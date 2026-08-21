@@ -1,0 +1,156 @@
+#!/usr/bin/env bash
+# PR pre-flight — mirror the exact suite CI runs, locally, before push.
+#
+# Prevents "pushed, then CI red" round-trips. Every check here is a check
+# CI runs on the PR; if any fails locally, CI will fail too.
+#
+# Invocation:
+#   bash scripts/dev/pr-preflight.sh              # normal pre-push check
+#   bash scripts/dev/pr-preflight.sh --body FILE  # + PR body lint (for PR-open)
+#   HERMES_SELF_TEST=1 bash scripts/dev/pr-preflight.sh  # sanity-check the script
+#
+# Wired to git-push via `.pre-commit-config.yaml` `stages: [pre-push]` hook.
+# One-time install:
+#   pre-commit install --hook-type pre-push
+#
+# Exit codes:
+#   0 — every check passed
+#   1 — at least one check failed
+#   2 — usage error
+
+set -uo pipefail
+
+# ────────────────────────────────────────────────────────────────
+# Argument parsing
+# ────────────────────────────────────────────────────────────────
+BODY_FILE=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --body)
+            BODY_FILE="${2:-}"
+            if [[ -z "$BODY_FILE" || ! -f "$BODY_FILE" ]]; then
+                echo "ERROR: --body requires a readable file path" >&2
+                exit 2
+            fi
+            shift 2
+            ;;
+        -h|--help)
+            sed -n '2,20p' "$0"
+            exit 0
+            ;;
+        *)
+            echo "ERROR: unknown argument: $1" >&2
+            exit 2
+            ;;
+    esac
+done
+
+# ────────────────────────────────────────────────────────────────
+# Self-test — validate the script's own logic without side-effects
+# ────────────────────────────────────────────────────────────────
+if [[ "${HERMES_SELF_TEST:-}" == "1" ]]; then
+    # Verify all mandatory tools are declared and the script parses.
+    # Real check-invocations happen only in the non-self-test path.
+    for cmd in ruff mypy lint-imports pytest markdownlint-cli2 git; do
+        if ! grep -q "\\b${cmd}\\b" "$0"; then
+            echo "SELF-TEST FAIL: script does not reference '${cmd}'" >&2
+            exit 1
+        fi
+    done
+    echo "SELF-TEST PASS: pr-preflight.sh declares expected tools."
+    exit 0
+fi
+
+# ────────────────────────────────────────────────────────────────
+# Result tracking
+# ────────────────────────────────────────────────────────────────
+FAILED=()
+CHECK_COUNT=0
+
+run_check() {
+    local name="$1"
+    shift
+    CHECK_COUNT=$((CHECK_COUNT + 1))
+    printf "▶ %s\n" "$name"
+    if "$@"; then
+        printf "  ✓ pass\n"
+    else
+        printf "  ✗ FAIL\n"
+        FAILED+=("$name")
+    fi
+}
+
+# ────────────────────────────────────────────────────────────────
+# Preconditions — the environment must be usable
+# ────────────────────────────────────────────────────────────────
+if ! command -v uv >/dev/null 2>&1; then
+    echo "ERROR: uv not on PATH." >&2
+    echo "  Windows: uv typically lives at ~/AppData/Roaming/Python/Scripts/uv.exe" >&2
+    echo "  Add to PATH before invoking pr-preflight." >&2
+    exit 2
+fi
+
+# ────────────────────────────────────────────────────────────────
+# Checks — same commands CI runs, no more no less
+# ────────────────────────────────────────────────────────────────
+
+# 1. Branch is up-to-date with origin/main (rebase check)
+check_base_current() {
+    git fetch origin main --quiet || return 1
+    git merge-base --is-ancestor origin/main HEAD
+}
+run_check "Base up-to-date with origin/main" check_base_current
+
+# 2. Ruff format on FULL tree (CI runs `ruff format --check .`)
+run_check "ruff format --check ."     uv run ruff format --check .
+
+# 3. Ruff lint on FULL tree
+run_check "ruff check ."              uv run ruff check .
+
+# 4. Mypy strict on src/
+run_check "mypy --strict src/hermes"  uv run mypy --strict src/hermes
+
+# 5. Import-linter contracts
+run_check "lint-imports"              uv run lint-imports
+
+# 6. Pip-audit (CVE scan) — --skip-editable to ignore local hermes package
+run_check "pip-audit --skip-editable" uv run pip-audit --skip-editable
+
+# 7. Pytest (should be fast in Phase 0 — one test)
+run_check "pytest tests/"             uv run pytest tests/ -q
+
+# 8. Markdownlint on FULL tree (CI runs the same glob)
+run_check "markdownlint-cli2 (full tree)" \
+    markdownlint-cli2 "**/*.md" "#node_modules" "#.venv"
+
+# 9. Guides index up-to-date (CI regenerates and diffs)
+check_guides_index() {
+    bash scripts/dev/regenerate-guides-index.sh >/dev/null 2>&1 || return 1
+    git diff --exit-code -- docs/guides/README.md >/dev/null 2>&1
+}
+run_check "Guides index current" check_guides_index
+
+# 10. Optional — PR body lint (only when --body FILE given)
+if [[ -n "$BODY_FILE" ]]; then
+    check_pr_body() {
+        PR_BODY="$(cat "$BODY_FILE")" bash scripts/dev/pr-body-lint.sh
+    }
+    run_check "PR body lint (--body $BODY_FILE)" check_pr_body
+fi
+
+# ────────────────────────────────────────────────────────────────
+# Summary
+# ────────────────────────────────────────────────────────────────
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+if [[ ${#FAILED[@]} -eq 0 ]]; then
+    echo "✓ ALL ${CHECK_COUNT} CHECKS PASS — safe to push."
+    exit 0
+else
+    echo "✗ ${#FAILED[@]} of ${CHECK_COUNT} CHECKS FAILED:"
+    printf '   - %s\n' "${FAILED[@]}"
+    echo ""
+    echo "Push blocked. Fix the failures above, then re-run:"
+    echo "  bash scripts/dev/pr-preflight.sh"
+    exit 1
+fi
