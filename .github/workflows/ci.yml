@@ -270,19 +270,21 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Run quality gates (placeholder)
-        shell: bash
-        run: |
-          echo "::notice::PLACEHOLDER — Phase 0 replaces with real tool invocations."
-          echo ""
-          echo "TODO(phase-0):"
-          echo "  curl -LsSf https://astral.sh/uv/install.sh | sh"
-          echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
-          echo "  uv sync --frozen"
-          echo "  uv run ruff check ."
-          echo "  uv run ruff format --check ."
-          echo "  uv run mypy --strict src/"
-          echo "  uv run pip-audit --strict"
+      - uses: astral-sh/setup-uv@v3
+        with: { version: "0.12.5" }
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy --strict src/
+      - run: uv run lint-imports
+      # `--skip-editable` skips our own local package (hermes) which isn't on PyPI.
+      # `--strict` dropped because it upgrades the skip warning to an error.
+      - run: uv run pip-audit --skip-editable
+      # safety dropped 2026-08-22 — v3.x requires interactive auth or --key API
+      # key; pip-audit (OSV + PyPI) + Dependabot alerts + semgrep cover the same
+      # ground without auth. See docs/decisions/2026-08-22-drop-safety.md.
+      - run: uv run radon cc --min B src/
+      - run: uv run vulture src/
 
   # ─────────────────────────────────────────────────────────────────────
   # UNIT — SKELETON (Phase 0 fills the body)
@@ -303,22 +305,11 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Run unit tests (placeholder)
-        shell: bash
-        run: |
-          echo "::notice::PLACEHOLDER — Phase 0 replaces with 'uv run pytest'."
-          echo ""
-          echo "TODO(phase-0):"
-          echo "  uv sync --frozen"
-          echo "  uv run pytest --cov=hermes --cov-branch --cov-report=xml --cov-fail-under=90"
-          echo ""
-          echo "Coverage discipline: 90% line, 85% branch (sanity floor only)."
-          echo "The load-bearing gate is the WEEKLY mutation-testing run —"
-          echo "see docs/guides/ai-authored-tests.md."
-
-      # TODO(phase-0): upload coverage.xml + emit PR comment with summary
-      # - uses: actions/upload-artifact@v5
-      #   with: {name: coverage-xml, path: coverage.xml, retention-days: 7}
+      - uses: astral-sh/setup-uv@v3
+        with: { version: "0.12.5" }
+      - run: uv sync --frozen
+      - run: uv run pytest tests/unit/ --cov=src/hermes --cov-branch --cov-report=xml --cov-report=json
+      - run: uv run python scripts/dev/coverage-check.py --bootstrap
 
   # ─────────────────────────────────────────────────────────────────────
   # GUARDS — SKELETON (Phase 0 fills the body)
@@ -339,21 +330,17 @@ jobs:
         with:
           fetch-depth: 0  # guards diff a range; shallow clone has no base
 
-      - name: Test-deletion guard (placeholder)
-        shell: bash
+      - name: Test-deletion guard
         run: |
-          echo "::notice::PLACEHOLDER — Phase 0 adds the guard once tests exist."
-          echo ""
-          echo "TODO(phase-0):"
-          echo "  # Detect deleted test files vs the merge base"
-          echo "  base=\"\${{ github.event.pull_request.base.sha }}\""
-          echo "  deleted=\$(git diff --name-only --diff-filter=D \"\$base\" HEAD | grep -E '^tests/.*\\.py$' || true)"
-          echo "  if [[ -n \"\$deleted\" ]]; then"
-          echo "    # Check PR body for '# SEV-1: removed by intent' or similar justification"
-          echo "    # OR check that the deleted test's assertion moved to another test in the same PR"
-          echo "    echo '::error::test files deleted without justification: \$deleted'"
-          echo "    exit 1"
-          echo "  fi"
+          set -euo pipefail
+          DELETED=$(git diff --name-only --diff-filter=D \
+            "origin/${{ github.base_ref }}...HEAD" -- 'tests/**/*.py' || true)
+          [ -z "$DELETED" ] && exit 0
+          if ! grep -q '^SEV-1:' <<< "${{ github.event.pull_request.body }}"; then
+            echo "Tests deleted but PR body lacks 'SEV-1:' opt-in header." >&2
+            echo "$DELETED" >&2
+            exit 1
+          fi
 
   # ─────────────────────────────────────────────────────────────────────
   # SEMGREP — SKELETON (Phase 0+ fills the body)
@@ -373,17 +360,10 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Run semgrep (placeholder)
-        shell: bash
-        run: |
-          echo "::notice::PLACEHOLDER — Phase 0+ replaces with real semgrep run."
-          echo ""
-          echo "TODO(phase-0):"
-          echo "  # semgrep CLI is baked into the runner image (per gh-runner Dockerfile)"
-          echo "  semgrep scan --config p/security-audit --config p/python --error"
-          echo ""
-          echo "Semgrep p/security-audit ruleset covers common Python security bugs."
-          echo "p/python catches idiom violations that lint doesn't."
+      - uses: returntocorp/semgrep-action@v1
+        with:
+          config: p/security-audit p/python
+          publishToken: ""  # no cloud upload
 
   # ─────────────────────────────────────────────────────────────────────
   # CODEOWNERS syntax guard — a broken CODEOWNERS silently disables

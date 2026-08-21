@@ -82,26 +82,12 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Build hermes wheel (placeholder)
-        shell: bash
-        run: |
-          echo "::notice::PLACEHOLDER — Phase 0 will replace this with 'uv build'."
-          echo "Expected outputs: dist/hermes-*.whl"
-          echo ""
-          echo "TODO(phase-0):"
-          echo "  curl -LsSf https://astral.sh/uv/install.sh | sh"
-          echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
-          echo "  uv sync --frozen"
-          echo "  uv build --wheel"
-          echo ""
-          echo "See ADR-003 §09 for the target design."
-
-      # TODO(phase-0): upload wheel as artifact for deploy job
-      # - uses: actions/upload-artifact@v5
-      #   with:
-      #     name: hermes-wheel
-      #     path: dist/hermes-*.whl
-      #     retention-days: 7
+      - uses: astral-sh/setup-uv@v3
+        with: { version: "0.12.5" }
+      - run: uv sync --frozen
+      - run: uv build --wheel
+      - uses: actions/upload-artifact@v4
+        with: { name: hermes-wheel, path: dist/*.whl }
 
   # ─────────────────────────────────────────────────────────────────
   # DEPLOY — SCP the wheel to VPS, install into venv, restart services
@@ -197,18 +183,10 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Run smoke suite (placeholder)
-        if: inputs.dry_run != true
-        shell: bash
-        run: |
-          echo "::notice::PLACEHOLDER — Phase 0 will replace with 'pytest -m smoke'."
-          echo ""
-          echo "TODO(phase-0):"
-          echo "  uv sync --frozen"
-          echo "  uv run pytest -m smoke --tb=short"
-          echo ""
-          echo "Smoke suite is deliberately tiny: one test per critical path."
-          echo "Full test suite runs pre-merge in ci.yml, not here."
+      - uses: astral-sh/setup-uv@v3
+        with: { version: "0.12.5" }
+      - run: uv sync --frozen
+      - run: uv run pytest -m smoke --tb=short
 
       - name: Dry-run notice
         if: inputs.dry_run == true
