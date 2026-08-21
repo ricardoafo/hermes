@@ -5,22 +5,22 @@
 # restarts, PC reboots, and each --ephemeral job exit.
 #
 # Usage:
-#   ./up.sh          # 4 runners (default — matches compose.yml's `scale: 4`)
+#   ./up.sh          # 8 runners (default — matches compose.yml's `scale: 8`)
 #   ./up.sh 1        # 1 runner (troubleshooting — isolate flaky jobs)
 #   ./up.sh N        # N runners
 #
-# The default is 4 because CI's 15 jobs finish in ~30s wall time with
-# 4 in parallel vs ~3 min sequential on 1. Only drop to 1 for
-# troubleshooting (a flaky job's runner assignment becomes deterministic).
+# The default is 8 because a code-changing PR fans out to 12 parallel
+# jobs post-`changeset`. 8 runners → 1.5 waves (~30s); 4 → 3 waves
+# (~60s). Rule: replicas = max_parallel_fan_out.
 #
 # Re-running with a different N scales the pool without stopping:
-#   ./up.sh 2  ->  ./up.sh 4  adds 2 more runners
-#   ./up.sh 4  ->  ./up.sh 2  stops 2 runners cleanly
+#   ./up.sh 4  ->  ./up.sh 8  adds 4 more runners
+#   ./up.sh 8  ->  ./up.sh 4  stops 4 runners cleanly
 set -euo pipefail
 
 cd "$(dirname "$0")"
 
-SCALE="${1:-4}"
+SCALE="${1:-8}"
 
 if [[ ! -f .env ]]; then
     echo "ERROR: .env not found. Copy .env.example to .env and fill in HERMES_RUNNER_REGISTRATION_PAT."
