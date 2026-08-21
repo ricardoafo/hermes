@@ -524,10 +524,20 @@ jobs:
                 `#${number} merged as ${mergedSha} — validated against main ${testedBase}`,
               );
             } catch (err) {
+              // Log the FULL error body so we can diagnose without
+              // guessing. Prior versions swallowed the message and left
+              // "GH refused merge (405)" with no context — useless.
+              const detail = err.response?.data?.message || err.message || String(err);
+              const docs = err.response?.data?.documentation_url || '';
+              core.warning(
+                `#${number}: pulls.merge failed status=${err.status} — "${detail}" ${docs}`,
+              );
+              // 409 = head SHA changed since Select resolved it. Safe retry.
+              // 405 = "Not mergeable" — usually a mid-flight race (head/base
+              //       moved) or a repo constraint we couldn't infer from
+              //       mergeable_state. Log-then-retry rather than fail hard;
+              //       the enhanced message above is the diagnostic surface.
               if (err.status === 405 || err.status === 409) {
-                core.warning(
-                  `#${number}: GH refused merge (${err.status}) — likely head/base moved between shouldMerge and pulls.merge. Retry next tick.`,
-                );
                 return;
               }
               throw err;
