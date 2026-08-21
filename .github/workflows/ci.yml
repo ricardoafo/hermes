@@ -254,6 +254,24 @@ jobs:
         run: node --test tools/merge/*.test.cjs
 
   # ─────────────────────────────────────────────────────────────────────
+  # CODEOWNERS syntax guard — a broken CODEOWNERS silently disables
+  # code-owner review enforcement (GitHub does not fail the PR; it just
+  # skips the check). That looks green while unreviewed code merges.
+  # Catch typos before they land.
+  # ─────────────────────────────────────────────────────────────────────
+  codeowners:
+    name: CODEOWNERS syntax
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Validate CODEOWNERS syntax
+        run: bash scripts/dev/codeowners-syntax-check.sh
+
+  # ─────────────────────────────────────────────────────────────────────
   # Secrets scan — gitleaks on the full history for every PR.
   # ─────────────────────────────────────────────────────────────────────
   secrets:
@@ -309,7 +327,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────
   ci-success:
     name: CI success
-    needs: [changeset, markdown-lint, pr-title, pr-body, changelog, auto-label, merge-decisions, secrets]
+    needs: [changeset, markdown-lint, pr-title, pr-body, changelog, auto-label, merge-decisions, codeowners, secrets]
     if: '!cancelled()'
     runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 1
