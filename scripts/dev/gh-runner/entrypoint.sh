@@ -22,10 +22,28 @@ set -euo pipefail
 : "${RUNNER_LABELS:=self-hosted,linux,x64,hermes}"
 
 # Docker creates named cache volumes as root by default. Fix ownership
-# so the runner user can write. Idempotent. _work is NOT a mount so
-# no chown needed there (fresh container-local dir owned by runner).
+# so the runner user can write. Idempotent.
 if [[ -d /home/runner/.cache ]] && [[ "$(stat -c '%U' /home/runner/.cache)" != "runner" ]]; then
     sudo chown -R runner:runner /home/runner/.cache
+fi
+
+# ────────────────────────────────────────────────────────────────
+# Wipe _work between jobs. `restart: unless-stopped` restarts the
+# SAME container in place, so the container's writable layer (which
+# is where /home/runner/_work lives — it's not a mount) persists
+# between --ephemeral job runs. That leaked prior git state into
+# subsequent jobs — sparse-checkout config from one workflow file
+# survived to the next, leaving files missing from the working tree
+# that the checkout thought were still present.
+#
+# Nuking _work at entrypoint start makes every job land on a truly
+# empty workspace, matching what the "each job in a fresh container"
+# design intended. Cache volumes stay intact (they're separate mounts
+# under /home/runner/.cache).
+# ────────────────────────────────────────────────────────────────
+if [[ -d /home/runner/_work ]]; then
+    echo "Wiping /home/runner/_work — every job starts on a clean workspace."
+    rm -rf /home/runner/_work/* /home/runner/_work/.[!.]* 2>/dev/null || true
 fi
 
 REPO_API="https://api.github.com/repos/${RUNNER_REPOSITORY}"

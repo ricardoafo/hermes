@@ -298,7 +298,15 @@ jobs:
           # exist. Prior designs discovered this only in the merge step
           # itself, after paying full pipeline cost per doomed entry —
           # quadratic waste as the queue drains.
-          current="$(gh api "repos/${GITHUB_REPOSITORY}/branches/main" --jq .commit.sha)"
+          #
+          # curl + jq (not `gh api`) — the self-hosted runner image
+          # does not include the gh CLI, and adding it just to serve
+          # this one call is not worth the image rebuild.
+          current="$(curl -sSfL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/branches/main" \
+            | jq -r .commit.sha)"
           echo "main tip     : ${MAIN_TIP}"
           echo "main now     : ${current}"
           [[ "$current" == "$MAIN_TIP" ]] \
