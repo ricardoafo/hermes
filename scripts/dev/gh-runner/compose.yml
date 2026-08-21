@@ -33,14 +33,17 @@ services:
     # GH runners list by RUNNER_NAME (hostname is a docker-generated
     # unique hex, so replicas get unique names).
     #
-    # Default 4 replicas — CI's 15 jobs finish in ~30s wall time with
-    # 4 in parallel vs ~3 min sequential on 1. Override at the CLI with
-    # `--scale runner=N` for troubleshooting (e.g. `--scale runner=1`
-    # to isolate a flaky job to a single container).
-    #
+    # Default 8 replicas — CI's 15 jobs fan out to 12 parallel post-
+    # changeset. 8 replicas → all 12 fit in 1.5 waves (~30s wall time).
+    # 4 gave us 3 waves (~60s); 12 would give 1 wave but exceeds the
+    # per-machine resource budget at 4GB × 12 = 48GB.
+    # Rule: replicas = max_parallel_fan_out. Ours = 12; 8 is the safe
+    # optimum given resource caps.
+    # Override at the CLI with `--scale runner=N` for troubleshooting
+    # (e.g. `--scale runner=1` to isolate a flaky job).
     # Persists across `docker compose up -d --build`, unlike the CLI
     # --scale flag which reverts to 1 the next time it's omitted.
-    scale: 4
+    scale: 8
     #
     # 24/7 lifecycle: auto-restart on Docker Desktop startup, on PC
     # reboot, and after each --ephemeral job completes. `unless-stopped`
