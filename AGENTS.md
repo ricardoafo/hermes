@@ -165,6 +165,30 @@ apply → verify → archive). Details:
   `mem_session_summary` with Goal / Discoveries / Accomplished / Next
   Steps / Relevant Files.
 
+## Writing tests
+
+Every test you author (or modify) MUST follow the discipline in
+[`docs/guides/ai-authored-tests.md`](docs/guides/ai-authored-tests.md).
+Non-negotiable summary:
+
+- Each test has a docstring naming the invariant it protects.
+- Start from the spec, not the code — write one test per invariant,
+  then check coverage as a sanity floor.
+- For pure-logic modules: add a property-based test (hypothesis).
+- Every mock names the integration test at the seam.
+- Assert on outputs, not internal state; assert the specific value.
+- One behavior claim per test.
+- **When updating a test to accommodate a code change: STOP.** If the
+  test SHOULD have failed on the behavior change, silencing it defeats
+  the point. Ask before updating.
+
+The one question before submitting: *"if I broke the invariant this
+test claims to protect, would this test fail?"* If not, rewrite it.
+
+Coverage floor (Phase 0+): 90% line, 85% branch. Mutation kill rate is
+the load-bearing gate (target ≥ 80%). Line coverage alone is not proof
+of correctness.
+
 ## For humans reading this
 
 If you are Ricardo (or a future collaborator with write access):
@@ -183,6 +207,8 @@ If you are Ricardo (or a future collaborator with write access):
   (persistent memory, SDD orchestrator, model assignments, git safety)
 - [`docs/guides/dev-workflow.md`](docs/guides/dev-workflow.md) — the
   git/gh discipline this file references
+- [`docs/guides/ai-authored-tests.md`](docs/guides/ai-authored-tests.md)
+  — mandatory discipline for every test authored in this repo
 - [`docs/architecture/`](docs/architecture/) — ADRs 001-010 (source of
   truth for architectural WHAT and HOW)
 - [`~/.claude/rules/severity-rubric.md`](../.claude/rules/severity-rubric.md)
