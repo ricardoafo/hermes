@@ -260,23 +260,18 @@ jobs:
             gitleaks git . --log-opts=--all --redact --no-banner --verbose
           fi
 
-  # ─────────────────────────────────────────────────────────────────────
-  # Add to project — every new issue/PR appears on the roadmap board.
-  # Idempotent (already-added items are skipped).
-  # ─────────────────────────────────────────────────────────────────────
-  add-to-project:
-    name: Add to project board
-    if: github.event.action == 'opened' && (github.event_name == 'pull_request' || github.event_name == 'issues')
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
-    timeout-minutes: 3
-    continue-on-error: true
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/add-to-project@v1.0.2
-        with:
-          project-url: https://github.com/users/ricardoafo/projects/4
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+  # Add-to-project step deliberately removed.
+  #
+  # actions/add-to-project cannot write to a user-owned project via the
+  # default GITHUB_TOKEN — that token has no permission surface for
+  # user-scope projects (org-scope only). To restore auto-add, create a
+  # fine-grained PAT with `read:project` + `write:project`, store as
+  # secret `ADD_TO_PROJECT_PAT`, then re-add the job using that secret
+  # instead of GITHUB_TOKEN.
+  #
+  # Until then: items get added manually via
+  #   gh project item-add 4 --owner ricardoafo --url <issue-or-pr-url>
+  # (run by the operator or a scripted post-open flow).
 
   # ─────────────────────────────────────────────────────────────────────
   # SUCCESS gate — single required status check on branch protection.
