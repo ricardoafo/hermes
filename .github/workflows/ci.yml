@@ -163,51 +163,14 @@ jobs:
     runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 3
     steps:
-      - name: Verify mandatory sections have content
-        shell: bash
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Lint PR body
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
-        run: |
-          set -euo pipefail
-
-          if [[ -z "$PR_BODY" ]]; then
-            echo "::error::PR body is empty — the template must be filled in."
-            exit 1
-          fi
-
-          # Extract each section between H2 headers. Strip HTML comments
-          # (single-line + multi-line spans) and placeholder-only bullet
-          # rows. If what remains is only whitespace, the section is empty.
-          missing=()
-          for section in "Summary" "Related" "Testing" "Risk"; do
-            content=$(printf '%s\n' "$PR_BODY" | awk -v s="$section" '
-              $0 ~ "^## " s "$" {inside=1; next}
-              inside && /^## / {inside=0}
-              inside { print }
-            ')
-            stripped=$(printf '%s\n' "$content" | awk '
-              {
-                line = $0
-                while (match(line, /<!--.*?-->/)) {
-                  line = substr(line, 1, RSTART - 1) substr(line, RSTART + RLENGTH)
-                }
-                if (line ~ /<!--/) { sub(/<!--.*/, "", line); in_comment=1; print line; next }
-                if (in_comment) { if (line ~ /-->/) { sub(/.*-->/, "", line); in_comment=0; print line } next }
-                print line
-              }
-            ' | grep -vE '^[[:space:]]*$|^[[:space:]]*-[[:space:]]+(ADR|Issue):[[:space:]]*$' || true)
-            if [[ -z "$stripped" ]]; then
-              missing+=("$section")
-            fi
-          done
-
-          if [[ ${#missing[@]} -gt 0 ]]; then
-            echo "::error::PR body missing content in mandatory sections: ${missing[*]}"
-            echo "Fill each ## section with real content (not the placeholder <!-- ... --> comment)."
-            exit 1
-          fi
-
-          echo "All mandatory sections have content."
+        run: bash scripts/dev/pr-body-lint.sh
 
   # ─────────────────────────────────────────────────────────────────────
   # CHANGELOG enforcement — blocks feat/fix/refactor/perf PRs that
@@ -224,50 +187,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check CHANGELOG for feat/fix/refactor/perf/breaking (with scope-aware skip)
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          title="${{ github.event.pull_request.title }}"
-
-          # Extract type + scope from title.
-          # Types that require a CHANGELOG entry: feat, fix, refactor, perf.
-          # BUT: infra-only scopes (ci, build, deps, tooling) skip the check
-          # because they don't affect user-visible runtime behavior.
-          type=$(echo "$title" | grep -oE '^(feat|fix|refactor|perf)(\([a-z0-9-]+\))?(!)?:' | grep -oE '^(feat|fix|refactor|perf)' || true)
-          scope=$(echo "$title" | grep -oE '^(feat|fix|refactor|perf)\(([a-z0-9-]+)\)' | sed -E 's/^[a-z]+\(([a-z0-9-]+)\)$/\1/' || true)
-          breaking=$(echo "$title" | grep -oE '!:' || true)
-
-          if [[ -z "$type" && -z "$breaking" ]]; then
-            echo "Type not in {feat, fix, refactor, perf} and no breaking marker — CHANGELOG check skipped."
-            exit 0
-          fi
-
-          # Infra-only scope skip (only when there's no breaking marker)
-          if [[ -z "$breaking" ]]; then
-            case "$scope" in
-              ci|build|deps|tooling)
-                echo "Type '$type' with infra-only scope '$scope' — CHANGELOG check skipped."
-                exit 0
-                ;;
-            esac
-          fi
-
-          # Check if CHANGELOG.md was touched in this PR
-          base_sha="${{ github.event.pull_request.base.sha }}"
-          head_sha="${{ github.event.pull_request.head.sha }}"
-          changed=$(git diff --name-only "$base_sha" "$head_sha")
-
-          if echo "$changed" | grep -qE '^CHANGELOG\.md$'; then
-            echo "CHANGELOG.md updated — ok."
-            exit 0
-          fi
-
-          echo "::error::PR type '${type:-breaking}' requires CHANGELOG.md [Unreleased] update."
-          echo "Add an entry under Added / Changed / Deprecated / Removed / Fixed / Security."
-          echo "For chore / docs / ci / build / test / revert, no CHANGELOG update needed."
-          exit 1
+      - name: Check CHANGELOG requirement
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: bash scripts/dev/changelog-check.sh
 
   # ─────────────────────────────────────────────────────────────────────
   # Auto-label — applies area:*/type:* labels based on file paths and
