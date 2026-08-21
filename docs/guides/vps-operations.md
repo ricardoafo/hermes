@@ -25,6 +25,42 @@ export HERMES_SSH_KEY="$HOME/.ssh/hermes_vps_ed25519"
 The IP + key path also live in Bitwarden under `Hermes VPS SSH key` for
 recovery when the shell profile is unavailable.
 
+## Initial provision — install order matters
+
+When bringing up a fresh VPS (initial install or full reprovision),
+install and verify components in this exact order. Skipping ahead
+locks you out.
+
+1. **apt update + upgrade + set timezone**
+2. **Install Tailscale + register with your tailnet** (via `tailscale
+   up --ssh`) — outbound-only, safe
+3. **Reboot** if `apt upgrade` installed a new kernel (`ls
+   /var/run/reboot-required` returns a file) — Tailscale must survive
+   a reboot before you trust it
+4. **After reboot, verify Tailscale came back up** via `ssh
+   root@hermes-01` (tailnet name) from your laptop — if this fails,
+   fix Tailscale first, still have public SSH as fallback
+5. **Only now enable ufw + Hetzner Cloud Firewall** — public SSH
+   becomes blocked; if Tailscale isn't working, you're locked out
+   without console recovery
+6. **Install Docker + any other services** — order doesn't matter here,
+   ufw allows outbound freely
+
+**Root cause of this rule**: enabling `ufw` before verifying Tailscale
+persists through reboot has burned people before. `apt upgrade`
+routinely installs new kernels; new kernels require reboot to activate;
+Tailscale's systemd unit may or may not auto-start depending on install
+method. Verify BEFORE closing the escape hatch.
+
+If step 4 fails, recover via:
+
+- SSH to the public IP: `ssh -i "$HERMES_SSH_KEY" root@$HERMES_VPS_IP`
+- Or Hetzner console (Server → Console — browser terminal, works even
+  with ufw active)
+- Restart Tailscale: `systemctl restart tailscaled && tailscale up --ssh`
+
+Then re-verify step 4, then proceed to step 5.
+
 ## Access
 
 ### First-time SSH from a new machine
