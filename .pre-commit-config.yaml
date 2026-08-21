@@ -63,3 +63,17 @@ repos:
         language: system
         files: ^scripts/dev/changelog-check\.sh$
         pass_filenames: false
+
+      - id: codeowners-syntax
+        name: CODEOWNERS syntax check
+        entry: bash scripts/dev/codeowners-syntax-check.sh
+        language: system
+        files: ^(\.github/CODEOWNERS|scripts/dev/codeowners-syntax-check\.sh)$
+        pass_filenames: false
+
+      - id: codeowners-syntax-self-test
+        name: codeowners-syntax self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/codeowners-syntax-check.sh'
+        language: system
+        files: ^scripts/dev/codeowners-syntax-check\.sh$
+        pass_filenames: false

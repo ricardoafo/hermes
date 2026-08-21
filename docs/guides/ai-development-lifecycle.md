@@ -252,18 +252,15 @@ Two settings live in GitHub's UI and can't be fully configured via CLI:
    - Enable "Item closed → move to Done"
    - Enable "Pull request merged → move to Done" (may be same as above)
 
-2. **Branch protection required status checks** — after this PR merges and
-   the `ci.yml` workflow has run at least once on `main`, add `ci-success`
-   as a required status check via:
-
-   ```bash
-   gh api -X PATCH repos/ricardoafo/hermes/branches/main/protection/required_status_checks \
-     -F strict=true \
-     -f 'contexts[]=CI success'
-   ```
-
-   Or via GitHub UI: Settings → Branches → main → Edit → Require status
-   checks → search "CI success" → Save.
+2. **Branch protection required status checks** — applied 2026-08-21 via
+   `scripts/dev/setup-branch-protection.sh`. Current state:
+   - Required check: `CI success` (the aggregator job in `ci.yml`)
+   - `strict: false` — freshness is enforced by `pr-revalidate.yml`,
+     which builds the merge tree at the resolved main SHA. Setting
+     `strict: true` would recreate the approval treadmill the
+     revalidate design was built to remove.
+   - Full config lives in the setup script; re-run it after any change
+     to reconcile.
 
 ## What each surface answers
 
@@ -285,10 +282,12 @@ Two settings live in GitHub's UI and can't be fully configured via CLI:
   the commit message, which is harder to find, filter, and prioritize.
 - **Squash-merge only** — one commit per PR on main. Bisecting is
   deterministic. `git log` is a readable changelog.
-- **Merge queue** — the bot ships work in parallel batches, but only one
-  PR should touch main at a time. Queue prevents the "approval got
-  invalidated by a rebase" treadmill under
-  `require_last_push_approval=true`.
+- **Merge queue (`pr-revalidate.yml`)** — revalidate-then-merge design.
+  Builds the merge tree at the resolved main SHA in the runner, runs
+  tree gates against it, then merges from the workflow. Never pushes
+  to the PR branch, so `require_last_push_approval=true` cannot
+  invalidate approvals. Decisions live in `tools/merge/decisions.cjs`
+  (unit-tested). See `docs/decisions/2026-08-21-revalidate-then-merge.md`.
 - **Auto-add to project** — CI job is idempotent; no manual dragging.
   Board reflects reality without extra work.
 - **Milestones = phases** — long-lived buckets aligned with the ADR-driven
