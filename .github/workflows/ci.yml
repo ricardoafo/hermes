@@ -153,6 +153,26 @@ jobs:
             Not:     'feat(fifo): Add lot-consumption event log'
 
   # ─────────────────────────────────────────────────────────────────────
+  # PR body linter — every mandatory template section must have real
+  # content, not the placeholder comment left in place. Prevents
+  # "opened a PR with empty body" from ever reaching review.
+  # ─────────────────────────────────────────────────────────────────────
+  pr-body:
+    name: PR body
+    if: github.event_name == 'pull_request'
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Lint PR body
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: bash scripts/dev/pr-body-lint.sh
+
+  # ─────────────────────────────────────────────────────────────────────
   # CHANGELOG enforcement — blocks feat/fix/refactor/perf PRs that
   # don't update CHANGELOG's [Unreleased] section. Skips for
   # docs/chore/ci/build/test/revert.
@@ -167,50 +187,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check CHANGELOG for feat/fix/refactor/perf/breaking (with scope-aware skip)
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          title="${{ github.event.pull_request.title }}"
-
-          # Extract type + scope from title.
-          # Types that require a CHANGELOG entry: feat, fix, refactor, perf.
-          # BUT: infra-only scopes (ci, build, deps, tooling) skip the check
-          # because they don't affect user-visible runtime behavior.
-          type=$(echo "$title" | grep -oE '^(feat|fix|refactor|perf)(\([a-z0-9-]+\))?(!)?:' | grep -oE '^(feat|fix|refactor|perf)' || true)
-          scope=$(echo "$title" | grep -oE '^(feat|fix|refactor|perf)\(([a-z0-9-]+)\)' | sed -E 's/^[a-z]+\(([a-z0-9-]+)\)$/\1/' || true)
-          breaking=$(echo "$title" | grep -oE '!:' || true)
-
-          if [[ -z "$type" && -z "$breaking" ]]; then
-            echo "Type not in {feat, fix, refactor, perf} and no breaking marker — CHANGELOG check skipped."
-            exit 0
-          fi
-
-          # Infra-only scope skip (only when there's no breaking marker)
-          if [[ -z "$breaking" ]]; then
-            case "$scope" in
-              ci|build|deps|tooling)
-                echo "Type '$type' with infra-only scope '$scope' — CHANGELOG check skipped."
-                exit 0
-                ;;
-            esac
-          fi
-
-          # Check if CHANGELOG.md was touched in this PR
-          base_sha="${{ github.event.pull_request.base.sha }}"
-          head_sha="${{ github.event.pull_request.head.sha }}"
-          changed=$(git diff --name-only "$base_sha" "$head_sha")
-
-          if echo "$changed" | grep -qE '^CHANGELOG\.md$'; then
-            echo "CHANGELOG.md updated — ok."
-            exit 0
-          fi
-
-          echo "::error::PR type '${type:-breaking}' requires CHANGELOG.md [Unreleased] update."
-          echo "Add an entry under Added / Changed / Deprecated / Removed / Fixed / Security."
-          echo "For chore / docs / ci / build / test / revert, no CHANGELOG update needed."
-          exit 1
+      - name: Check CHANGELOG requirement
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: bash scripts/dev/changelog-check.sh
 
   # ─────────────────────────────────────────────────────────────────────
   # Auto-label — applies area:*/type:* labels based on file paths and
@@ -304,7 +286,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────
   ci-success:
     name: CI success
-    needs: [changeset, markdown-lint, pr-title, changelog, auto-label, secrets]
+    needs: [changeset, markdown-lint, pr-title, pr-body, changelog, auto-label, secrets]
     if: '!cancelled()'
     runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 1
