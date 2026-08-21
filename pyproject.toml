@@ -1,0 +1,130 @@
+[project]
+name = "hermes"
+version = "0.0.0"
+description = "Crypto trading engine — hexagonal, event-sourced, tax-compliant."
+requires-python = ">=3.14,<3.15"
+readme = "README.md"
+license = { text = "Proprietary" }
+authors = [{ name = "Ricardo Afonso" }]
+dependencies = [
+  "pydantic>=2.9,<3",
+  "pydantic-settings>=2.5,<3",
+  "httpx>=0.27,<1",
+  "structlog>=24.4,<25",
+  "typer>=0.12,<1",
+  "rich>=13.8,<14",
+  "textual>=0.79,<1",
+  "apscheduler>=3.10,<4",
+  "python-telegram-bot>=21.5,<22",
+  "ulid-py>=1.1,<2",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=9,<10",  # bumped for PYSEC-2026-1845 fix (9.0.3+)
+  "pytest-cov>=5,<7",  # --cov integration for pytest → coverage.py
+  "pytest-xdist>=3.6,<4",
+  "hypothesis>=6.112,<7",
+  "syrupy>=5,<6",  # bumped to unblock pytest 9 (see PYSEC-2026-1845 note above)
+  # mutmut deferred to Phase 1: libcst (transitive) lacks a 3.14 wheel as of
+  # 2026-08 and needs Rust to build. Add back when either libcst ships a 3.14
+  # wheel or the mutation-testing GH workflow provisions a Rust toolchain.
+  # [tool.mutmut] config below stays — it's inert without the tool installed.
+  "respx>=0.21,<1",
+  "freezegun>=1.5,<2",
+  "coverage[toml]>=7.6,<8",
+  "ruff>=0.6,<1",
+  "mypy>=1.11,<2",
+  "import-linter>=2.1,<3",
+  # safety dropped 2026-08-22: v3.7.0 requires interactive auth OR --key API key
+  # (breaking change from pre-2024 flow), and the scan command crashes with a
+  # click-context bug on our stack. pip-audit + Dependabot alerts + semgrep
+  # cover the same ground without auth. See docs/decisions/ entry.
+  "pip-audit>=2.7,<3",
+  "cyclonedx-python-lib>=8.5,<9",
+  "pre-commit>=3.8,<4",
+  "radon>=6.0,<7",
+  "vulture>=2.13,<3",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hermes"]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+extend-exclude = ["src/hermes/**/__init__.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "PL", "RUF", "S", "PTH", "ERA", "PGH"]
+ignore = ["PLR0913"]  # arg count — hexagonal use cases take many ports
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "PLR2004"]  # assert allowed in tests, magic numbers fine
+
+[tool.mypy]
+strict = true
+python_version = "3.14"
+mypy_path = "src"
+packages = ["hermes"]
+exclude = ["build/", "dist/", ".venv/"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "smoke: post-deploy smoke tests",
+  "integration: tier-2 tests (SQLite :memory:, testnet)",
+  "e2e: tier-3 end-to-end against testnet",
+  "slow: >1s per test",
+]
+addopts = "-ra --strict-markers --strict-config"
+
+[tool.coverage.run]
+source = ["src/hermes"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+  "pragma: no cover",
+  "if TYPE_CHECKING:",
+  "@abstractmethod",
+  "raise NotImplementedError",
+]
+
+[tool.importlinter]
+root_packages = ["hermes"]
+
+[[tool.importlinter.contracts]]
+name = "domain-is-pure"
+type = "forbidden"
+source_modules = ["hermes.domain"]
+forbidden_modules = [
+  "hermes.application", "hermes.ports", "hermes.adapters",
+  "hermes.infrastructure", "hermes.entrypoints",
+]
+
+[[tool.importlinter.contracts]]
+name = "application-imports-only-domain-and-ports"
+type = "forbidden"
+source_modules = ["hermes.application"]
+forbidden_modules = ["hermes.adapters", "hermes.infrastructure", "hermes.entrypoints"]
+
+[[tool.importlinter.contracts]]
+name = "adapters-never-import-entrypoints"
+type = "forbidden"
+source_modules = ["hermes.adapters"]
+forbidden_modules = ["hermes.entrypoints"]
+
+[tool.mutmut]
+paths_to_mutate = ["src/hermes/domain/"]
+tests_dir = "tests/unit/"
+runner = "uv run pytest tests/unit/ -x -q"
+
+[tool.vulture]
+min_confidence = 80
+paths = ["src/hermes"]
+exclude = ["src/hermes/ports/"]

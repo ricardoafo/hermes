@@ -77,3 +77,29 @@ repos:
         language: system
         files: ^scripts/dev/codeowners-syntax-check\.sh$
         pass_filenames: false
+
+      - id: ruff-check
+        name: ruff check
+        language: system
+        entry: uv run ruff check
+        types: [python]
+
+      - id: ruff-format
+        name: ruff format
+        language: system
+        entry: uv run ruff format --check
+        types: [python]
+
+      - id: mypy
+        name: mypy --strict
+        language: system
+        entry: uv run mypy --strict
+        types: [python]
+        pass_filenames: false
+        args: ["src/"]
+
+      - id: import-linter
+        name: import-linter
+        language: system
+        entry: uv run lint-imports
+        pass_filenames: false

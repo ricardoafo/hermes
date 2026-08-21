@@ -3,6 +3,7 @@
 **Date**: 2026-08-20
 **Status**: Accepted
 **Accepted**: 2026-08-21
+**Amended**: 2026-08-21 — added §7 (SDD change artifacts, dual-source convention); Neutral bullet on openspec/engram revised to match
 **Deciders**: Ricardo Afonso (product owner), Claude (proposer)
 **Supersedes**: —
 
@@ -31,21 +32,22 @@ into one.
 
 ## Decision
 
-Documentation lives in **six surfaces**, each with a clear purpose,
-location, and format. Everything else is either engram memory (session
+Documentation lives in **seven surfaces**, each with a clear purpose,
+location, and format. Everything else is either engram memory (AI working
 context that does not need to persist as a file) or code (which documents
 itself if named well).
 
-### The six surfaces
+### The seven surfaces
 
-| Surface          | Location                | Reader arrives asking                                        | Lifecycle                                     |
-| ---------------- | ----------------------- | ------------------------------------------------------------ | --------------------------------------------- |
-| **ADRs**         | `docs/architecture/`    | Why did we choose X over Y at the architectural level?       | Immutable once Accepted; new ADR supersedes   |
-| **Decisions**    | `docs/decisions/`       | Why is parameter P set to value V? When did that get chosen? | Dated entry; parameters change → new entry    |
-| **Guides**       | `docs/guides/`          | How do I do task T (setup, dev workflow, release)?           | Living; edited as tools/workflows change      |
-| **Runbook**      | `docs/runbook/`         | Incident I is happening — what do I do right now?            | Living; each entry per incident type or drill |
-| **Research**     | `docs/research/`        | What did we learn before choosing X? What was the evidence?  | Immutable snapshot; referenced by ADRs        |
-| **In-code docs** | Docstrings + module doc | What does this function/class do, and when should I use it?  | Living with the code; deleted with the code   |
+| Surface           | Location                     | Reader arrives asking                                                            | Lifecycle                                     |
+| ----------------- | ---------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------- |
+| **ADRs**          | `docs/architecture/`         | Why did we choose X over Y at the architectural level?                           | Immutable once Accepted; new ADR supersedes   |
+| **Decisions**     | `docs/decisions/`            | Why is parameter P set to value V? When did that get chosen?                     | Dated entry; parameters change → new entry    |
+| **Guides**        | `docs/guides/`               | How do I do task T (setup, dev workflow, release)?                               | Living; edited as tools/workflows change      |
+| **Runbook**       | `docs/runbook/`              | Incident I is happening — what do I do right now?                                | Living; each entry per incident type or drill |
+| **Research**      | `docs/research/`             | What did we learn before choosing X? What was the evidence?                      | Immutable snapshot; referenced by ADRs        |
+| **Change specs**  | `openspec/changes/{name}/`   | What did this SDD change decide, require, and design (proposal / spec / design)? | Frozen once the change ships; then archived   |
+| **In-code docs**  | Docstrings + module doc      | What does this function/class do, and when should I use it?                      | Living with the code; deleted with the code   |
 
 ### 1. ADRs — Architecture Decision Records
 
@@ -139,7 +141,59 @@ itself if named well).
   once merged. Updates get a new report with the newer date; the older
   one remains as the record of what was believed at that time.
 
-### 6. In-code documentation — docstrings, sparingly
+### 6. Change specs — SDD artifacts, dual-source convention
+
+- **Location**: `openspec/changes/{change-name}/` — one folder per SDD
+  change, following the standard SDD convention. Files inside:
+  - `proposal.md` — decisions with rationale (the "what and why" of the change)
+  - `spec.md` — testable requirements + acceptance criteria (the "definition of done")
+  - `design.md` — file-level shapes and concrete tool config (the "how")
+- **Not tracked in this surface**: `explore.md` (throwaway scaffolding
+  for the proposal), `tasks.md` (ephemeral implementation breakdown),
+  `apply-progress.md` (session state), `verify-report.md` (one-shot CI
+  substitute). These live in **engram only**.
+- **Dual-source rule**: every artifact in `openspec/changes/` is
+  ALSO mirrored to engram under the topic key
+  `sdd/{change-name}/{artifact}`. Engram is the AI-side working
+  memory (fast retrieval mid-session, survives compaction); the repo
+  is the human-side durable audit trail (reviewable in the IDE, on
+  GitHub, in PR diffs, in git history). Whenever a phase updates an
+  artifact, both sources must be updated in the same commit.
+- **Lifecycle**: while a change is open (proposal → apply →
+  verify), the folder is live. Once the change ships (squash-merge
+  to `main`), the folder is frozen. Post-ship archival strategy
+  (leave in place vs move under `openspec/archive/`) is a
+  Pending decision.
+- **Cross-reference to ADRs**: if a change spec makes an
+  architectural decision that will outlive the change, promote the
+  content to a new ADR before archiving; the change spec then cites
+  the ADR ("architectural rationale codified in ADR-NNN"). Non-
+  architectural decisions do NOT need promotion.
+- **Readability standards** (change specs are read by humans in PR
+  review and by future-them during archaeology — treat them like
+  guides, not internal notes):
+  - **Headings**: Level 2 for major sections (`## Scope`,
+    `## Decisions`, etc.); Level 3 for sub-decisions and
+    requirements (`### D-N: <name>`, `### R-N: <title>`); Level 4+
+    used sparingly.
+  - **Tables**: use them whenever the content is naturally
+    columnar (threshold tables, file-purpose maps, verification
+    check lists). Padded per invariant I-10.
+  - **Fenced code blocks**: language tag mandatory (`toml`,
+    `python`, `yaml`, `bash`, `mermaid`). No naked ` ``` `.
+  - **Mermaid diagrams**: use where they add value — dependency
+    direction, execution sequence, state machine, file-tree
+    hierarchy. Do NOT use mermaid for lists that are just as
+    readable in bullets. A good test: "does the diagram show a
+    relationship the text alone would take a paragraph to
+    explain?" If yes, diagram; if no, keep the bullet list.
+  - **Executive Summary** at the top of `proposal.md` and
+    `design.md`: 3-5 sentences. A reviewer should decide
+    whether to read further based on this alone.
+  - **Cross-references** to ADRs / sibling artifacts use
+    relative markdown links, not bare URLs.
+
+### 7. In-code documentation — docstrings, sparingly
 
 - **Docstring style**: Google-style (numpy-style also acceptable; pick
   one and stick — Google is chosen).
@@ -170,14 +224,20 @@ itself if named well).
 
 ### What is NOT written down as a file
 
-- **Session-specific context** — engram memory instead. Session
-  goals, next-steps, "what we discovered in yesterday's exploration"
-  live in engram, not in docs/.
+- **AI working memory for the current session** — engram instead.
+  Session goals, next-steps, "what we discovered in yesterday's
+  exploration", scratch task lists, apply-progress logs. Engram is
+  optimised for AI retrieval and survives compaction; the repo is
+  optimised for human review.
 - **Chat transcripts** — engram entries when they contain durable
   learnings; discarded otherwise.
 - **AI-generated summaries that duplicate primary artifacts** — a
   Claude-generated "summary of ADR-003" file is redundant; ADR-003
   is the summary.
+- **SDD scaffolding artifacts** — `explore.md`, `tasks.md`,
+  `apply-progress.md`, `verify-report.md` live in engram only.
+  Only the three durable artifacts (`proposal.md`, `spec.md`,
+  `design.md`) are mirrored to `openspec/changes/{name}/`. See §6.
 
 ### Directory layout
 
@@ -338,10 +398,13 @@ this ADR does not change that.
   Markdown well enough for casual browsing.
 - **CHANGELOG.md lives at the repo root** (per ADR-006 convention),
   not under `docs/`. It is a versioning artifact, not a doc surface.
-- **The `openspec/` directory is separate from `docs/`.** SDD
-  artifacts follow their own convention (`sdd-init`, `sdd-explore`,
-  etc.) and are not doc surfaces in this ADR's terms. Engram
-  entries similarly are not "docs".
+- **The `openspec/` directory is a doc surface** (§6, added in the
+  2026-08-21 amendment). Prior wording (that openspec was "separate
+  from docs" and "not a doc surface") is superseded by that
+  amendment. Rationale: the human owner needs proposal / spec /
+  design accessible in the IDE and on GitHub, not only via the AI's
+  engram tools. Engram continues to hold session context and
+  scaffolding artifacts (see §5 What is NOT written down).
 
 ## What would change this decision
 
@@ -383,3 +446,7 @@ this ADR does not change that.
   in Phase 0
 - **Google-style docstring examples** — first module docstring
   landed with the domain module in Phase 1
+- **Post-ship archival strategy for `openspec/changes/{name}/`**
+  (§6) — leave in place vs move under `openspec/archive/{name}/`
+  once the change squash-merges. Pick before the first Phase 0
+  change ships.

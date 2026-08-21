@@ -53,7 +53,13 @@ What this locks in. What it forecloses. What we'll revisit.
 
 ## Living index
 
-None yet — populate as decisions accumulate.
+| Date       | Entry                                                                                        | Supersedes                                    |
+| ---------- | -------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| 2026-08-21 | [PR flow hardening](2026-08-21-pr-flow-hardening.md)                                         | —                                             |
+| 2026-08-21 | [Revalidate-then-merge](2026-08-21-revalidate-then-merge.md)                                 | —                                             |
+| 2026-08-21 | [Dependabot over Renovate](2026-08-21-dependabot-over-renovate.md)                           | ADR-010 §Renovate                             |
+| 2026-08-21 | [Python 3.14 pin](2026-08-21-python-3-14-pin.md)                                             | ADR-003 §User Interface + README §64          |
+| 2026-08-22 | [Drop `safety` from dev deps](2026-08-22-drop-safety.md)                                     | ADR-010 §3 CVE scanning (safety+pip-audit)    |
 
 ## Anti-patterns
 

@@ -1,0 +1,9 @@
+# Registry of CVEs we've reviewed and accepted (with expiry).
+# Referenced by pip-audit/safety runs to allow-list known-benign findings.
+# Entry shape:
+#   - id: CVE-YYYY-NNNNN
+#     package: <pypi-name>
+#     reason: <why safe / mitigation>
+#     accepted_by: <initials>
+#     expires: YYYY-MM-DD  # MUST re-review by this date
+advisories: []
