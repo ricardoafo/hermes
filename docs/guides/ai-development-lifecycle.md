@@ -110,14 +110,37 @@ in hermes.
   hypothesis / syrupy / mutmut / detect-secrets / `sev1_guard` plugin) lands
   in Phase 0.
 
-### 6. Push + PR open
+### 6. Push + delete local + open PR
 
 - **Who**: bot (via Agent) or Ricardo
-- **What**: `git push -u origin <branch>` then `gh pr create` with
-  `--label`, `--milestone`, `--assignee`, `--reviewer`. PR body includes
-  `Closes #N` to link the issue. Uses `.github/pull_request_template.md`.
+- **What**: three commands, in this order:
+
+  ```bash
+  git push -u origin <branch>        # remote now has your work (safety met)
+  git checkout main
+  git branch -d <branch>             # safe form — passes because upstream matches
+  gh pr create --head <branch> ...   # --head refers to the REMOTE branch
+  ```
+
+  The local branch deletion happens **immediately after push**, not after
+  merge. Push is the definite trigger: it completed, the work is safe on
+  remote, delete now. This prevents orphaned local branches accumulating.
 - **Where**: `github.com/ricardoafo/hermes/pull/N`
 - **State**: ✅ Ready
+- **Iteration flow** (when review comments arrive, need to change something):
+
+  ```bash
+  git fetch origin <branch>:<branch>
+  git checkout <branch>
+  # edit
+  git push
+  git checkout main
+  git branch -d <branch>             # again — every push triggers a delete
+  ```
+
+  Same discipline applies to every iteration. Each push is followed by a
+  local delete. Never a shell state where a stale feature branch sits after
+  its work is on remote.
 
 ### 7. CI pipeline
 
@@ -163,9 +186,8 @@ in hermes.
   - Issue auto-closes (via `Closes #N` keyword)
   - Project board moves item Backlog/In review → Done
   - Milestone progress % increments
-  - Local branch stays until Ricardo runs
-    `git fetch --prune && git branch -d <branch>` (see
-    [dev-workflow.md § Delete the local branch AFTER confirming remote landing](dev-workflow.md#delete-the-local-branch-after-confirming-remote-landing))
+  - Remote branch auto-deleted by GH (repo setting)
+  - Local branch was already deleted in step 6 — nothing to clean up here
 - **State**: ✅ Ready
 
 ### 11. Release
