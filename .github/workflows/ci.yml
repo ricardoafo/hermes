@@ -92,6 +92,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: Install markdownlint-cli2 (if not already pre-baked)
         run: |
@@ -248,8 +250,15 @@ jobs:
             echo "gitleaks already available: $(gitleaks version)"
           fi
 
-      - name: Scan git history for secrets
-        run: gitleaks git . --log-opts=--all --redact --no-banner --verbose
+      - name: Scan for secrets (PR diff only, --all on push-to-main)
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            gitleaks git . \
+              --log-opts="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}" \
+              --redact --no-banner --verbose
+          else
+            gitleaks git . --log-opts=--all --redact --no-banner --verbose
+          fi
 
   # ─────────────────────────────────────────────────────────────────────
   # Add to project — every new issue/PR appears on the roadmap board.
