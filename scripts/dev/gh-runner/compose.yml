@@ -33,6 +33,15 @@ services:
     # GH runners list by RUNNER_NAME (hostname is a docker-generated
     # unique hex, so replicas get unique names).
     #
+    # Default 4 replicas — CI's 15 jobs finish in ~30s wall time with
+    # 4 in parallel vs ~3 min sequential on 1. Override at the CLI with
+    # `--scale runner=N` for troubleshooting (e.g. `--scale runner=1`
+    # to isolate a flaky job to a single container).
+    #
+    # Persists across `docker compose up -d --build`, unlike the CLI
+    # --scale flag which reverts to 1 the next time it's omitted.
+    scale: 4
+    #
     # 24/7 lifecycle: auto-restart on Docker Desktop startup, on PC
     # reboot, and after each --ephemeral job completes. `unless-stopped`
     # respects manual `docker stop` (won't restart until manually started
