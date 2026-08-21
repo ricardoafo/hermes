@@ -10,7 +10,7 @@ How does hermes actually run on the VPS? What processes exist? How do they start
 
 ## VPS filesystem layout
 
-hermes is the only app on the VPS (amg-saas-factory decommissioned — see appendix).
+hermes is the only app on the VPS. Any prior services on the VPS are decommissioned before hermes install (steps are captured in operational notes, not in this ADR).
 
 ```text
 /opt/hermes/                        # code + venv (managed by uv)
@@ -393,7 +393,7 @@ flowchart LR
 
 ### Log hygiene scan — enforces zero-warnings rule at CI level
 
-**Pattern lifted from `ricardoafo/pdp-automation` `pr-revalidate.yml`**. After every CI job completes, a dedicated step downloads the raw logs and scans for warning markers:
+After every CI job completes, a dedicated step downloads the raw logs and scans for warning markers:
 
 ```yaml
 # Runs after all lint/test jobs, before merge
@@ -422,13 +422,13 @@ Any suppression must be:
 
 **This is how "no delivery leaves warnings" gets ENFORCED, not hoped for.**
 
-### Merge queue (future-consideration)
+### Merge queue
 
-pdp-automation runs a **merge queue** (`pr-revalidate.yml`, 844 lines) that solves the "approval → new push → approval invalidated" treadmill: it re-tests the exact merge tree at the exact approved SHA before landing.
+A **merge queue** pattern re-tests the exact merge tree at the exact approved SHA before landing, solving the "approval → new push → approval invalidated" treadmill.
 
-**At hermes scale (solo contributor + claude-bot, low PR volume), treadmill isn't a real problem yet.** Deferred. If we ever add human collaborators or PR velocity increases, adopt the pr-revalidate pattern.
+For hermes: adopted early despite solo-contributor + claude-bot scale. Reason: PRs can queue up when the bot ships work in parallel batches, and rebase-on-latest-main invalidates prior approvals under our `require_last_push_approval` protection. Pattern is a custom workflow (`.github/workflows/merge-queue.yml`) since GitHub's native merge queue is not available on private repos on the current plan tier.
 
-### Aggregator pattern (per amg-saas-factory Track 1 findings)
+### Aggregator pattern
 
 Single required check on branch protection:
 
@@ -580,40 +580,6 @@ No Loki/ELK/Datadog — overkill at our scale. journalctl is the query interface
 | **rsync for backups**                                               | Never rsync a live WAL file — use SQLite `.backup` + restic                                             |
 | **Self-hosted runner on prod VPS**                                  | HIGH blast radius — workflow could read `/var/lib/hermes/`, contend with hermes-swing for resources     |
 | **Push-based deploy via GitHub Deployments API + agent on VPS**     | Overkill for solo project; `git pull` cron achieves same outcome with zero moving parts                 |
-
-## Appendix: amg-saas-factory decommission (deferred)
-
-amg-saas-factory is decommissioning from the VPS — user's pet project with no real use. Sequence to be applied MANUALLY when we reach the point of setting up hermes on the VPS:
-
-```bash
-# Draft — user reviews and runs, NOT auto-executed
-
-# 1. Confirm nothing valuable
-ls /home/deploy/pb-snapshots*
-docker ps
-
-# 2. Stop stacks
-cd /srv/amg && docker compose down -v
-cd /srv/amg-pro && docker compose down -v
-cd /srv/amg-edge && docker compose down -v
-
-# 3. Remove data + code
-rm -rf /srv/amg /srv/amg-pro /srv/amg-edge
-rm -rf /home/deploy/pb-snapshots /home/deploy/pb-snapshots-pro
-rm -f /home/deploy/deploy-*.sh
-
-# 4. Wipe Docker
-docker system prune -a --volumes
-apt purge -y docker* caddy
-
-# 5. Optional — remove deploy user
-# userdel -r deploy
-
-# 6. Reboot
-reboot
-```
-
-Will be persisted as `deploy/decommission-amg.sh` in Phase 0 scaffold work.
 
 ## Cross-references
 
