@@ -354,22 +354,29 @@ capital and legal artifacts (invoices, tax filings).
 
 ## Branch protection on `main` (repo settings)
 
-Configured once via `gh api PATCH /repos/ricardoafo/hermes/branches/main/protection`.
-See `scripts/dev/apply-branch-protection.sh` (lands in Phase 0). Current rules:
+Configured via `scripts/dev/setup-branch-protection.sh` (idempotent,
+uses the **rulesets API**, not classic branch protection). Requires
+`ricardoafo` admin auth to apply.
+
+Active rules on `main`:
 
 - **Require pull request reviews before merging**: on
 - **Required approving review count**: 1
 - **Dismiss stale reviews on new commits**: on
 - **Require review from Code Owners**: on
-- **Restrict who can dismiss reviews**: `ricardoafo` only
-- **Require conversation resolution before merging**: on
-- **Require linear history**: on (blocks merge-commits, forces squash or rebase)
-- **Do not allow bypassing the above settings**: on (applies to admins too)
-- **Allow force pushes**: off
-- **Allow deletions**: off
+- **Require last push approval**: on (safe under revalidate-then-merge —
+  the queue never pushes to the PR branch)
+- **Require extra approval for unattributed changes**: on (guards against
+  bot identity misconfiguration mid-PR)
+- **Require review-thread resolution before merging**: on
+- **Allowed merge methods**: `squash` only
+- **Required linear history**: on
+- **Non-fast-forward pushes blocked**: on (explicit rule; protects against
+  history rewrites)
+- **Branch deletion blocked**: on (explicit rule)
+- **Required status checks**: `CI success` (single aggregator job)
 - **Require branches to be up to date before merging (`strict`)**: **off**
-
-Required status checks are added incrementally as CI workflows land in Phase 0.
+  (see next section)
 
 ### Why `strict` is off (and why that is safe)
 
