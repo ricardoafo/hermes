@@ -1,0 +1,11 @@
+# Build context is scripts/dev/gh-runner/ (per compose.yml `context: .`).
+# Only Dockerfile + entrypoint.sh need to be readable during build; the
+# rest is either dev-side scripts or local-only files that shouldn't
+# leak into the image or invalidate its build cache.
+
+# Everything by default, then whitelist what the build actually needs.
+*
+
+# What the Dockerfile actually references (via COPY / build ARGs).
+!Dockerfile
+!entrypoint.sh
