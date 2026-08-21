@@ -1,0 +1,37 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v3.6.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args:
+          - --strict
+          - feat
+          - fix
+          - docs
+          - chore
+          - refactor
+          - test
+          - perf
+          - build
+          - ci
+          - revert
+
+  - repo: local
+    hooks:
+      - id: markdownlint-cli2
+        name: markdownlint-cli2
+        entry: markdownlint-cli2
+        language: system
+        files: \.md$
