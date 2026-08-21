@@ -175,8 +175,9 @@ jobs:
             exit 1
           fi
 
-          # Extract each section between H2 headers, verify it has non-comment,
-          # non-whitespace content.
+          # Extract each section between H2 headers. Strip HTML comments
+          # (single-line + multi-line spans) and placeholder-only bullet
+          # rows. If what remains is only whitespace, the section is empty.
           missing=()
           for section in "Summary" "Related" "Testing" "Risk"; do
             content=$(printf '%s\n' "$PR_BODY" | awk -v s="$section" '
@@ -184,7 +185,17 @@ jobs:
               inside && /^## / {inside=0}
               inside { print }
             ')
-            stripped=$(printf '%s\n' "$content" | grep -vE '^\s*$|^\s*<!--.*-->\s*$|^\s*-\s+ADR:\s*$|^\s*-\s+Issue:\s*$' | grep -vE '^\s*<!--' | grep -vE '-->\s*$' || true)
+            stripped=$(printf '%s\n' "$content" | awk '
+              {
+                line = $0
+                while (match(line, /<!--.*?-->/)) {
+                  line = substr(line, 1, RSTART - 1) substr(line, RSTART + RLENGTH)
+                }
+                if (line ~ /<!--/) { sub(/<!--.*/, "", line); in_comment=1; print line; next }
+                if (in_comment) { if (line ~ /-->/) { sub(/.*-->/, "", line); in_comment=0; print line } next }
+                print line
+              }
+            ' | grep -vE '^[[:space:]]*$|^[[:space:]]*-[[:space:]]+(ADR|Issue):[[:space:]]*$' || true)
             if [[ -z "$stripped" ]]; then
               missing+=("$section")
             fi
