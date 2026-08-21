@@ -21,14 +21,12 @@ set -euo pipefail
 : "${RUNNER_NAME:=gh-runner-hermes-$(hostname)}"
 : "${RUNNER_LABELS:=self-hosted,linux,x64,hermes}"
 
-# Docker creates named volumes as root by default. Fix ownership on the
-# mounted paths so the runner user can write. Idempotent: chown is a
-# no-op on already-correct paths.
-for dir in /home/runner/_work /home/runner/.cache; do
-    if [[ -d "$dir" ]] && [[ "$(stat -c '%U' "$dir")" != "runner" ]]; then
-        sudo chown -R runner:runner "$dir"
-    fi
-done
+# Docker creates named cache volumes as root by default. Fix ownership
+# so the runner user can write. Idempotent. _work is NOT a mount so
+# no chown needed there (fresh container-local dir owned by runner).
+if [[ -d /home/runner/.cache ]] && [[ "$(stat -c '%U' /home/runner/.cache)" != "runner" ]]; then
+    sudo chown -R runner:runner /home/runner/.cache
+fi
 
 REPO_API="https://api.github.com/repos/${RUNNER_REPOSITORY}"
 REPO_URL="https://github.com/${RUNNER_REPOSITORY}"

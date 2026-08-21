@@ -87,12 +87,13 @@ services:
       - ruff-cache:/home/runner/.cache/ruff
       - hypothesis-db:/home/runner/.cache/hypothesis
 
-      # Workspace: writable, persists across container restarts within
-      # the same replica. GH runner uses `_work/_actions` for downloaded
-      # actions (setup-uv, checkout, etc.); persisting `_work` covers
-      # them without needing a separate mount (which conflicts with
-      # runner's directory operations: 'Device or resource busy').
-      - runner-work:/home/runner/_work
+      # Workspace: NO shared volume — each replica gets its own
+      # container-local /home/runner/_work. Sharing this across
+      # replicas caused git ref locks (multiple runners writing to the
+      # same refs/remotes/), _actions dir teardowns interfering with
+      # each other, and _runner_file_commands temp files vanishing
+      # mid-step. Docker allocates local writable space; --ephemeral
+      # cleanup means it's fresh per job anyway.
 
 volumes:
   uv-cache:
@@ -102,4 +103,3 @@ volumes:
   mypy-cache:
   ruff-cache:
   hypothesis-db:
-  runner-work:
