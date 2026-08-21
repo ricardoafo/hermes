@@ -25,6 +25,8 @@ file disagree, the config file wins — open a PR to reconcile the guide.
    days without a PR opened, delete it or open the PR.
 6. **Zero warnings** from any linter, ever. Non-negotiable. See ADR-009 and the
    project rule in engram `preferences/zero-warnings`.
+7. **Zero footprint of external / unrelated projects**. See
+   [Zero-footprint policy](#zero-footprint-policy) below. Non-negotiable.
 
 ## Branching model
 
@@ -198,6 +200,38 @@ Enabled at the repo level. Feature branches disappear as soon as their PR
 merges. This keeps `git branch -r` uncluttered and makes stale branches
 detectable at a glance.
 
+### Delete the local branch AFTER confirming remote landing
+
+Remote branches auto-delete on merge. Local clones do not — delete them by
+hand, but only after confirming the merge landed. Sequence:
+
+```bash
+# 1. Return to main
+git checkout main
+
+# 2. Sync refs and prune stale remote-tracking branches
+git fetch --prune origin
+
+# 3. Fast-forward local main to the merged commit
+git pull --ff-only origin main
+
+# 4. Confirm the merged commit is visible on origin/main
+git log --oneline -5
+
+# 5. ONLY NOW delete the local feature branch
+git branch -d <feature-branch>
+```
+
+**Never delete the local branch before step 4** confirms the remote landed.
+Force-deleting (`git branch -D`) with unpushed work loses that work; recovery
+requires `git reflog` spelunking and is not reliable. `git branch -d` (safe
+form) refuses to delete an unmerged branch — trust the safe form.
+
+If a merge got squashed, `git branch -d` may refuse (the squash commit has
+different SHA from the branch tip). In that case, verify the changes
+landed by other means (`git log origin/main --oneline` or GitHub UI), then
+use `git branch -D` intentionally.
+
 ### No force-push to `main`
 
 Enforced by branch protection. Force-push to feature branches is allowed
@@ -242,6 +276,62 @@ minute of delay compounds real-capital exposure. In that case:
 
 This exception applies to hermes only, and only after live capital is at
 risk (Phase 3+). Before then, no exceptions.
+
+## Zero-footprint policy
+
+Nothing in this repository — files, doc content, commit messages, PR bodies,
+issue bodies, comments, workflow names, job names, script names — references
+other projects, repositories, tools, contractors, or codebases by name.
+Non-negotiable, applied retroactively (editorial scrubs are allowed and
+expected as this rule surfaces existing footprint).
+
+### Why
+
+- hermes stands on its own reputation and design decisions
+- External-project references leak assumptions about who has access to what,
+  invite confused questions from anyone reading the repo, and age poorly as
+  those projects evolve or disappear
+- A repository handling real capital and legal artifacts must be a
+  self-contained audit trail; auditors reading the repo should not need
+  context on unrelated systems
+- Removing external references before they accumulate is cheaper than
+  scrubbing history later (though we do scrub when needed)
+
+### How to adopt patterns from elsewhere without leaving a footprint
+
+1. Save the source reference to engram (internal memory) with enough
+   context to retrieve it later. Engram is not a hermes artifact — it is
+   the operator's private notebook.
+2. Describe the pattern generically in the hermes artifact: what it does,
+   why it works, why hermes adopts it.
+3. Do NOT name the source repo, tool, author, contractor, or organization
+   in any hermes artifact.
+4. If pattern-crediting is genuinely necessary (e.g., a well-known public
+   library), use its canonical package name only — never a private-repo
+   reference.
+
+### What counts as a footprint
+
+- Repo names (`org/repo` or `repo-name`)
+- Internal project codenames
+- Contractor or vendor names
+- File paths that reveal external structure (`/srv/other-project/`)
+- Workflow file names lifted verbatim from another repo
+- Branch naming conventions unique to another team
+- Comment attributions ("adapted from X's foo.py")
+
+### What does NOT count as a footprint
+
+- Standard open-source library names used in imports (`from pydantic import ...`)
+- Public tooling names (`ruff`, `mypy`, `pytest`, `uv`) — these are what we depend on
+- Public standards (`Conventional Commits`, `Keep a Changelog`, `SemVer`)
+- Public specifications and regulations (`DGT V2232-25`, `LOPDGDD`)
+
+### Editorial scrubs
+
+When footprint is discovered, an editorial-scrub PR is opened with type
+`docs` or `chore`, explaining the scope. This rule pre-empts the "ADRs are
+immutable" rule for the specific case of external-reference removal.
 
 ## For Claude Code / `rafo-claude-bot`
 

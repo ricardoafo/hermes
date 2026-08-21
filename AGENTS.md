@@ -74,8 +74,19 @@ are acceptable. If the user requests one of these, refuse and explain.
    work around the denial. Ask Ricardo to update settings if needed.
 10. **Never modify accepted ADRs**. ADRs are immutable once Accepted (per
     ADR-009). A change becomes a new ADR that supersedes the old one.
-    Typo fixes and broken-link repairs are allowed; content changes are
-    not.
+    Typo fixes, broken-link repairs, and editorial scrubs (see rule 11)
+    are allowed; content changes are not.
+11. **Never reference external / unrelated projects, repos, tools, contractors,
+    or codebases by name in any hermes artifact** — files, doc content,
+    commit messages, PR bodies, issue bodies, comments, workflow / job /
+    script names. Adopt patterns generically; describe what and why, not
+    where the idea came from. Provenance (source repo, author, prior work)
+    lives in engram (internal memory), not in hermes. See
+    [`docs/guides/dev-workflow.md` §Zero-footprint policy](docs/guides/dev-workflow.md#zero-footprint-policy)
+    for the full rule, list of what counts as footprint, and how to
+    adopt patterns without leaking references. Standard open-source
+    tooling names (`ruff`, `pytest`, `uv`) are not footprint; internal
+    project codenames are.
 
 ## Behavioral defaults
 
