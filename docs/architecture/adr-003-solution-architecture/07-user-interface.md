@@ -62,7 +62,7 @@ from rich.table import Table
 from rich.panel import Panel
 from babel.numbers import format_currency
 
-console = Console(theme=HERMES_THEME)   # project-wide palette
+console = Console(theme=HERMES_THEME)  # project-wide palette
 
 # hermes status
 table = Table(title="Open positions", box=None, show_lines=False)
@@ -83,7 +83,7 @@ console.print(Panel(table, title="hermes", border_style="primary"))
 
 ```python
 def hermes_watch(interval_sec: float = 2.0):
-    with Live(build_status_table(), refresh_per_second=1/interval_sec, screen=False) as live:
+    with Live(build_status_table(), refresh_per_second=1 / interval_sec, screen=False) as live:
         while True:
             time.sleep(interval_sec)
             live.update(build_status_table())
@@ -134,6 +134,7 @@ from textual.widgets import Header, Footer, DataTable, Digits, RichLog, Sparklin
 
 from hermes.tui.theme import hermes_dark
 
+
 class HermesApp(App):
     CSS_PATH = "app.tcss"
 
@@ -154,12 +155,12 @@ class HermesApp(App):
     MODES = {
         "dashboard": "hermes.tui.screens.dashboard.DashboardScreen",
         "portfolio": "hermes.tui.screens.portfolio.PortfolioScreen",
-        "swings":    "hermes.tui.screens.swings.SwingsScreen",
-        "ledger":    "hermes.tui.screens.ledger.LedgerScreen",
-        "tax":       "hermes.tui.screens.tax.TaxScreen",
-        "events":    "hermes.tui.screens.events.EventsScreen",
-        "health":    "hermes.tui.screens.health.HealthScreen",
-        "config":    "hermes.tui.screens.config.ConfigScreen",
+        "swings": "hermes.tui.screens.swings.SwingsScreen",
+        "ledger": "hermes.tui.screens.ledger.LedgerScreen",
+        "tax": "hermes.tui.screens.tax.TaxScreen",
+        "events": "hermes.tui.screens.events.EventsScreen",
+        "health": "hermes.tui.screens.health.HealthScreen",
+        "config": "hermes.tui.screens.config.ConfigScreen",
     }
     DEFAULT_MODE = "dashboard"
 
@@ -173,7 +174,7 @@ class HermesApp(App):
     def on_mount(self) -> None:
         self.register_theme(hermes_dark)
         self.theme = "hermes-dark"
-        self.set_interval(2.0, self.poll_state)   # 2Hz — smooth, CPU-friendly
+        self.set_interval(2.0, self.poll_state)  # 2Hz — smooth, CPU-friendly
         self.poll_state()
 
     def poll_state(self) -> None:
@@ -186,12 +187,17 @@ class HermesApp(App):
 
     def get_system_commands(self, screen):
         yield from super().get_system_commands(screen)
-        yield SystemCommand("Rebalance now", "Threshold check + execute if breach", self.action_rebalance)
+        yield SystemCommand(
+            "Rebalance now", "Threshold check + execute if breach", self.action_rebalance
+        )
         yield SystemCommand("Export tax report", "CSV to ~/hermes-tax.csv", self.action_export_tax)
-        yield SystemCommand("Close swing position", "Interactive picker + confirm", self.action_close_swing)
+        yield SystemCommand(
+            "Close swing position", "Interactive picker + confirm", self.action_close_swing
+        )
 
     def action_kill_switch(self) -> None:
         self.push_screen(KillSwitchModal(), self._handle_kill)
+
 
 if __name__ == "__main__":
     HermesApp(ledger=SqliteLedger(read_only=True)).run()
@@ -294,7 +300,7 @@ class DashboardScreen(Screen):
 
     def on_mount(self) -> None:
         self.load_data()
-        self.set_interval(2.0, self.load_data)   # 2Hz — perceptibly live
+        self.set_interval(2.0, self.load_data)  # 2Hz — perceptibly live
 
     def load_data(self) -> None:
         # SQLite read is fast — safe on event loop
@@ -349,11 +355,11 @@ from textual.theme import Theme
 hermes_dark = Theme(
     name="hermes-dark",
     dark=True,
-    primary="#0072B2",       # blue — accent, actions
-    success="#009E73",       # bluish-green — gains (distinguishable from red)
-    warning="#E69F00",       # orange — warnings, deferred rebalance
-    error="#D55E00",         # vermillion — losses, kill-switch (NOT pure red)
-    accent="#CC79A7",        # reddish-purple — highlights
+    primary="#0072B2",  # blue — accent, actions
+    success="#009E73",  # bluish-green — gains (distinguishable from red)
+    warning="#E69F00",  # orange — warnings, deferred rebalance
+    error="#D55E00",  # vermillion — losses, kill-switch (NOT pure red)
+    accent="#CC79A7",  # reddish-purple — highlights
     surface="#1e1e1e",
     panel="#2a2a2a",
     background="#101010",
@@ -380,6 +386,7 @@ Never rely on color alone. Works under grayscale SSH, screenshot paste, and CVD.
 import pytest
 from hermes.tui.app import HermesApp
 
+
 @pytest.mark.asyncio
 async def test_dashboard_shows_positions(tmp_ledger):
     tmp_ledger.seed_positions([("BTC", 0.5, 120.0)])
@@ -389,13 +396,15 @@ async def test_dashboard_shows_positions(tmp_ledger):
         table = app.query_one(DataTable)
         assert table.row_count == 1
 
+
 @pytest.mark.asyncio
 async def test_execute_rebalance_requires_confirm():
     async with HermesApp().run_test() as pilot:
-        await pilot.press("p", "x")   # portfolio, then execute
+        await pilot.press("p", "x")  # portfolio, then execute
         await pilot.press("W", "R", "O", "N", "G", "enter")
         # button remains disabled
         assert app.query_one("#execute", Button).disabled
+
 
 # Snapshot test — visual regression
 def test_dashboard_snapshot(snap_compare):
@@ -412,8 +421,7 @@ Annotate SEV-1 paths per the severity rubric:
 
 ```python
 # SEV-1: F5 — double-book prevention for concurrent rebalance requests
-async def test_execute_rebalance_is_idempotent():
-    ...
+async def test_execute_rebalance_is_idempotent(): ...
 ```
 
 ## Deployment — SSH + mosh + tmux + Termius
