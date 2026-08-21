@@ -33,8 +33,10 @@ flowchart TB
 
     I --> J[CI workflow runs]
     J --> J1[changeset classifier]
-    J1 --> J2["markdown-lint · pr-title · pr-body · CHANGELOG<br/>auto-label · merge-decisions · secrets"]
-    J2 --> J3[ci-success aggregator = required status check]
+    J1 --> J2["Always-on: markdown-lint · pr-title · pr-body<br/>CHANGELOG · auto-label · merge-decisions<br/>codeowners · secrets"]
+    J1 --> J2b["Code-gated (needs.changeset.outputs.code == 'true'):<br/>quality (ruff/mypy/deps) · unit (pytest+cov)<br/>guards (test-deletion) · semgrep (SAST)"]
+    J2 --> J3
+    J2b --> J3[ci-success aggregator = required status check]
 
     J3 --> K{green + approved?}
     K -- no --> L["Author iterates<br/>fetch → edit → push → delete local"] --> F
@@ -44,9 +46,10 @@ flowchart TB
     N --> O["Issue auto-closes via Closes #N<br/>Project board = Done column<br/>Milestone progress % moves"]
     N --> P["Local: git fetch --prune + git pull --ff-only<br/>local branch already gone since step G2"]
 
-    N --> Q["Release phase — Phase 0+"]
-    Q --> R["CD to VPS — Phase 0+ deploy work"]
-    R --> S["Runtime: structlog + healthchecks + Telegram"]
+    N --> Q["push:main fires deploy.yml"]
+    Q --> R["deploy.yml (skeleton today, Phase 0 fills bodies):<br/>build → deploy → health-check → smoke → confirm"]
+    R --> S["VPS hermes-01 (Tailscale-only SSH)<br/>systemd units restarted"]
+    S -.->|periodic ping| HC["healthchecks.io<br/>dead-man's-switch → Telegram on silence"]
     S -.->|incident| T["bug-triager agent → new Issue"] --> A
 ```
 
@@ -150,19 +153,24 @@ in hermes.
 ### 7. CI pipeline
 
 - **Who**: GH Actions
-- **What**: `.github/workflows/ci.yml` runs in parallel:
-  - `changeset` classifier (docs-only vs code)
-  - `markdown-lint` (markdownlint-cli2)
-  - `pr-title` (Conventional Commits format)
-  - `changelog` (blocks `feat/fix/refactor/perf/breaking` PRs without
-    `[Unreleased]` update)
-  - `auto-label` (path-based `area:*` labels + `size:*` from LOC)
-  - `secrets` (gitleaks history scan)
-  - `add-to-project` (idempotent — safe on already-added items)
-  - `ci-success` (aggregator, single required status check)
-- **State**: ✅ Ready (this PR)
-- **Missing until Phase 0**: `quality` (ruff + mypy + dep audit) and `unit`
-  (pytest with coverage). Both gated behind `pyproject.toml` existing.
+- **What**: `.github/workflows/ci.yml` runs 15 jobs:
+  - **Always-on gates**:
+    - `changeset` — classifier (docs-only vs code); sets outputs the code-gated jobs read
+    - `markdown-lint` (markdownlint-cli2) — runs if docs changed
+    - `pr-title` — Conventional Commits format validation
+    - `pr-body` — mandatory template sections have real content (not placeholder comments)
+    - `changelog` — blocks `feat/fix/refactor/perf/breaking` PRs without `[Unreleased]` update
+    - `auto-label` — path-based `area:*` labels + `size:*` from LOC
+    - `merge-decisions` — Node `node:test` runs `tools/merge/decisions.test.cjs` (34 cases)
+    - `codeowners` — CODEOWNERS syntax guard (broken CODEOWNERS silently disables review enforcement)
+    - `secrets` — gitleaks history scan
+  - **Code-gated (fire only when `changeset.outputs.code == 'true'`)**:
+    - `quality` — ruff format + ruff check + mypy --strict + pip-audit (skeleton today, Phase 0 fills body)
+    - `unit` — pytest with branch coverage + `--cov-fail-under=90` (skeleton)
+    - `guards` — test-deletion detector (skeleton)
+    - `semgrep` — SAST scan (`p/security-audit` + `p/python`) (skeleton)
+  - **Aggregator**: `ci-success` — needs every above job; single required status check on branch protection
+- **State**: ✅ Ready. Skeleton bodies for the four code-gated jobs are `echo TODO` today with the exact Phase 0 command shown — swap for real code without touching workflow structure.
 
 ### 8. Human review
 
@@ -215,12 +223,16 @@ in hermes.
 
 ### 12. Deploy (CD to VPS)
 
-- **Who**: GH Actions → VPS via SSH
-- **What**: Build wheel via `uv`, push to VPS, run migrations, restart
-  systemd services. Serialized via deploy queue (adapt pr-revalidate pattern
-  for `main`-push events).
-- **State**: 📅 Deferred. User confirmed: we develop first, deploy later.
-  Full CD design in ADR-003 §09.
+- **Who**: `.github/workflows/deploy.yml` (5 jobs) → VPS `hermes-01` via SSH over Tailscale
+- **What**: `push:main` fires the CD pipeline:
+  - `build` — `uv build` produces a wheel artifact
+  - `deploy` — `scp` wheel to VPS, `uv pip install --force-reinstall`, `systemctl restart hermes-*.service` (environment: `prod`, secrets scoped there)
+  - `health-check` — poll `healthchecks.io` URL until service reports green
+  - `smoke` — `pytest -m smoke` against the deployed instance
+  - `confirm` — aggregator; deployment marker set only when all above pass
+- **Serialized** via `concurrency: deploy-vps` (never two deploys racing)
+- **Full flow**: see `deploy/README.md` — includes mermaid diagram of the whole pipeline
+- **State**: ✅ Skeleton in place (this PR). Every job body is `echo TODO` today; Phase 0 fills bodies as it lands `pyproject.toml`, systemd units, and healthchecks endpoints. `deploy/bootstrap-vps.sh` provisions the VPS layout idempotently.
 
 ### 13. Operate + incident
 
@@ -235,12 +247,12 @@ in hermes.
 
 | # | Area | State | Gap |
 | --- | --- | --- | --- |
-| 5 | Local implementation | 🚧 Partial | ruff / mypy / detect-secrets / pytest / `sev1_guard` — Phase 0 |
-| 7 | CI pipeline (Python) | 🚧 Partial | `quality` + `unit` jobs — Phase 0 (gated on `pyproject.toml`) |
-| 7 | Required status checks | 🚧 Partial | Branch protection currently has `required_status_checks: null`. Update to require `ci-success` job after this PR merges. |
-| 11 | Release | 📅 Phase 0 | Release workflow, tag automation, CHANGELOG date-cut. |
-| 12 | CD to VPS | 📅 Deferred | Entire CD stack: SSH deploy, migration runner, systemd, rollback, deploy queue. User confirmed can wait. |
-| 13 | Observability | 📅 Phase 0+ | Structlog scaffold Phase 0, full stack Phase 2. |
+| 5 | Local implementation | 🚧 Skeleton | Real ruff / mypy / pytest / hypothesis / mutmut / `sev1_guard` — Phase 0 fills bodies (pipeline shape is locked) |
+| 7 | CI pipeline (Python quality/unit/guards/semgrep) | 🚧 Skeleton | Bodies are `echo TODO`; swap for real tool invocations in Phase 0 without touching workflow structure |
+| 7 | Required status checks | ✅ Ready | `CI success` aggregator required; `strict:false` (freshness enforced by pr-revalidate.yml, not by branch update) |
+| 11 | Release | 📅 Phase 0 | Release workflow, tag automation, CHANGELOG date-cut |
+| 12 | CD to VPS | 🚧 Skeleton | `deploy.yml` scaffolded (build → deploy → health → smoke → confirm); Phase 0 fills bodies + Ricardo provisions `prod` Environment secrets |
+| 13 | Observability | 📅 Phase 0+ | Structlog scaffold Phase 0, full stack Phase 2 |
 
 ## One-time setup (Ricardo, in the browser)
 
