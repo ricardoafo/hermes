@@ -1,0 +1,427 @@
+# VPS Operations — Access, Maintenance, Recovery
+
+**Type**: Guide (living document — PR any change)
+**Owners**: Ricardo Afonso (sole operator)
+**Applies to**: the single Hetzner Cloud VPS that hosts hermes at
+`hermes-01` (CX23, Ubuntu 24.04 LTS, Nuremberg).
+
+Everything you need to reach the server, keep it healthy, and recover
+it when it misbehaves. Copy-pasteable commands throughout. Actual
+values (IP, tailnet name, systemd unit names) come from environment
+variables so this doc stays portable if we ever reprovision or
+migrate.
+
+## Environment setup — put these in your shell profile
+
+Add to `$PROFILE` (PowerShell) or `~/.bashrc` (bash) so every session
+has them ready:
+
+```bash
+export HERMES_VPS_IP=178.104.237.14           # or the Tailscale IP once linked
+export HERMES_VPS_USER=root                    # non-root user lands in a future update
+export HERMES_SSH_KEY="$HOME/.ssh/hermes_vps_ed25519"
+```
+
+The IP + key path also live in Bitwarden under `Hermes VPS SSH key` for
+recovery when the shell profile is unavailable.
+
+## Initial provision — install order matters
+
+When bringing up a fresh VPS (initial install or full reprovision),
+install and verify components in this exact order. Skipping ahead
+locks you out.
+
+1. **apt update + upgrade + set timezone**
+2. **Install Tailscale + register with your tailnet** (via `tailscale
+   up --ssh`) — outbound-only, safe
+3. **Reboot** if `apt upgrade` installed a new kernel (`ls
+   /var/run/reboot-required` returns a file) — Tailscale must survive
+   a reboot before you trust it
+4. **After reboot, verify Tailscale came back up** via `ssh
+   root@hermes-01` (tailnet name) from your laptop — if this fails,
+   fix Tailscale first, still have public SSH as fallback
+5. **Only now enable ufw + Hetzner Cloud Firewall** — public SSH
+   becomes blocked; if Tailscale isn't working, you're locked out
+   without console recovery
+6. **Install Docker + any other services** — order doesn't matter here,
+   ufw allows outbound freely
+
+**Root cause of this rule**: enabling `ufw` before verifying Tailscale
+persists through reboot has burned people before. `apt upgrade`
+routinely installs new kernels; new kernels require reboot to activate;
+Tailscale's systemd unit may or may not auto-start depending on install
+method. Verify BEFORE closing the escape hatch.
+
+If step 4 fails, recover via:
+
+- SSH to the public IP: `ssh -i "$HERMES_SSH_KEY" root@$HERMES_VPS_IP`
+- Or Hetzner console (Server → Console — browser terminal, works even
+  with ufw active)
+- Restart Tailscale: `systemctl restart tailscaled && tailscale up --ssh`
+
+Then re-verify step 4, then proceed to step 5.
+
+## Access
+
+### First-time SSH from a new machine
+
+Copy the SSH key from Bitwarden to `$HOME/.ssh/hermes_vps_ed25519` on
+the new machine (`chmod 600` on Linux/macOS). Then:
+
+```bash
+ssh -i "$HERMES_SSH_KEY" -o StrictHostKeyChecking=accept-new \
+    "$HERMES_VPS_USER@$HERMES_VPS_IP"
+```
+
+First connection prompts for the SSH key passphrase (from Bitwarden)
+and adds the host key to `~/.ssh/known_hosts`.
+
+### Routine SSH
+
+```bash
+ssh -i "$HERMES_SSH_KEY" "$HERMES_VPS_USER@$HERMES_VPS_IP"
+```
+
+Passphrase prompt every session unless you use `ssh-agent` or
+Bitwarden's built-in SSH agent (recommended — unlock Bitwarden once,
+passphrase served silently to SSH client).
+
+### SSH via Tailscale (preferred once linked)
+
+Once the VPS is on your tailnet (see [Tailscale operations](#tailscale-operations)):
+
+```bash
+ssh -i "$HERMES_SSH_KEY" root@hermes-01
+```
+
+Tailscale MagicDNS resolves `hermes-01` to the tailnet IP. No public
+IP needed. `ufw` rules only permit SSH from Tailscale CGNAT
+(`100.64.0.0/10`), so this becomes the ONLY working path once ufw is
+enabled.
+
+### Host key changed warning
+
+If SSH refuses to connect with `REMOTE HOST IDENTIFICATION HAS CHANGED`:
+
+- **Expected**: after reprovisioning the VPS (fresh install = new host
+  key). Purge the old entry:
+
+    ```bash
+    ssh-keygen -R "$HERMES_VPS_IP"
+    ssh-keygen -R hermes-01
+    ```
+
+    Then reconnect. NEW host key is auto-added.
+
+- **Unexpected**: could be MITM. Do NOT connect. Verify with Hetzner
+  console (Server → Console) that the server hasn't been rebuilt
+  without your knowledge.
+
+## OS maintenance
+
+### Weekly / on-demand
+
+```bash
+apt update && apt upgrade -y
+apt autoremove -y
+```
+
+Renovate opens PRs for GitHub Actions + Python deps in the repo. OS
+package updates are manual — run this every 1-2 weeks or when Ubuntu
+Security notice arrives.
+
+### Reboot after kernel updates
+
+Ubuntu creates `/var/run/reboot-required` when a reboot is needed
+(kernel, systemd, glibc):
+
+```bash
+[[ -f /var/run/reboot-required ]] && echo "reboot needed" || echo "no reboot needed"
+```
+
+Reboot procedure (2-3 min downtime):
+
+```bash
+systemctl stop hermes-swing hermes-rebalancer.timer  # add other services as they land
+sync
+reboot
+```
+
+Wait ~90 seconds, then reconnect and verify services came back:
+
+```bash
+systemctl status 'hermes-*'
+```
+
+### Disk and memory checks
+
+```bash
+df -h                    # disk usage per mountpoint
+du -sh /var/lib/hermes   # hermes state dir (SQLite + backups staging)
+du -sh /var/log/journal  # journald log growth
+free -h                  # RAM + swap
+uptime                   # load average + boot time
+```
+
+Baseline expectations after a full hermes install:
+
+- `/` disk usage: 5-10 GB (OS + Docker + hermes + venv)
+- `/var/lib/hermes`: MB-scale for years (SQLite grows slowly)
+- RAM: <1 GB idle, up to 2 GB during rebalance calculations
+- Load: <0.5 idle; brief spikes during hourly rebalancer
+
+### Journald log retention
+
+Configured to hold 30 days by default. Verify:
+
+```bash
+journalctl --disk-usage
+journalctl --vacuum-time=30d       # manual prune (rarely needed)
+```
+
+## Docker operations
+
+Docker CE is installed; used for the local CI runner (when we move it
+here from the operator's laptop) and any future containerized
+services.
+
+### Container state
+
+```bash
+docker ps                 # running containers
+docker ps -a              # + stopped
+docker images             # local images
+docker stats --no-stream  # snapshot of CPU/RAM per container
+```
+
+### Logs
+
+```bash
+docker logs -f <container>              # tail
+docker logs --tail 200 <container>      # last 200 lines
+docker logs --since 1h <container>      # last hour
+```
+
+### Restart / recreate
+
+```bash
+docker restart <container>              # in-place restart
+docker compose -f /path/to/compose.yml restart
+docker compose -f /path/to/compose.yml down && docker compose -f /path/to/compose.yml up -d
+```
+
+### Cleanup
+
+```bash
+docker system prune              # unused images + networks
+docker system prune --volumes    # + unused volumes (careful — data loss)
+docker system df                 # disk usage by resource type
+```
+
+## Tailscale operations
+
+Zero-trust access layer. All SSH traffic routes through Tailscale;
+public SSH is blocked by `ufw`.
+
+### Status
+
+```bash
+tailscale status                 # peers + connection quality
+tailscale ip -4                  # this machine's tailnet IPv4
+tailscale ping <peer-name>       # latency to a peer
+```
+
+### Bring up / down (rare)
+
+```bash
+tailscale up --ssh               # register or re-register
+tailscale down                   # disconnect (breaks SSH — do only from Hetzner console)
+```
+
+`--ssh` enables Tailscale SSH (identity-based auth via tailnet, no
+key exchange). Combined with SSH-key auth, gives you two orthogonal
+paths in.
+
+### If Tailscale is offline
+
+If `tailscale status` shows `stopped` or `offline`:
+
+```bash
+systemctl status tailscaled
+systemctl restart tailscaled
+sleep 5
+tailscale up --ssh
+```
+
+If that fails, re-authenticate:
+
+```bash
+tailscale up --ssh --force-reauth
+```
+
+Prints an auth URL. Open on your laptop's Tailscale-authenticated
+browser session to reconnect.
+
+### Emergency: locked out of Tailscale
+
+If `ufw` denies SSH from public and Tailscale is broken:
+
+- Use Hetzner console (Server → Console) to open a browser terminal
+- Login as `root` (needs password — set one via `passwd` early after
+  install, save to Bitwarden)
+- `systemctl restart tailscaled && tailscale up --ssh`
+- OR temporarily allow SSH from your public IP: `ufw allow from <your-public-ip> to any port 22`
+
+Console access is your "always works" fallback. Do not delete the
+password.
+
+## ufw operations
+
+Firewall at the OS level. Complements the Hetzner Cloud Firewall
+(applied at the infrastructure edge — see [Hetzner Cloud Firewall](#hetzner-cloud-firewall)).
+
+### Status and rules
+
+```bash
+ufw status verbose
+ufw show added                   # rules waiting to activate
+```
+
+### Add / remove rules
+
+```bash
+ufw allow from 100.64.0.0/10 to any port 22   # SSH from Tailscale CGNAT
+ufw allow out 443/tcp                           # HTTPS out (default)
+ufw deny in from 1.2.3.4                        # block a specific abuser
+ufw delete allow from 1.2.3.4                   # remove a rule
+```
+
+### Reload / disable
+
+```bash
+ufw reload            # re-read rules
+ufw disable           # off (do NOT use unless recovering — leaves you exposed)
+ufw enable            # on
+```
+
+## Hetzner Cloud Firewall
+
+Additional packet filter applied at Hetzner's infrastructure edge
+(before packets reach the VPS). Complements `ufw` — belt and
+suspenders.
+
+Configured via Hetzner console → Firewalls. Managed manually. Rules:
+
+- **Inbound**: allow TCP 22 from `100.64.0.0/10` (Tailscale CGNAT)
+  only; deny all else
+- **Outbound**: allow all (default)
+
+To modify: Hetzner console → Firewalls → hermes-firewall → Edit rules.
+Changes apply within seconds.
+
+## Systemd services (populated as hermes services land)
+
+Hermes runs as a set of systemd units under user `hermes` (created in
+Phase 0). Common commands once services exist:
+
+```bash
+systemctl status hermes-rebalancer.service
+systemctl status hermes-swing.service
+systemctl restart hermes-swing
+systemctl stop 'hermes-*'
+systemctl start 'hermes-*'
+
+# View logs
+journalctl -u hermes-rebalancer -f          # tail
+journalctl -u hermes-swing --since '1 hour ago'
+journalctl -u hermes-rebalancer --grep ERROR
+```
+
+## Snapshots (Hetzner Backups + manual)
+
+**Automatic backups** (Hetzner-managed): daily, 7-day retention.
+Restore via console → Server → Backups → Restore. Full-server
+restore, brief downtime.
+
+**Manual snapshot** (before risky operations):
+
+```bash
+# On operator laptop, via hcloud CLI or console
+# (Hetzner console → Server → Snapshots → Take Snapshot)
+```
+
+Recommended before:
+
+- Major OS upgrades (`do-release-upgrade`)
+- Large `apt upgrade` batches
+- Non-reversible Docker cleanup
+- Testing new hermes service configurations
+
+## Troubleshooting
+
+### Can't connect via Tailscale
+
+See [If Tailscale is offline](#if-tailscale-is-offline) above.
+
+### Disk full
+
+```bash
+df -h                            # confirm which mountpoint
+du -sh /* 2>/dev/null | sort -h  # largest top-level dirs
+docker system df                 # if it's docker
+journalctl --disk-usage          # if it's logs
+```
+
+Common offenders: `/var/lib/docker`, `/var/log/journal`. Prune:
+
+```bash
+docker system prune              # docker cruft
+journalctl --vacuum-size=1G      # cap logs to 1 GB
+```
+
+### High load / RAM
+
+```bash
+top -c                           # or htop if installed
+ps auxf | sort -k4 -r | head     # highest RAM
+```
+
+Real-money guardrail: if load or RAM spikes correlate with
+`hermes-swing` timing out on Binance connections, check
+`journalctl -u hermes-swing --since '10 min ago'` for exchange
+API rate-limit messages. Do not restart hermes-swing while it holds
+an open order.
+
+### Systemd unit failed
+
+```bash
+systemctl status <unit>          # last error + start attempts
+journalctl -u <unit> --since '1 hour ago' | grep -i error
+systemctl reset-failed <unit>    # clear failed state
+systemctl start <unit>           # retry
+```
+
+If a unit fails repeatedly (`start-limit-hit`):
+
+```bash
+systemctl reset-failed
+systemctl daemon-reload
+systemctl start <unit>
+```
+
+Consider: does the failure indicate a real problem (bad config,
+missing secret, exchange API down) rather than a transient issue?
+Never mask a repeated failure by increasing `StartLimitBurst`.
+
+## Reference
+
+- [ADR-003 §09 Deployment](../architecture/adr-003-solution-architecture/09-deployment.md)
+  — the design this VPS implements
+- [ADR-008 Observability](../architecture/adr-008-observability-strategy.md)
+  — structlog + journald + healthchecks + Telegram
+- [dev-workflow.md](dev-workflow.md) — git/gh discipline (governs
+  changes to hermes code that runs here)
+- [ai-development-lifecycle.md](ai-development-lifecycle.md) — where
+  this fits end-to-end
+- [prose-style.md](prose-style.md) — how to write additions to this
+  guide
