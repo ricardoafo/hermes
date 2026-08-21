@@ -38,6 +38,13 @@ lands in Phase 0 CI (per ADR-006).
 - Local dev environment: `.venv/` (Python 3.14.7 via uv 0.12.5),
   pre-commit 4.6.2, markdownlint-cli2 0.23.2
 
+### Fixed
+
+- Removed non-functional `Add to project board` step from CI workflow;
+  `GITHUB_TOKEN` cannot write to user-owned projects (only org-scope).
+  Items now added manually via `gh project item-add` until a PAT-based
+  restoration is set up (documented inline in `.github/workflows/ci.yml`).
+
 ### Notes
 
 - No production runtime yet — Phase 0 lands `pyproject.toml`,
