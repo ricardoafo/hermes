@@ -134,12 +134,12 @@ jobs:
       any: ${{ steps.pick.outputs.any }}
       main: ${{ steps.pick.outputs.main }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           sparse-checkout: tools/merge
           sparse-checkout-cone-mode: false
 
-      - uses: actions/github-script@v7
+      - uses: actions/github-script@v8
         id: pick
         with:
           script: |
@@ -259,7 +259,7 @@ jobs:
       matrix:
         pr: ${{ fromJson(needs.select.outputs.prs) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # The EXACT `main` the select job resolved, by SHA — not the
           # branch name. If `main` moves while this runs, we still
@@ -367,7 +367,7 @@ jobs:
       - name: Fast path
         id: fast
         if: steps.freshness.outputs.fresh == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           ANCESTOR: ${{ steps.freshness.outputs.ancestor }}
           TESTED_HEAD: ${{ matrix.pr.head }}
@@ -441,7 +441,7 @@ jobs:
       # ─────────────────────────────────────────────────────────────
       - name: Merge
         if: steps.freshness.outputs.fresh == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           MAIN_TIP: ${{ needs.select.outputs.main }}
           PR_NUMBER: ${{ matrix.pr.n }}
