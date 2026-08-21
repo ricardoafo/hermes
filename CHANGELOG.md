@@ -15,6 +15,7 @@ lands in Phase 0 CI (per ADR-006).
 
 ### Added
 
+- Merge queue test — PR B (conflict scenario setup)
 - Architecture Decision Records 001-010 (accepted 2026-08-21)
 - Version-control discipline (`docs/guides/dev-workflow.md`) — trunk-based,
   Conventional Commits, squash-merge only, Ricardo-only approval
