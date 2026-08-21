@@ -93,7 +93,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          fetch-depth: 1
+          # fetch-depth: 0 — regenerate-guides-index.sh uses
+          # `git log -1 --format=%as -- <file>` to compute the "Last
+          # updated" date. On a shallow clone (depth 1) git can only see
+          # the head commit, so if the head didn't touch the file, git
+          # log returns empty and the script falls back to today's date
+          # → false-positive drift diff. Full history fixes it.
+          fetch-depth: 0
 
       - name: Install markdownlint-cli2 (if not already pre-baked)
         run: |
@@ -254,17 +260,39 @@ jobs:
         run: node --test tools/merge/*.test.cjs
 
   # ─────────────────────────────────────────────────────────────────────
-  # QUALITY — SKELETON (Phase 0 fills the body)
-  # ruff + mypy + dep audit against the changeset. Gated on
-  # `changeset.code == 'true'` so docs-only PRs skip. Once Phase 0 lands
-  # `pyproject.toml`, swap the echoes for real tool invocations.
+  # QUALITY — parallel matrix (one leg per check)
+  # 7 checks that used to run serially in a single job now fan out as a
+  # matrix. Each leg is a separate check on the PR page; wall-clock is
+  # max(setup + slowest check) instead of sum(all checks).
+  # Cache reuse via uv-cache volume shared across all runner replicas.
+  # See docs/decisions/2026-08-22-drop-safety.md re: no safety.
   # ─────────────────────────────────────────────────────────────────────
   quality:
-    name: Quality (ruff + mypy + deps)
+    name: Quality
     needs: changeset
     if: needs.changeset.outputs.code == 'true'
     runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 5
+    strategy:
+      fail-fast: false  # surface every violation, not just the first leg to fail
+      matrix:
+        include:
+          - name: format
+            cmd: uv run ruff format --check .
+          - name: lint
+            cmd: uv run ruff check .
+          - name: types
+            cmd: uv run mypy --strict src/hermes
+          - name: imports
+            cmd: uv run lint-imports
+          # `--skip-editable` skips our own local hermes package (not on PyPI).
+          # `--strict` dropped because it upgrades the skip warning to an error.
+          - name: deps
+            cmd: uv run pip-audit --skip-editable
+          - name: complexity
+            cmd: uv run radon cc --min B src/
+          - name: deadcode
+            cmd: uv run vulture src/
     steps:
       - uses: actions/checkout@v5
         with:
@@ -273,18 +301,8 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with: { version: "0.12.5" }
       - run: uv sync --frozen
-      - run: uv run ruff check .
-      - run: uv run ruff format --check .
-      - run: uv run mypy --strict src/
-      - run: uv run lint-imports
-      # `--skip-editable` skips our own local package (hermes) which isn't on PyPI.
-      # `--strict` dropped because it upgrades the skip warning to an error.
-      - run: uv run pip-audit --skip-editable
-      # safety dropped 2026-08-22 — v3.x requires interactive auth or --key API
-      # key; pip-audit (OSV + PyPI) + Dependabot alerts + semgrep cover the same
-      # ground without auth. See docs/decisions/2026-08-22-drop-safety.md.
-      - run: uv run radon cc --min B src/
-      - run: uv run vulture src/
+      - name: ${{ matrix.name }}
+        run: ${{ matrix.cmd }}
 
   # ─────────────────────────────────────────────────────────────────────
   # UNIT — SKELETON (Phase 0 fills the body)
