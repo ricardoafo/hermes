@@ -1,0 +1,241 @@
+# =====================================================================
+# CD to VPS — SKELETON (Phase 0 fills the bodies)
+# =====================================================================
+#
+# ## Status
+#
+# This is scaffolding. Every job's body is a placeholder that echoes
+# what it will do once Phase 0 code exists. The SHAPE of the pipeline
+# is locked in now so the DevOps foundation is closed, and later PRs
+# can fill each step in isolation without touching workflow structure.
+#
+# Fill order (roughly):
+#   1. `build` — once `pyproject.toml` + `src/hermes/` exist,
+#      swap `echo TODO` for `uv build` and artifact upload
+#   2. `deploy` — once VPS has `/opt/hermes` layout and systemd units
+#      loaded, swap for real scp + ssh + `uv pip install` + systemctl
+#   3. `health-check` — once healthchecks.io endpoints are provisioned
+#      and a `hermes-health` service pings them, swap for real polling
+#   4. `smoke` — once a `smoke` pytest suite exists (Phase 0+)
+#   5. `confirm` — already real; the aggregator only needs the four
+#      upstream jobs to be non-trivial
+#
+# ## Trigger set
+#
+#   push: [main]
+#     Every merged PR triggers a deploy of that exact SHA. Same SHA
+#     drives the wheel build and the systemd unit swap — version-locked.
+#
+#   workflow_dispatch:
+#     Manual invocation with `dry_run` for changes to THIS workflow.
+#     Every real step is guarded on `dry_run != 'true'` so a dispatch
+#     for validation cannot accidentally deploy.
+#
+# ## Serialization
+#
+# `concurrency: deploy-vps` + `cancel-in-progress: false`. Two deploys
+# racing would land unpredictable wheel versions on the VPS. If a
+# second commit lands mid-deploy, it queues and runs after the first
+# finishes — no skipping, every merged commit reaches production.
+#
+# ## Secrets
+#
+# Populated when the `prod` Environment is provisioned (see
+# `docs/guides/vps-operations.md`). Skeleton jobs reference the
+# expected secret names via `env:` so the wiring is visible.
+
+name: CD to VPS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Skip real deploy steps (validate workflow only)'
+        type: boolean
+        default: true
+        required: false
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  VPS_HOST: hermes-01
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────
+  # BUILD — package the app into a wheel
+  # Phase 0 payload: `uv build`, upload as artifact for the next job.
+  # Today: placeholder that surfaces the intended shape.
+  # ─────────────────────────────────────────────────────────────────
+  build:
+    name: Build wheel
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Build hermes wheel (placeholder)
+        shell: bash
+        run: |
+          echo "::notice::PLACEHOLDER — Phase 0 will replace this with 'uv build'."
+          echo "Expected outputs: dist/hermes-*.whl"
+          echo ""
+          echo "TODO(phase-0):"
+          echo "  curl -LsSf https://astral.sh/uv/install.sh | sh"
+          echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+          echo "  uv sync --frozen"
+          echo "  uv build --wheel"
+          echo ""
+          echo "See ADR-003 §09 for the target design."
+
+      # TODO(phase-0): upload wheel as artifact for deploy job
+      # - uses: actions/upload-artifact@v5
+      #   with:
+      #     name: hermes-wheel
+      #     path: dist/hermes-*.whl
+      #     retention-days: 7
+
+  # ─────────────────────────────────────────────────────────────────
+  # DEPLOY — SCP the wheel to VPS, install into venv, restart services
+  # Phase 0 payload: real ssh + scp using TS_SSH_KEY secret.
+  # ─────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to VPS
+    needs: build
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    environment:
+      name: prod
+      url: https://${{ env.VPS_HOST }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      # TODO(phase-0): download wheel from build job
+      # - uses: actions/download-artifact@v5
+      #   with:
+      #     name: hermes-wheel
+      #     path: dist/
+
+      - name: Push wheel + restart services on VPS (placeholder)
+        if: inputs.dry_run != true
+        shell: bash
+        env:
+          # Populated on the `prod` Environment (Settings → Environments → prod)
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
+          SSH_USER: ${{ secrets.VPS_SSH_USER }}
+        run: |
+          echo "::notice::PLACEHOLDER — Phase 0 will replace this with real scp+ssh."
+          echo ""
+          echo "TODO(phase-0):"
+          echo "  1. write \$SSH_KEY to temp file with 600 perms"
+          echo "  2. scp dist/hermes-*.whl \$SSH_USER@\$SSH_HOST:/tmp/"
+          echo "  3. ssh \$SSH_USER@\$SSH_HOST 'sudo -u hermes /opt/hermes/.venv/bin/uv pip install --force-reinstall /tmp/hermes-*.whl'"
+          echo "  4. ssh \$SSH_USER@\$SSH_HOST 'sudo systemctl restart hermes-*.service'"
+          echo "  5. rm \$KEY_FILE /tmp/hermes-*.whl"
+          echo ""
+          echo "SSH via Tailscale (public port 22 is CLOSED, hermes-01 = ${VPS_HOST})."
+
+      - name: Dry-run notice
+        if: inputs.dry_run == true
+        run: echo "::notice::dry_run=true — skipped VPS-mutating steps."
+
+  # ─────────────────────────────────────────────────────────────────
+  # HEALTH CHECK — verify services came up green after restart
+  # Phase 0 payload: poll healthchecks.io endpoint OR curl an
+  # in-process /healthz once Phase 3+ exposes one via tailscale.
+  # ─────────────────────────────────────────────────────────────────
+  health-check:
+    name: Health check
+    needs: deploy
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    steps:
+      - name: Poll health endpoint (placeholder)
+        if: inputs.dry_run != true
+        shell: bash
+        env:
+          HEALTHCHECK_URL: ${{ secrets.VPS_HEALTHCHECK_URL }}
+        run: |
+          echo "::notice::PLACEHOLDER — Phase 0 will poll healthchecks.io."
+          echo ""
+          echo "TODO(phase-0):"
+          echo "  for attempt in {1..24}; do"
+          echo "    if curl -fsSL \"\$HEALTHCHECK_URL\" -o /dev/null; then"
+          echo "      echo 'health OK'; exit 0"
+          echo "    fi"
+          echo "    sleep 5"
+          echo "  done"
+          echo "  echo '::error::health check timed out after 120s'; exit 1"
+
+      - name: Dry-run notice
+        if: inputs.dry_run == true
+        run: echo "::notice::dry_run=true — skipped health poll."
+
+  # ─────────────────────────────────────────────────────────────────
+  # SMOKE — end-to-end sanity check post-deploy
+  # Phase 0+ payload: pytest suite marked @smoke that exercises a
+  # small subset of core paths against the deployed instance.
+  # ─────────────────────────────────────────────────────────────────
+  smoke:
+    name: Smoke tests
+    needs: deploy
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Run smoke suite (placeholder)
+        if: inputs.dry_run != true
+        shell: bash
+        run: |
+          echo "::notice::PLACEHOLDER — Phase 0 will replace with 'pytest -m smoke'."
+          echo ""
+          echo "TODO(phase-0):"
+          echo "  uv sync --frozen"
+          echo "  uv run pytest -m smoke --tb=short"
+          echo ""
+          echo "Smoke suite is deliberately tiny: one test per critical path."
+          echo "Full test suite runs pre-merge in ci.yml, not here."
+
+      - name: Dry-run notice
+        if: inputs.dry_run == true
+        run: echo "::notice::dry_run=true — skipped smoke suite."
+
+  # ─────────────────────────────────────────────────────────────────
+  # CONFIRM — deploy-gate aggregator
+  # Real today. Passes iff every upstream deploy job succeeded (or
+  # was skipped in dry_run). This is the marker future branch
+  # protection could gate on via `required_deployments: [prod]`.
+  # ─────────────────────────────────────────────────────────────────
+  confirm:
+    name: Confirm deployment
+    needs: [build, deploy, health-check, smoke]
+    if: '!cancelled()'
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 1
+    steps:
+      - name: Verify all deploy gates passed
+        shell: bash
+        run: |
+          results='${{ toJSON(needs) }}'
+          echo "$results"
+
+          if echo "$results" | grep -qE '"result":"(failure|cancelled)"'; then
+            echo "::error::One or more deploy gates failed."
+            exit 1
+          fi
+
+          echo "All deploy gates passed."
