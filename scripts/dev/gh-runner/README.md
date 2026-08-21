@@ -135,33 +135,34 @@ sequenceDiagram
 - **Rebuild triggers**: bump ARG values in `Dockerfile` → `./up.sh`
   detects and rebuilds automatically.
 
-## Multiple runners (when 1 isn't enough)
+## Replica count
 
-Hermes CI is fine with 1 runner today (~30-60s total wall-clock). If it
-starts feeling slow, scale up in either of two ways:
+**Default: 4 replicas.** Set once in `compose.yml` (`scale: 4`) and
+mirrored by `up.sh`'s default arg. CI's 15 jobs finish in ~30s wall
+time with 4 parallel replicas vs ~3 min sequential on 1.
 
-### Option A: replicas in the same stack
+Change temporarily:
 
 ```bash
-docker compose up -d --scale runner=2
+./up.sh 8                             # bump to 8 (heavy day)
+./up.sh 1                             # drop to 1 (troubleshoot a flaky job)
 ```
 
-Both replicas share volumes (cache hits across replicas — good) and use
-the same PAT to mint their own registration tokens.
+The scale reverts to `compose.yml`'s default after `./up.sh` without
+args, so troubleshooting scale changes don't persist by accident.
 
-### Option B: fully isolated second stack
+If you need to override the compose default itself, edit `scale:` in
+`compose.yml` and re-run `./up.sh`.
+
+### Fully isolated second stack (rare)
 
 ```bash
 COMPOSE_PROJECT_NAME=gh-runner-hermes-2 docker compose up -d
 ```
 
-Runs a separate stack with its own volumes, own container, own runner
-identity in GitHub. Useful if you want per-runner cache isolation for
-comparative testing.
-
-Your existing PDP runners are unaffected either way — different
-container names, different volume namespaces, different repo
-registration tokens.
+Runs a separate stack with its own volumes, own containers, own runner
+identities in GitHub. Useful for per-runner cache isolation during
+comparative testing — not needed for normal operation.
 
 ## Auth flows
 
