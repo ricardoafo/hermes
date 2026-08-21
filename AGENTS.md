@@ -87,6 +87,18 @@ are acceptable. If the user requests one of these, refuse and explain.
     adopt patterns without leaking references. Standard open-source
     tooling names (`ruff`, `pytest`, `uv`) are not footprint; internal
     project codenames are.
+12. **Always open PRs as `rafo-claude-bot`, never as `ricardoafo`**.
+    GitHub blocks self-approval (a PR opened by ricardoafo cannot be
+    approved by ricardoafo), and our branch protection prevents admin
+    bypass. Before `gh pr create`, verify: `gh auth status` shows bot
+    is active. If unsure, `gh auth switch --user rafo-claude-bot` first.
+13. **Every git commit in this repo must be authored by bot**. The
+    local git config sets `user.name = rafo-claude-bot`. Verify:
+    `git config --local --get user.name`. Do NOT use
+    `git commit --author='...'` overrides that reintroduce the
+    operator's identity — `require_last_push_approval` will block the
+    merge. See [dev-workflow.md § Local git config: bot identity is
+    required](docs/guides/dev-workflow.md#local-git-config-bot-identity-is-required).
 
 ## Behavioral defaults
 

@@ -35,3 +35,10 @@ repos:
         entry: markdownlint-cli2
         language: system
         files: \.md$
+
+      - id: regenerate-guides-index
+        name: regenerate-guides-index
+        entry: scripts/dev/regenerate-guides-index.sh
+        language: system
+        files: ^docs/guides/.*\.md$
+        pass_filenames: false

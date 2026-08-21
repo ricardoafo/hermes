@@ -4,6 +4,7 @@
 **Owners**: Ricardo Afonso (sole operator)
 **Applies to**: the single Hetzner Cloud VPS that hosts hermes at
 `hermes-01` (CX23, Ubuntu 24.04 LTS, Nuremberg).
+**Description**: SSH access, OS maintenance, Docker + Tailscale + ufw ops, systemd services, troubleshooting.
 
 Everything you need to reach the server, keep it healthy, and recover
 it when it misbehaves. Copy-pasteable commands throughout. Actual

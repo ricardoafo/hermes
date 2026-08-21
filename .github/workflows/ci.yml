@@ -106,6 +106,16 @@ jobs:
       - name: Lint markdown
         run: markdownlint-cli2 "**/*.md" "#node_modules" "#.venv"
 
+      - name: Verify guides index is up-to-date
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/dev/regenerate-guides-index.sh
+          if ! git diff --exit-code docs/guides/README.md; then
+            echo "::error::docs/guides/README.md is out of date. Run scripts/dev/regenerate-guides-index.sh locally and commit."
+            exit 1
+          fi
+
   # ─────────────────────────────────────────────────────────────────────
   # PR title validation — Conventional Commits format on PR title.
   # PR title becomes the squash-merge commit message, so this enforces
@@ -157,20 +167,34 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check CHANGELOG for feat/fix/refactor/perf/breaking
+      - name: Check CHANGELOG for feat/fix/refactor/perf/breaking (with scope-aware skip)
         shell: bash
         run: |
           set -euo pipefail
 
           title="${{ github.event.pull_request.title }}"
 
-          # Extract type prefix from title (feat, fix, refactor, perf, ! for breaking)
+          # Extract type + scope from title.
+          # Types that require a CHANGELOG entry: feat, fix, refactor, perf.
+          # BUT: infra-only scopes (ci, build, deps, tooling) skip the check
+          # because they don't affect user-visible runtime behavior.
           type=$(echo "$title" | grep -oE '^(feat|fix|refactor|perf)(\([a-z0-9-]+\))?(!)?:' | grep -oE '^(feat|fix|refactor|perf)' || true)
+          scope=$(echo "$title" | grep -oE '^(feat|fix|refactor|perf)\(([a-z0-9-]+)\)' | sed -E 's/^[a-z]+\(([a-z0-9-]+)\)$/\1/' || true)
           breaking=$(echo "$title" | grep -oE '!:' || true)
 
           if [[ -z "$type" && -z "$breaking" ]]; then
             echo "Type not in {feat, fix, refactor, perf} and no breaking marker — CHANGELOG check skipped."
             exit 0
+          fi
+
+          # Infra-only scope skip (only when there's no breaking marker)
+          if [[ -z "$breaking" ]]; then
+            case "$scope" in
+              ci|build|deps|tooling)
+                echo "Type '$type' with infra-only scope '$scope' — CHANGELOG check skipped."
+                exit 0
+                ;;
+            esac
           fi
 
           # Check if CHANGELOG.md was touched in this PR
