@@ -1,0 +1,40 @@
+# Docker Compose config for the self-hosted GH Actions runner.
+#
+# On-demand pattern: `up.sh` starts the runner and waits for jobs; `down.sh`
+# stops + deregisters cleanly. NOT `restart: always` — we want the runner up
+# ONLY when Ricardo is actively working with Claude and expects CI to fire.
+#
+# Ephemeral: the runner processes ONE job then exits (via --ephemeral flag
+# in entrypoint). up.sh loops it back up if you want multiple jobs per
+# session; simplest form is one-shot per invocation.
+
+services:
+  runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        RUNNER_VERSION: '2.336.0'
+    image: hermes-runner:latest
+    container_name: hermes-runner
+    restart: 'no'
+    env_file:
+      - .env
+    environment:
+      RUNNER_NAME: 'hermes-runner-${HOSTNAME:-local}'
+      RUNNER_LABELS: 'self-hosted,linux,x64,hermes'
+    mem_limit: 4g
+    cpus: 4
+    volumes:
+      # Host docker socket → runner can spawn sibling containers (gitleaks
+      # action, etc.). NOTE: security-sensitive — runner effectively has
+      # root on the host via docker. Acceptable for solo-dev + private repo
+      # + trusted PRs only.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Cache volumes: persist across container restarts within a session
+      - runner-cache:/home/runner/.cache
+      - runner-work:/home/runner/_work
+
+volumes:
+  runner-cache:
+  runner-work:
