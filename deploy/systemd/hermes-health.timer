@@ -1,0 +1,19 @@
+# Fire hermes-health.service every 5 minutes.
+#
+# Chosen frequency: matches healthchecks.io's default "grace period" for a
+# 5-min ping cadence — a missed ping alerts at ~5:30 min. Real service
+# timers land in Phase 0+ (rebalancer hourly, swing heartbeat, backup nightly).
+
+[Unit]
+Description=Fire hermes-health every 5 minutes
+Requires=hermes-health.service
+
+[Timer]
+OnBootSec=2min           # first ping 2 min after boot, gives network a moment
+OnUnitActiveSec=5min     # then every 5 min after last completion
+Persistent=true          # run a missed tick on next boot
+RandomizedDelaySec=30    # small jitter to avoid clock-tick pile-ups
+Unit=hermes-health.service
+
+[Install]
+WantedBy=timers.target
