@@ -153,6 +153,52 @@ jobs:
             Not:     'feat(fifo): Add lot-consumption event log'
 
   # ─────────────────────────────────────────────────────────────────────
+  # PR body linter — every mandatory template section must have real
+  # content, not the placeholder comment left in place. Prevents
+  # "opened a PR with empty body" from ever reaching review.
+  # ─────────────────────────────────────────────────────────────────────
+  pr-body:
+    name: PR body
+    if: github.event_name == 'pull_request'
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 3
+    steps:
+      - name: Verify mandatory sections have content
+        shell: bash
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$PR_BODY" ]]; then
+            echo "::error::PR body is empty — the template must be filled in."
+            exit 1
+          fi
+
+          # Extract each section between H2 headers, verify it has non-comment,
+          # non-whitespace content.
+          missing=()
+          for section in "Summary" "Related" "Testing" "Risk"; do
+            content=$(printf '%s\n' "$PR_BODY" | awk -v s="$section" '
+              $0 ~ "^## " s "$" {inside=1; next}
+              inside && /^## / {inside=0}
+              inside { print }
+            ')
+            stripped=$(printf '%s\n' "$content" | grep -vE '^\s*$|^\s*<!--.*-->\s*$|^\s*-\s+ADR:\s*$|^\s*-\s+Issue:\s*$' | grep -vE '^\s*<!--' | grep -vE '-->\s*$' || true)
+            if [[ -z "$stripped" ]]; then
+              missing+=("$section")
+            fi
+          done
+
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "::error::PR body missing content in mandatory sections: ${missing[*]}"
+            echo "Fill each ## section with real content (not the placeholder <!-- ... --> comment)."
+            exit 1
+          fi
+
+          echo "All mandatory sections have content."
+
+  # ─────────────────────────────────────────────────────────────────────
   # CHANGELOG enforcement — blocks feat/fix/refactor/perf PRs that
   # don't update CHANGELOG's [Unreleased] section. Skips for
   # docs/chore/ci/build/test/revert.
@@ -304,7 +350,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────
   ci-success:
     name: CI success
-    needs: [changeset, markdown-lint, pr-title, changelog, auto-label, secrets]
+    needs: [changeset, markdown-lint, pr-title, pr-body, changelog, auto-label, secrets]
     if: '!cancelled()'
     runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 1
