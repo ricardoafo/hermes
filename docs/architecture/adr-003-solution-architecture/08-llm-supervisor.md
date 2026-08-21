@@ -77,6 +77,7 @@ flowchart TB
 # hermes-mcp.service exposes tools via MCP protocol
 # NO wildcard permissions. Each tool explicit scope.
 
+
 @mcp_tool(
     name="get_recent_trades",
     scope="hermes:read:trades",
@@ -89,7 +90,7 @@ def get_recent_trades(input: GetRecentTradesInput) -> RecentTradesOutput:
         raise MemorizationGuardViolation(...)
     ledger = SqliteLedger(read_only=True)
     trades = ledger.trades_between(input.start, input.end)
-    return RecentTradesOutput(trades=trades[:input.limit])
+    return RecentTradesOutput(trades=trades[: input.limit])
 ```
 
 **`hermes:trade:place` tool DOES NOT EXIST in the codebase.** Not "exists but disabled" — literally not in the source. Impossible for Claude to call something that doesn't exist.

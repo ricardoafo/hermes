@@ -117,8 +117,7 @@ document why in the PR body.
 
     ```python
     # SEV-1: Security axis S2 (tenant-isolation IDOR)
-    def test_position_query_never_returns_other_tenant_data():
-        ...
+    def test_position_query_never_returns_other_tenant_data(): ...
     ```
 
     Enforced by the `sev1_guard` pytest plugin (lands Phase 0 per ADR-007).

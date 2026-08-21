@@ -18,11 +18,13 @@ class ExchangePort(Protocol):
     def get_portfolio(self) -> Portfolio: ...
     def get_prices(self, pairs: list[Pair]) -> dict[Pair, Price]: ...
     def get_candles(self, pair: Pair, interval: Interval, since: datetime) -> list[Candle]: ...
-    def get_trading_rules(self, pair: Pair) -> TradingRules: ...  # MIN_NOTIONAL, lot step, tick size
+    def get_trading_rules(
+        self, pair: Pair
+    ) -> TradingRules: ...  # MIN_NOTIONAL, lot step, tick size
     def get_fees(self, pair: Pair) -> FeeSchedule: ...
     def list_open_orders(self) -> list[OrderInfo]: ...
     def get_order_status(self, order_id: OrderId) -> OrderStatus: ...
-    def get_eur_rate(self) -> Decimal: ...   # EUR/USDT for FIFO pricing
+    def get_eur_rate(self) -> Decimal: ...  # EUR/USDT for FIFO pricing
 
     # ── Write / trading ────────────────────────────────────────
     def place_market_order(self, pair: Pair, side: Side, qty: Decimal) -> OrderFill: ...
@@ -47,9 +49,9 @@ class OrderFill:
     pair: Pair
     side: Side
     qty: Decimal
-    price_native: Decimal      # e.g., USDT
-    price_eur: Decimal         # REQUIRED — populated by adapter, feeds FIFO
-    eur_rate: Decimal          # EUR/USDT at fill time
+    price_native: Decimal  # e.g., USDT
+    price_eur: Decimal  # REQUIRED — populated by adapter, feeds FIFO
+    eur_rate: Decimal  # EUR/USDT at fill time
     fee_native: Decimal
     fee_eur: Decimal
     executed_at: datetime
@@ -59,13 +61,27 @@ class OrderFill:
 
 ```python
 class ExchangeError(Exception): ...
+
+
 class InsufficientBalance(ExchangeError): ...
+
+
 class OrderRejectedForMinNotional(ExchangeError): ...
+
+
 class OrderRejectedForLotStep(ExchangeError): ...
-class ExchangeTemporarilyUnavailable(ExchangeError): ...    # retry-exhausted
+
+
+class ExchangeTemporarilyUnavailable(ExchangeError): ...  # retry-exhausted
+
+
 class InvalidPair(ExchangeError): ...
+
+
 class RateLimitExceeded(ExchangeError): ...
-class AuthenticationFailed(ExchangeError): ...              # API key expired → alert user
+
+
+class AuthenticationFailed(ExchangeError): ...  # API key expired → alert user
 ```
 
 ## Leaky abstraction risks (why the port is semantic)
@@ -96,8 +112,8 @@ Each adapter TRANSLATES these to the port's terms. Peculiarities NEVER leak into
 class BinanceAdapter:
     def __init__(self):
         self.limiter = TokenBucket(
-            capacity=5000,           # buffer below Binance's 6000/min
-            refill_per_second=83,    # 5000/60
+            capacity=5000,  # buffer below Binance's 6000/min
+            refill_per_second=83,  # 5000/60
         )
 ```
 
