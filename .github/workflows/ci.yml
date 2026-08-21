@@ -93,7 +93,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          fetch-depth: 1
+          # fetch-depth: 0 — regenerate-guides-index.sh uses
+          # `git log -1 --format=%as -- <file>` to compute the "Last
+          # updated" date. On a shallow clone (depth 1) git can only see
+          # the head commit, so if the head didn't touch the file, git
+          # log returns empty and the script falls back to today's date
+          # → false-positive drift diff. Full history fixes it.
+          fetch-depth: 0
 
       - name: Install markdownlint-cli2 (if not already pre-baked)
         run: |
@@ -372,10 +378,16 @@ jobs:
         with:
           fetch-depth: 1
 
-      - uses: returntocorp/semgrep-action@v1
-        with:
-          config: p/security-audit p/python
-          publishToken: ""  # no cloud upload
+      # semgrep-action@v1 uses Docker-in-Docker which our containerized
+      # self-hosted runner cannot do (docker.sock permission denied when
+      # the action tries `docker pull returntocorp/semgrep-agent:v1`).
+      # Install semgrep via uv tool instead — same rules, no daemon.
+      # Duplicated from PR #73 (still open at time of this branch cut);
+      # git will resolve as identical when either PR merges first.
+      - uses: astral-sh/setup-uv@v3
+        with: { version: "0.12.5" }
+      - run: uv tool install semgrep
+      - run: uv tool run semgrep scan --config p/security-audit --config p/python --error
 
   # ─────────────────────────────────────────────────────────────────────
   # CODEOWNERS syntax guard — a broken CODEOWNERS silently disables
