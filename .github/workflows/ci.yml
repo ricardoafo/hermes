@@ -360,10 +360,14 @@ jobs:
         with:
           fetch-depth: 1
 
-      - uses: returntocorp/semgrep-action@v1
-        with:
-          config: p/security-audit p/python
-          publishToken: ""  # no cloud upload
+      # semgrep-action@v1 uses Docker-in-Docker which our containerized
+      # self-hosted runner cannot do (docker.sock permission denied when the
+      # action tries `docker pull returntocorp/semgrep-agent:v1`).
+      # Install semgrep via uv tool instead — same rules, no daemon needed.
+      - uses: astral-sh/setup-uv@v3
+        with: { version: "0.12.5" }
+      - run: uv tool install semgrep
+      - run: uv tool run semgrep scan --config p/security-audit --config p/python --error
 
   # ─────────────────────────────────────────────────────────────────────
   # CODEOWNERS syntax guard — a broken CODEOWNERS silently disables

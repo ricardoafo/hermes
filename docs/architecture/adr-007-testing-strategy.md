@@ -109,8 +109,7 @@ the test block, following the format from the rubric:
 
 ```python
 # SEV-1: Security axis S2 — tenant-isolation IDOR
-def test_rebalancer_query_includes_tenant_scope() -> None:
-    ...
+def test_rebalancer_query_includes_tenant_scope() -> None: ...
 ```
 
 Rules:
