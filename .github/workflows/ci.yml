@@ -1,0 +1,282 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# SHA-based concurrency dedupes push+PR fired on the same commit. On PRs,
+# cancel superseded runs; on main, let each commit finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────
+  # DECISION: classify the changeset. Docs-only skips heavier gates.
+  # ─────────────────────────────────────────────────────────────────────
+  changeset:
+    name: Changeset
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      code: ${{ steps.detect.outputs.code }}
+      docs: ${{ steps.detect.outputs.docs }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
+
+      - id: detect
+        shell: bash
+        run: |
+          set -uo pipefail
+          case "${{ github.event_name }}" in
+            pull_request)
+              base="${{ github.event.pull_request.base.sha }}"
+              head="${{ github.event.pull_request.head.sha }}"
+              ;;
+            push)
+              base="${{ github.event.before }}"
+              head="${{ github.sha }}"
+              ;;
+            *)
+              echo "code=true" >> "$GITHUB_OUTPUT"
+              echo "docs=true" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+          esac
+
+          if [[ "$base" =~ ^0+$ ]] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            echo "docs=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          changed=$(git diff --name-only "$base" "$head")
+          echo "Changed files:"
+          echo "$changed"
+
+          # Docs-only: excludes .github/ deliberately — workflow changes
+          # can break tests and must still be verified.
+          code_files=$(echo "$changed" | grep -vE '(^|/)[^/]+\.md$|^docs/' || true)
+          docs_files=$(echo "$changed" | grep -E '(^|/)[^/]+\.md$|^docs/' || true)
+
+          if [[ -z "$code_files" ]]; then
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [[ -z "$docs_files" ]]; then
+            echo "docs=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "docs=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Markdown lint — always required. Runs on every PR that touches *.md
+  # or if we can't rule out changes (first PR, empty ref).
+  # ─────────────────────────────────────────────────────────────────────
+  markdown-lint:
+    name: Markdown lint
+    needs: changeset
+    if: needs.changeset.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install markdownlint-cli2
+        run: npm install -g markdownlint-cli2@0.23.2
+
+      - name: Lint markdown
+        run: markdownlint-cli2 "**/*.md" "#node_modules" "#.venv"
+
+  # ─────────────────────────────────────────────────────────────────────
+  # PR title validation — Conventional Commits format on PR title.
+  # PR title becomes the squash-merge commit message, so this enforces
+  # the commit convention at merge time (commit-msg hook only runs
+  # locally; CI enforces the final artifact).
+  # ─────────────────────────────────────────────────────────────────────
+  pr-title:
+    name: PR title
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      pull-requests: read
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            docs
+            chore
+            refactor
+            test
+            perf
+            build
+            ci
+            revert
+          requireScope: false
+          subjectPattern: ^(?![A-Z]).+$
+          subjectPatternError: |
+            PR subject must start lowercase (imperative mood).
+            Example: 'feat(fifo): add lot-consumption event log'
+            Not:     'feat(fifo): Add lot-consumption event log'
+
+  # ─────────────────────────────────────────────────────────────────────
+  # CHANGELOG enforcement — blocks feat/fix/refactor/perf PRs that
+  # don't update CHANGELOG's [Unreleased] section. Skips for
+  # docs/chore/ci/build/test/revert.
+  # ─────────────────────────────────────────────────────────────────────
+  changelog:
+    name: CHANGELOG update
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check CHANGELOG for feat/fix/refactor/perf/breaking
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          title="${{ github.event.pull_request.title }}"
+
+          # Extract type prefix from title (feat, fix, refactor, perf, ! for breaking)
+          type=$(echo "$title" | grep -oE '^(feat|fix|refactor|perf)(\([a-z0-9-]+\))?(!)?:' | grep -oE '^(feat|fix|refactor|perf)' || true)
+          breaking=$(echo "$title" | grep -oE '!:' || true)
+
+          if [[ -z "$type" && -z "$breaking" ]]; then
+            echo "Type not in {feat, fix, refactor, perf} and no breaking marker — CHANGELOG check skipped."
+            exit 0
+          fi
+
+          # Check if CHANGELOG.md was touched in this PR
+          base_sha="${{ github.event.pull_request.base.sha }}"
+          head_sha="${{ github.event.pull_request.head.sha }}"
+          changed=$(git diff --name-only "$base_sha" "$head_sha")
+
+          if echo "$changed" | grep -qE '^CHANGELOG\.md$'; then
+            echo "CHANGELOG.md updated — ok."
+            exit 0
+          fi
+
+          echo "::error::PR type '${type:-breaking}' requires CHANGELOG.md [Unreleased] update."
+          echo "Add an entry under Added / Changed / Deprecated / Removed / Fixed / Security."
+          echo "For chore / docs / ci / build / test / revert, no CHANGELOG update needed."
+          exit 1
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Auto-label — applies area:*/type:* labels based on file paths and
+  # PR title. Non-blocking (continue-on-error) so a labeler config bug
+  # doesn't block merge.
+  # ─────────────────────────────────────────────────────────────────────
+  auto-label:
+    name: Auto-label
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    continue-on-error: true
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/labeler@v5
+        with:
+          configuration-path: .github/labeler.yml
+          sync-labels: true
+
+      - name: Size label
+        uses: pascalgn/size-label-action@v0.5.5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IGNORED: |
+            uv.lock
+            package-lock.json
+            **/*.snapshot
+        with:
+          sizes: |
+            {
+              "0": "size:s",
+              "100": "size:m",
+              "500": "size:l"
+            }
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Secrets scan — gitleaks on the full history for every PR.
+  # ─────────────────────────────────────────────────────────────────────
+  secrets:
+    name: Secrets scan
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Add to project — every new issue/PR appears on the roadmap board.
+  # Idempotent (already-added items are skipped).
+  # ─────────────────────────────────────────────────────────────────────
+  add-to-project:
+    name: Add to project board
+    if: github.event.action == 'opened' && (github.event_name == 'pull_request' || github.event_name == 'issues')
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/add-to-project@v1
+        with:
+          project-url: https://github.com/users/ricardoafo/projects/4
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─────────────────────────────────────────────────────────────────────
+  # SUCCESS gate — single required status check on branch protection.
+  # Aggregates results; passes iff every non-skipped job succeeded.
+  # Add / remove jobs above without touching branch protection JSON.
+  # ─────────────────────────────────────────────────────────────────────
+  ci-success:
+    name: CI success
+    needs: [changeset, markdown-lint, pr-title, changelog, auto-label, secrets]
+    if: '!cancelled()'
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Verify all gates passed
+        shell: bash
+        run: |
+          results='${{ toJSON(needs) }}'
+          echo "$results"
+
+          # Fail if any non-skipped job failed or was cancelled
+          if echo "$results" | grep -qE '"result":"(failure|cancelled)"'; then
+            echo "::error::One or more required CI gates failed."
+            exit 1
+          fi
+
+          echo "All required CI gates passed."

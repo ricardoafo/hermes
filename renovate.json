@@ -1,0 +1,105 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    ":semanticCommitTypeAll(chore)",
+    ":prConcurrentLimit10",
+    ":prHourlyLimit2"
+  ],
+  "timezone": "Europe/Madrid",
+  "schedule": [
+    "before 08:00 on monday"
+  ],
+  "prCreation": "not-pending",
+  "commitMessagePrefix": "chore(deps):",
+  "labels": [
+    "type:chore",
+    "area:tooling"
+  ],
+  "assignees": [
+    "rafo-claude-bot"
+  ],
+  "reviewers": [
+    "ricardoafo"
+  ],
+  "minimumReleaseAge": "7 days",
+  "internalChecksFilter": "strict",
+  "rangeStrategy": "pin",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": [
+      "before 08:00 on monday"
+    ],
+    "commitMessageAction": "refresh"
+  },
+  "dependencyDashboardTitle": "Renovate dependency dashboard",
+  "dependencyDashboardHeader": "Live view of dependency updates. Auto-merge is enabled for patch updates on well-known deps only (see packageRules). Anything else opens a PR and waits for Ricardo's review.",
+  "packageRules": [
+    {
+      "description": "Group all patch updates into one PR to reduce notification noise",
+      "matchUpdateTypes": ["patch"],
+      "groupName": "all patch updates",
+      "labels": ["type:chore", "area:tooling", "size:s"]
+    },
+    {
+      "description": "Group all minor updates into one PR (Python + GH Actions separate)",
+      "matchUpdateTypes": ["minor"],
+      "matchDatasources": ["pypi"],
+      "groupName": "python minor updates",
+      "labels": ["type:chore", "area:tooling", "size:m"]
+    },
+    {
+      "matchUpdateTypes": ["minor"],
+      "matchManagers": ["github-actions"],
+      "groupName": "github-actions minor updates",
+      "labels": ["type:ci", "area:tooling", "size:s"]
+    },
+    {
+      "description": "Auto-merge patch updates for well-known safe dependencies after CI green",
+      "matchUpdateTypes": ["patch"],
+      "matchPackageNames": [
+        "pytest",
+        "hypothesis",
+        "syrupy",
+        "mypy",
+        "ruff",
+        "coverage",
+        "respx",
+        "freezegun"
+      ],
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": true
+    },
+    {
+      "description": "Never auto-merge major updates — human decides breaking-change scope + CHANGELOG entry",
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "labels": ["type:chore", "area:tooling", "p2", "size:m"]
+    },
+    {
+      "description": "Security updates bypass cooldown — but still require review",
+      "matchDatasources": ["pypi"],
+      "matchDepTypes": ["dependencies"],
+      "matchUpdateTypes": ["patch", "minor"],
+      "vulnerabilityAlerts": {
+        "labels": ["sev-1", "type:fix", "p1"],
+        "minimumReleaseAge": null,
+        "automerge": false
+      }
+    },
+    {
+      "description": "Pin GitHub Actions to full-length SHA — supply-chain best practice",
+      "matchManagers": ["github-actions"],
+      "pinDigests": true
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": ["sev-1", "type:fix", "p1"],
+    "assignees": ["ricardoafo"]
+  },
+  "prBodyTemplate": "This dependency update was opened by Renovate. Review the changelog links, verify CI passes, then merge (or let auto-merge handle it if configured for this dependency).\n\n{{{table}}}\n{{{notes}}}\n{{{changelogs}}}"
+}

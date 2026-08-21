@@ -1,0 +1,57 @@
+# Auto-labeler config for actions/labeler@v5.
+# Path-based labels only. Type-based labels are inferred from the PR title
+# prefix by the pr-title CI job — we do NOT duplicate here.
+# Size labels come from pascalgn/size-label-action (see workflows/ci.yml).
+
+# area:* — code area labels
+area:domain:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/hermes/domain/**
+          - tests/domain/**
+
+area:adapters:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/hermes/adapters/**
+          - tests/adapters/**
+
+area:cli:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/hermes/cli/**
+          - src/hermes/tui/**
+          - tests/cli/**
+          - tests/tui/**
+
+area:config:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/hermes/config/**
+          - config/**
+          - pyproject.toml
+          - "**/*.env.example"
+
+area:docs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*.md"
+          - "docs/**"
+
+area:tooling:
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/**
+          - scripts/**
+          - .pre-commit-config.yaml
+          - .markdownlint-cli2.jsonc
+          - .gitattributes
+          - .gitignore
+          - renovate.json
+
+area:security:
+  - changed-files:
+      - any-glob-to-any-file:
+          - SECURITY.md
+          - .gitleaks.toml
+          - "**/detect-secrets*"
