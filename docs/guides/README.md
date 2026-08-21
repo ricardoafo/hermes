@@ -7,12 +7,23 @@ for machines. Per [ADR-009](../architecture/adr-009-documentation-strategy.md)
 
 ## Living index
 
+The table below is **auto-generated** from `docs/guides/*.md` by
+`scripts/dev/regenerate-guides-index.sh` (runs as a pre-commit hook +
+CI verification). Do NOT edit the table by hand — edit the guide files
+themselves, and the index regenerates on next commit.
+
+Why: manual index maintenance caused merge conflicts every time two
+parallel PRs added new guides. Auto-generation eliminates that class
+of conflict entirely.
+
+<!-- guides-index-start -->
 | Guide | What it covers | Last updated |
 | ----- | -------------- | ------------ |
-| [dev-workflow.md](dev-workflow.md) | Branching, commits, PRs, merge policy, delete-branch safety, zero-footprint policy | 2026-08-21 |
-| [ai-development-lifecycle.md](ai-development-lifecycle.md) | End-to-end flow: idea → issue → PR → CI → merge → deploy; how milestones/issues/project board fill in as work moves | 2026-08-21 |
-| [prose-style.md](prose-style.md) | Comments, docstrings, docs, PR/issue bodies — banned words, formatting rules, per-artifact style | 2026-08-21 |
-| [vps-operations.md](vps-operations.md) | SSH access, OS maintenance, Docker + Tailscale + ufw ops, systemd services, troubleshooting | 2026-08-21 |
+| [ai-development-lifecycle.md](ai-development-lifecycle.md) | End-to-end flow from idea to VPS runtime; how milestones, issues, and the project board fill in as work moves. | 2026-08-21 |
+| [dev-workflow.md](dev-workflow.md) | Branching, commits, PRs, merge policy, delete-branch safety, zero-footprint policy. | 2026-08-21 |
+| [prose-style.md](prose-style.md) | Comments, docstrings, docs, PR/issue bodies — banned words, formatting rules, per-artifact style. | 2026-08-21 |
+| [vps-operations.md](vps-operations.md) | SSH access, OS maintenance, Docker + Tailscale + ufw ops, systemd services, troubleshooting. | 2026-08-21 |
+<!-- guides-index-end -->
 
 ## When to add a guide
 

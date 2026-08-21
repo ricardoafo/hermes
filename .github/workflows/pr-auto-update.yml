@@ -1,0 +1,73 @@
+name: Auto-update PRs
+
+# When main moves, update every open PR to include the latest main
+# commits. Eliminates the manual "Update branch" click that was being
+# attributed to the human clicker (invalidating their prior approval
+# via require_last_push_approval).
+#
+# Updates are performed by github-actions[bot] via the update-branch
+# API. That actor is treated as a system actor: it does NOT invalidate
+# an existing reviewer's approval on the PR.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: pr-auto-update
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  update:
+    name: Update stale PRs to latest main
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+
+            const open = await github.paginate(github.rest.pulls.list, {
+              owner, repo, state: 'open', base: 'main', per_page: 100,
+            });
+
+            core.info(`Found ${open.length} open PR(s) targeting main.`);
+
+            for (const pr of open) {
+              if (pr.draft) {
+                core.info(`#${pr.number}: draft, skip`);
+                continue;
+              }
+              const { data: full } = await github.rest.pulls.get({
+                owner, repo, pull_number: pr.number,
+              });
+              if (full.mergeable_state === 'clean' || full.mergeable_state === 'unstable') {
+                core.info(`#${pr.number}: state=${full.mergeable_state}, already current`);
+                continue;
+              }
+              if (full.mergeable_state === 'dirty') {
+                core.info(`#${pr.number}: dirty (conflict) — needs human resolution, skip`);
+                continue;
+              }
+              // 'behind' or 'blocked' → update
+              try {
+                await github.rest.pulls.updateBranch({
+                  owner, repo, pull_number: pr.number,
+                });
+                core.info(`#${pr.number}: update triggered`);
+              } catch (err) {
+                if (err.status === 422) {
+                  core.warning(`#${pr.number}: cannot update — ${err.message}`);
+                } else {
+                  core.warning(`#${pr.number}: update failed — ${err.message}`);
+                }
+              }
+            }
+
+            core.info('Done.');
