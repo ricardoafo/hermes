@@ -3,7 +3,14 @@
 # Enforces the discipline documented in docs/guides/dev-workflow.md:
 #   - 1 approving review required (Ricardo, via CODEOWNERS)
 #   - dismiss stale reviews on new commits
-#   - require last push approval
+#   - require last push approval (safe under revalidate-then-merge design:
+#     the queue never pushes to the PR branch, so only genuine author
+#     iteration dismisses approvals — which is correct behavior)
+#   - `CI success` aggregator must be green (single required check)
+#   - `strict: false` — do NOT require branch up-to-date. Freshness is
+#     enforced by pr-revalidate.yml, which builds the merge tree at the
+#     resolved main SHA and asserts twice. See
+#     docs/decisions/2026-08-21-revalidate-then-merge.md.
 #   - linear history only (squash-merge only, no merge-commits)
 #   - no force push, no deletions, no admin bypass
 #   - resolve all conversations before merge
@@ -19,7 +26,10 @@ echo "Applying branch protection to $REPO:$BRANCH"
 
 gh api -X PUT "repos/$REPO/branches/$BRANCH/protection" --input - <<'JSON' >/dev/null
 {
-  "required_status_checks": null,
+  "required_status_checks": {
+    "strict": false,
+    "contexts": ["CI success"]
+  },
   "enforce_admins": true,
   "required_pull_request_reviews": {
     "dismiss_stale_reviews": true,
