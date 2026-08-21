@@ -254,6 +254,138 @@ jobs:
         run: node --test tools/merge/*.test.cjs
 
   # ─────────────────────────────────────────────────────────────────────
+  # QUALITY — SKELETON (Phase 0 fills the body)
+  # ruff + mypy + dep audit against the changeset. Gated on
+  # `changeset.code == 'true'` so docs-only PRs skip. Once Phase 0 lands
+  # `pyproject.toml`, swap the echoes for real tool invocations.
+  # ─────────────────────────────────────────────────────────────────────
+  quality:
+    name: Quality (ruff + mypy + deps)
+    needs: changeset
+    if: needs.changeset.outputs.code == 'true'
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Run quality gates (placeholder)
+        shell: bash
+        run: |
+          echo "::notice::PLACEHOLDER — Phase 0 replaces with real tool invocations."
+          echo ""
+          echo "TODO(phase-0):"
+          echo "  curl -LsSf https://astral.sh/uv/install.sh | sh"
+          echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+          echo "  uv sync --frozen"
+          echo "  uv run ruff check ."
+          echo "  uv run ruff format --check ."
+          echo "  uv run mypy --strict src/"
+          echo "  uv run pip-audit --strict"
+
+  # ─────────────────────────────────────────────────────────────────────
+  # UNIT — SKELETON (Phase 0 fills the body)
+  # pytest with branch coverage. Enforces coverage floor + uploads a
+  # report artifact for the coverage-comment step (Phase 1+).
+  # ─────────────────────────────────────────────────────────────────────
+  unit:
+    name: Unit tests + coverage
+    needs: changeset
+    if: needs.changeset.outputs.code == 'true'
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write # coverage comment (Phase 1+)
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Run unit tests (placeholder)
+        shell: bash
+        run: |
+          echo "::notice::PLACEHOLDER — Phase 0 replaces with 'uv run pytest'."
+          echo ""
+          echo "TODO(phase-0):"
+          echo "  uv sync --frozen"
+          echo "  uv run pytest --cov=hermes --cov-branch --cov-report=xml --cov-fail-under=90"
+          echo ""
+          echo "Coverage discipline: 90% line, 85% branch (sanity floor only)."
+          echo "The load-bearing gate is the WEEKLY mutation-testing run —"
+          echo "see docs/guides/ai-authored-tests.md."
+
+      # TODO(phase-0): upload coverage.xml + emit PR comment with summary
+      # - uses: actions/upload-artifact@v5
+      #   with: {name: coverage-xml, path: coverage.xml, retention-days: 7}
+
+  # ─────────────────────────────────────────────────────────────────────
+  # GUARDS — SKELETON (Phase 0 fills the body)
+  # Custom hard rules that CI enforces without human review:
+  #   - test-deletion guard: a PR that removes a test must justify it
+  #     (either a `SEV-1: removed by intent` marker, or the deleted
+  #     test's assertion is being MOVED elsewhere in the same PR)
+  # CODEOWNERS-syntax guard already exists as its own `codeowners` job.
+  # ─────────────────────────────────────────────────────────────────────
+  guards:
+    name: Guards
+    needs: changeset
+    if: needs.changeset.outputs.code == 'true'
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # guards diff a range; shallow clone has no base
+
+      - name: Test-deletion guard (placeholder)
+        shell: bash
+        run: |
+          echo "::notice::PLACEHOLDER — Phase 0 adds the guard once tests exist."
+          echo ""
+          echo "TODO(phase-0):"
+          echo "  # Detect deleted test files vs the merge base"
+          echo "  base=\"\${{ github.event.pull_request.base.sha }}\""
+          echo "  deleted=\$(git diff --name-only --diff-filter=D \"\$base\" HEAD | grep -E '^tests/.*\\.py$' || true)"
+          echo "  if [[ -n \"\$deleted\" ]]; then"
+          echo "    # Check PR body for '# SEV-1: removed by intent' or similar justification"
+          echo "    # OR check that the deleted test's assertion moved to another test in the same PR"
+          echo "    echo '::error::test files deleted without justification: \$deleted'"
+          echo "    exit 1"
+          echo "  fi"
+
+  # ─────────────────────────────────────────────────────────────────────
+  # SEMGREP — SKELETON (Phase 0+ fills the body)
+  # Static analysis for security bugs (SAST). Once code exists to scan,
+  # bump this to a real semgrep run with the p/security-audit ruleset.
+  # ─────────────────────────────────────────────────────────────────────
+  semgrep:
+    name: Semgrep (SAST)
+    needs: changeset
+    if: needs.changeset.outputs.code == 'true'
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Run semgrep (placeholder)
+        shell: bash
+        run: |
+          echo "::notice::PLACEHOLDER — Phase 0+ replaces with real semgrep run."
+          echo ""
+          echo "TODO(phase-0):"
+          echo "  # semgrep CLI is baked into the runner image (per gh-runner Dockerfile)"
+          echo "  semgrep scan --config p/security-audit --config p/python --error"
+          echo ""
+          echo "Semgrep p/security-audit ruleset covers common Python security bugs."
+          echo "p/python catches idiom violations that lint doesn't."
+
+  # ─────────────────────────────────────────────────────────────────────
   # CODEOWNERS syntax guard — a broken CODEOWNERS silently disables
   # code-owner review enforcement (GitHub does not fail the PR; it just
   # skips the check). That looks green while unreviewed code merges.
@@ -327,7 +459,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────
   ci-success:
     name: CI success
-    needs: [changeset, markdown-lint, pr-title, pr-body, changelog, auto-label, merge-decisions, codeowners, secrets]
+    needs: [changeset, markdown-lint, pr-title, pr-body, changelog, auto-label, merge-decisions, quality, unit, guards, semgrep, codeowners, secrets]
     if: '!cancelled()'
     runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 1
