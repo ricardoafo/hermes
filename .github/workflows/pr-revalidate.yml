@@ -1,0 +1,593 @@
+# =====================================================================
+# Merge queue — revalidate then merge
+# =====================================================================
+#
+# ## What this replaces, and why
+#
+# The prior design (`merge-queue.yml`) called `pulls.merge` after checking
+# GitHub's `mergeable_state` field. Two problems:
+#
+#   1. It kept branches current by pushing them forward (via
+#      `pr-auto-update.yml`). Those pushes invalidated approvals under
+#      `require_last_push_approval` + `dismiss_stale_reviews_on_push`.
+#      The bot's own updates blocked the merges the bot was trying to
+#      unblock. Bandaid workflows appeared to work around it.
+#
+#   2. It trusted `mergeable_state` as final. That field is lazy (returns
+#      `unknown` on `pulls.list`) and can report `unstable` when a
+#      non-required check was skipped or failed. The prior queue refused
+#      `unstable`, stranding PRs where only a non-required check was red.
+#
+# This workflow removes both problems at the root. It checks out `main`
+# at the exact SHA it resolved, fetches the PR head at the SHA that was
+# approved, builds the merge locally with `git merge --no-commit --no-ff`,
+# runs the tree-verifying gates on that tree, and merges from the
+# workflow. No push to the PR branch, ever. The approval survives.
+#
+# ## Freshness is asserted TWICE
+#
+# Once at the top of `Build merge tree` — cheap API + git assertions
+# before we pay for gates. Once again in the `Merge` step — the gates
+# take minutes, and a sibling in the same matrix may have merged in
+# that window, moving `main` out from under the tree we validated.
+#
+# ## Fast path
+#
+# When the approved head already contains the current `main` tip
+# (`git merge-base --is-ancestor`), merging is a fast-forward and the
+# tree that would land is IDENTICAL to the tree CI already validated.
+# The `gateSkip` decision (in `tools/merge/decisions.cjs`, unit-tested)
+# fires only when BOTH the ancestor check AND `ciConclusion === success`
+# hold. "Cannot check" is never "clean" — anything less than proven
+# runs the gates.
+#
+# ## Where the judgement lives
+#
+# All non-trivial decisions live in `tools/merge/decisions.cjs` and are
+# covered by `tools/merge/decisions.test.cjs`. YAML holds only the I/O,
+# because a decision inside a `script:` block can only be tested by
+# merging and watching, which is exactly how prior queues shipped bugs.
+#
+# ## Trigger set — why each event is here
+#
+#   push: [main]
+#     A merge moved `main`; every candidate behind it must be re-checked
+#     against the new tip. Fires for HUMAN merges only. Merges performed
+#     by this workflow (with GITHUB_TOKEN) raise no events; the merge
+#     step hand-starts the next pass to close that gap.
+#
+#   pull_request_review: [submitted]
+#     The reviewer just approved. Often approval lands seconds after PR
+#     open, while CI still has minutes to run — at that instant the
+#     required check is pending, `mergeable_state` is `blocked`, and
+#     `select` correctly declines. But NOTHING would look again once the
+#     block cleared, except the hourly cron. `workflow_run` below covers
+#     the actual clear.
+#
+#   workflow_run: [CI completed]
+#     CI just finished. This is the trigger that clears the "approved
+#     before CI finished" block. Guarded on `conclusion == 'success'` in
+#     the `select` filter, because a red run must never start a merge.
+#
+#   schedule: hourly
+#     Backstop for missed triggers (network hiccup, GitHub outage). It
+#     is 100% idle in the healthy case, which is the product.
+#
+#   workflow_dispatch:
+#     Manual invocation, with `dry_run` for changes to THIS workflow.
+#     Runs everything up to and including the gates; stops one call
+#     before `pulls.merge`.
+
+name: Merge queue
+
+on:
+  push:
+    branches: [main]
+  pull_request_review:
+    types: [submitted]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Validate and report, merge nothing'
+        type: boolean
+        default: false
+        required: false
+
+# Serialised on purpose. Two passes would race to merge into the same
+# `main`, and the loser would land a tree it validated against a tip
+# that no longer exists. `cancel-in-progress: false` because a run that
+# is mid-merge must finish.
+concurrency:
+  group: revalidate-and-merge
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────
+  # SELECT — enumerate mergeable candidates.
+  # Sparse checkout of `tools/merge` only; this job runs many times a
+  # day and its cost is API calls, not the repository.
+  # ─────────────────────────────────────────────────────────────────
+  select:
+    name: Select
+    # Two triggers are narrowed here; every other one is unconditional.
+    # A failed CI run must never start a merge pass, and a review that
+    # is not `approved` cannot make a PR mergeable (`types: [submitted]`
+    # fires on plain comments too).
+    if: >-
+      (github.event_name != 'workflow_run'
+       || github.event.workflow_run.conclusion == 'success')
+      && (github.event_name != 'pull_request_review'
+       || github.event.review.state == 'approved')
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    outputs:
+      prs: ${{ steps.pick.outputs.prs }}
+      any: ${{ steps.pick.outputs.any }}
+      main: ${{ steps.pick.outputs.main }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: tools/merge
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/github-script@v7
+        id: pick
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+
+            // Decisions live in a unit-tested module, NOT inline.
+            // `tests/decisions.test.cjs` pins every refusal case in
+            // ~80ms; a round trip against the live queue costs minutes.
+            const { isCandidate } = require(
+              `${process.env.GITHUB_WORKSPACE}/tools/merge/decisions.cjs`
+            );
+
+            // Resolved ONCE, here, and passed down. Every downstream
+            // comparison uses this exact value, so "current main"
+            // cannot mean two things inside one run.
+            //
+            // Deliberately NOT `pr.base.sha` — that is the base tip as
+            // of the PR's last SYNCHRONIZATION, so comparing against it
+            // asks "is this PR behind where main was the last time I
+            // looked", whose answer is always no.
+            const { data: base } = await github.rest.repos.getBranch({
+              owner, repo, branch: 'main',
+            });
+            const mainTip = base.commit.sha;
+            core.setOutput('main', mainTip);
+            core.info(`main tip: ${mainTip}`);
+
+            const open = await github.paginate(github.rest.pulls.list, {
+              owner, repo, state: 'open', base: 'main', per_page: 100,
+            });
+
+            const reviewsOf = (n) => github.paginate(github.rest.pulls.listReviews, {
+              owner, repo, pull_number: n, per_page: 100,
+            });
+
+            // `mergeable` and `mergeable_state` are computed LAZILY.
+            // `pulls.list` returns them null; `pulls.get` triggers
+            // computation. Poll until the state is definite.
+            const settle = async (number) => {
+              for (let attempt = 0; attempt < 6; attempt += 1) {
+                const { data } = await github.rest.pulls.get({
+                  owner, repo, pull_number: number,
+                });
+                if (data.mergeable !== null && data.mergeable_state !== 'unknown') {
+                  return data;
+                }
+                await new Promise((r) => setTimeout(r, 5000));
+              }
+              return null;
+            };
+
+            const eligible = [];
+            for (const pr of open) {
+              const tag = `#${pr.number} (${pr.head.ref})`;
+
+              if (pr.draft) {
+                core.info(`${tag}: draft — not a candidate`);
+                continue;
+              }
+
+              const full = await settle(pr.number);
+              if (full === null) {
+                core.warning(`${tag}: GitHub never computed mergeability — will retry next run`);
+                continue;
+              }
+
+              const { eligible: ok, reason } = isCandidate({
+                pr: full,
+                reviews: await reviewsOf(pr.number),
+              });
+
+              if (!ok) {
+                // Conflicts are the only case a human must act on; the
+                // rest resolve themselves and are noise at warning level.
+                const say = reason.includes('CONFLICTS') ? core.warning : core.info;
+                say(`${tag}: ${reason}`);
+                continue;
+              }
+
+              // The head SHA travels with the number. The revalidation
+              // must prove it tested the commit that was APPROVED, not
+              // whatever the branch points at by the time it runs.
+              eligible.push({ n: pr.number, head: pr.head.sha });
+              core.info(`${tag}: ${reason} head=${pr.head.sha}`);
+            }
+
+            core.setOutput('prs', JSON.stringify(eligible));
+            core.setOutput('any', String(eligible.length > 0));
+            core.info(
+              eligible.length
+                ? `candidates: ${eligible.map((e) => '#' + e.n).join(', ')}`
+                : 'no candidates',
+            );
+
+  # ─────────────────────────────────────────────────────────────────
+  # REVALIDATE — build the merge tree, run gates on it, then merge.
+  # ─────────────────────────────────────────────────────────────────
+  revalidate:
+    name: Revalidate
+    needs: select
+    if: needs.select.outputs.any == 'true'
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 20
+    permissions:
+      contents: write        # merging is a push to main
+      pull-requests: write   # and it closes the pull request
+      actions: write         # and it hand-starts what its own push cannot
+      statuses: write        # so main carries a status even on skip
+      issues: write          # so `Closes #N` in the body can act on issues
+    strategy:
+      # Serialised. Merging #A moves `main`, so #B must be re-checked
+      # afterwards, not merged in parallel against a tip that is already
+      # gone.
+      max-parallel: 1
+      # #B failing must not cancel #A. Independent decisions.
+      fail-fast: false
+      matrix:
+        pr: ${{ fromJson(needs.select.outputs.prs) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The EXACT `main` the select job resolved, by SHA — not the
+          # branch name. If `main` moves while this runs, we still
+          # stand on the commit every downstream comparison is written
+          # against.
+          ref: ${{ needs.select.outputs.main }}
+          # Full history: about to perform a real merge, which needs a
+          # merge base.
+          fetch-depth: 0
+
+      # ─────────────────────────────────────────────────────────────
+      # FRESHNESS + BUILD THE MERGE — the assertion the design rests on
+      # ─────────────────────────────────────────────────────────────
+      - name: Build merge tree
+        id: freshness
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAIN_TIP: ${{ needs.select.outputs.main }}
+          PR_NUMBER: ${{ matrix.pr.n }}
+          PR_HEAD: ${{ matrix.pr.head }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          decline() {
+            # NOT a failure. The world moved, or the branch did. Merge
+            # nothing, say why, let the next trigger retry.
+            echo "::warning::#${PR_NUMBER}: $1 — not merging this pass."
+            echo "fresh=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+
+          # Has `main` moved since select resolved it? Ask BEFORE paying
+          # for gates. `max-parallel: 1` means every later entry in this
+          # matrix is validating against a tip that already may not
+          # exist. Prior designs discovered this only in the merge step
+          # itself, after paying full pipeline cost per doomed entry —
+          # quadratic waste as the queue drains.
+          current="$(gh api "repos/${GITHUB_REPOSITORY}/branches/main" --jq .commit.sha)"
+          echo "main tip     : ${MAIN_TIP}"
+          echo "main now     : ${current}"
+          [[ "$current" == "$MAIN_TIP" ]] \
+            || decline "main moved to ${current} since Select resolved it"
+
+          # The checkout above pinned us to a SHA; disagree here only if
+          # something rewrote history under us. Cheap to assert.
+          here="$(git rev-parse HEAD)"
+          echo "checked out  : ${here}"
+          [[ "$here" == "$MAIN_TIP" ]] || decline "checkout is not the resolved main tip"
+
+          # `refs/pull/<N>/head` is the PR branch itself — a plain ref
+          # GitHub does not compute anything for, so it cannot be stale
+          # the way `refs/pull/<N>/merge` was.
+          git fetch --no-tags --force origin \
+            "refs/pull/${PR_NUMBER}/head:refs/heads/pr-head" >/dev/null 2>&1 \
+            || decline "could not fetch refs/pull/${PR_NUMBER}/head"
+
+          head_now="$(git rev-parse refs/heads/pr-head)"
+          echo "approved head: ${PR_HEAD}"
+          echo "head ref is  : ${head_now}"
+          [[ "$head_now" == "$PR_HEAD" ]] || decline "head moved after approval"
+
+          # Does the approved head ALREADY contain this main tip? If it
+          # does, merging is a fast-forward and the tree that would land
+          # is identical to the head tree CI already validated. The
+          # `Fast path` step below combines this with the CI-conclusion
+          # check to decide whether gates can be skipped safely.
+          if git merge-base --is-ancestor "$MAIN_TIP" refs/heads/pr-head; then
+            echo "head already contains ${MAIN_TIP}"
+            echo "ancestor=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "main moved ahead of this head — the merged tree is new"
+            echo "ancestor=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # --no-commit: the TREE is what the gates need; a commit
+          # object would only need an identity we have no reason to
+          # invent.
+          # --no-ff: never silently fast-forward past the merge we came
+          # to test.
+          git -c user.name='revalidate' -c user.email='revalidate@invalid' \
+            merge --no-commit --no-ff refs/heads/pr-head \
+            || decline "merge conflicts — a human must resolve them"
+
+          echo "merged ${PR_HEAD} into ${MAIN_TIP} — this tree is what would land"
+          echo "fresh=true" >> "$GITHUB_OUTPUT"
+
+          # Record the tree hash so the merge step can compare it to
+          # the squash's output tree (see `ciRestart` decision).
+          echo "merged_tree=$(git write-tree)" >> "$GITHUB_OUTPUT"
+
+      # ─────────────────────────────────────────────────────────────
+      # FAST PATH — may the gates be skipped, and only when PROVABLE.
+      # Both halves of gateSkip are required and neither is inferred.
+      # A wrong TRUE here MERGES A TREE NOTHING CHECKED.
+      # ─────────────────────────────────────────────────────────────
+      - name: Fast path
+        id: fast
+        if: steps.freshness.outputs.fresh == 'true'
+        uses: actions/github-script@v7
+        env:
+          ANCESTOR: ${{ steps.freshness.outputs.ancestor }}
+          TESTED_HEAD: ${{ matrix.pr.head }}
+          PR_NUMBER: ${{ matrix.pr.n }}
+        with:
+          script: |
+            const { gateSkip } = require(
+              `${process.env.GITHUB_WORKSPACE}/tools/merge/decisions.cjs`
+            );
+            const { owner, repo } = context.repo;
+
+            // Matched on PATH, never on name. A display name renames;
+            // the file does not.
+            const runs = await github.rest.actions.listWorkflowRunsForRepo({
+              owner, repo,
+              head_sha: process.env.TESTED_HEAD,
+              per_page: 100,
+            });
+            const ci = runs.data.workflow_runs.find(
+              (r) => r.path === '.github/workflows/ci.yml' && r.status === 'completed',
+            );
+
+            const verdict = gateSkip({
+              mainIsAncestor: process.env.ANCESTOR === 'true',
+              ciConclusion: ci?.conclusion ?? null,
+            });
+            core.info(
+              `#${process.env.PR_NUMBER}: ${verdict.skip ? 'SKIPPING' : 'running'} gates — ${verdict.reason}`
+            );
+            core.setOutput('skip', String(verdict.skip));
+
+      # ─────────────────────────────────────────────────────────────
+      # TREE GATES — only run when the merged tree is genuinely new.
+      # These re-validate content-derived facts (markdown lint,
+      # secret exposure). PR metadata gates (title, body, changelog)
+      # are not tree-derived and don't change when `main` advances.
+      # ─────────────────────────────────────────────────────────────
+      - name: Install markdownlint-cli2 (if not pre-baked)
+        if: steps.freshness.outputs.fresh == 'true' && steps.fast.outputs.skip != 'true'
+        shell: bash
+        run: |
+          if ! command -v markdownlint-cli2 >/dev/null 2>&1; then
+            sudo npm install -g markdownlint-cli2@0.23.2
+          fi
+          markdownlint-cli2 --version
+
+      - name: Lint markdown (merged tree)
+        if: steps.freshness.outputs.fresh == 'true' && steps.fast.outputs.skip != 'true'
+        shell: bash
+        run: markdownlint-cli2 "**/*.md" "#node_modules" "#.venv"
+
+      - name: Install gitleaks (if not pre-baked)
+        if: steps.freshness.outputs.fresh == 'true' && steps.fast.outputs.skip != 'true'
+        shell: bash
+        run: |
+          if ! command -v gitleaks >/dev/null 2>&1; then
+            GITLEAKS_VERSION=8.21.2
+            curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o /tmp/gitleaks.tar.gz
+            sudo tar -xzf /tmp/gitleaks.tar.gz -C /usr/local/bin gitleaks
+            sudo chmod +x /usr/local/bin/gitleaks
+          fi
+          gitleaks version
+
+      - name: Scan for secrets (merged tree)
+        if: steps.freshness.outputs.fresh == 'true' && steps.fast.outputs.skip != 'true'
+        shell: bash
+        run: gitleaks git . --log-opts=--all --redact --no-banner --verbose
+
+      # ─────────────────────────────────────────────────────────────
+      # MERGE — re-assert freshness, then perform the merge.
+      # ─────────────────────────────────────────────────────────────
+      - name: Merge
+        if: steps.freshness.outputs.fresh == 'true'
+        uses: actions/github-script@v7
+        env:
+          MAIN_TIP: ${{ needs.select.outputs.main }}
+          PR_NUMBER: ${{ matrix.pr.n }}
+          PR_HEAD: ${{ matrix.pr.head }}
+          # The tree this job built and validated. Compared to the
+          # squash output tree via `ciRestart` to decide whether main
+          # needs a full CI pass after the merge.
+          MERGED_TREE: ${{ steps.freshness.outputs.merged_tree }}
+          # Only ever true on manual dispatch — every automatic trigger
+          # leaves this empty, so the real path cannot be disabled by
+          # accident.
+          DRY_RUN: ${{ inputs.dry_run }}
+        with:
+          script: |
+            const { shouldMerge, ciRestart } = require(
+              `${process.env.GITHUB_WORKSPACE}/tools/merge/decisions.cjs`
+            );
+            const { owner, repo } = context.repo;
+            const number = Number(process.env.PR_NUMBER);
+            const testedBase = process.env.MAIN_TIP;
+            const testedHead = process.env.PR_HEAD;
+
+            // Re-assert IMMEDIATELY before the merge. The gates take
+            // minutes; a sibling PR in this matrix may have merged in
+            // that window, moving `main`. Merging anyway would land a
+            // tree tested against a tip that no longer exists — the
+            // exact defect this workflow exists to remove, reintroduced
+            // by its own runtime.
+            const { data: base } = await github.rest.repos.getBranch({
+              owner, repo, branch: 'main',
+            });
+            const { data: pr } = await github.rest.pulls.get({
+              owner, repo, pull_number: number,
+            });
+            const reviews = await github.paginate(github.rest.pulls.listReviews, {
+              owner, repo, pull_number: number, per_page: 100,
+            });
+
+            const verdict = shouldMerge({
+              testedBase,
+              currentBase: base.commit.sha,
+              testedHead,
+              currentHead: pr.head.sha,
+              state: pr.state,
+              draft: pr.draft,
+              mergeable: pr.mergeable,
+              mergeableState: pr.mergeable_state,
+              reviews,
+            });
+
+            if (!verdict.merge) {
+              core.warning(`#${number}: ${verdict.reason} — not merging this pass.`);
+              return;
+            }
+
+            if (process.env.DRY_RUN === 'true') {
+              core.notice(
+                `DRY RUN — would merge #${number} (${verdict.reason}). ` +
+                `Stopping before pulls.merge; nothing dispatched.`,
+              );
+              return;
+            }
+
+            let mergedSha;
+            try {
+              const { data } = await github.rest.pulls.merge({
+                owner, repo, pull_number: number,
+                merge_method: 'squash',
+                commit_title: `${pr.title} (#${number})`,
+                // `commit_message` is DELIBERATELY not set. An empty
+                // string means "no body" — GitHub does not fall back
+                // to a default. Omitting the field gives the default
+                // squash body (commit messages of the squashed
+                // commits), which preserves the reasoning and any
+                // `Closes #N` trailers.
+                sha: testedHead,
+              });
+              mergedSha = data.sha;
+              core.notice(
+                `#${number} merged as ${mergedSha} — validated against main ${testedBase}`,
+              );
+            } catch (err) {
+              if (err.status === 405 || err.status === 409) {
+                core.warning(
+                  `#${number}: GH refused merge (${err.status}) — likely head/base moved between shouldMerge and pulls.merge. Retry next tick.`,
+                );
+                return;
+              }
+              throw err;
+            }
+
+            // ─────────────────────────────────────────────
+            // Delete the head branch. `delete_branch_on_merge` at the
+            // repo level would work too, but doing it here is scoped
+            // to the queue's actions and never surprises anyone using
+            // the API to merge manually.
+            // ─────────────────────────────────────────────
+            try {
+              await github.rest.git.deleteRef({
+                owner, repo, ref: `heads/${pr.head.ref}`,
+              });
+            } catch (err) {
+              core.info(`#${number}: branch delete skipped (${err.status ?? '?'})`);
+            }
+
+            // ─────────────────────────────────────────────
+            // Hand-dispatch what our own push cannot: a token push
+            // raises no events, so this merge produces no
+            // `workflow_run` for `main` and no `push` to wake the next
+            // pass of THIS workflow.
+            //
+            // The revalidate re-run always fires — it continues the
+            // queue, not re-proving a tree. CI on main is decided by
+            // `ciRestart`: skip when the squash tree is byte-identical
+            // to the one CI already validated.
+            // ─────────────────────────────────────────────
+            let validatedTree = null;
+            try {
+              const { data: mergedCommit } = await github.rest.git.getCommit({
+                owner, repo, commit_sha: mergedSha,
+              });
+              validatedTree = mergedCommit.tree.sha;
+            } catch (err) {
+              core.info(`could not read merged commit tree: ${err.message}`);
+            }
+
+            const restart = ciRestart({
+              mergedTree: process.env.MERGED_TREE || null,
+              validatedTree,
+            });
+            core.info(`ci restart on main: ${restart.restart ? 'YES' : 'no'} — ${restart.reason}`);
+
+            if (restart.restart) {
+              try {
+                await github.rest.actions.createWorkflowDispatch({
+                  owner, repo,
+                  workflow_id: 'ci.yml',
+                  ref: 'main',
+                });
+                core.info('dispatched ci.yml on main');
+              } catch (err) {
+                core.warning(`could not dispatch ci.yml: ${err.message}`);
+              }
+            }
+
+            // Always re-dispatch this workflow so the next candidate is
+            // considered without waiting on the hourly cron.
+            try {
+              await github.rest.actions.createWorkflowDispatch({
+                owner, repo,
+                workflow_id: 'pr-revalidate.yml',
+                ref: 'main',
+              });
+              core.info('dispatched pr-revalidate.yml for next candidate');
+            } catch (err) {
+              core.warning(`could not dispatch pr-revalidate.yml: ${err.message}`);
+            }

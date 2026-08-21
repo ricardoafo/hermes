@@ -314,19 +314,37 @@ conflict when one merges. Two mitigations:
 
 2. **Serialize merges when unavoidable** — for the rare case where
    parallel PRs unavoidably touch the same non-generated file,
-   merge one, wait for `pr-auto-update` workflow to rebase the
-   others, then merge them in turn.
+   merge one, then rebase the others locally against the new `main`
+   and push. The merge queue revalidates the merged tree on every
+   candidate, so a rebase-and-push is the only human action needed.
 
-### Auto-update stale PRs
+### Merge queue: revalidate-then-merge
 
-`.github/workflows/pr-auto-update.yml` runs on every push to `main`
-and updates every open PR to include the latest main. Runs as
-`github-actions[bot]`, which is a system actor — its update commits
-do NOT invalidate prior reviewer approvals via
-`require_last_push_approval`.
+`.github/workflows/pr-revalidate.yml` is the merge queue. It runs on
+CI completion, on human approval, on push to `main`, and hourly. For
+each candidate PR that is approved and mergeable, it:
 
-Result: after any PR merges, all other open PRs auto-sync within
-~10 seconds. You never click "Update branch" manually.
+1. Checks out `main` at the exact SHA it resolved
+2. Fetches the PR head at the exact SHA that was approved
+3. Builds the merge locally with `git merge --no-commit --no-ff`
+4. Runs tree-verifying gates on that tree (markdown-lint, secrets scan)
+   — skipped when the head already contains `main` (fast-forward) AND
+   CI on that head concluded `success`, because the tree is proven
+5. Re-asserts freshness (`main` still there, head still approved) then
+   calls `pulls.merge` with `sha=testedHead`
+
+**No push to any PR branch happens, ever.** That is the whole design.
+`require_last_push_approval: true` + `dismiss_stale_reviews_on_push:
+true` become harmless because the merge queue never pushes to the PR.
+Approvals survive.
+
+The judgement lives in `tools/merge/decisions.cjs`, unit-tested by
+`tools/merge/decisions.test.cjs`. Adding a new refusal rule means
+adding a test first, not editing YAML.
+
+To validate a change to `pr-revalidate.yml` against real open PRs
+without merging anything: run it via `workflow_dispatch` with
+`dry_run: true`. Every gate runs; `pulls.merge` is skipped.
 
 ### No `main` history rewrites
 
@@ -349,8 +367,30 @@ See `scripts/dev/apply-branch-protection.sh` (lands in Phase 0). Current rules:
 - **Do not allow bypassing the above settings**: on (applies to admins too)
 - **Allow force pushes**: off
 - **Allow deletions**: off
+- **Require branches to be up to date before merging (`strict`)**: **off**
 
 Required status checks are added incrementally as CI workflows land in Phase 0.
+
+### Why `strict` is off (and why that is safe)
+
+`strict_required_status_checks_policy: true` requires a PR branch to
+include the current `main` tip before it can merge. Keeping a branch
+current requires a PUSH, and any push invalidates the reviewer's
+approval under `require_last_push_approval` — the two settings fight
+each other.
+
+With `strict` off, freshness is enforced by the merge queue instead:
+`pr-revalidate.yml` refuses to merge unless it has just checked out
+`main` at the exact SHA, fetched the PR head at the exact approved
+SHA, built the merge locally, and asserted twice that neither moved.
+The tree that lands is provably validated against the current `main`,
+without requiring a push to the PR branch.
+
+Trade-off: if a change to the merge-queue workflow itself is broken,
+`strict off` gives less "belt and braces" protection. Mitigation: the
+merge decisions are unit-tested (`tools/merge/decisions.test.cjs`) and
+`pr-revalidate.yml` supports a `dry_run` dispatch mode for testing
+changes against real open PRs without merging.
 
 ## Emergency exceptions
 

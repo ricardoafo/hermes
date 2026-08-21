@@ -426,7 +426,7 @@ Any suppression must be:
 
 A **merge queue** pattern re-tests the exact merge tree at the exact approved SHA before landing, solving the "approval → new push → approval invalidated" treadmill.
 
-For hermes: adopted early despite solo-contributor + claude-bot scale. Reason: PRs can queue up when the bot ships work in parallel batches, and rebase-on-latest-main invalidates prior approvals under our `require_last_push_approval` protection. Pattern is a custom workflow (`.github/workflows/merge-queue.yml`) since GitHub's native merge queue is not available on private repos on the current plan tier.
+For hermes: adopted early despite solo-contributor + claude-bot scale. Reason: PRs can queue up when the bot ships work in parallel batches, and rebase-on-latest-main invalidates prior approvals under our `require_last_push_approval` protection. Pattern is a custom workflow (`.github/workflows/pr-revalidate.yml`) since GitHub's native merge queue is not available on private repos on the current plan tier. The revalidate design builds the merge tree locally and asserts freshness rather than pushing the branch forward — decisions live in `tools/merge/decisions.cjs` and are unit-tested.
 
 ### Aggregator pattern
 

@@ -171,16 +171,20 @@ in hermes.
 
 ### 9. Merge queue
 
-- **Who**: `.github/workflows/merge-queue.yml`
-- **What**: Serialized queue picks the oldest approved + CI-green PR and
-  merges via GH squash-merge API. Retries on network hiccup, on
-  out-of-date-branch (waits for author to rebase), on head-SHA change
-  (waits for CI to re-run).
+- **Who**: `.github/workflows/pr-revalidate.yml`
+- **What**: Serialized revalidate-then-merge queue. Picks each approved,
+  mergeable PR, checks out `main` at the resolved SHA, fetches the PR
+  head at the approved SHA, builds the merge locally, runs tree gates
+  on the merged tree (skipped when it is a fast-forward and CI on the
+  head is green), re-asserts freshness, then merges via GH squash-merge
+  API. Never pushes to the PR branch, so `require_last_push_approval`
+  cannot invalidate the approval. Decisions live in
+  `tools/merge/decisions.cjs` (unit-tested).
 - **State**: ✅ Ready (this PR)
 
 ### 10. Merge to main
 
-- **Who**: `merge-queue.yml` (via GH API)
+- **Who**: `pr-revalidate.yml` (via GH API)
 - **What**: Squash-merge → single commit on main, PR title becomes the
   commit message, remote branch auto-deletes.
 - **Automation on merge**:
@@ -202,7 +206,7 @@ in hermes.
 
 - **Who**: GH Actions → VPS via SSH
 - **What**: Build wheel via `uv`, push to VPS, run migrations, restart
-  systemd services. Serialized via deploy queue (adapt merge-queue pattern
+  systemd services. Serialized via deploy queue (adapt pr-revalidate pattern
   for `main`-push events).
 - **State**: 📅 Deferred. User confirmed: we develop first, deploy later.
   Full CD design in ADR-003 §09.
@@ -285,7 +289,7 @@ Two settings live in GitHub's UI and can't be fully configured via CLI:
 - [`docs/guides/dev-workflow.md`](dev-workflow.md) — git/gh discipline
 - [`AGENTS.md`](../../AGENTS.md) — AI collaboration protocol
 - [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) — the CI implementation
-- [`.github/workflows/merge-queue.yml`](../../.github/workflows/merge-queue.yml) — the merge queue
+- [`.github/workflows/pr-revalidate.yml`](../../.github/workflows/pr-revalidate.yml) — the merge queue
 - [ADR-003 § 09 Deployment](../architecture/adr-003-solution-architecture/09-deployment.md) — CD design (Phase 0+)
 - [ADR-006](../architecture/adr-006-versioning-strategy.md) — SemVer + release
 - [ADR-007](../architecture/adr-007-testing-strategy.md) — testing tiers
