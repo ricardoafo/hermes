@@ -50,14 +50,22 @@ When done:
 
 ## What runs where
 
-- **`runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}`** — every job in
-  `.github/workflows/ci.yml` and `merge-queue.yml` uses this pattern.
-  When `RUNNER_LABEL` is set, jobs go to this runner. When unset, they
-  target GitHub-hosted `ubuntu-latest`.
-- The runner image includes: Ubuntu 24.04, git, curl, jq, Docker CLI
-  (socket-mounted for gitleaks + similar actions).
-- Python, uv, Node get installed per-job via `astral-sh/setup-uv` /
-  `actions/setup-node` — keeps the image lean and catches version drift.
+- **`runs-on: ${{ vars.RUNNER_LABEL && fromJSON(...) || 'ubuntu-latest' }}`** —
+  every job in `.github/workflows/ci.yml` and `merge-queue.yml` uses this
+  pattern. When the `RUNNER_LABEL` repo variable is set, jobs go to this
+  runner. When unset, they target GitHub-hosted `ubuntu-latest`.
+- **The runner image is pre-baked for speed**. Contents:
+  - Ubuntu 24.04 base
+  - Python 3.14 (via uv `python install`)
+  - uv 0.12.5 (pinned)
+  - Node 24 (nodesource) + markdownlint-cli2 0.23.2 (pinned, installed globally)
+  - gitleaks 8.21.2 (pinned binary — avoids Docker pull on every scan)
+  - git, curl, jq, Docker CLI (socket-mounted for container-based actions)
+- **Warm caches persist across sessions** (survive `--force-recreate`):
+  `~/.cache/uv`, `~/.cache/npm`, `~/.cache/pip`. Big speed-up on repeat
+  jobs. `./down.sh --prune` clears them for a cold-start reset.
+- **Rebuild the image when versions bump**: edit `Dockerfile` ARG values,
+  `./up.sh` detects the newer Dockerfile and rebuilds automatically.
 
 ## Security notes
 
