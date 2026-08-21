@@ -1,0 +1,38 @@
+# Normalize all text files to LF on checkin (kills "LF will be replaced by
+# CRLF" warnings on Windows). Binary files stay untouched.
+* text=auto eol=lf
+
+# Explicit text types
+*.md       text eol=lf
+*.py       text eol=lf
+*.pyi      text eol=lf
+*.toml     text eol=lf
+*.yaml     text eol=lf
+*.yml      text eol=lf
+*.json     text eol=lf
+*.jsonc    text eol=lf
+*.sh       text eol=lf
+*.cfg      text eol=lf
+*.ini      text eol=lf
+*.txt      text eol=lf
+*.sql      text eol=lf
+
+# Windows-only files (rare — none expected in hermes) keep CRLF
+*.bat      text eol=crlf
+*.cmd      text eol=crlf
+*.ps1      text eol=crlf
+
+# Binary — never touch
+*.png      binary
+*.jpg      binary
+*.jpeg     binary
+*.gif      binary
+*.ico      binary
+*.pdf      binary
+*.db       binary
+*.sqlite   binary
+*.sqlite3  binary
+
+# Lockfiles — force LF, exclude from language stats + diff noise
+uv.lock            text eol=lf linguist-generated=true
+package-lock.json  text eol=lf linguist-generated=true

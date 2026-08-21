@@ -1,0 +1,114 @@
+name: Bug report
+description: Report a defect. Bug-triager agent will pick this up and assign severity.
+title: "[bug] "
+labels: ["type:fix"]
+assignees:
+  - ricardoafo
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Structured bug report. Every field matters — the `bug-triager` agent uses
+        the severity rubric at `~/.claude/rules/severity-rubric.md` to classify
+        this and cite the exact axis row (e.g. `Security axis S2` or `Functional
+        axis F1`). No vibes-based severity. See
+        [docs/guides/dev-workflow.md](../../docs/guides/dev-workflow.md).
+
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: One-sentence description of the observed problem
+      placeholder: "e.g. FIFO lot consumption picks newest lot instead of oldest"
+    validations:
+      required: true
+
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed
+      description: >
+        What actually happened. Paste log lines, API responses, screenshots.
+        Concrete artifacts only — no "I tested and it broke".
+      placeholder: |
+        Log line at 2026-08-21T14:12:03Z from hermes.engines.fifo:
+          consuming lot_id=lot-abc (created 2026-08-20) for sale of 0.5 BTC
+          expected: lot_id=lot-xyz (created 2026-06-01, oldest with qty>=0.5)
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+      description: What should have happened, with citation (ADR, spec, invariant)
+      placeholder: |
+        Per ADR-003 §03 (persistence-schema) and F1 (tax posture), FIFO consumption
+        must pick the oldest lot with sufficient qty first. Invariant I-04.
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why this matters
+      description: >
+        What rule/invariant/law is being violated? Reference the severity rubric
+        row if known (e.g. "Functional axis F1: IVA breakdown missing").
+      placeholder: |
+        Functional axis F1 — wrong FIFO order produces wrong realized gain,
+        which produces wrong Modelo 100 declaration. Legal exposure.
+    validations:
+      required: true
+
+  - type: textarea
+    id: where
+    attributes:
+      label: Where
+      description: File paths, function names, commit SHAs, migration numbers
+      placeholder: |
+        src/hermes/domain/fifo/lot_consumer.py:47 (consume_next_lot)
+        migration 0003_add_lot_indexes.sql
+        first observed on commit 1a9bc53
+    validations:
+      required: true
+
+  - type: dropdown
+    id: silent_failure
+    attributes:
+      label: Silent failure?
+      description: >
+        Did the system report success while doing the wrong thing? Silent
+        failures are always at least SEV-2. Loud crashes are usually less
+        severe (they surface fast).
+      options:
+        - "No — user got an error"
+        - "Partial — logged a warning but continued"
+        - "YES — reported success while doing the wrong thing"
+      default: 0
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Minimal steps or command that reproduces the bug
+      placeholder: |
+        1. `hermes lot list --coin BTC`
+        2. Note that 3 lots exist for BTC
+        3. `hermes sell --coin BTC --qty 0.5 --dry-run`
+        4. Observe consumed lot ID vs oldest lot ID
+    validations:
+      required: false
+
+  - type: textarea
+    id: proposed_severity
+    attributes:
+      label: Proposed severity + rubric row
+      description: >
+        Your best guess. Bug-triager will validate. Cite the row.
+        Format: `SEV-N (axis, row)`.
+      placeholder: "SEV-2 (Functional axis F1) — wrong legal output; blocks merge; fix in 72h"
+    validations:
+      required: false
