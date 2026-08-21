@@ -1,0 +1,77 @@
+name: Feature request
+description: Propose a new capability. For architectural changes, open an SDD change instead.
+title: "[feat] "
+labels: ["type:feat"]
+assignees:
+  - ricardoafo
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Before opening**: is this an architectural decision, cross-cutting
+        change, or new subsystem? If yes, start an SDD change via
+        `/sdd-new <name>` instead — the SDD workflow produces
+        proposal + spec + design + tasks that far outweigh what fits in an
+        issue. GitHub issues are for atomic work items that map to a single
+        PR.
+
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: One-sentence description of what you want
+      placeholder: "e.g. Add `hermes lot show <id>` CLI subcommand"
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: What problem does this solve? What triggered the ask?
+      placeholder: |
+        During shadow-mode I need to inspect specific lots to verify FIFO
+        picked the correct one. Currently only `lot list` exists, which
+        dumps all lots — too noisy.
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope + acceptance criteria
+      description: >
+        What does "done" look like? List checkable criteria. If it can't be
+        listed, it's probably too big for one PR — split it.
+      placeholder: |
+        - `hermes lot show <lot-id>` prints: coin, created_at, qty_initial,
+          qty_remaining, consumption events
+        - Exit 1 with clear error if lot_id doesn't exist
+        - Test coverage per ADR-007 tier (adapters ≥80%)
+        - Docstring per ADR-009 (Google style, public API)
+    validations:
+      required: true
+
+  - type: textarea
+    id: out_of_scope
+    attributes:
+      label: Out of scope
+      description: >
+        What are you explicitly NOT doing here? Prevents scope creep and
+        review friction.
+      placeholder: |
+        - No changes to lot consumption logic (separate PR if needed)
+        - No new persistence schema fields
+    validations:
+      required: false
+
+  - type: textarea
+    id: related
+    attributes:
+      label: Related
+      description: ADRs, prior PRs, prior issues, external docs
+      placeholder: |
+        - ADR-003 §03 (persistence-schema)
+        - Prior: #12 (lot list command)
+    validations:
+      required: false

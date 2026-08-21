@@ -1,0 +1,46 @@
+name: Chore
+description: Tooling, deps, CI, config, repo hygiene. No user-visible runtime impact.
+title: "[chore] "
+labels: ["type:chore"]
+assignees:
+  - ricardoafo
+body:
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      placeholder: "e.g. Add Renovate config for uv-managed lockfile"
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: Why now? Deferred from where? Referenced by which ADR?
+      placeholder: |
+        ADR-010 mandates Renovate over Dependabot. Deferred from bootstrap.
+        Needs to land before Phase 0 first Python code so `uv.lock` gets
+        automated PRs from day 1.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance
+      placeholder: |
+        - `renovate.json` in repo root
+        - Renovate GitHub App installed
+        - Test PR shows up within 24h of merge
+        - Documented in `docs/guides/dev-workflow.md`
+    validations:
+      required: true
+
+  - type: textarea
+    id: related
+    attributes:
+      label: Related
+      placeholder: "ADR-010, prior chore issues"
+    validations:
+      required: false
