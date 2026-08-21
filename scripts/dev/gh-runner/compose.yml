@@ -38,12 +38,12 @@ services:
       # Repository (default: hermes; override RUNNER_REPOSITORY to serve
       # a different repo from the same image)
       RUNNER_REPOSITORY: ${RUNNER_REPOSITORY:-ricardoafo/hermes}
-      # Auth: RUNNER_REGISTRATION_PAT is REQUIRED for the 24/7 pattern.
+      # Auth: HERMES_RUNNER_REGISTRATION_PAT is REQUIRED for the 24/7 pattern.
       # Each container restart (after --ephemeral exit) needs a fresh
       # registration token, which the entrypoint mints via the PAT.
       # Pre-fetched RUNNER_TOKEN mode (1h TTL) is still supported for
       # ad-hoc / troubleshooting invocations but not viable for 24/7.
-      RUNNER_REGISTRATION_PAT: ${RUNNER_REGISTRATION_PAT:?RUNNER_REGISTRATION_PAT is required — put it in .env (see .env.example)}
+      HERMES_RUNNER_REGISTRATION_PAT: ${HERMES_RUNNER_REGISTRATION_PAT:?HERMES_RUNNER_REGISTRATION_PAT is required — put it in .env (see .env.example)}
       RUNNER_TOKEN: ${RUNNER_TOKEN:-}
       RUNNER_NAME: gh-runner-hermes-${HOSTNAME:-local}
       RUNNER_LABELS: self-hosted,linux,x64,hermes

@@ -9,7 +9,7 @@
 #      launcher fetches a fresh token via `gh api` right before `docker
 #      compose up`. Deregistration uses the same short-lived flow.
 #
-#   2. RUNNER_REGISTRATION_PAT — fine-grained PAT with Administration:
+#   2. HERMES_RUNNER_REGISTRATION_PAT — fine-grained PAT with Administration:
 #      Read+write. Auto-fetches a fresh registration token per registration
 #      + a fresh remove-token per deregistration. Best for 24/7 loops that
 #      outlive the 1-hour TTL of a pre-fetched token.
@@ -31,17 +31,17 @@ if [[ -n "${RUNNER_TOKEN:-}" ]]; then
     echo "Using pre-fetched RUNNER_TOKEN (1-hour TTL)."
     REG_TOKEN="${RUNNER_TOKEN}"
     AUTH_MODE="pre-fetched"
-elif [[ -n "${RUNNER_REGISTRATION_PAT:-}" ]]; then
+elif [[ -n "${HERMES_RUNNER_REGISTRATION_PAT:-}" ]]; then
     echo "Fetching fresh registration token via PAT…"
     REG_TOKEN=$(curl -fsSL \
         -X POST \
-        -H "Authorization: Bearer ${RUNNER_REGISTRATION_PAT}" \
+        -H "Authorization: Bearer ${HERMES_RUNNER_REGISTRATION_PAT}" \
         -H "Accept: application/vnd.github+json" \
         -H "X-GitHub-Api-Version: 2022-11-28" \
         "${REPO_API}/actions/runners/registration-token" | jq -r .token)
     AUTH_MODE="pat"
 else
-    echo "ERROR: need either RUNNER_TOKEN (pre-fetched) or RUNNER_REGISTRATION_PAT"
+    echo "ERROR: need either RUNNER_TOKEN (pre-fetched) or HERMES_RUNNER_REGISTRATION_PAT"
     echo "For on-demand: fetch via 'gh api POST /repos/${RUNNER_REPOSITORY}/actions/runners/registration-token'"
     exit 1
 fi
@@ -63,7 +63,7 @@ cleanup() {
         echo "Deregistering runner via PAT…"
         REMOVE_TOKEN=$(curl -fsSL \
             -X POST \
-            -H "Authorization: Bearer ${RUNNER_REGISTRATION_PAT}" \
+            -H "Authorization: Bearer ${HERMES_RUNNER_REGISTRATION_PAT}" \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "${REPO_API}/actions/runners/remove-token" | jq -r .token 2>/dev/null || echo "")

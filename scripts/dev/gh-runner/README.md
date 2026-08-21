@@ -32,7 +32,7 @@ so the same setup is reusable for any repo by pointing
 ```bash
 cd scripts/dev/gh-runner
 cp .env.example .env
-# edit .env — paste the PAT into RUNNER_REGISTRATION_PAT
+# edit .env — paste the PAT into HERMES_RUNNER_REGISTRATION_PAT
 ```
 
 `.env` is gitignored (repo root `.gitignore`, `.env` pattern). Never
@@ -163,7 +163,7 @@ registration tokens.
 
 ### 24/7 flow (default, requires PAT)
 
-The container's entrypoint uses `RUNNER_REGISTRATION_PAT` to mint fresh
+The container's entrypoint uses `HERMES_RUNNER_REGISTRATION_PAT` to mint fresh
 registration tokens for each registration cycle (once per job with
 `--ephemeral`) and remove-tokens for clean deregistration on shutdown.
 
@@ -179,7 +179,7 @@ docker compose up   # attached; ONE job then exits
 unset RUNNER_TOKEN
 ```
 
-`RUNNER_TOKEN` beats `RUNNER_REGISTRATION_PAT` if both are set. Token
+`RUNNER_TOKEN` beats `HERMES_RUNNER_REGISTRATION_PAT` if both are set. Token
 is 1h TTL, so this doesn't work for 24/7.
 
 ## Security notes
@@ -199,7 +199,7 @@ is 1h TTL, so this doesn't work for 24/7.
 
 ## Troubleshooting
 
-- **`docker compose up` errors on missing `RUNNER_REGISTRATION_PAT`** →
+- **`docker compose up` errors on missing `HERMES_RUNNER_REGISTRATION_PAT`** →
   `.env` doesn't exist or PAT var is unset. See [Setup](#setup-one-time).
 - **Registration fails with 401 / 403** → PAT expired or has wrong
   scopes. Recreate with `Administration: Read and write` on
