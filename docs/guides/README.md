@@ -12,6 +12,7 @@ for machines. Per [ADR-009](../architecture/adr-009-documentation-strategy.md)
 | [dev-workflow.md](dev-workflow.md) | Branching, commits, PRs, merge policy, delete-branch safety, zero-footprint policy | 2026-08-21 |
 | [ai-development-lifecycle.md](ai-development-lifecycle.md) | End-to-end flow: idea → issue → PR → CI → merge → deploy; how milestones/issues/project board fill in as work moves | 2026-08-21 |
 | [prose-style.md](prose-style.md) | Comments, docstrings, docs, PR/issue bodies — banned words, formatting rules, per-artifact style | 2026-08-21 |
+| [vps-operations.md](vps-operations.md) | SSH access, OS maintenance, Docker + Tailscale + ufw ops, systemd services, troubleshooting | 2026-08-21 |
 
 ## When to add a guide
 
