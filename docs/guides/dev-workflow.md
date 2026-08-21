@@ -143,18 +143,24 @@ ADR, a Q&A, or an incident, reference it in the body.
 
 ### PR template sections (mandatory)
 
+The Conventional Commits type prefix in the PR title conveys the change
+category — there is no separate `Change type` section in the template.
+
 1. **Summary** — 1-3 sentences: what changes and why.
-2. **Related** — ADR, Q&A, incident, prior PR, or `N/A`.
-3. **Change type** — check one: feat / fix / docs / chore / refactor / test
-   / perf / build / ci / revert.
-4. **Testing** — how the change was verified. For code changes: which tests
-   were added or extended, coverage delta if relevant. For docs: `markdownlint
-   passes` at minimum.
-5. **Zero-warnings compliance** — checkbox confirming all linters pass with
-   zero warnings. This is the enforceable version of the global rule.
-6. **Risk** — what could break, who feels it first, rollback plan if any.
-7. **Follow-ups** — issues opened or planned for out-of-scope items surfaced
-   during this PR. Prevents scope creep.
+2. **Related** — ADR, Q&A, incident, prior PR, GitHub issue. Include
+   `Closes #N` for auto-close on merge.
+3. **Testing** — how the change was verified. Concrete measurements over
+   assertions ("what did you measure?" — not "I ran it and it worked").
+   For docs: at minimum `markdownlint-cli2 passes with zero warnings across
+   N files`. For code: which pytest files, coverage delta, benchmark
+   numbers if perf.
+4. **Zero-warnings compliance** — a plain assertion sentence (not a
+   checkbox — unchecked boxes render as open tasks in the GH UI). All
+   applicable linters pass with zero warnings; if a suppression was
+   unavoidable, explain in Risk.
+5. **Risk** — what could break, who feels it first, rollback plan if any.
+6. **Follow-ups** — issues opened or planned for out-of-scope items
+   surfaced during this PR. Prevents scope creep.
 
 ### Reviewers and approvals
 
