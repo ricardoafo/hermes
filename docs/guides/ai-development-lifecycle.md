@@ -111,32 +111,40 @@ in hermes.
   hypothesis / syrupy / mutmut / detect-secrets / `sev1_guard` plugin) lands
   in Phase 0.
 
-### 6. Push + open PR
+### 6. Push + delete local + open PR
 
 - **Who**: bot (via Agent) or Ricardo
-- **What**: two commands:
+- **What**: four commands, in this order:
 
   ```bash
-  git push -u origin <branch>        # remote now has your work
+  git push -u origin <branch>        # push lands in GH (safety condition met)
+  git checkout main
+  git branch -d <branch>             # safe form — passes because upstream matches
   gh pr create --head <branch> ...   # --head refers to the REMOTE branch
   ```
 
-  The local branch STAYS while the PR is open. Review comments and
-  further iteration happen on the same branch, so keeping it checked
-  out avoids `git fetch origin <branch>:<branch>` friction on every
-  round-trip.
+  The local branch is deleted **the moment the push has landed in GH**,
+  before the PR is opened. Push completing is the definite trigger: the
+  work is safe on remote, the local copy is now redundant. Deferring
+  to post-merge would leave a leftover branch sitting in `git branch`
+  for however long review takes, and "clean up later" reliably becomes
+  "clean up never".
 - **Where**: `github.com/ricardoafo/hermes/pull/N`
 - **State**: ✅ Ready
 - **Iteration flow** (when review comments arrive, need to change something):
 
   ```bash
-  git checkout <branch>              # already exists locally — no fetch needed
+  git fetch origin <branch>:<branch>
+  git checkout <branch>
   # edit
   git push
+  git checkout main
+  git branch -d <branch>             # every push triggers a delete
   ```
 
-  Each iteration is just an edit + push. No branch dance. Local cleanup
-  happens once, in step 10 (after merge).
+  Same discipline applies to every iteration. Each push is followed by
+  a local delete — never a shell state where a stale feature branch
+  sits after its work is on remote.
 
 ### 7. CI pipeline
 
@@ -187,19 +195,14 @@ in hermes.
   - Project board moves item Backlog/In review → Done
   - Milestone progress % increments
   - Remote branch auto-deleted by GH (repo setting)
-- **Local cleanup** (do this once the PR is merged):
+  - Local branch was already deleted in step 6 — nothing to clean up here
+- **Local sync after merge** (fast-forward main, prune the tracking ref):
 
   ```bash
-  git checkout main
-  git pull                           # squash commit lands locally
-  git fetch --prune                  # removes the tracking ref of the deleted remote
-  git branch -d <branch>             # safe form — refuses if unmerged locally
+  git fetch --prune origin
+  git pull --ff-only origin main
   ```
 
-  Deleting locally BEFORE merge means fetching the branch back to
-  handle review comments. Deleting AFTER merge is the natural point:
-  the work is on `main`, the remote branch is gone, `-d` (safe form)
-  will pass without complaint.
 - **State**: ✅ Ready
 
 ### 11. Release

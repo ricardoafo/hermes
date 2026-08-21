@@ -207,12 +207,13 @@ Enabled at the repo level. Feature branches disappear as soon as their PR
 merges. This keeps `git branch -r` uncluttered and makes stale branches
 detectable at a glance.
 
-### Keep the local branch while the PR is open
+### Delete the local branch the moment the push lands in GH
 
-The local branch STAYS on disk from `git push` through merge. Review
-comments and iteration happen on the same branch, so keeping it
-checked out avoids the `git fetch origin <branch>:<branch>` dance on
-every round-trip.
+**Every push is followed by a local branch delete.** Push completing is
+the definite trigger — remote now has your work, safety condition met,
+delete now. Deferring the delete to post-merge leaves an orphan branch
+sitting in `git branch` for however long review takes, and "clean up
+later" reliably becomes "clean up never".
 
 Sequence:
 
@@ -220,37 +221,52 @@ Sequence:
 # 1. Push the branch (upstream tracking gets set)
 git push -u origin <feature-branch>
 
-# 2. Open the PR (--head refers to the REMOTE branch)
+# 2. Return to main
+git checkout main
+
+# 3. Delete the local branch
+git branch -d <feature-branch>
+
+# 4. Open the PR (--head refers to the REMOTE branch, not local)
 gh pr create --head <feature-branch> ...
 ```
 
-That's it until you have review comments to address.
+`git branch -d` (safe form) checks that the branch is merged into its
+upstream. Since you just pushed, upstream matches local, so `-d` succeeds.
+If `-d` refuses, something is wrong — investigate before force-deleting.
 
 ### Iterating on a PR (review comments arrive)
 
-The branch is already checked out. Just edit and push:
+Same discipline applies to every iteration. Re-fetch the branch, edit,
+push, delete — every cycle:
 
 ```bash
-git checkout <feature-branch>       # already exists locally — no fetch needed
+git fetch origin <feature-branch>:<feature-branch>
+git checkout <feature-branch>
 # edit
 git push
+git checkout main
+git branch -d <feature-branch>
 ```
 
-### After merge — clean up locally
+Never leave a shell state where a stale feature branch sits after its
+work is on remote. If you notice a leftover branch, you missed a delete
+step in the prior cycle — clean it now.
 
-Once the PR is merged, the remote branch auto-deletes
-(`--delete-branch-on-merge` repo setting). Local cleanup:
+### After merge — nothing to clean up locally
+
+Because the local branch was deleted in the push step, there is
+nothing local to delete after Ricardo merges the PR. Remote branch
+auto-deletes (`--delete-branch-on-merge` repo setting). Fast-forward
+local main:
 
 ```bash
-git checkout main
-git pull --ff-only origin main      # squash commit lands locally
-git fetch --prune origin            # removes the deleted remote-tracking ref
-git branch -d <feature-branch>      # safe form — refuses if unmerged locally
+git fetch --prune origin
+git pull --ff-only origin main
 ```
 
-`git branch -d` (safe form) checks that the branch is merged into its
-upstream. After merge the squash lives on `main`, so `-d` succeeds. If
-`-d` refuses, something is wrong — investigate before force-deleting.
+`--prune` removes stale remote-tracking refs so `git branch -a` stays
+tidy. That's the whole post-merge cleanup.
 
 ### No force-push to `main`
 
