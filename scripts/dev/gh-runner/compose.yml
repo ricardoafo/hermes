@@ -1,0 +1,88 @@
+# Docker Compose config for a self-hosted GitHub Actions runner.
+#
+# One image (gh-runner:latest), one container per target repo. Compose
+# project name (the parent directory name) namespaces the volumes, so
+# multiple runners on the same host don't collide.
+#
+# On-demand pattern: up.sh starts, down.sh stops. NOT restart: always —
+# runner is up only when actively working with Claude and expecting CI
+# to fire.
+#
+# Ephemeral: --ephemeral flag makes the runner process ONE job then exit.
+# up.sh --loop re-runs the container after each job.
+
+services:
+  runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        RUNNER_VERSION: '2.336.0'
+    image: gh-runner:latest
+    container_name: gh-runner-hermes
+    restart: 'no'
+    environment:
+      # Repository (default: hermes; override RUNNER_REPOSITORY to serve
+      # a different repo from the same image)
+      RUNNER_REPOSITORY: ${RUNNER_REPOSITORY:-ricardoafo/hermes}
+      # Auth: exactly ONE must be non-empty at compose-up time.
+      #  - RUNNER_TOKEN: pre-fetched 1-hour registration token. Preferred
+      #    for on-demand — no disk persistence. up.sh fetches via gh api
+      #    and exports before invoking compose.
+      #  - RUNNER_REGISTRATION_PAT: fine-grained PAT with Administration
+      #    Read+write. For 24/7 loops needing repeated re-registration.
+      RUNNER_TOKEN: ${RUNNER_TOKEN:-}
+      RUNNER_REGISTRATION_PAT: ${RUNNER_REGISTRATION_PAT:-}
+      RUNNER_NAME: gh-runner-hermes-${HOSTNAME:-local}
+      RUNNER_LABELS: self-hosted,linux,x64,hermes
+    mem_limit: 4g
+    cpus: 4
+    volumes:
+      # Host docker socket → runner can spawn sibling containers when a
+      # workflow step uses container-based actions. NOTE: security-
+      # sensitive — runner effectively has root on the host via docker.
+      # Acceptable for solo-dev + private repo + trusted PRs only.
+      - /var/run/docker.sock:/var/run/docker.sock
+
+      # ─────────────────────────────────────────────────────
+      # Tool caches — persist across --force-recreate. First job
+      # populates, subsequent jobs read.
+      # ─────────────────────────────────────────────────────
+      # uv wheel cache (Python deps)
+      - uv-cache:/home/runner/.cache/uv
+      # npm cache (markdownlint updates, any node-based action)
+      - npm-cache:/home/runner/.cache/npm
+      # pip cache (fallback if any step uses pip directly)
+      - pip-cache:/home/runner/.cache/pip
+
+      # ─────────────────────────────────────────────────────
+      # Phase 0 test-tool caches — significant speedup on re-runs:
+      #   pytest: collection cache, last-failed cache
+      #   mypy: type-info incremental cache
+      #   ruff: rule + AST cache
+      #   hypothesis: shrinking database (also correctness — reusing
+      #     shrinks avoids re-discovering minimal failing examples)
+      # ─────────────────────────────────────────────────────
+      - pytest-cache:/home/runner/.cache/pytest
+      - mypy-cache:/home/runner/.cache/mypy
+      - ruff-cache:/home/runner/.cache/ruff
+      - hypothesis-db:/home/runner/.cache/hypothesis
+
+      # Actions runner keeps downloaded actions here (actions/checkout,
+      # setup-uv, etc.). Persisting avoids re-download on every job.
+      - actions-cache:/home/runner/_work/_actions
+
+      # Workspace: writable but ephemeral (--force-recreate wipes the
+      # container; git clones happen fresh per job via actions/checkout).
+      - runner-work:/home/runner/_work
+
+volumes:
+  uv-cache:
+  npm-cache:
+  pip-cache:
+  pytest-cache:
+  mypy-cache:
+  ruff-cache:
+  hypothesis-db:
+  actions-cache:
+  runner-work:
