@@ -4,12 +4,21 @@
 # project name (the parent directory name) namespaces the volumes, so
 # multiple runners on the same host don't collide.
 #
-# On-demand pattern: up.sh starts, down.sh stops. NOT restart: always —
-# runner is up only when actively working with Claude and expecting CI
-# to fire.
+# 24/7 pattern: `docker compose up -d` once, then forget. `restart:
+# unless-stopped` keeps the runner alive across Docker Desktop restarts
+# and PC reboots. When the PC sleeps, the runner sleeps; when the PC
+# wakes, so does the runner. No manual intervention per session.
 #
-# Ephemeral: --ephemeral flag makes the runner process ONE job then exit.
-# up.sh --loop re-runs the container after each job.
+# Job lifecycle: --ephemeral flag makes the runner process ONE job then
+# exit cleanly. Docker's restart policy respawns the container, which
+# fetches a fresh registration token (via PAT) and re-registers. Result:
+# every job runs in a fresh container with clean state, while the
+# outward-facing runner is always available.
+#
+# Scaling: `docker compose up -d --scale runner=N` runs N runners in
+# parallel (each fetches its own token). Or add another stack with
+# `COMPOSE_PROJECT_NAME=gh-runner-hermes-2 docker compose up -d` for
+# full isolation.
 
 services:
   runner:
@@ -20,19 +29,22 @@ services:
         RUNNER_VERSION: '2.336.0'
     image: gh-runner:latest
     container_name: gh-runner-hermes
-    restart: 'no'
+    # 24/7 lifecycle: auto-restart on Docker Desktop startup, on PC
+    # reboot, and after each --ephemeral job completes. `unless-stopped`
+    # respects manual `docker stop` (won't restart until manually started
+    # again — deliberate off-switch for troubleshooting).
+    restart: unless-stopped
     environment:
       # Repository (default: hermes; override RUNNER_REPOSITORY to serve
       # a different repo from the same image)
       RUNNER_REPOSITORY: ${RUNNER_REPOSITORY:-ricardoafo/hermes}
-      # Auth: exactly ONE must be non-empty at compose-up time.
-      #  - RUNNER_TOKEN: pre-fetched 1-hour registration token. Preferred
-      #    for on-demand — no disk persistence. up.sh fetches via gh api
-      #    and exports before invoking compose.
-      #  - RUNNER_REGISTRATION_PAT: fine-grained PAT with Administration
-      #    Read+write. For 24/7 loops needing repeated re-registration.
+      # Auth: RUNNER_REGISTRATION_PAT is REQUIRED for the 24/7 pattern.
+      # Each container restart (after --ephemeral exit) needs a fresh
+      # registration token, which the entrypoint mints via the PAT.
+      # Pre-fetched RUNNER_TOKEN mode (1h TTL) is still supported for
+      # ad-hoc / troubleshooting invocations but not viable for 24/7.
+      RUNNER_REGISTRATION_PAT: ${RUNNER_REGISTRATION_PAT:?RUNNER_REGISTRATION_PAT is required — put it in .env (see .env.example)}
       RUNNER_TOKEN: ${RUNNER_TOKEN:-}
-      RUNNER_REGISTRATION_PAT: ${RUNNER_REGISTRATION_PAT:-}
       RUNNER_NAME: gh-runner-hermes-${HOSTNAME:-local}
       RUNNER_LABELS: self-hosted,linux,x64,hermes
     mem_limit: 4g
