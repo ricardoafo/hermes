@@ -41,7 +41,7 @@ integration branches.
 | `feat/`      | New capability or user-visible behavior             | `feat/execution-logging`           |
 | `fix/`       | Bug fix in existing behavior                        | `fix/fifo-lot-consumption-order`   |
 | `docs/`      | Documentation-only change                           | `docs/adr-011-scheduler`           |
-| `chore/`     | Tooling, config, dependencies, CI, no user impact   | `chore/renovate-config`            |
+| `chore/`     | Tooling, config, dependencies, CI, no user impact   | `chore/dependabot-config`          |
 | `refactor/`  | Behavior-preserving internal change                 | `refactor/extract-exchange-port`   |
 | `test/`      | Test-only additions or fixes                        | `test/hypothesis-fifo-strategies`  |
 | `perf/`      | Performance-only change, measured                   | `perf/batch-price-fetch`           |

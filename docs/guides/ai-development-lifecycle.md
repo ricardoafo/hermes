@@ -288,4 +288,4 @@ Two settings live in GitHub's UI and can't be fully configured via CLI:
 - [ADR-003 § 09 Deployment](../architecture/adr-003-solution-architecture/09-deployment.md) — CD design (Phase 0+)
 - [ADR-006](../architecture/adr-006-versioning-strategy.md) — SemVer + release
 - [ADR-007](../architecture/adr-007-testing-strategy.md) — testing tiers
-- [ADR-010](../architecture/adr-010-dependency-management-and-supply-chain.md) — deps + Renovate
+- [ADR-010](../architecture/adr-010-dependency-management-and-supply-chain.md) — deps (see also [decisions/2026-08-21-dependabot-over-renovate.md](../decisions/2026-08-21-dependabot-over-renovate.md))
