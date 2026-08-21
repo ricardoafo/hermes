@@ -10,6 +10,7 @@ for machines. Per [ADR-009](../architecture/adr-009-documentation-strategy.md)
 | Guide | What it covers | Last updated |
 | ----- | -------------- | ------------ |
 | [dev-workflow.md](dev-workflow.md) | Branching, commits, PRs, merge policy | 2026-08-21 |
+| [vps-operations.md](vps-operations.md) | SSH access, OS maintenance, Docker + Tailscale + ufw ops, systemd services, troubleshooting | 2026-08-21 |
 
 ## When to add a guide
 
