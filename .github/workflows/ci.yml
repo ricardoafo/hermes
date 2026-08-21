@@ -231,6 +231,29 @@ jobs:
             }
 
   # ─────────────────────────────────────────────────────────────────────
+  # Merge-decisions unit tests — the pr-revalidate.yml logic lives in a
+  # pure-function module (tools/merge/decisions.cjs) so it can be
+  # asserted against fixtures. Runs on every PR that touches it, and
+  # unconditionally on push to main so a regression cannot be masked by
+  # a docs-only change.
+  # ─────────────────────────────────────────────────────────────────────
+  merge-decisions:
+    name: Merge-decisions tests
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run decisions test suite
+        run: node --test tools/merge/*.test.cjs
+
+  # ─────────────────────────────────────────────────────────────────────
   # Secrets scan — gitleaks on the full history for every PR.
   # ─────────────────────────────────────────────────────────────────────
   secrets:
@@ -286,7 +309,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────
   ci-success:
     name: CI success
-    needs: [changeset, markdown-lint, pr-title, pr-body, changelog, auto-label, secrets]
+    needs: [changeset, markdown-lint, pr-title, pr-body, changelog, auto-label, merge-decisions, secrets]
     if: '!cancelled()'
     runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 1

@@ -3,6 +3,12 @@
 **Date**: 2026-08-21
 **Author**: claude on behalf of Ricardo
 **Related**: dev-workflow.md, AGENTS.md, ADR-006, ADR-009
+**Superseded (in part)**: the `pr-auto-update.yml` decision (and the
+`require_last_push_approval` workaround it implemented) is superseded
+by `docs/decisions/2026-08-21-revalidate-then-merge.md`, which removes
+the treadmill at the root by never pushing to the PR branch. The
+auto-generated index decision and the scope-aware CHANGELOG decision
+still stand.
 
 ## Decision
 

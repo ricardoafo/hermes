@@ -25,28 +25,29 @@ flowchart TB
 
     D --> E[Feature branch<br/>prefix/kebab-case]
     E --> F[Local work + tests<br/>pre-commit hooks]
-    F --> G[Push branch to GH]
-    G --> H[Open PR<br/>PR body: 'Closes #N']
+    F --> G[git push -u origin branch<br/>= push lands in GH]
+    G --> G2[git checkout main<br/>git branch -d branch<br/>= delete local the moment push landed]
+    G2 --> H[gh pr create<br/>PR body: 'Closes #N']
 
-    H --> I[PR auto-assigns @rafo-claude-bot<br/>Requests review from @ricardoafo<br/>Auto-added to Project = In review]
+    H --> I["PR auto-assigns @rafo-claude-bot<br/>Requests review from @ricardoafo<br/>Auto-added to Project = In review"]
 
     I --> J[CI workflow runs]
     J --> J1[changeset classifier]
-    J1 --> J2[markdown-lint · pr-title · CHANGELOG · auto-label · secrets]
+    J1 --> J2["markdown-lint · pr-title · pr-body · CHANGELOG<br/>auto-label · merge-decisions · secrets"]
     J2 --> J3[ci-success aggregator = required status check]
 
     J3 --> K{green + approved?}
-    K -- no --> L[Author iterates] --> F
-    K -- yes --> M[Merge queue picks oldest candidate]
-    M --> N[Squash-merge to main<br/>Auto-delete remote branch]
+    K -- no --> L["Author iterates<br/>fetch → edit → push → delete local"] --> F
+    K -- yes --> M["pr-revalidate.yml<br/>builds merge tree locally<br/>runs tree gates on merged tree"]
+    M --> N["Squash-merge to main<br/>Remote branch auto-deleted"]
 
-    N --> O[Issue auto-closes via Closes #N<br/>Project board = Done column<br/>Milestone progress % moves]
-    N --> P[Local: git fetch --prune + git branch -d]
+    N --> O["Issue auto-closes via Closes #N<br/>Project board = Done column<br/>Milestone progress % moves"]
+    N --> P["Local: git fetch --prune + git pull --ff-only<br/>local branch already gone since step G2"]
 
-    N --> Q[Release phase — Phase 0+]
-    Q --> R[CD to VPS — Phase 0+ deploy work]
-    R --> S[Runtime: structlog + healthchecks + Telegram]
-    S -.->|incident| T[bug-triager agent → new Issue] --> A
+    N --> Q["Release phase — Phase 0+"]
+    Q --> R["CD to VPS — Phase 0+ deploy work"]
+    R --> S["Runtime: structlog + healthchecks + Telegram"]
+    S -.->|incident| T["bug-triager agent → new Issue"] --> A
 ```
 
 ## Where progress lives (three surfaces, one source of truth)
@@ -114,18 +115,21 @@ in hermes.
 ### 6. Push + delete local + open PR
 
 - **Who**: bot (via Agent) or Ricardo
-- **What**: three commands, in this order:
+- **What**: four commands, in this order:
 
   ```bash
-  git push -u origin <branch>        # remote now has your work (safety met)
+  git push -u origin <branch>        # push lands in GH (safety condition met)
   git checkout main
   git branch -d <branch>             # safe form — passes because upstream matches
   gh pr create --head <branch> ...   # --head refers to the REMOTE branch
   ```
 
-  The local branch deletion happens **immediately after push**, not after
-  merge. Push is the definite trigger: it completed, the work is safe on
-  remote, delete now. This prevents orphaned local branches accumulating.
+  The local branch is deleted **the moment the push has landed in GH**,
+  before the PR is opened. Push completing is the definite trigger: the
+  work is safe on remote, the local copy is now redundant. Deferring
+  to post-merge would leave a leftover branch sitting in `git branch`
+  for however long review takes, and "clean up later" reliably becomes
+  "clean up never".
 - **Where**: `github.com/ricardoafo/hermes/pull/N`
 - **State**: ✅ Ready
 - **Iteration flow** (when review comments arrive, need to change something):
@@ -136,12 +140,12 @@ in hermes.
   # edit
   git push
   git checkout main
-  git branch -d <branch>             # again — every push triggers a delete
+  git branch -d <branch>             # every push triggers a delete
   ```
 
-  Same discipline applies to every iteration. Each push is followed by a
-  local delete. Never a shell state where a stale feature branch sits after
-  its work is on remote.
+  Same discipline applies to every iteration. Each push is followed by
+  a local delete — never a shell state where a stale feature branch
+  sits after its work is on remote.
 
 ### 7. CI pipeline
 
@@ -171,16 +175,20 @@ in hermes.
 
 ### 9. Merge queue
 
-- **Who**: `.github/workflows/merge-queue.yml`
-- **What**: Serialized queue picks the oldest approved + CI-green PR and
-  merges via GH squash-merge API. Retries on network hiccup, on
-  out-of-date-branch (waits for author to rebase), on head-SHA change
-  (waits for CI to re-run).
+- **Who**: `.github/workflows/pr-revalidate.yml`
+- **What**: Serialized revalidate-then-merge queue. Picks each approved,
+  mergeable PR, checks out `main` at the resolved SHA, fetches the PR
+  head at the approved SHA, builds the merge locally, runs tree gates
+  on the merged tree (skipped when it is a fast-forward and CI on the
+  head is green), re-asserts freshness, then merges via GH squash-merge
+  API. Never pushes to the PR branch, so `require_last_push_approval`
+  cannot invalidate the approval. Decisions live in
+  `tools/merge/decisions.cjs` (unit-tested).
 - **State**: ✅ Ready (this PR)
 
 ### 10. Merge to main
 
-- **Who**: `merge-queue.yml` (via GH API)
+- **Who**: `pr-revalidate.yml` (via GH API)
 - **What**: Squash-merge → single commit on main, PR title becomes the
   commit message, remote branch auto-deletes.
 - **Automation on merge**:
@@ -189,6 +197,13 @@ in hermes.
   - Milestone progress % increments
   - Remote branch auto-deleted by GH (repo setting)
   - Local branch was already deleted in step 6 — nothing to clean up here
+- **Local sync after merge** (fast-forward main, prune the tracking ref):
+
+  ```bash
+  git fetch --prune origin
+  git pull --ff-only origin main
+  ```
+
 - **State**: ✅ Ready
 
 ### 11. Release
@@ -202,7 +217,7 @@ in hermes.
 
 - **Who**: GH Actions → VPS via SSH
 - **What**: Build wheel via `uv`, push to VPS, run migrations, restart
-  systemd services. Serialized via deploy queue (adapt merge-queue pattern
+  systemd services. Serialized via deploy queue (adapt pr-revalidate pattern
   for `main`-push events).
 - **State**: 📅 Deferred. User confirmed: we develop first, deploy later.
   Full CD design in ADR-003 §09.
@@ -285,7 +300,7 @@ Two settings live in GitHub's UI and can't be fully configured via CLI:
 - [`docs/guides/dev-workflow.md`](dev-workflow.md) — git/gh discipline
 - [`AGENTS.md`](../../AGENTS.md) — AI collaboration protocol
 - [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) — the CI implementation
-- [`.github/workflows/merge-queue.yml`](../../.github/workflows/merge-queue.yml) — the merge queue
+- [`.github/workflows/pr-revalidate.yml`](../../.github/workflows/pr-revalidate.yml) — the merge queue
 - [ADR-003 § 09 Deployment](../architecture/adr-003-solution-architecture/09-deployment.md) — CD design (Phase 0+)
 - [ADR-006](../architecture/adr-006-versioning-strategy.md) — SemVer + release
 - [ADR-007](../architecture/adr-007-testing-strategy.md) — testing tiers
