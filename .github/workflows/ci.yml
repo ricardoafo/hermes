@@ -93,8 +93,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install markdownlint-cli2
-        run: npm install -g markdownlint-cli2@0.23.2
+      - name: Install markdownlint-cli2 (if not already pre-baked)
+        run: |
+          if ! command -v markdownlint-cli2 >/dev/null 2>&1; then
+            sudo npm install -g markdownlint-cli2@0.23.2
+          else
+            echo "markdownlint-cli2 already available: $(markdownlint-cli2 --version)"
+          fi
 
       - name: Lint markdown
         run: markdownlint-cli2 "**/*.md" "#node_modules" "#.venv"
