@@ -41,7 +41,7 @@ integration branches.
 | `feat/`      | New capability or user-visible behavior             | `feat/execution-logging`           |
 | `fix/`       | Bug fix in existing behavior                        | `fix/fifo-lot-consumption-order`   |
 | `docs/`      | Documentation-only change                           | `docs/adr-011-scheduler`           |
-| `chore/`     | Tooling, config, dependencies, CI, no user impact   | `chore/renovate-config`            |
+| `chore/`     | Tooling, config, dependencies, CI, no user impact   | `chore/dependabot-config`          |
 | `refactor/`  | Behavior-preserving internal change                 | `refactor/extract-exchange-port`   |
 | `test/`      | Test-only additions or fixes                        | `test/hypothesis-fifo-strategies`  |
 | `perf/`      | Performance-only change, measured                   | `perf/batch-price-fetch`           |
@@ -143,18 +143,24 @@ ADR, a Q&A, or an incident, reference it in the body.
 
 ### PR template sections (mandatory)
 
+The Conventional Commits type prefix in the PR title conveys the change
+category — there is no separate `Change type` section in the template.
+
 1. **Summary** — 1-3 sentences: what changes and why.
-2. **Related** — ADR, Q&A, incident, prior PR, or `N/A`.
-3. **Change type** — check one: feat / fix / docs / chore / refactor / test
-   / perf / build / ci / revert.
-4. **Testing** — how the change was verified. For code changes: which tests
-   were added or extended, coverage delta if relevant. For docs: `markdownlint
-   passes` at minimum.
-5. **Zero-warnings compliance** — checkbox confirming all linters pass with
-   zero warnings. This is the enforceable version of the global rule.
-6. **Risk** — what could break, who feels it first, rollback plan if any.
-7. **Follow-ups** — issues opened or planned for out-of-scope items surfaced
-   during this PR. Prevents scope creep.
+2. **Related** — ADR, Q&A, incident, prior PR, GitHub issue. Include
+   `Closes #N` for auto-close on merge.
+3. **Testing** — how the change was verified. Concrete measurements over
+   assertions ("what did you measure?" — not "I ran it and it worked").
+   For docs: at minimum `markdownlint-cli2 passes with zero warnings across
+   N files`. For code: which pytest files, coverage delta, benchmark
+   numbers if perf.
+4. **Zero-warnings compliance** — a plain assertion sentence (not a
+   checkbox — unchecked boxes render as open tasks in the GH UI). All
+   applicable linters pass with zero warnings; if a suppression was
+   unavoidable, explain in Risk.
+5. **Risk** — what could break, who feels it first, rollback plan if any.
+6. **Follow-ups** — issues opened or planned for out-of-scope items
+   surfaced during this PR. Prevents scope creep.
 
 ### Reviewers and approvals
 
@@ -200,37 +206,66 @@ Enabled at the repo level. Feature branches disappear as soon as their PR
 merges. This keeps `git branch -r` uncluttered and makes stale branches
 detectable at a glance.
 
-### Delete the local branch AFTER confirming remote landing
+### Delete the local branch immediately after push (before opening the PR)
 
-Remote branches auto-delete on merge. Local clones do not — delete them by
-hand, but only after confirming the merge landed. Sequence:
+**Every push is followed by a local branch delete.** Push is the definite
+trigger — remote now has your work, safety condition is met, delete now.
+This prevents orphaned local branches accumulating (which is what happens
+if you defer deletion to post-merge — you may not be at your shell for
+hours after Ricardo merges on mobile, and by then the trigger is fuzzy).
+
+Sequence:
 
 ```bash
-# 1. Return to main
+# 1. Push the branch (upstream tracking gets set)
+git push -u origin <feature-branch>
+
+# 2. Return to main
 git checkout main
 
-# 2. Sync refs and prune stale remote-tracking branches
-git fetch --prune origin
+# 3. Delete the local branch
+git branch -d <feature-branch>
 
-# 3. Fast-forward local main to the merged commit
-git pull --ff-only origin main
+# 4. Open the PR (--head refers to the REMOTE branch, not local)
+gh pr create --head <feature-branch> ...
+```
 
-# 4. Confirm the merged commit is visible on origin/main
-git log --oneline -5
+`git branch -d` (safe form) checks that the branch is merged into its
+upstream. Since you just pushed, upstream matches local, so `-d` succeeds.
+If `-d` refuses, something is wrong — investigate before force-deleting.
 
-# 5. ONLY NOW delete the local feature branch
+### Iterating on a PR (review comments arrive)
+
+Same discipline applies to every iteration. Re-fetch the branch, edit,
+push, delete — every cycle:
+
+```bash
+git fetch origin <feature-branch>:<feature-branch>
+git checkout <feature-branch>
+# edit
+git push
+git checkout main
 git branch -d <feature-branch>
 ```
 
-**Never delete the local branch before step 4** confirms the remote landed.
-Force-deleting (`git branch -D`) with unpushed work loses that work; recovery
-requires `git reflog` spelunking and is not reliable. `git branch -d` (safe
-form) refuses to delete an unmerged branch — trust the safe form.
+Never leave a shell state where a stale feature branch sits after its
+work is on remote. If you notice a leftover branch, you missed a delete
+step in the prior cycle — clean it now.
 
-If a merge got squashed, `git branch -d` may refuse (the squash commit has
-different SHA from the branch tip). In that case, verify the changes
-landed by other means (`git log origin/main --oneline` or GitHub UI), then
-use `git branch -D` intentionally.
+### After merge — nothing to clean up locally
+
+Because the local branch was already deleted in the push step, there is
+nothing local to delete after Ricardo merges the PR. Remote branch
+auto-deletes (`--delete-branch-on-merge` repo setting). Fast-forward local
+main:
+
+```bash
+git fetch --prune origin
+git pull --ff-only origin main
+```
+
+`--prune` removes stale remote-tracking refs so `git branch -a` stays
+tidy. That's the whole post-merge cleanup.
 
 ### No force-push to `main`
 

@@ -1,0 +1,95 @@
+# Dependabot version updates.
+#
+# The clustered CI workflow pins every GitHub Action to a commit SHA rather
+# than a floating tag (a moved tag is arbitrary code execution holding our
+# GITHUB_TOKEN). But a pin without maintenance is not security — it is
+# freezing: the pinned SHA never picks up the next advisory fix. Dependabot
+# makes pinning sustainable by raising the SHA and updating the trailing
+# version comment together.
+#
+# Two ecosystems: Python (pip) via `pyproject.toml`, and GitHub Actions.
+version: 2
+
+updates:
+  # ────────────────────────────────────────────────────────────────
+  # Python dependencies (uv-managed lockfile via pyproject.toml)
+  # ────────────────────────────────────────────────────────────────
+  - package-ecosystem: pip
+    directory: '/'
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Europe/Madrid
+    open-pull-requests-limit: 3
+
+    # A brand-new version is the least-reviewed version there is. A package
+    # published minutes ago can be malicious or simply broken; this config
+    # schedules updates for 06:00 Monday, so anything published over a
+    # weekend would arrive before anyone else had looked at it.
+    #
+    # Seven days is the window in which a compromised release is typically
+    # yanked. Costs nothing on a weekly cadence.
+    cooldown:
+      default-days: 7
+
+    labels:
+      - 'type:chore'
+      - 'area:tooling'
+    assignees:
+      - 'rafo-claude-bot'
+    reviewers:
+      - 'ricardoafo'
+
+    commit-message:
+      prefix: 'chore(deps)'
+      include: scope
+
+    # Grouped on purpose. Ungrouped, ~50 direct dependencies produce a PR
+    # firehose that trains you to rubber-stamp — the failure mode where
+    # gates exist and stop being read. Grouped, it is one reviewable PR
+    # per slice per week.
+    groups:
+      production-minor-patch:
+        dependency-type: production
+        update-types: [minor, patch]
+      development-minor-patch:
+        dependency-type: development
+        update-types: [minor, patch]
+
+    # Majors arrive as their own PR. Each requires a recorded decision
+    # (CHANGELOG entry + potential migration) which a grouped PR cannot
+    # carry cleanly.
+
+  # ────────────────────────────────────────────────────────────────
+  # GitHub Actions — keeps the SHA pins alive
+  # ────────────────────────────────────────────────────────────────
+  - package-ecosystem: github-actions
+    directory: '/'
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Europe/Madrid
+    open-pull-requests-limit: 3
+
+    cooldown:
+      default-days: 7
+
+    labels:
+      - 'type:ci'
+      - 'area:tooling'
+    assignees:
+      - 'rafo-claude-bot'
+    reviewers:
+      - 'ricardoafo'
+
+    commit-message:
+      prefix: 'ci(deps)'
+      include: scope
+
+    groups:
+      actions-minor-patch:
+        update-types: [minor, patch]
+
+    # Actions majors also arrive as own PR — action interfaces move in majors.

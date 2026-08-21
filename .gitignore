@@ -34,6 +34,18 @@ uv.lock
 *.pem
 *.key
 
+# Local dev state — DB, logs, backups. Never commit runtime state.
+# Real data lives on the VPS at /var/lib/hermes/ (per ADR-003 §09).
+# Migration schema lives in src/hermes/migrations/ (committed).
+*.db
+*.sqlite
+*.sqlite3
+*.db-wal
+*.db-shm
+*.db-journal
+*.log
+var/
+
 # OS
 .DS_Store
 Thumbs.db
