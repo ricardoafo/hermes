@@ -13,7 +13,7 @@ docker compose down --remove-orphans
 
 if [[ "${1:-}" == "--prune" ]]; then
     echo "Pruning all runner cache + work volumes (cold start next up)…"
-    for vol in uv-cache npm-cache pip-cache pytest-cache mypy-cache ruff-cache hypothesis-db actions-cache runner-work; do
+    for vol in uv-cache npm-cache pip-cache pytest-cache mypy-cache ruff-cache hypothesis-db runner-work; do
         docker volume rm "gh-runner_${vol}" 2>/dev/null || true
     done
 fi

@@ -28,7 +28,11 @@ services:
       args:
         RUNNER_VERSION: '2.336.0'
     image: gh-runner:latest
-    container_name: gh-runner-hermes
+    # No container_name — compose auto-names replicas gh-runner-runner-N
+    # so `--scale runner=N` works. Runners identify themselves in the
+    # GH runners list by RUNNER_NAME (hostname is a docker-generated
+    # unique hex, so replicas get unique names).
+    #
     # 24/7 lifecycle: auto-restart on Docker Desktop startup, on PC
     # reboot, and after each --ephemeral job completes. `unless-stopped`
     # respects manual `docker stop` (won't restart until manually started
@@ -45,7 +49,10 @@ services:
       # ad-hoc / troubleshooting invocations but not viable for 24/7.
       HERMES_RUNNER_REGISTRATION_PAT: ${HERMES_RUNNER_REGISTRATION_PAT:?HERMES_RUNNER_REGISTRATION_PAT is required — put it in .env (see .env.example)}
       RUNNER_TOKEN: ${RUNNER_TOKEN:-}
-      RUNNER_NAME: gh-runner-hermes-${HOSTNAME:-local}
+      # RUNNER_NAME intentionally UNSET here — entrypoint.sh derives it
+      # from the container's hostname (unique per replica). Setting it
+      # here would give all replicas the same name and cause --replace
+      # to kick each other out.
       RUNNER_LABELS: self-hosted,linux,x64,hermes
     mem_limit: 4g
     cpus: 4
@@ -80,12 +87,11 @@ services:
       - ruff-cache:/home/runner/.cache/ruff
       - hypothesis-db:/home/runner/.cache/hypothesis
 
-      # Actions runner keeps downloaded actions here (actions/checkout,
-      # setup-uv, etc.). Persisting avoids re-download on every job.
-      - actions-cache:/home/runner/_work/_actions
-
-      # Workspace: writable but ephemeral (--force-recreate wipes the
-      # container; git clones happen fresh per job via actions/checkout).
+      # Workspace: writable, persists across container restarts within
+      # the same replica. GH runner uses `_work/_actions` for downloaded
+      # actions (setup-uv, checkout, etc.); persisting `_work` covers
+      # them without needing a separate mount (which conflicts with
+      # runner's directory operations: 'Device or resource busy').
       - runner-work:/home/runner/_work
 
 volumes:
@@ -96,5 +102,4 @@ volumes:
   mypy-cache:
   ruff-cache:
   hypothesis-db:
-  actions-cache:
   runner-work:
