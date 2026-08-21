@@ -4,6 +4,7 @@
 **Owners**: Ricardo Afonso (product owner, sole reviewer)
 **Applies to**: everyone with write access to `github.com/ricardoafo/hermes`, including
 `rafo-claude-bot`.
+**Description**: Branching, commits, PRs, merge policy, delete-branch safety, zero-footprint policy.
 
 This guide encodes the version-control discipline for hermes. It is enforced by
 GitHub branch protection on `main`, by `.github/CODEOWNERS`, by the pre-commit
@@ -271,6 +272,61 @@ tidy. That's the whole post-merge cleanup.
 
 Enforced by branch protection. Force-push to feature branches is allowed
 (and expected during rebase workflows before opening a PR).
+
+### Local git config: bot identity is required
+
+The **local** git config for this repo MUST identify commits as
+`rafo-claude-bot`, NOT the operator. Reason: branch protection
+`require_last_push_approval: true` blocks a reviewer from approving
+commits authored by themselves. If commits are authored by the
+operator (from global `user.name` = "Ricardo Afonso"), Ricardo
+cannot approve his own bot's PR, and the merge deadlocks.
+
+Global `~/.claude/CLAUDE.md` says "NEVER update the git config" —
+that applies to GLOBAL config only. Local (per-repo) config is
+explicitly required here and set once at repo setup:
+
+```bash
+git config --local user.name "rafo-claude-bot"
+git config --local user.email "279133050+rafo-claude-bot@users.noreply.github.com"
+```
+
+Verify with `git config --local --get user.name` (should print
+`rafo-claude-bot`).
+
+Also required: `gh auth setup-git --hostname github.com`. Windows
+credential manager otherwise caches the operator's PAT and pushes
+under Ricardo's identity regardless of the active `gh` user.
+
+### Parallel PRs on shared files
+
+Two open PRs that both modify the same "index" file (e.g., the guides
+README index, `CHANGELOG.md`, a `dependabot.yml` deps block) will
+conflict when one merges. Two mitigations:
+
+1. **Auto-generated indexes** — the guides README table is auto-built
+   from `docs/guides/*.md` by
+   `scripts/dev/regenerate-guides-index.sh` (pre-commit hook +
+   CI verification). No manual editing. Same pattern applies to
+   `CHANGELOG.md` (extract from Conventional Commits) and other
+   append-only artifacts as they become friction. When adding a
+   NEW category of index file, generate it — don't hand-maintain.
+
+2. **Serialize merges when unavoidable** — for the rare case where
+   parallel PRs unavoidably touch the same non-generated file,
+   merge one, wait for `pr-auto-update` workflow to rebase the
+   others, then merge them in turn.
+
+### Auto-update stale PRs
+
+`.github/workflows/pr-auto-update.yml` runs on every push to `main`
+and updates every open PR to include the latest main. Runs as
+`github-actions[bot]`, which is a system actor — its update commits
+do NOT invalidate prior reviewer approvals via
+`require_last_push_approval`.
+
+Result: after any PR merges, all other open PRs auto-sync within
+~10 seconds. You never click "Update branch" manually.
 
 ### No `main` history rewrites
 

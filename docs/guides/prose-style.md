@@ -5,6 +5,7 @@
 **Applies to**: everything with words in this repo — code comments,
 docstrings, ADRs, guides, decisions, runbook, research digests, PR bodies,
 issue bodies, commit messages, workflow / job / script names.
+**Description**: Comments, docstrings, docs, PR/issue bodies — banned words, formatting rules, per-artifact style.
 
 Prose in hermes has one job: **let a future reader answer their question
 faster than reading the code would**. Every rule here serves that. When a

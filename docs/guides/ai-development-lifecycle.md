@@ -4,6 +4,7 @@
 **Owners**: Ricardo Afonso (product owner, sole reviewer)
 **Applies to**: everyone (and every AI agent) doing work that lands in
 `github.com/ricardoafo/hermes`.
+**Description**: End-to-end flow from idea to VPS runtime; how milestones, issues, and the project board fill in as work moves.
 
 This document maps every step from "Ricardo has an idea" to "code runs on
 the VPS and reports back". For each step it says WHO does it, WHAT gets
