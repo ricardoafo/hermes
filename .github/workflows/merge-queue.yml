@@ -55,7 +55,7 @@ jobs:
     if: |
       (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
       && (github.event_name != 'pull_request_review' || github.event.review.state == 'approved')
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(format('[{0}]', vars.RUNNER_LABEL)) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 5
     outputs:
       candidates: ${{ steps.pick.outputs.candidates }}
@@ -128,7 +128,7 @@ jobs:
     name: Merge oldest candidate
     needs: select
     if: needs.select.outputs.any == 'true' && github.event.inputs.dry_run != 'true'
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(format('[{0}]', vars.RUNNER_LABEL)) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions:
       contents: write
@@ -173,7 +173,7 @@ jobs:
     name: Dry-run report
     needs: select
     if: needs.select.outputs.any == 'true' && github.event.inputs.dry_run == 'true'
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(format('[{0}]', vars.RUNNER_LABEL)) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 2
     steps:
       - name: Report

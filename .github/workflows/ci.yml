@@ -22,7 +22,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────
   changeset:
     name: Changeset
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(format('[{0}]', vars.RUNNER_LABEL)) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 3
     outputs:
       code: ${{ steps.detect.outputs.code }}
@@ -88,7 +88,7 @@ jobs:
     name: Markdown lint
     needs: changeset
     if: needs.changeset.outputs.docs == 'true'
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(format('[{0}]', vars.RUNNER_LABEL)) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
@@ -108,7 +108,7 @@ jobs:
   pr-title:
     name: PR title
     if: github.event_name == 'pull_request'
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(format('[{0}]', vars.RUNNER_LABEL)) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 3
     permissions:
       pull-requests: read
@@ -143,7 +143,7 @@ jobs:
   changelog:
     name: CHANGELOG update
     if: github.event_name == 'pull_request'
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(format('[{0}]', vars.RUNNER_LABEL)) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
@@ -189,7 +189,7 @@ jobs:
   auto-label:
     name: Auto-label
     if: github.event_name == 'pull_request'
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(format('[{0}]', vars.RUNNER_LABEL)) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 3
     continue-on-error: true
     permissions:
@@ -223,7 +223,7 @@ jobs:
   secrets:
     name: Secrets scan
     if: github.event_name == 'pull_request'
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(format('[{0}]', vars.RUNNER_LABEL)) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -244,7 +244,7 @@ jobs:
   add-to-project:
     name: Add to project board
     if: github.event.action == 'opened' && (github.event_name == 'pull_request' || github.event_name == 'issues')
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(format('[{0}]', vars.RUNNER_LABEL)) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 3
     continue-on-error: true
     permissions:
@@ -264,7 +264,7 @@ jobs:
     name: CI success
     needs: [changeset, markdown-lint, pr-title, changelog, auto-label, secrets]
     if: '!cancelled()'
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(format('[{0}]', vars.RUNNER_LABEL)) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 1
     steps:
       - name: Verify all gates passed

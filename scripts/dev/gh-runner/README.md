@@ -42,8 +42,12 @@ commit it.
 
 ```bash
 gh variable set RUNNER_LABEL --repo ricardoafo/hermes \
-    --body 'self-hosted,linux,x64,hermes'
+    --body '["self-hosted","linux","x64","hermes"]'
 ```
+
+The value MUST be a JSON array string — the workflow parses it with
+`fromJSON()`. A plain comma-separated string will fail silently (jobs
+skipped with no runner assignment).
 
 When you want to fall back to GH-hosted `ubuntu-latest` (minutes reset,
 plan upgrade, etc.):
