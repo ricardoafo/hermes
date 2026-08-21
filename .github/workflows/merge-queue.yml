@@ -21,6 +21,8 @@ on:
     types: [completed]
   pull_request_review:
     types: [submitted]
+  check_suite:
+    types: [completed]
   push:
     branches: [main]
   schedule:
@@ -79,6 +81,27 @@ jobs:
               owner, repo, state: 'open', base: 'main', per_page: 100,
             });
 
+            // Settle: GH computes `mergeable` + `mergeable_state` lazily.
+            // pulls.list returns cached / stale values; pulls.get triggers
+            // computation. Poll until state is a definite value (not null,
+            // not 'unknown'). This is the KEY fix for the race where MQ
+            // ran too early, saw 'unstable' transient state, and skipped.
+            async function settle(prNumber, maxAttempts = 6, delayMs = 5000) {
+              for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                const { data } = await github.rest.pulls.get({
+                  owner, repo, pull_number: prNumber,
+                });
+                if (data.mergeable !== null && data.mergeable_state !== 'unknown') {
+                  core.info(`#${prNumber}: settled after ${attempt} attempt(s) → state=${data.mergeable_state}`);
+                  return data;
+                }
+                core.info(`#${prNumber}: not settled yet (attempt ${attempt}/${maxAttempts}), waiting ${delayMs}ms`);
+                await new Promise(r => setTimeout(r, delayMs));
+              }
+              core.warning(`#${prNumber}: GH never computed mergeability — will retry next tick`);
+              return null;
+            }
+
             const candidates = [];
             for (const pr of open) {
               if (pr.draft) {
@@ -86,10 +109,9 @@ jobs:
                 continue;
               }
 
-              // Refresh mergeability (GitHub computes this lazily)
-              const { data: full } = await github.rest.pulls.get({
-                owner, repo, pull_number: pr.number,
-              });
+              const full = await settle(pr.number);
+              if (!full) continue;
+
               if (full.mergeable !== true) {
                 core.info(`#${pr.number}: mergeable=${full.mergeable}, skip`);
                 continue;
