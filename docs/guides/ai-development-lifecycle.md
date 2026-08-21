@@ -25,28 +25,29 @@ flowchart TB
 
     D --> E[Feature branch<br/>prefix/kebab-case]
     E --> F[Local work + tests<br/>pre-commit hooks]
-    F --> G[Push branch to GH]
-    G --> H[Open PR<br/>PR body: 'Closes #N']
+    F --> G[git push -u origin branch<br/>= push lands in GH]
+    G --> G2[git checkout main<br/>git branch -d branch<br/>= delete local the moment push landed]
+    G2 --> H[gh pr create<br/>PR body: 'Closes #N']
 
-    H --> I[PR auto-assigns @rafo-claude-bot<br/>Requests review from @ricardoafo<br/>Auto-added to Project = In review]
+    H --> I["PR auto-assigns @rafo-claude-bot<br/>Requests review from @ricardoafo<br/>Auto-added to Project = In review"]
 
     I --> J[CI workflow runs]
     J --> J1[changeset classifier]
-    J1 --> J2[markdown-lint · pr-title · CHANGELOG · auto-label · secrets]
+    J1 --> J2["markdown-lint · pr-title · pr-body · CHANGELOG<br/>auto-label · merge-decisions · secrets"]
     J2 --> J3[ci-success aggregator = required status check]
 
     J3 --> K{green + approved?}
-    K -- no --> L[Author iterates] --> F
-    K -- yes --> M[Merge queue picks oldest candidate]
-    M --> N[Squash-merge to main<br/>Auto-delete remote branch]
+    K -- no --> L["Author iterates<br/>fetch → edit → push → delete local"] --> F
+    K -- yes --> M["pr-revalidate.yml<br/>builds merge tree locally<br/>runs tree gates on merged tree"]
+    M --> N["Squash-merge to main<br/>Remote branch auto-deleted"]
 
-    N --> O[Issue auto-closes via Closes #N<br/>Project board = Done column<br/>Milestone progress % moves]
-    N --> P[Local: git fetch --prune + git branch -d]
+    N --> O["Issue auto-closes via Closes #N<br/>Project board = Done column<br/>Milestone progress % moves"]
+    N --> P["Local: git fetch --prune + git pull --ff-only<br/>local branch already gone since step G2"]
 
-    N --> Q[Release phase — Phase 0+]
-    Q --> R[CD to VPS — Phase 0+ deploy work]
-    R --> S[Runtime: structlog + healthchecks + Telegram]
-    S -.->|incident| T[bug-triager agent → new Issue] --> A
+    N --> Q["Release phase — Phase 0+"]
+    Q --> R["CD to VPS — Phase 0+ deploy work"]
+    R --> S["Runtime: structlog + healthchecks + Telegram"]
+    S -.->|incident| T["bug-triager agent → new Issue"] --> A
 ```
 
 ## Where progress lives (three surfaces, one source of truth)
