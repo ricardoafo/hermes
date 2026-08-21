@@ -42,3 +42,24 @@ repos:
         language: system
         files: ^docs/guides/.*\.md$
         pass_filenames: false
+
+      - id: secrets-scan
+        name: secrets-scan (gitleaks pre-commit)
+        entry: scripts/dev/pre-commit-secrets-scan.sh
+        language: system
+        stages: [pre-commit]
+        pass_filenames: false
+
+      - id: pr-body-lint-self-test
+        name: pr-body-lint self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/pr-body-lint.sh'
+        language: system
+        files: ^scripts/dev/pr-body-lint\.sh$
+        pass_filenames: false
+
+      - id: changelog-check-self-test
+        name: changelog-check self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/changelog-check.sh'
+        language: system
+        files: ^scripts/dev/changelog-check\.sh$
+        pass_filenames: false

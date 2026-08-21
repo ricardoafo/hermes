@@ -116,10 +116,17 @@ jobs:
                 core.info(`#${pr.number}: mergeable=${full.mergeable}, skip`);
                 continue;
               }
-              if (full.mergeable_state !== 'clean') {
+              // 'clean' = all checks pass. 'unstable' = mergeable + some
+              // non-required check is skipped or failing. Since our ONLY
+              // required check is `ci-success`, both states are OK to
+              // attempt — GH's merge API is the final authority on branch
+              // protection. Only skip on definitively-blocking states.
+              const blockingStates = ['dirty', 'behind', 'blocked', 'draft', 'has_hooks'];
+              if (blockingStates.includes(full.mergeable_state)) {
                 core.info(`#${pr.number}: mergeable_state=${full.mergeable_state}, skip`);
                 continue;
               }
+              core.info(`#${pr.number}: mergeable_state=${full.mergeable_state}, proceeding`);
 
               // Require an approved code-owner review on the current head SHA
               const { data: reviews } = await github.rest.pulls.listReviews({
