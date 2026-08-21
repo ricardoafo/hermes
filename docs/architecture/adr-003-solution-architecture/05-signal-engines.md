@@ -15,19 +15,22 @@ How are the two engines structured in code? What does the Rebalancer's band logi
 ```python
 # src/hermes/domain/rebalancer.py
 
+
 @dataclass(frozen=True)
 class RebalanceContext:
-    portfolio: Portfolio            # current holdings
-    targets: dict[Asset, Weight]    # e.g., {BTC: 0.60, ETH: 0.30, USDC: 0.10}
-    band: Percentage                # e.g., 0.10 (10%)
-    prices: dict[Asset, Price]      # EUR-priced
-    tax_state: TaxState             # YTD realized gain, current bracket
+    portfolio: Portfolio  # current holdings
+    targets: dict[Asset, Weight]  # e.g., {BTC: 0.60, ETH: 0.30, USDC: 0.10}
+    band: Percentage  # e.g., 0.10 (10%)
+    prices: dict[Asset, Price]  # EUR-priced
+    tax_state: TaxState  # YTD realized gain, current bracket
+
 
 @dataclass(frozen=True)
 class RebalanceDecision:
     action: Literal["NO_ACTION", "REBALANCE", "DEFER_TAX"]
-    trades: list[TradeCommand]      # empty if NO_ACTION or DEFER_TAX
-    reason: str                     # human-readable + machine-parseable tag
+    trades: list[TradeCommand]  # empty if NO_ACTION or DEFER_TAX
+    reason: str  # human-readable + machine-parseable tag
+
 
 class Rebalancer:
     """Pure function: given context, decide what to do. No I/O."""
@@ -79,15 +82,17 @@ Exact opportunity-cost formula gets designed + backtested in Phase 1. For MVP, k
 ```python
 # src/hermes/domain/donchian.py
 
+
 @dataclass(frozen=True)
 class DonchianConfig:
-    entry_lookback: int = 55        # 55-day breakout (parameter, tuned in Phase 1)
-    exit_lookback: int = 20         # 20-day opposite band for regime exit
+    entry_lookback: int = 55  # 55-day breakout (parameter, tuned in Phase 1)
+    exit_lookback: int = 20  # 20-day opposite band for regime exit
     atr_period: int = 14
-    atr_stop_multiple: Decimal = Decimal("2.0")   # 2× ATR trailing stop
+    atr_stop_multiple: Decimal = Decimal("2.0")  # 2× ATR trailing stop
     ema_regime_period: int = 200
     adx_period: int = 14
     adx_threshold: int = 20
+
 
 @dataclass(frozen=True)
 class DonchianDecision:
@@ -96,6 +101,7 @@ class DonchianDecision:
     stop_price: Optional[Price] = None
     exit_reason: Optional[str] = None
     reason: str = ""
+
 
 class DonchianEngine:
     """Pure function: given price history + open position, decide."""
@@ -116,7 +122,9 @@ class DonchianEngine:
     def adx(self, candles, period) -> Decimal: ...
     def regime_ok_for_entry(self, price, ema_200, adx) -> bool: ...
     def stop_price(self, entry, atr, multiple) -> Price: ...
-    def trailing_stop_update(self, current_stop, current_price, atr, multiple) -> Optional[Price]: ...
+    def trailing_stop_update(
+        self, current_stop, current_price, atr, multiple
+    ) -> Optional[Price]: ...
 ```
 
 ### Decision logic (simplified)
@@ -147,13 +155,14 @@ if open_position exists:
 ```python
 # src/hermes/domain/position_sizing.py
 
+
 def compute_position_size(
     satellite_capital_eur: Decimal,
-    risk_per_trade_pct: Decimal,       # e.g., 0.01 (1%)
+    risk_per_trade_pct: Decimal,  # e.g., 0.01 (1%)
     entry_price_eur: Price,
     stop_price_eur: Price,
-    max_position_pct: Decimal,          # e.g., 0.40 (40% cap of satellite)
-    trading_rules: TradingRules,        # MIN_NOTIONAL, lot_step
+    max_position_pct: Decimal,  # e.g., 0.40 (40% cap of satellite)
+    trading_rules: TradingRules,  # MIN_NOTIONAL, lot_step
 ) -> Optional[Decimal]:
     """
     Position size such that if stop hits, we lose exactly risk_per_trade_pct
@@ -188,7 +197,7 @@ def test_rebalancer_no_action_when_in_band():
 
 
 def test_donchian_enter_on_breakout_with_regime_ok():
-    candles = fixtures.uptrending_series(200)   # deterministic price series
+    candles = fixtures.uptrending_series(200)  # deterministic price series
     result = DonchianEngine().check_signal(
         asset=ETH,
         candles=candles,

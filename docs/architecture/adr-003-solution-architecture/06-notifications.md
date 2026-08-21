@@ -125,9 +125,9 @@ Cycle: `{{correlation_id}}`
 ```python
 # src/hermes/application/report_uc.py
 
+
 class WeeklyReportUseCase:
-    def __init__(self, ledger: LedgerPort, notifier: NotifierPort, clock: ClockPort):
-        ...
+    def __init__(self, ledger: LedgerPort, notifier: NotifierPort, clock: ClockPort): ...
 
     def generate_and_send(self) -> None:
         end = self.clock.now()

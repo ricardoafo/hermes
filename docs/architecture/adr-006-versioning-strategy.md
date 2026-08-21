@@ -128,10 +128,12 @@ class ExchangeConfigV1(BaseModel):
     ws_url: str
     # ...
 
+
 class ExchangeConfigV2(BaseModel):
     schema_version: Literal[2] = 2
-    endpoints: EndpointBlock          # V2 nests URL fields
+    endpoints: EndpointBlock  # V2 nests URL fields
     # ...
+
 
 ExchangeConfig = ExchangeConfigV1 | ExchangeConfigV2
 ```

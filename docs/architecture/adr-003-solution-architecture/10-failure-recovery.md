@@ -309,8 +309,7 @@ Our code observes reconnect events and logs:
 
 ```python
 def on_reconnect(self):
-    logger.warning("websocket_reconnected",
-                   downtime_ms=self.last_disconnect_ms())
+    logger.warning("websocket_reconnected", downtime_ms=self.last_disconnect_ms())
     self.catch_up_prices_via_rest()
 ```
 
