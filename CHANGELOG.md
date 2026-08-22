@@ -15,6 +15,34 @@ lands in Phase 0 CI (per ADR-006).
 
 ### Added
 
+- **Slack notifier adapter** (`src/hermes/adapters/notifier/slack_adapter.py`):
+  concrete `NotifierPort` implementation for the rich/reports channel per
+  the 2026-08-23 decisions-journal entry. `notify_urgent` posts a short
+  text message with the ADR-008 correlation-tail suffix; `notify_report`
+  renders title + body as Block Kit (`header` + `context` + `section`
+  blocks) and uploads attachments via Slack's v2 external-upload flow
+  (`files.getUploadURLExternal` → signed PUT → `files.completeUploadExternal`,
+  the only path since Nov 2025 sunset of legacy `files.upload`). An
+  extension method `post_message` accepts explicit `blocks=` and
+  `channel=` for callers that need full Block Kit control without
+  cramming through the fixed report shape. Wire: raw `httpx.Client`
+  (no `slack_sdk`) matching the Telegram adapter's rationale. Auth:
+  `Authorization: Bearer` header sourced from
+  `HERMES_SLACK__BOT_TOKEN` + `HERMES_SLACK__DEFAULT_CHANNEL` env vars
+  via `SlackConfig.from_env` — never a YAML file (AGENTS.md prohibition
+  #6). Errors: `SlackNotifierError` extends `InfraError` and wraps
+  transport failures, non-2xx HTTP responses (401/429), non-JSON bodies,
+  and the Slack HTTP-200-with-`ok=false` footgun (explicitly test-covered
+  since a naive `raise_for_status()` would swallow those). 429 raises
+  to surface rate-limit pressure to the caller; adaptive back-off stays
+  a router-layer follow-up. Tests: respx-based contract tests cover
+  happy path, `ok=false` body, 401 auth, 429 rate-limit, network error,
+  non-JSON response, empty-attachment short-circuit, full 3-step upload
+  flow, malformed step-1 response, step-2 PUT error status, step-2 PUT
+  transport error, step-1 transport error, extension surface with
+  explicit blocks + channel override, port conformance, and factory +
+  close lifecycle. 100% branch coverage on the new package.
+  Closes #101.
 - **Notification router** (`src/hermes/application/notification_router.py`):
   pure function `route(EventClass, RouterConfig) -> tuple[NotifierPort, ...]`
   that encodes the 2026-08-23 decisions-journal Rationale table verbatim —
