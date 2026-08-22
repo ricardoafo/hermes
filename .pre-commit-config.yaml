@@ -106,6 +106,34 @@ repos:
         files: ^scripts/dev/reproducibility-check\.py$
         pass_filenames: false
 
+      - id: no-naive-datetime
+        name: no naive datetimes (grep guard)
+        entry: bash scripts/dev/no-naive-datetime.sh
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: no-naive-datetime-self-test
+        name: no-naive-datetime self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/no-naive-datetime.sh'
+        language: system
+        files: ^scripts/dev/no-naive-datetime\.sh$
+        pass_filenames: false
+
+      - id: no-domain-mode-check
+        name: no TradingMode in domain (grep guard)
+        entry: bash scripts/dev/no-domain-mode-check.sh
+        language: system
+        files: ^src/hermes/domain/.*\.py$
+        pass_filenames: false
+
+      - id: no-domain-mode-check-self-test
+        name: no-domain-mode-check self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/no-domain-mode-check.sh'
+        language: system
+        files: ^scripts/dev/no-domain-mode-check\.sh$
+        pass_filenames: false
+
       - id: ruff-check
         name: ruff check
         language: system
