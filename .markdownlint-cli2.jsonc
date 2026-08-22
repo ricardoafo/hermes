@@ -22,6 +22,11 @@
     // ignore is belt-and-suspenders for the (disallowed) path where
     // someone bypasses the wrapper.
     "**/.pr-body-*.md",
-    ".pr-body-*.md"
+    ".pr-body-*.md",
+    // Changelog fragments (drift-eval 2026-08-22, wave 4): each file under
+    // changelog.d/ is a single Markdown bullet — no H1 by design.
+    // README.md in that directory IS a full document and is NOT ignored.
+    "changelog.d/[0-9]*.md",
+    "changelog.d/wave-*.md"
   ]
 }
