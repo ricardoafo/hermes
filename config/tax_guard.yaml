@@ -1,0 +1,9 @@
+# Tax guard thresholds — Spain / LOPDGDD-flavoured.
+#
+# Loaded by hermes.infrastructure.config.load_config into TaxGuardConfig.
+# Values are illustrative starters; the operator tunes them per year in
+# consultation with the gestor before switching to real capital.
+
+annual_realised_pnl_alert_eur: "1000"
+wash_sale_window_days: 30
+max_position_pct_portfolio: "0.25"

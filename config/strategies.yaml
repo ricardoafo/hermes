@@ -1,0 +1,16 @@
+# Strategy roster — order matters for deterministic event replay.
+#
+# Loaded by hermes.infrastructure.config.load_config into StrategiesConfig.
+# Weights must sum to 1.0 across enabled strategies (validated downstream
+# when the signal engine wires per issue #27).
+#
+# Env-override example: set HERMES_STRATEGIES__STRATEGIES__0__ENABLED=false
+# to disable the first strategy without editing this file.
+
+strategies:
+  - name: rebalancer
+    enabled: true
+    weight: "0.6"
+  - name: donchian
+    enabled: true
+    weight: "0.4"
