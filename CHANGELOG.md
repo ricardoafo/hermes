@@ -141,6 +141,23 @@ lands in Phase 0 CI (per ADR-006).
 
 ### Changed
 
+- **Process hardening wave 3** (`scripts/dev/create-pr.sh`,
+  `scripts/dev/no-vague-test-assertions.py`, `scripts/dev/pr-preflight.sh`,
+  `.markdownlint-cli2.jsonc`): closes three drifts observed in the
+  PR #124-#127 queue. (1) create-pr.sh now copies repo-relative
+  `--body-file` paths to a mktemp'd `/tmp/` location before lint +
+  `gh pr create`, and `.markdownlint-cli2.jsonc` ignores `.pr-body-*.md`
+  as belt-and-suspenders — sub-agents that wrote body files at repo
+  root repeatedly hit MD041 because PR bodies start with H2 `## Summary`
+  by template. (2) The vague-test-assertions AST walker now allows an
+  `ast.Attribute` on either side of `==` (`assert side == TradeSide.BUY`
+  and `assert obj.field == value` now pass); the true vague case
+  `assert result == expected` (both sides plain Names) stays rejected.
+  (3) pr-preflight summary now names its invocation mode ("with PR
+  body lint" / "without PR body lint") so the 13-vs-14 check count no
+  longer reads as silent drift. New create-pr self-test fixture (9
+  total, was 8); new vague-assertion self-test fixtures (5 PASS + 4
+  REJECT, was 3+3).
 - **AI-authored-tests guide** (`docs/guides/ai-authored-tests.md`): new
   test pyramid tier 2+3 definitions (integration and e2e: markers,
   fake/mock/testnet policy, hermes density guidance) and "AI development
