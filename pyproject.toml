@@ -45,6 +45,11 @@ dev = [
   "radon>=6.0,<7",
   "vulture>=2.13,<3",
   "types-pyyaml>=6,<7",
+  # Mutation testing — parso-backed (Python 3.14 native). See
+  # docs/decisions/2026-08-22-mutation-testing-cosmic-ray.md for the
+  # tool-choice rationale + spike evidence. Weekly workflow at
+  # .github/workflows/mutation.yml.
+  "cosmic-ray>=8.7,<9",
 ]
 
 [build-system]
