@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
+__all__ = ["ExchangePort"]
+
 
 @runtime_checkable
 class ExchangePort(Protocol):

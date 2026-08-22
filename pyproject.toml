@@ -99,6 +99,7 @@ exclude_lines = [
 
 [tool.importlinter]
 root_packages = ["hermes"]
+include_external_packages = true
 
 [[tool.importlinter.contracts]]
 name = "domain-is-pure"
@@ -120,6 +121,27 @@ name = "adapters-never-import-entrypoints"
 type = "forbidden"
 source_modules = ["hermes.adapters"]
 forbidden_modules = ["hermes.entrypoints"]
+
+[[tool.importlinter.contracts]]
+name = "domain-no-pydantic"
+type = "forbidden"
+source_modules = ["hermes.domain"]
+forbidden_modules = ["pydantic", "pydantic_settings"]
+
+[[tool.importlinter.contracts]]
+name = "domain-no-async-or-network"
+type = "forbidden"
+source_modules = ["hermes.domain"]
+forbidden_modules = [
+  "asyncio",
+  "anyio",
+  "httpx",
+  "socket",
+  "requests",
+  "aiohttp",
+  "urllib",
+  "urllib3",
+]
 
 [tool.vulture]
 min_confidence = 80

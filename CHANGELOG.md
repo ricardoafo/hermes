@@ -53,6 +53,14 @@ lands in Phase 0 CI (per ADR-006).
   `/opt/hermes/{versions/, current -> versions/vX, previous -> ...}`.
   Enables Phase-1 rollback logic when real services + `hermes engine
   pause` CLI exist.
+- **Code conventions enforcement**: 2 import-linter contracts
+  (`domain-no-pydantic`, `domain-no-async-or-network` with
+  `include_external_packages = true`), 2 pre-commit grep hooks
+  (`no-naive-datetime`, `no-domain-mode-check`) with paired self-tests,
+  and `tests/unit/test_public_api.py` asserting `__all__` on every
+  `hermes.domain.*` and `hermes.ports.*` module. Adds `__all__` to
+  `hermes.domain.__init__`, `hermes.ports.__init__`, `hermes.ports.exchange`,
+  `hermes.ports.notifier`. Closes #109.
 - Merge queue test — PR C (competing edit)
 - Architecture Decision Records 001-010 (accepted 2026-08-21)
 - Version-control discipline (`docs/guides/dev-workflow.md`) — trunk-based,
