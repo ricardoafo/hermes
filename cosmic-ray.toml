@@ -1,0 +1,38 @@
+##
+## Cosmic-ray configuration — mutation testing for hermes.domain
+##
+## Scope: `src/hermes/domain/value_objects/` only. Domain value objects
+## are pure logic with no I/O, no time, no network — the surface where
+## mutation testing gives the highest signal-to-noise ratio (guide
+## `docs/guides/ai-authored-tests.md` §"The mutation kill rate is the
+## load-bearing gate").
+##
+## Rationale for choosing cosmic-ray over mutmut:
+##   - mutmut's transitive dep `libcst` has no Python 3.14 wheel (needs
+##     Rust build). See `docs/decisions/2026-08-22-drop-safety.md` for
+##     the Phase-0 blocker context.
+##   - cosmic-ray uses `parso` for AST manipulation (pure Python,
+##     3.14-native), installs cleanly from PyPI wheels.
+##
+## Cadence (see `.github/workflows/mutation.yml`):
+##   - Weekly cron (Sundays 03:00 UTC).
+##   - Advisory for 2 weeks (2026-08-22 → 2026-09-05): kill-rate
+##     reported but never fails the workflow.
+##   - Blocking at ≥80% kill-rate after the soak window.
+##
+## Local invocation:
+##   uv run cosmic-ray init cosmic-ray.toml session.sqlite
+##   uv run cosmic-ray baseline cosmic-ray.toml
+##   uv run cosmic-ray exec cosmic-ray.toml session.sqlite
+##   uv run cr-report session.sqlite
+##   uv run cr-rate session.sqlite   # prints kill-rate percentage
+##
+
+[cosmic-ray]
+module-path = "src/hermes/domain/value_objects"
+timeout = 30.0
+excluded-modules = []
+test-command = "uv run pytest tests/unit/domain/value_objects -x --no-cov -q"
+
+[cosmic-ray.distributor]
+name = "local"

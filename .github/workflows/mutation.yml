@@ -1,0 +1,116 @@
+name: Mutation testing (cosmic-ray)
+
+##
+## Weekly cosmic-ray mutation run against `src/hermes/domain/value_objects/`.
+##
+## Cadence & discipline (per `docs/guides/ai-authored-tests.md`
+## §"The mutation kill rate is the load-bearing gate"):
+##   - Sunday 03:00 UTC — off-hours, does not compete with weekday CI load.
+##   - Advisory for 2 weeks (2026-08-22 → 2026-09-05): kill-rate is reported
+##     as a workflow annotation but the job succeeds regardless.
+##   - Blocking at ≥80% kill-rate after the soak window: to activate, flip
+##     `KILL_RATE_ADVISORY: "true"` to `"false"` below.
+##
+## Manual dispatch is enabled so we can re-run after a red run without
+## waiting a week, and to smoke-test workflow changes.
+##
+## Scope: value_objects only (pure logic, no I/O). Application/adapters
+## have side effects — mutation runs would be prohibitively expensive
+## and noise-heavy for our current test surface.
+##
+## Rejection criterion (per issue #118): ≥30% surviving mutants on
+## well-tested value-objects means the tool is not helping. Baseline
+## measured on money.py at spike time: 27.62% surviving (72.38% killed),
+## with 22 of 27 survivors being noise from `BitOr` mutations of `|`
+## in type-union syntax (`Decimal | int`) — real logic kill-rate is
+## substantially higher. See `docs/decisions/2026-08-22-mutation-testing-cosmic-ray.md`.
+##
+
+on:
+  schedule:
+    - cron: "0 3 * * 0"   # Sundays 03:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-${{ github.ref }}
+  cancel-in-progress: false  # let a long run complete rather than restart
+
+env:
+  KILL_RATE_ADVISORY: "true"   # flip to "false" after 2026-09-05 to enforce
+  KILL_RATE_FLOOR: "80"
+
+jobs:
+  cosmic-ray:
+    name: Cosmic-ray mutation run
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - uses: astral-sh/setup-uv@v3
+        with: { version: "0.12.5" }
+
+      - name: Sync dev deps (frozen)
+        run: uv sync --frozen
+
+      - name: Baseline (unmutated tests must be green)
+        run: uv run cosmic-ray baseline cosmic-ray.toml
+
+      - name: Initialize mutation session
+        run: |
+          rm -f mutation-session.sqlite
+          uv run cosmic-ray init cosmic-ray.toml mutation-session.sqlite
+
+      - name: Execute mutations
+        # NOTE: local distributor runs sequentially. If wall-clock grows
+        # painful once more value_objects land, switch to the http worker
+        # or shard by module_path across matrix legs.
+        run: uv run cosmic-ray exec cosmic-ray.toml mutation-session.sqlite
+
+      - name: Compute kill rate
+        id: rate
+        shell: bash
+        run: |
+          set -euo pipefail
+          survival=$(uv run cr-rate mutation-session.sqlite | tr -d '\r')
+          kill=$(python3 -c "print(f'{100 - float('${survival}'):.2f}')")
+          echo "survival=${survival}" >> "$GITHUB_OUTPUT"
+          echo "kill=${kill}" >> "$GITHUB_OUTPUT"
+          echo "::notice::Mutation kill rate: ${kill}% (survivors: ${survival}%)"
+
+      - name: Publish detailed report
+        if: always()
+        run: uv run cr-report mutation-session.sqlite > cosmic-ray-report.txt
+
+      - name: Upload session + report as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cosmic-ray-session
+          path: |
+            mutation-session.sqlite
+            cosmic-ray-report.txt
+          retention-days: 30
+
+      - name: Enforce kill-rate floor (after advisory soak)
+        shell: bash
+        run: |
+          set -euo pipefail
+          kill="${{ steps.rate.outputs.kill }}"
+          floor="${KILL_RATE_FLOOR}"
+          if [[ "${KILL_RATE_ADVISORY}" == "true" ]]; then
+            echo "Advisory mode — kill=${kill}% (floor ${floor}%), NOT blocking."
+            exit 0
+          fi
+          if python3 -c "import sys; sys.exit(0 if float('${kill}') >= float('${floor}') else 1)"; then
+            echo "Kill rate ${kill}% ≥ ${floor}% — pass."
+          else
+            echo "::error::Kill rate ${kill}% below floor ${floor}%"
+            exit 1
+          fi

@@ -27,6 +27,17 @@ lands in Phase 0 CI (per ADR-006).
   §00 invariant I-06 will build on when the SQLite `events` table lands
   with #24. Coverage 100% on every new file in the events package.
   Closes #99.
+- **Mutation testing gate — cosmic-ray** (`cosmic-ray.toml`,
+  `.github/workflows/mutation.yml`, `docs/decisions/2026-08-22-mutation-testing-cosmic-ray.md`):
+  adopts cosmic-ray 8.7 as the Phase-1 mutation-testing tool for
+  `src/hermes/domain/value_objects/` — Python 3.14 native via `parso`
+  (unblocks the mutmut/libcst wheel gap from Phase 0). Weekly cron
+  (Sundays 03:00 UTC), advisory until 2026-09-05 then blocking at
+  ≥80% kill-rate. Feasibility spike on `money.py` measured 72.38%
+  kill rate (27.62% survivors, of which 22/29 are noise from mutation
+  of `|` in PEP 604 type-union syntax — real-logic kill rate ≈ 93%).
+  Updates `docs/guides/ai-authored-tests.md` enforcement table row
+  from "deferred" to "live (advisory)". Closes #118.
 
 - **Process hardening wave 2** (`scripts/dev/create-pr.sh`, `scripts/dev/pr-preflight.sh`,
   `.pre-commit-config.yaml`, `AGENTS.md`): create-pr.sh wrapper enforces PR body lint
