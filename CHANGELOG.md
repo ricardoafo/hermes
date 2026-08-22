@@ -222,6 +222,26 @@ lands in Phase 0 CI (per ADR-006).
 
 ### Changed
 
+- **Process hardening wave 4** (`scripts/dev/create-pr.sh`,
+  `scripts/dev/aggregate-changelog.py`, `scripts/dev/changelog-check.sh`,
+  `changelog.d/`, `AGENTS.md`): closes four drifts observed in the PR
+  #124-#132 queue. (1) create-pr.sh title gate enforces the CI "PR title"
+  `subjectPattern` locally (regex `^[a-z]+(\(.+\))?!?:\s+[a-z]`), rejecting
+  proper-noun uppercase subjects (e.g. `Telegram`) before `gh pr create`
+  — closes the PR #130 drift. (2) AGENTS.md documents `# gitleaks:allow`
+  inline as the required marker for test-only credential-shaped literals
+  (ruff `# noqa: S105` is insufficient) — closes the PR #132 drift. (3)
+  AGENTS.md mandates `git fetch origin main` before worktree-isolated
+  sub-agent launches — closes the wave-3 rebase-cascade drift. (4)
+  Structural CHANGELOG conflict eliminated via `changelog.d/` fragments
+  (one `<pr-number>-<type>.md` per PR); `changelog-check.sh` accepts
+  either path; `scripts/dev/aggregate-changelog.py` merges fragments
+  into `[Unreleased]` at release cut. THIS PR is the transition —
+  it edits CHANGELOG.md directly AND ships a placeholder fragment
+  (`changelog.d/wave-4-process-hardening.md`). Future feature/fix PRs
+  should use the fragment path instead of editing this file. create-pr
+  self-test grows to 11 fixtures (was 9); new pytest coverage for the
+  aggregator in `tests/unit/infrastructure/test_aggregate_changelog.py`.
 - **Process hardening wave 3** (`scripts/dev/create-pr.sh`,
   `scripts/dev/no-vague-test-assertions.py`, `scripts/dev/pr-preflight.sh`,
   `.markdownlint-cli2.jsonc`): closes three drifts observed in the

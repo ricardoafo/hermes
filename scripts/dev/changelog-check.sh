@@ -2,9 +2,13 @@
 # CHANGELOG update enforcement (scope-aware).
 #
 # For PRs typed feat/fix/refactor/perf (or with breaking marker `!:`),
-# require that CHANGELOG.md was modified in the PR — UNLESS the scope
-# is one of the infra-only scopes (ci, build, deps, tooling) which
-# don't affect user-visible runtime behavior.
+# require that CHANGELOG.md was modified OR a changelog.d/*.md fragment was
+# added in the PR — UNLESS the scope is one of the infra-only scopes (ci,
+# build, deps, tooling) which don't affect user-visible runtime behavior.
+#
+# The fragment path is the preferred way per AGENTS.md (introduced by
+# process hardening wave 4). Direct CHANGELOG.md edits remain valid for
+# small doc-only PRs — either path satisfies this check.
 #
 # Called by:
 #   - .github/workflows/ci.yml changelog job (production)
@@ -19,7 +23,7 @@
 #
 # Exit codes:
 #   0 — check passed or was skipped
-#   1 — check failed (missing CHANGELOG entry)
+#   1 — check failed (missing CHANGELOG entry or fragment)
 #   2 — usage error
 
 set -euo pipefail
@@ -119,8 +123,15 @@ case "$decision" in
             echo "CHANGELOG.md updated — ok."
             exit 0
         fi
-        echo "::error::PR requires a CHANGELOG.md [Unreleased] update."
-        echo "Add an entry under Added / Changed / Deprecated / Removed / Fixed / Security."
+        # Fragment path (wave 4): a new file under changelog.d/ also
+        # satisfies the check. Aggregation happens at release-cut time.
+        if echo "$changed" | grep -qE '^changelog\.d/[^/]+\.md$'; then
+            echo "changelog.d/*.md fragment added — ok."
+            exit 0
+        fi
+        echo "::error::PR requires a CHANGELOG.md [Unreleased] update OR a changelog.d/*.md fragment."
+        echo "Preferred: add changelog.d/<pr-number>-<type>.md (see changelog.d/README.md)."
+        echo "Direct edits to CHANGELOG.md are still accepted."
         echo "Infra-only scopes (ci, build, deps, tooling) skip this check — non-breaking only."
         exit 1
         ;;
