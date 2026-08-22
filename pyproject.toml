@@ -80,6 +80,9 @@ ignore = ["PLR0913"]  # arg count — hexagonal use cases take many ports
 # InvalidLot read more naturally as domain concepts than CurrencyMismatchError.
 # The layer + hierarchy (DomainError base) make the exception nature clear.
 "src/hermes/domain/errors.py" = ["N818"]
+# InsufficientInventory follows the same convention — it is a domain concept
+# and the DomainError base already carries the exception nature.
+"src/hermes/domain/lots/selection.py" = ["N818"]
 
 [tool.mypy]
 strict = true
