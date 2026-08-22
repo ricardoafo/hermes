@@ -1,0 +1,250 @@
+# =====================================================================
+# Release workflow — SKELETON (bodies fill in on first real release)
+# =====================================================================
+#
+# ## Status
+#
+# Scaffold. The trigger + job shape is locked in per `docs/guides/release.md`
+# so tagging semantics + verification order are stable. Every job's body
+# is a placeholder that echoes what it will do; every real step is guarded
+# on the `dry_run` input so a workflow_dispatch for validation cannot cut
+# an accidental release. Bodies fill in when we tag v0.1.0.
+#
+# ## Trigger
+#
+#   push tags matching v[0-9]+.[0-9]+.[0-9]+
+#     Semver-tagged releases. Only triggered by an explicit tag push.
+#     No auto-releases on merge, no scheduled releases.
+#
+#   workflow_dispatch:
+#     Manual invocation with `dry_run` (default: true). Every mutating step
+#     is guarded on `dry_run != 'true'` — safe to invoke for workflow-shape
+#     validation.
+#
+# ## Fill order (Phase 1+ per docs/guides/release.md)
+#
+#   1. `verify` — real body: assert tag matches pyproject version, assert
+#      CHANGELOG has a dated entry for the tag, assert main is at the
+#      tagged commit
+#   2. `build` — real body: uv sync --frozen + uv build --wheel + upload
+#      artifact
+#   3. `gh-release` — real body: gh release create + attach wheel +
+#      auto-generate release notes from PR titles since last tag
+#   4. `notify` — real body: Telegram ping via TELEGRAM_RELEASE_URL secret
+#   5. `confirm` — already real (aggregator)
+#
+# See docs/guides/release.md for the end-to-end release procedure + the
+# mermaid diagram showing this workflow's shape.
+#
+# Closes #21 once every job body ships (Phase 1).
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Skip real release steps (validate workflow only)'
+        type: boolean
+        default: true
+        required: false
+
+# Never race releases. If a second tag pushes mid-release, queue it —
+# don't cancel. Every tag must complete its release cycle.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write  # gh-release step needs to create releases
+  actions: read
+
+env:
+  # Matches the tag being processed (e.g. v0.1.0). Empty on
+  # workflow_dispatch — the verify job resolves it.
+  TAG: ${{ github.ref_name }}
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────
+  # VERIFY — SKELETON (Phase 1 fills the body)
+  # Asserts pre-release invariants before touching anything:
+  #   - Tag matches pyproject.toml `version` (no accidental v0.1.0
+  #     from a repo still at 0.0.9)
+  #   - CHANGELOG.md has a `## [<TAG>] — YYYY-MM-DD` section (date-cut
+  #     happened per docs/guides/release.md)
+  #   - Current commit is main's HEAD (releases only cut from main)
+  # ───────────────────────────────────────────────────────────────────
+  verify:
+    name: Verify release preconditions
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # need history for tag+main lineage checks
+
+      - name: Verify tag + version + CHANGELOG (placeholder)
+        if: inputs.dry_run != true
+        shell: bash
+        run: |
+          echo "::notice::PLACEHOLDER — Phase 1 replaces with real verify."
+          echo ""
+          echo "TODO(phase-1):"
+          echo "  # 1. Extract version from pyproject.toml"
+          echo "  pyproject_version=\$(grep '^version = ' pyproject.toml | cut -d'\"' -f2)"
+          echo "  tag_version=\${TAG#v}"
+          echo "  [[ \"\$pyproject_version\" == \"\$tag_version\" ]] || {"
+          echo "    echo \"::error::Tag \$TAG does not match pyproject version \$pyproject_version\""
+          echo "    exit 1"
+          echo "  }"
+          echo ""
+          echo "  # 2. CHANGELOG has dated section for this tag"
+          echo "  grep -qE \"^## \\[\$TAG\\] — [0-9]{4}-[0-9]{2}-[0-9]{2}\" CHANGELOG.md || {"
+          echo "    echo \"::error::CHANGELOG.md missing dated entry for \$TAG\""
+          echo "    exit 1"
+          echo "  }"
+          echo ""
+          echo "  # 3. Tagged commit is main's HEAD"
+          echo "  git fetch origin main"
+          echo "  [[ \"\$(git rev-parse HEAD)\" == \"\$(git rev-parse origin/main)\" ]] || {"
+          echo "    echo \"::error::Tag is not at main's HEAD — releases only cut from main\""
+          echo "    exit 1"
+          echo "  }"
+
+      - name: Dry-run notice
+        if: inputs.dry_run == true
+        run: echo "::notice::dry_run=true — skipped verify."
+
+  # ───────────────────────────────────────────────────────────────────
+  # BUILD — SKELETON (Phase 1 fills the body)
+  # Produces dist/hermes-<VERSION>-py3-none-any.whl and uploads as
+  # artifact for the gh-release job. Wheel only, no sdist per ADR-010.
+  # ───────────────────────────────────────────────────────────────────
+  build:
+    name: Build wheel
+    needs: verify
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - uses: astral-sh/setup-uv@v3
+        with: { version: "0.12.5" }
+
+      - name: Build wheel (placeholder)
+        if: inputs.dry_run != true
+        run: |
+          echo "::notice::PLACEHOLDER — Phase 1 replaces with real build."
+          echo ""
+          echo "TODO(phase-1):"
+          echo "  uv sync --frozen"
+          echo "  uv build --wheel"
+          echo "  ls -la dist/"
+
+      - name: Upload wheel artifact (placeholder)
+        if: inputs.dry_run != true
+        run: |
+          echo "TODO(phase-1):"
+          echo "  actions/upload-artifact@v5 { name: hermes-wheel, path: dist/*.whl }"
+
+      - name: Dry-run notice
+        if: inputs.dry_run == true
+        run: echo "::notice::dry_run=true — skipped build."
+
+  # ───────────────────────────────────────────────────────────────────
+  # GH-RELEASE — SKELETON (Phase 1 fills the body)
+  # Creates the GitHub Release for this tag, attaches the wheel, and
+  # auto-generates release notes from PR titles since the previous tag.
+  # ───────────────────────────────────────────────────────────────────
+  gh-release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Download wheel artifact (placeholder)
+        if: inputs.dry_run != true
+        run: |
+          echo "TODO(phase-1):"
+          echo "  actions/download-artifact@v5 { name: hermes-wheel, path: dist/ }"
+
+      - name: Create release + attach wheel (placeholder)
+        if: inputs.dry_run != true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "::notice::PLACEHOLDER — Phase 1 replaces with real gh release create."
+          echo ""
+          echo "TODO(phase-1):"
+          echo "  gh release create \"\$TAG\" dist/*.whl \\"
+          echo "    --repo \"\${GITHUB_REPOSITORY}\" \\"
+          echo "    --title \"\$TAG\" \\"
+          echo "    --generate-notes"
+
+      - name: Dry-run notice
+        if: inputs.dry_run == true
+        run: echo "::notice::dry_run=true — skipped release."
+
+  # ───────────────────────────────────────────────────────────────────
+  # NOTIFY — SKELETON (Phase 1 fills the body)
+  # Pings the operator's Telegram bot on successful release. Optional —
+  # if TELEGRAM_RELEASE_URL secret is missing, this step no-ops.
+  # ───────────────────────────────────────────────────────────────────
+  notify:
+    name: Notify release
+    needs: gh-release
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 2
+    steps:
+      - name: Telegram ping (placeholder)
+        if: inputs.dry_run != true
+        env:
+          TELEGRAM_URL: ${{ secrets.TELEGRAM_RELEASE_URL }}
+        run: |
+          echo "::notice::PLACEHOLDER — Phase 1 replaces with real Telegram ping."
+          echo ""
+          echo "TODO(phase-1):"
+          echo "  if [[ -n \"\$TELEGRAM_URL\" ]]; then"
+          echo "    curl -fsS -X POST \"\$TELEGRAM_URL\" \\"
+          echo "      -d \"text=hermes \$TAG released. https://github.com/\${GITHUB_REPOSITORY}/releases/tag/\$TAG\""
+          echo "  else"
+          echo "    echo 'TELEGRAM_RELEASE_URL not set — skipping notification'"
+          echo "  fi"
+
+      - name: Dry-run notice
+        if: inputs.dry_run == true
+        run: echo "::notice::dry_run=true — skipped notification."
+
+  # ───────────────────────────────────────────────────────────────────
+  # CONFIRM — release-gate aggregator
+  # Real today. Passes iff every upstream job succeeded (or was
+  # skipped in dry_run). Future branch protection could gate release
+  # deployments on this check.
+  # ───────────────────────────────────────────────────────────────────
+  confirm:
+    name: Confirm release
+    needs: [verify, build, gh-release, notify]
+    if: '!cancelled()'
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 1
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Verify all release gates passed
+        shell: bash
+        # Uses the same aggregator script as ci-success (PR #81). Reuses
+        # the proven Python-based JSON parsing + positive-list allowlist.
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: bash scripts/dev/ci-success-check.sh
