@@ -1,7 +1,7 @@
 # Local Setup
 
 **Type**: Guide (living document — PR any change)
-**Owners**: Ricardo Afonso (product owner, sole reviewer)
+**Owners**: Code Owner (product owner, sole reviewer)
 **Applies to**: everyone (and every AI agent) cloning `github.com/ricardoafo/hermes`
 for local dev work.
 **Description**: Clone → install → run tests → open your first PR. One-time setup steps you do once per clone, then never again.

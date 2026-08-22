@@ -1,7 +1,7 @@
 # AI-Authored Tests — Discipline & Enforcement
 
 **Type**: Guide (living document — PR any change)
-**Owners**: Ricardo Afonso
+**Owners**: Code Owner
 **Applies to**: every test file in this repo, whether authored by a human or an AI agent (`rafo-claude-bot`).
 **Description**: What makes a unit test meaningful, how AI typically fails at writing tests, the protocol AI must follow in this repo, and the tooling that enforces it.
 
