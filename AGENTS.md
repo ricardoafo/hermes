@@ -166,6 +166,32 @@ him decide.
   fields. `Any` is a code-review red flag — justify in a comment or
   refactor.
 
+### On CHANGELOG entries
+
+For any PR typed `feat` / `fix` / `refactor` / `perf` (and not scoped
+`ci` / `build` / `deps` / `tooling`), the CHANGELOG must be updated.
+Two paths satisfy the check:
+
+- **Preferred — add a fragment**: create
+  `changelog.d/<pr-number>-<type>.md` where `<type>` is one of
+  `added` / `changed` / `deprecated` / `removed` / `fixed` / `security`.
+  The file contains a single Markdown bullet describing the change.
+  See [`changelog.d/README.md`](changelog.d/README.md) for the naming
+  and placeholder conventions. Aggregation into `CHANGELOG.md`
+  happens at release cut via
+  `scripts/dev/aggregate-changelog.py --apply`.
+- **Legacy — edit `CHANGELOG.md` directly** under `[Unreleased]`.
+  Still accepted for tiny doc-only PRs, but avoid it for feature/fix
+  PRs — every direct edit races with concurrent PRs on the same
+  section. Wave 4's fragment pattern exists precisely to eliminate
+  that structural conflict.
+
+Rationale: through the #124-#132 queue, EVERY concurrent PR touched
+`[Unreleased] → ### Added` and forced a rebase cascade. Fragments
+give each PR its own file — no conflict unless two PRs claim the
+same PR number (impossible) or the same feature (already a merge
+problem elsewhere).
+
 ### On the SDD workflow
 
 Hermes uses hybrid SDD: engram for AI working memory + a single
@@ -221,6 +247,14 @@ work?', skip it — the PR body + tests are enough."
   Do NOT bypass `create-pr.sh` — direct `gh pr create` skips the body
   lint and has caused CI failures on PR #112 and PR #119.
 - Post-ship: `change.md` is frozen in the repo per ADR-009 lifecycle
+- **Gitleaks discipline for test-only credential-shaped literals**: for
+  test files that hold bot tokens, API keys, webhook URLs, JWTs, or any
+  other credential-shaped literal (even fake ones), append
+  `# gitleaks:allow` inline on the same line as the literal. Ruff's
+  `# noqa: S105` silences ruff but does NOT satisfy the "Secrets scan"
+  CI job — gitleaks runs separately and scans the raw file content.
+  PR #132 (Slack adapter) burned one amend+push cycle on this before
+  the pattern was written down.
 
 Full orchestrator contract in `~/.claude/CLAUDE.md` §SDD-Workflow.
 Note: existing `openspec/changes/phase-0-python-toolchain/` uses the
@@ -251,6 +285,14 @@ Three rules keep delegations lean:
    The orchestrator uses it to spot prompts that ballooned past
    their intent — a delegation that estimates 200k for a task the
    plan sized as 20k is a smell worth investigating before firing.
+4. **Fetch origin/main BEFORE spawning a worktree-isolated
+   sub-agent.** The orchestrator MUST run `git fetch origin main`
+   from the primary tree before creating the worktree or launching
+   the sub-agent. Worktrees inherit from local `main`; a stale local
+   `main` yields silent conflicts when the sub-agent's PR races
+   another merge. One-line cost, prevents multi-PR rebase cascades.
+   The 2026-08-22 wave-3 dispatch batch burned two rebases on this
+   exact drift — no more.
 
 Rationale: a prior apply phase burned ~200k tokens re-describing an
 existing `change.md` inline in a sub-agent prompt. The file IS the

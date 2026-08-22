@@ -19,6 +19,17 @@
 #   the collision without asking every author to remember to `mktemp` first.
 #   Files already under /tmp/ or absolute non-repo paths are used as-is.
 #
+# Lowercase title gate (drift-eval 2026-08-22, wave 4):
+#   The CI job "PR title" uses `amannn/action-semantic-pull-request@v6` with
+#   `subjectPattern: ^(?![A-Z]).+$` — the subject after the `:` MUST start
+#   lowercase, even for proper nouns (Telegram → telegram, Slack → slack).
+#   This wrapper validates `--title` against
+#     ^[a-z]+(\(.+\))?!?:\s+[a-z]
+#   BEFORE running pr-body-lint or `gh pr create`. On mismatch: prints the
+#   offending title, the regex, the CI error the sub-agent would eventually
+#   see, and exits 2. Closes the "push → CI red on title-case" round-trip
+#   drift (PR #130 was caught by CI only, cost 1 amend+push cycle).
+#
 # Invocation:
 #   bash scripts/dev/create-pr.sh --title <t> --body-file <path> [passthrough]
 #   HERMES_SELF_TEST=1 bash scripts/dev/create-pr.sh
@@ -43,10 +54,46 @@ BODY_FILE=""
 PASSTHROUGH=()
 ALLOWED_PASS=(--head --base --draft --reviewer)
 
+# Conventional-commit + lowercase-subject regex. Matches:
+#   type(scope)!: lowercase subject...
+#   type(scope): lowercase subject...
+#   type: lowercase subject...
+# Rejects any subject whose first character after `:` is uppercase (proper
+# nouns included). Mirrors the CI job "PR title" subjectPattern
+# ^(?![A-Z]).+$ from amannn/action-semantic-pull-request@v6.
+TITLE_REGEX='^[a-z]+(\(.+\))?!?:[[:space:]]+[a-z]'
+
 is_allowed_flag() {
     local flag="$1"
     for a in "${ALLOWED_PASS[@]}"; do [[ "$a" == "$flag" ]] && return 0; done
     return 1
+}
+
+# ────────────────────────────────────────────────────────────────
+# validate_title <title>
+#
+# Returns 0 if the title matches TITLE_REGEX (conventional-commit prefix +
+# lowercase first char after `:`), else prints diagnostic info to stderr
+# and returns 2. See the "Lowercase title gate" note in the header.
+# ────────────────────────────────────────────────────────────────
+validate_title() {
+    local title="$1"
+    if [[ "$title" =~ $TITLE_REGEX ]]; then
+        return 0
+    fi
+    {
+        echo "ERROR: PR title fails the lowercase-subject rule."
+        echo "  title:  $title"
+        echo "  regex:  $TITLE_REGEX"
+        echo ""
+        echo "  CI would eventually reject this with (from amannn/action-semantic-pull-request@v6):"
+        echo "    Subject may not start with an uppercase character."
+        echo ""
+        echo "  Fix: lowercase the first char after the colon (yes, even proper nouns)."
+        echo "    bad:  feat(adapters): Telegram notifier — urgent alerts"
+        echo "    good: feat(adapters): telegram notifier — urgent alerts"
+    } >&2
+    return 2
 }
 
 # ────────────────────────────────────────────────────────────────
@@ -113,37 +160,41 @@ EOF
 <!-- ph -->
 EOF
 
+    # Titles used across fixtures 1-9 must clear the wave-4 lowercase-subject
+    # gate. `feat(x): valid` is the minimal conforming title.
+    T_OK="feat(x): valid"
+
     # 1. PASS: valid body, gh stubbed → exit 0, echo captures gh args
-    out=$(GH_CMD=echo HERMES_SELF_TEST=0 bash "$0" --title "T1" --body-file "$tmp_ok" 2>&1); rc=$?
+    out=$(GH_CMD=echo HERMES_SELF_TEST=0 bash "$0" --title "$T_OK" --body-file "$tmp_ok" 2>&1); rc=$?
     if [[ $rc -ne 0 ]]; then echo "SELF-TEST FAIL: valid body → rc=$rc, want 0"; fail=1; fi
     grep -q 'pr create' <<< "$out" || { echo "SELF-TEST FAIL: valid body should invoke stubbed gh"; fail=1; }
-    grep -q -- '--title T1' <<< "$out" || { echo "SELF-TEST FAIL: --title passthrough missing"; fail=1; }
+    grep -q -- "--title $T_OK" <<< "$out" || { echo "SELF-TEST FAIL: --title passthrough missing"; fail=1; }
 
     # 2. PASS: passthrough --draft + --reviewer
-    out=$(GH_CMD=echo HERMES_SELF_TEST=0 bash "$0" --title "T2" --body-file "$tmp_ok" --draft --reviewer alice 2>&1); rc=$?
+    out=$(GH_CMD=echo HERMES_SELF_TEST=0 bash "$0" --title "$T_OK" --body-file "$tmp_ok" --draft --reviewer alice 2>&1); rc=$?
     if [[ $rc -ne 0 ]]; then echo "SELF-TEST FAIL: passthrough → rc=$rc"; fail=1; fi
     grep -q -- '--draft' <<< "$out" || { echo "SELF-TEST FAIL: --draft not forwarded"; fail=1; }
     grep -q -- '--reviewer alice' <<< "$out" || { echo "SELF-TEST FAIL: --reviewer not forwarded"; fail=1; }
 
     # 3. PASS: --head + --base passthrough
-    out=$(GH_CMD=echo HERMES_SELF_TEST=0 bash "$0" --title "T3" --body-file "$tmp_ok" --head feat --base main 2>&1); rc=$?
+    out=$(GH_CMD=echo HERMES_SELF_TEST=0 bash "$0" --title "$T_OK" --body-file "$tmp_ok" --head feat --base main 2>&1); rc=$?
     [[ $rc -eq 0 ]] || { echo "SELF-TEST FAIL: --head/--base rc=$rc"; fail=1; }
 
     # 4. FAIL: bad body → exit 1, gh NOT invoked
-    out=$(GH_CMD=echo HERMES_SELF_TEST=0 bash "$0" --title "T4" --body-file "$tmp_bad" 2>&1); rc=$?
+    out=$(GH_CMD=echo HERMES_SELF_TEST=0 bash "$0" --title "$T_OK" --body-file "$tmp_bad" 2>&1); rc=$?
     [[ $rc -eq 1 ]] || { echo "SELF-TEST FAIL: bad body → rc=$rc, want 1"; fail=1; }
     grep -q 'pr create' <<< "$out" && { echo "SELF-TEST FAIL: gh MUST NOT be invoked on lint fail"; fail=1; }
 
     # 5. FAIL: missing --body-file arg → exit 2
-    out=$(HERMES_SELF_TEST=0 bash "$0" --title "T5" 2>&1); rc=$?
+    out=$(HERMES_SELF_TEST=0 bash "$0" --title "$T_OK" 2>&1); rc=$?
     [[ $rc -eq 2 ]] || { echo "SELF-TEST FAIL: missing --body-file → rc=$rc, want 2"; fail=1; }
 
     # 6. FAIL: nonexistent body file → exit 2 (before lint runs)
-    out=$(HERMES_SELF_TEST=0 bash "$0" --title "T6" --body-file "/nonexistent/xyz.md" 2>&1); rc=$?
+    out=$(HERMES_SELF_TEST=0 bash "$0" --title "$T_OK" --body-file "/nonexistent/xyz.md" 2>&1); rc=$?
     [[ $rc -eq 2 ]] || { echo "SELF-TEST FAIL: nonexistent body-file → rc=$rc, want 2"; fail=1; }
 
     # 7. FAIL: unknown flag → exit 2
-    out=$(HERMES_SELF_TEST=0 bash "$0" --title "T7" --body-file "$tmp_ok" --project 99 2>&1); rc=$?
+    out=$(HERMES_SELF_TEST=0 bash "$0" --title "$T_OK" --body-file "$tmp_ok" --project 99 2>&1); rc=$?
     [[ $rc -eq 2 ]] || { echo "SELF-TEST FAIL: unknown flag → rc=$rc, want 2"; fail=1; }
     grep -q "unknown flag" <<< "$out" || { echo "SELF-TEST FAIL: expected 'unknown flag' in stderr"; fail=1; }
 
@@ -159,7 +210,7 @@ EOF
     repo_root_st=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
     tmp_in_repo="$repo_root_st/.pr-body-selftest-$$.md"
     cp "$tmp_ok" "$tmp_in_repo"
-    out=$(GH_CMD=echo HERMES_SELF_TEST=0 bash "$0" --title "T9" --body-file "$tmp_in_repo" 2>&1); rc=$?
+    out=$(GH_CMD=echo HERMES_SELF_TEST=0 bash "$0" --title "feat(x): valid" --body-file "$tmp_in_repo" 2>&1); rc=$?
     if [[ $rc -ne 0 ]]; then echo "SELF-TEST FAIL: repo-relative body → rc=$rc, want 0"; fail=1; fi
     grep -q 'pr create' <<< "$out" || { echo "SELF-TEST FAIL: gh not invoked for repo-relative body"; fail=1; }
     # The body content is passed inline (not as a path), so we can't grep the
@@ -169,10 +220,25 @@ EOF
     # the script succeeded (rc=0) with a valid body coming from the repo path.
     rm -f "$tmp_in_repo"
 
+    # 10. PASS: conventional-commit title with lowercase subject clears the
+    #     new title gate (drift-eval 2026-08-22, wave 4). The CI job "PR
+    #     title" would accept this.
+    out=$(GH_CMD=echo HERMES_SELF_TEST=0 bash "$0" --title "feat(adapters): telegram notifier for urgent alerts channel" --body-file "$tmp_ok" 2>&1); rc=$?
+    if [[ $rc -ne 0 ]]; then echo "SELF-TEST FAIL: lowercase-subject title → rc=$rc, want 0"; fail=1; fi
+    grep -q 'pr create' <<< "$out" || { echo "SELF-TEST FAIL: lowercase-subject title should invoke gh"; fail=1; }
+
+    # 11. FAIL: same title but uppercase 'T' in "Telegram" — CI would reject
+    #     with subjectPattern ^(?![A-Z]).+$. Wrapper MUST reject before
+    #     invoking gh, exit 2, and NOT call the stubbed gh at all.
+    out=$(GH_CMD=echo HERMES_SELF_TEST=0 bash "$0" --title "feat(adapters): Telegram notifier for urgent alerts channel" --body-file "$tmp_ok" 2>&1); rc=$?
+    [[ $rc -eq 2 ]] || { echo "SELF-TEST FAIL: uppercase-subject title → rc=$rc, want 2"; fail=1; }
+    grep -q 'pr create' <<< "$out" && { echo "SELF-TEST FAIL: gh MUST NOT be invoked on title-gate fail"; fail=1; }
+    grep -q 'lowercase-subject rule' <<< "$out" || { echo "SELF-TEST FAIL: expected 'lowercase-subject rule' in stderr"; fail=1; }
+
     rm -f "$tmp_ok" "$tmp_bad"
 
     if [[ $fail -eq 0 ]]; then
-        echo "SELF-TEST PASS: create-pr.sh handles 9 fixtures correctly."
+        echo "SELF-TEST PASS: create-pr.sh handles 11 fixtures correctly."
         exit 0
     fi
     exit 1
@@ -209,6 +275,13 @@ done
 [[ -z "$TITLE" ]] && { echo "ERROR: --title is required" >&2; exit 2; }
 [[ -z "$BODY_FILE" ]] && { echo "ERROR: --body-file is required" >&2; exit 2; }
 [[ -f "$BODY_FILE" ]] || { echo "ERROR: body file not found: $BODY_FILE" >&2; exit 2; }
+
+# ────────────────────────────────────────────────────────────────
+# Title gate — refuse titles the CI "PR title" job would reject.
+# Runs BEFORE pr-body-lint so authors get the cheapest failure first.
+# See the "Lowercase title gate" note in the header.
+# ────────────────────────────────────────────────────────────────
+validate_title "$TITLE" || exit 2
 
 # ────────────────────────────────────────────────────────────────
 # Copy repo-relative body files to /tmp/ so markdownlint MD041 does not
