@@ -61,6 +61,7 @@ What this locks in. What it forecloses. What we'll revisit.
 | 2026-08-21 | [Python 3.14 pin](2026-08-21-python-3-14-pin.md)                                             | ADR-003 §User Interface + README §64          |
 | 2026-08-22 | [Drop `safety` from dev deps](2026-08-22-drop-safety.md)                                     | ADR-010 §3 CVE scanning (safety+pip-audit)    |
 | 2026-08-22 | [ci-success aggregator fix](2026-08-22-ci-success-aggregator-fix.md)                         | Inline shell aggregator in ci.yml             |
+| 2026-08-23 | [Add Slack alongside Telegram](2026-08-23-slack-alongside-telegram.md)                       | ADR-008 §4 Telegram alerts scope              |
 
 ## Anti-patterns
 
