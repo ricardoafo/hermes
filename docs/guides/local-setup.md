@@ -112,7 +112,10 @@ green on `main`.
 
 ## First PR flow
 
-Per `docs/guides/dev-workflow.md` step 6:
+Per `docs/guides/dev-workflow.md` step 6 and the **project-tracker
+hygiene** discipline in [AGENTS.md § Behavioral defaults](../../AGENTS.md#on-project-tracker-hygiene)
+(file issue first, close on merge via `Closes #N`, comment on deferrals,
+close superseded, audit each session):
 
 ```bash
 # Every change is issue-first
