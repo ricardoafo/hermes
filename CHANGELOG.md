@@ -15,6 +15,13 @@ lands in Phase 0 CI (per ADR-006).
 
 ### Added
 
+- **Process hardening wave 2** (`scripts/dev/create-pr.sh`, `scripts/dev/pr-preflight.sh`,
+  `.pre-commit-config.yaml`, `AGENTS.md`): create-pr.sh wrapper enforces PR body lint
+  before `gh pr create` (closes drift class 1); pre-flight check #9 now uses
+  CI-verbatim pytest invocation + check #14 adds coverage-check.py --bootstrap (closes
+  pre-flight ↔ CI parity drift); sdd-design live-verify rule added to AGENTS.md (closes
+  design-miss drift class). Closes #121, #122, #123.
+
 - **Code conventions guide** (`docs/guides/code-conventions.md`): 14
   sections codifying design patterns, error handling (hybrid Result in
   domain / exceptions in adapters), immutability, factories, async

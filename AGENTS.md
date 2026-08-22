@@ -205,14 +205,21 @@ work?', skip it — the PR body + tests are enough."
 - Mirror to engram under `sdd/{name}/change` in the same commit
 - `/sdd-apply` implements from Design. It MUST read `apply-progress`
   from prior batches before starting (merge, don't overwrite)
+- `sdd-design` MUST run any proposed target command(s) against the
+  current tree state and report actual output. "Take a position" without
+  "verify the position" has caused design misses (e.g., PR #119's
+  `--bootstrap` drop that failed CI). This is a phase gate, not a
+  nice-to-have.
 - `/sdd-verify` validates against Requirements. `CRITICAL` findings
   block merge; `WARNING` and `SUGGESTION` are non-blocking
 - **PR body**: use
   `bash scripts/dev/pr-preflight.sh --render-body <change-name>` before
-  `gh pr create`. The render script auto-injects `Closes #N` from
+  opening the PR. The render script auto-injects `Closes #N` from
   `issue.md`, populates Summary/Testing/Risk from `change.md`, and
-  runs `pr-body-lint.sh` — all in one command. Then
-  `gh pr create --body-file <rendered>`
+  runs `pr-body-lint.sh` — all in one command. Then open the PR via
+  `bash scripts/dev/create-pr.sh --title "<title>" --body-file <rendered>`.
+  Do NOT bypass `create-pr.sh` — direct `gh pr create` skips the body
+  lint and has caused CI failures on PR #112 and PR #119.
 - Post-ship: `change.md` is frozen in the repo per ADR-009 lifecycle
 
 Full orchestrator contract in `~/.claude/CLAUDE.md` §SDD-Workflow.
