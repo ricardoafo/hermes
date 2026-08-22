@@ -85,7 +85,7 @@ fi
 if [[ "${HERMES_SELF_TEST:-}" == "1" ]]; then
     # Verify all mandatory tools are declared and the script parses.
     # Real check-invocations happen only in the non-self-test path.
-    for cmd in ruff mypy lint-imports pytest markdownlint-cli2 git radon vulture; do
+    for cmd in ruff mypy lint-imports pytest markdownlint-cli2 git radon vulture coverage-check; do
         if ! grep -q "\\b${cmd}\\b" "$0"; then
             echo "SELF-TEST FAIL: script does not reference '${cmd}'" >&2
             exit 1
@@ -179,8 +179,16 @@ run_check "radon (complexity)"        uv run radon cc --min B src/
 #    Reads config from [tool.vulture] in pyproject.toml (min_confidence=80).
 run_check "vulture (dead code)"       uv run vulture src/
 
-# 9. Pytest (should be fast in Phase 0 — one test)
-run_check "pytest tests/"             uv run pytest tests/ -q
+# 9. Pytest — verbatim CI (unit job): tests/unit/ with branch coverage,
+#    emits coverage.json which check #14 (coverage-check.py) reads.
+run_check "pytest tests/unit/ (CI-verbatim)" \
+    uv run pytest tests/unit/ --cov=src/hermes --cov-branch --cov-report=json --cov-report=term
+
+# 14. Per-package coverage thresholds — matches CI unit job's
+#     `coverage-check.py --bootstrap` step. Depends on coverage.json
+#     produced by check #9. `--bootstrap` accepts empty Phase 0 layers.
+run_check "coverage-check.py (per-package thresholds)" \
+    uv run python scripts/dev/coverage-check.py --bootstrap
 
 # 10. Markdownlint on FULL tree (CI runs the same glob)
 run_check "markdownlint-cli2 (full tree)" \

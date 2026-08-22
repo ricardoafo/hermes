@@ -57,6 +57,13 @@ repos:
         files: ^scripts/dev/pr-body-lint\.sh$
         pass_filenames: false
 
+      - id: create-pr-self-test
+        name: create-pr self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/create-pr.sh'
+        language: system
+        files: ^scripts/dev/create-pr\.sh$
+        pass_filenames: false
+
       - id: changelog-check-self-test
         name: changelog-check self-test
         entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/changelog-check.sh'
