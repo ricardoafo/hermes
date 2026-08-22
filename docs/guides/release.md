@@ -1,7 +1,7 @@
 # Release Guide
 
 **Type**: Guide (living document — PR any change)
-**Owners**: Ricardo Afonso (product owner, sole reviewer)
+**Owners**: Code Owner (product owner, sole reviewer)
 **Applies to**: cutting a versioned release of hermes.
 **Description**: How to tag a release, what the release workflow does, how to
 verify the released wheel + CHANGELOG landed correctly.

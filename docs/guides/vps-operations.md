@@ -1,7 +1,7 @@
 # VPS Operations — Access, Maintenance, Recovery
 
 **Type**: Guide (living document — PR any change)
-**Owners**: Ricardo Afonso (sole operator)
+**Owners**: Code Owner (sole operator)
 **Applies to**: the single Hetzner Cloud VPS that hosts hermes at
 `hermes-01` (CX23, Ubuntu 24.04 LTS, Nuremberg).
 **Description**: SSH access, OS maintenance, Docker + Tailscale + ufw ops, systemd services, troubleshooting.

@@ -34,7 +34,7 @@ Body:
 # {title}
 
 **Date**: YYYY-MM-DD
-**Author**: Ricardo Afonso (or claude on behalf of Ricardo)
+**Author**: Code Owner (or AI Bot on behalf of the Code Owner)
 **Related**: ADR-NNN, prior journal entries, GitHub issues
 
 ## Decision

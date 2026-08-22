@@ -1,9 +1,9 @@
 # AGENTS.md — Project-Specific AI Collaboration Protocol
 
 **Type**: Living reference. Any change PRs this file.
-**Owners**: Ricardo Afonso (sole reviewer, sole approver).
+**Owners**: Code Owner (sole reviewer, sole approver).
 **Applies to**: `rafo-claude-bot` (write bot) and any AI agent operating on
-this repo via Claude Code, Aider, Cursor, or any similar tool. Ricardo's
+this repo via Claude Code, Aider, Cursor, or any similar tool. The Code Owner's
 global rules at `~/.claude/CLAUDE.md` apply first; this document layers
 project-specific rules on top and never contradicts them.
 
@@ -30,7 +30,7 @@ it), pause and ask before acting.
 
 If two documents conflict, the higher-precedence one wins. If ADRs conflict
 with each other, the higher-numbered ADR wins (later ADRs are refinements
-or supersedes). Flag the conflict to Ricardo before acting.
+or supersedes). Flag the conflict to the Code Owner before acting.
 
 ## The three roles
 
@@ -58,8 +58,8 @@ are acceptable. If the user requests one of these, refuse and explain.
 6. **Never store secrets in the repo**. Not even encrypted. Not even in
    comments. Not even in test fixtures. Secrets go through
    `pydantic-settings` env-var loading (per ADR-003 §04). Suspected leak
-   → stop, alert Ricardo, do not `git rm` (leaves history — needs
-   `git filter-repo` + force-push in Ricardo's hands).
+   → stop, alert the Code Owner, do not `git rm` (leaves history — needs
+   `git filter-repo` + force-push in the Code Owner's hands).
 7. **Never call real-capital APIs from tests or dry-run flows**. All
    real-money order paths require explicit typed confirmation (per
    invariant I-08 in ADR-003 §00). If you can't tell whether a code
@@ -220,6 +220,34 @@ Note: existing `openspec/changes/phase-0-python-toolchain/` uses the
 prior 3-file convention (proposal.md + spec.md + design.md) and stays
 frozen as historical evidence — the 2026-08-22 ADR-009 amendment
 introduced `change.md` for future changes.
+
+### On sub-agent delegation
+
+When the orchestrator dispatches work to a sub-agent, the launch
+prompt IS the sub-agent's context. Every paragraph the orchestrator
+re-states inflates that context window for zero incremental value.
+Three rules keep delegations lean:
+
+1. **Reference `openspec/changes/<name>/change.md` by path — never
+   paste its content inline.** The sub-agent reads from disk (or the
+   `sdd/<name>/change` engram mirror) via `mem_get_observation`.
+   Pasting the Design or Decisions section into the launch prompt
+   duplicates the source of truth and drifts the moment the file
+   is edited.
+2. **Sub-agents hydrate artifacts directly from the backend.** The
+   orchestrator passes topic keys (`sdd/<name>/spec`, `sdd/<name>/design`,
+   `sdd/<name>/apply-progress`) or file paths — not full observation
+   content. `mem_search` results are 300-char previews;
+   `mem_get_observation` returns the full text.
+3. **Every sub-agent launch declares an `estimated_tokens` budget**
+   in the launch prompt (rough order-of-magnitude, not a hard cap).
+   The orchestrator uses it to spot prompts that ballooned past
+   their intent — a delegation that estimates 200k for a task the
+   plan sized as 20k is a smell worth investigating before firing.
+
+Rationale: a prior apply phase burned ~200k tokens re-describing an
+existing `change.md` inline in a sub-agent prompt. The file IS the
+spec — the prompt only points at it.
 
 ### On memory (engram)
 

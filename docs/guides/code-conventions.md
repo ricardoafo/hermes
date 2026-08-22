@@ -1,7 +1,7 @@
 # Code Conventions
 
 **Type**: Guide (living document — PR any change)
-**Owners**: Ricardo Afonso (product owner, sole reviewer)
+**Owners**: Code Owner (product owner, sole reviewer)
 **Applies to**: everyone (and every AI agent) writing production code in this repo.
 **Description**: Design patterns, error handling, immutability, factories, async, performance, polyglot posture, testing, time handling, event schema versioning, feature flags, engine pause, migrations, and public/internal API conventions.
 

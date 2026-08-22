@@ -1,7 +1,7 @@
 # AI Development Life Cycle
 
 **Type**: Guide (living document — PR any change)
-**Owners**: Ricardo Afonso (product owner, sole reviewer)
+**Owners**: Code Owner (product owner, sole reviewer)
 **Applies to**: everyone (and every AI agent) doing work that lands in
 `github.com/ricardoafo/hermes`.
 **Description**: End-to-end flow from idea to VPS runtime; how milestones, issues, and the project board fill in as work moves.
