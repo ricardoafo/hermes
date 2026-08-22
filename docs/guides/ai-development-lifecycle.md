@@ -114,6 +114,9 @@ in hermes.
 - **State**: 🚧 Partial. Full Python toolchain (ruff / mypy / pytest /
   hypothesis / syrupy / mutmut / detect-secrets / `sev1_guard` plugin) lands
   in Phase 0.
+- **Test tier per lifecycle phase**: see the "AI development lifecycle × test
+  tier" matrix in [`ai-authored-tests.md`](ai-authored-tests.md#ai-development-lifecycle--test-tier).
+  Answers "when should I be writing which tier of test?".
 
 ### 6. Push + delete local + open PR
 
