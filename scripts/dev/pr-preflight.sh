@@ -57,11 +57,22 @@ done
 
 # Render mode: generate body from openspec/changes/<name>/change.md +
 # issue.md, then treat as --body. Fails early if change.md or issue.md
-# is missing.
+# is missing. Auto-derives --branch from the current git branch (unless
+# on main) so render-pr-body.sh can fall back to `git show origin/<ref>`
+# if the local file was removed by the "delete-local-after-open" step
+# of the Code Owner's PR discipline.
 if [[ -n "$RENDER_CHANGE" ]]; then
     BODY_FILE=$(mktemp -t pr-body.XXXXXX.md)
     echo "▶ Rendering PR body for change '$RENDER_CHANGE'"
-    if ! bash scripts/dev/render-pr-body.sh "$RENDER_CHANGE" -o "$BODY_FILE"; then
+
+    # Determine branch for the remote-fallback arg. Skip on main.
+    current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+    render_args=("$RENDER_CHANGE" -o "$BODY_FILE")
+    if [[ -n "$current_branch" && "$current_branch" != "main" ]]; then
+        render_args+=(--branch "$current_branch")
+    fi
+
+    if ! bash scripts/dev/render-pr-body.sh "${render_args[@]}"; then
         echo "ERROR: render-pr-body.sh failed for '$RENDER_CHANGE'" >&2
         exit 1
     fi
