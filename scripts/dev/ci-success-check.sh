@@ -123,5 +123,10 @@ if [[ -z "$failures" ]]; then
 fi
 
 echo "::error::CI gates failed or in unexpected state:"
-printf '  - %s\n' $(echo "$failures" | sed 's/: /\t/') | column -t -s $'\t'
+# Plain-bash formatting — the runner image lacks the `column` binary
+# (bsdextrautils not installed in Ubuntu 24.04 base), so we format one
+# line per failure without any external dep.
+while IFS= read -r line; do
+    printf '  - %s\n' "$line"
+done <<< "$failures"
 exit 1
