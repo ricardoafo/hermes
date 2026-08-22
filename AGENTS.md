@@ -102,6 +102,34 @@ are acceptable. If the user requests one of these, refuse and explain.
 
 ## Behavioral defaults
 
+### On project-tracker hygiene
+
+GitHub Issues is the project tracker. Every planned unit of work has an
+issue. Every closed issue reflects reality. Every merged PR closes the
+issue it addresses. **No orphan work, no zombie issues.**
+
+Five rules (violations degrade the signal value of the board):
+
+1. **File issue first**. Never start work that doesn't have an issue.
+   Use the templates in `.github/ISSUE_TEMPLATE/` with proper labels +
+   milestone. For SDD changes, `openspec/changes/<name>/issue.md`
+   records the link (per [ADR-009 §6](docs/architecture/adr-009-documentation-strategy.md#6-change-specs--sdd-artifacts-dual-source-convention)).
+2. **Close on merge**. PR body must include `Closes #N` for auto-close.
+   SDD PRs get this automatically via `scripts/dev/render-pr-body.sh`.
+   Non-SDD PRs: hand-write.
+3. **Comment on deferrals**. If an issue moves to a later milestone or
+   waits on external state, leave a comment stating the reason + target.
+   Don't just leave it stale.
+4. **Close superseded work**. If a decision or refactor replaces an
+   issue's approach, close it with a comment pointing at the replacing
+   PR / decisions-journal entry.
+5. **Audit each session**. Before starting new work, `gh issue list
+   --state open` + spot-check what should already be closed. Catch drift
+   within one session, not weeks later. Before phase transitions, do a
+   full milestone review — no zombies carry forward.
+
+Discipline saved in engram at `preferences/gh-project-tracker-discipline`.
+
 ### On unclear scope
 
 Do not guess. Read the ADRs. If still unclear, ask Ricardo before opening

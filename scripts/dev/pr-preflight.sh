@@ -172,7 +172,41 @@ check_guides_index() {
 }
 run_check "Guides index current" check_guides_index
 
-# 10. Optional — PR body lint (only when --body FILE given)
+# 10. CHANGELOG check — infers PR title's conventional-commit type from
+#     the LATEST commit on the branch (matches what the eventual squash
+#     commit will inherit — squash-merge uses the PR title, which is
+#     conventionally the last-committed message).
+#     Skipped when the branch has no commits ahead of origin/main, or
+#     when the inferred type is docs/chore/ci/build/test/revert (which
+#     changelog-check.sh itself skips anyway).
+check_changelog_if_applicable() {
+    # Latest commit's subject line — the type prefix drives the check.
+    local latest_subject
+    latest_subject=$(git log -1 --format=%s HEAD 2>/dev/null)
+    if [[ -z "$latest_subject" ]]; then
+        return 0  # empty branch — nothing to check
+    fi
+
+    # Only feat/fix/refactor/perf require a CHANGELOG entry.
+    if ! [[ "$latest_subject" =~ ^(feat|fix|refactor|perf)(\(.+\))?(!)?: ]]; then
+        return 0  # docs/chore/ci/build/test/revert — skip
+    fi
+
+    # Base SHA for the diff — origin/main HEAD as of last fetch.
+    # (base-current check already ran + refreshed origin/main.)
+    local base_sha head_sha
+    base_sha=$(git rev-parse origin/main 2>/dev/null)
+    head_sha=$(git rev-parse HEAD)
+    if [[ "$base_sha" == "$head_sha" ]]; then
+        return 0  # branch at main — no diff to check
+    fi
+
+    PR_TITLE="$latest_subject" BASE_SHA="$base_sha" HEAD_SHA="$head_sha" \
+        bash scripts/dev/changelog-check.sh >/dev/null 2>&1
+}
+run_check "CHANGELOG check (inferred from latest commit)" check_changelog_if_applicable
+
+# 11. Optional — PR body lint (only when --body FILE given)
 if [[ -n "$BODY_FILE" ]]; then
     check_pr_body() {
         PR_BODY="$(cat "$BODY_FILE")" bash scripts/dev/pr-body-lint.sh
