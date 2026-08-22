@@ -58,11 +58,17 @@ line-length = 100
 extend-exclude = ["src/hermes/**/__init__.py"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "PL", "RUF", "S", "PTH", "ERA", "PGH"]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "PL", "RUF", "S", "PTH", "ERA", "PGH", "D"]
 ignore = ["PLR0913"]  # arg count — hexagonal use cases take many ports
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "PLR2004"]  # assert allowed in tests, magic numbers fine
+# D-family docstring enforcement is TEST-SCOPED for this PR (see docs/guides/ai-authored-tests.md
+# §"Enforcement in this repo"). Production src has variable docstring coverage; a global roll-out
+# is a separate scope conversation. Test files must expose D103 (missing docstring on public fn)
+# so every test names the invariant it protects.
+"src/**/*.py" = ["D"]
+"scripts/**/*.py" = ["D"]
 # Domain errors intentionally omit the "Error" suffix — CurrencyMismatch and
 # InvalidLot read more naturally as domain concepts than CurrencyMismatchError.
 # The layer + hierarchy (DomainError base) make the exception nature clear.
@@ -90,6 +96,8 @@ source = ["src/hermes"]
 branch = true
 
 [tool.coverage.report]
+fail_under = 90
+show_missing = true
 exclude_lines = [
   "pragma: no cover",
   "if TYPE_CHECKING:",
