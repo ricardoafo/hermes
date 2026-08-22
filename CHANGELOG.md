@@ -15,6 +15,26 @@ lands in Phase 0 CI (per ADR-006).
 
 ### Added
 
+- **Notification router** (`src/hermes/application/notification_router.py`):
+  pure function `route(EventClass, RouterConfig) -> tuple[NotifierPort, ...]`
+  that encodes the 2026-08-23 decisions-journal Rationale table verbatim —
+  Telegram-only for `SERVICE_CRASH`/`HEALTH_CHECK_FAIL`/`DEPLOY_STATUS`,
+  Slack-only for `WEEKLY_REBALANCE_REPORT`/`MONTHLY_TAX_REPORT`, fan-out to
+  both channels for `ROLLBACK_FIRED`/`CVE_DETECTED`, and log-only (empty
+  tuple) for `TRADE_FIRED_SINGLE`. `EventClass` enum lives alongside the
+  router in the application layer (routing is an application concern, not
+  a domain one). `RouterConfig` dataclass carries `telegram` + `slack`
+  handles as `NotifierPort | None` — a wanted-but-unwired channel drops
+  silently from the returned tuple rather than raising, so partial rigs
+  (Slack-only tests, early-boot before Telegram creds load) work without
+  branching in the router. Fan-out order is deterministic (Telegram
+  precedes Slack); dispatch is the caller's job (typically an EventBus
+  subscriber wired in `entrypoints/`). Property tests (hypothesis) prove
+  purity + full enum coverage; parametrized examples pin the ADR table
+  row-by-row. Router file 100% coverage. Domain-purity preserved — router
+  imports only `hermes.ports.notifier`, never adapter classes (enforced by
+  the `application-imports-only-domain-and-ports` import-linter contract).
+  Closes #100.
 - **Domain events + in-process EventBus** (`src/hermes/domain/events/`):
   four concrete event dataclasses — `TradeExecuted`, `RebalanceTriggered`,
   `AnomalyDetected`, `LotClosed` — all frozen and pinned to
