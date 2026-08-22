@@ -305,11 +305,13 @@ name = "hermes"
 version = "0.0.0"
 source = { editable = "." }
 dependencies = [
+    { name = "anyio" },
     { name = "apscheduler" },
     { name = "httpx" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "python-telegram-bot" },
+    { name = "returns" },
     { name = "rich" },
     { name = "structlog" },
     { name = "textual" },
@@ -339,11 +341,13 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "anyio", specifier = ">=4,<5" },
     { name = "apscheduler", specifier = ">=3.10,<4" },
     { name = "httpx", specifier = ">=0.27,<1" },
     { name = "pydantic", specifier = ">=2.9,<3" },
     { name = "pydantic-settings", specifier = ">=2.5,<3" },
     { name = "python-telegram-bot", specifier = ">=21.5,<22" },
+    { name = "returns", specifier = ">=0.24,<1" },
     { name = "rich", specifier = ">=13.8,<14" },
     { name = "structlog", specifier = ">=24.4,<25" },
     { name = "textual", specifier = ">=0.79,<1" },
@@ -1059,6 +1063,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/43/98/4e55c9c486404ec12373708d015ebce157966965a5ebe7f28ff2c784d41b/respx-0.23.1.tar.gz", hash = "sha256:242dcc6ce6b5b9bf621f5870c82a63997e8e82bc7c947f9ffe272b8f3dd5a780", size = 29243, upload-time = "2026-04-08T14:37:16.008Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1d/4a/221da6ca167db45693d8d26c7dc79ccfc978a440251bf6721c9aaf251ac0/respx-0.23.1-py2.py3-none-any.whl", hash = "sha256:b18004b029935384bccfa6d7d9d74b4ec9af73a081cc28600fffc0447f4b8c1a", size = 25557, upload-time = "2026-04-08T14:37:14.613Z" },
+]
+
+[[package]]
+name = "returns"
+version = "0.29.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/29/e6/f5ada68dfb47e9c032683813f3cd9a810978d8ce541866d365076215906f/returns-0.29.0.tar.gz", hash = "sha256:fd9831594403229595dc705fee632a9be24a497df10aa3b9b72405d75d54e8ad", size = 106314, upload-time = "2026-08-02T08:36:26.976Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c2/b6/660f9724d574eee210ba89cc8fc2c41a5d960947bcea7d780847ce766e21/returns-0.29.0-py3-none-any.whl", hash = "sha256:db43c06d228f84b3d93c0418313c37c5ee4ecdb7a0f10326c24444f9baaf074c", size = 160951, upload-time = "2026-08-02T08:36:28.291Z" },
 ]
 
 [[package]]
