@@ -1,0 +1,10 @@
+# Binance exchange endpoints — TESTNET by default.
+#
+# Loaded by hermes.infrastructure.config.load_config into BinanceExchangeConfig.
+# Flipping testnet=false is a deliberate, reviewed change — real-capital
+# paths additionally require typed confirmation per ADR-003 §00 invariant I-08.
+
+base_url: https://testnet.binance.vision
+ws_url: wss://testnet.binance.vision/ws
+recv_window_ms: 5000
+testnet: true

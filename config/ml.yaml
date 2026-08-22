@@ -1,0 +1,10 @@
+# ML / LLM subsystem configuration.
+#
+# Loaded by hermes.infrastructure.config.load_config into MLConfig.
+# Per ADR-001 + ADR-005, LLMs SUPERVISE and MONITOR — they NEVER emit
+# trade signals. This file carries knobs for the supervisor role only.
+
+supervisor_model: claude-sonnet-4-7
+temperature: "0.2"
+max_tokens: 4096
+enabled: true
