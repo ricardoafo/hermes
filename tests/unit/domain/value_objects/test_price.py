@@ -24,11 +24,13 @@ class TestPriceFromStr:
 
     @given(price_strategy())
     def test_from_str_roundtrip(self, p: Price) -> None:
+        """from_str(str(p)) round-trips losslessly for all valid Price values."""
         result = Price.from_str(str(p))
         assert isinstance(result, Success)
         assert result.unwrap() == p
 
     def test_from_str_valid(self) -> None:
+        """from_str parses a well-formed 'amount BASE/QUOTE' string into the correct fields."""
         result = Price.from_str("50000.00 BTC/USDT")
         assert isinstance(result, Success)
         p = result.unwrap()
@@ -36,14 +38,17 @@ class TestPriceFromStr:
         assert p.pair == Pair(base=Currency.BTC, quote=Currency.USDT)
 
     def test_from_str_invalid_amount(self) -> None:
+        """from_str returns Failure when the amount part is not a valid decimal."""
         result = Price.from_str("abc BTC/USDT")
         assert isinstance(result, Failure)
 
     def test_from_str_invalid_pair(self) -> None:
+        """from_str returns Failure when the pair string contains unknown currency tickers."""
         result = Price.from_str("50000 DOGE/XYZ")
         assert isinstance(result, Failure)
 
     def test_from_str_missing_parts(self) -> None:
+        """from_str returns Failure when the input lacks the expected 'amount PAIR' structure."""
         result = Price.from_str("50000")
         assert isinstance(result, Failure)
 
@@ -52,6 +57,7 @@ class TestPriceApplyTo:
     """apply_to() returns quote-currency Money."""
 
     def test_apply_to_matching_asset(self) -> None:
+        """apply_to() returns quote-currency Money (price * qty) when the quantity asset matches."""
         price = Price(
             amount=Decimal("50000"),
             pair=Pair(base=Currency.BTC, quote=Currency.USDT),
@@ -64,6 +70,7 @@ class TestPriceApplyTo:
         assert money.currency == Currency.USDT
 
     def test_apply_to_mismatched_asset_fails(self) -> None:
+        """apply_to() returns Failure when the Quantity's asset does not match the Price's base."""
         price = Price(
             amount=Decimal("50000"),
             pair=Pair(base=Currency.BTC, quote=Currency.USDT),
@@ -73,6 +80,7 @@ class TestPriceApplyTo:
         assert isinstance(result, Failure)
 
     def test_apply_to_zero_quantity(self) -> None:
+        """apply_to() with zero quantity returns zero Money in the quote currency."""
         price = Price(
             amount=Decimal("50000"),
             pair=Pair(base=Currency.BTC, quote=Currency.USDT),
@@ -83,6 +91,7 @@ class TestPriceApplyTo:
         assert result.unwrap() == Money.zero(Currency.USDT)
 
     def test_str_representation(self) -> None:
+        """str(Price) produces the canonical 'amount BASE/QUOTE' format."""
         price = Price(
             amount=Decimal("50000"),
             pair=Pair(base=Currency.BTC, quote=Currency.USDT),

@@ -23,6 +23,7 @@ def quantity_strategy(
 
     Returns:
         A valid ``Quantity`` instance.
+
     """
     amount = draw(positive_decimal_strategy())
     cur = asset or draw(st.sampled_from(list(Currency)))

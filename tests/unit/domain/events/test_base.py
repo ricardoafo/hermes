@@ -40,7 +40,7 @@ class TestSchemaVersionEnforcement:
                 __event_schema_version__: ClassVar[SchemaVersion] = "1"  # type: ignore[assignment]
 
     def test_subclass_with_version_is_accepted(self) -> None:
-        """Defining __event_schema_version__ as ClassVar[int] must NOT raise."""
+        """A DomainEvent subclass with an integer version attribute is accepted without raising."""
 
         @dataclass(frozen=True, slots=True)
         class GoodEvent(DomainEvent):
@@ -55,6 +55,7 @@ class TestDomainEventInstantiation:
     """Verify a valid subclass can be instantiated with required fields."""
 
     def test_instantiation_with_required_fields(self) -> None:
+        """A valid DomainEvent subclass can be instantiated with occurred_at and correlation_id."""
 
         @dataclass(frozen=True, slots=True)
         class ConcreteEvent(DomainEvent):
@@ -66,6 +67,7 @@ class TestDomainEventInstantiation:
         assert event.correlation_id == "01J9Z8T3M5BQR2FVKN4XWY6PH1"
 
     def test_event_is_frozen(self) -> None:
+        """DomainEvent subclasses are immutable — mutating a field after construction raises."""
 
         @dataclass(frozen=True, slots=True)
         class FrozenEvent(DomainEvent):
@@ -77,6 +79,7 @@ class TestDomainEventInstantiation:
             event.correlation_id = "changed"  # type: ignore[misc]
 
     def test_schema_version_is_class_var(self) -> None:
+        """__event_schema_version__ is a ClassVar accessible on the class and on type(instance)."""
 
         @dataclass(frozen=True, slots=True)
         class VersionedEvent(DomainEvent):
@@ -93,5 +96,6 @@ class TestSchemaVersionTypeAlias:
     """Verify SchemaVersion is exported and is the int type alias."""
 
     def test_schema_version_is_int(self) -> None:
+        """SchemaVersion is a type alias for int — values of that type are instances of int."""
         v: SchemaVersion = 1
         assert isinstance(v, int)

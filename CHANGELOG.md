@@ -61,6 +61,15 @@ lands in Phase 0 CI (per ADR-006).
   `hermes.domain.*` and `hermes.ports.*` module. Adds `__all__` to
   `hermes.domain.__init__`, `hermes.ports.__init__`, `hermes.ports.exchange`,
   `hermes.ports.notifier`. Closes #109.
+- **AI-authored-test enforcement** (`docs/guides/ai-authored-tests.md`):
+  ruff `D103` enforced on `tests/**` (missing docstring on public test fn),
+  `[tool.coverage.report] fail_under = 90` global floor, and a new
+  `no-vague-test-assertions` pre-commit hook (Python AST walker at
+  `scripts/dev/no-vague-test-assertions.py`) that fails a test function whose
+  sole assertion is a vague null-guard (`is None`, `> 0`, bare `assert x`).
+  Existing tests received 89 invariant-naming docstrings. Contributors: your
+  next commit may fail if a new test lacks a docstring or has only a vague
+  assertion — see the guide for the standard. Closes #116.
 - Merge queue test — PR C (competing edit)
 - Architecture Decision Records 001-010 (accepted 2026-08-21)
 - Version-control discipline (`docs/guides/dev-workflow.md`) — trunk-based,

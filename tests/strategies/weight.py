@@ -18,6 +18,7 @@ def weight_strategy(draw: st.DrawFn) -> Weight:
 
     Returns:
         A valid ``Weight`` instance with value in [0, 1].
+
     """
     value = draw(
         st.decimals(

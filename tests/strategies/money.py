@@ -31,6 +31,7 @@ def positive_decimal_strategy(
 
     Returns:
         A non-negative Decimal value.
+
     """
     return draw(
         st.decimals(
@@ -52,6 +53,7 @@ def currency_strategy(draw: st.DrawFn) -> Currency:
 
     Returns:
         A random ``Currency`` enum member.
+
     """
     return draw(st.sampled_from(list(Currency)))
 
@@ -70,6 +72,7 @@ def money_strategy(
 
     Returns:
         A ``Money`` instance with a non-negative amount.
+
     """
     amount = draw(positive_decimal_strategy())
     cur = currency or draw(currency_strategy())
