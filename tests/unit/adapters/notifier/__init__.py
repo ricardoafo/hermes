@@ -1,1 +1,1 @@
-"""Unit tests for the notifier adapter package."""
+"""Unit tests for notifier adapters (Slack, Telegram)."""
