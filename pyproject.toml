@@ -28,10 +28,6 @@ dev = [
   "pytest-xdist>=3.6,<4",
   "hypothesis>=6.112,<7",
   "syrupy>=5,<6",  # bumped to unblock pytest 9 (see PYSEC-2026-1845 note above)
-  # mutmut deferred to Phase 1: libcst (transitive) lacks a 3.14 wheel as of
-  # 2026-08 and needs Rust to build. Add back when either libcst ships a 3.14
-  # wheel or the mutation-testing GH workflow provisions a Rust toolchain.
-  # [tool.mutmut] config below stays — it's inert without the tool installed.
   "respx>=0.21,<1",
   "freezegun>=1.5,<2",
   "coverage[toml]>=7.6,<8",
@@ -124,11 +120,6 @@ name = "adapters-never-import-entrypoints"
 type = "forbidden"
 source_modules = ["hermes.adapters"]
 forbidden_modules = ["hermes.entrypoints"]
-
-[tool.mutmut]
-paths_to_mutate = ["src/hermes/domain/"]
-tests_dir = "tests/unit/"
-runner = "uv run pytest tests/unit/ -x -q"
 
 [tool.vulture]
 min_confidence = 80

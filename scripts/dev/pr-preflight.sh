@@ -74,7 +74,7 @@ fi
 if [[ "${HERMES_SELF_TEST:-}" == "1" ]]; then
     # Verify all mandatory tools are declared and the script parses.
     # Real check-invocations happen only in the non-self-test path.
-    for cmd in ruff mypy lint-imports pytest markdownlint-cli2 git; do
+    for cmd in ruff mypy lint-imports pytest markdownlint-cli2 git radon vulture; do
         if ! grep -q "\\b${cmd}\\b" "$0"; then
             echo "SELF-TEST FAIL: script does not reference '${cmd}'" >&2
             exit 1
@@ -158,21 +158,31 @@ run_check "lint-imports"              uv run lint-imports
 # 6. Pip-audit (CVE scan) — --skip-editable to ignore local hermes package
 run_check "pip-audit --skip-editable" uv run pip-audit --skip-editable
 
-# 7. Pytest (should be fast in Phase 0 — one test)
+# 7. Radon complexity — matches CI quality matrix leg "complexity".
+#    NOTE: radon cc --min B prints violations but exits 0 regardless; kept
+#    as-is to mirror CI exactly (informational-only gate). Strengthening the
+#    exit-code semantic is out of scope for this drift-closure change.
+run_check "radon (complexity)"        uv run radon cc --min B src/
+
+# 8. Vulture dead-code — matches CI quality matrix leg "deadcode".
+#    Reads config from [tool.vulture] in pyproject.toml (min_confidence=80).
+run_check "vulture (dead code)"       uv run vulture src/
+
+# 9. Pytest (should be fast in Phase 0 — one test)
 run_check "pytest tests/"             uv run pytest tests/ -q
 
-# 8. Markdownlint on FULL tree (CI runs the same glob)
+# 10. Markdownlint on FULL tree (CI runs the same glob)
 run_check "markdownlint-cli2 (full tree)" \
     markdownlint-cli2 "**/*.md" "#node_modules" "#.venv"
 
-# 9. Guides index up-to-date (CI regenerates and diffs)
+# 11. Guides index up-to-date (CI regenerates and diffs)
 check_guides_index() {
     bash scripts/dev/regenerate-guides-index.sh >/dev/null 2>&1 || return 1
     git diff --exit-code -- docs/guides/README.md >/dev/null 2>&1
 }
 run_check "Guides index current" check_guides_index
 
-# 10. CHANGELOG check — infers PR title's conventional-commit type from
+# 12. CHANGELOG check — infers PR title's conventional-commit type from
 #     the LATEST commit on the branch (matches what the eventual squash
 #     commit will inherit — squash-merge uses the PR title, which is
 #     conventionally the last-committed message).
@@ -206,7 +216,7 @@ check_changelog_if_applicable() {
 }
 run_check "CHANGELOG check (inferred from latest commit)" check_changelog_if_applicable
 
-# 11. Optional — PR body lint (only when --body FILE given)
+# 13. Optional — PR body lint (only when --body FILE given)
 if [[ -n "$BODY_FILE" ]]; then
     check_pr_body() {
         PR_BODY="$(cat "$BODY_FILE")" bash scripts/dev/pr-body-lint.sh
