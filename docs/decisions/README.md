@@ -60,6 +60,7 @@ What this locks in. What it forecloses. What we'll revisit.
 | 2026-08-21 | [Dependabot over Renovate](2026-08-21-dependabot-over-renovate.md)                           | ADR-010 §Renovate                             |
 | 2026-08-21 | [Python 3.14 pin](2026-08-21-python-3-14-pin.md)                                             | ADR-003 §User Interface + README §64          |
 | 2026-08-22 | [Drop `safety` from dev deps](2026-08-22-drop-safety.md)                                     | ADR-010 §3 CVE scanning (safety+pip-audit)    |
+| 2026-08-22 | [ci-success aggregator fix](2026-08-22-ci-success-aggregator-fix.md)                         | Inline shell aggregator in ci.yml             |
 
 ## Anti-patterns
 
