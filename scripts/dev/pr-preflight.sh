@@ -105,11 +105,30 @@ run_check() {
 
 # ────────────────────────────────────────────────────────────────
 # Preconditions — the environment must be usable
+#
+# uv may not be on PATH inside subshells (pre-commit spawns without
+# env inheritance on Windows). Probe common install locations before
+# giving up.
 # ────────────────────────────────────────────────────────────────
 if ! command -v uv >/dev/null 2>&1; then
-    echo "ERROR: uv not on PATH." >&2
+    for candidate in \
+        "$HOME/AppData/Roaming/Python/Scripts/uv.exe" \
+        "$HOME/.local/bin/uv" \
+        "$HOME/.cargo/bin/uv" \
+        "/usr/local/bin/uv"
+    do
+        if [[ -x "$candidate" ]]; then
+            export PATH="$(dirname "$candidate"):$PATH"
+            break
+        fi
+    done
+fi
+
+if ! command -v uv >/dev/null 2>&1; then
+    echo "ERROR: uv not found on PATH or in common install locations." >&2
     echo "  Windows: uv typically lives at ~/AppData/Roaming/Python/Scripts/uv.exe" >&2
-    echo "  Add to PATH before invoking pr-preflight." >&2
+    echo "  Linux/macOS: ~/.local/bin/uv or ~/.cargo/bin/uv" >&2
+    echo "  Install: https://github.com/astral-sh/uv" >&2
     exit 2
 fi
 
