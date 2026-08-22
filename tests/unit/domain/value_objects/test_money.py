@@ -1,0 +1,189 @@
+"""Property and example-based tests for Money (R-5).
+
+Property invariants per code-conventions.md §8:
+- add same currency → Success
+- add different currency → Failure(CurrencyMismatch)
+- add is commutative
+- zero is neutral element
+- from_str roundtrip
+- multiply by zero yields zero
+
+Reference: R-5 (A-5.3, A-5.4, A-5.6, A-5.7).
+"""
+
+from __future__ import annotations
+
+from decimal import Decimal
+
+import pytest
+from hypothesis import given
+from returns.result import Failure, Success
+
+# Import for side-effect: registers type strategy for Money with hypothesis
+import tests.strategies.money  # noqa: F401
+from hermes.domain.errors import CurrencyMismatch, InvalidLot
+from hermes.domain.value_objects.currency import Currency
+from hermes.domain.value_objects.money import Money
+from tests.strategies.money import currency_strategy, money_strategy
+
+
+class TestMoneyAddSameCurrency:
+    """add() with same currency always succeeds."""
+
+    @given(money_strategy(), money_strategy())
+    def test_add_same_currency_succeeds(self, a: Money, b: Money) -> None:
+        # Force same currency
+        b_same = Money(amount=b.amount, currency=a.currency)
+        result = a.add(b_same)
+        assert isinstance(result, Success)
+        unwrapped = result.unwrap()
+        assert unwrapped.currency == a.currency
+        assert unwrapped.amount == a.amount + b_same.amount
+
+
+class TestMoneyAddDifferentCurrency:
+    """add() with different currencies always fails with CurrencyMismatch."""
+
+    @given(money_strategy(), money_strategy(), currency_strategy(), currency_strategy())
+    def test_add_different_currency_fails(
+        self, a: Money, b: Money, c1: Currency, c2: Currency
+    ) -> None:
+        # Force different currencies — skip if sampled currencies happen to be equal
+        if c1 == c2:
+            return
+        a_mod = Money(amount=a.amount, currency=c1)
+        b_mod = Money(amount=b.amount, currency=c2)
+        result = a_mod.add(b_mod)
+        assert isinstance(result, Failure)
+        err = result.failure()
+        assert isinstance(err, CurrencyMismatch)
+        assert err.expected == c1
+        assert err.actual == c2
+
+
+class TestMoneyAddCommutativity:
+    """a.add(b) == b.add(a) for same-currency pairs."""
+
+    @given(money_strategy())
+    def test_add_is_commutative(self, a: Money) -> None:
+        b = Money(amount=Decimal("1.5"), currency=a.currency)
+        ab = a.add(b)
+        ba = b.add(a)
+        assert isinstance(ab, Success)
+        assert isinstance(ba, Success)
+        assert ab.unwrap() == ba.unwrap()
+
+
+class TestMoneyZeroNeutral:
+    """Adding zero does not change the value."""
+
+    @given(money_strategy())
+    def test_zero_is_neutral(self, a: Money) -> None:
+        z = Money.zero(a.currency)
+        result = a.add(z)
+        assert isinstance(result, Success)
+        assert result.unwrap() == a
+
+    @given(money_strategy())
+    def test_zero_plus_value_is_value(self, a: Money) -> None:
+        z = Money.zero(a.currency)
+        result = z.add(a)
+        assert isinstance(result, Success)
+        assert result.unwrap() == a
+
+
+class TestMoneyFromStrRoundtrip:
+    """from_str(str(m)) == m for all valid Money values."""
+
+    @given(money_strategy())
+    def test_from_str_roundtrip(self, m: Money) -> None:
+        result = Money.from_str(str(m))
+        assert isinstance(result, Success)
+        assert result.unwrap() == m
+
+
+class TestMoneyMultiplyByZero:
+    """Multiplying by zero yields zero Money."""
+
+    @given(money_strategy())
+    def test_multiply_by_zero_int(self, m: Money) -> None:
+        result = m.multiply(0)
+        assert result == Money.zero(m.currency)
+
+    @given(money_strategy())
+    def test_multiply_by_zero_decimal(self, m: Money) -> None:
+        result = m.multiply(Decimal("0"))
+        assert result == Money.zero(m.currency)
+
+    @given(money_strategy())
+    def test_multiply_by_one_is_identity(self, m: Money) -> None:
+        result = m.multiply(1)
+        assert result == m
+
+
+class TestMoneyExampleBased:
+    """Example-based tests for factory methods and edge cases."""
+
+    def test_from_str_valid(self) -> None:
+        result = Money.from_str("100.50 EUR")
+        assert isinstance(result, Success)
+        m = result.unwrap()
+        assert m.amount == Decimal("100.50")
+        assert m.currency == Currency.EUR
+
+    def test_from_str_invalid_amount(self) -> None:
+        result = Money.from_str("abc EUR")
+        assert isinstance(result, Failure)
+
+    def test_from_str_unknown_currency(self) -> None:
+        result = Money.from_str("100 XYZ")
+        assert isinstance(result, Failure)
+
+    def test_from_str_missing_parts(self) -> None:
+        result = Money.from_str("100")
+        assert isinstance(result, Failure)
+
+    def test_zero_factory(self) -> None:
+        z = Money.zero(Currency.BTC)
+        assert z.amount == Decimal("0")
+        assert z.currency == Currency.BTC
+
+    def test_divide_by_zero_fails(self) -> None:
+        m = Money(amount=Decimal("100"), currency=Currency.EUR)
+        result = m.divide(Decimal("0"))
+        assert isinstance(result, Failure)
+        assert isinstance(result.failure(), InvalidLot)
+
+    def test_divide_success(self) -> None:
+        m = Money(amount=Decimal("100"), currency=Currency.EUR)
+        result = m.divide(Decimal("4"))
+        assert isinstance(result, Success)
+        assert result.unwrap().amount == Decimal("25")
+
+    def test_sub_same_currency(self) -> None:
+        a = Money(amount=Decimal("10"), currency=Currency.EUR)
+        b = Money(amount=Decimal("3"), currency=Currency.EUR)
+        result = a.sub(b)
+        assert isinstance(result, Success)
+        assert result.unwrap().amount == Decimal("7")
+
+    def test_sub_different_currency_fails(self) -> None:
+        a = Money(amount=Decimal("10"), currency=Currency.EUR)
+        b = Money(amount=Decimal("3"), currency=Currency.BTC)
+        result = a.sub(b)
+        assert isinstance(result, Failure)
+        assert isinstance(result.failure(), CurrencyMismatch)
+
+    def test_frozen_immutable(self) -> None:
+        m = Money(amount=Decimal("100"), currency=Currency.EUR)
+        with pytest.raises((AttributeError, TypeError)):
+            m.amount = Decimal("200")  # type: ignore[misc]
+
+    def test_equality_by_value(self) -> None:
+        m1 = Money(amount=Decimal("50"), currency=Currency.EUR)
+        m2 = Money(amount=Decimal("50"), currency=Currency.EUR)
+        assert m1 == m2
+
+    def test_str_representation(self) -> None:
+        m = Money(amount=Decimal("42.5"), currency=Currency.BTC)
+        assert str(m) == "42.5 BTC"

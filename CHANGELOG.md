@@ -15,6 +15,32 @@ lands in Phase 0 CI (per ADR-006).
 
 ### Added
 
+- **Code conventions guide** (`docs/guides/code-conventions.md`): 14
+  sections codifying design patterns, error handling (hybrid Result in
+  domain / exceptions in adapters), immutability, factories, async
+  policy (AnyIO on asyncio), performance mindset with measured triggers,
+  polyglot posture (Rust yes when profiled, Go no for solo scale),
+  testing patterns, time handling (UTC internally / Madrid at edges),
+  event schema versioning, feature flags, engine pause, migrations, and
+  public/internal API. Research-backed (engram
+  `phase-1-code-conventions-research-2026-08-23`). Closes #106.
+- **6 domain value objects** in `src/hermes/domain/value_objects/`:
+  Money, Price, Weight, Pair, Quantity, LotId — all frozen dataclasses
+  with `from_*` factories and `Result`-based validation. Foundation for
+  every Phase 1 domain feature. Closes #98.
+- **HermesError hierarchy** (`src/hermes/domain/errors.py`): `DomainError`
+  and `InfraError` subtrees. Enables the hybrid error-handling pattern.
+- **Time helpers** (`src/hermes/infrastructure/time.py`): `now_utc`,
+  `to_madrid`, `from_madrid` using `zoneinfo.ZoneInfo` (no pytz, no
+  naive datetimes). Enforces §9 UTC-internally convention.
+- **DomainEvent base class** (`src/hermes/domain/events/base.py`) with
+  `__event_schema_version__` enforcement via `__init_subclass__`.
+- **Hypothesis strategy library** in `tests/strategies/` with composable
+  strategies for all 6 value objects.
+
+- **New runtime dependencies**: `returns>=0.24,<1` (Result monad, used
+  in domain error handling per code-conventions §2) + `anyio>=4,<5`
+  (structured concurrency at I/O boundary per code-conventions §5).
 - **Observability scaffold** (`src/hermes/infrastructure/logging.py`):
   structlog config with JSONRenderer (prod) / ConsoleRenderer (dev),
   ULID correlation-ID contextvar plumbing, starter field taxonomy in
