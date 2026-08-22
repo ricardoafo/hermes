@@ -168,13 +168,23 @@ work?', skip it — the PR body + tests are enough."
 - Start with `/sdd-new <change-name>` — creates
   `openspec/changes/{name}/change.md` from
   `openspec/changes/TEMPLATE/change.md`
-- Fill sections in order: Summary → Scope → Decisions → Requirements
-  → Design → Test plan → Risks
+- **Create the tracking issue in the same step** — `gh issue create` and
+  write the number + URL into `openspec/changes/{name}/issue.md` from
+  `openspec/changes/TEMPLATE/issue.md`. Every SDD change has exactly
+  one tracking issue (Rust RFC pattern). No exceptions.
+- Fill `change.md` sections in order: Summary → Scope → Decisions →
+  Requirements → Design → Test plan → Risks
 - Mirror to engram under `sdd/{name}/change` in the same commit
 - `/sdd-apply` implements from Design. It MUST read `apply-progress`
   from prior batches before starting (merge, don't overwrite)
 - `/sdd-verify` validates against Requirements. `CRITICAL` findings
   block merge; `WARNING` and `SUGGESTION` are non-blocking
+- **PR body**: use
+  `bash scripts/dev/pr-preflight.sh --render-body <change-name>` before
+  `gh pr create`. The render script auto-injects `Closes #N` from
+  `issue.md`, populates Summary/Testing/Risk from `change.md`, and
+  runs `pr-body-lint.sh` — all in one command. Then
+  `gh pr create --body-file <rendered>`
 - Post-ship: `change.md` is frozen in the repo per ADR-009 lifecycle
 
 Full orchestrator contract in `~/.claude/CLAUDE.md` §SDD-Workflow.

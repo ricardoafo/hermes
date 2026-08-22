@@ -5,6 +5,7 @@
 **Accepted**: 2026-08-21
 **Amended**: 2026-08-21 — added §7 (SDD change artifacts, dual-source convention); Neutral bullet on openspec/engram revised to match
 **Amended**: 2026-08-22 — §6 consolidates 3-file change spec (proposal.md + spec.md + design.md) into single `change.md`; adds §6a "when to skip SDD entirely" bar
+**Amended**: 2026-08-22 — §6 documents `issue.md` tracking-issue convention; PR body rendered from `change.md` + `issue.md` via `scripts/dev/render-pr-body.sh`
 **Deciders**: Ricardo Afonso (product owner), Claude (proposer)
 **Supersedes**: —
 
@@ -168,6 +169,12 @@ itself if named well).
   - `design-<topic>.md` — deep-dive on one tricky area if it would
     bloat `change.md` past ~2000 words
   - Otherwise everything goes in `change.md`. Bias toward one file
+- **Tracking issue link** (`issue.md`, added 2026-08-22): every SDD
+  change is tracked by exactly one GitHub issue (Rust RFC tracking-
+  issue pattern). `openspec/changes/{name}/issue.md` records the
+  issue number + URL. `scripts/dev/render-pr-body.sh` reads this
+  file to auto-inject `Closes #N` into every PR body for the change.
+  Enforces the AI-lifecycle §3 issue-first discipline.
 - **Not tracked in this surface**: `explore.md` (throwaway
   scaffolding for the change), `tasks.md` (ephemeral implementation
   breakdown), `apply-progress.md` (session state),
