@@ -55,6 +55,30 @@ lands in Phase 0 CI (per ADR-006).
   `ok=false` response, and non-JSON payload; 100% coverage on the new
   package. Follow-up: adaptive back-off on 429 (deferred until router
   layer lands). Closes #102.
+- **Recharacterization tax guard** (`src/hermes/application/tax_guard/`):
+  pure-function ADR-002 §Decision 6 monitor over trade activity. Two
+  public functions — `compute_window(events, now, window_days)` returns
+  a frozen `WindowStats` (trade count, distinct base assets, fees
+  bucketed by currency) over the rolling `[now - window_days, now]`
+  closed interval; `check_breach(stats, config, now, correlation_id)`
+  emits `AnomalyDetected(source="tax_guard.recharacterization",
+  severity=CRITICAL)` when any threshold is strictly exceeded, else
+  `None`. `evaluate()` composes both. All ADR-002 §6 initial values
+  ship in `config/tax_guard.yaml` (`trade_count_90d_max: 500`,
+  `distinct_assets_90d_max: 12`, `fee_income_90d_max_eur: "0"`,
+  `recharacterization_window_days: 90`) — mirrored as required fields
+  on `TaxGuardConfig`. The application layer stays hexagonally pure via
+  a `TaxGuardThresholds` `Protocol` (import-linter still forbids
+  `hermes.application → hermes.infrastructure`; the infra
+  `TaxGuardConfig` structurally satisfies the protocol). Property tests
+  (`hypothesis`) pin the "streams crossing thresholds fire; streams
+  that don't, don't" invariant across window inclusion, threshold
+  strictness, and asset-cardinality axes. The engine-pause subscriber
+  hook ADR-002 §6 mandates is DEFERRED to #25 (paper-trading engine —
+  that PR owns the pause mechanism); this guard ships the emission
+  contract that the engine will subscribe to. Application-layer coverage
+  promoted from bootstrap to 100% enforced. Closes #105.
+
 - **Domain events + in-process EventBus** (`src/hermes/domain/events/`):
   four concrete event dataclasses — `TradeExecuted`, `RebalanceTriggered`,
   `AnomalyDetected`, `LotClosed` — all frozen and pinned to
@@ -67,17 +91,6 @@ lands in Phase 0 CI (per ADR-006).
   §00 invariant I-06 will build on when the SQLite `events` table lands
   with #24. Coverage 100% on every new file in the events package.
   Closes #99.
-- **Mutation testing gate — cosmic-ray** (`cosmic-ray.toml`,
-  `.github/workflows/mutation.yml`, `docs/decisions/2026-08-22-mutation-testing-cosmic-ray.md`):
-  adopts cosmic-ray 8.7 as the Phase-1 mutation-testing tool for
-  `src/hermes/domain/value_objects/` — Python 3.14 native via `parso`
-  (unblocks the mutmut/libcst wheel gap from Phase 0). Weekly cron
-  (Sundays 03:00 UTC), advisory until 2026-09-05 then blocking at
-  ≥80% kill-rate. Feasibility spike on `money.py` measured 72.38%
-  kill rate (27.62% survivors, of which 22/29 are noise from mutation
-  of `|` in PEP 604 type-union syntax — real-logic kill rate ≈ 93%).
-  Updates `docs/guides/ai-authored-tests.md` enforcement table row
-  from "deferred" to "live (advisory)". Closes #118.
 
 - **Process hardening wave 2** (`scripts/dev/create-pr.sh`, `scripts/dev/pr-preflight.sh`,
   `.pre-commit-config.yaml`, `AGENTS.md`): create-pr.sh wrapper enforces PR body lint

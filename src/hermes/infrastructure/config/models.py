@@ -131,6 +131,18 @@ class FeesConfig(BaseModel):
 class TaxGuardConfig(BaseModel):
     """Root of ``config/tax_guard.yaml`` — LOPDGDD + tax thresholds.
 
+    Two axes live under this model:
+
+    - **PnL / concentration hygiene** — ``annual_realised_pnl_alert_eur``,
+      ``wash_sale_window_days``, ``max_position_pct_portfolio``. Used by the
+      annual-report + concentration guards.
+    - **Recharacterization guard (ADR-002 §Decision 6)** — the rolling
+      90-day window over trade count, distinct assets, and fee income that
+      keeps the observable signals firmly on the "individual investor"
+      side of any plausible AEAT recharacterization line. Crossing any
+      threshold emits an ``AnomalyDetected`` and (per ADR-002) pauses
+      new signal generation.
+
     Attributes:
         annual_realised_pnl_alert_eur: Absolute EUR gain in a calendar year
             above which the operator receives a Modelo-100 reminder.
@@ -140,6 +152,24 @@ class TaxGuardConfig(BaseModel):
             the gestor).
         max_position_pct_portfolio: Concentration cap; single-instrument
             exposure above this ratio blocks new entries.
+        recharacterization_window_days: Rolling window (in days) over which
+            the recharacterization guard aggregates trades. ADR-002 fixes
+            this at 90; the field is configurable so a future tightening
+            (e.g. 60 days) does not require a code change.
+        trade_count_90d_max: Maximum trade count inside the rolling window
+            before the guard fires. ADR-002 §6 sets the initial value at
+            500 as an approximation of the informal AEAT "day trader"
+            range.
+        distinct_assets_90d_max: Maximum count of distinct base assets
+            traded inside the rolling window. ADR-002 §6 sets 12 as the
+            ceiling; 6 is the planned diversification target.
+        fee_income_90d_max_eur: Maximum EUR-denominated fee income
+            collected by the operator inside the rolling window. ADR-002
+            §6 sets this to €0 (any nonzero value flags an infrastructure
+            recharacterization signal). Values recorded in non-EUR
+            currencies are counted separately (see the application-layer
+            ``WindowStats.fees_by_currency`` field); this threshold ONLY
+            gates the EUR bucket.
     """
 
     model_config = _MODEL_CONFIG
@@ -147,6 +177,10 @@ class TaxGuardConfig(BaseModel):
     annual_realised_pnl_alert_eur: Decimal = Field(gt=Decimal("0"))
     wash_sale_window_days: int = Field(ge=1, le=365)
     max_position_pct_portfolio: Decimal = Field(gt=Decimal("0"), le=Decimal("1"))
+    recharacterization_window_days: int = Field(ge=1, le=365)
+    trade_count_90d_max: int = Field(ge=1)
+    distinct_assets_90d_max: int = Field(ge=1)
+    fee_income_90d_max_eur: Decimal = Field(ge=Decimal("0"))
 
 
 class MLConfig(BaseModel):

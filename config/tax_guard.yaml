@@ -3,7 +3,17 @@
 # Loaded by hermes.infrastructure.config.load_config into TaxGuardConfig.
 # Values are illustrative starters; the operator tunes them per year in
 # consultation with the gestor before switching to real capital.
+#
+# The recharacterization block (window + trade_count + distinct_assets +
+# fee_income) mirrors ADR-002 §Decision 6 initial values. See the ADR for
+# rationale and the "first review after 90 days of shadow-mode data" note.
 
 annual_realised_pnl_alert_eur: "1000"
 wash_sale_window_days: 30
 max_position_pct_portfolio: "0.25"
+
+# Recharacterization guard — ADR-002 §Decision 6.
+recharacterization_window_days: 90
+trade_count_90d_max: 500
+distinct_assets_90d_max: 12
+fee_income_90d_max_eur: "0"
