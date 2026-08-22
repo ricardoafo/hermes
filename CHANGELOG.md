@@ -35,6 +35,26 @@ lands in Phase 0 CI (per ADR-006).
   imports only `hermes.ports.notifier`, never adapter classes (enforced by
   the `application-imports-only-domain-and-ports` import-linter contract).
   Closes #100.
+- **Telegram notifier adapter** (`src/hermes/adapters/notifier/telegram_adapter.py`):
+  concrete `NotifierPort` for the urgent/terse channel per the 2026-08-23
+  decisions-journal entry. `notify_urgent` posts to the Telegram Bot API
+  `sendMessage` endpoint via `httpx.Client` (no `python-telegram-bot` SDK —
+  we skip the extra event loop and stay aligned with the anyio-on-asyncio
+  policy). Message format is MarkdownV2 with every reserved character
+  backslash-escaped so dotted event names and correlation tails render
+  literally; correlation tail = last 6 chars per ADR-008. `notify_report`
+  is a documented no-op with a WARNING log line — long-form content
+  belongs on Slack, not Telegram. New `TelegramNotifierError` extends
+  `InfraError` and wraps transport failures, non-2xx HTTP responses
+  (401 / 403 / 429), and `ok=false` API bodies; nothing is swallowed
+  silently. Credentials come from `HERMES_TELEGRAM__BOT_TOKEN` and
+  `HERMES_TELEGRAM__CHAT_ID` env vars via `TelegramConfig.from_env` —
+  never a YAML file, per AGENTS.md prohibition #6. Contract tests via
+  `respx` cover happy path, MarkdownV2 escaping, correlation-tail
+  extraction, 429 rate-limit, 401/403 auth failure, network error,
+  `ok=false` response, and non-JSON payload; 100% coverage on the new
+  package. Follow-up: adaptive back-off on 429 (deferred until router
+  layer lands). Closes #102.
 - **Domain events + in-process EventBus** (`src/hermes/domain/events/`):
   four concrete event dataclasses — `TradeExecuted`, `RebalanceTriggered`,
   `AnomalyDetected`, `LotClosed` — all frozen and pinned to
