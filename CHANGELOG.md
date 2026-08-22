@@ -87,6 +87,14 @@ lands in Phase 0 CI (per ADR-006).
 
 ### Changed
 
+- **AI-authored-tests guide** (`docs/guides/ai-authored-tests.md`): new
+  test pyramid tier 2+3 definitions (integration and e2e: markers,
+  fake/mock/testnet policy, hermes density guidance) and "AI development
+  lifecycle × test tier" matrix mapping 7 SDD phases across 3 tiers.
+  Enforcement table rewritten to reflect PR A truth (D103, `fail_under = 90`,
+  `coverage-check.py`, and `no-vague-test-assertions` now `live`; mutation
+  testing deferred to Phase 1 pending #118). Cross-link added from
+  `ai-development-lifecycle.md` Step 5. Closes #117.
 - **Notification channels** — added Slack alongside Telegram, routed
   by content class (Telegram = urgent/terse, Slack = rich/reports).
   Supersedes ADR-008 §4 "Telegram alerts — user-facing signals only"
