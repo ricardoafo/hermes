@@ -388,6 +388,52 @@ jobs:
       - run: uv tool run semgrep scan --config p/security-audit --config p/python --error
 
   # ─────────────────────────────────────────────────────────────────────
+  # LICENSES — dep license allowlist enforcement
+  # Blocks GPL/AGPL/LGPL which create commercial-use constraints
+  # incompatible with hermes' private closed operation.
+  # See scripts/dev/license-check.py header for allowlist rationale.
+  # ─────────────────────────────────────────────────────────────────────
+  licenses:
+    name: License compliance
+    needs: changeset
+    if: needs.changeset.outputs.code == 'true'
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - uses: astral-sh/setup-uv@v3
+        with: { version: "0.12.5" }
+      - run: uv sync --frozen
+      - run: uv tool install pip-licenses
+      - name: Validate licenses against allowlist
+        run: |
+          uv tool run pip-licenses --format=json \
+            | python3 scripts/dev/license-check.py
+
+  # ─────────────────────────────────────────────────────────────────────
+  # REPRODUCIBLE — uv.lock integrity: every entry has a hash
+  # `uv sync --frozen` verifies hashes at install time; this asserts the
+  # lockfile itself has hashes for every entry (defense-in-depth).
+  # ─────────────────────────────────────────────────────────────────────
+  reproducible:
+    name: Lockfile hash integrity
+    needs: changeset
+    if: needs.changeset.outputs.code == 'true'
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Assert uv.lock hashes
+        # Python 3.14 has tomllib in stdlib — no uv setup needed.
+        run: python3 scripts/dev/reproducibility-check.py
+
+  # ─────────────────────────────────────────────────────────────────────
   # CODEOWNERS syntax guard — a broken CODEOWNERS silently disables
   # code-owner review enforcement (GitHub does not fail the PR; it just
   # skips the check). That looks green while unreviewed code merges.
@@ -461,7 +507,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────
   ci-success:
     name: CI success
-    needs: [changeset, markdown-lint, pr-title, pr-body, changelog, auto-label, merge-decisions, quality, unit, guards, semgrep, codeowners, secrets]
+    needs: [changeset, markdown-lint, pr-title, pr-body, changelog, auto-label, merge-decisions, quality, unit, guards, semgrep, licenses, reproducible, codeowners, secrets]
     if: '!cancelled()'
     runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 1

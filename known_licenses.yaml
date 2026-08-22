@@ -1,0 +1,20 @@
+# Registry of license exceptions.
+#
+# Every entry: a package hermes uses whose license is NOT in the
+# `scripts/dev/license-check.py` allowlist but has been reviewed and
+# accepted as safe for our use.
+#
+# Referenced by scripts/dev/license-check.py — package name (case-
+# insensitive) matches exempt the license check.
+#
+# Every exception requires yearly re-review (parallel to known_advisories.yaml
+# quarterly re-audit for CVEs).
+#
+# Format:
+#   exceptions:
+#     - package: <pypi-name>
+#       version: <version-or-*>
+#       reason: <why the non-allowlisted license is OK for our use>
+#       accepted_by: <initials>
+#       reviewed: <YYYY-MM-DD>
+exceptions: []
