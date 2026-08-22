@@ -19,6 +19,7 @@ def price_strategy(draw: st.DrawFn) -> Price:
 
     Returns:
         A valid ``Price`` instance.
+
     """
     # Use a min_value > 0 for prices — a price of 0 is degenerate but valid
     amount = draw(

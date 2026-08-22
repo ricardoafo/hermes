@@ -20,6 +20,7 @@ def lot_id_strategy(draw: st.DrawFn) -> LotId:
 
     Returns:
         A valid ``LotId`` with a fresh ULID value.
+
     """
     _ = draw(st.booleans())
     return LotId.new()

@@ -17,6 +17,7 @@ def pair_strategy(draw: st.DrawFn) -> Pair:
 
     Returns:
         A valid ``Pair`` instance.
+
     """
     currencies = list(Currency)
     base = draw(st.sampled_from(currencies))
