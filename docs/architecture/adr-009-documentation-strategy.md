@@ -4,6 +4,7 @@
 **Status**: Accepted
 **Accepted**: 2026-08-21
 **Amended**: 2026-08-21 — added §7 (SDD change artifacts, dual-source convention); Neutral bullet on openspec/engram revised to match
+**Amended**: 2026-08-22 — §6 consolidates 3-file change spec (proposal.md + spec.md + design.md) into single `change.md`; adds §6a "when to skip SDD entirely" bar
 **Deciders**: Ricardo Afonso (product owner), Claude (proposer)
 **Supersedes**: —
 
@@ -46,7 +47,7 @@ itself if named well).
 | **Guides**        | `docs/guides/`               | How do I do task T (setup, dev workflow, release)?                               | Living; edited as tools/workflows change      |
 | **Runbook**       | `docs/runbook/`              | Incident I is happening — what do I do right now?                                | Living; each entry per incident type or drill |
 | **Research**      | `docs/research/`             | What did we learn before choosing X? What was the evidence?                      | Immutable snapshot; referenced by ADRs        |
-| **Change specs**  | `openspec/changes/{name}/`   | What did this SDD change decide, require, and design (proposal / spec / design)? | Frozen once the change ships; then archived   |
+| **Change specs**  | `openspec/changes/{name}/`   | What did this SDD change decide, require, and design (`change.md`)?              | Frozen once the change ships; then archived   |
 | **In-code docs**  | Docstrings + module doc      | What does this function/class do, and when should I use it?                      | Living with the code; deleted with the code   |
 
 ### 1. ADRs — Architecture Decision Records
@@ -143,55 +144,107 @@ itself if named well).
 
 ### 6. Change specs — SDD artifacts, dual-source convention
 
-- **Location**: `openspec/changes/{change-name}/` — one folder per SDD
-  change, following the standard SDD convention. Files inside:
-  - `proposal.md` — decisions with rationale (the "what and why" of the change)
-  - `spec.md` — testable requirements + acceptance criteria (the "definition of done")
-  - `design.md` — file-level shapes and concrete tool config (the "how")
-- **Not tracked in this surface**: `explore.md` (throwaway scaffolding
-  for the proposal), `tasks.md` (ephemeral implementation breakdown),
-  `apply-progress.md` (session state), `verify-report.md` (one-shot CI
-  substitute). These live in **engram only**.
-- **Dual-source rule**: every artifact in `openspec/changes/` is
-  ALSO mirrored to engram under the topic key
-  `sdd/{change-name}/{artifact}`. Engram is the AI-side working
-  memory (fast retrieval mid-session, survives compaction); the repo
-  is the human-side durable audit trail (reviewable in the IDE, on
-  GitHub, in PR diffs, in git history). Whenever a phase updates an
-  artifact, both sources must be updated in the same commit.
-- **Lifecycle**: while a change is open (proposal → apply →
-  verify), the folder is live. Once the change ships (squash-merge
-  to `main`), the folder is frozen. Post-ship archival strategy
-  (leave in place vs move under `openspec/archive/`) is a
-  Pending decision.
-- **Cross-reference to ADRs**: if a change spec makes an
-  architectural decision that will outlive the change, promote the
-  content to a new ADR before archiving; the change spec then cites
-  the ADR ("architectural rationale codified in ADR-NNN"). Non-
-  architectural decisions do NOT need promotion.
+- **Location**: `openspec/changes/{change-name}/change.md` — one file
+  per SDD change. The 2026-08-21 amendment specified 3 files
+  (proposal.md + spec.md + design.md); the 2026-08-22 amendment
+  consolidates them into one, because splitting cost ~20k tokens
+  per change in redundant content restatement and matched no
+  outside convention (Rust RFC, Kubernetes KEP, IETF RFC all use a
+  single artifact).
+- **Structure of `change.md`** (H2 sections in this order):
+  - **Summary** — 3-5 sentences; reviewer decides whether to read
+    further based on this alone
+  - **Scope** — `### In` and `### Out` subsections
+  - **Decisions** — `### D-N: <name>` per decision, each with:
+    Decision (one line) / Alternatives / Rationale (cites ADR or
+    invariant) / Cost of reversal
+  - **Requirements** — `### R-N: <title>` per requirement, each
+    with `- **A-N.M**: <shell-verifiable check>` bullets
+  - **Design** — file-level shapes, code snippets, tool config
+    (copy-ready for the apply phase)
+  - **Test plan** — how we know the change is done
+  - **Risks** — non-obvious failure modes + mitigations
+- **Supplementary files** (only when scope genuinely needs them):
+  - `design-<topic>.md` — deep-dive on one tricky area if it would
+    bloat `change.md` past ~2000 words
+  - Otherwise everything goes in `change.md`. Bias toward one file
+- **Not tracked in this surface**: `explore.md` (throwaway
+  scaffolding for the change), `tasks.md` (ephemeral implementation
+  breakdown), `apply-progress.md` (session state),
+  `verify-report.md` (one-shot CI substitute). These live in
+  **engram only**.
+- **Dual-source rule**: `change.md` is ALSO mirrored to engram
+  under topic key `sdd/{change-name}/change`. Engram is the AI-side
+  working memory (fast retrieval mid-session, survives compaction);
+  the repo is the human-side durable audit trail (reviewable in
+  the IDE, on GitHub, in PR diffs, in git history). Both sources
+  updated in the same commit.
+- **Lifecycle**: while a change is open, `change.md` is live. Once
+  the change ships (squash-merge to `main`), the file is frozen.
+  Post-ship archival strategy (leave in place vs move under
+  `openspec/archive/`) is a Pending decision.
+- **Cross-reference to ADRs**: if a change makes an architectural
+  decision that will outlive the change, promote the content to a
+  new ADR before archiving; `change.md` then cites the ADR
+  ("architectural rationale codified in ADR-NNN"). Non-architectural
+  decisions do NOT need promotion.
+- **Historical exception**: `openspec/changes/phase-0-python-toolchain/`
+  contains 3 files (proposal.md + spec.md + design.md) under the
+  prior 2026-08-21 convention. That change shipped as PR #72 + PR #73
+  before this amendment landed; per the lifecycle rule, shipped
+  artifacts stay frozen. No back-migration.
+- **Starting a new change spec**: copy
+  `openspec/changes/TEMPLATE/change.md` and fill in — canonical
+  shape.
 - **Readability standards** (change specs are read by humans in PR
   review and by future-them during archaeology — treat them like
   guides, not internal notes):
-  - **Headings**: Level 2 for major sections (`## Scope`,
-    `## Decisions`, etc.); Level 3 for sub-decisions and
-    requirements (`### D-N: <name>`, `### R-N: <title>`); Level 4+
-    used sparingly.
+  - **Headings**: Level 2 for major sections (`## Summary`,
+    `## Scope`, `## Decisions`); Level 3 for sub-items
+    (`### D-N: <name>`, `### R-N: <title>`); Level 4+ used sparingly
   - **Tables**: use them whenever the content is naturally
-    columnar (threshold tables, file-purpose maps, verification
-    check lists). Padded per invariant I-10.
+    columnar. Padded per invariant I-10
   - **Fenced code blocks**: language tag mandatory (`toml`,
-    `python`, `yaml`, `bash`, `mermaid`). No naked ` ``` `.
+    `python`, `yaml`, `bash`, `mermaid`, `text`). No naked ` ``` `
   - **Mermaid diagrams**: use where they add value — dependency
     direction, execution sequence, state machine, file-tree
     hierarchy. Do NOT use mermaid for lists that are just as
     readable in bullets. A good test: "does the diagram show a
     relationship the text alone would take a paragraph to
-    explain?" If yes, diagram; if no, keep the bullet list.
-  - **Executive Summary** at the top of `proposal.md` and
-    `design.md`: 3-5 sentences. A reviewer should decide
-    whether to read further based on this alone.
-  - **Cross-references** to ADRs / sibling artifacts use
-    relative markdown links, not bare URLs.
+    explain?" If yes, diagram; if no, keep the bullet list
+  - **Cross-references** to ADRs / sibling artifacts use relative
+    markdown links, not bare URLs
+
+### 6a. When to SKIP SDD entirely
+
+Not every change earns the SDD ceremony. The audit that motivated
+the 2026-08-22 consolidation also found we over-invoke SDD.
+
+**Skip SDD** for:
+
+- Bug fixes (unless the fix reveals an architectural gap)
+- Single-file refactors
+- Features implemented within existing architectural boundaries
+  (no new port, no new adapter kind, no new hexagonal-layer
+  interaction)
+- Documentation-only changes
+- CI / tooling / config changes (unless they change the
+  contribution workflow — this ADR-009 amendment is itself an
+  example that DID earn SDD-style rigor but landed as a normal PR)
+
+**Use SDD** for:
+
+- New external dependency with real tradeoffs (multiple candidates,
+  license implications, or supply-chain surface expansion)
+- Architectural shift (new hexagonal layer, new bounded context,
+  new event flow)
+- Breaking API contract (public function signature, config schema,
+  event payload)
+- Cross-cutting changes touching 3+ hexagonal layers together
+
+The Rust RFC bar: "if a peer reviewer would ask 'why are we doing
+it this way?', SDD is worth writing. If they'd only ask 'does this
+work?', skip it — the PR body + tests are enough."
 
 ### 7. In-code documentation — docstrings, sparingly
 
@@ -236,8 +289,10 @@ itself if named well).
   is the summary.
 - **SDD scaffolding artifacts** — `explore.md`, `tasks.md`,
   `apply-progress.md`, `verify-report.md` live in engram only.
-  Only the three durable artifacts (`proposal.md`, `spec.md`,
-  `design.md`) are mirrored to `openspec/changes/{name}/`. See §6.
+  Only the durable artifact (`change.md` per §6, or the legacy
+  3-file set `proposal.md` + `spec.md` + `design.md` for changes
+  that shipped before 2026-08-22) is mirrored to
+  `openspec/changes/{name}/`. See §6 and §6a.
 
 ### Directory layout
 

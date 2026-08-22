@@ -140,19 +140,48 @@ him decide.
 
 ### On the SDD workflow
 
-Hermes uses engram-backed SDD (proposal → spec → design → tasks →
-apply → verify → archive). Details:
+Hermes uses hybrid SDD: engram for AI working memory + a single
+`openspec/changes/{name}/change.md` in the repo for durable audit
+trail (per [ADR-009 §6](docs/architecture/adr-009-documentation-strategy.md#6-change-specs--sdd-artifacts-dual-source-convention)).
 
-- For **any change touching >2 files across >1 layer** or introducing a
-  new pattern: start with `/sdd-new <change-name>`. Skip SDD for typos,
-  one-line fixes, dependency bumps, doc corrections.
-- SDD artifacts live in engram under topic keys like
-  `sdd/{change-name}/{phase}`. Full contract in
-  `~/.claude/CLAUDE.md` §SDD-Workflow.
-- `/sdd-apply` implements tasks. It MUST read `apply-progress` from
-  prior batches before starting (merge, don't overwrite).
-- `/sdd-verify` validates against spec. `CRITICAL` findings block
-  merge; `WARNING` and `SUGGESTION` are non-blocking.
+**When to use SDD** (per ADR-009 §6a):
+
+- New external dep with real tradeoffs
+- Architectural shift (new port, new adapter kind, new bounded context)
+- Breaking API contract
+- Cross-cutting change touching 3+ hexagonal layers
+
+**When to SKIP SDD**:
+
+- Bug fixes (unless the fix reveals an architectural gap)
+- Single-file refactors
+- Features within existing architecture
+- Docs-only changes
+- CI / tooling / config changes (unless they change the workflow)
+
+The Rust RFC bar: "if a peer reviewer would ask 'why are we doing it
+this way?', SDD is worth writing. If they'd only ask 'does this
+work?', skip it — the PR body + tests are enough."
+
+**When SDD applies**:
+
+- Start with `/sdd-new <change-name>` — creates
+  `openspec/changes/{name}/change.md` from
+  `openspec/changes/TEMPLATE/change.md`
+- Fill sections in order: Summary → Scope → Decisions → Requirements
+  → Design → Test plan → Risks
+- Mirror to engram under `sdd/{name}/change` in the same commit
+- `/sdd-apply` implements from Design. It MUST read `apply-progress`
+  from prior batches before starting (merge, don't overwrite)
+- `/sdd-verify` validates against Requirements. `CRITICAL` findings
+  block merge; `WARNING` and `SUGGESTION` are non-blocking
+- Post-ship: `change.md` is frozen in the repo per ADR-009 lifecycle
+
+Full orchestrator contract in `~/.claude/CLAUDE.md` §SDD-Workflow.
+Note: existing `openspec/changes/phase-0-python-toolchain/` uses the
+prior 3-file convention (proposal.md + spec.md + design.md) and stays
+frozen as historical evidence — the 2026-08-22 ADR-009 amendment
+introduced `change.md` for future changes.
 
 ### On memory (engram)
 
