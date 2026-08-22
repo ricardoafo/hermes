@@ -1,1 +1,1 @@
-"""Unit tests for the application layer (notification router, use cases)."""
+"""Unit tests for the application layer (use cases, notification router, guards)."""

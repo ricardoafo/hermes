@@ -67,6 +67,10 @@ _VALID_TAX_GUARD = dedent(
     annual_realised_pnl_alert_eur: "1000"
     wash_sale_window_days: 30
     max_position_pct_portfolio: "0.25"
+    recharacterization_window_days: 90
+    trade_count_90d_max: 500
+    distinct_assets_90d_max: 12
+    fee_income_90d_max_eur: "0"
     """
 ).strip()
 
