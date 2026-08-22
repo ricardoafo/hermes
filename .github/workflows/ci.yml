@@ -466,16 +466,17 @@ jobs:
     runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 1
     steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
       - name: Verify all gates passed
         shell: bash
-        run: |
-          results='${{ toJSON(needs) }}'
-          echo "$results"
-
-          # Fail if any non-skipped job failed or was cancelled
-          if echo "$results" | grep -qE '"result":"(failure|cancelled)"'; then
-            echo "::error::One or more required CI gates failed."
-            exit 1
-          fi
-
-          echo "All required CI gates passed."
+        # Delegates to scripts/dev/ci-success-check.sh — parses needs
+        # context via Python (proper JSON, positive-list allowlist) and
+        # exits non-zero if any job result is outside {success, skipped}.
+        # See the script header for the bug story (PRs #72 and #73 merged
+        # red under the old grep-based check).
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: bash scripts/dev/ci-success-check.sh
