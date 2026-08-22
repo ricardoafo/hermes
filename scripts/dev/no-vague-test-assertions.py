@@ -19,7 +19,12 @@ Vague assertion classifier:
   - `assert x > 0` / `assert x >= 0` / `assert x != 0`
   - `assert x == True` / `assert x == False`
   - Bare `assert x` (single Name)
-  - `assert x == y` where both sides are Names (no Constant anchor)
+  - `assert x == y` where BOTH sides are plain Names (no Constant AND no
+    Attribute anchor). Allowing an Attribute on either side lets meaningful
+    domain-value comparisons through — e.g. `assert side == TradeSide.BUY`
+    or `assert obj.field == expected_value`. The problematic case that
+    survives is `assert result == expected` where the reader cannot tell
+    which side is the fixture and which is the system-under-test output.
 
 A test function is VALID if:
   - it has at least one MEANINGFUL assertion (comparison against a Constant
@@ -65,6 +70,13 @@ def _is_vague_compare(node: ast.Compare) -> bool:
         return True
     if isinstance(op, ast.Eq) and isinstance(rhs, ast.Constant) and isinstance(rhs.value, bool):
         return True
+    # Name == Name is the vague case (`assert result == expected` — which
+    # side is the answer?). An Attribute on EITHER side is a legitimate
+    # anchor (enum member, dataclass field, module constant) and is
+    # allowed through — this closes the drift-eval 2026-08-22 wave-3
+    # false-positive class where `assert side == TradeSide.BUY` was
+    # flagged and authors were forced to wrap RHS in `list(...)` or add
+    # a redundant `assert len(x) == N` companion.
     return isinstance(op, ast.Eq) and isinstance(rhs, ast.Name) and isinstance(node.left, ast.Name)
 
 
@@ -138,6 +150,21 @@ def _run_self_test() -> int:
         ),
         # meaningful alongside vague — vague is defensive, meaningful is real
         "def test_mix():\n    r = {'a': 1}\n    assert r is not None\n    assert r['a'] == 1\n",
+        # Name == Enum.MEMBER — Attribute on RHS is a legit anchor
+        (
+            "def test_enum_rhs():\n"
+            "    side = 'BUY'\n"
+            "    class TradeSide:\n        BUY = 'BUY'\n"
+            "    assert side == TradeSide.BUY\n"
+        ),
+        # obj.field == value — Attribute on LHS is also legit
+        (
+            "def test_attr_lhs():\n"
+            "    class O:\n        pass\n"
+            "    o = O(); o.field = 3\n"
+            "    value = 3\n"
+            "    assert o.field == value\n"
+        ),
     ]
     fail_cases = [
         # sole is not None
@@ -146,6 +173,12 @@ def _run_self_test() -> int:
         "def test_bad_gt():\n    n = 5\n    assert n > 0\n",
         # bare Name
         "def test_bad_bare():\n    r = True\n    assert r\n",
+        # Name == Name — the real vague case, MUST stay rejected
+        (
+            "def test_bad_name_eq_name():\n"
+            "    result = 1\n    expected = 1\n"
+            "    assert result == expected\n"
+        ),
     ]
     failed = 0
     with tempfile.TemporaryDirectory() as tmp:

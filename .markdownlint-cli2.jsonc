@@ -13,6 +13,15 @@
     "node_modules/**",
     ".venv/**",
     ".idea/**",
-    ".git/**"
+    ".git/**",
+    // Transient PR-body scratchpads (drift-eval 2026-08-22, wave 3):
+    // sub-agents sometimes write `.pr-body-*.md` at repo root before
+    // handing off to create-pr.sh. Those files start with `## Summary`
+    // (H2) per the pull_request_template, which trips MD041. create-pr.sh
+    // now copies repo-relative body files to /tmp/ automatically; this
+    // ignore is belt-and-suspenders for the (disallowed) path where
+    // someone bypasses the wrapper.
+    "**/.pr-body-*.md",
+    ".pr-body-*.md"
   ]
 }

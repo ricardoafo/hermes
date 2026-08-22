@@ -97,6 +97,13 @@ fi
 
 # ────────────────────────────────────────────────────────────────
 # Result tracking
+#
+# Total check count is CONDITIONAL, by design:
+#   - 13 checks always run (checks 1-12 plus per-package coverage).
+#   - +1 check runs ONLY when --body FILE or --render-body <change> is
+#     given (the PR body lint at the bottom).
+# Total = 13 unconditional + 1 optional. Not drift — different modes.
+# See summary line for the exact per-invocation breakdown.
 # ────────────────────────────────────────────────────────────────
 FAILED=()
 CHECK_COUNT=0
@@ -245,14 +252,24 @@ fi
 
 # ────────────────────────────────────────────────────────────────
 # Summary
+#
+# The check count depends on invocation flags (see "Result tracking" comment
+# above). The mode string makes the count discoverable so operators do not
+# mistake it for silent drift between runs (drift-eval 2026-08-22, wave 3).
 # ────────────────────────────────────────────────────────────────
+if [[ -n "$BODY_FILE" ]]; then
+    MODE_DESC="with PR body lint"
+else
+    MODE_DESC="without PR body lint — pass --body FILE or --render-body <change> to add it"
+fi
+
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 if [[ ${#FAILED[@]} -eq 0 ]]; then
-    echo "✓ ALL ${CHECK_COUNT} CHECKS PASS — safe to push."
+    echo "✓ ALL ${CHECK_COUNT} CHECKS PASS (${MODE_DESC}) — safe to push."
     exit 0
 else
-    echo "✗ ${#FAILED[@]} of ${CHECK_COUNT} CHECKS FAILED:"
+    echo "✗ ${#FAILED[@]} of ${CHECK_COUNT} CHECKS FAILED (${MODE_DESC}):"
     printf '   - %s\n' "${FAILED[@]}"
     echo ""
     echo "Push blocked. Fix the failures above, then re-run:"
