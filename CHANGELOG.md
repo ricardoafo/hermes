@@ -15,6 +15,19 @@ lands in Phase 0 CI (per ADR-006).
 
 ### Added
 
+- **Domain events + in-process EventBus** (`src/hermes/domain/events/`):
+  four concrete event dataclasses — `TradeExecuted`, `RebalanceTriggered`,
+  `AnomalyDetected`, `LotClosed` — all frozen and pinned to
+  `__event_schema_version__ = 1` per code-conventions §10. Ships alongside
+  `EventBus`, a synchronous in-process pub/sub with exact-type dispatch,
+  deterministic registration-order fan-out, and failure isolation via
+  `EventDispatchError` aggregating every raising handler in dispatch
+  order. Property tests (`hypothesis`) prove the fan-out invariant
+  "N subscribers → N sync dispatches in registration order" that ADR-003
+  §00 invariant I-06 will build on when the SQLite `events` table lands
+  with #24. Coverage 100% on every new file in the events package.
+  Closes #99.
+
 - **Process hardening wave 2** (`scripts/dev/create-pr.sh`, `scripts/dev/pr-preflight.sh`,
   `.pre-commit-config.yaml`, `AGENTS.md`): create-pr.sh wrapper enforces PR body lint
   before `gh pr create` (closes drift class 1); pre-flight check #9 now uses
