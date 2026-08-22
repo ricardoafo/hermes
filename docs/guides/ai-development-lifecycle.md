@@ -127,6 +127,20 @@ in hermes.
   gh pr create --head <branch> ...   # --head refers to the REMOTE branch
   ```
 
+  **For SDD-tracked changes**, replace `gh pr create --body "..."` with
+  the auto-rendered body (Tier C, 2026-08-22):
+
+  ```bash
+  bash scripts/dev/pr-preflight.sh --render-body <change-name>
+  # ↑ renders openspec/changes/<change-name>/change.md + issue.md into
+  #   a mandatory-template-conformant body and runs pr-body-lint.sh on it.
+  #   Outputs the temp file path on stdout.
+  gh pr create --head <branch> --base main --title "..." --body-file <tmp>
+  ```
+
+  Removes hand-writing PR bodies from the SDD flow and guarantees
+  `Closes #N` is present.
+
   The local branch is deleted **the moment the push has landed in GH**,
   before the PR is opened. Push completing is the definite trigger: the
   work is safe on remote, the local copy is now redundant. Deferring

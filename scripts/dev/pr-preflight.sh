@@ -5,9 +5,10 @@
 # CI runs on the PR; if any fails locally, CI will fail too.
 #
 # Invocation:
-#   bash scripts/dev/pr-preflight.sh              # normal pre-push check
-#   bash scripts/dev/pr-preflight.sh --body FILE  # + PR body lint (for PR-open)
-#   HERMES_SELF_TEST=1 bash scripts/dev/pr-preflight.sh  # sanity-check the script
+#   bash scripts/dev/pr-preflight.sh                          # normal pre-push
+#   bash scripts/dev/pr-preflight.sh --body FILE              # + PR body lint
+#   bash scripts/dev/pr-preflight.sh --render-body <change>   # render + lint
+#   HERMES_SELF_TEST=1 bash scripts/dev/pr-preflight.sh       # sanity check
 #
 # Wired to git-push via `.pre-commit-config.yaml` `stages: [pre-push]` hook.
 # One-time install:
@@ -24,12 +25,21 @@ set -uo pipefail
 # Argument parsing
 # ────────────────────────────────────────────────────────────────
 BODY_FILE=""
+RENDER_CHANGE=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --body)
             BODY_FILE="${2:-}"
             if [[ -z "$BODY_FILE" || ! -f "$BODY_FILE" ]]; then
                 echo "ERROR: --body requires a readable file path" >&2
+                exit 2
+            fi
+            shift 2
+            ;;
+        --render-body)
+            RENDER_CHANGE="${2:-}"
+            if [[ -z "$RENDER_CHANGE" ]]; then
+                echo "ERROR: --render-body requires a change name" >&2
                 exit 2
             fi
             shift 2
@@ -44,6 +54,19 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Render mode: generate body from openspec/changes/<name>/change.md +
+# issue.md, then treat as --body. Fails early if change.md or issue.md
+# is missing.
+if [[ -n "$RENDER_CHANGE" ]]; then
+    BODY_FILE=$(mktemp -t pr-body.XXXXXX.md)
+    echo "▶ Rendering PR body for change '$RENDER_CHANGE'"
+    if ! bash scripts/dev/render-pr-body.sh "$RENDER_CHANGE" -o "$BODY_FILE"; then
+        echo "ERROR: render-pr-body.sh failed for '$RENDER_CHANGE'" >&2
+        exit 1
+    fi
+    echo "  ✓ body rendered to $BODY_FILE"
+fi
 
 # ────────────────────────────────────────────────────────────────
 # Self-test — validate the script's own logic without side-effects

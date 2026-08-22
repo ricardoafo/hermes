@@ -3,6 +3,7 @@
 **SDD change**: `{change-name}`
 **Date**: YYYY-MM-DD
 **Status**: Proposed | Applied | Shipped
+**Tracking issue**: see sibling `issue.md`
 
 Mirror of engram topic key `sdd/{change-name}/change` (see
 [ADR-009 §6](../../../docs/architecture/adr-009-documentation-strategy.md#6-change-specs--sdd-artifacts-dual-source-convention)

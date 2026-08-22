@@ -85,6 +85,13 @@ repos:
         files: ^scripts/dev/ci-success-check\.sh$
         pass_filenames: false
 
+      - id: render-pr-body-self-test
+        name: render-pr-body self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/render-pr-body.sh'
+        language: system
+        files: ^scripts/dev/render-pr-body\.sh$
+        pass_filenames: false
+
       - id: ruff-check
         name: ruff check
         language: system
