@@ -1,7 +1,7 @@
 # Prose Style Guide — Comments, Docstrings, Docs, Free Text
 
 **Type**: Guide (living document — PR any change)
-**Owners**: Ricardo Afonso (sole reviewer)
+**Owners**: Code Owner (sole reviewer)
 **Applies to**: everything with words in this repo — code comments,
 docstrings, ADRs, guides, decisions, runbook, research digests, PR bodies,
 issue bodies, commit messages, workflow / job / script names.

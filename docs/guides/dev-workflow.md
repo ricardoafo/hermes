@@ -1,7 +1,7 @@
 # Dev Workflow — Branching, Commits, Pull Requests
 
 **Type**: Guide (living document — PR any change)
-**Owners**: Ricardo Afonso (product owner, sole reviewer)
+**Owners**: Code Owner (product owner, sole reviewer)
 **Applies to**: everyone with write access to `github.com/ricardoafo/hermes`, including
 `rafo-claude-bot`.
 **Description**: Branching, commits, PRs, merge policy, delete-branch safety, zero-footprint policy.
@@ -15,7 +15,7 @@ file disagree, the config file wins — open a PR to reconcile the guide.
 
 1. **No direct pushes to `main`**. Every change lands via pull request. Bootstrap
    commits (before this guide is merged) are the only exception.
-2. **Every PR is reviewed and approved by Ricardo Afonso** before merge. No
+2. **Every PR is reviewed and approved by the Code Owner** before merge. No
    self-approval. No bypass. `rafo-claude-bot` cannot approve its own PRs.
 3. **Conventional Commits** (see [Commit convention](#commit-convention)) —
    enforced by the `commitizen` pre-commit hook on `commit-msg`.

@@ -40,7 +40,7 @@ Read these first, in order:
 2. [`AGENTS.md`](AGENTS.md) — if you (or your AI assistant) will open PRs on this repo
 3. Relevant [ADR](docs/architecture/) for whatever you are touching
 
-Every change goes through a PR. Ricardo Afonso reviews and merges everything.
+Every change goes through a PR. The Code Owner reviews and merges everything.
 No self-approval, no bot merges, no force-push to `main`. See dev-workflow.md
 for the full discipline.
 

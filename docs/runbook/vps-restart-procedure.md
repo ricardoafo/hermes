@@ -1,7 +1,7 @@
 # Runbook: VPS restart procedure
 
 **Type**: Runbook (incident-response entry per ADR-009 §4)
-**Owners**: Ricardo Afonso
+**Owners**: Code Owner
 **Incident**: VPS `hermes-01` needs a restart (planned maintenance, hung
 service, kernel update, or unresponsive process)
 
