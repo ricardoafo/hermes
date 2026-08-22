@@ -8,7 +8,14 @@ end-to-end.
 
 Fill in the issue number + URL after running `gh issue create ...`.
 
+If the change closes MORE than one issue (bundled work), add one
+`closes: <N>` line per secondary issue below the `url:` line. The
+render script emits `Closes #N` for each and deduplicates against the
+primary `issue:` value.
+
 <!-- Data block below is parsed by scripts/dev/render-pr-body.sh -->
 
 issue: <N>
 url: <https://github.com/ricardoafo/hermes/issues/N>
+<!-- closes: <N2>    optional, repeatable; add when bundling multiple issues -->
+<!-- closes: <N3> -->
