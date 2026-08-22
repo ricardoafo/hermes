@@ -1,0 +1,13 @@
+# Fee schedules per venue.
+#
+# Loaded by hermes.infrastructure.config.load_config into FeesConfig.
+# bps = basis points (1 bp = 0.01%). Values are Binance spot defaults;
+# real per-tier calibration lands with the fee-modeller feature.
+
+default:
+  maker_bps: "10"
+  taker_bps: "10"
+venues:
+  binance:
+    maker_bps: "10"
+    taker_bps: "10"

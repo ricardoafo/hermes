@@ -21,7 +21,21 @@ lands in Phase 0 CI (per ADR-006).
   CI-verbatim pytest invocation + check #14 adds coverage-check.py --bootstrap (closes
   pre-flight ↔ CI parity drift); sdd-design live-verify rule added to AGENTS.md (closes
   design-miss drift class). Closes #121, #122, #123.
-
+- **Typed configuration loader** (`src/hermes/infrastructure/config/`):
+  pydantic-settings-style loader for the five hermes YAML files —
+  `config/strategies.yaml`, `config/exchanges/binance.yaml`,
+  `config/fees.yaml`, `config/tax_guard.yaml`, `config/ml.yaml`.
+  Composite `HermesConfig` root with per-file frozen `BaseModel` classes
+  (`StrategiesConfig`, `BinanceExchangeConfig`, `FeesConfig`,
+  `TaxGuardConfig`, `MLConfig`), all `extra="forbid"` so typos abort at
+  process start rather than silently drift. 12-factor env override via
+  `HERMES_<SECTION>__<FIELD>` double-underscore nested delimiter (including
+  list-index addressing). `ConfigError` extends `InfraError` so operator
+  fixes surface early with the offending file path and pydantic validation
+  detail. Property tests (hypothesis) pin invariant enforcement on every
+  bounded field. New runtime dep `pyyaml>=6,<7`; new dev dep
+  `types-pyyaml>=6,<7` (mypy strict clean). Domain purity preserved —
+  import-linter `domain-no-pydantic` contract still passes. Closes #103.
 - **Code conventions guide** (`docs/guides/code-conventions.md`): 14
   sections codifying design patterns, error handling (hybrid Result in
   domain / exceptions in adapters), immutability, factories, async
