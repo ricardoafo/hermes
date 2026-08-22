@@ -22,6 +22,7 @@ class TestWeightConstraint:
 
     @given(weight_strategy())
     def test_weight_in_range(self, w: Weight) -> None:
+        """Weight.value is always in the closed interval [0, 1] — out-of-range values rejected."""
         assert Decimal("0") <= w.value <= Decimal("1")
 
     @given(
@@ -34,6 +35,7 @@ class TestWeightConstraint:
         )
     )
     def test_above_one_raises(self, v: Decimal) -> None:
+        """Constructing Weight with value > 1 raises ValueError — the upper bound is enforced."""
         with pytest.raises(ValueError):
             Weight(value=v)
 
@@ -47,6 +49,7 @@ class TestWeightConstraint:
         )
     )
     def test_below_zero_raises(self, v: Decimal) -> None:
+        """Constructing Weight with value < 0 raises ValueError — negative weights are forbidden."""
         with pytest.raises(ValueError):
             Weight(value=v)
 
@@ -56,37 +59,45 @@ class TestWeightFactories:
 
     @given(weight_strategy())
     def test_from_str_roundtrip(self, w: Weight) -> None:
+        """from_str(str(w)) round-trips losslessly for all valid Weight values."""
         result = Weight.from_str(str(w))
         assert isinstance(result, Success)
         assert result.unwrap() == w
 
     def test_from_str_valid(self) -> None:
+        """from_str parses a valid decimal string into the correct Weight value."""
         result = Weight.from_str("0.25")
         assert isinstance(result, Success)
         assert result.unwrap().value == Decimal("0.25")
 
     def test_from_str_invalid_decimal(self) -> None:
+        """from_str returns Failure when the input is not a valid decimal."""
         result = Weight.from_str("abc")
         assert isinstance(result, Failure)
 
     def test_from_str_out_of_range(self) -> None:
+        """from_str returns Failure when the decimal is outside the [0, 1] range."""
         result = Weight.from_str("1.5")
         assert isinstance(result, Failure)
 
     @given(weight_strategy())
     def test_from_decimal_roundtrip(self, w: Weight) -> None:
+        """from_decimal(w.value) round-trips to an equal Weight for all valid values."""
         result = Weight.from_decimal(w.value)
         assert isinstance(result, Success)
         assert result.unwrap() == w
 
     def test_from_decimal_out_of_range(self) -> None:
+        """from_decimal returns Failure when the value exceeds the [0, 1] constraint."""
         result = Weight.from_decimal(Decimal("2"))
         assert isinstance(result, Failure)
 
     def test_zero_factory(self) -> None:
+        """Weight.zero() produces a Weight with value exactly 0."""
         z = Weight.zero()
         assert z.value == Decimal("0")
 
     def test_one_factory(self) -> None:
+        """Weight.one() produces a Weight with value exactly 1 (the maximum allowed)."""
         o = Weight.one()
         assert o.value == Decimal("1")

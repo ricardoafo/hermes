@@ -326,7 +326,10 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with: { version: "0.12.5" }
       - run: uv sync --frozen
-      - run: uv run pytest tests/unit/ --cov=src/hermes --cov-branch --cov-report=xml --cov-report=json
+      - run: uv run pytest tests/unit/ --cov=src/hermes --cov-branch --cov-report=xml --cov-report=json --cov-report=term
+      # --bootstrap: skip EMPTY-package FAILs while Phase 0 skeleton is not yet
+      # populated. Drop the flag when Phase 1 lands code in application/,
+      # adapters/*, entrypoints/. Tracked in #71 (Phase 0 meta backlog).
       - run: uv run python scripts/dev/coverage-check.py --bootstrap
 
   # ─────────────────────────────────────────────────────────────────────

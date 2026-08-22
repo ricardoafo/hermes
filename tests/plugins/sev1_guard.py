@@ -33,11 +33,13 @@ def _is_sev1_test(nodeid: str) -> bool:
 
 
 def pytest_report_teststatus(report: pytest.TestReport) -> None:
+    """Collect SEV-1-annotated tests that are skipped during the setup phase."""
     if report.when == "setup" and report.skipped and _is_sev1_test(report.nodeid):
         _skipped_sev1.append(report.nodeid)
 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Fail the session with exit code 1 if any SEV-1 tests were skipped without opt-in."""
     if _skipped_sev1 and not os.environ.get("PYTEST_SEV1_ALLOW_SKIP"):
         for nid in _skipped_sev1:
             print(f"SEV1_GUARD: SEV-1 test skipped without opt-in: {nid}")

@@ -27,9 +27,7 @@ def _read_contextvar_from_inner_call() -> dict[str, object]:
 
 
 def test_correlation_id_propagates_across_nested_calls() -> None:
-    """A correlation ID bound at the top of a call chain is visible in every
-    nested call (via ``structlog.contextvars``) — the primary audit-trail
-    guarantee per ADR-008 §1.
+    """Correlation ID bound at the call-chain root is visible in every nested call.
 
     Uses ``get_contextvars`` for direct verification rather than
     ``capture_logs``, because ``capture_logs`` replaces the processor chain
@@ -45,9 +43,7 @@ def test_correlation_id_propagates_across_nested_calls() -> None:
 
 
 def test_correlation_id_lands_in_captured_log() -> None:
-    """A separate end-to-end check: with the ``merge_contextvars`` processor
-    installed via ``configure_logging``, a call to ``log.info`` should
-    include the bound correlation ID in the rendered payload.
+    """Bound correlation ID appears in a real JSON-rendered log entry via merge_contextvars.
 
     ``capture_logs`` replaces the chain, so instead we verify via the
     contextvar directly (above test) and via a real JSON render here.

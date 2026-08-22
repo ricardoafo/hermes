@@ -120,6 +120,20 @@ repos:
         files: ^scripts/dev/no-naive-datetime\.sh$
         pass_filenames: false
 
+      - id: no-vague-test-assertions
+        name: no vague test assertions (AST guard)
+        entry: uv run python scripts/dev/no-vague-test-assertions.py
+        language: system
+        files: ^tests/.*\.py$
+        pass_filenames: true
+
+      - id: no-vague-test-assertions-self-test
+        name: no-vague-test-assertions self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 uv run python scripts/dev/no-vague-test-assertions.py'
+        language: system
+        files: ^scripts/dev/no-vague-test-assertions\.py$
+        pass_filenames: false
+
       - id: no-domain-mode-check
         name: no TradingMode in domain (grep guard)
         entry: bash scripts/dev/no-domain-mode-check.sh
