@@ -15,6 +15,18 @@ lands in Phase 0 CI (per ADR-006).
 
 ### Added
 
+- **Observability scaffold** (`src/hermes/infrastructure/logging.py`):
+  structlog config with JSONRenderer (prod) / ConsoleRenderer (dev),
+  ULID correlation-ID contextvar plumbing, starter field taxonomy in
+  module docstring. First real Phase-1-shaping code — supports the
+  ADR-008 observability discipline. Closes #18.
+- **NotifierPort Protocol** (`src/hermes/ports/notifier.py`): contract
+  for outbound notifications with `notify_urgent` + `notify_report`
+  methods. Adapters land in Phase 1.
+- **Symlink-swap rollback layout** in `deploy/bootstrap-vps.sh`:
+  `/opt/hermes/{versions/, current -> versions/vX, previous -> ...}`.
+  Enables Phase-1 rollback logic when real services + `hermes engine
+  pause` CLI exist.
 - Merge queue test — PR C (competing edit)
 - Architecture Decision Records 001-010 (accepted 2026-08-21)
 - Version-control discipline (`docs/guides/dev-workflow.md`) — trunk-based,
@@ -38,6 +50,14 @@ lands in Phase 0 CI (per ADR-006).
   `docs/runbook/`, `docs/research/` with README indexes
 - Local dev environment: `.venv/` (Python 3.14.7 via uv 0.12.5),
   pre-commit 4.6.2, markdownlint-cli2 0.23.2
+
+### Changed
+
+- **Notification channels** — added Slack alongside Telegram, routed
+  by content class (Telegram = urgent/terse, Slack = rich/reports).
+  Supersedes ADR-008 §4 "Telegram alerts — user-facing signals only"
+  via decisions-journal entry
+  `docs/decisions/2026-08-23-slack-alongside-telegram.md`.
 
 ### Fixed
 

@@ -24,8 +24,28 @@ fi
 
 # ────────────────────────────────────────────────────────────────
 # 2. Directory layout (owned by hermes)
+#
+# Hermes install layout — enables symlink-swap rollback per D-2 of
+# openspec/changes/phase-1-observability-rollback-slack-scaffolds/
+# change.md (2026-08-23):
+#
+#   /opt/hermes/
+#     versions/
+#       v0.1.0/         <- installed by deploy.yml build step
+#         .venv/
+#         hermes-0.1.0-py3-none-any.whl
+#       v0.1.1/         <- next version installed here
+#       ...
+#     current -> versions/v0.1.1   <- ACTIVE; systemd units point here
+#     previous -> versions/v0.1.0  <- rollback target
+#
+# Rollback (fills in Phase 1 when `hermes engine pause` CLI exists):
+#   ln -sfn /opt/hermes/previous /opt/hermes/current
+#   systemctl restart hermes-*.service
+#
+# Idempotent — reruns preserve symlink targets if already present.
 # ────────────────────────────────────────────────────────────────
-for dir in /opt/hermes /var/lib/hermes /var/lib/hermes/backups; do
+for dir in /opt/hermes /opt/hermes/versions /var/lib/hermes /var/lib/hermes/backups; do
     if [[ -d "$dir" ]]; then
         skip "directory $dir already exists"
     else
@@ -34,6 +54,24 @@ for dir in /opt/hermes /var/lib/hermes /var/lib/hermes/backups; do
     fi
 done
 mkdir -p /etc/credstore.encrypted  # root-owned, systemd-creds target
+
+# Placeholder file lets the symlinks point at a real path before any
+# version is installed. `ln -sfn` swaps atomically; if the target
+# didn't exist, some tools warn on the dangling symlink.
+if [[ ! -f /opt/hermes/versions/.placeholder ]]; then
+    log "creating /opt/hermes/versions/.placeholder"
+    touch /opt/hermes/versions/.placeholder
+fi
+
+for link in current previous; do
+    target="/opt/hermes/$link"
+    if [[ -L "$target" ]]; then
+        skip "symlink $target already exists -> $(readlink "$target")"
+    else
+        log "creating symlink $target -> versions/.placeholder (initial)"
+        ln -s /opt/hermes/versions/.placeholder "$target"
+    fi
+done
 
 log "reconciling ownership of /opt/hermes and /var/lib/hermes"
 chown -R hermes:hermes /opt/hermes /var/lib/hermes
