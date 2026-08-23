@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from dotenv import load_dotenv
 from pydantic import BaseModel, ValidationError
 
 from hermes.infrastructure.config.errors import ConfigError
@@ -46,12 +47,21 @@ from hermes.infrastructure.config.models import (
 )
 from hermes.infrastructure.config.root import HermesConfig
 
-__all__ = ["DEFAULT_CONFIG_DIR", "load_config", "load_yaml_model"]
+__all__ = ["DEFAULT_CONFIG_DIR", "DEFAULT_DOTENV_PATH", "load_config", "load_yaml_model"]
 
 
 DEFAULT_CONFIG_DIR: Path = Path("config")
+# Local-dev secrets file. Gitignored — production reads env from a systemd
+# EnvironmentFile at /etc/hermes.env, and CI reads from GH Actions secrets.
+# See docs/decisions/2026-08-23-credential-storage-layered-by-env.md.
+DEFAULT_DOTENV_PATH: Path = Path(".env.local")
 _ENV_PREFIX: str = "HERMES_"
 _NESTED_DELIMITER: str = "__"
+# Root-level env-var names — not part of the nested HERMES_<section>__<field>
+# namespace because they gate runtime tier (adapter-wiring policy), not a
+# specific YAML section.
+_ENV_TIER: str = "HERMES_ENV"
+_ENV_ALLOW_MAINNET: str = "HERMES_ALLOW_MAINNET"
 
 
 def _read_yaml(path: Path) -> dict[str, Any]:
@@ -223,29 +233,76 @@ def load_yaml_model[T: BaseModel](
         ) from exc
 
 
+def _root_env_kwargs(env: dict[str, str]) -> dict[str, Any]:
+    """Extract root-tier env vars (``HERMES_ENV``, ``HERMES_ALLOW_MAINNET``).
+
+    Returns a kwargs dict suitable for passing to :class:`HermesConfig`.
+    Missing vars are omitted so the model's own defaults apply — we never
+    invent a value here. Coercion for ``allow_mainnet`` reuses
+    :func:`_coerce_scalar` so ``yes``/``no``/``true``/``false`` all work.
+
+    Args:
+        env: Env-var snapshot.
+
+    Returns:
+        Dict with only the keys that were present in ``env``. Kept small so
+        the composite constructor call stays a single readable statement.
+    """
+    kwargs: dict[str, Any] = {}
+    tier = env.get(_ENV_TIER)
+    if tier is not None:
+        kwargs["env"] = tier
+    mainnet = env.get(_ENV_ALLOW_MAINNET)
+    if mainnet is not None:
+        kwargs["allow_mainnet"] = _coerce_scalar(mainnet)
+    return kwargs
+
+
 def load_config(
     config_dir: Path | None = None,
     *,
     env: dict[str, str] | None = None,
+    dotenv_path: Path | None = None,
 ) -> HermesConfig:
     """Load every hermes YAML file under ``config_dir`` into :class:`HermesConfig`.
 
+    Before reading any env var, ``load_config`` calls
+    :func:`dotenv.load_dotenv` against ``dotenv_path`` (default:
+    ``.env.local`` in CWD). Missing dotenv files are treated as no-op —
+    production reads env from a systemd ``EnvironmentFile`` and never has
+    ``.env.local``. When ``env`` is supplied explicitly (tests) the
+    dotenv step is skipped so tests never depend on the ambient shell.
+
     Args:
-        config_dir: Directory containing the five YAML files. Defaults to
+        config_dir: Directory containing the YAML files. Defaults to
             :data:`DEFAULT_CONFIG_DIR` (``./config`` relative to CWD).
         env: Optional env-var snapshot (defaults to ``os.environ``). Injected
-            for tests so we never read the ambient shell.
+            for tests so we never read the ambient shell. When supplied,
+            ``dotenv_path`` is IGNORED — tests own their env fully.
+        dotenv_path: Optional path to a dotenv file. Defaults to
+            :data:`DEFAULT_DOTENV_PATH`. Only consulted when ``env`` is
+            ``None``. Missing files are a silent no-op (12-factor: prod
+            has no dotenv).
 
     Returns:
         Fully-validated composite :class:`HermesConfig`.
 
     Raises:
-        ConfigError: Any of the five files is missing, malformed, or fails
+        ConfigError: Any of the YAML files is missing, malformed, or fails
             schema validation. The message identifies the offending file and
             the pydantic validation error.
     """
     base = config_dir if config_dir is not None else DEFAULT_CONFIG_DIR
-    env_snapshot = dict(os.environ) if env is None else env
+    if env is None:
+        # Populate os.environ from .env.local (if it exists) BEFORE
+        # snapshotting. `override=False` — a real shell env var always
+        # wins over dotenv, so CI and prod are never silently shadowed
+        # by a stray developer .env.local.
+        dotenv_target = dotenv_path if dotenv_path is not None else DEFAULT_DOTENV_PATH
+        load_dotenv(dotenv_target, override=False)
+        env_snapshot = dict(os.environ)
+    else:
+        env_snapshot = env
 
     strategies = load_yaml_model(
         base / "strategies.yaml",
@@ -284,11 +341,19 @@ def load_config(
         env=env_snapshot,
     )
 
-    return HermesConfig(
-        strategies=strategies,
-        binance=binance,
-        fees=fees,
-        tax_guard=tax_guard,
-        ml=ml,
-        klines=klines,
-    )
+    root_kwargs = _root_env_kwargs(env_snapshot)
+    try:
+        return HermesConfig(
+            **root_kwargs,
+            strategies=strategies,
+            binance=binance,
+            fees=fees,
+            tax_guard=tax_guard,
+            ml=ml,
+            klines=klines,
+        )
+    except ValidationError as exc:
+        # Root-level validation covers env-tier gates (mainnet outside prod)
+        # + env literal narrowing. Wrap in ConfigError for a consistent
+        # error type across the loader.
+        raise ConfigError(f"HermesConfig validation failed: {exc}") from exc
