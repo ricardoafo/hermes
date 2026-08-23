@@ -53,17 +53,21 @@ traps that have cost dev-time in the past.
 # UNPUSHED COMMITS. Reflog can recover, but only if you notice.
 git config --global push.autoSetupRemote true
 
-# 2. Bot identity — this repo requires commits from `rafo-claude-bot`
-# (see AGENTS.md rule 13). If your global config sets a different
-# user.name, the local override wins. Set once per clone.
+# 2. Bot identity — this repo requires commits from the `ai-bot`
+# (see AGENTS.md rule 13). The literal `user.name` / `user.email`
+# values below are the underlying, operator-owned GitHub account for
+# the bot — the `ai-bot` alias used in prose maps to this identity.
+# If your global config sets a different user.name, the local override
+# wins. Set once per clone.
 git config --local user.name "rafo-claude-bot"
 git config --local user.email "279133050+rafo-claude-bot@users.noreply.github.com"
 ```
 
-Verify:
+Verify (the local `user.name` should print the operator-owned bot
+account name — the project-facing alias is `ai-bot`):
 
 ```bash
-git config --local --get user.name       # rafo-claude-bot
+git config --local --get user.name       # operator-owned bot account
 git config --global --get push.autoSetupRemote  # true
 ```
 
@@ -173,9 +177,10 @@ them impossible for future clones.
   recovery works but isn't automatic. → Fixed by `git config --global
   push.autoSetupRemote true`.
 - **Wrong git author on commits**: `require_last_push_approval` on the
-  branch protection ruleset blocks merges if any commit isn't authored by
-  `rafo-claude-bot`. The bot's global config might not be set. → Fixed by
-  `git config --local user.name/user.email` per clone.
+  branch protection ruleset blocks merges if any commit isn't authored
+  by the `ai-bot` (the operator-owned bot account). The bot's global
+  config might not be set. → Fixed by `git config --local
+  user.name/user.email` per clone.
 - **Push without pre-push hook**: bypasses the CI mirror. Ships broken
   code to CI, wastes round-trips. → Fixed by `pre-commit install
   --hook-type pre-push`.

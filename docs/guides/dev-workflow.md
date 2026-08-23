@@ -3,7 +3,7 @@
 **Type**: Guide (living document — PR any change)
 **Owners**: Code Owner (product owner, sole reviewer)
 **Applies to**: everyone with write access to `github.com/ricardoafo/hermes`, including
-`rafo-claude-bot`.
+the `ai-bot`.
 **Description**: Branching, commits, PRs, merge policy, delete-branch safety, zero-footprint policy.
 
 This guide encodes the version-control discipline for hermes. It is enforced by
@@ -16,7 +16,7 @@ file disagree, the config file wins — open a PR to reconcile the guide.
 1. **No direct pushes to `main`**. Every change lands via pull request. Bootstrap
    commits (before this guide is merged) are the only exception.
 2. **Every PR is reviewed and approved by the Code Owner** before merge. No
-   self-approval. No bypass. `rafo-claude-bot` cannot approve its own PRs.
+   self-approval. No bypass. The `ai-bot` cannot approve its own PRs.
 3. **Conventional Commits** (see [Commit convention](#commit-convention)) —
    enforced by the `commitizen` pre-commit hook on `commit-msg`.
 4. **Squash-merge only** into `main`. Linear history. No merge commits, no
@@ -57,7 +57,7 @@ names (they belong in the commit body and PR body). No personal prefixes
 
 - **Ricardo** works on feature branches created from `main`, opens PRs, and
   self-approves via the review workflow (see [Pull requests](#pull-requests)).
-- **`rafo-claude-bot`** creates branches only when explicitly directed via a
+- **The `ai-bot`** creates branches only when explicitly directed via a
   Claude Code session. It commits, pushes, opens the PR, and stops. It
   never merges its own PRs.
 
@@ -216,7 +216,7 @@ category — there is no separate `Change type` section in the template.
   can unblock a merge.
 - **Author cannot approve own PR** — enforced by branch protection setting
   "Require review from Code Owners" + "Dismiss stale approvals".
-- **`rafo-claude-bot` PRs** — same rule. Bot opens, Ricardo reviews, Ricardo
+- **`ai-bot` PRs** — same rule. Bot opens, Ricardo reviews, Ricardo
   merges (or asks bot to merge post-approval via Claude Code session).
 
 ### CI checks (required, land in Phase 0)
@@ -320,8 +320,8 @@ Enforced by branch protection. Force-push to feature branches is allowed
 
 ### Local git config: bot identity is required
 
-The **local** git config for this repo MUST identify commits as
-`rafo-claude-bot`, NOT the operator. Reason: branch protection
+The **local** git config for this repo MUST identify commits as the
+`ai-bot`, NOT the operator. Reason: branch protection
 `require_last_push_approval: true` blocks a reviewer from approving
 commits authored by themselves. If commits are authored by the
 operator (from global `user.name` = "Ricardo Afonso"), Ricardo
@@ -329,15 +329,19 @@ cannot approve his own bot's PR, and the merge deadlocks.
 
 Global `~/.claude/CLAUDE.md` says "NEVER update the git config" —
 that applies to GLOBAL config only. Local (per-repo) config is
-explicitly required here and set once at repo setup:
+explicitly required here and set once at repo setup. The literal
+`user.name` / `user.email` values below are the underlying,
+operator-owned GitHub account for the bot — the `ai-bot` alias used
+in prose maps to this identity:
 
 ```bash
 git config --local user.name "rafo-claude-bot"
 git config --local user.email "279133050+rafo-claude-bot@users.noreply.github.com"
 ```
 
-Verify with `git config --local --get user.name` (should print
-`rafo-claude-bot`).
+Verify with `git config --local --get user.name` (should print the
+operator-owned bot account name — the project-facing alias is
+`ai-bot`).
 
 Also required: `gh auth setup-git --hostname github.com`. Windows
 credential manager otherwise caches the operator's PAT and pushes
@@ -516,7 +520,7 @@ When footprint is discovered, an editorial-scrub PR is opened with type
 `docs` or `chore`, explaining the scope. This rule pre-empts the "ADRs are
 immutable" rule for the specific case of external-reference removal.
 
-## For Claude Code / `rafo-claude-bot`
+## For Claude Code / `ai-bot`
 
 When operating in a Claude Code session against this repo:
 

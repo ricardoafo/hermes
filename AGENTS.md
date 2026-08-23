@@ -2,7 +2,7 @@
 
 **Type**: Living reference. Any change PRs this file.
 **Owners**: Code Owner (sole reviewer, sole approver).
-**Applies to**: `rafo-claude-bot` (write bot) and any AI agent operating on
+**Applies to**: `ai-bot` (write bot) and any AI agent operating on
 this repo via Claude Code, Aider, Cursor, or any similar tool. The Code Owner's
 global rules at `~/.claude/CLAUDE.md` apply first; this document layers
 project-specific rules on top and never contradicts them.
@@ -37,8 +37,18 @@ or supersedes). Flag the conflict to the Code Owner before acting.
 | Role | GitHub identity | What it does | What it never does |
 | ----- | -------------- | ------------- | ------------------- |
 | **Human** | `ricardoafo` | Decides direction, approves PRs, merges | Runs manual repetitive work when a script exists |
-| **Bot** | `rafo-claude-bot` | Authors commits, opens PRs, runs CI-adjacent tasks | Merges its own PR, approves any PR, dismisses reviews, force-pushes to main |
+| **Bot** | `ai-bot` | Authors commits, opens PRs, runs CI-adjacent tasks | Merges its own PR, approves any PR, dismisses reviews, force-pushes to main |
 | **Agent** | (invoked via Claude Code) | Directs the bot; drafts code, docs, ADRs; runs shell inside sandbox | Bypasses branch protection, edits `.claude/settings.local.json` for its own permissions, deletes user data, calls real-capital APIs without dry-run first |
+
+Naming convention: in prose (docs, PR bodies, commit messages, comments)
+the bot is called **`ai-bot`** — a project-neutral alias. The underlying
+GitHub account username is operator-owned and only appears where the
+literal string is functionally load-bearing: `.github/dependabot.yml`
+`assignees`, `git config --local user.name/user.email` commands, and
+`gh auth switch --user <name>` invocations. If you see the underlying
+GitHub username in a new PR's prose, replace it with `ai-bot`. If you
+see `ai-bot` inside a config field that expects a real GitHub username,
+the PR broke a functional dependency — flag it, do not merge.
 
 ## Absolute prohibitions
 
@@ -46,7 +56,7 @@ These are non-negotiable, apply always, and there is no context in which they
 are acceptable. If the user requests one of these, refuse and explain.
 
 1. **Never `git commit --no-verify`**. If a pre-commit hook fails, fix the
-   underlying issue. See [dev-workflow.md](docs/guides/dev-workflow.md#for-claude-code--rafo-claude-bot).
+   underlying issue. See [dev-workflow.md](docs/guides/dev-workflow.md#for-claude-code--ai-bot).
 2. **Never `git push --force` to `main`**. Force-push is only allowed on
    feature branches you own during a rebase workflow before opening a PR.
 3. **Never approve or merge a PR you authored**. GitHub blocks this via
@@ -87,14 +97,17 @@ are acceptable. If the user requests one of these, refuse and explain.
     adopt patterns without leaking references. Standard open-source
     tooling names (`ruff`, `pytest`, `uv`) are not footprint; internal
     project codenames are.
-12. **Always open PRs as `rafo-claude-bot`, never as `ricardoafo`**.
+12. **Always open PRs as the `ai-bot`, never as `ricardoafo`**.
     GitHub blocks self-approval (a PR opened by ricardoafo cannot be
     approved by ricardoafo), and our branch protection prevents admin
     bypass. Before `gh pr create`, verify: `gh auth status` shows bot
-    is active. If unsure, `gh auth switch --user rafo-claude-bot` first.
-13. **Every git commit in this repo must be authored by bot**. The
-    local git config sets `user.name = rafo-claude-bot`. Verify:
-    `git config --local --get user.name`. Do NOT use
+    is active. If unsure, `gh auth switch --user rafo-claude-bot` first
+    (the GH CLI username is the operator-owned account name — the
+    project-facing alias is `ai-bot`).
+13. **Every git commit in this repo must be authored by the `ai-bot`**.
+    The local git config sets `user.name = rafo-claude-bot` (the
+    operator-owned account name — the project-facing alias is
+    `ai-bot`). Verify: `git config --local --get user.name`. Do NOT use
     `git commit --author='...'` overrides that reintroduce the
     operator's identity — `require_last_push_approval` will block the
     merge. See [dev-workflow.md § Local git config: bot identity is

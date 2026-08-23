@@ -85,7 +85,7 @@ fi
 if [[ "${HERMES_SELF_TEST:-}" == "1" ]]; then
     # Verify all mandatory tools are declared and the script parses.
     # Real check-invocations happen only in the non-self-test path.
-    for cmd in ruff mypy lint-imports pytest markdownlint-cli2 git radon vulture coverage-check; do
+    for cmd in ruff mypy lint-imports pytest pytest-timeout markdownlint-cli2 git radon vulture coverage-check; do
         if ! grep -q "\\b${cmd}\\b" "$0"; then
             echo "SELF-TEST FAIL: script does not reference '${cmd}'" >&2
             exit 1
@@ -188,6 +188,11 @@ run_check "vulture (dead code)"       uv run vulture src/
 
 # 9. Pytest — verbatim CI (unit job): tests/unit/ with branch coverage,
 #    emits coverage.json which check #14 (coverage-check.py) reads.
+#    pytest-timeout (60s default, thread method) is configured in
+#    pyproject.toml [tool.pytest.ini_options]. A test that hangs past the
+#    cap fails LOUDLY with a stack trace instead of silently draining CI
+#    time — closes the drift from the wave-5 sub-agent hang on a klines
+#    fetcher rate-limiter float-drift infinite loop.
 run_check "pytest tests/unit/ (CI-verbatim)" \
     uv run pytest tests/unit/ --cov=src/hermes --cov-branch --cov-report=json --cov-report=term
 
