@@ -115,8 +115,14 @@ markers = [
   "integration: tier-2 tests (SQLite :memory:, testnet)",
   "e2e: tier-3 end-to-end against testnet",
   "slow: >1s per test",
+  # Contract-tier tests hit real third-party sandboxes (Telegram Bot API,
+  # Slack, Frankfurter). Skipped by default via the `-m 'not contract'`
+  # addopts filter so the per-PR unit path stays fast + hermetic. Run
+  # explicitly with `uv run pytest -m contract` (see
+  # docs/decisions/2026-08-23-contract-test-tier.md).
+  "contract: tier-2b tests — real HTTP against third-party sandbox APIs",
 ]
-addopts = "-ra --strict-markers --strict-config"
+addopts = "-ra --strict-markers --strict-config -m 'not contract'"
 # pytest-timeout: default per-test wall clock cap. 60s is generous —
 # unit tests finish in milliseconds; anything slower is a smell. Overrides
 # per-test with `@pytest.mark.timeout(N)` (see

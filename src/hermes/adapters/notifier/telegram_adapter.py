@@ -34,13 +34,17 @@ Design decisions
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
 import httpx
 import structlog
 
+from hermes.application.messages.telegram import telegram_template
 from hermes.domain.errors import InfraError
+from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
+from hermes.domain.events.base import DomainEvent
 
 __all__ = ["TelegramAdapter", "TelegramConfig", "TelegramNotifierError"]
 
@@ -53,13 +57,6 @@ _HTTP_ERROR_THRESHOLD: Final[int] = 400
 # Truncate response-body excerpts included in raised errors — keeps the
 # exception message readable even when the upstream returns a huge blob.
 _ERROR_EXCERPT_MAX_CHARS: Final[int] = 200
-
-# MarkdownV2 reserved characters that MUST be escaped to render literally
-# in a Telegram message. Per Bot API spec:
-# https://core.telegram.org/bots/api#markdownv2-style
-_MARKDOWN_V2_RESERVED: Final[frozenset[str]] = frozenset(
-    "_*[]()~`>#+-=|{}.!",
-)
 
 _log = structlog.get_logger(__name__)
 
@@ -131,23 +128,6 @@ class TelegramConfig:
         return cls(bot_token=token, chat_id=chat)
 
 
-def _escape_markdown_v2(text: str) -> str:
-    """Escape MarkdownV2 reserved characters so ``text`` renders literally.
-
-    Telegram's MarkdownV2 mode is strict: any unescaped reserved char in a
-    payload silently corrupts the message rendering. Since our urgent
-    alerts embed event names (dotted namespaces) and correlation tails
-    that contain characters like ``.`` and ``_``, we escape unconditionally.
-
-    Args:
-        text: The raw text to escape.
-
-    Returns:
-        The text with every reserved character prefixed by a backslash.
-    """
-    return "".join(f"\\{c}" if c in _MARKDOWN_V2_RESERVED else c for c in text)
-
-
 def _correlation_tail(correlation_id: str) -> str:
     """Return the last :data:`_CORRELATION_TAIL_LEN` chars of ``correlation_id``.
 
@@ -211,32 +191,25 @@ class TelegramAdapter:
         """
         self.client.close()
 
-    def notify_urgent(self, *, event: str, correlation_id: str, message: str) -> None:
-        """Post an urgent short message to the configured Telegram chat.
+    def notify(self, event: DomainEvent) -> None:
+        """Render ``event`` through :func:`telegram_template` and post to Telegram.
 
-        Format (MarkdownV2, all fields escaped):
-
-            *<event>* [<cid-tail>]
-            <message>
+        This is the preferred entry point for domain-event notifications.
+        The template is looked up in the application-layer registry
+        (:mod:`hermes.application.messages.telegram`); adapter code stays
+        thin — no formatting decisions live here.
 
         Args:
-            event: Dotted-namespace event name (e.g.
-                ``"rollback.fired"``). Rendered bold in the message header.
-            correlation_id: Full ULID; only the last 6 chars appear in
-                the ping (per ADR-008 § Correlation ID convention).
-            message: Short human-readable body. Kept terse — long-form
-                reports go to :meth:`notify_report` on the Slack adapter.
+            event: A concrete :class:`DomainEvent` instance.
 
         Raises:
             TelegramNotifierError: On transport failure, non-2xx HTTP
                 status (including 429 rate-limit and 401/403 auth), or
                 ``ok=false`` in the API response body.
+            ValueError: If no template is registered for ``type(event)``
+                (bubbled from :func:`telegram_template`).
         """
-        tail = _correlation_tail(correlation_id)
-        header = f"*{_escape_markdown_v2(event)}* \\[{_escape_markdown_v2(tail)}\\]"
-        body = _escape_markdown_v2(message)
-        text = f"{header}\n{body}"
-
+        text = telegram_template(event)
         payload = {
             "chat_id": self.config.chat_id,
             "text": text,
@@ -244,6 +217,39 @@ class TelegramAdapter:
             "disable_web_page_preview": True,
         }
         self._post("sendMessage", payload)
+
+    def notify_urgent(self, *, event: str, correlation_id: str, message: str) -> None:
+        """Post an urgent short message to the configured Telegram chat.
+
+        Prefer :meth:`notify` (which takes a ``DomainEvent``) — this
+        wrapper exists for compatibility with PR #92 callers and will be
+        removed once the router migration lands. It constructs a synthetic
+        :class:`AnomalyDetected` event (CRITICAL severity, ``event`` as
+        source, ``message`` as reason) so the same template path renders
+        the payload.
+
+        Args:
+            event: Dotted-namespace event name (e.g.
+                ``"rollback.fired"``). Threaded into the synthetic
+                ``AnomalyDetected.source`` field.
+            correlation_id: Full ULID; only the last 6 chars appear in
+                the ping (per ADR-008 § Correlation ID convention).
+            message: Short human-readable body. Threaded into the
+                synthetic ``AnomalyDetected.reason`` field.
+
+        Raises:
+            TelegramNotifierError: On transport failure, non-2xx HTTP
+                status (including 429 rate-limit and 401/403 auth), or
+                ``ok=false`` in the API response body.
+        """
+        synthetic = AnomalyDetected(
+            occurred_at=datetime.now(UTC),
+            correlation_id=correlation_id,
+            source=event,
+            severity=AnomalySeverity.CRITICAL,
+            reason=message,
+        )
+        self.notify(synthetic)
 
     def notify_report(
         self,
@@ -279,6 +285,52 @@ class TelegramAdapter:
             correlation_tail=_correlation_tail(correlation_id),
             reason="telegram channel is urgent-only per decisions journal",
         )
+
+    def get_me(self) -> dict[str, Any]:
+        """Call the Bot API ``getMe`` endpoint and return the ``result`` object.
+
+        This is a READ-ONLY probe used by ``hermes health telegram`` to
+        verify that the bot token is valid AND the API is reachable
+        WITHOUT sending anything to any chat. Never call ``sendMessage``
+        from a health path.
+
+        Returns:
+            The ``result`` object from the Bot API response (typically
+            containing ``id``, ``is_bot``, ``username``, ``first_name``,
+            etc.).
+
+        Raises:
+            TelegramNotifierError: On transport failure, non-2xx HTTP
+                status (401 = bad token, 429 = rate-limited), or
+                ``ok=false`` in the API response body.
+        """
+        url = f"/bot{self.config.bot_token}/getMe"
+        try:
+            response = self.client.get(url)
+        except httpx.HTTPError as exc:
+            raise TelegramNotifierError(f"transport failure calling getMe: {exc!r}") from exc
+
+        if response.status_code >= _HTTP_ERROR_THRESHOLD:
+            excerpt = response.text[:_ERROR_EXCERPT_MAX_CHARS]
+            raise TelegramNotifierError(f"HTTP {response.status_code} from getMe: {excerpt}")
+
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise TelegramNotifierError(
+                f"non-JSON response from getMe: {response.text[:_ERROR_EXCERPT_MAX_CHARS]}"
+            ) from exc
+
+        if not isinstance(data, dict) or not data.get("ok", False):
+            excerpt = str(data)[:_ERROR_EXCERPT_MAX_CHARS]
+            raise TelegramNotifierError(f"Bot API rejected getMe: {excerpt}")
+
+        result = data.get("result")
+        if not isinstance(result, dict):
+            raise TelegramNotifierError(
+                f"getMe response missing 'result' object: {str(data)[:_ERROR_EXCERPT_MAX_CHARS]}"
+            )
+        return result
 
     # ------------------------------------------------------------------
     # Internal HTTP helper
