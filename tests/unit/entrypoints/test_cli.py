@@ -4,8 +4,11 @@ Verifies:
 - No arguments prints the top-level help (exit 0).
 - ``--help`` / ``-h`` prints the top-level help (exit 0).
 - ``preview list`` delegates and prints the event catalog.
-- ``serve`` / ``health`` / ``simulate`` exit 2 with a "not yet implemented" note.
-- An unknown subcommand exits 2 with a diagnostic.
+- ``serve`` / ``simulate`` exit 2 with a "not yet implemented" note.
+- ``health`` (no arg) prints usage and exits 2.
+- ``health <unknown>`` exits 2 with a diagnostic.
+- ``health telegram`` delegates to the registry probe.
+- An unknown top-level subcommand exits 2 with a diagnostic.
 
 Reference: docs/decisions/2026-08-23-slack-alongside-telegram.md.
 """
@@ -57,9 +60,9 @@ class TestPreviewDelegation:
 
 
 class TestStubSubcommands:
-    """serve / health / simulate print a 'not yet implemented' line and exit 2."""
+    """serve / simulate print a 'not yet implemented' line and exit 2."""
 
-    @pytest.mark.parametrize("subcommand", ["serve", "health", "simulate"])
+    @pytest.mark.parametrize("subcommand", ["serve", "simulate"])
     def test_stub_subcommand_exits_two(self, subcommand: str) -> None:
         """Each stub subcommand exits 2 with an ERROR line naming the subcommand."""
         stream = io.StringIO()
@@ -127,3 +130,40 @@ class TestUnknownSubcommand:
         rc = cli_module.main(["not-a-command"], stream=stream)
         assert rc == 2
         assert "unknown subcommand" in stream.getvalue()
+
+
+class TestHealthDispatch:
+    """`hermes health` sub-dispatch — no-arg usage + per-integration probe."""
+
+    def test_health_without_arg_prints_usage_and_exits_two(self) -> None:
+        """`hermes health` (no arg) prints usage + registered integrations, exits 2."""
+        stream = io.StringIO()
+        rc = cli_module.main(["health"], stream=stream)
+        assert rc == 2
+        output = stream.getvalue()
+        assert "Usage: hermes health <integration>" in output
+        assert "telegram" in output
+
+    def test_health_unknown_integration_exits_two(self) -> None:
+        """`hermes health <unknown>` prints an ERROR and exits 2."""
+        stream = io.StringIO()
+        rc = cli_module.main(["health", "not-a-real-integration"], stream=stream)
+        assert rc == 2
+        output = stream.getvalue()
+        assert "unknown integration" in output
+        assert "not-a-real-integration" in output
+
+    def test_health_telegram_missing_config_exits_three(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`hermes health telegram` with no bot-token env var exits 3 (not configured)."""
+        # Strip both required env vars — dict(os.environ) inside the CLI must not see them.
+        monkeypatch.delenv("HERMES_TELEGRAM__BOT_TOKEN", raising=False)
+        monkeypatch.delenv("HERMES_TELEGRAM__CHAT_ID", raising=False)
+        stream = io.StringIO()
+        rc = cli_module.main(["health", "telegram"], stream=stream)
+        assert rc == 3
+        output = stream.getvalue()
+        assert "telegram" in output
+        assert "FAIL" in output
+        assert ".env.local" in output

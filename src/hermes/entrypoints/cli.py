@@ -1,9 +1,10 @@
 """Top-level `hermes` CLI dispatcher.
 
 Registers subcommands the future integration PRs will fill in. Today
-only ``preview`` is implemented; ``serve``, ``health``, and ``simulate``
-exist as stubs that print "not yet implemented" and exit with code 2 so
-composition scripts fail loudly if they attempt to call them.
+``preview`` renders templates and ``health <integration>`` probes an
+integration adapter; ``serve`` and ``simulate`` remain stubs that print
+"not yet implemented" and exit with code 2 so composition scripts fail
+loudly if they attempt to call them.
 
 Design notes
 ------------
@@ -12,7 +13,8 @@ Design notes
   Subcommands own their own parsers (see :mod:`hermes.entrypoints.preview`)
   and receive the residual argv.
 - **Exit codes**: 0 success, 2 usage / unimplemented. Subcommands may
-  return other codes (e.g. ``preview run_send`` returns 3 on prod refusal).
+  return other codes (e.g. ``preview run_send`` returns 3 on prod refusal;
+  ``health <int>`` returns 3 on missing config, 1 on adapter down).
 - **Entry point**: wired via ``[project.scripts]`` in ``pyproject.toml``
   as ``hermes = "hermes.entrypoints.cli:main"``.
 """
@@ -21,9 +23,11 @@ from __future__ import annotations
 
 import contextlib
 import io
+import os
 import sys
 from typing import Any, Final
 
+from hermes.entrypoints import _health as health_module
 from hermes.entrypoints import preview as preview_module
 
 __all__ = ["main"]
@@ -31,11 +35,14 @@ __all__ = ["main"]
 _SUBCOMMAND_HELP: Final[dict[str, str]] = {
     "preview": "Render + optionally send notification templates.",
     "serve": "Run the trading engine (stub — implemented in a future PR).",
-    "health": "Health-check probe (stub — implemented in a future PR).",
+    "health": "Health-check probe for an integration (e.g. `hermes health telegram`).",
     "simulate": "Replay historical scenarios (stub — implemented in a future PR).",
 }
 
-_STUB_SUBCOMMANDS: Final[frozenset[str]] = frozenset({"serve", "health", "simulate"})
+# ``health`` is intentionally NOT in this set — it has a real implementation
+# below (per-integration probe). PR E will replace the "no-arg" branch with
+# a registry walk.
+_STUB_SUBCOMMANDS: Final[frozenset[str]] = frozenset({"serve", "simulate"})
 
 
 def _print_top_help(stream: Any) -> None:
@@ -96,6 +103,8 @@ def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
     subcommand, *rest = args
     if subcommand == "preview":
         return preview_module.main(rest, stream=out)
+    if subcommand == "health":
+        return _dispatch_health(rest, stream=out)
     if subcommand in _STUB_SUBCOMMANDS:
         out.write(
             f"ERROR: `hermes {subcommand}` is not yet implemented. "
@@ -104,6 +113,41 @@ def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
         return 2
     out.write(f"ERROR: unknown subcommand {subcommand!r}. Run `hermes --help`.\n")
     return 2
+
+
+def _dispatch_health(rest: list[str], *, stream: Any) -> int:
+    """Handle the ``hermes health <integration>`` subcommand.
+
+    The no-arg form prints a usage line + the list of registered
+    integrations and exits 2. PR E will replace that branch with a
+    registry walk that probes every integration in one pass.
+
+    Args:
+        rest: Residual argv after the ``health`` token.
+        stream: Output stream.
+
+    Returns:
+        Process exit code — 0 on OK, 1 on adapter down, 2 on usage
+        error / unknown integration, 3 on missing configuration.
+    """
+    if not rest:
+        integrations = ", ".join(health_module.registered_integrations()) or "(none)"
+        stream.write(
+            f"Usage: hermes health <integration>\n  Registered integrations: {integrations}\n"
+        )
+        return 2
+
+    integration, *_extra = rest
+    check = health_module.get_check(integration)
+    if check is None:
+        available = ", ".join(health_module.registered_integrations()) or "(none)"
+        stream.write(f"ERROR: unknown integration {integration!r}. Available: {available}\n")
+        return 2
+
+    result = check(dict(os.environ))
+    stream.write(f"# hermes health {integration}\n")
+    health_module.render_table(result, stream)
+    return result.exit_code
 
 
 if __name__ == "__main__":  # pragma: no cover
