@@ -35,37 +35,49 @@ Design decisions
   200 even when the request failed, with ``{"ok": false, "error":
   "..."}`` in the JSON body. Every response MUST inspect ``body["ok"]``
   in addition to the status code. A raw ``response.raise_for_status()``
-  is NOT sufficient. See ``_post`` below.
+  is NOT sufficient. See ``_validate_response`` below.
 - **Rate limits**: Slack rate-limits per method (tier 1 = 1/minute,
   tier 4 = 100+/minute; ``chat.postMessage`` is tier 4 with special
   per-workspace/per-channel limits). This adapter does NOT implement
   client-side back-off yet; it raises on HTTP 429 so the caller sees
   the pressure. Adaptive back-off is a documented follow-up for the
   router layer.
-- **Block Kit**: :meth:`notify_urgent` posts plain text.
-  :meth:`notify_report` accepts a rendered body plus optional
-  attachments. Callers wanting explicit Block Kit blocks (formatted
-  tables, sections, dividers) use the extension-shaped
-  :meth:`post_message` method, which accepts a ``blocks`` list — this
-  keeps the port surface uncluttered while giving the router / caller
-  full Block Kit access when it wants it.
-- **File attachments**: uses the Slack v2 external-upload flow
-  (:code:`files.getUploadURLExternal` → PUT to returned URL →
-  :code:`files.completeUploadExternal`). The legacy :code:`files.upload`
-  endpoint was retired by Slack in Nov 2025 and is no longer callable.
-  Three HTTP round-trips per file — expected cost.
+- **Template-driven rendering**: :meth:`notify` is the preferred entry
+  point — it takes a :class:`DomainEvent`, delegates all Block Kit
+  formatting to :func:`slack_template` (application layer), posts the
+  rendered blocks via ``chat.postMessage``, and uploads any
+  ``SlackMessage.attachments`` as THREADED REPLIES (``thread_ts`` from
+  the parent post). Adapter code stays thin — no formatting decisions
+  live here.
+- **Legacy wrappers**: :meth:`notify_urgent`, :meth:`notify_report`,
+  and :meth:`post_message` are kept as thin wrappers for compatibility
+  with PR #92 callers and pre-template code paths. They will be removed
+  once the notification-router migration lands. New callers MUST use
+  :meth:`notify`. The wrappers preserve every error-handling behaviour
+  (``ok=false`` footgun, 401, 429, transport failure) so no callers see
+  a behavioural regression during the transition.
+- **File attachments (v2 flow)**: uses the Slack v2 external-upload
+  flow (:code:`files.getUploadURLExternal` → PUT to returned URL →
+  :code:`files.completeUploadExternal`). The legacy
+  :code:`files.upload` endpoint was **retired by Slack in Nov 2025**
+  and is no longer callable. Three HTTP round-trips per file plus one
+  ``chat.postMessage`` when threaded — expected cost.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
 import httpx
 import structlog
 
+from hermes.application.messages.slack import FileAttachment, slack_template
 from hermes.domain.errors import InfraError
+from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
+from hermes.domain.events.base import DomainEvent
 
 __all__ = ["SlackAdapter", "SlackConfig", "SlackNotifierError"]
 
@@ -121,10 +133,10 @@ class SlackConfig:
             as opaque; the adapter only puts it in an
             ``Authorization: Bearer`` header.
         default_channel: The channel ID (``C0123ABCD``) or name
-            (``#alerts``) that :meth:`notify_urgent` /
-            :meth:`notify_report` post to when the caller does not
-            override with a ``channel=`` kwarg. Stored as ``str`` since
-            the API accepts both ID and name.
+            (``#alerts``) that :meth:`notify` and the legacy wrappers
+            post to when the caller does not override with a
+            ``channel=`` kwarg. Stored as ``str`` since the API accepts
+            both ID and name.
     """
 
     bot_token: str
@@ -221,37 +233,126 @@ class SlackAdapter:
         self.client.close()
 
     # ------------------------------------------------------------------
-    # NotifierPort surface
+    # Preferred surface — template-driven notify + read-only health probe
+    # ------------------------------------------------------------------
+
+    def notify(self, event: DomainEvent) -> None:
+        """Render ``event`` through :func:`slack_template` and post to Slack.
+
+        This is the preferred entry point for domain-event notifications.
+        Rendering happens in the application layer
+        (:mod:`hermes.application.messages.slack`); adapter code stays
+        thin — no formatting decisions live here.
+
+        Flow:
+          1. Render the event to a :class:`SlackMessage`
+             (``text`` fallback + Block Kit ``blocks`` + optional
+             ``attachments`` tuple).
+          2. POST to ``chat.postMessage`` with ``text`` + ``blocks``.
+             The response body carries the parent message ``ts``.
+          3. For each ``FileAttachment``, upload via the Slack v2
+             external-upload flow AND thread the completed file to the
+             parent message via ``thread_ts``. Threading keeps the
+             channel view clean — a Daily Trade Digest posts one parent
+             card, the CSV lands as a reply.
+
+        Args:
+            event: A concrete :class:`DomainEvent` instance.
+
+        Raises:
+            SlackNotifierError: On transport failure, non-2xx HTTP
+                status (including 429 rate-limit and 401 auth), or
+                ``ok=false`` in the API response body from any of the
+                (1 + 3*len(attachments)) HTTP calls this method makes.
+            ValueError: If no template is registered for ``type(event)``
+                (bubbled from :func:`slack_template`).
+        """
+        rendered = slack_template(event)
+
+        payload: dict[str, Any] = {
+            "channel": self.config.default_channel,
+            "text": rendered.text,
+            "blocks": rendered.blocks,
+        }
+        response_body = self._post_json("/api/chat.postMessage", payload)
+        parent_ts = response_body.get("ts")
+
+        for attachment in rendered.attachments:
+            # Thread each attachment under the parent post so the channel
+            # timeline stays a single card per event. Fall back to no
+            # thread if Slack somehow omitted ``ts`` (defensive — the
+            # docs guarantee it, but the field is not typed at the wire).
+            thread_ts = parent_ts if isinstance(parent_ts, str) and parent_ts else None
+            self._upload_attachment(attachment, thread_ts=thread_ts)
+
+    def auth_test(self) -> dict[str, Any]:
+        """Call the Web API ``auth.test`` endpoint and return the response body.
+
+        This is a READ-ONLY probe used by ``hermes health slack`` to
+        verify that the bot token is valid AND the API is reachable
+        WITHOUT sending anything to any channel. Never call
+        ``chat.postMessage`` from a health path — a watchdog script
+        would spam the channel every tick.
+
+        Returns:
+            The full parsed response body (a dict guaranteed to contain
+            ``ok=True``; typically also ``team``, ``user``, ``team_id``,
+            ``user_id``, ``url`` fields per
+            https://api.slack.com/methods/auth.test).
+
+        Raises:
+            SlackNotifierError: On transport failure, non-2xx HTTP
+                status (401 = invalid token, 429 = rate-limited), or
+                ``ok=false`` in the API response body (Slack's
+                HTTP-200 footgun).
+        """
+        # auth.test accepts an empty body; the bearer token in the
+        # Authorization header is the entire request. Sending an empty
+        # JSON object keeps the request shape uniform with the other
+        # chat/files endpoints and avoids an httpx warning about a POST
+        # with no body.
+        return self._post_json("/api/auth.test", {})
+
+    # ------------------------------------------------------------------
+    # Legacy NotifierPort surface — deprecated thin wrappers.
+    #
+    # Every wrapper below is scheduled for removal once the notification
+    # router migration (PR F) lands. New callers MUST use ``notify()``.
     # ------------------------------------------------------------------
 
     def notify_urgent(self, *, event: str, correlation_id: str, message: str) -> None:
         """Post a short urgent message to the configured Slack channel.
 
-        Format (plain text — Slack renders newlines and mrkdwn inline):
-
-            *<event>* [<cid-tail>]
-            <message>
+        DEPRECATED — prefer :meth:`notify` (which takes a
+        :class:`DomainEvent`). This wrapper exists for compatibility
+        with pre-template callers and will be removed once the
+        notification-router migration lands. It constructs a synthetic
+        :class:`AnomalyDetected` event (CRITICAL severity, ``event`` as
+        source, ``message`` as reason) so the same template path renders
+        the payload.
 
         Args:
             event: Dotted-namespace event name (e.g.
-                ``"rollback.fired"``). Rendered bold in the message header.
+                ``"rollback.fired"``). Threaded into the synthetic
+                ``AnomalyDetected.source`` field.
             correlation_id: Full ULID; only the last 6 chars appear in
                 the ping (per ADR-008 § Correlation ID convention).
-            message: Short human-readable body. Longer, formatted content
-                belongs on :meth:`notify_report`.
+            message: Short human-readable body. Threaded into the
+                synthetic ``AnomalyDetected.reason`` field.
 
         Raises:
             SlackNotifierError: On transport failure, non-2xx HTTP
                 status (including 429 rate-limit and 401 auth), or
                 ``ok=false`` in the API response body.
         """
-        tail = _correlation_tail(correlation_id)
-        text = f"*{event}* [{tail}]\n{message}"
-        payload: dict[str, Any] = {
-            "channel": self.config.default_channel,
-            "text": text,
-        }
-        self._post_json("/api/chat.postMessage", payload)
+        synthetic = AnomalyDetected(
+            occurred_at=datetime.now(UTC),
+            correlation_id=correlation_id,
+            source=event,
+            severity=AnomalySeverity.CRITICAL,
+            reason=message,
+        )
+        self.notify(synthetic)
 
     def notify_report(
         self,
@@ -264,10 +365,17 @@ class SlackAdapter:
     ) -> None:
         """Post a rich long-form report to the configured Slack channel.
 
+        DEPRECATED — prefer :meth:`notify` with a concrete report event
+        (e.g. :class:`DailyTradeDigest`). This wrapper preserves the
+        original inline Block Kit rendering + ``Path``-based attachment
+        upload so existing pre-template callers keep working during the
+        router migration. It will be removed once every caller has
+        migrated.
+
         Renders ``title`` as a Block Kit ``header`` block and ``body``
         as a ``section`` block with mrkdwn text. Then uploads each
         attachment via the Slack v2 external-upload flow (three HTTP
-        calls per file) and shares it into the same channel.
+        calls per file) as a threaded reply to the parent message.
 
         Args:
             event: Dotted-namespace event name (e.g.
@@ -280,7 +388,7 @@ class SlackAdapter:
             body: Report body (Slack mrkdwn accepted) — rendered as a
                 ``section`` block.
             attachments: Optional list of local file paths to upload and
-                share into the same channel. ``None`` or ``[]`` means
+                share as threaded replies. ``None`` or ``[]`` means
                 no attachments. Files must be readable at the moment of
                 the call.
 
@@ -303,10 +411,12 @@ class SlackAdapter:
             "text": f"{title} — {event} [{tail}]",  # fallback for no-blocks clients
             "blocks": blocks,
         }
-        self._post_json("/api/chat.postMessage", payload)
+        response_body = self._post_json("/api/chat.postMessage", payload)
+        parent_ts = response_body.get("ts")
+        thread_ts = parent_ts if isinstance(parent_ts, str) and parent_ts else None
 
         for path in attachments or ():
-            self._upload_file(path)
+            self._upload_file(path, thread_ts=thread_ts)
 
     # ------------------------------------------------------------------
     # Extension surface (beyond NotifierPort) — accepts explicit blocks
@@ -322,10 +432,11 @@ class SlackAdapter:
     ) -> None:
         """Post a message with optional explicit Block Kit blocks.
 
-        Wider surface than :class:`NotifierPort` intentionally — the
-        router / caller may want full Block Kit control (tables, action
-        buttons, dividers) without cramming everything through
-        :meth:`notify_report`'s fixed title/body/attachments shape.
+        DEPRECATED — kept for compatibility with pre-template callers.
+        New callers should render through :func:`slack_template` and
+        call :meth:`notify` instead so no formatting decisions live in
+        adapter callers. Will be removed once the router migration
+        lands.
 
         Args:
             message: Plain-text body. Also serves as the fallback for
@@ -415,32 +526,82 @@ class SlackAdapter:
 
         return data
 
-    def _upload_file(self, path: Path) -> None:
-        """Upload ``path`` to Slack via the v2 external-upload flow.
+    def _upload_attachment(self, attachment: FileAttachment, *, thread_ts: str | None) -> None:
+        """Upload an in-memory :class:`FileAttachment` via the v2 flow.
 
-        Three-step dance mandated by Slack after the Nov 2025 sunset of
-        the legacy ``files.upload`` endpoint:
-
-        1. ``files.getUploadURLExternal`` — Slack returns a signed PUT URL
-           and a ``file_id``.
-        2. ``PUT`` the raw bytes to the returned URL (NOT ``slack.com``).
-        3. ``files.completeUploadExternal`` — associates the uploaded
-           bytes with a Slack file record and shares it into the
-           configured channel.
+        Companion to :meth:`_upload_file` for attachments generated in
+        memory by the template layer (bytes, filename, MIME already
+        known). Threads under ``thread_ts`` when provided.
 
         Args:
-            path: Local file path. Must be readable at call time.
+            attachment: The rendered attachment (name + MIME + bytes).
+            thread_ts: Parent message ``ts`` — the upload lands as a
+                reply in that thread. ``None`` posts as a top-level
+                message (defensive fallback if the parent post did not
+                return a ``ts``).
 
         Raises:
             SlackNotifierError: On any of the three network calls
-                failing (transport, HTTP status, or ``ok=false`` body),
-                or on a local read error against ``path``.
+                failing (transport, HTTP status, or ``ok=false`` body).
+        """
+        self._external_upload(
+            filename=attachment.name,
+            content=attachment.content,
+            thread_ts=thread_ts,
+        )
+
+    def _upload_file(self, path: Path, *, thread_ts: str | None = None) -> None:
+        """Upload the file at ``path`` via the Slack v2 external-upload flow.
+
+        Kept for the deprecated :meth:`notify_report` wrapper. Reads the
+        file into memory, delegates the three-step wire dance to
+        :meth:`_external_upload`. Threads under ``thread_ts`` when
+        provided.
+
+        Args:
+            path: Local file path. Must be readable at call time.
+            thread_ts: Parent message ``ts`` — the upload lands as a
+                reply in that thread. ``None`` posts as a top-level
+                channel message (preserves original pre-thread
+                behaviour).
+
+        Raises:
+            SlackNotifierError: On a local read error against ``path``
+                or on any of the three network calls failing.
         """
         try:
             content = path.read_bytes()
         except OSError as exc:
             raise SlackNotifierError(f"cannot read attachment {path}: {exc!r}") from exc
-        filename = path.name
+        self._external_upload(filename=path.name, content=content, thread_ts=thread_ts)
+
+    def _external_upload(self, *, filename: str, content: bytes, thread_ts: str | None) -> None:
+        """Run the Slack v2 external-upload three-step dance.
+
+        Steps (mandated by Slack after the Nov 2025 sunset of the
+        legacy ``files.upload`` endpoint):
+
+        1. ``files.getUploadURLExternal`` — Slack returns a signed PUT
+           URL and a ``file_id``.
+        2. ``PUT`` the raw bytes to the returned URL (NOT
+           ``slack.com``; the URL is signed, no auth header needed).
+        3. ``files.completeUploadExternal`` — associates the uploaded
+           bytes with a Slack file record and shares it into the
+           configured channel (optionally threaded).
+
+        Args:
+            filename: Filename Slack shows in the file card.
+            content: Raw file bytes.
+            thread_ts: Parent message ``ts`` — the completed file lands
+                as a threaded reply. ``None`` posts to the channel as a
+                top-level file share.
+
+        Raises:
+            SlackNotifierError: On any of the three network calls
+                failing (transport, HTTP status, or ``ok=false`` body),
+                or when the step-1 body is malformed (missing
+                ``upload_url`` / ``file_id``).
+        """
         length = len(content)
 
         # Step 1: ask Slack for an upload URL + file_id.
@@ -466,14 +627,15 @@ class SlackAdapter:
                 f"HTTP {put_response.status_code} uploading {filename}: {excerpt}"
             )
 
-        # Step 3: complete the upload and share into the channel.
-        self._post_json(
-            "/api/files.completeUploadExternal",
-            {
-                "files": [{"id": file_id, "title": filename}],
-                "channel_id": self.config.default_channel,
-            },
-        )
+        # Step 3: complete the upload and share into the channel
+        # (threaded under ``thread_ts`` when supplied).
+        complete_payload: dict[str, Any] = {
+            "files": [{"id": file_id, "title": filename}],
+            "channel_id": self.config.default_channel,
+        }
+        if thread_ts is not None:
+            complete_payload["thread_ts"] = thread_ts
+        self._post_json("/api/files.completeUploadExternal", complete_payload)
 
     def _post_form(self, path: str, form: dict[str, str]) -> dict[str, Any]:
         """POST ``form`` as ``application/x-www-form-urlencoded`` and validate.

@@ -35,7 +35,10 @@ __all__ = ["main"]
 _SUBCOMMAND_HELP: Final[dict[str, str]] = {
     "preview": "Render + optionally send notification templates.",
     "serve": "Run the trading engine (stub — implemented in a future PR).",
-    "health": "Health-check probe for an integration (e.g. `hermes health telegram`).",
+    "health": (
+        "Health-check probe for an integration "
+        "(e.g. `hermes health telegram`, `hermes health slack`)."
+    ),
     "simulate": "Replay historical scenarios (stub — implemented in a future PR).",
 }
 

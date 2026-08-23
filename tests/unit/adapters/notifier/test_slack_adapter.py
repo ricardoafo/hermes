@@ -25,6 +25,8 @@ Reference: docs/decisions/2026-08-23-slack-alongside-telegram.md;
 from __future__ import annotations
 
 import json
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 
 import httpx
@@ -37,6 +39,12 @@ from hermes.adapters.notifier import (
     SlackNotifierError,
 )
 from hermes.domain.errors import HermesError, InfraError
+from hermes.domain.events.anomaly_detected import AnomalySeverity
+from hermes.domain.events.daily_trade_digest import DailyTradeDigest, TradeSummary
+from hermes.domain.events.strategy_paused import StrategyPaused
+from hermes.domain.value_objects.currency import Currency
+from hermes.domain.value_objects.money import Money
+from hermes.domain.value_objects.pair import Pair
 from hermes.ports.notifier import NotifierPort
 
 _TEST_TOKEN = "xoxb-test"  # noqa: S105 - test-only bot token, never real
@@ -133,10 +141,16 @@ class TestNotifyUrgentHappyPath:
             assert payload["channel"] == _TEST_CHANNEL
             assert "db unreachable" in payload["text"]
 
-    def test_notify_urgent_includes_correlation_tail_in_message_text(
+    def test_notify_urgent_includes_correlation_tail_in_context_block(
         self, adapter: SlackAdapter
     ) -> None:
-        """The message text contains the last 6 chars of the correlation ID per ADR-008."""
+        """The Block Kit context footer carries the last 6 chars of the correlation ID.
+
+        Template-driven path: the tail lives in the context block
+        (``ref: <tail>``) rather than the plain-text field. Asserting on
+        the block preserves the ADR-008 contract while matching the new
+        rendering surface (:func:`slack_template`).
+        """
         with respx.mock() as router:
             route = router.post(_POST_MESSAGE_URL).mock(
                 return_value=httpx.Response(200, json={"ok": True})
@@ -147,10 +161,18 @@ class TestNotifyUrgentHappyPath:
                 message="node down",
             )
             payload = json.loads(route.calls[0].request.content)
-            assert _TEST_CORRELATION_TAIL in payload["text"]
+            context_block = payload["blocks"][-1]
+            assert context_block["type"] == "context"
+            context_text = context_block["elements"][0]["text"]
+            assert _TEST_CORRELATION_TAIL in context_text
 
     def test_notify_urgent_short_correlation_id_used_verbatim(self, adapter: SlackAdapter) -> None:
-        """A correlation ID shorter than 6 chars is used in full (no exception)."""
+        """A correlation ID shorter than 6 chars is used in full (no exception).
+
+        Template-driven path: the tail lives in the context footer
+        block. A 3-char ID (``abc``) is shorter than the 6-char cap so
+        it appears verbatim there, not silently truncated.
+        """
         with respx.mock() as router:
             route = router.post(_POST_MESSAGE_URL).mock(
                 return_value=httpx.Response(200, json={"ok": True})
@@ -161,7 +183,9 @@ class TestNotifyUrgentHappyPath:
                 message="ok",
             )
             payload = json.loads(route.calls[0].request.content)
-            assert "abc" in payload["text"]
+            context_block = payload["blocks"][-1]
+            assert context_block["type"] == "context"
+            assert "abc" in context_block["elements"][0]["text"]
 
     def test_notify_urgent_sends_bearer_authorization_header(self, adapter: SlackAdapter) -> None:
         """The Authorization header is Bearer <bot_token> — Slack's required auth mode."""
@@ -570,3 +594,251 @@ class TestCreateAndClose:
         adapter = SlackAdapter.create(config)
         adapter.close()
         adapter.close()  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# Template-driven notify(event) + auth.test() — new preferred surface.
+# ---------------------------------------------------------------------------
+
+_AUTH_TEST_URL = "https://slack.com/api/auth.test"
+
+
+class TestNotifyEvent:
+    """`notify(event)` delegates rendering to slack_template and posts the blocks."""
+
+    def _strategy_paused_event(self) -> StrategyPaused:
+        """Return a minimal StrategyPaused event with no attachments."""
+        return StrategyPaused(
+            occurred_at=datetime(2026, 8, 23, 14, 22, 0, tzinfo=UTC),
+            correlation_id=_TEST_CORRELATION_ID,
+            strategy_id="swing-btc",
+            severity=AnomalySeverity.CRITICAL,
+            reason="drawdown breach — 6.2% over daily cap",
+            paused_at=datetime(2026, 8, 23, 14, 22, 0, tzinfo=UTC),
+        )
+
+    def test_notify_posts_rendered_text_and_blocks_from_template(
+        self, adapter: SlackAdapter
+    ) -> None:
+        """notify() posts the template's text + blocks to chat.postMessage."""
+        with respx.mock() as router:
+            route = router.post(_POST_MESSAGE_URL).mock(
+                return_value=httpx.Response(200, json={"ok": True, "ts": "1234.5"})
+            )
+            adapter.notify(self._strategy_paused_event())
+            assert route.call_count == 1
+            payload = json.loads(route.calls[0].request.content)
+            assert payload["channel"] == _TEST_CHANNEL
+            # Template renders "Strategy paused — <strategy_id> — <reason>" as fallback text.
+            assert "Strategy paused" in payload["text"]
+            assert "swing-btc" in payload["text"]
+            # Blocks list carries header + section + context (per template shape).
+            block_types = [b["type"] for b in payload["blocks"]]
+            assert block_types == ["header", "section", "context"]
+
+    def test_notify_sends_bearer_authorization_header(self, adapter: SlackAdapter) -> None:
+        """The Authorization header is Bearer <bot_token> for the template-driven path too."""
+        with respx.mock() as router:
+            route = router.post(_POST_MESSAGE_URL).mock(
+                return_value=httpx.Response(200, json={"ok": True, "ts": "1.0"})
+            )
+            adapter.notify(self._strategy_paused_event())
+            auth = route.calls[0].request.headers.get("authorization", "")
+            assert auth == f"Bearer {_TEST_TOKEN}"
+
+    def test_notify_without_attachments_makes_exactly_one_post(self, adapter: SlackAdapter) -> None:
+        """A template with no attachments (short event) triggers only chat.postMessage."""
+        with respx.mock(assert_all_called=False) as router:
+            post_route = router.post(_POST_MESSAGE_URL).mock(
+                return_value=httpx.Response(200, json={"ok": True, "ts": "1.0"})
+            )
+            upload_route = router.post(_GET_UPLOAD_URL).mock(
+                return_value=httpx.Response(200, json={"ok": True})
+            )
+            adapter.notify(self._strategy_paused_event())
+            assert post_route.call_count == 1
+            assert upload_route.call_count == 0
+
+    def test_notify_ok_false_body_raises(self, adapter: SlackAdapter) -> None:
+        """The template-driven path surfaces Slack's HTTP-200-with-ok-false footgun."""
+        with respx.mock() as router:
+            router.post(_POST_MESSAGE_URL).mock(
+                return_value=httpx.Response(200, json={"ok": False, "error": "channel_not_found"})
+            )
+            with pytest.raises(SlackNotifierError, match="rejected"):
+                adapter.notify(self._strategy_paused_event())
+
+    def test_notify_transport_failure_wraps(self, adapter: SlackAdapter) -> None:
+        """A httpx transport error during notify() is wrapped as SlackNotifierError."""
+        with respx.mock() as router:
+            router.post(_POST_MESSAGE_URL).mock(side_effect=httpx.ConnectError("DNS failed"))
+            with pytest.raises(SlackNotifierError, match="transport failure"):
+                adapter.notify(self._strategy_paused_event())
+
+
+class TestNotifyDailyDigestThreadedAttachment:
+    """DailyTradeDigest is the attachment-bearing event — CSV lands as a threaded reply."""
+
+    def _digest_event(self) -> DailyTradeDigest:
+        """Return a minimal DailyTradeDigest event with a single winner + loser row."""
+        winner = TradeSummary(
+            pair=Pair(base=Currency.BTC, quote=Currency.USDT),
+            pnl=Money(amount=Decimal("120.00"), currency=Currency.EUR),
+        )
+        loser = TradeSummary(
+            pair=Pair(base=Currency.ETH, quote=Currency.USDT),
+            pnl=Money(amount=Decimal("-45.50"), currency=Currency.EUR),
+        )
+        return DailyTradeDigest(
+            occurred_at=datetime(2026, 8, 23, 22, 0, 0, tzinfo=UTC),
+            correlation_id=_TEST_CORRELATION_ID,
+            day=date(2026, 8, 23),
+            total_trades=12,
+            filled=10,
+            rejected=2,
+            total_notional=Money(amount=Decimal("12500.50"), currency=Currency.EUR),
+            top_winners=(winner,),
+            top_losers=(loser,),
+        )
+
+    def test_daily_digest_uploads_csv_via_three_step_flow(self, adapter: SlackAdapter) -> None:
+        """DailyTradeDigest triggers getUploadURLExternal → PUT → completeUploadExternal."""
+        signed_put_url = "https://files.slack.com/upload/signed-digest"
+        parent_ts = "1700000000.000100"
+
+        with respx.mock() as router:
+            router.post(_POST_MESSAGE_URL).mock(
+                return_value=httpx.Response(200, json={"ok": True, "ts": parent_ts})
+            )
+            step1 = router.post(_GET_UPLOAD_URL).mock(
+                return_value=httpx.Response(
+                    200,
+                    json={"ok": True, "upload_url": signed_put_url, "file_id": "F888"},
+                )
+            )
+            step2 = router.put(signed_put_url).mock(return_value=httpx.Response(200, text="OK"))
+            step3 = router.post(_COMPLETE_UPLOAD_URL).mock(
+                return_value=httpx.Response(200, json={"ok": True})
+            )
+
+            adapter.notify(self._digest_event())
+
+            assert step1.call_count == 1
+            assert step2.call_count == 1
+            assert step3.call_count == 1
+
+    def test_daily_digest_attachment_lands_in_parent_thread(self, adapter: SlackAdapter) -> None:
+        """The completeUploadExternal payload carries thread_ts from the parent post."""
+        signed_put_url = "https://files.slack.com/upload/signed-thread"
+        parent_ts = "1700000000.000200"
+
+        with respx.mock() as router:
+            router.post(_POST_MESSAGE_URL).mock(
+                return_value=httpx.Response(200, json={"ok": True, "ts": parent_ts})
+            )
+            router.post(_GET_UPLOAD_URL).mock(
+                return_value=httpx.Response(
+                    200,
+                    json={"ok": True, "upload_url": signed_put_url, "file_id": "F777"},
+                )
+            )
+            router.put(signed_put_url).mock(return_value=httpx.Response(200, text="OK"))
+            step3 = router.post(_COMPLETE_UPLOAD_URL).mock(
+                return_value=httpx.Response(200, json={"ok": True})
+            )
+
+            adapter.notify(self._digest_event())
+
+            step3_payload = json.loads(step3.calls[0].request.content)
+            # The thread_ts field pins the upload as a threaded reply
+            # rather than a top-level channel message — keeps the timeline
+            # a single card per event.
+            assert step3_payload["thread_ts"] == parent_ts
+            assert step3_payload["files"] == [{"id": "F777", "title": "digest-2026-08-23.csv"}]
+            assert step3_payload["channel_id"] == _TEST_CHANNEL
+
+    def test_daily_digest_step1_form_carries_filename_and_length(
+        self, adapter: SlackAdapter
+    ) -> None:
+        """Step-1 form body carries filename + byte-length of the rendered CSV."""
+        signed_put_url = "https://files.slack.com/upload/signed-form"
+        with respx.mock() as router:
+            router.post(_POST_MESSAGE_URL).mock(
+                return_value=httpx.Response(200, json={"ok": True, "ts": "1.0"})
+            )
+            step1 = router.post(_GET_UPLOAD_URL).mock(
+                return_value=httpx.Response(
+                    200,
+                    json={"ok": True, "upload_url": signed_put_url, "file_id": "F1"},
+                )
+            )
+            router.put(signed_put_url).mock(return_value=httpx.Response(200, text="OK"))
+            router.post(_COMPLETE_UPLOAD_URL).mock(
+                return_value=httpx.Response(200, json={"ok": True})
+            )
+
+            adapter.notify(self._digest_event())
+
+            step1_body = step1.calls[0].request.content.decode()
+            # Template names the file `digest-<day>.csv` — must reach step 1.
+            assert "filename=digest-2026-08-23.csv" in step1_body
+            # Byte length is a positive integer — sanity assertion, no drift target.
+            assert "length=" in step1_body
+
+
+class TestAuthTest:
+    """`auth_test()` powers `hermes health slack` — read-only, never sends messages."""
+
+    def test_auth_test_returns_full_response_body_on_ok(self, adapter: SlackAdapter) -> None:
+        """auth.test returns the parsed body dict with ok=True + team + user fields."""
+        with respx.mock() as router:
+            router.post(_AUTH_TEST_URL).mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "ok": True,
+                        "team": "hermes-ws",
+                        "user": "hermes_bot",
+                        "team_id": "T01",
+                        "user_id": "U01",
+                        "url": "https://hermes-ws.slack.com/",
+                    },
+                )
+            )
+            result = adapter.auth_test()
+            assert result["ok"] is True
+            assert result["team"] == "hermes-ws"
+            assert result["user"] == "hermes_bot"
+
+    def test_auth_test_sends_bearer_authorization_header(self, adapter: SlackAdapter) -> None:
+        """The Authorization header is Bearer <bot_token> — Slack's required auth mode."""
+        with respx.mock() as router:
+            route = router.post(_AUTH_TEST_URL).mock(
+                return_value=httpx.Response(200, json={"ok": True, "team": "t", "user": "u"})
+            )
+            adapter.auth_test()
+            auth = route.calls[0].request.headers.get("authorization", "")
+            assert auth == f"Bearer {_TEST_TOKEN}"
+
+    def test_auth_test_ok_false_raises_notifier_error(self, adapter: SlackAdapter) -> None:
+        """HTTP 200 with ok=false (invalid_auth) raises — Slack's HTTP-200 footgun."""
+        with respx.mock() as router:
+            router.post(_AUTH_TEST_URL).mock(
+                return_value=httpx.Response(200, json={"ok": False, "error": "invalid_auth"})
+            )
+            with pytest.raises(SlackNotifierError, match="invalid_auth"):
+                adapter.auth_test()
+
+    def test_auth_test_401_raises_notifier_error(self, adapter: SlackAdapter) -> None:
+        """HTTP 401 raises with the status code in the message."""
+        with respx.mock() as router:
+            router.post(_AUTH_TEST_URL).mock(return_value=httpx.Response(401, text="Unauthorized"))
+            with pytest.raises(SlackNotifierError, match="401"):
+                adapter.auth_test()
+
+    def test_auth_test_transport_failure_wraps(self, adapter: SlackAdapter) -> None:
+        """A httpx transport error during auth.test is wrapped as SlackNotifierError."""
+        with respx.mock() as router:
+            router.post(_AUTH_TEST_URL).mock(side_effect=httpx.ConnectError("DNS failed"))
+            with pytest.raises(SlackNotifierError, match="transport failure"):
+                adapter.auth_test()
