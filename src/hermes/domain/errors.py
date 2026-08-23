@@ -17,6 +17,7 @@ __all__ = [
     "CurrencyMismatch",
     "DomainError",
     "ExchangeError",
+    "FxRateError",
     "HermesError",
     "InfraError",
     "InvalidLot",
@@ -164,3 +165,26 @@ class LedgerError(InfraError):
     def __str__(self) -> str:
         """Return human-readable description."""
         return f"Ledger error: {self.msg}"
+
+
+@dataclass(frozen=True, slots=True)
+class FxRateError(InfraError):
+    """FX rate provider (Frankfurter, ECB, ...) failed to deliver a usable rate.
+
+    Raised by FX adapters when the wire call succeeds at the transport
+    level but the response is unusable — HTTP non-2xx, unparseable JSON,
+    or a schema shape that does not contain the requested currency.
+
+    Args:
+        msg: Context from the response (status code, offending payload
+            excerpt, missing currency name, etc.).
+
+    Reference: code-conventions.md §2,
+    docs/decisions/2026-08-23-fx-rate-source-frankfurter.md.
+    """
+
+    msg: str
+
+    def __str__(self) -> str:
+        """Return human-readable description."""
+        return f"FX rate error: {self.msg}"

@@ -91,6 +91,14 @@ _VALID_KLINES = dedent(
     """
 ).strip()
 
+_VALID_FRANKFURTER = dedent(
+    """
+    base_url: https://api.frankfurter.app
+    timeout_sec: 10.0
+    requests_per_minute: 60
+    """
+).strip()
+
 
 @pytest.fixture()
 def config_dir(tmp_path: Path) -> Path:
@@ -102,6 +110,7 @@ def config_dir(tmp_path: Path) -> Path:
     (tmp_path / "tax_guard.yaml").write_text(_VALID_TAX_GUARD, encoding="utf-8")
     (tmp_path / "ml.yaml").write_text(_VALID_ML, encoding="utf-8")
     (tmp_path / "klines.yaml").write_text(_VALID_KLINES, encoding="utf-8")
+    (tmp_path / "frankfurter.yaml").write_text(_VALID_FRANKFURTER, encoding="utf-8")
     return tmp_path
 
 
