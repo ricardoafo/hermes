@@ -20,6 +20,10 @@ dependencies = [
   "returns>=0.24,<1",
   "anyio>=4,<5",
   "pyyaml>=6,<7",
+  # Loads .env.local at process start for local dev (systemd EnvironmentFile
+  # in prod, GH Actions secrets in CI). See
+  # docs/decisions/2026-08-23-credential-storage-layered-by-env.md.
+  "python-dotenv>=1,<2",
 ]
 
 [dependency-groups]
