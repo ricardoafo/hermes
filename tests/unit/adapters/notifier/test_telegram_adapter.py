@@ -10,6 +10,8 @@ Reference: docs/decisions/2026-08-23-slack-alongside-telegram.md.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
+from decimal import Decimal
 
 import httpx
 import pytest
@@ -23,6 +25,10 @@ from hermes.adapters.notifier import (
     TelegramNotifierError,
 )
 from hermes.domain.errors import HermesError, InfraError
+from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
+from hermes.domain.events.balance_low import BalanceLow
+from hermes.domain.value_objects.currency import Currency
+from hermes.domain.value_objects.money import Money
 from hermes.ports.notifier import NotifierPort
 
 _TEST_TOKEN = "123456:ABC-DEF"  # noqa: S105 - test-only bot token, never real
@@ -30,6 +36,7 @@ _TEST_CHAT = "-1001234567890"
 _TEST_CORRELATION_ID = "01HKQMZXYZ0123456789ABCDEF"  # 26-char pseudo-ULID
 _TEST_CORRELATION_TAIL = "ABCDEF"  # last 6 chars
 _API_URL = f"https://api.telegram.org/bot{_TEST_TOKEN}/sendMessage"
+_GET_ME_URL = f"https://api.telegram.org/bot{_TEST_TOKEN}/getMe"
 
 
 @pytest.fixture
@@ -354,3 +361,142 @@ class TestCreateAndClose:
         adapter = TelegramAdapter.create(config)
         adapter.close()
         adapter.close()  # must not raise
+
+
+class TestNotifyEvent:
+    """Verify :meth:`notify` (event-based) delegates to the template registry."""
+
+    def test_notify_posts_rendered_template_to_send_message(self, adapter: TelegramAdapter) -> None:
+        """notify(event) hits sendMessage with the text produced by telegram_template."""
+        event = AnomalyDetected(
+            occurred_at=datetime(2026, 8, 23, 14, 22, 3, tzinfo=UTC),
+            correlation_id=_TEST_CORRELATION_ID,
+            source="swing.risk",
+            severity=AnomalySeverity.CRITICAL,
+            reason="30% drawdown breached",
+        )
+        with respx.mock() as router:
+            route = router.post(_API_URL).mock(
+                return_value=httpx.Response(200, json={"ok": True, "result": {}})
+            )
+            adapter.notify(event)
+            assert route.call_count == 1
+            payload = json.loads(route.calls[0].request.content)
+            assert payload["chat_id"] == _TEST_CHAT
+            assert payload["parse_mode"] == "MarkdownV2"
+            assert payload["disable_web_page_preview"] is True
+            # ANOMALY_DETECTED template renders the event source + correlation tail.
+            # Underscore is a MarkdownV2 reserved char → escaped in the rendered text.
+            assert "ANOMALY\\_DETECTED" in payload["text"]
+            assert _TEST_CORRELATION_TAIL in payload["text"]
+
+    def test_notify_uses_template_for_different_event_types(self, adapter: TelegramAdapter) -> None:
+        """Notify dispatches on event type — BalanceLow renders as BALANCE_LOW."""
+        usdt = Currency.USDT
+        event = BalanceLow(
+            occurred_at=datetime(2026, 8, 23, 14, 22, 3, tzinfo=UTC),
+            correlation_id=_TEST_CORRELATION_ID,
+            asset=usdt,
+            current=Money(amount=Decimal("50"), currency=usdt),
+            threshold=Money(amount=Decimal("100"), currency=usdt),
+            checked_at=datetime(2026, 8, 23, 14, 22, 3, tzinfo=UTC),
+        )
+        with respx.mock() as router:
+            route = router.post(_API_URL).mock(
+                return_value=httpx.Response(200, json={"ok": True, "result": {}})
+            )
+            adapter.notify(event)
+            payload = json.loads(route.calls[0].request.content)
+            assert "BALANCE\\_LOW" in payload["text"]
+
+    def test_notify_wire_failure_raises_notifier_error(self, adapter: TelegramAdapter) -> None:
+        """A network error inside notify() surfaces as TelegramNotifierError."""
+        event = AnomalyDetected(
+            occurred_at=datetime(2026, 8, 23, 14, 22, 3, tzinfo=UTC),
+            correlation_id=_TEST_CORRELATION_ID,
+            source="reconciler",
+            severity=AnomalySeverity.WARNING,
+            reason="drift detected",
+        )
+        with respx.mock() as router:
+            router.post(_API_URL).mock(side_effect=httpx.ConnectError("DNS failed"))
+            with pytest.raises(TelegramNotifierError, match="transport failure"):
+                adapter.notify(event)
+
+
+class TestGetMe:
+    """Verify :meth:`get_me` — the read-only health probe used by `hermes health`."""
+
+    def test_get_me_returns_result_object_on_success(self, adapter: TelegramAdapter) -> None:
+        """get_me returns the 'result' object from a successful Bot API response."""
+        with respx.mock() as router:
+            router.get(_GET_ME_URL).mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "ok": True,
+                        "result": {
+                            "id": 42,
+                            "is_bot": True,
+                            "username": "hermes_bot",
+                            "first_name": "Hermes",
+                        },
+                    },
+                )
+            )
+            result = adapter.get_me()
+        assert result["username"] == "hermes_bot"
+        assert result["is_bot"] is True
+
+    def test_get_me_401_raises_notifier_error(self, adapter: TelegramAdapter) -> None:
+        """HTTP 401 from getMe raises TelegramNotifierError with the status in the msg."""
+        with respx.mock() as router:
+            router.get(_GET_ME_URL).mock(
+                return_value=httpx.Response(
+                    401,
+                    json={"ok": False, "error_code": 401, "description": "Unauthorized"},
+                )
+            )
+            with pytest.raises(TelegramNotifierError, match="401"):
+                adapter.get_me()
+
+    def test_get_me_ok_false_raises_notifier_error(self, adapter: TelegramAdapter) -> None:
+        """A 200 response with ok=false still raises — Bot API rejected the probe."""
+        with respx.mock() as router:
+            router.get(_GET_ME_URL).mock(
+                return_value=httpx.Response(
+                    200,
+                    json={"ok": False, "error_code": 400, "description": "Bad Request"},
+                )
+            )
+            with pytest.raises(TelegramNotifierError, match="rejected"):
+                adapter.get_me()
+
+    def test_get_me_transport_error_wraps_httpx_exception(self, adapter: TelegramAdapter) -> None:
+        """A transport-level failure during getMe wraps to TelegramNotifierError."""
+        with respx.mock() as router:
+            router.get(_GET_ME_URL).mock(side_effect=httpx.ConnectError("DNS failed"))
+            with pytest.raises(TelegramNotifierError, match="transport failure"):
+                adapter.get_me()
+
+    def test_get_me_non_json_response_raises_notifier_error(self, adapter: TelegramAdapter) -> None:
+        """A 2xx response that is not JSON raises TelegramNotifierError, not ValueError."""
+        with respx.mock() as router:
+            router.get(_GET_ME_URL).mock(
+                return_value=httpx.Response(
+                    200,
+                    content=b"<html>gateway error</html>",
+                    headers={"content-type": "text/html"},
+                )
+            )
+            with pytest.raises(TelegramNotifierError, match="non-JSON"):
+                adapter.get_me()
+
+    def test_get_me_missing_result_object_raises_notifier_error(
+        self, adapter: TelegramAdapter
+    ) -> None:
+        """A 200 ok=true response without a 'result' object raises TelegramNotifierError."""
+        with respx.mock() as router:
+            router.get(_GET_ME_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
+            with pytest.raises(TelegramNotifierError, match="missing 'result'"):
+                adapter.get_me()

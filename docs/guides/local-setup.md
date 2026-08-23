@@ -136,6 +136,42 @@ Precedence: a real shell env var wins over `.env.local`. That means
 `HERMES_ENV=sandbox uv run ...` overrides whatever the file says — CI
 and prod are never silently shadowed by a stray developer dotenv.
 
+## First health check
+
+After you populate `.env.local` with real credentials for at least one
+integration, verify the wire path end-to-end BEFORE running the full
+test suite:
+
+```bash
+uv run hermes health telegram
+```
+
+Expected output on OK:
+
+```text
+# hermes health telegram
+  integration  telegram
+  status       OK
+  latency_ms   142.3
+  detail       bot=@your_bot_username
+  last_check   2026-08-23T14:22:03.412+00:00
+```
+
+Exit codes:
+
+- `0` — OK. The token is valid, the API is reachable, `getMe` returned
+  your bot's username.
+- `1` — FAIL. Adapter reached the API but the API responded with an
+  error (401 bad token, 429 rate-limited, etc.). The `detail` column
+  tells you which.
+- `3` — Not configured. `HERMES_TELEGRAM__BOT_TOKEN` (or `CHAT_ID`) is
+  missing. Populate `.env.local` (see the `.env.local.example` header
+  around line 27).
+
+The probe calls the read-only `getMe` endpoint — it **never** sends a
+message to your channel. Safe to run in any tier, safe to loop in a
+watchdog script.
+
 ## First test run
 
 ```bash
