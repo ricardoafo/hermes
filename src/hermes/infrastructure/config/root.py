@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict
 from hermes.infrastructure.config.models import (
     BinanceExchangeConfig,
     FeesConfig,
+    KlinesConfig,
     MLConfig,
     StrategiesConfig,
     TaxGuardConfig,
@@ -30,6 +31,8 @@ class HermesConfig(BaseModel):
         tax_guard: LOPDGDD + tax thresholds.
         ml: LLM supervisor configuration (never trade-signal source per
             ADR-001 + ADR-005).
+        klines: Historical-klines fetcher + storage configuration
+            (issue #28 foundation).
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -39,3 +42,4 @@ class HermesConfig(BaseModel):
     fees: FeesConfig
     tax_guard: TaxGuardConfig
     ml: MLConfig
+    klines: KlinesConfig

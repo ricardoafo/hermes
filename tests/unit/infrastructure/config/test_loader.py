@@ -83,6 +83,14 @@ _VALID_ML = dedent(
     """
 ).strip()
 
+_VALID_KLINES = dedent(
+    """
+    store_db_path: var/hermes/klines.db
+    rate_limit_max_weight: 5000
+    rate_limit_window_seconds: 60
+    """
+).strip()
+
 
 @pytest.fixture()
 def config_dir(tmp_path: Path) -> Path:
@@ -93,6 +101,7 @@ def config_dir(tmp_path: Path) -> Path:
     (tmp_path / "fees.yaml").write_text(_VALID_FEES, encoding="utf-8")
     (tmp_path / "tax_guard.yaml").write_text(_VALID_TAX_GUARD, encoding="utf-8")
     (tmp_path / "ml.yaml").write_text(_VALID_ML, encoding="utf-8")
+    (tmp_path / "klines.yaml").write_text(_VALID_KLINES, encoding="utf-8")
     return tmp_path
 
 

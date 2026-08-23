@@ -34,6 +34,7 @@ from pydantic import BaseModel, ConfigDict, Field
 __all__ = [
     "BinanceExchangeConfig",
     "FeesConfig",
+    "KlinesConfig",
     "MLConfig",
     "StrategiesConfig",
     "TaxGuardConfig",
@@ -95,6 +96,35 @@ class BinanceExchangeConfig(BaseModel):
     ws_url: str = Field(min_length=1, pattern=r"^wss://")
     recv_window_ms: int = Field(ge=1, le=60_000)
     testnet: bool
+
+
+class KlinesConfig(BaseModel):
+    """Root of ``config/klines.yaml`` — historical-klines fetcher + storage.
+
+    Consumed by the exchange klines adapter (``BinanceKlinesAdapter``) and
+    the market-data store (``KlineStore``). Stored separately from the
+    exchange endpoint config so a future multi-exchange fetcher factory
+    (issue #28 follow-up) can key rate limits per source without
+    reshuffling the Binance-specific YAML.
+
+    Attributes:
+        store_db_path: Path to the SQLite database that persists klines.
+            Empty string is rejected (would resolve to CWD-relative
+            ``./`` — a common misconfig). Point at an in-memory database
+            (``":memory:"``) for local experimentation only.
+        rate_limit_max_weight: Maximum tokens in the fetcher's
+            token-bucket per :attr:`rate_limit_window_seconds`. Defaults
+            in code buffer below Binance's published 6000 weight/min cap
+            (ADR-003 §04).
+        rate_limit_window_seconds: Length of the token-bucket refill
+            window, in seconds.
+    """
+
+    model_config = _MODEL_CONFIG
+
+    store_db_path: str = Field(min_length=1)
+    rate_limit_max_weight: int = Field(gt=0, le=6_000)
+    rate_limit_window_seconds: int = Field(gt=0, le=3_600)
 
 
 class FeeSchedule(BaseModel):

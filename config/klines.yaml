@@ -1,0 +1,10 @@
+# Historical klines fetcher + storage configuration.
+#
+# Loaded by hermes.infrastructure.config.load_config into KlinesConfig.
+# Rate-limit defaults buffer below Binance's public 6000 weight/min cap
+# (ADR-003 §04). Store path is dev-local — production wiring points at
+# /var/lib/hermes/klines.db via env override (HERMES_KLINES__STORE_DB_PATH).
+
+store_db_path: var/hermes/klines.db
+rate_limit_max_weight: 5000
+rate_limit_window_seconds: 60
