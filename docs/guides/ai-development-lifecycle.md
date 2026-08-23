@@ -29,7 +29,7 @@ flowchart TB
     G --> G2[git checkout main<br/>git branch -d branch<br/>= delete local the moment push landed]
     G2 --> H[gh pr create<br/>PR body: 'Closes #N']
 
-    H --> I["PR auto-assigns @rafo-claude-bot<br/>Requests review from @ricardoafo<br/>Auto-added to Project = In review"]
+    H --> I["PR auto-assigns @ai-bot<br/>Requests review from @ricardoafo<br/>Auto-added to Project = In review"]
 
     I --> J[CI workflow runs]
     J --> J1[changeset classifier]
@@ -99,7 +99,7 @@ in hermes.
 
 ### 4. Feature branch
 
-- **Who**: Ricardo or bot (`rafo-claude-bot`)
+- **Who**: Ricardo or bot (`ai-bot`)
 - **What**: Branch off `main` with a Conventional Commits prefix
   (`feat/*`, `fix/*`, etc. — see [dev-workflow.md § Branching](dev-workflow.md#branching-model))
 - **State**: ✅ Ready

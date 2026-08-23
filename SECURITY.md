@@ -48,8 +48,8 @@ Ricardo's public GitHub profile.
   used in CI/CD)
 - Supply chain (dependencies, `uv.lock` integrity, GitHub Actions used
   from this repo)
-- Bot identity misuse (any scenario where `rafo-claude-bot` performs
-  actions it should not be able to)
+- Bot identity misuse (any scenario where the `ai-bot` performs actions
+  it should not be able to)
 
 ## What is out of scope
 

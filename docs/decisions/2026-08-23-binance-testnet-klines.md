@@ -1,7 +1,7 @@
 # Binance testnet as historical-klines source; SQLite for kline storage
 
 **Date**: 2026-08-23
-**Author**: Code Owner (via rafo-claude-bot)
+**Author**: Code Owner (via ai-bot)
 **Related**: ADR-003 §04 (exchange adapters), ADR-003 §03 (persistence schema —
 `prices` table), ADR-004 (Binance primary via ARG-DNI, Kraken hot backup),
 GitHub issue #28

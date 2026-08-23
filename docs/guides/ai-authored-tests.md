@@ -2,7 +2,7 @@
 
 **Type**: Guide (living document — PR any change)
 **Owners**: Code Owner
-**Applies to**: every test file in this repo, whether authored by a human or an AI agent (`rafo-claude-bot`).
+**Applies to**: every test file in this repo, whether authored by a human or an AI agent (`ai-bot`).
 **Description**: What makes a unit test meaningful, how AI typically fails at writing tests, the protocol AI must follow in this repo, and the tooling that enforces it.
 
 This guide exists because AI-authored tests have a specific failure mode: they *look* like tests, they satisfy line-coverage gates, and they pass — but they don't catch bugs. This guide is the discipline that prevents that from happening in hermes.
@@ -97,6 +97,8 @@ When you (an AI agent) author a test in this repo, you MUST:
 2. **Start from the spec, not the code.** Look at the ADR, the interface contract, or the failing production incident. Enumerate the invariants the code must satisfy. Write one test per invariant. THEN look at coverage.
 
 3. **For pure-logic modules: add a property-based test.** Hypothesis will find edge cases. One `@given` decorator is worth ten hand-crafted examples. Use `@example` to pin specific regressions.
+
+   **Hypothesis and timeouts** — every test in this repo inherits the 60s `pytest-timeout` default configured in `pyproject.toml` `[tool.pytest.ini_options]`. Property-based tests with high `max_examples` counts, integration tests over slow adapters, and tests that legitimately need to sleep MUST override the cap explicitly with `@pytest.mark.timeout(N)` and a comment naming the reason. Silence is the worst failure mode — a test that hangs past the cap fails LOUDLY with a stack trace pointing at the frame that stopped progressing. Introduced by process-hardening wave 5 after a sub-agent burned its entire token budget on a rate-limiter test that hit a real float-drift infinite loop in production (fixed in PR #138) — the runner produced no output and the sub-agent kept blaming test infra.
 
 4. **For every mock, name the integration test at the seam.** Add a comment: `# integration: tests/integration/exchange_adapter/test_binance_ws.py::test_reconnect_survives_1006`. If you can't name one, the mock is untethered — either add the integration test or don't mock.
 
