@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 from hermes.infrastructure.config.models import (
     BinanceExchangeConfig,
     FeesConfig,
+    FrankfurterConfig,
     KlinesConfig,
     MLConfig,
     StrategiesConfig,
@@ -53,6 +54,9 @@ class HermesConfig(BaseModel):
             ADR-001 + ADR-005).
         klines: Historical-klines fetcher + storage configuration
             (issue #28 foundation).
+        frankfurter: FX-rate provider configuration — the
+            ECB-reference-rate wrapper used for EUR conversion at
+            tax-reporting time (see the FX decisions journal entry).
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -65,6 +69,7 @@ class HermesConfig(BaseModel):
     tax_guard: TaxGuardConfig
     ml: MLConfig
     klines: KlinesConfig
+    frankfurter: FrankfurterConfig = FrankfurterConfig()
 
     @model_validator(mode="after")
     def _mainnet_only_in_prod(self) -> HermesConfig:

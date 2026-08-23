@@ -34,6 +34,7 @@ from pydantic import BaseModel, ConfigDict, Field
 __all__ = [
     "BinanceExchangeConfig",
     "FeesConfig",
+    "FrankfurterConfig",
     "KlinesConfig",
     "MLConfig",
     "StrategiesConfig",
@@ -96,6 +97,32 @@ class BinanceExchangeConfig(BaseModel):
     ws_url: str = Field(min_length=1, pattern=r"^wss://")
     recv_window_ms: int = Field(ge=1, le=60_000)
     testnet: bool
+
+
+class FrankfurterConfig(BaseModel):
+    """Root of ``config/frankfurter.yaml`` — official FX rate provider.
+
+    Consumed by :class:`hermes.adapters.fx.frankfurter.FrankfurterAdapter`.
+    Frankfurter is the ECB reference-rate wrapper we use for EUR
+    conversion at tax-reporting time — see
+    ``docs/decisions/2026-08-23-fx-rate-source-frankfurter.md``.
+
+    Attributes:
+        base_url: HTTPS root of the Frankfurter API. Defaults to the
+            public endpoint (no key required). Override for a self-hosted
+            instance (the Frankfurter project publishes a Docker image).
+        timeout_sec: Per-request HTTP timeout in seconds.
+        requests_per_minute: Polite rate cap. Frankfurter publishes no
+            official limit; 60/min is well below anything a small hobbyist
+            wrapper could reasonably reject and covers a full tax-report
+            batch (dozens of dates) comfortably.
+    """
+
+    model_config = _MODEL_CONFIG
+
+    base_url: str = Field(default="https://api.frankfurter.app", pattern=r"^https://")
+    timeout_sec: float = Field(default=10.0, gt=0)
+    requests_per_minute: int = Field(default=60, gt=0, le=6000)
 
 
 class KlinesConfig(BaseModel):
