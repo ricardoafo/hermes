@@ -7,7 +7,7 @@ Verifies:
 - ``serve`` / ``simulate`` exit 2 with a "not yet implemented" note.
 - ``health`` (no arg) prints usage and exits 2.
 - ``health <unknown>`` exits 2 with a diagnostic.
-- ``health telegram`` delegates to the registry probe.
+- ``health telegram`` / ``health slack`` delegate to the registry probes.
 - An unknown top-level subcommand exits 2 with a diagnostic.
 
 Reference: docs/decisions/2026-08-23-slack-alongside-telegram.md.
@@ -142,7 +142,9 @@ class TestHealthDispatch:
         assert rc == 2
         output = stream.getvalue()
         assert "Usage: hermes health <integration>" in output
+        # Both integrations appear in the registry listing.
         assert "telegram" in output
+        assert "slack" in output
 
     def test_health_unknown_integration_exits_two(self) -> None:
         """`hermes health <unknown>` prints an ERROR and exits 2."""
@@ -165,5 +167,18 @@ class TestHealthDispatch:
         assert rc == 3
         output = stream.getvalue()
         assert "telegram" in output
+        assert "FAIL" in output
+        assert ".env.local" in output
+
+    def test_health_slack_missing_config_exits_three(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """`hermes health slack` with no bot-token env var exits 3 (not configured)."""
+        # Strip both required env vars — dict(os.environ) inside the CLI must not see them.
+        monkeypatch.delenv("HERMES_SLACK__BOT_TOKEN", raising=False)
+        monkeypatch.delenv("HERMES_SLACK__DEFAULT_CHANNEL", raising=False)
+        stream = io.StringIO()
+        rc = cli_module.main(["health", "slack"], stream=stream)
+        assert rc == 3
+        output = stream.getvalue()
+        assert "slack" in output
         assert "FAIL" in output
         assert ".env.local" in output

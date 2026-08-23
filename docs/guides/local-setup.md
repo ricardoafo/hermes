@@ -140,7 +140,11 @@ and prod are never silently shadowed by a stray developer dotenv.
 
 After you populate `.env.local` with real credentials for at least one
 integration, verify the wire path end-to-end BEFORE running the full
-test suite:
+test suite. Each `hermes health <integration>` call hits a READ-ONLY
+endpoint — it **never** sends a message to your channel, safe to loop
+in a watchdog script.
+
+### Telegram
 
 ```bash
 uv run hermes health telegram
@@ -171,6 +175,40 @@ Exit codes:
 The probe calls the read-only `getMe` endpoint — it **never** sends a
 message to your channel. Safe to run in any tier, safe to loop in a
 watchdog script.
+
+### Slack
+
+```bash
+uv run hermes health slack
+```
+
+Expected output on OK:
+
+```text
+# hermes health slack
+  integration  slack
+  status       OK
+  latency_ms   87.4
+  detail       workspace=your-workspace bot=@your_bot
+  last_check   2026-08-23T14:22:03.412+00:00
+```
+
+Exit codes:
+
+- `0` — OK. The bot token is valid, the API is reachable, `auth.test`
+  returned your workspace + bot user.
+- `1` — FAIL. Adapter reached the API but the API responded with an
+  error (401 invalid token, 429 rate-limited, or the ubiquitous
+  `{"ok": false, "error": "..."}` HTTP-200 body). The `detail` column
+  tells you which — Slack's error code (e.g. `invalid_auth`,
+  `missing_scope`) lands there verbatim.
+- `3` — Not configured. `HERMES_SLACK__BOT_TOKEN` or
+  `HERMES_SLACK__DEFAULT_CHANNEL` is missing. Populate `.env.local`
+  (see the `.env.local.example` header for the Slack section).
+
+The probe calls the read-only `auth.test` endpoint (per
+<https://api.slack.com/methods/auth.test>) — no `chat.postMessage`
+call from the health path, ever.
 
 ## First test run
 
