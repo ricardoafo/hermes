@@ -64,6 +64,7 @@ What this locks in. What it forecloses. What we'll revisit.
 | 2026-08-23 | [Add Slack alongside Telegram](2026-08-23-slack-alongside-telegram.md)                       | ADR-008 §4 Telegram alerts scope              |
 | 2026-08-23 | [Binance testnet klines + SQLite kline store](2026-08-23-binance-testnet-klines.md)          | —                                             |
 | 2026-08-23 | [FX rate source — Frankfurter](2026-08-23-fx-rate-source-frankfurter.md)                     | ADR-002 §4 (EUR-first, ECB rates)             |
+| 2026-08-23 | [Fetch-before-launch tooling gate](2026-08-23-fetch-before-launch-tooling.md)                | AGENTS.md §sub-agent-delegation rule 4 (norm) |
 
 ## Anti-patterns
 

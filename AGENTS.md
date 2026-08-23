@@ -307,6 +307,17 @@ Three rules keep delegations lean:
    The 2026-08-22 wave-3 dispatch batch burned two rebases on this
    exact drift — no more.
 
+   **Tooling gate** (Wave 6, 2026-08-23): run
+   `bash scripts/dev/launch-agent.sh` from the primary tree BEFORE
+   spawning each worktree-isolated sub-agent. The script fetches
+   `origin/main`, blocks (exit 1) if local `main` is behind, and
+   prints the current `origin/main` SHA on success — pin the
+   sub-agent's base against that SHA in the launch prompt so any
+   mid-flight drift is diff-able. `--quiet` outputs SHA-only for
+   scripting. Rationale + design tradeoffs:
+   [`docs/decisions/2026-08-23-fetch-before-launch-tooling.md`](docs/decisions/2026-08-23-fetch-before-launch-tooling.md).
+   The prose norm above STAYS — the tool ENFORCES it.
+
 Rationale: a prior apply phase burned ~200k tokens re-describing an
 existing `change.md` inline in a sub-agent prompt. The file IS the
 spec — the prompt only points at it.
