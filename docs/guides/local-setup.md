@@ -96,6 +96,46 @@ ls -la .git/hooks/pre-commit .git/hooks/pre-push
 depends on it. If you push without it, you'll ship broken code to CI and
 waste round-trips.
 
+## Configuring secrets
+
+Hermes reads credentials (bot tokens, exchange API keys, webhook URLs)
+from environment variables — never from committed YAML. For local dev,
+those env vars live in a `.env.local` file at the repo root; the loader
+picks them up automatically at process start.
+
+The three-tier credential story: dotenv for local dev, GitHub Actions
+secrets for CI, systemd `EnvironmentFile` on the prod VPS. See
+[`docs/decisions/2026-08-23-credential-storage-layered-by-env.md`](../decisions/2026-08-23-credential-storage-layered-by-env.md)
+for the full rationale.
+
+Setup (once per clone):
+
+```bash
+# Copy the committed template — it lists every env var hermes uses.
+cp .env.local.example .env.local
+
+# Fill in the values you have. Skip integrations you have not set up
+# yet — the adapter for a missing integration simply refuses to
+# construct, everything else keeps working.
+$EDITOR .env.local
+```
+
+`.env.local` is in `.gitignore` — do not remove that entry, do not
+force-add the file. If you accidentally commit real secrets, rotate
+them immediately (gitleaks scans full history at CI time).
+
+Verify the loader can read the file:
+
+```bash
+uv run python -c "from hermes.infrastructure.config import load_config; \
+                  print(load_config().env)"
+# Expected: `dev` (unless you set HERMES_ENV to something else)
+```
+
+Precedence: a real shell env var wins over `.env.local`. That means
+`HERMES_ENV=sandbox uv run ...` overrides whatever the file says — CI
+and prod are never silently shadowed by a stray developer dotenv.
+
 ## First test run
 
 ```bash

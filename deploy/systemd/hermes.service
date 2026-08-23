@@ -1,0 +1,38 @@
+# Prod systemd unit for the hermes main process.
+#
+# TEMPLATE — not installed by bootstrap-vps.sh. Copy to
+# /etc/systemd/system/hermes.service on the VPS, then:
+#   systemctl daemon-reload
+#   systemctl enable --now hermes.service
+#
+# Env vars come from EnvironmentFile=/etc/hermes.env — see
+# deploy/systemd/hermes.env.example for the expected shape. The file
+# must be root:root 0600 so non-root readers cannot exfiltrate secrets.
+#
+# See docs/decisions/2026-08-23-credential-storage-layered-by-env.md
+# for the three-tier credential story (dotenv → GH Secrets → systemd).
+
+[Unit]
+Description=Hermes crypto trading system
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hermes
+Group=hermes
+WorkingDirectory=/opt/hermes
+EnvironmentFile=/etc/hermes.env
+ExecStart=/opt/hermes/.venv/bin/python -m hermes serve
+Restart=on-failure
+RestartSec=10s
+
+# Hardening — matches the pattern used by hermes-health.service.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/hermes
+
+[Install]
+WantedBy=multi-user.target

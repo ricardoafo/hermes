@@ -405,3 +405,149 @@ def test_env_override_that_would_shadow_a_scalar_fails_loudly(config_dir: Path) 
             env={"HERMES_ML__SUPERVISOR_MODEL__NESTED": "ignored"},
         )
     assert "supervisor_model" in str(excinfo.value)
+
+
+# ---------------------------------------------------------------------------
+# Root-level env vars — HERMES_ENV + HERMES_ALLOW_MAINNET
+# ---------------------------------------------------------------------------
+
+
+def test_load_config_defaults_env_to_dev_when_unset(config_dir: Path) -> None:
+    """HermesConfig.env defaults to 'dev' when HERMES_ENV is not in the env snapshot."""
+    cfg = load_config(config_dir, env={})
+    assert cfg.env == "dev"
+    assert cfg.allow_mainnet is False
+
+
+def test_load_config_reads_hermes_env_from_env(config_dir: Path) -> None:
+    """HERMES_ENV=sandbox sets HermesConfig.env accordingly."""
+    cfg = load_config(config_dir, env={"HERMES_ENV": "sandbox"})
+    assert cfg.env == "sandbox"
+
+
+def test_load_config_reads_hermes_env_prod(config_dir: Path) -> None:
+    """HERMES_ENV=prod sets HermesConfig.env to prod."""
+    cfg = load_config(config_dir, env={"HERMES_ENV": "prod"})
+    assert cfg.env == "prod"
+
+
+def test_load_config_rejects_unknown_hermes_env_value(config_dir: Path) -> None:
+    """HERMES_ENV=staging (not in Literal set) raises ConfigError."""
+    with pytest.raises(ConfigError) as excinfo:
+        load_config(config_dir, env={"HERMES_ENV": "staging"})
+    assert "HermesConfig" in str(excinfo.value)
+
+
+def test_load_config_allow_mainnet_in_prod_is_permitted(config_dir: Path) -> None:
+    """HERMES_ALLOW_MAINNET=yes + HERMES_ENV=prod succeeds."""
+    cfg = load_config(
+        config_dir,
+        env={"HERMES_ENV": "prod", "HERMES_ALLOW_MAINNET": "yes"},
+    )
+    assert cfg.env == "prod"
+    assert cfg.allow_mainnet is True
+
+
+def test_load_config_allow_mainnet_in_dev_raises_config_error(config_dir: Path) -> None:
+    """HERMES_ALLOW_MAINNET=yes outside prod raises ConfigError at load time.
+
+    Belt-and-suspenders: the composite validator refuses to instantiate
+    a HermesConfig with allow_mainnet=True + env!=prod, so the misconfig
+    surfaces at process start (not at first trade).
+    """
+    with pytest.raises(ConfigError) as excinfo:
+        load_config(
+            config_dir,
+            env={"HERMES_ENV": "dev", "HERMES_ALLOW_MAINNET": "yes"},
+        )
+    msg = str(excinfo.value)
+    assert "HERMES_ALLOW_MAINNET" in msg or "allow_mainnet" in msg
+
+
+def test_load_config_allow_mainnet_in_sandbox_raises_config_error(
+    config_dir: Path,
+) -> None:
+    """HERMES_ALLOW_MAINNET=yes in sandbox tier raises — sandbox is not prod."""
+    with pytest.raises(ConfigError):
+        load_config(
+            config_dir,
+            env={"HERMES_ENV": "sandbox", "HERMES_ALLOW_MAINNET": "yes"},
+        )
+
+
+def test_load_config_allow_mainnet_false_in_dev_is_ok(config_dir: Path) -> None:
+    """HERMES_ALLOW_MAINNET=no + HERMES_ENV=dev is the default happy state."""
+    cfg = load_config(
+        config_dir,
+        env={"HERMES_ENV": "dev", "HERMES_ALLOW_MAINNET": "no"},
+    )
+    assert cfg.env == "dev"
+    assert cfg.allow_mainnet is False
+
+
+# ---------------------------------------------------------------------------
+# Dotenv loading — .env.local is read when env is not injected
+# ---------------------------------------------------------------------------
+
+
+def test_load_config_reads_dotenv_file_when_env_not_injected(
+    config_dir: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When ``env`` is None, load_config populates os.environ from the dotenv file.
+
+    Simulates the local-dev flow: developer copies .env.local.example to
+    .env.local, sets HERMES_ENV=sandbox, then runs the app. The loader
+    picks it up without the developer setting shell env vars.
+    """
+    # Clear any ambient HERMES_ENV so the dotenv is the sole source.
+    monkeypatch.delenv("HERMES_ENV", raising=False)
+    monkeypatch.delenv("HERMES_ALLOW_MAINNET", raising=False)
+    dotenv = tmp_path / ".env.local"
+    dotenv.write_text("HERMES_ENV=sandbox\n", encoding="utf-8")
+
+    cfg = load_config(config_dir, dotenv_path=dotenv)
+    assert cfg.env == "sandbox"
+
+
+def test_load_config_dotenv_missing_is_silent_noop(
+    config_dir: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missing dotenv file does not raise — prod runs without .env.local."""
+    monkeypatch.delenv("HERMES_ENV", raising=False)
+    monkeypatch.delenv("HERMES_ALLOW_MAINNET", raising=False)
+    missing = tmp_path / "does-not-exist.env"
+    cfg = load_config(config_dir, dotenv_path=missing)
+    # Default tier applied — no crash from the missing file.
+    assert cfg.env == "dev"
+
+
+def test_load_config_dotenv_ignored_when_env_snapshot_supplied(
+    config_dir: Path,
+    tmp_path: Path,
+) -> None:
+    """When ``env`` is explicitly passed, dotenv_path is ignored — tests own env."""
+    dotenv = tmp_path / ".env.local"
+    dotenv.write_text("HERMES_ENV=sandbox\n", encoding="utf-8")
+    # env={} means "no env vars at all" — dotenv MUST NOT slip in.
+    cfg = load_config(config_dir, env={}, dotenv_path=dotenv)
+    assert cfg.env == "dev"
+
+
+def test_load_config_shell_env_overrides_dotenv(
+    config_dir: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A real shell env var wins over a conflicting dotenv value (override=False)."""
+    # Shell env sets prod; dotenv sets sandbox; loader must honour shell.
+    monkeypatch.setenv("HERMES_ENV", "prod")
+    monkeypatch.delenv("HERMES_ALLOW_MAINNET", raising=False)
+    dotenv = tmp_path / ".env.local"
+    dotenv.write_text("HERMES_ENV=sandbox\n", encoding="utf-8")
+
+    cfg = load_config(config_dir, dotenv_path=dotenv)
+    assert cfg.env == "prod"
