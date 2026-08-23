@@ -2,16 +2,17 @@
 
 Each registered integration exposes a synchronous probe callable that
 returns a :class:`HealthCheckResult`. The CLI (``entrypoints/cli.py``)
-maps subcommand names (e.g. ``telegram``) to registry entries and
-prints a status table.
+maps subcommand names (e.g. ``telegram``, ``slack``) to registry
+entries and prints a status table.
 
 Design notes
 ------------
 
 - **Registry pattern (scaffold)**: PR E will consolidate the registry so
   ``hermes health`` (no arg) enumerates every registered check. Today
-  the registry has one entry (``telegram``); the shape anticipates
-  Slack, Healthchecks, Sentry, and the exchange adapters joining later.
+  the registry has two entries (``telegram``, ``slack``); the shape
+  anticipates Healthchecks, Sentry, and the exchange adapters joining
+  later.
 - **Wiring layer**: this module lives under ``entrypoints/`` so it MAY
   import ``adapters``, ``application``, and ``infrastructure`` (per
   import-linter contract ``adapters-never-import-entrypoints`` — the
@@ -23,6 +24,10 @@ Design notes
 - **Exit codes**: distinguish "not configured" (3) from "adapter down"
   (1). Scripts wrapping ``hermes health`` can react differently — a
   fresh clone missing ``.env.local`` should not page an operator.
+- **Read-only probes**: every probe hits a read-only third-party
+  endpoint (Telegram ``getMe``, Slack ``auth.test``). NEVER call a
+  send endpoint (``sendMessage``, ``chat.postMessage``) from a health
+  path — a watchdog script would spam the channel on every tick.
 """
 
 from __future__ import annotations
@@ -33,6 +38,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Final
 
+from hermes.adapters.notifier.slack_adapter import (
+    SlackAdapter,
+    SlackConfig,
+    SlackNotifierError,
+)
 from hermes.adapters.notifier.telegram_adapter import (
     TelegramAdapter,
     TelegramConfig,
@@ -45,6 +55,7 @@ __all__ = [
     "EXIT_OK",
     "HealthCheckResult",
     "HealthStatus",
+    "check_slack",
     "check_telegram",
     "get_check",
     "registered_integrations",
@@ -76,8 +87,8 @@ class HealthCheckResult:
         integration: Short label — ``"telegram"``, ``"slack"``, etc.
         status: One of :class:`HealthStatus` labels.
         latency_ms: Wall-clock time the probe took, milliseconds.
-        detail: Free-form context (bot username on OK, error message on
-            FAIL). Included in the printed table.
+        detail: Free-form context (bot username / workspace on OK,
+            error message on FAIL). Included in the printed table.
         last_check: UTC-aware timestamp — when the probe ran.
         exit_code: Suggested process exit code (0 / 1 / 3).
     """
@@ -161,11 +172,80 @@ def check_telegram(env: dict[str, str]) -> HealthCheckResult:
     )
 
 
+def check_slack(env: dict[str, str]) -> HealthCheckResult:
+    """Probe the Slack Web API ``auth.test`` endpoint.
+
+    ``auth.test`` is the canonical READ-ONLY validation call: it
+    returns the workspace name (``team``) and bot user (``user``) tied
+    to the token WITHOUT sending anything to any channel. Never call
+    ``chat.postMessage`` from a health path — a watchdog loop would
+    spam the channel every tick.
+
+    Args:
+        env: Env-var snapshot. Pass ``os.environ`` in production; tests
+            supply a controlled dict so the ambient shell never leaks in.
+
+    Returns:
+        A :class:`HealthCheckResult` describing the probe outcome. The
+        function does NOT raise on failure — the ``exit_code`` field
+        carries the intent instead so the caller can print a table
+        before exiting.
+    """
+    # Config-missing path — distinct exit code (3) so wrapper scripts
+    # can distinguish "not configured yet" from "adapter is down".
+    try:
+        config = SlackConfig.from_env(env)
+    except SlackNotifierError as exc:
+        detail = (
+            f"{exc.msg} — populate HERMES_SLACK__BOT_TOKEN and "
+            f"HERMES_SLACK__DEFAULT_CHANNEL in .env.local "
+            f"(see .env.local.example)"
+        )
+        return HealthCheckResult(
+            integration="slack",
+            status=HealthStatus.FAIL,
+            latency_ms=0.0,
+            detail=detail,
+            last_check=_now_utc(),
+            exit_code=EXIT_NOT_CONFIGURED,
+        )
+
+    adapter = SlackAdapter.create(config)
+    start = time.perf_counter()
+    try:
+        result = adapter.auth_test()
+    except SlackNotifierError as exc:
+        elapsed_ms = (time.perf_counter() - start) * 1000.0
+        return HealthCheckResult(
+            integration="slack",
+            status=HealthStatus.FAIL,
+            latency_ms=elapsed_ms,
+            detail=str(exc),
+            last_check=_now_utc(),
+            exit_code=EXIT_FAIL,
+        )
+    finally:
+        adapter.close()
+
+    elapsed_ms = (time.perf_counter() - start) * 1000.0
+    team = result.get("team", "<unknown>")
+    user = result.get("user", "<unknown>")
+    return HealthCheckResult(
+        integration="slack",
+        status=HealthStatus.OK,
+        latency_ms=elapsed_ms,
+        detail=f"workspace={team} bot=@{user}",
+        last_check=_now_utc(),
+        exit_code=EXIT_OK,
+    )
+
+
 # Registry — PR E will consolidate this into a shared discovery layer
 # used by both `hermes health` (no arg → run every check) and any future
-# `hermes doctor` subcommand. Today the shape anticipates Slack,
-# Healthchecks, Sentry, and the exchange adapters joining as siblings.
+# `hermes doctor` subcommand. Today the shape anticipates Healthchecks,
+# Sentry, and the exchange adapters joining as siblings.
 _REGISTRY: Final[dict[str, Callable[[dict[str, str]], HealthCheckResult]]] = {
+    "slack": check_slack,
     "telegram": check_telegram,
 }
 
@@ -184,7 +264,7 @@ def get_check(name: str) -> Callable[[dict[str, str]], HealthCheckResult] | None
 
     Args:
         name: Integration label — lowercase, matches CLI argument
-            (e.g. ``"telegram"``).
+            (e.g. ``"telegram"``, ``"slack"``).
 
     Returns:
         The probe callable, or ``None`` when ``name`` is not registered.
