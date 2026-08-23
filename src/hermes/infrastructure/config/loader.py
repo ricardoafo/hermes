@@ -39,6 +39,7 @@ from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.models import (
     BinanceExchangeConfig,
     FeesConfig,
+    KlinesConfig,
     MLConfig,
     StrategiesConfig,
     TaxGuardConfig,
@@ -276,6 +277,12 @@ def load_config(
         env_section="ML",
         env=env_snapshot,
     )
+    klines = load_yaml_model(
+        base / "klines.yaml",
+        KlinesConfig,
+        env_section="KLINES",
+        env=env_snapshot,
+    )
 
     return HermesConfig(
         strategies=strategies,
@@ -283,4 +290,5 @@ def load_config(
         fees=fees,
         tax_guard=tax_guard,
         ml=ml,
+        klines=klines,
     )

@@ -62,6 +62,7 @@ What this locks in. What it forecloses. What we'll revisit.
 | 2026-08-22 | [Drop `safety` from dev deps](2026-08-22-drop-safety.md)                                     | ADR-010 §3 CVE scanning (safety+pip-audit)    |
 | 2026-08-22 | [ci-success aggregator fix](2026-08-22-ci-success-aggregator-fix.md)                         | Inline shell aggregator in ci.yml             |
 | 2026-08-23 | [Add Slack alongside Telegram](2026-08-23-slack-alongside-telegram.md)                       | ADR-008 §4 Telegram alerts scope              |
+| 2026-08-23 | [Binance testnet klines + SQLite kline store](2026-08-23-binance-testnet-klines.md)          | —                                             |
 
 ## Anti-patterns
 

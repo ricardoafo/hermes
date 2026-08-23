@@ -24,6 +24,7 @@ from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
 from hermes.infrastructure.config.models import (
     BinanceExchangeConfig,
     FeesConfig,
+    KlinesConfig,
     MLConfig,
     StrategiesConfig,
     TaxGuardConfig,
@@ -36,6 +37,7 @@ __all__ = [
     "ConfigError",
     "FeesConfig",
     "HermesConfig",
+    "KlinesConfig",
     "MLConfig",
     "StrategiesConfig",
     "TaxGuardConfig",
