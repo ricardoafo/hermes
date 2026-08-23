@@ -64,6 +64,13 @@ repos:
         files: ^scripts/dev/create-pr\.sh$
         pass_filenames: false
 
+      - id: launch-agent-self-test
+        name: launch-agent self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/launch-agent.sh'
+        language: system
+        files: ^scripts/dev/launch-agent\.sh$
+        pass_filenames: false
+
       - id: changelog-check-self-test
         name: changelog-check self-test
         entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/changelog-check.sh'
