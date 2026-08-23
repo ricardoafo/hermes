@@ -1,0 +1,13 @@
+# Frankfurter FX-rate provider configuration.
+#
+# Loaded by hermes.infrastructure.config.load_config into FrankfurterConfig.
+# Frankfurter is a free public wrapper over ECB reference rates — see
+# docs/decisions/2026-08-23-fx-rate-source-frankfurter.md for why we
+# picked it over ECB direct and the fallback plan if it goes down.
+#
+# No API key is required — Frankfurter is keyless. Any env override
+# lives at HERMES_FRANKFURTER__<FIELD> (see .env.local.example).
+
+base_url: https://api.frankfurter.app
+timeout_sec: 10.0
+requests_per_minute: 60

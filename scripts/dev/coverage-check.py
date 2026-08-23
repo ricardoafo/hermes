@@ -19,6 +19,7 @@ THRESHOLDS = {
     "src/hermes/application": 90,
     "src/hermes/adapters/ledger": 90,
     "src/hermes/adapters/exchanges": 85,
+    "src/hermes/adapters/fx": 85,
     "src/hermes/adapters/market_data": 85,
     "src/hermes/adapters/notifier": 85,
     "src/hermes/entrypoints": 70,
