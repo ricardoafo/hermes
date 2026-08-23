@@ -20,6 +20,7 @@ from hermes.infrastructure.config.models import (
     BinanceExchangeConfig,
     FeesConfig,
     FrankfurterConfig,
+    HealthchecksConfig,
     KlinesConfig,
     MLConfig,
     StrategiesConfig,
@@ -57,6 +58,11 @@ class HermesConfig(BaseModel):
         frankfurter: FX-rate provider configuration — the
             ECB-reference-rate wrapper used for EUR conversion at
             tax-reporting time (see the FX decisions journal entry).
+        healthchecks: Dead-man's-switch heartbeat configuration for
+            Healthchecks.io. Defaults to an empty ping URL — the
+            integration is opt-in; a fresh clone reports NOT_CONFIGURED
+            (exit 3) from ``hermes health healthchecks`` until the
+            operator populates ``HERMES_HEALTHCHECKS__PING_URL``.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -70,6 +76,7 @@ class HermesConfig(BaseModel):
     ml: MLConfig
     klines: KlinesConfig
     frankfurter: FrankfurterConfig = FrankfurterConfig()
+    healthchecks: HealthchecksConfig = HealthchecksConfig()
 
     @model_validator(mode="after")
     def _mainnet_only_in_prod(self) -> HermesConfig:

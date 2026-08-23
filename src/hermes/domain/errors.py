@@ -18,6 +18,7 @@ __all__ = [
     "DomainError",
     "ExchangeError",
     "FxRateError",
+    "HealthchecksError",
     "HermesError",
     "InfraError",
     "InvalidLot",
@@ -165,6 +166,33 @@ class LedgerError(InfraError):
     def __str__(self) -> str:
         """Return human-readable description."""
         return f"Ledger error: {self.msg}"
+
+
+@dataclass(frozen=True, slots=True)
+class HealthchecksError(InfraError):
+    """Healthchecks.io ping failed at transport or HTTP layer.
+
+    Wraps wire-level (:class:`httpx.HTTPError`) exceptions and non-2xx HTTP
+    responses from the ping URL into one exception surface. Healthchecks
+    is a dead-man's-switch / heartbeat monitor — the ping URL is
+    stateless, no auth, no JSON body — so this error type is deliberately
+    thin (no ``ok=false`` footgun like Slack, no ``error_code`` field
+    like Telegram).
+
+    Args:
+        msg: Human-readable context — includes HTTP status, response body
+            excerpt, or transport error message. The operator needs
+            enough context to distinguish "wrong URL" from "Healthchecks
+            outage" from "our network is down".
+
+    Reference: code-conventions.md §2, https://healthchecks.io/docs/http_api/.
+    """
+
+    msg: str
+
+    def __str__(self) -> str:
+        """Return human-readable description."""
+        return f"Healthchecks error: {self.msg}"
 
 
 @dataclass(frozen=True, slots=True)

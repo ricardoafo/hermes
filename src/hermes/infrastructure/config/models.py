@@ -35,6 +35,7 @@ __all__ = [
     "BinanceExchangeConfig",
     "FeesConfig",
     "FrankfurterConfig",
+    "HealthchecksConfig",
     "KlinesConfig",
     "MLConfig",
     "StrategiesConfig",
@@ -123,6 +124,50 @@ class FrankfurterConfig(BaseModel):
     base_url: str = Field(default="https://api.frankfurter.app", pattern=r"^https://")
     timeout_sec: float = Field(default=10.0, gt=0)
     requests_per_minute: int = Field(default=60, gt=0, le=6000)
+
+
+class HealthchecksConfig(BaseModel):
+    """Root of ``config/healthchecks.yaml`` — dead-man's-switch heartbeat.
+
+    Consumed by :class:`hermes.adapters.healthchecks.hc.HealthchecksAdapter`.
+    Healthchecks.io is a dead-man's-switch / heartbeat monitor: hermes
+    POSTs / GETs a unique ping URL periodically, and if the pings stop,
+    Healthchecks alerts the operator via its own configured channels.
+    See https://healthchecks.io/docs/http_api/.
+
+    Attributes:
+        ping_url: The unique ping URL for this environment (one UUID per
+            hermes tier — dev / sandbox / prod). Empty string means the
+            integration is disabled — the adapter refuses to construct
+            and ``hermes health healthchecks`` returns NOT_CONFIGURED
+            (exit 3) instead of firing wire calls that would fail.
+            Format: ``https://hc-ping.com/<uuid>``.
+        timeout_sec: Per-request HTTP timeout in seconds. Kept aggressive
+            (default 5s) because a slow ping MUST NEVER block the trading
+            path — the ping is informational, not on the critical write
+            path.
+        requests_per_minute: Polite rate cap for the internal token-bucket
+            limiter. Healthchecks does not publish a hard limit, but the
+            adapter typically pings ~1/minute; 30/min is generous
+            headroom for occasional ``ping_start`` + ``ping_success``
+            pairs on long jobs.
+    """
+
+    model_config = _MODEL_CONFIG
+
+    ping_url: str = Field(default="")
+    timeout_sec: float = Field(default=5.0, gt=0)
+    requests_per_minute: int = Field(default=30, gt=0, le=6000)
+
+    @property
+    def enabled(self) -> bool:
+        """Return ``True`` when a non-empty ping URL is configured.
+
+        A blank ``ping_url`` means the integration is intentionally
+        disabled — the health check reports NOT_CONFIGURED (exit 3) and
+        the adapter refuses to construct.
+        """
+        return bool(self.ping_url)
 
 
 class KlinesConfig(BaseModel):

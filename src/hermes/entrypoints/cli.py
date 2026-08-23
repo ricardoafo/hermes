@@ -36,15 +36,14 @@ _SUBCOMMAND_HELP: Final[dict[str, str]] = {
     "preview": "Render + optionally send notification templates.",
     "serve": "Run the trading engine (stub — implemented in a future PR).",
     "health": (
-        "Health-check probe for an integration "
-        "(e.g. `hermes health telegram`, `hermes health slack`)."
+        "Health-check probe. `hermes health` (no arg) probes every "
+        "registered integration; `hermes health <integration>` probes one."
     ),
     "simulate": "Replay historical scenarios (stub — implemented in a future PR).",
 }
 
 # ``health`` is intentionally NOT in this set — it has a real implementation
-# below (per-integration probe). PR E will replace the "no-arg" branch with
-# a registry walk.
+# below (registry walk when no arg is passed; per-integration probe otherwise).
 _STUB_SUBCOMMANDS: Final[frozenset[str]] = frozenset({"serve", "simulate"})
 
 
@@ -119,26 +118,31 @@ def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
 
 
 def _dispatch_health(rest: list[str], *, stream: Any) -> int:
-    """Handle the ``hermes health <integration>`` subcommand.
+    """Handle the ``hermes health`` subcommand family.
 
-    The no-arg form prints a usage line + the list of registered
-    integrations and exits 2. PR E will replace that branch with a
-    registry walk that probes every integration in one pass.
+    Two forms:
+
+    - ``hermes health`` (no arg) → runs EVERY registered check via
+      :func:`health_module.run_all` and prints ONE consolidated
+      multi-row table. Exit code aggregates per
+      :func:`health_module.aggregate_exit_code` (0 all OK, 1 any FAIL,
+      3 any NOT_CONFIGURED and no FAIL).
+    - ``hermes health <integration>`` → runs a single probe and prints
+      the two-column key/value table (existing behaviour preserved).
 
     Args:
         rest: Residual argv after the ``health`` token.
         stream: Output stream.
 
     Returns:
-        Process exit code — 0 on OK, 1 on adapter down, 2 on usage
-        error / unknown integration, 3 on missing configuration.
+        Process exit code — 0 on OK, 1 on adapter down, 2 on unknown
+        integration, 3 on missing configuration.
     """
     if not rest:
-        integrations = ", ".join(health_module.registered_integrations()) or "(none)"
-        stream.write(
-            f"Usage: hermes health <integration>\n  Registered integrations: {integrations}\n"
-        )
-        return 2
+        results = health_module.run_all(dict(os.environ))
+        stream.write("# hermes health (all integrations)\n")
+        health_module.render_table_multi(results, stream)
+        return health_module.aggregate_exit_code(results)
 
     integration, *_extra = rest
     check = health_module.get_check(integration)

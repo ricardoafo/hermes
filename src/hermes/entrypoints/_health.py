@@ -38,6 +38,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Final
 
+from hermes.adapters.healthchecks import (
+    HealthchecksAdapter,
+    HealthchecksAdapterConfig,
+    HealthchecksError,
+)
 from hermes.adapters.notifier.slack_adapter import (
     SlackAdapter,
     SlackConfig,
@@ -55,10 +60,15 @@ __all__ = [
     "EXIT_OK",
     "HealthCheckResult",
     "HealthStatus",
+    "aggregate_exit_code",
+    "check_healthchecks",
     "check_slack",
     "check_telegram",
     "get_check",
     "registered_integrations",
+    "render_table",
+    "render_table_multi",
+    "run_all",
 ]
 
 # Exit-code constants — kept as module-level so both the CLI dispatcher
@@ -240,11 +250,80 @@ def check_slack(env: dict[str, str]) -> HealthCheckResult:
     )
 
 
-# Registry — PR E will consolidate this into a shared discovery layer
-# used by both `hermes health` (no arg → run every check) and any future
-# `hermes doctor` subcommand. Today the shape anticipates Healthchecks,
-# Sentry, and the exchange adapters joining as siblings.
+def check_healthchecks(env: dict[str, str]) -> HealthCheckResult:
+    """Probe the Healthchecks.io ``/start`` endpoint (informational — no alert fires).
+
+    Uses :meth:`HealthchecksAdapter.ping_start`. ``ping_start`` is the
+    right choice for the health path — it is idempotent + informational,
+    and does NOT fire the dead-man's-switch alert. Calling
+    :meth:`HealthchecksAdapter.ping_fail` from a health probe would
+    page the operator on every ``hermes health`` tick (documented
+    anti-pattern in the adapter docstring).
+
+    Args:
+        env: Env-var snapshot. Pass ``os.environ`` in production; tests
+            supply a controlled dict so the ambient shell never leaks in.
+
+    Returns:
+        A :class:`HealthCheckResult` describing the probe outcome. The
+        function does NOT raise on failure — the ``exit_code`` field
+        carries the intent instead so the caller can print a table
+        before exiting.
+    """
+    # Config-missing path — distinct exit code (3) so wrapper scripts
+    # can distinguish "not configured yet" from "adapter is down".
+    try:
+        config = HealthchecksAdapterConfig.from_env(env)
+    except HealthchecksError as exc:
+        detail = (
+            f"{exc.msg} — populate HERMES_HEALTHCHECKS__PING_URL "
+            f"in .env.local (see .env.local.example line 59-60)"
+        )
+        return HealthCheckResult(
+            integration="healthchecks",
+            status=HealthStatus.FAIL,
+            latency_ms=0.0,
+            detail=detail,
+            last_check=_now_utc(),
+            exit_code=EXIT_NOT_CONFIGURED,
+        )
+
+    adapter = HealthchecksAdapter.create(config)
+    start = time.perf_counter()
+    try:
+        adapter.ping_start(details="hermes health probe")
+    except HealthchecksError as exc:
+        elapsed_ms = (time.perf_counter() - start) * 1000.0
+        return HealthCheckResult(
+            integration="healthchecks",
+            status=HealthStatus.FAIL,
+            latency_ms=elapsed_ms,
+            detail=str(exc),
+            last_check=_now_utc(),
+            exit_code=EXIT_FAIL,
+        )
+    finally:
+        adapter.close()
+
+    elapsed_ms = (time.perf_counter() - start) * 1000.0
+    return HealthCheckResult(
+        integration="healthchecks",
+        status=HealthStatus.OK,
+        latency_ms=elapsed_ms,
+        detail="ping accepted",
+        last_check=_now_utc(),
+        exit_code=EXIT_OK,
+    )
+
+
+# Registry — every registered integration is walked by :func:`run_all`
+# for the no-arg ``hermes health`` invocation. Sort order in the registry
+# is not user-visible: :func:`registered_integrations` sorts before
+# returning. Each check is a pure function of the env snapshot — it must
+# not read module-level state, so tests can pin the outcome via a
+# controlled env dict.
 _REGISTRY: Final[dict[str, Callable[[dict[str, str]], HealthCheckResult]]] = {
+    "healthchecks": check_healthchecks,
     "slack": check_slack,
     "telegram": check_telegram,
 }
@@ -293,3 +372,108 @@ def render_table(result: HealthCheckResult, stream: Any) -> None:
     width = max(len(k) for k, _ in rows)
     for key, value in rows:
         stream.write(f"  {key.ljust(width)}  {value}\n")
+
+
+def run_all(env: dict[str, str]) -> list[HealthCheckResult]:
+    """Run every registered integration probe and return the outcomes.
+
+    Pure function of the env snapshot — testable without stubbing the
+    CLI dispatcher. Iteration order matches
+    :func:`registered_integrations` (sorted) so the printed table is
+    deterministic across runs.
+
+    Args:
+        env: Env-var snapshot. Pass ``os.environ`` in production; tests
+            supply a controlled dict so the ambient shell never leaks
+            in.
+
+    Returns:
+        A list of :class:`HealthCheckResult`, one per registered
+        integration, in the order returned by
+        :func:`registered_integrations`.
+    """
+    return [_REGISTRY[name](env) for name in registered_integrations()]
+
+
+def aggregate_exit_code(results: list[HealthCheckResult]) -> int:
+    """Aggregate a list of check results into a single process exit code.
+
+    Rules (documented in the task spec):
+
+    - :data:`EXIT_FAIL` (1) if ANY result is FAIL — an actual adapter
+      failure trumps everything else.
+    - :data:`EXIT_NOT_CONFIGURED` (3) if any result is NOT_CONFIGURED
+      and none are FAIL — partial configuration is a fresh-clone
+      state, not a system-down state, so it exits distinctly from OK
+      but does not signal an outage.
+    - :data:`EXIT_OK` (0) when every result is OK.
+
+    Args:
+        results: The outcomes to aggregate. Empty list yields
+            :data:`EXIT_OK` (nothing to check → nothing to fail).
+
+    Returns:
+        The aggregated exit code.
+    """
+    any_fail = any(r.exit_code == EXIT_FAIL for r in results)
+    if any_fail:
+        return EXIT_FAIL
+    any_not_configured = any(r.exit_code == EXIT_NOT_CONFIGURED for r in results)
+    if any_not_configured:
+        return EXIT_NOT_CONFIGURED
+    return EXIT_OK
+
+
+# Header labels for the multi-row table. Kept as a module-level constant
+# so tests can assert on the exact column names without re-declaring
+# them.
+_MULTI_TABLE_HEADERS: Final[tuple[str, ...]] = (
+    "integration",
+    "status",
+    "latency",
+    "detail",
+    "last_check",
+)
+
+
+def render_table_multi(results: list[HealthCheckResult], stream: Any) -> None:
+    """Print ``results`` as a multi-row aligned table to ``stream``.
+
+    Column widths adjust to the widest value per column so the output
+    stays readable even when one integration reports a long ``detail``
+    (e.g. an HTTP error excerpt) and another reports a short one.
+    No ANSI colours, no ``rich`` dependency — same rationale as
+    :func:`render_table` (journald / CI logs strip escapes anyway).
+
+    An empty ``results`` list prints only the header row — an empty
+    registry is a legitimate "nothing to check yet" state and should
+    not raise.
+
+    Args:
+        results: The list of health-check outcomes to render.
+        stream: File-like object with a ``.write`` method.
+    """
+    # Convert each row into strings up-front so width computation and
+    # rendering both operate on the same cells.
+    header_row = _MULTI_TABLE_HEADERS
+    data_rows: list[tuple[str, ...]] = [
+        (
+            r.integration,
+            r.status,
+            f"{r.latency_ms:.0f}ms",
+            r.detail,
+            r.last_check.isoformat(),
+        )
+        for r in results
+    ]
+
+    all_rows: list[tuple[str, ...]] = [header_row, *data_rows]
+    # Column widths = max cell width per column (across header + data).
+    widths = [max(len(row[col]) for row in all_rows) for col in range(len(header_row))]
+
+    def _format_row(row: tuple[str, ...]) -> str:
+        return "  ".join(cell.ljust(widths[i]) for i, cell in enumerate(row)).rstrip() + "\n"
+
+    stream.write(_format_row(header_row))
+    for row in data_rows:
+        stream.write(_format_row(row))

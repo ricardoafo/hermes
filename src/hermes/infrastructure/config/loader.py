@@ -41,6 +41,7 @@ from hermes.infrastructure.config.models import (
     BinanceExchangeConfig,
     FeesConfig,
     FrankfurterConfig,
+    HealthchecksConfig,
     KlinesConfig,
     MLConfig,
     StrategiesConfig,
@@ -347,6 +348,12 @@ def load_config(
         env_section="FRANKFURTER",
         env=env_snapshot,
     )
+    healthchecks = load_yaml_model(
+        base / "healthchecks.yaml",
+        HealthchecksConfig,
+        env_section="HEALTHCHECKS",
+        env=env_snapshot,
+    )
 
     root_kwargs = _root_env_kwargs(env_snapshot)
     try:
@@ -359,6 +366,7 @@ def load_config(
             ml=ml,
             klines=klines,
             frankfurter=frankfurter,
+            healthchecks=healthchecks,
         )
     except ValidationError as exc:
         # Root-level validation covers env-tier gates (mainnet outside prod)
