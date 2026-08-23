@@ -14,15 +14,22 @@ Reference: code-conventions.md §10 — Event schema versioning + upcaster chain
 """
 
 from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
+from hermes.domain.events.balance_low import BalanceLow
 from hermes.domain.events.base import DomainEvent, SchemaVersion
+from hermes.domain.events.daily_trade_digest import DailyTradeDigest, TradeSummary
 from hermes.domain.events.event_bus import EventBus, EventDispatchError, Handler
 from hermes.domain.events.lot_closed import LotClosed
 from hermes.domain.events.rebalance_triggered import RebalanceTriggered
+from hermes.domain.events.strategy_paused import StrategyPaused
+from hermes.domain.events.strategy_resumed import StrategyResumed
 from hermes.domain.events.trade_executed import TradeExecuted, TradeSide
+from hermes.domain.events.trade_rejected import TradeRejected
 
 __all__ = [
     "AnomalyDetected",
     "AnomalySeverity",
+    "BalanceLow",
+    "DailyTradeDigest",
     "DomainEvent",
     "EventBus",
     "EventDispatchError",
@@ -30,6 +37,10 @@ __all__ = [
     "LotClosed",
     "RebalanceTriggered",
     "SchemaVersion",
+    "StrategyPaused",
+    "StrategyResumed",
     "TradeExecuted",
+    "TradeRejected",
     "TradeSide",
+    "TradeSummary",
 ]

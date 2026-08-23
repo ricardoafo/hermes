@@ -45,7 +45,7 @@ from enum import StrEnum
 
 from hermes.ports.notifier import NotifierPort
 
-__all__ = ["EventClass", "RouterConfig", "route"]
+__all__ = ["EventClass", "RouterConfig", "channels_for", "route"]
 
 
 class EventClass(StrEnum):
@@ -99,6 +99,38 @@ class EventClass(StrEnum):
     TRADE_FIRED_SINGLE = "TRADE_FIRED_SINGLE"
     """Individual trade fill — log-only, no channel fires."""
 
+    # ------------------------------------------------------------------
+    # MVP1 additions — extend the routing table per the 2026-08-23
+    # decisions-journal entry ("Extended MVP1 events" section). Each row
+    # below mirrors a routing choice documented in that entry.
+    # ------------------------------------------------------------------
+
+    STRATEGY_PAUSED = "STRATEGY_PAUSED"
+    """Strategy pause — Telegram (urgent) + Slack (durable record)."""
+
+    STRATEGY_RESUMED = "STRATEGY_RESUMED"
+    """Strategy resume — Slack only (recovery notice, no phone push)."""
+
+    BALANCE_LOW = "BALANCE_LOW"
+    """Wallet balance below threshold — Telegram only (urgent action)."""
+
+    TRADE_REJECTED_ESCALATED = "TRADE_REJECTED_ESCALATED"
+    """Repeated trade rejection — Telegram only (urgent).
+
+    Single rejections are logged only (no ``EventClass`` for them). This
+    class fires when the retry / dedup logic escalates a pattern of
+    rejections into a single actionable ping.
+    """
+
+    DAILY_TRADE_DIGEST = "DAILY_TRADE_DIGEST"
+    """End-of-day trading summary — Slack only (formatted + CSV)."""
+
+    POSITION_LARGE = "POSITION_LARGE"
+    """Large-position notice — Telegram (visibility) + Slack (durable record)."""
+
+    ANOMALY_DETECTED = "ANOMALY_DETECTED"
+    """Circuit-breaker / invariant violation — Telegram + Slack (both channels)."""
+
 
 @dataclass(frozen=True, slots=True)
 class RouterConfig:
@@ -148,6 +180,15 @@ _ROUTING_TABLE: dict[EventClass, tuple[bool, bool]] = {
     EventClass.WEEKLY_REBALANCE_REPORT: (False, True),
     EventClass.MONTHLY_TAX_REPORT: (False, True),
     EventClass.TRADE_FIRED_SINGLE: (False, False),
+    # MVP1 additions — see 2026-08-23-slack-alongside-telegram.md §
+    # "Extended MVP1 events" for the rationale of each row.
+    EventClass.STRATEGY_PAUSED: (True, True),
+    EventClass.STRATEGY_RESUMED: (False, True),
+    EventClass.BALANCE_LOW: (True, False),
+    EventClass.TRADE_REJECTED_ESCALATED: (True, False),
+    EventClass.DAILY_TRADE_DIGEST: (False, True),
+    EventClass.POSITION_LARGE: (True, True),
+    EventClass.ANOMALY_DETECTED: (True, True),
 }
 """Per-class channel fan-out — encodes the ADR Rationale table verbatim."""
 
@@ -195,3 +236,23 @@ def route(event_class: EventClass, config: RouterConfig) -> tuple[NotifierPort, 
     if slack_fires and config.slack is not None:
         adapters.append(config.slack)
     return tuple(adapters)
+
+
+def channels_for(event_class: EventClass) -> tuple[bool, bool]:
+    """Return ``(telegram_fires, slack_fires)`` for ``event_class``.
+
+    Introspection helper used by tooling that needs to know WHICH
+    channels an event class targets without wiring adapters (e.g. the
+    ``hermes preview`` CLI decides whether to render the Telegram
+    template based on the routing table, not by trial-and-error).
+
+    The tuple mirrors the internal routing table row-for-row; a router
+    change automatically propagates.
+
+    Args:
+        event_class: The operational category to look up.
+
+    Returns:
+        A ``(telegram, slack)`` pair of bools.
+    """
+    return _ROUTING_TABLE[event_class]
