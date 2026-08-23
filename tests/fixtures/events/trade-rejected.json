@@ -1,0 +1,9 @@
+{
+  "occurred_at": "2026-08-23T14:22:03+00:00",
+  "correlation_id": "01J9Z8T3M5BQR2FVKN4XWY6PH1",
+  "pair": "BTC/USDT",
+  "side": "BUY",
+  "rejection_reason": "insufficient balance",
+  "exchange": "binance",
+  "attempted_at": "2026-08-23T14:22:03+00:00"
+}

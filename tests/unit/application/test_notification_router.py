@@ -41,7 +41,12 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from hermes.application.notification_router import EventClass, RouterConfig, route
+from hermes.application.notification_router import (
+    EventClass,
+    RouterConfig,
+    channels_for,
+    route,
+)
 from hermes.ports.notifier import NotifierPort
 
 # ---------------------------------------------------------------------------
@@ -113,6 +118,15 @@ _EXPECTED_ROUTING: dict[EventClass, tuple[bool, bool]] = {
     EventClass.WEEKLY_REBALANCE_REPORT: (False, True),
     EventClass.MONTHLY_TAX_REPORT: (False, True),
     EventClass.TRADE_FIRED_SINGLE: (False, False),
+    # MVP1 additions — see 2026-08-23-slack-alongside-telegram.md §
+    # "Extended MVP1 events".
+    EventClass.STRATEGY_PAUSED: (True, True),
+    EventClass.STRATEGY_RESUMED: (False, True),
+    EventClass.BALANCE_LOW: (True, False),
+    EventClass.TRADE_REJECTED_ESCALATED: (True, False),
+    EventClass.DAILY_TRADE_DIGEST: (False, True),
+    EventClass.POSITION_LARGE: (True, True),
+    EventClass.ANOMALY_DETECTED: (True, True),
 }
 
 
@@ -161,7 +175,13 @@ class TestFanOutOrdering:
 
     @pytest.mark.parametrize(
         "event_class",
-        [EventClass.ROLLBACK_FIRED, EventClass.CVE_DETECTED],
+        [
+            EventClass.ROLLBACK_FIRED,
+            EventClass.CVE_DETECTED,
+            EventClass.STRATEGY_PAUSED,
+            EventClass.POSITION_LARGE,
+            EventClass.ANOMALY_DETECTED,
+        ],
     )
     def test_telegram_precedes_slack_in_fan_out(self, event_class: EventClass) -> None:
         """Fan-out classes return the Telegram adapter at index 0 and Slack at index 1."""
@@ -185,6 +205,8 @@ class TestTelegramOnlyClasses:
             EventClass.SERVICE_CRASH,
             EventClass.HEALTH_CHECK_FAIL,
             EventClass.DEPLOY_STATUS,
+            EventClass.BALANCE_LOW,
+            EventClass.TRADE_REJECTED_ESCALATED,
         ],
     )
     def test_telegram_only_class_returns_telegram_alone(self, event_class: EventClass) -> None:
@@ -204,6 +226,8 @@ class TestSlackOnlyClasses:
         [
             EventClass.WEEKLY_REBALANCE_REPORT,
             EventClass.MONTHLY_TAX_REPORT,
+            EventClass.STRATEGY_RESUMED,
+            EventClass.DAILY_TRADE_DIGEST,
         ],
     )
     def test_slack_only_class_returns_slack_alone(self, event_class: EventClass) -> None:
@@ -350,6 +374,15 @@ class TestAdapterInjectionIntegrity:
 # invoking the returned adapters. The router does NOT invoke; this test
 # proves the returned tuple is USEFUL — the caller can iterate + dispatch.
 # ---------------------------------------------------------------------------
+
+
+class TestChannelsForHelper:
+    """The channels_for introspection helper mirrors the routing table row-for-row."""
+
+    @pytest.mark.parametrize("event_class", list(EventClass))
+    def test_channels_for_matches_expected_routing(self, event_class: EventClass) -> None:
+        """channels_for(x) returns the (telegram, slack) pair from the ADR-verified map."""
+        assert channels_for(event_class) == _EXPECTED_ROUTING[event_class]
 
 
 class TestCallerSideDispatchSmoke:
