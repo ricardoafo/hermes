@@ -133,18 +133,42 @@ class TestUnknownSubcommand:
 
 
 class TestHealthDispatch:
-    """`hermes health` sub-dispatch — no-arg usage + per-integration probe."""
+    """`hermes health` sub-dispatch — no-arg full walk + per-integration probe."""
 
-    def test_health_without_arg_prints_usage_and_exits_two(self) -> None:
-        """`hermes health` (no arg) prints usage + registered integrations, exits 2."""
+    def test_health_without_arg_runs_all_and_reports_not_configured_on_empty_env(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`hermes health` (no arg) walks the registry and exits 3 on a pristine env.
+
+        With no credentials in the env, every registered probe reports
+        NOT_CONFIGURED, so :func:`aggregate_exit_code` returns 3
+        (partial config is not a system-down state — that's exit 1).
+        """
+        # Strip every credential env var so `run_all` sees a pristine snapshot.
+        for var in (
+            "HERMES_TELEGRAM__BOT_TOKEN",
+            "HERMES_TELEGRAM__CHAT_ID",
+            "HERMES_SLACK__BOT_TOKEN",
+            "HERMES_SLACK__DEFAULT_CHANNEL",
+            "HERMES_HEALTHCHECKS__PING_URL",
+        ):
+            monkeypatch.delenv(var, raising=False)
         stream = io.StringIO()
         rc = cli_module.main(["health"], stream=stream)
-        assert rc == 2
+        assert rc == 3
         output = stream.getvalue()
-        assert "Usage: hermes health <integration>" in output
-        # Both integrations appear in the registry listing.
+        assert "# hermes health (all integrations)" in output
+        # Multi-row table shows every registered integration, all reporting FAIL /
+        # NOT_CONFIGURED. Every registered name appears in the output.
         assert "telegram" in output
         assert "slack" in output
+        assert "healthchecks" in output
+        # The multi-table header row names the columns:
+        assert "integration" in output
+        assert "status" in output
+        assert "latency" in output
+        # Every row reports FAIL (NOT_CONFIGURED renders as FAIL status label).
+        assert "FAIL" in output
 
     def test_health_unknown_integration_exits_two(self) -> None:
         """`hermes health <unknown>` prints an ERROR and exits 2."""

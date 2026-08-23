@@ -210,6 +210,69 @@ The probe calls the read-only `auth.test` endpoint (per
 <https://api.slack.com/methods/auth.test>) — no `chat.postMessage`
 call from the health path, ever.
 
+### Healthchecks
+
+```bash
+uv run hermes health healthchecks
+```
+
+Expected output on OK:
+
+```text
+# hermes health healthchecks
+  integration  healthchecks
+  status       OK
+  latency_ms   87.4
+  detail       ping accepted
+  last_check   2026-08-23T14:22:03.412+00:00
+```
+
+Exit codes:
+
+- `0` — OK. The ping URL is valid, Healthchecks.io accepted the `/start`
+  ping, no dead-man's-switch alert was fired (the `/start` endpoint is
+  informational — it does NOT trigger alerts on its own).
+- `1` — FAIL. The adapter reached Healthchecks but got an HTTP error
+  (400 on a malformed URL, 500 on an outage). The `detail` column
+  carries the status code and body excerpt.
+- `3` — Not configured. `HERMES_HEALTHCHECKS__PING_URL` is missing.
+  Populate `.env.local` (see the `.env.local.example` header for the
+  Healthchecks section — the URL is opaque, one UUID per environment,
+  from your Healthchecks.io project dashboard).
+
+The probe calls the `/start` endpoint (per
+<https://healthchecks.io/docs/http_api/>) — an idempotent + informational
+ping that Healthchecks uses to compute job duration. It NEVER calls
+`ping_fail`, which would spam the operator's alert channels every time
+they run `hermes health`.
+
+### Full status
+
+```bash
+uv run hermes health
+```
+
+Runs every registered integration in one pass and prints ONE
+consolidated table:
+
+```text
+# hermes health (all integrations)
+integration   status  latency  detail                                 last_check
+healthchecks  OK      87ms     ping accepted                          2026-08-23T15:42:18+00:00
+slack         OK      201ms    workspace=hermes-ws bot=@hermes_bot    2026-08-23T15:42:18+00:00
+telegram      OK      142ms    bot=@hermes_alerts_bot                 2026-08-23T15:42:19+00:00
+```
+
+Aggregated exit code:
+
+- `0` — every integration reports OK.
+- `1` — any integration reports FAIL (an actual adapter outage — a
+  fresh clone missing credentials will NOT produce this).
+- `3` — any integration reports NOT_CONFIGURED and none report FAIL
+  (partial config is a fresh-clone / one-integration-at-a-time state,
+  not a system-down state — wrapper scripts should treat it distinctly
+  from OK but should not page an operator).
+
 ## First test run
 
 ```bash
