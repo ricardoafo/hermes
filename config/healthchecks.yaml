@@ -1,0 +1,22 @@
+# Healthchecks.io dead-man's-switch heartbeat configuration.
+#
+# Loaded by hermes.infrastructure.config.load_config into HealthchecksConfig.
+# Healthchecks.io is a heartbeat monitor — hermes POSTs / GETs a unique
+# ping URL periodically, and if the pings stop, Healthchecks alerts the
+# operator via its own configured channels. See
+# https://healthchecks.io/docs/http_api/.
+#
+# The ping URL is opaque (a UUID path segment) — it is NOT a credential
+# and NOT a secret in the traditional sense, but treat it as sensitive:
+# anyone with the URL can ping-in as this monitor. That is why the
+# default here is EMPTY — the operator populates it via
+# HERMES_HEALTHCHECKS__PING_URL in .env.local (dev) or /etc/hermes.env
+# (prod), never here on disk.
+#
+# When ping_url is empty the integration is DISABLED — the adapter
+# refuses to construct and `hermes health healthchecks` returns
+# NOT_CONFIGURED (exit 3) instead of firing wire calls that would fail.
+
+ping_url: ""
+timeout_sec: 5.0
+requests_per_minute: 30
