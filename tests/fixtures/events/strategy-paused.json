@@ -1,0 +1,8 @@
+{
+  "occurred_at": "2026-08-23T14:22:03+00:00",
+  "correlation_id": "01J9Z8T3M5BQR2FVKN4XWY6PH1",
+  "strategy_id": "swing.v1",
+  "reason": "30% drawdown breached",
+  "paused_at": "2026-08-23T14:22:03+00:00",
+  "severity": "CRITICAL"
+}

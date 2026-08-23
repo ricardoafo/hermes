@@ -26,6 +26,9 @@ dependencies = [
   "python-dotenv>=1,<2",
 ]
 
+[project.scripts]
+hermes = "hermes.entrypoints.cli:main"
+
 [dependency-groups]
 dev = [
   "pytest>=9,<10",  # bumped for PYSEC-2026-1845 fix (9.0.3+)

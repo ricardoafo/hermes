@@ -60,16 +60,54 @@ compromise both tools require alone.
 
 The router assigns events to channels by content shape:
 
-| Event class             | Telegram         | Slack                     |
-| ----------------------- | ---------------- | ------------------------- |
-| Service crash           | ✅               | ❌                        |
-| Health-check fail       | ✅               | ❌                        |
-| Rollback fired          | ✅ (short)       | ✅ (postmortem thread)    |
-| CVE detected            | ✅ (short)       | ✅ (analysis + timeline)  |
-| Deploy done/failed      | ✅ (one line)    | ❌                        |
-| Weekly rebalance report | ❌               | ✅ (formatted table)      |
-| Monthly tax report      | ❌               | ✅ (CSV attachment)       |
-| Trade fired (single)    | ❌               | ❌ (log only, no notify)  |
+| Event class              | Telegram         | Slack                     |
+| ------------------------ | ---------------- | ------------------------- |
+| Service crash            | ✅               | ❌                        |
+| Health-check fail        | ✅               | ❌                        |
+| Rollback fired           | ✅ (short)       | ✅ (postmortem thread)    |
+| CVE detected             | ✅ (short)       | ✅ (analysis + timeline)  |
+| Deploy done/failed       | ✅ (one line)    | ❌                        |
+| Weekly rebalance report  | ❌               | ✅ (formatted table)      |
+| Monthly tax report       | ❌               | ✅ (CSV attachment)       |
+| Trade fired (single)     | ❌               | ❌ (log only, no notify)  |
+
+### Extended MVP1 events
+
+Added by the message-templates-and-preview PR (feat/message-templates-and-preview).
+Cadence: each row corresponds to a concrete `DomainEvent` shipped in
+`src/hermes/domain/events/` and rendered by
+`src/hermes/application/messages/`. Same shape convention as the base
+table — urgent-and-short goes to Telegram, rich-and-durable goes to Slack,
+both when a signal needs immediate visibility AND a durable record.
+
+| Event class                | Telegram        | Slack                          |
+| -------------------------- | --------------- | ------------------------------ |
+| Strategy paused            | ✅ (short)      | ✅ (durable postmortem record) |
+| Strategy resumed           | ❌              | ✅ (recovery notice)           |
+| Balance low                | ✅ (urgent)     | ❌                             |
+| Trade rejected — escalated | ✅ (urgent)     | ❌                             |
+| Daily trade digest         | ❌              | ✅ (formatted + CSV)           |
+| Position large             | ✅ (visibility) | ✅ (durable record)            |
+| Anomaly detected           | ✅              | ✅                             |
+
+Rationale per row:
+
+- **Strategy paused** — operator sees the pause on their phone; the
+  durable Slack copy is the trail for the follow-up.
+- **Strategy resumed** — recovery is not urgent; no need to buzz the
+  phone. The Slack copy closes the incident thread.
+- **Balance low** — actionable phone-push only; the operator tops up.
+  A durable Slack record is not needed for a recurring housekeeping
+  signal.
+- **Trade rejected — escalated** — the dedup / retry layer escalates
+  repeated rejections into a single ping; the pattern is the signal,
+  not each attempt. Single rejections stay log-only.
+- **Daily trade digest** — end-of-day recap — rich formatting; CSV
+  attachment for the day's trades.
+- **Position large** — an unusually large position is worth a phone
+  glance AND a durable Slack line for later audit.
+- **Anomaly detected** — circuit-breaker / invariant violation —
+  urgent push AND durable record (mirrors rollback-fired shape).
 
 Both adapters implement `NotifierPort` (see
 `src/hermes/ports/notifier.py`) with two methods: `notify_urgent()`

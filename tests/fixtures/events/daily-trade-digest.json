@@ -1,0 +1,15 @@
+{
+  "occurred_at": "2026-08-23T23:59:00+00:00",
+  "correlation_id": "01J9Z8T3M5BQR2FVKN4XWY6PH1",
+  "day": "2026-08-23",
+  "total_trades": 12,
+  "filled": 10,
+  "rejected": 2,
+  "total_notional": {"amount": "12500.50", "currency": "EUR"},
+  "top_winners": [
+    {"pair": "BTC/USDT", "pnl": {"amount": "120.00", "currency": "EUR"}}
+  ],
+  "top_losers": [
+    {"pair": "ETH/USDT", "pnl": {"amount": "-45.50", "currency": "EUR"}}
+  ]
+}
