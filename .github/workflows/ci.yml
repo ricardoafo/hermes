@@ -251,7 +251,7 @@ jobs:
             }
 
   # ─────────────────────────────────────────────────────────────────────
-  # Merge-decisions unit tests — the pr-revalidate.yml logic lives in a
+  # Merge-decisions unit tests — the merge-queue.yml logic lives in a
   # pure-function module (tools/merge/decisions.cjs) so it can be
   # asserted against fixtures. Runs on every PR that touches it, and
   # unconditionally on push to main so a regression cannot be masked by

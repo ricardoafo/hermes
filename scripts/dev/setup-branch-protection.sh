@@ -19,7 +19,7 @@
 #   - Require review-thread resolution before merge
 #   - `CI success` aggregator must be green (single required check)
 #   - `strict_required_status_checks_policy: false` — do NOT require branch
-#     up-to-date. Freshness is enforced by pr-revalidate.yml, which builds
+#     up-to-date. Freshness is enforced by merge-queue.yml, which builds
 #     the merge tree at the resolved main SHA and asserts twice.
 #     See docs/decisions/2026-08-21-revalidate-then-merge.md.
 #   - Linear history (squash-merge only)

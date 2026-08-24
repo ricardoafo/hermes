@@ -119,42 +119,15 @@ jobs:
         run: echo "::notice::dry_run=true — skipped verify."
 
   # ───────────────────────────────────────────────────────────────────
-  # BUILD — SKELETON (Phase 1 fills the body)
-  # Produces dist/hermes-<VERSION>-py3-none-any.whl and uploads as
-  # artifact for the gh-release job. Wheel only, no sdist per ADR-010.
+  # BUILD — reusable wheel build.
+  # Body lives in `.github/workflows/_build-wheel.yml`; keeping the
+  # build in one place means the pinned `astral-sh/setup-uv` version
+  # and the artifact name never drift between CD and Release.
+  # `needs: verify` preserves the verify → build → gh-release order.
   # ───────────────────────────────────────────────────────────────────
   build:
-    name: Build wheel
     needs: verify
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 1
-
-      - uses: astral-sh/setup-uv@v7
-        with: { version: "0.12.5" }
-
-      - name: Build wheel (placeholder)
-        if: inputs.dry_run != true
-        run: |
-          echo "::notice::PLACEHOLDER — Phase 1 replaces with real build."
-          echo ""
-          echo "TODO(phase-1):"
-          echo "  uv sync --frozen"
-          echo "  uv build --wheel"
-          echo "  ls -la dist/"
-
-      - name: Upload wheel artifact (placeholder)
-        if: inputs.dry_run != true
-        run: |
-          echo "TODO(phase-1):"
-          echo "  actions/upload-artifact@v5 { name: hermes-wheel, path: dist/*.whl }"
-
-      - name: Dry-run notice
-        if: inputs.dry_run == true
-        run: echo "::notice::dry_run=true — skipped build."
+    uses: ./.github/workflows/_build-wheel.yml
 
   # ───────────────────────────────────────────────────────────────────
   # GH-RELEASE — SKELETON (Phase 1 fills the body)

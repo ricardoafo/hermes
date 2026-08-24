@@ -602,10 +602,10 @@ jobs:
             try {
               await github.rest.actions.createWorkflowDispatch({
                 owner, repo,
-                workflow_id: 'pr-revalidate.yml',
+                workflow_id: 'merge-queue.yml',
                 ref: 'main',
               });
-              core.info('dispatched pr-revalidate.yml for next candidate');
+              core.info('dispatched merge-queue.yml for next candidate');
             } catch (err) {
-              core.warning(`could not dispatch pr-revalidate.yml: ${err.message}`);
+              core.warning(`could not dispatch merge-queue.yml: ${err.message}`);
             }

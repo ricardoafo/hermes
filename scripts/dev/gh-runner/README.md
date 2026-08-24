@@ -115,7 +115,7 @@ sequenceDiagram
 ## What runs where
 
 - **`runs-on: ${{ vars.RUNNER_LABEL && fromJSON(...) || 'ubuntu-latest' }}`** —
-  every job in `.github/workflows/ci.yml` and `pr-revalidate.yml` uses this
+  every job in `.github/workflows/ci.yml` and `merge-queue.yml` uses this
   pattern. `RUNNER_LABEL` set → this runner; unset → `ubuntu-latest`.
 
 - **Image (`gh-runner:latest`) pre-baked for speed**:
@@ -229,6 +229,6 @@ is 1h TTL, so this doesn't work for 24/7.
 ## Related
 
 - `.github/workflows/ci.yml` — the workflows this runner serves
-- `.github/workflows/pr-revalidate.yml` — same, for the merge queue
+- `.github/workflows/merge-queue.yml` — same, for the merge queue
 - [`docs/guides/ai-development-lifecycle.md`](../../../docs/guides/ai-development-lifecycle.md)
   — where this runner fits in the end-to-end flow

@@ -1,4 +1,4 @@
-name: Mutation testing (cosmic-ray)
+name: Mutation
 
 ##
 ## Weekly cosmic-ray mutation run against `src/hermes/domain/value_objects/`.
