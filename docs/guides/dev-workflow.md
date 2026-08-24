@@ -8,7 +8,7 @@ the `ai-bot`.
 
 This guide encodes the version-control discipline for hermes. It is enforced by
 GitHub branch protection on `main`, by `.github/CODEOWNERS`, by the pre-commit
-hook chain, and by CI checks that land in Phase 0. When this guide and a config
+hook chain, and by CI checks (all live since MVP1 started). When this guide and a config
 file disagree, the config file wins — open a PR to reconcile the guide.
 
 ## Golden rules
@@ -219,9 +219,9 @@ category — there is no separate `Change type` section in the template.
 - **`ai-bot` PRs** — same rule. Bot opens, Ricardo reviews, Ricardo
   merges (or asks bot to merge post-approval via Claude Code session).
 
-### CI checks (required, land in Phase 0)
+### CI checks (required, all live)
 
-Once Phase 0 CI is wired, the following must pass before a PR can merge:
+The following must pass before a PR can merge:
 
 - Pre-commit hooks (markdownlint, ruff, mypy, conventional-commits,
   detect-secrets, trailing-whitespace, end-of-file-fixer)
@@ -232,8 +232,8 @@ Once Phase 0 CI is wired, the following must pass before a PR can merge:
 - CHANGELOG update check per ADR-006 (for `feat` / `fix` / `refactor` / `perf`
   / breaking commits)
 
-Before Phase 0, only the markdown pre-commit hook runs. That is enough for
-docs-only PRs, which is all we ship in this bootstrap window.
+During the initial bootstrap window (before MVP1 CI was wired), only the markdown
+pre-commit hook ran. Full CI has been enforced since then.
 
 ## Merge policy
 
@@ -462,7 +462,7 @@ minute of delay compounds real-capital exposure. In that case:
    to reconcile.
 
 This exception applies to hermes only, and only after live capital is at
-risk (Phase 3+). Before then, no exceptions.
+risk (MVP2+, i.e. real money deployed). Before then, no exceptions.
 
 ## Zero-footprint policy
 
