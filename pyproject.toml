@@ -39,7 +39,7 @@ hermes = "hermes.entrypoints.cli:main"
 dev = [
   "pytest>=9,<10",  # bumped for PYSEC-2026-1845 fix (9.0.3+)
   "pytest-cov>=5,<7",  # --cov integration for pytest → coverage.py
-  "pytest-xdist>=3.6,<4",
+  "pytest-xdist>=3.8.0,<4",
   # Fails a test that hangs past the pytest.ini_options `timeout` (default
   # 60s). Introduced by process-hardening wave 5 after slot-12 sub-agent
   # burned its entire token budget on a klines-fetcher rate-limiter test
