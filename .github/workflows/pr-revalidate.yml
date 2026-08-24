@@ -139,7 +139,7 @@ jobs:
           sparse-checkout: tools/merge
           sparse-checkout-cone-mode: false
 
-      - uses: actions/github-script@v8
+      - uses: actions/github-script@v9
         id: pick
         with:
           script: |
@@ -367,7 +367,7 @@ jobs:
       - name: Fast path
         id: fast
         if: steps.freshness.outputs.fresh == 'true'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           ANCESTOR: ${{ steps.freshness.outputs.ancestor }}
           TESTED_HEAD: ${{ matrix.pr.head }}
@@ -441,7 +441,7 @@ jobs:
       # ─────────────────────────────────────────────────────────────
       - name: Merge
         if: steps.freshness.outputs.fresh == 'true'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           MAIN_TIP: ${{ needs.select.outputs.main }}
           PR_NUMBER: ${{ matrix.pr.n }}
