@@ -50,7 +50,7 @@ dev = [
   # for Windows compatibility (signals do not interrupt blocking C-level
   # calls on Windows the way they do on POSIX).
   "pytest-timeout>=2.3,<3",
-  "hypothesis>=6.112,<7",
+  "hypothesis>=6.165.10,<7",
   "syrupy>=5,<6",  # bumped to unblock pytest 9 (see PYSEC-2026-1845 note above)
   "respx>=0.21,<1",
   "freezegun>=1.5,<2",
