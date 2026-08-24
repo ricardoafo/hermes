@@ -40,14 +40,14 @@ flowchart TB
 
     J3 --> K{green + approved?}
     K -- no --> L["Author iterates<br/>fetch → edit → push → delete local"] --> F
-    K -- yes --> M["pr-revalidate.yml<br/>builds merge tree locally<br/>runs tree gates on merged tree"]
+    K -- yes --> M["merge-queue.yml<br/>builds merge tree locally<br/>runs tree gates on merged tree"]
     M --> N["Squash-merge to main<br/>Remote branch auto-deleted"]
 
     N --> O["Issue auto-closes via Closes #N<br/>Project board = Done column<br/>Milestone progress % moves"]
     N --> P["Local: git fetch --prune + git pull --ff-only<br/>local branch already gone since step G2"]
 
-    N --> Q["push:main fires deploy.yml"]
-    Q --> R["deploy.yml (skeleton today, Phase 0 fills bodies):<br/>build → deploy → health-check → smoke → confirm"]
+    N --> Q["push:main fires cd.yml"]
+    Q --> R["cd.yml (skeleton today, Phase 0 fills bodies):<br/>build → deploy → health-check → smoke → confirm"]
     R --> S["VPS hermes-01 (Tailscale-only SSH)<br/>systemd units restarted"]
     S -.->|periodic ping| HC["healthchecks.io<br/>dead-man's-switch → Telegram on silence"]
     S -.->|incident| T["bug-triager agent → new Issue"] --> A
@@ -200,7 +200,7 @@ in hermes.
 
 ### 9. Merge queue
 
-- **Who**: `.github/workflows/pr-revalidate.yml`
+- **Who**: `.github/workflows/merge-queue.yml`
 - **What**: Serialized revalidate-then-merge queue. Picks each approved,
   mergeable PR, checks out `main` at the resolved SHA, fetches the PR
   head at the approved SHA, builds the merge locally, runs tree gates
@@ -213,7 +213,7 @@ in hermes.
 
 ### 10. Merge to main
 
-- **Who**: `pr-revalidate.yml` (via GH API)
+- **Who**: `merge-queue.yml` (via GH API)
 - **What**: Squash-merge → single commit on main, PR title becomes the
   commit message, remote branch auto-deletes.
 - **Automation on merge**:
@@ -240,7 +240,7 @@ in hermes.
 
 ### 12. Deploy (CD to VPS)
 
-- **Who**: `.github/workflows/deploy.yml` (5 jobs) → VPS `hermes-01` via SSH over Tailscale
+- **Who**: `.github/workflows/cd.yml` (5 jobs) → VPS `hermes-01` via SSH over Tailscale
 - **What**: `push:main` fires the CD pipeline:
   - `build` — `uv build` produces a wheel artifact
   - `deploy` — `scp` wheel to VPS, `uv pip install --force-reinstall`, `systemctl restart hermes-*.service` (environment: `prod`, secrets scoped there)
@@ -266,9 +266,9 @@ in hermes.
 | --- | --- | --- | --- |
 | 5 | Local implementation | 🚧 Skeleton | Real ruff / mypy / pytest / hypothesis / mutmut / `sev1_guard` — Phase 0 fills bodies (pipeline shape is locked) |
 | 7 | CI pipeline (Python quality/unit/guards/semgrep) | 🚧 Skeleton | Bodies are `echo TODO`; swap for real tool invocations in Phase 0 without touching workflow structure |
-| 7 | Required status checks | ✅ Ready | `CI success` aggregator required; `strict:false` (freshness enforced by pr-revalidate.yml, not by branch update) |
+| 7 | Required status checks | ✅ Ready | `CI success` aggregator required; `strict:false` (freshness enforced by merge-queue.yml, not by branch update) |
 | 11 | Release | 📅 Phase 0 | Release workflow, tag automation, CHANGELOG date-cut |
-| 12 | CD to VPS | 🚧 Skeleton | `deploy.yml` scaffolded (build → deploy → health → smoke → confirm); Phase 0 fills bodies + Ricardo provisions `prod` Environment secrets |
+| 12 | CD to VPS | 🚧 Skeleton | `cd.yml` scaffolded (build → deploy → health → smoke → confirm); Phase 0 fills bodies + Ricardo provisions `prod` Environment secrets |
 | 13 | Observability | 📅 Phase 0+ | Structlog scaffold Phase 0, full stack Phase 2 |
 
 ## One-time setup (Ricardo, in the browser)
@@ -284,7 +284,7 @@ Two settings live in GitHub's UI and can't be fully configured via CLI:
 2. **Branch protection required status checks** — applied 2026-08-21 via
    `scripts/dev/setup-branch-protection.sh`. Current state:
    - Required check: `CI success` (the aggregator job in `ci.yml`)
-   - `strict: false` — freshness is enforced by `pr-revalidate.yml`,
+   - `strict: false` — freshness is enforced by `merge-queue.yml`,
      which builds the merge tree at the resolved main SHA. Setting
      `strict: true` would recreate the approval treadmill the
      revalidate design was built to remove.
@@ -311,7 +311,7 @@ Two settings live in GitHub's UI and can't be fully configured via CLI:
   the commit message, which is harder to find, filter, and prioritize.
 - **Squash-merge only** — one commit per PR on main. Bisecting is
   deterministic. `git log` is a readable changelog.
-- **Merge queue (`pr-revalidate.yml`)** — revalidate-then-merge design.
+- **Merge queue (`merge-queue.yml`)** — revalidate-then-merge design.
   Builds the merge tree at the resolved main SHA in the runner, runs
   tree gates against it, then merges from the workflow. Never pushes
   to the PR branch, so `require_last_push_approval=true` cannot
@@ -328,7 +328,7 @@ Two settings live in GitHub's UI and can't be fully configured via CLI:
 - [`docs/guides/dev-workflow.md`](dev-workflow.md) — git/gh discipline
 - [`AGENTS.md`](../../AGENTS.md) — AI collaboration protocol
 - [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) — the CI implementation
-- [`.github/workflows/pr-revalidate.yml`](../../.github/workflows/pr-revalidate.yml) — the merge queue
+- [`.github/workflows/merge-queue.yml`](../../.github/workflows/merge-queue.yml) — the merge queue
 - [ADR-003 § 09 Deployment](../architecture/adr-003-solution-architecture/09-deployment.md) — CD design (Phase 0+)
 - [ADR-006](../architecture/adr-006-versioning-strategy.md) — SemVer + release
 - [ADR-007](../architecture/adr-007-testing-strategy.md) — testing tiers

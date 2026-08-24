@@ -1,5 +1,5 @@
 /**
- * The decisions `pr-revalidate.yml` makes, as pure functions.
+ * The decisions `merge-queue.yml` makes, as pure functions.
  *
  * ## Why this file exists (not just bash inside a workflow)
  *
@@ -231,7 +231,7 @@ function gateSkip(input) {
  * skipping a real difference is `main` HEAD nobody validated.
  *
  * The revalidate workflow's OWN restart is a separate decision (see
- * pr-revalidate.yml) — it always fires, because it continues the queue
+ * merge-queue.yml) — it always fires, because it continues the queue
  * rather than re-proving a tree.
  *
  * @param {{ mergedTree: string|null, validatedTree: string|null }} input

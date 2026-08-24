@@ -1,0 +1,58 @@
+# =====================================================================
+# Build wheel — REUSABLE workflow (underscore prefix = not triggered directly)
+# =====================================================================
+#
+# Extracted from `cd.yml` and `release.yml` — both had a nearly-identical
+# wheel-build step. Keeping the build in one place means the pinned
+# `astral-sh/setup-uv` version and the artifact name never drift between
+# callers.
+#
+# ## Inputs
+#
+#   runner-label (optional string):
+#     JSON-array runner label to override the default. Empty string means
+#     "fall back to `vars.RUNNER_LABEL` or `ubuntu-latest`" — matches the
+#     pattern the callers used before extraction so behaviour is preserved.
+#
+# ## Outputs
+#
+#   wheel-artifact-name:
+#     Name of the uploaded artifact (`hermes-wheel`). Callers use this in
+#     `actions/download-artifact` to pull the wheel into downstream jobs.
+
+name: Build wheel (reusable)
+
+on:
+  workflow_call:
+    outputs:
+      wheel-artifact-name:
+        description: 'Name of the uploaded wheel artifact'
+        value: hermes-wheel
+    inputs:
+      runner-label:
+        description: 'JSON array of runner labels or a single label string'
+        type: string
+        required: false
+        default: ''
+
+jobs:
+  build:
+    name: Build wheel
+    runs-on: ${{ inputs.runner-label != '' && fromJSON(inputs.runner-label) || (vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest') }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.12.5"
+
+      - run: uv sync --frozen
+      - run: uv build --wheel
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: hermes-wheel
+          path: dist/*.whl

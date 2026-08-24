@@ -2,7 +2,7 @@
 
 **Type**: Deploy assets (living scaffolding)
 **Owners**: Ricardo Afonso
-**Description**: VPS bootstrap script, systemd units, and reference material for the CD pipeline defined in `.github/workflows/deploy.yml`.
+**Description**: VPS bootstrap script, systemd units, and reference material for the CD pipeline defined in `.github/workflows/cd.yml`.
 
 ## Status
 
@@ -22,14 +22,14 @@ flowchart TB
         A -- no --> P
     end
 
-    A -- yes --> Q["pr-revalidate.yml<br/>revalidate-then-merge queue<br/>builds merge tree locally"]
+    A -- yes --> Q["merge-queue.yml<br/>revalidate-then-merge queue<br/>builds merge tree locally"]
     Q --> M["Squash-merge to main<br/>(delete_branch_on_merge=true)"]
 
     M --> WR["workflow_run: CI on main"]
     WR --> CIMAIN["ci.yml runs on main SHA<br/>(same checks, re-validates squash)"]
-    CIMAIN --> PMAIN["push:main event fires deploy.yml"]
+    CIMAIN --> PMAIN["push:main event fires cd.yml"]
 
-    subgraph CD["deploy.yml — 5 jobs"]
+    subgraph CD["cd.yml — 5 jobs"]
         B["build<br/>uv build → wheel artifact"]
         D["deploy<br/>scp + ssh + uv pip install<br/>+ systemctl restart hermes-*.service<br/>environment: prod"]
         H["health-check<br/>curl healthchecks.io URL<br/>poll ×24 @ 5s"]
@@ -61,18 +61,18 @@ Yellow = placeholder body (fill in Phase 0). Green = real logic today.
 ## Trigger order
 
 1. PR opens → CI runs (all 15 jobs, gated on changeset)
-2. Human approves → `pr-revalidate.yml` picks it up
+2. Human approves → `merge-queue.yml` picks it up
 3. Queue builds merge tree locally, runs tree gates on it, calls `pulls.merge`
 4. Squash lands on `main` → GH fires `push:main` + `workflow_run:CI:completed`
-5. `deploy.yml` triggers on `push:main` — builds wheel, deploys, verifies
+5. `cd.yml` triggers on `push:main` — builds wheel, deploys, verifies
 6. `confirm` aggregator marks the deployment complete
 7. Systemd services on VPS pick up the new wheel on their next unit start
 
 Cross-references:
 
-- Queue: `.github/workflows/pr-revalidate.yml`, `tools/merge/decisions.cjs`, `docs/decisions/2026-08-21-revalidate-then-merge.md`
+- Queue: `.github/workflows/merge-queue.yml`, `tools/merge/decisions.cjs`, `docs/decisions/2026-08-21-revalidate-then-merge.md`
 - CI: `.github/workflows/ci.yml`
-- CD: `.github/workflows/deploy.yml` (this dir)
+- CD: `.github/workflows/cd.yml` (this dir)
 - Runtime: `docs/architecture/adr-003-solution-architecture/09-deployment.md`
 
 ## Contents
@@ -165,7 +165,7 @@ journalctl -u hermes.service --since "5 minutes ago"
 
 ## GH Actions secrets required (populate on `prod` Environment)
 
-The `deploy.yml` workflow references these secrets. Provision them under
+The `cd.yml` workflow references these secrets. Provision them under
 Repo Settings → Environments → `prod`:
 
 | Secret                | Purpose                                                                    |
@@ -180,6 +180,6 @@ resolve these.
 
 ## Related
 
-- `.github/workflows/deploy.yml` — CD pipeline
+- `.github/workflows/cd.yml` — CD pipeline
 - `docs/architecture/adr-003-solution-architecture/09-deployment.md` — full deploy design
 - `docs/guides/vps-operations.md` — VPS ops runbook

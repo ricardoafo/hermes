@@ -369,7 +369,7 @@ conflict when one merges. Two mitigations:
 
 ### Merge queue: revalidate-then-merge
 
-`.github/workflows/pr-revalidate.yml` is the merge queue. It runs on
+`.github/workflows/merge-queue.yml` is the merge queue. It runs on
 CI completion, on human approval, on push to `main`, and hourly. For
 each candidate PR that is approved and mergeable, it:
 
@@ -391,7 +391,7 @@ The judgement lives in `tools/merge/decisions.cjs`, unit-tested by
 `tools/merge/decisions.test.cjs`. Adding a new refusal rule means
 adding a test first, not editing YAML.
 
-To validate a change to `pr-revalidate.yml` against real open PRs
+To validate a change to `merge-queue.yml` against real open PRs
 without merging anything: run it via `workflow_dispatch` with
 `dry_run: true`. Every gate runs; `pulls.merge` is skipped.
 
@@ -436,7 +436,7 @@ approval under `require_last_push_approval` — the two settings fight
 each other.
 
 With `strict` off, freshness is enforced by the merge queue instead:
-`pr-revalidate.yml` refuses to merge unless it has just checked out
+`merge-queue.yml` refuses to merge unless it has just checked out
 `main` at the exact SHA, fetched the PR head at the exact approved
 SHA, built the merge locally, and asserted twice that neither moved.
 The tree that lands is provably validated against the current `main`,
@@ -445,7 +445,7 @@ without requiring a push to the PR branch.
 Trade-off: if a change to the merge-queue workflow itself is broken,
 `strict off` gives less "belt and braces" protection. Mitigation: the
 merge decisions are unit-tested (`tools/merge/decisions.test.cjs`) and
-`pr-revalidate.yml` supports a `dry_run` dispatch mode for testing
+`merge-queue.yml` supports a `dry_run` dispatch mode for testing
 changes against real open PRs without merging.
 
 ## Emergency exceptions
