@@ -134,7 +134,7 @@ jobs:
       any: ${{ steps.pick.outputs.any }}
       main: ${{ steps.pick.outputs.main }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           sparse-checkout: tools/merge
           sparse-checkout-cone-mode: false
@@ -259,7 +259,7 @@ jobs:
       matrix:
         pr: ${{ fromJson(needs.select.outputs.prs) }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           # The EXACT `main` the select job resolved, by SHA — not the
           # branch name. If `main` moves while this runs, we still
