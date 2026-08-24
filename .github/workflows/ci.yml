@@ -7,11 +7,16 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# SHA-based concurrency dedupes push+PR fired on the same commit. On PRs,
-# cancel superseded runs; on main, let each commit finish.
+# Ref-based per-PR concurrency (closes #174). Pushing a fix to a PR
+# cancels the previous in-progress CI run for that PR — different PRs
+# still run in parallel because each has its own ref. On push to main
+# the group is refs/heads/main; consecutive main pushes DO cancel
+# earlier in-progress runs so we don't waste runner slots on
+# already-superseded main commits. Only added at workflow level (adding
+# it per-job would over-serialize).
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.head.sha || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -543,3 +548,52 @@ jobs:
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
         run: bash scripts/dev/ci-success-check.sh
+
+  # ───────────────────────────────────────────────────────────────
+  # REBASE STALE PRs — post-main-CI rebase automation
+  # Fires only when main's own CI passes green, so a broken main
+  # doesn't cascade its state into open PRs. Rebases dependabot PRs
+  # via `@dependabot rebase` comment; rebases human/sub-agent PRs
+  # via peter-evans/rebase action. Opt-out labels + draft state
+  # respected.
+  # ───────────────────────────────────────────────────────────────
+  rebase-stale-prs:
+    name: Rebase open PRs against fresh main
+    needs: [ci-success]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Runner label choice: ubuntu-latest explicitly (not RUNNER_LABEL).
+    # This job is a small GitHub API script; it doesn't need self-hosted
+    # runners, and pinning to ubuntu-latest ensures it always runs even
+    # if the self-hosted pool is down.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+      contents: write
+    steps:
+      - name: Comment @dependabot rebase on open dependabot PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh pr list \
+            --state open \
+            --author "app/dependabot" \
+            --json number,labels \
+            --jq '.[] | select([.labels[].name] | contains(["no-auto-rebase"]) | not) | .number' \
+            --repo ${{ github.repository }} \
+          | while read n; do
+              echo "Requesting rebase on dependabot PR #${n}"
+              gh pr comment "${n}" \
+                --body "@dependabot rebase" \
+                --repo ${{ github.repository }}
+            done
+
+      - name: Rebase open human/sub-agent PRs
+        uses: peter-evans/rebase@v3
+        with:
+          exclude-drafts: true
+          exclude-labels: "no-auto-rebase,dependencies"
+        # exclude-labels dependencies avoids double-rebasing dependabot PRs
+        # (they've already been handled by the comment step above; the
+        # peter-evans action would attempt another rebase).
