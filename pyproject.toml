@@ -139,6 +139,26 @@ addopts = "-ra --strict-markers --strict-config -m 'not contract'"
 timeout = 60
 timeout_method = "thread"
 
+# filterwarnings — surface deprecated APIs as HARD test failures so we
+# discover them at PR time (not at "the day the library removed the API").
+# Dependency-review discipline: `pytest -W error::DeprecationWarning` is
+# one of the automated checks in docs/decisions/2026-08-24-dependency-
+# upgrade-checklist.md; enabling it as pytest config makes every unit run
+# enforce it, not just an ad-hoc CI leg.
+#
+# When a third-party library trips this and we cannot fix it (upstream
+# hasn't shipped the migration yet, or the fix is behind a major bump we
+# haven't accepted), add a targeted `ignore::DeprecationWarning:<module>`
+# line WITH A COMMENT explaining WHY + a link to the upstream tracking
+# issue. Never a bare `default::DeprecationWarning` — that silences the
+# whole class and defeats the discipline.
+filterwarnings = [
+  "error::DeprecationWarning",
+  "error::PendingDeprecationWarning",
+  # Third-party warnings we cannot fix — allow with a comment explaining why:
+  # (add exceptions here as they surface, with justification + upstream link)
+]
+
 [tool.coverage.run]
 source = ["src/hermes"]
 branch = true
