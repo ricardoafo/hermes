@@ -43,7 +43,11 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────
   semgrep:
     name: Semgrep (SAST)
-    runs-on: ubuntu-latest
+    # Uses the standard RUNNER_LABEL fallback per the "always self-hosted"
+    # rule. If runners are offline at cron time, GitHub queues the job
+    # until a runner comes online — no missed executions for a nightly
+    # job that's tolerant of hours of delay.
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 10
     permissions:
       contents: read
