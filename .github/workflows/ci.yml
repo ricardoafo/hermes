@@ -312,7 +312,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v7
         with: { version: "0.12.5" }
       - run: uv sync --frozen
       - name: ${{ matrix.name }}
@@ -337,7 +337,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v7
         with: { version: "0.12.5" }
       - run: uv sync --frozen
       - run: uv run pytest tests/unit/ --cov=src/hermes --cov-branch --cov-report=xml --cov-report=json --cov-report=term
@@ -399,7 +399,7 @@ jobs:
       # self-hosted runner cannot do (docker.sock permission denied when the
       # action tries `docker pull returntocorp/semgrep-agent:v1`).
       # Install semgrep via uv tool instead — same rules, no daemon needed.
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v7
         with: { version: "0.12.5" }
       - run: uv tool install semgrep
       - run: uv tool run semgrep scan --config p/security-audit --config p/python --error
@@ -421,7 +421,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v7
         with: { version: "0.12.5" }
       - run: uv sync --frozen
       - run: uv tool install pip-licenses
