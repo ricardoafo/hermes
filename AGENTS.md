@@ -322,6 +322,49 @@ Rationale: a prior apply phase burned ~200k tokens re-describing an
 existing `change.md` inline in a sub-agent prompt. The file IS the
 spec — the prompt only points at it.
 
+**Sub-agent rate-limit resilience.** A sub-agent that hits a rate
+limit, a harness kill, or a network drop mid-flight loses everything
+in its context that has not been committed and pushed. The 2026-08-24
+Sentry salvage cost one recovery cycle because the sub-agent produced
+~200 LOC without ever committing or pushing. Non-trivial sub-agent
+prompts MUST include the following checkpoint discipline (see
+[`scripts/dev/sub-agent-prompt-checklist.md`](scripts/dev/sub-agent-prompt-checklist.md)
+for the copy-paste template):
+
+1. **Commit a WIP checkpoint every ~30 tool uses OR after each
+   distinct "Part" completes** (whichever comes first). WIP commits
+   use `wip:` prefix — this is the only accepted deviation from
+   conventional-commits. They will be squashed or amended into
+   conventional-commits form before the final PR opens.
+2. **Push the WIP branch to origin** immediately after each WIP
+   commit (`git push --force-with-lease` on rewrite). This makes the
+   in-flight work salvageable from GitHub if the sub-agent dies —
+   the operator does `git fetch origin <wip-branch>` and continues
+   from HEAD instead of scraping a stranded worktree.
+3. **Save an engram checkpoint (`mem_save`)** after each significant
+   milestone: a Part completes, the test suite goes green, the PR
+   body is drafted. Topic key: `sdd/<change-name>/apply-progress`.
+   Merge with prior progress — do not overwrite (see the
+   "Apply-Progress Continuity" rule in `~/.claude/CLAUDE.md`
+   §SDD-Workflow).
+
+**Recovery pattern when a sub-agent dies mid-flight** (operator
+runbook):
+
+- `git fetch origin <wip-branch>` — pick up whatever was pushed.
+- `mem_search` for `sdd/<change-name>/apply-progress` — recover the
+  last milestone summary.
+- Continue from the last WIP commit. Fix any WIP commits (interactive
+  rebase to squash into conventional-commits form) BEFORE opening
+  the final PR — conventional-commits pre-commit hook rejects `wip:`
+  at commit-msg stage, so a WIP left in place would block the merge.
+
+Applies to: any sub-agent launched to write code across ≥2 files,
+implement a Part of a multi-Part spec, or run a chain longer than
+~15 tool uses. Trivial one-file mechanical edits do NOT need
+checkpoint discipline — the recovery cost is lower than the
+overhead.
+
 ### On memory (engram)
 
 - Save decisions, discoveries, bug fixes, patterns proactively — do not
