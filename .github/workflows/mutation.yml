@@ -25,6 +25,12 @@ name: Mutation
 ## in type-union syntax (`Decimal | int`) — real logic kill-rate is
 ## substantially higher. See `docs/decisions/2026-08-22-mutation-testing-cosmic-ray.md`.
 ##
+## Sibling nightly workflow: `.github/workflows/nightly-quality.yml`
+## runs semgrep + future daily heavy checks on a 03:00 UTC cron. Both
+## files form the "nightly heavy jobs" tier — kept separate only
+## because the mutation run's 60-minute budget and weekly cadence make
+## a shared workflow awkward.
+##
 
 on:
   schedule:

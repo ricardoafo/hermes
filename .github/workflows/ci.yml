@@ -378,31 +378,14 @@ jobs:
           fi
 
   # ─────────────────────────────────────────────────────────────────────
-  # SEMGREP — SKELETON (Phase 0+ fills the body)
-  # Static analysis for security bugs (SAST). Once code exists to scan,
-  # bump this to a real semgrep run with the p/security-audit ruleset.
+  # SEMGREP — moved to nightly cron.
+  # Semgrep (SAST) previously ran here on every PR. It now lives in
+  # `.github/workflows/nightly-quality.yml` on a 03:00 UTC daily cron
+  # against `ubuntu-latest`. Rationale: semgrep findings are codebase-
+  # wide patterns that rarely change per-PR, and the ~30s+ per-run cost
+  # was pinning scarce self-hosted runners. See CHANGELOG fragment
+  # `changelog.d/wave-ci-heavy-jobs-nightly.md` for the full context.
   # ─────────────────────────────────────────────────────────────────────
-  semgrep:
-    name: Semgrep (SAST)
-    needs: changeset
-    if: needs.changeset.outputs.code == 'true'
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 1
-
-      # semgrep-action@v1 uses Docker-in-Docker which our containerized
-      # self-hosted runner cannot do (docker.sock permission denied when the
-      # action tries `docker pull returntocorp/semgrep-agent:v1`).
-      # Install semgrep via uv tool instead — same rules, no daemon needed.
-      - uses: astral-sh/setup-uv@v7
-        with: { version: "0.12.5" }
-      - run: uv tool install semgrep
-      - run: uv tool run semgrep scan --config p/security-audit --config p/python --error
 
   # ─────────────────────────────────────────────────────────────────────
   # LICENSES — dep license allowlist enforcement
@@ -524,7 +507,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────
   ci-success:
     name: CI success
-    needs: [changeset, markdown-lint, pr-title, pr-body, changelog, auto-label, merge-decisions, quality, unit, guards, semgrep, licenses, reproducible, codeowners, secrets]
+    needs: [changeset, markdown-lint, pr-title, pr-body, changelog, auto-label, merge-decisions, quality, unit, guards, licenses, reproducible, codeowners, secrets]
     if: '!cancelled()'
     runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 1
