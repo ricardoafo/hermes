@@ -2,9 +2,9 @@
 
 Solo-developer crypto trading system.
 Deterministic rule engine, hexagonal architecture, Spanish tax posture
-(FIFO + Modelo 100/721), LLM supervision via MCP at Phase 3+.
+(FIFO + Modelo 100/721), LLM supervision via MCP in MVP2+.
 
-**Status**: Phase 0 (scaffold). No production runtime yet.
+**Status**: MVP1 in progress (simulation + shadow mode). No production runtime yet.
 
 ## What lives where
 
@@ -18,19 +18,17 @@ Deterministic rule engine, hexagonal architecture, Spanish tax posture
 | [`AGENTS.md`](AGENTS.md) | Project-specific AI collaboration protocol (10 absolute prohibitions + behavioral defaults). |
 | [`CHANGELOG.md`](CHANGELOG.md) | Release notes (Keep a Changelog format per ADR-006). |
 | [`SECURITY.md`](SECURITY.md) | How to report security issues. |
-| [Project board](https://github.com/users/ricardoafo/projects/4) | Roadmap by phase (0-3), open work items, issue-to-PR flow. |
+| [Project board](https://github.com/users/ricardoafo/projects/4) | Roadmap by milestone, open work items, issue-to-PR flow. |
 
 ## Roadmap
 
-Four phases, one per milestone. See the [project board](https://github.com/users/ricardoafo/projects/4)
+Two active milestones. See the [project board](https://github.com/users/ricardoafo/projects/4)
 for current status.
 
-| # | Milestone | What lands |
-| --- | --------- | ---------- |
-| 0 | Scaffold | `pyproject.toml`, hexagonal `src/hermes/` skeleton, CI, testing scaffold, structlog, supply-chain, doc surfaces |
-| 1 | Simulation | Paper-trading engine, FIFO ledger, backtest harness, deterministic replay, strategy pattern |
-| 2 | Shadow | Tiny real capital, live orders with typed confirmations, execution logging, 90-day observation |
-| 3 | Live | Full production, LLM supervisor via MCP, monthly reconciliation, Modelo 100/721 pipeline |
+| Milestone | What lands |
+| --------- | ---------- |
+| **MVP1 — Simulation ready** | Paper-trading engine, FIFO ledger, backtest + calibration harness, shadow-mode flag, Binance testnet + Kraken demo adapters, notifications live, ledger + tax guard operational |
+| **MVP2 — Live trading** | Real money on Binance + Kraken mainnet, warm-standby VPS, full observability, LLM supervisor via MCP, monthly reconciliation, Modelo 100/721 pipeline |
 
 ## Working on the code
 

@@ -8,9 +8,8 @@ verify the released wheel + CHANGELOG landed correctly.
 
 ## Status
 
-**Skeleton — bodies land in Phase 1**. The `release.yml` workflow file
-is a scaffold today. This guide documents the SHAPE of the release
-process so it's clear what fills in later. Cross-references:
+The `release.yml` workflow is a scaffold. This guide documents the SHAPE of the
+release process so it's clear what fills in during MVP1. Cross-references:
 [issue #21](https://github.com/ricardoafo/hermes/issues/21).
 
 ## The release surface
@@ -83,7 +82,7 @@ Yellow = jobs whose bodies get filled in when we cut v0.1.0.
 
 Every release moves `[Unreleased]` into a dated section and prepends a
 fresh empty `[Unreleased]`. The `scripts/dev/changelog-check.sh`
-script gains an on-release check (Phase 0+) that:
+script gains an on-release check that:
 
 1. On tag push: `## [Unreleased]` in `CHANGELOG.md` must be empty (all
    entries must have been moved into the tagged section by the human).
@@ -153,12 +152,11 @@ downstream saw the failed release. Re-cut it.
 
 ## Cadence
 
-Undefined until Phase 1 ships. Rough targets:
+Rough targets:
 
-- **v0.1.0**: end of Phase 1 (domain layer complete: Money, FIFO, Portfolio, ports)
-- **v0.2.0**: end of Phase 2 (adapters + CLI/TUI)
-- **v0.3.0**: end of Phase 3 (LLM supervisor active)
-- **v1.0.0**: real-capital cutover (see `docs/guides/shadow-mode-checklist.md`)
+- **v0.1.0**: end of MVP1 (domain layer complete: Money, FIFO, Portfolio, ports, paper-trading engine)
+- **v0.2.0**: shadow mode complete (adapters + CLI/TUI + 90-day observation gate)
+- **v1.0.0**: real-capital cutover / MVP2 (see `docs/guides/shadow-mode-checklist.md`)
 
 Releases before v1.0.0 are dry-run-only: the CD pipeline (`cd.yml`)
 never enters `commit: true` mode. See ADR-003 §09.

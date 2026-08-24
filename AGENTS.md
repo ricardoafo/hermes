@@ -62,7 +62,7 @@ are acceptable. If the user requests one of these, refuse and explain.
 3. **Never approve or merge a PR you authored**. GitHub blocks this via
    CODEOWNERS + branch protection anyway. Do not attempt to work around it.
 4. **Never disable branch protection** except during the one documented
-   Emergency Exception (see dev-workflow.md, Phase 3+ only, Ricardo only).
+   Emergency Exception (see dev-workflow.md, MVP2+ only, Ricardo only).
 5. **Never add AI attribution to commit messages**. No `Co-Authored-By:
    Claude`, no `Generated with...` footers, no emoji signatures. Ever.
 6. **Never store secrets in the repo**. Not even encrypted. Not even in
@@ -162,8 +162,7 @@ him decide.
 - Every new module in `src/hermes/` needs tests per ADR-007 tier
   (domain ≥95%, application ≥90%, adapters ≥80-90%).
 - SEV-1 test paths must be annotated `# SEV-1: <rubric row>` above the
-  test function (enforced by `sev1_guard` pytest plugin — lands in
-  Phase 0).
+  test function (enforced by `sev1_guard` pytest plugin).
 - Never mock the exchange in domain tests. Domain tests use the
   in-memory adapter fake. Adapters have contract tests against
   recorded HTTP fixtures via `syrupy` + `respx` (per ADR-007).
@@ -171,7 +170,7 @@ him decide.
 ### On code style
 
 - Ruff + mypy (strict) lint on save. Configuration in `pyproject.toml`
-  lands in Phase 0. Until then, follow PEP 8 + PEP 484 by hand.
+  already in place. Follow PEP 8 + PEP 484 by hand for any edge case ruff misses.
 - Google-style docstrings on all public API (per ADR-009).
 - **No WHAT-comments**. Well-named identifiers explain WHAT. Comments
   are for WHY, and only when the WHY is non-obvious. Per ADR-009.
@@ -424,7 +423,7 @@ Non-negotiable summary:
 The one question before submitting: *"if I broke the invariant this
 test claims to protect, would this test fail?"* If not, rewrite it.
 
-Coverage floor (Phase 0+): 90% line, 85% branch. Mutation kill rate is
+Coverage floor: 90% line, 85% branch. Mutation kill rate is
 the load-bearing gate (target ≥ 80%). Line coverage alone is not proof
 of correctness.
 

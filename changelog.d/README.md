@@ -61,7 +61,7 @@ feat/fix/refactor/perf, not a hard requirement.
 
 ## Aggregation
 
-At release cut (Phase 0 has no release yet — this is future-proofing):
+At release cut:
 
 ```bash
 uv run python scripts/dev/aggregate-changelog.py --apply
