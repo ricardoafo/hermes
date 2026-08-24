@@ -275,6 +275,34 @@ prior 3-file convention (proposal.md + spec.md + design.md) and stays
 frozen as historical evidence — the 2026-08-22 ADR-009 amendment
 introduced `change.md` for future changes.
 
+**Rule 15 — openspec change spec is mandatory for feat/refactor/perf
+work** (drift-eval 2026-08-24, closes #194 — enforcement lives at
+`scripts/dev/create-pr.sh` + `scripts/dev/pr-preflight.sh`):
+
+Sub-agent implementation tasks that write code MUST be preceded by an
+openspec change spec if the task is sized `size:m` or larger. The
+orchestrator MUST verify `openspec/changes/<change-name>/change.md`
+exists BEFORE delegating any `Write` or `Edit` tool for material work.
+
+Enforcement (both wrappers run the same predicate):
+
+- `scripts/dev/create-pr.sh` — exit 3 when the latest commit's
+  conventional-commit type is `feat|refactor|perf` and the branch's
+  diff vs `origin/main` includes no `openspec/changes/*/change.md`.
+  Bypass: `--skip-openspec-check "reason"` — the reason is required
+  and echoed to stderr for audit.
+- `scripts/dev/pr-preflight.sh` — same predicate as check #13.
+  Bypass: `SKIP_OPENSPEC_CHECK=1 bash scripts/dev/pr-preflight.sh`.
+
+Rationale: between 2026-08-21 and 2026-08-24 the team shipped ~180 PRs
+and only 4 openspec change specs landed. The SDD flow was silently
+skipped on almost every substantive feature. Two-layer enforcement
+turns the rule from a norm into a gate. See
+`openspec/changes/dor-dod-enforcement/change.md` for the full design.
+
+Retroactive spec-writing for already-shipped PRs is explicitly out of
+scope — forward-looking only.
+
 ### On sub-agent delegation
 
 When the orchestrator dispatches work to a sub-agent, the launch

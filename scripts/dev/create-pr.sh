@@ -32,9 +32,12 @@
 #
 # Invocation:
 #   bash scripts/dev/create-pr.sh --title <t> --body-file <path> [passthrough]
+#   bash scripts/dev/create-pr.sh --title <t> --body-file <path> \
+#     --skip-openspec-check "reason"
 #   HERMES_SELF_TEST=1 bash scripts/dev/create-pr.sh
 #
 # Passthrough allowlist: --head, --base, --draft, --reviewer
+# DoR flags: --skip-openspec-check "reason" (bypass openspec gate, audit-logged)
 # Anything else → exit 2 (usage error, unknown flag).
 #
 # Env vars:
@@ -42,15 +45,23 @@
 #   GH_CMD            — override for `gh` binary; self-test sets to `echo`
 #                       so tests never call real GitHub.
 #
+# DoR/DoD openspec gate (drift-eval 2026-08-24, #194):
+#   feat/refactor/perf commits MUST add an openspec/changes/*/change.md
+#   in the branch diff vs origin/main. See openspec/changes/dor-dod-enforcement/.
+#   Bypass with --skip-openspec-check "reason" — the reason is required and
+#   is echoed to stderr for audit trail visibility.
+#
 # Exit codes:
 #   0 — PR created successfully (or self-test passed)
 #   1 — PR body failed lint (gh NOT invoked)
 #   2 — usage / arg error
+#   3 — DoR gate failed (openspec change spec missing)
 
 set -uo pipefail
 
 TITLE=""
 BODY_FILE=""
+SKIP_OPENSPEC_REASON=""
 PASSTHROUGH=()
 ALLOWED_PASS=(--head --base --draft --reviewer)
 
@@ -94,6 +105,50 @@ validate_title() {
         echo "    good: feat(adapters): telegram notifier — urgent alerts"
     } >&2
     return 2
+}
+
+# ────────────────────────────────────────────────────────────────
+# validate_openspec_change_present
+#
+# DoR gate (#194). If the latest commit's conventional-commit type is
+# feat|refactor|perf, require at least one openspec/changes/*/change.md
+# addition or modification in the branch diff vs origin/main.
+#
+# Exit codes: 0 (pass or exempt), 3 (fail — spec required, none found).
+# Bypass: --skip-openspec-check "reason" sets SKIP_OPENSPEC_REASON.
+#
+# See openspec/changes/dor-dod-enforcement/change.md for the full rationale.
+# ────────────────────────────────────────────────────────────────
+validate_openspec_change_present() {
+    if [[ -n "$SKIP_OPENSPEC_REASON" ]]; then
+        echo "WARN: openspec check skipped: $SKIP_OPENSPEC_REASON" >&2
+        return 0
+    fi
+    local latest_subject
+    latest_subject=$(git log -1 --format=%s HEAD 2>/dev/null)
+    if [[ -z "$latest_subject" ]]; then
+        return 0  # empty branch — nothing to check
+    fi
+    if ! [[ "$latest_subject" =~ ^(feat|refactor|perf)(\(.+\))?(!)?: ]]; then
+        return 0  # exempt commit type
+    fi
+    # In self-test, git may not resolve origin/main — the gate is verified
+    # by dedicated self-test fixtures that stub the git-diff output.
+    local added_or_modified
+    added_or_modified=$(git diff --name-only origin/main..HEAD -- \
+        'openspec/changes/*/change.md' 2>/dev/null)
+    if [[ -n "$added_or_modified" ]]; then
+        return 0
+    fi
+    {
+        echo "ERROR: feat/refactor/perf PR requires an openspec change spec."
+        echo "  Latest commit: $latest_subject"
+        echo "  Expected: openspec/changes/<change-name>/change.md added or modified"
+        echo "  Template: openspec/changes/TEMPLATE/change.md"
+        echo "  Bypass:   --skip-openspec-check \"reason\" (audit-logged)"
+        echo "  Rationale: #194 DoR/DoD hardening — openspec/changes/dor-dod-enforcement/"
+    } >&2
+    return 3
 }
 
 # ────────────────────────────────────────────────────────────────
@@ -235,10 +290,61 @@ EOF
     grep -q 'pr create' <<< "$out" && { echo "SELF-TEST FAIL: gh MUST NOT be invoked on title-gate fail"; fail=1; }
     grep -q 'lowercase-subject rule' <<< "$out" || { echo "SELF-TEST FAIL: expected 'lowercase-subject rule' in stderr"; fail=1; }
 
+    # Fixtures 12-14 exercise the DoR/DoD openspec gate (#194). The gate
+    # reads `git log -1` and `git diff origin/main..HEAD`. We isolate the
+    # git state in a tmpdir via GIT_DIR + GIT_WORK_TREE env vars so CWD
+    # stays at the repo root — otherwise the relative `scripts/dev/pr-body-lint.sh`
+    # call inside this script would fail because the tmpdir has no such
+    # path. This is a standard git-in-test idiom (see gitcli(1)).
+    tmpdir=$(mktemp -d -t create-pr-selftest.XXXXXX)
+    (
+        export GIT_DIR="$tmpdir/.git" GIT_WORK_TREE="$tmpdir"
+        git init -q "$tmpdir"
+        git -C "$tmpdir" commit -q --allow-empty -m "chore: initial"
+        git -C "$tmpdir" branch -m main 2>/dev/null || true
+        # Simulate origin/main at the initial (chore) commit — so a feat
+        # commit added later shows up as HEAD-only in the diff.
+        git -C "$tmpdir" update-ref refs/remotes/origin/main HEAD
+        git -C "$tmpdir" commit -q --allow-empty -m "feat(x): valid"
+    ) >/dev/null 2>&1
+
+    # 12. FAIL: feat title + no openspec change in diff → exit 3, gh NOT
+    #     invoked, stderr mentions openspec.
+    if [[ -d "$tmpdir/.git" ]]; then
+        out=$(GIT_DIR="$tmpdir/.git" GIT_WORK_TREE="$tmpdir" GH_CMD=echo HERMES_SELF_TEST=0 bash "$0" --title "feat(x): valid" --body-file "$tmp_ok" 2>&1); rc=$?
+        [[ $rc -eq 3 ]] || { echo "SELF-TEST FAIL 12: feat + no openspec → rc=$rc, want 3"; fail=1; }
+        grep -q 'pr create' <<< "$out" && { echo "SELF-TEST FAIL 12: gh MUST NOT be invoked on DoR fail"; fail=1; }
+        grep -qi 'openspec' <<< "$out" || { echo "SELF-TEST FAIL 12: expected 'openspec' in stderr"; fail=1; }
+    fi
+
+    # 13. PASS: same as 12 but --skip-openspec-check "reason" → exit 0,
+    #     gh invoked, stderr warns about the skip.
+    if [[ -d "$tmpdir/.git" ]]; then
+        out=$(GIT_DIR="$tmpdir/.git" GIT_WORK_TREE="$tmpdir" GH_CMD=echo HERMES_SELF_TEST=0 bash "$0" --title "feat(x): valid" --body-file "$tmp_ok" --skip-openspec-check "cosmetic constant rename" 2>&1); rc=$?
+        [[ $rc -eq 0 ]] || { echo "SELF-TEST FAIL 13: skip flag → rc=$rc, want 0"; fail=1; }
+        grep -q 'pr create' <<< "$out" || { echo "SELF-TEST FAIL 13: gh should be invoked when skip flag set"; fail=1; }
+        grep -q 'openspec check skipped' <<< "$out" || { echo "SELF-TEST FAIL 13: expected 'openspec check skipped' warning"; fail=1; }
+    fi
+
+    # 14. PASS: feat title + openspec change staged → exit 0.
+    if [[ -d "$tmpdir/.git" ]]; then
+        mkdir -p "$tmpdir/openspec/changes/x-change"
+        echo "# Change: x-change" > "$tmpdir/openspec/changes/x-change/change.md"
+        (
+            export GIT_DIR="$tmpdir/.git" GIT_WORK_TREE="$tmpdir"
+            git -C "$tmpdir" add openspec/changes/x-change/change.md
+            git -C "$tmpdir" commit -q --amend --no-edit
+        ) >/dev/null 2>&1
+        out=$(GIT_DIR="$tmpdir/.git" GIT_WORK_TREE="$tmpdir" GH_CMD=echo HERMES_SELF_TEST=0 bash "$0" --title "feat(x): valid" --body-file "$tmp_ok" 2>&1); rc=$?
+        [[ $rc -eq 0 ]] || { echo "SELF-TEST FAIL 14: feat + openspec present → rc=$rc, want 0"; fail=1; }
+        grep -q 'pr create' <<< "$out" || { echo "SELF-TEST FAIL 14: gh should be invoked when openspec change present"; fail=1; }
+    fi
+
+    rm -rf "$tmpdir"
     rm -f "$tmp_ok" "$tmp_bad"
 
     if [[ $fail -eq 0 ]]; then
-        echo "SELF-TEST PASS: create-pr.sh handles 11 fixtures correctly."
+        echo "SELF-TEST PASS: create-pr.sh handles 14 fixtures correctly."
         exit 0
     fi
     exit 1
@@ -261,10 +367,14 @@ while [[ $# -gt 0 ]]; do
             PASSTHROUGH+=("$1"); shift ;;
         --head|--base|--reviewer)
             PASSTHROUGH+=("$1" "${2:-}"); shift 2 ;;
+        --skip-openspec-check)
+            SKIP_OPENSPEC_REASON="${2:-}"
+            [[ -z "$SKIP_OPENSPEC_REASON" ]] && { echo "ERROR: --skip-openspec-check requires a reason string" >&2; exit 2; }
+            shift 2 ;;
         -h|--help)
             sed -n '2,26p' "$0"; exit 0 ;;
         *)
-            echo "ERROR: unknown flag '$1' (allowlist: --title, --body-file, ${ALLOWED_PASS[*]})" >&2
+            echo "ERROR: unknown flag '$1' (allowlist: --title, --body-file, --skip-openspec-check, ${ALLOWED_PASS[*]})" >&2
             exit 2 ;;
     esac
 done
@@ -282,6 +392,12 @@ done
 # See the "Lowercase title gate" note in the header.
 # ────────────────────────────────────────────────────────────────
 validate_title "$TITLE" || exit 2
+
+# ────────────────────────────────────────────────────────────────
+# DoR gate — openspec change spec required for feat/refactor/perf.
+# See validate_openspec_change_present() header for the rule.
+# ────────────────────────────────────────────────────────────────
+validate_openspec_change_present || exit 3
 
 # ────────────────────────────────────────────────────────────────
 # Copy repo-relative body files to /tmp/ so markdownlint MD041 does not

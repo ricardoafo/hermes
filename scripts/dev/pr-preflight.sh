@@ -247,6 +247,42 @@ check_changelog_if_applicable() {
 }
 run_check "CHANGELOG check (inferred from latest commit)" check_changelog_if_applicable
 
+# 13. Openspec change spec present when the PR's conventional-commit type
+#     implies a material change (feat|refactor|perf). Coarse heuristic
+#     — false positives (small feat) bypass via SKIP_OPENSPEC_CHECK=1
+#     with a logged reason. False negatives (large fix) caught in code
+#     review. See #194 for the DoR/DoD rationale that motivates this.
+check_openspec_change_required() {
+    if [[ "${SKIP_OPENSPEC_CHECK:-0}" == "1" ]]; then
+        echo "  WARN: openspec check skipped via SKIP_OPENSPEC_CHECK=1" >&2
+        return 0
+    fi
+    local latest_subject
+    latest_subject=$(git log -1 --format=%s HEAD 2>/dev/null)
+    if [[ -z "$latest_subject" ]]; then
+        return 0  # empty branch — nothing to check
+    fi
+    if ! [[ "$latest_subject" =~ ^(feat|refactor|perf)(\(.+\))?(!)?: ]]; then
+        return 0  # docs/chore/ci/build/test/fix/revert — exempt
+    fi
+    local added_or_modified
+    added_or_modified=$(git diff --name-only origin/main..HEAD -- \
+        'openspec/changes/*/change.md' 2>/dev/null)
+    if [[ -z "$added_or_modified" ]]; then
+        {
+            echo "ERROR: feat/refactor/perf PR requires an openspec change spec."
+            echo "  Latest commit: $latest_subject"
+            echo "  Expected: openspec/changes/<change-name>/change.md added or modified in this branch."
+            echo "  Template: openspec/changes/TEMPLATE/change.md"
+            echo "  Bypass (with cause): SKIP_OPENSPEC_CHECK=1 bash scripts/dev/pr-preflight.sh"
+            echo "  Rationale: #194 DoR/DoD hardening."
+        } >&2
+        return 1
+    fi
+    return 0
+}
+run_check "Openspec change spec present (DoR)" check_openspec_change_required
+
 # 13. Optional — PR body lint (only when --body FILE given)
 if [[ -n "$BODY_FILE" ]]; then
     check_pr_body() {
