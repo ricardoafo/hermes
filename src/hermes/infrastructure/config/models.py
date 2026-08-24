@@ -38,6 +38,7 @@ __all__ = [
     "HealthchecksConfig",
     "KlinesConfig",
     "MLConfig",
+    "SentryConfig",
     "StrategiesConfig",
     "TaxGuardConfig",
 ]
@@ -168,6 +169,48 @@ class HealthchecksConfig(BaseModel):
         the adapter refuses to construct.
         """
         return bool(self.ping_url)
+
+
+class SentryConfig(BaseModel):
+    """Root of ``config/sentry.yaml`` — error-reporting SDK configuration.
+
+    Consumed by :mod:`hermes.infrastructure.sentry_integration`. Sentry is
+    a hosted error-monitoring service — the SDK ships unhandled exceptions
+    (via ``sys.excepthook``) and explicit ``capture_exception()`` calls to
+    the Sentry project identified by :attr:`dsn`. Unlike the notifier
+    adapters (Telegram / Slack) or Healthchecks, Sentry is an SDK we
+    initialize ONCE at process start — there is no per-call adapter method.
+
+    Attributes:
+        dsn: The Sentry Data Source Name — a URL of the form
+            ``https://<public-key>@<host>/<project-id>``. Empty string
+            means the integration is DISABLED — ``initialize()`` becomes
+            a no-op, and ``hermes health sentry`` returns NOT_CONFIGURED
+            (exit 3). Matches the "empty ping_url = disabled" pattern
+            established by :class:`HealthchecksConfig`.
+        environment: Environment tag attached to every event. Mirrors
+            :attr:`hermes.infrastructure.config.root.HermesConfig.env`
+            by default (``"dev"`` on a fresh clone) so Sentry's UI can
+            filter dev / sandbox / prod events accordingly. No PII —
+            this is purely a runtime tier label.
+    """
+
+    model_config = _MODEL_CONFIG
+
+    dsn: str = Field(default="")
+    environment: str = Field(default="dev", min_length=1)
+
+    @property
+    def enabled(self) -> bool:
+        """Return ``True`` when a non-empty DSN is configured.
+
+        A blank ``dsn`` means the integration is intentionally disabled —
+        :func:`hermes.infrastructure.sentry_integration.initialize` becomes
+        a no-op and ``hermes health sentry`` reports NOT_CONFIGURED
+        (exit 3). Same disabled-when-empty convention as
+        :class:`HealthchecksConfig`.
+        """
+        return bool(self.dsn)
 
 
 class KlinesConfig(BaseModel):

@@ -26,6 +26,7 @@ from hermes.infrastructure.config.models import (
     FeesConfig,
     KlinesConfig,
     MLConfig,
+    SentryConfig,
     StrategiesConfig,
     TaxGuardConfig,
 )
@@ -39,6 +40,7 @@ __all__ = [
     "HermesConfig",
     "KlinesConfig",
     "MLConfig",
+    "SentryConfig",
     "StrategiesConfig",
     "TaxGuardConfig",
     "load_config",

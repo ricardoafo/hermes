@@ -24,6 +24,13 @@ dependencies = [
   # in prod, GH Actions secrets in CI). See
   # docs/decisions/2026-08-23-credential-storage-layered-by-env.md.
   "python-dotenv>=1,<2",
+  # Sentry SDK — error reporting. Initialized once at CLI startup via
+  # hermes.infrastructure.sentry_integration.initialize(); after that the
+  # SDK installs a global sys.excepthook + captures explicit
+  # sentry_sdk.capture_exception() calls. No framework integrations enabled
+  # (we run vanilla Python, no Django/Flask/etc.). See
+  # docs/decisions/ (Sentry wiring entry) for the design rationale.
+  "sentry-sdk>=2,<3",
 ]
 
 [project.scripts]

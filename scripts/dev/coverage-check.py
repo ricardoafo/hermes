@@ -23,6 +23,11 @@ THRESHOLDS = {
     "src/hermes/adapters/healthchecks": 85,
     "src/hermes/adapters/market_data": 85,
     "src/hermes/adapters/notifier": 85,
+    # Sentry integration lives in infrastructure/ (it is an SDK init
+    # wrapper, not a hexagonal-port adapter — no adapters/sentry/ package).
+    # Held at the same 85% adapter-tier bar because it carries wire-level
+    # semantics (Sentry SDK init + capture wrappers).
+    "src/hermes/infrastructure/sentry_integration": 85,
     "src/hermes/entrypoints": 70,
 }
 
