@@ -22,6 +22,7 @@ __all__ = [
     "HermesError",
     "InfraError",
     "InvalidLot",
+    "KrakenPublicError",
     "LedgerError",
     "NetworkError",
 ]
@@ -193,6 +194,41 @@ class HealthchecksError(InfraError):
     def __str__(self) -> str:
         """Return human-readable description."""
         return f"Healthchecks error: {self.msg}"
+
+
+@dataclass(frozen=True, slots=True)
+class KrakenPublicError(InfraError):
+    """Kraken public-endpoints adapter returned an error response or bad payload.
+
+    Raised by :class:`hermes.adapters.exchanges.kraken_public.KrakenPublicAdapter`
+    on:
+
+    - Non-empty ``error`` array in the Kraken response envelope
+      (``{"error": [...], "result": {...}}``) — Kraken signals every
+      business-level failure through this array.
+    - HTTP non-2xx from any public endpoint (fees, klines, depth, ticker).
+    - Malformed / unparseable JSON body.
+    - Missing pair in the ``result`` mapping (e.g. asked for
+      ``XXBTZUSD`` but the response omitted it entirely).
+
+    Extends :class:`InfraError` so callers using ``except InfraError``
+    still catch it. Kept separate from :class:`ExchangeError` (Binance
+    envelope) because the two exchanges' error shapes are unrelated and
+    attribution matters at triage time.
+
+    Args:
+        msg: Human-readable context — includes HTTP status, the offending
+            payload excerpt, or the Kraken error strings verbatim.
+
+    Reference: code-conventions.md §2,
+    docs/decisions/2026-08-24-kraken-public-adapter.md.
+    """
+
+    msg: str
+
+    def __str__(self) -> str:
+        """Return human-readable description."""
+        return f"Kraken public error: {self.msg}"
 
 
 @dataclass(frozen=True, slots=True)

@@ -43,6 +43,7 @@ from hermes.infrastructure.config.models import (
     FrankfurterConfig,
     HealthchecksConfig,
     KlinesConfig,
+    KrakenPublicConfig,
     MLConfig,
     SentryConfig,
     StrategiesConfig,
@@ -361,6 +362,12 @@ def load_config(
         env_section="SENTRY",
         env=env_snapshot,
     )
+    kraken_public = load_yaml_model(
+        base / "kraken_public.yaml",
+        KrakenPublicConfig,
+        env_section="KRAKEN_PUBLIC",
+        env=env_snapshot,
+    )
 
     root_kwargs = _root_env_kwargs(env_snapshot)
     try:
@@ -375,6 +382,7 @@ def load_config(
             frankfurter=frankfurter,
             healthchecks=healthchecks,
             sentry=sentry,
+            kraken_public=kraken_public,
         )
     except ValidationError as exc:
         # Root-level validation covers env-tier gates (mainnet outside prod)

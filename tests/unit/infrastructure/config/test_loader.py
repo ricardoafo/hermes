@@ -114,6 +114,15 @@ _VALID_SENTRY = dedent(
     """
 ).strip()
 
+_VALID_KRAKEN_PUBLIC = dedent(
+    """
+    base_url: https://api.kraken.com
+    timeout_sec: 10.0
+    requests_per_second: 1
+    fees_cache_ttl_seconds: 86400
+    """
+).strip()
+
 
 @pytest.fixture()
 def config_dir(tmp_path: Path) -> Path:
@@ -128,6 +137,7 @@ def config_dir(tmp_path: Path) -> Path:
     (tmp_path / "frankfurter.yaml").write_text(_VALID_FRANKFURTER, encoding="utf-8")
     (tmp_path / "healthchecks.yaml").write_text(_VALID_HEALTHCHECKS, encoding="utf-8")
     (tmp_path / "sentry.yaml").write_text(_VALID_SENTRY, encoding="utf-8")
+    (tmp_path / "kraken_public.yaml").write_text(_VALID_KRAKEN_PUBLIC, encoding="utf-8")
     return tmp_path
 
 

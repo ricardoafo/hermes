@@ -1,0 +1,19 @@
+# Kraken read-only endpoints configuration.
+#
+# Loaded by hermes.infrastructure.config.load_config into
+# KrakenPublicConfig. Kraken's public endpoints (fees, klines, orderbook,
+# ticker) require NO API key — they are IP-rate-limited only.
+# See docs/decisions/2026-08-24-kraken-public-adapter.md for the
+# public-only rationale and MVP2 promotion path (signed trading methods).
+#
+# Env overrides live at HERMES_KRAKEN_PUBLIC__<FIELD>.
+
+base_url: https://api.kraken.com
+timeout_sec: 10.0
+# Kraken publishes 1 call/second per IP for the public tier — raising
+# this is a good way to earn 429s.
+requests_per_second: 1
+# 24 h — Kraken changes fee schedules weeks-to-months apart. The 24 h
+# TTL keeps the commission-calculation path well below the 1 req/s cap
+# while still catching schedule updates within a business day.
+fees_cache_ttl_seconds: 86400
