@@ -246,6 +246,38 @@ ping that Healthchecks uses to compute job duration. It NEVER calls
 `ping_fail`, which would spam the operator's alert channels every time
 they run `hermes health`.
 
+### Sentry
+
+```bash
+uv run hermes health sentry
+```
+
+Expected output (populated `HERMES_SENTRY__DSN`):
+
+```text
+integration:  sentry
+status:       OK
+latency_ms:   0.0
+detail:       DSN parsed host=sentry.example.com project=1 environment=dev
+last_check:   2026-08-23T15:42:19+00:00
+```
+
+Exit codes:
+
+- `0` — OK. The DSN is a well-formed Sentry URL. **No wire call is made** —
+  the probe only parses the URL via `sentry_sdk.utils.Dsn`, the same parse
+  the SDK itself runs at `init` time. This avoids burning the operator's
+  free-tier quota (5,000 events/month) on every health check.
+- `1` — FAIL. The DSN string does not parse. Copy the DSN again from
+  Sentry (Settings → Client Keys).
+- `3` — NOT_CONFIGURED. `HERMES_SENTRY__DSN` is empty. Populate it in
+  `.env.local` (see `.env.local.example`).
+
+Sentry initialization happens at CLI startup (before any subcommand
+dispatches), so unhandled exceptions in the subcommand are shipped to
+Sentry via the SDK's global excepthook. Init failures never crash the
+CLI — a Sentry outage MUST NOT take down hermes.
+
 ### Full status
 
 ```bash
@@ -257,10 +289,11 @@ consolidated table:
 
 ```text
 # hermes health (all integrations)
-integration   status  latency  detail                                 last_check
-healthchecks  OK      87ms     ping accepted                          2026-08-23T15:42:18+00:00
-slack         OK      201ms    workspace=hermes-ws bot=@hermes_bot    2026-08-23T15:42:18+00:00
-telegram      OK      142ms    bot=@hermes_alerts_bot                 2026-08-23T15:42:19+00:00
+integration   status  latency  detail                                       last_check
+healthchecks  OK      87ms     ping accepted                                2026-08-23T15:42:18+00:00
+sentry        OK      0.0ms    DSN parsed host=... project=1 environment=dev 2026-08-23T15:42:18+00:00
+slack         OK      201ms    workspace=hermes-ws bot=@hermes_bot          2026-08-23T15:42:18+00:00
+telegram      OK      142ms    bot=@hermes_alerts_bot                       2026-08-23T15:42:19+00:00
 ```
 
 Aggregated exit code:

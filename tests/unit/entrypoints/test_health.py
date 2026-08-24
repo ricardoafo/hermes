@@ -61,13 +61,23 @@ def env_with_hc_url() -> dict[str, str]:
 
 
 @pytest.fixture
+def env_with_sentry_dsn() -> dict[str, str]:
+    """Return an env-var snapshot with a well-formed synthetic Sentry DSN."""
+    return {
+        "HERMES_SENTRY__DSN": "https://public@sentry.example.com/1",
+        "HERMES_SENTRY__ENVIRONMENT": "dev",
+    }
+
+
+@pytest.fixture
 def env_all_configured(
     env_with_creds: dict[str, str],
     env_with_slack_creds: dict[str, str],
     env_with_hc_url: dict[str, str],
+    env_with_sentry_dsn: dict[str, str],
 ) -> dict[str, str]:
     """Return an env-var snapshot with credentials for every integration."""
-    return {**env_with_creds, **env_with_slack_creds, **env_with_hc_url}
+    return {**env_with_creds, **env_with_slack_creds, **env_with_hc_url, **env_with_sentry_dsn}
 
 
 class TestRegistry:
@@ -80,6 +90,7 @@ class TestRegistry:
         assert "telegram" in names
         assert "slack" in names
         assert "healthchecks" in names
+        assert "sentry" in names
 
     def test_get_check_returns_callable_for_telegram(self) -> None:
         """get_check('telegram') returns the check_telegram callable."""
@@ -92,6 +103,10 @@ class TestRegistry:
     def test_get_check_returns_callable_for_healthchecks(self) -> None:
         """get_check('healthchecks') returns the check_healthchecks callable."""
         assert health_module.get_check("healthchecks") is health_module.check_healthchecks
+
+    def test_get_check_returns_callable_for_sentry(self) -> None:
+        """get_check('sentry') returns the check_sentry callable."""
+        assert health_module.get_check("sentry") is health_module.check_sentry
 
     def test_get_check_returns_none_for_unknown_name(self) -> None:
         """get_check returns None (no KeyError) for an unregistered integration."""
@@ -574,3 +589,60 @@ class TestRenderTableMulti:
         header_status_pos = lines[0].index("status")
         row_status_pos = lines[1].index("OK")
         assert header_status_pos == row_status_pos
+
+
+class TestCheckSentry:
+    """DSN-parse-only Sentry health probe — no wire, no quota burn."""
+
+    _VALID_DSN = "https://public@sentry.example.com/1"
+
+    def test_missing_dsn_returns_not_configured(self) -> None:
+        """Empty HERMES_SENTRY__DSN → NOT_CONFIGURED (exit 3), no parse attempted."""
+        result = health_module.check_sentry({})
+        assert result.integration == "sentry"
+        assert result.status == health_module.HealthStatus.FAIL
+        assert result.exit_code == health_module.EXIT_NOT_CONFIGURED
+        assert "disabled" in result.detail
+        assert result.latency_ms == 0.0
+
+    def test_whitespace_dsn_returns_not_configured(self) -> None:
+        """Whitespace-only DSN is treated as empty → NOT_CONFIGURED."""
+        result = health_module.check_sentry({"HERMES_SENTRY__DSN": "   "})
+        assert result.exit_code == health_module.EXIT_NOT_CONFIGURED
+
+    def test_valid_dsn_returns_ok_with_host_and_project(self) -> None:
+        """Valid DSN parses → OK (exit 0), detail carries host + project + env."""
+        env = {
+            "HERMES_SENTRY__DSN": self._VALID_DSN,
+            "HERMES_SENTRY__ENVIRONMENT": "sandbox",
+        }
+        result = health_module.check_sentry(env)
+        assert result.integration == "sentry"
+        assert result.status == health_module.HealthStatus.OK
+        assert result.exit_code == health_module.EXIT_OK
+        assert "sentry.example.com" in result.detail
+        assert "environment=sandbox" in result.detail
+        assert result.latency_ms == 0.0
+
+    def test_valid_dsn_default_environment_is_dev(self) -> None:
+        """Missing HERMES_SENTRY__ENVIRONMENT defaults to 'dev' in detail."""
+        env = {"HERMES_SENTRY__DSN": self._VALID_DSN}
+        result = health_module.check_sentry(env)
+        assert "environment=dev" in result.detail
+
+    def test_malformed_dsn_returns_fail(self) -> None:
+        """Non-DSN-shaped string → FAIL (exit 1) via BadDsn parse error."""
+        env = {"HERMES_SENTRY__DSN": "not-a-dsn"}
+        result = health_module.check_sentry(env)
+        assert result.integration == "sentry"
+        assert result.status == health_module.HealthStatus.FAIL
+        assert result.exit_code == health_module.EXIT_FAIL
+        assert "malformed" in result.detail.lower()
+        assert result.latency_ms == 0.0
+
+    def test_ok_result_last_check_is_utc_aware(self) -> None:
+        """OK result carries a UTC-aware last_check timestamp."""
+        result = health_module.check_sentry({"HERMES_SENTRY__DSN": self._VALID_DSN})
+        assert result.last_check.tzinfo is not None
+        assert result.last_check.utcoffset() is not None
+        assert result.last_check.utcoffset().total_seconds() == 0

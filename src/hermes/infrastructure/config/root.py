@@ -23,6 +23,7 @@ from hermes.infrastructure.config.models import (
     HealthchecksConfig,
     KlinesConfig,
     MLConfig,
+    SentryConfig,
     StrategiesConfig,
     TaxGuardConfig,
 )
@@ -63,6 +64,12 @@ class HermesConfig(BaseModel):
             integration is opt-in; a fresh clone reports NOT_CONFIGURED
             (exit 3) from ``hermes health healthchecks`` until the
             operator populates ``HERMES_HEALTHCHECKS__PING_URL``.
+        sentry: Sentry error-reporting SDK configuration. Defaults to
+            an empty DSN — the integration is opt-in; a fresh clone
+            reports NOT_CONFIGURED (exit 3) from ``hermes health sentry``
+            and :func:`hermes.infrastructure.sentry_integration.initialize`
+            becomes a no-op until the operator populates
+            ``HERMES_SENTRY__DSN``.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -77,6 +84,7 @@ class HermesConfig(BaseModel):
     klines: KlinesConfig
     frankfurter: FrankfurterConfig = FrankfurterConfig()
     healthchecks: HealthchecksConfig = HealthchecksConfig()
+    sentry: SentryConfig = SentryConfig()
 
     @model_validator(mode="after")
     def _mainnet_only_in_prod(self) -> HermesConfig:

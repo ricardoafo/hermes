@@ -62,6 +62,7 @@ __all__ = [
     "HealthStatus",
     "aggregate_exit_code",
     "check_healthchecks",
+    "check_sentry",
     "check_slack",
     "check_telegram",
     "get_check",
@@ -316,6 +317,90 @@ def check_healthchecks(env: dict[str, str]) -> HealthCheckResult:
     )
 
 
+def check_sentry(env: dict[str, str]) -> HealthCheckResult:
+    """Parse the Sentry DSN — read-only, no network, no test event.
+
+    Unlike Telegram / Slack / Healthchecks, we do NOT hit the Sentry
+    wire here. Sentry's free tier caps at 5,000 events/month, and
+    firing a test event on every ``hermes health`` invocation would
+    burn the operator's quota within days. Instead we validate the
+    DSN URL parses correctly via :class:`sentry_sdk.utils.Dsn`, which
+    is what ``sentry_sdk.init`` itself does before opening the
+    transport. A parse failure at this layer catches every misconfig
+    the SDK itself would raise on ``init`` — enough signal to gate
+    ``hermes health`` without wire cost.
+
+    If ``HERMES_SENTRY__DSN`` is empty the integration is DISABLED —
+    same convention as Healthchecks (empty ping URL) and matches
+    :attr:`SentryConfig.enabled`. Reports NOT_CONFIGURED (exit 3) so
+    wrapper scripts can distinguish a fresh clone from a real outage.
+
+    Args:
+        env: Env-var snapshot. Pass ``os.environ`` in production; tests
+            supply a controlled dict so the ambient shell never leaks in.
+
+    Returns:
+        A :class:`HealthCheckResult` describing the probe outcome. The
+        function does NOT raise on failure — the ``exit_code`` field
+        carries the intent instead so the caller can print a table
+        before exiting. ``latency_ms`` is always ``0.0`` because no
+        wire call is made.
+    """
+    # Local import to keep sentry_sdk off the import path when the caller
+    # never invokes this probe. The SDK is a runtime dep, so it is always
+    # importable — but the import is ~50ms cold, and the CLI already pays
+    # the httpx / structlog cost. Localising it here matches how the
+    # notifier probes localise their httpx.Client construction.
+    from sentry_sdk.utils import (  # noqa: PLC0415 — deliberate lazy import (see comment above)
+        BadDsn,
+        Dsn,
+    )
+
+    dsn = env.get("HERMES_SENTRY__DSN", "").strip()
+    if not dsn:
+        return HealthCheckResult(
+            integration="sentry",
+            status=HealthStatus.FAIL,
+            latency_ms=0.0,
+            detail=(
+                "Sentry is disabled (empty DSN) — populate HERMES_SENTRY__DSN "
+                "in .env.local (see .env.local.example line 62-66)"
+            ),
+            last_check=_now_utc(),
+            exit_code=EXIT_NOT_CONFIGURED,
+        )
+
+    environment = env.get("HERMES_SENTRY__ENVIRONMENT", "dev").strip() or "dev"
+
+    try:
+        parsed = Dsn(dsn)
+    except BadDsn as exc:
+        # Malformed DSN — same class of error the SDK's own init would
+        # raise. Surface it as FAIL (exit 1) so watchdogs distinguish
+        # "disabled" (exit 3) from "misconfigured" (exit 1).
+        return HealthCheckResult(
+            integration="sentry",
+            status=HealthStatus.FAIL,
+            latency_ms=0.0,
+            detail=f"malformed DSN: {exc}",
+            last_check=_now_utc(),
+            exit_code=EXIT_FAIL,
+        )
+
+    # DSN parses. Do NOT init the SDK, do NOT send a test event — see
+    # the docstring for the free-tier-quota rationale.
+    host = parsed.host
+    project = parsed.project_id
+    return HealthCheckResult(
+        integration="sentry",
+        status=HealthStatus.OK,
+        latency_ms=0.0,
+        detail=f"DSN parsed host={host} project={project} environment={environment}",
+        last_check=_now_utc(),
+        exit_code=EXIT_OK,
+    )
+
+
 # Registry — every registered integration is walked by :func:`run_all`
 # for the no-arg ``hermes health`` invocation. Sort order in the registry
 # is not user-visible: :func:`registered_integrations` sorts before
@@ -324,6 +409,7 @@ def check_healthchecks(env: dict[str, str]) -> HealthCheckResult:
 # controlled env dict.
 _REGISTRY: Final[dict[str, Callable[[dict[str, str]], HealthCheckResult]]] = {
     "healthchecks": check_healthchecks,
+    "sentry": check_sentry,
     "slack": check_slack,
     "telegram": check_telegram,
 }

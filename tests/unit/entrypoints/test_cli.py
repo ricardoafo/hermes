@@ -206,3 +206,54 @@ class TestHealthDispatch:
         assert "slack" in output
         assert "FAIL" in output
         assert ".env.local" in output
+
+    def test_health_sentry_missing_config_exits_three(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`hermes health sentry` with no DSN exits 3 (not configured)."""
+        monkeypatch.delenv("HERMES_SENTRY__DSN", raising=False)
+        stream = io.StringIO()
+        rc = cli_module.main(["health", "sentry"], stream=stream)
+        assert rc == 3
+        output = stream.getvalue()
+        assert "sentry" in output
+        assert "FAIL" in output
+        assert "disabled" in output
+
+
+class TestSentryInit:
+    """CLI main() initializes Sentry from env before dispatch."""
+
+    def test_main_calls_sentry_initialize_with_env_values(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """main() invokes sentry_integration.initialize(dsn, environment) at startup."""
+        captured: dict[str, str] = {}
+
+        def _spy_initialize(*, dsn: str, environment: str) -> None:
+            captured["dsn"] = dsn
+            captured["environment"] = environment
+
+        monkeypatch.setattr(cli_module.sentry_integration, "initialize", _spy_initialize)
+        monkeypatch.setenv("HERMES_SENTRY__DSN", "https://public@sentry.example.com/1")
+        monkeypatch.setenv("HERMES_SENTRY__ENVIRONMENT", "sandbox")
+        # --help exits after handling help; we only care initialize was called first.
+        cli_module.main(["--help"], stream=io.StringIO())
+        assert captured["dsn"] == "https://public@sentry.example.com/1"
+        assert captured["environment"] == "sandbox"
+
+    def test_main_defaults_environment_to_dev_when_env_missing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Missing HERMES_SENTRY__ENVIRONMENT → initialize called with 'dev' default."""
+        captured: dict[str, str] = {}
+
+        def _spy_initialize(*, dsn: str, environment: str) -> None:
+            captured["dsn"] = dsn
+            captured["environment"] = environment
+
+        monkeypatch.setattr(cli_module.sentry_integration, "initialize", _spy_initialize)
+        monkeypatch.setenv("HERMES_SENTRY__DSN", "https://public@sentry.example.com/1")
+        monkeypatch.delenv("HERMES_SENTRY__ENVIRONMENT", raising=False)
+        cli_module.main(["--help"], stream=io.StringIO())
+        assert captured["environment"] == "dev"

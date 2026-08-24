@@ -1,0 +1,26 @@
+# Sentry error-reporting SDK configuration.
+#
+# Loaded by hermes.infrastructure.config.load_config into SentryConfig.
+# Sentry is a hosted error-monitoring service — the SDK ships unhandled
+# exceptions (via sys.excepthook) plus explicit sentry_sdk.capture_exception()
+# calls to the Sentry project identified by the DSN.
+#
+# Unlike Telegram/Slack/Healthchecks, Sentry is an SDK we initialize ONCE
+# at process start (see hermes.infrastructure.sentry_integration.initialize).
+# There is no per-call adapter method — after init, capture is passive
+# (unhandled exceptions) or explicit (capture()).
+#
+# The DSN identifies the Sentry project + carries the public key. It is
+# NOT a secret in the classical sense (it embeds a public key), but it
+# still identifies your project uniquely — treat it as sensitive:
+# anyone with the DSN can post events into your project. That is why the
+# default here is EMPTY — the operator populates it via
+# HERMES_SENTRY__DSN in .env.local (dev) or /etc/hermes.env (prod),
+# never here on disk.
+#
+# When dsn is empty the integration is DISABLED — initialize() becomes a
+# no-op and `hermes health sentry` returns NOT_CONFIGURED (exit 3)
+# instead of firing wire calls that would fail.
+
+dsn: ""
+environment: "dev"
