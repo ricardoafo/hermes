@@ -21,7 +21,10 @@ updates:
       day: monday
       time: '06:00'
       timezone: Europe/Madrid
-    open-pull-requests-limit: 3
+    # 10 leaves headroom for a busy week (patch group + 3-4 individual
+    # minor bumps + a security fix) without letting the queue explode
+    # into a rubber-stamp firehose.
+    open-pull-requests-limit: 10
 
     # A brand-new version is the least-reviewed version there is. A package
     # published minutes ago can be malicious or simply broken; this config
@@ -42,24 +45,28 @@ updates:
       - 'ricardoafo'
 
     commit-message:
+      # Prod deps → `chore(deps): ...`; dev-group entries → `chore(deps-dev):
+      # ...` (dependabot swaps `prefix` for `prefix-development` when the
+      # PR only touches dev-group packages). Matches
+      # docs/decisions/2026-08-24-dependency-upgrade-checklist.md.
       prefix: 'chore(deps)'
+      prefix-development: 'chore(deps-dev)'
       include: scope
 
-    # Grouped on purpose. Ungrouped, ~50 direct dependencies produce a PR
-    # firehose that trains you to rubber-stamp — the failure mode where
-    # gates exist and stop being read. Grouped, it is one reviewable PR
-    # per slice per week.
+    # Group PATCH-level updates only (per the dependency-review checklist).
+    # Minor + major bumps ship as INDIVIDUAL PRs so each gets a real
+    # CHANGELOG-diff read — grouped minors train reviewers to rubber-stamp
+    # the whole bundle. The `*` pattern with `update-types: [patch]` catches
+    # every ecosystem package at patch level regardless of prod vs dev split;
+    # per-ecosystem commit-message prefix + prefix-development still applies.
     groups:
-      production-minor-patch:
-        dependency-type: production
-        update-types: [minor, patch]
-      development-minor-patch:
-        dependency-type: development
-        update-types: [minor, patch]
+      patch-updates:
+        patterns: ['*']
+        update-types: ['patch']
 
-    # Majors arrive as their own PR. Each requires a recorded decision
-    # (CHANGELOG entry + potential migration) which a grouped PR cannot
-    # carry cleanly.
+    # Minors + majors intentionally UN-grouped: dependabot opens one PR
+    # per package per bump. Each requires a manual CHANGELOG-read + a
+    # documented decision (see the dependency-upgrade-checklist decision doc).
 
   # ────────────────────────────────────────────────────────────────
   # GitHub Actions — keeps the SHA pins alive
@@ -71,7 +78,7 @@ updates:
       day: monday
       time: '06:00'
       timezone: Europe/Madrid
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 10
 
     cooldown:
       default-days: 7
@@ -88,8 +95,10 @@ updates:
       prefix: 'ci(deps)'
       include: scope
 
+    # Same discipline as the pip ecosystem: patch-only grouping, minor +
+    # major bumps get their own PR because action major bumps move
+    # interfaces (breaking `with:` schemas, output names, or runtime).
     groups:
-      actions-minor-patch:
-        update-types: [minor, patch]
-
-    # Actions majors also arrive as own PR — action interfaces move in majors.
+      patch-updates:
+        patterns: ['*']
+        update-types: ['patch']
