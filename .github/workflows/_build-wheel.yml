@@ -20,7 +20,7 @@
 #     Name of the uploaded artifact (`hermes-wheel`). Callers use this in
 #     `actions/download-artifact` to pull the wheel into downstream jobs.
 
-name: Build wheel (reusable)
+name: Build wheel
 
 on:
   workflow_call:
