@@ -22,6 +22,7 @@ from hermes.infrastructure.config.models import (
     FrankfurterConfig,
     HealthchecksConfig,
     KlinesConfig,
+    KrakenPublicConfig,
     MLConfig,
     SentryConfig,
     StrategiesConfig,
@@ -70,6 +71,11 @@ class HermesConfig(BaseModel):
             and :func:`hermes.infrastructure.sentry_integration.initialize`
             becomes a no-op until the operator populates
             ``HERMES_SENTRY__DSN``.
+        kraken_public: Kraken read-only endpoints configuration
+            (fee schedules, klines, orderbook, ticker). Defaults are
+            safe — the endpoints require no auth and the rate limiter
+            sizes at Kraken's published 1 call/second public-tier cap.
+            See docs/decisions/2026-08-24-kraken-public-adapter.md.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -85,6 +91,7 @@ class HermesConfig(BaseModel):
     frankfurter: FrankfurterConfig = FrankfurterConfig()
     healthchecks: HealthchecksConfig = HealthchecksConfig()
     sentry: SentryConfig = SentryConfig()
+    kraken_public: KrakenPublicConfig = KrakenPublicConfig()
 
     @model_validator(mode="after")
     def _mainnet_only_in_prod(self) -> HermesConfig:
