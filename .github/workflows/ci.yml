@@ -545,10 +545,12 @@ jobs:
     needs: [ci-success]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     # Runner label choice: ubuntu-latest explicitly (not RUNNER_LABEL).
-    # This job is a small GitHub API script; it doesn't need self-hosted
-    # runners, and pinning to ubuntu-latest ensures it always runs even
-    # if the self-hosted pool is down.
-    runs-on: ubuntu-latest
+    # Uses the standard RUNNER_LABEL fallback so this job runs on the
+    # self-hosted pool per the "always self-hosted" rule. If the pool is
+    # temporarily down, GitHub queues the job — the post-CI rebase is
+    # not time-critical (rebases happen once per main-merge, not per
+    # commit).
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions:
       pull-requests: write
