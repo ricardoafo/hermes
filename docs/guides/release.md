@@ -160,7 +160,7 @@ Undefined until Phase 1 ships. Rough targets:
 - **v0.3.0**: end of Phase 3 (LLM supervisor active)
 - **v1.0.0**: real-capital cutover (see `docs/guides/shadow-mode-checklist.md`)
 
-Releases before v1.0.0 are dry-run-only: the CD pipeline (`deploy.yml`)
+Releases before v1.0.0 are dry-run-only: the CD pipeline (`cd.yml`)
 never enters `commit: true` mode. See ADR-003 §09.
 
 ## Related

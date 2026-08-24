@@ -31,7 +31,7 @@ fi
 #
 #   /opt/hermes/
 #     versions/
-#       v0.1.0/         <- installed by deploy.yml build step
+#       v0.1.0/         <- installed by cd.yml build step
 #         .venv/
 #         hermes-0.1.0-py3-none-any.whl
 #       v0.1.1/         <- next version installed here
@@ -142,4 +142,4 @@ log "                             cp deploy/systemd/hermes-*.timer /etc/systemd/
 log "                             systemctl daemon-reload"
 log "                             systemctl enable --now hermes-health.timer"
 log "  2. Provision GH secrets on the 'prod' Environment (see deploy/README.md)"
-log "  3. Trigger deploy.yml with workflow_dispatch dry_run:true to verify wiring"
+log "  3. Trigger cd.yml with workflow_dispatch dry_run:true to verify wiring"
