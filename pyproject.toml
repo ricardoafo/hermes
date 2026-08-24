@@ -63,7 +63,7 @@ dev = [
   # click-context bug on our stack. pip-audit + Dependabot alerts + semgrep
   # cover the same ground without auth. See docs/decisions/ entry.
   "pip-audit>=2.7,<3",
-  "cyclonedx-python-lib>=8.5,<9",
+  "cyclonedx-python-lib>=11.12.0,<12",
   "pre-commit>=3.8,<4",
   "radon>=6.0,<7",
   "vulture>=2.13,<3",
