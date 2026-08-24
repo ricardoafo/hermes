@@ -22,10 +22,10 @@ of conflict entirely.
 | [ai-authored-tests.md](ai-authored-tests.md) | What makes a unit test meaningful, how AI typically fails at writing tests, the protocol AI must follow in this repo, and the tooling that enforces it. | 2026-08-23 |
 | [ai-development-lifecycle.md](ai-development-lifecycle.md) | End-to-end flow from idea to VPS runtime; how milestones, issues, and the project board fill in as work moves. | 2026-08-24 |
 | [code-conventions.md](code-conventions.md) | Design patterns, error handling, immutability, factories, async, performance, polyglot posture, testing, time handling, event schema versioning, feature flags, engine pause, migrations, and public/internal API conventions. | 2026-08-22 |
-| [dev-workflow.md](dev-workflow.md) | Branching, commits, PRs, merge policy, delete-branch safety, zero-footprint policy. | 2026-08-24 |
+| [dev-workflow.md](dev-workflow.md) | Branching, commits, PRs, merge policy, delete-branch safety, zero-footprint policy. | 2026-08-25 |
 | [local-setup.md](local-setup.md) | Clone → install → run tests → open your first PR. One-time setup steps you do once per clone, then never again. | 2026-08-24 |
 | [prose-style.md](prose-style.md) | Comments, docstrings, docs, PR/issue bodies — banned words, formatting rules, per-artifact style. | 2026-08-22 |
-| [release.md](release.md) | How to tag a release, what the release workflow does, how to | 2026-08-24 |
+| [release.md](release.md) | How to tag a release, what the release workflow does, how to | 2026-08-25 |
 | [vps-operations.md](vps-operations.md) | SSH access, OS maintenance, Docker + Tailscale + ufw ops, systemd services, troubleshooting. | 2026-08-22 |
 <!-- guides-index-end -->
 
