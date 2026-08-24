@@ -107,6 +107,13 @@ _VALID_HEALTHCHECKS = dedent(
     """
 ).strip()
 
+_VALID_SENTRY = dedent(
+    """
+    dsn: ""
+    environment: dev
+    """
+).strip()
+
 
 @pytest.fixture()
 def config_dir(tmp_path: Path) -> Path:
@@ -120,6 +127,7 @@ def config_dir(tmp_path: Path) -> Path:
     (tmp_path / "klines.yaml").write_text(_VALID_KLINES, encoding="utf-8")
     (tmp_path / "frankfurter.yaml").write_text(_VALID_FRANKFURTER, encoding="utf-8")
     (tmp_path / "healthchecks.yaml").write_text(_VALID_HEALTHCHECKS, encoding="utf-8")
+    (tmp_path / "sentry.yaml").write_text(_VALID_SENTRY, encoding="utf-8")
     return tmp_path
 
 

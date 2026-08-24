@@ -17,6 +17,16 @@ Design notes
   ``health <int>`` returns 3 on missing config, 1 on adapter down).
 - **Entry point**: wired via ``[project.scripts]`` in ``pyproject.toml``
   as ``hermes = "hermes.entrypoints.cli:main"``.
+- **Sentry init at startup**: ``main()`` initializes the Sentry SDK
+  from the two env vars ``HERMES_SENTRY__DSN`` +
+  ``HERMES_SENTRY__ENVIRONMENT`` BEFORE dispatching to any subcommand,
+  so unhandled exceptions in the subcommand are captured by Sentry's
+  global excepthook. Reads the env directly (not via ``load_config``)
+  to keep the CLI runnable on a fresh clone that has not yet populated
+  the YAML files. An empty DSN is a silent no-op (integration
+  disabled). Init failures (bad DSN, SDK error) are swallowed inside
+  :func:`sentry_integration.initialize` — the CLI never crashes on
+  Sentry issues.
 """
 
 from __future__ import annotations
@@ -29,6 +39,7 @@ from typing import Any, Final
 
 from hermes.entrypoints import _health as health_module
 from hermes.entrypoints import preview as preview_module
+from hermes.infrastructure import sentry_integration
 
 __all__ = ["main"]
 
@@ -84,8 +95,35 @@ def _utf8_stdout() -> Any:
     return stdout
 
 
+def _initialize_sentry_from_env(env: dict[str, str]) -> None:
+    """Initialize Sentry from ``env`` — no-op when DSN is empty.
+
+    Reads ``HERMES_SENTRY__DSN`` + ``HERMES_SENTRY__ENVIRONMENT`` directly
+    from the env snapshot rather than routing through ``load_config`` so
+    the CLI stays runnable on a fresh clone that has not yet populated
+    every YAML file. Delegates to
+    :func:`sentry_integration.initialize`, which itself:
+
+    - Is a no-op when ``dsn`` is empty (integration disabled).
+    - Never raises — any SDK-init failure is logged and swallowed.
+
+    Args:
+        env: Env-var snapshot (defaults come from ``os.environ`` in
+            production; tests inject a controlled dict).
+    """
+    dsn = env.get("HERMES_SENTRY__DSN", "").strip()
+    environment = env.get("HERMES_SENTRY__ENVIRONMENT", "dev").strip() or "dev"
+    sentry_integration.initialize(dsn=dsn, environment=environment)
+
+
 def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
     """Dispatch the invoked subcommand.
+
+    Initializes Sentry (from env) BEFORE dispatching so unhandled
+    exceptions in the subcommand are shipped to Sentry via its global
+    excepthook. Init failures are silently swallowed inside
+    :func:`sentry_integration.initialize` — a Sentry outage MUST NOT
+    crash the CLI.
 
     Args:
         argv: Argument list — defaults to ``sys.argv[1:]``.
@@ -97,6 +135,12 @@ def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
     """
     args = list(sys.argv[1:] if argv is None else argv)
     out = stream if stream is not None else _utf8_stdout()
+
+    # Initialize Sentry first — before any subcommand can raise. If the
+    # DSN is empty, this is a no-op (integration disabled). Any SDK
+    # init error is caught + logged inside sentry_integration.initialize
+    # so the CLI never crashes on a Sentry failure.
+    _initialize_sentry_from_env(dict(os.environ))
 
     if not args or args[0] in {"-h", "--help"}:
         _print_top_help(out)
