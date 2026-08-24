@@ -37,6 +37,7 @@ __all__ = [
     "FrankfurterConfig",
     "HealthchecksConfig",
     "KlinesConfig",
+    "KrakenPublicConfig",
     "MLConfig",
     "SentryConfig",
     "StrategiesConfig",
@@ -125,6 +126,36 @@ class FrankfurterConfig(BaseModel):
     base_url: str = Field(default="https://api.frankfurter.app", pattern=r"^https://")
     timeout_sec: float = Field(default=10.0, gt=0)
     requests_per_minute: int = Field(default=60, gt=0, le=6000)
+
+
+class KrakenPublicConfig(BaseModel):
+    """Root of ``config/kraken_public.yaml`` — Kraken read-only endpoints.
+
+    Consumed by :class:`hermes.adapters.exchanges.kraken_public.KrakenPublicAdapter`.
+    Kraken's public endpoints (fees, klines, orderbook, ticker) require
+    no API key — they are IP-rate-limited only (1 call / second per IP).
+
+    Attributes:
+        base_url: HTTPS root of the Kraken REST API. Defaults to the
+            public endpoint. Override for a Kraken sandbox / staging
+            mirror.
+        timeout_sec: Per-request HTTP timeout in seconds.
+        requests_per_second: Sizing for the internal token-bucket
+            limiter. Default 1 matches Kraken's published public-tier
+            cap; raising it is a good way to earn 429s.
+        fees_cache_ttl_seconds: TTL for the in-memory fee-schedule
+            cache. Kraken changes fee schedules infrequently
+            (weeks-to-months); the default 86_400 seconds (24 h) keeps
+            the commission-calculation path well below the 1 req/s cap
+            while still catching schedule changes within a business day.
+    """
+
+    model_config = _MODEL_CONFIG
+
+    base_url: str = Field(default="https://api.kraken.com", pattern=r"^https://")
+    timeout_sec: float = Field(default=10.0, gt=0)
+    requests_per_second: int = Field(default=1, gt=0, le=60)
+    fees_cache_ttl_seconds: int = Field(default=86_400, ge=0, le=7 * 86_400)
 
 
 class HealthchecksConfig(BaseModel):
