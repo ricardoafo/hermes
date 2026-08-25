@@ -187,16 +187,17 @@ from decimal import Decimal
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.pair import Pair
 
+
 @dataclass(frozen=True, slots=True)
 class Bar:
     pair: Pair
     interval: KlineInterval
-    open_time: datetime   # UTC-aware, start of bar window
+    open_time: datetime  # UTC-aware, start of bar window
     open: Decimal
     high: Decimal
     low: Decimal
     close: Decimal
-    volume: Decimal       # base-asset quantity
+    volume: Decimal  # base-asset quantity
     close_time: datetime  # UTC-aware, end of bar window (exclusive)
 ```
 
@@ -213,18 +214,20 @@ from decimal import Decimal
 from enum import StrEnum
 from hermes.domain.value_objects.pair import Pair
 
+
 class TradeSide(StrEnum):
-    BUY = "buy"    # aggressor is buyer (taker buy)
+    BUY = "buy"  # aggressor is buyer (taker buy)
     SELL = "sell"  # aggressor is seller (taker sell)
+
 
 @dataclass(frozen=True, slots=True)
 class Trade:
     pair: Pair
-    price: Decimal          # execution price, > 0
-    quantity: Decimal       # base-asset quantity, > 0
-    side: TradeSide         # aggressor direction
-    trade_time: datetime    # UTC-aware
-    trade_id: str           # exchange-assigned unique ID (opaque string)
+    price: Decimal  # execution price, > 0
+    quantity: Decimal  # base-asset quantity, > 0
+    side: TradeSide  # aggressor direction
+    trade_time: datetime  # UTC-aware
+    trade_id: str  # exchange-assigned unique ID (opaque string)
 ```
 
 Invariants: UTC-aware `trade_time`; `price > 0`; `quantity > 0`.
@@ -237,19 +240,21 @@ from dataclasses import dataclass
 from decimal import Decimal
 from hermes.domain.value_objects.pair import Pair
 
+
 @dataclass(frozen=True, slots=True)
 class OrderbookDiffLevel:
     price: Decimal
     quantity: Decimal
-    delete: bool    # True = remove this price level from the local book
+    delete: bool  # True = remove this price level from the local book
+
 
 @dataclass(frozen=True, slots=True)
 class OrderbookDiff:
     pair: Pair
     bids: tuple[OrderbookDiffLevel, ...]  # bid-side updates (any order, adapter decides)
     asks: tuple[OrderbookDiffLevel, ...]  # ask-side updates (any order, adapter decides)
-    first_update_id: int   # exchange sequence number (Binance: U; Kraken: first seq)
-    final_update_id: int   # exchange sequence number (Binance: u; Kraken: last seq)
+    first_update_id: int  # exchange sequence number (Binance: U; Kraken: first seq)
+    final_update_id: int  # exchange sequence number (Binance: u; Kraken: last seq)
 ```
 
 Invariants in `__post_init__`: `price > 0` for all levels (zero-price is never a valid
@@ -269,6 +274,7 @@ from hermes.domain.market_data.orderbook_diff import OrderbookDiff
 from hermes.domain.market_data.trade import Trade
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.pair import Pair
+
 
 @runtime_checkable
 class MarketDataPort(Protocol):
