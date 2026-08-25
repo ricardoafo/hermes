@@ -296,8 +296,7 @@ class SimulatedClock:
     def __init__(self, *, start: datetime) -> None:
         if start.tzinfo is None:
             raise ValueError(
-                "SimulatedClock.start must be timezone-aware (UTC). "
-                f"Got naive datetime: {start!r}"
+                f"SimulatedClock.start must be timezone-aware (UTC). Got naive datetime: {start!r}"
             )
         self._current: datetime = start
         self._lock: threading.Lock = threading.Lock()
@@ -322,9 +321,7 @@ class SimulatedClock:
             ValueError: If ``delta`` is negative.
         """
         if delta < timedelta(0):
-            raise ValueError(
-                f"SimulatedClock.advance: delta must be non-negative, got {delta!r}"
-            )
+            raise ValueError(f"SimulatedClock.advance: delta must be non-negative, got {delta!r}")
         with self._lock:
             self._current += delta
 
@@ -340,9 +337,7 @@ class SimulatedClock:
                 ``t`` is naive.
         """
         if t.tzinfo is None:
-            raise ValueError(
-                f"SimulatedClock.set: t must be timezone-aware, got naive {t!r}"
-            )
+            raise ValueError(f"SimulatedClock.set: t must be timezone-aware, got naive {t!r}")
         with self._lock:
             if t < self._current:
                 raise ValueError(

@@ -177,8 +177,7 @@ class StrategyId:
         invalid = [c for c in self.value if c not in string.printable or c in string.whitespace]
         if invalid:
             raise ValueError(
-                f"StrategyId.value contains non-printable or whitespace characters: "
-                f"{invalid!r}"
+                f"StrategyId.value contains non-printable or whitespace characters: {invalid!r}"
             )
 
     def __str__(self) -> str:
@@ -208,8 +207,7 @@ def open(
     cost_basis_per_unit: Money,
     strategy_id: StrategyId,
     opened_at: datetime,
-) -> Result[Lot, DomainError]:
-    ...
+) -> Result[Lot, DomainError]: ...
 ```
 
 ### `DomainEvent` field additions
@@ -222,17 +220,12 @@ event_seq: int
 # post_init to set it:
 payload_sha256: str = dataclasses.field(default="", init=False)
 
+
 def __post_init__(self) -> None:
     if self.event_seq < 0:
-        raise ValueError(
-            f"DomainEvent.event_seq must be >= 0, got {self.event_seq}"
-        )
+        raise ValueError(f"DomainEvent.event_seq must be >= 0, got {self.event_seq}")
     # Compute hash from all fields except payload_sha256 itself.
-    payload = {
-        k: v
-        for k, v in dataclasses.asdict(self).items()
-        if k != "payload_sha256"
-    }
+    payload = {k: v for k, v in dataclasses.asdict(self).items() if k != "payload_sha256"}
     digest = hashlib.blake2b(
         json.dumps(payload, sort_keys=True, default=str).encode(),
         digest_size=32,
