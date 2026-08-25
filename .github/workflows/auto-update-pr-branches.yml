@@ -1,0 +1,122 @@
+# =====================================================================
+# Auto-update PR branches — keeps every open non-draft PR up-to-date
+# =====================================================================
+#
+# When `main` moves, every open non-draft PR whose head is BEHIND main
+# gets a fresh merge commit via GitHub's `pulls/{n}/update-branch`
+# endpoint. That call is a no-op if the PR is already up-to-date, so
+# firing this workflow for every push to main is cheap.
+#
+# ## Why this exists (separate from merge-queue.yml)
+#
+# `merge-queue.yml` only reconciles APPROVED candidates — that is a
+# correct scope for it, because non-approved PRs should not enter the
+# merge pipeline. But operators expect to open a PR review page and see
+# a fresh, ready-to-merge branch — not a stale "BEHIND main" state that
+# lingers until the queue eventually reaches it after approval.
+#
+# This workflow closes that UX gap: every open non-draft PR is updated
+# eagerly when main moves. The merge-queue still owns the merge
+# decision; this workflow only owns branch freshness.
+#
+# ## Non-goals
+#
+# - Does NOT merge anything. `pulls.merge` is exclusively the queue's job.
+# - Does NOT bypass required reviews or status checks. `updateBranch`
+#   creates a merge commit on the PR branch; GitHub then re-runs CI on
+#   the new head. Nothing about the review/merge gates changes.
+# - Does NOT run on draft PRs. Draft PRs are work-in-progress by
+#   convention — noise-updating them would surprise the author.
+#
+# ## Safety
+#
+# `updateBranch` returns HTTP 422 if the head already contains main
+# (nothing to do) or if the branch is not mergeable (e.g., conflict).
+# Both cases are logged and swallowed — this workflow never fails, it
+# only reports. The merge-queue's stricter reconciliation still runs
+# for approved candidates on its own triggers.
+#
+# ## Cost
+#
+# One paginated `pulls.list` + one `pulls.get` per PR + at most one
+# `updateBranch` per BEHIND PR. Sub-second for any realistic PR count.
+
+name: Auto-update PR branches
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: auto-update-pr-branches
+  cancel-in-progress: false
+
+permissions:
+  contents: write         # updateBranch is a merge commit on the PR branch
+  pull-requests: write    # required by updateBranch scope
+
+jobs:
+  update:
+    name: Update BEHIND branches
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    steps:
+      - name: Reconcile every open non-draft PR
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+
+            // pulls.list does NOT include mergeable_state; that field is
+            // only on pulls.get. Paginate for correctness even when the
+            // repo has few open PRs — the API call is cheap.
+            const listed = await github.paginate(github.rest.pulls.list, {
+              owner, repo, state: 'open', per_page: 100,
+            });
+
+            let updated = 0;
+            let skipped = 0;
+
+            for (const pr of listed) {
+              if (pr.draft) {
+                skipped++;
+                continue;
+              }
+
+              // GitHub sometimes reports mergeable_state='unknown' right
+              // after a push. In that case pulls.get with a small poll
+              // would be more accurate, but this workflow reruns on
+              // every push to main, so eventual consistency wins.
+              const { data: full } = await github.rest.pulls.get({
+                owner, repo, pull_number: pr.number,
+              });
+
+              if (full.mergeable_state !== 'behind') {
+                skipped++;
+                continue;
+              }
+
+              try {
+                await github.rest.pulls.updateBranch({
+                  owner, repo, pull_number: pr.number,
+                });
+                core.info(`#${pr.number}: updated (was BEHIND main)`);
+                updated++;
+              } catch (err) {
+                // 422 is the expected "nothing to do" or "cannot
+                // update" response — race conditions or protected-file
+                // rules. Warn but do not fail; the queue will surface
+                // real merge blockers when the PR reaches it.
+                const detail =
+                  err.response?.data?.message || err.message || String(err);
+                core.warning(
+                  `#${pr.number}: updateBranch failed status=${err.status} — "${detail}"`,
+                );
+              }
+            }
+
+            core.notice(
+              `auto-update: ${updated} updated, ${skipped} skipped ` +
+              `(of ${listed.length} open PRs).`,
+            );
