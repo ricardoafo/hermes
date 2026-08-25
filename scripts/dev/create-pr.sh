@@ -56,6 +56,8 @@
 #   1 — PR body failed lint (gh NOT invoked)
 #   2 — usage / arg error
 #   3 — DoR gate failed (openspec change spec missing)
+#   4 — Actor gate failed (author == reviewer, self-review deadlock)
+#       Bypass: SKIP_ACTOR_CHECK=1. See scripts/dev/pr-actor-check.sh.
 
 set -uo pipefail
 
@@ -398,6 +400,34 @@ validate_title "$TITLE" || exit 2
 # See validate_openspec_change_present() header for the rule.
 # ────────────────────────────────────────────────────────────────
 validate_openspec_change_present || exit 3
+
+# ────────────────────────────────────────────────────────────────
+# Actor gate — refuse PR-open when the gh-authenticated user matches
+# the intended reviewer. Enforces the two-account discipline from
+# AGENTS.md rules 12-13. See scripts/dev/pr-actor-check.sh header.
+#
+# Extracts --reviewer from PASSTHROUGH (if present) and forwards to
+# the check. Falls back to HERMES_DEFAULT_REVIEWER or the hardcoded
+# `ricardoafo` fallback.
+#
+# Exit code 4 (distinct from openspec 3, title 2, lint 1) so callers
+# can distinguish the failure mode.
+# ────────────────────────────────────────────────────────────────
+if [[ "${SKIP_ACTOR_CHECK:-0}" != "1" && "${HERMES_SELF_TEST:-0}" != "1" ]]; then
+    ACTOR_REVIEWER=""
+    for i in "${!PASSTHROUGH[@]}"; do
+        if [[ "${PASSTHROUGH[$i]}" == "--reviewer" ]]; then
+            next=$((i + 1))
+            ACTOR_REVIEWER="${PASSTHROUGH[$next]:-}"
+            break
+        fi
+    done
+    if [[ -n "$ACTOR_REVIEWER" ]]; then
+        bash scripts/dev/pr-actor-check.sh --reviewer "$ACTOR_REVIEWER" || exit 4
+    else
+        bash scripts/dev/pr-actor-check.sh || exit 4
+    fi
+fi
 
 # ────────────────────────────────────────────────────────────────
 # Copy repo-relative body files to /tmp/ so markdownlint MD041 does not

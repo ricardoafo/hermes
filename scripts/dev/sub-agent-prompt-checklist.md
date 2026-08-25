@@ -50,6 +50,41 @@ rules to make your work salvageable:
    commit into conventional-commits form (`chore(x): ...`,
    `feat(x): ...`, etc). The commit-msg hook rejects `wip:` when the
    PR opens, so leaving one in place blocks the merge.
+
+5. **`isolation: worktree` REQUIRED for parallel sub-agent spawns.**
+   When two or more sub-agents run in parallel via the Agent tool,
+   each MUST be spawned with `isolation: "worktree"`. Sharing the
+   working tree causes `git checkout -b` collisions that surface as
+   stash-corruption during recovery (root cause of a 30-min recovery
+   during 2026-08-25 Batch 1 delegation).
+
+6. **PR body via `render-pr-body.sh <change>` only — never hand-authored.**
+   `bash scripts/dev/render-pr-body.sh <change>` renders from
+   `openspec/changes/<change>/change.md` + `issue.md`, auto-injects
+   `Closes #N`, and produces the exact shape the `pr-body-lint.sh`
+   validator expects (4 sections: Summary / Related / Testing / Risk).
+   Hand-authored bodies routinely miss one section and fail CI
+   (verified across Batch 1/2 delegation).
+
+7. **`changelog.d/wave-<change>.md` fragment is an acceptance criterion,
+   not a follow-up.** The fragment ships in the same PR as the change.
+   The `changelog-check.sh` gate rejects `feat/fix/refactor/perf`
+   without a fragment (per sdd-process-hardening D-3). Bypass with
+   `ALLOW_CHANGELOG_MD_EDIT=1` is for forks, not for "I'll add it
+   later" — do it now.
+
+8. **`scripts/dev/no-vague-test-assertions.py` is a pre-PR checkpoint.**
+   Run it against your new tests BEFORE the final push. Every
+   `assert x == y` needs an informative message. The pre-commit
+   hook rejects bare assertions, so leaving them in blocks the WIP
+   push.
+
+9. **Fix up ONCE at the start, not reactively per commit.** Run
+   `uv run ruff format . && uv run ruff check . --fix && npx
+   --no-install markdownlint-cli2 --fix "**/*.md"` before the first
+   WIP commit. This preempts 3-5 pre-commit-hook fix-loops per commit
+   later (each loop costs ~5-10 tool uses — verified in Batch 1/2
+   RCA on 2026-08-25).
 ```
 
 ## Recovery pattern (for the operator, when a sub-agent dies)

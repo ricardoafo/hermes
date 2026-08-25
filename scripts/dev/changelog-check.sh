@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
-# CHANGELOG update enforcement (scope-aware).
+# CHANGELOG update enforcement (scope-aware, fragment-preferred).
 #
 # For PRs typed feat/fix/refactor/perf (or with breaking marker `!:`),
-# require that CHANGELOG.md was modified OR a changelog.d/*.md fragment was
-# added in the PR — UNLESS the scope is one of the infra-only scopes (ci,
-# build, deps, tooling) which don't affect user-visible runtime behavior.
+# require a `changelog.d/<name>.md` fragment — UNLESS the scope is one of
+# the infra-only scopes (ci, build, deps, tooling) which don't affect
+# user-visible runtime behavior.
 #
-# The fragment path is the preferred way per AGENTS.md (introduced by
-# process hardening wave 4). Direct CHANGELOG.md edits remain valid for
-# small doc-only PRs — either path satisfies this check.
+# The fragment path (introduced by process hardening wave 4) is now the
+# ONLY accepted route by default — CHANGELOG.md-only edits fail because
+# they conflict-merge poorly when parallel PRs land (the exact scenario
+# the #209 + #210 + #213 automation trust chain enables at scale).
+#
+# Bypass for forks or one-off exceptions: `ALLOW_CHANGELOG_MD_EDIT=1`
+# restores the old OR-semantics (either CHANGELOG.md edit OR fragment).
+# Per sdd-process-hardening D-3.
 #
 # Called by:
 #   - .github/workflows/ci.yml changelog job (production)
@@ -119,20 +124,26 @@ case "$decision" in
         ;;
     require|require-breaking)
         changed=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
-        if echo "$changed" | grep -qE '^CHANGELOG\.md$'; then
-            echo "CHANGELOG.md updated — ok."
-            exit 0
-        fi
-        # Fragment path (wave 4): a new file under changelog.d/ also
-        # satisfies the check. Aggregation happens at release-cut time.
+        # Fragment path — the primary route. Aggregation happens at
+        # release-cut time; append-only fragments never merge-conflict
+        # across parallel PRs.
         if echo "$changed" | grep -qE '^changelog\.d/[^/]+\.md$'; then
             echo "changelog.d/*.md fragment added — ok."
             exit 0
         fi
-        echo "::error::PR requires a CHANGELOG.md [Unreleased] update OR a changelog.d/*.md fragment."
-        echo "Preferred: add changelog.d/<pr-number>-<type>.md (see changelog.d/README.md)."
-        echo "Direct edits to CHANGELOG.md are still accepted."
-        echo "Infra-only scopes (ci, build, deps, tooling) skip this check — non-breaking only."
+        # Legacy path — accepted ONLY when ALLOW_CHANGELOG_MD_EDIT=1
+        # is set (fork / bypass). See sdd-process-hardening D-3.
+        if [[ "${ALLOW_CHANGELOG_MD_EDIT:-0}" == "1" ]]; then
+            if echo "$changed" | grep -qE '^CHANGELOG\.md$'; then
+                echo "CHANGELOG.md updated (legacy path via ALLOW_CHANGELOG_MD_EDIT=1) — ok."
+                exit 0
+            fi
+        fi
+        echo "::error::PR requires a changelog.d/*.md fragment for feat/fix/refactor/perf scopes."
+        echo "Add changelog.d/wave-<change-name>.md (or <pr-number>-<type>.md — see changelog.d/README.md)."
+        echo "Fragments avoid merge conflicts on CHANGELOG.md when parallel PRs land."
+        echo "Bypass (with cause): ALLOW_CHANGELOG_MD_EDIT=1 restores OR-semantics."
+        echo "Infra-only scopes (ci, build, deps, tooling) skip this check entirely."
         exit 1
         ;;
     *)
