@@ -439,6 +439,21 @@ jobs:
       # ─────────────────────────────────────────────────────────────
       # MERGE — re-assert freshness, then perform the merge.
       # ─────────────────────────────────────────────────────────────
+      # Mint a short-lived installation token from the hermes-automation
+      # GitHub App. Commits + merges made with this token are attributed
+      # to the App (not github-actions[bot]), which means downstream CI
+      # runs are NOT held in GitHub's `action_required` loop-prevention
+      # gate. Also means the squash-merge commit on main shows a clean
+      # App identity rather than a synthetic bot. Falls back to
+      # GITHUB_TOKEN if the App is unset (e.g., in forks).
+      - name: Mint App token
+        id: app-token
+        if: steps.freshness.outputs.fresh == 'true' && vars.HERMES_AUTOMATION_APP_ID != ''
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.HERMES_AUTOMATION_APP_ID }}
+          private-key: ${{ secrets.HERMES_AUTOMATION_APP_KEY }}
+
       - name: Merge
         if: steps.freshness.outputs.fresh == 'true'
         uses: actions/github-script@v9
@@ -455,6 +470,7 @@ jobs:
           # accident.
           DRY_RUN: ${{ inputs.dry_run }}
         with:
+          github-token: ${{ steps.app-token.outputs.token || github.token }}
           script: |
             const { shouldMerge, ciRestart } = require(
               `${process.env.GITHUB_WORKSPACE}/tools/merge/decisions.cjs`
