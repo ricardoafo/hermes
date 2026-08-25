@@ -43,9 +43,29 @@
 
 name: Auto-update PR branches
 
+# Trigger set:
+#
+#   push: [main]
+#     A PR merged; every OTHER open PR is now potentially BEHIND main.
+#     Iterate + reconcile each BEHIND branch. This is the "someone
+#     else moved main" freshness event.
+#
+#   pull_request: [opened, reopened, ready_for_review]
+#     A PR just entered the review pipeline. If it was BEHIND at open
+#     time (main moved between branch creation and PR open), update
+#     immediately — otherwise the PR sits in BEHIND state until
+#     ANOTHER PR merges and fires push:main, which is a bad first
+#     impression on the reviewer. `ready_for_review` covers the
+#     draft-to-ready transition.
+#
+#   workflow_dispatch:
+#     Manual invocation for debugging.
+
 on:
   push:
     branches: [main]
+  pull_request:
+    types: [opened, reopened, ready_for_review]
   workflow_dispatch:
 
 concurrency:
