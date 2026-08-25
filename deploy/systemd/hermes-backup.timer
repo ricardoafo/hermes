@@ -1,0 +1,18 @@
+# Fire hermes-backup.service daily at 03:00 UTC.
+#
+# 03:00 chosen to sit inside the low-traffic overnight window on the
+# VPS (post US market close, pre EU wake-up). Randomised delay avoids
+# collision with other cron-like timers on the box.
+
+[Unit]
+Description=Nightly hermes backup timer
+Requires=hermes-backup.service
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 UTC
+Persistent=true          # run a missed backup on next boot
+RandomizedDelaySec=15min # jitter to avoid overlapping other 03:00 jobs
+Unit=hermes-backup.service
+
+[Install]
+WantedBy=timers.target
