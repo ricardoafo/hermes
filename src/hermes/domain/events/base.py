@@ -14,7 +14,10 @@ Reference: code-conventions.md §10 — Event schema versioning + upcaster chain
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import dataclasses
+import hashlib
+import json
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import ClassVar
 
@@ -38,12 +41,33 @@ class DomainEvent:
         correlation_id: ULID string (26 chars, Crockford base32) that ties
             this event to a request/cycle. Propagates across all log lines
             in the same async task via ``structlog.contextvars``.
+        event_seq: Caller-supplied monotonic sequence number within a
+            correlation (>= 0). Used for hash-chain ordering (D-3).
+        payload_sha256: BLAKE2b-256 hex digest of the event payload
+            (auto-computed in ``__post_init__``, not an init param).
 
-    Reference: code-conventions.md §10.
+    Reference: code-conventions.md §10, spec-1-domain-aggregates D-2/D-3.
     """
 
     occurred_at: datetime
     correlation_id: str
+    event_seq: int = field(default=0, kw_only=True)
+    payload_sha256: str = field(default="", init=False)
+
+    def __post_init__(self) -> None:
+        """Validate event_seq and compute payload_sha256 (BLAKE2b-256).
+
+        Raises:
+            ValueError: If ``event_seq`` is negative.
+        """
+        if self.event_seq < 0:
+            raise ValueError(f"DomainEvent.event_seq must be >= 0, got {self.event_seq!r}")
+        payload = {k: v for k, v in dataclasses.asdict(self).items() if k != "payload_sha256"}
+        digest = hashlib.blake2b(
+            json.dumps(payload, sort_keys=True, default=str).encode(),
+            digest_size=32,
+        ).hexdigest()
+        object.__setattr__(self, "payload_sha256", digest)
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         """Enforce ``__event_schema_version__`` at class-definition time.
