@@ -26,6 +26,7 @@ from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.lot_id import LotId
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.quantity import Quantity
+from hermes.domain.value_objects.strategy_id import StrategyId
 
 __all__ = ["Lot"]
 
@@ -44,6 +45,9 @@ class Lot:
             by every ``consume`` call via a new frozen instance.
         cost_basis_per_unit: Cost of ONE unit of ``asset`` in EUR at trade
             time. Multiplied by consumed quantity to derive realized gain.
+        strategy_id: Bucket identifier — the strategy that opened this lot.
+            Mandatory from day 1; no default allowed (bucket-aware invariant,
+            SYNTHESIS §1, SA-6 finding 1).
         opened_at: UTC-aware datetime of the opening BUY. Primary FIFO key.
 
     Invariants:
@@ -53,7 +57,7 @@ class Lot:
         - ``cost_basis_per_unit.currency == Currency.EUR`` (ADR-003 §03)
         - ``opened_at`` is timezone-aware (I-06 requires UTC timestamps)
 
-    Reference: ADR-003 §03 TAX_LOTS table.
+    Reference: ADR-003 §03 TAX_LOTS table, spec-1-domain-aggregates.
     """
 
     lot_id: LotId
@@ -61,6 +65,7 @@ class Lot:
     original_qty: Quantity
     remaining_qty: Quantity
     cost_basis_per_unit: Money
+    strategy_id: StrategyId
     opened_at: datetime
 
     def __post_init__(self) -> None:
@@ -100,6 +105,7 @@ class Lot:
         asset: Currency,
         qty: Quantity,
         cost_basis_per_unit: Money,
+        strategy_id: StrategyId,
         opened_at: datetime,
     ) -> Result[Lot, DomainError]:
         """Open a fresh lot with ``remaining_qty == qty`` (nothing consumed yet).
@@ -110,6 +116,7 @@ class Lot:
             qty: Non-zero positive quantity. Zero-quantity lots are rejected
                 because they carry no economic meaning and would confuse FIFO.
             cost_basis_per_unit: Cost of one unit in EUR at trade time.
+            strategy_id: Bucket identifier — the strategy that opened this lot.
             opened_at: UTC-aware datetime of the opening BUY.
 
         Returns:
@@ -127,6 +134,7 @@ class Lot:
                     original_qty=qty,
                     remaining_qty=qty,
                     cost_basis_per_unit=cost_basis_per_unit,
+                    strategy_id=strategy_id,
                     opened_at=opened_at,
                 )
             )
