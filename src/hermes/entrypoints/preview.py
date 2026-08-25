@@ -87,6 +87,7 @@ def _fixture_strategy_paused() -> StrategyPaused:
     return StrategyPaused(
         occurred_at=_SAMPLE_TIMESTAMP,
         correlation_id=_SAMPLE_CORRELATION,
+        event_seq=0,
         strategy_id="swing.v1",
         reason="30% drawdown breached",
         paused_at=_SAMPLE_TIMESTAMP,
@@ -99,6 +100,7 @@ def _fixture_strategy_resumed() -> StrategyResumed:
     return StrategyResumed(
         occurred_at=_SAMPLE_TIMESTAMP,
         correlation_id=_SAMPLE_CORRELATION,
+        event_seq=0,
         strategy_id="swing.v1",
         resumed_at=_SAMPLE_TIMESTAMP,
         pause_duration_seconds=900,
@@ -110,6 +112,7 @@ def _fixture_balance_low() -> BalanceLow:
     return BalanceLow(
         occurred_at=_SAMPLE_TIMESTAMP,
         correlation_id=_SAMPLE_CORRELATION,
+        event_seq=0,
         asset=Currency.USDT,
         current=Money(amount=Decimal("50"), currency=Currency.USDT),
         threshold=Money(amount=Decimal("100"), currency=Currency.USDT),
@@ -122,6 +125,7 @@ def _fixture_trade_rejected() -> TradeRejected:
     return TradeRejected(
         occurred_at=_SAMPLE_TIMESTAMP,
         correlation_id=_SAMPLE_CORRELATION,
+        event_seq=0,
         pair=_SAMPLE_PAIR,
         side=TradeSide.BUY,
         rejection_reason="insufficient balance",
@@ -135,6 +139,7 @@ def _fixture_anomaly_detected() -> AnomalyDetected:
     return AnomalyDetected(
         occurred_at=_SAMPLE_TIMESTAMP,
         correlation_id=_SAMPLE_CORRELATION,
+        event_seq=0,
         source="swing.risk",
         severity=AnomalySeverity.CRITICAL,
         reason="30% drawdown breached",
@@ -146,6 +151,7 @@ def _fixture_trade_executed() -> TradeExecuted:
     return TradeExecuted(
         occurred_at=_SAMPLE_TIMESTAMP,
         correlation_id=_SAMPLE_CORRELATION,
+        event_seq=0,
         pair=_SAMPLE_PAIR,
         side=TradeSide.BUY,
         qty=Quantity(amount=Decimal("0.5"), asset=Currency.BTC),
@@ -159,6 +165,7 @@ def _fixture_rebalance_triggered() -> RebalanceTriggered:
     return RebalanceTriggered(
         occurred_at=_SAMPLE_TIMESTAMP,
         correlation_id=_SAMPLE_CORRELATION,
+        event_seq=0,
         pair=_SAMPLE_PAIR,
         current_weight=Weight(value=Decimal("0.35")),
         target_weight=Weight(value=Decimal("0.25")),
@@ -179,6 +186,7 @@ def _fixture_daily_trade_digest() -> DailyTradeDigest:
     return DailyTradeDigest(
         occurred_at=_SAMPLE_TIMESTAMP,
         correlation_id=_SAMPLE_CORRELATION,
+        event_seq=0,
         day=date(2026, 8, 23),
         total_trades=12,
         filled=10,
@@ -312,10 +320,12 @@ def _reconstruct(name: str, data: dict[str, Any]) -> DomainEvent:  # noqa: PLR09
     """
     occurred_at = _parse_ts(data["occurred_at"])
     correlation_id = str(data["correlation_id"])
+    event_seq = int(data.get("event_seq", 0))
     if name == "strategy-paused":
         return StrategyPaused(
             occurred_at=occurred_at,
             correlation_id=correlation_id,
+            event_seq=event_seq,
             strategy_id=str(data["strategy_id"]),
             reason=str(data["reason"]),
             paused_at=_parse_ts(data["paused_at"]),
@@ -325,6 +335,7 @@ def _reconstruct(name: str, data: dict[str, Any]) -> DomainEvent:  # noqa: PLR09
         return StrategyResumed(
             occurred_at=occurred_at,
             correlation_id=correlation_id,
+            event_seq=event_seq,
             strategy_id=str(data["strategy_id"]),
             resumed_at=_parse_ts(data["resumed_at"]),
             pause_duration_seconds=int(data["pause_duration_seconds"]),
@@ -334,6 +345,7 @@ def _reconstruct(name: str, data: dict[str, Any]) -> DomainEvent:  # noqa: PLR09
         return BalanceLow(
             occurred_at=occurred_at,
             correlation_id=correlation_id,
+            event_seq=event_seq,
             asset=asset,
             current=_parse_money(data["current"]),
             threshold=_parse_money(data["threshold"]),
@@ -343,6 +355,7 @@ def _reconstruct(name: str, data: dict[str, Any]) -> DomainEvent:  # noqa: PLR09
         return TradeRejected(
             occurred_at=occurred_at,
             correlation_id=correlation_id,
+            event_seq=event_seq,
             pair=_parse_pair(data["pair"]),
             side=TradeSide(data["side"]),
             rejection_reason=str(data["rejection_reason"]),
@@ -353,6 +366,7 @@ def _reconstruct(name: str, data: dict[str, Any]) -> DomainEvent:  # noqa: PLR09
         return AnomalyDetected(
             occurred_at=occurred_at,
             correlation_id=correlation_id,
+            event_seq=event_seq,
             source=str(data["source"]),
             severity=AnomalySeverity(data["severity"]),
             reason=str(data["reason"]),
@@ -362,6 +376,7 @@ def _reconstruct(name: str, data: dict[str, Any]) -> DomainEvent:  # noqa: PLR09
         return TradeExecuted(
             occurred_at=occurred_at,
             correlation_id=correlation_id,
+            event_seq=event_seq,
             pair=pair,
             side=TradeSide(data["side"]),
             qty=Quantity(amount=Decimal(str(data["qty"])), asset=pair.base),
@@ -372,6 +387,7 @@ def _reconstruct(name: str, data: dict[str, Any]) -> DomainEvent:  # noqa: PLR09
         return RebalanceTriggered(
             occurred_at=occurred_at,
             correlation_id=correlation_id,
+            event_seq=event_seq,
             pair=_parse_pair(data["pair"]),
             current_weight=Weight(value=Decimal(str(data["current_weight"]))),
             target_weight=Weight(value=Decimal(str(data["target_weight"]))),
@@ -389,6 +405,7 @@ def _reconstruct(name: str, data: dict[str, Any]) -> DomainEvent:  # noqa: PLR09
         return DailyTradeDigest(
             occurred_at=occurred_at,
             correlation_id=correlation_id,
+            event_seq=event_seq,
             day=date.fromisoformat(data["day"]),
             total_trades=int(data["total_trades"]),
             filled=int(data["filled"]),
