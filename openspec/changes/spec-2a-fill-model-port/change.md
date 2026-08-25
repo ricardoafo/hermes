@@ -189,7 +189,7 @@ openspec/changes/
 
 ### `src/hermes/domain/trading/order.py`
 
-```python
+```py
 from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
@@ -197,13 +197,16 @@ from enum import StrEnum
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
 
+
 class OrderSide(StrEnum):
     BUY = "BUY"
     SELL = "SELL"
 
+
 @dataclass(frozen=True, slots=True)
 class Order:
     """Immutable order request — the input to FillModelPort.fill_order."""
+
     side: OrderSide
     pair: Pair
     qty: Quantity
@@ -212,7 +215,7 @@ class Order:
 
 ### `src/hermes/domain/trading/fill.py`
 
-```python
+```py
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
@@ -220,25 +223,29 @@ from decimal import Decimal
 from hermes.domain.trading.order import Order
 from hermes.domain.value_objects.money import Money
 
+
 @dataclass(frozen=True, slots=True)
 class Fill:
     """Successful fill result — ALL fields required, no None."""
+
     order: Order
     executed_qty: Decimal
     avg_price: Decimal
     fee: Money
     timestamp: datetime  # UTC-aware
 
+
 @dataclass(frozen=True, slots=True)
 class Rejection:
     """Order rejected by the fill model — expected outcome, not an error."""
+
     order: Order
     reason: str
 ```
 
 ### `src/hermes/ports/fill_model.py`
 
-```python
+```py
 from __future__ import annotations
 from datetime import datetime
 from typing import Protocol, runtime_checkable
@@ -246,6 +253,7 @@ from hermes.domain.fees import FeeSchedule
 from hermes.domain.market_data.orderbook import Orderbook
 from hermes.domain.trading.fill import Fill, Rejection
 from hermes.domain.trading.order import Order
+
 
 @runtime_checkable
 class FillModelPort(Protocol):
