@@ -85,6 +85,27 @@ rules to make your work salvageable:
    WIP commit. This preempts 3-5 pre-commit-hook fix-loops per commit
    later (each loop costs ~5-10 tool uses — verified in Batch 1/2
    RCA on 2026-08-25).
+
+10. **PR body: explain WHAT is being implemented, not just what
+    shipped.** The Summary section (or a dedicated subsection within
+    Related) should include a technical explanation the reviewer can
+    read to understand the intent + design without also opening the
+    diff. A terse one-sentence summary saves 5 seconds of writing
+    but costs 10 minutes of the reviewer's context reconstruction.
+    Rules of thumb:
+    * 1-3 sentences: what ships + why + main risk (mandatory —
+      matches the existing template)
+    * Followed by: 2-5 paragraphs (or bulleted subsections)
+      explaining the KEY design decisions, the shape of the new
+      abstractions, and how they interact with existing code
+    * Include a `mermaid` diagram WHEN it clarifies architecture
+      (module boundaries), flow (sequence of events), or state
+      (finite-state-machine transitions). Do NOT include mermaid
+      when a short paragraph would say the same thing — diagrams
+      that repeat prose are noise.
+    * Cite existing file paths + line numbers when referencing
+      code that already exists (e.g., "reuses `TITLE_REGEX` from
+      `scripts/dev/create-pr.sh:75`").
 ```
 
 ## Recovery pattern (for the operator, when a sub-agent dies)
