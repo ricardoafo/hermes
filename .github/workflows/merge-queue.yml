@@ -497,6 +497,55 @@ jobs:
               return;
             }
 
+            // ─────────────────────────────────────────────────────────────
+            // Strict branch-protection reconciliation.
+            //
+            // The repository ruleset for `main` sets
+            // `strict_required_status_checks_policy: true`, which means
+            // GitHub refuses `pulls.merge` on a PR that is BEHIND main —
+            // the required `CI success` check must be reported on the PR's
+            // OWN head SHA, not the synthetic merged tree the queue built
+            // locally. The queue proved the merged tree is safe, but
+            // GitHub's ruleset won't accept that proof against a head SHA
+            // that has never seen the current main.
+            //
+            // Fix: call `pulls/{n}/update-branch` — GitHub creates a merge
+            // commit on the PR branch, moving the head forward to include
+            // main. That triggers a fresh CI run on the new head. When CI
+            // completes, `workflow_run:CI:completed` fires this workflow
+            // again, the PR is no longer BEHIND, and this pass reaches
+            // pulls.merge with the required check satisfied.
+            //
+            // Without this reconciliation, BEHIND PRs sit forever: the
+            // queue tests the merged tree, tries to merge, GitHub refuses
+            // with 405 ("required status check expected"), queue warns,
+            // waits — repeat.
+            // ─────────────────────────────────────────────────────────────
+            if (pr.mergeable_state === 'behind') {
+              if (process.env.DRY_RUN === 'true') {
+                core.notice(
+                  `DRY RUN — would update #${number} branch (BEHIND main); ` +
+                  `next pass would merge.`,
+                );
+                return;
+              }
+              try {
+                await github.rest.pulls.updateBranch({
+                  owner, repo, pull_number: number,
+                });
+                core.notice(
+                  `#${number}: branch was BEHIND main; updated via API. ` +
+                  `Fresh CI will run on the new head; next queue trigger will merge.`,
+                );
+              } catch (err) {
+                const detail = err.response?.data?.message || err.message || String(err);
+                core.warning(
+                  `#${number}: pulls.updateBranch failed status=${err.status} — "${detail}"`,
+                );
+              }
+              return;
+            }
+
             if (process.env.DRY_RUN === 'true') {
               core.notice(
                 `DRY RUN — would merge #${number} (${verdict.reason}). ` +
