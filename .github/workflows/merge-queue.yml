@@ -616,6 +616,59 @@ jobs:
             }
 
             // ─────────────────────────────────────────────
+            // Belt-and-suspenders issue close.
+            //
+            // GitHub's built-in auto-close SHOULD fire when a PR with
+            // "Closes #N" / "Fixes #N" / "Resolves #N" in its body
+            // merges into the default branch. In practice, when merges
+            // happen via `pulls.merge` API from a workflow, the
+            // auto-close hook is unreliable — the `closingIssuesReferences`
+            // linkage is recognised (visible via GraphQL) but the
+            // actual close event does not fire. Observed 2026-08-25:
+            // PRs #227, #229 all merged with correct Closes references
+            // recognised by GraphQL; none of the linked issues closed.
+            //
+            // Fix: explicitly close every referenced issue via
+            // `issues.update` right after the merge succeeds. Idempotent
+            // (closing an already-closed issue is a no-op). See issue #232.
+            // ─────────────────────────────────────────────
+            try {
+              const graphqlResult = await github.graphql(`
+                query($owner: String!, $repo: String!, $number: Int!) {
+                  repository(owner: $owner, name: $repo) {
+                    pullRequest(number: $number) {
+                      closingIssuesReferences(first: 20) {
+                        nodes { number state }
+                      }
+                    }
+                  }
+                }
+              `, { owner, repo, number });
+              const linked = graphqlResult.repository.pullRequest
+                .closingIssuesReferences.nodes;
+              for (const issue of linked) {
+                if (issue.state === 'CLOSED') { continue; }
+                try {
+                  await github.rest.issues.update({
+                    owner, repo, issue_number: issue.number, state: 'closed',
+                    state_reason: 'completed',
+                  });
+                  await github.rest.issues.createComment({
+                    owner, repo, issue_number: issue.number,
+                    body: `Closed by #${number} via merge queue (belt-and-suspenders; GitHub auto-close did not fire).`,
+                  });
+                  core.info(`#${number}: closed linked issue #${issue.number}`);
+                } catch (err) {
+                  core.warning(
+                    `#${number}: failed to close linked issue #${issue.number}: ${err.message}`,
+                  );
+                }
+              }
+            } catch (err) {
+              core.warning(`#${number}: closingIssuesReferences query failed: ${err.message}`);
+            }
+
+            // ─────────────────────────────────────────────
             // Delete the head branch. `delete_branch_on_merge` at the
             // repo level would work too, but doing it here is scoped
             // to the queue's actions and never surprises anyone using
