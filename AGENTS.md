@@ -113,6 +113,15 @@ are acceptable. If the user requests one of these, refuse and explain.
     merge. See [dev-workflow.md § Local git config: bot identity is
     required](docs/guides/dev-workflow.md#local-git-config-bot-identity-is-required).
 
+    **Enforced locally**: `scripts/dev/pr-actor-check.sh`, wired into
+    `scripts/dev/create-pr.sh` after the openspec gate, refuses PR-open
+    when the `gh`-authenticated user matches the intended reviewer
+    (exit code 4). Bypass via `SKIP_ACTOR_CHECK=1` with a logged reason.
+    For the "why" behind the split — and the automation trust chain
+    (#209 + #210 + #213) that lets `ricardoafo` review with no manual
+    CI-approval clicks — see
+    [`docs/guides/automation-trust-chain.md`](docs/guides/automation-trust-chain.md).
+
 ## Behavioral defaults
 
 ### On project-tracker hygiene
