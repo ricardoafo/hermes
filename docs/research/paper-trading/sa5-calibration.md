@@ -257,6 +257,7 @@ For PnL correlation (M-09) and Sharpe match (M-10):
 
 ```python
 from scipy.stats import ks_2samp
+
 stat, p_value = ks_2samp(sim_fill_prices_bps, real_fill_prices_bps)
 # Alert if stat > 0.15 (i.e., CDFs differ by >15% at their maximum gap)
 # AND p_value < 0.05
@@ -266,6 +267,7 @@ stat, p_value = ks_2samp(sim_fill_prices_bps, real_fill_prices_bps)
 
 ```python
 from scipy.stats import wasserstein_distance
+
 w1 = wasserstein_distance(sim_fill_prices_bps, real_fill_prices_bps)
 # Alert if w1 > 20 bps (CDFs need >20 bps "mass shift" to match)
 ```
@@ -431,7 +433,7 @@ the historical replay path.
 # From NautilusTrader documentation (2026)
 FillModel(
     prob_fill_on_limit=1.0,  # P(limit fills | price touches level)
-    prob_slippage=0.0,       # P(one-tick adverse slippage on L1 book)
+    prob_slippage=0.0,  # P(one-tick adverse slippage on L1 book)
     random_seed=42,
 )
 ```
@@ -489,6 +491,7 @@ bps_series = [(s - r) / r * 10_000 for s, r in fill_pairs]
 
 # Step 3: run KS test and update FillModel parameters
 from scipy.stats import ks_2samp
+
 stat, p = ks_2samp(bps_series_sim, bps_series_real)
 if p < 0.05 and stat > 0.15:
     # distributions differ significantly; retune prob_slippage
@@ -693,10 +696,12 @@ def test_insufficient_sample_degrades_to_warn():
 ```python
 from hypothesis import given, strategies as st
 
+
 @given(st.lists(st.floats(-500, 500), min_size=200, max_size=2000))
 def test_bps_percentiles_are_monotone(bps_series):
     result = compute_percentiles(bps_series)
     assert result.p50 <= result.p90 <= result.p95 <= result.p99
+
 
 @given(st.floats(0.0, 1.0))
 def test_bias_ratio_thresholds_are_symmetric(ratio):
@@ -721,6 +726,7 @@ def test_end_to_end_calibration_catches_slippage_undermodel():
 
     assert harness.metrics["M02_p50"].value < -15  # sim fills ~20 bps cheaper
     assert harness.shadow_mode_status == "UNTRUSTED"
+
 
 def test_calibration_passes_with_realistic_model():
     """Sim with matching slippage model → CERTIFIED after 200 fills."""
@@ -774,6 +780,7 @@ same asset+direction. If no real fill within 5s, the sim fill is unmatched
 ```python
 class FillModelPort(Protocol):
     """Simulates fills without touching real exchange."""
+
     def simulate_fill(
         self,
         order: Order,

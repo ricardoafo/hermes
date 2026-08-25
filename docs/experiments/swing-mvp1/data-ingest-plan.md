@@ -98,9 +98,10 @@ import hashlib, urllib.request, pathlib, json, zipfile
 
 PAIRS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
 INTERVALS = ["1h", "4h", "1d"]
-SOL_START = {"SOLUSDT": (2020, 9)}   # first available month
+SOL_START = {"SOLUSDT": (2020, 9)}  # first available month
 DEFAULT_START = (2020, 1)
 BASE = "https://data.binance.vision/data/spot/monthly"
+
 
 def iter_months(start_ym, end_ym):
     y, m = start_ym
@@ -112,6 +113,7 @@ def iter_months(start_ym, end_ym):
             m = 1
             y += 1
 
+
 def verify_and_save(url, dest_path, checksum_url):
     with urllib.request.urlopen(checksum_url) as r:
         expected = r.read().decode().split()[0]
@@ -120,6 +122,7 @@ def verify_and_save(url, dest_path, checksum_url):
     assert actual == expected, f"SHA256 mismatch: {url}"
     dest_path.write_bytes(data)
     return actual
+
 
 # Returns {filename: sha256hex} entries for data-manifest.json
 ```
@@ -362,6 +365,7 @@ Compression: **Zstd** (level 3) per the pre-registration. Use `compression="zstd
 ```python
 import hashlib, json, pathlib, datetime
 
+
 def sha256_file(path: pathlib.Path) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -369,10 +373,11 @@ def sha256_file(path: pathlib.Path) -> str:
             h.update(chunk)
     return h.hexdigest()
 
+
 def register_file(
     manifest: dict,
     path: pathlib.Path,
-    file_type: str,        # "ohlcv_zip" | "parquet" | "l2_snapshot" | ...
+    file_type: str,  # "ohlcv_zip" | "parquet" | "l2_snapshot" | ...
     pair: str | None = None,
     interval: str | None = None,
     period: str | None = None,  # e.g. "2020-01"
@@ -422,6 +427,7 @@ Before converting ZIP → Parquet, verify against Binance's own checksum:
 ```python
 def verify_binance_checksum(zip_path: pathlib.Path, checksum_url: str) -> bool:
     import urllib.request
+
     with urllib.request.urlopen(checksum_url) as r:
         expected_hex = r.read().decode().split()[0]
     actual = sha256_file(zip_path)

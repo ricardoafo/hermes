@@ -184,18 +184,18 @@ BTC dominates crypto market regime. ETH and SOL trend is co-determined by BTC ma
 ```python
 # Pseudocode — not production code
 def classify_regime(btc_daily: pd.DataFrame) -> pd.Series:
-    ema200 = btc_daily['close'].ewm(span=200, adjust=False).mean()
-    log_ret = np.log(btc_daily['close'] / btc_daily['close'].shift(1))
+    ema200 = btc_daily["close"].ewm(span=200, adjust=False).mean()
+    log_ret = np.log(btc_daily["close"] / btc_daily["close"].shift(1))
     realized_vol = log_ret.rolling(20).std() * np.sqrt(252)
 
-    trend = np.where(btc_daily['close'] > ema200, 'up', 'down')
-    vol_state = np.where(realized_vol >= 0.60, 'vol', 'quiet')
+    trend = np.where(btc_daily["close"] > ema200, "up", "down")
+    vol_state = np.where(realized_vol >= 0.60, "vol", "quiet")
 
     base = [f"{t}-{v}" for t, v in zip(trend, vol_state)]
     # rename: up-quiet → bull-quiet, up-vol → bull-vol, etc.
 
     flash = (log_ret < -0.10).rolling(3).max().fillna(0).astype(bool)
-    return pd.DataFrame({'regime': base, 'flash_crash': flash})
+    return pd.DataFrame({"regime": base, "flash_crash": flash})
 ```
 
 - **No look-ahead bias**: EMA and rolling vol use only past data (standard pandas `.ewm` and `.rolling` with `min_periods`).

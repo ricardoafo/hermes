@@ -285,19 +285,19 @@ from scipy.stats import norm, skew, kurtosis
 
 @dataclass(frozen=True)
 class DSRResult:
-    dsr: float           # in [0, 1]; pre-registration threshold: > 0.7
-    observed_sr: float   # annualised Sharpe on OOS series
-    sr_star: float       # benchmark Sharpe used
-    n_trials: int        # total strategy configurations tried
-    t_obs: int           # number of OOS observations
+    dsr: float  # in [0, 1]; pre-registration threshold: > 0.7
+    observed_sr: float  # annualised Sharpe on OOS series
+    sr_star: float  # benchmark Sharpe used
+    n_trials: int  # total strategy configurations tried
+    t_obs: int  # number of OOS observations
     skewness: float
     excess_kurtosis: float
 
 
 def compute_dsr(
-    oos_returns: np.ndarray,   # daily (or bar) return series, NOT annualised
-    n_trials: int,             # total configurations tried (from lab notebook)
-    sr_star: float = 0.0,      # benchmark; 0.0 = "is strategy positive?"
+    oos_returns: np.ndarray,  # daily (or bar) return series, NOT annualised
+    n_trials: int,  # total configurations tried (from lab notebook)
+    sr_star: float = 0.0,  # benchmark; 0.0 = "is strategy positive?"
     periods_per_year: int = 252,  # 252 for daily; 365*6 for 4H crypto bars
 ) -> DSRResult:
     """
@@ -320,9 +320,7 @@ def compute_dsr(
 
     # Non-normality and multi-trial correction term
     correction = sr_star * np.sqrt(
-        (1 - gamma3 * sr_hat + (gamma4 - 1) / 4 * sr_hat**2)
-        * np.log(n_trials)
-        / (t - 1)
+        (1 - gamma3 * sr_hat + (gamma4 - 1) / 4 * sr_hat**2) * np.log(n_trials) / (t - 1)
     )
     dsr_value = float(norm.cdf(sr_hat - correction))
 
@@ -355,8 +353,8 @@ from arch.bootstrap import CircularBlockBootstrap
 
 @dataclass(frozen=True)
 class BootstrapCIResult:
-    lower_95: float      # 2.5th percentile of bootstrap Sharpe distribution
-    upper_95: float      # 97.5th percentile
+    lower_95: float  # 2.5th percentile of bootstrap Sharpe distribution
+    upper_95: float  # 97.5th percentile
     median: float
     n_resamples: int
     block_size: int
@@ -364,10 +362,10 @@ class BootstrapCIResult:
 
 def compute_bootstrap_sharpe_ci(
     oos_returns: np.ndarray,
-    block_size: int = 30,          # 30-day blocks per pre-registration §8.2
-    n_resamples: int = 10_000,     # per pre-registration §8.2
+    block_size: int = 30,  # 30-day blocks per pre-registration §8.2
+    n_resamples: int = 10_000,  # per pre-registration §8.2
     periods_per_year: int = 252,
-    random_state: int = 42,        # fixed seed for reproducibility
+    random_state: int = 42,  # fixed seed for reproducibility
 ) -> BootstrapCIResult:
     """
     Circular block bootstrap CI on annualised Sharpe ratio.
@@ -388,10 +386,7 @@ def compute_bootstrap_sharpe_ci(
             return 0.0
         return float(np.mean(x) / std * np.sqrt(periods_per_year))
 
-    bootstrap_sharpes = np.array([
-        _sharpe(data[0])
-        for data, _ in bs.bootstrap(n_resamples)
-    ])
+    bootstrap_sharpes = np.array([_sharpe(data[0]) for data, _ in bs.bootstrap(n_resamples)])
 
     return BootstrapCIResult(
         lower_95=float(np.percentile(bootstrap_sharpes, 2.5)),
@@ -432,15 +427,15 @@ class WalkForwardFold:
 class WalkForwardResult:
     folds: list[WalkForwardFold]
     median_test_sharpe: float
-    p10_test_sharpe: float   # distribution left tail
+    p10_test_sharpe: float  # distribution left tail
     all_test_sharpes: np.ndarray
 
 
 def walk_forward_expanding(
-    returns: np.ndarray,               # full train+val return series (daily bars)
-    retrain_every: int = 126,          # ~6 months of trading days
-    test_window: int = 63,             # ~3 months of trading days
-    min_train_obs: int = 252,          # minimum 1 year of history before first test
+    returns: np.ndarray,  # full train+val return series (daily bars)
+    retrain_every: int = 126,  # ~6 months of trading days
+    test_window: int = 63,  # ~3 months of trading days
+    min_train_obs: int = 252,  # minimum 1 year of history before first test
     sharpe_fn: Callable[[np.ndarray], float] | None = None,
     periods_per_year: int = 252,
 ) -> WalkForwardResult:
@@ -454,6 +449,7 @@ def walk_forward_expanding(
     Expected performance: <10ms for 1,500 obs (54 months daily).
     """
     if sharpe_fn is None:
+
         def sharpe_fn(x: np.ndarray) -> float:
             std = float(np.std(x, ddof=1))
             return 0.0 if std == 0.0 else float(np.mean(x) / std * np.sqrt(periods_per_year))
@@ -467,12 +463,14 @@ def walk_forward_expanding(
     while test_start + test_window <= n:
         test_end = test_start + test_window
         test_sharpe = sharpe_fn(returns[test_start:test_end])
-        folds.append(WalkForwardFold(
-            fold_idx=fold_idx,
-            train_slice=slice(0, test_start),
-            test_slice=slice(test_start, test_end),
-            test_sharpe=test_sharpe,
-        ))
+        folds.append(
+            WalkForwardFold(
+                fold_idx=fold_idx,
+                train_slice=slice(0, test_start),
+                test_slice=slice(test_start, test_end),
+                test_sharpe=test_sharpe,
+            )
+        )
         fold_idx += 1
         test_start += retrain_every
 
@@ -515,7 +513,7 @@ class CPCVFold:
 class CPCVResult:
     folds: list[CPCVFold]
     n_folds: int
-    n_test_combinations: int   # C(n_folds, k_test) paths
+    n_test_combinations: int  # C(n_folds, k_test) paths
     median_test_sharpe: float
     p10_test_sharpe: float
     sharpe_distribution: np.ndarray
@@ -523,10 +521,10 @@ class CPCVResult:
 
 def purged_cpcv(
     returns: np.ndarray,
-    n_folds: int = 5,            # per pre-registration §8.3
-    k_test: int = 2,             # number of folds held out per combination
-    purge_days: int = 5,         # per pre-registration §8.3
-    embargo_days: int = 3,       # per pre-registration §8.3
+    n_folds: int = 5,  # per pre-registration §8.3
+    k_test: int = 2,  # number of folds held out per combination
+    purge_days: int = 5,  # per pre-registration §8.3
+    embargo_days: int = 3,  # per pre-registration §8.3
     sharpe_fn: Callable[[np.ndarray], float] | None = None,
     periods_per_year: int = 252,
 ) -> CPCVResult:
@@ -543,6 +541,7 @@ def purged_cpcv(
     Expected performance: <50ms for 1,500 obs, 5-fold, 10 combinations.
     """
     if sharpe_fn is None:
+
         def sharpe_fn(x: np.ndarray) -> float:
             std = float(np.std(x, ddof=1))
             return 0.0 if std == 0.0 else float(np.mean(x) / std * np.sqrt(periods_per_year))
@@ -593,12 +592,14 @@ def purged_cpcv(
             continue  # insufficient data — skip fold
 
         test_sharpe = sharpe_fn(returns[test_idx])
-        all_folds.append(CPCVFold(
-            fold_idx=fold_combo_idx,
-            train_indices=train_idx,
-            test_indices=test_idx,
-            test_sharpe=test_sharpe,
-        ))
+        all_folds.append(
+            CPCVFold(
+                fold_idx=fold_combo_idx,
+                train_indices=train_idx,
+                test_indices=test_idx,
+                test_sharpe=test_sharpe,
+            )
+        )
         fold_combo_idx += 1
 
     sharpes = np.array([f.test_sharpe for f in all_folds])
@@ -626,8 +627,8 @@ Bonferroni is a one-liner. No `statsmodels` needed:
 
 ```python
 def bonferroni_adjusted_alpha(
-    family_wise_alpha: float,   # desired FWER (e.g. 0.05)
-    n_tests: int,               # total number of hypothesis tests in the family
+    family_wise_alpha: float,  # desired FWER (e.g. 0.05)
+    n_tests: int,  # total number of hypothesis tests in the family
 ) -> float:
     """
     Bonferroni correction: adjusted alpha per test = FWER / n_tests.
@@ -657,16 +658,16 @@ from scipy.stats import ks_2samp
 
 @dataclass(frozen=True)
 class KSResult:
-    statistic: float   # D-statistic in [0, 1]
+    statistic: float  # D-statistic in [0, 1]
     p_value: float
-    status: str        # "OK" | "WARN" | "BLOCK"
+    status: str  # "OK" | "WARN" | "BLOCK"
 
 
 def compute_ks_metric(
     sim_bps: np.ndarray,
     real_bps: np.ndarray,
-    d_warn: float = 0.10,     # D > 0.10 → WARN
-    d_block: float = 0.15,    # D > 0.15 AND p < 0.05 → BLOCK (SA-5 §3.2)
+    d_warn: float = 0.10,  # D > 0.10 → WARN
+    d_block: float = 0.15,  # D > 0.15 AND p < 0.05 → BLOCK (SA-5 §3.2)
     alpha: float = 0.05,
 ) -> KSResult:
     """
@@ -700,15 +701,15 @@ from scipy.stats import wasserstein_distance
 
 @dataclass(frozen=True)
 class WassersteinResult:
-    distance_bps: float   # earth-mover distance in bps units
-    status: str           # "OK" | "WARN" | "BLOCK"
+    distance_bps: float  # earth-mover distance in bps units
+    status: str  # "OK" | "WARN" | "BLOCK"
 
 
 def compute_wasserstein_metric(
     sim_bps: np.ndarray,
     real_bps: np.ndarray,
-    warn_threshold_bps: float = 10.0,    # > 10 bps → WARN
-    block_threshold_bps: float = 20.0,   # > 20 bps → BLOCK (SA-5 §3.2)
+    warn_threshold_bps: float = 10.0,  # > 10 bps → WARN
+    block_threshold_bps: float = 20.0,  # > 20 bps → BLOCK (SA-5 §3.2)
 ) -> WassersteinResult:
     """
     Wasserstein-1 distance between sim and real fill-price bps distributions.

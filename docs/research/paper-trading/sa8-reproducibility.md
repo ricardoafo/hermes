@@ -106,6 +106,7 @@ At write time:
 ```python
 import hashlib, json
 
+
 def _payload_hash(payload_json: str) -> str:
     return hashlib.sha256(payload_json.encode()).hexdigest()
 ```
@@ -128,9 +129,7 @@ ALTER TABLE events ADD COLUMN prev_sha256 TEXT;  -- NULL for event_seq = 1
 At write time:
 
 ```python
-prev = conn.execute(
-    "SELECT payload_sha256 FROM events ORDER BY event_seq DESC LIMIT 1"
-).fetchone()
+prev = conn.execute("SELECT payload_sha256 FROM events ORDER BY event_seq DESC LIMIT 1").fetchone()
 prev_hash = prev[0] if prev else ""
 # Include prev_hash in the payload before hashing
 combined = json.dumps({"prev": prev_hash, "payload": payload_dict}, sort_keys=True)
@@ -157,22 +156,29 @@ This is the highest-value section for hermes. Sources of non-determinism must be
 class ClockPort(Protocol):
     def now(self) -> datetime: ...
 
+
 class WallClock:
     def now(self) -> datetime:
         return now_utc()
 
+
 class FrozenClock:
     def __init__(self, ts: datetime) -> None:
         self._ts = ts
+
     def now(self) -> datetime:
         return self._ts
 
+
 class ReplayClock:
     """Advances with each event replayed; always returns event.occurred_at."""
+
     def __init__(self) -> None:
         self._ts: datetime | None = None
+
     def advance(self, ts: datetime) -> None:
         self._ts = ts
+
     def now(self) -> datetime:
         assert self._ts is not None, "ReplayClock not initialized"
         return self._ts
@@ -226,11 +232,11 @@ For paper-trading specifically: the shadow-mode engine must run in the same sing
 @dataclass(frozen=True, slots=True)
 class ExternalCallRecorded(DomainEvent):
     __event_schema_version__: ClassVar[int] = 1
-    call_type: str          # "GET_KLINES" | "GET_ORDERBOOK" | "GET_FILL"
-    request_hash: str       # SHA-256 of serialized request params
-    response_json: str      # raw JSON from exchange
-    exchange_ts: datetime   # exchange-reported timestamp from response
-    latency_ms: int         # wall-clock round-trip (for slippage modeling)
+    call_type: str  # "GET_KLINES" | "GET_ORDERBOOK" | "GET_FILL"
+    request_hash: str  # SHA-256 of serialized request params
+    response_json: str  # raw JSON from exchange
+    exchange_ts: datetime  # exchange-reported timestamp from response
+    latency_ms: int  # wall-clock round-trip (for slippage modeling)
 ```
 
 During replay, the `ExchangePort` implementation reads from this log instead of making network calls:
@@ -260,6 +266,7 @@ This is the approach NautilusTrader calls its "backtest data engine" — all mar
 
 ```python
 import decimal
+
 decimal.getcontext().prec = 28  # explicit, never rely on default
 ```
 
@@ -434,6 +441,7 @@ SEC Rule 17a-4 requires broker-dealers to preserve electronic records in a "non-
 ```python
 # BAD — global RNG state; replay with different call order = different result
 import numpy as np
+
 np.random.seed(42)
 position_size = np.random.normal(0.001, 0.0001)
 
@@ -453,12 +461,15 @@ class SwingEngine:
         price = requests.get("https://api.binance.com/...").json()  # WRONG
         ...
 
+
 # GOOD — I/O injected via port
 class SwingEngine:
     def __init__(self, market_data: MarketDataPort) -> None:
         self._market_data = market_data
-    def check_signal(self, asset: Currency, snapshot: MarketSnapshot) -> Signal:
-        ...  # pure function of snapshot
+
+    def check_signal(
+        self, asset: Currency, snapshot: MarketSnapshot
+    ) -> Signal: ...  # pure function of snapshot
 ```
 
 Domain logic that touches the network is untestable and non-replayable by definition. All hermes domain classes already follow the port pattern — this is an enforcement point to watch in new code.
@@ -471,10 +482,12 @@ class TaxGuard:
     def is_deferred(self, lot: Lot) -> bool:
         return (datetime.now(UTC) - lot.opened_at).days > 365  # WRONG
 
+
 # GOOD — clock injected
 class TaxGuard:
     def __init__(self, clock: ClockPort) -> None:
         self._clock = clock
+
     def is_deferred(self, lot: Lot) -> bool:
         return (self._clock.now() - lot.opened_at).days > 365
 ```
@@ -486,15 +499,14 @@ Hermes currently has `now_utc()` called in `SqliteLedger._insert_event` for `rec
 ```python
 # BAD — inclusive vs exclusive boundary confusion
 events = db.query(
-    "SELECT * FROM events WHERE event_seq >= ? AND event_seq <= ?",
-    (from_seq, to_seq)
+    "SELECT * FROM events WHERE event_seq >= ? AND event_seq <= ?", (from_seq, to_seq)
 )
 # Then replaying with `to_seq + 1` as the start of the next batch duplicates to_seq
 
 # GOOD — use half-open intervals consistently
 events = db.query(
     "SELECT * FROM events WHERE event_seq >= ? AND event_seq < ?",
-    (from_seq, to_seq)  # [from_seq, to_seq) — standard Python convention
+    (from_seq, to_seq),  # [from_seq, to_seq) — standard Python convention
 )
 ```
 
@@ -506,6 +518,7 @@ This is a classic fence-post error. Define the `replay` CLI contract once and en
 # BAD — list created once at function definition time, shared across calls
 def record_event(event: DomainEvent, metadata: list = []) -> None:
     metadata.append(event)  # always grows the same list
+
 
 # GOOD
 def record_event(event: DomainEvent, metadata: list | None = None) -> None:
@@ -525,6 +538,7 @@ def on_trade_executed(event: TradeExecuted) -> None:
         ledger.open_lot(lot, event)
     except LedgerError:
         pass  # WRONG — ledger failure is not recoverable by ignoring it
+
 
 # GOOD — propagate, let EventBus aggregate failures
 def on_trade_executed(event: TradeExecuted) -> None:
@@ -551,8 +565,8 @@ Extend the existing `DomainEvent` base class with two new fields for shadow-mode
 ```python
 @dataclass(frozen=True, slots=True)
 class DomainEvent:
-    occurred_at: datetime       # existing — exchange or domain time
-    correlation_id: str         # existing — ULID, propagates through lifecycle
+    occurred_at: datetime  # existing — exchange or domain time
+    correlation_id: str  # existing — ULID, propagates through lifecycle
     # NEW for shadow-mode:
     # event_seq is set by the ledger at write time (autoincrement), not by the domain
     # payload_sha256 is computed by the ledger from the serialized payload
@@ -578,14 +592,14 @@ The `SqliteLedger` applies the upcaster chain at read time before deserializing 
 @dataclass(frozen=True, slots=True)
 class SimulatedFillRecorded(DomainEvent):
     __event_schema_version__: ClassVar[int] = 1
-    pair: str                   # "BTC/USDT"
-    side: str                   # "BUY" | "SELL"
-    sim_fill_price: Decimal     # what the fill model produced
+    pair: str  # "BTC/USDT"
+    side: str  # "BUY" | "SELL"
+    sim_fill_price: Decimal  # what the fill model produced
     sim_fill_qty: Decimal
     sim_fee: Decimal
-    exchange_ts: datetime       # exchange-reported kline/tick timestamp used for fill
-    fill_model_id: str          # "constant_spread_v1" | "orderbook_v1"
-    orderbook_snapshot_seq: int # event_seq of the ExternalCallRecorded that fed the model
+    exchange_ts: datetime  # exchange-reported kline/tick timestamp used for fill
+    fill_model_id: str  # "constant_spread_v1" | "orderbook_v1"
+    orderbook_snapshot_seq: int  # event_seq of the ExternalCallRecorded that fed the model
 ```
 
 The `orderbook_snapshot_seq` foreign key to the recorded API response is the key reproducibility link — it lets us prove exactly which market data produced this fill.
@@ -636,10 +650,7 @@ SQLite is the correct choice for solo-operator VPS. The triggers enforce append-
 ```python
 def _insert_event(self, event: DomainEvent) -> int:
     """Returns the assigned event_seq (SQLite rowid)."""
-    cursor = self._conn.execute(
-        "INSERT INTO events (...) VALUES (...)",
-        (...)
-    )
+    cursor = self._conn.execute("INSERT INTO events (...) VALUES (...)", (...))
     return cursor.lastrowid  # this IS event_seq
 ```
 
@@ -727,6 +738,7 @@ def replay(
 from hypothesis import given, strategies as st
 from hypothesis.strategies import composite
 
+
 @composite
 def market_event_stream(draw):
     """Generate a random but valid sequence of market events."""
@@ -736,6 +748,7 @@ def market_event_stream(draw):
         event_type = draw(st.sampled_from(["kline", "tick", "timer"]))
         # ... build typed event from drawn values
     return events
+
 
 @given(stream=market_event_stream())
 def test_replay_is_deterministic(stream: list[MarketEvent]) -> None:
@@ -761,8 +774,7 @@ def test_replay_is_deterministic(stream: list[MarketEvent]) -> None:
 
 ```python
 # SEV-1: Functional axis F1 — realized gain must be reproducible across replays
-def test_fifo_lot_consumption_is_deterministic() -> None:
-    ...
+def test_fifo_lot_consumption_is_deterministic() -> None: ...
 ```
 
 ---

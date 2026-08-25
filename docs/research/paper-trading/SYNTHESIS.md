@@ -525,6 +525,7 @@ every other spec references. Confirmed by SA-6 finding 1 (NautilusTrader
 class StrategyId:
     value: str  # e.g. "swing-donchian-4h"
 
+
 @dataclass(frozen=True)
 class Order:
     id: OrderId
@@ -540,6 +541,7 @@ class Order:
     submitted_at: datetime  # via ClockPort
     correlation_id: ULID
 
+
 @dataclass(frozen=True)
 class Fill:
     id: FillId
@@ -552,6 +554,7 @@ class Fill:
     is_maker: bool
     filled_at: datetime
 
+
 class Position:
     id: PositionId
     strategy_id: StrategyId
@@ -563,6 +566,7 @@ class Position:
     unrealised_pnl: Money  # marked-to-market via portfolio update
     opened_at: datetime
     closed_at: datetime | None
+
 
 class Portfolio:
     balances: dict[tuple[StrategyId, Currency], Balance]
@@ -625,12 +629,14 @@ class FillModelPort(ABC):
     @abstractmethod
     def reset(self) -> None: ...
 
+
 class SimulatedExchangeAdapter(ExchangePort):
     """Composes FillModelPort + local order state.
 
     Implements ExchangePort so it's a drop-in replacement for
     RealExchangeAdapter. Used in shadow + backtest.
     """
+
     def __init__(
         self,
         fill_model: FillModelPort,
@@ -710,6 +716,7 @@ class OrderRouter:
     def submit(self, signal: StrategySignal) -> RouteDecision:
         """Returns Accepted | RejectedByRisk | RejectedByBudget | Halted."""
 
+
 class RiskEngine:
     capital_budget: dict[StrategyId, Money]
     max_concurrent_positions_per_strategy: int  # SA-7: 3
@@ -724,8 +731,10 @@ class RiskEngine:
         portfolio: Portfolio,
     ) -> RiskDecision: ...
 
+
 class SizingCalculator:
     """T-1 resolution: ATR baseline capped by fractional Kelly (or 5% floor)."""
+
     risk_pct_target: Decimal = Decimal("0.01")  # SA-7 1%
     stop_atr_multiple: Decimal = Decimal("2.0")  # SA-7
     equity_cap_pct: Decimal = Decimal("0.05")  # pre-reg v1 §5.4 binding
@@ -796,12 +805,11 @@ diffs + trade prints for the fill layer) and a `consolidated_bars` channel
 ```python
 class ClockPort(Protocol):
     def now(self) -> datetime: ...  # UTC always
-    def now_ns(self) -> int: ...    # nanosecond precision for event_ts
+    def now_ns(self) -> int: ...  # nanosecond precision for event_ts
+
 
 class MarketDataPort(Protocol):
-    def subscribe_raw_events(
-        self, instrument_id: InstrumentId
-    ) -> AsyncIterator[MarketEvent]:
+    def subscribe_raw_events(self, instrument_id: InstrumentId) -> AsyncIterator[MarketEvent]:
         """L2 diffs + trade prints in strict timestamp order."""
 
     def subscribe_bars(
@@ -809,9 +817,8 @@ class MarketDataPort(Protocol):
     ) -> AsyncIterator[Bar]:
         """Bar-close events (via consolidator)."""
 
-    def get_orderbook_snapshot(
-        self, instrument_id: InstrumentId
-    ) -> OrderbookSnapshot: ...
+    def get_orderbook_snapshot(self, instrument_id: InstrumentId) -> OrderbookSnapshot: ...
+
 
 @dataclass(frozen=True)
 class MarketEvent:
@@ -820,8 +827,10 @@ class MarketEvent:
     ts_local: int  # local receive timestamp (ns) for latency measurement
     payload: OrderbookDiff | TradePrint
 
+
 class Consolidator:
     """Aggregates raw events into bars. LEAN pattern (SA-2 §1.2)."""
+
     def update(self, event: MarketEvent) -> Bar | None: ...
 ```
 
@@ -884,6 +893,7 @@ class StrategyPort(Protocol):
     def on_fill(self, fill: Fill) -> None:
         """State update after fill (e.g., trailing stop level)."""
 
+
 @dataclass(frozen=True)
 class StrategyConfig:
     strategy_id: StrategyId
@@ -891,6 +901,7 @@ class StrategyConfig:
     oms_type: OmsType  # NETTING for Swing
     status: StrategyStatus  # ACTIVE | DRAINING | DISABLED
     timeframe: Timeframe
+
 
 @dataclass(frozen=True)
 class StrategySignal:
@@ -904,6 +915,7 @@ class StrategySignal:
     atr_context: Decimal  # for M-06 regime tagging in calibration
     f_star_estimate: Decimal | None  # T-1: enables Kelly cap; None → 5% floor
     metadata: dict  # signal source, confidence, etc.
+
 
 class SwingStrategyAdapter(StrategyPort):
     donchian_period: int = 20
@@ -969,9 +981,11 @@ class CalibrationService:
     def check_lookahead(self, event_log: list[FillEvent]) -> list[LookaheadViolation]: ...
     def certify(self, report: CalibrationReport, human_approved: bool) -> ShadowModeStatus: ...
 
+
 class ShadowModeGate:
     """CI-invoked. Reads shadow_mode.status from SQLite.
     Exits non-zero when deploy-to-live is attempted with UNTRUSTED status."""
+
     def check_deploy_allowed(self, target_env: Env) -> None: ...
 ```
 

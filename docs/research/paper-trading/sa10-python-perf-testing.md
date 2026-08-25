@@ -63,8 +63,8 @@ Hermes pins `requires-python = ">=3.14,<3.15"`. All 3.11+ improvements are avail
 # entrypoints/shadow_engine.py (future)
 async def run_shadow_engine(config: HermesConfig) -> None:
     async with asyncio.TaskGroup() as tg:
-        tg.create_task(ws_ingest_loop(config))      # receives diffs, feeds consolidator
-        tg.create_task(heartbeat_loop(config))       # healthchecks.io pings
+        tg.create_task(ws_ingest_loop(config))  # receives diffs, feeds consolidator
+        tg.create_task(heartbeat_loop(config))  # healthchecks.io pings
         tg.create_task(notifier_flush_loop(config))  # Telegram/Slack drain
     # TaskGroup exits when all tasks complete OR when first task raises.
     # On KeyboardInterrupt: the loop is cancelled, TaskGroup propagates
@@ -251,13 +251,15 @@ SQLite WAL (Write-Ahead Log) is already implied by ADR-003. Recommended connecti
 
 ```python
 # In SqliteLedger.__init__ or a connection factory:
-conn.execute("PRAGMA journal_mode=WAL")        # Concurrent reads during write
-conn.execute("PRAGMA synchronous=NORMAL")      # fsync on WAL checkpoint only (not every write)
-                                                # safe for non-power-failure workloads; use FULL if paranoid
-conn.execute("PRAGMA wal_autocheckpoint=1000") # Checkpoint every 1000 pages (default); tune up for write-heavy
-conn.execute("PRAGMA cache_size=-65536")        # 64MB page cache (negative = KB)
-conn.execute("PRAGMA temp_store=MEMORY")        # Temp tables in RAM
-conn.execute("PRAGMA mmap_size=268435456")      # 256MB memory-mapped I/O for reads
+conn.execute("PRAGMA journal_mode=WAL")  # Concurrent reads during write
+conn.execute("PRAGMA synchronous=NORMAL")  # fsync on WAL checkpoint only (not every write)
+# safe for non-power-failure workloads; use FULL if paranoid
+conn.execute(
+    "PRAGMA wal_autocheckpoint=1000"
+)  # Checkpoint every 1000 pages (default); tune up for write-heavy
+conn.execute("PRAGMA cache_size=-65536")  # 64MB page cache (negative = KB)
+conn.execute("PRAGMA temp_store=MEMORY")  # Temp tables in RAM
+conn.execute("PRAGMA mmap_size=268435456")  # 256MB memory-mapped I/O for reads
 ```
 
 **Batch commit pattern**: do not commit after every event insert if inserting at high rate. Batch-commit every 100 events or every 500ms, whichever comes first. The existing `SqliteLedger` already groups lot + event into one transaction per trade — this is correct. For the shadow-mode event stream (orderbook diffs), batch them.
@@ -321,6 +323,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from pathlib import Path
 
+
 # One Parquet file per day per pair: diffs/BTCEUR/2026-08-24.parquet
 def write_diff_batch(
     pair: str,
@@ -328,13 +331,15 @@ def write_diff_batch(
     output_dir: Path,
     date_str: str,
 ) -> None:
-    schema = pa.schema([
-        ("ts_ns", pa.int64()),
-        ("bids_px", pa.list_(pa.decimal128(18, 8))),
-        ("bids_qty", pa.list_(pa.decimal128(18, 8))),
-        ("asks_px", pa.list_(pa.decimal128(18, 8))),
-        ("asks_qty", pa.list_(pa.decimal128(18, 8))),
-    ])
+    schema = pa.schema(
+        [
+            ("ts_ns", pa.int64()),
+            ("bids_px", pa.list_(pa.decimal128(18, 8))),
+            ("bids_qty", pa.list_(pa.decimal128(18, 8))),
+            ("asks_px", pa.list_(pa.decimal128(18, 8))),
+            ("asks_qty", pa.list_(pa.decimal128(18, 8))),
+        ]
+    )
     table = pa.Table.from_pylist(diffs, schema=schema)
     out_path = output_dir / pair / f"{date_str}.parquet"
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -371,7 +376,7 @@ Known race patterns in trading systems:
 
    ```python
    # DANGEROUS — two tasks can both read balance=100, both write balance=90
-   balance = await get_balance()          # preemption possible here
+   balance = await get_balance()  # preemption possible here
    balance -= fill_cost
    await set_balance(balance)
    ```
@@ -386,8 +391,8 @@ Known race patterns in trading systems:
 
    ```python
    # DANGEROUS
-   book = self._current_orderbook          # snapshot at T
-   await asyncio.sleep(0)                  # book can change here
+   book = self._current_orderbook  # snapshot at T
+   await asyncio.sleep(0)  # book can change here
    fill_result = self._fill_model.process(book, order)  # uses stale book
    ```
 
@@ -430,6 +435,7 @@ The scenario: WS ingest is fast (10 msg/sec); the fill processor or SQLite write
 
 ```python
 INGEST_QUEUE: asyncio.Queue[MarketEvent] = asyncio.Queue(maxsize=10_000)
+
 
 async def ws_ingest_loop(ws_url: str) -> None:
     async with websockets.connect(ws_url) as ws:
@@ -513,6 +519,7 @@ from decimal import Decimal
 from hermes.domain.market_data.orderbook import Orderbook, OrderbookLevel
 from hermes.domain.value_objects.pair import Pair
 
+
 @st.composite
 def orderbook_levels(draw, n_levels: int = 10) -> tuple[OrderbookLevel, ...]:
     """Generate a sorted tuple of OrderbookLevels."""
@@ -522,9 +529,9 @@ def orderbook_levels(draw, n_levels: int = 10) -> tuple[OrderbookLevel, ...]:
         reverse=True,  # bids descending
     )
     return tuple(
-        OrderbookLevel(price=p, quantity=Decimal(str(draw(st.floats(0.001, 10.0)))))
-        for p in prices
+        OrderbookLevel(price=p, quantity=Decimal(str(draw(st.floats(0.001, 10.0))))) for p in prices
     )
+
 
 @st.composite
 def valid_orderbook(draw, pair: Pair | None = None) -> Orderbook:
@@ -550,6 +557,7 @@ def valid_orderbook(draw, pair: Pair | None = None) -> Orderbook:
         for i in range(n)
     )
     from datetime import datetime, UTC
+
     return Orderbook(
         pair=pair,
         bids=bid_levels,
@@ -564,6 +572,7 @@ def valid_orderbook(draw, pair: Pair | None = None) -> Orderbook:
 # tests/unit/domain/test_fill_state_machine.py
 from hypothesis.stateful import RuleBasedStateMachine, rule, initialize, invariant
 
+
 class FillStateMachine(RuleBasedStateMachine):
     """
     Models the order → fill → position state machine.
@@ -577,8 +586,10 @@ class FillStateMachine(RuleBasedStateMachine):
         self.open_lots: list[Lot] = []
         self.position_qty = Decimal("0")
 
-    @rule(qty=st.decimals(min_value="0.001", max_value="1.0", places=8),
-          price=st.decimals(min_value="100", max_value="50000", places=2))
+    @rule(
+        qty=st.decimals(min_value="0.001", max_value="1.0", places=8),
+        price=st.decimals(min_value="100", max_value="50000", places=2),
+    )
     def buy(self, qty: Decimal, price: Decimal) -> None:
         cost = qty * price * Decimal("1.001")  # 0.1% taker fee
         if cost > self.cash_balance:
@@ -588,8 +599,10 @@ class FillStateMachine(RuleBasedStateMachine):
         self.open_lots.append(lot)
         self.position_qty += qty
 
-    @rule(qty=st.decimals(min_value="0.001", max_value="1.0", places=8),
-          price=st.decimals(min_value="100", max_value="50000", places=2))
+    @rule(
+        qty=st.decimals(min_value="0.001", max_value="1.0", places=8),
+        price=st.decimals(min_value="100", max_value="50000", places=2),
+    )
     def sell(self, qty: Decimal, price: Decimal) -> None:
         sellable = min(qty, self.position_qty)
         if sellable <= 0:
@@ -606,7 +619,10 @@ class FillStateMachine(RuleBasedStateMachine):
     @invariant()
     def position_matches_lots(self) -> None:
         lot_qty = sum(l.remaining_qty.amount for l in self.open_lots)
-        assert lot_qty == self.position_qty, f"Lot qty {lot_qty} != position qty {self.position_qty}"
+        assert lot_qty == self.position_qty, (
+            f"Lot qty {lot_qty} != position qty {self.position_qty}"
+        )
+
 
 TestFillStateMachine = FillStateMachine.TestCase
 ```
@@ -625,6 +641,7 @@ WebSocket delay, reorder, and duplicate injection using a proxy coroutine:
 # tests/chaos/ws_chaos_proxy.py
 import asyncio, random
 from collections import deque
+
 
 class ChaosWebSocketProxy:
     """Wraps a websockets connection and injects network chaos."""
@@ -676,6 +693,7 @@ Already have `freezegun` in dev dependencies. Use it to test `ClockPort` defense
 from freezegun import freeze_time
 from hypothesis import given, settings
 from hypothesis import strategies as st
+
 
 @given(skew_seconds=st.floats(min_value=-86400, max_value=86400))
 def test_clock_skew_does_not_affect_event_ordering(skew_seconds: float) -> None:
@@ -799,6 +817,7 @@ When `FillModelPort` changes its serialization format, bump `fixture_schema_vers
 # tests/integration/test_golden_replay.py
 from syrupy.assertion import SnapshotAssertion
 
+
 def test_btceur_1h_replay(snapshot: SnapshotAssertion) -> None:
     """Replay the BTCEUR 1-hour fixture and assert bit-identical output."""
     events = load_fixture("tests/fixtures/replays/btceur_1h.jsonl")
@@ -880,6 +899,7 @@ The Binance diff message parser is the highest-value fuzz target: it receives un
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+
 @given(raw_message=st.binary(max_size=10_000))
 @settings(max_examples=10_000, deadline=None)
 def test_ws_parser_never_raises_on_arbitrary_bytes(raw_message: bytes) -> None:
@@ -889,7 +909,7 @@ def test_ws_parser_never_raises_on_arbitrary_bytes(raw_message: bytes) -> None:
         # If parsing succeeds, result must be a valid MarketEvent or None
         if result is not None:
             assert isinstance(result, MarketEvent)
-    except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
+    except ValueError, json.JSONDecodeError, UnicodeDecodeError:
         pass  # Expected — parser can reject malformed input
     except Exception as e:
         pytest.fail(f"Parser raised unexpected exception on {raw_message!r}: {e}")
@@ -901,12 +921,14 @@ def test_ws_parser_never_raises_on_arbitrary_bytes(raw_message: bytes) -> None:
 # fuzz/fuzz_ws_parser.py — atheris entry point
 import atheris, sys
 
+
 def TestOneInput(data):
     with atheris.instrument_func(parse_binance_diff_message):
         try:
             parse_binance_diff_message(data)
-        except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
+        except ValueError, json.JSONDecodeError, UnicodeDecodeError:
             pass
+
 
 atheris.Setup(sys.argv, TestOneInput)
 atheris.Fuzz()
@@ -923,7 +945,7 @@ The YAML config loader parses user-controlled input at startup. A malformed conf
 def test_config_loader_never_crashes_on_arbitrary_yaml(yaml_content: str) -> None:
     try:
         parse_config(yaml_content)
-    except (ConfigError, ValueError, pydantic.ValidationError):
+    except ConfigError, ValueError, pydantic.ValidationError:
         pass  # Expected rejection
     except Exception as e:
         pytest.fail(f"Config loader raised unexpected exception: {e}")

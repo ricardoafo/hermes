@@ -260,12 +260,12 @@ Each strategy is a **column** in a 2-D array. Time is the row axis. A portfolio 
 ```python
 # from_signals factory
 Portfolio.from_signals(
-    close,          # (T, N) price array
-    entries,        # (T, N) boolean signal array
-    exits,          # (T, N) boolean signal array
-    init_cash=10000,    # scalar (replicated per column) or (N,) array
-    cash_sharing=False, # False = isolated capital per column
-    group_by=None,      # None = no capital sharing
+    close,  # (T, N) price array
+    entries,  # (T, N) boolean signal array
+    exits,  # (T, N) boolean signal array
+    init_cash=10000,  # scalar (replicated per column) or (N,) array
+    cash_sharing=False,  # False = isolated capital per column
+    group_by=None,  # None = no capital sharing
 )
 ```
 
@@ -278,9 +278,9 @@ When `cash_sharing=True` with `group_by`: columns within a group share a single 
 ### 5.3 Per-Strategy PnL Attribution
 
 ```python
-pf.total_profit(group_by=False)   # Series indexed by column (strategy)
-pf.returns(group_by=False)         # (T, N) returns array per strategy
-pf.stats(agg_func=None)            # DataFrame of stats per strategy
+pf.total_profit(group_by=False)  # Series indexed by column (strategy)
+pf.returns(group_by=False)  # (T, N) returns array per strategy
+pf.stats(agg_func=None)  # DataFrame of stats per strategy
 ```
 
 The `group_by` parameter is the key: set to `False` to get per-column metrics; pass a grouping Series to aggregate sub-groups.

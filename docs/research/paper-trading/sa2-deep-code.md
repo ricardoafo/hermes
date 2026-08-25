@@ -341,7 +341,7 @@ price = data.current(order.asset, "close")  # BUG: uses CLOSE of CURRENT bar
 max_volume = self.volume_limit * volume
 remaining_volume = max_volume - self.volume_for_bar
 volume_to_transact = min(order.open_amount, remaining_volume)
-price_impact = price * self.price_impact * (volume_share ** 2)
+price_impact = price * self.price_impact * (volume_share**2)
 ```
 
 Issue #2011 (STILL OPEN, created 2017-11-10): "why do we use 'close' price for orders in VolumeShareSlippage.process_order". The call chain is: bar arrives → `process_orders()` → `VolumeShareSlippage.process_order` → uses CURRENT bar's `close` price. Since orders from bar T are processed when bar T+1 data arrives (from `tradesimulation.py`), this means fills at bar T+1 CLOSE — not T+1 OPEN. Pure look-ahead on daily bars.
@@ -422,32 +422,39 @@ from dataclasses import dataclass
 from typing import Optional, Protocol
 from decimal import Decimal
 
+
 @dataclass
 class OrderBookSnapshot:
     """Synthetic or real L2 snapshot for fill simulation."""
+
     bids: list[tuple[Decimal, Decimal]]  # [(price, qty), ...] sorted desc
     asks: list[tuple[Decimal, Decimal]]  # [(price, qty), ...] sorted asc
+
 
 @dataclass
 class FillResult:
     """Returned by FillModelPort.process_fill()."""
-    filled_qty: Decimal          # 0 = unfilled; < order_qty = partial
-    fill_price: Decimal          # VWAP if partial walk, else single price
-    commission: Decimal          # in quote currency
-    is_maker: bool               # determines fee tier
-    slippage_ticks: int          # for diagnostics
+
+    filled_qty: Decimal  # 0 = unfilled; < order_qty = partial
+    fill_price: Decimal  # VWAP if partial walk, else single price
+    commission: Decimal  # in quote currency
+    is_maker: bool  # determines fee tier
+    slippage_ticks: int  # for diagnostics
+
 
 class MarketDataContext:
     """What the fill model receives — inspired by NautilusTrader + LEAN."""
+
     instrument_id: str
-    strategy_id: str             # hermes: bucket-aware
-    order: "Order"               # order type, side, qty, limit_px
+    strategy_id: str  # hermes: bucket-aware
+    order: "Order"  # order type, side, qty, limit_px
     best_bid: Decimal
     best_ask: Decimal
     orderbook: Optional[OrderBookSnapshot]  # None if only bar data available
-    bar_ohlcv: Optional[tuple]   # (open, high, low, close, volume) if bar-level
-    ts_event: int                # nanosecond timestamp
-    ts_now: int                  # wall-clock or simulated clock
+    bar_ohlcv: Optional[tuple]  # (open, high, low, close, volume) if bar-level
+    ts_event: int  # nanosecond timestamp
+    ts_now: int  # wall-clock or simulated clock
+
 
 class FillModelPort(ABC):
     """
@@ -478,6 +485,7 @@ class FillModelPort(ABC):
         """Reset per-bar state (e.g., volume_for_bar tracking)."""
         ...
 
+
 class FeeModelPort(ABC):
     """Injected into FillModelPort at construction."""
 
@@ -489,10 +497,11 @@ class FeeModelPort(ABC):
         fill_px: Decimal,
         is_maker: bool,
         strategy_id: str,  # for tier-aware per-strategy fee tracking
-    ) -> Decimal:
-        ...
+    ) -> Decimal: ...
+
 
 # --- Concrete MVP1 Implementations ---
+
 
 class OrderbookWalkFillModel(FillModelPort):
     """
@@ -502,6 +511,7 @@ class OrderbookWalkFillModel(FillModelPort):
     For MVP1: uses real orderbook snapshot from WebSocket feed (shadow mode)
     or synthetic from bar OHLCV (backtesting).
     """
+
     def __init__(self, fee_model: FeeModelPort, max_volume_pct: float = 0.10):
         self.fee_model = fee_model
         self.max_volume_pct = max_volume_pct  # cap at 10% of bar volume
@@ -529,15 +539,21 @@ class OrderbookWalkFillModel(FillModelPort):
             return FillResult(0, Decimal(0), Decimal(0), False, 0)
         vwap = total_cost / filled
         is_maker = False  # market order always taker
-        commission = self.fee_model.commission(ctx.instrument_id, filled, vwap, is_maker, ctx.strategy_id)
-        slippage_ticks = round((vwap - ctx.best_ask) / ctx.order.tick_size) if ctx.order.is_buy else 0
+        commission = self.fee_model.commission(
+            ctx.instrument_id, filled, vwap, is_maker, ctx.strategy_id
+        )
+        slippage_ticks = (
+            round((vwap - ctx.best_ask) / ctx.order.tick_size) if ctx.order.is_buy else 0
+        )
         return FillResult(filled, vwap, commission, is_maker, slippage_ticks)
+
 
 class MakerTakerFeeModel(FeeModelPort):
     """
     Tier-aware maker/taker fees.
     Inspired by: NautilusTrader MakerTakerFeeModel, hftbacktest TradingValueFeeModel.
     """
+
     def __init__(self, maker_rate: Decimal, taker_rate: Decimal):
         self.maker = maker_rate
         self.taker = taker_rate

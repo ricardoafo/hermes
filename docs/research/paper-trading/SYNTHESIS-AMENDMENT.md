@@ -145,24 +145,27 @@ from decimal import Decimal
 from enum import Enum
 from typing import Protocol
 
+
 class OverlayVerdict(Enum):
-    ALLOW = "allow"                      # no overlay concerns
-    SUPPRESS = "suppress"                # single-rule suppression (e.g., correlation lock)
-    PORTFOLIO_HALT = "portfolio_halt"    # multiple new entries halted
+    ALLOW = "allow"  # no overlay concerns
+    SUPPRESS = "suppress"  # single-rule suppression (e.g., correlation lock)
+    PORTFOLIO_HALT = "portfolio_halt"  # multiple new entries halted
+
 
 @dataclass(frozen=True)
 class OverlayDecision:
     verdict: OverlayVerdict
-    triggered_rules: tuple[str, ...]     # e.g., ("RO-01",) or ("RO-06", "RO-08")
-    rationale: str                       # human-readable
-    reenable_at: datetime | None         # e.g., re-check RO-04 after 5 min of normal spread
+    triggered_rules: tuple[str, ...]  # e.g., ("RO-01",) or ("RO-06", "RO-08")
+    rationale: str  # human-readable
+    reenable_at: datetime | None  # e.g., re-check RO-04 after 5 min of normal spread
+
 
 class RiskOverlayPort(Protocol):
     def pre_entry_check(
         self,
         candidate: Order,
         portfolio: Portfolio,
-        market_snapshot: MarketSnapshot,   # includes current book, spread, ATR context
+        market_snapshot: MarketSnapshot,  # includes current book, spread, ATR context
     ) -> OverlayDecision: ...
 
     def evaluate_periodic(self, portfolio: Portfolio) -> list[OverlayEvent]:
@@ -173,17 +176,19 @@ class RiskOverlayPort(Protocol):
     def is_portfolio_halted(self) -> tuple[bool, tuple[str, ...]]:
         """Fast check consulted by OrderRouter before every submit()."""
 
+
 class PortfolioRiskOverlay(RiskOverlayPort):
     """Concrete MVP1 impl of the 8 SA-9 rules."""
-    correlation_threshold: Decimal = Decimal("0.80")     # RO-01, SA-9 §2.5
-    spread_spike_multiplier: Decimal = Decimal("10.0")   # RO-04, SA-9 §3.5
-    stale_book_ms: int = 2000                            # RO-05, SA-9 §3.5
-    depeg_warn: Decimal = Decimal("0.015")               # RO-06, SA-9 §4.5
-    depeg_halt: Decimal = Decimal("0.030")               # RO-06, SA-9 §4.5
-    fomc_blackout_before_min: int = 30                   # RO-07, SA-9 §8.6
-    fomc_blackout_after_min: int = 60                    # RO-07, SA-9 §8.6
-    multi_pair_atr_threshold: int = 2                    # RO-08, SA-9 §8.6
-    reenable_normal_min: int = 5                         # RO-04, SA-9 §3.5
+
+    correlation_threshold: Decimal = Decimal("0.80")  # RO-01, SA-9 §2.5
+    spread_spike_multiplier: Decimal = Decimal("10.0")  # RO-04, SA-9 §3.5
+    stale_book_ms: int = 2000  # RO-05, SA-9 §3.5
+    depeg_warn: Decimal = Decimal("0.015")  # RO-06, SA-9 §4.5
+    depeg_halt: Decimal = Decimal("0.030")  # RO-06, SA-9 §4.5
+    fomc_blackout_before_min: int = 30  # RO-07, SA-9 §8.6
+    fomc_blackout_after_min: int = 60  # RO-07, SA-9 §8.6
+    multi_pair_atr_threshold: int = 2  # RO-08, SA-9 §8.6
+    reenable_normal_min: int = 5  # RO-04, SA-9 §3.5
 ```
 
 **Dependencies**:
@@ -364,10 +369,12 @@ from datetime import datetime
 from enum import Enum
 from typing import Protocol
 
+
 class DataMode(Enum):
     TRAIN = "train"
     VALIDATION = "validation"
     OOS_CERTIFICATION = "oos_certification"  # one-shot; requires certify CLI
+
 
 class ExperimentStatus(Enum):
     UNTRUSTED = "untrusted"
@@ -378,24 +385,26 @@ class ExperimentStatus(Enum):
     CERTIFIED = "certified"
     DEAD = "dead"  # terminal — kill trigger fired
 
+
 @dataclass(frozen=True)
 class PreRegistration:
-    experiment_id: str                       # e.g., "swing-mvp1-v1"
+    experiment_id: str  # e.g., "swing-mvp1-v1"
     version: int
-    hash_sha256: str                         # canonical hash of §1-§13
+    hash_sha256: str  # canonical hash of §1-§13
     signed_at: datetime | None
     git_commit_sha: str | None
-    asset_universe: tuple[str, ...]          # §3
+    asset_universe: tuple[str, ...]  # §3
     train_window: tuple[datetime, datetime]  # §4
     validation_window: tuple[datetime, datetime]
     oos_window: tuple[datetime, datetime]
-    certification_earliest: datetime         # §4 discipline gate
-    strategy_config_frozen: dict             # §5 — exact params required
-    fee_model_frozen: dict                   # §6
-    kill_criteria: dict                      # §10
-    primary_metric_thresholds: dict          # §9 primary
-    secondary_metric_thresholds: dict        # §9 secondary
-    bonferroni_penalty_count: int            # incremented on secondary additions
+    certification_earliest: datetime  # §4 discipline gate
+    strategy_config_frozen: dict  # §5 — exact params required
+    fee_model_frozen: dict  # §6
+    kill_criteria: dict  # §10
+    primary_metric_thresholds: dict  # §9 primary
+    secondary_metric_thresholds: dict  # §9 secondary
+    bonferroni_penalty_count: int  # incremented on secondary additions
+
 
 class DataSplitEnforcer:
     def __init__(self, pre_registration: PreRegistration, clock: ClockPort): ...
@@ -411,11 +420,14 @@ class DataSplitEnforcer:
         overlaps the OOS window. Also enforces the certification_earliest
         date gate for OOS_CERTIFICATION mode."""
 
+
 class OOSDataLeakageError(Exception):
     """Physical refusal to load OOS data outside certification mode."""
 
+
 class PreRegistrationDeviationError(Exception):
     """Current config drifts from frozen pre-registration."""
+
 
 class StatisticalReport:
     dsr: Decimal
@@ -425,6 +437,7 @@ class StatisticalReport:
     purged_cv_metrics: dict
     trade_count: int
     bonferroni_adjusted_alpha: Decimal
+
 
 class H1AcceptanceGate:
     def evaluate(
@@ -437,36 +450,47 @@ class H1AcceptanceGate:
         AND report.bootstrap_ci_lower > 0
         AND all secondary metrics pass."""
 
-class KillTriggerEvaluator:
-    def evaluate_shadow(self, overlay_events: list[OverlayEvent],
-                        drift_bps: list[Decimal],
-                        shadow_sharpe_60d: Decimal) -> list[KillTriggerFired]: ...
 
-    def evaluate_live(self, drawdown_pct: Decimal,
-                      time_to_recovery_days: int,
-                      rolling_30_trade_sharpe: Decimal,
-                      overlay_events: list[OverlayEvent],
-                      shadow_vs_live_bps_2w: Decimal) -> list[KillTriggerFired]: ...
+class KillTriggerEvaluator:
+    def evaluate_shadow(
+        self,
+        overlay_events: list[OverlayEvent],
+        drift_bps: list[Decimal],
+        shadow_sharpe_60d: Decimal,
+    ) -> list[KillTriggerFired]: ...
+
+    def evaluate_live(
+        self,
+        drawdown_pct: Decimal,
+        time_to_recovery_days: int,
+        rolling_30_trade_sharpe: Decimal,
+        overlay_events: list[OverlayEvent],
+        shadow_vs_live_bps_2w: Decimal,
+    ) -> list[KillTriggerFired]: ...
+
 
 @dataclass(frozen=True)
 class KillTriggerFired:
-    rule_id: str                    # e.g., "live-max-drawdown-15pct"
-    evidence: dict                  # observed values
+    rule_id: str  # e.g., "live-max-drawdown-15pct"
+    evidence: dict  # observed values
     fired_at: datetime
-    pre_registration_hash: str      # binds firing to specific experiment
+    pre_registration_hash: str  # binds firing to specific experiment
+
 
 class DeviationDetector:
     def compare(
         self,
-        current_strategy_config: StrategyConfig,   # Spec 5
-        current_fee_model: FeeModelConfig,          # Spec 2
+        current_strategy_config: StrategyConfig,  # Spec 5
+        current_fee_model: FeeModelConfig,  # Spec 2
         pre_registration: PreRegistration,
     ) -> list[Deviation]:
         """Returns empty list if no drift; non-empty raises
         PreRegistrationDeviationError at the enforcement site."""
 
+
 class LabNotebook:
     """Append-only, event-sourced per SA-8 discipline."""
+
     def append(self, entry: LabNotebookEntry) -> None: ...
     def dump_markdown(self, experiment_id: str) -> str: ...
 ```
