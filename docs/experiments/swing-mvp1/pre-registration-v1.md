@@ -1,11 +1,16 @@
 ---
 name: Pre-Registration — Swing MVP1
-version: 1 (PENDING SIGNATURE — awaiting operator sign-off and hash)
+version: 1
 supersedes: pre-registration-v0.md
 author: Claude (drafted from research vault) — resolutions per operator confirmation 2026-08-25
 date_drafted: 2026-08-25
+date_signed: 2026-08-25T12:48:18Z
 experiment_id: swing-mvp1-v1
-status: PENDING_SIGNATURE
+status: SIGNED
+signed_by: Rafo Afonso Montero <r.afonsomontero@gmail.com>
+content_sha256: 8d73e99ec658712e2304b872e3231421a5f5eeeafbe8255b199cbb8092db3433
+content_sha256_scope: git show 9ddb879:docs/experiments/swing-mvp1/pre-registration-v1.md | sha256sum
+signing_commit_precursor: 9ddb879
 ---
 
 # Pre-Registration Document — Swing Strategy MVP1
@@ -312,14 +317,25 @@ Every entry: UTC ISO 8601 timestamp, phase (train/val/OOS/shadow/live), action, 
 
 ## 16. Signatures
 
-Pending operator sign-off:
+**Signed 2026-08-25T12:48:18Z.**
 
-- Operator signature + timestamp: _______________
-- SHA256 hash of this document (post-signing): _______________
-- SHA256 hash of `data-manifest.json` (once ingest complete): _______________
-- Git commit SHA of pre-registration-v1.md: _______________
+- Operator: Rafo Afonso Montero (`r.afonsomontero@gmail.com`)
+- Timestamp: `2026-08-25T12:48:18Z`
+- Content SHA256 (pre-signing state at commit `9ddb879`): `8d73e99ec658712e2304b872e3231421a5f5eeeafbe8255b199cbb8092db3433`
+- SHA256 of `data-manifest.json`: TBD — Week 1-2 ingest
+- Git commit SHA of pre-signing state: `9ddb879`
+- Git commit SHA of signing state: recorded in the commit message of this change
 
-**Once signed, this document is IMMUTABLE.** Any change means v2 — which kills v1's experiment and starts a new one.
+**Verification protocol.** The content hash above is of the file's state in commit `9ddb879` (immediately before this signing edit). To verify:
+
+```bash
+git show 9ddb879:docs/experiments/swing-mvp1/pre-registration-v1.md | sha256sum
+# expect: 8d73e99ec658712e2304b872e3231421a5f5eeeafbe8255b199cbb8092db3433
+```
+
+Any subsequent edit to this file changes the git tree — the signing commit is the anchor, and any post-signing modification is a **new experiment (v2)** per §11 Deviation Protocol.
+
+**This document is now IMMUTABLE.** Any change means v2 — which kills v1's experiment and starts a new one.
 
 ---
 
