@@ -39,6 +39,9 @@ from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.lot_id import LotId
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.quantity import Quantity
+from hermes.domain.value_objects.strategy_id import StrategyId
+
+_SWING = StrategyId("swing")
 
 # ---------------------------------------------------------------------------
 # Deterministic ULID generator — Hypothesis-safe.
@@ -76,6 +79,7 @@ def _lot(
         original_qty=Quantity(amount=original, asset=Currency.BTC),
         remaining_qty=Quantity(amount=remaining, asset=Currency.BTC),
         cost_basis_per_unit=Money(amount=cost_basis, currency=Currency.EUR),
+        strategy_id=_SWING,
         opened_at=opened_at,
     )
 
@@ -302,6 +306,7 @@ class TestSelectLotsFifoAssetFiltering:
             original_qty=Quantity(amount=Decimal("10"), asset=Currency.ETH),
             remaining_qty=Quantity(amount=Decimal("10"), asset=Currency.ETH),
             cost_basis_per_unit=Money(amount=Decimal("3000"), currency=Currency.EUR),
+            strategy_id=_SWING,
             opened_at=datetime(2026, 8, 23, tzinfo=UTC),
         )
         result = select_lots_fifo(

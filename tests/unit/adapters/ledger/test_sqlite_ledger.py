@@ -38,6 +38,7 @@ from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.price import Price
 from hermes.domain.value_objects.quantity import Quantity
+from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.ports.ledger import LedgerPort
 
 
@@ -77,6 +78,7 @@ def _sample_lot() -> Lot:
         original_qty=Quantity(amount=Decimal("0.001"), asset=Currency.BTC),
         remaining_qty=Quantity(amount=Decimal("0.001"), asset=Currency.BTC),
         cost_basis_per_unit=Money(amount=Decimal("65000"), currency=Currency.EUR),
+        strategy_id=StrategyId("swing"),
         opened_at=datetime(2026, 11, 5, 14, 22, 3, tzinfo=UTC),
     )
 
@@ -235,6 +237,7 @@ class TestOpenLotRoundTrip:
                 original_qty=Quantity(amount=Decimal("0.001"), asset=Currency.BTC),
                 remaining_qty=Quantity(amount=Decimal("0.001"), asset=Currency.BTC),
                 cost_basis_per_unit=Money(amount=Decimal("50000"), currency=Currency.EUR),
+                strategy_id=StrategyId("swing"),
                 opened_at=datetime(2026, 1, 1, tzinfo=UTC),
             )
             newer = Lot(
@@ -243,6 +246,7 @@ class TestOpenLotRoundTrip:
                 original_qty=Quantity(amount=Decimal("0.001"), asset=Currency.BTC),
                 remaining_qty=Quantity(amount=Decimal("0.001"), asset=Currency.BTC),
                 cost_basis_per_unit=Money(amount=Decimal("60000"), currency=Currency.EUR),
+                strategy_id=StrategyId("swing"),
                 opened_at=datetime(2026, 6, 1, tzinfo=UTC),
             )
             # Insert newer first — proves the ordering comes from the SELECT.
@@ -356,6 +360,7 @@ class TestConsumeLotRollbackOnSqlError:
                 original_qty=Quantity(amount=Decimal("0.001"), asset=Currency.BTC),
                 remaining_qty=Quantity(amount=Decimal("0"), asset=Currency.BTC),
                 cost_basis_per_unit=Money(amount=Decimal("50000"), currency=Currency.EUR),
+                strategy_id=StrategyId("swing"),
                 opened_at=datetime(2026, 1, 1, tzinfo=UTC),
             )
             with pytest.raises(LedgerError, match="consume_lot failed"):
