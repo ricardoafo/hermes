@@ -28,6 +28,9 @@ from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.lot_id import LotId
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.quantity import Quantity
+from hermes.domain.value_objects.strategy_id import StrategyId
+
+_SWING = StrategyId("swing")
 
 
 def _btc_lot(
@@ -44,6 +47,7 @@ def _btc_lot(
         original_qty=Quantity(amount=original, asset=Currency.BTC),
         remaining_qty=Quantity(amount=remaining, asset=Currency.BTC),
         cost_basis_per_unit=Money(amount=cost_basis, currency=Currency.EUR),
+        strategy_id=_SWING,
         opened_at=opened_at or datetime(2026, 8, 23, 14, 22, 3, tzinfo=UTC),
     )
 
@@ -60,6 +64,7 @@ class TestLotConstruction:
                 original_qty=Quantity(amount=Decimal("1"), asset=Currency.ETH),
                 remaining_qty=Quantity(amount=Decimal("1"), asset=Currency.BTC),
                 cost_basis_per_unit=Money(amount=Decimal("50000"), currency=Currency.EUR),
+                strategy_id=_SWING,
                 opened_at=datetime(2026, 8, 23, tzinfo=UTC),
             )
 
@@ -72,6 +77,7 @@ class TestLotConstruction:
                 original_qty=Quantity(amount=Decimal("1"), asset=Currency.BTC),
                 remaining_qty=Quantity(amount=Decimal("1"), asset=Currency.ETH),
                 cost_basis_per_unit=Money(amount=Decimal("50000"), currency=Currency.EUR),
+                strategy_id=_SWING,
                 opened_at=datetime(2026, 8, 23, tzinfo=UTC),
             )
 
@@ -84,6 +90,7 @@ class TestLotConstruction:
                 original_qty=Quantity(amount=Decimal("0.5"), asset=Currency.BTC),
                 remaining_qty=Quantity(amount=Decimal("1.0"), asset=Currency.BTC),
                 cost_basis_per_unit=Money(amount=Decimal("50000"), currency=Currency.EUR),
+                strategy_id=_SWING,
                 opened_at=datetime(2026, 8, 23, tzinfo=UTC),
             )
 
@@ -96,6 +103,7 @@ class TestLotConstruction:
                 original_qty=Quantity(amount=Decimal("1"), asset=Currency.BTC),
                 remaining_qty=Quantity(amount=Decimal("1"), asset=Currency.BTC),
                 cost_basis_per_unit=Money(amount=Decimal("50000"), currency=Currency.USDT),
+                strategy_id=_SWING,
                 opened_at=datetime(2026, 8, 23, tzinfo=UTC),
             )
 
@@ -108,6 +116,7 @@ class TestLotConstruction:
                 original_qty=Quantity(amount=Decimal("1"), asset=Currency.BTC),
                 remaining_qty=Quantity(amount=Decimal("1"), asset=Currency.BTC),
                 cost_basis_per_unit=Money(amount=Decimal("50000"), currency=Currency.EUR),
+                strategy_id=_SWING,
                 opened_at=datetime(2026, 8, 23, 14, 22, 3),  # naive on purpose
             )
 
@@ -122,6 +131,7 @@ class TestLotOpenFactory:
             asset=Currency.BTC,
             qty=Quantity(amount=Decimal("0.5"), asset=Currency.BTC),
             cost_basis_per_unit=Money(amount=Decimal("50000"), currency=Currency.EUR),
+            strategy_id=_SWING,
             opened_at=datetime(2026, 8, 23, tzinfo=UTC),
         )
         assert isinstance(result, Success)
@@ -136,6 +146,7 @@ class TestLotOpenFactory:
             asset=Currency.BTC,
             qty=Quantity(amount=Decimal("0"), asset=Currency.BTC),
             cost_basis_per_unit=Money(amount=Decimal("50000"), currency=Currency.EUR),
+            strategy_id=_SWING,
             opened_at=datetime(2026, 8, 23, tzinfo=UTC),
         )
         assert isinstance(result, Failure)

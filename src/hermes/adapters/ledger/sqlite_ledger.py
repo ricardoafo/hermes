@@ -35,6 +35,7 @@ from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.lot_id import LotId
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.quantity import Quantity
+from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.infrastructure.time import now_utc
 
 __all__ = ["SqliteLedger"]
@@ -166,7 +167,7 @@ class SqliteLedger:
         try:
             rows = self._conn.execute(
                 "SELECT lot_id, asset, original_qty, remaining_qty, "
-                "       cost_basis_per_unit, opened_at "
+                "       cost_basis_per_unit, strategy_id, opened_at "
                 "FROM lots "
                 "WHERE asset = ? AND CAST(remaining_qty AS REAL) > 0 "
                 "ORDER BY opened_at ASC, lot_id ASC",
@@ -185,14 +186,15 @@ class SqliteLedger:
         """Insert a new lot row. Does NOT commit — caller controls the txn."""
         self._conn.execute(
             "INSERT INTO lots (lot_id, asset, original_qty, remaining_qty, "
-            "                  cost_basis_per_unit, opened_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "                  cost_basis_per_unit, strategy_id, opened_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 lot.lot_id.value,
                 lot.asset.value,
                 str(lot.original_qty.amount),
                 str(lot.remaining_qty.amount),
                 str(lot.cost_basis_per_unit.amount),
+                lot.strategy_id.value,
                 _iso_utc(lot.opened_at),
             ),
         )
@@ -238,7 +240,15 @@ class SqliteLedger:
 
     def _row_to_lot(self, row: tuple[Any, ...]) -> Lot:
         """Rehydrate a Lot from its SQLite row tuple."""
-        lot_id_str, asset_str, original, remaining, cost_basis, opened_at_str = row
+        (
+            lot_id_str,
+            asset_str,
+            original,
+            remaining,
+            cost_basis,
+            strategy_id_str,
+            opened_at_str,
+        ) = row
         asset = Currency(asset_str)
         return Lot(
             lot_id=LotId(value=lot_id_str),
@@ -246,6 +256,7 @@ class SqliteLedger:
             original_qty=Quantity(amount=Decimal(original), asset=asset),
             remaining_qty=Quantity(amount=Decimal(remaining), asset=asset),
             cost_basis_per_unit=Money(amount=Decimal(cost_basis), currency=Currency.EUR),
+            strategy_id=StrategyId(strategy_id_str),
             opened_at=datetime.fromisoformat(opened_at_str),
         )
 
