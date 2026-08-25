@@ -576,12 +576,19 @@ jobs:
                 owner, repo, pull_number: number,
                 merge_method: 'squash',
                 commit_title: `${pr.title} (#${number})`,
-                // `commit_message` is DELIBERATELY not set. An empty
-                // string means "no body" — GitHub does not fall back
-                // to a default. Omitting the field gives the default
-                // squash body (commit messages of the squashed
-                // commits), which preserves the reasoning and any
-                // `Closes #N` trailers.
+                // Pass the PR body as commit_message so GitHub's issue
+                // auto-close mechanism sees any `Closes #N` / `Fixes #N`
+                // / `Resolves #N` trailers. Observed 2026-08-25: PRs
+                // that merged via this queue with `Closes #N` in the
+                // rendered body (from openspec issue.md) did NOT
+                // auto-close their referenced issues — the earlier
+                // "omit commit_message to inherit commit-message
+                // trailers" strategy failed because our render-pr-body
+                // path puts Closes in the PR body, not in individual
+                // commit messages. Passing pr.body explicitly closes
+                // that gap. Empty body → GitHub uses commit messages
+                // (falls back to prior behavior). See issue #224.
+                commit_message: pr.body || '',
                 sha: testedHead,
               });
               mergedSha = data.sha;
