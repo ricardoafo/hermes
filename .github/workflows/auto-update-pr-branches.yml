@@ -65,6 +65,15 @@ jobs:
       - name: Reconcile every open non-draft PR
         uses: actions/github-script@v9
         with:
+          # Use the operator's PAT (not GITHUB_TOKEN) so that updateBranch
+          # merge commits are authored by ricardoafo, NOT
+          # github-actions[bot]. Without this, every automated
+          # branch-freshening triggers GitHub's loop-prevention
+          # "action_required" gate on the downstream CI run — each PR then
+          # requires manual approval to run tests, defeating the whole
+          # point of hands-off freshness. PAT-authored commits are
+          # first-class events and run CI normally.
+          github-token: ${{ secrets.HERMES_QUEUE_PAT || github.token }}
           script: |
             const { owner, repo } = context.repo;
 

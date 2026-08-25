@@ -455,6 +455,17 @@ jobs:
           # accident.
           DRY_RUN: ${{ inputs.dry_run }}
         with:
+          # Use the operator's PAT (not GITHUB_TOKEN) so that:
+          # (1) updateBranch merge commits are authored by ricardoafo, NOT
+          #     github-actions[bot], which means the resulting CI run does
+          #     NOT hit GitHub's loop-prevention "action_required" gate;
+          # (2) the squash merge itself is attributed to the human operator
+          #     in the git log rather than to a bot — matches the intent
+          #     "this merge is the operator's decision, executed by the
+          #     queue on the operator's behalf".
+          # The GITHUB_TOKEN path is preserved as a fallback if the secret
+          # is unset — the token is optional to actions/github-script.
+          github-token: ${{ secrets.HERMES_QUEUE_PAT || github.token }}
           script: |
             const { shouldMerge, ciRestart } = require(
               `${process.env.GITHUB_WORKSPACE}/tools/merge/decisions.cjs`
