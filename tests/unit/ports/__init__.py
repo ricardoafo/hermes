@@ -1,1 +1,1 @@
-"""Unit tests for hermes port protocols."""
+"""Unit tests for the hermes.ports layer — structural-conformance harnesses."""
