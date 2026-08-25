@@ -1,0 +1,357 @@
+"""Unit tests for the pre-registration parser.
+
+Tests cover:
+- All five typed accessors return correct signed constants.
+- Property: DataWindows.is_in_oos, is_in_train, is_in_validation are mutually
+  exclusive for non-overlapping ranges.
+- Parser raises FileNotFoundError when the file is missing.
+- Parser raises ValueError when experiment_id in frontmatter is wrong.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+from hypothesis import given
+from hypothesis import strategies as st
+
+from hermes.application.strategy_protocol.preregistration import (
+    PreRegistration,
+)
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def pre_reg(tmp_path_factory: pytest.TempPathFactory) -> PreRegistration:
+    """Return a PreRegistration pointed at the real pre-reg file in the repo."""
+    here = Path(__file__).resolve().parent
+    for candidate in [here, *here.parents]:
+        if (candidate / "pyproject.toml").exists():
+            return PreRegistration(project_root=candidate)
+    pytest.skip("Could not find project root — skipping integration-style test")
+
+
+# ---------------------------------------------------------------------------
+# Accessor tests
+# ---------------------------------------------------------------------------
+
+
+class TestExperimentId:
+    """experiment_id() returns the signed experiment identifier."""
+
+    def test_returns_signed_id(self, pre_reg: PreRegistration) -> None:
+        """experiment_id() must return 'swing-mvp1-v1' — the only signed experiment."""
+        result = pre_reg.experiment_id()
+        assert result == "swing-mvp1-v1", (
+            f"Expected experiment_id 'swing-mvp1-v1', got '{result}'. "
+            f"This is a signed constant — do not change."
+        )
+
+
+class TestUniverse:
+    """universe() returns the signed three-symbol asset universe from §3."""
+
+    def test_returns_three_symbols(self, pre_reg: PreRegistration) -> None:
+        """universe() must return exactly 3 symbols (BTC, ETH, SOL per §3)."""
+        universe = pre_reg.universe()
+        assert len(universe) == 3, (
+            f"Expected 3 symbols in the signed universe, got {len(universe)}: {universe}"
+        )
+
+    def test_contains_btcusdt(self, pre_reg: PreRegistration) -> None:
+        """BTCUSDT must be in the signed universe per pre-reg §3."""
+        universe = pre_reg.universe()
+        assert "BTCUSDT" in universe, (
+            f"BTCUSDT missing from universe {universe}. Signed in pre-reg §3."
+        )
+
+    def test_contains_ethusdt(self, pre_reg: PreRegistration) -> None:
+        """ETHUSDT must be in the signed universe per pre-reg §3."""
+        universe = pre_reg.universe()
+        assert "ETHUSDT" in universe, (
+            f"ETHUSDT missing from universe {universe}. Signed in pre-reg §3."
+        )
+
+    def test_contains_solusdt(self, pre_reg: PreRegistration) -> None:
+        """SOLUSDT must be in the signed universe per pre-reg §3."""
+        universe = pre_reg.universe()
+        assert "SOLUSDT" in universe, (
+            f"SOLUSDT missing from universe {universe}. Signed in pre-reg §3."
+        )
+
+    def test_returns_tuple(self, pre_reg: PreRegistration) -> None:
+        """universe() must return a tuple (immutable) not a list."""
+        universe = pre_reg.universe()
+        assert isinstance(universe, tuple), (
+            f"universe() must return a tuple for immutability, got {type(universe)}"
+        )
+
+
+class TestDataWindows:
+    """data_windows() returns the signed §4 data windows as UTC-aware datetimes."""
+
+    def test_train_start_is_2020_09_01(self, pre_reg: PreRegistration) -> None:
+        """train_start must be 2020-09-01 UTC — SOL availability constraint per §4."""
+        windows = pre_reg.data_windows()
+        expected = datetime(2020, 9, 1, tzinfo=UTC)
+        assert windows.train_start == expected, (
+            f"train_start expected {expected}, got {windows.train_start}. Signed in pre-reg §4."
+        )
+
+    def test_oos_start_is_2025_09_01(self, pre_reg: PreRegistration) -> None:
+        """oos_start must be 2025-09-01 UTC — the CODE-ENFORCED read-refusal boundary."""
+        windows = pre_reg.data_windows()
+        expected = datetime(2025, 9, 1, tzinfo=UTC)
+        assert windows.oos_start == expected, (
+            f"oos_start expected {expected}, got {windows.oos_start}. "
+            f"This is the CODE-ENFORCED read-refusal boundary."
+        )
+
+    def test_oos_end_is_2026_12_31(self, pre_reg: PreRegistration) -> None:
+        """oos_end must be in December 2026 per pre-reg §4."""
+        windows = pre_reg.data_windows()
+        assert windows.oos_end.year == 2026, (
+            f"oos_end year expected 2026, got {windows.oos_end.year}. Signed in pre-reg §4."
+        )
+        assert windows.oos_end.month == 12, (
+            f"oos_end month expected 12, got {windows.oos_end.month}."
+        )
+
+    def test_all_datetimes_are_utc_aware(self, pre_reg: PreRegistration) -> None:
+        """All DataWindows datetimes must be UTC-aware (never naive)."""
+        windows = pre_reg.data_windows()
+        fields = [
+            ("train_start", windows.train_start),
+            ("train_end", windows.train_end),
+            ("validation_start", windows.validation_start),
+            ("validation_end", windows.validation_end),
+            ("oos_start", windows.oos_start),
+            ("oos_end", windows.oos_end),
+        ]
+        for name, dt in fields:
+            assert dt.tzinfo == UTC, (
+                f"DataWindows.{name} must be UTC-aware (tzinfo == UTC), got {dt.tzinfo!r}."
+            )
+
+    def test_is_in_oos_true_for_oos_date(self, pre_reg: PreRegistration) -> None:
+        """is_in_oos() must return True for a date inside the OOS window."""
+        windows = pre_reg.data_windows()
+        oos_ts = datetime(2026, 1, 1, tzinfo=UTC)
+        assert windows.is_in_oos(oos_ts) is True, (
+            "is_in_oos(2026-01-01) expected True, got False. OOS window is signed."
+        )
+
+    def test_is_in_oos_false_for_train_date(self, pre_reg: PreRegistration) -> None:
+        """is_in_oos() must return False for a date in the train window."""
+        windows = pre_reg.data_windows()
+        train_ts = datetime(2023, 6, 1, tzinfo=UTC)
+        assert windows.is_in_oos(train_ts) is False, (
+            "is_in_oos(2023-06-01) expected False, got True. Train dates must not be OOS."
+        )
+
+    def test_is_in_train_true_for_train_date(self, pre_reg: PreRegistration) -> None:
+        """is_in_train() must return True for a date inside the train window."""
+        windows = pre_reg.data_windows()
+        train_ts = datetime(2022, 3, 15, tzinfo=UTC)
+        assert windows.is_in_train(train_ts) is True, (
+            "is_in_train(2022-03-15) expected True, got False."
+        )
+
+    def test_is_in_validation_true_for_val_date(self, pre_reg: PreRegistration) -> None:
+        """is_in_validation() must return True for a date inside the validation window."""
+        windows = pre_reg.data_windows()
+        val_ts = datetime(2025, 1, 15, tzinfo=UTC)
+        assert windows.is_in_validation(val_ts) is True, (
+            "is_in_validation(2025-01-15) expected True, got False."
+        )
+
+
+class TestSizingConfig:
+    """sizing_config() returns the signed §5.4/§5.5 position-sizing constants."""
+
+    def test_risk_per_trade_is_1_percent(self, pre_reg: PreRegistration) -> None:
+        """risk_per_trade_fraction must be 0.01 (1%) per pre-reg §5.4."""
+        config = pre_reg.sizing_config()
+        assert config.risk_per_trade_fraction == 0.01, (
+            f"risk_per_trade_fraction expected 0.01 (1%), got {config.risk_per_trade_fraction}. "
+            f"Signed in pre-reg §5.4."
+        )
+
+    def test_hard_cap_is_5_percent(self, pre_reg: PreRegistration) -> None:
+        """position_hard_cap_fraction must be 0.05 (5%) per pre-reg §5.4."""
+        config = pre_reg.sizing_config()
+        assert config.position_hard_cap_fraction == 0.05, (
+            f"position_hard_cap_fraction expected 0.05 (5%), "
+            f"got {config.position_hard_cap_fraction}. Signed in pre-reg §5.4."
+        )
+
+    def test_max_concurrent_is_3(self, pre_reg: PreRegistration) -> None:
+        """max_concurrent_positions must be 3 per pre-reg §5.5."""
+        config = pre_reg.sizing_config()
+        assert config.max_concurrent_positions == 3, (
+            f"max_concurrent_positions expected 3, got {config.max_concurrent_positions}. "
+            f"Signed in pre-reg §5.5."
+        )
+
+    def test_correlation_lock_is_0_80(self, pre_reg: PreRegistration) -> None:
+        """correlation_lock_threshold must be 0.80 per pre-reg §5.5."""
+        config = pre_reg.sizing_config()
+        assert config.correlation_lock_threshold == 0.80, (
+            f"correlation_lock_threshold expected 0.80, got {config.correlation_lock_threshold}. "
+            f"Signed in pre-reg §5.5."
+        )
+
+    def test_time_stop_is_90_days(self, pre_reg: PreRegistration) -> None:
+        """time_stop_days must be 90 per pre-reg §5.2."""
+        config = pre_reg.sizing_config()
+        assert config.time_stop_days == 90, (
+            f"time_stop_days expected 90, got {config.time_stop_days}. Signed in pre-reg §5.2."
+        )
+
+
+class TestH1Thresholds:
+    """h1_thresholds() returns the signed §9 H1 acceptance thresholds."""
+
+    def test_dsr_min_is_0_7(self, pre_reg: PreRegistration) -> None:
+        """dsr_min must be 0.7 per pre-reg §9 primary metric."""
+        thresholds = pre_reg.h1_thresholds()
+        assert thresholds.dsr_min == 0.7, (
+            f"dsr_min expected 0.7, got {thresholds.dsr_min}. Signed in pre-reg §9."
+        )
+
+    def test_bootstrap_ci_lower_min_is_0(self, pre_reg: PreRegistration) -> None:
+        """bootstrap_ci_lower_min must be 0.0 per pre-reg §9."""
+        thresholds = pre_reg.h1_thresholds()
+        assert thresholds.bootstrap_ci_lower_min == 0.0, (
+            f"bootstrap_ci_lower_min expected 0.0, got {thresholds.bootstrap_ci_lower_min}. "
+            f"Signed in pre-reg §9."
+        )
+
+    def test_max_drawdown_max_is_15_percent(self, pre_reg: PreRegistration) -> None:
+        """max_drawdown_max must be 0.15 (15%) per pre-reg §9."""
+        thresholds = pre_reg.h1_thresholds()
+        assert thresholds.max_drawdown_max == 0.15, (
+            f"max_drawdown_max expected 0.15 (15%), got {thresholds.max_drawdown_max}. "
+            f"Signed in pre-reg §9."
+        )
+
+    def test_win_rate_min_is_30_percent(self, pre_reg: PreRegistration) -> None:
+        """win_rate_min must be 0.30 (30%) per pre-reg §9."""
+        thresholds = pre_reg.h1_thresholds()
+        assert thresholds.win_rate_min == 0.30, (
+            f"win_rate_min expected 0.30 (30%), got {thresholds.win_rate_min}. "
+            f"Signed in pre-reg §9."
+        )
+
+    def test_ulcer_index_max_is_10(self, pre_reg: PreRegistration) -> None:
+        """ulcer_index_max must be 10.0 per operator resolution 2026-08-25."""
+        thresholds = pre_reg.h1_thresholds()
+        assert thresholds.ulcer_index_max == 10.0, (
+            f"ulcer_index_max expected 10.0, got {thresholds.ulcer_index_max}. "
+            f"Signed in pre-reg §9 (note: 10 not 8 — operator resolution 2026-08-25)."
+        )
+
+
+class TestKillTriggers:
+    """kill_triggers() returns the signed §10 kill-trigger thresholds."""
+
+    def test_max_drawdown_threshold_is_15_percent(self, pre_reg: PreRegistration) -> None:
+        """max_drawdown_threshold must be 0.15 (15%) per pre-reg §10."""
+        triggers = pre_reg.kill_triggers()
+        assert triggers.max_drawdown_threshold == 0.15, (
+            f"max_drawdown_threshold expected 0.15 (15%), got {triggers.max_drawdown_threshold}. "
+            f"Signed in pre-reg §10."
+        )
+
+    def test_recovery_days_threshold_is_90(self, pre_reg: PreRegistration) -> None:
+        """recovery_days_threshold must be 90.0 days per pre-reg §10."""
+        triggers = pre_reg.kill_triggers()
+        assert triggers.recovery_days_threshold == 90.0, (
+            f"recovery_days_threshold expected 90.0 days, got {triggers.recovery_days_threshold}. "
+            f"Signed in pre-reg §10."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Error path tests
+# ---------------------------------------------------------------------------
+
+
+class TestPreRegistrationErrors:
+    """PreRegistration raises on missing file or wrong experiment_id."""
+
+    def test_raises_file_not_found_when_file_missing(self, tmp_path: Path) -> None:
+        """FileNotFoundError raised when pre-registration file is absent."""
+        with pytest.raises(FileNotFoundError, match="not found"):
+            PreRegistration(project_root=tmp_path)
+
+    def test_raises_value_error_when_experiment_id_wrong(self, tmp_path: Path) -> None:
+        """ValueError raised when frontmatter experiment_id does not match expected value."""
+        pre_reg_dir = tmp_path / "docs" / "experiments" / "swing-mvp1"
+        pre_reg_dir.mkdir(parents=True)
+        pre_reg_file = pre_reg_dir / "pre-registration-v1.md"
+        pre_reg_file.write_text(
+            "---\nexperiment_id: wrong-id\nstatus: SIGNED\n---\n\n# Content\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "hermes"\n')
+        with pytest.raises(ValueError, match="experiment_id mismatch"):
+            PreRegistration(project_root=tmp_path)
+
+    def test_raises_value_error_when_no_frontmatter(self, tmp_path: Path) -> None:
+        """ValueError raised when the pre-registration file has no YAML frontmatter."""
+        pre_reg_dir = tmp_path / "docs" / "experiments" / "swing-mvp1"
+        pre_reg_dir.mkdir(parents=True)
+        pre_reg_file = pre_reg_dir / "pre-registration-v1.md"
+        pre_reg_file.write_text("# No frontmatter\n\ncontent here\n", encoding="utf-8")
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "hermes"\n')
+        with pytest.raises(ValueError, match="no YAML frontmatter"):
+            PreRegistration(project_root=tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# Property tests
+# ---------------------------------------------------------------------------
+
+
+class TestDataWindowsProperties:
+    """Property tests for DataWindows boundary checks — windows must be mutually exclusive."""
+
+    @given(
+        year=st.integers(min_value=2025, max_value=2026),
+        month=st.integers(min_value=9, max_value=12),
+        day=st.integers(min_value=1, max_value=28),
+    )
+    def test_oos_dates_not_in_train(
+        self, year: int, month: int, day: int, pre_reg: PreRegistration
+    ) -> None:
+        """OOS timestamps must not be classified as train — windows are mutually exclusive."""
+        ts = datetime(year, month, day, tzinfo=UTC)
+        windows = pre_reg.data_windows()
+        if windows.is_in_oos(ts):
+            assert not windows.is_in_train(ts), (
+                f"Timestamp {ts} classified as both OOS and train — "
+                f"windows must be mutually exclusive."
+            )
+
+    @given(
+        year=st.integers(min_value=2020, max_value=2024),
+        month=st.integers(min_value=1, max_value=12),
+        day=st.integers(min_value=1, max_value=28),
+    )
+    def test_train_dates_not_in_oos(
+        self, year: int, month: int, day: int, pre_reg: PreRegistration
+    ) -> None:
+        """Train timestamps must not be classified as OOS — windows are mutually exclusive."""
+        ts = datetime(year, month, day, tzinfo=UTC)
+        windows = pre_reg.data_windows()
+        if windows.is_in_train(ts):
+            assert not windows.is_in_oos(ts), (
+                f"Timestamp {ts} classified as both train and OOS — "
+                f"windows must be mutually exclusive."
+            )
