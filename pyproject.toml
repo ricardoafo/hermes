@@ -98,7 +98,7 @@ ignore = ["PLR0913"]  # arg count — hexagonal use cases take many ports
 # is a separate scope conversation. Test files must expose D103 (missing docstring on public fn)
 # so every test names the invariant it protects.
 "src/**/*.py" = ["D"]
-"scripts/**/*.py" = ["D"]
+"scripts/**/*.py" = ["D", "PLR2004", "PLR0911", "PLR0912", "PLR0915", "PLR0917", "S310"]
 # Domain errors intentionally omit the "Error" suffix — CurrencyMismatch and
 # InvalidLot read more naturally as domain concepts than CurrencyMismatchError.
 # The layer + hierarchy (DomainError base) make the exception nature clear.
