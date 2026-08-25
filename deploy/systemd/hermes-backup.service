@@ -1,0 +1,35 @@
+# Nightly borg backup of L2 Parquet + SQLite DBs → Hetzner Storage Box.
+#
+# TEMPLATE — not installed by bootstrap-vps.sh. Copy to
+# /etc/systemd/system/hermes-backup.service on the VPS, then:
+#   systemctl daemon-reload
+#   systemctl enable --now hermes-backup.timer
+#
+# Prerequisites: see deploy/hetzner-storagebox-setup.md for one-time
+# borg repo init + Storage Box SSH key upload.
+
+[Unit]
+Description=Hermes nightly backup (L2 + SQLite → Hetzner Storage Box)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=hermes
+Group=hermes
+WorkingDirectory=/opt/hermes
+EnvironmentFile=/etc/hermes.env
+ExecStart=/opt/hermes/deploy/hermes-backup.sh
+
+# Hardening — same pattern as hermes.service.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/hermes
+
+# Backups can take several minutes on cold-cache runs; give room but cap.
+TimeoutStartSec=30min
+
+[Install]
+WantedBy=multi-user.target
