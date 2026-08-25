@@ -1,1 +1,1 @@
-"""Unit tests for hermes.ports."""
+"""Unit tests for hermes port protocols."""
