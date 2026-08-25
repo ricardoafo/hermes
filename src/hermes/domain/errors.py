@@ -23,8 +23,10 @@ __all__ = [
     "InfraError",
     "InvalidLot",
     "KrakenPublicError",
+    "LabNotebookAppendError",
     "LedgerError",
     "NetworkError",
+    "OOSDataLeakageError",
 ]
 
 
@@ -229,6 +231,69 @@ class KrakenPublicError(InfraError):
     def __str__(self) -> str:
         """Return human-readable description."""
         return f"Kraken public error: {self.msg}"
+
+
+@dataclass(frozen=True, slots=True)
+class OOSDataLeakageError(DomainError):
+    """Attempted to read OOS data outside certification mode.
+
+    Raised by :class:`hermes.application.strategy_protocol.data_split_enforcer.DataSplitEnforcer`
+    when code attempts to read a bar or trade whose timestamp falls inside the
+    OOS test window (``2025-09-01 ≤ ts ≤ 2026-12-31``) while
+    ``certification_mode`` context variable is ``False``.
+
+    This is the code-enforced read refusal mandated by
+    ``docs/experiments/swing-mvp1/pre-registration-v1.md`` §4 discipline gate.
+    OOS data is physically inaccessible until the certification harness explicitly activates
+    :func:`hermes.application.strategy_protocol.data_split_enforcer.certification_context`.
+
+    Args:
+        attempted_timestamp: The UTC datetime that violated the OOS boundary.
+        oos_start: The OOS window start date (``2025-09-01``).
+
+    Reference: pre-registration-v1.md §4, spec-9-strategy-development-protocol change.md D-2.
+    """
+
+    attempted_timestamp: str
+    oos_start: str
+
+    def __str__(self) -> str:
+        """Return human-readable description."""
+        return (
+            f"OOS data leakage prevented: timestamp {self.attempted_timestamp} "
+            f"is inside OOS window (starts {self.oos_start}). "
+            f"Activate certification_context() to permit this read."
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class LabNotebookAppendError(DomainError):
+    """Attempted to overwrite or duplicate an existing lab notebook entry.
+
+    Raised by :class:`hermes.application.strategy_protocol.lab_notebook.LabNotebook`
+    when an entry with the same header (timestamp + phase + actor + action) already
+    exists as the last entry in the notebook, or when a write would modify existing
+    content (overwrite attempt).
+
+    The lab notebook is append-only per
+    ``docs/experiments/swing-mvp1/pre-registration-v1.md`` §12 — the
+    anti-p-hacking mechanism requires that every action is permanently recorded
+    and nothing can be silently erased.
+
+    Args:
+        header: The entry header that conflicted.
+
+    Reference: pre-registration-v1.md §12, spec-9-strategy-development-protocol change.md D-5.
+    """
+
+    header: str
+
+    def __str__(self) -> str:
+        """Return human-readable description."""
+        return (
+            f"Lab notebook append error: entry with header '{self.header}' "
+            f"already exists as the last entry. The notebook is append-only."
+        )
 
 
 @dataclass(frozen=True, slots=True)
