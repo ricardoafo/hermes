@@ -25,6 +25,7 @@ __all__ = [
     "KrakenPublicError",
     "LedgerError",
     "NetworkError",
+    "RiskViolationError",
 ]
 
 
@@ -103,6 +104,31 @@ class InvalidLot(DomainError):
     def __str__(self) -> str:
         """Return human-readable description."""
         return f"Invalid lot: {self.reason}"
+
+
+@dataclass(frozen=True, slots=True)
+class RiskViolationError(DomainError):
+    """A risk overlay rule fired and blocked execution.
+
+    Returned as ``Failure(RiskViolationError(...))`` from risk-rule
+    evaluation when the rule's HALT threshold is crossed. Callers that
+    receive this error MUST abort the pending order or position entry and
+    log the ``reason`` for audit.
+
+    Args:
+        rule: Short identifier for the rule that fired (e.g. ``"RO-04"``).
+        reason: Human-readable description of the violation including the
+            measured value and the threshold that was exceeded.
+
+    Reference: SA-9 §5.5 — risk overlay rules; code-conventions.md §2.
+    """
+
+    rule: str
+    reason: str
+
+    def __str__(self) -> str:
+        """Return human-readable description."""
+        return f"Risk violation [{self.rule}]: {self.reason}"
 
 
 # ---------------------------------------------------------------------------
