@@ -63,6 +63,14 @@ from hermes.domain.value_objects.pair import Pair
 __all__ = ["BinanceHistoricalAdapter", "BinanceHistoricalConfig"]
 
 _MS_PER_SECOND: Final[int] = 1_000
+_US_PER_SECOND: Final[int] = 1_000_000
+
+# Binance changed the klines CSV archive format starting 2025-01: the
+# `open_time` / `close_time` fields went from milliseconds (13-digit
+# unix timestamps) to microseconds (16-digit). This adapter detects the
+# unit at parse time from the string length. See #271.
+_EPOCH_MS_DIGITS: Final[int] = 13
+_EPOCH_US_DIGITS: Final[int] = 16
 # Minimum CSV columns expected per klines row (Binance Vision spec).
 _KLINES_MIN_COLS: Final[int] = 7
 # Minimum CSV columns expected per aggTrades row.
@@ -344,7 +352,16 @@ def _is_numeric(s: str) -> bool:
 
 
 def _from_epoch_ms(ms_str: str, *, field_name: str, source: Path) -> datetime:
-    """Parse a milliseconds-since-epoch string into a UTC-aware datetime.
+    """Parse an epoch timestamp string into a UTC-aware datetime.
+
+    Handles both Binance archive formats:
+
+    - Pre-2025-01: 13-digit millisecond timestamps.
+    - Post-2025-01: 16-digit microsecond timestamps (see #271).
+
+    Detection is by digit-count of the trimmed input. Anything shorter
+    than 13 or longer than 16 digits raises `ExchangeError` — a defense
+    against parser drift.
 
     Args:
         ms_str: Raw string field from the CSV.
@@ -355,15 +372,27 @@ def _from_epoch_ms(ms_str: str, *, field_name: str, source: Path) -> datetime:
         UTC-aware :class:`~datetime.datetime`.
 
     Raises:
-        hermes.domain.errors.ExchangeError: On non-integer input.
+        hermes.domain.errors.ExchangeError: On non-integer input or a
+            digit-count outside the {13, 16} allowlist.
     """
+    stripped = ms_str.strip()
     try:
-        ms = int(ms_str)
+        raw = int(stripped)
     except ValueError as exc:
         raise ExchangeError(
             f"BinanceHistoricalAdapter: {field_name} is not an integer ({ms_str!r}) in {source}"
         ) from exc
-    return datetime.fromtimestamp(ms / _MS_PER_SECOND, tz=UTC)
+    n_digits = len(stripped.lstrip("-"))
+    if n_digits == _EPOCH_MS_DIGITS:
+        seconds = raw / _MS_PER_SECOND
+    elif n_digits == _EPOCH_US_DIGITS:
+        seconds = raw / _US_PER_SECOND
+    else:
+        raise ExchangeError(
+            f"BinanceHistoricalAdapter: {field_name} has unexpected timestamp "
+            f"digit-count {n_digits} ({stripped!r}) in {source} — expected 13 (ms) or 16 (µs)"
+        )
+    return datetime.fromtimestamp(seconds, tz=UTC)
 
 
 def _decimal_field(raw: str, *, field_name: str, source: Path) -> Decimal:
