@@ -46,6 +46,12 @@ locks you out.
    without console recovery
 6. **Install Docker + any other services** — order doesn't matter here,
    ufw allows outbound freely
+7. **Run the hermes bootstrap workflow** — see
+   [Hermes bootstrap (automated)](#hermes-bootstrap-automated) below.
+   Creates `/var/log/hermes` + `/etc/hermes`, renders
+   `/etc/hermes/env.production` from prod-env secrets, mounts the
+   Hetzner Storage Box when its creds are present. Idempotent — safe
+   to re-dispatch after any config change.
 
 **Root cause of this rule**: enabling `ufw` before verifying Tailscale
 persists through reboot has burned people before. `apt upgrade`
@@ -319,6 +325,79 @@ Configured via Hetzner console → Firewalls. Managed manually. Rules:
 
 To modify: Hetzner console → Firewalls → hermes-firewall → Edit rules.
 Changes apply within seconds.
+
+## Hermes bootstrap (automated)
+
+Provisioning the app-layer state on the VPS is fully automated by the
+`vps-bootstrap` GitHub Actions workflow. It joins the tailnet, SSHes
+in as `hermes-01`, and runs `scripts/deploy/vps_bootstrap.sh` on the
+box.
+
+### What it does
+
+1. Creates missing FHS dirs: `/var/log/hermes` and `/etc/hermes`
+   (owned `hermes:hermes`, mode `0750`). Skips if already present.
+2. Renders `/etc/hermes/env.production` from every `HERMES_*` secret
+   in the `prod` GitHub Environment. Written via tmp file + atomic
+   `mv`; mode `0400`, owned `hermes:hermes`. Empty secret values are
+   skipped (never written as `KEY=`, which systemd would interpret as
+   unset). Re-running overwrites cleanly.
+3. Mounts the Hetzner Storage Box at `/mnt/storage-box` via SSHFS.
+   Guarded — if `STORAGE_BOX_HOST` / `STORAGE_BOX_USER` /
+   `STORAGE_BOX_KEY` are missing the step logs a WARN and exits 0.
+   Installs a systemd auto-mount unit so it survives reboot.
+
+Idempotent: every step diffs before writing, so re-dispatch is safe
+and expected after any prod-env secret change.
+
+### How to dispatch
+
+```bash
+# From your laptop (needs gh CLI, no VPS access needed)
+gh workflow run vps-bootstrap.yml --repo ricardoafo/hermes --ref main
+gh run watch                                         # follow to completion
+```
+
+Or from the GitHub UI: Actions → VPS bootstrap → Run workflow.
+
+### Verifying the result
+
+```bash
+ssh -i "$HERMES_SSH_KEY" root@hermes-01 '
+    ls -la /var/log/hermes /etc/hermes
+    stat -c "%a %U:%G" /etc/hermes/env.production
+    mountpoint /mnt/storage-box
+'
+```
+
+Expected: both dirs exist as `hermes:hermes 750`; env file is
+`400 hermes:hermes`; storage-box mountpoint reports mounted (or the
+WARN case if creds are still absent).
+
+### When to re-dispatch
+
+- After adding/updating any `HERMES_*` secret in the `prod` GH env.
+- After adding storage-box credentials for the first time (unblocks
+  the mount step that previously WARN-skipped).
+- After a VPS reprovision — before enabling any hermes systemd unit.
+
+### Failure modes
+
+- **Tailscale-join fails** — the workflow's `Join tailnet` step
+  reports it. Check `TAILSCALE_AUTHKEY` in the `prod` env is not
+  expired; keys rotate every 90 days.
+- **SSH host-key mismatch** — the workflow's keyscan step will pick up
+  the new key. If it hangs, the VPS has been reprovisioned — verify
+  fingerprint via Hetzner console before proceeding.
+- **Storage-box mount fails mid-flight** — the script exits 1 with a
+  pointer to `journalctl -xeu mnt-storage\x2dbox.mount` on the VPS.
+  Check that the sub-account key hasn't been rotated.
+
+### Related
+
+- `.github/workflows/vps-bootstrap.yml`
+- `scripts/deploy/vps_bootstrap.sh`
+- `openspec/changes/chore-vps-bootstrap-workflow/change.md`
 
 ## Systemd services (populated as hermes services land)
 
