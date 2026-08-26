@@ -1,0 +1,146 @@
+# =====================================================================
+# VPS bootstrap — idempotent post-provisioning setup
+# =====================================================================
+#
+# workflow_dispatch-only. Runs `scripts/deploy/vps_bootstrap.sh` on the
+# VPS via Tailscale + SSH. Creates missing FHS dirs, renders
+# /etc/hermes/env.production from GH prod-env secrets, mounts storage
+# box when its credentials are present.
+#
+# Reuses the Tailscale + openssh-install scaffolding from
+# `vps-diagnose.yml` (see PR chain #277+, notably #284 for the
+# ADDITIONAL_DAEMON_ARGS composite-action gotcha).
+#
+# ## Related
+#   scripts/deploy/vps_bootstrap.sh — the idempotent script this runs
+#   openspec/changes/chore-vps-bootstrap-workflow/change.md
+#   #285 — tracking issue
+
+name: VPS bootstrap
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: vps-bootstrap
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    name: Bootstrap hermes-01
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    environment: prod
+    timeout-minutes: 10
+    # Job-level env — the tailscale composite action's internal daemon
+    # step doesn't inherit step-level env. See #284 for evidence.
+    env:
+      ADDITIONAL_DAEMON_ARGS: --tun=userspace-networking
+
+    steps:
+      - name: Checkout hermes repo (for scripts/deploy/vps_bootstrap.sh)
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout: scripts/deploy
+          sparse-checkout-cone-mode: false
+
+      - name: Ensure openssh-client is installed
+        run: |
+          set -euo pipefail
+          if command -v ssh >/dev/null 2>&1; then
+              echo "ssh already available: $(ssh -V 2>&1)"
+              exit 0
+          fi
+          echo "ssh missing — installing openssh-client"
+          if command -v apt-get >/dev/null 2>&1; then
+              if [ "$(id -u)" = "0" ]; then
+                  apt-get update -qq && apt-get install -y openssh-client
+              else
+                  sudo apt-get update -qq && sudo apt-get install -y openssh-client
+              fi
+          elif command -v apk >/dev/null 2>&1; then
+              if [ "$(id -u)" = "0" ]; then
+                  apk add --no-cache openssh-client
+              else
+                  sudo apk add --no-cache openssh-client
+              fi
+          else
+              echo "ERROR: no supported package manager (apt-get / apk)"
+              exit 2
+          fi
+
+      - name: Join tailnet
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          hostname: gh-actions-vps-bootstrap-${{ github.run_id }}
+          version: latest
+
+      - name: Prepare SSH keyfile + known_hosts
+        env:
+          VPS_SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/vps_id
+          chmod 600 ~/.ssh/vps_id
+          ssh-keyscan -H "$VPS_SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh-keygen -y -f ~/.ssh/vps_id > /dev/null && echo "keyfile parsed OK"
+
+      - name: Run bootstrap script on VPS
+        env:
+          VPS_SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
+          VPS_SSH_USER: ${{ secrets.VPS_SSH_USER }}
+
+          # Config-only vars (non-secret) hardcoded here so they land
+          # in .env.production even without a corresponding GH secret.
+          HERMES_ENV: prod
+          HERMES_SHADOW: "true"
+          HERMES_ALLOW_MAINNET: "no"
+          HERMES_SENTRY__ENVIRONMENT: prod
+
+          # HERMES_* secrets from prod env. Any that are unset (secret
+          # not added yet) come through as empty and the bootstrap
+          # script skips them (see "skipped-empty" counter in output).
+          HERMES_HEALTHCHECKS__PING_URL: ${{ secrets.HERMES_HEALTHCHECKS__PING_URL }}
+          HERMES_TELEGRAM__BOT_TOKEN: ${{ secrets.HERMES_TELEGRAM__BOT_TOKEN }}
+          HERMES_TELEGRAM__CHAT_ID: ${{ secrets.HERMES_TELEGRAM__CHAT_ID }}
+          HERMES_SLACK__BOT_TOKEN: ${{ secrets.HERMES_SLACK__BOT_TOKEN }}
+          HERMES_SLACK__DEFAULT_CHANNEL: ${{ vars.HERMES_SLACK__DEFAULT_CHANNEL }}
+          HERMES_SENTRY__DSN: ${{ secrets.HERMES_SENTRY__DSN }}
+          HERMES_BINANCE_MAINNET__API_KEY: ${{ secrets.HERMES_BINANCE_MAINNET__API_KEY }}
+          HERMES_BINANCE_MAINNET__API_SECRET: ${{ secrets.HERMES_BINANCE_MAINNET__API_SECRET }}
+          HERMES_BINANCE_TESTNET__API_KEY: ${{ secrets.HERMES_BINANCE_TESTNET__API_KEY }}
+          HERMES_BINANCE_TESTNET__API_SECRET: ${{ secrets.HERMES_BINANCE_TESTNET__API_SECRET }}
+
+          # Storage-box credentials (guarded — script skips mount when missing)
+          STORAGE_BOX_HOST: ${{ secrets.STORAGE_BOX_HOST }}
+          STORAGE_BOX_USER: ${{ secrets.STORAGE_BOX_USER }}
+          STORAGE_BOX_KEY: ${{ secrets.STORAGE_BOX_KEY }}
+        run: |
+          set -euo pipefail
+          # `-o SendEnv=HERMES_*,STORAGE_BOX_*` doesn't work by default
+          # (sshd's AcceptEnv would need to allow it). Instead, we build
+          # an inline `env VAR=... bash < script` command — the VPS
+          # never sees the client's env, only what we explicitly pass.
+          #
+          # Assemble the env-passing prefix from every currently-set env
+          # var starting with HERMES_ or STORAGE_BOX_.
+          env_args=()
+          while IFS='=' read -r name value; do
+              case "$name" in
+                  HERMES_*|STORAGE_BOX_*)
+                      env_args+=("$name=$value")
+                      ;;
+              esac
+          done < <(env)
+
+          # Pass the script via stdin so it runs as one atomic session.
+          ssh -i ~/.ssh/vps_id -o StrictHostKeyChecking=yes \
+              "$VPS_SSH_USER@$VPS_SSH_HOST" \
+              "env $(printf '%q ' "${env_args[@]}") bash" \
+              < scripts/deploy/vps_bootstrap.sh
