@@ -1,0 +1,174 @@
+# =====================================================================
+# VPS diagnose — read ground-truth state of the provisioned VPS
+# =====================================================================
+#
+# Manual-only workflow (`workflow_dispatch`). SSHes into the production
+# VPS using the same secrets the future CD deploy body (#179) will use
+# — validates the secret plumbing works AND emits a structured snapshot
+# of the VPS state (OS, python, /opt/hermes, systemd units, disk).
+#
+# Zero side effects: only READ commands. Never writes / installs /
+# restarts anything on the VPS.
+#
+# ## Trigger
+#
+#   workflow_dispatch:
+#     Operator runs this from the Actions tab (or `gh workflow run
+#     vps-diagnose.yml`) when they want a state snapshot — typically
+#     before filling / modifying the CD deploy body.
+#
+# ## Why an Environment
+#
+# `environment: prod` scopes secret access to the Environment's
+# protection rules (required reviewers, wait timers, etc.). The prod
+# Environment already holds the VPS_SSH_* secrets — this workflow just
+# consumes them.
+#
+# ## Related
+#
+#   .github/workflows/cd.yml — Fill order in its header lists this
+#   diagnostic as a prerequisite for deploy-body work.
+#   docs/guides/vps-operations.md — Operational runbook the deploy
+#   body will implement against.
+#   #276 — tracking issue.
+
+name: VPS diagnose
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: vps-diagnose
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    name: Snapshot VPS state
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    environment: prod
+    timeout-minutes: 5
+
+    steps:
+      # Load the SSH key into an ssh-agent so subsequent `ssh` calls
+      # use it. webfactory/ssh-agent takes the key from the VPS_SSH_KEY
+      # secret and starts an agent scoped to the job.
+      - name: Load SSH key from prod env
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+
+      # Trust the VPS's host key on first contact. `-H` hashes the
+      # hostname (matches GitHub-hosted convention).
+      - name: Add VPS to known_hosts
+        env:
+          VPS_SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "$VPS_SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Run diagnostic checklist
+        env:
+          VPS_SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
+          VPS_SSH_USER: ${{ secrets.VPS_SSH_USER }}
+        run: |
+          set -e
+          # Heredoc runs on the REMOTE — quoted so local shell doesn't expand.
+          ssh -o StrictHostKeyChecking=yes "$VPS_SSH_USER@$VPS_SSH_HOST" bash << 'REMOTE'
+          set +e  # Individual command failures are informational, not fatal.
+
+          echo ""
+          echo "════════════════════════════════════════════════════════"
+          echo "  1. OS + kernel"
+          echo "════════════════════════════════════════════════════════"
+          lsb_release -a 2>/dev/null || cat /etc/os-release
+          echo ""
+          uname -a
+
+          echo ""
+          echo "════════════════════════════════════════════════════════"
+          echo "  2. Python + uv"
+          echo "════════════════════════════════════════════════════════"
+          which python3 && python3 --version
+          which uv && uv --version || echo "uv NOT INSTALLED"
+
+          echo ""
+          echo "════════════════════════════════════════════════════════"
+          echo "  3. Hermes install directory (/opt/hermes)"
+          echo "════════════════════════════════════════════════════════"
+          if [ -d /opt/hermes ]; then
+              ls -la /opt/hermes
+              echo ""
+              echo "-- git state --"
+              (cd /opt/hermes && git log -1 --oneline 2>/dev/null && git status --short 2>/dev/null) || echo "not a git repo"
+          else
+              echo "NOT INSTALLED — /opt/hermes does not exist"
+          fi
+
+          echo ""
+          echo "════════════════════════════════════════════════════════"
+          echo "  4. Hermes systemd units"
+          echo "════════════════════════════════════════════════════════"
+          systemctl list-units --type=service --all 2>/dev/null | grep -i hermes || echo "NONE"
+          echo ""
+          echo "-- unit files on disk --"
+          ls -la /etc/systemd/system/hermes-* 2>/dev/null || echo "NONE"
+
+          echo ""
+          echo "════════════════════════════════════════════════════════"
+          echo "  5. Runtime user + FHS directories"
+          echo "════════════════════════════════════════════════════════"
+          id hermes 2>&1 || echo "hermes user does NOT exist"
+          for d in /opt/hermes /var/log/hermes /etc/hermes /var/lib/hermes; do
+              if [ -d "$d" ]; then
+                  stat -c "  %n  %U:%G  %a" "$d"
+              else
+                  echo "  $d  NOT EXIST"
+              fi
+          done
+
+          echo ""
+          echo "════════════════════════════════════════════════════════"
+          echo "  6. Storage-box mount"
+          echo "════════════════════════════════════════════════════════"
+          if mountpoint -q /mnt/storage-box 2>/dev/null; then
+              echo "MOUNTED"
+              df -h /mnt/storage-box
+              echo "-- contents --"
+              ls -la /mnt/storage-box/ 2>/dev/null | head -20
+          else
+              echo "NOT MOUNTED"
+              [ -d /mnt/storage-box ] && echo "(mount point directory exists)" || echo "(mount point directory does not exist)"
+          fi
+
+          echo ""
+          echo "════════════════════════════════════════════════════════"
+          echo "  7. Disk + memory"
+          echo "════════════════════════════════════════════════════════"
+          df -h / /var 2>/dev/null
+          echo ""
+          free -h
+
+          echo ""
+          echo "════════════════════════════════════════════════════════"
+          echo "  8. Firewall (UFW)"
+          echo "════════════════════════════════════════════════════════"
+          sudo -n ufw status verbose 2>&1 | head -20 || echo "UFW status unavailable (needs sudo)"
+
+          echo ""
+          echo "════════════════════════════════════════════════════════"
+          echo "  9. Fail2ban"
+          echo "════════════════════════════════════════════════════════"
+          systemctl is-active fail2ban 2>/dev/null || echo "fail2ban NOT installed / not running"
+
+          echo ""
+          echo "════════════════════════════════════════════════════════"
+          echo "  10. GH Actions runner"
+          echo "════════════════════════════════════════════════════════"
+          systemctl list-units --type=service --all 2>/dev/null | grep -i "runner" || echo "NO runner service found"
+
+          echo ""
+          echo "═════════════ DIAGNOSTIC COMPLETE ═════════════"
+          REMOTE
