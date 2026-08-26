@@ -72,6 +72,13 @@ jobs:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
           hostname: gh-actions-vps-diagnose-${{ github.run_id }}
           version: latest
+          # `--tun=userspace-networking` skips the TUN device requirement.
+          # The self-hosted runner is a Docker container without
+          # NET_ADMIN + /dev/net/tun; tailscaled crashes at start-up
+          # with "failed to connect to local tailscaled" otherwise.
+          # Userspace networking works inside unprivileged containers —
+          # slower than kernel-mode TUN but plenty for a diagnostic SSH.
+          additional-daemon-args: --tun=userspace-networking
 
       # Install openssh-client if missing. Self-hosted runner container
       # is minimal (no ssh / ssh-keygen / ssh-keyscan by default).
