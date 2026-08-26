@@ -56,6 +56,23 @@ jobs:
     timeout-minutes: 5
 
     steps:
+      # Join the tailnet as an ephemeral device using the auth key.
+      # The VPS is fronted by Tailscale SSH (previous dispatch hung on
+      # the "visit login.tailscale.com/a/..." interactive prompt) — this
+      # step provides device-level auth so the subsequent SSH connection
+      # succeeds without human interaction.
+      #
+      # Uses `hostname: gh-actions-vps-diagnose-${{ github.run_id }}` so
+      # the ephemeral device is uniquely identifiable in Tailscale admin
+      # logs. Ephemeral flag on the auth key ensures the device is
+      # cleaned up when the runner terminates.
+      - name: Join tailnet
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          hostname: gh-actions-vps-diagnose-${{ github.run_id }}
+          version: latest
+
       # Install openssh-client if missing. Self-hosted runner container
       # is minimal (no ssh / ssh-keygen / ssh-keyscan by default).
       # Detects the package manager (apt-get for Debian/Ubuntu bases,
