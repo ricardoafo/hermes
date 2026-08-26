@@ -54,6 +54,16 @@ jobs:
     runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     environment: prod
     timeout-minutes: 5
+    # Job-level env — the tailscale/github-action is COMPOSITE. Its
+    # internal daemon-start step does NOT inherit step-level env from
+    # the outer `Join tailnet` step, but DOES inherit job-level env.
+    # (Verified via run 33009310269 which showed the value empty in
+    # the internal step's env dump despite being set at step-level.)
+    # `--tun=userspace-networking` skips the kernel TUN requirement —
+    # required because the runner is a Docker container without
+    # NET_ADMIN / /dev/net/tun.
+    env:
+      ADDITIONAL_DAEMON_ARGS: --tun=userspace-networking
 
     steps:
       # Join the tailnet as an ephemeral device using the auth key.
@@ -67,19 +77,9 @@ jobs:
       # logs. Ephemeral flag on the auth key ensures the device is
       # cleaned up when the runner terminates.
       - name: Join tailnet
-        # `--tun=userspace-networking` skips the TUN device requirement.
-        # The self-hosted runner is a Docker container without NET_ADMIN
-        # + /dev/net/tun; tailscaled crashes at start-up with "failed to
-        # connect to local tailscaled" otherwise. Userspace networking
-        # works inside unprivileged containers — slower than kernel-mode
-        # TUN but plenty for a diagnostic SSH.
-        #
-        # NOTE: the `additional-daemon-args` input on this action does
-        # NOT populate the ADDITIONAL_DAEMON_ARGS env var (verified via
-        # run 33008731708 — env dump showed it empty despite the input
-        # being set). Setting the env var directly at the step level.
-        env:
-          ADDITIONAL_DAEMON_ARGS: --tun=userspace-networking
+        # ADDITIONAL_DAEMON_ARGS is set at JOB level (see env: above
+        # the steps) because this action is composite and its internal
+        # steps don't inherit step-level env.
         uses: tailscale/github-action@v3
         with:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
