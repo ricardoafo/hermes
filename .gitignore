@@ -54,3 +54,6 @@ Thumbs.db
 *.swo
 .vscode/
 .idea/
+
+# Sub-agent worktree scratch (never commit)
+.claude/

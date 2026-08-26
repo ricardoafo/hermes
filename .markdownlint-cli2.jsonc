@@ -14,6 +14,13 @@
     ".venv/**",
     ".idea/**",
     ".git/**",
+    // Sub-agent worktree scratch — never linted, never committed.
+    // Sub-agents spawned via `isolation: worktree` land under
+    // `.claude/worktrees/agent-*/` and often leave transient .md files
+    // (changelog fragments, PR-body drafts). These are gitignored
+    // via `.claude/` in .gitignore; ignore them here too so
+    // `markdownlint-cli2` doesn't scan into leftover worktree dirs.
+    ".claude/**",
     // Transient PR-body scratchpads (drift-eval 2026-08-22, wave 3):
     // sub-agents sometimes write `.pr-body-*.md` at repo root before
     // handing off to create-pr.sh. Those files start with `## Summary`
