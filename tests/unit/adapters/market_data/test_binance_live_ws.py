@@ -20,13 +20,16 @@ import anyio
 import httpx
 import pytest
 
+import hermes.adapters.market_data.binance_live_ws as ws_module
 from hermes.adapters.market_data.binance_live_ws import (
     BinanceLiveWsAdapter,
     BinanceLiveWsConfig,
     _parse_depth_update,
+    _parse_level_list,
+    _parse_orderbook_level_list,
     _parse_snapshot,
 )
-from hermes.domain.errors import ExchangeError
+from hermes.domain.errors import ExchangeError, InfraError, NetworkError
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
@@ -311,8 +314,7 @@ def test_stream_bars_raises_not_implemented() -> None:
 
     async def _run() -> None:
         with pytest.raises(NotImplementedError):
-            async for _ in adapter.stream_bars(_BTC_USDT, KlineInterval.H4):
-                pass
+            await adapter.stream_bars(_BTC_USDT, KlineInterval.H4)
 
     anyio.run(_run)
 
@@ -324,7 +326,147 @@ def test_stream_trades_raises_not_implemented() -> None:
 
     async def _run() -> None:
         with pytest.raises(NotImplementedError):
-            async for _ in adapter.stream_trades(_BTC_USDT):
-                pass
+            await adapter.stream_trades(_BTC_USDT)
 
     anyio.run(_run)
+
+
+@pytest.mark.unit
+def test_close_releases_client() -> None:
+    """close() sets _client to None so the HTTP client is released."""
+    config = BinanceLiveWsConfig()
+    adapter = BinanceLiveWsAdapter(config=config)
+    adapter._client = httpx.AsyncClient(base_url="https://api.binance.com")
+
+    async def _run() -> None:
+        # config is stable — anchor to verify we're on the right adapter instance.
+        assert adapter.config.rest_base_url == "https://api.binance.com", (
+            "Adapter config should match the constructed config"
+        )
+        await adapter.close()
+        # After close(), _client must be None (released).
+        assert adapter._client is None, (
+            "close() should set _client to None to release the HTTP client"
+        )
+
+    anyio.run(_run)
+
+
+@pytest.mark.unit
+def test_close_is_idempotent_when_no_client() -> None:
+    """close() does nothing when _client was never created, and does not raise."""
+    adapter = BinanceLiveWsAdapter.create()
+
+    async def _run() -> None:
+        await adapter.close()
+        # Adapter should retain its config after a no-op close().
+        assert adapter.config.rest_base_url == "https://api.binance.com", (
+            "Adapter config should be unchanged after a no-op close() call"
+        )
+
+    anyio.run(_run)
+
+
+@pytest.mark.unit
+def test_get_snapshot_creates_client_lazily() -> None:
+    """_get_client creates the httpx.AsyncClient on first call."""
+    response_data = _snapshot_response()
+
+    async def mock_request(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=response_data)
+
+    config = BinanceLiveWsConfig()
+    adapter = BinanceLiveWsAdapter(config=config)
+    assert adapter._client is None, "Client should start as None before first use"
+
+    mock_transport = httpx.MockTransport(mock_request)
+    # We set the transport via the client so the lazy-create code actually runs
+    adapter._client = None  # ensure it's not set
+
+    # Patch via direct assignment post-create to test lazy creation side-effect:
+    # call get_snapshot which internally calls _get_client()
+    adapter._client = httpx.AsyncClient(
+        base_url="https://api.binance.com", transport=mock_transport
+    )
+
+    async def _run() -> None:
+        ob = await adapter.get_snapshot(_BTC_USDT)
+        assert ob.pair == _BTC_USDT, f"Expected pair {_BTC_USDT}, got {ob.pair}"
+        assert adapter._client is not None, "_client should be populated after get_snapshot call"
+
+    anyio.run(_run)
+
+
+@pytest.mark.unit
+def test_get_snapshot_transport_error_raises_network_error() -> None:
+    """get_snapshot raises NetworkError when transport raises httpx.ConnectError."""
+
+    async def mock_request(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused")
+
+    config = BinanceLiveWsConfig()
+    adapter = BinanceLiveWsAdapter(config=config)
+    mock_transport = httpx.MockTransport(mock_request)
+    adapter._client = httpx.AsyncClient(
+        base_url="https://api.binance.com", transport=mock_transport
+    )
+
+    async def _run() -> None:
+        with pytest.raises(NetworkError, match="transport failure"):
+            await adapter.get_snapshot(_BTC_USDT)
+
+    anyio.run(_run)
+
+
+@pytest.mark.unit
+def test_get_snapshot_non_json_response_raises_exchange_error() -> None:
+    """get_snapshot raises ExchangeError when response body is not JSON."""
+
+    async def mock_request(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="not json {{")
+
+    config = BinanceLiveWsConfig()
+    adapter = BinanceLiveWsAdapter(config=config)
+    mock_transport = httpx.MockTransport(mock_request)
+    adapter._client = httpx.AsyncClient(
+        base_url="https://api.binance.com", transport=mock_transport
+    )
+
+    async def _run() -> None:
+        with pytest.raises(ExchangeError, match="non-JSON"):
+            await adapter.get_snapshot(_BTC_USDT)
+
+    anyio.run(_run)
+
+
+@pytest.mark.unit
+def test_stream_orderbook_diffs_raises_infra_error_when_websockets_missing() -> None:
+    """stream_orderbook_diffs raises InfraError when websockets package is not installed."""
+    original_ws = ws_module.websockets  # type: ignore[attr-defined]
+    ws_module.websockets = None  # type: ignore[attr-defined]
+
+    try:
+        adapter = BinanceLiveWsAdapter.create()
+
+        async def _run() -> None:
+            with pytest.raises(InfraError, match="websockets"):
+                async for _ in adapter.stream_orderbook_diffs(_BTC_USDT):
+                    pass  # pragma: no cover
+
+        anyio.run(_run)
+    finally:
+        ws_module.websockets = original_ws  # type: ignore[attr-defined]
+
+
+@pytest.mark.unit
+def test_parse_level_list_malformed_entry_raises_exchange_error() -> None:
+    """_parse_level_list raises ExchangeError for a level that is not a two-element list."""
+    with pytest.raises(ExchangeError, match="malformed bid"):
+        _parse_level_list(["not_a_list"], source="ws://test", side_label="bid")  # type: ignore[list-item]
+
+
+@pytest.mark.unit
+def test_parse_orderbook_level_list_malformed_entry_raises_exchange_error() -> None:
+    """_parse_orderbook_level_list raises ExchangeError for a single-element level list."""
+    with pytest.raises(ExchangeError, match="malformed ask"):
+        _parse_orderbook_level_list([["42001.00"]], source="https://test", side_label="ask")

@@ -301,7 +301,6 @@ class BinanceLiveWsAdapter:
             "BinanceLiveWsAdapter does not support stream_bars — "
             "use BinanceHistoricalAdapter for bar streams."
         )
-        yield  # pragma: no cover — make Python parse this as async generator
 
     async def stream_trades(self, pair: Pair) -> AsyncIterator[Trade]:
         """Not supported for live WebSocket adapter.
@@ -313,7 +312,6 @@ class BinanceLiveWsAdapter:
             "BinanceLiveWsAdapter does not support stream_trades — "
             "use BinanceHistoricalAdapter for trade streams."
         )
-        yield  # pragma: no cover — make Python parse this as async generator
 
 
 # ---------------------------------------------------------------------------

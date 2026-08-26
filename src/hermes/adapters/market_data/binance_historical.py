@@ -241,7 +241,6 @@ class BinanceHistoricalAdapter:
             "historical archives contain no L2 depth data. "
             "Use BinanceLiveWsAdapter for shadow-phase L2 streaming."
         )
-        yield  # pragma: no cover — make Python parse this as async generator
 
     async def get_snapshot(self, pair: Pair) -> Orderbook:
         """Not supported for historical data.
