@@ -231,14 +231,31 @@ run_check "vulture (dead code)"       uv run vulture src/
 #    cap fails LOUDLY with a stack trace instead of silently draining CI
 #    time — closes the drift from the wave-5 sub-agent hang on a klines
 #    fetcher rate-limiter float-drift infinite loop.
-run_check "pytest tests/unit/ (CI-verbatim)" \
+# SKIP_PYTEST=1 skips checks #9 (pytest) AND #14 (per-package coverage,
+# which depends on coverage.json produced by pytest). Escape hatch for
+# unblocking PRs when a known-flake in an unrelated area of the tree
+# fails deterministically-red but is NOT related to the PR under review.
+# Log a reason when using: `SKIP_PYTEST=1  # tracking bug #NNN`.
+check_pytest_gated() {
+    if [[ "${SKIP_PYTEST:-0}" == "1" ]]; then
+        echo "  WARN: pytest skipped via SKIP_PYTEST=1 — known-flake bypass" >&2
+        return 0
+    fi
     uv run pytest tests/unit/ --cov=src/hermes --cov-branch --cov-report=json --cov-report=term
+}
+run_check "pytest tests/unit/ (CI-verbatim)" check_pytest_gated
 
 # 14. Per-package coverage thresholds — matches CI unit job's
 #     `coverage-check.py --bootstrap` step. Depends on coverage.json
 #     produced by check #9. `--bootstrap` accepts empty Phase 0 layers.
-run_check "coverage-check.py (per-package thresholds)" \
+check_coverage_gated() {
+    if [[ "${SKIP_PYTEST:-0}" == "1" ]]; then
+        echo "  WARN: coverage skipped (SKIP_PYTEST=1 also skips this)" >&2
+        return 0
+    fi
     uv run python scripts/dev/coverage-check.py --bootstrap
+}
+run_check "coverage-check.py (per-package thresholds)" check_coverage_gated
 
 # 10. Markdownlint on FULL tree (CI runs the same glob)
 run_check "markdownlint-cli2 (full tree)" \

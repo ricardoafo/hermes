@@ -1,0 +1,3 @@
+### Added
+
+- **`scripts/dev/verify-auto-close.sh`** — audit tool that walks the last N merged PRs, extracts `Closes #NNN` from each body, queries linked issues' state, and reports per-PR auto-close success. Correlates against merge-queue workflow logs to distinguish `v3_ok` from `v3_did_not_run` from `v3_fired_but_token_or_perm_bug`. `--limit N` / `--since <date>` / `--json` / `--quiet` flags. Exit 0 iff every linked issue is CLOSED. `HERMES_SELF_TEST=1` fixture. Closes #264.
