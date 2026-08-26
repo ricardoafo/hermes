@@ -469,6 +469,11 @@ jobs:
           # leaves this empty, so the real path cannot be disabled by
           # accident.
           DRY_RUN: ${{ inputs.dry_run }}
+          # The default GITHUB_TOKEN — has `issues: write` from the job's
+          # `permissions:` block. Used by the belt-and-suspenders block
+          # below because the App token used for `pulls.merge` does NOT
+          # have Issues:Read+Write at App-install time (v3 fix — see #261).
+          WORKFLOW_TOKEN: ${{ github.token }}
         with:
           github-token: ${{ steps.app-token.outputs.token || github.token }}
           script: |
@@ -616,12 +621,12 @@ jobs:
             }
 
             // ─────────────────────────────────────────────
-            // Belt-and-suspenders issue close (v2 — 2026-08-26).
+            // Belt-and-suspenders issue close (v3 — 2026-08-26).
             //
             // GitHub's built-in auto-close SHOULD fire when a PR with
             // "Closes #N" / "Fixes #N" / "Resolves #N" in its body
-            // merges into the default branch. In practice, two separate
-            // failure modes both leave issues open:
+            // merges into the default branch. In practice, THREE
+            // separate failure modes each leave issues open:
             //
             //   1. When merges happen via `pulls.merge` API from a
             //      workflow, GitHub's auto-close hook does not fire.
@@ -634,17 +639,34 @@ jobs:
             //      `Closes #N`. Querying moments later returns the
             //      linkage correctly. (Observed 2026-08-26 on PRs
             //      #236, #237, #241, #243, #244, #246 — v1 of this
-            //      block ran but linked.length === 0 every time,
+            //      block ran but `linked.length === 0` every time,
             //      silent no-op.)
             //
-            // Fix: derive the closable-issue set from TWO sources —
-            // GraphQL's linkage index (authoritative when populated)
-            // AND regex on the PR body (works immediately for local
-            // `Closes #N` trailers). Union, dedupe, close each.
+            //   3. The App token used for `pulls.merge` (from
+            //      `actions/create-github-app-token`) does NOT have
+            //      Issues:Read+Write at App-install time. `issues.update`
+            //      fails with "Resource not accessible by integration".
+            //      Meanwhile the workflow's `permissions: issues: write`
+            //      grants the scope ONLY to the default `GITHUB_TOKEN`,
+            //      NOT to the App token. (Observed 2026-08-26 on PRs
+            //      #250/#252/#254/#256 — v2 body-regex found the linked
+            //      issues but the close call failed silently in the
+            //      per-issue catch block.)
             //
-            // See issue #232 for the v1 that missed the async-index
-            // failure mode.
+            // Fix (v3): union GraphQL + body-regex sources (v2 logic
+            // preserved) AND use `github.token` (via `WORKFLOW_TOKEN`
+            // env) for the `issues.update` + `issues.createComment`
+            // calls. The merge itself keeps the App token (needs it to
+            // bypass branch protection).
+            //
+            // Related: #232 (v1 explicit close), #247 (v2 body-regex),
+            // #261 (v3 token split — this fix).
             // ─────────────────────────────────────────────
+            // Second Octokit instance authed with the workflow's
+            // default GITHUB_TOKEN — has `issues: write` per the job's
+            // `permissions:` block.
+            const workflowOctokit = require('@actions/github')
+              .getOctokit(process.env.WORKFLOW_TOKEN);
             const closableIssues = new Set();
             try {
               const graphqlResult = await github.graphql(`
@@ -690,18 +712,20 @@ jobs:
 
             for (const issueNumber of closableIssues) {
               try {
-                const { data: existing } = await github.rest.issues.get({
+                // All three calls use the workflow token — App token
+                // lacks Issues:Write. See the v3 block header above.
+                const { data: existing } = await workflowOctokit.rest.issues.get({
                   owner, repo, issue_number: issueNumber,
                 });
                 if (existing.state === 'closed') {
                   core.info(`#${number}: linked issue #${issueNumber} already closed — skip`);
                   continue;
                 }
-                await github.rest.issues.update({
+                await workflowOctokit.rest.issues.update({
                   owner, repo, issue_number: issueNumber,
                   state: 'closed', state_reason: 'completed',
                 });
-                await github.rest.issues.createComment({
+                await workflowOctokit.rest.issues.createComment({
                   owner, repo, issue_number: issueNumber,
                   body: `Closed by #${number} via merge queue (belt-and-suspenders; GitHub auto-close did not fire).`,
                 });
