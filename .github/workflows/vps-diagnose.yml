@@ -52,22 +52,26 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      # Load the SSH key into an ssh-agent so subsequent `ssh` calls
-      # use it. webfactory/ssh-agent takes the key from the VPS_SSH_KEY
-      # secret and starts an agent scoped to the job.
-      - name: Load SSH key from prod env
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
-
-      # Trust the VPS's host key on first contact. `-H` hashes the
-      # hostname (matches GitHub-hosted convention).
-      - name: Add VPS to known_hosts
+      # Write the private key to a keyfile (chmod 600) instead of using
+      # ssh-agent. The self-hosted runner image doesn't ship ssh-agent;
+      # keyfile approach works on any runner with `ssh` binary
+      # (GitHub-hosted or self-hosted).
+      - name: Prepare SSH keyfile + known_hosts
         env:
           VPS_SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
         run: |
+          set -euo pipefail
           mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          # Write key. `printf '%s\n'` guarantees trailing newline
+          # (openssh requires it; some secret UIs strip it).
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/vps_id
+          chmod 600 ~/.ssh/vps_id
+          # Populate known_hosts (`-H` hashes hostnames — matches GH convention).
           ssh-keyscan -H "$VPS_SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          # Sanity check — don't leak the key, just confirm it parsed.
+          ssh-keygen -y -f ~/.ssh/vps_id > /dev/null && echo "keyfile parsed OK"
 
       - name: Run diagnostic checklist
         env:
@@ -76,7 +80,8 @@ jobs:
         run: |
           set -e
           # Heredoc runs on the REMOTE — quoted so local shell doesn't expand.
-          ssh -o StrictHostKeyChecking=yes "$VPS_SSH_USER@$VPS_SSH_HOST" bash << 'REMOTE'
+          ssh -i ~/.ssh/vps_id -o StrictHostKeyChecking=yes \
+            "$VPS_SSH_USER@$VPS_SSH_HOST" bash << 'REMOTE'
           set +e  # Individual command failures are informational, not fatal.
 
           echo ""
