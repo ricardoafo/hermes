@@ -67,18 +67,24 @@ jobs:
       # logs. Ephemeral flag on the auth key ensures the device is
       # cleaned up when the runner terminates.
       - name: Join tailnet
+        # `--tun=userspace-networking` skips the TUN device requirement.
+        # The self-hosted runner is a Docker container without NET_ADMIN
+        # + /dev/net/tun; tailscaled crashes at start-up with "failed to
+        # connect to local tailscaled" otherwise. Userspace networking
+        # works inside unprivileged containers — slower than kernel-mode
+        # TUN but plenty for a diagnostic SSH.
+        #
+        # NOTE: the `additional-daemon-args` input on this action does
+        # NOT populate the ADDITIONAL_DAEMON_ARGS env var (verified via
+        # run 33008731708 — env dump showed it empty despite the input
+        # being set). Setting the env var directly at the step level.
+        env:
+          ADDITIONAL_DAEMON_ARGS: --tun=userspace-networking
         uses: tailscale/github-action@v3
         with:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
           hostname: gh-actions-vps-diagnose-${{ github.run_id }}
           version: latest
-          # `--tun=userspace-networking` skips the TUN device requirement.
-          # The self-hosted runner is a Docker container without
-          # NET_ADMIN + /dev/net/tun; tailscaled crashes at start-up
-          # with "failed to connect to local tailscaled" otherwise.
-          # Userspace networking works inside unprivileged containers —
-          # slower than kernel-mode TUN but plenty for a diagnostic SSH.
-          additional-daemon-args: --tun=userspace-networking
 
       # Install openssh-client if missing. Self-hosted runner container
       # is minimal (no ssh / ssh-keygen / ssh-keyscan by default).
