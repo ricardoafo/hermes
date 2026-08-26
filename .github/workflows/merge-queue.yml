@@ -616,22 +616,36 @@ jobs:
             }
 
             // ─────────────────────────────────────────────
-            // Belt-and-suspenders issue close.
+            // Belt-and-suspenders issue close (v2 — 2026-08-26).
             //
             // GitHub's built-in auto-close SHOULD fire when a PR with
             // "Closes #N" / "Fixes #N" / "Resolves #N" in its body
-            // merges into the default branch. In practice, when merges
-            // happen via `pulls.merge` API from a workflow, the
-            // auto-close hook is unreliable — the `closingIssuesReferences`
-            // linkage is recognised (visible via GraphQL) but the
-            // actual close event does not fire. Observed 2026-08-25:
-            // PRs #227, #229 all merged with correct Closes references
-            // recognised by GraphQL; none of the linked issues closed.
+            // merges into the default branch. In practice, two separate
+            // failure modes both leave issues open:
             //
-            // Fix: explicitly close every referenced issue via
-            // `issues.update` right after the merge succeeds. Idempotent
-            // (closing an already-closed issue is a no-op). See issue #232.
+            //   1. When merges happen via `pulls.merge` API from a
+            //      workflow, GitHub's auto-close hook does not fire.
+            //      (Observed 2026-08-25 on PRs #227, #229.)
+            //
+            //   2. `closingIssuesReferences` (GraphQL) is populated
+            //      by an ASYNCHRONOUS indexer. At merge time — often
+            //      seconds after the PR was opened — the index is
+            //      still empty even when the body clearly contains
+            //      `Closes #N`. Querying moments later returns the
+            //      linkage correctly. (Observed 2026-08-26 on PRs
+            //      #236, #237, #241, #243, #244, #246 — v1 of this
+            //      block ran but linked.length === 0 every time,
+            //      silent no-op.)
+            //
+            // Fix: derive the closable-issue set from TWO sources —
+            // GraphQL's linkage index (authoritative when populated)
+            // AND regex on the PR body (works immediately for local
+            // `Closes #N` trailers). Union, dedupe, close each.
+            //
+            // See issue #232 for the v1 that missed the async-index
+            // failure mode.
             // ─────────────────────────────────────────────
+            const closableIssues = new Set();
             try {
               const graphqlResult = await github.graphql(`
                 query($owner: String!, $repo: String!, $number: Int!) {
@@ -647,25 +661,56 @@ jobs:
               const linked = graphqlResult.repository.pullRequest
                 .closingIssuesReferences.nodes;
               for (const issue of linked) {
-                if (issue.state === 'CLOSED') { continue; }
-                try {
-                  await github.rest.issues.update({
-                    owner, repo, issue_number: issue.number, state: 'closed',
-                    state_reason: 'completed',
-                  });
-                  await github.rest.issues.createComment({
-                    owner, repo, issue_number: issue.number,
-                    body: `Closed by #${number} via merge queue (belt-and-suspenders; GitHub auto-close did not fire).`,
-                  });
-                  core.info(`#${number}: closed linked issue #${issue.number}`);
-                } catch (err) {
-                  core.warning(
-                    `#${number}: failed to close linked issue #${issue.number}: ${err.message}`,
-                  );
-                }
+                if (issue.state !== 'CLOSED') { closableIssues.add(issue.number); }
               }
+              core.info(
+                `#${number}: closingIssuesReferences returned ${linked.length} nodes` +
+                ` (${closableIssues.size} still open)`,
+              );
             } catch (err) {
               core.warning(`#${number}: closingIssuesReferences query failed: ${err.message}`);
+            }
+
+            // Body-regex fallback — works even when GitHub's async
+            // indexer has not yet populated closingIssuesReferences.
+            // Matches: Close(s|d), Fix(es|ed), Resolve(s|d).
+            const bodyText = pr.body || '';
+            const bodyMatches = [
+              ...bodyText.matchAll(
+                /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)\b/gi,
+              ),
+            ].map((m) => Number(m[1]));
+            if (bodyMatches.length > 0) {
+              core.info(
+                `#${number}: PR body regex found closing references: ` +
+                `#${bodyMatches.join(', #')}`,
+              );
+              for (const n of bodyMatches) { closableIssues.add(n); }
+            }
+
+            for (const issueNumber of closableIssues) {
+              try {
+                const { data: existing } = await github.rest.issues.get({
+                  owner, repo, issue_number: issueNumber,
+                });
+                if (existing.state === 'closed') {
+                  core.info(`#${number}: linked issue #${issueNumber} already closed — skip`);
+                  continue;
+                }
+                await github.rest.issues.update({
+                  owner, repo, issue_number: issueNumber,
+                  state: 'closed', state_reason: 'completed',
+                });
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: issueNumber,
+                  body: `Closed by #${number} via merge queue (belt-and-suspenders; GitHub auto-close did not fire).`,
+                });
+                core.info(`#${number}: closed linked issue #${issueNumber}`);
+              } catch (err) {
+                core.warning(
+                  `#${number}: failed to close linked issue #${issueNumber}: ${err.message}`,
+                );
+              }
             }
 
             // ─────────────────────────────────────────────
