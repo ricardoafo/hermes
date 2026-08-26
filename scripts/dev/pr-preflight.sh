@@ -154,6 +154,44 @@ fi
 # Checks — same commands CI runs, no more no less
 # ────────────────────────────────────────────────────────────────
 
+# MUST MATCH create-pr.sh:77 — same TITLE_REGEX; single source of truth.
+# If you change one, change both AND update this comment's line number.
+TITLE_REGEX='^[a-z]+(\(.+\))?!?:[[:space:]]+[a-z]'
+
+# Check: PR title semantic (conventional-commit + lowercase subject).
+# Mirrors amannn/action-semantic-pull-request@v6 subjectPattern. A rebase
+# or amend can leave HEAD as a fixup / uppercase subject that create-pr.sh
+# accepted at open time but CI rejects, forcing a close+reopen cycle
+# (drift observed 2026-08-25 on 'PAT-authenticate' — see #215 Tier-2 defer).
+# Bypass with SKIP_TITLE_CHECK=1 (documented for rebase-in-progress paths).
+check_pr_title_semantic() {
+    if [[ "${SKIP_TITLE_CHECK:-0}" == "1" ]]; then
+        echo "  WARN: title check skipped via SKIP_TITLE_CHECK=1" >&2
+        return 0
+    fi
+    local title
+    title=$(git log -1 --format=%s HEAD 2>/dev/null)
+    if [[ -z "$title" ]]; then
+        return 0
+    fi
+    if [[ "$title" =~ $TITLE_REGEX ]]; then
+        return 0
+    fi
+    {
+        echo "ERROR: HEAD commit subject fails the semantic-PR-title rule."
+        echo "  title:  $title"
+        echo "  regex:  $TITLE_REGEX"
+        echo ""
+        echo "  CI would reject this via amannn/action-semantic-pull-request@v6:"
+        echo "    'Subject may not start with an uppercase character.'"
+        echo ""
+        echo "  Fix: lowercase the first char after the colon (yes, even proper nouns)."
+        echo "  Bypass (rebase in progress): SKIP_TITLE_CHECK=1 bash scripts/dev/pr-preflight.sh"
+    } >&2
+    return 1
+}
+run_check "PR title semantic (conventional-commit + lowercase)" check_pr_title_semantic
+
 # 1. Branch is up-to-date with origin/main (rebase check)
 check_base_current() {
     git fetch origin main --quiet || return 1
