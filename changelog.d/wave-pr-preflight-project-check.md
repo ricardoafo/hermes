@@ -1,0 +1,3 @@
+### Added
+
+- **`pr-preflight.sh` — `Tracking-issue project assignment` check** — walks openspec change → `issue.md` → GitHub issue → `projectItems`. Fails when the tracked issue is not attached to any GitHub Project. Graceful degradation: WARN + skip when the local `gh` token lacks `read:project` scope (CI's App-auth token grants it, so enforcement lives in CI). Bypass via `SKIP_PROJECT_CHECK=1`. Closes the ship-validation gap surfaced on #242. Closes #253.

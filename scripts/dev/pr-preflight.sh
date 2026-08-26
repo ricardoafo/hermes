@@ -290,6 +290,74 @@ run_check "CHANGELOG check (inferred from latest commit)" check_changelog_if_app
 #     — false positives (small feat) bypass via SKIP_OPENSPEC_CHECK=1
 #     with a logged reason. False negatives (large fix) caught in code
 #     review. See #194 for the DoR/DoD rationale that motivates this.
+# Check: tracking-issue project assignment (opt-in).
+#
+# For every openspec change modified on this branch, resolve its
+# tracking issue via issue.md and verify the issue is attached to at
+# least one GitHub Project. Ship-validation gap surfaced on #242 —
+# operator caught PR #242 slipping through without a project attached.
+#
+# OPT-IN via HERMES_ENFORCE_PROJECT_CHECK=1. Default OFF because
+# until every open tracking issue is attached to a project AND local
+# operators have `read:project` scope, this check would fail-hard on
+# every current tracking issue (`projectItems` returns `[]` both when
+# no project is attached AND when the scope is missing — the two
+# cases are indistinguishable to the caller). Flip the env var on
+# once open issues are bulk-attached and the scope is granted.
+#
+# Bypass (when opt-in is on): SKIP_PROJECT_CHECK=1.
+check_pr_project_assigned() {
+    if [[ "${HERMES_ENFORCE_PROJECT_CHECK:-0}" != "1" ]]; then
+        echo "  SKIP: enforcement OFF (set HERMES_ENFORCE_PROJECT_CHECK=1 to enable)" >&2
+        return 0
+    fi
+    if [[ "${SKIP_PROJECT_CHECK:-0}" == "1" ]]; then
+        echo "  WARN: project check skipped via SKIP_PROJECT_CHECK=1" >&2
+        return 0
+    fi
+    local changes
+    changes=$(git diff --name-only origin/main..HEAD -- 'openspec/changes/*/change.md' 2>/dev/null)
+    if [[ -z "$changes" ]]; then
+        # No openspec change on this branch — nothing to check.
+        return 0
+    fi
+
+    local any_fail=0
+    while IFS= read -r cf; do
+        [[ -z "$cf" ]] && continue
+        local change_dir issue_md issue_num count
+        change_dir=$(dirname "$cf")
+        issue_md="$change_dir/issue.md"
+        [[ -f "$issue_md" ]] || continue
+        issue_num=$(grep -oE '^issue:[[:space:]]*[0-9]+' "$issue_md" \
+                    | grep -oE '[0-9]+' | head -1)
+        [[ -z "$issue_num" ]] && continue
+
+        count=$(gh issue view "$issue_num" --json projectItems \
+                    --jq '.projectItems | length' 2>&1)
+        if [[ "$count" == *INSUFFICIENT_SCOPES* ]] || [[ "$count" == *"required scopes"* ]]; then
+            echo "  WARN: read:project scope missing — cannot verify project attachment for #$issue_num" >&2
+            continue
+        fi
+        if ! [[ "$count" =~ ^[0-9]+$ ]]; then
+            echo "  WARN: unexpected gh output for #$issue_num: ${count:0:120}" >&2
+            continue
+        fi
+        if [[ "$count" -eq 0 ]]; then
+            {
+                echo "ERROR: tracking issue #$issue_num for change '$(basename "$change_dir")' has no project attached."
+                echo "  Attach via the GitHub web UI (Projects tab on the issue) or:"
+                echo "    gh api graphql -f query='mutation { addProjectV2ItemById(input: {projectId: \"...\", contentId: \"...\"}) { item { id } } }'"
+                echo "  Bypass (with cause): SKIP_PROJECT_CHECK=1 bash scripts/dev/pr-preflight.sh"
+            } >&2
+            any_fail=1
+        fi
+    done <<< "$changes"
+
+    return $any_fail
+}
+run_check "Tracking-issue project assignment (opt-in)" check_pr_project_assigned
+
 check_openspec_change_required() {
     if [[ "${SKIP_OPENSPEC_CHECK:-0}" == "1" ]]; then
         echo "  WARN: openspec check skipped via SKIP_OPENSPEC_CHECK=1" >&2
