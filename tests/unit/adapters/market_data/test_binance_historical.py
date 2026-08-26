@@ -363,8 +363,7 @@ def test_stream_orderbook_diffs_raises_not_implemented(tmp_path: Path) -> None:
 
     async def _run() -> None:
         with pytest.raises(NotImplementedError):
-            async for _ in adapter.stream_orderbook_diffs(_BTC_USDT):
-                pass
+            await adapter.stream_orderbook_diffs(_BTC_USDT)
 
     anyio.run(_run)
 
