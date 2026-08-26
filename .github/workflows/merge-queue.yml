@@ -660,13 +660,52 @@ jobs:
             // bypass branch protection).
             //
             // Related: #232 (v1 explicit close), #247 (v2 body-regex),
-            // #261 (v3 token split — this fix).
+            // #261 (v3 token split), #267 (v4 fetch instead of require).
+            //
+            // v4 note: v3 tried `require('@actions/github').getOctokit(...)`
+            // but the `actions/checkout@v7 with sparse-checkout: tools/merge`
+            // step leaves the workspace with NO `node_modules`, so
+            // `require('@actions/github')` fails with MODULE_NOT_FOUND —
+            // and the crash killed everything after `pulls.merge`
+            // (including the delete-ref + hand-dispatch steps). v4 uses
+            // Node 20+'s built-in `fetch()` against GitHub's REST API
+            // directly — no require, no Octokit, no bundle dependency.
             // ─────────────────────────────────────────────
-            // Second Octokit instance authed with the workflow's
-            // default GITHUB_TOKEN — has `issues: write` per the job's
-            // `permissions:` block.
-            const workflowOctokit = require('@actions/github')
-              .getOctokit(process.env.WORKFLOW_TOKEN);
+            const ghApiHeaders = {
+              'Authorization': `Bearer ${process.env.WORKFLOW_TOKEN}`,
+              'Accept': 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28',
+              'User-Agent': 'hermes-merge-queue/v4',
+            };
+            const ghApiBase = `https://api.github.com/repos/${owner}/${repo}`;
+            async function issueState(n) {
+              const res = await fetch(`${ghApiBase}/issues/${n}`, { headers: ghApiHeaders });
+              if (!res.ok) {
+                throw new Error(`GET issue #${n}: ${res.status} ${await res.text()}`);
+              }
+              const body = await res.json();
+              return body.state; // 'open' | 'closed'
+            }
+            async function closeIssue(n) {
+              const res = await fetch(`${ghApiBase}/issues/${n}`, {
+                method: 'PATCH',
+                headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ state: 'closed', state_reason: 'completed' }),
+              });
+              if (!res.ok) {
+                throw new Error(`PATCH issue #${n}: ${res.status} ${await res.text()}`);
+              }
+            }
+            async function commentIssue(n, text) {
+              const res = await fetch(`${ghApiBase}/issues/${n}/comments`, {
+                method: 'POST',
+                headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ body: text }),
+              });
+              if (!res.ok) {
+                throw new Error(`POST comment #${n}: ${res.status} ${await res.text()}`);
+              }
+            }
             const closableIssues = new Set();
             try {
               const graphqlResult = await github.graphql(`
@@ -712,23 +751,16 @@ jobs:
 
             for (const issueNumber of closableIssues) {
               try {
-                // All three calls use the workflow token — App token
-                // lacks Issues:Write. See the v3 block header above.
-                const { data: existing } = await workflowOctokit.rest.issues.get({
-                  owner, repo, issue_number: issueNumber,
-                });
-                if (existing.state === 'closed') {
+                const state = await issueState(issueNumber);
+                if (state === 'closed') {
                   core.info(`#${number}: linked issue #${issueNumber} already closed — skip`);
                   continue;
                 }
-                await workflowOctokit.rest.issues.update({
-                  owner, repo, issue_number: issueNumber,
-                  state: 'closed', state_reason: 'completed',
-                });
-                await workflowOctokit.rest.issues.createComment({
-                  owner, repo, issue_number: issueNumber,
-                  body: `Closed by #${number} via merge queue (belt-and-suspenders; GitHub auto-close did not fire).`,
-                });
+                await closeIssue(issueNumber);
+                await commentIssue(
+                  issueNumber,
+                  `Closed by #${number} via merge queue (belt-and-suspenders; GitHub auto-close did not fire).`,
+                );
                 core.info(`#${number}: closed linked issue #${issueNumber}`);
               } catch (err) {
                 core.warning(
