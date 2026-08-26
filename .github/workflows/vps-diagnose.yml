@@ -47,7 +47,12 @@ permissions:
 jobs:
   diagnose:
     name: Snapshot VPS state
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    # Force GitHub-hosted ubuntu-latest — the self-hosted runner's
+    # container image is minimal and lacks openssh-client (ssh /
+    # ssh-keygen / ssh-keyscan). This diagnostic is a one-shot
+    # workflow_dispatch — no benefit from the self-hosted runner's
+    # caching or IP-allowlisting; ubuntu-latest is the right fit.
+    runs-on: ubuntu-latest
     environment: prod
     timeout-minutes: 5
 
