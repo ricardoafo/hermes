@@ -136,6 +136,13 @@ Five rules (violations degrade the signal value of the board):
    Use the templates in `.github/ISSUE_TEMPLATE/` with proper labels +
    milestone. For SDD changes, `openspec/changes/<name>/issue.md`
    records the link (per [ADR-009 §6](docs/architecture/adr-009-documentation-strategy.md#6-change-specs--sdd-artifacts-dual-source-convention)).
+   **Agents must use `bash scripts/dev/create-issue.sh` — never bare
+   `gh issue create`.** The wrapper refuses invocations without
+   `--milestone`, `--assignee`, and one label from each of
+   `type:` / `area:` / `size:`. Bypass via `HERMES_ISSUE_DRY_RUN=1`
+   for verification. Precedent: #245 was created without milestone or
+   assignee — a "huge process violation" per the Code Owner. The
+   wrapper closes that gap.
 2. **Close on merge**. PR body must include `Closes #N` for auto-close.
    SDD PRs get this automatically via `scripts/dev/render-pr-body.sh`.
    Non-SDD PRs: hand-write.
