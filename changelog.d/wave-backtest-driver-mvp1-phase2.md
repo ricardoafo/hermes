@@ -1,0 +1,3 @@
+### Added
+
+- **Backtest driver Phase 2 design proposal (spec-only PR)** — design document for `scripts/backtest/run_calibration_full.py` wiring the full spec-3 `OrderRouter` + spec-2c `SimulatedExchangeAdapter` + spec-2b `OrderbookWalkFillModel` pipeline. Phase 1's `_synthesise_fill` shortcut is replaced. Key design decision D-1: synthesise the Vision-missing `Orderbook` per bar from OHLCV + a volume-proportional 10-level depth model (Vision has no L2). Multi-pair walk + SA-9 correlation lock + statistical framework deferred to Phase 3. Non-zero M-02 slippage / M-04 rejection rate / M-06 regime returns become reachable. This PR is design-only — implementation lands in a follow-up after operator approval. Closes #273.
