@@ -62,7 +62,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import json
 import os
 import shutil
 import sys
@@ -70,6 +69,11 @@ from datetime import date
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
+
+# Shared read-modify-atomic-write transaction for the multi-writer
+# manifest. See scripts/data/_manifest_util.py + change
+# `data-manifest-file-lock` (#257) for the race narrative.
+from _manifest_util import manifest_read, manifest_transaction
 
 # --- Pre-registration v1 sec 4 constants (BINDING; do not edit without a v2) ---
 PAIRS: tuple[str, ...] = ("BTCUSDT", "ETHUSDT", "SOLUSDT")
@@ -286,11 +290,20 @@ def process_target(target: Target, root: Path, manifest: dict) -> tuple[str, str
 
 
 def save_manifest(manifest_path: Path, manifest: dict) -> None:
-    """Write manifest to disk atomically (temp file + rename)."""
-    manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = manifest_path.with_suffix(manifest_path.suffix + ".tmp")
-    tmp.write_text(json.dumps(manifest, indent=2, sort_keys=True))
-    tmp.replace(manifest_path)
+    """Merge in-memory manifest additions back to disk under an exclusive lock.
+
+    Only NEW keys are written — never overwrite entries a sibling
+    ingest script may have added since we snapshotted. Refreshes the
+    passed-in dict in place with the just-committed on-disk state so
+    subsequent resume checks see sibling writes. See change
+    `data-manifest-file-lock` (#257) for the race narrative.
+    """
+    with manifest_transaction(manifest_path) as on_disk:
+        for k, v in manifest.items():
+            if k not in on_disk:
+                on_disk[k] = v
+        manifest.clear()
+        manifest.update(on_disk)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -336,13 +349,9 @@ def main(argv: list[str] | None = None) -> int:
     data_dir = Path(args.data_dir or os.environ.get("HERMES_DATA_DIR", DEFAULT_DATA_DIR))
     manifest_path = Path(args.manifest or (data_dir / "manifests" / "data-manifest.json"))
 
-    manifest: dict = {}
-    if manifest_path.exists():
-        try:
-            manifest = json.loads(manifest_path.read_text())
-        except json.JSONDecodeError as err:
-            print(f"ERROR: manifest at {manifest_path} is not valid JSON: {err}", file=sys.stderr)
-            return 1
+    # Read via locked transaction to avoid tearing with a concurrent
+    # writer starting up at the same moment.
+    manifest: dict = manifest_read(manifest_path)
 
     # Backward-compat: migrate any legacy klines keys (`<pair>/<interval>/<yyyy>-<mm>`)
     # to the namespaced form (`klines/<pair>/<interval>/<yyyy>-<mm>`).
