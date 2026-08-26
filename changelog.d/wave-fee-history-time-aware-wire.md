@@ -1,0 +1,3 @@
+### Added
+
+- **Time-aware Binance fee selector** — new `src/hermes/domain/fees/fee_schedule_selector.py` exposes `select_fee_schedule(rows, timestamp, pair) -> FeeSchedule`, returning the point-in-time Binance VIP0 rate for the given pair, including the 2022-07-28 → 2023-03-21 zero-fee BTC promotional window (BTC pairs 0/0 bps; ETH/SOL unaffected at 10/10). Companion adapter `src/hermes/adapters/fees/binance_history.py` loads `docs/experiments/swing-mvp1/fee-history.csv`. Composition-root wire (`sim_ex = SimulatedExchangeAdapter(fee_schedule_fn=lambda pair: select_fee_schedule(rows, clock.now(), pair))`) will land with the future backtest driver script — this change ships the primitives only. Closes #260. Satisfies ADR-011 D-09 + pre-registration v1 §6.1.
