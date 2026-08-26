@@ -32,13 +32,15 @@ Usage:
     --dry-run              List targets without downloading
 
 Examples:
-    # Full klines ingest (684 files, ~20 MB, ~10-20 min)
+    # Full klines ingest (684 files, ~30 MB, ~10-20 min)
     python scripts/data/ingest_binance_vision.py
 
     # Add agg_trades on top (klines already ingested? resume-safe)
+    # WARNING: agg_trades is LARGE — ~45 GB across 228 files (BTC ~300-500 MB/month,
+    # ETH/SOL smaller). Full ingest can take 2-4 hours on a residential connection.
     python scripts/data/ingest_binance_vision.py --include agg_trades
 
-    # Download both in one run
+    # Download both in one run (klines + agg_trades)
     python scripts/data/ingest_binance_vision.py --include all
 
     # Small sanity subset (BTC 1d only, ~76 files, ~2 min)
@@ -120,7 +122,8 @@ def check_disk_space(root: Path) -> None:
         if free_gb < DISK_WARN_GB:
             print(
                 f"WARN: only {free_gb:.1f} GB free on {root}. "
-                f"Full ingest expects up to ~10 GB across klines + agg_trades. "
+                f"Full ingest expects up to ~50 GB across klines + agg_trades "
+                f"(klines ~30 MB; agg_trades ~45 GB dominated by BTC pairs). "
                 f"Consider freeing space before continuing.",
                 file=sys.stderr,
             )
