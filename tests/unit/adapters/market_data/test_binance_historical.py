@@ -239,6 +239,37 @@ def test_row_to_bar_timestamps_are_utc(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
+def test_row_to_bar_microsecond_timestamps_2025_format(tmp_path: Path) -> None:
+    """_row_to_bar handles the post-2025-01 microsecond klines format (#271).
+
+    Binance changed the klines archive format at 2025-01-01: open_time /
+    close_time went from 13-digit milliseconds to 16-digit microseconds.
+    Same wall-clock (2025-01-01 00:00:00 UTC) but 1000x larger integer.
+    """
+    row = _klines_row(
+        open_time_ms=1_735_689_600_000_000,  # 16 digits — 2025-01-01 00:00:00 UTC in µs
+        close_time_ms=1_735_689_659_999_000,  # 16 digits — 2025-01-01 00:00:59.999 UTC in µs
+    )
+    source = tmp_path / "test.zip"
+    bar = _row_to_bar(row=row, pair=_BTC_USDT, interval=KlineInterval.M1, source=source)
+
+    expected_open = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
+    assert bar.open_time == expected_open, (
+        f"post-2025 µs open_time should decode to 2025-01-01 UTC, got {bar.open_time}"
+    )
+
+
+@pytest.mark.unit
+def test_row_to_bar_unexpected_timestamp_width_raises(tmp_path: Path) -> None:
+    """_row_to_bar rejects timestamp widths outside {13, 16} digits (#271 defense)."""
+    row = _klines_row()
+    row[0] = "17040672000"  # 11 digits — seconds, unexpected
+    source = tmp_path / "test.zip"
+    with pytest.raises(ExchangeError, match="unexpected timestamp digit-count"):
+        _row_to_bar(row=row, pair=_BTC_USDT, interval=KlineInterval.M1, source=source)
+
+
+@pytest.mark.unit
 def test_row_to_bar_too_few_fields_raises_exchange_error(tmp_path: Path) -> None:
     """_row_to_bar raises ExchangeError when row has fewer than 7 fields."""
     row = ["1704067200000", "42000", "42100"]  # only 3 fields
