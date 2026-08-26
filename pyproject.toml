@@ -30,6 +30,11 @@ dependencies = [
   # (we run vanilla Python, no Django/Flask/etc.). See
   # docs/decisions/ (Sentry wiring entry) for the design rationale.
   "sentry-sdk>=2,<3",
+  # Cross-platform file lock for multi-writer manifest transactions in
+  # the ingest scripts (scripts/data/_manifest_util.py). Was a transitive
+  # dep of virtualenv; promoted to direct after we started depending on
+  # it explicitly. See docs/decisions/... and change data-manifest-file-lock (#257).
+  "filelock>=3,<4",
 ]
 
 [project.scripts]

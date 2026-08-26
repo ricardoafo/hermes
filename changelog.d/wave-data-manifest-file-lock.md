@@ -1,0 +1,3 @@
+### Fixed
+
+- **`data-manifest.json` read-modify-write race** — running klines + agg_trades + peg ingests concurrently could silently lose entries because both scripts read-then-wrote the shared manifest without locking. New `scripts/data/_manifest_util.py` exposes a `manifest_transaction()` context manager wrapping the cycle in a cross-platform `filelock.FileLock`; both ingest scripts refactored to use it. Concurrency test asserts 2 threads × 100 unique writes leave 200 entries (no lost updates). `filelock` promoted from transitive to direct dep. Closes #257.
