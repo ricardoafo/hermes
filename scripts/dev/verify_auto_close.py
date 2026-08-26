@@ -77,6 +77,20 @@ def _run_gh(*args: str, check: bool = True) -> str:
     return result.stdout
 
 
+def _find_merge_queue_run_id(runs: list[dict[str, Any]], merge_commit_sha: str) -> int | None:
+    """Return the run id whose head_sha matches the PR's merge commit.
+
+    Merge-queue workflow runs all share display_title="Merge queue" — the only
+    reliable correlation to a specific PR is head_sha == pr.mergeCommit.oid.
+    """
+    if not merge_commit_sha:
+        return None
+    for r in runs:
+        if r.get("head_sha") == merge_commit_sha:
+            return r.get("id")
+    return None
+
+
 def _self_test() -> int:
     """Run the fixture matrix — regex + report-shape checks, no live calls."""
     # Extraction from a sample body with three closing verbs.
@@ -124,12 +138,40 @@ def _self_test() -> int:
         )
         return 1
 
-    print("SELF-TEST PASS: regex + report-shape fixtures behave as specified.")
+    # Merge-queue run correlation is by head_sha (exact), not display_title
+    # substring — the old matcher would false-negative every merge-queue run
+    # (display_title is always the literal string "Merge queue") and, if it
+    # ever matched by title, false-positive across PR numbers that share
+    # digits ("23" inside "231").
+    runs_fixture = [
+        {"id": 1, "display_title": "Merge queue", "head_sha": "aaaa1111"},
+        {"id": 2, "display_title": "Merge queue", "head_sha": "bbbb2222"},
+        {"id": 3, "display_title": "Merge queue", "head_sha": "cccc3333"},
+    ]
+    matched = _find_merge_queue_run_id(runs_fixture, "bbbb2222")
+    if matched != 2:
+        print(f"SELF-TEST FAIL: head_sha match — expected 2, got {matched}", file=sys.stderr)
+        return 1
+    missing = _find_merge_queue_run_id(runs_fixture, "deadbeef")
+    if missing is not None:
+        print(f"SELF-TEST FAIL: unmatched sha — expected None, got {missing}", file=sys.stderr)
+        return 1
+    empty_sha = _find_merge_queue_run_id(runs_fixture, "")
+    if empty_sha is not None:
+        print(f"SELF-TEST FAIL: empty sha — expected None, got {empty_sha}", file=sys.stderr)
+        return 1
+
+    print("SELF-TEST PASS: regex + run-matching + report-shape fixtures behave as specified.")
     return 0
 
 
 def _diagnose_pr(
-    pr_num: int, body: str, merged_at: str, *, log_probe: bool = True
+    pr_num: int,
+    body: str,
+    merged_at: str,
+    merge_commit_sha: str = "",
+    *,
+    log_probe: bool = True,
 ) -> tuple[str, list[dict[str, Any]]]:
     """Return (diagnostic, linked_issues) for one PR."""
     linked_nums = _extract_linked(body)
@@ -164,11 +206,10 @@ def _diagnose_pr(
     except RuntimeError, json.JSONDecodeError:
         runs = []
 
-    matching = [r for r in runs if str(pr_num) in (r.get("display_title") or "")]
+    run_id = _find_merge_queue_run_id(runs, merge_commit_sha)
 
     log = ""
-    if matching:
-        run_id = matching[0].get("id")
+    if run_id is not None:
         try:
             log = _run_gh("run", "view", str(run_id), "--log", check=False)
         except RuntimeError:
@@ -221,7 +262,7 @@ def main(argv: list[str] | None = None) -> int:
         "--limit",
         str(args.limit),
         "--json",
-        "number,body,mergedAt",
+        "number,body,mergedAt,mergeCommit",
     )
     prs = json.loads(raw)
 
@@ -235,10 +276,15 @@ def main(argv: list[str] | None = None) -> int:
             continue
         pr_num = pr["number"]
         body = pr.get("body") or ""
+        merge_commit_sha = (pr.get("mergeCommit") or {}).get("oid", "")
         audited += 1
 
         diagnostic, linked_issues = _diagnose_pr(
-            pr_num, body, merged_at, log_probe=not args.no_log_probe
+            pr_num,
+            body,
+            merged_at,
+            merge_commit_sha,
+            log_probe=not args.no_log_probe,
         )
 
         # Bad diagnostics — anything that means the automation did not do
