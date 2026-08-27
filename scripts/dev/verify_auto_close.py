@@ -45,6 +45,7 @@ import re
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from typing import Any
 
 CLOSING_RE = re.compile(
@@ -77,18 +78,45 @@ def _run_gh(*args: str, check: bool = True) -> str:
     return result.stdout
 
 
-def _find_merge_queue_run_id(runs: list[dict[str, Any]], merge_commit_sha: str) -> int | None:
-    """Return the run id whose head_sha matches the PR's merge commit.
+def _find_merge_queue_run_id(
+    runs: list[dict[str, Any]],
+    pr_num: int,
+    jobs_for_run: Callable[[int], list[dict[str, Any]]],
+) -> int | None:
+    """Return the run id whose jobs include one that processed this PR.
 
-    Merge-queue workflow runs all share display_title="Merge queue" — the only
-    reliable correlation to a specific PR is head_sha == pr.mergeCommit.oid.
+    Merge-queue runs share display_title="Merge queue" AND their head_sha
+    is the PRE-merge main tip (not pr.mergeCommit.oid) — the run performs
+    the merge, then pushes, so its head_sha never equals the resulting
+    merge commit. The reliable correlation is inside the run's jobs: the
+    Revalidate job is named `Revalidate (N, <sha>)` where N is the PR
+    number. Iterate recent runs and query jobs until we find a match.
     """
-    if not merge_commit_sha:
-        return None
+    pattern = re.compile(rf"^Revalidate\s*\(\s*{pr_num}\s*,")
     for r in runs:
-        if r.get("head_sha") == merge_commit_sha:
-            return r.get("id")
+        run_id = r.get("id")
+        if run_id is None:
+            continue
+        try:
+            for job in jobs_for_run(run_id):
+                if pattern.match(job.get("name", "")):
+                    return run_id
+        except RuntimeError:
+            continue
     return None
+
+
+def _jobs_for_run(run_id: int) -> list[dict[str, Any]]:
+    """Fetch jobs for a merge-queue workflow run."""
+    raw = _run_gh(
+        "api",
+        f"repos/ricardoafo/hermes/actions/runs/{run_id}/jobs?per_page=100",
+        check=False,
+    )
+    try:
+        return json.loads(raw).get("jobs", [])
+    except json.JSONDecodeError:
+        return []
 
 
 def _self_test() -> int:
@@ -138,27 +166,41 @@ def _self_test() -> int:
         )
         return 1
 
-    # Merge-queue run correlation is by head_sha (exact), not display_title
-    # substring — the old matcher would false-negative every merge-queue run
-    # (display_title is always the literal string "Merge queue") and, if it
-    # ever matched by title, false-positive across PR numbers that share
-    # digits ("23" inside "231").
+    # Merge-queue run correlation is by job-name inside each run — the
+    # PRE-merge run's head_sha is the pre-merge main tip, not
+    # pr.mergeCommit.oid (the merge commit doesn't exist yet at that
+    # point). The Revalidate job name embeds the PR number as
+    # `Revalidate (N, <sha>)`. The fixture below uses a fake jobs_for_run
+    # to assert positive match, no-match, and PR-number-substring
+    # discrimination (287 must not match a job for PR 2870).
     runs_fixture = [
-        {"id": 1, "display_title": "Merge queue", "head_sha": "aaaa1111"},
-        {"id": 2, "display_title": "Merge queue", "head_sha": "bbbb2222"},
-        {"id": 3, "display_title": "Merge queue", "head_sha": "cccc3333"},
+        {"id": 100},
+        {"id": 200},
+        {"id": 300},
     ]
-    matched = _find_merge_queue_run_id(runs_fixture, "bbbb2222")
-    if matched != 2:
-        print(f"SELF-TEST FAIL: head_sha match — expected 2, got {matched}", file=sys.stderr)
+    jobs_by_run = {
+        100: [{"name": "Select"}],
+        200: [{"name": "Revalidate (2870, aaaabbbb)"}, {"name": "Merge"}],
+        300: [{"name": "Revalidate (287, ccccdddd)"}, {"name": "Merge"}],
+    }
+    matched = _find_merge_queue_run_id(runs_fixture, 287, jobs_by_run.get)
+    if matched != 300:
+        print(f"SELF-TEST FAIL: job-name match — expected 300, got {matched}", file=sys.stderr)
         return 1
-    missing = _find_merge_queue_run_id(runs_fixture, "deadbeef")
+    # PR number that never appears in any run's jobs.
+    missing = _find_merge_queue_run_id(runs_fixture, 999, jobs_by_run.get)
     if missing is not None:
-        print(f"SELF-TEST FAIL: unmatched sha — expected None, got {missing}", file=sys.stderr)
+        print(f"SELF-TEST FAIL: no-job match — expected None, got {missing}", file=sys.stderr)
         return 1
-    empty_sha = _find_merge_queue_run_id(runs_fixture, "")
-    if empty_sha is not None:
-        print(f"SELF-TEST FAIL: empty sha — expected None, got {empty_sha}", file=sys.stderr)
+    # Substring discrimination: PR 287 should not accidentally match
+    # a run whose only job is `Revalidate (2870, ...)`.
+    substring_runs = [{"id": 200}]
+    substring = _find_merge_queue_run_id(substring_runs, 287, jobs_by_run.get)
+    if substring is not None:
+        print(
+            f"SELF-TEST FAIL: substring discrimination — expected None, got {substring}",
+            file=sys.stderr,
+        )
         return 1
 
     print("SELF-TEST PASS: regex + run-matching + report-shape fixtures behave as specified.")
@@ -169,7 +211,6 @@ def _diagnose_pr(
     pr_num: int,
     body: str,
     merged_at: str,
-    merge_commit_sha: str = "",
     *,
     log_probe: bool = True,
 ) -> tuple[str, list[dict[str, Any]]]:
@@ -199,14 +240,14 @@ def _diagnose_pr(
     try:
         raw = _run_gh(
             "api",
-            "repos/ricardoafo/hermes/actions/workflows/merge-queue.yml/runs?per_page=50",
+            "repos/ricardoafo/hermes/actions/workflows/merge-queue.yml/runs?per_page=30",
             check=False,
         )
         runs = json.loads(raw).get("workflow_runs", [])
     except RuntimeError, json.JSONDecodeError:
         runs = []
 
-    run_id = _find_merge_queue_run_id(runs, merge_commit_sha)
+    run_id = _find_merge_queue_run_id(runs, pr_num, _jobs_for_run)
 
     log = ""
     if run_id is not None:
@@ -262,7 +303,7 @@ def main(argv: list[str] | None = None) -> int:
         "--limit",
         str(args.limit),
         "--json",
-        "number,body,mergedAt,mergeCommit",
+        "number,body,mergedAt",
     )
     prs = json.loads(raw)
 
@@ -276,14 +317,12 @@ def main(argv: list[str] | None = None) -> int:
             continue
         pr_num = pr["number"]
         body = pr.get("body") or ""
-        merge_commit_sha = (pr.get("mergeCommit") or {}).get("oid", "")
         audited += 1
 
         diagnostic, linked_issues = _diagnose_pr(
             pr_num,
             body,
             merged_at,
-            merge_commit_sha,
             log_probe=not args.no_log_probe,
         )
 
