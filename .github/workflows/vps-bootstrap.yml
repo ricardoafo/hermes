@@ -34,10 +34,6 @@ jobs:
     runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     environment: prod
     timeout-minutes: 10
-    # Job-level env — the tailscale composite action's internal daemon
-    # step doesn't inherit step-level env. See #284 for evidence.
-    env:
-      ADDITIONAL_DAEMON_ARGS: --tun=userspace-networking
 
     steps:
       - name: Checkout hermes repo (for scripts/deploy/vps_bootstrap.sh)
@@ -77,6 +73,13 @@ jobs:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
           hostname: gh-actions-vps-bootstrap-${{ github.run_id }}
           version: latest
+          # Self-hosted runner is a Docker container without NET_ADMIN /
+          # /dev/net/tun — tailscaled would crash on startup without this.
+          # NOT settable via `env: ADDITIONAL_DAEMON_ARGS=…` — the value
+          # is sourced from `inputs.tailscaled-args` inside the composite
+          # action's Start-Daemon step. See tailscale/github-action@v3
+          # action.yml:285.
+          tailscaled-args: --tun=userspace-networking
 
       - name: Prepare SSH keyfile + known_hosts
         env:
