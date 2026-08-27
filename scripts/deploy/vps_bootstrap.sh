@@ -28,8 +28,22 @@ set -euo pipefail
 set +x
 
 echo "==== VPS bootstrap starting on $(hostname) ===="
-echo "user: $(id -un) ($(id -u))"
-echo "date: $(date -u -Iseconds)"
+# `id -un` may be masked in workflow logs when the username happens to
+# equal a passed-through secret (e.g. VPS_SSH_USER). Print uid + groups
+# alongside so the identity is legible regardless. Also probe sudo
+# availability — the script needs root to write /var/log/hermes and
+# /etc/hermes; if SSH mapped us to a non-root user (Tailscale-SSH ACL
+# gotcha, see #290 follow-up), we need passwordless sudo to elevate.
+echo "user:   uid=$(id -u) gid=$(id -g)  ($(id -un))"
+echo "groups: $(id -Gn)"
+if [ "$(id -u)" = "0" ]; then
+    echo "sudo:   n/a (already root)"
+elif sudo -n true 2>/dev/null; then
+    echo "sudo:   passwordless OK"
+else
+    echo "sudo:   NOT available — install-d ops will fail unless you're root"
+fi
+echo "date:   $(date -u -Iseconds)"
 echo ""
 
 # ────────────────────────────────────────────────────────────────
