@@ -151,14 +151,21 @@ jobs:
           #
           # Assemble the env-passing prefix from every currently-set env
           # var starting with HERMES_ or STORAGE_BOX_.
+          #
+          # Use `env -0` (null-separated) instead of newline-separated. Some
+          # secrets are multi-line (e.g. STORAGE_BOX_KEY is a PEM-encoded
+          # OpenSSH private key). Newline-based `env | while read` truncates
+          # such values at the first `\n`, silently dropping everything
+          # after the PEM header and shipping a 36-byte file to the VPS.
           env_args=()
-          while IFS='=' read -r name value; do
+          while IFS= read -r -d '' entry; do
+              name="${entry%%=*}"
               case "$name" in
                   HERMES_*|STORAGE_BOX_*)
-                      env_args+=("$name=$value")
+                      env_args+=("$entry")
                       ;;
               esac
-          done < <(env)
+          done < <(env -0)
 
           # Pass the script via stdin so it runs as one atomic session.
           ssh -i ~/.ssh/vps_id -o StrictHostKeyChecking=yes \
