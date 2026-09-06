@@ -81,6 +81,24 @@ jobs:
           # action.yml:285.
           tailscaled-args: --tun=userspace-networking
 
+      - name: Tailscale diagnostics (self + peer + ping)
+        run: |
+          set -euo pipefail
+          echo "=== self (tags this runner is claiming) ==="
+          tailscale status --self=true --peers=false --json \
+            | jq '{HostName, DNSName, Tags, TailscaleIPs, Online}'
+          echo ""
+          echo "=== hermes-01 peer (tags Tailscale sees on the target) ==="
+          tailscale status --self=false --json \
+            | jq '.Peer | to_entries[] | select(.value.HostName == "hermes-01") | .value
+                  | {HostName, DNSName, Tags, TailscaleIPs, Online, LastSeen}'
+          echo ""
+          echo "=== ping (proves control-plane peer discovery is done) ==="
+          # Wait up to 30s for a direct or DERP connection. Without this
+          # the SSH step can race the tailscaled peer-sync and hit the
+          # "policy does not permit" false-negative from stale peer info.
+          tailscale ping --until-direct=false --timeout=30s hermes-01 || true
+
       - name: Prepare SSH keyfile + known_hosts
         env:
           VPS_SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
