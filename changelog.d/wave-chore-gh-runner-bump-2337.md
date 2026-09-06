@@ -1,0 +1,3 @@
+### Changed
+
+- **`scripts/dev/gh-runner/{Dockerfile,compose.yml}`** — bumped `RUNNER_VERSION` from `2.336.0` to `2.337.0` (matches current GitHub-released version). Eliminates the auto-update crash loop where fresh containers had `./bin/Runner.Listener` wiped on first-job pickup and never recovered — 5+ of 8 replicas were stuck restart-looping with exit code 127 on 2026-09-06. Requires `docker compose build && docker compose up -d --force-recreate --scale runner=8` after merge.
