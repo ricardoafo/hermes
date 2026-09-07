@@ -1,10 +1,11 @@
 """Top-level `hermes` CLI dispatcher.
 
 Registers subcommands the future integration PRs will fill in. Today
-``preview`` renders templates and ``health <integration>`` probes an
-integration adapter; ``serve`` and ``simulate`` remain stubs that print
-"not yet implemented" and exit with code 2 so composition scripts fail
-loudly if they attempt to call them.
+``preview`` renders templates, ``health <integration>`` probes an
+integration adapter, and ``serve`` runs the paper-trading engine via
+the composition root in :mod:`hermes.entrypoints.serve`. ``simulate``
+remains a stub that prints "not yet implemented" and exits with code
+2 so composition scripts fail loudly if they attempt to call it.
 
 Design notes
 ------------
@@ -31,21 +32,27 @@ Design notes
 
 from __future__ import annotations
 
+import argparse
+import asyncio
 import contextlib
 import io
 import os
 import sys
+from pathlib import Path
 from typing import Any, Final
 
 from hermes.entrypoints import _health as health_module
 from hermes.entrypoints import preview as preview_module
+from hermes.entrypoints import serve as serve_module
 from hermes.infrastructure import sentry_integration
+from hermes.infrastructure.config.errors import ConfigError
+from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
 
 __all__ = ["main"]
 
 _SUBCOMMAND_HELP: Final[dict[str, str]] = {
     "preview": "Render + optionally send notification templates.",
-    "serve": "Run the trading engine (stub — implemented in a future PR).",
+    "serve": "Run the paper-trading engine until SIGTERM/SIGINT.",
     "health": (
         "Health-check probe. `hermes health` (no arg) probes every "
         "registered integration; `hermes health <integration>` probes one."
@@ -53,9 +60,9 @@ _SUBCOMMAND_HELP: Final[dict[str, str]] = {
     "simulate": "Replay historical scenarios (stub — implemented in a future PR).",
 }
 
-# ``health`` is intentionally NOT in this set — it has a real implementation
-# below (registry walk when no arg is passed; per-integration probe otherwise).
-_STUB_SUBCOMMANDS: Final[frozenset[str]] = frozenset({"serve", "simulate"})
+# ``health`` and ``serve`` are intentionally NOT in this set — they have real
+# implementations below (registry walk / composition root respectively).
+_STUB_SUBCOMMANDS: Final[frozenset[str]] = frozenset({"simulate"})
 
 
 def _print_top_help(stream: Any) -> None:
@@ -151,6 +158,8 @@ def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
         return preview_module.main(rest, stream=out)
     if subcommand == "health":
         return _dispatch_health(rest, stream=out)
+    if subcommand == "serve":
+        return _dispatch_serve(rest, stream=out)
     if subcommand in _STUB_SUBCOMMANDS:
         out.write(
             f"ERROR: `hermes {subcommand}` is not yet implemented. "
@@ -199,6 +208,72 @@ def _dispatch_health(rest: list[str], *, stream: Any) -> int:
     stream.write(f"# hermes health {integration}\n")
     health_module.render_table(result, stream)
     return result.exit_code
+
+
+def _dispatch_serve(rest: list[str], *, stream: Any) -> int:
+    """Handle the ``hermes serve`` subcommand.
+
+    Parses ``--config-dir`` and ``--db``, loads the composite
+    :class:`~hermes.infrastructure.config.HermesConfig`, wires the
+    composition root, installs signal handlers, and awaits the
+    shutdown event. Returns 0 on a clean shutdown, 2 on argument-parse
+    failure, 3 on config load failure.
+
+    Args:
+        rest: Residual argv after the ``serve`` token.
+        stream: Output stream — errors are written here so tests can
+            capture them without touching real stdout.
+
+    Returns:
+        Process exit code.
+    """
+    parser = argparse.ArgumentParser(prog="hermes serve", add_help=False)
+    parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
+    parser.add_argument("--db", type=Path, default=serve_module.DEFAULT_DB_PATH)
+    parser.add_argument("-h", "--help", action="store_true")
+
+    try:
+        parsed = parser.parse_args(rest)
+    except SystemExit:
+        stream.write("ERROR: could not parse `hermes serve` arguments.\n")
+        return 2
+
+    if parsed.help:
+        stream.write(
+            "Usage: hermes serve [--config-dir DIR] [--db PATH]\n"
+            "\n"
+            "Runs the paper-trading engine until SIGTERM or SIGINT arrives.\n"
+        )
+        return 0
+
+    try:
+        config = load_config(parsed.config_dir)
+    except ConfigError as exc:
+        stream.write(f"ERROR: config load failed: {exc}\n")
+        return 3
+
+    return asyncio.run(_serve_main(config, db_path=parsed.db))
+
+
+async def _serve_main(config: Any, *, db_path: Path) -> int:
+    """Wire the composition root and await the shutdown event.
+
+    Extracted from :func:`_dispatch_serve` so tests can drive the
+    composition + run steps without going through argparse.
+
+    Args:
+        config: The loaded :class:`~hermes.infrastructure.config.HermesConfig`.
+        db_path: Path to the SQLite ledger file.
+
+    Returns:
+        Process exit code (0 on clean shutdown).
+    """
+    loop = asyncio.get_running_loop()
+    shutdown = asyncio.Event()
+    composition = serve_module.build_composition(config, db_path=db_path)
+    serve_module.install_signal_handlers(loop, shutdown)
+    await serve_module.run(composition, shutdown)
+    return 0
 
 
 if __name__ == "__main__":  # pragma: no cover
