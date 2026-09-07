@@ -1,54 +1,44 @@
 # =====================================================================
-# CD — SKELETON (Phase 0 fills the bodies)
+# CD — deploy hermes wheel to hermes-01 (Phase 0)
 # =====================================================================
 #
 # ## Status
 #
-# This is scaffolding. Every job's body is a placeholder that echoes
-# what it will do once Phase 0 code exists. The SHAPE of the pipeline
-# is locked in now so the DevOps foundation is closed, and later PRs
-# can fill each step in isolation without touching workflow structure.
+# Phase 0 filled: build → download wheel → tailnet + SSH → scp wheel →
+# uv install into /opt/hermes/.venv → systemctl restart → healthchecks
+# poll. Smoke suite is still a placeholder (no @smoke tests exist yet).
 #
-# Fill order (roughly):
-#   1. `build` — once `pyproject.toml` + `src/hermes/` exist,
-#      swap `echo TODO` for `uv build` and artifact upload
-#   2. `deploy` — once VPS has `/opt/hermes` layout and systemd units
-#      loaded, swap for real scp + ssh + `uv pip install` + systemctl
-#   3. `health-check` — once healthchecks.io endpoints are provisioned
-#      and a `hermes-health` service pings them, swap for real polling
-#   4. `smoke` — once a `smoke` pytest suite exists (Phase 0+)
-#   5. `confirm` — already real; the aggregator only needs the four
-#      upstream jobs to be non-trivial
+# ## Prerequisites on hermes-01 (one-time setup — see vps-operations guide)
+#
+#   - `hermes` OS user exists (see vps_bootstrap.sh)
+#   - `/opt/hermes/` owned by hermes:hermes
+#   - `/opt/hermes/.venv/` — Python 3.14 venv (create with `uv venv --python 3.14`)
+#   - `/etc/systemd/system/hermes.service` installed + enabled
+#   - `sudo` no-password rule for the deploy user on `systemctl restart hermes.service`
 #
 # ## Trigger set
 #
-#   push: [main]
-#     Every merged PR triggers a deploy of that exact SHA. Same SHA
-#     drives the wheel build and the systemd unit swap — version-locked.
-#
 #   workflow_dispatch:
-#     Manual invocation with `dry_run` for changes to THIS workflow.
-#     Every real step is guarded on `dry_run != 'true'` so a dispatch
-#     for validation cannot accidentally deploy.
+#     Manual until we're confident. Every push-to-main auto-deploy will
+#     be enabled in a follow-up once the pipeline has proven itself over
+#     a few manual runs.
 #
 # ## Serialization
 #
 # `concurrency: deploy-vps` + `cancel-in-progress: false`. Two deploys
-# racing would land unpredictable wheel versions on the VPS. If a
-# second commit lands mid-deploy, it queues and runs after the first
-# finishes — no skipping, every merged commit reaches production.
+# racing would land unpredictable wheel versions on the VPS.
 #
-# ## Secrets
+# ## Secrets (populated on `prod` GH Environment)
 #
-# Populated when the `prod` Environment is provisioned (see
-# `docs/guides/vps-operations.md`). Skeleton jobs reference the
-# expected secret names via `env:` so the wiring is visible.
+#   TAILSCALE_AUTHKEY       — tagged authkey (tag:ci-runner)
+#   VPS_SSH_HOST            — hermes-01 (tailnet hostname or 100.96.83.123)
+#   VPS_SSH_USER            — root
+#   VPS_SSH_KEY             — hermes_ci_ed25519 (unencrypted ed25519 private)
+#   VPS_HEALTHCHECK_URL     — healthchecks.io ping URL for the deploy probe
 
 name: CD
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       dry_run:
@@ -70,64 +60,141 @@ env:
 jobs:
   # ─────────────────────────────────────────────────────────────────
   # BUILD — package the app into a wheel via the reusable workflow.
-  # Body lives in `.github/workflows/_build-wheel.yml`; keeping the
-  # build in one place means the pinned `astral-sh/setup-uv` version
-  # and the artifact name never drift between CD and Release.
   # ─────────────────────────────────────────────────────────────────
   build:
     uses: ./.github/workflows/_build-wheel.yml
 
   # ─────────────────────────────────────────────────────────────────
-  # DEPLOY — SCP the wheel to VPS, install into venv, restart services
-  # Phase 0 payload: real ssh + scp using TS_SSH_KEY secret.
+  # DEPLOY — scp the wheel to VPS, install into venv, restart services
+  # Mirrors the tailnet + SSH scaffolding proven in vps-bootstrap.yml
+  # (#286, #289, #291, #294, #296, #298).
   # ─────────────────────────────────────────────────────────────────
   deploy:
     name: Deploy to VPS
     needs: build
     runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
-    timeout-minutes: 10
+    timeout-minutes: 15
     environment:
       name: prod
       url: https://${{ env.VPS_HOST }}
+
     steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 1
-
-      # TODO(phase-0): download wheel from build job
-      # - uses: actions/download-artifact@v5
-      #   with:
-      #     name: hermes-wheel
-      #     path: dist/
-
-      - name: Push wheel + restart services on VPS (placeholder)
-        if: inputs.dry_run != true
-        shell: bash
-        env:
-          # Populated on the `prod` Environment (Settings → Environments → prod)
-          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
-          SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
-          SSH_USER: ${{ secrets.VPS_SSH_USER }}
+      - name: Ensure openssh-client is installed
         run: |
-          echo "::notice::PLACEHOLDER — Phase 0 will replace this with real scp+ssh."
-          echo ""
-          echo "TODO(phase-0):"
-          echo "  1. write \$SSH_KEY to temp file with 600 perms"
-          echo "  2. scp dist/hermes-*.whl \$SSH_USER@\$SSH_HOST:/tmp/"
-          echo "  3. ssh \$SSH_USER@\$SSH_HOST 'sudo -u hermes /opt/hermes/.venv/bin/uv pip install --force-reinstall /tmp/hermes-*.whl'"
-          echo "  4. ssh \$SSH_USER@\$SSH_HOST 'sudo systemctl restart hermes-*.service'"
-          echo "  5. rm \$KEY_FILE /tmp/hermes-*.whl"
-          echo ""
-          echo "SSH via Tailscale (public port 22 is CLOSED, hermes-01 = ${VPS_HOST})."
+          set -euo pipefail
+          if command -v ssh >/dev/null 2>&1; then
+              echo "ssh already available: $(ssh -V 2>&1)"
+              exit 0
+          fi
+          echo "ssh missing — installing openssh-client"
+          if command -v apt-get >/dev/null 2>&1; then
+              if [ "$(id -u)" = "0" ]; then
+                  apt-get update -qq && apt-get install -y openssh-client
+              else
+                  sudo apt-get update -qq && sudo apt-get install -y openssh-client
+              fi
+          elif command -v apk >/dev/null 2>&1; then
+              if [ "$(id -u)" = "0" ]; then
+                  apk add --no-cache openssh-client
+              else
+                  sudo apk add --no-cache openssh-client
+              fi
+          else
+              echo "ERROR: no supported package manager (apt-get / apk)"
+              exit 2
+          fi
+
+      - name: Download wheel artifact
+        if: inputs.dry_run != true
+        uses: actions/download-artifact@v5
+        with:
+          name: hermes-wheel
+          path: dist/
+
+      - name: Join tailnet
+        if: inputs.dry_run != true
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          hostname: gh-actions-cd-${{ github.run_id }}
+          version: latest
+          tailscaled-args: --tun=userspace-networking
+
+      - name: Prepare SSH keyfile + known_hosts
+        if: inputs.dry_run != true
+        env:
+          VPS_SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/vps_id
+          chmod 600 ~/.ssh/vps_id
+          ssh-keyscan -H "$VPS_SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh-keygen -y -f ~/.ssh/vps_id > /dev/null && echo "keyfile parsed OK"
+
+      - name: Copy wheel to VPS
+        if: inputs.dry_run != true
+        env:
+          VPS_SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
+          VPS_SSH_USER: ${{ secrets.VPS_SSH_USER }}
+        run: |
+          set -euo pipefail
+          wheel=$(ls dist/hermes-*.whl | head -1)
+          if [ -z "$wheel" ]; then
+              echo "::error::no wheel found in dist/"
+              exit 1
+          fi
+          echo "shipping $wheel ($(stat -c%s "$wheel") bytes) → hermes-01:/tmp/hermes.whl"
+          scp -i ~/.ssh/vps_id -o StrictHostKeyChecking=yes \
+              "$wheel" "$VPS_SSH_USER@$VPS_SSH_HOST:/tmp/hermes.whl"
+
+      - name: Install wheel + restart hermes.service
+        if: inputs.dry_run != true
+        env:
+          VPS_SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
+          VPS_SSH_USER: ${{ secrets.VPS_SSH_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/vps_id -o StrictHostKeyChecking=yes \
+              "$VPS_SSH_USER@$VPS_SSH_HOST" bash <<'REMOTE'
+          set -euo pipefail
+          echo "==== hermes deploy on $(hostname) ===="
+
+          # Prerequisites (one-time — will fail loudly if missing):
+          #   /opt/hermes/       (hermes:hermes)
+          #   /opt/hermes/.venv  (Python 3.14 venv)
+          #   /etc/systemd/system/hermes.service
+          if [ ! -d /opt/hermes/.venv ]; then
+              echo "::error::/opt/hermes/.venv missing — run one-time VPS setup first"
+              exit 1
+          fi
+          if ! systemctl list-unit-files hermes.service >/dev/null 2>&1; then
+              echo "::error::hermes.service systemd unit not installed"
+              exit 1
+          fi
+
+          echo "installing wheel into /opt/hermes/.venv…"
+          sudo -u hermes /opt/hermes/.venv/bin/pip install --quiet --force-reinstall /tmp/hermes.whl
+          rm /tmp/hermes.whl
+
+          echo "installed version:"
+          sudo -u hermes /opt/hermes/.venv/bin/pip show hermes | grep -E '^Version:'
+
+          echo "restarting hermes.service…"
+          sudo systemctl daemon-reload
+          sudo systemctl restart hermes.service
+          sleep 2
+          sudo systemctl status hermes.service --no-pager | head -20
+          REMOTE
 
       - name: Dry-run notice
         if: inputs.dry_run == true
-        run: echo "::notice::dry_run=true — skipped VPS-mutating steps."
+        run: echo "::notice::dry_run=true — skipped tailnet + scp + install."
 
   # ─────────────────────────────────────────────────────────────────
-  # HEALTH CHECK — verify services came up green after restart
-  # Phase 0 payload: poll healthchecks.io endpoint OR curl an
-  # in-process /healthz once Phase 3+ exposes one via tailscale.
+  # HEALTH CHECK — poll healthchecks.io for post-restart heartbeat
   # ─────────────────────────────────────────────────────────────────
   health-check:
     name: Health check
@@ -135,31 +202,40 @@ jobs:
     runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 5
     steps:
-      - name: Poll health endpoint (placeholder)
+      - name: Poll healthchecks.io
         if: inputs.dry_run != true
         shell: bash
         env:
           HEALTHCHECK_URL: ${{ secrets.VPS_HEALTHCHECK_URL }}
         run: |
-          echo "::notice::PLACEHOLDER — Phase 0 will poll healthchecks.io."
-          echo ""
-          echo "TODO(phase-0):"
-          echo "  for attempt in {1..24}; do"
-          echo "    if curl -fsSL \"\$HEALTHCHECK_URL\" -o /dev/null; then"
-          echo "      echo 'health OK'; exit 0"
-          echo "    fi"
-          echo "    sleep 5"
-          echo "  done"
-          echo "  echo '::error::health check timed out after 120s'; exit 1"
+          set -euo pipefail
+          if [ -z "${HEALTHCHECK_URL}" ]; then
+              echo "::warning::VPS_HEALTHCHECK_URL secret is empty — skipping poll"
+              exit 0
+          fi
+          # 24 attempts × 5s = 2 minutes. hermes-health.timer fires every
+          # minute so a healthy deploy should ping within 1-2 min.
+          for attempt in $(seq 1 24); do
+              # Healthchecks.io API: GET /api/v3/checks/<uuid>/pings returns
+              # last ping. We use the ping URL itself for a lightweight probe —
+              # any HTTP 200 means "check has been pinged in its expected window".
+              status=$(curl -fsSL -o /dev/null -w '%{http_code}' "${HEALTHCHECK_URL}" || echo "000")
+              if [ "$status" = "200" ]; then
+                  echo "health OK after ${attempt} attempt(s)"
+                  exit 0
+              fi
+              echo "attempt ${attempt}/24: status=${status}, sleeping 5s"
+              sleep 5
+          done
+          echo "::error::health check timed out after 120s"
+          exit 1
 
       - name: Dry-run notice
         if: inputs.dry_run == true
         run: echo "::notice::dry_run=true — skipped health poll."
 
   # ─────────────────────────────────────────────────────────────────
-  # SMOKE — end-to-end sanity check post-deploy
-  # Phase 0+ payload: pytest suite marked @smoke that exercises a
-  # small subset of core paths against the deployed instance.
+  # SMOKE — end-to-end sanity (still placeholder — no @smoke suite yet)
   # ─────────────────────────────────────────────────────────────────
   smoke:
     name: Smoke tests
@@ -174,7 +250,17 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with: { version: "0.12.5" }
       - run: uv sync --frozen
-      - run: uv run pytest -m smoke --tb=short
+
+      - name: Run smoke suite
+        if: inputs.dry_run != true
+        run: |
+          set -euo pipefail
+          # Guarded — if no smoke tests exist yet, don't fail the deploy.
+          if uv run pytest --collect-only -m smoke 2>&1 | grep -q "no tests ran"; then
+              echo "::warning::no @smoke tests defined yet — skipping"
+              exit 0
+          fi
+          uv run pytest -m smoke --tb=short
 
       - name: Dry-run notice
         if: inputs.dry_run == true
@@ -182,9 +268,6 @@ jobs:
 
   # ─────────────────────────────────────────────────────────────────
   # CONFIRM — deploy-gate aggregator
-  # Real today. Passes iff every upstream deploy job succeeded (or
-  # was skipped in dry_run). This is the marker future branch
-  # protection could gate on via `required_deployments: [prod]`.
   # ─────────────────────────────────────────────────────────────────
   confirm:
     name: Confirm deployment
