@@ -60,9 +60,9 @@ class TestPreviewDelegation:
 
 
 class TestStubSubcommands:
-    """serve / simulate print a 'not yet implemented' line and exit 2."""
+    """simulate prints a 'not yet implemented' line and exits 2."""
 
-    @pytest.mark.parametrize("subcommand", ["serve", "simulate"])
+    @pytest.mark.parametrize("subcommand", ["simulate"])
     def test_stub_subcommand_exits_two(self, subcommand: str) -> None:
         """Each stub subcommand exits 2 with an ERROR line naming the subcommand."""
         stream = io.StringIO()
@@ -71,6 +71,27 @@ class TestStubSubcommands:
         output = stream.getvalue()
         assert subcommand in output
         assert "not yet implemented" in output
+
+
+class TestServeSubcommand:
+    """`hermes serve` dispatches to the composition-root handler."""
+
+    def test_serve_help_exits_zero(self) -> None:
+        """`hermes serve --help` prints usage and exits 0 without touching config."""
+        stream = io.StringIO()
+        rc = cli_module.main(["serve", "--help"], stream=stream)
+        assert rc == 0
+        assert "hermes serve" in stream.getvalue()
+
+    def test_serve_missing_config_dir_exits_three(self, tmp_path: object) -> None:
+        """A non-existent --config-dir returns exit code 3 (config load failed)."""
+        stream = io.StringIO()
+        rc = cli_module.main(
+            ["serve", "--config-dir", "does-not-exist-abcdef"],
+            stream=stream,
+        )
+        assert rc == 3
+        assert "config load failed" in stream.getvalue()
 
 
 class TestMainDefaultStream:
