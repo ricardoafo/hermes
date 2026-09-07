@@ -85,8 +85,14 @@ jobs:
         run: |
           set -euo pipefail
           echo "=== self (tags this runner is claiming) ==="
+          # Per-device fields live under `.Self` in tailscale status --json.
+          # Reading them from the top-level object returns null (only
+          # TailscaleIPs is mirrored at both levels) — earlier version of
+          # this step queried `{Tags, HostName, ...}` at the root and got
+          # a misleading "Tags: null" that suggested untagged when the
+          # device was actually tagged. See #294 followup.
           tailscale status --self=true --peers=false --json \
-            | jq '{HostName, DNSName, Tags, TailscaleIPs, Online}'
+            | jq '.Self | {HostName, DNSName, Tags, TailscaleIPs, Online}'
           echo ""
           echo "=== hermes-01 peer (tags Tailscale sees on the target) ==="
           tailscale status --self=false --json \
