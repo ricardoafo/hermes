@@ -86,6 +86,7 @@ before 4h bars relied on the leak and had to move their 4h bars later.
 def _closed_1d_bars(self, as_of: datetime) -> list[Bar]:
     return [b for b in self._bars_1d if b.close_time <= as_of]
 
+
 def _regime_above_ema(self, as_of: datetime) -> bool:
     closed = self._closed_1d_bars(as_of)
     return bool(closed) and EmaRegimeFilter.above_ema(closed, period=self._ema_period)
