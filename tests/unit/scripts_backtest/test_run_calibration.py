@@ -10,12 +10,14 @@ from __future__ import annotations
 
 import importlib.util
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
 import pytest
 
+from hermes.domain.market_data.bar import Bar
+from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.strategy.signal import SignalKind, SignalSide, StrategySignal
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
@@ -140,3 +142,37 @@ def test_jsonify_handles_decimal_and_datetime() -> None:
     assert out["price"] == "50000.12345678", f"Decimal not stringified: {out['price']}"
     assert out["ts"] == "2024-01-15T12:30:00+00:00", f"datetime not ISO: {out['ts']}"
     assert out["nested"][0]["inner"] == "0.001", "nested Decimal not stringified"
+
+
+def _day_bar(pair: Pair, open_time: datetime, interval: KlineInterval) -> Bar:
+    hours = 4 if interval == KlineInterval.H4 else 24
+    return Bar(
+        pair=pair,
+        interval=interval,
+        open_time=open_time,
+        open=Decimal("100"),
+        high=Decimal("100"),
+        low=Decimal("100"),
+        close=Decimal("100"),
+        volume=Decimal("1"),
+        close_time=open_time + timedelta(hours=hours),
+    )
+
+
+def test_merge_delivers_each_daily_bar_after_the_4h_bars_it_covers() -> None:
+    """Issue #311: a 1D bar is delivered only once it has closed.
+
+    It must follow the 4h bars that close before it and precede the 4h bar
+    closing at the same instant, so no 4h bar sees a 1D close from its future.
+    """
+    pair = _btc_pair()
+    day = datetime(2024, 1, 15, tzinfo=UTC)
+    bars_4h = [_day_bar(pair, day + timedelta(hours=4 * i), KlineInterval.H4) for i in range(6)]
+    daily = _day_bar(pair, day, KlineInterval.D1)
+
+    merged = DRIVER._merge_by_close_time(bars_4h, [daily])
+
+    assert merged == [*bars_4h[:5], daily, bars_4h[5]], (
+        f"daily bar delivered at position {merged.index(daily)}, expected 5 (just before "
+        "the 4h bar that closes at midnight)"
+    )
