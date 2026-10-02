@@ -184,8 +184,21 @@ def test_ml_rejects_non_positive_max_tokens(tokens: int) -> None:
 
 
 # ---------------------------------------------------------------------------
-# StrategyConfig — weight in [0, 1]; name non-empty
+# StrategyConfig — weight in [0, 1]; name non-empty; capital and quote required
 # ---------------------------------------------------------------------------
+
+
+def _strategy_entry(**overrides: Any) -> dict[str, Any]:
+    """Return a valid strategy roster entry with ``overrides`` applied."""
+    entry: dict[str, Any] = {
+        "name": "x",
+        "enabled": True,
+        "weight": "1.0",
+        "capital_budget": "5000",
+        "quote": "USDT",
+    }
+    entry.update(overrides)
+    return entry
 
 
 @_SETTINGS
@@ -193,7 +206,41 @@ def test_ml_rejects_non_positive_max_tokens(tokens: int) -> None:
 def test_strategy_rejects_weight_above_one(w: Decimal) -> None:
     """Weight must be <= 1; a strategy cannot hold more than the whole portfolio."""
     _assert_field_in_validation_error(
-        {"strategies": [{"name": "x", "enabled": True, "weight": str(w)}]},
+        {"strategies": [_strategy_entry(weight=str(w))]},
         StrategiesConfig,
         "weight",
+    )
+
+
+@_SETTINGS
+@given(budget=st.decimals(max_value=Decimal("0"), allow_nan=False, allow_infinity=False, places=8))
+def test_strategy_rejects_non_positive_capital_budget(budget: Decimal) -> None:
+    """capital_budget must be > 0; a strategy cannot be seeded with zero or negative capital."""
+    _assert_field_in_validation_error(
+        {"strategies": [_strategy_entry(capital_budget=str(budget))]},
+        StrategiesConfig,
+        "capital_budget",
+    )
+
+
+def test_strategy_rejects_missing_quote() -> None:
+    """Quote is required: a roster entry without it fails at load, not at first use."""
+    entry = _strategy_entry()
+    del entry["quote"]
+    _assert_field_in_validation_error({"strategies": [entry]}, StrategiesConfig, "quote")
+
+
+def test_strategy_rejects_missing_capital_budget() -> None:
+    """capital_budget is required: there is no silent default seed for the tracker."""
+    entry = _strategy_entry()
+    del entry["capital_budget"]
+    _assert_field_in_validation_error({"strategies": [entry]}, StrategiesConfig, "capital_budget")
+
+
+def test_strategy_rejects_quote_outside_the_currency_allowlist() -> None:
+    """Quote must be a known Currency; a typo such as USTD fails validation."""
+    _assert_field_in_validation_error(
+        {"strategies": [_strategy_entry(quote="USTD")]},
+        StrategiesConfig,
+        "quote",
     )
