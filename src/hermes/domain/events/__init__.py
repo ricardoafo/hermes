@@ -20,6 +20,7 @@ from hermes.domain.events.daily_trade_digest import DailyTradeDigest, TradeSumma
 from hermes.domain.events.event_bus import EventBus, EventDispatchError, Handler
 from hermes.domain.events.lot_closed import LotClosed
 from hermes.domain.events.rebalance_triggered import RebalanceTriggered
+from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.events.strategy_paused import StrategyPaused
 from hermes.domain.events.strategy_resumed import StrategyResumed
 from hermes.domain.events.trade_executed import TradeExecuted, TradeSide
@@ -37,6 +38,7 @@ __all__ = [
     "LotClosed",
     "RebalanceTriggered",
     "SchemaVersion",
+    "SignalEmitted",
     "StrategyPaused",
     "StrategyResumed",
     "TradeExecuted",
