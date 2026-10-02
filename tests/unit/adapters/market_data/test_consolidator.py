@@ -18,7 +18,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
-from hypothesis import given, settings
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from hermes.adapters.market_data.consolidator import BarConsolidator, interval_to_timedelta
@@ -331,9 +331,16 @@ def _trade_list_strategy(draw: st.DrawFn) -> list[Trade]:
     return trades
 
 
+# Generating these trade lists can be slow on a loaded machine (several test
+# suites running in parallel), which trips Hypothesis's too_slow health check
+# without any change in what the properties assert. Suppressing only that check
+# keeps every property and the example count intact (#326).
+_PROPERTY_SETTINGS = settings(max_examples=200, suppress_health_check=[HealthCheck.too_slow])
+
+
 @pytest.mark.property
 @given(_trade_list_strategy())
-@settings(max_examples=200)
+@_PROPERTY_SETTINGS
 def test_property_bar_high_ge_all_trade_prices(trades: list[Trade]) -> None:
     """Property: bar.high >= every trade price that contributed to the bar."""
     consolidator = BarConsolidator(pair=_BTC_USDT, interval=KlineInterval.H1)
@@ -355,7 +362,7 @@ def test_property_bar_high_ge_all_trade_prices(trades: list[Trade]) -> None:
 
 @pytest.mark.property
 @given(_trade_list_strategy())
-@settings(max_examples=200)
+@_PROPERTY_SETTINGS
 def test_property_bar_volume_equals_sum_of_trade_volumes(trades: list[Trade]) -> None:
     """Property: bar.volume == sum of trade.quantity for all contributing trades."""
     consolidator = BarConsolidator(pair=_BTC_USDT, interval=KlineInterval.H1)
@@ -379,7 +386,7 @@ def test_property_bar_volume_equals_sum_of_trade_volumes(trades: list[Trade]) ->
 
 @pytest.mark.property
 @given(_trade_list_strategy())
-@settings(max_examples=200)
+@_PROPERTY_SETTINGS
 def test_property_no_lookahead(trades: list[Trade]) -> None:
     """Property: bar at close_time T never uses any trade with trade_time > T."""
     consolidator = BarConsolidator(pair=_BTC_USDT, interval=KlineInterval.H1)
@@ -409,7 +416,7 @@ def test_property_no_lookahead(trades: list[Trade]) -> None:
 
 @pytest.mark.property
 @given(_trade_list_strategy())
-@settings(max_examples=200)
+@_PROPERTY_SETTINGS
 def test_property_bar_high_ge_open_close_low(trades: list[Trade]) -> None:
     """Property: bar.high >= bar.open, bar.close, bar.low for all emitted bars."""
     consolidator = BarConsolidator(pair=_BTC_USDT, interval=KlineInterval.H1)
@@ -423,7 +430,7 @@ def test_property_bar_high_ge_open_close_low(trades: list[Trade]) -> None:
 
 @pytest.mark.property
 @given(_trade_list_strategy())
-@settings(max_examples=200)
+@_PROPERTY_SETTINGS
 def test_property_bar_low_le_open_close_high(trades: list[Trade]) -> None:
     """Property: bar.low <= bar.open, bar.close, bar.high for all emitted bars."""
     consolidator = BarConsolidator(pair=_BTC_USDT, interval=KlineInterval.H1)
@@ -437,7 +444,7 @@ def test_property_bar_low_le_open_close_high(trades: list[Trade]) -> None:
 
 @pytest.mark.property
 @given(_trade_list_strategy())
-@settings(max_examples=200)
+@_PROPERTY_SETTINGS
 def test_property_close_time_strictly_after_open_time(trades: list[Trade]) -> None:
     """Property: bar.close_time > bar.open_time for all emitted bars."""
     consolidator = BarConsolidator(pair=_BTC_USDT, interval=KlineInterval.H1)
@@ -452,7 +459,7 @@ def test_property_close_time_strictly_after_open_time(trades: list[Trade]) -> No
 
 @pytest.mark.property
 @given(_trade_list_strategy())
-@settings(max_examples=200)
+@_PROPERTY_SETTINGS
 def test_property_bars_in_ascending_open_time_order(trades: list[Trade]) -> None:
     """Property: emitted bars are in ascending open_time order."""
     consolidator = BarConsolidator(pair=_BTC_USDT, interval=KlineInterval.H1)
@@ -467,7 +474,7 @@ def test_property_bars_in_ascending_open_time_order(trades: list[Trade]) -> None
 
 @pytest.mark.property
 @given(_trade_list_strategy())
-@settings(max_examples=200)
+@_PROPERTY_SETTINGS
 def test_property_bar_volume_non_negative(trades: list[Trade]) -> None:
     """Property: bar.volume >= 0 for all emitted bars."""
     consolidator = BarConsolidator(pair=_BTC_USDT, interval=KlineInterval.H1)
