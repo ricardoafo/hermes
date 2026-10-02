@@ -26,6 +26,9 @@ from hermes.ports.strategy import StrategyPort
 
 _BTC_USDT = Pair(base=Currency.BTC, quote=Currency.USDT)
 _BASE = datetime(2024, 1, 1, tzinfo=UTC)
+# 4h bars start after the longest 1D seed (12 bars + 3 crash bars) has closed,
+# so every seeded 1D bar is visible to the regime filter (no look-ahead, #311).
+_H4_BASE = _BASE + timedelta(days=15)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -41,7 +44,8 @@ def _bar(
     low: Decimal | None = None,
 ) -> Bar:
     hours = 4 if interval == KlineInterval.H4 else 24
-    open_time = _BASE + timedelta(hours=hours * index)
+    base = _H4_BASE if interval == KlineInterval.H4 else _BASE
+    open_time = base + timedelta(hours=hours * index)
     close_time = open_time + timedelta(hours=hours)
     _h = high if high is not None else close + Decimal("2")
     _l = low if low is not None else max(close - Decimal("2"), Decimal("0.01"))
