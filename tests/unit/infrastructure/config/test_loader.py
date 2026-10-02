@@ -15,6 +15,7 @@ from textwrap import dedent
 import pytest
 
 from hermes.domain.errors import HermesError, InfraError
+from hermes.domain.value_objects.currency import Currency
 from hermes.infrastructure.config import (
     BinanceExchangeConfig,
     ConfigError,
@@ -35,9 +36,13 @@ _VALID_STRATEGIES = dedent(
       - name: rebalancer
         enabled: true
         weight: "0.6"
+        capital_budget: "3000"
+        quote: USDT
       - name: donchian
         enabled: false
         weight: "0.4"
+        capital_budget: "2000"
+        quote: USDC
     """
 ).strip()
 
@@ -170,6 +175,31 @@ def test_load_config_preserves_strategy_order(config_dir: Path) -> None:
     """Strategies come out in the same order as the YAML — replay determinism."""
     cfg = load_config(config_dir, env={})
     assert [s.name for s in cfg.strategies.strategies] == ["rebalancer", "donchian"]
+
+
+def test_load_config_parses_capital_budget_and_quote_exactly(config_dir: Path) -> None:
+    """capital_budget stays an exact Decimal and quote becomes the Currency member."""
+    first = load_config(config_dir, env={}).strategies.strategies[0]
+    assert first.capital_budget == Decimal("3000")
+    assert first.quote is Currency.USDT
+
+
+def test_env_override_lifts_capital_budget(config_dir: Path) -> None:
+    """HERMES_STRATEGIES__STRATEGIES__0__CAPITAL_BUDGET replaces the seed, as an exact Decimal."""
+    cfg = load_config(
+        config_dir,
+        env={"HERMES_STRATEGIES__STRATEGIES__0__CAPITAL_BUDGET": "1234.5"},
+    )
+    assert cfg.strategies.strategies[0].capital_budget == Decimal("1234.5")
+
+
+def test_shipped_strategies_yaml_is_the_swing_only_roster() -> None:
+    """The committed strategies.yaml loads as one swing-donchian-4h entry seeded 5000 USDT."""
+    shipped = Path(__file__).resolve().parents[4] / "config" / "strategies.yaml"
+    roster = load_yaml_model(shipped, StrategiesConfig, env_section="STRATEGIES", env={})
+    assert [
+        (s.name, s.enabled, s.weight, s.capital_budget, s.quote) for s in roster.strategies
+    ] == [("swing-donchian-4h", True, Decimal("1.0"), Decimal("5000"), Currency.USDT)]
 
 
 # ---------------------------------------------------------------------------
