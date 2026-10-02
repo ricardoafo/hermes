@@ -1,15 +1,17 @@
-# Placeholder health-ping service.
+# Dead-man's-switch ping for hermes.service.
 #
-# Exists so the CD pipeline has something to `systemctl restart` and
-# something to poll for post-deploy verification, before Phase 0 lands
-# real hermes processes.
+# Fired every 5 minutes by hermes-health.timer. The script pings
+# healthchecks.io only while `systemctl is-active --quiet hermes.service`
+# succeeds, so a missed ping means the engine is down or crash-looping and
+# the check's Telegram integration alerts the operator (deploy/README.md,
+# "Alerting when hermes is down").
 #
-# Once Phase 0 adds `hermes-rebalancer.service` etc., this unit stays
-# useful as a tiny liveness check that pings healthchecks.io on a
-# schedule — orthogonal to the real workload.
+# The script ships inside each release, so ExecStart follows the `current`
+# symlink. The ping URL (HERMES_HEALTHCHECKS__PING_URL) comes from the same
+# env file as the engine's secrets.
 
 [Unit]
-Description=Hermes health ping (placeholder pre-Phase-0)
+Description=Hermes liveness ping (healthchecks.io, only while hermes.service is active)
 After=network-online.target
 Wants=network-online.target
 
@@ -18,12 +20,10 @@ Type=oneshot
 User=hermes
 Group=hermes
 
-# TODO(phase-0): swap for a real ping command run from
-# `/opt/hermes/current/.venv/bin/hermes` once one exists. For now, a shell
-# one-liner emits a version marker + ping so journalctl and healthchecks.io
-# both see life signs.
-ExecStart=/bin/bash -c 'echo "hermes-health tick: $(date -Iseconds) build=${HERMES_BUILD_SHA:-unknown}" && \
-                        curl -fsS -m 10 --retry 3 -o /dev/null "${HEALTHCHECK_URL:-https://hc-ping.com/00000000-0000-0000-0000-000000000000}" || true'
+# Read by systemd as root before dropping to User=hermes. No leading "-": a
+# missing file must fail the ping, not silently skip it.
+EnvironmentFile=/etc/hermes/env.production
+ExecStart=/bin/bash /opt/hermes/current/deploy/hermes-health-ping.sh
 
 # Hardening — matches the pattern used by real hermes services (ADR-003 §09)
 NoNewPrivileges=true
@@ -32,10 +32,6 @@ ProtectHome=true
 PrivateTmp=true
 CapabilityBoundingSet=
 ReadWritePaths=
-
-# Populated at install time by deploy/README instructions.
-# Environment=HERMES_BUILD_SHA=<sha>
-# Environment=HEALTHCHECK_URL=https://hc-ping.com/<uuid>
 
 [Install]
 WantedBy=multi-user.target

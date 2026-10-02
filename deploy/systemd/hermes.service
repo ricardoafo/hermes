@@ -20,6 +20,11 @@ Wants=network-online.target
 # market-data API. 5 x RestartSec (30s) = 150s, well inside the 10 min window.
 StartLimitIntervalSec=10min
 StartLimitBurst=5
+# One Telegram message when the unit lands in `failed`: the start limit tripped
+# or it exited 2/3. A crash that is about to be restarted does not count; the
+# unit is "activating (auto-restart)", not failed. The missed healthchecks.io
+# ping (hermes-health.service) covers every other way of being down.
+OnFailure=hermes-notify-failure@%n.service
 
 [Service]
 Type=simple

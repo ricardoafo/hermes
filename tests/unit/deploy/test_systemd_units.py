@@ -186,3 +186,94 @@ def test_unit_values_carry_no_inline_comments(path: Path) -> None:
 def test_unit_files_never_reference_the_pre_release_layout(path: Path, legacy: str) -> None:
     """The single-venv layout and the flat env file are gone; no unit may name them."""
     assert legacy not in path.read_text(encoding="utf-8")
+
+
+_RELEASE_DEPLOY_DIR = PurePosixPath("/opt/hermes/current/deploy")
+_NOTIFIER_TEMPLATE = "hermes-notify-failure@.service"
+
+
+def _exec_argv(unit_name: str) -> list[str]:
+    """Return the ExecStart of ``unit_name`` split into argv tokens."""
+    return shlex.split(_parse(unit_name)["Service"]["ExecStart"])
+
+
+def test_hermes_service_starts_the_failure_notifier_when_it_fails() -> None:
+    """A tripped start limit or an exit 2/3 must reach the operator, not stay in the journal."""
+    assert _parse("hermes.service")["Unit"]["OnFailure"] == "hermes-notify-failure@%n.service"
+
+
+def test_hermes_service_declares_on_failure_in_the_unit_section() -> None:
+    """Systemd ignores OnFailure= under [Service], so the alert would never fire."""
+    assert "OnFailure" not in _parse("hermes.service")["Service"]
+
+
+def test_on_failure_instance_resolves_to_a_shipped_template_unit() -> None:
+    """OnFailure= naming a template that is not in deploy/systemd/ would alert nobody."""
+    target = _parse("hermes.service")["Unit"]["OnFailure"]
+    assert target.endswith("@%n.service")
+    template = target.removesuffix("%n.service") + ".service"
+    assert (_UNIT_DIR / template).is_file(), f"{template} is not shipped"
+
+
+def test_failure_notifier_is_a_oneshot() -> None:
+    """The notifier runs once per failure and exits; a long-running unit would never finish."""
+    assert _parse(_NOTIFIER_TEMPLATE)["Service"]["Type"] == "oneshot"
+
+
+def test_failure_notifier_never_restarts() -> None:
+    """One failure, one message: any Restart= policy would repeat the alert."""
+    assert _parse(_NOTIFIER_TEMPLATE)["Service"].get("Restart", "no") == "no"
+
+
+def test_failure_notifier_loads_the_credentials_from_the_environment_file() -> None:
+    """The Telegram token and chat id come from env.production, never from the unit file."""
+    assert _parse(_NOTIFIER_TEMPLATE)["Service"]["EnvironmentFile"] == _ENV_FILE
+
+
+def test_failure_notifier_hands_the_failed_unit_name_to_its_script() -> None:
+    """The message names the unit that failed, so the instance name must reach the script."""
+    assert _exec_argv(_NOTIFIER_TEMPLATE)[-1] == "%I"
+
+
+def test_health_service_loads_the_ping_url_from_the_environment_file() -> None:
+    """The ping URL lives in env.production; without it the ping has no target."""
+    assert _parse("hermes-health.service")["Service"]["EnvironmentFile"] == _ENV_FILE
+
+
+def test_health_ping_script_reads_the_variable_the_bootstrap_workflow_writes() -> None:
+    """The ping URL variable must be one vps-bootstrap.yml renders into env.production."""
+    variable = "HERMES_HEALTHCHECKS__PING_URL"
+    script = (_REPO_ROOT / "deploy" / "hermes-health-ping.sh").read_text(encoding="utf-8")
+    workflow = (_REPO_ROOT / ".github" / "workflows" / "vps-bootstrap.yml").read_text(
+        encoding="utf-8"
+    )
+    assert f"${{{variable}:-}}" in script
+    assert f"{variable}:" in workflow
+
+
+@pytest.mark.parametrize(
+    "path",
+    [_UNIT_DIR / "hermes-health.service", _REPO_ROOT / "deploy" / "hermes-health-ping.sh"],
+    ids=lambda p: p.name,
+)
+def test_health_ping_never_falls_back_to_a_placeholder_url(path: Path) -> None:
+    """An unset URL must fail loudly; pinging the all-zero UUID only ever 404s unnoticed."""
+    text = path.read_text(encoding="utf-8")
+    assert "00000000-0000-0000-0000-000000000000" not in text
+    assert "${HEALTHCHECK_URL" not in text
+
+
+def test_health_service_pings_through_the_conditional_script_only() -> None:
+    """A direct curl in the unit would ping even while hermes.service is down."""
+    assert _exec_argv("hermes-health.service") == [
+        "/bin/bash",
+        str(_RELEASE_DEPLOY_DIR / "hermes-health-ping.sh"),
+    ]
+
+
+@pytest.mark.parametrize("unit_name", ["hermes-health.service", _NOTIFIER_TEMPLATE])
+def test_unit_script_is_shipped_in_the_release_deploy_directory(unit_name: str) -> None:
+    """ExecStart follows `current/deploy/`; a script missing from repo deploy/ fails with 127."""
+    script = PurePosixPath(_exec_argv(unit_name)[1])
+    assert script.parent == _RELEASE_DEPLOY_DIR
+    assert (_REPO_ROOT / "deploy" / script.name).is_file()
