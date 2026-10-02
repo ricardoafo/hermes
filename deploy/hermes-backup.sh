@@ -5,18 +5,18 @@
 # Retention: 7 daily / 4 weekly / 12 monthly. Fails loud on any error.
 #
 # Invoked by hermes-backup.timer at 03:00 UTC daily.
-# Env vars sourced from /etc/hermes.env (loaded by systemd EnvironmentFile).
+# Env vars sourced from /etc/hermes/env.production (loaded by systemd EnvironmentFile).
 #
 # Prerequisites (see deploy/hetzner-storagebox-setup.md):
 #   1. borgbackup >= 1.2 installed on VPS (apt install borgbackup)
 #   2. Storage Box SSH pubkey uploaded, port 23 reachable
 #   3. Borg repo initialised once: hermes-backup.sh --init
-#   4. /etc/hermes.env populated with HERMES_BACKUP_* + BORG_PASSPHRASE
+#   4. /etc/hermes/env.production populated with HERMES_BACKUP_* + BORG_PASSPHRASE
 
 set -euo pipefail
 
-: "${HERMES_BACKUP_BORG_REPO:?must be set in /etc/hermes.env}"
-: "${BORG_PASSPHRASE:?must be set in /etc/hermes.env}"
+: "${HERMES_BACKUP_BORG_REPO:?must be set in /etc/hermes/env.production}"
+: "${BORG_PASSPHRASE:?must be set in /etc/hermes/env.production}"
 : "${HERMES_BACKUP_HEALTHCHECK_URL:=}"
 
 export BORG_REPO="${HERMES_BACKUP_BORG_REPO}"
@@ -49,7 +49,7 @@ ping "/start"
 
 log "Snapshotting SQLite databases via sqlite3 .backup"
 mkdir -p "${SNAPSHOT_DIR}/sqlite"
-for db in "${DATA_DIR}"/*.db; do
+for db in "${DATA_DIR}"/*.db "${DATA_DIR}"/*.sqlite3; do
     [ -f "${db}" ] || continue
     dbname="$(basename "${db}")"
     log "  → ${dbname}"

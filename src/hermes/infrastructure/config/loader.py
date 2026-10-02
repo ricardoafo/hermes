@@ -56,7 +56,7 @@ __all__ = ["DEFAULT_CONFIG_DIR", "DEFAULT_DOTENV_PATH", "load_config", "load_yam
 
 DEFAULT_CONFIG_DIR: Path = Path("config")
 # Local-dev secrets file. Gitignored — production reads env from a systemd
-# EnvironmentFile at /etc/hermes.env, and CI reads from GH Actions secrets.
+# EnvironmentFile at /etc/hermes/env.production, and CI reads from GH Actions secrets.
 # See docs/decisions/2026-08-23-credential-storage-layered-by-env.md.
 DEFAULT_DOTENV_PATH: Path = Path(".env.local")
 _ENV_PREFIX: str = "HERMES_"

@@ -10,8 +10,10 @@ Requires=hermes-backup.service
 
 [Timer]
 OnCalendar=*-*-* 03:00:00 UTC
-Persistent=true          # run a missed backup on next boot
-RandomizedDelaySec=15min # jitter to avoid overlapping other 03:00 jobs
+# Run a missed backup on next boot.
+Persistent=true
+# Jitter to avoid overlapping other 03:00 jobs.
+RandomizedDelaySec=15min
 Unit=hermes-backup.service
 
 [Install]
