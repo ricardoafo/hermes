@@ -31,6 +31,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from hermes.domain.value_objects.currency import Currency
+
 __all__ = [
     "BinanceExchangeConfig",
     "FeesConfig",
@@ -56,6 +58,10 @@ class StrategyConfig(BaseModel):
         enabled: If ``False``, the strategy is skipped at signal-engine startup.
         weight: Fraction of the portfolio budget allocated to this strategy;
             all enabled strategies must sum to ``1.0`` (enforced downstream).
+        capital_budget: Starting capital for this strategy, in ``quote``
+            units. Seeds the portfolio tracker and, later, the risk engine's
+            per-strategy budget. Required: a missing value fails at load.
+        quote: Currency ``capital_budget`` is denominated in. Required.
     """
 
     model_config = _MODEL_CONFIG
@@ -63,6 +69,8 @@ class StrategyConfig(BaseModel):
     name: str = Field(min_length=1)
     enabled: bool
     weight: Decimal = Field(ge=Decimal("0"), le=Decimal("1"))
+    capital_budget: Decimal = Field(gt=Decimal("0"))
+    quote: Currency
 
 
 class StrategiesConfig(BaseModel):

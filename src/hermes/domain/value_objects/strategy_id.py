@@ -6,9 +6,11 @@ that participates in the paper-trading engine (``Lot``, ``Order``,
 so that PnL attribution, capital budgeting, and multi-strategy routing
 are accurate from the first trade.
 
-For MVP1 the only strategy is ``StrategyId("swing")``. The value-object
-design (rather than a StrEnum) allows MVP2's Portfolio Balancer to
-register as a second strategy without any breaking change to domain code.
+For MVP1 the only strategy is ``StrategyId("swing-donchian-4h")``, built from
+the roster name in ``config/strategies.yaml``. The id names the variant, not
+the family. The value-object design (rather than a StrEnum) allows MVP2's
+Portfolio Balancer to register as a second strategy without any breaking
+change to domain code.
 
 Reference: SYNTHESIS §1 (bucket-aware aggregates), SA-6 (strategy_id as
 first-class domain field), spec-1-domain-aggregates D-1.
@@ -36,8 +38,8 @@ class StrategyId:
     and ``Money``: wraps a validated primitive so strategy identity cannot
     be accidentally confused with arbitrary strings at the type level.
 
-    Examples: ``StrategyId("swing")``, ``StrategyId("balancer")``,
-    ``StrategyId("swing-v2")``.
+    Examples: ``StrategyId("swing-donchian-4h")``, ``StrategyId("balancer")``,
+    ``StrategyId("swing-donchian-1d")``.
 
     Invariants:
         - ``value`` is non-empty.

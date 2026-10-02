@@ -22,6 +22,7 @@ __all__ = [
     "HermesError",
     "InfraError",
     "InvalidLot",
+    "InvalidPortfolioTransition",
     "KrakenPublicError",
     "LabNotebookAppendError",
     "LedgerError",
@@ -106,6 +107,28 @@ class InvalidLot(DomainError):
     def __str__(self) -> str:
         """Return human-readable description."""
         return f"Invalid lot: {self.reason}"
+
+
+@dataclass(frozen=True, slots=True)
+class InvalidPortfolioTransition(DomainError):
+    """A fill cannot be applied to a portfolio snapshot.
+
+    Returned as ``Failure(InvalidPortfolioTransition(...))`` from
+    :meth:`hermes.domain.portfolio.snapshot.PortfolioSnapshot.after_fill` when
+    the fill would overdraw cash, sell more than the open position, or sell a
+    pair that is not held. The snapshot is left unchanged.
+
+    Args:
+        reason: Human-readable description of the refused transition.
+
+    Reference: 308-signal-event-portfolio-state change.md D-5.
+    """
+
+    reason: str
+
+    def __str__(self) -> str:
+        """Return human-readable description."""
+        return f"Invalid portfolio transition: {self.reason}"
 
 
 @dataclass(frozen=True, slots=True)

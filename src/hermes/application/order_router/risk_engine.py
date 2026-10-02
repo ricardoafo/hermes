@@ -11,7 +11,7 @@ to a :class:`~hermes.domain.value_objects.money.Money` maximum notional. When th
 strategy's open notional meets or exceeds its budget, the engine returns HALT.
 
 MVP1 note: multi-strategy balancing is deferred to SA-6 MVP2. For MVP1 the
-``capital_budget`` is typically a single entry for the ``"swing"`` strategy.
+``capital_budget`` is typically a single entry for the ``"swing-donchian-4h"`` strategy.
 
 Reference: spec-3-order-router change.md D-3, SA-6, SA-9 §5.5.
 """

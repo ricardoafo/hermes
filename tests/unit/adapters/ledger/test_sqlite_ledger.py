@@ -18,6 +18,7 @@ Reference: ADR-003 §00 (I-06), §03 (persistence schema), code-conventions.md.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -29,9 +30,11 @@ from hermes.adapters.ledger import SqliteLedger
 from hermes.adapters.ledger.migration_runner import apply_migrations
 from hermes.adapters.ledger.sqlite_ledger import _iso_utc, _json_default
 from hermes.domain.errors import LedgerError
+from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.events.trade_executed import TradeExecuted, TradeSide
 from hermes.domain.lots.lot import Lot
 from hermes.domain.lots.lot_consumption import LotConsumption
+from hermes.domain.strategy.signal import SignalKind, SignalSide, StrategySignal
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.lot_id import LotId
 from hermes.domain.value_objects.money import Money
@@ -94,6 +97,24 @@ def _sample_trade_event(side: TradeSide = TradeSide.BUY) -> TradeExecuted:
         qty=Quantity(amount=Decimal("0.001"), asset=Currency.BTC),
         price=Price(amount=Decimal("65000"), pair=pair),
         fee=Money(amount=Decimal("0.06"), currency=Currency.USDT),
+    )
+
+
+def _sample_signal_event() -> SignalEmitted:
+    """Return a deterministic SignalEmitted event for the swing-donchian-4h strategy."""
+    signal = StrategySignal(
+        kind=SignalKind.ENTRY,
+        side=SignalSide.LONG,
+        entry_price=Decimal("65000"),
+        stop_price=Decimal("62000"),
+        atr_context=Decimal("1500"),
+        signal_time=datetime(2026, 11, 5, 16, 0, 0, tzinfo=UTC),
+    )
+    return SignalEmitted.from_signal(
+        signal,
+        strategy_id=StrategyId("swing-donchian-4h"),
+        pair=Pair(base=Currency.BTC, quote=Currency.USDT),
+        correlation_id="01J9Z8T3M5BQR2FVKN4XWY6PH2",
     )
 
 
@@ -321,6 +342,49 @@ class TestAppendEventPersistsEventRow:
             assert event_type == "TradeExecuted"
             assert schema_version == 1
             assert correlation_id == "01J9Z8T3M5BQR2FVKN4XWY6PH1"
+        finally:
+            conn.close()
+
+
+class TestAppendEventPersistsSignalEmitted:
+    """A SignalEmitted event reaches the ledger as a versioned, hashed audit row."""
+
+    def test_signal_emitted_row_records_type_version_and_event_time(self) -> None:
+        """The row stores type SignalEmitted, schema version 1 and the signal time."""
+        conn = sqlite3.connect(":memory:")
+        try:
+            event = _sample_signal_event()
+            SqliteLedger(conn).append_event(event)
+            row = conn.execute(
+                "SELECT event_type, event_schema_version, occurred_at FROM events"
+            ).fetchone()
+            assert row == ("SignalEmitted", 1, _iso_utc(event.occurred_at))
+        finally:
+            conn.close()
+
+    def test_signal_emitted_payload_carries_strategy_id_and_pair(self) -> None:
+        """The stored JSON names the strategy id and the pair, which the signal itself lacks."""
+        conn = sqlite3.connect(":memory:")
+        try:
+            SqliteLedger(conn).append_event(_sample_signal_event())
+            (payload_json,) = conn.execute("SELECT payload_json FROM events").fetchone()
+            payload = json.loads(payload_json)
+            assert (payload["strategy_id"], payload["pair"]) == (
+                {"value": "swing-donchian-4h"},
+                {"base": "BTC", "quote": "USDT"},
+            )
+        finally:
+            conn.close()
+
+    def test_signal_emitted_payload_stores_the_computed_hash(self) -> None:
+        """The stored payload_sha256 equals the event hash and is not the empty string."""
+        conn = sqlite3.connect(":memory:")
+        try:
+            event = _sample_signal_event()
+            SqliteLedger(conn).append_event(event)
+            (payload_json,) = conn.execute("SELECT payload_json FROM events").fetchone()
+            assert json.loads(payload_json)["payload_sha256"] == event.payload_sha256
+            assert len(event.payload_sha256) == 64
         finally:
             conn.close()
 

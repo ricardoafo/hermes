@@ -4,13 +4,17 @@
 # Weights must sum to 1.0 across enabled strategies (validated downstream
 # when the signal engine wires per issue #27).
 #
+# MVP1 runs one swing strategy. `name` is the StrategyId written to events and
+# lots, so it names the variant, not the family. `capital_budget` seeds the
+# portfolio tracker and equals the pre-registered starting capital
+# (pre-registration-v1.md §2); changing it invalidates the run.
+#
 # Env-override example: set HERMES_STRATEGIES__STRATEGIES__0__ENABLED=false
 # to disable the first strategy without editing this file.
 
 strategies:
-  - name: rebalancer
+  - name: swing-donchian-4h
     enabled: true
-    weight: "0.6"
-  - name: donchian
-    enabled: true
-    weight: "0.4"
+    weight: "1.0"
+    capital_budget: "5000" # pre-registration-v1.md §2, in quote units
+    quote: USDT
