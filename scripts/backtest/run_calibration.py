@@ -178,6 +178,20 @@ def _report_to_json(report: Any) -> dict[str, Any]:
     return _jsonify(d)
 
 
+def _merge_by_close_time(bars_4h: list[Bar], bars_1d: list[Bar]) -> list[Bar]:
+    """Merge the 4h and 1D streams in the order their bars close.
+
+    Ordering by ``open_time`` would deliver each 1D bar right after the day's
+    first 4h bar, 20 hours before it closes (issue #311).  On equal
+    ``close_time`` the 1D bar goes first so the 4h bar closing at midnight
+    sees that day's regime, matching the live bar stream.
+    """
+    return sorted(
+        bars_4h + bars_1d,
+        key=lambda b: (b.close_time, b.interval != KlineInterval.D1),
+    )
+
+
 def _jsonify(obj: Any) -> Any:
     """Recursively convert Decimal/datetime/enum/tuple/set to JSON-native types."""
     if isinstance(obj, dict):
@@ -224,8 +238,7 @@ async def _run(args: argparse.Namespace) -> int:
         print("--dry-run set; skipping strategy execution.")
         return 0
 
-    # Merge streams by bar.open_time so strategy sees chronological order.
-    merged = sorted(bars_4h + bars_1d, key=lambda b: b.open_time)
+    merged = _merge_by_close_time(bars_4h, bars_1d)
 
     strategy = SwingStrategyAdapter()
     portfolio_state = PortfolioState(
