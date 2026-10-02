@@ -24,9 +24,13 @@ Multi-timeframe coordination (D-1):
     - 1D bar arrival updates the 1D buffer silently (returns ``None``).
 
 No-lookahead contract (SA-4 P1, R-8):
-    Both buffers only hold bars whose ``close_time`` ≤ current bar's
-    ``close_time``.  The current signal bar IS included in the 4h buffer
-    before evaluation (the bar has already closed).
+    Signal evaluation only reads bars whose ``close_time`` ≤ the current 4h
+    bar's ``close_time``.  The current signal bar IS included in the 4h buffer
+    before evaluation (the bar has already closed).  The adapter enforces this
+    for the 1D buffer itself rather than trusting delivery order: a 1D bar
+    that arrives before it has closed relative to the signal bar (e.g. a
+    caller merging streams by ``open_time``) stays invisible to the regime
+    filter until a 4h bar closing at or after it is evaluated (issue #311).
 
 State transitions:
     - FLAT → LONG: entry signal
@@ -176,6 +180,15 @@ class SwingStrategyAdapter:
         if len(self._bars_1d) > _1D_BUFFER_CAP:
             self._bars_1d = self._bars_1d[-_1D_BUFFER_CAP:]
 
+    def _closed_1d_bars(self, as_of: datetime) -> list[Bar]:
+        """Return buffered 1D bars that had closed by ``as_of``."""
+        return [b for b in self._bars_1d if b.close_time <= as_of]
+
+    def _regime_above_ema(self, as_of: datetime) -> bool:
+        """Return True when the last 1D bar closed by ``as_of`` is above EMA(period)."""
+        closed = self._closed_1d_bars(as_of)
+        return bool(closed) and EmaRegimeFilter.above_ema(closed, period=self._ema_period)
+
     def _on_4h_bar(self, bar: Bar) -> StrategySignal | None:
         """Handle a closed 4h bar: update buffer, then evaluate signals."""
         self._update_4h_buffer(bar)
@@ -184,7 +197,7 @@ class SwingStrategyAdapter:
             return self._evaluate_exit(bar)
         return self._evaluate_entry(bar)
 
-    def _entry_conditions_met(self) -> bool:
+    def _entry_conditions_met(self, as_of: datetime) -> bool:
         """Return True when all three entry conditions fire simultaneously (pre-reg §5.1)."""
         # Condition 1: Donchian(20) breakout
         if not DonchianEngine.high_break(self._bars_4h, period=self._donchian_period):
@@ -194,9 +207,7 @@ class SwingStrategyAdapter:
         if adx is None or adx < self._adx_threshold:
             return False
         # Condition 3: 1D close > EMA(200)
-        return bool(
-            self._bars_1d and EmaRegimeFilter.above_ema(self._bars_1d, period=self._ema_period)
-        )
+        return self._regime_above_ema(as_of)
 
     def _evaluate_entry(self, bar: Bar) -> StrategySignal | None:
         """Check whether all three entry conditions fire on this 4h bar.
@@ -204,7 +215,7 @@ class SwingStrategyAdapter:
         Returns an ENTRY signal when Donchian(20) AND ADX(14)>=25 AND
         1D EMA(200) regime all fire simultaneously (pre-reg §5.1).
         """
-        if not self._entry_conditions_met():
+        if not self._entry_conditions_met(bar.close_time):
             return None
 
         # All conditions met — compute stop and ATR for signal
@@ -273,9 +284,7 @@ class SwingStrategyAdapter:
             stop = stop if stop is not None else bar.close - atr  # best-effort
 
         # C: Regime break (1D close < EMA(200))
-        elif self._bars_1d and not EmaRegimeFilter.above_ema(
-            self._bars_1d, period=self._ema_period
-        ):
+        elif self._closed_1d_bars(bar.close_time) and not self._regime_above_ema(bar.close_time):
             exit_reason = "regime_break"
             stop = stop if stop is not None else bar.close - atr
 

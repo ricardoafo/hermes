@@ -41,6 +41,9 @@ from hermes.domain.value_objects.pair import Pair
 
 _BTC_USDT = Pair(base=Currency.BTC, quote=Currency.USDT)
 _BASE_TIME = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
+# 4h bars start after the 1D seeds used below (12 bars) have closed, so the
+# regime filter can see them without reading the future (#311).
+_H4_BASE_TIME = _BASE_TIME + timedelta(days=12)
 
 # ──────────────────────────────────────────────────────────────
 # Hypothesis strategies
@@ -49,7 +52,8 @@ _BASE_TIME = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
 
 def _make_bar(close: Decimal, index: int, interval: KlineInterval = KlineInterval.H4) -> Bar:
     hours = 4 if interval == KlineInterval.H4 else 24
-    open_time = _BASE_TIME + timedelta(hours=hours * index)
+    base = _H4_BASE_TIME if interval == KlineInterval.H4 else _BASE_TIME
+    open_time = base + timedelta(hours=hours * index)
     close_time = open_time + timedelta(hours=hours)
     high = close + Decimal("2")
     low = max(close - Decimal("2"), Decimal("0.01"))
