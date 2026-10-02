@@ -9,10 +9,14 @@ Description=Fire hermes-health every 5 minutes
 Requires=hermes-health.service
 
 [Timer]
-OnBootSec=2min           # first ping 2 min after boot, gives network a moment
-OnUnitActiveSec=5min     # then every 5 min after last completion
-Persistent=true          # run a missed tick on next boot
-RandomizedDelaySec=30    # small jitter to avoid clock-tick pile-ups
+# First ping 2 min after boot, gives the network a moment.
+OnBootSec=2min
+# Then every 5 min after the last completion.
+OnUnitActiveSec=5min
+# Run a missed tick on next boot.
+Persistent=true
+# Small jitter to avoid clock-tick pile-ups.
+RandomizedDelaySec=30
 Unit=hermes-health.service
 
 [Install]

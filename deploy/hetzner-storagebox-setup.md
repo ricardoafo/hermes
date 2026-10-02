@@ -35,7 +35,7 @@ borg --version    # expect >= 1.2
 `bootstrap-vps.sh` should be updated in a follow-up to include this — for now
 it's a manual step.
 
-## 3. Populate `/etc/hermes.env`
+## 3. Populate `/etc/hermes/env.production`
 
 Add these lines (see `deploy/systemd/hermes.env.example` for template):
 
@@ -52,18 +52,18 @@ BORG_PASSPHRASE=<generated in step 4>
 ```bash
 # On hermes-01, as the hermes user, with env loaded:
 sudo -u hermes -E bash
-export $(grep -v '^#' /etc/hermes.env | xargs)
+export $(grep -v '^#' /etc/hermes/env.production | xargs)
 # Generate a strong passphrase FIRST, save to password manager:
 export BORG_PASSPHRASE="$(openssl rand -base64 32)"
 echo "PASSPHRASE (SAVE THIS): ${BORG_PASSPHRASE}"
 
 # Then run init:
-/opt/hermes/deploy/hermes-backup.sh --init
+/opt/hermes/current/deploy/hermes-backup.sh --init
 ```
 
 After init:
 
-1. Add `BORG_PASSPHRASE=<value>` to `/etc/hermes.env` (root-owned, 0600).
+1. Add `BORG_PASSPHRASE=<value>` to `/etc/hermes/env.production` (root-owned, 0600).
 2. Save the passphrase to your password manager. **Losing it = unrecoverable backups.**
 3. Optional: export the borg key material to a second location:
 
@@ -76,9 +76,9 @@ After init:
 
 ```bash
 # On hermes-01, as root:
-cp /opt/hermes/deploy/systemd/hermes-backup.service /etc/systemd/system/
-cp /opt/hermes/deploy/systemd/hermes-backup.timer   /etc/systemd/system/
-chmod +x /opt/hermes/deploy/hermes-backup.sh
+cp /opt/hermes/current/deploy/systemd/hermes-backup.service /etc/systemd/system/
+cp /opt/hermes/current/deploy/systemd/hermes-backup.timer   /etc/systemd/system/
+chmod +x /opt/hermes/current/deploy/hermes-backup.sh
 systemctl daemon-reload
 systemctl enable --now hermes-backup.timer
 ```
@@ -150,4 +150,4 @@ is a click in Cloud Console, ~1 min downtime.
 - `deploy/hermes-backup.sh` — the backup script itself
 - `deploy/systemd/hermes-backup.{service,timer}` — systemd units
 - `deploy/systemd/hermes.env.example` — env var shape
-- `docs/decisions/2026-08-23-credential-storage-layered-by-env.md` — why secrets live in `/etc/hermes.env`
+- `docs/decisions/2026-08-23-credential-storage-layered-by-env.md` — why secrets live in `/etc/hermes/env.production`

@@ -1,36 +1,56 @@
-# Prod systemd unit for the hermes main process.
+# Prod systemd unit for the hermes main process (`hermes serve`).
 #
-# TEMPLATE — not installed by bootstrap-vps.sh. Copy to
-# /etc/systemd/system/hermes.service on the VPS, then:
-#   systemctl daemon-reload
-#   systemctl enable --now hermes.service
-#
-# Env vars come from EnvironmentFile=/etc/hermes.env — see
-# deploy/systemd/hermes.env.example for the expected shape. The file
-# must be root:root 0600 so non-root readers cannot exfiltrate secrets.
+# Installed to /etc/systemd/system/hermes.service by the CD deploy.
+# Layout this unit assumes (see openspec/changes/306-serve-systemd-boot):
+#   /opt/hermes/current            -> versions/<version>  (atomic symlink)
+#   /opt/hermes/current/.venv      per-release virtualenv (console script `hermes`)
+#   /opt/hermes/current/config     per-release non-secret YAML
+#   /etc/hermes/env.production     secrets only
+#   /var/lib/hermes                state: hermes.sqlite3 and its journal files
 #
 # See docs/decisions/2026-08-23-credential-storage-layered-by-env.md
-# for the three-tier credential story (dotenv → GH Secrets → systemd).
+# for the three-tier credential story (dotenv, GH Secrets, systemd).
 
 [Unit]
-Description=Hermes crypto trading system
+Description=Hermes trading engine (hermes serve)
 After=network-online.target
 Wants=network-online.target
+# Crash-loop guard: at most 5 starts in 10 min, then the unit stays failed.
+# Each start re-fetches warm-up history, so an endless loop would hammer the
+# market-data API. 5 x RestartSec (30s) = 150s, well inside the 10 min window.
+StartLimitIntervalSec=10min
+StartLimitBurst=5
 
 [Service]
 Type=simple
 User=hermes
 Group=hermes
-WorkingDirectory=/opt/hermes
-EnvironmentFile=/etc/hermes.env
-ExecStart=/opt/hermes/.venv/bin/python -m hermes serve
-Restart=on-failure
-RestartSec=10s
 
-# Hardening — matches the pattern used by hermes-health.service.
+# State dir: systemd creates it (hermes:hermes 0750) before the sandbox is
+# built, so ProtectSystem=strict cannot fail on a missing path (226/NAMESPACE).
+StateDirectory=hermes
+StateDirectoryMode=0750
+# CWD is the writable dir, so any relative path lands in state, not in the
+# read-only release.
+WorkingDirectory=/var/lib/hermes
+
+# Secrets only. systemd reads this file as root before dropping to User=hermes.
+# No leading "-": a missing file must fail the start, not boot without secrets.
+EnvironmentFile=/etc/hermes/env.production
+
+ExecStart=/opt/hermes/current/.venv/bin/hermes serve --config-dir /opt/hermes/current/config --db /var/lib/hermes/hermes.sqlite3
+Restart=on-failure
+RestartSec=30s
+# Exit 2 (bad arguments) and 3 (config load failed) never fix themselves.
+# Stay failed so `systemctl is-active` and the journal show it.
+RestartPreventExitStatus=2 3
+
+# Hardening: same pattern as the other hermes units.
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
+# Hides /root and /home. The venv python links into /opt/hermes/python, so it
+# stays readable.
 ProtectHome=true
 ReadWritePaths=/var/lib/hermes
 

@@ -18,9 +18,10 @@ Type=oneshot
 User=hermes
 Group=hermes
 
-# TODO(phase-0): swap for `/opt/hermes/.venv/bin/python -m hermes.health.ping`
-# once the hermes package exists. For now, a shell one-liner emits a version
-# marker + ping so journalctl and healthchecks.io both see life signs.
+# TODO(phase-0): swap for a real ping command run from
+# `/opt/hermes/current/.venv/bin/hermes` once one exists. For now, a shell
+# one-liner emits a version marker + ping so journalctl and healthchecks.io
+# both see life signs.
 ExecStart=/bin/bash -c 'echo "hermes-health tick: $(date -Iseconds) build=${HERMES_BUILD_SHA:-unknown}" && \
                         curl -fsS -m 10 --retry 3 -o /dev/null "${HEALTHCHECK_URL:-https://hc-ping.com/00000000-0000-0000-0000-000000000000}" || true'
 

@@ -5,6 +5,9 @@
 #   systemctl daemon-reload
 #   systemctl enable --now hermes-backup.timer
 #
+# The backup script ships inside each release, so ExecStart follows the
+# `current` symlink.
+#
 # Prerequisites: see deploy/hetzner-storagebox-setup.md for one-time
 # borg repo init + Storage Box SSH key upload.
 
@@ -17,9 +20,9 @@ Wants=network-online.target
 Type=oneshot
 User=hermes
 Group=hermes
-WorkingDirectory=/opt/hermes
-EnvironmentFile=/etc/hermes.env
-ExecStart=/opt/hermes/deploy/hermes-backup.sh
+WorkingDirectory=/var/lib/hermes
+EnvironmentFile=/etc/hermes/env.production
+ExecStart=/opt/hermes/current/deploy/hermes-backup.sh
 
 # Hardening — same pattern as hermes.service.
 NoNewPrivileges=true
