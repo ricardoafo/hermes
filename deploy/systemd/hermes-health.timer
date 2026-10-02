@@ -1,8 +1,9 @@
 # Fire hermes-health.service every 5 minutes.
 #
-# Chosen frequency: matches healthchecks.io's default "grace period" for a
-# 5-min ping cadence — a missed ping alerts at ~5:30 min. Real service
-# timers land in Phase 0+ (rebalancer hourly, swing heartbeat, backup nightly).
+# Chosen frequency: the healthchecks.io check expects a ping every 5 min with
+# a 10 min grace period, so hermes being down alerts after about 15 min of
+# silence and a single missed ping never does. See deploy/README.md,
+# "Alerting when hermes is down".
 
 [Unit]
 Description=Fire hermes-health every 5 minutes
