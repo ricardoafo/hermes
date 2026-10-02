@@ -77,13 +77,16 @@ Cross-references:
 
 ## Contents
 
-| File                            | Purpose                                                                                                | Status                                     |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
-| `bootstrap-vps.sh`              | Idempotent VPS provisioning (user, dirs, uv, systemd-creds, Tailscale)                                 | skeleton — safe to re-run when filled in   |
-| `systemd/hermes-health.service` | Minimal placeholder service — exists so the deploy pipeline has something to restart before Phase 0    | placeholder                                |
-| `systemd/hermes-health.timer`   | Fires the placeholder every 5 min so we can validate the health-check job end-to-end                   | placeholder                                |
-| `systemd/hermes.service`        | Template unit for the main hermes process (reads `/etc/hermes/env.production`, runs `hermes serve`)    | template — copy-and-install, not auto-set  |
-| `systemd/hermes.env.example`    | Shape of `/etc/hermes/env.production` — the EnvironmentFile prod systemd loads. Documentation only     | template — never installed automatically   |
+| File                                     | Purpose                                                                                             | Status                                    |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| `bootstrap-vps.sh`                       | Idempotent VPS provisioning (user, dirs, uv, systemd-creds, Tailscale)                              | skeleton — safe to re-run when filled in  |
+| `systemd/hermes-health.service`          | Pings healthchecks.io via `hermes-health-ping.sh`, only while `hermes.service` is active            | template — copy-and-install, not auto-set |
+| `systemd/hermes-health.timer`            | Fires the ping every 5 min                                                                          | template — copy-and-install, not auto-set |
+| `systemd/hermes-notify-failure@.service` | Started by `hermes.service`'s `OnFailure=`; sends one Telegram message                              | template — copy-and-install, not auto-set |
+| `hermes-health-ping.sh`                  | The conditional ping (`systemctl is-active --quiet hermes.service`, then curl)                      | shipped in each release                   |
+| `hermes-notify-failure.sh`               | Builds and sends the Telegram failure message; needs only bash and curl                             | shipped in each release                   |
+| `systemd/hermes.service`                 | Template unit for the main hermes process (reads `/etc/hermes/env.production`, runs `hermes serve`) | template — copy-and-install, not auto-set |
+| `systemd/hermes.env.example`             | Shape of `/etc/hermes/env.production` — the EnvironmentFile prod systemd loads. Documentation only  | template — never installed automatically  |
 
 ## First-time VPS setup
 
@@ -109,15 +112,53 @@ missing state.
 ```bash
 sudo cp deploy/systemd/hermes-health.service /etc/systemd/system/
 sudo cp deploy/systemd/hermes-health.timer /etc/systemd/system/
+sudo cp 'deploy/systemd/hermes-notify-failure@.service' /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now hermes-health.timer
 ```
+
+Both units read `/etc/hermes/env.production` and run scripts from
+`/opt/hermes/current/deploy/`, so a release must be deployed first. The
+health timer needs `HERMES_HEALTHCHECKS__PING_URL` in that file.
 
 Verify:
 
 ```bash
 systemctl status hermes-health.timer
 journalctl -u hermes-health.service --since "5 minutes ago"
+```
+
+### Alerting when hermes is down
+
+Two independent paths reach the operator on Telegram:
+
+| Path                    | Fires when                                                                                      | Needs                                                     |
+| ----------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `OnFailure=` notifier   | `hermes.service` enters `failed`: start limit tripped (5 starts in 10 min) or exit code 2 or 3  | `HERMES_TELEGRAM__BOT_TOKEN`, `HERMES_TELEGRAM__CHAT_ID`  |
+| healthchecks.io ping    | `hermes-health-ping.sh` stops pinging: service stopped, crash-looping, or the whole VPS is down | `HERMES_HEALTHCHECKS__PING_URL` and the integration below |
+
+The notifier sends one message per failure, with the last five journal
+lines (values of secret-looking variables are masked). A crash that is
+about to be restarted does not alert: the unit is `activating
+(auto-restart)`, not `failed`. A stopped service sends no message of its
+own; the missed ping covers it.
+
+`hermes-health-ping.sh` pings only while `systemctl is-active --quiet
+hermes.service` succeeds, and a rejected ping fails the unit instead of
+being swallowed. The one-time operator step (healthchecks.io, no code):
+
+1. Open the hermes check on healthchecks.io: period 5 minutes, grace
+   10 minutes.
+2. Integrations: add Telegram and tick it for this check.
+
+An alert then arrives after about 15 minutes of silence (period plus
+grace), so a single missed ping never pages.
+
+Check the notifier end to end (sends a real message):
+
+```bash
+sudo systemctl start hermes-notify-failure@hermes.service
+journalctl -u hermes-notify-failure@hermes.service --since "1 minute ago"
 ```
 
 ## Post-bootstrap: install the main hermes service + env file
@@ -145,13 +186,16 @@ checks that it loads. Then install the unit:
 
 ```bash
 sudo cp /opt/hermes/current/deploy/systemd/hermes.service /etc/systemd/system/
+sudo cp '/opt/hermes/current/deploy/systemd/hermes-notify-failure@.service' /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now hermes.service
 ```
 
 `hermes.service` stops restarting after 5 failed starts in 10 minutes and
-stays `failed`. Exit codes 2 (bad arguments) and 3 (config load failed)
-never restart. Clear a tripped limit before the next start:
+stays `failed`; its `OnFailure=` then sends a Telegram message (see
+[Alerting when hermes is down](#alerting-when-hermes-is-down)). Exit codes
+2 (bad arguments) and 3 (config load failed) never restart. Clear a
+tripped limit before the next start:
 
 ```bash
 sudo systemctl reset-failed hermes.service

@@ -1,0 +1,39 @@
+# Telegram alert for a unit that entered the failed state.
+#
+# Template unit, started through OnFailure= (hermes.service:
+# OnFailure=hermes-notify-failure@%n.service), so %i is the failed unit's name
+# and one message goes out per failure. It never restarts: if Telegram is
+# unreachable the failure stays in the journal, and the missed healthchecks.io
+# ping (hermes-health.service) is the second, independent alert path.
+#
+# The script ships inside each release, so ExecStart follows the `current`
+# symlink. It needs only bash and curl, not the hermes venv.
+#
+# Manual test on the VPS (sends a real message):
+#   sudo systemctl start hermes-notify-failure@hermes.service
+
+[Unit]
+Description=Telegram alert: %i entered failed state
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=hermes
+Group=hermes
+
+# Read by systemd as root before dropping to User=hermes, so the secrets file
+# stays root-only. No leading "-": a missing file must fail the alert loudly.
+EnvironmentFile=/etc/hermes/env.production
+# Read access to the system journal, for the log tail in the message.
+SupplementaryGroups=systemd-journal
+ExecStart=/bin/bash /opt/hermes/current/deploy/hermes-notify-failure.sh %I
+TimeoutStartSec=60s
+
+# Hardening — same pattern as the other hermes units.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+CapabilityBoundingSet=
+ReadWritePaths=
