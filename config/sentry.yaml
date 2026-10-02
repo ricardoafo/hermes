@@ -15,7 +15,7 @@
 # still identifies your project uniquely — treat it as sensitive:
 # anyone with the DSN can post events into your project. That is why the
 # default here is EMPTY — the operator populates it via
-# HERMES_SENTRY__DSN in .env.local (dev) or /etc/hermes.env (prod),
+# HERMES_SENTRY__DSN in .env.local (dev) or /etc/hermes/env.production (prod),
 # never here on disk.
 #
 # When dsn is empty the integration is DISABLED — initialize() becomes a

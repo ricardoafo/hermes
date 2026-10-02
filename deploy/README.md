@@ -82,8 +82,8 @@ Cross-references:
 | `bootstrap-vps.sh`              | Idempotent VPS provisioning (user, dirs, uv, systemd-creds, Tailscale)                                 | skeleton — safe to re-run when filled in   |
 | `systemd/hermes-health.service` | Minimal placeholder service — exists so the deploy pipeline has something to restart before Phase 0    | placeholder                                |
 | `systemd/hermes-health.timer`   | Fires the placeholder every 5 min so we can validate the health-check job end-to-end                   | placeholder                                |
-| `systemd/hermes.service`        | Template unit for the main hermes process (reads `/etc/hermes.env`, runs `python -m hermes serve`)     | template — copy-and-install, not auto-set  |
-| `systemd/hermes.env.example`    | Shape of `/etc/hermes.env` — the EnvironmentFile prod systemd loads. Documentation only, no secrets    | template — never installed automatically   |
+| `systemd/hermes.service`        | Template unit for the main hermes process (reads `/etc/hermes/env.production`, runs `hermes serve`)    | template — copy-and-install, not auto-set  |
+| `systemd/hermes.env.example`    | Shape of `/etc/hermes/env.production` — the EnvironmentFile prod systemd loads. Documentation only     | template — never installed automatically   |
 
 ## First-time VPS setup
 
@@ -122,35 +122,46 @@ journalctl -u hermes-health.service --since "5 minutes ago"
 
 ## Post-bootstrap: install the main hermes service + env file
 
-Prod credentials live in `/etc/hermes.env` (read by systemd via
+Prod credentials live in `/etc/hermes/env.production` (read by systemd via
 `EnvironmentFile=`) — NOT in a dotenv file inside `/opt/hermes`. The
-file must be root-owned and 0600 so `hermes` (or any other user) cannot
+target is root-owned and 0600 so `hermes` (or any other user) cannot
 read the secrets directly; systemd expands the env into the service
 process at start time only. See
 `docs/decisions/2026-08-23-credential-storage-layered-by-env.md` for
 the three-tier rationale (dotenv for dev / GH Secrets for CI / systemd
 EnvironmentFile for prod).
 
+The unit assumes a versioned-release layout: `/opt/hermes/current` is a
+symlink to `/opt/hermes/versions/<version>`, and each release holds its own
+`.venv`, `config/` and `deploy/`. The unit runs
+`/opt/hermes/current/.venv/bin/hermes serve` from `/var/lib/hermes`, the
+only writable path (the SQLite ledger lives there). The deploy creates the
+layout and installs the unit.
+
+Do not copy `hermes.env.example` to the VPS. The `vps-bootstrap` workflow
+(`.github/workflows/vps-bootstrap.yml`) renders the real file from the
+GitHub `prod` environment; the example documents its shape and a unit test
+checks that it loads. Then install the unit:
+
 ```bash
-# 1. Install the env file from the committed example, then edit it in place.
-sudo install -o root -g root -m 0600 \
-    deploy/systemd/hermes.env.example /etc/hermes.env
-sudo $EDITOR /etc/hermes.env    # populate real secrets
-
-# 2. Verify permissions — MUST be 0600 root:root. Any other value is a leak.
-stat -c '%a %U:%G' /etc/hermes.env   # expect: 600 root:root
-
-# 3. Install the systemd unit.
-sudo cp deploy/systemd/hermes.service /etc/systemd/system/
+sudo cp /opt/hermes/current/deploy/systemd/hermes.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now hermes.service
 ```
 
-Reload after editing `/etc/hermes.env` (systemd caches the file into
-each running unit — restart is required):
+`hermes.service` stops restarting after 5 failed starts in 10 minutes and
+stays `failed`. Exit codes 2 (bad arguments) and 3 (config load failed)
+never restart. Clear a tripped limit before the next start:
 
 ```bash
-sudo $EDITOR /etc/hermes.env
+sudo systemctl reset-failed hermes.service
+sudo systemctl restart hermes.service
+```
+
+Reload after the env file changes (systemd caches the file into each
+running unit — restart is required):
+
+```bash
 sudo systemctl daemon-reload         # picks up EnvironmentFile changes
 sudo systemctl restart hermes.service
 journalctl -u hermes.service --since "1 minute ago"
