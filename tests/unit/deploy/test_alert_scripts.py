@@ -109,7 +109,10 @@ def server() -> Iterator[_FakeServer]:
 
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     fake.url = f"http://127.0.0.1:{httpd.server_address[1]}"
-    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    # The default 0.5s poll makes every teardown's shutdown() wait that long.
+    thread = threading.Thread(
+        target=httpd.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True
+    )
     thread.start()
     yield fake
     httpd.shutdown()
