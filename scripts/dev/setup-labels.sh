@@ -46,6 +46,7 @@ echo "p* (priority)"
 create_label "p1" "d93f0b" "Priority: this week"
 create_label "p2" "fbca04" "Priority: this month"
 create_label "p3" "c2e0c6" "Priority: backlog"
+create_label "merge-queue:hand-merge" "fbca04" "The merge queue cannot merge this PR itself; merge it by hand"
 
 echo ""
 echo "area:* (code area — expand as codebase grows)"

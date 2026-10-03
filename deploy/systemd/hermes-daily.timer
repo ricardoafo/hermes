@@ -1,0 +1,18 @@
+# Fire hermes-daily.service once a day at 07:00 Madrid time (#373).
+#
+# Madrid morning, so the line lands when the operator starts the day. The
+# time zone follows the CET/CEST switch on its own.
+
+[Unit]
+Description=Fire hermes-daily at 07:00 Europe/Madrid
+Requires=hermes-daily.service
+
+[Timer]
+OnCalendar=*-*-* 07:00:00 Europe/Madrid
+# Run a missed day on next boot.
+Persistent=true
+RandomizedDelaySec=60
+Unit=hermes-daily.service
+
+[Install]
+WantedBy=timers.target
