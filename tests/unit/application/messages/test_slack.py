@@ -4,8 +4,8 @@ Verifies for every concrete template:
 - The returned SlackMessage has a non-empty ``text`` fallback.
 - ``blocks`` starts with a header block, ends with a context footer, and
   the middle section contains the key facts.
-- Attachments are empty for short events and non-empty for the
-  DailyTradeDigest (with CSV content that decodes to the expected rows).
+- Attachments are empty for short events. The DailyTradeDigest carries
+  its P&L CSV only in the CERTIFIED phase; by default it renders blind.
 - The dispatcher raises ``ValueError`` for an event type without a template.
 
 Reference: docs/decisions/2026-08-23-slack-alongside-telegram.md.
@@ -13,13 +13,21 @@ Reference: docs/decisions/2026-08-23-slack-alongside-telegram.md.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import ClassVar
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
+from hermes.application.messages.reporting_phase import (
+    OUTCOME_FIELD_NAMES,
+    OUTCOME_WITHHELD_NOTICE,
+    ReportingPhase,
+)
 from hermes.application.messages.slack import (
     FileAttachment,
     SlackMessage,
@@ -251,22 +259,101 @@ class TestDailyTradeDigestSlack:
         assert "12500.50" in section
 
     def test_attachment_is_a_single_csv(self) -> None:
-        """The message ships exactly one CSV attachment with the digest suffix."""
-        msg = slack_template(self._event())
+        """Once certified, the message ships exactly one CSV attachment with the digest suffix."""
+        msg = slack_template(self._event(), phase=ReportingPhase.CERTIFIED)
         assert len(msg.attachments) == 1
         attachment: FileAttachment = msg.attachments[0]
         assert attachment.name == "digest-2026-08-23.csv"
         assert attachment.mime == "text/csv"
 
     def test_csv_content_contains_expected_rows(self) -> None:
-        """The CSV rows encode header + winners + losers in the documented order."""
-        msg = slack_template(self._event())
+        """The certified CSV rows encode header + winners + losers in the documented order."""
+        msg = slack_template(self._event(), phase=ReportingPhase.CERTIFIED)
         content = msg.attachments[0].content.decode("utf-8")
         lines = content.strip().splitlines()
         assert lines[0] == "bucket,pair,pnl_amount,pnl_currency"
         # Order matters: winners first, then losers, per the template contract.
         assert lines[1] == "winner,BTC/USDT,120.00,EUR"
         assert lines[2] == "loser,ETH/USDT,-45.50,EUR"
+
+
+def _rendered_surface(msg: SlackMessage) -> str:
+    """Return every string a recipient can see: fallback, blocks and attachments."""
+    attachments = " ".join(f"{a.name} {a.content.decode('utf-8')}" for a in msg.attachments)
+    return f"{msg.text} {json.dumps(msg.blocks)} {attachments}".lower()
+
+
+def _digest(winner_pnl: Decimal, loser_pnl: Decimal) -> DailyTradeDigest:
+    """Return a digest with fully populated outcome fields."""
+    return DailyTradeDigest(
+        occurred_at=_TS,
+        correlation_id=_CID,
+        day=date(2026, 8, 23),
+        total_trades=12,
+        filled=10,
+        rejected=2,
+        total_notional=Money(amount=Decimal("12500.50"), currency=Currency.EUR),
+        top_winners=(
+            TradeSummary(
+                pair=Pair(base=Currency.BTC, quote=Currency.USDT),
+                pnl=Money(amount=winner_pnl, currency=Currency.EUR),
+            ),
+        ),
+        top_losers=(
+            TradeSummary(
+                pair=Pair(base=Currency.ETH, quote=Currency.USDT),
+                pnl=Money(amount=loser_pnl, currency=Currency.EUR),
+            ),
+        ),
+    )
+
+
+class TestDailyTradeDigestBlind:
+    """Before certification the digest carries no outcome field or value (ADR-012 ruling 1)."""
+
+    def test_default_phase_is_pre_certification(self) -> None:
+        """Calling without a phase renders blind: no attachment at all."""
+        msg = slack_template(_digest(Decimal("120.00"), Decimal("-45.50")))
+        assert msg.attachments == ()
+
+    def test_no_outcome_field_name_appears(self) -> None:
+        """None of the suppressed outcome field names appear anywhere in the message."""
+        surface = _rendered_surface(slack_template(_digest(Decimal("120.00"), Decimal("-45.50"))))
+        leaked = sorted(name for name in OUTCOME_FIELD_NAMES if name in surface)
+        assert leaked == []
+
+    def test_activity_counts_and_withheld_notice_remain(self) -> None:
+        """The blind digest still reports activity and says why outcomes are missing."""
+        section = _section_text(slack_template(_digest(Decimal("120.00"), Decimal("-45.50"))))
+        assert "*Filled*: `10`" in section
+        assert "*Total notional*: `12500.50 EUR`" in section
+        assert OUTCOME_WITHHELD_NOTICE in section
+
+    def test_certified_phase_restores_outcomes(self) -> None:
+        """The CERTIFIED phase is the only path that carries the per-pair P&L CSV."""
+        msg = slack_template(
+            _digest(Decimal("120.00"), Decimal("-45.50")), phase=ReportingPhase.CERTIFIED
+        )
+        assert "120.00" in _rendered_surface(msg)
+        assert OUTCOME_WITHHELD_NOTICE not in _rendered_surface(msg)
+
+    @given(
+        winner=st.decimals(
+            min_value=Decimal("1000000.01"), max_value=Decimal("9999999.99"), places=2
+        ),
+        loser=st.decimals(
+            min_value=Decimal("-9999999.99"), max_value=Decimal("-1000000.01"), places=2
+        ),
+    )
+    def test_no_pnl_value_appears_for_any_amount(self, winner: Decimal, loser: Decimal) -> None:
+        """Property: no P&L amount reaches the blind message, whatever its value.
+
+        Amounts are drawn outside the range of the activity figures so a
+        match can only be a leak, never a coincidence with a count.
+        """
+        surface = _rendered_surface(slack_template(_digest(winner, loser)))
+        assert str(winner) not in surface
+        assert str(loser) not in surface
 
 
 class TestSlackDispatchFallback:

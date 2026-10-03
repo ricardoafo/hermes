@@ -32,12 +32,14 @@ from pathlib import Path
 import httpx
 import pytest
 import respx
+from structlog.testing import capture_logs
 
 from hermes.adapters.notifier import (
     SlackAdapter,
     SlackConfig,
     SlackNotifierError,
 )
+from hermes.application.messages.reporting_phase import ReportingPhase
 from hermes.domain.errors import HermesError, InfraError
 from hermes.domain.events.anomaly_detected import AnomalySeverity
 from hermes.domain.events.daily_trade_digest import DailyTradeDigest, TradeSummary
@@ -72,6 +74,39 @@ def adapter(config: SlackConfig) -> SlackAdapter:
     """
     client = httpx.Client(base_url="https://slack.com", timeout=5.0)
     return SlackAdapter(config=config, client=client)
+
+
+@pytest.fixture
+def unblinded_adapter(config: SlackConfig) -> SlackAdapter:
+    """Return a :class:`SlackAdapter` built in the CERTIFIED reporting phase.
+
+    Only the attachment-upload tests need it: before certification no
+    template produces an attachment, so the upload flow is reachable
+    only after the explicit unblinding step.
+    """
+    client = httpx.Client(base_url="https://slack.com", timeout=5.0)
+    return SlackAdapter(config=config, client=client, reporting_phase=ReportingPhase.CERTIFIED)
+
+
+class TestReportingPhaseLogging:
+    """Building the adapter unblinded is the explicit, logged step of ADR-012 ruling 1."""
+
+    def test_certified_adapter_logs_unblinding_warning(self, config: SlackConfig) -> None:
+        """A CERTIFIED adapter emits exactly one ``slack_notifier_unblinded`` warning."""
+        client = httpx.Client(base_url="https://slack.com", timeout=5.0)
+        with capture_logs() as logs:
+            SlackAdapter(config=config, client=client, reporting_phase=ReportingPhase.CERTIFIED)
+        unblinded = [e for e in logs if e["event"] == "slack_notifier_unblinded"]
+        assert len(unblinded) == 1
+        assert unblinded[0]["log_level"] == "warning"
+
+    def test_default_adapter_logs_nothing_about_unblinding(self, config: SlackConfig) -> None:
+        """The default adapter is blind and logs no unblinding event."""
+        client = httpx.Client(base_url="https://slack.com", timeout=5.0)
+        with capture_logs() as logs:
+            built = SlackAdapter(config=config, client=client)
+        assert built.reporting_phase is ReportingPhase.PRE_CERTIFICATION
+        assert not [e for e in logs if e["event"] == "slack_notifier_unblinded"]
 
 
 class TestSlackConfig:
@@ -701,8 +736,33 @@ class TestNotifyDailyDigestThreadedAttachment:
             top_losers=(loser,),
         )
 
-    def test_daily_digest_uploads_csv_via_three_step_flow(self, adapter: SlackAdapter) -> None:
+    def test_blind_adapter_posts_digest_without_any_upload(self, adapter: SlackAdapter) -> None:
+        """A default (pre-certification) adapter never uploads the per-pair P&L CSV.
+
+        Protects the ADR-012 ruling 1 blind at the wire: the outcome CSV
+        must not leave the process, not merely be hidden in the template.
+        """
+        with respx.mock(assert_all_called=False) as router:
+            post = router.post(_POST_MESSAGE_URL).mock(
+                return_value=httpx.Response(200, json={"ok": True, "ts": "1.0"})
+            )
+            step1 = router.post(_GET_UPLOAD_URL).mock(
+                return_value=httpx.Response(200, json={"ok": True})
+            )
+
+            adapter.notify(self._digest_event())
+
+            assert post.call_count == 1
+            assert step1.call_count == 0
+            body = post.calls[0].request.content.decode()
+            assert "120.00" not in body
+            assert "-45.50" not in body
+
+    def test_daily_digest_uploads_csv_via_three_step_flow(
+        self, unblinded_adapter: SlackAdapter
+    ) -> None:
         """DailyTradeDigest triggers getUploadURLExternal → PUT → completeUploadExternal."""
+        adapter = unblinded_adapter
         signed_put_url = "https://files.slack.com/upload/signed-digest"
         parent_ts = "1700000000.000100"
 
@@ -727,8 +787,11 @@ class TestNotifyDailyDigestThreadedAttachment:
             assert step2.call_count == 1
             assert step3.call_count == 1
 
-    def test_daily_digest_attachment_lands_in_parent_thread(self, adapter: SlackAdapter) -> None:
+    def test_daily_digest_attachment_lands_in_parent_thread(
+        self, unblinded_adapter: SlackAdapter
+    ) -> None:
         """The completeUploadExternal payload carries thread_ts from the parent post."""
+        adapter = unblinded_adapter
         signed_put_url = "https://files.slack.com/upload/signed-thread"
         parent_ts = "1700000000.000200"
 
@@ -758,9 +821,10 @@ class TestNotifyDailyDigestThreadedAttachment:
             assert step3_payload["channel_id"] == _TEST_CHANNEL
 
     def test_daily_digest_step1_form_carries_filename_and_length(
-        self, adapter: SlackAdapter
+        self, unblinded_adapter: SlackAdapter
     ) -> None:
         """Step-1 form body carries filename + byte-length of the rendered CSV."""
+        adapter = unblinded_adapter
         signed_put_url = "https://files.slack.com/upload/signed-form"
         with respx.mock() as router:
             router.post(_POST_MESSAGE_URL).mock(
