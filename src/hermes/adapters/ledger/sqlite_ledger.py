@@ -21,7 +21,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import sqlite3
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
 from typing import Any
@@ -33,6 +33,7 @@ from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.events.trade_executed import TradeExecuted, TradeSide
 from hermes.domain.lots.lot import Lot
 from hermes.domain.lots.lot_consumption import LotConsumption
+from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.strategy.signal import SignalKind, SignalSide
 from hermes.domain.value_objects.currency import Currency
@@ -152,6 +153,76 @@ class SqliteLedger:
         except sqlite3.Error as exc:
             self._conn.rollback()
             raise LedgerError(msg=f"append_event failed: {exc}") from exc
+
+    def record_live_bar(self, bar: Bar) -> Bar | None:
+        """Store one closed live bar unless its key is already stored (#421).
+
+        Data only: no strategy, signal or event reads this table.
+
+        Args:
+            bar: The closed bar the serve loop is handling.
+
+        Returns:
+            ``None`` when the bar was stored or an identical bar was already
+            there; the stored bar when it differs (the stored one is kept).
+
+        Raises:
+            LedgerError: On any SQLite failure.
+        """
+        key = (
+            bar.pair.base.value,
+            bar.pair.quote.value,
+            bar.interval.value,
+            _iso_utc(bar.open_time),
+        )
+        try:
+            inserted = self._conn.execute(
+                "INSERT OR IGNORE INTO live_bars (pair_base, pair_quote, interval, open_time, "
+                "close_time, open, high, low, close, volume, recorded_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    *key,
+                    _iso_utc(bar.close_time),
+                    str(bar.open),
+                    str(bar.high),
+                    str(bar.low),
+                    str(bar.close),
+                    str(bar.volume),
+                    _iso_utc(datetime.now(UTC)),
+                ),
+            ).rowcount
+            self._conn.commit()
+            if inserted:
+                return None
+            row = self._conn.execute(
+                "SELECT open_time, close_time, open, high, low, close, volume FROM live_bars "
+                "WHERE pair_base = ? AND pair_quote = ? AND interval = ? AND open_time = ?",
+                key,
+            ).fetchone()
+        except sqlite3.Error as exc:
+            self._conn.rollback()
+            raise LedgerError(msg=f"record_live_bar failed: {exc}") from exc
+        stored = _row_to_bar(bar.pair, bar.interval, row)
+        return None if stored == bar else stored
+
+    def live_bars(
+        self, pair: Pair, interval: KlineInterval, start: datetime, end: datetime
+    ) -> tuple[Bar, ...]:
+        """Return stored live bars with ``start <= open_time < end``, oldest first.
+
+        Raises:
+            LedgerError: On any SQLite failure.
+        """
+        try:
+            rows = self._conn.execute(
+                "SELECT open_time, close_time, open, high, low, close, volume FROM live_bars "
+                "WHERE pair_base = ? AND pair_quote = ? AND interval = ? "
+                "  AND open_time >= ? AND open_time < ? ORDER BY open_time",
+                (pair.base.value, pair.quote.value, interval.value, _iso_utc(start), _iso_utc(end)),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"live_bars failed: {exc}") from exc
+        return tuple(_row_to_bar(pair, interval, row) for row in rows)
 
     # ------------------------------------------------------------------
     # LedgerPort — read methods
@@ -407,6 +478,21 @@ class SqliteLedger:
 # ---------------------------------------------------------------------------
 # Module-level helpers — serialisation of domain values to JSON-safe primitives
 # ---------------------------------------------------------------------------
+
+
+def _row_to_bar(pair: Pair, interval: KlineInterval, row: tuple[Any, ...]) -> Bar:
+    open_time, close_time, open_, high, low, close, volume = row
+    return Bar(
+        pair=pair,
+        interval=interval,
+        open_time=datetime.fromisoformat(open_time),
+        close_time=datetime.fromisoformat(close_time),
+        open=Decimal(open_),
+        high=Decimal(high),
+        low=Decimal(low),
+        close=Decimal(close),
+        volume=Decimal(volume),
+    )
 
 
 def _iso_utc(dt: datetime) -> str:
