@@ -36,7 +36,8 @@
 #     --skip-openspec-check "reason"
 #   HERMES_SELF_TEST=1 bash scripts/dev/create-pr.sh
 #
-# Passthrough allowlist: --head, --base, --draft, --reviewer
+# Passthrough allowlist: --head, --base, --reviewer. --draft is refused:
+# a PR opens only when it is ready to merge (Rick's rule, 2026-10-03).
 # DoR flags: --skip-openspec-check "reason" (bypass openspec gate, audit-logged)
 # Anything else → exit 2 (usage error, unknown flag).
 #
@@ -58,6 +59,10 @@
 #   3 — DoR gate failed (openspec change spec missing)
 #   4 — Actor gate failed (author == reviewer, self-review deadlock)
 #       Bypass: SKIP_ACTOR_CHECK=1. See scripts/dev/pr-actor-check.sh.
+#   5 — Ready-to-merge gate failed: uncommitted or unpushed work, behind
+#       or conflicting with origin/main, or no full preflight pass on
+#       HEAD. Bypass: SKIP_READY_CHECK="reason". See
+#       scripts/dev/pr-ready-check.sh.
 
 set -uo pipefail
 
@@ -65,7 +70,7 @@ TITLE=""
 BODY_FILE=""
 SKIP_OPENSPEC_REASON=""
 PASSTHROUGH=()
-ALLOWED_PASS=(--head --base --draft --reviewer)
+ALLOWED_PASS=(--head --base --reviewer)
 
 # Conventional-commit + lowercase-subject regex. Matches:
 #   type(scope)!: lowercase subject...
@@ -225,17 +230,37 @@ EOF
     # gate. `feat(x): valid` is the minimal conforming title.
     T_OK="feat(x): valid"
 
+    # The fixtures run from whatever branch the developer is on; the
+    # ready gate has its own self-test (pr-ready-check.sh).
+    export SKIP_READY_CHECK="create-pr self-test fixture"
+
+    # The DoR gate reads the repo's latest commit, so fixtures 1-11 would
+    # fail whenever the real HEAD is a feat commit. They run against a
+    # neutral repo whose only commit is a chore; 12-14 build their own.
+    # Hooks export GIT_DIR / GIT_INDEX_FILE for the real repo; the
+    # scratch repos below must never inherit them.
+    while IFS= read -r var; do
+        unset "$var"
+    done < <(env | sed -n 's/^\(GIT_[A-Z_]*\)=.*/\1/p')
+    neutral=$(mktemp -d -t create-pr-neutral.XXXXXX)
+    git init -q "$neutral"
+    git -C "$neutral" -c user.name=t -c user.email=t@invalid commit -q --allow-empty -m "chore: neutral"
+    git -C "$neutral" update-ref refs/remotes/origin/main HEAD
+    export GIT_DIR="$neutral/.git" GIT_WORK_TREE="$neutral"
+
     # 1. PASS: valid body, gh stubbed → exit 0, echo captures gh args
     out=$(GH_CMD=echo HERMES_SELF_TEST=0 bash "$0" --title "$T_OK" --body-file "$tmp_ok" 2>&1); rc=$?
     if [[ $rc -ne 0 ]]; then echo "SELF-TEST FAIL: valid body → rc=$rc, want 0"; fail=1; fi
     grep -q 'pr create' <<< "$out" || { echo "SELF-TEST FAIL: valid body should invoke stubbed gh"; fail=1; }
     grep -q -- "--title $T_OK" <<< "$out" || { echo "SELF-TEST FAIL: --title passthrough missing"; fail=1; }
 
-    # 2. PASS: passthrough --draft + --reviewer
-    out=$(GH_CMD=echo HERMES_SELF_TEST=0 bash "$0" --title "$T_OK" --body-file "$tmp_ok" --draft --reviewer alice 2>&1); rc=$?
+    # 2. PASS: passthrough --reviewer; FAIL: --draft is refused before gh
+    out=$(GH_CMD=echo HERMES_SELF_TEST=0 bash "$0" --title "$T_OK" --body-file "$tmp_ok" --reviewer alice 2>&1); rc=$?
     if [[ $rc -ne 0 ]]; then echo "SELF-TEST FAIL: passthrough → rc=$rc"; fail=1; fi
-    grep -q -- '--draft' <<< "$out" || { echo "SELF-TEST FAIL: --draft not forwarded"; fail=1; }
     grep -q -- '--reviewer alice' <<< "$out" || { echo "SELF-TEST FAIL: --reviewer not forwarded"; fail=1; }
+    out=$(GH_CMD=echo HERMES_SELF_TEST=0 bash "$0" --title "$T_OK" --body-file "$tmp_ok" --draft 2>&1); rc=$?
+    [[ $rc -eq 2 ]] || { echo "SELF-TEST FAIL: --draft → rc=$rc, want 2"; fail=1; }
+    grep -q 'pr create' <<< "$out" && { echo "SELF-TEST FAIL: gh MUST NOT be invoked for a draft"; fail=1; }
 
     # 3. PASS: --head + --base passthrough
     out=$(GH_CMD=echo HERMES_SELF_TEST=0 bash "$0" --title "$T_OK" --body-file "$tmp_ok" --head feat --base main 2>&1); rc=$?
@@ -313,6 +338,8 @@ EOF
     # stays at the repo root — otherwise the relative `scripts/dev/pr-body-lint.sh`
     # call inside this script would fail because the tmpdir has no such
     # path. This is a standard git-in-test idiom (see gitcli(1)).
+    unset GIT_DIR GIT_WORK_TREE
+    rm -rf "$neutral"
     tmpdir=$(mktemp -d -t create-pr-selftest.XXXXXX)
     (
         export GIT_DIR="$tmpdir/.git" GIT_WORK_TREE="$tmpdir"
@@ -381,7 +408,8 @@ while [[ $# -gt 0 ]]; do
             [[ -z "$BODY_FILE" ]] && { echo "ERROR: --body-file requires a value" >&2; exit 2; }
             shift 2 ;;
         --draft)
-            PASSTHROUGH+=("$1"); shift ;;
+            echo "ERROR: --draft is not allowed: open the PR when it is ready to merge" >&2
+            exit 2 ;;
         --head|--base|--reviewer)
             PASSTHROUGH+=("$1" "${2:-}"); shift 2 ;;
         --skip-openspec-check)
@@ -442,6 +470,15 @@ if [[ "${SKIP_ACTOR_CHECK:-0}" != "1" && "${HERMES_SELF_TEST:-0}" != "1" ]]; the
     else
         bash scripts/dev/pr-actor-check.sh || exit 4
     fi
+fi
+
+# ────────────────────────────────────────────────────────────────
+# Ready-to-merge gate — the PR must be mergeable as it stands: clean
+# tree, pushed, contains origin/main, full preflight passed on HEAD.
+# See scripts/dev/pr-ready-check.sh.
+# ────────────────────────────────────────────────────────────────
+if [[ "${HERMES_SELF_TEST:-0}" != "1" ]]; then
+    bash scripts/dev/pr-ready-check.sh || exit 5
 fi
 
 # ────────────────────────────────────────────────────────────────
