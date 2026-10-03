@@ -47,6 +47,7 @@ jobs:
             scripts/deploy
             deploy/systemd
             deploy/hermes-notify-failure.sh
+            deploy/hermes-notify-crash.sh
           sparse-checkout-cone-mode: false
 
       - name: Ensure openssh-client is installed
@@ -136,7 +137,7 @@ jobs:
           # (installed to /opt/hermes/bin, #364) to a fixed path first; the
           # script installs them and deletes the directory.
           remote='rm -rf /var/tmp/hermes-bootstrap && install -d -m 0700 /var/tmp/hermes-bootstrap && tar -xf - -C /var/tmp/hermes-bootstrap'
-          tar -C deploy -cf - systemd hermes-notify-failure.sh | ssh -i ~/.ssh/vps_id -o StrictHostKeyChecking=yes "$VPS_SSH_USER@$VPS_SSH_HOST" "$remote"
+          tar -C deploy -cf - systemd hermes-notify-failure.sh hermes-notify-crash.sh | ssh -i ~/.ssh/vps_id -o StrictHostKeyChecking=yes "$VPS_SSH_USER@$VPS_SSH_HOST" "$remote"
 
       - name: Run bootstrap script on VPS
         env:
