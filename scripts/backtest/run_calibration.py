@@ -40,8 +40,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import inspect
 import json
 import os
+import shutil
+import subprocess
 import sys
 from dataclasses import asdict, is_dataclass
 from datetime import UTC, datetime, timedelta
@@ -52,6 +55,7 @@ from typing import Any
 from hermes.adapters.data_manifest.json_file import JsonFileDatasetManifest
 from hermes.adapters.fees.binance_history import load_binance_fee_history
 from hermes.adapters.market_data.binance_historical import BinanceHistoricalAdapter
+from hermes.adapters.trial_log.jsonl_file import JsonlTrialLog
 from hermes.application.calibration.harness import CalibrationHarness
 from hermes.application.calibration.lifecycle import CertificationState
 from hermes.application.strategy_protocol.pinned_dataset import (
@@ -60,7 +64,9 @@ from hermes.application.strategy_protocol.pinned_dataset import (
     load_pinned_bars,
 )
 from hermes.application.strategy_protocol.preregistration import PreRegistration
-from hermes.domain.errors import DataManifestFormatError, DomainError
+from hermes.application.strategy_protocol.trial_log import trial_split
+from hermes.domain.calibration.trial_record import DatasetRef, TrialRecord
+from hermes.domain.errors import DataManifestFormatError, DomainError, TrialLogError
 from hermes.domain.fees.fee_schedule_selector import (
     FeeHistoryOutOfRangeError,
     select_fee_schedule,
@@ -81,6 +87,7 @@ from hermes.domain.value_objects.strategy_id import StrategyId
 
 FEE_HISTORY_CSV = Path("docs/experiments/swing-mvp1/fee-history.csv")
 DATA_MANIFEST_JSON = Path("docs/experiments/swing-mvp1/data-manifest.json")
+TRIAL_LOG_JSONL = Path("docs/experiments/swing-mvp1/trial-log.jsonl")
 
 # Phase-1 defaults (deliberately narrow — see docstring).
 _DEFAULT_PAIR = "BTCUSDT"
@@ -225,6 +232,59 @@ def _jsonify(obj: Any) -> Any:
     return obj
 
 
+def _strategy_parameters() -> dict[str, Any]:
+    """Return every SwingStrategyAdapter parameter at its default, so the trial records what ran."""
+    return {
+        name: param.default
+        for name, param in inspect.signature(SwingStrategyAdapter.__init__).parameters.items()
+        if param.kind is inspect.Parameter.KEYWORD_ONLY
+    }
+
+
+def _git_state() -> tuple[str, bool]:
+    """Return the HEAD commit and whether tracked files differ from it."""
+    git = shutil.which("git")
+    if git is None:
+        raise RuntimeError("git not found; a trial must record the commit it ran on")
+    sha = subprocess.run(  # noqa: S603 — git resolved via shutil.which, fixed arguments
+        [git, "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+    status = subprocess.run(  # noqa: S603 — git resolved via shutil.which, fixed arguments
+        [git, "status", "--porcelain", "--untracked-files=no"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    return sha, bool(status.strip())
+
+
+def _trial_record(
+    strategy_id: StrategyId,
+    parameters: dict[str, Any],
+    split: DataSplit,
+    start: datetime,
+    end: datetime,
+    datasets: list[dict[str, Any]],
+    metrics: dict[str, Any],
+) -> TrialRecord:
+    """Build the trial record for this run."""
+    git_sha, git_dirty = _git_state()
+    return TrialRecord(
+        recorded_at=datetime.now(UTC),
+        strategy_id=str(strategy_id),
+        parameters={k: str(v) for k, v in parameters.items()},
+        split=split,
+        window_start=start,
+        window_end=end,
+        datasets=tuple(DatasetRef(d["dataset_id"], d["content_sha256"]) for d in datasets),
+        metrics={k: str(v) for k, v in metrics.items()},
+        # The phase-1 driver has no per-period return series; #313 adds the Sharpe.
+        sharpe=None,
+        git_sha=git_sha,
+        git_dirty=git_dirty,
+    )
+
+
 async def _load_verified_bars(
     manifest: DatasetManifest, pair: Pair, start: datetime, end: datetime
 ) -> tuple[list[Bar], list[Bar], list[dict[str, Any]]]:
@@ -267,6 +327,7 @@ async def _run(args: argparse.Namespace) -> int:
     try:
         manifest = _load_manifest(Path(args.manifest))
         bars_4h, bars_1d, datasets = await _load_verified_bars(manifest, pair, start, end)
+        split = trial_split(manifest, start, end)
     except (DataManifestFormatError, DomainError, ValueError) as err:
         print(f"ERROR: {err}", file=sys.stderr)
         return 1
@@ -282,7 +343,8 @@ async def _run(args: argparse.Namespace) -> int:
 
     merged = _merge_by_close_time(bars_4h, bars_1d)
 
-    strategy = SwingStrategyAdapter()
+    parameters = _strategy_parameters()
+    strategy = SwingStrategyAdapter(**parameters)
     portfolio_state = PortfolioState(
         peak_value=_DEFAULT_STARTING_EQUITY_USD,
         current_value=_DEFAULT_STARTING_EQUITY_USD,
@@ -343,6 +405,26 @@ async def _run(args: argparse.Namespace) -> int:
         mid_prices=mid_prices,
     )
 
+    # Every run that evaluated the strategy is a trial (pre-registration §8.1). The trial is
+    # logged before the report exists, so no report can exist without its trial.
+    report_json = _report_to_json(report)
+    headline = {
+        "signals_seen": signals_seen,
+        "fills_count": len(fills),
+        "m01_fill_count": report_json.get("m01_fill_count"),
+        "m04_rejection_rate": report_json.get("m04_rejection_rate"),
+        "m05_orphan_position_count": report_json.get("m05_orphan_position_count"),
+    }
+    trial_log = JsonlTrialLog(Path(args.trial_log))
+    try:
+        trial_log.append(
+            _trial_record(strategy_id, parameters, split, start, end, datasets, headline)
+        )
+    except (TrialLogError, RuntimeError, OSError, subprocess.CalledProcessError) as err:
+        print(f"ERROR: trial not logged, report not written: {err}", file=sys.stderr)
+        return 1
+    print(f"Trial logged: {args.trial_log} (split={split.value})")
+
     ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
     if args.output:
         out_path = Path(args.output)
@@ -358,7 +440,8 @@ async def _run(args: argparse.Namespace) -> int:
         "signals_seen": signals_seen,
         "fills_count": len(fills),
         "datasets": datasets,
-        "report": _report_to_json(report),
+        "split": split.value,
+        "report": report_json,
     }
     out_path.write_text(json.dumps(payload, indent=2, sort_keys=True))
     print(f"Report saved: {out_path}")
@@ -375,6 +458,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--end", default=_DEFAULT_END, help="Window end (YYYY-MM-DD UTC)")
     parser.add_argument("--output", default=None, help="Output JSON path (default: auto)")
     parser.add_argument("--dry-run", action="store_true", help="Load bars, skip strategy + save")
+    parser.add_argument(
+        "--trial-log",
+        default=str(TRIAL_LOG_JSONL),
+        help="Append-only trial log every run writes to",
+    )
     parser.add_argument(
         "--manifest", default=str(DATA_MANIFEST_JSON), help="Data manifest the bars must match"
     )
