@@ -287,7 +287,7 @@ jobs:
           uv run pytest tests/smoke -m smoke --tb=short -p no:cacheprovider
 
       - name: Roll back after a failed smoke run
-        if: failure() && steps.smoke.outcome == 'failure'
+        if: failure() && inputs.dry_run != true && steps.smoke.outcome == 'failure'
         env:
           VPS_SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
           VPS_SSH_USER: ${{ secrets.VPS_SSH_USER }}
