@@ -7,12 +7,14 @@ Verifies:
 - Tri-currency invariant: ``asset``, ``current.currency`` and
   ``threshold.currency`` MUST all match; mismatched pairs raise
   ``ValueError`` at construction (invariant I-01).
+- ``payload_sha256`` is populated by the base initialiser (#324).
 
 Reference: code-conventions.md §10 + §3.
 """
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -98,3 +100,22 @@ class TestBalanceLowTriCurrencyInvariant:
         event = _sample_event(asset=Currency.BTC)
         assert event.current.currency == Currency.BTC
         assert event.threshold.currency == Currency.BTC
+
+
+class TestBalanceLowPayloadHash:
+    """BalanceLow runs the base initialiser, so its payload hash is populated (#324)."""
+
+    def test_payload_hash_is_blake2b_hex(self) -> None:
+        """payload_sha256 is a 64-char lowercase hex digest, never the empty default."""
+        event = _sample_event()
+        assert re.fullmatch(r"[0-9a-f]{64}", event.payload_sha256)
+
+    def test_payload_hash_is_stable_for_equal_fields(self) -> None:
+        """Two events built from the same fields carry the same hash."""
+        assert _sample_event().payload_sha256 == _sample_event().payload_sha256
+
+    def test_payload_hash_tracks_balance(self) -> None:
+        """A different current balance yields a different hash."""
+        low = _sample_event(current_amount=Decimal("50"))
+        lower = _sample_event(current_amount=Decimal("49"))
+        assert low.payload_sha256 != lower.payload_sha256

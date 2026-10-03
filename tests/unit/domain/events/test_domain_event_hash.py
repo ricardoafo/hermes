@@ -9,6 +9,8 @@ Verifies:
 - **event_seq validation**: negative event_seq raises ValueError.
 - **Auto-computation**: payload_sha256 is computed in __post_init__,
   not passed by the caller.
+- **Subclass guard**: overrides of __post_init__ call the base
+  initialiser by name (#324).
 
 Property tests use Hypothesis to generalise determinism and sensitivity
 across a wide range of inputs.
@@ -18,6 +20,9 @@ Reference: spec-1-domain-aggregates (D-2, D-3), ADR-003 §00.
 
 from __future__ import annotations
 
+import importlib
+import inspect
+import pkgutil
 import re
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -26,6 +31,8 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+import hermes.domain.events as events_pkg
+from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.trade_executed import TradeExecuted, TradeSide
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
@@ -184,3 +191,26 @@ class TestPayloadSha256PropertyDeterminism:
         a = _trade(event_seq=seq_a)
         b = _trade(event_seq=seq_b)
         assert a.payload_sha256 != b.payload_sha256
+
+
+# ---------------------------------------------------------------------------
+# Subclass guard
+# ---------------------------------------------------------------------------
+
+
+def _concrete_events() -> list[type[DomainEvent]]:
+    for module in pkgutil.iter_modules(events_pkg.__path__):
+        importlib.import_module(f"{events_pkg.__name__}.{module.name}")
+    return list(DomainEvent.__subclasses__())
+
+
+class TestSubclassPostInitCallsBase:
+    """Every event that overrides ``__post_init__`` still runs the base hash (#324)."""
+
+    @pytest.mark.parametrize("event_cls", _concrete_events(), ids=lambda c: c.__name__)
+    def test_override_calls_base_initialiser(self, event_cls: type[DomainEvent]) -> None:
+        """An override without ``DomainEvent.__post_init__(self)`` leaves the hash empty."""
+        override = event_cls.__dict__.get("__post_init__")
+        if override is None:
+            return  # inherits the base initialiser unchanged
+        assert "DomainEvent.__post_init__(self)" in inspect.getsource(override)
