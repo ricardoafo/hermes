@@ -46,8 +46,10 @@ from typing import Any, Final
 from dotenv import dotenv_values
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
+from hermes.adapters.console import available_scenarios
 from hermes.entrypoints import _health as health_module
 from hermes.entrypoints import certify as certify_module
+from hermes.entrypoints import console as console_module
 from hermes.entrypoints import preview as preview_module
 from hermes.entrypoints import serve as serve_module
 from hermes.infrastructure import sentry_integration
@@ -99,12 +101,16 @@ def _print_top_help(stream: Any) -> None:
     lines = [
         "hermes — crypto trading engine (MVP1 scaffold)",
         "",
-        "Usage: hermes <command> [args]",
+        "Usage: hermes [--demo SCENARIO] <command> [args]",
         "",
         "Commands:",
     ]
     for name in sorted(_SUBCOMMAND_HELP):
         lines.append(f"  {name:10s} {_SUBCOMMAND_HELP[name]}")
+    lines.append("")
+    lines.append("Options:")
+    lines.append("  --demo SCENARIO  Show console screens on demo data (DEMO DATA tag).")
+    lines.append(f"                   Scenarios: {', '.join(available_scenarios())}")
     lines.append("")
     stream.write("\n".join(lines))
 
@@ -177,6 +183,10 @@ def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
     # init error is caught + logged inside sentry_integration.initialize
     # so the CLI never crashes on a Sentry failure.
     _initialize_sentry_from_env(dict(os.environ))
+
+    demo_exit, args = console_module.apply_demo_flag(args, out)
+    if demo_exit is not None:
+        return demo_exit
 
     if not args or args[0] in {"-h", "--help"}:
         _print_top_help(out)
