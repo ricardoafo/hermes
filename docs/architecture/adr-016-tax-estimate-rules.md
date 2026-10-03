@@ -134,4 +134,4 @@ Those code gaps are fixed in #386; this ADR records the rules that fix follows.
 
 ## Pending
 
-- The operator's region for the total IRPF view (#396).
+- None. The operator's region for the total IRPF view is Región de Murcia (confirmed 2026-10-03, #396).
