@@ -42,6 +42,7 @@ __all__ = [
     "next_boundary",
     "plan_delivery",
     "previous_boundary",
+    "within_catchup",
 ]
 
 # One followed candle series: a pair at one interval.
@@ -171,6 +172,32 @@ def is_closed(
     _require_utc(local_now, name="local_now")
     _require_utc(exchange_now, name="exchange_now")
     return open_time + _DURATIONS[interval] + settle <= min(local_now, exchange_now)
+
+
+def within_catchup(
+    now: datetime, occurred_at: datetime, interval: KlineInterval, *, bars: int = 2
+) -> bool:
+    """Return whether a signal is recent enough to be worth notifying.
+
+    A signal is recent when it is at most ``bars`` candles old. A future
+    ``occurred_at`` (clock skew) is not recent: it cannot be a real bar close.
+
+    Args:
+        now: Reference instant, UTC-aware.
+        occurred_at: Signal time (the bar close), UTC-aware.
+        interval: Candle-duration bucket of the signal's stream.
+        bars: How many candles old a signal may be. Defaults to 2.
+
+    Returns:
+        ``True`` exactly when ``0 <= now - occurred_at <= bars * interval``.
+
+    Raises:
+        ValueError: ``now`` or ``occurred_at`` is not UTC-aware.
+    """
+    _require_utc(now, name="now")
+    _require_utc(occurred_at, name="occurred_at")
+    age = now - occurred_at
+    return timedelta(0) <= age <= bars * _DURATIONS[interval]
 
 
 def delivery_key(bar: Bar) -> tuple[datetime, float, str]:
