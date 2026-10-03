@@ -13,12 +13,14 @@
 #   - .github/workflows/pr-body-recheck.yml (on body edit, and when a
 #     CI run completes — bot edits made with GITHUB_TOKEN fire no
 #     `edited` event, so the completion trigger catches them)
-#   - Manually: PR_NUMBER=123 bash scripts/dev/pr-body-recheck.sh
+#   - Manually: GITHUB_REPOSITORY=owner/repo GH_TOKEN=... PR_NUMBER=123 \
+#       HERMES_RECHECK_DRY_RUN=1 bash scripts/dev/pr-body-recheck.sh
 #
 # Env vars:
 #   PR_NUMBER          — the pull request to recheck (required)
-#   GITHUB_REPOSITORY  — owner/repo (defaults to the gh-resolved repo)
+#   GITHUB_REPOSITORY  — owner/repo (required)
 #   GH_TOKEN           — needs pull-requests:read + actions:write
+#   HERMES_RECHECK_DRY_RUN — set to 1 to report the decision without re-running
 #   HERMES_SELF_TEST   — set to 1 to run the decision table and exit
 #
 # Exit codes:
@@ -77,23 +79,46 @@ if [[ "${HERMES_SELF_TEST:-0}" == "1" ]]; then
     exit "$failed"
 fi
 
+# The self-hosted runner has no gh or jq; curl + python3 are what it ships.
 : "${PR_NUMBER:?PR_NUMBER is required}"
-repo="${GITHUB_REPOSITORY:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+: "${GH_TOKEN:?GH_TOKEN is required}"
+: "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required (owner/repo)}"
+PYTHON="${PYTHON:-python3}"
+repo="$GITHUB_REPOSITORY"
 
-pr_json=$(gh api "repos/$repo/pulls/$PR_NUMBER")
-head_sha=$(jq -r '.head.sha' <<< "$pr_json")
-body=$(jq -r '.body // ""' <<< "$pr_json")
+api() {
+    curl -fsSL -X "${2:-GET}" \
+        -H "Authorization: Bearer $GH_TOKEN" \
+        -H "Accept: application/vnd.github+json" \
+        -H "X-GitHub-Api-Version: 2022-11-28" \
+        "https://api.github.com/$1"
+}
 
-run=$(gh api "repos/$repo/actions/workflows/ci.yml/runs?head_sha=$head_sha&event=pull_request&per_page=1" \
-    --jq '.workflow_runs[0] // empty | [.id, .status, .run_attempt] | @tsv')
+# json_get <python-expression over d>: prints the value, or nothing when None.
+json_get() {
+    "$PYTHON" -c '
+import json, sys
+d = json.load(sys.stdin)
+v = eval(sys.argv[1], {}, {"d": d})
+if v is not None:
+    sys.stdout.write(v if isinstance(v, str) else "\t".join(map(str, v)))
+' "$1"
+}
+
+pr_json=$(api "repos/$repo/pulls/$PR_NUMBER")
+head_sha=$(json_get 'd["head"]["sha"]' <<< "$pr_json")
+body=$(json_get 'd.get("body") or ""' <<< "$pr_json")
+
+run=$(api "repos/$repo/actions/workflows/ci.yml/runs?head_sha=$head_sha&event=pull_request&per_page=1" \
+    | json_get '[(r["id"], r["status"], r["run_attempt"]) for r in d["workflow_runs"][:1]][0] if d["workflow_runs"] else None')
 if [[ -z "$run" ]]; then
     echo "No CI run for $head_sha yet; nothing to recheck."
     exit 0
 fi
 read -r run_id run_status run_attempt <<< "$run"
 
-job=$(gh api "repos/$repo/actions/runs/$run_id/jobs?per_page=100" \
-    --jq '.jobs[] | select(.name == "PR body") | [.id, (.conclusion // "none")] | @tsv')
+job=$(api "repos/$repo/actions/runs/$run_id/jobs?per_page=100" \
+    | json_get 'next(((j["id"], j["conclusion"] or "none") for j in d["jobs"] if j["name"] == "PR body"), None)')
 if [[ -z "$job" ]]; then
     echo "CI run $run_id has no PR body job; nothing to recheck."
     exit 0
@@ -111,6 +136,11 @@ echo "PR #$PR_NUMBER: CI run $run_id ($run_status, attempt $run_attempt), PR bod
 
 case "$action" in
     wait)  echo "CI is still running; the recheck fires again when it completes." ;;
-    rerun) gh api -X POST "repos/$repo/actions/jobs/$job_id/rerun" > /dev/null
-           echo "Re-ran PR body job $job_id (and CI success)." ;;
+    rerun)
+        if [[ "${HERMES_RECHECK_DRY_RUN:-0}" == "1" ]]; then
+            echo "Dry run: would re-run PR body job $job_id."
+        else
+            api "repos/$repo/actions/jobs/$job_id/rerun" POST > /dev/null
+            echo "Re-ran PR body job $job_id (and CI success)."
+        fi ;;
 esac

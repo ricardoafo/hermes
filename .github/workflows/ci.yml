@@ -192,8 +192,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+        # The self-hosted runner has no gh or jq; curl + python3 it does have.
         run: |
-          PR_BODY="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '.body // ""')"
+          PR_BODY="$(curl -fsSL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" \
+            | python3 -c 'import json, sys; sys.stdout.write(json.load(sys.stdin).get("body") or "")')"
           export PR_BODY
           bash scripts/dev/pr-body-lint.sh
 
