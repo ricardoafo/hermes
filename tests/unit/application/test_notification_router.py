@@ -47,6 +47,7 @@ from hermes.application.notification_router import (
     channels_for,
     route,
 )
+from hermes.domain.events.base import DomainEvent
 from hermes.ports.notifier import NotifierPort
 
 # ---------------------------------------------------------------------------
@@ -73,6 +74,11 @@ class _RecordingNotifier:
     label: str
     urgent_calls: list[dict[str, object]] = field(default_factory=list)
     report_calls: list[dict[str, object]] = field(default_factory=list)
+    notify_calls: list[DomainEvent] = field(default_factory=list)
+
+    def notify(self, event: DomainEvent) -> None:
+        """Record a template-driven domain-event notification."""
+        self.notify_calls.append(event)
 
     def notify_urgent(self, *, event: str, correlation_id: str, message: str) -> None:
         """Record a push-to-phone alert invocation."""
@@ -127,6 +133,8 @@ _EXPECTED_ROUTING: dict[EventClass, tuple[bool, bool]] = {
     EventClass.DAILY_TRADE_DIGEST: (False, True),
     EventClass.POSITION_LARGE: (True, True),
     EventClass.ANOMALY_DETECTED: (True, True),
+    # 2026-10-03-signal-notification-routing.md
+    EventClass.SIGNAL_EMITTED: (True, True),
 }
 
 

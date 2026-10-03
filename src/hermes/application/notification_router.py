@@ -131,6 +131,12 @@ class EventClass(StrEnum):
     ANOMALY_DETECTED = "ANOMALY_DETECTED"
     """Circuit-breaker / invariant violation — Telegram + Slack (both channels)."""
 
+    SIGNAL_EMITTED = "SIGNAL_EMITTED"
+    """Shadow strategy signal — Telegram (push) + Slack (durable record).
+
+    Reference: ``docs/decisions/2026-10-03-signal-notification-routing.md``.
+    """
+
 
 @dataclass(frozen=True, slots=True)
 class RouterConfig:
@@ -189,6 +195,8 @@ _ROUTING_TABLE: dict[EventClass, tuple[bool, bool]] = {
     EventClass.DAILY_TRADE_DIGEST: (False, True),
     EventClass.POSITION_LARGE: (True, True),
     EventClass.ANOMALY_DETECTED: (True, True),
+    # See 2026-10-03-signal-notification-routing.md.
+    EventClass.SIGNAL_EMITTED: (True, True),
 }
 """Per-class channel fan-out — encodes the ADR Rationale table verbatim."""
 

@@ -19,6 +19,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+from hermes.domain.events.base import DomainEvent
+
 __all__ = ["NotifierPort"]
 
 
@@ -54,5 +56,21 @@ class NotifierPort(Protocol):
         May include formatting, threads, attached artifacts (wheels,
         SBOMs, CSV reports). Delivered to a lower-urgency channel where
         the operator reads when convenient.
+        """
+        ...
+
+    def notify(self, event: DomainEvent) -> None:
+        """Render a domain event through the channel's template and send it.
+
+        The template lives in the application layer
+        (:mod:`hermes.application.messages`); a missing template raises
+        ``ValueError``.
+
+        Args:
+            event: A concrete :class:`DomainEvent`.
+
+        Raises:
+            hermes.domain.errors.InfraError: The channel could not deliver.
+            ValueError: No template is registered for ``type(event)``.
         """
         ...
