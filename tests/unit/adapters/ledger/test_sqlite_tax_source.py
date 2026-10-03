@@ -6,6 +6,7 @@ Reference: ADR-016 decision 3; change trade-eur-values D-6 (the rows the FIFO re
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterator
 from datetime import timedelta
 from decimal import Decimal
 
@@ -19,9 +20,17 @@ from hermes.ports.ledger import EurTradeRow, TaxTradeSourcePort
 from tests.unit.adapters.ledger.test_sqlite_trade_ledger import _T0, _record, _trade
 
 
-def test_lists_priced_and_pending_trades_in_fill_order() -> None:
+@pytest.fixture
+def connection() -> Iterator[sqlite3.Connection]:
+    """Yield an in-memory connection, closed after the test."""
+    conn = sqlite3.connect(":memory:")
+    yield conn
+    conn.close()
+
+
+def test_lists_priced_and_pending_trades_in_fill_order(connection: sqlite3.Connection) -> None:
     """Each row carries its EUR values, or None while pending, oldest first."""
-    ledger = SqliteLedger(sqlite3.connect(":memory:"))
+    ledger = SqliteLedger(connection)
     buy_id = _record(ledger, _trade(OrderSide.BUY, "1", "125", "1.25", minutes=0))
     _record(ledger, _trade(OrderSide.SELL, "1", "150", "1.25", minutes=10, priced=False))
     rows = ledger.list_eur_trades()
@@ -47,9 +56,9 @@ def test_lists_priced_and_pending_trades_in_fill_order() -> None:
     )
 
 
-def test_sqlite_ledger_satisfies_the_tax_source_port() -> None:
+def test_sqlite_ledger_satisfies_the_tax_source_port(connection: sqlite3.Connection) -> None:
     """The adapter is usable wherever the tax service expects the port."""
-    assert isinstance(SqliteLedger(sqlite3.connect(":memory:")), TaxTradeSourcePort)
+    assert isinstance(SqliteLedger(connection), TaxTradeSourcePort)
 
 
 def test_read_failure_raises_ledger_error() -> None:

@@ -6,8 +6,11 @@ Reference: ADR-016 decisions 3 and 7; change trade-eur-values (EUR trade rows).
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from decimal import Decimal
+
+import pytest
 
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.application.console.views import TaxEstimate, TaxPending
@@ -20,9 +23,12 @@ from tests.unit.domain.tax.scales import SCALE_2026
 _AS_OF = datetime(2026, 1, 2, 18, tzinfo=UTC)
 
 
-def _service() -> tuple[TaxService, SqliteLedger]:
-    ledger = SqliteLedger(sqlite3.connect(":memory:"))
-    return TaxService(ledger), ledger
+@pytest.fixture
+def ledger() -> Iterator[SqliteLedger]:
+    """Yield a ledger on an in-memory database, closed after the test."""
+    conn = sqlite3.connect(":memory:")
+    yield SqliteLedger(conn)
+    conn.close()
 
 
 def _run(service: TaxService) -> TaxYearEstimate | TaxPending:
@@ -37,9 +43,9 @@ def _run(service: TaxService) -> TaxYearEstimate | TaxPending:
     )
 
 
-def test_service_estimates_from_the_ledger_with_fees_in_the_values() -> None:
+def test_service_estimates_from_the_ledger_with_fees_in_the_values(ledger: SqliteLedger) -> None:
     """Buy at 125 USDT + fee 1.25, sell at 150 - 1.25 at 1.25 USD/EUR: gain 18 EUR, tax 3.42."""
-    service, ledger = _service()
+    service = TaxService(ledger)
     _record(ledger, _trade(OrderSide.BUY, "1", "125", "1.25", minutes=0))
     _record(ledger, _trade(OrderSide.SELL, "1", "150", "1.25", minutes=10))
     estimate = _run(service)
@@ -50,9 +56,9 @@ def test_service_estimates_from_the_ledger_with_fees_in_the_values() -> None:
     )
 
 
-def test_service_reports_pending_ledger_rows() -> None:
+def test_service_reports_pending_ledger_rows(ledger: SqliteLedger) -> None:
     """A fill stored while FX was down keeps the year pending until backfilled."""
-    service, ledger = _service()
+    service = TaxService(ledger)
     _record(ledger, _trade(OrderSide.BUY, "1", "125", "1.25", minutes=0, priced=False))
     assert _run(service) == TaxPending(
         label="tax pending: EUR values pending for 1 trade(s) in 2026"

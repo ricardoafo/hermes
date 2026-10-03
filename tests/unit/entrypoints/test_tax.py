@@ -73,6 +73,15 @@ def test_text_output_is_labelled_estimate_and_shadow(tmp_path: Path) -> None:
     assert "carried losses used  4.50 EUR" in out
 
 
+def test_text_band_line_in_the_top_band(tmp_path: Path) -> None:
+    """With 400,000 of other savings income the next euro is in the 30% top band."""
+    db = _ledger(tmp_path / "ledger.sqlite3")
+    profile = 'years:\n  2026:\n    other_savings_income_eur: "400000"\n'
+    code, out = _run(tmp_path, "--db", str(db), profile=profile)
+    assert code == 0
+    assert "band                 30% (FIFO, top band)" in out
+
+
 def test_json_output_carries_the_figures_and_labels(tmp_path: Path) -> None:
     """The JSON form has the same figures, as strings, with both labels."""
     db = _ledger(tmp_path / "ledger.sqlite3")
