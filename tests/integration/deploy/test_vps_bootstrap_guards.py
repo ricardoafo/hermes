@@ -439,3 +439,120 @@ def test_deploy_user_missing_on_the_box_is_refused(box: Harness) -> None:
     assert result.returncode == 1
     assert "does not exist" in result.stdout
     assert list(box.sudoers_dir.iterdir()) == []
+
+
+# --- ensure_auto_reboot ----------------------------------------------------
+
+_AUTO_REBOOT_FUNCS = ("render_auto_reboot", "ensure_auto_reboot")
+
+_STUB_TIMEDATECTL = """\
+#!/usr/bin/env bash
+echo "${STUB_TZ:-Europe/Madrid}"
+"""
+
+_STUB_DPKG_QUERY = """\
+#!/usr/bin/env bash
+echo "dpkg-query $*" >> "$STUB_LOG"
+[ -n "${STUB_UU_INSTALLED:-}" ] && printf 'install ok installed'
+exit 0
+"""
+
+_STUB_APT_GET = """\
+#!/usr/bin/env bash
+echo "apt-get $*" >> "$STUB_LOG"
+"""
+
+_STUB_SYSTEMCTL = """\
+#!/usr/bin/env bash
+echo "systemctl $*" >> "$STUB_LOG"
+if [ "$1" = is-enabled ]; then
+    [ -n "${STUB_UU_ENABLED:-}" ]
+    exit
+fi
+"""
+
+
+@pytest.fixture
+def reboot_box(box: Harness) -> Harness:
+    """Return the harness with apt, dpkg, timedatectl and systemctl stubs added."""
+    write_stubs(
+        box.stub_dir,
+        {
+            "timedatectl": _STUB_TIMEDATECTL,
+            "dpkg-query": _STUB_DPKG_QUERY,
+            "apt-get": _STUB_APT_GET,
+            "systemctl": _STUB_SYSTEMCTL,
+        },
+    )
+    (box.base / "etc" / "apt" / "apt.conf.d").mkdir(parents=True)
+    return box
+
+
+def _reboot_file(box: Harness) -> Path:
+    return box.base / "etc" / "apt" / "apt.conf.d" / "52hermes-auto-reboot"
+
+
+def _run_auto_reboot(box: Harness, **extra: str) -> subprocess.CompletedProcess[str]:
+    body = (
+        f'AUTO_REBOOT_FILE="{posix(_reboot_file(box))}"\n'
+        "AUTO_REBOOT_TZ=Europe/Madrid\n"
+        "ensure_auto_reboot"
+    )
+    return box.run(body, _AUTO_REBOOT_FUNCS, **extra)
+
+
+def test_auto_reboot_policy_reboots_at_0330_with_users_logged_in(reboot_box: Harness) -> None:
+    """Invariant: the policy file arms the 03:30 reboot, even with SSH sessions open."""
+    result = _run_auto_reboot(reboot_box)
+
+    assert result.returncode == 0, output(result)
+    policy = _reboot_file(reboot_box).read_text(encoding="utf-8")
+    assert 'Unattended-Upgrade::Automatic-Reboot "true";' in policy
+    assert 'Unattended-Upgrade::Automatic-Reboot-Time "03:30";' in policy
+    assert 'Unattended-Upgrade::Automatic-Reboot-WithUsers "true";' in policy
+    assert 'APT::Periodic::Unattended-Upgrade "1";' in policy
+
+
+def test_auto_reboot_installs_and_enables_unattended_upgrades_when_missing(
+    reboot_box: Harness,
+) -> None:
+    """A fresh box gets the package installed and the service enabled."""
+    result = _run_auto_reboot(reboot_box)
+
+    assert result.returncode == 0, output(result)
+    assert any("install -y unattended-upgrades" in call for call in reboot_box.calls("apt-get"))
+    assert "systemctl enable --now unattended-upgrades.service" in reboot_box.calls("systemctl")
+
+
+def test_auto_reboot_rerun_changes_nothing(reboot_box: Harness) -> None:
+    """Invariant: a re-run on a configured box installs, writes and enables nothing."""
+    first = _run_auto_reboot(reboot_box)
+    assert first.returncode == 0, output(first)
+    mtime = _reboot_file(reboot_box).stat().st_mtime_ns
+    reboot_box.log.unlink()
+
+    again = _run_auto_reboot(reboot_box, STUB_UU_INSTALLED="1", STUB_UU_ENABLED="1")
+
+    assert again.returncode == 0, output(again)
+    assert _reboot_file(reboot_box).stat().st_mtime_ns == mtime
+    assert reboot_box.calls("apt-get") == []
+    assert not any(call.startswith("systemctl enable") for call in reboot_box.calls("systemctl"))
+
+
+def test_auto_reboot_rewrites_a_hand_edited_policy(reboot_box: Harness) -> None:
+    """A policy that drifted from the rendered one is replaced."""
+    _reboot_file(reboot_box).write_text('Unattended-Upgrade::Automatic-Reboot-Time "12:00";\n')
+
+    result = _run_auto_reboot(reboot_box, STUB_UU_INSTALLED="1", STUB_UU_ENABLED="1")
+
+    assert result.returncode == 0, output(result)
+    assert '"03:30"' in _reboot_file(reboot_box).read_text(encoding="utf-8")
+
+
+def test_auto_reboot_refuses_a_box_on_another_timezone(reboot_box: Harness) -> None:
+    """Invariant: 03:30 is only safe in Europe/Madrid; on UTC it would not be armed."""
+    result = _run_auto_reboot(reboot_box, STUB_TZ="Etc/UTC")
+
+    assert result.returncode != 0
+    assert "Etc/UTC" in output(result)
+    assert not _reboot_file(reboot_box).exists()
