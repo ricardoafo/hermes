@@ -211,6 +211,21 @@ Loading historical bars from Binance Vision, verified against docs\experiments\s
 
 The same loader feeds Phase 2, so the default window has 2040 4h and 340 1D bars including warm-up, all inside Train.
 
+### A-1.1 smoke after implementation (2026-10-04)
+
+The trial went to a scratch trial log, not `docs/experiments/swing-mvp1/trial-log.jsonl`, because it was a development smoke; whether it belongs in the official log is the Code Owner's call.
+
+```text
+$ HERMES_DATA_DIR=D:/hermes-data uv run python scripts/backtest/run_calibration_full.py \
+    --output <scratch>/p2.json --trial-log <scratch>/trial-log.jsonl
+Backtest window: 2024-01-01 -> 2024-03-31 (pair=BTCUSDT, swing-donchian-4h)
+  bars_4h=2040 bars_1d=340 datasets=2
+Replay: 12 signals, 12 fills, 0 rejections, declined={}
+Trial logged: <scratch>/trial-log.jsonl (split=train, daily_sharpe=0.016592551126277364)
+```
+
+Report: `m01_fill_count=12`, `m02 avg_bps=10.00000000` (p50 10, p95 15), `m04_rejection_rate=0`, final equity 5000.6676 USDT, no open position.
+
 ## Risks
 
 - **R1**: the synthetic book's depth model over- or under-states depth. At the pre-registered sizes the touch level of a BTC/ETH/SOL 4h bar is orders of magnitude larger than the order, so depth binds only on near-zero-volume bars. Mitigation: `--depth-frac` is recorded in the trial; shadow replaces the book with live L2.
