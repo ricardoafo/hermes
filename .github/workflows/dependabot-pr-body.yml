@@ -1,0 +1,81 @@
+# =====================================================================
+# Dependabot PR body — rewrite into the 4-section PR template
+# =====================================================================
+#
+# Dependabot bodies carry release notes but none of the Summary /
+# Related / Testing / Risk sections every human PR must fill. This
+# workflow renders those sections (with a loud MAJOR-bump warning in
+# Risk) and keeps the original body in a trailing "Dependabot notes"
+# section. See scripts/dev/rewrite-dependabot-body.py.
+#
+# ## Safety
+#
+# `pull_request_target` runs the BASE branch's workflow and script with a
+# write token. Nothing from the PR head is checked out or executed: the
+# only PR input is its title and body, passed through env vars and parsed
+# as text. The job is scoped to `dependabot[bot]` PRs.
+#
+# ## Idempotency
+#
+# The rendered body starts with a marker comment. On `edited` (including
+# the edit this workflow makes) the script sees the marker and exits 3,
+# so the body is rewritten once per Dependabot (re)generation.
+#
+# ## Non-goals
+#
+# - Does not touch human PRs and does not merge anything.
+# - The `pr-body` exemption for Dependabot in ci.yml stays until this
+#   has run cleanly for one full Dependabot cycle (#162 acceptance 4).
+
+name: Dependabot PR body
+
+on:
+  pull_request_target:
+    types: [opened, reopened, edited]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: dependabot-pr-body-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  rewrite:
+    name: Rewrite Dependabot body
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - uses: astral-sh/setup-uv@v7
+        with: { version: "0.12.5" }
+
+      - name: Render 4-section body
+        id: render
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set +e
+          uv run --no-project python scripts/dev/rewrite-dependabot-body.py --out "$RUNNER_TEMP/body.md"
+          rc=$?
+          set -e
+          if [ "$rc" -eq 3 ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          [ "$rc" -eq 0 ] || exit "$rc"
+          PR_BODY="$(cat "$RUNNER_TEMP/body.md")" bash scripts/dev/pr-body-lint.sh
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Update PR body
+        if: steps.render.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh pr edit "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/body.md"
