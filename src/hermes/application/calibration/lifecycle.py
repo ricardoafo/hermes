@@ -7,14 +7,12 @@ Implements the state machine defined in
 States:
 
 - ``UNTRUSTED`` — default; no evidence. Starting state for every new adapter.
-- ``BACKTEST_CERTIFIED`` — DSR > 0.7 on Train + Val windows (evidence: ≥1 fill
-  in calibration window).
-- ``SHADOW_CERTIFIED`` — 90+ days of shadow-mode with metrics matching backtest
-  within tolerance (operator-triggered).
-- ``OOS_CERTIFIED`` — H1 accepted on OOS window per §9 thresholds (operator-triggered).
-- ``LIVE_APPROVED`` — operator manual gate + risk overlay green (operator-triggered).
-- ``CERTIFIED`` — 90+ days of live-mode with metrics matching OOS within tolerance
-  (operator-triggered).
+- ``BACKTEST_CERTIFIED`` — every §9 row passes on Train + Val.
+- ``SHADOW_CERTIFIED`` — 90+ days of live shadow with sim-vs-live drift p50 < 30 bps.
+- ``OOS_CERTIFIED`` — H1 accepted on the OOS window per §9, one shot, not before
+  2027-01-01.
+- ``LIVE_APPROVED`` — OOS_CERTIFIED plus explicit operator sign-off.
+- ``CERTIFIED`` — 90+ days of live capital with no kill trigger fired.
 - ``DEAD`` — any kill-trigger fires → absorbing; requires new pre-reg v2.
 
 The ``advance`` method is a pure function: it does not hold mutable state,
@@ -29,9 +27,12 @@ from __future__ import annotations
 
 from decimal import Decimal
 from enum import StrEnum
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from hermes.application.calibration.harness import CalibrationReport
+
+if TYPE_CHECKING:
+    from hermes.application.calibration.certification_gates import GateReport
 
 __all__ = ["CertificationLifecycle", "CertificationState"]
 
@@ -70,16 +71,12 @@ class CertificationLifecycle:
     ``advance`` is the only public method. It is a pure function — stateless,
     no I/O. Callers are responsible for persisting the returned state.
 
-    The transition logic implements the pre-reg §7 discipline gate:
+    Every forward transition needs a passed
+    :class:`~hermes.application.calibration.certification_gates.GateReport` for
+    exactly that transition (pre-reg §7 entry criteria). In addition:
 
     - ``UNTRUSTED → BACKTEST_CERTIFIED``: requires at least one fill in the
       calibration report (``m01_fill_count >= 1``).
-    - ``BACKTEST_CERTIFIED → SHADOW_CERTIFIED``: operator-triggered; the report
-      must not signal a kill condition (``m04_rejection_rate < 1.0`` and
-      ``m05_orphan_position_count == 0``).
-    - ``SHADOW_CERTIFIED → OOS_CERTIFIED``: operator-triggered; same guard.
-    - ``OOS_CERTIFIED → LIVE_APPROVED``: operator manual gate; no automatic condition.
-    - ``LIVE_APPROVED → CERTIFIED``: operator-triggered; same guard.
     - Any state → ``DEAD``: when ``m05_orphan_position_count > 0`` (SA-4 P0 violation)
       or ``m04_rejection_rate >= 1.0`` (100% rejection — fill model broken).
     - ``DEAD → anything``: always returns an error — absorbing state.
@@ -101,6 +98,8 @@ class CertificationLifecycle:
         self,
         current_state: CertificationState,
         report: CalibrationReport,
+        *,
+        gate: GateReport,
     ) -> CertificationState | str:
         """Attempt to advance the certification state.
 
@@ -115,6 +114,7 @@ class CertificationLifecycle:
             current_state: The current certification state.
             report: The :class:`~hermes.application.calibration.harness.CalibrationReport`
                 produced by the calibration harness for the current data window.
+            gate: The evaluated gate for the transition out of ``current_state``.
 
         Returns:
             :class:`CertificationState` — the next state on a valid transition.
@@ -155,11 +155,10 @@ class CertificationLifecycle:
         next_state = self._FORWARD_ORDER[current_idx + 1]
 
         # State-specific preconditions.
-        precondition_error = self._check_precondition(current_state, next_state, report)
-        if precondition_error:
-            return precondition_error
-
-        return next_state
+        error = self._check_precondition(current_state, next_state, report) or self._check_gate(
+            current_state, next_state, gate
+        )
+        return error or next_state
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -218,10 +217,37 @@ class CertificationLifecycle:
                 f"m01_fill_count={report.m01_fill_count} — at least 1 fill required "
                 "to certify backtest evidence. Pre-reg §7."
             )
-        # All other transitions (operator-triggered) have no automatic precondition
-        # beyond the kill-condition checks already done. The operator is responsible
-        # for verifying the 90-day shadow/live windows and OOS H1 thresholds before
-        # triggering the transition.
+        return ""
+
+    @staticmethod
+    def _check_gate(
+        current_state: CertificationState,
+        next_state: CertificationState,
+        gate: GateReport,
+    ) -> str:
+        """Return an error string unless ``gate`` passed for this exact transition.
+
+        Args:
+            current_state: State we are transitioning FROM.
+            next_state: State we are transitioning TO.
+            gate: The evaluated gate report.
+
+        Returns:
+            Non-empty error string when the gate does not authorise the move.
+        """
+        if gate.from_state != current_state or gate.to_state != next_state:
+            return (
+                f"CertificationLifecycle: gate report is for {gate.from_state} → "
+                f"{gate.to_state}, not {current_state} → {next_state}. Pre-reg §7."
+            )
+        if gate.refused_reason:
+            return f"CertificationLifecycle: gate refused: {gate.refused_reason}"
+        if not gate.passed:
+            return (
+                f"CertificationLifecycle: cannot advance {current_state} → {next_state}; "
+                f"failed checks: {', '.join(gate.failed_checks) or 'none evaluated'}. "
+                "Pre-reg §7."
+            )
         return ""
 
     def force_dead(
