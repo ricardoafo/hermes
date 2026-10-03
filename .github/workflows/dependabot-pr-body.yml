@@ -24,8 +24,13 @@
 # ## Non-goals
 #
 # - Does not touch human PRs and does not merge anything.
-# - The `pr-body` exemption for Dependabot in ci.yml stays until this
-#   has run cleanly for one full Dependabot cycle (#162 acceptance 4).
+#
+# ## Interaction with the PR body check
+#
+# Dependabot PRs gate on ci.yml's `PR body` job like any other PR (#162).
+# This edit uses GITHUB_TOKEN, which fires no `edited` event; if CI linted
+# the original body first, pr-body-recheck.yml re-runs that job when the
+# CI run completes (#350).
 
 name: Dependabot PR body
 
