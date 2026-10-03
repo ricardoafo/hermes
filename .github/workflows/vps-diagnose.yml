@@ -268,8 +268,28 @@ jobs:
                     _ "$hermes_bin" "$integration" 2>&1 | tail -15
                   echo ""
               done
+              # One plain line on whether prod errors reach Sentry (#381). The
+              # probe only parses the DSN; it sends no event. Exit 3 is its
+              # NOT_CONFIGURED code (empty HERMES_SENTRY__DSN).
+              $as_root bash -c 'set -a; . /etc/hermes/env.production; set +a; cd /var/lib/hermes && exec runuser -u hermes -- "$1" health sentry' \
+                _ "$hermes_bin" > /dev/null 2>&1
+              case $? in
+                  0) echo "Sentry: CONFIGURED (DSN parses; prod errors are reported)" ;;
+                  3) echo "Sentry: NOT_CONFIGURED (HERMES_SENTRY__DSN is empty in /etc/hermes/env.production; errors reach the journal only)" ;;
+                  *) echo "Sentry: FAIL (the DSN does not parse; see the sentry probe above)" ;;
+              esac
+              echo ""
           else
               echo "$hermes_bin missing: no release installed"
+          fi
+          # The verdict and per-stream table every console surface shares
+          # (#370); read-only. Releases older than #370 print an unknown
+          # command error here, and the raw ledger query below still runs.
+          echo "-- hermes status --"
+          if [ -x "$hermes_bin" ]; then
+              $as_root bash -c 'set -a; . /etc/hermes/env.production; set +a; cd /var/lib/hermes && COLUMNS=120 exec runuser -u hermes -- "$1" status --config-dir /opt/hermes/current/config --db /var/lib/hermes/hermes.sqlite3' \
+                _ "$hermes_bin" 2>&1 | head -40
+              echo ""
           fi
           # Newest BarProcessed per stream, read-only: confirms the loop
           # handled the latest closed bars (4h bars close 00/04/08/12/16/20 UTC).

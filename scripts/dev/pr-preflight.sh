@@ -12,9 +12,8 @@
 #   HERMES_SELF_TEST=1 bash scripts/dev/pr-preflight.sh       # sanity check
 #
 # Wired to git-push via `.pre-commit-config.yaml` `stages: [pre-push]` hook,
-# which passes --pre-push: a stale base fails in seconds, and the slow checks
-# CI runs on every head anyway (pytest + coverage, pip-audit, radon, vulture)
-# are skipped (#416). Run without --pre-push for the full suite.
+# which passes --pre-push: the slow checks CI runs on every head anyway
+# (pytest + coverage, pip-audit, radon, vulture) are skipped (#416). Run without --pre-push for the full suite.
 # One-time install:
 #   pre-commit install --hook-type pre-push
 #
@@ -215,20 +214,10 @@ check_pr_title_semantic() {
 }
 run_check "PR title semantic (conventional-commit + lowercase)" check_pr_title_semantic
 
-# 1. Branch is up-to-date with origin/main (rebase check)
-check_base_current() {
-    git fetch origin main --quiet || return 1
-    git merge-base --is-ancestor origin/main HEAD
-}
-run_check "Base up-to-date with origin/main" check_base_current
-# Fail fast: every later check would run against a base the push will be
-# refused for anyway (#416).
-if [[ ${#FAILED[@]} -gt 0 && " ${FAILED[*]} " == *" Base up-to-date with origin/main "* ]]; then
-    echo ""
-    echo "✗ Branch is behind origin/main — stopping before the remaining checks."
-    echo "  Rebase first:  git fetch origin main && git rebase origin/main"
-    exit 1
-fi
+# Refresh origin/main for the diff-based checks below (changelog, openspec).
+# No "base up-to-date" gate: the merge queue owns branch freshness, so a
+# stale base no longer blocks a push (#416).
+git fetch origin main --quiet || true
 
 # 2. Ruff format on FULL tree (CI runs `ruff format --check .`)
 run_check "ruff format --check ."     uv run ruff format --check .
@@ -320,7 +309,7 @@ check_changelog_if_applicable() {
     fi
 
     # Base SHA for the diff — origin/main HEAD as of last fetch.
-    # (base-current check already ran + refreshed origin/main.)
+    # (origin/main was refreshed above.)
     local base_sha head_sha
     base_sha=$(git rev-parse origin/main 2>/dev/null)
     head_sha=$(git rev-parse HEAD)

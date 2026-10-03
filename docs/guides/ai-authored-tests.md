@@ -170,7 +170,7 @@ test tier is expected to move. It answers: "when should I be writing which tier 
 | SDD verify | **RUN** — must pass locally before commit | **RUN if written** | Skip |
 | SDD archive | — (tests already committed) | — | — |
 | PR open | Must pass in CI (blocks merge) | Must pass in CI if written | — |
-| Merge to main | Weekly cosmic-ray run (`mutation.yml`, Sundays 03:00 UTC) | On-merge run in `unit` job | Nightly / manual dispatch (`e2e.yml`) |
+| Merge to main | Weekly cosmic-ray run (`scheduled.yml`, Sundays 11:45 UTC) | On-merge run in `unit` job | Nightly / manual dispatch (`e2e.yml`) |
 | Deploy | Smoke (`@pytest.mark.smoke`) fires post-deploy | — | Manual e2e against prod-mirror testnet |
 | Post-incident | Add regression unit test (every incident produces a test) | Add integration test if the incident crossed a port | Add e2e if the incident was cross-service |
 
@@ -204,7 +204,7 @@ tests it), and per-package coverage (every path exercised) is the interim substi
 
 - **pytest** — test runner. Fixtures are code — review them like production code.
 - **hypothesis** — property-based testing. Use for pure functions with data inputs (FIFO, tax calculations, price aggregation).
-- **cosmic-ray** — mutation testing. Runs weekly (`.github/workflows/mutation.yml`); kill rate is the real correctness gate. See `docs/decisions/2026-08-22-mutation-testing-cosmic-ray.md` for the tool choice + spike evidence.
+- **cosmic-ray** — mutation testing. Runs weekly (Sunday leg of `.github/workflows/scheduled.yml`); kill rate is the real correctness gate. See `docs/decisions/2026-08-22-mutation-testing-cosmic-ray.md` for the tool choice + spike evidence.
 - **coverage.py** with `--branch` — coverage floor as sanity check, not a goal.
 - **pytest-cov** — reporting in CI.
 - **pytest-xdist** — parallel execution (mutation runs are compute-heavy).

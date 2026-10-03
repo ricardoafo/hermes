@@ -65,7 +65,7 @@ Rules:
 
 ## Weekly tier
 
-Runs via **weekly cron** (`.github/workflows/mutation.yml` — follow-up PR).
+Runs via **weekly cron** (the Sunday leg of `.github/workflows/scheduled.yml`).
 
 Markers included: `mutation`, `e2e`
 

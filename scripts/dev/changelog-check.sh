@@ -140,7 +140,7 @@ case "$decision" in
             fi
         fi
         echo "::error::PR requires a changelog.d/*.md fragment for feat/fix/refactor/perf scopes."
-        echo "Add changelog.d/wave-<change-name>.md (or <pr-number>-<type>.md — see changelog.d/README.md)."
+        echo "Add changelog.d/<issue-number>-<type>.md (or +<slug>.<type>.md — see changelog.d/README.md)."
         echo "Fragments avoid merge conflicts on CHANGELOG.md when parallel PRs land."
         echo "Bypass (with cause): ALLOW_CHANGELOG_MD_EDIT=1 restores OR-semantics."
         echo "Infra-only scopes (ci, build, deps, tooling) skip this check entirely."
