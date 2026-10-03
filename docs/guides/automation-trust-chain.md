@@ -46,10 +46,21 @@ minutes of latency and cognitive load.
 ### 1. `merge-queue.yml` — revalidate-then-merge (PR #209)
 
 **Design**: the queue selects APPROVED candidates, checks out `main` at
-a resolved SHA, fetches the PR head at the approved SHA, builds the
-merge locally with `git merge --no-commit --no-ff`, runs gates against
-that tree, and only then calls `pulls.merge`. **No push to the PR
-branch, ever** — the approval survives.
+a resolved SHA, fetches each PR head at the approved SHA, builds the
+merge locally with `git merge --no-ff`, runs gates against that tree,
+and only then calls `pulls.merge`. **No push to the PR branch, ever** —
+the approval survives.
+
+**One batch per pass**: every candidate is merged into ONE tree, oldest
+approval first, and the gates (`scripts/dev/merge-gates.sh`) run once on
+it. A green batch lands back to back, each squash pinned to its approved
+head, and the queue stops if `main` moves between two squashes. A red
+batch is bisected: halves are gated on top of the PRs already proven
+good until each PR is good or bad. Bad PRs get one comment naming the
+failing gate and stay open; a head that moved or conflicts with the
+earlier batch PRs waits for the next pass. A batch of one PR whose head
+already contains `main` and passed CI skips the gates, as before. Both
+jobs prefer the `OPS_RUNNER_LABEL` runner and fall back to the CI pool.
 
 **Behind branches merge as they are (#413)**: the ruleset does not
 require up-to-date branches, so the queue merges an approved head that
@@ -60,7 +71,10 @@ The queue never pushes to a PR branch.
 
 **Decisions module**: `tools/merge/decisions.cjs` — pure functions
 covered by `tools/merge/decisions.test.cjs`. `isCandidate`,
-`shouldMerge`, `gateSkip`, `ciRestart`. YAML holds only the I/O.
+`orderCandidates`, `shouldMerge`, `gateSkip`, `bisectNext`,
+`bisectRecord`, `ciRestart` and the rest. The build-and-bisect loop is
+`tools/merge/batch.cjs`, tested against a fake repository. YAML holds
+only the I/O.
 
 ### 2. `auto-update-pr-branches.yml` — removed (#413)
 

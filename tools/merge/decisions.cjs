@@ -118,8 +118,8 @@ function isCandidate({ pr, reviews }) {
 /**
  * Immediately before merging: is what we tested still what would land?
  *
- * The gates take minutes. In that window the sibling PR in the same
- * matrix may have merged (moving `main`), the author may have pushed
+ * The gates take minutes. In that window someone else may have merged
+ * (moving `main`), the author may have pushed
  * (moving the head), or the reviewer may have dismissed their approval.
  * "It was true when we started" is not consent, and it is not a
  * validation of the tree that would actually land.
@@ -216,12 +216,12 @@ function gateSkip(input) {
  *
  * ## When it is safe to skip the ci.yml restart
  *
- * The queue merges only when the approved head already contains the
- * main tip (fast-forward), so squashing produces a tree IDENTICAL to
- * the head tree CI already validated. Comparing TREES (not SHAs) is
- * what makes the proof honest — a squash always produces a new commit
- * with a new SHA, but the same input trees produce the same output
- * tree by definition.
+ * The queue knows the tree it validated: the batch tree its gates ran
+ * on, or, on the fast path, the head tree CI ran on. When the squash
+ * merges reproduce that tree exactly, `main` holds nothing unvalidated.
+ * Comparing TREES (not SHAs) is what makes the proof honest — a squash
+ * always produces a new commit with a new SHA, but the same input trees
+ * produce the same output tree by definition.
  *
  * ## Fail direction
  *
@@ -230,9 +230,8 @@ function gateSkip(input) {
  * needless run is a few minutes on a self-hosted runner; the cost of
  * skipping a real difference is `main` HEAD nobody validated.
  *
- * The revalidate workflow's OWN restart is a separate decision (see
- * merge-queue.yml) — it always fires, because it continues the queue
- * rather than re-proving a tree.
+ * The merge queue's OWN restart is a separate decision (`afterMerge`):
+ * it continues the queue rather than re-proving a tree.
  *
  * @param {{ mergedTree: string|null, validatedTree: string|null }} input
  * @returns {{ restart: boolean, reason: string }}
@@ -257,11 +256,328 @@ function ciRestart(input) {
   };
 }
 
+/**
+ * When did this pull request receive its most recent approval?
+ *
+ * The queue lands PRs in the order they were approved, so a re-approval
+ * after new commits moves the PR to the back: the reviewer's latest
+ * consent is what the queue honours, not the first one.
+ *
+ * @param {Array<Review & { submitted_at?: string|null }>} reviews
+ * @returns {string|null} ISO timestamp, or null when nothing is approved
+ */
+function approvedAt(reviews) {
+  let latest = null;
+  for (const r of reviews) {
+    if (r.state !== 'APPROVED' || !r.submitted_at) {
+      continue;
+    }
+    if (latest === null || Date.parse(r.submitted_at) > Date.parse(latest)) {
+      latest = r.submitted_at;
+    }
+  }
+  return latest;
+}
+
+/**
+ * The order a batch is built and merged in: oldest approval first, PR
+ * number as the tie-break.
+ *
+ * Deterministic on purpose. The batch tree is `main` plus each PR merged
+ * in this order, and the squash merges replay the same order, so two
+ * passes over the same candidates must agree on it. A candidate with no
+ * approval time sorts last rather than first: "unknown" must not jump
+ * the queue.
+ *
+ * @template {{ n: number, approvedAt: string|null }} C
+ * @param {C[]} candidates
+ * @returns {C[]} a sorted copy; the input is not modified
+ */
+function orderCandidates(candidates) {
+  const at = (c) => (c.approvedAt ? Date.parse(c.approvedAt) : Number.POSITIVE_INFINITY);
+  return [...candidates].sort((a, b) => {
+    const ta = at(a);
+    const tb = at(b);
+    if (ta !== tb) {
+      return ta < tb ? -1 : 1;
+    }
+    return a.n - b.n;
+  });
+}
+
+/**
+ * Reason recorded when a PR cannot be merged into the batch being built.
+ *
+ * The PR may merge cleanly into `main` alone; it is the combination with
+ * PRs approved before it that conflicts. It is dropped from this pass and
+ * reconsidered by the next one, on the new `main`.
+ */
+const BATCH_CONFLICT_REASON = 'conflicts with main + earlier batch PRs';
+
+/**
+ * May the head fetched for this PR join the batch?
+ *
+ * The batch must contain the commit that was APPROVED. A head that moved
+ * between Select and the build is a commit nobody reviewed.
+ *
+ * @param {{ approvedHead: string, fetchedHead: string|null }} input
+ * @returns {{ admit: boolean, reason: string }}
+ */
+function admitHead(input) {
+  if (!input.fetchedHead) {
+    return { admit: false, reason: 'could not fetch the PR head' };
+  }
+  if (input.fetchedHead !== input.approvedHead) {
+    return { admit: false, reason: 'head moved' };
+  }
+  return { admit: true, reason: `head ${input.approvedHead.slice(0, 7)} is the approved one` };
+}
+
+/**
+ * May a whole batch skip the gates?
+ *
+ * Only a batch of exactly one PR can: that is the single-PR case
+ * `gateSkip` was written for, where the tree that lands may be the very
+ * tree CI validated on the head. Two or more PRs merged together make a
+ * tree no CI run has ever seen, whatever each head's own CI said.
+ *
+ * @param {{ size: number, mainIsAncestor: boolean, ciConclusion: string|null }} input
+ * @returns {{ skip: boolean, reason: string }}
+ */
+function batchGateSkip(input) {
+  if (input.size !== 1) {
+    return {
+      skip: false,
+      reason: `batch of ${input.size} — the combined tree is new`,
+    };
+  }
+  return gateSkip(input);
+}
+
+/**
+ * @typedef {{
+ *   order: number[],
+ *   good: number[],
+ *   bad: Array<{ n: number, gate: string }>,
+ *   pending: number[][],
+ *   red: Record<string, string>,
+ * }} BisectState
+ */
+
+/**
+ * Start isolating the PRs that turn a batch red.
+ *
+ * `pending` is a STACK whose top is the last element. It starts with
+ * the whole batch, so a green batch costs exactly one gate run and
+ * bisect only pays when something is actually wrong.
+ *
+ * @param {number[]} order - PR numbers in merge order
+ * @returns {BisectState}
+ */
+function bisectInit(order) {
+  return {
+    order: [...order],
+    good: [],
+    bad: [],
+    pending: order.length ? [[...order]] : [],
+    red: {},
+  };
+}
+
+/**
+ * Keep `ns` in merge order, whatever order they were collected in.
+ *
+ * @param {number[]} order
+ * @param {number[]} ns
+ * @returns {number[]}
+ */
+function inMergeOrder(order, ns) {
+  const wanted = new Set(ns);
+  return order.filter((n) => wanted.has(n));
+}
+
+/**
+ * What to gate next.
+ *
+ * The tree to build is `main` + every PR already proven good + the set
+ * under test, in merge order. Proven-good PRs stay in the tree because
+ * they are going to land: a set that is only green WITHOUT them would be
+ * red once merged after them.
+ *
+ * `known` is set when that exact tree was already gated red. It happens
+ * every time a first half comes back green: the second half on top of it
+ * rebuilds the tree that just failed. Re-running the gates there would
+ * spend minutes proving a known fact, so the caller records `known`
+ * instead of gating.
+ *
+ * @param {BisectState} state
+ * @returns {{ done: true, reason: string }
+ *         | { done: false, set: number[], tree: number[], reason: string,
+ *             known: { passed: false, gate: string } | null }}
+ */
+function bisectNext(state) {
+  if (state.pending.length === 0) {
+    return {
+      done: true,
+      reason: `${state.good.length} good, ${state.bad.length} bad`,
+    };
+  }
+  const set = state.pending[state.pending.length - 1];
+  const tree = inMergeOrder(state.order, [...state.good, ...set]);
+  const gate = state.red[tree.join(',')];
+  return {
+    done: false,
+    set: [...set],
+    tree,
+    reason: gate === undefined
+      ? `gating ${set.length} PR(s) on top of ${state.good.length} proven good`
+      : `${set.length} PR(s) on top of ${state.good.length} proven good — this tree already failed`,
+    known: gate === undefined ? null : { passed: false, gate },
+  };
+}
+
+/**
+ * Record the gate verdict for the set `bisectNext` returned.
+ *
+ *   green            — the whole set is good
+ *   red, one PR      — that PR is bad; the failing gate is kept so the
+ *                      author is told what to fix
+ *   red, several PRs — split in two; the FIRST half is gated first, so
+ *                      every PR before a set is settled by the time the
+ *                      set is tested, and the tree under test is always
+ *                      what would land if the set were the last good one
+ *
+ * @param {BisectState} state
+ * @param {{ passed: boolean, gate: string|null }} verdict
+ * @returns {BisectState} a new state; the input is not modified
+ */
+function bisectRecord(state, verdict) {
+  const set = state.pending[state.pending.length - 1];
+  if (!set) {
+    throw new Error('bisectRecord called with nothing pending');
+  }
+  const pending = state.pending.slice(0, -1);
+  if (verdict.passed) {
+    return {
+      ...state,
+      pending,
+      good: inMergeOrder(state.order, [...state.good, ...set]),
+    };
+  }
+  const gate = verdict.gate || 'unknown gate';
+  const tree = inMergeOrder(state.order, [...state.good, ...set]).join(',');
+  const red = { ...state.red, [tree]: gate };
+  if (set.length === 1) {
+    return {
+      ...state,
+      pending,
+      red,
+      bad: [...state.bad, { n: set[0], gate }],
+    };
+  }
+  const mid = Math.ceil(set.length / 2);
+  return {
+    ...state,
+    pending: [...pending, set.slice(mid), set.slice(0, mid)],
+    red,
+  };
+}
+
+/**
+ * Should the merge pass hand-start another one when it is done?
+ *
+ * A pass that merged something, or stopped early because the world
+ * moved, leaves work the next pass can do on the new `main`. A pass that
+ * merged nothing would only rebuild the same batch, fail the same gates
+ * and dispatch itself again, forever. Those wait for a real trigger: a
+ * push, an approval, a CI completion or the hourly cron.
+ *
+ * @param {{ dryRun: boolean, merged: number, stoppedEarly: boolean }} input
+ * @returns {{ redispatch: boolean, reason: string }}
+ */
+function afterMerge(input) {
+  if (input.dryRun) {
+    return { redispatch: false, reason: 'dry run — nothing changed, nothing to continue' };
+  }
+  if (input.stoppedEarly) {
+    return {
+      redispatch: true,
+      reason: 'stopped before the batch was done — rebuild on the new main',
+    };
+  }
+  if (input.merged > 0) {
+    return {
+      redispatch: true,
+      reason: `merged ${input.merged} — pick up newly approved PRs`,
+    };
+  }
+  return {
+    redispatch: false,
+    reason: 'merged nothing — a re-run would repeat this pass',
+  };
+}
+
+/**
+ * Hidden marker that ties a "gates failed" comment to one head.
+ *
+ * Keyed on the head, not the PR: a new push is a new candidate and
+ * deserves a fresh verdict, while re-running the same head must not
+ * repost the same comment every pass.
+ *
+ * @param {string} head
+ * @returns {string}
+ */
+function badMarker(head) {
+  return `<!-- merge-queue-bad:${head} -->`;
+}
+
+/**
+ * The comment left on a PR the batch proved red.
+ *
+ * @param {{ n: number, head: string, gate: string, base: string }} input
+ * @returns {{ body: string, marker: string }}
+ */
+function badComment(input) {
+  const marker = badMarker(input.head);
+  const body = [
+    marker,
+    `The merge queue did not merge #${input.n}: the \`${input.gate}\` gate failed on`,
+    `\`main\` ${input.base.slice(0, 7)} + the batch PRs approved before it + head ${input.head.slice(0, 7)}.`,
+    '',
+    'The PR stays open and approved, and the queue retries it on its next pass.',
+    'Push a fix if the failure is real.',
+  ].join('\n');
+  return { body, marker };
+}
+
+/**
+ * Has this head already been told its gates failed?
+ *
+ * @param {Array<{ body?: string|null }>} comments
+ * @param {string} head
+ * @returns {boolean}
+ */
+function hasBadComment(comments, head) {
+  const marker = badMarker(head);
+  return comments.some((c) => (c.body || '').includes(marker));
+}
+
 module.exports = {
   MERGEABLE_STATES,
+  BATCH_CONFLICT_REASON,
   isApproved,
   isCandidate,
   shouldMerge,
   gateSkip,
   ciRestart,
+  approvedAt,
+  orderCandidates,
+  admitHead,
+  batchGateSkip,
+  bisectInit,
+  bisectNext,
+  bisectRecord,
+  afterMerge,
+  badComment,
+  hasBadComment,
 };
