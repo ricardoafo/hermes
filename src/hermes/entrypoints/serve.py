@@ -579,6 +579,19 @@ class _BarLoop:
                         kind=event.kind.value,
                         occurred_at=event.occurred_at.isoformat(),
                     )
+        # Data only (#421): the archive check and the parity replay read these
+        # values back; nothing in the strategy does. Stored before BarProcessed
+        # so a processed bar always has its values on record.
+        stored = c.ledger.record_live_bar(bar)
+        if stored is not None:
+            _log.warning(
+                "serve.live_bar.differs_from_stored",
+                pair=str(bar.pair),
+                interval=bar.interval.value,
+                open_time=bar.open_time.isoformat(),
+                stored_close=str(stored.close),
+                received_close=str(bar.close),
+            )
         c.event_bus.publish(BarProcessed.from_bar(bar, correlation_id=correlation_id))
         self.previous[stream] = bar.open_time
         # The ledger row alone leaves the journal silent between signals, so

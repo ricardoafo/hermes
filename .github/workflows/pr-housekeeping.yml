@@ -1,0 +1,131 @@
+# =====================================================================
+# PR housekeeping — keep PR bodies in template shape and CI fresh
+# =====================================================================
+#
+# Two jobs that both react to a PR body changing outside git:
+#
+# 1. `rewrite` — Dependabot bodies carry release notes but none of the
+#    Summary / Related / Testing / Risk sections every human PR must
+#    fill. It renders those sections (with a loud MAJOR-bump warning in
+#    Risk) and keeps the original body in a trailing "Dependabot notes"
+#    section. See scripts/dev/rewrite-dependabot-body.py.
+# 2. `recheck` — editing a PR body pushes nothing, so the `CI` workflow
+#    does not run again and its "PR body" result goes stale (#350).
+#    scripts/dev/pr-body-recheck.sh re-lints the current body and, when
+#    the verdict differs from the "PR body" step of the head commit's CI
+#    run, re-runs that run's "CI success" job, the one required check.
+#
+# ## Triggers
+#
+# - `pull_request_target: opened/reopened` — a Dependabot PR appears;
+#   `rewrite` renders its body.
+# - `pull_request_target: edited` — a person edits the body (title-only
+#   edits are ignored), or Dependabot regenerates its own.
+# - `workflow_run: CI completed` — the body changed while CI was still
+#   running (a job can only be re-run once its run completes), or a bot
+#   edited it with GITHUB_TOKEN, which fires no `edited` event. The
+#   `rewrite` job's own edit is one of those; `recheck` also runs right
+#   after it in the same workflow run.
+#
+# ## Idempotency
+#
+# The rendered Dependabot body starts with a marker comment. When the
+# script sees the marker it exits 3, so a body is rewritten once per
+# Dependabot (re)generation.
+#
+# ## Safety
+#
+# Both triggers run the BASE branch's workflow and scripts. Nothing from
+# the PR head is checked out or executed; the title and body are passed
+# through env vars or fetched from the API and parsed as text. Only
+# `rewrite` gets a write token, and only on `dependabot[bot]` PRs. It
+# never touches human PRs and nothing here merges anything.
+
+name: PR housekeeping
+
+on:
+  pull_request_target:
+    types: [opened, reopened, edited]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-housekeeping-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  rewrite:
+    name: Rewrite Dependabot body
+    if: >-
+      github.event_name == 'pull_request_target' &&
+      github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      changed: ${{ steps.render.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - uses: astral-sh/setup-uv@v7
+        with: { version: "0.12.5" }
+
+      - name: Render 4-section body
+        id: render
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set +e
+          uv run --no-project python scripts/dev/rewrite-dependabot-body.py --out "$RUNNER_TEMP/body.md"
+          rc=$?
+          set -e
+          if [ "$rc" -eq 3 ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          [ "$rc" -eq 0 ] || exit "$rc"
+          PR_BODY="$(cat "$RUNNER_TEMP/body.md")" bash scripts/dev/pr-body-lint.sh
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Update PR body
+        if: steps.render.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh pr edit "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/body.md"
+
+  recheck:
+    name: Recheck PR body
+    needs: rewrite
+    if: >-
+      !cancelled() && (
+        (github.event_name == 'pull_request_target' &&
+         (github.event.changes.body != null || needs.rewrite.outputs.changed == 'true')) ||
+        (github.event_name == 'workflow_run' &&
+         github.event.workflow_run.event == 'pull_request' &&
+         github.event.workflow_run.pull_requests[0] != null))
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Recheck and re-run PR body job if stale
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number }}
+        run: bash scripts/dev/pr-body-recheck.sh

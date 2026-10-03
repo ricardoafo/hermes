@@ -14,7 +14,7 @@
 ##   - cosmic-ray uses `parso` for AST manipulation (pure Python,
 ##     3.14-native), installs cleanly from PyPI wheels.
 ##
-## Cadence (see `.github/workflows/mutation.yml`):
+## Cadence (see `.github/workflows/scheduled.yml`, Sunday leg):
 ##   - Weekly cron (Sundays 03:00 UTC).
 ##   - Advisory for 2 weeks (2026-08-22 → 2026-09-05): kill-rate
 ##     reported but never fails the workflow.

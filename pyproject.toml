@@ -80,7 +80,7 @@ dev = [
   # Mutation testing — parso-backed (Python 3.14 native). See
   # docs/decisions/2026-08-22-mutation-testing-cosmic-ray.md for the
   # tool-choice rationale + spike evidence. Weekly workflow at
-  # .github/workflows/mutation.yml.
+  # .github/workflows/scheduled.yml (Sunday leg).
   "cosmic-ray>=8.7,<9",
 ]
 
@@ -240,7 +240,7 @@ exclude = ["src/hermes/ports/"]
 # Mutation testing — targets domain layer only (pure logic, no I/O, fastest to
 # exercise). Adapter and application layers are covered by integration tests
 # where mutation scoring is less meaningful. Kill-rate target ≥ 85 % per SA-10.
-# CI wire-up: .github/workflows/mutation.yml (weekly cron — follow-up PR).
+# CI wire-up: .github/workflows/scheduled.yml (Sunday leg).
 # Run locally: uv run cosmic-ray init cosmic-ray.toml session.sqlite &&
 #              uv run cosmic-ray exec session.sqlite &&
 #              uv run cr-report session.sqlite

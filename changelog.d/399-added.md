@@ -1,0 +1,1 @@
+- `hermes status`: a read-only progress check that leads with the shared verdict (all good, late, down) and its next step, then each stream's last and next close in UTC and Madrid time, signal counts and open shadow entries; `--json` for scripts. vps-diagnose now runs it (#370).

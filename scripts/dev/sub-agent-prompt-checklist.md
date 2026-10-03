@@ -66,7 +66,7 @@ rules to make your work salvageable:
    Hand-authored bodies routinely miss one section and fail CI
    (verified across Batch 1/2 delegation).
 
-7. **`changelog.d/wave-<change>.md` fragment is an acceptance criterion,
+7. **`changelog.d/<issue>-<type>.md` fragment is an acceptance criterion,
    not a follow-up.** The fragment ships in the same PR as the change.
    The `changelog-check.sh` gate rejects `feat/fix/refactor/perf`
    without a fragment (per sdd-process-hardening D-3). Bypass with
