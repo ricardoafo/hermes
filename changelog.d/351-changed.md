@@ -1,0 +1,1 @@
+- The `PR body` check now re-runs when a PR body is edited, without re-running the rest of CI, and Dependabot PRs are no longer exempt from it (#350, #162).
