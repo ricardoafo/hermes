@@ -14,6 +14,17 @@ migration.
 
 Each migration runs in one transaction: if any statement fails, none of it stays and it is not recorded.
 
+## Naming a new migration
+
+Name a new file after its UTC creation time: `YYYYMMDDTHHMM_<lowercase_slug>.sql`, for example
+`20261004T0930_trades_add_venue.sql`. Two PRs written in parallel then cannot take the same number. The numbered
+files `0001` to `0006` stay as they are, and the runner still orders by name, so they sort before every timestamp
+file and existing ledgers apply new migrations last.
+
+Don't write `BEGIN`, `COMMIT`, `END`, `ROLLBACK`, `SAVEPOINT` or `RELEASE` statements. The runner wraps each
+migration in one transaction, and a statement that ends it early could leave the ledger half-migrated. Trigger bodies
+are fine. `scripts/dev/migration-sql-check.py` enforces both rules in pre-commit and in the unit tests.
+
 ## Two kinds of migration
 
 | Kind | First line of the file | When it runs |

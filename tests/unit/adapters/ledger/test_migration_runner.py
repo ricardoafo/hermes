@@ -111,3 +111,20 @@ class TestMigrationsDirLocation:
     def test_migrations_dir_contains_initial_schema(self) -> None:
         """The shipped migrations dir includes 0001_initial_schema.sql."""
         assert (MIGRATIONS_DIR / "0001_initial_schema.sql").exists()
+
+
+class TestTimestampNamedMigrations:
+    """Timestamp-named migrations (#483) apply after the legacy numbered ones."""
+
+    def test_existing_ledger_applies_a_timestamp_migration_next(self, tmp_path: Path) -> None:
+        """A ledger migrated through every shipped file picks up a timestamp file, no renames."""
+        for shipped in sorted(MIGRATIONS_DIR.glob("*.sql")):
+            (tmp_path / shipped.name).write_bytes(shipped.read_bytes())
+        conn = sqlite3.connect(":memory:")
+        try:
+            apply_migrations(conn, migrations_dir=tmp_path)
+            (tmp_path / "20261004T0930_extra.sql").write_text("CREATE TABLE extra (id INTEGER);")
+            applied = apply_migrations(conn, migrations_dir=tmp_path)
+        finally:
+            conn.close()
+        assert applied == ("20261004T0930_extra.sql",)
