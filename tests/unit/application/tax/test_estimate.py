@@ -147,6 +147,12 @@ def test_selling_a_lot_bought_while_pending_makes_the_year_pending() -> None:
     )
 
 
+def test_sell_beyond_open_lots_is_pending_not_a_crash() -> None:
+    """An inconsistent ledger (a SELL with no lot) yields a pending notice."""
+    rows = _Rows().sell(_at(3, 5), "200").rows
+    assert _estimate(rows) == TaxPending(label="tax pending: ledger replay failed for BTC")
+
+
 def test_pending_trades_of_other_years_do_not_block_the_year() -> None:
     """A pending 2027 buy leaves the 2026 estimate intact."""
     rows = _Rows().buy(_at(1, 5), "0").sell(_at(3, 5), "1000").buy(_at(1, 5, 2027), None).rows
