@@ -1,8 +1,9 @@
 # CODEOWNERS — hermes
 #
 # Every path is owned by @ricardoafo. GitHub auto-requests his review on every
-# pull request. Combined with branch protection "Require review from Code
-# Owners", this makes his approval a hard blocker on all merges into `main`.
+# pull request. Combined with the `main-protection` ruleset's "Require review
+# from Code Owners", this makes his approval a hard blocker on all merges
+# into `main`.
 #
 # Do NOT add other owners without opening a PR to update this file — the whole
 # point of CODEOWNERS here is to make Ricardo the sole approver.

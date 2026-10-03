@@ -180,12 +180,12 @@ jobs:
       any: ${{ steps.pick.outputs.any }}
       main: ${{ steps.pick.outputs.main }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           sparse-checkout: tools/merge
           sparse-checkout-cone-mode: false
 
-      - uses: actions/github-script@v9
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         id: pick
         env:
           # Set the repo variable to `true` once the hermes-automation
@@ -349,7 +349,7 @@ jobs:
       statuses: write        # so main carries a status even on skip
       issues: write          # so `Closes #N` in the body can act on issues
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           # The EXACT `main` the select job resolved, by SHA — not the
           # branch name. If `main` moves while this runs, we still
@@ -377,14 +377,14 @@ jobs:
 
       # The gates need uv; installing it is seconds, and deciding
       # whether a pass will need it would mean knowing the batch first.
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with: { version: "0.12.5" }
 
       # ─────────────────────────────────────────────────────────────
       # BUILD + GATE — the assertion the design rests on
       # ─────────────────────────────────────────────────────────────
       - name: Build and gate the batch
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
           MAIN_TIP: ${{ needs.select.outputs.main }}
           PRS: ${{ needs.select.outputs.prs }}
@@ -468,13 +468,13 @@ jobs:
       - name: Mint App token
         id: app-token
         if: vars.HERMES_AUTOMATION_APP_ID != ''
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
         with:
           app-id: ${{ vars.HERMES_AUTOMATION_APP_ID }}
           private-key: ${{ secrets.HERMES_AUTOMATION_APP_KEY }}
 
       - name: Merge
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
           # Only ever true on manual dispatch — every automatic trigger
           # leaves this empty, so the real path cannot be disabled by
