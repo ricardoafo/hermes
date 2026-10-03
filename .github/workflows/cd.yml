@@ -184,7 +184,8 @@ jobs:
         with:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
           hostname: gh-actions-cd-${{ github.run_id }}
-          version: latest
+          # Pinned: `latest` downloads whatever shipped that day.
+          version: 1.102.4
           tailscaled-args: --tun=userspace-networking
 
       - name: Prepare SSH keyfile + known_hosts
