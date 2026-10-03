@@ -40,6 +40,8 @@ fi
 set -a; source .env; set +a
 
 echo "Starting ${SCALE} runner(s) (detached, restart: unless-stopped)…"
+# The ops and Dependabot runners are single services; --scale only
+# applies to the CI pool.
 docker compose up -d --scale "runner=${SCALE}" --no-recreate
 
 echo ""
