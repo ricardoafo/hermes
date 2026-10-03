@@ -20,6 +20,7 @@ from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.price import Price
 from hermes.domain.value_objects.quantity import Quantity
+from hermes.domain.value_objects.strategy_id import StrategyId
 
 __all__ = ["TradeExecuted", "TradeSide"]
 
@@ -47,14 +48,17 @@ class TradeExecuted(DomainEvent):
         qty: The quantity of the base asset traded (never negative).
         price: The fill price for one unit of the base asset in quote currency.
         fee: The exchange fee charged for the fill (positive Money).
+        strategy_id: The strategy bucket the fill belongs to; the ledger replay
+            uses it to rebuild each strategy's portfolio (schema version 2).
 
     Reference: ADR-003 §02 flow 1 (rebalancer) and flow 2 (swing entry).
     """
 
-    __event_schema_version__: ClassVar[int] = 1
+    __event_schema_version__: ClassVar[int] = 2
 
     pair: Pair
     side: TradeSide
     qty: Quantity
     price: Price
     fee: Money
+    strategy_id: StrategyId

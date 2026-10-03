@@ -7,24 +7,34 @@ calls :meth:`mark` before ``on_bar`` so the strategy sees marked equity, and
 itself lives in the snapshot; this class only swaps the current snapshot on
 success.
 
-The tracker is built per strategy: a ``Fill`` carries no strategy id yet, so
-it trusts the caller to route fills to the right tracker. It lives in memory
-and restarts from its seed; rebuilding it from the ledger is a follow-up.
+The tracker is built per strategy and lives in memory. :meth:`rebuilt` restores
+it after a restart by replaying the strategy's recorded ``TradeExecuted``
+events through the same fill accounting the live loop uses.
 
-Reference: 308-signal-event-portfolio-state change.md D-4, D-7, D-8.
+Reference: 308-signal-event-portfolio-state change.md D-4, D-7, D-8;
+322-rebuild-portfolio-from-ledger change.md D-2.
 """
 
 from __future__ import annotations
 
-from returns.result import Result, Success
+from collections.abc import Iterable
+from typing import Self
+
+from returns.result import Failure, Result, Success
 
 from hermes.domain.errors import DomainError
+from hermes.domain.events.trade_executed import TradeExecuted
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.portfolio.snapshot import PortfolioSnapshot
 from hermes.domain.risk.state import PortfolioState
 from hermes.domain.trading.fill import Fill
+from hermes.domain.trading.order import Order, OrderSide
 
-__all__ = ["PortfolioTracker"]
+__all__ = ["PortfolioTracker", "ReplayError"]
+
+
+class ReplayError(DomainError):
+    """A recorded trade could not be replayed; the message names its correlation id."""
 
 
 class PortfolioTracker:
@@ -38,6 +48,33 @@ class PortfolioTracker:
     def __init__(self, seed: PortfolioSnapshot) -> None:
         """Start from ``seed``."""
         self._snapshot = seed
+
+    @classmethod
+    def rebuilt(
+        cls, seed: PortfolioSnapshot, trades: Iterable[TradeExecuted]
+    ) -> Result[Self, DomainError]:
+        """Replay recorded trades over ``seed``.
+
+        Args:
+            seed: The snapshot the strategy started from.
+            trades: The strategy's ``TradeExecuted`` events, oldest first.
+
+        Returns:
+            ``Success(tracker)`` holding the replayed state (the seed when
+            ``trades`` is empty), or a ``Failure(ReplayError)`` for the
+            first trade the accounting rejects.
+        """
+        tracker = cls(seed)
+        for trade in trades:
+            result = tracker.apply_fill(_fill_from_trade(trade))
+            if isinstance(result, Failure):
+                return Failure(
+                    ReplayError(
+                        f"trade {trade.correlation_id} ({trade.side.value} {trade.pair}) "
+                        f"cannot be replayed: {result.failure()}"
+                    )
+                )
+        return Success(tracker)
 
     def mark(self, bar: Bar) -> None:
         """Mark the bar's pair at the bar close when the bar is newer than its mark.
@@ -69,3 +106,19 @@ class PortfolioTracker:
     def open_position_count(self) -> int:
         """Return how many pairs currently hold a position."""
         return len(self._snapshot.positions)
+
+
+def _fill_from_trade(trade: TradeExecuted) -> Fill:
+    """Rebuild the ``Fill`` the live loop applied for a recorded trade."""
+    return Fill(
+        order=Order(
+            side=OrderSide(trade.side.value),
+            pair=trade.pair,
+            qty=trade.qty,
+            strategy_id=trade.strategy_id,
+        ),
+        executed_qty=trade.qty.amount,
+        avg_price=trade.price.amount,
+        fee=trade.fee,
+        timestamp=trade.occurred_at,
+    )

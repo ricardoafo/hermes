@@ -97,6 +97,7 @@ def _sample_trade_event(side: TradeSide = TradeSide.BUY) -> TradeExecuted:
         qty=Quantity(amount=Decimal("0.001"), asset=Currency.BTC),
         price=Price(amount=Decimal("65000"), pair=pair),
         fee=Money(amount=Decimal("0.06"), currency=Currency.USDT),
+        strategy_id=StrategyId("swing"),
     )
 
 
@@ -340,7 +341,7 @@ class TestAppendEventPersistsEventRow:
             assert row is not None
             event_type, schema_version, correlation_id = row
             assert event_type == "TradeExecuted"
-            assert schema_version == 1
+            assert schema_version == 2
             assert correlation_id == "01J9Z8T3M5BQR2FVKN4XWY6PH1"
         finally:
             conn.close()
