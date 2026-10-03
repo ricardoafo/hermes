@@ -198,53 +198,113 @@ All decisions below: DECIDED by implementer, Code Owner reviews in PR.
 ```python
 # scale.py
 @dataclass(frozen=True, slots=True)
-class SavingsBand: up_to: Decimal | None; rate: Decimal
+class SavingsBand:
+    up_to: Decimal | None
+    rate: Decimal
+
+
 @dataclass(frozen=True, slots=True)
 class SavingsScale:
-    bands: tuple[SavingsBand, ...]           # ascending, last unbounded (validated)
-    def tax(self, base: Decimal) -> Decimal: ...           # 0 for base <= 0
+    bands: tuple[SavingsBand, ...]  # ascending, last unbounded (validated)
+
+    def tax(self, base: Decimal) -> Decimal: ...  # 0 for base <= 0
     def band_at(self, base: Decimal) -> BandPosition: ...  # rate, next_rate, room_to_next
 
+
 # year_position.py
-def tax_year_of(at: datetime) -> int: ...                  # Madrid
+def tax_year_of(at: datetime) -> int: ...  # Madrid
+
+
 @dataclass(frozen=True, slots=True)
-class Disposal: asset: str; ref: str; at: datetime; gain: Decimal; consumed_refs: frozenset[str]
+class Disposal:
+    asset: str
+    ref: str
+    at: datetime
+    gain: Decimal
+    consumed_refs: frozenset[str]
+
+
 @dataclass(frozen=True, slots=True)
 class YearPosition:
-    year: int; gains: Decimal; losses: Decimal              # losses as a positive magnitude
+    year: int
+    gains: Decimal
+    losses: Decimal  # losses as a positive magnitude
+
     @property
     def net(self) -> Decimal: ...
     @classmethod
     def of(cls, year: int, disposals: Iterable[Disposal]) -> YearPosition: ...
 
+
 # netting.py
 @dataclass(frozen=True, slots=True)
-class CarriedLoss: origin_year: int; amount: Decimal     # repr=False on values
+class CarriedLoss:
+    origin_year: int
+    amount: Decimal  # repr=False on values
+
+
 @dataclass(frozen=True, slots=True)
-class TaxpayerYear:                                        # every field repr=False
-    general_income: Decimal = 0; personal_minimum: Decimal = 0
-    other_savings_income: Decimal = 0; other_capital_gains: Decimal = 0  # signed
+class TaxpayerYear:  # every field repr=False
+    general_income: Decimal = 0
+    personal_minimum: Decimal = 0
+    other_savings_income: Decimal = 0
+    other_capital_gains: Decimal = 0  # signed
     carried_losses: tuple[CarriedLoss, ...] = ()
+
+
 @dataclass(frozen=True, slots=True)
 class NettingResult:
-    savings_base: Decimal; carried_used: tuple[CarriedLoss, ...]
-    carried_left: tuple[CarriedLoss, ...]; expiring: tuple[CarriedLoss, ...]
+    savings_base: Decimal
+    carried_used: tuple[CarriedLoss, ...]
+    carried_left: tuple[CarriedLoss, ...]
+    expiring: tuple[CarriedLoss, ...]
+
+
 def net_savings_base(year: int, hermes_net: Decimal, taxpayer: TaxpayerYear) -> NettingResult: ...
+
 
 # marginal.py
 def taxable_savings_base(savings_base: Decimal, taxpayer: TaxpayerYear) -> Decimal: ...
+
+
 @dataclass(frozen=True, slots=True)
-class SavingsTax: netting: NettingResult; taxable: Decimal; tax: Decimal   # repr=False
+class SavingsTax:
+    netting: NettingResult
+    taxable: Decimal
+    tax: Decimal  # repr=False
+
+
 def savings_tax(scale, taxpayer, hermes_net, *, year) -> SavingsTax: ...
+
+
 @dataclass(frozen=True, slots=True)
-class MarginalTax: hermes_tax: Decimal; with_hermes: SavingsTax; without_hermes: SavingsTax
-def marginal_tax(scale: SavingsScale, taxpayer: TaxpayerYear, hermes_net: Decimal, *, year: int) -> MarginalTax: ...
+class MarginalTax:
+    hermes_tax: Decimal
+    with_hermes: SavingsTax
+    without_hermes: SavingsTax
+
+
+def marginal_tax(
+    scale: SavingsScale, taxpayer: TaxpayerYear, hermes_net: Decimal, *, year: int
+) -> MarginalTax: ...
+
 
 # two_month.py
 @dataclass(frozen=True, slots=True)
-class Acquisition: asset: str; ref: str; at: datetime
+class Acquisition:
+    asset: str
+    ref: str
+    at: datetime
+
+
 @dataclass(frozen=True, slots=True)
-class TwoMonthFlag: asset: str; sold_on: date; loss: Decimal; bought_on: date
+class TwoMonthFlag:
+    asset: str
+    sold_on: date
+    loss: Decimal
+    bought_on: date
+
+
 def two_month_flags(disposals, acquisitions) -> tuple[TwoMonthFlag, ...]: ...
 ```
 
@@ -256,11 +316,18 @@ All arithmetic runs in a 100-digit `localcontext`; nothing is rounded before dis
 # ports/ledger.py
 @dataclass(frozen=True, slots=True)
 class EurTradeRow:
-    trade_id: int; asset: Currency; side: OrderSide; qty: Decimal; executed_at: datetime
-    price_eur: Decimal | None; fee_eur: Decimal | None
+    trade_id: int
+    asset: Currency
+    side: OrderSide
+    qty: Decimal
+    executed_at: datetime
+    price_eur: Decimal | None
+    fee_eur: Decimal | None
+
+
 @runtime_checkable
 class TaxTradeSourcePort(Protocol):
-    def list_eur_trades(self) -> tuple[EurTradeRow, ...]: ...   # every lot-linked BUY and every SELL
+    def list_eur_trades(self) -> tuple[EurTradeRow, ...]: ...  # every lot-linked BUY and every SELL
 ```
 
 `SqliteLedger.list_eur_trades` selects the same rows `_reproject` replays (`side = 'SELL' OR id IN lots.trade_id`), all
@@ -270,19 +337,45 @@ assets, ordered by `executed_at, id`.
 
 ```python
 @dataclass(frozen=True, slots=True)
-class PositionTax: asset: str; unrealised_gain: Decimal | None; tax_if_sold_now: Tax
+class PositionTax:
+    asset: str
+    unrealised_gain: Decimal | None
+    tax_if_sold_now: Tax
+
+
 @dataclass(frozen=True, slots=True)
 class TaxYearEstimate:
-    year: int; realised_gain: Decimal; hermes_tax: TaxEstimate; today_tax: TaxEstimate
-    tax_if_sold_now: Tax; per_position_if_sold_now: tuple[PositionTax, ...]
-    carry_forward_used: Decimal; carry_forward_left: tuple[CarriedLoss, ...]
-    band: TaxBand; flags: tuple[str, ...]; notices: tuple[str, ...]
-    is_shadow: bool; is_estimate: Literal[True] = True
+    year: int
+    realised_gain: Decimal
+    hermes_tax: TaxEstimate
+    today_tax: TaxEstimate
+    tax_if_sold_now: Tax
+    per_position_if_sold_now: tuple[PositionTax, ...]
+    carry_forward_used: Decimal
+    carry_forward_left: tuple[CarriedLoss, ...]
+    band: TaxBand
+    flags: tuple[str, ...]
+    notices: tuple[str, ...]
+    is_shadow: bool
+    is_estimate: Literal[True] = True
+
     @property
     def label(self) -> str: ...
-def estimate_year(trades, *, year, scales: Mapping[int, SavingsScale], taxpayer: TaxpayerYear | None,
-                  default_personal_minimum: Decimal, prices: Mapping[str, Decimal], as_of: datetime,
-                  is_shadow: bool) -> TaxYearEstimate | TaxPending: ...
+
+
+def estimate_year(
+    trades,
+    *,
+    year,
+    scales: Mapping[int, SavingsScale],
+    taxpayer: TaxpayerYear | None,
+    default_personal_minimum: Decimal,
+    prices: Mapping[str, Decimal],
+    as_of: datetime,
+    is_shadow: bool,
+) -> TaxYearEstimate | TaxPending: ...
+
+
 class TaxService:
     def __init__(self, source: TaxTradeSourcePort) -> None: ...
     def estimate(self, **same_keywords) -> TaxYearEstimate | TaxPending: ...
