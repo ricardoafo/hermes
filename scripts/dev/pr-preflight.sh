@@ -455,6 +455,11 @@ echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 if [[ ${#FAILED[@]} -eq 0 ]]; then
     echo "✓ ALL ${CHECK_COUNT} CHECKS PASS (${MODE_DESC}) — safe to push."
+    # The stamp scripts/dev/pr-ready-check.sh requires before a PR opens:
+    # only a full run on a clean tree proves this exact HEAD.
+    if [[ "$PRE_PUSH" != "1" && -z "$(git status --porcelain)" ]]; then
+        git rev-parse HEAD > "$(git rev-parse --git-dir)/hermes-preflight-pass"
+    fi
     exit 0
 else
     echo "✗ ${#FAILED[@]} of ${CHECK_COUNT} CHECKS FAILED (${MODE_DESC}):"
