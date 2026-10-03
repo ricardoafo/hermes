@@ -14,11 +14,18 @@
 # It leaves `previous` alone, so a second run refuses (current already
 # equals previous) instead of toggling between two releases. After an
 # automatic rollback `previous` equals `current`; the next good deploy
-# repairs it. It never touches /var/lib/hermes: the SQLite ledger is
-# shared across versions, so a release that migrated the schema needs a
-# backup-before-activate step first (follow-up, see the change spec).
+# repairs it.
 #
-# Test seams: HERMES_ROOT, SYSTEMCTL (health_gate.sh adds its own).
+# The SQLite ledger is shared across versions, and a release may migrate
+# it at start. With HERMES_RESTORE_DB=<snapshot> (install_release.sh sets
+# it to the pre-<sha12> snapshot it took), the unit is stopped and the
+# snapshot copied over the ledger before the old release starts. Without
+# it the ledger is left alone. By hand:
+#
+#   ssh hermes-01 HERMES_RESTORE_DB=/var/lib/hermes/backups/pre-<sha12>.sqlite3 \
+#       /opt/hermes/bin/rollback.sh
+#
+# Test seams: HERMES_ROOT, SYSTEMCTL, HERMES_DB (health_gate.sh adds its own).
 #
 # Reference: openspec/changes/179-cd-first-real-deploy/change.md (D-6).
 
@@ -27,6 +34,8 @@ set -euo pipefail
 ROOT=${HERMES_ROOT:-/opt/hermes}
 SYSTEMCTL=${SYSTEMCTL:-systemctl}
 UNIT=hermes.service
+DB=${HERMES_DB:-/var/lib/hermes/hermes.sqlite3}
+RESTORE=${HERMES_RESTORE_DB:-}
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 die() {
@@ -42,6 +51,9 @@ cur=$(readlink -f "$ROOT/current")
 prev=$(readlink -f "$ROOT/previous")
 
 [ -f "$prev/.installed" ] || die "previous ($prev) has no .installed marker: it was pruned or is partial"
+if [ -n "$RESTORE" ] && [ ! -f "$RESTORE" ]; then
+    die "snapshot $RESTORE not found: not rolling back onto a ledger it cannot restore"
+fi
 # `-ef` compares device and inode, so two spellings of one path still match.
 if [ "$ROOT/current" -ef "$ROOT/previous" ]; then
     die "current already equals previous ($cur): nothing to roll back to"
@@ -52,6 +64,17 @@ echo "rolling back: current $cur -> $prev"
 # never sees a missing `current`.
 ln -sfn "$prev" "$ROOT/current.tmp"
 mv -T "$ROOT/current.tmp" "$ROOT/current"
+
+if [ -n "$RESTORE" ]; then
+    # Stop first: copying under a running writer would tear the file. The
+    # -wal/-shm files belong to the replaced image and must go with it.
+    "$SYSTEMCTL" stop "$UNIT"
+    cp -f "$RESTORE" "$DB.restore"
+    chown --reference="$RESTORE" "$DB.restore" 2>/dev/null || true
+    mv -f "$DB.restore" "$DB"
+    rm -f "$DB-wal" "$DB-shm"
+    echo "restored ledger $DB from $RESTORE"
+fi
 
 since=$(date +%s)
 "$SYSTEMCTL" daemon-reload
