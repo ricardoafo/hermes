@@ -2,9 +2,10 @@
 #
 # Fired every 5 minutes by hermes-health.timer. The script pings
 # healthchecks.io only while `systemctl is-active --quiet hermes.service`
-# succeeds, so a missed ping means the engine is down or crash-looping and
-# the check's Telegram integration alerts the operator (deploy/README.md,
-# "Alerting when hermes is down").
+# succeeds, and sends a /fail ping when `hermes status --json` says a check
+# is late or hermes is down. A missed or failed ping makes the check's
+# Telegram integration alert the operator (deploy/README.md, "Alerting when
+# hermes is down").
 #
 # The script ships inside each release, so ExecStart follows the `current`
 # symlink. The ping URL (HERMES_HEALTHCHECKS__PING_URL) comes from the same
