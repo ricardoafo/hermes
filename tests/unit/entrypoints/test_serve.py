@@ -27,9 +27,11 @@ import sqlite3
 import sys
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from structlog.testing import capture_logs
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
 from hermes.adapters.clock.wall import WallClock
@@ -48,7 +50,7 @@ from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.bar_schedule import delivery_key
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.risk.state import PortfolioState
-from hermes.domain.strategy.signal import OpenPosition, StrategySignal
+from hermes.domain.strategy.signal import OpenPosition, SignalKind, SignalSide, StrategySignal
 from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
 from hermes.entrypoints import serve as serve_module
 from hermes.infrastructure.config.loader import load_config
@@ -490,3 +492,115 @@ class TestBarLoop:
         composition.sqlite_connection.close()
 
         assert (len(recorder.seeded), recorder.position) == (23, None)
+
+
+class _EntryOnceStrategy(_RecordingStrategy):
+    """Strategy fake that emits one long entry on the first bar it sees."""
+
+    def __init__(self) -> None:
+        """Start without having signalled."""
+        super().__init__()
+        self.fired = False
+
+    def on_bar(self, bar: Bar, portfolio_state: PortfolioState) -> StrategySignal | None:
+        """Enter on the first bar, stay quiet afterwards."""
+        if self.fired:
+            return None
+        self.fired = True
+        return StrategySignal(
+            kind=SignalKind.ENTRY,
+            side=SignalSide.LONG,
+            entry_price=bar.close,
+            stop_price=bar.close - Decimal("10"),
+            atr_context=Decimal("5"),
+            signal_time=bar.close_time,
+        )
+
+
+def _processed(logs: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Return the ``serve.bar.processed`` entries without structlog's own keys."""
+    return [
+        {k: v for k, v in entry.items() if k not in {"event", "log_level"}}
+        for entry in logs
+        if entry["event"] == "serve.bar.processed"
+    ]
+
+
+class TestBarLogging:
+    """Every handled bar leaves a journal line, so a quiet market reads as alive (#371)."""
+
+    def _settle(self, composition: serve_module.Composition) -> timedelta:
+        """Return the configured closed-bar settle delay."""
+        return timedelta(seconds=composition.config.market_data.settle_delay_seconds)
+
+    def test_two_bars_log_two_processed_lines_with_exact_fields(self, tmp_path: Path) -> None:
+        """Each bar logs pair, interval, open/close time, no signal and the next bar's due time."""
+        composition = build(tmp_path / "test.sqlite3", FakeFeed(), BASE)
+        composition = dataclasses.replace(composition, strategies={BTC: _RecordingStrategy()})
+        loop = serve_module._BarLoop(composition)
+        first, second = h4_bar(0), h4_bar(1)
+        settle = self._settle(composition)
+
+        with capture_logs() as logs:
+            asyncio.run(loop.handle(first))
+            asyncio.run(loop.handle(second))
+        composition.sqlite_connection.close()
+
+        assert _processed(logs) == [
+            {
+                "pair": "BTC/USDT",
+                "interval": "4h",
+                "open_time": bar.open_time.isoformat(),
+                "close_time": bar.close_time.isoformat(),
+                "signal": "none",
+                "next_due": (bar.open_time + timedelta(hours=8) + settle).isoformat(),
+            }
+            for bar in (first, second)
+        ]
+
+    def test_a_signal_bar_logs_the_signal_kind(self, tmp_path: Path) -> None:
+        """An entry on the bar is named in its line; the operator sees it without the ledger."""
+        composition = build(tmp_path / "test.sqlite3", FakeFeed(), BASE)
+        composition = dataclasses.replace(composition, strategies={BTC: _EntryOnceStrategy()})
+        loop = serve_module._BarLoop(composition)
+
+        with capture_logs() as logs:
+            asyncio.run(loop.handle(h4_bar(0)))
+            asyncio.run(loop.handle(h4_bar(1)))
+        composition.sqlite_connection.close()
+
+        assert [line["signal"] for line in _processed(logs)] == ["entry", "none"]
+
+    def test_a_repeated_bar_logs_nothing(self, tmp_path: Path) -> None:
+        """A duplicate is skipped, so it must not read as a second processed bar."""
+        composition = build(tmp_path / "test.sqlite3", FakeFeed(), BASE)
+        loop = serve_module._BarLoop(composition)
+
+        with capture_logs() as logs:
+            asyncio.run(loop.handle(h4_bar(0)))
+            asyncio.run(loop.handle(h4_bar(0)))
+        composition.sqlite_connection.close()
+
+        assert len(_processed(logs)) == 1
+
+    def test_next_due_lists_every_stream_after_catch_up(self, tmp_path: Path) -> None:
+        """Going live logs when each stream's next bar should arrive."""
+        feed = FakeFeed(warm=history(10))
+        composition = dataclasses.replace(
+            build(tmp_path / "test.sqlite3", feed, datetime(2030, 1, 1, tzinfo=UTC)),
+            strategies={BTC: _RecordingStrategy()},
+        )
+        loop = serve_module._BarLoop(composition)
+        settle = self._settle(composition)
+        asyncio.run(loop.warm_up_and_catch_up(asyncio.Event()))
+
+        with capture_logs() as logs:
+            loop.log_next_due()
+        composition.sqlite_connection.close()
+
+        assert [e["streams"] for e in logs if e["event"] == "serve.bar.next_due"] == [
+            {
+                "BTC/USDT 1d": (d1_bar(11).open_time + timedelta(days=2) + settle).isoformat(),
+                "BTC/USDT 4h": (h4_bar(10).open_time + timedelta(hours=8) + settle).isoformat(),
+            }
+        ]
