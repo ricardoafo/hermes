@@ -10,8 +10,10 @@ GitHub issues #319, #353, #355, #378 (ADR-015, pending) and #385
 
 ## Decision
 
-The Code Owner chose "Go full" at 13:18 UTC on 2026-10-03, on the commitment
-they stated in their own words: "If we commit to not change the strategy on the
+The Code Owner chose "Go full" at 13:18:31 UTC on 2026-10-03, on the decision
+card "Approve showing you shadow P&L under the five binding rules" in the
+"Hermes ops console" project thread. They made the commitment in their own
+words: "If we commit to not change the strategy on the
 time period define can we go full?"
 
 The Code Owner sees shadow P&L, realized and unrealized, gross and after
