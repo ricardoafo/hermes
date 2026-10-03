@@ -8,9 +8,17 @@
 #
 # Idempotent: identical output for identical input. Safe to run repeatedly.
 # The table depends on file content only, never on git history: a commit
-# date changes when the merge queue squashes a PR, which would leave main's
-# committed index stale and fail every later docs PR.
-# Called from: pre-commit hook + CI verification job.
+# date changes when the merge queue squashes a PR.
+#
+# The index is a derived file, rebuilt on main after each merge. PRs never
+# commit it: two PRs that each regenerate it conflict, and a committed copy
+# goes stale the moment another PR lands.
+#
+# Usage:
+#   regenerate-guides-index.sh           rewrite the table in README.md
+#   regenerate-guides-index.sh --check   validate every guide and build the
+#                                        table, write nothing (pre-commit,
+#                                        pr-preflight, CI)
 #
 # Expected guide file shape:
 #   # <Title>
@@ -23,6 +31,16 @@
 #   <body>
 
 set -euo pipefail
+
+check_only=0
+case "${1:-}" in
+    "") ;;
+    --check) check_only=1 ;;
+    *)
+        echo "usage: $0 [--check]" >&2
+        exit 2
+        ;;
+esac
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 GUIDES_DIR="$REPO_ROOT/docs/guides"
@@ -71,6 +89,13 @@ if ! grep -q '<!-- guides-index-end -->' "$README"; then
     exit 1
 fi
 
+count=$(find "$GUIDES_DIR" -maxdepth 1 -name '*.md' -not -name 'README.md' | wc -l | tr -d ' ')
+
+if [[ "$check_only" == 1 ]]; then
+    echo "guides index builds from ${count} guide file(s); README.md not written (--check)."
+    exit 0
+fi
+
 awk -v table="$TABLE" '
     /<!-- guides-index-start -->/ { print; print table; skip=1; next }
     /<!-- guides-index-end -->/ { skip=0 }
@@ -78,5 +103,4 @@ awk -v table="$TABLE" '
 ' "$README" > "$README.tmp"
 mv "$README.tmp" "$README"
 
-count=$(find "$GUIDES_DIR" -maxdepth 1 -name '*.md' -not -name 'README.md' | wc -l | tr -d ' ')
 echo "$README regenerated from ${count} guide file(s)."

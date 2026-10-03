@@ -8,13 +8,13 @@ for machines. Per [ADR-009](../architecture/adr-009-documentation-strategy.md)
 ## Living index
 
 The table below is **auto-generated** from `docs/guides/*.md` by
-`scripts/dev/regenerate-guides-index.sh` (runs as a pre-commit hook +
-CI verification). Do NOT edit the table by hand — edit the guide files
-themselves, and the index regenerates on next commit.
+`scripts/dev/regenerate-guides-index.sh`, rebuilt on `main` after each
+merge. Do NOT edit the table in a PR, by hand or by running the script —
+edit the guide files themselves. Pre-commit and CI only check that the
+index still builds (`--check`).
 
-Why: manual index maintenance caused merge conflicts every time two
-parallel PRs added new guides. Auto-generation eliminates that class
-of conflict entirely.
+Why: when PRs committed the table, two PRs adding guides conflicted, and
+a committed copy went stale whenever another PR merged first.
 
 <!-- guides-index-start -->
 | Guide | What it covers |
