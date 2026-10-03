@@ -25,6 +25,7 @@ from hermes.application.console.render import (
     RenderContext,
     render_activity,
     render_positions,
+    render_tax_footnote,
     to_plain_text,
 )
 from tests.unit.application.console._screens import SCENARIOS, SCREENS, render
@@ -121,7 +122,15 @@ def test_hero_change_follows_the_range() -> None:
 def test_pending_tax_reads_not_available_yet() -> None:
     """Before the tax module lands, the portfolio says so instead of showing zero tax."""
     text = render("tax-pending", "portfolio", surface=Surface.OPERATOR_CLI)
-    assert "tax estimate: not available yet · net is before tax" in text
+    assert "Open ▲ +€9.36 · tax estimate: not available yet" in text
+
+
+def test_pending_tax_footnote_says_net_is_before_tax() -> None:
+    """The help-screen footnote of a pending tax says the net is before tax."""
+    summary = FixtureReadModel.load("tax-pending").portfolio()
+    assert (
+        render_tax_footnote(summary).plain == "tax estimate: not available yet · net is before tax"
+    )
 
 
 def test_pending_tax_detail_row_reads_not_available_yet() -> None:
@@ -147,8 +156,16 @@ def test_waterfall_net_row_is_gross_minus_fees_minus_tax() -> None:
 
 def test_footnote_names_band_and_room() -> None:
     """The tax footnote names the method, the band and the room to the next band."""
+    summary = FixtureReadModel.load("ok-two-positions").portfolio()
+    assert (
+        render_tax_footnote(summary).plain == "est. · FIFO · 19% band · €5,988.30 left before 21%"
+    )
+
+
+def test_portfolio_has_no_tax_explanation() -> None:
+    """The home portfolio block keeps only the waterfall numbers, no tax footnote."""
     text = render("ok-two-positions", "portfolio", surface=Surface.OPERATOR_CLI)
-    assert "est. · FIFO · 19% band · €5,988.30 left before 21%" in text
+    assert ("FIFO" in text, "band" in text) == (False, False)
 
 
 def test_position_row_shows_net_only() -> None:
@@ -159,17 +176,17 @@ def test_position_row_shows_net_only() -> None:
     assert "gross" not in text.lower()
 
 
-def test_wide_positions_add_stop_columns() -> None:
-    """At 120 columns the table adds the stop level and the distance to it."""
+def test_stop_column_is_price_and_distance_in_eur() -> None:
+    """The stop column reads the EUR stop price and the distance in percent, no ATR wording."""
     text = render("ok-two-positions", "positions", surface=Surface.OPERATOR_CLI, width=120)
     eth = next(line for line in text.splitlines() if line.startswith("ETH"))
-    assert "2,580    −3.44%" in eth
+    assert (eth.endswith("€2,210 · −3.4%"), "ATR" in text) == (True, False)
 
 
 def test_narrow_positions_omit_stop_columns() -> None:
     """At 80 columns the wide-only columns stay out."""
     text = render("ok-two-positions", "positions", surface=Surface.OPERATOR_CLI)
-    assert "to stop" not in text
+    assert ("to stop" in text, "cushion" in text) == (False, False)
 
 
 def test_empty_positions_state() -> None:
@@ -205,8 +222,8 @@ def test_activity_groups_by_day_with_relative_times_today() -> None:
     lines = [line.strip() for line in text.splitlines()[1:]]
     assert lines[:4] == [
         "Today",
-        "2h ago      closed BTC at 61,240 · ▲ +€3.18 net",
-        "4h ago      SOL stop raised ×6, 139.0→142.1",
+        "2h ago      closed BTC at €52,464 · ▲ +€3.18 net",
+        "4h ago      SOL stop raised ×6, €119.1→€121.7",
         "Yesterday",
     ]
 

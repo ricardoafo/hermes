@@ -37,14 +37,15 @@ from hermes.application.console.format import (
     CushionLevel,
     arrow,
     cushion_level,
-    fmt_atr,
+    fmt_atr_range,
     fmt_change,
     fmt_eur,
+    fmt_eur_price,
     fmt_level,
     fmt_pct,
     fmt_price,
     fmt_qty,
-    signed_pct,
+    fmt_stop,
     sparkline,
     stop_bar,
 )
@@ -62,10 +63,8 @@ from hermes.application.console.views import (
     ShadowTest,
     ShadowTestStatus,
     Tax,
-    TaxBand,
     TaxEstimate,
     TaxPending,
-    WaterfallColumn,
 )
 from hermes.application.console.visibility import Surface, pnl_visible
 
@@ -80,6 +79,7 @@ __all__ = [
     "render_position_detail",
     "render_positions",
     "render_shadow_test",
+    "render_tax_footnote",
     "to_plain_text",
 ]
 
@@ -310,7 +310,18 @@ def _tax_cell(ctx: RenderContext, tax: Tax) -> Text:
     return _money(ctx, -tax.amount, suffix)
 
 
-def _tax_line(ctx: RenderContext, band: TaxBand | None, columns: Sequence[WaterfallColumn]) -> Text:
+def render_tax_footnote(summary: PortfolioSummary) -> Text:
+    """Render the tax footnote the ``?`` help screen shows, not the home screen.
+
+    Args:
+        summary: The portfolio view carrying the tax band.
+
+    Returns:
+        ``est. · FIFO · 19% band · €X left before 21%``, or the pending label
+        while the tax module has not landed.
+    """
+    columns = (summary.today, summary.year)
+    band = summary.tax_band
     if band is None or any(isinstance(c.tax, TaxPending) for c in columns):
         return Text(f"{TaxPending().label} · net is before tax", style="dim")
     parts = ["est.", band.method, f"{band.rate:.0f}% band"]
@@ -357,6 +368,7 @@ def render_portfolio(summary: PortfolioSummary, ctx: RenderContext) -> Group:
     """Render the hero (total value, change, net) and the waterfall.
 
     The waterfall covers closed trades only; open positions get their own line.
+    The tax footnote is not part of it (see :func:`render_tax_footnote`).
     Blind surfaces get a single line with no figures.
 
     Args:
@@ -377,11 +389,10 @@ def render_portfolio(summary: PortfolioSummary, ctx: RenderContext) -> Group:
         style=_money_style(ctx, summary.change),
     )
     hero.append(_stale_note(ctx), style="dim")
-    tax_pending = isinstance(summary.year.tax, TaxPending)
-    after = "after fees, before tax" if tax_pending else "after fees and est. tax"
     net_line = Text("net ")
     net_line.append_text(_money(ctx, summary.net, f" {label}"))
-    net_line.append(f" · {after}", style="dim")
+    if isinstance(summary.year.tax, TaxPending):
+        net_line.append(" · before tax", style="dim")
     spark = sparkline(summary.sparkline, min(_SPARK_MAX, ctx.width - 2))
     cash_line = Text(
         f"cash {fmt_level(summary.cash)} {_share(summary.cash, summary.total_value)}"
@@ -394,17 +405,26 @@ def render_portfolio(summary: PortfolioSummary, ctx: RenderContext) -> Group:
         net_line,
         Text(spark, style="dim" if ctx.stale_since else "cyan"),
         cash_line,
-        Text(""),
-        _waterfall(ctx, summary),
-        _open_line(ctx, summary),
-        _tax_line(ctx, summary.tax_band, (summary.today, summary.year)),
     ]
+    if summary.starting_capital is not None and summary.started_on is not None:
+        started = summary.started_on
+        parts.append(
+            Text(
+                f"started {fmt_level(summary.starting_capital)} on {started.day} {started:%b}",
+                style="dim",
+            )
+        )
+    parts += [Text(""), _waterfall(ctx, summary), _open_line(ctx, summary)]
     return _framed(ctx, parts)
 
 
 # ----------------------------------------------------------------------
 # Positions
 # ----------------------------------------------------------------------
+
+
+def _eur_caption() -> Text:
+    return Text("prices in EUR", style="dim")
 
 
 def _blind_positions(rows: Sequence[PositionRow], ctx: RenderContext) -> Table:
@@ -416,29 +436,46 @@ def _blind_positions(rows: Sequence[PositionRow], ctx: RenderContext) -> Table:
             row.coin,
             row.side,
             _stamp(ctx, row.opened_at),
-            fmt_price(row.entry_price),
+            fmt_price(row.entry_eur),
             fmt_qty(row.size),
-            fmt_price(row.stop_price),
+            fmt_price(row.stop_eur),
         )
     return table
 
 
-def _stop_cell(row: PositionRow) -> Text:
-    style = _CUSHION_STYLE[cushion_level(row.stop_distance_atr)]
-    cell = Text(stop_bar(row.stop_price, row.current_price, row.high_since_entry), style=style)
-    cell.append(f" {fmt_atr(row.stop_distance_atr)}")
+def _cushion_style(ctx: RenderContext, row: PositionRow) -> str:
+    if ctx.stale_since is not None:
+        return "dim"
+    return _CUSHION_STYLE[cushion_level(row.stop_distance_atr)]
+
+
+def _stop_cell(ctx: RenderContext, row: PositionRow) -> Text:
+    return Text(fmt_stop(row.stop_eur, row.stop_distance_pct), style=_cushion_style(ctx, row))
+
+
+def _stop_bar_cell(ctx: RenderContext, row: PositionRow) -> Text:
+    cell = Text(
+        stop_bar(row.stop_price, row.current_price, row.high_since_entry),
+        style=_cushion_style(ctx, row),
+    )
+    cell.append(f" {fmt_atr_range(row.stop_distance_atr)}")
     return cell
 
 
-def render_positions(rows: Sequence[PositionRow], ctx: RenderContext) -> Group:
-    """Render one row per open position; money is net only.
+def render_positions(
+    rows: Sequence[PositionRow], ctx: RenderContext, *, selected: str | None = None
+) -> Group:
+    """Render one row per open position; money is net only, prices are EUR.
 
-    Wide contexts add the stop level and the stop distance in percent. Blind
-    surfaces show coin, side, opened at, entry, size and stop level only.
+    The stop column is the stop price and the distance to it in percent,
+    green above 2 ATR, amber from 1 to 2 and red below 1 (the ATR itself is
+    only named in the detail). Blind surfaces show coin, side, opened at,
+    entry, size and stop level only.
 
     Args:
         rows: Open positions.
         ctx: Render context.
+        selected: Coin to mark with a leading arrow (the TUI cursor).
 
     Returns:
         The positions table, or the empty-state line.
@@ -446,29 +483,28 @@ def render_positions(rows: Sequence[PositionRow], ctx: RenderContext) -> Group:
     if not rows:
         return _framed(ctx, [Text("No open shadow positions.", style="dim")])
     if not ctx.shows_money:
-        return _framed(ctx, [_blind_positions(rows, ctx)])
+        return _framed(ctx, [_blind_positions(rows, ctx), _eur_caption()])
     table = Table(box=box.SIMPLE_HEAD, pad_edge=False, show_edge=False)
+    if selected is not None:
+        table.add_column("")
     table.add_column("coin")
     table.add_column("tf")
     table.add_column("entry → now")
     table.add_column("change", justify="right")
     table.add_column("net" + _stale_note(ctx), justify="right")
-    if ctx.wide:
-        table.add_column("stop", justify="right")
-        table.add_column("to stop", justify="right")
-    table.add_column("cushion")
+    table.add_column("stop")
     for row in rows:
-        cells: list[RenderableType] = [
+        cells: list[RenderableType] = []
+        if selected is not None:
+            cells.append(Text("▸" if row.coin == selected else " ", style="bold"))
+        cells += [
             Text(row.coin, style="bold"),
             row.timeframe,
-            f"{fmt_price(row.entry_price)} → {fmt_price(row.current_price)}",
+            f"{fmt_eur_price(row.entry_eur)} → {fmt_eur_price(row.current_eur)}",
             Text(fmt_pct(row.change_pct), style=_money_style(ctx, row.change_pct)),
             _money(ctx, row.net, " net"),
+            _stop_cell(ctx, row),
         ]
-        if ctx.wide:
-            cells.append(fmt_price(row.stop_price))
-            cells.append(signed_pct(-row.stop_distance_pct))
-        cells.append(_stop_cell(row))
         table.add_row(*cells)
     return _framed(ctx, [table])
 
@@ -521,33 +557,43 @@ def render_position_detail(detail: PositionDetail | None, ctx: RenderContext) ->
     header.append(f" · {row.timeframe} · {row.side} · open {age}")
     if not ctx.shows_money:
         facts = Text(
-            f"opened {_stamp(ctx, row.opened_at)} · entry {fmt_price(row.entry_price)}"
-            f" · size {fmt_qty(row.size)} · stop {fmt_price(row.stop_price)}"
+            f"opened {_stamp(ctx, row.opened_at)} · entry {fmt_price(row.entry_eur)}"
+            f" · size {fmt_qty(row.size)} · stop {fmt_price(row.stop_eur)}"
         )
-        return _framed(ctx, [header, facts])
+        return _framed(ctx, [header, facts, _eur_caption()])
     header.append("   ")
     header.append_text(_money(ctx, detail.net, " net"))
     header.append(_stale_note(ctx), style="dim")
-    values = " · ".join(f"{name} {fmt_price(value)}" for name, value in detail.entry_values)
-    why = Text(f"Why: {detail.strategy} on {row.timeframe} · entry {fmt_price(row.entry_price)}")
+    size_line = Text(
+        f"size {row.size:.4f} {row.coin} · now worth {fmt_level(detail.now_worth)}"
+        f" · cost {fmt_level(detail.cost)}"
+    )
+    values = " · ".join(f"{name} {fmt_eur_price(value)}" for name, value in detail.entry_values)
+    why = Text(f"Why: {detail.strategy} on {row.timeframe} · entry {fmt_eur_price(row.entry_eur)}")
     if values:
         why.append(f" · {values}")
     stop = Text("Stop: ")
-    stop.append_text(_stop_cell(row))
+    stop.append_text(_stop_bar_cell(ctx, row))
     stop.append(
-        f" · {fmt_price(row.stop_price)} · {signed_pct(-row.stop_distance_pct)}"
-        f" · high since entry {fmt_price(row.high_since_entry)}"
+        f" · {fmt_stop(row.stop_eur, row.stop_distance_pct)}"
+        f" · high since entry {fmt_eur_price(row.high_eur)}"
         f" · moved {detail.stop_moves}{TIMES}"
     )
     chart = Text("Price ")
     chart.append(sparkline(detail.price_path, min(_SPARK_MAX, ctx.width - 40)), style="cyan")
     chart.append(
-        f" entry {fmt_price(row.entry_price)} · stop {fmt_price(row.stop_price)}"
-        f" · high {fmt_price(row.high_since_entry)}",
+        f" entry {fmt_eur_price(row.entry_eur)} · stop {fmt_eur_price(row.stop_eur)}"
+        f" · high {fmt_eur_price(row.high_eur)}",
+        style="dim",
+    )
+    quoted = Text(
+        f"quoted in USDT · entry {fmt_price(row.entry_price)} · now {fmt_price(row.current_price)}"
+        f" · stop {fmt_price(row.stop_price)} · high {fmt_price(row.high_since_entry)}",
         style="dim",
     )
     parts: list[RenderableType] = [
         header,
+        size_line,
         why,
         stop,
         Text(""),
@@ -555,6 +601,7 @@ def render_position_detail(detail: PositionDetail | None, ctx: RenderContext) ->
         _detail_money(ctx, detail),
         Text(""),
         chart,
+        quoted,
         Text(""),
         Text("Timeline", style="bold"),
         _timeline(ctx, detail),
@@ -587,6 +634,10 @@ def _when(ctx: RenderContext, item: ActivityItem, *, is_today: bool) -> str:
     return f"{minutes // 60}h ago"
 
 
+def _price_text(ctx: RenderContext, value: Decimal) -> str:
+    return fmt_eur_price(value) if ctx.shows_money else fmt_price(value)
+
+
 def _closed_text(ctx: RenderContext, item: ActivityItem, coin: str, price: str) -> Text:
     if not ctx.shows_money:
         return Text(f"closed {coin}")
@@ -597,17 +648,21 @@ def _closed_text(ctx: RenderContext, item: ActivityItem, coin: str, price: str) 
     return text
 
 
-def _stop_raised_text(item: ActivityItem, coin: str) -> Text:
+def _stop_raised_text(ctx: RenderContext, item: ActivityItem, coin: str) -> Text:
     times = f" {TIMES}{item.count}" if item.count > 1 else ""
     levels = ""
     if item.stop_from is not None and item.stop_to is not None:
-        levels = f", {fmt_price(item.stop_from)}→{fmt_price(item.stop_to)}"
+        rate = item.eur_per_usdt
+        levels = (
+            f", {_price_text(ctx, item.stop_from * rate)}→{_price_text(ctx, item.stop_to * rate)}"
+        )
     return Text(f"{coin} stop raised{times}{levels}")
 
 
 def _activity_text(ctx: RenderContext, item: ActivityItem) -> Text:
     coin = item.coin or ""
-    price = f" at {fmt_price(item.price)}" if item.price is not None else ""
+    price_eur = item.price_eur
+    price = f" at {_price_text(ctx, price_eur)}" if price_eur is not None else ""
     note = item.text or ""
     match item.kind:
         case ActivityKind.OPENED:
@@ -615,7 +670,7 @@ def _activity_text(ctx: RenderContext, item: ActivityItem) -> Text:
         case ActivityKind.CLOSED:
             text = _closed_text(ctx, item, coin, price)
         case ActivityKind.STOP_RAISED:
-            text = _stop_raised_text(item, coin)
+            text = _stop_raised_text(ctx, item, coin)
         case ActivityKind.RESTART:
             text = Text(f"restart · {note}" if note else "restart", style="dim")
         case ActivityKind.WARNING:
