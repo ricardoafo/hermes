@@ -19,10 +19,8 @@ area:adapters:
 area:cli:
   - changed-files:
       - any-glob-to-any-file:
-          - src/hermes/cli/**
-          - src/hermes/tui/**
-          - tests/cli/**
-          - tests/tui/**
+          - src/hermes/entrypoints/**
+          - tests/unit/entrypoints/**
 
 area:config:
   - changed-files:
@@ -47,7 +45,7 @@ area:tooling:
           - .markdownlint-cli2.jsonc
           - .gitattributes
           - .gitignore
-          - renovate.json
+          - tools/**
 
 area:security:
   - changed-files:
