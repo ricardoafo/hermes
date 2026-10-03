@@ -1,31 +1,33 @@
-"""SizingCalculator — T-1 position-sizing composition for Swing MVP1.
+"""SizingCalculator — position sizing for Swing MVP1 per pre-registration §5.4/§5.5.
 
-Implements the three-cap ``min()`` formula from pre-registration-v1.md §5.4:
+Every limit is a share of the fixed experiment capital (pre-reg §2), never of
+current equity:
 
-.. code-block:: python
+.. code-block:: text
 
-    atr_notional   = (equity * risk_pct) / stop_atr_mult   # ATR-baseline (SA-7)
-    kelly_notional = equity * min(0.25 * f_star_estimate, 0.05)  # Kelly cap (SA-1)
-    hard_cap       = 0.05 * equity                          # §5.4 absolute 5% cap
-    notional       = min(atr_notional, kelly_notional, hard_cap)
-    qty            = notional / entry_px
+    risk_budget    = risk_pct * capital                      # §5.4: 1% → 50 USDT
+    risk_notional  = risk_budget ÷ (entry - stop) * entry    # §5.4
+    position_cap   = max_position_pct * capital              # §5.4: 5% → 250 USDT
+    notional       = min(risk_notional, position_cap)
+    exposure_cap   = max_total_exposure_pct * capital        # §5.5: 15% → 750 USDT
+    blocked when open_notional + notional > exposure_cap
+    qty            = notional ÷ entry
 
-All three caps are computed independently and the minimum is taken. This is
-order-insensitive and verifiable as a property: ``sized ≤ cap_i ∀ i``.
+Fractional Kelly is not applied: §5.4 defers it until ≥ 30 OOS trades exist,
+which needs a new pre-registration rather than a parameter here.
 
-MVP1 note: ``f_star_estimate`` is set to ``Decimal("0.20")`` by the composition
-root (OD-4 defers live Kelly estimation until ≥ 30 OOS trades). With this value,
-``kelly_notional = equity * 0.05``, which equals the hard cap — effectively the
-hard cap always wins. The formula remains correct for future live values.
+Divisions round toward zero, so the sized notional never exceeds the exact
+formula and the realised risk ``notional * (entry - stop) ÷ entry`` never
+exceeds the risk budget, without an epsilon.
 
-Reference: pre-registration-v1.md §5.4 (5% hard cap, supersedes SA-7 10%),
-SA-7 (ATR-baseline), SA-1 (Kelly cap), spec-3-order-router change.md D-2.
+Reference: pre-registration-v1.md §2, §5.4, §5.5;
+openspec/changes/sizing-per-prereg/change.md (supersedes spec-3 D-2).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal, localcontext
 
 from returns.result import Failure, Result, Success
 
@@ -34,173 +36,185 @@ from hermes.domain.errors import DomainError, InvalidLot
 __all__ = [
     "SizingCalculator",
     "SizingInput",
+    "SizingPolicy",
     "SizingResult",
 ]
 
-# Pre-reg §5.4 binding constants — DO NOT change without updating the signed document.
-_HARD_CAP_FRACTION: Decimal = Decimal("0.05")  # 5% of equity per position
-_KELLY_FRACTION_MULTIPLIER: Decimal = Decimal("0.25")  # Kelly fraction = 0.25 * f_star
-_KELLY_FLOOR_FRACTION: Decimal = Decimal("0.05")  # Kelly cap floor = 5% of equity
+_ZERO = Decimal("0")
+_ONE = Decimal("1")
+
+
+@dataclass(frozen=True, slots=True)
+class SizingPolicy:
+    """Pre-registered sizing limits, all relative to the experiment capital.
+
+    Built from ``config/strategies.yaml`` (``capital_budget`` and the
+    strategy's ``sizing`` block) — never from literals in code.
+
+    Args:
+        capital: Fixed experiment capital in the quote currency (§2). > 0.
+        risk_pct: Share of capital risked per trade (§5.4). In (0, 1].
+        max_position_pct: Notional cap per position as a share of capital
+            (§5.4). In (0, 1].
+        max_total_exposure_pct: Cap on the summed notional of all open
+            positions as a share of capital (§5.5). In (0, 1].
+    """
+
+    capital: Decimal
+    risk_pct: Decimal
+    max_position_pct: Decimal
+    max_total_exposure_pct: Decimal
+
+    def __post_init__(self) -> None:
+        """Reject a non-positive capital or a share outside (0, 1].
+
+        Raises:
+            ValueError: On any out-of-range field.
+        """
+        if self.capital <= _ZERO:
+            raise ValueError(f"SizingPolicy.capital must be > 0, got {self.capital!r}")
+        for name, val in [
+            ("risk_pct", self.risk_pct),
+            ("max_position_pct", self.max_position_pct),
+            ("max_total_exposure_pct", self.max_total_exposure_pct),
+        ]:
+            if not _ZERO < val <= _ONE:
+                raise ValueError(f"SizingPolicy.{name} must be in (0, 1], got {val!r}")
+
+    @property
+    def risk_budget(self) -> Decimal:
+        """Quote amount one trade may lose at its stop (§5.4)."""
+        return self.risk_pct * self.capital
+
+    @property
+    def position_cap(self) -> Decimal:
+        """Largest notional a single position may have (§5.4)."""
+        return self.max_position_pct * self.capital
+
+    @property
+    def exposure_cap(self) -> Decimal:
+        """Largest summed notional across open positions (§5.5)."""
+        return self.max_total_exposure_pct * self.capital
 
 
 @dataclass(frozen=True, slots=True)
 class SizingInput:
-    """Immutable input bundle for T-1 position sizing.
+    """Per-signal inputs to position sizing.
 
     Args:
-        equity: Total portfolio equity in the quote currency (e.g. USDT).
-            Must be > 0.
-        entry_px: Intended entry price (quote currency per base unit).
-            Must be > 0.
-        atr: Average True Range value in quote currency. Used in the
-            ATR-baseline formula: ``notional = (equity * risk_pct) / stop_atr_mult``.
-            Must be > 0.
-        stop_atr_mult: ATR multiplier for the stop distance. Pre-reg §5.4
-            default is ``Decimal("1.5")``. Must be > 0.
-        risk_pct: Fraction of equity to risk per trade. Pre-reg §5.4
-            default is ``Decimal("0.01")`` (1%). Must be in (0, 1].
-        f_star_estimate: Kelly fraction estimate. MVP1 composition root
-            uses ``Decimal("0.20")`` (OD-4 floor). Must be > 0.
-
-    Reference: pre-registration-v1.md §5.4, spec-3-order-router change.md D-2.
+        entry_px: Intended entry price (quote per base unit). > 0.
+        stop_px: Initial chandelier stop of the entry signal. > 0; a stop at
+            or above the entry fails sizing (long-only, §5.1).
+        open_notional: Summed notional of the positions already open, in the
+            quote currency, from ``PortfolioTracker.open_notional()``. ≥ 0.
     """
 
-    equity: Decimal
     entry_px: Decimal
-    atr: Decimal
-    stop_atr_mult: Decimal
-    risk_pct: Decimal
-    f_star_estimate: Decimal
+    stop_px: Decimal
+    open_notional: Decimal
 
     def __post_init__(self) -> None:
-        """Validate all inputs are strictly positive.
+        """Validate prices are positive and open notional is not negative.
 
         Raises:
-            ValueError: On any non-positive input field.
+            ValueError: On a non-positive price or a negative open notional.
         """
-        for name, val in [
-            ("equity", self.equity),
-            ("entry_px", self.entry_px),
-            ("atr", self.atr),
-            ("stop_atr_mult", self.stop_atr_mult),
-            ("risk_pct", self.risk_pct),
-            ("f_star_estimate", self.f_star_estimate),
-        ]:
-            if val <= Decimal("0"):
+        for name, val in [("entry_px", self.entry_px), ("stop_px", self.stop_px)]:
+            if val <= _ZERO:
                 raise ValueError(f"SizingInput.{name} must be > 0, got {val!r}")
+        if self.open_notional < _ZERO:
+            raise ValueError(f"SizingInput.open_notional must be >= 0, got {self.open_notional!r}")
 
 
 @dataclass(frozen=True, slots=True)
 class SizingResult:
-    """Immutable result of the T-1 sizing computation.
+    """Outcome of a successful sizing computation.
 
     Args:
-        qty: Computed base-asset quantity to trade. Always > 0 when the
-            computation succeeds.
-        notional: Quote-currency notional value = ``qty * entry_px``.
-        atr_notional: The ATR-baseline notional before capping.
-        kelly_notional: The Kelly-cap notional before capping.
-        hard_cap_notional: The 5%-of-equity hard cap.
-        binding_cap: Human-readable label of which cap was binding
-            (``"atr"``, ``"kelly"``, or ``"hard_cap"``).
-
-    Reference: spec-3-order-router change.md D-2.
+        qty: Base-asset quantity to trade, ``notional ÷ entry`` rounded down.
+        notional: Quote-currency notional of the position.
+        risk_notional: The §5.4 risk formula before the hard cap.
+        position_cap: The §5.4 per-position cap.
+        binding_cap: ``"risk"`` when the risk formula set the size,
+            ``"position_cap"`` when the hard cap did.
     """
 
     qty: Decimal
     notional: Decimal
-    atr_notional: Decimal
-    kelly_notional: Decimal
-    hard_cap_notional: Decimal
+    risk_notional: Decimal
+    position_cap: Decimal
     binding_cap: str
 
 
 class SizingCalculator:
-    """Stateless T-1 position-sizing calculator for Swing MVP1.
+    """Stateless position-sizing calculator bound to one :class:`SizingPolicy`.
 
-    Instantiate once; call :meth:`compute` for each sizing request.
-    Holds no mutable state — all inputs arrive at call time.
-
-    Reference: pre-registration-v1.md §5.4; spec-3-order-router change.md D-2.
+    Args:
+        policy: Pre-registered limits from the strategy's configuration.
     """
 
+    def __init__(self, policy: SizingPolicy) -> None:
+        """Bind the calculator to ``policy``."""
+        self._policy = policy
+
     def compute(self, inp: SizingInput) -> Result[SizingResult, DomainError]:
-        """Compute the T-1 position size using the three-cap min() formula.
-
-        Formula (pre-reg §5.4 binding):
-
-        .. code-block:: text
-
-            atr_notional   = (equity * risk_pct) / stop_atr_mult
-            kelly_notional = equity * min(0.25 * f_star_estimate, 0.05)
-            hard_cap       = 0.05 * equity
-            notional       = min(atr_notional, kelly_notional, hard_cap)
-            qty            = notional / entry_px
+        """Size one long entry per pre-registration §5.4 and §5.5.
 
         Args:
-            inp: Immutable sizing input bundle.
+            inp: Entry price, stop and the notional already open.
 
         Returns:
-            ``Success(SizingResult)`` with the computed position size, or
-            ``Failure(InvalidLot)`` when the computed qty would be zero or
-            negative (degenerate inputs that pass ``__post_init__`` but
-            yield nonsensical output — e.g. ``stop_atr_mult`` so large
-            that ``atr_notional`` underflows to zero in Decimal precision).
-
-        Reference: pre-registration-v1.md §5.4, SA-7, SA-1.
+            ``Success(SizingResult)``, or ``Failure(InvalidLot)`` when the stop
+            is not below the entry, when the position would push open notional
+            past the §5.5 exposure cap, or when the size rounds to zero.
         """
-        atr_notional: Decimal = (inp.equity * inp.risk_pct) / inp.stop_atr_mult
-
-        # Kelly cap: 0.25 * f_star_estimate, floored at 5% of equity.
-        kelly_fraction = min(
-            _KELLY_FRACTION_MULTIPLIER * inp.f_star_estimate,
-            _KELLY_FLOOR_FRACTION,
-        )
-        kelly_notional: Decimal = inp.equity * kelly_fraction
-
-        hard_cap_notional: Decimal = _HARD_CAP_FRACTION * inp.equity
-
-        notional = min(atr_notional, kelly_notional, hard_cap_notional)
-
-        if notional <= Decimal("0"):
+        policy = self._policy
+        stop_distance = inp.entry_px - inp.stop_px
+        if stop_distance <= _ZERO:
             return Failure(
                 InvalidLot(
                     reason=(
-                        f"SizingCalculator: computed notional is zero or negative "
-                        f"(atr={atr_notional!r}, kelly={kelly_notional!r}, "
-                        f"hard_cap={hard_cap_notional!r}). "
-                        f"Check sizing inputs for degenerate values."
+                        f"SizingCalculator: stop {inp.stop_px!r} is not below entry "
+                        f"{inp.entry_px!r}; a long entry needs a positive stop distance."
                     )
                 )
             )
 
-        qty = notional / inp.entry_px
+        with localcontext() as ctx:
+            # Round toward zero so neither notional nor qty exceeds the exact formula.
+            ctx.rounding = ROUND_DOWN
+            risk_notional = policy.risk_budget * inp.entry_px / stop_distance
+            position_cap = policy.position_cap
+            notional = min(risk_notional, position_cap)
+            qty = notional / inp.entry_px
 
-        if qty <= Decimal("0"):
+        if inp.open_notional + notional > policy.exposure_cap:
             return Failure(
                 InvalidLot(
                     reason=(
-                        f"SizingCalculator: computed qty is zero or negative "
+                        f"SizingCalculator: total exposure cap — open notional "
+                        f"{inp.open_notional!r} + new {notional!r} exceeds "
+                        f"{policy.exposure_cap!r} (pre-reg §5.5)."
+                    )
+                )
+            )
+
+        if qty <= _ZERO:
+            return Failure(
+                InvalidLot(
+                    reason=(
+                        f"SizingCalculator: computed qty is zero "
                         f"(notional={notional!r}, entry_px={inp.entry_px!r})."
                     )
                 )
             )
 
-        # Identify which cap was binding (first match when equal).
-        if notional == atr_notional:
-            binding_cap = "atr"
-        elif notional == kelly_notional:
-            binding_cap = "kelly"
-        else:
-            binding_cap = "hard_cap"
-
         return Success(
             SizingResult(
                 qty=qty,
                 notional=notional,
-                atr_notional=atr_notional,
-                kelly_notional=kelly_notional,
-                hard_cap_notional=hard_cap_notional,
-                binding_cap=binding_cap,
+                risk_notional=risk_notional,
+                position_cap=position_cap,
+                binding_cap="risk" if risk_notional <= position_cap else "position_cap",
             )
         )

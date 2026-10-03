@@ -248,3 +248,25 @@ def test_rebuilt_equals_the_live_tracker_for_any_accepted_fill_sequence(
     rebuilt = result.unwrap()
     assert rebuilt.state() == live.state()
     assert rebuilt.open_position_count() == live.open_position_count()
+
+
+class TestOpenNotional:
+    """open_notional is the marked value of open positions the §5.5 exposure cap reads."""
+
+    def test_open_notional_is_zero_before_any_fill(self) -> None:
+        """With no position open, nothing counts toward the total exposure cap."""
+        assert PortfolioTracker(_seed()).open_notional() == Decimal("0")
+
+    def test_open_notional_follows_the_latest_mark(self) -> None:
+        """0.005 BTC bought at 50000 and marked at 52000 counts as 260 USDT, not its 250 cost."""
+        tracker = PortfolioTracker(_seed())
+        tracker.apply_fill(make_fill(OrderSide.BUY, "0.005", "50000"))
+        tracker.mark(make_bar(BTC_USDT, "52000", minutes=240))
+        assert tracker.open_notional() == Decimal("260")
+
+    def test_open_notional_returns_to_zero_after_the_position_closes(self) -> None:
+        """A closed position no longer uses exposure headroom."""
+        tracker = PortfolioTracker(_seed())
+        tracker.apply_fill(make_fill(OrderSide.BUY, "0.005", "50000"))
+        tracker.apply_fill(make_fill(OrderSide.SELL, "0.005", "50000", minutes=1))
+        assert tracker.open_notional() == Decimal("0")

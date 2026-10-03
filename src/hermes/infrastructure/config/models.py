@@ -33,6 +33,7 @@ from typing import Final
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from returns.result import Failure
 
+from hermes.application.order_router.sizing import SizingPolicy
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
@@ -46,6 +47,7 @@ __all__ = [
     "KrakenPublicConfig",
     "MLConfig",
     "MarketDataConfig",
+    "PositionSizingConfig",
     "SentryConfig",
     "StrategiesConfig",
     "TaxGuardConfig",
@@ -53,6 +55,26 @@ __all__ = [
 
 
 _MODEL_CONFIG = ConfigDict(frozen=True, extra="forbid")
+
+
+class PositionSizingConfig(BaseModel):
+    """Pre-registered sizing limits, each a share of the strategy's capital.
+
+    No defaults: a roster entry without a ``sizing`` block fails at load
+    rather than trading on limits nobody configured.
+
+    Attributes:
+        risk_pct: Share of capital risked per trade (pre-reg §5.4: 0.01).
+        max_position_pct: Notional cap per position (pre-reg §5.4: 0.05).
+        max_total_exposure_pct: Cap on the summed notional of open
+            positions (pre-reg §5.5: 0.15).
+    """
+
+    model_config = _MODEL_CONFIG
+
+    risk_pct: Decimal = Field(gt=Decimal("0"), le=Decimal("1"))
+    max_position_pct: Decimal = Field(gt=Decimal("0"), le=Decimal("1"))
+    max_total_exposure_pct: Decimal = Field(gt=Decimal("0"), le=Decimal("1"))
 
 
 class StrategyConfig(BaseModel):
@@ -67,6 +89,8 @@ class StrategyConfig(BaseModel):
             units. Seeds the portfolio tracker and, later, the risk engine's
             per-strategy budget. Required: a missing value fails at load.
         quote: Currency ``capital_budget`` is denominated in. Required.
+        sizing: Position-sizing limits as shares of ``capital_budget``.
+            Required.
     """
 
     model_config = _MODEL_CONFIG
@@ -76,6 +100,20 @@ class StrategyConfig(BaseModel):
     weight: Decimal = Field(ge=Decimal("0"), le=Decimal("1"))
     capital_budget: Decimal = Field(gt=Decimal("0"))
     quote: Currency
+    sizing: PositionSizingConfig
+
+    def sizing_policy(self) -> SizingPolicy:
+        """Return the sizing limits for this strategy, scaled by its capital.
+
+        Pre-reg §2 fixes the experiment capital, so the limits follow
+        ``capital_budget``, never current equity.
+        """
+        return SizingPolicy(
+            capital=self.capital_budget,
+            risk_pct=self.sizing.risk_pct,
+            max_position_pct=self.sizing.max_position_pct,
+            max_total_exposure_pct=self.sizing.max_total_exposure_pct,
+        )
 
 
 class StrategiesConfig(BaseModel):
