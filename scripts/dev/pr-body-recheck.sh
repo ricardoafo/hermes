@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# Re-run the CI "PR body" job when its result no longer matches the
-# PR's current body.
+# Re-run the CI "CI success" job when its "PR body" step no longer
+# matches the PR's current body.
 #
 # The PR body lives outside git, so editing it fires no push and the
 # `CI` workflow does not re-run (#350). This script lints the current
-# body and, when that verdict disagrees with the latest "PR body" job
-# of the CI run for the PR's head commit, re-runs that job. GitHub
-# re-runs its dependents with it, so "CI success" (the one required
-# check) follows. The rest of the CI suite is not re-run.
+# body and, when that verdict disagrees with the "PR body" step of the
+# latest CI run for the PR's head commit, re-runs the "CI success" job
+# that holds it. That job is the whole suite and the one required check
+# (#397), so the re-run refreshes the required result. It only happens
+# when the verdict flips, which is rare.
 #
 # Called by:
 #   - .github/workflows/pr-body-recheck.yml (on body edit, and when a
@@ -118,9 +119,9 @@ fi
 read -r run_id run_status run_attempt <<< "$run"
 
 job=$(api "repos/$repo/actions/runs/$run_id/jobs?per_page=100" \
-    | json_get 'next(((j["id"], j["conclusion"] or "none") for j in d["jobs"] if j["name"] == "PR body"), None)')
+    | json_get 'next(((j["id"], s["conclusion"] or "none") for j in d["jobs"] if j["name"] == "CI success" for s in j.get("steps") or [] if s["name"] == "PR body"), None)')
 if [[ -z "$job" ]]; then
-    echo "CI run $run_id has no PR body job; nothing to recheck."
+    echo "CI run $run_id has no PR body step yet; nothing to recheck."
     exit 0
 fi
 read -r job_id job_conclusion <<< "$job"
@@ -132,15 +133,15 @@ else
 fi
 
 action=$(decide "$run_status" "$job_conclusion" "$verdict" "$run_attempt")
-echo "PR #$PR_NUMBER: CI run $run_id ($run_status, attempt $run_attempt), PR body job $job_conclusion, current body $verdict -> $action"
+echo "PR #$PR_NUMBER: CI run $run_id ($run_status, attempt $run_attempt), PR body step $job_conclusion, current body $verdict -> $action"
 
 case "$action" in
     wait)  echo "CI is still running; the recheck fires again when it completes." ;;
     rerun)
         if [[ "${HERMES_RECHECK_DRY_RUN:-0}" == "1" ]]; then
-            echo "Dry run: would re-run PR body job $job_id."
+            echo "Dry run: would re-run CI success job $job_id."
         else
             api "repos/$repo/actions/jobs/$job_id/rerun" POST > /dev/null
-            echo "Re-ran PR body job $job_id (and CI success)."
+            echo "Re-ran CI success job $job_id."
         fi ;;
 esac
