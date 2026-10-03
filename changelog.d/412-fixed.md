@@ -1,0 +1,1 @@
+- The healthchecks.io ping now reports progress: it runs `hermes status --json` and sends a `/fail` ping with the status when a check is late or hermes is down, so a running but stalled loop alerts within one tick (#372).
