@@ -1,7 +1,7 @@
 # ADR-006: Versioning strategy — SemVer for the release surface, numbered SQL migrations for the ledger, versioned config schemas for parameters
 
 **Date**: 2026-08-20
-**Status**: Accepted
+**Status**: Accepted — partially superseded by [ADR-014](adr-014-pre-registration-binds-real-capital.md) (pre-release calendar only)
 **Accepted**: 2026-08-21
 **Deciders**: Ricardo Afonso (product owner), Claude (proposer)
 **Supersedes**: —
