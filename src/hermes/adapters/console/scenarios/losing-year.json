@@ -1,5 +1,6 @@
 {
   "description": "A losing year: losses show as a tax credit, not zero.",
+  "eur_per_usdt": "0.8567",
   "heartbeat": {
     "state": "ok",
     "as_of": "2026-10-03T12:12:00+00:00",
@@ -186,7 +187,9 @@
           "951.19"
         ]
       }
-    }
+    },
+    "starting_capital": "1000.00",
+    "started_on": "2026-09-27"
   },
   "positions": [
     {
@@ -205,11 +208,11 @@
         "entry_values": [
           [
             "donchian_high",
-            "62350"
+            "53415.24"
           ],
           [
             "atr",
-            "405"
+            "346.96"
           ]
         ],
         "stop_moves": 1,
@@ -232,11 +235,11 @@
           },
           {
             "at": "2026-10-03T00:00:06+00:00",
-            "label": "filled 0.0016 at 62,400"
+            "label": "filled 0.0016 at €53,458"
           },
           {
             "at": "2026-10-03T08:00:00+00:00",
-            "label": "stop raised 61,500 → 61,700"
+            "label": "stop raised €52,687 → €52,858"
           }
         ]
       }
