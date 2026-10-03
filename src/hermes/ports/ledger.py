@@ -12,7 +12,9 @@ code-conventions.md §1 (Ports & Adapters).
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from typing import Protocol, runtime_checkable
 
 from hermes.domain.events.base import DomainEvent
@@ -21,11 +23,13 @@ from hermes.domain.events.trade_executed import TradeExecuted
 from hermes.domain.lots.lot import Lot
 from hermes.domain.lots.lot_consumption import LotConsumption
 from hermes.domain.market_data.kline import KlineInterval
+from hermes.domain.trading.trade_record import TradeEur, TradeRecord
 from hermes.domain.value_objects.currency import Currency
+from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
 
-__all__ = ["LedgerPort"]
+__all__ = ["LedgerPort", "PendingTrade", "TradeLedgerPort"]
 
 
 @runtime_checkable
@@ -192,5 +196,75 @@ class LedgerPort(Protocol):
         Raises:
             LedgerError: On any SQLite read failure, a row that is not schema
                 version 2, or an unreadable payload.
+        """
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class PendingTrade:
+    """A stored trade whose EUR values are still pending.
+
+    Attributes:
+        trade_id: Ledger row id.
+        pair: Traded pair; ``pair.quote`` is the currency to price.
+        executed_at: Fill time; its Madrid date picks the EUR rate.
+        price: Native price of one base unit.
+        fee: Native fee.
+    """
+
+    trade_id: int
+    pair: Pair
+    executed_at: datetime
+    price: Decimal
+    fee: Money
+
+
+@runtime_checkable
+class TradeLedgerPort(Protocol):
+    """Trade-row persistence with EUR values (change ``trade-eur-values``).
+
+    Lots and consumptions written through this port are a projection of the
+    ``trades`` table: every write replays the asset's trades FIFO and stores
+    the EUR values, fees included, in the same transaction (I-06).
+
+    Adapters raise :class:`hermes.domain.errors.LedgerError` on failure.
+    """
+
+    def record_trade(self, trade: TradeRecord, event: DomainEvent) -> int:
+        """Store one trade, its lot effects and its event atomically.
+
+        Args:
+            trade: The trade; ``trade.eur is None`` stores it pending.
+            event: The ``TradeExecuted`` event for the trade.
+
+        Returns:
+            The new trade row id.
+
+        Raises:
+            LedgerError: On any SQLite failure, or a SELL beyond the open
+                quantity of its asset. Nothing is stored.
+        """
+        ...
+
+    def list_pending_trades(self) -> tuple[PendingTrade, ...]:
+        """Return every trade whose EUR values are pending, oldest first.
+
+        Returns:
+            Pending trades ordered by ``executed_at`` then id.
+
+        Raises:
+            LedgerError: On any SQLite read failure.
+        """
+        ...
+
+    def apply_trade_eur(self, trade_id: int, eur: TradeEur) -> None:
+        """Fill a pending trade's EUR values and re-project its asset.
+
+        Args:
+            trade_id: Row id of the trade.
+            eur: The EUR values to store.
+
+        Raises:
+            LedgerError: On any SQLite failure or an unknown ``trade_id``.
         """
         ...

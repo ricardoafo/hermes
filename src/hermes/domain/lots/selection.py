@@ -38,7 +38,7 @@ from decimal import Decimal
 
 from returns.result import Failure, Result, Success
 
-from hermes.domain.errors import DomainError
+from hermes.domain.errors import DomainError, InvalidLot
 from hermes.domain.lots.lot import Lot
 from hermes.domain.lots.lot_consumption import LotConsumption
 from hermes.domain.value_objects.money import Money
@@ -131,6 +131,12 @@ def select_lots_fifo(
         if remaining_to_consume == Decimal("0"):
             break
         take = min(lot.remaining_qty.amount, remaining_to_consume)
+        if lot.cost_basis_per_unit is None:
+            return Failure(
+                InvalidLot(
+                    reason=f"select_lots_fifo: lot {lot.lot_id} has a pending EUR cost basis"
+                )
+            )
         consumption_result = LotConsumption.record(
             lot_id=lot.lot_id,
             consumed_qty=Quantity(amount=take, asset=quantity_to_consume.asset),
