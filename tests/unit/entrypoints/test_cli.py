@@ -4,7 +4,8 @@ Verifies:
 - No arguments prints the top-level help (exit 0).
 - ``--help`` / ``-h`` prints the top-level help (exit 0).
 - ``preview list`` delegates and prints the event catalog.
-- ``serve`` / ``simulate`` exit 2 with a "not yet implemented" note.
+- ``simulate`` exits 2 with a "not yet implemented" note.
+- ``serve`` exit codes: 0 clean, 1 runtime, 2 usage, 3 config.
 - ``health`` (no arg) prints usage and exits 2.
 - ``health <unknown>`` exits 2 with a diagnostic.
 - ``health telegram`` / ``health slack`` delegate to the registry probes.
@@ -15,6 +16,7 @@ Reference: docs/decisions/2026-08-23-slack-alongside-telegram.md.
 
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import sys
@@ -27,6 +29,7 @@ import respx
 
 from hermes.entrypoints import _health as health_module
 from hermes.entrypoints import cli as cli_module
+from hermes.entrypoints import serve as serve_module
 
 _RECORDED_DIR = Path(__file__).parents[2] / "fixtures" / "binance_public"
 
@@ -100,6 +103,73 @@ class TestServeSubcommand:
         )
         assert rc == 3
         assert "config load failed" in stream.getvalue()
+
+
+class TestServeExitCodes:
+    """`hermes serve` exit codes: 0 clean, 1 runtime, 2 usage, 3 config."""
+
+    def test_serve_env_flag_stays_rejected_with_exit_two(self) -> None:
+        """`--env` is not a flag: HERMES_ENV is the only source of the tier (D-8)."""
+        stream = io.StringIO()
+
+        rc = cli_module.main(["serve", "--env", "prod"], stream=stream)
+
+        assert (rc, "could not parse" in stream.getvalue()) == (2, True)
+
+    def test_serve_help_documents_the_exit_codes_and_hermes_env(self) -> None:
+        """The help text names HERMES_ENV and the four exit codes."""
+        stream = io.StringIO()
+
+        cli_module.main(["serve", "--help"], stream=stream)
+
+        text = stream.getvalue()
+        assert ("HERMES_ENV" in text, "3 config" in text) == (True, True)
+
+    def test_a_failed_startup_check_exits_three(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A StartupError from the check maps to exit 3 with its message."""
+
+        def _refuse(_config: object, _env: object) -> None:
+            raise serve_module.StartupError("roster is wrong")
+
+        monkeypatch.setattr(serve_module, "check_startup", _refuse)
+        stream = io.StringIO()
+        config_dir = Path(__file__).resolve().parents[3] / "config"
+
+        rc = cli_module.main(["serve", "--config-dir", str(config_dir)], stream=stream)
+
+        assert (rc, "roster is wrong" in stream.getvalue()) == (3, True)
+
+    def test_serve_main_returns_the_exit_code_of_run(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """_serve_main returns whatever run() returns instead of a hard-coded 0."""
+
+        async def _fake_run(_composition: object, _shutdown: object) -> int:
+            return 7
+
+        monkeypatch.setattr(serve_module, "build_composition", lambda *_a, **_k: object())
+        monkeypatch.setattr(serve_module, "install_signal_handlers", lambda *_a, **_k: None)
+        monkeypatch.setattr(serve_module, "run", _fake_run)
+
+        rc = asyncio.run(cli_module._serve_main(object(), db_path=tmp_path / "x.sqlite3"))
+
+        assert rc == 7
+
+    def test_a_failed_build_exits_one_and_is_reported(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """A wiring failure is a runtime failure: exit 1, logged and sent to Sentry."""
+        reported: list[BaseException] = []
+
+        def _boom(*_a: object, **_k: object) -> object:
+            raise RuntimeError("cannot open ledger")
+
+        monkeypatch.setattr(serve_module, "build_composition", _boom)
+        monkeypatch.setattr(serve_module, "report_failure", reported.append)
+
+        rc = asyncio.run(cli_module._serve_main(object(), db_path=tmp_path / "x.sqlite3"))
+
+        assert (rc, [str(e) for e in reported]) == (1, ["cannot open ledger"])
 
 
 class TestMainDefaultStream:

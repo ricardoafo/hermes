@@ -1,48 +1,52 @@
-"""Composition root for the ``hermes serve`` command.
+"""Composition root and shadow bar loop for the ``hermes serve`` command.
 
-Wires config → adapters → strategy → router → event bus → runs the async
-loop until SIGTERM/SIGINT is received.
+Wires config → adapters → strategies → notifiers → event bus, then runs the
+Phase-1 shadow loop until SIGTERM/SIGINT or a failure. The root lives here,
+not in the application layer, because choosing a concrete adapter is an
+import the application layer may not make (ADR-013, which supersedes
+ADR-011 D-02).
 
-This module delivers the MINIMUM composition needed to start the paper-trading
-engine and exit cleanly on signal. It intentionally stays scoped to
-adapter wiring and shutdown plumbing:
+What one process does:
 
-- :class:`Composition` is a frozen dataclass holding every wired port that
-  Phase-1 paper-trading needs at process start.
-- :func:`build_composition` is pure wiring — the only I/O is the SQLite
-  ``connect`` inside :class:`~hermes.adapters.ledger.sqlite_ledger.SqliteLedger`
-  (which runs migrations idempotently) and the ``httpx.Client`` opened by
-  :class:`~hermes.adapters.notifier.telegram_adapter.TelegramAdapter` when
-  Telegram credentials are present in the env snapshot.
-- :func:`run` awaits the shutdown event and returns; the event-bus is
-  populated and ready for publishers but no scheduling loop is spun up
-  here — that lives in the follow-up wave (see the PR body for the
-  Phase-2 boundary).
+- :func:`build_composition` is pure wiring. The only I/O is the SQLite
+  ``connect`` (the ledger runs migrations idempotently) and the HTTP clients
+  the adapters own.
+- :func:`run` opens an :class:`asyncio.TaskGroup` holding the bar loop, logs
+  and reports to Sentry whatever escapes it, closes every resource in order
+  and returns the process exit code (0 clean, 1 runtime failure).
+- The bar loop warms up one :class:`SwingStrategyAdapter` per pair, seeding
+  bars up to a persisted cursor without evaluating them, restoring each
+  pair's open position from the ledger, then evaluates every later bar as if
+  it were live. A restart therefore neither re-notifies, skips a bar nor
+  forgets an open position (change ``309-serve-bar-loop`` D-6).
+- A notifier outage is logged and sent to Sentry; it never stops the loop.
+  Every other error exits 1 so systemd restarts the unit. Exit codes 2 and 3
+  are reserved for usage and config errors found before the loop starts.
 - :func:`install_signal_handlers` binds SIGTERM + SIGINT to
-  :meth:`asyncio.Event.set`. Falls back to :func:`signal.signal` on
-  Windows where :meth:`asyncio.AbstractEventLoop.add_signal_handler`
-  raises :class:`NotImplementedError`.
+  :meth:`asyncio.Event.set`. Falls back to :func:`signal.signal` on Windows
+  where :meth:`asyncio.AbstractEventLoop.add_signal_handler` raises
+  :class:`NotImplementedError`.
 
 Real-money guard
 ----------------
 
-The composition root refuses to build a mainnet-touching adapter unless
-:attr:`~hermes.infrastructure.config.HermesConfig.allow_mainnet` is True
-AND :attr:`~hermes.infrastructure.config.HermesConfig.env` is ``"prod"``.
-The stricter of those checks already lives on the config model
-(``_mainnet_only_in_prod``); this module treats a missing
-``allow_mainnet`` flag as "wire paper-trading only" and never attempts
-to open a live exchange client from here. See ADR-003 §00 invariant
+No exchange adapter is wired, so no order can be placed by construction. The
+real-money gate stays on :attr:`~hermes.infrastructure.config.HermesConfig.allow_mainnet`
+AND :attr:`~hermes.infrastructure.config.HermesConfig.env` being ``"prod"``
+(``_mainnet_only_in_prod`` on the config model). See ADR-003 §00 invariant
 I-08.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import signal
 import sqlite3
-from dataclasses import dataclass
+from collections.abc import AsyncIterator, Callable, Mapping
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Final
 
@@ -50,23 +54,52 @@ import structlog
 
 from hermes.adapters.clock.wall import WallClock
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
-from hermes.adapters.market_data.binance_historical import (
-    BinanceHistoricalAdapter,
-    BinanceHistoricalConfig,
-)
+from hermes.adapters.market_data.binance_live_klines import BinanceLiveKlinesAdapter
+from hermes.adapters.notifier.slack_adapter import SlackAdapter, SlackConfig, SlackNotifierError
 from hermes.adapters.notifier.telegram_adapter import (
     TelegramAdapter,
     TelegramConfig,
     TelegramNotifierError,
 )
-from hermes.domain.events.event_bus import EventBus
+from hermes.application.notification_router import RouterConfig
+from hermes.application.portfolio.tracker import PortfolioTracker
+from hermes.application.signal_notifier import SignalNotifier
+from hermes.domain.errors import HermesError
+from hermes.domain.events.bar_processed import BarProcessed
+from hermes.domain.events.event_bus import EventBus, EventDispatchError
+from hermes.domain.events.signal_emitted import SignalEmitted
+from hermes.domain.market_data.bar import Bar
+from hermes.domain.market_data.bar_schedule import (
+    Stream,
+    delivery_key,
+    interval_duration,
+    within_catchup,
+)
+from hermes.domain.market_data.kline import KlineInterval
+from hermes.domain.portfolio.snapshot import PortfolioSnapshot
+from hermes.domain.strategy.signal import OpenPosition, SignalKind
 from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
+from hermes.domain.value_objects.money import Money
+from hermes.domain.value_objects.pair import Pair
+from hermes.domain.value_objects.strategy_id import StrategyId
+from hermes.infrastructure import sentry_integration
 from hermes.infrastructure.config.root import HermesConfig
+from hermes.infrastructure.logging import bind_correlation_id, new_correlation_id
+from hermes.ports.bar_feed import ClosedBarFeedPort
+from hermes.ports.clock import ClockPort
+from hermes.ports.strategy import StrategyPort
 
 __all__ = [
+    "CATCHUP_BARS",
+    "SHADOW_STRATEGY_NAME",
+    "SHADOW_UNIVERSE",
+    "BarGapError",
     "Composition",
+    "StartupError",
     "build_composition",
+    "check_startup",
     "install_signal_handlers",
+    "report_failure",
     "run",
 ]
 
@@ -77,6 +110,26 @@ _log = structlog.get_logger(__name__)
 # valid starting state.
 DEFAULT_DB_PATH: Final[Path] = Path("hermes.sqlite3")
 
+CATCHUP_BARS: Final = 2
+"""A signal at most this many bars old is still notified (H4: up to 8 h)."""
+
+SHADOW_UNIVERSE: Final = ("BTC/USDT", "ETH/USDT", "SOL/USDT")
+"""The three pairs of pre-registration §3."""
+
+SHADOW_STRATEGY_NAME: Final = "swing-donchian-4h"
+"""The one strategy the shadow roster may enable (pre-registration §5)."""
+
+_ONE_MS: Final = timedelta(milliseconds=1)
+_NEVER: Final = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+class StartupError(HermesError):
+    """The configuration cannot run the shadow loop; the process exits 3."""
+
+
+class BarGapError(HermesError):
+    """A stream skipped a bar, so the strategy buffers would be wrong; exits 1."""
+
 
 @dataclass(frozen=True)
 class Composition:
@@ -84,148 +137,415 @@ class Composition:
 
     Attributes:
         config: The fully-validated :class:`HermesConfig` snapshot the
-            composition was built from. Kept on the container so
-            downstream layers can consult tier / mainnet flags without
-            re-reading YAML.
-        event_bus: Synchronous in-process pub/sub. Publishers push
-            :class:`~hermes.domain.events.base.DomainEvent` instances,
-            subscribers register at composition time.
-        ledger: SQLite-backed FIFO ledger. Runs migrations idempotently
-            in its constructor.
-        clock: :class:`~hermes.adapters.clock.wall.WallClock` — the
-            production time source. Backtests inject a
-            :class:`~hermes.adapters.clock.simulated.SimulatedClock` at
-            their own composition root.
-        market_data: Historical filesystem-backed
-            :class:`~hermes.adapters.market_data.binance_historical.BinanceHistoricalAdapter`.
-            The live WebSocket adapter is intentionally NOT wired here —
-            its ``stream_bars`` implementation raises
-            :class:`NotImplementedError` today.
-        strategy: :class:`~hermes.domain.strategy.swing.adapter.SwingStrategyAdapter`
-            configured with pre-registration defaults.
-        notifier: Optional :class:`~hermes.adapters.notifier.telegram_adapter.TelegramAdapter`.
-            ``None`` when the operator has not populated
-            ``HERMES_TELEGRAM__BOT_TOKEN`` + ``HERMES_TELEGRAM__CHAT_ID``.
-            Absent credentials degrade the channel to a silent no-op —
-            they do NOT abort composition.
-        sqlite_connection: The raw connection owned by the composition.
-            Kept on the container so :func:`run` can close it in its
-            ``finally`` block.
+            composition was built from.
+        event_bus: Synchronous in-process pub/sub. ``SignalEmitted`` and
+            ``BarProcessed`` are subscribed to the ledger at build time.
+        ledger: SQLite-backed ledger. Holds signals and the bar cursor.
+        clock: Production time source.
+        feed: Closed-bar source (warm-up history plus the live stream).
+        strategies: One strategy instance per pair, routed by ``bar.pair``.
+        strategy_id: The bucket id every signal carries.
+        tracker: Portfolio state handed to the strategies on every bar.
+        signal_notifier: Fans a signal out to the routed channels.
+        pairs: Pairs the feed follows.
+        intervals: Intervals the feed follows.
+        telegram: Telegram adapter, or ``None`` without credentials. Kept
+            concrete because only the adapters have ``close()``.
+        slack: Slack adapter, or ``None`` without credentials.
+        sqlite_connection: The raw connection owned by the composition,
+            closed last by :func:`run`.
     """
 
     config: HermesConfig
     event_bus: EventBus
     ledger: SqliteLedger
-    clock: WallClock
-    market_data: BinanceHistoricalAdapter
-    strategy: SwingStrategyAdapter
-    notifier: TelegramAdapter | None
+    clock: ClockPort
+    feed: ClosedBarFeedPort
+    strategies: Mapping[Pair, StrategyPort]
+    strategy_id: StrategyId
+    tracker: PortfolioTracker
+    signal_notifier: SignalNotifier
+    pairs: tuple[Pair, ...]
+    intervals: tuple[KlineInterval, ...]
+    telegram: TelegramAdapter | None
+    slack: SlackAdapter | None
     sqlite_connection: sqlite3.Connection
 
 
-def _build_notifier(env: dict[str, str]) -> TelegramAdapter | None:
-    """Build the Telegram notifier when credentials are present in ``env``.
-
-    The notifier is optional — a fresh clone with no populated Telegram
-    env vars is a valid starting state (the operator gets no push pings
-    until they wire the bot). Any credential-shape error is logged and
-    swallowed so a missing token cannot crash the whole engine at
-    startup.
-
-    Args:
-        env: Env-var snapshot. Pass ``os.environ`` in production; tests
-            pass a controlled dict so the ambient shell never leaks in.
-
-    Returns:
-        A configured :class:`TelegramAdapter` or ``None`` when
-        credentials are missing.
-    """
+def _telegram_config(env: Mapping[str, str]) -> TelegramConfig | None:
+    """Return the Telegram credentials in ``env``, or ``None`` when absent."""
     try:
-        config = TelegramConfig.from_env(env)
+        return TelegramConfig.from_env(dict(env))
     except TelegramNotifierError as exc:
         _log.info("serve.notifier.telegram_disabled", reason=str(exc))
         return None
-    return TelegramAdapter.create(config)
+
+
+def _slack_config(env: Mapping[str, str]) -> SlackConfig | None:
+    """Return the Slack credentials in ``env``, or ``None`` when absent."""
+    try:
+        return SlackConfig.from_env(dict(env))
+    except SlackNotifierError as exc:
+        _log.info("serve.notifier.slack_disabled", reason=str(exc))
+        return None
+
+
+def check_startup(config: HermesConfig, env: Mapping[str, str]) -> None:
+    """Refuse a configuration the shadow loop cannot run safely.
+
+    Args:
+        config: The loaded configuration.
+        env: Env-var snapshot used to probe channel credentials.
+
+    Raises:
+        StartupError: The enabled roster is not exactly the one swing entry,
+            the followed pairs or intervals differ from pre-registration §3,
+            or ``env`` is ``prod`` and neither Telegram nor Slack has
+            credentials.
+    """
+    enabled = [s.name for s in config.strategies.strategies if s.enabled]
+    if enabled != [SHADOW_STRATEGY_NAME]:
+        raise StartupError(
+            f"enabled strategies must be exactly [{SHADOW_STRATEGY_NAME!r}], got {enabled!r}"
+        )
+    if set(config.market_data.pairs) != set(SHADOW_UNIVERSE):
+        raise StartupError(
+            f"market_data.pairs must be {list(SHADOW_UNIVERSE)!r}, got {config.market_data.pairs!r}"
+        )
+    if set(config.market_data.intervals) != {KlineInterval.H4, KlineInterval.D1}:
+        raise StartupError("market_data.intervals must be exactly 4h and 1d")
+    if config.env == "prod" and _telegram_config(env) is None and _slack_config(env) is None:
+        raise StartupError(
+            "env is prod but neither Telegram nor Slack credentials are set; "
+            "a signal would reach no one"
+        )
 
 
 def build_composition(
     config: HermesConfig,
     *,
     db_path: Path | None = None,
-    env: dict[str, str] | None = None,
+    env: Mapping[str, str] | None = None,
+    feed: ClosedBarFeedPort | None = None,
+    clock: ClockPort | None = None,
 ) -> Composition:
-    """Wire every adapter the paper-trading loop needs and return the container.
+    """Wire every adapter the shadow loop needs and return the container.
 
-    Pure wiring — the only I/O is the SQLite ``connect`` (which the
-    ledger constructor uses to apply pending migrations idempotently)
-    and an optional ``httpx.Client`` on the Telegram adapter when
-    credentials are present.
+    Pure wiring: the only I/O is the SQLite ``connect`` (migrations run
+    idempotently in the ledger constructor) and the HTTP clients the adapters
+    own.
 
     Args:
-        config: The validated :class:`HermesConfig` snapshot.
+        config: The validated :class:`HermesConfig` snapshot. Callers run
+            :func:`check_startup` first.
         db_path: Optional path to the SQLite ledger file. Defaults to
             :data:`DEFAULT_DB_PATH` (``./hermes.sqlite3`` in CWD).
-        env: Optional env-var snapshot for the Telegram credential
-            probe. Defaults to :data:`os.environ`.
+        env: Optional env-var snapshot for the credential probes. Defaults
+            to :data:`os.environ`.
+        feed: Closed-bar source override for tests. Defaults to
+            :class:`BinanceLiveKlinesAdapter`.
+        clock: Clock override for tests. Defaults to :class:`WallClock`.
 
     Returns:
         A fully wired :class:`Composition` ready to hand to :func:`run`.
     """
     db_target = db_path if db_path is not None else DEFAULT_DB_PATH
-    env_snapshot = dict(os.environ) if env is None else env
+    env_snapshot: Mapping[str, str] = dict(os.environ) if env is None else env
 
     connection = sqlite3.connect(db_target)
     ledger = SqliteLedger(connection)
 
-    clock = WallClock()
-    strategy = SwingStrategyAdapter()
+    wall: ClockPort = clock if clock is not None else WallClock()
     event_bus = EventBus()
+    event_bus.subscribe(SignalEmitted, ledger.append_event)
+    event_bus.subscribe(BarProcessed, ledger.append_event)
 
-    # BinanceHistoricalAdapter reads Vision-ingested klines from disk. The
-    # data directory resolves lazily (first ``stream_bars`` call) from
-    # ``HERMES_DATA_DIR``; not required at wire time.
-    market_data = BinanceHistoricalAdapter(config=BinanceHistoricalConfig())
+    roster = next(s for s in config.strategies.strategies if s.enabled)
+    strategy_id = StrategyId(roster.name)
+    tracker = PortfolioTracker(
+        PortfolioSnapshot.seed(
+            strategy_id, Money(amount=roster.capital_budget, currency=roster.quote)
+        )
+    )
+    pairs = config.market_data.parsed_pairs()
+    strategies: dict[Pair, StrategyPort] = {pair: SwingStrategyAdapter() for pair in pairs}
 
-    notifier = _build_notifier(env_snapshot)
+    telegram_config = _telegram_config(env_snapshot)
+    slack_config = _slack_config(env_snapshot)
+    telegram = TelegramAdapter.create(telegram_config) if telegram_config is not None else None
+    slack = SlackAdapter.create(slack_config) if slack_config is not None else None
 
     return Composition(
         config=config,
         event_bus=event_bus,
         ledger=ledger,
-        clock=clock,
-        market_data=market_data,
-        strategy=strategy,
-        notifier=notifier,
+        clock=wall,
+        feed=feed
+        if feed is not None
+        else BinanceLiveKlinesAdapter.create(config.market_data, wall),
+        strategies=strategies,
+        strategy_id=strategy_id,
+        tracker=tracker,
+        signal_notifier=SignalNotifier(RouterConfig(telegram=telegram, slack=slack)),
+        pairs=pairs,
+        intervals=tuple(config.market_data.intervals),
+        telegram=telegram,
+        slack=slack,
         sqlite_connection=connection,
     )
 
 
-async def run(composition: Composition, shutdown: asyncio.Event) -> None:
-    """Await the shutdown signal, then release the composition's resources.
+async def run(composition: Composition, shutdown: asyncio.Event) -> int:
+    """Run the bar loop until shutdown or failure, then release every resource.
 
-    Phase-1 scope: this is the minimum loop the CLI wraps. Publishers
-    fan events out through :attr:`Composition.event_bus`; subscribers
-    register at composition time. The scheduling loop that pumps market
-    data through the strategy lives in the Phase-2 follow-up wave — see
-    the PR body for that boundary.
-
-    Cleanup runs in the ``finally`` block so a mid-loop exception cannot
-    leak the SQLite connection or the notifier's ``httpx.Client``.
+    The loop runs inside an :class:`asyncio.TaskGroup`, so a sibling task
+    added later cancels it and vice versa. Anything that escapes is logged
+    with its traceback, sent to Sentry (a returned exit code no longer
+    reaches Sentry's excepthook) and turned into exit code 1.
 
     Args:
         composition: The wired container from :func:`build_composition`.
         shutdown: An :class:`asyncio.Event` that :func:`install_signal_handlers`
             (or the caller) sets when SIGTERM / SIGINT arrives.
+
+    Returns:
+        ``0`` after a clean shutdown, ``1`` after a runtime failure. Never 2
+        or 3: those would stop the systemd unit for good.
     """
-    _log.info("serve.run.started", env=composition.config.env)
+    _log.info(
+        "serve.run.started",
+        env=composition.config.env,
+        pairs=len(composition.strategies),
+    )
+    code = 0
     try:
-        await shutdown.wait()
+        async with asyncio.TaskGroup() as group:
+            group.create_task(_bar_loop(composition, shutdown))
+    except* Exception as failures:
+        code = 1
+        for exc in failures.exceptions:
+            report_failure(exc)
     finally:
         _log.info("serve.run.stopping")
-        if composition.notifier is not None:
-            composition.notifier.close()
-        composition.sqlite_connection.close()
-        _log.info("serve.run.stopped")
+        await _release(composition)
+        _log.info("serve.run.stopped", exit_code=code)
+    return code
+
+
+def report_failure(exc: BaseException) -> None:
+    """Log ``exc`` with its traceback and send it to Sentry.
+
+    Args:
+        exc: The failure that ends the process with exit code 1.
+    """
+    _log.error("serve.run.failed", exc_info=exc)
+    if isinstance(exc, Exception):
+        sentry_integration.capture(exc)
+
+
+async def _release(c: Composition) -> None:
+    """Close the feed, then Slack, Telegram and SQLite last; never raise."""
+    try:
+        await c.feed.aclose()
+    except Exception as exc:
+        _log.error("serve.close.feed_failed", exc_info=exc)
+    with contextlib.ExitStack() as stack:
+        stack.callback(_close_quietly, c.sqlite_connection.close)
+        if c.telegram is not None:
+            stack.callback(_close_quietly, c.telegram.close)
+        if c.slack is not None:
+            stack.callback(_close_quietly, c.slack.close)
+
+
+def _close_quietly(close: Callable[[], object]) -> None:
+    """Call ``close`` and log, instead of raising, when it fails."""
+    try:
+        close()
+    except Exception as exc:
+        _log.error("serve.close.failed", exc_info=exc)
+
+
+async def _bar_loop(c: Composition, shutdown: asyncio.Event) -> None:
+    """Warm up, catch up, then handle live bars until shutdown."""
+    if shutdown.is_set():
+        return
+    loop = _BarLoop(c)
+    await loop.warm_up_and_catch_up(shutdown)
+    if shutdown.is_set():
+        return
+    stream = c.feed.stream_closed_bars(c.pairs, c.intervals).__aiter__()
+    while (bar := await _next_or_stop(stream, shutdown)) is not None:
+        await loop.handle(bar)
+
+
+async def _anext(stream: AsyncIterator[Bar]) -> Bar:
+    """Await the next bar; a thin coroutine so it can be a task."""
+    return await anext(stream)
+
+
+async def _next_or_stop(stream: AsyncIterator[Bar], shutdown: asyncio.Event) -> Bar | None:
+    """Wait for the next bar or for shutdown, whichever comes first.
+
+    Shutdown is raced at this idle await only: a bar being handled is never
+    cancelled, so a handler cannot be cut between the ledger write and the
+    notification.
+
+    Args:
+        stream: The live bar stream.
+        shutdown: The shutdown event.
+
+    Returns:
+        The next bar, or ``None`` when shutdown arrived first.
+
+    Raises:
+        RuntimeError: The feed ended, which a live feed must not do.
+    """
+    bar_task = asyncio.ensure_future(_anext(stream))
+    stop_task = asyncio.ensure_future(shutdown.wait())
+    try:
+        await asyncio.wait({bar_task, stop_task}, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        for task in (bar_task, stop_task):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(bar_task, stop_task, return_exceptions=True)
+    if bar_task.cancelled():
+        return None
+    try:
+        return bar_task.result()
+    except StopAsyncIteration as exc:
+        raise RuntimeError("bar feed ended unexpectedly") from exc
+
+
+@dataclass
+class _BarLoop:
+    """Per-process loop state: the last handled bar of every stream."""
+
+    c: Composition
+    previous: dict[Stream, datetime] = field(default_factory=dict)
+
+    async def warm_up_and_catch_up(self, shutdown: asyncio.Event) -> None:
+        """Seed history up to each cursor, then evaluate the bars after it."""
+        c = self.c
+        warm: list[Bar] = []
+        for pair in c.pairs:
+            for interval in c.intervals:
+                count = c.config.market_data.warmup_bars(interval)
+                warm.extend(await c.feed.warm_up(pair, interval, count))
+        warm.sort(key=delivery_key)
+        cursors = self._load_cursors(warm)
+        for pair, strategy in c.strategies.items():
+            seeded = [
+                b for b in warm if b.pair == pair and b.close_time <= cursors[(b.pair, b.interval)]
+            ]
+            strategy.seed(seeded, open_position=self._restore_position(pair, cursors))
+        _log.info("serve.warmup.done", bars=len(warm))
+        for bar in warm:
+            if shutdown.is_set():
+                return
+            if bar.close_time > cursors[(bar.pair, bar.interval)]:
+                await self.handle(bar)
+
+    def _load_cursors(self, warm: list[Bar]) -> dict[Stream, datetime]:
+        """Return each stream's cursor; a first boot starts at its last warm-up bar."""
+        c = self.c
+        cursors: dict[Stream, datetime] = {}
+        for pair in c.pairs:
+            for interval in c.intervals:
+                stream = (pair, interval)
+                stored = c.ledger.last_processed_close(pair, interval)
+                if stored is not None:
+                    cursors[stream] = stored
+                    self.previous[stream] = stored + _ONE_MS - interval_duration(interval)
+                    continue
+                history = [b for b in warm if (b.pair, b.interval) == stream]
+                if not history:
+                    cursors[stream] = _NEVER
+                    continue
+                last = history[-1]
+                cursors[stream] = last.close_time
+                self.previous[stream] = last.open_time
+                c.event_bus.publish(
+                    BarProcessed.from_bar(last, correlation_id=new_correlation_id())
+                )
+                _log.info("serve.cursor.initialised", pair=str(pair), interval=interval.value)
+        return cursors
+
+    def _restore_position(
+        self, pair: Pair, cursors: Mapping[Stream, datetime]
+    ) -> OpenPosition | None:
+        """Rebuild the open position from the ledger, bounded by the 4h cursor."""
+        cursor = cursors.get((pair, KlineInterval.H4))
+        if cursor is None:
+            return None
+        latest = self.c.ledger.latest_signal_event(self.c.strategy_id, pair, at_or_before=cursor)
+        if latest is None or latest.kind is not SignalKind.ENTRY or latest.entry_price is None:
+            return None
+        return OpenPosition(entry_time=latest.occurred_at, entry_price=latest.entry_price)
+
+    async def handle(self, bar: Bar) -> None:
+        """Evaluate one closed bar, record any signal, notify, then move the cursor."""
+        c = self.c
+        stream = (bar.pair, bar.interval)
+        if not self._is_next(stream, bar):
+            return
+        correlation_id = new_correlation_id()
+        bind_correlation_id(correlation_id)
+
+        c.tracker.mark(bar)
+        signal_ = c.strategies[bar.pair].on_bar(bar, c.tracker.state())
+        if signal_ is not None:
+            event = SignalEmitted.from_signal(
+                signal_,
+                strategy_id=c.strategy_id,
+                pair=bar.pair,
+                correlation_id=correlation_id,
+            )
+            if not c.ledger.has_signal_event(event):
+                c.event_bus.publish(event)
+                if within_catchup(
+                    c.clock.now(), event.occurred_at, bar.interval, bars=CATCHUP_BARS
+                ):
+                    await self._notify(event)
+                else:
+                    _log.warning(
+                        "serve.signal.stale_not_notified",
+                        pair=str(event.pair),
+                        kind=event.kind.value,
+                        occurred_at=event.occurred_at.isoformat(),
+                    )
+        c.event_bus.publish(BarProcessed.from_bar(bar, correlation_id=correlation_id))
+        self.previous[stream] = bar.open_time
+
+    def _is_next(self, stream: Stream, bar: Bar) -> bool:
+        """Return ``False`` for a repeated bar; raise on a skipped one.
+
+        Raises:
+            BarGapError: ``bar`` does not directly follow the stream's last bar.
+        """
+        last = self.previous.get(stream)
+        if last is None:
+            return True
+        if bar.open_time <= last:
+            _log.debug("serve.bar.duplicate_skipped", pair=str(bar.pair))
+            return False
+        expected = last + interval_duration(bar.interval)
+        if bar.open_time != expected:
+            raise BarGapError(
+                f"{bar.pair} {bar.interval.value}: expected the bar opening at "
+                f"{expected.isoformat()}, got {bar.open_time.isoformat()}"
+            )
+        return True
+
+    async def _notify(self, event: SignalEmitted) -> None:
+        """Fan the event out in a worker thread; a channel outage is logged, not fatal."""
+        try:
+            await asyncio.to_thread(self.c.signal_notifier.dispatch, event)
+        except EventDispatchError as exc:
+            _log.error("serve.notify.failed", exc_info=exc)
+            for failure in exc.failures:
+                if isinstance(failure, Exception):
+                    sentry_integration.capture(failure)
 
 
 def install_signal_handlers(

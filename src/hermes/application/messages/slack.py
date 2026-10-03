@@ -56,10 +56,12 @@ from hermes.domain.events.balance_low import BalanceLow
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.daily_trade_digest import DailyTradeDigest
 from hermes.domain.events.rebalance_triggered import RebalanceTriggered
+from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.events.strategy_paused import StrategyPaused
 from hermes.domain.events.strategy_resumed import StrategyResumed
 from hermes.domain.events.trade_executed import TradeExecuted
 from hermes.domain.events.trade_rejected import TradeRejected
+from hermes.domain.strategy.signal import SignalKind
 
 __all__ = ["FileAttachment", "SlackMessage", "slack_template"]
 
@@ -357,6 +359,36 @@ def _render_daily_trade_digest(event: DailyTradeDigest, phase: ReportingPhase) -
     )
 
 
+def _render_signal_emitted(event: SignalEmitted) -> SlackMessage:
+    """Render a SignalEmitted as a short Slack record with no attachments.
+
+    Shows pair, side, kind, price and bar time only: no outcome figure
+    (aggregate blind, ADR-012 ruling 1).
+    """
+    kind = event.kind.value
+    title = f"Signal {kind}"
+    bar_time = event.occurred_at.isoformat()
+    lines = [
+        f"*Pair*: `{event.pair}`",
+        f"*Side*: `{event.side.value}`",
+        f"*Kind*: `{kind}`",
+    ]
+    if event.kind is SignalKind.ENTRY:
+        lines.append(f"*Price*: `{event.entry_price}`")
+        summary = f"{event.pair} {event.side.value} entry @ {event.entry_price}"
+    else:
+        lines.append(f"*Entry ref*: `{event.entry_price}`")
+        lines.append(f"*Exit rule*: `{event.exit_reason}`")
+        summary = f"{event.pair} {event.side.value} exit ({event.exit_reason})"
+    lines.append(f"*Bar time*: `{bar_time}`")
+    blocks = [
+        _header_block(title, bar_time),
+        _section_block("\n".join(lines)),
+        _context_footer(event.correlation_id),
+    ]
+    return SlackMessage(text=f"{title} — {summary}", blocks=blocks, attachments=())
+
+
 # ---------------------------------------------------------------------------
 # Dispatch registry — populated at import, never mutated.
 # ---------------------------------------------------------------------------
@@ -369,6 +401,7 @@ _TEMPLATES: Final[dict[type, Callable[[DomainEvent], SlackMessage]]] = {
     AnomalyDetected: _render_anomaly_detected,  # type: ignore[dict-item]
     TradeExecuted: _render_trade_executed,  # type: ignore[dict-item]
     RebalanceTriggered: _render_rebalance_triggered,  # type: ignore[dict-item]
+    SignalEmitted: _render_signal_emitted,  # type: ignore[dict-item]
 }
 
 _PHASE_AWARE_TEMPLATES: Final[dict[type, Callable[[DomainEvent, ReportingPhase], SlackMessage]]] = {

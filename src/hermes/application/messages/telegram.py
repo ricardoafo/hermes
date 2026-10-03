@@ -51,9 +51,11 @@ from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeveri
 from hermes.domain.events.balance_low import BalanceLow
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.rebalance_triggered import RebalanceTriggered
+from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.events.strategy_paused import StrategyPaused
 from hermes.domain.events.trade_executed import TradeExecuted
 from hermes.domain.events.trade_rejected import TradeRejected
+from hermes.domain.strategy.signal import SignalKind
 
 __all__ = ["telegram_template"]
 
@@ -196,6 +198,28 @@ def _render_rebalance_triggered(event: RebalanceTriggered) -> str:
     )
 
 
+def _render_signal_emitted(event: SignalEmitted) -> str:
+    """Render a SignalEmitted as a 3-line MarkdownV2 push.
+
+    Shows pair, side, kind, price and bar time only: no outcome figure
+    (aggregate blind, ADR-012 ruling 1).
+    """
+    bar_time = event.occurred_at.isoformat()
+    if event.kind is SignalKind.ENTRY:
+        body = f"{event.pair} {event.side.value} entry @ {event.entry_price} · bar {bar_time}"
+    else:
+        body = (
+            f"{event.pair} {event.side.value} exit ({event.exit_reason}) · "
+            f"entry ref {event.entry_price} · bar {bar_time}"
+        )
+    return _render_line(
+        emoji=_EMOJI_INFO,
+        title_upper="SIGNAL_EMITTED",
+        body=body,
+        tail=correlation_tail(event.correlation_id),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Dispatch registry. Missing entries raise at first render — no silent
 # empty pushes. Populated at import time; NEVER mutated at runtime.
@@ -208,6 +232,7 @@ _TEMPLATES: Final[dict[type, Callable[[DomainEvent], str]]] = {
     AnomalyDetected: _render_anomaly_detected,  # type: ignore[dict-item]
     TradeExecuted: _render_trade_executed,  # type: ignore[dict-item]
     RebalanceTriggered: _render_rebalance_triggered,  # type: ignore[dict-item]
+    SignalEmitted: _render_signal_emitted,  # type: ignore[dict-item]
 }
 
 

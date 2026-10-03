@@ -2,7 +2,7 @@
 
 Registers subcommands the future integration PRs will fill in. Today
 ``preview`` renders templates, ``health <integration>`` probes an
-integration adapter, and ``serve`` runs the paper-trading engine via
+integration adapter, and ``serve`` runs the shadow bar loop via
 the composition root in :mod:`hermes.entrypoints.serve`. ``simulate``
 remains a stub that prints "not yet implemented" and exits with code
 2 so composition scripts fail loudly if they attempt to call it.
@@ -15,7 +15,8 @@ Design notes
   and receive the residual argv.
 - **Exit codes**: 0 success, 2 usage / unimplemented. Subcommands may
   return other codes (e.g. ``preview run_send`` returns 3 on prod refusal;
-  ``health <int>`` returns 3 on missing config, 1 on adapter down).
+  ``health <int>`` returns 3 on missing config, 1 on adapter down;
+  ``serve`` returns 1 on a runtime failure and 3 on a config error).
 - **Entry point**: wired via ``[project.scripts]`` in ``pyproject.toml``
   as ``hermes = "hermes.entrypoints.cli:main"``.
 - **Sentry init at startup**: ``main()`` initializes the Sentry SDK
@@ -238,10 +239,11 @@ def _dispatch_serve(rest: list[str], *, stream: Any) -> int:
     """Handle the ``hermes serve`` subcommand.
 
     Parses ``--config-dir`` and ``--db``, loads the composite
-    :class:`~hermes.infrastructure.config.HermesConfig`, wires the
-    composition root, installs signal handlers, and awaits the
-    shutdown event. Returns 0 on a clean shutdown, 2 on argument-parse
-    failure, 3 on config load failure.
+    :class:`~hermes.infrastructure.config.HermesConfig`, checks it can run
+    the shadow loop, wires the composition root, installs signal handlers,
+    and runs the bar loop. Returns 0 on a clean shutdown, 1 on a runtime
+    failure, 2 on argument-parse failure, 3 on a config load or startup
+    check failure. The environment tier comes from ``HERMES_ENV`` only.
 
     Args:
         rest: Residual argv after the ``serve`` token.
@@ -266,7 +268,9 @@ def _dispatch_serve(rest: list[str], *, stream: Any) -> int:
         stream.write(
             "Usage: hermes serve [--config-dir DIR] [--db PATH]\n"
             "\n"
-            "Runs the paper-trading engine until SIGTERM or SIGINT arrives.\n"
+            "Runs the shadow bar loop until SIGTERM or SIGINT arrives.\n"
+            "The environment tier comes from HERMES_ENV.\n"
+            "Exit codes: 0 clean shutdown, 1 runtime failure, 2 usage, 3 config.\n"
         )
         return 0
 
@@ -276,11 +280,17 @@ def _dispatch_serve(rest: list[str], *, stream: Any) -> int:
         stream.write(f"ERROR: config load failed: {exc}\n")
         return 3
 
+    try:
+        serve_module.check_startup(config, dict(os.environ))
+    except serve_module.StartupError as exc:
+        stream.write(f"ERROR: startup check failed: {exc}\n")
+        return 3
+
     return asyncio.run(_serve_main(config, db_path=parsed.db))
 
 
 async def _serve_main(config: Any, *, db_path: Path) -> int:
-    """Wire the composition root and await the shutdown event.
+    """Wire the composition root and run the bar loop to its exit code.
 
     Extracted from :func:`_dispatch_serve` so tests can drive the
     composition + run steps without going through argparse.
@@ -290,14 +300,18 @@ async def _serve_main(config: Any, *, db_path: Path) -> int:
         db_path: Path to the SQLite ledger file.
 
     Returns:
-        Process exit code (0 on clean shutdown).
+        :func:`~hermes.entrypoints.serve.run`'s exit code: 0 on clean
+        shutdown, 1 on a runtime failure (including a failed build).
     """
     loop = asyncio.get_running_loop()
     shutdown = asyncio.Event()
-    composition = serve_module.build_composition(config, db_path=db_path)
+    try:
+        composition = serve_module.build_composition(config, db_path=db_path)
+    except Exception as exc:
+        serve_module.report_failure(exc)
+        return 1
     serve_module.install_signal_handlers(loop, shutdown)
-    await serve_module.run(composition, shutdown)
-    return 0
+    return await serve_module.run(composition, shutdown)
 
 
 if __name__ == "__main__":  # pragma: no cover
