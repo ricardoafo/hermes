@@ -21,7 +21,9 @@ Each migration runs in one transaction: if any statement fails, none of it stays
 | Additive (new table, new column, new index) | anything | Automatically when the ledger opens (`hermes serve` start) |
 | Destructive (drop, rename, table rebuild) | `-- hermes: destructive` | Only through `hermes migrate`, which snapshots first |
 
-If a destructive migration is pending, the ledger refuses to open and names the file. `hermes serve` stops at
+A brand-new ledger (no migration applied yet) has no data to protect, so it gets every migration at
+first open, destructive ones included. On an existing ledger, if a destructive migration is pending,
+the ledger refuses to open and names the file. `hermes serve` stops at
 start with that message until the migration has been run by hand. Additive migrations before it in the sequence
 still apply.
 
