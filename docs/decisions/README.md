@@ -72,6 +72,7 @@ What this locks in. What it forecloses. What we'll revisit.
 | 2026-10-02 | [Prod env file path](2026-10-02-env-file-path-etc-hermes-env-production.md)                  | 2026-08-23 credential-storage (prod path)     |
 | 2026-10-03 | [ADR-011 accepted](2026-10-03-adr-011-accepted.md)                                           | ADR-011 status PROPOSED                       |
 | 2026-10-03 | [Route shadow signals to Telegram and Slack](2026-10-03-signal-notification-routing.md)      | —                                             |
+| 2026-10-03 | [Sharpe kill window, M-09/M-10](2026-10-03-calibration-metrics-and-shadow-sharpe-kill.md)    | Draft M-09/M-10 thresholds                    |
 
 ## Anti-patterns
 

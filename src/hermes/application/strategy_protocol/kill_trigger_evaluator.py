@@ -10,6 +10,12 @@ Kill triggers (§10 live phase):
     - SA-9 P0 rule fires HALT signal
     - 30 rolling trades OOS Sharpe < 0.3
 
+This evaluator applies the live-phase rules. The shadow-phase Sharpe rule
+("< 0.3 for 60 consecutive days") needs a streak across days, so it lives in
+:class:`~hermes.application.strategy_protocol.shadow_sharpe_kill.ShadowSharpeKill`;
+using this evaluator's Sharpe check in shadow would kill up to 60 days early
+(#422).
+
 The evaluator is stateless — it holds no mutable state between calls. Thresholds
 are injected at construction time via
 :class:`~hermes.application.strategy_protocol.preregistration.PreRegistration`.
