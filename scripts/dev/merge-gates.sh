@@ -65,4 +65,25 @@ gate "ruff format" uv run ruff format --check .
 gate "ruff check" uv run ruff check .
 gate "mypy" uv run mypy --strict src/hermes
 gate "lint-imports" uv run lint-imports
-gate "pytest" uv run pytest tests/unit/ tests/integration/ -n 4 -q
+# pytest names its failures in the fail file, so the PR comment says
+# which tests broke, not just "pytest". At most five names, comma-joined.
+run_pytest() {
+  local log status names
+  log=$(mktemp)
+  set +e
+  uv run pytest tests/unit/ tests/integration/ -n 4 -q 2>&1 | tee "$log"
+  status=${PIPESTATUS[0]}
+  set -e
+  if [ "$status" -ne 0 ]; then
+    names=$(grep -E '^(FAILED|ERROR) ' "$log" | awk '{print $2}' | head -5 | paste -sd ',' - | sed 's/,/, /g')
+    echo "gate failed: pytest" >&2
+    printf 'pytest: %s\n' "${names:-see the run log}" > "$fail_file"
+    rm -f "$log"
+    exit 1
+  fi
+  rm -f "$log"
+}
+
+echo "::group::gate: pytest"
+run_pytest
+echo "::endgroup::"

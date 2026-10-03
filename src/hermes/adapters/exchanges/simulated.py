@@ -46,6 +46,7 @@ import structlog
 from returns.result import Failure
 
 from hermes.domain.fees.fee_schedule import FeeSchedule
+from hermes.domain.lots.eur_fifo import acquisition_value
 from hermes.domain.lots.lot import Lot
 from hermes.domain.market_data.orderbook import Orderbook
 from hermes.domain.trading.fill import Fill, Rejection
@@ -354,12 +355,11 @@ class SimulatedExchangeAdapter:
     def _open_lot(self, fill: Fill) -> None:
         """Create a ``Lot`` from a BUY fill and append to ``lot_ledger``.
 
-        The cost basis is stored in EUR per convention (ADR-003 §03).  When
-        the fill is denominated in a non-EUR quote (e.g. USDT) the adapter
-        records the USDT price in the cost_basis field and marks the currency
-        as EUR.  A proper EUR conversion requires the FX port (Spec 5 — out
-        of scope here); for paper-trading purposes this is an acceptable
-        approximation that the pre-registration notes explicitly acknowledge.
+        The lot carries its cost in the fill's quote currency, buy fee
+        included (ADR-016 item 3). Unless the quote is EUR, its EUR cost
+        basis stays ``None``: the adapter has no FX rate, and labelling a USDT price as EUR would
+        corrupt every gain built on it. EUR values live on the ledger rows
+        written by the trade recorder (change ``trade-eur-values`` D-7).
 
         Args:
             fill: The BUY fill to open a lot for.
@@ -367,18 +367,23 @@ class SimulatedExchangeAdapter:
         order = fill.order
         lot_id = LotId.new()
         qty = Quantity(amount=fill.executed_qty, asset=order.pair.base)
-
-        # Cost basis: use avg_price in EUR (approximation — FX conversion
-        # deferred to Spec 5 / MVP2, acknowledged in pre-reg §6).
-        cost_basis = Money(amount=fill.avg_price, currency=Currency.EUR)
+        native_basis = Money(
+            amount=acquisition_value(
+                price=fill.avg_price, qty=fill.executed_qty, fee=fill.fee.amount
+            )
+            / fill.executed_qty,
+            currency=order.pair.quote,
+        )
+        eur_basis = native_basis if order.pair.quote == Currency.EUR else None
 
         lot_result = Lot.open(
             lot_id=lot_id,
             asset=order.pair.base,
             qty=qty,
-            cost_basis_per_unit=cost_basis,
+            cost_basis_per_unit=eur_basis,
             strategy_id=fill.strategy_id,
             opened_at=fill.timestamp,
+            cost_basis_native_per_unit=native_basis,
         )
 
         # Lot.open returns Result[Lot, DomainError].  In practice this only

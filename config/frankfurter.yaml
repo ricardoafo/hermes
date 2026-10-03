@@ -8,6 +8,6 @@
 # No API key is required — Frankfurter is keyless. Any env override
 # lives at HERMES_FRANKFURTER__<FIELD> (see .env.local.example).
 
-base_url: https://api.frankfurter.app
+base_url: https://api.frankfurter.dev/v1
 timeout_sec: 10.0
 requests_per_minute: 60

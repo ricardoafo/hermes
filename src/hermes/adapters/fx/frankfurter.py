@@ -1,7 +1,9 @@
 """Frankfurter FX-rate adapter — free public wrapper over ECB reference rates.
 
 Implements :class:`hermes.ports.fx.FxRateProviderPort` against the public
-Frankfurter endpoints at ``https://api.frankfurter.app``. Frankfurter is
+Frankfurter endpoints. The live host is ``https://api.frankfurter.dev/v1``
+(set in ``config/frankfurter.yaml``); the former ``api.frankfurter.app``
+answers 301 and the client does not follow redirects. Frankfurter is
 a small hobbyist wrapper on top of ECB reference rates; it is free,
 keyless, and returns clean JSON — but it is not owned by a large team
 and can go down. See the decisions journal entry
@@ -31,6 +33,11 @@ Design decisions
   :class:`~hermes.domain.fx.fx_rate.FxRate` — callers who need
   strict-day semantics MUST verify ``result.date == on`` themselves
   (per the port contract).
+- **Wire codes**: Frankfurter only knows ISO currencies. ``wire_codes``
+  maps a domain currency to the code sent on the wire and read back from
+  ``rates``; :attr:`FrankfurterConfig.USDT_AS_USD` reads USDT as USD, the
+  working reading of ADR-004's "ECB EUR/USDT reference rate" (ADR-016
+  item 5). The returned :class:`FxRate` keeps the domain currency.
 
 Reference: docs/decisions/2026-08-23-fx-rate-source-frankfurter.md,
 ADR-002 §Decision 4 (EUR-first accounting, ECB reference rates).
@@ -41,7 +48,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal, InvalidOperation
-from typing import Final
+from typing import ClassVar, Final
 
 import httpx
 import structlog
@@ -54,6 +61,10 @@ from hermes.domain.value_objects.currency import Currency
 __all__ = ["FrankfurterAdapter", "FrankfurterConfig"]
 
 
+# The public host moved: this URL now answers 301 to api.frankfurter.dev/v1,
+# which the client does not follow. config/frankfurter.yaml carries the new
+# host; this default stays until its unit test is updated (change
+# trade-eur-values, Risks).
 _DEFAULT_BASE_URL: Final[str] = "https://api.frankfurter.app"
 _LATEST_PATH: Final[str] = "/latest"
 _DEFAULT_TIMEOUT_SEC: Final[float] = 10.0
@@ -82,11 +93,28 @@ class FrankfurterConfig:
         rate_limit: Sizing for the internal token-bucket limiter. Default
             is 60 req/min — polite for a free hobbyist API.
         timeout_sec: Per-request timeout in seconds.
+        wire_codes: ``(currency, wire code)`` pairs sent instead of the
+            currency's own code. Empty by default: every currency is sent
+            as itself.
     """
+
+    USDT_AS_USD: ClassVar[tuple[tuple[Currency, str], ...]] = ((Currency.USDT, "USD"),)
 
     base_url: str = _DEFAULT_BASE_URL
     rate_limit: RateLimitConfig = _DEFAULT_RATE_LIMIT
     timeout_sec: float = _DEFAULT_TIMEOUT_SEC
+    wire_codes: tuple[tuple[Currency, str], ...] = ()
+
+    def wire_code(self, currency: Currency) -> str:
+        """Return the code Frankfurter sees for ``currency``.
+
+        Args:
+            currency: Domain currency.
+
+        Returns:
+            The mapped wire code, or the currency's own code.
+        """
+        return dict(self.wire_codes).get(currency, currency.value)
 
     def __post_init__(self) -> None:
         """Validate the URL scheme and timeout — cheap fail-fast in the config layer."""
@@ -168,6 +196,7 @@ class FrankfurterAdapter:
             payload=payload,
             from_currency=from_currency,
             to_currency=to_currency,
+            rate_key=self.config.wire_code(to_currency),
         )
 
     def get_for_date(self, from_currency: Currency, to_currency: Currency, on: date) -> FxRate:
@@ -205,6 +234,7 @@ class FrankfurterAdapter:
             payload=payload,
             from_currency=from_currency,
             to_currency=to_currency,
+            rate_key=self.config.wire_code(to_currency),
         )
 
     # ------------------------------------------------------------------
@@ -251,8 +281,8 @@ class FrankfurterAdapter:
                 non-2xx, non-JSON body, or a non-dict JSON root.
         """
         params = {
-            "from": from_currency.value,
-            "to": to_currency.value,
+            "from": self.config.wire_code(from_currency),
+            "to": self.config.wire_code(to_currency),
         }
         self.limiter.acquire(_FX_REQUEST_WEIGHT)
         try:
@@ -285,6 +315,7 @@ def _parse_response(
     payload: dict[str, object],
     from_currency: Currency,
     to_currency: Currency,
+    rate_key: str,
 ) -> FxRate:
     """Convert a Frankfurter JSON payload into a domain :class:`FxRate`.
 
@@ -300,8 +331,9 @@ def _parse_response(
     Args:
         payload: Decoded JSON body.
         from_currency: Currency requested in the ``from`` query param.
-        to_currency: Currency requested in the ``to`` query param. Must be
-            present in ``payload["rates"]`` or the parse raises.
+        to_currency: Domain currency stamped on the returned rate.
+        rate_key: Wire code of ``to_currency``; must be present in
+            ``payload["rates"]`` or the parse raises.
 
     Returns:
         A validated :class:`FxRate`.
@@ -323,7 +355,6 @@ def _parse_response(
     if not isinstance(rates_raw, dict):
         raise FxRateError(f"Frankfurter response missing or non-object 'rates': {payload!r}")
 
-    rate_key = to_currency.value
     if rate_key not in rates_raw:
         raise FxRateError(
             f"Frankfurter response has no rate for {rate_key!r}; "
