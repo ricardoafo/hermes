@@ -562,6 +562,99 @@ function hasBadComment(comments, head) {
   return comments.some((c) => (c.body || '').includes(marker));
 }
 
+/**
+ * Label the queue puts on a PR it cannot merge itself. A human merges
+ * it by hand; until the label is removed, Select passes over it so one
+ * PR the queue cannot land never blocks the PRs behind it.
+ */
+const HAND_MERGE_LABEL = 'merge-queue:hand-merge';
+
+/**
+ * May the queue take this PR, given what it touches and what its token
+ * may write?
+ *
+ * GitHub refuses (403) to let an App create or update anything under
+ * `.github/workflows/` unless the App holds the Workflows permission.
+ * Finding that out at `pulls.merge` time, after gating a whole batch
+ * with the PR underneath, stalls every PR behind it. Checking the file
+ * list up front costs one API call per candidate.
+ *
+ * @param {{ files: string[], labels: string[], canMergeWorkflows: boolean }} input
+ * @returns {{ eligible: boolean, label: boolean, reason: string }}
+ */
+function queueCanMerge(input) {
+  if (input.labels.includes(HAND_MERGE_LABEL)) {
+    return {
+      eligible: false,
+      label: false,
+      reason: `labelled ${HAND_MERGE_LABEL} — waiting for a human merge`,
+    };
+  }
+  const workflows = input.files.filter((f) => f.startsWith('.github/workflows/'));
+  if (workflows.length > 0 && !input.canMergeWorkflows) {
+    return {
+      eligible: false,
+      label: true,
+      reason: `touches ${workflows.join(', ')} and the queue's App cannot write workflows — merge by hand`,
+    };
+  }
+  return { eligible: true, label: false, reason: 'queue can merge it' };
+}
+
+/**
+ * What does a failed `pulls.merge` mean for this PR and for the pass?
+ *
+ *   race        — 405 / 409: base or head moved mid-flight. Stop, and
+ *                 let the next pass rebuild; nothing is wrong with the PR.
+ *   needs-human — 403: GitHub will never let this token merge this PR
+ *                 (workflow files without the Workflows permission,
+ *                 rules the App cannot bypass). Label it for a human,
+ *                 stop, and let the next pass rebuild WITHOUT it.
+ *   error       — anything else. Same as needs-human for the PR, but the
+ *                 run ends red so someone looks at the queue itself.
+ *
+ * Every kind stops the loop: later PRs were gated with this one
+ * underneath, so landing them without it would land a tree nothing
+ * checked. The label is what keeps the next pass from tripping on the
+ * same PR — that is how one PR stops being a head-of-line block.
+ *
+ * @param {{ status: number|undefined, message: string }} input
+ * @returns {{ kind: 'race'|'needs-human'|'error', label: boolean, fatal: boolean, reason: string }}
+ */
+function classifyMergeFailure(input) {
+  if (input.status === 405 || input.status === 409) {
+    return {
+      kind: 'race', label: false, fatal: false,
+      reason: `merge raced a moving base or head (${input.status})`,
+    };
+  }
+  if (input.status === 403) {
+    return {
+      kind: 'needs-human', label: true, fatal: false,
+      reason: `GitHub refused the queue's token: ${input.message}`,
+    };
+  }
+  return {
+    kind: 'error', label: true, fatal: true,
+    reason: `unexpected merge failure (${input.status ?? '?'}): ${input.message}`,
+  };
+}
+
+/**
+ * The comment that tells a PR why the queue handed it to a human.
+ *
+ * @param {{ n: number, reason: string }} input
+ * @returns {{ body: string }}
+ */
+function handMergeComment(input) {
+  return {
+    body:
+      `The merge queue can't merge #${input.n} itself: ${input.reason}.\n\n` +
+      `It is labelled \`${HAND_MERGE_LABEL}\` and the queue skips it from now on. ` +
+      'Merge it by hand, or remove the label once the cause is fixed.',
+  };
+}
+
 module.exports = {
   MERGEABLE_STATES,
   BATCH_CONFLICT_REASON,
@@ -580,4 +673,8 @@ module.exports = {
   afterMerge,
   badComment,
   hasBadComment,
+  HAND_MERGE_LABEL,
+  queueCanMerge,
+  classifyMergeFailure,
+  handMergeComment,
 };
