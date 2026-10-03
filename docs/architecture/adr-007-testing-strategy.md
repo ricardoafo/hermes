@@ -5,6 +5,7 @@
 **Accepted**: 2026-08-21
 **Deciders**: Ricardo Afonso (product owner), Claude (proposer)
 **Supersedes**: —
+**Superseded in part by**: [ADR-017](adr-017-test-tiers-as-enforced.md) (tier cadences, mutation tool and scope, coverage table, test data)
 
 ## Context
 

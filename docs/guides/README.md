@@ -28,7 +28,7 @@ of conflict entirely.
 | [local-setup.md](local-setup.md) | Clone → install → run tests → open your first PR. One-time setup steps you do once per clone, then never again. | 2026-10-03 |
 | [prose-style.md](prose-style.md) | Comments, docstrings, docs, PR/issue bodies — banned words, formatting rules, per-artifact style. | 2026-08-22 |
 | [release.md](release.md) | How to tag a release, what the release workflow does, how to | 2026-10-03 |
-| [test-tiers.md](test-tiers.md) | Six-tier marker taxonomy, CI pyramid tier assignments, coverage thresholds, and layer-isolation contracts — the single reference subsequent specs cite. | 2026-10-03 |
+| [test-tiers.md](test-tiers.md) | The single table of test tiers: what each one is, which workflow or command runs it, how often, and whether it is live or planned; plus coverage floors and layer-isolation contracts. | 2026-10-03 |
 | [vps-operations.md](vps-operations.md) | SSH access, OS maintenance, Docker + Tailscale + ufw ops, systemd services, troubleshooting. | 2026-10-03 |
 <!-- guides-index-end -->
 

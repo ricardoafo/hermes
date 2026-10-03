@@ -112,11 +112,10 @@ in hermes.
   Ruff / mypy / detect-secrets land in Phase 0.
 - **Where**: local working tree
 - **State**: 🚧 Partial. Full Python toolchain (ruff / mypy / pytest /
-  hypothesis / syrupy / mutmut / detect-secrets / `sev1_guard` plugin) lands
+  hypothesis / syrupy / cosmic-ray / detect-secrets / `sev1_guard` plugin) lands
   in Phase 0.
-- **Test tier per lifecycle phase**: see the "AI development lifecycle × test
-  tier" matrix in [`ai-authored-tests.md`](ai-authored-tests.md#ai-development-lifecycle--test-tier).
-  Answers "when should I be writing which tier of test?".
+- **Test tiers**: which tier runs where and how often is in [`test-tiers.md`](test-tiers.md). The
+  test-writing discipline is in [`ai-authored-tests.md`](ai-authored-tests.md).
 
 ### 6. Push + delete local + open PR
 
