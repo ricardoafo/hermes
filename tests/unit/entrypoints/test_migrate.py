@@ -96,6 +96,6 @@ def test_cli_routes_migrate(monkeypatch: pytest.MonkeyPatch) -> None:
         seen.append(rest)
         return 0
 
-    monkeypatch.setattr(cli, "migrate_main", fake_main)
+    monkeypatch.setattr(module, "main", fake_main)
     assert cli.main(["migrate", "--status"], stream=io.StringIO()) == 0
     assert seen == [["--status"]]
