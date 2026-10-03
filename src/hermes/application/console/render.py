@@ -407,6 +407,16 @@ def render_portfolio(summary: PortfolioSummary, ctx: RenderContext) -> Group:
 # ----------------------------------------------------------------------
 
 
+QUOTE_CURRENCY: Final = "USDT"
+
+
+def _price_caption(ctx: RenderContext) -> Text:
+    note = f"prices in {QUOTE_CURRENCY}"
+    if ctx.shows_money:
+        note += " · money in EUR"
+    return Text(note, style="dim")
+
+
 def _blind_positions(rows: Sequence[PositionRow], ctx: RenderContext) -> Table:
     table = Table(box=box.SIMPLE_HEAD, pad_edge=False, show_edge=False)
     for name in ("coin", "side", "opened", "entry", "size", "stop"):
@@ -446,7 +456,7 @@ def render_positions(rows: Sequence[PositionRow], ctx: RenderContext) -> Group:
     if not rows:
         return _framed(ctx, [Text("No open shadow positions.", style="dim")])
     if not ctx.shows_money:
-        return _framed(ctx, [_blind_positions(rows, ctx)])
+        return _framed(ctx, [_blind_positions(rows, ctx), _price_caption(ctx)])
     table = Table(box=box.SIMPLE_HEAD, pad_edge=False, show_edge=False)
     table.add_column("coin")
     table.add_column("tf")
@@ -470,7 +480,7 @@ def render_positions(rows: Sequence[PositionRow], ctx: RenderContext) -> Group:
             cells.append(signed_pct(-row.stop_distance_pct))
         cells.append(_stop_cell(row))
         table.add_row(*cells)
-    return _framed(ctx, [table])
+    return _framed(ctx, [table, _price_caption(ctx)])
 
 
 # ----------------------------------------------------------------------
@@ -524,7 +534,7 @@ def render_position_detail(detail: PositionDetail | None, ctx: RenderContext) ->
             f"opened {_stamp(ctx, row.opened_at)} · entry {fmt_price(row.entry_price)}"
             f" · size {fmt_qty(row.size)} · stop {fmt_price(row.stop_price)}"
         )
-        return _framed(ctx, [header, facts])
+        return _framed(ctx, [header, facts, _price_caption(ctx)])
     header.append("   ")
     header.append_text(_money(ctx, detail.net, " net"))
     header.append(_stale_note(ctx), style="dim")
@@ -548,6 +558,7 @@ def render_position_detail(detail: PositionDetail | None, ctx: RenderContext) ->
     )
     parts: list[RenderableType] = [
         header,
+        _price_caption(ctx),
         why,
         stop,
         Text(""),
