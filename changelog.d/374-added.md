@@ -1,0 +1,1 @@
+- `hermes activity`: a day-grouped feed of what changed (opened, closed with net, folded stop raises, restarts, warnings, errors); `--all` adds bar checks and signals, `--json` the same data. Works on the `--demo` scenarios and reads the ledger read-only otherwise (#374).

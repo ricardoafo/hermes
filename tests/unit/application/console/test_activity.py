@@ -1,0 +1,80 @@
+"""Tests for the shared activity helpers (#374).
+
+Invariants protected here:
+
+- rows group by the display timezone's calendar day, newest day and row first;
+- bar checks and signals are dropped unless asked for;
+- the JSON form carries a closed row's net only where ``pnl_visible`` allows.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, date, datetime
+from decimal import Decimal
+
+import pytest
+
+from hermes.application.console import Surface
+from hermes.application.console.activity import activity_to_json, group_activity
+from hermes.application.console.render import MADRID, RenderContext
+from hermes.application.console.views import ActivityDay, ActivityItem, ActivityKind
+
+_NOW = datetime(2026, 10, 3, 16, tzinfo=UTC)
+
+
+def _item(hour: int, kind: ActivityKind, *, day: int = 3, **kw: object) -> ActivityItem:
+    return ActivityItem(at=datetime(2026, 10, day, hour, tzinfo=UTC), kind=kind, coin="ETH", **kw)  # type: ignore[arg-type]
+
+
+def test_rows_group_by_local_day_newest_first() -> None:
+    """23:00 UTC on the 2nd is already the 3rd in Madrid (CEST, UTC+2)."""
+    items = [
+        _item(8, ActivityKind.OPENED, day=2),
+        _item(23, ActivityKind.CLOSED, day=2),
+        _item(10, ActivityKind.WARNING, day=3, text="retry"),
+    ]
+
+    days = group_activity(items, MADRID)
+
+    assert [(d.day, [i.kind for i in d.items]) for d in days] == [
+        (date(2026, 10, 3), [ActivityKind.WARNING, ActivityKind.CLOSED]),
+        (date(2026, 10, 2), [ActivityKind.OPENED]),
+    ]
+
+
+def test_quiet_rows_are_dropped_unless_asked_for() -> None:
+    """Bar checks and signals never get a row by default; --all keeps them."""
+    items = [
+        _item(8, ActivityKind.BAR),
+        _item(8, ActivityKind.SIGNAL),
+        _item(8, ActivityKind.OPENED),
+    ]
+
+    default = group_activity(items, MADRID)
+    everything = group_activity(items, MADRID, include_quiet=True)
+
+    assert [i.kind for d in default for i in d.items] == [ActivityKind.OPENED]
+    assert sorted(i.kind.value for d in everything for i in d.items) == ["bar", "opened", "signal"]
+
+
+def test_a_day_with_only_quiet_rows_disappears() -> None:
+    """A day of nothing but bar checks shows no header at all."""
+    days = group_activity([_item(8, ActivityKind.BAR, day=1)], MADRID)
+
+    assert days == ()
+
+
+@pytest.mark.parametrize(
+    ("surface", "has_net"),
+    [(Surface.OPERATOR_CLI, True), (Surface.TELEGRAM_PUSHED, False), (Surface.SLACK, False)],
+)
+def test_json_carries_net_only_on_operator_surfaces(surface: Surface, has_net: bool) -> None:
+    """Blind surfaces never receive the money of a closed row."""
+    closed = _item(10, ActivityKind.CLOSED, price=Decimal("61240"), net=Decimal("3.18"))
+    ctx = RenderContext(surface=surface, now=_NOW)
+
+    data = activity_to_json([ActivityDay(day=date(2026, 10, 3), items=(closed,))], ctx)
+
+    row = data["days"][0]["items"][0]  # type: ignore[index]
+    assert ("net_eur" in row) is has_net
+    assert row["price"] == "61240"

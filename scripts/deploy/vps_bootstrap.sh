@@ -34,6 +34,10 @@
 #   6. Hetzner Storage Box SSHFS mount (guarded: skipped without credentials).
 #   7. sudoers rule for a non-root CD deploy user (guarded: skipped unless
 #      DEPLOY_USER names one; CD runs as root today, so nothing is written).
+#   8. Unattended security upgrades with an automatic reboot at 03:30 box
+#      time (Europe/Madrid) when an update needs one: clear of the 00:00
+#      and 04:00 UTC bar closes and the 03:00 UTC backup in both summer
+#      and winter time.
 #
 # Reference:
 #   openspec/changes/179-cd-first-real-deploy/change.md (D-5, D-8, R-5)
@@ -62,6 +66,10 @@ PYTHON_VERSION=3.14.7
 # Optional: the non-root account CD connects as. Unset or root: no sudoers rule.
 DEPLOY_USER=${DEPLOY_USER:-}
 SUDOERS_FILE=/etc/sudoers.d/hermes-deploy
+AUTO_REBOOT_FILE=/etc/apt/apt.conf.d/52hermes-auto-reboot
+# The reboot time is read in the box's own timezone; 03:30 is chosen for
+# Europe/Madrid, so the bootstrap refuses to arm it on any other zone.
+AUTO_REBOOT_TZ=Europe/Madrid
 
 # uv installs to /usr/local/bin; a non-interactive ssh PATH may omit it.
 export PATH="/usr/local/bin:$PATH"
@@ -316,6 +324,49 @@ ensure_deploy_sudoers() {
     echo "  wrote $SUDOERS_FILE for $user ($(stat -c '%a %U:%G' "$SUDOERS_FILE"))"
 }
 
+# apt settings for unattended security upgrades plus the reboot they may
+# need. Rendered, not hand-written, so a re-run can compare byte for byte.
+render_auto_reboot() {
+    cat <<'EOF'
+// Managed by scripts/deploy/vps_bootstrap.sh (step 8). Edits are overwritten.
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+Unattended-Upgrade::Automatic-Reboot "true";
+Unattended-Upgrade::Automatic-Reboot-WithUsers "true";
+Unattended-Upgrade::Automatic-Reboot-Time "03:30";
+EOF
+}
+
+# Install unattended-upgrades if missing, write the reboot policy only when
+# it differs, and enable the service. Refuses on an unexpected timezone:
+# 03:30 is only clear of bar closes and the backup in Europe/Madrid.
+ensure_auto_reboot() {
+    local tz tmp
+    tz=$(timedatectl show -p Timezone --value 2>/dev/null || true)
+    if [ "$tz" != "$AUTO_REBOOT_TZ" ]; then
+        echo "ERROR: box timezone is '${tz:-unknown}', expected $AUTO_REBOOT_TZ; reboot time not armed"
+        return 1
+    fi
+    if ! dpkg-query -W -f='${Status}' unattended-upgrades 2>/dev/null | grep -q 'install ok installed'; then
+        echo "  installing unattended-upgrades..."
+        apt-get update -qq < /dev/null && apt-get install -y unattended-upgrades < /dev/null
+    fi
+    if [ -f "$AUTO_REBOOT_FILE" ] && [ "$(render_auto_reboot)" = "$(< "$AUTO_REBOOT_FILE")" ]; then
+        echo "  $AUTO_REBOOT_FILE already current"
+    else
+        tmp=$(mktemp "$(dirname "$AUTO_REBOOT_FILE")/.52hermes-auto-reboot.XXXXXX")
+        render_auto_reboot > "$tmp"
+        chmod 0644 "$tmp"
+        mv -T "$tmp" "$AUTO_REBOOT_FILE"
+        echo "  wrote $AUTO_REBOOT_FILE (reboot at 03:30 $tz when an update needs it)"
+    fi
+    if systemctl is-enabled --quiet unattended-upgrades.service; then
+        echo "  unattended-upgrades.service already enabled"
+    else
+        systemctl enable --now unattended-upgrades.service
+    fi
+}
+
 echo "==== VPS bootstrap starting on $(hostname) ===="
 # `id -un` may be masked in workflow logs when the username happens to
 # equal a passed-through secret (e.g. VPS_SSH_USER). Print uid + groups
@@ -512,6 +563,13 @@ echo ""
 # ────────────────────────────────────────────────────────────────
 echo "---- 7. deploy sudoers ----"
 ensure_deploy_sudoers "$DEPLOY_USER"
+echo ""
+
+# ────────────────────────────────────────────────────────────────
+# 8. Unattended upgrades with a 03:30 reboot window
+# ────────────────────────────────────────────────────────────────
+echo "---- 8. automatic security updates ----"
+ensure_auto_reboot
 echo ""
 
 echo "==== VPS bootstrap complete ===="
