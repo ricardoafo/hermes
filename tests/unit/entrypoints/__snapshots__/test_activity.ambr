@@ -3,13 +3,13 @@
   list([
     ' DEMO DATA · scenario down-stale',
     'Today',
-    '6h ago      closed BTC at 61,240 · ▲ +€3.18 net',
-    '8h ago      SOL stop raised ×6, 139.0→142.1',
+    '6h ago      closed BTC at €52,464 · ▲ +€3.18 net',
+    '8h ago      SOL stop raised ×6, €119.1→€121.7',
     'Yesterday',
     '15:00       ⚠ market data retry after timeout',
-    '10:00       opened ETH at 2,618',
+    '10:00       opened ETH at €2,243',
     'Mon 28 Sep',
-    '02:00       opened SOL at 139.0',
+    '02:00       opened SOL at €119.1',
     '00:30       restart · deploy',
   ])
 # ---
@@ -17,13 +17,13 @@
   list([
     ' DEMO DATA · scenario down-stale',
     'Today',
-    '6h ago      closed BTC at 61,240 · ▲ +€3.18 net',
-    '8h ago      SOL stop raised ×6, 139.0→142.1',
+    '6h ago      closed BTC at €52,464 · ▲ +€3.18 net',
+    '8h ago      SOL stop raised ×6, €119.1→€121.7',
     'Yesterday',
     '15:00       ⚠ market data retry after timeout',
-    '10:00       opened ETH at 2,618',
+    '10:00       opened ETH at €2,243',
     'Mon 28 Sep',
-    '02:00       opened SOL at 139.0',
+    '02:00       opened SOL at €119.1',
     '00:30       restart · deploy',
   ])
 # ---
@@ -43,13 +43,13 @@
   list([
     ' DEMO DATA · scenario late',
     'Today',
-    '6h ago      closed BTC at 61,240 · ▲ +€3.18 net',
-    '8h ago      SOL stop raised ×6, 139.0→142.1',
+    '6h ago      closed BTC at €52,464 · ▲ +€3.18 net',
+    '8h ago      SOL stop raised ×6, €119.1→€121.7',
     'Yesterday',
     '15:00       ⚠ market data retry after timeout',
-    '10:00       opened ETH at 2,618',
+    '10:00       opened ETH at €2,243',
     'Mon 28 Sep',
-    '02:00       opened SOL at 139.0',
+    '02:00       opened SOL at €119.1',
     '00:30       restart · deploy',
   ])
 # ---
@@ -57,13 +57,13 @@
   list([
     ' DEMO DATA · scenario late',
     'Today',
-    '6h ago      closed BTC at 61,240 · ▲ +€3.18 net',
-    '8h ago      SOL stop raised ×6, 139.0→142.1',
+    '6h ago      closed BTC at €52,464 · ▲ +€3.18 net',
+    '8h ago      SOL stop raised ×6, €119.1→€121.7',
     'Yesterday',
     '15:00       ⚠ market data retry after timeout',
-    '10:00       opened ETH at 2,618',
+    '10:00       opened ETH at €2,243',
     'Mon 28 Sep',
-    '02:00       opened SOL at 139.0',
+    '02:00       opened SOL at €119.1',
     '00:30       restart · deploy',
   ])
 # ---
@@ -71,9 +71,9 @@
   list([
     ' DEMO DATA · scenario losing-year',
     'Today',
-    '3h ago      closed ADA at 0.3412 · ▼ −€2.61 net',
-    '4h ago      BTC stop raised, 61,500→61,700',
-    '12h ago     opened BTC at 62,400',
+    '3h ago      closed ADA at €0.2923 · ▼ −€2.61 net',
+    '4h ago      BTC stop raised, €52,687→€52,858',
+    '12h ago     opened BTC at €53,458',
     'Thu 01 Oct',
     '17:20       ✖ fill model rejected order: book too thin',
   ])
@@ -82,9 +82,9 @@
   list([
     ' DEMO DATA · scenario losing-year',
     'Today',
-    '3h ago      closed ADA at 0.3412 · ▼ −€2.61 net',
-    '4h ago      BTC stop raised, 61,500→61,700',
-    '12h ago     opened BTC at 62,400',
+    '3h ago      closed ADA at €0.2923 · ▼ −€2.61 net',
+    '4h ago      BTC stop raised, €52,687→€52,858',
+    '12h ago     opened BTC at €53,458',
     'Thu 01 Oct',
     '17:20       ✖ fill model rejected order: book too thin',
   ])
@@ -93,13 +93,13 @@
   list([
     ' DEMO DATA · scenario ok-two-positions',
     'Today',
-    '2h ago      closed BTC at 61,240 · ▲ +€3.18 net',
-    '4h ago      SOL stop raised ×6, 139.0→142.1',
+    '2h ago      closed BTC at €52,464 · ▲ +€3.18 net',
+    '4h ago      SOL stop raised ×6, €119.1→€121.7',
     'Yesterday',
     '15:00       ⚠ market data retry after timeout',
-    '10:00       opened ETH at 2,618',
+    '10:00       opened ETH at €2,243',
     'Mon 28 Sep',
-    '02:00       opened SOL at 139.0',
+    '02:00       opened SOL at €119.1',
     '00:30       restart · deploy',
   ])
 # ---
@@ -107,13 +107,13 @@
   list([
     ' DEMO DATA · scenario ok-two-positions',
     'Today',
-    '2h ago      closed BTC at 61,240 · ▲ +€3.18 net',
-    '4h ago      SOL stop raised ×6, 139.0→142.1',
+    '2h ago      closed BTC at €52,464 · ▲ +€3.18 net',
+    '4h ago      SOL stop raised ×6, €119.1→€121.7',
     'Yesterday',
     '15:00       ⚠ market data retry after timeout',
-    '10:00       opened ETH at 2,618',
+    '10:00       opened ETH at €2,243',
     'Mon 28 Sep',
-    '02:00       opened SOL at 139.0',
+    '02:00       opened SOL at €119.1',
     '00:30       restart · deploy',
   ])
 # ---
@@ -121,13 +121,13 @@
   list([
     ' DEMO DATA · scenario tax-pending',
     'Today',
-    '2h ago      closed BTC at 61,240 · ▲ +€3.18 net',
-    '4h ago      SOL stop raised ×6, 139.0→142.1',
+    '2h ago      closed BTC at €52,464 · ▲ +€3.18 net',
+    '4h ago      SOL stop raised ×6, €119.1→€121.7',
     'Yesterday',
     '15:00       ⚠ market data retry after timeout',
-    '10:00       opened ETH at 2,618',
+    '10:00       opened ETH at €2,243',
     'Mon 28 Sep',
-    '02:00       opened SOL at 139.0',
+    '02:00       opened SOL at €119.1',
     '00:30       restart · deploy',
   ])
 # ---
@@ -135,13 +135,13 @@
   list([
     ' DEMO DATA · scenario tax-pending',
     'Today',
-    '2h ago      closed BTC at 61,240 · ▲ +€3.18 net',
-    '4h ago      SOL stop raised ×6, 139.0→142.1',
+    '2h ago      closed BTC at €52,464 · ▲ +€3.18 net',
+    '4h ago      SOL stop raised ×6, €119.1→€121.7',
     'Yesterday',
     '15:00       ⚠ market data retry after timeout',
-    '10:00       opened ETH at 2,618',
+    '10:00       opened ETH at €2,243',
     'Mon 28 Sep',
-    '02:00       opened SOL at 139.0',
+    '02:00       opened SOL at €119.1',
     '00:30       restart · deploy',
   ])
 # ---

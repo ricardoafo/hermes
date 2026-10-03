@@ -56,11 +56,11 @@ def test_demo_feed_matches_snapshot(
 
 
 def test_demo_feed_is_tagged_and_folds_stop_raises() -> None:
-    """DEMO DATA leads the feed; six stop raises read as one row."""
+    """DEMO DATA leads the feed; six stop raises read as one row, levels in EUR."""
     _, out = _run([], demo_flag="ok-two-positions")
 
     assert "DEMO DATA" in out.splitlines()[0]
-    assert "SOL stop raised \u00d76, 139.0\u2192142.1" in out
+    assert "SOL stop raised \u00d76, \u20ac119.1\u2192\u20ac121.7" in out
 
 
 def test_quiet_bar_checks_only_show_with_all() -> None:
@@ -96,7 +96,7 @@ def test_ledger_feed_shows_opened_and_closed_from_signals(tmp_path: Path) -> Non
     assert code == 0
     assert items == [
         {"at": "2026-10-03T16:00:00+00:00", "kind": "closed", "coin": "ETH"},
-        {"at": "2026-10-03T08:00:00+00:00", "kind": "opened", "coin": "ETH", "price": "2618.45"},
+        {"at": "2026-10-03T08:00:00+00:00", "kind": "opened", "coin": "ETH"},
     ]
 
 

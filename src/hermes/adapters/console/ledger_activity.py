@@ -4,9 +4,10 @@ Until simulated fills land (#353) the ledger holds bar checks
 (``BarProcessed``) and strategy signals (``SignalEmitted``). The shadow
 position opens on an entry signal and closes on an exit signal, so:
 
-- an entry signal is an ``opened`` row at the signal bar's close price;
-- an exit signal is a ``closed`` row with no price and no net (there is no
-  fill, so no money to show yet);
+- an entry signal is an ``opened`` row and an exit signal a ``closed`` row,
+  both without price or net: the console shows prices in EUR, and a signal
+  carries only the USDT close with no EUR rate (EUR values arrive with fills,
+  #353 and #386), so no figure is shown rather than a mislabelled one;
 - with ``--all``, every bar check and every signal also gets its own quiet row.
 
 Restarts, warnings and errors live in the journal, not the ledger; they join
@@ -23,7 +24,6 @@ from __future__ import annotations
 import json
 import sqlite3
 from datetime import datetime, timedelta
-from decimal import Decimal
 from pathlib import Path
 from typing import Final, Self
 
@@ -128,14 +128,7 @@ def _items(event_type: str, payload: dict[str, object]) -> list[ActivityItem]:
     side = str(payload["side"])
     signal = ActivityItem(at=at, kind=ActivityKind.SIGNAL, coin=coin, text=f"{kind} {side}")
     if kind == "entry":
-        price = payload["entry_price"]
-        opened = ActivityItem(
-            at=at,
-            kind=ActivityKind.OPENED,
-            coin=coin,
-            price=None if price is None else Decimal(str(price)),
-        )
-        return [signal, opened]
+        return [signal, ActivityItem(at=at, kind=ActivityKind.OPENED, coin=coin)]
     return [signal, ActivityItem(at=at, kind=ActivityKind.CLOSED, coin=coin)]
 
 

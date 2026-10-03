@@ -44,8 +44,10 @@ fills and the journal reader land.
 ### D-1: live data from signals, not an empty state
 
 The ledger already holds the shadow position's opens and closes as entry and
-exit signals, so the feed shows them rather than "no data yet". Closed rows
-carry no price or net: there is no fill to price them.
+exit signals, so the feed shows them rather than "no data yet". These rows
+carry no price or net: the console shows prices in EUR, and a signal has only
+the USDT close with no EUR rate, so no figure beats a mislabelled one. EUR
+prices and net arrive with fills (#353) and EUR ledger values (#386).
 
 ### D-2: one section, reusing the #384 renderer
 
@@ -73,6 +75,9 @@ surfaces; the renderer already hides it on blind ones.
 ### R-4: read-only ledger; a missing path exits 3 and creates nothing
 
 ### R-5: `--json` carries the same rows; net only where `pnl_visible`
+
+Prices keep the USDT quote under `price` and the EUR figure the screen shows
+under `price_eur` (stop levels likewise).
 
 ### R-6: `hermes --demo SCENARIO activity` works through the top-level CLI
 

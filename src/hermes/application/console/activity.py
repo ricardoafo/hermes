@@ -6,7 +6,8 @@
 - :func:`activity_to_json` gives the same rows as JSON-ready data. Money (the
   net of a closed row) sits under ``net_eur`` only on surfaces where
   :func:`~hermes.application.console.visibility.pnl_visible` allows it, so a
-  blind consumer never receives a figure.
+  blind consumer never receives a figure. Prices keep their USDT quote value
+  under ``price`` and the EUR value the console shows under ``price_eur``.
 
 Reference: openspec/changes/374-hermes-activity/change.md.
 """
@@ -15,6 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from datetime import date, tzinfo
+from decimal import Decimal
 from itertools import groupby
 
 from hermes.application.console.render import RenderContext
@@ -27,6 +29,8 @@ from hermes.application.console.views import (
 __all__ = ["activity_to_json", "group_activity"]
 
 type JsonObject = dict[str, object]
+
+_EUR_PRECISION = Decimal("0.0001")
 
 
 def group_activity(
@@ -78,6 +82,11 @@ def activity_to_json(days: Sequence[ActivityDay], ctx: RenderContext) -> JsonObj
     }
 
 
+def _eur(value: Decimal) -> Decimal:
+    """Quantize an EUR figure to 4 places, as the positions JSON does."""
+    return value.quantize(_EUR_PRECISION)
+
+
 def _item(item: ActivityItem, ctx: RenderContext) -> JsonObject:
     data: JsonObject = {"at": item.at.astimezone(ctx.tz).isoformat(), "kind": item.kind.value}
     if item.coin is not None:
@@ -86,11 +95,14 @@ def _item(item: ActivityItem, ctx: RenderContext) -> JsonObject:
         data["text"] = item.text
     if item.price is not None:
         data["price"] = format(item.price, "f")
+        data["price_eur"] = format(_eur(item.price * item.eur_per_usdt), "f")
     if item.count != 1:
         data["count"] = item.count
     if item.stop_from is not None and item.stop_to is not None:
         data["stop_from"] = format(item.stop_from, "f")
         data["stop_to"] = format(item.stop_to, "f")
+        data["stop_from_eur"] = format(_eur(item.stop_from * item.eur_per_usdt), "f")
+        data["stop_to_eur"] = format(_eur(item.stop_to * item.eur_per_usdt), "f")
     if item.net is not None and ctx.shows_money:
         data["net_eur"] = format(item.net, "f")
     return data
