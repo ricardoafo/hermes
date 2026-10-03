@@ -55,18 +55,12 @@ from hermes.domain.value_objects.lot_id import LotId
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
-from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.ports.clock import ClockPort
 from hermes.ports.fill_model import FillModelPort
 
 __all__ = ["SimulatedExchangeAdapter"]
 
 log: Final = structlog.get_logger(__name__)
-
-# Sentinel strategy ID used when the caller does not pass one.
-# The composition root SHOULD always pass a real strategy_id; this
-# sentinel only fires in tests that do not care about lot tracking.
-_DEFAULT_STRATEGY_ID: Final[StrategyId] = StrategyId("simulated-default")
 
 
 @dataclass
@@ -94,9 +88,6 @@ class SimulatedExchangeAdapter:
             tracks committed balances (reserved for open orders) and deducts
             fills from free balances.  Defaults to an empty dict (zero
             balance on every currency).
-        strategy_id: Strategy bucket identifier recorded in every lot opened
-            by a BUY fill.  Defaults to ``"simulated-default"`` when not
-            provided.
         rng: Optional :class:`random.Random` instance for deterministic
             replay.  Currently unused in fill logic (future queue-position
             modeling, M-07).  Pass an explicit seeded instance to guarantee
@@ -113,7 +104,6 @@ class SimulatedExchangeAdapter:
     clock: ClockPort
     fee_schedule_fn: Callable[[Pair], FeeSchedule]
     initial_balances: dict[Currency, Decimal] = field(default_factory=dict)
-    strategy_id: StrategyId = field(default=_DEFAULT_STRATEGY_ID)
     rng: random.Random = field(default_factory=random.Random)
 
     # Internal state — not part of the public interface.
@@ -174,6 +164,7 @@ class SimulatedExchangeAdapter:
             side=side,
             pair=order.pair,
             qty=order.qty,
+            strategy_id=order.strategy_id,
             limit_price=None,
         )
 
@@ -386,7 +377,7 @@ class SimulatedExchangeAdapter:
             asset=order.pair.base,
             qty=qty,
             cost_basis_per_unit=cost_basis,
-            strategy_id=self.strategy_id,
+            strategy_id=fill.strategy_id,
             opened_at=fill.timestamp,
         )
 

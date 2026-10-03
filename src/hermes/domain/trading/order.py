@@ -14,7 +14,8 @@ and stdlib. No pydantic, no httpx (enforced by import-linter contracts
 ``domain-no-pydantic`` and ``domain-no-async-or-network``).
 
 Reference: spec-2a-fill-model-port/change.md D-1 (single-method protocol),
-D-4 (Fill | Rejection discriminated union).
+D-4 (Fill | Rejection discriminated union); ADR-011 D-03 (strategy_id on
+every aggregate).
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from enum import StrEnum
 
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
+from hermes.domain.value_objects.strategy_id import StrategyId
 
 __all__ = ["Order", "OrderSide"]
 
@@ -57,6 +59,9 @@ class Order:
         pair: Trading pair. The ``qty`` asset must match ``pair.base``.
         qty: Amount of base asset to buy or sell. Must be > 0 — a zero
             quantity order has no economic meaning.
+        strategy_id: The strategy bucket that produced this order. Required
+            with no default (ADR-011 D-03): an order without an owner would
+            make per-strategy PnL and capital budgets unattributable.
         limit_price: Optional price cap for limit orders (quote currency
             per base unit). ``None`` → market order. Must be > 0 when
             provided — a non-positive limit price cannot appear in a real
@@ -66,6 +71,7 @@ class Order:
     side: OrderSide
     pair: Pair
     qty: Quantity
+    strategy_id: StrategyId
     limit_price: Decimal | None = None
 
     def __post_init__(self) -> None:

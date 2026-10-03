@@ -1,0 +1,1 @@
+- **Order and Fill carry a strategy id** (`src/hermes/domain/trading/`): `Order.strategy_id` is required and `Fill.strategy_id` is read from its order, so every order and fill is attributable to a strategy (ADR-011 D-03). The router passes its id into the order, and the simulated exchange now stamps lots from the fill instead of its own constructor field. Closes #323.
