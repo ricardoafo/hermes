@@ -8,7 +8,9 @@
 # GitHub's `mergeable_state` field. Two problems:
 #
 #   1. It kept branches current by pushing them forward (via
-#      `pr-auto-update.yml`). Those pushes invalidated approvals under
+#      `pr-auto-update.yml`, later `auto-update-pr-branches.yml` and
+#      this queue's own `updateBranch` call, all removed by #413).
+#      Those pushes invalidated approvals under
 #      `require_last_push_approval` + `dismiss_stale_reviews_on_push`.
 #      The bot's own updates blocked the merges the bot was trying to
 #      unblock. Bandaid workflows appeared to work around it.
@@ -242,7 +244,7 @@ jobs:
     needs: select
     if: needs.select.outputs.any == 'true'
     runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
-    timeout-minutes: 20
+    timeout-minutes: 30
     permissions:
       contents: write        # merging is a push to main
       pull-requests: write   # and it closes the pull request
@@ -401,9 +403,10 @@ jobs:
 
       # ─────────────────────────────────────────────────────────────
       # TREE GATES — only run when the merged tree is genuinely new.
-      # These re-validate content-derived facts (markdown lint,
-      # secret exposure). PR metadata gates (title, body, changelog)
-      # are not tree-derived and don't change when `main` advances.
+      # These re-validate content-derived facts (markdown lint, secret
+      # exposure, then the code gates below). PR metadata gates (title,
+      # body, changelog) are not tree-derived and don't change when
+      # `main` advances.
       # ─────────────────────────────────────────────────────────────
       - name: Install markdownlint-cli2 (if not pre-baked)
         if: steps.freshness.outputs.fresh == 'true' && steps.fast.outputs.skip != 'true'
@@ -435,6 +438,27 @@ jobs:
         if: steps.freshness.outputs.fresh == 'true' && steps.fast.outputs.skip != 'true'
         shell: bash
         run: gitleaks git . --log-opts=--all --redact --no-banner --verbose
+
+      # Code gates on the merged tree (#413). The PR's own CI proved its
+      # head; main moved since, so the tree that would land is new and
+      # gets the checks that a change elsewhere on main can break.
+      # Metadata and dependency checks are not tree-sensitive and stay
+      # in PR CI.
+      - uses: astral-sh/setup-uv@v7
+        if: steps.freshness.outputs.fresh == 'true' && steps.fast.outputs.skip != 'true'
+        with: { version: "0.12.5" }
+
+      - name: Code gates (merged tree)
+        if: steps.freshness.outputs.fresh == 'true' && steps.fast.outputs.skip != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv sync --frozen
+          uv run ruff format --check .
+          uv run ruff check .
+          uv run mypy --strict src/hermes
+          uv run lint-imports
+          uv run pytest tests/unit/ tests/integration/ -n 4 -q
 
       # ─────────────────────────────────────────────────────────────
       # MERGE — re-assert freshness, then perform the merge.
@@ -518,54 +542,11 @@ jobs:
               return;
             }
 
-            // ─────────────────────────────────────────────────────────────
-            // Strict branch-protection reconciliation.
-            //
-            // The repository ruleset for `main` sets
-            // `strict_required_status_checks_policy: true`, which means
-            // GitHub refuses `pulls.merge` on a PR that is BEHIND main —
-            // the required `CI success` check must be reported on the PR's
-            // OWN head SHA, not the synthetic merged tree the queue built
-            // locally. The queue proved the merged tree is safe, but
-            // GitHub's ruleset won't accept that proof against a head SHA
-            // that has never seen the current main.
-            //
-            // Fix: call `pulls/{n}/update-branch` — GitHub creates a merge
-            // commit on the PR branch, moving the head forward to include
-            // main. That triggers a fresh CI run on the new head. When CI
-            // completes, `workflow_run:CI:completed` fires this workflow
-            // again, the PR is no longer BEHIND, and this pass reaches
-            // pulls.merge with the required check satisfied.
-            //
-            // Without this reconciliation, BEHIND PRs sit forever: the
-            // queue tests the merged tree, tries to merge, GitHub refuses
-            // with 405 ("required status check expected"), queue warns,
-            // waits — repeat.
-            // ─────────────────────────────────────────────────────────────
-            if (pr.mergeable_state === 'behind') {
-              if (process.env.DRY_RUN === 'true') {
-                core.notice(
-                  `DRY RUN — would update #${number} branch (BEHIND main); ` +
-                  `next pass would merge.`,
-                );
-                return;
-              }
-              try {
-                await github.rest.pulls.updateBranch({
-                  owner, repo, pull_number: number,
-                });
-                core.notice(
-                  `#${number}: branch was BEHIND main; updated via API. ` +
-                  `Fresh CI will run on the new head; next queue trigger will merge.`,
-                );
-              } catch (err) {
-                const detail = err.response?.data?.message || err.message || String(err);
-                core.warning(
-                  `#${number}: pulls.updateBranch failed status=${err.status} — "${detail}"`,
-                );
-              }
-              return;
-            }
+            // No branch update, ever (#413). The ruleset no longer requires
+            // up-to-date branches, so GitHub accepts a merge of a head that
+            // is behind main. The tree that lands was proven by the gates
+            // above on this exact main tip, not by the PR's own CI run.
+            // Updating every behind PR used to restart CI across the queue.
 
             if (process.env.DRY_RUN === 'true') {
               core.notice(
