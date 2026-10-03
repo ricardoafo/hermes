@@ -304,3 +304,34 @@ def test_health_script_is_shipped_in_the_release_deploy_directory() -> None:
     script = PurePosixPath(_exec_argv("hermes-health.service")[1])
     assert script.parent == _RELEASE_DEPLOY_DIR
     assert (_REPO_ROOT / "deploy" / script.name).is_file()
+
+
+def test_daily_timer_fires_at_seven_madrid_time() -> None:
+    """The alive line lands at 07:00 Madrid, following the CET/CEST switch (#373)."""
+    timer = _parse("hermes-daily.timer")["Timer"]
+
+    assert (timer["OnCalendar"], timer["Persistent"], timer["Unit"]) == (
+        "*-*-* 07:00:00 Europe/Madrid",
+        "true",
+        "hermes-daily.service",
+    )
+
+
+def test_daily_service_is_a_oneshot_with_journal_access_and_state() -> None:
+    """It runs once, reads the journal for the counts and keeps yesterday's NRestarts."""
+    service = _parse("hermes-daily.service")["Service"]
+
+    assert (
+        service["Type"],
+        service["SupplementaryGroups"],
+        service["StateDirectory"],
+        service["EnvironmentFile"],
+    ) == ("oneshot", "systemd-journal", "hermes-daily", _ENV_FILE)
+
+
+def test_daily_service_runs_the_shipped_script_from_the_release() -> None:
+    """ExecStart follows `current/deploy/`; the script must exist in repo deploy/."""
+    script = PurePosixPath(_exec_argv("hermes-daily.service")[1])
+
+    assert script == _RELEASE_DEPLOY_DIR / "hermes-daily-line.sh"
+    assert (_REPO_ROOT / "deploy" / script.name).is_file()
