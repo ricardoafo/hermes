@@ -88,6 +88,7 @@ _SUBCOMMAND_HELP: Final[dict[str, str]] = {
         "registered integration; `hermes health <integration>` probes one."
     ),
     "certify": "Evaluate the next certification gate for a strategy (pre-reg §7).",
+    "positions": "Open shadow positions, net per row; `positions COIN` for the detail.",
     "simulate": "Replay historical scenarios (stub — implemented in a future PR).",
 }
 
@@ -158,6 +159,14 @@ def _initialize_sentry_from_env(env: dict[str, str]) -> None:
     sentry_integration.initialize(dsn=dsn, environment=environment)
 
 
+def _leading_demo_scenario(args: list[str]) -> str | None:
+    """Return the scenario of a leading ``--demo`` option, or ``None``."""
+    try:
+        return console_module.split_demo_flag(args).scenario
+    except console_module.DemoFlagError:
+        return None
+
+
 def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
     """Dispatch the invoked subcommand.
 
@@ -184,6 +193,7 @@ def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
     # so the CLI never crashes on a Sentry failure.
     _initialize_sentry_from_env(dict(os.environ))
 
+    demo_scenario = _leading_demo_scenario(args)
     demo_exit, args = console_module.apply_demo_flag(args, out)
     if demo_exit is not None:
         return demo_exit
@@ -198,6 +208,9 @@ def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
         "health": _dispatch_health,
         "serve": _dispatch_serve,
         "certify": certify_module.main,
+        "positions": lambda rest, *, stream: console_module.run_positions(
+            rest, stream, demo_flag=demo_scenario, env=os.environ
+        ),
     }
     dispatch = table.get(subcommand)
     if dispatch is not None:
