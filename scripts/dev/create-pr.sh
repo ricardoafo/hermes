@@ -189,6 +189,10 @@ ensure_body_outside_repo() {
 # Self-test — validate the script's own logic without side-effects
 # ────────────────────────────────────────────────────────────────
 if [[ "${HERMES_SELF_TEST:-0}" == "1" ]]; then
+    # Under a pre-commit hook git exports GIT_INDEX_FILE for the repo being
+    # committed. Fixtures 12-14 build a throwaway repo, and an inherited
+    # index makes its commits write into the real repo's index instead.
+    unset GIT_INDEX_FILE
     fail=0
     tmp_ok=$(mktemp -t create-pr-ok.XXXXXX.md)
     tmp_bad=$(mktemp -t create-pr-bad.XXXXXX.md)
@@ -291,6 +295,17 @@ EOF
     [[ $rc -eq 2 ]] || { echo "SELF-TEST FAIL: uppercase-subject title → rc=$rc, want 2"; fail=1; }
     grep -q 'pr create' <<< "$out" && { echo "SELF-TEST FAIL: gh MUST NOT be invoked on title-gate fail"; fail=1; }
     grep -q 'lowercase-subject rule' <<< "$out" || { echo "SELF-TEST FAIL: expected 'lowercase-subject rule' in stderr"; fail=1; }
+
+    # 11b. PASS: a CRLF body (written on Windows) reaches gh as LF only.
+    #      CI's Linux awk does not match `## Summary\r`, so a CR that
+    #      survives into the PR body fails the PR-body job (#318).
+    tmp_crlf=$(mktemp -t create-pr-crlf.XXXXXX.md)
+    sed 's/$/\r/' "$tmp_ok" > "$tmp_crlf"
+    out=$(GH_CMD=echo HERMES_SELF_TEST=0 bash "$0" --title "$T_OK" --body-file "$tmp_crlf" 2>&1); rc=$?
+    [[ $rc -eq 0 ]] || { echo "SELF-TEST FAIL 11b: CRLF body → rc=$rc, want 0"; fail=1; }
+    # Pattern match, not grep: Git Bash grep drops CRs in text mode.
+    [[ "$out" == *$'\r'* ]] && { echo "SELF-TEST FAIL 11b: CR reached the gh --body argument"; fail=1; }
+    rm -f "$tmp_crlf"
 
     # Fixtures 12-14 exercise the DoR/DoD openspec gate (#194). The gate
     # reads `git log -1` and `git diff origin/main..HEAD`. We isolate the
@@ -434,6 +449,16 @@ fi
 # fire on the transient `.pr-body-*.md` scratchpad (see header note).
 # ────────────────────────────────────────────────────────────────
 BODY_FILE=$(ensure_body_outside_repo "$BODY_FILE")
+
+# ────────────────────────────────────────────────────────────────
+# Normalise to LF. A body written on Windows keeps its CRs through
+# `gh pr create`, and CI's Linux awk then misses every `## ` heading
+# (#318). Git Bash's awk tolerates the CR, so local lint alone would
+# not catch it.
+# ────────────────────────────────────────────────────────────────
+lf_body=$(mktemp -t create-pr-lf.XXXXXX.md)
+tr -d '\r' < "$BODY_FILE" > "$lf_body"
+BODY_FILE="$lf_body"
 
 # ────────────────────────────────────────────────────────────────
 # Lint gate — refuse to open the PR if body fails pr-body-lint.sh
