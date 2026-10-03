@@ -46,13 +46,14 @@ spec-5-swing-strategy-adapter change.md D-1 through D-4.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 from decimal import Decimal
 
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.risk.state import PortfolioState
-from hermes.domain.strategy.signal import SignalKind, SignalSide, StrategySignal
+from hermes.domain.strategy.signal import OpenPosition, SignalKind, SignalSide, StrategySignal
 from hermes.domain.strategy.swing.engines.adx import AdxEngine
 from hermes.domain.strategy.swing.engines.atr import AtrEngine
 from hermes.domain.strategy.swing.engines.chandelier import ChandelierEngine
@@ -163,6 +164,37 @@ class SwingStrategyAdapter:
             return None
         # Unknown interval — ignore
         return None
+
+    def seed(self, bars: Sequence[Bar], open_position: OpenPosition | None = None) -> None:
+        """Fill the bar buffers from history without evaluating any bar.
+
+        Replaying history through :meth:`on_bar` would open positions that
+        never existed. This method only appends to the buffers ``on_bar``
+        fills, with the same caps, and never calls the entry or exit
+        evaluation, so it can never emit a signal.
+
+        Position state is set only from ``open_position``; it is never
+        derived from the bars. With ``None`` the adapter ends flat.
+
+        Args:
+            bars: Closed bars in delivery order (ascending ``close_time``,
+                the daily bar before the 4h bar at equal close time). Bars of
+                other intervals are ignored.
+            open_position: Position to restore, or ``None`` for flat.
+        """
+        for bar in bars:
+            if bar.interval == KlineInterval.H4:
+                self._update_4h_buffer(bar)
+            elif bar.interval == KlineInterval.D1:
+                self._update_1d_buffer(bar)
+        if open_position is None:
+            self._in_position = False
+            self._entry_time = None
+            self._entry_price = None
+        else:
+            self._in_position = True
+            self._entry_time = open_position.entry_time
+            self._entry_price = open_position.entry_price
 
     # ------------------------------------------------------------------
     # Internal helpers

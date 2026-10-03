@@ -29,11 +29,15 @@ from typing import Any
 from hermes.adapters.ledger.migration_runner import apply_migrations
 from hermes.domain.errors import LedgerError
 from hermes.domain.events.base import DomainEvent
+from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.lots.lot import Lot
 from hermes.domain.lots.lot_consumption import LotConsumption
+from hermes.domain.market_data.kline import KlineInterval
+from hermes.domain.strategy.signal import SignalKind, SignalSide
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.lot_id import LotId
 from hermes.domain.value_objects.money import Money
+from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.infrastructure.time import now_utc
@@ -178,6 +182,108 @@ class SqliteLedger:
 
         return tuple(self._row_to_lot(row) for row in rows)
 
+    def has_signal_event(self, event: SignalEmitted) -> bool:
+        """Return whether a ``SignalEmitted`` row matches ``event``.
+
+        Matches on strategy, pair, kind and ``occurred_at``.
+
+        Args:
+            event: The signal event to look up.
+
+        Returns:
+            ``True`` when a matching row exists.
+
+        Raises:
+            LedgerError: On any SQLite read failure.
+        """
+        try:
+            row = self._conn.execute(
+                "SELECT 1 FROM events "
+                "WHERE event_type = 'SignalEmitted' AND occurred_at = ? "
+                "  AND json_extract(payload_json, '$.strategy_id.value') = ? "
+                "  AND json_extract(payload_json, '$.pair.base') = ? "
+                "  AND json_extract(payload_json, '$.pair.quote') = ? "
+                "  AND json_extract(payload_json, '$.kind') = ? "
+                "LIMIT 1",
+                (
+                    _iso_utc(event.occurred_at),
+                    event.strategy_id.value,
+                    event.pair.base.value,
+                    event.pair.quote.value,
+                    event.kind.value,
+                ),
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"has_signal_event failed: {exc}") from exc
+        return row is not None
+
+    def last_processed_close(self, pair: Pair, interval: KlineInterval) -> datetime | None:
+        """Return the newest ``BarProcessed`` close time for one stream.
+
+        Args:
+            pair: Trading pair.
+            interval: Candle-duration bucket.
+
+        Returns:
+            The newest ``occurred_at``, or ``None`` when the stream has no row.
+
+        Raises:
+            LedgerError: On any SQLite read failure.
+        """
+        try:
+            row = self._conn.execute(
+                "SELECT occurred_at FROM events "
+                "WHERE event_type = 'BarProcessed' "
+                "  AND json_extract(payload_json, '$.pair.base') = ? "
+                "  AND json_extract(payload_json, '$.pair.quote') = ? "
+                "  AND json_extract(payload_json, '$.interval') = ? "
+                "ORDER BY occurred_at DESC LIMIT 1",
+                (pair.base.value, pair.quote.value, interval.value),
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"last_processed_close failed: {exc}") from exc
+        return None if row is None else datetime.fromisoformat(row[0])
+
+    def latest_signal_event(
+        self, strategy_id: StrategyId, pair: Pair, *, at_or_before: datetime
+    ) -> SignalEmitted | None:
+        """Return the newest ``SignalEmitted`` of a strategy and pair up to a bound.
+
+        Args:
+            strategy_id: Strategy bucket that emitted the signal.
+            pair: Trading pair.
+            at_or_before: Inclusive upper bound on ``occurred_at``.
+
+        Returns:
+            The rehydrated event, or ``None`` when there is none.
+
+        Raises:
+            LedgerError: On any SQLite read failure or an unreadable payload.
+        """
+        try:
+            row = self._conn.execute(
+                "SELECT payload_json FROM events "
+                "WHERE event_type = 'SignalEmitted' AND occurred_at <= ? "
+                "  AND json_extract(payload_json, '$.strategy_id.value') = ? "
+                "  AND json_extract(payload_json, '$.pair.base') = ? "
+                "  AND json_extract(payload_json, '$.pair.quote') = ? "
+                "ORDER BY occurred_at DESC, id DESC LIMIT 1",
+                (
+                    _iso_utc(at_or_before),
+                    strategy_id.value,
+                    pair.base.value,
+                    pair.quote.value,
+                ),
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"latest_signal_event failed: {exc}") from exc
+        if row is None:
+            return None
+        try:
+            return _signal_from_payload(json.loads(row[0]))
+        except (KeyError, ValueError, TypeError) as exc:
+            raise LedgerError(msg=f"latest_signal_event: unreadable payload: {exc}") from exc
+
     # ------------------------------------------------------------------
     # Private helpers — SQL and (de)serialisation
     # ------------------------------------------------------------------
@@ -312,3 +418,40 @@ def _json_default(value: Any) -> Any:
     if isinstance(value, Enum):
         return value.value
     raise TypeError(f"Cannot serialize {type(value).__name__} to JSON: {value!r}")
+
+
+def _optional_decimal(raw: object) -> Decimal | None:
+    """Parse a stored decimal string, keeping ``None`` as ``None``."""
+    return None if raw is None else Decimal(str(raw))
+
+
+def _signal_from_payload(payload: dict[str, Any]) -> SignalEmitted:
+    """Rehydrate a :class:`SignalEmitted` from its stored JSON payload.
+
+    Args:
+        payload: The decoded ``payload_json`` of a ``SignalEmitted`` row.
+
+    Returns:
+        The event with every stored field restored.
+
+    Raises:
+        KeyError: A field is missing from the payload.
+        ValueError: A field holds a value of the wrong shape.
+    """
+    return SignalEmitted(
+        occurred_at=datetime.fromisoformat(payload["occurred_at"]),
+        correlation_id=payload["correlation_id"],
+        event_seq=int(payload["event_seq"]),
+        strategy_id=StrategyId(payload["strategy_id"]["value"]),
+        pair=Pair(
+            base=Currency(payload["pair"]["base"]),
+            quote=Currency(payload["pair"]["quote"]),
+        ),
+        kind=SignalKind(payload["kind"]),
+        side=SignalSide(payload["side"]),
+        entry_price=_optional_decimal(payload["entry_price"]),
+        stop_price=Decimal(str(payload["stop_price"])),
+        atr_context=Decimal(str(payload["atr_context"])),
+        exit_reason=payload["exit_reason"],
+        f_star_estimate=_optional_decimal(payload["f_star_estimate"]),
+    )
