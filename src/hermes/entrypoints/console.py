@@ -1,0 +1,170 @@
+"""Console composition: the demo switch and the read-model factory.
+
+``hermes --demo <scenario> [command]`` and ``HERMES_CONSOLE_DEMO`` put console
+commands on a packaged fixture scenario. The flag is a leading global option
+parsed before dispatch. It refuses non-console commands, so a demo can never
+reach ``hermes serve``; the environment variable is only read for console
+commands, so a stray value on a host never breaks the bar loop. With no
+command, the flag prints the overview of the scenario.
+
+Console commands (#370, #374, #375, #377) join :data:`CONSOLE_COMMANDS` and
+call :func:`resolve_read_model`.
+
+Reference: openspec/changes/console-read-model/change.md (D-4, D-9).
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import Final, TextIO
+
+from rich.console import Console
+
+from hermes.adapters.console import FixtureReadModel, UnknownScenarioError, available_scenarios
+from hermes.application.console import ConsoleReadModel, Surface
+from hermes.application.console.render import RenderContext, render_overview
+
+__all__ = [
+    "CONSOLE_COMMANDS",
+    "DEMO_ENV_VAR",
+    "DemoFlagError",
+    "DemoSplit",
+    "LiveReadModelUnavailableError",
+    "apply_demo_flag",
+    "resolve_read_model",
+    "run_overview",
+    "split_demo_flag",
+]
+
+DEMO_ENV_VAR: Final = "HERMES_CONSOLE_DEMO"
+CONSOLE_COMMANDS: Final[frozenset[str]] = frozenset()
+_FLAG: Final = "--demo"
+
+
+class DemoFlagError(ValueError):
+    """``--demo`` was given without a scenario name."""
+
+
+class LiveReadModelUnavailableError(RuntimeError):
+    """No ledger-backed read model exists yet; only ``--demo`` works."""
+
+
+@dataclass(frozen=True, slots=True)
+class DemoSplit:
+    """Result of stripping the leading ``--demo`` option from argv.
+
+    Attributes:
+        scenario: The scenario named by the flag, or ``None`` without the flag.
+        rest: The remaining arguments, starting with the command if any.
+    """
+
+    scenario: str | None
+    rest: list[str]
+
+
+def split_demo_flag(args: list[str]) -> DemoSplit:
+    """Strip a leading ``--demo <scenario>`` or ``--demo=<scenario>`` from ``args``.
+
+    Only the first argument is inspected: ``--demo`` after the command belongs
+    to that command's own parser.
+
+    Args:
+        args: Arguments after the program name.
+
+    Returns:
+        The scenario (or ``None``) and the remaining arguments.
+
+    Raises:
+        DemoFlagError: ``--demo`` has no scenario name.
+    """
+    if not args:
+        return DemoSplit(None, [])
+    head, *tail = args
+    if head.startswith(f"{_FLAG}="):
+        scenario = head.removeprefix(f"{_FLAG}=")
+        if not scenario:
+            msg = "--demo needs a scenario name"
+            raise DemoFlagError(msg)
+        return DemoSplit(scenario, tail)
+    if head == _FLAG:
+        if not tail or tail[0].startswith("-"):
+            msg = "--demo needs a scenario name"
+            raise DemoFlagError(msg)
+        return DemoSplit(tail[0], tail[1:])
+    return DemoSplit(None, list(args))
+
+
+def apply_demo_flag(args: list[str], stream: TextIO) -> tuple[int | None, list[str]]:
+    """Handle a leading ``--demo`` for the top-level dispatcher.
+
+    Args:
+        args: Arguments after the program name.
+        stream: Output stream for the overview and errors.
+
+    Returns:
+        ``(exit_code, rest)``: an exit code when the flag was fully handled
+        here (overview printed, or a usage error), else ``None`` and the
+        arguments left for normal dispatch.
+    """
+    try:
+        demo = split_demo_flag(args)
+    except DemoFlagError as exc:
+        stream.write(f"ERROR: {exc}. Scenarios: {', '.join(available_scenarios())}\n")
+        return 2, []
+    if demo.scenario is None:
+        return None, demo.rest
+    if not demo.rest:
+        return run_overview(demo.scenario, stream), []
+    if demo.rest[0] not in CONSOLE_COMMANDS:
+        stream.write(f"ERROR: --demo only applies to console commands, not {demo.rest[0]!r}.\n")
+        return 2, []
+    return None, demo.rest
+
+
+def resolve_read_model(*, demo_flag: str | None, env: Mapping[str, str]) -> ConsoleReadModel:
+    """Return the read model a console command should use.
+
+    The flag wins over :data:`DEMO_ENV_VAR`; an empty variable counts as unset.
+
+    Args:
+        demo_flag: Scenario named by ``--demo``, if any.
+        env: Environment snapshot.
+
+    Returns:
+        A fixture read model for the chosen scenario.
+
+    Raises:
+        UnknownScenarioError: The scenario does not exist.
+        LiveReadModelUnavailableError: No demo was asked for and the ledger-backed
+            read model has not landed yet.
+    """
+    scenario = demo_flag or env.get(DEMO_ENV_VAR, "").strip() or None
+    if scenario is None:
+        msg = (
+            "the console has no live data source yet; "
+            f"use --demo <scenario> ({', '.join(available_scenarios())})"
+        )
+        raise LiveReadModelUnavailableError(msg)
+    return FixtureReadModel.load(scenario)
+
+
+def run_overview(scenario: str, stream: TextIO) -> int:
+    """Print the overview of ``scenario`` to ``stream``.
+
+    Args:
+        scenario: Scenario named by ``--demo``.
+        stream: Output stream; colour follows Rich's TTY and ``NO_COLOR`` detection.
+
+    Returns:
+        0 on success, 2 for an unknown scenario.
+    """
+    try:
+        model = FixtureReadModel.load(scenario)
+    except UnknownScenarioError as exc:
+        stream.write(f"ERROR: {exc}\n")
+        return 2
+    console = Console(file=stream, emoji=False, markup=False, highlight=False)
+    ctx = RenderContext.for_model(model, surface=Surface.OPERATOR_CLI, width=console.width)
+    console.print(render_overview(model, ctx))
+    return 0

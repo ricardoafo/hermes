@@ -14,12 +14,15 @@ from decimal import Decimal
 from hypothesis import given, settings
 from returns.result import Failure, Success
 
-from hermes.application.portfolio.tracker import PortfolioTracker
+from hermes.application.portfolio.tracker import PortfolioTracker, ReplayError
 from hermes.domain.errors import InvalidPortfolioTransition
+from hermes.domain.events.trade_executed import TradeExecuted, TradeSide
 from hermes.domain.portfolio.snapshot import PortfolioSnapshot
+from hermes.domain.trading.fill import Fill
 from hermes.domain.trading.order import OrderSide
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
+from hermes.domain.value_objects.price import Price
 from hermes.domain.value_objects.strategy_id import StrategyId
 from tests.strategies.portfolio import (
     BTC_USDT,
@@ -155,3 +158,93 @@ def test_tracker_state_matches_the_pure_fold_of_the_same_operations(
             folded = folded.after_bar(op.bar)
     assert tracker.state() == folded.to_risk_state()
     assert tracker.open_position_count() == len(folded.positions)
+
+
+def _trade_of(fill: Fill, correlation_id: str = "01J9Z8T3M5BQR2FVKN4XWY6PH1") -> TradeExecuted:
+    """Record ``fill`` the way the ledger would: as the TradeExecuted that carries it."""
+    pair = fill.order.pair
+    return TradeExecuted(
+        occurred_at=fill.timestamp,
+        correlation_id=correlation_id,
+        pair=pair,
+        side=TradeSide(fill.order.side.value),
+        qty=fill.order.qty,
+        price=Price(amount=fill.avg_price, pair=pair),
+        fee=fill.fee,
+        strategy_id=fill.strategy_id,
+    )
+
+
+class TestRebuilt:
+    """rebuilt() replays recorded trades through the same accounting as live fills."""
+
+    def test_buy_then_partial_sell_matches_applying_the_fills_live(self) -> None:
+        """Replaying BUY 0.005 then SELL 0.002 gives the live tracker's state and positions."""
+        buy = make_fill(OrderSide.BUY, "0.005", "50000", fee="0.25")
+        sell = make_fill(OrderSide.SELL, "0.002", "52000", fee="0.1", minutes=60)
+        live = PortfolioTracker(_seed())
+        live.apply_fill(buy)
+        live.apply_fill(sell)
+        result = PortfolioTracker.rebuilt(_seed(), [_trade_of(buy), _trade_of(sell)])
+        assert isinstance(result, Success)
+        rebuilt = result.unwrap()
+        assert (rebuilt.state(), rebuilt.open_position_count()) == (
+            live.state(),
+            live.open_position_count(),
+        )
+
+    def test_buy_then_partial_sell_leaves_one_position_and_the_expected_value(self) -> None:
+        """BUY 0.005 at 50000 then SELL 0.002 at 52000 keeps one position, value 5009.65."""
+        buy = make_fill(OrderSide.BUY, "0.005", "50000", fee="0.25")
+        sell = make_fill(OrderSide.SELL, "0.002", "52000", fee="0.1", minutes=60)
+        result = PortfolioTracker.rebuilt(_seed(), [_trade_of(buy), _trade_of(sell)])
+        assert isinstance(result, Success)
+        tracker = result.unwrap()
+        assert (tracker.open_position_count(), tracker.state().current_value.normalize()) == (
+            1,
+            Decimal("5009.65"),
+        )
+
+    def test_no_trades_returns_the_seed_unchanged(self) -> None:
+        """An empty ledger rebuilds to the seed: same risk state, no position."""
+        result = PortfolioTracker.rebuilt(_seed(), [])
+        assert isinstance(result, Success)
+        tracker = result.unwrap()
+        assert (tracker.state(), tracker.open_position_count()) == (_seed().to_risk_state(), 0)
+
+    def test_sell_without_a_position_fails_naming_the_trade(self) -> None:
+        """A SELL with no prior BUY returns Failure(ReplayError) carrying its correlation id."""
+        sell = _trade_of(make_fill(OrderSide.SELL, "0.005", "50000"), "01J9Z8T3M5BQR2FVKN4XWY6PH9")
+        result = PortfolioTracker.rebuilt(_seed(), [sell])
+        assert isinstance(result, Failure)
+        assert isinstance(result.failure(), ReplayError)
+        assert "01J9Z8T3M5BQR2FVKN4XWY6PH9" in str(result.failure())
+
+    def test_replay_stops_at_the_first_failing_trade(self) -> None:
+        """The Failure names the first bad trade, not a later one."""
+        first = _trade_of(make_fill(OrderSide.SELL, "1", "3000", pair=ETH_USDT), "FIRSTBAD")
+        second = _trade_of(
+            make_fill(OrderSide.SELL, "1", "3000", pair=ETH_USDT, minutes=1), "LATERBAD"
+        )
+        result = PortfolioTracker.rebuilt(_seed(), [first, second])
+        assert isinstance(result, Failure)
+        assert "FIRSTBAD" in str(result.failure())
+        assert "LATERBAD" not in str(result.failure())
+
+
+@settings(max_examples=60, deadline=None, derandomize=True)
+@given(cash=starting_cash, ops=operations())
+def test_rebuilt_equals_the_live_tracker_for_any_accepted_fill_sequence(
+    cash: Decimal, ops: list[Operation]
+) -> None:
+    """Replaying the fills the live tracker accepted rebuilds the same state and positions."""
+    live = PortfolioTracker(_seed(cash))
+    recorded: list[TradeExecuted] = []
+    for op in ops:
+        if isinstance(op, FillOp) and isinstance(live.apply_fill(op.fill), Success):
+            recorded.append(_trade_of(op.fill))
+    result = PortfolioTracker.rebuilt(_seed(cash), recorded)
+    assert isinstance(result, Success)
+    rebuilt = result.unwrap()
+    assert rebuilt.state() == live.state()
+    assert rebuilt.open_position_count() == live.open_position_count()

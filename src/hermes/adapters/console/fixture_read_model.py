@@ -1,0 +1,488 @@
+"""Console read model served from named JSON scenarios.
+
+The scenarios ship inside the package (``scenarios/*.json``) so
+``hermes --demo <scenario>`` works from an installed wheel, and the tests load
+the same files. Every amount is a JSON string parsed into an exact ``Decimal``;
+every timestamp must carry an offset. Figures the views can derive (row net,
+change since entry, stop distance) are computed here rather than stored, so a
+scenario cannot contradict itself.
+
+Reference: openspec/changes/console-read-model/change.md (D-3, D-7).
+"""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Mapping, Sequence
+from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
+from importlib import resources
+from pathlib import Path
+from typing import Final, cast
+
+from hermes.application.console.views import (
+    QUIET_ACTIVITY_KINDS,
+    ActivityDay,
+    ActivityItem,
+    ActivityKind,
+    Heartbeat,
+    HeartbeatState,
+    PortfolioRange,
+    PortfolioSummary,
+    PositionDetail,
+    PositionRow,
+    ShadowTest,
+    ShadowTestStatus,
+    Tax,
+    TaxBand,
+    TaxEstimate,
+    TaxPending,
+    TimelineEvent,
+    WaterfallColumn,
+    tax_amount,
+)
+
+__all__ = [
+    "FixtureReadModel",
+    "ScenarioError",
+    "UnknownScenarioError",
+    "available_scenarios",
+]
+
+_SCENARIO_PACKAGE: Final = "hermes.adapters.console"
+_SCENARIO_DIR: Final = "scenarios"
+_SUFFIX: Final = ".json"
+_HUNDRED: Final = Decimal(100)
+
+type _Json = Mapping[str, object]
+
+
+class ScenarioError(ValueError):
+    """A scenario file is missing a field or holds an invalid value."""
+
+
+class UnknownScenarioError(ScenarioError):
+    """No scenario has the requested name."""
+
+    def __init__(self, name: str, available: Sequence[str]) -> None:
+        """Name the missing scenario and list the valid ones."""
+        super().__init__(f"unknown demo scenario {name!r}; available: {', '.join(available)}")
+        self.name = name
+        self.available = tuple(available)
+
+
+def available_scenarios() -> tuple[str, ...]:
+    """Return the names of the packaged scenarios, sorted."""
+    folder = resources.files(_SCENARIO_PACKAGE) / _SCENARIO_DIR
+    return tuple(
+        sorted(
+            entry.name.removesuffix(_SUFFIX)
+            for entry in folder.iterdir()
+            if entry.name.endswith(_SUFFIX)
+        )
+    )
+
+
+# ----------------------------------------------------------------------
+# Field readers
+# ----------------------------------------------------------------------
+
+
+def _field(obj: _Json, key: str) -> object:
+    if key not in obj:
+        msg = f"missing field {key!r}"
+        raise ScenarioError(msg)
+    return obj[key]
+
+
+def _obj(obj: _Json, key: str) -> _Json:
+    value = _field(obj, key)
+    if not isinstance(value, Mapping):
+        msg = f"field {key!r} must be an object"
+        raise ScenarioError(msg)
+    return cast("_Json", value)
+
+
+def _list(obj: _Json, key: str) -> list[object]:
+    value = obj.get(key, [])
+    if not isinstance(value, list):
+        msg = f"field {key!r} must be a list"
+        raise ScenarioError(msg)
+    return cast("list[object]", value)
+
+
+def _str(obj: _Json, key: str) -> str:
+    value = _field(obj, key)
+    if not isinstance(value, str):
+        msg = f"field {key!r} must be a string"
+        raise ScenarioError(msg)
+    return value
+
+
+def _opt_str(obj: _Json, key: str) -> str | None:
+    return None if obj.get(key) is None else _str(obj, key)
+
+
+def _int(obj: _Json, key: str) -> int:
+    value = _field(obj, key)
+    if not isinstance(value, int) or isinstance(value, bool):
+        msg = f"field {key!r} must be an integer"
+        raise ScenarioError(msg)
+    return value
+
+
+def _to_decimal(raw: object, key: str) -> Decimal:
+    if not isinstance(raw, str):
+        msg = f"field {key!r} must be a decimal string, got {raw!r}"
+        raise ScenarioError(msg)
+    try:
+        value = Decimal(raw)
+    except InvalidOperation as exc:
+        msg = f"field {key!r} is not a decimal: {raw!r}"
+        raise ScenarioError(msg) from exc
+    if not value.is_finite():
+        msg = f"field {key!r} must be finite: {raw!r}"
+        raise ScenarioError(msg)
+    return value
+
+
+def _dec(obj: _Json, key: str) -> Decimal:
+    return _to_decimal(_field(obj, key), key)
+
+
+def _opt_dec(obj: _Json, key: str) -> Decimal | None:
+    return None if obj.get(key) is None else _dec(obj, key)
+
+
+def _dec_list(obj: _Json, key: str) -> tuple[Decimal, ...]:
+    return tuple(_to_decimal(raw, key) for raw in _list(obj, key))
+
+
+def _to_datetime(raw: object, key: str) -> datetime:
+    if not isinstance(raw, str):
+        msg = f"field {key!r} must be an ISO timestamp string"
+        raise ScenarioError(msg)
+    try:
+        value = datetime.fromisoformat(raw)
+    except ValueError as exc:
+        msg = f"field {key!r} is not an ISO timestamp: {raw!r}"
+        raise ScenarioError(msg) from exc
+    if value.tzinfo is None or value.utcoffset() is None:
+        msg = f"field {key!r} has no timezone offset: {raw!r}"
+        raise ScenarioError(msg)
+    return value
+
+
+def _dt(obj: _Json, key: str) -> datetime:
+    return _to_datetime(_field(obj, key), key)
+
+
+def _opt_dt(obj: _Json, key: str) -> datetime | None:
+    return None if obj.get(key) is None else _dt(obj, key)
+
+
+def _items(obj: _Json, key: str) -> list[_Json]:
+    out: list[_Json] = []
+    for entry in _list(obj, key):
+        if not isinstance(entry, Mapping):
+            msg = f"every entry of {key!r} must be an object"
+            raise ScenarioError(msg)
+        out.append(cast("_Json", entry))
+    return out
+
+
+def _enum[E: (HeartbeatState, ActivityKind, ShadowTestStatus, PortfolioRange)](
+    kind: type[E], raw: str, key: str
+) -> E:
+    try:
+        return kind(raw)
+    except ValueError as exc:
+        msg = f"field {key!r} has unknown value {raw!r}"
+        raise ScenarioError(msg) from exc
+
+
+# ----------------------------------------------------------------------
+# View parsers
+# ----------------------------------------------------------------------
+
+
+def _tax(obj: _Json, key: str) -> Tax:
+    raw = _obj(obj, key)
+    if raw.get("pending") is True:
+        return TaxPending()
+    return TaxEstimate(amount=_dec(raw, "estimate"))
+
+
+def _heartbeat(raw: _Json) -> Heartbeat:
+    try:
+        return Heartbeat(
+            state=_enum(HeartbeatState, _str(raw, "state"), "state"),
+            as_of=_dt(raw, "as_of"),
+            last_check_at=_dt(raw, "last_check_at"),
+            next_check_at=_dt(raw, "next_check_at"),
+            down_since=_opt_dt(raw, "down_since"),
+        )
+    except ValueError as exc:
+        if isinstance(exc, ScenarioError):
+            raise
+        raise ScenarioError(str(exc)) from exc
+
+
+def _waterfall(raw: _Json) -> WaterfallColumn:
+    return WaterfallColumn(gross=_dec(raw, "gross"), fees=_dec(raw, "fees"), tax=_tax(raw, "tax"))
+
+
+def _tax_band(raw: _Json) -> TaxBand | None:
+    band = raw.get("tax_band")
+    if band is None:
+        return None
+    if not isinstance(band, Mapping):
+        msg = "field 'tax_band' must be an object or null"
+        raise ScenarioError(msg)
+    band_obj = cast("_Json", band)
+    return TaxBand(
+        rate=_dec(band_obj, "rate"),
+        next_rate=_opt_dec(band_obj, "next_rate"),
+        room_to_next=_opt_dec(band_obj, "room_to_next"),
+    )
+
+
+def _portfolios(raw: _Json) -> dict[PortfolioRange, PortfolioSummary]:
+    ranges = _obj(raw, "ranges")
+    as_of = _dt(raw, "as_of")
+    total_value = _dec(raw, "total_value")
+    cash = _dec(raw, "cash")
+    invested = _dec(raw, "invested")
+    today = _waterfall(_obj(raw, "today"))
+    year = _waterfall(_obj(raw, "year"))
+    open_pnl = _dec(raw, "open_pnl")
+    open_tax = _tax(raw, "open_tax_if_sold")
+    band = _tax_band(raw)
+    out: dict[PortfolioRange, PortfolioSummary] = {}
+    for range_ in PortfolioRange:
+        entry = _obj(ranges, range_.value)
+        out[range_] = PortfolioSummary(
+            range=range_,
+            as_of=as_of,
+            total_value=total_value,
+            change=_dec(entry, "change"),
+            change_pct=_dec(entry, "change_pct"),
+            net=_dec(entry, "net"),
+            sparkline=_dec_list(entry, "sparkline"),
+            cash=cash,
+            invested=invested,
+            today=today,
+            year=year,
+            open_pnl=open_pnl,
+            open_tax_if_sold=open_tax,
+            tax_band=band,
+        )
+    return out
+
+
+def _position(raw: _Json) -> PositionDetail:
+    detail = _obj(raw, "detail")
+    entry = _dec(raw, "entry_price")
+    current = _dec(raw, "current_price")
+    stop = _dec(raw, "stop_price")
+    atr = _dec(raw, "atr")
+    if entry <= 0 or current <= 0 or atr <= 0:
+        msg = f"position {raw.get('coin')!r}: prices and ATR must be positive"
+        raise ScenarioError(msg)
+    tax = _tax(detail, "tax")
+    gross = _dec(detail, "gross")
+    fees_paid = _dec(detail, "fees_paid")
+    fees_to_close = _dec(detail, "fees_to_close")
+    row = PositionRow(
+        coin=_str(raw, "coin"),
+        timeframe=_str(raw, "timeframe"),
+        side=_str(raw, "side"),
+        size=_dec(raw, "size"),
+        opened_at=_dt(raw, "opened_at"),
+        entry_price=entry,
+        current_price=current,
+        change_pct=(current - entry) * _HUNDRED / entry,
+        net=gross - fees_paid - fees_to_close - tax_amount(tax),
+        stop_price=stop,
+        high_since_entry=_dec(raw, "high_since_entry"),
+        stop_distance_atr=(current - stop) / atr,
+        stop_distance_pct=(current - stop) * _HUNDRED / current,
+    )
+    entry_values: list[tuple[str, Decimal]] = []
+    for pair in _list(detail, "entry_values"):
+        if not (isinstance(pair, list) and len(pair) == 2 and isinstance(pair[0], str)):  # noqa: PLR2004
+            msg = "entry_values entries must be [name, value] pairs"
+            raise ScenarioError(msg)
+        entry_values.append((pair[0], _to_decimal(pair[1], "entry_values")))
+    return PositionDetail(
+        row=row,
+        strategy=_str(detail, "strategy"),
+        entry_values=tuple(entry_values),
+        stop_moves=_int(detail, "stop_moves"),
+        gross=gross,
+        fees_paid=fees_paid,
+        fees_to_close=fees_to_close,
+        tax=tax,
+        price_path=_dec_list(detail, "price_path"),
+        timeline=tuple(
+            TimelineEvent(at=_dt(event, "at"), label=_str(event, "label"))
+            for event in _items(detail, "timeline")
+        ),
+    )
+
+
+def _activity_item(raw: _Json) -> ActivityItem:
+    return ActivityItem(
+        at=_dt(raw, "at"),
+        kind=_enum(ActivityKind, _str(raw, "kind"), "kind"),
+        coin=_opt_str(raw, "coin"),
+        text=_opt_str(raw, "text"),
+        price=_opt_dec(raw, "price"),
+        net=_opt_dec(raw, "net"),
+        count=_int(raw, "count") if "count" in raw else 1,
+        stop_from=_opt_dec(raw, "stop_from"),
+        stop_to=_opt_dec(raw, "stop_to"),
+    )
+
+
+def _activity(raw: _Json) -> tuple[ActivityDay, ...]:
+    days: list[ActivityDay] = []
+    for day in _items(raw, "activity"):
+        try:
+            day_value = date.fromisoformat(_str(day, "day"))
+        except ValueError as exc:
+            msg = f"activity day is not an ISO date: {day.get('day')!r}"
+            raise ScenarioError(msg) from exc
+        days.append(
+            ActivityDay(
+                day=day_value,
+                items=tuple(_activity_item(item) for item in _items(day, "items")),
+            )
+        )
+    return tuple(days)
+
+
+def _shadow_test(raw: _Json) -> ShadowTest:
+    return ShadowTest(
+        status=_enum(ShadowTestStatus, _str(raw, "status"), "status"),
+        day=None if raw.get("day") is None else _int(raw, "day"),
+        length_days=_int(raw, "length_days") if "length_days" in raw else 90,
+        note=_opt_str(raw, "note"),
+    )
+
+
+# ----------------------------------------------------------------------
+# Read model
+# ----------------------------------------------------------------------
+
+
+class FixtureReadModel:
+    """A :class:`~hermes.application.console.read_model.ConsoleReadModel` over one scenario.
+
+    Construction parses and validates the whole scenario, so a broken fixture
+    fails on load rather than halfway through a render.
+    """
+
+    def __init__(self, scenario: str, document: _Json) -> None:
+        """Parse ``document`` as the scenario named ``scenario``.
+
+        Args:
+            scenario: Name shown in the DEMO DATA tag.
+            document: The decoded scenario JSON.
+
+        Raises:
+            ScenarioError: A field is missing or invalid.
+        """
+        self._scenario = scenario
+        self._heartbeat = _heartbeat(_obj(document, "heartbeat"))
+        self._portfolios = _portfolios(_obj(document, "portfolio"))
+        details = tuple(_position(raw) for raw in _items(document, "positions"))
+        self._details = {detail.row.coin.upper(): detail for detail in details}
+        self._rows = tuple(detail.row for detail in details)
+        self._activity = _activity(document)
+        self._shadow_test = _shadow_test(_obj(document, "shadow_test"))
+
+    @classmethod
+    def load(cls, name: str) -> FixtureReadModel:
+        """Load a packaged scenario by name.
+
+        Args:
+            name: Scenario name, e.g. ``"ok-two-positions"``.
+
+        Returns:
+            The read model.
+
+        Raises:
+            UnknownScenarioError: No packaged scenario has that name.
+            ScenarioError: The scenario file is invalid.
+        """
+        available = available_scenarios()
+        if name not in available:
+            raise UnknownScenarioError(name, available)
+        resource = resources.files(_SCENARIO_PACKAGE) / _SCENARIO_DIR / f"{name}{_SUFFIX}"
+        return cls(name, _decode(resource.read_text(encoding="utf-8")))
+
+    @classmethod
+    def from_path(cls, path: Path) -> FixtureReadModel:
+        """Load a scenario from a file; its stem becomes the scenario name.
+
+        Args:
+            path: JSON scenario file.
+
+        Returns:
+            The read model.
+
+        Raises:
+            ScenarioError: The file is not a valid scenario.
+        """
+        return cls(path.stem, _decode(path.read_text(encoding="utf-8")))
+
+    @property
+    def demo_scenario(self) -> str:
+        """Return the scenario name; fixture data is always demo data."""
+        return self._scenario
+
+    def heartbeat(self) -> Heartbeat:
+        """Return the scenario heartbeat."""
+        return self._heartbeat
+
+    def portfolio(self, range_: PortfolioRange = PortfolioRange.TODAY) -> PortfolioSummary:
+        """Return the scenario portfolio for ``range_``."""
+        return self._portfolios[range_]
+
+    def positions(self) -> tuple[PositionRow, ...]:
+        """Return the scenario's open positions in file order."""
+        return self._rows
+
+    def position(self, coin: str) -> PositionDetail | None:
+        """Return the detail for ``coin`` (case-insensitive), or ``None``."""
+        return self._details.get(coin.upper())
+
+    def activity(self, *, include_quiet: bool = False) -> tuple[ActivityDay, ...]:
+        """Return activity days; bar checks and signals only when asked."""
+        if include_quiet:
+            return self._activity
+        days = (
+            ActivityDay(
+                day=day.day,
+                items=tuple(i for i in day.items if i.kind not in QUIET_ACTIVITY_KINDS),
+            )
+            for day in self._activity
+        )
+        return tuple(day for day in days if day.items)
+
+    def shadow_test(self) -> ShadowTest:
+        """Return the scenario's shadow test status."""
+        return self._shadow_test
+
+
+def _decode(text: str) -> _Json:
+    try:
+        document = json.loads(text)
+    except json.JSONDecodeError as exc:
+        msg = f"scenario is not valid JSON: {exc}"
+        raise ScenarioError(msg) from exc
+    if not isinstance(document, dict):
+        msg = "scenario must be a JSON object"
+        raise ScenarioError(msg)
+    return cast("_Json", document)

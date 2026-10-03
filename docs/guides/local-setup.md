@@ -80,8 +80,8 @@ catches issues your local should have.
 # 1. Commit-stage hooks (ruff / mypy / markdownlint / conventional-commits / etc.)
 pre-commit install
 
-# 2. Pre-push hook — runs the full CI-mirror suite before every push
-#    (mirrors what `scripts/dev/pr-preflight.sh` does).
+# 2. Pre-push hook — runs the fast CI subset before every push
+#    (`scripts/dev/pr-preflight.sh --pre-push`; tests and audits run in CI).
 pre-commit install --hook-type pre-push
 ```
 
@@ -377,7 +377,7 @@ git checkout -b <prefix>/<kebab-case-name>
 git add ...
 git commit -m "<type>(<scope>): <lowercase subject>"
 
-# Push — pre-push hook runs pr-preflight (full CI mirror)
+# Push — pre-push hook runs pr-preflight --pre-push (fast CI subset)
 git push
 
 # Delete local branch immediately (per dev-workflow.md § Golden rules)

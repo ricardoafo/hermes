@@ -36,14 +36,20 @@ from hermes.application.calibration.certification_gates import (
     evaluate_next_gate,
     record_outcome,
 )
+from hermes.application.calibration.window_metrics import (
+    PerformanceRecord,
+    TrialStats,
+    compute_window_metrics,
+)
 from hermes.application.strategy_protocol.preregistration import PreRegistration
+from hermes.domain.statistics.performance import TradeResult
 from hermes.entrypoints import serve as serve_module
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
 from hermes.infrastructure.time import now_utc
 from hermes.ports.certification import CertificationStoreError, CertificationStorePort
 
-__all__ = ["EvidenceError", "load_evidence", "main", "run"]
+__all__ = ["EvidenceError", "apply_performance", "load_evidence", "main", "run"]
 
 _USAGE = (
     "Usage: hermes certify <strategy_id> [--evidence FILE] [--store-dir DIR]\n"
@@ -90,6 +96,8 @@ def main(argv: list[str], *, stream: TextIO) -> int:
         config = load_config(parsed.config_dir)
         fingerprint = serve_module.parameter_fingerprint_for(config)
         evidence = load_evidence(parsed.evidence) if parsed.evidence else GateEvidence()
+        if parsed.performance:
+            evidence = apply_performance(evidence, parsed.performance)
     except (ConfigError, serve_module.StartupError) as exc:
         stream.write(f"ERROR: config: {exc}\n")
         return 3
@@ -117,6 +125,7 @@ def _parse(argv: list[str], stream: TextIO) -> tuple[argparse.Namespace | None, 
     parser = argparse.ArgumentParser(prog="hermes certify", add_help=False)
     parser.add_argument("strategy_id", nargs="?")
     parser.add_argument("--evidence", type=Path)
+    parser.add_argument("--performance", type=Path)
     parser.add_argument("--store-dir", type=Path)
     parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
     parser.add_argument("--sign-off", default=None)
@@ -261,6 +270,92 @@ def load_evidence(path: Path) -> GateEvidence:
         ),
         sha256=hashlib.sha256(raw).hexdigest(),
     )
+
+
+_WINDOWS = ("train_val", "oos")
+
+
+def apply_performance(evidence: GateEvidence, path: Path) -> GateEvidence:
+    """Compute a window's §9 metrics from a performance file and add them to ``evidence``.
+
+    The file names its window: ``train_val`` fills the backtest metrics,
+    ``oos`` fills the OOS metrics. The evidence hash then covers both files.
+
+    Args:
+        evidence: Evidence loaded from ``--evidence`` (or empty).
+        path: The performance file.
+
+    Returns:
+        ``evidence`` with that window's metrics replaced by computed ones.
+
+    Raises:
+        EvidenceError: The file is not a valid performance record.
+        OSError: The file cannot be read.
+    """
+    raw = path.read_bytes()
+    try:
+        payload = json.loads(raw)
+    except ValueError as exc:
+        raise EvidenceError(f"{path} is not JSON: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise EvidenceError(f"{path} must hold a JSON object")
+    window, record = _performance_record(payload)
+    try:
+        metrics = compute_window_metrics(record)
+    except ValueError as exc:
+        raise EvidenceError(f"performance: {exc}") from exc
+    digest = hashlib.sha256(
+        ((evidence.sha256 or "") + hashlib.sha256(raw).hexdigest()).encode("ascii")
+    ).hexdigest()
+    if window == "oos":
+        return replace(evidence, oos=metrics, sha256=digest)
+    return replace(evidence, backtest=metrics, sha256=digest)
+
+
+def _performance_record(payload: dict[str, Any]) -> tuple[str, PerformanceRecord]:
+    unknown = set(payload) - {"window", "daily_equity", "trades", "trials", "bootstrap_seed"}
+    if unknown:
+        raise EvidenceError(f"unknown performance keys: {sorted(unknown)}")
+    window = payload.get("window")
+    if window not in _WINDOWS:
+        raise EvidenceError(f"window must be one of {list(_WINDOWS)}, got {window!r}")
+    equity = payload.get("daily_equity")
+    if not isinstance(equity, list):
+        raise EvidenceError("daily_equity must be a list of numbers")
+    trades = payload.get("trades")
+    if not isinstance(trades, list) or not all(isinstance(t, dict) for t in trades):
+        raise EvidenceError("trades must be a list of objects")
+    seed = _int(payload, "bootstrap_seed")
+    if seed is None:
+        raise EvidenceError("bootstrap_seed is required so the interval is reproducible")
+    trials = _section(payload, "trials")
+    record = PerformanceRecord(
+        daily_equity=tuple(_number(v, "daily_equity") for v in equity),
+        trades=tuple(_trade(t) for t in trades),
+        trials=None if trials is None else _trials(trials),
+        bootstrap_seed=seed,
+    )
+    return str(window), record
+
+
+def _number(value: object, key: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise EvidenceError(f"{key} values must be numbers, got {value!r}")
+    return float(value)
+
+
+def _trade(item: dict[str, Any]) -> TradeResult:
+    if set(item) != {"gross_pnl", "fees"}:
+        raise EvidenceError(f"each trade needs exactly gross_pnl and fees, got {sorted(item)}")
+    return TradeResult(_number(item["gross_pnl"], "gross_pnl"), _number(item["fees"], "fees"))
+
+
+def _trials(section: dict[str, Any]) -> TrialStats:
+    count = _int(section, "count")
+    variance = _float(section, "sharpe_variance")
+    if count is None or count < 1 or variance is None or variance < 0.0:
+        raise EvidenceError("trials needs count >= 1 and sharpe_variance >= 0")
+    return TrialStats(count, variance)
 
 
 def _section(payload: dict[str, Any], name: str) -> dict[str, Any] | None:

@@ -1,0 +1,20 @@
+# Example taxpayer profile: zeros only, safe to commit.
+#
+# The REAL profile never lives in this repo. Copy this file to
+# ~/.config/hermes/taxpayer.yaml (or point HERMES_TAXPAYER_PROFILE at it) and
+# fill in the operator figures. Values are never logged and never reach Slack,
+# Sentry or any AI-facing tool (ADR-016 decision 12).
+#
+# Amounts are strings so they parse as Decimal. A year absent from the file is
+# treated as zeros, with the notice "no taxpayer profile, assuming no other income".
+
+years:
+  2026:
+    general_income_eur: "0"
+    # Optional: omit to use the default personal minimum from config/tax_scales.yaml.
+    personal_minimum_eur: "5550"
+    other_savings_income_eur: "0"
+    other_capital_gains_eur: "0"
+    losses_carried_forward: []
+    # Example entry once a loss exists:
+    #   - { origin_year: 2024, amount_eur: "0" }

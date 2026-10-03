@@ -64,6 +64,16 @@ fi
 tail -n "$lines" "$here/journal.txt"
 """
 
+_FAKE_HERMES = """#!/usr/bin/env bash
+here="$(dirname "$0")"
+printf '%s\\n' "$@" > "$here/hermes.argv"
+cat "$here/hermes.out"
+exit "$(cat "$here/hermes.rc")"
+"""
+
+_STATUS_OK = '{"verdict": {"level": "ok", "headline": "All good"}}'
+_STATUS_LATE = '{"verdict": {"level": "late", "headline": "The 22:00 check is 20 minutes late"}}'
+
 _SPY_CURL = """#!/usr/bin/env bash
 printf '%s\\n' "$@" > "$(dirname "$0")/curl.argv"
 exec "$REAL_CURL" "$@"
@@ -128,7 +138,9 @@ class _Host:
         self._write_exe("systemctl", _STUB_SYSTEMCTL)
         self._write_exe("journalctl", _STUB_JOURNALCTL)
         self._write_exe("curl", _SPY_CURL)
+        self._write_exe("hermes", _FAKE_HERMES)
         self.set_hermes_active(True)
+        self.set_status(0, _STATUS_OK)
         self.set_journal([])
 
     def _write_exe(self, name: str, text: str) -> None:
@@ -142,6 +154,15 @@ class _Host:
     def set_hermes_active(self, active: bool) -> None:
         """`systemctl is-active --quiet hermes.service` exits 0 when active, 3 when not."""
         self._write("systemctl.rc", "0" if active else "3")
+
+    def set_status(self, rc: int, output: str) -> None:
+        """Make the fake `hermes status --json` print ``output`` and exit ``rc``."""
+        self._write("hermes.rc", str(rc))
+        self._write("hermes.out", output)
+
+    def hermes_argv(self) -> list[str]:
+        """Return the argv the ping script gave `hermes`."""
+        return (self.bin_dir / "hermes.argv").read_text(encoding="utf-8").splitlines()
 
     def set_journal(self, lines: list[str], unit: str = "hermes.service") -> None:
         """Make `journalctl --unit=<unit>` answer with ``lines`` (honouring --lines)."""
@@ -189,6 +210,7 @@ def _run(
             "HERMES_TELEGRAM__CHAT_ID": _CHAT_ID,
             "HERMES_NOTIFY_API_BASE": server.url,
             "HERMES_HEALTHCHECKS__PING_URL": f"{server.url}{_PING_PATH}",
+            "HERMES_HEALTH_HERMES_BIN": (host.bin_dir / "hermes").as_posix(),
         }
     )
     environ.update(env or {})
@@ -359,12 +381,72 @@ def test_notifier_without_credentials_exits_1_and_sends_nothing(
     assert server.requests == []
 
 
-def test_health_ping_is_sent_while_hermes_is_active(host: _Host, server: _FakeServer) -> None:
-    """The dead-man's switch is fed exactly once per tick while hermes.service is active."""
+def test_health_ping_reports_all_good_as_success_with_the_status_body(
+    host: _Host, server: _FakeServer
+) -> None:
+    """All good: one success ping per tick, carrying the status JSON for the check's log."""
     result = _run(_PING, host, server)
 
     assert result.returncode == 0, result.stderr
-    assert [(r.method, r.path) for r in server.requests] == [("GET", _PING_PATH)]
+    assert [(r.method, r.path, r.body) for r in server.requests] == [
+        ("POST", _PING_PATH, _STATUS_OK)
+    ]
+
+
+def test_health_ping_reports_a_late_check_as_fail_with_the_status_body(
+    host: _Host, server: _FakeServer
+) -> None:
+    """A running but stalled loop must turn the check red, not stay green (#372)."""
+    host.set_status(1, _STATUS_LATE)
+
+    result = _run(_PING, host, server)
+
+    assert result.returncode == 0, result.stderr
+    assert [(r.method, r.path, r.body) for r in server.requests] == [
+        ("POST", f"{_PING_PATH}/fail", _STATUS_LATE)
+    ]
+
+
+def test_health_ping_reports_a_missing_ledger_as_fail_with_the_error(
+    host: _Host, server: _FakeServer
+) -> None:
+    """Exit 3 (no ledger, config error) is a problem to page about, with its message."""
+    host.set_status(3, "ERROR: config load failed: boom")
+
+    result = _run(_PING, host, server)
+
+    assert result.returncode == 0, result.stderr
+    assert [(r.path, r.body) for r in server.requests] == [
+        (f"{_PING_PATH}/fail", "ERROR: config load failed: boom")
+    ]
+
+
+def test_health_ping_falls_back_to_a_plain_success_on_a_release_without_status(
+    host: _Host, server: _FakeServer
+) -> None:
+    """Exit 2 (no `status` command yet) keeps the pre-#372 behaviour during the rollout."""
+    host.set_status(2, "ERROR: unknown command")
+
+    result = _run(_PING, host, server)
+
+    assert result.returncode == 0, result.stderr
+    assert [(r.path, r.body) for r in server.requests] == [(_PING_PATH, "")]
+
+
+def test_health_ping_asks_hermes_status_for_json_on_the_release_paths(
+    host: _Host, server: _FakeServer
+) -> None:
+    """The ping reads the prod ledger and config through `hermes status --json`."""
+    _run(_PING, host, server)
+
+    assert host.hermes_argv() == [
+        "status",
+        "--config-dir",
+        "/opt/hermes/current/config",
+        "--db",
+        "/var/lib/hermes/hermes.sqlite3",
+        "--json",
+    ]
 
 
 def test_health_ping_is_skipped_while_hermes_is_not_active(
@@ -378,6 +460,7 @@ def test_health_ping_is_skipped_while_hermes_is_not_active(
     assert result.returncode == 0, result.stderr
     assert server.requests == []
     assert "ping skipped" in result.stdout
+    assert not (host.bin_dir / "hermes.argv").exists()
 
 
 def test_health_ping_failure_is_not_swallowed(host: _Host, server: _FakeServer) -> None:

@@ -31,7 +31,7 @@ from hermes.application.status import UnitState, build_report
 from hermes.domain.strategy.signal import SignalKind
 from hermes.entrypoints import cli
 from hermes.entrypoints import status as status_module
-from hermes.entrypoints.console.status_view import render_status
+from hermes.entrypoints.status_view import render_status
 from tests.support.status_ledger import (
     ETH,
     INTERVALS,

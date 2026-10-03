@@ -97,6 +97,7 @@ def _sample_trade_event(side: TradeSide = TradeSide.BUY) -> TradeExecuted:
         qty=Quantity(amount=Decimal("0.001"), asset=Currency.BTC),
         price=Price(amount=Decimal("65000"), pair=pair),
         fee=Money(amount=Decimal("0.06"), currency=Currency.USDT),
+        strategy_id=StrategyId("swing"),
     )
 
 
@@ -340,8 +341,89 @@ class TestAppendEventPersistsEventRow:
             assert row is not None
             event_type, schema_version, correlation_id = row
             assert event_type == "TradeExecuted"
-            assert schema_version == 1
+            assert schema_version == 2
             assert correlation_id == "01J9Z8T3M5BQR2FVKN4XWY6PH1"
+        finally:
+            conn.close()
+
+
+def _trade_at(
+    strategy: str, minute: int, correlation_id: str, side: TradeSide = TradeSide.BUY
+) -> TradeExecuted:
+    """Return a TradeExecuted of ``strategy`` filled ``minute`` minutes after midnight."""
+    pair = Pair(base=Currency.BTC, quote=Currency.USDT)
+    return TradeExecuted(
+        occurred_at=datetime(2026, 11, 5, 0, minute, 0, tzinfo=UTC),
+        correlation_id=correlation_id,
+        pair=pair,
+        side=side,
+        qty=Quantity(amount=Decimal("0.001"), asset=Currency.BTC),
+        price=Price(amount=Decimal("65000.5"), pair=pair),
+        fee=Money(amount=Decimal("0.06"), currency=Currency.USDT),
+        strategy_id=StrategyId(strategy),
+    )
+
+
+class TestTradeEvents:
+    """trade_events returns one strategy's TradeExecuted rows, oldest first."""
+
+    def test_returns_only_the_asked_strategy_oldest_first_with_every_field(self) -> None:
+        """Trades of two strategies written out of time order come back filtered and sorted."""
+        conn = sqlite3.connect(":memory:")
+        try:
+            ledger = SqliteLedger(conn)
+            late = _trade_at("swing", 30, "LATE", TradeSide.SELL)
+            early = _trade_at("swing", 10, "EARLY")
+            other = _trade_at("other", 20, "OTHER")
+            for event in (late, other, early):
+                ledger.append_event(event)
+            assert ledger.trade_events(StrategyId("swing")) == (early, late)
+        finally:
+            conn.close()
+
+    def test_equal_timestamps_keep_insert_order(self) -> None:
+        """Two fills with the same occurred_at replay in the order they were written."""
+        conn = sqlite3.connect(":memory:")
+        try:
+            ledger = SqliteLedger(conn)
+            ledger.append_event(_trade_at("swing", 10, "FIRST"))
+            ledger.append_event(_trade_at("swing", 10, "SECOND", TradeSide.SELL))
+            assert [e.correlation_id for e in ledger.trade_events(StrategyId("swing"))] == [
+                "FIRST",
+                "SECOND",
+            ]
+        finally:
+            conn.close()
+
+    def test_no_rows_returns_an_empty_tuple(self) -> None:
+        """A strategy with no recorded trade gets an empty tuple."""
+        conn = sqlite3.connect(":memory:")
+        try:
+            assert SqliteLedger(conn).trade_events(StrategyId("swing")) == ()
+        finally:
+            conn.close()
+
+    def test_a_schema_v1_row_raises_ledger_error(self) -> None:
+        """A TradeExecuted row stored as schema version 1 is refused, not guessed at."""
+        conn = sqlite3.connect(":memory:")
+        try:
+            ledger = SqliteLedger(conn)
+            ledger.append_event(_trade_at("swing", 10, "OLD"))
+            conn.execute("UPDATE events SET event_schema_version = 1")
+            with pytest.raises(LedgerError, match="schema version 1"):
+                ledger.trade_events(StrategyId("swing"))
+        finally:
+            conn.close()
+
+    def test_an_unreadable_payload_raises_ledger_error(self) -> None:
+        """A payload missing a required field raises LedgerError."""
+        conn = sqlite3.connect(":memory:")
+        try:
+            ledger = SqliteLedger(conn)
+            ledger.append_event(_trade_at("swing", 10, "BAD"))
+            conn.execute("UPDATE events SET payload_json = json_remove(payload_json, '$.fee')")
+            with pytest.raises(LedgerError, match="unreadable payload"):
+                ledger.trade_events(StrategyId("swing"))
         finally:
             conn.close()
 

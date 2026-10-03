@@ -17,6 +17,7 @@ from typing import Protocol, runtime_checkable
 
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.signal_emitted import SignalEmitted
+from hermes.domain.events.trade_executed import TradeExecuted
 from hermes.domain.lots.lot import Lot
 from hermes.domain.lots.lot_consumption import LotConsumption
 from hermes.domain.market_data.kline import KlineInterval
@@ -175,5 +176,21 @@ class LedgerPort(Protocol):
 
         Raises:
             LedgerError: On any SQLite read failure or an unreadable payload.
+        """
+        ...
+
+    def trade_events(self, strategy_id: StrategyId) -> tuple[TradeExecuted, ...]:
+        """Return every recorded trade of one strategy, oldest first.
+
+        Args:
+            strategy_id: Strategy bucket the fills belong to.
+
+        Returns:
+            The rehydrated events ordered by ``occurred_at`` then insert order.
+            Empty when the strategy has no recorded trade.
+
+        Raises:
+            LedgerError: On any SQLite read failure, a row that is not schema
+                version 2, or an unreadable payload.
         """
         ...

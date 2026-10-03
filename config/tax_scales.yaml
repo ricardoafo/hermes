@@ -1,0 +1,24 @@
+# IRPF savings-base scale per tax year (ADR-016 decision 1).
+#
+# Loaded by hermes.infrastructure.config.load_tax_scales. Code never hardcodes a
+# rate: a new year or rate change is an edit here plus a test. The savings scale
+# is national; regions cannot change it. A year with no entry fails closed.
+#
+# Each band: up_to_eur is the cumulative upper limit of the band; the last band
+# has up_to_eur: null (no upper limit). Rates are fractions (0.19 = 19%).
+# Amounts and rates are strings so they parse as Decimal, never float.
+#
+# Reserved for issue 396 (not implemented): general.state.<year> and
+# general.regions.<region>.<year> band tables.
+
+personal_minimum_eur: "5550"
+
+savings:
+  2025: &scale_2025
+    bands:
+      - { up_to_eur: "6000", rate: "0.19" }
+      - { up_to_eur: "50000", rate: "0.21" }
+      - { up_to_eur: "200000", rate: "0.23" }
+      - { up_to_eur: "300000", rate: "0.27" }
+      - { up_to_eur: null, rate: "0.30" }
+  2026: *scale_2025

@@ -47,6 +47,7 @@ from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.price import Price
 from hermes.domain.value_objects.quantity import Quantity
+from hermes.domain.value_objects.strategy_id import StrategyId
 
 # ---------------------------------------------------------------------------
 # Fixture helpers — small pure builders shared across tests
@@ -64,6 +65,7 @@ def _trade() -> TradeExecuted:
         qty=Quantity(amount=Decimal("0.001"), asset=Currency.BTC),
         price=Price(amount=Decimal("68000"), pair=pair),
         fee=Money(amount=Decimal("0.06"), currency=Currency.USDT),
+        strategy_id=StrategyId("swing"),
     )
 
 

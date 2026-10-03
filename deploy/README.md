@@ -91,7 +91,7 @@ Cross-references:
 | `systemd/hermes-backup.service`          | Nightly borg backup of L2 Parquet and SQLite                                                       | installed by `vps-bootstrap`                                      |
 | `systemd/hermes-backup.timer`            | Fires the backup daily at 03:00 UTC                                                                | installed by `vps-bootstrap`; stays disabled until borg is set up |
 | `systemd/hermes-notify-failure@.service` | Started by `hermes.service`'s `OnFailure=`; sends one Telegram message                             | installed by `vps-bootstrap`                                      |
-| `hermes-health-ping.sh`                  | The conditional ping (`systemctl is-active --quiet hermes.service`, then curl)                     | shipped in each release                                           |
+| `hermes-health-ping.sh`                  | The progress ping: `hermes status --json` decides success or `/fail` while the unit is active      | shipped in each release                                           |
 | `hermes-notify-failure.sh`               | Builds and sends the Telegram failure message; needs only bash and curl                            | `/opt/hermes/bin`: `vps-bootstrap`, then each good deploy         |
 
 The scripts the workflows run live in `scripts/deploy/`:
@@ -153,7 +153,7 @@ Two independent paths reach the operator on Telegram:
 | Path                  | Fires when                                                                                      | Needs                                                     |
 | --------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
 | `OnFailure=` notifier | `hermes.service` enters `failed`: start limit tripped (5 starts in 10 min) or exit code 2 or 3  | `HERMES_TELEGRAM__BOT_TOKEN`, `HERMES_TELEGRAM__CHAT_ID`  |
-| healthchecks.io ping  | `hermes-health-ping.sh` stops pinging: service stopped, crash-looping, or the whole VPS is down | `HERMES_HEALTHCHECKS__PING_URL` and the integration below |
+| healthchecks.io ping  | the ping stops (service stopped, crash-looping, VPS down) or `hermes status` says late or down  | `HERMES_HEALTHCHECKS__PING_URL` and the integration below |
 
 The notifier sends one message per failure, with the last five journal
 lines (values of secret-looking variables are masked). A crash that is
@@ -162,8 +162,11 @@ about to be restarted does not alert: the unit is `activating
 own; the missed ping covers it.
 
 `hermes-health-ping.sh` pings only while `systemctl is-active --quiet
-hermes.service` succeeds, and a rejected ping fails the unit instead of
-being swallowed. The one-time operator step (healthchecks.io, no code):
+hermes.service` succeeds. It then runs `hermes status --json`: all good sends
+a success ping, a late or down verdict (or no ledger) sends a `/fail` ping, so
+a running process that stopped processing bars alerts within one tick. The
+status JSON goes in the ping body and shows in the check's log. A rejected
+ping fails the unit instead of being swallowed. The one-time operator step (healthchecks.io, no code):
 
 1. Open the hermes check on healthchecks.io: period 5 minutes, grace
    10 minutes.

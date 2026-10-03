@@ -35,7 +35,7 @@ from hermes.application.status import (
 )
 from hermes.domain.errors import LedgerError
 from hermes.entrypoints import serve as serve_module
-from hermes.entrypoints.console.status_view import render_status, report_to_dict
+from hermes.entrypoints.status_view import render_status, report_to_dict
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
 

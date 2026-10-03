@@ -31,7 +31,7 @@ surface at once; the rules are pinned by unit and property tests.
   URI, no migrations, `FileNotFoundError` on a missing file.
 - Application `hermes.application.status`: `build_report`, the verdict rules,
   `ledger_missing_report`.
-- Renderers `hermes.entrypoints.console.status_view`: Rich human view and a
+- Renderers `hermes.entrypoints.status_view`: Rich human view and a
   JSON dict.
 - CLI `hermes status [--config-dir] [--db] [--json]`, with a `systemctl show`
   probe for the unit state.
@@ -74,7 +74,7 @@ stale. This matches #371's `serve.bar.next_due`.
 
 ### D-4: renderers in the entrypoint layer
 
-Rich is presentation, so the renderers live in `hermes.entrypoints.console`,
+Rich is presentation, so the renderers live in `hermes.entrypoints.status_view`,
 next to the CLI, not in the application layer (import-linter keeps the
 application layer free of UI libraries). The JSON form is built from the same
 report, so the two cannot drift. On a terminal the verdict is a coloured

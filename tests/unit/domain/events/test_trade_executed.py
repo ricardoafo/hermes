@@ -22,6 +22,7 @@ from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.price import Price
 from hermes.domain.value_objects.quantity import Quantity
+from hermes.domain.value_objects.strategy_id import StrategyId
 
 
 def _sample_pair() -> Pair:
@@ -40,15 +41,16 @@ def _sample_event(*, side: TradeSide = TradeSide.BUY) -> TradeExecuted:
         qty=Quantity(amount=Decimal("0.001"), asset=Currency.BTC),
         price=Price(amount=Decimal("68000"), pair=pair),
         fee=Money(amount=Decimal("0.06"), currency=Currency.USDT),
+        strategy_id=StrategyId("swing"),
     )
 
 
 class TestTradeExecutedSchema:
     """Verify the event declares the required schema version."""
 
-    def test_schema_version_is_one(self) -> None:
-        """TradeExecuted.__event_schema_version__ pins to 1 for the initial release."""
-        assert TradeExecuted.__event_schema_version__ == 1
+    def test_schema_version_is_two(self) -> None:
+        """TradeExecuted.__event_schema_version__ pins to 2 (v2 added strategy_id)."""
+        assert TradeExecuted.__event_schema_version__ == 2
 
 
 class TestTradeExecutedInstantiation:

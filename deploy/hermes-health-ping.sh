@@ -1,22 +1,34 @@
 #!/usr/bin/env bash
-# Liveness ping for the healthchecks.io dead-man's switch.
+# Progress ping for the healthchecks.io dead-man's switch.
 #
-# Run every 5 minutes by hermes-health.timer. The ping is sent ONLY while
-# hermes.service is active, so a missed ping on healthchecks.io means the
-# engine is down or crash-looping (the check's Telegram integration then
-# alerts the operator; see deploy/README.md). While the service is down the
-# script logs and exits 0: the missing ping is the signal, and the failed
-# hermes.service already shows in `systemctl`.
+# Run every 5 minutes by hermes-health.timer. While hermes.service is
+# active, the script asks `hermes status --json` whether the loop is
+# actually processing bars (#372) and reports that, not just "the process
+# exists":
+#
+#   status exit 0 (all good)       -> success ping, the status JSON as body
+#   status exit 1 (late or down)   -> /fail ping, the status JSON as body
+#   status exit 2 (no `status` command: a release older than #370)
+#                                  -> success ping, as before #372
+#   anything else (no ledger, config error, binary missing)
+#                                  -> /fail ping with the command's output
+#
+# A hung poller or a stale feed therefore turns the check red within one
+# tick instead of staying green. healthchecks.io shows the body in the
+# check's log, so the alert carries the verdict and the late streams.
+#
+# While hermes.service is not active the script logs and exits 0: the
+# missing ping is the signal, and the failed unit already shows in
+# `systemctl`.
 #
 # The ping URL arrives as HERMES_HEALTHCHECKS__PING_URL through the unit's
 # EnvironmentFile=/etc/hermes/env.production (systemd reads it as root).
 #
-# Exit codes: 0 pinged or skipped (service down); 1 URL missing; anything
-# else is curl's own exit status. A failed ping is NOT swallowed: it fails the
-# oneshot, which stays visible in `systemctl --failed` until the next tick
-# succeeds. The timer keeps firing, curl's --retry absorbs short network
-# blips, and the check's grace period covers a single missed ping, so this
-# does not page anybody by itself.
+# Exit codes: 0 pinged (success or /fail) or skipped (service down); 1 URL
+# missing; anything else is curl's own exit status. A failed ping is NOT
+# swallowed: it fails the oneshot, which stays visible in `systemctl
+# --failed` until the next tick succeeds. curl's --retry absorbs short
+# network blips, and the check's grace period covers a single missed ping.
 
 set -euo pipefail
 
@@ -36,11 +48,30 @@ if ! systemctl is-active --quiet hermes.service; then
     exit 0
 fi
 
+# Test seams; production uses the release layout.
+hermes_bin="${HERMES_HEALTH_HERMES_BIN:-/opt/hermes/current/.venv/bin/hermes}"
+config_dir="${HERMES_HEALTH_CONFIG_DIR:-/opt/hermes/current/config}"
+db="${HERMES_HEALTH_DB:-/var/lib/hermes/hermes.sqlite3}"
+
+body="$(mktemp)"
+trap 'rm -f "$body"' EXIT
+set +e
+"$hermes_bin" status --config-dir "$config_dir" --db "$db" --json > "$body" 2>&1
+status_rc=$?
+set -e
+
+case "$status_rc" in
+    0) endpoint="$url" ; outcome="ok" ;;
+    2) endpoint="$url" ; outcome="ok (release has no hermes status)" ; : > "$body" ;;
+    *) endpoint="${url%/}/fail" ; outcome="fail (hermes status exit $status_rc)" ;;
+esac
+
 # The ping URL carries the check's secret key, so it goes to curl as a config
 # on stdin (printf is a builtin, so no argv either): `ps` shows argv to every
 # local user. Escape for a double-quoted config value first.
-url="${url//\\/\\\\}"
-url="${url//\"/\\\"}"
-printf 'url = "%s"\n' "$url" \
-    | curl --silent --show-error --fail --max-time 10 --retry 3 --output /dev/null --config -
-echo "hermes-health: ping sent"
+endpoint="${endpoint//\\/\\\\}"
+endpoint="${endpoint//\"/\\\"}"
+printf 'url = "%s"\n' "$endpoint" \
+    | curl --silent --show-error --fail --max-time 10 --retry 3 --output /dev/null \
+        --data-binary "@$body" --config -
+echo "hermes-health: ping sent: $outcome"
