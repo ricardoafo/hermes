@@ -32,6 +32,7 @@ __all__ = [
     "NetworkError",
     "OOSDataLeakageError",
     "RiskViolationError",
+    "TrialLogError",
 ]
 
 
@@ -420,6 +421,28 @@ class LabNotebookAppendError(DomainError):
             f"Lab notebook append error: entry with header '{self.header}' "
             f"already exists as the last entry. The notebook is append-only."
         )
+
+
+@dataclass(frozen=True, slots=True)
+class TrialLogError(InfraError):
+    """The trial log could not be read or written, or its hash chain is broken.
+
+    A broken chain means a line was edited, removed or reordered, so the trial
+    count behind the Deflated Sharpe Ratio can no longer be trusted.
+
+    Args:
+        path: Trial log path.
+        msg: What went wrong, with the line number when known.
+
+    Reference: openspec/changes/357-trial-log/change.md D-2.
+    """
+
+    path: str
+    msg: str
+
+    def __str__(self) -> str:
+        """Return human-readable description."""
+        return f"Trial log {self.path}: {self.msg}"
 
 
 @dataclass(frozen=True, slots=True)
