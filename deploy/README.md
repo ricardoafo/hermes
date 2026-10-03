@@ -182,6 +182,27 @@ sudo systemctl start hermes-notify-failure@hermes.service
 journalctl -u hermes-notify-failure@hermes.service --since "1 minute ago"
 ```
 
+### Sentry in prod
+
+`hermes serve` reports every runtime failure to Sentry when
+`HERMES_SENTRY__DSN` is set in `/etc/hermes/env.production`; with an empty
+DSN, errors reach the journal only. vps-diagnose prints one line on which it
+is: `Sentry: CONFIGURED`, `Sentry: NOT_CONFIGURED` or `Sentry: FAIL` (a DSN
+that does not parse). The check parses the DSN and sends no event.
+
+Sentry's own alerts must reach a channel the operator reads. The rule to
+create in the hermes Sentry project:
+
+- **When**: a new issue is created, or an issue changes from resolved to
+  unresolved (a regression).
+- **If**: the event's `environment` equals `prod`.
+- **Then**: send a Slack notification to `#hermes-reports`.
+
+Creating that rule and setting `HERMES_SENTRY__DSN` on the VPS are the Code
+Owner's steps; neither is automated. After setting the DSN, restart the
+service (`sudo systemctl restart hermes.service`) and re-run vps-diagnose to
+see `Sentry: CONFIGURED`.
+
 ## The env file
 
 Prod credentials live in `/etc/hermes/env.production` (read by systemd via

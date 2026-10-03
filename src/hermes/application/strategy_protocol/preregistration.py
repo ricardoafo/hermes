@@ -196,7 +196,10 @@ class KillTriggers:
     """Days since equity high at or above this triggers kill (90)."""
 
     rolling_sharpe_min: float
-    """30-day rolling Sharpe below this during shadow/live triggers kill (0.3)."""
+    """Sharpe floor for the shadow and live kill rules (0.3)."""
+
+    shadow_sharpe_consecutive_days: int
+    """Shadow kill: days in a row the Sharpe must stay below the floor (60)."""
 
 
 # ---------------------------------------------------------------------------
@@ -360,6 +363,7 @@ class PreRegistration:
             max_drawdown_threshold=0.15,
             recovery_days_threshold=90.0,
             rolling_sharpe_min=0.3,
+            shadow_sharpe_consecutive_days=60,
         )
 
     def pre_reg_path(self) -> Path:

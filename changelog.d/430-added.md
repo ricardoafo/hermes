@@ -1,0 +1,1 @@
+- **Live bar store** (`live_bars` table, `src/hermes/adapters/ledger/migrations/0003_live_bars.sql`): `hermes serve` now records each handled closed bar (OHLCV) in an append-only table keyed by pair, interval and open time, for the Binance archive check and the parity replay. Data only: strategy, signals, sizing and the `BarProcessed` schema are unchanged. Closes #421.
