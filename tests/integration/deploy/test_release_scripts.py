@@ -49,6 +49,7 @@ pytestmark = [
     pytest.mark.skipif(not RUN_ON_THIS_PLATFORM, reason=SKIP_REASON),
 ]
 _RELEASE_SCRIPTS = ("install_release.sh", "health_gate.sh", "rollback.sh")
+_NOTIFY_SCRIPT = "hermes-notify-failure.sh"
 _BOOTSTRAP_SCRIPT = "vps_bootstrap.sh"
 
 _SHA_A = "a" * 12
@@ -189,6 +190,7 @@ class Box:
         (stage / "config").mkdir()
         (stage / "deploy").mkdir()
         (stage / "deploy" / "hermes-health-ping.sh").write_text("#!/bin/bash\n", encoding="utf-8")
+        (stage / "deploy" / _NOTIFY_SCRIPT).write_text(f"#!/bin/bash\n# {sha}\n", encoding="utf-8")
         (stage / "config" / "strategies.yaml").write_text(_STRATEGIES_YAML, encoding="utf-8")
         (stage / "requirements.txt").write_text(
             "pydantic==2.0 --hash=sha256:00\n", encoding="utf-8"
@@ -417,6 +419,37 @@ def test_good_deploy_installs_the_helper_scripts_executable(box: Box) -> None:
     rollback = box.root / "bin" / "rollback.sh"
     assert os.access(rollback, os.X_OK) is True
     assert (box.root / "bin" / "health_gate.sh").is_file()
+
+
+def test_good_deploy_installs_the_failure_alert_outside_the_release(box: Box) -> None:
+    """Invariant (#364): the alert runs from bin/, so a broken release cannot silence it."""
+    box.deploy(_SHA_A)
+
+    notifier = box.root / "bin" / _NOTIFY_SCRIPT
+    assert os.access(notifier, os.X_OK) is True
+    assert notifier.read_text(encoding="utf-8") == f"#!/bin/bash\n# {_SHA_A}\n"
+
+
+def test_failed_gate_keeps_the_previous_failure_alert(box: Box) -> None:
+    """Invariant (#364): a release that fails its gate never replaces the working alert script."""
+    box.deploy(_SHA_A)
+
+    box.deploy(_SHA_B, STUB_BAD_RELEASES=_SHA_B)
+
+    notifier = box.root / "bin" / _NOTIFY_SCRIPT
+    assert notifier.read_text(encoding="utf-8") == f"#!/bin/bash\n# {_SHA_A}\n"
+
+
+def test_release_without_the_failure_alert_is_refused(box: Box) -> None:
+    """Invariant (#364): a bundle without the alert script fails before `current` moves."""
+    box.deploy(_SHA_A)
+    stage = box.make_stage(_SHA_B)
+    (stage / "deploy" / _NOTIFY_SCRIPT).unlink()
+
+    result = box.deploy(_SHA_B, stage=stage)
+
+    assert result.returncode != 0, _output(result)
+    assert box.target("current") == _SHA_A
 
 
 def test_hash_mismatch_leaves_current_unchanged(box: Box) -> None:

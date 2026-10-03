@@ -14,7 +14,8 @@
 #   /opt/hermes/versions/<sha12>/   .venv, config/, deploy/, .installed
 #   /opt/hermes/current            -> versions/<sha12>   (what systemd runs)
 #   /opt/hermes/previous           -> the release current replaced
-#   /opt/hermes/bin/               health_gate.sh, rollback.sh
+#   /opt/hermes/bin/               health_gate.sh, rollback.sh,
+#                                  hermes-notify-failure.sh
 #   /opt/hermes/python/            uv-managed Python 3.14
 #
 # Steps, in order:
@@ -100,6 +101,7 @@ preflight() {
     [ -f "$stage/requirements.txt" ] || die "$stage/requirements.txt missing"
     [ -d "$stage/config" ] || die "$stage/config missing"
     [ -d "$stage/deploy" ] || die "$stage/deploy missing"
+    [ -f "$stage/deploy/hermes-notify-failure.sh" ] || die "$stage/deploy/hermes-notify-failure.sh missing"
     [ -f "$SCRIPT_DIR/health_gate.sh" ] || die "$SCRIPT_DIR/health_gate.sh missing"
     [ -f "$SCRIPT_DIR/rollback.sh" ] || die "$SCRIPT_DIR/rollback.sh missing"
 }
@@ -208,9 +210,11 @@ main() {
     fi
 
     # Copied only after the gate passes, so a bad release never replaces the
-    # scripts a manual rollback depends on.
+    # scripts a manual rollback depends on, nor the failure alert, which runs
+    # from here so it survives a broken release (#364).
     install -d -m 0755 "$ROOT/bin"
-    install -m 0755 "$SCRIPT_DIR/health_gate.sh" "$SCRIPT_DIR/rollback.sh" "$ROOT/bin/"
+    install -m 0755 "$SCRIPT_DIR/health_gate.sh" "$SCRIPT_DIR/rollback.sh" \
+        "$stage/deploy/hermes-notify-failure.sh" "$ROOT/bin/"
     prune_versions
     log "release $sha is live"
 }

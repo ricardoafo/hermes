@@ -189,6 +189,7 @@ def test_unit_files_never_reference_the_pre_release_layout(path: Path, legacy: s
 
 
 _RELEASE_DEPLOY_DIR = PurePosixPath("/opt/hermes/current/deploy")
+_HERMES_BIN_DIR = PurePosixPath("/opt/hermes/bin")
 _NOTIFIER_TEMPLATE = "hermes-notify-failure@.service"
 
 
@@ -199,7 +200,12 @@ def _exec_argv(unit_name: str) -> list[str]:
 
 def test_hermes_service_starts_the_failure_notifier_when_it_fails() -> None:
     """A tripped start limit or an exit 2/3 must reach the operator, not stay in the journal."""
-    assert _parse("hermes.service")["Unit"]["OnFailure"] == "hermes-notify-failure@%n.service"
+    assert _parse("hermes.service")["Unit"]["OnFailure"] == "hermes-notify-failure@%N.service"
+
+
+def test_on_failure_instance_name_drops_the_service_suffix() -> None:
+    """%n would name the alert `hermes-notify-failure@hermes.service.service` (#364)."""
+    assert "%n" not in _parse("hermes.service")["Unit"]["OnFailure"]
 
 
 def test_hermes_service_declares_on_failure_in_the_unit_section() -> None:
@@ -210,8 +216,8 @@ def test_hermes_service_declares_on_failure_in_the_unit_section() -> None:
 def test_on_failure_instance_resolves_to_a_shipped_template_unit() -> None:
     """OnFailure= naming a template that is not in deploy/systemd/ would alert nobody."""
     target = _parse("hermes.service")["Unit"]["OnFailure"]
-    assert target.endswith("@%n.service")
-    template = target.removesuffix("%n.service") + ".service"
+    assert target.endswith("@%N.service")
+    template = target.removesuffix("%N.service") + ".service"
     assert (_UNIT_DIR / template).is_file(), f"{template} is not shipped"
 
 
@@ -232,7 +238,14 @@ def test_failure_notifier_loads_the_credentials_from_the_environment_file() -> N
 
 def test_failure_notifier_hands_the_failed_unit_name_to_its_script() -> None:
     """The message names the unit that failed, so the instance name must reach the script."""
-    assert _exec_argv(_NOTIFIER_TEMPLATE)[-1] == "%I"
+    assert _exec_argv(_NOTIFIER_TEMPLATE)[-1] == "%i.service"
+
+
+def test_failure_notifier_runs_its_script_from_outside_the_release() -> None:
+    """A missing or broken `current` is why hermes fails; the alert must not depend on it (#364)."""
+    script = PurePosixPath(_exec_argv(_NOTIFIER_TEMPLATE)[1])
+    assert script == _HERMES_BIN_DIR / "hermes-notify-failure.sh"
+    assert (_REPO_ROOT / "deploy" / script.name).is_file()
 
 
 def test_health_service_loads_the_ping_url_from_the_environment_file() -> None:
@@ -271,9 +284,8 @@ def test_health_service_pings_through_the_conditional_script_only() -> None:
     ]
 
 
-@pytest.mark.parametrize("unit_name", ["hermes-health.service", _NOTIFIER_TEMPLATE])
-def test_unit_script_is_shipped_in_the_release_deploy_directory(unit_name: str) -> None:
+def test_health_script_is_shipped_in_the_release_deploy_directory() -> None:
     """ExecStart follows `current/deploy/`; a script missing from repo deploy/ fails with 127."""
-    script = PurePosixPath(_exec_argv(unit_name)[1])
+    script = PurePosixPath(_exec_argv("hermes-health.service")[1])
     assert script.parent == _RELEASE_DEPLOY_DIR
     assert (_REPO_ROOT / "deploy" / script.name).is_file()
