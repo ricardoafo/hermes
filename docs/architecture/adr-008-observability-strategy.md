@@ -86,6 +86,8 @@ for what the engine did and why; they never age out.
 - **Not-for-Telegram** rule: routine INFO logs (cycle started, cycle
   finished OK) NEVER go to Telegram. Telegram is a signal channel; if it
   becomes noisy, the operator stops reading it.
+  [ADR-015](adr-015-read-only-telegram-commands.md) (Proposed) keeps this rule: command
+  replies are pulled by the operator, not pushed.
 
 ### 5. Report generation — weekly + monthly + yearly
 

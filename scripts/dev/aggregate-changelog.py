@@ -7,11 +7,16 @@ the naming convention and rationale.
 Behavior
 --------
 - Reads every file under ``changelog.d/`` whose name matches
-  ``<digits>-<type>.md`` where type ∈ SECTIONS.
-- Skips ``.gitkeep``, ``README.md``, and any file whose name does NOT
-  start with a digit (placeholder convention — human-only fragments).
-- Groups fragments by section and orders each group by numeric PR
-  prefix (ascending).
+  ``<number>-<type>.md`` (a PR or issue number) or ``+<slug>.<type>.md``
+  (an orphan fragment, named before the PR exists; #420), where type ∈
+  SECTIONS.
+- An orphan's number is resolved at release time from the squash commit
+  that added it (subject ending in ``(#<pr>)``). Unresolved orphans sort
+  last, by slug.
+- Skips ``.gitkeep``, ``README.md``, and any other name, such as the
+  legacy ``wave-*.md`` placeholders (human-only fragments).
+- Groups fragments by section and orders each group by number
+  (ascending).
 - Emits a merged ``[Unreleased]`` block in Keep-a-Changelog order.
 
 Modes
@@ -34,7 +39,10 @@ from __future__ import annotations
 
 import argparse
 import re
+import shutil
+import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 # Keep-a-Changelog section order (case-sensitive header text)
@@ -48,6 +56,10 @@ SECTIONS: tuple[str, ...] = (
 )
 
 FRAGMENT_RE = re.compile(r"^(?P<pr>\d+)-(?P<type>[a-z]+)\.md$")
+ORPHAN_RE = re.compile(r"^\+(?P<slug>[a-z0-9][a-z0-9._-]*)\.(?P<type>[a-z]+)\.md$")
+SQUASH_PR_RE = re.compile(r"\(#(?P<pr>\d+)\)\s*$")
+UNRESOLVED = 10**9
+"""Sort key for an orphan whose PR could not be resolved: after every number."""
 UNRELEASED_RE = re.compile(
     r"^## \[Unreleased\].*?(?=^## \[|\Z)",
     re.DOTALL | re.MULTILINE,
@@ -59,12 +71,46 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parent.parent.parent
 
 
-def collect_fragments(dir_path: Path) -> dict[str, list[tuple[int, str]]]:
+def git_added_pr(path: Path) -> int | None:
+    """Return the PR number of the squash commit that added ``path``, if any.
+
+    Squash merges end their subject with ``(#<pr>)``. Returns ``None`` when
+    git is unavailable or the file was not added by such a commit.
+    """
+    git = shutil.which("git")
+    if git is None:
+        return None
+    try:
+        result = subprocess.run(  # noqa: S603 — fixed argv; git resolved via shutil.which
+            [git, "log", "--diff-filter=A", "--format=%s", "--", path.name],
+            cwd=path.parent,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    return pr_from_subjects(result.stdout.splitlines())
+
+
+def pr_from_subjects(subjects: list[str]) -> int | None:
+    """Return the PR number from the first squash subject ending in ``(#<pr>)``."""
+    for subject in subjects:
+        m = SQUASH_PR_RE.search(subject)
+        if m is not None:
+            return int(m.group("pr"))
+    return None
+
+
+def collect_fragments(
+    dir_path: Path, resolve_pr: Callable[[Path], int | None] = git_added_pr
+) -> dict[str, list[tuple[int, str]]]:
     """Group fragments by section.
 
-    Returns a mapping ``section-title -> [(pr_number, body), ...]`` sorted
-    by PR number ascending within each section. Non-numeric-prefixed files
-    (placeholder convention) are skipped.
+    Returns a mapping ``section-title -> [(number, body), ...]`` sorted by
+    number ascending within each section. Orphan fragments take the number
+    ``resolve_pr`` returns, or :data:`UNRESOLVED`. Other names (legacy
+    ``wave-*`` placeholders) are skipped.
 
     Raises
     ------
@@ -82,17 +128,18 @@ def collect_fragments(dir_path: Path) -> dict[str, list[tuple[int, str]]]:
             continue
         if path.name in {".gitkeep", "README.md"}:
             continue
-        m = FRAGMENT_RE.match(path.name)
-        if m is None:
-            # Placeholder / non-numeric — silently skip per convention.
+        numbered = FRAGMENT_RE.match(path.name)
+        match = numbered or ORPHAN_RE.match(path.name)
+        if match is None:
+            # Legacy placeholder — silently skip per convention.
             continue
-        type_key = m.group("type")
+        type_key = match.group("type")
         if type_key not in valid_types:
             raise ValueError(
                 f"changelog.d/{path.name}: unknown type '{type_key}' — "
                 f"expected one of: {', '.join(valid_types)}"
             )
-        pr = int(m.group("pr"))
+        pr = int(numbered.group("pr")) if numbered else (resolve_pr(path) or UNRESOLVED)
         body = path.read_text(encoding="utf-8").rstrip() + "\n"
         section = valid_types[type_key]
         by_section[section].append((pr, body))

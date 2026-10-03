@@ -146,7 +146,8 @@ class TaxpayerYearProfile(BaseModel):
         general_income_eur: General-base income (salary etc.).
         personal_minimum_eur: Override of the default personal minimum, or ``None``.
         other_savings_income_eur: Interest, dividends and other savings income.
-        other_capital_gains_eur: Net gains from other transmissions.
+        other_capital_gains_eur: Net gains (negative for a net loss) from other
+            transmissions in the same tax year.
         losses_carried_forward: Losses from prior years still usable.
     """
 
@@ -159,9 +160,8 @@ class TaxpayerYearProfile(BaseModel):
     other_savings_income_eur: Decimal = Field(
         default=_ZERO, ge=_ZERO, allow_inf_nan=False, repr=False
     )
-    other_capital_gains_eur: Decimal = Field(
-        default=_ZERO, ge=_ZERO, allow_inf_nan=False, repr=False
-    )
+    # Signed: a same-year loss outside hermes nets against hermes gains that year.
+    other_capital_gains_eur: Decimal = Field(default=_ZERO, allow_inf_nan=False, repr=False)
     losses_carried_forward: tuple[CarriedLoss, ...] = Field(default=(), repr=False)
 
 

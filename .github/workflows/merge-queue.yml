@@ -1,5 +1,5 @@
 # =====================================================================
-# Merge queue — revalidate then merge
+# Merge queue — build one batch, gate it once, merge it in order
 # =====================================================================
 #
 # ## What this replaces, and why
@@ -21,34 +21,74 @@
 #      `unstable`, stranding PRs where only a non-required check was red.
 #
 # This workflow removes both problems at the root. It checks out `main`
-# at the exact SHA it resolved, fetches the PR head at the SHA that was
-# approved, builds the merge locally with `git merge --no-commit --no-ff`,
-# runs the tree-verifying gates on that tree, and merges from the
-# workflow. No push to the PR branch, ever. The approval survives.
+# at the exact SHA it resolved, fetches each PR head at the SHA that was
+# approved, builds the merge locally, runs the tree-verifying gates on
+# that tree, and merges from the workflow. No push to a PR branch, ever.
+# The approval survives.
+#
+# ## One batch per pass
+#
+# The next design gated one PR per matrix entry and merged it, which
+# moved `main` and left every later entry validated against a tip that
+# no longer existed: one merge per pass, the rest declined. Six approved
+# PRs took six passes.
+#
+# Now one pass handles every candidate together:
+#
+#   1. Select orders the candidates oldest approval first, PR number as
+#      the tie-break (`orderCandidates`).
+#   2. Batch merges each approved head, in that order, on top of the
+#      resolved `main` tip with a real `--no-ff` merge commit. A head
+#      that moved since approval or a merge that conflicts with `main`
+#      plus the PRs before it is dropped from this pass, with a reason.
+#   3. The gates run ONCE, on the whole batch tree
+#      (`scripts/dev/merge-gates.sh`).
+#   4. Green: every PR in the batch merges, in order. Red with more than
+#      one PR: bisect. Gate the first half on top of the PRs already
+#      proven good, then the second; recurse into any red half until
+#      each PR is proven good or bad (`bisectInit` / `bisectNext` /
+#      `bisectRecord`). A tree already gated red is never gated again.
+#   5. Merge squashes the good PRs in order, each pinned to its approved
+#      head. Bad PRs get one comment naming the failing gate and stay
+#      open.
+#
+# What lands is main + the good PRs, the exact tree the last green gate
+# run saw. The intermediate commits on `main` (main + the first good PR,
+# and so on) are not gated on their own; that is the price of landing
+# a batch in one gate run instead of one run per PR.
 #
 # ## Freshness is asserted TWICE
 #
-# Once at the top of `Build merge tree` — cheap API + git assertions
-# before we pay for gates. Once again in the `Merge` step — the gates
-# take minutes, and a sibling in the same matrix may have merged in
-# that window, moving `main` out from under the tree we validated.
+# Once at the top of `Build and gate the batch` — a cheap API check
+# before we pay for gates. Once again before EVERY squash: `main` must
+# be the batch base for the first PR and exactly the previous squash
+# afterwards. Anything else (a human merged in between) stops the loop,
+# hand-starts the next pass on the new tip, and exits cleanly.
 #
 # ## Fast path
 #
-# When the approved head already contains the current `main` tip
-# (`git merge-base --is-ancestor`), merging is a fast-forward and the
-# tree that would land is IDENTICAL to the tree CI already validated.
-# The `gateSkip` decision (in `tools/merge/decisions.cjs`, unit-tested)
-# fires only when BOTH the ancestor check AND `ciConclusion === success`
-# hold. "Cannot check" is never "clean" — anything less than proven
-# runs the gates.
+# A batch of exactly one PR whose approved head already contains the
+# current `main` tip (`git merge-base --is-ancestor`) lands a tree
+# IDENTICAL to the one CI already validated on that head. The `gateSkip`
+# decision fires only when BOTH the ancestor check AND
+# `ciConclusion === success` hold. A batch of two or more never skips:
+# no CI run has seen that combination. "Cannot check" is never "clean".
 #
 # ## Where the judgement lives
 #
 # All non-trivial decisions live in `tools/merge/decisions.cjs` and are
-# covered by `tools/merge/decisions.test.cjs`. YAML holds only the I/O,
-# because a decision inside a `script:` block can only be tested by
-# merging and watching, which is exactly how prior queues shipped bugs.
+# covered by `tools/merge/decisions.test.cjs`. The build-and-bisect loop
+# is `tools/merge/batch.cjs` (covered by `batch.test.cjs` against a fake
+# repository). YAML holds only the I/O, because a decision inside a
+# `script:` block can only be tested by merging and watching, which is
+# exactly how prior queues shipped bugs.
+#
+# ## Runner
+#
+# Select and Batch prefer `vars.OPS_RUNNER_LABEL`, a runner reserved for
+# repository operations, so a busy CI pool cannot hold up a merge pass.
+# Until that variable exists they fall back to `vars.RUNNER_LABEL`, then
+# to `ubuntu-latest`.
 #
 # ## Trigger set — why each event is here
 #
@@ -77,8 +117,8 @@
 #
 #   workflow_dispatch:
 #     Manual invocation, with `dry_run` for changes to THIS workflow.
-#     Runs everything up to and including the gates; stops one call
-#     before `pulls.merge`.
+#     Builds and gates the batch, reports what would merge, and stops
+#     one call before `pulls.merge`.
 
 name: Merge queue
 
@@ -114,7 +154,7 @@ permissions:
 
 jobs:
   # ─────────────────────────────────────────────────────────────────
-  # SELECT — enumerate mergeable candidates.
+  # SELECT — enumerate mergeable candidates, in merge order.
   # Sparse checkout of `tools/merge` only; this job runs many times a
   # day and its cost is API calls, not the repository.
   # ─────────────────────────────────────────────────────────────────
@@ -129,7 +169,7 @@ jobs:
        || github.event.workflow_run.conclusion == 'success')
       && (github.event_name != 'pull_request_review'
        || github.event.review.state == 'approved')
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 5
     outputs:
       prs: ${{ steps.pick.outputs.prs }}
@@ -148,9 +188,10 @@ jobs:
             const { owner, repo } = context.repo;
 
             // Decisions live in a unit-tested module, NOT inline.
-            // `tests/decisions.test.cjs` pins every refusal case in
-            // ~80ms; a round trip against the live queue costs minutes.
-            const { isCandidate } = require(
+            // `tools/merge/decisions.test.cjs` pins every refusal case
+            // in ~100ms; a round trip against the live queue costs
+            // minutes.
+            const { isCandidate, approvedAt, orderCandidates } = require(
               `${process.env.GITHUB_WORKSPACE}/tools/merge/decisions.cjs`
             );
 
@@ -208,10 +249,8 @@ jobs:
                 continue;
               }
 
-              const { eligible: ok, reason } = isCandidate({
-                pr: full,
-                reviews: await reviewsOf(pr.number),
-              });
+              const reviews = await reviewsOf(pr.number);
+              const { eligible: ok, reason } = isCandidate({ pr: full, reviews });
 
               if (!ok) {
                 // Conflicts are the only case a human must act on; the
@@ -221,45 +260,41 @@ jobs:
                 continue;
               }
 
-              // The head SHA travels with the number. The revalidation
-              // must prove it tested the commit that was APPROVED, not
+              // The head SHA travels with the number. The batch must
+              // prove it tested the commit that was APPROVED, not
               // whatever the branch points at by the time it runs.
-              eligible.push({ n: pr.number, head: pr.head.sha });
-              core.info(`${tag}: ${reason} head=${pr.head.sha}`);
+              const approved = approvedAt(reviews);
+              eligible.push({ n: pr.number, head: full.head.sha, approvedAt: approved });
+              core.info(`${tag}: ${reason} head=${full.head.sha} approved=${approved}`);
             }
 
-            core.setOutput('prs', JSON.stringify(eligible));
-            core.setOutput('any', String(eligible.length > 0));
+            const ordered = orderCandidates(eligible);
+            core.setOutput('prs', JSON.stringify(ordered));
+            core.setOutput('any', String(ordered.length > 0));
             core.info(
-              eligible.length
-                ? `candidates: ${eligible.map((e) => '#' + e.n).join(', ')}`
+              ordered.length
+                ? `merge order: ${ordered.map((e) => '#' + e.n).join(', ')}`
                 : 'no candidates',
             );
 
   # ─────────────────────────────────────────────────────────────────
-  # REVALIDATE — build the merge tree, run gates on it, then merge.
+  # REVALIDATE — build one batch tree, gate it (bisect if red), then
+  # merge the good PRs in order.
   # ─────────────────────────────────────────────────────────────────
   revalidate:
     name: Revalidate
     needs: select
     if: needs.select.outputs.any == 'true'
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
-    timeout-minutes: 30
+    runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    # One gate run is a few minutes; a red batch adds a few more per
+    # bisect step. The cap is for a hung gate, not for a normal pass.
+    timeout-minutes: 45
     permissions:
       contents: write        # merging is a push to main
-      pull-requests: write   # and it closes the pull request
+      pull-requests: write   # it closes pull requests and comments on bad ones
       actions: write         # and it hand-starts what its own push cannot
       statuses: write        # so main carries a status even on skip
       issues: write          # so `Closes #N` in the body can act on issues
-    strategy:
-      # Serialised. Merging #A moves `main`, so #B must be re-checked
-      # afterwards, not merged in parallel against a tip that is already
-      # gone.
-      max-parallel: 1
-      # #B failing must not cancel #A. Independent decisions.
-      fail-fast: false
-      matrix:
-        pr: ${{ fromJson(needs.select.outputs.prs) }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -268,200 +303,105 @@ jobs:
           # stand on the commit every downstream comparison is written
           # against.
           ref: ${{ needs.select.outputs.main }}
-          # Full history: about to perform a real merge, which needs a
+          # Full history: about to perform real merges, which need a
           # merge base.
           fetch-depth: 0
 
-      # ─────────────────────────────────────────────────────────────
-      # FRESHNESS + BUILD THE MERGE — the assertion the design rests on
-      # ─────────────────────────────────────────────────────────────
-      - name: Build merge tree
-        id: freshness
-        env:
-          GH_TOKEN: ${{ github.token }}
-          MAIN_TIP: ${{ needs.select.outputs.main }}
-          PR_NUMBER: ${{ matrix.pr.n }}
-          PR_HEAD: ${{ matrix.pr.head }}
+      # Once the batch is checked out, the workspace holds the PRs'
+      # versions of every file, including the queue's own tooling. A PR
+      # must not change the gates or the decisions its own batch is
+      # judged by, so the copies from `main` are pinned here, before the
+      # first PR is merged in, and everything below loads those.
+      - name: Pin queue tooling from main
         shell: bash
         run: |
           set -euo pipefail
+          tools="${RUNNER_TEMP}/queue-tools"
+          mkdir -p "$tools"
+          cp tools/merge/decisions.cjs tools/merge/batch.cjs scripts/dev/merge-gates.sh "$tools/"
+          echo "QUEUE_TOOLS=${tools}" >> "$GITHUB_ENV"
+          echo "BATCH_RESULT=${RUNNER_TEMP}/batch.json" >> "$GITHUB_ENV"
 
-          decline() {
-            # NOT a failure. The world moved, or the branch did. Merge
-            # nothing, say why, let the next trigger retry.
-            echo "::warning::#${PR_NUMBER}: $1 — not merging this pass."
-            echo "fresh=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          }
-
-          # Has `main` moved since select resolved it? Ask BEFORE paying
-          # for gates. `max-parallel: 1` means every later entry in this
-          # matrix is validating against a tip that already may not
-          # exist. Prior designs discovered this only in the merge step
-          # itself, after paying full pipeline cost per doomed entry —
-          # quadratic waste as the queue drains.
-          #
-          # curl + jq (not `gh api`) — the self-hosted runner image
-          # does not include the gh CLI, and adding it just to serve
-          # this one call is not worth the image rebuild.
-          current="$(curl -sSfL \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/branches/main" \
-            | jq -r .commit.sha)"
-          echo "main tip     : ${MAIN_TIP}"
-          echo "main now     : ${current}"
-          [[ "$current" == "$MAIN_TIP" ]] \
-            || decline "main moved to ${current} since Select resolved it"
-
-          # The checkout above pinned us to a SHA; disagree here only if
-          # something rewrote history under us. Cheap to assert.
-          here="$(git rev-parse HEAD)"
-          echo "checked out  : ${here}"
-          [[ "$here" == "$MAIN_TIP" ]] || decline "checkout is not the resolved main tip"
-
-          # `refs/pull/<N>/head` is the PR branch itself — a plain ref
-          # GitHub does not compute anything for, so it cannot be stale
-          # the way `refs/pull/<N>/merge` was.
-          git fetch --no-tags --force origin \
-            "refs/pull/${PR_NUMBER}/head:refs/heads/pr-head" >/dev/null 2>&1 \
-            || decline "could not fetch refs/pull/${PR_NUMBER}/head"
-
-          head_now="$(git rev-parse refs/heads/pr-head)"
-          echo "approved head: ${PR_HEAD}"
-          echo "head ref is  : ${head_now}"
-          [[ "$head_now" == "$PR_HEAD" ]] || decline "head moved after approval"
-
-          # Does the approved head ALREADY contain this main tip? If it
-          # does, merging is a fast-forward and the tree that would land
-          # is identical to the head tree CI already validated. The
-          # `Fast path` step below combines this with the CI-conclusion
-          # check to decide whether gates can be skipped safely.
-          if git merge-base --is-ancestor "$MAIN_TIP" refs/heads/pr-head; then
-            echo "head already contains ${MAIN_TIP}"
-            echo "ancestor=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "main moved ahead of this head — the merged tree is new"
-            echo "ancestor=false" >> "$GITHUB_OUTPUT"
-          fi
-
-          # --no-commit: the TREE is what the gates need; a commit
-          # object would only need an identity we have no reason to
-          # invent.
-          # --no-ff: never silently fast-forward past the merge we came
-          # to test.
-          git -c user.name='revalidate' -c user.email='revalidate@invalid' \
-            merge --no-commit --no-ff refs/heads/pr-head \
-            || decline "merge conflicts — a human must resolve them"
-
-          echo "merged ${PR_HEAD} into ${MAIN_TIP} — this tree is what would land"
-          echo "fresh=true" >> "$GITHUB_OUTPUT"
-
-          # Record the tree hash so the merge step can compare it to
-          # the squash's output tree (see `ciRestart` decision).
-          echo "merged_tree=$(git write-tree)" >> "$GITHUB_OUTPUT"
+      # The gates need uv; installing it is seconds, and deciding
+      # whether a pass will need it would mean knowing the batch first.
+      - uses: astral-sh/setup-uv@v7
+        with: { version: "0.12.5" }
 
       # ─────────────────────────────────────────────────────────────
-      # FAST PATH — may the gates be skipped, and only when PROVABLE.
-      # Both halves of gateSkip are required and neither is inferred.
-      # A wrong TRUE here MERGES A TREE NOTHING CHECKED.
+      # BUILD + GATE — the assertion the design rests on
       # ─────────────────────────────────────────────────────────────
-      - name: Fast path
-        id: fast
-        if: steps.freshness.outputs.fresh == 'true'
+      - name: Build and gate the batch
         uses: actions/github-script@v9
         env:
-          ANCESTOR: ${{ steps.freshness.outputs.ancestor }}
-          TESTED_HEAD: ${{ matrix.pr.head }}
-          PR_NUMBER: ${{ matrix.pr.n }}
+          MAIN_TIP: ${{ needs.select.outputs.main }}
+          PRS: ${{ needs.select.outputs.prs }}
         with:
           script: |
-            const { gateSkip } = require(
-              `${process.env.GITHUB_WORKSPACE}/tools/merge/decisions.cjs`
-            );
+            const fs = require('fs');
+            const path = require('path');
+            const { runBatch, gitOps } = require(`${process.env.QUEUE_TOOLS}/batch.cjs`);
             const { owner, repo } = context.repo;
+            const base = process.env.MAIN_TIP;
+            const out = process.env.BATCH_RESULT;
+
+            // Has `main` moved since Select resolved it? Ask BEFORE
+            // paying for gates: every merge below must land on this
+            // exact tip, so a batch built on an old one is doomed. The
+            // merge step sees `stale` and hands the work to a new pass.
+            const { data: now } = await github.rest.repos.getBranch({
+              owner, repo, branch: 'main',
+            });
+            if (now.commit.sha !== base) {
+              core.warning(
+                `main moved to ${now.commit.sha} since Select resolved ${base} — not building this batch.`,
+              );
+              fs.writeFileSync(out, JSON.stringify({
+                base, stale: true, merge: [], dropped: [], bad: [], steps: [],
+                finalTree: null, gated: false, gateRuns: 0, fastPath: null,
+              }));
+              return;
+            }
 
             // Matched on PATH, never on name. A display name renames;
             // the file does not.
-            const runs = await github.rest.actions.listWorkflowRunsForRepo({
-              owner, repo,
-              head_sha: process.env.TESTED_HEAD,
-              per_page: 100,
+            const ciConclusion = async (head) => {
+              const runs = await github.rest.actions.listWorkflowRunsForRepo({
+                owner, repo, head_sha: head, per_page: 100,
+              });
+              const ci = runs.data.workflow_runs.find(
+                (r) => r.path === '.github/workflows/ci.yml' && r.status === 'completed',
+              );
+              return ci?.conclusion ?? null;
+            };
+
+            const result = await runBatch({
+              base,
+              candidates: JSON.parse(process.env.PRS),
+              ops: gitOps({
+                cwd: process.env.GITHUB_WORKSPACE,
+                base,
+                gatesScript: `${process.env.QUEUE_TOOLS}/merge-gates.sh`,
+                failFile: path.join(process.env.RUNNER_TEMP, 'merge-gates.failed'),
+                ciConclusion,
+              }),
+              log: (line) => core.info(line),
             });
-            const ci = runs.data.workflow_runs.find(
-              (r) => r.path === '.github/workflows/ci.yml' && r.status === 'completed',
+            fs.writeFileSync(out, JSON.stringify(result, null, 2));
+
+            for (const d of result.dropped) {
+              core.warning(`#${d.n}: ${d.reason} — not in this batch.`);
+            }
+            for (const b of result.bad) {
+              core.warning(`#${b.n}: gate '${b.gate}' failed — not merging.`);
+            }
+            core.notice(
+              `batch on ${base.slice(0, 7)}: merge [${result.merge.map((m) => '#' + m.n).join(', ')}]` +
+              ` — ${result.gated ? `${result.gateRuns} gate run(s)` : 'gates skipped'}` +
+              `, ${result.bad.length} bad, ${result.dropped.length} dropped`,
             );
 
-            const verdict = gateSkip({
-              mainIsAncestor: process.env.ANCESTOR === 'true',
-              ciConclusion: ci?.conclusion ?? null,
-            });
-            core.info(
-              `#${process.env.PR_NUMBER}: ${verdict.skip ? 'SKIPPING' : 'running'} gates — ${verdict.reason}`
-            );
-            core.setOutput('skip', String(verdict.skip));
-
       # ─────────────────────────────────────────────────────────────
-      # TREE GATES — only run when the merged tree is genuinely new.
-      # These re-validate content-derived facts (markdown lint, secret
-      # exposure, then the code gates below). PR metadata gates (title,
-      # body, changelog) are not tree-derived and don't change when
-      # `main` advances.
-      # ─────────────────────────────────────────────────────────────
-      - name: Install markdownlint-cli2 (if not pre-baked)
-        if: steps.freshness.outputs.fresh == 'true' && steps.fast.outputs.skip != 'true'
-        shell: bash
-        run: |
-          if ! command -v markdownlint-cli2 >/dev/null 2>&1; then
-            sudo npm install -g markdownlint-cli2@0.23.2
-          fi
-          markdownlint-cli2 --version
-
-      - name: Lint markdown (merged tree)
-        if: steps.freshness.outputs.fresh == 'true' && steps.fast.outputs.skip != 'true'
-        shell: bash
-        run: markdownlint-cli2 "**/*.md" "#node_modules" "#.venv"
-
-      - name: Install gitleaks (if not pre-baked)
-        if: steps.freshness.outputs.fresh == 'true' && steps.fast.outputs.skip != 'true'
-        shell: bash
-        run: |
-          if ! command -v gitleaks >/dev/null 2>&1; then
-            GITLEAKS_VERSION=8.21.2
-            curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o /tmp/gitleaks.tar.gz
-            sudo tar -xzf /tmp/gitleaks.tar.gz -C /usr/local/bin gitleaks
-            sudo chmod +x /usr/local/bin/gitleaks
-          fi
-          gitleaks version
-
-      - name: Scan for secrets (merged tree)
-        if: steps.freshness.outputs.fresh == 'true' && steps.fast.outputs.skip != 'true'
-        shell: bash
-        run: gitleaks git . --log-opts=--all --redact --no-banner --verbose
-
-      # Code gates on the merged tree (#413). The PR's own CI proved its
-      # head; main moved since, so the tree that would land is new and
-      # gets the checks that a change elsewhere on main can break.
-      # Metadata and dependency checks are not tree-sensitive and stay
-      # in PR CI.
-      - uses: astral-sh/setup-uv@v7
-        if: steps.freshness.outputs.fresh == 'true' && steps.fast.outputs.skip != 'true'
-        with: { version: "0.12.5" }
-
-      - name: Code gates (merged tree)
-        if: steps.freshness.outputs.fresh == 'true' && steps.fast.outputs.skip != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          uv sync --frozen
-          uv run ruff format --check .
-          uv run ruff check .
-          uv run mypy --strict src/hermes
-          uv run lint-imports
-          uv run pytest tests/unit/ tests/integration/ -n 4 -q
-
-      # ─────────────────────────────────────────────────────────────
-      # MERGE — re-assert freshness, then perform the merge.
+      # MERGE — re-assert freshness before every squash, then merge.
       # ─────────────────────────────────────────────────────────────
       # Mint a short-lived installation token from the hermes-automation
       # GitHub App. Commits + merges made with this token are attributed
@@ -469,26 +409,20 @@ jobs:
       # runs are NOT held in GitHub's `action_required` loop-prevention
       # gate. Also means the squash-merge commit on main shows a clean
       # App identity rather than a synthetic bot. Falls back to
-      # GITHUB_TOKEN if the App is unset (e.g., in forks).
+      # GITHUB_TOKEN if the App is unset (e.g., in forks). Minted after
+      # the gates, not before: the token is short-lived and a red batch
+      # can bisect for a while.
       - name: Mint App token
         id: app-token
-        if: steps.freshness.outputs.fresh == 'true' && vars.HERMES_AUTOMATION_APP_ID != ''
+        if: vars.HERMES_AUTOMATION_APP_ID != ''
         uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ vars.HERMES_AUTOMATION_APP_ID }}
           private-key: ${{ secrets.HERMES_AUTOMATION_APP_KEY }}
 
       - name: Merge
-        if: steps.freshness.outputs.fresh == 'true'
         uses: actions/github-script@v9
         env:
-          MAIN_TIP: ${{ needs.select.outputs.main }}
-          PR_NUMBER: ${{ matrix.pr.n }}
-          PR_HEAD: ${{ matrix.pr.head }}
-          # The tree this job built and validated. Compared to the
-          # squash output tree via `ciRestart` to decide whether main
-          # needs a full CI pass after the merge.
-          MERGED_TREE: ${{ steps.freshness.outputs.merged_tree }}
           # Only ever true on manual dispatch — every automatic trigger
           # leaves this empty, so the real path cannot be disabled by
           # accident.
@@ -501,105 +435,13 @@ jobs:
         with:
           github-token: ${{ steps.app-token.outputs.token || github.token }}
           script: |
-            const { shouldMerge, ciRestart } = require(
-              `${process.env.GITHUB_WORKSPACE}/tools/merge/decisions.cjs`
-            );
+            const fs = require('fs');
+            const {
+              shouldMerge, ciRestart, afterMerge, badComment, hasBadComment,
+            } = require(`${process.env.QUEUE_TOOLS}/decisions.cjs`);
             const { owner, repo } = context.repo;
-            const number = Number(process.env.PR_NUMBER);
-            const testedBase = process.env.MAIN_TIP;
-            const testedHead = process.env.PR_HEAD;
-
-            // Re-assert IMMEDIATELY before the merge. The gates take
-            // minutes; a sibling PR in this matrix may have merged in
-            // that window, moving `main`. Merging anyway would land a
-            // tree tested against a tip that no longer exists — the
-            // exact defect this workflow exists to remove, reintroduced
-            // by its own runtime.
-            const { data: base } = await github.rest.repos.getBranch({
-              owner, repo, branch: 'main',
-            });
-            const { data: pr } = await github.rest.pulls.get({
-              owner, repo, pull_number: number,
-            });
-            const reviews = await github.paginate(github.rest.pulls.listReviews, {
-              owner, repo, pull_number: number, per_page: 100,
-            });
-
-            const verdict = shouldMerge({
-              testedBase,
-              currentBase: base.commit.sha,
-              testedHead,
-              currentHead: pr.head.sha,
-              state: pr.state,
-              draft: pr.draft,
-              mergeable: pr.mergeable,
-              mergeableState: pr.mergeable_state,
-              reviews,
-            });
-
-            if (!verdict.merge) {
-              core.warning(`#${number}: ${verdict.reason} — not merging this pass.`);
-              return;
-            }
-
-            // No branch update, ever (#413). The ruleset no longer requires
-            // up-to-date branches, so GitHub accepts a merge of a head that
-            // is behind main. The tree that lands was proven by the gates
-            // above on this exact main tip, not by the PR's own CI run.
-            // Updating every behind PR used to restart CI across the queue.
-
-            if (process.env.DRY_RUN === 'true') {
-              core.notice(
-                `DRY RUN — would merge #${number} (${verdict.reason}). ` +
-                `Stopping before pulls.merge; nothing dispatched.`,
-              );
-              return;
-            }
-
-            let mergedSha;
-            try {
-              const { data } = await github.rest.pulls.merge({
-                owner, repo, pull_number: number,
-                merge_method: 'squash',
-                commit_title: `${pr.title} (#${number})`,
-                // Pass the PR body as commit_message so GitHub's issue
-                // auto-close mechanism sees any `Closes #N` / `Fixes #N`
-                // / `Resolves #N` trailers. Observed 2026-08-25: PRs
-                // that merged via this queue with `Closes #N` in the
-                // rendered body (from openspec issue.md) did NOT
-                // auto-close their referenced issues — the earlier
-                // "omit commit_message to inherit commit-message
-                // trailers" strategy failed because our render-pr-body
-                // path puts Closes in the PR body, not in individual
-                // commit messages. Passing pr.body explicitly closes
-                // that gap. Empty body → GitHub uses commit messages
-                // (falls back to prior behavior). See issue #224.
-                commit_message: pr.body || '',
-                sha: testedHead,
-              });
-              mergedSha = data.sha;
-              core.notice(
-                `#${number} merged as ${mergedSha} — validated against main ${testedBase}`,
-              );
-            } catch (err) {
-              // Log the FULL error body so we can diagnose without
-              // guessing. Prior versions swallowed the message and left
-              // "GH refused merge (405)" with no context — useless.
-              const detail = err.response?.data?.message || err.message || String(err);
-              const docs = err.response?.data?.documentation_url || '';
-              core.warning(
-                `#${number}: pulls.merge failed status=${err.status} — "${detail}" ${docs}`,
-              );
-              // 409 = head SHA changed since Select resolved it. Safe retry.
-              // 405 = "Not mergeable" — usually a mid-flight race (head/base
-              //       moved) or a repo constraint we couldn't infer from
-              //       mergeable_state. Log-then-retry rather than fail hard;
-              //       the enhanced message above is the diagnostic surface.
-              if (err.status === 405 || err.status === 409) {
-                return;
-              }
-              throw err;
-            }
+            const batch = JSON.parse(fs.readFileSync(process.env.BATCH_RESULT, 'utf8'));
+            const dryRun = process.env.DRY_RUN === 'true';
 
             // ─────────────────────────────────────────────
             // Belt-and-suspenders issue close (v3 — 2026-08-26).
@@ -651,6 +493,8 @@ jobs:
             // (including the delete-ref + hand-dispatch steps). v4 uses
             // Node 20+'s built-in `fetch()` against GitHub's REST API
             // directly — no require, no Octokit, no bundle dependency.
+            // The same helpers post the bad-PR comments, for the same
+            // token reason.
             // ─────────────────────────────────────────────
             const ghApiHeaders = {
               'Authorization': `Bearer ${process.env.WORKFLOW_TOKEN}`,
@@ -687,132 +531,293 @@ jobs:
                 throw new Error(`POST comment #${n}: ${res.status} ${await res.text()}`);
               }
             }
-            const closableIssues = new Set();
-            try {
-              const graphqlResult = await github.graphql(`
-                query($owner: String!, $repo: String!, $number: Int!) {
-                  repository(owner: $owner, name: $repo) {
-                    pullRequest(number: $number) {
-                      closingIssuesReferences(first: 20) {
-                        nodes { number state }
+            async function listComments(n) {
+              const all = [];
+              for (let page = 1; ; page += 1) {
+                const res = await fetch(
+                  `${ghApiBase}/issues/${n}/comments?per_page=100&page=${page}`,
+                  { headers: ghApiHeaders },
+                );
+                if (!res.ok) {
+                  throw new Error(`GET comments #${n}: ${res.status} ${await res.text()}`);
+                }
+                const chunk = await res.json();
+                all.push(...chunk);
+                if (chunk.length < 100) {
+                  return all;
+                }
+              }
+            }
+
+            async function closeLinkedIssues(number, pr) {
+              const closableIssues = new Set();
+              try {
+                const graphqlResult = await github.graphql(`
+                  query($owner: String!, $repo: String!, $number: Int!) {
+                    repository(owner: $owner, name: $repo) {
+                      pullRequest(number: $number) {
+                        closingIssuesReferences(first: 20) {
+                          nodes { number state }
+                        }
                       }
                     }
                   }
+                `, { owner, repo, number });
+                const linked = graphqlResult.repository.pullRequest
+                  .closingIssuesReferences.nodes;
+                for (const issue of linked) {
+                  if (issue.state !== 'CLOSED') { closableIssues.add(issue.number); }
                 }
-              `, { owner, repo, number });
-              const linked = graphqlResult.repository.pullRequest
-                .closingIssuesReferences.nodes;
-              for (const issue of linked) {
-                if (issue.state !== 'CLOSED') { closableIssues.add(issue.number); }
+                core.info(
+                  `#${number}: closingIssuesReferences returned ${linked.length} nodes` +
+                  ` (${closableIssues.size} still open)`,
+                );
+              } catch (err) {
+                core.warning(`#${number}: closingIssuesReferences query failed: ${err.message}`);
               }
-              core.info(
-                `#${number}: closingIssuesReferences returned ${linked.length} nodes` +
-                ` (${closableIssues.size} still open)`,
-              );
-            } catch (err) {
-              core.warning(`#${number}: closingIssuesReferences query failed: ${err.message}`);
+
+              // Body-regex fallback — works even when GitHub's async
+              // indexer has not yet populated closingIssuesReferences.
+              // Matches: Close(s|d), Fix(es|ed), Resolve(s|d).
+              const bodyText = pr.body || '';
+              const bodyMatches = [
+                ...bodyText.matchAll(
+                  /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)\b/gi,
+                ),
+              ].map((m) => Number(m[1]));
+              if (bodyMatches.length > 0) {
+                core.info(
+                  `#${number}: PR body regex found closing references: ` +
+                  `#${bodyMatches.join(', #')}`,
+                );
+                for (const n of bodyMatches) { closableIssues.add(n); }
+              }
+
+              for (const issueNumber of closableIssues) {
+                try {
+                  const state = await issueState(issueNumber);
+                  if (state === 'closed') {
+                    core.info(`#${number}: linked issue #${issueNumber} already closed — skip`);
+                    continue;
+                  }
+                  await closeIssue(issueNumber);
+                  await commentIssue(
+                    issueNumber,
+                    `Closed by #${number} via merge queue (belt-and-suspenders; GitHub auto-close did not fire).`,
+                  );
+                  core.info(`#${number}: closed linked issue #${issueNumber}`);
+                } catch (err) {
+                  core.warning(
+                    `#${number}: failed to close linked issue #${issueNumber}: ${err.message}`,
+                  );
+                }
+              }
             }
 
-            // Body-regex fallback — works even when GitHub's async
-            // indexer has not yet populated closingIssuesReferences.
-            // Matches: Close(s|d), Fix(es|ed), Resolve(s|d).
-            const bodyText = pr.body || '';
-            const bodyMatches = [
-              ...bodyText.matchAll(
-                /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)\b/gi,
-              ),
-            ].map((m) => Number(m[1]));
-            if (bodyMatches.length > 0) {
-              core.info(
-                `#${number}: PR body regex found closing references: ` +
-                `#${bodyMatches.join(', #')}`,
-              );
-              for (const n of bodyMatches) { closableIssues.add(n); }
+            // ─────────────────────────────────────────────
+            // The merge loop. Every squash lands on top of the previous
+            // one, so `main` must be EXACTLY the batch base before the
+            // first and exactly the previous squash before each later
+            // one. Any other tip means something outside this pass
+            // merged, and the rest of the batch was validated against
+            // a `main` that no longer exists.
+            //
+            // Any refusal stops the loop, not just a moved `main`: the
+            // later PRs were gated WITH this one underneath, so landing
+            // them without it would land a tree nothing checked. The
+            // next pass rebuilds from whatever did land.
+            // ─────────────────────────────────────────────
+            let expectedBase = batch.base;
+            let lastSha = null;
+            const merged = [];
+            let stopped = batch.stale ? 'main moved before the batch was built' : null;
+            let fatal = null;
+
+            if (dryRun) {
+              for (const { n } of batch.merge) {
+                core.notice(`DRY RUN — would merge #${n} on top of ${batch.base.slice(0, 7)} + the PRs before it.`);
+              }
+              core.notice('DRY RUN — stopping before pulls.merge; nothing commented, nothing dispatched.');
             }
 
-            for (const issueNumber of closableIssues) {
+            for (const { n: number, head } of dryRun ? [] : batch.merge) {
+              const { data: base } = await github.rest.repos.getBranch({
+                owner, repo, branch: 'main',
+              });
+              const { data: pr } = await github.rest.pulls.get({
+                owner, repo, pull_number: number,
+              });
+              const reviews = await github.paginate(github.rest.pulls.listReviews, {
+                owner, repo, pull_number: number, per_page: 100,
+              });
+
+              const verdict = shouldMerge({
+                testedBase: expectedBase,
+                currentBase: base.commit.sha,
+                testedHead: head,
+                currentHead: pr.head.sha,
+                state: pr.state,
+                draft: pr.draft,
+                mergeable: pr.mergeable,
+                mergeableState: pr.mergeable_state,
+                reviews,
+              });
+
+              if (!verdict.merge) {
+                core.warning(`#${number}: ${verdict.reason} — stopping this pass here.`);
+                stopped = verdict.reason;
+                break;
+              }
+
+              // No branch update, ever (#413). The ruleset does not
+              // require up-to-date branches, so GitHub accepts a merge of
+              // a head that is behind main. The tree that lands was
+              // proven by the gates on this exact base, not by the PR's
+              // own CI run.
               try {
-                const state = await issueState(issueNumber);
-                if (state === 'closed') {
-                  core.info(`#${number}: linked issue #${issueNumber} already closed — skip`);
+                const { data } = await github.rest.pulls.merge({
+                  owner, repo, pull_number: number,
+                  merge_method: 'squash',
+                  commit_title: `${pr.title} (#${number})`,
+                  // Pass the PR body as commit_message so GitHub's issue
+                  // auto-close mechanism sees any `Closes #N` / `Fixes #N`
+                  // / `Resolves #N` trailers. Observed 2026-08-25: PRs
+                  // that merged via this queue with `Closes #N` in the
+                  // rendered body (from openspec issue.md) did NOT
+                  // auto-close their referenced issues — the earlier
+                  // "omit commit_message to inherit commit-message
+                  // trailers" strategy failed because our render-pr-body
+                  // path puts Closes in the PR body, not in individual
+                  // commit messages. Passing pr.body explicitly closes
+                  // that gap. Empty body → GitHub uses commit messages
+                  // (falls back to prior behavior). See issue #224.
+                  commit_message: pr.body || '',
+                  sha: head,
+                });
+                lastSha = data.sha;
+                expectedBase = data.sha;
+                merged.push(number);
+                core.notice(`#${number} merged as ${data.sha} — part of the batch on ${batch.base.slice(0, 7)}`);
+              } catch (err) {
+                // Log the FULL error body so we can diagnose without
+                // guessing. Prior versions swallowed the message and left
+                // "GH refused merge (405)" with no context — useless.
+                const detail = err.response?.data?.message || err.message || String(err);
+                const docs = err.response?.data?.documentation_url || '';
+                core.warning(
+                  `#${number}: pulls.merge failed status=${err.status} — "${detail}" ${docs}`,
+                );
+                stopped = `pulls.merge refused #${number} (${err.status})`;
+                // 409 = head changed under us; 405 = "Not mergeable",
+                // usually a mid-flight race. Both are for the next pass.
+                // Anything else is a defect worth a red run, raised only
+                // after the clean-up below has run.
+                if (err.status !== 405 && err.status !== 409) {
+                  fatal = err;
+                }
+                break;
+              }
+
+              await closeLinkedIssues(number, pr);
+
+              // Delete the head branch. `delete_branch_on_merge` at the
+              // repo level would work too, but doing it here is scoped
+              // to the queue's actions and never surprises anyone using
+              // the API to merge manually.
+              try {
+                await github.rest.git.deleteRef({
+                  owner, repo, ref: `heads/${pr.head.ref}`,
+                });
+              } catch (err) {
+                core.info(`#${number}: branch delete skipped (${err.status ?? '?'})`);
+              }
+            }
+
+            // ─────────────────────────────────────────────
+            // Tell each bad PR, once per head, which gate failed.
+            // ─────────────────────────────────────────────
+            for (const bad of dryRun ? [] : batch.bad) {
+              try {
+                if (hasBadComment(await listComments(bad.n), bad.head)) {
+                  core.info(`#${bad.n}: already told head ${bad.head.slice(0, 7)} it failed — skip`);
                   continue;
                 }
-                await closeIssue(issueNumber);
-                await commentIssue(
-                  issueNumber,
-                  `Closed by #${number} via merge queue (belt-and-suspenders; GitHub auto-close did not fire).`,
-                );
-                core.info(`#${number}: closed linked issue #${issueNumber}`);
+                const { body } = badComment({
+                  n: bad.n, head: bad.head, gate: bad.gate, base: batch.base,
+                });
+                await commentIssue(bad.n, body);
+                core.info(`#${bad.n}: commented that gate '${bad.gate}' failed`);
               } catch (err) {
-                core.warning(
-                  `#${number}: failed to close linked issue #${issueNumber}: ${err.message}`,
-                );
+                core.warning(`#${bad.n}: could not comment: ${err.message}`);
               }
-            }
-
-            // ─────────────────────────────────────────────
-            // Delete the head branch. `delete_branch_on_merge` at the
-            // repo level would work too, but doing it here is scoped
-            // to the queue's actions and never surprises anyone using
-            // the API to merge manually.
-            // ─────────────────────────────────────────────
-            try {
-              await github.rest.git.deleteRef({
-                owner, repo, ref: `heads/${pr.head.ref}`,
-              });
-            } catch (err) {
-              core.info(`#${number}: branch delete skipped (${err.status ?? '?'})`);
             }
 
             // ─────────────────────────────────────────────
             // Hand-dispatch what our own push cannot: a token push
-            // raises no events, so this merge produces no
+            // raises no events, so these merges produce no
             // `workflow_run` for `main` and no `push` to wake the next
             // pass of THIS workflow.
             //
-            // The revalidate re-run always fires — it continues the
-            // queue, not re-proving a tree. CI on main is decided by
-            // `ciRestart`: skip when the squash tree is byte-identical
-            // to the one CI already validated.
+            // CI on main is decided by `ciRestart`: skip when `main`
+            // now holds the byte-identical tree the batch validated.
+            // A loop that stopped part-way leaves a different tree, so
+            // CI runs.
             // ─────────────────────────────────────────────
-            let validatedTree = null;
-            try {
-              const { data: mergedCommit } = await github.rest.git.getCommit({
-                owner, repo, commit_sha: mergedSha,
-              });
-              validatedTree = mergedCommit.tree.sha;
-            } catch (err) {
-              core.info(`could not read merged commit tree: ${err.message}`);
-            }
-
-            const restart = ciRestart({
-              mergedTree: process.env.MERGED_TREE || null,
-              validatedTree,
-            });
-            core.info(`ci restart on main: ${restart.restart ? 'YES' : 'no'} — ${restart.reason}`);
-
-            if (restart.restart) {
+            if (lastSha !== null) {
+              let mainTree = null;
               try {
-                await github.rest.actions.createWorkflowDispatch({
-                  owner, repo,
-                  workflow_id: 'ci.yml',
-                  ref: 'main',
+                const { data: mergedCommit } = await github.rest.git.getCommit({
+                  owner, repo, commit_sha: lastSha,
                 });
-                core.info('dispatched ci.yml on main');
+                mainTree = mergedCommit.tree.sha;
               } catch (err) {
-                core.warning(`could not dispatch ci.yml: ${err.message}`);
+                core.info(`could not read merged commit tree: ${err.message}`);
+              }
+
+              const restart = ciRestart({
+                mergedTree: mainTree,
+                validatedTree: batch.finalTree || null,
+              });
+              core.info(`ci restart on main: ${restart.restart ? 'YES' : 'no'} — ${restart.reason}`);
+
+              if (restart.restart) {
+                try {
+                  await github.rest.actions.createWorkflowDispatch({
+                    owner, repo,
+                    workflow_id: 'ci.yml',
+                    ref: 'main',
+                  });
+                  core.info('dispatched ci.yml on main');
+                } catch (err) {
+                  core.warning(`could not dispatch ci.yml: ${err.message}`);
+                }
               }
             }
 
-            // Always re-dispatch this workflow so the next candidate is
-            // considered without waiting on the hourly cron.
-            try {
-              await github.rest.actions.createWorkflowDispatch({
-                owner, repo,
-                workflow_id: 'merge-queue.yml',
-                ref: 'main',
-              });
-              core.info('dispatched merge-queue.yml for next candidate');
-            } catch (err) {
-              core.warning(`could not dispatch merge-queue.yml: ${err.message}`);
+            const next = afterMerge({
+              dryRun, merged: merged.length, stoppedEarly: stopped !== null,
+            });
+            core.info(`next pass: ${next.redispatch ? 'dispatching' : 'not dispatching'} — ${next.reason}`);
+            if (next.redispatch) {
+              try {
+                await github.rest.actions.createWorkflowDispatch({
+                  owner, repo,
+                  workflow_id: 'merge-queue.yml',
+                  ref: 'main',
+                });
+                core.info('dispatched merge-queue.yml for the next pass');
+              } catch (err) {
+                core.warning(`could not dispatch merge-queue.yml: ${err.message}`);
+              }
+            }
+
+            if (fatal !== null) {
+              throw fatal;
+            }
+            // Red, like the single-PR queue was when its gates failed:
+            // a bad PR is something a human should see on the run list.
+            if (batch.bad.length > 0) {
+              core.setFailed(
+                `gates failed for ${batch.bad.map((b) => `#${b.n} (${b.gate})`).join(', ')}`,
+              );
             }
