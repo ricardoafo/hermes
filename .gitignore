@@ -57,3 +57,10 @@ Thumbs.db
 
 # Sub-agent worktree scratch (never commit)
 .claude/
+
+# Real taxpayer profile must never be committed (ADR-016 decision 12).
+# Default location is ~/.config/hermes/taxpayer.yaml, outside the repo; these
+# patterns catch a copy dropped inside the tree. The zeros-only example is allowed.
+taxpayer.yaml
+**/taxpayer.yaml
+.config/hermes/
