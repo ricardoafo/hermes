@@ -1,0 +1,1 @@
+- Slack crash notice: `hermes.service` posts one Slack line after any stop that is not clean (crash, signal, timeout), including crashes `Restart=` recovers from, with the result, exit code or signal and the last `serve.run.failed` line, secrets masked (#380).

@@ -50,6 +50,7 @@ pytestmark = [
 ]
 _RELEASE_SCRIPTS = ("install_release.sh", "health_gate.sh", "rollback.sh")
 _NOTIFY_SCRIPT = "hermes-notify-failure.sh"
+_CRASH_SCRIPT = "hermes-notify-crash.sh"
 _BOOTSTRAP_SCRIPT = "vps_bootstrap.sh"
 
 _SHA_A = "a" * 12
@@ -191,6 +192,7 @@ class Box:
         (stage / "deploy").mkdir()
         (stage / "deploy" / "hermes-health-ping.sh").write_text("#!/bin/bash\n", encoding="utf-8")
         (stage / "deploy" / _NOTIFY_SCRIPT).write_text(f"#!/bin/bash\n# {sha}\n", encoding="utf-8")
+        (stage / "deploy" / _CRASH_SCRIPT).write_text(f"#!/bin/bash\n# {sha}\n", encoding="utf-8")
         (stage / "config" / "strategies.yaml").write_text(_STRATEGIES_YAML, encoding="utf-8")
         (stage / "requirements.txt").write_text(
             "pydantic==2.0 --hash=sha256:00\n", encoding="utf-8"
@@ -428,6 +430,15 @@ def test_good_deploy_installs_the_failure_alert_outside_the_release(box: Box) ->
     notifier = box.root / "bin" / _NOTIFY_SCRIPT
     assert os.access(notifier, os.X_OK) is True
     assert notifier.read_text(encoding="utf-8") == f"#!/bin/bash\n# {_SHA_A}\n"
+
+
+def test_good_deploy_installs_the_crash_notice_outside_the_release(box: Box) -> None:
+    """Invariant (#380): ExecStopPost= runs the crash notice from bin/, like the failure alert."""
+    box.deploy(_SHA_A)
+
+    notice = box.root / "bin" / _CRASH_SCRIPT
+    assert os.access(notice, os.X_OK) is True
+    assert notice.read_text(encoding="utf-8") == f"#!/bin/bash\n# {_SHA_A}\n"
 
 
 def test_failed_gate_keeps_the_previous_failure_alert(box: Box) -> None:
