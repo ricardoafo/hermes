@@ -1,5 +1,6 @@
 {
   "description": "Nothing yet: no positions, no activity, the shadow test has not started.",
+  "eur_per_usdt": "0.8567",
   "heartbeat": {
     "state": "ok",
     "as_of": "2026-10-03T12:12:00+00:00",
@@ -137,7 +138,9 @@
           "1000.00"
         ]
       }
-    }
+    },
+    "starting_capital": "1000.00",
+    "started_on": "2026-09-27"
   },
   "positions": [],
   "activity": [],
