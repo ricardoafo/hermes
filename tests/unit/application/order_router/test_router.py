@@ -47,6 +47,8 @@ from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.ports.fill_model import FillModelPort
 from hermes.ports.risk_overlay import RiskOverlayPort
 
+_STRATEGY_ID = StrategyId("test-strategy")
+
 # ---------------------------------------------------------------------------
 # Stubs
 # ---------------------------------------------------------------------------
@@ -261,6 +263,7 @@ class TestOrderRouterKillCircuitBreaker:
             side=OrderSide.BUY,
             pair=_BTC_USDT,
             qty=Quantity(amount=Decimal("0.001"), asset=Currency.BTC),
+            strategy_id=_STRATEGY_ID,
         )
         fill = _make_fill(dummy_order)
         fill_model = _FixedFillModel(result=fill)
@@ -281,6 +284,7 @@ class TestOrderRouterKillCircuitBreaker:
             side=OrderSide.BUY,
             pair=_BTC_USDT,
             qty=Quantity(amount=Decimal("0.001"), asset=Currency.BTC),
+            strategy_id=_STRATEGY_ID,
         )
         fill = _make_fill(dummy_order)
         fill_model = _FixedFillModel(result=fill)
@@ -303,6 +307,7 @@ class TestOrderRouterKillCircuitBreaker:
             side=OrderSide.BUY,
             pair=_BTC_USDT,
             qty=Quantity(amount=Decimal("0.001"), asset=Currency.BTC),
+            strategy_id=_STRATEGY_ID,
         )
         fill = _make_fill(dummy_order)
         fill_model = _FixedFillModel(result=fill)
@@ -332,6 +337,7 @@ class TestOrderRouterOrphanPositionGuard:
             side=OrderSide.BUY,
             pair=_BTC_USDT,
             qty=Quantity(amount=Decimal("0.001"), asset=Currency.BTC),
+            strategy_id=_STRATEGY_ID,
         )
         fill = _make_fill(dummy_order)
         fill_model = _FixedFillModel(result=fill)
@@ -352,6 +358,7 @@ class TestOrderRouterOrphanPositionGuard:
             side=OrderSide.BUY,
             pair=_BTC_USDT,
             qty=Quantity(amount=Decimal("0.001"), asset=Currency.BTC),
+            strategy_id=_STRATEGY_ID,
         )
         fill = _make_fill(dummy_order)
         fill_model = _FixedFillModel(result=fill)
@@ -375,6 +382,7 @@ class TestOrderRouterOrphanPositionGuard:
             side=OrderSide.BUY,
             pair=_BTC_USDT,
             qty=Quantity(amount=Decimal("0.001"), asset=Currency.BTC),
+            strategy_id=_STRATEGY_ID,
         )
         fill = _make_fill(dummy_order)
         fill_model = _FixedFillModel(result=fill)
@@ -395,6 +403,7 @@ class TestOrderRouterOrphanPositionGuard:
             side=OrderSide.BUY,
             pair=_BTC_USDT,
             qty=Quantity(amount=Decimal("0.001"), asset=Currency.BTC),
+            strategy_id=_STRATEGY_ID,
         )
         fill = _make_fill(dummy_order)
         fill_model = _FixedFillModel(result=fill)
@@ -427,6 +436,7 @@ class TestOrderRouterRiskOverlay:
             side=OrderSide.BUY,
             pair=_BTC_USDT,
             qty=Quantity(amount=Decimal("0.001"), asset=Currency.BTC),
+            strategy_id=_STRATEGY_ID,
         )
         fill = _make_fill(dummy_order)
         fill_model = _FixedFillModel(result=fill)
@@ -448,6 +458,7 @@ class TestOrderRouterRiskOverlay:
             side=OrderSide.BUY,
             pair=_BTC_USDT,
             qty=Quantity(amount=Decimal("0.001"), asset=Currency.BTC),
+            strategy_id=_STRATEGY_ID,
         )
         fill = _make_fill(dummy_order)
         fill_model = _FixedFillModel(result=fill)
@@ -467,6 +478,7 @@ class TestOrderRouterRiskOverlay:
             side=OrderSide.BUY,
             pair=_BTC_USDT,
             qty=Quantity(amount=Decimal("0.001"), asset=Currency.BTC),
+            strategy_id=_STRATEGY_ID,
         )
         fill = _make_fill(dummy_order)
         fill_model = _FixedFillModel(result=fill)
@@ -487,6 +499,7 @@ class TestOrderRouterRiskOverlay:
             side=OrderSide.BUY,
             pair=_BTC_USDT,
             qty=Quantity(amount=Decimal("0.001"), asset=Currency.BTC),
+            strategy_id=_STRATEGY_ID,
         )
         fill = _make_fill(dummy_order)
         fill_model = _FixedFillModel(result=fill)
@@ -517,6 +530,7 @@ class TestOrderRouterFillDispatch:
             side=OrderSide.BUY,
             pair=_BTC_USDT,
             qty=Quantity(amount=Decimal("0.001"), asset=Currency.BTC),
+            strategy_id=_STRATEGY_ID,
         )
         expected_fill = _make_fill(dummy_order)
         fill_model = _FixedFillModel(result=expected_fill)
@@ -533,6 +547,7 @@ class TestOrderRouterFillDispatch:
             side=OrderSide.BUY,
             pair=_BTC_USDT,
             qty=Quantity(amount=Decimal("0.001"), asset=Currency.BTC),
+            strategy_id=_STRATEGY_ID,
         )
         rejection = Rejection(order=dummy_order, reason="insufficient liquidity in book")
         fill_model = _FixedFillModel(result=rejection)
@@ -546,3 +561,28 @@ class TestOrderRouterFillDispatch:
         assert result.rule == "fill_model", (
             f"Expected rule='fill_model' for fill Rejection, got {result.rule!r}."
         )
+
+
+class TestOrderRouterStrategyAttribution:
+    """The order the router builds is owned by the requesting strategy."""
+
+    def test_order_sent_to_fill_model_carries_the_requesting_strategy_id(self) -> None:
+        """Order dispatched to the fill model has strategy_id == RoutingInput.strategy_id."""
+        seen: list[Order] = []
+
+        class _RecordingFillModel:
+            def fill_order(
+                self,
+                order: Order,
+                orderbook: Orderbook,
+                clock: datetime,
+                fees: FeeSchedule,
+            ) -> Fill | Rejection:
+                seen.append(order)
+                return _make_fill(order)
+
+        router, inp = _make_routing_input(fill_model=_RecordingFillModel())
+        result = router.route(inp)
+        assert isinstance(result, Fill)
+        assert [o.strategy_id for o in seen] == [inp.strategy_id]
+        assert result.strategy_id == inp.strategy_id
