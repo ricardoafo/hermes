@@ -27,6 +27,7 @@ __all__ = [
     "TIMES",
     "CushionLevel",
     "arrow",
+    "big_digits",
     "cushion_level",
     "fmt_atr",
     "fmt_atr_range",
@@ -61,6 +62,45 @@ _CUSHION_GREEN_ABOVE: Final = Decimal(2)
 _PRICE_WHOLE_FROM: Final = Decimal(1000)
 _PRICE_TENTHS_FROM: Final = Decimal(100)
 _PRICE_CENTS_FROM: Final = Decimal(1)
+
+
+_BIG_GLYPHS: Final[dict[str, tuple[str, str, str]]] = {
+    "0": ("┌─┐", "│ │", "└─┘"),
+    "1": ("╶┐ ", " │ ", "╶┴╴"),
+    "2": ("╶─┐", "┌─┘", "└─╴"),
+    "3": ("╶─┐", " ─┤", "╶─┘"),
+    "4": ("╷ ╷", "└─┤", "  ╵"),
+    "5": ("┌─╴", "└─┐", "╶─┘"),
+    "6": ("┌─╴", "├─┐", "└─┘"),
+    "7": ("╶─┐", "  │", "  ╵"),
+    "8": ("┌─┐", "├─┤", "└─┘"),
+    "9": ("┌─┐", "└─┤", "╶─┘"),
+    "€": ("╭─╴", "╞═ ", "╰─╴"),
+    ",": ("  ", "  ", "▗ "),
+    ".": ("  ", "  ", "▗ "),
+    MINUS: ("   ", "╶─╴", "   "),
+}
+
+
+def big_digits(text: str) -> tuple[str, str, str]:
+    """Return ``text`` drawn three rows tall with box-drawing characters.
+
+    Covers the characters of a EUR level (digits, ``€``, ``,``, ``.``, minus);
+    anything else becomes a blank cell.
+
+    Args:
+        text: For example ``€1,021.06``.
+
+    Returns:
+        The three rows, one string each, glyphs separated by one space.
+    """
+    blank = ("   ", "   ", "   ")
+    glyphs = [_BIG_GLYPHS.get(char, blank) for char in text]
+    return (
+        " ".join(g[0] for g in glyphs).rstrip(),
+        " ".join(g[1] for g in glyphs).rstrip(),
+        " ".join(g[2] for g in glyphs).rstrip(),
+    )
 
 
 def round2(value: Decimal) -> Decimal:
