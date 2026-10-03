@@ -105,6 +105,69 @@ services:
       # mid-step. Docker allocates local writable space; --ephemeral
       # cleanup means it's fresh per job anyway.
 
+  # ─────────────────────────────────────────────────────────────
+  # OPS runner — merge queue and CD only (label hermes-ops).
+  # One replica, so merges and deploys never wait behind PR CI on
+  # the shared pool. Routed by the repo variable OPS_RUNNER_LABEL
+  # (merge-queue.yml and cd.yml fall back to RUNNER_LABEL when it is
+  # unset). Same image, caches and limits as the CI runners.
+  # ─────────────────────────────────────────────────────────────
+  ops-runner:
+    image: gh-runner:latest
+    restart: unless-stopped
+    environment:
+      RUNNER_REPOSITORY: ${RUNNER_REPOSITORY:-ricardoafo/hermes}
+      HERMES_RUNNER_REGISTRATION_PAT: ${HERMES_RUNNER_REGISTRATION_PAT:?HERMES_RUNNER_REGISTRATION_PAT is required — put it in .env (see .env.example)}
+      RUNNER_TOKEN: ${RUNNER_TOKEN:-}
+      RUNNER_LABELS: self-hosted,linux,x64,hermes-ops
+    mem_limit: 4g
+    cpus: 4
+    volumes:
+      - uv-cache:/home/runner/.cache/uv
+      - npm-cache:/home/runner/.cache/npm
+      - pip-cache:/home/runner/.cache/pip
+
+  # ─────────────────────────────────────────────────────────────
+  # Dependabot runner (label dependabot) with its own Docker daemon.
+  # GitHub runs Dependabot updates on a self-hosted runner only when
+  # the runner user can run Docker. The CI runners reach the host
+  # socket, which the runner user cannot use and which would be
+  # root-equivalent on the host if it could. This runner instead
+  # talks to a Docker-in-Docker sidecar on a private network: the
+  # sidecar is privileged inside Docker Desktop's VM, not on the host,
+  # and Dependabot's containers live and die inside it.
+  # ─────────────────────────────────────────────────────────────
+  dependabot-runner:
+    image: gh-runner:latest
+    restart: unless-stopped
+    depends_on: [dependabot-dind]
+    environment:
+      RUNNER_REPOSITORY: ${RUNNER_REPOSITORY:-ricardoafo/hermes}
+      HERMES_RUNNER_REGISTRATION_PAT: ${HERMES_RUNNER_REGISTRATION_PAT:?HERMES_RUNNER_REGISTRATION_PAT is required — put it in .env (see .env.example)}
+      RUNNER_TOKEN: ${RUNNER_TOKEN:-}
+      RUNNER_LABELS: self-hosted,linux,x64,dependabot
+      DOCKER_HOST: tcp://dependabot-dind:2375
+    mem_limit: 4g
+    cpus: 2
+    networks: [dependabot]
+
+  dependabot-dind:
+    image: docker:27-dind
+    restart: unless-stopped
+    privileged: true
+    environment:
+      # Plain TCP is safe here: the port is reachable only on the
+      # private `dependabot` network, never published to the host.
+      DOCKER_TLS_CERTDIR: ''
+    command: ['--host=tcp://0.0.0.0:2375']
+    mem_limit: 4g
+    volumes:
+      - dependabot-docker:/var/lib/docker
+    networks: [dependabot]
+
+networks:
+  dependabot:
+
 volumes:
   uv-cache:
   npm-cache:
@@ -113,3 +176,4 @@ volumes:
   mypy-cache:
   ruff-cache:
   hypothesis-db:
+  dependabot-docker:
