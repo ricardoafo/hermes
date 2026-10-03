@@ -1,0 +1,1 @@
+- `hermes serve` logs one `serve.bar.processed` line per handled bar (pair, interval, open and close time, signal, next due time) and a `serve.bar.next_due` line per stream when it goes live, so the journal shows the loop is alive between signals (#371).
