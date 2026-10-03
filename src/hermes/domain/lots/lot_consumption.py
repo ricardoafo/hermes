@@ -39,7 +39,8 @@ class LotConsumption:
         consumed_qty: The amount drawn from the lot. Positive, non-zero, and
             in the lot's asset.
         realized_gain: Gain (or loss) in EUR realised by this consumption.
-            Computed as ``(sell_price_per_unit - lot_cost_basis) * consumed_qty``.
+            Computed as ``(sell_price_per_unit - lot_cost_basis) * consumed_qty
+            - sell_fee_share``, with the buy fee inside the cost basis.
             Can be negative on a losing trade.
         consumed_at: UTC-aware moment of the SELL. Ties every consumption to
             the parent trade timestamp for reconciliation and tax reports.
@@ -77,20 +78,37 @@ class LotConsumption:
         sell_price_per_unit: Money,
         lot_cost_basis_per_unit: Money,
         consumed_at: datetime,
+        sell_fee_eur: Money | None = None,
     ) -> Result[LotConsumption, DomainError]:
         """Compute realized gain and construct a validated :class:`LotConsumption`.
+
+        Gain = ``(sell_price - cost_basis) * qty - sell_fee_eur`` (ADR-016
+        item 3): the buy fee is already inside the lot's cost basis, the
+        sell fee is this consumption's share of the SELL's fee.
 
         Args:
             lot_id: The lot being drawn from.
             consumed_qty: How much of the lot's asset the SELL took.
             sell_price_per_unit: EUR fill price per one unit of the lot's asset.
-            lot_cost_basis_per_unit: EUR cost basis per one unit at lot open.
+            lot_cost_basis_per_unit: EUR cost basis per one unit at lot open,
+                buy fee included.
             consumed_at: UTC-aware moment of the SELL.
+            sell_fee_eur: This consumption's share of the SELL's EUR fee.
+                ``None`` means no fee.
 
         Returns:
-            ``Success(LotConsumption)`` when both prices are EUR-denominated
+            ``Success(LotConsumption)`` when every amount is EUR-denominated
             and ``consumed_qty > 0``; ``Failure(InvalidLot)`` otherwise.
         """
+        if sell_fee_eur is not None and sell_fee_eur.currency != Currency.EUR:
+            return Failure(
+                InvalidLot(
+                    reason=(
+                        f"LotConsumption.record: sell_fee_eur must be EUR, "
+                        f"got {sell_fee_eur.currency!r}"
+                    )
+                )
+            )
         if sell_price_per_unit.currency != Currency.EUR:
             return Failure(
                 InvalidLot(
@@ -110,7 +128,10 @@ class LotConsumption:
                 )
             )
         gain_per_unit = sell_price_per_unit.amount - lot_cost_basis_per_unit.amount
-        realized_gain = Money(amount=gain_per_unit * consumed_qty.amount, currency=Currency.EUR)
+        fee = Decimal("0") if sell_fee_eur is None else sell_fee_eur.amount
+        realized_gain = Money(
+            amount=gain_per_unit * consumed_qty.amount - fee, currency=Currency.EUR
+        )
         try:
             return Success(
                 cls(

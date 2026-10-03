@@ -1,4 +1,4 @@
-"""SQLite :class:`LedgerPort` implementation — one transaction per write.
+"""SQLite ledger adapter (``LedgerPort`` + ``TradeLedgerPort``) — one transaction per write.
 
 Concrete adapter for the FIFO tax-lot ledger. Uses stdlib ``sqlite3``
 (no ORM — ADR-003 rules out heavyweight tooling for the single-writer
@@ -12,6 +12,13 @@ and value-object wrappers into JSON-safe primitives. The stored payload plus
 the ``event_schema_version`` column let a future upcaster chain
 (code-conventions §10) reconstruct the event.
 
+Trade rows (:meth:`SqliteLedger.record_trade`) carry EUR values or a pending
+status. Lots and consumptions linked to trades are a projection: every trade
+write replays the asset's trades through
+:func:`~hermes.domain.lots.eur_fifo.replay_fifo_eur` and rewrites their EUR
+values, fees included, inside the same transaction (change
+``trade-eur-values`` D-6).
+
 Reference: ADR-003 §00 (I-06), §03 (persistence schema),
 code-conventions.md §6 (Decimal ledger values), §9 (UTC timestamps).
 """
@@ -21,20 +28,26 @@ from __future__ import annotations
 import dataclasses
 import json
 import sqlite3
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
 from typing import Any
+
+from returns.result import Failure
 
 from hermes.adapters.ledger.migration_runner import apply_migrations
 from hermes.domain.errors import LedgerError
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.events.trade_executed import TradeExecuted, TradeSide
+from hermes.domain.fx.eur_pricing import EurStatus
+from hermes.domain.lots.eur_fifo import EurTrade, acquisition_value, replay_fifo_eur
 from hermes.domain.lots.lot import Lot
 from hermes.domain.lots.lot_consumption import LotConsumption
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.strategy.signal import SignalKind, SignalSide
+from hermes.domain.trading.order import OrderSide
+from hermes.domain.trading.trade_record import TradeEur, TradeRecord
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.lot_id import LotId
 from hermes.domain.value_objects.money import Money
@@ -43,12 +56,14 @@ from hermes.domain.value_objects.price import Price
 from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.infrastructure.time import now_utc
+from hermes.ports.ledger import PendingTrade
 
 __all__ = ["SqliteLedger"]
 
 
 class SqliteLedger:
-    """SQLite implementation of :class:`hermes.ports.ledger.LedgerPort`.
+    """SQLite implementation of :class:`~hermes.ports.ledger.LedgerPort` and
+    :class:`~hermes.ports.ledger.TradeLedgerPort`.
 
     The adapter owns its :class:`sqlite3.Connection`. Callers pass a
     pre-opened connection at construction time so tests can inject
@@ -154,6 +169,105 @@ class SqliteLedger:
             raise LedgerError(msg=f"append_event failed: {exc}") from exc
 
     # ------------------------------------------------------------------
+    # TradeLedgerPort — trade rows with EUR values
+    # ------------------------------------------------------------------
+
+    def record_trade(self, trade: TradeRecord, event: DomainEvent) -> int:
+        """Store a trade, its lot effects and its event in one transaction.
+
+        A BUY inserts the lot it opens, linked to the trade. The asset is then
+        re-projected so lot remainders, consumptions and every EUR value
+        follow from the trades (I-06 holds: one ``BEGIN…COMMIT``).
+
+        Args:
+            trade: The trade. ``trade.eur is None`` stores it pending.
+            event: The ``TradeExecuted`` event for the trade.
+
+        Returns:
+            The new trade row id.
+
+        Raises:
+            LedgerError: On any SQLite failure or a SELL beyond the open
+                quantity; the transaction is rolled back.
+        """
+        try:
+            trade_id = self._insert_trade(trade)
+            if trade.lot_id is not None:
+                self._insert_trade_lot(trade, trade_id)
+            self._reproject(trade.pair.base)
+            self._insert_event(event)
+            self._conn.commit()
+        except sqlite3.Error as exc:
+            self._conn.rollback()
+            raise LedgerError(msg=f"record_trade failed: {exc}") from exc
+        except LedgerError:
+            self._conn.rollback()
+            raise
+        return trade_id
+
+    def list_pending_trades(self) -> tuple[PendingTrade, ...]:
+        """Return every trade with ``eur_status = 'pending'``, oldest first.
+
+        Returns:
+            Pending trades sorted by fill time, then row id.
+
+        Raises:
+            LedgerError: On any SQLite read failure.
+        """
+        try:
+            rows = self._conn.execute(
+                "SELECT id, pair_base, pair_quote, executed_at, price_amount, "
+                "       fee_amount, fee_currency "
+                "FROM trades WHERE eur_status = ?",
+                (EurStatus.PENDING.value,),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"list_pending_trades failed: {exc}") from exc
+        pending = [
+            PendingTrade(
+                trade_id=int(row[0]),
+                pair=Pair(base=Currency(row[1]), quote=Currency(row[2])),
+                executed_at=datetime.fromisoformat(row[3]),
+                price=Decimal(row[4]),
+                fee=Money(amount=Decimal(row[5]), currency=Currency(row[6])),
+            )
+            for row in rows
+        ]
+        return tuple(sorted(pending, key=lambda p: (p.executed_at, p.trade_id)))
+
+    def apply_trade_eur(self, trade_id: int, eur: TradeEur) -> None:
+        """Store a trade's EUR values, mark it ``ok`` and re-project its asset.
+
+        Args:
+            trade_id: Row id of the trade.
+            eur: The EUR values.
+
+        Raises:
+            LedgerError: On any SQLite failure or an unknown ``trade_id``;
+                the transaction is rolled back.
+        """
+        try:
+            row = self._conn.execute(
+                "SELECT pair_base FROM trades WHERE id = ?", (trade_id,)
+            ).fetchone()
+            if row is None:
+                raise LedgerError(msg=f"apply_trade_eur: no trade with id {trade_id}")
+            self._conn.execute(
+                "UPDATE trades SET eur_rate = ?, eur_rate_date = ?, eur_source = ?, "
+                "       price_eur = ?, fee_eur = ?, eur_status = ? "
+                "WHERE id = ?",
+                (*_eur_columns(eur), EurStatus.OK.value, trade_id),
+            )
+            self._reproject(Currency(row[0]))
+            self._conn.commit()
+        except sqlite3.Error as exc:
+            self._conn.rollback()
+            raise LedgerError(msg=f"apply_trade_eur failed: {exc}") from exc
+        except LedgerError:
+            self._conn.rollback()
+            raise
+
+    # ------------------------------------------------------------------
     # LedgerPort — read methods
     # ------------------------------------------------------------------
 
@@ -173,7 +287,8 @@ class SqliteLedger:
         try:
             rows = self._conn.execute(
                 "SELECT lot_id, asset, original_qty, remaining_qty, "
-                "       cost_basis_per_unit, strategy_id, opened_at "
+                "       cost_basis_per_unit, strategy_id, opened_at, "
+                "       cost_basis_native_per_unit, native_currency "
                 "FROM lots "
                 "WHERE asset = ? AND CAST(remaining_qty AS REAL) > 0 "
                 "ORDER BY opened_at ASC, lot_id ASC",
@@ -325,20 +440,147 @@ class SqliteLedger:
     # Private helpers — SQL and (de)serialisation
     # ------------------------------------------------------------------
 
-    def _insert_lot(self, lot: Lot) -> None:
-        """Insert a new lot row. Does NOT commit — caller controls the txn."""
+    def _insert_trade(self, trade: TradeRecord) -> int:
+        """Insert a trade row with its EUR columns or a pending status."""
+        eur = (None, None, None, None, None) if trade.eur is None else _eur_columns(trade.eur)
+        cursor = self._conn.execute(
+            "INSERT INTO trades (correlation_id, pair_base, pair_quote, side, qty_amount, "
+            "                    qty_asset, price_amount, fee_amount, fee_currency, "
+            "                    executed_at, eur_rate, eur_rate_date, eur_source, "
+            "                    price_eur, fee_eur, eur_status) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                trade.correlation_id,
+                trade.pair.base.value,
+                trade.pair.quote.value,
+                trade.side.value,
+                _dec(trade.qty),
+                trade.pair.base.value,
+                _dec(trade.price),
+                _dec(trade.fee.amount),
+                trade.fee.currency.value,
+                _iso_utc(trade.executed_at.astimezone(UTC)),
+                *eur,
+                trade.eur_status.value,
+            ),
+        )
+        if cursor.lastrowid is None:
+            raise LedgerError(msg="record_trade: INSERT INTO trades returned no row id")
+        return cursor.lastrowid
+
+    def _insert_trade_lot(self, trade: TradeRecord, trade_id: int) -> None:
+        """Insert the lot a BUY opens; the projection fills its EUR basis."""
+        if trade.lot_id is None:
+            raise LedgerError(msg=f"record_trade: trade {trade_id} opens no lot")
+        native_basis = (
+            acquisition_value(price=trade.price, qty=trade.qty, fee=trade.fee.amount) / trade.qty
+        )
         self._conn.execute(
             "INSERT INTO lots (lot_id, asset, original_qty, remaining_qty, "
-            "                  cost_basis_per_unit, strategy_id, opened_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "                  cost_basis_per_unit, strategy_id, opened_at, "
+            "                  cost_basis_native_per_unit, native_currency, trade_id) "
+            "VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)",
+            (
+                trade.lot_id.value,
+                trade.pair.base.value,
+                _dec(trade.qty),
+                _dec(trade.qty),
+                trade.strategy_id.value,
+                _iso_utc(trade.executed_at.astimezone(UTC)),
+                _dec(native_basis),
+                trade.pair.quote.value,
+                trade_id,
+            ),
+        )
+
+    def _reproject(self, asset: Currency) -> None:
+        """Rewrite the asset's trade-linked lots and consumptions from its trades.
+
+        Raises:
+            LedgerError: When the replay fails (a SELL beyond the open quantity).
+            sqlite3.Error: On any SQL failure; the caller rolls back.
+        """
+        rows = self._conn.execute(
+            "SELECT id, side, qty_amount, executed_at, price_eur, fee_eur FROM trades "
+            "WHERE pair_base = ? "
+            "  AND (side = 'SELL' OR id IN (SELECT trade_id FROM lots WHERE trade_id IS NOT NULL))",
+            (asset.value,),
+        ).fetchall()
+        trades = sorted(
+            (
+                EurTrade(
+                    ref=str(row[0]),
+                    side=OrderSide(row[1]),
+                    qty=Decimal(row[2]),
+                    executed_at=datetime.fromisoformat(row[3]),
+                    price_eur=_optional_decimal(row[4]),
+                    fee_eur=_optional_decimal(row[5]),
+                )
+                for row in rows
+            ),
+            key=lambda t: (t.executed_at, int(t.ref)),
+        )
+        projected = replay_fifo_eur(asset, trades)
+        if isinstance(projected, Failure):
+            raise LedgerError(msg=f"FIFO replay of {asset} failed: {projected.failure()}")
+        projection = projected.unwrap()
+
+        lot_by_trade: dict[str, str] = {}
+        for lot_value in projection.lots:
+            (lot_id,) = self._conn.execute(
+                "SELECT lot_id FROM lots WHERE trade_id = ?", (int(lot_value.buy_ref),)
+            ).fetchone()
+            lot_by_trade[lot_value.buy_ref] = lot_id
+            self._conn.execute(
+                "UPDATE lots SET remaining_qty = ?, cost_basis_per_unit = ? WHERE trade_id = ?",
+                (
+                    _dec(lot_value.remaining_qty),
+                    _optional_dec(lot_value.cost_basis_per_unit_eur),
+                    int(lot_value.buy_ref),
+                ),
+            )
+        self._conn.execute(
+            "DELETE FROM lot_consumptions WHERE trade_id IN "
+            "(SELECT id FROM trades WHERE pair_base = ?)",
+            (asset.value,),
+        )
+        for piece in projection.consumptions:
+            self._conn.execute(
+                "INSERT INTO lot_consumptions (lot_id, consumed_qty, consumed_asset, "
+                "                              realized_gain_eur, consumed_at, proceeds_eur, "
+                "                              cost_eur, fee_eur, trade_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    lot_by_trade[piece.buy_ref],
+                    _dec(piece.qty),
+                    asset.value,
+                    _optional_dec(piece.gain_eur),
+                    _iso_utc(piece.consumed_at),
+                    _optional_dec(piece.proceeds_eur),
+                    _optional_dec(piece.cost_eur),
+                    _optional_dec(piece.fee_eur),
+                    int(piece.sell_ref),
+                ),
+            )
+
+    def _insert_lot(self, lot: Lot) -> None:
+        """Insert a new lot row. Does NOT commit — caller controls the txn."""
+        native = lot.cost_basis_native_per_unit
+        self._conn.execute(
+            "INSERT INTO lots (lot_id, asset, original_qty, remaining_qty, "
+            "                  cost_basis_per_unit, strategy_id, opened_at, "
+            "                  cost_basis_native_per_unit, native_currency) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 lot.lot_id.value,
                 lot.asset.value,
                 str(lot.original_qty.amount),
                 str(lot.remaining_qty.amount),
-                str(lot.cost_basis_per_unit.amount),
+                None if lot.cost_basis_per_unit is None else str(lot.cost_basis_per_unit.amount),
                 lot.strategy_id.value,
                 _iso_utc(lot.opened_at),
+                None if native is None else str(native.amount),
+                None if native is None else native.currency.value,
             ),
         )
 
@@ -391,6 +633,8 @@ class SqliteLedger:
             cost_basis,
             strategy_id_str,
             opened_at_str,
+            native_basis,
+            native_currency,
         ) = row
         asset = Currency(asset_str)
         return Lot(
@@ -398,9 +642,18 @@ class SqliteLedger:
             asset=asset,
             original_qty=Quantity(amount=Decimal(original), asset=asset),
             remaining_qty=Quantity(amount=Decimal(remaining), asset=asset),
-            cost_basis_per_unit=Money(amount=Decimal(cost_basis), currency=Currency.EUR),
+            cost_basis_per_unit=(
+                None
+                if cost_basis is None
+                else Money(amount=Decimal(cost_basis), currency=Currency.EUR)
+            ),
             strategy_id=StrategyId(strategy_id_str),
             opened_at=datetime.fromisoformat(opened_at_str),
+            cost_basis_native_per_unit=(
+                None
+                if native_basis is None or native_currency is None
+                else Money(amount=Decimal(native_basis), currency=Currency(native_currency))
+            ),
         )
 
 
@@ -455,6 +708,27 @@ def _json_default(value: Any) -> Any:
     if isinstance(value, Enum):
         return value.value
     raise TypeError(f"Cannot serialize {type(value).__name__} to JSON: {value!r}")
+
+
+def _dec(value: Decimal) -> str:
+    """Format a Decimal as plain positional text (no exponent)."""
+    return format(value, "f")
+
+
+def _optional_dec(value: Decimal | None) -> str | None:
+    """Format an optional Decimal, keeping ``None`` as SQL NULL."""
+    return None if value is None else _dec(value)
+
+
+def _eur_columns(eur: TradeEur) -> tuple[str, str, str, str, str]:
+    """Return ``eur_rate, eur_rate_date, eur_source, price_eur, fee_eur`` as stored."""
+    return (
+        _dec(eur.pricing.rate),
+        eur.pricing.rate_date.isoformat(),
+        eur.pricing.source,
+        _dec(eur.price_eur),
+        _dec(eur.fee_eur),
+    )
 
 
 def _optional_decimal(raw: object) -> Decimal | None:

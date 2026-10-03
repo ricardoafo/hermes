@@ -6,14 +6,33 @@ Ships the pure-logic building blocks of the tax ledger:
 - :class:`LotConsumption` — the append-only record of a SELL drawing from a lot.
 - :func:`select_lots_fifo` — the pure FIFO selection algorithm (oldest-first,
   deterministic tie-breaker on :class:`LotId` lexical order).
+- :func:`replay_fifo_eur` — the EUR values of every lot and consumption,
+  fees included, replayed from one asset's trades.
 
 Reference: ADR-003 §03 (persistence schema + FIFO worked example),
 ADR-002 (Spanish FIFO tax posture), code-conventions.md §1 (Value Object),
 §3 (immutability), §6 (Decimal ledger values).
 """
 
+from hermes.domain.lots.eur_fifo import (
+    ConsumptionEurValue,
+    EurTrade,
+    FifoEurProjection,
+    LotEurValue,
+    replay_fifo_eur,
+)
 from hermes.domain.lots.lot import Lot
 from hermes.domain.lots.lot_consumption import LotConsumption
 from hermes.domain.lots.selection import InsufficientInventory, select_lots_fifo
 
-__all__ = ["InsufficientInventory", "Lot", "LotConsumption", "select_lots_fifo"]
+__all__ = [
+    "ConsumptionEurValue",
+    "EurTrade",
+    "FifoEurProjection",
+    "InsufficientInventory",
+    "Lot",
+    "LotConsumption",
+    "LotEurValue",
+    "replay_fifo_eur",
+    "select_lots_fifo",
+]
