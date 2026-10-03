@@ -60,7 +60,7 @@ from hermes.domain.strategy.swing.engines.chandelier import ChandelierEngine
 from hermes.domain.strategy.swing.engines.donchian import DonchianEngine
 from hermes.domain.strategy.swing.engines.ema import EmaRegimeFilter
 
-__all__ = ["SwingStrategyAdapter"]
+__all__ = ["SwingStrategyAdapter", "swing_parameters"]
 
 # Pre-reg §5.1 parameters
 _DONCHIAN_PERIOD = 20
@@ -81,6 +81,27 @@ _ATR_SIZING_PERIOD = 14
 # ADX = 2*14+1 = 29 bars minimum.  Add a margin of 50.
 _4H_BUFFER_CAP = 300
 _1D_BUFFER_CAP = 300
+
+
+def swing_parameters() -> dict[str, str]:
+    """Return the pre-registered §5 parameters the adapter trades with.
+
+    The certification gates fingerprint this mapping: changing any value here
+    is a §11 deviation and sends the strategy back to UNTRUSTED (D-8 guardrail).
+
+    Returns:
+        Parameter name to its value rendered as a string.
+    """
+    return {
+        "donchian_period": str(_DONCHIAN_PERIOD),
+        "adx_period": str(_ADX_PERIOD),
+        "adx_threshold": str(_ADX_THRESHOLD),
+        "ema_period": str(_EMA_PERIOD),
+        "chandelier_period": str(_CHANDELIER_PERIOD),
+        "chandelier_atr_mult": str(_CHANDELIER_ATR_MULT),
+        "time_stop_days": str(_TIME_STOP_DAYS),
+        "atr_sizing_period": str(_ATR_SIZING_PERIOD),
+    }
 
 
 class SwingStrategyAdapter:

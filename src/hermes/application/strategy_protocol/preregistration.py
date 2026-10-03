@@ -20,6 +20,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 __all__ = [
+    "CertificationSchedule",
     "DataWindows",
     "H1Thresholds",
     "KillTriggers",
@@ -47,6 +48,7 @@ _SIGNED_VAL_START = datetime(2024, 7, 1, tzinfo=UTC)
 _SIGNED_VAL_END = datetime(2025, 8, 31, 23, 59, 59, tzinfo=UTC)
 _SIGNED_OOS_START = datetime(2025, 9, 1, tzinfo=UTC)
 _SIGNED_OOS_END = datetime(2026, 12, 31, 23, 59, 59, tzinfo=UTC)
+_SIGNED_CERTIFICATION_NOT_BEFORE = datetime(2027, 1, 1, tzinfo=UTC)
 _SIGNED_CONTENT_SHA256 = "8d73e99ec658712e2304b872e3231421a5f5eeeafbe8255b199cbb8092db3433"
 
 
@@ -152,6 +154,32 @@ class H1Thresholds:
 
     win_rate_min: float
     """Win rate must be at or above this fraction (0.30 = 30%)."""
+
+    profit_factor_min: float
+    """Profit factor must strictly exceed this (1.3)."""
+
+    fees_to_gross_pnl_max: float
+    """Total fees / gross PnL must be strictly less than this fraction (0.30 = 30%)."""
+
+
+@dataclass(frozen=True, slots=True)
+class CertificationSchedule:
+    """Calendar and window rules for the certification lifecycle from pre-reg §4, §7.
+
+    Reference: pre-registration-v1.md §4 (discipline gate), §7.
+    """
+
+    certification_not_before: datetime
+    """The OOS certification cannot begin before this UTC instant (2027-01-01)."""
+
+    shadow_min_days: int
+    """Live shadow days required for SHADOW_CERTIFIED (90)."""
+
+    shadow_drift_p50_max_bps: float
+    """Sim-vs-live drift p50 must be strictly below this, in bps (30)."""
+
+    live_min_days: int
+    """Live-capital days with no kill trigger required for CERTIFIED (90)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -300,6 +328,24 @@ class PreRegistration:
             recovery_days_max=90.0,
             ulcer_index_max=10.0,
             win_rate_min=0.30,
+            profit_factor_min=1.3,
+            fees_to_gross_pnl_max=0.30,
+        )
+
+    def certification_schedule(self) -> CertificationSchedule:
+        """Return the calendar and window rules from pre-reg §4 and §7.
+
+        Returns:
+            :class:`CertificationSchedule` with the OOS date lock and the 90-day
+            shadow and live windows.
+
+        Reference: pre-registration-v1.md §4, §7.
+        """
+        return CertificationSchedule(
+            certification_not_before=_SIGNED_CERTIFICATION_NOT_BEFORE,
+            shadow_min_days=90,
+            shadow_drift_p50_max_bps=30.0,
+            live_min_days=90,
         )
 
     def kill_triggers(self) -> KillTriggers:

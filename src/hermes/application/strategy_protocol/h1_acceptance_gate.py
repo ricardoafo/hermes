@@ -20,7 +20,9 @@ H1 is accepted iff ALL of the following hold (§9):
     Secondary (all must pass):
         - Max drawdown (OOS) < 15%
         - Time-to-recovery from any drawdown >= 8% < 90 days
+        - Profit factor > 1.3
         - Ulcer index < 10
+        - Total fees / gross PnL < 30%
         - Win rate >= 30%
 
 Reference:
@@ -32,6 +34,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from hermes.application.calibration.certification_gates import WindowMetrics, section9_checks
 from hermes.application.strategy_protocol.preregistration import (
     H1Thresholds,
     PreRegistration,
@@ -68,6 +71,8 @@ class CertificationResult:
             Use ``float("inf")`` if recovery has not yet occurred.
         win_rate: Fraction of OOS trades that were winners (e.g. 0.45 = 45%).
         oos_trade_count: Number of completed trades in the OOS window.
+        profit_factor: Gross profit divided by gross loss on OOS.
+        fees_to_gross_pnl: Total fees divided by gross PnL on OOS (e.g. 0.2 = 20%).
 
     Reference: pre-registration-v1.md §9.
     """
@@ -80,6 +85,8 @@ class CertificationResult:
     recovery_days: float
     win_rate: float
     oos_trade_count: int
+    profit_factor: float
+    fees_to_gross_pnl: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,7 +105,9 @@ class AcceptanceDecision:
         ``"oos_trade_count"`` — minimum OOS trade count
         ``"max_drawdown"`` — max drawdown threshold
         ``"recovery_days"`` — recovery period threshold
+        ``"profit_factor"`` — profit factor threshold
         ``"ulcer_index"`` — ulcer index threshold
+        ``"fees_to_gross_pnl"`` — fees over gross PnL threshold
         ``"win_rate"`` — win rate threshold
 
     Reference: pre-registration-v1.md §9.
@@ -111,6 +120,10 @@ class AcceptanceDecision:
 # ---------------------------------------------------------------------------
 # Gate
 # ---------------------------------------------------------------------------
+
+# The shared §9 evaluator names the trade-count row for any window; this gate
+# keeps its OOS-specific identifier for audit-log stability.
+_CRITERION_NAMES = {"trade_count": "oos_trade_count"}
 
 
 class H1AcceptanceGate:
@@ -150,31 +163,22 @@ class H1AcceptanceGate:
 
         Reference: pre-registration-v1.md §9.
         """
-        t = self._thresholds
-        failed: list[str] = []
-
-        # Primary criteria
-        if result.dsr <= t.dsr_min:
-            failed.append("dsr")
-
-        if result.bootstrap_ci_lower <= t.bootstrap_ci_lower_min:
-            failed.append("bootstrap_ci")
-
-        if result.oos_trade_count < t.oos_trade_count_min:
-            failed.append("oos_trade_count")
-
-        # Secondary criteria (all must pass per §9)
-        if result.max_drawdown >= t.max_drawdown_max:
-            failed.append("max_drawdown")
-
-        if result.recovery_days >= t.recovery_days_max:
-            failed.append("recovery_days")
-
-        if result.ulcer_index >= t.ulcer_index_max:
-            failed.append("ulcer_index")
-
-        if result.win_rate < t.win_rate_min:
-            failed.append("win_rate")
+        metrics = WindowMetrics(
+            dsr=result.dsr,
+            bootstrap_ci_lower=result.bootstrap_ci_lower,
+            trade_count=result.oos_trade_count,
+            max_drawdown=result.max_drawdown,
+            recovery_days=result.recovery_days,
+            profit_factor=result.profit_factor,
+            ulcer_index=result.ulcer_index,
+            fees_to_gross_pnl=result.fees_to_gross_pnl,
+            win_rate=result.win_rate,
+        )
+        failed = [
+            _CRITERION_NAMES.get(check.name, check.name)
+            for check in section9_checks(metrics, self._thresholds)
+            if not check.passed
+        ]
 
         return AcceptanceDecision(
             accepted=len(failed) == 0,

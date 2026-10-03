@@ -1,0 +1,1 @@
+- **Certification gates enforced in code** (`application/calibration/certification_gates.py`, `hermes certify`): every pre-registration §7 transition now checks its §9, 90-day and 2027-01-01 rules, missing statistics fail closed, any v1 parameter change returns the strategy to UNTRUSTED, and `hermes serve` refuses `allow_mainnet` unless the strategy is LIVE_APPROVED. Closes #355.
