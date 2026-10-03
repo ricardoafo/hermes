@@ -1,0 +1,96 @@
+"""Activity feed helpers shared by every read model and the ``--json`` output.
+
+- :func:`group_activity` turns a flat list of :class:`ActivityItem` into the
+  day-grouped, newest-first shape every surface renders, dropping bar checks
+  and signals unless the caller asks for them.
+- :func:`activity_to_json` gives the same rows as JSON-ready data. Money (the
+  net of a closed row) sits under ``net_eur`` only on surfaces where
+  :func:`~hermes.application.console.visibility.pnl_visible` allows it, so a
+  blind consumer never receives a figure.
+
+Reference: openspec/changes/374-hermes-activity/change.md.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterable, Sequence
+from datetime import date, tzinfo
+from itertools import groupby
+
+from hermes.application.console.render import RenderContext
+from hermes.application.console.views import (
+    QUIET_ACTIVITY_KINDS,
+    ActivityDay,
+    ActivityItem,
+)
+
+__all__ = ["activity_to_json", "group_activity"]
+
+type JsonObject = dict[str, object]
+
+
+def group_activity(
+    items: Iterable[ActivityItem], tz: tzinfo, *, include_quiet: bool = False
+) -> tuple[ActivityDay, ...]:
+    """Group ``items`` by local calendar day, newest day and newest item first.
+
+    Args:
+        items: Activity rows in any order.
+        tz: The timezone whose calendar days the feed is split by.
+        include_quiet: Keep bar checks and signals (``hermes activity --all``).
+
+    Returns:
+        Days with at least one row, newest first.
+    """
+    kept = sorted(
+        (i for i in items if include_quiet or i.kind not in QUIET_ACTIVITY_KINDS),
+        key=lambda i: i.at,
+        reverse=True,
+    )
+
+    def local_day(item: ActivityItem) -> date:
+        return item.at.astimezone(tz).date()
+
+    return tuple(
+        ActivityDay(day=day, items=tuple(group)) for day, group in groupby(kept, key=local_day)
+    )
+
+
+def activity_to_json(days: Sequence[ActivityDay], ctx: RenderContext) -> JsonObject:
+    """Return the feed as a JSON-ready dictionary.
+
+    Args:
+        days: Activity grouped by local day, newest day first.
+        ctx: Render context; its surface decides whether ``net_eur`` is present
+            and its timezone sets the day keys and timestamps.
+
+    Returns:
+        ``{"days": [{"day": ..., "items": [...]}], "demo_scenario": ..., "as_of": ...}``
+        with amounts as decimal strings.
+    """
+    return {
+        "days": [
+            {"day": day.day.isoformat(), "items": [_item(item, ctx) for item in day.items]}
+            for day in days
+        ],
+        "demo_scenario": ctx.demo_scenario,
+        "as_of": ctx.now.astimezone(ctx.tz).isoformat(),
+    }
+
+
+def _item(item: ActivityItem, ctx: RenderContext) -> JsonObject:
+    data: JsonObject = {"at": item.at.astimezone(ctx.tz).isoformat(), "kind": item.kind.value}
+    if item.coin is not None:
+        data["coin"] = item.coin
+    if item.text is not None:
+        data["text"] = item.text
+    if item.price is not None:
+        data["price"] = format(item.price, "f")
+    if item.count != 1:
+        data["count"] = item.count
+    if item.stop_from is not None and item.stop_to is not None:
+        data["stop_from"] = format(item.stop_from, "f")
+        data["stop_to"] = format(item.stop_to, "f")
+    if item.net is not None and ctx.shows_money:
+        data["net_eur"] = format(item.net, "f")
+    return data

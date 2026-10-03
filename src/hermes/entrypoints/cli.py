@@ -48,6 +48,7 @@ from dotenv import dotenv_values
 from hermes.adapters.certification.json_store import JsonCertificationStore
 from hermes.adapters.console import available_scenarios
 from hermes.entrypoints import _health as health_module
+from hermes.entrypoints import activity as activity_module
 from hermes.entrypoints import certify as certify_module
 from hermes.entrypoints import console as console_module
 from hermes.entrypoints import preview as preview_module
@@ -89,6 +90,7 @@ _SUBCOMMAND_HELP: Final[dict[str, str]] = {
         "registered integration; `hermes health <integration>` probes one."
     ),
     "certify": "Evaluate the next certification gate for a strategy (pre-reg §7).",
+    "activity": "What changed, grouped by day; `--all` adds bar checks and signals.",
     "status": "Read-only progress check: verdict, last and next bar per stream.",
     "simulate": "Replay historical scenarios (stub — implemented in a future PR).",
 }
@@ -160,6 +162,14 @@ def _initialize_sentry_from_env(env: dict[str, str]) -> None:
     sentry_integration.initialize(dsn=dsn, environment=environment)
 
 
+def _leading_demo_scenario(args: list[str]) -> str | None:
+    """Return the scenario of a leading ``--demo`` option, or ``None``."""
+    try:
+        return console_module.split_demo_flag(args).scenario
+    except console_module.DemoFlagError:
+        return None
+
+
 def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
     """Dispatch the invoked subcommand.
 
@@ -186,6 +196,7 @@ def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
     # so the CLI never crashes on a Sentry failure.
     _initialize_sentry_from_env(dict(os.environ))
 
+    demo_scenario = _leading_demo_scenario(args)
     demo_exit, args = console_module.apply_demo_flag(args, out)
     if demo_exit is not None:
         return demo_exit
@@ -200,6 +211,9 @@ def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
         "health": _dispatch_health,
         "serve": _dispatch_serve,
         "certify": certify_module.main,
+        "activity": lambda rest, *, stream: activity_module.run_activity(
+            rest, stream, demo_flag=demo_scenario, env=os.environ
+        ),
         "status": status_module.main,
     }
     dispatch = table.get(subcommand)
