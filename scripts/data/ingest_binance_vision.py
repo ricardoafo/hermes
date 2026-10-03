@@ -67,8 +67,8 @@ import shutil
 import sys
 from datetime import date
 from pathlib import Path
-from urllib.error import HTTPError, URLError
-from urllib.request import urlopen
+
+import httpx
 
 # Shared read-modify-atomic-write transaction for the multi-writer
 # manifest. See scripts/data/_manifest_util.py + change
@@ -104,9 +104,18 @@ def iter_months() -> list[tuple[int, int]]:
 
 
 def download(url: str) -> bytes:
-    """GET url and return bytes. Raises HTTPError/URLError on failure."""
-    with urlopen(url, timeout=HTTP_TIMEOUT_SECONDS) as response:
-        return response.read()
+    """GET url and return bytes.
+
+    httpx only speaks http(s), unlike urllib's ``urlopen``, which also opens
+    ``file://`` URLs (Semgrep dynamic-urllib-use-detected, #410).
+
+    Raises:
+        httpx.HTTPStatusError: non-2xx response.
+        httpx.TransportError: network failure.
+    """
+    response = httpx.get(url, timeout=HTTP_TIMEOUT_SECONDS, follow_redirects=True)
+    response.raise_for_status()
+    return response.content
 
 
 def sha256_hex(data: bytes) -> str:
@@ -254,12 +263,12 @@ def process_target(target: Target, root: Path, manifest: dict) -> tuple[str, str
     # Fetch checksum first — 404 here is the "not yet published" signal
     try:
         checksum_bytes = download(checksum_url)
-    except HTTPError as err:
-        if err.code == 404:
+    except httpx.HTTPStatusError as err:
+        if err.response.status_code == 404:
             return "not_yet", "not yet published or pair pre-listing"
-        return "failed", f"checksum HTTP {err.code}"
-    except URLError as err:
-        return "failed", f"checksum network error: {err.reason}"
+        return "failed", f"checksum HTTP {err.response.status_code}"
+    except httpx.TransportError as err:
+        return "failed", f"checksum network error: {err}"
 
     # Binance format: "<sha256hex>  <filename>\n"
     expected = checksum_bytes.decode("utf-8", errors="replace").split()[0]
@@ -267,10 +276,10 @@ def process_target(target: Target, root: Path, manifest: dict) -> tuple[str, str
     # Fetch the ZIP
     try:
         data = download(target.url())
-    except HTTPError as err:
-        return "failed", f"data HTTP {err.code}"
-    except URLError as err:
-        return "failed", f"data network error: {err.reason}"
+    except httpx.HTTPStatusError as err:
+        return "failed", f"data HTTP {err.response.status_code}"
+    except httpx.TransportError as err:
+        return "failed", f"data network error: {err}"
 
     actual = sha256_hex(data)
     if actual != expected:
