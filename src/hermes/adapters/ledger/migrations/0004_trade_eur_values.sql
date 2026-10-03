@@ -12,9 +12,7 @@
 --   parts of the gain and the selling trade. Rows of both tables keep their
 --   values; legacy rows have no trade link and are never re-projected.
 --
--- One transaction: a failure leaves the schema at 0003.
-
-BEGIN;
+-- The migration runner wraps this script in one transaction, so a failure leaves the schema at 0003.
 
 ALTER TABLE trades ADD COLUMN eur_rate      TEXT;
 ALTER TABLE trades ADD COLUMN eur_rate_date TEXT;
@@ -75,5 +73,3 @@ ALTER TABLE lot_consumptions_new RENAME TO lot_consumptions;
 CREATE INDEX IF NOT EXISTS idx_lot_consumptions_lot_id      ON lot_consumptions(lot_id);
 CREATE INDEX IF NOT EXISTS idx_lot_consumptions_consumed_at ON lot_consumptions(consumed_at);
 CREATE INDEX IF NOT EXISTS idx_lot_consumptions_trade_id    ON lot_consumptions(trade_id);
-
-COMMIT;
