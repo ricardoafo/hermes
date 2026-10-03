@@ -55,6 +55,8 @@ def test_all_expected_unit_files_are_discovered() -> None:
         "hermes-health.service",
         "hermes-backup.timer",
         "hermes-health.timer",
+        "hermes-archive-check.service",
+        "hermes-archive-check.timer",
     }
 
 
