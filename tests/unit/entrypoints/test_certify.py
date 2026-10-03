@@ -69,11 +69,11 @@ class TestRun:
 
     # SEV-1: a failed gate must not move the record (pre-registration §7)
     def test_failed_gate_prints_each_check_and_records_nothing(self, tmp_path: Path) -> None:
-        """No evidence prints ten FAIL lines, exits 1 and writes no file."""
+        """No evidence prints eight FAIL lines, exits 1 and writes no file."""
         store = JsonCertificationStore(tmp_path)
         code, out = _run(store, GateEvidence(), datetime(2026, 10, 3, tzinfo=UTC))
         assert code == 1
-        assert out.count("FAIL ") == 10
+        assert out.count("FAIL ") == 8
         assert "not computed (#354)" in out
         assert store.load(_SID) is None
 

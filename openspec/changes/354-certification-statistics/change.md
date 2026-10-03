@@ -44,6 +44,7 @@ worked example.
 - `application/calibration/window_metrics.py`: assembles the gate's
   `WindowMetrics` from those functions.
 - `hermes certify --performance FILE`.
+- Backtest gate: drop the OOS-only trade count and bootstrap CI rows (D-7).
 
 ### Out
 
@@ -120,6 +121,14 @@ worked example.
   on an invented value. Cases: fewer than two returns, zero variance, no
   trades. Profit factor with no losing trades is infinite and passes; the fee
   ratio with gross PnL of zero or less is infinite and fails.
+- **Cost of reversal**: LOW.
+
+### D-7 (DECIDED by the Code Owner, 2026-10-03): trade count and bootstrap CI are OOS-only
+
+- **Decision**: the backtest gate from #382 no longer applies the §9 trade
+  count (≥ 30) and bootstrap CI (lower bound > 0) rows to Train+Val; both
+  still bind the one-shot OOS test. This answers the open question in #382
+  (change `355-certification-gates` D-2).
 - **Cost of reversal**: LOW.
 
 ## Requirements

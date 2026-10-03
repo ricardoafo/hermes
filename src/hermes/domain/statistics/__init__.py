@@ -2,3 +2,5 @@
 
 Reference: openspec/changes/354-certification-statistics/change.md.
 """
+
+__all__: list[str] = []
