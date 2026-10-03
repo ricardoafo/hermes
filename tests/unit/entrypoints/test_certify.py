@@ -180,3 +180,94 @@ class TestMain:
         )
         assert code == 1
         assert not store_dir.exists()
+
+
+def _strong_performance(window: str) -> dict[str, object]:
+    """120 days of steady gains, 30 winners and 10 losers, 5 logged trials."""
+    equity = [5000.0]
+    for i in range(119):
+        equity.append(equity[-1] * (1.003 if i % 2 == 0 else 1.001))
+    return {
+        "window": window,
+        "daily_equity": equity,
+        "trades": [{"gross_pnl": 50.0, "fees": 2.0}] * 30
+        + [{"gross_pnl": -20.0, "fees": 2.0}] * 10,
+        "trials": {"count": 5, "sharpe_variance": 0.0001},
+        "bootstrap_seed": 11,
+    }
+
+
+def _performance_file(tmp_path: Path, payload: object) -> Path:
+    path = tmp_path / "performance.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+class TestPerformance:
+    """`--performance` computes a window's §9 metrics (#354)."""
+
+    def test_train_val_fills_the_backtest_metrics(self, tmp_path: Path) -> None:
+        """A train_val file fills the backtest section and leaves OOS empty."""
+        path = _performance_file(tmp_path, _strong_performance("train_val"))
+        evidence = certify_module.apply_performance(GateEvidence(), path)
+        assert evidence.backtest is not None
+        assert evidence.backtest.is_complete()
+        assert evidence.oos is None
+
+    def test_oos_fills_the_oos_metrics(self, tmp_path: Path) -> None:
+        """An oos file fills the OOS section only."""
+        path = _performance_file(tmp_path, _strong_performance("oos"))
+        evidence = certify_module.apply_performance(GateEvidence(), path)
+        assert (evidence.backtest, evidence.oos is not None) == (None, True)
+
+    def test_hash_covers_both_files(self, tmp_path: Path) -> None:
+        """Changing the evidence file changes the recorded hash even with the same performance."""
+        path = _performance_file(tmp_path, _strong_performance("train_val"))
+        first = certify_module.apply_performance(GateEvidence(sha256="a" * 64), path)
+        second = certify_module.apply_performance(GateEvidence(sha256="b" * 64), path)
+        assert first.sha256 != second.sha256
+
+    @pytest.mark.parametrize(
+        "change",
+        [
+            {"window": "validation"},
+            {"daily_equity": "lots"},
+            {"trades": [{"gross_pnl": 1.0}]},
+            {"bootstrap_seed": None},
+            {"trials": {"count": 0, "sharpe_variance": 0.1}},
+            {"daily_equity": [100.0, 0.0]},
+            {"extra": 1},
+        ],
+    )
+    def test_malformed_performance_is_rejected(
+        self, tmp_path: Path, change: dict[str, object]
+    ) -> None:
+        """Bad windows, shapes, a missing seed, bad trials or zero equity are errors."""
+        path = _performance_file(tmp_path, {**_strong_performance("train_val"), **change})
+        with pytest.raises(EvidenceError):
+            certify_module.apply_performance(GateEvidence(), path)
+
+    def test_strong_backtest_passes_the_gate(self, tmp_path: Path) -> None:
+        """Computed metrics plus a calibration fill certify the backtest end to end."""
+        evidence_path = _evidence_file(tmp_path, {"backtest": {"calibration_fill_count": 40}})
+        performance_path = _performance_file(tmp_path, _strong_performance("train_val"))
+        store_dir = tmp_path / "store"
+        out = io.StringIO()
+        code = certify_module.main(
+            [
+                _SID,
+                "--evidence",
+                str(evidence_path),
+                "--performance",
+                str(performance_path),
+                "--config-dir",
+                str(_PROJECT_ROOT / "config"),
+                "--store-dir",
+                str(store_dir),
+            ],
+            stream=out,
+        )
+        record = JsonCertificationStore(store_dir).load(_SID)
+        assert code == 0, out.getvalue()
+        assert record is not None
+        assert record.state == CertificationState.BACKTEST_CERTIFIED
