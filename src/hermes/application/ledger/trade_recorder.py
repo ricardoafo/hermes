@@ -73,5 +73,6 @@ class TradeRecorder:
             qty=Quantity(amount=fill.executed_qty, asset=pair.base),
             price=Price(amount=fill.avg_price, pair=pair),
             fee=fill.fee,
+            strategy_id=fill.strategy_id,
         )
         return self._ledger.record_trade(record, event)

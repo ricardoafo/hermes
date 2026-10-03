@@ -69,6 +69,7 @@ def _event(trade: TradeRecord) -> TradeExecuted:
         qty=Quantity(amount=trade.qty, asset=trade.pair.base),
         price=Price(amount=trade.price, pair=trade.pair),
         fee=trade.fee,
+        strategy_id=trade.strategy_id,
     )
 
 
