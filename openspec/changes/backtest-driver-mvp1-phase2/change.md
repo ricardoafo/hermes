@@ -180,9 +180,11 @@ outcome = kernel.execute(
     correlation_id=correlation_id,
 )
 match outcome:
-    case Executed(trade=trade): ledger.append_event(trade)
+    case Executed(fill=fill): trade_recorder.record(fill, correlation_id=correlation_id)
     case Declined() | Halted(): ...
 ```
+
+`TradeRecorder.record` (merged from main with the EUR trade values) writes the trade row with the same `TradeExecuted` v2 event the kernel returns in `Executed.trade`; the backtest keeps the event in memory instead.
 
 ## Test plan
 
