@@ -31,6 +31,7 @@ Closes: #199 (empty ExchangePort stub with no methods).
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Protocol, runtime_checkable
 
 from hermes.domain.fees import FeeSchedule
@@ -41,7 +42,7 @@ from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
 
-__all__ = ["ExchangePort"]
+__all__ = ["ExchangePort", "StopLossPort"]
 
 
 @runtime_checkable
@@ -222,6 +223,29 @@ class ExchangePort(Protocol):
 
         Raises:
             hermes.domain.errors.InfraError: On any transport or exchange
+                failure.
+        """
+        ...
+
+
+@runtime_checkable
+class StopLossPort(Protocol):
+    """An exchange that can hold a resting stop-loss for an open position.
+
+    Separate from :class:`ExchangePort` because a simulated exchange has no
+    outage to protect against. Real venues rest the stop on the exchange so a
+    position stays protected while hermes is down (#148).
+    """
+
+    def place_stop_loss(self, *, order: Order, stop_price: Decimal) -> str:
+        """Rest a stop-loss SELL for ``order.qty`` triggered at ``stop_price``.
+
+        Returns:
+            The exchange order id, usable with
+            :meth:`ExchangePort.cancel_order`.
+
+        Raises:
+            hermes.domain.errors.InfraError: On any exchange or transport
                 failure.
         """
         ...
