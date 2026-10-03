@@ -34,6 +34,7 @@
     // changelog.d/ is a single Markdown bullet — no H1 by design.
     // README.md in that directory IS a full document and is NOT ignored.
     "changelog.d/[0-9]*.md",
+    "changelog.d/+*.md",
     "changelog.d/wave-*.md"
   ]
 }

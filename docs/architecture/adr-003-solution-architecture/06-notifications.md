@@ -1,7 +1,7 @@
 # 06 — Notification Pipeline
 
 **Parent ADR**: [README.md](./README.md)
-**Status**: Accepted
+**Status**: Accepted — read-only inbound commands proposed in [ADR-015](../adr-015-read-only-telegram-commands.md), which supersedes the outbound-only rule in part once accepted
 **Accepted**: 2026-08-21
 
 ## Question this section answers
