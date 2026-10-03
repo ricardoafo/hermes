@@ -1,11 +1,9 @@
 # ADR-011: Paper-trading engine — hexagonal fill kernel with same-code-path backtest / shadow / live parity, bucket-aware domain, calibration as CI gate, risk overlay, and pre-registered Strategy Development Protocol
 
 **Date**: 2026-08-25
-**Status**: PROPOSED
+**Status**: Accepted — confirmed by Ricardo on 2026-10-03; text merged unchanged via #231 on 2026-08-26
 **Deciders**: Ricardo Afonso (product owner, theorist), Claude (proposer, synthesizer)
 **Supersedes**: —
-
-> **Draft note**: this ADR is PROPOSED and unsigned. It expands the 20-decision outline in `docs/research/paper-trading/SYNTHESIS.md` §3, folds in SA-9's portfolio-shock risk overlay and the Strategy Development Protocol from `docs/experiments/swing-mvp1/pre-registration-v1.md`, and consolidates 10 sub-agent research reports (SA-0 through SA-10) into a single foundational-subsystem architectural commitment. Awaiting operator review before Accepted.
 
 ---
 
@@ -725,4 +723,4 @@ New issues to file (one per spec, all as sub-issues of #25):
 - **First testnet baseline measurement job run** (7-day sim-off, Spec 6 P0 pre-run, D-19)
 - **Import-linter contracts landed** (Spec 7) — three contracts per D-15, D-01, D-03
 - **First CERTIFIED shadow-mode run** (SYNTHESIS §5 timeline: ~12 weeks after Spec 1 lands)
-- **Operator signature on this ADR** to move status from PROPOSED to Accepted
+- **Operator signature on this ADR** — confirmed 2026-10-03, see [decisions journal](../decisions/2026-10-03-adr-011-accepted.md)
