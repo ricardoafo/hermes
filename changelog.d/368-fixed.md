@@ -1,0 +1,1 @@
+- The Telegram failure alert for `hermes.service` now runs from `/opt/hermes/bin`, so a missing or broken release no longer silences it; its unit is named `hermes-notify-failure@hermes.service`, and the VPS bootstrap clears a stale failed alert unit and turns on the healthchecks.io timer once the ping URL is configured (#364).
