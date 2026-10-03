@@ -1,0 +1,1 @@
+- **Shadow-parity metrics M-09 and M-10** (`application/calibration/shadow_parity.py`): P&L correlation and Sharpe match between the live shadow run and a backtest replay of the same days, with ADR-011 thresholds; verdicts show only pass, block or insufficient, and raw values stay sealed until certification. Closes #360.
