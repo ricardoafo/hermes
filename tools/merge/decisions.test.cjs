@@ -609,3 +609,37 @@ test('handMergeComment: names the reason and the label to remove', () => {
   assert.match(body, /no workflows permission/);
   assert.ok(body.includes(HAND_MERGE_LABEL));
 });
+
+
+// ============================================================
+// skipFailedHead — a head that failed the gates is not re-gated
+// ============================================================
+
+const { GATES_FAILED_LABEL, skipFailedHead } = require('./decisions.cjs');
+
+test('skipFailedHead: a labelled head that was told it failed is skipped', () => {
+  const head = 'a'.repeat(40);
+  const { body } = badComment({ n: 435, head, gate: 'pytest: tests/x.py::test_y', base: 'b'.repeat(40) });
+  const res = skipFailedHead({ head, labels: [GATES_FAILED_LABEL], comments: [{ body }] });
+  assert.equal(res.skip, true);
+  assert.match(res.reason, /aaaaaaa/);
+});
+
+test('skipFailedHead: a new push is a new head and is tried again', () => {
+  const { body } = badComment({ n: 435, head: 'old', gate: 'pytest', base: 'b' });
+  const res = skipFailedHead({ head: 'new', labels: [GATES_FAILED_LABEL], comments: [{ body }] });
+  assert.equal(res.skip, false);
+});
+
+test('skipFailedHead: removing the label retries the same head', () => {
+  const head = 'c'.repeat(40);
+  const { body } = badComment({ n: 1, head, gate: 'mypy', base: 'd' });
+  assert.equal(skipFailedHead({ head, labels: [], comments: [{ body }] }).skip, false);
+});
+
+test('badComment: tells the writer the head will not be retried and how to retry', () => {
+  const { body } = badComment({ n: 9, head: 'e'.repeat(40), gate: 'pytest: tests/a.py::t', base: 'f'.repeat(40) });
+  assert.match(body, /will not try this head again/);
+  assert.ok(body.includes(GATES_FAILED_LABEL));
+  assert.match(body, /tests\/a\.py::t/);
+});

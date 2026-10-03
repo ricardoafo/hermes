@@ -544,10 +544,40 @@ function badComment(input) {
     `The merge queue did not merge #${input.n}: the \`${input.gate}\` gate failed on`,
     `\`main\` ${input.base.slice(0, 7)} + the batch PRs approved before it + head ${input.head.slice(0, 7)}.`,
     '',
-    'The PR stays open and approved, and the queue retries it on its next pass.',
-    'Push a fix if the failure is real.',
+    `The queue will not try this head again: it is labelled \`${GATES_FAILED_LABEL}\`.`,
+    'Push a fix (a new head is tried again), or remove the label to retry this one.',
   ].join('\n');
   return { body, marker };
+}
+
+/**
+ * Label on a PR whose current head failed the merged-tree gates.
+ */
+const GATES_FAILED_LABEL = 'merge-queue:gates-failed';
+
+/**
+ * Should Select pass over this PR because its head already failed?
+ *
+ * A gate failure that comes from the PR itself fails the same way every
+ * pass: #435 was rebuilt and re-gated every pass for an hour and a half
+ * (2026-10-03). Once a head has been told it failed AND carries the
+ * label, Select skips it. A new push is a new head and is tried again;
+ * removing the label retries the same head.
+ *
+ * @param {{ head: string, labels: string[], comments: Array<{ body?: string|null }> }} input
+ * @returns {{ skip: boolean, reason: string }}
+ */
+function skipFailedHead(input) {
+  if (!input.labels.includes(GATES_FAILED_LABEL)) {
+    return { skip: false, reason: 'no gates-failed label' };
+  }
+  if (!hasBadComment(input.comments, input.head)) {
+    return { skip: false, reason: 'gates failed on an older head; this head is new' };
+  }
+  return {
+    skip: true,
+    reason: `gates already failed on head ${input.head.slice(0, 7)} — waiting for a push or the label's removal`,
+  };
 }
 
 /**
@@ -674,6 +704,8 @@ module.exports = {
   badComment,
   hasBadComment,
   HAND_MERGE_LABEL,
+  GATES_FAILED_LABEL,
+  skipFailedHead,
   queueCanMerge,
   classifyMergeFailure,
   handMergeComment,
