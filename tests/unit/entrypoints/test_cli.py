@@ -25,6 +25,7 @@ import httpx
 import pytest
 import respx
 
+from hermes.entrypoints import _health as health_module
 from hermes.entrypoints import cli as cli_module
 
 _RECORDED_DIR = Path(__file__).parents[2] / "fixtures" / "binance_public"
@@ -162,6 +163,50 @@ class TestUnknownSubcommand:
 
 class TestHealthDispatch:
     """`hermes health` sub-dispatch — no-arg full walk + per-integration probe."""
+
+    @pytest.fixture(autouse=True)
+    def _no_dotenv_in_cwd(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Run from an empty directory so a developer's ``.env.local`` is never read."""
+        monkeypatch.chdir(tmp_path)
+
+    def test_health_reads_credentials_from_env_local(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A credential present only in ``.env.local`` reaches the probe (#316).
+
+        Before the fix the probe saw only the process env and reported
+        "not set" while pointing the operator at ``.env.local``.
+        """
+        monkeypatch.delenv("HERMES_SENTRY__DSN", raising=False)
+        (tmp_path / ".env.local").write_text(
+            "HERMES_SENTRY__DSN=https://abc@o1.ingest.sentry.io/1\n",  # gitleaks:allow
+            encoding="utf-8",
+        )
+        seen: dict[str, str] = {}
+
+        def _probe(env: dict[str, str]) -> health_module.HealthCheckResult:
+            seen.update(env)
+            return health_module.check_sentry({})
+
+        monkeypatch.setattr(health_module, "get_check", lambda _name: _probe)
+        cli_module.main(["health", "sentry"], stream=io.StringIO())
+        assert seen["HERMES_SENTRY__DSN"] == "https://abc@o1.ingest.sentry.io/1"  # gitleaks:allow
+
+    def test_health_real_env_wins_over_env_local(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A process env var shadows the same key in ``.env.local``, as in ``load_config``."""
+        monkeypatch.setenv("HERMES_ENV", "from-shell")
+        (tmp_path / ".env.local").write_text("HERMES_ENV=from-file\n", encoding="utf-8")
+        seen: dict[str, str] = {}
+
+        def _probe(env: dict[str, str]) -> health_module.HealthCheckResult:
+            seen.update(env)
+            return health_module.check_sentry({})
+
+        monkeypatch.setattr(health_module, "get_check", lambda _name: _probe)
+        cli_module.main(["health", "sentry"], stream=io.StringIO())
+        assert seen["HERMES_ENV"] == "from-shell"
 
     def test_health_without_arg_runs_all_and_reports_not_configured_on_empty_env(
         self, monkeypatch: pytest.MonkeyPatch

@@ -41,14 +41,38 @@ import sys
 from pathlib import Path
 from typing import Any, Final
 
+from dotenv import dotenv_values
+
 from hermes.entrypoints import _health as health_module
 from hermes.entrypoints import preview as preview_module
 from hermes.entrypoints import serve as serve_module
 from hermes.infrastructure import sentry_integration
 from hermes.infrastructure.config.errors import ConfigError
-from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
+from hermes.infrastructure.config.loader import (
+    DEFAULT_CONFIG_DIR,
+    DEFAULT_DOTENV_PATH,
+    load_config,
+)
 
 __all__ = ["main"]
+
+
+def _health_env(dotenv_path: Path = DEFAULT_DOTENV_PATH) -> dict[str, str]:
+    """Return the env snapshot ``hermes health`` probes, including ``.env.local``.
+
+    Mirrors :func:`load_config`: a missing dotenv file is a no-op and a
+    real environment variable always wins over the file. Unlike
+    ``load_config`` it does not mutate :data:`os.environ`.
+
+    Args:
+        dotenv_path: Dotenv file to merge under the process environment.
+
+    Returns:
+        The merged snapshot.
+    """
+    from_file = {k: v for k, v in dotenv_values(dotenv_path).items() if v is not None}
+    return {**from_file, **os.environ}
+
 
 _SUBCOMMAND_HELP: Final[dict[str, str]] = {
     "preview": "Render + optionally send notification templates.",
@@ -192,7 +216,7 @@ def _dispatch_health(rest: list[str], *, stream: Any) -> int:
         integration, 3 on missing configuration.
     """
     if not rest:
-        results = health_module.run_all(dict(os.environ))
+        results = health_module.run_all(_health_env())
         stream.write("# hermes health (all integrations)\n")
         health_module.render_table_multi(results, stream)
         return health_module.aggregate_exit_code(results)
@@ -204,7 +228,7 @@ def _dispatch_health(rest: list[str], *, stream: Any) -> int:
         stream.write(f"ERROR: unknown integration {integration!r}. Available: {available}\n")
         return 2
 
-    result = check(dict(os.environ))
+    result = check(_health_env())
     stream.write(f"# hermes health {integration}\n")
     health_module.render_table(result, stream)
     return result.exit_code
