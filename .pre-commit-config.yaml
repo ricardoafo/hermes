@@ -97,6 +97,13 @@ repos:
         files: ^scripts/dev/pr-body-lint\.sh$
         pass_filenames: false
 
+      - id: pr-body-recheck-self-test
+        name: pr-body-recheck self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/pr-body-recheck.sh'
+        language: system
+        files: ^scripts/dev/pr-body-recheck\.sh$
+        pass_filenames: false
+
       - id: create-pr-self-test
         name: create-pr self-test
         entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/create-pr.sh'

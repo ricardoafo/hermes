@@ -168,23 +168,19 @@ jobs:
   # content, not the placeholder comment left in place. Prevents
   # "opened a PR with empty body" from ever reaching review.
   #
-  # Dependabot exemption: dependabot's auto-generated PR body carries
-  # its own structured content (upstream diff + release notes + compat
-  # score) that does NOT map to our 4-section (Summary/Related/Testing/
-  # Risk) template. Failing the check on every dependabot PR trained
-  # reviewers to ignore the red X, defeating the gate for human PRs
-  # too. We skip the job for dependabot ONLY — every human PR still
-  # gates on it. Skipped jobs are accepted by ci-success-check.sh (see
-  # scripts/dev/ci-success-check.sh, allowlist {success, skipped}), so
-  # dependabot PRs unblock cleanly. Follow-up: PR body auto-rewriter
-  # for dependabot into our 4-section format (see the p3 issue linked
-  # from the CHANGELOG fragment).
+  # The body is fetched from the API rather than the event payload, so a
+  # re-run lints the CURRENT body. Editing a body pushes nothing and does
+  # not re-run CI; .github/workflows/pr-body-recheck.yml re-runs this job
+  # (and CI success, its dependent) when its result goes stale (#350).
+  # Dependabot PRs gate here too: the body rewriter from #344 puts them
+  # in the 4-section template (#162).
   # ─────────────────────────────────────────────────────────────────────
   pr-body:
     name: PR body
-    if: >-
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.user.login != 'dependabot[bot]'
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: read
     runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 3
     steps:
@@ -194,8 +190,17 @@ jobs:
 
       - name: Lint PR body
         env:
-          PR_BODY: ${{ github.event.pull_request.body }}
-        run: bash scripts/dev/pr-body-lint.sh
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        # The self-hosted runner has no gh or jq; curl + python3 it does have.
+        run: |
+          PR_BODY="$(curl -fsSL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" \
+            | python3 -c 'import json, sys; sys.stdout.write(json.load(sys.stdin).get("body") or "")')"
+          export PR_BODY
+          bash scripts/dev/pr-body-lint.sh
 
   # ─────────────────────────────────────────────────────────────────────
   # CHANGELOG enforcement — blocks feat/fix/refactor/perf PRs that
