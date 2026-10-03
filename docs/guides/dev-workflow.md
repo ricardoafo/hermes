@@ -133,9 +133,9 @@ ADR, a Q&A, or an incident, reference it in the body.
 
 ### Local pre-flight (mandatory before push)
 
-Before every `git push`, the same suite CI runs on the PR must pass locally.
-This is enforced by a `pre-push` git hook — attempting to push with any
-check red is blocked at the git level.
+Before every `git push`, a fast subset of the suite CI runs on the PR must
+pass locally. This is enforced by a `pre-push` git hook: attempting to push
+with any of those checks red is blocked at the git level.
 
 **One-time install** (per clone):
 
@@ -150,26 +150,32 @@ operation is gated locally before it touches the remote.
 **Manual invocation** (when you want to check without pushing):
 
 ```bash
-bash scripts/dev/pr-preflight.sh              # normal — mirrors CI
+bash scripts/dev/pr-preflight.sh              # full suite, mirrors CI
+bash scripts/dev/pr-preflight.sh --pre-push   # the subset the hook runs
 bash scripts/dev/pr-preflight.sh --body FILE  # also lint a draft PR body
 ```
 
-**What it runs** (identical to CI on the PR):
+**What the hook runs** (`--pre-push`):
 
-1. Branch is up-to-date with `origin/main` (rebase check)
-2. `uv run ruff format --check .` — full-tree formatting
-3. `uv run ruff check .` — full-tree lint
+1. PR title (HEAD subject) follows the conventional-commit rule
+2. Branch is up-to-date with `origin/main`. **Fails fast**: when the base
+   is stale the run stops here, in seconds, with the rebase command.
+3. `uv run ruff format --check .` and `uv run ruff check .`, full tree
 4. `uv run mypy --strict src/hermes`
-5. `uv run lint-imports` — hexagonal boundary contracts
-6. `uv run pip-audit --skip-editable` — dep CVE scan
-7. `uv run pytest tests/`
-8. `markdownlint-cli2 "**/*.md" "#node_modules" "#.venv"` — full-tree
-9. `bash scripts/dev/regenerate-guides-index.sh` + drift check on
-   `docs/guides/README.md`
-10. (Optional with `--body`) `scripts/dev/pr-body-lint.sh` against the file
+5. `uv run lint-imports`, the hexagonal boundary contracts
+6. `markdownlint-cli2 "**/*.md" "#node_modules" "#.venv"`, full tree
+7. Guides index drift check on `docs/guides/README.md`
+8. CHANGELOG fragment and openspec change spec, when the commit type needs
+   them
+9. (Optional with `--body`) `scripts/dev/pr-body-lint.sh` against the file
 
-If any of the above fails locally, it will fail on CI. Fix at push
-time, not after a red-CI round-trip.
+**Left to CI** in pre-push mode, because CI runs them on every head:
+`pytest tests/unit/` with coverage and the per-package thresholds,
+`pip-audit`, `radon` and `vulture`. The manual full run includes them.
+This keeps a push to about a minute instead of about five (#416).
+
+If any check fails locally, it will fail on CI. Fix it at push time, not
+after a red-CI round-trip.
 
 **Bypass** — do not skip this hook. If you have a genuine reason a
 check should not apply to a specific push, fix the check to

@@ -5,12 +5,16 @@
 # CI runs on the PR; if any fails locally, CI will fail too.
 #
 # Invocation:
-#   bash scripts/dev/pr-preflight.sh                          # normal pre-push
+#   bash scripts/dev/pr-preflight.sh                          # full suite
+#   bash scripts/dev/pr-preflight.sh --pre-push               # fast subset (git hook)
 #   bash scripts/dev/pr-preflight.sh --body FILE              # + PR body lint
 #   bash scripts/dev/pr-preflight.sh --render-body <change>   # render + lint
 #   HERMES_SELF_TEST=1 bash scripts/dev/pr-preflight.sh       # sanity check
 #
-# Wired to git-push via `.pre-commit-config.yaml` `stages: [pre-push]` hook.
+# Wired to git-push via `.pre-commit-config.yaml` `stages: [pre-push]` hook,
+# which passes --pre-push: a stale base fails in seconds, and the slow checks
+# CI runs on every head anyway (pytest + coverage, pip-audit, radon, vulture)
+# are skipped (#416). Run without --pre-push for the full suite.
 # One-time install:
 #   pre-commit install --hook-type pre-push
 #
@@ -26,6 +30,7 @@ set -uo pipefail
 # ────────────────────────────────────────────────────────────────
 BODY_FILE=""
 RENDER_CHANGE=""
+PRE_PUSH=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --body)
@@ -44,8 +49,12 @@ while [[ $# -gt 0 ]]; do
             fi
             shift 2
             ;;
+        --pre-push)
+            PRE_PUSH=1
+            shift
+            ;;
         -h|--help)
-            sed -n '2,20p' "$0"
+            sed -n '2,24p' "$0"
             exit 0
             ;;
         *)
@@ -119,6 +128,20 @@ run_check() {
         printf "  ✗ FAIL\n"
         FAILED+=("$name")
     fi
+}
+
+# Checks CI runs on every head; skipped in --pre-push mode so a push costs
+# seconds, not minutes (#416).
+SKIPPED=()
+run_slow_check() {
+    if [[ "$PRE_PUSH" == "1" ]]; then
+        printf "▶ %s
+  - skipped in pre-push (CI runs it on every head)
+" "$1"
+        SKIPPED+=("$1")
+        return 0
+    fi
+    run_check "$@"
 }
 
 # ────────────────────────────────────────────────────────────────
@@ -198,6 +221,14 @@ check_base_current() {
     git merge-base --is-ancestor origin/main HEAD
 }
 run_check "Base up-to-date with origin/main" check_base_current
+# Fail fast: every later check would run against a base the push will be
+# refused for anyway (#416).
+if [[ ${#FAILED[@]} -gt 0 && " ${FAILED[*]} " == *" Base up-to-date with origin/main "* ]]; then
+    echo ""
+    echo "✗ Branch is behind origin/main — stopping before the remaining checks."
+    echo "  Rebase first:  git fetch origin main && git rebase origin/main"
+    exit 1
+fi
 
 # 2. Ruff format on FULL tree (CI runs `ruff format --check .`)
 run_check "ruff format --check ."     uv run ruff format --check .
@@ -212,17 +243,17 @@ run_check "mypy --strict src/hermes"  uv run mypy --strict src/hermes
 run_check "lint-imports"              uv run lint-imports
 
 # 6. Pip-audit (CVE scan) — --skip-editable to ignore local hermes package
-run_check "pip-audit --skip-editable" uv run pip-audit --skip-editable
+run_slow_check "pip-audit --skip-editable" uv run pip-audit --skip-editable
 
 # 7. Radon complexity — matches CI quality matrix leg "complexity".
 #    NOTE: radon cc --min B prints violations but exits 0 regardless; kept
 #    as-is to mirror CI exactly (informational-only gate). Strengthening the
 #    exit-code semantic is out of scope for this drift-closure change.
-run_check "radon (complexity)"        uv run radon cc --min B src/
+run_slow_check "radon (complexity)"        uv run radon cc --min B src/
 
 # 8. Vulture dead-code — matches CI quality matrix leg "deadcode".
 #    Reads config from [tool.vulture] in pyproject.toml (min_confidence=80).
-run_check "vulture (dead code)"       uv run vulture src/
+run_slow_check "vulture (dead code)"       uv run vulture src/
 
 # 9. Pytest — verbatim CI (unit job): tests/unit/ with branch coverage,
 #    emits coverage.json which check #14 (coverage-check.py) reads.
@@ -243,7 +274,7 @@ check_pytest_gated() {
     fi
     uv run pytest tests/unit/ --cov=src/hermes --cov-branch --cov-report=json --cov-report=term
 }
-run_check "pytest tests/unit/ (CI-verbatim)" check_pytest_gated
+run_slow_check "pytest tests/unit/ (CI-verbatim)" check_pytest_gated
 
 # 14. Per-package coverage thresholds — matches CI unit job's
 #     `coverage-check.py --bootstrap` step. Depends on coverage.json
@@ -255,7 +286,7 @@ check_coverage_gated() {
     fi
     uv run python scripts/dev/coverage-check.py --bootstrap
 }
-run_check "coverage-check.py (per-package thresholds)" check_coverage_gated
+run_slow_check "coverage-check.py (per-package thresholds)" check_coverage_gated
 
 # 10. Markdownlint on FULL tree (CI runs the same glob)
 run_check "markdownlint-cli2 (full tree)" \
@@ -425,6 +456,10 @@ if [[ -n "$BODY_FILE" ]]; then
     MODE_DESC="with PR body lint"
 else
     MODE_DESC="without PR body lint — pass --body FILE or --render-body <change> to add it"
+fi
+
+if [[ "$PRE_PUSH" == "1" ]]; then
+    MODE_DESC="pre-push, ${#SKIPPED[@]} slow checks left to CI; ${MODE_DESC}"
 fi
 
 echo ""
