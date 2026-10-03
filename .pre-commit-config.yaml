@@ -229,13 +229,14 @@ repos:
         entry: uv run lint-imports
         pass_filenames: false
 
-      # Pre-push: mirror the exact CI suite locally. Blocks push if any
-      # check would fail on the PR. Slower than commit-stage hooks (~30-60s)
-      # — that's the tradeoff for catching PR-open failures at push time.
+      # Pre-push: the fast subset of the CI suite. A stale base fails in
+      # seconds; pytest + coverage, pip-audit, radon and vulture are left to
+      # CI, which runs them on every head (#416). Run
+      # `bash scripts/dev/pr-preflight.sh` by hand for the full suite.
       # One-time install: `pre-commit install --hook-type pre-push`.
       - id: pr-preflight
-        name: pr-preflight (mirror CI locally)
-        entry: bash scripts/dev/pr-preflight.sh
+        name: pr-preflight (fast pre-push subset)
+        entry: bash scripts/dev/pr-preflight.sh --pre-push
         language: system
         stages: [pre-push]
         pass_filenames: false
