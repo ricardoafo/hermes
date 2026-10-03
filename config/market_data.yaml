@@ -1,0 +1,28 @@
+# Live closed-bar source configuration.
+#
+# Loaded by hermes.infrastructure.config.load_config into MarketDataConfig.
+# Public Binance market data only: GET requests, no API key, no link to
+# allow_mainnet. See docs/decisions/2026-10-02-binance-public-market-data-host.md.
+#
+# Env overrides live at HERMES_MARKET_DATA__<FIELD>.
+
+# The validator allows this host only; trading endpoints live elsewhere.
+base_url: https://data-api.binance.vision
+# Pre-registration v1 section 3.
+pairs: [BTC/USDT, ETH/USDT, SOL/USDT]
+# The swing strategy never enters without 1d bars, so both are followed.
+intervals: [4h, 1d]
+# Warm-up depth per stream. 4h indicator values stop changing at 45 bars;
+# the 1d EMA needs 200. 300 matches the strategy's own buffer cap.
+warmup_bars_4h: 300   # floor 45, max 999
+warmup_bars_1d: 300   # floor 200, max 999
+# Wait after a candle boundary before the bar counts as closed.
+settle_delay_seconds: 5
+# Re-poll period while a bar is overdue, then once the source is stale.
+retry_interval_seconds: 5
+slow_retry_interval_seconds: 30
+stale_after_seconds: 900
+timeout_sec: 10.0
+# 10 percent of Binance's 6000 weight per minute cap.
+rate_limit_max_weight: 600
+rate_limit_window_seconds: 60
