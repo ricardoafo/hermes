@@ -290,3 +290,11 @@ class TestDataSplitEnforcerTrades:
         assert len(trades_received) == 1, (
             f"Expected 1 trade for train date, got {len(trades_received)}."
         )
+
+
+def test_frozen_domain_error_raised_inside_certification_context_propagates() -> None:
+    """A frozen DomainError raised in the block propagates as itself, not FrozenInstanceError."""
+    with pytest.raises(OOSDataLeakageError) as exc, certification_context():
+        raise OOSDataLeakageError(attempted_timestamp="t", oos_start="s")
+    assert exc.value.attempted_timestamp == "t"
+    assert is_certification_mode() is False

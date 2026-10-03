@@ -49,14 +49,24 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+from hermes.adapters.data_manifest.json_file import JsonFileDatasetManifest
 from hermes.adapters.fees.binance_history import load_binance_fee_history
 from hermes.adapters.market_data.binance_historical import BinanceHistoricalAdapter
 from hermes.application.calibration.harness import CalibrationHarness
+from hermes.application.calibration.lifecycle import CertificationState
+from hermes.application.strategy_protocol.pinned_dataset import (
+    PinnedBars,
+    assert_manifest_matches_preregistration,
+    load_pinned_bars,
+)
+from hermes.application.strategy_protocol.preregistration import PreRegistration
+from hermes.domain.errors import DataManifestFormatError, DomainError
 from hermes.domain.fees.fee_schedule_selector import (
     FeeHistoryOutOfRangeError,
     select_fee_schedule,
 )
 from hermes.domain.market_data.bar import Bar
+from hermes.domain.market_data.dataset_manifest import DatasetManifest, DataSplit
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.risk.state import PortfolioState
 from hermes.domain.strategy.signal import SignalKind, StrategySignal
@@ -70,6 +80,7 @@ from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
 
 FEE_HISTORY_CSV = Path("docs/experiments/swing-mvp1/fee-history.csv")
+DATA_MANIFEST_JSON = Path("docs/experiments/swing-mvp1/data-manifest.json")
 
 # Phase-1 defaults (deliberately narrow — see docstring).
 _DEFAULT_PAIR = "BTCUSDT"
@@ -101,22 +112,23 @@ def _parse_iso_date(s: str) -> datetime:
     return datetime.fromisoformat(s).replace(tzinfo=UTC)
 
 
-async def _load_bars(
-    adapter: BinanceHistoricalAdapter,
-    pair: Pair,
-    interval: KlineInterval,
-    start: datetime,
-    end: datetime,
-) -> list[Bar]:
-    """Collect all bars for pair+interval within [start, end)."""
-    out: list[Bar] = []
-    async for bar in adapter.stream_bars(pair, interval):
-        if bar.open_time < start:
-            continue
-        if bar.open_time >= end:
-            break
-        out.append(bar)
-    return out
+def _load_manifest(path: Path) -> DatasetManifest:
+    """Load the data manifest and refuse it unless it matches the signed pre-registration."""
+    manifest = JsonFileDatasetManifest(path).load()
+    pre_reg = PreRegistration()
+    assert_manifest_matches_preregistration(
+        manifest, experiment_id=pre_reg.experiment_id(), windows=pre_reg.data_windows()
+    )
+    return manifest
+
+
+def _datasets_payload(*loads: PinnedBars) -> list[dict[str, Any]]:
+    """Return the manifest entries behind ``loads``, one per dataset id."""
+    entries = {e.dataset_id: e for load in loads for e in load.entries}
+    return [
+        {"dataset_id": e.dataset_id, "content_sha256": e.content_sha256, "row_count": e.row_count}
+        for _, e in sorted(entries.items())
+    ]
 
 
 def _synthesise_fill(
@@ -213,6 +225,34 @@ def _jsonify(obj: Any) -> Any:
     return obj
 
 
+async def _load_verified_bars(
+    manifest: DatasetManifest, pair: Pair, start: datetime, end: datetime
+) -> tuple[list[Bar], list[Bar], list[dict[str, Any]]]:
+    """Load 4h and 1d bars for ``[warm-up, end)`` through the data manifest."""
+    adapter = BinanceHistoricalAdapter.create()
+    # Load a warm-up buffer BEFORE the trading window so the strategy's
+    # EMA(200) + other indicators are populated by the time we start
+    # counting signals. Nothing before Train is pinned, so warm-up stops there.
+    warmup_start = max(start - timedelta(days=_WARMUP_DAYS), manifest.splits[DataSplit.TRAIN].start)
+    # No persisted certification state yet (#355): a backtest is UNTRUSTED, so OOS is refused.
+    loads = [
+        await load_pinned_bars(
+            adapter,
+            manifest,
+            pair=pair,
+            interval=interval,
+            start=warmup_start,
+            end=end,
+            state=CertificationState.UNTRUSTED,
+            now=datetime.now(UTC),
+        )
+        for interval in (KlineInterval.H4, KlineInterval.D1)
+    ]
+    bars_4h = list(loads[0].bars)
+    bars_1d = list(loads[1].bars)
+    return bars_4h, bars_1d, _datasets_payload(*loads)
+
+
 async def _run(args: argparse.Namespace) -> int:
     pair = _parse_pair(args.pair)
     start = _parse_iso_date(args.start)
@@ -223,15 +263,14 @@ async def _run(args: argparse.Namespace) -> int:
     fee_rows = load_binance_fee_history(FEE_HISTORY_CSV)
     print(f"  loaded {len(fee_rows)} Binance rows")
 
-    print("Loading historical bars from Binance Vision...")
-    adapter = BinanceHistoricalAdapter.create()
-    # Load a warm-up buffer BEFORE the trading window so the strategy's
-    # EMA(200) + other indicators are populated by the time we start
-    # counting signals.
-    warmup_start = start - timedelta(days=_WARMUP_DAYS)
-    bars_4h = await _load_bars(adapter, pair, KlineInterval.H4, warmup_start, end)
-    bars_1d = await _load_bars(adapter, pair, KlineInterval.D1, warmup_start, end)
-    print(f"  warmup_start={warmup_start.date()} bars_4h={len(bars_4h)} bars_1d={len(bars_1d)}")
+    print(f"Loading historical bars from Binance Vision, verified against {args.manifest}...")
+    try:
+        manifest = _load_manifest(Path(args.manifest))
+        bars_4h, bars_1d, datasets = await _load_verified_bars(manifest, pair, start, end)
+    except (DataManifestFormatError, DomainError, ValueError) as err:
+        print(f"ERROR: {err}", file=sys.stderr)
+        return 1
+    print(f"  bars_4h={len(bars_4h)} bars_1d={len(bars_1d)} datasets={len(datasets)}")
 
     if not bars_4h or not bars_1d:
         print("ERROR: no bars found in window — check HERMES_DATA_DIR + ingest", file=sys.stderr)
@@ -318,6 +357,7 @@ async def _run(args: argparse.Namespace) -> int:
         "window_end": end.isoformat(),
         "signals_seen": signals_seen,
         "fills_count": len(fills),
+        "datasets": datasets,
         "report": _report_to_json(report),
     }
     out_path.write_text(json.dumps(payload, indent=2, sort_keys=True))
@@ -335,6 +375,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--end", default=_DEFAULT_END, help="Window end (YYYY-MM-DD UTC)")
     parser.add_argument("--output", default=None, help="Output JSON path (default: auto)")
     parser.add_argument("--dry-run", action="store_true", help="Load bars, skip strategy + save")
+    parser.add_argument(
+        "--manifest", default=str(DATA_MANIFEST_JSON), help="Data manifest the bars must match"
+    )
     args = parser.parse_args(argv)
     return asyncio.run(_run(args))
 
