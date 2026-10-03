@@ -23,6 +23,7 @@ from hermes.infrastructure.config.models import (
     HealthchecksConfig,
     KlinesConfig,
     KrakenPublicConfig,
+    MarketDataConfig,
     MLConfig,
     SentryConfig,
     StrategiesConfig,
@@ -76,6 +77,10 @@ class HermesConfig(BaseModel):
             safe — the endpoints require no auth and the rate limiter
             sizes at Kraken's published 1 call/second public-tier cap.
             See docs/decisions/2026-08-24-kraken-public-adapter.md.
+        market_data: Live closed-bar source (public Binance klines, REST
+            polling): host allow-list, pairs, intervals, warm-up depth and
+            poll timing. Needs no credentials and is unrelated to
+            ``allow_mainnet``, which gates trading adapters only.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -92,6 +97,7 @@ class HermesConfig(BaseModel):
     healthchecks: HealthchecksConfig = HealthchecksConfig()
     sentry: SentryConfig = SentryConfig()
     kraken_public: KrakenPublicConfig = KrakenPublicConfig()
+    market_data: MarketDataConfig = MarketDataConfig()
 
     @model_validator(mode="after")
     def _mainnet_only_in_prod(self) -> HermesConfig:

@@ -128,6 +128,14 @@ _VALID_KRAKEN_PUBLIC = dedent(
     """
 ).strip()
 
+_VALID_MARKET_DATA = dedent(
+    """
+    base_url: https://data-api.binance.vision
+    pairs: [BTC/USDT, ETH/USDT, SOL/USDT]
+    intervals: [4h, 1d]
+    """
+).strip()
+
 
 @pytest.fixture()
 def config_dir(tmp_path: Path) -> Path:
@@ -143,6 +151,7 @@ def config_dir(tmp_path: Path) -> Path:
     (tmp_path / "healthchecks.yaml").write_text(_VALID_HEALTHCHECKS, encoding="utf-8")
     (tmp_path / "sentry.yaml").write_text(_VALID_SENTRY, encoding="utf-8")
     (tmp_path / "kraken_public.yaml").write_text(_VALID_KRAKEN_PUBLIC, encoding="utf-8")
+    (tmp_path / "market_data.yaml").write_text(_VALID_MARKET_DATA, encoding="utf-8")
     return tmp_path
 
 

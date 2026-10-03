@@ -16,11 +16,18 @@ Reference: docs/decisions/2026-08-23-slack-alongside-telegram.md.
 from __future__ import annotations
 
 import io
+import json
 import sys
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
+import httpx
 import pytest
+import respx
 
 from hermes.entrypoints import cli as cli_module
+
+_RECORDED_DIR = Path(__file__).parents[2] / "fixtures" / "binance_public"
 
 
 class TestTopLevelHelp:
@@ -174,11 +181,29 @@ class TestHealthDispatch:
             "HERMES_HEALTHCHECKS__PING_URL",
         ):
             monkeypatch.delenv(var, raising=False)
+        # market_data needs no credentials, so it probes the (mocked) public host
+        # and reports OK; the other four stay NOT_CONFIGURED, keeping the exit at 3.
+        recorded_ms = json.loads((_RECORDED_DIR / "time.json").read_text(encoding="utf-8"))[
+            "serverTime"
+        ]
+        rows = json.loads(
+            (_RECORDED_DIR / "klines_btcusdt_4h_limit3.json").read_text(encoding="utf-8")
+        )
+        recorded_now = datetime(1970, 1, 1, tzinfo=UTC) + timedelta(milliseconds=recorded_ms)
+        monkeypatch.setattr("hermes.entrypoints._health._now_utc", lambda: recorded_now)
         stream = io.StringIO()
-        rc = cli_module.main(["health"], stream=stream)
+        with respx.mock() as router:
+            router.get("https://data-api.binance.vision/api/v3/time").mock(
+                return_value=httpx.Response(200, json={"serverTime": recorded_ms})
+            )
+            router.get("https://data-api.binance.vision/api/v3/klines").mock(
+                return_value=httpx.Response(200, json=rows)
+            )
+            rc = cli_module.main(["health"], stream=stream)
         assert rc == 3
         output = stream.getvalue()
         assert "# hermes health (all integrations)" in output
+        assert "market_data" in output
         # Multi-row table shows every registered integration, all reporting FAIL /
         # NOT_CONFIGURED. Every registered name appears in the output.
         assert "telegram" in output
