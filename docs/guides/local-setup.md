@@ -278,6 +278,40 @@ dispatches), so unhandled exceptions in the subcommand are shipped to
 Sentry via the SDK's global excepthook. Init failures never crash the
 CLI — a Sentry outage MUST NOT take down hermes.
 
+### Market data
+
+```bash
+uv run hermes health market_data
+```
+
+Probes the public Binance market-data host (`https://data-api.binance.vision`)
+with two read-only GETs, `/api/v3/time` and the newest BTC/USDT 4h klines. It
+needs no credentials. Settings come from `config/market_data.yaml`, with
+`HERMES_MARKET_DATA__<FIELD>` overrides.
+
+Expected output:
+
+```text
+integration:  market_data
+status:       OK
+latency_ms:   212.4
+detail:       newest closed 4h bar opened 2026-10-02T16:00:00+00:00 skew_ms=-41
+last_check:   2026-10-02T22:10:57+00:00
+```
+
+Exit codes:
+
+- `0` - OK. The host answers, the local and exchange clocks agree within the
+  settle delay (5 s), and the newest closed 4h bar is visible, or is less than
+  `stale_after_seconds` (900 s) past its close.
+- `1` - FAIL. The host is unreachable or answers an error (a 451 or 403 from a
+  blocked region is permanent), the clocks differ by more than the settle
+  delay, or the 4h bar that should have closed is missing more than 900 s after
+  its close.
+
+The probe is stateless: it cannot see the running service. "The service is
+alive" is the Healthchecks.io ping's job.
+
 ### Full status
 
 ```bash
@@ -291,6 +325,7 @@ consolidated table:
 # hermes health (all integrations)
 integration   status  latency  detail                                       last_check
 healthchecks  OK      87ms     ping accepted                                2026-08-23T15:42:18+00:00
+market_data   OK      212ms    newest closed 4h bar opened ...              2026-08-23T15:42:18+00:00
 sentry        OK      0.0ms    DSN parsed host=... project=1 environment=dev 2026-08-23T15:42:18+00:00
 slack         OK      201ms    workspace=hermes-ws bot=@hermes_bot          2026-08-23T15:42:18+00:00
 telegram      OK      142ms    bot=@hermes_alerts_bot                       2026-08-23T15:42:19+00:00

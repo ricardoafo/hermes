@@ -28,10 +28,14 @@ feature that reads them.
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Final
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from returns.result import Failure
 
+from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.currency import Currency
+from hermes.domain.value_objects.pair import Pair
 
 __all__ = [
     "BinanceExchangeConfig",
@@ -41,6 +45,7 @@ __all__ = [
     "KlinesConfig",
     "KrakenPublicConfig",
     "MLConfig",
+    "MarketDataConfig",
     "SentryConfig",
     "StrategiesConfig",
     "TaxGuardConfig",
@@ -164,6 +169,125 @@ class KrakenPublicConfig(BaseModel):
     timeout_sec: float = Field(default=10.0, gt=0)
     requests_per_second: int = Field(default=1, gt=0, le=60)
     fees_cache_ttl_seconds: int = Field(default=86_400, ge=0, le=7 * 86_400)
+
+
+# The only host the live closed-bar source may read. data-api.binance.vision
+# serves public market data only (GET, no keys); trading endpoints live on
+# api.binance.com and must never be reachable from this config.
+_MARKET_DATA_ALLOWED_BASE_URLS: Final[frozenset[str]] = frozenset(
+    {"https://data-api.binance.vision"}
+)
+_MARKET_DATA_INTERVALS: Final[frozenset[KlineInterval]] = frozenset(
+    {KlineInterval.H4, KlineInterval.D1}
+)
+
+
+class MarketDataConfig(BaseModel):
+    """Root of ``config/market_data.yaml`` — live closed-bar source.
+
+    Consumed by :class:`hermes.adapters.market_data.binance_live_klines.BinanceLiveKlinesAdapter`
+    and the ``hermes health market_data`` probe. Env overrides use
+    ``HERMES_MARKET_DATA__<FIELD>``.
+
+    Attributes:
+        base_url: HTTPS root of the public market-data host. Only
+            ``https://data-api.binance.vision`` is accepted.
+        pairs: Pairs to follow, as ``BASE/QUOTE`` text.
+        intervals: Candle intervals to follow. ``4h`` and ``1d`` only: the
+            swing strategy never enters without 1d bars.
+        warmup_bars_4h: Closed 4h bars returned by warm-up. The floor is the
+            45 bars after which every 4h indicator value stops changing.
+        warmup_bars_1d: Closed 1d bars returned by warm-up. The floor is the
+            200 bars the 1d EMA needs.
+        settle_delay_seconds: Wait after a candle boundary before the bar
+            counts as closed.
+        retry_interval_seconds: Re-poll period while a bar is overdue.
+        slow_retry_interval_seconds: Re-poll period once the source is stale.
+        stale_after_seconds: Overdue time after which the source is stale.
+        timeout_sec: Per-request HTTP timeout in seconds.
+        rate_limit_max_weight: Token-bucket size per window. The default is
+            10 percent of Binance's 6000 weight per minute cap.
+        rate_limit_window_seconds: Token-bucket refill window in seconds.
+    """
+
+    model_config = _MODEL_CONFIG
+
+    base_url: str = Field(default="https://data-api.binance.vision")
+    pairs: list[str] = Field(
+        default_factory=lambda: ["BTC/USDT", "ETH/USDT", "SOL/USDT"], min_length=1
+    )
+    intervals: list[KlineInterval] = Field(
+        default_factory=lambda: [KlineInterval.H4, KlineInterval.D1], min_length=1
+    )
+    warmup_bars_4h: int = Field(default=300, ge=45, le=999)
+    warmup_bars_1d: int = Field(default=300, ge=200, le=999)
+    settle_delay_seconds: float = Field(default=5.0, gt=0, le=60)
+    retry_interval_seconds: float = Field(default=5.0, gt=0, le=300)
+    slow_retry_interval_seconds: float = Field(default=30.0, gt=0, le=3_600)
+    stale_after_seconds: float = Field(default=900.0, gt=0, le=86_400)
+    timeout_sec: float = Field(default=10.0, gt=0)
+    # Floor of 3 covers the heaviest single request (klines, weight 2) plus
+    # a time call (weight 1), so the limiter can always grant a request.
+    rate_limit_max_weight: int = Field(default=600, ge=3, le=6_000)
+    rate_limit_window_seconds: int = Field(default=60, gt=0, le=3_600)
+
+    @field_validator("base_url")
+    @classmethod
+    def _host_is_allow_listed(cls, value: str) -> str:
+        """Accept only the public market-data host, with no trailing slash."""
+        normalised = value.rstrip("/")
+        if normalised not in _MARKET_DATA_ALLOWED_BASE_URLS:
+            allowed = ", ".join(sorted(_MARKET_DATA_ALLOWED_BASE_URLS))
+            raise ValueError(f"base_url {value!r} is not an allowed market-data host ({allowed})")
+        return normalised
+
+    @field_validator("pairs")
+    @classmethod
+    def _pairs_parse(cls, value: list[str]) -> list[str]:
+        """Require every pair to parse and reject duplicates."""
+        canonical: list[str] = []
+        for text in value:
+            parsed = Pair.from_str(text)
+            if isinstance(parsed, Failure):
+                raise ValueError(f"pair {text!r} is not a known BASE/QUOTE pair")
+            canonical.append(str(parsed.unwrap()))
+        if len(set(canonical)) != len(canonical):
+            raise ValueError(f"pairs contain duplicates: {value!r}")
+        return canonical
+
+    @field_validator("intervals")
+    @classmethod
+    def _intervals_supported(cls, value: list[KlineInterval]) -> list[KlineInterval]:
+        """Allow only 4h and 1d, each at most once."""
+        unsupported = [i for i in value if i not in _MARKET_DATA_INTERVALS]
+        if unsupported:
+            raise ValueError(f"unsupported intervals {unsupported!r}; allowed: 4h, 1d")
+        if len(set(value)) != len(value):
+            raise ValueError(f"intervals contain duplicates: {value!r}")
+        return value
+
+    @model_validator(mode="after")
+    def _slow_retry_not_faster(self) -> MarketDataConfig:
+        """Reject a slow retry period shorter than the normal one."""
+        if self.slow_retry_interval_seconds < self.retry_interval_seconds:
+            raise ValueError("slow_retry_interval_seconds must be >= retry_interval_seconds")
+        return self
+
+    def parsed_pairs(self) -> tuple[Pair, ...]:
+        """Return :attr:`pairs` as :class:`Pair` values, in configured order."""
+        return tuple(Pair.from_str(text).unwrap() for text in self.pairs)
+
+    def warmup_bars(self, interval: KlineInterval) -> int:
+        """Return the warm-up depth configured for ``interval``.
+
+        Raises:
+            ValueError: ``interval`` is not ``4h`` or ``1d``.
+        """
+        if interval == KlineInterval.H4:
+            return self.warmup_bars_4h
+        if interval == KlineInterval.D1:
+            return self.warmup_bars_1d
+        raise ValueError(f"no warm-up depth configured for interval {interval!r}")
 
 
 class HealthchecksConfig(BaseModel):

@@ -35,8 +35,11 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Final
+
+import httpx
+from pydantic import ValidationError
 
 from hermes.adapters.healthchecks import (
     HealthchecksAdapter,
@@ -53,6 +56,15 @@ from hermes.adapters.notifier.telegram_adapter import (
     TelegramConfig,
     TelegramNotifierError,
 )
+from hermes.domain.market_data.bar_schedule import (
+    interval_duration,
+    is_closed,
+    previous_boundary,
+)
+from hermes.domain.market_data.kline import KlineInterval
+from hermes.infrastructure.config.errors import ConfigError
+from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_yaml_model
+from hermes.infrastructure.config.models import MarketDataConfig
 
 __all__ = [
     "EXIT_FAIL",
@@ -62,6 +74,7 @@ __all__ = [
     "HealthStatus",
     "aggregate_exit_code",
     "check_healthchecks",
+    "check_market_data",
     "check_sentry",
     "check_slack",
     "check_telegram",
@@ -401,6 +414,194 @@ def check_sentry(env: dict[str, str]) -> HealthCheckResult:
     )
 
 
+# The probe follows one bar series: BTC/USDT 4h, the strategy's primary
+# timeframe. Binance spells the symbol without a separator.
+_PROBE_SYMBOL: Final[str] = "BTCUSDT"
+_PROBE_INTERVAL: Final[KlineInterval] = KlineInterval.H4
+_ONE_MS: Final[timedelta] = timedelta(milliseconds=1)
+_EPOCH: Final[datetime] = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+class _ProbeError(Exception):
+    """The market-data endpoint answered, but not with something the probe can use."""
+
+
+def _market_data_config(env: dict[str, str]) -> MarketDataConfig:
+    """Load the market-data config: ``config/market_data.yaml`` plus env overrides.
+
+    A missing file falls back to the built-in defaults, which equal the shipped
+    file, so the probe works from any working directory. Env overrides apply
+    either way.
+
+    Raises:
+        ConfigError: The file exists but is malformed, or the result fails validation.
+    """
+    path = DEFAULT_CONFIG_DIR / "market_data.yaml"
+    if path.is_file():
+        return load_yaml_model(path, MarketDataConfig, env_section="MARKET_DATA", env=env)
+    prefix = "HERMES_MARKET_DATA__"
+    overrides = {
+        key.removeprefix(prefix).lower(): value
+        for key, value in env.items()
+        if key.startswith(prefix)
+    }
+    try:
+        return MarketDataConfig.model_validate(overrides)
+    except ValidationError as exc:
+        raise ConfigError(f"validation failed for built-in market_data defaults: {exc}") from exc
+
+
+def _probe_get_json(client: httpx.Client, url: str, params: dict[str, str] | None) -> object:
+    """GET ``url`` and return the decoded JSON body.
+
+    Raises:
+        httpx.HTTPError: Transport failure.
+        _ProbeError: Non-200 status or a non-JSON body.
+    """
+    response = client.get(url, params=params)
+    if response.status_code != httpx.codes.OK:
+        raise _ProbeError(f"HTTP {response.status_code} from {url}")
+    try:
+        decoded: object = response.json()
+    except ValueError as exc:
+        raise _ProbeError(f"non-JSON body from {url}") from exc
+    return decoded
+
+
+def _probe_server_time(client: httpx.Client, config: MarketDataConfig) -> datetime:
+    """Return the exchange clock from ``GET /api/v3/time``."""
+    payload = _probe_get_json(client, f"{config.base_url}/api/v3/time", None)
+    server_time = payload.get("serverTime") if isinstance(payload, dict) else None
+    if not isinstance(server_time, int) or isinstance(server_time, bool):
+        raise _ProbeError(f"/api/v3/time returned no integer serverTime: {payload!r}")
+    return _EPOCH + timedelta(milliseconds=server_time)
+
+
+def _probe_open_times(client: httpx.Client, config: MarketDataConfig) -> list[datetime]:
+    """Return the ``open_time`` of the newest BTC/USDT 4h rows (the last may be open)."""
+    payload = _probe_get_json(
+        client,
+        f"{config.base_url}/api/v3/klines",
+        {"symbol": _PROBE_SYMBOL, "interval": _PROBE_INTERVAL.value, "limit": "2"},
+    )
+    if not isinstance(payload, list):
+        raise _ProbeError(f"/api/v3/klines returned a non-list body: {str(payload)[:200]}")
+    open_times: list[datetime] = []
+    for row in payload:
+        open_ms = row[0] if isinstance(row, list) and row else None
+        if not isinstance(open_ms, int) or isinstance(open_ms, bool):
+            raise _ProbeError(f"klines row has no integer open_time: {row!r}")
+        open_times.append(_EPOCH + timedelta(milliseconds=open_ms))
+    return open_times
+
+
+def _market_data_verdict(
+    config: MarketDataConfig,
+    *,
+    local_now: datetime,
+    exchange_now: datetime,
+    open_times: list[datetime],
+) -> tuple[str, int, str]:
+    """Judge skew and staleness; return ``(status, exit_code, detail)``.
+
+    Fails when the two clocks differ by more than the settle delay, or when
+    the 4h bar that should have closed is still missing ``stale_after_seconds``
+    after its close.
+    """
+    settle = timedelta(seconds=config.settle_delay_seconds)
+    skew_ms = (local_now - exchange_now) // _ONE_MS
+    if abs(local_now - exchange_now) > settle:
+        detail = f"clock skew {skew_ms} ms exceeds settle delay {config.settle_delay_seconds:g} s"
+        return HealthStatus.FAIL, EXIT_FAIL, detail
+    now = min(local_now, exchange_now)
+    duration = interval_duration(_PROBE_INTERVAL)
+    expected_open = previous_boundary(now - settle, _PROBE_INTERVAL) - duration
+    closed_opens = [
+        open_time
+        for open_time in open_times
+        if is_closed(
+            open_time,
+            _PROBE_INTERVAL,
+            local_now=local_now,
+            exchange_now=exchange_now,
+            settle=settle,
+        )
+    ]
+    newest = max(closed_opens, default=None)
+    if newest is not None and newest >= expected_open:
+        detail = f"newest closed 4h bar opened {newest.isoformat()} skew_ms={skew_ms}"
+        return HealthStatus.OK, EXIT_OK, detail
+    overdue = (now - (expected_open + duration)).total_seconds()
+    if overdue >= config.stale_after_seconds:
+        detail = (
+            f"stale: 4h bar opened {expected_open.isoformat()} is {overdue:.0f} s past its "
+            f"close (limit {config.stale_after_seconds:g} s)"
+        )
+        return HealthStatus.FAIL, EXIT_FAIL, detail
+    detail = (
+        f"4h bar opened {expected_open.isoformat()} not visible yet, {overdue:.0f} s past close"
+    )
+    return HealthStatus.OK, EXIT_OK, detail
+
+
+def check_market_data(env: dict[str, str]) -> HealthCheckResult:
+    """Probe the public market-data host: reachable, clocks agree, feed not stale.
+
+    Stateless by design: every check is a pure function of the env and the
+    exchange's answers, so the probe cannot read the serving process's memory.
+    "The service is alive" is the Healthchecks.io ping's job. Read-only: two
+    GETs (``/api/v3/time`` and ``/api/v3/klines``), no credentials.
+
+    Fails (exit 1) when the host is unreachable, the local and exchange clocks
+    differ by more than the settle delay, or the newest closed BTC/USDT 4h bar
+    is missing ``stale_after_seconds`` past its close.
+
+    Args:
+        env: Env-var snapshot. ``HERMES_MARKET_DATA__<FIELD>`` overrides
+            ``config/market_data.yaml``.
+
+    Returns:
+        A :class:`HealthCheckResult`. The function does NOT raise on failure.
+    """
+    try:
+        config = _market_data_config(env)
+    except ConfigError as exc:
+        return HealthCheckResult(
+            integration="market_data",
+            status=HealthStatus.FAIL,
+            latency_ms=0.0,
+            detail=f"invalid market_data config: {exc}",
+            last_check=_now_utc(),
+            exit_code=EXIT_FAIL,
+        )
+    start = time.perf_counter()
+    try:
+        with httpx.Client(timeout=config.timeout_sec) as client:
+            local_now = _now_utc()
+            exchange_now = _probe_server_time(client, config)
+            open_times = _probe_open_times(client, config)
+    except (httpx.HTTPError, _ProbeError) as exc:
+        return HealthCheckResult(
+            integration="market_data",
+            status=HealthStatus.FAIL,
+            latency_ms=(time.perf_counter() - start) * 1000.0,
+            detail=f"market data source unreachable or unusable: {exc}",
+            last_check=_now_utc(),
+            exit_code=EXIT_FAIL,
+        )
+    status, exit_code, detail = _market_data_verdict(
+        config, local_now=local_now, exchange_now=exchange_now, open_times=open_times
+    )
+    return HealthCheckResult(
+        integration="market_data",
+        status=status,
+        latency_ms=(time.perf_counter() - start) * 1000.0,
+        detail=detail,
+        last_check=_now_utc(),
+        exit_code=exit_code,
+    )
+
+
 # Registry — every registered integration is walked by :func:`run_all`
 # for the no-arg ``hermes health`` invocation. Sort order in the registry
 # is not user-visible: :func:`registered_integrations` sorts before
@@ -409,6 +610,7 @@ def check_sentry(env: dict[str, str]) -> HealthCheckResult:
 # controlled env dict.
 _REGISTRY: Final[dict[str, Callable[[dict[str, str]], HealthCheckResult]]] = {
     "healthchecks": check_healthchecks,
+    "market_data": check_market_data,
     "sentry": check_sentry,
     "slack": check_slack,
     "telegram": check_telegram,
