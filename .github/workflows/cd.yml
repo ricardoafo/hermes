@@ -118,7 +118,7 @@ jobs:
           # The units run these from /opt/hermes/current/deploy/ (health ping,
           # failure notifier, backup): each release carries its own copy.
           install -d "$stage/deploy" "$stage/bin"
-          install -m 0755 deploy/hermes-health-ping.sh deploy/hermes-notify-failure.sh deploy/hermes-backup.sh "$stage/deploy/"
+          install -m 0755 deploy/hermes-health-ping.sh deploy/hermes-notify-failure.sh deploy/hermes-notify-crash.sh deploy/hermes-backup.sh "$stage/deploy/"
           install -m 0755 scripts/deploy/install_release.sh scripts/deploy/health_gate.sh \
               scripts/deploy/rollback.sh "$stage/bin/"
 

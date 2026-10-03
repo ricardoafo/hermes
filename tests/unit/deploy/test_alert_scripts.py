@@ -85,6 +85,7 @@ class _Received:
     method: str
     path: str
     body: str
+    authorization: str = ""
 
 
 @dataclass
@@ -94,6 +95,7 @@ class _FakeServer:
     url: str
     requests: list[_Received] = field(default_factory=list)
     status: int = 200
+    response: bytes = b"ok"
 
 
 @pytest.fixture
@@ -105,11 +107,12 @@ def server() -> Iterator[_FakeServer]:
         def _record(self) -> None:
             length = int(self.headers.get("Content-Length") or 0)
             body = self.rfile.read(length).decode("utf-8")
-            fake.requests.append(_Received(self.command, self.path, body))
+            authorization = self.headers.get("Authorization") or ""
+            fake.requests.append(_Received(self.command, self.path, body, authorization))
             self.send_response(fake.status)
-            self.send_header("Content-Length", "2")
+            self.send_header("Content-Length", str(len(fake.response)))
             self.end_headers()
-            self.wfile.write(b"ok")
+            self.wfile.write(fake.response)
 
         do_GET = _record  # noqa: N815
         do_POST = _record  # noqa: N815
@@ -495,3 +498,128 @@ def test_health_ping_keeps_the_ping_url_out_of_the_curl_argv(
     assert result.returncode == 0, result.stderr
     assert server.requests[0].path == _PING_PATH
     assert _PING_PATH not in host.curl_argv()
+
+
+# --- hermes-notify-crash.sh (ExecStopPost=, #380) ------------------------------
+
+_CRASH = "hermes-notify-crash.sh"
+_SLACK_TOKEN = "xoxb-0000000000-FAKE-slack-token-for-tests"  # noqa: S105 - test-only  # gitleaks:allow
+_SLACK_CHANNEL = "#hermes-reports"
+_SLACK_OK = b'{"ok":true,"ts":"1.2"}'
+
+
+def _crash_env(server: _FakeServer, **result: str) -> dict[str, str]:
+    """Return the env systemd gives ExecStopPost= plus the Slack credentials."""
+    return {
+        "HERMES_SLACK__BOT_TOKEN": _SLACK_TOKEN,
+        "HERMES_SLACK__DEFAULT_CHANNEL": _SLACK_CHANNEL,
+        "HERMES_NOTIFY_SLACK_API_BASE": server.url,
+        "HOSTNAME": "hermes-01",
+        **result,
+    }
+
+
+def _slack_form(server: _FakeServer) -> dict[str, str]:
+    """Return the single chat.postMessage form the server saw."""
+    assert [(r.method, r.path) for r in server.requests] == [("POST", "/api/chat.postMessage")]
+    return {key: values[0] for key, values in parse_qs(server.requests[0].body).items()}
+
+
+def test_crash_notice_sends_nothing_after_a_clean_stop(host: _Host, server: _FakeServer) -> None:
+    """A deploy or SIGTERM stop (SERVICE_RESULT=success) must stay quiet."""
+    server.response = _SLACK_OK
+
+    result = _run(
+        _CRASH, host, server, "hermes.service", env=_crash_env(server, SERVICE_RESULT="success")
+    )
+
+    assert (result.returncode, server.requests) == (0, [])
+
+
+def test_crash_notice_posts_one_slack_line_for_an_error_exit(
+    host: _Host, server: _FakeServer
+) -> None:
+    """A crash that Restart= will recover from still reaches Slack, with unit, result and host."""
+    server.response = _SLACK_OK
+    env = _crash_env(server, SERVICE_RESULT="exit-code", EXIT_CODE="exited", EXIT_STATUS="1")
+
+    result = _run(_CRASH, host, server, "hermes.service", env=env)
+
+    form = _slack_form(server)
+    assert result.returncode == 0, result.stderr
+    assert form["channel"] == _SLACK_CHANNEL
+    assert form["text"] == (
+        "hermes.service on hermes-01 exited with an error"
+        " (result=exit-code, code=exited, status=1)."
+        " systemd restarts it in 30s; Telegram alerts if it stays down."
+    )
+    assert server.requests[0].authorization == f"Bearer {_SLACK_TOKEN}"
+
+
+def test_crash_notice_names_the_signal_for_a_killed_process(
+    host: _Host, server: _FakeServer
+) -> None:
+    """A segfault or OOM kill reports the signal, not just "failed"."""
+    server.response = _SLACK_OK
+    env = _crash_env(server, SERVICE_RESULT="signal", EXIT_CODE="killed", EXIT_STATUS="SEGV")
+
+    _run(_CRASH, host, server, "hermes.service", env=env)
+
+    assert "(result=signal, code=killed, status=SEGV)" in _slack_form(server)["text"]
+
+
+def test_crash_notice_appends_the_last_serve_run_failed_line_redacted(
+    host: _Host, server: _FakeServer
+) -> None:
+    """The newest serve.run.failed line goes along, with secret values masked."""
+    server.response = _SLACK_OK
+    host.set_journal(
+        [
+            "serve.run.failed old error",
+            "serve.bar.processed BTC/USDT 4h",
+            f"serve.run.failed LedgerError: disk full token={_SLACK_TOKEN}",
+        ]
+    )
+    env = _crash_env(server, SERVICE_RESULT="exit-code", EXIT_CODE="exited", EXIT_STATUS="1")
+
+    _run(_CRASH, host, server, "hermes.service", env=env)
+
+    last = _slack_form(server)["text"].splitlines()[-1]
+    assert last == "Last error: serve.run.failed LedgerError: disk full token=[redacted]"
+
+
+def test_crash_notice_keeps_the_slack_token_out_of_the_curl_argv(
+    host: _Host, server: _FakeServer
+) -> None:
+    """The bot token rides in a header from a stdin config, never in argv."""
+    server.response = _SLACK_OK
+    env = _crash_env(server, SERVICE_RESULT="exit-code", EXIT_CODE="exited", EXIT_STATUS="1")
+
+    _run(_CRASH, host, server, "hermes.service", env=env)
+
+    assert _SLACK_TOKEN not in host.curl_argv()
+
+
+def test_crash_notice_reports_a_slack_refusal_but_still_exits_zero(
+    host: _Host, server: _FakeServer
+) -> None:
+    """Slack's HTTP 200 + ok:false is an error to log; the stop result must not change."""
+    server.response = b'{"ok":false,"error":"channel_not_found"}'
+    env = _crash_env(server, SERVICE_RESULT="exit-code", EXIT_CODE="exited", EXIT_STATUS="1")
+
+    result = _run(_CRASH, host, server, "hermes.service", env=env)
+
+    assert result.returncode == 0
+    assert "channel_not_found" in result.stderr
+
+
+def test_crash_notice_without_credentials_logs_and_exits_zero(
+    host: _Host, server: _FakeServer
+) -> None:
+    """Missing Slack settings are logged, sent nowhere, and never fail the stop."""
+    env = _crash_env(server, SERVICE_RESULT="exit-code", HERMES_SLACK__BOT_TOKEN="")
+
+    result = _run(_CRASH, host, server, "hermes.service", env=env)
+
+    assert (result.returncode, server.requests) == (0, [])
+    assert "HERMES_SLACK__BOT_TOKEN" in result.stderr

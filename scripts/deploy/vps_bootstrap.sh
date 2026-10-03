@@ -7,9 +7,9 @@
 # (invoked by .github/workflows/vps-bootstrap.yml). Consumes HERMES_*
 # and STORAGE_BOX_* env vars that the workflow propagates from the
 # `prod` GH environment. The script arrives on stdin, so it cannot find
-# files next to itself: the workflow ships deploy/systemd/ and
-# deploy/hermes-notify-failure.sh to /var/tmp/hermes-bootstrap/ in an
-# earlier step.
+# files next to itself: the workflow ships deploy/systemd/ and the two
+# alert scripts (deploy/hermes-notify-failure.sh, deploy/hermes-notify-crash.sh)
+# to /var/tmp/hermes-bootstrap/ in an earlier step.
 #
 # Safe to re-run any number of times. Every step checks state before it
 # acts; the hazards a re-run can hit are named where they apply:
@@ -52,8 +52,8 @@ umask 022
 UV_VERSION=0.12.5
 BOOTSTRAP_DIR=/var/tmp/hermes-bootstrap
 SYSTEMD_SRC="$BOOTSTRAP_DIR/systemd"
-NOTIFIER_SRC="$BOOTSTRAP_DIR/hermes-notify-failure.sh"
-NOTIFIER_DST=/opt/hermes/bin/hermes-notify-failure.sh
+# Alert scripts the units run from /opt/hermes/bin, outside any release.
+NOTIFIERS=(hermes-notify-failure.sh hermes-notify-crash.sh)
 ENV_FILE=/etc/hermes/env.production
 PYTHON_DIR=/opt/hermes/python
 # Exact interpreter the release venvs are built on (pyproject requires
@@ -218,14 +218,15 @@ install_units() {
     done
 }
 
-# Copy the failure-alert script $1 to $2 (0755 root:root) when its content
-# differs. hermes-notify-failure@.service runs it from there, not from the
-# release, so an outage caused by a missing or broken release still alerts
-# (#364). install_release.sh refreshes it after each good deploy.
+# Copy the alert script $1 to $2 (0755 root:root) when its content differs.
+# hermes-notify-failure@.service and hermes.service's ExecStopPost= run them
+# from there, not from the release, so an outage caused by a missing or
+# broken release still alerts (#364, #380). install_release.sh refreshes
+# them after each good deploy.
 install_notifier() {
     local src=$1 dst=$2
     if [ ! -f "$src" ]; then
-        echo "  ERROR: $src missing — vps-bootstrap.yml must ship deploy/hermes-notify-failure.sh"
+        echo "  ERROR: $src missing — vps-bootstrap.yml must ship deploy/$(basename "$src")"
         return 1
     fi
     if cmp -s "$src" "$dst"; then
@@ -381,7 +382,9 @@ if [ ! -d "$SYSTEMD_SRC" ]; then
     exit 1
 fi
 install_units "$SYSTEMD_SRC" /etc/systemd/system
-install_notifier "$NOTIFIER_SRC" "$NOTIFIER_DST"
+for notifier in "${NOTIFIERS[@]}"; do
+    install_notifier "$BOOTSTRAP_DIR/$notifier" "/opt/hermes/bin/$notifier"
+done
 if [ "$units_changed" = "1" ]; then
     systemctl daemon-reload
 fi
