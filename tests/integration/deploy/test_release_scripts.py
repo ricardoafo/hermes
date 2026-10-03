@@ -483,6 +483,13 @@ def test_good_deploy_installs_the_failure_alert_outside_the_release(box: Box) ->
     assert notifier.read_text(encoding="utf-8") == f"#!/bin/bash\n# {_SHA_A}\n"
 
 
+def test_good_deploy_restarts_a_running_bot_on_the_new_release(box: Box) -> None:
+    """Invariant (#379): the bot runs from `current`, so a good deploy try-restarts it."""
+    box.deploy(_SHA_A)
+
+    assert "systemctl try-restart hermes-bot.service" in box.calls()
+
+
 def test_good_deploy_installs_the_crash_notice_outside_the_release(box: Box) -> None:
     """Invariant (#380): ExecStopPost= runs the crash notice from bin/, like the failure alert."""
     box.deploy(_SHA_A)

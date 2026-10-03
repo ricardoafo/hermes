@@ -273,6 +273,31 @@ ensure_daily_timer() {
     fi
 }
 
+# Write the bot env file $1 (root:root 0600) with only the Telegram token
+# and chat id from the HERMES_TELEGRAM__* environment, then enable and start
+# hermes-bot.service; without both values the unit is disabled and the file
+# removed (ADR-015 D-05). The bot never sees env.production. The file is
+# rewritten on every run, so re-running bootstrap rotates the token.
+# Extracted by tests/unit/deploy/test_vps_bootstrap_alerts.py.
+ensure_bot() {
+    local file=$1 token=${HERMES_TELEGRAM__BOT_TOKEN:-} chat=${HERMES_TELEGRAM__CHAT_ID:-} tmp
+    if [ -z "$token" ] || [ -z "$chat" ]; then
+        systemctl disable --now hermes-bot.service 2>/dev/null || true
+        rm -f "$file"
+        echo "  hermes-bot.service: left off (Telegram token or chat id not set)"
+        return 0
+    fi
+    tmp=$(mktemp "$(dirname "$file")/.env.bot.XXXXXX")
+    printf 'HERMES_TELEGRAM__BOT_TOKEN="%s"\nHERMES_TELEGRAM__CHAT_ID="%s"\nHERMES_ENV="prod"\n' \
+        "$token" "$chat" > "$tmp"
+    chown root:root "$tmp"
+    chmod 0600 "$tmp"
+    mv -T "$tmp" "$file"
+    systemctl enable hermes-bot.service
+    systemctl restart hermes-bot.service || true
+    echo "  hermes-bot.service: enabled; $file written"
+}
+
 # The sudoers file for a non-root CD user: exactly the commands the deploy
 # step runs as root (cd.yml), nothing else. The 12 hex classes match the
 # sha12 release id; sudoers wildcards are fnmatch patterns.
@@ -471,6 +496,7 @@ echo "---- 5. $ENV_FILE ----"
 ensure_env_file "$ENV_FILE"
 ensure_health_timer "$ENV_FILE"
 ensure_daily_timer "$ENV_FILE"
+ensure_bot /etc/hermes/env.bot
 echo ""
 
 # ────────────────────────────────────────────────────────────────

@@ -91,6 +91,7 @@ Cross-references:
 | `systemd/hermes-backup.service`          | Nightly borg backup of L2 Parquet and SQLite                                                       | installed by `vps-bootstrap`                                      |
 | `systemd/hermes-backup.timer`            | Fires the backup daily at 03:00 UTC                                                                | installed by `vps-bootstrap`; stays disabled until borg is set up |
 | `systemd/hermes-notify-failure@.service` | Started by `hermes.service`'s `OnFailure=`; sends one Telegram message                             | installed by `vps-bootstrap`                                      |
+| `systemd/hermes-bot.service`             | Read-only Telegram bot (`hermes bot`, ADR-015); reads only `/etc/hermes/env.bot`                   | `vps-bootstrap` enables it when the Telegram secrets are set      |
 | `hermes-health-ping.sh`                  | The progress ping: `hermes status --json` decides success or `/fail` while the unit is active      | shipped in each release                                           |
 | `hermes-notify-failure.sh`               | Builds and sends the Telegram failure message; needs only bash and curl                            | `/opt/hermes/bin`: `vps-bootstrap`, then each good deploy         |
 | `hermes-notify-crash.sh`                 | `hermes.service`'s `ExecStopPost=`: one Slack line after a stop that was not clean                 | `/opt/hermes/bin`: `vps-bootstrap`, then each good deploy         |
