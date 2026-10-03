@@ -1,0 +1,33 @@
+# Daily check of yesterday's stored live bars against the Binance public
+# archive (#359). Read-only: opens the ledger with SQLite mode=ro and only
+# downloads public archive files. Alerts go through the anomaly routing row
+# (Telegram, Slack) and the exit code is 1 on any mismatch.
+#
+# Fired by hermes-archive-check.timer. The command ships inside each release,
+# so ExecStart follows the `current` symlink.
+
+[Unit]
+Description=Hermes daily live-bar check against the Binance archive
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=hermes
+Group=hermes
+
+EnvironmentFile=/etc/hermes/env.production
+WorkingDirectory=/var/lib/hermes
+ExecStart=/opt/hermes/current/.venv/bin/hermes archive-check --config-dir /opt/hermes/current/config --db /var/lib/hermes/hermes.sqlite3
+
+# Hardening — matches the pattern used by real hermes services (ADR-003 §09).
+# Read-only: no ReadWritePaths, the ledger is opened mode=ro.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+CapabilityBoundingSet=
+ReadWritePaths=
+
+[Install]
+WantedBy=multi-user.target
