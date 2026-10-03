@@ -66,6 +66,8 @@ What this locks in. What it forecloses. What we'll revisit.
 | 2026-08-23 | [FX rate source — Frankfurter](2026-08-23-fx-rate-source-frankfurter.md)                     | ADR-002 §4 (EUR-first, ECB rates)             |
 | 2026-08-23 | [Fetch-before-launch tooling gate](2026-08-23-fetch-before-launch-tooling.md)                | AGENTS.md §sub-agent-delegation rule 4 (norm) |
 | 2026-08-24 | [Dependency-upgrade review checklist](2026-08-24-dependency-upgrade-checklist.md)            | ADR-010 §CVE-scanning (checklist codified)    |
+| 2026-10-02 | [Binance public market-data host](2026-10-02-binance-public-market-data-host.md)             | Testnet-only stance of 2026-08-23 (live bars) |
+| 2026-10-02 | [Forward testing inside the OOS window](2026-10-02-forward-testing-during-oos-window.md)     | —                                             |
 | 2026-10-03 | [ADR-011 accepted](2026-10-03-adr-011-accepted.md)                                           | ADR-011 status PROPOSED                       |
 
 ## Anti-patterns
