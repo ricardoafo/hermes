@@ -93,12 +93,12 @@ _SUBCOMMAND_HELP: Final[dict[str, str]] = {
         "registered integration; `hermes health <integration>` probes one."
     ),
     "certify": "Evaluate the next certification gate for a strategy (pre-reg §7).",
-    "fx": "`hermes fx backfill` fills pending EUR values in the ledger.",
     "positions": "Open shadow positions, net per row; `positions COIN` for the detail.",
     "archive-check": "Compare yesterday's live bars with the Binance archive (read-only).",
     "journal": "Record, list and review Code Owner decisions (decision journal).",
     "status": "Read-only progress check: verdict, last and next bar per stream.",
     "simulate": "Replay historical scenarios (stub — implemented in a future PR).",
+    "fx": "`hermes fx backfill` fills pending EUR values in the ledger.",
 }
 
 # ``health`` and ``serve`` are intentionally NOT in this set — they have real
@@ -217,13 +217,13 @@ def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
         "health": _dispatch_health,
         "serve": _dispatch_serve,
         "certify": certify_module.main,
-        "fx": _dispatch_fx,
         "positions": lambda rest, *, stream: console_module.run_positions(
             rest, stream, demo_flag=demo_scenario, env=os.environ
         ),
         "archive-check": archive_check_module.main,
         "journal": journal_module.main,
         "status": status_module.main,
+        "fx": _dispatch_fx,
     }
     dispatch = table.get(subcommand)
     if dispatch is not None:
