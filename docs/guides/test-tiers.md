@@ -76,8 +76,15 @@ uv run cosmic-ray exec session.sqlite
 uv run cr-report session.sqlite
 
 # End-to-end
-uv run pytest -m "e2e" --timeout=300
+uv run pytest tests/e2e -m e2e
 ```
+
+The `e2e` tests (`tests/e2e/test_serve_cycle.py`) boot the real `hermes serve`
+composition root and replay recorded Binance bars
+(`tests/fixtures/e2e/serve-cycle-bars.csv.gz`) through it: a full cycle, a stop
+then restart, a missed bar, and a `hermes status --json` snapshot. They need no
+keys and no network. The `e2e` job of `scheduled.yml` runs them on the Sunday
+cron and on every manual dispatch.
 
 Kill-rate target for domain layer: ≥ 85 % (per SA-10). The cosmic-ray
 config targets `hermes.domain` exclusively — see `[tool.cosmic-ray]` in

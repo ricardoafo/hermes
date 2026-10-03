@@ -10,12 +10,12 @@
 # ## Schedule
 #
 #   30 11 * * *   daily: Semgrep + contract tests
-#   45 11 * * 0   Sundays: the cosmic-ray mutation run
+#   45 11 * * 0   Sundays: the cosmic-ray mutation run + e2e tests
 #
 # 11:30 UTC is when the self-hosted pool is reliably online. The Sunday
 # cron is a separate entry so the long mutation run never delays the
-# daily checks. Manual dispatch runs the daily jobs, and the mutation
-# run too when `mutation` is ticked.
+# daily checks. Manual dispatch runs the daily jobs and the e2e tests,
+# and the mutation run too when `mutation` is ticked.
 #
 # ## Jobs
 #
@@ -27,6 +27,8 @@
 #   parse, Healthchecks /start). Read-only or informational calls only;
 #   each test skips when its secret is absent. Catches upstream drift
 #   the unit-tier mocks cannot see.
+# - e2e: the real `hermes serve` composition root replays recorded
+#   Binance bars (tests/e2e). Offline and keyless.
 # - mutation: cosmic-ray on the modules in cosmic-ray.toml, with the
 #   kill-rate floor (advisory until #406 enforces it).
 
@@ -93,6 +95,23 @@ jobs:
           HERMES_HEALTHCHECKS__PING_URL: ${{ secrets.HERMES_HEALTHCHECKS__PING_URL }}
         # -m contract overrides the `not contract` addopts filter.
         run: uv run pytest tests/contract -m contract --tb=short -p no:cacheprovider
+
+  e2e:
+    name: End-to-end tests
+    if: github.event.schedule == '45 11 * * 0' || github.event_name == 'workflow_dispatch'
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - uses: astral-sh/setup-uv@v7
+        with: { version: "0.12.5" }
+      - run: uv sync --frozen
+
+      - name: Run e2e tier
+        run: uv run pytest tests/e2e -m e2e --tb=short -p no:cacheprovider
 
   mutation:
     name: Cosmic-ray mutation run

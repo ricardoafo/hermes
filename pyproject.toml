@@ -139,7 +139,7 @@ markers = [
   "contract: tier-2b tests — real HTTP against third-party sandbox APIs",
   # Tier-3 — weekly cron. See docs/guides/test-tiers.md.
   "mutation: tier-3 mutation-testing harness hooks — weekly via cosmic-ray",
-  "e2e: tier-3 end-to-end against testnet",
+  "e2e: tier-3 end-to-end serve cycle on recorded bars — weekly + manual dispatch",
   "slow: >1s per test",
 ]
 addopts = "-ra --strict-markers --strict-config -m 'not contract'"
