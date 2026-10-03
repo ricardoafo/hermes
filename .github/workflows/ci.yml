@@ -12,8 +12,12 @@ on:
 # still run in parallel because each has its own ref. On push to main
 # the group is refs/heads/main; consecutive main pushes DO cancel
 # earlier in-progress runs so we don't waste runner slots on
-# already-superseded main commits. Only added at workflow level (adding
-# it per-job would over-serialize).
+# already-superseded main commits.
+#
+# There is deliberately NO global group to serialize PRs: a concurrency
+# group keeps one pending run and cancels the older pending ones, so it
+# would silently drop queued PRs. Runs stay whole through job shape
+# instead — see the `checks` job below (#397).
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -23,22 +27,42 @@ permissions:
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────
-  # DECISION: classify the changeset. Docs-only skips heavier gates.
+  # CHECKS — every per-PR gate in ONE job, one step per check (#397).
+  #
+  # Why one job: the self-hosted pool is a handful of runners and the
+  # suite used to fan out into ~15 jobs. With several PRs pushing at
+  # once their jobs interleaved in the runner queue, so PR A's Quality
+  # and Unit legs waited behind PR B's and PR C's jobs and nobody
+  # finished. Now a run asks for one runner for its whole suite: GitHub
+  # hands queued jobs to idle runners first come, first served, and once
+  # a run starts nothing from another PR can cut in. Up to one PR per
+  # runner runs side by side; nothing queued is ever dropped.
+  #
+  # Why not a lock job that waits its turn: it would hold a runner while
+  # polling, and enough waiting PRs would fill every runner and deadlock
+  # the run holding the lock.
+  #
+  # Every check step runs even after an earlier one fails (`!cancelled()`),
+  # matching the old fail-fast: false matrix — surface every violation.
+  # Docs-only changesets skip the code checks.
   # ─────────────────────────────────────────────────────────────────────
-  changeset:
-    name: Changeset
+  checks:
+    name: Checks
     runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
-    timeout-minutes: 3
-    outputs:
-      code: ${{ steps.detect.outputs.code }}
-      docs: ${{ steps.detect.outputs.docs }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write # auto-label + coverage comment
     steps:
       - uses: actions/checkout@v7
         with:
+          # Full history: the changeset diff, guides-index dates, the
+          # CHANGELOG check, the test-deletion guard and gitleaks all
+          # read a commit range.
           fetch-depth: 0
-          filter: blob:none
 
-      - id: detect
+      - name: Changeset
+        id: changeset
         shell: bash
         run: |
           set -uo pipefail
@@ -85,63 +109,11 @@ jobs:
             echo "docs=true" >> "$GITHUB_OUTPUT"
           fi
 
-  # ─────────────────────────────────────────────────────────────────────
-  # Markdown lint — always required. Runs on every PR that touches *.md
-  # or if we can't rule out changes (first PR, empty ref).
-  # ─────────────────────────────────────────────────────────────────────
-  markdown-lint:
-    name: Markdown lint
-    needs: changeset
-    if: needs.changeset.outputs.docs == 'true'
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          # fetch-depth: 0 — regenerate-guides-index.sh uses
-          # `git log -1 --format=%as -- <file>` to compute the "Last
-          # updated" date. On a shallow clone (depth 1) git can only see
-          # the head commit, so if the head didn't touch the file, git
-          # log returns empty and the script falls back to today's date
-          # → false-positive drift diff. Full history fixes it.
-          fetch-depth: 0
-
-      - name: Install markdownlint-cli2 (if not already pre-baked)
-        run: |
-          if ! command -v markdownlint-cli2 >/dev/null 2>&1; then
-            sudo npm install -g markdownlint-cli2@0.23.2
-          else
-            echo "markdownlint-cli2 already available: $(markdownlint-cli2 --version)"
-          fi
-
-      - name: Lint markdown
-        run: markdownlint-cli2 "**/*.md" "#node_modules" "#.venv"
-
-      - name: Verify guides index is up-to-date
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash scripts/dev/regenerate-guides-index.sh
-          if ! git diff --exit-code docs/guides/README.md; then
-            echo "::error::docs/guides/README.md is out of date. Run scripts/dev/regenerate-guides-index.sh locally and commit."
-            exit 1
-          fi
-
-  # ─────────────────────────────────────────────────────────────────────
-  # PR title validation — Conventional Commits format on PR title.
-  # PR title becomes the squash-merge commit message, so this enforces
-  # the commit convention at merge time (commit-msg hook only runs
-  # locally; CI enforces the final artifact).
-  # ─────────────────────────────────────────────────────────────────────
-  pr-title:
-    name: PR title
-    if: github.event_name == 'pull_request'
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
-    timeout-minutes: 3
-    permissions:
-      pull-requests: read
-    steps:
-      - uses: amannn/action-semantic-pull-request@v6
+      # PR title becomes the squash-merge commit message, so this
+      # enforces the Conventional Commits convention at merge time.
+      - name: PR title
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        uses: amannn/action-semantic-pull-request@v6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -162,6 +134,194 @@ jobs:
             PR subject must start lowercase (imperative mood).
             Example: 'feat(fifo): add lot-consumption event log'
             Not:     'feat(fifo): Add lot-consumption event log'
+
+      # Blocks feat/fix/refactor/perf PRs without a changelog fragment
+      # or [Unreleased] entry. Skips docs/chore/ci/build/test/revert.
+      - name: CHANGELOG update
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: bash scripts/dev/changelog-check.sh
+
+      # Non-blocking so a labeler config bug doesn't block merge.
+      - name: Auto-label
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        continue-on-error: true
+        uses: actions/labeler@v7
+        with:
+          configuration-path: .github/labeler.yml
+          sync-labels: true
+
+      - name: Size label
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        continue-on-error: true
+        uses: pascalgn/size-label-action@v0.5.7
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IGNORED: |
+            uv.lock
+            package-lock.json
+            **/*.snapshot
+        with:
+          sizes: |
+            {
+              "0": "size:s",
+              "100": "size:m",
+              "500": "size:l"
+            }
+
+      # Runs before setup-node so markdownlint-cli2 keeps the image's
+      # own Node.
+      - name: Install markdownlint-cli2 (if not already pre-baked)
+        id: mdl-install
+        if: ${{ !cancelled() && steps.changeset.outputs.docs == 'true' }}
+        run: |
+          if ! command -v markdownlint-cli2 >/dev/null 2>&1; then
+            sudo npm install -g markdownlint-cli2@0.23.2
+          else
+            echo "markdownlint-cli2 already available: $(markdownlint-cli2 --version)"
+          fi
+
+      - name: Markdown lint
+        if: ${{ !cancelled() && steps.mdl-install.outcome == 'success' }}
+        run: markdownlint-cli2 "**/*.md" "#node_modules" "#.venv"
+
+      # Needs full history: regenerate-guides-index.sh dates each guide
+      # with `git log -1`, which a shallow clone cannot answer.
+      - name: Verify guides index is up-to-date
+        if: ${{ !cancelled() && steps.changeset.outputs.docs == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/dev/regenerate-guides-index.sh
+          if ! git diff --exit-code docs/guides/README.md; then
+            echo "::error::docs/guides/README.md is out of date. Run scripts/dev/regenerate-guides-index.sh locally and commit."
+            exit 1
+          fi
+
+      # A broken CODEOWNERS silently disables code-owner review
+      # enforcement — GitHub skips the check instead of failing it.
+      - name: CODEOWNERS syntax
+        if: ${{ !cancelled() }}
+        run: bash scripts/dev/codeowners-syntax-check.sh
+
+      - name: Install gitleaks (if not already pre-baked)
+        id: gitleaks-install
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        run: |
+          if ! command -v gitleaks >/dev/null 2>&1; then
+            GITLEAKS_VERSION=8.21.2
+            curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o /tmp/gitleaks.tar.gz
+            sudo tar -xzf /tmp/gitleaks.tar.gz -C /usr/local/bin gitleaks
+            sudo chmod +x /usr/local/bin/gitleaks
+          else
+            echo "gitleaks already available: $(gitleaks version)"
+          fi
+
+      - name: Secrets scan
+        if: ${{ !cancelled() && steps.gitleaks-install.outcome == 'success' }}
+        run: |
+          gitleaks git . \
+            --log-opts="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}" \
+            --redact --no-banner --verbose
+
+      # merge-queue.yml logic lives in tools/merge/decisions.cjs so it
+      # can be asserted against fixtures. Runs on every change so a
+      # regression cannot be masked by a docs-only diff.
+      - uses: actions/setup-node@v7
+        id: node
+        if: ${{ !cancelled() }}
+        with:
+          node-version: '20'
+
+      - name: Merge-decisions tests
+        if: ${{ !cancelled() && steps.node.outcome == 'success' }}
+        run: node --test tools/merge/*.test.cjs
+
+      # Python 3.14 has tomllib in stdlib — no uv setup needed.
+      - name: Lockfile hash integrity
+        if: ${{ !cancelled() && steps.changeset.outputs.code == 'true' }}
+        run: python3 scripts/dev/reproducibility-check.py
+
+      # A PR that removes a test must opt in with a `SEV-1:` header.
+      - name: Test-deletion guard
+        if: ${{ !cancelled() && steps.changeset.outputs.code == 'true' }}
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          DELETED=$(git diff --name-only --diff-filter=D \
+            "origin/${{ github.base_ref }}...HEAD" -- 'tests/**/*.py' || true)
+          [ -z "$DELETED" ] && exit 0
+          if ! grep -q '^SEV-1:' <<< "$PR_BODY"; then
+            echo "Tests deleted but PR body lacks 'SEV-1:' opt-in header." >&2
+            echo "$DELETED" >&2
+            exit 1
+          fi
+
+      - uses: astral-sh/setup-uv@v7
+        id: uv
+        if: ${{ !cancelled() && steps.changeset.outputs.code == 'true' }}
+        with: { version: "0.12.5" }
+
+      - name: uv sync
+        id: sync
+        if: ${{ !cancelled() && steps.uv.outcome == 'success' }}
+        run: uv sync --frozen
+
+      # Quality gates. See docs/decisions/2026-08-22-drop-safety.md re: no safety.
+      - name: format
+        if: ${{ !cancelled() && steps.sync.outcome == 'success' }}
+        run: uv run ruff format --check .
+
+      - name: lint
+        if: ${{ !cancelled() && steps.sync.outcome == 'success' }}
+        run: uv run ruff check .
+
+      - name: types
+        if: ${{ !cancelled() && steps.sync.outcome == 'success' }}
+        run: uv run mypy --strict src/hermes
+
+      - name: imports
+        if: ${{ !cancelled() && steps.sync.outcome == 'success' }}
+        run: uv run lint-imports
+
+      # `--skip-editable` skips our own local hermes package (not on PyPI).
+      # `--strict` dropped because it upgrades the skip warning to an error.
+      - name: deps
+        if: ${{ !cancelled() && steps.sync.outcome == 'success' }}
+        run: uv run pip-audit --skip-editable
+
+      - name: complexity
+        if: ${{ !cancelled() && steps.sync.outcome == 'success' }}
+        run: uv run radon cc --min B src/
+
+      - name: deadcode
+        if: ${{ !cancelled() && steps.sync.outcome == 'success' }}
+        run: uv run vulture src/
+
+      # Blocks GPL/AGPL/LGPL, which create commercial-use constraints.
+      # See scripts/dev/license-check.py header for allowlist rationale.
+      - name: License compliance
+        if: ${{ !cancelled() && steps.sync.outcome == 'success' }}
+        run: |
+          uv tool install pip-licenses
+          uv tool run pip-licenses --format=json \
+            | python3 scripts/dev/license-check.py
+
+      - name: Unit tests + coverage
+        id: unit
+        if: ${{ !cancelled() && steps.sync.outcome == 'success' }}
+        run: uv run pytest tests/unit/ -n auto --cov=src/hermes --cov-branch --cov-report=xml --cov-report=json --cov-report=term
+
+      # --bootstrap: skip EMPTY-package FAILs while Phase 0 skeleton is not yet
+      # populated. Drop the flag when Phase 1 lands code in application/,
+      # adapters/*, entrypoints/. Tracked in #71 (Phase 0 meta backlog).
+      - name: Coverage floor
+        if: ${{ !cancelled() && steps.unit.outcome == 'success' }}
+        run: uv run python scripts/dev/coverage-check.py --bootstrap
 
   # ─────────────────────────────────────────────────────────────────────
   # PR body linter — every mandatory template section must have real
@@ -202,300 +362,6 @@ jobs:
           export PR_BODY
           bash scripts/dev/pr-body-lint.sh
 
-  # ─────────────────────────────────────────────────────────────────────
-  # CHANGELOG enforcement — blocks feat/fix/refactor/perf PRs that
-  # don't update CHANGELOG's [Unreleased] section. Skips for
-  # docs/chore/ci/build/test/revert.
-  # ─────────────────────────────────────────────────────────────────────
-  changelog:
-    name: CHANGELOG update
-    if: github.event_name == 'pull_request'
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
-    timeout-minutes: 3
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Check CHANGELOG requirement
-        env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: bash scripts/dev/changelog-check.sh
-
-  # ─────────────────────────────────────────────────────────────────────
-  # Auto-label — applies area:*/type:* labels based on file paths and
-  # PR title. Non-blocking (continue-on-error) so a labeler config bug
-  # doesn't block merge.
-  # ─────────────────────────────────────────────────────────────────────
-  auto-label:
-    name: Auto-label
-    if: github.event_name == 'pull_request'
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
-    timeout-minutes: 3
-    continue-on-error: true
-    permissions:
-      contents: read
-      pull-requests: write
-    steps:
-      - uses: actions/labeler@v7
-        with:
-          configuration-path: .github/labeler.yml
-          sync-labels: true
-
-      - name: Size label
-        uses: pascalgn/size-label-action@v0.5.7
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          IGNORED: |
-            uv.lock
-            package-lock.json
-            **/*.snapshot
-        with:
-          sizes: |
-            {
-              "0": "size:s",
-              "100": "size:m",
-              "500": "size:l"
-            }
-
-  # ─────────────────────────────────────────────────────────────────────
-  # Merge-decisions unit tests — the merge-queue.yml logic lives in a
-  # pure-function module (tools/merge/decisions.cjs) so it can be
-  # asserted against fixtures. Runs on every PR that touches it, and
-  # unconditionally on push to main so a regression cannot be masked by
-  # a docs-only change.
-  # ─────────────────────────────────────────────────────────────────────
-  merge-decisions:
-    name: Merge-decisions tests
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
-    timeout-minutes: 3
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 1
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '20'
-
-      - name: Run decisions test suite
-        run: node --test tools/merge/*.test.cjs
-
-  # ─────────────────────────────────────────────────────────────────────
-  # QUALITY — parallel matrix (one leg per check)
-  # 7 checks that used to run serially in a single job now fan out as a
-  # matrix. Each leg is a separate check on the PR page; wall-clock is
-  # max(setup + slowest check) instead of sum(all checks).
-  # Cache reuse via uv-cache volume shared across all runner replicas.
-  # See docs/decisions/2026-08-22-drop-safety.md re: no safety.
-  # ─────────────────────────────────────────────────────────────────────
-  quality:
-    name: Quality
-    needs: changeset
-    if: needs.changeset.outputs.code == 'true'
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
-    timeout-minutes: 5
-    strategy:
-      fail-fast: false  # surface every violation, not just the first leg to fail
-      matrix:
-        include:
-          - name: format
-            cmd: uv run ruff format --check .
-          - name: lint
-            cmd: uv run ruff check .
-          - name: types
-            cmd: uv run mypy --strict src/hermes
-          - name: imports
-            cmd: uv run lint-imports
-          # `--skip-editable` skips our own local hermes package (not on PyPI).
-          # `--strict` dropped because it upgrades the skip warning to an error.
-          - name: deps
-            cmd: uv run pip-audit --skip-editable
-          - name: complexity
-            cmd: uv run radon cc --min B src/
-          - name: deadcode
-            cmd: uv run vulture src/
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 1
-
-      - uses: astral-sh/setup-uv@v7
-        with: { version: "0.12.5" }
-      - run: uv sync --frozen
-      - name: ${{ matrix.name }}
-        run: ${{ matrix.cmd }}
-
-  # ─────────────────────────────────────────────────────────────────────
-  # UNIT — SKELETON (Phase 0 fills the body)
-  # pytest with branch coverage. Enforces coverage floor + uploads a
-  # report artifact for the coverage-comment step (Phase 1+).
-  # ─────────────────────────────────────────────────────────────────────
-  unit:
-    name: Unit tests + coverage
-    needs: changeset
-    if: needs.changeset.outputs.code == 'true'
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      pull-requests: write # coverage comment (Phase 1+)
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 1
-
-      - uses: astral-sh/setup-uv@v7
-        with: { version: "0.12.5" }
-      - run: uv sync --frozen
-      - run: uv run pytest tests/unit/ -n auto --cov=src/hermes --cov-branch --cov-report=xml --cov-report=json --cov-report=term
-      # --bootstrap: skip EMPTY-package FAILs while Phase 0 skeleton is not yet
-      # populated. Drop the flag when Phase 1 lands code in application/,
-      # adapters/*, entrypoints/. Tracked in #71 (Phase 0 meta backlog).
-      - run: uv run python scripts/dev/coverage-check.py --bootstrap
-
-  # ─────────────────────────────────────────────────────────────────────
-  # GUARDS — SKELETON (Phase 0 fills the body)
-  # Custom hard rules that CI enforces without human review:
-  #   - test-deletion guard: a PR that removes a test must justify it
-  #     (either a `SEV-1: removed by intent` marker, or the deleted
-  #     test's assertion is being MOVED elsewhere in the same PR)
-  # CODEOWNERS-syntax guard already exists as its own `codeowners` job.
-  # ─────────────────────────────────────────────────────────────────────
-  guards:
-    name: Guards
-    needs: changeset
-    if: needs.changeset.outputs.code == 'true'
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
-    timeout-minutes: 3
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0  # guards diff a range; shallow clone has no base
-
-      - name: Test-deletion guard
-        run: |
-          set -euo pipefail
-          DELETED=$(git diff --name-only --diff-filter=D \
-            "origin/${{ github.base_ref }}...HEAD" -- 'tests/**/*.py' || true)
-          [ -z "$DELETED" ] && exit 0
-          if ! grep -q '^SEV-1:' <<< "${{ github.event.pull_request.body }}"; then
-            echo "Tests deleted but PR body lacks 'SEV-1:' opt-in header." >&2
-            echo "$DELETED" >&2
-            exit 1
-          fi
-
-  # ─────────────────────────────────────────────────────────────────────
-  # SEMGREP — moved to nightly cron.
-  # Semgrep (SAST) previously ran here on every PR. It now lives in
-  # `.github/workflows/nightly-quality.yml` on a 03:00 UTC daily cron
-  # against `ubuntu-latest`. Rationale: semgrep findings are codebase-
-  # wide patterns that rarely change per-PR, and the ~30s+ per-run cost
-  # was pinning scarce self-hosted runners. See CHANGELOG fragment
-  # `changelog.d/wave-ci-heavy-jobs-nightly.md` for the full context.
-  # ─────────────────────────────────────────────────────────────────────
-
-  # ─────────────────────────────────────────────────────────────────────
-  # LICENSES — dep license allowlist enforcement
-  # Blocks GPL/AGPL/LGPL which create commercial-use constraints
-  # incompatible with hermes' private closed operation.
-  # See scripts/dev/license-check.py header for allowlist rationale.
-  # ─────────────────────────────────────────────────────────────────────
-  licenses:
-    name: License compliance
-    needs: changeset
-    if: needs.changeset.outputs.code == 'true'
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 1
-
-      - uses: astral-sh/setup-uv@v7
-        with: { version: "0.12.5" }
-      - run: uv sync --frozen
-      - run: uv tool install pip-licenses
-      - name: Validate licenses against allowlist
-        run: |
-          uv tool run pip-licenses --format=json \
-            | python3 scripts/dev/license-check.py
-
-  # ─────────────────────────────────────────────────────────────────────
-  # REPRODUCIBLE — uv.lock integrity: every entry has a hash
-  # `uv sync --frozen` verifies hashes at install time; this asserts the
-  # lockfile itself has hashes for every entry (defense-in-depth).
-  # ─────────────────────────────────────────────────────────────────────
-  reproducible:
-    name: Lockfile hash integrity
-    needs: changeset
-    if: needs.changeset.outputs.code == 'true'
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
-    timeout-minutes: 2
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 1
-
-      - name: Assert uv.lock hashes
-        # Python 3.14 has tomllib in stdlib — no uv setup needed.
-        run: python3 scripts/dev/reproducibility-check.py
-
-  # ─────────────────────────────────────────────────────────────────────
-  # CODEOWNERS syntax guard — a broken CODEOWNERS silently disables
-  # code-owner review enforcement (GitHub does not fail the PR; it just
-  # skips the check). That looks green while unreviewed code merges.
-  # Catch typos before they land.
-  # ─────────────────────────────────────────────────────────────────────
-  codeowners:
-    name: CODEOWNERS syntax
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
-    timeout-minutes: 2
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 1
-
-      - name: Validate CODEOWNERS syntax
-        run: bash scripts/dev/codeowners-syntax-check.sh
-
-  # ─────────────────────────────────────────────────────────────────────
-  # Secrets scan — gitleaks on the full history for every PR.
-  # ─────────────────────────────────────────────────────────────────────
-  secrets:
-    name: Secrets scan
-    if: github.event_name == 'pull_request'
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Install gitleaks (if not already pre-baked)
-        run: |
-          if ! command -v gitleaks >/dev/null 2>&1; then
-            GITLEAKS_VERSION=8.21.2
-            curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o /tmp/gitleaks.tar.gz
-            sudo tar -xzf /tmp/gitleaks.tar.gz -C /usr/local/bin gitleaks
-            sudo chmod +x /usr/local/bin/gitleaks
-          else
-            echo "gitleaks already available: $(gitleaks version)"
-          fi
-
-      - name: Scan for secrets (PR diff only, --all on push-to-main)
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            gitleaks git . \
-              --log-opts="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}" \
-              --redact --no-banner --verbose
-          else
-            gitleaks git . --log-opts=--all --redact --no-banner --verbose
-          fi
 
   # Add-to-project step deliberately removed.
   #
@@ -517,7 +383,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────
   ci-success:
     name: CI success
-    needs: [changeset, markdown-lint, pr-title, pr-body, changelog, auto-label, merge-decisions, quality, unit, guards, licenses, reproducible, codeowners, secrets]
+    needs: [checks, pr-body]
     if: '!cancelled()'
     runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 1
