@@ -33,12 +33,10 @@ services:
     # GH runners list by RUNNER_NAME (hostname is a docker-generated
     # unique hex, so replicas get unique names).
     #
-    # Default 8 replicas — CI's 15 jobs fan out to 12 parallel post-
-    # changeset. 8 replicas → all 12 fit in 1.5 waves (~30s wall time).
-    # 4 gave us 3 waves (~60s); 12 would give 1 wave but exceeds the
+    # Default 8 replicas. CI runs each PR's whole suite as one `Checks`
+    # job (#397), so replicas = PRs whose CI runs side by side; a ninth
+    # PR queues first come, first served. 12 would exceed the
     # per-machine resource budget at 4GB × 12 = 48GB.
-    # Rule: replicas = max_parallel_fan_out. Ours = 12; 8 is the safe
-    # optimum given resource caps.
     # Override at the CLI with `--scale runner=N` for troubleshooting
     # (e.g. `--scale runner=1` to isolate a flaky job).
     # Persists across `docker compose up -d --build`, unlike the CLI
