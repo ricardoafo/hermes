@@ -1,0 +1,1 @@
+- **Shadow Sharpe kill counts 60 consecutive days** (`application/strategy_protocol/shadow_sharpe_kill.py`): the pre-registration §10 shadow rule now fires only after 60 consecutive UTC days with the 30-day rolling Sharpe (daily returns, annualised by √365) below 0.3, instead of on a single value; the reason never reveals the Sharpe. Closes #422.
