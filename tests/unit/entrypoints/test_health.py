@@ -11,7 +11,10 @@ Reference: docs/decisions/2026-08-23-contract-test-tier.md.
 from __future__ import annotations
 
 import io
-from datetime import UTC, datetime
+import json
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -80,6 +83,43 @@ def env_all_configured(
     return {**env_with_creds, **env_with_slack_creds, **env_with_hc_url, **env_with_sentry_dsn}
 
 
+# Market data (public Binance host). Bodies are recorded 2026-10-02 responses,
+# so the probe is exercised against the real wire shape.
+_MD_BASE = "https://data-api.binance.vision"
+_MD_TIME_URL = f"{_MD_BASE}/api/v3/time"
+_MD_KLINES_URL = f"{_MD_BASE}/api/v3/klines"
+_RECORDED_DIR = Path(__file__).parents[2] / "fixtures" / "binance_public"
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+def _recorded(name: str) -> Any:
+    """Load a recorded Binance response body from ``tests/fixtures/binance_public``."""
+    return json.loads((_RECORDED_DIR / name).read_text(encoding="utf-8"))
+
+
+_RECORDED_SERVER_MS: int = _recorded("time.json")["serverTime"]
+_RECORDED_NOW = _EPOCH + timedelta(milliseconds=_RECORDED_SERVER_MS)
+_RECORDED_4H_ROWS: list[list[Any]] = _recorded("klines_btcusdt_4h_limit3.json")
+
+
+def _mock_market_data(
+    router: respx.MockRouter,
+    *,
+    server_ms: int = _RECORDED_SERVER_MS,
+    rows: list[list[Any]] | None = None,
+) -> None:
+    """Route the two market-data GETs to recorded (or given) bodies."""
+    router.get(_MD_TIME_URL).mock(return_value=httpx.Response(200, json={"serverTime": server_ms}))
+    router.get(_MD_KLINES_URL).mock(
+        return_value=httpx.Response(200, json=_RECORDED_4H_ROWS if rows is None else rows)
+    )
+
+
+def _pin_clock(monkeypatch: pytest.MonkeyPatch, now: datetime = _RECORDED_NOW) -> None:
+    """Freeze the probe's local clock (``_now_utc``) at ``now``."""
+    monkeypatch.setattr(health_module, "_now_utc", lambda: now)
+
+
 class TestRegistry:
     """Verify the health-check registry surface."""
 
@@ -107,6 +147,20 @@ class TestRegistry:
     def test_get_check_returns_callable_for_sentry(self) -> None:
         """get_check('sentry') returns the check_sentry callable."""
         assert health_module.get_check("sentry") is health_module.check_sentry
+
+    def test_get_check_returns_callable_for_market_data(self) -> None:
+        """get_check('market_data') returns the check_market_data callable."""
+        assert health_module.get_check("market_data") is health_module.check_market_data
+
+    def test_registry_lists_market_data_between_healthchecks_and_sentry(self) -> None:
+        """market_data is registered and sorted among the integrations."""
+        assert health_module.registered_integrations() == (
+            "healthchecks",
+            "market_data",
+            "sentry",
+            "slack",
+            "telegram",
+        )
 
     def test_get_check_returns_none_for_unknown_name(self) -> None:
         """get_check returns None (no KeyError) for an unregistered integration."""
@@ -444,10 +498,12 @@ class TestRunAll:
     """`run_all` executes every registered probe and returns a list of results."""
 
     def test_run_all_returns_one_result_per_registered_integration(
-        self, env_all_configured: dict[str, str]
+        self, env_all_configured: dict[str, str], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """run_all returns exactly len(registered_integrations()) results in sorted order."""
+        _pin_clock(monkeypatch)
         with respx.mock() as router:
+            _mock_market_data(router)
             router.get(_TELEGRAM_GET_ME_URL).mock(
                 return_value=httpx.Response(200, json={"ok": True, "result": {"username": "b"}})
             )
@@ -462,10 +518,12 @@ class TestRunAll:
         assert names == list(health_module.registered_integrations())
 
     def test_run_all_with_all_ok_yields_ok_results(
-        self, env_all_configured: dict[str, str]
+        self, env_all_configured: dict[str, str], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Every result carries status OK when the upstream mocks all succeed."""
+        _pin_clock(monkeypatch)
         with respx.mock() as router:
+            _mock_market_data(router)
             router.get(_TELEGRAM_GET_ME_URL).mock(
                 return_value=httpx.Response(200, json={"ok": True, "result": {"username": "b"}})
             )
@@ -476,10 +534,26 @@ class TestRunAll:
             results = health_module.run_all(env_all_configured)
         assert all(r.status == health_module.HealthStatus.OK for r in results)
 
-    def test_run_all_with_empty_env_reports_all_not_configured(self) -> None:
-        """A pristine env (no creds) yields NOT_CONFIGURED for every integration."""
-        results = health_module.run_all({})
-        assert all(r.exit_code == health_module.EXIT_NOT_CONFIGURED for r in results)
+    def test_run_all_with_empty_env_reports_every_credentialed_integration_not_configured(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A pristine env (no creds) yields NOT_CONFIGURED for every integration needing creds.
+
+        ``market_data`` reads a public endpoint and needs no credentials, so it is
+        checked against a mocked healthy host instead.
+        """
+        _pin_clock(monkeypatch)
+        with respx.mock() as router:
+            _mock_market_data(router)
+            results = health_module.run_all({})
+        by_name = {r.integration: r.exit_code for r in results}
+        assert by_name == {
+            "healthchecks": health_module.EXIT_NOT_CONFIGURED,
+            "market_data": health_module.EXIT_OK,
+            "sentry": health_module.EXIT_NOT_CONFIGURED,
+            "slack": health_module.EXIT_NOT_CONFIGURED,
+            "telegram": health_module.EXIT_NOT_CONFIGURED,
+        }
         # Every registered name shows up — no probe swallowed silently.
         assert len(results) == len(health_module.registered_integrations())
 
@@ -533,10 +607,12 @@ class TestRenderTableMulti:
     """`render_table_multi` prints a multi-row aligned table."""
 
     def test_table_includes_header_and_one_row_per_result(
-        self, env_all_configured: dict[str, str]
+        self, env_all_configured: dict[str, str], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Rendered output contains the header row + one row per result, plus each field."""
+        _pin_clock(monkeypatch)
         with respx.mock() as router:
+            _mock_market_data(router)
             router.get(_TELEGRAM_GET_ME_URL).mock(
                 return_value=httpx.Response(
                     200, json={"ok": True, "result": {"username": "hermes_bot"}}
@@ -646,3 +722,236 @@ class TestCheckSentry:
         assert result.last_check.tzinfo is not None
         assert result.last_check.utcoffset() is not None
         assert result.last_check.utcoffset().total_seconds() == 0
+
+
+class TestCheckMarketData:
+    """`check_market_data` probes the public market-data host, stateless and read-only.
+
+    Fails (exit 1) when the host is unreachable, the clocks disagree by more than
+    the settle delay, or the newest closed BTC/USDT 4h bar is overdue by more than
+    ``stale_after_seconds`` (live-bar-stream D-7).
+    """
+
+    def test_recorded_responses_report_ok_with_the_newest_closed_bar(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With the recorded 22:10:57 sample the newest closed 4h bar is the 16:00 one."""
+        _pin_clock(monkeypatch)
+        with respx.mock() as router:
+            _mock_market_data(router)
+            result = health_module.check_market_data({})
+        assert (result.integration, result.status, result.exit_code) == (
+            "market_data",
+            health_module.HealthStatus.OK,
+            health_module.EXIT_OK,
+        )
+        assert result.detail == "newest closed 4h bar opened 2026-10-02T16:00:00+00:00 skew_ms=0"
+
+    def test_probe_sends_two_gets_with_the_expected_query_and_nothing_else(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Exactly GET /api/v3/time and GET /api/v3/klines?symbol=BTCUSDT&interval=4h&limit=2."""
+        _pin_clock(monkeypatch)
+        with respx.mock() as router:
+            _mock_market_data(router)
+            health_module.check_market_data({})
+            sent = [
+                (c.request.method, c.request.url.path, dict(c.request.url.params))
+                for c in router.calls
+            ]
+        assert sent == [
+            ("GET", "/api/v3/time", {}),
+            ("GET", "/api/v3/klines", {"symbol": "BTCUSDT", "interval": "4h", "limit": "2"}),
+        ]
+
+    def test_unreachable_host_reports_fail(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A transport error on /time is FAIL with exit 1, never an exception."""
+        _pin_clock(monkeypatch)
+        with respx.mock() as router:
+            router.get(_MD_TIME_URL).mock(side_effect=httpx.ConnectError("no route"))
+            result = health_module.check_market_data({})
+        assert (result.status, result.exit_code) == (
+            health_module.HealthStatus.FAIL,
+            health_module.EXIT_FAIL,
+        )
+        assert "unreachable or unusable" in result.detail
+
+    @pytest.mark.parametrize("status", [451, 503])
+    def test_non_200_from_the_host_reports_fail_with_the_status(
+        self, status: int, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """HTTP 451 (blocked region) and 503 both fail the probe and name the status."""
+        _pin_clock(monkeypatch)
+        with respx.mock() as router:
+            router.get(_MD_TIME_URL).mock(return_value=httpx.Response(status))
+            result = health_module.check_market_data({})
+        assert (result.exit_code, f"HTTP {status}" in result.detail) == (
+            health_module.EXIT_FAIL,
+            True,
+        )
+
+    @pytest.mark.parametrize(
+        "klines_body",
+        [{"code": -1121}, [["not-a-number"]], [[]]],
+        ids=["non-list", "string-open-time", "empty-row"],
+    )
+    def test_malformed_klines_body_reports_fail(
+        self, klines_body: object, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A klines answer the probe cannot read is FAIL, not a crash."""
+        _pin_clock(monkeypatch)
+        with respx.mock() as router:
+            router.get(_MD_TIME_URL).mock(
+                return_value=httpx.Response(200, json={"serverTime": _RECORDED_SERVER_MS})
+            )
+            router.get(_MD_KLINES_URL).mock(return_value=httpx.Response(200, json=klines_body))
+            result = health_module.check_market_data({})
+        assert (result.exit_code, "unusable" in result.detail) == (health_module.EXIT_FAIL, True)
+
+    def test_time_body_without_server_time_reports_fail(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A /time answer with no integer serverTime is FAIL."""
+        _pin_clock(monkeypatch)
+        with respx.mock() as router:
+            router.get(_MD_TIME_URL).mock(return_value=httpx.Response(200, json={"oops": 1}))
+            result = health_module.check_market_data({})
+        assert (result.exit_code, "serverTime" in result.detail) == (health_module.EXIT_FAIL, True)
+
+    def test_non_json_time_body_reports_fail(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """An HTML error page with status 200 is FAIL."""
+        _pin_clock(monkeypatch)
+        with respx.mock() as router:
+            router.get(_MD_TIME_URL).mock(return_value=httpx.Response(200, text="<html>"))
+            result = health_module.check_market_data({})
+        assert (result.exit_code, "non-JSON" in result.detail) == (health_module.EXIT_FAIL, True)
+
+    def test_bar_missing_two_hours_after_its_close_reports_stale(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Only the 12:00 bar is served at 22:10:57: the 16:00 bar is 7857 s past its close."""
+        _pin_clock(monkeypatch)
+        with respx.mock() as router:
+            _mock_market_data(router, rows=_RECORDED_4H_ROWS[:1])
+            result = health_module.check_market_data({})
+        assert (result.status, result.exit_code) == (
+            health_module.HealthStatus.FAIL,
+            health_module.EXIT_FAIL,
+        )
+        assert result.detail == (
+            "stale: 4h bar opened 2026-10-02T16:00:00+00:00 is 7857 s past its close (limit 900 s)"
+        )
+
+    def test_bar_not_yet_visible_30_seconds_after_close_is_still_ok(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Within stale_after_seconds a missing bar is lag, not a failure."""
+        now = datetime(2026, 10, 2, 20, 0, 30, tzinfo=UTC)
+        _pin_clock(monkeypatch, now)
+        server_ms = (now - _EPOCH) // timedelta(milliseconds=1)
+        with respx.mock() as router:
+            _mock_market_data(router, server_ms=server_ms, rows=_RECORDED_4H_ROWS[:1])
+            result = health_module.check_market_data({})
+        assert (result.exit_code, result.detail) == (
+            health_module.EXIT_OK,
+            "4h bar opened 2026-10-02T16:00:00+00:00 not visible yet, 30 s past close",
+        )
+
+    def test_stale_threshold_follows_the_env_override(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """HERMES_MARKET_DATA__STALE_AFTER_SECONDS=20 turns a 30 s lag into a FAIL."""
+        now = datetime(2026, 10, 2, 20, 0, 30, tzinfo=UTC)
+        _pin_clock(monkeypatch, now)
+        server_ms = (now - _EPOCH) // timedelta(milliseconds=1)
+        with respx.mock() as router:
+            _mock_market_data(router, server_ms=server_ms, rows=_RECORDED_4H_ROWS[:1])
+            result = health_module.check_market_data(
+                {"HERMES_MARKET_DATA__STALE_AFTER_SECONDS": "20"}
+            )
+        assert (result.exit_code, "stale" in result.detail) == (health_module.EXIT_FAIL, True)
+
+    @pytest.mark.parametrize("offset_seconds", [60, -60])
+    def test_clock_skew_beyond_settle_reports_fail_with_the_skew(
+        self, offset_seconds: int, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A local clock 60 s off the exchange's exceeds the 5 s settle delay."""
+        _pin_clock(monkeypatch)
+        with respx.mock() as router:
+            _mock_market_data(router, server_ms=_RECORDED_SERVER_MS + offset_seconds * 1000)
+            result = health_module.check_market_data({})
+        assert (result.exit_code, result.detail) == (
+            health_module.EXIT_FAIL,
+            f"clock skew {-offset_seconds * 1000} ms exceeds settle delay 5 s",
+        )
+
+    def test_clock_skew_within_settle_is_ok(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A 3 s skew is inside the 5 s settle delay."""
+        _pin_clock(monkeypatch)
+        with respx.mock() as router:
+            _mock_market_data(router, server_ms=_RECORDED_SERVER_MS + 3000)
+            result = health_module.check_market_data({})
+        assert (result.exit_code, "skew_ms=-3000" in result.detail) == (health_module.EXIT_OK, True)
+
+    def test_trading_host_override_is_rejected_before_any_request(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Pointing base_url at a trading host through the env fails config validation."""
+        _pin_clock(monkeypatch)
+        with respx.mock() as router:
+            result = health_module.check_market_data(
+                {"HERMES_MARKET_DATA__BASE_URL": "https://api.binance.com"}
+            )
+            sent = router.calls.call_count
+        assert (result.exit_code, "invalid market_data config" in result.detail, sent) == (
+            health_module.EXIT_FAIL,
+            True,
+            0,
+        )
+
+    def test_missing_yaml_falls_back_to_the_built_in_defaults(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """From a directory without config/market_data.yaml the probe still works (defaults)."""
+        monkeypatch.setattr(health_module, "DEFAULT_CONFIG_DIR", tmp_path / "config")
+        _pin_clock(monkeypatch)
+        with respx.mock() as router:
+            _mock_market_data(router)
+            result = health_module.check_market_data({})
+        assert result.exit_code == health_module.EXIT_OK
+
+    def test_missing_yaml_still_applies_env_overrides(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Without config/market_data.yaml, HERMES_MARKET_DATA__ overrides still reach the probe."""
+        monkeypatch.setattr(health_module, "DEFAULT_CONFIG_DIR", tmp_path / "config")
+        now = datetime(2026, 10, 2, 20, 0, 30, tzinfo=UTC)
+        _pin_clock(monkeypatch, now)
+        server_ms = (now - _EPOCH) // timedelta(milliseconds=1)
+        with respx.mock() as router:
+            _mock_market_data(router, server_ms=server_ms, rows=_RECORDED_4H_ROWS[:1])
+            result = health_module.check_market_data(
+                {"HERMES_MARKET_DATA__STALE_AFTER_SECONDS": "20"}
+            )
+        assert (result.exit_code, "stale" in result.detail) == (health_module.EXIT_FAIL, True)
+
+    def test_missing_yaml_with_an_invalid_override_reports_fail_not_a_crash(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An override below a floor is FAIL with a config message even without the YAML."""
+        monkeypatch.setattr(health_module, "DEFAULT_CONFIG_DIR", tmp_path / "config")
+        result = health_module.check_market_data({"HERMES_MARKET_DATA__WARMUP_BARS_4H": "5"})
+        assert (result.exit_code, "invalid market_data config" in result.detail) == (
+            health_module.EXIT_FAIL,
+            True,
+        )
+
+    def test_last_check_is_the_probe_timestamp_in_utc(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The result carries the probe's UTC timestamp."""
+        _pin_clock(monkeypatch)
+        with respx.mock() as router:
+            _mock_market_data(router)
+            result = health_module.check_market_data({})
+        assert result.last_check == _RECORDED_NOW
