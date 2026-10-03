@@ -1,0 +1,53 @@
+# serializer version: 1
+# name: test_plain_output_snapshot
+  '''
+  hermes status   2026-10-03 16:10 UTC (Sat 18:10 Madrid)   unit: running
+  
+  ● All good
+  Watching BTC, ETH and SOL. Every check ran on time.
+  Your move: nothing
+  
+  
+   STREAM        LAST CLOSE (UTC)   NEXT DUE (UTC)     NEXT (MADRID)   STATE
+   ───────────────────────────────────────────────────────────────────────────
+   BTC/USDT 4h   2026-10-03 16:00   2026-10-03 20:00   Sat 22:00       ON TIME
+   BTC/USDT 1d   2026-10-03 00:00   2026-10-04 00:00   Sun 02:00       ON TIME
+   ETH/USDT 4h   2026-10-03 16:00   2026-10-03 20:00   Sat 22:00       ON TIME
+   ETH/USDT 1d   2026-10-03 00:00   2026-10-04 00:00   Sun 02:00       ON TIME
+   SOL/USDT 4h   2026-10-03 16:00   2026-10-03 20:00   Sat 22:00       ON TIME
+   SOL/USDT 1d   2026-10-03 00:00   2026-10-04 00:00   Sun 02:00       ON TIME
+  
+  
+  signals    24h: 1   7d: 1
+  positions  open: 1 (shadow, entry facts only)
+    ETH/USDT  opened 2026-10-03 12:00 UTC (Sat 14:00 Madrid)  entry 2618.45
+  
+  '''
+# ---
+# name: test_terminal_render_snapshot
+  '''
+  hermes status   2026-10-03 16:10 UTC (Sat 18:10 Madrid)   unit: running
+  
+  ┌─────────────────────────────────────────────────────┐
+  │ ● All good                                          │
+  │ Watching BTC, ETH and SOL. Every check ran on time. │
+  │ Your move: nothing                                  │
+  └─────────────────────────────────────────────────────┘
+  
+  
+   STREAM        LAST CLOSE (UTC)   NEXT DUE (UTC)     NEXT (MADRID)   STATE
+   ───────────────────────────────────────────────────────────────────────────
+   BTC/USDT 4h   2026-10-03 16:00   2026-10-03 20:00   Sat 22:00       ON TIME
+   BTC/USDT 1d   2026-10-03 00:00   2026-10-04 00:00   Sun 02:00       ON TIME
+   ETH/USDT 4h   2026-10-03 16:00   2026-10-03 20:00   Sat 22:00       ON TIME
+   ETH/USDT 1d   2026-10-03 00:00   2026-10-04 00:00   Sun 02:00       ON TIME
+   SOL/USDT 4h   2026-10-03 16:00   2026-10-03 20:00   Sat 22:00       ON TIME
+   SOL/USDT 1d   2026-10-03 00:00   2026-10-04 00:00   Sun 02:00       ON TIME
+  
+  
+  signals    24h: 1   7d: 1
+  positions  open: 1 (shadow, entry facts only)
+    ETH/USDT  opened 2026-10-03 12:00 UTC (Sat 14:00 Madrid)  entry 2618.45
+  
+  '''
+# ---
