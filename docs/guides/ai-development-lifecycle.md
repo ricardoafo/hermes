@@ -47,7 +47,7 @@ flowchart TB
     N --> P["Local: git fetch --prune + git pull --ff-only<br/>local branch already gone since step G2"]
 
     N --> Q["push:main fires cd.yml"]
-    Q --> R["cd.yml (skeleton today, Phase 0 fills bodies):<br/>build → deploy → health-check → smoke → confirm"]
+    Q --> R["cd.yml (manual dispatch today):<br/>build → bundle → deploy + health gate → smoke → confirm"]
     R --> S["VPS hermes-01 (Tailscale-only SSH)<br/>systemd units restarted"]
     S -.->|periodic ping| HC["healthchecks.io<br/>dead-man's-switch → Telegram on silence"]
     S -.->|incident| T["bug-triager agent → new Issue"] --> A
@@ -241,15 +241,15 @@ in hermes.
 ### 12. Deploy (CD to VPS)
 
 - **Who**: `.github/workflows/cd.yml` (5 jobs) → VPS `hermes-01` via SSH over Tailscale
-- **What**: `push:main` fires the CD pipeline:
+- **What**: a manual `workflow_dispatch` fires the CD pipeline (a `push:main` trigger is a follow-up):
   - `build` — `uv build` produces a wheel artifact
-  - `deploy` — `scp` wheel to VPS, `uv pip install --force-reinstall`, `systemctl restart hermes-*.service` (environment: `prod`, secrets scoped there)
-  - `health-check` — poll `healthchecks.io` URL until service reports green
-  - `smoke` — `pytest -m smoke` against the deployed instance
+  - `bundle` — one tarball: the wheel, hash-pinned `requirements.txt` from `uv export`, `config/`, and the deploy scripts
+  - `deploy` — `scp` the bundle to the VPS, run `install_release.sh` over SSH: install into `/opt/hermes/versions/<sha12>`, flip `current`, restart `hermes.service`, then a health gate (unit active for 30 s, same `MainPID`, `serve.run.started` in the journal). A failed gate rolls back to `previous` and fails the job (environment: `prod`, secrets scoped there)
+  - `smoke` — `pytest -m smoke` (no smoke tests exist yet; pytest exit 5 counts as a pass)
   - `confirm` — aggregator; deployment marker set only when all above pass
 - **Serialized** via `concurrency: deploy-vps` (never two deploys racing)
 - **Full flow**: see `deploy/README.md` — includes mermaid diagram of the whole pipeline
-- **State**: ✅ Skeleton in place (this PR). Every job body is `echo TODO` today; Phase 0 fills bodies as it lands `pyproject.toml`, systemd units, and healthchecks endpoints. `deploy/bootstrap-vps.sh` provisions the VPS layout idempotently.
+- **State**: Implemented by `openspec/changes/179-cd-first-real-deploy/change.md`. The `vps-bootstrap` workflow provisions the VPS layout idempotently (`scripts/deploy/vps_bootstrap.sh`); the smoke suite is still a placeholder.
 
 ### 13. Operate + incident
 

@@ -1,8 +1,8 @@
 # Nightly borg backup of L2 Parquet + SQLite DBs → Hetzner Storage Box.
 #
-# TEMPLATE — not installed by bootstrap-vps.sh. Copy to
-# /etc/systemd/system/hermes-backup.service on the VPS, then:
-#   systemctl daemon-reload
+# The vps-bootstrap workflow installs this file to /etc/systemd/system but
+# leaves hermes-backup.timer disabled until the borg repo exists. After the
+# prerequisites below, on the VPS:
 #   systemctl enable --now hermes-backup.timer
 #
 # The backup script ships inside each release, so ExecStart follows the

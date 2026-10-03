@@ -68,6 +68,8 @@ What this locks in. What it forecloses. What we'll revisit.
 | 2026-08-24 | [Dependency-upgrade review checklist](2026-08-24-dependency-upgrade-checklist.md)            | ADR-010 §CVE-scanning (checklist codified)    |
 | 2026-10-02 | [Binance public market-data host](2026-10-02-binance-public-market-data-host.md)             | Testnet-only stance of 2026-08-23 (live bars) |
 | 2026-10-02 | [Forward testing inside the OOS window](2026-10-02-forward-testing-during-oos-window.md)     | —                                             |
+| 2026-10-02 | [VPS installs from hashed requirements](2026-10-02-vps-install-from-hashed-requirements.md)  | ADR-010 §1 (VPS install step only)            |
+| 2026-10-02 | [Prod env file path](2026-10-02-env-file-path-etc-hermes-env-production.md)                  | 2026-08-23 credential-storage (prod path)     |
 | 2026-10-03 | [ADR-011 accepted](2026-10-03-adr-011-accepted.md)                                           | ADR-011 status PROPOSED                       |
 | 2026-10-03 | [Route shadow signals to Telegram and Slack](2026-10-03-signal-notification-routing.md)      | —                                             |
 
