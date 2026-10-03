@@ -20,6 +20,17 @@ const {
   shouldMerge,
   gateSkip,
   ciRestart,
+  BATCH_CONFLICT_REASON,
+  approvedAt,
+  orderCandidates,
+  admitHead,
+  batchGateSkip,
+  bisectInit,
+  bisectNext,
+  bisectRecord,
+  afterMerge,
+  badComment,
+  hasBadComment,
 } = require('./decisions.cjs');
 
 // ============================================================
@@ -281,4 +292,250 @@ test('ciRestart: null validatedTree -> restart', () => {
 test('ciRestart: both null -> restart', () => {
   const res = ciRestart({ mergedTree: null, validatedTree: null });
   assert.equal(res.restart, true);
+});
+
+// ============================================================
+// approvedAt + orderCandidates — the order a batch lands in
+// ============================================================
+
+const at = (login, state, submitted_at) => ({ user: { login }, state, submitted_at });
+
+test('approvedAt: the LATEST approval wins, so a re-approval moves the PR back', () => {
+  const res = approvedAt([
+    at('alice', 'APPROVED', '2026-10-01T10:00:00Z'),
+    at('alice', 'COMMENTED', '2026-10-01T12:00:00Z'),
+    at('alice', 'APPROVED', '2026-10-01T11:00:00Z'),
+  ]);
+  assert.equal(res, '2026-10-01T11:00:00Z');
+});
+
+test('approvedAt: no approval -> null', () => {
+  assert.equal(approvedAt([at('alice', 'CHANGES_REQUESTED', '2026-10-01T10:00:00Z')]), null);
+});
+
+test('orderCandidates: oldest approval first', () => {
+  const res = orderCandidates([
+    { n: 1, approvedAt: '2026-10-01T12:00:00Z' },
+    { n: 2, approvedAt: '2026-10-01T10:00:00Z' },
+    { n: 3, approvedAt: '2026-10-01T11:00:00Z' },
+  ]);
+  assert.deepEqual(res.map((c) => c.n), [2, 3, 1]);
+});
+
+test('orderCandidates: equal approval times fall back to PR number', () => {
+  const t = '2026-10-01T10:00:00Z';
+  const res = orderCandidates([{ n: 9, approvedAt: t }, { n: 4, approvedAt: t }]);
+  assert.deepEqual(res.map((c) => c.n), [4, 9]);
+});
+
+test('orderCandidates: unknown approval time sorts last, never first', () => {
+  const res = orderCandidates([
+    { n: 1, approvedAt: null },
+    { n: 2, approvedAt: '2026-10-01T10:00:00Z' },
+  ]);
+  assert.deepEqual(res.map((c) => c.n), [2, 1]);
+});
+
+test('orderCandidates: does not modify its input', () => {
+  const input = [{ n: 2, approvedAt: null }, { n: 1, approvedAt: null }];
+  orderCandidates(input);
+  assert.deepEqual(input.map((c) => c.n), [2, 1]);
+});
+
+// ============================================================
+// admitHead + batchGateSkip
+// ============================================================
+
+test('admitHead: the approved head is admitted', () => {
+  assert.equal(admitHead({ approvedHead: 'abc', fetchedHead: 'abc' }).admit, true);
+});
+
+test('admitHead: a head that moved after approval is dropped as "head moved"', () => {
+  const res = admitHead({ approvedHead: 'abc', fetchedHead: 'def' });
+  assert.equal(res.admit, false);
+  assert.equal(res.reason, 'head moved');
+});
+
+test('admitHead: an unfetchable head is dropped', () => {
+  assert.equal(admitHead({ approvedHead: 'abc', fetchedHead: null }).admit, false);
+});
+
+test('BATCH_CONFLICT_REASON names the combination, not the PR alone', () => {
+  assert.equal(BATCH_CONFLICT_REASON, 'conflicts with main + earlier batch PRs');
+});
+
+test('batchGateSkip: a batch of two never skips, even when each head is proven', () => {
+  const res = batchGateSkip({ size: 2, mainIsAncestor: true, ciConclusion: 'success' });
+  assert.equal(res.skip, false);
+  assert.match(res.reason, /batch of 2/);
+});
+
+test('batchGateSkip: a batch of one defers to gateSkip (skip when proven)', () => {
+  const res = batchGateSkip({ size: 1, mainIsAncestor: true, ciConclusion: 'success' });
+  assert.equal(res.skip, true);
+});
+
+test('batchGateSkip: a batch of one still gates when CI did not pass', () => {
+  const res = batchGateSkip({ size: 1, mainIsAncestor: true, ciConclusion: null });
+  assert.equal(res.skip, false);
+});
+
+// ============================================================
+// bisect planning — driven against a gate oracle
+// ============================================================
+
+/**
+ * Run the bisect plan to completion. The oracle is green exactly when
+ * the tree contains none of `badSet`, which is how a real gate behaves
+ * when each bad PR is independently broken.
+ */
+const simulate = (order, badSet) => {
+  const bad = new Set(badSet);
+  const trees = [];
+  let state = bisectInit(order);
+  for (let step = bisectNext(state); !step.done; step = bisectNext(state)) {
+    if (step.known) {
+      state = bisectRecord(state, step.known);
+      continue;
+    }
+    trees.push(step.tree);
+    const culprit = step.tree.find((n) => bad.has(n));
+    state = bisectRecord(state, {
+      passed: culprit === undefined,
+      gate: culprit === undefined ? null : `pytest (#${culprit})`,
+    });
+  }
+  return { state, trees };
+};
+
+test('bisect: an empty batch gates nothing', () => {
+  const { state, trees } = simulate([], []);
+  assert.deepEqual(trees, []);
+  assert.deepEqual(state.good, []);
+  assert.deepEqual(state.bad, []);
+});
+
+test('bisect: an all-good batch costs exactly one gate run', () => {
+  const { state, trees } = simulate([1, 2, 3, 4, 5, 6], []);
+  assert.deepEqual(trees, [[1, 2, 3, 4, 5, 6]]);
+  assert.deepEqual(state.good, [1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(state.bad, []);
+});
+
+test('bisect: a batch of one that fails marks that PR bad, with its gate', () => {
+  const { state, trees } = simulate([7], [7]);
+  assert.deepEqual(trees, [[7]]);
+  assert.deepEqual(state.good, []);
+  assert.deepEqual(state.bad, [{ n: 7, gate: 'pytest (#7)' }]);
+});
+
+test('bisect: one bad among six is isolated; the other five stay good in order', () => {
+  const { state, trees } = simulate([1, 2, 3, 4, 5, 6], [5]);
+  assert.deepEqual(state.good, [1, 2, 3, 4, 6]);
+  assert.deepEqual(state.bad, [{ n: 5, gate: 'pytest (#5)' }]);
+  // The first half is settled before the second is tried, every tree
+  // built after that keeps the proven-good PRs underneath, and a tree
+  // already gated red is never gated again.
+  assert.deepEqual(trees, [
+    [1, 2, 3, 4, 5, 6],
+    [1, 2, 3],
+    [1, 2, 3, 4, 5],
+    [1, 2, 3, 4],
+    [1, 2, 3, 4, 6],
+  ]);
+});
+
+test('bisect: two bad PRs are both isolated', () => {
+  const { state } = simulate([1, 2, 3, 4, 5, 6], [2, 6]);
+  assert.deepEqual(state.good, [1, 3, 4, 5]);
+  assert.deepEqual(state.bad.map((b) => b.n), [2, 6]);
+});
+
+test('bisect: every PR bad -> nothing good, every PR named', () => {
+  const { state } = simulate([1, 2, 3], [1, 2, 3]);
+  assert.deepEqual(state.good, []);
+  assert.deepEqual(state.bad.map((b) => b.n), [1, 2, 3]);
+});
+
+test('bisect: every gated tree is a prefix-ordered subset of the batch', () => {
+  const order = [11, 4, 9, 2, 30, 7, 5];
+  const { trees } = simulate(order, [9, 7]);
+  for (const tree of trees) {
+    const positions = tree.map((n) => order.indexOf(n));
+    assert.deepEqual(positions, [...positions].sort((a, b) => a - b));
+  }
+});
+
+test('bisectNext: a tree already gated red comes back as known, with its gate', () => {
+  let state = bisectInit([1, 2]);
+  state = bisectRecord(state, { passed: false, gate: 'ruff check' });
+  state = bisectRecord(state, { passed: true, gate: null });
+  const step = bisectNext(state);
+  assert.deepEqual(step.tree, [1, 2]);
+  assert.deepEqual(step.known, { passed: false, gate: 'ruff check' });
+});
+
+test('bisectNext: a fresh tree is not known', () => {
+  assert.equal(bisectNext(bisectInit([1, 2])).known, null);
+});
+
+test('bisectRecord: does not modify the state it is given', () => {
+  const state = bisectInit([1, 2]);
+  bisectRecord(state, { passed: false, gate: 'ruff check' });
+  assert.deepEqual(state.pending, [[1, 2]]);
+});
+
+test('bisectRecord: a red verdict with no gate name still names something', () => {
+  const state = bisectRecord(bisectInit([3]), { passed: false, gate: null });
+  assert.deepEqual(state.bad, [{ n: 3, gate: 'unknown gate' }]);
+});
+
+test('bisectRecord: refuses to record when nothing is pending', () => {
+  assert.throws(() => bisectRecord(bisectInit([]), { passed: true, gate: null }));
+});
+
+// ============================================================
+// afterMerge — the re-dispatch must not loop on a red batch
+// ============================================================
+
+test('afterMerge: merged something -> re-dispatch', () => {
+  assert.equal(afterMerge({ dryRun: false, merged: 2, stoppedEarly: false }).redispatch, true);
+});
+
+test('afterMerge: stopped early (main moved) -> re-dispatch even with nothing merged', () => {
+  assert.equal(afterMerge({ dryRun: false, merged: 0, stoppedEarly: true }).redispatch, true);
+});
+
+test('afterMerge: merged nothing -> no re-dispatch (would rerun the same red batch)', () => {
+  const res = afterMerge({ dryRun: false, merged: 0, stoppedEarly: false });
+  assert.equal(res.redispatch, false);
+  assert.match(res.reason, /merged nothing/);
+});
+
+test('afterMerge: dry run never re-dispatches', () => {
+  assert.equal(afterMerge({ dryRun: true, merged: 3, stoppedEarly: true }).redispatch, false);
+});
+
+// ============================================================
+// badComment + hasBadComment — one comment per head
+// ============================================================
+
+test('badComment: names the gate and the tested head, behind a head marker', () => {
+  const head = 'f'.repeat(40);
+  const { body, marker } = badComment({ n: 12, head, gate: 'mypy', base: 'a'.repeat(40) });
+  assert.equal(marker, `<!-- merge-queue-bad:${head} -->`);
+  assert.ok(body.startsWith(marker));
+  assert.match(body, /`mypy` gate failed/);
+  assert.match(body, /head fffffff/);
+});
+
+test('hasBadComment: finds the marker for the same head', () => {
+  const head = 'b'.repeat(40);
+  const { body } = badComment({ n: 1, head, gate: 'pytest', base: 'c'.repeat(40) });
+  assert.equal(hasBadComment([{ body: 'lgtm' }, { body }], head), true);
+});
+
+test('hasBadComment: a comment for an older head does not count', () => {
+  const { body } = badComment({ n: 1, head: 'old', gate: 'pytest', base: 'c' });
+  assert.equal(hasBadComment([{ body }, { body: null }], 'new'), false);
 });
