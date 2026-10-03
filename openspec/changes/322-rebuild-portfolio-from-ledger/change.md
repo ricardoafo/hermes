@@ -27,7 +27,7 @@ the fill kernel in serve (#353) records fills in a different shape; D-1 fixes th
   strategy, oldest first.
 - `PortfolioTracker.rebuilt(seed, trades)`: replays the trades over the seed and returns the tracker, or the first
   `DomainError`.
-- `serve.compose` builds the tracker with `rebuilt`; a failure raises `StartupError` with the failing event.
+- `serve.build_composition` builds the tracker with `rebuilt`; a failure raises `StartupError` with the failing event.
 - Unit tests for each piece; callers of `TradeExecuted` updated for the new field.
 
 ### Out
@@ -64,7 +64,7 @@ the fill kernel in serve (#353) records fills in a different shape; D-1 fixes th
 ### D-3: Fail closed on an unreplayable ledger
 
 - **Decision**: Any replay failure (unreadable payload, v1 row, currency mismatch, a sell without a position)
-  stops `compose` with `StartupError` naming the event's correlation id. hermes does not start on the seed.
+  stops `build_composition` with `StartupError` naming the event's correlation id. hermes does not start on the seed.
 - **Alternatives**: Skip the bad row and log (positions silently wrong); fall back to the seed (the bug this issue
   exists to fix).
 - **Rationale**: Wrong portfolio state feeds the risk overlay and position sizing. Refusing to start is the safe
@@ -99,8 +99,8 @@ the fill kernel in serve (#353) records fills in a different shape; D-1 fixes th
 
 ### R-4: `hermes serve` starts from the rebuilt state
 
-- **A-4.1**: `compose` against a ledger holding a BUY shows one open position and reduced cash.
-- **A-4.2**: `compose` against a ledger holding a SELL with no prior BUY raises `StartupError`.
+- **A-4.1**: `build_composition` against a ledger holding a BUY shows one open position and reduced cash.
+- **A-4.2**: `build_composition` against a ledger holding a SELL with no prior BUY raises `StartupError`.
 
 ## Design
 
@@ -109,18 +109,20 @@ src/hermes/domain/events/trade_executed.py   + strategy_id: StrategyId; schema v
 src/hermes/ports/ledger.py                   + trade_events(strategy_id) -> tuple[TradeExecuted, ...]
 src/hermes/adapters/ledger/sqlite_ledger.py  + trade_events, _trade_from_payload
 src/hermes/application/portfolio/tracker.py  + PortfolioTracker.rebuilt(seed, trades)
-src/hermes/entrypoints/serve.py              compose: tracker = rebuilt(...) or StartupError
+src/hermes/entrypoints/serve.py              build_composition: tracker = rebuilt(...) or StartupError
 ```
 
 ```python
 # ports/ledger.py
 def trade_events(self, strategy_id: StrategyId) -> tuple[TradeExecuted, ...]: ...
 
+
 # adapters/ledger/sqlite_ledger.py
 "SELECT event_schema_version, payload_json FROM events "
 "WHERE event_type = 'TradeExecuted' "
 "  AND json_extract(payload_json, '$.strategy_id.value') = ? "
 "ORDER BY occurred_at ASC, id ASC"
+
 
 # application/portfolio/tracker.py
 @classmethod
