@@ -55,6 +55,8 @@ from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.ports.exchange import ExchangePort
 
+_STRATEGY_ID = StrategyId("test-strategy")
+
 # ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------
@@ -100,7 +102,6 @@ def _make_adapter(
     book: Orderbook | None = None,
     fees: FeeSchedule | None = None,
     initial_balances: dict[Currency, Decimal] | None = None,
-    strategy_id: StrategyId | None = None,
     clock: SimulatedClock | None = None,
     rng: random.Random | None = None,
 ) -> SimulatedExchangeAdapter:
@@ -108,7 +109,6 @@ def _make_adapter(
     resolved_book = book or _SIMPLE_BOOK
     resolved_fees = fees or _STANDARD_FEES
     balances = initial_balances or {Currency.USDT: Decimal("100000"), Currency.BTC: Decimal("5")}
-    sid = strategy_id or StrategyId("test-strategy")
     clk = clock or _make_clock()
     rng_ = rng or random.Random(42)  # noqa: S311
 
@@ -130,7 +130,6 @@ def _make_adapter(
         clock=clk,
         fee_schedule_fn=_fee_fn,
         initial_balances=balances,
-        strategy_id=sid,
         rng=rng_,
     )
 
@@ -145,6 +144,7 @@ def _buy_order(
         pair=pair,
         qty=Quantity(amount=qty, asset=pair.base),
         limit_price=limit_price,
+        strategy_id=_STRATEGY_ID,
     )
 
 
@@ -158,6 +158,7 @@ def _sell_order(
         pair=pair,
         qty=Quantity(amount=qty, asset=pair.base),
         limit_price=limit_price,
+        strategy_id=_STRATEGY_ID,
     )
 
 
@@ -219,6 +220,7 @@ class TestPlaceMarketOrder:
             pair=_BTC_USDT,
             qty=Quantity(amount=Decimal("0.1"), asset=Currency.BTC),
             limit_price=Decimal("60000"),
+            strategy_id=_STRATEGY_ID,
         )
         with pytest.raises(ValueError, match="limit_price must be None"):
             adapter.place_market_order(side=OrderSide.BUY, order=order)
@@ -603,10 +605,18 @@ class TestLotTracking:
         )
 
     def test_lot_strategy_id_set(self) -> None:
-        """Lot.strategy_id matches the adapter's strategy_id."""
+        """Lot.strategy_id equals the strategy_id of the order that opened it."""
         sid = StrategyId("test-strat")
-        adapter = _make_adapter(strategy_id=sid)
-        adapter.place_market_order(side=OrderSide.BUY, order=_buy_order())
+        adapter = _make_adapter()
+        adapter.place_market_order(
+            side=OrderSide.BUY,
+            order=Order(
+                side=OrderSide.BUY,
+                pair=_BTC_USDT,
+                qty=Quantity(amount=Decimal("0.1"), asset=Currency.BTC),
+                strategy_id=sid,
+            ),
+        )
         lot = adapter.lot_ledger[0]
         assert lot.strategy_id == sid, f"Lot.strategy_id must be {sid!r}, got {lot.strategy_id!r}"
 
@@ -661,3 +671,33 @@ class TestDeterministicReplay:
         assert fill_a.avg_price == fill_b.avg_price, (
             f"Seeded replay: avg_price must match: {fill_a.avg_price!r} vs {fill_b.avg_price!r}"
         )
+
+
+class TestStrategyAttribution:
+    """Fills and lots from the adapter keep the submitting order's strategy."""
+
+    def test_market_fill_keeps_the_order_strategy_id(self) -> None:
+        """place_market_order returns a Fill whose strategy_id is the order's, not a default."""
+        sid = StrategyId("swing-donchian-4h")
+        order = Order(
+            side=OrderSide.BUY,
+            pair=_BTC_USDT,
+            qty=Quantity(amount=Decimal("0.1"), asset=Currency.BTC),
+            strategy_id=sid,
+        )
+        fill = _make_adapter().place_market_order(side=OrderSide.BUY, order=order)
+        assert fill.strategy_id == sid
+
+    def test_limit_fill_keeps_the_order_strategy_id(self) -> None:
+        """place_limit_order returns a Fill whose strategy_id is the order's."""
+        sid = StrategyId("swing-donchian-4h")
+        order = Order(
+            side=OrderSide.BUY,
+            pair=_BTC_USDT,
+            qty=Quantity(amount=Decimal("0.1"), asset=Currency.BTC),
+            strategy_id=sid,
+            limit_price=Decimal("1000000"),
+        )
+        result = _make_adapter().place_limit_order(order=order)
+        assert isinstance(result, Fill)
+        assert result.strategy_id == sid

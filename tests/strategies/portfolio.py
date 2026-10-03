@@ -23,6 +23,9 @@ from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
+from hermes.domain.value_objects.strategy_id import StrategyId
+
+_STRATEGY_ID = StrategyId("test-strategy")
 
 BTC_USDT = Pair(base=Currency.BTC, quote=Currency.USDT)
 ETH_USDT = Pair(base=Currency.ETH, quote=Currency.USDT)
@@ -68,7 +71,12 @@ def make_fill(
 
     """
     quantity = Decimal(qty)
-    order = Order(side=side, pair=pair, qty=Quantity(amount=quantity, asset=pair.base))
+    order = Order(
+        side=side,
+        pair=pair,
+        qty=Quantity(amount=quantity, asset=pair.base),
+        strategy_id=_STRATEGY_ID,
+    )
     return Fill(
         order=order,
         executed_qty=quantity,

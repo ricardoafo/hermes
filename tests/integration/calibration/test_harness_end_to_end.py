@@ -34,6 +34,9 @@ from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
+from hermes.domain.value_objects.strategy_id import StrategyId
+
+_STRATEGY_ID = StrategyId("test-strategy")
 
 # ---------------------------------------------------------------------------
 # Shared fixture data
@@ -50,6 +53,7 @@ def _order(side: OrderSide = OrderSide.BUY, qty: str = "0.1") -> Order:
         side=side,
         pair=_BTC_USDT,
         qty=Quantity(amount=Decimal(qty), asset=Currency.BTC),
+        strategy_id=_STRATEGY_ID,
     )
 
 

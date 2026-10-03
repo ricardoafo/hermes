@@ -37,7 +37,10 @@ from hermes.domain.trading.order import Order, OrderSide
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
+from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.ports.fill_model import FillModelPort
+
+_STRATEGY_ID = StrategyId("test-strategy")
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -92,6 +95,7 @@ def _make_order(
         pair=p,
         qty=Quantity(amount=qty_amount, asset=p.base),
         limit_price=limit_price,
+        strategy_id=_STRATEGY_ID,
     )
 
 
@@ -846,3 +850,14 @@ class TestFillTimestamp:
             f"Fill.timestamp {result.timestamp!r} != provided clock {custom_clock!r}. "
             "The composition root's clock controls the fill timestamp."
         )
+
+
+class TestStrategyAttribution:
+    """Fills produced by the model inherit the order's strategy."""
+
+    def test_fill_carries_the_strategy_id_of_the_order(self) -> None:
+        """OrderbookWalkFillModel returns a Fill whose strategy_id is the order's."""
+        order = _make_order()
+        result = _make_model().fill_order(order, _DEEP_BOOK, _CLOCK, _STANDARD_SCHEDULE)
+        assert isinstance(result, Fill)
+        assert result.strategy_id == order.strategy_id
