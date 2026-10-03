@@ -8,7 +8,8 @@ verify the released wheel + CHANGELOG landed correctly.
 
 ## Status
 
-The `release.yml` workflow is a scaffold. This guide documents the SHAPE of the
+The placeholder `release.yml` workflow was removed in the CI/CD consolidation;
+it returns when #21 implements it. This guide documents the SHAPE of the
 release process so it's clear what fills in during MVP1. Cross-references:
 [issue #21](https://github.com/ricardoafo/hermes/issues/21).
 

@@ -14,7 +14,7 @@ original body, and keeps the original body verbatim in a trailing
 - **Risk**: a loud MAJOR-bump warning when any update crosses a major
   boundary (or a minor boundary below 1.0), otherwise low.
 
-Run by ``.github/workflows/dependabot-pr-body.yml``. Reads ``PR_TITLE``
+Run by ``.github/workflows/pr-housekeeping.yml``. Reads ``PR_TITLE``
 and ``PR_BODY`` from the environment and writes the rendered body to
 ``--out``.
 

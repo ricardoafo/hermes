@@ -11,7 +11,7 @@
 # when the verdict flips, which is rare.
 #
 # Called by:
-#   - .github/workflows/pr-body-recheck.yml (on body edit, and when a
+#   - .github/workflows/pr-housekeeping.yml (on body edit, and when a
 #     CI run completes — bot edits made with GITHUB_TOKEN fire no
 #     `edited` event, so the completion trigger catches them)
 #   - Manually: GITHUB_REPOSITORY=owner/repo GH_TOKEN=... PR_NUMBER=123 \
