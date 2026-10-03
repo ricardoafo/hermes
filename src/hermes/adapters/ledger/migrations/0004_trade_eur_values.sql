@@ -1,4 +1,4 @@
--- 0003_trade_eur_values.sql — EUR values on every trade, fees in FIFO values.
+-- 0004_trade_eur_values.sql — EUR values on every trade, fees in FIFO values.
 --
 -- change trade-eur-values (issue #386), ADR-002 §3, ADR-016 items 3 and 5.
 --
@@ -12,7 +12,7 @@
 --   parts of the gain and the selling trade. Rows of both tables keep their
 --   values; legacy rows have no trade link and are never re-projected.
 --
--- One transaction: a failure leaves the schema at 0002.
+-- One transaction: a failure leaves the schema at 0003.
 
 BEGIN;
 

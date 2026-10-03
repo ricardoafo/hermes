@@ -14,7 +14,7 @@ dual-source rule).
 ADR-002 §3 requires EUR values on every trade row from insert; ADR-016 items 3 and 5 say fees enter the FIFO values and the
 EUR rate is the ECB EUR/USD rate with USDT read as USD. Today `trades` has no EUR columns, `SimulatedExchangeAdapter._open_lot`
 labels the USDT fill price as the lot's EUR cost basis (`simulated.py:371-373`), and `LotConsumption.record` ignores fees
-(`lot_consumption.py:112`). This change adds the EUR columns (migration 0003), a fill-path recorder that prices each fill
+(`lot_consumption.py:112`). This change adds the EUR columns (migration 0004), a fill-path recorder that prices each fill
 through `FxRateProviderPort.get_for_date` and stores `eur_status=pending` when the lookup fails, a `hermes fx backfill`
 command, and a pure FIFO replay that derives every lot and consumption EUR value, fees included, from the trades. Strategy,
 sizing, fee and kill code keep reading native USDT values. Main risk: the Frankfurter host in config answered 301 (found while
@@ -24,7 +24,7 @@ recording fixtures), so every call failed; this change points `config/frankfurte
 
 ### In
 
-- `adapters/ledger/migrations/0003_trade_eur_values.sql`: EUR columns on `trades`; `lots` and `lot_consumptions` rebuilt so
+- `adapters/ledger/migrations/0004_trade_eur_values.sql`: EUR columns on `trades`; `lots` and `lot_consumptions` rebuilt so
   EUR values may be NULL while pending, plus native-basis, link and fee columns.
 - `domain/fx/eur_pricing.py`: `EurPricing` value object, `EurStatus`, `fill_date_madrid`, `rate_is_final`.
 - `domain/lots/eur_fifo.py`: `acquisition_value`, `transmission_value`, `replay_fifo_eur` (pure, quantity FIFO per asset,
@@ -137,7 +137,7 @@ All decisions below: DECIDED by implementer, Code Owner reviews in PR.
   `price_eur`, `fee_eur`, `eur_status` (NOT NULL, default `pending`, CHECK `ok|pending`).
 - **A-1.2**: `lots` lists `cost_basis_native_per_unit`, `native_currency`, `trade_id`, and `cost_basis_per_unit` is nullable.
 - **A-1.3**: `lot_consumptions` lists `proceeds_eur`, `cost_eur`, `fee_eur`, `trade_id`, and `realized_gain_eur` is nullable.
-- **A-1.4**: rows written before 0003 survive the migration unchanged; old `trades` rows read `eur_status='pending'`.
+- **A-1.4**: rows written before 0004 survive the migration unchanged; old `trades` rows read `eur_status='pending'`.
 
 ### R-2: Fill path writes EUR or pending
 
@@ -174,7 +174,7 @@ All decisions below: DECIDED by implementer, Code Owner reviews in PR.
 
 ## Design
 
-### Migration `0003_trade_eur_values.sql`
+### Migration `0004_trade_eur_values.sql`
 
 ```sql
 BEGIN;
@@ -337,7 +337,7 @@ ledger at `--db` (default `serve.DEFAULT_DB_PATH`), builds a Frankfurter adapter
 - **USDT/USD de-peg**: EUR values inherit the error of reading USDT as USD (ADR-016 Consequences); `eur_source` names the
   approximation so a later re-pricing can find the rows.
 - **Existing VPS ledger rows**: no code writes `trades`/`lots` today, so none should exist; any row that does reads
-  `pending` after 0003 and is backfilled by its fill date. Legacy `lots` rows without `trade_id` are never re-projected.
+  `pending` after 0004 and is backfilled by its fill date. Legacy `lots` rows without `trade_id` are never re-projected.
 - **Same-day fills**: a fill before ~16:00 CET is pending until a backfill runs on a later day; until then its gains show as
   pending, not wrong.
 - **Two lot paths**: the legacy `open_lot`/`consume_lot` API still writes unlinked rows; mixing it with `record_trade` for one
