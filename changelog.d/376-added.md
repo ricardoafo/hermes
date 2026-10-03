@@ -1,0 +1,1 @@
+- `hermes logs`: hermes's journal, one readable line per entry (`HH:MM:SS  LEVEL  event  key=value  …corr`), with `--level`, `--since`, `--cycle`, `--last`, `-f` and `--json`; the runbook gets a "Check on hermes" section (#376).
