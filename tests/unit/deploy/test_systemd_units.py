@@ -193,6 +193,11 @@ _HERMES_BIN_DIR = PurePosixPath("/opt/hermes/bin")
 _NOTIFIER_TEMPLATE = "hermes-notify-failure@.service"
 
 
+def _exec_argv_of(unit_name: str, key: str) -> list[str]:
+    """Return the ``key`` command line of ``unit_name``'s [Service] as argv tokens."""
+    return shlex.split(_parse(unit_name)["Service"][key])
+
+
 def _exec_argv(unit_name: str) -> list[str]:
     """Return the ExecStart of ``unit_name`` split into argv tokens."""
     return shlex.split(_parse(unit_name)["Service"]["ExecStart"])
@@ -219,6 +224,16 @@ def test_on_failure_instance_resolves_to_a_shipped_template_unit() -> None:
     assert target.endswith("@%N.service")
     template = target.removesuffix("%N.service") + ".service"
     assert (_UNIT_DIR / template).is_file(), f"{template} is not shipped"
+
+
+def test_hermes_service_posts_a_crash_notice_after_every_unclean_stop() -> None:
+    """A crash Restart= recovers from never reaches OnFailure=; ExecStopPost= covers it (#380)."""
+    assert _exec_argv_of("hermes.service", "ExecStopPost") == [
+        "-+/bin/bash",
+        str(_HERMES_BIN_DIR / "hermes-notify-crash.sh"),
+        "%n",
+    ]
+    assert (_REPO_ROOT / "deploy" / "hermes-notify-crash.sh").is_file()
 
 
 def test_failure_notifier_is_a_oneshot() -> None:

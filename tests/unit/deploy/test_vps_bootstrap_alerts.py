@@ -157,5 +157,7 @@ def test_bootstrap_workflow_ships_the_notifier_script() -> None:
     sparse = next(s for s in steps if "sparse-checkout" in s.get("with", {}))["with"]
     runs = "\n".join(str(s.get("run", "")) for s in steps)
 
-    assert "deploy/hermes-notify-failure.sh" in sparse["sparse-checkout"].split()
-    assert "tar -C deploy -cf - systemd hermes-notify-failure.sh" in runs
+    assert {"deploy/hermes-notify-failure.sh", "deploy/hermes-notify-crash.sh"} <= set(
+        sparse["sparse-checkout"].split()
+    )
+    assert "tar -C deploy -cf - systemd hermes-notify-failure.sh hermes-notify-crash.sh" in runs
