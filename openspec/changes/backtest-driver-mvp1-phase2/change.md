@@ -1,145 +1,144 @@
 # Change: backtest-driver-mvp1-phase2
 
 **SDD change**: `backtest-driver-mvp1-phase2`
-**Date**: 2026-08-26
-**Status**: Proposed (design-only PR — implementation follows after approval)
-**Tracking issue**: see sibling `issue.md` (#273)
+**Date**: 2026-08-26 (approved), refreshed 2026-10-03
+**Status**: Approved 2026-08-26; refreshed for the current tree 2026-10-03 and implemented under #313
+**Tracking issue**: see sibling `issue.md` (#313; the original #273 was closed by the spec-only PR #274)
 
 Mirror of engram topic key `sdd/backtest-driver-mvp1-phase2/change`.
 
 ## Summary
 
-Phase 1 (PR #270) proved the outer wiring — bars → strategy → fee → CalibrationHarness → JSON report — works end-to-end. Fills are synthesised at `bar.close`, so M-02 (slippage bps), M-04 (rejection rate), and M-06 (regime returns) all read zero. Phase 2 replaces `_synthesise_fill` with the full spec chain: **spec-3 `OrderRouter` → spec-2c `SimulatedExchangeAdapter` → spec-2b `OrderbookWalkFillModel`**. Because Binance Vision has no L2 depth data, the driver **synthesises an Orderbook per bar** from OHLCV + a volume-proportional depth model — see D-1 for the design rationale + rejected alternatives. Multi-pair walks with SA-9 correlation lock and kill-trigger evaluation are deferred to Phase 3.
+Phase 1 (PR #270) proved the outer wiring (bars → strategy → fee → CalibrationHarness → JSON report). Its fills are synthesised at `bar.close`, so M-02 (slippage bps), M-04 (rejection rate) and M-06 (regime returns) all read zero, and the trial it logs has no Sharpe.
+
+Phase 2 runs every signal through the real fill path: **`OrderRouter` (spec-3) → `FillModelPort` = `OrderbookWalkFillModel` (spec-2b)**, with fills folded into the **`PortfolioTracker` from #308** and recorded as **`TradeExecuted` v2** events. Because Binance Vision has no L2 depth, the backtest builds a **synthetic order book per signal** from the bar (D-1). The routing, exit and accounting logic lives in one application-layer **fill kernel** (D-2) that `hermes serve` reuses in #353 with live books, so there is one implementation for backtest and shadow (ADR-011 D-01).
+
+## Changes since approval (2026-08-26 → 2026-10-03)
+
+- **Portfolio tracker**: the approved spec sketched a new `application/backtest/portfolio_tracker.py`. #308 shipped `hermes.application.portfolio.tracker.PortfolioTracker` (snapshot accounting, long-only, average cost) and #392 added `PortfolioTracker.rebuilt` (replay of `TradeExecuted` v2). Phase 2 reuses it; no second tracker (D-3).
+- **Strategy id**: `StrategyId("swing-donchian-4h")`, read from the enabled roster entry in `config/strategies.yaml` (the same id `hermes serve` writes), replacing `swing-mvp1-p2`.
+- **Bar order**: bars are merged by close time with the 1D bar first on ties (#311), reusing phase 1's `_merge_by_close_time`; the approved sketch sorted by `open_time`, which leaks each daily bar 20 h early.
+- **Data access**: bars load through the data manifest (#356) with `CertificationState.UNTRUSTED`, so OOS is refused, and every run that evaluates the strategy appends a trial (#357/#419) before writing its report. Phase 2 reuses phase 1's loaders and trial helpers.
+- **Capital**: seeded from the roster's `capital_budget` (5000 USDT, pre-registration §2) instead of 10000.
+- **Slippage model**: the approved D-1 used a 5 bps spread around `bar.close` with the fill model's slippage off, giving ~2.5 bps entry cost. Pre-registration §6.2 fixes the backtest model at 5 bps over bar close for entries and 15 bps over the stop trigger for stop exits, and §11 makes any change a deviation. The refreshed D-1 makes the synthetic book reproduce §6.2 exactly (see below).
+- **Dropped `--fill-model constant`** (old R-2): a second `FillModelPort` implementation would be a second fill kernel (ADR-011 D-01). Phase 1's driver stays in the tree as the zero-slippage baseline.
+- **Sharpe**: phase 1 logged `sharpe=None` ("#313 adds the Sharpe"). Phase 2 records the per-period Sharpe of the daily equity curve in the trial.
+- **Kernel shared with serve**: #353 (filed after approval) wires the same path into `hermes serve`. The approved design kept routing logic in the driver; the refresh moves it into `hermes.application.execution` so serve imports it instead of copying it.
 
 ## Scope
 
 ### In
 
-- **NEW**: `scripts/backtest/run_calibration_full.py` (~350 LOC target) — Phase 2 driver. Similar CLI to Phase 1 (`--pair --start --end --output --dry-run`) plus `--fill-model {orderbook_walk,constant}` for A/B comparison.
-- **NEW**: `scripts/backtest/synthetic_orderbook.py` (~120 LOC target) — pure function `synthesize_orderbook_from_bar(bar, spread_bps, depth_frac) -> Orderbook` implementing D-1's model. Domain-pure; unit-testable in isolation.
-- **NEW**: `src/hermes/application/backtest/portfolio_tracker.py` (~150 LOC target) — running-position tracker consuming `Fill | Rejection` and emitting `PortfolioState` snapshots per bar. Needed because `OrderRouter.route()` requires an up-to-date `PortfolioState`.
-- **NEW**: Tests (~15 targeted unit tests + 1 integration test): synthetic-orderbook shape invariants (bid < mid < ask, depth sums match volume, no negative levels); portfolio tracker (open/close/pnl accounting); end-to-end integration on a 1-week fixture asserts non-zero M-02.
-- **NEW**: `changelog.d/wave-backtest-driver-mvp1-phase2.md`.
+- **NEW** `src/hermes/domain/market_data/synthetic_orderbook.py`: pure `synthesize_orderbook(...)` (D-1).
+- **NEW** `src/hermes/application/execution/kernel.py`: `FillKernel` + outcome types, the shared fill path (D-2).
+- **NEW** `src/hermes/application/backtest/replay.py`: `replay(...)`, the bar loop and the §6.2 execution book per signal (D-4).
+- **EDIT** `src/hermes/application/portfolio/tracker.py`: additive `snapshot()` accessor (the kernel needs held quantity and starting cash).
+- **NEW** `scripts/backtest/run_calibration_full.py`: the Phase 2 composition root (`--pair --start --end --output --dry-run --trial-log --manifest --depth-frac --config-dir`).
+- **NEW** tests: synthetic-book invariants (hypothesis), kernel unit tests, replay unit tests, script helper tests, integration test (real router + real fill model + real swing strategy) asserting non-zero slippage, and a ledger round-trip asserting `PortfolioTracker.rebuilt` reproduces the kernel's portfolio.
+- **NEW** `changelog.d/313-added.md`.
 
-### Out (Phase 3)
+### Out (Phase 3 or other issues)
 
-- Multi-pair walk (BTC + ETH + SOL simultaneously) with SA-9 correlation lock.
-- Kill-trigger evaluation across pairs (pre-reg §10).
-- Statistical framework (DSR, block bootstrap CI, walk-forward, CPCV, Bonferroni) — pre-reg §8.
-- HTML/PDF report renderer.
-- Full multi-year sweep automation (Train + Validate + OOS).
-- Comparison-report generator (Phase 1 vs Phase 2 vs shadow).
-
-### Also Out
-
-- Real orderbook injection (Kaiko / Tardis / VPS-side captured L2). These are the RIGHT long-term source, but ingest infra is a separate spec. Phase 2 uses synthetic orderbook so backtest is unblocked; shadow phase later swaps to captured orderbook.
+- Multi-pair walk with SA-9 correlation lock; kill-trigger and drawdown accounting across pairs (pre-reg §10).
+- Risk-overlay rules in the backtest (the rules need per-bar spread medians, book age, peg and BTC-return data the backtest does not have yet; see D-5).
+- Statistical framework, HTML report, multi-year sweep automation, comparison report.
+- Real L2 injection for backtests.
+- Wiring the kernel into `hermes serve` (#353).
+- Any change to sizing math (see Risk R6).
 
 ## Decisions
 
-### D-1: Synthetic Orderbook from OHLCV + volume-proportional depth
+### D-1: Synthetic order book reproduces pre-registration §6.2
 
-**Decision**: `synthesize_orderbook_from_bar(bar)` produces an Orderbook per bar with:
+**Decision**: `synthesize_orderbook(pair, reference_price, half_spread_bps, depth_per_side, snapshot_time, *, levels=10, level_growth=1.5, level_step_bps=1)` returns a symmetric book: best ask at `reference × (1 + half_spread)`, best bid at `reference × (1 − half_spread)`, each further level `level_step_bps` deeper, and `depth_per_side` split geometrically (each level `level_growth` × the previous, summing exactly to `depth_per_side`).
 
-- **Mid price**: `bar.close` (last-print proxy; consistent with strategy's `entry_price`).
-- **Spread**: fixed 5 bps for BTC/ETH/SOL VIP0 tier (per SA-3 §2.4 typical spot spread; parameterised via `--spread-bps` for sensitivity analysis).
-- **Depth**: total book depth = `bar.volume × 0.30` per side (Vision aggTrades sampling shows ~30% of hourly volume typically resides in the top-10 orderbook levels; SA-3 §2.6). Distributed geometrically across 10 levels with 1.5x growth: level 1 = 20% of depth, level 2 = 30%, level 3 = 45%, ... — matches empirical Binance depth curves.
-- **Timestamp**: `bar.close_time` (Binance Vision inclusive convention).
+The backtest picks the reference and the half-spread from §6.2 per signal (D-4):
 
-**Alternatives rejected**:
+| Signal | Side | Reference price | Half-spread |
+| --- | --- | --- | --- |
+| ENTRY | BUY | signal bar close (§5.3) | 5 bps |
+| EXIT, `chandelier` | SELL | `signal.stop_price` (stop trigger, §5.3/§6.2) | 15 bps |
+| EXIT, `time_stop` / `regime_break` | SELL | signal bar close | 5 bps |
 
-- (a) **Flat depth** (each level = 10% of depth). Unrealistic — real books are top-heavy.
-- (b) **Constant depth** (fixed 100 BTC per side regardless of bar). Ignores volume signal from the bar entirely; small-volume bars overstate fillable depth.
-- (c) **Random depth** (Gaussian noise around mean). Non-determinism defeats backtest reproducibility (pre-reg §12 anti-p-hacking).
-- (d) **Perfect fill** (no depth constraint — order fills at bid/ask). Equivalent to Phase 1's shortcut for market-order sizing; defeats the point of Phase 2.
-
-**Rationale**: The geometric distribution empirically matches Binance L2 snapshots (SA-3 §2.6 sampling notes). Volume-proportional means small-volume bars correctly reject oversized orders — which is precisely what M-04 (rejection rate) needs to become non-zero. Parameterised spread + depth-frac let us run sensitivity analysis without code changes.
-
-**Cost of reversal**: LOW. Swap `synthesize_orderbook_from_bar` for a real-orderbook reader when the shadow-phase L2 capture ingest is ready.
-
-### D-2: PortfolioTracker as a separate application-layer class
-
-**Decision**: `src/hermes/application/backtest/portfolio_tracker.py` — new class. Consumes `Fill | Rejection` events, maintains lot ledger, emits `PortfolioState` per bar.
+`depth_per_side = bar.volume × depth_frac` (default 0.30). The fill model runs with `apply_slippage=False`, the same setting shadow uses: the cost lives in the book, the kernel is configured identically in both modes, and only the book source differs. A small order fills on the touch at exactly the §6.2 price; an order larger than the touch walks deeper; an order larger than the whole side is rejected (§6.3: fill fully or reject). A zero-volume bar has no book and the order is declined.
 
 **Alternatives rejected**:
 
-- (a) Inline the accounting in the driver script (~50 LOC of dict manipulation).
-- (b) Reuse the production `hermes.adapters.ledger` SQLite adapter (overkill — backtest doesn't need persistence).
-- (c) Reuse `hermes.domain.lots.lot.LotStack` directly without a wrapper (would work but embeds bookkeeping logic in the driver).
+- (a) Approved D-1 as written (5 bps spread around close, fill-model slippage off): entry cost 2.5 bps, a §6.2 deviation.
+- (b) 5 bps spread plus `apply_slippage=True`: entry cost 7.5 bps; and the fill model applies `entry_slippage_bps` to every order (its `stop_slippage_bps` is never read), so stop exits would get 5 bps instead of 15.
+- (c) Next-bar-open reference (ADR-011 D-10): pre-registration §5.3 fixes entry at the signal bar close, and ADR-011's own consistency section says the signed pre-registration wins.
+- (d) Flat, constant or random depth: unchanged from the approved spec (unrealistic, ignores volume, or non-deterministic).
 
-**Rationale**: `PortfolioState` is a first-class input to `OrderRouter.route()`. The tracker's responsibility (fold `Fill` events → running state) is stateful and non-trivial (long/short, partial fills, realised pnl). Separating it into an application-layer class means:
+**Cost of reversal**: LOW. Swap the book source for captured L2 when it exists.
 
-- It's reusable by the future shadow-mode driver.
-- It's unit-testable in isolation (feed synthetic Fill events, assert state transitions).
-- The main driver script stays a thin composition-root — no business logic.
+### D-2: One fill kernel for backtest and serve
 
-**Cost of reversal**: LOW. Inline into the driver if we later decide simplicity wins.
+**Decision**: `hermes.application.execution.kernel.FillKernel` owns the path from a strategy signal to a recorded fill:
 
-### D-3: Reuse existing `SizingCalculator`, `RiskEngine`, `KillTriggerEvaluator` unchanged
+- ENTRY → `OrderRouter.route` (kill breaker, orphan-position guard, risk engine, sizing, fill model), unchanged.
+- EXIT → a market SELL of the full held quantity, sent to the same `FillModelPort` instance. Exits do not go through the router: its sizing would size the exit from equity, and its orphan-position guard would refuse to close a position when three are open.
+- A fill is folded into the `PortfolioTracker` and returned with its `TradeExecuted` v2 event (`strategy_id` set), so persisting the event lets #392's startup rebuild replay it. A fill the portfolio refuses (e.g. a BUY above cash) is declined, not recorded.
+- Outcomes: `Executed(fill, trade)`, `Declined(reason, rule, rejection)` (`rejection` set only when the fill model refused, the M-04 numerator), `Halted(breaker)`.
 
-**Decision**: The driver composes existing spec-3 components. No changes to `hermes.application.order_router.*`.
+The kernel takes per-call market inputs (`MarketContext`: book or `None`, fees, time, `MarketSnapshot`, `ExperimentState`) so backtest passes a synthetic book and serve passes a live one. It never reads a clock, a config or a venue.
 
-**Alternatives rejected**:
+**Alternatives rejected**: routing logic in the driver script (serve would need a copy); routing through `SimulatedExchangeAdapter` (the router's dispatch contract is `FillModelPort`; putting the adapter in the path would mean changing the router, which R-5 forbids, or a shim that duplicates order construction; the adapter's balance and EUR-lot ledger would be a second accounting next to the tracker).
 
-- (a) Fork a "backtest-mode" `OrderRouter` that skips risk/kill checks.
-- (b) Wrap `OrderRouter` in a decorator that inspects `RoutingInput` and short-circuits some checks.
+**Cost of reversal**: LOW.
 
-**Rationale**: The whole point of Phase 2 is to prove the SAME code path runs in backtest AND live. Fork or wrap breaks that (D-02 same-code-path invariant from ADR-011). Backtest gets the identical `OrderRouter.route()` call the shadow-phase gateway will use.
+### D-3: Reuse `PortfolioTracker` (#308/#392)
 
-**Cost of reversal**: TRIVIAL — no code to reverse.
+**Decision**: The kernel folds fills into the existing tracker. One additive accessor, `PortfolioTracker.snapshot()`, exposes the current `PortfolioSnapshot` (held quantity per pair for exits, starting cash for sizing). Nothing else in the tracker changes.
 
-### D-4: `MarketSnapshot` / `ExperimentState` stubbed with defaults per bar
+### D-4: Backtest loop in the application layer; script is a thin composition root
 
-**Decision**: The driver constructs sensible defaults for:
+**Decision**: `hermes.application.backtest.replay.replay(bars, ...)` marks the tracker, calls `strategy.on_bar(bar, tracker.state())`, skips signals before the window (warm-up), builds the §6.2 book (D-1), calls the kernel, and records the daily equity curve at each in-window 1D close. It does no I/O. The script loads config, manifest-pinned bars, fee history, writes the trial and the report.
 
-- `MarketSnapshot(pair, current_spread=Decimal("0.0005"), realized_slippage_last=Decimal("0"), stable_price=None)`.
-- `ExperimentState(current_dd_pct=Decimal("0"), consecutive_losses=0, oos_trades=0, ...)` — placeholder means kill triggers never fire in Phase 2.
+**Sizing inputs** (unchanged from the approved sketch): `stop_atr_mult=1.5`, `risk_pct=0.01`, `f_star_estimate=0.20`, `atr=signal.atr_context`. The sizing equity is the snapshot's starting cash: pre-registration §2 states that the risk percentage refers to the full 5000 USDT regardless of the deployed balance.
 
-**Alternatives rejected**:
+### D-5: Stubs for market snapshot, experiment state and risk rules
 
-- (a) Skip `OrderRouter` entirely — impossible; `RoutingInput` requires these.
-- (b) Compute `ExperimentState` incrementally as trades happen — proper implementation, deferred to Phase 3.
+**Decision**: per signal, `MarketSnapshot(current_spread = median_spread_1h = book spread, orderbook_age_seconds=0, realized_slippage_last=0, stable_price=None, btc_log_return_1d=None)`; `ExperimentState(max_drawdown=0, days_since_equity_high=0, sa9_halt=False)` so kill triggers never fire; `RiskEngine(rules=[])`. Same rationale as the approved D-4: the backtest lacks the data these need, and wiring rules against invented inputs would change trading without evidence. The kernel takes all three from the caller, so serve wires real ones.
 
-**Rationale**: Phase 2's job is to prove the pipeline runs and emits non-zero M-02/M-04. Kill triggers + drawdown accounting are Phase 3 (with the CalibrationLifecycle). Stubbing lets Phase 2 ship without waiting.
+### D-6: Fees unchanged (`select_fee_schedule`, PR #260)
 
-**Cost of reversal**: LOW — swap the constant for the real computation in Phase 3.
-
-### D-5: Fee model reused from PR #260 (`select_fee_schedule`)
-
-**Decision**: `OrderRouter.route()` receives `fees = select_fee_schedule(rows, bar.close_time, pair)`. Same as Phase 1.
-
-**Alternatives**: none — this is the correct wire per ADR-011 D-09.
-
-**Cost of reversal**: n/a.
+Per signal: `select_fee_schedule(rows, signal.signal_time, pair)`. A signal outside the fee history aborts the run (exit 1) instead of being skipped silently.
 
 ## Requirements
 
 ### R-1: Full pipeline runs end-to-end
 
-- **A-1.1**: `python scripts/backtest/run_calibration_full.py --pair BTCUSDT --start 2024-01-01 --end 2024-03-31 --output /tmp/p2.json` exits 0.
-- **A-1.2**: The output JSON contains `report.m01_fill_count >= 1` AND `report.m02_fill_price_delta_bps.avg_bps > 0` (non-zero slippage — the Phase 2 acceptance signal).
+- **A-1.1**: `HERMES_DATA_DIR=<data> uv run python scripts/backtest/run_calibration_full.py --pair BTCUSDT --start 2024-01-01 --end 2024-03-31 --output <tmp>/p2.json` exits 0 and appends one trial.
+- **A-1.2**: when the window has fills, the report has `report.m01_fill_count >= 1` and `report.m02_fill_price_delta_bps.avg_bps > 0`.
 
-### R-2: Multi-mode CLI for A/B comparison
+### R-2: Execution model matches pre-registration §6.2
 
-- **A-2.1**: `--fill-model constant` reproduces Phase 1's shortcut behaviour (M-02 = 0). Serves as a regression check that Phase 1's semantics are preserved when the operator wants the fast path.
-- **A-2.2**: `--fill-model orderbook_walk` (default) uses the synthetic Orderbook + `OrderbookWalkFillModel`. M-02 > 0 expected.
+- **A-2.1**: an entry that fits the touch fills at `close × 1.0005`; a chandelier exit at `stop × 0.9985`; a time-stop or regime-break exit at `close × 0.9995`.
+- **A-2.2**: an order larger than one side of the book is rejected, counted in M-04, and changes no portfolio state.
 
-### R-3: Synthetic Orderbook invariants (pure-function tests)
+### R-3: Synthetic order book invariants (pure, hypothesis)
 
-- **A-3.1**: `synthesize_orderbook_from_bar(bar, spread_bps=5, depth_frac=Decimal("0.30"))` produces `Orderbook` with `bid_levels[0].price < mid < ask_levels[0].price`.
-- **A-3.2**: Sum of `bid_levels[i].qty for i in range(10)` == `bar.volume * depth_frac`.
-- **A-3.3**: Level qty is monotonically non-decreasing from level 1 to level N (geometric growth).
-- **A-3.4**: All timestamps == `bar.close_time`.
+- **A-3.1**: best bid < reference < best ask, and the touch sits exactly `half_spread_bps` from the reference.
+- **A-3.2**: each side's quantities sum exactly to `depth_per_side`.
+- **A-3.3**: level quantities are non-decreasing away from the touch; bids strictly descend and asks strictly ascend.
+- **A-3.4**: `snapshot_time` is the given time.
 
-### R-4: PortfolioTracker accounting
+### R-4: Kernel accounting and replay parity
 
-- **A-4.1**: After a single BUY fill of 0.1 BTC @ 50000, `tracker.state().current_value == 10000 - (0.1*50000) - fee`.
-- **A-4.2**: After a matched SELL fill of 0.1 BTC @ 52000, realised pnl == (52000-50000)*0.1 - 2*fee. Position closes to zero.
-- **A-4.3**: `tracker.state().peak_value` is monotonically non-decreasing.
+- **A-4.1**: an ENTRY fill reaches the tracker and its `TradeExecuted` carries the kernel's `strategy_id`, the fill's price, quantity and fee.
+- **A-4.2**: an EXIT sells exactly the held quantity and leaves the pair flat.
+- **A-4.3**: an EXIT with no position is declined (`rule="no-position"`), not filled.
+- **A-4.4**: `PortfolioTracker.rebuilt(seed, trades)` over the kernel's recorded trades (including a SQLite ledger round-trip) equals the live tracker's snapshot.
 
-### R-5: Composition root uses production OrderRouter unchanged
+### R-5: Production router unchanged
 
-- **A-5.1**: `grep 'class OrderRouter' src/hermes/application/order_router/router.py` is unchanged from main after this PR merges.
-- **A-5.2**: The Phase 2 driver imports `OrderRouter` from its production module (`hermes.application.order_router.router`).
+- **A-5.1**: `src/hermes/application/order_router/router.py` has no diff against `origin/main`.
+- **A-5.2**: the kernel builds `OrderRouter` from `hermes.application.order_router.router`.
+
+### R-6: Pre-registration integrity
+
+- **A-6.1**: bars load through the data manifest with `CertificationState.UNTRUSTED`; an OOS window is refused before any strategy call.
+- **A-6.2**: strategy parameters are the `SwingStrategyAdapter` defaults (recorded in the trial); no strategy or sizing math changes.
 
 ## Design
 
@@ -147,137 +146,81 @@ Phase 1 (PR #270) proved the outer wiring — bars → strategy → fee → Cali
 
 ```mermaid
 flowchart LR
-    Vision["Binance Vision klines\n$HERMES_DATA_DIR"] --> BHA[BinanceHistoricalAdapter]
-    BHA -->|Bar 4h + 1D| Loop{main loop}
-    Loop -->|Bar 4h| Strategy[SwingStrategyAdapter\nDonchian+ADX+EMA+Chandelier]
-    Loop -->|Bar 4h| SyntheticOB[synthesize_orderbook_from_bar\nOHLCV -> 10-level book]
-    Strategy -->|StrategySignal| Router[OrderRouter.route]
-    SyntheticOB -->|Orderbook| Router
-    FeeCSV["fee-history.csv"] --> Selector[select_fee_schedule]
-    Selector -->|FeeSchedule| Router
-    Tracker[PortfolioTracker] -->|PortfolioState| Router
-    Router -->|Fill or Rejection| FillModel[OrderbookWalkFillModel]
-    FillModel -->|Fill or Rejection| Tracker
-    Tracker -->|Fill events| Harness[CalibrationHarness]
-    Harness -->|CalibrationReport| JSON["JSON report\n$HERMES_DATA_DIR/backtests/"]
+    Vision["Binance Vision klines (manifest-pinned)"] --> Merge[merge by close time]
+    Merge -->|Bar 4h + 1D| Replay[replay loop]
+    Replay -->|mark + on_bar| Strategy[SwingStrategyAdapter]
+    Strategy -->|StrategySignal| Replay
+    Replay -->|"signal + §6.2 book"| Kernel[FillKernel]
+    FeeCSV[fee-history.csv] -->|select_fee_schedule| Replay
+    Kernel -->|ENTRY| Router[OrderRouter.route]
+    Router --> FillModel[OrderbookWalkFillModel]
+    Kernel -->|EXIT: held qty| FillModel
+    FillModel -->|Fill or Rejection| Kernel
+    Kernel -->|apply_fill| Tracker[PortfolioTracker]
+    Kernel -->|"Executed(fill, TradeExecuted v2)"| Replay
+    Replay -->|fills, rejections, mids, equity| Harness[CalibrationHarness]
+    Harness --> Trial[trial log] --> JSON[JSON report]
 ```
 
-### Synthetic Orderbook sketch
+### Kernel entry point (what #353 calls)
 
 ```python
-def synthesize_orderbook_from_bar(
-    bar: Bar,
-    *,
-    spread_bps: int = 5,
-    depth_frac: Decimal = Decimal("0.30"),
-    num_levels: int = 10,
-    level_growth: Decimal = Decimal("1.5"),
-) -> Orderbook:
-    """Synthesise a top-of-book + 10-level Orderbook from OHLCV.
-
-    - Mid = bar.close
-    - Spread = spread_bps around mid (bid = mid - spread/2, ask = mid + spread/2)
-    - Total depth per side = bar.volume * depth_frac
-    - Level qty distribution: geometric with `level_growth` ratio
-      (top level = smallest, outer levels grow — matches empirical
-      Binance L2 curves per SA-3 §2.6)
-    """
-    ...
-```
-
-### Composition root sketch
-
-```python
-async def _run(args) -> int:
-    pair = _parse_pair(args.pair)
-    fee_rows = load_binance_fee_history(FEE_HISTORY_CSV)
-    strategy = SwingStrategyAdapter()
-    tracker = PortfolioTracker(starting_equity=Decimal("10000"), quote=Currency.USDT)
-    fill_model = OrderbookWalkFillModel(rng=random.Random(0))
-    risk_engine = RiskEngine(rules=default_mvp1_risk_rules())
-    sizing = SizingCalculator()
-    kill_eval = KillTriggerEvaluator.from_pre_reg_v1()  # placeholder — never fires in P2
-    router = OrderRouter(
-        fill_model=fill_model,
-        risk_engine=risk_engine,
-        sizing_calculator=sizing,
-        kill_evaluator=kill_eval,
-    )
-    adapter = BinanceHistoricalAdapter.create()
-
-    bars = await _load_bars(adapter, pair, KlineInterval.H4, start_with_warmup, end)
-    bars_1d = await _load_bars(adapter, pair, KlineInterval.D1, start_with_warmup, end)
-    merged = sorted(bars + bars_1d, key=lambda b: b.open_time)
-
-    fills, rejections = [], []
-    mid_prices: list[Decimal] = []
-
-    for bar in merged:
-        signal = strategy.on_bar(bar, tracker.state())
-        if signal is None:
-            continue
-        if signal.signal_time < start:
-            continue  # warm-up
-        orderbook = synthesize_orderbook_from_bar(bar)
-        fees = select_fee_schedule(fee_rows, signal.signal_time, pair)
-        routing_input = RoutingInput(
-            strategy_id=StrategyId("swing-mvp1-p2"),
-            side=OrderSide.BUY if signal.kind == SignalKind.ENTRY else OrderSide.SELL,
-            pair=pair,
-            entry_px=signal.entry_price,
-            sizing_input=SizingInput(
-                equity=tracker.state().current_value,
-                entry_px=signal.entry_price,
-                atr=signal.atr_context,
-                stop_atr_mult=Decimal("1.5"),
-                risk_pct=Decimal("0.01"),
-                f_star_estimate=Decimal("0.20"),
-            ),
-            portfolio_state=tracker.state(),
-            market_snapshot=_default_market_snapshot(pair, orderbook),
-            experiment_state=_stub_experiment_state(),
-            orderbook=orderbook,
-            clock=signal.signal_time,
-            fees=fees,
-            open_position_count=tracker.open_position_count(),
-        )
-        result = router.route(routing_input)
-        match result:
-            case Fill():
-                fills.append(result)
-                tracker.apply_fill(result)
-                mid_prices.append(bar.close)
-            case Rejection():
-                rejections.append(result)
-                tracker.apply_rejection(result)
-            case _:
-                raise RuntimeError("unexpected router outcome")
-
-    harness = CalibrationHarness(strategy_id="swing-mvp1-p2-{pair}")
-    report = harness.run(...)
-    _save_report(...)
+kernel = FillKernel(
+    fill_model=OrderbookWalkFillModel(apply_slippage=False),
+    risk_engine=RiskEngine(rules=[...]),
+    kill_evaluator=KillTriggerEvaluator(pre_reg=PreRegistration()),
+    tracker=tracker,                      # PortfolioTracker.rebuilt(...) in serve
+    strategy_id=StrategyId("swing-donchian-4h"),
+)
+outcome = kernel.execute(
+    signal,
+    pair,
+    MarketContext(orderbook=book, fees=fees, at=now,
+                  market_snapshot=snapshot, experiment_state=state),
+    correlation_id=correlation_id,
+)
+match outcome:
+    case Executed(trade=trade): ledger.append_event(trade)
+    case Declined() | Halted(): ...
 ```
 
 ## Test plan
 
-1. Domain unit tests: `synthesize_orderbook_from_bar` invariants (R-3).
-2. Application unit tests: `PortfolioTracker` accounting (R-4).
-3. Integration test: driver runs on a 1-week fixture (small in-memory ZIP), asserts M-01 > 0 AND M-02 > 0 (non-zero slippage — the Phase 2 acceptance criterion).
-4. Regression test: `--fill-model constant` produces IDENTICAL fill counts to Phase 1 on the same window.
-5. Smoke: full 2024-Q1 BTC run against real data — completes without errors, emits report.
-6. `bash scripts/dev/pr-preflight.sh --render-body backtest-driver-mvp1-phase2` — all 17 checks green.
+1. Domain: `synthesize_orderbook` invariants with hypothesis (R-3).
+2. Application: `FillKernel` entry, exit, no-position, fill-model rejection, portfolio refusal, kill halt (R-2, R-4) with the real `OrderbookWalkFillModel` where the fill price matters.
+3. Application: `replay` warm-up skip, §6.2 references per signal kind, daily equity curve.
+4. Integration: real `SwingStrategyAdapter` + router + fill model on generated trending bars: at least one entry and one exit, `m02.avg_bps > 0` (R-1.2, the phase-2 acceptance signal); ledger round-trip rebuild parity (A-4.4).
+5. Script helpers: execution-parameter recording, report payload.
+6. Smoke (manual, real data): A-1.1 on 2024-Q1 BTC (Train).
+7. `uv run pytest tests/unit tests/integration -q`, `uv run ruff check`, `uv run mypy src`, `uv run lint-imports`, `bash scripts/dev/pr-preflight.sh`.
+
+### Commands run against the tree at refresh time (2026-10-03, base `0e046ac`)
+
+```text
+$ ls src/hermes/application/backtest
+ls: cannot access 'src/hermes/application/backtest': No such file or directory
+
+$ HERMES_DATA_DIR=D:/hermes-data uv run python scripts/backtest/run_calibration.py --dry-run
+Backtest window: 2024-01-01 -> 2024-03-31 (pair=BTCUSDT)
+Loading fee history...
+  loaded 9 Binance rows
+Loading historical bars from Binance Vision, verified against docs\experiments\swing-mvp1\data-manifest.json...
+  bars_4h=2040 bars_1d=340 datasets=2
+--dry-run set; skipping strategy execution.
+```
+
+The same loader feeds Phase 2, so the default window has 2040 4h and 340 1D bars including warm-up, all inside Train.
 
 ## Risks
 
-- **R1** — Synthetic Orderbook systematically over- or under-estimates slippage. Mitigation: parameterised `spread_bps` and `depth_frac`. Sensitivity analysis (running the same window with 3× the spread) is a follow-up analysis, not blocking.
-- **R2** — Real vs synthetic Orderbook divergence. When shadow-mode L2 capture comes online, backtest M-02 will differ from live M-02. Mitigation: documented as a KNOWN limitation in the change spec + PR body; Phase 3 swaps to captured L2 where available.
-- **R3** — `OrderRouter.route()` requires `MarketSnapshot` / `ExperimentState` that are non-trivial to compute per bar. Stubbing risks masking real router behaviour. Mitigation: R-2 A/B mode compares synthetic-orderbook to constant-fill (Phase 1 semantics); large divergence in fill count is a red flag on the stubs.
-- **R4** — PortfolioTracker accounting bugs propagate to CalibrationReport. Mitigation: R-4 acceptance tests + integration test with a hand-crafted scenario (1 BUY, 1 SELL, known pnl).
-- **R5** — Runtime performance. Phase 1 processes ~2000 bars in ~2 minutes. Phase 2 adds `OrderRouter.route()` + `synthesize_orderbook_from_bar` per signal (not per bar). At 100 signals/backtest, +5 ms/signal = negligible.
+- **R1**: the synthetic book's depth model over- or under-states depth. At the pre-registered sizes the touch level of a BTC/ETH/SOL 4h bar is orders of magnitude larger than the order, so depth binds only on near-zero-volume bars. Mitigation: `--depth-frac` is recorded in the trial; shadow replaces the book with live L2.
+- **R2**: a chandelier exit fills at the stop even when the bar gapped through it (open below the stop). This is the literal §6.2 rule ("15 bps over stop trigger price"); changing it is a §11 deviation. Recorded as a known optimism.
+- **R3**: stubbed snapshot, experiment state and empty risk rules mask risk behaviour (D-5). Phase 3 replaces them.
+- **R4**: strategy and portfolio can disagree. A warm-up entry leaves the strategy "in position" while the portfolio is flat; its exit is declined as `no-position`. A rejected exit leaves the portfolio holding while the strategy is flat. Both are counted in the report's declined totals.
+- **R5**: runtime. The kernel runs per signal, not per bar; the book is built per signal.
+- **R6 (found during refresh, not changed)**: `SizingCalculator` computes `atr_notional = equity × risk_pct / stop_atr_mult`, which does not use the ATR or the stop distance. Pre-registration §5.4 sizes at `$50 / (entry − stop) × entry`, capped at $250. With the pre-registered inputs the router sizes every entry at 33.33 USDT. Phase 2 reuses the router unchanged (R-5) and reports this to the Code Owner instead of editing sizing math.
 
 ## Dependencies on other changes
 
-- Predecessor: PR #270 (backtest driver Phase 1) — merged; Phase 2 replaces its `_synthesise_fill` shortcut.
-- Predecessor: spec-2b (`OrderbookWalkFillModel`), spec-2c (`SimulatedExchangeAdapter`), spec-3 (`OrderRouter`) — all merged.
-- Predecessor: PR #260 (fee-history selector) — merged; Phase 2 reuses.
-- Follow-up (Phase 3): multi-pair walk + correlation lock + kill trigger + statistical framework + HTML renderer. New spec after Phase 2 lands + is dogfooded.
+- Predecessors (merged): PR #270 (phase 1), spec-2b, spec-2c, spec-3, PR #260 (fee selector), #308 (tracker), #311 (bar order), #356 (data manifest), #357/#419 (trial log), #392 (tracker rebuild).
+- Follow-up: #353 wires `FillKernel` into `hermes serve` with live books; Phase 3 adds multi-pair, risk rules and kill accounting.
