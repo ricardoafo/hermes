@@ -1,0 +1,1 @@
+- **Daily Binance archive check** (`hermes archive-check`, `deploy/systemd/hermes-archive-check.timer`): compares yesterday's stored live bars with the Binance public daily archive (checksum-verified) for every traded pair and interval, and alerts once per missing or differing bar, naming pair, timeframe and bar. Read-only against the ledger. Closes #359.

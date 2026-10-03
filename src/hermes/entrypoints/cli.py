@@ -48,6 +48,7 @@ from dotenv import dotenv_values
 from hermes.adapters.certification.json_store import JsonCertificationStore
 from hermes.adapters.console import available_scenarios
 from hermes.entrypoints import _health as health_module
+from hermes.entrypoints import archive_check as archive_check_module
 from hermes.entrypoints import certify as certify_module
 from hermes.entrypoints import console as console_module
 from hermes.entrypoints import journal as journal_module
@@ -90,6 +91,7 @@ _SUBCOMMAND_HELP: Final[dict[str, str]] = {
         "registered integration; `hermes health <integration>` probes one."
     ),
     "certify": "Evaluate the next certification gate for a strategy (pre-reg §7).",
+    "archive-check": "Compare yesterday's live bars with the Binance archive (read-only).",
     "journal": "Record, list and review Code Owner decisions (decision journal).",
     "status": "Read-only progress check: verdict, last and next bar per stream.",
     "simulate": "Replay historical scenarios (stub — implemented in a future PR).",
@@ -202,6 +204,7 @@ def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
         "health": _dispatch_health,
         "serve": _dispatch_serve,
         "certify": certify_module.main,
+        "archive-check": archive_check_module.main,
         "journal": journal_module.main,
         "status": status_module.main,
     }
