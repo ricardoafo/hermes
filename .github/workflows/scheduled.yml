@@ -1,0 +1,168 @@
+# =====================================================================
+# Scheduled — the checks that run on a clock, not on a PR
+# =====================================================================
+#
+# One workflow for everything that is too slow, too external or too
+# codebase-wide for PR CI. It replaces nightly-quality.yml and
+# mutation.yml, whose 03:00 runs sat queued until GitHub cancelled them
+# because the self-hosted pool is offline at night.
+#
+# ## Schedule
+#
+#   30 11 * * *   daily: Semgrep + contract tests
+#   45 11 * * 0   Sundays: the cosmic-ray mutation run
+#
+# 11:30 UTC is when the self-hosted pool is reliably online. The Sunday
+# cron is a separate entry so the long mutation run never delays the
+# daily checks. Manual dispatch runs the daily jobs, and the mutation
+# run too when `mutation` is ticked.
+#
+# ## Jobs
+#
+# - semgrep: SAST over the whole tree (p/security-audit + p/python).
+#   Installed with `uv tool` because the action needs Docker-in-Docker,
+#   which the runner containers cannot do.
+# - contract: real HTTPS against third-party sandboxes (Binance and
+#   Kraken public endpoints, Telegram getMe, Slack auth.test, Sentry DSN
+#   parse, Healthchecks /start). Read-only or informational calls only;
+#   each test skips when its secret is absent. Catches upstream drift
+#   the unit-tier mocks cannot see.
+# - mutation: cosmic-ray on the modules in cosmic-ray.toml, with the
+#   kill-rate floor (advisory until #406 enforces it).
+
+name: Scheduled
+
+on:
+  schedule:
+    - cron: '30 11 * * *'
+    - cron: '45 11 * * 0'
+  workflow_dispatch:
+    inputs:
+      mutation:
+        description: 'Also run the cosmic-ray mutation job'
+        type: boolean
+        default: false
+        required: false
+
+concurrency:
+  group: scheduled-${{ github.event.schedule || 'dispatch' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  KILL_RATE_ADVISORY: "true"   # #406 flips this once the widened scope has a baseline
+  KILL_RATE_FLOOR: "80"
+
+jobs:
+  semgrep:
+    name: Semgrep (SAST)
+    if: github.event.schedule != '45 11 * * 0'
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - uses: astral-sh/setup-uv@v7
+        with: { version: "0.12.5" }
+      - run: uv tool install semgrep
+      - run: uv tool run semgrep scan --config p/security-audit --config p/python --error
+
+  contract:
+    name: Contract tests
+    if: github.event.schedule != '45 11 * * 0'
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - uses: astral-sh/setup-uv@v7
+        with: { version: "0.12.5" }
+      - run: uv sync --frozen
+
+      - name: Run contract tier
+        env:
+          HERMES_TELEGRAM__BOT_TOKEN: ${{ secrets.HERMES_TELEGRAM__BOT_TOKEN }}
+          HERMES_SLACK__BOT_TOKEN: ${{ secrets.HERMES_SLACK__BOT_TOKEN }}
+          HERMES_SENTRY__DSN: ${{ secrets.HERMES_SENTRY__DSN }}
+          HERMES_HEALTHCHECKS__PING_URL: ${{ secrets.HERMES_HEALTHCHECKS__PING_URL }}
+        # -m contract overrides the `not contract` addopts filter.
+        run: uv run pytest tests/contract -m contract --tb=short -p no:cacheprovider
+
+  mutation:
+    name: Cosmic-ray mutation run
+    if: >-
+      github.event.schedule == '45 11 * * 0' ||
+      (github.event_name == 'workflow_dispatch' && inputs.mutation)
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - uses: astral-sh/setup-uv@v7
+        with: { version: "0.12.5" }
+
+      - name: Sync dev deps (frozen)
+        run: uv sync --frozen
+
+      - name: Baseline (unmutated tests must be green)
+        run: uv run cosmic-ray baseline cosmic-ray.toml
+
+      - name: Initialize mutation session
+        run: |
+          rm -f mutation-session.sqlite
+          uv run cosmic-ray init cosmic-ray.toml mutation-session.sqlite
+
+      - name: Execute mutations
+        # The local distributor runs sequentially. If wall-clock grows,
+        # switch to the http worker or shard by module_path across legs.
+        run: uv run cosmic-ray exec cosmic-ray.toml mutation-session.sqlite
+
+      - name: Compute kill rate
+        id: rate
+        shell: bash
+        run: |
+          set -euo pipefail
+          survival=$(uv run cr-rate mutation-session.sqlite | tr -d '\r')
+          kill=$(python3 -c "print(f'{100 - float('${survival}'):.2f}')")
+          echo "survival=${survival}" >> "$GITHUB_OUTPUT"
+          echo "kill=${kill}" >> "$GITHUB_OUTPUT"
+          echo "::notice::Mutation kill rate: ${kill}% (survivors: ${survival}%)"
+
+      - name: Publish detailed report
+        if: always()
+        run: uv run cr-report mutation-session.sqlite > cosmic-ray-report.txt
+
+      - name: Upload session + report as artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cosmic-ray-session
+          path: |
+            mutation-session.sqlite
+            cosmic-ray-report.txt
+          retention-days: 30
+
+      - name: Enforce kill-rate floor
+        shell: bash
+        run: |
+          set -euo pipefail
+          kill="${{ steps.rate.outputs.kill }}"
+          floor="${KILL_RATE_FLOOR}"
+          if [[ "${KILL_RATE_ADVISORY}" == "true" ]]; then
+            echo "Advisory mode — kill=${kill}% (floor ${floor}%), NOT blocking."
+            exit 0
+          fi
+          if python3 -c "import sys; sys.exit(0 if float('${kill}') >= float('${floor}') else 1)"; then
+            echo "Kill rate ${kill}% ≥ ${floor}% — pass."
+          else
+            echo "::error::Kill rate ${kill}% below floor ${floor}%"
+            exit 1
+          fi
