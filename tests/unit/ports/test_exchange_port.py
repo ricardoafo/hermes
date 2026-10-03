@@ -30,7 +30,10 @@ from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
+from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.ports.exchange import ExchangePort
+
+_STRATEGY_ID = StrategyId("test-strategy")
 
 # ---------------------------------------------------------------------------
 # Shared constants
@@ -353,6 +356,7 @@ class TestExchangePortStubBehaviour:
             side=OrderSide.BUY,
             pair=_BTC_USDT,
             qty=Quantity(amount=Decimal("0.1"), asset=Currency.BTC),
+            strategy_id=_STRATEGY_ID,
         )
         result = stub.place_market_order(side=OrderSide.BUY, order=order)
         assert isinstance(result, Fill), (
