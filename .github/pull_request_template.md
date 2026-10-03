@@ -35,6 +35,14 @@ For docs: at minimum "markdownlint-cli2 passes with zero warnings across N files
 For code: which pytest files? Coverage delta? Benchmark numbers if perf?
 -->
 
+<!--
+Required (create-pr.sh refuses the PR without it): the pyramid tiers
+this PR adds or changes tests in. Any of unit, property, contract,
+integration, mutation; or none with a reason, e.g. "none (docs only)".
+-->
+
+Test tiers touched: <!-- e.g. unit, property -->
+
 ## Zero-warnings compliance
 
 All applicable linters pass with **zero** warnings (markdownlint, ruff,
@@ -60,7 +68,8 @@ Prevents scope creep and makes the PR reviewable in <15 minutes.
 ---
 
 <!--
-Reviewer: @ricardoafo (auto-assigned via CODEOWNERS + branch protection).
-Merge: squash-merge only. Author cannot self-approve. Bot cannot merge.
+Reviewer: @ricardoafo (auto-requested via CODEOWNERS; the main-protection
+ruleset requires his approval). Merge: squash-only, through the merge queue.
+Author cannot self-approve. Bot cannot merge.
 See docs/guides/dev-workflow.md for the full discipline.
 -->

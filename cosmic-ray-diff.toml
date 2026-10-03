@@ -1,0 +1,32 @@
+##
+## Cosmic-ray configuration — diff-scoped mutation testing (#160)
+##
+## Scope: every module under `src/hermes/domain/` and
+## `src/hermes/application/`. The scope is a directory list, so a new
+## module in either layer is picked up with no config change.
+##
+## Mutating both layers in full is ~11k mutants (hours on one runner),
+## so this config is used with `cr-filter-git`: only mutants on lines
+## that differ from `origin/main` are executed, the rest are marked
+## skipped. Cost scales with the size of the change, not the codebase.
+##
+## The weekly scheduled run keeps using `cosmic-ray.toml` (value objects
+## only, kill-rate floor enforced). This config is the per-change check
+## for new domain + application code.
+##
+## Invocation:
+##   bash scripts/dev/mutation-diff.sh            # vs origin/main
+##   bash scripts/dev/mutation-diff.sh --base <ref>
+##
+
+[cosmic-ray]
+module-path = ["src/hermes/domain", "src/hermes/application"]
+timeout = 60.0
+excluded-modules = []
+test-command = "uv run pytest tests/unit/domain tests/unit/application -x -q --no-cov -n 4 -p no:cacheprovider"
+
+[cosmic-ray.distributor]
+name = "local"
+
+[cosmic-ray.filters.git-filter]
+branch = "origin/main"
