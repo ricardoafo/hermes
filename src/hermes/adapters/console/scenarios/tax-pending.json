@@ -1,5 +1,6 @@
 {
   "description": "The tax module has not landed: every tax figure is pending.",
+  "eur_per_usdt": "0.8567",
   "heartbeat": {
     "state": "ok",
     "as_of": "2026-10-03T12:12:00+00:00",
@@ -193,7 +194,9 @@
           "1021.06"
         ]
       }
-    }
+    },
+    "starting_capital": "1000.00",
+    "started_on": "2026-09-27"
   },
   "positions": [
     {
@@ -212,11 +215,11 @@
         "entry_values": [
           [
             "donchian_high",
-            "2615"
+            "2240.27"
           ],
           [
             "atr",
-            "30.1"
+            "25.79"
           ]
         ],
         "stop_moves": 3,
@@ -243,19 +246,19 @@
           },
           {
             "at": "2026-10-02T08:00:05+00:00",
-            "label": "filled 0.035 at 2,618"
+            "label": "filled 0.035 at €2,243"
           },
           {
             "at": "2026-10-02T16:00:00+00:00",
-            "label": "stop raised 2,552 → 2,566"
+            "label": "stop raised €2,186 → €2,198"
           },
           {
             "at": "2026-10-03T00:00:00+00:00",
-            "label": "stop raised 2,566 → 2,575"
+            "label": "stop raised €2,198 → €2,206"
           },
           {
             "at": "2026-10-03T04:00:00+00:00",
-            "label": "stop raised 2,575 → 2,580"
+            "label": "stop raised €2,206 → €2,210"
           }
         ]
       }
@@ -276,11 +279,11 @@
         "entry_values": [
           [
             "donchian_high",
-            "138.6"
+            "118.74"
           ],
           [
             "atr",
-            "3.4"
+            "2.91"
           ]
         ],
         "stop_moves": 6,
@@ -306,11 +309,11 @@
           },
           {
             "at": "2026-09-28T00:00:04+00:00",
-            "label": "filled 1.2 at 139.0"
+            "label": "filled 1.2 at €119.1"
           },
           {
             "at": "2026-10-03T08:00:00+00:00",
-            "label": "stop raised ×6, 133.9 → 142.1"
+            "label": "stop raised ×6, €114.7 → €121.7"
           }
         ]
       }
