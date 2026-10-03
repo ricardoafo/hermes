@@ -49,6 +49,15 @@ class StatusReadPort(Protocol):
         """
         ...
 
+    def count_bars_since(self, interval: KlineInterval, since: datetime) -> int:
+        """Return how many bars of ``interval`` were processed at or after ``since``.
+
+        Args:
+            interval: Candle-duration bucket, across every pair.
+            since: Inclusive lower bound on the bar's close, UTC-aware.
+        """
+        ...
+
     def count_signals_since(self, since: datetime) -> int:
         """Return how many signals were recorded at or after ``since``.
 

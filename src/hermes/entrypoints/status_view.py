@@ -115,6 +115,7 @@ def report_to_dict(report: StatusReport) -> dict[str, Any]:
             }
             for s in report.streams
         ],
+        "bars_24h": {interval.value: count for interval, count in report.bars_24h},
         "signals": {"last_24h": report.signals_24h, "last_7d": report.signals_7d},
         "open_positions": [
             {

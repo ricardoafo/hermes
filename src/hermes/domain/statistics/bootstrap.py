@@ -14,9 +14,10 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from hermes.domain.statistics.rng import SplitMix64 as _SplitMix64
 from hermes.domain.statistics.sharpe import sharpe_ratio
 
-__all__ = ["SharpeInterval", "block_bootstrap_sharpe_ci"]
+__all__ = ["SharpeInterval", "block_bootstrap_sharpe_ci", "percentile"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,38 +81,13 @@ def block_bootstrap_sharpe_ci(
     sharpes.sort()
     tail = (1.0 - confidence) / 2.0
     return SharpeInterval(
-        lower=_percentile(sharpes, tail),
-        upper=_percentile(sharpes, 1.0 - tail),
+        lower=percentile(sharpes, tail),
+        upper=percentile(sharpes, 1.0 - tail),
         resamples=len(sharpes),
     )
 
 
-class _SplitMix64:
-    """SplitMix64: a small, fully specified generator, so a seed reproduces the
-    interval exactly regardless of the Python version's ``random`` internals."""
-
-    _MASK = (1 << 64) - 1
-
-    def __init__(self, seed: int) -> None:
-        self._state = seed & self._MASK
-
-    def next64(self) -> int:
-        self._state = (self._state + 0x9E3779B97F4A7C15) & self._MASK
-        z = self._state
-        z = ((z ^ (z >> 30)) * 0xBF58476D1CE4E5B9) & self._MASK
-        z = ((z ^ (z >> 27)) * 0x94D049BB133111EB) & self._MASK
-        return z ^ (z >> 31)
-
-    def below(self, n: int) -> int:
-        """Return a uniform integer in [0, n) by rejection sampling."""
-        limit = (1 << 64) - (1 << 64) % n
-        while True:
-            value = self.next64()
-            if value < limit:
-                return value % n
-
-
-def _percentile(ordered: Sequence[float], q: float) -> float:
+def percentile(ordered: Sequence[float], q: float) -> float:
     """Linear-interpolated quantile of an ascending sequence."""
     position = q * (len(ordered) - 1)
     low = int(position)

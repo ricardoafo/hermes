@@ -1,0 +1,18 @@
+# Fire hermes-archive-check.service once a day for the previous UTC day.
+#
+# Binance publishes daily kline archives some hours after midnight UTC; 09:00
+# UTC leaves a wide margin. An unpublished day is reported, not alerted.
+
+[Unit]
+Description=Fire hermes-archive-check daily at 09:00 UTC
+Requires=hermes-archive-check.service
+
+[Timer]
+OnCalendar=*-*-* 09:00:00 UTC
+# Run a missed day on next boot.
+Persistent=true
+RandomizedDelaySec=5min
+Unit=hermes-archive-check.service
+
+[Install]
+WantedBy=timers.target

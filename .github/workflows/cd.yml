@@ -7,9 +7,9 @@
 # build (wheel) -> bundle (wheel + hash-pinned requirements + config +
 # deploy scripts, one tarball) -> deploy (tailnet + scp + install_release.sh
 # over SSH, which flips `current`, restarts the unit and runs the health
-# gate) -> smoke -> confirm. A failed gate rolls back to `previous` and
-# fails the deploy job. The smoke suite is still a placeholder (no @smoke
-# tests exist yet).
+# gate, then the tests/smoke suite over the same SSH path, #407) ->
+# confirm. A failed gate or a failed smoke run rolls back to `previous`
+# and fails the deploy job.
 #
 # ## Prerequisites on hermes-01 (one-time: run the `vps-bootstrap` workflow)
 #
@@ -118,7 +118,7 @@ jobs:
           # The units run these from /opt/hermes/current/deploy/ (health ping,
           # failure notifier, backup): each release carries its own copy.
           install -d "$stage/deploy" "$stage/bin"
-          install -m 0755 deploy/hermes-health-ping.sh deploy/hermes-notify-failure.sh deploy/hermes-notify-crash.sh deploy/hermes-backup.sh "$stage/deploy/"
+          install -m 0755 deploy/hermes-health-ping.sh deploy/hermes-notify-failure.sh deploy/hermes-notify-crash.sh deploy/hermes-daily-line.sh deploy/hermes-backup.sh "$stage/deploy/"
           install -m 0755 scripts/deploy/install_release.sh scripts/deploy/health_gate.sh \
               scripts/deploy/rollback.sh "$stage/bin/"
 
@@ -217,6 +217,11 @@ jobs:
           scp -i ~/.ssh/vps_id -o StrictHostKeyChecking=yes \
               "$bundle" "$VPS_SSH_USER@$VPS_SSH_HOST:/var/tmp/"
 
+      - name: Mark the deploy start
+        id: start
+        if: inputs.dry_run != true
+        run: echo "epoch=$(date -u +%s)" >> "$GITHUB_OUTPUT"
+
       - name: Install release, restart hermes.service, run health gate
         if: inputs.dry_run != true
         env:
@@ -250,52 +255,58 @@ jobs:
           "${as_root[@]}" /usr/bin/bash "$stage/bin/install_release.sh" "$sha12" "$stage"
           REMOTE
 
-      - name: Dry-run notice
-        if: inputs.dry_run == true
-        run: echo "::notice::dry_run=true — built the bundle, skipped tailnet + scp + install."
-
-  # ─────────────────────────────────────────────────────────────────
-  # SMOKE — end-to-end sanity (still placeholder — no @smoke suite yet)
-  # ─────────────────────────────────────────────────────────────────
-  smoke:
-    name: Smoke tests
-    needs: deploy
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
-    timeout-minutes: 10
-    steps:
+      # ───────────────────────────────────────────────────────────
+      # SMOKE — tests/smoke runs read-only checks on hermes-01 over the
+      # SSH path above (tailnet and key exist only on this runner, which
+      # is why smoke lives in this job). No tests collected (pytest exit
+      # 5) or any failure fails the deploy and rolls back.
+      # ───────────────────────────────────────────────────────────
       - uses: actions/checkout@v7
+        if: inputs.dry_run != true
         with:
           fetch-depth: 1
 
       - uses: astral-sh/setup-uv@v7
-        with: { version: "0.12.5" }
-      - run: uv sync --frozen
-
-      - name: Run smoke suite
         if: inputs.dry_run != true
+        with: { version: "0.12.5" }
+
+      - name: Smoke tests
+        id: smoke
+        if: inputs.dry_run != true
+        env:
+          VPS_SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
+          VPS_SSH_USER: ${{ secrets.VPS_SSH_USER }}
+          RELEASE_SHA: ${{ github.sha }}
+          HERMES_SMOKE_SINCE: ${{ steps.start.outputs.epoch }}
+          HERMES_SMOKE_REQUIRED: '1'
         run: |
           set -euo pipefail
-          # pytest exits 5 when it collects no tests, which is the state
-          # until a @smoke suite exists: warn and pass. Any other code is
-          # a real failure and passes through.
-          rc=0
-          uv run pytest -m smoke --tb=short || rc=$?
-          if [ "$rc" -eq 5 ]; then
-              echo "::warning::no @smoke tests defined yet — skipping"
-              exit 0
-          fi
-          exit "$rc"
+          export HERMES_SMOKE_RELEASE="${RELEASE_SHA::12}"
+          export HERMES_SMOKE_SSH="-i $HOME/.ssh/vps_id -o StrictHostKeyChecking=yes $VPS_SSH_USER@$VPS_SSH_HOST"
+          uv sync --frozen
+          uv run pytest tests/smoke -m smoke --tb=short -p no:cacheprovider
+
+      - name: Roll back after a failed smoke run
+        if: failure() && inputs.dry_run != true && steps.smoke.outcome == 'failure'
+        env:
+          VPS_SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
+          VPS_SSH_USER: ${{ secrets.VPS_SSH_USER }}
+        run: |
+          set -euo pipefail
+          echo "::error::Smoke tests failed; rolling hermes-01 back to the previous release."
+          ssh -i ~/.ssh/vps_id -o StrictHostKeyChecking=yes -o ServerAliveInterval=15 \
+              "$VPS_SSH_USER@$VPS_SSH_HOST" /opt/hermes/bin/rollback.sh
 
       - name: Dry-run notice
         if: inputs.dry_run == true
-        run: echo "::notice::dry_run=true — skipped smoke suite."
+        run: echo "::notice::dry_run=true — built the bundle, skipped tailnet + scp + install + smoke."
 
   # ─────────────────────────────────────────────────────────────────
   # CONFIRM — deploy-gate aggregator
   # ─────────────────────────────────────────────────────────────────
   confirm:
     name: Confirm deployment
-    needs: [build, bundle, deploy, smoke]
+    needs: [build, bundle, deploy]
     if: '!cancelled()'
     runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 1

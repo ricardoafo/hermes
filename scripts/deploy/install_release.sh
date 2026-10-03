@@ -18,17 +18,23 @@
 #                                  hermes-notify-failure.sh,
 #                                  hermes-notify-crash.sh
 #   /opt/hermes/python/            uv-managed Python 3.14
+#   /var/lib/hermes/backups/       pre-<sha12>.sqlite3 ledger snapshots
 #
 # Steps, in order:
 #   1. Preflight: nothing on disk changes until every check passes.
 #   2. Install into versions/<sha12> unless its .installed marker exists.
 #      The venv is built at its final path because a venv is not relocatable.
-#   3. Flip previous, flip current, restart the unit.
-#   4. Run the health gate. On failure roll back (or stop the unit on a
-#      first deploy) and exit 1.
-#   5. On success refresh /opt/hermes/bin and prune old releases.
+#   3. Snapshot the ledger (SQLite online backup, as `hermes`) and keep
+#      the newest BACKUPS_KEPT. The new release may migrate the schema at
+#      start; the snapshot is the way back. A failed snapshot stops the
+#      deploy before anything goes live.
+#   4. Flip previous, flip current, restart the unit.
+#   5. Run the health gate. On failure roll back, restoring the snapshot
+#      (or stop the unit on a first deploy), and exit 1.
+#   6. On success refresh /opt/hermes/bin and prune old releases.
 #
-# Test seams: HERMES_ROOT, HERMES_ENV_FILE, SYSTEMCTL. The script can be
+# Test seams: HERMES_ROOT, HERMES_ENV_FILE, SYSTEMCTL, HERMES_DB,
+# HERMES_BACKUP_DIR, HERMES_BACKUP_PYTHON, RUNUSER. The script can be
 # sourced to reach prune_versions on its own.
 #
 # Reference: openspec/changes/179-cd-first-real-deploy/change.md (D-1..D-7).
@@ -40,10 +46,15 @@ ENV_FILE=${HERMES_ENV_FILE:-/etc/hermes/env.production}
 SYSTEMCTL=${SYSTEMCTL:-systemctl}
 UNIT=hermes.service
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+DB=${HERMES_DB:-/var/lib/hermes/hermes.sqlite3}
+BACKUP_DIR=${HERMES_BACKUP_DIR:-/var/lib/hermes/backups}
+RUNUSER=${RUNUSER:-runuser}
 
 # The 3 newest releases survive a prune, plus whatever `current` and
 # `previous` point to.
 KEEP_NEWEST=3
+# Ledger snapshots kept; one per deploy, newest first.
+BACKUPS_KEPT=5
 
 # uv runs as root (the service must not be able to rewrite its own code),
 # so the managed Python lives where `hermes` can read it. Under /root it
@@ -125,6 +136,49 @@ install_version() {
     partial_dir=""
 }
 
+# Snapshot the ledger before the new release can touch it. SQLite's online
+# backup API copies a consistent image while hermes.service keeps writing,
+# unlike `cp`, which can catch a half-written page or miss the WAL. It runs
+# as `hermes`, which owns the database, through the new release's own
+# Python (no sqlite3 CLI on the box). Prints the snapshot path, or nothing
+# when there is no ledger yet (first deploy).
+backup_ledger() {
+    local sha=$1 py=$2 out tmp
+    if [ ! -f "$DB" ]; then
+        log "no ledger at $DB yet: nothing to back up" >&2
+        return 0
+    fi
+    install -d -m 0750 -o hermes -g hermes "$BACKUP_DIR" 2>/dev/null || install -d -m 0750 "$BACKUP_DIR"
+    out="$BACKUP_DIR/pre-$sha.sqlite3"
+    tmp="$out.partial"
+    "$RUNUSER" -u hermes -- "$py" -c '
+import sqlite3, sys
+src = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
+dst = sqlite3.connect(sys.argv[2])
+with dst:
+    src.backup(dst)
+dst.close()
+src.close()
+' "$DB" "$tmp" >&2 || { rm -f "$tmp"; return 1; }
+    mv -f "$tmp" "$out"
+    log "ledger snapshot: $out" >&2
+    prune_backups
+    echo "$out"
+}
+
+# Keep the BACKUPS_KEPT newest snapshots by mtime.
+prune_backups() {
+    local file n=0
+    while IFS= read -r file; do
+        n=$((n + 1))
+        if [ "$n" -gt "$BACKUPS_KEPT" ]; then
+            log "pruning snapshot $file" >&2
+            rm -f "$file"
+        fi
+    done < <(find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type f -name 'pre-*.sqlite3' -printf '%T@ %p\n' \
+        | LC_ALL=C sort -rn | cut -d' ' -f2-)
+}
+
 # Atomic symlink swap: write a temp link, then rename(2) it over the real one.
 flip_link() {
     local target=$1 link=$2
@@ -171,7 +225,7 @@ prune_versions() {
 main() {
     local sha=${1:?usage: install_release.sh <sha12> <stage_dir>}
     local stage=${2:?usage: install_release.sh <sha12> <stage_dir>}
-    local vdir="$ROOT/versions/$sha" cur="" prev_ok=false
+    local vdir="$ROOT/versions/$sha" cur="" prev_ok=false snapshot=""
 
     preflight "$sha" "$stage"
     trap cleanup_partial EXIT
@@ -182,6 +236,9 @@ main() {
         log "installing release $sha"
         install_version "$vdir" "$stage"
     fi
+
+    snapshot=$(backup_ledger "$sha" "${HERMES_BACKUP_PYTHON:-$vdir/.venv/bin/python}") \
+        || die "ledger snapshot of $DB failed: not deploying $sha"
 
     # `readlink -f` exits 0 on a missing link, so `current` needs `-L`.
     # Without it the first deploy would write `previous -> current`.
@@ -203,7 +260,9 @@ main() {
             prev_ok=true
         fi
         if [ "$prev_ok" = true ]; then
-            bash "$SCRIPT_DIR/rollback.sh" || echo "::error::rollback failed too"
+            # The failed release may have migrated the ledger; the
+            # snapshot puts it back to what `previous` expects.
+            HERMES_RESTORE_DB=$snapshot bash "$SCRIPT_DIR/rollback.sh" || echo "::error::rollback failed too"
         else
             log "no previous release: stopping $UNIT"
             "$SYSTEMCTL" stop "$UNIT" || true

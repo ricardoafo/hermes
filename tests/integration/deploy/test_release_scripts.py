@@ -23,7 +23,9 @@ from __future__ import annotations
 
 import os
 import shutil
+import sqlite3
 import subprocess
+import sys
 import tempfile
 import time
 from dataclasses import dataclass
@@ -136,7 +138,19 @@ _STUB_SLEEP = """\
 exit 0
 """
 
+# `runuser -u hermes -- <cmd>` drops privileges on the box; here it logs
+# the call and runs <cmd> as the test user.
+_STUB_RUNUSER = """\
+#!/usr/bin/env bash
+echo "runuser $*" >> "$STUB_LOG"
+[ -z "${STUB_RUNUSER_FAIL:-}" ] || exit 1
+while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do shift; done
+shift
+exec "$@"
+"""
+
 _STUBS = {
+    "runuser": _STUB_RUNUSER,
     "uv": _STUB_UV,
     "systemctl": _STUB_SYSTEMCTL,
     "journalctl": _STUB_JOURNALCTL,
@@ -161,6 +175,40 @@ class Box:
     def env_file(self) -> Path:
         """Return the scratch env file the scripts preflight."""
         return self.base / "env.production"
+
+    @property
+    def db(self) -> Path:
+        """Return the scratch ledger path (absent until a test creates it)."""
+        return self.base / "var-lib-hermes" / "hermes.sqlite3"
+
+    @property
+    def backups(self) -> Path:
+        """Return the scratch ledger snapshot directory."""
+        return self.base / "var-lib-hermes" / "backups"
+
+    def write_ledger(self, value: str, path: Path | None = None) -> Path:
+        """Create a one-row SQLite ledger holding ``value``."""
+        path = path or self.db
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.unlink(missing_ok=True)
+        conn = sqlite3.connect(path)
+        try:
+            with conn:
+                conn.execute("CREATE TABLE marker (value TEXT)")
+                conn.execute("INSERT INTO marker VALUES (?)", (value,))
+        finally:
+            conn.close()
+        return path
+
+    @staticmethod
+    def ledger_value(path: Path) -> str:
+        """Return the single marker value stored in a ledger file."""
+        conn = sqlite3.connect(path)
+        try:
+            (value,) = conn.execute("SELECT value FROM marker").fetchone()
+        finally:
+            conn.close()
+        return str(value)
 
     @property
     def log(self) -> Path:
@@ -240,6 +288,9 @@ class Box:
                 "STUB_LOG": _posix(self.log),
                 "STUB_STATE": _posix(self._state),
                 "GATE_HOLD_SECONDS": _GATE_HOLD,
+                "HERMES_DB": _posix(self.db),
+                "HERMES_BACKUP_DIR": _posix(self.backups),
+                "HERMES_BACKUP_PYTHON": _posix(Path(sys.executable)),
                 **extra,
             }
         )
@@ -832,3 +883,132 @@ def test_prune_keeps_exactly_the_three_newest_plus_current_and_previous(
         kept = sorted(path.name for path in (root / "versions").iterdir())
     assert result.returncode == 0, result.stderr
     assert kept == expected
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Ledger snapshot before activate, restore on rollback.
+# ─────────────────────────────────────────────────────────────────────
+
+
+def test_deploy_snapshots_the_ledger_before_the_restart(box: Box) -> None:
+    """Invariant: the ledger is copied before the new release can migrate it.
+
+    The snapshot holds the pre-deploy rows, and the `runuser` call that
+    takes it comes before any `systemctl restart`.
+    """
+    box.write_ledger("before-deploy")
+
+    result = box.deploy(_SHA_A)
+
+    assert result.returncode == 0, _output(result)
+    assert box.ledger_value(box.backups / f"pre-{_SHA_A}.sqlite3") == "before-deploy"
+    calls = box.calls()
+    backup_at = next(i for i, call in enumerate(calls) if call.startswith("runuser -u hermes"))
+    restart_at = next(i for i, call in enumerate(calls) if call.startswith("systemctl restart"))
+    assert backup_at < restart_at
+
+
+def test_deploy_without_a_ledger_skips_the_snapshot(box: Box) -> None:
+    """A first deploy has no ledger yet; it must go live without a snapshot."""
+    result = box.deploy(_SHA_A)
+
+    assert result.returncode == 0, _output(result)
+    assert not box.backups.exists()
+
+
+def test_failed_snapshot_stops_the_deploy_before_current_moves(box: Box) -> None:
+    """Invariant: no snapshot, no deploy. `current` stays on the old release."""
+    box.seed_release(_SHA_A)
+    box.link("current", _SHA_A)
+    box.write_ledger("live")
+
+    result = box.deploy(_SHA_B, STUB_RUNUSER_FAIL="1")
+
+    assert result.returncode == 1
+    assert "ledger snapshot" in _output(result)
+    assert box.target("current") == _SHA_A
+    assert not any(call.startswith("systemctl restart") for call in box.calls())
+
+
+def test_only_the_five_newest_snapshots_survive(box: Box) -> None:
+    """Snapshots are pruned to the newest five; the two oldest go."""
+    box.write_ledger("live")
+    box.backups.mkdir(parents=True)
+    for index in range(6):
+        old = box.backups / f"pre-{index:012x}.sqlite3"
+        old.write_bytes(b"old")
+        os.utime(old, (1_000_000 + index, 1_000_000 + index))
+
+    result = box.deploy(_SHA_A)
+
+    assert result.returncode == 0, _output(result)
+    survivors = sorted(path.name for path in box.backups.iterdir())
+    assert survivors == sorted(
+        [f"pre-{_SHA_A}.sqlite3", *(f"pre-{index:012x}.sqlite3" for index in range(2, 6))]
+    )
+
+
+def test_failed_gate_rolls_back_and_restores_the_snapshot(box: Box) -> None:
+    """Invariant: a release that fails the gate leaves the ledger as it found it.
+
+    The rollback runs with the snapshot this deploy took, so a schema the
+    bad release migrated never meets the old code.
+    """
+    box.seed_release(_SHA_A)
+    box.link("current", _SHA_A)
+    box.write_ledger("before-deploy")
+
+    result = box.deploy(_SHA_B, STUB_BAD_RELEASES=_SHA_B)
+
+    assert result.returncode == 1
+    assert box.target("current") == _SHA_A
+    assert "restored ledger" in _output(result)
+    assert box.ledger_value(box.db) == "before-deploy"
+
+
+def test_rollback_with_a_snapshot_stops_restores_then_restarts(box: Box) -> None:
+    """Invariant: the copy happens with the unit stopped, and stale WAL files go with it."""
+    box.seed_release(_SHA_A)
+    box.seed_release(_SHA_B)
+    box.link("previous", _SHA_A)
+    box.link("current", _SHA_B)
+    box.write_ledger("migrated")
+    snapshot = box.write_ledger("pre-migration", box.backups / f"pre-{_SHA_B}.sqlite3")
+    wal = Path(f"{box.db}-wal")
+    wal.write_bytes(b"stale")
+
+    result = box.rollback(HERMES_RESTORE_DB=_posix(snapshot))
+
+    assert result.returncode == 0, _output(result)
+    assert box.ledger_value(box.db) == "pre-migration"
+    assert not wal.exists()
+    stop_at, restart_at = _systemctl_order(box.calls(), "stop", "restart")
+    assert stop_at < restart_at
+
+
+def test_rollback_refuses_a_missing_snapshot(box: Box) -> None:
+    """A named snapshot that is not there stops the rollback before anything moves."""
+    box.seed_release(_SHA_A)
+    box.seed_release(_SHA_B)
+    box.link("previous", _SHA_A)
+    box.link("current", _SHA_B)
+
+    result = box.rollback(HERMES_RESTORE_DB=_posix(box.backups / "missing.sqlite3"))
+
+    assert result.returncode == 1
+    assert box.target("current") == _SHA_B
+
+
+def test_rollback_without_a_snapshot_leaves_the_ledger_alone(box: Box) -> None:
+    """A manual rollback with no snapshot named must not touch the ledger."""
+    box.seed_release(_SHA_A)
+    box.seed_release(_SHA_B)
+    box.link("previous", _SHA_A)
+    box.link("current", _SHA_B)
+    box.write_ledger("untouched")
+
+    result = box.rollback()
+
+    assert result.returncode == 0, _output(result)
+    assert box.ledger_value(box.db) == "untouched"
+    assert not any(call.startswith("systemctl stop") for call in box.calls())
