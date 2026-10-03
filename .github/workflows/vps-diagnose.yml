@@ -5,10 +5,14 @@
 # Manual-only workflow (`workflow_dispatch`). SSHes into the production
 # VPS using the same secrets the future CD deploy body (#179) will use
 # — validates the secret plumbing works AND emits a structured snapshot
-# of the VPS state (OS, python, /opt/hermes, systemd units, disk).
+# of the VPS state (OS, python, /opt/hermes, systemd units, disk), plus
+# hermes.service itself: unit status, the last hour of journal, the
+# failure-alert units, the per-integration `hermes health` probes and
+# the newest processed bar per stream from the ledger (#348).
 #
 # Zero side effects: only READ commands. Never writes / installs /
-# restarts anything on the VPS.
+# restarts anything on the VPS. The health probes skip `healthchecks`
+# (its probe sends a /start ping) and the ledger is opened read-only.
 #
 # ## Trigger
 #
@@ -231,6 +235,63 @@ jobs:
           echo "  10. GH Actions runner"
           echo "════════════════════════════════════════════════════════"
           systemctl list-units --type=service --all 2>/dev/null | grep -i "runner" || echo "NO runner service found"
+
+          # Section 11 reads secrets and the ledger, so it needs root; the
+          # CD account is root today, a non-root one goes through sudo -n.
+          as_root=""
+          [ "$(id -u)" -eq 0 ] || as_root="sudo -n"
+          hermes_bin=/opt/hermes/current/.venv/bin/hermes
+
+          echo ""
+          echo "════════════════════════════════════════════════════════"
+          echo "  11. hermes.service: status, journal, probes, ledger"
+          echo "════════════════════════════════════════════════════════"
+          systemctl status hermes.service --no-pager -l 2>&1 | head -30
+          echo ""
+          echo "-- failure-alert units --"
+          systemctl list-units --all --no-pager 'hermes-notify-failure@*' 2>&1 | head -10
+          $as_root journalctl -u 'hermes-notify-failure@*' --since "-24h" --no-pager 2>&1 | tail -30
+          echo ""
+          echo "-- journal, last 60 min (tail 150) --"
+          $as_root journalctl -u hermes.service --since "-60 min" --no-pager 2>&1 | tail -150
+          echo ""
+          echo "-- serve lifecycle events, last 24h --"
+          $as_root journalctl -u hermes.service --since "-24h" --no-pager 2>&1 \
+            | grep -E 'serve\.(run|warmup|cursor|close|notify|signal)\.' | tail -40 || echo "none"
+          echo ""
+          # Per-integration probes only: `hermes health` with no argument also
+          # runs the healthchecks probe, which sends a /start ping (a write).
+          echo "-- hermes health probes --"
+          if [ -x "$hermes_bin" ]; then
+              for integration in market_data telegram slack sentry; do
+                  $as_root bash -c 'set -a; . /etc/hermes/env.production; set +a; cd /var/lib/hermes && exec runuser -u hermes -- "$1" health "$2"' \
+                    _ "$hermes_bin" "$integration" 2>&1 | tail -15
+                  echo ""
+              done
+          else
+              echo "$hermes_bin missing: no release installed"
+          fi
+          # Newest BarProcessed per stream, read-only: confirms the loop
+          # handled the latest closed bars (4h bars close 00/04/08/12/16/20 UTC).
+          echo "-- last processed bar per stream (ledger, read-only) --"
+          if [ -x "$hermes_bin" ] && [ -f /var/lib/hermes/hermes.sqlite3 ]; then
+              $as_root runuser -u hermes -- /opt/hermes/current/.venv/bin/python -c '
+          import sqlite3
+          conn = sqlite3.connect("file:/var/lib/hermes/hermes.sqlite3?mode=ro", uri=True)
+          rows = conn.execute(
+              "SELECT json_extract(payload_json, ?), json_extract(payload_json, ?),"
+              " json_extract(payload_json, ?), MAX(occurred_at), COUNT(*) FROM events"
+              " WHERE event_type = ? GROUP BY 1, 2, 3 ORDER BY 1, 2, 3",
+              ("$.pair.base", "$.pair.quote", "$.interval", "BarProcessed"),
+          ).fetchall()
+          for base, quote, interval, last, count in rows:
+              print(f"  {base}/{quote:<6} {interval:<4} last close {last}  ({count} bars)")
+          if not rows:
+              print("  no BarProcessed rows")
+          ' 2>&1 | head -20
+          else
+              echo "no release or no ledger at /var/lib/hermes/hermes.sqlite3"
+          fi
 
           echo ""
           echo "═════════════ DIAGNOSTIC COMPLETE ═════════════"
