@@ -1,0 +1,1839 @@
+# serializer version: 1
+# name: test_blind_screen_matches_snapshot[down-stale-activity]
+  list([
+    ' DEMO DATA · scenario down-stale',
+    'Today',
+    '6h ago      closed BTC',
+    '8h ago      SOL stop raised ×6, 139.0→142.1',
+    'Yesterday',
+    '15:00       ⚠ market data retry after timeout',
+    '10:00       opened ETH at 2,618',
+    'Mon 28 Sep',
+    '02:00       opened SOL at 139.0',
+    '00:30       restart · deploy',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[down-stale-heartbeat]
+  list([
+    ' DEMO DATA · scenario down-stale',
+    '✖ hermes down since 18:04 · run hermes logs for why',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[down-stale-overview]
+  list([
+    ' DEMO DATA · scenario down-stale',
+    '✖ hermes down since 18:04 · run hermes logs for why',
+    'Portfolio · money hidden on this surface',
+    '',
+    'coin   side   opened             entry   size    stop',
+    '──────────────────────────────────────────────────────',
+    'ETH    long   Fri 02 Oct 10:00   2,618   0.035   2,580',
+    'SOL    long   Mon 28 Sep 02:00   139.0   1.2     142.1',
+    '',
+    'Today',
+    '6h ago      closed BTC',
+    '8h ago      SOL stop raised ×6, 139.0→142.1',
+    'Yesterday',
+    '15:00       ⚠ market data retry after timeout',
+    '10:00       opened ETH at 2,618',
+    '',
+    'Shadow test · day 12 of 90 · on track',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[down-stale-portfolio-year]
+  list([
+    ' DEMO DATA · scenario down-stale',
+    'Portfolio · money hidden on this surface',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[down-stale-portfolio]
+  list([
+    ' DEMO DATA · scenario down-stale',
+    'Portfolio · money hidden on this surface',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[down-stale-position-detail]
+  list([
+    ' DEMO DATA · scenario down-stale',
+    'ETH · 4h · long · open 1d 8h',
+    'opened Fri 02 Oct 10:00 · entry 2,618 · size 0.035 · stop 2,580',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[down-stale-positions]
+  list([
+    ' DEMO DATA · scenario down-stale',
+    'coin   side   opened             entry   size    stop',
+    '──────────────────────────────────────────────────────',
+    'ETH    long   Fri 02 Oct 10:00   2,618   0.035   2,580',
+    'SOL    long   Mon 28 Sep 02:00   139.0   1.2     142.1',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[down-stale-shadow-test]
+  list([
+    ' DEMO DATA · scenario down-stale',
+    'Shadow test · day 12 of 90 · on track',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[empty-activity]
+  list([
+    ' DEMO DATA · scenario empty',
+    'No activity yet.',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[empty-heartbeat]
+  list([
+    ' DEMO DATA · scenario empty',
+    '                                             ● live · checked 14:00 · next 18:00',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[empty-overview]
+  list([
+    ' DEMO DATA · scenario empty',
+    '                                             ● live · checked 14:00 · next 18:00',
+    'Portfolio · money hidden on this surface',
+    '',
+    'No open shadow positions.',
+    '',
+    'No activity yet.',
+    '',
+    'Shadow test · not started · waits on #353',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[empty-portfolio-year]
+  list([
+    ' DEMO DATA · scenario empty',
+    'Portfolio · money hidden on this surface',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[empty-portfolio]
+  list([
+    ' DEMO DATA · scenario empty',
+    'Portfolio · money hidden on this surface',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[empty-position-detail]
+  list([
+    ' DEMO DATA · scenario empty',
+    'No open position for that coin.',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[empty-positions]
+  list([
+    ' DEMO DATA · scenario empty',
+    'No open shadow positions.',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[empty-shadow-test]
+  list([
+    ' DEMO DATA · scenario empty',
+    'Shadow test · not started · waits on #353',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[late-activity]
+  list([
+    ' DEMO DATA · scenario late',
+    'Today',
+    '6h ago      closed BTC',
+    '8h ago      SOL stop raised ×6, 139.0→142.1',
+    'Yesterday',
+    '15:00       ⚠ market data retry after timeout',
+    '10:00       opened ETH at 2,618',
+    'Mon 28 Sep',
+    '02:00       opened SOL at 139.0',
+    '00:30       restart · deploy',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[late-heartbeat]
+  list([
+    ' DEMO DATA · scenario late',
+    '                                                        ◐ 18:00 check late · 12m',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[late-overview]
+  list([
+    ' DEMO DATA · scenario late',
+    '                                                        ◐ 18:00 check late · 12m',
+    'Portfolio · money hidden on this surface',
+    '',
+    'coin   side   opened             entry   size    stop',
+    '──────────────────────────────────────────────────────',
+    'ETH    long   Fri 02 Oct 10:00   2,618   0.035   2,580',
+    'SOL    long   Mon 28 Sep 02:00   139.0   1.2     142.1',
+    '',
+    'Today',
+    '6h ago      closed BTC',
+    '8h ago      SOL stop raised ×6, 139.0→142.1',
+    'Yesterday',
+    '15:00       ⚠ market data retry after timeout',
+    '10:00       opened ETH at 2,618',
+    '',
+    'Shadow test · day 12 of 90 · on track',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[late-portfolio-year]
+  list([
+    ' DEMO DATA · scenario late',
+    'Portfolio · money hidden on this surface',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[late-portfolio]
+  list([
+    ' DEMO DATA · scenario late',
+    'Portfolio · money hidden on this surface',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[late-position-detail]
+  list([
+    ' DEMO DATA · scenario late',
+    'ETH · 4h · long · open 1d 8h',
+    'opened Fri 02 Oct 10:00 · entry 2,618 · size 0.035 · stop 2,580',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[late-positions]
+  list([
+    ' DEMO DATA · scenario late',
+    'coin   side   opened             entry   size    stop',
+    '──────────────────────────────────────────────────────',
+    'ETH    long   Fri 02 Oct 10:00   2,618   0.035   2,580',
+    'SOL    long   Mon 28 Sep 02:00   139.0   1.2     142.1',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[late-shadow-test]
+  list([
+    ' DEMO DATA · scenario late',
+    'Shadow test · day 12 of 90 · on track',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[losing-year-activity]
+  list([
+    ' DEMO DATA · scenario losing-year',
+    'Today',
+    '3h ago      closed ADA',
+    '4h ago      BTC stop raised, 61,500→61,700',
+    '12h ago     opened BTC at 62,400',
+    'Thu 01 Oct',
+    '17:20       ✖ fill model rejected order: book too thin',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[losing-year-heartbeat]
+  list([
+    ' DEMO DATA · scenario losing-year',
+    '                                             ● live · checked 14:00 · next 18:00',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[losing-year-overview]
+  list([
+    ' DEMO DATA · scenario losing-year',
+    '                                             ● live · checked 14:00 · next 18:00',
+    'Portfolio · money hidden on this surface',
+    '',
+    'coin   side   opened             entry    size     stop',
+    '─────────────────────────────────────────────────────────',
+    'BTC    long   Sat 03 Oct 02:00   62,400   0.0016   61,700',
+    '',
+    'Today',
+    '3h ago      closed ADA',
+    '4h ago      BTC stop raised, 61,500→61,700',
+    '12h ago     opened BTC at 62,400',
+    'Thu 01 Oct',
+    '17:20       ✖ fill model rejected order: book too thin',
+    '',
+    'Shadow test · day 40 of 90 · off track',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[losing-year-portfolio-year]
+  list([
+    ' DEMO DATA · scenario losing-year',
+    'Portfolio · money hidden on this surface',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[losing-year-portfolio]
+  list([
+    ' DEMO DATA · scenario losing-year',
+    'Portfolio · money hidden on this surface',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[losing-year-position-detail]
+  list([
+    ' DEMO DATA · scenario losing-year',
+    'BTC · 4h · long · open 12h 12m',
+    'opened Sat 03 Oct 02:00 · entry 62,400 · size 0.0016 · stop 61,700',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[losing-year-positions]
+  list([
+    ' DEMO DATA · scenario losing-year',
+    'coin   side   opened             entry    size     stop',
+    '─────────────────────────────────────────────────────────',
+    'BTC    long   Sat 03 Oct 02:00   62,400   0.0016   61,700',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[losing-year-shadow-test]
+  list([
+    ' DEMO DATA · scenario losing-year',
+    'Shadow test · day 40 of 90 · off track',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[ok-two-positions-activity]
+  list([
+    ' DEMO DATA · scenario ok-two-positions',
+    'Today',
+    '2h ago      closed BTC',
+    '4h ago      SOL stop raised ×6, 139.0→142.1',
+    'Yesterday',
+    '15:00       ⚠ market data retry after timeout',
+    '10:00       opened ETH at 2,618',
+    'Mon 28 Sep',
+    '02:00       opened SOL at 139.0',
+    '00:30       restart · deploy',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[ok-two-positions-heartbeat]
+  list([
+    ' DEMO DATA · scenario ok-two-positions',
+    '                                             ● live · checked 14:00 · next 18:00',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[ok-two-positions-overview]
+  list([
+    ' DEMO DATA · scenario ok-two-positions',
+    '                                             ● live · checked 14:00 · next 18:00',
+    'Portfolio · money hidden on this surface',
+    '',
+    'coin   side   opened             entry   size    stop',
+    '──────────────────────────────────────────────────────',
+    'ETH    long   Fri 02 Oct 10:00   2,618   0.035   2,580',
+    'SOL    long   Mon 28 Sep 02:00   139.0   1.2     142.1',
+    '',
+    'Today',
+    '2h ago      closed BTC',
+    '4h ago      SOL stop raised ×6, 139.0→142.1',
+    'Yesterday',
+    '15:00       ⚠ market data retry after timeout',
+    '10:00       opened ETH at 2,618',
+    '',
+    'Shadow test · day 12 of 90 · on track',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[ok-two-positions-portfolio-year]
+  list([
+    ' DEMO DATA · scenario ok-two-positions',
+    'Portfolio · money hidden on this surface',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[ok-two-positions-portfolio]
+  list([
+    ' DEMO DATA · scenario ok-two-positions',
+    'Portfolio · money hidden on this surface',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[ok-two-positions-position-detail]
+  list([
+    ' DEMO DATA · scenario ok-two-positions',
+    'ETH · 4h · long · open 1d 4h',
+    'opened Fri 02 Oct 10:00 · entry 2,618 · size 0.035 · stop 2,580',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[ok-two-positions-positions]
+  list([
+    ' DEMO DATA · scenario ok-two-positions',
+    'coin   side   opened             entry   size    stop',
+    '──────────────────────────────────────────────────────',
+    'ETH    long   Fri 02 Oct 10:00   2,618   0.035   2,580',
+    'SOL    long   Mon 28 Sep 02:00   139.0   1.2     142.1',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[ok-two-positions-shadow-test]
+  list([
+    ' DEMO DATA · scenario ok-two-positions',
+    'Shadow test · day 12 of 90 · on track',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[tax-pending-activity]
+  list([
+    ' DEMO DATA · scenario tax-pending',
+    'Today',
+    '2h ago      closed BTC',
+    '4h ago      SOL stop raised ×6, 139.0→142.1',
+    'Yesterday',
+    '15:00       ⚠ market data retry after timeout',
+    '10:00       opened ETH at 2,618',
+    'Mon 28 Sep',
+    '02:00       opened SOL at 139.0',
+    '00:30       restart · deploy',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[tax-pending-heartbeat]
+  list([
+    ' DEMO DATA · scenario tax-pending',
+    '                                             ● live · checked 14:00 · next 18:00',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[tax-pending-overview]
+  list([
+    ' DEMO DATA · scenario tax-pending',
+    '                                             ● live · checked 14:00 · next 18:00',
+    'Portfolio · money hidden on this surface',
+    '',
+    'coin   side   opened             entry   size    stop',
+    '──────────────────────────────────────────────────────',
+    'ETH    long   Fri 02 Oct 10:00   2,618   0.035   2,580',
+    'SOL    long   Mon 28 Sep 02:00   139.0   1.2     142.1',
+    '',
+    'Today',
+    '2h ago      closed BTC',
+    '4h ago      SOL stop raised ×6, 139.0→142.1',
+    'Yesterday',
+    '15:00       ⚠ market data retry after timeout',
+    '10:00       opened ETH at 2,618',
+    '',
+    'Shadow test · day 12 of 90 · on track',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[tax-pending-portfolio-year]
+  list([
+    ' DEMO DATA · scenario tax-pending',
+    'Portfolio · money hidden on this surface',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[tax-pending-portfolio]
+  list([
+    ' DEMO DATA · scenario tax-pending',
+    'Portfolio · money hidden on this surface',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[tax-pending-position-detail]
+  list([
+    ' DEMO DATA · scenario tax-pending',
+    'ETH · 4h · long · open 1d 4h',
+    'opened Fri 02 Oct 10:00 · entry 2,618 · size 0.035 · stop 2,580',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[tax-pending-positions]
+  list([
+    ' DEMO DATA · scenario tax-pending',
+    'coin   side   opened             entry   size    stop',
+    '──────────────────────────────────────────────────────',
+    'ETH    long   Fri 02 Oct 10:00   2,618   0.035   2,580',
+    'SOL    long   Mon 28 Sep 02:00   139.0   1.2     142.1',
+  ])
+# ---
+# name: test_blind_screen_matches_snapshot[tax-pending-shadow-test]
+  list([
+    ' DEMO DATA · scenario tax-pending',
+    'Shadow test · day 12 of 90 · on track',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[down-stale-activity-120]
+  list([
+    ' DEMO DATA · scenario down-stale',
+    'Today',
+    '6h ago      closed BTC at 61,240 · ▲ +€3.18 net',
+    '8h ago      SOL stop raised ×6, 139.0→142.1',
+    'Yesterday',
+    '15:00       ⚠ market data retry after timeout',
+    '10:00       opened ETH at 2,618',
+    'Mon 28 Sep',
+    '02:00       opened SOL at 139.0',
+    '00:30       restart · deploy',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[down-stale-activity-80]
+  list([
+    ' DEMO DATA · scenario down-stale',
+    'Today',
+    '6h ago      closed BTC at 61,240 · ▲ +€3.18 net',
+    '8h ago      SOL stop raised ×6, 139.0→142.1',
+    'Yesterday',
+    '15:00       ⚠ market data retry after timeout',
+    '10:00       opened ETH at 2,618',
+    'Mon 28 Sep',
+    '02:00       opened SOL at 139.0',
+    '00:30       restart · deploy',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[down-stale-heartbeat-120]
+  list([
+    ' DEMO DATA · scenario down-stale',
+    '✖ hermes down since 18:04 · run hermes logs for why',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[down-stale-heartbeat-80]
+  list([
+    ' DEMO DATA · scenario down-stale',
+    '✖ hermes down since 18:04 · run hermes logs for why',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[down-stale-overview-120]
+  list([
+    ' DEMO DATA · scenario down-stale',
+    '✖ hermes down since 18:04 · run hermes logs for why',
+    '€1,021.06   ▲ +€12.30 +1.22% today · as of 18:04',
+    'net ▲ +€10.66 today · after fees and est. tax',
+    '▁▂▁▄▆█',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax    ▼ −€0.74     ▼ −€2.22',
+    'Net           ▲ +€3.18     ▲ +€9.48',
+    'Open ▲ +€9.36 · tax if sold now ▼ −€1.77',
+    'est. · FIFO · 19% band · €5,988.30 left before 21%',
+    '',
+    'coin   tf   entry → now       change   net · as of 18:04    stop   to stop   cushion',
+    '───────────────────────────────────────────────────────────────────────────────────────────────',
+    'ETH    4h   2,618 → 2,672   ▲ +2.06%        ▲ +€1.54 net   2,580    −3.44%   ▕███████░▏ 3.1 ATR',
+    'SOL    1d   139.0 → 146.5   ▲ +5.40%        ▲ +€6.05 net   142.1    −3.00%   ▕██████░░▏ 1.4 ATR',
+    '',
+    'Today',
+    '6h ago      closed BTC at 61,240 · ▲ +€3.18 net',
+    '8h ago      SOL stop raised ×6, 139.0→142.1',
+    'Yesterday',
+    '15:00       ⚠ market data retry after timeout',
+    '10:00       opened ETH at 2,618',
+    '',
+    'Shadow test · day 12 of 90 · on track',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[down-stale-overview-80]
+  list([
+    ' DEMO DATA · scenario down-stale',
+    '✖ hermes down since 18:04 · run hermes logs for why',
+    '€1,021.06   ▲ +€12.30 +1.22% today · as of 18:04',
+    'net ▲ +€10.66 today · after fees and est. tax',
+    '▁▂▁▄▆█',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax    ▼ −€0.74     ▼ −€2.22',
+    'Net           ▲ +€3.18     ▲ +€9.48',
+    'Open ▲ +€9.36 · tax if sold now ▼ −€1.77',
+    'est. · FIFO · 19% band · €5,988.30 left before 21%',
+    '',
+    'coin   tf   entry → now       change   net · as of 18:04   cushion',
+    '─────────────────────────────────────────────────────────────────────────────',
+    'ETH    4h   2,618 → 2,672   ▲ +2.06%        ▲ +€1.54 net   ▕███████░▏ 3.1 ATR',
+    'SOL    1d   139.0 → 146.5   ▲ +5.40%        ▲ +€6.05 net   ▕██████░░▏ 1.4 ATR',
+    '',
+    'Today',
+    '6h ago      closed BTC at 61,240 · ▲ +€3.18 net',
+    '8h ago      SOL stop raised ×6, 139.0→142.1',
+    'Yesterday',
+    '15:00       ⚠ market data retry after timeout',
+    '10:00       opened ETH at 2,618',
+    '',
+    'Shadow test · day 12 of 90 · on track',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[down-stale-portfolio-120]
+  list([
+    ' DEMO DATA · scenario down-stale',
+    '€1,021.06   ▲ +€12.30 +1.22% today · as of 18:04',
+    'net ▲ +€10.66 today · after fees and est. tax',
+    '▁▂▁▄▆█',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax    ▼ −€0.74     ▼ −€2.22',
+    'Net           ▲ +€3.18     ▲ +€9.48',
+    'Open ▲ +€9.36 · tax if sold now ▼ −€1.77',
+    'est. · FIFO · 19% band · €5,988.30 left before 21%',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[down-stale-portfolio-80]
+  list([
+    ' DEMO DATA · scenario down-stale',
+    '€1,021.06   ▲ +€12.30 +1.22% today · as of 18:04',
+    'net ▲ +€10.66 today · after fees and est. tax',
+    '▁▂▁▄▆█',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax    ▼ −€0.74     ▼ −€2.22',
+    'Net           ▲ +€3.18     ▲ +€9.48',
+    'Open ▲ +€9.36 · tax if sold now ▼ −€1.77',
+    'est. · FIFO · 19% band · €5,988.30 left before 21%',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[down-stale-portfolio-year-120]
+  list([
+    ' DEMO DATA · scenario down-stale',
+    '€1,021.06   ▲ +€21.06 +2.11% this year · as of 18:04',
+    'net ▲ +€17.07 this year · after fees and est. tax',
+    '▁▁▂▂▂▂▂▂▂▃▃▃▃▃▃▄▄▄▄▄▄▄▅▅▅▅▅▅▅▅▆▆▆▆▆▆▇▇▇▇▇▇▇████▁',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax    ▼ −€0.74     ▼ −€2.22',
+    'Net           ▲ +€3.18     ▲ +€9.48',
+    'Open ▲ +€9.36 · tax if sold now ▼ −€1.77',
+    'est. · FIFO · 19% band · €5,988.30 left before 21%',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[down-stale-portfolio-year-80]
+  list([
+    ' DEMO DATA · scenario down-stale',
+    '€1,021.06   ▲ +€21.06 +2.11% this year · as of 18:04',
+    'net ▲ +€17.07 this year · after fees and est. tax',
+    '▁▁▂▂▂▂▂▂▂▃▃▃▃▃▃▄▄▄▄▄▄▄▅▅▅▅▅▅▅▅▆▆▆▆▆▆▇▇▇▇▇▇▇████▁',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax    ▼ −€0.74     ▼ −€2.22',
+    'Net           ▲ +€3.18     ▲ +€9.48',
+    'Open ▲ +€9.36 · tax if sold now ▼ −€1.77',
+    'est. · FIFO · 19% band · €5,988.30 left before 21%',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[down-stale-position-detail-120]
+  list([
+    ' DEMO DATA · scenario down-stale',
+    'ETH · 4h · long · open 1d 8h   ▲ +€1.54 net · as of 18:04',
+    'Why: donchian-breakout-v1 on 4h · entry 2,618 · donchian_high 2,615 · atr 30.10',
+    'Stop: ▕███████░▏ 3.1 ATR · 2,580 · −3.44% · high since entry 2,690 · moved 3×',
+    '',
+    'Money if sold now',
+    'Gross                     ▲ +€2.10',
+    '− Fees paid               ▼ −€0.08',
+    '− Fees to close (est.)    ▼ −€0.09',
+    '− Est. tax if sold now    ▼ −€0.39',
+    'Net                       ▲ +€1.54',
+    '',
+    'Price ▂▃▁▄█▆▆▆ entry 2,618 · stop 2,580 · high 2,690',
+    '',
+    'Timeline',
+    'Fri 02 Oct 10:00    signal: long ETH on 4h close',
+    'Fri 02 Oct 10:00    filled 0.035 at 2,618',
+    'Fri 02 Oct 18:00    stop raised 2,552 → 2,566',
+    'Sat 03 Oct 02:00    stop raised 2,566 → 2,575',
+    'Sat 03 Oct 06:00    stop raised 2,575 → 2,580',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[down-stale-position-detail-80]
+  list([
+    ' DEMO DATA · scenario down-stale',
+    'ETH · 4h · long · open 1d 8h   ▲ +€1.54 net · as of 18:04',
+    'Why: donchian-breakout-v1 on 4h · entry 2,618 · donchian_high 2,615 · atr 30.10',
+    'Stop: ▕███████░▏ 3.1 ATR · 2,580 · −3.44% · high since entry 2,690 · moved 3×',
+    '',
+    'Money if sold now',
+    'Gross                     ▲ +€2.10',
+    '− Fees paid               ▼ −€0.08',
+    '− Fees to close (est.)    ▼ −€0.09',
+    '− Est. tax if sold now    ▼ −€0.39',
+    'Net                       ▲ +€1.54',
+    '',
+    'Price ▂▃▁▄█▆▆▆ entry 2,618 · stop 2,580 · high 2,690',
+    '',
+    'Timeline',
+    'Fri 02 Oct 10:00    signal: long ETH on 4h close',
+    'Fri 02 Oct 10:00    filled 0.035 at 2,618',
+    'Fri 02 Oct 18:00    stop raised 2,552 → 2,566',
+    'Sat 03 Oct 02:00    stop raised 2,566 → 2,575',
+    'Sat 03 Oct 06:00    stop raised 2,575 → 2,580',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[down-stale-positions-120]
+  list([
+    ' DEMO DATA · scenario down-stale',
+    'coin   tf   entry → now       change   net · as of 18:04    stop   to stop   cushion',
+    '───────────────────────────────────────────────────────────────────────────────────────────────',
+    'ETH    4h   2,618 → 2,672   ▲ +2.06%        ▲ +€1.54 net   2,580    −3.44%   ▕███████░▏ 3.1 ATR',
+    'SOL    1d   139.0 → 146.5   ▲ +5.40%        ▲ +€6.05 net   142.1    −3.00%   ▕██████░░▏ 1.4 ATR',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[down-stale-positions-80]
+  list([
+    ' DEMO DATA · scenario down-stale',
+    'coin   tf   entry → now       change   net · as of 18:04   cushion',
+    '─────────────────────────────────────────────────────────────────────────────',
+    'ETH    4h   2,618 → 2,672   ▲ +2.06%        ▲ +€1.54 net   ▕███████░▏ 3.1 ATR',
+    'SOL    1d   139.0 → 146.5   ▲ +5.40%        ▲ +€6.05 net   ▕██████░░▏ 1.4 ATR',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[down-stale-shadow-test-120]
+  list([
+    ' DEMO DATA · scenario down-stale',
+    'Shadow test · day 12 of 90 · on track',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[down-stale-shadow-test-80]
+  list([
+    ' DEMO DATA · scenario down-stale',
+    'Shadow test · day 12 of 90 · on track',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[empty-activity-120]
+  list([
+    ' DEMO DATA · scenario empty',
+    'No activity yet.',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[empty-activity-80]
+  list([
+    ' DEMO DATA · scenario empty',
+    'No activity yet.',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[empty-heartbeat-120]
+  list([
+    ' DEMO DATA · scenario empty',
+    '                                                                                     ● live · checked 14:00 · next 18:00',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[empty-heartbeat-80]
+  list([
+    ' DEMO DATA · scenario empty',
+    '                                             ● live · checked 14:00 · next 18:00',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[empty-overview-120]
+  list([
+    ' DEMO DATA · scenario empty',
+    '                                                                                     ● live · checked 14:00 · next 18:00',
+    '€1,000.00   · €0.00 0.00% today',
+    'net · €0.00 today · after fees and est. tax',
+    '▄▄▄▄',
+    'cash €1,000.00 100.00% · invested €0.00 0.00%',
+    '',
+    '                Today    This year',
+    'Gross         · €0.00      · €0.00',
+    '− Fees        · €0.00      · €0.00',
+    '− Est. tax    · €0.00      · €0.00',
+    'Net           · €0.00      · €0.00',
+    'Open · €0.00 · tax if sold now · €0.00',
+    'est. · FIFO · 19% band · €6,000.00 left before 21%',
+    '',
+    'No open shadow positions.',
+    '',
+    'No activity yet.',
+    '',
+    'Shadow test · not started · waits on #353',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[empty-overview-80]
+  list([
+    ' DEMO DATA · scenario empty',
+    '                                             ● live · checked 14:00 · next 18:00',
+    '€1,000.00   · €0.00 0.00% today',
+    'net · €0.00 today · after fees and est. tax',
+    '▄▄▄▄',
+    'cash €1,000.00 100.00% · invested €0.00 0.00%',
+    '',
+    '                Today    This year',
+    'Gross         · €0.00      · €0.00',
+    '− Fees        · €0.00      · €0.00',
+    '− Est. tax    · €0.00      · €0.00',
+    'Net           · €0.00      · €0.00',
+    'Open · €0.00 · tax if sold now · €0.00',
+    'est. · FIFO · 19% band · €6,000.00 left before 21%',
+    '',
+    'No open shadow positions.',
+    '',
+    'No activity yet.',
+    '',
+    'Shadow test · not started · waits on #353',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[empty-portfolio-120]
+  list([
+    ' DEMO DATA · scenario empty',
+    '€1,000.00   · €0.00 0.00% today',
+    'net · €0.00 today · after fees and est. tax',
+    '▄▄▄▄',
+    'cash €1,000.00 100.00% · invested €0.00 0.00%',
+    '',
+    '                Today    This year',
+    'Gross         · €0.00      · €0.00',
+    '− Fees        · €0.00      · €0.00',
+    '− Est. tax    · €0.00      · €0.00',
+    'Net           · €0.00      · €0.00',
+    'Open · €0.00 · tax if sold now · €0.00',
+    'est. · FIFO · 19% band · €6,000.00 left before 21%',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[empty-portfolio-80]
+  list([
+    ' DEMO DATA · scenario empty',
+    '€1,000.00   · €0.00 0.00% today',
+    'net · €0.00 today · after fees and est. tax',
+    '▄▄▄▄',
+    'cash €1,000.00 100.00% · invested €0.00 0.00%',
+    '',
+    '                Today    This year',
+    'Gross         · €0.00      · €0.00',
+    '− Fees        · €0.00      · €0.00',
+    '− Est. tax    · €0.00      · €0.00',
+    'Net           · €0.00      · €0.00',
+    'Open · €0.00 · tax if sold now · €0.00',
+    'est. · FIFO · 19% band · €6,000.00 left before 21%',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[empty-portfolio-year-120]
+  list([
+    ' DEMO DATA · scenario empty',
+    '€1,000.00   · €0.00 0.00% this year',
+    'net · €0.00 this year · after fees and est. tax',
+    '▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄',
+    'cash €1,000.00 100.00% · invested €0.00 0.00%',
+    '',
+    '                Today    This year',
+    'Gross         · €0.00      · €0.00',
+    '− Fees        · €0.00      · €0.00',
+    '− Est. tax    · €0.00      · €0.00',
+    'Net           · €0.00      · €0.00',
+    'Open · €0.00 · tax if sold now · €0.00',
+    'est. · FIFO · 19% band · €6,000.00 left before 21%',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[empty-portfolio-year-80]
+  list([
+    ' DEMO DATA · scenario empty',
+    '€1,000.00   · €0.00 0.00% this year',
+    'net · €0.00 this year · after fees and est. tax',
+    '▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄',
+    'cash €1,000.00 100.00% · invested €0.00 0.00%',
+    '',
+    '                Today    This year',
+    'Gross         · €0.00      · €0.00',
+    '− Fees        · €0.00      · €0.00',
+    '− Est. tax    · €0.00      · €0.00',
+    'Net           · €0.00      · €0.00',
+    'Open · €0.00 · tax if sold now · €0.00',
+    'est. · FIFO · 19% band · €6,000.00 left before 21%',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[empty-position-detail-120]
+  list([
+    ' DEMO DATA · scenario empty',
+    'No open position for that coin.',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[empty-position-detail-80]
+  list([
+    ' DEMO DATA · scenario empty',
+    'No open position for that coin.',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[empty-positions-120]
+  list([
+    ' DEMO DATA · scenario empty',
+    'No open shadow positions.',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[empty-positions-80]
+  list([
+    ' DEMO DATA · scenario empty',
+    'No open shadow positions.',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[empty-shadow-test-120]
+  list([
+    ' DEMO DATA · scenario empty',
+    'Shadow test · not started · waits on #353',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[empty-shadow-test-80]
+  list([
+    ' DEMO DATA · scenario empty',
+    'Shadow test · not started · waits on #353',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[late-activity-120]
+  list([
+    ' DEMO DATA · scenario late',
+    'Today',
+    '6h ago      closed BTC at 61,240 · ▲ +€3.18 net',
+    '8h ago      SOL stop raised ×6, 139.0→142.1',
+    'Yesterday',
+    '15:00       ⚠ market data retry after timeout',
+    '10:00       opened ETH at 2,618',
+    'Mon 28 Sep',
+    '02:00       opened SOL at 139.0',
+    '00:30       restart · deploy',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[late-activity-80]
+  list([
+    ' DEMO DATA · scenario late',
+    'Today',
+    '6h ago      closed BTC at 61,240 · ▲ +€3.18 net',
+    '8h ago      SOL stop raised ×6, 139.0→142.1',
+    'Yesterday',
+    '15:00       ⚠ market data retry after timeout',
+    '10:00       opened ETH at 2,618',
+    'Mon 28 Sep',
+    '02:00       opened SOL at 139.0',
+    '00:30       restart · deploy',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[late-heartbeat-120]
+  list([
+    ' DEMO DATA · scenario late',
+    '                                                                                                ◐ 18:00 check late · 12m',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[late-heartbeat-80]
+  list([
+    ' DEMO DATA · scenario late',
+    '                                                        ◐ 18:00 check late · 12m',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[late-overview-120]
+  list([
+    ' DEMO DATA · scenario late',
+    '                                                                                                ◐ 18:00 check late · 12m',
+    '€1,021.06   ▲ +€12.30 +1.22% today',
+    'net ▲ +€10.66 today · after fees and est. tax',
+    '▁▂▁▄▆█',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax    ▼ −€0.74     ▼ −€2.22',
+    'Net           ▲ +€3.18     ▲ +€9.48',
+    'Open ▲ +€9.36 · tax if sold now ▼ −€1.77',
+    'est. · FIFO · 19% band · €5,988.30 left before 21%',
+    '',
+    'coin   tf   entry → now       change            net    stop   to stop   cushion',
+    '──────────────────────────────────────────────────────────────────────────────────────────',
+    'ETH    4h   2,618 → 2,672   ▲ +2.06%   ▲ +€1.54 net   2,580    −3.44%   ▕███████░▏ 3.1 ATR',
+    'SOL    1d   139.0 → 146.5   ▲ +5.40%   ▲ +€6.05 net   142.1    −3.00%   ▕██████░░▏ 1.4 ATR',
+    '',
+    'Today',
+    '6h ago      closed BTC at 61,240 · ▲ +€3.18 net',
+    '8h ago      SOL stop raised ×6, 139.0→142.1',
+    'Yesterday',
+    '15:00       ⚠ market data retry after timeout',
+    '10:00       opened ETH at 2,618',
+    '',
+    'Shadow test · day 12 of 90 · on track',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[late-overview-80]
+  list([
+    ' DEMO DATA · scenario late',
+    '                                                        ◐ 18:00 check late · 12m',
+    '€1,021.06   ▲ +€12.30 +1.22% today',
+    'net ▲ +€10.66 today · after fees and est. tax',
+    '▁▂▁▄▆█',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax    ▼ −€0.74     ▼ −€2.22',
+    'Net           ▲ +€3.18     ▲ +€9.48',
+    'Open ▲ +€9.36 · tax if sold now ▼ −€1.77',
+    'est. · FIFO · 19% band · €5,988.30 left before 21%',
+    '',
+    'coin   tf   entry → now       change            net   cushion',
+    '────────────────────────────────────────────────────────────────────────',
+    'ETH    4h   2,618 → 2,672   ▲ +2.06%   ▲ +€1.54 net   ▕███████░▏ 3.1 ATR',
+    'SOL    1d   139.0 → 146.5   ▲ +5.40%   ▲ +€6.05 net   ▕██████░░▏ 1.4 ATR',
+    '',
+    'Today',
+    '6h ago      closed BTC at 61,240 · ▲ +€3.18 net',
+    '8h ago      SOL stop raised ×6, 139.0→142.1',
+    'Yesterday',
+    '15:00       ⚠ market data retry after timeout',
+    '10:00       opened ETH at 2,618',
+    '',
+    'Shadow test · day 12 of 90 · on track',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[late-portfolio-120]
+  list([
+    ' DEMO DATA · scenario late',
+    '€1,021.06   ▲ +€12.30 +1.22% today',
+    'net ▲ +€10.66 today · after fees and est. tax',
+    '▁▂▁▄▆█',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax    ▼ −€0.74     ▼ −€2.22',
+    'Net           ▲ +€3.18     ▲ +€9.48',
+    'Open ▲ +€9.36 · tax if sold now ▼ −€1.77',
+    'est. · FIFO · 19% band · €5,988.30 left before 21%',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[late-portfolio-80]
+  list([
+    ' DEMO DATA · scenario late',
+    '€1,021.06   ▲ +€12.30 +1.22% today',
+    'net ▲ +€10.66 today · after fees and est. tax',
+    '▁▂▁▄▆█',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax    ▼ −€0.74     ▼ −€2.22',
+    'Net           ▲ +€3.18     ▲ +€9.48',
+    'Open ▲ +€9.36 · tax if sold now ▼ −€1.77',
+    'est. · FIFO · 19% band · €5,988.30 left before 21%',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[late-portfolio-year-120]
+  list([
+    ' DEMO DATA · scenario late',
+    '€1,021.06   ▲ +€21.06 +2.11% this year',
+    'net ▲ +€17.07 this year · after fees and est. tax',
+    '▁▁▂▂▂▂▂▂▂▃▃▃▃▃▃▄▄▄▄▄▄▄▅▅▅▅▅▅▅▅▆▆▆▆▆▆▇▇▇▇▇▇▇████▁',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax    ▼ −€0.74     ▼ −€2.22',
+    'Net           ▲ +€3.18     ▲ +€9.48',
+    'Open ▲ +€9.36 · tax if sold now ▼ −€1.77',
+    'est. · FIFO · 19% band · €5,988.30 left before 21%',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[late-portfolio-year-80]
+  list([
+    ' DEMO DATA · scenario late',
+    '€1,021.06   ▲ +€21.06 +2.11% this year',
+    'net ▲ +€17.07 this year · after fees and est. tax',
+    '▁▁▂▂▂▂▂▂▂▃▃▃▃▃▃▄▄▄▄▄▄▄▅▅▅▅▅▅▅▅▆▆▆▆▆▆▇▇▇▇▇▇▇████▁',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax    ▼ −€0.74     ▼ −€2.22',
+    'Net           ▲ +€3.18     ▲ +€9.48',
+    'Open ▲ +€9.36 · tax if sold now ▼ −€1.77',
+    'est. · FIFO · 19% band · €5,988.30 left before 21%',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[late-position-detail-120]
+  list([
+    ' DEMO DATA · scenario late',
+    'ETH · 4h · long · open 1d 8h   ▲ +€1.54 net',
+    'Why: donchian-breakout-v1 on 4h · entry 2,618 · donchian_high 2,615 · atr 30.10',
+    'Stop: ▕███████░▏ 3.1 ATR · 2,580 · −3.44% · high since entry 2,690 · moved 3×',
+    '',
+    'Money if sold now',
+    'Gross                     ▲ +€2.10',
+    '− Fees paid               ▼ −€0.08',
+    '− Fees to close (est.)    ▼ −€0.09',
+    '− Est. tax if sold now    ▼ −€0.39',
+    'Net                       ▲ +€1.54',
+    '',
+    'Price ▂▃▁▄█▆▆▆ entry 2,618 · stop 2,580 · high 2,690',
+    '',
+    'Timeline',
+    'Fri 02 Oct 10:00    signal: long ETH on 4h close',
+    'Fri 02 Oct 10:00    filled 0.035 at 2,618',
+    'Fri 02 Oct 18:00    stop raised 2,552 → 2,566',
+    'Sat 03 Oct 02:00    stop raised 2,566 → 2,575',
+    'Sat 03 Oct 06:00    stop raised 2,575 → 2,580',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[late-position-detail-80]
+  list([
+    ' DEMO DATA · scenario late',
+    'ETH · 4h · long · open 1d 8h   ▲ +€1.54 net',
+    'Why: donchian-breakout-v1 on 4h · entry 2,618 · donchian_high 2,615 · atr 30.10',
+    'Stop: ▕███████░▏ 3.1 ATR · 2,580 · −3.44% · high since entry 2,690 · moved 3×',
+    '',
+    'Money if sold now',
+    'Gross                     ▲ +€2.10',
+    '− Fees paid               ▼ −€0.08',
+    '− Fees to close (est.)    ▼ −€0.09',
+    '− Est. tax if sold now    ▼ −€0.39',
+    'Net                       ▲ +€1.54',
+    '',
+    'Price ▂▃▁▄█▆▆▆ entry 2,618 · stop 2,580 · high 2,690',
+    '',
+    'Timeline',
+    'Fri 02 Oct 10:00    signal: long ETH on 4h close',
+    'Fri 02 Oct 10:00    filled 0.035 at 2,618',
+    'Fri 02 Oct 18:00    stop raised 2,552 → 2,566',
+    'Sat 03 Oct 02:00    stop raised 2,566 → 2,575',
+    'Sat 03 Oct 06:00    stop raised 2,575 → 2,580',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[late-positions-120]
+  list([
+    ' DEMO DATA · scenario late',
+    'coin   tf   entry → now       change            net    stop   to stop   cushion',
+    '──────────────────────────────────────────────────────────────────────────────────────────',
+    'ETH    4h   2,618 → 2,672   ▲ +2.06%   ▲ +€1.54 net   2,580    −3.44%   ▕███████░▏ 3.1 ATR',
+    'SOL    1d   139.0 → 146.5   ▲ +5.40%   ▲ +€6.05 net   142.1    −3.00%   ▕██████░░▏ 1.4 ATR',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[late-positions-80]
+  list([
+    ' DEMO DATA · scenario late',
+    'coin   tf   entry → now       change            net   cushion',
+    '────────────────────────────────────────────────────────────────────────',
+    'ETH    4h   2,618 → 2,672   ▲ +2.06%   ▲ +€1.54 net   ▕███████░▏ 3.1 ATR',
+    'SOL    1d   139.0 → 146.5   ▲ +5.40%   ▲ +€6.05 net   ▕██████░░▏ 1.4 ATR',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[late-shadow-test-120]
+  list([
+    ' DEMO DATA · scenario late',
+    'Shadow test · day 12 of 90 · on track',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[late-shadow-test-80]
+  list([
+    ' DEMO DATA · scenario late',
+    'Shadow test · day 12 of 90 · on track',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[losing-year-activity-120]
+  list([
+    ' DEMO DATA · scenario losing-year',
+    'Today',
+    '3h ago      closed ADA at 0.3412 · ▼ −€2.61 net',
+    '4h ago      BTC stop raised, 61,500→61,700',
+    '12h ago     opened BTC at 62,400',
+    'Thu 01 Oct',
+    '17:20       ✖ fill model rejected order: book too thin',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[losing-year-activity-80]
+  list([
+    ' DEMO DATA · scenario losing-year',
+    'Today',
+    '3h ago      closed ADA at 0.3412 · ▼ −€2.61 net',
+    '4h ago      BTC stop raised, 61,500→61,700',
+    '12h ago     opened BTC at 62,400',
+    'Thu 01 Oct',
+    '17:20       ✖ fill model rejected order: book too thin',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[losing-year-heartbeat-120]
+  list([
+    ' DEMO DATA · scenario losing-year',
+    '                                                                                     ● live · checked 14:00 · next 18:00',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[losing-year-heartbeat-80]
+  list([
+    ' DEMO DATA · scenario losing-year',
+    '                                             ● live · checked 14:00 · next 18:00',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[losing-year-overview-120]
+  list([
+    ' DEMO DATA · scenario losing-year',
+    '                                                                                     ● live · checked 14:00 · next 18:00',
+    '€951.19   ▼ −€4.02 −0.42% today',
+    'net ▼ −€3.26 today · after fees and est. tax',
+    '█▇▇▄▁',
+    'cash €867.83 91.24% · invested €83.36 8.76%',
+    '',
+    '                        Today          This year',
+    'Gross                ▼ −€3.10          ▼ −€42.60',
+    '− Fees               ▼ −€0.12           ▼ −€6.20',
+    '− Est. tax    ▲ +€0.61 credit    ▲ +€9.27 credit',
+    'Net                  ▼ −€2.61          ▼ −€39.53',
+    'Open ▼ −€0.80 · tax if sold now ▲ +€0.15 credit',
+    'est. · FIFO · 19% band · €6,000.00 left before 21%',
+    '',
+    'coin   tf   entry → now         change            net     stop   to stop   cushion',
+    '─────────────────────────────────────────────────────────────────────────────────────────────',
+    'BTC    4h   62,400 → 61,950   ▼ −0.72%   ▼ −€0.65 net   61,700    −0.40%   ▕██░░░░░░▏ 0.6 ATR',
+    '',
+    'Today',
+    '3h ago      closed ADA at 0.3412 · ▼ −€2.61 net',
+    '4h ago      BTC stop raised, 61,500→61,700',
+    '12h ago     opened BTC at 62,400',
+    'Thu 01 Oct',
+    '17:20       ✖ fill model rejected order: book too thin',
+    '',
+    'Shadow test · day 40 of 90 · off track',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[losing-year-overview-80]
+  list([
+    ' DEMO DATA · scenario losing-year',
+    '                                             ● live · checked 14:00 · next 18:00',
+    '€951.19   ▼ −€4.02 −0.42% today',
+    'net ▼ −€3.26 today · after fees and est. tax',
+    '█▇▇▄▁',
+    'cash €867.83 91.24% · invested €83.36 8.76%',
+    '',
+    '                        Today          This year',
+    'Gross                ▼ −€3.10          ▼ −€42.60',
+    '− Fees               ▼ −€0.12           ▼ −€6.20',
+    '− Est. tax    ▲ +€0.61 credit    ▲ +€9.27 credit',
+    'Net                  ▼ −€2.61          ▼ −€39.53',
+    'Open ▼ −€0.80 · tax if sold now ▲ +€0.15 credit',
+    'est. · FIFO · 19% band · €6,000.00 left before 21%',
+    '',
+    'coin   tf   entry → now         change            net   cushion',
+    '──────────────────────────────────────────────────────────────────────────',
+    'BTC    4h   62,400 → 61,950   ▼ −0.72%   ▼ −€0.65 net   ▕██░░░░░░▏ 0.6 ATR',
+    '',
+    'Today',
+    '3h ago      closed ADA at 0.3412 · ▼ −€2.61 net',
+    '4h ago      BTC stop raised, 61,500→61,700',
+    '12h ago     opened BTC at 62,400',
+    'Thu 01 Oct',
+    '17:20       ✖ fill model rejected order: book too thin',
+    '',
+    'Shadow test · day 40 of 90 · off track',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[losing-year-portfolio-120]
+  list([
+    ' DEMO DATA · scenario losing-year',
+    '€951.19   ▼ −€4.02 −0.42% today',
+    'net ▼ −€3.26 today · after fees and est. tax',
+    '█▇▇▄▁',
+    'cash €867.83 91.24% · invested €83.36 8.76%',
+    '',
+    '                        Today          This year',
+    'Gross                ▼ −€3.10          ▼ −€42.60',
+    '− Fees               ▼ −€0.12           ▼ −€6.20',
+    '− Est. tax    ▲ +€0.61 credit    ▲ +€9.27 credit',
+    'Net                  ▼ −€2.61          ▼ −€39.53',
+    'Open ▼ −€0.80 · tax if sold now ▲ +€0.15 credit',
+    'est. · FIFO · 19% band · €6,000.00 left before 21%',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[losing-year-portfolio-80]
+  list([
+    ' DEMO DATA · scenario losing-year',
+    '€951.19   ▼ −€4.02 −0.42% today',
+    'net ▼ −€3.26 today · after fees and est. tax',
+    '█▇▇▄▁',
+    'cash €867.83 91.24% · invested €83.36 8.76%',
+    '',
+    '                        Today          This year',
+    'Gross                ▼ −€3.10          ▼ −€42.60',
+    '− Fees               ▼ −€0.12           ▼ −€6.20',
+    '− Est. tax    ▲ +€0.61 credit    ▲ +€9.27 credit',
+    'Net                  ▼ −€2.61          ▼ −€39.53',
+    'Open ▼ −€0.80 · tax if sold now ▲ +€0.15 credit',
+    'est. · FIFO · 19% band · €6,000.00 left before 21%',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[losing-year-portfolio-year-120]
+  list([
+    ' DEMO DATA · scenario losing-year',
+    '€951.19   ▼ −€49.60 −4.96% this year',
+    'net ▼ −€40.18 this year · after fees and est. tax',
+    '███████████████▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▆▆▁',
+    'cash €867.83 91.24% · invested €83.36 8.76%',
+    '',
+    '                        Today          This year',
+    'Gross                ▼ −€3.10          ▼ −€42.60',
+    '− Fees               ▼ −€0.12           ▼ −€6.20',
+    '− Est. tax    ▲ +€0.61 credit    ▲ +€9.27 credit',
+    'Net                  ▼ −€2.61          ▼ −€39.53',
+    'Open ▼ −€0.80 · tax if sold now ▲ +€0.15 credit',
+    'est. · FIFO · 19% band · €6,000.00 left before 21%',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[losing-year-portfolio-year-80]
+  list([
+    ' DEMO DATA · scenario losing-year',
+    '€951.19   ▼ −€49.60 −4.96% this year',
+    'net ▼ −€40.18 this year · after fees and est. tax',
+    '███████████████▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▆▆▁',
+    'cash €867.83 91.24% · invested €83.36 8.76%',
+    '',
+    '                        Today          This year',
+    'Gross                ▼ −€3.10          ▼ −€42.60',
+    '− Fees               ▼ −€0.12           ▼ −€6.20',
+    '− Est. tax    ▲ +€0.61 credit    ▲ +€9.27 credit',
+    'Net                  ▼ −€2.61          ▼ −€39.53',
+    'Open ▼ −€0.80 · tax if sold now ▲ +€0.15 credit',
+    'est. · FIFO · 19% band · €6,000.00 left before 21%',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[losing-year-position-detail-120]
+  list([
+    ' DEMO DATA · scenario losing-year',
+    'BTC · 4h · long · open 12h 12m   ▼ −€0.65 net',
+    'Why: donchian-breakout-v1 on 4h · entry 62,400 · donchian_high 62,350 · atr 405.0',
+    'Stop: ▕██░░░░░░▏ 0.6 ATR · 61,700 · −0.40% · high since entry 62,900 · moved 1×',
+    '',
+    'Money if sold now',
+    'Gross                            ▼ −€0.62',
+    '− Fees paid                      ▼ −€0.09',
+    '− Fees to close (est.)           ▼ −€0.09',
+    '− Est. tax if sold now    ▲ +€0.15 credit',
+    'Net                              ▼ −€0.65',
+    '',
+    'Price ▄█▄▁ entry 62,400 · stop 61,700 · high 62,900',
+    '',
+    'Timeline',
+    'Sat 03 Oct 02:00    signal: long BTC on 4h close',
+    'Sat 03 Oct 02:00    filled 0.0016 at 62,400',
+    'Sat 03 Oct 10:00    stop raised 61,500 → 61,700',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[losing-year-position-detail-80]
+  list([
+    ' DEMO DATA · scenario losing-year',
+    'BTC · 4h · long · open 12h 12m   ▼ −€0.65 net',
+    'Why: donchian-breakout-v1 on 4h · entry 62,400 · donchian_high 62,350 · atr',
+    '405.0',
+    'Stop: ▕██░░░░░░▏ 0.6 ATR · 61,700 · −0.40% · high since entry 62,900 · moved 1×',
+    '',
+    'Money if sold now',
+    'Gross                            ▼ −€0.62',
+    '− Fees paid                      ▼ −€0.09',
+    '− Fees to close (est.)           ▼ −€0.09',
+    '− Est. tax if sold now    ▲ +€0.15 credit',
+    'Net                              ▼ −€0.65',
+    '',
+    'Price ▄█▄▁ entry 62,400 · stop 61,700 · high 62,900',
+    '',
+    'Timeline',
+    'Sat 03 Oct 02:00    signal: long BTC on 4h close',
+    'Sat 03 Oct 02:00    filled 0.0016 at 62,400',
+    'Sat 03 Oct 10:00    stop raised 61,500 → 61,700',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[losing-year-positions-120]
+  list([
+    ' DEMO DATA · scenario losing-year',
+    'coin   tf   entry → now         change            net     stop   to stop   cushion',
+    '─────────────────────────────────────────────────────────────────────────────────────────────',
+    'BTC    4h   62,400 → 61,950   ▼ −0.72%   ▼ −€0.65 net   61,700    −0.40%   ▕██░░░░░░▏ 0.6 ATR',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[losing-year-positions-80]
+  list([
+    ' DEMO DATA · scenario losing-year',
+    'coin   tf   entry → now         change            net   cushion',
+    '──────────────────────────────────────────────────────────────────────────',
+    'BTC    4h   62,400 → 61,950   ▼ −0.72%   ▼ −€0.65 net   ▕██░░░░░░▏ 0.6 ATR',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[losing-year-shadow-test-120]
+  list([
+    ' DEMO DATA · scenario losing-year',
+    'Shadow test · day 40 of 90 · off track',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[losing-year-shadow-test-80]
+  list([
+    ' DEMO DATA · scenario losing-year',
+    'Shadow test · day 40 of 90 · off track',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[ok-two-positions-activity-120]
+  list([
+    ' DEMO DATA · scenario ok-two-positions',
+    'Today',
+    '2h ago      closed BTC at 61,240 · ▲ +€3.18 net',
+    '4h ago      SOL stop raised ×6, 139.0→142.1',
+    'Yesterday',
+    '15:00       ⚠ market data retry after timeout',
+    '10:00       opened ETH at 2,618',
+    'Mon 28 Sep',
+    '02:00       opened SOL at 139.0',
+    '00:30       restart · deploy',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[ok-two-positions-activity-80]
+  list([
+    ' DEMO DATA · scenario ok-two-positions',
+    'Today',
+    '2h ago      closed BTC at 61,240 · ▲ +€3.18 net',
+    '4h ago      SOL stop raised ×6, 139.0→142.1',
+    'Yesterday',
+    '15:00       ⚠ market data retry after timeout',
+    '10:00       opened ETH at 2,618',
+    'Mon 28 Sep',
+    '02:00       opened SOL at 139.0',
+    '00:30       restart · deploy',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[ok-two-positions-heartbeat-120]
+  list([
+    ' DEMO DATA · scenario ok-two-positions',
+    '                                                                                     ● live · checked 14:00 · next 18:00',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[ok-two-positions-heartbeat-80]
+  list([
+    ' DEMO DATA · scenario ok-two-positions',
+    '                                             ● live · checked 14:00 · next 18:00',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[ok-two-positions-overview-120]
+  list([
+    ' DEMO DATA · scenario ok-two-positions',
+    '                                                                                     ● live · checked 14:00 · next 18:00',
+    '€1,021.06   ▲ +€12.30 +1.22% today',
+    'net ▲ +€10.66 today · after fees and est. tax',
+    '▁▂▁▄▆█',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax    ▼ −€0.74     ▼ −€2.22',
+    'Net           ▲ +€3.18     ▲ +€9.48',
+    'Open ▲ +€9.36 · tax if sold now ▼ −€1.77',
+    'est. · FIFO · 19% band · €5,988.30 left before 21%',
+    '',
+    'coin   tf   entry → now       change            net    stop   to stop   cushion',
+    '──────────────────────────────────────────────────────────────────────────────────────────',
+    'ETH    4h   2,618 → 2,672   ▲ +2.06%   ▲ +€1.54 net   2,580    −3.44%   ▕███████░▏ 3.1 ATR',
+    'SOL    1d   139.0 → 146.5   ▲ +5.40%   ▲ +€6.05 net   142.1    −3.00%   ▕██████░░▏ 1.4 ATR',
+    '',
+    'Today',
+    '2h ago      closed BTC at 61,240 · ▲ +€3.18 net',
+    '4h ago      SOL stop raised ×6, 139.0→142.1',
+    'Yesterday',
+    '15:00       ⚠ market data retry after timeout',
+    '10:00       opened ETH at 2,618',
+    '',
+    'Shadow test · day 12 of 90 · on track',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[ok-two-positions-overview-80]
+  list([
+    ' DEMO DATA · scenario ok-two-positions',
+    '                                             ● live · checked 14:00 · next 18:00',
+    '€1,021.06   ▲ +€12.30 +1.22% today',
+    'net ▲ +€10.66 today · after fees and est. tax',
+    '▁▂▁▄▆█',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax    ▼ −€0.74     ▼ −€2.22',
+    'Net           ▲ +€3.18     ▲ +€9.48',
+    'Open ▲ +€9.36 · tax if sold now ▼ −€1.77',
+    'est. · FIFO · 19% band · €5,988.30 left before 21%',
+    '',
+    'coin   tf   entry → now       change            net   cushion',
+    '────────────────────────────────────────────────────────────────────────',
+    'ETH    4h   2,618 → 2,672   ▲ +2.06%   ▲ +€1.54 net   ▕███████░▏ 3.1 ATR',
+    'SOL    1d   139.0 → 146.5   ▲ +5.40%   ▲ +€6.05 net   ▕██████░░▏ 1.4 ATR',
+    '',
+    'Today',
+    '2h ago      closed BTC at 61,240 · ▲ +€3.18 net',
+    '4h ago      SOL stop raised ×6, 139.0→142.1',
+    'Yesterday',
+    '15:00       ⚠ market data retry after timeout',
+    '10:00       opened ETH at 2,618',
+    '',
+    'Shadow test · day 12 of 90 · on track',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[ok-two-positions-portfolio-120]
+  list([
+    ' DEMO DATA · scenario ok-two-positions',
+    '€1,021.06   ▲ +€12.30 +1.22% today',
+    'net ▲ +€10.66 today · after fees and est. tax',
+    '▁▂▁▄▆█',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax    ▼ −€0.74     ▼ −€2.22',
+    'Net           ▲ +€3.18     ▲ +€9.48',
+    'Open ▲ +€9.36 · tax if sold now ▼ −€1.77',
+    'est. · FIFO · 19% band · €5,988.30 left before 21%',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[ok-two-positions-portfolio-80]
+  list([
+    ' DEMO DATA · scenario ok-two-positions',
+    '€1,021.06   ▲ +€12.30 +1.22% today',
+    'net ▲ +€10.66 today · after fees and est. tax',
+    '▁▂▁▄▆█',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax    ▼ −€0.74     ▼ −€2.22',
+    'Net           ▲ +€3.18     ▲ +€9.48',
+    'Open ▲ +€9.36 · tax if sold now ▼ −€1.77',
+    'est. · FIFO · 19% band · €5,988.30 left before 21%',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[ok-two-positions-portfolio-year-120]
+  list([
+    ' DEMO DATA · scenario ok-two-positions',
+    '€1,021.06   ▲ +€21.06 +2.11% this year',
+    'net ▲ +€17.07 this year · after fees and est. tax',
+    '▁▁▂▂▂▂▂▂▂▃▃▃▃▃▃▄▄▄▄▄▄▄▅▅▅▅▅▅▅▅▆▆▆▆▆▆▇▇▇▇▇▇▇████▁',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax    ▼ −€0.74     ▼ −€2.22',
+    'Net           ▲ +€3.18     ▲ +€9.48',
+    'Open ▲ +€9.36 · tax if sold now ▼ −€1.77',
+    'est. · FIFO · 19% band · €5,988.30 left before 21%',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[ok-two-positions-portfolio-year-80]
+  list([
+    ' DEMO DATA · scenario ok-two-positions',
+    '€1,021.06   ▲ +€21.06 +2.11% this year',
+    'net ▲ +€17.07 this year · after fees and est. tax',
+    '▁▁▂▂▂▂▂▂▂▃▃▃▃▃▃▄▄▄▄▄▄▄▅▅▅▅▅▅▅▅▆▆▆▆▆▆▇▇▇▇▇▇▇████▁',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax    ▼ −€0.74     ▼ −€2.22',
+    'Net           ▲ +€3.18     ▲ +€9.48',
+    'Open ▲ +€9.36 · tax if sold now ▼ −€1.77',
+    'est. · FIFO · 19% band · €5,988.30 left before 21%',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[ok-two-positions-position-detail-120]
+  list([
+    ' DEMO DATA · scenario ok-two-positions',
+    'ETH · 4h · long · open 1d 4h   ▲ +€1.54 net',
+    'Why: donchian-breakout-v1 on 4h · entry 2,618 · donchian_high 2,615 · atr 30.10',
+    'Stop: ▕███████░▏ 3.1 ATR · 2,580 · −3.44% · high since entry 2,690 · moved 3×',
+    '',
+    'Money if sold now',
+    'Gross                     ▲ +€2.10',
+    '− Fees paid               ▼ −€0.08',
+    '− Fees to close (est.)    ▼ −€0.09',
+    '− Est. tax if sold now    ▼ −€0.39',
+    'Net                       ▲ +€1.54',
+    '',
+    'Price ▂▃▁▄█▆▆▆ entry 2,618 · stop 2,580 · high 2,690',
+    '',
+    'Timeline',
+    'Fri 02 Oct 10:00    signal: long ETH on 4h close',
+    'Fri 02 Oct 10:00    filled 0.035 at 2,618',
+    'Fri 02 Oct 18:00    stop raised 2,552 → 2,566',
+    'Sat 03 Oct 02:00    stop raised 2,566 → 2,575',
+    'Sat 03 Oct 06:00    stop raised 2,575 → 2,580',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[ok-two-positions-position-detail-80]
+  list([
+    ' DEMO DATA · scenario ok-two-positions',
+    'ETH · 4h · long · open 1d 4h   ▲ +€1.54 net',
+    'Why: donchian-breakout-v1 on 4h · entry 2,618 · donchian_high 2,615 · atr 30.10',
+    'Stop: ▕███████░▏ 3.1 ATR · 2,580 · −3.44% · high since entry 2,690 · moved 3×',
+    '',
+    'Money if sold now',
+    'Gross                     ▲ +€2.10',
+    '− Fees paid               ▼ −€0.08',
+    '− Fees to close (est.)    ▼ −€0.09',
+    '− Est. tax if sold now    ▼ −€0.39',
+    'Net                       ▲ +€1.54',
+    '',
+    'Price ▂▃▁▄█▆▆▆ entry 2,618 · stop 2,580 · high 2,690',
+    '',
+    'Timeline',
+    'Fri 02 Oct 10:00    signal: long ETH on 4h close',
+    'Fri 02 Oct 10:00    filled 0.035 at 2,618',
+    'Fri 02 Oct 18:00    stop raised 2,552 → 2,566',
+    'Sat 03 Oct 02:00    stop raised 2,566 → 2,575',
+    'Sat 03 Oct 06:00    stop raised 2,575 → 2,580',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[ok-two-positions-positions-120]
+  list([
+    ' DEMO DATA · scenario ok-two-positions',
+    'coin   tf   entry → now       change            net    stop   to stop   cushion',
+    '──────────────────────────────────────────────────────────────────────────────────────────',
+    'ETH    4h   2,618 → 2,672   ▲ +2.06%   ▲ +€1.54 net   2,580    −3.44%   ▕███████░▏ 3.1 ATR',
+    'SOL    1d   139.0 → 146.5   ▲ +5.40%   ▲ +€6.05 net   142.1    −3.00%   ▕██████░░▏ 1.4 ATR',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[ok-two-positions-positions-80]
+  list([
+    ' DEMO DATA · scenario ok-two-positions',
+    'coin   tf   entry → now       change            net   cushion',
+    '────────────────────────────────────────────────────────────────────────',
+    'ETH    4h   2,618 → 2,672   ▲ +2.06%   ▲ +€1.54 net   ▕███████░▏ 3.1 ATR',
+    'SOL    1d   139.0 → 146.5   ▲ +5.40%   ▲ +€6.05 net   ▕██████░░▏ 1.4 ATR',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[ok-two-positions-shadow-test-120]
+  list([
+    ' DEMO DATA · scenario ok-two-positions',
+    'Shadow test · day 12 of 90 · on track',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[ok-two-positions-shadow-test-80]
+  list([
+    ' DEMO DATA · scenario ok-two-positions',
+    'Shadow test · day 12 of 90 · on track',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[tax-pending-activity-120]
+  list([
+    ' DEMO DATA · scenario tax-pending',
+    'Today',
+    '2h ago      closed BTC at 61,240 · ▲ +€3.18 net',
+    '4h ago      SOL stop raised ×6, 139.0→142.1',
+    'Yesterday',
+    '15:00       ⚠ market data retry after timeout',
+    '10:00       opened ETH at 2,618',
+    'Mon 28 Sep',
+    '02:00       opened SOL at 139.0',
+    '00:30       restart · deploy',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[tax-pending-activity-80]
+  list([
+    ' DEMO DATA · scenario tax-pending',
+    'Today',
+    '2h ago      closed BTC at 61,240 · ▲ +€3.18 net',
+    '4h ago      SOL stop raised ×6, 139.0→142.1',
+    'Yesterday',
+    '15:00       ⚠ market data retry after timeout',
+    '10:00       opened ETH at 2,618',
+    'Mon 28 Sep',
+    '02:00       opened SOL at 139.0',
+    '00:30       restart · deploy',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[tax-pending-heartbeat-120]
+  list([
+    ' DEMO DATA · scenario tax-pending',
+    '                                                                                     ● live · checked 14:00 · next 18:00',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[tax-pending-heartbeat-80]
+  list([
+    ' DEMO DATA · scenario tax-pending',
+    '                                             ● live · checked 14:00 · next 18:00',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[tax-pending-overview-120]
+  list([
+    ' DEMO DATA · scenario tax-pending',
+    '                                                                                     ● live · checked 14:00 · next 18:00',
+    '€1,021.06   ▲ +€12.30 +1.22% today',
+    'net ▲ +€11.40 today · after fees, before tax',
+    '▁▂▁▄▆█',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax         n/a          n/a',
+    'Net           ▲ +€3.92    ▲ +€11.70',
+    'Open ▲ +€9.36 · tax estimate: not available yet',
+    'tax estimate: not available yet · net is before tax',
+    '',
+    'coin   tf   entry → now       change            net    stop   to stop   cushion',
+    '──────────────────────────────────────────────────────────────────────────────────────────',
+    'ETH    4h   2,618 → 2,672   ▲ +2.06%   ▲ +€1.93 net   2,580    −3.44%   ▕███████░▏ 3.1 ATR',
+    'SOL    1d   139.0 → 146.5   ▲ +5.40%   ▲ +€7.43 net   142.1    −3.00%   ▕██████░░▏ 1.4 ATR',
+    '',
+    'Today',
+    '2h ago      closed BTC at 61,240 · ▲ +€3.18 net',
+    '4h ago      SOL stop raised ×6, 139.0→142.1',
+    'Yesterday',
+    '15:00       ⚠ market data retry after timeout',
+    '10:00       opened ETH at 2,618',
+    '',
+    'Shadow test · day 12 of 90 · on track',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[tax-pending-overview-80]
+  list([
+    ' DEMO DATA · scenario tax-pending',
+    '                                             ● live · checked 14:00 · next 18:00',
+    '€1,021.06   ▲ +€12.30 +1.22% today',
+    'net ▲ +€11.40 today · after fees, before tax',
+    '▁▂▁▄▆█',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax         n/a          n/a',
+    'Net           ▲ +€3.92    ▲ +€11.70',
+    'Open ▲ +€9.36 · tax estimate: not available yet',
+    'tax estimate: not available yet · net is before tax',
+    '',
+    'coin   tf   entry → now       change            net   cushion',
+    '────────────────────────────────────────────────────────────────────────',
+    'ETH    4h   2,618 → 2,672   ▲ +2.06%   ▲ +€1.93 net   ▕███████░▏ 3.1 ATR',
+    'SOL    1d   139.0 → 146.5   ▲ +5.40%   ▲ +€7.43 net   ▕██████░░▏ 1.4 ATR',
+    '',
+    'Today',
+    '2h ago      closed BTC at 61,240 · ▲ +€3.18 net',
+    '4h ago      SOL stop raised ×6, 139.0→142.1',
+    'Yesterday',
+    '15:00       ⚠ market data retry after timeout',
+    '10:00       opened ETH at 2,618',
+    '',
+    'Shadow test · day 12 of 90 · on track',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[tax-pending-portfolio-120]
+  list([
+    ' DEMO DATA · scenario tax-pending',
+    '€1,021.06   ▲ +€12.30 +1.22% today',
+    'net ▲ +€11.40 today · after fees, before tax',
+    '▁▂▁▄▆█',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax         n/a          n/a',
+    'Net           ▲ +€3.92    ▲ +€11.70',
+    'Open ▲ +€9.36 · tax estimate: not available yet',
+    'tax estimate: not available yet · net is before tax',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[tax-pending-portfolio-80]
+  list([
+    ' DEMO DATA · scenario tax-pending',
+    '€1,021.06   ▲ +€12.30 +1.22% today',
+    'net ▲ +€11.40 today · after fees, before tax',
+    '▁▂▁▄▆█',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax         n/a          n/a',
+    'Net           ▲ +€3.92    ▲ +€11.70',
+    'Open ▲ +€9.36 · tax estimate: not available yet',
+    'tax estimate: not available yet · net is before tax',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[tax-pending-portfolio-year-120]
+  list([
+    ' DEMO DATA · scenario tax-pending',
+    '€1,021.06   ▲ +€21.06 +2.11% this year',
+    'net ▲ +€21.06 this year · after fees, before tax',
+    '▁▁▂▂▂▂▂▂▂▃▃▃▃▃▃▄▄▄▄▄▄▄▅▅▅▅▅▅▅▅▆▆▆▆▆▆▇▇▇▇▇▇▇████▁',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax         n/a          n/a',
+    'Net           ▲ +€3.92    ▲ +€11.70',
+    'Open ▲ +€9.36 · tax estimate: not available yet',
+    'tax estimate: not available yet · net is before tax',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[tax-pending-portfolio-year-80]
+  list([
+    ' DEMO DATA · scenario tax-pending',
+    '€1,021.06   ▲ +€21.06 +2.11% this year',
+    'net ▲ +€21.06 this year · after fees, before tax',
+    '▁▁▂▂▂▂▂▂▂▃▃▃▃▃▃▄▄▄▄▄▄▄▅▅▅▅▅▅▅▅▆▆▆▆▆▆▇▇▇▇▇▇▇████▁',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax         n/a          n/a',
+    'Net           ▲ +€3.92    ▲ +€11.70',
+    'Open ▲ +€9.36 · tax estimate: not available yet',
+    'tax estimate: not available yet · net is before tax',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[tax-pending-position-detail-120]
+  list([
+    ' DEMO DATA · scenario tax-pending',
+    'ETH · 4h · long · open 1d 4h   ▲ +€1.93 net',
+    'Why: donchian-breakout-v1 on 4h · entry 2,618 · donchian_high 2,615 · atr 30.10',
+    'Stop: ▕███████░▏ 3.1 ATR · 2,580 · −3.44% · high since entry 2,690 · moved 3×',
+    '',
+    'Money if sold now',
+    'Gross                                            ▲ +€2.10',
+    '− Fees paid                                      ▼ −€0.08',
+    '− Fees to close (est.)                           ▼ −€0.09',
+    '− Est. tax if sold now    tax estimate: not available yet',
+    'Net                                              ▲ +€1.93',
+    '',
+    'Price ▂▃▁▄█▆▆▆ entry 2,618 · stop 2,580 · high 2,690',
+    '',
+    'Timeline',
+    'Fri 02 Oct 10:00    signal: long ETH on 4h close',
+    'Fri 02 Oct 10:00    filled 0.035 at 2,618',
+    'Fri 02 Oct 18:00    stop raised 2,552 → 2,566',
+    'Sat 03 Oct 02:00    stop raised 2,566 → 2,575',
+    'Sat 03 Oct 06:00    stop raised 2,575 → 2,580',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[tax-pending-position-detail-80]
+  list([
+    ' DEMO DATA · scenario tax-pending',
+    'ETH · 4h · long · open 1d 4h   ▲ +€1.93 net',
+    'Why: donchian-breakout-v1 on 4h · entry 2,618 · donchian_high 2,615 · atr 30.10',
+    'Stop: ▕███████░▏ 3.1 ATR · 2,580 · −3.44% · high since entry 2,690 · moved 3×',
+    '',
+    'Money if sold now',
+    'Gross                                            ▲ +€2.10',
+    '− Fees paid                                      ▼ −€0.08',
+    '− Fees to close (est.)                           ▼ −€0.09',
+    '− Est. tax if sold now    tax estimate: not available yet',
+    'Net                                              ▲ +€1.93',
+    '',
+    'Price ▂▃▁▄█▆▆▆ entry 2,618 · stop 2,580 · high 2,690',
+    '',
+    'Timeline',
+    'Fri 02 Oct 10:00    signal: long ETH on 4h close',
+    'Fri 02 Oct 10:00    filled 0.035 at 2,618',
+    'Fri 02 Oct 18:00    stop raised 2,552 → 2,566',
+    'Sat 03 Oct 02:00    stop raised 2,566 → 2,575',
+    'Sat 03 Oct 06:00    stop raised 2,575 → 2,580',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[tax-pending-positions-120]
+  list([
+    ' DEMO DATA · scenario tax-pending',
+    'coin   tf   entry → now       change            net    stop   to stop   cushion',
+    '──────────────────────────────────────────────────────────────────────────────────────────',
+    'ETH    4h   2,618 → 2,672   ▲ +2.06%   ▲ +€1.93 net   2,580    −3.44%   ▕███████░▏ 3.1 ATR',
+    'SOL    1d   139.0 → 146.5   ▲ +5.40%   ▲ +€7.43 net   142.1    −3.00%   ▕██████░░▏ 1.4 ATR',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[tax-pending-positions-80]
+  list([
+    ' DEMO DATA · scenario tax-pending',
+    'coin   tf   entry → now       change            net   cushion',
+    '────────────────────────────────────────────────────────────────────────',
+    'ETH    4h   2,618 → 2,672   ▲ +2.06%   ▲ +€1.93 net   ▕███████░▏ 3.1 ATR',
+    'SOL    1d   139.0 → 146.5   ▲ +5.40%   ▲ +€7.43 net   ▕██████░░▏ 1.4 ATR',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[tax-pending-shadow-test-120]
+  list([
+    ' DEMO DATA · scenario tax-pending',
+    'Shadow test · day 12 of 90 · on track',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[tax-pending-shadow-test-80]
+  list([
+    ' DEMO DATA · scenario tax-pending',
+    'Shadow test · day 12 of 90 · on track',
+  ])
+# ---
