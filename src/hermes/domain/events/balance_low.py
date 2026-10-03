@@ -52,13 +52,17 @@ class BalanceLow(DomainEvent):
     checked_at: datetime
 
     def __post_init__(self) -> None:
-        """Enforce the tri-currency invariant across ``asset`` / ``current`` / ``threshold``.
+        """Compute the payload hash, then enforce the tri-currency invariant.
 
         Domain invariant I-01 (code-conventions §1): value objects reject
         invalid states at construction. A mismatched trio here would
         silently corrupt downstream Money arithmetic and notification
         rendering — fail loudly instead.
+
+        The base initialiser is called by name: ``super()`` does not work in a
+        slotted dataclass, and skipping it leaves ``payload_sha256`` empty.
         """
+        DomainEvent.__post_init__(self)
         if self.current.currency != self.asset:
             raise ValueError(
                 f"BalanceLow.current.currency {self.current.currency!r} does "
