@@ -71,18 +71,15 @@ class TestPreviewRenderCommand:
         assert "## Slack — text fallback" in output
         assert "## Slack — Block Kit" in output
 
-    def test_daily_trade_digest_writes_csv_attachment_to_tmp(self, tmp_path: Path) -> None:
-        """The digest preview reports a saved CSV attachment path in the output."""
-        # tmp_path is unused for the CSV location (the CLI uses tempfile.gettempdir()),
-        # but requesting it forces pytest to give this test its own temp dir if we ever
-        # want to redirect. Kept for symmetry with future tests.
-        _ = tmp_path
+    def test_daily_trade_digest_previews_blind(self) -> None:
+        """The digest preview shows what shadow sends: no P&L CSV and no P&L values."""
         stream = io.StringIO()
         rc = preview_module.main(["daily-trade-digest"], stream=stream)
         output = stream.getvalue()
         assert rc == 0
-        assert "digest-2026-08-23.csv" in output
-        assert "text/csv" in output
+        assert "digest-2026-08-23.csv" not in output
+        assert "120.00" not in output
+        assert "## Slack — attachments\n(none)" in output
 
     def test_telegram_only_event_reports_slack_absence(self) -> None:
         """BALANCE_LOW is routed to Telegram only — the Slack section notes the routing."""
