@@ -36,9 +36,8 @@ Reference:
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterator
-from contextlib import contextmanager
-from contextvars import ContextVar
+from collections.abc import AsyncIterator
+from contextvars import ContextVar, Token
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -68,8 +67,27 @@ __all__ = [
 _certification_mode: ContextVar[bool] = ContextVar("hermes_certification_mode", default=False)
 
 
-@contextmanager
-def certification_context() -> Iterator[None]:
+class _CertificationContext:
+    """Class-based so frozen-dataclass errors raised inside the block propagate unchanged.
+
+    ``contextlib.contextmanager`` assigns ``__traceback__`` on the exception it
+    re-raises, which fails with ``FrozenInstanceError`` for the frozen, slotted
+    :class:`~hermes.domain.errors.DomainError` subclasses.
+    """
+
+    def __init__(self) -> None:
+        self._token: Token[bool] | None = None
+
+    def __enter__(self) -> None:
+        self._token = _certification_mode.set(True)
+
+    def __exit__(self, *_exc_info: object) -> None:
+        if self._token is not None:
+            _certification_mode.reset(self._token)
+            self._token = None
+
+
+def certification_context() -> _CertificationContext:
     """Context manager that enables OOS data access for certification.
 
     Sets the ``hermes_certification_mode`` context variable to ``True`` for the
@@ -87,11 +105,7 @@ def certification_context() -> Iterator[None]:
 
     Reference: pre-registration-v1.md §4, spec-9 change.md D-2.
     """
-    token = _certification_mode.set(True)
-    try:
-        yield
-    finally:
-        _certification_mode.reset(token)
+    return _CertificationContext()
 
 
 def is_certification_mode() -> bool:

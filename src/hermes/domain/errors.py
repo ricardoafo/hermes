@@ -15,6 +15,9 @@ from dataclasses import dataclass
 
 __all__ = [
     "CurrencyMismatch",
+    "DataManifestFormatError",
+    "DatasetHashMismatchError",
+    "DatasetNotPinnedError",
     "DomainError",
     "ExchangeError",
     "FxRateError",
@@ -248,6 +251,25 @@ class HealthchecksError(InfraError):
 
 
 @dataclass(frozen=True, slots=True)
+class DataManifestFormatError(InfraError):
+    """The data manifest file is missing, unreadable, or not schema version 1.
+
+    Args:
+        path: Manifest file path.
+        msg: What was wrong with it.
+
+    Reference: openspec/changes/356-data-manifest/change.md Design.
+    """
+
+    path: str
+    msg: str
+
+    def __str__(self) -> str:
+        """Return human-readable description."""
+        return f"Data manifest {self.path} is invalid: {self.msg}"
+
+
+@dataclass(frozen=True, slots=True)
 class KrakenPublicError(InfraError):
     """Kraken public-endpoints adapter returned an error response or bad payload.
 
@@ -313,6 +335,61 @@ class OOSDataLeakageError(DomainError):
             f"is inside OOS window (starts {self.oos_start}). "
             f"Activate certification_context() to permit this read."
         )
+
+
+@dataclass(frozen=True, slots=True)
+class DatasetHashMismatchError(DomainError):
+    """Loaded bars differ from the dataset pinned in the data manifest.
+
+    A backtest or certification result is only reproducible on the exact bars
+    the manifest pins, so a changed dataset stops the run instead of silently
+    producing a result on different data.
+
+    Args:
+        dataset_id: Manifest id of the dataset (e.g. ``klines/BTCUSDT/4h/train``).
+        expected_sha256: Hash pinned in the manifest.
+        actual_sha256: Hash of the bars actually loaded.
+        expected_rows: Row count pinned in the manifest.
+        actual_rows: Row count actually loaded.
+
+    Reference: openspec/changes/356-data-manifest/change.md R-1.
+    """
+
+    dataset_id: str
+    expected_sha256: str
+    actual_sha256: str
+    expected_rows: int
+    actual_rows: int
+
+    def __str__(self) -> str:
+        """Return human-readable description."""
+        return (
+            f"Dataset {self.dataset_id} does not match the data manifest: "
+            f"expected {self.expected_rows} rows sha256={self.expected_sha256}, "
+            f"loaded {self.actual_rows} rows sha256={self.actual_sha256}. "
+            f"Re-pin only after recording why in the lab notebook."
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class DatasetNotPinnedError(DomainError):
+    """A requested bar range needs a dataset the data manifest does not pin.
+
+    Args:
+        pair: Pair string (``BASE/QUOTE``).
+        interval: Interval string (e.g. ``4h``).
+        reason: Which split is missing, or that the range lies outside every split.
+
+    Reference: openspec/changes/356-data-manifest/change.md R-3.
+    """
+
+    pair: str
+    interval: str
+    reason: str
+
+    def __str__(self) -> str:
+        """Return human-readable description."""
+        return f"No pinned dataset for {self.pair} {self.interval}: {self.reason}"
 
 
 @dataclass(frozen=True, slots=True)
