@@ -27,6 +27,7 @@ import sqlite3
 import sys
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -44,12 +45,19 @@ from hermes.domain.errors import ExchangeError, LedgerError
 from hermes.domain.events.bar_processed import BarProcessed
 from hermes.domain.events.event_bus import EventBus
 from hermes.domain.events.signal_emitted import SignalEmitted
+from hermes.domain.events.trade_executed import TradeExecuted, TradeSide
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.bar_schedule import delivery_key
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.risk.state import PortfolioState
 from hermes.domain.strategy.signal import OpenPosition, StrategySignal
 from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
+from hermes.domain.value_objects.currency import Currency
+from hermes.domain.value_objects.money import Money
+from hermes.domain.value_objects.pair import Pair
+from hermes.domain.value_objects.price import Price
+from hermes.domain.value_objects.quantity import Quantity
+from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.entrypoints import serve as serve_module
 from hermes.infrastructure.config.loader import load_config
 from hermes.infrastructure.config.models import StrategiesConfig
@@ -233,6 +241,75 @@ class TestMainnetNeedsLiveApproval:
         serve_module.check_startup(
             shadow_config, {}, certification_store=JsonCertificationStore(tmp_path)
         )
+
+
+def _record_trade(db_path: Path, side: TradeSide, correlation_id: str) -> None:
+    """Write one 0.01 BTC fill at 50000 (fee 0.5 USDT) of the shadow strategy to the ledger."""
+    pair = Pair(base=Currency.BTC, quote=Currency.USDT)
+    connection = sqlite3.connect(db_path)
+    try:
+        SqliteLedger(connection).append_event(
+            TradeExecuted(
+                occurred_at=datetime(2026, 10, 1, 4, 0, tzinfo=UTC),
+                correlation_id=correlation_id,
+                pair=pair,
+                side=side,
+                qty=Quantity(amount=Decimal("0.01"), asset=Currency.BTC),
+                price=Price(amount=Decimal("50000"), pair=pair),
+                fee=Money(amount=Decimal("0.5"), currency=Currency.USDT),
+                strategy_id=StrategyId("swing-donchian-4h"),
+            )
+        )
+    finally:
+        connection.close()
+
+
+class TestPortfolioRebuiltOnStartup:
+    """build_composition restores the portfolio from the ledger's recorded trades."""
+
+    def test_a_recorded_buy_shows_as_an_open_position_and_reduced_cash(
+        self, shadow_config: HermesConfig, tmp_path: Path
+    ) -> None:
+        """One BUY of 0.01 BTC at 50000 leaves one position and value seed minus the fee."""
+        db_path = tmp_path / "test.sqlite3"
+        _record_trade(db_path, TradeSide.BUY, "01J9Z8T3M5BQR2FVKN4XWY6PH1")
+        fresh = tmp_path / "fresh.sqlite3"
+        baseline = serve_module.build_composition(
+            shadow_config, db_path=fresh, env={}, feed=FakeFeed()
+        )
+        composition = serve_module.build_composition(
+            shadow_config, db_path=db_path, env={}, feed=FakeFeed()
+        )
+        try:
+            assert (
+                composition.tracker.open_position_count(),
+                baseline.tracker.state().current_value - composition.tracker.state().current_value,
+            ) == (1, Decimal("0.5"))
+        finally:
+            composition.sqlite_connection.close()
+            baseline.sqlite_connection.close()
+
+    def test_an_unreplayable_ledger_raises_startup_error_naming_the_trade(
+        self, shadow_config: HermesConfig, tmp_path: Path
+    ) -> None:
+        """A SELL with no prior BUY stops startup and names the trade's correlation id."""
+        db_path = tmp_path / "test.sqlite3"
+        _record_trade(db_path, TradeSide.SELL, "01J9Z8T3M5BQR2FVKN4XWY6PH7")
+        with pytest.raises(serve_module.StartupError, match="01J9Z8T3M5BQR2FVKN4XWY6PH7"):
+            serve_module.build_composition(shadow_config, db_path=db_path, env={}, feed=FakeFeed())
+
+    def test_a_ledger_read_failure_raises_startup_error(
+        self, shadow_config: HermesConfig, tmp_path: Path
+    ) -> None:
+        """A schema v1 TradeExecuted row stops startup with StartupError, not LedgerError."""
+        db_path = tmp_path / "test.sqlite3"
+        _record_trade(db_path, TradeSide.BUY, "01J9Z8T3M5BQR2FVKN4XWY6PH1")
+        connection = sqlite3.connect(db_path)
+        connection.execute("UPDATE events SET event_schema_version = 1")
+        connection.commit()
+        connection.close()
+        with pytest.raises(serve_module.StartupError, match="schema version 1"):
+            serve_module.build_composition(shadow_config, db_path=db_path, env={}, feed=FakeFeed())
 
 
 class TestCheckStartup:
