@@ -253,7 +253,9 @@ def replay_fifo_eur(trades: Sequence[EurTrade]) -> Result[FifoEurProjection, Dom
 @runtime_checkable
 class TradeLedgerPort(Protocol):
     def record_trade(self, trade: TradeRecord, event: DomainEvent) -> int: ...
-    def list_pending_trades(self) -> tuple[PendingTrade, ...]: ...     # PendingTrade: trade_id, executed_at, price, fee
+    def list_pending_trades(
+        self,
+    ) -> tuple[PendingTrade, ...]: ...  # PendingTrade: trade_id, executed_at, price, fee
     def apply_trade_eur(self, trade_id: int, eur: TradeEur) -> None: ...
 ```
 
@@ -273,14 +275,26 @@ id looked up by buy trade). `Failure` -> `LedgerError`, rolled back.
 class EurPricer:
     def __init__(self, fx: FxRateProviderPort, *, source: str = "ecb:frankfurter") -> None: ...
     def price(self, quote: Currency, fill_date: date, *, today: date) -> EurPricing | None: ...
+
+
 # application/ledger/trade_recorder.py
 class TradeRecorder:
     def __init__(self, ledger: TradeLedgerPort, pricer: EurPricer) -> None: ...
-    def record(self, fill: Fill, *, correlation_id: str) -> int: ...  # appends TradeExecuted in the same txn
+    def record(
+        self, fill: Fill, *, correlation_id: str
+    ) -> int: ...  # appends TradeExecuted in the same txn
+
+
 # application/ledger/eur_backfill.py
 @dataclass(frozen=True, slots=True)
-class BackfillReport: filled: tuple[int, ...]; pending: tuple[int, ...]
-def backfill_pending_eur(ledger: TradeLedgerPort, pricer: EurPricer, *, today: date) -> BackfillReport: ...
+class BackfillReport:
+    filled: tuple[int, ...]
+    pending: tuple[int, ...]
+
+
+def backfill_pending_eur(
+    ledger: TradeLedgerPort, pricer: EurPricer, *, today: date
+) -> BackfillReport: ...
 ```
 
 ### Entry point
