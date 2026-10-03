@@ -48,7 +48,7 @@ __all__ = [
 ]
 
 DEMO_ENV_VAR: Final = "HERMES_CONSOLE_DEMO"
-CONSOLE_COMMANDS: Final[frozenset[str]] = frozenset({"positions"})
+CONSOLE_COMMANDS: Final[frozenset[str]] = frozenset({"activity", "positions"})
 _FLAG: Final = "--demo"
 
 
