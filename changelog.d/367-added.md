@@ -1,0 +1,1 @@
+- **ADR-012 continuous AI evaluation** (`docs/architecture/adr-012-continuous-ai-evaluation.md`): engineering, supervision and research loops plus the supervisor desk land in MVP1, with autonomy limits, outcome-blindness until OOS certification, and a monthly LLM cost cap. Partly supersedes ADR-003 §08. Closes #310.
