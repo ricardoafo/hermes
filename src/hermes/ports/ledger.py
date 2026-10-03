@@ -12,12 +12,17 @@ code-conventions.md §1 (Ports & Adapters).
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol, runtime_checkable
 
 from hermes.domain.events.base import DomainEvent
+from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.lots.lot import Lot
 from hermes.domain.lots.lot_consumption import LotConsumption
+from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.currency import Currency
+from hermes.domain.value_objects.pair import Pair
+from hermes.domain.value_objects.strategy_id import StrategyId
 
 __all__ = ["LedgerPort"]
 
@@ -113,5 +118,62 @@ class LedgerPort(Protocol):
 
         Raises:
             LedgerError: On any SQLite write failure.
+        """
+        ...
+
+    def has_signal_event(self, event: SignalEmitted) -> bool:
+        """Return whether a ledger row already records ``event``.
+
+        A row matches on strategy, pair, kind and ``occurred_at`` (the signal
+        bar's close time), so a bar re-evaluated after a restart finds the
+        signal it already wrote.
+
+        Args:
+            event: The signal event to look up.
+
+        Returns:
+            ``True`` when a matching ``SignalEmitted`` row exists.
+
+        Raises:
+            LedgerError: On any SQLite read failure.
+        """
+        ...
+
+    def last_processed_close(self, pair: Pair, interval: KlineInterval) -> datetime | None:
+        """Return the close time of the newest bar handled for one stream.
+
+        Reads the ``BarProcessed`` rows the serve loop appends after every
+        handled bar.
+
+        Args:
+            pair: Trading pair.
+            interval: Candle-duration bucket.
+
+        Returns:
+            The newest ``occurred_at`` for the stream, or ``None`` when no
+            bar of it was ever handled.
+
+        Raises:
+            LedgerError: On any SQLite read failure.
+        """
+        ...
+
+    def latest_signal_event(
+        self, strategy_id: StrategyId, pair: Pair, *, at_or_before: datetime
+    ) -> SignalEmitted | None:
+        """Return the newest signal of one strategy and pair, bounded in time.
+
+        Args:
+            strategy_id: Strategy bucket that emitted the signal.
+            pair: Trading pair.
+            at_or_before: Inclusive upper bound on ``occurred_at``. A signal
+                newer than this (written before a crash, ahead of its cursor
+                row) is ignored.
+
+        Returns:
+            The newest matching event, or ``None`` when there is none.
+
+        Raises:
+            LedgerError: On any SQLite read failure or an unreadable payload.
         """
         ...

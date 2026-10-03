@@ -18,9 +18,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from hermes.domain.market_data.bar import Bar
     from hermes.domain.risk.state import PortfolioState
-    from hermes.domain.strategy.signal import StrategySignal
+    from hermes.domain.strategy.signal import OpenPosition, StrategySignal
 
 __all__ = ["StrategyPort"]
 
@@ -68,5 +70,20 @@ class StrategyPort(Protocol):
             Implementations MUST NOT read any bar with a ``close_time`` later
             than ``bar.close_time`` — this is the no-lookahead contract
             (spec-5 R-8, SA-4 P1).
+        """
+        ...  # pragma: no cover
+
+    def seed(self, bars: Sequence[Bar], open_position: OpenPosition | None = None) -> None:
+        """Prime the adapter's history from closed bars without evaluating them.
+
+        Called once at warm-up, before the first live bar. Unlike
+        :meth:`on_bar` it never returns a signal and never opens a position
+        by itself: a historical bar must not be able to emit an entry that
+        was never traded.
+
+        Args:
+            bars: Closed bars in delivery order.
+            open_position: The position already held, restored from the
+                ledger, or ``None`` when flat.
         """
         ...  # pragma: no cover
