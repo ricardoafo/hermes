@@ -157,3 +157,56 @@ def test_apply_replaces_unreleased_block_in_place(tmp_path: Path) -> None:
     assert "## [1.0.0] - 2026-01-01" in rewritten
     assert "- First release." in rewritten
     assert "[Unreleased]: https://example.com/compare/1.0.0...HEAD" in rewritten
+
+
+def test_orphan_fragments_take_the_resolved_pr_number(tmp_path: Path) -> None:
+    """`+slug.type.md` sorts by the PR number resolved at release time (#420)."""
+    frag_dir = tmp_path / "changelog.d"
+    frag_dir.mkdir()
+    (frag_dir / "300-added.md").write_text("- Numbered.\n", encoding="utf-8")
+    (frag_dir / "+late-orphan.added.md").write_text("- Late orphan.\n", encoding="utf-8")
+    (frag_dir / "+early-orphan.added.md").write_text("- Early orphan.\n", encoding="utf-8")
+    numbers = {"+early-orphan.added.md": 250, "+late-orphan.added.md": 350}
+
+    by_section = aggregate_changelog.collect_fragments(
+        frag_dir, resolve_pr=lambda path: numbers[path.name]
+    )
+
+    assert [pr for pr, _ in by_section["Added"]] == [250, 300, 350]
+
+
+def test_unresolved_orphans_sort_last_by_slug(tmp_path: Path) -> None:
+    """An orphan with no recoverable PR is kept, after every numbered entry."""
+    frag_dir = tmp_path / "changelog.d"
+    frag_dir.mkdir()
+    (frag_dir / "+b-orphan.fixed.md").write_text("- B.\n", encoding="utf-8")
+    (frag_dir / "+a-orphan.fixed.md").write_text("- A.\n", encoding="utf-8")
+    (frag_dir / "900-fixed.md").write_text("- Numbered.\n", encoding="utf-8")
+
+    by_section = aggregate_changelog.collect_fragments(frag_dir, resolve_pr=lambda _path: None)
+
+    bodies = [body.strip() for _, body in by_section["Fixed"]]
+    assert bodies == ["- Numbered.", "- A.", "- B."]
+
+
+def test_orphan_with_unknown_type_raises(tmp_path: Path) -> None:
+    """Orphans are validated like numbered fragments."""
+    frag_dir = tmp_path / "changelog.d"
+    frag_dir.mkdir()
+    (frag_dir / "+thing.nonsense.md").write_text("- Bad.\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="unknown type 'nonsense'"):
+        aggregate_changelog.collect_fragments(frag_dir, resolve_pr=lambda _path: 1)
+
+
+def test_pr_number_comes_from_the_squash_suffix() -> None:
+    """The squash subject's trailing `(#N)` gives the PR number."""
+    subjects = ["feat(x): add thing (#412)"]
+    assert aggregate_changelog.pr_from_subjects(subjects) == 412
+
+
+def test_subject_without_squash_suffix_is_unresolved() -> None:
+    """A local commit with no `(#N)` suffix, or a mid-subject `#N`, resolves nothing."""
+    subjects = ["feat(x): local commit", "fix(y): mention #12 in passing"]
+    resolved = aggregate_changelog.pr_from_subjects(subjects)
+    assert (resolved, len(subjects)) == (None, 2)

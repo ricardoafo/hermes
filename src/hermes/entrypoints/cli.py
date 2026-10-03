@@ -54,6 +54,7 @@ from hermes.entrypoints import console as console_module
 from hermes.entrypoints import fx as fx_module
 from hermes.entrypoints import preview as preview_module
 from hermes.entrypoints import serve as serve_module
+from hermes.entrypoints import status as status_module
 from hermes.infrastructure import sentry_integration
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.loader import (
@@ -91,6 +92,7 @@ _SUBCOMMAND_HELP: Final[dict[str, str]] = {
     ),
     "certify": "Evaluate the next certification gate for a strategy (pre-reg §7).",
     "fx": "`hermes fx backfill` fills pending EUR values in the ledger.",
+    "status": "Read-only progress check: verdict, last and next bar per stream.",
     "simulate": "Replay historical scenarios (stub — implemented in a future PR).",
 }
 
@@ -202,6 +204,7 @@ def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
         "serve": _dispatch_serve,
         "certify": certify_module.main,
         "fx": _dispatch_fx,
+        "status": status_module.main,
     }
     dispatch = table.get(subcommand)
     if dispatch is not None:

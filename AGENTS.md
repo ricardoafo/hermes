@@ -201,11 +201,14 @@ For any PR typed `feat` / `fix` / `refactor` / `perf` (and not scoped
 Two paths satisfy the check:
 
 - **Preferred — add a fragment**: create
-  `changelog.d/<pr-number>-<type>.md` where `<type>` is one of
-  `added` / `changed` / `deprecated` / `removed` / `fixed` / `security`.
-  The file contains a single Markdown bullet describing the change.
-  See [`changelog.d/README.md`](changelog.d/README.md) for the naming
-  and placeholder conventions. Aggregation into `CHANGELOG.md`
+  `changelog.d/<issue-number>-<type>.md`, named after the tracking
+  issue, or `changelog.d/+<slug>.<type>.md` when there is no issue,
+  where `<type>` is one of `added` / `changed` / `deprecated` /
+  `removed` / `fixed` / `security`. Commit it before the PR opens; never
+  rename it to the PR number afterwards, because a push after approval
+  dismisses the approval (#420). The file contains a single Markdown
+  bullet describing the change. See
+  [`changelog.d/README.md`](changelog.d/README.md) for the naming rules. Aggregation into `CHANGELOG.md`
   happens at release cut via
   `scripts/dev/aggregate-changelog.py --apply`.
 - **Legacy — edit `CHANGELOG.md` directly** under `[Unreleased]`.
@@ -217,8 +220,8 @@ Two paths satisfy the check:
 Rationale: through the #124-#132 queue, EVERY concurrent PR touched
 `[Unreleased] → ### Added` and forced a rebase cascade. Fragments
 give each PR its own file — no conflict unless two PRs claim the
-same PR number (impossible) or the same feature (already a merge
-problem elsewhere).
+same number or slug (use a `+<slug>` for a second PR on one issue) or
+the same feature (already a merge problem elsewhere).
 
 ### On the SDD workflow
 

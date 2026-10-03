@@ -93,6 +93,7 @@ Cross-references:
 | `systemd/hermes-notify-failure@.service` | Started by `hermes.service`'s `OnFailure=`; sends one Telegram message                             | installed by `vps-bootstrap`                                      |
 | `hermes-health-ping.sh`                  | The progress ping: `hermes status --json` decides success or `/fail` while the unit is active      | shipped in each release                                           |
 | `hermes-notify-failure.sh`               | Builds and sends the Telegram failure message; needs only bash and curl                            | `/opt/hermes/bin`: `vps-bootstrap`, then each good deploy         |
+| `hermes-notify-crash.sh`                 | `hermes.service`'s `ExecStopPost=`: one Slack line after a stop that was not clean                 | `/opt/hermes/bin`: `vps-bootstrap`, then each good deploy         |
 
 The scripts the workflows run live in `scripts/deploy/`:
 
@@ -148,18 +149,23 @@ ssh hermes-01 'id hermes; stat -c "%a %U:%G" /etc/hermes/env.production; systemc
 
 ### Alerting when hermes is down
 
-Two independent paths reach the operator on Telegram:
+Two independent paths reach the operator on Telegram, and a third posts
+same-day notices to Slack:
 
 | Path                  | Fires when                                                                                      | Needs                                                     |
 | --------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
 | `OnFailure=` notifier | `hermes.service` enters `failed`: start limit tripped (5 starts in 10 min) or exit code 2 or 3  | `HERMES_TELEGRAM__BOT_TOKEN`, `HERMES_TELEGRAM__CHAT_ID`  |
 | healthchecks.io ping  | the ping stops (service stopped, crash-looping, VPS down) or `hermes status` says late or down  | `HERMES_HEALTHCHECKS__PING_URL` and the integration below |
+| Slack crash notice    | any stop that is not clean (crash, signal, timeout), including the ones `Restart=` recovers     | `HERMES_SLACK__BOT_TOKEN` and `__DEFAULT_CHANNEL`         |
 
 The notifier sends one message per failure, with the last five journal
 lines (values of secret-looking variables are masked). A crash that is
 about to be restarted does not alert: the unit is `activating
-(auto-restart)`, not `failed`. A stopped service sends no message of its
-own; the missed ping covers it.
+(auto-restart)`, not `failed`; the Slack crash notice covers that case with
+one line per crash (unit, result, exit code or signal, and the last
+`serve.run.failed` line, secrets masked). A clean stop (deploy, SIGTERM)
+sends nothing. A stopped service sends no Telegram message of its own; the
+missed ping covers it.
 
 `hermes-health-ping.sh` pings only while `systemctl is-active --quiet
 hermes.service` succeeds. It then runs `hermes status --json`: all good sends

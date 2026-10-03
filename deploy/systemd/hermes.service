@@ -51,6 +51,13 @@ RestartSec=30s
 # Exit 2 (bad arguments) and 3 (config load failed) never fix themselves.
 # Stay failed so `systemctl is-active` and the journal show it.
 RestartPreventExitStatus=2 3
+# One Slack line after a stop that was not clean (crash, signal, timeout),
+# including the ones Restart= recovers from in 30s, which OnFailure= never
+# sees (#380). "+" runs it as root outside the sandbox so it can read the
+# journal for the last serve.run.failed line; the script is root-owned in
+# /opt/hermes/bin, needs only bash and curl, and always exits 0. "-" keeps a
+# failed notice from ever changing the stop result.
+ExecStopPost=-+/bin/bash /opt/hermes/bin/hermes-notify-crash.sh %n
 
 # Hardening: same pattern as the other hermes units.
 NoNewPrivileges=true
