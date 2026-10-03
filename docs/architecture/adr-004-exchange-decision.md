@@ -1,7 +1,7 @@
 # ADR-004: Exchange decision — Binance primary via ARG-DNI, Kraken hot backup, agnostic port at the code boundary
 
 **Date**: 2026-08-20
-**Status**: Accepted
+**Status**: Accepted — partially superseded by [ADR-014](adr-014-pre-registration-binds-real-capital.md) (real-capital dates only)
 **Accepted**: 2026-08-21
 **Deciders**: Ricardo Afonso (product owner), Claude (proposer)
 **Supersedes**: —
