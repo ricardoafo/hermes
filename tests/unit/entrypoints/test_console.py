@@ -17,6 +17,7 @@ import pytest
 
 from hermes.adapters.console import UnknownScenarioError
 from hermes.entrypoints import cli as cli_module
+from hermes.entrypoints.commands import Command
 from hermes.entrypoints.console import (
     DEMO_ENV_VAR,
     DemoFlagError,
@@ -76,9 +77,8 @@ def test_demo_flag_without_name_exits_2() -> None:
 def test_demo_flag_refuses_serve(monkeypatch: pytest.MonkeyPatch) -> None:
     """A demo can never reach the bar loop: --demo with serve exits 2 before dispatch."""
     calls: list[list[str]] = []
-    monkeypatch.setattr(
-        cli_module, "_dispatch_serve", lambda rest, *, stream: calls.append(rest) or 0
-    )
+    spy = Command("serve", "spy", lambda rest, *, stream: calls.append(rest) or 0)
+    monkeypatch.setattr(cli_module, "discover", lambda: {"serve": spy})
     stream = io.StringIO()
     rc = cli_module.main(["--demo", "late", "serve"], stream=stream)
     assert (rc, calls) == (2, [])
