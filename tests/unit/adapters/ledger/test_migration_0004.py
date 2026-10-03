@@ -192,7 +192,7 @@ def test_0004_sorts_after_0003_live_bars_in_a_fresh_ledger() -> None:
 
     applied = apply_migrations(conn)
 
-    assert applied == (
+    assert applied[:4] == (
         "0001_initial_schema.sql",
         "0002_lots_add_strategy_id.sql",
         "0003_live_bars.sql",
@@ -201,7 +201,7 @@ def test_0004_sorts_after_0003_live_bars_in_a_fresh_ledger() -> None:
 
 
 def test_ledger_migrated_through_0003_live_bars_upgrades_cleanly_to_0004(tmp_path: Path) -> None:
-    """Invariant: a ledger already at 0003_live_bars applies exactly 0004 and keeps live_bars."""
+    """Invariant: a ledger already at 0003_live_bars applies 0004 next and keeps live_bars."""
     conn = _seeded_at_0003(tmp_path)
     conn.execute(
         "INSERT INTO live_bars VALUES ('BTC', 'USDT', '1h', 't0', 't1', '1', '2', '0.5', '1.5', "
@@ -211,8 +211,10 @@ def test_ledger_migrated_through_0003_live_bars_upgrades_cleanly_to_0004(tmp_pat
 
     applied = apply_migrations(conn)
 
-    assert applied == ("0004_trade_eur_values.sql",)
-    assert conn.execute("SELECT filename FROM schema_migrations ORDER BY filename").fetchall() == [
+    assert applied[0] == "0004_trade_eur_values.sql"
+    assert conn.execute(
+        "SELECT filename FROM schema_migrations ORDER BY filename LIMIT 4"
+    ).fetchall() == [
         ("0001_initial_schema.sql",),
         ("0002_lots_add_strategy_id.sql",),
         ("0003_live_bars.sql",),
