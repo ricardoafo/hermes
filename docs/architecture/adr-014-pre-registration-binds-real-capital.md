@@ -111,6 +111,7 @@ Alternatives considered:
 - [ADR-006](adr-006-versioning-strategy.md) — versioning (pre-release calendar superseded here)
 - [ADR-009](adr-009-documentation-strategy.md) — ADR immutability and supersession
 - [ADR-011](adr-011-paper-trading-engine.md) — certification lifecycle in the engine
+- [2026-10-03 operator sees shadow P&L](../decisions/2026-10-03-operator-sees-shadow-pnl.md) — binding no-change rule while the operator watches shadow P&L
 
 ## Pending
 

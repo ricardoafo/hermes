@@ -59,3 +59,29 @@ Actors: `operator` | `claude-experimentalist` | `claude-integrity-checker` | `en
 - Prior corrections (pre-signing, in commit `9ddb879`): SYNTHESIS.md, adr-011-paper-trading-engine.md, data-ingest-plan.md, REVIEW-BRIEF.md, success-criteria.md.
 
 **Next**: kick off `/sdd-new spec-1-domain-aggregates` for the first engineering spec via the SDD flow. Data ingest to follow once storage layout is provisioned on the dev D: drive.
+
+### 2026-10-03T13:18:31Z | shadow | operator | operator P&L visibility under a binding no-change rule (not a deviation)
+
+**Observed metrics**:
+
+- N/A (no simulated fill yet; recorded before the 90-day shadow clock starts)
+
+**Decision**:
+
+- Operator console and Telegram pull replies show shadow P&L, gross and after estimated tax.
+- No change to pre-registration v1; its file and hash stay as signed.
+- Binding rule: no strategy change before certification; halts only by a §10 kill criterion or a logged operational fault; certification is mechanical; AI surfaces stay blind (ADR-012 D-06); v2 cannot reuse the 2025-09-01 to 2026-12-31 window.
+
+**Rationale**:
+
+- Operator commitment, verbatim: "If we commit to not change the strategy on the time period define can we go full?"
+- Chosen as "Go full" at 13:18 UTC on 2026-10-03.
+- Governing sections: pre-registration v1 §4, §10, §11, §13, §16; D-8 guardrail (2026-10-02 decision).
+- Not a deviation per §11: no §11 item changes and the signed file is not edited. Version label if wanted: v1.1, same windows.
+
+**Files touched**:
+
+- docs/decisions/2026-10-03-operator-sees-shadow-pnl.md (added)
+- docs/experiments/swing-mvp1/lab-notebook.md (modified)
+
+<!-- entry-sha256: 9d0b2e9efe4eccfc2bdc23b22de599922c2478158e28b54d719cc68a67832f59 -->
