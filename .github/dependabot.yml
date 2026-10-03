@@ -53,20 +53,16 @@ updates:
       prefix-development: 'chore(deps-dev)'
       include: scope
 
-    # Group PATCH-level updates only (per the dependency-review checklist).
-    # Minor + major bumps ship as INDIVIDUAL PRs so each gets a real
-    # CHANGELOG-diff read — grouped minors train reviewers to rubber-stamp
-    # the whole bundle. The `*` pattern with `update-types: [patch]` catches
-    # every ecosystem package at patch level regardless of prod vs dev split;
-    # per-ecosystem commit-message prefix + prefix-development still applies.
+    # One weekly PR per ecosystem (CI/CD consolidation, Rick's call on
+    # 2026-10-03): every version update, patch to major, lands in a single
+    # grouped PR that goes through the same CI and merge queue as any other
+    # and still needs Rick's approval. Read each bump's changelog in that PR
+    # (docs/decisions/2026-08-24-dependency-upgrade-checklist.md). Security
+    # updates are not grouped: each advisory fix opens its own PR at once.
     groups:
-      patch-updates:
+      weekly:
+        applies-to: version-updates
         patterns: ['*']
-        update-types: ['patch']
-
-    # Minors + majors intentionally UN-grouped: dependabot opens one PR
-    # per package per bump. Each requires a manual CHANGELOG-read + a
-    # documented decision (see the dependency-upgrade-checklist decision doc).
 
   # ────────────────────────────────────────────────────────────────
   # GitHub Actions — keeps the SHA pins alive
@@ -95,10 +91,8 @@ updates:
       prefix: 'ci(deps)'
       include: scope
 
-    # Same discipline as the pip ecosystem: patch-only grouping, minor +
-    # major bumps get their own PR because action major bumps move
-    # interfaces (breaking `with:` schemas, output names, or runtime).
+    # Same as pip: one grouped weekly PR; security updates stay separate.
     groups:
-      patch-updates:
+      weekly:
+        applies-to: version-updates
         patterns: ['*']
-        update-types: ['patch']
