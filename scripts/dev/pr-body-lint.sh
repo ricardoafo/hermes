@@ -52,7 +52,7 @@ lint_body() {
                 if (in_comment) { if (line ~ /-->/) { sub(/.*-->/, "", line); in_comment=0; print line } next }
                 print line
             }
-        ' | grep -vE '^[[:space:]]*$|^[[:space:]]*-[[:space:]]+(ADR|Issue):[[:space:]]*$' || true)
+        ' | grep -vE '^[[:space:]]*$|^[[:space:]]*-[[:space:]]+(ADR|Issue):[[:space:]]*$|^[[:space:]]*Test tiers touched:[[:space:]]*$' || true)
 
         if [[ -z "$stripped" ]]; then
             missing+=("$section")
@@ -120,6 +120,8 @@ Low.'
 ## Testing
 
 <!-- what was verified -->
+
+Test tiers touched: <!-- e.g. unit, property -->
 
 ## Risk
 

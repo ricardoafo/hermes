@@ -35,6 +35,14 @@ For docs: at minimum "markdownlint-cli2 passes with zero warnings across N files
 For code: which pytest files? Coverage delta? Benchmark numbers if perf?
 -->
 
+<!--
+Required (create-pr.sh refuses the PR without it): the pyramid tiers
+this PR adds or changes tests in. Any of unit, property, contract,
+integration, mutation; or none with a reason, e.g. "none (docs only)".
+-->
+
+Test tiers touched: <!-- e.g. unit, property -->
+
 ## Zero-warnings compliance
 
 All applicable linters pass with **zero** warnings (markdownlint, ruff,
