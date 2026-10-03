@@ -288,6 +288,8 @@ def _positive_decimal_strategy(
         max_value=Decimal(max_val),
         allow_nan=False,
         allow_infinity=False,
+        # Exchange tick precision; unbounded places cost ~40ms per example.
+        places=8,
     )
 
 
