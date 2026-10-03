@@ -60,7 +60,16 @@ def render_status(report: StatusReport, console: Console) -> None:
     verdict = _verdict(report)
     if console.is_terminal:
         _, style = _VERDICT_STYLE[report.verdict.level]
-        console.print(Panel(verdict, border_style=style.removeprefix("bold "), expand=False))
+        # SQUARE, not Rich's default ROUNDED: Rich swaps ROUNDED for SQUARE on
+        # Windows consoles, so the default would draw differently per OS.
+        console.print(
+            Panel(
+                verdict,
+                box=box.SQUARE,
+                border_style=style.removeprefix("bold "),
+                expand=False,
+            )
+        )
     else:
         console.print(verdict)
     console.print()
