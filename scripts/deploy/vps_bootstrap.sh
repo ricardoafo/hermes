@@ -252,6 +252,19 @@ ensure_health_timer() {
     fi
 }
 
+# Enable and start hermes-daily.timer when env file $1 carries a non-empty
+# HERMES_SLACK__BOT_TOKEN; without one every daily line would fail, so the
+# timer stays off (#373). `enable --now` is a no-op on a running timer.
+ensure_daily_timer() {
+    local file=$1
+    if [ -f "$file" ] && grep -qE '^HERMES_SLACK__BOT_TOKEN="?[^"[:space:]]' "$file"; then
+        systemctl enable --now hermes-daily.timer
+        echo "  hermes-daily.timer: enabled and started"
+    else
+        echo "  hermes-daily.timer: left off (HERMES_SLACK__BOT_TOKEN not set in $file)"
+    fi
+}
+
 # The sudoers file for a non-root CD user: exactly the commands the deploy
 # step runs as root (cd.yml), nothing else. The 12 hex classes match the
 # sha12 release id; sudoers wildcards are fnmatch patterns.
@@ -406,6 +419,7 @@ echo ""
 echo "---- 5. $ENV_FILE ----"
 ensure_env_file "$ENV_FILE"
 ensure_health_timer "$ENV_FILE"
+ensure_daily_timer "$ENV_FILE"
 echo ""
 
 # ────────────────────────────────────────────────────────────────

@@ -98,6 +98,27 @@ class SqliteStatusReader:
         value = None if row is None else row[0]
         return datetime.fromisoformat(value) if isinstance(value, str) else None
 
+    def count_bars_since(self, interval: KlineInterval, since: datetime) -> int:
+        """Return the number of ``BarProcessed`` rows of ``interval`` at or after ``since``.
+
+        Args:
+            interval: Candle-duration bucket, across every pair.
+            since: Inclusive lower bound, UTC-aware.
+
+        Returns:
+            The count.
+
+        Raises:
+            LedgerError: On any SQLite read failure.
+        """
+        row = self._fetchone(
+            "SELECT COUNT(*) FROM events WHERE event_type = 'BarProcessed' "
+            "  AND json_extract(payload_json, '$.interval') = ? AND occurred_at >= ?",
+            (interval.value, since.isoformat()),
+        )
+        value = None if row is None else row[0]
+        return value if isinstance(value, int) else 0
+
     def count_signals_since(self, since: datetime) -> int:
         """Return the number of ``SignalEmitted`` rows at or after ``since``.
 

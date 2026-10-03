@@ -5,7 +5,11 @@ Read-only: opens the ledger with SQLite's ``mode=ro`` and asks systemd about
 ``hermes serve``. Leads with the verdict every console surface shares (all
 good, late, down), then one row per stream with its last and next close.
 
-Usage: ``hermes status [--config-dir DIR] [--db PATH] [--json]``
+Usage: ``hermes status [--config-dir DIR] [--db PATH] [--json | --summary]``
+
+``--summary`` prints the one-line daily summary instead (#373); with
+``--journal FILE`` (``-`` for stdin) it adds the window's journal error and
+warning counts, and ``--restarts N`` the systemd restart count.
 
 Exit codes: 0 all good, 1 late or down, 2 usage, 3 config error or no ledger.
 
@@ -18,6 +22,7 @@ import argparse
 import json
 import shutil
 import subprocess
+import sys
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -35,6 +40,7 @@ from hermes.application.status import (
 )
 from hermes.domain.errors import LedgerError
 from hermes.entrypoints import serve as serve_module
+from hermes.entrypoints.daily_line import JournalCounts, count_journal, daily_line
 from hermes.entrypoints.status_view import render_status, report_to_dict
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
@@ -43,9 +49,11 @@ __all__ = ["main", "systemd_unit_state"]
 
 _UNIT: Final = "hermes.service"
 _USAGE: Final = (
-    "Usage: hermes status [--config-dir DIR] [--db PATH] [--json]\n"
+    "Usage: hermes status [--config-dir DIR] [--db PATH] [--json | --summary]\n"
+    "                     [--journal FILE|-] [--restarts N]\n"
     "\n"
     "Read-only progress check: the verdict, then each stream's last and next close.\n"
+    "--summary prints the one-line daily summary; --journal and --restarts feed it.\n"
     "Exit codes: 0 all good, 1 late or down, 2 usage, 3 config error or no ledger.\n"
 )
 
@@ -56,6 +64,7 @@ def main(
     stream: TextIO,
     now: datetime | None = None,
     unit_state: Callable[[], UnitState] | None = None,
+    stdin: TextIO | None = None,
 ) -> int:
     """Handle ``hermes status``.
 
@@ -64,6 +73,7 @@ def main(
         stream: Output stream.
         now: Reference instant; defaults to the wall clock. Injected by tests.
         unit_state: systemd probe; defaults to :func:`systemd_unit_state`.
+        stdin: Where ``--journal -`` reads from; defaults to ``sys.stdin``.
 
     Returns:
         Process exit code.
@@ -71,7 +81,11 @@ def main(
     parser = argparse.ArgumentParser(prog="hermes status", add_help=False)
     parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
     parser.add_argument("--db", type=Path, default=serve_module.DEFAULT_DB_PATH)
-    parser.add_argument("--json", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--json", action="store_true")
+    mode.add_argument("--summary", action="store_true")
+    parser.add_argument("--journal", default=None)
+    parser.add_argument("--restarts", type=int, default=0)
     parser.add_argument("-h", "--help", action="store_true")
     try:
         parsed = parser.parse_args(rest)
@@ -104,14 +118,19 @@ def main(
             )
     except FileNotFoundError:
         report = ledger_missing_report(at, unit, str(parsed.db))
-        _emit(report, stream, as_json=parsed.json)
-        return 3
+        code = 3
     except LedgerError as exc:
         stream.write(f"ERROR: could not read the ledger: {exc}\n")
         return 3
+    else:
+        code = 0 if report.verdict.level is VerdictLevel.OK else 1
 
-    _emit(report, stream, as_json=parsed.json)
-    return 0 if report.verdict.level is VerdictLevel.OK else 1
+    if parsed.summary:
+        counts = _journal_counts(parsed.journal, stdin or sys.stdin)
+        stream.write(daily_line(report, counts, parsed.restarts) + "\n")
+    else:
+        _emit(report, stream, as_json=parsed.json)
+    return code
 
 
 def systemd_unit_state(
@@ -165,6 +184,16 @@ def unit_state_from(active: str, sub: str) -> UnitState:
     if active in {"inactive", "deactivating"}:
         return UnitState.STOPPED
     return UnitState.UNKNOWN
+
+
+def _journal_counts(source: str | None, stdin: TextIO) -> JournalCounts:
+    """Count journal errors and warnings from ``source`` (a path, ``-``, or none)."""
+    if source is None:
+        return JournalCounts()
+    if source == "-":
+        return count_journal(stdin)
+    with Path(source).open(encoding="utf-8", errors="replace") as handle:
+        return count_journal(handle)
 
 
 def _emit(report: StatusReport, stream: TextIO, *, as_json: bool) -> None:
