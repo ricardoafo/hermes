@@ -6,6 +6,7 @@ Reference: ADR-016 decision 3; change trade-eur-values D-6 (the rows the FIFO re
 from __future__ import annotations
 
 import sqlite3
+from datetime import timedelta
 from decimal import Decimal
 
 import pytest
@@ -39,7 +40,7 @@ def test_lists_priced_and_pending_trades_in_fill_order() -> None:
             asset=Currency.BTC,
             side=OrderSide.SELL,
             qty=Decimal("1"),
-            executed_at=rows[1].executed_at,
+            executed_at=_T0 + timedelta(minutes=10),
             price_eur=None,
             fee_eur=None,
         ),
