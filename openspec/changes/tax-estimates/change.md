@@ -234,7 +234,10 @@ def net_savings_base(year: int, hermes_net: Decimal, taxpayer: TaxpayerYear) -> 
 # marginal.py
 def taxable_savings_base(savings_base: Decimal, taxpayer: TaxpayerYear) -> Decimal: ...
 @dataclass(frozen=True, slots=True)
-class MarginalTax: hermes_tax: Decimal; with_hermes: NettingResult; taxable_with: Decimal
+class SavingsTax: netting: NettingResult; taxable: Decimal; tax: Decimal   # repr=False
+def savings_tax(scale, taxpayer, hermes_net, *, year) -> SavingsTax: ...
+@dataclass(frozen=True, slots=True)
+class MarginalTax: hermes_tax: Decimal; with_hermes: SavingsTax; without_hermes: SavingsTax
 def marginal_tax(scale: SavingsScale, taxpayer: TaxpayerYear, hermes_net: Decimal, *, year: int) -> MarginalTax: ...
 
 # two_month.py
