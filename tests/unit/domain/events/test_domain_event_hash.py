@@ -199,9 +199,22 @@ class TestPayloadSha256PropertyDeterminism:
 
 
 def _concrete_events() -> list[type[DomainEvent]]:
-    for module in pkgutil.iter_modules(events_pkg.__path__):
-        importlib.import_module(f"{events_pkg.__name__}.{module.name}")
-    return list(DomainEvent.__subclasses__())
+    # Read classes from module namespaces, not DomainEvent.__subclasses__():
+    # @dataclass(slots=True) replaces the class, and the discarded original
+    # stays in __subclasses__() until a GC pass, so xdist workers collected
+    # different ids (BalanceLow vs BalanceLow0/BalanceLow1).
+    events: dict[str, type[DomainEvent]] = {}
+    for module_info in pkgutil.iter_modules(events_pkg.__path__):
+        module = importlib.import_module(f"{events_pkg.__name__}.{module_info.name}")
+        for obj in vars(module).values():
+            if (
+                isinstance(obj, type)
+                and issubclass(obj, DomainEvent)
+                and obj is not DomainEvent
+                and obj.__module__ == module.__name__
+            ):
+                events[obj.__qualname__] = obj
+    return [events[name] for name in sorted(events)]
 
 
 class TestSubclassPostInitCallsBase:
