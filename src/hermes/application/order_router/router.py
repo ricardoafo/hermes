@@ -340,6 +340,7 @@ class OrderRouter:
             side=inp.side,
             pair=inp.pair,
             qty=Quantity(amount=qty, asset=asset),
+            strategy_id=inp.strategy_id,
             limit_price=None,  # market order for MVP1
         )
 

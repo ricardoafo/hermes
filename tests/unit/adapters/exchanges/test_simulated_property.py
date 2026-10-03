@@ -40,6 +40,8 @@ from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
 
+_STRATEGY_ID = StrategyId("test-strategy")
+
 _BTC_USDT = Pair(base=Currency.BTC, quote=Currency.USDT)
 _T0 = datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC)
 
@@ -105,7 +107,6 @@ def _make_adapter_for_property(
             Currency.USDT: initial_usdt,
             Currency.BTC: initial_btc,
         },
-        strategy_id=StrategyId("prop-test"),
         rng=random.Random(42),  # noqa: S311
     )
 
@@ -144,6 +145,7 @@ def test_fill_semantics_identical_across_wiring(
         side=OrderSide.BUY,
         pair=_BTC_USDT,
         qty=Quantity(amount=qty, asset=Currency.BTC),
+        strategy_id=_STRATEGY_ID,
     )
 
     result_backtest = adapter_backtest.place_market_order(side=OrderSide.BUY, order=order)
@@ -187,6 +189,7 @@ def test_executed_qty_never_exceeds_order_qty(qty: Decimal, ask_price: Decimal) 
         side=OrderSide.BUY,
         pair=_BTC_USDT,
         qty=Quantity(amount=qty, asset=Currency.BTC),
+        strategy_id=_STRATEGY_ID,
     )
     result = adapter.place_market_order(side=OrderSide.BUY, order=order)
     assert isinstance(result, Fill), (
@@ -218,6 +221,7 @@ def test_fill_avg_price_always_positive(qty: Decimal, ask_price: Decimal) -> Non
         side=OrderSide.BUY,
         pair=_BTC_USDT,
         qty=Quantity(amount=qty, asset=Currency.BTC),
+        strategy_id=_STRATEGY_ID,
     )
     result = adapter.place_market_order(side=OrderSide.BUY, order=order)
     assert isinstance(result, Fill), f"Market BUY must fill on this book, got {type(result)!r}"
@@ -243,6 +247,7 @@ def test_fill_fee_is_quote_denominated(qty: Decimal, taker_bps: int) -> None:
         side=OrderSide.BUY,
         pair=_BTC_USDT,
         qty=Quantity(amount=qty, asset=Currency.BTC),
+        strategy_id=_STRATEGY_ID,
     )
     result = adapter.place_market_order(side=OrderSide.BUY, order=order)
     assert isinstance(result, Fill), (
@@ -274,6 +279,7 @@ def test_lot_ledger_grows_monotonically(n_buys: int) -> None:
             side=OrderSide.BUY,
             pair=_BTC_USDT,
             qty=Quantity(amount=Decimal("0.01"), asset=Currency.BTC),
+            strategy_id=_STRATEGY_ID,
         )
         adapter.place_market_order(side=OrderSide.BUY, order=order)
 

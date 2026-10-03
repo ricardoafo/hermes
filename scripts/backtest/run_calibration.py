@@ -67,6 +67,7 @@ from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
+from hermes.domain.value_objects.strategy_id import StrategyId
 
 FEE_HISTORY_CSV = Path("docs/experiments/swing-mvp1/fee-history.csv")
 
@@ -123,6 +124,7 @@ def _synthesise_fill(
     pair: Pair,
     fee_bps: int,
     starting_equity: Decimal,
+    strategy_id: StrategyId,
 ) -> Fill:
     """Build a Fill from a strategy signal at bar.close price.
 
@@ -153,6 +155,7 @@ def _synthesise_fill(
         side=OrderSide.BUY if signal.kind == SignalKind.ENTRY else OrderSide.SELL,
         pair=pair,
         qty=Quantity(amount=qty_amount, asset=pair.base),
+        strategy_id=strategy_id,
     )
     fee_amount = (qty_amount * entry_px * Decimal(fee_bps) / Decimal(10000)).quantize(
         Decimal("0.00000001")
@@ -247,6 +250,7 @@ async def _run(args: argparse.Namespace) -> int:
         realized_slippage_cumulative=Decimal("0"),
     )
 
+    strategy_id = StrategyId(f"swing-mvp1-phase1-{args.pair.lower()}")
     fills: list[Fill] = []
     mid_prices: list[Decimal] = []
     signals_seen = 0
@@ -274,7 +278,9 @@ async def _run(args: argparse.Namespace) -> int:
             continue
         fee_bps = int(fee_schedule.tiers[0].taker_bps)
         try:
-            fill = _synthesise_fill(signal, pair, fee_bps, _DEFAULT_STARTING_EQUITY_USD)
+            fill = _synthesise_fill(
+                signal, pair, fee_bps, _DEFAULT_STARTING_EQUITY_USD, strategy_id
+            )
         except ValueError as err:
             print(f"WARN: fill synthesis failed at {signal.signal_time}: {err}", file=sys.stderr)
             continue
@@ -289,7 +295,7 @@ async def _run(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
 
-    harness = CalibrationHarness(strategy_id=f"swing-mvp1-phase1-{args.pair.lower()}")
+    harness = CalibrationHarness(strategy_id=str(strategy_id))
     report = harness.run(
         window_start=start,
         window_end=end,

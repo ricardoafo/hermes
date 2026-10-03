@@ -27,6 +27,7 @@ from decimal import Decimal
 
 from hermes.domain.trading.order import Order
 from hermes.domain.value_objects.money import Money
+from hermes.domain.value_objects.strategy_id import StrategyId
 
 __all__ = ["Fill", "Rejection"]
 
@@ -63,6 +64,15 @@ class Fill:
     avg_price: Decimal
     fee: Money
     timestamp: datetime
+
+    @property
+    def strategy_id(self) -> StrategyId:
+        """Strategy that produced this fill, always ``order.strategy_id``.
+
+        Derived rather than stored so a fill cannot disagree with its order
+        (ADR-011 D-03: copied from the order at fill time).
+        """
+        return self.order.strategy_id
 
     def __post_init__(self) -> None:
         """Validate fill consistency invariants.

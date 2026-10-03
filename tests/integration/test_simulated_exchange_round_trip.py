@@ -34,6 +34,8 @@ from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
 
+_STRATEGY_ID = StrategyId("test-strategy")
+
 # ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------
@@ -77,7 +79,6 @@ _ETH_FEES = FeeSchedule.from_tiers(
 def _make_adapter(
     clock: SimulatedClock | None = None,
     initial_balances: dict[Currency, Decimal] | None = None,
-    strategy_id: StrategyId | None = None,
 ) -> SimulatedExchangeAdapter:
     """Build a fully-wired SimulatedExchangeAdapter for integration tests."""
     clk = clock or SimulatedClock(start=_T0)
@@ -86,7 +87,6 @@ def _make_adapter(
         Currency.BTC: Decimal("10"),
         Currency.ETH: Decimal("50"),
     }
-    sid = strategy_id or StrategyId("integration-test")
 
     def _book_fn(pair: Pair) -> Orderbook:
         if pair == _ETH_USDT:
@@ -104,7 +104,6 @@ def _make_adapter(
         clock=clk,
         fee_schedule_fn=_fee_fn,
         initial_balances=balances,
-        strategy_id=sid,
         rng=random.Random(0),  # noqa: S311
     )
 
@@ -128,6 +127,7 @@ def test_buy_sell_round_trip_lot_ledger() -> None:
         side=OrderSide.BUY,
         pair=_BTC_USDT,
         qty=Quantity(amount=Decimal("0.5"), asset=Currency.BTC),
+        strategy_id=_STRATEGY_ID,
     )
     buy_fill = adapter.place_market_order(side=OrderSide.BUY, order=buy_order)
     assert isinstance(buy_fill, Fill), f"BUY must return Fill, got {type(buy_fill)!r}"
@@ -140,6 +140,7 @@ def test_buy_sell_round_trip_lot_ledger() -> None:
         side=OrderSide.SELL,
         pair=_BTC_USDT,
         qty=Quantity(amount=Decimal("0.5"), asset=Currency.BTC),
+        strategy_id=_STRATEGY_ID,
     )
     sell_fill = adapter.place_market_order(side=OrderSide.SELL, order=sell_order)
     assert isinstance(sell_fill, Fill), f"SELL must return Fill, got {type(sell_fill)!r}"
@@ -169,6 +170,7 @@ def test_multi_pair_independent_balances() -> None:
         side=OrderSide.BUY,
         pair=_BTC_USDT,
         qty=Quantity(amount=Decimal("0.2"), asset=Currency.BTC),
+        strategy_id=_STRATEGY_ID,
     )
     btc_fill = adapter.place_market_order(side=OrderSide.BUY, order=btc_order)
     assert isinstance(btc_fill, Fill), f"BTC BUY must return Fill, got {type(btc_fill)!r}"
@@ -178,6 +180,7 @@ def test_multi_pair_independent_balances() -> None:
         side=OrderSide.BUY,
         pair=_ETH_USDT,
         qty=Quantity(amount=Decimal("1"), asset=Currency.ETH),
+        strategy_id=_STRATEGY_ID,
     )
     eth_fill = adapter.place_market_order(side=OrderSide.BUY, order=eth_order)
     assert isinstance(eth_fill, Fill), f"ETH BUY must return Fill, got {type(eth_fill)!r}"
@@ -213,6 +216,7 @@ def test_limit_buy_fills_and_updates_state() -> None:
         pair=_BTC_USDT,
         qty=Quantity(amount=Decimal("0.3"), asset=Currency.BTC),
         limit_price=limit_price,
+        strategy_id=_STRATEGY_ID,
     )
     result = adapter.place_limit_order(order=order)
 
@@ -254,6 +258,7 @@ def test_fill_timestamp_reflects_advancing_clock() -> None:
         side=OrderSide.BUY,
         pair=_BTC_USDT,
         qty=Quantity(amount=Decimal("0.1"), asset=Currency.BTC),
+        strategy_id=_STRATEGY_ID,
     )
 
     fill1 = adapter.place_market_order(side=OrderSide.BUY, order=order)

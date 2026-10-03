@@ -21,6 +21,9 @@ from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.strategy.signal import SignalKind, SignalSide, StrategySignal
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
+from hermes.domain.value_objects.strategy_id import StrategyId
+
+_STRATEGY_ID = StrategyId("swing-mvp1-phase1-btcusdt")
 
 
 def _import_driver():
@@ -83,10 +86,13 @@ def test_synthesise_fill_atr_sized_notional() -> None:
         signal_time=datetime(2024, 1, 15, tzinfo=UTC),
     )
     starting_equity = Decimal("10000")
-    fill = DRIVER._synthesise_fill(signal, pair, fee_bps=10, starting_equity=starting_equity)
+    fill = DRIVER._synthesise_fill(
+        signal, pair, fee_bps=10, starting_equity=starting_equity, strategy_id=_STRATEGY_ID
+    )
 
     # Sanity: fill's avg_price matches the signal's entry_price.
     assert fill.avg_price == Decimal("50000"), f"avg_price drift: {fill.avg_price}"
+    assert fill.strategy_id == _STRATEGY_ID, f"strategy_id drift: {fill.strategy_id}"
     assert fill.timestamp == datetime(2024, 1, 15, tzinfo=UTC), f"timestamp drift: {fill.timestamp}"
     # T-1 formula gives 6666.67, but capped at 5% * 10000 = 500 (hard cap wins).
     # qty = 500 / 50000 = 0.01
@@ -109,7 +115,9 @@ def test_synthesise_fill_zero_fee_promo_window() -> None:
         atr_context=Decimal("400"),
         signal_time=datetime(2022, 8, 15, tzinfo=UTC),
     )
-    fill = DRIVER._synthesise_fill(signal, pair, fee_bps=0, starting_equity=Decimal("10000"))
+    fill = DRIVER._synthesise_fill(
+        signal, pair, fee_bps=0, starting_equity=Decimal("10000"), strategy_id=_STRATEGY_ID
+    )
     assert fill.fee.amount == Decimal("0"), (
         f"promo-window fill fee must be 0, got {fill.fee.amount}"
     )
@@ -128,7 +136,9 @@ def test_synthesise_fill_rejects_zero_entry_price() -> None:
         exit_reason="chandelier",
     )
     with pytest.raises(ValueError, match=r"entry_price must be > 0"):
-        DRIVER._synthesise_fill(signal, pair, fee_bps=10, starting_equity=Decimal("10000"))
+        DRIVER._synthesise_fill(
+            signal, pair, fee_bps=10, starting_equity=Decimal("10000"), strategy_id=_STRATEGY_ID
+        )
 
 
 def test_jsonify_handles_decimal_and_datetime() -> None:

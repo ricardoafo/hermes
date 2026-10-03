@@ -38,7 +38,10 @@ from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
+from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.ports.fill_model import FillModelPort
+
+_STRATEGY_ID = StrategyId("test-strategy")
 
 # ---------------------------------------------------------------------------
 # Shared fixtures — minimal valid domain objects for property tests
@@ -76,6 +79,7 @@ def _make_order(
         pair=p,
         qty=Quantity(amount=qty_amount, asset=p.base),
         limit_price=limit_price,
+        strategy_id=_STRATEGY_ID,
     )
 
 
@@ -326,6 +330,7 @@ class TestOrderShapeInvariants:
             side=OrderSide.BUY,
             pair=_BTC_USDT,
             qty=Quantity(amount=qty_amount, asset=Currency.BTC),
+            strategy_id=_STRATEGY_ID,
         )
         assert order.qty.amount > Decimal("0"), (
             f"Order with qty_amount={qty_amount!r} has non-positive qty. "
@@ -347,6 +352,7 @@ class TestOrderShapeInvariants:
             pair=_BTC_USDT,
             qty=Quantity(amount=Decimal("0.1"), asset=Currency.BTC),
             limit_price=limit,
+            strategy_id=_STRATEGY_ID,
         )
         assert order.limit_price is not None, (
             "limit_price was provided but is None after construction."
@@ -378,6 +384,7 @@ class TestOrderShapeInvariants:
             side=side,
             pair=_BTC_USDT,
             qty=Quantity(amount=Decimal("0.01"), asset=Currency.BTC),
+            strategy_id=_STRATEGY_ID,
         )
         assert order.side in (OrderSide.BUY, OrderSide.SELL), (
             f"Order.side {order.side!r} is not BUY or SELL — "

@@ -68,7 +68,6 @@ def test_tracker_cash_and_quantity_equal_the_exchange_balances_after_every_fill(
         clock=SimulatedClock(start=_T0),
         fee_schedule_fn=lambda _pair: _FEES,
         initial_balances={Currency.USDT: _SEED_CASH},
-        strategy_id=_STRATEGY,
         rng=random.Random(0),  # noqa: S311
     )
     tracker = PortfolioTracker(PortfolioSnapshot.seed(_STRATEGY, Money(_SEED_CASH, Currency.USDT)))
@@ -85,6 +84,7 @@ def test_tracker_cash_and_quantity_equal_the_exchange_balances_after_every_fill(
             side=side,
             pair=_BTC_USDT,
             qty=Quantity(amount=Decimal(qty), asset=Currency.BTC),
+            strategy_id=_STRATEGY,
         )
         fill = exchange.place_market_order(side=side, order=order)
         assert isinstance(fill, Fill)
