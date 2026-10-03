@@ -58,6 +58,14 @@ class _FakeReader:
         """Return the canned inclusive close."""
         return self.closes.get((pair, interval))
 
+    def count_bars_since(self, interval: KlineInterval, since: datetime) -> int:
+        """Count canned closes of ``interval`` at or after ``since``."""
+        return sum(
+            1
+            for (_, i), close in self.closes.items()
+            if i is interval and close is not None and close >= since
+        )
+
     def count_signals_since(self, since: datetime) -> int:
         """Count canned signal times at or after ``since``."""
         return sum(1 for t in self.signal_times if t >= since)

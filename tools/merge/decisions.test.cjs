@@ -539,3 +539,73 @@ test('hasBadComment: a comment for an older head does not count', () => {
   const { body } = badComment({ n: 1, head: 'old', gate: 'pytest', base: 'c' });
   assert.equal(hasBadComment([{ body }, { body: null }], 'new'), false);
 });
+
+// ============================================================
+// queueCanMerge — workflow files and the hand-merge label
+// ============================================================
+
+const {
+  HAND_MERGE_LABEL, queueCanMerge, classifyMergeFailure, handMergeComment,
+} = require('./decisions.cjs');
+
+test('queueCanMerge: a PR touching workflows is labelled for a human when the App cannot write them', () => {
+  const res = queueCanMerge({
+    files: ['src/a.py', '.github/workflows/cd.yml'], labels: [], canMergeWorkflows: false,
+  });
+  assert.equal(res.eligible, false);
+  assert.equal(res.label, true);
+  assert.match(res.reason, /\.github\/workflows\/cd\.yml/);
+});
+
+test('queueCanMerge: workflow changes are fine once the App may write workflows', () => {
+  const res = queueCanMerge({
+    files: ['.github/workflows/cd.yml'], labels: [], canMergeWorkflows: true,
+  });
+  assert.equal(res.eligible, true);
+});
+
+test('queueCanMerge: a PR already labelled for a human is skipped without relabelling', () => {
+  const res = queueCanMerge({ files: ['src/a.py'], labels: [HAND_MERGE_LABEL], canMergeWorkflows: true });
+  assert.deepEqual([res.eligible, res.label], [false, false]);
+});
+
+test('queueCanMerge: an ordinary PR is eligible', () => {
+  const res = queueCanMerge({ files: ['src/a.py', 'docs/x.md'], labels: ['type:feat'], canMergeWorkflows: false });
+  assert.equal(res.eligible, true);
+});
+
+// ============================================================
+// classifyMergeFailure — one PR's failure must not block the queue
+// ============================================================
+
+test('classifyMergeFailure: 405 and 409 are races, no label, not fatal', () => {
+  for (const status of [405, 409]) {
+    const res = classifyMergeFailure({ status, message: 'x' });
+    assert.deepEqual([res.kind, res.label, res.fatal], ['race', false, false]);
+  }
+});
+
+test('classifyMergeFailure: 403 labels the PR for a human and keeps the run green', () => {
+  const res = classifyMergeFailure({
+    status: 403,
+    message: 'refusing to allow a GitHub App to create or update workflow `.github/workflows/cd.yml` without `workflows` permission',
+  });
+  assert.deepEqual([res.kind, res.label, res.fatal], ['needs-human', true, false]);
+  assert.match(res.reason, /workflows/);
+});
+
+test('classifyMergeFailure: anything else labels the PR and turns the run red', () => {
+  const res = classifyMergeFailure({ status: 500, message: 'boom' });
+  assert.deepEqual([res.kind, res.label, res.fatal], ['error', true, true]);
+});
+
+test('classifyMergeFailure: a missing status is an error, never a race', () => {
+  assert.equal(classifyMergeFailure({ status: undefined, message: 'network' }).kind, 'error');
+});
+
+test('handMergeComment: names the reason and the label to remove', () => {
+  const { body } = handMergeComment({ n: 431, reason: 'no workflows permission' });
+  assert.match(body, /#431/);
+  assert.match(body, /no workflows permission/);
+  assert.ok(body.includes(HAND_MERGE_LABEL));
+});
