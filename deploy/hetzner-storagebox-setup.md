@@ -32,8 +32,8 @@ apt update && apt install -y borgbackup sqlite3
 borg --version    # expect >= 1.2
 ```
 
-`bootstrap-vps.sh` should be updated in a follow-up to include this — for now
-it's a manual step.
+The `vps-bootstrap` workflow does not install borg yet, so this stays a manual
+step.
 
 ## 3. Populate `/etc/hermes/env.production`
 
