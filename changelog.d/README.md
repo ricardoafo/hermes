@@ -16,26 +16,34 @@ merges only conflict if they touch the exact same feature.
 
 ## Naming convention
 
-`<PR-number>-<type>.md`
+Name the fragment **before** the PR exists, so the PR never needs a rename
+commit. A push after approval dismisses the approval (#420).
 
-- `<PR-number>`: the numeric GitHub PR number (e.g. `132`). Chronological
-  ordering falls out for free, and there can be no collision between
-  concurrent PRs.
+`<issue-number>-<type>.md`: the default.
+
+- `<issue-number>`: the tracking issue the PR closes (every PR has one, per
+  AGENTS.md). Issues and PRs share GitHub's number space, so the number never
+  collides with another PR's fragment.
 - `<type>`: one of `added`, `changed`, `deprecated`, `removed`, `fixed`,
-  `security` — matches the Keep-a-Changelog sections.
+  `security`, matching the Keep-a-Changelog sections.
+
+`+<slug>.<type>.md`: an orphan fragment, for a PR with no issue.
+
+- `<slug>`: lowercase letters, digits, `.`, `_` and `-`.
+- At release time the aggregator recovers the PR number from the squash
+  commit that added the file (subject ending in `(#<pr>)`).
 
 Examples:
 
-- `132-added.md` — feature added by PR #132
-- `140-fixed.md` — bug fix by PR #140
-- `145-security.md` — security fix by PR #145
+- `355-added.md`: feature for issue #355
+- `410-security.md`: security fix for issue #410
+- `+ingest-timeouts.fixed.md`: fix with no tracking issue
 
-**Placeholder convention**: fragments whose filename does NOT start with a
-digit (e.g. `wave-4-process-hardening.md`) are ignored by the aggregator.
-This handles the chicken-and-egg case where the PR number is not known until
-`gh pr create` returns — the fragment can be committed with a keyword name,
-then renamed post-open if needed. Aggregation only counts numeric-prefixed
-files.
+Fragments named `<pr-number>-<type>.md` (the earlier convention) still work.
+
+**Legacy placeholders**: other names, such as `wave-4-process-hardening.md`,
+are ignored by the aggregator. Do not create new ones; use the two forms
+above.
 
 ## Format
 
@@ -49,7 +57,8 @@ top-level bullet). No section headers — the type comes from the filename.
 ```
 
 The aggregator inserts each fragment as-is under the correct section, in
-PR-number order (ascending — oldest first).
+number order (ascending, oldest first). Orphans take their resolved PR
+number; any that cannot be resolved come last, by slug.
 
 ## Backwards compatibility
 
@@ -75,8 +84,8 @@ uv run python scripts/dev/aggregate-changelog.py --apply
 After a successful release cut, delete the aggregated fragments:
 
 ```bash
-rm changelog.d/*-{added,changed,deprecated,removed,fixed,security}.md
+rm changelog.d/*-{added,changed,deprecated,removed,fixed,security}.md    changelog.d/+*.{added,changed,deprecated,removed,fixed,security}.md
 ```
 
-Placeholder-named fragments (non-numeric prefix) are NOT deleted — they
-are visible only to humans reading the directory.
+Legacy placeholder fragments (`wave-*.md`) are NOT deleted; they are
+visible only to humans reading the directory.
