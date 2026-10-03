@@ -282,10 +282,13 @@ run_slow_check "coverage-check.py (per-package thresholds)" check_coverage_gated
 run_check "markdownlint-cli2 (full tree)" \
     markdownlint-cli2 "**/*.md" "#node_modules" "#.venv"
 
-# 11. Guides index up-to-date (CI regenerates and diffs)
+# 11. Guides index up-to-date: the same regenerate-and-diff as CI's
+# "Verify guides index is up-to-date". Diff against HEAD, not the working
+# tree: CI sees only the committed file, so an uncommitted regen must not
+# pass here.
 check_guides_index() {
     bash scripts/dev/regenerate-guides-index.sh >/dev/null 2>&1 || return 1
-    git diff --exit-code -- docs/guides/README.md >/dev/null 2>&1
+    git diff --exit-code HEAD -- docs/guides/README.md >/dev/null 2>&1
 }
 run_check "Guides index current" check_guides_index
 

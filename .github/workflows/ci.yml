@@ -60,9 +60,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          # Full history: the changeset diff, guides-index dates, the
-          # CHANGELOG check, the test-deletion guard and gitleaks all
-          # read a commit range.
+          # Full history: the changeset diff, the CHANGELOG check, the
+          # test-deletion guard and gitleaks all read a commit range.
           fetch-depth: 0
 
       - name: Changeset
@@ -223,8 +222,8 @@ jobs:
         if: ${{ !cancelled() && steps.mdl-install.outcome == 'success' }}
         run: markdownlint-cli2 "**/*.md" "#node_modules" "#.venv"
 
-      # Needs full history: regenerate-guides-index.sh dates each guide
-      # with `git log -1`, which a shallow clone cannot answer.
+      # pr-preflight.sh runs the same check, so a PR that would fail here
+      # does not open.
       - name: Verify guides index is up-to-date
         if: ${{ !cancelled() && steps.changeset.outputs.docs == 'true' }}
         shell: bash

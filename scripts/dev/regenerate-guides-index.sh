@@ -4,10 +4,12 @@
 # Reads each docs/guides/*.md file (excluding README.md), extracts:
 #   * H1 → filename link
 #   * **Description**: <line> from the header metadata block
-#   * Last updated: git log's last commit date for that file (YYYY-MM-DD)
-# Writes a fresh 3-column table between the marker comments in README.md.
+# Writes a fresh 2-column table between the marker comments in README.md.
 #
 # Idempotent: identical output for identical input. Safe to run repeatedly.
+# The table depends on file content only, never on git history: a commit
+# date changes when the merge queue squashes a PR, which would leave main's
+# committed index stale and fail every later docs PR.
 # Called from: pre-commit hook + CI verification job.
 #
 # Expected guide file shape:
@@ -36,7 +38,7 @@ if [[ ! -f "$README" ]]; then
     exit 1
 fi
 
-TABLE="| Guide | What it covers | Last updated |"$'\n'"| ----- | -------------- | ------------ |"
+TABLE="| Guide | What it covers |"$'\n'"| ----- | -------------- |"
 
 for guide in $(find "$GUIDES_DIR" -maxdepth 1 -name '*.md' -not -name 'README.md' | sort); do
     filename="$(basename "$guide")"
@@ -47,13 +49,6 @@ for guide in $(find "$GUIDES_DIR" -maxdepth 1 -name '*.md' -not -name 'README.md
     # Description: line starting with "**Description**:"
     description="$(grep -m1 '^\*\*Description\*\*:' "$guide" | sed 's/^\*\*Description\*\*: *//')"
 
-    # Last updated: last commit date for this file (author date, YYYY-MM-DD)
-    # Falls back to today if the file is not yet committed.
-    last_updated="$(cd "$REPO_ROOT" && git log -1 --format='%as' -- "$guide" 2>/dev/null || true)"
-    if [[ -z "$last_updated" ]]; then
-        last_updated="$(date +%Y-%m-%d)"
-    fi
-
     if [[ -z "$title" ]]; then
         echo "ERROR: $filename has no H1 heading — cannot index" >&2
         exit 1
@@ -63,7 +58,7 @@ for guide in $(find "$GUIDES_DIR" -maxdepth 1 -name '*.md' -not -name 'README.md
         exit 1
     fi
 
-    TABLE+=$'\n'"| [$filename]($filename) | $description | $last_updated |"
+    TABLE+=$'\n'"| [$filename]($filename) | $description |"
 done
 
 # Verify markers exist before writing
