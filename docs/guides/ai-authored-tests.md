@@ -193,12 +193,85 @@ Rules the CI pipeline enforces after `phase-1-prep-test-discipline` PR A (GH #11
 | Property-based tests exist | manual review + `grep hypothesis` | reviewer checklist | manual |
 | No snapshot without reviewer comment on the diff | pytest-snapshot with review annotation | manual for now, tooling later | manual |
 | Test files never deleted without justification | `guards` job (test-deletion guard) | CI `guards` job | live |
+| New `src/hermes/` module ships with a `tests/unit/**/test_<name>.py` | `scripts/dev/test-file-adjacency.sh` (exempt: `__init__`, `_private`, `ports/`) | pre-commit hook + `pr-preflight.sh` (`--base origin/main`) | live |
+| PR body names the test tiers touched | `scripts/dev/test-tiers-line-check.sh` | `create-pr.sh` refuses the PR (exit 6) | live |
+| Mutants on changed domain + application lines are killed | `scripts/dev/mutation-diff.sh` + `cosmic-ray-diff.toml` | run by the author before the PR; kill rate reported in the PR body | manual |
 
 The **mutation kill rate** is the load-bearing gate. Line coverage is table stakes — it
 tells you the test EXECUTED the line. Mutation testing tells you the test would DETECT
 if that line's logic were subtly wrong. Until the mutation gate is live (GH #118), the
 combination of D103 (docstring names the invariant), no-vague-assertions (the assertion
 tests it), and per-package coverage (every path exercised) is the interim substitute.
+
+## Bug discovery timing
+
+Each tier catches a different class of bug, at a different moment. The
+cheaper the moment, the better: a bug the author's own unit test finds
+costs a minute; the same bug found by a sub-agent that hangs mid-run
+costs a rate-limited session and a misdiagnosis.
+
+```mermaid
+flowchart LR
+    A[Write code] --> U[Unit<br/>seconds, on save]
+    U --> P[Property<br/>seconds, same run]
+    P --> H[Pre-commit hooks<br/>at commit]
+    H --> C[Contract / integration<br/>CI on the PR]
+    C --> M[Mutation<br/>before the PR, weekly on main]
+    M --> R[Runtime<br/>shadow on the VPS]
+```
+
+| Tier | Catches | When it runs |
+| ---- | ------- | ------------ |
+| Unit | A wrong branch, a wrong constant, a missing failure case | On every save and in CI's `unit` job |
+| Property | Edge cases nobody listed: float drift, duplicates, empty inputs, loops that never terminate | Same run as unit; hypothesis shrinks the failing input |
+| Pre-commit hooks | Process drift: a stale generated file, a module with no test, a vague assertion | At `git commit` |
+| Contract | The wire shape of an external API changing under us | Against recorded fixtures in CI; live weekly |
+| Integration | Two adapters disagreeing about a port's contract | CI on the PR |
+| Mutation | Tests that run the code but would not notice it being wrong | `mutation-diff.sh` before the PR; weekly on main |
+
+Real examples from the 2026-08-23 autonomous session, each found later
+than it should have been:
+
+- **Rate-limiter float drift.** Refilling the token bucket with float
+  arithmetic could leave the balance a hair under the request weight, so
+  the caller spun forever on tiny top-ups
+  (`src/hermes/adapters/exchanges/rate_limiter.py`). A hypothesis property test ("acquire always returns
+  for any cost ≤ capacity") found it. The sub-agent first read the hang
+  as a slow test and burned its session retrying. Lesson: write the
+  property test first for any numeric loop, and treat a hang as a
+  failing test, not as slowness.
+- **Klines duplicate-row loop.** The exchange sometimes re-sends a row
+  at or below the requested start time; yielding it put the pager back
+  on the same cursor, so it never advanced
+  (`src/hermes/adapters/exchanges/binance_klines.py`). The same style of property test ("paging terminates
+  and yields each open time once") surfaced it once someone wrote it.
+- **Frozen-dataclass exception.** A frozen dataclass used as an
+  exception broke when Python set `__traceback__` on it. It showed up as
+  test *errors* in the KlineStore suite, not as failures, so it was
+  deferred. Lesson: an error in a test run is a bug report too.
+- **Guides index drift.** A new guide shipped without regenerating
+  `docs/guides/README.md`, and CI caught it twice. A pre-commit hook now
+  regenerates the index at commit time. Lesson: drift that recurs gets a
+  hook, not a reminder.
+
+## Signs your tests aren't producing value
+
+- **They never fail.** A suite that has not gone red in weeks of active
+  change is not checking much. Run `mutation-diff.sh` on your change and
+  read the survivors.
+- **They all changed in the refactor.** Tests coupled to structure
+  break when behaviour did not change. See §"What makes a unit test
+  meaningful", point 1.
+- **The bug was found by something else.** Every bug found in review,
+  in CI's contract job or on the VPS is a missing unit or property test.
+  Add it with the fix (see the post-incident row of the lifecycle
+  matrix above).
+- **Coverage went up, the kill rate did not.** New lines are executed
+  but not asserted on.
+- **Only examples, no properties, for numeric or looping code.** Hand
+  picked examples miss the drift and termination bugs above.
+- **The test needed the mock to be told the answer.** If the assertion
+  only restates what the mock returns, the test checks the mock.
 
 ## Tooling summary
 

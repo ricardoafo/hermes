@@ -106,6 +106,22 @@ rules to make your work salvageable:
     * Cite existing file paths + line numbers when referencing
       code that already exists (e.g., "reuses `TITLE_REGEX` from
       `scripts/dev/create-pr.sh:75`").
+
+11. **Test tiers and TDD posture (MANDATORY for code changes).**
+    Read docs/guides/ai-authored-tests.md before writing tests.
+    In your final report, state:
+    * Tiers touched: which of unit / property / contract /
+      integration / mutation you added or changed tests in. Put the
+      same list in the PR body's ## Testing section as
+      `Test tiers touched: unit, property` (create-pr.sh refuses the
+      PR without it).
+    * TDD posture: whether you wrote the tests BEFORE or AFTER the
+      production code.
+    Every new module under src/hermes/ needs a
+    tests/unit/**/test_<name>.py in the same commit (pre-commit hook
+    test-file-adjacency). New logic in src/hermes/domain/ or
+    src/hermes/application/: run `bash scripts/dev/mutation-diff.sh`
+    before the final push and report the kill rate.
 ```
 
 ## Recovery pattern (for the operator, when a sub-agent dies)
