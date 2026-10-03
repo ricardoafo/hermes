@@ -30,6 +30,7 @@ import respx
 from hermes.entrypoints import _health as health_module
 from hermes.entrypoints import cli as cli_module
 from hermes.entrypoints import serve as serve_module
+from hermes.entrypoints.commands import serve as serve_command
 
 _RECORDED_DIR = Path(__file__).parents[2] / "fixtures" / "binance_public"
 
@@ -151,7 +152,7 @@ class TestServeExitCodes:
         monkeypatch.setattr(serve_module, "install_signal_handlers", lambda *_a, **_k: None)
         monkeypatch.setattr(serve_module, "run", _fake_run)
 
-        rc = asyncio.run(cli_module._serve_main(object(), db_path=tmp_path / "x.sqlite3"))
+        rc = asyncio.run(serve_command.serve_main(object(), db_path=tmp_path / "x.sqlite3"))
 
         assert rc == 7
 
@@ -167,7 +168,7 @@ class TestServeExitCodes:
         monkeypatch.setattr(serve_module, "build_composition", _boom)
         monkeypatch.setattr(serve_module, "report_failure", reported.append)
 
-        rc = asyncio.run(cli_module._serve_main(object(), db_path=tmp_path / "x.sqlite3"))
+        rc = asyncio.run(serve_command.serve_main(object(), db_path=tmp_path / "x.sqlite3"))
 
         assert (rc, [str(e) for e in reported]) == (1, ["cannot open ledger"])
 
