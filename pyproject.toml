@@ -230,6 +230,30 @@ forbidden_modules = [
   "hermes.domain.trading.trade_record",
 ]
 
+# ADR-012 D-08: the supervisor layer reads through read-only ports and
+# projections only. It never reaches an exchange, an order path, the ledger's
+# write port, the portfolio or the composition root (change 34-supervisor-read-tools).
+[[tool.importlinter.contracts]]
+name = "supervisor-is-read-only"
+type = "forbidden"
+source_modules = ["hermes.application.supervisor", "hermes.ports.supervisor"]
+forbidden_modules = [
+  "hermes.adapters",
+  "hermes.entrypoints",
+  "hermes.infrastructure",
+  "hermes.ports.exchange",
+  "hermes.ports.ledger",
+  "hermes.ports.fill_model",
+  "hermes.ports.notifier",
+  "hermes.application.order_router",
+  "hermes.application.ledger",
+  "hermes.application.portfolio",
+  "hermes.application.console",
+  "hermes.domain.lots",
+  "hermes.domain.trading",
+  "hermes.domain.fx",
+]
+
 [[tool.importlinter.contracts]]
 name = "domain-no-pydantic"
 type = "forbidden"

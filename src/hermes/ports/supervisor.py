@@ -8,6 +8,7 @@ Reference: issue #470 (part of #34); ADR-003 §08; ADR-012 D-06, D-07.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol, runtime_checkable
@@ -15,7 +16,7 @@ from typing import Protocol, runtime_checkable
 from hermes.domain.value_objects.pair import Pair
 from hermes.ports.status import StatusReadPort
 
-__all__ = ["SignalFact", "SupervisorReadPort"]
+__all__ = ["CertificationFact", "CertificationLookup", "SignalFact", "SupervisorReadPort"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +32,23 @@ class SignalFact:
     pair: Pair
     kind: str
     occurred_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class CertificationFact:
+    """A strategy's certification state, without the metrics behind it.
+
+    Attributes:
+        state: Lifecycle state name, e.g. ``SHADOW_CERTIFIED``.
+        entered_at: When the strategy entered ``state``, or ``None``.
+    """
+
+    state: str
+    entered_at: datetime | None
+
+
+type CertificationLookup = Callable[[str], CertificationFact | None]
+"""Return a strategy's certification state by id, or ``None`` without a record."""
 
 
 @runtime_checkable
