@@ -46,7 +46,7 @@ flowchart TB
     PMAIN --> B
 
     C --> VPS["VPS hermes-01<br/>(Tailscale-only SSH)"]
-    VPS --> SD["systemd units<br/>hermes.service (hermes serve)<br/>hermes-health.timer (placeholder, off)<br/>hermes-backup.timer (off until borg is set up)"]
+    VPS --> SD["systemd units<br/>hermes.service (hermes serve)<br/>hermes-health.timer (on once the ping URL is set)<br/>hermes-backup.timer (off until borg is set up)"]
 
     SD -.->|ping every 5min| HC["healthchecks.io<br/>dead-man's-switch"]
     HC -.->|silent → alert| TG["Telegram bot"]
@@ -87,12 +87,12 @@ Cross-references:
 | `systemd/hermes.service`                 | Main hermes process unit (reads `/etc/hermes/env.production`, runs `hermes serve`)                 | installed and enabled by `vps-bootstrap`; first deploy starts it  |
 | `systemd/hermes.env.example`             | Shape of `/etc/hermes/env.production` — the EnvironmentFile prod systemd loads. Documentation only | template — never installed automatically                          |
 | `systemd/hermes-health.service`          | Pings healthchecks.io via `hermes-health-ping.sh`, only while `hermes.service` is active           | installed by `vps-bootstrap`                                      |
-| `systemd/hermes-health.timer`            | Fires the ping every 5 min                                                                         | installed by `vps-bootstrap`; stays disabled                      |
+| `systemd/hermes-health.timer`            | Fires the ping every 5 min                                                                         | installed by `vps-bootstrap`; enabled once the ping URL is set    |
 | `systemd/hermes-backup.service`          | Nightly borg backup of L2 Parquet and SQLite                                                       | installed by `vps-bootstrap`                                      |
 | `systemd/hermes-backup.timer`            | Fires the backup daily at 03:00 UTC                                                                | installed by `vps-bootstrap`; stays disabled until borg is set up |
 | `systemd/hermes-notify-failure@.service` | Started by `hermes.service`'s `OnFailure=`; sends one Telegram message                             | installed by `vps-bootstrap`                                      |
 | `hermes-health-ping.sh`                  | The conditional ping (`systemctl is-active --quiet hermes.service`, then curl)                     | shipped in each release                                           |
-| `hermes-notify-failure.sh`               | Builds and sends the Telegram failure message; needs only bash and curl                            | shipped in each release                                           |
+| `hermes-notify-failure.sh`               | Builds and sends the Telegram failure message; needs only bash and curl                            | `/opt/hermes/bin`: `vps-bootstrap`, then each good deploy         |
 
 The scripts the workflows run live in `scripts/deploy/`:
 
@@ -123,17 +123,22 @@ dispatch is safe. The script:
    and `/etc/hermes` (root-owned);
 3. installs the uv version pinned in `cd.yml` and Python 3.14.7 under
    `/opt/hermes/python`, then checks that user `hermes` can run it;
-4. installs the unit files and enables `hermes.service` (the timers stay off);
+4. installs the unit files, enables `hermes.service`, installs the failure
+   alert script to `/opt/hermes/bin` and resets a failed alert unit;
 5. writes `/etc/hermes/env.production` (`root:root`, `0600`) when it does not
-   exist; an existing file only has its owner and mode repaired;
+   exist; an existing file only has its owner and mode repaired; then
+   enables `hermes-health.timer` when that file has
+   `HERMES_HEALTHCHECKS__PING_URL` (the backup timer stays off);
 6. mounts the Hetzner Storage Box when its credentials are set;
 7. writes `/etc/sudoers.d/hermes-deploy` (`0440`, checked with `visudo -cf`)
    only when the repo variable `VPS_DEPLOY_USER` names a non-root CD account.
    CD runs as `root` today, so nothing is written.
 
-Both units read `/etc/hermes/env.production` and run scripts from
-`/opt/hermes/current/deploy/`, so a release must be deployed first. The
-health timer needs `HERMES_HEALTHCHECKS__PING_URL` in that file.
+The health and backup units read `/etc/hermes/env.production` and run
+scripts from `/opt/hermes/current/deploy/`, so a release must be deployed
+first. The failure alert runs from `/opt/hermes/bin` instead: a missing or
+broken release is the likeliest reason `hermes.service` fails, and the
+alert has to survive it.
 
 Verify:
 

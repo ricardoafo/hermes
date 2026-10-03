@@ -24,7 +24,9 @@ StartLimitBurst=5
 # or it exited 2/3. A crash that is about to be restarted does not count; the
 # unit is "activating (auto-restart)", not failed. The missed healthchecks.io
 # ping (hermes-health.service) covers every other way of being down.
-OnFailure=hermes-notify-failure@%n.service
+# %N (the name without ".service") keeps the instance unit readable:
+# hermes-notify-failure@hermes.service, not @hermes.service.service.
+OnFailure=hermes-notify-failure@%N.service
 
 [Service]
 Type=simple
