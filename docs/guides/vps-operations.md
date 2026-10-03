@@ -432,6 +432,37 @@ journalctl -u hermes-swing --since '1 hour ago'
 journalctl -u hermes-rebalancer --grep ERROR
 ```
 
+## Check on hermes
+
+The read-only console commands answer "is it OK, and what happened?"
+without touching the ledger. Run them on the VPS as user `hermes` with the
+service's env file loaded, so they see the same config and ledger:
+
+```bash
+hermes_run() {
+    sudo bash -c 'set -a; . /etc/hermes/env.production; set +a; cd /var/lib/hermes &&
+        exec runuser -u hermes -- /opt/hermes/current/.venv/bin/hermes "$@"' _ "$@"
+}
+
+hermes_run status --config-dir /opt/hermes/current/config --db /var/lib/hermes/hermes.sqlite3
+hermes_run positions
+hermes_run activity --db /var/lib/hermes/hermes.sqlite3
+hermes_run logs --level warning --since 1h
+hermes_run logs --cycle K7Q2ZP     # one bar cycle, by the tail of its correlation id
+hermes_run logs -f                 # follow, Ctrl-C to stop
+```
+
+- `hermes status`: the verdict (all good, late, down), then each stream's
+  last and next bar. Exit 0 only when all good.
+- `hermes positions`: open shadow positions.
+- `hermes activity`: what changed, grouped by day; `--all` adds bar checks
+  and signals.
+- `hermes logs`: the journal, one readable line per entry, times in Madrid
+  (`--utc` for UTC). `--json` prints the same entries as data.
+
+Every console command also runs on demo data from any machine:
+`hermes --demo ok-two-positions activity` (see `hermes --demo` for the list).
+
 ## Snapshots (Hetzner Backups + manual)
 
 **Automatic backups** (Hetzner-managed): daily, 7-day retention.
