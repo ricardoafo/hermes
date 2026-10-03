@@ -50,9 +50,32 @@ def _passing_result(**overrides: float | int) -> CertificationResult:
         "recovery_days": 60.0,
         "win_rate": 0.40,
         "oos_trade_count": 45,
+        "profit_factor": 1.5,
+        "fees_to_gross_pnl": 0.20,
     }
     defaults.update(overrides)
     return CertificationResult(**defaults)  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
+# The two §9 secondary rows added by #355
+# ---------------------------------------------------------------------------
+
+
+class TestH1AcceptanceGateSecondaryRowsAddedBy355:
+    """Profit factor and fees / gross PnL are §9 secondary rows and must gate H1."""
+
+    # SEV-1: OOS acceptance gates real capital (ADR-014); every §9 row must bind
+    def test_profit_factor_at_threshold_fails(self, gate: H1AcceptanceGate) -> None:
+        """Profit factor must be strictly above 1.3 (§9)."""
+        decision = gate.evaluate(_passing_result(profit_factor=1.3))
+        assert decision.failed_criteria == ("profit_factor",)
+
+    # SEV-1: OOS acceptance gates real capital (ADR-014); every §9 row must bind
+    def test_fees_to_gross_pnl_at_threshold_fails(self, gate: H1AcceptanceGate) -> None:
+        """Fees over gross PnL must be strictly below 30% (§9)."""
+        decision = gate.evaluate(_passing_result(fees_to_gross_pnl=0.30))
+        assert decision.failed_criteria == ("fees_to_gross_pnl",)
 
 
 # ---------------------------------------------------------------------------

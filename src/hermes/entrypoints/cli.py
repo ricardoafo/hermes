@@ -39,12 +39,15 @@ import contextlib
 import io
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Final
 
 from dotenv import dotenv_values
 
+from hermes.adapters.certification.json_store import JsonCertificationStore
 from hermes.entrypoints import _health as health_module
+from hermes.entrypoints import certify as certify_module
 from hermes.entrypoints import preview as preview_module
 from hermes.entrypoints import serve as serve_module
 from hermes.infrastructure import sentry_integration
@@ -82,6 +85,7 @@ _SUBCOMMAND_HELP: Final[dict[str, str]] = {
         "Health-check probe. `hermes health` (no arg) probes every "
         "registered integration; `hermes health <integration>` probes one."
     ),
+    "certify": "Evaluate the next certification gate for a strategy (pre-reg §7).",
     "simulate": "Replay historical scenarios (stub — implemented in a future PR).",
 }
 
@@ -179,12 +183,15 @@ def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
         return 0
 
     subcommand, *rest = args
-    if subcommand == "preview":
-        return preview_module.main(rest, stream=out)
-    if subcommand == "health":
-        return _dispatch_health(rest, stream=out)
-    if subcommand == "serve":
-        return _dispatch_serve(rest, stream=out)
+    table: dict[str, Callable[..., int]] = {
+        "preview": preview_module.main,
+        "health": _dispatch_health,
+        "serve": _dispatch_serve,
+        "certify": certify_module.main,
+    }
+    dispatch = table.get(subcommand)
+    if dispatch is not None:
+        return dispatch(rest, stream=out)
     if subcommand in _STUB_SUBCOMMANDS:
         out.write(
             f"ERROR: `hermes {subcommand}` is not yet implemented. "
@@ -281,7 +288,13 @@ def _dispatch_serve(rest: list[str], *, stream: Any) -> int:
         return 3
 
     try:
-        serve_module.check_startup(config, dict(os.environ))
+        serve_module.check_startup(
+            config,
+            dict(os.environ),
+            certification_store=JsonCertificationStore(
+                serve_module.certification_dir_for(parsed.db)
+            ),
+        )
     except serve_module.StartupError as exc:
         stream.write(f"ERROR: startup check failed: {exc}\n")
         return 3

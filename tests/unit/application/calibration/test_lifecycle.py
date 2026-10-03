@@ -23,6 +23,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from hermes.application.calibration.certification_gates import GateCheck, GateReport
 from hermes.application.calibration.harness import CalibrationReport
 from hermes.application.calibration.lifecycle import CertificationLifecycle, CertificationState
 from hermes.domain.calibration.metrics import FillPriceDeltaBps, RegimeReturns
@@ -69,6 +70,21 @@ def _make_report(
     )
 
 
+_NEXT = {
+    CertificationState.UNTRUSTED: CertificationState.BACKTEST_CERTIFIED,
+    CertificationState.BACKTEST_CERTIFIED: CertificationState.SHADOW_CERTIFIED,
+    CertificationState.SHADOW_CERTIFIED: CertificationState.OOS_CERTIFIED,
+    CertificationState.OOS_CERTIFIED: CertificationState.LIVE_APPROVED,
+    CertificationState.LIVE_APPROVED: CertificationState.CERTIFIED,
+}
+
+
+def _gate(state: CertificationState, *, passed: bool = True, refused: str = "") -> GateReport:
+    """Build a gate report for the transition out of ``state`` with one check."""
+    check = GateCheck("evidence", "test requirement", "ok" if passed else "bad", passed)
+    return GateReport("swing-mvp1-v1", state, _NEXT.get(state), (check,), refused_reason=refused)
+
+
 # ---------------------------------------------------------------------------
 # Valid forward transitions
 # ---------------------------------------------------------------------------
@@ -80,7 +96,9 @@ class TestCertificationLifecycleForwardTransitions:
     def test_untrusted_to_backtest_certified_with_fills(self) -> None:
         """UNTRUSTED → BACKTEST_CERTIFIED when m01_fill_count >= 1 (R-3.1)."""
         report = _make_report(fill_count=1)
-        result = _LIFECYCLE.advance(CertificationState.UNTRUSTED, report)
+        result = _LIFECYCLE.advance(
+            CertificationState.UNTRUSTED, report, gate=_gate(CertificationState.UNTRUSTED)
+        )
         assert result == CertificationState.BACKTEST_CERTIFIED, (
             f"UNTRUSTED → BACKTEST_CERTIFIED must succeed with fill_count=1, "
             f"got {result!r}. R-3.1: at least 1 fill required."
@@ -89,7 +107,11 @@ class TestCertificationLifecycleForwardTransitions:
     def test_backtest_certified_to_shadow_certified(self) -> None:
         """BACKTEST_CERTIFIED → SHADOW_CERTIFIED (operator-triggered)."""
         report = _make_report(fill_count=5)
-        result = _LIFECYCLE.advance(CertificationState.BACKTEST_CERTIFIED, report)
+        result = _LIFECYCLE.advance(
+            CertificationState.BACKTEST_CERTIFIED,
+            report,
+            gate=_gate(CertificationState.BACKTEST_CERTIFIED),
+        )
         assert result == CertificationState.SHADOW_CERTIFIED, (
             f"BACKTEST_CERTIFIED → SHADOW_CERTIFIED must succeed, got {result!r}."
         )
@@ -97,7 +119,11 @@ class TestCertificationLifecycleForwardTransitions:
     def test_shadow_certified_to_oos_certified(self) -> None:
         """SHADOW_CERTIFIED → OOS_CERTIFIED (operator-triggered)."""
         report = _make_report(fill_count=5)
-        result = _LIFECYCLE.advance(CertificationState.SHADOW_CERTIFIED, report)
+        result = _LIFECYCLE.advance(
+            CertificationState.SHADOW_CERTIFIED,
+            report,
+            gate=_gate(CertificationState.SHADOW_CERTIFIED),
+        )
         assert result == CertificationState.OOS_CERTIFIED, (
             f"SHADOW_CERTIFIED → OOS_CERTIFIED must succeed, got {result!r}."
         )
@@ -105,7 +131,9 @@ class TestCertificationLifecycleForwardTransitions:
     def test_oos_certified_to_live_approved(self) -> None:
         """OOS_CERTIFIED → LIVE_APPROVED (operator manual gate)."""
         report = _make_report(fill_count=5)
-        result = _LIFECYCLE.advance(CertificationState.OOS_CERTIFIED, report)
+        result = _LIFECYCLE.advance(
+            CertificationState.OOS_CERTIFIED, report, gate=_gate(CertificationState.OOS_CERTIFIED)
+        )
         assert result == CertificationState.LIVE_APPROVED, (
             f"OOS_CERTIFIED → LIVE_APPROVED must succeed, got {result!r}."
         )
@@ -113,7 +141,9 @@ class TestCertificationLifecycleForwardTransitions:
     def test_live_approved_to_certified(self) -> None:
         """LIVE_APPROVED → CERTIFIED (operator-triggered after 90+ days live)."""
         report = _make_report(fill_count=5)
-        result = _LIFECYCLE.advance(CertificationState.LIVE_APPROVED, report)
+        result = _LIFECYCLE.advance(
+            CertificationState.LIVE_APPROVED, report, gate=_gate(CertificationState.LIVE_APPROVED)
+        )
         assert result == CertificationState.CERTIFIED, (
             f"LIVE_APPROVED → CERTIFIED must succeed, got {result!r}."
         )
@@ -130,7 +160,9 @@ class TestCertificationLifecyclePreconditions:
     def test_untrusted_zero_fills_returns_error(self) -> None:
         """UNTRUSTED → BACKTEST_CERTIFIED with zero fills must return error string."""
         report = _make_report(fill_count=0)
-        result = _LIFECYCLE.advance(CertificationState.UNTRUSTED, report)
+        result = _LIFECYCLE.advance(
+            CertificationState.UNTRUSTED, report, gate=_gate(CertificationState.UNTRUSTED)
+        )
         assert isinstance(result, str), (
             f"UNTRUSTED with 0 fills must return error string, got {result!r}."
         )
@@ -141,7 +173,9 @@ class TestCertificationLifecyclePreconditions:
     def test_certified_advance_returns_error(self) -> None:
         """CERTIFIED → advance must return error — terminal success state (R-3.2 related)."""
         report = _make_report(fill_count=10)
-        result = _LIFECYCLE.advance(CertificationState.CERTIFIED, report)
+        result = _LIFECYCLE.advance(
+            CertificationState.CERTIFIED, report, gate=_gate(CertificationState.CERTIFIED)
+        )
         assert isinstance(result, str), (
             f"CERTIFIED is terminal — advance must return error, got {result!r}."
         )
@@ -149,13 +183,50 @@ class TestCertificationLifecyclePreconditions:
     def test_dead_advance_returns_error(self) -> None:
         """DEAD → any returns error — absorbing state (R-3.4)."""
         report = _make_report(fill_count=5)
-        result = _LIFECYCLE.advance(CertificationState.DEAD, report)
+        result = _LIFECYCLE.advance(
+            CertificationState.DEAD, report, gate=_gate(CertificationState.DEAD)
+        )
         assert isinstance(result, str), (
             f"DEAD advance must return error, got {result!r}. R-3.4: DEAD is absorbing."
         )
         assert "DEAD" in result or "absorbing" in result, (
             f"Error must mention DEAD/absorbing state, got '{result}'."
         )
+
+
+# ---------------------------------------------------------------------------
+# Gate enforcement (#355)
+# ---------------------------------------------------------------------------
+
+
+class TestCertificationLifecycleGateEnforcement:
+    """Forward transitions need a passed gate for exactly that transition."""
+
+    # SEV-1: real-capital gate — no transition without its pre-registration §7 evidence
+    @pytest.mark.parametrize("state", list(_NEXT))
+    def test_failed_gate_blocks_transition(self, state: CertificationState) -> None:
+        """A gate with a failing check keeps the state (pre-reg §7 entry criteria)."""
+        result = _LIFECYCLE.advance(state, _make_report(), gate=_gate(state, passed=False))
+        assert isinstance(result, str)
+        assert "evidence" in result
+
+    # SEV-1: real-capital gate — a refused gate never advances
+    @pytest.mark.parametrize("state", list(_NEXT))
+    def test_refused_gate_blocks_transition(self, state: CertificationState) -> None:
+        """A refused gate (too early, shot spent) keeps the state."""
+        result = _LIFECYCLE.advance(state, _make_report(), gate=_gate(state, refused="too early"))
+        assert isinstance(result, str)
+        assert "too early" in result
+
+    def test_gate_for_another_transition_blocks(self) -> None:
+        """A passed backtest gate cannot authorise the OOS transition."""
+        result = _LIFECYCLE.advance(
+            CertificationState.SHADOW_CERTIFIED,
+            _make_report(),
+            gate=_gate(CertificationState.UNTRUSTED),
+        )
+        assert isinstance(result, str)
+        assert "not SHADOW_CERTIFIED" in result
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +247,7 @@ class TestCertificationLifecycleKillConditions:
             CertificationState.OOS_CERTIFIED,
             CertificationState.LIVE_APPROVED,
         ]:
-            result = _LIFECYCLE.advance(state, report)
+            result = _LIFECYCLE.advance(state, report, gate=_gate(state))
             assert isinstance(result, str), (
                 f"Orphan position must block transition from {state!r}, got {result!r}. "
                 "SA-4 P0: every position must trace to a fill."
@@ -188,7 +259,9 @@ class TestCertificationLifecycleKillConditions:
     def test_full_rejection_rate_blocks_transition(self) -> None:
         """m04_rejection_rate == 1.0 must block transition — fill model broken."""
         report = _make_report(fill_count=0, rejection_rate="1")
-        result = _LIFECYCLE.advance(CertificationState.UNTRUSTED, report)
+        result = _LIFECYCLE.advance(
+            CertificationState.UNTRUSTED, report, gate=_gate(CertificationState.UNTRUSTED)
+        )
         assert isinstance(result, str), (
             f"100% rejection rate must block transition, got {result!r}. "
             "Fill model is completely broken."
@@ -197,7 +270,9 @@ class TestCertificationLifecycleKillConditions:
     def test_zero_orphans_does_not_block(self) -> None:
         """m05_orphan_position_count == 0 must not trigger kill condition."""
         report = _make_report(fill_count=3, orphan_count=0)
-        result = _LIFECYCLE.advance(CertificationState.UNTRUSTED, report)
+        result = _LIFECYCLE.advance(
+            CertificationState.UNTRUSTED, report, gate=_gate(CertificationState.UNTRUSTED)
+        )
         assert result == CertificationState.BACKTEST_CERTIFIED, (
             f"Zero orphans must not block UNTRUSTED → BACKTEST_CERTIFIED, got {result!r}."
         )
@@ -252,7 +327,9 @@ class TestCertificationLifecycleProperties:
     def test_untrusted_with_any_fill_advances(self, fill_count: int) -> None:
         """For all fill_count >= 1, UNTRUSTED always advances to BACKTEST_CERTIFIED."""
         report = _make_report(fill_count=fill_count)
-        result = _LIFECYCLE.advance(CertificationState.UNTRUSTED, report)
+        result = _LIFECYCLE.advance(
+            CertificationState.UNTRUSTED, report, gate=_gate(CertificationState.UNTRUSTED)
+        )
         assert result == CertificationState.BACKTEST_CERTIFIED, (
             f"UNTRUSTED with fill_count={fill_count} must always produce BACKTEST_CERTIFIED, "
             f"got {result!r}. Property: ∀ fill_count ≥ 1 → BACKTEST_CERTIFIED."
@@ -264,7 +341,7 @@ class TestCertificationLifecycleProperties:
         """For all orphan_count >= 1, any advanceable state returns error."""
         report = _make_report(fill_count=5, orphan_count=orphan_count)
         for state in _ADVANCEABLE_STATES:
-            result = _LIFECYCLE.advance(state, report)
+            result = _LIFECYCLE.advance(state, report, gate=_gate(state))
             assert isinstance(result, str), (
                 f"orphan_count={orphan_count} from {state!r} must return error, "
                 f"got {result!r}. SA-4 P0 kill condition."
@@ -275,7 +352,9 @@ class TestCertificationLifecycleProperties:
     def test_dead_always_returns_error(self, state: CertificationState) -> None:
         """DEAD.advance always returns error regardless of report content."""
         report = _make_report(fill_count=100)
-        result = _LIFECYCLE.advance(CertificationState.DEAD, report)
+        result = _LIFECYCLE.advance(
+            CertificationState.DEAD, report, gate=_gate(CertificationState.DEAD)
+        )
         assert isinstance(result, str), (
             f"DEAD must always return error, got {result!r}. DEAD is absorbing."
         )
@@ -290,7 +369,7 @@ class TestCertificationLifecycleProperties:
     ) -> None:
         """Advance must always return CertificationState or str — never raises."""
         report = _make_report(fill_count=fill_count)
-        result = _LIFECYCLE.advance(state, report)
+        result = _LIFECYCLE.advance(state, report, gate=_gate(state))
         assert isinstance(result, (CertificationState, str)), (
             f"advance({state!r}, report) must return CertificationState or str, "
             f"got {type(result).__name__!r}. Must never raise for valid inputs."
@@ -304,8 +383,8 @@ class TestCertificationLifecycleProperties:
     def test_advance_is_deterministic(self, state: CertificationState, fill_count: int) -> None:
         """Advance must be deterministic: same (state, report) always yields same result."""
         report = _make_report(fill_count=fill_count)
-        result1 = _LIFECYCLE.advance(state, report)
-        result2 = _LIFECYCLE.advance(state, report)
+        result1 = _LIFECYCLE.advance(state, report, gate=_gate(state))
+        result2 = _LIFECYCLE.advance(state, report, gate=_gate(state))
         assert result1 == result2, (
             f"advance({state!r}, report) must be deterministic, "
             f"got {result1!r} then {result2!r}. Pure function contract."

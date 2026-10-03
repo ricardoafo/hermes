@@ -18,6 +18,8 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from hermes.application.strategy_protocol.preregistration import (
+    CertificationSchedule,
+    H1Thresholds,
     PreRegistration,
 )
 
@@ -355,3 +357,32 @@ class TestDataWindowsProperties:
                 f"Timestamp {ts} classified as both train and OOS — "
                 f"windows must be mutually exclusive."
             )
+
+
+class TestCertificationGateValuesMatchSignedText:
+    """Every value the certification gates read is pinned to the signed text (#355)."""
+
+    # SEV-1: real-capital gate thresholds (ADR-014) must equal the signed §9 table
+    def test_all_nine_section9_rows(self, pre_reg: PreRegistration) -> None:
+        """The §9 table: three primary rows and six secondary rows, exactly."""
+        assert pre_reg.h1_thresholds() == H1Thresholds(
+            dsr_min=0.7,
+            bootstrap_ci_lower_min=0.0,
+            oos_trade_count_min=30,
+            max_drawdown_max=0.15,
+            recovery_days_max=90.0,
+            ulcer_index_max=10.0,
+            win_rate_min=0.30,
+            profit_factor_min=1.3,
+            fees_to_gross_pnl_max=0.30,
+        )
+
+    # SEV-1: the OOS date lock and 90-day windows gate real capital (§4, §7)
+    def test_certification_schedule(self, pre_reg: PreRegistration) -> None:
+        """§4 discipline gate (2027-01-01) and the §7 90-day and 30 bps rules."""
+        assert pre_reg.certification_schedule() == CertificationSchedule(
+            certification_not_before=datetime(2027, 1, 1, tzinfo=UTC),
+            shadow_min_days=90,
+            shadow_drift_p50_max_bps=30.0,
+            live_min_days=90,
+        )

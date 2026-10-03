@@ -31,11 +31,14 @@ from pathlib import Path
 
 import pytest
 
+from hermes.adapters.certification.json_store import JsonCertificationStore
 from hermes.adapters.clock.wall import WallClock
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.adapters.market_data.binance_live_klines import BinanceLiveKlinesAdapter
 from hermes.adapters.notifier.slack_adapter import SlackAdapter
 from hermes.adapters.notifier.telegram_adapter import TelegramAdapter
+from hermes.application.calibration.certification_gates import CertificationRecord
+from hermes.application.calibration.lifecycle import CertificationState
 from hermes.application.strategy_protocol.preregistration import PreRegistration
 from hermes.domain.errors import ExchangeError, LedgerError
 from hermes.domain.events.bar_processed import BarProcessed
@@ -156,6 +159,80 @@ class TestBuildComposition:
             composition.telegram.close()
             composition.slack.close()
             composition.sqlite_connection.close()
+
+
+class TestMainnetNeedsLiveApproval:
+    """`allow_mainnet` starts only for a LIVE_APPROVED strategy (#355, ADR-014)."""
+
+    @staticmethod
+    def _mainnet(shadow_config: HermesConfig) -> HermesConfig:
+        return shadow_config.model_copy(update={"env": "prod", "allow_mainnet": True})
+
+    @staticmethod
+    def _store_with(
+        tmp_path: Path, state: CertificationState, fingerprint: str
+    ) -> JsonCertificationStore:
+        store = JsonCertificationStore(tmp_path)
+        store.save(
+            CertificationRecord(
+                serve_module.SHADOW_STRATEGY_NAME, state, parameter_fingerprint=fingerprint
+            )
+        )
+        return store
+
+    # SEV-1: no real-capital start without a certification store (ADR-014 decision 2)
+    def test_refused_without_a_store(self, shadow_config: HermesConfig) -> None:
+        """Mainnet with no store configured is refused."""
+        with pytest.raises(serve_module.StartupError, match="no certification store"):
+            serve_module.check_startup(self._mainnet(shadow_config), _TELEGRAM_ENV)
+
+    # SEV-1: no real-capital start for a strategy that has no record
+    def test_refused_without_a_record(self, shadow_config: HermesConfig, tmp_path: Path) -> None:
+        """An empty store means the strategy was never certified."""
+        with pytest.raises(serve_module.StartupError, match="no certification record"):
+            serve_module.check_startup(
+                self._mainnet(shadow_config),
+                _TELEGRAM_ENV,
+                certification_store=JsonCertificationStore(tmp_path),
+            )
+
+    # SEV-1: OOS_CERTIFIED without the operator's sign-off is not enough for real capital
+    def test_refused_when_only_oos_certified(
+        self, shadow_config: HermesConfig, tmp_path: Path
+    ) -> None:
+        """OOS_CERTIFIED lacks the operator sign-off, so mainnet is refused."""
+        config = self._mainnet(shadow_config)
+        fingerprint = serve_module.parameter_fingerprint_for(config)
+        store = self._store_with(tmp_path, CertificationState.OOS_CERTIFIED, fingerprint)
+        with pytest.raises(serve_module.StartupError, match="not LIVE_APPROVED"):
+            serve_module.check_startup(config, _TELEGRAM_ENV, certification_store=store)
+
+    # SEV-1: D-8 guardrail — changed parameters lose live approval
+    def test_refused_when_parameters_changed(
+        self, shadow_config: HermesConfig, tmp_path: Path
+    ) -> None:
+        """A LIVE_APPROVED record for other parameters is refused."""
+        store = self._store_with(tmp_path, CertificationState.LIVE_APPROVED, "0" * 64)
+        with pytest.raises(serve_module.StartupError, match="parameters changed"):
+            serve_module.check_startup(
+                self._mainnet(shadow_config), _TELEGRAM_ENV, certification_store=store
+            )
+
+    def test_accepted_when_live_approved(self, shadow_config: HermesConfig, tmp_path: Path) -> None:
+        """LIVE_APPROVED with the running parameters starts."""
+        config = self._mainnet(shadow_config)
+        fingerprint = serve_module.parameter_fingerprint_for(config)
+        store = self._store_with(tmp_path, CertificationState.LIVE_APPROVED, fingerprint)
+        serve_module.check_startup(config, _TELEGRAM_ENV, certification_store=store)
+
+    def test_shadow_does_not_read_the_store(
+        self, shadow_config: HermesConfig, tmp_path: Path
+    ) -> None:
+        """Without allow_mainnet a corrupt store is irrelevant: shadow never needs approval."""
+        (tmp_path / f"{serve_module.SHADOW_STRATEGY_NAME}.json").write_text("{", encoding="utf-8")
+        serve_module.check_startup(
+            shadow_config, {}, certification_store=JsonCertificationStore(tmp_path)
+        )
 
 
 class TestCheckStartup:

@@ -61,6 +61,10 @@ from hermes.adapters.notifier.telegram_adapter import (
     TelegramConfig,
     TelegramNotifierError,
 )
+from hermes.application.calibration.certification_gates import (
+    require_live_approval,
+    v1_parameter_fingerprint,
+)
 from hermes.application.notification_router import RouterConfig
 from hermes.application.portfolio.tracker import PortfolioTracker
 from hermes.application.signal_notifier import SignalNotifier
@@ -86,6 +90,7 @@ from hermes.infrastructure import sentry_integration
 from hermes.infrastructure.config.root import HermesConfig
 from hermes.infrastructure.logging import bind_correlation_id, new_correlation_id
 from hermes.ports.bar_feed import ClosedBarFeedPort
+from hermes.ports.certification import CertificationStoreError, CertificationStorePort
 from hermes.ports.clock import ClockPort
 from hermes.ports.strategy import StrategyPort
 
@@ -97,8 +102,10 @@ __all__ = [
     "Composition",
     "StartupError",
     "build_composition",
+    "certification_dir_for",
     "check_startup",
     "install_signal_handlers",
+    "parameter_fingerprint_for",
     "report_failure",
     "run",
 ]
@@ -125,6 +132,25 @@ _NEVER: Final = datetime(1970, 1, 1, tzinfo=UTC)
 
 class StartupError(HermesError):
     """The configuration cannot run the shadow loop; the process exits 3."""
+
+
+def certification_dir_for(db_path: Path) -> Path:
+    """Return the certification record directory that sits next to the ledger."""
+    return db_path.parent / "certification"
+
+
+def parameter_fingerprint_for(config: HermesConfig) -> str:
+    """Fingerprint what the enabled strategy trades with (D-8 guardrail).
+
+    Raises:
+        StartupError: No strategy is enabled.
+    """
+    roster = next((s for s in config.strategies.strategies if s.enabled), None)
+    if roster is None:
+        raise StartupError("no enabled strategy to fingerprint")
+    return v1_parameter_fingerprint(
+        capital_budget=roster.capital_budget, universe=config.market_data.pairs
+    )
 
 
 class BarGapError(HermesError):
@@ -190,18 +216,27 @@ def _slack_config(env: Mapping[str, str]) -> SlackConfig | None:
         return None
 
 
-def check_startup(config: HermesConfig, env: Mapping[str, str]) -> None:
+def check_startup(
+    config: HermesConfig,
+    env: Mapping[str, str],
+    *,
+    certification_store: CertificationStorePort | None = None,
+) -> None:
     """Refuse a configuration the shadow loop cannot run safely.
 
     Args:
         config: The loaded configuration.
         env: Env-var snapshot used to probe channel credentials.
+        certification_store: Where the certification record lives. Required
+            when ``allow_mainnet`` is true; without it, mainnet is refused.
 
     Raises:
         StartupError: The enabled roster is not exactly the one swing entry,
             the followed pairs or intervals differ from pre-registration §3,
-            or ``env`` is ``prod`` and neither Telegram nor Slack has
-            credentials.
+            ``env`` is ``prod`` and neither Telegram nor Slack has
+            credentials, or ``allow_mainnet`` is true while the strategy is
+            not LIVE_APPROVED with unchanged parameters (pre-registration §7,
+            ADR-014).
     """
     enabled = [s.name for s in config.strategies.strategies if s.enabled]
     if enabled != [SHADOW_STRATEGY_NAME]:
@@ -219,6 +254,23 @@ def check_startup(config: HermesConfig, env: Mapping[str, str]) -> None:
             "env is prod but neither Telegram nor Slack credentials are set; "
             "a signal would reach no one"
         )
+    if config.allow_mainnet:
+        _check_live_approval(config, certification_store)
+
+
+def _check_live_approval(
+    config: HermesConfig, certification_store: CertificationStorePort | None
+) -> None:
+    """Raise unless real capital is allowed for the enabled strategy."""
+    if certification_store is None:
+        raise StartupError("allow_mainnet is set but no certification store is configured")
+    try:
+        record = certification_store.load(SHADOW_STRATEGY_NAME)
+    except CertificationStoreError as exc:
+        raise StartupError(f"allow_mainnet is set but {exc}") from exc
+    refusal = require_live_approval(record, parameter_fingerprint_for(config))
+    if refusal:
+        raise StartupError(f"allow_mainnet is set but {refusal}")
 
 
 def build_composition(

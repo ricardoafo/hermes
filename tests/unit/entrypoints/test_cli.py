@@ -128,7 +128,7 @@ class TestServeExitCodes:
     def test_a_failed_startup_check_exits_three(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """A StartupError from the check maps to exit 3 with its message."""
 
-        def _refuse(_config: object, _env: object) -> None:
+        def _refuse(_config: object, _env: object, **_kwargs: object) -> None:
             raise serve_module.StartupError("roster is wrong")
 
         monkeypatch.setattr(serve_module, "check_startup", _refuse)
