@@ -287,3 +287,11 @@ def test_profile_values_never_appear_in_error_messages(tmp_path: Path) -> None:
 def test_empty_profile_object_is_default_constructible() -> None:
     """TaxpayerProfile() is the 'no profile' value used when nothing is configured."""
     assert TaxpayerProfile().notice_for(2026) == NO_PROFILE_NOTICE
+
+
+def test_other_capital_gains_may_be_a_net_loss(tmp_path: Path) -> None:
+    """A same-year loss outside hermes loads as a negative amount, since it nets in-year."""
+    profile = load_taxpayer_profile(
+        _write(tmp_path, 'years:\n  2026:\n    other_capital_gains_eur: "-1200.50"\n')
+    )
+    assert profile.for_year(2026).other_capital_gains_eur == Decimal("-1200.50")
