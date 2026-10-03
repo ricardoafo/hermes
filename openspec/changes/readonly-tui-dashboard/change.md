@@ -13,8 +13,7 @@ dual-source rule).
 
 This change adds `hermes tui`, a read-only Textual home screen over the
 `ConsoleReadModel` (#384), and makes the static overview the same home screen
-as text (`hermes --demo <scenario>`, or plain `hermes` when
-`HERMES_CONSOLE_DEMO` is set). The portfolio total in EUR is the first big
+as text (`hermes --demo <scenario>`). The portfolio total in EUR is the first big
 thing on the screen; the status is one dim line when all is well and grows
 only when late or down. Everything is shown in EUR, including coin prices; the
 stop column is a plain price plus distance in percent. The main risk is the
@@ -28,7 +27,7 @@ renderers.
 - `src/hermes/entrypoints/tui.py`: the Textual app (5 s refresh, range keys,
   position detail, logs placeholder, help, quit, read-only footer, stacked
   and wide layouts).
-- `hermes tui` and `hermes` home screen wiring in `entrypoints/console.py`
+- `hermes tui` and the static home screen wiring in `entrypoints/console.py`
   and `entrypoints/cli.py`.
 - Operator feedback of 2026-10-03 applied to the shared renderers: no "All
   good" panel, no tax footnote on the home screen (it moves behind `?`), no
@@ -64,15 +63,18 @@ renderers.
 - **Rationale**: cell order gives the issue's stacking order and the wide split.
 - **Cost of reversal**: LOW.
 
-### D-3: Plain `hermes` is unchanged unless a demo scenario is set
+### D-3: Plain `hermes` is unchanged; `hermes --demo SCENARIO` prints the home screen
 
-- **Decision**: `hermes` with no arguments still prints the top-level help.
-  With `HERMES_CONSOLE_DEMO` set (or the leading `--demo` flag) it prints the
-  home screen. No live read model exists yet, so help stays the default.
-- **Alternatives**: always print the home screen: breaks the documented help
-  and the existing tests, and has no data without a ledger read model.
-- **Rationale**: no existing behaviour changes on a host without the variable.
-- **Cost of reversal**: LOW (flip once `LedgerReadModel` lands).
+- **Decision**: `hermes` with no arguments still prints the top-level help,
+  also when `HERMES_CONSOLE_DEMO` is set. `hermes --demo SCENARIO` (already the
+  overview command of #384) now prints the home screen as static text, the
+  same screen `hermes tui` shows. No live read model exists yet, so there is
+  nothing else a bare `hermes` could show.
+- **Alternatives**: print the home screen for bare `hermes` when the variable
+  is set: contradicts #384 D-9 and its test (a stray variable must not change
+  the bare command); needs a Code Owner decision and a new ADR-level note.
+- **Rationale**: no existing behaviour or assertion changes.
+- **Cost of reversal**: LOW (one branch in `cli.main` once `LedgerReadModel` lands).
 
 ### D-4: EUR everywhere; USDT only as a secondary line and in JSON
 

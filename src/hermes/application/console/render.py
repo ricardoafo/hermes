@@ -36,6 +36,7 @@ from hermes.application.console.format import (
     TIMES,
     CushionLevel,
     arrow,
+    big_digits,
     cushion_level,
     fmt_atr_range,
     fmt_change,
@@ -364,7 +365,9 @@ def _share(part: Decimal, whole: Decimal) -> str:
     return f"{(part * 100 / whole):.2f}%"
 
 
-def render_portfolio(summary: PortfolioSummary, ctx: RenderContext) -> Group:
+def render_portfolio(
+    summary: PortfolioSummary, ctx: RenderContext, *, big_total: bool = False
+) -> Group:
     """Render the hero (total value, change, net) and the waterfall.
 
     The waterfall covers closed trades only; open positions get their own line.
@@ -374,6 +377,8 @@ def render_portfolio(summary: PortfolioSummary, ctx: RenderContext) -> Group:
     Args:
         summary: The portfolio view for the chosen range.
         ctx: Render context.
+        big_total: Draw the total value three rows tall (the TUI on tall
+            terminals), with the change on the line below.
 
     Returns:
         The portfolio block.
@@ -381,9 +386,11 @@ def render_portfolio(summary: PortfolioSummary, ctx: RenderContext) -> Group:
     if not ctx.shows_money:
         return _framed(ctx, [Text(f"Portfolio · {_HIDDEN_NOTE}", style="dim")])
     label = _RANGE_LABEL[summary.range]
+    total_style = "dim" if ctx.stale_since else "bold"
     hero = Text()
-    hero.append(fmt_level(summary.total_value), style="dim" if ctx.stale_since else "bold")
-    hero.append("   ")
+    if not big_total:
+        hero.append(fmt_level(summary.total_value), style=total_style)
+        hero.append("   ")
     hero.append(
         f"{fmt_change(summary.change, summary.change_pct)} {label}",
         style=_money_style(ctx, summary.change),
@@ -401,6 +408,11 @@ def render_portfolio(summary: PortfolioSummary, ctx: RenderContext) -> Group:
         style="dim",
     )
     parts: list[RenderableType] = [
+        *(
+            [Text(row, style=total_style) for row in big_digits(fmt_level(summary.total_value))]
+            if big_total
+            else []
+        ),
         hero,
         net_line,
         Text(spark, style="dim" if ctx.stale_since else "cyan"),
@@ -485,8 +497,6 @@ def render_positions(
     if not ctx.shows_money:
         return _framed(ctx, [_blind_positions(rows, ctx), _eur_caption()])
     table = Table(box=box.SIMPLE_HEAD, pad_edge=False, show_edge=False)
-    if selected is not None:
-        table.add_column("")
     table.add_column("coin")
     table.add_column("tf")
     table.add_column("entry → now")
@@ -494,11 +504,9 @@ def render_positions(
     table.add_column("net" + _stale_note(ctx), justify="right")
     table.add_column("stop")
     for row in rows:
-        cells: list[RenderableType] = []
-        if selected is not None:
-            cells.append(Text("▸" if row.coin == selected else " ", style="bold"))
-        cells += [
-            Text(row.coin, style="bold"),
+        marker = "" if selected is None else ("▸" if row.coin == selected else " ")
+        cells: list[RenderableType] = [
+            Text(f"{marker}{row.coin}", style="bold"),
             row.timeframe,
             f"{fmt_eur_price(row.entry_eur)} → {fmt_eur_price(row.current_eur)}",
             Text(fmt_pct(row.change_pct), style=_money_style(ctx, row.change_pct)),
