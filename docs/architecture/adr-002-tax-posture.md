@@ -5,6 +5,7 @@
 **Accepted**: 2026-08-21
 **Deciders**: Ricardo Afonso (product owner), Claude (proposer)
 **Supersedes**: —
+**Superseded in part by**: [ADR-016](adr-016-tax-estimate-rules.md) (Decision item 1, rate scale only)
 
 ## Context
 
