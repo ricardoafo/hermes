@@ -30,6 +30,7 @@ from hermes.adapters.ledger.migration_runner import apply_migrations
 from hermes.domain.errors import LedgerError
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.signal_emitted import SignalEmitted
+from hermes.domain.events.trade_executed import TradeExecuted, TradeSide
 from hermes.domain.lots.lot import Lot
 from hermes.domain.lots.lot_consumption import LotConsumption
 from hermes.domain.market_data.kline import KlineInterval
@@ -38,6 +39,7 @@ from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.lot_id import LotId
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
+from hermes.domain.value_objects.price import Price
 from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.infrastructure.time import now_utc
@@ -284,6 +286,41 @@ class SqliteLedger:
         except (KeyError, ValueError, TypeError) as exc:
             raise LedgerError(msg=f"latest_signal_event: unreadable payload: {exc}") from exc
 
+    def trade_events(self, strategy_id: StrategyId) -> tuple[TradeExecuted, ...]:
+        """Return every ``TradeExecuted`` of a strategy, oldest first.
+
+        Args:
+            strategy_id: Strategy bucket the fills belong to.
+
+        Returns:
+            The rehydrated events ordered by ``occurred_at`` then row id.
+
+        Raises:
+            LedgerError: On any SQLite read failure, a row whose schema version
+                is not 2, or an unreadable payload.
+        """
+        try:
+            rows = self._conn.execute(
+                "SELECT event_schema_version, payload_json FROM events "
+                "WHERE event_type = 'TradeExecuted' "
+                "  AND json_extract(payload_json, '$.strategy_id.value') = ? "
+                "ORDER BY occurred_at ASC, id ASC",
+                (strategy_id.value,),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"trade_events failed: {exc}") from exc
+        trades: list[TradeExecuted] = []
+        for version, payload_json in rows:
+            if version != TradeExecuted.__event_schema_version__:
+                raise LedgerError(
+                    msg=f"trade_events: unsupported TradeExecuted schema version {version}"
+                )
+            try:
+                trades.append(_trade_from_payload(json.loads(payload_json)))
+            except (KeyError, ValueError, TypeError) as exc:
+                raise LedgerError(msg=f"trade_events: unreadable payload: {exc}") from exc
+        return tuple(trades)
+
     # ------------------------------------------------------------------
     # Private helpers — SQL and (de)serialisation
     # ------------------------------------------------------------------
@@ -454,4 +491,37 @@ def _signal_from_payload(payload: dict[str, Any]) -> SignalEmitted:
         atr_context=Decimal(str(payload["atr_context"])),
         exit_reason=payload["exit_reason"],
         f_star_estimate=_optional_decimal(payload["f_star_estimate"]),
+    )
+
+
+def _trade_from_payload(payload: dict[str, Any]) -> TradeExecuted:
+    """Rehydrate a :class:`TradeExecuted` from its stored JSON payload.
+
+    Args:
+        payload: The decoded ``payload_json`` of a ``TradeExecuted`` row.
+
+    Returns:
+        The event with every stored field restored.
+
+    Raises:
+        KeyError: A field is missing from the payload.
+        ValueError: A field holds a value of the wrong shape.
+    """
+    pair = Pair(
+        base=Currency(payload["pair"]["base"]),
+        quote=Currency(payload["pair"]["quote"]),
+    )
+    return TradeExecuted(
+        occurred_at=datetime.fromisoformat(payload["occurred_at"]),
+        correlation_id=payload["correlation_id"],
+        event_seq=int(payload["event_seq"]),
+        pair=pair,
+        side=TradeSide(payload["side"]),
+        qty=Quantity(amount=Decimal(str(payload["qty"]["amount"])), asset=pair.base),
+        price=Price(amount=Decimal(str(payload["price"]["amount"])), pair=pair),
+        fee=Money(
+            amount=Decimal(str(payload["fee"]["amount"])),
+            currency=Currency(payload["fee"]["currency"]),
+        ),
+        strategy_id=StrategyId(payload["strategy_id"]["value"]),
     )

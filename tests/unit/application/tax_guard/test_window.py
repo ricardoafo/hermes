@@ -39,6 +39,7 @@ from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.price import Price
 from hermes.domain.value_objects.quantity import Quantity
+from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.infrastructure.config.models import TaxGuardConfig
 
 # ---------------------------------------------------------------------------
@@ -87,6 +88,7 @@ def _trade(
         qty=Quantity(amount=Decimal("0.01"), asset=base),
         price=Price(amount=Decimal("50000"), pair=pair),
         fee=Money(amount=Decimal(fee_amount), currency=fee_currency),
+        strategy_id=StrategyId("swing"),
     )
 
 
