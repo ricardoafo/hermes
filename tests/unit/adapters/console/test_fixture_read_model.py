@@ -215,3 +215,46 @@ def test_from_path_names_the_scenario_after_the_file(tmp_path: Path) -> None:
     """A scenario loaded from a file is tagged with the file name."""
     model = FixtureReadModel.from_path(_write(tmp_path, _ok_document()))
     assert model.demo_scenario == "custom"
+
+
+def _set(document: dict[str, Any], path: tuple[str | int, ...], value: object) -> None:
+    target: Any = document
+    for key in path[:-1]:
+        target = target[key]
+    target[path[-1]] = value
+
+
+@pytest.mark.parametrize(
+    ("path", "value", "message"),
+    [
+        (("heartbeat",), [], "must be an object"),
+        (("positions",), {}, "must be a list"),
+        (("positions", 0, "coin"), 7, "must be a string"),
+        (("positions", 0, "detail", "stop_moves"), "3", "must be an integer"),
+        (("portfolio", "cash"), "lots", "not a decimal"),
+        (("portfolio", "cash"), "NaN", "must be finite"),
+        (("heartbeat", "as_of"), "yesterday", "not an ISO timestamp"),
+        (("heartbeat", "state"), "sleepy", "unknown value"),
+        (("activity", 0, "day"), "03/10/2026", "not an ISO date"),
+        (("positions", 0, "detail", "entry_values"), [["atr"]], "pairs"),
+        (("positions", 0, "atr"), "0", "must be positive"),
+        (("portfolio", "tax_band"), "19%", "object or null"),
+        (("activity", 0, "items"), ["closed"], "must be an object"),
+    ],
+)
+def test_malformed_field_fails_on_load(
+    tmp_path: Path, path: tuple[str | int, ...], value: object, message: str
+) -> None:
+    """Each kind of malformed field fails on load with a message naming the problem."""
+    document = _ok_document()
+    _set(document, path, value)
+    with pytest.raises(ScenarioError, match=message):
+        FixtureReadModel.from_path(_write(tmp_path, document))
+
+
+def test_invalid_json_fails_on_load(tmp_path: Path) -> None:
+    """A file that is not JSON fails on load."""
+    path = tmp_path / "broken.json"
+    path.write_text("{", encoding="utf-8")
+    with pytest.raises(ScenarioError, match="not valid JSON"):
+        FixtureReadModel.from_path(path)

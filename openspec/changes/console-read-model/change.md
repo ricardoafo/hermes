@@ -2,7 +2,7 @@
 
 **SDD change**: `console-read-model`
 **Date**: 2026-10-03
-**Status**: Proposed
+**Status**: Applied
 **Tracking issue**: see sibling `issue.md`
 
 Mirror of engram topic key `sdd/console-read-model/change` (see
@@ -53,7 +53,7 @@ context and the blind tests scan the rendered text for money.
   (#379). They register into `CONSOLE_COMMANDS` and call the factory added here.
 - `hermes status` and its read-only ledger queries (#370, built in parallel).
 - The ledger-backed read model (`LedgerReadModel`, build-plan step 7). Until
-  it exists the factory raises `LiveReadModelUnavailable` without `--demo`.
+  it exists the factory raises `LiveReadModelUnavailableError` without `--demo`.
 - Day grouping and folding of real ledger rows (#374): the view objects carry
   already grouped days and folded stop raises; the fixture provides them.
 - `--json` and `--utc` output (#374, #375): the views are plain dataclasses so
@@ -145,8 +145,10 @@ context and the blind tests scan the rendered text for money.
 ### D-7: Net is derived, never stored
 
 - **Decision**: `WaterfallColumn.net` and `PositionDetail.net` are properties
-  (`gross − fees − tax`, with tax counted as zero while pending); the fixture
-  loader rejects a position whose row net differs from its detail net.
+  (`gross − fees − tax`, with tax counted as zero while pending). Scenario
+  files store no row net, change since entry or stop distance: the fixture
+  loader derives them from the detail and the prices, so a scenario cannot
+  contradict itself, and a test checks row net equals detail net.
 - **Rationale**: net = gross − fees − tax is the invariant #375 asserts; making
   it structural removes a class of fixture and adapter bugs.
 - **Cost of reversal**: LOW.
@@ -184,8 +186,9 @@ context and the blind tests scan the rendered text for money.
 
 - **A-2.1**: `uv run pytest tests/unit/adapters/console -q` passes: all six
   scenarios load (`ok-two-positions`, `late`, `down-stale`, `losing-year`,
-  `tax-pending`, `empty`), an unknown name raises `UnknownScenario`, a naive
-  timestamp and an inconsistent net raise `ScenarioError`.
+  `tax-pending`, `empty`), an unknown name raises `UnknownScenarioError`, a
+  naive timestamp or a float amount raises `ScenarioError`, and every row net
+  equals its detail net.
 
 ### R-3: Demo switch
 
@@ -228,12 +231,13 @@ src/hermes/application/console/
                    render_shadow_test, render_overview, to_plain_text
 src/hermes/adapters/console/
   __init__.py
-  fixture_read_model.py   FixtureReadModel, ScenarioError, UnknownScenario,
+  fixture_read_model.py   FixtureReadModel, ScenarioError, UnknownScenarioError,
                           available_scenarios
   scenarios/{ok-two-positions,late,down-stale,losing-year,tax-pending,empty}.json
 src/hermes/entrypoints/console.py   CONSOLE_COMMANDS, DEMO_ENV_VAR,
-                                    split_demo_flag, resolve_read_model,
-                                    LiveReadModelUnavailable, run_overview
+                                    split_demo_flag, apply_demo_flag,
+                                    resolve_read_model, run_overview,
+                                    LiveReadModelUnavailableError
 ```
 
 ```python
@@ -307,7 +311,10 @@ uv run python -c "from zoneinfo import ZoneInfo; ZoneInfo('Europe/Madrid')" -> o
   appear in the diff; the behaviour tests (sign, arrow, net, tax label, DEMO
   DATA) fail independently of the snapshots.
 - **Trailing whitespace in Rich output**: the pre-commit hook would rewrite the
-  snapshot file; `to_plain_text` strips line ends so the stored text is stable.
+  snapshot file; `to_plain_text` strips line ends and the snapshots store one
+  string per line, so blank lines survive the hook.
+- **Blind leak through activity**: a close price next to the entry price gives
+  away the result, so blind activity rows drop the close price as well as net.
 - **Parallel edit of `cli.py` by #370**: the change there is a few lines at the
   top of `main`, so a rebase conflict stays small.
 
