@@ -169,19 +169,22 @@ kernel = FillKernel(
     fill_model=OrderbookWalkFillModel(apply_slippage=False),
     risk_engine=RiskEngine(rules=[...]),
     kill_evaluator=KillTriggerEvaluator(pre_reg=PreRegistration()),
-    tracker=tracker,                      # PortfolioTracker.rebuilt(...) in serve
+    tracker=tracker,  # PortfolioTracker.rebuilt(...) in serve
     strategy_id=StrategyId("swing-donchian-4h"),
 )
 outcome = kernel.execute(
     signal,
     pair,
-    MarketContext(orderbook=book, fees=fees, at=now,
-                  market_snapshot=snapshot, experiment_state=state),
+    MarketContext(
+        orderbook=book, fees=fees, at=now, market_snapshot=snapshot, experiment_state=state
+    ),
     correlation_id=correlation_id,
 )
 match outcome:
-    case Executed(fill=fill): trade_recorder.record(fill, correlation_id=correlation_id)
-    case Declined() | Halted(): ...
+    case Executed(fill=fill):
+        trade_recorder.record(fill, correlation_id=correlation_id)
+    case Declined() | Halted():
+        ...
 ```
 
 `TradeRecorder.record` (merged from main with the EUR trade values) writes the trade row with the same `TradeExecuted` v2 event the kernel returns in `Executed.trade`; the backtest keeps the event in memory instead.
