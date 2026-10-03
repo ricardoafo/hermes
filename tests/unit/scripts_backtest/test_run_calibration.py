@@ -9,6 +9,7 @@ because it depends on the ~30 MB Binance Vision klines archive.
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import sys
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -186,3 +187,18 @@ def test_merge_delivers_each_daily_bar_after_the_4h_bars_it_covers() -> None:
         f"daily bar delivered at position {merged.index(daily)}, expected 5 (just before "
         "the 4h bar that closes at midnight)"
     )
+
+
+def test_strategy_parameters_cover_every_keyword_and_build_the_adapter() -> None:
+    """The trial records exactly the parameters the strategy was built with, no more, no less."""
+    params = DRIVER._strategy_parameters()
+    assert set(params) >= {"donchian_period", "adx_period", "ema_period", "time_stop_days"}
+    assert all(value is not inspect.Parameter.empty for value in params.values())
+    DRIVER.SwingStrategyAdapter(**params)
+
+
+def test_git_state_returns_a_full_commit_sha() -> None:
+    """A trial pins the commit it ran on; the driver refuses to log without one."""
+    sha, dirty = DRIVER._git_state()
+    assert len(sha) == 40
+    assert isinstance(dirty, bool)
