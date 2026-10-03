@@ -1,19 +1,15 @@
 """Top-level `hermes` CLI dispatcher.
 
-Registers subcommands the future integration PRs will fill in. Today
-``preview`` renders templates, ``health <integration>`` probes an
-integration adapter, ``fx backfill`` fills pending EUR ledger values, and
-``serve`` runs the shadow bar loop via
-the composition root in :mod:`hermes.entrypoints.serve`. ``simulate``
-remains a stub that prints "not yet implemented" and exits with code
-2 so composition scripts fail loudly if they attempt to call it.
+Each subcommand lives in its own module under
+:mod:`hermes.entrypoints.commands` and declares a ``COMMAND``. This module
+discovers them, prints ``--help`` from their summaries and dispatches. No
+list here names the commands, so adding one never edits this file (#457).
 
 Design notes
 ------------
 
 - **Argparse (stdlib)**: no extra dep just for a top-level dispatch.
-  Subcommands own their own parsers (see :mod:`hermes.entrypoints.preview`)
-  and receive the residual argv.
+  Subcommands own their own parsers and receive the residual argv.
 - **Exit codes**: 0 success, 2 usage / unimplemented. Subcommands may
   return other codes (e.g. ``preview run_send`` returns 3 on prod refusal;
   ``health <int>`` returns 3 on missing config, 1 on adapter down;
@@ -34,79 +30,29 @@ Design notes
 
 from __future__ import annotations
 
-import argparse
-import asyncio
 import contextlib
 import io
 import os
 import sys
-from collections.abc import Callable
-from pathlib import Path
-from typing import Any, Final
+from typing import Any
 
-from dotenv import dotenv_values
-
-from hermes.adapters.certification.json_store import JsonCertificationStore
 from hermes.adapters.console import available_scenarios
-from hermes.entrypoints import _health as health_module
-from hermes.entrypoints import archive_check as archive_check_module
-from hermes.entrypoints import certify as certify_module
 from hermes.entrypoints import console as console_module
-from hermes.entrypoints import fx as fx_module
-from hermes.entrypoints import journal as journal_module
-from hermes.entrypoints import preview as preview_module
-from hermes.entrypoints import serve as serve_module
-from hermes.entrypoints import status as status_module
+from hermes.entrypoints.commands import Command, discover
 from hermes.infrastructure import sentry_integration
-from hermes.infrastructure.config.errors import ConfigError
-from hermes.infrastructure.config.loader import (
-    DEFAULT_CONFIG_DIR,
-    DEFAULT_DOTENV_PATH,
-    load_config,
-)
 
 __all__ = ["main"]
 
 
-def _health_env(dotenv_path: Path = DEFAULT_DOTENV_PATH) -> dict[str, str]:
-    """Return the env snapshot ``hermes health`` probes, including ``.env.local``.
-
-    Mirrors :func:`load_config`: a missing dotenv file is a no-op and a
-    real environment variable always wins over the file. Unlike
-    ``load_config`` it does not mutate :data:`os.environ`.
-
-    Args:
-        dotenv_path: Dotenv file to merge under the process environment.
-
-    Returns:
-        The merged snapshot.
-    """
-    from_file = {k: v for k, v in dotenv_values(dotenv_path).items() if v is not None}
-    return {**from_file, **os.environ}
+def _leading_demo_scenario(args: list[str]) -> str | None:
+    """Return the scenario of a leading ``--demo`` option, or ``None``."""
+    try:
+        return console_module.split_demo_flag(args).scenario
+    except console_module.DemoFlagError:
+        return None
 
 
-_SUBCOMMAND_HELP: Final[dict[str, str]] = {
-    "preview": "Render + optionally send notification templates.",
-    "serve": "Run the paper-trading engine until SIGTERM/SIGINT.",
-    "health": (
-        "Health-check probe. `hermes health` (no arg) probes every "
-        "registered integration; `hermes health <integration>` probes one."
-    ),
-    "certify": "Evaluate the next certification gate for a strategy (pre-reg §7).",
-    "positions": "Open shadow positions, net per row; `positions COIN` for the detail.",
-    "archive-check": "Compare yesterday's live bars with the Binance archive (read-only).",
-    "journal": "Record, list and review Code Owner decisions (decision journal).",
-    "status": "Read-only progress check: verdict, last and next bar per stream.",
-    "simulate": "Replay historical scenarios (stub — implemented in a future PR).",
-    "fx": "`hermes fx backfill` fills pending EUR values in the ledger.",
-}
-
-# ``health`` and ``serve`` are intentionally NOT in this set — they have real
-# implementations below (registry walk / composition root respectively).
-_STUB_SUBCOMMANDS: Final[frozenset[str]] = frozenset({"simulate"})
-
-
-def _print_top_help(stream: Any) -> None:
+def _print_top_help(stream: Any, commands: dict[str, Command]) -> None:
     """Print the top-level `hermes` help message to ``stream``."""
     lines = [
         "hermes — crypto trading engine (MVP1 scaffold)",
@@ -115,8 +61,8 @@ def _print_top_help(stream: Any) -> None:
         "",
         "Commands:",
     ]
-    for name in sorted(_SUBCOMMAND_HELP):
-        lines.append(f"  {name:10s} {_SUBCOMMAND_HELP[name]}")
+    for name in sorted(commands):
+        lines.append(f"  {name:10s} {commands[name].summary}")
     lines.append("")
     lines.append("Options:")
     lines.append("  --demo SCENARIO  Show console screens on demo data (DEMO DATA tag).")
@@ -168,14 +114,6 @@ def _initialize_sentry_from_env(env: dict[str, str]) -> None:
     sentry_integration.initialize(dsn=dsn, environment=environment)
 
 
-def _leading_demo_scenario(args: list[str]) -> str | None:
-    """Return the scenario of a leading ``--demo`` option, or ``None``."""
-    try:
-        return console_module.split_demo_flag(args).scenario
-    except console_module.DemoFlagError:
-        return None
-
-
 def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
     """Dispatch the invoked subcommand.
 
@@ -207,173 +145,19 @@ def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
     if demo_exit is not None:
         return demo_exit
 
+    commands = discover()
     if not args or args[0] in {"-h", "--help"}:
-        _print_top_help(out)
+        _print_top_help(out, commands)
         return 0
 
     subcommand, *rest = args
-    table: dict[str, Callable[..., int]] = {
-        "preview": preview_module.main,
-        "health": _dispatch_health,
-        "serve": _dispatch_serve,
-        "certify": certify_module.main,
-        "positions": lambda rest, *, stream: console_module.run_positions(
-            rest, stream, demo_flag=demo_scenario, env=os.environ
-        ),
-        "archive-check": archive_check_module.main,
-        "journal": journal_module.main,
-        "status": status_module.main,
-        "fx": _dispatch_fx,
-    }
-    dispatch = table.get(subcommand)
-    if dispatch is not None:
-        return dispatch(rest, stream=out)
-    if subcommand in _STUB_SUBCOMMANDS:
-        out.write(
-            f"ERROR: `hermes {subcommand}` is not yet implemented. "
-            f"Tracked for a future integration PR.\n"
-        )
+    command = commands.get(subcommand)
+    if command is None:
+        out.write(f"ERROR: unknown subcommand {subcommand!r}. Run `hermes --help`.\n")
         return 2
-    out.write(f"ERROR: unknown subcommand {subcommand!r}. Run `hermes --help`.\n")
-    return 2
-
-
-def _dispatch_fx(rest: list[str], *, stream: Any) -> int:
-    """Handle the ``hermes fx`` subcommand family (``backfill``).
-
-    Args:
-        rest: Residual argv after the ``fx`` token.
-        stream: Output stream.
-
-    Returns:
-        Process exit code from :func:`hermes.entrypoints.fx.main`.
-    """
-    return fx_module.main(rest, stream=stream)
-
-
-def _dispatch_health(rest: list[str], *, stream: Any) -> int:
-    """Handle the ``hermes health`` subcommand family.
-
-    Two forms:
-
-    - ``hermes health`` (no arg) → runs EVERY registered check via
-      :func:`health_module.run_all` and prints ONE consolidated
-      multi-row table. Exit code aggregates per
-      :func:`health_module.aggregate_exit_code` (0 all OK, 1 any FAIL,
-      3 any NOT_CONFIGURED and no FAIL).
-    - ``hermes health <integration>`` → runs a single probe and prints
-      the two-column key/value table (existing behaviour preserved).
-
-    Args:
-        rest: Residual argv after the ``health`` token.
-        stream: Output stream.
-
-    Returns:
-        Process exit code — 0 on OK, 1 on adapter down, 2 on unknown
-        integration, 3 on missing configuration.
-    """
-    if not rest:
-        results = health_module.run_all(_health_env())
-        stream.write("# hermes health (all integrations)\n")
-        health_module.render_table_multi(results, stream)
-        return health_module.aggregate_exit_code(results)
-
-    integration, *_extra = rest
-    check = health_module.get_check(integration)
-    if check is None:
-        available = ", ".join(health_module.registered_integrations()) or "(none)"
-        stream.write(f"ERROR: unknown integration {integration!r}. Available: {available}\n")
-        return 2
-
-    result = check(_health_env())
-    stream.write(f"# hermes health {integration}\n")
-    health_module.render_table(result, stream)
-    return result.exit_code
-
-
-def _dispatch_serve(rest: list[str], *, stream: Any) -> int:
-    """Handle the ``hermes serve`` subcommand.
-
-    Parses ``--config-dir`` and ``--db``, loads the composite
-    :class:`~hermes.infrastructure.config.HermesConfig`, checks it can run
-    the shadow loop, wires the composition root, installs signal handlers,
-    and runs the bar loop. Returns 0 on a clean shutdown, 1 on a runtime
-    failure, 2 on argument-parse failure, 3 on a config load or startup
-    check failure. The environment tier comes from ``HERMES_ENV`` only.
-
-    Args:
-        rest: Residual argv after the ``serve`` token.
-        stream: Output stream — errors are written here so tests can
-            capture them without touching real stdout.
-
-    Returns:
-        Process exit code.
-    """
-    parser = argparse.ArgumentParser(prog="hermes serve", add_help=False)
-    parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
-    parser.add_argument("--db", type=Path, default=serve_module.DEFAULT_DB_PATH)
-    parser.add_argument("-h", "--help", action="store_true")
-
-    try:
-        parsed = parser.parse_args(rest)
-    except SystemExit:
-        stream.write("ERROR: could not parse `hermes serve` arguments.\n")
-        return 2
-
-    if parsed.help:
-        stream.write(
-            "Usage: hermes serve [--config-dir DIR] [--db PATH]\n"
-            "\n"
-            "Runs the shadow bar loop until SIGTERM or SIGINT arrives.\n"
-            "The environment tier comes from HERMES_ENV.\n"
-            "Exit codes: 0 clean shutdown, 1 runtime failure, 2 usage, 3 config.\n"
-        )
-        return 0
-
-    try:
-        config = load_config(parsed.config_dir)
-    except ConfigError as exc:
-        stream.write(f"ERROR: config load failed: {exc}\n")
-        return 3
-
-    try:
-        serve_module.check_startup(
-            config,
-            dict(os.environ),
-            certification_store=JsonCertificationStore(
-                serve_module.certification_dir_for(parsed.db)
-            ),
-        )
-    except serve_module.StartupError as exc:
-        stream.write(f"ERROR: startup check failed: {exc}\n")
-        return 3
-
-    return asyncio.run(_serve_main(config, db_path=parsed.db))
-
-
-async def _serve_main(config: Any, *, db_path: Path) -> int:
-    """Wire the composition root and run the bar loop to its exit code.
-
-    Extracted from :func:`_dispatch_serve` so tests can drive the
-    composition + run steps without going through argparse.
-
-    Args:
-        config: The loaded :class:`~hermes.infrastructure.config.HermesConfig`.
-        db_path: Path to the SQLite ledger file.
-
-    Returns:
-        :func:`~hermes.entrypoints.serve.run`'s exit code: 0 on clean
-        shutdown, 1 on a runtime failure (including a failed build).
-    """
-    loop = asyncio.get_running_loop()
-    shutdown = asyncio.Event()
-    try:
-        composition = serve_module.build_composition(config, db_path=db_path)
-    except Exception as exc:
-        serve_module.report_failure(exc)
-        return 1
-    serve_module.install_signal_handlers(loop, shutdown)
-    return await serve_module.run(composition, shutdown)
+    if command.wants_demo:
+        return command.run(rest, stream=out, demo=demo_scenario)
+    return command.run(rest, stream=out)
 
 
 if __name__ == "__main__":  # pragma: no cover

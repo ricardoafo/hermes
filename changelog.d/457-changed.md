@@ -1,0 +1,1 @@
+- **One module per CLI command** (`src/hermes/entrypoints/commands/`): each `hermes` subcommand declares itself in its own module and `cli.py` discovers them, so adding a command no longer edits a shared list and parallel PRs stop conflicting in `cli.py`. No behaviour change. Closes #457.
