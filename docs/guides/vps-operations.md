@@ -48,10 +48,11 @@ locks you out.
    ufw allows outbound freely
 7. **Run the hermes bootstrap workflow** — see
    [Hermes bootstrap (automated)](#hermes-bootstrap-automated) below.
-   Creates `/var/log/hermes` + `/etc/hermes`, renders
-   `/etc/hermes/env.production` from prod-env secrets, mounts the
-   Hetzner Storage Box when its creds are present. Idempotent — safe
-   to re-dispatch after any config change.
+   Creates the `hermes` user and the `/opt/hermes`, `/var/lib/hermes`,
+   `/var/log/hermes` and `/etc/hermes` dirs, installs uv, Python 3.14 and
+   the systemd units, renders `/etc/hermes/env.production` from prod-env
+   secrets (once), mounts the Hetzner Storage Box when its creds are
+   present. Idempotent — safe to re-dispatch.
 
 **Root cause of this rule**: enabling `ufw` before verifying Tailscale
 persists through reboot has burned people before. `apt upgrade`
@@ -335,20 +336,32 @@ box.
 
 ### What it does
 
-1. Creates missing FHS dirs: `/var/log/hermes` and `/etc/hermes`
-   (owned `hermes:hermes`, mode `0750`). Skips if already present.
-2. Renders `/etc/hermes/env.production` from every `HERMES_*` secret
-   in the `prod` GitHub Environment. Written via tmp file + atomic
-   `mv`; mode `0400`, owned `hermes:hermes`. Empty secret values are
-   skipped (never written as `KEY=`, which systemd would interpret as
-   unset). Re-running overwrites cleanly.
-3. Mounts the Hetzner Storage Box at `/mnt/storage-box` via SSHFS.
+1. Creates the `hermes` system user (nologin) when it is missing.
+2. Creates the FHS dirs with explicit owners: `/opt/hermes`
+   (`versions`, `bin`, `python`) and `/etc/hermes` root-owned `0755`;
+   `/var/lib/hermes` and `/var/log/hermes` owned `hermes:hermes`, `0750`.
+3. Installs the uv version pinned in `cd.yml` to `/usr/local/bin` when
+   `uv --version` differs, and Python 3.14 under `/opt/hermes/python`.
+4. Installs the unit files from `deploy/systemd/` to
+   `/etc/systemd/system` and enables `hermes.service` (not started: the
+   first deploy starts it). The backup and health timers stay disabled.
+5. Renders `/etc/hermes/env.production` from every `HERMES_*` secret in
+   the `prod` GitHub Environment, only when the file does not exist yet.
+   Written via a `0600` tmp file + atomic `mv`, owned `root:root`. Empty
+   secret values are skipped (never written as `KEY=`, which systemd
+   would interpret as unset). An existing file keeps its content; only
+   its owner and mode are repaired.
+6. Mounts the Hetzner Storage Box at `/mnt/storage-box` via SSHFS.
    Guarded — if `STORAGE_BOX_HOST` / `STORAGE_BOX_USER` /
    `STORAGE_BOX_KEY` are missing the step logs a WARN and exits 0.
-   Installs a systemd auto-mount unit so it survives reboot.
+   Installs a systemd auto-mount unit so it survives reboot. The mount
+   point is prepared only while nothing is mounted on it: `chown` on a
+   live SSHFS mount fails even as root.
 
-Idempotent: every step diffs before writing, so re-dispatch is safe
-and expected after any prod-env secret change.
+Idempotent: every step checks state before it acts, so re-dispatch is
+safe. A re-dispatch does not re-render the env file, so it does not
+pick up a changed secret: edit `/etc/hermes/env.production` on the box,
+or delete it and re-dispatch.
 
 ### How to dispatch
 
@@ -370,13 +383,15 @@ ssh -i "$HERMES_SSH_KEY" root@hermes-01 '
 '
 ```
 
-Expected: both dirs exist as `hermes:hermes 750`; env file is
-`400 hermes:hermes`; storage-box mountpoint reports mounted (or the
-WARN case if creds are still absent).
+Expected: `/etc/hermes` is `root:root 755` and `/var/log/hermes` is
+`hermes:hermes 750`; the env file is `600 root:root`; storage-box
+mountpoint reports mounted (or the WARN case if creds are still absent).
 
 ### When to re-dispatch
 
-- After adding/updating any `HERMES_*` secret in the `prod` GH env.
+- After adding a new `HERMES_*` secret and deleting
+  `/etc/hermes/env.production` so it renders again. Updating a secret in
+  the `prod` GH env alone changes nothing on the box.
 - After adding storage-box credentials for the first time (unblocks
   the mount step that previously WARN-skipped).
 - After a VPS reprovision — before enabling any hermes systemd unit.

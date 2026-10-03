@@ -3,9 +3,12 @@
 # =====================================================================
 #
 # workflow_dispatch-only. Runs `scripts/deploy/vps_bootstrap.sh` on the
-# VPS via Tailscale + SSH. Creates missing FHS dirs, renders
-# /etc/hermes/env.production from GH prod-env secrets, mounts storage
-# box when its credentials are present.
+# VPS via Tailscale + SSH. Creates the hermes user and the FHS dirs,
+# installs the pinned uv and Python 3.14, installs the systemd units from
+# deploy/systemd/ and enables hermes.service, renders
+# /etc/hermes/env.production from GH prod-env secrets ONLY when the file is
+# absent (an existing file only gets its owner and mode repaired), and
+# mounts the storage box when its credentials are present.
 #
 # Reuses the Tailscale + openssh-install scaffolding from
 # `vps-diagnose.yml` (see PR chain #277+, notably #284 for the
@@ -14,6 +17,7 @@
 # ## Related
 #   scripts/deploy/vps_bootstrap.sh — the idempotent script this runs
 #   openspec/changes/chore-vps-bootstrap-workflow/change.md
+#   openspec/changes/179-cd-first-real-deploy/change.md (D-8)
 #   #285 — tracking issue
 
 name: VPS bootstrap
@@ -36,10 +40,12 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Checkout hermes repo (for scripts/deploy/vps_bootstrap.sh)
+      - name: Checkout hermes repo (for scripts/deploy and deploy/systemd)
         uses: actions/checkout@v5
         with:
-          sparse-checkout: scripts/deploy
+          sparse-checkout: |
+            scripts/deploy
+            deploy/systemd
           sparse-checkout-cone-mode: false
 
       - name: Ensure openssh-client is installed
@@ -118,6 +124,18 @@ jobs:
           ssh-keyscan -H "$VPS_SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           ssh-keygen -y -f ~/.ssh/vps_id > /dev/null && echo "keyfile parsed OK"
 
+      - name: Ship systemd units to VPS
+        env:
+          VPS_SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
+          VPS_SSH_USER: ${{ secrets.VPS_SSH_USER }}
+        run: |
+          set -euo pipefail
+          # The bootstrap script arrives on stdin, so it cannot read files
+          # next to itself. Stream the unit files to a fixed path first; the
+          # script installs them and deletes the directory.
+          remote='rm -rf /var/tmp/hermes-bootstrap && install -d -m 0700 /var/tmp/hermes-bootstrap && tar -xf - -C /var/tmp/hermes-bootstrap'
+          tar -C deploy -cf - systemd | ssh -i ~/.ssh/vps_id -o StrictHostKeyChecking=yes "$VPS_SSH_USER@$VPS_SSH_HOST" "$remote"
+
       - name: Run bootstrap script on VPS
         env:
           VPS_SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
@@ -126,13 +144,15 @@ jobs:
           # Config-only vars (non-secret) hardcoded here so they land
           # in .env.production even without a corresponding GH secret.
           HERMES_ENV: prod
-          HERMES_SHADOW: "true"
           HERMES_ALLOW_MAINNET: "no"
           HERMES_SENTRY__ENVIRONMENT: prod
 
           # HERMES_* secrets from prod env. Any that are unset (secret
           # not added yet) come through as empty and the bootstrap
           # script skips them (see "skipped-empty" counter in output).
+          # The script renders them only when /etc/hermes/env.production
+          # does not exist yet: to rotate a secret, edit the file on the
+          # box, or delete it and re-dispatch.
           HERMES_HEALTHCHECKS__PING_URL: ${{ secrets.HERMES_HEALTHCHECKS__PING_URL }}
           HERMES_TELEGRAM__BOT_TOKEN: ${{ secrets.HERMES_TELEGRAM__BOT_TOKEN }}
           HERMES_TELEGRAM__CHAT_ID: ${{ secrets.HERMES_TELEGRAM__CHAT_ID }}
@@ -143,6 +163,10 @@ jobs:
           HERMES_BINANCE_MAINNET__API_SECRET: ${{ secrets.HERMES_BINANCE_MAINNET__API_SECRET }}
           HERMES_BINANCE_TESTNET__API_KEY: ${{ secrets.HERMES_BINANCE_TESTNET__API_KEY }}
           HERMES_BINANCE_TESTNET__API_SECRET: ${{ secrets.HERMES_BINANCE_TESTNET__API_SECRET }}
+
+          # Optional non-root CD account (repo variable VPS_DEPLOY_USER). Unset
+          # or root: the script writes no sudoers rule.
+          DEPLOY_USER: ${{ vars.VPS_DEPLOY_USER }}
 
           # Storage-box credentials (guarded — script skips mount when missing)
           STORAGE_BOX_HOST: ${{ secrets.STORAGE_BOX_HOST }}
@@ -167,7 +191,7 @@ jobs:
           while IFS= read -r -d '' entry; do
               name="${entry%%=*}"
               case "$name" in
-                  HERMES_*|STORAGE_BOX_*)
+                  HERMES_*|STORAGE_BOX_*|DEPLOY_USER)
                       env_args+=("$entry")
                       ;;
               esac

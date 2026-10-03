@@ -37,7 +37,10 @@ def _mount_point_guard() -> str:
     text = _SCRIPT.read_text(encoding="utf-8")
     start = text.index(_GUARD_START)
     end = text.index(_GUARD_END, start)
-    return text[start:end]
+    # The guard lives in `prepare_mount_point`; the step calls it, so define it first.
+    func_start = text.index("prepare_mount_point() {")
+    func_end = text.index("\n}\n", func_start) + 3
+    return text[func_start:func_end] + text[start:end]
 
 
 def _run_guard(tmp_path: Path, *, mounted: bool) -> tuple[subprocess.CompletedProcess[str], str]:

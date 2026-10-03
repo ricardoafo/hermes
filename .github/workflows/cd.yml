@@ -1,32 +1,38 @@
 # =====================================================================
-# CD — deploy hermes wheel to hermes-01 (Phase 0)
+# CD — deploy a hermes release bundle to hermes-01 (Phase 0)
 # =====================================================================
 #
 # ## Status
 #
-# Phase 0 filled: build → download wheel → tailnet + SSH → scp wheel →
-# uv install into /opt/hermes/.venv → systemctl restart → healthchecks
-# poll. Smoke suite is still a placeholder (no @smoke tests exist yet).
+# build (wheel) -> bundle (wheel + hash-pinned requirements + config +
+# deploy scripts, one tarball) -> deploy (tailnet + scp + install_release.sh
+# over SSH, which flips `current`, restarts the unit and runs the health
+# gate) -> smoke -> confirm. A failed gate rolls back to `previous` and
+# fails the deploy job. The smoke suite is still a placeholder (no @smoke
+# tests exist yet).
 #
-# ## Prerequisites on hermes-01 (one-time setup — see vps-operations guide)
+# ## Prerequisites on hermes-01 (one-time: run the `vps-bootstrap` workflow)
 #
-#   - `hermes` OS user exists (see vps_bootstrap.sh)
-#   - `/opt/hermes/` owned by hermes:hermes
-#   - `/opt/hermes/.venv/` — Python 3.14 venv (create with `uv venv --python 3.14`)
-#   - `/etc/systemd/system/hermes.service` installed + enabled
-#   - `sudo` no-password rule for the deploy user on `systemctl restart hermes.service`
+#   - `hermes` OS user, /opt/hermes/{versions,bin,python}, /var/lib/hermes
+#   - uv (pinned) and Python 3.14 under /opt/hermes/python
+#   - hermes.service installed and enabled (a deploy starts it)
+#   - /etc/hermes/env.production, root:root 0600, HERMES_ALLOW_MAINNET=no
+#
+# See docs/guides/vps-operations.md for the operator checklist and
+# openspec/changes/179-cd-first-real-deploy/change.md for the design.
 #
 # ## Trigger set
 #
 #   workflow_dispatch:
 #     Manual until we're confident. Every push-to-main auto-deploy will
 #     be enabled in a follow-up once the pipeline has proven itself over
-#     a few manual runs.
+#     a few manual runs. `dry_run` defaults to true: it builds the bundle
+#     and touches nothing else (no tailnet, scp or ssh).
 #
 # ## Serialization
 #
 # `concurrency: deploy-vps` + `cancel-in-progress: false`. Two deploys
-# racing would land unpredictable wheel versions on the VPS.
+# racing would flip `current` under each other.
 #
 # ## Secrets (populated on `prod` GH Environment)
 #
@@ -34,7 +40,6 @@
 #   VPS_SSH_HOST            — hermes-01 (tailnet hostname or TAILNET-IP)
 #   VPS_SSH_USER            — root
 #   VPS_SSH_KEY             — hermes_ci_ed25519 (unencrypted ed25519 private)
-#   VPS_HEALTHCHECK_URL     — healthchecks.io ping URL for the deploy probe
 
 name: CD
 
@@ -65,13 +70,75 @@ jobs:
     uses: ./.github/workflows/_build-wheel.yml
 
   # ─────────────────────────────────────────────────────────────────
-  # DEPLOY — scp the wheel to VPS, install into venv, restart services
+  # BUNDLE — one tarball per commit: the CI-built wheel, the hash-pinned
+  # requirements from uv.lock, the config/ YAML and the deploy scripts.
+  # Runs in dry-run too, so a dry run proves the bundle builds.
+  # ─────────────────────────────────────────────────────────────────
+  bundle:
+    name: Build release bundle
+    needs: build
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - uses: astral-sh/setup-uv@v7
+        with: { version: "0.12.5" }
+
+      - name: Download wheel artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: hermes-wheel
+          path: dist/
+
+      - name: Assemble release bundle
+        run: |
+          set -euo pipefail
+          sha12=${GITHUB_SHA::12}
+          stage=$(mktemp -d)
+
+          # The wheel keeps its original filename: uv rejects a renamed one.
+          cp dist/hermes-*.whl "$stage/"
+          if [ "$(ls "$stage"/hermes-*.whl | wc -l)" -ne 1 ]; then
+              echo "::error::expected exactly one wheel in dist/"
+              exit 1
+          fi
+
+          # Same lock, same SHA-256 hashes as CI (ADR-010 section 4). The VPS
+          # installs from this file with --require-hashes.
+          uv export --frozen --no-dev --no-emit-project --output-file "$stage/requirements.txt"
+          if ! grep -q -- '--hash=sha256:' "$stage/requirements.txt"; then
+              echo "::error::uv export wrote no hashes"
+              exit 1
+          fi
+
+          cp -r config "$stage/config"
+          # The units run these from /opt/hermes/current/deploy/ (health ping,
+          # failure notifier, backup): each release carries its own copy.
+          install -d "$stage/deploy" "$stage/bin"
+          install -m 0755 deploy/hermes-health-ping.sh deploy/hermes-notify-failure.sh deploy/hermes-backup.sh "$stage/deploy/"
+          install -m 0755 scripts/deploy/install_release.sh scripts/deploy/health_gate.sh \
+              scripts/deploy/rollback.sh "$stage/bin/"
+
+          tar -czf "hermes-release-${sha12}.tar.gz" -C "$stage" .
+          tar -tzf "hermes-release-${sha12}.tar.gz"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: hermes-release
+          path: hermes-release-*.tar.gz
+          if-no-files-found: error
+
+  # ─────────────────────────────────────────────────────────────────
+  # DEPLOY — scp the bundle to the VPS, install it, restart, gate it.
   # Mirrors the tailnet + SSH scaffolding proven in vps-bootstrap.yml
   # (#286, #289, #291, #294, #296, #298).
   # ─────────────────────────────────────────────────────────────────
   deploy:
     name: Deploy to VPS
-    needs: build
+    needs: bundle
     runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 15
     environment:
@@ -104,12 +171,12 @@ jobs:
               exit 2
           fi
 
-      - name: Download wheel artifact
+      - name: Download release bundle
         if: inputs.dry_run != true
         uses: actions/download-artifact@v5
         with:
-          name: hermes-wheel
-          path: dist/
+          name: hermes-release
+          path: release/
 
       - name: Join tailnet
         if: inputs.dry_run != true
@@ -134,105 +201,58 @@ jobs:
           ssh-keyscan -H "$VPS_SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           ssh-keygen -y -f ~/.ssh/vps_id > /dev/null && echo "keyfile parsed OK"
 
-      - name: Copy wheel to VPS
+      - name: Copy release bundle to VPS
         if: inputs.dry_run != true
         env:
           VPS_SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
           VPS_SSH_USER: ${{ secrets.VPS_SSH_USER }}
         run: |
           set -euo pipefail
-          wheel=$(ls dist/hermes-*.whl | head -1)
-          if [ -z "$wheel" ]; then
-              echo "::error::no wheel found in dist/"
+          bundle="release/hermes-release-${GITHUB_SHA::12}.tar.gz"
+          if [ ! -f "$bundle" ]; then
+              echo "::error::no $bundle in the downloaded artifact"
               exit 1
           fi
-          echo "shipping $wheel ($(stat -c%s "$wheel") bytes) → hermes-01:/tmp/hermes.whl"
+          echo "shipping $bundle ($(stat -c%s "$bundle") bytes) → $VPS_HOST:/var/tmp/"
           scp -i ~/.ssh/vps_id -o StrictHostKeyChecking=yes \
-              "$wheel" "$VPS_SSH_USER@$VPS_SSH_HOST:/tmp/hermes.whl"
+              "$bundle" "$VPS_SSH_USER@$VPS_SSH_HOST:/var/tmp/"
 
-      - name: Install wheel + restart hermes.service
+      - name: Install release, restart hermes.service, run health gate
         if: inputs.dry_run != true
         env:
           VPS_SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
           VPS_SSH_USER: ${{ secrets.VPS_SSH_USER }}
         run: |
           set -euo pipefail
-          ssh -i ~/.ssh/vps_id -o StrictHostKeyChecking=yes \
-              "$VPS_SSH_USER@$VPS_SSH_HOST" bash <<'REMOTE'
+          # install_release.sh exits 1 when the health gate fails, after it
+          # rolled back (or stopped the unit on a first deploy). That fails
+          # this step and so the job. ServerAlive keeps the session open
+          # through the 30 s the gate spends watching the unit.
+          ssh -i ~/.ssh/vps_id -o StrictHostKeyChecking=yes -o ServerAliveInterval=15 \
+              "$VPS_SSH_USER@$VPS_SSH_HOST" bash -s -- "${GITHUB_SHA::12}" <<'REMOTE'
           set -euo pipefail
-          echo "==== hermes deploy on $(hostname) ===="
+          sha12=$1
+          bundle="/var/tmp/hermes-release-$sha12.tar.gz"
+          stage="/var/tmp/hermes-release-$sha12"
+          cleanup() { rm -rf "$stage" "$bundle"; }
+          trap cleanup EXIT
 
-          # Prerequisites (one-time — will fail loudly if missing):
-          #   /opt/hermes/       (hermes:hermes)
-          #   /opt/hermes/.venv  (Python 3.14 venv)
-          #   /etc/systemd/system/hermes.service
-          if [ ! -d /opt/hermes/.venv ]; then
-              echo "::error::/opt/hermes/.venv missing — run one-time VPS setup first"
-              exit 1
+          echo "==== hermes deploy $sha12 on $(hostname) ===="
+          rm -rf "$stage"
+          install -d -m 0700 "$stage"
+          tar -xzf "$bundle" -C "$stage"
+          # root runs it directly; any other account goes through the narrow
+          # sudoers rule that vps_bootstrap.sh writes when DEPLOY_USER is set.
+          as_root=()
+          if [ "$(id -u)" != "0" ]; then
+              as_root=(sudo -n)
           fi
-          if ! systemctl list-unit-files hermes.service >/dev/null 2>&1; then
-              echo "::error::hermes.service systemd unit not installed"
-              exit 1
-          fi
-
-          echo "installing wheel into /opt/hermes/.venv…"
-          sudo -u hermes /opt/hermes/.venv/bin/pip install --quiet --force-reinstall /tmp/hermes.whl
-          rm /tmp/hermes.whl
-
-          echo "installed version:"
-          sudo -u hermes /opt/hermes/.venv/bin/pip show hermes | grep -E '^Version:'
-
-          echo "restarting hermes.service…"
-          sudo systemctl daemon-reload
-          sudo systemctl restart hermes.service
-          sleep 2
-          sudo systemctl status hermes.service --no-pager | head -20
+          "${as_root[@]}" /usr/bin/bash "$stage/bin/install_release.sh" "$sha12" "$stage"
           REMOTE
 
       - name: Dry-run notice
         if: inputs.dry_run == true
-        run: echo "::notice::dry_run=true — skipped tailnet + scp + install."
-
-  # ─────────────────────────────────────────────────────────────────
-  # HEALTH CHECK — poll healthchecks.io for post-restart heartbeat
-  # ─────────────────────────────────────────────────────────────────
-  health-check:
-    name: Health check
-    needs: deploy
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
-    timeout-minutes: 5
-    steps:
-      - name: Poll healthchecks.io
-        if: inputs.dry_run != true
-        shell: bash
-        env:
-          HEALTHCHECK_URL: ${{ secrets.VPS_HEALTHCHECK_URL }}
-        run: |
-          set -euo pipefail
-          if [ -z "${HEALTHCHECK_URL}" ]; then
-              echo "::warning::VPS_HEALTHCHECK_URL secret is empty — skipping poll"
-              exit 0
-          fi
-          # 24 attempts × 5s = 2 minutes. hermes-health.timer fires every
-          # minute so a healthy deploy should ping within 1-2 min.
-          for attempt in $(seq 1 24); do
-              # Healthchecks.io API: GET /api/v3/checks/<uuid>/pings returns
-              # last ping. We use the ping URL itself for a lightweight probe —
-              # any HTTP 200 means "check has been pinged in its expected window".
-              status=$(curl -fsSL -o /dev/null -w '%{http_code}' "${HEALTHCHECK_URL}" || echo "000")
-              if [ "$status" = "200" ]; then
-                  echo "health OK after ${attempt} attempt(s)"
-                  exit 0
-              fi
-              echo "attempt ${attempt}/24: status=${status}, sleeping 5s"
-              sleep 5
-          done
-          echo "::error::health check timed out after 120s"
-          exit 1
-
-      - name: Dry-run notice
-        if: inputs.dry_run == true
-        run: echo "::notice::dry_run=true — skipped health poll."
+        run: echo "::notice::dry_run=true — built the bundle, skipped tailnet + scp + install."
 
   # ─────────────────────────────────────────────────────────────────
   # SMOKE — end-to-end sanity (still placeholder — no @smoke suite yet)
@@ -255,12 +275,16 @@ jobs:
         if: inputs.dry_run != true
         run: |
           set -euo pipefail
-          # Guarded — if no smoke tests exist yet, don't fail the deploy.
-          if uv run pytest --collect-only -m smoke 2>&1 | grep -q "no tests ran"; then
+          # pytest exits 5 when it collects no tests, which is the state
+          # until a @smoke suite exists: warn and pass. Any other code is
+          # a real failure and passes through.
+          rc=0
+          uv run pytest -m smoke --tb=short || rc=$?
+          if [ "$rc" -eq 5 ]; then
               echo "::warning::no @smoke tests defined yet — skipping"
               exit 0
           fi
-          uv run pytest -m smoke --tb=short
+          exit "$rc"
 
       - name: Dry-run notice
         if: inputs.dry_run == true
@@ -271,20 +295,19 @@ jobs:
   # ─────────────────────────────────────────────────────────────────
   confirm:
     name: Confirm deployment
-    needs: [build, deploy, health-check, smoke]
+    needs: [build, bundle, deploy, smoke]
     if: '!cancelled()'
     runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 1
     steps:
-      - name: Verify all deploy gates passed
-        shell: bash
+      - name: Fail when any gate failed
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        env:
+          RESULTS: ${{ toJSON(needs) }}
         run: |
-          results='${{ toJSON(needs) }}'
-          echo "$results"
+          echo "$RESULTS"
+          echo "::error::One or more deploy gates failed."
+          exit 1
 
-          if echo "$results" | grep -qE '"result":"(failure|cancelled)"'; then
-            echo "::error::One or more deploy gates failed."
-            exit 1
-          fi
-
-          echo "All deploy gates passed."
+      - name: All gates passed
+        run: echo "All deploy gates passed."
