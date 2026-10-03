@@ -27,12 +27,16 @@ permissions:
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────
-  # CHECKS — every per-PR gate in ONE job, one step per check (#397).
+  # CI SUCCESS — every gate in ONE job, one step per check (#397).
+  #
+  # This job IS the single required status check on branch protection,
+  # so its name stays "CI success". No other job and no `needs:` chain:
+  # an aggregator or a second wave would queue behind other PRs' jobs.
   #
   # Why one job: the self-hosted pool is a handful of runners and the
-  # suite used to fan out into ~15 jobs. With several PRs pushing at
-  # once their jobs interleaved in the runner queue, so PR A's Quality
-  # and Unit legs waited behind PR B's and PR C's jobs and nobody
+  # suite used to fan out into ~15 jobs in three `needs:` waves. With
+  # several PRs pushing at once their jobs interleaved in the runner
+  # queue, so later PRs overtook earlier ones between waves and nobody
   # finished. Now a run asks for one runner for its whole suite: GitHub
   # hands queued jobs to idle runners first come, first served, and once
   # a run starts nothing from another PR can cut in. Up to one PR per
@@ -46,13 +50,13 @@ jobs:
   # matching the old fail-fast: false matrix — surface every violation.
   # Docs-only changesets skip the code checks.
   # ─────────────────────────────────────────────────────────────────────
-  checks:
-    name: Checks
+  ci-success:
+    name: CI success
     runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 30
     permissions:
       contents: read
-      pull-requests: write # auto-label + coverage comment
+      pull-requests: write # PR body read, auto-label, coverage comment
     steps:
       - uses: actions/checkout@v7
         with:
@@ -108,6 +112,28 @@ jobs:
           else
             echo "docs=true" >> "$GITHUB_OUTPUT"
           fi
+
+      # Every mandatory template section must have real content. The
+      # body is fetched from the API rather than the event payload, so a
+      # re-run lints the CURRENT body. Editing a body pushes nothing;
+      # scripts/dev/pr-body-recheck.sh re-runs this job when this step's
+      # result goes stale (#350). Dependabot PRs gate here too: the body
+      # rewriter from #344 puts them in the 4-section template (#162).
+      # Keep the step name: the recheck finds it by name.
+      - name: PR body
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        # The self-hosted runner has no gh or jq; curl + python3 it does have.
+        run: |
+          PR_BODY="$(curl -fsSL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" \
+            | python3 -c 'import json, sys; sys.stdout.write(json.load(sys.stdin).get("body") or "")')"
+          export PR_BODY
+          bash scripts/dev/pr-body-lint.sh
 
       # PR title becomes the squash-merge commit message, so this
       # enforces the Conventional Commits convention at merge time.
@@ -311,10 +337,12 @@ jobs:
           uv tool run pip-licenses --format=json \
             | python3 scripts/dev/license-check.py
 
+      # -n 4, not auto: auto counts the host's CPUs, not the container's
+      # 4, and 10+ workers overrun the runner's 4 GB limit (#397).
       - name: Unit tests + coverage
         id: unit
         if: ${{ !cancelled() && steps.sync.outcome == 'success' }}
-        run: uv run pytest tests/unit/ -n auto --cov=src/hermes --cov-branch --cov-report=xml --cov-report=json --cov-report=term
+        run: uv run pytest tests/unit/ -n 4 --cov=src/hermes --cov-branch --cov-report=xml --cov-report=json --cov-report=term
 
       # --bootstrap: skip EMPTY-package FAILs while Phase 0 skeleton is not yet
       # populated. Drop the flag when Phase 1 lands code in application/,
@@ -322,46 +350,6 @@ jobs:
       - name: Coverage floor
         if: ${{ !cancelled() && steps.unit.outcome == 'success' }}
         run: uv run python scripts/dev/coverage-check.py --bootstrap
-
-  # ─────────────────────────────────────────────────────────────────────
-  # PR body linter — every mandatory template section must have real
-  # content, not the placeholder comment left in place. Prevents
-  # "opened a PR with empty body" from ever reaching review.
-  #
-  # The body is fetched from the API rather than the event payload, so a
-  # re-run lints the CURRENT body. Editing a body pushes nothing and does
-  # not re-run CI; .github/workflows/pr-body-recheck.yml re-runs this job
-  # (and CI success, its dependent) when its result goes stale (#350).
-  # Dependabot PRs gate here too: the body rewriter from #344 puts them
-  # in the 4-section template (#162).
-  # ─────────────────────────────────────────────────────────────────────
-  pr-body:
-    name: PR body
-    if: github.event_name == 'pull_request'
-    permissions:
-      contents: read
-      pull-requests: read
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
-    timeout-minutes: 3
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 1
-
-      - name: Lint PR body
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        # The self-hosted runner has no gh or jq; curl + python3 it does have.
-        run: |
-          PR_BODY="$(curl -fsSL \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" \
-            | python3 -c 'import json, sys; sys.stdout.write(json.load(sys.stdin).get("body") or "")')"
-          export PR_BODY
-          bash scripts/dev/pr-body-lint.sh
-
 
   # Add-to-project step deliberately removed.
   #
@@ -375,30 +363,3 @@ jobs:
   # Until then: items get added manually via
   #   gh project item-add 4 --owner ricardoafo --url <issue-or-pr-url>
   # (run by the operator or a scripted post-open flow).
-
-  # ─────────────────────────────────────────────────────────────────────
-  # SUCCESS gate — single required status check on branch protection.
-  # Aggregates results; passes iff every non-skipped job succeeded.
-  # Add / remove jobs above without touching branch protection JSON.
-  # ─────────────────────────────────────────────────────────────────────
-  ci-success:
-    name: CI success
-    needs: [checks, pr-body]
-    if: '!cancelled()'
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
-    timeout-minutes: 1
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 1
-
-      - name: Verify all gates passed
-        shell: bash
-        # Delegates to scripts/dev/ci-success-check.sh — parses needs
-        # context via Python (proper JSON, positive-list allowlist) and
-        # exits non-zero if any job result is outside {success, skipped}.
-        # See the script header for the bug story (PRs #72 and #73 merged
-        # red under the old grep-based check).
-        env:
-          NEEDS_JSON: ${{ toJSON(needs) }}
-        run: bash scripts/dev/ci-success-check.sh

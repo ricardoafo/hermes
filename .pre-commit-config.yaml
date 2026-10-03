@@ -139,12 +139,6 @@ repos:
         files: ^scripts/dev/codeowners-syntax-check\.sh$
         pass_filenames: false
 
-      - id: ci-success-check-self-test
-        name: ci-success-check self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/ci-success-check.sh'
-        language: system
-        files: ^scripts/dev/ci-success-check\.sh$
-        pass_filenames: false
 
       - id: render-pr-body-self-test
         name: render-pr-body self-test
