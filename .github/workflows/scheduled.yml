@@ -10,7 +10,7 @@
 # ## Schedule
 #
 #   30 11 * * *   daily: Semgrep + contract tests
-#   45 11 * * 0   Sundays: the cosmic-ray mutation run
+#   45 11 * * 0   Sundays: the cosmic-ray mutation run, remote branch prune
 #
 # 11:30 UTC is when the self-hosted pool is reliably online. The Sunday
 # cron is a separate entry so the long mutation run never delays the
@@ -29,6 +29,11 @@
 #   the unit-tier mocks cannot see.
 # - mutation: cosmic-ray on the modules in cosmic-ray.toml, with the
 #   kill-rate floor (advisory until #406 enforces it).
+# - branch-prune: deletes remote branches of PRs closed unmerged more
+#   than 3 days ago and no-PR branches idle more than 14 days
+#   (scripts/dev/prune-merged-branches.sh --remote-only). Merged PR
+#   branches are already deleted on merge. The age limits keep in-flight
+#   work, which has no PR until it is finished, out of reach.
 
 name: Scheduled
 
@@ -166,3 +171,23 @@ jobs:
             echo "::error::Kill rate ${kill}% below floor ${floor}%"
             exit 1
           fi
+
+  branch-prune:
+    name: Prune stale remote branches
+    if: >-
+      github.event.schedule == '45 11 * * 0' ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Delete closed and orphaned remote branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/dev/prune-merged-branches.sh --yes --remote-only
