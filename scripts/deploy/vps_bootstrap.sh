@@ -7,8 +7,9 @@
 # (invoked by .github/workflows/vps-bootstrap.yml). Consumes HERMES_*
 # and STORAGE_BOX_* env vars that the workflow propagates from the
 # `prod` GH environment. The script arrives on stdin, so it cannot find
-# files next to itself: the workflow ships deploy/systemd/ to
-# /var/tmp/hermes-bootstrap/systemd/ in an earlier step.
+# files next to itself: the workflow ships deploy/systemd/ and
+# deploy/hermes-notify-failure.sh to /var/tmp/hermes-bootstrap/ in an
+# earlier step.
 #
 # Safe to re-run any number of times. Every step checks state before it
 # acts; the hazards a re-run can hit are named where they apply:
@@ -23,10 +24,13 @@
 #      /opt/hermes/python, both verified after the install (hermes must be
 #      able to run the interpreter).
 #   4. systemd units copied to /etc/systemd/system; hermes.service enabled
-#      (not started: the first deploy starts it). Timers stay off: backup
-#      needs borg set up, and the health timer needs a healthchecks.io check.
+#      (not started: the first deploy starts it). The backup timer stays
+#      off until borg is set up. The OnFailure= alert script goes to
+#      /opt/hermes/bin, so it exists before any release does, and a stale
+#      failed alert unit is reset (#364).
 #   5. /etc/hermes/env.production: rendered from HERMES_* vars only when the
-#      file is absent; when present only owner and mode are repaired.
+#      file is absent; when present only owner and mode are repaired. The
+#      health timer is enabled once the file has a healthchecks.io ping URL.
 #   6. Hetzner Storage Box SSHFS mount (guarded: skipped without credentials).
 #   7. sudoers rule for a non-root CD deploy user (guarded: skipped unless
 #      DEPLOY_USER names one; CD runs as root today, so nothing is written).
@@ -48,6 +52,8 @@ umask 022
 UV_VERSION=0.12.5
 BOOTSTRAP_DIR=/var/tmp/hermes-bootstrap
 SYSTEMD_SRC="$BOOTSTRAP_DIR/systemd"
+NOTIFIER_SRC="$BOOTSTRAP_DIR/hermes-notify-failure.sh"
+NOTIFIER_DST=/opt/hermes/bin/hermes-notify-failure.sh
 ENV_FILE=/etc/hermes/env.production
 PYTHON_DIR=/opt/hermes/python
 # Exact interpreter the release venvs are built on (pyproject requires
@@ -212,6 +218,39 @@ install_units() {
     done
 }
 
+# Copy the failure-alert script $1 to $2 (0755 root:root) when its content
+# differs. hermes-notify-failure@.service runs it from there, not from the
+# release, so an outage caused by a missing or broken release still alerts
+# (#364). install_release.sh refreshes it after each good deploy.
+install_notifier() {
+    local src=$1 dst=$2
+    if [ ! -f "$src" ]; then
+        echo "  ERROR: $src missing — vps-bootstrap.yml must ship deploy/hermes-notify-failure.sh"
+        return 1
+    fi
+    if cmp -s "$src" "$dst"; then
+        echo "  $(basename "$dst"): unchanged"
+    else
+        install -m 0755 -o root -g root "$src" "$dst"
+        echo "  $(basename "$dst"): installed"
+    fi
+}
+
+# Enable and start hermes-health.timer when env file $1 carries a non-empty
+# HERMES_HEALTHCHECKS__PING_URL; without one every ping would fail, so the
+# timer stays off. `enable --now` is a no-op on an already running timer.
+# The ping script only pings while hermes.service is active, so turning the
+# timer on before the first deploy sends nothing.
+ensure_health_timer() {
+    local file=$1
+    if [ -f "$file" ] && grep -qE '^HERMES_HEALTHCHECKS__PING_URL="?[^"[:space:]]' "$file"; then
+        systemctl enable --now hermes-health.timer
+        echo "  hermes-health.timer: enabled and started"
+    else
+        echo "  hermes-health.timer: left off (HERMES_HEALTHCHECKS__PING_URL not set in $file)"
+    fi
+}
+
 # The sudoers file for a non-root CD user: exactly the commands the deploy
 # step runs as root (cd.yml), nothing else. The 12 hex classes match the
 # sha12 release id; sudoers wildcards are fnmatch patterns.
@@ -342,6 +381,7 @@ if [ ! -d "$SYSTEMD_SRC" ]; then
     exit 1
 fi
 install_units "$SYSTEMD_SRC" /etc/systemd/system
+install_notifier "$NOTIFIER_SRC" "$NOTIFIER_DST"
 if [ "$units_changed" = "1" ]; then
     systemctl daemon-reload
 fi
@@ -351,6 +391,9 @@ else
     # No --now: the first deploy starts it, after the release exists.
     systemctl enable hermes.service
 fi
+# A notifier that failed under the old layout stays listed as failed until
+# reset; clear it so `systemctl --failed` only shows live problems.
+systemctl reset-failed 'hermes-notify-failure@*' || true
 rm -rf "$BOOTSTRAP_DIR"
 echo ""
 
@@ -359,6 +402,7 @@ echo ""
 # ────────────────────────────────────────────────────────────────
 echo "---- 5. $ENV_FILE ----"
 ensure_env_file "$ENV_FILE"
+ensure_health_timer "$ENV_FILE"
 echo ""
 
 # ────────────────────────────────────────────────────────────────

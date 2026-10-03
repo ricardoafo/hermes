@@ -46,6 +46,7 @@ jobs:
           sparse-checkout: |
             scripts/deploy
             deploy/systemd
+            deploy/hermes-notify-failure.sh
           sparse-checkout-cone-mode: false
 
       - name: Ensure openssh-client is installed
@@ -131,10 +132,11 @@ jobs:
         run: |
           set -euo pipefail
           # The bootstrap script arrives on stdin, so it cannot read files
-          # next to itself. Stream the unit files to a fixed path first; the
+          # next to itself. Stream the unit files and the failure-alert script
+          # (installed to /opt/hermes/bin, #364) to a fixed path first; the
           # script installs them and deletes the directory.
           remote='rm -rf /var/tmp/hermes-bootstrap && install -d -m 0700 /var/tmp/hermes-bootstrap && tar -xf - -C /var/tmp/hermes-bootstrap'
-          tar -C deploy -cf - systemd | ssh -i ~/.ssh/vps_id -o StrictHostKeyChecking=yes "$VPS_SSH_USER@$VPS_SSH_HOST" "$remote"
+          tar -C deploy -cf - systemd hermes-notify-failure.sh | ssh -i ~/.ssh/vps_id -o StrictHostKeyChecking=yes "$VPS_SSH_USER@$VPS_SSH_HOST" "$remote"
 
       - name: Run bootstrap script on VPS
         env:
