@@ -33,9 +33,18 @@ from hermes.infrastructure.config.models import (
     TaxGuardConfig,
 )
 from hermes.infrastructure.config.root import HermesConfig
+from hermes.infrastructure.config.tax import (
+    NO_PROFILE_NOTICE,
+    SavingsScale,
+    TaxpayerProfile,
+    TaxScalesConfig,
+    load_tax_scales,
+    load_taxpayer_profile,
+)
 
 __all__ = [
     "DEFAULT_CONFIG_DIR",
+    "NO_PROFILE_NOTICE",
     "BinanceExchangeConfig",
     "ConfigError",
     "FeesConfig",
@@ -44,8 +53,13 @@ __all__ = [
     "KrakenPublicConfig",
     "MLConfig",
     "MarketDataConfig",
+    "SavingsScale",
     "SentryConfig",
     "StrategiesConfig",
     "TaxGuardConfig",
+    "TaxScalesConfig",
+    "TaxpayerProfile",
     "load_config",
+    "load_tax_scales",
+    "load_taxpayer_profile",
 ]
