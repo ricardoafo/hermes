@@ -17,8 +17,8 @@ labels the USDT fill price as the lot's EUR cost basis (`simulated.py:371-373`),
 (`lot_consumption.py:112`). This change adds the EUR columns (migration 0003), a fill-path recorder that prices each fill
 through `FxRateProviderPort.get_for_date` and stores `eur_status=pending` when the lookup fails, a `hermes fx backfill`
 command, and a pure FIFO replay that derives every lot and consumption EUR value, fees included, from the trades. Strategy,
-sizing, fee and kill code keep reading native USDT values. Main risk: the default Frankfurter URL answers 301 today (found
-while recording fixtures), so the adapter fails every call until this change moves it to `https://api.frankfurter.dev/v1`.
+sizing, fee and kill code keep reading native USDT values. Main risk: the Frankfurter host in config answered 301 (found while
+recording fixtures), so every call failed; this change points `config/frankfurter.yaml` at `https://api.frankfurter.dev/v1`.
 
 ## Scope
 
@@ -28,13 +28,14 @@ while recording fixtures), so the adapter fails every call until this change mov
   EUR values may be NULL while pending, plus native-basis, link and fee columns.
 - `domain/fx/eur_pricing.py`: `EurPricing` value object, `EurStatus`, `fill_date_madrid`, `rate_is_final`.
 - `domain/lots/eur_fifo.py`: `acquisition_value`, `transmission_value`, `replay_fifo_eur` (pure, quantity FIFO per asset,
-  exact EUR allocation).
+  exact EUR allocation), `exact_sum` (totals without the 28-digit default context rounding them).
 - `domain/trading/trade_record.py`: `TradeRecord` (what one fill writes) and `TradeEur`.
 - `domain/lots/lot.py`: `cost_basis_per_unit` may be `None` (pending); new `cost_basis_native_per_unit`.
 - `domain/lots/lot_consumption.py`: `record` takes an optional EUR sell-fee share and subtracts it.
 - `adapters/exchanges/simulated.py`: `_open_lot` stores the native basis (fee included) and no fake EUR basis.
-- `adapters/fx/frankfurter.py`: default base URL `https://api.frankfurter.dev/v1`; optional `wire_codes` alias map
-  (`USDT -> USD`). Same default in `infrastructure/config/models.py` and `config/frankfurter.yaml`.
+- `adapters/fx/frankfurter.py`: optional `wire_codes` alias map (`USDT -> USD`). The live host
+  `https://api.frankfurter.dev/v1` goes in `config/frankfurter.yaml`, the config model default and `.env.local.example`;
+  the adapter's own default stays `api.frankfurter.app` because an existing unit test pins it (see Risks).
 - `ports/ledger.py`: new `TradeLedgerPort` (`record_trade`, `list_pending_trades`, `apply_trade_eur`).
 - `adapters/ledger/sqlite_ledger.py`: implements `TradeLedgerPort`; re-projects the asset inside each write transaction.
 - `application/ledger/`: `EurPricer` (per-day cache, failure -> `None`), `TradeRecorder`, `backfill_pending_eur`.
@@ -284,9 +285,10 @@ def backfill_pending_eur(ledger: TradeLedgerPort, pricer: EurPricer, *, today: d
 
 ### Entry point
 
-`hermes fx backfill [--db PATH]` (`entrypoints/fx.py`): opens the ledger at `--db` (default `serve.DEFAULT_DB_PATH`), builds
-`FrankfurterAdapter.create(FrankfurterConfig(wire_codes=FrankfurterConfig.USDT_AS_USD))`, runs the backfill with today in
-Madrid, prints `filled=N pending=M`, exits 0 (1 on `LedgerError`).
+`hermes fx backfill [--config-dir DIR] [--db PATH]` (`entrypoints/fx.py`): loads the config like `serve`, opens the
+ledger at `--db` (default `serve.DEFAULT_DB_PATH`), builds a Frankfurter adapter from `config.frankfurter` with
+`wire_codes=FrankfurterConfig.USDT_AS_USD`, runs the backfill with today in Madrid, prints `filled=N pending=M`, exits 0
+(1 on `LedgerError`, 2 usage, 3 config).
 
 ### Commands run against the current tree (2026-10-03)
 
@@ -312,7 +314,12 @@ Madrid, prints `filled=N pending=M`, exits 0 (1 on `LedgerError`).
 ## Risks
 
 - **Frankfurter outage or move**: rows stay pending and `hermes fx backfill` fills them later; the 301 found here shows the
-  host can move under us — the recorded-fixture test pins the response shape, not the host.
+  host can move under us — the recorded-fixture test pins the response shape, not the host. The adapter's built-in default
+  (`FrankfurterAdapter.create()` with no config) still targets the old host because
+  `test_create_default_targets_public_frankfurter` asserts it; changing that assertion needs the Code Owner's word. No
+  production path uses the built-in default (`hermes fx backfill` passes the configured host).
+- **Precision**: EUR shares carry up to 30 decimals so totals are exact; summing them in Python's default 28-digit
+  context rounds. Consumers (#395) total with `exact_sum`.
 - **USDT/USD de-peg**: EUR values inherit the error of reading USDT as USD (ADR-016 Consequences); `eur_source` names the
   approximation so a later re-pricing can find the rows.
 - **Existing VPS ledger rows**: no code writes `trades`/`lots` today, so none should exist; any row that does reads

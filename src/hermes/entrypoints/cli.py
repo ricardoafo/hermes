@@ -2,7 +2,8 @@
 
 Registers subcommands the future integration PRs will fill in. Today
 ``preview`` renders templates, ``health <integration>`` probes an
-integration adapter, and ``serve`` runs the shadow bar loop via
+integration adapter, ``fx backfill`` fills pending EUR ledger values, and
+``serve`` runs the shadow bar loop via
 the composition root in :mod:`hermes.entrypoints.serve`. ``simulate``
 remains a stub that prints "not yet implemented" and exits with code
 2 so composition scripts fail loudly if they attempt to call it.
@@ -50,6 +51,7 @@ from hermes.adapters.console import available_scenarios
 from hermes.entrypoints import _health as health_module
 from hermes.entrypoints import certify as certify_module
 from hermes.entrypoints import console as console_module
+from hermes.entrypoints import fx as fx_module
 from hermes.entrypoints import preview as preview_module
 from hermes.entrypoints import serve as serve_module
 from hermes.infrastructure import sentry_integration
@@ -88,6 +90,7 @@ _SUBCOMMAND_HELP: Final[dict[str, str]] = {
         "registered integration; `hermes health <integration>` probes one."
     ),
     "certify": "Evaluate the next certification gate for a strategy (pre-reg §7).",
+    "fx": "`hermes fx backfill` fills pending EUR values in the ledger.",
     "simulate": "Replay historical scenarios (stub — implemented in a future PR).",
 }
 
@@ -198,6 +201,7 @@ def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
         "health": _dispatch_health,
         "serve": _dispatch_serve,
         "certify": certify_module.main,
+        "fx": _dispatch_fx,
     }
     dispatch = table.get(subcommand)
     if dispatch is not None:
@@ -210,6 +214,19 @@ def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
         return 2
     out.write(f"ERROR: unknown subcommand {subcommand!r}. Run `hermes --help`.\n")
     return 2
+
+
+def _dispatch_fx(rest: list[str], *, stream: Any) -> int:
+    """Handle the ``hermes fx`` subcommand family (``backfill``).
+
+    Args:
+        rest: Residual argv after the ``fx`` token.
+        stream: Output stream.
+
+    Returns:
+        Process exit code from :func:`hermes.entrypoints.fx.main`.
+    """
+    return fx_module.main(rest, stream=stream)
 
 
 def _dispatch_health(rest: list[str], *, stream: Any) -> int:

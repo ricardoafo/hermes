@@ -211,6 +211,25 @@ type = "forbidden"
 source_modules = ["hermes.adapters"]
 forbidden_modules = ["hermes.entrypoints"]
 
+# change trade-eur-values D-3: EUR ledger values are measurement only. Strategy,
+# sizing, fees, risk and kill rules keep reading native (USDT) values.
+[[tool.importlinter.contracts]]
+name = "eur-values-are-measurement-only"
+type = "forbidden"
+source_modules = [
+  "hermes.application.order_router",
+  "hermes.application.strategy_protocol",
+  "hermes.domain.strategy",
+  "hermes.domain.fees",
+  "hermes.domain.risk",
+]
+forbidden_modules = [
+  "hermes.application.ledger",
+  "hermes.domain.fx.eur_pricing",
+  "hermes.domain.lots.eur_fifo",
+  "hermes.domain.trading.trade_record",
+]
+
 [[tool.importlinter.contracts]]
 name = "domain-no-pydantic"
 type = "forbidden"
