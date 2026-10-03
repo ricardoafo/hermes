@@ -41,7 +41,7 @@ minutes of latency and cognitive load.
 
 ---
 
-## The three workflows
+## The pieces
 
 ### 1. `merge-queue.yml` — revalidate-then-merge (PR #209)
 
@@ -51,35 +51,22 @@ merge locally with `git merge --no-commit --no-ff`, runs gates against
 that tree, and only then calls `pulls.merge`. **No push to the PR
 branch, ever** — the approval survives.
 
-**BEHIND-branch reconciliation (added by #209)**: after the freshness
-re-assertion passes but before `pulls.merge`, the queue checks
-`pr.mergeable_state`. If `BEHIND`, it calls `pulls/{n}/update-branch`
-— GitHub creates a merge commit on the PR head, moving it forward to
-include main. That triggers fresh CI on the new head; when CI
-completes, `workflow_run:CI:completed` re-fires this workflow. On
-the next pass the PR is no longer BEHIND and `pulls.merge` succeeds
-because the required `CI success` check is now reported on the
-up-to-date head.
+**Behind branches merge as they are (#413)**: the ruleset does not
+require up-to-date branches, so the queue merges an approved head that
+is behind `main` without updating it. Its gates ran on the merged tree
+against the exact `main` tip it merges into: markdownlint, gitleaks,
+ruff, `mypy --strict`, `lint-imports` and unit plus integration tests.
+The queue never pushes to a PR branch.
 
 **Decisions module**: `tools/merge/decisions.cjs` — pure functions
 covered by `tools/merge/decisions.test.cjs`. `isCandidate`,
 `shouldMerge`, `gateSkip`, `ciRestart`. YAML holds only the I/O.
 
-### 2. `auto-update-pr-branches.yml` — push:main freshness (PR #210)
+### 2. `auto-update-pr-branches.yml` — removed (#413)
 
-**Scope**: complements the queue, which only reconciles APPROVED
-candidates. On every push to `main`, this workflow calls
-`pulls/{n}/update-branch` for every open non-draft PR whose head is
-BEHIND. Non-approved PRs (still in review) no longer linger in the
-"BEHIND main" state until they eventually reach the queue.
-
-**Non-goals**: does NOT merge anything (`pulls.merge` is exclusively
-the queue's job); does NOT bypass any status/review gate; does NOT
-run on draft PRs.
-
-**Safety**: `updateBranch` returns 422 if the head already contains
-main (no-op) or if the branch is not mergeable (conflict). Both are
-logged and swallowed — this workflow never fails, only reports.
+It updated every open PR on each push to `main`, which restarted CI
+across the queue on every merge. The queue's merged-tree gates replaced
+it.
 
 ### 3. GitHub App authentication (PR #213)
 
@@ -89,11 +76,9 @@ authenticate as `github-actions[bot]`, triggering the loop-prevention
 therefore required a manual approval click before CI would run —
 defeating the queue's hands-off intent.
 
-**Fix**: both `merge-queue.yml` and `auto-update-pr-branches.yml` now
-mint short-lived installation tokens from a dedicated GitHub App
+**Fix**: `merge-queue.yml` mints short-lived installation tokens from a dedicated GitHub App
 (`hermes-automation-bot`) via `actions/create-github-app-token@v2`,
-and pass those tokens to `pulls/{n}/update-branch` and `pulls/{n}/merge`
-calls. App-authored commits are a distinct actor and bypass the
+and passes those tokens to its `pulls/{n}/merge` calls. App-authored commits are a distinct actor and bypass the
 loop-prevention rule entirely.
 
 **Attribution**: merges now show as `hermes-automation-bot[bot]` in the
@@ -147,12 +132,9 @@ select repositories** → check the target repo → **Install**.
       --body "<app-id>"
   ```
 
-### 4. Copy the three workflows
+### 4. Copy the workflow
 
-- `.github/workflows/merge-queue.yml` (with #209 reconciliation
-  branch — search for `mergeable_state === 'behind'`)
-- `.github/workflows/auto-update-pr-branches.yml` (with #213 App-token
-  mint at the top of the job)
+- `.github/workflows/merge-queue.yml`
 - `tools/merge/decisions.cjs` + `tools/merge/decisions.test.cjs`
 
 Update any repo-name references. The App-token mint step is guarded
@@ -163,8 +145,8 @@ safe to copy before the App is provisioned.
 
 - Open a test PR. Approve. Confirm the queue merges it without
   requiring you to click "Update branch" or "Approve CI".
-- On a separate open PR, wait for the next push to main. Confirm the
-  auto-update workflow keeps it fresh without needing approval.
+- On a separate approved PR that is behind main, confirm the queue
+  runs the merged-tree gates and merges it without updating the branch.
 
 ---
 
@@ -172,8 +154,8 @@ safe to copy before the App is provisioned.
 
 | Symptom | Root cause | Recovery |
 | --------- | ----------- | ---------- |
-| Queue selects PR but 405 "CI success expected" | App not installed on repo, `updateBranch` falls back to `GITHUB_TOKEN`, loop-prevention held CI. | Install App; re-trigger queue via `gh workflow run merge-queue.yml`. |
-| Auto-update workflow errors "Resource not accessible" | App permissions insufficient (missing Contents R/W or Pull requests R/W). | Update App permissions at <https://github.com/settings/apps/{name}/permissions>; accept the resulting installation-permission-request in the target repo. |
+| Queue selects PR but 405 "CI success expected" | App not installed on repo, `pulls.merge` falls back to `GITHUB_TOKEN`, loop-prevention held CI. | Install App; re-trigger queue via `gh workflow run merge-queue.yml`. |
+| Merge queue errors "Resource not accessible" | App permissions insufficient (missing Contents R/W or Pull requests R/W). | Update App permissions at <https://github.com/settings/apps/{name}/permissions>; accept the resulting installation-permission-request in the target repo. |
 | Downstream CI still shows `action_required` after App install | Variable `HERMES_AUTOMATION_APP_ID` unset — fallback to GITHUB_TOKEN. | Verify `gh variable list --repo <owner>/<repo>` shows `HERMES_AUTOMATION_APP_ID`. |
 | Merge queue merges but new commit not signed by bot | Legacy `HERMES_QUEUE_PAT` secret still set + old PAT-based path in the workflow. | Grep workflows for `HERMES_QUEUE_PAT`; remove references; delete the secret. |
 | App private key compromised (accidentally leaked) | Generate new key at App settings → **Private keys** → Generate new; delete the old key; update the repo secret. | Rotation is O(seconds). |
