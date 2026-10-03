@@ -23,13 +23,20 @@ from hermes.domain.events.trade_executed import TradeExecuted
 from hermes.domain.lots.lot import Lot
 from hermes.domain.lots.lot_consumption import LotConsumption
 from hermes.domain.market_data.kline import KlineInterval
+from hermes.domain.trading.order import OrderSide
 from hermes.domain.trading.trade_record import TradeEur, TradeRecord
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
 
-__all__ = ["LedgerPort", "PendingTrade", "TradeLedgerPort"]
+__all__ = [
+    "EurTradeRow",
+    "LedgerPort",
+    "PendingTrade",
+    "TaxTradeSourcePort",
+    "TradeLedgerPort",
+]
 
 
 @runtime_checkable
@@ -266,5 +273,47 @@ class TradeLedgerPort(Protocol):
 
         Raises:
             LedgerError: On any SQLite failure or an unknown ``trade_id``.
+        """
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class EurTradeRow:
+    """A stored trade with its EUR values, as the tax estimate reads it.
+
+    Attributes:
+        trade_id: Ledger row id; also the FIFO order tie-breaker.
+        asset: Base asset traded.
+        side: BUY opens a lot; SELL consumes lots.
+        qty: Base quantity.
+        executed_at: Fill time, timezone-aware.
+        price_eur: EUR price of one unit, ``None`` while pending.
+        fee_eur: EUR fee, ``None`` while pending.
+    """
+
+    trade_id: int
+    asset: Currency
+    side: OrderSide
+    qty: Decimal
+    executed_at: datetime
+    price_eur: Decimal | None
+    fee_eur: Decimal | None
+
+
+@runtime_checkable
+class TaxTradeSourcePort(Protocol):
+    """Read side of the trade ledger for tax estimates (change ``tax-estimates``).
+
+    Adapters raise :class:`hermes.domain.errors.LedgerError` on failure.
+    """
+
+    def list_eur_trades(self) -> tuple[EurTradeRow, ...]:
+        """Return every trade the FIFO projection replays, all assets.
+
+        Returns:
+            Lot-opening BUYs and every SELL, ordered by ``executed_at`` then id.
+
+        Raises:
+            LedgerError: On any SQLite read failure.
         """
         ...

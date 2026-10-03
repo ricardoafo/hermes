@@ -1,4 +1,4 @@
-"""SQLite ledger adapter (``LedgerPort`` + ``TradeLedgerPort``) — one transaction per write.
+"""SQLite ledger adapter (``LedgerPort``, ``TradeLedgerPort``, ``TaxTradeSourcePort``).
 
 Concrete adapter for the FIFO tax-lot ledger. Uses stdlib ``sqlite3``
 (no ORM — ADR-003 rules out heavyweight tooling for the single-writer
@@ -57,7 +57,7 @@ from hermes.domain.value_objects.price import Price
 from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.infrastructure.time import now_utc
-from hermes.ports.ledger import PendingTrade
+from hermes.ports.ledger import EurTradeRow, PendingTrade
 
 __all__ = ["SqliteLedger"]
 
@@ -506,6 +506,41 @@ class SqliteLedger:
             except (KeyError, ValueError, TypeError) as exc:
                 raise LedgerError(msg=f"trade_events: unreadable payload: {exc}") from exc
         return tuple(trades)
+
+    def list_eur_trades(self) -> tuple[EurTradeRow, ...]:
+        """Return every trade the FIFO projection replays, with its EUR values.
+
+        The same rows :meth:`_reproject` replays: lot-opening BUYs and every
+        SELL, across all assets.
+
+        Returns:
+            Rows ordered by fill time, then row id.
+
+        Raises:
+            LedgerError: On any SQLite read failure.
+        """
+        try:
+            rows = self._conn.execute(
+                "SELECT id, pair_base, side, qty_amount, executed_at, price_eur, fee_eur "
+                "FROM trades "
+                "WHERE side = 'SELL' "
+                "   OR id IN (SELECT trade_id FROM lots WHERE trade_id IS NOT NULL)"
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"list_eur_trades failed: {exc}") from exc
+        trades = [
+            EurTradeRow(
+                trade_id=int(row[0]),
+                asset=Currency(row[1]),
+                side=OrderSide(row[2]),
+                qty=Decimal(row[3]),
+                executed_at=datetime.fromisoformat(row[4]),
+                price_eur=_optional_decimal(row[5]),
+                fee_eur=_optional_decimal(row[6]),
+            )
+            for row in rows
+        ]
+        return tuple(sorted(trades, key=lambda t: (t.executed_at, t.trade_id)))
 
     # ------------------------------------------------------------------
     # Private helpers — SQL and (de)serialisation
