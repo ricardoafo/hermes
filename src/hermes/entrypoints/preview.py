@@ -68,6 +68,7 @@ from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.price import Price
 from hermes.domain.value_objects.quantity import Quantity
+from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.domain.value_objects.weight import Weight
 
 __all__ = ["build_parser", "list_events", "main", "run_preview"]
@@ -157,6 +158,7 @@ def _fixture_trade_executed() -> TradeExecuted:
         qty=Quantity(amount=Decimal("0.5"), asset=Currency.BTC),
         price=Price(amount=Decimal("68000"), pair=_SAMPLE_PAIR),
         fee=Money(amount=Decimal("34"), currency=Currency.USDT),
+        strategy_id=StrategyId("swing-donchian-4h"),
     )
 
 
@@ -382,6 +384,7 @@ def _reconstruct(name: str, data: dict[str, Any]) -> DomainEvent:  # noqa: PLR09
             qty=Quantity(amount=Decimal(str(data["qty"])), asset=pair.base),
             price=Price(amount=Decimal(str(data["price"])), pair=pair),
             fee=_parse_money(data["fee"]),
+            strategy_id=StrategyId(str(data.get("strategy_id", "swing-donchian-4h"))),
         )
     if name == "rebalance-triggered":
         return RebalanceTriggered(

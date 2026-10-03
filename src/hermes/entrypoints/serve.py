@@ -51,6 +51,7 @@ from pathlib import Path
 from typing import Final
 
 import structlog
+from returns.result import Failure
 
 from hermes.adapters.clock.wall import WallClock
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
@@ -68,7 +69,7 @@ from hermes.application.calibration.certification_gates import (
 from hermes.application.notification_router import RouterConfig
 from hermes.application.portfolio.tracker import PortfolioTracker
 from hermes.application.signal_notifier import SignalNotifier
-from hermes.domain.errors import HermesError
+from hermes.domain.errors import HermesError, LedgerError
 from hermes.domain.events.bar_processed import BarProcessed
 from hermes.domain.events.event_bus import EventBus, EventDispatchError
 from hermes.domain.events.signal_emitted import SignalEmitted
@@ -300,6 +301,10 @@ def build_composition(
 
     Returns:
         A fully wired :class:`Composition` ready to hand to :func:`run`.
+
+    Raises:
+        StartupError: The ledger's recorded trades cannot be replayed into the
+            portfolio. The SQLite connection is closed before raising.
     """
     db_target = db_path if db_path is not None else DEFAULT_DB_PATH
     env_snapshot: Mapping[str, str] = dict(os.environ) if env is None else env
@@ -314,11 +319,18 @@ def build_composition(
 
     roster = next(s for s in config.strategies.strategies if s.enabled)
     strategy_id = StrategyId(roster.name)
-    tracker = PortfolioTracker(
-        PortfolioSnapshot.seed(
-            strategy_id, Money(amount=roster.capital_budget, currency=roster.quote)
-        )
+    seed = PortfolioSnapshot.seed(
+        strategy_id, Money(amount=roster.capital_budget, currency=roster.quote)
     )
+    try:
+        rebuilt = PortfolioTracker.rebuilt(seed, ledger.trade_events(strategy_id))
+    except LedgerError as exc:
+        connection.close()
+        raise StartupError(f"cannot rebuild the portfolio from the ledger: {exc.msg}") from exc
+    if isinstance(rebuilt, Failure):
+        connection.close()
+        raise StartupError(f"cannot rebuild the portfolio from the ledger: {rebuilt.failure()}")
+    tracker = rebuilt.unwrap()
     pairs = config.market_data.parsed_pairs()
     strategies: dict[Pair, StrategyPort] = {pair: SwingStrategyAdapter() for pair in pairs}
 
