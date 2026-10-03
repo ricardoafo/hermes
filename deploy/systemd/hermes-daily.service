@@ -1,0 +1,37 @@
+# Daily "hermes is alive" line to Slack (#373).
+#
+# Fired once a day by hermes-daily.timer. The script runs `hermes status
+# --summary` over the ledger (read-only) and the last 24 h of hermes.service's
+# journal, then posts one line to Slack: bars processed, signals, the next 4h
+# bar, error and warning counts, and restarts. Never any P&L.
+#
+# The script ships inside each release, so ExecStart follows the `current`
+# symlink. Slack credentials come from the same env file as the engine.
+
+[Unit]
+Description=Hermes daily alive line (Slack)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=hermes
+Group=hermes
+
+# Read by systemd as root before dropping to User=hermes. No leading "-": a
+# missing file must fail the run, not silently skip it.
+EnvironmentFile=/etc/hermes/env.production
+# Read access to the system journal, for the error and warning counts.
+SupplementaryGroups=systemd-journal
+# Keeps yesterday's NRestarts so the line reports the day's restarts.
+StateDirectory=hermes-daily
+ExecStart=/bin/bash /opt/hermes/current/deploy/hermes-daily-line.sh
+TimeoutStartSec=120s
+
+# Hardening — same pattern as the other hermes units.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+CapabilityBoundingSet=
+ReadWritePaths=

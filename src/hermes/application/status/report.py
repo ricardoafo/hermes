@@ -122,6 +122,7 @@ class StatusReport:
         generated_at: The instant the report describes, UTC-aware.
         unit: systemd state of ``hermes.service``.
         streams: One entry per configured stream, pair then interval order.
+        bars_24h: Bars processed in the last 24 hours, per interval, across pairs.
         signals_24h: Signals recorded in the last 24 hours.
         signals_7d: Signals recorded in the last 7 days.
         open_entries: Open shadow positions, entry facts only.
@@ -131,6 +132,7 @@ class StatusReport:
     generated_at: datetime
     unit: UnitState
     streams: tuple[StreamStatus, ...]
+    bars_24h: tuple[tuple[KlineInterval, int], ...]
     signals_24h: int
     signals_7d: int
     open_entries: tuple[ShadowEntry, ...]
@@ -177,6 +179,10 @@ def build_report(
         generated_at=now,
         unit=unit,
         streams=streams,
+        bars_24h=tuple(
+            (interval, reader.count_bars_since(interval, now - timedelta(hours=24)))
+            for interval in intervals
+        ),
         signals_24h=reader.count_signals_since(now - timedelta(hours=24)),
         signals_7d=reader.count_signals_since(now - timedelta(days=7)),
         open_entries=reader.open_entries(),
@@ -199,6 +205,7 @@ def ledger_missing_report(now: datetime, unit: UnitState, path: str) -> StatusRe
         generated_at=now,
         unit=unit,
         streams=(),
+        bars_24h=(),
         signals_24h=0,
         signals_7d=0,
         open_entries=(),

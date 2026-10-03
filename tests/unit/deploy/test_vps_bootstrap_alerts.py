@@ -161,3 +161,24 @@ def test_bootstrap_workflow_ships_the_notifier_script() -> None:
         sparse["sparse-checkout"].split()
     )
     assert "tar -C deploy -cf - systemd hermes-notify-failure.sh hermes-notify-crash.sh" in runs
+
+
+@_needs_bash
+def test_daily_timer_is_enabled_when_the_env_file_has_a_slack_token(tmp_path: Path) -> None:
+    """With a Slack token the daily alive line runs (#373)."""
+    env_file = _env_file(tmp_path, 'HERMES_SLACK__BOT_TOKEN="xoxb-abc"\n')
+
+    result, calls = _run(tmp_path, "ensure_daily_timer", f"ensure_daily_timer {env_file}")
+
+    assert result.returncode == 0, result.stderr
+    assert calls == "systemctl enable --now hermes-daily.timer\n"
+
+
+@_needs_bash
+def test_daily_timer_stays_off_without_a_slack_token(tmp_path: Path) -> None:
+    """Without a token every daily run would fail; the timer stays off."""
+    env_file = _env_file(tmp_path, 'HERMES_ENV="prod"\n')
+
+    result, calls = _run(tmp_path, "ensure_daily_timer", f"ensure_daily_timer {env_file}")
+
+    assert (result.returncode, calls) == (0, "")
