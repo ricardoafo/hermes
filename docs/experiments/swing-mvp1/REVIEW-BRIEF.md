@@ -28,7 +28,7 @@ While operator slept, 9 background agents completed research and drafts. This br
 | Artifact | Location | Status |
 | ---------- | ---------- | -------- |
 | SYNTHESIS amendment (SA-9/10 + Spec 8/9) | `docs/research/paper-trading/SYNTHESIS-AMENDMENT.md` | Additive to SYNTHESIS, does not modify it |
-| Umbrella ADR-011 paper-trading engine | `docs/architecture/adr-011-paper-trading-engine.md` | PROPOSED, unsigned, 22 decisions |
+| Umbrella ADR-011 paper-trading engine | `docs/architecture/adr-011-paper-trading-engine.md` | Accepted (confirmed 2026-10-03), 22 decisions |
 | Codebase spec-readiness audit | `docs/research/paper-trading/spec-readiness.md` | Ready |
 | Prior-art research on pre-registration | `docs/research/paper-trading/prior-art-preregistration.md` | Ready |
 
