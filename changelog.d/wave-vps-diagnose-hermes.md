@@ -1,0 +1,1 @@
+- `vps-diagnose` now shows `hermes.service` status, its last hour of journal, serve lifecycle events, the failure-alert units, per-integration `hermes health` probes and the newest processed bar per stream from the ledger, all read-only (#348).
