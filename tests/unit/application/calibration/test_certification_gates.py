@@ -145,7 +145,7 @@ class TestSection9Checks:
 
 
 class TestBacktestGate:
-    """UNTRUSTED → BACKTEST_CERTIFIED: §9 on Train+Val plus a calibration fill (§7, §10)."""
+    """UNTRUSTED → BACKTEST_CERTIFIED: §9 on Train+Val, minus OOS-only rows, plus a fill (§7)."""
 
     def test_passes_on_full_evidence(self, pre_reg: PreRegistration) -> None:
         """All §9 rows and one fill certify the backtest."""
@@ -154,12 +154,25 @@ class TestBacktestGate:
 
     # SEV-1: no evidence must never certify (the bug #355 fixes: one fill used to suffice)
     def test_no_evidence_fails_every_row(self, pre_reg: PreRegistration) -> None:
-        """Without metrics, all nine §9 rows and the fill check fail."""
+        """Without metrics, the seven Train+Val §9 rows and the fill check fail."""
         report = evaluate_next_gate(
             _record(_S.UNTRUSTED), GateEvidence(), now=_OOS_DAY, pre_reg=pre_reg
         )
         assert not report.passed
-        assert len(report.failed_checks) == 10
+        assert len(report.failed_checks) == 8
+
+    def test_trade_count_and_ci_are_oos_only(self, pre_reg: PreRegistration) -> None:
+        """Ruling 2026-10-03: few trades and a CI below zero do not block the backtest."""
+        evidence = replace(
+            _ALL_PASS, backtest=replace(_PASSING, trade_count=5, bootstrap_ci_lower=-0.1)
+        )
+        report = evaluate_next_gate(_record(_S.UNTRUSTED), evidence, now=_OOS_DAY, pre_reg=pre_reg)
+        names = [c.name for c in report.checks]
+        assert (report.passed, "trade_count" in names, "bootstrap_ci" in names) == (
+            True,
+            False,
+            False,
+        )
 
     def test_zero_fills_fails(self, pre_reg: PreRegistration) -> None:
         """Metrics without a calibration fill still fail."""

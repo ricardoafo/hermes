@@ -9,8 +9,9 @@ the first. Every threshold comes from
 
 Gates:
 
-- ``UNTRUSTED → BACKTEST_CERTIFIED``: every §9 row on the Train+Val metrics,
-  plus at least one calibration fill.
+- ``UNTRUSTED → BACKTEST_CERTIFIED``: the §9 rows on the Train+Val metrics
+  except the OOS-only trade count and bootstrap CI, plus at least one
+  calibration fill.
 - ``BACKTEST_CERTIFIED → SHADOW_CERTIFIED``: 90+ shadow days, sim-vs-live drift
   p50 below 30 bps, no §10 shadow kill fired.
 - ``SHADOW_CERTIFIED → OOS_CERTIFIED``: one-shot H1 test (§1, §9) on the OOS
@@ -383,11 +384,16 @@ def evaluate_next_gate(
     return _EVIDENCE_GATES[state](sid, evidence, pre_reg)
 
 
+_OOS_ONLY_ROWS = frozenset({"trade_count", "bootstrap_ci"})
+"""§9 rows that apply to the OOS test only (Code Owner ruling, 2026-10-03)."""
+
+
 def _backtest_gate(sid: str, evidence: GateEvidence, pre_reg: PreRegistration) -> GateReport:
     metrics = evidence.backtest or WindowMetrics()
     fills = evidence.calibration_fill_count
+    rows = section9_checks(metrics, pre_reg.h1_thresholds())
     checks = (
-        *section9_checks(metrics, pre_reg.h1_thresholds()),
+        *(row for row in rows if row.name not in _OOS_ONLY_ROWS),
         _check(
             "calibration_fills", ">= 1", None if fills is None else float(fills), (fills or 0) >= 1
         ),
