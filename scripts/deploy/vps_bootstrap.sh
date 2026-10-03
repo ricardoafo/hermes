@@ -110,8 +110,13 @@ if [ -z "${STORAGE_BOX_HOST:-}" ] || [ -z "${STORAGE_BOX_USER:-}" ] || [ -z "${S
     echo "  WARN: storage-box credentials missing — skipping mount"
     echo "  (add STORAGE_BOX_HOST + STORAGE_BOX_USER + STORAGE_BOX_KEY to the prod env when ready)"
 else
-    # Ensure mount point + sshfs binary
-    install -d -m 0755 -o hermes -g hermes /mnt/storage-box
+    # Ensure mount point + sshfs binary. On a re-run the sshfs mount is live
+    # and FUSE rejects chown/chmod on its root, so only prepare it unmounted.
+    if mountpoint -q /mnt/storage-box; then
+        echo "  /mnt/storage-box already mounted — leaving mount point as is"
+    else
+        install -d -m 0755 -o hermes -g hermes /mnt/storage-box
+    fi
     if ! command -v sshfs >/dev/null 2>&1; then
         echo "  installing sshfs..."
         apt-get update -qq && apt-get install -y sshfs
