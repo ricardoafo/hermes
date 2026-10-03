@@ -2,12 +2,13 @@
 
 **Type**: Deploy assets (living scaffolding)
 **Owners**: Ricardo Afonso
-**Description**: VPS bootstrap script, systemd units, and reference material for the CD pipeline defined in `.github/workflows/cd.yml`.
+**Description**: Systemd units and reference material for the VPS bootstrap workflow and the CD pipeline defined in `.github/workflows/cd.yml`.
 
 ## Status
 
-Skeleton — every asset here is a placeholder that pins the SHAPE of
-the deploy target while Phase 0 fills in the payload. See ADR-003 §09
+The bootstrap and the deploy path are implemented
+(`openspec/changes/179-cd-first-real-deploy/change.md`). The health timer,
+the backup timer and the smoke suite are still placeholders. See ADR-003 §09
 (`docs/architecture/adr-003-solution-architecture/09-deployment.md`)
 for the target design.
 
@@ -27,36 +28,37 @@ flowchart TB
 
     M --> WR["workflow_run: CI on main"]
     WR --> CIMAIN["ci.yml runs on main SHA<br/>(same checks, re-validates squash)"]
-    CIMAIN --> PMAIN["push:main event fires cd.yml"]
+    CIMAIN --> PMAIN["operator dispatches cd.yml<br/>(a push:main trigger is a follow-up)"]
 
     subgraph CD["cd.yml — 5 jobs"]
         B["build<br/>uv build → wheel artifact"]
-        D["deploy<br/>scp + ssh + uv pip install<br/>+ systemctl restart hermes-*.service<br/>environment: prod"]
-        H["health-check<br/>curl healthchecks.io URL<br/>poll ×24 @ 5s"]
-        S["smoke<br/>pytest -m smoke against deployed instance"]
+        K["bundle<br/>wheel + hashed requirements<br/>+ config + deploy scripts"]
+        D["deploy<br/>scp bundle + ssh install_release.sh<br/>flip current, restart, health gate<br/>rollback on failure<br/>environment: prod"]
+        S["smoke<br/>pytest -m smoke (no tests yet)"]
         C["confirm<br/>aggregator: all above green?"]
-        B --> D --> H
-        D --> S
-        H --> C
+        B --> K --> D --> S
+        B --> C
+        K --> C
+        D --> C
         S --> C
     end
 
     PMAIN --> B
 
     C --> VPS["VPS hermes-01<br/>(Tailscale-only SSH)"]
-    VPS --> SD["systemd units<br/>hermes-health.timer (placeholder)<br/>hermes-rebalancer.timer (Phase 0)<br/>hermes-swing.service (Phase 1)<br/>hermes-backup.timer (Phase 2)"]
+    VPS --> SD["systemd units<br/>hermes.service (hermes serve)<br/>hermes-health.timer (placeholder, off)<br/>hermes-backup.timer (off until borg is set up)"]
 
     SD -.->|ping every 5min| HC["healthchecks.io<br/>dead-man's-switch"]
     HC -.->|silent → alert| TG["Telegram bot"]
 
-    style B fill:#fff3cd
-    style D fill:#fff3cd
-    style H fill:#fff3cd
     style S fill:#fff3cd
+    style B fill:#d4edda
+    style K fill:#d4edda
+    style D fill:#d4edda
     style C fill:#d4edda
 ```
 
-Yellow = placeholder body (fill in Phase 0). Green = real logic today.
+Yellow = placeholder body. Green = real logic today.
 
 ## Trigger order
 
@@ -64,58 +66,70 @@ Yellow = placeholder body (fill in Phase 0). Green = real logic today.
 2. Human approves → `merge-queue.yml` picks it up
 3. Queue builds merge tree locally, runs tree gates on it, calls `pulls.merge`
 4. Squash lands on `main` → GH fires `push:main` + `workflow_run:CI:completed`
-5. `cd.yml` triggers on `push:main` — builds wheel, deploys, verifies
-6. `confirm` aggregator marks the deployment complete
-7. Systemd services on VPS pick up the new wheel on their next unit start
+5. The operator dispatches `cd.yml` (`workflow_dispatch` only; a `push:main`
+   trigger is a follow-up)
+6. `cd.yml` builds the wheel and the release bundle, installs the release
+   on the VPS and runs the health gate; `confirm` marks the deployment
+   complete
+7. `hermes.service` runs the new release from `/opt/hermes/current`
 
 Cross-references:
 
 - Queue: `.github/workflows/merge-queue.yml`, `tools/merge/decisions.cjs`, `docs/decisions/2026-08-21-revalidate-then-merge.md`
 - CI: `.github/workflows/ci.yml`
-- CD: `.github/workflows/cd.yml` (this dir)
+- CD: `.github/workflows/cd.yml`
 - Runtime: `docs/architecture/adr-003-solution-architecture/09-deployment.md`
 
 ## Contents
 
-| File                                     | Purpose                                                                                             | Status                                    |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------- |
-| `bootstrap-vps.sh`                       | Idempotent VPS provisioning (user, dirs, uv, systemd-creds, Tailscale)                              | skeleton — safe to re-run when filled in  |
-| `systemd/hermes-health.service`          | Pings healthchecks.io via `hermes-health-ping.sh`, only while `hermes.service` is active            | template — copy-and-install, not auto-set |
-| `systemd/hermes-health.timer`            | Fires the ping every 5 min                                                                          | template — copy-and-install, not auto-set |
-| `systemd/hermes-notify-failure@.service` | Started by `hermes.service`'s `OnFailure=`; sends one Telegram message                              | template — copy-and-install, not auto-set |
-| `hermes-health-ping.sh`                  | The conditional ping (`systemctl is-active --quiet hermes.service`, then curl)                      | shipped in each release                   |
-| `hermes-notify-failure.sh`               | Builds and sends the Telegram failure message; needs only bash and curl                             | shipped in each release                   |
-| `systemd/hermes.service`                 | Template unit for the main hermes process (reads `/etc/hermes/env.production`, runs `hermes serve`) | template — copy-and-install, not auto-set |
-| `systemd/hermes.env.example`             | Shape of `/etc/hermes/env.production` — the EnvironmentFile prod systemd loads. Documentation only  | template — never installed automatically  |
+| File                                     | Purpose                                                                                            | Status                                                            |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `systemd/hermes.service`                 | Main hermes process unit (reads `/etc/hermes/env.production`, runs `hermes serve`)                 | installed and enabled by `vps-bootstrap`; first deploy starts it  |
+| `systemd/hermes.env.example`             | Shape of `/etc/hermes/env.production` — the EnvironmentFile prod systemd loads. Documentation only | template — never installed automatically                          |
+| `systemd/hermes-health.service`          | Pings healthchecks.io via `hermes-health-ping.sh`, only while `hermes.service` is active           | installed by `vps-bootstrap`                                      |
+| `systemd/hermes-health.timer`            | Fires the ping every 5 min                                                                         | installed by `vps-bootstrap`; stays disabled                      |
+| `systemd/hermes-backup.service`          | Nightly borg backup of L2 Parquet and SQLite                                                       | installed by `vps-bootstrap`                                      |
+| `systemd/hermes-backup.timer`            | Fires the backup daily at 03:00 UTC                                                                | installed by `vps-bootstrap`; stays disabled until borg is set up |
+| `systemd/hermes-notify-failure@.service` | Started by `hermes.service`'s `OnFailure=`; sends one Telegram message                             | installed by `vps-bootstrap`                                      |
+| `hermes-health-ping.sh`                  | The conditional ping (`systemctl is-active --quiet hermes.service`, then curl)                     | shipped in each release                                           |
+| `hermes-notify-failure.sh`               | Builds and sends the Telegram failure message; needs only bash and curl                            | shipped in each release                                           |
+
+The scripts the workflows run live in `scripts/deploy/`:
+
+| Script               | Runs on                                   | Purpose                                                                            |
+| -------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------- |
+| `vps_bootstrap.sh`   | VPS, from `vps-bootstrap.yml`             | Idempotent provisioning: user, dirs, uv, Python 3.14, units, env file, storage box |
+| `install_release.sh` | VPS, from `cd.yml`                        | Installs one release, flips `current`, restarts the unit, runs the gate            |
+| `health_gate.sh`     | VPS, from the two scripts here            | Unit active for 30 s, same `MainPID`, `serve.run.started` in the journal           |
+| `rollback.sh`        | VPS, by hand or from `install_release.sh` | Flips `current` back to `previous` and re-runs the gate                            |
 
 ## First-time VPS setup
 
-Run once as root on `hermes-01` (via `ssh -i ~/.ssh/hermes_vps_ed25519 root@hermes-01`):
+Dispatch the `vps-bootstrap` workflow (it runs on the `prod` environment,
+over the tailnet):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ricardoafo/hermes/main/deploy/bootstrap-vps.sh | sudo bash
+gh workflow run vps-bootstrap.yml --repo ricardoafo/hermes --ref main
+gh run watch --repo ricardoafo/hermes
 ```
 
-Or clone the repo and run locally:
+The workflow ships `deploy/systemd/` to the VPS and runs
+`scripts/deploy/vps_bootstrap.sh`. Every step is idempotent, so a second
+dispatch is safe. The script:
 
-```bash
-git clone https://github.com/ricardoafo/hermes.git
-cd hermes
-sudo bash deploy/bootstrap-vps.sh
-```
-
-The script is idempotent — re-running is safe and only reconciles
-missing state.
-
-## Post-bootstrap: install systemd units
-
-```bash
-sudo cp deploy/systemd/hermes-health.service /etc/systemd/system/
-sudo cp deploy/systemd/hermes-health.timer /etc/systemd/system/
-sudo cp 'deploy/systemd/hermes-notify-failure@.service' /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now hermes-health.timer
-```
+1. creates the `hermes` system user (nologin);
+2. creates `/opt/hermes/{versions,bin,python}` (root-owned),
+   `/var/lib/hermes` and `/var/log/hermes` (`hermes`-owned),
+   and `/etc/hermes` (root-owned);
+3. installs the uv version pinned in `cd.yml` and Python 3.14.7 under
+   `/opt/hermes/python`, then checks that user `hermes` can run it;
+4. installs the unit files and enables `hermes.service` (the timers stay off);
+5. writes `/etc/hermes/env.production` (`root:root`, `0600`) when it does not
+   exist; an existing file only has its owner and mode repaired;
+6. mounts the Hetzner Storage Box when its credentials are set;
+7. writes `/etc/sudoers.d/hermes-deploy` (`0440`, checked with `visudo -cf`)
+   only when the repo variable `VPS_DEPLOY_USER` names a non-root CD account.
+   CD runs as `root` today, so nothing is written.
 
 Both units read `/etc/hermes/env.production` and run scripts from
 `/opt/hermes/current/deploy/`, so a release must be deployed first. The
@@ -124,18 +138,17 @@ health timer needs `HERMES_HEALTHCHECKS__PING_URL` in that file.
 Verify:
 
 ```bash
-systemctl status hermes-health.timer
-journalctl -u hermes-health.service --since "5 minutes ago"
+ssh hermes-01 'id hermes; stat -c "%a %U:%G" /etc/hermes/env.production; systemctl is-enabled hermes.service'
 ```
 
 ### Alerting when hermes is down
 
 Two independent paths reach the operator on Telegram:
 
-| Path                    | Fires when                                                                                      | Needs                                                     |
-| ----------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| `OnFailure=` notifier   | `hermes.service` enters `failed`: start limit tripped (5 starts in 10 min) or exit code 2 or 3  | `HERMES_TELEGRAM__BOT_TOKEN`, `HERMES_TELEGRAM__CHAT_ID`  |
-| healthchecks.io ping    | `hermes-health-ping.sh` stops pinging: service stopped, crash-looping, or the whole VPS is down | `HERMES_HEALTHCHECKS__PING_URL` and the integration below |
+| Path                  | Fires when                                                                                      | Needs                                                     |
+| --------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `OnFailure=` notifier | `hermes.service` enters `failed`: start limit tripped (5 starts in 10 min) or exit code 2 or 3  | `HERMES_TELEGRAM__BOT_TOKEN`, `HERMES_TELEGRAM__CHAT_ID`  |
+| healthchecks.io ping  | `hermes-health-ping.sh` stops pinging: service stopped, crash-looping, or the whole VPS is down | `HERMES_HEALTHCHECKS__PING_URL` and the integration below |
 
 The notifier sends one message per failure, with the last five journal
 lines (values of secret-looking variables are masked). A crash that is
@@ -161,35 +174,25 @@ sudo systemctl start hermes-notify-failure@hermes.service
 journalctl -u hermes-notify-failure@hermes.service --since "1 minute ago"
 ```
 
-## Post-bootstrap: install the main hermes service + env file
+## The env file
 
 Prod credentials live in `/etc/hermes/env.production` (read by systemd via
 `EnvironmentFile=`) — NOT in a dotenv file inside `/opt/hermes`. The
-target is root-owned and 0600 so `hermes` (or any other user) cannot
+file is root-owned and `0600` so `hermes` (or any other user) cannot
 read the secrets directly; systemd expands the env into the service
 process at start time only. See
 `docs/decisions/2026-08-23-credential-storage-layered-by-env.md` for
 the three-tier rationale (dotenv for dev / GH Secrets for CI / systemd
-EnvironmentFile for prod).
-
-The unit assumes a versioned-release layout: `/opt/hermes/current` is a
-symlink to `/opt/hermes/versions/<version>`, and each release holds its own
-`.venv`, `config/` and `deploy/`. The unit runs
-`/opt/hermes/current/.venv/bin/hermes serve` from `/var/lib/hermes`, the
-only writable path (the SQLite ledger lives there). The deploy creates the
-layout and installs the unit.
+EnvironmentFile for prod) and
+`docs/decisions/2026-10-02-env-file-path-etc-hermes-env-production.md` for
+the path.
 
 Do not copy `hermes.env.example` to the VPS. The `vps-bootstrap` workflow
-(`.github/workflows/vps-bootstrap.yml`) renders the real file from the
-GitHub `prod` environment; the example documents its shape and a unit test
-checks that it loads. Then install the unit:
-
-```bash
-sudo cp /opt/hermes/current/deploy/systemd/hermes.service /etc/systemd/system/
-sudo cp '/opt/hermes/current/deploy/systemd/hermes-notify-failure@.service' /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now hermes.service
-```
+renders the real file from the GitHub `prod` environment, once. A
+re-dispatch leaves an existing file alone. To rotate a secret, edit the
+file on the VPS, or delete it and re-dispatch. A deploy refuses to run
+when the file is not `600 root:root` or when it enables
+`HERMES_ALLOW_MAINNET`.
 
 `hermes.service` stops restarting after 5 failed starts in 10 minutes and
 stays `failed`; its `OnFailure=` then sends a Telegram message (see
@@ -211,30 +214,80 @@ sudo systemctl restart hermes.service
 journalctl -u hermes.service --since "1 minute ago"
 ```
 
+## Deploy and rollback
+
+Dispatch `cd.yml` with `dry_run=true` first: it builds the wheel and the
+release bundle and touches nothing else. Then deploy for real:
+
+```bash
+gh workflow run cd.yml --repo ricardoafo/hermes --ref main -f dry_run=false
+gh run watch --repo ricardoafo/hermes
+```
+
+The deploy ships `hermes-release-<sha12>.tar.gz` to the VPS and runs
+`install_release.sh`. The VPS layout:
+
+```text
+/opt/hermes/
+  versions/<sha12>/   .venv, config/, deploy/, .installed    (3 newest kept)
+  current  -> versions/<sha12>                      (what systemd runs)
+  previous -> versions/<older>                      (rollback target)
+  bin/                health_gate.sh, rollback.sh
+  python/             uv-managed Python 3.14.7
+/etc/hermes/env.production                          (secrets, root:root 0600)
+/var/lib/hermes/hermes.sqlite3                      (state, hermes:hermes)
+```
+
+The release installs from the hash-pinned requirements plus the CI-built
+wheel (`docs/decisions/2026-10-02-vps-install-from-hashed-requirements.md`),
+flips `previous` and `current` atomically, restarts the unit and runs the
+health gate. When the gate fails the script rolls back to `previous` (or
+stops the unit on a first deploy) and the job fails. To roll back by hand:
+
+```bash
+ssh hermes-01 /opt/hermes/bin/rollback.sh
+```
+
+It exits 1 when `current` already equals `previous`. Rollback does not roll
+back `/var/lib/hermes`: the SQLite ledger is shared across versions.
+
+`hermes.service` stops restarting after 5 failed starts in 10 minutes and
+stays `failed`. Exit codes 2 (bad arguments) and 3 (config load failed)
+never restart. A deploy and a rollback both run `reset-failed` before the
+restart. To clear a tripped limit by hand:
+
+```bash
+sudo systemctl reset-failed hermes.service
+sudo systemctl restart hermes.service
+```
+
 Verify:
 
 ```bash
+readlink /opt/hermes/current
 systemctl status hermes.service
 journalctl -u hermes.service --since "5 minutes ago"
 ```
 
 ## GH Actions secrets required (populate on `prod` Environment)
 
-The `cd.yml` workflow references these secrets. Provision them under
-Repo Settings → Environments → `prod`:
+The `cd.yml` and `vps-bootstrap.yml` workflows reference these secrets.
+Provision them under Repo Settings → Environments → `prod`:
 
-| Secret                | Purpose                                                                    |
-| --------------------- | -------------------------------------------------------------------------- |
-| `VPS_SSH_KEY`         | Private SSH key for the deploy user (ed25519)                              |
-| `VPS_SSH_HOST`        | Tailscale hostname (`hermes-01`) — port 22 is CLOSED to public internet    |
-| `VPS_SSH_USER`        | Deploy user (`hermes-deploy` — different from `hermes` service user)       |
-| `VPS_HEALTHCHECK_URL` | Healthchecks.io ping URL for post-deploy verification                      |
+| Secret              | Purpose                                                                           |
+| ------------------- | --------------------------------------------------------------------------------- |
+| `TAILSCALE_AUTHKEY` | Tagged (`tag:ci-runner`) auth key the runner uses to join the tailnet             |
+| `VPS_SSH_KEY`       | Private SSH key for the deploy user (ed25519)                                     |
+| `VPS_SSH_HOST`      | Tailscale hostname (`hermes-01`) — port 22 is CLOSED to public internet           |
+| `VPS_SSH_USER`      | Deploy user. `root` today; the scripts need root (least privilege is a follow-up) |
 
 Environment branch restriction: `main` only — no fork-PR workflows can
-resolve these.
+resolve these. No secret or variable named `HERMES_ALLOW_MAINNET` may be
+set to `yes`.
 
 ## Related
 
 - `.github/workflows/cd.yml` — CD pipeline
+- `.github/workflows/vps-bootstrap.yml` — VPS bootstrap
 - `docs/architecture/adr-003-solution-architecture/09-deployment.md` — full deploy design
 - `docs/guides/vps-operations.md` — VPS ops runbook
