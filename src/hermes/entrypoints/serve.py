@@ -425,6 +425,7 @@ async def _bar_loop(c: Composition, shutdown: asyncio.Event) -> None:
     await loop.warm_up_and_catch_up(shutdown)
     if shutdown.is_set():
         return
+    loop.log_next_due()
     stream = c.feed.stream_closed_bars(c.pairs, c.intervals).__aiter__()
     while (bar := await _next_or_stop(stream, shutdown)) is not None:
         await loop.handle(bar)
@@ -568,6 +569,43 @@ class _BarLoop:
                     )
         c.event_bus.publish(BarProcessed.from_bar(bar, correlation_id=correlation_id))
         self.previous[stream] = bar.open_time
+        # The ledger row alone leaves the journal silent between signals, so
+        # an operator could not tell a quiet market from a stalled loop (#371).
+        _log.info(
+            "serve.bar.processed",
+            pair=str(bar.pair),
+            interval=bar.interval.value,
+            open_time=bar.open_time.isoformat(),
+            close_time=bar.close_time.isoformat(),
+            signal="none" if signal_ is None else signal_.kind.value,
+            next_due=self.next_due(stream).isoformat(),
+        )
+
+    def next_due(self, stream: Stream) -> datetime:
+        """Return when the bar after the last handled one should arrive.
+
+        That bar closes one interval after the last handled bar closed, and the
+        feed delivers it ``settle_delay_seconds`` later (the closed-bar rule).
+
+        Args:
+            stream: A stream with at least one handled or seeded bar.
+
+        Returns:
+            The expected delivery time of the stream's next bar.
+        """
+        duration = interval_duration(stream[1])
+        settle = timedelta(seconds=self.c.config.market_data.settle_delay_seconds)
+        return self.previous[stream] + 2 * duration + settle
+
+    def log_next_due(self) -> None:
+        """Log, once the loop goes live, when each stream's next bar is due."""
+        _log.info(
+            "serve.bar.next_due",
+            streams={
+                f"{pair} {interval.value}": self.next_due((pair, interval)).isoformat()
+                for pair, interval in sorted(self.previous, key=lambda s: (str(s[0]), s[1].value))
+            },
+        )
 
     def _is_next(self, stream: Stream, bar: Bar) -> bool:
         """Return ``False`` for a repeated bar; raise on a skipped one.
