@@ -381,3 +381,31 @@ def test_crash_between_signal_row_and_cursor_row_does_not_notify_twice(tmp_path:
     code = run_once(build(db, boot2, _after(12), telegram=telegram), boot2)
 
     assert (code, [k for k, _ in _signals(db)], telegram.seen) == (0, ["entry"], [])
+
+
+def _live_bar_rows(db: Path) -> list[tuple[str, str, str]]:
+    """Return ``(interval, open_time, close)`` of every live_bars row."""
+    connection = sqlite3.connect(db)
+    try:
+        return connection.execute(
+            "SELECT interval, open_time, close FROM live_bars ORDER BY interval, open_time"
+        ).fetchall()
+    finally:
+        connection.close()
+
+
+def test_every_handled_bar_is_recorded_once_with_its_values(tmp_path: Path) -> None:
+    """#421: each handled bar gets one live_bars row with its exact close; data only.
+
+    The first-boot cursor rows mark warm-up bars as seen without handling
+    them, so they get no live_bars row.
+    """
+    db = tmp_path / "ledger.sqlite3"
+    feed = FakeFeed(warm=history(10), live_bars=live(11, 12))
+    run_once(build(db, feed, _after(12)), feed)
+    rows = _live_bar_rows(db)
+    assert rows == [("4h", h4_bar(i).open_time.isoformat(), str(h4_bar(i).close)) for i in (11, 12)]
+
+    second = FakeFeed(warm=history(12))
+    run_once(build(db, second, _after(12)), second)
+    assert _live_bar_rows(db) == rows

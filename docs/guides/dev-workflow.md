@@ -158,16 +158,17 @@ bash scripts/dev/pr-preflight.sh --body FILE  # also lint a draft PR body
 **What the hook runs** (`--pre-push`):
 
 1. PR title (HEAD subject) follows the conventional-commit rule
-2. Branch is up-to-date with `origin/main`. **Fails fast**: when the base
-   is stale the run stops here, in seconds, with the rebase command.
-3. `uv run ruff format --check .` and `uv run ruff check .`, full tree
-4. `uv run mypy --strict src/hermes`
-5. `uv run lint-imports`, the hexagonal boundary contracts
-6. `markdownlint-cli2 "**/*.md" "#node_modules" "#.venv"`, full tree
-7. Guides index drift check on `docs/guides/README.md`
-8. CHANGELOG fragment and openspec change spec, when the commit type needs
+2. `uv run ruff format --check .` and `uv run ruff check .`, full tree
+3. `uv run mypy --strict src/hermes`
+4. `uv run lint-imports`, the hexagonal boundary contracts
+5. `markdownlint-cli2 "**/*.md" "#node_modules" "#.venv"`, full tree
+6. Guides index drift check on `docs/guides/README.md`
+7. CHANGELOG fragment and openspec change spec, when the commit type needs
    them
-9. (Optional with `--body`) `scripts/dev/pr-body-lint.sh` against the file
+8. (Optional with `--body`) `scripts/dev/pr-body-lint.sh` against the file
+
+There is no "base up-to-date" check: the merge queue keeps branches fresh,
+so a push from an older base is fine.
 
 **Left to CI** in pre-push mode, because CI runs them on every head:
 `pytest tests/unit/` with coverage and the per-package thresholds,
