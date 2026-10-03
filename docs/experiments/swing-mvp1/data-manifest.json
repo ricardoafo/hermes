@@ -1,0 +1,128 @@
+{
+  "datasets": [
+    {
+      "content_sha256": "a49ecf7731c24627adcbc8a1c74c5fc6db48e0153d7081f03335b876d20e9e2d",
+      "dataset_id": "klines/BTCUSDT/1d/train",
+      "interval": "1d",
+      "pair": "BTC/USDT",
+      "row_count": 1399,
+      "source": "binance-vision",
+      "split": "train"
+    },
+    {
+      "content_sha256": "9b40e402b0877bf29f6e425f47fbb03950eb6ee4ac2852cf65088e42ebd0932c",
+      "dataset_id": "klines/BTCUSDT/1d/validation",
+      "interval": "1d",
+      "pair": "BTC/USDT",
+      "row_count": 427,
+      "source": "binance-vision",
+      "split": "validation"
+    },
+    {
+      "content_sha256": "3d26a0b223d0379a0076723bc13ee082f5e7daf6f486f24010b8b858d9c2c937",
+      "dataset_id": "klines/BTCUSDT/4h/train",
+      "interval": "4h",
+      "pair": "BTC/USDT",
+      "row_count": 8394,
+      "source": "binance-vision",
+      "split": "train"
+    },
+    {
+      "content_sha256": "f93ad238fb8d0838f215ce97837aa9fbf25c0945294816e48a93e8754adf0bb0",
+      "dataset_id": "klines/BTCUSDT/4h/validation",
+      "interval": "4h",
+      "pair": "BTC/USDT",
+      "row_count": 2562,
+      "source": "binance-vision",
+      "split": "validation"
+    },
+    {
+      "content_sha256": "7230c692d3f0420d160e4e32f74d974b2aee9c835666f9fa0bf44845c4a54cd3",
+      "dataset_id": "klines/ETHUSDT/1d/train",
+      "interval": "1d",
+      "pair": "ETH/USDT",
+      "row_count": 1399,
+      "source": "binance-vision",
+      "split": "train"
+    },
+    {
+      "content_sha256": "cb3b92fd12a94092ffa0b6c3fe6a1440f77af70cc05db9c98f1261776f748be9",
+      "dataset_id": "klines/ETHUSDT/1d/validation",
+      "interval": "1d",
+      "pair": "ETH/USDT",
+      "row_count": 427,
+      "source": "binance-vision",
+      "split": "validation"
+    },
+    {
+      "content_sha256": "b5437a6b0db132111140ca37369e55eb47b574c3e789824f3befeb88de5a506c",
+      "dataset_id": "klines/ETHUSDT/4h/train",
+      "interval": "4h",
+      "pair": "ETH/USDT",
+      "row_count": 8394,
+      "source": "binance-vision",
+      "split": "train"
+    },
+    {
+      "content_sha256": "122d28d6b1b60c593ae6bb2ae6ac3c417253cf5a83440dc153721a1ecb776d4f",
+      "dataset_id": "klines/ETHUSDT/4h/validation",
+      "interval": "4h",
+      "pair": "ETH/USDT",
+      "row_count": 2562,
+      "source": "binance-vision",
+      "split": "validation"
+    },
+    {
+      "content_sha256": "09afed71659343050ea6266e5a599199e66a3dba207c51ae0235056268a4e629",
+      "dataset_id": "klines/SOLUSDT/1d/train",
+      "interval": "1d",
+      "pair": "SOL/USDT",
+      "row_count": 1399,
+      "source": "binance-vision",
+      "split": "train"
+    },
+    {
+      "content_sha256": "5860b7285f68f84559e321f61cecbfbd6d2d0e289e5d590e217cffd77be98fd9",
+      "dataset_id": "klines/SOLUSDT/1d/validation",
+      "interval": "1d",
+      "pair": "SOL/USDT",
+      "row_count": 427,
+      "source": "binance-vision",
+      "split": "validation"
+    },
+    {
+      "content_sha256": "f007d135d3aadcae5765a3997bee6019fdceb69438fe9230b86e61a35d8506cf",
+      "dataset_id": "klines/SOLUSDT/4h/train",
+      "interval": "4h",
+      "pair": "SOL/USDT",
+      "row_count": 8394,
+      "source": "binance-vision",
+      "split": "train"
+    },
+    {
+      "content_sha256": "5c590f725e35eb926c19126424b33e2ec083657c1bc2fa2a39f19f1dc3f6c23e",
+      "dataset_id": "klines/SOLUSDT/4h/validation",
+      "interval": "4h",
+      "pair": "SOL/USDT",
+      "row_count": 2562,
+      "source": "binance-vision",
+      "split": "validation"
+    }
+  ],
+  "experiment_id": "swing-mvp1-v1",
+  "schema_version": 1,
+  "splits": {
+    "oos": {
+      "end": "2026-12-31T23:59:59+00:00",
+      "start": "2025-09-01T00:00:00+00:00"
+    },
+    "train": {
+      "end": "2024-06-30T23:59:59+00:00",
+      "start": "2020-09-01T00:00:00+00:00"
+    },
+    "validation": {
+      "end": "2025-08-31T23:59:59+00:00",
+      "start": "2024-07-01T00:00:00+00:00"
+    }
+  }
+}
