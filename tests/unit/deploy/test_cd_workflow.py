@@ -39,6 +39,16 @@ def _steps(job: str) -> list[dict[str, Any]]:
     return list(_workflow()["jobs"][job]["steps"])
 
 
+def _label(step: dict[str, Any]) -> str:
+    """Return a step's name, or its action for an unnamed `uses:` step."""
+    return str(step.get("name", step.get("uses", "")))
+
+
+def _dry_run_guarded(step: dict[str, Any]) -> bool:
+    """Return whether a step's condition skips it on a dry run."""
+    return _DRY_RUN_GUARD in str(step.get("if", ""))
+
+
 def test_confirm_needs_every_other_job() -> None:
     """The aggregator must wait on every job, or a failure upstream goes unreported."""
     jobs = _workflow()["jobs"]
@@ -82,10 +92,11 @@ def test_confirm_runs_even_when_an_upstream_job_failed() -> None:
 def test_every_real_deploy_step_is_skipped_on_dry_run() -> None:
     """A dry run must not join the tailnet, scp or ssh: each real step carries the guard."""
     unguarded = [
-        step["name"]
+        _label(step)
         for step in _steps("deploy")
-        if step["name"] not in _ALWAYS_RUN_DEPLOY_STEPS
-        and step.get("if") not in {_DRY_RUN_GUARD, _DRY_RUN_NOTICE_GUARD}
+        if _label(step) not in _ALWAYS_RUN_DEPLOY_STEPS
+        and not _dry_run_guarded(step)
+        and step.get("if") != _DRY_RUN_NOTICE_GUARD
     ]
 
     assert unguarded == []
@@ -96,7 +107,7 @@ def test_deploy_ssh_and_scp_steps_are_all_guarded() -> None:
     risky = [
         step
         for step in _steps("deploy")
-        if step["name"] not in _ALWAYS_RUN_DEPLOY_STEPS
+        if _label(step) not in _ALWAYS_RUN_DEPLOY_STEPS
         and step.get("if") != _DRY_RUN_NOTICE_GUARD
         and (
             re.search(r"\b(ssh|scp)\b", step.get("run", "")) or "tailscale" in step.get("uses", "")
@@ -104,7 +115,7 @@ def test_deploy_ssh_and_scp_steps_are_all_guarded() -> None:
     ]
 
     assert len(risky) >= 3
-    assert [step["name"] for step in risky if step.get("if") != _DRY_RUN_GUARD] == []
+    assert [_label(step) for step in risky if not _dry_run_guarded(step)] == []
 
 
 def test_bundle_job_runs_without_a_dry_run_guard() -> None:
@@ -114,20 +125,51 @@ def test_bundle_job_runs_without_a_dry_run_guard() -> None:
     assert guarded == []
 
 
-def test_deploy_waits_for_the_bundle_and_smoke_waits_for_deploy() -> None:
-    """Ordering: bundle before deploy before smoke, so smoke never runs against a failed deploy."""
-    jobs = _workflow()["jobs"]
-
-    assert (jobs["deploy"]["needs"], jobs["smoke"]["needs"]) == ("bundle", "deploy")
+def test_deploy_waits_for_the_bundle() -> None:
+    """Ordering: the deploy job installs only a bundle that was built."""
+    assert _workflow()["jobs"]["deploy"]["needs"] == "bundle"
 
 
-def test_smoke_guard_maps_pytest_exit_5_to_success() -> None:
-    """Exit code 5 means no tests collected; the old grep for 'no tests ran' never matched."""
-    run = next(step["run"] for step in _steps("smoke") if step.get("name") == "Run smoke suite")
+def test_smoke_runs_after_the_install_and_before_the_rollback() -> None:
+    """Smoke checks the release the install step just put live (#407).
 
-    assert 'if [ "$rc" -eq 5 ]' in run
-    assert 'exit "$rc"' in run
-    assert "no tests ran" not in run
+    Smoke lives in the deploy job because only that runner has the tailnet
+    and SSH key. It must come after the install, and the rollback that
+    reacts to it must come after it.
+    """
+    labels = [_label(step) for step in _steps("deploy")]
+
+    install = labels.index("Install release, restart hermes.service, run health gate")
+    smoke = labels.index("Smoke tests")
+    rollback = labels.index("Roll back after a failed smoke run")
+    assert install < smoke < rollback
+
+
+def test_smoke_step_fails_when_no_tests_run() -> None:
+    """Exit code 5 (no tests collected) must fail the deploy, not pass it (#407).
+
+    The old step mapped exit 5 to success, so every deploy was green with
+    nothing checked. The step now runs pytest directly and requires the
+    smoke environment, so a missing SSH target fails instead of skipping.
+    """
+    step = next(step for step in _steps("deploy") if step.get("name") == "Smoke tests")
+
+    assert "uv run pytest tests/smoke -m smoke" in step["run"]
+    assert "-eq 5" not in step["run"]
+    assert step["env"]["HERMES_SMOKE_REQUIRED"] == "1"
+
+
+def test_failed_smoke_rolls_back_only_after_a_smoke_failure() -> None:
+    """The rollback step fires on a failed smoke run and never on a dry run."""
+    step = next(
+        step
+        for step in _steps("deploy")
+        if step.get("name") == "Roll back after a failed smoke run"
+    )
+
+    assert "steps.smoke.outcome == 'failure'" in step["if"]
+    assert _dry_run_guarded(step)
+    assert "/opt/hermes/bin/rollback.sh" in step["run"]
 
 
 def _setup_uv_versions(job: str) -> list[str]:
@@ -147,7 +189,7 @@ def test_bootstrap_installs_the_same_uv_version_as_the_bundle_job() -> None:
     assert [match.group(1)] == _setup_uv_versions("bundle")
 
 
-@pytest.mark.parametrize("job", ["bundle", "smoke"])
+@pytest.mark.parametrize("job", ["bundle", "deploy"])
 def test_setup_uv_versions_agree_across_jobs(job: str) -> None:
     """Every job that uses uv pins the same version as the reusable wheel build."""
     wheel_workflow = yaml.safe_load(
