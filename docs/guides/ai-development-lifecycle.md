@@ -259,6 +259,75 @@ in hermes.
 - **State**: 📅 Phase 0+ (structlog scaffold in Phase 0; full stack in
   Phase 2+)
 
+## How AI-authored code catches bugs before merge
+
+Steps 5 and 6 above, zoomed in for a change written by a sub-agent. The
+operator's prompt sets the bar, the sub-agent writes tests first, and
+four gates check the result before a human reviews it.
+
+```mermaid
+sequenceDiagram
+    participant O as Operator
+    participant S as Sub-agent
+    participant H as Pre-commit hooks
+    participant W as create-pr.sh
+    participant CI
+    O->>S: Prompt cites ai-authored-tests.md<br/>and asks for tiers + TDD posture
+    S->>S: Write failing tests from the spec
+    S->>S: Write the code until they pass
+    S->>H: git commit
+    H-->>S: Reject a new module without test_<name>.py
+    S->>S: mutation-diff.sh on domain/application changes
+    S->>W: PR body with "Test tiers touched"
+    W-->>S: Refuse a body without the line (exit 6)
+    W->>CI: Open the PR
+    CI-->>O: Unit, integration, contract and coverage gates
+    S-->>O: Report tiers touched + tests before/after code
+```
+
+### Test-first discipline
+
+A sub-agent writes the tests before the production code: one test per
+invariant in the spec, run red, then code until green. When that is not
+possible (a spike, an exploratory adapter), it says so in its report:
+"TDD posture: tests after". The claim is cheap to make honestly and
+tells the reviewer how much to trust that the tests came from the spec
+rather than from the code.
+
+### Which tiers each kind of PR needs
+
+| PR type | Unit | Property | Contract | Integration | Mutation |
+| ------- | ---- | -------- | -------- | ----------- | -------- |
+| Feature in `domain/` or `application/` | Required | When the rules below apply | — | When it composes adapters | `mutation-diff.sh` before the PR |
+| Feature in an adapter | Required | When the rules below apply | Required for a new external wire | Required when it crosses a port | — |
+| Bug fix | Required: the regression test, red before the fix | If the bug was an edge case | If the bug was a wire-shape mismatch | If the bug crossed a seam | Re-run on the fixed lines |
+| Refactor | Existing tests stay green, unchanged | — | — | — | Kill rate must not drop |
+| Docs, CI, tooling | `none (docs only)` or the script's self-test | — | — | — | — |
+
+### When to add each tier
+
+- **Property tests** (hypothesis): numeric invariants (money, quantity,
+  FIFO lots, tax amounts), anything with a loop whose termination
+  depends on data (pagers, rate limiters, retries), parsers, and state
+  machines. Both infinite loops in
+  [`ai-authored-tests.md` § Bug discovery timing](ai-authored-tests.md#bug-discovery-timing)
+  were property-test finds.
+- **Contract tests**: any external wire, meaning an exchange, an FX
+  feed, a notifier or a webhook. Record the real response with `respx`
+  and snapshot it with `syrupy`; test what the service actually
+  returns, not what its docs say.
+- **Integration tests**: when two or more adapters compose behind a
+  use case (ledger + price lookup, bar feed + strategy), or when a
+  stateful port needs its real SQLite schema.
+- **Mutation**: any new or changed logic in `src/hermes/domain/` or
+  `src/hermes/application/`. `bash scripts/dev/mutation-diff.sh`
+  mutates only the changed lines (config `cosmic-ray-diff.toml`, whose
+  scope is the two directories, so new modules are included
+  automatically) and fails below an 80% kill rate.
+
+The authoritative list of tiers, where each runs and its status is
+[`test-tiers.md`](test-tiers.md).
+
 ## Gaps table
 
 | # | Area | State | Gap |

@@ -16,7 +16,7 @@ Reference: openspec/changes/console-read-model/change.md (D-4, D-9).
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC
 from typing import Final, TextIO
@@ -44,11 +44,12 @@ __all__ = [
     "resolve_read_model",
     "run_overview",
     "run_positions",
+    "run_tui",
     "split_demo_flag",
 ]
 
 DEMO_ENV_VAR: Final = "HERMES_CONSOLE_DEMO"
-CONSOLE_COMMANDS: Final[frozenset[str]] = frozenset({"activity", "positions"})
+CONSOLE_COMMANDS: Final[frozenset[str]] = frozenset({"activity", "positions", "status", "tui"})
 _FLAG: Final = "--demo"
 
 
@@ -160,7 +161,9 @@ def resolve_read_model(*, demo_flag: str | None, env: Mapping[str, str]) -> Cons
 
 
 def run_overview(scenario: str, stream: TextIO) -> int:
-    """Print the overview of ``scenario`` to ``stream``.
+    """Print the home screen of ``scenario`` to ``stream`` as static text.
+
+    This is the same screen ``hermes tui`` shows, without the keys.
 
     Args:
         scenario: Scenario named by ``--demo``.
@@ -259,4 +262,48 @@ def _positions_without_data(stream: TextIO, *, as_json: bool) -> int:
         stream.write(json.dumps({"positions": [], "note": _NO_FILLS_NOTE}, indent=2) + "\n")
     else:
         stream.write(f"No open shadow positions.\n{_NO_FILLS_NOTE}\n")
+    return 0
+
+
+_TUI_USAGE: Final = "Usage: hermes [--demo SCENARIO] tui"
+
+
+def run_tui(
+    args: list[str],
+    stream: TextIO,
+    *,
+    demo_flag: str | None = None,
+    env: Mapping[str, str] | None = None,
+    runner: Callable[[ConsoleReadModel], None] | None = None,
+) -> int:
+    """Run ``hermes tui``, the read-only home screen.
+
+    Without a demo scenario there is no live read model yet, so the command
+    says so and exits with a usage error instead of showing an empty screen.
+
+    Args:
+        args: Arguments after ``tui``; none are accepted.
+        stream: Output stream for errors.
+        demo_flag: Scenario from the leading ``--demo`` option, if any.
+        env: Environment snapshot; defaults to empty.
+        runner: Runs the app on the read model; defaults to the Textual home
+            screen (imported lazily so the other commands stay fast).
+
+    Returns:
+        0 after the operator quits, 2 for a usage error, an unknown scenario or
+        no data source.
+    """
+    if args:
+        stream.write(f"ERROR: bad arguments. {_TUI_USAGE}\n")
+        return 2
+    try:
+        model = resolve_read_model(demo_flag=demo_flag, env=env or {})
+    except (LiveReadModelUnavailableError, UnknownScenarioError) as exc:
+        stream.write(f"ERROR: {exc}\n")
+        return 2
+    if runner is None:
+        from hermes.entrypoints.tui import run_home  # noqa: PLC0415 - Textual is slow to import
+
+        runner = run_home
+    runner(model)
     return 0

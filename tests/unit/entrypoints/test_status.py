@@ -242,3 +242,42 @@ def test_systemd_probe_is_unknown_without_systemctl(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(status_module.shutil, "which", lambda _: None)
 
     assert status_module.systemd_unit_state() is UnitState.UNKNOWN
+
+
+@pytest.mark.parametrize(
+    ("scenario", "code", "verdict"),
+    [
+        ("ok-two-positions", 0, "● live · checked 14:00 · next 18:00"),
+        ("late", 1, "◐ 18:00 check late · 12m"),
+        ("down-stale", 1, "✖ hermes down since 18:04"),
+    ],
+)
+def test_demo_status_shows_the_scenario_heartbeat(scenario: str, code: int, verdict: str) -> None:
+    """`hermes --demo SCENARIO status` shows that heartbeat, tagged, with matching exit code."""
+    out = io.StringIO()
+
+    rc = cli.main(["--demo", scenario, "status"], stream=out)
+
+    assert rc == code
+    assert "DEMO DATA" in out.getvalue().splitlines()[0]
+    assert verdict in out.getvalue()
+
+
+def test_demo_status_reads_the_environment_variable() -> None:
+    """HERMES_CONSOLE_DEMO selects a scenario like the flag does."""
+    out = io.StringIO()
+
+    rc = status_module.main(["--json"], stream=out, env={"HERMES_CONSOLE_DEMO": "late"})
+    data = json.loads(out.getvalue())
+
+    assert (rc, data["demo_scenario"], data["heartbeat"]["state"]) == (1, "late", "late")
+
+
+def test_demo_status_with_an_unknown_scenario_exits_two() -> None:
+    """A typo in the scenario is a usage error."""
+    out = io.StringIO()
+
+    rc = status_module.main([], stream=out, demo_flag="no-such-scenario")
+
+    assert rc == 2
+    assert out.getvalue().startswith("ERROR:")

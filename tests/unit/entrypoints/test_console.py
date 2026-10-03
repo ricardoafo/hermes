@@ -23,6 +23,7 @@ from hermes.entrypoints.console import (
     DemoFlagError,
     LiveReadModelUnavailableError,
     resolve_read_model,
+    run_tui,
     split_demo_flag,
 )
 
@@ -123,3 +124,48 @@ def test_no_demo_means_no_console_source_yet(env: dict[str, str]) -> None:
     """Until the ledger read model lands, only demo data can be shown."""
     with pytest.raises(LiveReadModelUnavailableError, match="--demo"):
         resolve_read_model(demo_flag=None, env=env)
+
+
+def test_tui_without_a_demo_says_there_is_no_live_source() -> None:
+    """`hermes tui` with no scenario exits 2 and points at --demo instead of an empty screen."""
+    stream = io.StringIO()
+    rc = run_tui([], stream, env={}, runner=lambda model: None)
+    assert (rc, "use --demo <scenario>" in stream.getvalue()) == (2, True)
+
+
+def test_tui_rejects_extra_arguments() -> None:
+    """`hermes tui` takes no arguments."""
+    stream = io.StringIO()
+    rc = run_tui(["--json"], stream, demo_flag="late", runner=lambda model: None)
+    assert (rc, "Usage: hermes [--demo SCENARIO] tui" in stream.getvalue()) == (2, True)
+
+
+def test_tui_runs_the_app_on_the_demo_read_model() -> None:
+    """With a scenario the runner receives the fixture read model of that scenario."""
+    seen: list[str | None] = []
+    rc = run_tui(
+        [],
+        io.StringIO(),
+        demo_flag=None,
+        env={DEMO_ENV_VAR: "late"},
+        runner=lambda model: seen.append(model.demo_scenario),
+    )
+    assert (rc, seen) == (0, ["late"])
+
+
+def test_demo_flag_reaches_the_tui_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`hermes --demo X tui` is accepted as a console command and starts the app."""
+    seen: list[str | None] = []
+    monkeypatch.setattr(
+        "hermes.entrypoints.tui.run_home", lambda model: seen.append(model.demo_scenario)
+    )
+    rc = cli_module.main(["--demo", "ok-two-positions", "tui"], stream=io.StringIO())
+    assert (rc, seen) == (0, ["ok-two-positions"])
+
+
+def test_static_home_screen_has_no_tax_footnote_and_no_all_good_panel() -> None:
+    """`hermes --demo X` is the quiet home screen: waterfall numbers only."""
+    stream = io.StringIO()
+    cli_module.main(["--demo", "ok-two-positions"], stream=stream)
+    text = stream.getvalue()
+    assert [w in text for w in ("FIFO", "All good", "Your move", "USDT")] == [False] * 4

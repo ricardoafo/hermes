@@ -179,6 +179,10 @@ him decide.
   (domain ≥95%, application ≥90%, adapters ≥80-90%).
 - SEV-1 test paths must be annotated `# SEV-1: <rubric row>` above the
   test function (enforced by `sev1_guard` pytest plugin).
+- Every NEW module under `src/hermes/` (not `__init__`, not
+  `_private`, not `ports/`) lands with a `tests/unit/**/test_<name>.py`
+  in the same commit. The `test-file-adjacency` pre-commit hook and
+  `pr-preflight.sh` reject it otherwise (#160).
 - Never mock the exchange in domain tests. Domain tests use the
   in-memory adapter fake. Adapters have contract tests against
   recorded HTTP fixtures via `syrupy` + `respx` (per ADR-007).
@@ -363,6 +367,22 @@ Three rules keep delegations lean:
    scripting. Rationale + design tradeoffs:
    [`docs/decisions/2026-08-23-fetch-before-launch-tooling.md`](docs/decisions/2026-08-23-fetch-before-launch-tooling.md).
    The prose norm above STAYS — the tool ENFORCES it.
+5. **Every code-writing sub-agent prompt carries the test-tier
+   mandate** (#160). The prompt cites
+   [`docs/guides/ai-authored-tests.md`](docs/guides/ai-authored-tests.md)
+   and requires the sub-agent to report back:
+   - **Tiers touched** — which of unit / property / contract /
+     integration / mutation the change adds or changes tests in. The
+     same list goes in the PR body as `Test tiers touched: ...`;
+     `create-pr.sh` refuses a PR without it (exit 6).
+   - **TDD posture** — whether the tests were written BEFORE or AFTER
+     the production code. "After" is allowed but must be said, so the
+     reviewer knows the tests were not driven by the spec.
+
+   Copy-paste text: item 11 of
+   [`scripts/dev/sub-agent-prompt-checklist.md`](scripts/dev/sub-agent-prompt-checklist.md).
+   Which tiers a change needs: [`docs/guides/ai-development-lifecycle.md`
+   § How AI-authored code catches bugs before merge](docs/guides/ai-development-lifecycle.md#how-ai-authored-code-catches-bugs-before-merge).
 
 Rationale: a prior apply phase burned ~200k tokens re-describing an
 existing `change.md` inline in a sub-agent prompt. The file IS the

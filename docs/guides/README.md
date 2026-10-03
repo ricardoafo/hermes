@@ -19,8 +19,8 @@ of conflict entirely.
 <!-- guides-index-start -->
 | Guide | What it covers | Last updated |
 | ----- | -------------- | ------------ |
-| [ai-authored-tests.md](ai-authored-tests.md) | What makes a unit test meaningful, how AI typically fails at writing tests, the protocol AI must follow in this repo, and the tooling that enforces it. | 2026-10-03 |
-| [ai-development-lifecycle.md](ai-development-lifecycle.md) | End-to-end flow from idea to VPS runtime; how milestones, issues, and the project board fill in as work moves. | 2026-10-03 |
+| [ai-authored-tests.md](ai-authored-tests.md) | What makes a unit test meaningful, how AI typically fails at writing tests, the protocol AI must follow in this repo, and the tooling that enforces it. | 2026-10-04 |
+| [ai-development-lifecycle.md](ai-development-lifecycle.md) | End-to-end flow from idea to VPS runtime; how milestones, issues, and the project board fill in as work moves. | 2026-10-04 |
 | [automation-trust-chain.md](automation-trust-chain.md) | How PRs #209 + #210 + #213 combine to give a hands-off "idea → merge to main" flow. Cross-repo reproduction reference. | 2026-10-03 |
 | [code-conventions.md](code-conventions.md) | Design patterns, error handling, immutability, factories, async, performance, polyglot posture, testing, time handling, event schema versioning, feature flags, engine pause, migrations, and public/internal API conventions. | 2026-08-22 |
 | [dev-workflow.md](dev-workflow.md) | Branching, commits, PRs, merge policy, delete-branch safety, zero-footprint policy. | 2026-10-03 |
@@ -29,7 +29,7 @@ of conflict entirely.
 | [prose-style.md](prose-style.md) | Comments, docstrings, docs, PR/issue bodies — banned words, formatting rules, per-artifact style. | 2026-08-22 |
 | [release.md](release.md) | How to tag a release, what the release workflow does, how to | 2026-10-03 |
 | [test-tiers.md](test-tiers.md) | The single table of test tiers: what each one is, which workflow or command runs it, how often, and whether it is live or planned; plus coverage floors and layer-isolation contracts. | 2026-10-03 |
-| [vps-operations.md](vps-operations.md) | SSH access, OS maintenance, Docker + Tailscale + ufw ops, systemd services, troubleshooting. | 2026-10-03 |
+| [vps-operations.md](vps-operations.md) | SSH access, OS maintenance, Docker + Tailscale + ufw ops, systemd services, troubleshooting. | 2026-10-04 |
 <!-- guides-index-end -->
 
 ## When to add a guide
