@@ -29,12 +29,15 @@ __all__ = [
     "arrow",
     "cushion_level",
     "fmt_atr",
+    "fmt_atr_range",
     "fmt_change",
     "fmt_eur",
+    "fmt_eur_price",
     "fmt_level",
     "fmt_pct",
     "fmt_price",
     "fmt_qty",
+    "fmt_stop",
     "round2",
     "signed_eur",
     "signed_pct",
@@ -143,6 +146,27 @@ def fmt_price(value: Decimal) -> str:
     return f"{value:.4g}"
 
 
+def fmt_eur_price(value: Decimal) -> str:
+    """Return a coin price in EUR with the precision of :func:`fmt_price`."""
+    return f"€{fmt_price(value)}"
+
+
+def fmt_stop(price_eur: Decimal, distance_pct: Decimal) -> str:
+    """Return the stop as a EUR price and the distance to it, e.g. ``€2,166 · minus 3.9%``.
+
+    Args:
+        price_eur: Stop level in EUR.
+        distance_pct: Distance from the current price down to the stop, percent
+            (positive when the stop sits below the price).
+
+    Returns:
+        The price and the signed distance to one decimal.
+    """
+    rounded = distance_pct.quantize(_TENTH, rounding=ROUND_HALF_UP)
+    sign = MINUS if rounded > _ZERO else "+" if rounded < _ZERO else ""
+    return f"{fmt_eur_price(price_eur)} · {sign}{abs(rounded)}%"
+
+
 def fmt_qty(value: Decimal) -> str:
     """Return a quantity without trailing zeros, e.g. ``0.035``."""
     return f"{value.normalize():f}"
@@ -151,6 +175,11 @@ def fmt_qty(value: Decimal) -> str:
 def fmt_atr(value: Decimal) -> str:
     """Return a distance in ATR to one decimal, e.g. ``1.4 ATR``."""
     return f"{value.quantize(_TENTH, rounding=ROUND_HALF_UP)} ATR"
+
+
+def fmt_atr_range(value: Decimal) -> str:
+    """Return the detail-view distance label: a number, times, average range (ATR)."""
+    return f"{value.quantize(_TENTH, rounding=ROUND_HALF_UP)} {TIMES} average range (ATR)"
 
 
 def sparkline(values: Sequence[Decimal], width: int) -> str:

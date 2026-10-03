@@ -178,6 +178,8 @@ class PortfolioSummary:
         open_pnl: Unrealised net P&L of open positions, before tax.
         open_tax_if_sold: Tax if every open position were sold now.
         tax_band: Footnote data; ``None`` while tax is pending.
+        starting_capital: EUR the account started with, if known.
+        started_on: Day the account started, if known.
     """
 
     range: PortfolioRange
@@ -194,6 +196,8 @@ class PortfolioSummary:
     open_pnl: Decimal
     open_tax_if_sold: Tax
     tax_band: TaxBand | None
+    starting_capital: Decimal | None = None
+    started_on: date | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,6 +218,8 @@ class PositionRow:
         high_since_entry: Highest price since entry.
         stop_distance_atr: Distance from current price to stop, in ATR.
         stop_distance_pct: Distance from current price to stop, percent.
+        eur_per_usdt: EUR for one unit of the quote currency (USDT) at read time;
+            the console shows every price in EUR through it.
     """
 
     coin: str
@@ -229,6 +235,27 @@ class PositionRow:
     high_since_entry: Decimal
     stop_distance_atr: Decimal
     stop_distance_pct: Decimal
+    eur_per_usdt: Decimal = Decimal(1)
+
+    @property
+    def entry_eur(self) -> Decimal:
+        """Return the entry price in EUR."""
+        return self.entry_price * self.eur_per_usdt
+
+    @property
+    def current_eur(self) -> Decimal:
+        """Return the current price in EUR."""
+        return self.current_price * self.eur_per_usdt
+
+    @property
+    def stop_eur(self) -> Decimal:
+        """Return the stop level in EUR."""
+        return self.stop_price * self.eur_per_usdt
+
+    @property
+    def high_eur(self) -> Decimal:
+        """Return the highest price since entry in EUR."""
+        return self.high_since_entry * self.eur_per_usdt
 
 
 @dataclass(frozen=True, slots=True)
@@ -272,6 +299,16 @@ class PositionDetail:
         """Return ``gross - fees_paid - fees_to_close - tax`` (tax zero while pending)."""
         return self.gross - self.fees_paid - self.fees_to_close - tax_amount(self.tax)
 
+    @property
+    def now_worth(self) -> Decimal:
+        """Return what the position is worth at the current price, EUR."""
+        return self.row.size * self.row.current_eur
+
+    @property
+    def cost(self) -> Decimal:
+        """Return ``size x entry + buy fee`` in EUR."""
+        return self.row.size * self.row.entry_eur + self.fees_paid
+
 
 class ActivityKind(StrEnum):
     """Kinds of activity rows. BAR and SIGNAL appear only on request."""
@@ -303,6 +340,7 @@ class ActivityItem:
         count: Occurrences folded into this row.
         stop_from: First stop level of a folded stop raise.
         stop_to: Last stop level of a folded stop raise.
+        eur_per_usdt: EUR for one unit of the quote currency at read time.
     """
 
     at: datetime
@@ -314,6 +352,12 @@ class ActivityItem:
     count: int = 1
     stop_from: Decimal | None = None
     stop_to: Decimal | None = None
+    eur_per_usdt: Decimal = Decimal(1)
+
+    @property
+    def price_eur(self) -> Decimal | None:
+        """Return the fill price in EUR, or ``None`` without a price."""
+        return None if self.price is None else self.price * self.eur_per_usdt
 
 
 @dataclass(frozen=True, slots=True)
