@@ -94,6 +94,7 @@ _SUBCOMMAND_HELP: Final[dict[str, str]] = {
     ),
     "certify": "Evaluate the next certification gate for a strategy (pre-reg §7).",
     "fx": "`hermes fx backfill` fills pending EUR values in the ledger.",
+    "positions": "Open shadow positions, net per row; `positions COIN` for the detail.",
     "archive-check": "Compare yesterday's live bars with the Binance archive (read-only).",
     "journal": "Record, list and review Code Owner decisions (decision journal).",
     "status": "Read-only progress check: verdict, last and next bar per stream.",
@@ -167,6 +168,14 @@ def _initialize_sentry_from_env(env: dict[str, str]) -> None:
     sentry_integration.initialize(dsn=dsn, environment=environment)
 
 
+def _leading_demo_scenario(args: list[str]) -> str | None:
+    """Return the scenario of a leading ``--demo`` option, or ``None``."""
+    try:
+        return console_module.split_demo_flag(args).scenario
+    except console_module.DemoFlagError:
+        return None
+
+
 def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
     """Dispatch the invoked subcommand.
 
@@ -193,6 +202,7 @@ def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
     # so the CLI never crashes on a Sentry failure.
     _initialize_sentry_from_env(dict(os.environ))
 
+    demo_scenario = _leading_demo_scenario(args)
     demo_exit, args = console_module.apply_demo_flag(args, out)
     if demo_exit is not None:
         return demo_exit
@@ -208,6 +218,9 @@ def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
         "serve": _dispatch_serve,
         "certify": certify_module.main,
         "fx": _dispatch_fx,
+        "positions": lambda rest, *, stream: console_module.run_positions(
+            rest, stream, demo_flag=demo_scenario, env=os.environ
+        ),
         "archive-check": archive_check_module.main,
         "journal": journal_module.main,
         "status": status_module.main,

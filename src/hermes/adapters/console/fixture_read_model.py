@@ -258,6 +258,7 @@ def _portfolios(raw: _Json) -> dict[PortfolioRange, PortfolioSummary]:
     open_pnl = _dec(raw, "open_pnl")
     open_tax = _tax(raw, "open_tax_if_sold")
     band = _tax_band(raw)
+    started_on = _opt_str(raw, "started_on")
     out: dict[PortfolioRange, PortfolioSummary] = {}
     for range_ in PortfolioRange:
         entry = _obj(ranges, range_.value)
@@ -276,11 +277,21 @@ def _portfolios(raw: _Json) -> dict[PortfolioRange, PortfolioSummary]:
             open_pnl=open_pnl,
             open_tax_if_sold=open_tax,
             tax_band=band,
+            starting_capital=_opt_dec(raw, "starting_capital"),
+            started_on=_to_date(started_on, "started_on") if started_on else None,
         )
     return out
 
 
-def _position(raw: _Json) -> PositionDetail:
+def _to_date(raw: str, key: str) -> date:
+    try:
+        return date.fromisoformat(raw)
+    except ValueError as exc:
+        msg = f"field {key!r} is not an ISO date: {raw!r}"
+        raise ScenarioError(msg) from exc
+
+
+def _position(raw: _Json, rate: Decimal) -> PositionDetail:
     detail = _obj(raw, "detail")
     entry = _dec(raw, "entry_price")
     current = _dec(raw, "current_price")
@@ -307,6 +318,7 @@ def _position(raw: _Json) -> PositionDetail:
         high_since_entry=_dec(raw, "high_since_entry"),
         stop_distance_atr=(current - stop) / atr,
         stop_distance_pct=(current - stop) * _HUNDRED / current,
+        eur_per_usdt=rate,
     )
     entry_values: list[tuple[str, Decimal]] = []
     for pair in _list(detail, "entry_values"):
@@ -331,7 +343,7 @@ def _position(raw: _Json) -> PositionDetail:
     )
 
 
-def _activity_item(raw: _Json) -> ActivityItem:
+def _activity_item(raw: _Json, rate: Decimal) -> ActivityItem:
     return ActivityItem(
         at=_dt(raw, "at"),
         kind=_enum(ActivityKind, _str(raw, "kind"), "kind"),
@@ -342,10 +354,11 @@ def _activity_item(raw: _Json) -> ActivityItem:
         count=_int(raw, "count") if "count" in raw else 1,
         stop_from=_opt_dec(raw, "stop_from"),
         stop_to=_opt_dec(raw, "stop_to"),
+        eur_per_usdt=rate,
     )
 
 
-def _activity(raw: _Json) -> tuple[ActivityDay, ...]:
+def _activity(raw: _Json, rate: Decimal) -> tuple[ActivityDay, ...]:
     days: list[ActivityDay] = []
     for day in _items(raw, "activity"):
         try:
@@ -356,7 +369,7 @@ def _activity(raw: _Json) -> tuple[ActivityDay, ...]:
         days.append(
             ActivityDay(
                 day=day_value,
-                items=tuple(_activity_item(item) for item in _items(day, "items")),
+                items=tuple(_activity_item(item, rate) for item in _items(day, "items")),
             )
         )
     return tuple(days)
@@ -396,10 +409,14 @@ class FixtureReadModel:
         self._scenario = scenario
         self._heartbeat = _heartbeat(_obj(document, "heartbeat"))
         self._portfolios = _portfolios(_obj(document, "portfolio"))
-        details = tuple(_position(raw) for raw in _items(document, "positions"))
+        rate = _dec(document, "eur_per_usdt")
+        if rate <= 0:
+            msg = "field 'eur_per_usdt' must be positive"
+            raise ScenarioError(msg)
+        details = tuple(_position(raw, rate) for raw in _items(document, "positions"))
         self._details = {detail.row.coin.upper(): detail for detail in details}
         self._rows = tuple(detail.row for detail in details)
-        self._activity = _activity(document)
+        self._activity = _activity(document, rate)
         self._shadow_test = _shadow_test(_obj(document, "shadow_test"))
 
     @classmethod
