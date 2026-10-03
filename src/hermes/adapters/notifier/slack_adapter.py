@@ -74,6 +74,10 @@ from typing import Any, Final
 import httpx
 import structlog
 
+from hermes.application.messages.reporting_phase import (
+    DEFAULT_REPORTING_PHASE,
+    ReportingPhase,
+)
 from hermes.application.messages.slack import FileAttachment, slack_template
 from hermes.domain.errors import InfraError
 from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
@@ -199,11 +203,21 @@ class SlackAdapter:
         timeout_sec: Per-request timeout — Slack's Web API is typically
             fast; a 10s ceiling catches wedged connections without
             starving the notification path.
+        reporting_phase: Aggregate-blind phase passed to every render.
+            Defaults to pre-certification; building the adapter with
+            ``CERTIFIED`` is the explicit unblinding step and logs a
+            warning (ADR-012 ruling 1).
     """
 
     config: SlackConfig
     client: httpx.Client = field()
     timeout_sec: float = _DEFAULT_TIMEOUT_SEC
+    reporting_phase: ReportingPhase = DEFAULT_REPORTING_PHASE
+
+    def __post_init__(self) -> None:
+        """Log the unblinding step when the adapter may render outcome figures."""
+        if self.reporting_phase.shows_outcomes:
+            _log.warning("slack_notifier_unblinded", reporting_phase=self.reporting_phase.value)
 
     @classmethod
     def create(
@@ -267,7 +281,7 @@ class SlackAdapter:
             ValueError: If no template is registered for ``type(event)``
                 (bubbled from :func:`slack_template`).
         """
-        rendered = slack_template(event)
+        rendered = slack_template(event, phase=self.reporting_phase)
 
         payload: dict[str, Any] = {
             "channel": self.config.default_channel,

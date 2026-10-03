@@ -30,6 +30,10 @@ Design invariants
 - **Attachment generation**: CSV bytes generated via stdlib ``csv``.
   No third-party deps. PDF generation deliberately out-of-scope for
   MVP1 (reportlab / weasyprint would drag in a large native tree).
+- **Aggregate blind**: templates that can carry outcome figures take a
+  :class:`ReportingPhase` and render blind unless it is ``CERTIFIED``.
+  They are registered in :data:`_PHASE_AWARE_TEMPLATES`, which the
+  dispatcher consults first.
 
 Reference: 2026-08-23-slack-alongside-telegram.md; code-conventions.md §1.
 """
@@ -42,6 +46,11 @@ from collections.abc import Callable
 from typing import Any, Final, NamedTuple
 
 from hermes.application.messages._escape import correlation_tail
+from hermes.application.messages.reporting_phase import (
+    DEFAULT_REPORTING_PHASE,
+    OUTCOME_WITHHELD_NOTICE,
+    ReportingPhase,
+)
 from hermes.domain.events.anomaly_detected import AnomalyDetected
 from hermes.domain.events.balance_low import BalanceLow
 from hermes.domain.events.base import DomainEvent
@@ -303,24 +312,35 @@ def _daily_digest_csv(event: DailyTradeDigest) -> bytes:
     return buffer.getvalue().encode("utf-8")
 
 
-def _render_daily_trade_digest(event: DailyTradeDigest) -> SlackMessage:
-    """Render a DailyTradeDigest as a rich Slack message with a CSV attachment.
+def _render_daily_trade_digest(event: DailyTradeDigest, phase: ReportingPhase) -> SlackMessage:
+    """Render a DailyTradeDigest as a rich Slack message.
 
     Message shape: header + summary section (totals + counts) + a context
-    footer. The full per-trade winners/losers live in an attached CSV.
+    footer. Before certification the winners/losers counts and the
+    per-pair P&L CSV are withheld; activity counts and notional remain.
+    Once certified, the full winners/losers live in an attached CSV.
     """
     title = f"Daily trade digest — {event.day.isoformat()}"
     text = (
         f"{title} — {event.filled}/{event.total_trades} filled, "
         f"notional {event.total_notional.amount} {event.total_notional.currency.value}"
     )
-    body = (
+    activity = (
         f"*Day*: `{event.day.isoformat()}`\n"
         f"*Total trades*: `{event.total_trades}`\n"
         f"*Filled*: `{event.filled}`\n"
         f"*Rejected*: `{event.rejected}`\n"
         f"*Total notional*: `{event.total_notional.amount} {event.total_notional.currency.value}`\n"
-        f"*Top winners*: `{len(event.top_winners)}` — see attached CSV\n"
+    )
+    if not phase.shows_outcomes:
+        blocks = [
+            _header_block(title, _iso(event)),
+            _section_block(activity + OUTCOME_WITHHELD_NOTICE),
+            _context_footer(event.correlation_id),
+        ]
+        return SlackMessage(text=text, blocks=blocks, attachments=())
+    body = (
+        activity + f"*Top winners*: `{len(event.top_winners)}` — see attached CSV\n"
         f"*Top losers*: `{len(event.top_losers)}` — see attached CSV"
     )
     blocks = [
@@ -349,11 +369,16 @@ _TEMPLATES: Final[dict[type, Callable[[DomainEvent], SlackMessage]]] = {
     AnomalyDetected: _render_anomaly_detected,  # type: ignore[dict-item]
     TradeExecuted: _render_trade_executed,  # type: ignore[dict-item]
     RebalanceTriggered: _render_rebalance_triggered,  # type: ignore[dict-item]
+}
+
+_PHASE_AWARE_TEMPLATES: Final[dict[type, Callable[[DomainEvent, ReportingPhase], SlackMessage]]] = {
     DailyTradeDigest: _render_daily_trade_digest,  # type: ignore[dict-item]
 }
 
 
-def slack_template(event: DomainEvent) -> SlackMessage:
+def slack_template(
+    event: DomainEvent, *, phase: ReportingPhase = DEFAULT_REPORTING_PHASE
+) -> SlackMessage:
     """Render a domain event as a :class:`SlackMessage`.
 
     Dispatches on ``type(event)`` — subclasses do NOT inherit their
@@ -362,6 +387,8 @@ def slack_template(event: DomainEvent) -> SlackMessage:
 
     Args:
         event: A concrete :class:`DomainEvent` instance.
+        phase: Reporting phase. Defaults to pre-certification, so outcome
+            figures stay withheld unless the caller unblinds explicitly.
 
     Returns:
         A :class:`SlackMessage` with plain-text fallback, Block Kit
@@ -372,6 +399,9 @@ def slack_template(event: DomainEvent) -> SlackMessage:
             The message names the missing type so the operator can fix
             the registry.
     """
+    phase_aware = _PHASE_AWARE_TEMPLATES.get(type(event))
+    if phase_aware is not None:
+        return phase_aware(event, phase)
     render = _TEMPLATES.get(type(event))
     if render is None:
         raise ValueError(

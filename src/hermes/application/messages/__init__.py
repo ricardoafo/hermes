@@ -20,6 +20,7 @@ Reference: ``docs/decisions/2026-08-23-slack-alongside-telegram.md``
     § "Extended MVP1 events"; code-conventions.md §1.
 """
 
+from hermes.application.messages.reporting_phase import ReportingPhase
 from hermes.application.messages.slack import (
     FileAttachment,
     SlackMessage,
@@ -27,4 +28,10 @@ from hermes.application.messages.slack import (
 )
 from hermes.application.messages.telegram import telegram_template
 
-__all__ = ["FileAttachment", "SlackMessage", "slack_template", "telegram_template"]
+__all__ = [
+    "FileAttachment",
+    "ReportingPhase",
+    "SlackMessage",
+    "slack_template",
+    "telegram_template",
+]
