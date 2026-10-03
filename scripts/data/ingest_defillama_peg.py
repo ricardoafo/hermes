@@ -48,8 +48,8 @@ import sys
 import time
 from datetime import UTC, date, datetime
 from pathlib import Path
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+
+import httpx
 
 # Shared read-modify-atomic-write transaction for the multi-writer
 # manifest. See scripts/data/_manifest_util.py + change
@@ -101,13 +101,21 @@ def download_json(url: str) -> bytes:
     """GET url with a hermes User-Agent and return raw response bytes.
 
     Returns the raw bytes so SHA256 is computed on the exact wire
-    content (order-preserving, no re-serialization drift).
+    content (order-preserving, no re-serialization drift). httpx only speaks
+    http(s), unlike urllib's ``urlopen`` (Semgrep, #410).
+
+    Raises:
+        httpx.HTTPStatusError: non-2xx response.
+        httpx.TransportError: network failure.
     """
-    request = Request(
-        url, headers={"User-Agent": "hermes-ingest/1.0 (github.com/ricardoafo/hermes)"}
+    response = httpx.get(
+        url,
+        headers={"User-Agent": "hermes-ingest/1.0 (github.com/ricardoafo/hermes)"},
+        timeout=HTTP_TIMEOUT_SECONDS,
+        follow_redirects=True,
     )
-    with urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
-        return response.read()
+    response.raise_for_status()
+    return response.content
 
 
 def sha256_hex(data: bytes) -> str:
@@ -189,12 +197,13 @@ def process_window(
 
         try:
             raw = download_json(url)
-        except HTTPError as err:
-            if err.code == 429:
+        except httpx.HTTPStatusError as err:
+            status = err.response.status_code
+            if status == 429:
                 return "failed", "rate-limited (429) — increase RATE_LIMIT_SLEEP_SECONDS"
-            return "failed", f"HTTP {err.code} on chunk {chunk_idx + 1}/{len(chunk_offsets)}"
-        except URLError as err:
-            return "failed", f"network error on chunk {chunk_idx + 1}: {err.reason}"
+            return "failed", f"HTTP {status} on chunk {chunk_idx + 1}/{len(chunk_offsets)}"
+        except httpx.TransportError as err:
+            return "failed", f"network error on chunk {chunk_idx + 1}: {err}"
 
         try:
             parsed_chunk = json.loads(raw)
