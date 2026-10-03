@@ -23,14 +23,18 @@ import json
 import shutil
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Final, TextIO
 
 from rich.console import Console
 
+from hermes.adapters.console import UnknownScenarioError
 from hermes.adapters.ledger.status_reader import SqliteStatusReader
+from hermes.application.console import Surface
+from hermes.application.console.render import RenderContext, render_heartbeat
+from hermes.application.console.views import HeartbeatState
 from hermes.application.status import (
     StatusReport,
     UnitState,
@@ -39,6 +43,7 @@ from hermes.application.status import (
     ledger_missing_report,
 )
 from hermes.domain.errors import LedgerError
+from hermes.entrypoints import console as console_module
 from hermes.entrypoints import serve as serve_module
 from hermes.entrypoints.daily_line import JournalCounts, count_journal, daily_line
 from hermes.entrypoints.status_view import render_status, report_to_dict
@@ -65,8 +70,14 @@ def main(
     now: datetime | None = None,
     unit_state: Callable[[], UnitState] | None = None,
     stdin: TextIO | None = None,
+    demo_flag: str | None = None,
+    env: Mapping[str, str] | None = None,
 ) -> int:
     """Handle ``hermes status``.
+
+    With a demo scenario (a leading ``--demo`` or ``HERMES_CONSOLE_DEMO``) the
+    command shows that scenario's console heartbeat, tagged DEMO DATA, instead
+    of reading the ledger (#454).
 
     Args:
         rest: Residual argv after the ``status`` token.
@@ -74,6 +85,8 @@ def main(
         now: Reference instant; defaults to the wall clock. Injected by tests.
         unit_state: systemd probe; defaults to :func:`systemd_unit_state`.
         stdin: Where ``--journal -`` reads from; defaults to ``sys.stdin``.
+        demo_flag: Scenario from the leading ``--demo`` option, if any.
+        env: Environment snapshot for ``HERMES_CONSOLE_DEMO``; defaults to empty.
 
     Returns:
         Process exit code.
@@ -95,7 +108,20 @@ def main(
     if parsed.help:
         stream.write(_USAGE)
         return 0
+    if demo_flag or (env or {}).get(console_module.DEMO_ENV_VAR, "").strip():
+        return _demo_status(stream, demo_flag=demo_flag, env=env or {}, as_json=parsed.json)
+    return _ledger_status(parsed, stream, now=now, unit_state=unit_state, stdin=stdin or sys.stdin)
 
+
+def _ledger_status(
+    parsed: argparse.Namespace,
+    stream: TextIO,
+    *,
+    now: datetime | None,
+    unit_state: Callable[[], UnitState] | None,
+    stdin: TextIO,
+) -> int:
+    """Build the report from config, the ledger and systemd, then print it."""
     try:
         config = load_config(parsed.config_dir)
     except ConfigError as exc:
@@ -126,7 +152,7 @@ def main(
         code = 0 if report.verdict.level is VerdictLevel.OK else 1
 
     if parsed.summary:
-        counts = _journal_counts(parsed.journal, stdin or sys.stdin)
+        counts = _journal_counts(parsed.journal, stdin)
         stream.write(daily_line(report, counts, parsed.restarts) + "\n")
     else:
         _emit(report, stream, as_json=parsed.json)
@@ -194,6 +220,37 @@ def _journal_counts(source: str | None, stdin: TextIO) -> JournalCounts:
         return count_journal(stdin)
     with Path(source).open(encoding="utf-8", errors="replace") as handle:
         return count_journal(handle)
+
+
+def _demo_status(
+    stream: TextIO, *, demo_flag: str | None, env: Mapping[str, str], as_json: bool
+) -> int:
+    """Show a demo scenario's heartbeat; exit 0 when OK, 1 late or down, 2 unknown."""
+    try:
+        model = console_module.resolve_read_model(demo_flag=demo_flag, env=env)
+    except UnknownScenarioError as exc:
+        stream.write(f"ERROR: {exc}\n")
+        return 2
+    heartbeat = model.heartbeat()
+    if as_json:
+        payload = {
+            "demo_scenario": model.demo_scenario,
+            "heartbeat": {
+                "state": heartbeat.state.value,
+                "as_of": heartbeat.as_of.isoformat(),
+                "last_check_at": heartbeat.last_check_at.isoformat(),
+                "next_check_at": heartbeat.next_check_at.isoformat(),
+                "down_since": None
+                if heartbeat.down_since is None
+                else heartbeat.down_since.isoformat(),
+            },
+        }
+        stream.write(json.dumps(payload, indent=2) + "\n")
+    else:
+        console = Console(file=stream, emoji=False, markup=False, highlight=False)
+        ctx = RenderContext.for_model(model, surface=Surface.OPERATOR_CLI, width=console.width)
+        console.print(render_heartbeat(heartbeat, ctx))
+    return 0 if heartbeat.state is HeartbeatState.OK else 1
 
 
 def _emit(report: StatusReport, stream: TextIO, *, as_json: bool) -> None:

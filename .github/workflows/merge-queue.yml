@@ -202,7 +202,7 @@ jobs:
             // minutes.
             const {
               isCandidate, approvedAt, orderCandidates,
-              queueCanMerge, handMergeComment, HAND_MERGE_LABEL,
+              queueCanMerge, handMergeComment, HAND_MERGE_LABEL, skipFailedHead,
             } = require(
               `${process.env.GITHUB_WORKSPACE}/tools/merge/decisions.cjs`
             );
@@ -298,6 +298,18 @@ jobs:
                     core.warning(`${tag}: could not label for a human merge: ${err.message}`);
                   }
                 }
+                continue;
+              }
+
+              const failed = skipFailedHead({
+                head: full.head.sha,
+                labels: (full.labels || []).map((l) => l.name),
+                comments: await github.paginate(github.rest.issues.listComments, {
+                  owner, repo, issue_number: pr.number, per_page: 100,
+                }),
+              });
+              if (failed.skip) {
+                core.info(`${tag}: ${failed.reason}`);
                 continue;
               }
 
@@ -478,7 +490,7 @@ jobs:
           script: |
             const fs = require('fs');
             const {
-              shouldMerge, ciRestart, afterMerge, badComment, hasBadComment,
+              shouldMerge, ciRestart, afterMerge, badComment, hasBadComment, GATES_FAILED_LABEL,
               classifyMergeFailure, handMergeComment, HAND_MERGE_LABEL,
             } = require(`${process.env.QUEUE_TOOLS}/decisions.cjs`);
             const { owner, repo } = context.repo;
@@ -812,6 +824,25 @@ jobs:
             // Tell each bad PR, once per head, which gate failed.
             // ─────────────────────────────────────────────
             for (const bad of dryRun ? [] : batch.bad) {
+              // Red on the PR page and labelled, so the writer sees it at
+              // once and Select stops re-gating this head.
+              try {
+                await addLabel(bad.n, GATES_FAILED_LABEL);
+                const res = await fetch(`${ghApiBase}/statuses/${bad.head}`, {
+                  method: 'POST',
+                  headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    state: 'failure',
+                    context: 'Merge queue gates',
+                    description: `${bad.gate}`.slice(0, 140),
+                  }),
+                });
+                if (!res.ok) {
+                  throw new Error(`POST status: ${res.status} ${await res.text()}`);
+                }
+              } catch (err) {
+                core.warning(`#${bad.n}: could not label or mark red: ${err.message}`);
+              }
               try {
                 if (hasBadComment(await listComments(bad.n), bad.head)) {
                   core.info(`#${bad.n}: already told head ${bad.head.slice(0, 7)} it failed — skip`);

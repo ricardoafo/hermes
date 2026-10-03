@@ -136,7 +136,7 @@ class FrankfurterConfig(BaseModel):
 
     model_config = _MODEL_CONFIG
 
-    base_url: str = Field(default="https://api.frankfurter.app", pattern=r"^https://")
+    base_url: str = Field(default="https://api.frankfurter.dev/v1", pattern=r"^https://")
     timeout_sec: float = Field(default=10.0, gt=0)
     requests_per_minute: int = Field(default=60, gt=0, le=6000)
 
