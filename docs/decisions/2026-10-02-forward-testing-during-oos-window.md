@@ -14,7 +14,11 @@ history both stay available, and a forward feed is not wrapped by
 `DataSplitEnforcer`. The Code Owner said: "We should start back and forward
 testing when possible, so we need to have this available too."
 
-Proposed guardrail, Code Owner confirms at PR review: shadow observations made inside the OOS window must not motivate parameter changes before OOS certification; if they do, the new pre-registration treats that period as in-sample and certifies on later data.
+Guardrail, confirmed as written by the Code Owner on 2026-10-03: shadow observations made inside the OOS window must not motivate parameter changes before OOS certification; if they do, the new pre-registration treats that period as in-sample and certifies on later data.
+
+Confirmation (2026-10-03, MVP1 readiness review): the Code Owner said
+"confirm the guardrail as written. It is what keeps the 2027 OOS test valid
+while shadow runs". See ADR-014 for the real-capital gate this protects.
 
 ## Context
 
@@ -43,8 +47,7 @@ Alternatives considered:
 - Backtests keep the enforcer on historical reads, so the OOS window is still
   unreadable from history.
 - The experiment's integrity claim now rests on discipline: the guardrail
-  above is a proposal until the Code Owner confirms it at PR review, and it is
-  the one part of this entry that can still change.
+  above, which the Code Owner confirmed on 2026-10-03.
 - Reversing this decision touches the experiment's integrity claim, so the
   cost of reversal is high. Revisit before OOS certification starts on
   2027-01-01.
