@@ -28,7 +28,9 @@ MANDATORY_SECTIONS=(Summary Related Testing Risk)
 # echoes space-separated names of missing sections (empty on pass)
 # ────────────────────────────────────────────────────────────────
 lint_body() {
-    local body="$1"
+    # Bodies authored on Windows arrive with CRLF; Linux awk would read
+    # `## Summary\r` and match no section (#318).
+    local body="${1//$'\r'/}"
     local missing=()
     local section content stripped
 
@@ -90,6 +92,16 @@ Low.'
         echo "PASS: fully-filled body returns no missing sections"
     else
         echo "FAIL: fully-filled body reported missing [$result]"
+        failed=1
+    fi
+
+    # PASS: the same body with CRLF line endings (Windows-authored, #318)
+    body_crlf="${body_ok//$'\n'/$'\r\n'}"
+    result=$(lint_body "$body_crlf")
+    if [[ -z "$result" ]]; then
+        echo "PASS: CRLF body returns no missing sections"
+    else
+        echo "FAIL: CRLF body reported missing [$result]"
         failed=1
     fi
 
