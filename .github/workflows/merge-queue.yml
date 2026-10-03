@@ -171,6 +171,10 @@ jobs:
        || github.event.review.state == 'approved')
     runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write   # labels and comments on PRs it hands to a human
+      issues: write          # labels are issue labels
     outputs:
       prs: ${{ steps.pick.outputs.prs }}
       any: ${{ steps.pick.outputs.any }}
@@ -183,6 +187,11 @@ jobs:
 
       - uses: actions/github-script@v9
         id: pick
+        env:
+          # Set the repo variable to `true` once the hermes-automation
+          # App holds "Workflows: read and write"; until then PRs that
+          # touch .github/workflows/ go to a human (#445 follow-up).
+          QUEUE_MERGES_WORKFLOWS: ${{ vars.QUEUE_MERGES_WORKFLOWS }}
         with:
           script: |
             const { owner, repo } = context.repo;
@@ -191,7 +200,10 @@ jobs:
             // `tools/merge/decisions.test.cjs` pins every refusal case
             // in ~100ms; a round trip against the live queue costs
             // minutes.
-            const { isCandidate, approvedAt, orderCandidates } = require(
+            const {
+              isCandidate, approvedAt, orderCandidates,
+              queueCanMerge, handMergeComment, HAND_MERGE_LABEL,
+            } = require(
               `${process.env.GITHUB_WORKSPACE}/tools/merge/decisions.cjs`
             );
 
@@ -257,6 +269,35 @@ jobs:
                 // rest resolve themselves and are noise at warning level.
                 const say = reason.includes('CONFLICTS') ? core.warning : core.info;
                 say(`${tag}: ${reason}`);
+                continue;
+              }
+
+              // Before it joins a batch: can this token land it at all?
+              // A PR the queue cannot merge, found only at pulls.merge,
+              // would stall every PR gated on top of it.
+              const files = (await github.paginate(github.rest.pulls.listFiles, {
+                owner, repo, pull_number: pr.number, per_page: 100,
+              })).map((f) => f.filename);
+              const access = queueCanMerge({
+                files,
+                labels: (full.labels || []).map((l) => l.name),
+                canMergeWorkflows: process.env.QUEUE_MERGES_WORKFLOWS === 'true',
+              });
+              if (!access.eligible) {
+                core.info(`${tag}: ${access.reason}`);
+                if (access.label) {
+                  try {
+                    await github.rest.issues.addLabels({
+                      owner, repo, issue_number: pr.number, labels: [HAND_MERGE_LABEL],
+                    });
+                    await github.rest.issues.createComment({
+                      owner, repo, issue_number: pr.number,
+                      body: handMergeComment({ n: pr.number, reason: access.reason }).body,
+                    });
+                  } catch (err) {
+                    core.warning(`${tag}: could not label for a human merge: ${err.message}`);
+                  }
+                }
                 continue;
               }
 
@@ -438,6 +479,7 @@ jobs:
             const fs = require('fs');
             const {
               shouldMerge, ciRestart, afterMerge, badComment, hasBadComment,
+              classifyMergeFailure, handMergeComment, HAND_MERGE_LABEL,
             } = require(`${process.env.QUEUE_TOOLS}/decisions.cjs`);
             const { owner, repo } = context.repo;
             const batch = JSON.parse(fs.readFileSync(process.env.BATCH_RESULT, 'utf8'));
@@ -519,6 +561,29 @@ jobs:
               });
               if (!res.ok) {
                 throw new Error(`PATCH issue #${n}: ${res.status} ${await res.text()}`);
+              }
+            }
+            async function addLabel(n, label) {
+              const res = await fetch(`${ghApiBase}/issues/${n}/labels`, {
+                method: 'POST',
+                headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ labels: [label] }),
+              });
+              if (!res.ok) {
+                throw new Error(`POST labels #${n}: ${res.status} ${await res.text()}`);
+              }
+            }
+            // Dispatch with the workflow token, which holds `actions:
+            // write`; the App token used for pulls.merge does not, and
+            // GitHub answered "Resource not accessible by integration".
+            async function dispatch(workflow) {
+              const res = await fetch(`${ghApiBase}/actions/workflows/${workflow}/dispatches`, {
+                method: 'POST',
+                headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ref: 'main' }),
+              });
+              if (!res.ok) {
+                throw new Error(`dispatch ${workflow}: ${res.status} ${await res.text()}`);
               }
             }
             async function commentIssue(n, text) {
@@ -707,12 +772,22 @@ jobs:
                 core.warning(
                   `#${number}: pulls.merge failed status=${err.status} — "${detail}" ${docs}`,
                 );
-                stopped = `pulls.merge refused #${number} (${err.status})`;
-                // 409 = head changed under us; 405 = "Not mergeable",
-                // usually a mid-flight race. Both are for the next pass.
-                // Anything else is a defect worth a red run, raised only
-                // after the clean-up below has run.
-                if (err.status !== 405 && err.status !== 409) {
+                // Every failure stops this pass (later PRs were gated with
+                // this one underneath). A PR GitHub will never let the
+                // queue merge is labelled for a human, so the next pass
+                // rebuilds without it instead of tripping on it again.
+                const failure = classifyMergeFailure({ status: err.status, message: detail });
+                stopped = `pulls.merge refused #${number}: ${failure.reason}`;
+                if (failure.label) {
+                  try {
+                    await addLabel(number, HAND_MERGE_LABEL);
+                    await commentIssue(number, handMergeComment({ n: number, reason: failure.reason }).body);
+                    core.notice(`#${number}: handed to a human — ${failure.reason}`);
+                  } catch (labelErr) {
+                    core.warning(`#${number}: could not label for a human merge: ${labelErr.message}`);
+                  }
+                }
+                if (failure.fatal) {
                   fatal = err;
                 }
                 break;
@@ -782,11 +857,7 @@ jobs:
 
               if (restart.restart) {
                 try {
-                  await github.rest.actions.createWorkflowDispatch({
-                    owner, repo,
-                    workflow_id: 'ci.yml',
-                    ref: 'main',
-                  });
+                  await dispatch('ci.yml');
                   core.info('dispatched ci.yml on main');
                 } catch (err) {
                   core.warning(`could not dispatch ci.yml: ${err.message}`);
@@ -800,11 +871,7 @@ jobs:
             core.info(`next pass: ${next.redispatch ? 'dispatching' : 'not dispatching'} — ${next.reason}`);
             if (next.redispatch) {
               try {
-                await github.rest.actions.createWorkflowDispatch({
-                  owner, repo,
-                  workflow_id: 'merge-queue.yml',
-                  ref: 'main',
-                });
+                await dispatch('merge-queue.yml');
                 core.info('dispatched merge-queue.yml for the next pass');
               } catch (err) {
                 core.warning(`could not dispatch merge-queue.yml: ${err.message}`);

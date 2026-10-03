@@ -48,8 +48,10 @@ from dotenv import dotenv_values
 from hermes.adapters.certification.json_store import JsonCertificationStore
 from hermes.adapters.console import available_scenarios
 from hermes.entrypoints import _health as health_module
+from hermes.entrypoints import archive_check as archive_check_module
 from hermes.entrypoints import certify as certify_module
 from hermes.entrypoints import console as console_module
+from hermes.entrypoints import journal as journal_module
 from hermes.entrypoints import preview as preview_module
 from hermes.entrypoints import serve as serve_module
 from hermes.entrypoints import status as status_module
@@ -90,6 +92,8 @@ _SUBCOMMAND_HELP: Final[dict[str, str]] = {
     ),
     "certify": "Evaluate the next certification gate for a strategy (pre-reg §7).",
     "positions": "Open shadow positions, net per row; `positions COIN` for the detail.",
+    "archive-check": "Compare yesterday's live bars with the Binance archive (read-only).",
+    "journal": "Record, list and review Code Owner decisions (decision journal).",
     "status": "Read-only progress check: verdict, last and next bar per stream.",
     "simulate": "Replay historical scenarios (stub — implemented in a future PR).",
 }
@@ -213,6 +217,8 @@ def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
         "positions": lambda rest, *, stream: console_module.run_positions(
             rest, stream, demo_flag=demo_scenario, env=os.environ
         ),
+        "archive-check": archive_check_module.main,
+        "journal": journal_module.main,
         "status": status_module.main,
     }
     dispatch = table.get(subcommand)
