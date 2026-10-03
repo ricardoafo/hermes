@@ -1,0 +1,1 @@
+- **Console price lookup** (`ports/price_lookup.py`, `adapters/market_data/binance_ticker.py`): read-only current price from the public Binance ticker, cached for 5 s and rate-limited, for valuing positions in the operator console. The strategy cannot import it. Closes #389.
