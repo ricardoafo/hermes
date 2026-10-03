@@ -4,6 +4,9 @@ The same fields the renderers show, for ``--json`` and any other surface that
 wants data instead of text. Money sits under a ``pnl`` key that blind surfaces
 omit entirely, so a consumer cannot render a figure that was never sent.
 
+Prices keep their USDT quote values under the original keys; the EUR figures
+sit beside them under ``pnl`` with the rate used (operator ruling 2026-10-03).
+
 Reference: openspec/changes/console-positions/change.md (D-2).
 """
 
@@ -26,6 +29,8 @@ __all__ = ["position_detail_to_json", "positions_to_json"]
 
 type JsonObject = dict[str, object]
 
+_EUR_PRECISION = Decimal("0.0001")
+
 
 def _amount(value: Decimal) -> str:
     return format(value, "f")
@@ -47,8 +52,17 @@ def _row_core(row: PositionRow, ctx: RenderContext) -> JsonObject:
     }
 
 
+def _eur(value: Decimal) -> str:
+    return _amount(value.quantize(_EUR_PRECISION))
+
+
 def _row_pnl(row: PositionRow) -> JsonObject:
     return {
+        "eur_per_usdt": _amount(row.eur_per_usdt),
+        "entry_price_eur": _eur(row.entry_eur),
+        "current_price_eur": _eur(row.current_eur),
+        "stop_price_eur": _eur(row.stop_eur),
+        "high_since_entry_eur": _eur(row.high_eur),
         "current_price": _amount(row.current_price),
         "change_pct": _amount(round2(row.change_pct)),
         "net_eur": _amount(row.net),

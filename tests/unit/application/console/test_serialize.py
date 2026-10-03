@@ -46,10 +46,15 @@ _MONEY_WORDS = (
 _PNL_KEYS = [
     "change_pct",
     "current_price",
+    "current_price_eur",
+    "entry_price_eur",
+    "eur_per_usdt",
     "high_since_entry",
+    "high_since_entry_eur",
     "net_eur",
     "stop_distance_atr",
     "stop_distance_pct",
+    "stop_price_eur",
 ]
 
 
