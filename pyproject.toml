@@ -13,6 +13,9 @@ dependencies = [
   "structlog>=24.4,<25",
   "typer>=0.27.1,<1",
   "textual>=0.79,<1",
+  # Console renderers (hermes status and the read-only console) import Rich
+  # directly; Textual already pulls it in, so this pins the API we call.
+  "rich>=15,<16",
   "apscheduler>=3.10,<4",
   "python-telegram-bot>=22.8,<23",
   "ulid-py>=1.1,<2",

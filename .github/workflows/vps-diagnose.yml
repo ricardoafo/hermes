@@ -271,6 +271,15 @@ jobs:
           else
               echo "$hermes_bin missing: no release installed"
           fi
+          # The verdict and per-stream table every console surface shares
+          # (#370); read-only. Releases older than #370 print an unknown
+          # command error here, and the raw ledger query below still runs.
+          echo "-- hermes status --"
+          if [ -x "$hermes_bin" ]; then
+              $as_root bash -c 'set -a; . /etc/hermes/env.production; set +a; cd /var/lib/hermes && COLUMNS=120 exec runuser -u hermes -- "$1" status --config-dir /opt/hermes/current/config --db /var/lib/hermes/hermes.sqlite3' \
+                _ "$hermes_bin" 2>&1 | head -40
+              echo ""
+          fi
           # Newest BarProcessed per stream, read-only: confirms the loop
           # handled the latest closed bars (4h bars close 00/04/08/12/16/20 UTC).
           echo "-- last processed bar per stream (ledger, read-only) --"

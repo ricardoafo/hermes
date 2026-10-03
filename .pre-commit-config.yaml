@@ -2,8 +2,12 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
+      # syrupy's .ambr files indent blank snapshot lines with two spaces and
+      # end without a final newline; stripping either breaks the snapshot.
       - id: trailing-whitespace
+        exclude: (^|/)__snapshots__/
       - id: end-of-file-fixer
+        exclude: (^|/)__snapshots__/
       - id: check-yaml
       - id: check-json
       - id: check-merge-conflict
