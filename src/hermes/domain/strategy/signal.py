@@ -19,7 +19,7 @@ from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
 
-__all__ = ["SignalKind", "SignalSide", "StrategySignal"]
+__all__ = ["OpenPosition", "SignalKind", "SignalSide", "StrategySignal"]
 
 
 class SignalSide(StrEnum):
@@ -98,3 +98,32 @@ class StrategySignal:
             raise ValueError(f"StrategySignal: atr_context must be > 0, got {self.atr_context}")
         if self.signal_time.tzinfo is None:
             raise ValueError("StrategySignal: signal_time must be UTC-aware")
+
+
+@dataclass(frozen=True, slots=True)
+class OpenPosition:
+    """A position a strategy already holds, restored at warm-up.
+
+    The swing strategy reads only an entry time and price from its position
+    state (the exit stop comes from its bar buffers), so that is all a
+    restart needs to carry over.
+
+    Attributes:
+        entry_time: ``close_time`` of the entry bar. UTC-aware.
+        entry_price: Entry reference price. Always > 0.
+
+    Raises:
+        ValueError: On a naive ``entry_time`` or a non-positive ``entry_price``.
+
+    Reference: 309-serve-bar-loop change.md D-6.
+    """
+
+    entry_time: datetime
+    entry_price: Decimal
+
+    def __post_init__(self) -> None:
+        """Enforce the position invariants."""
+        if self.entry_time.tzinfo is None:
+            raise ValueError("OpenPosition: entry_time must be UTC-aware")
+        if self.entry_price <= Decimal("0"):
+            raise ValueError(f"OpenPosition: entry_price must be > 0, got {self.entry_price}")
