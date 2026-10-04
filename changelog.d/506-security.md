@@ -1,0 +1,1 @@
+- Telegram and Slack bot tokens no longer appear in `repr` output, and Sentry error events no longer include stack-frame local variables, so a failed alert can't ship a bot token to Sentry (#506).

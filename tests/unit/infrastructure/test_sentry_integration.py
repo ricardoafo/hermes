@@ -8,6 +8,7 @@ Every test protects one invariant of the Sentry SDK wrapper:
 - ``capture`` ships exceptions with optional structured context via a
   short-lived scope; SDK failures are swallowed.
 - ``set_correlation_id`` tags the current scope; SDK failures are swallowed.
+- Error events carry no credential held in a local variable (#506).
 
 All calls to :mod:`sentry_sdk` are monkeypatched — no real network wire.
 
@@ -18,8 +19,14 @@ from __future__ import annotations
 
 from typing import Any
 
+import httpx
 import pytest
+import respx
+import sentry_sdk
+import sentry_sdk.envelope
+import sentry_sdk.transport
 
+from hermes.adapters.notifier import TelegramAdapter, TelegramConfig, TelegramNotifierError
 from hermes.infrastructure import sentry_integration
 
 
@@ -160,3 +167,75 @@ class TestSetCorrelationId:
 
         monkeypatch.setattr(sentry_integration.sentry_sdk, "set_tag", _boom_set_tag)
         sentry_integration.set_correlation_id("XYZ789")
+
+
+class _RecordingTransport(sentry_sdk.transport.Transport):
+    """Keeps every envelope the SDK would send, serialised, in memory."""
+
+    def __init__(self, options: dict[str, Any] | None = None) -> None:
+        super().__init__(options)
+        self.payloads: list[str] = []
+
+    def capture_envelope(self, envelope: sentry_sdk.envelope.Envelope) -> None:
+        self.payloads.append(envelope.serialize().decode("utf-8", errors="replace"))
+
+
+class TestEventsCarryNoCredentials:
+    """An error event never carries a credential held in a local variable (#506)."""
+
+    def test_initialize_turns_off_local_variables(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """``initialize`` passes ``include_local_variables=False`` to the SDK."""
+        captured: dict[str, Any] = {}
+
+        def _spy_init(**kwargs: Any) -> None:
+            captured.update(kwargs)
+
+        monkeypatch.setattr(sentry_integration.sentry_sdk, "init", _spy_init)
+        sentry_integration.initialize(dsn="https://public@sentry.example.com/1", environment="dev")
+        assert captured["include_local_variables"] is False
+
+    def test_telegram_failure_event_omits_the_bot_token(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A failed Telegram send, captured to Sentry, ships no bot token.
+
+        The adapter builds ``url = f"/bot{token}/sendMessage"`` as a local.
+        The real SDK serialises the event through a recording transport
+        (no network); the token must not appear anywhere in it.
+        """
+        token = "987654:SECRET-TOKEN-VALUE"  # noqa: S105  # gitleaks:allow
+        transport = _RecordingTransport()
+        real_init = sentry_sdk.init
+
+        def _init_with_transport(**kwargs: Any) -> Any:
+            return real_init(transport=transport, **kwargs)
+
+        monkeypatch.setattr(sentry_integration.sentry_sdk, "init", _init_with_transport)
+        sentry_integration.initialize(dsn="https://public@sentry.example.com/1", environment="dev")
+        adapter = TelegramAdapter(
+            config=TelegramConfig(bot_token=token, chat_id="-100123"),
+            client=httpx.Client(base_url="https://api.telegram.org", timeout=5.0),
+        )
+        try:
+            with respx.mock() as router:
+                router.post(f"https://api.telegram.org/bot{token}/sendMessage").mock(
+                    return_value=httpx.Response(500, json={"ok": False})
+                )
+                with pytest.raises(TelegramNotifierError) as raised:
+                    adapter.notify_urgent(
+                        event="deploy.done",
+                        correlation_id="01HKQMZXYZ0123456789ABCDEF",
+                        message="deploy shipped",
+                    )
+            sentry_integration.capture(raised.value)
+            sentry_sdk.flush()
+        finally:
+            # A bare init(dsn=None) turns on Sentry's default integrations,
+            # and their patches outlive the client: the threading one then
+            # assigns __traceback__ on frozen-dataclass errors in every later
+            # test of this worker (test_notifier_outage_does_not_stop_the_loop).
+            real_init(dsn=None, default_integrations=False)
+
+        assert len(transport.payloads) == 1
+        assert token not in transport.payloads[0]
+        assert "threading" not in sentry_sdk.integrations._installed_integrations
