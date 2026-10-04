@@ -186,6 +186,11 @@ jobs:
           fi
 
           cp -r config "$stage/config"
+          # hermes serve reads the signed pre-registration (kill rules) and the
+          # fee history (pre-reg §6.1) from the release root (#353 D-6).
+          install -d "$stage/docs/experiments/swing-mvp1"
+          install -m 0644 docs/experiments/swing-mvp1/pre-registration-v1.md \
+              docs/experiments/swing-mvp1/fee-history.csv "$stage/docs/experiments/swing-mvp1/"
           # The units run these from /opt/hermes/current/deploy/ (health ping,
           # failure notifier, backup): each release carries its own copy.
           install -d "$stage/deploy" "$stage/bin"
