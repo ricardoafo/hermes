@@ -42,6 +42,7 @@ import httpx
 import structlog
 
 from hermes.application.messages.telegram import telegram_template
+from hermes.application.notification_router import is_event_loud
 from hermes.domain.errors import InfraError
 from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
 from hermes.domain.events.base import DomainEvent
@@ -197,7 +198,9 @@ class TelegramAdapter:
         This is the preferred entry point for domain-event notifications.
         The template is looked up in the application-layer registry
         (:mod:`hermes.application.messages.telegram`); adapter code stays
-        thin — no formatting decisions live here.
+        thin — no formatting decisions live here. The message rings the
+        phone only when the router says the event is loud (down, P0,
+        rejected order); otherwise it is sent with ``disable_notification``.
 
         Args:
             event: A concrete :class:`DomainEvent` instance.
@@ -215,6 +218,7 @@ class TelegramAdapter:
             "text": text,
             "parse_mode": "MarkdownV2",
             "disable_web_page_preview": True,
+            "disable_notification": not is_event_loud(event),
         }
         self._post("sendMessage", payload)
 

@@ -5,7 +5,9 @@ Three subcommands:
 - ``list`` — enumerate every event name supported by the template
   registry, with a short description.
 - ``<event-name>`` — render Telegram + Slack outputs for a fixture event
-  and print them. Attachments (if any) are saved to
+  and print them, for every event whether or not the routing table fires
+  that channel (the routing and the push loudness are printed above).
+  Attachments (if any) are saved to
   :func:`tempfile.gettempdir` under a discoverable filename.
 - ``<event-name> --send`` — same as above, PLUS actually send the
   rendered message through the wired-up Telegram + Slack adapters
@@ -53,16 +55,18 @@ from hermes.application.messages import (
     slack_template,
     telegram_template,
 )
-from hermes.application.notification_router import EventClass, channels_for
+from hermes.application.notification_router import EventClass, channels_for, is_event_loud
 from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
 from hermes.domain.events.balance_low import BalanceLow
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.daily_trade_digest import DailyTradeDigest, TradeSummary
 from hermes.domain.events.rebalance_triggered import RebalanceTriggered
+from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.events.strategy_paused import StrategyPaused
 from hermes.domain.events.strategy_resumed import StrategyResumed
 from hermes.domain.events.trade_executed import TradeExecuted, TradeSide
 from hermes.domain.events.trade_rejected import TradeRejected
+from hermes.domain.strategy.signal import SignalKind, SignalSide
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
@@ -83,6 +87,39 @@ _SAMPLE_CORRELATION: Final[str] = "01J9Z8T3M5BQR2FVKN4XWY6PH1"
 _SAMPLE_PAIR: Final[Pair] = Pair(base=Currency.BTC, quote=Currency.USDT)
 
 
+def _fixture_signal_entry() -> SignalEmitted:
+    """Return a canned entry SignalEmitted sample event."""
+    return SignalEmitted(
+        occurred_at=_SAMPLE_TIMESTAMP,
+        correlation_id=_SAMPLE_CORRELATION,
+        event_seq=0,
+        strategy_id=StrategyId("swing-donchian-4h"),
+        pair=_SAMPLE_PAIR,
+        kind=SignalKind.ENTRY,
+        side=SignalSide.LONG,
+        entry_price=Decimal("61234.5"),
+        stop_price=Decimal("59100"),
+        atr_context=Decimal("1180"),
+    )
+
+
+def _fixture_signal_exit() -> SignalEmitted:
+    """Return a canned exit SignalEmitted sample event."""
+    return SignalEmitted(
+        occurred_at=_SAMPLE_TIMESTAMP,
+        correlation_id=_SAMPLE_CORRELATION,
+        event_seq=0,
+        strategy_id=StrategyId("swing-donchian-4h"),
+        pair=_SAMPLE_PAIR,
+        kind=SignalKind.EXIT,
+        side=SignalSide.LONG,
+        entry_price=Decimal("61234.5"),
+        stop_price=Decimal("62800"),
+        atr_context=Decimal("1180"),
+        exit_reason="trailing_stop",
+    )
+
+
 def _fixture_strategy_paused() -> StrategyPaused:
     """Return a canned StrategyPaused sample event."""
     return StrategyPaused(
@@ -90,7 +127,7 @@ def _fixture_strategy_paused() -> StrategyPaused:
         correlation_id=_SAMPLE_CORRELATION,
         event_seq=0,
         strategy_id="swing.v1",
-        reason="30% drawdown breached",
+        reason="operator kill switch",
         paused_at=_SAMPLE_TIMESTAMP,
         severity=AnomalySeverity.CRITICAL,
     )
@@ -143,7 +180,7 @@ def _fixture_anomaly_detected() -> AnomalyDetected:
         event_seq=0,
         source="swing.risk",
         severity=AnomalySeverity.CRITICAL,
-        reason="30% drawdown breached",
+        reason="ledger reconciliation mismatch",
     )
 
 
@@ -201,6 +238,16 @@ def _fixture_daily_trade_digest() -> DailyTradeDigest:
 
 # Registry: event-name -> (description, fixture factory, routing category)
 _CATALOG: Final[dict[str, tuple[str, Callable[[], DomainEvent], EventClass]]] = {
+    "signal-emitted": (
+        "Strategy entry signal with its stop (the only event live in production)",
+        _fixture_signal_entry,
+        EventClass.SIGNAL_EMITTED,
+    ),
+    "signal-exit": (
+        "Strategy exit signal with the rule that fired",
+        _fixture_signal_exit,
+        EventClass.SIGNAL_EMITTED,
+    ),
     "strategy-paused": (
         "Strategy halted — critical drawdown or operator kill",
         _fixture_strategy_paused,
@@ -234,7 +281,7 @@ _CATALOG: Final[dict[str, tuple[str, Callable[[], DomainEvent], EventClass]]] = 
     "rebalance-triggered": (
         "Rebalancer detected drift beyond band",
         _fixture_rebalance_triggered,
-        EventClass.WEEKLY_REBALANCE_REPORT,
+        EventClass.REBALANCE_TRIGGERED,
     ),
     "daily-trade-digest": (
         "End-of-day trading summary with CSV attachment",
@@ -323,6 +370,21 @@ def _reconstruct(name: str, data: dict[str, Any]) -> DomainEvent:  # noqa: PLR09
     occurred_at = _parse_ts(data["occurred_at"])
     correlation_id = str(data["correlation_id"])
     event_seq = int(data.get("event_seq", 0))
+    if name in ("signal-emitted", "signal-exit"):
+        entry_price = data.get("entry_price")
+        return SignalEmitted(
+            occurred_at=occurred_at,
+            correlation_id=correlation_id,
+            event_seq=event_seq,
+            strategy_id=StrategyId(str(data["strategy_id"])),
+            pair=_parse_pair(data["pair"]),
+            kind=SignalKind(data["kind"]),
+            side=SignalSide(data["side"]),
+            entry_price=None if entry_price is None else Decimal(str(entry_price)),
+            stop_price=Decimal(str(data["stop_price"])),
+            atr_context=Decimal(str(data["atr_context"])),
+            exit_reason=data.get("exit_reason"),
+        )
     if name == "strategy-paused":
         return StrategyPaused(
             occurred_at=occurred_at,
@@ -497,35 +559,36 @@ def run_preview(event_name: str, *, fixture: Path | None, stream: Any) -> int:
     telegram_fires, slack_fires = channels_for(event_class)
 
     stream.write(f"# hermes preview — {event_name}\n\n")
+    push = "loud (rings the phone)" if is_event_loud(event) else "silent (disable_notification)"
+    stream.write(f"## Delivery\nTelegram push: {push}\n\n")
 
     stream.write("## Telegram (MarkdownV2)\n")
-    if telegram_fires:
-        stream.write(f"{telegram_template(event)}\n\n")
-    else:
-        stream.write("(routing table: Telegram does not fire for this event)\n\n")
+    if not telegram_fires:
+        stream.write("(routing table: Telegram does not fire for this event; shown for review)\n")
+    try:
+        telegram_text = telegram_template(event)
+    except ValueError:
+        telegram_text = "(Telegram has no template for this event: Slack-only report)"
+    stream.write(f"{telegram_text}\n\n")
 
-    if slack_fires:
-        slack_message = slack_template(event)
-        attachments_written = _write_attachments(slack_message, event_name)
-        stream.write("## Slack — text fallback\n")
-        stream.write(f"{slack_message.text}\n\n")
-        stream.write("## Slack — Block Kit\n")
-        stream.write(json.dumps(slack_message.blocks, indent=2))
-        stream.write("\n\n")
-        stream.write("## Slack — attachments\n")
-        if slack_message.attachments:
-            for attachment, path in zip(
-                slack_message.attachments, attachments_written, strict=True
-            ):
-                stream.write(
-                    f"- {attachment.name} ({attachment.mime}, "
-                    f"{len(attachment.content)} bytes) saved to {path}\n"
-                )
-        else:
-            stream.write("(none)\n")
+    slack_message = slack_template(event)
+    attachments_written = _write_attachments(slack_message, event_name)
+    stream.write("## Slack — text fallback\n")
+    if not slack_fires:
+        stream.write("(routing table: Slack does not fire for this event; shown for review)\n")
+    stream.write(f"{slack_message.text}\n\n")
+    stream.write("## Slack — Block Kit\n")
+    stream.write(json.dumps(slack_message.blocks, indent=2, ensure_ascii=False))
+    stream.write("\n\n")
+    stream.write("## Slack — attachments\n")
+    if slack_message.attachments:
+        for attachment, path in zip(slack_message.attachments, attachments_written, strict=True):
+            stream.write(
+                f"- {attachment.name} ({attachment.mime}, "
+                f"{len(attachment.content)} bytes) saved to {path}\n"
+            )
     else:
-        stream.write("## Slack — text fallback\n")
-        stream.write("(routing table: Slack does not fire for this event)\n\n")
+        stream.write("(none)\n")
     return 0
 
 

@@ -110,7 +110,7 @@ class TestFixtureLoading:
         )
         output = stream.getvalue()
         assert rc == 0
-        assert "STRATEGY\\_PAUSED" in output
+        assert "Strategy paused · swing\\.v1" in output
 
     def test_missing_fixture_exits_one(self, tmp_path: Path) -> None:
         """A non-existent fixture path exits 1 with an ERROR line."""
