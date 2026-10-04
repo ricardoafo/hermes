@@ -79,9 +79,9 @@ def test_positions_reads_the_db_option(ledger: Path) -> None:
 
 def test_positions_db_without_a_path_is_a_usage_error() -> None:
     """``--db`` with no value exits 2 with the usage line."""
-    stream = io.StringIO()
-    rc = run_positions(["--db"], stream, env={})
-    assert (rc, "--db PATH" in stream.getvalue()) == (2, True)
+    stream, err = io.StringIO(), io.StringIO()
+    rc = run_positions(["--db"], stream, env={}, err=err)
+    assert (rc, stream.getvalue(), "--db PATH" in err.getvalue()) == (2, "", True)
 
 
 def test_positions_db_pointing_nowhere_is_the_empty_state(tmp_path: Path) -> None:
@@ -97,17 +97,17 @@ def test_positions_unreadable_ledger_exits_3(tmp_path: Path) -> None:
     b = LedgerBuilder(path)
     b.mark(T0, (Held(ETH, "1", "2500", "2550", T0),), pair=ETH)
     b.close()
-    stream = io.StringIO()
-    rc = run_positions(["--db", str(path)], stream, env={})
-    assert (rc, "could not read the ledger" in stream.getvalue()) == (3, True)
+    stream, err = io.StringIO(), io.StringIO()
+    rc = run_positions(["--db", str(path)], stream, env={}, err=err)
+    assert (rc, stream.getvalue(), "could not read the ledger" in err.getvalue()) == (3, "", True)
 
 
 def test_tui_stays_demo_only_with_a_ledger(ledger: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The home screen needs every view, so a ledger alone still asks for --demo (D-8)."""
     monkeypatch.chdir(ledger.parent)
-    stream = io.StringIO()
-    rc = run_tui([], stream, env={}, runner=lambda model: None)
-    assert (rc, "use --demo <scenario>" in stream.getvalue()) == (2, True)
+    stream, err = io.StringIO(), io.StringIO()
+    rc = run_tui([], stream, env={}, runner=lambda model: None, err=err)
+    assert (rc, stream.getvalue(), "use --demo <scenario>" in err.getvalue()) == (2, "", True)
 
 
 def test_activity_keeps_its_own_ledger_reader(

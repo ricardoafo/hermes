@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 from dotenv import dotenv_values
 
 from hermes.entrypoints import _health as health_module
+from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.commands import Command
 from hermes.infrastructure.config.loader import DEFAULT_DOTENV_PATH
 
@@ -48,7 +49,7 @@ Exit codes:
   3  an integration is not configured (and none is down)"""
 
 
-def _parse(rest: list[str], stream: Any) -> tuple[bool, list[str]] | int:
+def _parse(rest: list[str], stream: Any, err: TextIO) -> tuple[bool, list[str]] | int:
     """Split ``rest`` into ``(as_json, positionals)``, or return an exit code.
 
     Returns 0 after printing usage for ``-h``/``--help`` and 2 for an
@@ -63,14 +64,14 @@ def _parse(rest: list[str], stream: Any) -> tuple[bool, list[str]] | int:
         if arg == "--json":
             as_json = True
         elif arg.startswith("-"):
-            stream.write(f"ERROR: unknown option {arg!r}.\n{_USAGE}\n")
+            err.write(f"ERROR: unknown option {arg!r}.\n{_USAGE}\n")
             return 2
         else:
             positional.append(arg)
     return as_json, positional
 
 
-def _run(rest: list[str], *, stream: Any) -> int:
+def _run(rest: list[str], *, stream: Any, err: TextIO | None = None) -> int:
     """Handle the ``hermes health`` subcommand family.
 
     Two forms, each with an optional ``--json``:
@@ -86,12 +87,14 @@ def _run(rest: list[str], *, stream: Any) -> int:
     Args:
         rest: Residual argv after the ``health`` token.
         stream: Output stream.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         Process exit code: 0 on OK or ``--help``, 1 on adapter down, 2 on
         bad usage or unknown integration, 3 on missing configuration.
     """
-    parsed = _parse(rest, stream)
+    err = resolve_err(err)
+    parsed = _parse(rest, stream, err)
     if isinstance(parsed, int):
         return parsed
     as_json, positional = parsed
@@ -109,7 +112,7 @@ def _run(rest: list[str], *, stream: Any) -> int:
     check = health_module.get_check(integration)
     if check is None:
         available = ", ".join(health_module.registered_integrations()) or "(none)"
-        stream.write(f"ERROR: unknown integration {integration!r}. Available: {available}\n")
+        err.write(f"ERROR: unknown integration {integration!r}. Available: {available}\n")
         return 2
 
     result = check(env)

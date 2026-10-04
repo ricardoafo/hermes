@@ -45,6 +45,7 @@ from hermes.application.status import (
 from hermes.domain.errors import LedgerError
 from hermes.entrypoints import console as console_module
 from hermes.entrypoints import serve as serve_module
+from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.daily_line import JournalCounts, count_journal, daily_line
 from hermes.entrypoints.status_view import render_status, report_to_dict
 from hermes.infrastructure.config.errors import ConfigError
@@ -74,6 +75,7 @@ def main(
     demo_flag: str | None = None,
     env: Mapping[str, str] | None = None,
     bot_state: Callable[[], UnitState] | None = None,
+    err: TextIO | None = None,
 ) -> int:
     """Handle ``hermes status``.
 
@@ -90,10 +92,12 @@ def main(
         demo_flag: Scenario from the leading ``--demo`` option, if any.
         env: Environment snapshot for ``HERMES_CONSOLE_DEMO``; defaults to empty.
         bot_state: Probe for ``hermes-bot.service``; defaults to systemd.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         Process exit code.
     """
+    err = resolve_err(err)
     parser = argparse.ArgumentParser(prog="hermes status", add_help=False)
     parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
     parser.add_argument("--db", type=Path, default=serve_module.DEFAULT_DB_PATH)
@@ -106,16 +110,17 @@ def main(
     try:
         parsed = parser.parse_args(rest)
     except SystemExit:
-        stream.write("ERROR: could not parse `hermes status` arguments.\n" + _USAGE)
+        err.write("ERROR: could not parse `hermes status` arguments.\n" + _USAGE)
         return 2
     if parsed.help:
         stream.write(_USAGE)
         return 0
     if demo_flag or (env or {}).get(console_module.DEMO_ENV_VAR, "").strip():
-        return _demo_status(stream, demo_flag=demo_flag, env=env or {}, as_json=parsed.json)
+        return _demo_status(stream, err, demo_flag=demo_flag, env=env or {}, as_json=parsed.json)
     return _ledger_status(
         parsed,
         stream,
+        err,
         now=now,
         unit_state=unit_state,
         stdin=stdin or sys.stdin,
@@ -126,6 +131,7 @@ def main(
 def _ledger_status(
     parsed: argparse.Namespace,
     stream: TextIO,
+    err: TextIO,
     *,
     now: datetime | None,
     unit_state: Callable[[], UnitState] | None,
@@ -136,7 +142,7 @@ def _ledger_status(
     try:
         config = load_config(parsed.config_dir)
     except ConfigError as exc:
-        stream.write(f"ERROR: config load failed: {exc}\n")
+        err.write(f"ERROR: config load failed: {exc}\n")
         return 3
 
     at = now if now is not None else datetime.now(UTC)
@@ -158,7 +164,7 @@ def _ledger_status(
         report = ledger_missing_report(at, unit, str(parsed.db))
         code = 3
     except LedgerError as exc:
-        stream.write(f"ERROR: could not read the ledger: {exc}\n")
+        err.write(f"ERROR: could not read the ledger: {exc}\n")
         return 3
     else:
         code = 0 if report.verdict.level is VerdictLevel.OK else 1
@@ -239,13 +245,13 @@ def _journal_counts(source: str | None, stdin: TextIO) -> JournalCounts:
 
 
 def _demo_status(
-    stream: TextIO, *, demo_flag: str | None, env: Mapping[str, str], as_json: bool
+    stream: TextIO, err: TextIO, *, demo_flag: str | None, env: Mapping[str, str], as_json: bool
 ) -> int:
     """Show a demo scenario's heartbeat; exit 0 when OK, 1 late or down, 2 unknown."""
     try:
         model = console_module.resolve_read_model(demo_flag=demo_flag, env=env)
     except UnknownScenarioError as exc:
-        stream.write(f"ERROR: {exc}\n")
+        err.write(f"ERROR: {exc}\n")
         return 2
     heartbeat = model.heartbeat()
     if as_json:

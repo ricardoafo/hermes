@@ -8,6 +8,7 @@ from typing import Final, TextIO
 
 from hermes.adapters.console import UnknownScenarioError, available_scenarios
 from hermes.application.console import ConsoleReadModel
+from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.commands import Command
 from hermes.entrypoints.console import demo_read_model, recent_journal_lines
 
@@ -32,6 +33,7 @@ def run_tui(
     demo_flag: str | None = None,
     env: Mapping[str, str] | None = None,
     runner: Callable[[ConsoleReadModel], None] | None = None,
+    err: TextIO | None = None,
 ) -> int:
     """Run ``hermes tui``, the read-only home screen.
 
@@ -41,30 +43,32 @@ def run_tui(
 
     Args:
         args: Arguments after ``tui``; none are accepted.
-        stream: Output stream for errors.
+        stream: Output stream.
         demo_flag: Scenario from the leading ``--demo`` option, if any.
         env: Environment snapshot; defaults to empty.
         runner: Runs the app on the read model; defaults to the Textual home
             screen (imported lazily so the other commands stay fast).
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         0 after the operator quits, 2 for a usage error, an unknown scenario or
         no data source.
     """
+    err = resolve_err(err)
     if "-h" in args or "--help" in args:
         stream.write(_TUI_HELP + "\n")
         return 0
     if args:
-        stream.write(f"ERROR: bad arguments. {_TUI_USAGE}\n")
+        err.write(f"ERROR: bad arguments. {_TUI_USAGE}\n")
         return 2
     try:
         model = demo_read_model(demo_flag=demo_flag, env=env or {})
     except UnknownScenarioError as exc:
-        stream.write(f"ERROR: {exc}\n")
+        err.write(f"ERROR: {exc}\n")
         return 2
     if model is None:
         scenarios = ", ".join(available_scenarios())
-        stream.write(f"ERROR: {_NO_LIVE_HOME.format(scenarios=scenarios)}\n")
+        err.write(f"ERROR: {_NO_LIVE_HOME.format(scenarios=scenarios)}\n")
         return 2
     if runner is None:
         from hermes.entrypoints.tui import run_home  # noqa: PLC0415 - Textual is slow to import
@@ -76,8 +80,8 @@ def run_tui(
     return 0
 
 
-def _run(argv: list[str], *, stream: TextIO, demo: str | None) -> int:
-    return run_tui(argv, stream, demo_flag=demo, env=os.environ)
+def _run(argv: list[str], *, stream: TextIO, demo: str | None, err: TextIO | None = None) -> int:
+    return run_tui(argv, stream, demo_flag=demo, env=os.environ, err=err)
 
 
 COMMAND = Command(

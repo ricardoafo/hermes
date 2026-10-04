@@ -12,5 +12,5 @@ __all__ = ["COMMAND"]
 COMMAND = Command(
     name="supervisor",
     summary="Read-only, outcome-blind supervisor tools; `mcp` serves them, `brief` sums them up.",
-    run=lambda argv, *, stream: _impl.main(argv, stream=stream, env=os.environ),
+    run=lambda argv, *, stream, err=None: _impl.main(argv, stream=stream, env=os.environ, err=err),
 )

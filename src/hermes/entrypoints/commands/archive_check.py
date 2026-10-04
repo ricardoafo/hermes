@@ -10,5 +10,5 @@ __all__ = ["COMMAND"]
 COMMAND = Command(
     name="archive-check",
     summary="Compare yesterday's live bars with the Binance archive (read-only).",
-    run=lambda argv, *, stream: _impl.main(argv, stream=stream),
+    run=lambda argv, *, stream, err=None: _impl.main(argv, stream=stream, err=err),
 )

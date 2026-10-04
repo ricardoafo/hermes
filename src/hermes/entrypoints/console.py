@@ -32,6 +32,7 @@ from hermes.adapters.systemd_journal import JournalctlReader, JournalUnavailable
 from hermes.application.console import ConsoleReadModel, Surface
 from hermes.application.console.logs import LogLine, parse_journal_entry
 from hermes.application.console.render import RenderContext, render_overview
+from hermes.entrypoints._streams import resolve_err
 
 __all__ = [
     "DEMO_ENV_VAR",
@@ -115,29 +116,33 @@ def console_commands() -> frozenset[str]:
     return frozenset(name for name, command in discover().items() if command.wants_demo)
 
 
-def apply_demo_flag(args: list[str], stream: TextIO) -> tuple[int | None, list[str]]:
+def apply_demo_flag(
+    args: list[str], stream: TextIO, err: TextIO | None = None
+) -> tuple[int | None, list[str]]:
     """Handle a leading ``--demo`` for the top-level dispatcher.
 
     Args:
         args: Arguments after the program name.
-        stream: Output stream for the overview and errors.
+        stream: Output stream for the overview.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         ``(exit_code, rest)``: an exit code when the flag was fully handled
         here (overview printed, or a usage error), else ``None`` and the
         arguments left for normal dispatch.
     """
+    err = resolve_err(err)
     try:
         demo = split_demo_flag(args)
     except DemoFlagError as exc:
-        stream.write(f"ERROR: {exc}. Scenarios: {', '.join(available_scenarios())}\n")
+        err.write(f"ERROR: {exc}. Scenarios: {', '.join(available_scenarios())}\n")
         return 2, []
     if demo.scenario is None:
         return None, demo.rest
     if not demo.rest:
-        return run_overview(demo.scenario, stream), []
+        return run_overview(demo.scenario, stream, err), []
     if demo.rest[0] not in console_commands():
-        stream.write(f"ERROR: --demo only applies to console commands, not {demo.rest[0]!r}.\n")
+        err.write(f"ERROR: --demo only applies to console commands, not {demo.rest[0]!r}.\n")
         return 2, []
     return None, demo.rest
 
@@ -200,7 +205,7 @@ def resolve_read_model(
         raise LiveReadModelUnavailableError(msg) from None
 
 
-def run_overview(scenario: str, stream: TextIO) -> int:
+def run_overview(scenario: str, stream: TextIO, err: TextIO | None = None) -> int:
     """Print the home screen of ``scenario`` to ``stream`` as static text.
 
     This is the same screen ``hermes tui`` shows, without the keys.
@@ -208,6 +213,7 @@ def run_overview(scenario: str, stream: TextIO) -> int:
     Args:
         scenario: Scenario named by ``--demo``.
         stream: Output stream; colour follows Rich's TTY and ``NO_COLOR`` detection.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         0 on success, 2 for an unknown scenario.
@@ -215,7 +221,7 @@ def run_overview(scenario: str, stream: TextIO) -> int:
     try:
         model = FixtureReadModel.load(scenario)
     except UnknownScenarioError as exc:
-        stream.write(f"ERROR: {exc}\n")
+        resolve_err(err).write(f"ERROR: {exc}\n")
         return 2
     console = Console(file=stream, emoji=False, markup=False, highlight=False)
     ctx = RenderContext.for_model(model, surface=Surface.OPERATOR_CLI, width=console.width)

@@ -63,6 +63,21 @@ def _run(tmp_path: Path, *args: str, profile: str | None = _PROFILE) -> tuple[in
     return code, out.getvalue()
 
 
+def _run_err(tmp_path: Path, *args: str, profile: str | None = _PROFILE) -> tuple[int, str, str]:
+    profile_path = tmp_path / "taxpayer.yaml"
+    if profile is not None:
+        profile_path.write_text(profile, encoding="utf-8")
+    out, err = io.StringIO(), io.StringIO()
+    code = tax_module.main(
+        ["--config-dir", str(_CONFIG_DIR), *args],
+        stream=out,
+        now=lambda: _NOW,
+        env={"HERMES_TAXPAYER_PROFILE": str(profile_path)},
+        err=err,
+    )
+    return code, out.getvalue(), err.getvalue()
+
+
 def test_text_output_is_labelled_estimate_and_shadow(tmp_path: Path) -> None:
     """Gain 18 EUR less a 4.50 carried loss, salary above the minimum: tax 2.565 -> 2.57."""
     db = _ledger(tmp_path / "ledger.sqlite3")
@@ -172,52 +187,57 @@ def test_profile_values_are_never_logged_or_printed(
 def test_missing_ledger_fails_without_creating_one(tmp_path: Path) -> None:
     """A wrong --db path exits 1 and leaves no empty ledger behind."""
     db = tmp_path / "nope.sqlite3"
-    code, out = _run(tmp_path, "--db", str(db))
-    assert (code, out, db.exists()) == (1, f"ERROR: ledger not found at {db}\n", False)
+    code, out, err = _run_err(tmp_path, "--db", str(db))
+    assert (code, out, err, db.exists()) == (1, "", f"ERROR: ledger not found at {db}\n", False)
 
 
 def test_unreadable_ledger_exits_1(tmp_path: Path) -> None:
     """A file that is not a SQLite database is a ledger failure."""
     db = tmp_path / "ledger.sqlite3"
     db.write_text("not a database, not a database, not a database", encoding="utf-8")
-    code, out = _run(tmp_path, "--db", str(db))
-    assert code == 1
-    assert out.startswith(f"ERROR: cannot read ledger {db}")
+    code, out, err = _run_err(tmp_path, "--db", str(db))
+    assert (code, out) == (1, "")
+    assert err.startswith(f"ERROR: cannot read ledger {db}")
 
 
 def test_malformed_profile_is_a_config_error(tmp_path: Path) -> None:
     """A present but broken profile fails closed with exit 3."""
     db = _ledger(tmp_path / "ledger.sqlite3")
-    code, out = _run(tmp_path, "--db", str(db), profile="years: [")
-    assert code == 3
-    assert out.startswith("ERROR: config load failed: Config error: invalid YAML in taxpayer")
+    code, out, err = _run_err(tmp_path, "--db", str(db), profile="years: [")
+    assert (code, out) == (3, "")
+    assert err.startswith("ERROR: config load failed: Config error: invalid YAML in taxpayer")
 
 
 def test_missing_config_dir_is_a_config_error(tmp_path: Path) -> None:
     """No tax_scales.yaml means exit 3."""
-    out = io.StringIO()
+    out, err = io.StringIO(), io.StringIO()
     code = tax_module.main(
         ["--config-dir", str(tmp_path / "missing")],
         stream=out,
         now=lambda: _NOW,
         env={"HERMES_TAXPAYER_PROFILE": str(tmp_path / "taxpayer.yaml")},
+        err=err,
     )
-    assert (code, out.getvalue().startswith("ERROR: config load failed")) == (3, True)
+    assert (code, out.getvalue(), err.getvalue().startswith("ERROR: config load failed")) == (
+        3,
+        "",
+        True,
+    )
 
 
 @pytest.mark.parametrize("price", ["BTC", "=5", "BTC=abc", "BTC=-1", "BTC=inf"])
 def test_bad_price_is_a_usage_error(tmp_path: Path, price: str) -> None:
     """--price needs ASSET=EUR with a finite non-negative amount."""
-    code, out = _run(tmp_path, "--price", price)
-    assert code == 2
-    assert out.startswith("ERROR: --price expects ASSET=EUR")
+    code, out, err = _run_err(tmp_path, "--price", price)
+    assert (code, out) == (2, "")
+    assert err.startswith("ERROR: --price expects ASSET=EUR")
 
 
 def test_unknown_argument_is_a_usage_error(tmp_path: Path) -> None:
     """An unknown flag exits 2 with the usage text."""
-    code, out = _run(tmp_path, "--nope")
-    assert code == 2
-    assert "Usage: hermes tax" in out
+    code, out, err = _run_err(tmp_path, "--nope")
+    assert (code, out) == (2, "")
+    assert "Usage: hermes tax" in err
 
 
 def test_cli_dispatches_tax_help() -> None:
