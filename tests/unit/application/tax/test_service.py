@@ -138,3 +138,19 @@ def test_tax_if_sold_now_leaves_the_quote_currency_out(ledger: SqliteLedger) -> 
     assert isinstance(estimate, TaxYearEstimate)
     assert estimate.tax_if_sold_now == TaxEstimate(Decimal("19"))
     assert [p.asset for p in estimate.per_position_if_sold_now] == ["BTC"]
+
+
+def test_usdt_losses_are_not_two_month_flagged(ledger: SqliteLedger) -> None:
+    """The two-month rule flags traded coins only, not the quote currency (decision 2026-10-04).
+
+    Seed 1,000 USDT at 1.25 (0.80 EUR per unit). BUY 1 BTC for 500 USDT at 1.50 disposes of
+    500 USDT at 0.6667 EUR against 0.80: a USDT loss. SELL 1 BTC for 500 USDT a minute later
+    re-acquires USDT, which would flag USDT under a same-coin reading; it must not.
+    """
+    seed_id = _record_seed(ledger)
+    ledger.apply_seed_eur(seed_id, _pricing("1.25"))
+    _record_usdt(ledger, _usdt_trade(OrderSide.BUY, "1", "500", "0", minutes=1, rate="1.50"))
+    _record_usdt(ledger, _usdt_trade(OrderSide.SELL, "1", "500", "0", minutes=2, rate="1.50"))
+    estimate = _estimate_seeded(ledger, {})
+    assert isinstance(estimate, TaxYearEstimate)
+    assert [line for line in estimate.flags if line.startswith("USDT")] == []

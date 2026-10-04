@@ -50,7 +50,8 @@ remainder, shared 25% limit), so every reading is written down here and pinned b
 
 ## Decisions
 
-All decisions below: DECIDED by implementer, Code Owner reviews in PR.
+All decisions below: DECIDED. The Code Owner accepted the D-1 legal readings (the standard AEAT reading; the output is an
+estimate) and the D-10 two-month scope on 2026-10-04.
 
 ### D-1: Hermes tax is marginal over the profile
 
@@ -162,8 +163,8 @@ All decisions below: DECIDED by implementer, Code Owner reviews in PR.
   year makes that year pending through the consumption, as before.
 - **Tax if sold now**: covers base-asset lots only. Selling a position receives the quote currency and disposes of
   none, so open USDT lots are left out and need no price.
-- **Two-month flags**: applied to every asset, USDT included, as ADR-016 item 8 is written ("same-coin purchase");
-  a USDT disposal at a loss with a USDT acquisition (a BTC sale) within two months is flagged for the gestor.
+- **Two-month flags**: traded coins only (BTC, ETH, SOL); the quote currency (USDT) is never flagged, since every trade
+  would otherwise raise one. **Decided by the Code Owner on 2026-10-04.**
 - **Alternatives**: read realised gains from `lot_consumptions` (the replay is still needed for open lots and refs);
   skip the quote leg (contradicts ADR-016 item 4).
 - **Rationale**: ADR-016 item 4; one source of truth for what the FIFO replays.

@@ -272,6 +272,7 @@ def estimate_year(
     flags = _flags(
         replay.disposals,
         replay.acquisitions,
+        not_flagged=frozenset(asset.value for asset in replay.quote_assets),
         year=year,
         expiring=netting.expiring,
         expired=netting.expired,
@@ -396,12 +397,16 @@ def _flags(
     disposals: Iterable[Disposal],
     acquisitions: Iterable[Acquisition],
     *,
+    not_flagged: frozenset[str],
     year: int,
     expiring: Iterable[CarriedLoss],
     expired: Iterable[CarriedLoss],
 ) -> tuple[str, ...]:
-    in_year = [d for d in disposals if d.tax_year == year]
-    lines = [_describe(flag) for flag in two_month_flags(in_year, acquisitions)]
+    # Code Owner decision 2026-10-04: the two-month rule flags traded coins only, never the
+    # quote currency (USDT), whose every trade would otherwise raise a flag.
+    in_year = [d for d in disposals if d.tax_year == year and d.asset not in not_flagged]
+    bought = [a for a in acquisitions if a.asset not in not_flagged]
+    lines = [_describe(flag) for flag in two_month_flags(in_year, bought)]
     lines.extend(
         f"a carried loss from {loss.origin_year} expires unused at the end of {year}"
         for loss in expiring
