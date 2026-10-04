@@ -40,6 +40,7 @@ from typing import Any
 from hermes.adapters.console import available_scenarios
 from hermes.entrypoints import console as console_module
 from hermes.entrypoints import version as version_module
+from hermes.entrypoints import vps as vps_module
 from hermes.entrypoints.commands import Command, discover
 from hermes.infrastructure import sentry_integration
 
@@ -74,6 +75,8 @@ def _print_top_help(stream: Any, commands: dict[str, Command]) -> None:
     lines.append("  --demo SCENARIO  Show console screens on demo data (DEMO DATA tag).")
     lines.append(f"                   Scenarios: {', '.join(available_scenarios())}")
     lines.append(f"                   Commands that accept it: {demo_commands}")
+    lines.append("  --vps            Run a console command on the VPS over ssh (read-only).")
+    lines.append("                   Settings: HERMES_VPS_HOST, HERMES_VPS_USER, HERMES_VPS_KEY.")
     lines.append("  --json           One JSON document on stdout; per command: " + _JSON_NOTE)
     lines.append("")
     lines.append("Run `hermes <command> --help` for a command's options and exit codes.")
@@ -133,6 +136,59 @@ def _initialize_sentry_from_env(env: dict[str, str]) -> None:
     sentry_integration.initialize(dsn=dsn, environment=environment)
 
 
+def _demo_then_vps(args: list[str]) -> bool:
+    """True for ``--demo SCENARIO --vps ...``, the other order of the refused pair."""
+    try:
+        return vps_module.split_vps_flag(console_module.split_demo_flag(args).rest)[0]
+    except console_module.DemoFlagError:
+        return False
+
+
+def _vps_exit(args: list[str], out: Any) -> int | None:
+    """Handle a ``--vps`` run (either order with ``--demo``); ``None`` when not asked for."""
+    on_vps, vps_args = vps_module.split_vps_flag(args)
+    if on_vps or _demo_then_vps(args):
+        return _run_on_vps(vps_args if on_vps else args, out, demo_first=not on_vps)
+    return None
+
+
+def _run_on_vps(args: list[str], out: Any, *, demo_first: bool) -> int:
+    """Run the console command after ``--vps`` on the VPS; refuse ``--demo`` alongside it."""
+    if not args:
+        out.write("ERROR: --vps needs a console command, e.g. `hermes --vps positions`.\n")
+        return 2
+    if demo_first or args[0] == "--demo" or args[0].startswith("--demo="):
+        out.write("ERROR: --vps cannot be combined with --demo; the demo runs locally.\n")
+        return 2
+    return vps_module.run_vps(
+        args[0],
+        args[1:],
+        out,
+        console_commands=console_module.console_commands(),
+        env=os.environ,
+    )
+
+
+def _dispatch(args: list[str], out: Any, demo_scenario: str | None) -> int:
+    """Run the version flag, the help, or the named subcommand."""
+    if args[:1] in (["--version"], ["-V"]):
+        return version_module.main([], stream=out)
+
+    commands = discover()
+    if not args or args[0] in {"-h", "--help"}:
+        _print_top_help(out, commands)
+        return 0
+
+    subcommand, *rest = args
+    command = commands.get(subcommand)
+    if command is None:
+        out.write(_unknown_command_message(subcommand, commands))
+        return 2
+    if command.wants_demo:
+        return command.run(rest, stream=out, demo=demo_scenario)
+    return command.run(rest, stream=out)
+
+
 def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
     """Dispatch the invoked subcommand.
 
@@ -159,27 +215,16 @@ def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
     # so the CLI never crashes on a Sentry failure.
     _initialize_sentry_from_env(dict(os.environ))
 
+    vps_exit = _vps_exit(args, out)
+    if vps_exit is not None:
+        return vps_exit
+
     demo_scenario = _leading_demo_scenario(args)
     demo_exit, args = console_module.apply_demo_flag(args, out)
     if demo_exit is not None:
         return demo_exit
 
-    if args[:1] in (["--version"], ["-V"]):
-        return version_module.main([], stream=out)
-
-    commands = discover()
-    if not args or args[0] in {"-h", "--help"}:
-        _print_top_help(out, commands)
-        return 0
-
-    subcommand, *rest = args
-    command = commands.get(subcommand)
-    if command is None:
-        out.write(_unknown_command_message(subcommand, commands))
-        return 2
-    if command.wants_demo:
-        return command.run(rest, stream=out, demo=demo_scenario)
-    return command.run(rest, stream=out)
+    return _dispatch(args, out, demo_scenario)
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -467,6 +467,31 @@ hermes_run logs -f                 # follow, Ctrl-C to stop
 Every console command also runs on demo data from any machine:
 `hermes --demo ok-two-positions activity` (see `hermes --demo` for the list).
 
+### Use the console from your PC
+
+With Tailscale connected, one local command runs a console command on the
+VPS over `ssh -t` (same user, env and ledger as `hermes_run` above):
+
+```powershell
+uv run hermes --vps tui
+uv run hermes --vps positions BTC
+uv run hermes --vps logs --level warning --since 1h
+```
+
+Only console commands go through; `serve`, `migrate` and the rest are
+refused, and `--vps` cannot be combined with `--demo`. Defaults match the
+setup above; override with environment variables:
+
+| Variable | Default |
+| --- | --- |
+| `HERMES_VPS_HOST` | `hermes-01` |
+| `HERMES_VPS_USER` | `root` |
+| `HERMES_VPS_KEY` | `~/.ssh/hermes_vps_ed25519` |
+
+Errors are one line: no ssh client (install OpenSSH), host unreachable
+(Tailscale down), authentication failed (check the key), or the VPS has no
+console yet (deploy a release that includes it).
+
 ## Supervisor tools (read-only, outcome-blind)
 
 `hermes supervisor` serves the supervisor's read tools (ADR-012 D-06, D-07).
