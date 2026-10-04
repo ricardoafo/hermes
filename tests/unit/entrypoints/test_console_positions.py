@@ -110,3 +110,24 @@ def test_positions_is_listed_in_help() -> None:
     """The top-level help names the positions command."""
     _, out = _run(["--help"])
     assert "positions" in out.split("Options:")[0]
+
+
+@pytest.mark.parametrize("flag", ["-h", "--help"])
+@pytest.mark.parametrize("prefix", [[], ["--demo", "ok-two-positions"]])
+def test_help_prints_usage_flags_and_exit_codes_and_exits_zero(
+    flag: str, prefix: list[str]
+) -> None:
+    """`positions -h/--help` is answered with usage, flags and exit codes, exit 0."""
+    rc, out = _run([*prefix, "positions", flag])
+    assert (
+        rc,
+        out.startswith("Usage: hermes [--demo SCENARIO] positions [COIN] [--json] [--utc]"),
+        "--json" in out,
+        "Exit codes: 0 success, 1 COIN has no open position, 2 usage" in out,
+    ) == (0, True, True, True)
+
+
+def test_help_beats_other_bad_arguments() -> None:
+    """Help wins over an unknown flag in the same call, as in `activity`."""
+    rc, out = _run(["positions", "--bogus", "--help"])
+    assert (rc, out.startswith("Usage:")) == (0, True)

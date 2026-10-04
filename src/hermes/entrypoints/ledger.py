@@ -97,6 +97,9 @@ def _to_json(report: LedgerReport) -> dict[str, object]:
         "pending_migrations": list(report.pending),
         "event_count": report.event_count,
         "gaps": [{"first": gap.first, "last": gap.last} for gap in report.gaps],
+        "unknown_migrations": list(report.unknown_migrations),
+        "lot_problems": list(report.lot_problems),
+        "orphans": list(report.orphans),
         "findings": list(report.findings),
     }
 

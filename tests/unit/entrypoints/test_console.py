@@ -16,6 +16,7 @@ import io
 import pytest
 
 from hermes.adapters.console import UnknownScenarioError
+from hermes.application.console import ConsoleReadModel
 from hermes.entrypoints import cli as cli_module
 from hermes.entrypoints.commands import Command
 from hermes.entrypoints.commands.tui import run_tui
@@ -173,3 +174,23 @@ def test_static_home_screen_has_no_tax_footnote_and_no_all_good_panel() -> None:
     cli_module.main(["--demo", "ok-two-positions"], stream=stream)
     text = stream.getvalue()
     assert [w in text for w in ("FIFO", "All good", "Your move", "USDT")] == [False] * 4
+
+
+@pytest.mark.parametrize("flag", ["-h", "--help"])
+def test_tui_help_prints_usage_and_exit_codes_without_starting_the_app(flag: str) -> None:
+    """`tui -h/--help` prints usage and exit codes, exits 0, and never runs the app."""
+    stream = io.StringIO()
+    started: list[ConsoleReadModel] = []
+    rc = run_tui([flag], stream, env={}, runner=started.append)
+    out = stream.getvalue()
+    assert (
+        rc,
+        started,
+        out.startswith("Usage: hermes [--demo SCENARIO] tui"),
+        "Exit codes: 0" in out,
+    ) == (
+        0,
+        [],
+        True,
+        True,
+    )

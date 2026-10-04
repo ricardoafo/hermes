@@ -37,6 +37,16 @@ _POSITIONS_USAGE: Final = (
     "Usage: hermes [--demo SCENARIO] positions [COIN] [--json] [--utc] [--db PATH]"
 )
 _DB: Final = "--db"
+_POSITIONS_HELP: Final = (
+    f"{_POSITIONS_USAGE}\n"
+    "  COIN       show the detail for one coin\n"
+    "  --json     one JSON document on stdout\n"
+    "  --utc      show times in UTC instead of Europe/Madrid\n"
+    "  --db PATH  ledger to read (default: the service ledger)\n"
+    "  -h, --help show this help\n"
+    "Exit codes: 0 success, 1 COIN has no open position, 2 usage or unknown scenario, "
+    "3 ledger unreadable."
+)
 
 
 def run_positions(
@@ -65,14 +75,14 @@ def run_positions(
         an unknown scenario, 3 when the ledger cannot be read.
     """
     err = resolve_err(err)
+    if "-h" in args or "--help" in args:
+        stream.write(_POSITIONS_HELP + "\n")
+        return 0
     split = _split_db(args)
-    if split is None:
-        err.write(f"ERROR: bad arguments. {_POSITIONS_USAGE}\n")
-        return 2
-    rest, db_path = split
+    rest, db_path = split if split is not None else ([], None)
     flags = {a for a in rest if a.startswith("-")}
     coins = [a for a in rest if not a.startswith("-")]
-    if flags - {"--json", "--utc"} or len(coins) > 1:
+    if split is None or flags - {"--json", "--utc"} or len(coins) > 1:
         err.write(f"ERROR: bad arguments. {_POSITIONS_USAGE}\n")
         return 2
     as_json = "--json" in flags
