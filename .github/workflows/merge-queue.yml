@@ -504,6 +504,7 @@ jobs:
             const fs = require('fs');
             const {
               shouldMerge, ciRestart, afterMerge, badComment, hasBadComment, GATES_FAILED_LABEL,
+              ALERTS_LABEL, alertComment,
               classifyMergeFailure, handMergeComment, HAND_MERGE_LABEL,
               branchRefPath, classifyBranchDelete,
             } = require(`${process.env.QUEUE_TOOLS}/decisions.cjs`);
@@ -610,6 +611,38 @@ jobs:
               });
               if (!res.ok) {
                 throw new Error(`dispatch ${workflow}: ${res.status} ${await res.text()}`);
+              }
+            }
+            // One open issue labelled merge-queue:alerts collects every
+            // red head, so a watcher follows one thread instead of every PR.
+            async function postAlert(bad, base) {
+              try {
+                const listing = await fetch(
+                  `${ghApiBase}/issues?state=open&labels=${encodeURIComponent(ALERTS_LABEL)}&per_page=1`,
+                  { headers: ghApiHeaders },
+                );
+                let [issue] = listing.ok ? await listing.json() : [];
+                if (!issue) {
+                  const created = await fetch(`${ghApiBase}/issues`, {
+                    method: 'POST',
+                    headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      title: 'Merge queue alerts',
+                      labels: [ALERTS_LABEL],
+                      body: 'The merge queue comments here whenever a PR head fails its gates.',
+                    }),
+                  });
+                  if (!created.ok) {
+                    throw new Error(`create alerts issue: ${created.status} ${await created.text()}`);
+                  }
+                  issue = await created.json();
+                }
+                const pr = await fetch(`${ghApiBase}/pulls/${bad.n}`, { headers: ghApiHeaders });
+                const ref = pr.ok ? (await pr.json()).head.ref : '?';
+                await commentIssue(issue.number, alertComment({ ...bad, ref, base }).body);
+                core.info(`#${bad.n}: alert posted to #${issue.number}`);
+              } catch (err) {
+                core.warning(`#${bad.n}: could not post the alert: ${err.message}`);
               }
             }
             async function commentIssue(n, text) {
@@ -887,6 +920,7 @@ jobs:
                 });
                 await commentIssue(bad.n, body);
                 core.info(`#${bad.n}: commented that gate '${bad.gate}' failed`);
+                await postAlert(bad, batch.base);
               } catch (err) {
                 core.warning(`#${bad.n}: could not comment: ${err.message}`);
               }

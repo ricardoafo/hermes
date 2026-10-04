@@ -730,6 +730,32 @@ function classifyBranchDelete(input) {
   return { outcome: 'failed', reason: `delete refused (${deleteStatus ?? '?'})${unchecked}` };
 }
 
+/**
+ * Label on the one open issue the queue posts its alerts to.
+ */
+const ALERTS_LABEL = 'merge-queue:alerts';
+
+/**
+ * One alert line for the shared alerts issue, so whoever watches it
+ * (a person or a Claude session following the repo) sees a red batch
+ * without opening each PR: which PR, which branch, which gate or tests.
+ *
+ * @param {{ n: number, ref: string, head: string, gate: string, base: string }} input
+ * @returns {{ body: string }}
+ */
+function alertComment(input) {
+  return {
+    body: [
+      `${badMarker(input.head)}`,
+      `**#${input.n}** (\`${input.ref}\`, head ${input.head.slice(0, 7)}) failed the merge-queue gates on main ${input.base.slice(0, 7)}.`,
+      '',
+      `Failing: \`${input.gate}\``,
+      '',
+      'The PR is labelled and skipped until its branch gets a fix.',
+    ].join('\n'),
+  };
+}
+
 module.exports = {
   branchRefPath,
   classifyBranchDelete,
@@ -756,4 +782,6 @@ module.exports = {
   queueCanMerge,
   classifyMergeFailure,
   handMergeComment,
+  ALERTS_LABEL,
+  alertComment,
 };
