@@ -39,6 +39,9 @@ dependencies = [
   # dep of virtualenv; promoted to direct after we started depending on
   # it explicitly. See docs/decisions/... and change data-manifest-file-lock (#257).
   "filelock>=4.0.4,<5",
+  # Writes the tax pack's Renta Web sheet and dossier as PDF (#568, change
+  # 568-tax-pack D-8). Pure Python; approved by the Code Owner 2026-10-04.
+  "fpdf2>=2.8,<3",
 ]
 
 [project.scripts]
