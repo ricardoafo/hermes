@@ -14,6 +14,7 @@ from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.commands import Command
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
+from hermes.infrastructure.logging import configure_logging
 
 __all__ = ["COMMAND", "serve_main"]
 
@@ -57,6 +58,10 @@ def _run(rest: list[str], *, stream: Any, err: TextIO | None = None) -> int:
             "Exit codes: 0 clean shutdown, 1 runtime failure, 2 usage, 3 config.\n"
         )
         return 0
+
+    # One JSON object per line (ADR-008 §1): the daily line's journal count
+    # and `hermes logs` parse serve's journal as JSON and skip anything else.
+    configure_logging(env="prod")
 
     try:
         config = load_config(parsed.config_dir)

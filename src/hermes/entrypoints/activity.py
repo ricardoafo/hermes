@@ -73,12 +73,10 @@ def run_activity(
     tz = UTC if parsed.utc else MADRID
     console = Console(file=stream, emoji=False, markup=False, highlight=False)
     try:
-        model = console_module.resolve_read_model(demo_flag=demo_flag, env=env or {})
+        model = console_module.demo_read_model(demo_flag=demo_flag, env=env or {})
     except UnknownScenarioError as exc:
         err.write(f"ERROR: {exc}\n")
         return 2
-    except console_module.LiveReadModelUnavailableError:
-        model = None
 
     if model is not None:
         ctx = RenderContext.for_model(

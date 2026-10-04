@@ -6,7 +6,7 @@ Every console surface (CLI, TUI, pulled Telegram replies) reads through
 Reference: openspec/changes/console-read-model/change.md.
 """
 
-from hermes.application.console.read_model import ConsoleReadModel
+from hermes.application.console.read_model import ConsoleReadModel, ViewNotAvailableError
 from hermes.application.console.views import (
     QUIET_ACTIVITY_KINDS,
     ActivityDay,
@@ -51,6 +51,7 @@ __all__ = [
     "TaxEstimate",
     "TaxPending",
     "TimelineEvent",
+    "ViewNotAvailableError",
     "WaterfallColumn",
     "pnl_visible",
     "tax_amount",

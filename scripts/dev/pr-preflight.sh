@@ -5,7 +5,8 @@
 # CI runs on the PR; if any fails locally, CI will fail too.
 #
 # Invocation:
-#   bash scripts/dev/pr-preflight.sh                          # full suite
+#   bash scripts/dev/pr-preflight.sh                          # every CI check, changed-area tests
+#   bash scripts/dev/pr-preflight.sh --full-tests             # ... and every test + coverage floor
 #   bash scripts/dev/pr-preflight.sh --pre-push               # fast subset (git hook)
 #   bash scripts/dev/pr-preflight.sh --body FILE              # + PR body lint
 #   bash scripts/dev/pr-preflight.sh --render-body <change>   # render + lint
@@ -13,7 +14,10 @@
 #
 # Wired to git-push via `.pre-commit-config.yaml` `stages: [pre-push]` hook,
 # which passes --pre-push: the slow checks CI runs on every head anyway
-# (pytest + coverage, pip-audit, radon, vulture) are skipped (#416). Run without --pre-push for the full suite.
+# (tests, pip-audit, radon, vulture, licenses) are skipped (#416).
+#
+# The CI checks themselves live in scripts/dev/ci-checks.sh, which CI's
+# workflow steps also call (#489).
 # One-time install:
 #   pre-commit install --hook-type pre-push
 #
@@ -30,6 +34,7 @@ set -uo pipefail
 BODY_FILE=""
 RENDER_CHANGE=""
 PRE_PUSH=0
+FULL_TESTS=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --body)
@@ -52,8 +57,12 @@ while [[ $# -gt 0 ]]; do
             PRE_PUSH=1
             shift
             ;;
+        --full-tests)
+            FULL_TESTS=1
+            shift
+            ;;
         -h|--help)
-            sed -n '2,24p' "$0"
+            sed -n '2,28p' "$0"
             exit 0
             ;;
         *)
@@ -91,15 +100,16 @@ fi
 # Self-test — validate the script's own logic without side-effects
 # ────────────────────────────────────────────────────────────────
 if [[ "${HERMES_SELF_TEST:-}" == "1" ]]; then
-    # Verify all mandatory tools are declared and the script parses.
-    # Real check-invocations happen only in the non-self-test path.
-    for cmd in ruff mypy lint-imports pytest pytest-timeout markdownlint-cli2 git radon vulture coverage-check; do
-        if ! grep -q "\\b${cmd}\\b" "$0"; then
-            echo "SELF-TEST FAIL: script does not reference '${cmd}'" >&2
+    # Every CI check name this script calls must exist in ci-checks.sh,
+    # and every check ci-checks.sh defines must be called here.
+    known=$(env -u HERMES_SELF_TEST bash scripts/dev/ci-checks.sh --list)
+    for check in $known; do
+        if ! grep -qE "ci_check ${check}\$|test_tier ${check}\$" "$0"; then
+            echo "SELF-TEST FAIL: CI check '${check}' is never run here" >&2
             exit 1
         fi
     done
-    echo "SELF-TEST PASS: pr-preflight.sh declares expected tools."
+    echo "SELF-TEST PASS: pr-preflight.sh runs every CI check in ci-checks.sh."
     exit 0
 fi
 
@@ -107,11 +117,12 @@ fi
 # Result tracking
 #
 # Total check count is CONDITIONAL, by design:
-#   - 14 checks always run (checks 1-12, per-package coverage and the
-#     new-module test-file check).
-#   - +1 check runs ONLY when --body FILE or --render-body <change> is
-#     given (the PR body lint at the bottom).
-# Total = 14 unconditional + 1 optional. Not drift — different modes.
+#   - the CI checks from ci-checks.sh, the guides index and the
+#     changelog, openspec, project and new-module checks always run.
+#   - the per-package coverage floor runs only with --full-tests.
+#   - the PR body lint runs ONLY when --body FILE or --render-body
+#     <change> is given.
+# Not drift — different modes.
 # See summary line for the exact per-invocation breakdown.
 # ────────────────────────────────────────────────────────────────
 FAILED=()
@@ -159,7 +170,8 @@ if ! command -v uv >/dev/null 2>&1; then
         "/usr/local/bin/uv"
     do
         if [[ -x "$candidate" ]]; then
-            export PATH="$(dirname "$candidate"):$PATH"
+            PATH="$(dirname "$candidate"):$PATH"
+            export PATH
             break
         fi
     done
@@ -220,74 +232,54 @@ run_check "PR title semantic (conventional-commit + lowercase)" check_pr_title_s
 # stale base no longer blocks a push (#416).
 git fetch origin main --quiet || true
 
-# 2. Ruff format on FULL tree (CI runs `ruff format --check .`)
-run_check "ruff format --check ."     uv run ruff format --check .
-
-# 3. Ruff lint on FULL tree
-run_check "ruff check ."              uv run ruff check .
-
-# 4. Mypy strict on src/
-run_check "mypy --strict src/hermes"  uv run mypy --strict src/hermes
-
-# 5. Import-linter contracts
-run_check "lint-imports"              uv run lint-imports
-
-# 6. Pip-audit (CVE scan) — --skip-editable to ignore local hermes package
-run_slow_check "pip-audit --skip-editable" uv run pip-audit --skip-editable
-
-# 7. Radon complexity — matches CI quality matrix leg "complexity".
-#    NOTE: radon cc --min B prints violations but exits 0 regardless; kept
-#    as-is to mirror CI exactly (informational-only gate). Strengthening the
-#    exit-code semantic is out of scope for this drift-closure change.
-run_slow_check "radon (complexity)"        uv run radon cc --min B src/
-
-# 8. Vulture dead-code — matches CI quality matrix leg "deadcode".
-#    Reads config from [tool.vulture] in pyproject.toml (min_confidence=80).
-run_slow_check "vulture (dead code)"       uv run vulture src/
-
-# 9. Pytest — verbatim CI (unit job): tests/unit/ with branch coverage,
-#    emits coverage.json which check #14 (coverage-check.py) reads.
-#    pytest-timeout (60s default, thread method) is configured in
-#    pyproject.toml [tool.pytest.ini_options]. A test that hangs past the
-#    cap fails LOUDLY with a stack trace instead of silently draining CI
-#    time — closes the drift from the wave-5 sub-agent hang on a klines
-#    fetcher rate-limiter float-drift infinite loop.
-# SKIP_PYTEST=1 skips checks #9 (pytest) AND #14 (per-package coverage,
-# which depends on coverage.json produced by pytest). Escape hatch for
-# unblocking PRs when a known-flake in an unrelated area of the tree
-# fails deterministically-red but is NOT related to the PR under review.
-# Log a reason when using: `SKIP_PYTEST=1  # tracking bug #NNN`.
-check_pytest_gated() {
+# 2-11. The CI checks, run through scripts/dev/ci-checks.sh: the same
+# script CI's steps call, so this list and CI cannot drift apart.
+#
+# Locally the unit and integration tiers run only the tests for the
+# changed area (scripts/dev/changed-tests.sh). CI and the merge queue's
+# merged-tree gate run every test on every head, so a full local run buys
+# little and cost five minutes. --full-tests runs every test here too,
+# plus the per-package coverage floor, which needs the full unit run.
+#
+# SKIP_PYTEST=1 skips the test tiers and the coverage floor. Escape hatch
+# for a known flake in an unrelated area; log a reason when using it:
+# `SKIP_PYTEST=1  # tracking bug #NNN`.
+ci_check() {
+    bash scripts/dev/ci-checks.sh "$@"
+}
+test_tier() {
     if [[ "${SKIP_PYTEST:-0}" == "1" ]]; then
-        echo "  WARN: pytest skipped via SKIP_PYTEST=1 — known-flake bypass" >&2
+        echo "  WARN: tests skipped via SKIP_PYTEST=1 — known-flake bypass" >&2
         return 0
     fi
-    uv run pytest tests/unit/ --cov=src/hermes --cov-branch --cov-report=json --cov-report=term
-}
-run_slow_check "pytest tests/unit/ (CI-verbatim)" check_pytest_gated
-
-# 14. Per-package coverage thresholds — matches CI unit job's
-#     `coverage-check.py --bootstrap` step. Depends on coverage.json
-#     produced by check #9. `--bootstrap` accepts empty Phase 0 layers.
-check_coverage_gated() {
-    if [[ "${SKIP_PYTEST:-0}" == "1" ]]; then
-        echo "  WARN: coverage skipped (SKIP_PYTEST=1 also skips this)" >&2
-        return 0
+    if [[ "$FULL_TESTS" == "1" ]]; then
+        ci_check "$1"
+    else
+        ci_check "$1" --changed origin/main
     fi
-    uv run python scripts/dev/coverage-check.py --bootstrap
 }
-run_slow_check "coverage-check.py (per-package thresholds)" check_coverage_gated
 
-# 10. Markdownlint on FULL tree (CI runs the same glob)
-run_check "markdownlint-cli2 (full tree)" \
-    markdownlint-cli2 "**/*.md" "#node_modules" "#.venv"
+run_check "format (ruff format --check)"     ci_check format
+run_check "lint (ruff check)"                 ci_check lint
+run_check "types (mypy --strict)"             ci_check types
+run_check "imports (lint-imports)"            ci_check imports
+run_check "lockfile hash integrity"           ci_check lockfile
+run_check "CODEOWNERS syntax"                 ci_check codeowners
+run_check "merge-decisions tests (node)"      ci_check merge-decisions
+run_check "markdownlint (full tree)"          ci_check markdown
+run_slow_check "deps (pip-audit)"             ci_check deps
+run_slow_check "complexity (radon)"           ci_check complexity
+run_slow_check "deadcode (vulture)"           ci_check deadcode
+run_slow_check "licenses (pip-licenses)"      ci_check licenses
+run_slow_check "unit tests"                   test_tier unit
+run_slow_check "integration tests"            test_tier integration
+if [[ "$FULL_TESTS" == "1" && "${SKIP_PYTEST:-0}" != "1" ]]; then
+    run_slow_check "coverage floor (per-package)" ci_check coverage-floor
+fi
 
-# 11. Guides index up-to-date (CI regenerates and diffs)
-check_guides_index() {
-    bash scripts/dev/regenerate-guides-index.sh >/dev/null 2>&1 || return 1
-    git diff --exit-code -- docs/guides/README.md >/dev/null 2>&1
-}
-run_check "Guides index current" check_guides_index
+# 11. Guides index builds. The index itself is rebuilt on main after
+# merge, never in a PR.
+run_check "Guides index builds"               ci_check guides-index
 
 # 12. CHANGELOG check — infers PR title's conventional-commit type from
 #     the LATEST commit on the branch (matches what the eventual squash
@@ -456,6 +448,10 @@ fi
 
 if [[ "$PRE_PUSH" == "1" ]]; then
     MODE_DESC="pre-push, ${#SKIPPED[@]} slow checks left to CI; ${MODE_DESC}"
+elif [[ "$FULL_TESTS" == "1" ]]; then
+    MODE_DESC="every test; ${MODE_DESC}"
+else
+    MODE_DESC="changed-area tests, CI runs the rest; ${MODE_DESC}"
 fi
 
 echo ""

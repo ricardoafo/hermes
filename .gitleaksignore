@@ -1,0 +1,2 @@
+# Fake AWS-key-shaped fixture in the output-gate tests (#576); the line carries gitleaks:allow from 1dedb8d on.
+cbfb11d0a0bfe9a1ffcfe6383ec33da9a20f07ee:tests/unit/application/supervisor/test_gate.py:aws-access-token:62

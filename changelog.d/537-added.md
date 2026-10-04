@@ -1,0 +1,1 @@
+- **`hermes config check [--config-dir DIR] [--json]`** loads the config and runs the startup checks without starting anything or touching the network; it names each unset secret variable and invalid field, never a value, and exits 0 clean, 1 findings, 2 usage, 3 config unreadable. Closes #537.

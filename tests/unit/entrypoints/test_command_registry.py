@@ -34,8 +34,9 @@ def test_help_lists_every_discovered_command() -> None:
     out = io.StringIO()
     assert cli_module.main(["--help"], stream=out) == 0
     help_text = out.getvalue()
+    width = max(len(name) for name in discover())
     missing = [
-        c.name for c in discover().values() if f"  {c.name:10s} {c.summary}" not in help_text
+        c.name for c in discover().values() if f"  {c.name:{width}s}  {c.summary}" not in help_text
     ]
     assert missing == []
 

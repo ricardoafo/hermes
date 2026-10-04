@@ -7,7 +7,7 @@ operator feedback of 2026-10-03):
   plus dimmed money "as of" when down;
 - the range keys change the hero change line and the sparkline together;
 - Enter opens the position detail, beside the list on wide terminals;
-- the tax footnote lives behind ``?`` only; ``L`` is a placeholder until #376;
+- the tax footnote lives behind ``?`` only; ``L`` shows the journal (#508);
 - DEMO DATA shows on fixtures and the screen is an operator surface;
 - the app only reads: it imports no adapter and calls only read-model methods.
 """
@@ -19,19 +19,23 @@ from __future__ import annotations
 import ast
 import asyncio
 import io
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 from rich.console import Console, RenderableType
 from syrupy.assertion import SnapshotAssertion
 from syrupy.extensions.image import SVGImageSnapshotExtension
+from textual.widgets import Static
 
 from hermes.adapters.console import FixtureReadModel
 from hermes.application.console import ConsoleReadModel, Surface, pnl_visible
 from hermes.application.console.format import big_digits
+from hermes.application.console.logs import LogLine
 from hermes.entrypoints import tui as tui_module
-from hermes.entrypoints.tui import REFRESH_SECONDS, HomeApp
+from hermes.entrypoints.tui import REFRESH_SECONDS, HomeApp, _PanelScreen
 
 _TAX_FOOTNOTE = "est. · FIFO · 19% band · €5,988.30 left before 21%"
 _READ_METHODS = {
@@ -80,9 +84,12 @@ def _repo_clean(svg: str) -> str:
 
 
 async def _drive(
-    model: ConsoleReadModel, keys: Sequence[str], size: tuple[int, int]
+    model: ConsoleReadModel,
+    keys: Sequence[str],
+    size: tuple[int, int],
+    journal: Callable[[int], Sequence[LogLine] | None] | None = None,
 ) -> tuple[Shot, HomeApp]:
-    app = HomeApp(model)
+    app = HomeApp(model, journal=journal)
     async with app.run_test(size=size) as pilot:
         await pilot.pause()
         for key in keys:
@@ -178,10 +185,70 @@ def test_escape_leaves_the_help_screen() -> None:
     assert (shot.depth, "Shadow test" in shot.screen) == (1, True)
 
 
-def test_logs_key_shows_the_placeholder() -> None:
-    """Until #376 lands, L says logs arrive with it."""
+class _LiveModel:
+    """A fixture model that claims to be live (no demo tag), for the logs panel."""
+
+    def __init__(self, scenario: str) -> None:
+        self._inner = FixtureReadModel.load(scenario)
+
+    @property
+    def demo_scenario(self) -> None:
+        return None
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._inner, name)
+
+
+_JOURNAL = [
+    LogLine(
+        at=datetime(2026, 10, 3, 12, 0, 5, tzinfo=UTC),
+        level="info",
+        event="serve.bar.processed",
+        fields=(("pair", "BTC/USDT"),),
+        correlation_id="01J9Z8T3M5BQR2FVKN4XK7Q2ZP",
+    ),
+    LogLine(
+        at=datetime(2026, 10, 3, 12, 1, 5, tzinfo=UTC),
+        level="warning",
+        event="feed.retry",
+        fields=(("attempt", "2"),),
+    ),
+]
+
+
+def _shoot_live(journal: Callable[[int], Sequence[LogLine] | None] | None) -> Shot:
+    model = cast("ConsoleReadModel", _LiveModel("ok-two-positions"))
+    shot, _ = asyncio.run(_drive(model, ["l"], (80, 24), journal=journal))
+    return shot
+
+
+def test_logs_key_shows_the_last_journal_lines() -> None:
+    """L opens the journal as `hermes logs` prints it, in Madrid time."""
+    asked: list[int] = []
+
+    def journal(count: int) -> list[LogLine]:
+        asked.append(count)
+        return _JOURNAL
+
+    shot = _shoot_live(journal)
+
+    assert "14:00:05  INFO     serve.bar.processed  pair=BTC/USDT  …K7Q2ZP" in shot.screen
+    assert "14:01:05  WARNING  feed.retry  attempt=2" in shot.screen
+    assert (shot.depth, asked[0]) == (2, 50)
+
+
+def test_logs_key_says_when_the_journal_is_not_readable() -> None:
+    """On a dev box with no journal the panel says where to look instead."""
+    shot = _shoot_live(lambda _count: None)
+
+    assert "The journal is not readable here; run hermes logs on the VPS." in shot.screen
+
+
+def test_logs_key_on_demo_data_says_there_are_no_logs() -> None:
+    """Demo scenarios have no journal; the panel says so instead of showing real logs."""
     shot = _shoot("ok-two-positions", ["l"])
-    assert "Logs arrive with #376." in shot.screen
+
+    assert "Logs come from the VPS journal; demo data has none." in shot.screen
 
 
 def test_enter_opens_the_detail_as_a_screen_on_narrow_terminals() -> None:
@@ -276,6 +343,21 @@ def test_app_refreshes_and_only_reads() -> None:
 
     asyncio.run(run())
     assert (spy.heartbeats > 3, spy.touched <= _READ_METHODS) == (True, True)
+
+
+def test_refresh_before_a_panel_mounts_keeps_the_app_running() -> None:
+    """A refresh landing between push_screen and the panel's mount neither crashes nor blanks it."""
+
+    async def run() -> tuple[bool, str]:
+        app = HomeApp(FixtureReadModel.load("ok-two-positions"), refresh_seconds=3600)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await pilot.pause()
+            app.push_screen(_PanelScreen(lambda: "panel body"))
+            app._redraw()
+            await pilot.pause()
+            return app.is_running, str(app.screen.query_one("#panel", Static).content)
+
+    assert asyncio.run(run()) == (True, "panel body")
 
 
 def test_tui_module_imports_no_adapter_or_port() -> None:

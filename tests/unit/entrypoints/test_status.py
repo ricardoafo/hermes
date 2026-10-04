@@ -53,7 +53,11 @@ def _run(
     """Run ``hermes status`` with a fixed clock and unit state; return code and output."""
     out = io.StringIO()
     code = status_module.main(
-        ["--config-dir", str(_CONFIG), *args], stream=out, now=now, unit_state=lambda: unit
+        ["--config-dir", str(_CONFIG), *args],
+        stream=out,
+        now=now,
+        unit_state=lambda: unit,
+        bot_state=lambda: UnitState.UNKNOWN,
     )
     return code, out.getvalue()
 

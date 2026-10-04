@@ -144,8 +144,19 @@ on:
 # `main`, and the loser would land a tree it validated against a tip
 # that no longer exists. `cancel-in-progress: false` because a run that
 # is mid-merge must finish.
+#
+# GitHub keeps only ONE pending run per group and replaces it with each
+# newer arrival. Events that can never merge anything (a CI run that did
+# not succeed, a review that is not an approval — exactly what Select's
+# `if:` skips) used to take that slot and displace a real pass queued
+# behind a running one (#485, 2026-10-03 22:50 UTC). They now get a
+# group of their own, so they never wait and never displace. Keep the
+# condition below the exact negation of Select's `if:`.
 concurrency:
-  group: revalidate-and-merge
+  group: >-
+    ${{ ((github.event_name == 'workflow_run' && github.event.workflow_run.conclusion != 'success')
+    || (github.event_name == 'pull_request_review' && github.event.review.state != 'approved'))
+    && format('mq-noop-{0}', github.run_id) || 'revalidate-and-merge' }}
   cancel-in-progress: false
 
 permissions:
@@ -163,7 +174,9 @@ jobs:
     # Two triggers are narrowed here; every other one is unconditional.
     # A failed CI run must never start a merge pass, and a review that
     # is not `approved` cannot make a PR mergeable (`types: [submitted]`
-    # fires on plain comments too).
+    # fires on plain comments too). The `concurrency:` group above
+    # routes exactly these skipped events to a no-op group; change both
+    # together (tools/merge/workflow.test.cjs checks they agree).
     if: >-
       (github.event_name != 'workflow_run'
        || github.event.workflow_run.conclusion == 'success')
@@ -201,8 +214,7 @@ jobs:
             // in ~100ms; a round trip against the live queue costs
             // minutes.
             const {
-              isCandidate, approvedAt, orderCandidates,
-              queueCanMerge, handMergeComment, HAND_MERGE_LABEL, skipFailedHead,
+              orderCandidates, selectDecision, handMergeComment, HAND_MERGE_LABEL,
             } = require(
               `${process.env.GITHUB_WORKSPACE}/tools/merge/decisions.cjs`
             );
@@ -261,38 +273,30 @@ jobs:
                 continue;
               }
 
-              const reviews = await reviewsOf(pr.number);
-              const { eligible: ok, reason } = isCandidate({ pr: full, reviews });
-
-              if (!ok) {
-                // Conflicts are the only case a human must act on; the
-                // rest resolve themselves and are noise at warning level.
-                const say = reason.includes('CONFLICTS') ? core.warning : core.info;
-                say(`${tag}: ${reason}`);
-                continue;
-              }
-
-              // Before it joins a batch: can this token land it at all?
-              // A PR the queue cannot merge, found only at pulls.merge,
-              // would stall every PR gated on top of it.
-              const files = (await github.paginate(github.rest.pulls.listFiles, {
-                owner, repo, pull_number: pr.number, per_page: 100,
-              })).map((f) => f.filename);
-              const access = queueCanMerge({
-                files,
-                labels: (full.labels || []).map((l) => l.name),
+              // Every input the decision needs, then one pure verdict
+              // (tools/merge/decisions.cjs selectDecision, unit-tested
+              // against recorded API replies).
+              const verdict = selectDecision({
+                pr: full,
+                reviews: await reviewsOf(pr.number),
+                files: (await github.paginate(github.rest.pulls.listFiles, {
+                  owner, repo, pull_number: pr.number, per_page: 100,
+                })).map((f) => f.filename),
+                comments: await github.paginate(github.rest.issues.listComments, {
+                  owner, repo, issue_number: pr.number, per_page: 100,
+                }),
                 canMergeWorkflows: process.env.QUEUE_MERGES_WORKFLOWS === 'true',
               });
-              if (!access.eligible) {
-                core.info(`${tag}: ${access.reason}`);
-                if (access.label) {
+              if (verdict.candidate === null) {
+                (verdict.warn ? core.warning : core.info)(`${tag}: ${verdict.reason}`);
+                if (verdict.label) {
                   try {
                     await github.rest.issues.addLabels({
                       owner, repo, issue_number: pr.number, labels: [HAND_MERGE_LABEL],
                     });
                     await github.rest.issues.createComment({
                       owner, repo, issue_number: pr.number,
-                      body: handMergeComment({ n: pr.number, reason: access.reason }).body,
+                      body: handMergeComment({ n: pr.number, reason: verdict.reason }).body,
                     });
                   } catch (err) {
                     core.warning(`${tag}: could not label for a human merge: ${err.message}`);
@@ -301,24 +305,13 @@ jobs:
                 continue;
               }
 
-              const failed = skipFailedHead({
-                head: full.head.sha,
-                labels: (full.labels || []).map((l) => l.name),
-                comments: await github.paginate(github.rest.issues.listComments, {
-                  owner, repo, issue_number: pr.number, per_page: 100,
-                }),
-              });
-              if (failed.skip) {
-                core.info(`${tag}: ${failed.reason}`);
-                continue;
-              }
-
               // The head SHA travels with the number. The batch must
               // prove it tested the commit that was APPROVED, not
               // whatever the branch points at by the time it runs.
-              const approved = approvedAt(reviews);
-              eligible.push({ n: pr.number, head: full.head.sha, approvedAt: approved });
-              core.info(`${tag}: ${reason} head=${full.head.sha} approved=${approved}`);
+              eligible.push(verdict.candidate);
+              core.info(
+                `${tag}: ${verdict.reason} head=${verdict.candidate.head} approved=${verdict.candidate.approvedAt}`,
+              );
             }
 
             const ordered = orderCandidates(eligible);
@@ -491,7 +484,9 @@ jobs:
             const fs = require('fs');
             const {
               shouldMerge, ciRestart, afterMerge, badComment, hasBadComment, GATES_FAILED_LABEL,
+              ALERTS_LABEL, alertComment,
               classifyMergeFailure, handMergeComment, HAND_MERGE_LABEL,
+              branchRefPath, classifyBranchDelete,
             } = require(`${process.env.QUEUE_TOOLS}/decisions.cjs`);
             const { owner, repo } = context.repo;
             const batch = JSON.parse(fs.readFileSync(process.env.BATCH_RESULT, 'utf8'));
@@ -596,6 +591,38 @@ jobs:
               });
               if (!res.ok) {
                 throw new Error(`dispatch ${workflow}: ${res.status} ${await res.text()}`);
+              }
+            }
+            // One open issue labelled merge-queue:alerts collects every
+            // red head, so a watcher follows one thread instead of every PR.
+            async function postAlert(bad, base) {
+              try {
+                const listing = await fetch(
+                  `${ghApiBase}/issues?state=open&labels=${encodeURIComponent(ALERTS_LABEL)}&per_page=1`,
+                  { headers: ghApiHeaders },
+                );
+                let [issue] = listing.ok ? await listing.json() : [];
+                if (!issue) {
+                  const created = await fetch(`${ghApiBase}/issues`, {
+                    method: 'POST',
+                    headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      title: 'Merge queue alerts',
+                      labels: [ALERTS_LABEL],
+                      body: 'The merge queue comments here whenever a PR head fails its gates.',
+                    }),
+                  });
+                  if (!created.ok) {
+                    throw new Error(`create alerts issue: ${created.status} ${await created.text()}`);
+                  }
+                  issue = await created.json();
+                }
+                const pr = await fetch(`${ghApiBase}/pulls/${bad.n}`, { headers: ghApiHeaders });
+                const ref = pr.ok ? (await pr.json()).head.ref : '?';
+                await commentIssue(issue.number, alertComment({ ...bad, ref, base }).body);
+                core.info(`#${bad.n}: alert posted to #${issue.number}`);
+              } catch (err) {
+                core.warning(`#${bad.n}: could not post the alert: ${err.message}`);
               }
             }
             async function commentIssue(n, text) {
@@ -807,16 +834,36 @@ jobs:
 
               await closeLinkedIssues(number, pr);
 
-              // Delete the head branch. `delete_branch_on_merge` at the
-              // repo level would work too, but doing it here is scoped
-              // to the queue's actions and never surprises anyone using
-              // the API to merge manually.
-              try {
-                await github.rest.git.deleteRef({
-                  owner, repo, ref: `heads/${pr.head.ref}`,
-                });
-              } catch (err) {
-                core.info(`#${number}: branch delete skipped (${err.status ?? '?'})`);
+              // Delete the head branch. The repo's `delete_branch_on_merge`
+              // usually beats us to it, so "no such ref" is fine, but only
+              // once a read confirms the branch is gone (#490:
+              // a mis-encoded path also answered 422 and left it behind).
+              // Literal paths: Octokit would encode the slashes in `ref`.
+              if (pr.head.repo?.full_name === `${owner}/${repo}`) {
+                const branch = pr.head.ref;
+                let deleteStatus;
+                let refStillExists;
+                try {
+                  const res = await github.request(`DELETE /repos/${owner}/${repo}/${branchRefPath('refs', branch)}`);
+                  deleteStatus = res.status;
+                } catch (err) {
+                  deleteStatus = err.status;
+                }
+                if (deleteStatus !== 204) {
+                  try {
+                    await github.request(`GET /repos/${owner}/${repo}/${branchRefPath('ref', branch)}`);
+                    refStillExists = true;
+                  } catch (err) {
+                    refStillExists = err.status === 404 ? false : undefined;
+                  }
+                }
+                const del = classifyBranchDelete({ deleteStatus, refStillExists });
+                const line = `#${number}: branch ${branch} ${del.reason}`;
+                if (del.outcome === 'failed') {
+                  core.warning(line);
+                } else {
+                  core.info(line);
+                }
               }
             }
 
@@ -853,6 +900,7 @@ jobs:
                 });
                 await commentIssue(bad.n, body);
                 core.info(`#${bad.n}: commented that gate '${bad.gate}' failed`);
+                await postAlert(bad, batch.base);
               } catch (err) {
                 core.warning(`#${bad.n}: could not comment: ${err.message}`);
               }

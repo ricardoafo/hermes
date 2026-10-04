@@ -2,8 +2,9 @@
 
 Opens the SQLite ledger, prices every trade stored with ``eur_status =
 'pending'`` from the ECB rate of its fill date (Frankfurter, USDT read as USD),
-and re-projects the lots and consumptions that depended on it. Safe to run any
-number of times: a trade whose rate is still missing stays pending.
+and re-projects the lots and consumptions that depended on it. A pending
+capital seed is priced by the rate of its seed date. Safe to run any number of
+times: a trade or seed whose rate is still missing stays pending.
 
 Exit codes: 0 done (some rows may stay pending), 1 ledger failure, 2 usage,
 3 config error.
@@ -128,6 +129,10 @@ def main(
         if callable(close):
             close()
     stream.write(f"filled={len(report.filled)} pending={len(report.pending)}\n")
+    if report.seeds_filled or report.seeds_pending:
+        stream.write(
+            f"seeds_filled={len(report.seeds_filled)} seeds_pending={len(report.seeds_pending)}\n"
+        )
     return 0
 
 

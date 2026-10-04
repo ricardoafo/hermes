@@ -7,7 +7,10 @@
 # MVP1 runs one swing strategy. `name` is the StrategyId written to events and
 # lots, so it names the variant, not the family. `capital_budget` seeds the
 # portfolio tracker and equals the pre-registered starting capital
-# (pre-registration-v1.md §2); changing it invalidates the run.
+# (pre-registration-v1.md §2); changing it invalidates the run. `sizing` holds
+# the pre-registered limits as shares of that capital: risk per trade and the
+# per-position cap (§5.4), and the total exposure cap across open positions
+# (§5.5).
 #
 # Env-override example: set HERMES_STRATEGIES__STRATEGIES__0__ENABLED=false
 # to disable the first strategy without editing this file.
@@ -18,3 +21,7 @@ strategies:
     weight: "1.0"
     capital_budget: "5000" # pre-registration-v1.md §2, in quote units
     quote: USDT
+    sizing:
+      risk_pct: "0.01" # pre-registration-v1.md §5.4
+      max_position_pct: "0.05" # pre-registration-v1.md §5.4
+      max_total_exposure_pct: "0.15" # pre-registration-v1.md §5.5

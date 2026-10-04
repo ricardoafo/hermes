@@ -31,6 +31,7 @@ Design notes
 from __future__ import annotations
 
 import contextlib
+import difflib
 import io
 import os
 import sys
@@ -38,11 +39,14 @@ from typing import Any
 
 from hermes.adapters.console import available_scenarios
 from hermes.entrypoints import console as console_module
+from hermes.entrypoints import version as version_module
 from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.commands import Command, discover
 from hermes.infrastructure import sentry_integration
 
 __all__ = ["main"]
+
+_JSON_NOTE = "status, activity, logs, version."
 
 
 def _leading_demo_scenario(args: list[str]) -> str | None:
@@ -55,21 +59,36 @@ def _leading_demo_scenario(args: list[str]) -> str | None:
 
 def _print_top_help(stream: Any, commands: dict[str, Command]) -> None:
     """Print the top-level `hermes` help message to ``stream``."""
+    width = max((len(name) for name in commands), default=0)
+    demo_commands = ", ".join(sorted(n for n, c in commands.items() if c.wants_demo))
     lines = [
-        "hermes — crypto trading engine (MVP1 scaffold)",
+        "hermes — crypto trading engine: paper trading, ledger and operator tools",
         "",
         "Usage: hermes [--demo SCENARIO] <command> [args]",
         "",
         "Commands:",
     ]
     for name in sorted(commands):
-        lines.append(f"  {name:10s} {commands[name].summary}")
+        lines.append(f"  {name:{width}s}  {commands[name].summary}")
     lines.append("")
     lines.append("Options:")
     lines.append("  --demo SCENARIO  Show console screens on demo data (DEMO DATA tag).")
     lines.append(f"                   Scenarios: {', '.join(available_scenarios())}")
+    lines.append(f"                   Commands that accept it: {demo_commands}")
+    lines.append("  --json           One JSON document on stdout; per command: " + _JSON_NOTE)
+    lines.append("")
+    lines.append("Run `hermes <command> --help` for a command's options and exit codes.")
     lines.append("")
     stream.write("\n".join(lines))
+
+
+def _unknown_command_message(subcommand: str, commands: dict[str, Command]) -> str:
+    """Return the error line for an unknown ``subcommand``, with a suggestion if close."""
+    message = f"ERROR: unknown subcommand {subcommand!r}."
+    close = difflib.get_close_matches(subcommand, list(commands), n=1)
+    if close:
+        message += f" Did you mean {close[0]!r}?"
+    return message + " Run `hermes --help`.\n"
 
 
 def _utf8_stdout() -> Any:
@@ -151,6 +170,9 @@ def main(
     if demo_exit is not None:
         return demo_exit
 
+    if args[:1] in (["--version"], ["-V"]):
+        return version_module.main([], stream=out)
+
     commands = discover()
     if not args or args[0] in {"-h", "--help"}:
         _print_top_help(out, commands)
@@ -159,7 +181,7 @@ def main(
     subcommand, *rest = args
     command = commands.get(subcommand)
     if command is None:
-        errors.write(f"ERROR: unknown subcommand {subcommand!r}. Run `hermes --help`.\n")
+        errors.write(_unknown_command_message(subcommand, commands))
         return 2
     if command.wants_demo:
         return command.run(rest, stream=out, demo=demo_scenario, err=errors)

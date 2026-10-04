@@ -15,6 +15,8 @@ const assert = require('node:assert/strict');
 
 const {
   MERGEABLE_STATES,
+  branchRefPath,
+  classifyBranchDelete,
   isApproved,
   isCandidate,
   shouldMerge,
@@ -642,4 +644,149 @@ test('badComment: tells the writer the head will not be retried and how to retry
   assert.match(body, /will not try this head again/);
   assert.ok(body.includes(GATES_FAILED_LABEL));
   assert.match(body, /tests\/a\.py::t/);
+});
+
+// ============================================================
+// selectDecision — Select's whole verdict, on recorded API replies
+// ============================================================
+
+const { selectDecision } = require('./decisions.cjs');
+
+// Recorded from the GitHub API on 2026-10-04 (see each file's _source):
+// #471 open, unreviewed, `blocked`; #467 open, approved, `blocked`.
+const recorded = (n) => {
+  const raw = JSON.parse(
+    require('node:fs').readFileSync(require('node:path').join(__dirname, 'fixtures', `pr-${n}-recorded.json`), 'utf8'),
+  );
+  return {
+    pr: raw.pull,
+    reviews: raw.reviews,
+    files: raw.files.map((f) => f.filename),
+    comments: raw.comments,
+    canMergeWorkflows: false,
+  };
+};
+// The same recorded PR once its required check went green.
+const green = (input) => ({ ...input, pr: { ...input.pr, mergeable_state: 'clean' } });
+
+test('selectDecision: an unreviewed recorded PR is not a candidate', () => {
+  const res = selectDecision(recorded(471));
+  assert.equal(res.candidate, null);
+  assert.match(res.reason, /not approved/);
+  assert.equal(res.label, false);
+});
+
+test('selectDecision: an approved recorded PR with red or pending CI (blocked) waits', () => {
+  const res = selectDecision(recorded(467));
+  assert.equal(res.candidate, null);
+  assert.match(res.reason, /blocked/);
+});
+
+test('selectDecision: the approved recorded PR becomes a candidate once green, carrying head and approval time', () => {
+  const input = green(recorded(467));
+  const res = selectDecision(input);
+  assert.deepEqual(res.candidate, {
+    n: 467,
+    head: input.pr.head.sha,
+    approvedAt: input.reviews.find((r) => r.state === 'APPROVED').submitted_at,
+  });
+});
+
+test('selectDecision: a green, approved PR touching workflows is handed to a human while the App cannot write them', () => {
+  const input = green(recorded(467));
+  const res = selectDecision({ ...input, files: [...input.files, '.github/workflows/cd.yml'] });
+  assert.equal(res.candidate, null);
+  assert.equal(res.label, true);
+  assert.match(res.reason, /\.github\/workflows\/cd\.yml/);
+});
+
+test('selectDecision: a head whose gates already failed is skipped until it changes', () => {
+  const input = green(recorded(467));
+  const { body } = badComment({ n: 467, head: input.pr.head.sha, gate: 'pytest', base: 'a'.repeat(40) });
+  const res = selectDecision({
+    ...input,
+    pr: { ...input.pr, labels: [...input.pr.labels, { name: GATES_FAILED_LABEL }] },
+    comments: [...input.comments, { body }],
+  });
+  assert.equal(res.candidate, null);
+  assert.match(res.reason, /already failed/);
+});
+
+test('selectDecision: conflicts are the one refusal logged as a warning', () => {
+  const input = recorded(467);
+  const res = selectDecision({ ...input, pr: { ...input.pr, mergeable: false, mergeable_state: 'dirty' } });
+  assert.equal(res.candidate, null);
+  assert.equal(res.warn, true);
+});
+
+test('selectDecision + orderCandidates: green approved PRs come out oldest approval first', () => {
+  const base = green(recorded(467));
+  const at = (iso) => [{ user: { login: 'ricardoafo' }, state: 'APPROVED', submitted_at: iso }];
+  const picks = [
+    { ...base, pr: { ...base.pr, number: 3 }, reviews: at('2026-10-04T03:00:00Z') },
+    { ...base, pr: { ...base.pr, number: 1 }, reviews: at('2026-10-04T01:00:00Z') },
+    { ...base, pr: { ...base.pr, number: 2 }, reviews: at('2026-10-04T02:00:00Z') },
+  ].map((i) => selectDecision(i).candidate);
+  assert.deepEqual(orderCandidates(picks).map((c) => c.n), [1, 2, 3]);
+});
+
+test('branchRefPath: slashes in a branch name stay path separators', () => {
+  assert.equal(
+    branchRefPath('refs', 'feat/148-binance-testnet-spot'),
+    'git/refs/heads/feat/148-binance-testnet-spot',
+  );
+  assert.equal(branchRefPath('ref', 'feat/148-x'), 'git/ref/heads/feat/148-x');
+});
+
+test('branchRefPath: other reserved characters inside a segment are encoded', () => {
+  assert.equal(branchRefPath('refs', 'fix/a#b?c'), 'git/refs/heads/fix/a%23b%3Fc');
+});
+
+test('classifyBranchDelete: 204 is a delete', () => {
+  assert.equal(classifyBranchDelete({ deleteStatus: 204, refStillExists: undefined }).outcome, 'deleted');
+});
+
+test('classifyBranchDelete: 404/422 with the ref confirmed absent is already gone', () => {
+  for (const deleteStatus of [404, 422]) {
+    assert.equal(classifyBranchDelete({ deleteStatus, refStillExists: false }).outcome, 'already-gone');
+  }
+});
+
+test('classifyBranchDelete: 422 while the branch still exists is a failure, not "already gone"', () => {
+  const r = classifyBranchDelete({ deleteStatus: 422, refStillExists: true });
+  assert.equal(r.outcome, 'failed');
+  assert.match(r.reason, /still exists/);
+});
+
+test('classifyBranchDelete: an unchecked ref is never assumed gone', () => {
+  assert.equal(classifyBranchDelete({ deleteStatus: 404, refStillExists: undefined }).outcome, 'failed');
+});
+
+test('classifyBranchDelete: 403 is a failure even if the ref is absent', () => {
+  assert.equal(classifyBranchDelete({ deleteStatus: 403, refStillExists: false }).outcome, 'failed');
+});
+
+// ============================================================
+// alertComment — one line per red head on the shared alerts issue
+// ============================================================
+
+const { ALERTS_LABEL, alertComment } = require('./decisions.cjs');
+
+test('alertComment: names the PR, branch, head, failing tests and base', () => {
+  const head = 'a'.repeat(40);
+  const { body } = alertComment({
+    n: 435, ref: 'feat/386-trade-eur-values', head, gate: 'pytest: tests/x.py::test_y', base: 'b'.repeat(40),
+  });
+  assert.match(body, /#435/);
+  assert.match(body, /feat\/386-trade-eur-values/);
+  assert.match(body, /tests\/x\.py::test_y/);
+  assert.match(body, /aaaaaaa/);
+  assert.match(body, /bbbbbbb/);
+});
+
+test('alertComment: carries the per-head marker, so the same head is alerted once', () => {
+  const head = 'c'.repeat(40);
+  const { body } = alertComment({ n: 1, ref: 'x', head, gate: 'mypy', base: 'd' });
+  assert.equal(hasBadComment([{ body }], head), true);
+  assert.equal(ALERTS_LABEL, 'merge-queue:alerts');
 });

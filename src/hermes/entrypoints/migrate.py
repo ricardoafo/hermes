@@ -24,6 +24,8 @@ from typing import TextIO
 
 from hermes.adapters.ledger.migration_runner import (
     DESTRUCTIVE_MARKER,
+    DryRunReport,
+    dry_run,
     migrate_with_snapshot,
     pending_migrations,
     restore_snapshot,
@@ -35,10 +37,12 @@ from hermes.entrypoints.serve import DEFAULT_DB_PATH
 __all__ = ["main"]
 
 _USAGE = (
-    "Usage: hermes migrate [--db PATH] [--snapshot-dir DIR] [--status | --restore SNAPSHOT]\n"
+    "Usage: hermes migrate [--db PATH] [--snapshot-dir DIR]\n"
+    "                      [--status | --dry-run | --restore SNAPSHOT]\n"
     "\n"
     "Stop hermes.service first. Without flags: snapshot the ledger, then apply every\n"
     "pending migration, destructive ones included. --restore copies a snapshot back.\n"
+    "--dry-run applies them to a temporary copy and reports; it never writes the ledger.\n"
     "Exit codes: 0 done, 1 migration failed (rolled back), 2 usage, 3 ledger/snapshot.\n"
 )
 
@@ -49,6 +53,7 @@ def _parse(argv: list[str], err: TextIO) -> argparse.Namespace | None:
     parser.add_argument("--snapshot-dir", type=Path, default=None)
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--status", action="store_true")
+    group.add_argument("--dry-run", action="store_true")
     group.add_argument("--restore", type=Path, default=None)
     parser.add_argument("-h", "--help", action="store_true")
     try:
@@ -56,6 +61,32 @@ def _parse(argv: list[str], err: TextIO) -> argparse.Namespace | None:
     except SystemExit:
         err.write("ERROR: could not parse `hermes migrate` arguments.\n" + _USAGE)
         return None
+
+
+def _write_dry_run(report: DryRunReport, stream: TextIO) -> None:
+    if not report.pending:
+        stream.write("dry run: no pending migrations.\n")
+    for name, destructive in report.pending:
+        mark = " (destructive)" if destructive else ""
+        state = "applies" if name in report.applied else "not reached"
+        stream.write(f"dry run: {name}{mark}: {state}\n")
+    if report.error is not None:
+        stream.write(f"dry run: FAILED {report.error}\n")
+    stream.write(f"dry run: integrity_check {'ok' if report.intact else 'FAILED'}\n")
+    for table in sorted(report.rows_before.keys() | report.rows_after.keys()):
+        before = report.rows_before.get(table, "-")
+        after = report.rows_after.get(table, "-")
+        stream.write(f"dry run: rows {table}: {before} -> {after}\n")
+
+
+def _dry_run(db: Path, stream: TextIO, err: TextIO) -> int:
+    try:
+        report = dry_run(db)
+    except LedgerError as exc:
+        err.write(f"ERROR: {exc}\n")
+        return 3
+    _write_dry_run(report, stream)
+    return 0 if report.ok else 1
 
 
 def _status(db: Path, stream: TextIO, err: TextIO) -> int:
@@ -128,6 +159,8 @@ def main(argv: list[str], *, stream: TextIO, err: TextIO | None = None) -> int:
     db: Path = parsed.db
     if parsed.status:
         return _status(db, stream, err)
+    if parsed.dry_run:
+        return _dry_run(db, stream, err)
     if parsed.restore is not None:
         return _restore(parsed.restore, db, stream, err)
     return _migrate(db, parsed.snapshot_dir or db.parent / "migration-snapshots", stream, err)

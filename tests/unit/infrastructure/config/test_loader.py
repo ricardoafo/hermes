@@ -38,11 +38,19 @@ _VALID_STRATEGIES = dedent(
         weight: "0.6"
         capital_budget: "3000"
         quote: USDT
+        sizing:
+          risk_pct: "0.01"
+          max_position_pct: "0.05"
+          max_total_exposure_pct: "0.15"
       - name: donchian
         enabled: false
         weight: "0.4"
         capital_budget: "2000"
         quote: USDC
+        sizing:
+          risk_pct: "0.01"
+          max_position_pct: "0.05"
+          max_total_exposure_pct: "0.15"
     """
 ).strip()
 
@@ -209,6 +217,34 @@ def test_shipped_strategies_yaml_is_the_swing_only_roster() -> None:
     assert [
         (s.name, s.enabled, s.weight, s.capital_budget, s.quote) for s in roster.strategies
     ] == [("swing-donchian-4h", True, Decimal("1.0"), Decimal("5000"), Currency.USDT)]
+
+
+def _shipped_roster(env: dict[str, str]) -> StrategiesConfig:
+    """Load the committed strategies.yaml with ``env`` as the only overrides."""
+    shipped = Path(__file__).resolve().parents[4] / "config" / "strategies.yaml"
+    return load_yaml_model(shipped, StrategiesConfig, env_section="STRATEGIES", env=env)
+
+
+# SEV-1: no rubric row matches; pre-reg §5.4/§5.5 limits must reach sizing unchanged
+def test_shipped_strategies_yaml_carries_the_preregistered_sizing_limits() -> None:
+    """At 5,000 USDT the shipped config gives a 50 risk budget, 250 position cap, 750 total cap."""
+    policy = _shipped_roster(env={}).strategies[0].sizing_policy()
+    assert (policy.risk_budget, policy.position_cap, policy.exposure_cap) == (
+        Decimal("50"),
+        Decimal("250"),
+        Decimal("750"),
+    )
+
+
+def test_changing_the_configured_capital_scales_every_sizing_limit() -> None:
+    """capital_budget 10,000 doubles all three limits: no limit is a fixed dollar amount."""
+    roster = _shipped_roster(env={"HERMES_STRATEGIES__STRATEGIES__0__CAPITAL_BUDGET": "10000"})
+    policy = roster.strategies[0].sizing_policy()
+    assert (policy.risk_budget, policy.position_cap, policy.exposure_cap) == (
+        Decimal("100"),
+        Decimal("500"),
+        Decimal("1500"),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -506,10 +542,25 @@ def test_load_config_reads_hermes_env_prod(config_dir: Path) -> None:
     assert cfg.env == "prod"
 
 
+def test_load_config_reads_hermes_env_staging(config_dir: Path) -> None:
+    """HERMES_ENV=staging is a valid tier (#192), so the staging unit's config loads."""
+    cfg = load_config(config_dir, env={"HERMES_ENV": "staging"})
+    assert cfg.env == "staging"
+
+
+def test_load_config_allow_mainnet_in_staging_raises_config_error(config_dir: Path) -> None:
+    """Staging shares the prod box but never real capital: allow_mainnet stays prod-only."""
+    with pytest.raises(ConfigError):
+        load_config(
+            config_dir,
+            env={"HERMES_ENV": "staging", "HERMES_ALLOW_MAINNET": "yes"},
+        )
+
+
 def test_load_config_rejects_unknown_hermes_env_value(config_dir: Path) -> None:
-    """HERMES_ENV=staging (not in Literal set) raises ConfigError."""
+    """HERMES_ENV=qa (not in Literal set) raises ConfigError."""
     with pytest.raises(ConfigError) as excinfo:
-        load_config(config_dir, env={"HERMES_ENV": "staging"})
+        load_config(config_dir, env={"HERMES_ENV": "qa"})
     assert "HermesConfig" in str(excinfo.value)
 
 

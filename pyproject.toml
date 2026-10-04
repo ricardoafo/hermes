@@ -7,12 +7,12 @@ readme = "README.md"
 license = { text = "Proprietary" }
 authors = [{ name = "Ricardo Afonso" }]
 dependencies = [
-  "pydantic>=2.9,<3",
+  "pydantic>=2.13.5,<3",
   "pydantic-settings>=2.5,<3",
   "httpx>=0.27,<1",
-  "structlog>=24.4,<25",
-  "typer>=0.27.1,<1",
-  "textual>=0.79,<1",
+  "structlog>=26.1.0,<27",
+  "typer>=0.27.2,<1",
+  "textual>=8.2.8,<9",
   # Console renderers import Rich directly (application/console/render.py);
   # promoted from a transitive dep of textual and typer so an upstream
   # constraint change cannot drop it. See openspec/changes/console-read-model.
@@ -21,7 +21,7 @@ dependencies = [
   "python-telegram-bot>=22.8,<23",
   "ulid-py>=1.1,<2",
   "returns>=0.24,<1",
-  "anyio>=4,<5",
+  "anyio>=4.15.1,<5",
   "pyyaml>=6,<7",
   # Loads .env.local at process start for local dev (systemd EnvironmentFile
   # in prod, GH Actions secrets in CI). See
@@ -33,12 +33,12 @@ dependencies = [
   # sentry_sdk.capture_exception() calls. No framework integrations enabled
   # (we run vanilla Python, no Django/Flask/etc.). See
   # docs/decisions/ (Sentry wiring entry) for the design rationale.
-  "sentry-sdk>=2,<3",
+  "sentry-sdk>=2.70.0,<3",
   # Cross-platform file lock for multi-writer manifest transactions in
   # the ingest scripts (scripts/data/_manifest_util.py). Was a transitive
   # dep of virtualenv; promoted to direct after we started depending on
   # it explicitly. See docs/decisions/... and change data-manifest-file-lock (#257).
-  "filelock>=3,<4",
+  "filelock>=4.0.4,<5",
 ]
 
 [project.scripts]
@@ -47,7 +47,7 @@ hermes = "hermes.entrypoints.cli:main"
 [dependency-groups]
 dev = [
   "pytest>=9,<10",  # bumped for PYSEC-2026-1845 fix (9.0.3+)
-  "pytest-cov>=5,<7",  # --cov integration for pytest → coverage.py
+  "pytest-cov>=7.1.0,<8",  # --cov integration for pytest → coverage.py
   "pytest-xdist>=3.8.0,<4",
   # Fails a test that hangs past the pytest.ini_options `timeout` (default
   # 60s). Introduced by process-hardening wave 5 after slot-12 sub-agent
@@ -59,14 +59,14 @@ dev = [
   # for Windows compatibility (signals do not interrupt blocking C-level
   # calls on Windows the way they do on POSIX).
   "pytest-timeout>=2.3,<3",
-  "hypothesis>=6.165.10,<7",
-  "syrupy>=5,<6",  # bumped to unblock pytest 9 (see PYSEC-2026-1845 note above)
+  "hypothesis>=6.168.2,<7",
+  "syrupy>=6.1.1,<7",  # bumped to unblock pytest 9 (see PYSEC-2026-1845 note above)
   "respx>=0.21,<1",
   "freezegun>=1.5,<2",
-  "coverage[toml]>=7.15.4,<8",
-  "ruff>=0.6,<1",
-  "mypy>=1.11,<2",
-  "import-linter>=2.13,<3",
+  "coverage[toml]>=7.16.2,<8",
+  "ruff>=0.16.9,<1",
+  "mypy>=2.3.1,<3",
+  "import-linter>=2.15,<3",
   # safety dropped 2026-08-22: v3.7.0 requires interactive auth OR --key API key
   # (breaking change from pre-2024 flow), and the scan command crashes with a
   # click-context bug on our stack. pip-audit + Dependabot alerts + semgrep
@@ -76,7 +76,7 @@ dev = [
   "pre-commit>=4.6.2,<5",
   "radon>=6.0,<7",
   "vulture>=2.13,<3",
-  "types-pyyaml>=6.0.12.20260815,<7",
+  "types-pyyaml>=6.0.12.20260906,<7",
   # Mutation testing — parso-backed (Python 3.14 native). See
   # docs/decisions/2026-08-22-mutation-testing-cosmic-ray.md for the
   # tool-choice rationale + spike evidence. Weekly workflow at
@@ -126,20 +126,20 @@ exclude = ["build/", "dist/", ".venv/"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
-  "smoke: post-deploy smoke tests",
-  # Tier-1 — PR CI (fast, hermetic, no I/O). See docs/guides/test-tiers.md.
-  "unit: tier-1 pure unit tests — no I/O, no network, millisecond-fast",
-  "property: tier-1 property-based tests via Hypothesis — run with unit tier in PR CI",
-  # Tier-2 — nightly (external deps allowed). See docs/guides/test-tiers.md.
-  "integration: tier-2 tests (SQLite :memory:, testnet)",
-  "chaos: tier-2b chaos / fault-injection tests — nightly only",
-  # Tier-2b — real third-party sandboxes. Skipped by default via the
-  # `-m 'not contract'` addopts filter. Run explicitly with
-  # `uv run pytest -m contract` (see docs/decisions/2026-08-23-contract-test-tier.md).
-  "contract: tier-2b tests — real HTTP against third-party sandbox APIs",
-  # Tier-3 — weekly cron. See docs/guides/test-tiers.md.
-  "mutation: tier-3 mutation-testing harness hooks — weekly via cosmic-ray",
-  "e2e: tier-3 end-to-end against testnet",
+  # Tiers are selected by directory (tests/unit/, tests/integration/, ...), not by
+  # marker. Where each tier runs: docs/guides/test-tiers.md. Markers are labels,
+  # except `contract` and `smoke`, which CI selects with -m.
+  "smoke: post-deploy smoke tests; selected with -m smoke by the CD job",
+  "unit: label for a pure unit test; not used for selection",
+  "property: label for a Hypothesis property test; not used for selection",
+  "integration: label for an integration test; not used for selection",
+  "chaos: fault-injection test; registered, no test uses it today",
+  # Contract tests are skipped by default via the `-m 'not contract'` addopts
+  # filter. The daily scheduled.yml job runs `pytest tests/contract -m contract`
+  # (see docs/decisions/2026-08-23-contract-test-tier.md).
+  "contract: real HTTP against third-party sandbox APIs; run daily by scheduled.yml",
+  "mutation: registered, no test uses it; mutation runs through cosmic-ray (cosmic-ray.toml)",
+  "e2e: end-to-end serve cycle on recorded bars (tests/e2e/); weekly + manual dispatch in scheduled.yml",
   "slow: >1s per test",
 ]
 addopts = "-ra --strict-markers --strict-config -m 'not contract'"
@@ -230,6 +230,48 @@ forbidden_modules = [
   "hermes.domain.trading.trade_record",
 ]
 
+# change 36-modelo-100-721 D-10: tax-filing figures are measurement only, like
+# the EUR values they read. Nothing that decides trades may import them.
+[[tool.importlinter.contracts]]
+name = "filing-is-measurement-only"
+type = "forbidden"
+source_modules = [
+  "hermes.application.order_router",
+  "hermes.application.strategy_protocol",
+  "hermes.domain.strategy",
+  "hermes.domain.fees",
+  "hermes.domain.risk",
+]
+forbidden_modules = [
+  "hermes.application.filing",
+  "hermes.domain.filing",
+  "hermes.ports.filing",
+]
+
+# ADR-012 D-08: the supervisor layer reads through read-only ports and
+# projections only. It never reaches an exchange, an order path, the ledger's
+# write port, the portfolio or the composition root (change 34-supervisor-read-tools).
+[[tool.importlinter.contracts]]
+name = "supervisor-is-read-only"
+type = "forbidden"
+source_modules = ["hermes.application.supervisor", "hermes.ports.supervisor"]
+forbidden_modules = [
+  "hermes.adapters",
+  "hermes.entrypoints",
+  "hermes.infrastructure",
+  "hermes.ports.exchange",
+  "hermes.ports.ledger",
+  "hermes.ports.fill_model",
+  "hermes.ports.notifier",
+  "hermes.application.order_router",
+  "hermes.application.ledger",
+  "hermes.application.portfolio",
+  "hermes.application.console",
+  "hermes.domain.lots",
+  "hermes.domain.trading",
+  "hermes.domain.fx",
+]
+
 [[tool.importlinter.contracts]]
 name = "domain-no-pydantic"
 type = "forbidden"
@@ -255,22 +297,3 @@ forbidden_modules = [
 min_confidence = 80
 paths = ["src/hermes"]
 exclude = ["src/hermes/ports/"]
-
-# Mutation testing — targets domain layer only (pure logic, no I/O, fastest to
-# exercise). Adapter and application layers are covered by integration tests
-# where mutation scoring is less meaningful. Kill-rate target ≥ 85 % per SA-10.
-# CI wire-up: .github/workflows/scheduled.yml (Sunday leg).
-# Run locally: uv run cosmic-ray init cosmic-ray.toml session.sqlite &&
-#              uv run cosmic-ray exec session.sqlite &&
-#              uv run cr-report session.sqlite
-[tool.cosmic-ray]
-module-path = "hermes.domain"
-python-paths = ["src"]
-timeout = 30.0
-excluded-modules = []
-
-[tool.cosmic-ray.execution-engine]
-name = "local"
-
-[tool.cosmic-ray.distributor]
-name = "local"
