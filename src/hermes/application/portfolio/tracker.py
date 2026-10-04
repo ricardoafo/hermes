@@ -99,6 +99,11 @@ class PortfolioTracker:
             self._snapshot = result.unwrap()
         return result
 
+    @property
+    def snapshot(self) -> PortfolioSnapshot:
+        """The current snapshot (immutable, so safe to hand out)."""
+        return self._snapshot
+
     def state(self) -> PortfolioState:
         """Return the risk-facing state for the current snapshot."""
         return self._snapshot.to_risk_state()
