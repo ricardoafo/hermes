@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from hermes.domain.filing.renta_campaign import CampaignLayout, campaign_for
+from hermes.domain.filing.renta_campaign import CampaignLayout, RentaCampaign, campaign_for
 
 _L2024 = CampaignLayout(
     tax_year=2024, transmissions_box="1800", source="s", verified_on=date(2025, 4, 1)
@@ -37,4 +37,8 @@ def test_never_uses_a_later_campaign() -> None:
 
 def test_no_layout_at_or_before_the_year_gives_none() -> None:
     """Invariant: with nothing known, there is no box to print."""
-    assert campaign_for(2023, [_L2024]) is None
+    found = {year: campaign_for(year, [_L2024]) for year in (2023, 2024)}
+    assert found == {
+        2023: None,
+        2024: RentaCampaign(tax_year=2024, layout=_L2024, provisional=False),
+    }

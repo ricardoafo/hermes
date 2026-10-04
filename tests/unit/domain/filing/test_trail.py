@@ -50,7 +50,7 @@ def test_gain_is_proceeds_minus_sell_fee_minus_acquisition() -> None:
 def test_a_pending_value_leaves_the_gain_unknown() -> None:
     """Invariant: a piece with any pending EUR value has no gain, never a guessed one."""
     (line,) = build_trail([_piece("s1", fee=None)], {})
-    assert line.gain_eur is None
+    assert (line.sell_fee_eur, line.gain_eur) == (None, None)
 
 
 def test_each_line_carries_the_rates_of_its_sell_and_its_buy() -> None:
@@ -65,7 +65,7 @@ def test_a_trade_without_a_stored_rate_has_none() -> None:
     """Invariant: a missing rate shows as missing, not as another trade's rate."""
     rate = TradeRate(rate=Decimal("1.10"), rate_date=date(2026, 6, 15))
     (line,) = build_trail([_piece("7", buy="3")], {"7": rate})
-    assert line.buy_rate is None
+    assert (line.sell_rate, line.buy_rate) == (rate, None)
 
 
 def test_thirty_decimal_shares_are_not_rounded() -> None:
