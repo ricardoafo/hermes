@@ -494,6 +494,38 @@ stdio, so an MCP client reaches it by SSH over the tailnet, for example
 never loads `/etc/hermes/env.production` or `.env.local`; leave the env
 file out when you run it.
 
+### Desk briefings
+
+`hermes supervisor brief` prints the supervisor desk's daily line, and
+`brief --weekly` the weekly brief (#365). Both are built by code from the
+same tools and grants, with no model call, and every line cites the tool it
+came from, such as `[health]`. A tool you did not grant shows as
+"Unavailable (not granted)".
+
+```bash
+grants=()
+for s in health signals positions decisions certification; do
+    grants+=(--grant "hermes:read:$s")
+done
+hermes_sup brief "${grants[@]}"
+hermes_sup brief --weekly "${grants[@]}"
+```
+
+Before printing, the brief goes through the desk's output gate (ADR-012
+D-08): no link, code fence, secret-shaped string or outcome word, and every
+number and reference must exist in what the tools returned. If free text
+such as a decision title fails the gate, the digest of states and counts is
+printed instead and the gate's reasons go to stderr as one JSON line.
+
+```mermaid
+flowchart LR
+    T["Read tools (granted, audited)"] --> G["gather: payloads plus counts"]
+    G --> C["compose: cited items"]
+    C --> K{"output gate"}
+    K -- pass --> P["print the brief"]
+    K -- fail --> D["print the digest; reasons to stderr"]
+```
+
 ## Snapshots (Hetzner Backups + manual)
 
 **Automatic backups** (Hetzner-managed): daily, 7-day retention.
