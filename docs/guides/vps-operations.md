@@ -181,11 +181,13 @@ Baseline expectations after a full hermes install:
 
 ### Journald log retention
 
-Configured to hold 30 days by default. Verify:
+`vps-bootstrap` writes `/etc/systemd/journald.conf.d/50-hermes.conf` with the ADR-008 §1 limits: at most 2G
+(`SystemMaxUse=2G`) and at most 180 days (`MaxRetentionSec=180day`). It restarts `systemd-journald` only when the
+file changed, and the limits apply once bootstrap has been re-run. Verify:
 
 ```bash
+cat /etc/systemd/journald.conf.d/50-hermes.conf
 journalctl --disk-usage
-journalctl --vacuum-time=30d       # manual prune (rarely needed)
 ```
 
 ## Docker operations
