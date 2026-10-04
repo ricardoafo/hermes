@@ -32,7 +32,6 @@ from hermes.application.console.render import MADRID, RenderContext, render_acti
 from hermes.application.console.views import ActivityDay
 from hermes.domain.errors import LedgerError
 from hermes.entrypoints import console as console_module
-from hermes.entrypoints import serve as serve_module
 
 __all__ = ["run_activity"]
 
@@ -62,7 +61,7 @@ def run_activity(
     Returns:
         Process exit code.
     """
-    parsed = _parse(args, stream)
+    parsed = _parse(args, stream, env or {})
     if isinstance(parsed, int):
         return parsed
 
@@ -94,13 +93,13 @@ def run_activity(
     return 0
 
 
-def _parse(args: list[str], stream: TextIO) -> argparse.Namespace | int:
+def _parse(args: list[str], stream: TextIO, env: Mapping[str, str]) -> argparse.Namespace | int:
     """Parse the arguments, or return the exit code for help and usage errors."""
     parser = argparse.ArgumentParser(prog="hermes activity", add_help=False)
     parser.add_argument("--all", action="store_true")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--utc", action="store_true")
-    parser.add_argument("--db", type=Path, default=serve_module.DEFAULT_DB_PATH)
+    parser.add_argument("--db", type=Path, default=None)
     parser.add_argument("--days", type=int, default=_DEFAULT_DAYS)
     parser.add_argument("-h", "--help", action="store_true")
     try:
@@ -108,6 +107,7 @@ def _parse(args: list[str], stream: TextIO) -> argparse.Namespace | int:
     except SystemExit:
         stream.write(f"ERROR: bad arguments. {_USAGE}\n")
         return 2
+    parsed.db = parsed.db or console_module.default_db_path(env)
     if parsed.help:
         stream.write(_USAGE + "\n")
         return 0
