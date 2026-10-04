@@ -99,9 +99,11 @@ def apply_migrations(
 ) -> tuple[str, ...]:
     """Apply every pending non-destructive migration in lexical order.
 
-    Runs on every ledger start. Stops at the first pending destructive
-    migration: that one, and everything after it, waits for
-    :func:`migrate_with_snapshot`.
+    Runs on every ledger start. On a ledger that already holds applied
+    migrations it stops at the first pending destructive migration: that
+    one, and everything after it, waits for :func:`migrate_with_snapshot`.
+    A brand-new ledger (no migration applied yet) has no data to protect,
+    so it gets every migration, destructive ones included.
 
     Idempotent: re-running on a fully-migrated database is a no-op and
     returns an empty tuple.
@@ -120,9 +122,11 @@ def apply_migrations(
         sqlite3.Error: On any SQL failure. The failing migration is rolled
             back in full and its filename is NOT recorded.
     """
+    pending = pending_migrations(conn, migrations_dir)
+    fresh = conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 0
     applied: list[str] = []
-    for sql_file in pending_migrations(conn, migrations_dir):
-        if _is_destructive(sql_file):
+    for sql_file in pending:
+        if not fresh and _is_destructive(sql_file):
             raise LedgerError(
                 msg=(
                     f"destructive migration {sql_file.name} is pending; it is never applied "
