@@ -135,7 +135,7 @@ class SlackConfig:
         bot_token: The Slack bot user OAuth token issued by the workspace
             admin. Format: ``xoxb-<numbers>-<numbers>-<base64>``. Treated
             as opaque; the adapter only puts it in an
-            ``Authorization: Bearer`` header.
+            ``Authorization: Bearer`` header. Not in ``repr``.
         default_channel: The channel ID (``C0123ABCD``) or name
             (``#alerts``) that :meth:`notify` and the legacy wrappers
             post to when the caller does not override with a
@@ -143,7 +143,7 @@ class SlackConfig:
             both ID and name.
     """
 
-    bot_token: str
+    bot_token: str = field(repr=False)
     default_channel: str
 
     @classmethod
