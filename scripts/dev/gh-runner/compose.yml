@@ -97,6 +97,8 @@ services:
       - mypy-cache:/home/runner/.cache/mypy
       - ruff-cache:/home/runner/.cache/ruff
       - hypothesis-db:/home/runner/.cache/hypothesis
+      # bun package cache: the AI review action installs its own deps
+      - bun-cache:/home/runner/.cache/bun
 
       # Workspace: NO shared volume — each replica gets its own
       # container-local /home/runner/_work. Sharing this across
@@ -177,4 +179,5 @@ volumes:
   mypy-cache:
   ruff-cache:
   hypothesis-db:
+  bun-cache:
   dependabot-docker:

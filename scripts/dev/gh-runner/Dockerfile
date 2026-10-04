@@ -30,6 +30,10 @@ ARG UV_VERSION=0.12.5
 ARG NODE_MAJOR=24
 ARG MARKDOWNLINT_VERSION=0.23.2
 ARG GITLEAKS_VERSION=8.21.2
+# The AI review action (ai-review.yml) pins these two; bump them together
+# with the action SHA or the job falls back to downloading its own.
+ARG BUN_VERSION=1.3.6
+ARG CLAUDE_CODE_VERSION=2.1.112
 ARG DOCKER_CE_CLI_VERSION=5:27.4.1-1~ubuntu.24.04~noble
 ARG DEBIAN_FRONTEND=noninteractive
 
@@ -140,6 +144,18 @@ ENV npm_config_cache=/home/runner/.cache/npm
 # referenced in .github/workflows/ci.yml.
 # ────────────────────────────────────────────────────────────────
 RUN uv tool install semgrep
+
+# ────────────────────────────────────────────────────────────────
+# Bun + Claude Code for the AI review job (ai-review.yml, #590).
+# The action otherwise downloads both on every PR; with them baked in
+# the job passes these paths and installs nothing.
+# ────────────────────────────────────────────────────────────────
+RUN curl -fsSL https://bun.sh/install | bash -s "bun-v${BUN_VERSION}" \
+ && curl -fsSL https://claude.ai/install.sh | bash -s -- "${CLAUDE_CODE_VERSION}" \
+ && mkdir -p /home/runner/.cache/bun
+
+ENV PATH="/home/runner/.bun/bin:${PATH}"
+ENV BUN_INSTALL_CACHE_DIR=/home/runner/.cache/bun
 
 # ────────────────────────────────────────────────────────────────
 # GH Actions runner (pinned)

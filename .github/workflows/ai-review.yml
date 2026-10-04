@@ -136,11 +136,39 @@ jobs:
           echo "schema=$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1])), separators=(",", ":")))' "$tools/schema.json")" >> "$GITHUB_OUTPUT"
           echo "tools=$tools" >> "$GITHUB_OUTPUT"
 
+      # The runner image bakes the Bun and Claude Code versions this action
+      # pins (gh-runner Dockerfile), and its bun cache is a volume. Use the
+      # baked binaries when they are the pinned versions, so a review
+      # downloads nothing; otherwise the action installs its own.
+      - name: Baked Bun and Claude Code
+        id: baked
+        if: steps.token.outputs.present == 'true'
+        env:
+          BUN_PIN: "1.3.6"
+          CLAUDE_PIN: "2.1.112"
+        run: |
+          bun=$(command -v bun || true)
+          if [ -n "$bun" ] && [ "$("$bun" --version)" = "$BUN_PIN" ]; then
+            echo "bun=$bun" >> "$GITHUB_OUTPUT"
+            echo "Using baked bun $BUN_PIN at $bun"
+          else
+            echo "::notice::No baked bun $BUN_PIN; the action downloads it."
+          fi
+          claude=$(command -v claude || true)
+          if [ -n "$claude" ] && "$claude" --version 2>/dev/null | grep -q "^$CLAUDE_PIN "; then
+            echo "claude=$claude" >> "$GITHUB_OUTPUT"
+            echo "Using baked Claude Code $CLAUDE_PIN at $claude"
+          else
+            echo "::notice::No baked Claude Code $CLAUDE_PIN; the action downloads it."
+          fi
+
       - name: Review
         id: review
         if: steps.token.outputs.present == 'true'
         uses: anthropics/claude-code-action@c3d45e8e941e1b2ad7b278c57482d9c5bf1f35b3 # v1.0.99
         with:
+          path_to_bun_executable: ${{ steps.baked.outputs.bun }}
+          path_to_claude_code_executable: ${{ steps.baked.outputs.claude }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
           allowed_bots: 'dependabot[bot]'
