@@ -81,6 +81,7 @@ from hermes.domain.market_data.bar_schedule import (
     within_catchup,
 )
 from hermes.domain.market_data.kline import KlineInterval
+from hermes.domain.portfolio.mark import PortfolioMark
 from hermes.domain.portfolio.snapshot import PortfolioSnapshot
 from hermes.domain.strategy.signal import OpenPosition, SignalKind
 from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
@@ -583,6 +584,15 @@ class _BarLoop:
         # values back; nothing in the strategy does. Stored before BarProcessed
         # so a processed bar always has its values on record.
         stored = c.ledger.record_live_bar(bar)
+        # The console reads the portfolio from the ledger, not from this process (#387).
+        c.ledger.record_portfolio_mark(
+            PortfolioMark(
+                snapshot=c.tracker.current,
+                pair=bar.pair,
+                interval=bar.interval,
+                bar_close_time=bar.close_time,
+            )
+        )
         if stored is not None:
             _log.warning(
                 "serve.live_bar.differs_from_stored",

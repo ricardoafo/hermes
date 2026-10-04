@@ -76,6 +76,11 @@ class PortfolioTracker:
                 )
         return Success(tracker)
 
+    @property
+    def current(self) -> PortfolioSnapshot:
+        """Return the current snapshot (read-only value object)."""
+        return self._snapshot
+
     def mark(self, bar: Bar) -> None:
         """Mark the bar's pair at the bar close when the bar is newer than its mark.
 

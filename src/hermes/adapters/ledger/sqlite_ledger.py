@@ -46,6 +46,9 @@ from hermes.domain.lots.lot import Lot
 from hermes.domain.lots.lot_consumption import LotConsumption
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
+from hermes.domain.portfolio.mark import PortfolioMark
+from hermes.domain.portfolio.position import Position
+from hermes.domain.portfolio.snapshot import PortfolioSnapshot
 from hermes.domain.strategy.signal import SignalKind, SignalSide
 from hermes.domain.trading.order import OrderSide
 from hermes.domain.trading.trade_record import TradeEur, TradeRecord
@@ -337,6 +340,103 @@ class SqliteLedger:
         except LedgerError:
             self._conn.rollback()
             raise
+
+    # ------------------------------------------------------------------
+    # PortfolioHistoryPort — one portfolio mark per processed bar (#387)
+    # ------------------------------------------------------------------
+
+    def record_portfolio_mark(self, mark: PortfolioMark) -> bool:
+        """Store the portfolio as it stood after one processed bar.
+
+        Args:
+            mark: The snapshot and the bar it followed.
+
+        Returns:
+            ``False`` when that bar's mark is already stored (a replay after a
+            restart); the stored row is kept.
+
+        Raises:
+            LedgerError: On any SQLite failure.
+        """
+        snap = mark.snapshot
+        positions = [
+            {
+                "base": p.pair.base.value,
+                "quote": p.pair.quote.value,
+                "quantity": str(p.quantity),
+                "cost_basis": str(p.cost_basis),
+                "mark_price": str(p.mark_price),
+                "marked_at": _iso_utc(p.marked_at),
+            }
+            for p in sorted(snap.positions.values(), key=lambda p: str(p.pair))
+        ]
+        try:
+            inserted = self._conn.execute(
+                "INSERT OR IGNORE INTO portfolio_marks (strategy_id, pair_base, pair_quote, "
+                "interval, bar_close_time, quote, starting_cash, cash, market_value, equity, "
+                "realized_pnl, peak_equity, positions_json, recorded_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    snap.strategy_id.value,
+                    mark.pair.base.value,
+                    mark.pair.quote.value,
+                    mark.interval.value,
+                    _iso_utc(mark.bar_close_time),
+                    snap.quote.value,
+                    str(snap.starting_cash),
+                    str(snap.cash),
+                    str(snap.market_value),
+                    str(snap.equity),
+                    str(snap.realized_pnl),
+                    str(snap.peak_equity),
+                    json.dumps(positions, sort_keys=True),
+                    _iso_utc(datetime.now(UTC)),
+                ),
+            ).rowcount
+            self._conn.commit()
+        except sqlite3.Error as exc:
+            self._conn.rollback()
+            raise LedgerError(msg=f"record_portfolio_mark failed: {exc}") from exc
+        return bool(inserted)
+
+    def portfolio_marks(
+        self, strategy_id: StrategyId, start: datetime, end: datetime
+    ) -> tuple[PortfolioMark, ...]:
+        """Return the strategy's marks with ``start <= bar_close_time < end``, oldest first.
+
+        Raises:
+            LedgerError: On any SQLite failure or an unreadable row.
+        """
+        try:
+            rows = self._conn.execute(
+                "SELECT strategy_id, pair_base, pair_quote, interval, bar_close_time, quote, "
+                "starting_cash, cash, realized_pnl, peak_equity, positions_json "
+                "FROM portfolio_marks "
+                "WHERE strategy_id = ? AND bar_close_time >= ? AND bar_close_time < ? "
+                "ORDER BY bar_close_time, id",
+                (strategy_id.value, _iso_utc(start), _iso_utc(end)),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"portfolio_marks failed: {exc}") from exc
+        return tuple(_row_to_mark(row) for row in rows)
+
+    def latest_portfolio_mark(self, strategy_id: StrategyId) -> PortfolioMark | None:
+        """Return the strategy's newest mark, or ``None`` before the first bar.
+
+        Raises:
+            LedgerError: On any SQLite failure or an unreadable row.
+        """
+        try:
+            row = self._conn.execute(
+                "SELECT strategy_id, pair_base, pair_quote, interval, bar_close_time, quote, "
+                "starting_cash, cash, realized_pnl, peak_equity, positions_json "
+                "FROM portfolio_marks WHERE strategy_id = ? "
+                "ORDER BY bar_close_time DESC, id DESC LIMIT 1",
+                (strategy_id.value,),
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"latest_portfolio_mark failed: {exc}") from exc
+        return None if row is None else _row_to_mark(row)
 
     # ------------------------------------------------------------------
     # LedgerPort — read methods
@@ -764,6 +864,51 @@ def _row_to_bar(pair: Pair, interval: KlineInterval, row: tuple[Any, ...]) -> Ba
         close=Decimal(close),
         volume=Decimal(volume),
     )
+
+
+def _row_to_mark(row: tuple[Any, ...]) -> PortfolioMark:
+    """Rebuild a :class:`PortfolioMark` from a ``portfolio_marks`` row."""
+    (
+        strategy,
+        base,
+        quote_ccy,
+        interval,
+        close_time,
+        quote,
+        starting,
+        cash,
+        realized,
+        peak,
+        positions_json,
+    ) = row
+    try:
+        positions = {}
+        for item in json.loads(positions_json):
+            pair = Pair(base=Currency(item["base"]), quote=Currency(item["quote"]))
+            positions[pair] = Position(
+                pair=pair,
+                quantity=Decimal(item["quantity"]),
+                cost_basis=Decimal(item["cost_basis"]),
+                mark_price=Decimal(item["mark_price"]),
+                marked_at=datetime.fromisoformat(item["marked_at"]),
+            )
+        snapshot = PortfolioSnapshot(
+            strategy_id=StrategyId(strategy),
+            quote=Currency(quote),
+            starting_cash=Decimal(starting),
+            cash=Decimal(cash),
+            positions=positions,
+            realized_pnl=Decimal(realized),
+            peak_equity=Decimal(peak),
+        )
+        return PortfolioMark(
+            snapshot=snapshot,
+            pair=Pair(base=Currency(base), quote=Currency(quote_ccy)),
+            interval=KlineInterval(interval),
+            bar_close_time=datetime.fromisoformat(close_time),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise LedgerError(msg=f"portfolio mark row is unreadable: {exc}") from exc
 
 
 def _iso_utc(dt: datetime) -> str:
