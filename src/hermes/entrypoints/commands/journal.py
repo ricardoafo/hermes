@@ -10,5 +10,5 @@ __all__ = ["COMMAND"]
 COMMAND = Command(
     name="journal",
     summary="Record, list and review Code Owner decisions (decision journal).",
-    run=lambda argv, *, stream: _impl.main(argv, stream=stream),
+    run=lambda argv, *, stream, err=None: _impl.main(argv, stream=stream, err=err),
 )

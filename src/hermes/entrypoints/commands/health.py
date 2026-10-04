@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 from dotenv import dotenv_values
 
 from hermes.entrypoints import _health as health_module
+from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.commands import Command
 from hermes.infrastructure.config.loader import DEFAULT_DOTENV_PATH
 
@@ -32,7 +33,7 @@ def health_env(dotenv_path: Path = DEFAULT_DOTENV_PATH) -> dict[str, str]:
     return {**from_file, **os.environ}
 
 
-def _run(rest: list[str], *, stream: Any) -> int:
+def _run(rest: list[str], *, stream: Any, err: TextIO | None = None) -> int:
     """Handle the ``hermes health`` subcommand family.
 
     Two forms:
@@ -48,6 +49,7 @@ def _run(rest: list[str], *, stream: Any) -> int:
     Args:
         rest: Residual argv after the ``health`` token.
         stream: Output stream.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         Process exit code — 0 on OK, 1 on adapter down, 2 on unknown
@@ -63,7 +65,9 @@ def _run(rest: list[str], *, stream: Any) -> int:
     check = health_module.get_check(integration)
     if check is None:
         available = ", ".join(health_module.registered_integrations()) or "(none)"
-        stream.write(f"ERROR: unknown integration {integration!r}. Available: {available}\n")
+        resolve_err(err).write(
+            f"ERROR: unknown integration {integration!r}. Available: {available}\n"
+        )
         return 2
 
     result = check(health_env())

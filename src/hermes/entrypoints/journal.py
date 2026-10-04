@@ -37,6 +37,7 @@ from hermes.application.journal.service import (
 )
 from hermes.domain.journal.entries import Decision, OutcomeKind, Review, Score
 from hermes.entrypoints import serve as serve_module
+from hermes.entrypoints._streams import resolve_err
 from hermes.infrastructure.time import now_utc
 from hermes.ports.certification import CertificationStoreError
 from hermes.ports.decision_journal import JournalIntegrityError
@@ -79,20 +80,22 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str], *, stream: TextIO) -> int:
+def main(argv: list[str], *, stream: TextIO, err: TextIO | None = None) -> int:
     """Run ``hermes journal``.
 
     Args:
         argv: Arguments after the ``journal`` token.
         stream: Output stream.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         Process exit code.
     """
+    err = resolve_err(err)
     try:
         args = _parser().parse_args(argv)
     except (argparse.ArgumentError, SystemExit, ValueError) as exc:
-        stream.write(f"ERROR: could not parse `hermes journal` arguments: {exc}\n")
+        err.write(f"ERROR: could not parse `hermes journal` arguments: {exc}\n")
         return 2
     db_path = serve_module.DEFAULT_DB_PATH
     journal = JsonlDecisionJournal(args.journal or db_path.parent / "decision-journal.jsonl")
@@ -102,10 +105,10 @@ def main(argv: list[str], *, stream: TextIO) -> int:
         certified = record is not None and record.state in _UNSEALED
         return _dispatch(args, journal, certified, stream)
     except JournalError as exc:
-        stream.write(f"REFUSED: {exc}\n")
+        err.write(f"REFUSED: {exc}\n")
         return 1
     except (JournalIntegrityError, CertificationStoreError, OSError) as exc:
-        stream.write(f"ERROR: {exc}\n")
+        err.write(f"ERROR: {exc}\n")
         return 3
 
 

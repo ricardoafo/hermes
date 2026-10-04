@@ -38,6 +38,7 @@ from typing import Any
 
 from hermes.adapters.console import available_scenarios
 from hermes.entrypoints import console as console_module
+from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.commands import Command, discover
 from hermes.infrastructure import sentry_integration
 
@@ -114,7 +115,9 @@ def _initialize_sentry_from_env(env: dict[str, str]) -> None:
     sentry_integration.initialize(dsn=dsn, environment=environment)
 
 
-def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
+def main(
+    argv: list[str] | None = None, *, stream: Any | None = None, err: Any | None = None
+) -> int:
     """Dispatch the invoked subcommand.
 
     Initializes Sentry (from env) BEFORE dispatching so unhandled
@@ -127,12 +130,15 @@ def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
         argv: Argument list — defaults to ``sys.argv[1:]``.
         stream: Output stream — defaults to a UTF-8-reconfigured
             ``sys.stdout``. Injected for tests.
+        err: Stream for ERROR lines — defaults to ``sys.stderr``, so stdout
+            holds only a command's real output (#543). Injected for tests.
 
     Returns:
         Process exit code.
     """
     args = list(sys.argv[1:] if argv is None else argv)
     out = stream if stream is not None else _utf8_stdout()
+    errors = resolve_err(err)
 
     # Initialize Sentry first — before any subcommand can raise. If the
     # DSN is empty, this is a no-op (integration disabled). Any SDK
@@ -141,7 +147,7 @@ def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
     _initialize_sentry_from_env(dict(os.environ))
 
     demo_scenario = _leading_demo_scenario(args)
-    demo_exit, args = console_module.apply_demo_flag(args, out)
+    demo_exit, args = console_module.apply_demo_flag(args, out, errors)
     if demo_exit is not None:
         return demo_exit
 
@@ -153,11 +159,11 @@ def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
     subcommand, *rest = args
     command = commands.get(subcommand)
     if command is None:
-        out.write(f"ERROR: unknown subcommand {subcommand!r}. Run `hermes --help`.\n")
+        errors.write(f"ERROR: unknown subcommand {subcommand!r}. Run `hermes --help`.\n")
         return 2
     if command.wants_demo:
-        return command.run(rest, stream=out, demo=demo_scenario)
-    return command.run(rest, stream=out)
+        return command.run(rest, stream=out, demo=demo_scenario, err=errors)
+    return command.run(rest, stream=out, err=errors)
 
 
 if __name__ == "__main__":  # pragma: no cover

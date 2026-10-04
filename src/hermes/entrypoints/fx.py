@@ -28,6 +28,7 @@ from hermes.application.ledger.eur_pricer import EurPricer
 from hermes.domain.errors import LedgerError
 from hermes.domain.fx.eur_pricing import fill_date_madrid
 from hermes.entrypoints import serve as serve_module
+from hermes.entrypoints._streams import resolve_err
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
 from hermes.infrastructure.config.models import FrankfurterConfig
@@ -87,32 +88,40 @@ def run_backfill(db_path: Path, fx: FxRateProviderPort) -> BackfillReport:
         connection.close()
 
 
-def main(argv: list[str], *, stream: TextIO, fx_factory: FxFactory = build_fx) -> int:
+def main(
+    argv: list[str],
+    *,
+    stream: TextIO,
+    fx_factory: FxFactory = build_fx,
+    err: TextIO | None = None,
+) -> int:
     """Parse ``argv`` (after the ``fx`` token) and run the subcommand.
 
     Args:
         argv: Arguments after ``fx``.
         stream: Output stream.
         fx_factory: Builds the rate provider from config; tests inject a fake.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         Process exit code.
     """
-    parsed, code = _parse(argv, stream)
+    err = resolve_err(err)
+    parsed, code = _parse(argv, stream, err)
     if parsed is None:
         return code
 
     try:
         config = load_config(parsed.config_dir)
     except ConfigError as exc:
-        stream.write(f"ERROR: config load failed: {exc}\n")
+        err.write(f"ERROR: config load failed: {exc}\n")
         return 3
 
     fx = fx_factory(config.frankfurter)
     try:
         report = run_backfill(parsed.db, fx)
     except LedgerError as exc:
-        stream.write(f"ERROR: {exc}\n")
+        err.write(f"ERROR: {exc}\n")
         return 1
     finally:
         close = getattr(fx, "close", None)
@@ -122,13 +131,13 @@ def main(argv: list[str], *, stream: TextIO, fx_factory: FxFactory = build_fx) -
     return 0
 
 
-def _parse(argv: list[str], stream: TextIO) -> tuple[argparse.Namespace | None, int]:
+def _parse(argv: list[str], stream: TextIO, err: TextIO) -> tuple[argparse.Namespace | None, int]:
     """Parse ``fx`` arguments; return ``(None, exit_code)`` when there is nothing to run."""
     if not argv or argv[0] in {"-h", "--help"}:
         stream.write(_USAGE)
         return None, 0 if argv else 2
     if argv[0] != "backfill":
-        stream.write(f"ERROR: unknown `hermes fx` command {argv[0]!r}.\n{_USAGE}")
+        err.write(f"ERROR: unknown `hermes fx` command {argv[0]!r}.\n{_USAGE}")
         return None, 2
 
     parser = argparse.ArgumentParser(prog="hermes fx backfill", add_help=False)
@@ -138,7 +147,7 @@ def _parse(argv: list[str], stream: TextIO) -> tuple[argparse.Namespace | None, 
     try:
         parsed = parser.parse_args(argv[1:])
     except SystemExit:
-        stream.write("ERROR: could not parse `hermes fx backfill` arguments.\n")
+        err.write("ERROR: could not parse `hermes fx backfill` arguments.\n")
         return None, 2
     if parsed.help:
         stream.write(_USAGE)

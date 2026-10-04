@@ -29,6 +29,7 @@ from hermes.adapters.ledger.migration_runner import (
     restore_snapshot,
 )
 from hermes.domain.errors import LedgerError
+from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.serve import DEFAULT_DB_PATH
 
 __all__ = ["main"]
@@ -42,7 +43,7 @@ _USAGE = (
 )
 
 
-def _parse(argv: list[str], stream: TextIO) -> argparse.Namespace | None:
+def _parse(argv: list[str], err: TextIO) -> argparse.Namespace | None:
     parser = argparse.ArgumentParser(prog="hermes migrate", add_help=False)
     parser.add_argument("--db", type=Path, default=DEFAULT_DB_PATH)
     parser.add_argument("--snapshot-dir", type=Path, default=None)
@@ -53,13 +54,13 @@ def _parse(argv: list[str], stream: TextIO) -> argparse.Namespace | None:
     try:
         return parser.parse_args(argv)
     except SystemExit:
-        stream.write("ERROR: could not parse `hermes migrate` arguments.\n" + _USAGE)
+        err.write("ERROR: could not parse `hermes migrate` arguments.\n" + _USAGE)
         return None
 
 
-def _status(db: Path, stream: TextIO) -> int:
+def _status(db: Path, stream: TextIO, err: TextIO) -> int:
     if not db.exists():
-        stream.write(f"ERROR: ledger {db} does not exist\n")
+        err.write(f"ERROR: ledger {db} does not exist\n")
         return 3
     conn = sqlite3.connect(db)
     try:
@@ -75,24 +76,24 @@ def _status(db: Path, stream: TextIO) -> int:
     return 0
 
 
-def _restore(snapshot: Path, db: Path, stream: TextIO) -> int:
+def _restore(snapshot: Path, db: Path, stream: TextIO, err: TextIO) -> int:
     try:
         restore_snapshot(snapshot, db)
     except LedgerError as exc:
-        stream.write(f"ERROR: {exc}\n")
+        err.write(f"ERROR: {exc}\n")
         return 3
     stream.write(f"Restored {db} from {snapshot}.\n")
     return 0
 
 
-def _migrate(db: Path, snapshot_dir: Path, stream: TextIO) -> int:
+def _migrate(db: Path, snapshot_dir: Path, stream: TextIO, err: TextIO) -> int:
     try:
         applied, snapshot = migrate_with_snapshot(db, snapshot_dir)
     except LedgerError as exc:
-        stream.write(f"ERROR: {exc}\n")
+        err.write(f"ERROR: {exc}\n")
         return 3
     except sqlite3.Error as exc:
-        stream.write(
+        err.write(
             f"ERROR: migration failed and was rolled back: {exc}\n"
             "The snapshot taken before it is in the snapshot directory.\n"
         )
@@ -106,17 +107,19 @@ def _migrate(db: Path, snapshot_dir: Path, stream: TextIO) -> int:
     return 0
 
 
-def main(argv: list[str], *, stream: TextIO) -> int:
+def main(argv: list[str], *, stream: TextIO, err: TextIO | None = None) -> int:
     """Parse ``argv`` and run the requested migration action.
 
     Args:
         argv: Arguments after the ``migrate`` token.
         stream: Output stream.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         Process exit code.
     """
-    parsed = _parse(argv, stream)
+    err = resolve_err(err)
+    parsed = _parse(argv, err)
     if parsed is None:
         return 2
     if parsed.help:
@@ -124,7 +127,7 @@ def main(argv: list[str], *, stream: TextIO) -> int:
         return 0
     db: Path = parsed.db
     if parsed.status:
-        return _status(db, stream)
+        return _status(db, stream, err)
     if parsed.restore is not None:
-        return _restore(parsed.restore, db, stream)
-    return _migrate(db, parsed.snapshot_dir or db.parent / "migration-snapshots", stream)
+        return _restore(parsed.restore, db, stream, err)
+    return _migrate(db, parsed.snapshot_dir or db.parent / "migration-snapshots", stream, err)

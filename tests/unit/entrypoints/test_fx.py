@@ -88,10 +88,10 @@ def test_cli_routes_fx_to_the_backfill_usage() -> None:
 
 def test_unknown_fx_command_is_a_usage_error() -> None:
     """Invariant: an unknown `hermes fx` command exits 2 and names the command."""
-    stream = io.StringIO()
-    code = fx_module.main(["rebuild"], stream=stream)
-    assert code == 2
-    assert "unknown `hermes fx` command 'rebuild'" in stream.getvalue()
+    stream, err = io.StringIO(), io.StringIO()
+    code = fx_module.main(["rebuild"], stream=stream, err=err)
+    assert (code, stream.getvalue()) == (2, "")
+    assert "unknown `hermes fx` command 'rebuild'" in err.getvalue()
 
 
 def test_build_fx_sends_usdt_as_usd_to_the_configured_host() -> None:

@@ -34,6 +34,7 @@ from hermes.application.archive_check import ArchiveCheckReport, run_archive_che
 from hermes.application.notification_router import EventClass, RouterConfig, route
 from hermes.domain.errors import InfraError
 from hermes.domain.events.base import DomainEvent
+from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.serve import DEFAULT_DB_PATH
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
@@ -45,7 +46,7 @@ __all__ = ["main"]
 _HTTP_TIMEOUT_SEC = 30.0
 
 
-def _parse(argv: list[str], stream: TextIO) -> argparse.Namespace | None:
+def _parse(argv: list[str], stream: TextIO, err: TextIO) -> argparse.Namespace | None:
     parser = argparse.ArgumentParser(prog="hermes archive-check", add_help=False)
     parser.add_argument("--date", type=date.fromisoformat, default=None)
     parser.add_argument("--db", type=Path, default=DEFAULT_DB_PATH)
@@ -54,7 +55,7 @@ def _parse(argv: list[str], stream: TextIO) -> argparse.Namespace | None:
     try:
         parsed = parser.parse_args(argv)
     except SystemExit:
-        stream.write("ERROR: could not parse `hermes archive-check` arguments.\n")
+        err.write("ERROR: could not parse `hermes archive-check` arguments.\n")
         return None
     if parsed.help:
         stream.write(
@@ -93,18 +94,26 @@ def _write_report(report: ArchiveCheckReport, stream: TextIO) -> None:
         )
 
 
-def main(argv: list[str], *, stream: TextIO, env: Mapping[str, str] | None = None) -> int:
+def main(
+    argv: list[str],
+    *,
+    stream: TextIO,
+    env: Mapping[str, str] | None = None,
+    err: TextIO | None = None,
+) -> int:
     """Parse ``argv`` and run the archive check.
 
     Args:
         argv: Arguments after the ``archive-check`` token.
         stream: Output stream.
         env: Environment for notifier credentials; defaults to ``os.environ``.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         Process exit code.
     """
-    parsed = _parse(argv, stream)
+    err = resolve_err(err)
+    parsed = _parse(argv, stream, err)
     if parsed is None:
         return 2
     if parsed.help:
@@ -112,7 +121,7 @@ def main(argv: list[str], *, stream: TextIO, env: Mapping[str, str] | None = Non
     try:
         config = load_config(parsed.config_dir)
     except ConfigError as exc:
-        stream.write(f"ERROR: config: {exc}\n")
+        err.write(f"ERROR: config: {exc}\n")
         return 3
     if env is None:
         env = dict(os.environ)
@@ -137,7 +146,7 @@ def main(argv: list[str], *, stream: TextIO, env: Mapping[str, str] | None = Non
                 correlation_id=new_correlation_id(),
             )
     except InfraError as exc:
-        stream.write(f"ERROR: {exc}\n")
+        err.write(f"ERROR: {exc}\n")
         return 3
     _write_report(report, stream)
     return 1 if report.mismatches else 0

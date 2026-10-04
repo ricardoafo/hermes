@@ -77,12 +77,11 @@ class TestStubSubcommands:
     @pytest.mark.parametrize("subcommand", ["simulate"])
     def test_stub_subcommand_exits_two(self, subcommand: str) -> None:
         """Each stub subcommand exits 2 with an ERROR line naming the subcommand."""
-        stream = io.StringIO()
-        rc = cli_module.main([subcommand], stream=stream)
-        assert rc == 2
-        output = stream.getvalue()
-        assert subcommand in output
-        assert "not yet implemented" in output
+        stream, err = io.StringIO(), io.StringIO()
+        rc = cli_module.main([subcommand], stream=stream, err=err)
+        assert (rc, stream.getvalue()) == (2, "")
+        assert subcommand in err.getvalue()
+        assert "not yet implemented" in err.getvalue()
 
 
 class TestServeSubcommand:
@@ -97,13 +96,14 @@ class TestServeSubcommand:
 
     def test_serve_missing_config_dir_exits_three(self, tmp_path: object) -> None:
         """A non-existent --config-dir returns exit code 3 (config load failed)."""
-        stream = io.StringIO()
+        stream, err = io.StringIO(), io.StringIO()
         rc = cli_module.main(
             ["serve", "--config-dir", "does-not-exist-abcdef"],
             stream=stream,
+            err=err,
         )
-        assert rc == 3
-        assert "config load failed" in stream.getvalue()
+        assert (rc, stream.getvalue()) == (3, "")
+        assert "config load failed" in err.getvalue()
 
 
 class TestServeExitCodes:
@@ -111,11 +111,11 @@ class TestServeExitCodes:
 
     def test_serve_env_flag_stays_rejected_with_exit_two(self) -> None:
         """`--env` is not a flag: HERMES_ENV is the only source of the tier (D-8)."""
-        stream = io.StringIO()
+        stream, err = io.StringIO(), io.StringIO()
 
-        rc = cli_module.main(["serve", "--env", "prod"], stream=stream)
+        rc = cli_module.main(["serve", "--env", "prod"], stream=stream, err=err)
 
-        assert (rc, "could not parse" in stream.getvalue()) == (2, True)
+        assert (rc, "could not parse" in err.getvalue()) == (2, True)
 
     def test_serve_help_documents_the_exit_codes_and_hermes_env(self) -> None:
         """The help text names HERMES_ENV and the four exit codes."""
@@ -133,12 +133,12 @@ class TestServeExitCodes:
             raise serve_module.StartupError("roster is wrong")
 
         monkeypatch.setattr(serve_module, "check_startup", _refuse)
-        stream = io.StringIO()
+        stream, err = io.StringIO(), io.StringIO()
         config_dir = Path(__file__).resolve().parents[3] / "config"
 
-        rc = cli_module.main(["serve", "--config-dir", str(config_dir)], stream=stream)
+        rc = cli_module.main(["serve", "--config-dir", str(config_dir)], stream=stream, err=err)
 
-        assert (rc, "roster is wrong" in stream.getvalue()) == (3, True)
+        assert (rc, "roster is wrong" in err.getvalue()) == (3, True)
 
     def test_serve_main_returns_the_exit_code_of_run(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -226,10 +226,10 @@ class TestUnknownSubcommand:
 
     def test_unknown_subcommand_exits_two(self) -> None:
         """An unknown top-level subcommand exits 2 and mentions --help."""
-        stream = io.StringIO()
-        rc = cli_module.main(["not-a-command"], stream=stream)
-        assert rc == 2
-        assert "unknown subcommand" in stream.getvalue()
+        stream, err = io.StringIO(), io.StringIO()
+        rc = cli_module.main(["not-a-command"], stream=stream, err=err)
+        assert (rc, stream.getvalue()) == (2, "")
+        assert "unknown subcommand" in err.getvalue()
 
 
 class TestHealthDispatch:
@@ -334,12 +334,11 @@ class TestHealthDispatch:
 
     def test_health_unknown_integration_exits_two(self) -> None:
         """`hermes health <unknown>` prints an ERROR and exits 2."""
-        stream = io.StringIO()
-        rc = cli_module.main(["health", "not-a-real-integration"], stream=stream)
-        assert rc == 2
-        output = stream.getvalue()
-        assert "unknown integration" in output
-        assert "not-a-real-integration" in output
+        stream, err = io.StringIO(), io.StringIO()
+        rc = cli_module.main(["health", "not-a-real-integration"], stream=stream, err=err)
+        assert (rc, stream.getvalue()) == (2, "")
+        assert "unknown integration" in err.getvalue()
+        assert "not-a-real-integration" in err.getvalue()
 
     def test_health_telegram_missing_config_exits_three(
         self, monkeypatch: pytest.MonkeyPatch

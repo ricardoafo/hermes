@@ -58,6 +58,19 @@ def _run(
     return code, out.getvalue()
 
 
+def _run_split(args: list[str]) -> tuple[int, str, str]:
+    """Like :func:`_run` but also return what went to the error stream."""
+    out, err = io.StringIO(), io.StringIO()
+    code = status_module.main(
+        ["--config-dir", str(_CONFIG), *args],
+        stream=out,
+        err=err,
+        now=NOW,
+        unit_state=lambda: UnitState.RUNNING,
+    )
+    return code, out.getvalue(), err.getvalue()
+
+
 def _rstrip_lines(text: str) -> str:
     """Drop Rich's right padding so the snapshot has no trailing whitespace."""
     return "\n".join(line.rstrip() for line in text.splitlines()) + "\n"
@@ -114,24 +127,25 @@ def test_missing_ledger_exits_three_and_creates_nothing(tmp_path: Path) -> None:
 
 def test_broken_config_exits_three(tmp_path: Path) -> None:
     """An unreadable config dir is a config error, exit 3."""
-    out = io.StringIO()
+    out, err = io.StringIO(), io.StringIO()
     code = status_module.main(
         ["--config-dir", str(tmp_path), "--db", str(tmp_path / "x.sqlite3")],
         stream=out,
+        err=err,
         now=NOW,
         unit_state=lambda: UnitState.RUNNING,
     )
 
-    assert code == 3
-    assert out.getvalue().startswith("ERROR: config load failed")
+    assert (code, out.getvalue()) == (3, "")
+    assert err.getvalue().startswith("ERROR: config load failed")
 
 
 def test_bad_arguments_exit_two() -> None:
     """Unknown flags are a usage error."""
-    code, out = _run(["--nope"])
+    code, out, err = _run_split(["--nope"])
 
-    assert code == 2
-    assert "Usage: hermes status" in out
+    assert (code, out) == (2, "")
+    assert "Usage: hermes status" in err
 
 
 def test_human_view_shows_utc_and_madrid_times(tmp_path: Path) -> None:
@@ -275,9 +289,9 @@ def test_demo_status_reads_the_environment_variable() -> None:
 
 def test_demo_status_with_an_unknown_scenario_exits_two() -> None:
     """A typo in the scenario is a usage error."""
-    out = io.StringIO()
+    out, err = io.StringIO(), io.StringIO()
 
-    rc = status_module.main([], stream=out, demo_flag="no-such-scenario")
+    rc = status_module.main([], stream=out, err=err, demo_flag="no-such-scenario")
 
-    assert rc == 2
-    assert out.getvalue().startswith("ERROR:")
+    assert (rc, out.getvalue()) == (2, "")
+    assert err.getvalue().startswith("ERROR:")

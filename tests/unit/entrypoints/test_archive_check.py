@@ -77,8 +77,13 @@ def test_empty_day_on_both_sides_exits_0_for_every_stream(
 def test_archive_failure_exits_3(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A download or checksum failure is a failed check, not a clean day."""
     monkeypatch.setattr(module, "BinanceVisionDailyArchive", _FailingArchive)
-    code, out = _main(["--db", str(_ledger(tmp_path)), "--config-dir", str(_PROJECT_CONFIG)])
-    assert (code, out) == (3, "ERROR: archive down\n")
+    out, err = io.StringIO(), io.StringIO()
+    code = module.main(
+        ["--db", str(_ledger(tmp_path)), "--config-dir", str(_PROJECT_CONFIG)],
+        stream=out,
+        err=err,
+    )
+    assert (code, out.getvalue(), err.getvalue()) == (3, "", "ERROR: archive down\n")
 
 
 def test_bad_arguments_exit_2() -> None:
@@ -97,7 +102,7 @@ def test_cli_routes_the_subcommand(monkeypatch: pytest.MonkeyPatch) -> None:
     """`hermes archive-check` reaches this command's main."""
     seen: list[list[str]] = []
 
-    def fake_main(rest: list[str], *, stream: object) -> int:
+    def fake_main(rest: list[str], *, stream: object, err: object) -> int:
         seen.append(rest)
         return 0
 

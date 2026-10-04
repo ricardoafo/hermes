@@ -11,8 +11,8 @@ from hermes.entrypoints.commands import Command
 __all__ = ["COMMAND"]
 
 
-def _run(argv: list[str], *, stream: TextIO, demo: str | None) -> int:
-    return _console.run_positions(argv, stream, demo_flag=demo, env=os.environ)
+def _run(argv: list[str], *, stream: TextIO, demo: str | None, err: TextIO | None = None) -> int:
+    return _console.run_positions(argv, stream, demo_flag=demo, env=os.environ, err=err)
 
 
 COMMAND = Command(

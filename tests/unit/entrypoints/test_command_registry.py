@@ -49,9 +49,9 @@ def test_cli_holds_no_command_names() -> None:
 
 def test_dispatch_runs_the_discovered_command() -> None:
     """The token after `hermes` selects the command with that name."""
-    out = io.StringIO()
-    assert cli_module.main(["simulate"], stream=out) == 2
-    assert "not yet implemented" in out.getvalue()
+    out, err = io.StringIO(), io.StringIO()
+    assert cli_module.main(["simulate"], stream=out, err=err) == 2
+    assert (out.getvalue(), "not yet implemented" in err.getvalue()) == ("", True)
 
 
 def test_module_without_command_is_rejected() -> None:

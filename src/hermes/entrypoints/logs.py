@@ -32,6 +32,7 @@ from hermes.application.console.logs import (
     render_log_line,
 )
 from hermes.application.console.render import MADRID
+from hermes.entrypoints._streams import resolve_err
 
 __all__ = ["main"]
 
@@ -41,18 +42,26 @@ _USAGE: Final = (
 _RELATIVE: Final = re.compile(r"^\d+[smhdw]$")
 
 
-def main(argv: list[str], *, stream: TextIO, reader: JournalctlReader | None = None) -> int:
+def main(
+    argv: list[str],
+    *,
+    stream: TextIO,
+    reader: JournalctlReader | None = None,
+    err: TextIO | None = None,
+) -> int:
     """Run ``hermes logs``.
 
     Args:
         argv: Arguments after ``logs``.
         stream: Output stream; colour follows Rich's TTY and ``NO_COLOR`` detection.
         reader: Journal source; a fake in tests.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         Process exit code.
     """
-    parsed = _parse(argv, stream)
+    err = resolve_err(err)
+    parsed = _parse(argv, stream, err)
     if isinstance(parsed, int):
         return parsed
     source = reader or JournalctlReader()
@@ -67,14 +76,14 @@ def main(argv: list[str], *, stream: TextIO, reader: JournalctlReader | None = N
             else:
                 console.print(render_log_line(line, tz), soft_wrap=True)
     except JournalUnavailableError as exc:
-        stream.write(f"ERROR: {exc}.\n")
+        err.write(f"ERROR: {exc}.\n")
         return 2
     except KeyboardInterrupt:
         return 0
     return 0
 
 
-def _parse(argv: list[str], stream: TextIO) -> argparse.Namespace | int:
+def _parse(argv: list[str], stream: TextIO, err: TextIO) -> argparse.Namespace | int:
     parser = argparse.ArgumentParser(prog="hermes logs", add_help=False)
     parser.add_argument("--last", type=int, default=50)
     parser.add_argument("-f", "--follow", action="store_true")
@@ -88,13 +97,13 @@ def _parse(argv: list[str], stream: TextIO) -> argparse.Namespace | int:
         parsed = parser.parse_args(argv)
         parsed.level = LogLevel.parse(parsed.level)
     except SystemExit, ValueError:
-        stream.write(f"ERROR: bad arguments. {_USAGE}\n")
+        err.write(f"ERROR: bad arguments. {_USAGE}\n")
         return 2
     if parsed.help:
         stream.write(_USAGE + "\n")
         return 0
     if parsed.last < 1:
-        stream.write(f"ERROR: --last must be at least 1. {_USAGE}\n")
+        err.write(f"ERROR: --last must be at least 1. {_USAGE}\n")
         return 2
     return parsed
 

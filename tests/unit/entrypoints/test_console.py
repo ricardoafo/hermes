@@ -64,9 +64,9 @@ def test_demo_without_command_prints_tagged_overview() -> None:
 
 def test_unknown_demo_scenario_exits_2() -> None:
     """An unknown scenario is a usage error that lists the valid names."""
-    stream = io.StringIO()
-    rc = cli_module.main(["--demo", "nope"], stream=stream)
-    assert (rc, "ok-two-positions" in stream.getvalue()) == (2, True)
+    stream, err = io.StringIO(), io.StringIO()
+    rc = cli_module.main(["--demo", "nope"], stream=stream, err=err)
+    assert (rc, stream.getvalue(), "ok-two-positions" in err.getvalue()) == (2, "", True)
 
 
 def test_demo_flag_without_name_exits_2() -> None:
@@ -128,16 +128,20 @@ def test_no_demo_means_no_console_source_yet(env: dict[str, str]) -> None:
 
 def test_tui_without_a_demo_says_there_is_no_live_source() -> None:
     """`hermes tui` with no scenario exits 2 and points at --demo instead of an empty screen."""
-    stream = io.StringIO()
-    rc = run_tui([], stream, env={}, runner=lambda model: None)
-    assert (rc, "use --demo <scenario>" in stream.getvalue()) == (2, True)
+    stream, err = io.StringIO(), io.StringIO()
+    rc = run_tui([], stream, env={}, runner=lambda model: None, err=err)
+    assert (rc, stream.getvalue(), "use --demo <scenario>" in err.getvalue()) == (2, "", True)
 
 
 def test_tui_rejects_extra_arguments() -> None:
     """`hermes tui` takes no arguments."""
-    stream = io.StringIO()
-    rc = run_tui(["--json"], stream, demo_flag="late", runner=lambda model: None)
-    assert (rc, "Usage: hermes [--demo SCENARIO] tui" in stream.getvalue()) == (2, True)
+    stream, err = io.StringIO(), io.StringIO()
+    rc = run_tui(["--json"], stream, demo_flag="late", runner=lambda model: None, err=err)
+    assert (rc, stream.getvalue(), "Usage: hermes [--demo SCENARIO] tui" in err.getvalue()) == (
+        2,
+        "",
+        True,
+    )
 
 
 def test_tui_runs_the_app_on_the_demo_read_model() -> None:

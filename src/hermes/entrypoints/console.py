@@ -33,6 +33,7 @@ from hermes.application.console.render import (
     render_positions,
 )
 from hermes.application.console.serialize import position_detail_to_json, positions_to_json
+from hermes.entrypoints._streams import resolve_err
 
 __all__ = [
     "CONSOLE_COMMANDS",
@@ -106,29 +107,33 @@ def split_demo_flag(args: list[str]) -> DemoSplit:
     return DemoSplit(None, list(args))
 
 
-def apply_demo_flag(args: list[str], stream: TextIO) -> tuple[int | None, list[str]]:
+def apply_demo_flag(
+    args: list[str], stream: TextIO, err: TextIO | None = None
+) -> tuple[int | None, list[str]]:
     """Handle a leading ``--demo`` for the top-level dispatcher.
 
     Args:
         args: Arguments after the program name.
-        stream: Output stream for the overview and errors.
+        stream: Output stream for the overview.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         ``(exit_code, rest)``: an exit code when the flag was fully handled
         here (overview printed, or a usage error), else ``None`` and the
         arguments left for normal dispatch.
     """
+    err = resolve_err(err)
     try:
         demo = split_demo_flag(args)
     except DemoFlagError as exc:
-        stream.write(f"ERROR: {exc}. Scenarios: {', '.join(available_scenarios())}\n")
+        err.write(f"ERROR: {exc}. Scenarios: {', '.join(available_scenarios())}\n")
         return 2, []
     if demo.scenario is None:
         return None, demo.rest
     if not demo.rest:
-        return run_overview(demo.scenario, stream), []
+        return run_overview(demo.scenario, stream, err), []
     if demo.rest[0] not in CONSOLE_COMMANDS:
-        stream.write(f"ERROR: --demo only applies to console commands, not {demo.rest[0]!r}.\n")
+        err.write(f"ERROR: --demo only applies to console commands, not {demo.rest[0]!r}.\n")
         return 2, []
     return None, demo.rest
 
@@ -160,7 +165,7 @@ def resolve_read_model(*, demo_flag: str | None, env: Mapping[str, str]) -> Cons
     return FixtureReadModel.load(scenario)
 
 
-def run_overview(scenario: str, stream: TextIO) -> int:
+def run_overview(scenario: str, stream: TextIO, err: TextIO | None = None) -> int:
     """Print the home screen of ``scenario`` to ``stream`` as static text.
 
     This is the same screen ``hermes tui`` shows, without the keys.
@@ -168,6 +173,7 @@ def run_overview(scenario: str, stream: TextIO) -> int:
     Args:
         scenario: Scenario named by ``--demo``.
         stream: Output stream; colour follows Rich's TTY and ``NO_COLOR`` detection.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         0 on success, 2 for an unknown scenario.
@@ -175,7 +181,7 @@ def run_overview(scenario: str, stream: TextIO) -> int:
     try:
         model = FixtureReadModel.load(scenario)
     except UnknownScenarioError as exc:
-        stream.write(f"ERROR: {exc}\n")
+        resolve_err(err).write(f"ERROR: {exc}\n")
         return 2
     console = Console(file=stream, emoji=False, markup=False, highlight=False)
     ctx = RenderContext.for_model(model, surface=Surface.OPERATOR_CLI, width=console.width)
@@ -193,6 +199,7 @@ def run_positions(
     *,
     demo_flag: str | None = None,
     env: Mapping[str, str] | None = None,
+    err: TextIO | None = None,
 ) -> int:
     """Run ``hermes positions [COIN] [--json] [--utc]``.
 
@@ -205,15 +212,17 @@ def run_positions(
         stream: Output stream; colour follows Rich's TTY and ``NO_COLOR`` detection.
         demo_flag: Scenario from the leading ``--demo`` option, if any.
         env: Environment snapshot; defaults to empty.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         0 on success, 1 when COIN has no open position, 2 for a usage error or
         an unknown scenario.
     """
+    err = resolve_err(err)
     flags = {a for a in args if a.startswith("-")}
     coins = [a for a in args if not a.startswith("-")]
     if flags - {"--json", "--utc"} or len(coins) > 1:
-        stream.write(f"ERROR: bad arguments. {_POSITIONS_USAGE}\n")
+        err.write(f"ERROR: bad arguments. {_POSITIONS_USAGE}\n")
         return 2
     as_json = "--json" in flags
     coin = coins[0].upper() if coins else None
@@ -222,7 +231,7 @@ def run_positions(
     except LiveReadModelUnavailableError:
         return _positions_without_data(stream, as_json=as_json)
     except UnknownScenarioError as exc:
-        stream.write(f"ERROR: {exc}\n")
+        err.write(f"ERROR: {exc}\n")
         return 2
     console = Console(file=stream, emoji=False, markup=False, highlight=False)
     ctx = RenderContext.for_model(
@@ -275,6 +284,7 @@ def run_tui(
     demo_flag: str | None = None,
     env: Mapping[str, str] | None = None,
     runner: Callable[[ConsoleReadModel], None] | None = None,
+    err: TextIO | None = None,
 ) -> int:
     """Run ``hermes tui``, the read-only home screen.
 
@@ -283,23 +293,25 @@ def run_tui(
 
     Args:
         args: Arguments after ``tui``; none are accepted.
-        stream: Output stream for errors.
+        stream: Output stream.
         demo_flag: Scenario from the leading ``--demo`` option, if any.
         env: Environment snapshot; defaults to empty.
         runner: Runs the app on the read model; defaults to the Textual home
             screen (imported lazily so the other commands stay fast).
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         0 after the operator quits, 2 for a usage error, an unknown scenario or
         no data source.
     """
+    err = resolve_err(err)
     if args:
-        stream.write(f"ERROR: bad arguments. {_TUI_USAGE}\n")
+        err.write(f"ERROR: bad arguments. {_TUI_USAGE}\n")
         return 2
     try:
         model = resolve_read_model(demo_flag=demo_flag, env=env or {})
     except (LiveReadModelUnavailableError, UnknownScenarioError) as exc:
-        stream.write(f"ERROR: {exc}\n")
+        err.write(f"ERROR: {exc}\n")
         return 2
     if runner is None:
         from hermes.entrypoints.tui import run_home  # noqa: PLC0415 - Textual is slow to import
