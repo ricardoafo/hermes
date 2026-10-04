@@ -53,7 +53,8 @@ pre-registration is untouched. The event goes to schema v2 with an upcaster for 
 ### D-3: delta_ms is fill time minus signal bar close_time
 
 - **Decision**: `delta_ms = floor((fill.timestamp - signal.signal_time) / 1 ms)`;
-  validation refuses a negative value instead of clamping it.
+  the executor stores `None` when it is negative (a clock behind the bar close), and the
+  event refuses a negative value. A record-only field never blocks a fill.
 - **Alternatives**: Wall-clock `now` minus close (differs from the recorded fill time).
 - **Rationale**: Uses the timestamps already stored on the event, so it is replayable.
 - **Cost of reversal**: LOW.
@@ -97,8 +98,8 @@ Test tiers touched: unit, integration
   model), §7 (certification lifecycle, SA-5 drift gate), §9 (metrics) and §10 (kill
   criteria) were checked; §11 lists changes to §6, §9 and §10 as deviations, and none occurs.
 - **Old rows**: v1 rows have `None` in both fields; consumers must treat them as unknown.
-- **Negative delta**: not clamped. A fill stamped before its signal would fail validation;
-  the executor stamps fills at or after the signal time, so this cannot happen today.
+- **Negative delta**: stored as `None`, never clamped and never raised from `execute`, so a
+  clock that puts the fill before the signal cannot stop a fill from being recorded.
 
 ## Dependencies on other changes
 

@@ -366,6 +366,7 @@ class ShadowExecutor:
             if isinstance(model_fill, Fill):
                 model_price = model_fill.avg_price
         mid = book_mid(book)
+        latency_ms = (fill.timestamp - signal.signal_time) // timedelta(milliseconds=1)
         return FillQualityRecorded(
             occurred_at=fill.timestamp,
             correlation_id=correlation_id,
@@ -381,5 +382,7 @@ class ShadowExecutor:
             book_mid=mid,
             slippage=None if mid is None else slippage_vs_mid(side, fill.avg_price, mid),
             arrival_price=bar.close,
-            delta_ms=(fill.timestamp - signal.signal_time) // timedelta(milliseconds=1),
+            # Record-only (#30): a clock that puts the fill before the signal
+            # must never stop the fill from being recorded.
+            delta_ms=latency_ms if latency_ms >= 0 else None,
         )

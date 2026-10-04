@@ -487,3 +487,16 @@ def test_a_slippage_recorded_before_a_restart_feeds_ro03(connection: sqlite3.Con
     bar = _bar("85000")
 
     assert _declined(rig.run(_entry(bar), bar)).rule == "HALT"
+
+
+def test_clock_behind_the_bar_close_records_no_latency_and_still_fills(
+    connection: sqlite3.Connection,
+) -> None:
+    """Record-only (#30): a negative latency is stored as None and never blocks the fill."""
+    rig = _rig(connection, book=_live_book("84999", "85001"))
+    bar = _bar("85000", open_time=_OPEN + timedelta(hours=4))
+
+    rig.run(_entry(bar), bar)
+
+    (quality,) = rig.ledger.fill_quality_events(STRATEGY)
+    assert (quality.delta_ms, quality.arrival_price) == (None, Decimal("85000"))
