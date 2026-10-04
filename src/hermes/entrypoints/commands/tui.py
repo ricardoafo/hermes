@@ -18,6 +18,11 @@ _NO_LIVE_HOME: Final = (
     "the live home screen is not available yet (#546 serves positions first); "
     "use --demo <scenario> ({scenarios})"
 )
+_TUI_HELP: Final = (
+    f"{_TUI_USAGE}\n"
+    "  -h, --help  show this help\n"
+    "Exit codes: 0 after the operator quits, 2 usage, unknown scenario or no data source."
+)
 
 
 def run_tui(
@@ -46,6 +51,9 @@ def run_tui(
         0 after the operator quits, 2 for a usage error, an unknown scenario or
         no data source.
     """
+    if "-h" in args or "--help" in args:
+        stream.write(_TUI_HELP + "\n")
+        return 0
     if args:
         stream.write(f"ERROR: bad arguments. {_TUI_USAGE}\n")
         return 2
