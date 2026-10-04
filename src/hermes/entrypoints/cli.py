@@ -38,6 +38,7 @@ from typing import Any
 
 from hermes.adapters.console import available_scenarios
 from hermes.entrypoints import console as console_module
+from hermes.entrypoints import version as version_module
 from hermes.entrypoints.commands import Command, discover
 from hermes.infrastructure import sentry_integration
 
@@ -144,6 +145,9 @@ def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
     demo_exit, args = console_module.apply_demo_flag(args, out)
     if demo_exit is not None:
         return demo_exit
+
+    if args[:1] in (["--version"], ["-V"]):
+        return version_module.main([], stream=out)
 
     commands = discover()
     if not args or args[0] in {"-h", "--help"}:
