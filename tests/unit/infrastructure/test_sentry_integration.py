@@ -230,7 +230,12 @@ class TestEventsCarryNoCredentials:
             sentry_integration.capture(raised.value)
             sentry_sdk.flush()
         finally:
-            real_init(dsn=None)
+            # A bare init(dsn=None) turns on Sentry's default integrations,
+            # and their patches outlive the client: the threading one then
+            # assigns __traceback__ on frozen-dataclass errors in every later
+            # test of this worker (test_notifier_outage_does_not_stop_the_loop).
+            real_init(dsn=None, default_integrations=False)
 
         assert len(transport.payloads) == 1
         assert token not in transport.payloads[0]
+        assert "threading" not in sentry_sdk.integrations._installed_integrations

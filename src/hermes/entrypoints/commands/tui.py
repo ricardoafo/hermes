@@ -9,7 +9,7 @@ from typing import Final, TextIO
 from hermes.adapters.console import UnknownScenarioError, available_scenarios
 from hermes.application.console import ConsoleReadModel
 from hermes.entrypoints.commands import Command
-from hermes.entrypoints.console import demo_read_model
+from hermes.entrypoints.console import demo_read_model, recent_journal_lines
 
 __all__ = ["COMMAND", "run_tui"]
 
@@ -61,7 +61,9 @@ def run_tui(
     if runner is None:
         from hermes.entrypoints.tui import run_home  # noqa: PLC0415 - Textual is slow to import
 
-        runner = run_home
+        def runner(read_model: ConsoleReadModel) -> None:
+            run_home(read_model, journal=recent_journal_lines)
+
     runner(model)
     return 0
 

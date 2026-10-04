@@ -24,7 +24,7 @@ from hermes.adapters.fills.orderbook_walk import OrderbookWalkFillModel
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.application.ledger.eur_pricer import EurPricer
 from hermes.application.ledger.trade_recorder import TradeRecorder
-from hermes.application.order_router.sizing import SizingCalculator, SizingInput
+from hermes.application.order_router.sizing import SizingCalculator, SizingInput, SizingPolicy
 from hermes.application.portfolio.tracker import PortfolioTracker
 from hermes.domain.fees.fee_schedule import FeeSchedule, FeeTier
 from hermes.domain.market_data.orderbook import Orderbook, OrderbookLevel
@@ -43,6 +43,12 @@ pytestmark = pytest.mark.integration
 
 _STRATEGY = StrategyId("swing")
 _CAPITAL = Decimal("10000")
+_SIZING = SizingPolicy(
+    capital=_CAPITAL,
+    risk_pct=Decimal("0.01"),
+    max_position_pct=Decimal("0.05"),
+    max_total_exposure_pct=Decimal("0.15"),
+)
 _FEES = FeeSchedule.from_tiers(
     pair=BTC,
     tiers=(FeeTier(volume_threshold_usd=Decimal("0"), maker_bps=10, taker_bps=10),),
@@ -87,14 +93,11 @@ def _run(fx: FakeFx) -> tuple[list[str], sqlite3.Connection]:
         last_close["px"] = bar.close
         if signal.kind == SignalKind.ENTRY:
             assert signal.entry_price is not None
-            sizing = SizingCalculator().compute(
+            sizing = SizingCalculator(_SIZING).compute(
                 SizingInput(
-                    equity=_CAPITAL,
                     entry_px=signal.entry_price,
-                    atr=signal.atr_context,
-                    stop_atr_mult=Decimal("1.5"),
-                    risk_pct=Decimal("0.01"),
-                    f_star_estimate=Decimal("0.20"),
+                    stop_px=signal.stop_price,
+                    open_notional=tracker.open_notional(),
                 )
             )
             trace.append(repr(sizing))

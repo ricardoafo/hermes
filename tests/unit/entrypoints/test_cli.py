@@ -32,6 +32,7 @@ import structlog
 from hermes.entrypoints import _health as health_module
 from hermes.entrypoints import cli as cli_module
 from hermes.entrypoints import serve as serve_module
+from hermes.entrypoints.commands import discover
 from hermes.entrypoints.commands import serve as serve_command
 from hermes.entrypoints.daily_line import count_journal
 
@@ -253,6 +254,49 @@ class TestUnknownSubcommand:
         rc = cli_module.main(["not-a-command"], stream=stream)
         assert rc == 2
         assert "unknown subcommand" in stream.getvalue()
+
+    def test_close_miss_suggests_the_command(self) -> None:
+        """A one-letter typo names the intended command and still exits 2."""
+        stream = io.StringIO()
+        rc = cli_module.main(["statsu"], stream=stream)
+        assert rc == 2
+        assert "Did you mean 'status'?" in stream.getvalue()
+
+    def test_distant_miss_offers_no_suggestion(self) -> None:
+        """A token far from every command gets no suggestion."""
+        stream = io.StringIO()
+        cli_module.main(["zzzzqqqq"], stream=stream)
+        assert "Did you mean" not in stream.getvalue()
+
+
+class TestTopLevelHelpContent:
+    """The top-level help is accurate and derived from the registry."""
+
+    def test_header_is_not_the_stale_scaffold_line(self) -> None:
+        """The header no longer claims to be an MVP1 scaffold."""
+        stream = io.StringIO()
+        cli_module.main(["--help"], stream=stream)
+        assert "scaffold" not in stream.getvalue()
+
+    def test_name_column_fits_the_longest_command(self) -> None:
+        """The longest registered name is followed by two spaces, then its summary."""
+        stream = io.StringIO()
+        cli_module.main(["--help"], stream=stream)
+        longest = max(discover().values(), key=lambda command: len(command.name))
+        assert f"  {longest.name}  {longest.summary}" in stream.getvalue()
+
+    def test_demo_note_lists_exactly_the_wants_demo_commands(self) -> None:
+        """The --demo note names the commands with wants_demo=True, from the registry."""
+        stream = io.StringIO()
+        cli_module.main(["--help"], stream=stream)
+        expected = ", ".join(sorted(n for n, c in discover().items() if c.wants_demo))
+        assert f"Commands that accept it: {expected}\n" in stream.getvalue()
+
+    def test_json_note_is_present(self) -> None:
+        """The help says which commands have --json."""
+        stream = io.StringIO()
+        cli_module.main(["--help"], stream=stream)
+        assert "--json" in stream.getvalue()
 
 
 class TestHealthDispatch:

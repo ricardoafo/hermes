@@ -1,0 +1,217 @@
+# serializer version: 1
+# name: test_section_matches_snapshot[down-stale-120]
+  list([
+    ' DEMO DATA · scenario down-stale',
+    '€1,021.06   ▲ +€12.30 +1.22% today · as of 18:04',
+    'net ▲ +€10.66 today',
+    '▁▂▁▄▆█',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    'started €1,000.00 on 27 Sep',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax    ▼ −€0.74     ▼ −€2.22',
+    'Net           ▲ +€3.18     ▲ +€9.48',
+    'Open ▲ +€9.36 · tax if sold now ▼ −€1.77',
+    'est. · FIFO · 19% band · €5,988.30 left before 21%',
+  ])
+# ---
+# name: test_section_matches_snapshot[down-stale-80]
+  list([
+    ' DEMO DATA · scenario down-stale',
+    '€1,021.06   ▲ +€12.30 +1.22% today · as of 18:04',
+    'net ▲ +€10.66 today',
+    '▁▂▁▄▆█',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    'started €1,000.00 on 27 Sep',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax    ▼ −€0.74     ▼ −€2.22',
+    'Net           ▲ +€3.18     ▲ +€9.48',
+    'Open ▲ +€9.36 · tax if sold now ▼ −€1.77',
+    'est. · FIFO · 19% band · €5,988.30 left before 21%',
+  ])
+# ---
+# name: test_section_matches_snapshot[empty-120]
+  list([
+    ' DEMO DATA · scenario empty',
+    '€1,000.00   · €0.00 0.00% today',
+    'net · €0.00 today',
+    '▄▄▄▄',
+    'cash €1,000.00 100.00% · invested €0.00 0.00%',
+    'started €1,000.00 on 27 Sep',
+    '',
+    '                Today    This year',
+    'Gross         · €0.00      · €0.00',
+    '− Fees        · €0.00      · €0.00',
+    '− Est. tax    · €0.00      · €0.00',
+    'Net           · €0.00      · €0.00',
+    'Open · €0.00 · tax if sold now · €0.00',
+    'est. · FIFO · 19% band · €6,000.00 left before 21%',
+  ])
+# ---
+# name: test_section_matches_snapshot[empty-80]
+  list([
+    ' DEMO DATA · scenario empty',
+    '€1,000.00   · €0.00 0.00% today',
+    'net · €0.00 today',
+    '▄▄▄▄',
+    'cash €1,000.00 100.00% · invested €0.00 0.00%',
+    'started €1,000.00 on 27 Sep',
+    '',
+    '                Today    This year',
+    'Gross         · €0.00      · €0.00',
+    '− Fees        · €0.00      · €0.00',
+    '− Est. tax    · €0.00      · €0.00',
+    'Net           · €0.00      · €0.00',
+    'Open · €0.00 · tax if sold now · €0.00',
+    'est. · FIFO · 19% band · €6,000.00 left before 21%',
+  ])
+# ---
+# name: test_section_matches_snapshot[late-120]
+  list([
+    ' DEMO DATA · scenario late',
+    '€1,021.06   ▲ +€12.30 +1.22% today',
+    'net ▲ +€10.66 today',
+    '▁▂▁▄▆█',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    'started €1,000.00 on 27 Sep',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax    ▼ −€0.74     ▼ −€2.22',
+    'Net           ▲ +€3.18     ▲ +€9.48',
+    'Open ▲ +€9.36 · tax if sold now ▼ −€1.77',
+    'est. · FIFO · 19% band · €5,988.30 left before 21%',
+  ])
+# ---
+# name: test_section_matches_snapshot[late-80]
+  list([
+    ' DEMO DATA · scenario late',
+    '€1,021.06   ▲ +€12.30 +1.22% today',
+    'net ▲ +€10.66 today',
+    '▁▂▁▄▆█',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    'started €1,000.00 on 27 Sep',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax    ▼ −€0.74     ▼ −€2.22',
+    'Net           ▲ +€3.18     ▲ +€9.48',
+    'Open ▲ +€9.36 · tax if sold now ▼ −€1.77',
+    'est. · FIFO · 19% band · €5,988.30 left before 21%',
+  ])
+# ---
+# name: test_section_matches_snapshot[losing-year-120]
+  list([
+    ' DEMO DATA · scenario losing-year',
+    '€951.19   ▼ −€4.02 −0.42% today',
+    'net ▼ −€3.26 today',
+    '█▇▇▄▁',
+    'cash €867.83 91.24% · invested €83.36 8.76%',
+    'started €1,000.00 on 27 Sep',
+    '',
+    '                        Today          This year',
+    'Gross                ▼ −€3.10          ▼ −€42.60',
+    '− Fees               ▼ −€0.12           ▼ −€6.20',
+    '− Est. tax    ▲ +€0.61 credit    ▲ +€9.27 credit',
+    'Net                  ▼ −€2.61          ▼ −€39.53',
+    'Open ▼ −€0.80 · tax if sold now ▲ +€0.15 credit',
+    'est. · FIFO · 19% band · €6,000.00 left before 21%',
+  ])
+# ---
+# name: test_section_matches_snapshot[losing-year-80]
+  list([
+    ' DEMO DATA · scenario losing-year',
+    '€951.19   ▼ −€4.02 −0.42% today',
+    'net ▼ −€3.26 today',
+    '█▇▇▄▁',
+    'cash €867.83 91.24% · invested €83.36 8.76%',
+    'started €1,000.00 on 27 Sep',
+    '',
+    '                        Today          This year',
+    'Gross                ▼ −€3.10          ▼ −€42.60',
+    '− Fees               ▼ −€0.12           ▼ −€6.20',
+    '− Est. tax    ▲ +€0.61 credit    ▲ +€9.27 credit',
+    'Net                  ▼ −€2.61          ▼ −€39.53',
+    'Open ▼ −€0.80 · tax if sold now ▲ +€0.15 credit',
+    'est. · FIFO · 19% band · €6,000.00 left before 21%',
+  ])
+# ---
+# name: test_section_matches_snapshot[ok-two-positions-120]
+  list([
+    ' DEMO DATA · scenario ok-two-positions',
+    '€1,021.06   ▲ +€12.30 +1.22% today',
+    'net ▲ +€10.66 today',
+    '▁▂▁▄▆█',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    'started €1,000.00 on 27 Sep',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax    ▼ −€0.74     ▼ −€2.22',
+    'Net           ▲ +€3.18     ▲ +€9.48',
+    'Open ▲ +€9.36 · tax if sold now ▼ −€1.77',
+    'est. · FIFO · 19% band · €5,988.30 left before 21%',
+  ])
+# ---
+# name: test_section_matches_snapshot[ok-two-positions-80]
+  list([
+    ' DEMO DATA · scenario ok-two-positions',
+    '€1,021.06   ▲ +€12.30 +1.22% today',
+    'net ▲ +€10.66 today',
+    '▁▂▁▄▆█',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    'started €1,000.00 on 27 Sep',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax    ▼ −€0.74     ▼ −€2.22',
+    'Net           ▲ +€3.18     ▲ +€9.48',
+    'Open ▲ +€9.36 · tax if sold now ▼ −€1.77',
+    'est. · FIFO · 19% band · €5,988.30 left before 21%',
+  ])
+# ---
+# name: test_section_matches_snapshot[tax-pending-120]
+  list([
+    ' DEMO DATA · scenario tax-pending',
+    '€1,021.06   ▲ +€12.30 +1.22% today',
+    'net ▲ +€11.40 today · before tax',
+    '▁▂▁▄▆█',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    'started €1,000.00 on 27 Sep',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax         n/a          n/a',
+    'Net           ▲ +€3.92    ▲ +€11.70',
+    'Open ▲ +€9.36 · tax estimate: not available yet',
+    'tax estimate: not available yet · net is before tax',
+  ])
+# ---
+# name: test_section_matches_snapshot[tax-pending-80]
+  list([
+    ' DEMO DATA · scenario tax-pending',
+    '€1,021.06   ▲ +€12.30 +1.22% today',
+    'net ▲ +€11.40 today · before tax',
+    '▁▂▁▄▆█',
+    'cash €790.36 77.41% · invested €230.70 22.59%',
+    'started €1,000.00 on 27 Sep',
+    '',
+    '                 Today    This year',
+    'Gross         ▲ +€4.10    ▲ +€14.80',
+    '− Fees        ▼ −€0.18     ▼ −€3.10',
+    '− Est. tax         n/a          n/a',
+    'Net           ▲ +€3.92    ▲ +€11.70',
+    'Open ▲ +€9.36 · tax estimate: not available yet',
+    'tax estimate: not available yet · net is before tax',
+  ])
+# ---
