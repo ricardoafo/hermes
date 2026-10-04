@@ -17,6 +17,13 @@ from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 
+from hermes.application.console.observation import (
+    Distribution,
+    DriftVerdict,
+    drift_verdict,
+    summarize,
+)
+
 __all__ = [
     "QUIET_ACTIVITY_KINDS",
     "ActivityDay",
@@ -24,6 +31,12 @@ __all__ = [
     "ActivityKind",
     "Heartbeat",
     "HeartbeatState",
+    "KillCriterion",
+    "KillState",
+    "KillTrigger",
+    "ObservationMoney",
+    "ObservationStats",
+    "ObservationWindow",
     "PortfolioRange",
     "PortfolioSummary",
     "PositionDetail",
@@ -392,3 +405,138 @@ class ShadowTest:
     day: int | None
     length_days: int = 90
     note: str | None = None
+
+
+class KillCriterion(StrEnum):
+    """The shadow-phase kill criteria of pre-registration v1 §10."""
+
+    DRIFT_SUSTAINED = "drift_sustained"
+    SHOCK_OVERLAY = "shock_overlay"
+    SHADOW_SHARPE = "shadow_sharpe"
+
+    @property
+    def reveals_pnl(self) -> bool:
+        """Return whether this criterion's progress count says something about P&L."""
+        return self is KillCriterion.SHADOW_SHARPE
+
+
+class KillState(StrEnum):
+    """Whether a kill criterion is still watching or has stopped the shadow."""
+
+    ARMED = "armed"
+    FIRED = "fired"
+
+
+@dataclass(frozen=True, slots=True)
+class KillTrigger:
+    """One §10 shadow-phase kill criterion as the engine last computed it.
+
+    Attributes:
+        criterion: Which criterion.
+        state: Armed or fired.
+        count: Progress towards the limit: days in breach for the drift and
+            Sharpe criteria, fires in the last 30 days for the shock overlay.
+    """
+
+    criterion: KillCriterion
+    state: KillState
+    count: int = 0
+
+    def __post_init__(self) -> None:
+        """Reject a negative progress count."""
+        if self.count < 0:
+            msg = "kill trigger count must not be negative"
+            raise ValueError(msg)
+
+
+@dataclass(frozen=True, slots=True)
+class ObservationStats:
+    """Execution and operations figures over one period of the window.
+
+    Samples are raw, one per fill or decision, so every surface computes the
+    same percentiles (see :mod:`hermes.application.console.observation`).
+
+    Attributes:
+        fills: Simulated fills.
+        rejections: Orders the fill path rejected.
+        drift_bps: Signed drift of each live-book fill from the §6.2 model
+            price, in bps (positive = the fill cost more).
+        slippage_bps: Signed slippage of each fill from the book mid, in bps.
+        decision_latency_ms: Bar close to decision, per decision, in ms.
+        data_gaps: Bars missing from the feed.
+        late_bars: Bars that arrived after their scheduled check.
+        uptime_pct: Share of the period the bar loop was up, percent.
+        restarts: Process restarts.
+    """
+
+    fills: int
+    rejections: int
+    drift_bps: tuple[Decimal, ...]
+    slippage_bps: tuple[Decimal, ...]
+    decision_latency_ms: tuple[Decimal, ...]
+    data_gaps: int
+    late_bars: int
+    uptime_pct: Decimal
+    restarts: int
+
+    @property
+    def drift(self) -> Distribution | None:
+        """Return p50, p95 and max of the absolute drift, as the gate reads it."""
+        return summarize([abs(value) for value in self.drift_bps])
+
+    @property
+    def drift_verdict(self) -> DriftVerdict:
+        """Return the drift verdict against the §7 gate."""
+        return drift_verdict(self.drift_bps)
+
+    @property
+    def slippage(self) -> Distribution | None:
+        """Return p50, p95 and max of the signed slippage."""
+        return summarize(self.slippage_bps)
+
+    @property
+    def decision_latency(self) -> Distribution | None:
+        """Return p50, p95 and max of the decision latency."""
+        return summarize(self.decision_latency_ms)
+
+
+@dataclass(frozen=True, slots=True)
+class ObservationMoney:
+    """Shadow results over the window; shown only where ``pnl_visible`` allows.
+
+    Attributes:
+        net: Net shadow P&L since day 1, EUR, after fees and estimated tax.
+        sharpe: Annualised shadow Sharpe since day 1, or ``None`` while too
+            short to compute.
+    """
+
+    net: Decimal
+    sharpe: Decimal | None
+
+
+@dataclass(frozen=True, slots=True)
+class ObservationWindow:
+    """The 90-day shadow observation window (pre-registration v1 §7).
+
+    Attributes:
+        as_of: When the figures were read.
+        test: Day N of the window and its verdict (the shadow test line).
+        started_on: First day of the window, ``None`` before it starts.
+        last_7_days: Figures over the last seven days.
+        to_date: Figures since day 1.
+        kill_triggers: The §10 shadow-phase criteria, empty before the start.
+        money: Shadow results; P&L, so only operator surfaces render it.
+    """
+
+    as_of: datetime
+    test: ShadowTest
+    started_on: date | None
+    last_7_days: ObservationStats
+    to_date: ObservationStats
+    kill_triggers: tuple[KillTrigger, ...]
+    money: ObservationMoney | None = None
+
+    @property
+    def started(self) -> bool:
+        """Return whether the window has a day 1."""
+        return self.test.day is not None and self.test.status is not ShadowTestStatus.NOT_STARTED

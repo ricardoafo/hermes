@@ -15,6 +15,7 @@ from typing import Protocol
 from hermes.application.console.views import (
     ActivityDay,
     Heartbeat,
+    ObservationWindow,
     PortfolioRange,
     PortfolioSummary,
     PositionDetail,
@@ -63,4 +64,8 @@ class ConsoleReadModel(Protocol):
 
     def shadow_test(self) -> ShadowTest:
         """Return the 90-day shadow test status."""
+        ...
+
+    def observation(self) -> ObservationWindow:
+        """Return the 90-day observation window figures and kill-trigger states."""
         ...

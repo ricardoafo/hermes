@@ -149,5 +149,32 @@
     "day": null,
     "length_days": 90,
     "note": "waits on #353"
+  },
+  "observation": {
+    "started_on": null,
+    "last_7_days": {
+      "fills": 0,
+      "rejections": 0,
+      "drift_bps": [],
+      "slippage_bps": [],
+      "decision_latency_ms": [],
+      "data_gaps": 0,
+      "late_bars": 0,
+      "uptime_pct": "100.0",
+      "restarts": 0
+    },
+    "to_date": {
+      "fills": 0,
+      "rejections": 0,
+      "drift_bps": [],
+      "slippage_bps": [],
+      "decision_latency_ms": [],
+      "data_gaps": 0,
+      "late_bars": 0,
+      "uptime_pct": "100.0",
+      "restarts": 0
+    },
+    "kill_triggers": [],
+    "money": null
   }
 }

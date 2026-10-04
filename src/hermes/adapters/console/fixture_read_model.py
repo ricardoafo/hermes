@@ -27,6 +27,12 @@ from hermes.application.console.views import (
     ActivityKind,
     Heartbeat,
     HeartbeatState,
+    KillCriterion,
+    KillState,
+    KillTrigger,
+    ObservationMoney,
+    ObservationStats,
+    ObservationWindow,
     PortfolioRange,
     PortfolioSummary,
     PositionDetail,
@@ -191,9 +197,9 @@ def _items(obj: _Json, key: str) -> list[_Json]:
     return out
 
 
-def _enum[E: (HeartbeatState, ActivityKind, ShadowTestStatus, PortfolioRange)](
-    kind: type[E], raw: str, key: str
-) -> E:
+def _enum[
+    E: (HeartbeatState, ActivityKind, ShadowTestStatus, PortfolioRange, KillCriterion, KillState)
+](kind: type[E], raw: str, key: str) -> E:
     try:
         return kind(raw)
     except ValueError as exc:
@@ -384,6 +390,64 @@ def _shadow_test(raw: _Json) -> ShadowTest:
     )
 
 
+def _stats(raw: _Json) -> ObservationStats:
+    counts = {
+        key: _int(raw, key) for key in ("fills", "rejections", "data_gaps", "late_bars", "restarts")
+    }
+    if any(value < 0 for value in counts.values()):
+        msg = "observation counts must not be negative"
+        raise ScenarioError(msg)
+    return ObservationStats(
+        fills=counts["fills"],
+        rejections=counts["rejections"],
+        drift_bps=_dec_list(raw, "drift_bps"),
+        slippage_bps=_dec_list(raw, "slippage_bps"),
+        decision_latency_ms=_dec_list(raw, "decision_latency_ms"),
+        data_gaps=counts["data_gaps"],
+        late_bars=counts["late_bars"],
+        uptime_pct=_dec(raw, "uptime_pct"),
+        restarts=counts["restarts"],
+    )
+
+
+def _kill_trigger(raw: _Json) -> KillTrigger:
+    try:
+        return KillTrigger(
+            criterion=_enum(KillCriterion, _str(raw, "criterion"), "criterion"),
+            state=_enum(KillState, _str(raw, "state"), "state"),
+            count=_int(raw, "count"),
+        )
+    except ValueError as exc:
+        if isinstance(exc, ScenarioError):
+            raise
+        raise ScenarioError(str(exc)) from exc
+
+
+def _money(raw: _Json) -> ObservationMoney | None:
+    money = raw.get("money")
+    if money is None:
+        return None
+    if not isinstance(money, Mapping):
+        msg = "field 'money' must be an object or null"
+        raise ScenarioError(msg)
+    money_obj = cast("_Json", money)
+    return ObservationMoney(net=_dec(money_obj, "net"), sharpe=_opt_dec(money_obj, "sharpe"))
+
+
+def _observation(raw: _Json, test: ShadowTest, as_of: datetime) -> ObservationWindow:
+    """Parse the observation; day and length come from ``shadow_test`` (change spec D-6)."""
+    started_on = _opt_str(raw, "started_on")
+    return ObservationWindow(
+        as_of=as_of,
+        test=test,
+        started_on=_to_date(started_on, "started_on") if started_on else None,
+        last_7_days=_stats(_obj(raw, "last_7_days")),
+        to_date=_stats(_obj(raw, "to_date")),
+        kill_triggers=tuple(_kill_trigger(item) for item in _items(raw, "kill_triggers")),
+        money=_money(raw),
+    )
+
+
 # ----------------------------------------------------------------------
 # Read model
 # ----------------------------------------------------------------------
@@ -418,6 +482,9 @@ class FixtureReadModel:
         self._rows = tuple(detail.row for detail in details)
         self._activity = _activity(document, rate)
         self._shadow_test = _shadow_test(_obj(document, "shadow_test"))
+        self._observation = _observation(
+            _obj(document, "observation"), self._shadow_test, self._heartbeat.as_of
+        )
 
     @classmethod
     def load(cls, name: str) -> FixtureReadModel:
@@ -491,6 +558,10 @@ class FixtureReadModel:
     def shadow_test(self) -> ShadowTest:
         """Return the scenario's shadow test status."""
         return self._shadow_test
+
+    def observation(self) -> ObservationWindow:
+        """Return the scenario's observation window."""
+        return self._observation
 
 
 def _decode(text: str) -> _Json:

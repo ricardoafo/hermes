@@ -394,5 +394,91 @@
     "day": 12,
     "length_days": 90,
     "note": null
+  },
+  "observation": {
+    "started_on": "2026-09-22",
+    "last_7_days": {
+      "fills": 3,
+      "rejections": 0,
+      "drift_bps": [
+        "4.4",
+        "-6.1",
+        "8.2"
+      ],
+      "slippage_bps": [
+        "3.9",
+        "5.0",
+        "2.2"
+      ],
+      "decision_latency_ms": [
+        "195",
+        "230",
+        "610"
+      ],
+      "data_gaps": 1,
+      "late_bars": 2,
+      "uptime_pct": "97.9",
+      "restarts": 2
+    },
+    "to_date": {
+      "fills": 8,
+      "rejections": 1,
+      "drift_bps": [
+        "4.4",
+        "-6.1",
+        "8.2",
+        "5.1",
+        "-2.4",
+        "7.9",
+        "3.3",
+        "10.6"
+      ],
+      "slippage_bps": [
+        "3.9",
+        "5.0",
+        "2.2",
+        "2.8",
+        "4.1",
+        "-0.6",
+        "6.2",
+        "9.0"
+      ],
+      "decision_latency_ms": [
+        "195",
+        "230",
+        "610",
+        "180",
+        "210",
+        "240",
+        "650",
+        "205",
+        "233"
+      ],
+      "data_gaps": 1,
+      "late_bars": 3,
+      "uptime_pct": "98.7",
+      "restarts": 3
+    },
+    "kill_triggers": [
+      {
+        "criterion": "drift_sustained",
+        "state": "armed",
+        "count": 0
+      },
+      {
+        "criterion": "shock_overlay",
+        "state": "armed",
+        "count": 1
+      },
+      {
+        "criterion": "shadow_sharpe",
+        "state": "armed",
+        "count": 0
+      }
+    ],
+    "money": {
+      "net": "9.85",
+      "sharpe": "0.64"
+    }
   }
 }

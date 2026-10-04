@@ -6,7 +6,8 @@ Invariants:
 - every position's row net equals its detail net (net = gross - fees - tax);
 - derived figures (change, stop distance) come from the prices, not the file;
 - quiet activity (bar checks, signals) appears only on request;
-- a naive timestamp, a float amount or an unknown name fails on load.
+- a naive timestamp, a float amount or an unknown name fails on load;
+- the observation window takes its day from the scenario's shadow test.
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ from hermes.application.console import (
     ActivityKind,
     ConsoleReadModel,
     HeartbeatState,
+    KillState,
     PortfolioRange,
     TaxPending,
 )
@@ -258,3 +260,51 @@ def test_invalid_json_fails_on_load(tmp_path: Path) -> None:
     path.write_text("{", encoding="utf-8")
     with pytest.raises(ScenarioError, match="not valid JSON"):
         FixtureReadModel.from_path(path)
+
+
+@pytest.mark.parametrize("scenario", available_scenarios())
+def test_observation_day_is_the_shadow_test_day(scenario: str) -> None:
+    """The window and the shadow test line can never show different days."""
+    model = FixtureReadModel.load(scenario)
+    assert model.observation().test == model.shadow_test()
+
+
+def test_losing_year_has_a_fired_kill_trigger() -> None:
+    """One scenario exercises a fired §10 trigger."""
+    triggers = FixtureReadModel.load("losing-year").observation().kill_triggers
+    assert [t.criterion.value for t in triggers if t.state is KillState.FIRED] == ["shock_overlay"]
+
+
+def test_empty_scenario_has_no_observation_money_or_triggers() -> None:
+    """Before the first fill there is no shadow P&L and no armed trigger."""
+    observation = FixtureReadModel.load("empty").observation()
+    assert (observation.money, observation.kill_triggers) == (None, ())
+
+
+@pytest.mark.parametrize(
+    ("path", "value", "message"),
+    [
+        (("observation", "kill_triggers", 0, "criterion"), "drawdown", "unknown value"),
+        (("observation", "kill_triggers", 0, "state"), "paused", "unknown value"),
+        (("observation", "kill_triggers", 0, "count"), -1, "negative"),
+        (("observation", "to_date", "fills"), -2, "negative"),
+        (("observation", "to_date", "drift_bps"), [5.1], "decimal string"),
+        (("observation", "money"), "lots", "object or null"),
+    ],
+)
+def test_malformed_observation_fails_on_load(
+    tmp_path: Path, path: tuple[str | int, ...], value: object, message: str
+) -> None:
+    """A broken observation field fails on load with a message naming the problem."""
+    document = _ok_document()
+    _set(document, path, value)
+    with pytest.raises(ScenarioError, match=message):
+        FixtureReadModel.from_path(_write(tmp_path, document))
+
+
+def test_missing_observation_is_named(tmp_path: Path) -> None:
+    """Every scenario must carry an observation (change spec D-6)."""
+    document = _ok_document()
+    del document["observation"]
+    with pytest.raises(ScenarioError, match="observation"):
+        FixtureReadModel.from_path(_write(tmp_path, document))

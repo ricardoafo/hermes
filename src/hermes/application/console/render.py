@@ -73,6 +73,7 @@ __all__ = [
     "DEMO_TAG",
     "MADRID",
     "RenderContext",
+    "framed",
     "render_activity",
     "render_heartbeat",
     "render_overview",
@@ -211,6 +212,21 @@ def _framed(ctx: RenderContext, parts: Sequence[RenderableType]) -> Group:
         return Group(*parts)
     tag = Text(f" {DEMO_TAG} · scenario {ctx.demo_scenario} ", style="bold black on yellow")
     return Group(tag, *parts)
+
+
+def framed(ctx: RenderContext, parts: Sequence[RenderableType]) -> Group:
+    """Stack ``parts``, headed by the DEMO DATA tag when the data is a fixture.
+
+    Panels in their own modules use this so every screen carries the same tag.
+
+    Args:
+        ctx: Render context; its demo scenario decides the tag.
+        parts: The panel's renderables, top to bottom.
+
+    Returns:
+        The stacked group.
+    """
+    return _framed(ctx, parts)
 
 
 def _clock(ctx: RenderContext, at: datetime) -> str:

@@ -287,5 +287,114 @@
     "day": 40,
     "length_days": 90,
     "note": null
+  },
+  "observation": {
+    "started_on": "2026-08-25",
+    "last_7_days": {
+      "fills": 5,
+      "rejections": 2,
+      "drift_bps": [
+        "35.2",
+        "-31.8",
+        "40.5",
+        "29.0",
+        "33.7"
+      ],
+      "slippage_bps": [
+        "21.0",
+        "-3.5",
+        "27.8",
+        "30.2",
+        "18.9"
+      ],
+      "decision_latency_ms": [
+        "240",
+        "300",
+        "520",
+        "260",
+        "910"
+      ],
+      "data_gaps": 0,
+      "late_bars": 2,
+      "uptime_pct": "100.0",
+      "restarts": 0
+    },
+    "to_date": {
+      "fills": 31,
+      "rejections": 6,
+      "drift_bps": [
+        "35.2",
+        "-31.8",
+        "40.5",
+        "29.0",
+        "33.7",
+        "12.4",
+        "-18.9",
+        "36.1",
+        "30.4",
+        "27.7",
+        "-33.0",
+        "41.9",
+        "22.8",
+        "34.6",
+        "31.5"
+      ],
+      "slippage_bps": [
+        "21.0",
+        "-3.5",
+        "27.8",
+        "30.2",
+        "18.9",
+        "9.1",
+        "14.3",
+        "25.0",
+        "-1.2",
+        "19.6",
+        "33.4",
+        "12.8",
+        "16.5",
+        "22.2",
+        "11.0"
+      ],
+      "decision_latency_ms": [
+        "240",
+        "300",
+        "520",
+        "260",
+        "910",
+        "230",
+        "250",
+        "280",
+        "610",
+        "215",
+        "240",
+        "330"
+      ],
+      "data_gaps": 1,
+      "late_bars": 5,
+      "uptime_pct": "99.4",
+      "restarts": 2
+    },
+    "kill_triggers": [
+      {
+        "criterion": "drift_sustained",
+        "state": "armed",
+        "count": 4
+      },
+      {
+        "criterion": "shock_overlay",
+        "state": "fired",
+        "count": 3
+      },
+      {
+        "criterion": "shadow_sharpe",
+        "state": "armed",
+        "count": 12
+      }
+    ],
+    "money": {
+      "net": "-38.90",
+      "sharpe": "-0.41"
+    }
   }
 }

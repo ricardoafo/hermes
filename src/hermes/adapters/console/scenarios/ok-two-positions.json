@@ -394,5 +394,99 @@
     "day": 12,
     "length_days": 90,
     "note": null
+  },
+  "observation": {
+    "started_on": "2026-09-22",
+    "last_7_days": {
+      "fills": 4,
+      "rejections": 0,
+      "drift_bps": [
+        "5.1",
+        "-2.4",
+        "7.9",
+        "3.3"
+      ],
+      "slippage_bps": [
+        "2.8",
+        "4.1",
+        "-0.6",
+        "6.2"
+      ],
+      "decision_latency_ms": [
+        "180",
+        "210",
+        "240",
+        "650"
+      ],
+      "data_gaps": 0,
+      "late_bars": 1,
+      "uptime_pct": "100.0",
+      "restarts": 0
+    },
+    "to_date": {
+      "fills": 9,
+      "rejections": 1,
+      "drift_bps": [
+        "5.1",
+        "-2.4",
+        "7.9",
+        "3.3",
+        "12.0",
+        "-4.8",
+        "6.6",
+        "9.4",
+        "1.7"
+      ],
+      "slippage_bps": [
+        "2.8",
+        "4.1",
+        "-0.6",
+        "6.2",
+        "11.5",
+        "3.0",
+        "5.4",
+        "8.8",
+        "1.2"
+      ],
+      "decision_latency_ms": [
+        "180",
+        "210",
+        "240",
+        "650",
+        "190",
+        "205",
+        "230",
+        "480",
+        "215",
+        "260",
+        "199",
+        "222"
+      ],
+      "data_gaps": 0,
+      "late_bars": 2,
+      "uptime_pct": "99.6",
+      "restarts": 1
+    },
+    "kill_triggers": [
+      {
+        "criterion": "drift_sustained",
+        "state": "armed",
+        "count": 0
+      },
+      {
+        "criterion": "shock_overlay",
+        "state": "armed",
+        "count": 1
+      },
+      {
+        "criterion": "shadow_sharpe",
+        "state": "armed",
+        "count": 0
+      }
+    ],
+    "money": {
+      "net": "12.47",
+      "sharpe": "0.82"
+    }
   }
 }

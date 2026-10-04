@@ -2,6 +2,7 @@
 
 - Net is always gross minus fees minus tax; a pending tax counts as zero.
 - A DOWN heartbeat carries the time it went down, and only a DOWN one does.
+- The observation drift summary reads the size of the drift, not its sign.
 """
 
 from __future__ import annotations
@@ -16,6 +17,9 @@ from hypothesis import strategies as st
 from hermes.application.console.views import (
     Heartbeat,
     HeartbeatState,
+    KillCriterion,
+    KillState,
+    KillTrigger,
     PositionDetail,
     PositionRow,
     TaxEstimate,
@@ -23,6 +27,7 @@ from hermes.application.console.views import (
     WaterfallColumn,
     tax_amount,
 )
+from tests.unit.application.console._observation import not_started, stats, window
 
 _T0 = datetime(2026, 10, 3, 12, 0, tzinfo=UTC)
 _money = st.decimals(min_value=-100_000, max_value=100_000, places=2, allow_nan=False)
@@ -141,3 +146,31 @@ def test_down_heartbeat_marks_numbers_stale_from_down_time() -> None:
         down_since=datetime(2026, 10, 3, 11, 4, tzinfo=UTC),
     )
     assert heartbeat.stale_since == datetime(2026, 10, 3, 11, 4, tzinfo=UTC)
+
+
+def test_observation_drift_summary_reads_absolute_drift() -> None:
+    """Drift of -40 bps is 40 bps off the model, as the §7 gate reads it."""
+    summary = stats(drift=("-40", "-40", "10")).drift
+    assert summary is not None
+    assert summary.p50 == Decimal(40)
+
+
+def test_observation_verdict_follows_to_date_samples() -> None:
+    """A stats object with drift at the gate reports a failing verdict."""
+    assert stats(drift=("31", "30", "35")).drift_verdict.value == "fail"
+
+
+def test_only_the_sharpe_criterion_reveals_pnl() -> None:
+    """Drift days and shock fires are execution facts; Sharpe days are P&L."""
+    assert [c for c in KillCriterion if c.reveals_pnl] == [KillCriterion.SHADOW_SHARPE]
+
+
+def test_kill_trigger_count_cannot_be_negative() -> None:
+    """A negative progress count is a read-model bug."""
+    with pytest.raises(ValueError, match="negative"):
+        KillTrigger(KillCriterion.SHOCK_OVERLAY, KillState.ARMED, -1)
+
+
+def test_window_before_day_one_is_not_started() -> None:
+    """A not-started shadow test means the window has no day 1."""
+    assert (window().started, not_started().started) == (True, False)
