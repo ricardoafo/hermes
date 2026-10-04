@@ -14,6 +14,17 @@ migration.
 
 Each migration runs in one transaction: if any statement fails, none of it stays and it is not recorded.
 
+## Naming a new migration
+
+Name a new file after its UTC creation time: `YYYYMMDDTHHMM_<lowercase_slug>.sql`, for example
+`20261004T0930_trades_add_venue.sql`. Two PRs written in parallel then cannot take the same number. The numbered
+files `0001` to `0006` stay as they are, and the runner still orders by name, so they sort before every timestamp
+file and existing ledgers apply new migrations last.
+
+Don't write `BEGIN`, `COMMIT`, `END`, `ROLLBACK`, `SAVEPOINT` or `RELEASE` statements. The runner wraps each
+migration in one transaction, and a statement that ends it early could leave the ledger half-migrated. Trigger bodies
+are fine. `scripts/dev/migration-sql-check.py` enforces both rules in pre-commit and in the unit tests.
+
 ## Two kinds of migration
 
 | Kind | First line of the file | When it runs |
@@ -39,6 +50,19 @@ fails, it rolls back in its transaction, the old release starts again and the de
 fails afterwards, the rollback restores the pre-deploy snapshot, which is from before the migration.
 
 The manual steps below are for running a migration outside a deploy.
+
+## Trying a migration first
+
+`hermes migrate --dry-run` applies every pending migration, destructive ones included, to a temporary copy of the
+ledger and prints what ran, whether the copy passes `PRAGMA integrity_check`, and the row count of every table
+before and after. It only reads the real ledger, so `hermes.service` can keep running:
+
+```bash
+sudo -u hermes /opt/hermes/current/.venv/bin/hermes migrate --db /var/lib/hermes/hermes.sqlite3 --dry-run
+```
+
+Exit 0 means everything applied and the copy is intact. Exit 1 means a migration failed on the copy, and the line
+starting `dry run: FAILED` names it.
 
 ## Running a destructive migration on hermes-01
 
