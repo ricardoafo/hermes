@@ -380,4 +380,6 @@ class ShadowExecutor:
             drift_bps=None if model_price is None else drift_bps(side, fill.avg_price, model_price),
             book_mid=mid,
             slippage=None if mid is None else slippage_vs_mid(side, fill.avg_price, mid),
+            arrival_price=bar.close,
+            delta_ms=(fill.timestamp - signal.signal_time) // timedelta(milliseconds=1),
         )
