@@ -21,6 +21,8 @@ one-line errors without capturing the TTY.
 
 - `src/hermes/entrypoints/vps.py`: settings, ssh argv builder, failure mapping.
 - `cli.py`: leading `--vps` dispatch and help text.
+- `deploy/hermes-console.sh` wrapper, its install in `install_release.sh` and the CD staging line.
+- `--demo` after the command; `HERMES_DB_PATH` / `HERMES_CONFIG_DIR` defaults.
 - Docs section in `docs/guides/vps-operations.md`.
 
 ### Out
@@ -44,9 +46,25 @@ one-line errors without capturing the TTY.
 - **Rationale**: same user, env and cwd as the service, per vps-operations.md.
 - **Cost of reversal**: LOW.
 
+### D-2b: Service paths come from the environment
+
+- **Decision**: console commands default `--db` / `--config-dir` from `HERMES_DB_PATH` / `HERMES_CONFIG_DIR` (new; no existing variable named these paths). The `--vps` remote script and the VPS wrapper export them, so no flags are forwarded.
+- **Alternatives**: forwarding `--db` / `--config-dir` from `--vps` (rejected: bare `hermes status` on the VPS would still need them).
+- **Cost of reversal**: LOW.
+
+### D-2c: VPS wrapper
+
+- **Decision**: `deploy/hermes-console.sh` is installed as `/usr/local/bin/hermes` by `install_release.sh` (prod only, optional if the stage lacks it). It allows the console commands (listed in the script; a unit test pins the list to the registry) and `--help`, refusing the rest with exit 2.
+- **Cost of reversal**: LOW.
+
+### D-2d: A VPS build without the command exits 127
+
+- **Decision**: the remote script first checks that the release's `--help` lists the command and otherwise exits 127, which the local side maps to the "needs a deploy" message. The remote's own text travels on the TTY, which stays attached so the passphrase prompt and the TUI work.
+- **Cost of reversal**: LOW.
+
 ### D-3: `--vps` with `--demo` is refused
 
-- **Decision**: exit 2 in either order.
+- **Decision**: exit 2 in either order. `--demo` itself is accepted before or after a console command (once).
 - **Alternatives**: forward `--demo` to the VPS (rejected: fixture data needs no VPS).
 - **Cost of reversal**: LOW.
 

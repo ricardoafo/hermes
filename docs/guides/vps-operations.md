@@ -475,10 +475,11 @@ VPS over `ssh -t` (same user, env and ledger as `hermes_run` above):
 ```powershell
 uv run hermes --vps tui
 uv run hermes --vps positions BTC
-uv run hermes --vps logs --level warning --since 1h
+uv run hermes --vps activity --all
 ```
 
-Only console commands go through; `serve`, `migrate` and the rest are
+Only console commands go through (`tui`, `status`, `positions`, `activity`,
+`money`); `serve`, `migrate` and the rest are
 refused, and `--vps` cannot be combined with `--demo`. Defaults match the
 setup above; override with environment variables:
 
@@ -490,7 +491,18 @@ setup above; override with environment variables:
 
 Errors are one line: no ssh client (install OpenSSH), host unreachable
 (Tailscale down), authentication failed (check the key), or the VPS has no
-console yet (deploy a release that includes it).
+console yet (deploy a release that includes it). The ssh passphrase prompt
+shows as usual; to type it once per session, load the key into the agent
+(on Windows start it first with `Start-Service ssh-agent` from an
+administrator PowerShell, then `ssh-add $HOME\.ssh\hermes_vps_ed25519`).
+This is optional.
+
+On the VPS itself, a deploy installs `/usr/local/bin/hermes`, a wrapper that
+does what `hermes_run` does and allows only the same console commands (plus
+`--help`); `hermes status` works bare there because the wrapper sets
+`HERMES_DB_PATH` and `HERMES_CONFIG_DIR`, which every console command reads as
+the default for `--db` and `--config-dir`. `--demo SCENARIO` works before or
+after the command.
 
 ## Supervisor tools (read-only, outcome-blind)
 

@@ -1315,3 +1315,55 @@ def test_staging_gate_watches_only_the_staging_unit(box: Box) -> None:
 
     assert result.returncode == 0, _output(result)
     assert _units_named(box.calls()) == {_STAGING_UNIT}
+
+
+# Plain `hermes` wrapper for the operator (#610).
+_CONSOLE_SCRIPT = "hermes-console.sh"
+
+
+def _stage_with_console(box: Box, sha: str) -> Path:
+    stage = box.make_stage(sha)
+    (stage / "deploy" / _CONSOLE_SCRIPT).write_text(f"#!/bin/bash\n# {sha}\n", encoding="utf-8")
+    return stage
+
+
+def test_deploy_installs_the_console_wrapper_as_hermes(box: Box, tmp_path: Path) -> None:
+    """Invariant: a prod deploy puts the release's console wrapper on PATH as `hermes`."""
+    bin_dir = tmp_path / "usr-local-bin"
+    bin_dir.mkdir()
+    result = box.deploy(
+        _SHA_A,
+        stage=_stage_with_console(box, _SHA_A),
+        HERMES_CONSOLE_BIN_DIR=_posix(bin_dir),
+    )
+
+    assert result.returncode == 0, _output(result)
+    installed = bin_dir / "hermes"
+    assert installed.read_text(encoding="utf-8") == f"#!/bin/bash\n# {_SHA_A}\n"
+    assert installed.stat().st_mode & 0o111
+
+
+def test_deploy_without_a_console_script_installs_no_wrapper(box: Box, tmp_path: Path) -> None:
+    """Invariant: a stage that lacks the wrapper still deploys and writes nothing to PATH."""
+    bin_dir = tmp_path / "usr-local-bin"
+    bin_dir.mkdir()
+    result = box.deploy(_SHA_A, HERMES_CONSOLE_BIN_DIR=_posix(bin_dir))
+
+    assert result.returncode == 0, _output(result)
+    assert list(bin_dir.iterdir()) == []
+
+
+def test_staging_deploy_never_installs_the_console_wrapper(box: Box, tmp_path: Path) -> None:
+    """Invariant: the wrapper points at prod's release, so a staging deploy leaves it alone."""
+    bin_dir = tmp_path / "usr-local-bin"
+    bin_dir.mkdir()
+    box.env_file.write_text(_STAGING_ENV_FILE, encoding="utf-8", newline="\n")
+    result = box.deploy(
+        _SHA_A,
+        stage=_stage_with_console(box, _SHA_A),
+        HERMES_CONSOLE_BIN_DIR=_posix(bin_dir),
+        **_STAGING,
+    )
+
+    assert result.returncode == 0, _output(result)
+    assert list(bin_dir.iterdir()) == []
