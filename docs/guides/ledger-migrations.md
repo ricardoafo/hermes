@@ -112,6 +112,13 @@ stay stopped between migrating and deciding to roll back.
 After a restore the migration is pending again. Deploy the release that drops or fixes it before starting
 `hermes.service`; otherwise the ledger refuses to open again.
 
+## Checking the ledger afterwards
+
+`hermes ledger verify --db /var/lib/hermes/hermes.sqlite3` opens the ledger read-only, so it is safe while
+`hermes.service` runs. Besides SQLite integrity and event id gaps, it reports pending migrations, applied migrations
+this release does not ship, lots whose remaining quantity is not their original minus their consumptions, and rows
+that point at a lot or trade that is gone. It exits 1 when there is any finding.
+
 ## Keeping snapshots
 
 Snapshots are not rotated automatically. Keep the latest one until the migrated release has run cleanly for a
