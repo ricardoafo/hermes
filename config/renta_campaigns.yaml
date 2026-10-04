@@ -1,0 +1,14 @@
+# Renta Web box numbers per tax year (ejercicio), for the hermes tax pack (#568).
+#
+# Loaded by hermes.infrastructure.config.renta.load_renta_campaigns. AEAT can
+# renumber boxes between campaigns: add a year here once its campaign is
+# published (usually March) and the box is checked. A year with no entry uses
+# the latest earlier entry, and the sheet marks it provisional.
+
+campaigns:
+  2025:
+    # "Ganancias y pérdidas patrimoniales / Monedas virtuales": one entry per
+    # coin and kind of consideration.
+    transmissions_box: "1804"
+    source: "https://www2.agenciatributaria.gob.es/wlpl/AVAC-CALC/InformadorRenta?ejercicio=2025&id=9.2.2"
+    verified_on: "2026-10-04"

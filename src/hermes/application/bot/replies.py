@@ -17,7 +17,12 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, tzinfo
 from typing import Final
 
-from hermes.application.console import ConsoleReadModel, PortfolioRange, Surface
+from hermes.application.console import (
+    ConsoleReadModel,
+    PortfolioRange,
+    Surface,
+    ViewNotAvailableError,
+)
 from hermes.application.console.format import fmt_change, fmt_eur_price, fmt_level, signed_eur
 from hermes.application.console.logs import LogLine
 from hermes.application.console.views import (
@@ -38,6 +43,7 @@ _HELP: Final = "Commands: /status /next /signals /money [week|month|year] /pos [
 _NO_LIVE_MONEY: Final = "No live money yet: simulated fills start with #353."
 _BLIND: Final = "Money is not shown here."
 _TAX_PENDING: Final = "tax estimate: not available yet"
+_EUR_PENDING: Final = "EUR pending"
 _LOG_LINES: Final = 20
 
 
@@ -119,9 +125,16 @@ class Replies:
             note = f", {test.note}" if test.note and not test.day else ""
             lines.append(f"90-day test: {day}, {test.status.value}{note}.")
             if self._money_visible():
-                summary = model.portfolio(PortfolioRange.TODAY)
-                total, net = fmt_level(summary.total_value), signed_eur(summary.net)
-                lines.append(f"Total {total}, today's net {net}.")
+                try:
+                    summary = model.portfolio(PortfolioRange.TODAY)
+                except ViewNotAvailableError:
+                    lines.append("Total: not available yet.")
+                else:
+                    if summary.eur_pending:
+                        lines.append(f"Total: {_EUR_PENDING}.")
+                    else:
+                        total, net = fmt_level(summary.total_value), signed_eur(summary.net)
+                        lines.append(f"Total {total}, today's net {net}.")
         else:
             lines.append("90-day test: not started, waits on #353.")
         return "\n".join(lines)
@@ -174,7 +187,10 @@ class Replies:
             range_ = PortfolioRange(args[0].lower()) if args else PortfolioRange.TODAY
         except ValueError:
             return "Usage: /money [week|month|year]"
-        summary = model.portfolio(range_)
+        try:
+            summary = model.portfolio(range_)
+        except ViewNotAvailableError as exc:
+            return f"{exc}."
         return _money_text(summary, range_)
 
     def _pos(self, args: list[str]) -> str:
@@ -229,6 +245,8 @@ class Replies:
 
 
 def _money_text(summary: PortfolioSummary, range_: PortfolioRange) -> str:
+    if summary.eur_pending:
+        return f"Total: {_EUR_PENDING} (no EUR rate in the ledger yet)."
     lines = [
         f"Total {fmt_level(summary.total_value)} ({fmt_change(summary.change, summary.change_pct)}"
         f" {range_.value})",
@@ -239,6 +257,8 @@ def _money_text(summary: PortfolioSummary, range_: PortfolioRange) -> str:
 
 
 def _waterfall(label: str, column: WaterfallColumn) -> str:
+    if column.eur_pending:
+        return f"{label}: {_EUR_PENDING}"
     tax = (
         _TAX_PENDING if isinstance(column.tax, TaxPending) else signed_eur(-tax_amount(column.tax))
     )

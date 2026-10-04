@@ -422,8 +422,9 @@ the same summary to Telegram (#626). On the box,
 ### Failure modes
 
 - **Tailscale-join fails** — the workflow's `Join tailnet` step
-  reports it. Check `TAILSCALE_AUTHKEY` in the `prod` env is not
-  expired; keys rotate every 90 days.
+  reports it. Check that `TS_OAUTH_CLIENT_ID` and `TS_OAUTH_SECRET`
+  in the `prod` env belong to an OAuth client that still exists, has
+  the `auth_keys` write scope and may use `tag:ci-runner`.
 - **SSH host-key mismatch** — the workflow's keyscan step will pick up
   the new key. If it hangs, the VPS has been reprovisioned — verify
   fingerprint via Hetzner console before proceeding.
