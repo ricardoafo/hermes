@@ -74,6 +74,7 @@ What this locks in. What it forecloses. What we'll revisit.
 | 2026-10-03 | [Route shadow signals to Telegram and Slack](2026-10-03-signal-notification-routing.md)      | —                                             |
 | 2026-10-03 | [Sharpe kill window, M-09/M-10](2026-10-03-calibration-metrics-and-shadow-sharpe-kill.md)    | Draft M-09/M-10 thresholds                    |
 | 2026-10-04 | [Kraken spot trading adapter](2026-10-04-kraken-spot-adapter.md)                             | 2026-08-24 Kraken entry (public-only scope)   |
+| 2026-10-04 | [Tax-filing report defaults](2026-10-04-tax-filing-defaults.md)                              | —                                             |
 
 ## Anti-patterns
 
