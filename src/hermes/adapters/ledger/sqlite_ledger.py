@@ -56,6 +56,9 @@ from hermes.domain.lots.quote_leg import (
 )
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
+from hermes.domain.portfolio.mark import PortfolioMark
+from hermes.domain.portfolio.position import Position
+from hermes.domain.portfolio.snapshot import PortfolioSnapshot
 from hermes.domain.strategy.signal import SignalKind, SignalSide
 from hermes.domain.trading.order import OrderSide
 from hermes.domain.trading.trade_record import TradeEur, TradeRecord
@@ -561,6 +564,103 @@ class SqliteLedger:
             raise
 
     # ------------------------------------------------------------------
+    # PortfolioHistoryPort — one portfolio mark per processed bar (#387)
+    # ------------------------------------------------------------------
+
+    def record_portfolio_mark(self, mark: PortfolioMark) -> bool:
+        """Store the portfolio as it stood after one processed bar.
+
+        Args:
+            mark: The snapshot and the bar it followed.
+
+        Returns:
+            ``False`` when that bar's mark is already stored (a replay after a
+            restart); the stored row is kept.
+
+        Raises:
+            LedgerError: On any SQLite failure.
+        """
+        snap = mark.snapshot
+        positions = [
+            {
+                "base": p.pair.base.value,
+                "quote": p.pair.quote.value,
+                "quantity": str(p.quantity),
+                "cost_basis": str(p.cost_basis),
+                "mark_price": str(p.mark_price),
+                "marked_at": _iso_utc(p.marked_at),
+            }
+            for p in sorted(snap.positions.values(), key=lambda p: str(p.pair))
+        ]
+        try:
+            inserted = self._conn.execute(
+                "INSERT OR IGNORE INTO portfolio_marks (strategy_id, pair_base, pair_quote, "
+                "interval, bar_close_time, quote, starting_cash, cash, market_value, equity, "
+                "realized_pnl, peak_equity, positions_json, recorded_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    snap.strategy_id.value,
+                    mark.pair.base.value,
+                    mark.pair.quote.value,
+                    mark.interval.value,
+                    _iso_utc(mark.bar_close_time),
+                    snap.quote.value,
+                    str(snap.starting_cash),
+                    str(snap.cash),
+                    str(snap.market_value),
+                    str(snap.equity),
+                    str(snap.realized_pnl),
+                    str(snap.peak_equity),
+                    json.dumps(positions, sort_keys=True),
+                    _iso_utc(datetime.now(UTC)),
+                ),
+            ).rowcount
+            self._conn.commit()
+        except sqlite3.Error as exc:
+            self._conn.rollback()
+            raise LedgerError(msg=f"record_portfolio_mark failed: {exc}") from exc
+        return bool(inserted)
+
+    def portfolio_marks(
+        self, strategy_id: StrategyId, start: datetime, end: datetime
+    ) -> tuple[PortfolioMark, ...]:
+        """Return the strategy's marks with ``start <= bar_close_time < end``, oldest first.
+
+        Raises:
+            LedgerError: On any SQLite failure or an unreadable row.
+        """
+        try:
+            rows = self._conn.execute(
+                "SELECT strategy_id, pair_base, pair_quote, interval, bar_close_time, quote, "
+                "starting_cash, cash, realized_pnl, peak_equity, positions_json "
+                "FROM portfolio_marks "
+                "WHERE strategy_id = ? AND bar_close_time >= ? AND bar_close_time < ? "
+                "ORDER BY bar_close_time, id",
+                (strategy_id.value, _iso_utc(start), _iso_utc(end)),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"portfolio_marks failed: {exc}") from exc
+        return tuple(_row_to_mark(row) for row in rows)
+
+    def latest_portfolio_mark(self, strategy_id: StrategyId) -> PortfolioMark | None:
+        """Return the strategy's newest mark, or ``None`` before the first bar.
+
+        Raises:
+            LedgerError: On any SQLite failure or an unreadable row.
+        """
+        try:
+            row = self._conn.execute(
+                "SELECT strategy_id, pair_base, pair_quote, interval, bar_close_time, quote, "
+                "starting_cash, cash, realized_pnl, peak_equity, positions_json "
+                "FROM portfolio_marks WHERE strategy_id = ? "
+                "ORDER BY bar_close_time DESC, id DESC LIMIT 1",
+                (strategy_id.value,),
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"latest_portfolio_mark failed: {exc}") from exc
+        return None if row is None else _row_to_mark(row)
+
+    # ------------------------------------------------------------------
     # LedgerPort — read methods
     # ------------------------------------------------------------------
 
@@ -717,17 +817,35 @@ class SqliteLedger:
             ).fetchall()
         except sqlite3.Error as exc:
             raise LedgerError(msg=f"trade_events failed: {exc}") from exc
-        trades: list[TradeExecuted] = []
-        for version, payload_json in rows:
-            if version != TradeExecuted.__event_schema_version__:
-                raise LedgerError(
-                    msg=f"trade_events: unsupported TradeExecuted schema version {version}"
-                )
-            try:
-                trades.append(_trade_from_payload(json.loads(payload_json)))
-            except (KeyError, ValueError, TypeError) as exc:
-                raise LedgerError(msg=f"trade_events: unreadable payload: {exc}") from exc
-        return tuple(trades)
+        return _trades_from_rows(rows, op="trade_events")
+
+    def trades_between(self, start: datetime, end: datetime) -> tuple[TradeExecuted, ...]:
+        """Return every ``TradeExecuted`` with ``start <= occurred_at <= end``, oldest first.
+
+        All strategies are included: the recharacterization guard measures the
+        taxpayer's activity, not one bucket's (ADR-002 §6, #135).
+
+        Args:
+            start: Window start (UTC, inclusive).
+            end: Window end (UTC, inclusive).
+
+        Returns:
+            The rehydrated events ordered by ``occurred_at`` then row id.
+
+        Raises:
+            LedgerError: On any SQLite read failure, a row whose schema version
+                is not 2, or an unreadable payload.
+        """
+        try:
+            rows = self._conn.execute(
+                "SELECT event_schema_version, payload_json FROM events "
+                "WHERE event_type = 'TradeExecuted' AND occurred_at >= ? AND occurred_at <= ? "
+                "ORDER BY occurred_at ASC, id ASC",
+                (_iso_utc(start), _iso_utc(end)),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"trades_between failed: {exc}") from exc
+        return _trades_from_rows(rows, op="trades_between")
 
     # ------------------------------------------------------------------
     # Private helpers — SQL and (de)serialisation
@@ -1087,6 +1205,51 @@ def _row_to_bar(pair: Pair, interval: KlineInterval, row: tuple[Any, ...]) -> Ba
     )
 
 
+def _row_to_mark(row: tuple[Any, ...]) -> PortfolioMark:
+    """Rebuild a :class:`PortfolioMark` from a ``portfolio_marks`` row."""
+    (
+        strategy,
+        base,
+        quote_ccy,
+        interval,
+        close_time,
+        quote,
+        starting,
+        cash,
+        realized,
+        peak,
+        positions_json,
+    ) = row
+    try:
+        positions = {}
+        for item in json.loads(positions_json):
+            pair = Pair(base=Currency(item["base"]), quote=Currency(item["quote"]))
+            positions[pair] = Position(
+                pair=pair,
+                quantity=Decimal(item["quantity"]),
+                cost_basis=Decimal(item["cost_basis"]),
+                mark_price=Decimal(item["mark_price"]),
+                marked_at=datetime.fromisoformat(item["marked_at"]),
+            )
+        snapshot = PortfolioSnapshot(
+            strategy_id=StrategyId(strategy),
+            quote=Currency(quote),
+            starting_cash=Decimal(starting),
+            cash=Decimal(cash),
+            positions=positions,
+            realized_pnl=Decimal(realized),
+            peak_equity=Decimal(peak),
+        )
+        return PortfolioMark(
+            snapshot=snapshot,
+            pair=Pair(base=Currency(base), quote=Currency(quote_ccy)),
+            interval=KlineInterval(interval),
+            bar_close_time=datetime.fromisoformat(close_time),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise LedgerError(msg=f"portfolio mark row is unreadable: {exc}") from exc
+
+
 def _iso_utc(dt: datetime) -> str:
     """Format a tz-aware :class:`datetime` as an ISO-8601 UTC string.
 
@@ -1191,6 +1354,19 @@ def _signal_from_payload(payload: dict[str, Any]) -> SignalEmitted:
         exit_reason=payload["exit_reason"],
         f_star_estimate=_optional_decimal(payload["f_star_estimate"]),
     )
+
+
+def _trades_from_rows(rows: list[Any], *, op: str) -> tuple[TradeExecuted, ...]:
+    """Rehydrate ``(event_schema_version, payload_json)`` rows into events."""
+    trades: list[TradeExecuted] = []
+    for version, payload_json in rows:
+        if version != TradeExecuted.__event_schema_version__:
+            raise LedgerError(msg=f"{op}: unsupported TradeExecuted schema version {version}")
+        try:
+            trades.append(_trade_from_payload(json.loads(payload_json)))
+        except (KeyError, ValueError, TypeError) as exc:
+            raise LedgerError(msg=f"{op}: unreadable payload: {exc}") from exc
+    return tuple(trades)
 
 
 def _trade_from_payload(payload: dict[str, Any]) -> TradeExecuted:
