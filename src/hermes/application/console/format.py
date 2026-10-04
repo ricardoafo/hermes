@@ -39,6 +39,8 @@ __all__ = [
     "fmt_price",
     "fmt_qty",
     "fmt_stop",
+    "fmt_stop_usdt",
+    "fmt_usdt_price",
     "round2",
     "signed_eur",
     "signed_pct",
@@ -202,9 +204,35 @@ def fmt_stop(price_eur: Decimal, distance_pct: Decimal) -> str:
     Returns:
         The price and the signed distance to one decimal.
     """
+    return f"{fmt_eur_price(price_eur)} · {_stop_distance(distance_pct)}"
+
+
+def fmt_usdt_price(value: Decimal) -> str:
+    """Return a price in the quote currency labelled as such, e.g. ``2,618 USDT``.
+
+    Used where a price has no EUR value yet (an unpriced fill), so it is never
+    shown under a € sign.
+    """
+    return f"{fmt_price(value)} USDT"
+
+
+def fmt_stop_usdt(price: Decimal, distance_pct: Decimal) -> str:
+    """Return the stop as a USDT price and the distance to it, e.g. ``2,580 USDT · minus 3.4%``.
+
+    Args:
+        price: Stop level in the quote currency.
+        distance_pct: As for :func:`fmt_stop`.
+
+    Returns:
+        The price and the signed distance to one decimal.
+    """
+    return f"{fmt_usdt_price(price)} · {_stop_distance(distance_pct)}"
+
+
+def _stop_distance(distance_pct: Decimal) -> str:
     rounded = distance_pct.quantize(_TENTH, rounding=ROUND_HALF_UP)
     sign = MINUS if rounded > _ZERO else "+" if rounded < _ZERO else ""
-    return f"{fmt_eur_price(price_eur)} · {sign}{abs(rounded)}%"
+    return f"{sign}{abs(rounded)}%"
 
 
 def fmt_qty(value: Decimal) -> str:

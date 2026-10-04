@@ -1,4 +1,4 @@
-"""Console read-model adapters: packaged demo scenarios today, the ledger later."""
+"""Console read-model adapters: packaged demo scenarios and the read-only ledger model."""
 
 from hermes.adapters.console.fixture_read_model import (
     FixtureReadModel,

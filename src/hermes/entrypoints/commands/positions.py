@@ -1,4 +1,9 @@
-"""``hermes positions``: open shadow positions; see :mod:`hermes.entrypoints.console`."""
+"""``hermes positions``: open shadow positions; see :mod:`hermes.entrypoints.console`.
+
+Without ``--demo`` the positions are read from the ledger, read-only
+(``--db PATH``, default ``./hermes.sqlite3``); with no ledger file the answer is
+the empty state (change ``ledger-read-model`` D-9).
+"""
 
 from __future__ import annotations
 
@@ -6,6 +11,7 @@ import json
 import os
 from collections.abc import Mapping
 from datetime import UTC
+from pathlib import Path
 from typing import Final, TextIO
 
 from rich.console import Console
@@ -19,13 +25,17 @@ from hermes.application.console.render import (
     render_positions,
 )
 from hermes.application.console.serialize import position_detail_to_json, positions_to_json
+from hermes.domain.errors import LedgerError
 from hermes.entrypoints.commands import Command
 from hermes.entrypoints.console import LiveReadModelUnavailableError, resolve_read_model
 
 __all__ = ["COMMAND", "run_positions"]
 
 _NO_FILLS_NOTE: Final = "Fills start with #353."
-_POSITIONS_USAGE: Final = "Usage: hermes [--demo SCENARIO] positions [COIN] [--json] [--utc]"
+_POSITIONS_USAGE: Final = (
+    "Usage: hermes [--demo SCENARIO] positions [COIN] [--json] [--utc] [--db PATH]"
+)
+_DB: Final = "--db"
 
 
 def run_positions(
@@ -35,11 +45,11 @@ def run_positions(
     demo_flag: str | None = None,
     env: Mapping[str, str] | None = None,
 ) -> int:
-    """Run ``hermes positions [COIN] [--json] [--utc]``.
+    """Run ``hermes positions [COIN] [--json] [--utc] [--db PATH]``.
 
-    Without a demo scenario there is no live read model yet and no position can
-    exist before the fill path lands, so the answer is the empty state plus a
-    note, not an error (change spec D-1).
+    Without a demo scenario the positions come from the ledger at ``--db``. With
+    no ledger file no position can exist, so the answer is the empty state plus
+    a note, not an error (console-positions D-1).
 
     Args:
         args: Arguments after ``positions``.
@@ -49,27 +59,63 @@ def run_positions(
 
     Returns:
         0 on success, 1 when COIN has no open position, 2 for a usage error or
-        an unknown scenario.
+        an unknown scenario, 3 when the ledger cannot be read.
     """
-    flags = {a for a in args if a.startswith("-")}
-    coins = [a for a in args if not a.startswith("-")]
+    split = _split_db(args)
+    if split is None:
+        stream.write(f"ERROR: bad arguments. {_POSITIONS_USAGE}\n")
+        return 2
+    rest, db_path = split
+    flags = {a for a in rest if a.startswith("-")}
+    coins = [a for a in rest if not a.startswith("-")]
     if flags - {"--json", "--utc"} or len(coins) > 1:
         stream.write(f"ERROR: bad arguments. {_POSITIONS_USAGE}\n")
         return 2
     as_json = "--json" in flags
     coin = coins[0].upper() if coins else None
     try:
-        model = resolve_read_model(demo_flag=demo_flag, env=env or {})
+        model = resolve_read_model(demo_flag=demo_flag, env=env or {}, db_path=db_path)
     except LiveReadModelUnavailableError:
         return _positions_without_data(stream, as_json=as_json)
     except UnknownScenarioError as exc:
         stream.write(f"ERROR: {exc}\n")
         return 2
+    try:
+        return _show(model, coin, stream, utc="--utc" in flags, as_json=as_json)
+    except LedgerError as exc:
+        stream.write(f"ERROR: could not read the ledger: {exc}\n")
+        return 3
+
+
+def _split_db(args: list[str]) -> tuple[list[str], Path | None] | None:
+    """Remove ``--db PATH`` or ``--db=PATH``; ``None`` when the path is missing."""
+    rest: list[str] = []
+    db_path: Path | None = None
+    items = iter(args)
+    for arg in items:
+        if arg == _DB:
+            value = next(items, None)
+            if value is None or value.startswith("-"):
+                return None
+            db_path = Path(value)
+        elif arg.startswith(f"{_DB}="):
+            value = arg.removeprefix(f"{_DB}=")
+            if not value:
+                return None
+            db_path = Path(value)
+        else:
+            rest.append(arg)
+    return rest, db_path
+
+
+def _show(
+    model: ConsoleReadModel, coin: str | None, stream: TextIO, *, utc: bool, as_json: bool
+) -> int:
     console = Console(file=stream, emoji=False, markup=False, highlight=False)
     ctx = RenderContext.for_model(
         model,
         surface=Surface.OPERATOR_CLI,
-        tz=UTC if "--utc" in flags else MADRID,
+        tz=UTC if utc else MADRID,
         width=console.width,
     )
     if coin is None:
