@@ -11,11 +11,9 @@
 #   - 1 approving review required (Ricardo, via CODEOWNERS)
 #   - Code owner review required
 #   - Dismiss stale reviews on new commits
-#   - Require last push approval (safe under revalidate-then-merge design:
-#     the queue never pushes to the PR branch, so only genuine author
-#     iteration dismisses approvals — which is correct behavior)
-#   - Require extra approval for commits authored by unknown identities
-#     (guards against bot identity misconfiguration mid-PR)
+#   - Last-push approval OFF: an "Update branch" click records Rick as the
+#     last pusher and would strand his own approval. Stale-review
+#     dismissal already covers new commits.
 #   - Require review-thread resolution before merge
 #   - `CI success` aggregator must be green (single required check)
 #   - `strict_required_status_checks_policy: false` — do NOT require branch
@@ -27,8 +25,9 @@
 #   - Non-fast-forward pushes blocked (protects against history rewrites)
 #   - Branch deletion blocked
 #
-# Idempotency: looks up an existing ruleset by name; if present, updates
-# it; if absent, creates it. Safe to re-run.
+# Idempotency: looks up an existing ruleset by name (including the legacy
+# misspelt name `main-proctetion`, which this script renames); if present,
+# updates it; if absent, creates it. Safe to re-run.
 #
 # Required: gh CLI authenticated as ricardoafo (owner). Bot lacks admin scope.
 
@@ -63,9 +62,8 @@ RULESET_BODY=$(cat <<'JSON'
         "required_approving_review_count": 1,
         "dismiss_stale_reviews_on_push": true,
         "require_code_owner_review": true,
-        "require_last_push_approval": true,
+        "require_last_push_approval": false,
         "required_review_thread_resolution": true,
-        "require_extra_approval_for_unattributed_changes": true,
         "allowed_merge_methods": ["squash"]
       }
     },
@@ -75,7 +73,7 @@ RULESET_BODY=$(cat <<'JSON'
         "strict_required_status_checks_policy": false,
         "do_not_enforce_on_create": false,
         "required_status_checks": [
-          {"context": "CI success"}
+          {"context": "CI success", "integration_id": 15368}
         ]
       }
     }
@@ -90,7 +88,7 @@ echo "Reconciling ruleset '$RULESET_NAME' on $REPO"
 # Look up existing ruleset by name
 # ────────────────────────────────────────────────────────────────
 existing_id=$(gh api "repos/$REPO/rulesets" --jq \
-  ".[] | select(.name == \"$RULESET_NAME\") | .id" | head -1)
+  ".[] | select(.name == \"$RULESET_NAME\" or .name == \"main-proctetion\") | .id" | head -1)
 
 if [[ -n "$existing_id" ]]; then
     echo "  found existing ruleset id=$existing_id — updating"

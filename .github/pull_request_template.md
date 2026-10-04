@@ -68,7 +68,8 @@ Prevents scope creep and makes the PR reviewable in <15 minutes.
 ---
 
 <!--
-Reviewer: @ricardoafo (auto-assigned via CODEOWNERS + branch protection).
-Merge: squash-merge only. Author cannot self-approve. Bot cannot merge.
+Reviewer: @ricardoafo (auto-requested via CODEOWNERS; the main-protection
+ruleset requires his approval). Merge: squash-only, through the merge queue.
+Author cannot self-approve. Bot cannot merge.
 See docs/guides/dev-workflow.md for the full discipline.
 -->

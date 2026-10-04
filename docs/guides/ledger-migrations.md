@@ -21,12 +21,24 @@ Each migration runs in one transaction: if any statement fails, none of it stays
 | Additive (new table, new column, new index) | anything | Automatically when the ledger opens (`hermes serve` start) |
 | Destructive (drop, rename, table rebuild) | `-- hermes: destructive` | Only through `hermes migrate`, which snapshots first |
 
-If a destructive migration is pending, the ledger refuses to open and names the file. `hermes serve` stops at
+A brand-new ledger (no migration applied yet) has no data to protect, so it gets every migration at
+first open, destructive ones included. On an existing ledger, if a destructive migration is pending,
+the ledger refuses to open and names the file. `hermes serve` stops at
 start with that message until the migration has been run by hand. Additive migrations before it in the sequence
 still apply.
 
 A migration author marks a file destructive whenever restoring the snapshot would be the only way back: anything
 that drops or rewrites existing rows, columns, tables, defaults or constraints.
+
+## How a deploy handles it
+
+CD runs this for you. After the pre-deploy ledger snapshot, `scripts/deploy/install_release.sh` asks the new
+release for `hermes migrate --status`. If a destructive migration is pending, it stops `hermes.service`, runs
+`hermes migrate` with the new release's binary, then restarts the unit and runs the health gate. If the migration
+fails, it rolls back in its transaction, the old release starts again and the deploy stops. If the health gate
+fails afterwards, the rollback restores the pre-deploy snapshot, which is from before the migration.
+
+The manual steps below are for running a migration outside a deploy.
 
 ## Running a destructive migration on hermes-01
 
