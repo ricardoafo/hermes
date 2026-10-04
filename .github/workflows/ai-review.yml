@@ -186,16 +186,21 @@ jobs:
         env:
           TOOLS: ${{ steps.ctx.outputs.tools }}
           OUTPUT: ${{ steps.review.outputs.structured_output }}
+          EXECUTION_FILE: ${{ steps.review.outputs.execution_file }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         with:
           script: |
+            const fs = require('fs');
             const path = require('path');
             const lib = require(path.join(process.env.TOOLS, 'ai-review.cjs'));
+            const file = process.env.EXECUTION_FILE;
+            const metrics = lib.parseMetrics(file && fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '');
             const { owner, repo } = context.repo;
             const issue_number = context.payload.pull_request.number;
             const meta = {
               headSha: process.env.HEAD_SHA,
               runUrl: `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`,
+              metrics,
             };
 
             let body;
@@ -217,6 +222,20 @@ jobs:
               await github.rest.issues.updateComment({ owner, repo, comment_id: existing, body });
             } else {
               await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+            // Cost-efficiency record: one row per review in the run summary.
+            if (metrics) {
+              await core.summary
+                .addHeading('AI review cost', 3)
+                .addTable([
+                  ['PR', 'Head', 'Time (s)', 'Turns', 'Input tokens', 'Output tokens', 'Cached tokens', 'USD at API prices'],
+                  [String(issue_number), meta.headSha.slice(0, 7), String(metrics.seconds), String(metrics.turns),
+                    String(metrics.inputTokens), String(metrics.outputTokens), String(metrics.cacheReadTokens),
+                    metrics.costUsd.toFixed(4)],
+                ])
+                .write();
+              core.notice(`AI review: ${lib.metricsLine(metrics)}`);
             }
 
             if (result.pass) {

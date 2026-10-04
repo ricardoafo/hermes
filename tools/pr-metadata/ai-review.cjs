@@ -106,8 +106,50 @@ function oneLine(text) {
 }
 
 /**
+ * Reads time, turns, tokens and the API-price cost from the action's
+ * execution file, whose last element is the session's result message.
+ * Reviews bill to a Claude plan, so the dollar figure is what the same
+ * review would cost at API prices: the yardstick for cost efficiency.
+ *
+ * @param {?string} content the execution file's text
+ * @returns {?{seconds: number, turns: number, costUsd: number, inputTokens: number, outputTokens: number, cacheReadTokens: number}}
+ */
+function parseMetrics(content) {
+  let data;
+  try {
+    data = JSON.parse(content || '');
+  } catch {
+    return null;
+  }
+  const last = Array.isArray(data) ? data[data.length - 1] : null;
+  if (!last || last.type !== 'result' || typeof last.duration_ms !== 'number') return null;
+  const usage = last.usage || {};
+  const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  return {
+    seconds: Math.round(num(last.duration_ms) / 1000),
+    turns: num(last.num_turns),
+    costUsd: num(last.total_cost_usd),
+    inputTokens: num(usage.input_tokens) + num(usage.cache_creation_input_tokens),
+    outputTokens: num(usage.output_tokens),
+    cacheReadTokens: num(usage.cache_read_input_tokens),
+  };
+}
+
+/**
+ * @param {?ReturnType<typeof parseMetrics>} metrics
+ * @returns {string} one line, or empty when nothing was measured
+ */
+function metricsLine(metrics) {
+  if (!metrics) return '';
+  const m = Math.floor(metrics.seconds / 60);
+  const sec = metrics.seconds % 60;
+  const kTok = (n) => `${Math.round(n / 1000)}k`;
+  return `${m}m ${sec}s · ${metrics.turns} turns · ${kTok(metrics.inputTokens)} in / ${kTok(metrics.outputTokens)} out / ${kTok(metrics.cacheReadTokens)} cached tokens · $${metrics.costUsd.toFixed(2)} at API prices`;
+}
+
+/**
  * @param {ReturnType<typeof parseReview>} review
- * @param {{headSha: string, runUrl: string}} meta
+ * @param {{headSha: string, runUrl: string, metrics?: ?object}} meta
  * @returns {string} the sticky comment body
  */
 function renderComment(review, meta) {
@@ -143,7 +185,8 @@ function renderComment(review, meta) {
     if (blocking.length) lines.push(`**Blocking (${blocking.length})**`, '', ...blocking.map(renderFinding), '');
     if (optional.length) lines.push(`**Optional (${optional.length})**`, '', ...optional.map(renderFinding), '');
   }
-  lines.push('', `<sub>Independent AI review of ${meta.headSha.slice(0, 7)} · [run](${meta.runUrl}) · updates on every push</sub>`);
+  const measured = metricsLine(meta.metrics);
+  lines.push('', `<sub>Independent AI review of ${meta.headSha.slice(0, 7)} · [run](${meta.runUrl})${measured ? ` · ${measured}` : ''} · updates on every push</sub>`);
   return lines.join('\n').replace(/\n{3,}/g, '\n\n');
 }
 
@@ -171,4 +214,4 @@ function stickyCommentId(comments) {
   return found ? found.id : null;
 }
 
-module.exports = { MARKER, parseReview, outcome, renderComment, renderFailure, stickyCommentId };
+module.exports = { MARKER, parseReview, outcome, parseMetrics, metricsLine, renderComment, renderFailure, stickyCommentId };

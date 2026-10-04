@@ -7,7 +7,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { MARKER, parseReview, outcome, renderComment, renderFailure, stickyCommentId } = require('./ai-review.cjs');
+const {
+  MARKER, parseReview, outcome, parseMetrics, metricsLine, renderComment, renderFailure, stickyCommentId,
+} = require('./ai-review.cjs');
 
 const meta = { headSha: 'abcdef0123456789', runUrl: 'https://github.com/o/r/actions/runs/1' };
 
@@ -101,4 +103,37 @@ test('the sticky comment is found by its marker, not by author', () => {
   const comments = [{ id: 1, body: 'hello' }, { id: 2, body: `${MARKER}\n## For Rick` }, { id: 3, body: null }];
   assert.equal(stickyCommentId(comments), 2);
   assert.equal(stickyCommentId([{ id: 1, body: `quote ${MARKER}` }]), null);
+});
+
+const execution = JSON.stringify([
+  { type: 'system', subtype: 'init' },
+  {
+    type: 'result',
+    duration_ms: 252400,
+    num_turns: 23,
+    total_cost_usd: 0.8412,
+    usage: { input_tokens: 1200, cache_creation_input_tokens: 40800, output_tokens: 6100, cache_read_input_tokens: 512000 },
+  },
+]);
+
+test('metrics come from the result message at the end of the execution file', () => {
+  assert.deepEqual(parseMetrics(execution), {
+    seconds: 252, turns: 23, costUsd: 0.8412, inputTokens: 42000, outputTokens: 6100, cacheReadTokens: 512000,
+  });
+});
+
+test('a missing or unfinished execution file gives no metrics instead of throwing', () => {
+  assert.equal(parseMetrics(''), null);
+  assert.equal(parseMetrics('not json'), null);
+  assert.equal(parseMetrics(JSON.stringify([{ type: 'assistant' }])), null);
+});
+
+test('the metrics line shows time, turns, tokens and API-price cost', () => {
+  assert.equal(metricsLine(parseMetrics(execution)), '4m 12s · 23 turns · 42k in / 6k out / 512k cached tokens · $0.84 at API prices');
+  assert.equal(metricsLine(null), '');
+});
+
+test('the comment footer carries the metrics when measured', () => {
+  const body = renderComment(parseReview(raw()), { ...meta, metrics: parseMetrics(execution) });
+  assert.match(body, /\[run\]\(https:\/\/github\.com\/o\/r\/actions\/runs\/1\) · 4m 12s · 23 turns/);
 });
