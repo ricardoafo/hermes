@@ -139,7 +139,7 @@ markers = [
   # (see docs/decisions/2026-08-23-contract-test-tier.md).
   "contract: real HTTP against third-party sandbox APIs; run daily by scheduled.yml",
   "mutation: registered, no test uses it; mutation runs through cosmic-ray (cosmic-ray.toml)",
-  "e2e: end-to-end against testnet; registered, tests/e2e/ is empty (planned, #408)",
+  "e2e: end-to-end serve cycle on recorded bars (tests/e2e/); weekly + manual dispatch in scheduled.yml",
   "slow: >1s per test",
 ]
 addopts = "-ra --strict-markers --strict-config -m 'not contract'"

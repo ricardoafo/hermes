@@ -22,7 +22,7 @@ Tiers are chosen by directory, not by marker. Status is `live` (a workflow or sc
 | Contract | `tests/contract/` | Real HTTPS to third-party sandboxes; each test skips when its secret is absent | `scheduled.yml` job `contract`: `pytest tests/contract -m contract` | Daily 11:30 UTC | live |
 | Smoke | `tests/smoke/` | Read-only checks on hermes-01 over SSH | `cd.yml` step "Smoke tests": `pytest tests/smoke -m smoke`. Exit 5 (nothing collected) fails the deploy | After each deploy | live |
 | Mutation | `tests/unit/domain/value_objects` (rerun by cosmic-ray) | cosmic-ray over `src/hermes/domain/value_objects`; scope is `module-path` in `cosmic-ray.toml` | `scheduled.yml` job `mutation` | Sundays 11:45 UTC; manual dispatch with `mutation` ticked | live; kill-rate floor (80%) advisory until #406 |
-| End-to-end | `tests/e2e/` | Full stack against a testnet | none; the directory holds only `__init__.py` | planned inside `scheduled.yml` (no `e2e.yml`) | planned, #408 |
+| End-to-end | `tests/e2e/` | The real `hermes serve` composition root replays recorded Binance bars (`tests/fixtures/e2e/`); offline and keyless | `scheduled.yml` job `e2e`: `pytest tests/e2e -m e2e` | Sundays 11:45 UTC; every manual dispatch | live |
 
 A push to `main` skips the suite when the tree already passed on the PR head
 (`scripts/dev/main-tree-validated.sh`). Unit and integration therefore run on the merged tree in the merge queue,
@@ -46,8 +46,9 @@ a test uses it. Registered markers are labels; the directory decides what runs, 
 - `contract`: `addopts` has `-m 'not contract'`, so contract tests only run with `-m contract` (the scheduled job).
 - `smoke`: the CD job selects it with `-m smoke`.
 
-`unit`, `property` and `integration` are used by a few tests and are not used for selection. `chaos`, `e2e`,
-`mutation` and `slow` are registered and used by no test today. Do not invent a new marker without registering it in
+`unit`, `property`, `integration` and `slow` are used by some tests and are not used for selection. `e2e` marks
+the end-to-end tests; the scheduled job runs their directory with `-m e2e`.
+`chaos` and `mutation` are registered and used by no test today. Do not invent a new marker without registering it in
 `pyproject.toml`.
 
 ## Rules per tier
@@ -58,6 +59,8 @@ a test uses it. Registered markers are labels; the directory decides what runs, 
 - **Contract**: read-only or informational calls only. See
   [the contract tier decision](../decisions/2026-08-23-contract-test-tier.md).
 - **Smoke**: read-only; nothing here writes to hermes-01 or calls an exchange (AGENTS.md rule 7).
+- **End-to-end**: no network and no secrets; the feed, clock and notification channels are the only fakes.
+  The recording never changes, so the pinned signals change only with the strategy.
 - **Mutation**: the rationale for cosmic-ray is in
   [the mutation tool decision](../decisions/2026-08-22-mutation-testing-cosmic-ray.md).
 
