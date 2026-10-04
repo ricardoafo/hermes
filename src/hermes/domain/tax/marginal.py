@@ -5,8 +5,11 @@ other gains and carried losses (ADR-016 decision 7), so the hermes figure is
 the difference between two full computations of the savings tax.
 
 Personal minimum (IRPF arts. 56.2 and 66.1): the minimum is applied to the
-general base first; whatever the general base cannot absorb shelters the
-bottom of the savings base, and the scale applies to the part that exceeds it.
+general base first; whatever the general base cannot absorb forms part of the
+savings base. Art. 66.1.2: the scale is applied to the whole savings base, and
+the result is reduced by the same scale applied to the part of the base that
+corresponds to the minimum. The relief is therefore at the scale's bottom rates,
+not a cut from the top of the base.
 
 Reference: ADR-016 decisions 6 and 7, change ``tax-estimates`` D-1.
 """
@@ -21,24 +24,22 @@ from hermes.domain.tax.netting import NettingResult, TaxpayerYear, net_savings_b
 from hermes.domain.tax.precision import exact
 from hermes.domain.tax.scale import SavingsScale
 
-__all__ = ["MarginalTax", "SavingsTax", "marginal_tax", "savings_tax", "taxable_savings_base"]
+__all__ = ["MarginalTax", "SavingsTax", "marginal_tax", "minimum_remainder", "savings_tax"]
 
 _ZERO: Final[Decimal] = Decimal(0)
 
 
-def taxable_savings_base(savings_base: Decimal, taxpayer: TaxpayerYear) -> Decimal:
-    """Return the part of the savings base the scale applies to.
+def minimum_remainder(taxpayer: TaxpayerYear) -> Decimal:
+    """Return the part of the personal minimum the general base cannot absorb.
 
     Args:
-        savings_base: Netted savings base.
         taxpayer: Supplies the general income and the personal minimum.
 
     Returns:
-        ``max(0, savings_base - max(0, personal_minimum - general_income))``.
+        ``max(0, personal_minimum - general_income)`` (IRPF art. 56.2).
     """
     with exact():
-        remainder = max(taxpayer.personal_minimum - taxpayer.general_income, _ZERO)
-        return max(savings_base - remainder, _ZERO)
+        return max(taxpayer.personal_minimum - taxpayer.general_income, _ZERO)
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,12 +48,13 @@ class SavingsTax:
 
     Attributes:
         netting: Netting outcome of the scenario.
-        taxable: Taxable savings base after the personal-minimum remainder.
-        tax: Tax on ``taxable``.
+        sheltered: Part of the savings base that corresponds to the minimum:
+            ``min(minimum remainder, savings base)``.
+        tax: ``scale(savings base) - scale(sheltered)`` (art. 66.1.2).
     """
 
     netting: NettingResult = field(repr=False)
-    taxable: Decimal = field(repr=False)
+    sheltered: Decimal = field(repr=False)
     tax: Decimal = field(repr=False)
 
 
@@ -68,11 +70,14 @@ def savings_tax(
         year: Tax year.
 
     Returns:
-        The netting, taxable base and tax.
+        The netting, the sheltered part of the base and the tax.
     """
     netting = net_savings_base(year, hermes_net, taxpayer)
-    taxable = taxable_savings_base(netting.savings_base, taxpayer)
-    return SavingsTax(netting=netting, taxable=taxable, tax=scale.tax(taxable))
+    base = netting.savings_base
+    sheltered = min(minimum_remainder(taxpayer), base)
+    with exact():
+        tax = max(scale.tax(base) - scale.tax(sheltered), _ZERO)
+    return SavingsTax(netting=netting, sheltered=sheltered, tax=tax)
 
 
 @dataclass(frozen=True, slots=True)
