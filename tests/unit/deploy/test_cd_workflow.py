@@ -127,7 +127,7 @@ def test_bundle_job_runs_without_a_dry_run_guard() -> None:
 
 def test_deploy_waits_for_the_bundle() -> None:
     """Ordering: the deploy job installs only a bundle that was built."""
-    assert _workflow()["jobs"]["deploy"]["needs"] == "bundle"
+    assert "bundle" in _workflow()["jobs"]["deploy"]["needs"]
 
 
 def test_smoke_runs_after_the_install_and_before_the_rollback() -> None:
@@ -189,7 +189,7 @@ def test_bootstrap_installs_the_same_uv_version_as_the_bundle_job() -> None:
     assert [match.group(1)] == _setup_uv_versions("bundle")
 
 
-@pytest.mark.parametrize("job", ["bundle", "deploy"])
+@pytest.mark.parametrize("job", ["bundle", "deploy", "notes"])
 def test_setup_uv_versions_agree_across_jobs(job: str) -> None:
     """Every job that uses uv pins the same version as the reusable wheel build."""
     wheel_workflow = yaml.safe_load(
@@ -310,3 +310,67 @@ def test_gate_runs_e2e_and_serve_path_contracts_before_the_bar_hold() -> None:
     assert "tests/e2e -m e2e" in runs
     assert set(re.findall(r"tests/contract/\S+\.py", runs)) == _SERVE_PATH_CONTRACTS
     assert _workflow()["jobs"]["build"]["needs"] == "gate"
+
+
+def test_bundle_ships_every_unit_and_timer_for_install_release() -> None:
+    """install_release.sh syncs units from the bundle, so the bundle carries them all (#626)."""
+    bundle_text = "\n".join(str(step.get("run", "")) for step in _steps("bundle"))
+
+    assert (
+        'install -m 0644 deploy/systemd/*.service deploy/systemd/*.timer "$stage/deploy/systemd/"'
+        in bundle_text
+    )
+
+
+def test_release_job_runs_only_after_a_good_real_deploy() -> None:
+    """A release names what is live, so it waits on the deploy and skips dry runs (#626)."""
+    release = _workflow()["jobs"]["release"]
+
+    assert "deploy" in release["needs"]
+    assert release["if"] == _DRY_RUN_GUARD
+
+
+def test_only_the_release_job_can_write_to_the_repo() -> None:
+    """contents: write is scoped to the job that creates the tag; the rest stay read-only."""
+    workflow = _workflow()
+    writers = [
+        name
+        for name, job in workflow["jobs"].items()
+        if job.get("permissions", {}).get("contents") == "write"
+    ]
+
+    assert workflow["permissions"] == {"contents": "read"}
+    assert writers == ["release"]
+
+
+def test_release_is_tagged_with_the_shipped_commit() -> None:
+    """The tag deploy-<sha12> sits on RELEASE_SHA, so the next deploy's notes start there."""
+    script = next(
+        str(step["with"]["script"])
+        for step in _steps("release")
+        if str(step.get("uses", "")).startswith("actions/github-script@")
+    )
+
+    assert "const sha = process.env.RELEASE_SHA;" in script
+    assert "const tag = `deploy-${sha.slice(0, 12)}`;" in script
+    assert "target_commitish: sha," in script
+
+
+def test_notes_checkout_has_the_history_and_tags_the_notes_need() -> None:
+    """release_notes.py walks back to the previous deploy tag; a shallow clone has none."""
+    checkout = next(
+        step
+        for step in _steps("notes")
+        if str(step.get("uses", "")).startswith("actions/checkout@")
+    )
+
+    assert checkout["with"]["fetch-depth"] == 0
+
+
+def test_telegram_announcement_never_fails_the_deploy() -> None:
+    """The release is live before the message goes out; a Telegram outage is not a failed deploy."""
+    step = next(s for s in _steps("deploy") if _label(s) == "Announce the release on Telegram")
+    labels = [_label(s) for s in _steps("deploy")]
+
+    assert step["continue-on-error"] is True
+    assert labels.index("Smoke tests") < labels.index("Announce the release on Telegram")

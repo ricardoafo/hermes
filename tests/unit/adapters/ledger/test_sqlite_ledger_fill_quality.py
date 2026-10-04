@@ -46,6 +46,8 @@ def _quality(
     strategy: StrategyId = _STRATEGY,
     model_price: Decimal | None = Decimal("84800.5"),
     drift_bps: Decimal | None = Decimal("3.9"),
+    arrival_price: Decimal | None = None,
+    delta_ms: int | None = None,
 ) -> FillQualityRecorded:
     """Build a live-book quality row at ``at``."""
     return FillQualityRecorded(
@@ -62,6 +64,8 @@ def _quality(
         drift_bps=drift_bps,
         book_mid=Decimal("84833.115"),
         slippage=Decimal("0.00000005"),
+        arrival_price=arrival_price,
+        delta_ms=delta_ms,
     )
 
 
@@ -108,4 +112,43 @@ def test_an_unreadable_payload_raises_ledger_error(ledger: SqliteLedger) -> None
     connection.commit()
 
     with pytest.raises(LedgerError, match="unreadable payload"):
+        ledger.fill_quality_events(_STRATEGY)
+
+
+def test_arrival_price_and_delta_round_trip(ledger: SqliteLedger) -> None:
+    """The v2 fields are stored and read back exactly, Decimal and int."""
+    row = _quality(_T0, arrival_price=Decimal("84990.5"), delta_ms=6012)
+    ledger.append_event(row)
+
+    (read,) = ledger.fill_quality_events(_STRATEGY)
+    assert (read.arrival_price, read.delta_ms) == (Decimal("84990.5"), 6012)
+
+
+def test_a_v1_row_reads_back_with_the_new_fields_none(ledger: SqliteLedger) -> None:
+    """A row written before schema v2 (no keys, version 1) stays readable."""
+    ledger.append_event(_quality(_T0))
+    ledger._conn.execute(
+        "UPDATE events SET event_schema_version = 1, "
+        "payload_json = json_remove(payload_json, '$.arrival_price', '$.delta_ms') "
+        "WHERE event_type = 'FillQualityRecorded'"
+    )
+    ledger._conn.commit()
+
+    (read,) = ledger.fill_quality_events(_STRATEGY)
+    assert (read.arrival_price, read.delta_ms, read.fill_price) == (
+        None,
+        None,
+        Decimal("84833.11"),
+    )
+
+
+def test_an_unknown_schema_version_raises_ledger_error(ledger: SqliteLedger) -> None:
+    """A row from a schema this reader does not know is refused, not guessed."""
+    ledger.append_event(_quality(_T0))
+    ledger._conn.execute(
+        "UPDATE events SET event_schema_version = 9 WHERE event_type = 'FillQualityRecorded'"
+    )
+    ledger._conn.commit()
+
+    with pytest.raises(LedgerError, match="unsupported FillQualityRecorded schema version 9"):
         ledger.fill_quality_events(_STRATEGY)
