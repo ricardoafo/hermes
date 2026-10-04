@@ -53,6 +53,7 @@ from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
 __all__ = ["main", "systemd_unit_state"]
 
 _UNIT: Final = "hermes.service"
+_BOT_UNIT: Final = "hermes-bot.service"
 _USAGE: Final = (
     "Usage: hermes status [--config-dir DIR] [--db PATH] [--json | --summary]\n"
     "                     [--journal FILE|-] [--restarts N]\n"
@@ -72,6 +73,7 @@ def main(
     stdin: TextIO | None = None,
     demo_flag: str | None = None,
     env: Mapping[str, str] | None = None,
+    bot_state: Callable[[], UnitState] | None = None,
 ) -> int:
     """Handle ``hermes status``.
 
@@ -87,6 +89,7 @@ def main(
         stdin: Where ``--journal -`` reads from; defaults to ``sys.stdin``.
         demo_flag: Scenario from the leading ``--demo`` option, if any.
         env: Environment snapshot for ``HERMES_CONSOLE_DEMO``; defaults to empty.
+        bot_state: Probe for ``hermes-bot.service``; defaults to systemd.
 
     Returns:
         Process exit code.
@@ -110,7 +113,14 @@ def main(
         return 0
     if demo_flag or (env or {}).get(console_module.DEMO_ENV_VAR, "").strip():
         return _demo_status(stream, demo_flag=demo_flag, env=env or {}, as_json=parsed.json)
-    return _ledger_status(parsed, stream, now=now, unit_state=unit_state, stdin=stdin or sys.stdin)
+    return _ledger_status(
+        parsed,
+        stream,
+        now=now,
+        unit_state=unit_state,
+        stdin=stdin or sys.stdin,
+        bot_state=bot_state,
+    )
 
 
 def _ledger_status(
@@ -120,6 +130,7 @@ def _ledger_status(
     now: datetime | None,
     unit_state: Callable[[], UnitState] | None,
     stdin: TextIO,
+    bot_state: Callable[[], UnitState] | None,
 ) -> int:
     """Build the report from config, the ledger and systemd, then print it."""
     try:
@@ -130,6 +141,7 @@ def _ledger_status(
 
     at = now if now is not None else datetime.now(UTC)
     unit = (unit_state or systemd_unit_state)()
+    bot = (bot_state or (lambda: systemd_unit_state(unit=_BOT_UNIT)))()
     market = config.market_data
     try:
         with SqliteStatusReader.open(parsed.db) as reader:
@@ -155,17 +167,19 @@ def _ledger_status(
         counts = _journal_counts(parsed.journal, stdin)
         stream.write(daily_line(report, counts, parsed.restarts) + "\n")
     else:
-        _emit(report, stream, as_json=parsed.json)
+        _emit(report, stream, as_json=parsed.json, bot=bot)
     return code
 
 
 def systemd_unit_state(
     run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    unit: str = _UNIT,
 ) -> UnitState:
-    """Ask systemd how ``hermes.service`` is doing.
+    """Ask systemd how ``unit`` is doing.
 
     Args:
         run: ``subprocess.run`` stand-in for tests.
+        unit: The unit to ask about; ``hermes.service`` by default.
 
     Returns:
         The unit state, or ``UNKNOWN`` where there is no systemd (a dev box).
@@ -175,7 +189,7 @@ def systemd_unit_state(
         return UnitState.UNKNOWN
     try:
         result = run(
-            [systemctl, "show", _UNIT, "--property=ActiveState,SubState"],
+            [systemctl, "show", unit, "--property=LoadState,ActiveState,SubState"],
             capture_output=True,
             text=True,
             check=False,
@@ -188,6 +202,8 @@ def systemd_unit_state(
         key, sep, value = line.partition("=")
         if sep:
             props[key] = value
+    if props.get("LoadState") == "not-found":
+        return UnitState.NOT_INSTALLED
     return unit_state_from(props.get("ActiveState", ""), props.get("SubState", ""))
 
 
@@ -253,10 +269,12 @@ def _demo_status(
     return 0 if heartbeat.state is HeartbeatState.OK else 1
 
 
-def _emit(report: StatusReport, stream: TextIO, *, as_json: bool) -> None:
+def _emit(
+    report: StatusReport, stream: TextIO, *, as_json: bool, bot: UnitState = UnitState.UNKNOWN
+) -> None:
     """Write ``report`` as JSON or as the Rich human view."""
     if as_json:
-        payload: dict[str, Any] = report_to_dict(report)
+        payload: dict[str, Any] = report_to_dict(report, bot=bot)
         stream.write(json.dumps(payload, indent=2) + "\n")
         return
-    render_status(report, Console(file=stream, highlight=False))
+    render_status(report, Console(file=stream, highlight=False), bot=bot)

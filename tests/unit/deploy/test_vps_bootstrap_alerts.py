@@ -40,7 +40,7 @@ def _function(name: str) -> str:
 def _run(tmp_path: Path, function: str, call: str) -> tuple[subprocess.CompletedProcess[str], str]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
-    for name in ("systemctl", "install"):
+    for name in ("systemctl", "install", "chown"):
         stub = bin_dir / name
         stub.write_text(_RECORDER, encoding="utf-8", newline="\n")
         stub.chmod(0o755)
@@ -182,3 +182,44 @@ def test_daily_timer_stays_off_without_a_slack_token(tmp_path: Path) -> None:
     result, calls = _run(tmp_path, "ensure_daily_timer", f"ensure_daily_timer {env_file}")
 
     assert (result.returncode, calls) == (0, "")
+
+
+@_needs_bash
+def test_bot_env_file_holds_only_the_telegram_values_and_the_unit_starts(tmp_path: Path) -> None:
+    """ADR-015 D-05: the bot gets its own env file with no exchange keys, then runs."""
+    env_file = (tmp_path / "env.bot").as_posix()
+    call = (
+        "HERMES_TELEGRAM__BOT_TOKEN=123:fake HERMES_TELEGRAM__CHAT_ID=-100 "  # gitleaks:allow
+        "HERMES_BINANCE_MAINNET__API_KEY=secret "
+        f"ensure_bot {env_file}"
+    )
+
+    result, calls = _run(tmp_path, "ensure_bot", call)
+
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "env.bot").read_text(encoding="utf-8") == (
+        'HERMES_TELEGRAM__BOT_TOKEN="123:fake"\n'  # gitleaks:allow
+        'HERMES_TELEGRAM__CHAT_ID="-100"\n'
+        'HERMES_ENV="prod"\n'
+    )
+    assert "systemctl enable hermes-bot.service" in calls.splitlines()
+    assert "systemctl restart hermes-bot.service" in calls.splitlines()
+
+
+@_needs_bash
+def test_bot_stays_off_and_its_env_file_is_removed_without_both_values(tmp_path: Path) -> None:
+    """No chat id: the unit is disabled and no stale token file is left behind."""
+    stale = tmp_path / "env.bot"
+    stale.write_text('HERMES_TELEGRAM__BOT_TOKEN="old"\n', encoding="utf-8")
+    call = (
+        "HERMES_TELEGRAM__BOT_TOKEN=123:fake HERMES_TELEGRAM__CHAT_ID= "  # gitleaks:allow
+        f"ensure_bot {stale.as_posix()}"
+    )
+
+    result, calls = _run(tmp_path, "ensure_bot", call)
+
+    assert result.returncode == 0, result.stderr
+    assert (stale.exists(), calls.splitlines()) == (
+        False,
+        ["systemctl disable --now hermes-bot.service"],
+    )

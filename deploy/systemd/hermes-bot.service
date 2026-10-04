@@ -1,0 +1,43 @@
+# Read-only Telegram bot (ADR-015, #379).
+#
+# Long-polls Telegram over outbound HTTPS, answers the operator's chat with
+# /status /next /signals /money /pos /logs, and pushes change-only heartbeat
+# alerts. Separate from hermes.service so a chat bug can never stall the bar
+# loop. It never changes anything: it opens the ledger read-only and gets no
+# exchange credentials.
+#
+# Secrets: only /etc/hermes/env.bot (root:root 0600, the Telegram token and
+# chat id), written by vps-bootstrap. This unit does NOT load
+# env.production. vps-bootstrap enables it only when both values are set.
+
+[Unit]
+Description=Hermes read-only Telegram bot (hermes bot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hermes
+Group=hermes
+
+# Read by systemd as root before dropping to User=hermes. No leading "-": a
+# missing file must fail the start, not run a bot without a token.
+EnvironmentFile=/etc/hermes/env.bot
+# Read access to the system journal, for /logs.
+SupplementaryGroups=systemd-journal
+WorkingDirectory=/var/lib/hermes
+
+ExecStart=/opt/hermes/current/.venv/bin/hermes bot --config-dir /opt/hermes/current/config --db /var/lib/hermes/hermes.sqlite3
+Restart=on-failure
+RestartSec=30s
+
+# Hardening: same pattern as the other hermes units. The bot only reads the
+# state dir, so it gets no write path at all.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/var/lib/hermes
+
+[Install]
+WantedBy=multi-user.target

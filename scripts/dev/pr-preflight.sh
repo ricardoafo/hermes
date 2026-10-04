@@ -170,7 +170,8 @@ if ! command -v uv >/dev/null 2>&1; then
         "/usr/local/bin/uv"
     do
         if [[ -x "$candidate" ]]; then
-            export PATH="$(dirname "$candidate"):$PATH"
+            PATH="$(dirname "$candidate"):$PATH"
+            export PATH
             break
         fi
     done

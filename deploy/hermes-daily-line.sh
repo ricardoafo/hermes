@@ -16,6 +16,11 @@
 #   HERMES_SLACK__BOT_TOKEN, and the channel from HERMES_DAILY_LINE__CHANNEL,
 #   falling back to HERMES_SLACK__DEFAULT_CHANNEL.
 #
+# Dead-man's switch (#38): when HERMES_HEALTHCHECKS__DAILY_PING_URL is set the
+# script pings it after a sent line and pings <url>/fail when the line could
+# not be sent, so a timer that stops firing turns the check red. Unset: no ping.
+# A failed ping is logged and never changes the exit code.
+#
 # Exit codes: 0 sent; 1 Slack credentials missing; 2 Slack refused the line;
 # anything else is curl's own exit status. A failure fails the oneshot, so it
 # shows in `systemctl --failed` until tomorrow's run succeeds.
@@ -34,10 +39,7 @@ state_dir="${STATE_DIRECTORY:-/var/lib/hermes-daily}"
 
 token="${HERMES_SLACK__BOT_TOKEN:-}"
 channel="${HERMES_DAILY_LINE__CHANNEL:-${HERMES_SLACK__DEFAULT_CHANNEL:-}}"
-if [ -z "$token" ] || [ -z "$channel" ]; then
-    echo "hermes-daily-line: HERMES_SLACK__BOT_TOKEN and a channel must be set; no line sent" >&2
-    exit 1
-fi
+hc_url="${HERMES_HEALTHCHECKS__DAILY_PING_URL:-}"
 
 # Escape $1 for a double-quoted value in a curl config file (curl -K).
 curl_quote() {
@@ -82,6 +84,20 @@ if [ -z "$line" ]; then
     line="hermes daily line: \`hermes status --summary\` printed nothing on ${HOSTNAME:-unknown}"
 fi
 
+# Ping the dead-man's switch: "" for success, "/fail" for a failed run. The URL
+# reaches curl as a config on stdin so the check id stays out of the argv.
+hc_ping() {
+    [ -n "$hc_url" ] || return 0
+    printf 'url = "%s"
+' "$(curl_quote "${hc_url}$1")"         | curl --silent --show-error --fail --max-time 10 --retry 2 -o /dev/null --config -         || echo "hermes-daily-line: healthcheck ping failed" >&2
+}
+
+if [ -z "$token" ] || [ -z "$channel" ]; then
+    echo "hermes-daily-line: HERMES_SLACK__BOT_TOKEN and a channel must be set; no line sent" >&2
+    hc_ping /fail
+    exit 1
+fi
+
 # The bot token goes in a header, so the request reaches curl as a config on
 # stdin (printf is a builtin, so no argv either): nothing secret ends up in
 # `ps`. Slack answers HTTP 200 with "ok":false on API errors.
@@ -97,7 +113,9 @@ case "$response" in
     *'"ok":true'* | *'"ok": true'*) ;;
     *)
         echo "hermes-daily-line: Slack refused the line: ${response:0:200}" >&2
+        hc_ping /fail
         exit 2
         ;;
 esac
 echo "hermes-daily-line: sent: $line"
+hc_ping ""

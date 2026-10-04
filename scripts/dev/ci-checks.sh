@@ -97,7 +97,7 @@ run_one() {
         deadcode) uv run vulture src/ ;;
         # Blocks GPL/AGPL/LGPL, which create commercial-use constraints.
         licenses)
-            uv tool install --quiet pip-licenses \
+            uv tool install --quiet pip-licenses==5.5.5 \
                 && uv tool run pip-licenses --format=json | python3 scripts/dev/license-check.py
             ;;
         unit) run_tier unit "$@" ;;

@@ -76,6 +76,13 @@ repos:
         files: ^scripts/dev/pr-ready-check\.sh$
         pass_filenames: false
 
+      - id: doctor-self-test
+        name: doctor self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/doctor.sh'
+        language: system
+        files: ^scripts/dev/doctor\.sh$
+        pass_filenames: false
+
       - id: regenerate-guides-index
         name: guides index builds on docs/guides/ change
         # Checks every guide can be indexed (H1 + Description) without
@@ -129,6 +136,13 @@ repos:
         files: ^scripts/dev/launch-agent\.sh$
         pass_filenames: false
 
+      - id: prune-merged-branches-self-test
+        name: prune-merged-branches self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/prune-merged-branches.sh'
+        language: system
+        files: ^scripts/dev/prune-merged-branches\.sh$
+        pass_filenames: false
+
       - id: changelog-check-self-test
         name: changelog-check self-test
         entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/changelog-check.sh'
@@ -171,6 +185,12 @@ repos:
         language: system
         files: ^scripts/dev/reproducibility-check\.py$
         pass_filenames: false
+
+      - id: migration-sql-check
+        name: ledger migration names + no transaction control (#483)
+        entry: uv run python scripts/dev/migration-sql-check.py
+        language: system
+        files: ^src/hermes/adapters/ledger/migrations/.*\.sql$
 
       - id: no-naive-datetime
         name: no naive datetimes (grep guard)

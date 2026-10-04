@@ -271,6 +271,40 @@ Enabled at the repo level. Feature branches disappear as soon as their PR
 merges. This keeps `git branch -r` uncluttered and makes stale branches
 detectable at a glance.
 
+### Branch and worktree cleanup strategy
+
+Nothing finished should outlive its PR, and nothing in flight should be
+deleted. `scripts/dev/prune-merged-branches.sh` decides which is which
+and runs at three points, so nobody has to remember to clean up:
+
+| What | When it is deleted | Who runs it |
+| --- | --- | --- |
+| Remote branch of a merged PR | On merge | GitHub (auto-delete) and the merge queue |
+| Local worktree and branch of a merged or closed PR | Next agent launch | `launch-agent.sh` (`--yes --local-only`) |
+| Remote branch of a PR closed unmerged | 3 days after close | Weekly `branch-prune` job in `scheduled.yml` |
+| Remote branch that never had a PR | 14 days without a commit | Weekly `branch-prune` job |
+
+```mermaid
+flowchart LR
+    W[Worktree or local branch] --> O{Open PR?}
+    O -- yes --> K[Keep]
+    O -- no --> F{Tip inside its closed PR head,<br/>or every patch in main?}
+    F -- no --> K
+    F -- yes --> C{Uncommitted or<br/>untracked files?}
+    C -- yes --> K
+    C -- no --> D[Delete]
+```
+
+A local branch or worktree counts as finished only when nothing on it
+would be lost: its tip is contained in the head of its merged or closed
+PR, or every patch on it is already in `origin/main`. A worktree is also
+kept while it has any uncommitted or untracked file, and anything with
+an open PR is always kept. The age limits exist because writers push for
+hours before opening a PR, and a closed PR is sometimes reopened.
+
+To clean by hand, run it without flags for a dry run, then with `--yes`.
+`HERMES_NO_AUTO_PRUNE=1` skips the automatic local run for one launch.
+
 ### Delete the local branch the moment the push lands in GH
 
 **Every push is followed by a local branch delete.** Push completing is

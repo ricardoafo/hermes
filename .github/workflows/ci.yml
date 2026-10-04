@@ -53,7 +53,10 @@ jobs:
   ci-success:
     name: CI success
     runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
-    timeout-minutes: 30
+    # A normal run takes 5-8 minutes on a busy pool. Each network step
+    # has its own short timeout, so a hung download fails that step
+    # instead of holding a runner until this cap.
+    timeout-minutes: 20
     permissions:
       contents: read
       pull-requests: write # PR body read, auto-label, coverage comment
@@ -206,11 +209,10 @@ jobs:
               "500": "size:l"
             }
 
-      # Runs before setup-node so markdownlint-cli2 keeps the image's
-      # own Node.
       - name: Install markdownlint-cli2 (if not already pre-baked)
         id: mdl-install
         if: ${{ !cancelled() && steps.changeset.outputs.docs == 'true' }}
+        timeout-minutes: 3
         run: |
           if ! command -v markdownlint-cli2 >/dev/null 2>&1; then
             sudo npm install -g markdownlint-cli2@0.23.2
@@ -235,6 +237,7 @@ jobs:
         run: bash scripts/dev/ci-checks.sh codeowners
 
       - name: Install gitleaks (if not already pre-baked)
+        timeout-minutes: 3
         id: gitleaks-install
         if: ${{ !cancelled() && github.event_name == 'pull_request' }}
         run: |
@@ -256,15 +259,13 @@ jobs:
 
       # merge-queue.yml logic lives in tools/merge/decisions.cjs so it
       # can be asserted against fixtures. Runs on every change so a
-      # regression cannot be masked by a docs-only diff.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        id: node
-        if: ${{ !cancelled() }}
-        with:
-          node-version: '20'
-
+      # regression cannot be masked by a docs-only diff. Runs on the
+      # runner image's own Node 24 (Dockerfile NODE_MAJOR). setup-node
+      # found no Node in the tool cache and downloaded one on every
+      # ephemeral job; that download hung #467 twice (2026-10-03).
       - name: Merge-decisions tests
-        if: ${{ !cancelled() && steps.node.outcome == 'success' }}
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
         run: bash scripts/dev/ci-checks.sh merge-decisions
 
       # Python 3.14 has tomllib in stdlib — no uv setup needed.
@@ -288,14 +289,37 @@ jobs:
             exit 1
           fi
 
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+      # The runner image bakes uv 0.12.5 (Dockerfile UV_VERSION), but
+      # setup-uv looked only in the wiped tool cache and downloaded uv on
+      # every job. Use the baked binary when it is the pinned version;
+      # install that exact version otherwise (the ubuntu-latest
+      # fallback). Any other version fails here instead of drifting.
+      - name: uv 0.12.5
         id: uv
         if: ${{ !cancelled() && steps.changeset.outputs.code == 'true' }}
-        with: { version: "0.12.5" }
+        timeout-minutes: 3
+        env:
+          UV_PIN: "0.12.5"
+        run: |
+          set -euo pipefail
+          have=$(uv --version 2>/dev/null | cut -d' ' -f2 || true)
+          if [ "$have" != "$UV_PIN" ]; then
+            curl -LsSf "https://github.com/astral-sh/uv/releases/download/${UV_PIN}/uv-installer.sh" \
+              | env UV_INSTALL_DIR="$HOME/.local/bin" sh
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.local/bin:$PATH"
+          fi
+          have=$(uv --version | cut -d' ' -f2)
+          if [ "$have" != "$UV_PIN" ]; then
+            echo "::error::uv is $have, expected $UV_PIN"
+            exit 1
+          fi
+          echo "uv $have at $(command -v uv)"
 
       - name: uv sync
         id: sync
         if: ${{ !cancelled() && steps.uv.outcome == 'success' }}
+        timeout-minutes: 5
         run: uv sync --frozen
 
       # Quality gates. Every command lives in scripts/dev/ci-checks.sh, which
