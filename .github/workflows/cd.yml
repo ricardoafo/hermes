@@ -331,7 +331,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────
   confirm:
     name: Confirm deployment
-    needs: [build, bundle, deploy]
+    needs: [gate, build, bundle, deploy]
     if: '!cancelled()'
     runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 1
