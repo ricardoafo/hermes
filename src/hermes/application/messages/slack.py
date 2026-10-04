@@ -1,67 +1,51 @@
-"""Slack message templates — pure functions per concrete event.
+"""Slack message templates.
 
-Each concrete ``DomainEvent`` gets its own ``_render_<event>`` function
-that produces a :class:`SlackMessage` — a NamedTuple carrying the plain
-text fallback, the Block Kit blocks, and any file attachments to upload
-after posting the message.
+``slack_template`` turns a domain event into a :class:`SlackMessage`: the
+plain-text fallback, the Block Kit blocks and any file attachments to upload
+after posting. The facts and the shapes come from
+:mod:`hermes.application.messages.notes` and
+:mod:`hermes.application.messages.shapes`; this module picks the shape the
+event's family gets on Slack and wraps the lines in blocks.
 
-Format skeleton for SHORT events:
+Block layout: the headline is bold in one section block together with the
+detail lines, and the last line (strategy, hint, correlation ref) sits in a
+context block. A one-line shape is a single section block.
 
-    header block: "━ <event title> — <ISO timestamp> ━"
-    section block: 2-4 key-fact lines
-    context block: "ref: <correlation-tail>"
-
-Format skeleton for LONG events (DAILY_TRADE_DIGEST, WEEKLY_REBALANCE_REPORT,
-MONTHLY_TAX_REPORT): same header + summary section PLUS one or more file
-attachments (generated CSV bytes; the adapter uploads them as threaded
-replies). PDF generation is deferred — MVP1 ships CSV only.
+The daily digest is the long report: once the phase is ``CERTIFIED`` its
+winners and losers go in an attached CSV, uploaded as a threaded reply.
+Before certification no CSV is built and no outcome figure appears.
 
 Design invariants
 -----------------
 
-- **Pure**: no I/O, no time reads (event carries its own timestamp), no
-  state. Two calls with equal input return equal ``SlackMessage``
-  tuples with equal-by-value attachments.
-- **Application-layer**: MAY import ``hermes.domain.events`` + domain
-  value objects. MUST NOT import ``hermes.adapters`` or
-  ``hermes.infrastructure``.
-- **No runtime-mutable registry**: :data:`_TEMPLATES` is populated at
-  import time. A missing entry raises ``ValueError`` at first render.
-- **Attachment generation**: CSV bytes generated via stdlib ``csv``.
-  No third-party deps. PDF generation deliberately out-of-scope for
-  MVP1 (reportlab / weasyprint would drag in a large native tree).
-- **Aggregate blind**: templates that can carry outcome figures take a
-  :class:`ReportingPhase` and render blind unless it is ``CERTIFIED``.
-  They are registered in :data:`_PHASE_AWARE_TEMPLATES`, which the
-  dispatcher consults first.
+- **Pure**: no I/O, no time reads (the event carries its own timestamp), no
+  state. Two calls with equal input return equal ``SlackMessage`` tuples.
+- **Application-layer**: imports domain events and sibling message modules,
+  never ``hermes.adapters`` or ``hermes.infrastructure``.
+- **Aggregate blind**: only :class:`~hermes.domain.events.daily_trade_digest.DailyTradeDigest`
+  reads the :class:`ReportingPhase`; it renders blind unless the caller
+  passes ``CERTIFIED``.
 
-Reference: 2026-08-23-slack-alongside-telegram.md; code-conventions.md §1.
+Reference: docs/decisions/2026-10-04-notification-templates-v2.md;
+    openspec/changes/144-notification-system/change.md.
 """
 
 from __future__ import annotations
 
 import csv
 import io
-from collections.abc import Callable
 from typing import Any, Final, NamedTuple
 
-from hermes.application.messages._escape import correlation_tail
+from hermes.application.messages._escape import escape_slack
+from hermes.application.messages.format import SEPARATOR, fmt_ref
+from hermes.application.messages.notes import build_note
 from hermes.application.messages.reporting_phase import (
     DEFAULT_REPORTING_PHASE,
-    OUTCOME_WITHHELD_NOTICE,
     ReportingPhase,
 )
-from hermes.domain.events.anomaly_detected import AnomalyDetected
-from hermes.domain.events.balance_low import BalanceLow
+from hermes.application.messages.shapes import Channel, render_lines, shape_for
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.daily_trade_digest import DailyTradeDigest
-from hermes.domain.events.rebalance_triggered import RebalanceTriggered
-from hermes.domain.events.signal_emitted import SignalEmitted
-from hermes.domain.events.strategy_paused import StrategyPaused
-from hermes.domain.events.strategy_resumed import StrategyResumed
-from hermes.domain.events.trade_executed import TradeExecuted
-from hermes.domain.events.trade_rejected import TradeRejected
-from hermes.domain.strategy.signal import SignalKind
 
 __all__ = ["FileAttachment", "SlackMessage", "slack_template"]
 
@@ -88,7 +72,7 @@ class FileAttachment(NamedTuple):
 
 
 class SlackMessage(NamedTuple):
-    """A rendered Slack post — fallback text, Block Kit blocks, and files.
+    """A rendered Slack post: fallback text, Block Kit blocks, and files.
 
     Frozen NamedTuple. The adapter posts ``text`` + ``blocks`` in one
     ``chat.postMessage`` call, then uploads every ``attachments`` entry
@@ -97,10 +81,10 @@ class SlackMessage(NamedTuple):
     Fields:
         text: Plain-text fallback for clients that do not render Block
             Kit. Also serves as the notification preview.
-        blocks: Block Kit blocks list — dicts matching Slack's schema
+        blocks: Block Kit blocks list, dicts matching Slack's schema
             (https://api.slack.com/reference/block-kit/blocks).
         attachments: Files to upload after the message. Empty tuple for
-            short events; populated for long/reporting events.
+            short events; populated for the certified daily digest.
     """
 
     text: str
@@ -108,184 +92,23 @@ class SlackMessage(NamedTuple):
     attachments: tuple[FileAttachment, ...]
 
 
-def _header_block(title: str, iso_timestamp: str) -> dict[str, Any]:
-    """Return a Block Kit ``header`` block with the standard bar formatting.
-
-    Args:
-        title: The event title (rendered inside the bar).
-        iso_timestamp: ISO-8601 UTC timestamp string.
-
-    Returns:
-        A Block Kit ``header`` block dict.
-    """
-    text = f"\u2501 {title} \u2014 {iso_timestamp} \u2501"
-    return {"type": "header", "text": {"type": "plain_text", "text": text, "emoji": True}}
-
-
 def _section_block(text: str) -> dict[str, Any]:
-    """Return a Block Kit ``section`` block with mrkdwn text.
-
-    Args:
-        text: The section body (Slack mrkdwn accepted).
-
-    Returns:
-        A Block Kit ``section`` block dict.
-    """
+    """Return a Block Kit ``section`` block carrying ``text`` as mrkdwn."""
     return {"type": "section", "text": {"type": "mrkdwn", "text": text}}
 
 
-def _context_footer(correlation_id: str) -> dict[str, Any]:
-    """Return a Block Kit ``context`` footer with ``ref: <tail>``.
-
-    Args:
-        correlation_id: Full correlation ULID; only the tail appears.
-
-    Returns:
-        A Block Kit ``context`` block dict.
-    """
-    tail = correlation_tail(correlation_id)
-    return {"type": "context", "elements": [{"type": "mrkdwn", "text": f"ref: `{tail}`"}]}
+def _context_block(text: str) -> dict[str, Any]:
+    """Return a Block Kit ``context`` block carrying ``text`` as mrkdwn."""
+    return {"type": "context", "elements": [{"type": "mrkdwn", "text": text}]}
 
 
-def _iso(event: DomainEvent) -> str:
-    """Return ``event.occurred_at`` as an ISO-8601 UTC string."""
-    return event.occurred_at.isoformat()
-
-
-# ---------------------------------------------------------------------------
-# Concrete templates
-# ---------------------------------------------------------------------------
-
-
-def _render_strategy_paused(event: StrategyPaused) -> SlackMessage:
-    """Render a StrategyPaused as a short Slack message with no attachments."""
-    title = "Strategy paused"
-    text = f"{title} — {event.strategy_id} — {event.reason}"
-    body = (
-        f"*Strategy*: `{event.strategy_id}`\n"
-        f"*Severity*: `{event.severity.value}`\n"
-        f"*Reason*: {event.reason}"
-    )
-    blocks = [
-        _header_block(title, _iso(event)),
-        _section_block(body),
-        _context_footer(event.correlation_id),
-    ]
-    return SlackMessage(text=text, blocks=blocks, attachments=())
-
-
-def _render_strategy_resumed(event: StrategyResumed) -> SlackMessage:
-    """Render a StrategyResumed as a short recovery notice."""
-    title = "Strategy resumed"
-    text = f"{title} — {event.strategy_id} — paused for {event.pause_duration_seconds}s"
-    body = (
-        f"*Strategy*: `{event.strategy_id}`\n*Paused for*: `{event.pause_duration_seconds}` seconds"
-    )
-    blocks = [
-        _header_block(title, _iso(event)),
-        _section_block(body),
-        _context_footer(event.correlation_id),
-    ]
-    return SlackMessage(text=text, blocks=blocks, attachments=())
-
-
-def _render_balance_low(event: BalanceLow) -> SlackMessage:
-    """Render a BalanceLow as a short Slack message with no attachments.
-
-    Routing config sends BalanceLow to Telegram only, but the template
-    is kept so a Slack-only test rig or a future routing change works
-    without a template gap.
-    """
-    title = "Balance low"
-    text = (
-        f"{title} — {event.asset.value} at {event.current.amount} "
-        f"(threshold {event.threshold.amount})"
-    )
-    body = (
-        f"*Asset*: `{event.asset.value}`\n"
-        f"*Current*: `{event.current.amount}`\n"
-        f"*Threshold*: `{event.threshold.amount}`"
-    )
-    blocks = [
-        _header_block(title, _iso(event)),
-        _section_block(body),
-        _context_footer(event.correlation_id),
-    ]
-    return SlackMessage(text=text, blocks=blocks, attachments=())
-
-
-def _render_trade_rejected(event: TradeRejected) -> SlackMessage:
-    """Render a TradeRejected as a short Slack message with no attachments."""
-    title = "Trade rejected"
-    text = f"{title} — {event.exchange} {event.side.value} {event.pair} — {event.rejection_reason}"
-    body = (
-        f"*Exchange*: `{event.exchange}`\n"
-        f"*Pair*: `{event.pair}`\n"
-        f"*Side*: `{event.side.value}`\n"
-        f"*Reason*: {event.rejection_reason}"
-    )
-    blocks = [
-        _header_block(title, _iso(event)),
-        _section_block(body),
-        _context_footer(event.correlation_id),
-    ]
-    return SlackMessage(text=text, blocks=blocks, attachments=())
-
-
-def _render_anomaly_detected(event: AnomalyDetected) -> SlackMessage:
-    """Render an AnomalyDetected as a short Slack message with no attachments."""
-    title = "Anomaly detected"
-    text = f"{title} — [{event.source}] {event.reason}"
-    body = (
-        f"*Source*: `{event.source}`\n"
-        f"*Severity*: `{event.severity.value}`\n"
-        f"*Reason*: {event.reason}"
-    )
-    blocks = [
-        _header_block(title, _iso(event)),
-        _section_block(body),
-        _context_footer(event.correlation_id),
-    ]
-    return SlackMessage(text=text, blocks=blocks, attachments=())
-
-
-def _render_trade_executed(event: TradeExecuted) -> SlackMessage:
-    """Render a TradeExecuted (as POSITION_LARGE) as a short Slack message."""
-    title = "Position large"
-    text = f"{title} — {event.side.value} {event.qty} {event.pair} @ {event.price.amount}"
-    body = (
-        f"*Pair*: `{event.pair}`\n"
-        f"*Side*: `{event.side.value}`\n"
-        f"*Qty*: `{event.qty}`\n"
-        f"*Price*: `{event.price.amount}`"
-    )
-    blocks = [
-        _header_block(title, _iso(event)),
-        _section_block(body),
-        _context_footer(event.correlation_id),
-    ]
-    return SlackMessage(text=text, blocks=blocks, attachments=())
-
-
-def _render_rebalance_triggered(event: RebalanceTriggered) -> SlackMessage:
-    """Render a RebalanceTriggered as a short Slack message with no attachments."""
-    title = "Rebalance triggered"
-    text = (
-        f"{title} — {event.pair} at {event.current_weight.value} "
-        f"vs target {event.target_weight.value}"
-    )
-    body = (
-        f"*Pair*: `{event.pair}`\n"
-        f"*Current weight*: `{event.current_weight.value}`\n"
-        f"*Target weight*: `{event.target_weight.value}`\n"
-        f"*Band*: `{event.band.value}`"
-    )
-    blocks = [
-        _header_block(title, _iso(event)),
-        _section_block(body),
-        _context_footer(event.correlation_id),
-    ]
-    return SlackMessage(text=text, blocks=blocks, attachments=())
+def _blocks(lines: tuple[str, ...]) -> list[dict[str, Any]]:
+    """Wrap rendered lines: bold headline and details, then a context footer."""
+    safe = [escape_slack(line) for line in lines]
+    safe[0] = f"*{safe[0]}*"
+    if len(safe) == 1:
+        return [_section_block(safe[0])]
+    return [_section_block("\n".join(safe[:-1])), _context_block(safe[-1])]
 
 
 def _daily_digest_csv(event: DailyTradeDigest) -> bytes:
@@ -314,109 +137,10 @@ def _daily_digest_csv(event: DailyTradeDigest) -> bytes:
     return buffer.getvalue().encode("utf-8")
 
 
-def _render_daily_trade_digest(event: DailyTradeDigest, phase: ReportingPhase) -> SlackMessage:
-    """Render a DailyTradeDigest as a rich Slack message.
-
-    Message shape: header + summary section (totals + counts) + a context
-    footer. Before certification the winners/losers counts and the
-    per-pair P&L CSV are withheld; activity counts and notional remain.
-    Once certified, the full winners/losers live in an attached CSV.
-    """
-    title = f"Daily trade digest — {event.day.isoformat()}"
-    text = (
-        f"{title} — {event.filled}/{event.total_trades} filled, "
-        f"notional {event.total_notional.amount} {event.total_notional.currency.value}"
-    )
-    activity = (
-        f"*Day*: `{event.day.isoformat()}`\n"
-        f"*Total trades*: `{event.total_trades}`\n"
-        f"*Filled*: `{event.filled}`\n"
-        f"*Rejected*: `{event.rejected}`\n"
-        f"*Total notional*: `{event.total_notional.amount} {event.total_notional.currency.value}`\n"
-    )
-    if not phase.shows_outcomes:
-        blocks = [
-            _header_block(title, _iso(event)),
-            _section_block(activity + OUTCOME_WITHHELD_NOTICE),
-            _context_footer(event.correlation_id),
-        ]
-        return SlackMessage(text=text, blocks=blocks, attachments=())
-    body = (
-        activity + f"*Top winners*: `{len(event.top_winners)}` — see attached CSV\n"
-        f"*Top losers*: `{len(event.top_losers)}` — see attached CSV"
-    )
-    blocks = [
-        _header_block(title, _iso(event)),
-        _section_block(body),
-        _context_footer(event.correlation_id),
-    ]
-    csv_bytes = _daily_digest_csv(event)
-    filename = f"digest-{event.day.isoformat()}.csv"
-    return SlackMessage(
-        text=text,
-        blocks=blocks,
-        attachments=(FileAttachment(name=filename, mime=_CSV_MIME, content=csv_bytes),),
-    )
-
-
-def _render_signal_emitted(event: SignalEmitted) -> SlackMessage:
-    """Render a SignalEmitted as a short Slack record with no attachments.
-
-    Shows pair, side, kind, price and bar time only: no outcome figure
-    (aggregate blind, ADR-012 ruling 1).
-    """
-    kind = event.kind.value
-    title = f"Signal {kind}"
-    bar_time = event.occurred_at.isoformat()
-    lines = [
-        f"*Pair*: `{event.pair}`",
-        f"*Side*: `{event.side.value}`",
-        f"*Kind*: `{kind}`",
-    ]
-    if event.kind is SignalKind.ENTRY:
-        lines.append(f"*Price*: `{event.entry_price}`")
-        summary = f"{event.pair} {event.side.value} entry @ {event.entry_price}"
-    else:
-        lines.append(f"*Entry ref*: `{event.entry_price}`")
-        lines.append(f"*Exit rule*: `{event.exit_reason}`")
-        summary = f"{event.pair} {event.side.value} exit ({event.exit_reason})"
-    lines.append(f"*Bar time*: `{bar_time}`")
-    blocks = [
-        _header_block(title, bar_time),
-        _section_block("\n".join(lines)),
-        _context_footer(event.correlation_id),
-    ]
-    return SlackMessage(text=f"{title} — {summary}", blocks=blocks, attachments=())
-
-
-# ---------------------------------------------------------------------------
-# Dispatch registry — populated at import, never mutated.
-# ---------------------------------------------------------------------------
-
-_TEMPLATES: Final[dict[type, Callable[[DomainEvent], SlackMessage]]] = {
-    StrategyPaused: _render_strategy_paused,  # type: ignore[dict-item]
-    StrategyResumed: _render_strategy_resumed,  # type: ignore[dict-item]
-    BalanceLow: _render_balance_low,  # type: ignore[dict-item]
-    TradeRejected: _render_trade_rejected,  # type: ignore[dict-item]
-    AnomalyDetected: _render_anomaly_detected,  # type: ignore[dict-item]
-    TradeExecuted: _render_trade_executed,  # type: ignore[dict-item]
-    RebalanceTriggered: _render_rebalance_triggered,  # type: ignore[dict-item]
-    SignalEmitted: _render_signal_emitted,  # type: ignore[dict-item]
-}
-
-_PHASE_AWARE_TEMPLATES: Final[dict[type, Callable[[DomainEvent, ReportingPhase], SlackMessage]]] = {
-    DailyTradeDigest: _render_daily_trade_digest,  # type: ignore[dict-item]
-}
-
-
 def slack_template(
     event: DomainEvent, *, phase: ReportingPhase = DEFAULT_REPORTING_PHASE
 ) -> SlackMessage:
     """Render a domain event as a :class:`SlackMessage`.
-
-    Dispatches on ``type(event)`` — subclasses do NOT inherit their
-    parent's template. Adding a new event class requires adding both a
-    ``_render_<name>`` function AND an entry in :data:`_TEMPLATES`.
 
     Args:
         event: A concrete :class:`DomainEvent` instance.
@@ -428,18 +152,16 @@ def slack_template(
         blocks, and optional file attachments.
 
     Raises:
-        ValueError: If no template is registered for ``type(event)``.
-            The message names the missing type so the operator can fix
-            the registry.
+        ValueError: If Slack has no template for ``type(event)``. The
+            message names the missing type so the operator can fix the
+            registry.
     """
-    phase_aware = _PHASE_AWARE_TEMPLATES.get(type(event))
-    if phase_aware is not None:
-        return phase_aware(event, phase)
-    render = _TEMPLATES.get(type(event))
-    if render is None:
-        raise ValueError(
-            f"No Slack template registered for {type(event).__qualname__} — "
-            f"add a _render function and a _TEMPLATES entry in "
-            f"src/hermes/application/messages/slack.py."
-        )
-    return render(event)
+    family, note = build_note(event, phase)
+    shape = shape_for(family, Channel.SLACK)
+    lines = render_lines(note, shape, fmt_ref(event.correlation_id))
+    attachments: tuple[FileAttachment, ...] = ()
+    if isinstance(event, DailyTradeDigest) and phase.shows_outcomes:
+        name = f"digest-{event.day.isoformat()}.csv"
+        attachments = (FileAttachment(name=name, mime=_CSV_MIME, content=_daily_digest_csv(event)),)
+    text = SEPARATOR.join(lines[:-1]) if len(lines) > 1 else lines[0]
+    return SlackMessage(text=text, blocks=_blocks(lines), attachments=attachments)
