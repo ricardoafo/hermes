@@ -51,6 +51,19 @@ fails afterwards, the rollback restores the pre-deploy snapshot, which is from b
 
 The manual steps below are for running a migration outside a deploy.
 
+## Trying a migration first
+
+`hermes migrate --dry-run` applies every pending migration, destructive ones included, to a temporary copy of the
+ledger and prints what ran, whether the copy passes `PRAGMA integrity_check`, and the row count of every table
+before and after. It only reads the real ledger, so `hermes.service` can keep running:
+
+```bash
+sudo -u hermes /opt/hermes/current/.venv/bin/hermes migrate --db /var/lib/hermes/hermes.sqlite3 --dry-run
+```
+
+Exit 0 means everything applied and the copy is intact. Exit 1 means a migration failed on the copy, and the line
+starting `dry run: FAILED` names it.
+
 ## Running a destructive migration on hermes-01
 
 1. Check what is pending:
