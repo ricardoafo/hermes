@@ -24,7 +24,9 @@ from typing import Final, TextIO
 from rich.console import Console
 
 from hermes.adapters.console import FixtureReadModel, UnknownScenarioError, available_scenarios
+from hermes.adapters.systemd_journal import JournalctlReader, JournalUnavailableError
 from hermes.application.console import ConsoleReadModel, Surface
+from hermes.application.console.logs import LogLine, parse_journal_entry
 from hermes.application.console.render import (
     MADRID,
     RenderContext,
@@ -304,6 +306,26 @@ def run_tui(
     if runner is None:
         from hermes.entrypoints.tui import run_home  # noqa: PLC0415 - Textual is slow to import
 
-        runner = run_home
+        def runner(read_model: ConsoleReadModel) -> None:
+            run_home(read_model, journal=recent_journal_lines)
+
     runner(model)
     return 0
+
+
+def recent_journal_lines(count: int) -> list[LogLine] | None:
+    """Return the last ``count`` hermes journal lines, or ``None`` without journalctl.
+
+    The TUI's logs panel calls this; it lives here so the TUI imports no adapter.
+
+    Args:
+        count: How many entries to read.
+
+    Returns:
+        Parsed lines, oldest first, or ``None`` on a machine with no journal.
+    """
+    try:
+        raw = JournalctlReader().lines(last=count)
+        return [line for line in map(parse_journal_entry, raw) if line is not None]
+    except JournalUnavailableError:
+        return None

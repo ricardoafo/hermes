@@ -19,7 +19,7 @@ Reference: openspec/changes/readonly-tui-dashboard/change.md.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from typing import ClassVar, Final
 
@@ -39,6 +39,7 @@ from hermes.application.console import (
     PortfolioRange,
     Surface,
 )
+from hermes.application.console.logs import LogLine, render_log_line
 from hermes.application.console.render import (
     DEMO_TAG,
     RenderContext,
@@ -61,7 +62,9 @@ _BIG_TOTAL_FROM_ROWS: Final = 30
 _ACTIVITY_ROWS: Final = 4
 _ACTIVITY_ROWS_SHORT: Final = 3
 _FOOTER: Final = "1 7 30 Y range · ↵ detail · L logs · ? help · Q quit · read-only"
-_LOGS_TEXT: Final = "Logs arrive with #376."
+_LOGS_LINES: Final = 50
+_LOGS_DEMO: Final = "Logs come from the VPS journal; demo data has none."
+_LOGS_UNAVAILABLE: Final = "The journal is not readable here; run hermes logs on the VPS."
 
 # Colour-blind friendly palette: the console's "red" reads orange and its
 # "green" reads blue. Amber (yellow) stays amber for late and warning states.
@@ -179,11 +182,23 @@ class HomeApp(App[None]):
     ]
 
     def __init__(
-        self, model: ConsoleReadModel, *, refresh_seconds: float = REFRESH_SECONDS
+        self,
+        model: ConsoleReadModel,
+        *,
+        refresh_seconds: float = REFRESH_SECONDS,
+        journal: Callable[[int], Sequence[LogLine] | None] | None = None,
     ) -> None:
-        """Hold the read model and the screen state."""
+        """Hold the read model, the journal source and the screen state.
+
+        Args:
+            model: The read model every panel draws from.
+            refresh_seconds: Seconds between redraws.
+            journal: Returns the last N journal lines, or ``None`` when the
+                journal is not readable here; ``None`` means no journal at all.
+        """
         super().__init__()
         self._model = model
+        self._journal = journal
         self._refresh_seconds = refresh_seconds
         self._range = PortfolioRange.TODAY
         self._selected: str | None = None
@@ -355,9 +370,20 @@ class HomeApp(App[None]):
             self._redraw()
 
     def action_logs(self) -> None:
-        """Show the logs placeholder until the log viewer (#376) lands."""
+        """Show the last journal lines, as ``hermes logs`` prints them."""
         if self._on_home:
-            self.push_screen(_PanelScreen(lambda: Text(_LOGS_TEXT)))
+            self.push_screen(_PanelScreen(self._logs_content))
+
+    def _logs_content(self) -> RenderableType:
+        if self._model.demo_scenario is not None:
+            return Text(_LOGS_DEMO, style="dim")
+        lines = None if self._journal is None else self._journal(_LOGS_LINES)
+        if lines is None:
+            return Text(_LOGS_UNAVAILABLE, style="dim")
+        if not lines:
+            return Text("No journal lines yet.", style="dim")
+        tz = self._render_context().tz
+        return Group(Text("Logs", style="bold"), *(render_log_line(line, tz) for line in lines))
 
     def action_help(self) -> None:
         """Show the keys and the tax footnote."""
@@ -382,10 +408,14 @@ class HomeApp(App[None]):
         return Group(*keys)
 
 
-def run_home(model: ConsoleReadModel) -> None:
+def run_home(
+    model: ConsoleReadModel,
+    journal: Callable[[int], Sequence[LogLine] | None] | None = None,
+) -> None:
     """Run the home screen until the operator quits.
 
     Args:
         model: The read model to show.
+        journal: Source of the logs panel's lines; see :class:`HomeApp`.
     """
-    HomeApp(model).run()
+    HomeApp(model, journal=journal).run()
