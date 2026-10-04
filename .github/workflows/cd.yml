@@ -44,6 +44,10 @@
 name: CD
 
 on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       dry_run:
@@ -64,15 +68,76 @@ permissions:
 
 env:
   VPS_HOST: hermes-01
+  # The commit every job builds, tests and ships. Under workflow_run,
+  # GITHUB_SHA is main's tip when CD starts, which may be a newer merge
+  # whose CI has not passed; head_sha is the commit CI validated.
+  RELEASE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 
 jobs:
+  # ─────────────────────────────────────────────────────────────────
+  # GATE — only a commit whose CI passed on a push to main ships, and
+  # only after the slower tiers pass on that exact commit: the offline
+  # end-to-end serve cycle and the contract tests for the adapters
+  # `hermes serve` calls. Contract tests for adapters serve does not
+  # use (Kraken, Slack, Binance testnet) stay in scheduled.yml as
+  # advisory, so their API drift never blocks a deploy. Then it waits
+  # out the 4h bar close so the restart never lands on one.
+  # ─────────────────────────────────────────────────────────────────
+  gate:
+    name: Release checks and a quiet bar
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push')
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          fetch-depth: 1
+
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with: { version: "0.12.5" }
+      - run: uv sync --frozen
+
+      - name: End-to-end serve cycle on the release commit
+        run: uv run pytest tests/e2e -m e2e --tb=short -p no:cacheprovider
+
+      - name: Contract tests for the adapters serve uses
+        env:
+          HERMES_TELEGRAM__BOT_TOKEN: ${{ secrets.HERMES_TELEGRAM__BOT_TOKEN }}
+          HERMES_SENTRY__DSN: ${{ secrets.HERMES_SENTRY__DSN }}
+          HERMES_HEALTHCHECKS__PING_URL: ${{ secrets.HERMES_HEALTHCHECKS__PING_URL }}
+        # -m contract overrides the `not contract` addopts filter.
+        run: >-
+          uv run pytest -m contract --tb=short -p no:cacheprovider
+          tests/contract/test_binance_public_klines.py
+          tests/contract/test_telegram_getme.py
+          tests/contract/test_healthchecks_ping.py
+          tests/contract/test_sentry_dsn_parses.py
+
+      - name: Hold around the 4h bar close
+        if: inputs.dry_run != true
+        shell: bash
+        run: |
+          set -euo pipefail
+          into=$(( $(date -u +%s) % 14400 ))
+          if [ "$into" -ge 14100 ]; then wait=$(( 14400 - into + 300 ))
+          elif [ "$into" -lt 300 ]; then wait=$(( 300 - into ))
+          else wait=0; fi
+          echo "Holding ${wait}s for the bar close"
+          sleep "$wait"
+
   # ─────────────────────────────────────────────────────────────────
   # BUILD — package the app into a wheel via the reusable workflow.
   # ─────────────────────────────────────────────────────────────────
   build:
+    needs: gate
     uses: ./.github/workflows/_build-wheel.yml
     with:
       runner-label: ${{ vars.OPS_RUNNER_LABEL }}
+      ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
   # ─────────────────────────────────────────────────────────────────
   # BUNDLE — one tarball per commit: the CI-built wheel, the hash-pinned
@@ -87,6 +152,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ env.RELEASE_SHA }}
           fetch-depth: 1
 
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
@@ -101,7 +167,7 @@ jobs:
       - name: Assemble release bundle
         run: |
           set -euo pipefail
-          sha12=${GITHUB_SHA::12}
+          sha12=${RELEASE_SHA::12}
           stage=$(mktemp -d)
 
           # The wheel keeps its original filename: uv rejects a renamed one.
@@ -214,7 +280,7 @@ jobs:
           VPS_SSH_USER: ${{ secrets.VPS_SSH_USER }}
         run: |
           set -euo pipefail
-          bundle="release/hermes-release-${GITHUB_SHA::12}.tar.gz"
+          bundle="release/hermes-release-${RELEASE_SHA::12}.tar.gz"
           if [ ! -f "$bundle" ]; then
               echo "::error::no $bundle in the downloaded artifact"
               exit 1
@@ -240,7 +306,7 @@ jobs:
           # this step and so the job. ServerAlive keeps the session open
           # through the 30 s the gate spends watching the unit.
           ssh -i ~/.ssh/vps_id -o StrictHostKeyChecking=yes -o ServerAliveInterval=15 \
-              "$VPS_SSH_USER@$VPS_SSH_HOST" bash -s -- "${GITHUB_SHA::12}" <<'REMOTE'
+              "$VPS_SSH_USER@$VPS_SSH_HOST" bash -s -- "${RELEASE_SHA::12}" <<'REMOTE'
           set -euo pipefail
           sha12=$1
           bundle="/var/tmp/hermes-release-$sha12.tar.gz"
@@ -270,6 +336,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: inputs.dry_run != true
         with:
+          ref: ${{ env.RELEASE_SHA }}
           fetch-depth: 1
 
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
@@ -282,7 +349,6 @@ jobs:
         env:
           VPS_SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
           VPS_SSH_USER: ${{ secrets.VPS_SSH_USER }}
-          RELEASE_SHA: ${{ github.sha }}
           HERMES_SMOKE_SINCE: ${{ steps.start.outputs.epoch }}
           HERMES_SMOKE_REQUIRED: '1'
         run: |
@@ -312,7 +378,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────
   confirm:
     name: Confirm deployment
-    needs: [build, bundle, deploy]
+    needs: [gate, build, bundle, deploy]
     if: '!cancelled()'
     runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 1

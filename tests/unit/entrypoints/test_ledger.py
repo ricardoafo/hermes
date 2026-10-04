@@ -78,6 +78,9 @@ def test_json_document(ledger: Path) -> None:
         "pending_migrations": [],
         "event_count": 3,
         "gaps": [],
+        "unknown_migrations": [],
+        "lot_problems": [],
+        "orphans": [],
         "findings": [],
     }
 
