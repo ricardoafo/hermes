@@ -299,6 +299,16 @@ migrate_ledger() {
     "$RUNUSER" -u "$RUN_AS" -- "$bin" migrate --db "$DB" --snapshot-dir "$BACKUP_DIR/migrations"
 }
 
+# Plain `hermes` for the operator on the VPS: a wrapper that runs the console
+# commands as the service user (#610). Prod only, since it points at prod's
+# release; a stage built without the script (older CD) simply has none.
+install_console_wrapper() {
+    local stage=$1
+    [ "$TARGET" = prod ] || return 0
+    [ -f "$stage/deploy/hermes-console.sh" ] || return 0
+    install -m 0755 "$stage/deploy/hermes-console.sh" "${HERMES_CONSOLE_BIN_DIR:-/usr/local/bin}/hermes"
+}
+
 # Atomic symlink swap: write a temp link, then rename(2) it over the real one.
 flip_link() {
     local target=$1 link=$2
@@ -404,6 +414,7 @@ main() {
     install -m 0755 "$SCRIPT_DIR/health_gate.sh" "$SCRIPT_DIR/rollback.sh" \
         "$stage/deploy/hermes-notify-failure.sh" "$stage/deploy/hermes-notify-crash.sh" \
         "$ROOT/bin/"
+    install_console_wrapper "$stage"
     prune_versions
     # The read-only bot runs from the same release; pick up the new code.
     # try-restart leaves a stopped or uninstalled bot alone (ADR-015). The bot

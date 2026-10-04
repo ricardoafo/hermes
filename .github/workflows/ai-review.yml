@@ -54,7 +54,9 @@ jobs:
   review:
     name: AI review
     if: ${{ !github.event.pull_request.draft }}
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    # Its own small runners: a review mostly waits on the model and must
+    # not hold a CI runner while PR tests queue (#631).
+    runs-on: ${{ vars.REVIEW_RUNNER_LABEL && fromJSON(vars.REVIEW_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 30
     permissions:
       contents: read

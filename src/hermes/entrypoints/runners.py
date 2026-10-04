@@ -1,7 +1,7 @@
 """``hermes runners``: health of the self-hosted CI runners.
 
 Reads ``GET /repos/{repo}/actions/runners`` and judges each label group
-(``hermes``, ``hermes-ops``, ``dependabot``) by the share of its runners that
+(``hermes``, ``hermes-ops``, ``hermes-review``, ``dependabot``) by the share of its runners that
 are online. The runners are ephemeral Docker containers that re-register after
 every job, so one runner offline between jobs is normal and never a failure.
 
@@ -44,7 +44,7 @@ _TIMEOUT_SECONDS: Final[float] = 10.0
 # The CI pool. A repo with no runner labelled this has no CI at all.
 REQUIRED_LABELS: Final[tuple[str, ...]] = ("hermes",)
 # Planned pools: judged once they exist, ignored until then.
-OPTIONAL_LABELS: Final[tuple[str, ...]] = ("hermes-ops", "dependabot")
+OPTIONAL_LABELS: Final[tuple[str, ...]] = ("hermes-ops", "hermes-review", "dependabot")
 # Ephemeral runners are offline between jobs, so a group only counts as
 # degraded when fewer than this share (1/2) of its runners is online.
 _MIN_ONLINE_SHARE: Final[tuple[int, int]] = (1, 2)
@@ -203,9 +203,11 @@ def fetch_runners(repo: str, token: str, *, client: httpx.Client | None = None) 
 
 def _render_table(repo: str, report: Report, stream: TextIO) -> None:
     stream.write(f"# hermes runners ({repo})\n")
-    stream.write(f"{'label':<12} {'online':<8} {'busy':<5} status\n")
+    # 12 fits every label but hermes-review, which widens the column.
+    width = max([12, *(len(g.label) + 1 for g in report.groups)])
+    stream.write(f"{'label':<{width}} {'online':<8} {'busy':<5} status\n")
     for g in report.groups:
-        stream.write(f"{g.label:<12} {f'{g.online}/{g.total}':<8} {g.busy:<5} {g.status}\n")
+        stream.write(f"{g.label:<{width}} {f'{g.online}/{g.total}':<8} {g.busy:<5} {g.status}\n")
     stream.write(f"overall: {report.status}\n")
 
 
