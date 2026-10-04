@@ -265,7 +265,8 @@ jobs:
     name: Deploy to VPS
     needs: [bundle, notes]
     runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
-    timeout-minutes: 15
+    # install_release.sh may hold up to 10 min for the bar close (#626).
+    timeout-minutes: 25
     environment:
       name: prod
       url: https://${{ env.VPS_HOST }}

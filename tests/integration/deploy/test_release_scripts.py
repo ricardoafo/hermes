@@ -56,6 +56,8 @@ _CRASH_SCRIPT = "hermes-notify-crash.sh"
 _EXPERIMENT_DIR = Path("docs/experiments/swing-mvp1")
 _BOOTSTRAP_SCRIPT = "vps_bootstrap.sh"
 _UNIT = "hermes.service"
+# One hour into a 4h bar: clear of every close, so no test holds by accident.
+_QUIET_EPOCH = str(14400 * 1000 + 3600)
 _TIMER = "hermes-daily.timer"
 
 _SHA_A = "a" * 12
@@ -320,6 +322,7 @@ class Box:
                 "HERMES_BACKUP_PYTHON": _posix(Path(sys.executable)),
                 "HERMES_MIGRATE_BIN": _posix(self._stubs / "hermes"),
                 "HERMES_UNIT_DIR": _posix(self.units),
+                "HERMES_NOW_EPOCH": _QUIET_EPOCH,
                 **extra,
             }
         )
@@ -1453,3 +1456,50 @@ def test_staging_deploy_never_touches_the_unit_dir(staging_box: Box) -> None:
 
     assert result.returncode == 0, _output(result)
     assert list(staging_box.units.iterdir()) == []
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Quiet bar (#626): the unit is never stopped from 5 minutes before a 4h
+# bar close until 5 minutes after it.
+# ─────────────────────────────────────────────────────────────────────
+
+_BAR = 14400
+
+
+@pytest.mark.parametrize(
+    ("into_bar", "held"),
+    [
+        (3600, None),
+        (_BAR - 301, None),
+        (_BAR - 300, 600),
+        (_BAR - 10, 310),
+        (0, 300),
+        (299, 1),
+        (300, None),
+    ],
+)
+def test_prod_deploy_holds_around_the_bar_close(box: Box, into_bar: int, held: int | None) -> None:
+    """Invariant: a restart never lands within 5 minutes of a 4h close, before or after."""
+    result = box.deploy(_SHA_A, HERMES_NOW_EPOCH=str(_BAR * 1000 + into_bar))
+
+    assert result.returncode == 0, _output(result)
+    if held is None:
+        assert "holding" not in result.stdout
+    else:
+        assert f"holding {held}s for the 4h bar close" in result.stdout
+
+
+def test_hold_comes_before_the_unit_is_stopped_or_restarted(box: Box) -> None:
+    """Invariant: the wait sits right before the restart, not minutes earlier in CI."""
+    result = box.deploy(_SHA_A, HERMES_NOW_EPOCH=str(_BAR * 1000 - 10))
+
+    out = result.stdout
+    assert out.index("holding") < out.index("current -> ")
+
+
+def test_staging_deploy_never_holds_for_the_bar(staging_box: Box) -> None:
+    """Invariant: staging trades nothing, so its deploys do not wait on prod's bars."""
+    result = staging_box.deploy(_SHA_A, HERMES_NOW_EPOCH=str(_BAR * 1000 - 10), **_STAGING)
+
+    assert result.returncode == 0, _output(result)
+    assert "holding" not in result.stdout

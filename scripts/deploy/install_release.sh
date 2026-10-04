@@ -24,6 +24,10 @@
 #   1. Preflight: nothing on disk changes until every check passes.
 #   2. Install into versions/<sha12> unless its .installed marker exists.
 #      The venv is built at its final path because a venv is not relocatable.
+#   2b. (prod) Wait out the 4h bar close: no restart from QUIET_BEFORE
+#      seconds before a close until QUIET_AFTER seconds after it (#626).
+#      The wait sits here, right before the steps that stop or restart
+#      the unit, because the CD gate's own hold runs minutes earlier.
 #   3. Snapshot the ledger (SQLite online backup, as `hermes`) and keep
 #      the newest BACKUPS_KEPT. The new release may migrate the schema at
 #      start; the snapshot is the way back. A failed snapshot stops the
@@ -52,7 +56,7 @@
 #
 # Test seams: HERMES_ROOT, HERMES_ENV_FILE, SYSTEMCTL, HERMES_DB,
 # HERMES_BACKUP_DIR, HERMES_BACKUP_PYTHON, HERMES_MIGRATE_BIN, RUNUSER,
-# HERMES_UNIT_DIR. The
+# HERMES_UNIT_DIR, HERMES_NOW_EPOCH. The
 # seams override the target's paths, and the staging guard still checks them.
 # The script can be sourced to reach prune_versions on its own.
 #
@@ -103,6 +107,13 @@ UNIT_DIR=${HERMES_UNIT_DIR:-/etc/systemd/system}
 KEEP_NEWEST=3
 # Ledger snapshots kept; one per deploy, newest first.
 BACKUPS_KEPT=5
+# Bars close every 4h at 00/04/08/12/16/20 UTC. serve handles a bar seconds
+# after its close, and a bar handled more than 5 minutes late fills against
+# a synthetic book, where the stale-book rule skips new entries. So the
+# unit is never stopped from 5 minutes before a close until 5 after it.
+BAR_SECONDS=14400
+QUIET_BEFORE=300
+QUIET_AFTER=300
 
 # uv runs as root (the service must not be able to rewrite its own code),
 # so the managed Python lives where `hermes` can read it. Under /root it
@@ -241,6 +252,32 @@ install_version() {
     cp -r "$stage/docs" "$vdir/docs"
     touch "$vdir/.installed"
     partial_dir=""
+}
+
+# Print how many seconds to wait so a restart starting now stays clear of
+# the bar close: QUIET_BEFORE before it through QUIET_AFTER after it.
+quiet_bar_wait() {
+    local now=$1 into
+    into=$((now % BAR_SECONDS))
+    if [ "$into" -ge $((BAR_SECONDS - QUIET_BEFORE)) ]; then
+        echo $((BAR_SECONDS - into + QUIET_AFTER))
+    elif [ "$into" -lt "$QUIET_AFTER" ]; then
+        echo $((QUIET_AFTER - into))
+    else
+        echo 0
+    fi
+}
+
+# Hold the deploy until the bar close is clear. Staging runs its own unit and
+# trades nothing, so only prod waits.
+wait_for_quiet_bar() {
+    local wait
+    [ "$TARGET" = prod ] || return 0
+    wait=$(quiet_bar_wait "${HERMES_NOW_EPOCH:-$(date -u +%s)}")
+    if [ "$wait" -gt 0 ]; then
+        log "holding ${wait}s for the 4h bar close"
+        sleep "$wait"
+    fi
 }
 
 # Snapshot the ledger before the new release can touch it. SQLite's online
@@ -417,6 +454,8 @@ main() {
         log "installing release $sha"
         install_version "$vdir" "$stage"
     fi
+
+    wait_for_quiet_bar
 
     snapshot=$(backup_ledger "$sha" "${HERMES_BACKUP_PYTHON:-$vdir/.venv/bin/python}") \
         || die "ledger snapshot of $DB failed: not deploying $sha"
