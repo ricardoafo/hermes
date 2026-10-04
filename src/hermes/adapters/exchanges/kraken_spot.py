@@ -9,10 +9,13 @@ private REST API:
   carries only the order id;
 - ``CancelOrder`` to cancel (idempotent: ``EOrder:Unknown order`` is not an
   error);
-- ``BalanceEx`` for free balances.
+- ``BalanceEx`` for free balances;
+- ``TradeVolume`` for the account's own maker and taker fee on a pair.
 
-The order book and the fee schedule are public data and come from
-:class:`~hermes.adapters.exchanges.kraken_public.KrakenPublicAdapter`.
+The order book is public data and comes from
+:class:`~hermes.adapters.exchanges.kraken_public.KrakenPublicAdapter`. The fee
+schedule used to come from there too, until Kraken stopped publishing fee
+tiers in the public ``AssetPairs`` reply on 2026-10-04 (#599).
 
 Safety (ADR-003 §00 I-08, AGENTS.md rule 7):
 
@@ -60,7 +63,7 @@ from hermes.adapters.exchanges.kraken_public import (
 )
 from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.domain.errors import ExchangeError, NetworkError
-from hermes.domain.fees import FeeSchedule
+from hermes.domain.fees import FeeSchedule, FeeTier
 from hermes.domain.market_data.orderbook import Orderbook
 from hermes.domain.trading.fill import Fill, Rejection
 from hermes.domain.trading.order import Order, OrderSide
@@ -122,6 +125,28 @@ def _decimal(raw: object, field_name: str) -> Decimal:
         return Decimal(str(raw))
     except InvalidOperation as exc:
         raise ExchangeError(msg=f"{field_name} is not a decimal: {raw!r}") from exc
+
+
+def _fee_percent(result: Mapping[str, Any], side: str, symbol: str) -> Decimal:
+    """Return the ``fee`` percent of ``symbol`` in a TradeVolume ``side`` map.
+
+    Kraken may key the reply by its own pair name rather than the one asked
+    for; a reply holding a single pair is that pair.
+    """
+    by_pair = result.get(side)
+    if not isinstance(by_pair, dict) or not by_pair:
+        raise ExchangeError(msg=f"Kraken TradeVolume has no {side!r} for {symbol}: {result!r}")
+    entry = by_pair.get(symbol)
+    if entry is None and len(by_pair) == 1:
+        entry = next(iter(by_pair.values()))
+    if not isinstance(entry, dict):
+        raise ExchangeError(msg=f"Kraken TradeVolume {side!r} lacks {symbol}: {by_pair!r}")
+    return _decimal(entry.get("fee"), f"{symbol} {side} fee")
+
+
+def _percent_to_bps(percent: Decimal) -> int:
+    """Convert Kraken's percent (0.26 = 0.26%) to whole basis points."""
+    return int((percent * 100).to_integral_value())
 
 
 @dataclass(frozen=True, slots=True)
@@ -335,12 +360,31 @@ class KrakenSpotAdapter:
         return Quantity(amount=Decimal("0"), asset=currency)
 
     def get_fees(self, *, pair: Pair) -> FeeSchedule:
-        """Return Kraken's volume-tiered schedule for ``pair`` (cached a day).
+        """Return the account's current maker and taker fee for ``pair``.
+
+        Read-only, so it works without ``allow_mainnet``. ``TradeVolume``
+        answers with the fee the account pays now, given its 30-day volume, so
+        the schedule has one tier that applies at any volume.
 
         Raises:
-            hermes.domain.errors.KrakenPublicError: Wire or schema failure.
+            hermes.domain.errors.ExchangeError: Wire failure, a refusal, or a
+                reply without a fee for ``pair``.
         """
-        return self.public.get_pair_fees(pair)
+        symbol = _pair_to_kraken_symbol(pair)
+        result = self._private("TradeVolume", {"pair": symbol})
+        taker = _fee_percent(result, "fees", symbol)
+        maker = _fee_percent(result, "fees_maker", symbol)
+        try:
+            tier = FeeTier(
+                volume_threshold_usd=Decimal("0"),
+                maker_bps=_percent_to_bps(maker),
+                taker_bps=_percent_to_bps(taker),
+            )
+        except ValueError as exc:
+            raise ExchangeError(
+                msg=f"Kraken TradeVolume fee for {symbol} is invalid: {exc}"
+            ) from exc
+        return FeeSchedule.from_tiers(pair=pair, tiers=(tier,))
 
     # ------------------------------------------------------------------
     # StopLossPort
