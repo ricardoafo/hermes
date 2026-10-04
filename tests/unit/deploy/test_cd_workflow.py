@@ -253,3 +253,60 @@ def test_bundle_ships_the_experiment_files_serve_reads() -> None:
         )
         if name not in bundle_text
     ] == []
+
+
+_RELEASE_SHA_EXPR = "${{ github.event.workflow_run.head_sha || github.sha }}"
+_SERVE_PATH_CONTRACTS = {
+    "tests/contract/test_binance_public_klines.py",
+    "tests/contract/test_telegram_getme.py",
+    "tests/contract/test_healthchecks_ping.py",
+    "tests/contract/test_sentry_dsn_parses.py",
+}
+
+
+def test_release_sha_is_the_commit_ci_validated() -> None:
+    """An automatic run ships workflow_run.head_sha, not main's tip when CD starts (#404)."""
+    assert _workflow()["env"]["RELEASE_SHA"] == _RELEASE_SHA_EXPR
+
+
+def test_every_checkout_and_the_wheel_build_use_the_release_sha() -> None:
+    """Every job that reads the tree reads the validated commit, so nothing newer slips in."""
+    jobs = _workflow()["jobs"]
+    checkouts = [
+        step
+        for job in jobs.values()
+        for step in job.get("steps", [])
+        if str(step.get("uses", "")).startswith("actions/checkout@")
+    ]
+
+    assert checkouts
+    assert all(step["with"]["ref"] == "${{ env.RELEASE_SHA }}" for step in checkouts)
+    assert jobs["build"]["with"]["ref"] == _RELEASE_SHA_EXPR
+
+
+def test_no_step_names_the_release_from_github_sha() -> None:
+    """GITHUB_SHA under workflow_run is the wrong commit; only RELEASE_SHA may name a release."""
+    text = _CD_PATH.read_text(encoding="utf-8")
+    code_lines = [line for line in text.splitlines() if not line.lstrip().startswith("#")]
+
+    assert not [line for line in code_lines if "GITHUB_SHA" in line]
+    assert [line for line in code_lines if "github.sha" in line] == [
+        f"  RELEASE_SHA: {_RELEASE_SHA_EXPR}",
+        f"      ref: {_RELEASE_SHA_EXPR}",
+    ]
+
+
+def test_gate_runs_e2e_and_serve_path_contracts_before_the_bar_hold() -> None:
+    """Only a release that passed the slow tiers reaches build; the hold comes last."""
+    labels = [_label(step) for step in _steps("gate")]
+    runs = " ".join(str(step.get("run", "")) for step in _steps("gate"))
+
+    assert labels.index("End-to-end serve cycle on the release commit") < labels.index(
+        "Hold around the 4h bar close"
+    )
+    assert labels.index("Contract tests for the adapters serve uses") < labels.index(
+        "Hold around the 4h bar close"
+    )
+    assert "tests/e2e -m e2e" in runs
+    assert set(re.findall(r"tests/contract/\S+\.py", runs)) == _SERVE_PATH_CONTRACTS
+    assert _workflow()["jobs"]["build"]["needs"] == "gate"
