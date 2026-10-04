@@ -44,6 +44,7 @@ _ZERO: Final = Decimal(0)
 _HUNDRED: Final = Decimal(100)
 _WEEK: Final = timedelta(days=7)
 _MONTH: Final = timedelta(days=30)
+_DEFAULT_QUOTE: Final = "USDT"
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,6 +139,7 @@ class PortfolioFacts:
             them is EUR pending.
         eur_per_quote: EUR for one quote unit at the newest recorded rate.
         seeds: The capital seeds, one per strategy that has one.
+        quote: The quote currency every book is counted in, when known.
     """
 
     as_of: datetime
@@ -147,6 +149,7 @@ class PortfolioFacts:
     open_net: Decimal | None
     eur_per_quote: Decimal | None
     seeds: tuple[SeedFacts, ...]
+    quote: str | None = None
 
 
 def range_start(range_: PortfolioRange, as_of: datetime, tz: tzinfo) -> datetime:
@@ -232,6 +235,7 @@ def build_portfolio(facts: PortfolioFacts, range_: PortfolioRange) -> PortfolioS
             starting_capital=seed.value_eur,
             started_on=seed.started_on,
             starting_capital_quote=seed.amount,
+            quote_currency=facts.quote or _DEFAULT_QUOTE,
         )
     samples = _samples(facts, start)
     change = samples[-1] - samples[0]
@@ -258,6 +262,7 @@ def build_portfolio(facts: PortfolioFacts, range_: PortfolioRange) -> PortfolioS
         starting_capital=seed.value_eur,
         started_on=seed.started_on,
         starting_capital_quote=seed.amount,
+        quote_currency=facts.quote or _DEFAULT_QUOTE,
     )
 
 

@@ -96,7 +96,7 @@ def test_tui_runs_live_on_the_ledger(ledger: Path) -> None:
     rc = run_tui(["--db", str(ledger)], io.StringIO(), env={}, runner=runner)
     assert (rc, seen["demo-tag"].strip()) == (0, "")
     assert seen["portfolio"].splitlines()[0].startswith("€4,078.76   ")
-    assert "started €4,000.00 on 1 Oct · Equivalent in EUR" in seen["portfolio"]
+    assert "started 5,000 USDT (€4,000.00 at ECB rate, 1 Oct)" in seen["portfolio"]
     assert "BTC" in seen["positions"]
     assert seen["shadow"].strip().startswith("Shadow test · day ")
     assert hashlib.sha256(ledger.read_bytes()).hexdigest() == before

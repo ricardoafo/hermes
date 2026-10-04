@@ -15,10 +15,12 @@ Invariants:
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
+import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -216,6 +218,13 @@ def test_start_capital_is_the_seed_eur_value_or_pending() -> None:
         (Decimal(4000), Decimal(5000), date(2026, 10, 1)),
         (None, Decimal(5000), date(2026, 10, 1)),
     ]
+
+
+@pytest.mark.parametrize("rate", [_RATE, None], ids=["priced", "pending"])
+def test_summary_carries_the_ledger_quote_currency(rate: Decimal | None) -> None:
+    """The start line's currency is the ledger's quote currency, priced or pending (#650)."""
+    facts = replace(_facts((_book(),), rate=rate), quote="USDC")
+    assert build_portfolio(facts, PortfolioRange.TODAY).quote_currency == "USDC"
 
 
 def test_no_seed_leaves_the_start_unknown() -> None:

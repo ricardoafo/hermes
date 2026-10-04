@@ -220,6 +220,7 @@ class LedgerReadModel:
             open_net=open_net,
             eur_per_quote=rate,
             seeds=seeds,
+            quote=quote,
         )
         return build_portfolio(facts, range_)
 

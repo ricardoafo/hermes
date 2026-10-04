@@ -95,10 +95,7 @@ _SPARK_MAX: Final = 48
 _OVERVIEW_ACTIVITY_ROWS: Final = 4
 _HIDDEN_NOTE: Final = "money hidden on this surface"
 _EUR_PENDING: Final = "EUR pending"
-_EUR_PENDING_NOTE: Final = (
-    "EUR values pending: a fill is not priced in EUR yet · run hermes fx backfill"
-)
-_NO_RATE_NOTE: Final = "EUR values pending: no EUR rate in the ledger yet · run hermes fx backfill"
+_EUR_PENDING_NOTE: Final = "EUR pending · priced on the next restart, or run hermes fx backfill"
 _ZERO: Final = Decimal(0)
 _CENT: Final = Decimal("0.01")
 
@@ -382,24 +379,33 @@ def _fmt_quote(value: Decimal) -> str:
     return f"{value.quantize(_CENT):,} USDT"
 
 
+def _fmt_seed(value: Decimal, currency: str) -> str:
+    """Return a seed amount as the operator funded it: ``5,000 USDT``, cents only if any."""
+    cents = value.quantize(_CENT)
+    shown = f"{cents:,.0f}" if cents == cents.to_integral_value() else f"{cents:,}"
+    return f"{shown} {currency}"
+
+
 def _started_line(summary: PortfolioSummary) -> Text | None:
     """Return the start capital line, or ``None`` when the start is unknown.
 
-    A USDT capital seed shows as its EUR equivalent at the seed-date rate,
-    labelled as such (USDT stays off the home screen), or as USDT with "EUR
-    pending" until that rate is known.
+    A capital seed in its quote currency shows the seed as funded and its EUR
+    equivalent at the seed-date ECB rate, or the seed with "EUR pending" until
+    that rate is known.
     """
     started = summary.started_on
     if started is None:
         return None
-    on = f"on {started.day} {started:%b}"
+    day = f"{started.day} {started:%b}"
+    on = f"on {day}"
     quote = summary.starting_capital_quote
     eur = summary.starting_capital
     if quote is None:
         return None if eur is None else Text(f"started {fmt_level(eur)} {on}", style="dim")
     if eur is None:
         return Text(f"started {_fmt_quote(quote)} {on} · {_EUR_PENDING}", style="dim")
-    return Text(f"started {fmt_level(eur)} {on} · Equivalent in EUR", style="dim")
+    seed = _fmt_seed(quote, summary.quote_currency)
+    return Text(f"started {seed} ({fmt_level(eur)} at ECB rate, {day})", style="dim")
 
 
 def _pending_portfolio(ctx: RenderContext, summary: PortfolioSummary) -> Group:
@@ -408,7 +414,7 @@ def _pending_portfolio(ctx: RenderContext, summary: PortfolioSummary) -> Group:
         head += f" {_fmt_quote(summary.total_value_quote)}"
     parts: list[RenderableType] = [
         Text(f"{head} · {_EUR_PENDING}", style="bold"),
-        Text(_NO_RATE_NOTE, style="dim"),
+        Text(_EUR_PENDING_NOTE, style="dim"),
     ]
     started = _started_line(summary)
     if started is not None:

@@ -8,8 +8,9 @@ actually produces.
 
 Invariants:
 
-- the hero is the EUR total; the start line is the seed's EUR equivalent,
-  labelled "Equivalent in EUR", and no USDT appears on the priced card;
+- the hero is the EUR total; the start line is the seed as funded in USDT
+  with its EUR value at the ECB rate (#650), and no other USDT figure appears
+  on the priced card;
 - an EUR-pending portfolio shows the USDT total and "EUR pending", no € figure;
 - a pending waterfall column or open line says "EUR pending", not €0.00;
 - blind surfaces show no money, pending or not (``pnl_visible``);
@@ -58,21 +59,32 @@ def test_priced_card_leads_with_the_eur_total(tmp_path: Path) -> None:
     assert first == "€4,078.76   ▲ +€78.76 +1.97% today"
 
 
-def test_start_line_is_labelled_equivalent_in_eur(tmp_path: Path) -> None:
-    """The 5,000 USDT seed reads as its EUR value with the label, and no USDT is shown."""
-    text = _text(_summary(tmp_path))
-    assert ("started €4,000.00 on 1 Oct · Equivalent in EUR" in text, "USDT" in text) == (
-        True,
-        False,
+def test_start_line_shows_the_seed_and_its_ecb_value(tmp_path: Path) -> None:
+    """The 5,000 USDT seed reads as funded, with its EUR value at the ECB rate (#650).
+
+    USDT appears on the priced card only on that line.
+    """
+    lines = _text(_summary(tmp_path)).splitlines()
+    assert [line for line in lines if "USDT" in line] == [
+        "started 5,000 USDT (€4,000.00 at ECB rate, 1 Oct)"
+    ]
+
+
+def test_start_line_keeps_the_seed_currency_and_cents(tmp_path: Path) -> None:
+    """A seed with cents in another quote currency reads exactly as funded (#650)."""
+    summary = replace(
+        _summary(tmp_path), quote_currency="USDC", starting_capital_quote=Decimal("5000.50")
     )
+    started = next(line for line in _text(summary).splitlines() if line.startswith("started"))
+    assert started == "started 5,000.50 USDC (€4,000.00 at ECB rate, 1 Oct)"
 
 
 def test_pending_card_shows_usdt_and_no_euro(tmp_path: Path) -> None:
-    """No rate: the USDT total, "EUR pending", the backfill hint, and no € anywhere (A-1.2)."""
+    """No rate: the USDT total, "EUR pending", the restart/backfill hint, no € (A-1.2, #650)."""
     lines = _text(_summary(tmp_path, priced=False)).splitlines()
     assert lines == [
         "Portfolio 5,098.45 USDT · EUR pending",
-        "EUR values pending: no EUR rate in the ledger yet · run hermes fx backfill",
+        "EUR pending · priced on the next restart, or run hermes fx backfill",
         "started 5,000.00 USDT on 1 Oct · EUR pending",
     ]
 

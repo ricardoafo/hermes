@@ -193,6 +193,8 @@ class PortfolioSummary:
             when the source knows it.
         open_pnl_pending: An open position is not priced in EUR yet, so
             ``open_pnl`` is not meaningful.
+        quote_currency: The currency ``starting_capital_quote`` and
+            ``total_value_quote`` are counted in (the capital seed's asset).
     """
 
     range: PortfolioRange
@@ -215,6 +217,7 @@ class PortfolioSummary:
     eur_pending: bool = False
     total_value_quote: Decimal | None = None
     open_pnl_pending: bool = False
+    quote_currency: str = "USDT"
 
 
 @dataclass(frozen=True, slots=True)
