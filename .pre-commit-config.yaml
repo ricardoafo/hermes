@@ -179,6 +179,12 @@ repos:
         files: ^scripts/dev/reproducibility-check\.py$
         pass_filenames: false
 
+      - id: migration-sql-check
+        name: ledger migration names + no transaction control (#483)
+        entry: uv run python scripts/dev/migration-sql-check.py
+        language: system
+        files: ^src/hermes/adapters/ledger/migrations/.*\.sql$
+
       - id: no-naive-datetime
         name: no naive datetimes (grep guard)
         entry: bash scripts/dev/no-naive-datetime.sh
