@@ -1087,3 +1087,224 @@ def test_first_deploy_without_a_ledger_skips_the_migrate_check(box: Box) -> None
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert not any(c.startswith("hermes migrate") for c in box.calls())
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Staging target (#192): HERMES_TARGET=staging never reaches prod.
+# openspec/changes/192-staging-env/change.md, D-3 and R-2.
+# ─────────────────────────────────────────────────────────────────────
+
+_STAGING = {"HERMES_TARGET": "staging"}
+_STAGING_UNIT = "hermes-staging.service"
+_STAGING_ENV_FILE = 'HERMES_ENV="staging"\nHERMES_ALLOW_MAINNET="no"\n'
+
+
+@pytest.fixture
+def staging_box(box: Box) -> Box:
+    """Return the scratch box with an env file that names the staging tier."""
+    box.env_file.write_text(_STAGING_ENV_FILE, encoding="utf-8", newline="\n")
+    return box
+
+
+def _units_named(calls: list[str]) -> set[str]:
+    """Return every ``*.service`` argument that systemctl or journalctl was called with."""
+    return {
+        word
+        for call in calls
+        if call.split()[0] in {"systemctl", "journalctl"}
+        for word in call.split()[1:]
+        if word.endswith(".service")
+    }
+
+
+def _files_and_bytes(base: Path) -> dict[str, bytes]:
+    """Return every regular file under ``base`` with its content, keyed by relative path."""
+    return {
+        str(path.relative_to(base)): path.read_bytes()
+        for path in base.rglob("*")
+        if path.is_file() and not path.is_symlink()
+    }
+
+
+def test_staging_deploy_writes_only_under_the_staging_root_and_backups(staging_box: Box) -> None:
+    """A-2.1: every file a staging deploy adds or changes lies in its root or its backups."""
+    staging_box.write_ledger("staging-ledger")
+    stage = staging_box.make_stage(_SHA_A)
+    before = _files_and_bytes(staging_box.base)
+
+    result = staging_box.deploy(_SHA_A, stage=stage, **_STAGING)
+
+    assert result.returncode == 0, _output(result)
+    after = _files_and_bytes(staging_box.base)
+    changed = {path for path, data in after.items() if before.get(path) != data}
+    allowed = (staging_box.root, staging_box.backups, staging_box.log)
+    stray = sorted(
+        path
+        for path in changed
+        if not any(
+            staging_box.base / path == base or base in (staging_box.base / path).parents
+            for base in allowed
+        )
+    )
+    assert stray == []
+
+
+def test_staging_deploy_restarts_only_the_staging_unit(staging_box: Box) -> None:
+    """A-2.1: a staging deploy names hermes-staging.service and never prod's unit."""
+    result = staging_box.deploy(_SHA_A, **_STAGING)
+
+    assert result.returncode == 0, _output(result)
+    assert f"systemctl restart {_STAGING_UNIT}" in staging_box.calls()
+    assert _units_named(staging_box.calls()) == {_STAGING_UNIT}
+
+
+def test_staging_deploy_takes_the_snapshot_as_the_staging_user(staging_box: Box) -> None:
+    """A-2.1: the ledger snapshot and migrate check run as hermes-staging, never as hermes."""
+    staging_box.write_ledger("staging-ledger")
+
+    result = staging_box.deploy(_SHA_A, **_STAGING)
+
+    assert result.returncode == 0, _output(result)
+    users = {call.split()[2] for call in staging_box.calls() if call.startswith("runuser -u")}
+    assert users == {"hermes-staging"}
+
+
+def test_staging_failed_gate_rolls_back_the_staging_unit_only(staging_box: Box) -> None:
+    """The automatic rollback inherits the target: it restarts and gates staging, not prod."""
+    staging_box.deploy(_SHA_A, **_STAGING)
+
+    result = staging_box.deploy(_SHA_B, STUB_BAD_RELEASES=_SHA_B, **_STAGING)
+
+    assert result.returncode == 1, _output(result)
+    assert staging_box.target("current") == _SHA_A
+    assert _units_named(staging_box.calls()) == {_STAGING_UNIT}
+
+
+@pytest.mark.parametrize(
+    "env_text",
+    [
+        'HERMES_ENV="prod"\n',
+        "HERMES_ENV=prod\n",
+        "HERMES_ALLOW_MAINNET=no\n",
+        'HERMES_ENV="staging"\nHERMES_ENV="prod"\n',
+        "# HERMES_ENV=staging\nHERMES_ENV=sandbox\n",
+        "HERMES_ENV=STAGING\n",
+    ],
+    ids=["quoted-prod", "bare-prod", "unset", "last-line-prod", "commented-staging", "uppercase"],
+)
+def test_staging_preflight_refuses_an_env_file_that_is_not_staging(
+    staging_box: Box, env_text: str
+) -> None:
+    """A-2.2: a staging run whose env file would boot another tier changes nothing."""
+    staging_box.env_file.write_text(env_text, encoding="utf-8", newline="\n")
+    stage = staging_box.make_stage(_SHA_A)
+    before = staging_box.disk()
+
+    result = staging_box.deploy(_SHA_A, stage=stage, **_STAGING)
+
+    assert result.returncode == 1, _output(result)
+    assert "expected 'staging'" in result.stdout
+    assert staging_box.disk() == before
+    assert not any(call.startswith("systemctl restart") for call in staging_box.calls())
+
+
+@pytest.mark.parametrize(
+    "env_text",
+    ["HERMES_ENV=staging\n", "HERMES_ENV='staging'\n", '  HERMES_ENV = "staging"\n'],
+    ids=["bare", "single-quoted", "spaced"],
+)
+def test_staging_preflight_accepts_every_spelling_of_the_staging_tier(
+    staging_box: Box, env_text: str
+) -> None:
+    """The tier check reads the env file the way systemd does, quoted or not."""
+    staging_box.env_file.write_text(env_text, encoding="utf-8", newline="\n")
+
+    result = staging_box.deploy(_SHA_A, **_STAGING)
+
+    assert result.returncode == 0, _output(result)
+
+
+@pytest.mark.parametrize(
+    ("seam", "prod_value"),
+    [
+        ("HERMES_ROOT", "/opt/hermes"),
+        ("HERMES_ROOT", "/opt/hermes-staging/../hermes"),
+        ("HERMES_ROOT", "/opt/hermes/versions"),
+        ("HERMES_DB", "/var/lib/hermes/hermes.sqlite3"),
+        ("HERMES_BACKUP_DIR", "/var/lib/hermes/backups"),
+        ("HERMES_ENV_FILE", "/etc/hermes/env.production"),
+    ],
+)
+def test_staging_deploy_refuses_any_path_that_resolves_to_prod(
+    staging_box: Box, seam: str, prod_value: str
+) -> None:
+    """D-3: no seam or typo lets a staging deploy write prod's tree or read prod's secrets.
+
+    The guard runs before every other check, so not even `systemctl cat` is called.
+    """
+    stage = staging_box.make_stage(_SHA_A)
+    before = staging_box.disk()
+
+    result = staging_box.deploy(_SHA_A, stage=stage, **_STAGING, **{seam: prod_value})
+
+    assert result.returncode == 1, _output(result)
+    assert "refusing" in result.stdout
+    assert staging_box.disk() == before
+    assert staging_box.calls() == []
+
+
+@pytest.mark.parametrize("script", ["install_release.sh", "rollback.sh", "health_gate.sh"])
+def test_every_release_script_refuses_an_unknown_target(box: Box, script: str) -> None:
+    """A-2.2: a mistyped target is refused outright, never mapped to prod by default."""
+    _two_releases(box)
+    stage = box.make_stage(_SHA_C)
+    args = {
+        "install_release.sh": [_posix(stage / "bin" / script), _SHA_C, _posix(stage)],
+        "rollback.sh": [_posix(_SCRIPT_DIR / script)],
+        "health_gate.sh": [_posix(_SCRIPT_DIR / script), "0"],
+    }[script]
+    before = box.disk()
+
+    result = box.run(args, HERMES_TARGET="production")
+
+    assert result.returncode == 1, _output(result)
+    assert "unknown HERMES_TARGET 'production'" in result.stdout
+    assert box.disk() == before
+    assert box.calls() == []
+
+
+def test_staging_rollback_restarts_and_gates_only_the_staging_unit(box: Box) -> None:
+    """A manual staging rollback flips staging's `current` and touches no prod unit."""
+    _two_releases(box)
+
+    result = box.rollback(**_STAGING)
+
+    assert result.returncode == 0, _output(result)
+    assert box.target("current") == _SHA_A
+    assert f"systemctl restart {_STAGING_UNIT}" in box.calls()
+    assert _units_named(box.calls()) == {_STAGING_UNIT}
+
+
+@pytest.mark.parametrize(
+    ("seam", "prod_value"),
+    [("HERMES_ROOT", "/opt/hermes"), ("HERMES_DB", "/var/lib/hermes/hermes.sqlite3")],
+)
+def test_staging_rollback_refuses_any_path_that_resolves_to_prod(
+    box: Box, seam: str, prod_value: str
+) -> None:
+    """D-3: a staging rollback pointed at prod's root or ledger stops before it acts."""
+    _two_releases(box)
+
+    result = box.rollback(**_STAGING, **{seam: prod_value})
+
+    assert result.returncode == 1, _output(result)
+    assert "refusing" in result.stdout
+    assert box.calls() == []
+
+
+def test_staging_gate_watches_only_the_staging_unit(box: Box) -> None:
+    """The staging gate reads hermes-staging.service's state and journal, never prod's."""
+    result = box.gate(**_STAGING)
+
+    assert result.returncode == 0, _output(result)
+    assert _units_named(box.calls()) == {_STAGING_UNIT}

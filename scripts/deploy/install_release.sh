@@ -38,21 +38,59 @@
 #      (or stop the unit on a first deploy), and exit 1.
 #   6. On success refresh /opt/hermes/bin and prune old releases.
 #
-# Test seams: HERMES_ROOT, HERMES_ENV_FILE, SYSTEMCTL, HERMES_DB,
-# HERMES_BACKUP_DIR, HERMES_BACKUP_PYTHON, HERMES_MIGRATE_BIN, RUNUSER. The script can be
-# sourced to reach prune_versions on its own.
+# Target (#192): HERMES_TARGET picks the install, `prod` (default, the
+# layout above) or `staging` (/opt/hermes-staging, /var/lib/hermes-staging,
+# /etc/hermes/env.staging, hermes-staging.service, user hermes-staging).
+# A staging run refuses to start when any path it would write, its unit or
+# its user is prod's, or when its env file does not say HERMES_ENV=staging.
+# By hand:
 #
-# Reference: openspec/changes/179-cd-first-real-deploy/change.md (D-1..D-7).
+#   HERMES_TARGET=staging bash <stage>/bin/install_release.sh <sha12> <stage>
+#
+# Test seams: HERMES_ROOT, HERMES_ENV_FILE, SYSTEMCTL, HERMES_DB,
+# HERMES_BACKUP_DIR, HERMES_BACKUP_PYTHON, HERMES_MIGRATE_BIN, RUNUSER. The
+# seams override the target's paths, and the staging guard still checks them.
+# The script can be sourced to reach prune_versions on its own.
+#
+# Reference: openspec/changes/179-cd-first-real-deploy/change.md (D-1..D-7),
+# openspec/changes/192-staging-env/change.md (D-3).
 
 set -euo pipefail
 
-ROOT=${HERMES_ROOT:-/opt/hermes}
-ENV_FILE=${HERMES_ENV_FILE:-/etc/hermes/env.production}
+PROD_ROOT=/opt/hermes
+PROD_STATE=/var/lib/hermes
+PROD_ENV_FILE=/etc/hermes/env.production
+PROD_UNIT=hermes.service
+PROD_RUN_AS=hermes
+
+TARGET=${HERMES_TARGET:-prod}
+case "$TARGET" in
+    prod)
+        target_root=$PROD_ROOT
+        target_state=$PROD_STATE
+        target_env_file=$PROD_ENV_FILE
+        UNIT=$PROD_UNIT
+        RUN_AS=$PROD_RUN_AS
+        ;;
+    staging)
+        target_root=/opt/hermes-staging
+        target_state=/var/lib/hermes-staging
+        target_env_file=/etc/hermes/env.staging
+        UNIT=hermes-staging.service
+        RUN_AS=hermes-staging
+        ;;
+    *)
+        echo "::error::unknown HERMES_TARGET '$TARGET': expected prod or staging"
+        exit 1
+        ;;
+esac
+
+ROOT=${HERMES_ROOT:-$target_root}
+ENV_FILE=${HERMES_ENV_FILE:-$target_env_file}
 SYSTEMCTL=${SYSTEMCTL:-systemctl}
-UNIT=hermes.service
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-DB=${HERMES_DB:-/var/lib/hermes/hermes.sqlite3}
-BACKUP_DIR=${HERMES_BACKUP_DIR:-/var/lib/hermes/backups}
+DB=${HERMES_DB:-$target_state/hermes.sqlite3}
+BACKUP_DIR=${HERMES_BACKUP_DIR:-$target_state/backups}
 RUNUSER=${RUNUSER:-runuser}
 
 # The 3 newest releases survive a prune, plus whatever `current` and
@@ -64,7 +102,13 @@ BACKUPS_KEPT=5
 # uv runs as root (the service must not be able to rewrite its own code),
 # so the managed Python lives where `hermes` can read it. Under /root it
 # would be unreachable because hermes.service sets ProtectHome=true.
-export UV_PYTHON_INSTALL_DIR=${UV_PYTHON_INSTALL_DIR:-$ROOT/python}
+# Staging builds its venvs on prod's interpreter: vps-bootstrap installs only
+# that one, it is root-owned 0755, and nothing here writes to it.
+if [ "$TARGET" = staging ]; then
+    export UV_PYTHON_INSTALL_DIR=${UV_PYTHON_INSTALL_DIR:-$PROD_ROOT/python}
+else
+    export UV_PYTHON_INSTALL_DIR=${UV_PYTHON_INSTALL_DIR:-$ROOT/python}
+fi
 export UV_PYTHON_DOWNLOADS=never
 # Never fall back to a system interpreter: the venv python must link into $UV_PYTHON_INSTALL_DIR.
 export UV_PYTHON_PREFERENCE=only-managed
@@ -83,6 +127,44 @@ die() {
     exit 1
 }
 
+# True when $1, symlinks resolved, is $2 or lies under it.
+is_within() {
+    local path base
+    path=$(realpath -m -- "$1")
+    base=$(realpath -m -- "$2")
+    [ "$path" = "$base" ] || [ "${path#"$base"/}" != "$path" ]
+}
+
+# The value of the last HERMES_ENV= line in $1 (what systemd ends up
+# setting), unquoted; empty when there is none.
+env_file_tier() {
+    local line value=""
+    local assign="^[[:space:]]*HERMES_ENV[[:space:]]*=[[:space:]]*[\"']?([^\"'[:space:]]*)"
+    while IFS= read -r line || [ -n "$line" ]; do
+        if [[ "$line" =~ $assign ]]; then
+            value=${BASH_REMATCH[1]}
+        fi
+    done <"$1"
+    echo "$value"
+}
+
+# Staging must never reach prod, whatever a seam or a typo says: no write
+# path inside prod's code or state tree, not prod's env file, unit or user.
+guard_staging() {
+    local path
+    [ "$TARGET" = staging ] || return 0
+    for path in "$ROOT" "$DB" "$BACKUP_DIR"; do
+        if is_within "$path" "$PROD_ROOT" || is_within "$path" "$PROD_STATE"; then
+            die "staging target resolves $path inside prod's $PROD_ROOT or $PROD_STATE: refusing"
+        fi
+    done
+    if is_within "$ENV_FILE" "$PROD_ENV_FILE"; then
+        die "staging target reads prod's env file $ENV_FILE: refusing"
+    fi
+    [ "$UNIT" != "$PROD_UNIT" ] || die "staging target would restart prod's $PROD_UNIT: refusing"
+    [ "$RUN_AS" != "$PROD_RUN_AS" ] || die "staging target would run as prod's user $PROD_RUN_AS: refusing"
+}
+
 cleanup_partial() {
     if [ -n "$partial_dir" ]; then
         rm -rf "$partial_dir"
@@ -91,16 +173,22 @@ cleanup_partial() {
 
 preflight() {
     local sha=$1 stage=$2 mode
+    guard_staging
     [[ "$sha" =~ ^[0-9a-f]{12}$ ]] || die "version id '$sha' is not 12 lowercase hex chars"
     [ -d "$stage" ] || die "stage dir $stage missing"
 
     command -v uv >/dev/null 2>&1 || die "uv not on PATH: run vps-bootstrap"
-    id hermes >/dev/null 2>&1 || die "user hermes missing: run vps-bootstrap"
+    id "$RUN_AS" >/dev/null 2>&1 || die "user $RUN_AS missing: run vps-bootstrap"
     "$SYSTEMCTL" cat "$UNIT" >/dev/null 2>&1 || die "$UNIT is not installed: run vps-bootstrap"
 
     [ -f "$ENV_FILE" ] || die "$ENV_FILE missing: run vps-bootstrap"
     mode=$(stat -c '%a %U:%G' "$ENV_FILE")
     [ "$mode" = "600 root:root" ] || die "$ENV_FILE is '$mode', expected '600 root:root'"
+    if [ "$TARGET" = staging ]; then
+        local tier
+        tier=$(env_file_tier "$ENV_FILE")
+        [ "$tier" = staging ] || die "$ENV_FILE sets HERMES_ENV='$tier', expected 'staging': refusing"
+    fi
 
     # Every spelling the config loader reads as true (loader.py _coerce_scalar,
     # plus 1, which pydantic coerces to True), quoted or not.
@@ -153,10 +241,10 @@ backup_ledger() {
         log "no ledger at $DB yet: nothing to back up" >&2
         return 0
     fi
-    install -d -m 0750 -o hermes -g hermes "$BACKUP_DIR" 2>/dev/null || install -d -m 0750 "$BACKUP_DIR"
+    install -d -m 0750 -o "$RUN_AS" -g "$RUN_AS" "$BACKUP_DIR" 2>/dev/null || install -d -m 0750 "$BACKUP_DIR"
     out="$BACKUP_DIR/pre-$sha.sqlite3"
     tmp="$out.partial"
-    "$RUNUSER" -u hermes -- "$py" -c '
+    "$RUNUSER" -u "$RUN_AS" -- "$py" -c '
 import sqlite3, sys
 src = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
 dst = sqlite3.connect(sys.argv[2])
@@ -195,14 +283,14 @@ migrate_ledger() {
         return 0
     fi
     bin=${HERMES_MIGRATE_BIN:-$vdir/.venv/bin/hermes}
-    status=$("$RUNUSER" -u hermes -- "$bin" migrate --db "$DB" --status) || return 1
+    status=$("$RUNUSER" -u "$RUN_AS" -- "$bin" migrate --db "$DB" --status) || return 1
     case "$status" in
         *"(destructive)"*) ;;
         *) return 0 ;;
     esac
     log "destructive migration pending: stopping $UNIT and running hermes migrate"
     "$SYSTEMCTL" stop "$UNIT" || return 1
-    "$RUNUSER" -u hermes -- "$bin" migrate --db "$DB" --snapshot-dir "$BACKUP_DIR/migrations"
+    "$RUNUSER" -u "$RUN_AS" -- "$bin" migrate --db "$DB" --snapshot-dir "$BACKUP_DIR/migrations"
 }
 
 # Atomic symlink swap: write a temp link, then rename(2) it over the real one.
