@@ -239,7 +239,7 @@ class FillKernel:
         entry_px = signal.entry_price
         if entry_px is None:  # pragma: no cover — StrategySignal forbids it for ENTRY
             return Declined(reason="entry signal without an entry price", rule="signal")
-        snapshot = self._tracker.snapshot()
+        snapshot = self._tracker.snapshot
         self._fill_model.last_rejection = None
         result = self._router.route(
             RoutingInput(
@@ -275,7 +275,7 @@ class FillKernel:
         self, pair: Pair, market: MarketContext, book: Orderbook, correlation_id: str
     ) -> ExecutionOutcome:
         """Sell the whole held position through the same fill model."""
-        held = self._tracker.snapshot().positions.get(pair)
+        held = self._tracker.snapshot.positions.get(pair)
         if held is None:
             return Declined(reason=f"exit signal for {pair} without a position", rule="no-position")
         order = Order(

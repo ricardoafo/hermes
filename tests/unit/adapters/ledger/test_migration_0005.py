@@ -81,7 +81,11 @@ def test_migrate_keeps_every_lot_and_drops_the_default(tmp_path: Path) -> None:
     before = conn.execute(_LOTS_SQL).fetchall()
     conn.close()
 
-    applied, snapshot = migrate_with_snapshot(db, tmp_path / "snaps")
+    through = tmp_path / "through_0005"
+    through.mkdir()
+    for name in (*_THROUGH_0004, "0005_lots_drop_strategy_default.sql"):
+        shutil.copy(MIGRATIONS_DIR / name, through / name)
+    applied, snapshot = migrate_with_snapshot(db, tmp_path / "snaps", migrations_dir=through)
 
     assert applied == ("0005_lots_drop_strategy_default.sql",)
     assert snapshot is not None

@@ -76,6 +76,11 @@ class PortfolioTracker:
                 )
         return Success(tracker)
 
+    @property
+    def current(self) -> PortfolioSnapshot:
+        """Return the current snapshot (read-only value object)."""
+        return self._snapshot
+
     def mark(self, bar: Bar) -> None:
         """Mark the bar's pair at the bar close when the bar is newer than its mark.
 
@@ -99,8 +104,9 @@ class PortfolioTracker:
             self._snapshot = result.unwrap()
         return result
 
+    @property
     def snapshot(self) -> PortfolioSnapshot:
-        """Return the current snapshot; it is immutable, so callers cannot change the state."""
+        """The current snapshot (immutable, so safe to hand out)."""
         return self._snapshot
 
     def state(self) -> PortfolioState:

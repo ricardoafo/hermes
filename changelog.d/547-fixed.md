@@ -1,0 +1,1 @@
+- `hermes serve` now logs one JSON object per line, as ADR-008 specifies. Before this, the daily alive line counted zero errors and warnings however many there were, and `hermes logs` could not filter by level or correlation id (#547).

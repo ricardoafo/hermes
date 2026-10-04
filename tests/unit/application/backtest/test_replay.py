@@ -213,7 +213,7 @@ def test_strategy_sees_the_portfolio_marked_at_the_bar_close() -> None:
         fees_at=_fees_at,
         correlation_id=lambda: "c",
     )
-    assert strategy.seen[1].current_value == k.tracker.snapshot().equity
+    assert strategy.seen[1].current_value == k.tracker.snapshot.equity
     assert strategy.seen[1].current_value > strategy.seen[0].current_value
 
 

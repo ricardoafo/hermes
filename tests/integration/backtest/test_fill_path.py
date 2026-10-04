@@ -162,8 +162,8 @@ def test_ledger_round_trip_rebuilds_the_backtest_portfolio() -> None:
         rebuilt = PortfolioTracker.rebuilt(seed(), ledger.trade_events(STRATEGY)).unwrap()
     finally:
         connection.close()
-    live = k.tracker.snapshot()
-    replayed = rebuilt.snapshot()
+    live = k.tracker.snapshot
+    replayed = rebuilt.snapshot
     assert len(run.trades) == 2
     assert (replayed.cash, replayed.realized_pnl, dict(replayed.positions)) == (
         live.cash,

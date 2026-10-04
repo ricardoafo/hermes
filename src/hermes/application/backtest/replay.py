@@ -172,7 +172,7 @@ def replay(
                 correlation_id=correlation_id(),
             )
         if bar.interval is KlineInterval.D1 and window_start <= bar.close_time <= window_end:
-            run.daily_equity.append((bar.close_time, tracker.snapshot().equity))
+            run.daily_equity.append((bar.close_time, tracker.snapshot.equity))
     return run
 
 

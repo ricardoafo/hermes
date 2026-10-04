@@ -25,6 +25,7 @@ _UNIT_FILES = sorted([*_UNIT_DIR.glob("*.service"), *_UNIT_DIR.glob("*.timer")])
 _SERVICE_FILES = [path for path in _UNIT_FILES if path.suffix == ".service"]
 
 _ENV_FILE = "/etc/hermes/env.production"
+_OWN_ENV_FILES = {"hermes-bot.service": "/etc/hermes/env.bot"}
 _EXEC_PREFIXES = "@-:+!"
 
 
@@ -100,11 +101,13 @@ def test_service_environment_file_is_the_bootstrap_path(path: Path) -> None:
     """Every unit that loads secrets reads the file vps_bootstrap.sh writes, with no '-'.
 
     A leading '-' would boot the process with no secrets instead of failing the start.
+    The bot reads its own bootstrap-written file so it never sees exchange keys
+    (ADR-015 D-05); every other unit reads env.production.
     """
     service = _parse(path.name)["Service"]
     if "EnvironmentFile" not in service:
         pytest.skip(f"{path.name} loads no environment file")
-    assert service["EnvironmentFile"] == _ENV_FILE
+    assert service["EnvironmentFile"] == _OWN_ENV_FILES.get(path.name, _ENV_FILE)
 
 
 def test_hermes_service_loads_the_environment_file() -> None:
@@ -337,3 +340,18 @@ def test_daily_service_runs_the_shipped_script_from_the_release() -> None:
 
     assert script == _RELEASE_DEPLOY_DIR / "hermes-daily-line.sh"
     assert (_REPO_ROOT / "deploy" / script.name).is_file()
+
+
+def test_bot_unit_loads_only_its_own_env_file() -> None:
+    """ADR-015 D-05: the bot never sees env.production and its exchange keys."""
+    service = _parse("hermes-bot.service")["Service"]
+
+    assert service["EnvironmentFile"] == "/etc/hermes/env.bot"
+
+
+def test_bot_unit_runs_hermes_bot_read_only_on_the_ledger() -> None:
+    """The bot runs `hermes bot` and gets no write path on the state dir."""
+    service = _parse("hermes-bot.service")["Service"]
+
+    assert shlex.split(service["ExecStart"])[:2] == ["/opt/hermes/current/.venv/bin/hermes", "bot"]
+    assert (service["ReadOnlyPaths"], service.get("ReadWritePaths")) == ("/var/lib/hermes", None)

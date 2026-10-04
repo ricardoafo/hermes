@@ -92,7 +92,7 @@ def test_entry_fills_on_the_ask_touch_and_reaches_the_portfolio() -> None:
     qty = _SIZED_NOTIONAL / Decimal("100")
     assert out.fill.avg_price == Decimal("100.05")
     assert out.fill.executed_qty == qty
-    assert k.tracker.snapshot().positions[BTC_USDT].quantity == qty
+    assert k.tracker.snapshot.positions[BTC_USDT].quantity == qty
 
 
 def test_entry_trade_event_mirrors_the_fill_and_carries_the_strategy() -> None:
@@ -136,7 +136,7 @@ def test_entry_sizing_uses_starting_capital_after_a_loss() -> None:
             correlation_id="b",
         )
     )
-    assert k.tracker.snapshot().equity < STARTING_CASH
+    assert k.tracker.snapshot.equity < STARTING_CASH
     second = _executed(
         k.execute(
             _entry(Decimal("100"), t2),
@@ -172,7 +172,7 @@ def test_exit_sells_the_whole_position_on_the_bid_touch() -> None:
     expected = Decimal("98") * (1 - Decimal("15") / _BPS)
     assert abs(out.fill.avg_price - expected) < Decimal("1e-20"), "VWAP rounds at 28 digits"
     assert out.trade.side is TradeSide.SELL
-    assert dict(k.tracker.snapshot().positions) == {}
+    assert dict(k.tracker.snapshot.positions) == {}
 
 
 def test_exit_without_a_position_is_declined() -> None:
@@ -187,7 +187,7 @@ def test_exit_without_a_position_is_declined() -> None:
     assert out == Declined(
         reason=f"exit signal for {BTC_USDT} without a position", rule="no-position"
     )
-    assert k.tracker.snapshot() == seed()
+    assert k.tracker.snapshot == seed()
 
 
 def test_missing_book_is_declined_before_routing() -> None:
@@ -196,7 +196,7 @@ def test_missing_book_is_declined_before_routing() -> None:
     out = k.execute(_entry(Decimal("100")), BTC_USDT, market(None, _T0), correlation_id="x")
     assert isinstance(out, Declined)
     assert out.rule == "no-book"
-    assert k.tracker.snapshot() == seed()
+    assert k.tracker.snapshot == seed()
 
 
 def test_entry_larger_than_the_book_is_rejected_with_the_fill_model_rejection() -> None:
@@ -213,7 +213,7 @@ def test_entry_larger_than_the_book_is_rejected_with_the_fill_model_rejection() 
     assert out.rejection is not None
     assert out.rejection.reason.startswith("INSUFFICIENT_DEPTH")
     assert out.rejection.order.qty.amount == _SIZED_NOTIONAL / Decimal("100")
-    assert k.tracker.snapshot() == seed()
+    assert k.tracker.snapshot == seed()
 
 
 def test_exit_larger_than_the_book_is_rejected_and_keeps_the_position() -> None:
@@ -237,7 +237,7 @@ def test_exit_larger_than_the_book_is_rejected_and_keeps_the_position() -> None:
     assert isinstance(out, Declined)
     assert out.rule == "fill_model"
     assert out.rejection is not None
-    assert k.tracker.snapshot().positions[BTC_USDT].quantity == entry.fill.executed_qty
+    assert k.tracker.snapshot.positions[BTC_USDT].quantity == entry.fill.executed_qty
 
 
 def test_kill_trigger_halts_the_entry() -> None:
@@ -251,7 +251,7 @@ def test_kill_trigger_halts_the_entry() -> None:
     )
     assert isinstance(out, Halted)
     assert out.breaker.decision.triggered is True
-    assert k.tracker.snapshot() == seed()
+    assert k.tracker.snapshot == seed()
 
 
 @dataclass
@@ -282,7 +282,7 @@ def test_fill_the_portfolio_refuses_is_declined_and_not_recorded() -> None:
     assert isinstance(out, Declined)
     assert out.rule == "portfolio"
     assert out.rejection is None
-    assert k.tracker.snapshot() == seed()
+    assert k.tracker.snapshot == seed()
 
 
 _prices = st.decimals(min_value=Decimal("1"), max_value=Decimal("100000"), places=2)
@@ -306,7 +306,7 @@ def test_replaying_the_returned_trades_rebuilds_the_same_portfolio(
         if isinstance(out, Executed):
             trades.append(out.trade)
     rebuilt = PortfolioTracker.rebuilt(seed(), trades).unwrap()
-    assert rebuilt.snapshot() == k.tracker.snapshot()
+    assert rebuilt.snapshot == k.tracker.snapshot
 
 
 def test_kernel_exposes_its_tracker() -> None:

@@ -55,6 +55,7 @@ class UnitState(StrEnum):
     RESTARTING = "restarting"
     FAILED = "failed"
     STOPPED = "stopped"
+    NOT_INSTALLED = "not installed"
     UNKNOWN = "unknown"
 
 

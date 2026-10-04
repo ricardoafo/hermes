@@ -297,7 +297,7 @@ async def _run(args: argparse.Namespace) -> int:
         start=start,
         end=end,
         run=run,
-        final=kernel.tracker.snapshot(),
+        final=kernel.tracker.snapshot,
         sharpe=sharpe,
         model=model,
         datasets=datasets,
