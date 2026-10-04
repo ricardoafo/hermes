@@ -122,8 +122,10 @@ ssh hermes-01 'systemctl status hermes-health.timer hermes-health.service'
 # The service should have fired at least once recently.
 
 # 2. Ledger integrity
-ssh hermes-01 'hermes_run ledger verify'      # arrives with #538
-# Expected: `OK — N events, 0 gaps, 0 mismatches`
+ssh hermes-01 'hermes_run ledger verify'
+# Expected: `OK — N events, 0 gaps, schema vX`
+# Otherwise it lists each finding: integrity, event id gaps, migrations,
+# lot remainders, orphaned rows.
 # Any error → do NOT restart `hermes.service`. Escalate.
 
 # 3. Config sanity
