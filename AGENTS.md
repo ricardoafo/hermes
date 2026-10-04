@@ -60,7 +60,7 @@ are acceptable. If the user requests one of these, refuse and explain.
 2. **Never `git push --force` to `main`**. Force-push is only allowed on
    feature branches you own during a rebase workflow before opening a PR.
 3. **Never approve or merge a PR you authored**. GitHub blocks this via
-   CODEOWNERS + branch protection anyway. Do not attempt to work around it.
+   CODEOWNERS + the `main-protection` ruleset anyway. Do not attempt to work around it.
 4. **Never disable branch protection** except during the one documented
    Emergency Exception (see dev-workflow.md, MVP2+ only, Ricardo only).
 5. **Never add AI attribution to commit messages**. No `Co-Authored-By:

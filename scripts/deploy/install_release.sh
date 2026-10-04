@@ -28,13 +28,18 @@
 #      the newest BACKUPS_KEPT. The new release may migrate the schema at
 #      start; the snapshot is the way back. A failed snapshot stops the
 #      deploy before anything goes live.
+#   3b. If the new release has a destructive migration pending (#447), stop
+#      the unit and run it through `hermes migrate` with the new release's
+#      binary. Serve never applies those at start. A failed migration rolls
+#      back inside its transaction; the old release restarts and the deploy
+#      stops.
 #   4. Flip previous, flip current, restart the unit.
 #   5. Run the health gate. On failure roll back, restoring the snapshot
 #      (or stop the unit on a first deploy), and exit 1.
 #   6. On success refresh /opt/hermes/bin and prune old releases.
 #
 # Test seams: HERMES_ROOT, HERMES_ENV_FILE, SYSTEMCTL, HERMES_DB,
-# HERMES_BACKUP_DIR, HERMES_BACKUP_PYTHON, RUNUSER. The script can be
+# HERMES_BACKUP_DIR, HERMES_BACKUP_PYTHON, HERMES_MIGRATE_BIN, RUNUSER. The script can be
 # sourced to reach prune_versions on its own.
 #
 # Reference: openspec/changes/179-cd-first-real-deploy/change.md (D-1..D-7).
@@ -179,6 +184,27 @@ prune_backups() {
         | LC_ALL=C sort -rn | cut -d' ' -f2-)
 }
 
+# Run pending destructive migrations through `hermes migrate` (#447). They
+# never run at serve start, so without this step the new release would fail
+# its health gate on an existing ledger. Non-destructive migrations still run
+# at start as before. The unit is stopped first because `hermes migrate`
+# needs the ledger to itself; it restarts in activate_and_gate.
+migrate_ledger() {
+    local vdir=$1 bin status
+    if [ ! -f "$DB" ]; then
+        return 0
+    fi
+    bin=${HERMES_MIGRATE_BIN:-$vdir/.venv/bin/hermes}
+    status=$("$RUNUSER" -u hermes -- "$bin" migrate --db "$DB" --status) || return 1
+    case "$status" in
+        *"(destructive)"*) ;;
+        *) return 0 ;;
+    esac
+    log "destructive migration pending: stopping $UNIT and running hermes migrate"
+    "$SYSTEMCTL" stop "$UNIT" || return 1
+    "$RUNUSER" -u hermes -- "$bin" migrate --db "$DB" --snapshot-dir "$BACKUP_DIR/migrations"
+}
+
 # Atomic symlink swap: write a temp link, then rename(2) it over the real one.
 flip_link() {
     local target=$1 link=$2
@@ -239,6 +265,13 @@ main() {
 
     snapshot=$(backup_ledger "$sha" "${HERMES_BACKUP_PYTHON:-$vdir/.venv/bin/python}") \
         || die "ledger snapshot of $DB failed: not deploying $sha"
+
+    if ! migrate_ledger "$vdir"; then
+        # current still points at the old release and the failed migration
+        # rolled back in its transaction, so the old release can run as before.
+        "$SYSTEMCTL" start "$UNIT" || true
+        die "hermes migrate failed on $DB: not deploying $sha"
+    fi
 
     # `readlink -f` exits 0 on a missing link, so `current` needs `-L`.
     # Without it the first deploy would write `previous -> current`.
