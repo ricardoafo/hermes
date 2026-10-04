@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =====================================================================
-# Health gate — decides whether a fresh hermes.service restart is good
+# Health gate — decides whether a fresh hermes restart is good
 # =====================================================================
 #
 # Usage: health_gate.sh <since_epoch>
@@ -16,22 +16,29 @@
 # Do not drop any of the three. Limit: this proves start and a stable
 # first 30 s, not that the strategy trades.
 #
+# HERMES_TARGET=staging gates hermes-staging.service instead (#192).
+#
 # Test seams: SYSTEMCTL, JOURNALCTL, GATE_HOLD_SECONDS.
 #
-# Reference: openspec/changes/179-cd-first-real-deploy/change.md (D-7).
+# Reference: openspec/changes/179-cd-first-real-deploy/change.md (D-7),
+# openspec/changes/192-staging-env/change.md (D-3).
 
 set -euo pipefail
-
-unit=hermes.service
-since=${1:?usage: health_gate.sh <since_epoch>}
-hold=${GATE_HOLD_SECONDS:-30}
-SYSTEMCTL=${SYSTEMCTL:-systemctl}
-JOURNALCTL=${JOURNALCTL:-journalctl}
 
 bad() {
     echo "::error::$*"
     exit 1
 }
+
+case "${HERMES_TARGET:-prod}" in
+    prod) unit=hermes.service ;;
+    staging) unit=hermes-staging.service ;;
+    *) bad "unknown HERMES_TARGET '${HERMES_TARGET}': expected prod or staging" ;;
+esac
+since=${1:?usage: health_gate.sh <since_epoch>}
+hold=${GATE_HOLD_SECONDS:-30}
+SYSTEMCTL=${SYSTEMCTL:-systemctl}
+JOURNALCTL=${JOURNALCTL:-journalctl}
 
 pid=""
 for ((t = 0; t < hold; t += 2)); do

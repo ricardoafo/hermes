@@ -47,6 +47,8 @@ from hermes.application.console.format import (
     fmt_price,
     fmt_qty,
     fmt_stop,
+    fmt_stop_usdt,
+    fmt_usdt_price,
     sparkline,
     stop_bar,
 )
@@ -91,6 +93,10 @@ _WIDE_FROM: Final = 100
 _SPARK_MAX: Final = 48
 _OVERVIEW_ACTIVITY_ROWS: Final = 4
 _HIDDEN_NOTE: Final = "money hidden on this surface"
+_EUR_PENDING: Final = "EUR pending"
+_EUR_PENDING_NOTE: Final = (
+    "EUR values pending: a fill is not priced in EUR yet · run hermes fx backfill"
+)
 _ZERO: Final = Decimal(0)
 
 _RANGE_LABEL: Final[dict[PortfolioRange, str]] = {
@@ -435,8 +441,15 @@ def render_portfolio(
 # ----------------------------------------------------------------------
 
 
-def _eur_caption() -> Text:
+def _eur_caption(rows: Sequence[PositionRow]) -> Text:
+    if any(row.eur_pending for row in rows):
+        return Text("prices in EUR; USDT where EUR values are pending", style="dim")
     return Text("prices in EUR", style="dim")
+
+
+def _level_price(row: PositionRow, usdt: Decimal, eur: Decimal) -> str:
+    """Return a blind-surface price: EUR, or labelled USDT while EUR is pending."""
+    return fmt_usdt_price(usdt) if row.eur_pending else fmt_price(eur)
 
 
 def _blind_positions(rows: Sequence[PositionRow], ctx: RenderContext) -> Table:
@@ -448,9 +461,9 @@ def _blind_positions(rows: Sequence[PositionRow], ctx: RenderContext) -> Table:
             row.coin,
             row.side,
             _stamp(ctx, row.opened_at),
-            fmt_price(row.entry_eur),
+            _level_price(row, row.entry_price, row.entry_eur),
             fmt_qty(row.size),
-            fmt_price(row.stop_eur),
+            _level_price(row, row.stop_price, row.stop_eur),
         )
     return table
 
@@ -461,8 +474,26 @@ def _cushion_style(ctx: RenderContext, row: PositionRow) -> str:
     return _CUSHION_STYLE[cushion_level(row.stop_distance_atr)]
 
 
+def _stop_text(row: PositionRow) -> str:
+    if row.eur_pending:
+        return fmt_stop_usdt(row.stop_price, row.stop_distance_pct)
+    return fmt_stop(row.stop_eur, row.stop_distance_pct)
+
+
 def _stop_cell(ctx: RenderContext, row: PositionRow) -> Text:
-    return Text(fmt_stop(row.stop_eur, row.stop_distance_pct), style=_cushion_style(ctx, row))
+    return Text(_stop_text(row), style=_cushion_style(ctx, row))
+
+
+def _price_move(row: PositionRow) -> str:
+    if row.eur_pending:
+        return f"{fmt_price(row.entry_price)} → {fmt_usdt_price(row.current_price)}"
+    return f"{fmt_eur_price(row.entry_eur)} → {fmt_eur_price(row.current_eur)}"
+
+
+def _net_cell(ctx: RenderContext, row: PositionRow) -> Text:
+    if row.eur_pending:
+        return Text(_EUR_PENDING, style="dim")
+    return _money(ctx, row.net, " net")
 
 
 def _stop_bar_cell(ctx: RenderContext, row: PositionRow) -> Text:
@@ -495,7 +526,8 @@ def render_positions(
     if not rows:
         return _framed(ctx, [Text("No open shadow positions.", style="dim")])
     if not ctx.shows_money:
-        return _framed(ctx, [_blind_positions(rows, ctx), _eur_caption()])
+        return _framed(ctx, [_blind_positions(rows, ctx), _eur_caption(rows)])
+    pending = any(row.eur_pending for row in rows)
     table = Table(box=box.SIMPLE_HEAD, pad_edge=False, show_edge=False)
     table.add_column("coin")
     table.add_column("tf")
@@ -508,12 +540,14 @@ def render_positions(
         cells: list[RenderableType] = [
             Text(f"{marker}{row.coin}", style="bold"),
             row.timeframe,
-            f"{fmt_eur_price(row.entry_eur)} → {fmt_eur_price(row.current_eur)}",
+            _price_move(row),
             Text(fmt_pct(row.change_pct), style=_money_style(ctx, row.change_pct)),
-            _money(ctx, row.net, " net"),
+            _net_cell(ctx, row),
             _stop_cell(ctx, row),
         ]
         table.add_row(*cells)
+    if pending:
+        return _framed(ctx, [table, Text(_EUR_PENDING_NOTE, style="dim")])
     return _framed(ctx, [table])
 
 
@@ -565,10 +599,13 @@ def render_position_detail(detail: PositionDetail | None, ctx: RenderContext) ->
     header.append(f" · {row.timeframe} · {row.side} · open {age}")
     if not ctx.shows_money:
         facts = Text(
-            f"opened {_stamp(ctx, row.opened_at)} · entry {fmt_price(row.entry_eur)}"
-            f" · size {fmt_qty(row.size)} · stop {fmt_price(row.stop_eur)}"
+            f"opened {_stamp(ctx, row.opened_at)}"
+            f" · entry {_level_price(row, row.entry_price, row.entry_eur)}"
+            f" · size {fmt_qty(row.size)} · stop {_level_price(row, row.stop_price, row.stop_eur)}"
         )
-        return _framed(ctx, [header, facts, _eur_caption()])
+        return _framed(ctx, [header, facts, _eur_caption([row])])
+    if row.eur_pending:
+        return _framed(ctx, _pending_detail_parts(detail, ctx, header))
     header.append("   ")
     header.append_text(_money(ctx, detail.net, " net"))
     header.append(_stale_note(ctx), style="dim")
@@ -615,6 +652,42 @@ def render_position_detail(detail: PositionDetail | None, ctx: RenderContext) ->
         _timeline(ctx, detail),
     ]
     return _framed(ctx, parts)
+
+
+def _pending_detail_parts(
+    detail: PositionDetail, ctx: RenderContext, header: Text
+) -> list[RenderableType]:
+    """Return the detail of a position whose fills have no EUR values yet: USDT only."""
+    row = detail.row
+    header.append("   ")
+    header.append(_EUR_PENDING, style="dim")
+    stop = Text("Stop: ")
+    stop.append_text(_stop_bar_cell(ctx, row))
+    stop.append(
+        f" · {fmt_stop_usdt(row.stop_price, row.stop_distance_pct)}"
+        f" · high since entry {fmt_usdt_price(row.high_since_entry)}"
+        f" · moved {detail.stop_moves}{TIMES}"
+    )
+    chart = Text("Price ")
+    chart.append(sparkline(detail.price_path, min(_SPARK_MAX, ctx.width - 40)), style="cyan")
+    chart.append(
+        f" entry {fmt_usdt_price(row.entry_price)} · stop {fmt_usdt_price(row.stop_price)}",
+        style="dim",
+    )
+    return [
+        header,
+        Text(f"size {row.size:.4f} {row.coin} · entry {fmt_usdt_price(row.entry_price)}"),
+        Text(f"Why: {detail.strategy} on {row.timeframe}"),
+        stop,
+        Text(""),
+        Text("Money if sold now", style="bold"),
+        Text(_EUR_PENDING_NOTE, style="dim"),
+        Text(""),
+        chart,
+        Text(""),
+        Text("Timeline", style="bold"),
+        _timeline(ctx, detail),
+    ]
 
 
 # ----------------------------------------------------------------------

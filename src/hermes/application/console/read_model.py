@@ -22,7 +22,15 @@ from hermes.application.console.views import (
     ShadowTest,
 )
 
-__all__ = ["ConsoleReadModel"]
+__all__ = ["ConsoleReadModel", "ViewNotAvailableError"]
+
+
+class ViewNotAvailableError(RuntimeError):
+    """A read model cannot serve this view yet.
+
+    The ledger-backed read model lands view by view (#546); a view it does not
+    serve yet raises this rather than an empty answer that would pass for real.
+    """
 
 
 class ConsoleReadModel(Protocol):

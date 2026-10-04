@@ -15,7 +15,7 @@ Composes the full T-1 pipeline for Swing MVP1:
    WARN → log + proceed.
 
 4. **Sizing** — computes position size via ``SizingCalculator``
-   using the T-1 three-cap ``min()`` formula.
+   per pre-reg §5.4 (risk ÷ stop distance, hard cap) and §5.5 (exposure cap).
 
 5. **Dispatch** — calls :meth:`~hermes.ports.fill_model.FillModelPort.fill_order`
    with the computed order. Returns :class:`~hermes.domain.trading.fill.Fill`

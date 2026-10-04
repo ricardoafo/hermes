@@ -1,0 +1,36 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verdict", "risk", "for_rick", "findings"],
+  "properties": {
+    "verdict": { "type": "string", "enum": ["approve", "changes_needed", "needs_decision"] },
+    "risk": { "type": "string", "enum": ["low", "medium", "high"] },
+    "for_rick": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["what_changes", "why_now", "risk_reason", "evidence"],
+      "properties": {
+        "what_changes": { "type": "string" },
+        "why_now": { "type": "string" },
+        "risk_reason": { "type": "string" },
+        "evidence": { "type": "string" },
+        "decision": { "type": "string" }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "title", "detail"],
+        "properties": {
+          "severity": { "type": "string", "enum": ["blocking", "optional"] },
+          "title": { "type": "string" },
+          "detail": { "type": "string" },
+          "file": { "type": "string" },
+          "line": { "type": "integer" }
+        }
+      }
+    }
+  }
+}

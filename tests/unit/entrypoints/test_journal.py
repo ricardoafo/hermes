@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -102,3 +103,52 @@ def test_bad_arguments_exit_two(tmp_path: Path) -> None:
     """A missing subcommand is a usage error."""
     code, _ = _run(tmp_path)
     assert code == 2
+
+
+def test_help_on_the_command_prints_exit_codes_and_returns_zero(tmp_path: Path) -> None:
+    """``-h`` documents the exit codes, returns 0 and leaves no ERROR line."""
+    code, out = _run(tmp_path, "-h")
+    assert (code, "Exit codes: 0 ok" in out, "ERROR" in out) == (0, True, False)
+
+
+def test_help_on_each_subcommand_names_that_subcommand(tmp_path: Path) -> None:
+    """``--help`` after a subcommand prints that subcommand's usage without required args."""
+    usages = {name: _run(tmp_path, name, "--help") for name in ("add", "due", "list", "review")}
+    assert {name: (c, f"hermes journal {name}" in out) for name, (c, out) in usages.items()} == {
+        name: (0, True) for name in usages
+    }
+
+
+def test_list_json_prints_one_document_with_every_entry(tmp_path: Path) -> None:
+    """``list --json`` is a single JSON document holding the decisions in the journal."""
+    entry_id = _add(tmp_path, "process", date(2027, 1, 1))
+    code, out = _run(tmp_path, "list", "--json")
+    entries = json.loads(out)["entries"]
+    assert (code, len(entries), entries[0]["entry_id"], entries[0]["review_on"]) == (
+        0,
+        1,
+        entry_id,
+        "2027-01-01",
+    )
+
+
+def test_list_json_includes_reviews_as_typed_entries(tmp_path: Path) -> None:
+    """A review serialises with ``type`` review and its score."""
+    entry_id = _add(tmp_path, "process", now_utc().date())
+    _run(tmp_path, "review", entry_id, "--outcome", "ok", "--score", "hit", "--evidence", "e")
+    _, out = _run(tmp_path, "list", "--json")
+    kinds = [(e["type"], e.get("score")) for e in json.loads(out)["entries"]]
+    assert kinds == [("decision", None), ("review", "hit")]
+
+
+def test_due_json_splits_reviewable_and_sealed(tmp_path: Path) -> None:
+    """``due --json`` lists a due process decision as reviewable and a strategy one as sealed."""
+    process_id = _add(tmp_path, "process", now_utc().date())
+    strategy_id = _add(tmp_path, "strategy", now_utc().date())
+    code, out = _run(tmp_path, "due", "--json")
+    report = json.loads(out)
+    assert (
+        code,
+        [e["entry_id"] for e in report["reviewable"]],
+        [e["entry_id"] for e in report["sealed"]],
+    ) == (0, [process_id], [strategy_id])

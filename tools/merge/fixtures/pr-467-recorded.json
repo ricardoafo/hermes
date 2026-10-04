@@ -1,0 +1,64 @@
+{
+  "_source": "Recorded from GET pulls/467, pulls/467/reviews, pulls/467/files and issues/467/comments on 2026-10-04, trimmed to the fields tools/merge reads.",
+  "pull": {
+    "number": 467,
+    "state": "open",
+    "draft": false,
+    "mergeable": true,
+    "mergeable_state": "blocked",
+    "head": {
+      "sha": "c47df7db0ed57844e6ec1665d2ea433531d3f2aa",
+      "ref": "feat/135-tax-guard-ledger"
+    },
+    "labels": [
+      {
+        "name": "type:feat"
+      },
+      {
+        "name": "area:adapters"
+      },
+      {
+        "name": "area:docs"
+      },
+      {
+        "name": "size:m"
+      }
+    ]
+  },
+  "reviews": [
+    {
+      "user": {
+        "login": "ricardoafo"
+      },
+      "state": "APPROVED",
+      "submitted_at": "2026-10-03T21:53:16Z"
+    }
+  ],
+  "files": [
+    {
+      "filename": "changelog.d/135-added.md"
+    },
+    {
+      "filename": "openspec/changes/135-tax-guard-ledger/change.md"
+    },
+    {
+      "filename": "openspec/changes/135-tax-guard-ledger/issue.md"
+    },
+    {
+      "filename": "src/hermes/adapters/ledger/sqlite_ledger.py"
+    },
+    {
+      "filename": "src/hermes/application/tax_guard/window.py"
+    },
+    {
+      "filename": "src/hermes/ports/trade_history.py"
+    },
+    {
+      "filename": "tests/unit/adapters/ledger/test_sqlite_ledger.py"
+    },
+    {
+      "filename": "tests/unit/application/tax_guard/test_evaluate_ledger.py"
+    }
+  ],
+  "comments": []
+}
