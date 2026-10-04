@@ -34,11 +34,7 @@ rules:
     ignore:
       - ci.yml
       - scheduled.yml
-  # Tag-pinned actions (tailscale/github-action, and actions/checkout in
-  # scheduled.yml) are SHA-pinned in #596, after Dependabot #584 lands.
+  # actions/checkout in scheduled.yml is still on a tag; #596 pins it.
   unpinned-uses:
     ignore:
-      - cd.yml
       - scheduled.yml
-      - vps-bootstrap.yml
-      - vps-diagnose.yml
