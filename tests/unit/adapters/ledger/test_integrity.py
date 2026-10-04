@@ -237,3 +237,9 @@ def test_applied_migration_not_shipped_is_a_finding(ledger: Path) -> None:
     """A ledger written by a newer or forked release is flagged (#559)."""
     _execute(ledger, "INSERT INTO schema_migrations (filename) VALUES ('9999_ghost.sql')")
     assert _check(ledger).findings == ("applied but not shipped: 9999_ghost.sql",)
+
+
+def test_unreadable_consumption_names_its_row(ledger_with_lot: Path) -> None:
+    """A corrupt consumed_qty names that consumption, not a remainder mismatch (#612)."""
+    _execute(ledger_with_lot, "UPDATE lot_consumptions SET consumed_qty = 'abc' WHERE id = 1")
+    assert _check(ledger_with_lot).findings == ("lot: consumption 1 on L1: unreadable quantity",)

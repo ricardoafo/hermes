@@ -157,14 +157,25 @@ def _lot_problems(conn: sqlite3.Connection) -> tuple[str, ...]:
     if not (_table_exists(conn, "lots") and _table_exists(conn, "lot_consumptions")):
         return ()
     consumed: dict[str, Decimal] = {}
-    for lot_id, qty in conn.execute("SELECT lot_id, consumed_qty FROM lot_consumptions"):
-        consumed[lot_id] = consumed.get(lot_id, Decimal(0)) + (_decimal(qty) or Decimal(0))
     problems: list[str] = []
+    # A lot with an unreadable consumption has no trustworthy remainder to compare (#612).
+    unsummable: set[str] = set()
+    for cid, lot_id, qty in conn.execute(
+        "SELECT id, lot_id, consumed_qty FROM lot_consumptions ORDER BY id"
+    ):
+        value = _decimal(qty)
+        if value is None:
+            problems.append(f"consumption {cid} on {lot_id}: unreadable quantity")
+            unsummable.add(lot_id)
+        else:
+            consumed[lot_id] = consumed.get(lot_id, Decimal(0)) + value
     for lot_id, original, remaining in conn.execute(
         "SELECT lot_id, original_qty, remaining_qty FROM lots ORDER BY lot_id"
     ):
         orig, rem = _decimal(original), _decimal(remaining)
         used = consumed.get(lot_id, Decimal(0))
+        if lot_id in unsummable:
+            continue
         if orig is None or rem is None:
             problems.append(f"{lot_id}: unreadable quantity")
         elif rem < 0:
