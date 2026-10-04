@@ -123,7 +123,7 @@ sequenceDiagram
   - Python 3.14 (via `uv python install`)
   - uv 0.12.5 (pinned)
   - Node 24 (nodesource) + markdownlint-cli2 0.23.2 (pinned, npm -g)
-  - gitleaks 8.21.2 (pinned binary — avoids Docker pull on every scan)
+  - gitleaks 8.30.1 (pinned binary — avoids Docker pull on every scan)
   - git, curl, jq, Docker CLI (socket-mounted for container-based actions)
 
 - **Warm cache volumes persist across container restarts**:
