@@ -68,6 +68,7 @@ from hermes.application.backtest.replay import BacktestRun, ExecutionModel, repl
 from hermes.application.calibration.harness import CalibrationHarness
 from hermes.application.execution.kernel import FillKernel
 from hermes.application.order_router.risk_engine import RiskEngine
+from hermes.application.order_router.sizing import SizingPolicy
 from hermes.application.portfolio.tracker import PortfolioTracker
 from hermes.application.strategy_protocol.kill_trigger_evaluator import KillTriggerEvaluator
 from hermes.application.strategy_protocol.preregistration import PreRegistration
@@ -189,7 +190,7 @@ def _payload(
     }
 
 
-def _kernel(strategy_id: StrategyId, starting_cash: Money) -> FillKernel:
+def _kernel(strategy_id: StrategyId, starting_cash: Money, sizing: SizingPolicy) -> FillKernel:
     """Compose the fill kernel exactly as serve will, with the backtest's empty rule set (D-5)."""
     return FillKernel(
         fill_model=OrderbookWalkFillModel(apply_slippage=False, rng=random.Random(_RNG_SEED)),  # noqa: S311 — deterministic replay, not crypto
@@ -197,6 +198,7 @@ def _kernel(strategy_id: StrategyId, starting_cash: Money) -> FillKernel:
         kill_evaluator=KillTriggerEvaluator(pre_reg=PreRegistration()),
         tracker=PortfolioTracker(PortfolioSnapshot.seed(strategy_id, starting_cash)),
         strategy_id=strategy_id,
+        sizing=sizing,
     )
 
 
@@ -237,7 +239,11 @@ async def _run(args: argparse.Namespace) -> int:
         return select_fee_schedule(fee_rows, at, for_pair)
 
     parameters = _strategy_parameters()
-    kernel = _kernel(strategy_id, Money(amount=roster.capital_budget, currency=roster.quote))
+    kernel = _kernel(
+        strategy_id,
+        Money(amount=roster.capital_budget, currency=roster.quote),
+        roster.sizing_policy(),
+    )
     try:
         run = replay(
             _merge_by_close_time(bars_4h, bars_1d),

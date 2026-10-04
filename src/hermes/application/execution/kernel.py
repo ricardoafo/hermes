@@ -23,7 +23,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from decimal import Decimal
 
 from returns.result import Failure
 
@@ -33,7 +32,7 @@ from hermes.application.order_router.router import (
     OrderRouter,
     RoutingInput,
 )
-from hermes.application.order_router.sizing import SizingCalculator, SizingInput
+from hermes.application.order_router.sizing import SizingCalculator, SizingInput, SizingPolicy
 from hermes.application.portfolio.tracker import PortfolioTracker
 from hermes.application.strategy_protocol.kill_trigger_evaluator import (
     ExperimentState,
@@ -59,23 +58,7 @@ __all__ = [
     "FillKernel",
     "Halted",
     "MarketContext",
-    "SizingPolicy",
 ]
-
-
-@dataclass(frozen=True, slots=True)
-class SizingPolicy:
-    """The pre-registered sizing inputs the kernel passes to the router.
-
-    Attributes:
-        stop_atr_mult: ATR multiple of the stop distance (pre-reg §5.4).
-        risk_pct: Fraction of capital risked per trade (pre-reg §5.4).
-        f_star_estimate: Kelly estimate; the OD-4 floor until 30 OOS trades.
-    """
-
-    stop_atr_mult: Decimal = Decimal("1.5")
-    risk_pct: Decimal = Decimal("0.01")
-    f_star_estimate: Decimal = Decimal("0.20")
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,7 +155,8 @@ class FillKernel:
         kill_evaluator: Pre-registration §10 kill evaluator.
         tracker: The strategy's portfolio; the kernel folds fills into it.
         strategy_id: Bucket stamped on every order and trade.
-        sizing: Pre-registered sizing inputs.
+        sizing: Pre-registered sizing limits built from the strategy config
+            (``StrategyConfig.sizing_policy()``).
     """
 
     def __init__(
@@ -183,19 +167,18 @@ class FillKernel:
         kill_evaluator: KillTriggerEvaluator,
         tracker: PortfolioTracker,
         strategy_id: StrategyId,
-        sizing: SizingPolicy | None = None,
+        sizing: SizingPolicy,
     ) -> None:
         """Compose the production router around a recording fill model."""
         self._fill_model = _RecordingFillModel(fill_model)
         self._router = OrderRouter(
             fill_model=self._fill_model,
             risk_engine=risk_engine,
-            sizing_calculator=SizingCalculator(),
+            sizing_calculator=SizingCalculator(sizing),
             kill_evaluator=kill_evaluator,
         )
         self._tracker = tracker
         self._strategy_id = strategy_id
-        self._sizing = sizing if sizing is not None else SizingPolicy()
 
     @property
     def tracker(self) -> PortfolioTracker:
@@ -239,7 +222,6 @@ class FillKernel:
         entry_px = signal.entry_price
         if entry_px is None:  # pragma: no cover — StrategySignal forbids it for ENTRY
             return Declined(reason="entry signal without an entry price", rule="signal")
-        snapshot = self._tracker.snapshot
         self._fill_model.last_rejection = None
         result = self._router.route(
             RoutingInput(
@@ -248,12 +230,9 @@ class FillKernel:
                 pair=pair,
                 entry_px=entry_px,
                 sizing_input=SizingInput(
-                    equity=snapshot.starting_cash,
                     entry_px=entry_px,
-                    atr=signal.atr_context,
-                    stop_atr_mult=self._sizing.stop_atr_mult,
-                    risk_pct=self._sizing.risk_pct,
-                    f_star_estimate=self._sizing.f_star_estimate,
+                    stop_px=signal.stop_price,
+                    open_notional=self._tracker.open_notional(),
                 ),
                 portfolio_state=self._tracker.state(),
                 market_snapshot=market.market_snapshot,

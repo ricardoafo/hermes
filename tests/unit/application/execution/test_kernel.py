@@ -42,8 +42,9 @@ from tests.support.fill_kernel import (
 
 _T0 = datetime(2024, 1, 2, 4, 0, tzinfo=UTC)
 _BPS = Decimal("10000")
-_SIZED_NOTIONAL = STARTING_CASH * Decimal("0.01") / Decimal("1.5")
-"""Router sizing at the pre-registered inputs: the ATR-baseline cap binds (R6 in the spec)."""
+_SIZED_NOTIONAL = STARTING_CASH * Decimal("0.05")
+"""Pre-registration §5.4 sizing for these signals: a 10% stop puts the 1% risk budget at
+500 USDT of notional, so the 5% per-position cap of the fixed capital (250) binds."""
 
 
 def _entry(price: Decimal, at: datetime = _T0) -> StrategySignal:

@@ -9,6 +9,7 @@ from pathlib import Path
 from hermes.adapters.fills.orderbook_walk import OrderbookWalkFillModel
 from hermes.application.execution.kernel import FillKernel, MarketContext
 from hermes.application.order_router.risk_engine import RiskEngine
+from hermes.application.order_router.sizing import SizingPolicy
 from hermes.application.portfolio.tracker import PortfolioTracker
 from hermes.application.strategy_protocol.kill_trigger_evaluator import (
     ExperimentState,
@@ -43,6 +44,15 @@ def fees(pair: Pair = BTC_USDT, taker_bps: int = TAKER_BPS) -> FeeSchedule:
     )
 
 
+SIZING = SizingPolicy(
+    capital=STARTING_CASH,
+    risk_pct=Decimal("0.01"),
+    max_position_pct=Decimal("0.05"),
+    max_total_exposure_pct=Decimal("0.15"),
+)
+"""Pre-registration §5.4/§5.5 limits on the shared starting cash."""
+
+
 def seed(cash: Decimal = STARTING_CASH) -> PortfolioSnapshot:
     """Return the USDT seed snapshot of the swing strategy."""
     return PortfolioSnapshot.seed(STRATEGY, Money(cash, Currency.USDT))
@@ -63,6 +73,7 @@ def kernel(
         kill_evaluator=kill_evaluator(),
         tracker=tracker if tracker is not None else PortfolioTracker(seed()),
         strategy_id=STRATEGY,
+        sizing=SIZING,
     )
 
 

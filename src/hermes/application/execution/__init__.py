@@ -19,7 +19,6 @@ from hermes.application.execution.kernel import (
     FillKernel,
     Halted,
     MarketContext,
-    SizingPolicy,
 )
 
 __all__ = [
@@ -29,5 +28,4 @@ __all__ = [
     "FillKernel",
     "Halted",
     "MarketContext",
-    "SizingPolicy",
 ]
