@@ -279,11 +279,11 @@ class TestTopLevelHelpContent:
         assert "scaffold" not in stream.getvalue()
 
     def test_name_column_fits_the_longest_command(self) -> None:
-        """archive-check (the longest name) is followed by two spaces, then its summary."""
+        """The longest registered name is followed by two spaces, then its summary."""
         stream = io.StringIO()
         cli_module.main(["--help"], stream=stream)
-        summary = discover()["archive-check"].summary
-        assert f"  archive-check  {summary}" in stream.getvalue()
+        longest = max(discover().values(), key=lambda command: len(command.name))
+        assert f"  {longest.name}  {longest.summary}" in stream.getvalue()
 
     def test_demo_note_lists_exactly_the_wants_demo_commands(self) -> None:
         """The --demo note names the commands with wants_demo=True, from the registry."""
