@@ -27,7 +27,9 @@ def _run(rest: list[str], *, stream: Any, err: TextIO | None = None) -> int:
     the shadow loop, wires the composition root, installs signal handlers,
     and runs the bar loop. Returns 0 on a clean shutdown, 1 on a runtime
     failure, 2 on argument-parse failure, 3 on a config load or startup
-    check failure. The environment tier comes from ``HERMES_ENV`` only.
+    check failure. The environment tier comes from ``HERMES_ENV`` only. The
+    signed pre-registration and the fee history are read from
+    ``--config-dir``'s parent (the release directory on the VPS).
 
     Args:
         rest: Residual argv after the ``serve`` token.
@@ -69,6 +71,7 @@ def _run(rest: list[str], *, stream: Any, err: TextIO | None = None) -> int:
         err.write(f"ERROR: config load failed: {exc}\n")
         return 3
 
+    experiment_root = parsed.config_dir.resolve().parent
     try:
         serve_module.check_startup(
             config,
@@ -76,15 +79,16 @@ def _run(rest: list[str], *, stream: Any, err: TextIO | None = None) -> int:
             certification_store=JsonCertificationStore(
                 serve_module.certification_dir_for(parsed.db)
             ),
+            experiment_root=experiment_root,
         )
     except serve_module.StartupError as exc:
         err.write(f"ERROR: startup check failed: {exc}\n")
         return 3
 
-    return asyncio.run(serve_main(config, db_path=parsed.db))
+    return asyncio.run(serve_main(config, db_path=parsed.db, experiment_root=experiment_root))
 
 
-async def serve_main(config: Any, *, db_path: Path) -> int:
+async def serve_main(config: Any, *, db_path: Path, experiment_root: Path | None = None) -> int:
     """Wire the composition root and run the bar loop to its exit code.
 
     Extracted from the argument handling so tests can drive the
@@ -93,6 +97,8 @@ async def serve_main(config: Any, *, db_path: Path) -> int:
     Args:
         config: The loaded :class:`~hermes.infrastructure.config.HermesConfig`.
         db_path: Path to the SQLite ledger file.
+        experiment_root: Directory holding the signed pre-registration and
+            the fee history. ``None`` finds the repository root.
 
     Returns:
         :func:`~hermes.entrypoints.serve.run`'s exit code: 0 on clean
@@ -101,7 +107,9 @@ async def serve_main(config: Any, *, db_path: Path) -> int:
     loop = asyncio.get_running_loop()
     shutdown = asyncio.Event()
     try:
-        composition = serve_module.build_composition(config, db_path=db_path)
+        composition = serve_module.build_composition(
+            config, db_path=db_path, experiment_root=experiment_root
+        )
     except Exception as exc:
         serve_module.report_failure(exc)
         return 1

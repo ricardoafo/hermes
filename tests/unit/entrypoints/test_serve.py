@@ -36,9 +36,11 @@ from structlog.testing import capture_logs
 from hermes.adapters.certification.json_store import JsonCertificationStore
 from hermes.adapters.clock.wall import WallClock
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
+from hermes.adapters.market_data.binance_depth_snapshot import BinanceDepthSnapshotAdapter
 from hermes.adapters.market_data.binance_live_klines import BinanceLiveKlinesAdapter
 from hermes.adapters.notifier.slack_adapter import SlackAdapter
 from hermes.adapters.notifier.telegram_adapter import TelegramAdapter
+from hermes.application.backtest.replay import ExecutionModel as ReplayExecutionModel
 from hermes.application.calibration.certification_gates import CertificationRecord
 from hermes.application.calibration.lifecycle import CertificationState
 from hermes.application.strategy_protocol.preregistration import PreRegistration
@@ -67,6 +69,7 @@ from tests.support.serve_loop import (
     BASE,
     BTC,
     FakeFeed,
+    UnavailableBooks,
     build,
     d1_bar,
     events,
@@ -680,3 +683,73 @@ class TestBarLogging:
                 "BTC/USDT 4h": (h4_bar(10).open_time + timedelta(hours=8) + settle).isoformat(),
             }
         ]
+
+
+class TestFillKernelWiring:
+    """serve wires the shared fill kernel and its experiment files (#353 D-1, D-6)."""
+
+    def test_default_depth_source_is_the_keyless_binance_snapshot_adapter(
+        self, shadow_config: HermesConfig, tmp_path: Path
+    ) -> None:
+        """Without an override the executor walks Binance public depth."""
+        composition = serve_module.build_composition(
+            shadow_config, db_path=tmp_path / "test.sqlite3", env={}, feed=FakeFeed()
+        )
+        try:
+            assert isinstance(composition.orderbooks, BinanceDepthSnapshotAdapter)
+        finally:
+            asyncio.run(composition.orderbooks.aclose())
+            composition.sqlite_connection.close()
+
+    def test_executor_falls_back_to_the_backtest_execution_model(
+        self, shadow_config: HermesConfig, tmp_path: Path
+    ) -> None:
+        """One §6.2 implementation: serve's fallback book is the backtest's class."""
+        composition = build(tmp_path / "test.sqlite3", FakeFeed(), BASE)
+        composition.sqlite_connection.close()
+
+        assert type(composition.executor.model) is ReplayExecutionModel
+
+    def test_startup_refuses_a_release_without_the_experiment_files(
+        self, shadow_config: HermesConfig, tmp_path: Path
+    ) -> None:
+        """A release dir without docs/experiments exits 3 instead of crash-looping."""
+        with pytest.raises(serve_module.StartupError, match="experiment files missing"):
+            serve_module.check_startup(shadow_config, {}, experiment_root=tmp_path)
+
+    def test_startup_accepts_the_repository_as_experiment_root(
+        self, shadow_config: HermesConfig
+    ) -> None:
+        """The repo carries both files, so development runs start."""
+        serve_module.check_startup(shadow_config, {}, experiment_root=_PROJECT_ROOT)
+
+    def test_build_refuses_an_experiment_root_without_the_pre_registration(
+        self, shadow_config: HermesConfig, tmp_path: Path
+    ) -> None:
+        """The kernel's kill rules cannot be built without the signed file."""
+        with pytest.raises(serve_module.StartupError, match="cannot read the experiment files"):
+            serve_module.build_composition(
+                shadow_config,
+                db_path=tmp_path / "test.sqlite3",
+                env={},
+                feed=FakeFeed(),
+                experiment_root=tmp_path,
+            )
+
+    def test_run_closes_the_depth_source(self, tmp_path: Path) -> None:
+        """Shutdown releases the depth source with the other resources."""
+        books = UnavailableBooks()
+        closed: list[bool] = []
+
+        async def _aclose() -> None:
+            closed.append(True)
+
+        books.aclose = _aclose  # type: ignore[method-assign]
+        feed = FakeFeed()
+        composition = build(tmp_path / "test.sqlite3", feed, BASE, books=books)
+        shutdown = asyncio.Event()
+        shutdown.set()
+
+        asyncio.run(serve_module.run(composition, shutdown))
+
+        assert closed == [True]
