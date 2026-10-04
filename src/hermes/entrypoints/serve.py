@@ -84,6 +84,7 @@ from hermes.application.execution.shadow import (
     ShadowExecutor,
     shadow_risk_engine,
 )
+from hermes.application.ledger.eur_backfill import backfill_pending_eur
 from hermes.application.ledger.eur_pricer import EurPricer
 from hermes.application.ledger.trade_recorder import TradeRecorder
 from hermes.application.notification_router import RouterConfig
@@ -99,6 +100,7 @@ from hermes.domain.events.shadow_capital_seeded import ShadowCapitalSeeded
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.fees.fee_schedule import FeeSchedule
 from hermes.domain.fees.fee_schedule_selector import FeeScheduleRow, select_fee_schedule
+from hermes.domain.fx.eur_pricing import fill_date_madrid
 from hermes.domain.lots.quote_leg import CapitalSeed, seed_timestamp
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.bar_schedule import (
@@ -233,6 +235,8 @@ class Composition:
         fx_adapter: The FX adapter the trade recorder prices with, when the
             composition built it (closed by :func:`run`); ``None`` when one
             was injected.
+        eur_pricer: The EUR rate lookups shared by the trade recorder and the
+            start-up pricing of pending values.
     """
 
     config: HermesConfig
@@ -252,6 +256,7 @@ class Composition:
     executor: ShadowExecutor
     orderbooks: OrderbookSnapshotPort
     fx_adapter: FrankfurterAdapter | None
+    eur_pricer: EurPricer
 
 
 def _telegram_config(env: Mapping[str, str]) -> TelegramConfig | None:
@@ -344,8 +349,9 @@ def seed_capital_once(
 
     The seed is dated by the ledger's earliest bar, signal or trade, or ``now``
     for a ledger without any, so a restart never moves the start of the run.
-    Its EUR value stays pending until ``hermes fx backfill`` prices the seed
-    date (change ``405-usdt-fifo`` D-1).
+    Its EUR value stays pending until the start-up pricing in :func:`run` (or
+    ``hermes fx backfill``) prices the seed date (changes ``405-usdt-fifo`` D-1,
+    ``630-seed-eur-at-boot``).
 
     Args:
         ledger: The ledger.
@@ -466,6 +472,7 @@ def build_composition(
     if rates is None:
         fx_adapter = _frankfurter(config.frankfurter)
         rates = fx_adapter
+    eur_pricer = EurPricer(rates)
     try:
         executor = ShadowExecutor(
             kernel=_build_kernel(
@@ -473,7 +480,7 @@ def build_composition(
             ),
             fill_model=fill_model,
             books=books,
-            recorder=TradeRecorder(ledger, EurPricer(rates)),
+            recorder=TradeRecorder(ledger, eur_pricer),
             ledger=ledger,
             clock=wall,
             fees_at=_fees_at(fee_rows),
@@ -511,6 +518,7 @@ def build_composition(
         executor=executor,
         orderbooks=books,
         fx_adapter=fx_adapter,
+        eur_pricer=eur_pricer,
     )
 
 
@@ -597,6 +605,8 @@ async def run(composition: Composition, shutdown: asyncio.Event) -> int:
         pairs=len(composition.strategies),
     )
     code = 0
+    if not shutdown.is_set():
+        price_pending_eur_once(composition)
     try:
         async with asyncio.TaskGroup() as group:
             group.create_task(_bar_loop(composition, shutdown))
@@ -609,6 +619,32 @@ async def run(composition: Composition, shutdown: asyncio.Event) -> int:
         await _release(composition)
         _log.info("serve.run.stopped", exit_code=code)
     return code
+
+
+def price_pending_eur_once(c: Composition) -> None:
+    """Price the pending capital seed and trades once, before the bar loop starts.
+
+    Runs the same backfill service as ``hermes fx backfill`` (same rate source
+    and rules). Each FX lookup is bounded by the configured FX timeout and the
+    pricer caches per day, so the cost is a few lookups at boot, never on the
+    bar path. Any failure is logged and swallowed: a value that stays pending
+    is priced by the next boot or ``hermes fx backfill``.
+
+    Args:
+        c: The wired container.
+    """
+    try:
+        report = backfill_pending_eur(c.ledger, c.eur_pricer, today=fill_date_madrid(c.clock.now()))
+    except Exception as exc:
+        _log.warning("serve.eur_pricing_failed", error=type(exc).__name__, detail=str(exc))
+        return
+    _log.info(
+        "serve.eur_priced",
+        seeds_filled=len(report.seeds_filled),
+        seeds_pending=len(report.seeds_pending),
+        trades_filled=len(report.filled),
+        trades_pending=len(report.pending),
+    )
 
 
 def report_failure(exc: BaseException) -> None:
