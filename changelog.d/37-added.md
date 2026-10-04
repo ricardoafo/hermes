@@ -1,0 +1,1 @@
+- CVE-response runbook (`docs/runbook/cve-response.md`) with triage and patch flows, and `scripts/dev/cve-triage.py`, which splits `pip-audit` findings into production and dev-only packages so severity can be assigned (#37).
