@@ -7,7 +7,11 @@ Subcommands:
 - ``due``: list decisions whose review date has passed. Strategy decisions
   show as sealed until certification. A scheduled routine runs this.
 - ``review ID``: score a due decision with its actual outcome and evidence.
-- ``list``: print every entry.
+- ``list``: print every entry; ``--json`` prints one JSON document instead.
+
+``due --json`` prints ``{"reviewable": [...], "sealed": [...]}``; ``list --json``
+prints ``{"entries": [...]}``. ``-h``/``--help`` works on ``hermes journal``
+and on every subcommand.
 
 Whether the strategy is certified comes from the certification record
 (#382): OOS_CERTIFIED, LIVE_APPROVED or CERTIFIED unseal strategy decisions.
@@ -20,9 +24,11 @@ Reference: issue #363; openspec/changes/363-decision-journal.
 from __future__ import annotations
 
 import argparse
+import json
+from dataclasses import asdict
 from datetime import date
 from pathlib import Path
-from typing import TextIO
+from typing import Any, Final, TextIO
 
 import ulid
 
@@ -52,13 +58,25 @@ _UNSEALED = frozenset(
 )
 
 
+_EXIT_CODES: Final = "Exit codes: 0 ok, 1 refused by a journal rule, 2 usage, 3 store error."
+_HELP_FLAGS: Final = frozenset({"-h", "--help"})
+
+
+def _new_parser(**kwargs: Any) -> argparse.ArgumentParser:
+    return argparse.ArgumentParser(add_help=False, epilog=_EXIT_CODES, **kwargs)
+
+
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="hermes journal", exit_on_error=False)
+    return _build()[0]
+
+
+def _build() -> tuple[argparse.ArgumentParser, dict[str, argparse.ArgumentParser]]:
+    parser = _new_parser(prog="hermes journal", exit_on_error=False)
     parser.add_argument("--journal", type=Path, default=None)
     parser.add_argument("--store-dir", type=Path, default=None)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    add = sub.add_parser("add")
+    add = sub.add_parser("add", add_help=False, epilog=_EXIT_CODES)
     add.add_argument("--decision", required=True)
     add.add_argument("--option", action="append", required=True, dest="options")
     add.add_argument("--chosen", required=True)
@@ -68,15 +86,27 @@ def _parser() -> argparse.ArgumentParser:
     add.add_argument("--kind", choices=[k.value for k in OutcomeKind], default="process")
     add.add_argument("--corrects", default=None)
 
-    sub.add_parser("due")
-    sub.add_parser("list")
+    for name in ("due", "list"):
+        sub_parser = sub.add_parser(name, add_help=False, epilog=_EXIT_CODES)
+        sub_parser.add_argument("--json", action="store_true", dest="as_json")
 
-    review = sub.add_parser("review")
+    review = sub.add_parser("review", add_help=False, epilog=_EXIT_CODES)
     review.add_argument("decision_id")
     review.add_argument("--outcome", required=True)
     review.add_argument("--score", choices=[s.value for s in Score], required=True)
     review.add_argument("--evidence", action="append", required=True)
-    return parser
+    return parser, dict(sub.choices)
+
+
+def _help_text(argv: list[str]) -> str | None:
+    """Return the help for the parser ``argv`` addresses, or ``None`` without a help flag."""
+    if not _HELP_FLAGS.intersection(argv):
+        return None
+    parser, subparsers = _build()
+    for token in argv:
+        if token in subparsers:
+            return subparsers[token].format_help()
+    return parser.format_help()
 
 
 def main(argv: list[str], *, stream: TextIO) -> int:
@@ -89,6 +119,10 @@ def main(argv: list[str], *, stream: TextIO) -> int:
     Returns:
         Process exit code.
     """
+    help_text = _help_text(argv)
+    if help_text is not None:
+        stream.write(help_text)
+        return 0
     try:
         args = _parser().parse_args(argv)
     except (argparse.ArgumentError, SystemExit, ValueError) as exc:
@@ -145,6 +179,13 @@ def _dispatch(
         stream.write(f"REVIEWED {review.decision_id}: {review.score}\n")
     elif args.command == "due":
         report = due(journal, today=now.date(), certified=certified)
+        if args.as_json:
+            payload = {
+                "reviewable": [_as_json(d) for d in report.reviewable],
+                "sealed": [_as_json(d) for d in report.sealed],
+            }
+            stream.write(json.dumps(payload, default=_json_default) + "\n")
+            return 0
         for d in report.reviewable:
             stream.write(f"DUE     {d.entry_id}  {d.review_on}  {d.decision}\n")
         for d in report.sealed:
@@ -153,6 +194,11 @@ def _dispatch(
             )
         if not report.reviewable and not report.sealed:
             stream.write("Nothing due.\n")
+    elif args.as_json:
+        stream.write(
+            json.dumps({"entries": [_as_json(e) for e in journal.entries()]}, default=_json_default)
+            + "\n"
+        )
     else:
         for entry in journal.entries():
             stream.write(_line(entry) + "\n")
@@ -170,3 +216,14 @@ def _line(entry: Decision | Review) -> str:
         f"REVIEW   {entry.entry_id} {entry.recorded_at.date()} of {entry.decision_id}: "
         f"{entry.score}"
     )
+
+
+def _as_json(entry: Decision | Review) -> dict[str, Any]:
+    kind = "decision" if isinstance(entry, Decision) else "review"
+    return {"type": kind, **asdict(entry)}
+
+
+def _json_default(value: object) -> str:
+    if isinstance(value, date):
+        return value.isoformat()
+    raise TypeError(f"not JSON serialisable: {type(value).__name__}")
