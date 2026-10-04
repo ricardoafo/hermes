@@ -90,6 +90,8 @@ Cross-references:
 | `systemd/hermes-health.timer`            | Fires the ping every 5 min                                                                         | installed by `vps-bootstrap`; enabled once the ping URL is set    |
 | `systemd/hermes-backup.service`          | Nightly borg backup of L2 Parquet and SQLite                                                       | installed by `vps-bootstrap`                                      |
 | `systemd/hermes-backup.timer`            | Fires the backup daily at 03:00 UTC                                                                | installed by `vps-bootstrap`; stays disabled until borg is set up |
+| `systemd/hermes-tax-pack.service`        | Refreshes the tax filing packs in `/var/lib/hermes-tax-pack` (`hermes tax-pack`, ledger read-only) | installed by `vps-bootstrap`                                      |
+| `systemd/hermes-tax-pack.timer`          | Fires the refresh daily at 07:30 Europe/Madrid                                                     | installed by `vps-bootstrap`; left off until enabled by hand      |
 | `systemd/hermes-notify-failure@.service` | Started by `hermes.service`'s `OnFailure=`; sends one Telegram message                             | installed by `vps-bootstrap`                                      |
 | `hermes-health-ping.sh`                  | The progress ping: `hermes status --json` decides success or `/fail` while the unit is active      | shipped in each release                                           |
 | `hermes-notify-failure.sh`               | Builds and sends the Telegram failure message; needs only bash and curl                            | `/opt/hermes/bin`: `vps-bootstrap`, then each good deploy         |

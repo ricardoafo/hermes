@@ -337,3 +337,48 @@ def test_daily_service_runs_the_shipped_script_from_the_release() -> None:
 
     assert script == _RELEASE_DEPLOY_DIR / "hermes-daily-line.sh"
     assert (_REPO_ROOT / "deploy" / script.name).is_file()
+
+
+def test_tax_pack_timer_fires_at_half_past_seven_madrid_time() -> None:
+    """The packs refresh daily at 07:30 Madrid, after the alive line (#568, R-6)."""
+    timer = _parse("hermes-tax-pack.timer")["Timer"]
+
+    assert (timer["OnCalendar"], timer["Persistent"], timer["Unit"]) == (
+        "*-*-* 07:30:00 Europe/Madrid",
+        "true",
+        "hermes-tax-pack.service",
+    )
+
+
+def test_tax_pack_service_writes_only_to_its_state_directory() -> None:
+    """The pack folder is the unit's private state directory; nothing else is writable."""
+    service = _parse("hermes-tax-pack.service")["Service"]
+    argv = shlex.split(service["ExecStart"])
+
+    assert (
+        service["Type"],
+        service["StateDirectory"],
+        service["StateDirectoryMode"],
+        service["ReadWritePaths"],
+        _flag(argv, "--out"),
+    ) == ("oneshot", "hermes-tax-pack", "0700", "", "/var/lib/hermes-tax-pack")
+
+
+def test_tax_pack_service_runs_tax_pack_from_the_release() -> None:
+    """ExecStart runs `hermes tax-pack` from the active release, on the serve ledger."""
+    argv = shlex.split(_parse("hermes-tax-pack.service")["Service"]["ExecStart"])
+
+    assert argv[:2] == ["/opt/hermes/current/.venv/bin/hermes", "tax-pack"]
+    assert _flag(argv, "--db") == _flag(_hermes_exec_argv(), "--db")
+
+
+def test_tax_pack_flags_are_accepted_by_the_real_cli_parser(tmp_path: Path) -> None:
+    """The unit's flags parse; with no ledger at the server path the run stops at exit 1."""
+    argv = shlex.split(_parse("hermes-tax-pack.service")["Service"]["ExecStart"])[1:]
+    argv[argv.index("--out") + 1] = str(tmp_path / "packs")
+    argv[argv.index("--config-dir") + 1] = str(_REPO_ROOT / "config")
+    argv[argv.index("--db") + 1] = str(tmp_path / "missing.sqlite3")
+    stream = io.StringIO()
+
+    assert cli_module.main(argv, stream=stream) == 1
+    assert "no ledger at" in stream.getvalue()
