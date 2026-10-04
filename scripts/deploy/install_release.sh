@@ -399,6 +399,12 @@ main() {
         "$stage/deploy/hermes-notify-failure.sh" "$stage/deploy/hermes-notify-crash.sh" \
         "$ROOT/bin/"
     prune_versions
+    # The read-only bot runs from the same release; pick up the new code.
+    # try-restart leaves a stopped or uninstalled bot alone (ADR-015). The bot
+    # runs from prod's release, so a staging deploy must not touch it (#192).
+    if [ "$TARGET" = prod ]; then
+        "$SYSTEMCTL" try-restart hermes-bot.service || true
+    fi
     log "release $sha is live"
 }
 

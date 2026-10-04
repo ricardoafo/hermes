@@ -26,7 +26,10 @@ _SERVICE_FILES = [path for path in _UNIT_FILES if path.suffix == ".service"]
 
 _ENV_FILE = "/etc/hermes/env.production"
 _STAGING_UNIT = "hermes-staging.service"
-_STAGING_ENV_FILE = "/etc/hermes/env.staging"
+_OWN_ENV_FILES = {
+    "hermes-bot.service": "/etc/hermes/env.bot",
+    _STAGING_UNIT: "/etc/hermes/env.staging",
+}
 _EXEC_PREFIXES = "@-:+!"
 
 
@@ -102,15 +105,15 @@ def test_hermes_service_flags_are_accepted_by_the_real_cli_parser() -> None:
 def test_service_environment_file_is_the_bootstrap_path(path: Path) -> None:
     """Every unit that loads secrets reads its own tier's file, with no '-'.
 
-    Prod units read the file vps_bootstrap.sh writes; the staging unit reads the
-    one the operator writes by hand (#192). A leading '-' would boot the process
-    with no secrets instead of failing the start.
+    A leading '-' would boot the process with no secrets instead of failing the start.
+    The bot reads its own bootstrap-written file so it never sees exchange keys
+    (ADR-015 D-05); the staging unit reads the one the operator writes by hand
+    (#192); every other unit reads env.production.
     """
     service = _parse(path.name)["Service"]
     if "EnvironmentFile" not in service:
         pytest.skip(f"{path.name} loads no environment file")
-    expected = _STAGING_ENV_FILE if path.name == _STAGING_UNIT else _ENV_FILE
-    assert service["EnvironmentFile"] == expected
+    assert service["EnvironmentFile"] == _OWN_ENV_FILES.get(path.name, _ENV_FILE)
 
 
 def test_hermes_service_loads_the_environment_file() -> None:
@@ -422,3 +425,18 @@ def test_staging_service_keeps_the_prod_hardening_and_crash_guard(section: str, 
 def test_staging_service_logs_under_its_own_identifier() -> None:
     """`journalctl -t hermes-staging` must never mix in prod lines."""
     assert _parse(_STAGING_UNIT)["Service"]["SyslogIdentifier"] == "hermes-staging"
+
+
+def test_bot_unit_loads_only_its_own_env_file() -> None:
+    """ADR-015 D-05: the bot never sees env.production and its exchange keys."""
+    service = _parse("hermes-bot.service")["Service"]
+
+    assert service["EnvironmentFile"] == "/etc/hermes/env.bot"
+
+
+def test_bot_unit_runs_hermes_bot_read_only_on_the_ledger() -> None:
+    """The bot runs `hermes bot` and gets no write path on the state dir."""
+    service = _parse("hermes-bot.service")["Service"]
+
+    assert shlex.split(service["ExecStart"])[:2] == ["/opt/hermes/current/.venv/bin/hermes", "bot"]
+    assert (service["ReadOnlyPaths"], service.get("ReadWritePaths")) == ("/var/lib/hermes", None)

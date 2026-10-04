@@ -5,7 +5,7 @@
 # restarts, PC reboots, and each --ephemeral job exit.
 #
 # Usage:
-#   ./up.sh          # 8 runners (default — matches compose.yml's `scale: 8`)
+#   ./up.sh          # 4 runners (default — matches compose.yml's `scale: 4`)
 #   ./up.sh 1        # 1 runner (troubleshooting — isolate flaky jobs)
 #   ./up.sh N        # N runners
 #
@@ -20,7 +20,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-SCALE="${1:-8}"
+SCALE="${1:-4}"
 
 if [[ ! -f .env ]]; then
     echo "ERROR: .env not found. Copy .env.example to .env and fill in HERMES_RUNNER_REGISTRATION_PAT."

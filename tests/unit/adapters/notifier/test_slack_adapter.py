@@ -112,6 +112,15 @@ class TestReportingPhaseLogging:
 class TestSlackConfig:
     """Verify credential-loading contract for :class:`SlackConfig`."""
 
+    def test_repr_hides_the_bot_token(self, adapter: SlackAdapter) -> None:
+        """Rendering the config or the adapter never prints the token (#506).
+
+        Logs, tracebacks and error reports render objects with ``repr``.
+        """
+        rendered = repr(adapter.config) + repr(adapter)
+        assert _TEST_TOKEN not in rendered
+        assert _TEST_CHANNEL in rendered
+
     def test_from_env_loads_both_variables(self) -> None:
         """from_env returns config populated from the two HERMES_SLACK__* env vars."""
         env = {
