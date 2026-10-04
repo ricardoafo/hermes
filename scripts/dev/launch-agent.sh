@@ -29,7 +29,11 @@
 #   bash scripts/dev/launch-agent.sh --quiet          # SHA-only on stdout
 #   HERMES_SELF_TEST=1 bash scripts/dev/launch-agent.sh
 #
+# After a successful check it also removes finished worktrees and local
+# branches (prune-merged-branches.sh --yes --local-only).
+#
 # Env vars:
+#   HERMES_NO_AUTO_PRUNE — set to 1 to skip the local prune
 #   HERMES_SELF_TEST — set to 1 to run built-in fixtures + exit
 #   GIT_CMD          — override for `git`; self-test uses a stub that
 #                      simulates fresh / stale / offline states without
@@ -143,6 +147,9 @@ check_base_fresh() {
 # ────────────────────────────────────────────────────────────────
 if [[ "${HERMES_SELF_TEST:-0}" == "1" ]]; then
     fail=0
+    # Fixtures re-run this script against the real checkout; the prune
+    # must never run there.
+    export HERMES_NO_AUTO_PRUNE=1
     tmp_stub=$(mktemp -t launch-agent-git.XXXXXX)
     trap 'rm -f "$tmp_stub"' EXIT
 
@@ -275,5 +282,13 @@ if [[ "$QUIET" == "1" ]]; then
 else
     echo "✓ local $BRANCH is up-to-date with $REMOTE/$BRANCH"
     echo "  base SHA (pin sub-agent against this): $remote_sha"
+fi
+
+# Every launch adds a worktree, so every launch is also when finished
+# ones get cleared (#472). Best effort: a prune failure never blocks a
+# launch, and its output goes to stderr so --quiet stays SHA-only.
+if [[ "${HERMES_NO_AUTO_PRUNE:-0}" != "1" && -z "${GIT_CMD:-}" ]]; then
+    bash "$(dirname "$0")/prune-merged-branches.sh" --yes --local-only >&2 \
+        || echo "WARN: local branch prune failed; run scripts/dev/prune-merged-branches.sh by hand" >&2
 fi
 exit 0
