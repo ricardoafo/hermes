@@ -175,4 +175,5 @@ COMMAND = Command(
     summary="Open shadow positions, net per row; `positions COIN` for the detail.",
     run=_run,
     wants_demo=True,
+    json=True,
 )
