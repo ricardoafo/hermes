@@ -65,9 +65,14 @@ def test_activity_json_from_the_ledger(ledger: Path) -> None:
 def test_activity_missing_ledger_exits_3(tmp_path: Path) -> None:
     """No ledger file at --db: exit 3 naming the path, and nothing is created."""
     path = tmp_path / "absent.sqlite3"
-    stream = io.StringIO()
-    rc = run_activity(["--db", str(path)], stream, env={}, now=_READ_AT)
-    assert (rc, f"no ledger at {path}" in stream.getvalue(), path.exists()) == (3, True, False)
+    stream, err = io.StringIO(), io.StringIO()
+    rc = run_activity(["--db", str(path)], stream, env={}, now=_READ_AT, err=err)
+    assert (rc, stream.getvalue(), f"no ledger at {path}" in err.getvalue(), path.exists()) == (
+        3,
+        "",
+        True,
+        False,
+    )
 
 
 def _home_texts(model: ConsoleReadModel) -> dict[str, str]:

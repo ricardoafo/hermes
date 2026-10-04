@@ -40,6 +40,7 @@ from returns.result import Failure
 from hermes.adapters.ledger.migration_runner import apply_migrations
 from hermes.domain.errors import LedgerError
 from hermes.domain.events.base import DomainEvent
+from hermes.domain.events.fill_quality_recorded import BookSource, FillQualityRecorded
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.events.trade_executed import TradeExecuted, TradeSide
 from hermes.domain.fx.eur_pricing import EurPricing, EurStatus
@@ -847,6 +848,39 @@ class SqliteLedger:
             raise LedgerError(msg=f"trades_between failed: {exc}") from exc
         return _trades_from_rows(rows, op="trades_between")
 
+    def fill_quality_events(self, strategy_id: StrategyId) -> tuple[FillQualityRecorded, ...]:
+        """Return every ``FillQualityRecorded`` of a strategy, oldest first.
+
+        Args:
+            strategy_id: Strategy bucket the fills belong to.
+
+        Returns:
+            The rehydrated events ordered by ``occurred_at`` then row id.
+
+        Raises:
+            LedgerError: On any SQLite read failure, a row whose schema version
+                is not 1, or an unreadable payload.
+        """
+        try:
+            rows = self._conn.execute(
+                "SELECT event_schema_version, payload_json FROM events "
+                "WHERE event_type = 'FillQualityRecorded' "
+                "  AND json_extract(payload_json, '$.strategy_id.value') = ? "
+                "ORDER BY occurred_at ASC, id ASC",
+                (strategy_id.value,),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"fill_quality_events failed: {exc}") from exc
+        events: list[FillQualityRecorded] = []
+        for version, payload_json in rows:
+            if version != FillQualityRecorded.__event_schema_version__:
+                raise LedgerError(msg=f"fill_quality_events: unsupported schema version {version}")
+            try:
+                events.append(_fill_quality_from_payload(json.loads(payload_json)))
+            except (KeyError, ValueError, TypeError) as exc:
+                raise LedgerError(msg=f"fill_quality_events: unreadable payload: {exc}") from exc
+        return tuple(events)
+
     def list_eur_trades(self) -> tuple[EurTradeRow, ...]:
         """Return every row the FIFO projection replays, with its EUR values.
 
@@ -1468,4 +1502,38 @@ def _trade_from_payload(payload: dict[str, Any]) -> TradeExecuted:
             currency=Currency(payload["fee"]["currency"]),
         ),
         strategy_id=StrategyId(payload["strategy_id"]["value"]),
+    )
+
+
+def _fill_quality_from_payload(payload: dict[str, Any]) -> FillQualityRecorded:
+    """Rehydrate a :class:`FillQualityRecorded` from its stored JSON payload.
+
+    Args:
+        payload: The decoded ``payload_json`` of a ``FillQualityRecorded`` row.
+
+    Returns:
+        The event with every stored field restored.
+
+    Raises:
+        KeyError: A field is missing from the payload.
+        ValueError: A field holds a value of the wrong shape.
+    """
+    return FillQualityRecorded(
+        occurred_at=datetime.fromisoformat(payload["occurred_at"]),
+        correlation_id=payload["correlation_id"],
+        event_seq=int(payload["event_seq"]),
+        strategy_id=StrategyId(payload["strategy_id"]["value"]),
+        pair=Pair(
+            base=Currency(payload["pair"]["base"]),
+            quote=Currency(payload["pair"]["quote"]),
+        ),
+        side=TradeSide(payload["side"]),
+        qty=Decimal(str(payload["qty"])),
+        book_source=BookSource(payload["book_source"]),
+        book_time=datetime.fromisoformat(payload["book_time"]),
+        fill_price=Decimal(str(payload["fill_price"])),
+        model_price=_optional_decimal(payload["model_price"]),
+        drift_bps=_optional_decimal(payload["drift_bps"]),
+        book_mid=_optional_decimal(payload["book_mid"]),
+        slippage=_optional_decimal(payload["slippage"]),
     )

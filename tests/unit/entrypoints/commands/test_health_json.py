@@ -52,9 +52,9 @@ def _fake_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     )
 
 
-def _run(args: list[str]) -> tuple[int, str]:
+def _run(args: list[str], err: io.StringIO | None = None) -> tuple[int, str]:
     stream = io.StringIO()
-    rc = health_command.COMMAND.run(args, stream=stream)
+    rc = health_command.COMMAND.run(args, stream=stream, err=err)
     return rc, stream.getvalue()
 
 
@@ -152,18 +152,20 @@ def test_help_prints_usage_with_exit_codes_and_returns_zero(flag: str) -> None:
 
 def test_unknown_flag_returns_two() -> None:
     """Invariant: an unknown option is bad usage, not an integration name."""
-    rc, out = _run(["--bogus"])
+    err = io.StringIO()
+    rc, out = _run(["--bogus"], err)
 
-    assert rc == 2
-    assert "unknown option '--bogus'" in out
+    assert (rc, out) == (2, "")
+    assert "unknown option '--bogus'" in err.getvalue()
 
 
 def test_unknown_integration_with_json_returns_two_and_names_available() -> None:
     """Invariant: an unknown integration is exit 2 even with --json."""
-    rc, out = _run(["nope", "--json"])
+    err = io.StringIO()
+    rc, out = _run(["nope", "--json"], err)
 
-    assert rc == 2
-    assert "unknown integration 'nope'" in out
+    assert (rc, out) == (2, "")
+    assert "unknown integration 'nope'" in err.getvalue()
 
 
 def test_table_form_is_unchanged_without_json(monkeypatch: pytest.MonkeyPatch) -> None:

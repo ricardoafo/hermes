@@ -5,7 +5,10 @@ Implements four narrow slices of Kraken's public REST API against
 
 - :meth:`KrakenPublicAdapter.get_pair_fees` — the ``AssetPairs`` endpoint,
   returning a volume-tiered :class:`~hermes.domain.fees.FeeSchedule`.
-  Satisfies :class:`~hermes.ports.fees.FeeScheduleProviderPort`.
+  Satisfies :class:`~hermes.ports.fees.FeeScheduleProviderPort`. Since
+  2026-10-04 Kraken returns empty fee lists here, so this raises against the
+  live API; the trading adapter reads its fees from the private
+  ``TradeVolume`` call instead (#599).
 - :meth:`KrakenPublicAdapter.fetch_klines` — the ``OHLC`` endpoint,
   yielding :class:`~hermes.domain.market_data.kline.Kline` values.
   Satisfies :class:`~hermes.ports.klines.KlinesFetcherPort`.

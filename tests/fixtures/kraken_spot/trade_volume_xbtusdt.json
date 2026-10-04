@@ -1,0 +1,1 @@
+{"error": [], "result": {"currency": "ZUSD", "volume": "1250.0000", "fees": {"XBTUSDT": {"fee": "0.4000", "minfee": "0.0800", "maxfee": "0.4000", "nextfee": "0.3500", "nextvolume": "10000.0000", "tiervolume": "0.0000"}}, "fees_maker": {"XBTUSDT": {"fee": "0.2500", "minfee": "0.0000", "maxfee": "0.2500", "nextfee": "0.2000", "nextvolume": "10000.0000", "tiervolume": "0.0000"}}}}

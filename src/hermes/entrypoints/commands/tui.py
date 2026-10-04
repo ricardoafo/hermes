@@ -9,6 +9,7 @@ from typing import Final, TextIO
 
 from hermes.adapters.console import UnknownScenarioError
 from hermes.application.console import ConsoleReadModel
+from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.commands import Command
 from hermes.entrypoints.console import (
     LiveReadModelUnavailableError,
@@ -39,6 +40,7 @@ def run_tui(
     demo_flag: str | None = None,
     env: Mapping[str, str] | None = None,
     runner: Callable[[ConsoleReadModel], None] | None = None,
+    err: TextIO | None = None,
 ) -> int:
     """Run ``hermes tui``, the read-only home screen.
 
@@ -48,28 +50,30 @@ def run_tui(
 
     Args:
         args: Arguments after ``tui``: only ``--db PATH``.
-        stream: Output stream for errors.
+        stream: Output stream.
         demo_flag: Scenario from the leading ``--demo`` option, if any.
         env: Environment snapshot; defaults to empty.
         runner: Runs the app on the read model; defaults to the Textual home
             screen (imported lazily so the other commands stay fast).
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         0 after the operator quits, 2 for a usage error, an unknown scenario or
         no data source (no demo and no ledger file).
     """
+    err = resolve_err(err)
     if "-h" in args or "--help" in args:
         stream.write(_TUI_HELP + "\n")
         return 0
     try:
         db_path = _db_path(args)
     except _BadArgumentsError:
-        stream.write(f"ERROR: bad arguments. {_TUI_USAGE}\n")
+        err.write(f"ERROR: bad arguments. {_TUI_USAGE}\n")
         return 2
     try:
         model = resolve_read_model(demo_flag=demo_flag, env=env or {}, db_path=db_path)
     except (UnknownScenarioError, LiveReadModelUnavailableError) as exc:
-        stream.write(f"ERROR: {exc}\n")
+        err.write(f"ERROR: {exc}\n")
         return 2
     if runner is None:
         from hermes.entrypoints.tui import run_home  # noqa: PLC0415 - Textual is slow to import
@@ -98,8 +102,8 @@ def _db_path(args: list[str]) -> Path | None:
             raise _BadArgumentsError
 
 
-def _run(argv: list[str], *, stream: TextIO, demo: str | None) -> int:
-    return run_tui(argv, stream, demo_flag=demo, env=os.environ)
+def _run(argv: list[str], *, stream: TextIO, demo: str | None, err: TextIO | None = None) -> int:
+    return run_tui(argv, stream, demo_flag=demo, env=os.environ, err=err)
 
 
 COMMAND = Command(

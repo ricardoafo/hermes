@@ -39,9 +39,9 @@ def _link(tmp_path: Path, name: str = "abc123def456") -> Path:
     return link
 
 
-def _run(argv: list[str], link: Path) -> tuple[int, str]:
+def _run(argv: list[str], link: Path, err: io.StringIO | None = None) -> tuple[int, str]:
     out = io.StringIO()
-    code = version_module.main(argv, stream=out, release_link=link)
+    code = version_module.main(argv, stream=out, release_link=link, err=err)
     return code, out.getvalue()
 
 
@@ -157,9 +157,10 @@ def test_help_exits_zero_with_exit_codes(tmp_path: Path) -> None:
 
 def test_bad_usage_exits_two(tmp_path: Path) -> None:
     """An unknown flag returns 2 with an ERROR line."""
-    code, text = _run(["--bogus"], tmp_path / "current")
-    assert code == 2
-    assert text.startswith("ERROR: could not parse `hermes version` arguments.")
+    err = io.StringIO()
+    code, text = _run(["--bogus"], tmp_path / "current", err)
+    assert (code, text) == (2, "")
+    assert err.getvalue().startswith("ERROR: could not parse `hermes version` arguments.")
 
 
 @pytest.mark.parametrize("flag", ["--version", "-V"])

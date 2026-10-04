@@ -12,11 +12,14 @@ Reference: docs/decisions/2026-08-23-slack-alongside-telegram.md.
 from __future__ import annotations
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from hermes.application.messages._escape import (
     CORRELATION_TAIL_LEN,
     correlation_tail,
     escape_markdown_v2,
+    escape_slack,
 )
 
 
@@ -62,3 +65,30 @@ class TestCorrelationTail:
     def test_tail_length_constant_matches_documentation(self) -> None:
         """The exported constant equals 6 (as documented in ADR-008)."""
         assert CORRELATION_TAIL_LEN == 6
+
+
+class TestEscapeSlack:
+    """Slack reads &, < and > as markup, so they must reach the API as entities."""
+
+    @pytest.mark.parametrize(
+        ("raw", "escaped"),
+        [
+            ("&", "&amp;"),
+            ("<", "&lt;"),
+            (">", "&gt;"),
+            ("<!channel> a & b", "&lt;!channel&gt; a &amp; b"),
+        ],
+    )
+    def test_markup_characters_become_entities(self, raw: str, escaped: str) -> None:
+        """Each of the three markup characters is replaced by its entity."""
+        assert escape_slack(raw) == escaped
+
+    @given(text=st.text(alphabet="abc XYZ 019 .,:;-_*`", max_size=40))
+    def test_text_without_markup_characters_is_unchanged(self, text: str) -> None:
+        """Property: text with no &, < or > passes through untouched."""
+        assert escape_slack(text) == text
+
+    @given(text=st.text(max_size=40))
+    def test_escaped_text_has_no_raw_angle_brackets(self, text: str) -> None:
+        """Property: after escaping no raw < or > remains, whatever the input."""
+        assert ("<" in escape_slack(text), ">" in escape_slack(text)) == (False, False)
