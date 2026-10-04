@@ -246,15 +246,26 @@ flowchart LR
 
 ```python
 class ShadowExecutor:
-    def __init__(self, *, kernel: FillKernel, fill_model: FillModelPort,
-                 books: OrderbookSnapshotPort, recorder: FillRecorder,
-                 ledger: ExecutionLedgerPort, clock: ClockPort,
-                 fees_at: Callable[[datetime, Pair], FeeSchedule],
-                 model: ExecutionModel, strategy_id: StrategyId,
-                 live_window: timedelta = LIVE_BOOK_WINDOW) -> None: ...
-    def observe(self, bar: Bar) -> None: ...          # BTC 1d closes for RO-07
-    async def execute(self, signal: StrategySignal, bar: Bar, *,
-                      correlation_id: str) -> ShadowOutcome: ...
+    def __init__(
+        self,
+        *,
+        kernel: FillKernel,
+        fill_model: FillModelPort,
+        books: OrderbookSnapshotPort,
+        recorder: FillRecorder,
+        ledger: ExecutionLedgerPort,
+        clock: ClockPort,
+        fees_at: Callable[[datetime, Pair], FeeSchedule],
+        model: ExecutionModel,
+        strategy_id: StrategyId,
+        live_window: timedelta = LIVE_BOOK_WINDOW,
+    ) -> None: ...
+    def observe(self, bar: Bar) -> None: ...  # BTC 1d closes for RO-07
+    async def execute(
+        self, signal: StrategySignal, bar: Bar, *, correlation_id: str
+    ) -> ShadowOutcome: ...
+
+
 # ShadowOutcome = ExecutionOutcome | AlreadyFilled
 ```
 
