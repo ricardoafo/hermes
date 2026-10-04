@@ -117,18 +117,18 @@ fi
 # ────────────────────────────────────────────────────────────────
 # Production path — scan src/hermes/ and tests/
 # ────────────────────────────────────────────────────────────────
-hits=""
+all_hits=""
 for root in src/hermes tests; do
     [[ -d "$root" ]] || continue
     found=$(scan_tree "$root")
     if [[ -n "$found" ]]; then
-        hits+="$found"$'\n'
+        all_hits+="$found"$'\n'
     fi
 done
 
-if [[ -n "${hits// /}" && -n "${hits//$'\n'/}" ]]; then
+if [[ -n "${all_hits// /}" && -n "${all_hits//$'\n'/}" ]]; then
     echo "::error::naive datetime usage detected (code-conventions §9)"
-    echo "$hits"
+    echo "$all_hits"
     echo ""
     echo "Use hermes.infrastructure.time.now_utc() instead of datetime.now()/utcnow()/date.today()."
     exit 1

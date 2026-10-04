@@ -1,0 +1,1 @@
+- **`hermes health` takes `--json` and `-h`/`--help`**: `--json` prints one document with an object per integration (name, status, detail) and the overall exit code, with secret values masked; `--help` lists the exit codes and an unknown option exits 2. Tables and exit codes are unchanged. Closes #540.

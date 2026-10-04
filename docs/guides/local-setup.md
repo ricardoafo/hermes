@@ -96,6 +96,18 @@ ls -la .git/hooks/pre-commit .git/hooks/pre-push
 depends on it. If you push without it, you'll ship broken code to CI and
 waste round-trips.
 
+## Toolchain check
+
+```bash
+bash scripts/dev/doctor.sh
+```
+
+It compares uv, the project Python, Node, markdownlint-cli2, gitleaks,
+the git hooks and the git identity with what CI pins, and reads each
+pin from the file CI uses. A FAIL changes what a local check decides,
+so fix it before trusting a local pass. A WARN can only change results
+at the edges.
+
 ## Configuring secrets
 
 Hermes reads credentials (bot tokens, exchange API keys, webhook URLs)

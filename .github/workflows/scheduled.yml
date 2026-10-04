@@ -73,7 +73,7 @@ jobs:
 
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with: { version: "0.12.5" }
-      - run: uv tool install semgrep
+      - run: uv tool install semgrep==1.176.1
       - run: uv tool run semgrep scan --config p/security-audit --config p/python --error
 
   contract:

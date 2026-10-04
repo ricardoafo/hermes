@@ -116,10 +116,10 @@ if [[ ! -d "$root" ]]; then
     exit 0
 fi
 
-hits=$(scan_tree "$root")
-if [[ -n "${hits// /}" && -n "${hits//$'\n'/}" ]]; then
+domain_hits=$(scan_tree "$root")
+if [[ -n "${domain_hits// /}" && -n "${domain_hits//$'\n'/}" ]]; then
     echo "::error::TradingMode branching detected in domain layer (code-conventions §11)"
-    echo "$hits"
+    echo "$domain_hits"
     echo ""
     echo "Move mode-branching to hermes.application.*_uc — domain must be mode-agnostic."
     exit 1
