@@ -12,7 +12,8 @@ dual-source rule).
 ## Summary
 
 `hermes serve` starts turning live signals into simulated orders and fills. Each signal goes through the
-`FillKernel` the backtest uses (#313: `OrderRouter` → `OrderbookWalkFillModel` → `PortfolioTracker`),
+`FillKernel` the backtest uses (#313, merged as #519: `OrderRouter` → `OrderbookWalkFillModel` →
+`PortfolioTracker`), sized by the enabled roster entry's `StrategyConfig.sizing_policy()` (#510),
 fed by a public, keyless Binance depth snapshot taken when the bar is handled, and each fill is written
 with `TradeRecorder.record` as a `TradeExecuted` v2 trade carrying `strategy_id` and EUR values (or
 pending). Next to every fill the loop stores a `FillQualityRecorded` event: which book was used, the
@@ -20,6 +21,11 @@ fill price, the pre-registration §6.2 model price for the same order and the dr
 SHADOW_CERTIFIED gate (pre-registration §7, "< 30 bps p50 over 90 days") is computed from these rows.
 The main risk is a live book that is unavailable or stale. The loop then falls back to the §6.2
 synthetic book and records that it did; entries on that book are refused by the stale-book rule (RO-04).
+That behaviour is as built and awaits the Code Owner's answer (D-2).
+
+Rebased on 2026-10-04 onto `main` at `e986a6d`, which has the merged kernel (#519), the
+`SizingPolicy` sizing API (#510), the USDT capital seed (#405 via #503/#504) and the per-bar portfolio
+marks (#511). The adaptations are D-8 to D-10.
 
 ## Scope
 
@@ -38,9 +44,10 @@ synthetic book and records that it did; entries on that book are refused by the 
   re-execution after a restart idempotent.
 - **EDIT** `src/hermes/adapters/ledger/sqlite_ledger.py`: add the `fill_quality_events(strategy_id)` reader;
   **EDIT** `src/hermes/ports/ledger.py`: add the `ExecutionLedgerPort` protocol.
-- **EDIT** `src/hermes/entrypoints/serve.py`: wire the kernel, executor, depth adapter, FX pricer, fee
-  history and pre-registration into `build_composition`; call the executor from `_BarLoop.handle`;
-  `check_startup` refuses a missing experiment file.
+- **EDIT** `src/hermes/entrypoints/serve.py`: wire the kernel (with `roster.sizing_policy()`, D-8),
+  executor (with the capital seed's date as `not_before`, D-9), depth adapter, FX pricer, fee history
+  and pre-registration into `build_composition`; call the executor from `_BarLoop.handle` before the
+  bar's portfolio mark (D-10); `check_startup` refuses a missing experiment file.
 - **EDIT** `src/hermes/entrypoints/commands/serve.py`: pass the experiment root (`--config-dir`'s parent).
 - **EDIT** `.github/workflows/cd.yml` and `scripts/deploy/install_release.sh`: ship
   `docs/experiments/swing-mvp1/{pre-registration-v1.md,fee-history.csv}` in each release (D-6).
@@ -58,7 +65,9 @@ synthetic book and records that it did; entries on that book are refused by the 
 - The SA-9 "3+ fires in 30 days" and recovery-period kill inputs need persisted history. Until it exists
   they are `sa9_halt=False` and `days_since_equity_high=0` (D-3).
 - Computing the SHADOW_CERTIFIED verdict itself (#355). This change records the per-fill input.
-- Sizing math (#480). The kernel keeps #313's `SizingCalculator()` call; see "When #480 lands".
+- Sizing math. It landed in #510; serve only passes the roster's policy (D-8).
+- Writing the capital seed. `build_composition` already does it once on `main` (#405 D-1); this change
+  only reads the recorded seed's date (D-9).
 - Any authenticated or trading endpoint. The spot trading adapter on main (#477) is not used.
 
 ## Decisions
@@ -97,6 +106,9 @@ synthetic book and records that it did; entries on that book are refused by the 
 - **Rationale**: the issue asks for a fallback that is recorded; exits do not go through the risk
   overlay, so the fallback keeps the portfolio in step with the strategy's exits.
 - **Cost of reversal**: LOW.
+- **Pending**: the Code Owner's answer on the stale or missing book is pending and will be recorded
+  here. Until then the behaviour stays as built: an entry on the synthetic fallback is refused by
+  RO-04, and an exit fills on the §6.2 book.
 
 ### D-3: Real risk and kill inputs where serve has the data
 
@@ -142,7 +154,7 @@ synthetic book and records that it did; entries on that book are refused by the 
 
 - **Decision**: Two guards. (1) The bar cursor, unchanged: a bar at or before the persisted
   `BarProcessed` cursor is never evaluated again. (2) Within one bar the order is signal row → trade
-  row → quality row → notification → live bar → cursor row. A bar re-evaluated after a crash before its
+  row → quality row → notification → live bar → portfolio mark → cursor row (D-10). A bar re-evaluated after a crash before its
   cursor row is executed only if `ledger.trade_events(strategy_id)` holds no trade for the same pair
   and side at or after `signal.signal_time`; otherwise the executor returns `AlreadyFilled`. The signal
   dedupe (`has_signal_event`) still decides whether the signal row and the notification are repeated.
@@ -180,6 +192,42 @@ synthetic book and records that it did; entries on that book are refused by the 
   `docs/decisions/2026-10-03-operator-sees-shadow-pnl.md` (journal lines are durable records AI
   sessions read).
 
+### D-8: Serve sizes with the roster's pre-registered policy
+
+- **Decision**: `_build_kernel` takes `roster.sizing_policy()` of the enabled roster entry and hands it
+  to `FillKernel(sizing=...)`.
+- **Alternatives**: a serve-local policy (two sources for the §5.4 and §5.5 limits).
+- **Rationale**: the backtest and serve then size from the same `config/strategies.yaml` values.
+- **Cost of reversal**: LOW.
+
+### D-9: A fill is never stamped before the capital seed
+
+- **Decision**: `build_composition` reads the recorded seed after `seed_capital_once` and passes its
+  `seeded_at` to `ShadowExecutor(not_before=...)`. The executor stamps a fill at the later of its
+  book or signal time and `not_before`.
+- **Alternatives**: date a first-boot seed earlier than the clock's now (changes #405 D-1 and its
+  tests); write the seed after the warm-up (moves #405's write out of `build_composition`).
+- **Rationale**: on a first boot the seed is dated at the clock's now (#405 D-1). A bar that closed
+  just before the start and arrives after it (the settle delay) fills on the synthetic book at its
+  close time, before the seed. The USDT FIFO replay then finds no lot, the trade write raises
+  `LedgerError`, the loop exits 1, and every restart re-evaluates the same bar and fails again. On a
+  ledger with earlier activity the seed is dated at the earliest event, so the clamp never moves a
+  later fill. The main test `test_duplicate_live_bar_is_evaluated_once` hit this (exit 1); with the
+  clamp it passes with its assertions unchanged.
+- **Cost of reversal**: LOW.
+
+### D-10: Order of the per-bar writes
+
+- **Decision**: `_BarLoop.handle` runs tracker mark → strategy → signal row → executor (trade row,
+  quality row) → notification → live bar → portfolio mark (#511) → `BarProcessed` cursor row. The
+  portfolio mark is read from the tracker the kernel just folded the fill into, so the mark of an
+  entry bar holds the position. The seed is not written per bar.
+- **Rationale**: the mark is the portfolio after the bar, fill included. Each record has one writer:
+  trades only through `TradeRecorder`, marks only in `handle`, the seed only in `seed_capital_once`.
+  A re-evaluated bar keeps its stored mark (`INSERT OR IGNORE`) and its trade (D-5), so nothing is
+  recorded twice.
+- **Cost of reversal**: LOW.
+
 ## Requirements
 
 ### R-1: A live signal becomes a simulated order and fill in the ledger
@@ -208,6 +256,8 @@ synthetic book and records that it did; entries on that book are refused by the 
 - **A-4.1**: Boot 1 fills the entry; boot 2 rebuilds the tracker from recorded trades (the position is
   held with the same quantity) and fills the exit.
 - **A-4.2**: A bar re-evaluated after a crash before its cursor row adds no second trade.
+- **A-4.3**: On a first boot, a signal of a bar that closed just before the start fills at the capital
+  seed's date, the seed lot pays for it, and the loop exits 0 (D-9).
 
 ### R-5: Blind outputs
 
@@ -225,6 +275,10 @@ synthetic book and records that it did; entries on that book are refused by the 
 
 - **A-7.1**: `uv run pytest tests/unit tests/integration -q`, `uv run ruff check`,
   `uv run ruff format --check src tests`, `uv run mypy src`, `uv run lint-imports` are green.
+
+### R-8: Portfolio marks after fills
+
+- **A-8.1**: The portfolio mark stored for the entry bar holds the bought quantity (D-10).
 
 ## Design
 
@@ -256,9 +310,10 @@ class ShadowExecutor:
         ledger: ExecutionLedgerPort,
         clock: ClockPort,
         fees_at: Callable[[datetime, Pair], FeeSchedule],
-        model: ExecutionModel,
         strategy_id: StrategyId,
+        model: ExecutionModel | None = None,
         live_window: timedelta = LIVE_BOOK_WINDOW,
+        not_before: datetime | None = None,  # the capital seed's date (D-9)
     ) -> None: ...
     def observe(self, bar: Bar) -> None: ...  # BTC 1d closes for RO-07
     async def execute(
@@ -271,15 +326,12 @@ class ShadowExecutor:
 
 No migration: `FillQualityRecorded` lives in the existing `events` table.
 
-### When #480 lands
+### Sizing (#480, landed in #510)
 
-Issue #480 replaces `SizingCalculator()` with `SizingCalculator(SizingPolicy)` and
-`SizingInput(entry_px, stop_px, open_notional)`. Only the kernel changes: it takes the #480
-`SizingPolicy` and builds `SizingInput(entry_px=…, stop_px=signal.stop_price,
-open_notional=tracker.open_notional())`. The kernel's own `SizingPolicy` dataclass is removed, since
-its name collides. Serve then builds the policy from the enabled roster entry in `_build_kernel` (one
-function), from `capital_budget` and the roster's `sizing` block. Nothing in `ShadowExecutor` or the
-loop changes.
+The merged kernel takes a required `sizing: SizingPolicy` and builds `SizingInput(entry_px,
+stop_px=signal.stop_price, open_notional=tracker.open_notional())` itself. Serve passes
+`roster.sizing_policy()` to `_build_kernel` (D-8). This change defines no sizing type, and nothing in
+`ShadowExecutor` or the loop sizes anything.
 
 ## Test plan
 
@@ -323,7 +375,10 @@ row is VIP0 10/10 bps.
 - **R2**: A long Binance outage refuses every entry (RO-04 on the synthetic book). This is an
   operational halt under binding rule 2(b), visible in `serve.fill.declined rule=HALT`.
 - **R3**: `peak_equity` after a restart comes from the trade replay only, with no bar marks, so
-  `max_drawdown` can read low just after a reboot. Persisting the peak is a follow-up.
+  `max_drawdown` can read low just after a reboot. The marks #511 stores per bar carry the peak, but
+  the tracker rebuild does not read them yet; that is a follow-up.
+- **R7**: A first-boot fill stamped at the seed's date (D-9) is up to one settle delay later than its
+  bar close; the §6.1 fee row and the kill check use that stamp.
 - **R4**: Strategy and portfolio can still diverge, for example on an entry the risk overlay refuses
   (#313 R4). The declined log line shows it.
 - **R5**: The deploy change has to land with this change: a release without `docs/` now fails
@@ -333,8 +388,8 @@ row is VIP0 10/10 bps.
 
 ## Dependencies on other changes
 
-- Builds on #313 (kernel; unmerged branch `feat/313-backtest-fill-path`), #392 (tracker rebuild), #435
-  (TradeRecorder), #309/#421 (bar loop, cursor).
-- #480 changes sizing; see "When #480 lands".
+- Builds on #313 (kernel, merged as #519), #392 (tracker rebuild), #435 (TradeRecorder), #309/#421
+  (bar loop, cursor), #510 (sizing policy), #405 (USDT FIFO and capital seed, #503/#504) and #511
+  (portfolio marks per bar).
 - The decision record `2026-10-03-operator-sees-shadow-pnl.md` and its lab-notebook entry must merge
   before the first simulated fill.
