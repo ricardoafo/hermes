@@ -15,6 +15,8 @@ const assert = require('node:assert/strict');
 
 const {
   MERGEABLE_STATES,
+  branchRefPath,
+  classifyBranchDelete,
   isApproved,
   isCandidate,
   shouldMerge,
@@ -726,4 +728,40 @@ test('selectDecision + orderCandidates: green approved PRs come out oldest appro
     { ...base, pr: { ...base.pr, number: 2 }, reviews: at('2026-10-04T02:00:00Z') },
   ].map((i) => selectDecision(i).candidate);
   assert.deepEqual(orderCandidates(picks).map((c) => c.n), [1, 2, 3]);
+});
+
+test('branchRefPath: slashes in a branch name stay path separators', () => {
+  assert.equal(
+    branchRefPath('refs', 'feat/148-binance-testnet-spot'),
+    'git/refs/heads/feat/148-binance-testnet-spot',
+  );
+  assert.equal(branchRefPath('ref', 'feat/148-x'), 'git/ref/heads/feat/148-x');
+});
+
+test('branchRefPath: other reserved characters inside a segment are encoded', () => {
+  assert.equal(branchRefPath('refs', 'fix/a#b?c'), 'git/refs/heads/fix/a%23b%3Fc');
+});
+
+test('classifyBranchDelete: 204 is a delete', () => {
+  assert.equal(classifyBranchDelete({ deleteStatus: 204, refStillExists: undefined }).outcome, 'deleted');
+});
+
+test('classifyBranchDelete: 404/422 with the ref confirmed absent is already gone', () => {
+  for (const deleteStatus of [404, 422]) {
+    assert.equal(classifyBranchDelete({ deleteStatus, refStillExists: false }).outcome, 'already-gone');
+  }
+});
+
+test('classifyBranchDelete: 422 while the branch still exists is a failure, not "already gone"', () => {
+  const r = classifyBranchDelete({ deleteStatus: 422, refStillExists: true });
+  assert.equal(r.outcome, 'failed');
+  assert.match(r.reason, /still exists/);
+});
+
+test('classifyBranchDelete: an unchecked ref is never assumed gone', () => {
+  assert.equal(classifyBranchDelete({ deleteStatus: 404, refStillExists: undefined }).outcome, 'failed');
+});
+
+test('classifyBranchDelete: 403 is a failure even if the ref is absent', () => {
+  assert.equal(classifyBranchDelete({ deleteStatus: 403, refStillExists: false }).outcome, 'failed');
 });
