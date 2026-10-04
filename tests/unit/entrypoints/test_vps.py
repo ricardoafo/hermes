@@ -33,6 +33,18 @@ _SCRIPT_TAIL = (
 _BIN = "/opt/hermes/current/.venv/bin/hermes"
 
 
+@pytest.fixture(autouse=True)
+def _no_real_ssh(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Invariant: no test in this file can open a connection, even through the CLI."""
+
+    def boom(argv: list[str]) -> SshResult:
+        raise AssertionError(f"a test reached the real ssh: {argv}")
+
+    defaults = vps_module.run_vps.__kwdefaults__
+    assert defaults is not None
+    monkeypatch.setitem(defaults, "runner", boom)
+
+
 class _FakeSsh:
     def __init__(self, result: SshResult | Exception) -> None:
         self.result = result
@@ -366,3 +378,48 @@ def test_remote_guard_exits_127_when_the_vps_build_lacks_the_command(
         [_BASH, "-c", script, "_", fake.as_posix(), "tui"], capture_output=True, check=False
     )
     assert done.returncode == expected_code
+
+
+@pytest.mark.parametrize(
+    ("args", "expected_args"),
+    [
+        (["positions", "--vps"], []),
+        (["positions", "BTC", "--vps", "--utc"], ["BTC", "--utc"]),
+    ],
+)
+def test_cli_accepts_vps_after_the_command(
+    monkeypatch: pytest.MonkeyPatch, args: list[str], expected_args: list[str]
+) -> None:
+    """Invariant: `hermes CMD --vps` runs CMD on the VPS, with --vps removed from its args."""
+    seen: dict[str, object] = {}
+
+    def fake_run(command: str, rest: list[str], stream: object, **kwargs: object) -> int:
+        seen.update(command=command, args=rest)
+        return 0
+
+    monkeypatch.setattr(vps_module, "run_vps", fake_run)
+    code, _ = _cli(args)
+    assert code == 0
+    assert seen == {"command": "positions", "args": expected_args}
+
+
+def test_cli_refuses_vps_before_and_after_the_command() -> None:
+    """Invariant: two --vps options are ambiguous, so exit 2 and nothing runs."""
+    code, out = _cli(["--vps", "positions", "--vps"])
+    assert (code, "give --vps once" in out) == (2, True)
+
+
+@pytest.mark.parametrize(
+    "args", [["positions", "--demo", "calm", "--vps"], ["--demo", "calm", "positions", "--vps"]]
+)
+def test_cli_refuses_trailing_vps_with_demo(args: list[str]) -> None:
+    """Invariant: --demo with a trailing --vps is refused, as with a leading one."""
+    code, out = _cli(args)
+    assert code == 2
+    assert "cannot be combined with --demo" in out
+
+
+def test_cli_trailing_vps_still_refuses_a_non_console_command() -> None:
+    """Invariant: `hermes serve --vps` is refused like `hermes --vps serve`."""
+    code, out = _cli(["serve", "--vps"])
+    assert (code, "not 'serve'" in out) == (2, True)

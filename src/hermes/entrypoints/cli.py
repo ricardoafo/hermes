@@ -46,6 +46,8 @@ from hermes.infrastructure import sentry_integration
 
 __all__ = ["main"]
 
+_FLAG_VPS = "--vps"
+
 _JSON_NOTE = "status, activity, logs, version."
 
 
@@ -145,10 +147,18 @@ def _demo_then_vps(args: list[str]) -> bool:
 
 
 def _vps_exit(args: list[str], out: Any) -> int | None:
-    """Handle a ``--vps`` run (either order with ``--demo``); ``None`` when not asked for."""
-    on_vps, vps_args = vps_module.split_vps_flag(args)
-    if on_vps or _demo_then_vps(args):
-        return _run_on_vps(vps_args if on_vps else args, out, demo_first=not on_vps)
+    """Handle a ``--vps`` run, before or after the command; ``None`` when not asked for."""
+    leading, rest = vps_module.split_vps_flag(args)
+    trailing = _FLAG_VPS in rest
+    if leading and trailing:
+        out.write("ERROR: give --vps once, before or after the command.\n")
+        return 2
+    if trailing:
+        rest = [arg for arg in rest if arg != _FLAG_VPS]
+    if leading or trailing:
+        return _run_on_vps(rest, out, demo_first=False)
+    if _demo_then_vps(args):
+        return _run_on_vps(args, out, demo_first=True)
     return None
 
 
@@ -157,7 +167,7 @@ def _run_on_vps(args: list[str], out: Any, *, demo_first: bool) -> int:
     if not args:
         out.write("ERROR: --vps needs a console command, e.g. `hermes --vps positions`.\n")
         return 2
-    if demo_first or args[0] == "--demo" or args[0].startswith("--demo="):
+    if demo_first or any(arg == "--demo" or arg.startswith("--demo=") for arg in args):
         out.write("ERROR: --vps cannot be combined with --demo; the demo runs locally.\n")
         return 2
     return vps_module.run_vps(
