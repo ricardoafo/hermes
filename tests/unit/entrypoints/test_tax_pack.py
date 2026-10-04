@@ -94,16 +94,26 @@ def test_pack_folder_holds_every_file(tmp_path: Path) -> None:
     assert sorted(p.name for p in (out / "2026").iterdir()) == [
         "README.md",
         "changes.md",
-        "dossier.html",
+        "dossier.pdf",
         "figures.json",
         "manifest.json",
         "modelo100-sales.csv",
         "modelo100-summary.csv",
         "modelo721.csv",
-        "renta-web.html",
+        "renta-web.pdf",
         "report.md",
         "trail.csv",
     ]
+
+
+def test_sheets_are_written_as_pdf(tmp_path: Path) -> None:
+    """Invariant (D-8): the Renta Web sheet and dossier on disk are PDF files."""
+    out = tmp_path / "packs"
+    _run(["--year", "2026", "--db", str(_ledger(tmp_path)), "--out", str(out)], tmp_path)
+    heads = {
+        name: (out / "2026" / name).read_bytes()[:5] for name in ("renta-web.pdf", "dossier.pdf")
+    }
+    assert heads == {"renta-web.pdf": b"%PDF-", "dossier.pdf": b"%PDF-"}
 
 
 def test_manifest_matches_every_file_written(tmp_path: Path) -> None:

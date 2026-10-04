@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
+from hermes.application.filing.document import Heading, Table
 from hermes.application.filing.pack import (
     ESTIMATE_FILE,
     FIGURES_FILE,
@@ -114,15 +115,18 @@ def test_pack_holds_the_filing_report_csvs_trail_and_figures() -> None:
     """Invariant: every refresh writes the report, the three CSV files, the trail and figures."""
     assert sorted(_output().files) == [
         "README.md",
-        "dossier.html",
         FIGURES_FILE,
         "modelo100-sales.csv",
         "modelo100-summary.csv",
         "modelo721.csv",
-        "renta-web.html",
         "report.md",
         "trail.csv",
     ]
+
+
+def test_pack_holds_the_renta_sheet_and_dossier_as_pdf_documents() -> None:
+    """Invariant (D-8): every refresh carries the two printable sheets, named as PDF."""
+    assert sorted(_output().documents) == ["dossier.pdf", "renta-web.pdf"]
 
 
 def test_estimate_is_written_only_when_given() -> None:
@@ -180,12 +184,11 @@ def test_closed_year_without_its_own_renta_boxes_is_not_frozen() -> None:
 
 def test_renta_sheet_lists_the_box_entry_with_spanish_amounts() -> None:
     """Invariant: the sheet names the campaign box and the entry Renta Web asks for."""
-    sheet = _output().files["renta-web.html"]
-    assert "casilla 1804" in sheet
-    assert (
-        "<td>1</td><td>Bitcoin (BTC)</td><td>N: Otra moneda virtual</td>"
-        '<td class="n">990,00</td><td class="n">800,00</td><td class="n">190,00</td>'
-    ) in sheet
+    sheet = _output().documents["renta-web.pdf"]
+    headings = [block.text for block in sheet.blocks if isinstance(block, Heading)]
+    rows = [row for block in sheet.blocks if isinstance(block, Table) for row in block.rows]
+    assert any("casilla 1804" in text for text in headings)
+    assert ("1", "Bitcoin (BTC)", "N: Otra moneda virtual", "990,00", "800,00", "190,00") in rows
 
 
 def test_closed_year_with_a_pending_sale_is_not_frozen() -> None:

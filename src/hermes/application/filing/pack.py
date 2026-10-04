@@ -22,12 +22,13 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Final
 from zoneinfo import ZoneInfo
 
+from hermes.application.filing.document import Document
 from hermes.application.filing.render import render_csv_files, render_markdown
 from hermes.application.filing.renta_sheet import (
     DOSSIER_FILE,
     RENTA_SHEET_FILE,
-    render_dossier,
-    render_renta_sheet,
+    build_dossier,
+    build_renta_sheet,
 )
 from hermes.application.filing.service import FilingPack
 from hermes.domain.filing.pack_changes import figure_changes
@@ -84,7 +85,9 @@ class PackOutput:
     """What one refresh writes.
 
     Attributes:
-        files: File name to content, rewritten on every refresh.
+        files: File name to text content, rewritten on every refresh.
+        documents: File name to printable sheet, rewritten on every refresh;
+            the entrypoint renders each one (as PDF).
         readiness: The checklist and status.
         changes: Figure changes since the previous refresh; empty when none.
         changes_entry: Markdown to append to ``changes.md``, or ``None`` when
@@ -92,6 +95,7 @@ class PackOutput:
     """
 
     files: dict[str, str]
+    documents: dict[str, Document]
     readiness: Readiness
     changes: tuple[str, ...]
     changes_entry: str | None
@@ -141,7 +145,7 @@ def build_pack_output(
         refreshed_at: Instant of the run.
 
     Returns:
-        The pack's files, checklist and changes.
+        The pack's files and sheets, checklist and changes.
     """
     readiness = assess_readiness(
         pack.year,
@@ -158,10 +162,6 @@ def build_pack_output(
     stamp = _stamp(refreshed_at)
     files = {
         _README_FILE: _readme(pack, readiness, changes, stamp, has_estimate=estimate is not None),
-        RENTA_SHEET_FILE: render_renta_sheet(
-            pack, campaign, status=readiness.status, refreshed_at=refreshed_at
-        ),
-        DOSSIER_FILE: render_dossier(pack, trail, refreshed_at=refreshed_at),
         _REPORT_FILE: render_markdown(pack),
         **render_csv_files(pack),
         _TRAIL_FILE: _trail_csv(trail),
@@ -169,10 +169,22 @@ def build_pack_output(
     }
     if estimate is not None:
         files[ESTIMATE_FILE] = estimate
+    documents = {
+        RENTA_SHEET_FILE: build_renta_sheet(
+            pack, campaign, status=readiness.status, refreshed_at=refreshed_at
+        ),
+        DOSSIER_FILE: build_dossier(pack, trail, refreshed_at=refreshed_at),
+    }
     entry = None
     if changes:
         entry = "\n".join([f"## {stamp}", "", *(f"- {line}" for line in changes), "", ""])
-    return PackOutput(files=files, readiness=readiness, changes=changes, changes_entry=entry)
+    return PackOutput(
+        files=files,
+        documents=documents,
+        readiness=readiness,
+        changes=changes,
+        changes_entry=entry,
+    )
 
 
 def render_manifest(year: int, refreshed_at: datetime, contents: Mapping[str, bytes]) -> str:

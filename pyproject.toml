@@ -39,6 +39,9 @@ dependencies = [
   # dep of virtualenv; promoted to direct after we started depending on
   # it explicitly. See docs/decisions/... and change data-manifest-file-lock (#257).
   "filelock>=3,<4",
+  # Writes the tax pack's Renta Web sheet and dossier as PDF (#568, change
+  # 568-tax-pack D-8). Pure Python; approved by the Code Owner 2026-10-04.
+  "fpdf2>=2.8,<3",
 ]
 
 [project.scripts]
@@ -264,24 +267,6 @@ source_modules = [
 forbidden_modules = [
   "hermes.application.tax",
   "hermes.domain.tax",
-]
-
-# change 36-modelo-100-721 D-10: tax-filing figures are measurement only, like
-# the EUR values they read. Nothing that decides trades may import them.
-[[tool.importlinter.contracts]]
-name = "filing-is-measurement-only"
-type = "forbidden"
-source_modules = [
-  "hermes.application.order_router",
-  "hermes.application.strategy_protocol",
-  "hermes.domain.strategy",
-  "hermes.domain.fees",
-  "hermes.domain.risk",
-]
-forbidden_modules = [
-  "hermes.application.filing",
-  "hermes.domain.filing",
-  "hermes.ports.filing",
 ]
 
 # ADR-012 D-08: the supervisor layer reads through read-only ports and

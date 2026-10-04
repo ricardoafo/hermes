@@ -1,8 +1,9 @@
 """``hermes tax-pack``: keep each tax year's filing pack up to date.
 
-Writes ``<out>/<year>/`` with the Modelo 100 and 721 report and CSV files,
-the trail from each sale to its lots, the readiness checklist, the changes
-since the previous refresh and a checksum manifest. Adds the ``hermes tax``
+Writes ``<out>/<year>/`` with the Renta Web sheet and dossier as PDF, the
+Modelo 100 and 721 report and CSV files, the trail from each sale to its
+lots, the readiness checklist, the changes since the previous refresh and a
+checksum manifest. Adds the ``hermes tax``
 estimate only where the taxpayer profile file exists (change 568-tax-pack
 D-4). A closed year whose pack is ready is frozen and never rewritten (D-2).
 Nothing is ever submitted.
@@ -31,6 +32,7 @@ from typing import Final, TextIO
 
 from returns.result import Failure
 
+from hermes.adapters.documents.pdf_writer import render_pdf
 from hermes.adapters.ledger.filing_reader import LedgerFilingReader
 from hermes.adapters.ledger.trade_rates_reader import LedgerTradeRates
 from hermes.application.filing import Custodian, FilingPack, build_filing_pack
@@ -287,6 +289,8 @@ def _write(directory: Path, output: PackOutput, *, year: int, refreshed_at: date
     directory.mkdir(parents=True, exist_ok=True)
     for name, content in output.files.items():
         _replace(directory / name, content)
+    for name, document in output.documents.items():
+        _replace(directory / name, render_pdf(document, created_at=refreshed_at))
     if ESTIMATE_FILE not in output.files:
         (directory / ESTIMATE_FILE).unlink(missing_ok=True)
     if output.changes_entry is not None:
@@ -307,10 +311,10 @@ def _write(directory: Path, output: PackOutput, *, year: int, refreshed_at: date
     _replace(directory / MANIFEST_FILE, render_manifest(year, refreshed_at, contents))
 
 
-def _replace(path: Path, content: str) -> None:
-    """Write ``content`` next to ``path`` and rename it in place."""
+def _replace(path: Path, content: str | bytes) -> None:
+    """Write ``content`` next to ``path`` and rename it in place; text as UTF-8."""
     temporary = path.with_name(f"{path.name}.tmp")
-    temporary.write_text(content, encoding="utf-8")
+    temporary.write_bytes(content.encode("utf-8") if isinstance(content, str) else content)
     temporary.replace(path)
 
 

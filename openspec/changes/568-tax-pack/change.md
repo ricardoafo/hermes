@@ -37,8 +37,11 @@ manual step.
 - `src/hermes/domain/filing/renta_campaign.py`,
   `src/hermes/infrastructure/config/renta.py` and
   `config/renta_campaigns.yaml`: the Renta Web box per tax year.
-- `src/hermes/application/filing/renta_sheet.py`: the printable Spanish
-  Renta Web sheet (with the 721 fields when due) and the dossier.
+- `src/hermes/application/filing/renta_sheet.py` and `document.py`: the
+  Spanish Renta Web sheet (with the 721 fields when due) and the dossier, as
+  documents.
+- `src/hermes/adapters/documents/pdf_writer.py`: writes those documents as
+  PDF with fpdf2 (D-8).
 - `src/hermes/ports/tax_pack.py` and
   `src/hermes/adapters/ledger/trade_rates_reader.py`: the read-only rate
   lookup.
@@ -53,8 +56,8 @@ manual step.
 
 ### Out
 
-- AEAT submission, PDF or BOE-format 721: never submitted; formats are
-  follow-ups on request.
+- AEAT submission and a BOE-format or web-service 721 file: never
+  submitted; formats are follow-ups on request.
 - Notifications on a status change: follow-up after the notification shapes
   (#520).
 - Total IRPF (#396): added to the pack once that change lands.
@@ -119,7 +122,7 @@ manual step.
 
 ### D-6: A Spanish sheet to copy into Renta Web, with box numbers from config
 
-- **Decision**: `renta-web.html` lists one entry per coin and kind of
+- **Decision**: `renta-web.pdf` lists one entry per coin and kind of
   consideration for the campaign's virtual-currency box (1804 in the 2025
   campaign), with Renta Web's labels and keys (F legal tender, N another
   virtual currency), amounts in the Spanish format. Box numbers come from
@@ -147,9 +150,17 @@ manual step.
 ### D-8: PDF output (decided by Rick, 2026-10-04)
 
 - **Decision**: the Renta Web sheet and the dossier are written as PDF files.
-  Rick chose PDF over printable HTML on the thread's decision card.
+  Rick chose PDF over printable HTML on the thread's decision card, and
+  approved fpdf2 (pure Python, core Helvetica font, no font file shipped) as
+  the library. The application builds each sheet as a small `Document`
+  (headings, paragraphs, tables); `adapters/documents/pdf_writer.py` renders
+  it, so fpdf2 stays out of the application layer. Characters outside latin-1
+  are spelled out (`€` as `EUR`) or replaced, never an error in the daily run.
+  The creation date is the refresh instant, so an unchanged pack renders the
+  same bytes.
 - **Alternatives**: printable HTML printed to PDF from a browser (no new
-  dependency; not chosen).
+  dependency; not chosen); a heavier PDF stack such as an HTML-to-PDF engine
+  (native libraries on the VPS; not needed for tables and text).
 - **Rationale**: the gestor receives a PDF either way; writing it directly
   removes the manual print step.
 - **Cost of reversal**: LOW.
@@ -223,8 +234,8 @@ Files in `<out>/<year>/`:
 | File | Content |
 | --- | --- |
 | `README.md` | status, headline figures, checklist, latest changes, file index |
-| `renta-web.html` | the Renta Web entries (Spanish) and the 721 fields when due |
-| `dossier.html` | every sale and the lots behind it, with fees and ECB rates |
+| `renta-web.pdf` | the Renta Web entries (Spanish) and the 721 fields when due |
+| `dossier.pdf` | every sale and the lots behind it, with fees and ECB rates |
 | `report.md` + 3 CSV | the #504 report, unchanged |
 | `trail.csv` | sale, lot, quantities, EUR values, ECB rates, gain |
 | `tax-estimate.txt` | the #528 estimate, only where the profile exists |

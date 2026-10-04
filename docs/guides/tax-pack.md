@@ -21,8 +21,8 @@ shadow figures say no real tax is due.
 | File | Content |
 | --- | --- |
 | `README.md` | status, headline figures, readiness checklist, changes in the last refresh |
-| `renta-web.html` | in Spanish: the entries to type into Renta Web (box, coin, F/N key, values), and the Modelo 721 fields when it is due |
-| `dossier.html` | in Spanish: every sale and the lots behind it, to keep in case Hacienda asks |
+| `renta-web.pdf` | in Spanish: the entries to type into Renta Web (box, coin, F/N key, values), and the Modelo 721 fields when it is due |
+| `dossier.pdf` | in Spanish: every sale and the lots behind it, to keep in case Hacienda asks |
 | `report.md` | the Modelo 100 and 721 figures per form field, with every sale (`hermes tax-filing`) |
 | `modelo100-summary.csv`, `modelo100-sales.csv`, `modelo721.csv` | the same figures as CSV |
 | `trail.csv` | each sale back to the lots it used, with EUR values, fees and both trades' ECB rates |
@@ -71,8 +71,8 @@ out of any checkout: it holds personal figures.
 
 ## Filing with it
 
-Renta Web has no file import for virtual currencies. Open `renta-web.html` (or print it to PDF
-for your gestor) and, in Renta Web, go to *Ganancias y pérdidas patrimoniales → Monedas
+Renta Web has no file import for virtual currencies. Open `renta-web.pdf` (or send it to your
+gestor with `dossier.pdf`) and, in Renta Web, go to *Ganancias y pérdidas patrimoniales → Monedas
 virtuales*, open the box the sheet names and add one entry per row.
 
 The box number comes from `config/renta_campaigns.yaml`. AEAT can renumber boxes between
