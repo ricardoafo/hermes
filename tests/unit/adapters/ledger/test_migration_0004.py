@@ -119,6 +119,16 @@ _ALL_ROWS_SQL = {
 }
 
 
+def _through_0004(tmp_path: Path) -> Path:
+    """Return a migrations directory ending at 0004, so these tests pin the 0004 step alone."""
+    through = tmp_path / "through_0004"
+    if not through.exists():
+        through.mkdir()
+        for name in (*_PRE_0004, "0004_trade_eur_values.sql"):
+            shutil.copy(MIGRATIONS_DIR / name, through / name)
+    return through
+
+
 def _seeded_at_0003(tmp_path: Path) -> sqlite3.Connection:
     """Return a ledger migrated through 0003_live_bars holding representative legacy rows."""
     pre = tmp_path / "pre_0004"
@@ -197,6 +207,7 @@ def test_0004_sorts_after_0003_live_bars_in_a_fresh_ledger() -> None:
         "0002_lots_add_strategy_id.sql",
         "0003_live_bars.sql",
         "0004_trade_eur_values.sql",
+        "0005_lots_drop_strategy_default.sql",
     )
 
 
@@ -209,7 +220,7 @@ def test_ledger_migrated_through_0003_live_bars_upgrades_cleanly_to_0004(tmp_pat
     )
     conn.commit()
 
-    applied = apply_migrations(conn)
+    applied = apply_migrations(conn, _through_0004(tmp_path))
 
     assert applied[0] == "0004_trade_eur_values.sql"
     assert conn.execute(
@@ -227,7 +238,7 @@ def test_rows_written_before_0004_survive_it(tmp_path: Path) -> None:
     """Invariant (A-1.4): old trades read pending; old lots and consumptions have no trade link."""
     conn = _seeded_at_0003(tmp_path)
 
-    apply_migrations(conn)
+    apply_migrations(conn, _through_0004(tmp_path))
 
     assert conn.execute("SELECT correlation_id, eur_status, price_eur FROM trades").fetchall() == [
         ("c-1", "pending", None)
@@ -255,7 +266,7 @@ def test_rebuild_preserves_every_lot_and_consumption_value(tmp_path: Path) -> No
     lots_before = conn.execute(_LOTS_SQL).fetchall()
     consumptions_before = conn.execute(_CONSUMPTIONS_SQL).fetchall()
 
-    apply_migrations(conn)
+    apply_migrations(conn, _through_0004(tmp_path))
 
     lots_after = conn.execute(_LOTS_SQL).fetchall()
     consumptions_after = conn.execute(_CONSUMPTIONS_SQL).fetchall()
@@ -274,7 +285,7 @@ def test_strategy_id_keeps_not_null_and_legacy_default_after_0004(tmp_path: Path
     """Invariant: 0004 leaves lots.strategy_id NOT NULL DEFAULT 'swing' (dropped later by 0005)."""
     conn = _seeded_at_0003(tmp_path)
 
-    apply_migrations(conn)
+    apply_migrations(conn, _through_0004(tmp_path))
 
     assert _columns(conn, "lots")["strategy_id"] == (True, "'swing'")
 
@@ -282,11 +293,11 @@ def test_strategy_id_keeps_not_null_and_legacy_default_after_0004(tmp_path: Path
 def test_second_migration_run_is_a_noop(tmp_path: Path) -> None:
     """Invariant: re-running the runner after 0004 applies nothing and changes nothing."""
     conn = _seeded_at_0003(tmp_path)
-    apply_migrations(conn)
+    apply_migrations(conn, _through_0004(tmp_path))
     schema_before = _schema_snapshot(conn)
     rows_before = {t: conn.execute(q).fetchall() for t, q in _ALL_ROWS_SQL.items()}
 
-    second = apply_migrations(conn)
+    second = apply_migrations(conn, _through_0004(tmp_path))
 
     assert second == ()
     assert _schema_snapshot(conn) == schema_before
@@ -303,7 +314,7 @@ def test_indexes_and_foreign_keys_present_before_0004_still_exist_after(tmp_path
     assert lots_indexes_before == {"idx_lots_asset_opened_at"}
     assert consumption_fks_before == {("lots", "lot_id", "lot_id")}
 
-    apply_migrations(conn)
+    apply_migrations(conn, _through_0004(tmp_path))
 
     assert lots_indexes_before <= _indexes(conn, "lots")
     assert consumption_indexes_before <= _indexes(conn, "lot_consumptions")
