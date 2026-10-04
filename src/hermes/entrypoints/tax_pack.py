@@ -329,6 +329,7 @@ def _previous_figures(path: Path) -> dict[str, str] | None:
     """Return the last refresh's figures, or ``None`` when absent or unreadable."""
     try:
         loaded = json.loads(path.read_text(encoding="utf-8"))
+    # Python 3.14 form (PEP 758, no parentheses); ruff format writes it this way.
     except OSError, ValueError:
         return None
     if not isinstance(loaded, dict):
@@ -386,6 +387,7 @@ def _parse_prices(raw: list[str], err: TextIO) -> dict[Currency, Decimal] | None
         try:
             asset = Currency(coin.strip().upper())
             value = Decimal(amount.strip())
+        # Python 3.14 form (PEP 758, no parentheses); ruff format writes it this way.
         except ValueError, InvalidOperation:
             value = None
         if not sep or value is None or not value.is_finite() or value < 0:
