@@ -60,9 +60,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          # Full history: the changeset diff, guides-index dates, the
-          # CHANGELOG check, the test-deletion guard and gitleaks all
-          # read a commit range.
+          # Full history: the changeset diff, the CHANGELOG check, the
+          # test-deletion guard and gitleaks all read a commit range.
           fetch-depth: 0
 
       - name: Changeset
@@ -223,18 +222,12 @@ jobs:
         if: ${{ !cancelled() && steps.mdl-install.outcome == 'success' }}
         run: bash scripts/dev/ci-checks.sh markdown
 
-      # Needs full history: regenerate-guides-index.sh dates each guide
-      # with `git log -1`, which a shallow clone cannot answer.
-      - name: Verify guides index is up-to-date
+      # The index is rebuilt on main after merge and never committed by a
+      # PR, so this only proves it still builds. pr-preflight.sh runs the
+      # same command.
+      - name: Verify guides index builds
         if: ${{ !cancelled() && steps.changeset.outputs.docs == 'true' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash scripts/dev/regenerate-guides-index.sh
-          if ! git diff --exit-code docs/guides/README.md; then
-            echo "::error::docs/guides/README.md is out of date. Run scripts/dev/regenerate-guides-index.sh locally and commit."
-            exit 1
-          fi
+        run: bash scripts/dev/regenerate-guides-index.sh --check
 
       # A broken CODEOWNERS silently disables code-owner review
       # enforcement — GitHub skips the check instead of failing it.

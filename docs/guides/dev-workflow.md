@@ -374,8 +374,9 @@ conflict when one merges. Two mitigations:
 
 1. **Auto-generated indexes** — the guides README table is auto-built
    from `docs/guides/*.md` by
-   `scripts/dev/regenerate-guides-index.sh` (pre-commit hook +
-   CI verification). No manual editing. Same pattern applies to
+   `scripts/dev/regenerate-guides-index.sh`, rebuilt on `main`
+   after merge. PRs never commit it; pre-commit and CI only check
+   that it builds. Same pattern applies to
    `CHANGELOG.md` (extract from Conventional Commits) and other
    append-only artifacts as they become friction. When adding a
    NEW category of index file, generate it — don't hand-maintain.
