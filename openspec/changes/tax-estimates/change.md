@@ -29,7 +29,8 @@ remainder, shared 25% limit), so every reading is written down here and pinned b
 - `domain/tax/netting.py`: `CarriedLoss`, `TaxpayerYear` (values hidden from repr), `NettingResult`, `net_savings_base`.
 - `domain/tax/marginal.py`: `minimum_remainder`, `savings_tax`, `MarginalTax`, `marginal_tax`.
 - `domain/tax/two_month.py`: `Acquisition`, `TwoMonthFlag`, `two_month_flags`.
-- `ports/ledger.py`: `EurTradeRow` and `TaxTradeSourcePort.list_eur_trades()`; `SqliteLedger` implements it.
+- `ports/ledger.py`: `EurTradeRow` and `TaxTradeSourcePort.list_eur_trades()`; `SqliteLedger` implements it with both
+  FIFO legs (D-10).
 - `application/tax/`: `TaxYearEstimate`, `PositionTax`, `estimate_year` (pure), `TaxService` (reads the port).
 - `entrypoints/tax.py` + `cli.py`: `hermes tax [--year YYYY] [--json] [--price ASSET=EUR]... [--db PATH] [--config-dir DIR]`.
 - `pyproject.toml`: import-linter contract `tax-is-measurement-only`.
@@ -46,7 +47,6 @@ remainder, shared 25% limit), so every reading is written down here and pinned b
   (negative RCM against gains) is not modelled. Carried losses are treated as gain/loss-group losses.
 - Hermes' own prior-year losses are not auto-carried from the ledger: carried losses come from the profile (the filed
   figures are authoritative). `carry_forward_left` shows what the operator should enter for the next year.
-- USDT as its own FIFO asset (#386 D-4 follow-up): its EUR/USD drift is not yet a gain or loss here either.
 
 ## Decisions
 
@@ -149,6 +149,26 @@ All decisions below: DECIDED by implementer, Code Owner reviews in PR.
   domain uses pydantic (breaks `domain-no-pydantic`).
 - **Cost of reversal**: LOW.
 
+### D-10: The quote currency is replayed as its own asset once it has a seed
+
+- **Decision**: `list_eur_trades` returns exactly the sequences the ledger's projection replays (change `405-usdt-fifo`):
+  per base asset its lot-opening BUYs and SELLs (net of a fee taken in the base, `405-usdt-fifo` D-2), and per seeded
+  quote currency the seed (a BUY) plus the quote leg of every trade quoted in it (a base BUY is a USDT SELL and vice
+  versa, valued at `1 / eur_rate`). `estimate_year` replays every asset alike, so a USDT disposal's EUR/USD gain or loss
+  is part of the year's realised gain and the hermes tax. `EurTradeRow` carries a string `ref` (trade id, or
+  `seed:<id>`) and `quote_leg`.
+- **Pending**: a seed is a row like any other: while its EUR value is pending the year is `TaxPending` ("EUR values
+  pending for N trade(s) in Y" counts it), as for a pending trade (D-5). A disposal of a pending seed lot in another
+  year makes that year pending through the consumption, as before.
+- **Tax if sold now**: covers base-asset lots only. Selling a position receives the quote currency and disposes of
+  none, so open USDT lots are left out and need no price.
+- **Two-month flags**: applied to every asset, USDT included, as ADR-016 item 8 is written ("same-coin purchase");
+  a USDT disposal at a loss with a USDT acquisition (a BTC sale) within two months is flagged for the gestor.
+- **Alternatives**: read realised gains from `lot_consumptions` (the replay is still needed for open lots and refs);
+  skip the quote leg (contradicts ADR-016 item 4).
+- **Rationale**: ADR-016 item 4; one source of truth for what the FIFO replays.
+- **Cost of reversal**: LOW.
+
 ## Requirements
 
 ### R-1: Scale by year
@@ -198,6 +218,15 @@ All decisions below: DECIDED by implementer, Code Owner reviews in PR.
 ### R-7: Measurement only
 
 - **A-7.1**: `uv run lint-imports` keeps `tax-is-measurement-only`.
+
+### R-8: USDT leg (D-10)
+
+- **A-8.1**: worked example (seed 1,000 USDT at 1.25; BUY 1 BTC for 500 at 1.25; SELL for 600 at 1.20; BUY for 400 at
+  1.00): BTC gain 100, USDT gain 400 - 320 = 80, realised 180, tax 34.20.
+- **A-8.2**: a pending seed makes the year `TaxPending`.
+- **A-8.3**: tax if sold now needs no USDT price and lists only base assets.
+- **A-8.4**: `list_eur_trades` lists the seed and the quote legs with `quote_leg=True`, and a BUY with a base fee at its
+  net quantity.
 
 ## Design
 
@@ -324,22 +353,24 @@ All arithmetic runs in a 100-digit `localcontext`; nothing is rounded before dis
 # ports/ledger.py
 @dataclass(frozen=True, slots=True)
 class EurTradeRow:
-    trade_id: int
-    asset: Currency
+    ref: str  # trade row id, or "seed:<id>"
+    asset: Currency  # the asset this row moves
     side: OrderSide
-    qty: Decimal
+    qty: Decimal  # net of a fee taken in the asset
     executed_at: datetime
     price_eur: Decimal | None
     fee_eur: Decimal | None
+    quote_leg: bool = False
 
 
 @runtime_checkable
 class TaxTradeSourcePort(Protocol):
-    def list_eur_trades(self) -> tuple[EurTradeRow, ...]: ...  # every lot-linked BUY and every SELL
+    def list_eur_trades(self) -> tuple[EurTradeRow, ...]: ...  # both FIFO legs, replay order
 ```
 
-`SqliteLedger.list_eur_trades` selects the same rows `_reproject` replays (`side = 'SELL' OR id IN lots.trade_id`), all
-assets, ordered by `executed_at, id`.
+`SqliteLedger.list_eur_trades` builds each asset's sequence with the same helpers the projection uses
+(`base_leg_trade` over the base rows `_reproject` reads, `quote_leg_trades` over the seeds and trades of each seeded
+quote currency), each in replay order.
 
 ### Application (`src/hermes/application/tax/`)
 
@@ -429,6 +460,7 @@ MVP1), prints text or JSON. Figures print rounded to cents (`ROUND_HALF_UP`). Ex
 ## Dependencies on other changes
 
 - #386 (`trade-eur-values`, PR #435): `replay_fifo_eur`, EUR trade columns. This branch sits on it.
+- #405 (`405-usdt-fifo`, on main): capital seed and quote-leg replay helpers that `list_eur_trades` reuses (D-10).
 - #394 (`tax-profile-config`): scales and profile (on main). #438 may make `other_capital_gains_eur` signed; the domain
   already accepts a signed value.
 - ADR-016. Blocks the tax lines in the console (#375, #377, #379).

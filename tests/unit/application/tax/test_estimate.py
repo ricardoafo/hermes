@@ -52,7 +52,7 @@ class _Rows:
     ) -> _Rows:
         self.rows.append(
             EurTradeRow(
-                trade_id=len(self.rows) + 1,
+                ref=str(len(self.rows) + 1),
                 asset=asset,
                 side=side,
                 qty=_D(qty),
