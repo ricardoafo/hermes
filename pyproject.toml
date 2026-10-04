@@ -248,6 +248,24 @@ forbidden_modules = [
   "hermes.ports.filing",
 ]
 
+# change tax-estimates D-7: tax figures are measurement only (ADR-016 decision 9).
+# Strategy, sizing, signals, risk, fees, kill rules and the tax guard never read them.
+[[tool.importlinter.contracts]]
+name = "tax-is-measurement-only"
+type = "forbidden"
+source_modules = [
+  "hermes.application.order_router",
+  "hermes.application.strategy_protocol",
+  "hermes.application.tax_guard",
+  "hermes.domain.strategy",
+  "hermes.domain.fees",
+  "hermes.domain.risk",
+]
+forbidden_modules = [
+  "hermes.application.tax",
+  "hermes.domain.tax",
+]
+
 [[tool.importlinter.contracts]]
 name = "domain-no-pydantic"
 type = "forbidden"
