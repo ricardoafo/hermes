@@ -127,8 +127,13 @@ class _PanelScreen(Screen[None]):
         self.refresh_panel()
 
     def refresh_panel(self) -> None:
-        """Rebuild the content from the read model."""
-        self.query_one("#panel", Static).update(self._body())
+        """Rebuild the content from the read model.
+
+        The refresh timer can fire between ``push_screen`` and the panel's
+        compose; the panel is then skipped here and filled by ``on_mount``.
+        """
+        for panel in self.query("#panel").results(Static):
+            panel.update(self._body())
 
     def action_close(self) -> None:
         """Return to the home screen."""

@@ -28,13 +28,14 @@ from typing import cast
 from rich.console import Console, RenderableType
 from syrupy.assertion import SnapshotAssertion
 from syrupy.extensions.image import SVGImageSnapshotExtension
+from textual.widgets import Static
 
 from hermes.adapters.console import FixtureReadModel
 from hermes.application.console import ConsoleReadModel, Surface, pnl_visible
 from hermes.application.console.format import big_digits
 from hermes.application.console.logs import LogLine
 from hermes.entrypoints import tui as tui_module
-from hermes.entrypoints.tui import REFRESH_SECONDS, HomeApp
+from hermes.entrypoints.tui import REFRESH_SECONDS, HomeApp, _PanelScreen
 
 _TAX_FOOTNOTE = "est. · FIFO · 19% band · €5,988.30 left before 21%"
 _READ_METHODS = {
@@ -342,6 +343,21 @@ def test_app_refreshes_and_only_reads() -> None:
 
     asyncio.run(run())
     assert (spy.heartbeats > 3, spy.touched <= _READ_METHODS) == (True, True)
+
+
+def test_refresh_before_a_panel_mounts_keeps_the_app_running() -> None:
+    """A refresh landing between push_screen and the panel's mount neither crashes nor blanks it."""
+
+    async def run() -> tuple[bool, str]:
+        app = HomeApp(FixtureReadModel.load("ok-two-positions"), refresh_seconds=3600)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await pilot.pause()
+            app.push_screen(_PanelScreen(lambda: "panel body"))
+            app._redraw()
+            await pilot.pause()
+            return app.is_running, str(app.screen.query_one("#panel", Static).renderable)
+
+    assert asyncio.run(run()) == (True, "panel body")
 
 
 def test_tui_module_imports_no_adapter_or_port() -> None:
