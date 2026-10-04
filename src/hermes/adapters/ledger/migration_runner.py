@@ -27,6 +27,8 @@ ADR-006 §2 (forward-only, restore from backup), GitHub issue #137.
 from __future__ import annotations
 
 import sqlite3
+import tempfile
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -35,7 +37,9 @@ from hermes.domain.errors import LedgerError
 __all__ = [
     "DESTRUCTIVE_MARKER",
     "MIGRATIONS_DIR",
+    "DryRunReport",
     "apply_migrations",
+    "dry_run",
     "migrate_with_snapshot",
     "pending_migrations",
     "restore_snapshot",
@@ -227,3 +231,99 @@ def restore_snapshot(snapshot_path: Path, db_path: Path) -> None:
             target.close()
     finally:
         source.close()
+
+
+@dataclass(frozen=True, slots=True)
+class DryRunReport:
+    """What a migration run would do, measured on a copy of the ledger.
+
+    Args:
+        pending: Migrations that would run, in order, with their destructive flag.
+        applied: Migrations that applied on the copy (all of ``pending`` on success).
+        error: The SQL error of the migration that failed on the copy, or ``None``.
+        intact: Whether the copy passed ``PRAGMA integrity_check`` afterwards.
+        rows_before: Row count per table before any migration.
+        rows_after: Row count per table after the migrations that applied.
+    """
+
+    pending: tuple[tuple[str, bool], ...]
+    applied: tuple[str, ...]
+    error: str | None
+    intact: bool
+    rows_before: dict[str, int]
+    rows_after: dict[str, int]
+
+    @property
+    def ok(self) -> bool:
+        """True when every pending migration applied and the copy is intact."""
+        return self.error is None and self.intact
+
+
+def _row_counts(conn: sqlite3.Connection) -> dict[str, int]:
+    tables = [
+        row[0]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' "
+            "AND name NOT LIKE 'sqlite_%' ORDER BY name"
+        )
+    ]
+    # Table names come from sqlite_master itself, quoted as identifiers.
+    return {
+        name: int(conn.execute(f'SELECT COUNT(*) FROM "{name}"').fetchone()[0])  # noqa: S608
+        for name in tables
+    }
+
+
+def dry_run(db_path: Path, *, migrations_dir: Path | None = None) -> DryRunReport:
+    """Apply every pending migration to a temporary copy of the ledger and report.
+
+    The copy is taken with SQLite's online backup API, so ``hermes.service``
+    may keep running; the real ledger is only read. The copy is deleted on
+    return.
+
+    Args:
+        db_path: Ledger database file.
+        migrations_dir: Directory to scan. Defaults to :data:`MIGRATIONS_DIR`.
+
+    Returns:
+        The report.
+
+    Raises:
+        LedgerError: The ledger file is missing or cannot be read.
+    """
+    if not db_path.exists():
+        raise LedgerError(msg=f"ledger {db_path} does not exist")
+    with tempfile.TemporaryDirectory(prefix="hermes-dry-run-") as tmp:
+        copy_path = Path(tmp) / db_path.name
+        try:
+            source = sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True)
+            target = sqlite3.connect(copy_path)
+            try:
+                source.backup(target)
+            finally:
+                source.close()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"cannot copy {db_path} for a dry run: {exc}") from exc
+        try:
+            pending = pending_migrations(target, migrations_dir)
+            rows_before = _row_counts(target)
+            applied: list[str] = []
+            error: str | None = None
+            for sql_file in pending:
+                try:
+                    _apply_one(target, sql_file)
+                except sqlite3.Error as exc:
+                    error = f"{sql_file.name}: {exc}"
+                    break
+                applied.append(sql_file.name)
+            check = target.execute("PRAGMA integrity_check").fetchone()
+            return DryRunReport(
+                pending=tuple((p.name, _is_destructive(p)) for p in pending),
+                applied=tuple(applied),
+                error=error,
+                intact=check is not None and check[0] == "ok",
+                rows_before=rows_before,
+                rows_after=_row_counts(target),
+            )
+        finally:
+            target.close()

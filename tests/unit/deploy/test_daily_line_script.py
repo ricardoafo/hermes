@@ -66,6 +66,7 @@ class _Slack:
     url: str
     forms: list[dict[str, str]] = field(default_factory=list)
     authorizations: list[str] = field(default_factory=list)
+    pings: list[str] = field(default_factory=list)
     response: bytes = b'{"ok":true}'
 
 
@@ -84,6 +85,13 @@ def slack() -> Iterator[_Slack]:
             self.send_header("Content-Length", str(len(fake.response)))
             self.end_headers()
             self.wfile.write(fake.response)
+
+        def do_GET(self) -> None:
+            fake.pings.append(self.path)
+            self.send_response(200)
+            self.send_header("Content-Length", "2")
+            self.end_headers()
+            self.wfile.write(b"OK")
 
         def log_message(self, format: str, *args: object) -> None:
             """Keep pytest output quiet."""
@@ -263,3 +271,30 @@ def test_a_slack_refusal_fails_the_run(host: _Host, slack: _Slack) -> None:
 
     assert result.returncode == 2
     assert "not_in_channel" in result.stderr
+
+
+_HC_PATH = "/hc/0f5c-check"
+
+
+def test_a_sent_line_pings_the_dead_mans_switch(host: _Host, slack: _Slack) -> None:
+    """#38: with a ping URL set, a sent line pings it once, without the id in curl's argv."""
+    result = _run(host, slack, HERMES_HEALTHCHECKS__DAILY_PING_URL=slack.url + _HC_PATH)
+
+    assert (result.returncode, slack.pings) == (0, [_HC_PATH])
+    assert _HC_PATH not in host.read("curl.argv")
+
+
+def test_a_refused_line_pings_fail(host: _Host, slack: _Slack) -> None:
+    """#38: a line Slack refuses pings <url>/fail and still exits 2."""
+    slack.response = b'{"ok":false,"error":"not_in_channel"}'
+
+    result = _run(host, slack, HERMES_HEALTHCHECKS__DAILY_PING_URL=slack.url + _HC_PATH)
+
+    assert (result.returncode, slack.pings) == (2, [_HC_PATH + "/fail"])
+
+
+def test_no_ping_url_means_no_ping(host: _Host, slack: _Slack) -> None:
+    """Unset, the dead-man's switch is off and nothing is requested."""
+    result = _run(host, slack)
+
+    assert (result.returncode, slack.pings, len(slack.forms)) == (0, [], 1)

@@ -62,7 +62,10 @@ class TradeRecorder:
         eur = None
         if pricing is not None:
             eur = TradeEur.price(
-                pricing, price=Money(amount=fill.avg_price, currency=pair.quote), fee=fill.fee
+                pricing,
+                price=Money(amount=fill.avg_price, currency=pair.quote),
+                fee=fill.fee,
+                base=pair.base,
             )
         record = TradeRecord.from_fill(fill, correlation_id=correlation_id, eur=eur)
         event = TradeExecuted(

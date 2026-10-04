@@ -13,6 +13,8 @@ from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.application.ledger.eur_backfill import BackfillReport, backfill_pending_eur
 from hermes.application.ledger.eur_pricer import EurPricer
 from hermes.application.ledger.trade_recorder import TradeRecorder
+from hermes.domain.events.shadow_capital_seeded import ShadowCapitalSeeded
+from hermes.domain.lots.quote_leg import CapitalSeed
 from hermes.domain.trading.fill import Fill
 from hermes.domain.trading.order import Order, OrderSide
 from hermes.domain.value_objects.currency import Currency
@@ -92,3 +94,59 @@ def test_backfill_on_the_fill_day_waits_for_the_days_rate() -> None:
     fx = FakeFx(rates={_SAT: (Decimal("1.25"), _FRI)})
     report = backfill_pending_eur(ledger, EurPricer(fx), today=_SAT)
     assert report == BackfillReport(filled=(), pending=(1, 2))
+
+
+def _seeded_ledger_with_pending_buy() -> tuple[SqliteLedger, sqlite3.Connection]:
+    """Seed 1000 USDT on Saturday, then record a pending Saturday BUY of 125 + 1.25 USDT."""
+    conn = sqlite3.connect(":memory:")
+    ledger = SqliteLedger(conn)
+    seed = CapitalSeed(
+        strategy_id=StrategyId("swing"),
+        amount=Money(amount=Decimal("1000"), currency=Currency.USDT),
+        seeded_at=datetime(2026, 1, 3, 9, tzinfo=UTC),
+    )
+    ledger.record_capital_seed(
+        seed,
+        ShadowCapitalSeeded(
+            occurred_at=seed.seeded_at,
+            correlation_id="seed",
+            strategy_id=seed.strategy_id,
+            amount=seed.amount,
+        ),
+    )
+    TradeRecorder(ledger, EurPricer(FakeFx(down=True))).record(
+        _fill(OrderSide.BUY, "125", "1.25", datetime(2026, 1, 3, 10, tzinfo=UTC)),
+        correlation_id="b",
+    )
+    return ledger, conn
+
+
+def test_backfill_prices_a_pending_seed_by_its_seed_date() -> None:
+    """Invariant (405 D-1): the seed is priced with the rate of its Madrid seed date."""
+    ledger, conn = _seeded_ledger_with_pending_buy()
+    fx = FakeFx(rates={_SAT: (Decimal("1.25"), _FRI)})
+
+    report = backfill_pending_eur(ledger, EurPricer(fx), today=_MON)
+
+    assert (report.seeds_filled, report.seeds_pending) == ((1,), ())
+    assert conn.execute("SELECT eur_status, value_eur FROM capital_seeds").fetchone()[0] == "ok"
+
+
+def test_backfill_values_the_quote_leg_once_seed_and_trade_are_priced() -> None:
+    """Invariant: after backfill the BUY's USDT consumption has its EUR gain (0 at one rate)."""
+    ledger, conn = _seeded_ledger_with_pending_buy()
+    fx = FakeFx(rates={_SAT: (Decimal("1.25"), _FRI)})
+
+    backfill_pending_eur(ledger, EurPricer(fx), today=_MON)
+
+    rows = conn.execute(
+        "SELECT consumed_qty, realized_gain_eur FROM lot_consumptions WHERE consumed_asset = 'USDT'"
+    ).fetchall()
+    assert [(Decimal(qty), Decimal(gain)) for qty, gain in rows] == [(Decimal("126.25"), 0)]
+
+
+def test_backfill_during_an_outage_leaves_the_seed_pending() -> None:
+    """Invariant: a provider failure keeps the seed pending and does not raise."""
+    ledger, _conn = _seeded_ledger_with_pending_buy()
+    report = backfill_pending_eur(ledger, EurPricer(FakeFx(down=True)), today=_MON)
+    assert (report.seeds_filled, report.seeds_pending) == ((), (1,))

@@ -18,12 +18,12 @@ import pytest
 from hermes.adapters.console import UnknownScenarioError
 from hermes.entrypoints import cli as cli_module
 from hermes.entrypoints.commands import Command
+from hermes.entrypoints.commands.tui import run_tui
 from hermes.entrypoints.console import (
     DEMO_ENV_VAR,
     DemoFlagError,
     LiveReadModelUnavailableError,
     resolve_read_model,
-    run_tui,
     split_demo_flag,
 )
 
@@ -157,7 +157,7 @@ def test_demo_flag_reaches_the_tui_command(monkeypatch: pytest.MonkeyPatch) -> N
     """`hermes --demo X tui` is accepted as a console command and starts the app."""
     seen: list[str | None] = []
     monkeypatch.setattr(
-        "hermes.entrypoints.tui.run_home", lambda model: seen.append(model.demo_scenario)
+        "hermes.entrypoints.tui.run_home", lambda model, **_: seen.append(model.demo_scenario)
     )
     rc = cli_module.main(["--demo", "ok-two-positions", "tui"], stream=io.StringIO())
     assert (rc, seen) == (0, ["ok-two-positions"])

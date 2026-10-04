@@ -7,7 +7,7 @@
 #   Test tiers touched: unit, property
 #   Test tiers touched: none (docs only)
 #
-# Allowed tiers: unit, property, contract, integration, mutation, none.
+# Allowed tiers: unit, property, contract, integration, e2e, mutation, none.
 # The line forces the author (human or sub-agent) to say which tiers the
 # change exercises; reviewers check the claim against the diff.
 #
@@ -30,7 +30,7 @@
 
 set -euo pipefail
 
-KNOWN_TIERS="unit property contract integration mutation none"
+KNOWN_TIERS="unit property contract integration e2e mutation none"
 
 # ────────────────────────────────────────────────────────────────
 # check_body <body-text> — echoes the problem, returns 1 on failure
@@ -105,7 +105,7 @@ Test tiers touched:
 ## Risk'
 
     expect 1 "template placeholder left in" '## Testing
-Test tiers touched: <unit, property, contract, integration, mutation or none>
+Test tiers touched: <unit, property, contract, integration, e2e, mutation or none>
 ## Risk'
 
     expect 1 "unfilled PR-template comment" '## Testing
@@ -113,7 +113,7 @@ Test tiers touched: <!-- e.g. unit, property -->
 ## Risk'
 
     expect 1 "unknown tier" '## Testing
-Test tiers touched: unit, e2e
+Test tiers touched: unit, acceptance
 ## Risk'
 
     if [[ "$failed" == "0" ]]; then
