@@ -107,10 +107,11 @@ fi
 # Result tracking
 #
 # Total check count is CONDITIONAL, by design:
-#   - 13 checks always run (checks 1-12 plus per-package coverage).
+#   - 14 checks always run (checks 1-12, per-package coverage and the
+#     new-module test-file check).
 #   - +1 check runs ONLY when --body FILE or --render-body <change> is
 #     given (the PR body lint at the bottom).
-# Total = 13 unconditional + 1 optional. Not drift — different modes.
+# Total = 14 unconditional + 1 optional. Not drift — different modes.
 # See summary line for the exact per-invocation breakdown.
 # ────────────────────────────────────────────────────────────────
 FAILED=()
@@ -426,10 +427,16 @@ check_openspec_change_required() {
 }
 run_check "Openspec change spec present (DoR)" check_openspec_change_required
 
-# 13. Optional — PR body lint (only when --body FILE given)
+# 15. New src modules carry a matching tests/unit test file — the
+#     branch-wide twin of the test-file-adjacency pre-commit hook (#160).
+run_check "New modules have test files (vs origin/main)" \
+    bash scripts/dev/test-file-adjacency.sh --base origin/main
+
+# 13. Optional — PR body lint + test-tier line (only when --body FILE given)
 if [[ -n "$BODY_FILE" ]]; then
     check_pr_body() {
-        PR_BODY="$(cat "$BODY_FILE")" bash scripts/dev/pr-body-lint.sh
+        PR_BODY="$(cat "$BODY_FILE")" bash scripts/dev/pr-body-lint.sh &&
+            PR_BODY="$(cat "$BODY_FILE")" bash scripts/dev/test-tiers-line-check.sh
     }
     run_check "PR body lint (--body $BODY_FILE)" check_pr_body
 fi
