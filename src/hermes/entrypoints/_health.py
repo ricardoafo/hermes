@@ -32,6 +32,8 @@ Design notes
 
 from __future__ import annotations
 
+import json
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -80,6 +82,7 @@ __all__ = [
     "check_telegram",
     "get_check",
     "registered_integrations",
+    "render_json",
     "render_table",
     "render_table_multi",
     "run_all",
@@ -660,6 +663,57 @@ def render_table(result: HealthCheckResult, stream: Any) -> None:
     width = max(len(k) for k, _ in rows)
     for key, value in rows:
         stream.write(f"  {key.ljust(width)}  {value}\n")
+
+
+_SECRET_KEY = re.compile(r"TOKEN|SECRET|PASSWORD|DSN|KEY|PING_URL", re.IGNORECASE)
+_REDACTED: Final[str] = "***"
+
+
+def _redact(text: str, env: dict[str, str]) -> str:
+    """Mask every secret-looking env value found inside ``text``."""
+    secrets = sorted(
+        (v for k, v in env.items() if v and _SECRET_KEY.search(k)),
+        key=len,
+        reverse=True,
+    )
+    for value in secrets:
+        text = text.replace(value, _REDACTED)
+    return text
+
+
+def render_json(results: list[HealthCheckResult], env: dict[str, str], stream: Any) -> int:
+    """Print ``results`` as one JSON document and return the aggregate exit code.
+
+    The document is ``{"integrations": [{"name", "status", "detail",
+    "latency_ms", "last_check", "exit_code"}, ...], "exit_code": N}``.
+    Any env value whose key looks like a secret is masked in ``detail``,
+    so a probe error that echoes a URL carrying a token cannot leak it.
+
+    Args:
+        results: The health-check outcomes to render.
+        env: Env snapshot the probes ran with; source of the values to mask.
+        stream: File-like object with a ``.write`` method.
+
+    Returns:
+        The aggregate exit code, also written as ``exit_code``.
+    """
+    exit_code = aggregate_exit_code(results)
+    document = {
+        "integrations": [
+            {
+                "name": r.integration,
+                "status": r.status,
+                "detail": _redact(r.detail, env),
+                "latency_ms": round(r.latency_ms, 1),
+                "last_check": r.last_check.isoformat(),
+                "exit_code": r.exit_code,
+            }
+            for r in results
+        ],
+        "exit_code": exit_code,
+    }
+    stream.write(json.dumps(document) + "\n")
+    return exit_code
 
 
 def run_all(env: dict[str, str]) -> list[HealthCheckResult]:

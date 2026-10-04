@@ -159,7 +159,8 @@ if ! command -v uv >/dev/null 2>&1; then
         "/usr/local/bin/uv"
     do
         if [[ -x "$candidate" ]]; then
-            export PATH="$(dirname "$candidate"):$PATH"
+            PATH="$(dirname "$candidate"):$PATH"
+            export PATH
             break
         fi
     done
@@ -282,12 +283,10 @@ run_slow_check "coverage-check.py (per-package thresholds)" check_coverage_gated
 run_check "markdownlint-cli2 (full tree)" \
     markdownlint-cli2 "**/*.md" "#node_modules" "#.venv"
 
-# 11. Guides index up-to-date (CI regenerates and diffs)
-check_guides_index() {
-    bash scripts/dev/regenerate-guides-index.sh >/dev/null 2>&1 || return 1
-    git diff --exit-code -- docs/guides/README.md >/dev/null 2>&1
-}
-run_check "Guides index current" check_guides_index
+# 11. Guides index builds: the same command as CI's "Verify guides index
+# builds". The index itself is rebuilt on main after merge, never in a PR.
+run_check "Guides index builds" \
+    bash scripts/dev/regenerate-guides-index.sh --check
 
 # 12. CHANGELOG check — infers PR title's conventional-commit type from
 #     the LATEST commit on the branch (matches what the eventual squash

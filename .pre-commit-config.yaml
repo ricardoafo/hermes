@@ -76,18 +76,18 @@ repos:
         files: ^scripts/dev/pr-ready-check\.sh$
         pass_filenames: false
 
+      - id: doctor-self-test
+        name: doctor self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/doctor.sh'
+        language: system
+        files: ^scripts/dev/doctor\.sh$
+        pass_filenames: false
+
       - id: regenerate-guides-index
-        name: regenerate guides index on docs/guides/ change
-        # Runs the regen script AND stages the refreshed
-        # docs/guides/README.md. pre-commit's stash-restore mechanism
-        # means the git-add-inside-a-hook does not carry the change
-        # into the current commit — but it does leave README.md
-        # regenerated in the working tree AND staged for the NEXT
-        # commit. The wrapper script fails LOUDLY (non-zero exit) when
-        # README.md needed regeneration, with a copy-paste `git commit
-        # --amend --no-edit` hint. That converts the previous silent
-        # push-then-CI-red round-trip (Wave 5 sub-agent + Sentry
-        # salvage) into a caught-at-commit-time drift.
+        name: guides index builds on docs/guides/ change
+        # Checks every guide can be indexed (H1 + Description) without
+        # writing docs/guides/README.md. The index is rebuilt on main
+        # after merge, so a PR commit never carries it.
         entry: bash scripts/dev/regenerate-guides-index-hook.sh
         language: system
         files: ^docs/guides/.*\.md$
@@ -136,6 +136,13 @@ repos:
         files: ^scripts/dev/launch-agent\.sh$
         pass_filenames: false
 
+      - id: prune-merged-branches-self-test
+        name: prune-merged-branches self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/prune-merged-branches.sh'
+        language: system
+        files: ^scripts/dev/prune-merged-branches\.sh$
+        pass_filenames: false
+
       - id: changelog-check-self-test
         name: changelog-check self-test
         entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/changelog-check.sh'
@@ -178,6 +185,12 @@ repos:
         language: system
         files: ^scripts/dev/reproducibility-check\.py$
         pass_filenames: false
+
+      - id: migration-sql-check
+        name: ledger migration names + no transaction control (#483)
+        entry: uv run python scripts/dev/migration-sql-check.py
+        language: system
+        files: ^src/hermes/adapters/ledger/migrations/.*\.sql$
 
       - id: no-naive-datetime
         name: no naive datetimes (grep guard)

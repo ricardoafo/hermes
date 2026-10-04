@@ -38,6 +38,8 @@
 #      time (Europe/Madrid) when an update needs one: clear of the 00:00
 #      and 04:00 UTC bar closes and the 03:00 UTC backup in both summer
 #      and winter time.
+#   9. journald drop-in with ADR-008 §1 limits (2G, 180 days); journald is
+#      restarted only when the drop-in changed.
 #
 # Reference:
 #   openspec/changes/179-cd-first-real-deploy/change.md (D-5, D-8, R-5)
@@ -70,6 +72,8 @@ AUTO_REBOOT_FILE=/etc/apt/apt.conf.d/52hermes-auto-reboot
 # The reboot time is read in the box's own timezone; 03:30 is chosen for
 # Europe/Madrid, so the bootstrap refuses to arm it on any other zone.
 AUTO_REBOOT_TZ=Europe/Madrid
+# journald limits from ADR-008 §1 (#512).
+JOURNALD_DROPIN=/etc/systemd/journald.conf.d/50-hermes.conf
 
 # uv installs to /usr/local/bin; a non-interactive ssh PATH may omit it.
 export PATH="/usr/local/bin:$PATH"
@@ -273,6 +277,31 @@ ensure_daily_timer() {
     fi
 }
 
+# Write the bot env file $1 (root:root 0600) with only the Telegram token
+# and chat id from the HERMES_TELEGRAM__* environment, then enable and start
+# hermes-bot.service; without both values the unit is disabled and the file
+# removed (ADR-015 D-05). The bot never sees env.production. The file is
+# rewritten on every run, so re-running bootstrap rotates the token.
+# Extracted by tests/unit/deploy/test_vps_bootstrap_alerts.py.
+ensure_bot() {
+    local file=$1 token=${HERMES_TELEGRAM__BOT_TOKEN:-} chat=${HERMES_TELEGRAM__CHAT_ID:-} tmp
+    if [ -z "$token" ] || [ -z "$chat" ]; then
+        systemctl disable --now hermes-bot.service 2>/dev/null || true
+        rm -f "$file"
+        echo "  hermes-bot.service: left off (Telegram token or chat id not set)"
+        return 0
+    fi
+    tmp=$(mktemp "$(dirname "$file")/.env.bot.XXXXXX")
+    printf 'HERMES_TELEGRAM__BOT_TOKEN="%s"\nHERMES_TELEGRAM__CHAT_ID="%s"\nHERMES_ENV="prod"\n' \
+        "$token" "$chat" > "$tmp"
+    chown root:root "$tmp"
+    chmod 0600 "$tmp"
+    mv -T "$tmp" "$file"
+    systemctl enable hermes-bot.service
+    systemctl restart hermes-bot.service || true
+    echo "  hermes-bot.service: enabled; $file written"
+}
+
 # The sudoers file for a non-root CD user: exactly the commands the deploy
 # step runs as root (cd.yml), nothing else. The 12 hex classes match the
 # sha12 release id; sudoers wildcards are fnmatch patterns.
@@ -365,6 +394,35 @@ ensure_auto_reboot() {
     else
         systemctl enable --now unattended-upgrades.service
     fi
+}
+
+# The journald drop-in: ADR-008 §1 caps the journal at 2G and 180 days (#512).
+render_journald_dropin() {
+    cat <<'EOF'
+# Written by hermes vps-bootstrap (#512). ADR-008 §1: journald is the log
+# store of record; keep at most 2G and at most 180 days.
+[Journal]
+SystemMaxUse=2G
+MaxRetentionSec=180day
+EOF
+}
+
+# Write the drop-in only when it differs and restart journald once so the
+# new limits apply; a re-run on a current box changes nothing.
+ensure_journald_retention() {
+    local tmp dir
+    dir=$(dirname "$JOURNALD_DROPIN")
+    if [ -f "$JOURNALD_DROPIN" ] && [ "$(render_journald_dropin)" = "$(< "$JOURNALD_DROPIN")" ]; then
+        echo "  $JOURNALD_DROPIN already current"
+        return 0
+    fi
+    mkdir -p "$dir"
+    tmp=$(mktemp "$dir/.50-hermes.XXXXXX")
+    render_journald_dropin > "$tmp"
+    chmod 0644 "$tmp"
+    mv -T "$tmp" "$JOURNALD_DROPIN"
+    systemctl restart systemd-journald
+    echo "  wrote $JOURNALD_DROPIN (SystemMaxUse=2G, MaxRetentionSec=180day) and restarted journald"
 }
 
 echo "==== VPS bootstrap starting on $(hostname) ===="
@@ -471,6 +529,7 @@ echo "---- 5. $ENV_FILE ----"
 ensure_env_file "$ENV_FILE"
 ensure_health_timer "$ENV_FILE"
 ensure_daily_timer "$ENV_FILE"
+ensure_bot /etc/hermes/env.bot
 echo ""
 
 # ────────────────────────────────────────────────────────────────
@@ -570,6 +629,13 @@ echo ""
 # ────────────────────────────────────────────────────────────────
 echo "---- 8. automatic security updates ----"
 ensure_auto_reboot
+echo ""
+
+# ────────────────────────────────────────────────────────────────
+# 9. journald retention (ADR-008 §1)
+# ────────────────────────────────────────────────────────────────
+echo "---- 9. journald retention ----"
+ensure_journald_retention
 echo ""
 
 echo "==== VPS bootstrap complete ===="

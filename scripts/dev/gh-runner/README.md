@@ -202,6 +202,26 @@ is 1h TTL, so this doesn't work for 24/7.
 - **PAT rotation** — set a calendar reminder for the PAT expiry.
   Generate a new one before expiry, update `.env`, `./down.sh && ./up.sh`.
 
+## Checking runner health
+
+`hermes runners` (add `--json` for scripts) reads the runner list from the
+GitHub API and prints online/total, busy and a status per label (`hermes`,
+`hermes-ops`, `dependabot`; the last two appear once such runners exist).
+
+- Needs `HERMES_GITHUB_TOKEN` in `.env.local` or the environment: a token
+  with `Administration: Read` on the repository. The bot token gets 403.
+  `HERMES_GITHUB_REPO` overrides the default `ricardoafo/hermes`.
+- **OK**: at least half the runners of every label are online. Busy counts
+  as online. One runner offline between jobs is normal: runners are
+  ephemeral and re-register after every job.
+- **DEGRADED**: fewer than half of a label's runners are online. Exit 0.
+- **FAIL**: a label has runners and none online, or no `hermes` runner is
+  registered. Exit 1. Start with `docker compose ps` and `docker compose logs`.
+- Exit 3 means the token is not set.
+
+It is not part of `hermes health`, which runs on the VPS where no GitHub
+token exists.
+
 ## Troubleshooting
 
 - **`docker compose up` errors on missing `HERMES_RUNNER_REGISTRATION_PAT`** →

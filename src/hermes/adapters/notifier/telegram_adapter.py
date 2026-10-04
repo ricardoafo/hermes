@@ -94,12 +94,13 @@ class TelegramConfig:
     Attributes:
         bot_token: The bot's HTTP API token issued by ``@BotFather``.
             Format: ``"<int>:<crockford-ish-base64>"``. Treated as opaque.
+            Not in ``repr``.
         chat_id: Numeric chat ID or ``@channelname`` string identifying
             where messages go. Stored as ``str`` since the API accepts
             both int and str and pydantic would need a union anyway.
     """
 
-    bot_token: str
+    bot_token: str = field(repr=False)
     chat_id: str
 
     @classmethod
