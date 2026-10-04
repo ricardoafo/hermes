@@ -41,13 +41,23 @@ class TradeEur:
     fee_eur: Decimal
 
     @classmethod
-    def price(cls, pricing: EurPricing, *, price: Money, fee: Money) -> TradeEur | None:
+    def price(
+        cls,
+        pricing: EurPricing,
+        *,
+        price: Money,
+        fee: Money,
+        base: Currency | None = None,
+    ) -> TradeEur | None:
         """Convert a native price and fee to EUR.
 
         Args:
             pricing: Rate for the price's currency.
             price: Native price of one base unit, in ``pricing.quote``.
-            fee: Native fee. Converted when it is in ``pricing.quote`` or EUR.
+            fee: Native fee. Converted when it is in ``pricing.quote``, EUR or
+                ``base``; a fee in the base asset is worth ``fee * price`` in
+                the quote (change ``405-usdt-fifo`` D-2).
+            base: The pair's base asset, when the caller knows it.
 
         Returns:
             The EUR values, or ``None`` when the fee is in a currency the
@@ -61,6 +71,10 @@ class TradeEur:
             fee_eur = pricing.to_eur(fee).amount
         elif fee.currency == Currency.EUR:
             fee_eur = fee.amount
+        elif base is not None and fee.currency == base:
+            fee_eur = pricing.to_eur(
+                Money(amount=fee.amount * price.amount, currency=pricing.quote)
+            ).amount
         else:
             return None
         return cls(pricing=pricing, price_eur=price_eur, fee_eur=fee_eur)

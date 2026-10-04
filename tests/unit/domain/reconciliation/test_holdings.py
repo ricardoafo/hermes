@@ -11,12 +11,13 @@ Invariants protected here:
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import Decimal, localcontext
 
 import pytest
-from hypothesis import given
+from hypothesis import example, given
 from hypothesis import strategies as st
 
+from hermes.domain.portfolio.precision import EXACT_CONTEXT
 from hermes.domain.reconciliation.holdings import (
     CheckStatus,
     LedgerTrade,
@@ -162,23 +163,45 @@ _amounts = st.decimals(min_value=0, max_value=10**6, places=8, allow_nan=False)
         max_size=12,
     )
 )
+# #585: 1E12 + 1E-16 needs 29 digits; the default 28-digit context rounds it.
+@example(
+    trades=[
+        (OrderSide.BUY, Decimal("1E-8"), Decimal("1E-8"), Decimal(0)),
+        (OrderSide.BUY, Decimal("1000000"), Decimal("1000000"), Decimal(0)),
+    ]
+)
 def test_book_conserves_value_at_trade_prices(
     trades: list[tuple[OrderSide, Decimal, Decimal, Decimal]],
 ) -> None:
     """Property: quote + base * price changes by exactly minus the fees, per fill.
 
     Valuing each fill's base flow at its own price, the only value that leaves
-    the book is the fee.
+    the book is the fee. The check runs in the book's own exact context: the
+    default 28-digit context would round the expected side, not the book (#585).
     """
     rows = [_trade(side, str(qty), str(price), str(fee)) for side, qty, price, fee in trades]
     balances = book_balances(rows, {})
-    quote_flow = balances.get(Currency.USDT, Decimal(0))
-    base_value = sum(
-        ((1 if r.side == OrderSide.BUY else -1) * r.qty * r.price for r in rows), Decimal(0)
-    )
-    fees = sum((r.fee.amount for r in rows), Decimal(0))
+    with localcontext(EXACT_CONTEXT):
+        quote_flow = balances.get(Currency.USDT, Decimal(0))
+        base_value = sum(
+            ((1 if r.side == OrderSide.BUY else -1) * r.qty * r.price for r in rows), Decimal(0)
+        )
+        fees = sum((r.fee.amount for r in rows), Decimal(0))
 
-    assert quote_flow + base_value == -fees
+        assert quote_flow + base_value == -fees
+
+
+def test_book_keeps_a_tiny_flow_next_to_a_huge_one() -> None:
+    """A 1E-16 USDT flow beside a 1E12 one survives: the book does not round (#585)."""
+    balances = book_balances(
+        [
+            _trade(OrderSide.BUY, "1E-8", "1E-8", "0"),
+            _trade(OrderSide.BUY, "1000000", "1000000", "0"),
+        ],
+        {},
+    )
+
+    assert balances[Currency.USDT] == Decimal("-1000000000000.0000000000000001")
 
 
 @given(book=_amounts, observed=_amounts)
