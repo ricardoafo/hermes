@@ -19,12 +19,14 @@ flowchart LR
     subgraph Workbench["Workbench (Docker Desktop VM)"]
         CI["runner x N<br/>label: hermes"]
         OPS["ops-runner x 1<br/>label: hermes-ops"]
+        REV["review-runner x 2<br/>label: hermes-review"]
         DEP["dependabot-runner x 1<br/>label: dependabot"]
         DIND["dependabot-dind<br/>(private Docker daemon)"]
         DEP --> DIND
     end
     PRCI["ci.yml, scheduled.yml"] -->|RUNNER_LABEL| CI
     Q["merge-queue.yml, cd.yml"] -->|OPS_RUNNER_LABEL,<br/>falls back to RUNNER_LABEL| OPS
+    AIR["ai-review.yml"] -->|REVIEW_RUNNER_LABEL,<br/>falls back to RUNNER_LABEL| REV
     DB["Dependabot Updates"] -->|label dependabot| DEP
 ```
 
@@ -36,6 +38,12 @@ flowchart LR
   merge or a deploy never waits behind PR CI. Workflows pick it through
   the repo variable `OPS_RUNNER_LABEL`. Until that is set, they fall back
   to the CI pool.
+- **The review runners** (`hermes-review`) run only the AI review. A
+  review takes about 7 minutes, mostly waiting on the model, so two small
+  runners (1 CPU, 1.5 GB) keep it from holding a CI runner while PR
+  tests queue (#631). `ai-review.yml` picks them through the repo
+  variable `REVIEW_RUNNER_LABEL` and falls back to the CI pool until it
+  is set.
 - **The Dependabot runner** has its own Docker-in-Docker sidecar on a
   private network. GitHub needs a runner that can run Docker for
   Dependabot updates, and this keeps the host's Docker socket out of
@@ -50,6 +58,7 @@ Runner commands, all run from `scripts/dev/gh-runner` on Workbench:
 | --- | --- |
 | Start or resize the CI pool | `./up.sh <N>` |
 | Start the ops and Dependabot runners | `docker compose up -d --no-recreate ops-runner dependabot-dind dependabot-runner` |
+| Start the AI review runners | `docker compose up -d --no-recreate review-runner` |
 | Tail a runner | `docker compose logs -f runner` |
 | Stop everything | `./down.sh` |
 

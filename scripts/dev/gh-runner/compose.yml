@@ -131,6 +131,30 @@ services:
       - pip-cache:/home/runner/.cache/pip
 
   # ─────────────────────────────────────────────────────────────
+  # AI review runners (label hermes-review). The review job spends
+  # ~7 minutes mostly waiting on the model, so on the CI pool it held
+  # up to 3 of the 4 CI runners and PR tests queued behind it. Two
+  # small replicas keep reviews off the CI pool. Routed by the repo
+  # variable REVIEW_RUNNER_LABEL (ai-review.yml falls back to
+  # RUNNER_LABEL when it is unset).
+  # ─────────────────────────────────────────────────────────────
+  review-runner:
+    image: gh-runner:latest
+    scale: 2
+    restart: unless-stopped
+    environment:
+      RUNNER_REPOSITORY: ${RUNNER_REPOSITORY:-ricardoafo/hermes}
+      HERMES_RUNNER_REGISTRATION_PAT: ${HERMES_RUNNER_REGISTRATION_PAT:?HERMES_RUNNER_REGISTRATION_PAT is required — put it in .env (see .env.example)}
+      RUNNER_TOKEN: ${RUNNER_TOKEN:-}
+      RUNNER_LABELS: self-hosted,linux,x64,hermes-review
+    mem_limit: 1536m
+    cpus: 1
+    volumes:
+      - uv-cache:/home/runner/.cache/uv
+      - npm-cache:/home/runner/.cache/npm
+      - bun-cache:/home/runner/.cache/bun
+
+  # ─────────────────────────────────────────────────────────────
   # Dependabot runner (label dependabot) with its own Docker daemon.
   # GitHub runs Dependabot updates on a self-hosted runner only when
   # the runner user can run Docker. The CI runners reach the host

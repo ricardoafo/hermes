@@ -107,6 +107,21 @@ IP needed. `ufw` rules only permit SSH from Tailscale CGNAT
 (`100.64.0.0/10`), so this becomes the ONLY working path once ufw is
 enabled.
 
+### SSH config alias
+
+An entry in your SSH config shortens the Tailscale form to `ssh hermes`.
+On Windows the file is `$HOME\.ssh\config`; on Linux and macOS
+`~/.ssh/config`:
+
+```text
+Host hermes
+    HostName hermes-01
+    User root
+    IdentityFile ~/.ssh/hermes_vps_ed25519
+```
+
+[operator-usage.md](operator-usage.md) covers what to run once connected.
+
 ### Host key changed warning
 
 If SSH refuses to connect with `REMOTE HOST IDENTIFICATION HAS CHANGED`:
@@ -487,6 +502,9 @@ hermes_run logs -f                 # follow, Ctrl-C to stop
 
 Every console command also runs on demo data from any machine:
 `hermes --demo ok-two-positions activity` (see `hermes --demo` for the list).
+
+[operator-usage.md](operator-usage.md) walks through these commands for
+day-to-day use, with the demo scenarios, deploys and alerts.
 
 ## Supervisor tools (read-only, outcome-blind)
 
