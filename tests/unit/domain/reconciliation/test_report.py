@@ -9,7 +9,7 @@ Invariants protected here:
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from hermes.domain.reconciliation.holdings import HoldingCheck
@@ -44,15 +44,20 @@ def _check(observed: str) -> HoldingCheck:
     )
 
 
-def _report(**kwargs: object) -> ReconciliationReport:
-    fields: dict[str, object] = {
-        "month": _MONTH,
-        "as_of": _MONTH.end,
-        "checks": (_check("1"),),
-        "tax": _tax(),
-    }
-    fields.update(kwargs)
-    return ReconciliationReport(**fields)  # type: ignore[arg-type]
+_DEFAULT_TAX = _tax()
+
+
+def _report(
+    *,
+    as_of: datetime = _MONTH.end,
+    checks: tuple[HoldingCheck, ...] = (_check("1"),),
+    tax: TaxView | None = _DEFAULT_TAX,
+    problems: tuple[str, ...] = (),
+    skipped: tuple[str, ...] = (),
+) -> ReconciliationReport:
+    return ReconciliationReport(
+        month=_MONTH, as_of=as_of, checks=checks, tax=tax, problems=problems, skipped=skipped
+    )
 
 
 def test_agreeing_views_with_eur_values_are_clean_and_ready() -> None:

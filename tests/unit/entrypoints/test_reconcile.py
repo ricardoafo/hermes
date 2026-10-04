@@ -39,6 +39,20 @@ class _Recorder:
         self.sent: list[DomainEvent] = []
         self.fail = fail
 
+    def notify_urgent(self, *, event: str, correlation_id: str, message: str) -> None:
+        raise AssertionError("reconcile sends domain events, not raw urgent text")
+
+    def notify_report(
+        self,
+        *,
+        event: str,
+        correlation_id: str,
+        title: str,
+        body: str,
+        attachments: list[Path] | None = None,
+    ) -> None:
+        raise AssertionError("reconcile sends domain events, not reports")
+
     def notify(self, event: DomainEvent) -> None:
         if self.fail:
             raise InfraError("telegram down")
@@ -51,7 +65,7 @@ def _run(
     out = io.StringIO()
 
     def factory(_env: Mapping[str, str]) -> NotifierPort | None:
-        return notifier  # type: ignore[return-value]
+        return notifier
 
     code = reconcile_module.main(
         ["--config-dir", str(_CONFIG), *args], stream=out, now=now, notifier_factory=factory

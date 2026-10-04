@@ -21,6 +21,8 @@ __all__ = ["ReconciliationMonth"]
 _MADRID: Final = ZoneInfo("Europe/Madrid")
 _PATTERN: Final = re.compile(r"(\d{4})-(\d{2})")
 _DECEMBER: Final = 12
+# datetime ends at year 9999, and a month needs its following month for its end.
+_MAX_YEAR: Final = 9998
 
 
 @dataclass(frozen=True, slots=True, order=True)
@@ -46,8 +48,8 @@ class ReconciliationMonth:
         """
         if not 1 <= self.month <= _DECEMBER:
             raise ValueError(f"month must be 1 to 12, got {self.month}")
-        if not 1 <= self.year <= 9998:  # noqa: PLR2004 - datetime's range, minus the next month
-            raise ValueError(f"year must be 1 to 9998, got {self.year}")
+        if not 1 <= self.year <= _MAX_YEAR:
+            raise ValueError(f"year must be 1 to {_MAX_YEAR}, got {self.year}")
 
     @classmethod
     def parse(cls, text: str) -> ReconciliationMonth:
