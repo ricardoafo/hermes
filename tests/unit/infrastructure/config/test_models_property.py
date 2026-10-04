@@ -196,6 +196,11 @@ def _strategy_entry(**overrides: Any) -> dict[str, Any]:
         "weight": "1.0",
         "capital_budget": "5000",
         "quote": "USDT",
+        "sizing": {
+            "risk_pct": "0.01",
+            "max_position_pct": "0.05",
+            "max_total_exposure_pct": "0.15",
+        },
     }
     entry.update(overrides)
     return entry
@@ -235,6 +240,30 @@ def test_strategy_rejects_missing_capital_budget() -> None:
     entry = _strategy_entry()
     del entry["capital_budget"]
     _assert_field_in_validation_error({"strategies": [entry]}, StrategiesConfig, "capital_budget")
+
+
+def test_strategy_rejects_missing_sizing() -> None:
+    """The sizing block is required: an entry without limits fails at load, never trades."""
+    entry = _strategy_entry()
+    del entry["sizing"]
+    _assert_field_in_validation_error({"strategies": [entry]}, StrategiesConfig, "sizing")
+
+
+@_SETTINGS
+@given(
+    field=st.sampled_from(["risk_pct", "max_position_pct", "max_total_exposure_pct"]),
+    share=st.one_of(
+        st.decimals(max_value=Decimal("0"), allow_nan=False, allow_infinity=False),
+        st.decimals(min_value=Decimal("1.0001"), allow_nan=False, allow_infinity=False),
+    ),
+)
+def test_strategy_rejects_sizing_share_outside_zero_one(field: str, share: Decimal) -> None:
+    """Each sizing share must lie in (0, 1]: zero, negative or above 100% of capital fails."""
+    sizing = {"risk_pct": "0.01", "max_position_pct": "0.05", "max_total_exposure_pct": "0.15"}
+    sizing[field] = str(share)
+    _assert_field_in_validation_error(
+        {"strategies": [_strategy_entry(sizing=sizing)]}, StrategiesConfig, field
+    )
 
 
 def test_strategy_rejects_quote_outside_the_currency_allowlist() -> None:
