@@ -62,8 +62,11 @@ def test_ledger_at_0004_applies_0006_and_keeps_its_lots(tmp_path: Path) -> None:
     """Invariant: upgrading adds capital_seeds and leaves existing lot rows untouched."""
     conn = _at_0004(tmp_path)
     before = conn.execute("SELECT * FROM lots").fetchall()
+    # Pinned to 0006 so later migrations do not change what this run applies.
+    through_0006 = tmp_path / "pre_0006"
+    shutil.copy(MIGRATIONS_DIR / _MIGRATION, through_0006 / _MIGRATION)
 
-    applied = apply_migrations(conn)
+    applied = apply_migrations(conn, through_0006)
 
     assert (applied, conn.execute("SELECT * FROM lots").fetchall()) == ((_MIGRATION,), before)
 
