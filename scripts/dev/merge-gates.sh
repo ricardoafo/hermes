@@ -57,14 +57,14 @@ install_gitleaks() {
 }
 
 gate "install markdownlint-cli2" install_markdownlint
-gate "markdownlint" markdownlint-cli2 "**/*.md" "#node_modules" "#.venv"
+gate "markdownlint" bash scripts/dev/ci-checks.sh markdown
 gate "install gitleaks" install_gitleaks
 gate "gitleaks" gitleaks git . "--log-opts=${base}..HEAD" --redact --no-banner --verbose
 gate "uv sync" uv sync --frozen
-gate "ruff format" uv run ruff format --check .
-gate "ruff check" uv run ruff check .
-gate "mypy" uv run mypy --strict src/hermes
-gate "lint-imports" uv run lint-imports
+gate "ruff format" bash scripts/dev/ci-checks.sh format
+gate "ruff check" bash scripts/dev/ci-checks.sh lint
+gate "mypy" bash scripts/dev/ci-checks.sh types
+gate "lint-imports" bash scripts/dev/ci-checks.sh imports
 # pytest names its failures in the fail file, so the PR comment says
 # which tests broke, not just "pytest". At most five names, comma-joined.
 run_pytest() {
