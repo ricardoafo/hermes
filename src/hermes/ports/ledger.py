@@ -18,6 +18,7 @@ from decimal import Decimal
 from typing import Protocol, runtime_checkable
 
 from hermes.domain.events.base import DomainEvent
+from hermes.domain.events.fill_quality_recorded import FillQualityRecorded
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.events.trade_executed import TradeExecuted
 from hermes.domain.fx.eur_pricing import EurPricing
@@ -31,7 +32,7 @@ from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
 
-__all__ = ["LedgerPort", "PendingSeed", "PendingTrade", "TradeLedgerPort"]
+__all__ = ["ExecutionLedgerPort", "LedgerPort", "PendingSeed", "PendingTrade", "TradeLedgerPort"]
 
 
 @runtime_checkable
@@ -341,5 +342,57 @@ class TradeLedgerPort(Protocol):
         Raises:
             LedgerError: On any SQLite failure, an unknown ``seed_id`` or a
                 pricing for another currency.
+        """
+        ...
+
+
+@runtime_checkable
+class ExecutionLedgerPort(Protocol):
+    """What the shadow executor reads and appends besides the trade rows.
+
+    Change ``353-fill-kernel-in-serve`` D-4, D-5: the executor checks the
+    recorded trades before filling a re-evaluated signal, appends one
+    :class:`FillQualityRecorded` per fill, and reads the newest one back for
+    risk rule RO-03.
+
+    Adapters raise :class:`hermes.domain.errors.LedgerError` on failure.
+    """
+
+    def append_event(self, event: DomainEvent) -> None:
+        """Append one standalone event.
+
+        Args:
+            event: The event to store.
+
+        Raises:
+            LedgerError: On any SQLite failure.
+        """
+        ...
+
+    def trade_events(self, strategy_id: StrategyId) -> tuple[TradeExecuted, ...]:
+        """Return every recorded trade of one strategy, oldest first.
+
+        Args:
+            strategy_id: Strategy bucket the fills belong to.
+
+        Returns:
+            The rehydrated events ordered by ``occurred_at`` then insert order.
+
+        Raises:
+            LedgerError: On any SQLite read failure or an unreadable payload.
+        """
+        ...
+
+    def fill_quality_events(self, strategy_id: StrategyId) -> tuple[FillQualityRecorded, ...]:
+        """Return every fill-quality row of one strategy, oldest first.
+
+        Args:
+            strategy_id: Strategy bucket the fills belong to.
+
+        Returns:
+            The rehydrated events ordered by ``occurred_at`` then insert order.
+
+        Raises:
+            LedgerError: On any SQLite read failure or an unreadable payload.
         """
         ...
