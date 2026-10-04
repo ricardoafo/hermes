@@ -21,7 +21,7 @@ fill price, the pre-registration §6.2 model price for the same order and the dr
 SHADOW_CERTIFIED gate (pre-registration §7, "< 30 bps p50 over 90 days") is computed from these rows.
 The main risk is a live book that is unavailable or stale. The loop then falls back to the §6.2
 synthetic book and records that it did; entries on that book are refused by the stale-book rule (RO-04).
-That behaviour is as built and awaits the Code Owner's answer (D-2).
+The Code Owner confirmed this behaviour on 2026-10-04 (D-2).
 
 Rebased on 2026-10-04 onto `main` at `e986a6d`, which has the merged kernel (#519), the
 `SizingPolicy` sizing API (#510), the USDT capital seed (#405 via #503/#504) and the per-bar portfolio
@@ -106,9 +106,9 @@ marks (#511). The adaptations are D-8 to D-10.
 - **Rationale**: the issue asks for a fallback that is recorded; exits do not go through the risk
   overlay, so the fallback keeps the portfolio in step with the strategy's exits.
 - **Cost of reversal**: LOW.
-- **Pending**: the Code Owner's answer on the stale or missing book is pending and will be recorded
-  here. Until then the behaviour stays as built: an entry on the synthetic fallback is refused by
-  RO-04, and an exit fills on the §6.2 book.
+- **Decided by the Code Owner (2026-10-04)**: when the live order book is missing or stale, new
+  entries for that bar are skipped; exits still fill at the §6.2 price. This is the behaviour as
+  built: an entry on the synthetic fallback is refused by RO-04, and an exit fills on the §6.2 book.
 
 ### D-3: Real risk and kill inputs where serve has the data
 
