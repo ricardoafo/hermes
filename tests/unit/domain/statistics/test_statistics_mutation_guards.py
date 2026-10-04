@@ -141,6 +141,34 @@ class TestSplitMix64Reference:
             16408922859458223821,
         ]
 
+    # SEV-1: uniform block starts underpin the certification bootstrap (ADR-014)
+    def test_below_rejects_outputs_in_the_tail(self) -> None:
+        """For n = 2^63 + 1 every output of n or more is rejected, so outputs 3 and 5 are skipped.
+
+        Of the seed's first five outputs, the 1st, 2nd and 4th are below n and
+        are returned as they are; the 3rd and 5th are at least n and must be drawn again.
+        """
+        rng = SplitMix64(1234567)
+        assert [rng.below(2**63 + 1) for _ in range(3)] == [
+            6457827717110365317,
+            3203168211198807973,
+            4593380528125082431,
+        ]
+
+    # SEV-1: uniform block starts underpin the certification bootstrap (ADR-014)
+    def test_below_keeps_every_output_under_the_limit(self) -> None:
+        """For n = 3 * 2^62 the limit is n itself, so the first three outputs all come back.
+
+        The third output, 9817491932198370423, is above 2^63; a limit built from
+        the wrong power of two would reject it.
+        """
+        rng = SplitMix64(1234567)
+        assert [rng.below(3 * 2**62) for _ in range(3)] == [
+            6457827717110365317,
+            3203168211198807973,
+            9817491932198370423,
+        ]
+
     def test_negative_seed_wraps_to_64_bits(self) -> None:
         """Seed -1 is the 64-bit pattern of all ones, as in the reference."""
         assert SplitMix64(-1).next64() == SplitMix64(2**64 - 1).next64()

@@ -542,10 +542,25 @@ def test_load_config_reads_hermes_env_prod(config_dir: Path) -> None:
     assert cfg.env == "prod"
 
 
+def test_load_config_reads_hermes_env_staging(config_dir: Path) -> None:
+    """HERMES_ENV=staging is a valid tier (#192), so the staging unit's config loads."""
+    cfg = load_config(config_dir, env={"HERMES_ENV": "staging"})
+    assert cfg.env == "staging"
+
+
+def test_load_config_allow_mainnet_in_staging_raises_config_error(config_dir: Path) -> None:
+    """Staging shares the prod box but never real capital: allow_mainnet stays prod-only."""
+    with pytest.raises(ConfigError):
+        load_config(
+            config_dir,
+            env={"HERMES_ENV": "staging", "HERMES_ALLOW_MAINNET": "yes"},
+        )
+
+
 def test_load_config_rejects_unknown_hermes_env_value(config_dir: Path) -> None:
-    """HERMES_ENV=staging (not in Literal set) raises ConfigError."""
+    """HERMES_ENV=qa (not in Literal set) raises ConfigError."""
     with pytest.raises(ConfigError) as excinfo:
-        load_config(config_dir, env={"HERMES_ENV": "staging"})
+        load_config(config_dir, env={"HERMES_ENV": "qa"})
     assert "HermesConfig" in str(excinfo.value)
 
 
