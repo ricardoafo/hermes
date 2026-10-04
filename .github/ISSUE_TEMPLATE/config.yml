@@ -5,7 +5,7 @@ contact_links:
     about: Branching, commits, PRs, merge policy. Read before opening.
   - name: Architecture Decision Records
     url: https://github.com/ricardoafo/hermes/tree/main/docs/architecture
-    about: All 10 ADRs (accepted). Reference these when opening issues.
+    about: All accepted ADRs. Reference these when opening issues.
   - name: SDD workflow (for architectural changes)
     url: https://github.com/ricardoafo/hermes/blob/main/docs/guides/dev-workflow.md
     about: >

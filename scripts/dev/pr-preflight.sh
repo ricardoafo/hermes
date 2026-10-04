@@ -107,10 +107,11 @@ fi
 # Result tracking
 #
 # Total check count is CONDITIONAL, by design:
-#   - 13 checks always run (checks 1-12 plus per-package coverage).
+#   - 14 checks always run (checks 1-12, per-package coverage and the
+#     new-module test-file check).
 #   - +1 check runs ONLY when --body FILE or --render-body <change> is
 #     given (the PR body lint at the bottom).
-# Total = 13 unconditional + 1 optional. Not drift — different modes.
+# Total = 14 unconditional + 1 optional. Not drift — different modes.
 # See summary line for the exact per-invocation breakdown.
 # ────────────────────────────────────────────────────────────────
 FAILED=()
@@ -281,12 +282,10 @@ run_slow_check "coverage-check.py (per-package thresholds)" check_coverage_gated
 run_check "markdownlint-cli2 (full tree)" \
     markdownlint-cli2 "**/*.md" "#node_modules" "#.venv"
 
-# 11. Guides index up-to-date (CI regenerates and diffs)
-check_guides_index() {
-    bash scripts/dev/regenerate-guides-index.sh >/dev/null 2>&1 || return 1
-    git diff --exit-code -- docs/guides/README.md >/dev/null 2>&1
-}
-run_check "Guides index current" check_guides_index
+# 11. Guides index builds: the same command as CI's "Verify guides index
+# builds". The index itself is rebuilt on main after merge, never in a PR.
+run_check "Guides index builds" \
+    bash scripts/dev/regenerate-guides-index.sh --check
 
 # 12. CHANGELOG check — infers PR title's conventional-commit type from
 #     the LATEST commit on the branch (matches what the eventual squash
@@ -426,10 +425,16 @@ check_openspec_change_required() {
 }
 run_check "Openspec change spec present (DoR)" check_openspec_change_required
 
-# 13. Optional — PR body lint (only when --body FILE given)
+# 15. New src modules carry a matching tests/unit test file — the
+#     branch-wide twin of the test-file-adjacency pre-commit hook (#160).
+run_check "New modules have test files (vs origin/main)" \
+    bash scripts/dev/test-file-adjacency.sh --base origin/main
+
+# 13. Optional — PR body lint + test-tier line (only when --body FILE given)
 if [[ -n "$BODY_FILE" ]]; then
     check_pr_body() {
-        PR_BODY="$(cat "$BODY_FILE")" bash scripts/dev/pr-body-lint.sh
+        PR_BODY="$(cat "$BODY_FILE")" bash scripts/dev/pr-body-lint.sh &&
+            PR_BODY="$(cat "$BODY_FILE")" bash scripts/dev/test-tiers-line-check.sh
     }
     run_check "PR body lint (--body $BODY_FILE)" check_pr_body
 fi

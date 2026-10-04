@@ -149,7 +149,19 @@ shift
 exec "$@"
 """
 
+# `hermes migrate`: `--status` prints STUB_MIGRATE_STATUS (default: nothing
+# pending); a run logs its arguments and fails when STUB_MIGRATE_FAIL is set.
+_STUB_HERMES = """#!/usr/bin/env bash
+echo "hermes $*" >> "$STUB_LOG"
+case " $* " in
+    *" --status "*) echo "${STUB_MIGRATE_STATUS:-No pending migrations.}" ;;
+    *) [ -z "${STUB_MIGRATE_FAIL:-}" ] || exit 1 ;;
+esac
+exit 0
+"""
+
 _STUBS = {
+    "hermes": _STUB_HERMES,
     "runuser": _STUB_RUNUSER,
     "uv": _STUB_UV,
     "systemctl": _STUB_SYSTEMCTL,
@@ -291,6 +303,7 @@ class Box:
                 "HERMES_DB": _posix(self.db),
                 "HERMES_BACKUP_DIR": _posix(self.backups),
                 "HERMES_BACKUP_PYTHON": _posix(Path(sys.executable)),
+                "HERMES_MIGRATE_BIN": _posix(self._stubs / "hermes"),
                 **extra,
             }
         )
@@ -1012,3 +1025,65 @@ def test_rollback_without_a_snapshot_leaves_the_ledger_alone(box: Box) -> None:
     assert result.returncode == 0, _output(result)
     assert box.ledger_value(box.db) == "untouched"
     assert not any(call.startswith("systemctl stop") for call in box.calls())
+
+
+_DESTRUCTIVE_PENDING = "pending: 0005_lots_drop_strategy_default.sql (destructive)"
+
+
+def test_destructive_migration_runs_through_hermes_migrate_before_the_restart(box: Box) -> None:
+    """#474: the deploy runs a pending destructive migration after the snapshot, unit stopped."""
+    box.seed_release(_SHA_A)
+    box.link("current", _SHA_A)
+    box.write_ledger("before")
+
+    result = box.deploy(_SHA_B, STUB_MIGRATE_STATUS=_DESTRUCTIVE_PENDING)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    calls = box.calls()
+    migrate = next(
+        i
+        for i, c in enumerate(calls)
+        if c.startswith("hermes migrate --db") and "--snapshot-dir" in c
+    )
+    stop, restart = _systemctl_order(calls, "stop", "restart")
+    assert stop < migrate < restart
+    assert (box.backups / f"pre-{_SHA_B}.sqlite3").exists()
+    assert box.target("current") == _SHA_B
+
+
+def test_no_destructive_migration_means_no_stop_and_no_migrate_run(box: Box) -> None:
+    """Without a destructive migration the deploy only asks for the status, as before."""
+    box.seed_release(_SHA_A)
+    box.link("current", _SHA_A)
+    box.write_ledger("before")
+
+    result = box.deploy(_SHA_B)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    calls = box.calls()
+    assert [c for c in calls if c.startswith("hermes migrate")] == [
+        f"hermes migrate --db {_posix(box.db)} --status"
+    ]
+    assert not any(c.split()[:2] == ["systemctl", "stop"] for c in calls)
+
+
+def test_failed_migration_keeps_the_old_release_running_and_exits_1(box: Box) -> None:
+    """A failed `hermes migrate` leaves current on the old release and starts its unit again."""
+    box.seed_release(_SHA_A)
+    box.link("current", _SHA_A)
+    box.write_ledger("before")
+
+    result = box.deploy(_SHA_B, STUB_MIGRATE_STATUS=_DESTRUCTIVE_PENDING, STUB_MIGRATE_FAIL="1")
+
+    assert result.returncode == 1
+    assert "hermes migrate failed" in result.stdout + result.stderr
+    assert box.target("current") == _SHA_A
+    assert any(c.split()[:2] == ["systemctl", "start"] for c in box.calls())
+
+
+def test_first_deploy_without_a_ledger_skips_the_migrate_check(box: Box) -> None:
+    """No ledger yet means nothing to migrate: serve creates it with every migration."""
+    result = box.deploy(_SHA_A)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not any(c.startswith("hermes migrate") for c in box.calls())
