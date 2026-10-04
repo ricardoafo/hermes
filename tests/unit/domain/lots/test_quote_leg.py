@@ -8,10 +8,10 @@ from __future__ import annotations
 import dataclasses
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
-from decimal import ROUND_DOWN, Decimal, localcontext
+from decimal import ROUND_DOWN, Decimal, DefaultContext, localcontext
 
 import pytest
-from hypothesis import given, settings
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 from returns.result import Failure
 
@@ -344,12 +344,139 @@ def _remaining_basis(projection: FifoEurProjection) -> list[Decimal]:
     return basis
 
 
+def _half_ulp(value: Decimal, precision: int) -> Decimal:
+    """Largest rounding error of ``value`` once rounded to ``precision`` significant digits."""
+    return Decimal(5).scaleb(value.adjusted() - precision)
+
+
+def _rounding_bound(trades: list[LegTrade]) -> Decimal:
+    """How far the two legs' EUR values of the same trades can drift apart (#608).
+
+    The base leg values a trade at ``price_eur`` and ``fee_eur``, which
+    ``EurPricing.to_eur`` divides in the default Decimal context. The quote leg
+    values it at ``quote_unit_eur(rate)``, cut to that function's quantum. The
+    replay itself adds and splits without loss, so the identity can miss by at
+    most the sum of both roundings over every trade.
+    """
+    to_eur_precision = DefaultContext.prec
+    quantum_exponent = quote_unit_eur(Decimal(3)).as_tuple().exponent
+    assert isinstance(quantum_exponent, int)
+    half_quantum = Decimal(5).scaleb(quantum_exponent - 1)
+    with localcontext() as ctx:
+        ctx.prec = 100
+        bound = Decimal(0)
+        for t in trades:
+            assert t.price_eur is not None
+            assert t.fee_eur is not None
+            fee_quote = t.fee.amount * t.price if t.fee.currency == Currency.BTC else t.fee.amount
+            bound += t.qty * _half_ulp(t.price_eur, to_eur_precision)
+            bound += _half_ulp(t.fee_eur, to_eur_precision)
+            bound += (t.price * t.qty + fee_quote) * half_quantum
+        return bound
+
+
+def _usdt(amount: str) -> Money:
+    return Money(Decimal(amount), Currency.USDT)
+
+
+_DRIFT_PAST_1E_18 = (
+    _seed(amount="14297.03", rate="0.9"),
+    [
+        _priced(
+            1,
+            OrderSide.BUY,
+            Decimal("117.41862763"),
+            Decimal("104.61"),
+            _usdt("12.28316263"),
+            Decimal("1.3"),
+        ),
+        _priced(
+            2,
+            OrderSide.SELL,
+            Decimal("1.17418627"),
+            Decimal("100.02"),
+            _usdt("0.11744211"),
+            Decimal("0.9002"),
+        ),
+        _priced(
+            3,
+            OrderSide.SELL,
+            Decimal("1.16244441"),
+            Decimal("100"),
+            _usdt("0.11624444"),
+            Decimal("0.9"),
+        ),
+        _priced(
+            4,
+            OrderSide.SELL,
+            Decimal("113.93117698"),
+            Decimal("18232.22"),
+            _usdt("2077.21828355"),
+            Decimal("1.3"),
+        ),
+        _priced(
+            5,
+            OrderSide.SELL,
+            Decimal("0.02301639"),
+            Decimal("12537.23"),
+            _usdt("0.28856177"),
+            Decimal("1.3"),
+        ),
+        _priced(
+            6,
+            OrderSide.BUY,
+            Decimal("9172.29651424"),
+            Decimal("101.83"),
+            _usdt("934.01495404"),
+            Decimal("0.9"),
+        ),
+        _priced(
+            7,
+            OrderSide.SELL,
+            Decimal("9081.69007464"),
+            Decimal("24903.15"),
+            _usdt("226162.69018227"),
+            Decimal("1.2997"),
+        ),
+        _priced(
+            8,
+            OrderSide.SELL,
+            Decimal("90.81690074"),
+            Decimal("74736.54"),
+            _usdt("6787.34093483"),
+            Decimal("1.028"),
+        ),
+        _priced(
+            9,
+            OrderSide.BUY,
+            Decimal("502346.24964460"),
+            Decimal("465.07"),
+            _usdt("233626.17032221"),
+            Decimal("1.3"),
+        ),
+        _priced(
+            10,
+            OrderSide.SELL,
+            Decimal("231079.69681403"),
+            Decimal("12151.31"),
+            _usdt("2807921.03069329"),
+            Decimal("0.9"),
+        ),
+    ],
+)
+
+
 @settings(max_examples=300, deadline=None)
 @given(history=_seeded_history())
+# Missed by 1.06e-18 against the former fixed 1e-18 tolerance (#608).
+@example(history=_DRIFT_PAST_1E_18)
 def test_realized_gains_equal_remaining_basis_minus_seed_value(
     history: tuple[CapitalSeed, list[LegTrade]],
 ) -> None:
-    """Invariant (R-3 A-3.1): sum of gains == sum of remaining basis - seed value, all assets."""
+    """Invariant (R-3 A-3.1): sum of gains == sum of remaining basis - seed value, all assets.
+
+    Exact up to the rounding the code itself does, see :func:`_rounding_bound`.
+    """
     seed, trades = history
     base = replay_fifo_eur(Currency.BTC, [base_leg_trade(t) for t in trades]).unwrap()
     quote_legs = quote_leg_trades(Currency.USDT, {"seed:1": seed}, trades).unwrap()
@@ -359,4 +486,4 @@ def test_realized_gains_equal_remaining_basis_minus_seed_value(
         ctx.prec = 100
         gains = exact_sum([*_gains(base), *_gains(quote)])
         basis = exact_sum([*_remaining_basis(base), *_remaining_basis(quote)])
-        assert abs(gains - (basis - seed.value_eur)) <= Decimal("1e-18")
+        assert abs(gains - (basis - seed.value_eur)) <= _rounding_bound(trades)
