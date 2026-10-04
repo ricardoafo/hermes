@@ -75,6 +75,16 @@ class TestTradeEurPrice:
         record = TradeRecord.from_fill(_fill(OrderSide.SELL), correlation_id="c-0", eur=eur)
         assert record.eur_status == EurStatus.PENDING
 
+    def test_fee_in_the_base_asset_is_valued_at_the_fill_price(self) -> None:
+        """Invariant (405 D-2): a 0.001 BTC fee at 50000 USDT and 1.25 is 40 EUR."""
+        eur = TradeEur.price(
+            _PRICING,
+            price=Money(amount=Decimal("50000"), currency=Currency.USDT),
+            fee=Money(amount=Decimal("0.001"), currency=Currency.BTC),
+            base=Currency.BTC,
+        )
+        assert eur == TradeEur(pricing=_PRICING, price_eur=Decimal("40000"), fee_eur=Decimal("40"))
+
 
 class TestTradeRecord:
     """The record mirrors the fill and states its EUR status."""

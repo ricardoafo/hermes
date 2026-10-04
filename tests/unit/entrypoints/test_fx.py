@@ -15,6 +15,8 @@ from hermes.adapters.fx.frankfurter import FrankfurterAdapter
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.application.ledger.eur_pricer import EurPricer
 from hermes.application.ledger.trade_recorder import TradeRecorder
+from hermes.domain.events.shadow_capital_seeded import ShadowCapitalSeeded
+from hermes.domain.lots.quote_leg import CapitalSeed
 from hermes.domain.trading.fill import Fill
 from hermes.domain.trading.order import Order, OrderSide
 from hermes.domain.value_objects.currency import Currency
@@ -105,3 +107,35 @@ def test_build_fx_sends_usdt_as_usd_to_the_configured_host() -> None:
         )
     finally:
         fx.close()
+
+
+def test_backfill_command_reports_seeds_when_the_ledger_has_one(tmp_path: Path) -> None:
+    """Invariant (405 D-1): a pending seed is priced and counted on its own output line."""
+    db = tmp_path / "ledger.sqlite3"
+    conn = sqlite3.connect(db)
+    try:
+        seed = CapitalSeed(
+            strategy_id=StrategyId("swing"),
+            amount=Money(amount=Decimal("1000"), currency=Currency.USDT),
+            seeded_at=datetime(2026, 1, 2, 9, tzinfo=UTC),
+        )
+        SqliteLedger(conn).record_capital_seed(
+            seed,
+            ShadowCapitalSeeded(
+                occurred_at=seed.seeded_at,
+                correlation_id="seed",
+                strategy_id=seed.strategy_id,
+                amount=seed.amount,
+            ),
+        )
+    finally:
+        conn.close()
+    stream = io.StringIO()
+
+    code = fx_module.main(
+        ["backfill", "--db", str(db), "--config-dir", str(_CONFIG_DIR)],
+        stream=stream,
+        fx_factory=lambda _cfg: FakeFx(rates={_FILL_DAY: (Decimal("1.1721"), _FILL_DAY)}),
+    )
+
+    assert (code, stream.getvalue()) == (0, "filled=0 pending=0\nseeds_filled=1 seeds_pending=0\n")
