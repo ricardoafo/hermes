@@ -76,7 +76,7 @@ jobs:
           fi
 
       - name: Join tailnet
-        uses: tailscale/github-action@v3
+        uses: tailscale/github-action@v4
         with:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
           hostname: gh-actions-vps-bootstrap-${{ github.run_id }}
