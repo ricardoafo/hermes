@@ -27,12 +27,13 @@ from __future__ import annotations
 import asyncio
 import json
 import sqlite3
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
 import pytest
+import structlog
 from structlog.testing import capture_logs
 
 from hermes.adapters.clock import SimulatedClock
@@ -59,6 +60,23 @@ from tests.support.serve_loop import (
 pytestmark = pytest.mark.integration
 
 _DELIVERY_DELAY = timedelta(seconds=6)
+
+
+@pytest.fixture(autouse=True)
+def _uncached_serve_log(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Give serve a logger ``capture_logs`` can see.
+
+    A test that configured structlog with ``cache_logger_on_first_use`` earlier
+    in the session pins serve's module logger to that processor chain, and
+    ``capture_logs`` then records nothing.
+    """
+    monkeypatch.setattr(serve_module, "_log", structlog.get_logger(serve_module.__name__))
+    cached = structlog.get_config()["cache_logger_on_first_use"]
+    structlog.configure(cache_logger_on_first_use=False)
+    yield
+    structlog.configure(cache_logger_on_first_use=cached)
+
+
 _STRATEGY = "swing-donchian-4h"
 
 
