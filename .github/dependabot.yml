@@ -7,14 +7,17 @@
 # makes pinning sustainable by raising the SHA and updating the trailing
 # version comment together.
 #
-# Two ecosystems: Python (pip) via `pyproject.toml`, and GitHub Actions.
+# Two ecosystems: Python (uv) via `pyproject.toml` + `uv.lock`, and GitHub
+# Actions.
 version: 2
 
 updates:
   # ────────────────────────────────────────────────────────────────
   # Python dependencies (uv-managed lockfile via pyproject.toml)
   # ────────────────────────────────────────────────────────────────
-  - package-ecosystem: pip
+  # `uv`, not `pip`: the pip ecosystem rewrites pyproject.toml and leaves
+  # uv.lock alone, so every PR failed CI's `uv sync --frozen` (#579).
+  - package-ecosystem: uv
     directory: '/'
     schedule:
       interval: weekly
@@ -46,11 +49,11 @@ updates:
 
     commit-message:
       # Prod deps → `chore(deps): ...`; dev-group entries → `chore(deps-dev):
-      # ...` (dependabot swaps `prefix` for `prefix-development` when the
-      # PR only touches dev-group packages). Matches
-      # docs/decisions/2026-08-24-dependency-upgrade-checklist.md.
-      prefix: 'chore(deps)'
-      prefix-development: 'chore(deps-dev)'
+      # ...`. `include: scope` adds the `(deps)` / `(deps-dev)` itself, so
+      # the prefix carries no scope; `chore(deps)` here produced
+      # `chore(deps)(deps):`, which the PR-title check rejects (#579).
+      # Matches docs/decisions/2026-08-24-dependency-upgrade-checklist.md.
+      prefix: 'chore'
       include: scope
 
     # One weekly PR per ecosystem (CI/CD consolidation, Rick's call on
@@ -88,10 +91,11 @@ updates:
       - 'ricardoafo'
 
     commit-message:
-      prefix: 'ci(deps)'
+      # `include: scope` adds `(deps)`: the title reads `ci(deps): ...`.
+      prefix: 'ci'
       include: scope
 
-    # Same as pip: one grouped weekly PR; security updates stay separate.
+    # Same as uv: one grouped weekly PR; security updates stay separate.
     groups:
       weekly:
         applies-to: version-updates

@@ -214,8 +214,7 @@ jobs:
             // in ~100ms; a round trip against the live queue costs
             // minutes.
             const {
-              isCandidate, approvedAt, orderCandidates,
-              queueCanMerge, handMergeComment, HAND_MERGE_LABEL, skipFailedHead,
+              orderCandidates, selectDecision, handMergeComment, HAND_MERGE_LABEL,
             } = require(
               `${process.env.GITHUB_WORKSPACE}/tools/merge/decisions.cjs`
             );
@@ -274,38 +273,30 @@ jobs:
                 continue;
               }
 
-              const reviews = await reviewsOf(pr.number);
-              const { eligible: ok, reason } = isCandidate({ pr: full, reviews });
-
-              if (!ok) {
-                // Conflicts are the only case a human must act on; the
-                // rest resolve themselves and are noise at warning level.
-                const say = reason.includes('CONFLICTS') ? core.warning : core.info;
-                say(`${tag}: ${reason}`);
-                continue;
-              }
-
-              // Before it joins a batch: can this token land it at all?
-              // A PR the queue cannot merge, found only at pulls.merge,
-              // would stall every PR gated on top of it.
-              const files = (await github.paginate(github.rest.pulls.listFiles, {
-                owner, repo, pull_number: pr.number, per_page: 100,
-              })).map((f) => f.filename);
-              const access = queueCanMerge({
-                files,
-                labels: (full.labels || []).map((l) => l.name),
+              // Every input the decision needs, then one pure verdict
+              // (tools/merge/decisions.cjs selectDecision, unit-tested
+              // against recorded API replies).
+              const verdict = selectDecision({
+                pr: full,
+                reviews: await reviewsOf(pr.number),
+                files: (await github.paginate(github.rest.pulls.listFiles, {
+                  owner, repo, pull_number: pr.number, per_page: 100,
+                })).map((f) => f.filename),
+                comments: await github.paginate(github.rest.issues.listComments, {
+                  owner, repo, issue_number: pr.number, per_page: 100,
+                }),
                 canMergeWorkflows: process.env.QUEUE_MERGES_WORKFLOWS === 'true',
               });
-              if (!access.eligible) {
-                core.info(`${tag}: ${access.reason}`);
-                if (access.label) {
+              if (verdict.candidate === null) {
+                (verdict.warn ? core.warning : core.info)(`${tag}: ${verdict.reason}`);
+                if (verdict.label) {
                   try {
                     await github.rest.issues.addLabels({
                       owner, repo, issue_number: pr.number, labels: [HAND_MERGE_LABEL],
                     });
                     await github.rest.issues.createComment({
                       owner, repo, issue_number: pr.number,
-                      body: handMergeComment({ n: pr.number, reason: access.reason }).body,
+                      body: handMergeComment({ n: pr.number, reason: verdict.reason }).body,
                     });
                   } catch (err) {
                     core.warning(`${tag}: could not label for a human merge: ${err.message}`);
@@ -314,24 +305,13 @@ jobs:
                 continue;
               }
 
-              const failed = skipFailedHead({
-                head: full.head.sha,
-                labels: (full.labels || []).map((l) => l.name),
-                comments: await github.paginate(github.rest.issues.listComments, {
-                  owner, repo, issue_number: pr.number, per_page: 100,
-                }),
-              });
-              if (failed.skip) {
-                core.info(`${tag}: ${failed.reason}`);
-                continue;
-              }
-
               // The head SHA travels with the number. The batch must
               // prove it tested the commit that was APPROVED, not
               // whatever the branch points at by the time it runs.
-              const approved = approvedAt(reviews);
-              eligible.push({ n: pr.number, head: full.head.sha, approvedAt: approved });
-              core.info(`${tag}: ${reason} head=${full.head.sha} approved=${approved}`);
+              eligible.push(verdict.candidate);
+              core.info(
+                `${tag}: ${verdict.reason} head=${verdict.candidate.head} approved=${verdict.candidate.approvedAt}`,
+              );
             }
 
             const ordered = orderCandidates(eligible);
