@@ -15,6 +15,7 @@ Invariants (change 353-fill-kernel-in-serve R-1, R-4, R-5):
 - After a restart the portfolio is rebuilt from the recorded trades, holds
   the same position and the exit closes it.
 - A bar re-evaluated after a crash before its cursor row fills nothing twice.
+- The portfolio mark stored for a bar (#511) is taken after that bar's fill.
 - On a first boot, a signal of a bar that closed just before the start fills
   at the capital seed's time, so the seed lot pays for it (405-usdt-fifo D-1).
 - Pushed notifications carry signals only, and fill log lines carry no
@@ -201,6 +202,30 @@ def test_first_boot_fill_of_a_bar_closed_before_the_start_is_paid_by_the_seed(
         started,
         started.isoformat(),
     )
+
+
+def test_the_entry_bars_portfolio_mark_holds_the_bought_position(tmp_path: Path) -> None:
+    """The mark of bar 11 is written after its fill, so it already holds the BUY."""
+    db = tmp_path / "ledger.sqlite3"
+    composition, feed = _boot(db, warm_upto=10, live_from=11, live_to=11)
+
+    run_once(composition, feed)
+
+    (trade,) = _payloads(db, "TradeExecuted")
+    bar = h4_bar(11)
+    connection = sqlite3.connect(db)
+    try:
+        marks = SqliteLedger(connection).portfolio_marks(
+            StrategyId(_STRATEGY), bar.close_time, bar.close_time + timedelta(milliseconds=1)
+        )
+    finally:
+        connection.close()
+    held = [
+        str(m.snapshot.positions[BTC].quantity)
+        for m in marks
+        if m.interval is KlineInterval.H4 and BTC in m.snapshot.positions
+    ]
+    assert held == [trade["qty"]["amount"]]  # type: ignore[index]
 
 
 def test_live_entry_fills_at_the_ask_of_the_live_book(tmp_path: Path) -> None:
