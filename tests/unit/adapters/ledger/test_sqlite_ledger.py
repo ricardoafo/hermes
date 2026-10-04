@@ -571,3 +571,28 @@ class TestSerialisationHelpers:
             ONE = 1
 
         assert _json_default(_NumberEnum.ONE) == 1
+
+
+class TestTradesBetween:
+    """trades_between returns every strategy's trades inside an inclusive window, oldest first."""
+
+    def test_inclusive_window_across_strategies_oldest_first(self) -> None:
+        """Both bounds count, other strategies count, and rows outside are left out."""
+        conn = sqlite3.connect(":memory:")
+        try:
+            ledger = SqliteLedger(conn)
+            for strategy, minute, cid in (
+                ("swing", 40, "AFTER"),
+                ("other", 30, "END"),
+                ("swing", 10, "START"),
+                ("swing", 5, "BEFORE"),
+                ("other", 20, "MIDDLE"),
+            ):
+                ledger.append_event(_trade_at(strategy, minute, cid))
+            start = datetime(2026, 11, 5, 0, 10, tzinfo=UTC)
+            end = datetime(2026, 11, 5, 0, 30, tzinfo=UTC)
+            got = ledger.trades_between(start, end)
+        finally:
+            conn.close()
+        assert [t.correlation_id for t in got] == ["START", "MIDDLE", "END"]
+        assert got[1].strategy_id == StrategyId("other")
