@@ -2,7 +2,7 @@
 
 **SDD change**: `630-seed-eur-at-boot`
 **Date**: 2026-10-04
-**Status**: Proposed
+**Status**: Applied
 **Tracking issue**: see sibling `issue.md`
 
 Mirror of engram topic key `sdd/630-seed-eur-at-boot/change`.
