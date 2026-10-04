@@ -47,13 +47,15 @@ import ulid
 from structlog.contextvars import bind_contextvars, merge_contextvars
 
 _INFO_LEVEL: int = logging.INFO
+_JSON_ENVS: frozenset[str] = frozenset({"prod", "staging"})
 
 
 def configure_logging(*, env: str = "prod") -> None:
     """Configure structlog processors for the given environment.
 
     Args:
-        env: ``"prod"`` uses ``JSONRenderer`` (journald-friendly, per ADR-008 §1).
+        env: ``"prod"`` and ``"staging"`` use ``JSONRenderer`` (journald-friendly,
+            per ADR-008 §1); staging logs like prod so its journal reads the same.
             ``"dev"`` uses ``ConsoleRenderer`` with colors (human-readable local).
 
     Idempotent — safe to call multiple times.
@@ -67,7 +69,7 @@ def configure_logging(*, env: str = "prod") -> None:
     ]
     renderer: structlog.types.Processor = (
         structlog.processors.JSONRenderer()
-        if env == "prod"
+        if env in _JSON_ENVS
         else structlog.dev.ConsoleRenderer(colors=True)
     )
     structlog.configure(

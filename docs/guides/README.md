@@ -30,6 +30,7 @@ a committed copy went stale whenever another PR merged first.
 | [pr-flow.md](pr-flow.md) | How a PR travels from a branch to main and production, and the rules learned the hard way on 2026-10-03. |
 | [prose-style.md](prose-style.md) | Comments, docstrings, docs, PR/issue bodies — banned words, formatting rules, per-artifact style. |
 | [release.md](release.md) | How to tag a release, what the release workflow does, how to |
+| [staging-on-hermes-01.md](staging-on-hermes-01.md) | How the staging tier runs beside prod on hermes-01 without sharing its user, paths, ledger or secrets, and every manual step to set it up, deploy to it, roll it back and remove it. |
 | [test-tiers.md](test-tiers.md) | The single table of test tiers: what each one is, which workflow or command runs it, how often, and whether it is live or planned; plus coverage floors and layer-isolation contracts. |
 | [vps-operations.md](vps-operations.md) | SSH access, OS maintenance, Docker + Tailscale + ufw ops, systemd services, troubleshooting. |
 <!-- guides-index-end -->
