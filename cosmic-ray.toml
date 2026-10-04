@@ -1,11 +1,15 @@
 ##
 ## Cosmic-ray configuration — mutation testing for hermes.domain
 ##
-## Scope: `src/hermes/domain/value_objects/` only. Domain value objects
-## are pure logic with no I/O, no time, no network — the surface where
-## mutation testing gives the highest signal-to-noise ratio (guide
-## `docs/guides/ai-authored-tests.md` §"The mutation kill rate is the
-## load-bearing gate").
+## Scope: `src/hermes/domain/value_objects/` (money arithmetic) and
+## `src/hermes/domain/lots/` (the FIFO calculator), the two targets
+## ADR-007 says must have every mutant caught. Both are pure logic with no
+## I/O, time or network, where mutation testing gives the highest
+## signal-to-noise ratio (guide `docs/guides/ai-authored-tests.md` §"The
+## mutation kill rate is the load-bearing gate"). ADR-007's other two
+## targets are not here yet: the sizing policy lives in
+## `application/order_router/sizing.py`, outside the domain, and no
+## rebalance decision function exists (#406).
 ##
 ## Rationale for choosing cosmic-ray over mutmut:
 ##   - mutmut's transitive dep `libcst` has no Python 3.14 wheel (needs
@@ -15,10 +19,15 @@
 ##     3.14-native), installs cleanly from PyPI wheels.
 ##
 ## Cadence (see `.github/workflows/scheduled.yml`, Sunday leg):
-##   - Weekly cron (Sundays 03:00 UTC).
-##   - Advisory for 2 weeks (2026-08-22 → 2026-09-05): kill-rate
-##     reported but never fails the workflow.
-##   - Blocking at ≥80% kill-rate after the soak window.
+##   - Weekly cron (Sundays 11:45 UTC), or a manual dispatch with
+##     `mutation` ticked.
+##   - Blocking: the run fails below an 80% kill rate (#406).
+##
+## Known equivalent mutants in domain/lots (cannot be killed, listed in
+## #406): `!=`/`==` on Currency members swapped for `is not`/`is` (enum
+## members are singletons), and `== 0` swapped for `<= 0` on Quantity
+## amounts (Quantity rejects negatives), plus `slots=False` on
+## InsufficientInventory (exceptions always have a __dict__).
 ##
 ## Local invocation:
 ##   uv run cosmic-ray init cosmic-ray.toml session.sqlite
@@ -29,10 +38,10 @@
 ##
 
 [cosmic-ray]
-module-path = "src/hermes/domain/value_objects"
+module-path = ["src/hermes/domain/value_objects", "src/hermes/domain/lots"]
 timeout = 30.0
 excluded-modules = []
-test-command = "uv run pytest tests/unit/domain/value_objects -x --no-cov -q"
+test-command = "uv run pytest tests/unit/domain/value_objects tests/unit/domain/lots -x --no-cov -q -p no:randomly -p no:cacheprovider"
 
 [cosmic-ray.distributor]
 name = "local"

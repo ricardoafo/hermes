@@ -556,3 +556,56 @@ def test_auto_reboot_refuses_a_box_on_another_timezone(reboot_box: Harness) -> N
     assert result.returncode != 0
     assert "Etc/UTC" in output(result)
     assert not _reboot_file(reboot_box).exists()
+
+
+# --- ensure_journald_retention (#512) ---------------------------------------
+
+_JOURNALD_FUNCS = ("render_journald_dropin", "ensure_journald_retention")
+
+
+def _dropin(box: Harness) -> Path:
+    return box.base / "etc" / "systemd" / "journald.conf.d" / "50-hermes.conf"
+
+
+def _run_journald(box: Harness) -> subprocess.CompletedProcess[str]:
+    body = f'JOURNALD_DROPIN="{posix(_dropin(box))}"\nensure_journald_retention'
+    return box.run(body, _JOURNALD_FUNCS)
+
+
+def test_journald_dropin_carries_the_adr_008_limits(reboot_box: Harness) -> None:
+    """Invariant (ADR-008 §1): the journal keeps at most 2G and at most 180 days."""
+    result = _run_journald(reboot_box)
+
+    assert result.returncode == 0, output(result)
+    lines = [
+        line
+        for line in _dropin(reboot_box).read_text(encoding="utf-8").splitlines()
+        if line and not line.startswith("#")
+    ]
+    assert lines == ["[Journal]", "SystemMaxUse=2G", "MaxRetentionSec=180day"]
+    assert reboot_box.calls("systemctl") == ["systemctl restart systemd-journald"]
+
+
+def test_journald_rerun_restarts_nothing(reboot_box: Harness) -> None:
+    """A re-run on a current box writes nothing and leaves journald running."""
+    assert _run_journald(reboot_box).returncode == 0
+    mtime = _dropin(reboot_box).stat().st_mtime_ns
+    reboot_box.log.unlink()
+
+    again = _run_journald(reboot_box)
+
+    assert again.returncode == 0, output(again)
+    assert _dropin(reboot_box).stat().st_mtime_ns == mtime
+    assert reboot_box.calls("systemctl") == []
+
+
+def test_journald_rewrites_a_hand_edited_dropin(reboot_box: Harness) -> None:
+    """A drop-in that drifted is replaced and journald restarted once."""
+    _dropin(reboot_box).parent.mkdir(parents=True)
+    _dropin(reboot_box).write_text("[Journal]\nSystemMaxUse=50G\n", encoding="utf-8")
+
+    result = _run_journald(reboot_box)
+
+    assert result.returncode == 0, output(result)
+    assert "SystemMaxUse=2G" in _dropin(reboot_box).read_text(encoding="utf-8")
+    assert reboot_box.calls("systemctl") == ["systemctl restart systemd-journald"]

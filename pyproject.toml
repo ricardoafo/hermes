@@ -126,20 +126,20 @@ exclude = ["build/", "dist/", ".venv/"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
-  "smoke: post-deploy smoke tests",
-  # Tier-1 — PR CI (fast, hermetic, no I/O). See docs/guides/test-tiers.md.
-  "unit: tier-1 pure unit tests — no I/O, no network, millisecond-fast",
-  "property: tier-1 property-based tests via Hypothesis — run with unit tier in PR CI",
-  # Tier-2 — nightly (external deps allowed). See docs/guides/test-tiers.md.
-  "integration: tier-2 tests (SQLite :memory:, testnet)",
-  "chaos: tier-2b chaos / fault-injection tests — nightly only",
-  # Tier-2b — real third-party sandboxes. Skipped by default via the
-  # `-m 'not contract'` addopts filter. Run explicitly with
-  # `uv run pytest -m contract` (see docs/decisions/2026-08-23-contract-test-tier.md).
-  "contract: tier-2b tests — real HTTP against third-party sandbox APIs",
-  # Tier-3 — weekly cron. See docs/guides/test-tiers.md.
-  "mutation: tier-3 mutation-testing harness hooks — weekly via cosmic-ray",
-  "e2e: tier-3 end-to-end against testnet",
+  # Tiers are selected by directory (tests/unit/, tests/integration/, ...), not by
+  # marker. Where each tier runs: docs/guides/test-tiers.md. Markers are labels,
+  # except `contract` and `smoke`, which CI selects with -m.
+  "smoke: post-deploy smoke tests; selected with -m smoke by the CD job",
+  "unit: label for a pure unit test; not used for selection",
+  "property: label for a Hypothesis property test; not used for selection",
+  "integration: label for an integration test; not used for selection",
+  "chaos: fault-injection test; registered, no test uses it today",
+  # Contract tests are skipped by default via the `-m 'not contract'` addopts
+  # filter. The daily scheduled.yml job runs `pytest tests/contract -m contract`
+  # (see docs/decisions/2026-08-23-contract-test-tier.md).
+  "contract: real HTTP against third-party sandbox APIs; run daily by scheduled.yml",
+  "mutation: registered, no test uses it; mutation runs through cosmic-ray (cosmic-ray.toml)",
+  "e2e: end-to-end serve cycle on recorded bars (tests/e2e/); weekly + manual dispatch in scheduled.yml",
   "slow: >1s per test",
 ]
 addopts = "-ra --strict-markers --strict-config -m 'not contract'"
@@ -230,6 +230,48 @@ forbidden_modules = [
   "hermes.domain.trading.trade_record",
 ]
 
+# change 36-modelo-100-721 D-10: tax-filing figures are measurement only, like
+# the EUR values they read. Nothing that decides trades may import them.
+[[tool.importlinter.contracts]]
+name = "filing-is-measurement-only"
+type = "forbidden"
+source_modules = [
+  "hermes.application.order_router",
+  "hermes.application.strategy_protocol",
+  "hermes.domain.strategy",
+  "hermes.domain.fees",
+  "hermes.domain.risk",
+]
+forbidden_modules = [
+  "hermes.application.filing",
+  "hermes.domain.filing",
+  "hermes.ports.filing",
+]
+
+# ADR-012 D-08: the supervisor layer reads through read-only ports and
+# projections only. It never reaches an exchange, an order path, the ledger's
+# write port, the portfolio or the composition root (change 34-supervisor-read-tools).
+[[tool.importlinter.contracts]]
+name = "supervisor-is-read-only"
+type = "forbidden"
+source_modules = ["hermes.application.supervisor", "hermes.ports.supervisor"]
+forbidden_modules = [
+  "hermes.adapters",
+  "hermes.entrypoints",
+  "hermes.infrastructure",
+  "hermes.ports.exchange",
+  "hermes.ports.ledger",
+  "hermes.ports.fill_model",
+  "hermes.ports.notifier",
+  "hermes.application.order_router",
+  "hermes.application.ledger",
+  "hermes.application.portfolio",
+  "hermes.application.console",
+  "hermes.domain.lots",
+  "hermes.domain.trading",
+  "hermes.domain.fx",
+]
+
 [[tool.importlinter.contracts]]
 name = "domain-no-pydantic"
 type = "forbidden"
@@ -255,22 +297,3 @@ forbidden_modules = [
 min_confidence = 80
 paths = ["src/hermes"]
 exclude = ["src/hermes/ports/"]
-
-# Mutation testing — targets domain layer only (pure logic, no I/O, fastest to
-# exercise). Adapter and application layers are covered by integration tests
-# where mutation scoring is less meaningful. Kill-rate target ≥ 85 % per SA-10.
-# CI wire-up: .github/workflows/scheduled.yml (Sunday leg).
-# Run locally: uv run cosmic-ray init cosmic-ray.toml session.sqlite &&
-#              uv run cosmic-ray exec session.sqlite &&
-#              uv run cr-report session.sqlite
-[tool.cosmic-ray]
-module-path = "hermes.domain"
-python-paths = ["src"]
-timeout = 30.0
-excluded-modules = []
-
-[tool.cosmic-ray.execution-engine]
-name = "local"
-
-[tool.cosmic-ray.distributor]
-name = "local"

@@ -1,0 +1,1 @@
+- `hermes money [--range today|week|month|year]`: the portfolio section on the command line (total value in EUR, change for the range, gross-to-net waterfall, tax footnote), on the `--demo` scenarios until live money lands; `--json` carries money under `pnl` (#498).

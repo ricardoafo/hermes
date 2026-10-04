@@ -1,0 +1,1 @@
+- **`hermes ledger verify`**: read-only ledger check (SQLite `mode=ro`) that runs `PRAGMA integrity_check` and reports the schema level, the event count and gaps in the event id sequence; `--json`, exit 0 OK, 1 findings, 3 ledger missing or unreadable. Closes #538.

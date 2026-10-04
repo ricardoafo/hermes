@@ -1,0 +1,53 @@
+{
+  "_source": "Recorded from GET pulls/471, pulls/471/reviews, pulls/471/files and issues/471/comments on 2026-10-04, trimmed to the fields tools/merge reads.",
+  "pull": {
+    "number": 471,
+    "state": "open",
+    "draft": false,
+    "mergeable": true,
+    "mergeable_state": "blocked",
+    "head": {
+      "sha": "587f2de04e33ed4e40b517e6f3eaeafe97497462",
+      "ref": "claude/test-tier-adr"
+    },
+    "labels": [
+      {
+        "name": "area:config"
+      },
+      {
+        "name": "area:docs"
+      },
+      {
+        "name": "size/size:m"
+      }
+    ]
+  },
+  "reviews": [],
+  "files": [
+    {
+      "filename": "cosmic-ray.toml"
+    },
+    {
+      "filename": "docs/architecture/adr-007-testing-strategy.md"
+    },
+    {
+      "filename": "docs/architecture/adr-017-test-tiers-as-enforced.md"
+    },
+    {
+      "filename": "docs/guides/README.md"
+    },
+    {
+      "filename": "docs/guides/ai-authored-tests.md"
+    },
+    {
+      "filename": "docs/guides/ai-development-lifecycle.md"
+    },
+    {
+      "filename": "docs/guides/test-tiers.md"
+    },
+    {
+      "filename": "pyproject.toml"
+    }
+  ],
+  "comments": []
+}

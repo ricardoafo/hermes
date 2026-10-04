@@ -81,7 +81,7 @@ How we know this change is done. Typically:
 3. All CI jobs green on the scaffolding PR.
 4. Any human-review sign-offs required.
 
-Test tiers touched: <!-- unit, property, contract, integration, mutation, or none -->
+Test tiers touched: <!-- unit, property, contract, integration, e2e, mutation, or none -->
 
 The line above is copied into the PR body's `## Testing` section by
 `render-pr-body.sh`; `create-pr.sh` refuses a PR without it.

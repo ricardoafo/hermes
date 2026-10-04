@@ -29,6 +29,7 @@ from hermes.application.status import (
     StatusReport,
     StreamState,
     StreamStatus,
+    UnitState,
     VerdictLevel,
 )
 
@@ -47,7 +48,9 @@ _STATE_STYLE: Final = {
 _DASH: Final = "-"
 
 
-def render_status(report: StatusReport, console: Console) -> None:
+def render_status(
+    report: StatusReport, console: Console, *, bot: UnitState = UnitState.UNKNOWN
+) -> None:
     """Print the human view of ``report`` to ``console``.
 
     Args:
@@ -55,7 +58,7 @@ def render_status(report: StatusReport, console: Console) -> None:
         console: Where to print. Its colour and terminal settings decide
             whether the verdict is a panel or plain lines.
     """
-    console.print(_header(report))
+    console.print(_header(report, bot))
     console.print()
     verdict = _verdict(report)
     if console.is_terminal:
@@ -85,7 +88,7 @@ def render_status(report: StatusReport, console: Console) -> None:
         )
 
 
-def report_to_dict(report: StatusReport) -> dict[str, Any]:
+def report_to_dict(report: StatusReport, *, bot: UnitState = UnitState.UNKNOWN) -> dict[str, Any]:
     """Return ``report`` as JSON-ready data with the same facts as the human view.
 
     Args:
@@ -97,6 +100,7 @@ def report_to_dict(report: StatusReport) -> dict[str, Any]:
     return {
         "generated_at": report.generated_at.isoformat(),
         "unit": report.unit.value,
+        "bot": _bot_label(bot),
         "verdict": {
             "level": report.verdict.level.value,
             "headline": report.verdict.headline,
@@ -128,13 +132,21 @@ def report_to_dict(report: StatusReport) -> dict[str, Any]:
     }
 
 
-def _header(report: StatusReport) -> Text:
-    """Return the one-line header: when, and what systemd says."""
+def _header(report: StatusReport, bot: UnitState) -> Text:
+    """Return the one-line header: when, and what systemd says about both units."""
     at = report.generated_at
+    bot_part = "" if bot is UnitState.UNKNOWN else f"   bot: {_bot_label(bot)}"
     return Text.assemble(
         ("hermes status", "bold"),
-        f"   {_utc(at)} UTC ({_madrid(at)} Madrid)   unit: {report.unit.value}",
+        f"   {_utc(at)} UTC ({_madrid(at)} Madrid)   unit: {report.unit.value}{bot_part}",
     )
+
+
+def _bot_label(bot: UnitState) -> str:
+    """Return ``running``, ``down``, ``not installed`` or ``unknown`` for the bot unit."""
+    if bot in {UnitState.FAILED, UnitState.STOPPED, UnitState.RESTARTING}:
+        return "down"
+    return bot.value
 
 
 def _verdict(report: StatusReport) -> Group:

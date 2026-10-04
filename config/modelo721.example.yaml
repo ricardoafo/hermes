@@ -1,0 +1,16 @@
+# Example Modelo 721 history: safe to commit, holds no real figures.
+#
+# The REAL file never lives in this repo. Copy it to
+# ~/.config/hermes/modelo721.yaml (or point HERMES_MODELO721_HISTORY at it)
+# and record each 721 you file: the tax year it declared and the 31 December
+# EUR value of each coin as filed. `hermes tax-filing` reads the latest year
+# before the report year to apply the 20,000 EUR increase rule and to mark
+# lines as M (declared before) or C (no longer held). No file means no 721
+# has been filed yet.
+#
+# Amounts are strings so they parse as Decimal.
+
+declarations:
+  2026:
+    BTC: "0"
+    ETH: "0"

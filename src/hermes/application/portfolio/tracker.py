@@ -18,6 +18,7 @@ Reference: 308-signal-event-portfolio-state change.md D-4, D-7, D-8;
 from __future__ import annotations
 
 from collections.abc import Iterable
+from decimal import Decimal
 from typing import Self
 
 from returns.result import Failure, Result, Success
@@ -76,6 +77,11 @@ class PortfolioTracker:
                 )
         return Success(tracker)
 
+    @property
+    def current(self) -> PortfolioSnapshot:
+        """Return the current snapshot (read-only value object)."""
+        return self._snapshot
+
     def mark(self, bar: Bar) -> None:
         """Mark the bar's pair at the bar close when the bar is newer than its mark.
 
@@ -99,6 +105,11 @@ class PortfolioTracker:
             self._snapshot = result.unwrap()
         return result
 
+    @property
+    def snapshot(self) -> PortfolioSnapshot:
+        """The current snapshot (immutable, so safe to hand out)."""
+        return self._snapshot
+
     def state(self) -> PortfolioState:
         """Return the risk-facing state for the current snapshot."""
         return self._snapshot.to_risk_state()
@@ -106,6 +117,14 @@ class PortfolioTracker:
     def open_position_count(self) -> int:
         """Return how many pairs currently hold a position."""
         return len(self._snapshot.positions)
+
+    def open_notional(self) -> Decimal:
+        """Return the open positions' value at their latest marks, in the quote currency.
+
+        The pre-reg §5.5 total exposure cap is checked against this value when
+        a new entry is sized.
+        """
+        return self._snapshot.market_value
 
 
 def _fill_from_trade(trade: TradeExecuted) -> Fill:
