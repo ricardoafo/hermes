@@ -43,6 +43,7 @@ from hermes.domain.reconciliation import ReconciliationMonth, ReconciliationRepo
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.entrypoints import serve as serve_module
+from hermes.entrypoints._streams import resolve_err
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
 from hermes.infrastructure.time import to_madrid
@@ -80,6 +81,7 @@ def main(
     now: datetime | None = None,
     env: Mapping[str, str] | None = None,
     notifier_factory: NotifierFactory | None = None,
+    err: TextIO | None = None,
 ) -> int:
     """Handle ``hermes reconcile``.
 
@@ -90,12 +92,14 @@ def main(
         env: Environment snapshot for the Telegram credentials.
         notifier_factory: Builds the alert channel from ``env``; defaults to
             Telegram. Injected by tests so no socket opens.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         Process exit code.
     """
     at = now if now is not None else datetime.now(UTC)
-    request = _parse(rest, stream, at)
+    err = resolve_err(err)
+    request = _parse(rest, stream, err, at)
     if isinstance(request, int):
         return request
     parsed, month, tolerance = request
@@ -103,7 +107,7 @@ def main(
     try:
         config = load_config(parsed.config_dir)
     except ConfigError as exc:
-        stream.write(f"ERROR: config load failed: {exc}\n")
+        err.write(f"ERROR: config load failed: {exc}\n")
         return 3
     seeds = [
         StrategySeed(
@@ -117,10 +121,10 @@ def main(
         with SqliteReconciliationReader.open(parsed.db) as reader:
             report = reconcile_month(reader, month=month, seeds=seeds, now=at, tolerance=tolerance)
     except FileNotFoundError:
-        stream.write(f"ERROR: no ledger at {parsed.db}\n")
+        err.write(f"ERROR: no ledger at {parsed.db}\n")
         return 3
     except LedgerError as exc:
-        stream.write(f"ERROR: could not read the ledger: {exc}\n")
+        err.write(f"ERROR: could not read the ledger: {exc}\n")
         return 3
 
     if parsed.json:
@@ -133,7 +137,7 @@ def main(
 
 
 def _parse(
-    rest: list[str], stream: TextIO, at: datetime
+    rest: list[str], stream: TextIO, err: TextIO, at: datetime
 ) -> tuple[argparse.Namespace, ReconciliationMonth, Decimal] | int:
     """Parse argv; return the request, or the exit code to stop with."""
     parser = argparse.ArgumentParser(prog="hermes reconcile", add_help=False)
@@ -147,7 +151,7 @@ def _parse(
     try:
         parsed = parser.parse_args(rest)
     except SystemExit:
-        stream.write("ERROR: could not parse `hermes reconcile` arguments.\n" + _USAGE)
+        err.write("ERROR: could not parse `hermes reconcile` arguments.\n" + _USAGE)
         return 2
     if parsed.help:
         stream.write(_USAGE)
@@ -160,13 +164,13 @@ def _parse(
         )
         tolerance = Decimal(parsed.tolerance)
     except (ValueError, InvalidOperation) as exc:
-        stream.write(f"ERROR: {exc}\n" + _USAGE)
+        err.write(f"ERROR: {exc}\n" + _USAGE)
         return 2
     if not tolerance.is_finite() or tolerance < 0:
-        stream.write(f"ERROR: --tolerance must be a number >= 0, got {parsed.tolerance}\n")
+        err.write(f"ERROR: --tolerance must be a number >= 0, got {parsed.tolerance}\n")
         return 2
     if month.start > at:
-        stream.write(f"ERROR: {month} has not started yet\n")
+        err.write(f"ERROR: {month} has not started yet\n")
         return 2
     return parsed, month, tolerance
 

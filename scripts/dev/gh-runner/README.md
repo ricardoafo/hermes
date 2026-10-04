@@ -206,7 +206,8 @@ is 1h TTL, so this doesn't work for 24/7.
 
 `hermes runners` (add `--json` for scripts) reads the runner list from the
 GitHub API and prints online/total, busy and a status per label (`hermes`,
-`hermes-ops`, `dependabot`; the last two appear once such runners exist).
+`hermes-ops`, `hermes-review`, `dependabot`; all but `hermes` appear once
+such runners exist).
 
 - Needs `HERMES_GITHUB_TOKEN` in `.env.local` or the environment: a token
   with `Administration: Read` on the repository. The bot token gets 403.

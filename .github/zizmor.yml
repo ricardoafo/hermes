@@ -1,0 +1,40 @@
+# zizmor baseline (#529). Every entry is a finding that existed when the
+# workflow check was added. New findings fail `ci-checks.sh workflows`;
+# these are burned down in #529 and removed from here as they are fixed.
+rules:
+  # actions/checkout keeps the token in .git/config; most jobs need no push.
+  artipacked:
+    ignore:
+      - _build-wheel.yml
+      - cd.yml
+      - ci.yml
+      - merge-queue.yml
+      - pr-housekeeping.yml
+      - scheduled.yml
+      - vps-bootstrap.yml
+  # By design: workflow_run and pull_request_target run base-branch code
+  # only; nothing from the PR head is checked out or executed.
+  # cd.yml deploys only when CI succeeded on a push to main
+  # (workflow_run.event == 'push'), so a PR's run never reaches it.
+  dangerous-triggers:
+    ignore:
+      - cd.yml
+      - merge-queue.yml
+      - pr-housekeeping.yml
+  github-app:
+    ignore:
+      - merge-queue.yml
+  github-env:
+    ignore:
+      - merge-queue.yml
+  self-repository:
+    ignore:
+      - cd.yml
+  template-injection:
+    ignore:
+      - ci.yml
+      - scheduled.yml
+  # actions/checkout in scheduled.yml is still on a tag; #596 pins it.
+  unpinned-uses:
+    ignore:
+      - scheduled.yml

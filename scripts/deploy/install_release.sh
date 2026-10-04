@@ -7,11 +7,11 @@
 #   <sha12>      first 12 hex chars of the git sha; names the release dir.
 #   <stage_dir>  the untarred release bundle (see the `bundle` job in
 #                .github/workflows/cd.yml): one hermes-*.whl,
-#                requirements.txt, config/, deploy/, bin/.
+#                requirements.txt, config/, deploy/, docs/, bin/.
 #
 # Runs on the VPS as root, over SSH from cd.yml. Layout it maintains:
 #
-#   /opt/hermes/versions/<sha12>/   .venv, config/, deploy/, .installed
+#   /opt/hermes/versions/<sha12>/   .venv, config/, deploy/, docs/, .installed
 #   /opt/hermes/current            -> versions/<sha12>   (what systemd runs)
 #   /opt/hermes/previous           -> the release current replaced
 #   /opt/hermes/bin/               health_gate.sh, rollback.sh,
@@ -24,6 +24,10 @@
 #   1. Preflight: nothing on disk changes until every check passes.
 #   2. Install into versions/<sha12> unless its .installed marker exists.
 #      The venv is built at its final path because a venv is not relocatable.
+#   2b. (prod) Wait out the 4h bar close: no restart from QUIET_BEFORE
+#      seconds before a close until QUIET_AFTER seconds after it (#626).
+#      The wait sits here, right before the steps that stop or restart
+#      the unit, because the CD gate's own hold runs minutes earlier.
 #   3. Snapshot the ledger (SQLite online backup, as `hermes`) and keep
 #      the newest BACKUPS_KEPT. The new release may migrate the schema at
 #      start; the snapshot is the way back. A failed snapshot stops the
@@ -33,6 +37,9 @@
 #      binary. Serve never applies those at start. A failed migration rolls
 #      back inside its transaction; the old release restarts and the deploy
 #      stops.
+#   3c. (prod) Install the release's systemd units and timers whose content
+#      differs from /etc/systemd/system, as vps-bootstrap does (#626). The
+#      replaced files are kept, so a failed gate puts them back.
 #   4. Flip previous, flip current, restart the unit.
 #   5. Run the health gate. On failure roll back, restoring the snapshot
 #      (or stop the unit on a first deploy), and exit 1.
@@ -48,7 +55,8 @@
 #   HERMES_TARGET=staging bash <stage>/bin/install_release.sh <sha12> <stage>
 #
 # Test seams: HERMES_ROOT, HERMES_ENV_FILE, SYSTEMCTL, HERMES_DB,
-# HERMES_BACKUP_DIR, HERMES_BACKUP_PYTHON, HERMES_MIGRATE_BIN, RUNUSER. The
+# HERMES_BACKUP_DIR, HERMES_BACKUP_PYTHON, HERMES_MIGRATE_BIN, RUNUSER,
+# HERMES_UNIT_DIR, HERMES_NOW_EPOCH. The
 # seams override the target's paths, and the staging guard still checks them.
 # The script can be sourced to reach prune_versions on its own.
 #
@@ -92,12 +100,20 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 DB=${HERMES_DB:-$target_state/hermes.sqlite3}
 BACKUP_DIR=${HERMES_BACKUP_DIR:-$target_state/backups}
 RUNUSER=${RUNUSER:-runuser}
+UNIT_DIR=${HERMES_UNIT_DIR:-/etc/systemd/system}
 
 # The 3 newest releases survive a prune, plus whatever `current` and
 # `previous` point to.
 KEEP_NEWEST=3
 # Ledger snapshots kept; one per deploy, newest first.
 BACKUPS_KEPT=5
+# Bars close every 4h at 00/04/08/12/16/20 UTC. serve handles a bar seconds
+# after its close, and a bar handled more than 5 minutes late fills against
+# a synthetic book, where the stale-book rule skips new entries. So the
+# unit is never stopped from 5 minutes before a close until 5 after it.
+BAR_SECONDS=14400
+QUIET_BEFORE=300
+QUIET_AFTER=300
 
 # uv runs as root (the service must not be able to rewrite its own code),
 # so the managed Python lives where `hermes` can read it. Under /root it
@@ -117,6 +133,9 @@ export UV_PYTHON_PREFERENCE=only-managed
 partial_dir=""
 # Path of the single wheel in the stage, set by preflight.
 WHEEL=""
+# Set while unit files are replaced: the old copies, and the units that are new.
+unit_backup=""
+units_added=()
 
 log() {
     echo "[install_release] $*"
@@ -206,6 +225,11 @@ preflight() {
     [ -f "$stage/requirements.txt" ] || die "$stage/requirements.txt missing"
     [ -d "$stage/config" ] || die "$stage/config missing"
     [ -d "$stage/deploy" ] || die "$stage/deploy missing"
+    # hermes serve reads both from the release root; without them it exits 3.
+    [ -f "$stage/docs/experiments/swing-mvp1/pre-registration-v1.md" ] \
+        || die "$stage/docs/experiments/swing-mvp1/pre-registration-v1.md missing"
+    [ -f "$stage/docs/experiments/swing-mvp1/fee-history.csv" ] \
+        || die "$stage/docs/experiments/swing-mvp1/fee-history.csv missing"
     [ -f "$stage/deploy/hermes-notify-failure.sh" ] || die "$stage/deploy/hermes-notify-failure.sh missing"
     [ -f "$stage/deploy/hermes-notify-crash.sh" ] || die "$stage/deploy/hermes-notify-crash.sh missing"
     [ -f "$SCRIPT_DIR/health_gate.sh" ] || die "$SCRIPT_DIR/health_gate.sh missing"
@@ -225,8 +249,35 @@ install_version() {
     uv pip install --python "$vdir/.venv/bin/python" --no-deps --no-cache "$WHEEL"
     cp -r "$stage/config" "$vdir/config"
     cp -r "$stage/deploy" "$vdir/deploy"
+    cp -r "$stage/docs" "$vdir/docs"
     touch "$vdir/.installed"
     partial_dir=""
+}
+
+# Print how many seconds to wait so a restart starting now stays clear of
+# the bar close: QUIET_BEFORE before it through QUIET_AFTER after it.
+quiet_bar_wait() {
+    local now=$1 into
+    into=$((now % BAR_SECONDS))
+    if [ "$into" -ge $((BAR_SECONDS - QUIET_BEFORE)) ]; then
+        echo $((BAR_SECONDS - into + QUIET_AFTER))
+    elif [ "$into" -lt "$QUIET_AFTER" ]; then
+        echo $((QUIET_AFTER - into))
+    else
+        echo 0
+    fi
+}
+
+# Hold the deploy until the bar close is clear. Staging runs its own unit and
+# trades nothing, so only prod waits.
+wait_for_quiet_bar() {
+    local wait
+    [ "$TARGET" = prod ] || return 0
+    wait=$(quiet_bar_wait "${HERMES_NOW_EPOCH:-$(date -u +%s)}")
+    if [ "$wait" -gt 0 ]; then
+        log "holding ${wait}s for the 4h bar close"
+        sleep "$wait"
+    fi
 }
 
 # Snapshot the ledger before the new release can touch it. SQLite's online
@@ -293,6 +344,69 @@ migrate_ledger() {
     "$RUNUSER" -u "$RUN_AS" -- "$bin" migrate --db "$DB" --snapshot-dir "$BACKUP_DIR/migrations"
 }
 
+# Install every *.service and *.timer from the release's deploy/systemd whose
+# content differs from the copy in UNIT_DIR, 0644, as vps_bootstrap.sh step 4
+# does. Without this a unit change merged to main waits for a manual bootstrap
+# (#626). The replaced files go to a backup dir so restore_units can put them
+# back. Enabling a new unit stays with vps-bootstrap: whether a timer runs
+# depends on the env file, which a deploy never touches. Staging shares prod's
+# unit dir, so only a prod deploy syncs. activate_and_gate reloads systemd.
+sync_units() {
+    local src_dir=$1/deploy/systemd src dst name
+    [ "$TARGET" = prod ] || return 0
+    if [ ! -d "$src_dir" ]; then
+        log "release carries no deploy/systemd: units left as they are"
+        return 0
+    fi
+    unit_backup="$ROOT/units-before-deploy"
+    rm -rf "$unit_backup"
+    install -d -m 0700 "$unit_backup" || return 1
+    for src in "$src_dir"/*.service "$src_dir"/*.timer; do
+        [ -f "$src" ] || continue
+        name=$(basename "$src")
+        dst="$UNIT_DIR/$name"
+        if cmp -s "$src" "$dst"; then
+            continue
+        fi
+        if [ -f "$dst" ]; then
+            cp -p "$dst" "$unit_backup/$name" || return 1
+        else
+            units_added+=("$name")
+            echo "::warning::new unit $name installed but not enabled: run vps-bootstrap to enable it"
+        fi
+        install -m 0644 "$src" "$dst" || return 1
+        log "unit $name: installed"
+    done
+}
+
+# Put back the unit files sync_units replaced and remove the ones it added.
+# The caller reloads systemd (rollback.sh does, before it restarts the unit).
+restore_units() {
+    local saved name
+    [ -n "$unit_backup" ] || return 0
+    for saved in "$unit_backup"/*; do
+        [ -f "$saved" ] || continue
+        install -m 0644 "$saved" "$UNIT_DIR/$(basename "$saved")"
+        log "unit $(basename "$saved"): restored"
+    done
+    for name in ${units_added[@]+"${units_added[@]}"}; do
+        rm -f "$UNIT_DIR/$name"
+        log "unit $name: removed"
+    done
+    rm -rf "$unit_backup"
+    unit_backup=""
+}
+
+# Plain `hermes` for the operator on the VPS: a wrapper that runs the console
+# commands as the service user (#610). Prod only, since it points at prod's
+# release; a stage built without the script (older CD) simply has none.
+install_console_wrapper() {
+    local stage=$1
+    [ "$TARGET" = prod ] || return 0
+    [ -f "$stage/deploy/hermes-console.sh" ] || return 0
+    install -m 0755 "$stage/deploy/hermes-console.sh" "${HERMES_CONSOLE_BIN_DIR:-/usr/local/bin}/hermes"
+}
+
 # Atomic symlink swap: write a temp link, then rename(2) it over the real one.
 flip_link() {
     local target=$1 link=$2
@@ -351,6 +465,8 @@ main() {
         install_version "$vdir" "$stage"
     fi
 
+    wait_for_quiet_bar
+
     snapshot=$(backup_ledger "$sha" "${HERMES_BACKUP_PYTHON:-$vdir/.venv/bin/python}") \
         || die "ledger snapshot of $DB failed: not deploying $sha"
 
@@ -359,6 +475,13 @@ main() {
         # rolled back in its transaction, so the old release can run as before.
         "$SYSTEMCTL" start "$UNIT" || true
         die "hermes migrate failed on $DB: not deploying $sha"
+    fi
+
+    if ! sync_units "$stage"; then
+        # Nothing reloaded systemd yet, so the old units still run the old release.
+        restore_units
+        "$SYSTEMCTL" start "$UNIT" || true
+        die "installing the release's systemd units failed: not deploying $sha"
     fi
 
     # `readlink -f` exits 0 on a missing link, so `current` needs `-L`.
@@ -380,12 +503,14 @@ main() {
         if [ -L "$ROOT/previous" ] && ! [ "$ROOT/previous" -ef "$ROOT/current" ]; then
             prev_ok=true
         fi
+        restore_units
         if [ "$prev_ok" = true ]; then
             # The failed release may have migrated the ledger; the
             # snapshot puts it back to what `previous` expects.
             HERMES_RESTORE_DB=$snapshot bash "$SCRIPT_DIR/rollback.sh" || echo "::error::rollback failed too"
         else
             log "no previous release: stopping $UNIT"
+            "$SYSTEMCTL" daemon-reload || true
             "$SYSTEMCTL" stop "$UNIT" || true
         fi
         exit 1
@@ -398,6 +523,8 @@ main() {
     install -m 0755 "$SCRIPT_DIR/health_gate.sh" "$SCRIPT_DIR/rollback.sh" \
         "$stage/deploy/hermes-notify-failure.sh" "$stage/deploy/hermes-notify-crash.sh" \
         "$ROOT/bin/"
+    rm -rf "$unit_backup"
+    install_console_wrapper "$stage"
     prune_versions
     # The read-only bot runs from the same release; pick up the new code.
     # try-restart leaves a stopped or uninstalled bot alone (ADR-015). The bot

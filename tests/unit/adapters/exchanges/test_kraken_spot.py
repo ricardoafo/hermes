@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, parse_qsl
 
 import httpx
 import pytest
@@ -436,13 +436,27 @@ def test_orderbook_comes_from_public_depth(read_only: KrakenSpotAdapter) -> None
 
 
 @respx.mock
-def test_fees_are_kraken_volume_tiers(read_only: KrakenSpotAdapter) -> None:
-    """Fees come from AssetPairs, percent converted to basis points."""
-    respx.get(f"{KRAKEN_BASE_URL}/0/public/AssetPairs").mock(
-        return_value=_ok("asset_pairs_xbtusdt_fees")
+def test_fees_are_the_accounts_trade_volume_fees(read_only: KrakenSpotAdapter) -> None:
+    """Fees come from the signed TradeVolume call for the pair, percent to bps (#599).
+
+    Kraken stopped publishing fee tiers in the public AssetPairs reply, so the
+    account's own fee is the source; the call is read-only.
+    """
+    route = respx.post(f"{_PRIVATE}/TradeVolume").mock(return_value=_ok("trade_volume_xbtusdt"))
+    schedule = read_only.get_fees(pair=_BTC)
+    sent = dict(parse_qsl(route.calls.last.request.content.decode()))
+    assert (sent["pair"], [(t.maker_bps, t.taker_bps) for t in schedule.tiers]) == (
+        "XBTUSDT",
+        [(25, 40)],
     )
-    tier = read_only.get_fees(pair=_BTC).tiers[0]
-    assert (tier.maker_bps, tier.taker_bps) == (25, 40)
+
+
+@respx.mock
+def test_trade_volume_reply_without_fees_raises(read_only: KrakenSpotAdapter) -> None:
+    """A TradeVolume reply with no fee for the pair is an ExchangeError, not a zero fee."""
+    respx.post(f"{_PRIVATE}/TradeVolume").mock(return_value=_ok("trade_volume_no_fees"))
+    with pytest.raises(ExchangeError, match="TradeVolume has no 'fees'"):
+        read_only.get_fees(pair=_BTC)
 
 
 # ---------------------------------------------------------------------------

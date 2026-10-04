@@ -1,4 +1,4 @@
-"""SQLite ledger adapter (``LedgerPort`` + ``TradeLedgerPort``) — one transaction per write.
+"""SQLite ledger adapter (``LedgerPort``, ``TradeLedgerPort``, ``TaxTradeSourcePort``).
 
 Concrete adapter for the FIFO tax-lot ledger. Uses stdlib ``sqlite3``
 (no ORM — ADR-003 rules out heavyweight tooling for the single-writer
@@ -40,6 +40,11 @@ from returns.result import Failure
 from hermes.adapters.ledger.migration_runner import apply_migrations
 from hermes.domain.errors import LedgerError
 from hermes.domain.events.base import DomainEvent
+from hermes.domain.events.fill_quality_recorded import (
+    BookSource,
+    FillQualityRecorded,
+    upcast_fill_quality_payload,
+)
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.events.trade_executed import TradeExecuted, TradeSide
 from hermes.domain.fx.eur_pricing import EurPricing, EurStatus
@@ -70,7 +75,7 @@ from hermes.domain.value_objects.price import Price
 from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.infrastructure.time import now_utc
-from hermes.ports.ledger import PendingSeed, PendingTrade
+from hermes.ports.ledger import EurTradeRow, PendingSeed, PendingTrade
 
 __all__ = ["SqliteLedger"]
 
@@ -847,6 +852,84 @@ class SqliteLedger:
             raise LedgerError(msg=f"trades_between failed: {exc}") from exc
         return _trades_from_rows(rows, op="trades_between")
 
+    def fill_quality_events(self, strategy_id: StrategyId) -> tuple[FillQualityRecorded, ...]:
+        """Return every ``FillQualityRecorded`` of a strategy, oldest first.
+
+        Args:
+            strategy_id: Strategy bucket the fills belong to.
+
+        Returns:
+            The rehydrated events ordered by ``occurred_at`` then row id.
+
+        Raises:
+            LedgerError: On any SQLite read failure, a row whose schema version
+                is unknown, or an unreadable payload.
+        """
+        try:
+            rows = self._conn.execute(
+                "SELECT event_schema_version, payload_json FROM events "
+                "WHERE event_type = 'FillQualityRecorded' "
+                "  AND json_extract(payload_json, '$.strategy_id.value') = ? "
+                "ORDER BY occurred_at ASC, id ASC",
+                (strategy_id.value,),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"fill_quality_events failed: {exc}") from exc
+        events: list[FillQualityRecorded] = []
+        for version, payload_json in rows:
+            try:
+                payload = upcast_fill_quality_payload(version, json.loads(payload_json))
+                events.append(_fill_quality_from_payload(payload))
+            except (KeyError, ValueError, TypeError) as exc:
+                raise LedgerError(msg=f"fill_quality_events: unreadable payload: {exc}") from exc
+        return tuple(events)
+
+    def list_eur_trades(self) -> tuple[EurTradeRow, ...]:
+        """Return every row the FIFO projection replays, with its EUR values.
+
+        The same sequences :meth:`_reproject` and :meth:`_reproject_quote`
+        replay: per base asset its lot-opening BUYs and SELLs (net of a base
+        fee), and per seeded quote currency its seed and the quote leg of every
+        trade quoted in it (change ``405-usdt-fifo``).
+
+        Returns:
+            Each asset's rows in replay order.
+
+        Raises:
+            LedgerError: On any SQLite read failure or a trade without a quote leg.
+        """
+        try:
+            bases = [
+                Currency(row[0])
+                for row in self._conn.execute(
+                    "SELECT DISTINCT pair_base FROM trades ORDER BY pair_base"
+                ).fetchall()
+            ]
+            quotes = [
+                Currency(row[0])
+                for row in self._conn.execute(
+                    "SELECT DISTINCT asset FROM capital_seeds ORDER BY asset"
+                ).fetchall()
+            ]
+            rows: list[EurTradeRow] = []
+            for base in bases:
+                legs = self._leg_trades("base", base.value)
+                replay = sorted(
+                    (base_leg_trade(leg) for leg in legs),
+                    key=lambda t: (t.executed_at, int(t.ref)),
+                )
+                rows.extend(_eur_row(base, trade, quote_leg=False) for trade in replay)
+            for quote in quotes:
+                derived = quote_leg_trades(
+                    quote, self._seeds_of(quote), self._leg_trades("quote", quote.value)
+                )
+                if isinstance(derived, Failure):
+                    raise LedgerError(msg=f"quote leg of {quote} failed: {derived.failure()}")
+                rows.extend(_eur_row(quote, trade, quote_leg=True) for trade in derived.unwrap())
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"list_eur_trades failed: {exc}") from exc
+        return tuple(rows)
+
     # ------------------------------------------------------------------
     # Private helpers — SQL and (de)serialisation
     # ------------------------------------------------------------------
@@ -941,19 +1024,28 @@ class SqliteLedger:
             (quote.value,),
         ).fetchall():
             self._insert_quote_lot(int(trade_id), str(seed_rows[0][1]))
-        seeds = {
+        derived = quote_leg_trades(
+            quote, self._seeds_of(quote), self._leg_trades("quote", quote.value)
+        )
+        if isinstance(derived, Failure):
+            raise LedgerError(msg=f"quote leg of {quote} failed: {derived.failure()}")
+        self._write_projection(quote, list(derived.unwrap()), "quote")
+
+    def _seeds_of(self, quote: Currency) -> dict[str, CapitalSeed]:
+        """Return the seeds held in ``quote``, keyed by their replay ref."""
+        return {
             f"{_SEED_REF_PREFIX}{row[0]}": CapitalSeed(
                 strategy_id=StrategyId(row[1]),
                 amount=Money(amount=Decimal(row[2]), currency=quote),
                 seeded_at=datetime.fromisoformat(row[3]),
                 eur_rate=_optional_decimal(row[4]),
             )
-            for row in seed_rows
+            for row in self._conn.execute(
+                "SELECT id, strategy_id, amount, seeded_at, eur_rate FROM capital_seeds "
+                "WHERE asset = ? ORDER BY id",
+                (quote.value,),
+            ).fetchall()
         }
-        derived = quote_leg_trades(quote, seeds, self._leg_trades("quote", quote.value))
-        if isinstance(derived, Failure):
-            raise LedgerError(msg=f"quote leg of {quote} failed: {derived.failure()}")
-        self._write_projection(quote, list(derived.unwrap()), "quote")
 
     def _leg_trades(self, selection: str, key: str | int) -> list[LegTrade]:
         """Read trades with what both legs need.
@@ -1319,6 +1411,20 @@ def _eur_columns(eur: TradeEur) -> tuple[str, str, str, str, str]:
     )
 
 
+def _eur_row(asset: Currency, trade: EurTrade, *, quote_leg: bool) -> EurTradeRow:
+    """Return one replay step of ``asset`` as the tax source port's row."""
+    return EurTradeRow(
+        ref=trade.ref,
+        asset=asset,
+        side=trade.side,
+        qty=trade.qty,
+        executed_at=trade.executed_at,
+        price_eur=trade.price_eur,
+        fee_eur=trade.fee_eur,
+        quote_leg=quote_leg,
+    )
+
+
 def _optional_decimal(raw: object) -> Decimal | None:
     """Parse a stored decimal string, keeping ``None`` as ``None``."""
     return None if raw is None else Decimal(str(raw))
@@ -1399,4 +1505,40 @@ def _trade_from_payload(payload: dict[str, Any]) -> TradeExecuted:
             currency=Currency(payload["fee"]["currency"]),
         ),
         strategy_id=StrategyId(payload["strategy_id"]["value"]),
+    )
+
+
+def _fill_quality_from_payload(payload: dict[str, Any]) -> FillQualityRecorded:
+    """Rehydrate a :class:`FillQualityRecorded` from its stored JSON payload.
+
+    Args:
+        payload: The decoded ``payload_json`` of a ``FillQualityRecorded`` row.
+
+    Returns:
+        The event with every stored field restored.
+
+    Raises:
+        KeyError: A field is missing from the payload.
+        ValueError: A field holds a value of the wrong shape.
+    """
+    return FillQualityRecorded(
+        occurred_at=datetime.fromisoformat(payload["occurred_at"]),
+        correlation_id=payload["correlation_id"],
+        event_seq=int(payload["event_seq"]),
+        strategy_id=StrategyId(payload["strategy_id"]["value"]),
+        pair=Pair(
+            base=Currency(payload["pair"]["base"]),
+            quote=Currency(payload["pair"]["quote"]),
+        ),
+        side=TradeSide(payload["side"]),
+        qty=Decimal(str(payload["qty"])),
+        book_source=BookSource(payload["book_source"]),
+        book_time=datetime.fromisoformat(payload["book_time"]),
+        fill_price=Decimal(str(payload["fill_price"])),
+        model_price=_optional_decimal(payload["model_price"]),
+        drift_bps=_optional_decimal(payload["drift_bps"]),
+        book_mid=_optional_decimal(payload["book_mid"]),
+        slippage=_optional_decimal(payload["slippage"]),
+        arrival_price=_optional_decimal(payload["arrival_price"]),
+        delta_ms=None if payload["delta_ms"] is None else int(payload["delta_ms"]),
     )

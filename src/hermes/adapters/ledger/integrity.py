@@ -13,6 +13,7 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Iterable
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from hermes.adapters.ledger.migration_runner import MIGRATIONS_DIR, pending_migrations
@@ -49,6 +50,11 @@ class LedgerReport:
         event_count: Rows in the ``events`` table (0 when the table is absent).
         gaps: Runs of missing event ids.
         events_table_present: Whether the ``events`` table exists.
+        unknown_migrations: Applied migrations this release does not ship.
+        lot_problems: Lots whose remaining quantity does not equal the
+            original minus their consumptions, is negative or is unreadable (#559).
+        orphans: Consumptions naming a missing lot, and lots naming a missing
+            trade (#559).
     """
 
     integrity: tuple[str, ...]
@@ -57,6 +63,9 @@ class LedgerReport:
     event_count: int
     gaps: tuple[IdGap, ...]
     events_table_present: bool
+    unknown_migrations: tuple[str, ...] = ()
+    lot_problems: tuple[str, ...] = ()
+    orphans: tuple[str, ...] = ()
 
     @property
     def findings(self) -> tuple[str, ...]:
@@ -69,6 +78,10 @@ class LedgerReport:
         found.extend(f"event id gap: {gap.describe()}" for gap in self.gaps)
         if self.pending:
             found.append(f"pending migrations: {', '.join(self.pending)}")
+        if self.unknown_migrations:
+            found.append(f"applied but not shipped: {', '.join(self.unknown_migrations)}")
+        found.extend(f"lot: {problem}" for problem in self.lot_problems)
+        found.extend(f"orphan: {orphan}" for orphan in self.orphans)
         return tuple(found)
 
     @property
@@ -125,6 +138,75 @@ def _schema(conn: sqlite3.Connection) -> tuple[str, tuple[str, ...]]:
     return level, pending
 
 
+def _unknown_migrations(conn: sqlite3.Connection) -> tuple[str, ...]:
+    if not _table_exists(conn, "schema_migrations"):
+        return ()
+    shipped = {path.name for path in MIGRATIONS_DIR.glob("*.sql")}
+    applied = {str(row[0]) for row in conn.execute("SELECT filename FROM schema_migrations")}
+    return tuple(sorted(applied - shipped))
+
+
+def _decimal(raw: object) -> Decimal | None:
+    try:
+        return Decimal(str(raw))
+    except InvalidOperation:
+        return None
+
+
+def _lot_problems(conn: sqlite3.Connection) -> tuple[str, ...]:
+    if not (_table_exists(conn, "lots") and _table_exists(conn, "lot_consumptions")):
+        return ()
+    consumed: dict[str, Decimal] = {}
+    problems: list[str] = []
+    # A lot with an unreadable consumption has no trustworthy remainder to compare (#612).
+    unsummable: set[str] = set()
+    for cid, lot_id, qty in conn.execute(
+        "SELECT id, lot_id, consumed_qty FROM lot_consumptions ORDER BY id"
+    ):
+        value = _decimal(qty)
+        if value is None:
+            problems.append(f"consumption {cid} on {lot_id}: unreadable quantity")
+            unsummable.add(lot_id)
+        else:
+            consumed[lot_id] = consumed.get(lot_id, Decimal(0)) + value
+    for lot_id, original, remaining in conn.execute(
+        "SELECT lot_id, original_qty, remaining_qty FROM lots ORDER BY lot_id"
+    ):
+        orig, rem = _decimal(original), _decimal(remaining)
+        used = consumed.get(lot_id, Decimal(0))
+        if lot_id in unsummable:
+            continue
+        if orig is None or rem is None:
+            problems.append(f"{lot_id}: unreadable quantity")
+        elif rem < 0:
+            problems.append(f"{lot_id}: remaining {rem} is negative")
+        elif orig - used != rem:
+            problems.append(f"{lot_id}: original {orig} - consumed {used} != remaining {rem}")
+    return tuple(problems)
+
+
+def _orphans(conn: sqlite3.Connection) -> tuple[str, ...]:
+    if not (_table_exists(conn, "lots") and _table_exists(conn, "lot_consumptions")):
+        return ()
+    found = [
+        f"consumption {cid} names missing lot {lot_id}"
+        for cid, lot_id in conn.execute(
+            "SELECT c.id, c.lot_id FROM lot_consumptions c "
+            "LEFT JOIN lots l ON l.lot_id = c.lot_id WHERE l.lot_id IS NULL ORDER BY c.id"
+        )
+    ]
+    lot_columns = {row[1] for row in conn.execute("PRAGMA table_info(lots)")}
+    if "trade_id" in lot_columns and _table_exists(conn, "trades"):
+        found += [
+            f"lot {lot_id} names missing trade {trade_id}"
+            for lot_id, trade_id in conn.execute(
+                "SELECT l.lot_id, l.trade_id FROM lots l LEFT JOIN trades t ON t.id = l.trade_id "
+                "WHERE l.trade_id IS NOT NULL AND t.id IS NULL ORDER BY l.lot_id"
+            )
+        ]
+    return tuple(found)
+
+
 def _high_water(conn: sqlite3.Connection, max_id: int) -> int:
     row = conn.execute("SELECT seq FROM sqlite_sequence WHERE name = 'events'").fetchone()
     return max(max_id, int(row[0])) if row is not None else max_id
@@ -144,8 +226,9 @@ def check_ledger(conn: sqlite3.Connection) -> LedgerReport:
     """
     integrity = tuple(str(row[0]) for row in conn.execute("PRAGMA integrity_check"))
     level, pending = _schema(conn)
+    unknown, lots, orphans = _unknown_migrations(conn), _lot_problems(conn), _orphans(conn)
     if not _table_exists(conn, "events"):
-        return LedgerReport(integrity, level, pending, 0, (), events_table_present=False)
+        return LedgerReport(integrity, level, pending, 0, (), False, unknown, lots, orphans)
     ids = (int(row[0]) for row in conn.execute("SELECT id FROM events ORDER BY id"))
     present = list(ids)
     high_water = _high_water(conn, present[-1] if present else 0)
@@ -156,4 +239,7 @@ def check_ledger(conn: sqlite3.Connection) -> LedgerReport:
         event_count=len(present),
         gaps=find_id_gaps(present, high_water),
         events_table_present=True,
+        unknown_migrations=unknown,
+        lot_problems=lots,
+        orphans=orphans,
     )

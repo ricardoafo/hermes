@@ -32,6 +32,7 @@ def _run(
     *,
     env: dict[str, str] | None = None,
     stdin: str = "",
+    err: io.StringIO | None = None,
 ) -> tuple[int, str, str]:
     out, audit = io.StringIO(), io.StringIO()
     code = supervisor_module.main(
@@ -40,6 +41,7 @@ def _run(
         env=env or {},
         stdin=io.StringIO(stdin),
         audit_stream=audit,
+        err=err,
         now=lambda: NOW,
         unit_state=lambda: UnitState.RUNNING,
     )
@@ -87,10 +89,11 @@ def test_an_unknown_scope_is_a_usage_error(tmp_path: Path) -> None:
     """A wildcard scope is rejected with exit 2, never treated as a broad grant."""
     db = write_ledger(tmp_path / "hermes.sqlite3")
 
-    code, out, _ = _run(["list", "--grant", "hermes:read:*"], db)
+    err = io.StringIO()
+    code, out, _ = _run(["list", "--grant", "hermes:read:*"], db, err=err)
 
-    assert code == 2
-    assert "unknown scope" in out
+    assert (code, out) == (2, "")
+    assert "unknown scope" in err.getvalue()
 
 
 def test_signals_before_the_guard_are_refused(tmp_path: Path) -> None:

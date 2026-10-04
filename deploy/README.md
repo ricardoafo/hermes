@@ -28,13 +28,13 @@ flowchart TB
 
     M --> WR["workflow_run: CI on main"]
     WR --> CIMAIN["ci.yml runs on main SHA<br/>(same checks, re-validates squash)"]
-    CIMAIN --> PMAIN["operator dispatches cd.yml<br/>(a push:main trigger is a follow-up)"]
+    CIMAIN --> PMAIN["CI green on main starts cd.yml<br/>(workflow_run; manual dispatch also works)"]
 
     subgraph CD["cd.yml — 5 jobs"]
         B["build<br/>uv build → wheel artifact"]
         K["bundle<br/>wheel + hashed requirements<br/>+ config + deploy scripts"]
         D["deploy<br/>scp bundle + ssh install_release.sh<br/>flip current, restart, health gate<br/>rollback on failure<br/>environment: prod"]
-        S["smoke<br/>pytest -m smoke (no tests yet)"]
+        S["smoke<br/>pytest -m smoke over SSH<br/>rollback on failure"]
         C["confirm<br/>aggregator: all above green?"]
         B --> K --> D --> S
         B --> C
@@ -51,14 +51,14 @@ flowchart TB
     SD -.->|ping every 5min| HC["healthchecks.io<br/>dead-man's-switch"]
     HC -.->|silent → alert| TG["Telegram bot"]
 
-    style S fill:#fff3cd
+    style S fill:#d4edda
     style B fill:#d4edda
     style K fill:#d4edda
     style D fill:#d4edda
     style C fill:#d4edda
 ```
 
-Yellow = placeholder body. Green = real logic today.
+Green = real logic today.
 
 ## Trigger order
 
@@ -66,8 +66,8 @@ Yellow = placeholder body. Green = real logic today.
 2. Human approves → `merge-queue.yml` picks it up
 3. Queue builds merge tree locally, runs tree gates on it, calls `pulls.merge`
 4. Squash lands on `main` → GH fires `push:main` + `workflow_run:CI:completed`
-5. The operator dispatches `cd.yml` (`workflow_dispatch` only; a `push:main`
-   trigger is a follow-up)
+5. CI passing on the `main` push starts `cd.yml` (`workflow_run`); a manual
+   `workflow_dispatch` also works and defaults to `dry_run=true`
 6. `cd.yml` builds the wheel and the release bundle, installs the release
    on the VPS and runs the health gate; `confirm` marks the deployment
    complete
@@ -90,6 +90,8 @@ Cross-references:
 | `systemd/hermes-health.timer`            | Fires the ping every 5 min                                                                         | installed by `vps-bootstrap`; enabled once the ping URL is set    |
 | `systemd/hermes-backup.service`          | Nightly borg backup of L2 Parquet and SQLite                                                       | installed by `vps-bootstrap`                                      |
 | `systemd/hermes-backup.timer`            | Fires the backup daily at 03:00 UTC                                                                | installed by `vps-bootstrap`; stays disabled until borg is set up |
+| `systemd/hermes-tax-pack.service`        | Refreshes the tax filing packs in `/var/lib/hermes-tax-pack` (`hermes tax-pack`, ledger read-only) | installed by `vps-bootstrap`                                      |
+| `systemd/hermes-tax-pack.timer`          | Fires the refresh daily at 07:30 Europe/Madrid                                                     | installed by `vps-bootstrap`; left off until enabled by hand      |
 | `systemd/hermes-notify-failure@.service` | Started by `hermes.service`'s `OnFailure=`; sends one Telegram message                             | installed by `vps-bootstrap`                                      |
 | `systemd/hermes-bot.service`             | Read-only Telegram bot (`hermes bot`, ADR-015); reads only `/etc/hermes/env.bot`                   | `vps-bootstrap` enables it when the Telegram secrets are set      |
 | `hermes-health-ping.sh`                  | The progress ping: `hermes status --json` decides success or `/fail` while the unit is active      | shipped in each release                                           |
@@ -253,8 +255,10 @@ hermes_run logs --since 1m
 
 ## Deploy and rollback
 
-Dispatch `cd.yml` with `dry_run=true` first: it builds the wheel and the
-release bundle and touches nothing else. Then deploy for real:
+Every green CI run on a push to `main` starts `cd.yml` and deploys that
+commit. To deploy by hand, dispatch it; `dry_run=true` (the default) builds
+the wheel and the release bundle and touches nothing else. Then deploy for
+real:
 
 ```bash
 gh workflow run cd.yml --repo ricardoafo/hermes --ref main -f dry_run=false

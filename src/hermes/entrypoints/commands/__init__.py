@@ -4,7 +4,7 @@ To add a command, add a module to this package that defines ``COMMAND``::
 
     from hermes.entrypoints.commands import Command
 
-    def _run(argv: list[str], *, stream: TextIO) -> int: ...
+    def _run(argv: list[str], *, stream: TextIO, err: TextIO | None = None) -> int: ...
 
     COMMAND = Command(name="example", summary="One line for --help.", run=_run)
 
@@ -36,8 +36,8 @@ class Command:
     Attributes:
         name: The token after ``hermes``.
         summary: One line for ``hermes --help``.
-        run: Called with the residual argv and ``stream=``; returns the exit
-            code.
+        run: Called with the residual argv, ``stream=`` (stdout) and ``err=``
+            (stderr, for ERROR lines); returns the exit code.
         stub: True for a placeholder that is not implemented yet.
         wants_demo: True when ``run`` also takes ``demo=``, the scenario of a
             leading ``hermes --demo SCENARIO`` (``None`` without one).

@@ -1,0 +1,392 @@
+# serializer version: 1
+# name: test_slack_message_matches_snapshot[anomaly-critical]
+  dict({
+    'blocks': list([
+      dict({
+        'text': dict({
+          'text': '''
+            *■ Anomaly · reconciler · Sat 14:00*
+            ledger and exchange balances disagree
+          ''',
+          'type': 'mrkdwn',
+        }),
+        'type': 'section',
+      }),
+      dict({
+        'elements': list([
+          dict({
+            'text': '…K7Q2ZP',
+            'type': 'mrkdwn',
+          }),
+        ]),
+        'type': 'context',
+      }),
+    ]),
+    'text': '■ Anomaly · reconciler · Sat 14:00 · ledger and exchange balances disagree',
+  })
+# ---
+# name: test_slack_message_matches_snapshot[anomaly-info]
+  dict({
+    'blocks': list([
+      dict({
+        'text': dict({
+          'text': '''
+            *● Anomaly · reconciler · Sat 14:00*
+            ledger and exchange balances disagree
+          ''',
+          'type': 'mrkdwn',
+        }),
+        'type': 'section',
+      }),
+      dict({
+        'elements': list([
+          dict({
+            'text': '…K7Q2ZP',
+            'type': 'mrkdwn',
+          }),
+        ]),
+        'type': 'context',
+      }),
+    ]),
+    'text': '● Anomaly · reconciler · Sat 14:00 · ledger and exchange balances disagree',
+  })
+# ---
+# name: test_slack_message_matches_snapshot[balance-low]
+  dict({
+    'blocks': list([
+      dict({
+        'text': dict({
+          'text': '''
+            *■ Balance low · USDT · Sat 14:00*
+            50.00 USDT left, threshold 100.00 USDT
+          ''',
+          'type': 'mrkdwn',
+        }),
+        'type': 'section',
+      }),
+      dict({
+        'elements': list([
+          dict({
+            'text': 'top up · …K7Q2ZP',
+            'type': 'mrkdwn',
+          }),
+        ]),
+        'type': 'context',
+      }),
+    ]),
+    'text': '■ Balance low · USDT · Sat 14:00 · 50.00 USDT left, threshold 100.00 USDT',
+  })
+# ---
+# name: test_slack_message_matches_snapshot[daily-digest]
+  dict({
+    'blocks': list([
+      dict({
+        'text': dict({
+          'text': '''
+            *● Daily digest · 2026-10-03*
+            10/12 filled · 2 rejected · €12,500.50 traded
+            Outcome figures are withheld until OOS certification.
+          ''',
+          'type': 'mrkdwn',
+        }),
+        'type': 'section',
+      }),
+      dict({
+        'elements': list([
+          dict({
+            'text': '…K7Q2ZP',
+            'type': 'mrkdwn',
+          }),
+        ]),
+        'type': 'context',
+      }),
+    ]),
+    'text': '● Daily digest · 2026-10-03 · 10/12 filled · 2 rejected · €12,500.50 traded · Outcome figures are withheld until OOS certification.',
+  })
+# ---
+# name: test_slack_message_matches_snapshot[position-large]
+  dict({
+    'blocks': list([
+      dict({
+        'text': dict({
+          'text': '''
+            *▲ Position large · BUY BTC · 52,410.20 USDT · Sat 14:00 (12:00 UTC)*
+            0.0040 BTC · value 209.64 USDT · fee 0.21 USDT
+          ''',
+          'type': 'mrkdwn',
+        }),
+        'type': 'section',
+      }),
+      dict({
+        'elements': list([
+          dict({
+            'text': 'swing-donchian-4h · …K7Q2ZP',
+            'type': 'mrkdwn',
+          }),
+        ]),
+        'type': 'context',
+      }),
+    ]),
+    'text': '▲ Position large · BUY BTC · 52,410.20 USDT · Sat 14:00 (12:00 UTC) · 0.0040 BTC · value 209.64 USDT · fee 0.21 USDT',
+  })
+# ---
+# name: test_slack_message_matches_snapshot[rebalance-triggered]
+  dict({
+    'blocks': list([
+      dict({
+        'text': dict({
+          'text': '''
+            *◐ Rebalance heads-up · BTC · Sat 14:00*
+            35.0% vs target 25.0% · drift 10.0 pp (band 5.0 pp)
+          ''',
+          'type': 'mrkdwn',
+        }),
+        'type': 'section',
+      }),
+      dict({
+        'elements': list([
+          dict({
+            'text': 'no trade yet · …K7Q2ZP',
+            'type': 'mrkdwn',
+          }),
+        ]),
+        'type': 'context',
+      }),
+    ]),
+    'text': '◐ Rebalance heads-up · BTC · Sat 14:00 · 35.0% vs target 25.0% · drift 10.0 pp (band 5.0 pp)',
+  })
+# ---
+# name: test_slack_message_matches_snapshot[signal-entry]
+  dict({
+    'blocks': list([
+      dict({
+        'text': dict({
+          'text': '''
+            *▲ Entry long BTC · 52,410.20 USDT · Sat 14:00 (12:00 UTC)*
+            Plan: stop 50,516.00 USDT (−3.6%, 1.8 ATR)
+            Actual: withheld until certification
+          ''',
+          'type': 'mrkdwn',
+        }),
+        'type': 'section',
+      }),
+      dict({
+        'elements': list([
+          dict({
+            'text': 'swing-donchian-4h · …K7Q2ZP',
+            'type': 'mrkdwn',
+          }),
+        ]),
+        'type': 'context',
+      }),
+    ]),
+    'text': '▲ Entry long BTC · 52,410.20 USDT · Sat 14:00 (12:00 UTC) · Plan: stop 50,516.00 USDT (−3.6%, 1.8 ATR) · Actual: withheld until certification',
+  })
+# ---
+# name: test_slack_message_matches_snapshot[signal-exit]
+  dict({
+    'blocks': list([
+      dict({
+        'text': dict({
+          'text': '''
+            *▼ Exit long BTC (trailing_stop) · Sat 14:00 (12:00 UTC)*
+            Plan: entry ref 52,410.20 USDT · stop 54,100.00 USDT
+            Actual: withheld until certification
+          ''',
+          'type': 'mrkdwn',
+        }),
+        'type': 'section',
+      }),
+      dict({
+        'elements': list([
+          dict({
+            'text': 'swing-donchian-4h · …K7Q2ZP',
+            'type': 'mrkdwn',
+          }),
+        ]),
+        'type': 'context',
+      }),
+    ]),
+    'text': '▼ Exit long BTC (trailing_stop) · Sat 14:00 (12:00 UTC) · Plan: entry ref 52,410.20 USDT · stop 54,100.00 USDT · Actual: withheld until certification',
+  })
+# ---
+# name: test_slack_message_matches_snapshot[strategy-paused-critical]
+  dict({
+    'blocks': list([
+      dict({
+        'text': dict({
+          'text': '''
+            *■ Strategy paused · swing-donchian-4h · Sat 14:00*
+            operator kill switch
+          ''',
+          'type': 'mrkdwn',
+        }),
+        'type': 'section',
+      }),
+      dict({
+        'elements': list([
+          dict({
+            'text': 'review the strategy · …K7Q2ZP',
+            'type': 'mrkdwn',
+          }),
+        ]),
+        'type': 'context',
+      }),
+    ]),
+    'text': '■ Strategy paused · swing-donchian-4h · Sat 14:00 · operator kill switch',
+  })
+# ---
+# name: test_slack_message_matches_snapshot[strategy-paused-warning]
+  dict({
+    'blocks': list([
+      dict({
+        'text': dict({
+          'text': '''
+            *◐ Strategy paused · swing-donchian-4h · Sat 14:00*
+            operator kill switch
+          ''',
+          'type': 'mrkdwn',
+        }),
+        'type': 'section',
+      }),
+      dict({
+        'elements': list([
+          dict({
+            'text': 'review the strategy · …K7Q2ZP',
+            'type': 'mrkdwn',
+          }),
+        ]),
+        'type': 'context',
+      }),
+    ]),
+    'text': '◐ Strategy paused · swing-donchian-4h · Sat 14:00 · operator kill switch',
+  })
+# ---
+# name: test_slack_message_matches_snapshot[strategy-resumed]
+  dict({
+    'blocks': list([
+      dict({
+        'text': dict({
+          'text': '''
+            *● Strategy resumed · swing-donchian-4h · Sat 14:00*
+            back after 15 min
+          ''',
+          'type': 'mrkdwn',
+        }),
+        'type': 'section',
+      }),
+      dict({
+        'elements': list([
+          dict({
+            'text': '…K7Q2ZP',
+            'type': 'mrkdwn',
+          }),
+        ]),
+        'type': 'context',
+      }),
+    ]),
+    'text': '● Strategy resumed · swing-donchian-4h · Sat 14:00 · back after 15 min',
+  })
+# ---
+# name: test_slack_message_matches_snapshot[trade-rejected]
+  dict({
+    'blocks': list([
+      dict({
+        'text': dict({
+          'text': '''
+            *■ Order rejected · BUY BTC · Sat 14:00 (12:00 UTC)*
+            binance: insufficient balance
+            Pair: BTC/USDT
+          ''',
+          'type': 'mrkdwn',
+        }),
+        'type': 'section',
+      }),
+      dict({
+        'elements': list([
+          dict({
+            'text': '…K7Q2ZP',
+            'type': 'mrkdwn',
+          }),
+        ]),
+        'type': 'context',
+      }),
+    ]),
+    'text': '■ Order rejected · BUY BTC · Sat 14:00 (12:00 UTC) · binance: insufficient balance · Pair: BTC/USDT',
+  })
+# ---
+# name: test_telegram_message_matches_snapshot[anomaly-critical]
+  list([
+    '■ Anomaly · reconciler · Sat 14:00',
+    'ledger and exchange balances disagree',
+    '…K7Q2ZP',
+  ])
+# ---
+# name: test_telegram_message_matches_snapshot[anomaly-info]
+  list([
+    '● Anomaly · reconciler · Sat 14:00',
+    'ledger and exchange balances disagree',
+    '…K7Q2ZP',
+  ])
+# ---
+# name: test_telegram_message_matches_snapshot[balance-low]
+  list([
+    '■ Balance low · USDT · Sat 14:00',
+    '50\\.00 USDT left, threshold 100\\.00 USDT',
+    'top up · …K7Q2ZP',
+  ])
+# ---
+# name: test_telegram_message_matches_snapshot[position-large]
+  list([
+    '▲ Position large · BUY BTC · 52,410\\.20 USDT',
+    '0\\.0040 BTC · fee 0\\.21 USDT · Sat 14:00',
+    'swing\\-donchian\\-4h · …K7Q2ZP',
+  ])
+# ---
+# name: test_telegram_message_matches_snapshot[rebalance-triggered]
+  list([
+    '◐ Rebalance heads\\-up BTC: drift 10\\.0 pp \\(band 5\\.0 pp\\) · …K7Q2ZP',
+  ])
+# ---
+# name: test_telegram_message_matches_snapshot[signal-entry]
+  list([
+    '▲ Entry long BTC · 52,410\\.20 USDT',
+    'stop 50,516\\.00 USDT \\(−3\\.6%\\) · Sat 14:00',
+    'swing\\-donchian\\-4h · …K7Q2ZP',
+  ])
+# ---
+# name: test_telegram_message_matches_snapshot[signal-exit]
+  list([
+    '▼ Exit long BTC \\(trailing\\_stop\\)',
+    'entry ref 52,410\\.20 USDT · stop 54,100\\.00 USDT · Sat 14:00',
+    'swing\\-donchian\\-4h · …K7Q2ZP',
+  ])
+# ---
+# name: test_telegram_message_matches_snapshot[strategy-paused-critical]
+  list([
+    '■ Strategy paused · swing\\-donchian\\-4h · Sat 14:00',
+    'operator kill switch',
+    'review the strategy · …K7Q2ZP',
+  ])
+# ---
+# name: test_telegram_message_matches_snapshot[strategy-paused-warning]
+  list([
+    '◐ Strategy paused · swing\\-donchian\\-4h · Sat 14:00',
+    'operator kill switch',
+    'review the strategy · …K7Q2ZP',
+  ])
+# ---
+# name: test_telegram_message_matches_snapshot[strategy-resumed]
+  list([
+    '● Strategy resumed · swing\\-donchian\\-4h · Sat 14:00',
+    'back after 15 min',
+    '…K7Q2ZP',
+  ])
+# ---
+# name: test_telegram_message_matches_snapshot[trade-rejected]
+  list([
+    '■ Order rejected · BUY BTC',
+    'binance: insufficient balance · Sat 14:00',
+    '…K7Q2ZP',
+  ])
+# ---

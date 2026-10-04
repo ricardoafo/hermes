@@ -1,16 +1,19 @@
-"""The console read model over the SQLite ledger, read-only (#546, slice 1).
+"""The console read model over the SQLite ledger, read-only (#546).
 
 Every view call opens the ledger with SQLite's ``mode=ro`` URI, runs its
 queries and closes the connection again, so the console never writes, never
 migrates and never holds a lock between two reads of a running ``hermes serve``.
 
-This slice serves the positions views: the open set, size, cost and latest
-price come from the newest portfolio mark of each strategy (#387), the stop
-from the entry signal, and the EUR values from the recorded trades (#435).
-The heartbeat is derived from the newest bar checks. Portfolio, activity and
-the shadow test raise :class:`ViewNotAvailableError` until their slices land.
+Positions: the open set, size, cost and latest price come from the newest
+portfolio mark of each strategy (#387), the stop from the entry signal, and the
+EUR values from the recorded trades (#435). The heartbeat is derived from the
+newest bar checks. The portfolio sums each strategy's equity from its marks and
+capital seed (#405) and the closed trades' FIFO values; activity reuses the
+ledger activity rows; the shadow test counts days from the capital seed. A view
+the ledger cannot answer yet raises :class:`ViewNotAvailableError`.
 
-Reference: openspec/changes/ledger-read-model/change.md (D-1, D-3 to D-9).
+Reference: openspec/changes/ledger-read-model/change.md (D-1, D-3 to D-9);
+openspec/changes/live-home-screen/change.md (D-1 to D-6).
 """
 
 from __future__ import annotations
@@ -19,13 +22,26 @@ import json
 import sqlite3
 from collections.abc import Callable
 from contextlib import closing
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 from decimal import Decimal
 from pathlib import Path
 from typing import Final, Self
 
+from hermes.adapters.console.ledger_activity import LedgerActivityReader
+from hermes.application.console.activity import group_activity
+from hermes.application.console.portfolio_figures import (
+    ClosedPiece,
+    EquityPoint,
+    PortfolioFacts,
+    SeedFacts,
+    StrategyBook,
+    build_portfolio,
+    range_start,
+)
 from hermes.application.console.position_figures import LotFacts, PositionFacts, build_detail
 from hermes.application.console.read_model import ViewNotAvailableError
+from hermes.application.console.render import MADRID
+from hermes.application.console.shadow_figures import build_shadow_test
 from hermes.application.console.views import (
     ActivityDay,
     Heartbeat,
@@ -41,10 +57,15 @@ from hermes.domain.market_data.bar_schedule import interval_duration
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.infrastructure.time import now_utc
 
-__all__ = ["LATE_AFTER", "LedgerReadModel", "connect_read_only"]
+__all__ = ["ACTIVITY_WINDOW", "LATE_AFTER", "LedgerReadModel", "connect_read_only"]
 
 LATE_AFTER: Final = timedelta(minutes=15)
 """How long past a due bar check the heartbeat turns LATE."""
+
+ACTIVITY_WINDOW: Final = timedelta(days=7)
+"""How far back :meth:`LedgerReadModel.activity` reads by default."""
+
+_NO_BOOK: Final = "the portfolio is not available yet: no portfolio mark or capital seed"
 
 _ONE_MS: Final = timedelta(milliseconds=1)
 _ZERO: Final = Decimal(0)
@@ -72,23 +93,44 @@ def connect_read_only(path: Path) -> sqlite3.Connection:
 class LedgerReadModel:
     """Console views read from a ledger file; implements ``ConsoleReadModel``."""
 
-    def __init__(self, path: Path, *, clock: Callable[[], datetime] = now_utc) -> None:
+    def __init__(
+        self,
+        path: Path,
+        *,
+        clock: Callable[[], datetime] = now_utc,
+        tz: tzinfo = MADRID,
+        activity_window: timedelta = ACTIVITY_WINDOW,
+    ) -> None:
         """Bind to a ledger file without opening it.
 
         Args:
             path: The ledger file; use :meth:`open` to check it exists.
-            clock: Read time for the heartbeat; the wall clock by default.
+            clock: Read time of every view; the wall clock by default.
+            tz: Timezone of the calendar days (activity days, "today", the
+                tax year, shadow test days).
+            activity_window: How far back :meth:`activity` reads.
         """
         self._path = path
         self._clock = clock
+        self._tz = tz
+        self._activity_window = activity_window
 
     @classmethod
-    def open(cls, path: Path, *, clock: Callable[[], datetime] = now_utc) -> Self:
+    def open(
+        cls,
+        path: Path,
+        *,
+        clock: Callable[[], datetime] = now_utc,
+        tz: tzinfo = MADRID,
+        activity_window: timedelta = ACTIVITY_WINDOW,
+    ) -> Self:
         """Return a read model over ``path``, which must already exist.
 
         Args:
             path: The ledger file.
-            clock: Read time for the heartbeat.
+            clock: Read time of every view.
+            tz: Timezone of the calendar days.
+            activity_window: How far back :meth:`activity` reads.
 
         Returns:
             The read model; nothing is created on disk.
@@ -98,7 +140,7 @@ class LedgerReadModel:
         """
         if not path.is_file():
             raise FileNotFoundError(str(path))
-        return cls(path, clock=clock)
+        return cls(path, clock=clock, tz=tz, activity_window=activity_window)
 
     @property
     def demo_scenario(self) -> str | None:
@@ -142,9 +184,44 @@ class LedgerReadModel:
         )
 
     def portfolio(self, range_: PortfolioRange = PortfolioRange.TODAY) -> PortfolioSummary:
-        """Raise: the portfolio view lands with the home slice of #546."""
-        msg = f"the portfolio ({range_.value}) is not yet available in the live read model"
-        raise ViewNotAvailableError(msg)
+        """Return the portfolio summed over every strategy, in EUR (live-home-screen D-1 to D-3).
+
+        Raises:
+            ViewNotAvailableError: The ledger has no portfolio mark and no capital
+                seed yet, or the strategies are quoted in different currencies.
+            LedgerError: On any SQLite failure or an unreadable row.
+        """
+        as_of = self._clock()
+        year_start = range_start(PortfolioRange.YEAR, as_of, self._tz)
+        try:
+            with closing(connect_read_only(self._path)) as conn:
+                reader = _Reader(conn)
+                books, quote = reader.books()
+                closed = reader.closed_pieces(year_start)
+                rate = reader.eur_per_quote(quote) if quote is not None else None
+                seeds = reader.seeds()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"console portfolio read failed: {exc}") from exc
+        except (KeyError, TypeError, ValueError, ArithmeticError) as exc:
+            raise LedgerError(msg=f"console portfolio: unreadable row: {exc}") from exc
+        if not books:
+            raise ViewNotAvailableError(_NO_BOOK)
+        details = self._details()
+        open_net = (
+            None
+            if any(d.row.eur_pending for d in details)
+            else sum((d.net for d in details), start=_ZERO)
+        )
+        facts = PortfolioFacts(
+            as_of=as_of,
+            tz=self._tz,
+            books=books,
+            closed=closed,
+            open_net=open_net,
+            eur_per_quote=rate,
+            seeds=seeds,
+        )
+        return build_portfolio(facts, range_)
 
     def positions(self) -> tuple[PositionRow, ...]:
         """Return the open positions of every strategy, oldest entry first.
@@ -165,15 +242,50 @@ class LedgerReadModel:
         return next((d for d in self._details() if d.row.coin == wanted), None)
 
     def activity(self, *, include_quiet: bool = False) -> tuple[ActivityDay, ...]:
-        """Raise: ``hermes activity`` reads the ledger itself until the activity slice."""
-        scope = "all activity" if include_quiet else "activity"
-        msg = f"{scope} is not yet available in the live read model"
-        raise ViewNotAvailableError(msg)
+        """Return the activity of the last ``activity_window`` by local day (live-home-screen D-5).
+
+        Raises:
+            LedgerError: On any SQLite failure or an unreadable payload.
+        """
+        since = self._clock() - self._activity_window
+        try:
+            with closing(connect_read_only(self._path)) as conn:
+                items = LedgerActivityReader(conn).items_since(since.astimezone(UTC))
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"console activity read failed: {exc}") from exc
+        return group_activity(items, self._tz, include_quiet=include_quiet)
 
     def shadow_test(self) -> ShadowTest:
-        """Raise: the shadow test start date is not recorded in the ledger yet."""
-        msg = "the shadow test status is not yet available in the live read model"
-        raise ViewNotAvailableError(msg)
+        """Return the day count since the capital seed and the fills so far (live-home-screen D-4).
+
+        Raises:
+            LedgerError: On any SQLite failure or an unreadable row.
+        """
+        as_of = self._clock()
+        try:
+            with closing(connect_read_only(self._path)) as conn:
+                first = conn.execute("SELECT MIN(seeded_at) FROM capital_seeds").fetchone()[0]
+                seeded_at = None if first is None else datetime.fromisoformat(str(first))
+                fills = 0
+                if seeded_at is not None:
+                    fills = int(
+                        conn.execute(
+                            "SELECT COUNT(*) FROM trades WHERE executed_at >= ?",
+                            (seeded_at.astimezone(UTC).isoformat(),),
+                        ).fetchone()[0]
+                    )
+                checked = int(
+                    conn.execute(
+                        "SELECT COUNT(*) FROM events WHERE event_type = 'FillQualityRecorded'"
+                    ).fetchone()[0]
+                )
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"console shadow test read failed: {exc}") from exc
+        except (TypeError, ValueError) as exc:
+            raise LedgerError(msg=f"console shadow test: unreadable row: {exc}") from exc
+        return build_shadow_test(
+            seeded_at=seeded_at, as_of=as_of, tz=self._tz, fills=fills, quality_checked=checked
+        )
 
     # ------------------------------------------------------------------
     # Reads
@@ -241,7 +353,7 @@ class _Reader:
                     signal_at=signal_at,
                     lots=lots,
                     price_path=self._price_path(strategy, base, opened_at),
-                    eur_per_usdt=self._eur_per_quote(quote),
+                    eur_per_usdt=self.eur_per_quote(quote),
                 )
             )
         return facts
@@ -324,13 +436,111 @@ class _Reader:
                     path.setdefault(marked_at, Decimal(item["mark_price"]))
         return tuple(path[at] for at in sorted(path))
 
-    def _eur_per_quote(self, quote: str) -> Decimal | None:
+    def eur_per_quote(self, quote: str) -> Decimal | None:
+        """Return EUR per quote unit at the newest priced trade or seed rate.
+
+        Reference: ``ledger-read-model`` D-4; ``live-home-screen`` D-1.
+        """
         row = self._conn.execute(
-            "SELECT eur_rate FROM trades "
+            "SELECT eur_rate, eur_rate_date, 1, executed_at, id FROM trades "
             "WHERE eur_status = 'ok' AND pair_quote = ? AND eur_rate IS NOT NULL "
-            "ORDER BY executed_at DESC, id DESC LIMIT 1",
-            (quote,),
+            "UNION ALL "
+            "SELECT eur_rate, eur_rate_date, 0, seeded_at, id FROM capital_seeds "
+            "WHERE eur_status = 'ok' AND asset = ? AND eur_rate IS NOT NULL "
+            "ORDER BY 2 DESC, 3 DESC, 4 DESC, 5 DESC LIMIT 1",
+            (quote, quote),
         ).fetchone()
         if row is None:
             return None
         return 1 / Decimal(str(row[0]))
+
+    def books(self) -> tuple[tuple[StrategyBook, ...], str | None]:
+        """Return each strategy's equity history and the one quote currency they share."""
+        seeds = {
+            str(strategy): (str(asset), Decimal(str(amount)), datetime.fromisoformat(str(at)))
+            for strategy, asset, amount, at in self._conn.execute(
+                "SELECT strategy_id, asset, amount, seeded_at FROM capital_seeds"
+            ).fetchall()
+        }
+        marks: dict[str, list[tuple[datetime, Decimal, Decimal, Decimal, str]]] = {}
+        for strategy, close, quote, cash, market, equity in self._conn.execute(
+            "SELECT strategy_id, bar_close_time, quote, cash, market_value, equity "
+            "FROM portfolio_marks ORDER BY bar_close_time, id"
+        ).fetchall():
+            marks.setdefault(str(strategy), []).append(
+                (
+                    datetime.fromisoformat(str(close)) + _ONE_MS,
+                    Decimal(str(cash)),
+                    Decimal(str(market)),
+                    Decimal(str(equity)),
+                    str(quote),
+                )
+            )
+        quotes = {asset for asset, _, _ in seeds.values()} | {
+            row[4] for rows in marks.values() for row in rows
+        }
+        if len(quotes) > 1:
+            msg = f"the portfolio is not available: strategies are quoted in {sorted(quotes)}"
+            raise ViewNotAvailableError(msg)
+        books: list[StrategyBook] = []
+        for strategy in sorted(seeds.keys() | marks.keys()):
+            seed = seeds.get(strategy)
+            rows = marks.get(strategy, [])
+            points: list[EquityPoint] = []
+            if seed is not None and (not rows or seed[2] < rows[0][0]):
+                points.append(EquityPoint(at=seed[2], equity=seed[1]))
+            points.extend(EquityPoint(at=at, equity=equity) for at, _, _, equity, _ in rows)
+            if rows:
+                cash, invested = rows[-1][1], rows[-1][2]
+            else:
+                cash, invested = (seed[1] if seed is not None else _ZERO), _ZERO
+            books.append(StrategyBook(points=tuple(points), cash=cash, invested=invested))
+        return tuple(books), next(iter(quotes), None)
+
+    def closed_pieces(self, since: datetime) -> tuple[ClosedPiece, ...]:
+        """Return the coin-sale lot consumptions filled since ``since`` (live-home-screen D-2)."""
+        rows = self._conn.execute(
+            "SELECT c.consumed_at, c.proceeds_eur, c.cost_eur, c.fee_eur, "
+            "       c.consumed_qty, l.original_qty, b.fee_eur, b.eur_status "
+            "FROM lot_consumptions c "
+            "JOIN trades s ON s.id = c.trade_id "
+            "JOIN lots l ON l.lot_id = c.lot_id "
+            "LEFT JOIN trades b ON b.id = l.trade_id "
+            "WHERE c.consumed_asset = s.pair_base AND c.consumed_at >= ? "
+            "ORDER BY c.consumed_at, c.id",
+            (since.astimezone(UTC).isoformat(),),
+        ).fetchall()
+        pieces: list[ClosedPiece] = []
+        for at, proceeds, cost, sell_fee, qty, original, buy_fee, buy_status in rows:
+            buy_share = None
+            if buy_status == _OK and buy_fee is not None:
+                buy_share = Decimal(str(buy_fee)) * Decimal(str(qty)) / Decimal(str(original))
+            pieces.append(
+                ClosedPiece(
+                    at=datetime.fromisoformat(str(at)),
+                    proceeds=_optional(proceeds),
+                    cost=_optional(cost),
+                    buy_fee=buy_share,
+                    sell_fee=_optional(sell_fee),
+                )
+            )
+        return tuple(pieces)
+
+    def seeds(self) -> tuple[SeedFacts, ...]:
+        """Return every capital seed, with its EUR value once priced (live-home-screen D-3)."""
+        rows = self._conn.execute(
+            "SELECT amount, seeded_at, value_eur, eur_status FROM capital_seeds "
+            "ORDER BY seeded_at, id"
+        ).fetchall()
+        return tuple(
+            SeedFacts(
+                amount=Decimal(str(amount)),
+                seeded_at=datetime.fromisoformat(str(at)),
+                value_eur=_optional(value) if status == _OK else None,
+            )
+            for amount, at, value, status in rows
+        )
+
+
+def _optional(value: object) -> Decimal | None:
+    return None if value is None else Decimal(str(value))

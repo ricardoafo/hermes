@@ -27,6 +27,11 @@ def _run(args: list[str]) -> tuple[int, str]:
     return cli_module.main(args, stream=stream), stream.getvalue()
 
 
+def _run_split(args: list[str]) -> tuple[int, str, str]:
+    stream, err = io.StringIO(), io.StringIO()
+    return cli_module.main(args, stream=stream, err=err), stream.getvalue(), err.getvalue()
+
+
 def test_without_demo_prints_empty_state_and_fill_note(monkeypatch: pytest.MonkeyPatch) -> None:
     """No ledger read model yet: empty state plus the note that fills start with #353."""
     monkeypatch.delenv(DEMO_ENV_VAR, raising=False)
@@ -91,17 +96,38 @@ def test_utc_flag_changes_the_json_offset() -> None:
 @pytest.mark.parametrize("args", [["--bogus"], ["ETH", "SOL"]])
 def test_bad_arguments_exit_two(args: list[str]) -> None:
     """Unknown flags or two coins are a usage error."""
-    rc, out = _run(["--demo", "ok-two-positions", "positions", *args])
-    assert (rc, out.startswith("ERROR: bad arguments.")) == (2, True)
+    rc, out, err = _run_split(["--demo", "ok-two-positions", "positions", *args])
+    assert (rc, out, err.startswith("ERROR: bad arguments.")) == (2, "", True)
 
 
 def test_unknown_scenario_exits_two() -> None:
     """An unknown scenario is a usage error that names the valid ones."""
-    rc, out = _run(["--demo", "nope", "positions"])
-    assert (rc, out.startswith("ERROR:")) == (2, True)
+    rc, out, err = _run_split(["--demo", "nope", "positions"])
+    assert (rc, out, err.startswith("ERROR:")) == (2, "", True)
 
 
 def test_positions_is_listed_in_help() -> None:
     """The top-level help names the positions command."""
     _, out = _run(["--help"])
     assert "positions" in out.split("Options:")[0]
+
+
+@pytest.mark.parametrize("flag", ["-h", "--help"])
+@pytest.mark.parametrize("prefix", [[], ["--demo", "ok-two-positions"]])
+def test_help_prints_usage_flags_and_exit_codes_and_exits_zero(
+    flag: str, prefix: list[str]
+) -> None:
+    """`positions -h/--help` is answered with usage, flags and exit codes, exit 0."""
+    rc, out = _run([*prefix, "positions", flag])
+    assert (
+        rc,
+        out.startswith("Usage: hermes [--demo SCENARIO] positions [COIN] [--json] [--utc]"),
+        "--json" in out,
+        "Exit codes: 0 success, 1 COIN has no open position, 2 usage" in out,
+    ) == (0, True, True, True)
+
+
+def test_help_beats_other_bad_arguments() -> None:
+    """Help wins over an unknown flag in the same call, as in `activity`."""
+    rc, out = _run(["positions", "--bogus", "--help"])
+    assert (rc, out.startswith("Usage:")) == (0, True)

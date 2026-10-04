@@ -26,6 +26,7 @@ from hermes.application.console.render import (
 )
 from hermes.application.console.serialize import position_detail_to_json, positions_to_json
 from hermes.domain.errors import LedgerError
+from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.commands import Command
 from hermes.entrypoints.console import LiveReadModelUnavailableError, resolve_read_model
 
@@ -36,6 +37,16 @@ _POSITIONS_USAGE: Final = (
     "Usage: hermes [--demo SCENARIO] positions [COIN] [--json] [--utc] [--db PATH]"
 )
 _DB: Final = "--db"
+_POSITIONS_HELP: Final = (
+    f"{_POSITIONS_USAGE}\n"
+    "  COIN       show the detail for one coin\n"
+    "  --json     one JSON document on stdout\n"
+    "  --utc      show times in UTC instead of Europe/Madrid\n"
+    "  --db PATH  ledger to read (default: the service ledger)\n"
+    "  -h, --help show this help\n"
+    "Exit codes: 0 success, 1 COIN has no open position, 2 usage or unknown scenario, "
+    "3 ledger unreadable."
+)
 
 
 def run_positions(
@@ -44,6 +55,7 @@ def run_positions(
     *,
     demo_flag: str | None = None,
     env: Mapping[str, str] | None = None,
+    err: TextIO | None = None,
 ) -> int:
     """Run ``hermes positions [COIN] [--json] [--utc] [--db PATH]``.
 
@@ -56,20 +68,22 @@ def run_positions(
         stream: Output stream; colour follows Rich's TTY and ``NO_COLOR`` detection.
         demo_flag: Scenario from the leading ``--demo`` option, if any.
         env: Environment snapshot; defaults to empty.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         0 on success, 1 when COIN has no open position, 2 for a usage error or
         an unknown scenario, 3 when the ledger cannot be read.
     """
+    err = resolve_err(err)
+    if "-h" in args or "--help" in args:
+        stream.write(_POSITIONS_HELP + "\n")
+        return 0
     split = _split_db(args)
-    if split is None:
-        stream.write(f"ERROR: bad arguments. {_POSITIONS_USAGE}\n")
-        return 2
-    rest, db_path = split
+    rest, db_path = split if split is not None else ([], None)
     flags = {a for a in rest if a.startswith("-")}
     coins = [a for a in rest if not a.startswith("-")]
-    if flags - {"--json", "--utc"} or len(coins) > 1:
-        stream.write(f"ERROR: bad arguments. {_POSITIONS_USAGE}\n")
+    if split is None or flags - {"--json", "--utc"} or len(coins) > 1:
+        err.write(f"ERROR: bad arguments. {_POSITIONS_USAGE}\n")
         return 2
     as_json = "--json" in flags
     coin = coins[0].upper() if coins else None
@@ -78,12 +92,12 @@ def run_positions(
     except LiveReadModelUnavailableError:
         return _positions_without_data(stream, as_json=as_json)
     except UnknownScenarioError as exc:
-        stream.write(f"ERROR: {exc}\n")
+        err.write(f"ERROR: {exc}\n")
         return 2
     try:
         return _show(model, coin, stream, utc="--utc" in flags, as_json=as_json)
     except LedgerError as exc:
-        stream.write(f"ERROR: could not read the ledger: {exc}\n")
+        err.write(f"ERROR: could not read the ledger: {exc}\n")
         return 3
 
 
@@ -152,8 +166,8 @@ def _positions_without_data(stream: TextIO, *, as_json: bool) -> int:
     return 0
 
 
-def _run(argv: list[str], *, stream: TextIO, demo: str | None) -> int:
-    return run_positions(argv, stream, demo_flag=demo, env=os.environ)
+def _run(argv: list[str], *, stream: TextIO, demo: str | None, err: TextIO | None = None) -> int:
+    return run_positions(argv, stream, demo_flag=demo, env=os.environ, err=err)
 
 
 COMMAND = Command(

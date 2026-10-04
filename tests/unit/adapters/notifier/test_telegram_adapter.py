@@ -394,13 +394,12 @@ class TestNotifyEvent:
             assert payload["chat_id"] == _TEST_CHAT
             assert payload["parse_mode"] == "MarkdownV2"
             assert payload["disable_web_page_preview"] is True
-            # ANOMALY_DETECTED template renders the event source + correlation tail.
-            # Underscore is a MarkdownV2 reserved char → escaped in the rendered text.
-            assert "ANOMALY\\_DETECTED" in payload["text"]
+            # The anomaly template renders the source (dot escaped for MarkdownV2).
+            assert "Anomaly \u00b7 swing\\.risk" in payload["text"]
             assert _TEST_CORRELATION_TAIL in payload["text"]
 
     def test_notify_uses_template_for_different_event_types(self, adapter: TelegramAdapter) -> None:
-        """Notify dispatches on event type — BalanceLow renders as BALANCE_LOW."""
+        """Notify dispatches on event type: BalanceLow renders as a low-balance message."""
         usdt = Currency.USDT
         event = BalanceLow(
             occurred_at=datetime(2026, 8, 23, 14, 22, 3, tzinfo=UTC),
@@ -416,7 +415,55 @@ class TestNotifyEvent:
             )
             adapter.notify(event)
             payload = json.loads(route.calls[0].request.content)
-            assert "BALANCE\\_LOW" in payload["text"]
+            assert "Balance low \u00b7 USDT" in payload["text"]
+
+    def test_critical_event_rings_the_phone(self, adapter: TelegramAdapter) -> None:
+        """A CRITICAL anomaly (P0) is sent loud: disable_notification is false."""
+        event = AnomalyDetected(
+            occurred_at=datetime(2026, 8, 23, 14, 22, 3, tzinfo=UTC),
+            correlation_id=_TEST_CORRELATION_ID,
+            source="swing.risk",
+            severity=AnomalySeverity.CRITICAL,
+            reason="kill switch",
+        )
+        with respx.mock() as router:
+            route = router.post(_API_URL).mock(
+                return_value=httpx.Response(200, json={"ok": True, "result": {}})
+            )
+            adapter.notify(event)
+            payload = json.loads(route.calls[0].request.content)
+            assert payload["disable_notification"] is False
+
+    def test_non_critical_event_is_sent_silently(self, adapter: TelegramAdapter) -> None:
+        """A WARNING anomaly is sent silent: disable_notification is true."""
+        event = AnomalyDetected(
+            occurred_at=datetime(2026, 8, 23, 14, 22, 3, tzinfo=UTC),
+            correlation_id=_TEST_CORRELATION_ID,
+            source="reconciler",
+            severity=AnomalySeverity.WARNING,
+            reason="drift detected",
+        )
+        with respx.mock() as router:
+            route = router.post(_API_URL).mock(
+                return_value=httpx.Response(200, json={"ok": True, "result": {}})
+            )
+            adapter.notify(event)
+            payload = json.loads(route.calls[0].request.content)
+            assert payload["disable_notification"] is True
+
+    def test_notify_urgent_is_loud(self, adapter: TelegramAdapter) -> None:
+        """The legacy urgent wrapper wraps a CRITICAL anomaly, so it still rings the phone."""
+        with respx.mock() as router:
+            route = router.post(_API_URL).mock(
+                return_value=httpx.Response(200, json={"ok": True, "result": {}})
+            )
+            adapter.notify_urgent(
+                event="health.check.fail",
+                correlation_id=_TEST_CORRELATION_ID,
+                message="db unreachable",
+            )
+            payload = json.loads(route.calls[0].request.content)
+            assert payload["disable_notification"] is False
 
     def test_notify_wire_failure_raises_notifier_error(self, adapter: TelegramAdapter) -> None:
         """A network error inside notify() surfaces as TelegramNotifierError."""

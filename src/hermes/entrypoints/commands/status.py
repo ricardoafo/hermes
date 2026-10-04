@@ -12,8 +12,8 @@ __all__ = ["COMMAND"]
 COMMAND = Command(
     name="status",
     summary="Read-only progress check: verdict, last and next bar per stream.",
-    run=lambda argv, *, stream, demo: _impl.main(
-        argv, stream=stream, demo_flag=demo, env=os.environ
+    run=lambda argv, *, stream, demo, err=None: _impl.main(
+        argv, stream=stream, demo_flag=demo, env=os.environ, err=err
     ),
     wants_demo=True,
 )

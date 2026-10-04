@@ -22,6 +22,7 @@
 #   codeowners                        CODEOWNERS syntax
 #   markdown                          markdownlint on the full tree
 #   guides-index                      the guides index still builds (--check)
+#   workflows                         actionlint + zizmor on .github/workflows
 #
 # `--changed <base>` (unit, integration) runs only the tests for the files
 # changed since <base>: see scripts/dev/changed-tests.sh. CI always runs
@@ -39,7 +40,7 @@ cd "$REPO_ROOT" || exit 2
 
 CHECKS=(format lint types imports deps complexity deadcode licenses unit
     integration coverage-floor lockfile merge-decisions codeowners markdown
-    guides-index)
+    guides-index workflows)
 
 # -n 4, not auto: auto counts the host's CPUs, not the container's 4, and
 # 10+ workers overrun the CI runner's 4 GB limit (#397).
@@ -110,6 +111,13 @@ run_one() {
         codeowners) bash scripts/dev/codeowners-syntax-check.sh ;;
         markdown) markdownlint-cli2 "**/*.md" "#node_modules" "#.venv" ;;
         guides-index) bash scripts/dev/regenerate-guides-index.sh --check ;;
+        # Pinned so a new release cannot turn CI red overnight. zizmor's
+        # baseline of findings that predate this check lives in
+        # .github/zizmor.yml and is burned down in #529.
+        workflows)
+            uv tool run --quiet --from "actionlint-py==1.7.12.*" actionlint \
+                && uv tool run --quiet zizmor==1.30.1 --offline --config .github/zizmor.yml .github/workflows
+            ;;
         *)
             echo "ERROR: unknown check '$check'. Known: ${CHECKS[*]}" >&2
             return 2

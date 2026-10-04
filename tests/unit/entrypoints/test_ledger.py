@@ -42,9 +42,9 @@ def ledger(tmp_path: Path) -> Path:
     return db
 
 
-def _run(argv: list[str]) -> tuple[int, str]:
+def _run(argv: list[str], err: io.StringIO | None = None) -> tuple[int, str]:
     out = io.StringIO()
-    return module.main(argv, stream=out), out.getvalue()
+    return module.main(argv, stream=out, err=err), out.getvalue()
 
 
 def test_clean_ledger_prints_ok_line(ledger: Path) -> None:
@@ -78,6 +78,9 @@ def test_json_document(ledger: Path) -> None:
         "pending_migrations": [],
         "event_count": 3,
         "gaps": [],
+        "unknown_migrations": [],
+        "lot_problems": [],
+        "orphans": [],
         "findings": [],
     }
 
@@ -85,23 +88,27 @@ def test_json_document(ledger: Path) -> None:
 def test_missing_ledger_exits_three(tmp_path: Path) -> None:
     """No file at --db exits 3 with the path in the message."""
     missing = tmp_path / "nope.sqlite3"
-    assert _run(["verify", "--db", str(missing)]) == (3, f"ERROR: no ledger at {missing}.\n")
+    err = io.StringIO()
+    assert _run(["verify", "--db", str(missing)], err) == (3, "")
+    assert err.getvalue() == f"ERROR: no ledger at {missing}.\n"
 
 
 def test_non_sqlite_file_exits_three(tmp_path: Path) -> None:
     """A file that is not a SQLite database is unreadable: exit 3."""
     junk = tmp_path / "junk.sqlite3"
     junk.write_bytes(b"this is not a database" * 100)
-    code, out = _run(["verify", "--db", str(junk)])
-    assert code == 3
-    assert out.startswith("ERROR: could not read the ledger:")
+    err = io.StringIO()
+    assert _run(["verify", "--db", str(junk)], err) == (3, "")
+    assert err.getvalue().startswith("ERROR: could not read the ledger:")
 
 
 def test_no_subcommand_prints_usage_and_exits_two() -> None:
     """`hermes ledger` alone is a usage error."""
-    code, out = _run([])
-    assert code == 2
-    assert out.startswith("ERROR: expected the subcommand `verify`.\nUsage: hermes ledger verify")
+    err = io.StringIO()
+    assert _run([], err) == (2, "")
+    assert err.getvalue().startswith(
+        "ERROR: expected the subcommand `verify`.\nUsage: hermes ledger verify"
+    )
 
 
 def test_unknown_subcommand_exits_two() -> None:
@@ -111,9 +118,9 @@ def test_unknown_subcommand_exits_two() -> None:
 
 def test_bad_flag_exits_two() -> None:
     """An unknown flag is a usage error."""
-    code, out = _run(["verify", "--bogus"])
-    assert code == 2
-    assert out.startswith("ERROR: bad arguments.\n")
+    err = io.StringIO()
+    assert _run(["verify", "--bogus"], err) == (2, "")
+    assert err.getvalue().startswith("ERROR: bad arguments.\n")
 
 
 @pytest.mark.parametrize("argv", [["--help"], ["verify", "-h"]])

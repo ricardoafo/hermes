@@ -76,9 +76,13 @@ jobs:
           fi
 
       - name: Join tailnet
-        uses: tailscale/github-action@v3
+        uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4.2.0
         with:
-          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          # OAuth client, not an auth key: each run mints a short-lived
+          # tagged key, so nothing here expires (#314).
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci-runner
           hostname: gh-actions-vps-bootstrap-${{ github.run_id }}
           # Pinned: `latest` downloads whatever shipped that day.
           version: 1.102.4
