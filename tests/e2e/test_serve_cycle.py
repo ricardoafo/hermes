@@ -12,7 +12,9 @@ can be placed (ADR-003 §00 I-08).
 Invariants protected here (issue #408, ADR-007 Tier 3):
 
 - serve on recorded bars: the ledger, the channels and the per-bar journal
-  lines all carry exactly the pinned signals of the recording, and no trade;
+  lines all carry exactly the pinned signals of the recording, and each
+  signal becomes exactly one simulated shadow fill (change
+  ``353-fill-kernel-in-serve``: a BUY per entry, a SELL per exit);
 - a stop that fires mid-run, then a restart, ends with the same ledger as an
   uninterrupted run: positions open at shutdown are restored, bars missed
   while down are caught up, nothing is re-notified;
@@ -156,6 +158,17 @@ def _ledger_signals(db: Path) -> list[Signal]:
     ]
 
 
+def _ledger_trades(db: Path) -> list[tuple[str, str]]:
+    """Return ``(pair, side)`` of every TradeExecuted row, oldest first.
+
+    Fill times are the bar's delivery time, not the signal's close time, so the
+    pin compares pair and side; the timing is covered in
+    ``tests/integration/entrypoints/test_serve_fills.py``.
+    """
+    rows = [json.loads(row["payload_json"]) for row in events(db, "TradeExecuted")]
+    return [(f"{p['pair']['base']}/{p['pair']['quote']}", p["side"]) for p in rows]
+
+
 def _signal_order(signal: Signal) -> tuple[str, str]:
     """Sort key of :data:`EXPECTED_SIGNALS`: signal time, then pair."""
     return signal[2], signal[0]
@@ -176,8 +189,9 @@ def test_serve_on_recorded_bars_records_notifies_and_logs_exactly_the_pinned_sig
     """One uninterrupted run gives the pinned signals in ledger, channel and journal.
 
     Also: one BarProcessed row per stream cursor and per live bar, one
-    ``serve.bar.processed`` line per live bar, and no TradeExecuted row
-    (shadow places no order).
+    ``serve.bar.processed`` line per live bar, and one simulated
+    TradeExecuted row per signal: a BUY per entry, a SELL per exit (change
+    ``353-fill-kernel-in-serve``; no exchange is wired, so none is a real order).
     """
     db = tmp_path / "ledger.sqlite3"
 
@@ -197,7 +211,7 @@ def test_serve_on_recorded_bars_records_notifies_and_logs_exactly_the_pinned_sig
         "logged": logged_signals,
         "bar_lines": len(bar_lines),
         "bar_rows": len(events(db, "BarProcessed")),
-        "trade_rows": len(events(db, "TradeExecuted")),
+        "trades": sorted(_ledger_trades(db)),
     } == {
         "exit_code": 0,
         "ledger": EXPECTED_SIGNALS,
@@ -205,7 +219,9 @@ def test_serve_on_recorded_bars_records_notifies_and_logs_exactly_the_pinned_sig
         "logged": [(pair, kind, at) for pair, kind, at, _ in EXPECTED_SIGNALS],
         "bar_lines": LIVE_BARS,
         "bar_rows": STREAMS + LIVE_BARS,
-        "trade_rows": 0,
+        "trades": sorted(
+            (pair, "BUY" if kind == "entry" else "SELL") for pair, kind, _, _ in EXPECTED_SIGNALS
+        ),
     }
 
 
