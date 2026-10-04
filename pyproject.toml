@@ -297,22 +297,3 @@ forbidden_modules = [
 min_confidence = 80
 paths = ["src/hermes"]
 exclude = ["src/hermes/ports/"]
-
-# Mutation testing — targets domain layer only (pure logic, no I/O, fastest to
-# exercise). Adapter and application layers are covered by integration tests
-# where mutation scoring is less meaningful. Kill-rate target ≥ 85 % per SA-10.
-# CI wire-up: .github/workflows/scheduled.yml (Sunday leg).
-# Run locally: uv run cosmic-ray init cosmic-ray.toml session.sqlite &&
-#              uv run cosmic-ray exec session.sqlite &&
-#              uv run cr-report session.sqlite
-[tool.cosmic-ray]
-module-path = "hermes.domain"
-python-paths = ["src"]
-timeout = 30.0
-excluded-modules = []
-
-[tool.cosmic-ray.execution-engine]
-name = "local"
-
-[tool.cosmic-ray.distributor]
-name = "local"
