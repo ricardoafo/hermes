@@ -44,12 +44,11 @@ from hermes.application.status import (
 )
 from hermes.domain.errors import LedgerError
 from hermes.entrypoints import console as console_module
-from hermes.entrypoints import serve as serve_module
 from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.daily_line import JournalCounts, count_journal, daily_line
 from hermes.entrypoints.status_view import render_status, report_to_dict
 from hermes.infrastructure.config.errors import ConfigError
-from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
+from hermes.infrastructure.config.loader import load_config
 
 __all__ = ["main", "systemd_unit_state"]
 
@@ -99,8 +98,8 @@ def main(
     """
     err = resolve_err(err)
     parser = argparse.ArgumentParser(prog="hermes status", add_help=False)
-    parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
-    parser.add_argument("--db", type=Path, default=serve_module.DEFAULT_DB_PATH)
+    parser.add_argument("--config-dir", type=Path, default=None)
+    parser.add_argument("--db", type=Path, default=None)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--json", action="store_true")
     mode.add_argument("--summary", action="store_true")
@@ -112,6 +111,8 @@ def main(
     except SystemExit:
         err.write("ERROR: could not parse `hermes status` arguments.\n" + _USAGE)
         return 2
+    parsed.config_dir = parsed.config_dir or console_module.default_config_dir(env or {})
+    parsed.db = parsed.db or console_module.default_db_path(env or {})
     if parsed.help:
         stream.write(_USAGE)
         return 0

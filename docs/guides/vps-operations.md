@@ -107,6 +107,21 @@ IP needed. `ufw` rules only permit SSH from Tailscale CGNAT
 (`100.64.0.0/10`), so this becomes the ONLY working path once ufw is
 enabled.
 
+### SSH config alias
+
+An entry in your SSH config shortens the Tailscale form to `ssh hermes`.
+On Windows the file is `$HOME\.ssh\config`; on Linux and macOS
+`~/.ssh/config`:
+
+```text
+Host hermes
+    HostName hermes-01
+    User root
+    IdentityFile ~/.ssh/hermes_vps_ed25519
+```
+
+[operator-usage.md](operator-usage.md) covers what to run once connected.
+
 ### Host key changed warning
 
 If SSH refuses to connect with `REMOTE HOST IDENTIFICATION HAS CHANGED`:
@@ -399,6 +414,26 @@ mountpoint reports mounted (or the WARN case if creds are still absent).
   the mount step that previously WARN-skipped).
 - After a VPS reprovision — before enabling any hermes systemd unit.
 
+A unit or timer whose file changed does not need a re-run: each deploy
+installs the release's changed `deploy/systemd/` files before it restarts
+the unit, and a failed health gate puts the old files back (#626). A
+deploy never enables a new unit, so a new timer still needs this
+workflow once. The env file and journald drop-in stay bootstrap-only.
+
+### Deploys and the 4h bar
+
+`install_release.sh` never stops or restarts `hermes.service` from 5
+minutes before a 4h bar close (00/04/08/12/16/20 UTC) until 5 minutes
+after it; it holds right before the restart (#626). A bar that closes
+while the unit is down is evaluated on restart from the ledger cursor.
+
+### Which version is live
+
+Each good deploy publishes a GitHub release tagged `deploy-<sha12>`
+listing the PRs and changelog lines since the previous deploy, and posts
+the same summary to Telegram (#626). On the box,
+`readlink /opt/hermes/current` names the live `versions/<sha12>`.
+
 ### Failure modes
 
 - **Tailscale-join fails** — the workflow's `Join tailnet` step
@@ -467,6 +502,46 @@ hermes_run logs -f                 # follow, Ctrl-C to stop
 
 Every console command also runs on demo data from any machine:
 `hermes --demo ok-two-positions activity` (see `hermes --demo` for the list).
+
+[operator-usage.md](operator-usage.md) walks through these commands for
+day-to-day use, with the demo scenarios, deploys and alerts.
+
+### Use the console from your PC
+
+With Tailscale connected, one local command runs a console command on the
+VPS over `ssh -t` (same user, env and ledger as `hermes_run` above):
+
+```powershell
+uv run hermes --vps tui
+uv run hermes --vps positions BTC
+uv run hermes --vps activity --all
+```
+
+Only console commands go through (`tui`, `status`, `positions`, `activity`,
+`money`); `serve`, `migrate` and the rest are
+refused, and `--vps` cannot be combined with `--demo`. Defaults match the
+setup above; override with environment variables:
+
+| Variable | Default |
+| --- | --- |
+| `HERMES_VPS_HOST` | `hermes-01` |
+| `HERMES_VPS_USER` | `root` |
+| `HERMES_VPS_KEY` | `~/.ssh/hermes_vps_ed25519` |
+
+Errors are one line: no ssh client (install OpenSSH), host unreachable
+(Tailscale down), authentication failed (check the key), or the VPS has no
+console yet (deploy a release that includes it). The ssh passphrase prompt
+shows as usual; to type it once per session, load the key into the agent
+(on Windows start it first with `Start-Service ssh-agent` from an
+administrator PowerShell, then `ssh-add $HOME\.ssh\hermes_vps_ed25519`).
+This is optional.
+
+On the VPS itself, a deploy installs `/usr/local/bin/hermes`, a wrapper that
+does what `hermes_run` does and allows only the same console commands (plus
+`--help`); `hermes status` works bare there because the wrapper sets
+`HERMES_DB_PATH` and `HERMES_CONFIG_DIR`, which every console command reads as
+the default for `--db` and `--config-dir`. `--demo SCENARIO` works before or
+after the command.
 
 ## Supervisor tools (read-only, outcome-blind)
 

@@ -35,12 +35,16 @@ from hermes.application.console.render import RenderContext, render_overview
 from hermes.entrypoints._streams import resolve_err
 
 __all__ = [
+    "CONFIG_DIR_ENV_VAR",
+    "DB_ENV_VAR",
     "DEMO_ENV_VAR",
     "DemoFlagError",
     "DemoSplit",
     "LiveReadModelUnavailableError",
     "apply_demo_flag",
     "console_commands",
+    "default_config_dir",
+    "default_db_path",
     "demo_read_model",
     "recent_journal_lines",
     "resolve_read_model",
@@ -49,6 +53,8 @@ __all__ = [
 ]
 
 DEMO_ENV_VAR: Final = "HERMES_CONSOLE_DEMO"
+DB_ENV_VAR: Final = "HERMES_DB_PATH"
+CONFIG_DIR_ENV_VAR: Final = "HERMES_CONFIG_DIR"
 _FLAG: Final = "--demo"
 
 
@@ -114,6 +120,29 @@ def console_commands() -> frozenset[str]:
     from hermes.entrypoints.commands import discover  # noqa: PLC0415 - commands import this module
 
     return frozenset(name for name, command in discover().items() if command.wants_demo)
+
+
+def default_db_path(env: Mapping[str, str]) -> Path:
+    """Return the ledger a console command reads without ``--db``.
+
+    ``HERMES_DB_PATH`` (set by the VPS wrapper to the service ledger) wins; an
+    empty value counts as unset; otherwise ``hermes serve``'s default path.
+    """
+    from hermes.entrypoints.serve import DEFAULT_DB_PATH  # noqa: PLC0415 - slow import
+
+    value = env.get(DB_ENV_VAR, "").strip()
+    return Path(value) if value else DEFAULT_DB_PATH
+
+
+def default_config_dir(env: Mapping[str, str]) -> Path:
+    """Return the config directory a console command loads without ``--config-dir``.
+
+    ``HERMES_CONFIG_DIR`` wins; an empty value counts as unset.
+    """
+    from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR  # noqa: PLC0415
+
+    value = env.get(CONFIG_DIR_ENV_VAR, "").strip()
+    return Path(value) if value else DEFAULT_CONFIG_DIR
 
 
 def apply_demo_flag(
@@ -192,9 +221,7 @@ def resolve_read_model(
     if demo is not None:
         return demo
     if db_path is None:
-        from hermes.entrypoints.serve import DEFAULT_DB_PATH  # noqa: PLC0415 - slow import
-
-        db_path = DEFAULT_DB_PATH
+        db_path = default_db_path(env)
     try:
         return LedgerReadModel.open(db_path)
     except FileNotFoundError:

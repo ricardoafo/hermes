@@ -55,6 +55,10 @@ _NOTIFY_SCRIPT = "hermes-notify-failure.sh"
 _CRASH_SCRIPT = "hermes-notify-crash.sh"
 _EXPERIMENT_DIR = Path("docs/experiments/swing-mvp1")
 _BOOTSTRAP_SCRIPT = "vps_bootstrap.sh"
+_UNIT = "hermes.service"
+# One hour into a 4h bar: clear of every close, so no test holds by accident.
+_QUIET_EPOCH = str(14400 * 1000 + 3600)
+_TIMER = "hermes-daily.timer"
 
 _SHA_A = "a" * 12
 _SHA_B = "b" * 12
@@ -224,6 +228,11 @@ class Box:
         return str(value)
 
     @property
+    def units(self) -> Path:
+        """Return the scratch stand-in for /etc/systemd/system."""
+        return self.base / "etc-systemd-system"
+
+    @property
     def log(self) -> Path:
         """Return the file every stub appends its call to."""
         return self.base / "calls.log"
@@ -238,7 +247,7 @@ class Box:
 
     def setup(self) -> Box:
         """Create the directories, the stubs and a valid env file."""
-        for directory in (self.root, self._state):
+        for directory in (self.root, self._state, self.units):
             directory.mkdir(parents=True)
         write_stubs(self._stubs, _STUBS)
         self.env_file.write_text(_ENV_FILE_DEFAULT, encoding="utf-8", newline="\n")
@@ -255,6 +264,9 @@ class Box:
         (stage / "deploy" / _NOTIFY_SCRIPT).write_text(f"#!/bin/bash\n# {sha}\n", encoding="utf-8")
         (stage / "deploy" / _CRASH_SCRIPT).write_text(f"#!/bin/bash\n# {sha}\n", encoding="utf-8")
         (stage / "config" / "strategies.yaml").write_text(_STRATEGIES_YAML, encoding="utf-8")
+        (stage / "deploy" / "systemd").mkdir()
+        (stage / "deploy" / "systemd" / _UNIT).write_text(f"# {sha}\n", encoding="utf-8")
+        (stage / "deploy" / "systemd" / _TIMER).write_text("# timer\n", encoding="utf-8")
         experiment = stage / _EXPERIMENT_DIR
         experiment.mkdir(parents=True)
         (experiment / "pre-registration-v1.md").write_text(f"# {sha}\n", encoding="utf-8")
@@ -309,6 +321,8 @@ class Box:
                 "HERMES_BACKUP_DIR": _posix(self.backups),
                 "HERMES_BACKUP_PYTHON": _posix(Path(sys.executable)),
                 "HERMES_MIGRATE_BIN": _posix(self._stubs / "hermes"),
+                "HERMES_UNIT_DIR": _posix(self.units),
+                "HERMES_NOW_EPOCH": _QUIET_EPOCH,
                 **extra,
             }
         )
@@ -1344,3 +1358,201 @@ def test_staging_gate_watches_only_the_staging_unit(box: Box) -> None:
 
     assert result.returncode == 0, _output(result)
     assert _units_named(box.calls()) == {_STAGING_UNIT}
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Unit sync (#626): a deploy installs the release's changed units and
+# timers, and a failed gate puts the old files back.
+# ─────────────────────────────────────────────────────────────────────
+
+
+def test_good_deploy_installs_the_release_units(box: Box) -> None:
+    """Invariant: a unit change ships with its release, no bootstrap run needed."""
+    box.deploy(_SHA_A)
+
+    result = box.deploy(_SHA_B)
+
+    assert result.returncode == 0, _output(result)
+    assert (box.units / _UNIT).read_text(encoding="utf-8") == f"# {_SHA_B}\n"
+    assert (box.units / _TIMER).read_text(encoding="utf-8") == "# timer\n"
+
+
+def test_unit_install_comes_before_the_daemon_reload_and_restart(box: Box) -> None:
+    """Invariant: systemd reloads after the files change, so the restart runs the new unit."""
+    result = box.deploy(_SHA_A)
+
+    out = result.stdout
+    assert out.index(f"unit {_UNIT}: installed") < out.index("current -> ")
+    assert "systemctl daemon-reload" in box.calls()
+
+
+def test_unchanged_units_are_left_alone(box: Box) -> None:
+    """Invariant: a redeploy with the same unit content rewrites nothing in the unit dir."""
+    box.deploy(_SHA_A)
+
+    result = box.deploy(_SHA_A)
+
+    assert result.returncode == 0, _output(result)
+    assert f"unit {_UNIT}: installed" not in result.stdout
+
+
+def test_failed_gate_restores_the_previous_unit(box: Box) -> None:
+    """Invariant: after a rollback the old release runs under the unit it was built for."""
+    box.deploy(_SHA_A)
+
+    result = box.deploy(_SHA_B, STUB_BAD_RELEASES=_SHA_B)
+
+    assert result.returncode == 1, _output(result)
+    assert (box.units / _UNIT).read_text(encoding="utf-8") == f"# {_SHA_A}\n"
+
+
+def test_failed_gate_removes_a_unit_the_release_added(box: Box) -> None:
+    """Invariant: a unit that only the failed release carried does not stay behind."""
+    box.deploy(_SHA_A)
+    stage = box.make_stage(_SHA_B)
+    (stage / "deploy" / "systemd" / "hermes-new.timer").write_text("# new\n", encoding="utf-8")
+
+    result = box.deploy(_SHA_B, stage=stage, STUB_BAD_RELEASES=_SHA_B)
+
+    assert result.returncode == 1, _output(result)
+    assert not (box.units / "hermes-new.timer").exists()
+
+
+def test_new_unit_is_flagged_for_bootstrap_to_enable(box: Box) -> None:
+    """Invariant: a deploy installs a new unit but leaves enabling it to vps-bootstrap."""
+    stage = box.make_stage(_SHA_A)
+    (stage / "deploy" / "systemd" / "hermes-new.timer").write_text("# new\n", encoding="utf-8")
+
+    result = box.deploy(_SHA_A, stage=stage)
+
+    assert result.returncode == 0, _output(result)
+    assert "::warning::new unit hermes-new.timer installed but not enabled" in result.stdout
+    assert not [call for call in box.calls() if call.startswith("systemctl enable")]
+
+
+def test_good_deploy_leaves_no_unit_backup_behind(box: Box) -> None:
+    """Invariant: the replaced unit copies live only for the length of one deploy."""
+    box.deploy(_SHA_A)
+    box.deploy(_SHA_B)
+
+    assert not (box.root / "units-before-deploy").exists()
+
+
+def test_release_without_units_deploys_and_leaves_the_unit_dir_alone(box: Box) -> None:
+    """Invariant: a bundle built before #626 still deploys; its units stay as they are."""
+    (box.units / _UNIT).write_text("# installed by bootstrap\n", encoding="utf-8")
+    stage = box.make_stage(_SHA_A)
+    shutil.rmtree(stage / "deploy" / "systemd")
+
+    result = box.deploy(_SHA_A, stage=stage)
+
+    assert result.returncode == 0, _output(result)
+    assert (box.units / _UNIT).read_text(encoding="utf-8") == "# installed by bootstrap\n"
+
+
+def test_staging_deploy_never_touches_the_unit_dir(staging_box: Box) -> None:
+    """Invariant: staging shares prod's unit dir, so only a prod deploy syncs units."""
+    result = staging_box.deploy(_SHA_A, **_STAGING)
+
+    assert result.returncode == 0, _output(result)
+    assert list(staging_box.units.iterdir()) == []
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Quiet bar (#626): the unit is never stopped from 5 minutes before a 4h
+# bar close until 5 minutes after it.
+# ─────────────────────────────────────────────────────────────────────
+
+_BAR = 14400
+
+
+@pytest.mark.parametrize(
+    ("into_bar", "held"),
+    [
+        (3600, None),
+        (_BAR - 301, None),
+        (_BAR - 300, 600),
+        (_BAR - 10, 310),
+        (0, 300),
+        (299, 1),
+        (300, None),
+    ],
+)
+def test_prod_deploy_holds_around_the_bar_close(box: Box, into_bar: int, held: int | None) -> None:
+    """Invariant: a restart never lands within 5 minutes of a 4h close, before or after."""
+    result = box.deploy(_SHA_A, HERMES_NOW_EPOCH=str(_BAR * 1000 + into_bar))
+
+    assert result.returncode == 0, _output(result)
+    if held is None:
+        assert "holding" not in result.stdout
+    else:
+        assert f"holding {held}s for the 4h bar close" in result.stdout
+
+
+def test_hold_comes_before_the_unit_is_stopped_or_restarted(box: Box) -> None:
+    """Invariant: the wait sits right before the restart, not minutes earlier in CI."""
+    result = box.deploy(_SHA_A, HERMES_NOW_EPOCH=str(_BAR * 1000 - 10))
+
+    out = result.stdout
+    assert out.index("holding") < out.index("current -> ")
+
+
+def test_staging_deploy_never_holds_for_the_bar(staging_box: Box) -> None:
+    """Invariant: staging trades nothing, so its deploys do not wait on prod's bars."""
+    result = staging_box.deploy(_SHA_A, HERMES_NOW_EPOCH=str(_BAR * 1000 - 10), **_STAGING)
+
+    assert result.returncode == 0, _output(result)
+    assert "holding" not in result.stdout
+
+
+# Plain `hermes` wrapper for the operator (#610).
+_CONSOLE_SCRIPT = "hermes-console.sh"
+
+
+def _stage_with_console(box: Box, sha: str) -> Path:
+    stage = box.make_stage(sha)
+    (stage / "deploy" / _CONSOLE_SCRIPT).write_text(f"#!/bin/bash\n# {sha}\n", encoding="utf-8")
+    return stage
+
+
+def test_deploy_installs_the_console_wrapper_as_hermes(box: Box, tmp_path: Path) -> None:
+    """Invariant: a prod deploy puts the release's console wrapper on PATH as `hermes`."""
+    bin_dir = tmp_path / "usr-local-bin"
+    bin_dir.mkdir()
+    result = box.deploy(
+        _SHA_A,
+        stage=_stage_with_console(box, _SHA_A),
+        HERMES_CONSOLE_BIN_DIR=_posix(bin_dir),
+    )
+
+    assert result.returncode == 0, _output(result)
+    installed = bin_dir / "hermes"
+    assert installed.read_text(encoding="utf-8") == f"#!/bin/bash\n# {_SHA_A}\n"
+    if sys.platform != "win32":  # NTFS stores no POSIX modes
+        assert installed.stat().st_mode & 0o111
+
+
+def test_deploy_without_a_console_script_installs_no_wrapper(box: Box, tmp_path: Path) -> None:
+    """Invariant: a stage that lacks the wrapper still deploys and writes nothing to PATH."""
+    bin_dir = tmp_path / "usr-local-bin"
+    bin_dir.mkdir()
+    result = box.deploy(_SHA_A, HERMES_CONSOLE_BIN_DIR=_posix(bin_dir))
+
+    assert result.returncode == 0, _output(result)
+    assert list(bin_dir.iterdir()) == []
+
+
+def test_staging_deploy_never_installs_the_console_wrapper(box: Box, tmp_path: Path) -> None:
+    """Invariant: the wrapper points at prod's release, so a staging deploy leaves it alone."""
+    bin_dir = tmp_path / "usr-local-bin"
+    bin_dir.mkdir()
+    box.env_file.write_text(_STAGING_ENV_FILE, encoding="utf-8", newline="\n")
+    result = box.deploy(
+        _SHA_A,
+        stage=_stage_with_console(box, _SHA_A),
+        HERMES_CONSOLE_BIN_DIR=_posix(bin_dir),
+        **_STAGING,
+    )
+
+    assert result.returncode == 0, _output(result)
+    assert list(bin_dir.iterdir()) == []
