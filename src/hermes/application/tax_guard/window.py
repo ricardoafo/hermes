@@ -49,6 +49,7 @@ from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeveri
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.trade_executed import TradeExecuted
 from hermes.domain.value_objects.currency import Currency
+from hermes.ports.trade_history import TradeHistoryPort
 
 __all__ = [
     "TAX_GUARD_SOURCE",
@@ -57,6 +58,7 @@ __all__ = [
     "check_breach",
     "compute_window",
     "evaluate",
+    "evaluate_ledger",
 ]
 
 
@@ -330,3 +332,40 @@ def evaluate(
     """
     stats = compute_window(events, now, window_days=config.recharacterization_window_days)
     return check_breach(stats, config, now=now, correlation_id=correlation_id)
+
+
+def evaluate_ledger(
+    history: TradeHistoryPort,
+    config: TaxGuardThresholds,
+    *,
+    now: datetime,
+    correlation_id: str,
+) -> AnomalyDetected | None:
+    """Run :func:`evaluate` over the trades the ledger holds for the rolling window.
+
+    Reads only ``[now - recharacterization_window_days, now]`` from
+    ``history``, so the guard sees every recorded trade without the caller
+    assembling an in-memory event list (#135).
+
+    Args:
+        history: Read-only trade source, normally the SQLite ledger.
+        config: An object satisfying :class:`TaxGuardThresholds`.
+        now: UTC-aware end instant of the rolling window.
+        correlation_id: ULID tying the evaluation cycle to the caller's
+            request context.
+
+    Returns:
+        The :class:`AnomalyDetected` event on breach, or ``None``.
+
+    Raises:
+        ValueError: If ``now`` is naive or the config window is invalid.
+    """
+    _require_utc(now, "now")
+    if config.recharacterization_window_days <= 0:
+        raise ValueError(
+            "recharacterization_window_days must be positive, "
+            f"got {config.recharacterization_window_days}"
+        )
+    start = now - timedelta(days=config.recharacterization_window_days)
+    trades = history.trades_between(start, now)
+    return evaluate(trades, config, now=now, correlation_id=correlation_id)

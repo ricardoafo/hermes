@@ -77,6 +77,11 @@ class PortfolioTracker:
                 )
         return Success(tracker)
 
+    @property
+    def current(self) -> PortfolioSnapshot:
+        """Return the current snapshot (read-only value object)."""
+        return self._snapshot
+
     def mark(self, bar: Bar) -> None:
         """Mark the bar's pair at the bar close when the bar is newer than its mark.
 
@@ -99,6 +104,11 @@ class PortfolioTracker:
         if isinstance(result, Success):
             self._snapshot = result.unwrap()
         return result
+
+    @property
+    def snapshot(self) -> PortfolioSnapshot:
+        """The current snapshot (immutable, so safe to hand out)."""
+        return self._snapshot
 
     def state(self) -> PortfolioState:
         """Return the risk-facing state for the current snapshot."""
