@@ -91,6 +91,7 @@ Cross-references:
 | `systemd/hermes-backup.service`          | Nightly borg backup of L2 Parquet and SQLite                                                       | installed by `vps-bootstrap`                                      |
 | `systemd/hermes-backup.timer`            | Fires the backup daily at 03:00 UTC                                                                | installed by `vps-bootstrap`; stays disabled until borg is set up |
 | `systemd/hermes-notify-failure@.service` | Started by `hermes.service`'s `OnFailure=`; sends one Telegram message                             | installed by `vps-bootstrap`                                      |
+| `systemd/hermes-bot.service`             | Read-only Telegram bot (`hermes bot`, ADR-015); reads only `/etc/hermes/env.bot`                   | `vps-bootstrap` enables it when the Telegram secrets are set      |
 | `hermes-health-ping.sh`                  | The progress ping: `hermes status --json` decides success or `/fail` while the unit is active      | shipped in each release                                           |
 | `hermes-notify-failure.sh`               | Builds and sends the Telegram failure message; needs only bash and curl                            | `/opt/hermes/bin`: `vps-bootstrap`, then each good deploy         |
 | `hermes-notify-crash.sh`                 | `hermes.service`'s `ExecStopPost=`: one Slack line after a stop that was not clean                 | `/opt/hermes/bin`: `vps-bootstrap`, then each good deploy         |
@@ -241,12 +242,13 @@ sudo systemctl restart hermes.service
 ```
 
 Reload after the env file changes (systemd caches the file into each
-running unit — restart is required):
+running unit — restart is required). `hermes_run` is the helper from
+[VPS operations](../docs/guides/vps-operations.md#check-on-hermes):
 
 ```bash
 sudo systemctl daemon-reload         # picks up EnvironmentFile changes
 sudo systemctl restart hermes.service
-journalctl -u hermes.service --since "1 minute ago"
+hermes_run logs --since 1m
 ```
 
 ## Deploy and rollback
@@ -301,7 +303,7 @@ Verify:
 ```bash
 readlink /opt/hermes/current   # or: hermes version
 systemctl status hermes.service
-journalctl -u hermes.service --since "5 minutes ago"
+hermes_run logs --level warning --since 5m
 ```
 
 ## GH Actions secrets required (populate on `prod` Environment)

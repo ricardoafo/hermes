@@ -14,6 +14,7 @@ from datetime import date
 from pathlib import Path
 from typing import ClassVar
 
+import httpx
 import pytest
 
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
@@ -104,3 +105,80 @@ def test_cli_routes_the_subcommand(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(module, "main", fake_main)
     assert cli.main(["archive-check", "--help"], stream=io.StringIO()) == 0
     assert seen == [["--help"]]
+
+
+_PING_URL = "https://hc-ping.com/archive-check-uuid"  # gitleaks:allow
+
+
+def _recording_ping(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(module, "_ping", lambda url, body: calls.append((url, body)))
+    return calls
+
+
+def test_completed_run_pings_the_dead_mans_switch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#38: a run that checked pings the URL once with the summary line."""
+    monkeypatch.setattr(module, "BinanceVisionDailyArchive", _EmptyArchive)
+    calls = _recording_ping(monkeypatch)
+    out = io.StringIO()
+    code = module.main(
+        [
+            "--date",
+            "2026-10-02",
+            "--db",
+            str(_ledger(tmp_path)),
+            "--config-dir",
+            str(_PROJECT_CONFIG),
+        ],
+        stream=out,
+        env={"HERMES_HEALTHCHECKS__ARCHIVE_CHECK_PING_URL": _PING_URL},
+    )
+    assert code == 0
+    assert [url for url, _ in calls] == [_PING_URL]
+    assert calls[0][1].startswith("2026-10-02: ")
+
+
+def test_failed_run_pings_fail(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """#38: a run that could not check pings <url>/fail with the error."""
+    monkeypatch.setattr(module, "BinanceVisionDailyArchive", _FailingArchive)
+    calls = _recording_ping(monkeypatch)
+    code = module.main(
+        ["--db", str(_ledger(tmp_path)), "--config-dir", str(_PROJECT_CONFIG)],
+        stream=io.StringIO(),
+        env={"HERMES_HEALTHCHECKS__ARCHIVE_CHECK_PING_URL": _PING_URL},
+    )
+    assert (code, calls) == (3, [(_PING_URL + "/fail", "archive down")])
+
+
+def test_no_ping_url_means_no_ping(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unset, the dead-man's switch is off."""
+    monkeypatch.setattr(module, "BinanceVisionDailyArchive", _EmptyArchive)
+    calls = _recording_ping(monkeypatch)
+    code = module.main(
+        ["--db", str(_ledger(tmp_path)), "--config-dir", str(_PROJECT_CONFIG)],
+        stream=io.StringIO(),
+        env={},
+    )
+    assert (code, calls) == (0, [])
+
+
+def test_a_failed_ping_never_changes_the_exit_code(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A healthchecks.io outage is reported as a warning only."""
+    monkeypatch.setattr(module, "BinanceVisionDailyArchive", _EmptyArchive)
+
+    def down(url: str, body: str) -> None:
+        raise httpx.ConnectError("down")
+
+    monkeypatch.setattr(module, "_ping", down)
+    out = io.StringIO()
+    code = module.main(
+        ["--db", str(_ledger(tmp_path)), "--config-dir", str(_PROJECT_CONFIG)],
+        stream=out,
+        env={"HERMES_HEALTHCHECKS__ARCHIVE_CHECK_PING_URL": _PING_URL},
+    )
+    assert code == 0
+    assert "WARNING: healthcheck ping failed: ConnectError" in out.getvalue()
