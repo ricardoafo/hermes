@@ -1,8 +1,9 @@
 """Builds ledger files for the console read-model tests through the real ledger API.
 
 Every row is written by :class:`SqliteLedger` (``record_trade``,
-``record_portfolio_mark``, ``append_event``), so the read model is tested
-against the schema and serialisation ``hermes serve`` actually produces.
+``record_portfolio_mark``, ``append_event``, ``record_capital_seed`` and
+``apply_seed_eur``), so the read model is tested against the schema and
+serialisation ``hermes serve`` actually produces.
 """
 
 from __future__ import annotations
@@ -15,9 +16,11 @@ from pathlib import Path
 
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.domain.events.bar_processed import BarProcessed
+from hermes.domain.events.shadow_capital_seeded import ShadowCapitalSeeded
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.events.trade_executed import TradeExecuted, TradeSide
 from hermes.domain.fx.eur_pricing import EurPricing
+from hermes.domain.lots.quote_leg import CapitalSeed
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.portfolio.mark import PortfolioMark
 from hermes.domain.portfolio.position import Position
@@ -117,6 +120,28 @@ class LedgerBuilder:
         )
         return self.ledger.record_trade(record, event)
 
+    def seed(
+        self, amount: str, at: datetime, *, priced: bool = True, strategy: StrategyId = SWING
+    ) -> None:
+        """Record the strategy's USDT start capital; price it at :data:`RATE` unless pending."""
+        capital = Money(amount=Decimal(amount), currency=Currency.USDT)
+        seed_id = self.ledger.record_capital_seed(
+            CapitalSeed(strategy_id=strategy, amount=capital, seeded_at=at),
+            ShadowCapitalSeeded(
+                occurred_at=at, correlation_id=self._cid(), strategy_id=strategy, amount=capital
+            ),
+        )
+        if priced:
+            self.ledger.apply_seed_eur(
+                seed_id,
+                EurPricing(
+                    quote=Currency.USDT,
+                    rate=RATE,
+                    rate_date=at.date(),
+                    source="ecb:frankfurter",
+                ),
+            )
+
     def entry_signal(
         self,
         at: datetime,
@@ -160,6 +185,8 @@ class LedgerBuilder:
         *,
         pair: Pair = BTC,
         strategy: StrategyId = SWING,
+        cash: str = "50000",
+        starting_cash: str = "100000",
     ) -> None:
         """Record the portfolio after the 4h bar of ``pair`` closing at ``boundary``."""
         positions = {
@@ -175,11 +202,11 @@ class LedgerBuilder:
         snapshot = PortfolioSnapshot(
             strategy_id=strategy,
             quote=Currency.USDT,
-            starting_cash=Decimal(100000),
-            cash=Decimal(50000),
+            starting_cash=Decimal(starting_cash),
+            cash=Decimal(cash),
             positions=positions,
             realized_pnl=Decimal(0),
-            peak_equity=Decimal(100000),
+            peak_equity=Decimal(starting_cash),
         )
         self.ledger.record_portfolio_mark(
             PortfolioMark(
@@ -211,5 +238,54 @@ def one_btc_position(path: Path, *, priced: bool = True) -> None:
                 b.bar(boundary)
             marked_at = filled_at if i == 0 else boundary - _ONE_MS
             b.mark(boundary, (Held(BTC, "0.5", "25000", mark, marked_at),))
+    finally:
+        b.close()
+
+
+SEEDED_AT = T0 - timedelta(hours=1)
+
+
+def home_ledger(path: Path, *, priced: bool = True) -> None:
+    """Write the home example: a 5,000 USDT seed, a buy, a partial sale and three marks.
+
+    In USDT: seeded 07:00 UTC with 5,000; 0.02 BTC bought at 50,000 (fee 1) just
+    after the 08:00 bar, so cash 3,999 and equity 4,999; marked at 52,000 at
+    12:00 (equity 5,039); 0.01 BTC sold at 55,000 (fee 0.55) just after 12:00, so
+    cash 4,548.45; marked at 55,000 at 16:00 (equity 5,098.45).
+
+    In EUR (rate 1.25, so 0.8 EUR per USDT): the seed is worth 4,000; the sale
+    has proceeds 440, cost 400.40 of which 0.40 is the buy fee, sell fee 0.44, so
+    gross 40, fees 0.84, net 39.16. The 0.01 BTC still held has the same net,
+    39.16. With ``priced=False`` neither the seed nor the fills have EUR values.
+    """
+    b = LedgerBuilder(path)
+    try:
+        b.seed("5000", SEEDED_AT, priced=priced)
+        b.bar(T0)
+        b.entry_signal(T0 - _ONE_MS, stop="48000", atr="1000", close="50000")
+        bought_at = T0 + timedelta(seconds=5)
+        b.trade(OrderSide.BUY, "0.02", "50000", "1", bought_at, priced=priced)
+        b.mark(
+            T0,
+            (Held(BTC, "0.02", "1000", "50000", bought_at),),
+            cash="3999",
+            starting_cash="5000",
+        )
+        b.bar(T0 + H4)
+        b.mark(
+            T0 + H4,
+            (Held(BTC, "0.02", "1000", "52000", T0 + H4 - _ONE_MS),),
+            cash="3999",
+            starting_cash="5000",
+        )
+        sold_at = T0 + H4 + timedelta(seconds=5)
+        b.trade(OrderSide.SELL, "0.01", "55000", "0.55", sold_at, priced=priced)
+        b.bar(T0 + H4 * 2)
+        b.mark(
+            T0 + H4 * 2,
+            (Held(BTC, "0.01", "500", "55000", T0 + H4 * 2 - _ONE_MS),),
+            cash="4548.45",
+            starting_cash="5000",
+        )
     finally:
         b.close()

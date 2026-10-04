@@ -68,6 +68,7 @@ from hermes.application.console.views import (
     Tax,
     TaxEstimate,
     TaxPending,
+    WaterfallColumn,
 )
 from hermes.application.console.visibility import Surface, pnl_visible
 
@@ -97,7 +98,9 @@ _EUR_PENDING: Final = "EUR pending"
 _EUR_PENDING_NOTE: Final = (
     "EUR values pending: a fill is not priced in EUR yet · run hermes fx backfill"
 )
+_NO_RATE_NOTE: Final = "EUR values pending: no EUR rate in the ledger yet · run hermes fx backfill"
 _ZERO: Final = Decimal(0)
+_CENT: Final = Decimal("0.01")
 
 _RANGE_LABEL: Final[dict[PortfolioRange, str]] = {
     PortfolioRange.TODAY: "today",
@@ -339,7 +342,10 @@ def render_tax_footnote(summary: PortfolioSummary) -> Text:
 
 def _open_line(ctx: RenderContext, summary: PortfolioSummary) -> Text:
     line = Text("Open ")
-    line.append_text(_money(ctx, summary.open_pnl))
+    if summary.open_pnl_pending:
+        line.append(_EUR_PENDING, style="dim")
+    else:
+        line.append_text(_money(ctx, summary.open_pnl))
     if isinstance(summary.open_tax_if_sold, TaxEstimate):
         line.append(" · tax if sold now ")
         line.append_text(_tax_cell(ctx, summary.open_tax_if_sold))
@@ -353,16 +359,61 @@ def _waterfall(ctx: RenderContext, summary: PortfolioSummary) -> Table:
     table.add_column("")
     table.add_column("Today", justify="right")
     table.add_column("This year", justify="right")
-    today, year = summary.today, summary.year
-    table.add_row("Gross", _money(ctx, today.gross), _money(ctx, year.gross))
-    table.add_row(f"{MINUS} Fees", _money(ctx, -today.fees), _money(ctx, -year.fees))
-    table.add_row(f"{MINUS} Est. tax", _tax_cell(ctx, today.tax), _tax_cell(ctx, year.tax))
+    columns = (summary.today, summary.year)
+    table.add_row("Gross", *(_column_money(ctx, c, c.gross) for c in columns))
+    table.add_row(f"{MINUS} Fees", *(_column_money(ctx, c, -c.fees) for c in columns))
     table.add_row(
-        Text("Net", style="bold"),
-        _money(ctx, today.net),
-        _money(ctx, year.net),
+        f"{MINUS} Est. tax",
+        *(_pending_cell() if c.eur_pending else _tax_cell(ctx, c.tax) for c in columns),
     )
+    table.add_row(Text("Net", style="bold"), *(_column_money(ctx, c, c.net) for c in columns))
     return table
+
+
+def _pending_cell() -> Text:
+    return Text(_EUR_PENDING, style="dim")
+
+
+def _column_money(ctx: RenderContext, column: WaterfallColumn, value: Decimal) -> Text:
+    return _pending_cell() if column.eur_pending else _money(ctx, value)
+
+
+def _fmt_quote(value: Decimal) -> str:
+    return f"{value.quantize(_CENT):,} USDT"
+
+
+def _started_line(summary: PortfolioSummary) -> Text | None:
+    """Return the start capital line, or ``None`` when the start is unknown.
+
+    A USDT capital seed shows as its EUR equivalent at the seed-date rate,
+    labelled as such (USDT stays off the home screen), or as USDT with "EUR
+    pending" until that rate is known.
+    """
+    started = summary.started_on
+    if started is None:
+        return None
+    on = f"on {started.day} {started:%b}"
+    quote = summary.starting_capital_quote
+    eur = summary.starting_capital
+    if quote is None:
+        return None if eur is None else Text(f"started {fmt_level(eur)} {on}", style="dim")
+    if eur is None:
+        return Text(f"started {_fmt_quote(quote)} {on} · {_EUR_PENDING}", style="dim")
+    return Text(f"started {fmt_level(eur)} {on} · Equivalent in EUR", style="dim")
+
+
+def _pending_portfolio(ctx: RenderContext, summary: PortfolioSummary) -> Group:
+    head = "Portfolio"
+    if summary.total_value_quote is not None:
+        head += f" {_fmt_quote(summary.total_value_quote)}"
+    parts: list[RenderableType] = [
+        Text(f"{head} · {_EUR_PENDING}", style="bold"),
+        Text(_NO_RATE_NOTE, style="dim"),
+    ]
+    started = _started_line(summary)
+    if started is not None:
+        parts.append(started)
+    return _framed(ctx, parts)
 
 
 def _share(part: Decimal, whole: Decimal) -> str:
@@ -391,6 +442,8 @@ def render_portfolio(
     """
     if not ctx.shows_money:
         return _framed(ctx, [Text(f"Portfolio · {_HIDDEN_NOTE}", style="dim")])
+    if summary.eur_pending:
+        return _pending_portfolio(ctx, summary)
     label = _RANGE_LABEL[summary.range]
     total_style = "dim" if ctx.stale_since else "bold"
     hero = Text()
@@ -424,14 +477,9 @@ def render_portfolio(
         Text(spark, style="dim" if ctx.stale_since else "cyan"),
         cash_line,
     ]
-    if summary.starting_capital is not None and summary.started_on is not None:
-        started = summary.started_on
-        parts.append(
-            Text(
-                f"started {fmt_level(summary.starting_capital)} on {started.day} {started:%b}",
-                style="dim",
-            )
-        )
+    started_line = _started_line(summary)
+    if started_line is not None:
+        parts.append(started_line)
     parts += [Text(""), _waterfall(ctx, summary), _open_line(ctx, summary)]
     return _framed(ctx, parts)
 

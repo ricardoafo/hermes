@@ -1,0 +1,38 @@
+# Daily refresh of the tax filing packs (#568). Writes the current tax
+# year's pack, and last year's unless it is frozen, to the unit's state
+# directory. Read-only on the ledger: opens it with SQLite mode=ro. The
+# server has no taxpayer profile, so its packs hold the filing figures only.
+# Nothing is submitted anywhere.
+#
+# Fired by hermes-tax-pack.timer, which vps-bootstrap installs but does not
+# enable. The command ships inside each release, so ExecStart follows the
+# `current` symlink.
+
+[Unit]
+Description=Hermes tax filing pack refresh
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=hermes
+Group=hermes
+
+EnvironmentFile=/etc/hermes/env.production
+StateDirectory=hermes-tax-pack
+StateDirectoryMode=0700
+WorkingDirectory=/var/lib/hermes-tax-pack
+ExecStart=/opt/hermes/current/.venv/bin/hermes tax-pack --out /var/lib/hermes-tax-pack --config-dir /opt/hermes/current/config --db /var/lib/hermes/hermes.sqlite3
+TimeoutStartSec=300s
+
+# Hardening — matches the pattern used by real hermes services (ADR-003 §09).
+# Only the state directory is writable; the ledger is opened mode=ro.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+CapabilityBoundingSet=
+ReadWritePaths=
+
+[Install]
+WantedBy=multi-user.target
