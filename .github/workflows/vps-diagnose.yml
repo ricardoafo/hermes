@@ -71,7 +71,7 @@ jobs:
       # logs. Ephemeral flag on the auth key ensures the device is
       # cleaned up when the runner terminates.
       - name: Join tailnet
-        uses: tailscale/github-action@v3
+        uses: tailscale/github-action@v4
         with:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
           hostname: gh-actions-vps-diagnose-${{ github.run_id }}
