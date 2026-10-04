@@ -208,3 +208,58 @@ def test_a_broken_config_dir_exits_3(tmp_path: Path) -> None:
     )
 
     assert code == 3
+
+
+_ALL_GRANTS = {
+    "HERMES_SUPERVISOR_GRANTS": ",".join(
+        f"hermes:read:{n}" for n in ("health", "signals", "positions", "decisions", "certification")
+    )
+}
+
+
+def test_brief_prints_the_daily_line_from_a_real_ledger(tmp_path: Path) -> None:
+    """``brief`` prints the cited daily line and audits one read per tool (#365)."""
+    db = write_ledger(
+        tmp_path / "hermes.sqlite3", signals=(signal(ETH, SignalKind.ENTRY, LAST_4H, "2618.45"),)
+    )
+
+    code, out, audit = _run(["brief"], db, env=_ALL_GRANTS)
+
+    lines = out.splitlines()
+    assert code == 0
+    assert lines[0] == "Hermes daily brief, 2026-10-03 16:10 UTC"
+    assert "1 signal(s), 1 open position(s)" in lines[1]
+    assert lines[1].endswith("[health] [signals] [positions] [decisions]")
+    assert "2618" not in out
+    assert len(audit.splitlines()) == 5
+
+
+def test_brief_weekly_lists_every_item(tmp_path: Path) -> None:
+    """``brief --weekly`` prints one line per item after the title."""
+    db = write_ledger(tmp_path / "hermes.sqlite3")
+
+    code, out, _ = _run(["brief", "--weekly"], db, env=_ALL_GRANTS)
+
+    headings = [line.split(":")[0] for line in out.splitlines()[1:]]
+    assert code == 0
+    assert headings == [
+        "- Health",
+        "- Signals",
+        "- Open positions",
+        "- Decisions waiting",
+        "- Certification",
+        "- Fill drift",
+        "- Kill triggers",
+        "- Model spend",
+    ]
+
+
+def test_brief_without_grants_reads_nothing(tmp_path: Path) -> None:
+    """Deny-by-default holds for the brief: every read is refused and audited."""
+    db = write_ledger(tmp_path / "hermes.sqlite3")
+
+    code, out, audit = _run(["brief"], db)
+
+    assert code == 0
+    assert "Health unavailable." in out
+    assert {json.loads(line)["outcome"] for line in audit.splitlines()} == {"denied"}

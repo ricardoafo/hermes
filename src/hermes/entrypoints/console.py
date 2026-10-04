@@ -24,7 +24,9 @@ from typing import Final, TextIO
 from rich.console import Console
 
 from hermes.adapters.console import FixtureReadModel, UnknownScenarioError, available_scenarios
+from hermes.adapters.systemd_journal import JournalctlReader, JournalUnavailableError
 from hermes.application.console import ConsoleReadModel, Surface
+from hermes.application.console.logs import LogLine, parse_journal_entry
 from hermes.application.console.render import RenderContext, render_overview
 
 __all__ = [
@@ -34,6 +36,7 @@ __all__ = [
     "LiveReadModelUnavailableError",
     "apply_demo_flag",
     "console_commands",
+    "recent_journal_lines",
     "resolve_read_model",
     "run_overview",
     "split_demo_flag",
@@ -182,3 +185,21 @@ def run_overview(scenario: str, stream: TextIO) -> int:
     ctx = RenderContext.for_model(model, surface=Surface.OPERATOR_CLI, width=console.width)
     console.print(render_overview(model, ctx))
     return 0
+
+
+def recent_journal_lines(count: int) -> list[LogLine] | None:
+    """Return the last ``count`` hermes journal lines, or ``None`` without journalctl.
+
+    The TUI's logs panel calls this; it lives here so the TUI imports no adapter.
+
+    Args:
+        count: How many entries to read.
+
+    Returns:
+        Parsed lines, oldest first, or ``None`` on a machine with no journal.
+    """
+    try:
+        raw = JournalctlReader().lines(last=count)
+        return [line for line in map(parse_journal_entry, raw) if line is not None]
+    except JournalUnavailableError:
+        return None

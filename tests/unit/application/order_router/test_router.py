@@ -13,7 +13,7 @@ Tests cover:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -27,7 +27,7 @@ from hermes.application.order_router.router import (
     RiskRejected,
     RoutingInput,
 )
-from hermes.application.order_router.sizing import SizingCalculator, SizingInput
+from hermes.application.order_router.sizing import SizingCalculator, SizingInput, SizingPolicy
 from hermes.application.strategy_protocol.kill_trigger_evaluator import (
     ExperimentState,
     KillTriggerEvaluator,
@@ -150,15 +150,22 @@ def _make_fee_schedule() -> FeeSchedule:
     )
 
 
-def _make_sizing_input() -> SizingInput:
-    """Return a ``SizingInput`` below all three caps."""
-    return SizingInput(
-        equity=Decimal("100000"),
-        entry_px=Decimal("50000"),
-        atr=Decimal("500"),
-        stop_atr_mult=Decimal("1.5"),
+def _make_sizing_policy() -> SizingPolicy:
+    """Return the pre-registered limits (§2 capital, §5.4/§5.5 shares)."""
+    return SizingPolicy(
+        capital=Decimal("5000"),
         risk_pct=Decimal("0.01"),
-        f_star_estimate=Decimal("0.20"),
+        max_position_pct=Decimal("0.05"),
+        max_total_exposure_pct=Decimal("0.15"),
+    )
+
+
+def _make_sizing_input() -> SizingInput:
+    """Return a ``SizingInput`` for a flat portfolio with the stop 3% below entry."""
+    return SizingInput(
+        entry_px=Decimal("50000"),
+        stop_px=Decimal("48500"),
+        open_notional=Decimal("0"),
     )
 
 
@@ -222,7 +229,7 @@ def _make_routing_input(
     evaluator = kill_evaluator or KillTriggerEvaluator(pre_reg=pre_reg)
     rules = risk_rules or []
     engine = RiskEngine(rules=rules)
-    calculator = SizingCalculator()
+    calculator = SizingCalculator(_make_sizing_policy())
 
     router = OrderRouter(
         fill_model=fill_model,
@@ -561,6 +568,46 @@ class TestOrderRouterFillDispatch:
         assert result.rule == "fill_model", (
             f"Expected rule='fill_model' for fill Rejection, got {result.rule!r}."
         )
+
+
+class _RecordingFillModel:
+    """FillModelPort stub that records every order it is asked to fill."""
+
+    def __init__(self) -> None:
+        self.orders: list[Order] = []
+
+    def fill_order(
+        self,
+        order: Order,
+        orderbook: Orderbook,
+        clock: datetime,
+        fees: FeeSchedule,
+    ) -> Fill | Rejection:
+        """Record ``order`` and fill it in full."""
+        self.orders.append(order)
+        return _make_fill(order)
+
+
+class TestOrderRouterSizingCaps:
+    """The router dispatches the pre-reg §5.4 size and never an entry past the §5.5 cap."""
+
+    # SEV-1: no rubric row matches; pre-reg §5.4 per-position cap stops over-exposure
+    def test_dispatched_qty_is_the_capped_position(self) -> None:
+        """Entry 50000, stop 48500 at 5,000 USDT: 250 USDT hard cap → 0.005 BTC sent to fill."""
+        fill_model = _RecordingFillModel()
+        router, inp = _make_routing_input(fill_model=fill_model)
+        router.route(inp)
+        assert [o.qty.amount for o in fill_model.orders] == [Decimal("0.005")]
+
+    # SEV-1: no rubric row matches; pre-reg §5.5 total exposure cap stops over-exposure
+    def test_entry_past_the_exposure_cap_is_rejected_before_dispatch(self) -> None:
+        """With 750 USDT open the router returns RiskRejected(rule='sizing') and fills nothing."""
+        fill_model = _RecordingFillModel()
+        router, inp = _make_routing_input(fill_model=fill_model)
+        blocked = replace(inp, sizing_input=replace(inp.sizing_input, open_notional=Decimal("750")))
+        result = router.route(blocked)
+        assert isinstance(result, RiskRejected), f"expected RiskRejected, got {result!r}"
+        assert (result.rule, fill_model.orders) == ("sizing", [])
 
 
 class TestOrderRouterStrategyAttribution:
