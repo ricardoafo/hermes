@@ -765,3 +765,28 @@ test('classifyBranchDelete: an unchecked ref is never assumed gone', () => {
 test('classifyBranchDelete: 403 is a failure even if the ref is absent', () => {
   assert.equal(classifyBranchDelete({ deleteStatus: 403, refStillExists: false }).outcome, 'failed');
 });
+
+// ============================================================
+// alertComment — one line per red head on the shared alerts issue
+// ============================================================
+
+const { ALERTS_LABEL, alertComment } = require('./decisions.cjs');
+
+test('alertComment: names the PR, branch, head, failing tests and base', () => {
+  const head = 'a'.repeat(40);
+  const { body } = alertComment({
+    n: 435, ref: 'feat/386-trade-eur-values', head, gate: 'pytest: tests/x.py::test_y', base: 'b'.repeat(40),
+  });
+  assert.match(body, /#435/);
+  assert.match(body, /feat\/386-trade-eur-values/);
+  assert.match(body, /tests\/x\.py::test_y/);
+  assert.match(body, /aaaaaaa/);
+  assert.match(body, /bbbbbbb/);
+});
+
+test('alertComment: carries the per-head marker, so the same head is alerted once', () => {
+  const head = 'c'.repeat(40);
+  const { body } = alertComment({ n: 1, ref: 'x', head, gate: 'mypy', base: 'd' });
+  assert.equal(hasBadComment([{ body }], head), true);
+  assert.equal(ALERTS_LABEL, 'merge-queue:alerts');
+});

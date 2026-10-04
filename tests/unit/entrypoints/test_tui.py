@@ -355,7 +355,7 @@ def test_refresh_before_a_panel_mounts_keeps_the_app_running() -> None:
             app.push_screen(_PanelScreen(lambda: "panel body"))
             app._redraw()
             await pilot.pause()
-            return app.is_running, str(app.screen.query_one("#panel", Static).renderable)
+            return app.is_running, str(app.screen.query_one("#panel", Static).content)
 
     assert asyncio.run(run()) == (True, "panel body")
 

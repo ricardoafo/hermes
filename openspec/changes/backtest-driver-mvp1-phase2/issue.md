@@ -2,5 +2,5 @@
 
 <!-- Data block below is parsed by scripts/dev/render-pr-body.sh -->
 
-issue: 273
-url: <https://github.com/ricardoafo/hermes/issues/273>
+issue: 313
+url: <https://github.com/ricardoafo/hermes/issues/313>

@@ -6,6 +6,8 @@ omit entirely, so a consumer cannot render a figure that was never sent.
 
 Prices keep their USDT quote values under the original keys; the EUR figures
 sit beside them under ``pnl`` with the rate used (operator ruling 2026-10-03).
+A row whose fills have no EUR values yet carries ``eur_pending: true`` and no
+EUR key at all (change ``ledger-read-model`` D-4).
 
 Reference: openspec/changes/console-positions/change.md (D-2).
 """
@@ -57,6 +59,8 @@ def _eur(value: Decimal) -> str:
 
 
 def _row_pnl(row: PositionRow) -> JsonObject:
+    if row.eur_pending:
+        return _pending_pnl(row)
     return {
         "eur_per_usdt": _amount(row.eur_per_usdt),
         "entry_price_eur": _eur(row.entry_eur),
@@ -66,6 +70,18 @@ def _row_pnl(row: PositionRow) -> JsonObject:
         "current_price": _amount(row.current_price),
         "change_pct": _amount(round2(row.change_pct)),
         "net_eur": _amount(row.net),
+        "high_since_entry": _amount(row.high_since_entry),
+        "stop_distance_atr": _amount(round2(row.stop_distance_atr)),
+        "stop_distance_pct": _amount(round2(row.stop_distance_pct)),
+    }
+
+
+def _pending_pnl(row: PositionRow) -> JsonObject:
+    """Return the quote-currency figures only: the fills have no EUR values yet."""
+    return {
+        "eur_pending": True,
+        "current_price": _amount(row.current_price),
+        "change_pct": _amount(round2(row.change_pct)),
         "high_since_entry": _amount(row.high_since_entry),
         "stop_distance_atr": _amount(round2(row.stop_distance_atr)),
         "stop_distance_pct": _amount(round2(row.stop_distance_pct)),
@@ -121,6 +137,9 @@ def position_detail_to_json(detail: PositionDetail, ctx: RenderContext) -> JsonO
         {"at": _stamp(ctx, event.at), "label": event.label} for event in detail.timeline
     ]
     pnl = _row_pnl(detail.row)
+    if detail.row.eur_pending:
+        data["pnl"] = pnl
+        return data
     pnl.update(
         {
             "gross_eur": _amount(detail.gross),
