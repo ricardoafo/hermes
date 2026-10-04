@@ -20,17 +20,20 @@ import asyncio
 import io
 import json
 import sys
+from collections import Counter
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
 import pytest
 import respx
+import structlog
 
 from hermes.entrypoints import _health as health_module
 from hermes.entrypoints import cli as cli_module
 from hermes.entrypoints import serve as serve_module
 from hermes.entrypoints.commands import serve as serve_command
+from hermes.entrypoints.daily_line import count_journal
 
 _RECORDED_DIR = Path(__file__).parents[2] / "fixtures" / "binance_public"
 
@@ -104,6 +107,26 @@ class TestServeSubcommand:
         )
         assert rc == 3
         assert "config load failed" in stream.getvalue()
+
+    def test_serve_logs_json_the_daily_line_can_count(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """After `hermes serve` starts, a log line is JSON that count_journal reads (#547).
+
+        The daily alive line counts serve's errors with ``count_journal``,
+        which skips any line that is not a JSON object.
+        """
+        try:
+            cli_module.main(
+                ["serve", "--config-dir", "does-not-exist-abcdef"], stream=io.StringIO()
+            )
+            capsys.readouterr()
+            structlog.get_logger("hermes.tests.serve").error("serve.test.failed", pair="BTC/USDT")
+            lines = capsys.readouterr().out.splitlines()
+        finally:
+            structlog.reset_defaults()
+
+        assert count_journal(lines).errors == Counter({"serve.test.failed": 1})
 
 
 class TestServeExitCodes:

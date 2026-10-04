@@ -7,6 +7,11 @@ routing row. Unpublished archive days are reported and skipped; the next run
 cannot catch them up, so the timer runs late enough in the day (see the unit
 file).
 
+Dead-man's switch (#38): when ``HERMES_HEALTHCHECKS__ARCHIVE_CHECK_PING_URL``
+is set, a run that completed (match or mismatch) pings it with the summary line,
+and a run that could not check pings ``<url>/fail`` with the error. Unset: no
+ping. A failed ping is reported and never changes the exit code.
+
 Exit codes: 0 all streams match, 1 at least one mismatch (alerts sent),
 2 usage, 3 config, ledger or archive failure.
 """
@@ -43,6 +48,23 @@ from hermes.infrastructure.time import now_utc
 __all__ = ["main"]
 
 _HTTP_TIMEOUT_SEC = 30.0
+_PING_URL_ENV = "HERMES_HEALTHCHECKS__ARCHIVE_CHECK_PING_URL"
+_PING_TIMEOUT_SEC = 10.0
+
+
+def _ping(url: str, body: str) -> None:
+    """POST ``body`` to a healthchecks.io ping URL."""
+    httpx.post(url, content=body.encode("utf-8"), timeout=_PING_TIMEOUT_SEC).raise_for_status()
+
+
+def _report_deadman(env: Mapping[str, str], *, ok: bool, body: str, stream: TextIO) -> None:
+    url = env.get(_PING_URL_ENV, "")
+    if not url:
+        return
+    try:
+        _ping(url if ok else f"{url}/fail", body)
+    except httpx.HTTPError as exc:
+        stream.write(f"WARNING: healthcheck ping failed: {type(exc).__name__}\n")
 
 
 def _parse(argv: list[str], stream: TextIO) -> argparse.Namespace | None:
@@ -109,13 +131,14 @@ def main(argv: list[str], *, stream: TextIO, env: Mapping[str, str] | None = Non
         return 2
     if parsed.help:
         return 0
+    if env is None:
+        env = dict(os.environ)
     try:
         config = load_config(parsed.config_dir)
     except ConfigError as exc:
         stream.write(f"ERROR: config: {exc}\n")
+        _report_deadman(env, ok=False, body=f"config: {exc}", stream=stream)
         return 3
-    if env is None:
-        env = dict(os.environ)
     now = now_utc()
     day = parsed.date if parsed.date is not None else (now - timedelta(days=1)).date()
     router = _router(env)
@@ -138,6 +161,16 @@ def main(argv: list[str], *, stream: TextIO, env: Mapping[str, str] | None = Non
             )
     except InfraError as exc:
         stream.write(f"ERROR: {exc}\n")
+        _report_deadman(env, ok=False, body=str(exc), stream=stream)
         return 3
     _write_report(report, stream)
+    _report_deadman(
+        env,
+        ok=True,
+        body=(
+            f"{report.day.isoformat()}: {len(report.checked)} checked, "
+            f"{len(report.unpublished)} not published, {len(report.mismatches)} mismatches"
+        ),
+        stream=stream,
+    )
     return 1 if report.mismatches else 0

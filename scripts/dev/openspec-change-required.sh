@@ -48,7 +48,7 @@ if [[ "${HERMES_SELF_TEST:-0}" == "1" ]]; then
     SCRIPT=$(cd "$(dirname "$0")" && printf '%s/%s' "$(pwd)" "$(basename "$0")")
     tmpdir=$(mktemp -d -t openspec-hook-selftest.XXXXXX)
     (
-        cd "$tmpdir"
+        cd "$tmpdir" || exit 1
         git init -q
         git commit -q --allow-empty -m "chore: initial"
         git update-ref refs/remotes/origin/main HEAD
@@ -56,60 +56,60 @@ if [[ "${HERMES_SELF_TEST:-0}" == "1" ]]; then
 
     # Fixture 1: branch 'main' → exempt, exit 0
     (
-        cd "$tmpdir"
+        cd "$tmpdir" || exit 1
         git checkout -q main 2>/dev/null || git checkout -q -b main
     )
-    out=$(cd "$tmpdir" && bash "$SCRIPT" 2>&1); rc=$?
+    out=$(cd "$tmpdir" && env -u HERMES_SELF_TEST bash "$SCRIPT" 2>&1); rc=$?
     [[ $rc -eq 0 ]] || { echo "SELF-TEST FAIL 1: main branch → rc=$rc, want 0"; fail=1; }
 
     # Fixture 2: 'chore/*' branch → exempt, exit 0
     (
-        cd "$tmpdir"
+        cd "$tmpdir" || exit 1
         git checkout -q -b chore/foo
     ) 2>/dev/null
-    out=$(cd "$tmpdir" && bash "$SCRIPT" 2>&1); rc=$?
+    out=$(cd "$tmpdir" && env -u HERMES_SELF_TEST bash "$SCRIPT" 2>&1); rc=$?
     [[ $rc -eq 0 ]] || { echo "SELF-TEST FAIL 2: chore/ branch → rc=$rc, want 0"; fail=1; }
 
     # Fixture 3: 'feat/*' branch, no openspec change → exit 1
     (
-        cd "$tmpdir"
+        cd "$tmpdir" || exit 1
         git checkout -q -b feat/x
     ) 2>/dev/null
-    out=$(cd "$tmpdir" && bash "$SCRIPT" 2>&1); rc=$?
+    out=$(cd "$tmpdir" && env -u HERMES_SELF_TEST bash "$SCRIPT" 2>&1); rc=$?
     [[ $rc -eq 1 ]] || { echo "SELF-TEST FAIL 3: feat/ no spec → rc=$rc, want 1"; fail=1; }
     grep -qi 'openspec' <<< "$out" || { echo "SELF-TEST FAIL 3: expected 'openspec' in stderr"; fail=1; }
 
     # Fixture 4: 'feat/*' branch with SKIP_OPENSPEC_CHECK=1 → exit 0
-    out=$(cd "$tmpdir" && SKIP_OPENSPEC_CHECK=1 bash "$0" 2>&1); rc=$?
+    out=$(cd "$tmpdir" && SKIP_OPENSPEC_CHECK=1 env -u HERMES_SELF_TEST bash "$SCRIPT" 2>&1); rc=$?
     [[ $rc -eq 0 ]] || { echo "SELF-TEST FAIL 4: skip flag → rc=$rc, want 0"; fail=1; }
     grep -q 'openspec check skipped' <<< "$out" || { echo "SELF-TEST FAIL 4: expected skip warning"; fail=1; }
 
     # Fixture 5: 'feat/*' branch with staged openspec change → exit 0
     (
-        cd "$tmpdir"
+        cd "$tmpdir" || exit 1
         mkdir -p openspec/changes/x-change
         echo "# Change: x-change" > openspec/changes/x-change/change.md
         git add openspec/changes/x-change/change.md
     ) 2>/dev/null
-    out=$(cd "$tmpdir" && bash "$SCRIPT" 2>&1); rc=$?
+    out=$(cd "$tmpdir" && env -u HERMES_SELF_TEST bash "$SCRIPT" 2>&1); rc=$?
     [[ $rc -eq 0 ]] || { echo "SELF-TEST FAIL 5: feat/ + staged spec → rc=$rc, want 0"; fail=1; }
 
     # Fixture 6: 'refactor/*' branch, no openspec change → exit 1
     (
-        cd "$tmpdir"
+        cd "$tmpdir" || exit 1
         git reset -q HEAD -- openspec/changes/x-change/change.md
         rm -rf openspec/
         git checkout -q -b refactor/y
     ) 2>/dev/null
-    out=$(cd "$tmpdir" && bash "$SCRIPT" 2>&1); rc=$?
+    out=$(cd "$tmpdir" && env -u HERMES_SELF_TEST bash "$SCRIPT" 2>&1); rc=$?
     [[ $rc -eq 1 ]] || { echo "SELF-TEST FAIL 6: refactor/ no spec → rc=$rc, want 1"; fail=1; }
 
     # Fixture 7: 'perf/*' branch, no openspec change → exit 1
     (
-        cd "$tmpdir"
+        cd "$tmpdir" || exit 1
         git checkout -q -b perf/z
     ) 2>/dev/null
-    out=$(cd "$tmpdir" && bash "$SCRIPT" 2>&1); rc=$?
+    out=$(cd "$tmpdir" && env -u HERMES_SELF_TEST bash "$SCRIPT" 2>&1); rc=$?
     [[ $rc -eq 1 ]] || { echo "SELF-TEST FAIL 7: perf/ no spec → rc=$rc, want 1"; fail=1; }
 
     rm -rf "$tmpdir"

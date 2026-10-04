@@ -18,12 +18,12 @@ import pytest
 from hermes.adapters.console import UnknownScenarioError
 from hermes.entrypoints import cli as cli_module
 from hermes.entrypoints.commands import Command
+from hermes.entrypoints.commands.tui import run_tui
 from hermes.entrypoints.console import (
     DEMO_ENV_VAR,
     DemoFlagError,
     LiveReadModelUnavailableError,
     resolve_read_model,
-    run_tui,
     split_demo_flag,
 )
 

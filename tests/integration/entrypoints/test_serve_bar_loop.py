@@ -409,3 +409,43 @@ def test_every_handled_bar_is_recorded_once_with_its_values(tmp_path: Path) -> N
     second = FakeFeed(warm=history(12))
     run_once(build(db, second, _after(12)), second)
     assert _live_bar_rows(db) == rows
+
+
+def _mark_rows(db: Path) -> list[tuple[str, str, str]]:
+    """Return ``(bar_close_time, cash, equity)`` of every portfolio mark, oldest first."""
+    connection = sqlite3.connect(db)
+    try:
+        return connection.execute(
+            "SELECT bar_close_time, cash, equity FROM portfolio_marks ORDER BY bar_close_time, id"
+        ).fetchall()
+    finally:
+        connection.close()
+
+
+def test_every_handled_bar_writes_one_portfolio_mark(tmp_path: Path) -> None:
+    """#387: N handled bars leave N marks, each with the tracker's cash and equity at that bar."""
+    db = tmp_path / "ledger.sqlite3"
+    feed = FakeFeed(warm=history(10), live_bars=live(11, 12))
+    composition = build(db, feed, _after(12))
+    run_once(composition, feed)
+
+    rows = _mark_rows(db)
+    snapshot = composition.tracker.current
+    assert [r[0] for r in rows] == [h4_bar(i).close_time.isoformat() for i in (11, 12)]
+    assert rows[-1][1:] == (str(snapshot.cash), str(snapshot.equity))
+
+
+def test_restart_then_one_bar_writes_an_equal_mark_at_the_new_close(tmp_path: Path) -> None:
+    """#387: after a restart the next bar's mark carries the same state, re-marked at its close."""
+    db = tmp_path / "ledger.sqlite3"
+    first = FakeFeed(warm=history(10), live_bars=live(11, 12))
+    run_once(build(db, first, _after(12)), first)
+    before = _mark_rows(db)[-1]
+
+    second = FakeFeed(warm=history(12), live_bars=live(13, 13))
+    run_once(build(db, second, _after(13)), second)
+
+    rows = _mark_rows(db)
+    assert len(rows) == 3
+    assert rows[-1][0] == h4_bar(13).close_time.isoformat()
+    assert rows[-1][1:] == before[1:]
