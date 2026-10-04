@@ -48,6 +48,7 @@ create_label "p2" "fbca04" "Priority: this month"
 create_label "p3" "c2e0c6" "Priority: backlog"
 create_label "merge-queue:hand-merge" "fbca04" "The merge queue cannot merge this PR itself; merge it by hand"
 create_label "merge-queue:gates-failed" "b60205" "The merge queue gates failed on this head; push a fix or remove the label to retry"
+create_label "merge-queue:alerts" "5319e7" "The one issue where the merge queue posts every red head"
 
 echo ""
 echo "area:* (code area — expand as codebase grows)"
