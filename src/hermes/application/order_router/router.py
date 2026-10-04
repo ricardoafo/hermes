@@ -30,6 +30,7 @@ Reference: spec-3-order-router change.md, pre-registration-v1.md §5.4 and §10.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -68,6 +69,22 @@ _log = structlog.get_logger(__name__)
 
 # Pre-reg binding constants — DO NOT change without updating the signed document.
 _MAX_CONCURRENT_POSITIONS: int = 3  # pre-reg concurrent position cap
+
+# Blind surfaces read the journal (decision record 2026-10-03, ruling 1), and some
+# rule reasons quote P&L-derived figures such as the RO-08 drawdown, so risk-overlay
+# log lines carry only the rule id and a fixed reason; the full text stays on the
+# RiskRejected result for operator surfaces (#513).
+_RULE_ID = re.compile(r"^(RO-\d{2})\b")
+_RULE_LOG_REASONS: dict[str, str] = {
+    "RO-01": "correlation_lock",
+    "RO-02": "spread_spike",
+    "RO-03": "slippage_limit",
+    "RO-04": "stale_orderbook",
+    "RO-05": "stablecoin_depeg_warn",
+    "RO-06": "stablecoin_depeg_halt",
+    "RO-07": "macro_volatility",
+    "RO-08": "drawdown_limit",
+}
 
 # OrderRouterResult discriminated union — callers pattern-match on isinstance.
 # Forward references (strings) are used because the classes are defined below.
@@ -271,24 +288,29 @@ class OrderRouter:
 
         # Log all individual rule decisions for audit.
         for decision in engine_result.decisions:
+            rule, rule_reason = _value_free(decision.reason)
             if decision.action.value == "warn":
                 _log.warning(
                     "risk_overlay_warn",
-                    rule_reason=decision.reason,
+                    rule=rule,
+                    reason=rule_reason,
                     strategy_id=str(inp.strategy_id),
                 )
             else:
                 _log.debug(
                     "risk_overlay_decision",
                     action=decision.action.value,
-                    rule_reason=decision.reason,
+                    rule=rule,
+                    reason=rule_reason,
                 )
 
         worst = engine_result.worst
         if worst.action.value == "halt":
+            rule, rule_reason = _value_free(worst.reason)
             _log.warning(
                 "risk_overlay_halt",
-                reason=worst.reason,
+                rule=rule,
+                reason=rule_reason,
                 strategy_id=str(inp.strategy_id),
             )
             return RiskRejected(reason=worst.reason, rule="HALT")
@@ -368,3 +390,22 @@ class OrderRouter:
             strategy_id=str(inp.strategy_id),
         )
         return RiskRejected(reason=fill_result.reason, rule="fill_model")
+
+
+def _value_free(reason: str) -> tuple[str, str]:
+    """Return the rule id and a fixed reason for a risk-overlay log line.
+
+    Args:
+        reason: The rule's human-readable reason, which may quote figures.
+
+    Returns:
+        ``(rule_id, reason)``, such as ``("RO-08", "drawdown_limit")``, or
+        ``("unknown", "unclassified")`` when the reason names no known rule.
+    """
+    match = _RULE_ID.match(reason)
+    rule = match.group(1) if match else "unknown"
+    return (
+        (rule, _RULE_LOG_REASONS[rule])
+        if rule in _RULE_LOG_REASONS
+        else ("unknown", "unclassified")
+    )
