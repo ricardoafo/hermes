@@ -1,0 +1,174 @@
+/**
+ * Turns the AI reviewer's structured output into the sticky PR comment
+ * and the pass/fail outcome of the "AI review" check (#590).
+ *
+ * Pure functions only; ai-review.yml does the API calls. The model never
+ * posts anything itself: it only returns JSON, and this module decides
+ * what reaches the PR. Anything malformed fails closed.
+ */
+
+const MARKER = '<!-- hermes-ai-review -->';
+const VERDICTS = ['approve', 'changes_needed', 'needs_decision'];
+const RISKS = ['low', 'medium', 'high'];
+const SEVERITIES = ['blocking', 'optional'];
+const MAX_TEXT = 4000;
+
+const VERDICT_LABEL = {
+  approve: 'Approve',
+  changes_needed: 'Changes needed',
+  needs_decision: 'Needs your decision',
+};
+
+function requireText(value, field) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error(`AI review output: ${field} must be a non-empty string`);
+  }
+  return value;
+}
+
+function requireEnum(value, allowed, field) {
+  if (!allowed.includes(value)) {
+    throw new Error(`AI review output: ${field} must be one of ${allowed.join(', ')}; got ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
+/**
+ * Parses and validates the reviewer's JSON.
+ *
+ * @param {string} raw the action's `structured_output`
+ * @returns {{verdict: string, risk: string, forRick: object, findings: object[]}}
+ * @throws {Error} when the output is missing, not JSON, or breaks the schema
+ */
+function parseReview(raw) {
+  if (typeof raw !== 'string' || raw.trim() === '') {
+    throw new Error('AI review output is empty: the reviewer returned no structured result');
+  }
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`AI review output is not JSON: ${err.message}`);
+  }
+  const fr = data.for_rick || {};
+  const findings = Array.isArray(data.findings) ? data.findings : null;
+  if (!findings) throw new Error('AI review output: findings must be an array');
+  return {
+    verdict: requireEnum(data.verdict, VERDICTS, 'verdict'),
+    risk: requireEnum(data.risk, RISKS, 'risk'),
+    forRick: {
+      whatChanges: requireText(fr.what_changes, 'for_rick.what_changes'),
+      whyNow: requireText(fr.why_now, 'for_rick.why_now'),
+      riskReason: requireText(fr.risk_reason, 'for_rick.risk_reason'),
+      evidence: requireText(fr.evidence, 'for_rick.evidence'),
+      decision: typeof fr.decision === 'string' ? fr.decision : '',
+    },
+    findings: findings.map((f, i) => ({
+      severity: requireEnum(f.severity, SEVERITIES, `findings[${i}].severity`),
+      title: requireText(f.title, `findings[${i}].title`),
+      detail: requireText(f.detail, `findings[${i}].detail`),
+      file: typeof f.file === 'string' ? f.file : '',
+      line: Number.isInteger(f.line) && f.line > 0 ? f.line : null,
+    })),
+  };
+}
+
+/**
+ * The check passes only on an Approve with no blocking finding. An
+ * Approve that still lists a blocking finding contradicts itself and
+ * fails, so a confused reviewer can never wave a PR through.
+ *
+ * @returns {{pass: boolean, reason: string}}
+ */
+function outcome(review) {
+  const blocking = review.findings.filter((f) => f.severity === 'blocking').length;
+  if (review.verdict === 'approve' && blocking === 0) {
+    return { pass: true, reason: 'AI review approved' };
+  }
+  if (review.verdict === 'approve') {
+    return { pass: false, reason: `AI review approved but listed ${blocking} blocking finding(s)` };
+  }
+  return { pass: false, reason: `AI review: ${VERDICT_LABEL[review.verdict]}` };
+}
+
+// Model text is untrusted: it must not ping people, forge the sticky
+// marker, or break out of the comment's layout.
+function clean(text) {
+  return String(text)
+    .slice(0, MAX_TEXT)
+    .split(MARKER).join('')
+    .replace(/<!--|-->/g, '')
+    .replace(/@(?=[A-Za-z0-9-])/g, '@​');
+}
+
+function oneLine(text) {
+  return clean(text).replace(/\s*\n\s*/g, ' ');
+}
+
+/**
+ * @param {ReturnType<typeof parseReview>} review
+ * @param {{headSha: string, runUrl: string}} meta
+ * @returns {string} the sticky comment body
+ */
+function renderComment(review, meta) {
+  const { pass } = outcome(review);
+  const fr = review.forRick;
+  const blocking = review.findings.filter((f) => f.severity === 'blocking');
+  const optional = review.findings.filter((f) => f.severity === 'optional');
+  const lines = [
+    MARKER,
+    `## For Rick: ${pass ? 'ready for your approval' : VERDICT_LABEL[review.verdict].toLowerCase()}`,
+    '',
+    `**What changes for you:** ${oneLine(fr.whatChanges)}`,
+    '',
+    `**Why now:** ${oneLine(fr.whyNow)}`,
+    '',
+    `**Risk:** ${review.risk}. ${oneLine(fr.riskReason)}`,
+    '',
+    `**What proves it works:** ${oneLine(fr.evidence)}`,
+    '',
+    `**AI review verdict:** ${VERDICT_LABEL[review.verdict]}`,
+  ];
+  if (review.verdict === 'needs_decision' && fr.decision) {
+    lines.push('', `**Your decision:** ${oneLine(fr.decision)}`);
+  }
+  const renderFinding = (f) => {
+    const where = f.file ? ` (\`${oneLine(f.file)}${f.line ? `:${f.line}` : ''}\`)` : '';
+    return `- **${oneLine(f.title)}**${where}: ${oneLine(f.detail)}`;
+  };
+  lines.push('', '### Findings for the writer', '');
+  if (review.findings.length === 0) {
+    lines.push('None.');
+  } else {
+    if (blocking.length) lines.push(`**Blocking (${blocking.length})**`, '', ...blocking.map(renderFinding), '');
+    if (optional.length) lines.push(`**Optional (${optional.length})**`, '', ...optional.map(renderFinding), '');
+  }
+  lines.push('', `<sub>Independent AI review of ${meta.headSha.slice(0, 7)} · [run](${meta.runUrl}) · updates on every push</sub>`);
+  return lines.join('\n').replace(/\n{3,}/g, '\n\n');
+}
+
+/**
+ * @param {string} reason why no review ran
+ * @param {{headSha: string, runUrl: string}} meta
+ */
+function renderFailure(reason, meta) {
+  return [
+    MARKER,
+    '## For Rick: AI review did not finish',
+    '',
+    `${oneLine(reason)}. Re-run the "AI review" job; the PR is not ready for approval until it passes.`,
+    '',
+    `<sub>${meta.headSha.slice(0, 7)} · [run](${meta.runUrl})</sub>`,
+  ].join('\n');
+}
+
+/**
+ * @param {{id: number, body: ?string}[]} comments
+ * @returns {?number} id of the existing sticky comment
+ */
+function stickyCommentId(comments) {
+  const found = comments.find((c) => (c.body || '').startsWith(MARKER));
+  return found ? found.id : null;
+}
+
+module.exports = { MARKER, parseReview, outcome, renderComment, renderFailure, stickyCommentId };
