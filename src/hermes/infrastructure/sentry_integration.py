@@ -15,6 +15,10 @@ Design notes
   so Sentry's UI can filter accordingly.
 - No PII in tags — we tag the runtime env, not user info
   (``send_default_pii=False`` explicitly on ``sentry_sdk.init``).
+- No stack-frame local variables on events (``include_local_variables=False``).
+  The SDK's scrubber masks keys named like ``token`` or ``secret``, but a
+  credential inside another local (the Telegram adapter builds
+  ``url = f"/bot{token}/..."``) would ship to Sentry as-is.
 - Traces sample rate = 0 (no performance monitoring in MVP1 — the free
   tier is error-only anyway).
 - Framework integrations are DISABLED (empty ``integrations=[]``,
@@ -72,7 +76,7 @@ def initialize(dsn: str, environment: str) -> None:
         dsn: The Sentry Data Source Name. Empty string disables the
             integration silently — no wire calls happen.
         environment: Environment tag attached to every event
-            (``"dev"`` / ``"sandbox"`` / ``"prod"``). Mirrors
+            (``"dev"`` / ``"sandbox"`` / ``"staging"`` / ``"prod"``). Mirrors
             :attr:`HermesConfig.env` so Sentry's UI can filter accordingly.
 
     Notes:
@@ -94,6 +98,9 @@ def initialize(dsn: str, environment: str) -> None:
             # No PII: we do not want user emails / IP / session tokens
             # attached to events (LOPDGDD / GDPR posture).
             send_default_pii=False,
+            # Locals can hold credentials under names the scrubber does
+            # not know (see the module docstring).
+            include_local_variables=False,
             # No performance / trace sampling in MVP1. The free tier is
             # error-only; enabling traces would burn quota without value.
             traces_sample_rate=0.0,

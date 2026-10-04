@@ -25,6 +25,11 @@ _UNIT_FILES = sorted([*_UNIT_DIR.glob("*.service"), *_UNIT_DIR.glob("*.timer")])
 _SERVICE_FILES = [path for path in _UNIT_FILES if path.suffix == ".service"]
 
 _ENV_FILE = "/etc/hermes/env.production"
+_STAGING_UNIT = "hermes-staging.service"
+_OWN_ENV_FILES = {
+    "hermes-bot.service": "/etc/hermes/env.bot",
+    _STAGING_UNIT: "/etc/hermes/env.staging",
+}
 _EXEC_PREFIXES = "@-:+!"
 
 
@@ -57,6 +62,7 @@ def test_all_expected_unit_files_are_discovered() -> None:
         "hermes-health.timer",
         "hermes-archive-check.service",
         "hermes-archive-check.timer",
+        _STAGING_UNIT,
     }
 
 
@@ -97,14 +103,17 @@ def test_hermes_service_flags_are_accepted_by_the_real_cli_parser() -> None:
 
 @pytest.mark.parametrize("path", _SERVICE_FILES, ids=lambda p: p.name)
 def test_service_environment_file_is_the_bootstrap_path(path: Path) -> None:
-    """Every unit that loads secrets reads the file vps_bootstrap.sh writes, with no '-'.
+    """Every unit that loads secrets reads its own tier's file, with no '-'.
 
     A leading '-' would boot the process with no secrets instead of failing the start.
+    The bot reads its own bootstrap-written file so it never sees exchange keys
+    (ADR-015 D-05); the staging unit reads the one the operator writes by hand
+    (#192); every other unit reads env.production.
     """
     service = _parse(path.name)["Service"]
     if "EnvironmentFile" not in service:
         pytest.skip(f"{path.name} loads no environment file")
-    assert service["EnvironmentFile"] == _ENV_FILE
+    assert service["EnvironmentFile"] == _OWN_ENV_FILES.get(path.name, _ENV_FILE)
 
 
 def test_hermes_service_loads_the_environment_file() -> None:
@@ -382,3 +391,97 @@ def test_tax_pack_flags_are_accepted_by_the_real_cli_parser(tmp_path: Path) -> N
 
     assert cli_module.main(argv, stream=stream) == 1
     assert "no ledger at" in stream.getvalue()
+
+
+_PROD_PATHS = ("/opt/hermes", "/var/lib/hermes", "/etc/hermes/env.production")
+
+
+def _staging_text_without_comments() -> str:
+    """Return the staging unit's directives, comment lines dropped."""
+    text = (_UNIT_DIR / _STAGING_UNIT).read_text(encoding="utf-8")
+    return "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+
+
+@pytest.mark.parametrize("prod_path", _PROD_PATHS)
+def test_staging_service_names_no_prod_path(prod_path: str) -> None:
+    """A staging unit that named a prod path could read or write prod state (#192, A-3.1)."""
+    words = _staging_text_without_comments().replace("=", " ").split()
+    offenders = [word for word in words if word == prod_path or word.startswith(f"{prod_path}/")]
+    assert offenders == []
+
+
+def test_staging_service_never_pages() -> None:
+    """Staging failures stay in the journal: no OnFailure= or ExecStopPost= alert (#192)."""
+    parser = _parse(_STAGING_UNIT)
+    keys = {key for section in parser.sections() for key in parser[section]}
+    assert keys & {"OnFailure", "ExecStopPost"} == set()
+
+
+def test_staging_service_runs_as_its_own_user_on_its_own_state() -> None:
+    """Isolation is by the OS (D-2): its own user, state dir, cwd and writable path."""
+    service = _parse(_STAGING_UNIT)["Service"]
+    assert (
+        service["User"],
+        service["Group"],
+        service["StateDirectory"],
+        service["WorkingDirectory"],
+        service["ReadWritePaths"],
+    ) == (
+        "hermes-staging",
+        "hermes-staging",
+        "hermes-staging",
+        "/var/lib/hermes-staging",
+        "/var/lib/hermes-staging",
+    )
+
+
+def test_staging_service_serves_its_own_release_and_ledger() -> None:
+    """ExecStart runs the staging release against the staging ledger, never prod's."""
+    argv = _exec_argv(_STAGING_UNIT)
+    assert argv[:2] == ["/opt/hermes-staging/current/.venv/bin/hermes", "serve"]
+    assert _flag(argv, "--config-dir") == "/opt/hermes-staging/current/config"
+    assert _flag(argv, "--db") == "/var/lib/hermes-staging/hermes.sqlite3"
+
+
+def test_staging_service_flags_are_accepted_by_the_real_cli_parser() -> None:
+    """An unknown flag in the staging ExecStart would crash-loop it too."""
+    out = io.StringIO()
+    rc = cli_module.main([*_exec_argv(_STAGING_UNIT)[1:], "--help"], stream=out)
+    assert rc == 0, out.getvalue()
+
+
+@pytest.mark.parametrize(
+    ("section", "key"),
+    [
+        ("Unit", "StartLimitIntervalSec"),
+        ("Unit", "StartLimitBurst"),
+        ("Service", "RestartPreventExitStatus"),
+        ("Service", "NoNewPrivileges"),
+        ("Service", "PrivateTmp"),
+        ("Service", "ProtectSystem"),
+        ("Service", "ProtectHome"),
+    ],
+)
+def test_staging_service_keeps_the_prod_hardening_and_crash_guard(section: str, key: str) -> None:
+    """Staging shares the box with prod; it must be sandboxed and loop-limited the same way."""
+    assert _parse(_STAGING_UNIT)[section][key] == _parse("hermes.service")[section][key]
+
+
+def test_staging_service_logs_under_its_own_identifier() -> None:
+    """`journalctl -t hermes-staging` must never mix in prod lines."""
+    assert _parse(_STAGING_UNIT)["Service"]["SyslogIdentifier"] == "hermes-staging"
+
+
+def test_bot_unit_loads_only_its_own_env_file() -> None:
+    """ADR-015 D-05: the bot never sees env.production and its exchange keys."""
+    service = _parse("hermes-bot.service")["Service"]
+
+    assert service["EnvironmentFile"] == "/etc/hermes/env.bot"
+
+
+def test_bot_unit_runs_hermes_bot_read_only_on_the_ledger() -> None:
+    """The bot runs `hermes bot` and gets no write path on the state dir."""
+    service = _parse("hermes-bot.service")["Service"]
+
+    assert shlex.split(service["ExecStart"])[:2] == ["/opt/hermes/current/.venv/bin/hermes", "bot"]
+    assert (service["ReadOnlyPaths"], service.get("ReadWritePaths")) == ("/var/lib/hermes", None)

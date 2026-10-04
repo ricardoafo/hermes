@@ -13,10 +13,19 @@ One or more of:
   fires — see ADR-008 §Observability)
 - `ssh hermes-01` hangs or times out (via Tailscale — port 22 is CLOSED
   to public internet per `deploy/README.md`)
-- `systemctl status hermes-*` on the VPS reports services in a `failed`
-  or `degraded` state
-- `journalctl -u hermes-* --since "5 minutes ago"` shows a wall of
-  errors, exit codes, or OOM messages
+- `systemctl status hermes.service` on the VPS reports the service
+  `failed` or `degraded`, or `hermes status` reports late or down
+- `hermes logs --level warning --since 5m` shows a wall of errors, exit
+  codes, or OOM messages
+
+## Conventions
+
+Every `hermes ...` command below runs through the `hermes_run` helper
+defined in [VPS operations § Check on hermes](../guides/vps-operations.md#check-on-hermes),
+which loads `/etc/hermes/env.production` and runs as user `hermes`. The
+trading process is one unit, `hermes.service`; the timers
+(`hermes-health`, `hermes-backup`, `hermes-daily`, `hermes-archive-check`)
+are separate units.
 
 ## Diagnosis
 
@@ -32,10 +41,11 @@ ssh hermes-01 uptime         # via Tailscale
 
 # 2. Which services are actually degraded?
 ssh hermes-01 'systemctl --failed'
-ssh hermes-01 'systemctl status hermes-*'
+ssh hermes-01 'systemctl status hermes.service'
+ssh hermes-01 'hermes_run status'    # the verdict: all good, late, down
 
 # 3. What's in the last 5 min of logs?
-ssh hermes-01 'journalctl -u hermes-* --since "5 minutes ago" -p err'
+ssh hermes-01 'hermes_run logs --level warning --since 5m'
 
 # 4. Is the VPS itself stressed?
 ssh hermes-01 'top -bn1 | head -20; free -h; df -h /'
@@ -55,39 +65,38 @@ restart JUST that service. Do not restart the box.
 
 ```bash
 # Preserve state — snapshot the ledger before any restart
-ssh hermes-01 'sudo -u hermes hermes backup --snapshot --reason "restart"'
-# ↑ Phase 0+ command; falls back to `sqlite3 .backup` if the CLI isn't
-# there yet.
+ssh hermes-01 'sudo -u hermes sqlite3 /var/lib/hermes/hermes.sqlite3 ".backup /var/lib/hermes/pre-restart.sqlite3"'
+# The nightly borg backup (`hermes-backup.timer`) runs only once borg is
+# set up; this one-off copy needs no borg.
 
-# Restart just the affected service
-ssh hermes-01 'sudo systemctl restart hermes-<service>.service'
+# Restart just the affected unit (hermes.service, or a timer's service)
+ssh hermes-01 'sudo systemctl restart hermes.service'
 
 # Verify it came back
-ssh hermes-01 'systemctl status hermes-<service>.service'
-ssh hermes-01 'journalctl -u hermes-<service> --since "1 minute ago"'
+ssh hermes-01 'systemctl status hermes.service'
+ssh hermes-01 'hermes_run logs --since 1m'
 ```
 
 ### Case B: whole VPS restart
 
 ```bash
-# 1. Pause active trading FIRST (per ADR-010 § CVE-response playbook
-#    convention — never restart while the rebalancer/swing engines
-#    have live orders)
-ssh hermes-01 'sudo -u hermes hermes engine pause --reason "vps restart"'
+# 1. Stop trading FIRST (per ADR-010 § CVE-response playbook
+#    convention — never restart while the engine has live orders)
+ssh hermes-01 'sudo systemctl stop hermes.service'
 
-# 2. Wait for confirmation that in-flight orders settled
-ssh hermes-01 'sudo -u hermes hermes engine status'
-# Expected: no `IN_FLIGHT` orders. If any, wait 30s and re-check.
-# If any are still IN_FLIGHT after 2 minutes, do NOT proceed — escalate.
+# 2. Confirm the service stopped and nothing is left open
+ssh hermes-01 'systemctl is-active hermes.service'    # expect: inactive
+ssh hermes-01 'hermes_run positions'
+# If positions or orders look unsettled, do NOT proceed — escalate.
 
 # 3. Take a backup
-ssh hermes-01 'sudo -u hermes hermes backup --snapshot --reason "vps restart"'
+ssh hermes-01 'sudo -u hermes sqlite3 /var/lib/hermes/hermes.sqlite3 ".backup /var/lib/hermes/pre-reboot.sqlite3"'
 
 # 4. Restart cleanly
 ssh hermes-01 'sudo systemctl reboot'
 ```
 
-The `pause → wait → backup → reboot` sequence is non-negotiable. Skipping
+The `stop → confirm → backup → reboot` sequence is non-negotiable. Skipping
 any step risks lost orders or ledger inconsistency at boot.
 
 ## Recovery (next 60 minutes)
@@ -100,8 +109,8 @@ until ssh hermes-01 uptime 2>/dev/null; do sleep 5; done
 
 ssh hermes-01 'uptime'                # confirm recent boot
 ssh hermes-01 'systemctl --failed'    # nothing should be listed
-ssh hermes-01 'systemctl status hermes-*'   # all `active (running)` or
-                                            # `active (waiting)` (timers)
+ssh hermes-01 'systemctl status hermes.service'   # `active (running)`
+ssh hermes-01 'systemctl list-timers "hermes-*"'  # timers waiting
 ```
 
 ### Verify services are healthy
@@ -113,12 +122,12 @@ ssh hermes-01 'systemctl status hermes-health.timer hermes-health.service'
 # The service should have fired at least once recently.
 
 # 2. Ledger integrity
-ssh hermes-01 'sudo -u hermes hermes ledger verify'
+ssh hermes-01 'hermes_run ledger verify'      # arrives with #538
 # Expected: `OK — N events, 0 gaps, 0 mismatches`
-# Any error → do NOT resume engines. Escalate.
+# Any error → do NOT restart `hermes.service`. Escalate.
 
 # 3. Config sanity
-ssh hermes-01 'sudo -u hermes hermes config check'
+ssh hermes-01 'hermes_run config check'       # arrives with #537
 # Expected: no missing secrets, no invalid values.
 ```
 
@@ -127,9 +136,9 @@ ssh hermes-01 'sudo -u hermes hermes config check'
 Only after every step above is green:
 
 ```bash
-ssh hermes-01 'sudo -u hermes hermes engine resume'
-ssh hermes-01 'sudo -u hermes hermes engine status'
-# Expected: `RUNNING`, next-tick within cadence.
+ssh hermes-01 'sudo systemctl start hermes.service'
+ssh hermes-01 'hermes_run status'
+# Expected: all good, next bar within cadence.
 ```
 
 ### Hard reboot (if the VPS is truly unresponsive)

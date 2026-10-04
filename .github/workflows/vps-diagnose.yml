@@ -75,7 +75,8 @@ jobs:
         with:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
           hostname: gh-actions-vps-diagnose-${{ github.run_id }}
-          version: latest
+          # Pinned: `latest` downloads whatever shipped that day.
+          version: 1.102.4
           # Self-hosted runner is a Docker container without NET_ADMIN /
           # /dev/net/tun — tailscaled would crash on startup without this.
           # NOT settable via `env: ADDITIONAL_DAEMON_ARGS=…` — the value

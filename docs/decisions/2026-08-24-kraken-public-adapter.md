@@ -83,11 +83,13 @@ Three concrete needs land on this decision:
   endpoints (which grant a higher tier) is going to eat 429s.
 - **Kraken pair naming quirk (X/Z prefixes)** — the adapter's
   `_pair_to_kraken_symbol()` translates the well-known pairs
-  (BTC/USD → XXBTZUSD, ETH/USDT → XETHZUSDT) via a hard-coded override
+  (BTC/USD → XXBTZUSD, ETH/USDT → ETHUSDT) via a hard-coded override
   table and falls back to raw `BASEQUOTE` concatenation for unlisted
   pairs. This is intentionally simple; every override is unit-tested,
   and unknown pairs fail fast with Kraken's own "Unknown asset pair"
-  error message instead of a mystery symbol.
+  error message instead of a mystery symbol. (Correction, 2026-10-04:
+  the table first mapped ETH/USDT to XETHZUSDT, which Kraken answers with
+  "Unknown asset pair"; the failover check of #31 caught it.)
 - **Error envelope** — Kraken wraps every response as
   `{"error": [...], "result": {...}}`. Non-empty `error` is the
   primary business-level failure surface; the adapter raises

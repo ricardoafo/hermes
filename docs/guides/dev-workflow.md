@@ -150,19 +150,31 @@ operation is gated locally before it touches the remote.
 **Manual invocation** (when you want to check without pushing):
 
 ```bash
-bash scripts/dev/pr-preflight.sh              # full suite, mirrors CI
-bash scripts/dev/pr-preflight.sh --pre-push   # the subset the hook runs
-bash scripts/dev/pr-preflight.sh --body FILE  # also lint a draft PR body
+bash scripts/dev/pr-preflight.sh               # every CI check, changed-area tests
+bash scripts/dev/pr-preflight.sh --full-tests  # ... plus every test and the coverage floor
+bash scripts/dev/pr-preflight.sh --pre-push    # the subset the hook runs
+bash scripts/dev/pr-preflight.sh --body FILE   # also lint a draft PR body
 ```
+
+Every CI check is defined once, in `scripts/dev/ci-checks.sh`. CI's
+workflow steps, the merge queue's gates and the preflight all call it,
+so a check that passes locally runs the same command CI runs (#489).
+
+Locally, the unit and integration tiers run only the tests for the
+changed area: test files that import or name a changed file, picked by
+`scripts/dev/changed-tests.sh`. A change to `pyproject.toml`, `uv.lock`,
+a `conftest.py` or the shared test support runs the whole tier. CI and
+the merge queue's merged-tree gate always run every test.
 
 **What the hook runs** (`--pre-push`):
 
 1. PR title (HEAD subject) follows the conventional-commit rule
-2. `uv run ruff format --check .` and `uv run ruff check .`, full tree
-3. `uv run mypy --strict src/hermes`
-4. `uv run lint-imports`, the hexagonal boundary contracts
-5. `markdownlint-cli2 "**/*.md" "#node_modules" "#.venv"`, full tree
-6. Guides index drift check on `docs/guides/README.md`
+2. `ci-checks.sh format` and `lint` (ruff), full tree
+3. `ci-checks.sh types` (mypy --strict)
+4. `ci-checks.sh imports`, the hexagonal boundary contracts
+5. `ci-checks.sh markdown`, `lockfile`, `codeowners` and
+   `merge-decisions`
+6. `ci-checks.sh guides-index`: the guides index still builds
 7. CHANGELOG fragment and openspec change spec, when the commit type needs
    them
 8. (Optional with `--body`) `scripts/dev/pr-body-lint.sh` against the file
@@ -171,8 +183,8 @@ There is no "base up-to-date" check: the merge queue keeps branches fresh,
 so a push from an older base is fine.
 
 **Left to CI** in pre-push mode, because CI runs them on every head:
-`pytest tests/unit/` with coverage and the per-package thresholds,
-`pip-audit`, `radon` and `vulture`. The manual full run includes them.
+the test tiers, `pip-audit`, `radon`, `vulture` and the license check.
+The manual run includes them.
 This keeps a push to about a minute instead of about five (#416).
 
 If any check fails locally, it will fail on CI. Fix it at push time, not
@@ -258,6 +270,40 @@ pre-commit hook ran. Full CI has been enforced since then.
 Enabled at the repo level. Feature branches disappear as soon as their PR
 merges. This keeps `git branch -r` uncluttered and makes stale branches
 detectable at a glance.
+
+### Branch and worktree cleanup strategy
+
+Nothing finished should outlive its PR, and nothing in flight should be
+deleted. `scripts/dev/prune-merged-branches.sh` decides which is which
+and runs at three points, so nobody has to remember to clean up:
+
+| What | When it is deleted | Who runs it |
+| --- | --- | --- |
+| Remote branch of a merged PR | On merge | GitHub (auto-delete) and the merge queue |
+| Local worktree and branch of a merged or closed PR | Next agent launch | `launch-agent.sh` (`--yes --local-only`) |
+| Remote branch of a PR closed unmerged | 3 days after close | Weekly `branch-prune` job in `scheduled.yml` |
+| Remote branch that never had a PR | 14 days without a commit | Weekly `branch-prune` job |
+
+```mermaid
+flowchart LR
+    W[Worktree or local branch] --> O{Open PR?}
+    O -- yes --> K[Keep]
+    O -- no --> F{Tip inside its closed PR head,<br/>or every patch in main?}
+    F -- no --> K
+    F -- yes --> C{Uncommitted or<br/>untracked files?}
+    C -- yes --> K
+    C -- no --> D[Delete]
+```
+
+A local branch or worktree counts as finished only when nothing on it
+would be lost: its tip is contained in the head of its merged or closed
+PR, or every patch on it is already in `origin/main`. A worktree is also
+kept while it has any uncommitted or untracked file, and anything with
+an open PR is always kept. The age limits exist because writers push for
+hours before opening a PR, and a closed PR is sometimes reopened.
+
+To clean by hand, run it without flags for a dry run, then with `--yes`.
+`HERMES_NO_AUTO_PRUNE=1` skips the automatic local run for one launch.
 
 ### Delete the local branch the moment the push lands in GH
 

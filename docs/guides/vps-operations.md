@@ -150,7 +150,7 @@ Ubuntu creates `/var/run/reboot-required` when a reboot is needed
 Reboot procedure (2-3 min downtime):
 
 ```bash
-systemctl stop hermes-swing hermes-rebalancer.timer  # add other services as they land
+systemctl stop hermes.service   # the timers are idle while it is stopped
 sync
 reboot
 ```
@@ -158,7 +158,8 @@ reboot
 Wait ~90 seconds, then reconnect and verify services came back:
 
 ```bash
-systemctl status 'hermes-*'
+systemctl status hermes.service
+systemctl list-timers 'hermes-*'
 ```
 
 ### Disk and memory checks
@@ -176,15 +177,17 @@ Baseline expectations after a full hermes install:
 - `/` disk usage: 5-10 GB (OS + Docker + hermes + venv)
 - `/var/lib/hermes`: MB-scale for years (SQLite grows slowly)
 - RAM: <1 GB idle, up to 2 GB during rebalance calculations
-- Load: <0.5 idle; brief spikes during hourly rebalancer
+- Load: <0.5 idle; brief spikes at each bar close
 
 ### Journald log retention
 
-Configured to hold 30 days by default. Verify:
+`vps-bootstrap` writes `/etc/systemd/journald.conf.d/50-hermes.conf` with the ADR-008 §1 limits: at most 2G
+(`SystemMaxUse=2G`) and at most 180 days (`MaxRetentionSec=180day`). It restarts `systemd-journald` only when the
+file changed, and the limits apply once bootstrap has been re-run. Verify:
 
 ```bash
+cat /etc/systemd/journald.conf.d/50-hermes.conf
 journalctl --disk-usage
-journalctl --vacuum-time=30d       # manual prune (rarely needed)
 ```
 
 ## Docker operations
@@ -420,16 +423,17 @@ Hermes runs as a set of systemd units under user `hermes` (created in
 Phase 0). Common commands once services exist:
 
 ```bash
-systemctl status hermes-rebalancer.service
-systemctl status hermes-swing.service
-systemctl restart hermes-swing
-systemctl stop 'hermes-*'
-systemctl start 'hermes-*'
+systemctl status hermes.service
+systemctl restart hermes.service
+systemctl stop hermes.service
+systemctl start hermes.service
+systemctl list-timers 'hermes-*'     # health, backup, daily, archive-check
 
-# View logs
-journalctl -u hermes-rebalancer -f          # tail
-journalctl -u hermes-swing --since '1 hour ago'
-journalctl -u hermes-rebalancer --grep ERROR
+# View logs (see "Check on hermes" below for the hermes_run helper)
+hermes_run logs -f                              # tail
+hermes_run logs --since 1h
+hermes_run logs --level error --since 1h
+journalctl -u hermes-backup.service --since '1 day ago'   # other units
 ```
 
 ## Check on hermes
@@ -462,6 +466,69 @@ hermes_run logs -f                 # follow, Ctrl-C to stop
 
 Every console command also runs on demo data from any machine:
 `hermes --demo ok-two-positions activity` (see `hermes --demo` for the list).
+
+## Supervisor tools (read-only, outcome-blind)
+
+`hermes supervisor` serves the supervisor's read tools (ADR-012 D-06, D-07).
+They return times, states, pairs and counts, never a price, value or P&L,
+and nothing in them can place, cancel or change anything. Access is
+deny-by-default: grant each scope you want by name, and every call leaves
+one audit line on stderr (journald) or in `--audit FILE`.
+
+```bash
+hermes_sup() {
+    sudo bash -c 'cd /var/lib/hermes &&
+        exec runuser -u hermes -- /opt/hermes/current/.venv/bin/hermes supervisor "$@" \
+            --config-dir /opt/hermes/current/config --db /var/lib/hermes/hermes.sqlite3' _ "$@"
+}
+
+hermes_sup list --grant hermes:read:health --grant hermes:read:signals
+hermes_sup call health --grant hermes:read:health
+hermes_sup call signals --since 2026-10-01T00:00:00+00:00 --grant hermes:read:signals
+```
+
+Scopes: `hermes:read:health`, `hermes:read:signals`, `hermes:read:positions`,
+`hermes:read:decisions`, `hermes:read:certification`. History before
+2026-02-01 is refused (memorization guard, ADR-003 §08); `--guard-date`
+can only move that later.
+
+`hermes supervisor mcp` is the same set of tools as an MCP server over
+stdio, so an MCP client reaches it by SSH over the tailnet, for example
+`ssh hermes-01 '<the hermes_sup line> mcp --grant hermes:read:health'`. It
+never loads `/etc/hermes/env.production` or `.env.local`; leave the env
+file out when you run it.
+
+### Desk briefings
+
+`hermes supervisor brief` prints the supervisor desk's daily line, and
+`brief --weekly` the weekly brief (#365). Both are built by code from the
+same tools and grants, with no model call, and every line cites the tool it
+came from, such as `[health]`. A tool you did not grant shows as
+"Unavailable (not granted)".
+
+```bash
+grants=()
+for s in health signals positions decisions certification; do
+    grants+=(--grant "hermes:read:$s")
+done
+hermes_sup brief "${grants[@]}"
+hermes_sup brief --weekly "${grants[@]}"
+```
+
+Before printing, the brief goes through the desk's output gate (ADR-012
+D-08): no link, code fence, secret-shaped string or outcome word, and every
+number and reference must exist in what the tools returned. If free text
+such as a decision title fails the gate, the digest of states and counts is
+printed instead and the gate's reasons go to stderr as one JSON line.
+
+```mermaid
+flowchart LR
+    T["Read tools (granted, audited)"] --> G["gather: payloads plus counts"]
+    G --> C["compose: cited items"]
+    C --> K{"output gate"}
+    K -- pass --> P["print the brief"]
+    K -- fail --> D["print the digest; reasons to stderr"]
+```
 
 ## Snapshots (Hetzner Backups + manual)
 
@@ -513,16 +580,16 @@ ps auxf | sort -k4 -r | head     # highest RAM
 ```
 
 Real-money guardrail: if load or RAM spikes correlate with
-`hermes-swing` timing out on Binance connections, check
-`journalctl -u hermes-swing --since '10 min ago'` for exchange
-API rate-limit messages. Do not restart hermes-swing while it holds
+`hermes.service` timing out on Binance connections, check
+`hermes_run logs --level warning --since 10m` for exchange
+API rate-limit messages. Do not restart `hermes.service` while it holds
 an open order.
 
 ### Systemd unit failed
 
 ```bash
 systemctl status <unit>          # last error + start attempts
-journalctl -u <unit> --since '1 hour ago' | grep -i error
+journalctl -u <unit> --since '1 hour ago' -p err   # hermes.service: hermes_run logs --level error --since 1h
 systemctl reset-failed <unit>    # clear failed state
 systemctl start <unit>           # retry
 ```
