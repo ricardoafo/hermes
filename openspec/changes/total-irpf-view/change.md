@@ -161,15 +161,17 @@ All decisions below: DECIDED by implementer, Code Owner reviews in PR.
 # domain/tax/total.py
 @dataclass(frozen=True, slots=True)
 class GeneralScales:
-    state: SavingsScale      # same band arithmetic as the savings scale
+    state: SavingsScale  # same band arithmetic as the savings scale
     regional: SavingsScale
 
 
-def general_tax(scales: GeneralScales, general_base: Decimal, personal_minimum: Decimal) -> Decimal: ...
+def general_tax(
+    scales: GeneralScales, general_base: Decimal, personal_minimum: Decimal
+) -> Decimal: ...
 
 
 @dataclass(frozen=True, slots=True)
-class TotalIrpf:              # values repr=False
+class TotalIrpf:  # values repr=False
     general_tax: Decimal
     savings_tax: Decimal
     hermes_share: Decimal
@@ -179,11 +181,14 @@ class TotalIrpf:              # values repr=False
 @dataclass(frozen=True, slots=True)
 class TotalIrpfUnavailable:
     reason: str
+
     @property
-    def label(self) -> str: ...   # "total IRPF unavailable: <reason>"
+    def label(self) -> str: ...  # "total IRPF unavailable: <reason>"
 
 
-def total_irpf(scales: GeneralScales, taxpayer: TaxpayerYear, marginal: MarginalTax) -> TotalIrpf: ...
+def total_irpf(
+    scales: GeneralScales, taxpayer: TaxpayerYear, marginal: MarginalTax
+) -> TotalIrpf: ...
 ```
 
 `estimate_year` takes `general_scales: GeneralScales | TotalIrpfUnavailable | None = None` and sets
