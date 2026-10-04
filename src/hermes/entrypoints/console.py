@@ -10,20 +10,24 @@ command, the flag prints the overview of the scenario.
 A console command is a module under :mod:`hermes.entrypoints.commands` whose
 ``Command`` sets ``wants_demo``; :func:`console_commands` reads the set from
 the registry, so no list here names them (#525). Console commands call
-:func:`resolve_read_model`.
+:func:`resolve_read_model`: a demo scenario when one is selected, otherwise the
+ledger-backed read model when the ledger file exists (#546).
 
-Reference: openspec/changes/console-read-model/change.md (D-4, D-9).
+Reference: openspec/changes/console-read-model/change.md (D-4, D-9);
+openspec/changes/ledger-read-model/change.md (D-8, D-9).
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Final, TextIO
 
 from rich.console import Console
 
 from hermes.adapters.console import FixtureReadModel, UnknownScenarioError, available_scenarios
+from hermes.adapters.console.ledger_read_model import LedgerReadModel
 from hermes.adapters.systemd_journal import JournalctlReader, JournalUnavailableError
 from hermes.application.console import ConsoleReadModel, Surface
 from hermes.application.console.logs import LogLine, parse_journal_entry
@@ -36,6 +40,7 @@ __all__ = [
     "LiveReadModelUnavailableError",
     "apply_demo_flag",
     "console_commands",
+    "demo_read_model",
     "recent_journal_lines",
     "resolve_read_model",
     "run_overview",
@@ -51,7 +56,7 @@ class DemoFlagError(ValueError):
 
 
 class LiveReadModelUnavailableError(RuntimeError):
-    """No ledger-backed read model exists yet; only ``--demo`` works."""
+    """No demo was selected and there is no ledger to read; only ``--demo`` works."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,31 +142,62 @@ def apply_demo_flag(args: list[str], stream: TextIO) -> tuple[int | None, list[s
     return None, demo.rest
 
 
-def resolve_read_model(*, demo_flag: str | None, env: Mapping[str, str]) -> ConsoleReadModel:
-    """Return the read model a console command should use.
+def demo_read_model(*, demo_flag: str | None, env: Mapping[str, str]) -> FixtureReadModel | None:
+    """Return the fixture read model of the selected demo scenario, if any.
 
     The flag wins over :data:`DEMO_ENV_VAR`; an empty variable counts as unset.
+    Commands that read the ledger themselves (``activity``, ``status``) use this
+    instead of :func:`resolve_read_model`.
 
     Args:
         demo_flag: Scenario named by ``--demo``, if any.
         env: Environment snapshot.
 
     Returns:
-        A fixture read model for the chosen scenario.
+        The scenario's read model, or ``None`` when no demo is selected.
 
     Raises:
         UnknownScenarioError: The scenario does not exist.
-        LiveReadModelUnavailableError: No demo was asked for and the ledger-backed
-            read model has not landed yet.
     """
     scenario = demo_flag or env.get(DEMO_ENV_VAR, "").strip() or None
-    if scenario is None:
+    return None if scenario is None else FixtureReadModel.load(scenario)
+
+
+def resolve_read_model(
+    *, demo_flag: str | None, env: Mapping[str, str], db_path: Path | None = None
+) -> ConsoleReadModel:
+    """Return the read model a console command should use.
+
+    A demo scenario wins; otherwise the ledger is read, read-only.
+
+    Args:
+        demo_flag: Scenario named by ``--demo``, if any.
+        env: Environment snapshot.
+        db_path: Ledger file; defaults to ``hermes serve``'s default path.
+
+    Returns:
+        A fixture read model for the chosen scenario, or the ledger read model.
+
+    Raises:
+        UnknownScenarioError: The scenario does not exist.
+        LiveReadModelUnavailableError: No demo was asked for and there is no
+            ledger file at the path.
+    """
+    demo = demo_read_model(demo_flag=demo_flag, env=env)
+    if demo is not None:
+        return demo
+    if db_path is None:
+        from hermes.entrypoints.serve import DEFAULT_DB_PATH  # noqa: PLC0415 - slow import
+
+        db_path = DEFAULT_DB_PATH
+    try:
+        return LedgerReadModel.open(db_path)
+    except FileNotFoundError:
         msg = (
-            "the console has no live data source yet; "
+            f"there is no ledger at {db_path} to read; "
             f"use --demo <scenario> ({', '.join(available_scenarios())})"
         )
-        raise LiveReadModelUnavailableError(msg)
-    return FixtureReadModel.load(scenario)
+        raise LiveReadModelUnavailableError(msg) from None
 
 
 def run_overview(scenario: str, stream: TextIO) -> int:
