@@ -90,6 +90,15 @@ class TestTelegramConfig:
         with pytest.raises(TelegramNotifierError, match="BOT_TOKEN"):
             TelegramConfig.from_env(env)
 
+    def test_repr_hides_the_bot_token(self, adapter: TelegramAdapter) -> None:
+        """Rendering the config or the adapter never prints the token (#506).
+
+        Logs, tracebacks and error reports render objects with ``repr``.
+        """
+        rendered = repr(adapter.config) + repr(adapter)
+        assert _TEST_TOKEN not in rendered
+        assert _TEST_CHAT in rendered
+
 
 class TestNotifyUrgentHappyPath:
     """Verify successful message-send behaviour of :meth:`notify_urgent`."""

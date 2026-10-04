@@ -18,7 +18,8 @@ import json
 import pytest
 
 from hermes.entrypoints import cli as cli_module
-from hermes.entrypoints.console import DEMO_ENV_VAR, run_positions
+from hermes.entrypoints.commands.positions import run_positions
+from hermes.entrypoints.console import DEMO_ENV_VAR
 
 
 def _run(args: list[str]) -> tuple[int, str]:

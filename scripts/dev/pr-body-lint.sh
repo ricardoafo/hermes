@@ -212,9 +212,9 @@ if [[ -z "$(printf '%s' "$PR_BODY" | tr -d '[:space:]')" ]]; then
     exit 1
 fi
 
-missing=$(lint_body "$PR_BODY")
-if [[ -n "$missing" ]]; then
-    echo "::error::PR body missing content in mandatory sections: $missing"
+missing_sections=$(lint_body "$PR_BODY")
+if [[ -n "$missing_sections" ]]; then
+    echo "::error::PR body missing content in mandatory sections: $missing_sections"
     echo "Fill each ## section with real content (not the placeholder <!-- ... --> comment)."
     exit 1
 fi

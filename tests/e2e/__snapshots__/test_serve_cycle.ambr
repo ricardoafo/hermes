@@ -1,0 +1,83 @@
+# serializer version: 1
+# name: test_status_json_after_a_serve_cycle_matches_its_snapshot
+  tuple(
+    0,
+    dict({
+      'bars_24h': dict({
+        '1d': 3,
+        '4h': 18,
+      }),
+      'bot': 'running',
+      'generated_at': '2025-01-21T00:00:10+00:00',
+      'open_positions': list([
+      ]),
+      'signals': dict({
+        'last_24h': 2,
+        'last_7d': 8,
+      }),
+      'streams': list([
+        dict({
+          'due': '2025-01-21T04:00:05+00:00',
+          'interval': '4h',
+          'last_close': '2025-01-21T00:00:00+00:00',
+          'late_by_seconds': 0,
+          'next_close': '2025-01-21T04:00:00+00:00',
+          'pair': 'BTC/USDT',
+          'state': 'on time',
+        }),
+        dict({
+          'due': '2025-01-22T00:00:05+00:00',
+          'interval': '1d',
+          'last_close': '2025-01-21T00:00:00+00:00',
+          'late_by_seconds': 0,
+          'next_close': '2025-01-22T00:00:00+00:00',
+          'pair': 'BTC/USDT',
+          'state': 'on time',
+        }),
+        dict({
+          'due': '2025-01-21T04:00:05+00:00',
+          'interval': '4h',
+          'last_close': '2025-01-21T00:00:00+00:00',
+          'late_by_seconds': 0,
+          'next_close': '2025-01-21T04:00:00+00:00',
+          'pair': 'ETH/USDT',
+          'state': 'on time',
+        }),
+        dict({
+          'due': '2025-01-22T00:00:05+00:00',
+          'interval': '1d',
+          'last_close': '2025-01-21T00:00:00+00:00',
+          'late_by_seconds': 0,
+          'next_close': '2025-01-22T00:00:00+00:00',
+          'pair': 'ETH/USDT',
+          'state': 'on time',
+        }),
+        dict({
+          'due': '2025-01-21T04:00:05+00:00',
+          'interval': '4h',
+          'last_close': '2025-01-21T00:00:00+00:00',
+          'late_by_seconds': 0,
+          'next_close': '2025-01-21T04:00:00+00:00',
+          'pair': 'SOL/USDT',
+          'state': 'on time',
+        }),
+        dict({
+          'due': '2025-01-22T00:00:05+00:00',
+          'interval': '1d',
+          'last_close': '2025-01-21T00:00:00+00:00',
+          'late_by_seconds': 0,
+          'next_close': '2025-01-22T00:00:00+00:00',
+          'pair': 'SOL/USDT',
+          'state': 'on time',
+        }),
+      ]),
+      'unit': 'running',
+      'verdict': dict({
+        'headline': 'All good',
+        'level': 'ok',
+        'next_step': 'nothing',
+        'reason': 'Watching BTC, ETH and SOL. Every check ran on time.',
+      }),
+    }),
+  )
+# ---
