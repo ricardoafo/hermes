@@ -1,0 +1,48 @@
+# Staging systemd unit for `hermes serve` on hermes-01, next to prod (#192).
+#
+# Shipped disabled: nothing in the repo enables it. The operator copies it to
+# /etc/systemd/system and enables it by hand; see
+# docs/guides/staging-on-hermes-01.md. Layout, fully separate from prod:
+#   /opt/hermes-staging/current    -> versions/<version>  (atomic symlink)
+#   /opt/hermes-staging/current/.venv   per-release virtualenv
+#   /opt/hermes-staging/current/config  per-release non-secret YAML
+#   /etc/hermes/env.staging        secrets only, HERMES_ENV="staging"
+#   /var/lib/hermes-staging        state: its own ledger, never prod's
+#
+# No OnFailure= and no ExecStopPost= alerts: a staging crash must never page.
+
+[Unit]
+Description=Hermes trading engine, staging (hermes serve)
+After=network-online.target
+Wants=network-online.target
+# Same crash-loop guard as prod: every start re-fetches warm-up history from
+# the same IP prod uses, so a loop here would eat prod's rate limit.
+StartLimitIntervalSec=10min
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=hermes-staging
+Group=hermes-staging
+
+StateDirectory=hermes-staging
+StateDirectoryMode=0750
+WorkingDirectory=/var/lib/hermes-staging
+
+# No leading "-": a missing file must fail the start, not boot without secrets.
+EnvironmentFile=/etc/hermes/env.staging
+
+ExecStart=/opt/hermes-staging/current/.venv/bin/hermes serve --config-dir /opt/hermes-staging/current/config --db /var/lib/hermes-staging/hermes.sqlite3
+Restart=on-failure
+RestartSec=30s
+RestartPreventExitStatus=2 3
+SyslogIdentifier=hermes-staging
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/hermes-staging
+
+[Install]
+WantedBy=multi-user.target

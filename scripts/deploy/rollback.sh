@@ -25,23 +25,65 @@
 #   ssh hermes-01 HERMES_RESTORE_DB=/var/lib/hermes/backups/pre-<sha12>.sqlite3 \
 #       /opt/hermes/bin/rollback.sh
 #
+# Staging (#192): HERMES_TARGET=staging rolls back /opt/hermes-staging and
+# hermes-staging.service instead, and refuses to run when its root or ledger
+# resolves inside prod's tree:
+#
+#   ssh hermes-01 HERMES_TARGET=staging /opt/hermes-staging/bin/rollback.sh
+#
 # Test seams: HERMES_ROOT, SYSTEMCTL, HERMES_DB (health_gate.sh adds its own).
 #
-# Reference: openspec/changes/179-cd-first-real-deploy/change.md (D-6).
+# Reference: openspec/changes/179-cd-first-real-deploy/change.md (D-6),
+# openspec/changes/192-staging-env/change.md (D-3).
 
 set -euo pipefail
 
-ROOT=${HERMES_ROOT:-/opt/hermes}
-SYSTEMCTL=${SYSTEMCTL:-systemctl}
-UNIT=hermes.service
-DB=${HERMES_DB:-/var/lib/hermes/hermes.sqlite3}
-RESTORE=${HERMES_RESTORE_DB:-}
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+PROD_ROOT=/opt/hermes
+PROD_STATE=/var/lib/hermes
+PROD_UNIT=hermes.service
 
 die() {
     echo "::error::$*"
     exit 1
 }
+
+TARGET=${HERMES_TARGET:-prod}
+case "$TARGET" in
+    prod)
+        target_root=$PROD_ROOT
+        target_state=$PROD_STATE
+        UNIT=$PROD_UNIT
+        ;;
+    staging)
+        target_root=/opt/hermes-staging
+        target_state=/var/lib/hermes-staging
+        UNIT=hermes-staging.service
+        ;;
+    *) die "unknown HERMES_TARGET '$TARGET': expected prod or staging" ;;
+esac
+
+ROOT=${HERMES_ROOT:-$target_root}
+SYSTEMCTL=${SYSTEMCTL:-systemctl}
+DB=${HERMES_DB:-$target_state/hermes.sqlite3}
+RESTORE=${HERMES_RESTORE_DB:-}
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
+# True when $1, symlinks resolved, is $2 or lies under it.
+is_within() {
+    local path base
+    path=$(realpath -m -- "$1")
+    base=$(realpath -m -- "$2")
+    [ "$path" = "$base" ] || [ "${path#"$base"/}" != "$path" ]
+}
+
+if [ "$TARGET" = staging ]; then
+    for path in "$ROOT" "$DB"; do
+        if is_within "$path" "$PROD_ROOT" || is_within "$path" "$PROD_STATE"; then
+            die "staging target resolves $path inside prod's $PROD_ROOT or $PROD_STATE: refusing"
+        fi
+    done
+    [ "$UNIT" != "$PROD_UNIT" ] || die "staging target would restart prod's $PROD_UNIT: refusing"
+fi
 
 # `readlink -f` exits 0 on a missing link, so presence needs `-L`.
 [ -L "$ROOT/current" ] || die "no current release at $ROOT/current"
