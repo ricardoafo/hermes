@@ -144,14 +144,14 @@ manual step.
   there is no file upload. With 5,000 USDT it is unlikely to be due at all.
 - **Cost of reversal**: LOW.
 
-### D-8: Printable HTML, no PDF library
+### D-8: PDF output (decided by Rick, 2026-10-04)
 
-- **Decision**: both sheets are self-contained HTML that print to PDF from a
-  browser.
-- **Alternatives**: a PDF library (a new dependency, which needs Rick's
-  approval).
-- **Rationale**: the same content and the same PDF, with nothing added to
-  the dependency tree. Pending Rick's choice on the thread's decision card.
+- **Decision**: the Renta Web sheet and the dossier are written as PDF files.
+  Rick chose PDF over printable HTML on the thread's decision card.
+- **Alternatives**: printable HTML printed to PDF from a browser (no new
+  dependency; not chosen).
+- **Rationale**: the gestor receives a PDF either way; writing it directly
+  removes the manual print step.
 - **Cost of reversal**: LOW.
 
 ## Requirements
