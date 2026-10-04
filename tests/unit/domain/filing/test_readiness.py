@@ -22,6 +22,7 @@ def _assess(
     obligation: Obligation = Obligation.NOT_REQUIRED,
     estimate: bool = False,
     shadow: bool = False,
+    campaign: bool = True,
 ) -> Readiness:
     return assess_readiness(
         2026,
@@ -31,6 +32,7 @@ def _assess(
         obligation=obligation,
         estimate_included=estimate,
         shadow=shadow,
+        campaign_confirmed=campaign,
     )
 
 
@@ -80,3 +82,8 @@ def test_shadow_adds_the_no_real_tax_note() -> None:
     """Invariant: a shadow pack says no real tax is due."""
     texts = [i.text for i in _assess(shadow=True).items]
     assert any("no real tax is due" in text for text in texts)
+
+
+def test_unconfirmed_renta_boxes_keep_a_closed_year_incomplete() -> None:
+    """Invariant (D-6): a closed year never freezes on another campaign's box numbers."""
+    assert _assess(campaign=False).status is PackStatus.INCOMPLETE

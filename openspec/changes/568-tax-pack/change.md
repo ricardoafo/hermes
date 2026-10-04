@@ -34,6 +34,11 @@ manual step.
   (open, incomplete, ready).
 - `src/hermes/domain/filing/pack_changes.py`: what changed between two
   refreshes.
+- `src/hermes/domain/filing/renta_campaign.py`,
+  `src/hermes/infrastructure/config/renta.py` and
+  `config/renta_campaigns.yaml`: the Renta Web box per tax year.
+- `src/hermes/application/filing/renta_sheet.py`: the printable Spanish
+  Renta Web sheet (with the 721 fields when due) and the dossier.
 - `src/hermes/ports/tax_pack.py` and
   `src/hermes/adapters/ledger/trade_rates_reader.py`: the read-only rate
   lookup.
@@ -112,6 +117,43 @@ manual step.
   in a checkout.
 - **Cost of reversal**: LOW.
 
+### D-6: A Spanish sheet to copy into Renta Web, with box numbers from config
+
+- **Decision**: `renta-web.html` lists one entry per coin and kind of
+  consideration for the campaign's virtual-currency box (1804 in the 2025
+  campaign), with Renta Web's labels and keys (F legal tender, N another
+  virtual currency), amounts in the Spanish format. Box numbers come from
+  `config/renta_campaigns.yaml`, one entry per tax year; a year without its
+  own entry borrows the latest earlier one, is marked provisional, and its
+  pack cannot freeze.
+- **Alternatives**: an import file (Renta Web has no import for this
+  section, checked 2026-10-04); hard-coded boxes (AEAT can renumber them).
+- **Rationale**: it is what Spanish crypto-tax tools hand their users (a
+  box-by-box report plus a dossier), and Rick asked for the boxes filled.
+- **Cost of reversal**: LOW.
+
+### D-7: The 721 as fields in the web form's order, not a submission file
+
+- **Decision**: when the 721 is due, the sheet lists its fields in the order
+  of Orden HFP/886/2023 (as amended by Orden HAC/1504/2024): declarant
+  condition, custodian, coin, units, unit value, value source, balance,
+  origin key. Nothing is generated for the web service.
+- **Alternatives**: an XML message for the AEAT web service (needs a signed
+  client; too close to submitting, which hermes never does).
+- **Rationale**: the 721 is filed through the AEAT web form or web service;
+  there is no file upload. With 5,000 USDT it is unlikely to be due at all.
+- **Cost of reversal**: LOW.
+
+### D-8: Printable HTML, no PDF library
+
+- **Decision**: both sheets are self-contained HTML that print to PDF from a
+  browser.
+- **Alternatives**: a PDF library (a new dependency, which needs Rick's
+  approval).
+- **Rationale**: the same content and the same PDF, with nothing added to
+  the dependency tree. Pending Rick's choice on the thread's decision card.
+- **Cost of reversal**: LOW.
+
 ## Requirements
 
 ### R-1: One folder per year with every file
@@ -144,6 +186,14 @@ manual step.
 - **A-5.2**: import-linter `filing-is-measurement-only` still passes (the new
   modules live under `hermes.domain.filing` and `hermes.application.filing`).
 
+### R-7: Renta Web sheet
+
+- **A-7.1**: `tests/unit/application/filing/test_renta_sheet.py` finds the
+  box 1804 entry with key N and Spanish amounts, the provisional note, and the
+  721 fields only when the 721 is due.
+- **A-7.2**: a closed year with only an earlier campaign's boxes does not
+  freeze (`test_tax_pack.py`).
+
 ### R-6: Timer shipped off
 
 - **A-6.1**: `tests/unit/deploy/test_systemd_units.py` pins the 07:30 Madrid
@@ -173,6 +223,8 @@ Files in `<out>/<year>/`:
 | File | Content |
 | --- | --- |
 | `README.md` | status, headline figures, checklist, latest changes, file index |
+| `renta-web.html` | the Renta Web entries (Spanish) and the 721 fields when due |
+| `dossier.html` | every sale and the lots behind it, with fees and ECB rates |
 | `report.md` + 3 CSV | the #504 report, unchanged |
 | `trail.csv` | sale, lot, quantities, EUR values, ECB rates, gain |
 | `tax-estimate.txt` | the #528 estimate, only where the profile exists |

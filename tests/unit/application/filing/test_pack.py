@@ -27,6 +27,7 @@ from hermes.domain.filing.modelo100 import DisposalPiece
 from hermes.domain.filing.modelo721 import Modelo721Rules
 from hermes.domain.filing.pack_changes import FIRST_REFRESH
 from hermes.domain.filing.readiness import PackStatus
+from hermes.domain.filing.renta_campaign import CampaignLayout, RentaCampaign
 from hermes.domain.filing.trail import TradeRate
 from hermes.domain.value_objects.currency import Currency
 from tests.unit.application.filing.fake_reader import FakeFilingReader
@@ -38,6 +39,13 @@ _OPEN_DAY = date(2026, 10, 4)
 _CLOSED_DAY = date(2027, 1, 5)
 _NOW = datetime(2026, 10, 4, 5, 30, tzinfo=UTC)
 _SALE_AT = datetime(2026, 6, 1, 10, tzinfo=UTC)
+_CAMPAIGN = RentaCampaign(
+    tax_year=2026,
+    layout=CampaignLayout(
+        tax_year=2026, transmissions_box="1804", source="test", verified_on=date(2027, 4, 1)
+    ),
+    provisional=False,
+)
 
 
 @dataclass
@@ -86,6 +94,7 @@ def _output(
     today: date = _OPEN_DAY,
     estimate: str | None = None,
     previous: dict[str, str] | None = None,
+    campaign: RentaCampaign | None = _CAMPAIGN,
 ) -> PackOutput:
     reader = FakeFilingReader(pieces=[_sale()] if pieces is None else pieces)
     pack = _filing(reader, today)
@@ -93,6 +102,7 @@ def _output(
     return build_pack_output(
         pack,
         trail,
+        campaign=campaign,
         estimate=estimate,
         previous_figures=previous,
         today=today,
@@ -104,10 +114,12 @@ def test_pack_holds_the_filing_report_csvs_trail_and_figures() -> None:
     """Invariant: every refresh writes the report, the three CSV files, the trail and figures."""
     assert sorted(_output().files) == [
         "README.md",
+        "dossier.html",
         FIGURES_FILE,
         "modelo100-sales.csv",
         "modelo100-summary.csv",
         "modelo721.csv",
+        "renta-web.html",
         "report.md",
         "trail.csv",
     ]
@@ -160,6 +172,22 @@ def test_closed_ready_year_is_frozen() -> None:
     assert (output.readiness.status, output.freeze) == (PackStatus.READY, True)
 
 
+def test_closed_year_without_its_own_renta_boxes_is_not_frozen() -> None:
+    """Invariant (D-6): a closed year never freezes on missing or provisional box numbers."""
+    output = _output(today=_CLOSED_DAY, campaign=None)
+    assert (output.readiness.status, output.freeze) == (PackStatus.INCOMPLETE, False)
+
+
+def test_renta_sheet_lists_the_box_entry_with_spanish_amounts() -> None:
+    """Invariant: the sheet names the campaign box and the entry Renta Web asks for."""
+    sheet = _output().files["renta-web.html"]
+    assert "casilla 1804" in sheet
+    assert (
+        "<td>1</td><td>Bitcoin (BTC)</td><td>N: Otra moneda virtual</td>"
+        '<td class="n">990,00</td><td class="n">800,00</td><td class="n">190,00</td>'
+    ) in sheet
+
+
 def test_closed_year_with_a_pending_sale_is_not_frozen() -> None:
     """Invariant (D-2): pending EUR values keep a closed year open to refreshes."""
     output = _output(pieces=[_sale(fee=None)], today=_CLOSED_DAY)
@@ -185,6 +213,7 @@ def test_trail_csv_lines_carry_values_and_rates() -> None:
     output = build_pack_output(
         _filing(reader, _OPEN_DAY),
         collect_trail(2026, reader, rates),
+        campaign=None,
         estimate=None,
         previous_figures=None,
         today=_OPEN_DAY,

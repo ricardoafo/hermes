@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import shutil
 import sqlite3
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -42,6 +43,18 @@ class FakeEstimate:
         return self.text
 
 
+def _config_with_2026_boxes(tmp_path: Path) -> Path:
+    """Copy the repo config and confirm the 2026 Renta Web boxes, as each March's PR does."""
+    config = tmp_path / "config"
+    shutil.copytree(_CONFIG_DIR, config)
+    with (config / "renta_campaigns.yaml").open("a", encoding="utf-8") as handle:
+        handle.write(
+            '  2026:\n    transmissions_box: "1804"\n    source: "test"\n'
+            '    verified_on: "2027-04-01"\n'
+        )
+    return config
+
+
 def _ledger(tmp_path: Path) -> Path:
     db = tmp_path / "ledger.sqlite3"
     standard_ledger(db)
@@ -55,10 +68,11 @@ def _run(
     at: datetime = _DURING_YEAR,
     env: dict[str, str] | None = None,
     estimate: FakeEstimate | None = None,
+    config_dir: Path = _CONFIG_DIR,
 ) -> tuple[int, str]:
     stream = io.StringIO()
     code = tax_pack.main(
-        [*argv, "--config-dir", str(_CONFIG_DIR), "--history", str(tmp_path / "none.yaml")],
+        [*argv, "--config-dir", str(config_dir), "--history", str(tmp_path / "none.yaml")],
         stream=stream,
         fx_factory=lambda _cfg: constant_fx(),
         env=env if env is not None else {},
@@ -80,11 +94,13 @@ def test_pack_folder_holds_every_file(tmp_path: Path) -> None:
     assert sorted(p.name for p in (out / "2026").iterdir()) == [
         "README.md",
         "changes.md",
+        "dossier.html",
         "figures.json",
         "manifest.json",
         "modelo100-sales.csv",
         "modelo100-summary.csv",
         "modelo721.csv",
+        "renta-web.html",
         "report.md",
         "trail.csv",
     ]
@@ -143,11 +159,12 @@ def test_ready_closed_year_freezes_and_is_never_rewritten(tmp_path: Path) -> Non
     """Invariant (A-4.2): a closed, complete year writes FROZEN; the next run exits 5 untouched."""
     out = tmp_path / "packs"
     argv = ["--year", "2026", "--db", str(_ledger(tmp_path)), "--out", str(out)]
-    code, _ = _run(argv, tmp_path, at=_AFTER_YEAR_END)
+    config = _config_with_2026_boxes(tmp_path)
+    code, _ = _run(argv, tmp_path, at=_AFTER_YEAR_END, config_dir=config)
     assert code == 0
     assert (out / "2026" / "FROZEN").is_file()
     before = _snapshot(out / "2026")
-    code, printed = _run(argv, tmp_path, at=_AFTER_YEAR_END)
+    code, printed = _run(argv, tmp_path, at=_AFTER_YEAR_END, config_dir=config)
     assert (code, _snapshot(out / "2026")) == (tax_pack.EXIT_FROZEN, before)
     assert "Tax pack 2026 is frozen; nothing written." in printed
 
@@ -163,9 +180,10 @@ def test_without_year_refreshes_this_and_last_year_and_skips_a_frozen_one(tmp_pa
     """Invariant (D-3): no --year means last year (unless frozen) and this year."""
     out = tmp_path / "packs"
     argv = ["--db", str(_ledger(tmp_path)), "--out", str(out)]
-    assert _run(argv, tmp_path, at=_AFTER_YEAR_END)[0] == 0
+    config = _config_with_2026_boxes(tmp_path)
+    assert _run(argv, tmp_path, at=_AFTER_YEAR_END, config_dir=config)[0] == 0
     assert sorted(p.name for p in out.iterdir()) == ["2026", "2027"]
-    code, printed = _run(argv, tmp_path, at=_AFTER_YEAR_END)
+    code, printed = _run(argv, tmp_path, at=_AFTER_YEAR_END, config_dir=config)
     assert code == 0
     assert "Tax pack 2026 is frozen; nothing written." in printed
     assert "Tax pack 2027: open." in printed
@@ -255,3 +273,14 @@ def test_help_exits_0_with_usage(tmp_path: Path) -> None:
 def test_command_is_registered() -> None:
     """Invariant: `hermes tax-pack` is discovered by the CLI registry."""
     assert discover()["tax-pack"].name == "tax-pack"
+
+
+def test_closed_year_waits_for_its_own_renta_boxes(tmp_path: Path) -> None:
+    """Invariant (D-6): with only last campaign's boxes, a closed year stays unfrozen."""
+    out = tmp_path / "packs"
+    _run(
+        ["--year", "2026", "--db", str(_ledger(tmp_path)), "--out", str(out)],
+        tmp_path,
+        at=_AFTER_YEAR_END,
+    )
+    assert not (out / "2026" / "FROZEN").exists()

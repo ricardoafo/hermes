@@ -21,6 +21,8 @@ shadow figures say no real tax is due.
 | File | Content |
 | --- | --- |
 | `README.md` | status, headline figures, readiness checklist, changes in the last refresh |
+| `renta-web.html` | in Spanish: the entries to type into Renta Web (box, coin, F/N key, values), and the Modelo 721 fields when it is due |
+| `dossier.html` | in Spanish: every sale and the lots behind it, to keep in case Hacienda asks |
 | `report.md` | the Modelo 100 and 721 figures per form field, with every sale (`hermes tax-filing`) |
 | `modelo100-summary.csv`, `modelo100-sales.csv`, `modelo721.csv` | the same figures as CSV |
 | `trail.csv` | each sale back to the lots it used, with EUR values, fees and both trades' ECB rates |
@@ -67,6 +69,19 @@ uv run hermes tax-pack --year 2026 --db ./hermes.sqlite3
 The default folder is `$HERMES_TAX_PACK_DIR`, else `~/.local/share/hermes/tax-packs`. Keep it
 out of any checkout: it holds personal figures.
 
+## Filing with it
+
+Renta Web has no file import for virtual currencies. Open `renta-web.html` (or print it to PDF
+for your gestor) and, in Renta Web, go to *Ganancias y pérdidas patrimoniales → Monedas
+virtuales*, open the box the sheet names and add one entry per row.
+
+The box number comes from `config/renta_campaigns.yaml`. AEAT can renumber boxes between
+campaigns, so each March, once the campaign is published, a PR adds the new year's entry. Until
+then the sheet uses the previous campaign's box, says so, and the pack does not freeze.
+
+The Modelo 721 is filed through the AEAT web form, not a file. When it is due, the sheet lists
+its fields in the form's order.
+
 ## When a closed year is incomplete
 
 The checklist says what is missing:
@@ -74,6 +89,8 @@ The checklist says what is missing:
 - **Sales waiting for EUR values**: run `hermes fx backfill`, then the pack again.
 - **No year-end price for a coin**: pass `--price COIN=EUR` with the 31 December value.
 - **Modelo 721 undetermined**: follows from a missing price; fix the price.
+- **Renta Web boxes not confirmed**: add the year to `config/renta_campaigns.yaml` once AEAT
+  publishes the campaign.
 
 ## Reopening a frozen year
 

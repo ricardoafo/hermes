@@ -23,9 +23,16 @@ from typing import Final
 from zoneinfo import ZoneInfo
 
 from hermes.application.filing.render import render_csv_files, render_markdown
+from hermes.application.filing.renta_sheet import (
+    DOSSIER_FILE,
+    RENTA_SHEET_FILE,
+    render_dossier,
+    render_renta_sheet,
+)
 from hermes.application.filing.service import FilingPack
 from hermes.domain.filing.pack_changes import figure_changes
 from hermes.domain.filing.readiness import PackStatus, Readiness, assess_readiness
+from hermes.domain.filing.renta_campaign import RentaCampaign
 from hermes.domain.filing.tax_year import tax_year_bounds
 from hermes.domain.filing.trail import TradeRate, TrailLine, build_trail
 from hermes.ports.filing import FilingLedgerReaderPort
@@ -57,6 +64,8 @@ _CENT: Final[Decimal] = Decimal("0.01")
 _MADRID: Final = ZoneInfo("Europe/Madrid")
 
 _FILE_NOTES: Final[tuple[tuple[str, str], ...]] = (
+    (RENTA_SHEET_FILE, "the Renta Web entries to copy, in Spanish, and the 721 fields when due"),
+    (DOSSIER_FILE, "every sale and the lots behind it, to keep in case Hacienda asks"),
     (_REPORT_FILE, "Modelo 100 and 721 figures per form field, with every sale"),
     ("modelo100-summary.csv", "one Renta Web line per coin and kind of consideration"),
     ("modelo100-sales.csv", "every sale of the year"),
@@ -114,6 +123,7 @@ def build_pack_output(
     pack: FilingPack,
     trail: Sequence[TrailLine],
     *,
+    campaign: RentaCampaign | None,
     estimate: str | None,
     previous_figures: Mapping[str, str] | None,
     today: date,
@@ -124,6 +134,7 @@ def build_pack_output(
     Args:
         pack: The year's Modelo 100 and 721 figures.
         trail: The year's trail.
+        campaign: The Renta Web layout for the year, or ``None`` when none is known.
         estimate: ``hermes tax`` output, or ``None`` without a local profile.
         previous_figures: ``figures.json`` of the previous refresh, or ``None``.
         today: Madrid date of the run.
@@ -140,12 +151,17 @@ def build_pack_output(
         obligation=pack.modelo721.obligation,
         estimate_included=estimate is not None,
         shadow=pack.shadow,
+        campaign_confirmed=campaign is not None and not campaign.provisional,
     )
     figures = _figures(pack, readiness)
     changes = figure_changes(previous_figures, figures)
     stamp = _stamp(refreshed_at)
     files = {
         _README_FILE: _readme(pack, readiness, changes, stamp, has_estimate=estimate is not None),
+        RENTA_SHEET_FILE: render_renta_sheet(
+            pack, campaign, status=readiness.status, refreshed_at=refreshed_at
+        ),
+        DOSSIER_FILE: render_dossier(pack, trail, refreshed_at=refreshed_at),
         _REPORT_FILE: render_markdown(pack),
         **render_csv_files(pack),
         _TRAIL_FILE: _trail_csv(trail),

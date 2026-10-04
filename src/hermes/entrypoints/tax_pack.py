@@ -48,6 +48,7 @@ from hermes.application.filing.pack import (
 )
 from hermes.application.ledger.eur_pricer import EurPricer
 from hermes.domain.errors import LedgerError
+from hermes.domain.filing.renta_campaign import campaign_for
 from hermes.domain.filing.tax_year import tax_year_of
 from hermes.domain.filing.trail import TrailLine
 from hermes.domain.fx.eur_pricing import fill_date_madrid
@@ -63,6 +64,7 @@ from hermes.infrastructure.config.filing import (
     load_modelo721_history,
 )
 from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
+from hermes.infrastructure.config.renta import RentaCampaignsConfig, load_renta_campaigns
 from hermes.infrastructure.config.root import HermesConfig
 from hermes.infrastructure.config.tax import resolve_taxpayer_profile_path
 from hermes.infrastructure.time import now_utc
@@ -154,6 +156,7 @@ def main(
         config = load_config(parsed.config_dir)
         filing = load_filing_config(parsed.config_dir, env=snapshot)
         history = load_modelo721_history(parsed.history, env=snapshot)
+        campaigns = load_renta_campaigns(parsed.config_dir, env=snapshot)
     except ConfigError as exc:
         stream.write(f"ERROR: config load failed: {exc}\n")
         return 3
@@ -164,6 +167,7 @@ def main(
         config=config,
         filing=filing,
         history=history,
+        campaigns=campaigns,
         overrides=overrides,
         out_root=_out_root(parsed.out, snapshot),
         fx_factory=fx_factory,
@@ -195,6 +199,7 @@ class _Run:
     config: HermesConfig
     filing: FilingConfig
     history: Modelo721History
+    campaigns: RentaCampaignsConfig
     overrides: Mapping[Currency, Decimal]
     out_root: Path
     fx_factory: fx_module.FxFactory
@@ -227,6 +232,7 @@ def _refresh(year: int, run: _Run, stream: TextIO) -> int:
     output = build_pack_output(
         pack,
         trail,
+        campaign=campaign_for(year, run.campaigns.layouts()),
         estimate=estimate,
         previous_figures=_previous_figures(directory / FIGURES_FILE),
         today=today,

@@ -2,8 +2,9 @@
 
 A pack is ``open`` until the Madrid tax year ends (ADR-016 item 2), because
 every trade still changes it. After that it is ``incomplete`` while a sale
-waits for EUR values, a coin held on 31 December has no price, or the 721
-obligation is undetermined, and ``ready`` otherwise. Advisory items (the
+waits for EUR values, a coin held on 31 December has no price, the 721
+obligation is undetermined, or the year's own Renta Web boxes are not yet
+configured, and ``ready`` otherwise. Advisory items (the
 estimate, the gestor defaults, the shadow label) never change the status.
 
 Reference: openspec/changes/568-tax-pack/change.md D-2, R-3.
@@ -67,6 +68,7 @@ def assess_readiness(
     obligation: Obligation,
     estimate_included: bool,
     shadow: bool,
+    campaign_confirmed: bool,
 ) -> Readiness:
     """Return the readiness of ``year``'s pack on ``today``.
 
@@ -78,6 +80,7 @@ def assess_readiness(
         obligation: The 721 obligation as computed.
         estimate_included: Whether the pack holds a tax estimate from a local profile.
         shadow: Whether the ledger holds simulated fills.
+        campaign_confirmed: Whether the year's own Renta Web boxes are configured.
 
     Returns:
         The checklist and status.
@@ -92,6 +95,7 @@ def assess_readiness(
             text=f"Modelo 721: {obligation.value}.",
             blocking=True,
         ),
+        _campaign_item(year, campaign_confirmed),
     )
     advisory = [
         CheckItem(
@@ -130,6 +134,19 @@ def _year_item(year: int, closed: bool) -> CheckItem:
     return CheckItem(
         done=False,
         text=f"Tax year {year} is still open: figures change with every trade until 31 December.",
+        blocking=True,
+    )
+
+
+def _campaign_item(year: int, confirmed: bool) -> CheckItem:
+    if confirmed:
+        return CheckItem(
+            done=True, text=f"Renta Web boxes for {year} are confirmed.", blocking=True
+        )
+    return CheckItem(
+        done=False,
+        text=f"Renta Web boxes for {year} are not confirmed yet: add them to "
+        "config/renta_campaigns.yaml once AEAT publishes the campaign.",
         blocking=True,
     )
 
