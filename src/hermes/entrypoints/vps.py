@@ -41,6 +41,8 @@ DEFAULT_USER: Final = "root"
 REMOTE_BIN: Final = "/opt/hermes/current/.venv/bin/hermes"
 _REMOTE_WORKDIR: Final = "/var/lib/hermes"
 _REMOTE_ENV_FILE: Final = "/etc/hermes/env.production"
+_REMOTE_DB: Final = "/var/lib/hermes/hermes.sqlite3"
+_REMOTE_CONFIG_DIR: Final = "/opt/hermes/current/config"
 # Same wrapper as `hermes_run` in docs/guides/vps-operations.md: load the service
 # env, run in the ledger's directory, drop to the `hermes` user.
 # Runs first on the VPS, as `bash -c ... _ BIN COMMAND`: an older build whose
@@ -52,7 +54,10 @@ REMOTE_GUARD: Final = (
     '{ echo "hermes: $2 is not on this VPS build" >&2; exit 127; }; '
 )
 _REMOTE_SCRIPT: Final = REMOTE_GUARD + (
-    f'set -a; . {_REMOTE_ENV_FILE}; set +a; cd {_REMOTE_WORKDIR} && exec runuser -u hermes -- "$@"'
+    f"set -a; . {_REMOTE_ENV_FILE}; set +a; "
+    f'export HERMES_DB_PATH="${{HERMES_DB_PATH:-{_REMOTE_DB}}}" '
+    f'HERMES_CONFIG_DIR="${{HERMES_CONFIG_DIR:-{_REMOTE_CONFIG_DIR}}}"; '
+    f'cd {_REMOTE_WORKDIR} && exec runuser -u hermes -- "$@"'
 )
 _FLAG: Final = "--vps"
 _SSH_FAILED: Final = 255
