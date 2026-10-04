@@ -4,7 +4,7 @@
 **Owners**: Code Owner (product owner, sole operator)
 **Applies to**: the operator using hermes from a Windows PC (PowerShell in
 the repo's `.venv`) and the VPS `hermes-01` (`hermes serve` in shadow mode).
-**Description**: Day-to-day use: connect with `ssh hermes`, read the console commands, see the live release, how auto-deploy works, and where to look when something is wrong.
+**Description**: Day-to-day use: connect with `ssh hermes` or `hermes --vps`, read the console commands, see the live release, how auto-deploy works, and where to look when something is wrong.
 
 This is the page to open when you want to know "is hermes OK, and what did
 it do?". It covers the commands that exist on `main` today. Setup and
@@ -18,16 +18,16 @@ Commands in PowerShell blocks run on your PC, one per line. Commands in
 
 ```mermaid
 flowchart LR
-    T["Telegram: alerts and the bot"] -->|something looks off| S["ssh hermes"]
-    S --> ST["hermes_run status"]
+    T["Telegram: alerts and the bot"] -->|something looks off| ST["hermes --vps status"]
     ST -->|all good| A["positions, activity"]
-    ST -->|late or down| L["hermes_run logs"]
-    L --> D["vps-diagnose or rollback"]
+    ST -->|late or down| S["ssh hermes, then hermes_run logs"]
+    S --> D["vps-diagnose or rollback"]
 ```
 
 Most days Telegram is enough: it stays quiet while hermes is healthy and
 alerts when it is not (see [When something is wrong](#when-something-is-wrong)).
-Connect to the VPS when you want to look closer.
+To look closer, run a console command from your PC with `--vps`, or connect
+to the VPS for the logs and the other tools.
 
 ## Connect to the VPS
 
@@ -79,13 +79,56 @@ source /root/.bashrc
 
 `hermes_run` always runs the live release (`/opt/hermes/current`) from
 `/var/lib/hermes`, so commands that default to `./hermes.sqlite3` read the
-service ledger. Every command below is read-only: none of them changes the
-ledger, restarts anything or places an order.
+service ledger.
+
+### Plain `hermes` on the VPS
+
+Every deploy since PR #635 also installs `/usr/local/bin/hermes`, a wrapper that does
+what `hermes_run` does for the console commands only: `tui`, `status`,
+`positions`, `activity` and `money` (plus `--help`). It points them at the
+service ledger and config, so they need no `--db` or `--config-dir`:
+
+```bash
+hermes status
+hermes positions
+```
+
+Anything else (`logs`, `version`, `tax`, `ledger verify`, `config check`)
+is refused by the wrapper with exit code 2; run those through `hermes_run`.
+
+Every command in this guide is read-only: none of them changes the ledger,
+restarts anything or places an order.
+
+## From your PC without logging in: `--vps`
+
+With Tailscale connected, `--vps` runs one console command on the VPS over
+SSH and shows it in your terminal, the same as running it there:
+
+```powershell
+uv run hermes --vps status
+uv run hermes --vps tui
+uv run hermes --vps positions BTC
+uv run hermes --vps activity --all
+```
+
+`--vps` goes either before or after the command (`uv run hermes tui --vps`
+does the same as the second line). It takes the same commands as the VPS
+wrapper (`tui`, `status`, `positions`, `activity`, `money`) and cannot be
+combined with `--demo`. It
+connects as `root@hermes-01` with `~/.ssh/hermes_vps_ed25519`; set
+`HERMES_VPS_HOST`, `HERMES_VPS_USER` or `HERMES_VPS_KEY` to change that.
+The key's passphrase prompt shows as usual. A failure prints one line: no
+SSH client, host unreachable (Tailscale down), authentication failed (check
+the key), or the VPS build has no console yet (wait for the deploy).
+Details: [vps-operations.md § Use the console from your PC](vps-operations.md#use-the-console-from-your-pc).
+
+The sections below show each command as you run it on the VPS. From your
+PC, put `uv run hermes --vps` in front of the console ones instead.
 
 ## Is it OK? `status`
 
 ```bash
-hermes_run status --config-dir /opt/hermes/current/config --db /var/lib/hermes/hermes.sqlite3
+hermes status
 ```
 
 It prints the verdict (all good, late or down), then each stream's last
@@ -101,14 +144,28 @@ and next 4h bar. Bars close at 00, 04, 08, 12, 16 and 20 UTC.
 `--json` prints the same as data; `--summary` prints the one-line daily
 summary. The healthchecks.io ping runs this same check every 5 minutes.
 
+## The home screen: `tui`
+
+```bash
+hermes tui
+```
+
+The interactive home screen reads the ledger read-only: the portfolio
+total in EUR, open positions, recent activity and the shadow test's day
+count toward 90. Keys: `1`, `7`, `3` and `Y` switch the range (today, week,
+30 days, year), the arrow keys (or `j`/`k`) and Enter open a position, `L`
+shows logs, `?` help and `Q` quits. A figure without an EUR value shows
+"EUR pending", and a card the ledger cannot answer yet says "not available
+yet". `--db PATH` reads another ledger.
+
 ## What does it hold and what did it do?
 
 ```bash
-hermes_run positions
-hermes_run positions BTC
-hermes_run activity --db /var/lib/hermes/hermes.sqlite3
-hermes_run activity --db /var/lib/hermes/hermes.sqlite3 --all --days 2
-hermes_run money --range week
+hermes positions
+hermes positions BTC
+hermes activity
+hermes activity --all --days 2
+hermes money --range week
 ```
 
 | Command | Shows | Useful options |
@@ -117,8 +174,9 @@ hermes_run money --range week
 | `activity` | What changed, grouped by day (default: the last 7 days) | `--all` adds bar checks and signals, `--days N`, `--json`, `--utc` |
 | `money` | Portfolio total in EUR and the gross-to-net waterfall | `--range today\|week\|month\|year`, `--json`, `--utc` |
 
-Times show in Europe/Madrid unless you pass `--utc`. `money` reads demo
-scenarios only for now: without `--demo` it answers "No live money yet".
+Times show in Europe/Madrid unless you pass `--utc`. With no ledger file,
+`positions` and `money` answer with an empty state, while `activity` exits
+with code 3 naming the missing ledger.
 
 ## Logs: `logs`
 
@@ -201,11 +259,9 @@ command prints the home screen as static text. Setting
 `$env:HERMES_CONSOLE_DEMO = "late"` picks a scenario for every command in
 that PowerShell window.
 
-`hermes tui` is the interactive home screen (portfolio, positions,
-activity; `1` `7` `3` `Y` change the range, Enter opens a position, `L` shows logs, `?` help, `Q` quits). It runs on demo data only for now: without `--demo`
-it exits with an error naming the scenarios. The live home screen and a
-`--vps` option that reaches the VPS from your PC are coming in PR #629 and
-issue #610; this guide covers them once they merge.
+On your PC there is no live ledger, so without `--demo` `positions` and
+`money` show the empty state, and `tui`, `activity` and `status` exit with
+an error.
 
 `uv run hermes --help` lists every command; `uv run hermes <command> --help`
 gives its options and exit codes.
@@ -277,7 +333,7 @@ runs when the Telegram secrets are set on the VPS. Details:
 ### First checks on the VPS
 
 ```bash
-hermes_run status --config-dir /opt/hermes/current/config --db /var/lib/hermes/hermes.sqlite3
+hermes status
 systemctl status hermes.service
 hermes_run logs --level warning --since 1h
 hermes_run ledger verify --db /var/lib/hermes/hermes.sqlite3
