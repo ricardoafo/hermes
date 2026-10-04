@@ -1,0 +1,19 @@
+# Fire hermes-tax-pack.service once a day at 07:30 Madrid time (#568).
+#
+# After the 07:00 alive line, so the two never overlap. The time zone
+# follows the CET/CEST switch on its own. Installed by vps-bootstrap and
+# left off: enable it with `systemctl enable --now hermes-tax-pack.timer`.
+
+[Unit]
+Description=Fire hermes-tax-pack at 07:30 Europe/Madrid
+Requires=hermes-tax-pack.service
+
+[Timer]
+OnCalendar=*-*-* 07:30:00 Europe/Madrid
+# Run a missed day on next boot.
+Persistent=true
+RandomizedDelaySec=60
+Unit=hermes-tax-pack.service
+
+[Install]
+WantedBy=timers.target
