@@ -241,12 +241,13 @@ sudo systemctl restart hermes.service
 ```
 
 Reload after the env file changes (systemd caches the file into each
-running unit — restart is required):
+running unit — restart is required). `hermes_run` is the helper from
+[VPS operations](../docs/guides/vps-operations.md#check-on-hermes):
 
 ```bash
 sudo systemctl daemon-reload         # picks up EnvironmentFile changes
 sudo systemctl restart hermes.service
-journalctl -u hermes.service --since "1 minute ago"
+hermes_run logs --since 1m
 ```
 
 ## Deploy and rollback
@@ -301,7 +302,7 @@ Verify:
 ```bash
 readlink /opt/hermes/current
 systemctl status hermes.service
-journalctl -u hermes.service --since "5 minutes ago"
+hermes_run logs --level warning --since 5m
 ```
 
 ## GH Actions secrets required (populate on `prod` Environment)
