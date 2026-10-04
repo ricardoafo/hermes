@@ -60,7 +60,11 @@ class _Recorder:
 
 
 def _run(
-    args: list[str], *, notifier: _Recorder | None = None, now: datetime = _OCT_4
+    args: list[str],
+    *,
+    notifier: _Recorder | None = None,
+    now: datetime = _OCT_4,
+    err: io.StringIO | None = None,
 ) -> tuple[int, str]:
     out = io.StringIO()
 
@@ -68,7 +72,11 @@ def _run(
         return notifier
 
     code = reconcile_module.main(
-        ["--config-dir", str(_CONFIG), *args], stream=out, now=now, notifier_factory=factory
+        ["--config-dir", str(_CONFIG), *args],
+        stream=out,
+        now=now,
+        notifier_factory=factory,
+        err=err,
     )
     return code, out.getvalue()
 
@@ -133,36 +141,49 @@ def test_a_missing_ledger_exits_three_and_creates_nothing(tmp_path: Path) -> Non
     """A wrong --db is a ledger error; no empty file is left behind."""
     db = tmp_path / "absent.sqlite3"
 
-    code, out = _run(["2026-09", "--db", str(db)])
+    err = io.StringIO()
+    code, out = _run(["2026-09", "--db", str(db)], err=err)
 
-    assert (code, out.startswith("ERROR: no ledger"), db.exists()) == (3, True, False)
+    assert (code, out, err.getvalue().startswith("ERROR: no ledger"), db.exists()) == (
+        3,
+        "",
+        True,
+        False,
+    )
 
 
 def test_a_broken_config_exits_three(tmp_path: Path) -> None:
     """Seeds come from the roster; without a config there is no book."""
-    out = io.StringIO()
+    out, err = io.StringIO(), io.StringIO()
 
     code = reconcile_module.main(
         ["--config-dir", str(tmp_path), "--db", str(tmp_path / "x"), "2026-09"],
         stream=out,
         now=_OCT_4,
+        err=err,
     )
 
-    assert (code, out.getvalue().startswith("ERROR: config load failed")) == (3, True)
+    assert (code, out.getvalue(), err.getvalue().startswith("ERROR: config load failed")) == (
+        3,
+        "",
+        True,
+    )
 
 
 def test_a_malformed_month_exits_two() -> None:
     """`2026-9` is not YYYY-MM."""
-    code, out = _run(["2026-9"])
+    err = io.StringIO()
+    code, out = _run(["2026-9"], err=err)
 
-    assert (code, "expected YYYY-MM" in out) == (2, True)
+    assert (code, out, "expected YYYY-MM" in err.getvalue()) == (2, "", True)
 
 
 def test_a_future_month_exits_two() -> None:
     """November has not started on 4 October."""
-    code, out = _run(["2026-11"])
+    err = io.StringIO()
+    code, out = _run(["2026-11"], err=err)
 
-    assert (code, "has not started yet" in out) == (2, True)
+    assert (code, out, "has not started yet" in err.getvalue()) == (2, "", True)
 
 
 def test_a_negative_tolerance_exits_two() -> None:
@@ -174,9 +195,10 @@ def test_a_negative_tolerance_exits_two() -> None:
 
 def test_an_unknown_flag_exits_two() -> None:
     """Unparseable arguments are a usage error, with the usage text."""
-    code, out = _run(["--bogus"])
+    err = io.StringIO()
+    code, out = _run(["--bogus"], err=err)
 
-    assert (code, "Usage: hermes reconcile" in out) == (2, True)
+    assert (code, out, "Usage: hermes reconcile" in err.getvalue()) == (2, "", True)
 
 
 def test_help_exits_zero() -> None:

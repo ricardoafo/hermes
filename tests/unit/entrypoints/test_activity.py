@@ -38,6 +38,12 @@ def _run(args: list[str], **kw: object) -> tuple[int, str]:
     return code, out.getvalue()
 
 
+def _run_split(args: list[str], **kw: object) -> tuple[int, str, str]:
+    out, err = io.StringIO(), io.StringIO()
+    code = run_activity(args, out, err=err, **kw)  # type: ignore[arg-type]
+    return code, out.getvalue(), err.getvalue()
+
+
 def _lines(text: str) -> list[str]:
     return [line.rstrip() for line in text.splitlines()]
 
@@ -124,27 +130,27 @@ def test_missing_ledger_exits_three_and_creates_nothing(tmp_path: Path) -> None:
     """A wrong --db is an error, never a new empty ledger."""
     path = tmp_path / "absent.sqlite3"
 
-    code, out = _run(["--db", str(path)], now=NOW)
+    code, out, err = _run_split(["--db", str(path)], now=NOW)
 
-    assert (code, path.exists()) == (3, False)
-    assert out.startswith("ERROR: no ledger at")
+    assert (code, path.exists(), out) == (3, False, "")
+    assert err.startswith("ERROR: no ledger at")
 
 
 @pytest.mark.parametrize("args", [["--nope"], ["--days", "0"]])
 def test_bad_arguments_exit_two(args: list[str]) -> None:
     """Unknown flags and an empty window are usage errors."""
-    code, out = _run(args, demo_flag="ok-two-positions")
+    code, out, err = _run_split(args, demo_flag="ok-two-positions")
 
-    assert code == 2
-    assert "Usage: hermes [--demo SCENARIO] activity" in out
+    assert (code, out) == (2, "")
+    assert "Usage: hermes [--demo SCENARIO] activity" in err
 
 
 def test_unknown_scenario_exits_two() -> None:
     """A typo in the scenario name is a usage error, not a crash."""
-    code, out = _run([], demo_flag="no-such-scenario")
+    code, out, err = _run_split([], demo_flag="no-such-scenario")
 
-    assert code == 2
-    assert out.startswith("ERROR:")
+    assert (code, out) == (2, "")
+    assert err.startswith("ERROR:")
 
 
 def test_cli_passes_a_leading_demo_flag_to_activity() -> None:

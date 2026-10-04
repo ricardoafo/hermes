@@ -114,22 +114,23 @@ class TestFixtureLoading:
 
     def test_missing_fixture_exits_one(self, tmp_path: Path) -> None:
         """A non-existent fixture path exits 1 with an ERROR line."""
-        stream = io.StringIO()
+        stream, err = io.StringIO(), io.StringIO()
         rc = preview_module.main(
             ["strategy-paused", "--fixture", str(tmp_path / "missing.json")],
             stream=stream,
+            err=err,
         )
-        assert rc == 1
-        assert "ERROR" in stream.getvalue()
+        assert (rc, stream.getvalue()) == (1, "")
+        assert "ERROR" in err.getvalue()
 
     def test_invalid_json_exits_one(self, tmp_path: Path) -> None:
         """A fixture whose content is not valid JSON exits 1 with an ERROR line."""
         bad = tmp_path / "bad.json"
         bad.write_text("not: valid json", encoding="utf-8")
-        stream = io.StringIO()
-        rc = preview_module.main(["strategy-paused", "--fixture", str(bad)], stream=stream)
-        assert rc == 1
-        assert "Invalid JSON" in stream.getvalue()
+        stream, err = io.StringIO(), io.StringIO()
+        rc = preview_module.main(["strategy-paused", "--fixture", str(bad)], stream=stream, err=err)
+        assert (rc, stream.getvalue()) == (1, "")
+        assert "Invalid JSON" in err.getvalue()
 
     def test_non_object_json_exits_one(self, tmp_path: Path) -> None:
         """A fixture whose top-level is a JSON array (not object) exits 1."""
@@ -148,10 +149,12 @@ class TestFixtureLoading:
             '"paused_at": "2026-08-23T14:22:03", "severity": "INFO"}',
             encoding="utf-8",
         )
-        stream = io.StringIO()
-        rc = preview_module.main(["strategy-paused", "--fixture", str(naive)], stream=stream)
-        assert rc == 1
-        assert "naive" in stream.getvalue()
+        stream, err = io.StringIO(), io.StringIO()
+        rc = preview_module.main(
+            ["strategy-paused", "--fixture", str(naive)], stream=stream, err=err
+        )
+        assert (rc, stream.getvalue()) == (1, "")
+        assert "naive" in err.getvalue()
 
     @pytest.mark.parametrize(
         "event_name",
@@ -182,10 +185,10 @@ class TestUnknownEvent:
 
     def test_unknown_event_exits_two(self) -> None:
         """An event name not in the catalog exits 2 with an ERROR line."""
-        stream = io.StringIO()
-        rc = preview_module.main(["not-a-real-event"], stream=stream)
-        assert rc == 2
-        assert "unknown event name" in stream.getvalue()
+        stream, err = io.StringIO(), io.StringIO()
+        rc = preview_module.main(["not-a-real-event"], stream=stream, err=err)
+        assert (rc, stream.getvalue()) == (2, "")
+        assert "unknown event name" in err.getvalue()
 
 
 class TestSendGuard:
@@ -194,10 +197,10 @@ class TestSendGuard:
     def test_send_refuses_in_prod(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """--send with HERMES_ENV=prod exits 3 without invoking any adapter."""
         monkeypatch.setenv("HERMES_ENV", "prod")
-        stream = io.StringIO()
-        rc = preview_module.main(["strategy-paused", "--send"], stream=stream)
-        assert rc == 3
-        assert "HERMES_ENV=prod" in stream.getvalue()
+        stream, err = io.StringIO(), io.StringIO()
+        rc = preview_module.main(["strategy-paused", "--send"], stream=stream, err=err)
+        assert (rc, stream.getvalue()) == (3, "")
+        assert "HERMES_ENV=prod" in err.getvalue()
 
     def test_send_refuses_prod_case_insensitively(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """--send with HERMES_ENV=PROD (uppercase) still triggers the refusal."""
@@ -209,10 +212,10 @@ class TestSendGuard:
     def test_send_in_dev_env_reports_stub(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """--send in dev env exits 4 (scaffolding not yet implemented for send)."""
         monkeypatch.setenv("HERMES_ENV", "dev")
-        stream = io.StringIO()
-        rc = preview_module.main(["strategy-paused", "--send"], stream=stream)
-        assert rc == 4
-        assert "PRs B + C" in stream.getvalue()
+        stream, err = io.StringIO(), io.StringIO()
+        rc = preview_module.main(["strategy-paused", "--send"], stream=stream, err=err)
+        assert (rc, stream.getvalue()) == (4, "")
+        assert "PRs B + C" in err.getvalue()
 
 
 class TestBuildParser:

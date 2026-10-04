@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import TextIO
 
 from hermes.adapters.ledger.migration_runner import pending_migrations
+from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.serve import DEFAULT_DB_PATH
 
 __all__ = ["DEFAULT_RELEASE_LINK", "VersionInfo", "collect_info", "main"]
@@ -112,7 +113,7 @@ def collect_info(*, db: Path, release_link: Path = DEFAULT_RELEASE_LINK) -> Vers
     )
 
 
-def _parse(argv: list[str], stream: TextIO) -> argparse.Namespace | None:
+def _parse(argv: list[str], stream: TextIO, err: TextIO) -> argparse.Namespace | None:
     parser = argparse.ArgumentParser(prog="hermes version", add_help=False)
     parser.add_argument("--db", type=Path, default=DEFAULT_DB_PATH)
     parser.add_argument("--json", action="store_true")
@@ -120,7 +121,7 @@ def _parse(argv: list[str], stream: TextIO) -> argparse.Namespace | None:
     try:
         return parser.parse_args(argv)
     except SystemExit:
-        stream.write("ERROR: could not parse `hermes version` arguments.\n" + _USAGE)
+        err.write("ERROR: could not parse `hermes version` arguments.\n" + _USAGE)
         return None
 
 
@@ -129,6 +130,7 @@ def main(
     *,
     stream: TextIO,
     release_link: Path = DEFAULT_RELEASE_LINK,
+    err: TextIO | None = None,
 ) -> int:
     """Parse ``argv`` and print the version report.
 
@@ -136,11 +138,12 @@ def main(
         argv: Arguments after the ``version`` token.
         stream: Output stream.
         release_link: The ``current`` symlink; injectable for tests.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         0, or 2 on a usage error.
     """
-    parsed = _parse(argv, stream)
+    parsed = _parse(argv, stream, resolve_err(err))
     if parsed is None:
         return 2
     if parsed.help:

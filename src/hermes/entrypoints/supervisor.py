@@ -51,6 +51,7 @@ from hermes.application.supervisor.tools import (
 )
 from hermes.entrypoints import serve as serve_module
 from hermes.entrypoints import status as status_module
+from hermes.entrypoints._streams import resolve_err
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
 from hermes.infrastructure.config.root import HermesConfig
@@ -81,6 +82,7 @@ def main(
     audit_stream: TextIO | None = None,
     now: Callable[[], datetime] | None = None,
     unit_state: Callable[[], UnitState] | None = None,
+    err: TextIO | None = None,
 ) -> int:
     """Handle ``hermes supervisor``.
 
@@ -93,27 +95,29 @@ def main(
             ``sys.stderr``.
         now: Wall clock; injected by tests.
         unit_state: systemd probe; defaults to ``hermes status``'s.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         Process exit code.
     """
+    err = resolve_err(err)
     try:
         args = _parser().parse_args(argv)
     except SystemExit:
-        stream.write("ERROR: could not parse `hermes supervisor` arguments.\n" + _USAGE)
+        err.write("ERROR: could not parse `hermes supervisor` arguments.\n" + _USAGE)
         return 2
     if args.help or args.mode is None:
         stream.write(_USAGE)
         return 0 if args.help else 2
     if args.mode == "call" and not args.tool:
-        stream.write("ERROR: `call` needs a TOOL.\n" + _USAGE)
+        err.write("ERROR: `call` needs a TOOL.\n" + _USAGE)
         return 2
     try:
         # An explicit env snapshot skips the .env.local load: the supervisor never
         # reads a dotenv file, so no secret can reach it that way (ADR-012 D-07).
         config = load_config(args.config_dir, env=dict(env or {}))
     except ConfigError as exc:
-        stream.write(f"ERROR: config load failed: {exc}\n")
+        err.write(f"ERROR: config load failed: {exc}\n")
         return 3
     clock = now or (lambda: datetime.now(UTC))
     grants = [*args.grant, *_env_grants(env or {})]
@@ -127,7 +131,7 @@ def main(
                 clock=clock,
             )
         except ValueError as exc:
-            stream.write(f"ERROR: {exc}\n")
+            err.write(f"ERROR: {exc}\n")
             return 2
         return _run_mode(dispatcher, args, stream, stdin, diagnostics=diagnostics, clock=clock)
 

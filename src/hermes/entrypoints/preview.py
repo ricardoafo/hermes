@@ -48,7 +48,7 @@ from collections.abc import Callable
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, TextIO
 
 from hermes.application.messages import (
     SlackMessage,
@@ -74,6 +74,7 @@ from hermes.domain.value_objects.price import Price
 from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.domain.value_objects.weight import Weight
+from hermes.entrypoints._streams import resolve_err
 
 __all__ = ["build_parser", "list_events", "main", "run_preview"]
 
@@ -526,7 +527,9 @@ def _write_attachments(message: SlackMessage, event_name: str) -> list[Path]:
     return written
 
 
-def run_preview(event_name: str, *, fixture: Path | None, stream: Any) -> int:
+def run_preview(
+    event_name: str, *, fixture: Path | None, stream: Any, err: TextIO | None = None
+) -> int:
     """Render templates for ``event_name`` and print them to ``stream``.
 
     Args:
@@ -534,13 +537,15 @@ def run_preview(event_name: str, *, fixture: Path | None, stream: Any) -> int:
         fixture: Optional JSON fixture path — when provided, overrides
             the canned sample factory.
         stream: File-like output stream.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         Exit code 0 on success, 2 on unknown event name, 1 on fixture
         load failure.
     """
+    err = resolve_err(err)
     if event_name not in _CATALOG:
-        stream.write(
+        err.write(
             f"ERROR: unknown event name {event_name!r}. "
             f"Run `hermes preview list` for the catalog.\n"
         )
@@ -549,7 +554,7 @@ def run_preview(event_name: str, *, fixture: Path | None, stream: Any) -> int:
         try:
             event = _load_fixture(event_name, fixture)
         except (FileNotFoundError, ValueError) as exc:
-            stream.write(f"ERROR: could not load fixture {fixture}: {exc}\n")
+            err.write(f"ERROR: could not load fixture {fixture}: {exc}\n")
             return 1
     else:
         _description, factory, _cls = _CATALOG[event_name]
@@ -602,7 +607,9 @@ def _refuse_prod_send() -> bool:
     return os.environ.get("HERMES_ENV", "").strip().lower() == "prod"
 
 
-def run_send(event_name: str, *, fixture: Path | None, stream: Any) -> int:  # pragma: no cover
+def run_send(  # pragma: no cover
+    event_name: str, *, fixture: Path | None, stream: Any, err: TextIO | None = None
+) -> int:
     """Render + actually send the rendered message via the wired adapters.
 
     Refuses to run when ``HERMES_ENV == "prod"`` — never spam prod
@@ -613,19 +620,21 @@ def run_send(event_name: str, *, fixture: Path | None, stream: Any) -> int:  # p
     Args:
         event_name: Kebab-case event name.
         fixture: Optional JSON fixture path.
-        stream: File-like output stream (used for the refusal message).
+        stream: File-like output stream.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         Exit code 0 on successful send; 3 on prod refusal.
     """
-    _ = event_name, fixture  # retained for API symmetry with run_preview
+    _ = event_name, fixture, stream  # retained for API symmetry with run_preview
+    err = resolve_err(err)
     if _refuse_prod_send():
-        stream.write(
+        err.write(
             "ERROR: --send refuses to run when HERMES_ENV=prod. "
             "Never spam prod channels from a dev preview.\n"
         )
         return 3
-    stream.write(
+    err.write(
         "ERROR: --send requires the Telegram + Slack adapters (PRs B + C). "
         "Only prod-refusal is implemented in this scaffolding PR.\n"
     )
@@ -667,13 +676,16 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
+def main(
+    argv: list[str] | None = None, *, stream: Any | None = None, err: TextIO | None = None
+) -> int:
     """Entry point for `hermes preview`.
 
     Args:
         argv: Argument list — defaults to ``sys.argv[1:]``.
         stream: Output stream — defaults to ``sys.stdout``. Injected
             for tests.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         Process exit code (0 = success).
@@ -685,5 +697,5 @@ def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
     if args.event is None or args.event == "list":
         return list_events(out)
     if args.send:
-        return run_send(args.event, fixture=args.fixture, stream=out)
-    return run_preview(args.event, fixture=args.fixture, stream=out)
+        return run_send(args.event, fixture=args.fixture, stream=out, err=err)
+    return run_preview(args.event, fixture=args.fixture, stream=out, err=err)

@@ -43,6 +43,12 @@ def _run(argv: list[str]) -> tuple[int, str]:
     return module.main(argv, stream=out), out.getvalue()
 
 
+def _run_split(argv: list[str]) -> tuple[int, str, str]:
+    out, err = io.StringIO(), io.StringIO()
+    code = module.main(argv, stream=out, err=err)
+    return code, out.getvalue(), err.getvalue()
+
+
 def test_status_marks_destructive_migrations(tmp_path: Path, mig: Path) -> None:
     """--status lists what is pending and flags what needs the snapshot path."""
     db = _ledger(tmp_path, mig)
@@ -72,9 +78,10 @@ def test_failed_migration_exits_1(tmp_path: Path, mig: Path) -> None:
     """A failing migration is rolled back and reported with exit 1."""
     db = _ledger(tmp_path, mig)
     (mig / "0002_bad.sql").write_text("NOT SQL;")
-    code, out = _run(["--db", str(db), "--snapshot-dir", str(tmp_path / "snaps")])
+    code, out, err = _run_split(["--db", str(db), "--snapshot-dir", str(tmp_path / "snaps")])
     assert code == 1
-    assert out.startswith("ERROR: migration failed and was rolled back")
+    assert err.startswith("ERROR: migration failed and was rolled back")
+    assert not out.startswith("ERROR")
 
 
 def test_missing_ledger_exits_3(tmp_path: Path, mig: Path) -> None:
@@ -92,7 +99,7 @@ def test_cli_routes_migrate(monkeypatch: pytest.MonkeyPatch) -> None:
     """`hermes migrate` reaches this command's main."""
     seen: list[list[str]] = []
 
-    def fake_main(rest: list[str], *, stream: object) -> int:
+    def fake_main(rest: list[str], *, stream: object, err: object) -> int:
         seen.append(rest)
         return 0
 

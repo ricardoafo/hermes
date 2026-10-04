@@ -6,10 +6,11 @@ import argparse
 import asyncio
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
 from hermes.entrypoints import serve as serve_module
+from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.commands import Command
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
@@ -18,7 +19,7 @@ from hermes.infrastructure.logging import configure_logging
 __all__ = ["COMMAND", "serve_main"]
 
 
-def _run(rest: list[str], *, stream: Any) -> int:
+def _run(rest: list[str], *, stream: Any, err: TextIO | None = None) -> int:
     """Handle the ``hermes serve`` subcommand.
 
     Parses ``--config-dir`` and ``--db``, loads the composite
@@ -30,12 +31,13 @@ def _run(rest: list[str], *, stream: Any) -> int:
 
     Args:
         rest: Residual argv after the ``serve`` token.
-        stream: Output stream — errors are written here so tests can
-            capture them without touching real stdout.
+        stream: Output stream for the help text.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         Process exit code.
     """
+    err = resolve_err(err)
     parser = argparse.ArgumentParser(prog="hermes serve", add_help=False)
     parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
     parser.add_argument("--db", type=Path, default=serve_module.DEFAULT_DB_PATH)
@@ -44,7 +46,7 @@ def _run(rest: list[str], *, stream: Any) -> int:
     try:
         parsed = parser.parse_args(rest)
     except SystemExit:
-        stream.write("ERROR: could not parse `hermes serve` arguments.\n")
+        err.write("ERROR: could not parse `hermes serve` arguments.\n")
         return 2
 
     if parsed.help:
@@ -64,7 +66,7 @@ def _run(rest: list[str], *, stream: Any) -> int:
     try:
         config = load_config(parsed.config_dir)
     except ConfigError as exc:
-        stream.write(f"ERROR: config load failed: {exc}\n")
+        err.write(f"ERROR: config load failed: {exc}\n")
         return 3
 
     try:
@@ -76,7 +78,7 @@ def _run(rest: list[str], *, stream: Any) -> int:
             ),
         )
     except serve_module.StartupError as exc:
-        stream.write(f"ERROR: startup check failed: {exc}\n")
+        err.write(f"ERROR: startup check failed: {exc}\n")
         return 3
 
     return asyncio.run(serve_main(config, db_path=parsed.db))

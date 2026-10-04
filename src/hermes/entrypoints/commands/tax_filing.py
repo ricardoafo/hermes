@@ -10,5 +10,5 @@ __all__ = ["COMMAND"]
 COMMAND = Command(
     name="tax-filing",
     summary="Figures for Modelo 100 and 721 for one tax year (an estimate; submits nothing).",
-    run=lambda argv, *, stream: _impl.main(argv, stream=stream),
+    run=lambda argv, *, stream, err=None: _impl.main(argv, stream=stream, err=err),
 )
