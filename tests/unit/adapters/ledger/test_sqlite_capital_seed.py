@@ -6,6 +6,7 @@ Reference: ADR-016 item 4, ADR-003 §00 I-06.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, localcontext
 
@@ -449,3 +450,44 @@ class TestEarliestActivity:
 def test_adapter_still_satisfies_the_trade_ledger_port(ledger: SqliteLedger) -> None:
     """Invariant: the adapter structurally satisfies TradeLedgerPort with the seed methods."""
     assert isinstance(ledger, TradeLedgerPort)
+
+
+class TestSqliteFailures:
+    """Every seed read and write turns a SQLite failure into a LedgerError."""
+
+    def test_seed_write_failure_is_rolled_back_with_its_lot(
+        self, ledger: SqliteLedger, conn: sqlite3.Connection
+    ) -> None:
+        """A failed seed insert leaves no orphan quote lot behind (one transaction)."""
+        conn.execute("DROP TABLE capital_seeds")
+        with pytest.raises(LedgerError, match="record_capital_seed failed"):
+            _record_seed(ledger)
+        assert conn.execute("SELECT COUNT(*) FROM lots").fetchone() == (0,)
+
+    @pytest.mark.parametrize(
+        ("name", "call"),
+        [
+            ("capital_seed", lambda ledger: ledger.capital_seed(_SWING)),
+            ("list_pending_seeds", lambda ledger: ledger.list_pending_seeds()),
+            ("apply_seed_eur", lambda ledger: ledger.apply_seed_eur(1, _pricing("1.25"))),
+        ],
+    )
+    def test_seed_read_failure_is_a_ledger_error(
+        self,
+        ledger: SqliteLedger,
+        conn: sqlite3.Connection,
+        name: str,
+        call: Callable[[SqliteLedger], object],
+    ) -> None:
+        """A missing capital_seeds table surfaces as LedgerError naming the call."""
+        conn.execute("DROP TABLE capital_seeds")
+        with pytest.raises(LedgerError, match=f"{name} failed"):
+            call(ledger)
+
+    def test_activity_read_failure_is_a_ledger_error(
+        self, ledger: SqliteLedger, conn: sqlite3.Connection
+    ) -> None:
+        """A missing events table surfaces as LedgerError naming earliest_activity."""
+        conn.execute("DROP TABLE events")
+        with pytest.raises(LedgerError, match="earliest_activity failed"):
+            ledger.earliest_activity()
