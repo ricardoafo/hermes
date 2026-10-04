@@ -23,8 +23,8 @@
 #   Installed with `uv tool` because the action needs Docker-in-Docker,
 #   which the runner containers cannot do.
 # - contract: real HTTPS against third-party sandboxes (Binance and
-#   Kraken public endpoints, Telegram getMe, Slack auth.test, Sentry DSN
-#   parse, Healthchecks /start). Read-only or informational calls only;
+#   Kraken public endpoints, Kraken TradeVolume fees, Telegram getMe,
+#   Slack auth.test, Sentry DSN parse, Healthchecks /start). Read-only or informational calls only;
 #   each test skips when its secret is absent. Catches upstream drift
 #   the unit-tier mocks cannot see.
 # - e2e: the real `hermes serve` composition root replays recorded
@@ -98,6 +98,8 @@ jobs:
           HERMES_SLACK__BOT_TOKEN: ${{ secrets.HERMES_SLACK__BOT_TOKEN }}
           HERMES_SENTRY__DSN: ${{ secrets.HERMES_SENTRY__DSN }}
           HERMES_HEALTHCHECKS__PING_URL: ${{ secrets.HERMES_HEALTHCHECKS__PING_URL }}
+          HERMES_KRAKEN__API_KEY: ${{ secrets.HERMES_KRAKEN__API_KEY }}
+          HERMES_KRAKEN__API_SECRET: ${{ secrets.HERMES_KRAKEN__API_SECRET }}
         # -m contract overrides the `not contract` addopts filter.
         run: uv run pytest tests/contract -m contract --tb=short -p no:cacheprovider
 
