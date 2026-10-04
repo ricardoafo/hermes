@@ -1,0 +1,1 @@
+- `hermes ledger-check` runs read-only consistency checks on the ledger: SQLite integrity, applied vs shipped migrations, lot remainders against their consumptions, and orphaned consumptions or lot-trade links. Exit 0 when all pass, 1 when any fails.
