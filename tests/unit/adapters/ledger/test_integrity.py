@@ -166,3 +166,74 @@ def test_gaps_are_exactly_the_missing_ids(present: set[int], extra: int) -> None
     gaps = find_id_gaps(sorted(present), high_water)
     missing = {n for gap in gaps for n in range(gap.first, gap.last + 1)}
     assert missing == set(range(1, high_water + 1)) - present
+
+
+def _execute(db: Path, sql: str) -> None:
+    conn = sqlite3.connect(db)
+    conn.execute(sql)
+    conn.commit()
+    conn.close()
+
+
+@pytest.fixture
+def ledger_with_lot(ledger: Path) -> Path:
+    """Add one lot of 1 BTC with 0.4 consumed, so 0.6 remains (#559)."""
+    _execute(
+        ledger,
+        "INSERT INTO lots (lot_id, asset, original_qty, remaining_qty, cost_basis_per_unit, "
+        "opened_at, strategy_id) VALUES ('L1', 'BTC', '1', '0.6', '60000', "
+        "'2026-10-03T12:00:00+00:00', 'swing')",
+    )
+    _execute(
+        ledger,
+        "INSERT INTO lot_consumptions (lot_id, consumed_qty, consumed_asset, realized_gain_eur, "
+        "consumed_at) VALUES ('L1', '0.4', 'BTC', '10', '2026-10-03T16:00:00+00:00')",
+    )
+    return ledger
+
+
+def test_consistent_lot_has_no_findings(ledger_with_lot: Path) -> None:
+    """Original 1 - consumed 0.4 == remaining 0.6: nothing to report."""
+    assert _check(ledger_with_lot).findings == ()
+
+
+def test_wrong_remainder_is_a_finding(ledger_with_lot: Path) -> None:
+    """A remaining quantity that disagrees with the consumptions names the lot (#559)."""
+    _execute(ledger_with_lot, "UPDATE lots SET remaining_qty = '0.5' WHERE lot_id = 'L1'")
+    assert _check(ledger_with_lot).findings == (
+        "lot: L1: original 1 - consumed 0.4 != remaining 0.5",
+    )
+
+
+def test_negative_remainder_is_a_finding(ledger_with_lot: Path) -> None:
+    """A lot can never hold less than nothing (#559)."""
+    _execute(ledger_with_lot, "UPDATE lots SET remaining_qty = '-0.1' WHERE lot_id = 'L1'")
+    assert _check(ledger_with_lot).findings == ("lot: L1: remaining -0.1 is negative",)
+
+
+def test_unreadable_quantity_is_a_finding(ledger_with_lot: Path) -> None:
+    """A quantity that is not a number is reported, not crashed on (#559)."""
+    _execute(ledger_with_lot, "UPDATE lots SET original_qty = 'abc' WHERE lot_id = 'L1'")
+    assert _check(ledger_with_lot).findings == ("lot: L1: unreadable quantity",)
+
+
+def test_consumption_of_a_missing_lot_is_an_orphan(ledger_with_lot: Path) -> None:
+    """A consumption pointing at no lot is reported with its row id (#559)."""
+    _execute(
+        ledger_with_lot,
+        "INSERT INTO lot_consumptions (lot_id, consumed_qty, consumed_asset, "
+        "realized_gain_eur, consumed_at) VALUES ('GHOST', '1', 'BTC', '0', 't')",
+    )
+    assert _check(ledger_with_lot).orphans == ("consumption 2 names missing lot GHOST",)
+
+
+def test_lot_naming_a_missing_trade_is_an_orphan(ledger_with_lot: Path) -> None:
+    """A lot whose trade_id names no trade is reported (#559)."""
+    _execute(ledger_with_lot, "UPDATE lots SET trade_id = 999 WHERE lot_id = 'L1'")
+    assert _check(ledger_with_lot).findings == ("orphan: lot L1 names missing trade 999",)
+
+
+def test_applied_migration_not_shipped_is_a_finding(ledger: Path) -> None:
+    """A ledger written by a newer or forked release is flagged (#559)."""
+    _execute(ledger, "INSERT INTO schema_migrations (filename) VALUES ('9999_ghost.sql')")
+    assert _check(ledger).findings == ("applied but not shipped: 9999_ghost.sql",)
