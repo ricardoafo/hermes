@@ -6,8 +6,10 @@ Invariants:
   worked example in ``_ledger_builder.one_btc_position`` reads back exactly;
 - the model never writes: its connection refuses a write, reading every view
   leaves the file's bytes unchanged, and a missing file is never created;
-- a fill without EUR values yields an EUR-pending row, never a guessed figure;
-- views this slice does not serve raise ``ViewNotAvailableError``.
+- a fill without EUR values yields an EUR-pending row, never a guessed figure.
+
+The home views (portfolio, activity, shadow test) are covered in
+``test_ledger_read_model_home.py``.
 
 Reference: openspec/changes/ledger-read-model/change.md (R-1 to R-3, D-8).
 """
@@ -29,8 +31,6 @@ from hermes.adapters.console.ledger_read_model import (
 from hermes.application.console import (
     ConsoleReadModel,
     HeartbeatState,
-    PortfolioRange,
-    ViewNotAvailableError,
 )
 from hermes.domain.errors import LedgerError
 from hermes.domain.trading.order import OrderSide
@@ -246,22 +246,6 @@ def test_heartbeat_on_time_inside_the_grace(btc_ledger: Path) -> None:
     """At exactly the grace boundary the heartbeat is still OK."""
     at = T0 + H4 * 3 + LATE_AFTER
     assert _model(btc_ledger, at=at).heartbeat().state is HeartbeatState.OK
-
-
-@pytest.mark.parametrize(
-    "call",
-    [
-        lambda m: m.portfolio(PortfolioRange.WEEK),
-        lambda m: m.activity(),
-        lambda m: m.shadow_test(),
-    ],
-    ids=["portfolio", "activity", "shadow_test"],
-)
-def test_views_of_later_slices_say_they_are_not_available(btc_ledger: Path, call: object) -> None:
-    """Portfolio, activity and the shadow test raise instead of an empty answer (D-8)."""
-    assert callable(call)
-    with pytest.raises(ViewNotAvailableError, match="not yet available"):
-        call(_model(btc_ledger))
 
 
 def test_strategies_are_read_separately(tmp_path: Path) -> None:
