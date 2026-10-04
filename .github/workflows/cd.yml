@@ -44,6 +44,10 @@
 name: CD
 
 on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       dry_run:
@@ -66,7 +70,28 @@ jobs:
   # ─────────────────────────────────────────────────────────────────
   # BUILD — package the app into a wheel via the reusable workflow.
   # ─────────────────────────────────────────────────────────────────
+  gate:
+    name: Wait for green main and a quiet bar
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push')
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    steps:
+      - name: Hold around the 4h bar close
+        if: inputs.dry_run != true
+        shell: bash
+        run: |
+          set -euo pipefail
+          into=$(( $(date -u +%s) % 14400 ))
+          if [ "$into" -ge 14100 ]; then wait=$(( 14400 - into + 300 ))
+          elif [ "$into" -lt 300 ]; then wait=$(( 300 - into ))
+          else wait=0; fi
+          echo "Holding ${wait}s for the bar close"
+          sleep "$wait"
   build:
+    needs: gate
     uses: ./.github/workflows/_build-wheel.yml
 
   # ─────────────────────────────────────────────────────────────────
