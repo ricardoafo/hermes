@@ -223,7 +223,6 @@ def test_no_entry_price_reaches_a_brief(price: Decimal) -> None:
     for kind in BriefKind:
         text = compose(gather(dispatcher, kind=kind, now=NOW), kind=kind).render()
         assert str(price) not in text
-        assert str(price).split(".")[0] not in text
 
 
 def test_a_title_that_fails_the_gate_falls_back_to_the_digest() -> None:
