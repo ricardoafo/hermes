@@ -10,5 +10,5 @@ __all__ = ["COMMAND"]
 COMMAND = Command(
     name="version",
     summary="Print the package version, live release, Python and ledger migration level.",
-    run=lambda argv, *, stream: _impl.main(argv, stream=stream),
+    run=lambda argv, *, stream, err=None: _impl.main(argv, stream=stream, err=err),
 )

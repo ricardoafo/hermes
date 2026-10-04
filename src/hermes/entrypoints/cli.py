@@ -41,6 +41,7 @@ from hermes.adapters.console import available_scenarios
 from hermes.entrypoints import console as console_module
 from hermes.entrypoints import version as version_module
 from hermes.entrypoints import vps as vps_module
+from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.commands import Command, discover
 from hermes.infrastructure import sentry_integration
 
@@ -146,34 +147,34 @@ def _demo_then_vps(args: list[str]) -> bool:
         return False
 
 
-def _vps_exit(args: list[str], out: Any) -> int | None:
+def _vps_exit(args: list[str], err: Any) -> int | None:
     """Handle a ``--vps`` run, before or after the command; ``None`` when not asked for."""
     leading, rest = vps_module.split_vps_flag(args)
     trailing = _FLAG_VPS in rest
     if leading and trailing:
-        out.write("ERROR: give --vps once, before or after the command.\n")
+        err.write("ERROR: give --vps once, before or after the command.\n")
         return 2
     if trailing:
         rest = [arg for arg in rest if arg != _FLAG_VPS]
     if leading or trailing:
-        return _run_on_vps(rest, out, demo_first=False)
+        return _run_on_vps(rest, err, demo_first=False)
     if _demo_then_vps(args):
-        return _run_on_vps(args, out, demo_first=True)
+        return _run_on_vps(args, err, demo_first=True)
     return None
 
 
-def _run_on_vps(args: list[str], out: Any, *, demo_first: bool) -> int:
+def _run_on_vps(args: list[str], err: Any, *, demo_first: bool) -> int:
     """Run the console command after ``--vps`` on the VPS; refuse ``--demo`` alongside it."""
     if not args:
-        out.write("ERROR: --vps needs a console command, e.g. `hermes --vps positions`.\n")
+        err.write("ERROR: --vps needs a console command, e.g. `hermes --vps positions`.\n")
         return 2
     if demo_first or any(arg == "--demo" or arg.startswith("--demo=") for arg in args):
-        out.write("ERROR: --vps cannot be combined with --demo; the demo runs locally.\n")
+        err.write("ERROR: --vps cannot be combined with --demo; the demo runs locally.\n")
         return 2
     return vps_module.run_vps(
         args[0],
         args[1:],
-        out,
+        err,
         console_commands=console_module.console_commands(),
         env=os.environ,
     )
@@ -198,20 +199,22 @@ def _split_late_demo(rest: list[str]) -> tuple[str | None, list[str]]:
     return scenario, kept
 
 
-def _run_console(command: Command, rest: list[str], out: Any, demo_scenario: str | None) -> int:
+def _run_console(
+    command: Command, rest: list[str], out: Any, err: Any, demo_scenario: str | None
+) -> int:
     """Run a console command, taking a ``--demo`` given after it as well as before."""
     try:
         late, rest = _split_late_demo(rest)
     except console_module.DemoFlagError as exc:
-        out.write(f"ERROR: {exc}. Scenarios: {', '.join(available_scenarios())}\n")
+        err.write(f"ERROR: {exc}. Scenarios: {', '.join(available_scenarios())}\n")
         return 2
     if late is not None and demo_scenario is not None:
-        out.write("ERROR: give --demo once, before or after the command.\n")
+        err.write("ERROR: give --demo once, before or after the command.\n")
         return 2
-    return command.run(rest, stream=out, demo=late or demo_scenario)
+    return command.run(rest, stream=out, demo=late or demo_scenario, err=err)
 
 
-def _dispatch(args: list[str], out: Any, demo_scenario: str | None) -> int:
+def _dispatch(args: list[str], out: Any, err: Any, demo_scenario: str | None) -> int:
     """Run the version flag, the help, or the named subcommand."""
     if args[:1] in (["--version"], ["-V"]):
         return version_module.main([], stream=out)
@@ -224,14 +227,16 @@ def _dispatch(args: list[str], out: Any, demo_scenario: str | None) -> int:
     subcommand, *rest = args
     command = commands.get(subcommand)
     if command is None:
-        out.write(_unknown_command_message(subcommand, commands))
+        err.write(_unknown_command_message(subcommand, commands))
         return 2
     if command.wants_demo:
-        return _run_console(command, rest, out, demo_scenario)
-    return command.run(rest, stream=out)
+        return _run_console(command, rest, out, err, demo_scenario)
+    return command.run(rest, stream=out, err=err)
 
 
-def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
+def main(
+    argv: list[str] | None = None, *, stream: Any | None = None, err: Any | None = None
+) -> int:
     """Dispatch the invoked subcommand.
 
     Initializes Sentry (from env) BEFORE dispatching so unhandled
@@ -244,12 +249,15 @@ def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
         argv: Argument list — defaults to ``sys.argv[1:]``.
         stream: Output stream — defaults to a UTF-8-reconfigured
             ``sys.stdout``. Injected for tests.
+        err: Stream for ERROR lines — defaults to ``sys.stderr``, so stdout
+            holds only a command's real output (#543). Injected for tests.
 
     Returns:
         Process exit code.
     """
     args = list(sys.argv[1:] if argv is None else argv)
     out = stream if stream is not None else _utf8_stdout()
+    errors = resolve_err(err)
 
     # Initialize Sentry first — before any subcommand can raise. If the
     # DSN is empty, this is a no-op (integration disabled). Any SDK
@@ -257,16 +265,16 @@ def main(argv: list[str] | None = None, *, stream: Any | None = None) -> int:
     # so the CLI never crashes on a Sentry failure.
     _initialize_sentry_from_env(dict(os.environ))
 
-    vps_exit = _vps_exit(args, out)
+    vps_exit = _vps_exit(args, errors)
     if vps_exit is not None:
         return vps_exit
 
     demo_scenario = _leading_demo_scenario(args)
-    demo_exit, args = console_module.apply_demo_flag(args, out)
+    demo_exit, args = console_module.apply_demo_flag(args, out, errors)
     if demo_exit is not None:
         return demo_exit
 
-    return _dispatch(args, out, demo_scenario)
+    return _dispatch(args, out, errors, demo_scenario)
 
 
 if __name__ == "__main__":  # pragma: no cover

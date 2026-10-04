@@ -10,5 +10,5 @@ __all__ = ["COMMAND"]
 COMMAND = Command(
     name="migrate",
     summary="Snapshot the ledger, then apply pending migrations (stop hermes first).",
-    run=lambda argv, *, stream: _impl.main(argv, stream=stream),
+    run=lambda argv, *, stream, err=None: _impl.main(argv, stream=stream, err=err),
 )

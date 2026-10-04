@@ -23,6 +23,16 @@ def _run(tmp_path: Path, *args: str) -> tuple[int, str]:
     return code, out.getvalue()
 
 
+def _run_split(tmp_path: Path, *args: str) -> tuple[int, str, str]:
+    out, err = io.StringIO(), io.StringIO()
+    code = journal_module.main(
+        ["--journal", str(tmp_path / "j.jsonl"), "--store-dir", str(tmp_path / "cert"), *args],
+        stream=out,
+        err=err,
+    )
+    return code, out.getvalue(), err.getvalue()
+
+
 def _add(tmp_path: Path, kind: str, review_on: date) -> str:
     code, out = _run(
         tmp_path,
@@ -63,11 +73,11 @@ def test_strategy_decision_is_sealed_without_certification(tmp_path: Path) -> No
     today = now_utc().date()
     entry_id = _add(tmp_path, "strategy", today)
     _, due_out = _run(tmp_path, "due")
-    code, review_out = _run(
+    code, review_out, review_err = _run_split(
         tmp_path, "review", entry_id, "--outcome", "x", "--score", "hit", "--evidence", "y"
     )
     assert f"SEALED  {entry_id}" in due_out
-    assert (code, "sealed until certification" in review_out) == (1, True)
+    assert (code, review_out, "sealed until certification" in review_err) == (1, "", True)
 
 
 def test_certified_strategy_unseals(tmp_path: Path) -> None:
@@ -93,10 +103,10 @@ def test_certified_strategy_unseals(tmp_path: Path) -> None:
 def test_future_review_is_refused(tmp_path: Path) -> None:
     """Reviewing before the review date exits 1."""
     entry_id = _add(tmp_path, "process", now_utc().date() + timedelta(days=30))
-    code, out = _run(
+    code, out, err = _run_split(
         tmp_path, "review", entry_id, "--outcome", "x", "--score", "miss", "--evidence", "y"
     )
-    assert (code, out.startswith("REFUSED")) == (1, True)
+    assert (code, out, err.startswith("REFUSED")) == (1, "", True)
 
 
 def test_bad_arguments_exit_two(tmp_path: Path) -> None:

@@ -9,6 +9,14 @@ import pytest
 from hermes.entrypoints import cli as cli_module
 
 
+def _run_err(args: list[str]) -> tuple[int, str]:
+    """Run the CLI for a refusal: the message is on stderr and stdout stays empty."""
+    out, err = io.StringIO(), io.StringIO()
+    code = cli_module.main(args, stream=out, err=err)
+    assert out.getvalue() == ""
+    return code, err.getvalue()
+
+
 def _run(args: list[str]) -> tuple[int, str]:
     out = io.StringIO()
     return cli_module.main(args, stream=out), out.getvalue()
@@ -39,14 +47,14 @@ def test_late_demo_keeps_the_commands_own_arguments() -> None:
 
 def test_late_demo_without_a_scenario_is_a_usage_error() -> None:
     """Invariant: a trailing bare --demo exits 2 and lists the scenarios."""
-    code, out = _run(["positions", "--demo"])
+    code, out = _run_err(["positions", "--demo"])
     assert code == 2
     assert "--demo needs a scenario name" in out
 
 
 def test_demo_before_and_after_is_refused() -> None:
     """Invariant: two --demo options are ambiguous, so exit 2."""
-    code, out = _run(["--demo", "ok-two-positions", "positions", "--demo", "ok-two-positions"])
+    code, out = _run_err(["--demo", "ok-two-positions", "positions", "--demo", "ok-two-positions"])
     assert (code, "give --demo once" in out) == (2, True)
 
 

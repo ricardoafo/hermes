@@ -275,8 +275,11 @@ def test_split_vps_flag_only_reads_the_leading_argument(
 
 
 def _cli(args: list[str]) -> tuple[int, str]:
-    out = io.StringIO()
-    return cli_module.main(args, stream=out), out.getvalue()
+    """Run the CLI and return the exit code and what it wrote to stderr; stdout must stay empty."""
+    out, err = io.StringIO(), io.StringIO()
+    code = cli_module.main(args, stream=out, err=err)
+    assert out.getvalue() == ""
+    return code, err.getvalue()
 
 
 def test_cli_refuses_vps_for_serve() -> None:

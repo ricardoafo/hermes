@@ -90,6 +90,13 @@ def _reader(lines: list[str] | None = None) -> tuple[JournalctlReader, _Spawn]:
     return JournalctlReader(executable="/usr/bin/journalctl", spawn=cast("Any", spawn)), spawn
 
 
+def _run_split(args: list[str]) -> tuple[int, str, str]:
+    reader, _ = _reader()
+    out, err = io.StringIO(), io.StringIO()
+    code = logs_module.main(args, stream=out, reader=reader, err=err)
+    return code, out.getvalue(), err.getvalue()
+
+
 def _run(args: list[str], lines: list[str] | None = None) -> tuple[int, str, _Spawn]:
     reader, spawn = _reader(lines)
     out = io.StringIO()
@@ -175,21 +182,21 @@ def test_json_mode_gives_the_entries_as_data() -> None:
 def test_no_journalctl_exits_two_with_a_message(monkeypatch: pytest.MonkeyPatch) -> None:
     """On a dev box without systemd the command says so instead of crashing."""
     monkeypatch.setattr("hermes.adapters.systemd_journal.journalctl.shutil.which", lambda _: None)
-    out = io.StringIO()
+    out, err = io.StringIO(), io.StringIO()
 
-    code = logs_module.main([], stream=out, reader=JournalctlReader())
+    code = logs_module.main([], stream=out, reader=JournalctlReader(), err=err)
 
-    assert code == 2
-    assert "journalctl is not available here" in out.getvalue()
+    assert (code, out.getvalue()) == (2, "")
+    assert "journalctl is not available here" in err.getvalue()
 
 
 @pytest.mark.parametrize("args", [["--nope"], ["--level", "loud"], ["--last", "0"]])
 def test_bad_arguments_exit_two(args: list[str]) -> None:
     """Unknown flags, unknown levels and an empty window are usage errors."""
-    code, out, _ = _run(args)
+    code, out, err = _run_split(args)
 
-    assert code == 2
-    assert "Usage: hermes logs" in out
+    assert (code, out) == (2, "")
+    assert "Usage: hermes logs" in err
 
 
 def test_output_carries_no_pnl_words() -> None:

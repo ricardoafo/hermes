@@ -27,6 +27,11 @@ def _run(args: list[str]) -> tuple[int, str]:
     return cli_module.main(args, stream=stream), stream.getvalue()
 
 
+def _run_split(args: list[str]) -> tuple[int, str, str]:
+    stream, err = io.StringIO(), io.StringIO()
+    return cli_module.main(args, stream=stream, err=err), stream.getvalue(), err.getvalue()
+
+
 def test_without_demo_prints_empty_state_and_fill_note(monkeypatch: pytest.MonkeyPatch) -> None:
     """No ledger read model yet: empty state plus the note that fills start with #353."""
     monkeypatch.delenv(DEMO_ENV_VAR, raising=False)
@@ -91,14 +96,14 @@ def test_utc_flag_changes_the_json_offset() -> None:
 @pytest.mark.parametrize("args", [["--bogus"], ["ETH", "SOL"]])
 def test_bad_arguments_exit_two(args: list[str]) -> None:
     """Unknown flags or two coins are a usage error."""
-    rc, out = _run(["--demo", "ok-two-positions", "positions", *args])
-    assert (rc, out.startswith("ERROR: bad arguments.")) == (2, True)
+    rc, out, err = _run_split(["--demo", "ok-two-positions", "positions", *args])
+    assert (rc, out, err.startswith("ERROR: bad arguments.")) == (2, "", True)
 
 
 def test_unknown_scenario_exits_two() -> None:
     """An unknown scenario is a usage error that names the valid ones."""
-    rc, out = _run(["--demo", "nope", "positions"])
-    assert (rc, out.startswith("ERROR:")) == (2, True)
+    rc, out, err = _run_split(["--demo", "nope", "positions"])
+    assert (rc, out, err.startswith("ERROR:")) == (2, "", True)
 
 
 def test_positions_is_listed_in_help() -> None:

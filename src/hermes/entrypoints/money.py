@@ -34,6 +34,7 @@ from hermes.application.console.render import (
 )
 from hermes.application.console.views import PortfolioSummary, TaxEstimate, WaterfallColumn
 from hermes.entrypoints import console as console_module
+from hermes.entrypoints._streams import resolve_err
 
 __all__ = ["main", "portfolio_to_json"]
 
@@ -49,6 +50,7 @@ def main(
     stream: TextIO,
     demo_flag: str | None = None,
     env: Mapping[str, str] | None = None,
+    err: TextIO | None = None,
 ) -> int:
     """Run ``hermes money``.
 
@@ -57,10 +59,12 @@ def main(
         stream: Output stream; colour follows Rich's TTY and ``NO_COLOR`` detection.
         demo_flag: Scenario from the leading ``--demo`` option, if any.
         env: Environment snapshot for ``HERMES_CONSOLE_DEMO``; defaults to empty.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         Process exit code.
     """
+    err = resolve_err(err)
     parser = argparse.ArgumentParser(prog="hermes money", add_help=False)
     parser.add_argument("--range", dest="range_", default=PortfolioRange.TODAY.value)
     parser.add_argument("--json", action="store_true")
@@ -70,7 +74,7 @@ def main(
         parsed = parser.parse_args(argv)
         range_ = PortfolioRange(parsed.range_.lower())
     except SystemExit, ValueError:
-        stream.write(f"ERROR: bad arguments. {_USAGE}\n")
+        err.write(f"ERROR: bad arguments. {_USAGE}\n")
         return 2
     if parsed.help:
         stream.write(_USAGE + "\n")
@@ -84,7 +88,7 @@ def main(
             stream.write(_NO_LIVE_MONEY + "\n")
         return 0
     except UnknownScenarioError as exc:
-        stream.write(f"ERROR: {exc}\n")
+        err.write(f"ERROR: {exc}\n")
         return 2
     console = Console(file=stream, emoji=False, markup=False, highlight=False)
     ctx = RenderContext.for_model(

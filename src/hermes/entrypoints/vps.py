@@ -236,7 +236,7 @@ def _exit_message(result: SshResult, settings: VpsSettings) -> str | None:
 def run_vps(
     command: str,
     args: list[str],
-    stream: TextIO,
+    err: TextIO,
     *,
     console_commands: frozenset[str],
     env: Mapping[str, str],
@@ -247,30 +247,30 @@ def run_vps(
     Args:
         command: The command named after ``--vps``.
         args: Its arguments.
-        stream: Where one-line errors and hints go.
+        err: Where one-line errors and hints go (stderr).
         console_commands: The commands allowed through; anything else is refused.
         env: Environment snapshot holding the optional ``HERMES_VPS_*`` settings.
         runner: Runs the ssh argv; injected by tests so nothing ever connects.
 
     Returns:
         The remote command's exit code; 2 for a refusal, bad settings or no ssh
-        client; 255 for an ssh failure (message on ``stream``); 127 when the
+        client; 255 for an ssh failure (message on ``err``); 127 when the
         VPS has no console to run.
     """
     settings = VpsSettings.from_env(env)
     problem = _refusal(command, settings, console_commands)
     if problem is not None:
-        stream.write(f"ERROR: {problem}\n")
+        err.write(f"ERROR: {problem}\n")
         return 2
     try:
         result = runner(build_ssh_argv(settings, command, args))
     except FileNotFoundError:
-        stream.write("ERROR: ssh not found; install the OpenSSH client.\n")
+        err.write("ERROR: ssh not found; install the OpenSSH client.\n")
         return 2
     message = _exit_message(result, settings)
     if message is not None:
-        stream.write(f"ERROR: {message}\n")
+        err.write(f"ERROR: {message}\n")
     hint = _agent_hint(result, settings)
     if hint is not None:
-        stream.write(hint + "\n")
+        err.write(hint + "\n")
     return result.returncode

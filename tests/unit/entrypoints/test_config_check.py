@@ -44,9 +44,9 @@ def config_dir(tmp_path: Path) -> Path:
     return target
 
 
-def _run(argv: list[str], env: dict[str, str]) -> tuple[int, str]:
+def _run(argv: list[str], env: dict[str, str], err: io.StringIO | None = None) -> tuple[int, str]:
     stream = io.StringIO()
-    code = check.main(argv, stream=stream, env=env)
+    code = check.main(argv, stream=stream, env=env, err=err)
     return code, stream.getvalue()
 
 
@@ -123,19 +123,23 @@ class TestUnreadable:
 
     def test_missing_directory_exits_three(self, tmp_path: Path) -> None:
         """Invariant: an absent config dir is exit 3 with an ERROR line."""
-        code, out = _run(["--config-dir", str(tmp_path / "nope")], {})
-        assert code == 3
-        assert out.startswith(
+        err = io.StringIO()
+        code, out = _run(["--config-dir", str(tmp_path / "nope")], {}, err)
+        assert (code, out) == (3, "")
+        assert err.getvalue().startswith(
             "ERROR: config could not be read: Config error: config file not found"
         )
 
     def test_malformed_yaml_exits_three(self, config_dir: Path) -> None:
         """Invariant: unparseable YAML is exit 3, one line, no document dump."""
         (config_dir / "fees.yaml").write_text("a: [unclosed\n", encoding="utf-8")
-        code, out = _run(["--config-dir", str(config_dir)], {})
-        assert code == 3
-        assert out.startswith("ERROR: config could not be read: Config error: invalid YAML in")
-        assert out.count("\n") == 1
+        err = io.StringIO()
+        code, out = _run(["--config-dir", str(config_dir)], {}, err)
+        assert (code, out) == (3, "")
+        assert err.getvalue().startswith(
+            "ERROR: config could not be read: Config error: invalid YAML in"
+        )
+        assert err.getvalue().count("\n") == 1
 
 
 class TestUsage:
@@ -143,9 +147,10 @@ class TestUsage:
 
     def test_bad_flag_exits_two(self) -> None:
         """Invariant: an unknown flag is exit 2 with the usage line."""
-        code, out = _run(["--bogus"], {})
-        assert code == 2
-        assert out == f"ERROR: bad arguments. {check.USAGE}\n"
+        err = io.StringIO()
+        code, out = _run(["--bogus"], {}, err)
+        assert (code, out) == (2, "")
+        assert err.getvalue() == f"ERROR: bad arguments. {check.USAGE}\n"
 
     def test_help_exits_zero_and_lists_exit_codes(self) -> None:
         """Invariant: -h prints usage with the exit codes and returns 0."""

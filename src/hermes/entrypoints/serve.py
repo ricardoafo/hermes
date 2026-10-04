@@ -14,6 +14,11 @@ What one process does:
 - :func:`run` opens an :class:`asyncio.TaskGroup` holding the bar loop, logs
   and reports to Sentry whatever escapes it, closes every resource in order
   and returns the process exit code (0 clean, 1 runtime failure).
+- Every signal goes through the :class:`~hermes.application.execution.shadow.ShadowExecutor`
+  around the fill kernel the backtest uses: a simulated order walks a live
+  Binance depth snapshot (or the pre-registration §6.2 book when none is
+  fresh), and the fill is recorded as a ``TradeExecuted`` v2 trade with its
+  execution-quality row (change ``353-fill-kernel-in-serve``).
 - The bar loop warms up one :class:`SwingStrategyAdapter` per pair, seeding
   bars up to a persisted cursor without evaluating them, restoring each
   pair's open position from the ledger, then evaluates every later bar as if
@@ -30,7 +35,8 @@ What one process does:
 Real-money guard
 ----------------
 
-No exchange adapter is wired, so no order can be placed by construction. The
+No exchange adapter is wired, so no order can be placed by construction:
+fills are simulated by walking a public, keyless depth snapshot. The
 real-money gate stays on :attr:`~hermes.infrastructure.config.HermesConfig.allow_mainnet`
 AND :attr:`~hermes.infrastructure.config.HermesConfig.env` being ``"prod"``
 (``_mainnet_only_in_prod`` on the config model). See ADR-003 §00 invariant
@@ -54,7 +60,13 @@ import structlog
 from returns.result import Failure
 
 from hermes.adapters.clock.wall import WallClock
+from hermes.adapters.fees.binance_history import load_binance_fee_history
+from hermes.adapters.fills.orderbook_walk import OrderbookWalkFillModel
+from hermes.adapters.fx.frankfurter import FrankfurterAdapter
+from hermes.adapters.fx.frankfurter import FrankfurterConfig as FrankfurterWireConfig
+from hermes.adapters.fx.rate_limiter import RateLimitConfig
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
+from hermes.adapters.market_data.binance_depth_snapshot import BinanceDepthSnapshotAdapter
 from hermes.adapters.market_data.binance_live_klines import BinanceLiveKlinesAdapter
 from hermes.adapters.notifier.slack_adapter import SlackAdapter, SlackConfig, SlackNotifierError
 from hermes.adapters.notifier.telegram_adapter import (
@@ -66,14 +78,27 @@ from hermes.application.calibration.certification_gates import (
     require_live_approval,
     v1_parameter_fingerprint,
 )
+from hermes.application.execution.kernel import Declined, Executed, FillKernel, Halted
+from hermes.application.execution.shadow import (
+    ShadowExecution,
+    ShadowExecutor,
+    shadow_risk_engine,
+)
+from hermes.application.ledger.eur_pricer import EurPricer
+from hermes.application.ledger.trade_recorder import TradeRecorder
 from hermes.application.notification_router import RouterConfig
+from hermes.application.order_router.sizing import SizingPolicy
 from hermes.application.portfolio.tracker import PortfolioTracker
 from hermes.application.signal_notifier import SignalNotifier
+from hermes.application.strategy_protocol.kill_trigger_evaluator import KillTriggerEvaluator
+from hermes.application.strategy_protocol.preregistration import PreRegistration
 from hermes.domain.errors import HermesError, LedgerError
 from hermes.domain.events.bar_processed import BarProcessed
 from hermes.domain.events.event_bus import EventBus, EventDispatchError
 from hermes.domain.events.shadow_capital_seeded import ShadowCapitalSeeded
 from hermes.domain.events.signal_emitted import SignalEmitted
+from hermes.domain.fees.fee_schedule import FeeSchedule
+from hermes.domain.fees.fee_schedule_selector import FeeScheduleRow, select_fee_schedule
 from hermes.domain.lots.quote_leg import CapitalSeed, seed_timestamp
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.bar_schedule import (
@@ -85,21 +110,25 @@ from hermes.domain.market_data.bar_schedule import (
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.portfolio.mark import PortfolioMark
 from hermes.domain.portfolio.snapshot import PortfolioSnapshot
-from hermes.domain.strategy.signal import OpenPosition, SignalKind
+from hermes.domain.strategy.signal import OpenPosition, SignalKind, StrategySignal
 from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.infrastructure import sentry_integration
+from hermes.infrastructure.config.models import FrankfurterConfig
 from hermes.infrastructure.config.root import HermesConfig
 from hermes.infrastructure.logging import bind_correlation_id, new_correlation_id
 from hermes.ports.bar_feed import ClosedBarFeedPort
 from hermes.ports.certification import CertificationStoreError, CertificationStorePort
 from hermes.ports.clock import ClockPort
+from hermes.ports.fx import FxRateProviderPort
+from hermes.ports.orderbook_snapshot import OrderbookSnapshotPort
 from hermes.ports.strategy import StrategyPort
 
 __all__ = [
     "CATCHUP_BARS",
+    "EXPERIMENT_DIR",
     "SHADOW_STRATEGY_NAME",
     "SHADOW_UNIVERSE",
     "BarGapError",
@@ -108,6 +137,7 @@ __all__ = [
     "build_composition",
     "certification_dir_for",
     "check_startup",
+    "experiment_files",
     "install_signal_handlers",
     "parameter_fingerprint_for",
     "report_failure",
@@ -129,6 +159,9 @@ SHADOW_UNIVERSE: Final = ("BTC/USDT", "ETH/USDT", "SOL/USDT")
 
 SHADOW_STRATEGY_NAME: Final = "swing-donchian-4h"
 """The one strategy the shadow roster may enable (pre-registration §5)."""
+
+EXPERIMENT_DIR: Final = Path("docs/experiments/swing-mvp1")
+"""Where the signed pre-registration and the fee history sit under the experiment root."""
 
 _ONE_MS: Final = timedelta(milliseconds=1)
 _NEVER: Final = datetime(1970, 1, 1, tzinfo=UTC)
@@ -155,6 +188,16 @@ def parameter_fingerprint_for(config: HermesConfig) -> str:
     return v1_parameter_fingerprint(
         capital_budget=roster.capital_budget, universe=config.market_data.pairs
     )
+
+
+def experiment_files(experiment_root: Path) -> tuple[Path, Path]:
+    """Return the pre-registration and fee-history paths under ``experiment_root``.
+
+    The root is the repository in development and the release directory on
+    the VPS (``/opt/hermes/current``), which carries both files (D-6).
+    """
+    folder = experiment_root / EXPERIMENT_DIR
+    return folder / "pre-registration-v1.md", folder / "fee-history.csv"
 
 
 class BarGapError(HermesError):
@@ -184,6 +227,12 @@ class Composition:
         slack: Slack adapter, or ``None`` without credentials.
         sqlite_connection: The raw connection owned by the composition,
             closed last by :func:`run`.
+        executor: Turns signals into simulated fills through the shared
+            fill kernel and records them.
+        orderbooks: Live depth snapshots; closed by :func:`run`.
+        fx_adapter: The FX adapter the trade recorder prices with, when the
+            composition built it (closed by :func:`run`); ``None`` when one
+            was injected.
     """
 
     config: HermesConfig
@@ -200,6 +249,9 @@ class Composition:
     telegram: TelegramAdapter | None
     slack: SlackAdapter | None
     sqlite_connection: sqlite3.Connection
+    executor: ShadowExecutor
+    orderbooks: OrderbookSnapshotPort
+    fx_adapter: FrankfurterAdapter | None
 
 
 def _telegram_config(env: Mapping[str, str]) -> TelegramConfig | None:
@@ -225,6 +277,7 @@ def check_startup(
     env: Mapping[str, str],
     *,
     certification_store: CertificationStorePort | None = None,
+    experiment_root: Path | None = None,
 ) -> None:
     """Refuse a configuration the shadow loop cannot run safely.
 
@@ -233,6 +286,9 @@ def check_startup(
         env: Env-var snapshot used to probe channel credentials.
         certification_store: Where the certification record lives. Required
             when ``allow_mainnet`` is true; without it, mainnet is refused.
+        experiment_root: Directory holding :data:`EXPERIMENT_DIR`. When given,
+            the signed pre-registration and the fee history must exist under
+            it: the fill kernel's kill rules and fees read them.
 
     Raises:
         StartupError: The enabled roster is not exactly the one swing entry,
@@ -240,8 +296,12 @@ def check_startup(
             ``env`` is ``prod`` and neither Telegram nor Slack has
             credentials, or ``allow_mainnet`` is true while the strategy is
             not LIVE_APPROVED with unchanged parameters (pre-registration §7,
-            ADR-014).
+            ADR-014), or a required experiment file is missing.
     """
+    if experiment_root is not None:
+        missing = [str(f) for f in experiment_files(experiment_root) if not f.is_file()]
+        if missing:
+            raise StartupError(f"experiment files missing: {', '.join(missing)}")
     enabled = [s.name for s in config.strategies.strategies if s.enabled]
     if enabled != [SHADOW_STRATEGY_NAME]:
         raise StartupError(
@@ -328,6 +388,9 @@ def build_composition(
     env: Mapping[str, str] | None = None,
     feed: ClosedBarFeedPort | None = None,
     clock: ClockPort | None = None,
+    experiment_root: Path | None = None,
+    orderbooks: OrderbookSnapshotPort | None = None,
+    fx: FxRateProviderPort | None = None,
 ) -> Composition:
     """Wire every adapter the shadow loop needs and return the container.
 
@@ -345,17 +408,25 @@ def build_composition(
         feed: Closed-bar source override for tests. Defaults to
             :class:`BinanceLiveKlinesAdapter`.
         clock: Clock override for tests. Defaults to :class:`WallClock`.
+        experiment_root: Directory holding :data:`EXPERIMENT_DIR`. Defaults to
+            the repository root found from the installed package.
+        orderbooks: Depth source override for tests. Defaults to
+            :class:`BinanceDepthSnapshotAdapter`.
+        fx: FX provider override for tests. Defaults to Frankfurter (USDT
+            read as USD).
 
     Returns:
         A fully wired :class:`Composition` ready to hand to :func:`run`.
 
     Raises:
-        StartupError: The start capital cannot be recorded, or the ledger's
-            recorded trades cannot be replayed into the portfolio. The SQLite
-            connection is closed before raising.
+        StartupError: The pre-registration or the fee history cannot be read,
+            the start capital cannot be recorded, or the ledger's recorded
+            trades or fill-quality rows cannot be read or replayed into the
+            portfolio. The SQLite connection is closed before raising.
     """
     db_target = db_path if db_path is not None else DEFAULT_DB_PATH
     env_snapshot: Mapping[str, str] = dict(os.environ) if env is None else env
+    pre_registration, fee_rows = _load_experiment(experiment_root)
 
     connection = sqlite3.connect(db_target)
     ledger = SqliteLedger(connection)
@@ -371,6 +442,7 @@ def build_composition(
     seed = PortfolioSnapshot.seed(strategy_id, capital)
     try:
         seed_capital_once(ledger, strategy_id, capital, now=wall.now())
+        recorded_seed = ledger.capital_seed(strategy_id)
     except LedgerError as exc:
         connection.close()
         raise StartupError(f"cannot record the start capital in the ledger: {exc.msg}") from exc
@@ -383,6 +455,34 @@ def build_composition(
         connection.close()
         raise StartupError(f"cannot rebuild the portfolio from the ledger: {rebuilt.failure()}")
     tracker = rebuilt.unwrap()
+    fill_model = OrderbookWalkFillModel()
+    books = (
+        orderbooks
+        if orderbooks is not None
+        else BinanceDepthSnapshotAdapter.create(config.market_data, wall)
+    )
+    fx_adapter: FrankfurterAdapter | None = None
+    rates = fx
+    if rates is None:
+        fx_adapter = _frankfurter(config.frankfurter)
+        rates = fx_adapter
+    try:
+        executor = ShadowExecutor(
+            kernel=_build_kernel(
+                fill_model, tracker, strategy_id, pre_registration, roster.sizing_policy()
+            ),
+            fill_model=fill_model,
+            books=books,
+            recorder=TradeRecorder(ledger, EurPricer(rates)),
+            ledger=ledger,
+            clock=wall,
+            fees_at=_fees_at(fee_rows),
+            strategy_id=strategy_id,
+            not_before=None if recorded_seed is None else recorded_seed.seeded_at,
+        )
+    except LedgerError as exc:
+        connection.close()
+        raise StartupError(f"cannot read the fill-quality rows: {exc.msg}") from exc
     pairs = config.market_data.parsed_pairs()
     strategies: dict[Pair, StrategyPort] = {pair: SwingStrategyAdapter() for pair in pairs}
 
@@ -408,6 +508,69 @@ def build_composition(
         telegram=telegram,
         slack=slack,
         sqlite_connection=connection,
+        executor=executor,
+        orderbooks=books,
+        fx_adapter=fx_adapter,
+    )
+
+
+def _load_experiment(
+    experiment_root: Path | None,
+) -> tuple[PreRegistration, list[FeeScheduleRow]]:
+    """Read the signed pre-registration and the fee history (D-6).
+
+    Raises:
+        StartupError: Either file is missing or unreadable.
+    """
+    try:
+        pre_registration = PreRegistration(project_root=experiment_root)
+        fee_path = pre_registration.pre_reg_path().parent / "fee-history.csv"
+        return pre_registration, load_binance_fee_history(fee_path)
+    except (OSError, ValueError, KeyError) as exc:
+        raise StartupError(f"cannot read the experiment files: {exc}") from exc
+
+
+def _fees_at(rows: list[FeeScheduleRow]) -> Callable[[datetime, Pair], FeeSchedule]:
+    """Return the pre-registration §6.1 fee lookup over ``rows``."""
+
+    def fees_at(at: datetime, pair: Pair) -> FeeSchedule:
+        return select_fee_schedule(rows, at, pair)
+
+    return fees_at
+
+
+def _build_kernel(
+    fill_model: OrderbookWalkFillModel,
+    tracker: PortfolioTracker,
+    strategy_id: StrategyId,
+    pre_registration: PreRegistration,
+    sizing: SizingPolicy,
+) -> FillKernel:
+    """Build the fill kernel the backtest uses, with serve's risk rules (D-3).
+
+    The one place serve configures the kernel. ``sizing`` is the enabled
+    roster entry's ``StrategyConfig.sizing_policy()``, the same limits the
+    backtest sizes with.
+    """
+    return FillKernel(
+        fill_model=fill_model,
+        risk_engine=shadow_risk_engine(),
+        kill_evaluator=KillTriggerEvaluator(pre_reg=pre_registration),
+        tracker=tracker,
+        strategy_id=strategy_id,
+        sizing=sizing,
+    )
+
+
+def _frankfurter(config: FrankfurterConfig) -> FrankfurterAdapter:
+    """Build the Frankfurter adapter that prices USDT as USD, as ``hermes fx`` does."""
+    return FrankfurterAdapter.create(
+        FrankfurterWireConfig(
+            base_url=config.base_url,
+            timeout_sec=config.timeout_sec,
+            rate_limit=RateLimitConfig(max_weight=config.requests_per_minute, window_seconds=60),
+            wire_codes=FrankfurterWireConfig.USDT_AS_USD,
+        )
     )
 
 
@@ -460,13 +623,19 @@ def report_failure(exc: BaseException) -> None:
 
 
 async def _release(c: Composition) -> None:
-    """Close the feed, then Slack, Telegram and SQLite last; never raise."""
+    """Close the feed and the depth source, then FX, Slack, Telegram, SQLite last."""
     try:
         await c.feed.aclose()
     except Exception as exc:
         _log.error("serve.close.feed_failed", exc_info=exc)
+    try:
+        await c.orderbooks.aclose()
+    except Exception as exc:
+        _log.error("serve.close.orderbooks_failed", exc_info=exc)
     with contextlib.ExitStack() as stack:
         stack.callback(_close_quietly, c.sqlite_connection.close)
+        if c.fx_adapter is not None:
+            stack.callback(_close_quietly, c.fx_adapter.close)
         if c.telegram is not None:
             stack.callback(_close_quietly, c.telegram.close)
         if c.slack is not None:
@@ -556,6 +725,9 @@ class _BarLoop:
                 b for b in warm if b.pair == pair and b.close_time <= cursors[(b.pair, b.interval)]
             ]
             strategy.seed(seeded, open_position=self._restore_position(pair, cursors))
+        for bar in warm:
+            if bar.close_time <= cursors[(bar.pair, bar.interval)]:
+                c.executor.observe(bar)
         _log.info("serve.warmup.done", bars=len(warm))
         for bar in warm:
             if shutdown.is_set():
@@ -610,6 +782,7 @@ class _BarLoop:
         bind_correlation_id(correlation_id)
 
         c.tracker.mark(bar)
+        c.executor.observe(bar)
         signal_ = c.strategies[bar.pair].on_bar(bar, c.tracker.state())
         if signal_ is not None:
             event = SignalEmitted.from_signal(
@@ -618,8 +791,13 @@ class _BarLoop:
                 pair=bar.pair,
                 correlation_id=correlation_id,
             )
-            if not c.ledger.has_signal_event(event):
+            is_new = not c.ledger.has_signal_event(event)
+            if is_new:
                 c.event_bus.publish(event)
+            # The signal row comes first, then the fill (D-5): a crash between
+            # them re-evaluates the bar, and the executor sees no trade yet.
+            await self._execute(signal_, bar, correlation_id)
+            if is_new:
                 if within_catchup(
                     c.clock.now(), event.occurred_at, bar.interval, bars=CATCHUP_BARS
                 ):
@@ -713,6 +891,11 @@ class _BarLoop:
             )
         return True
 
+    async def _execute(self, signal_: StrategySignal, bar: Bar, correlation_id: str) -> None:
+        """Simulate the signal's order and log the outcome, never its P&L (D-7)."""
+        result = await self.c.executor.execute(signal_, bar, correlation_id=correlation_id)
+        _log_execution(bar.pair, signal_.kind, result)
+
     async def _notify(self, event: SignalEmitted) -> None:
         """Fan the event out in a worker thread; a channel outage is logged, not fatal."""
         try:
@@ -722,6 +905,42 @@ class _BarLoop:
             for failure in exc.failures:
                 if isinstance(failure, Exception):
                     sentry_integration.capture(failure)
+
+
+def _log_execution(pair: Pair, kind: SignalKind, result: ShadowExecution) -> None:
+    """Log one execution: prices, sizes and rules only, never equity, P&L or drift."""
+    source = None if result.book_source is None else result.book_source.value
+    if result.snapshot_error is not None:
+        _log.warning("serve.book.snapshot_failed", pair=str(pair), error=result.snapshot_error)
+    outcome = result.outcome
+    if isinstance(outcome, Executed):
+        fill = outcome.fill
+        _log.info(
+            "serve.fill.executed",
+            pair=str(pair),
+            side=fill.order.side.value,
+            qty=str(fill.executed_qty),
+            price=str(fill.avg_price),
+            fee=str(fill.fee.amount),
+            book_source=source,
+        )
+    elif isinstance(outcome, Declined):
+        _log.info(
+            "serve.fill.declined",
+            pair=str(pair),
+            kind=kind.value,
+            rule=outcome.rule,
+            book_source=source,
+        )
+    elif isinstance(outcome, Halted):
+        _log.warning("serve.fill.halted", pair=str(pair), kind=kind.value)
+    else:
+        _log.info(
+            "serve.fill.already_filled",
+            pair=str(pair),
+            side=outcome.trade.side.value,
+            occurred_at=outcome.trade.occurred_at.isoformat(),
+        )
 
 
 def install_signal_handlers(

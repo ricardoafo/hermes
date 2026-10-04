@@ -43,9 +43,27 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
+from hermes.domain.events.balance_low import BalanceLow
+from hermes.domain.events.base import DomainEvent
+from hermes.domain.events.daily_trade_digest import DailyTradeDigest
+from hermes.domain.events.rebalance_triggered import RebalanceTriggered
+from hermes.domain.events.signal_emitted import SignalEmitted
+from hermes.domain.events.strategy_paused import StrategyPaused
+from hermes.domain.events.strategy_resumed import StrategyResumed
+from hermes.domain.events.trade_executed import TradeExecuted
+from hermes.domain.events.trade_rejected import TradeRejected
 from hermes.ports.notifier import NotifierPort
 
-__all__ = ["EventClass", "RouterConfig", "channels_for", "route"]
+__all__ = [
+    "EventClass",
+    "RouterConfig",
+    "channels_for",
+    "event_class_for",
+    "is_event_loud",
+    "is_loud",
+    "route",
+]
 
 
 class EventClass(StrEnum):
@@ -109,7 +127,7 @@ class EventClass(StrEnum):
     """Strategy pause — Telegram (urgent) + Slack (durable record)."""
 
     STRATEGY_RESUMED = "STRATEGY_RESUMED"
-    """Strategy resume — Slack only (recovery notice, no phone push)."""
+    """Strategy resume — Telegram (silent) + Slack: the recovery mirrors the pause."""
 
     BALANCE_LOW = "BALANCE_LOW"
     """Wallet balance below threshold — Telegram only (urgent action)."""
@@ -136,6 +154,9 @@ class EventClass(StrEnum):
 
     Reference: ``docs/decisions/2026-10-03-signal-notification-routing.md``.
     """
+
+    REBALANCE_TRIGGERED = "REBALANCE_TRIGGERED"
+    """Rebalance heads-up — Slack (compact) + Telegram (one-line pointer), silent."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -189,7 +210,7 @@ _ROUTING_TABLE: dict[EventClass, tuple[bool, bool]] = {
     # MVP1 additions — see 2026-08-23-slack-alongside-telegram.md §
     # "Extended MVP1 events" for the rationale of each row.
     EventClass.STRATEGY_PAUSED: (True, True),
-    EventClass.STRATEGY_RESUMED: (False, True),
+    EventClass.STRATEGY_RESUMED: (True, True),
     EventClass.BALANCE_LOW: (True, False),
     EventClass.TRADE_REJECTED_ESCALATED: (True, False),
     EventClass.DAILY_TRADE_DIGEST: (False, True),
@@ -197,8 +218,39 @@ _ROUTING_TABLE: dict[EventClass, tuple[bool, bool]] = {
     EventClass.ANOMALY_DETECTED: (True, True),
     # See 2026-10-03-signal-notification-routing.md.
     EventClass.SIGNAL_EMITTED: (True, True),
+    # Notification templates v2 (#144): the heads-up reaches both channels.
+    EventClass.REBALANCE_TRIGGERED: (True, True),
 }
 """Per-class channel fan-out — encodes the ADR Rationale table verbatim."""
+
+_ALWAYS_LOUD: frozenset[EventClass] = frozenset(
+    {
+        EventClass.SERVICE_CRASH,
+        EventClass.HEALTH_CHECK_FAIL,
+        EventClass.ROLLBACK_FIRED,
+        EventClass.BALANCE_LOW,
+        EventClass.TRADE_REJECTED_ESCALATED,
+    }
+)
+"""Classes that ring the phone: down, P0 and rejected orders (ADR-015 D-06, D-07)."""
+
+_LOUD_WHEN_CRITICAL: frozenset[EventClass] = frozenset(
+    {EventClass.STRATEGY_PAUSED, EventClass.ANOMALY_DETECTED}
+)
+"""Classes that ring only at ``CRITICAL`` severity (P0); lower severities are silent."""
+
+_EVENT_CLASSES: dict[type[DomainEvent], EventClass] = {
+    SignalEmitted: EventClass.SIGNAL_EMITTED,
+    StrategyPaused: EventClass.STRATEGY_PAUSED,
+    StrategyResumed: EventClass.STRATEGY_RESUMED,
+    AnomalyDetected: EventClass.ANOMALY_DETECTED,
+    BalanceLow: EventClass.BALANCE_LOW,
+    TradeRejected: EventClass.TRADE_REJECTED_ESCALATED,
+    TradeExecuted: EventClass.POSITION_LARGE,
+    RebalanceTriggered: EventClass.REBALANCE_TRIGGERED,
+    DailyTradeDigest: EventClass.DAILY_TRADE_DIGEST,
+}
+"""Concrete event type to routing class. ``LotClosed`` and ``BarProcessed`` have none."""
 
 
 def route(event_class: EventClass, config: RouterConfig) -> tuple[NotifierPort, ...]:
@@ -264,3 +316,52 @@ def channels_for(event_class: EventClass) -> tuple[bool, bool]:
         A ``(telegram, slack)`` pair of bools.
     """
     return _ROUTING_TABLE[event_class]
+
+
+def event_class_for(event: DomainEvent) -> EventClass | None:
+    """Return the routing class of a concrete event.
+
+    Args:
+        event: A concrete domain event.
+
+    Returns:
+        Its :class:`EventClass`, or ``None`` for an event that is never
+        notified (``LotClosed``, ``BarProcessed``).
+    """
+    return _EVENT_CLASSES.get(type(event))
+
+
+def is_loud(event_class: EventClass, severity: AnomalySeverity | None = None) -> bool:
+    """Return whether a push for ``event_class`` should ring the phone.
+
+    Loud means down, P0 and rejected orders; everything else is sent silent
+    (Telegram ``disable_notification``).
+
+    Args:
+        event_class: The routing class.
+        severity: The event's severity, for the classes that carry one. A
+            pause or an anomaly rings only when it is ``CRITICAL``.
+
+    Returns:
+        ``True`` to ring, ``False`` to send silently.
+    """
+    if event_class in _ALWAYS_LOUD:
+        return True
+    return event_class in _LOUD_WHEN_CRITICAL and severity is AnomalySeverity.CRITICAL
+
+
+def is_event_loud(event: DomainEvent) -> bool:
+    """Return whether the push for ``event`` should ring the phone.
+
+    Args:
+        event: A concrete domain event.
+
+    Returns:
+        ``False`` for an event with no routing class, else :func:`is_loud`
+        on its class and, where it has one, its severity.
+    """
+    event_class = event_class_for(event)
+    if event_class is None:
+        return False
+    severity = event.severity if isinstance(event, StrategyPaused | AnomalyDetected) else None
+    return is_loud(event_class, severity)

@@ -36,6 +36,7 @@ from hermes.domain.tax.netting import CarriedLoss, TaxpayerYear
 from hermes.domain.tax.scale import SavingsBand, SavingsScale
 from hermes.domain.tax.year_position import tax_year_of
 from hermes.entrypoints import serve as serve_module
+from hermes.entrypoints._streams import resolve_err
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR
 from hermes.infrastructure.config.tax import SavingsScale as SavingsScaleConfig
@@ -118,6 +119,7 @@ def main(
     stream: TextIO,
     now: Callable[[], datetime] = now_utc,
     env: Mapping[str, str] | None = None,
+    err: TextIO | None = None,
 ) -> int:
     """Parse ``argv`` (after the ``tax`` token), estimate and print.
 
@@ -126,11 +128,13 @@ def main(
         stream: Output stream.
         now: Clock; tests inject a fixed instant.
         env: Env snapshot for the profile path (defaults to ``os.environ``).
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         Process exit code.
     """
-    parsed = _parse(argv, stream)
+    err = resolve_err(err)
+    parsed = _parse(argv, stream, err)
     if isinstance(parsed, int):
         return parsed
     args, prices = parsed
@@ -143,12 +147,12 @@ def main(
             resolve_taxpayer_profile_path(None if env is None else dict(env))
         )
     except ConfigError as exc:
-        stream.write(f"ERROR: config load failed: {exc}\n")
+        err.write(f"ERROR: config load failed: {exc}\n")
         return 3
 
     db: Path = args.db
     if not db.is_file():
-        stream.write(f"ERROR: ledger not found at {db}\n")
+        err.write(f"ERROR: ledger not found at {db}\n")
         return 1
     connection = sqlite3.connect(db)
     try:
@@ -164,7 +168,7 @@ def main(
             is_shadow=_IS_SHADOW,
         )
     except (LedgerError, sqlite3.Error) as exc:
-        stream.write(f"ERROR: cannot read ledger {db}: {exc}\n")
+        err.write(f"ERROR: cannot read ledger {db}: {exc}\n")
         return 1
     finally:
         connection.close()
@@ -176,7 +180,9 @@ def main(
     return 0
 
 
-def _parse(argv: list[str], stream: TextIO) -> tuple[argparse.Namespace, dict[str, Decimal]] | int:
+def _parse(
+    argv: list[str], stream: TextIO, err: TextIO
+) -> tuple[argparse.Namespace, dict[str, Decimal]] | int:
     """Parse arguments; return an exit code when there is nothing to run."""
     parser = argparse.ArgumentParser(prog="hermes tax", add_help=False)
     parser.add_argument("--year", type=int, default=None)
@@ -188,7 +194,7 @@ def _parse(argv: list[str], stream: TextIO) -> tuple[argparse.Namespace, dict[st
     try:
         args = parser.parse_args(argv)
     except SystemExit:
-        stream.write(f"ERROR: could not parse `hermes tax` arguments.\n{_USAGE}")
+        err.write(f"ERROR: could not parse `hermes tax` arguments.\n{_USAGE}")
         return 2
     if args.help:
         stream.write(_USAGE)
@@ -201,9 +207,7 @@ def _parse(argv: list[str], stream: TextIO) -> tuple[argparse.Namespace, dict[st
         except InvalidOperation:
             value = Decimal("NaN")
         if not sep or not asset.strip() or not value.is_finite() or value < 0:
-            stream.write(
-                f"ERROR: --price expects ASSET=EUR with a non-negative amount, got {raw!r}\n"
-            )
+            err.write(f"ERROR: --price expects ASSET=EUR with a non-negative amount, got {raw!r}\n")
             return 2
         prices[asset.strip().upper()] = value
     return args, prices

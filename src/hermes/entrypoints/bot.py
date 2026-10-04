@@ -42,6 +42,7 @@ from hermes.application.status import StatusReport, build_report, ledger_missing
 from hermes.domain.errors import LedgerError
 from hermes.entrypoints import console as console_module
 from hermes.entrypoints import serve as serve_module
+from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.status import systemd_unit_state
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
@@ -111,18 +112,21 @@ def main(
     stream: TextIO,
     env: Mapping[str, str] | None = None,
     client: TelegramBotClient | None = None,
+    err: TextIO | None = None,
 ) -> int:
     """Run ``hermes bot`` until stopped.
 
     Args:
         argv: Arguments after ``bot``.
-        stream: Output stream for usage and setup errors.
+        stream: Output stream for usage.
         env: Environment snapshot; defaults to ``os.environ``.
         client: Telegram client override for tests.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         Process exit code.
     """
+    err = resolve_err(err)
     parser = argparse.ArgumentParser(prog="hermes bot", add_help=False)
     parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
     parser.add_argument("--db", type=Path, default=serve_module.DEFAULT_DB_PATH)
@@ -131,7 +135,7 @@ def main(
     try:
         parsed = parser.parse_args(argv)
     except SystemExit:
-        stream.write(f"ERROR: bad arguments. {_USAGE}\n")
+        err.write(f"ERROR: bad arguments. {_USAGE}\n")
         return 2
     if parsed.help:
         stream.write(_USAGE + "\n")
@@ -140,14 +144,12 @@ def main(
     token = environ.get("HERMES_TELEGRAM__BOT_TOKEN", "").strip()
     chat_id = environ.get("HERMES_TELEGRAM__CHAT_ID", "").strip()
     if not token or not chat_id:
-        stream.write(
-            "ERROR: HERMES_TELEGRAM__BOT_TOKEN and HERMES_TELEGRAM__CHAT_ID must be set.\n"
-        )
+        err.write("ERROR: HERMES_TELEGRAM__BOT_TOKEN and HERMES_TELEGRAM__CHAT_ID must be set.\n")
         return 3
     try:
         config = load_config(parsed.config_dir)
     except ConfigError as exc:
-        stream.write(f"ERROR: config load failed: {exc}\n")
+        err.write(f"ERROR: config load failed: {exc}\n")
         return 3
 
     sources = build_sources(config, parsed.db, environ)

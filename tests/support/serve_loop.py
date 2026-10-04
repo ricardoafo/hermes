@@ -24,17 +24,23 @@ from pathlib import Path
 
 from hermes.application.notification_router import RouterConfig
 from hermes.application.signal_notifier import SignalNotifier
+from hermes.domain.errors import NetworkError
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.bar_schedule import close_time_of, delivery_key
 from hermes.domain.market_data.kline import KlineInterval
+from hermes.domain.market_data.orderbook import Orderbook
 from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
 from hermes.entrypoints import serve as serve_module
 from hermes.infrastructure.config.loader import load_config
 from hermes.ports.bar_feed import SourceHealth, SourceState
+from hermes.ports.clock import ClockPort
+from hermes.ports.fx import FxRateProviderPort
+from hermes.ports.orderbook_snapshot import OrderbookSnapshotPort
+from tests.unit.application.ledger.fake_fx import FakeFx
 
 BTC = Pair(base=Currency.BTC, quote=Currency.USDT)
 ETH = Pair(base=Currency.ETH, quote=Currency.USDT)
@@ -174,6 +180,26 @@ class FakeFeed:
         self.closed = True
 
 
+class UnavailableBooks:
+    """Depth source that always fails, like an unreachable endpoint.
+
+    The default for :func:`build`, so a loop test never reaches the network
+    and every fill falls back to the pre-registration §6.2 book.
+    """
+
+    def __init__(self) -> None:
+        """Start with no calls."""
+        self.calls = 0
+
+    async def snapshot(self, pair: Pair) -> Orderbook:
+        """Fail like a network outage."""
+        self.calls += 1
+        raise NetworkError(f"no depth for {pair} in tests")
+
+    async def aclose(self) -> None:
+        """Nothing to release."""
+
+
 @dataclass
 class RecordingChannel:
     """NotifierPort fake that records events and optionally raises."""
@@ -214,14 +240,26 @@ def build(
     *,
     telegram: RecordingChannel | None = None,
     slack: RecordingChannel | None = None,
+    books: OrderbookSnapshotPort | None = None,
+    fx: FxRateProviderPort | None = None,
+    clock: ClockPort | None = None,
 ) -> serve_module.Composition:
     """Build a composition over a real ledger file with fakes injected.
 
     One pair (BTC/USDT) with one small-period strategy and the given channels.
+    The depth source defaults to :class:`UnavailableBooks` and the FX provider
+    to one that is down, so nothing reaches the network. ``clock`` replaces
+    the fixed clock at ``now``.
     """
     config = load_config(PROJECT_ROOT / "config", env={})
     base = serve_module.build_composition(
-        config, db_path=db_path, env={}, feed=feed, clock=FakeClock(now)
+        config,
+        db_path=db_path,
+        env={},
+        feed=feed,
+        clock=clock if clock is not None else FakeClock(now),
+        orderbooks=books if books is not None else UnavailableBooks(),
+        fx=fx if fx is not None else FakeFx(down=True),
     )
     return dataclasses.replace(
         base,

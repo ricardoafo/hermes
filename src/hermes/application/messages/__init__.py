@@ -7,14 +7,15 @@ Two public entry points:
 - :func:`slack_template` — takes a :class:`DomainEvent`, returns a
   :class:`SlackMessage` NamedTuple (text + Block Kit + attachments).
 
-Both dispatch on ``type(event)`` through a static registry. Adding a new
-event class requires editing BOTH files (a ``_render`` function + an
-entry in the ``_TEMPLATES`` dict) — a missing registration raises
+Both build their text from one channel-neutral note per event
+(:mod:`~hermes.application.messages.notes`), written with the shared
+formatters (:mod:`~hermes.application.messages.format`) and rendered in the
+shape that :data:`~hermes.application.messages.shapes.SHAPES` assigns to the
+event's family on that channel. An event with no builder raises
 ``ValueError`` at first render, not silently at runtime.
 
-Templates ship standalone in this PR; the Telegram and Slack adapters
-consume them in follow-up PRs. This isolation lets the CLI
-(``hermes preview``) exercise templates without any adapter dependency.
+The adapters consume the templates; this isolation lets the CLI
+(``hermes preview``) exercise them without any adapter dependency.
 
 Reference: ``docs/decisions/2026-08-23-slack-alongside-telegram.md``
     § "Extended MVP1 events"; code-conventions.md §1.

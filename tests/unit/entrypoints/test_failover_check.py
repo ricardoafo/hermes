@@ -173,15 +173,16 @@ def test_help_exits_0() -> None:
 def test_bad_config_exits_3(tmp_path: Path) -> None:
     """A config directory that fails validation is a config failure."""
     (tmp_path / "market_data.yaml").write_text("pairs: not-a-list\n", encoding="utf-8")
-    out = io.StringIO()
+    out, err = io.StringIO(), io.StringIO()
     code = module.main(
         ["--config-dir", str(tmp_path)],
         stream=out,
         venues=module.Venues(_venue([]), _venue([])),
         now=_NOW,
+        err=err,
     )
-    assert code == 3
-    assert out.getvalue().startswith("ERROR: config:")
+    assert (code, out.getvalue()) == (3, "")
+    assert err.getvalue().startswith("ERROR: config:")
 
 
 def test_daily_interval_uses_day_boundaries() -> None:

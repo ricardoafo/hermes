@@ -44,6 +44,7 @@ from hermes.application.calibration.window_metrics import (
 from hermes.application.strategy_protocol.preregistration import PreRegistration
 from hermes.domain.statistics.performance import TradeResult
 from hermes.entrypoints import serve as serve_module
+from hermes.entrypoints._streams import resolve_err
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
 from hermes.infrastructure.time import now_utc
@@ -78,17 +79,19 @@ class EvidenceError(ValueError):
     """The evidence file is malformed."""
 
 
-def main(argv: list[str], *, stream: TextIO) -> int:
+def main(argv: list[str], *, stream: TextIO, err: TextIO | None = None) -> int:
     """Parse ``argv`` and run ``hermes certify``.
 
     Args:
         argv: Arguments after the ``certify`` token.
         stream: Output stream.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         Process exit code.
     """
-    parsed, code = _parse(argv, stream)
+    err = resolve_err(err)
+    parsed, code = _parse(argv, stream, err)
     if parsed is None:
         return code
 
@@ -99,10 +102,10 @@ def main(argv: list[str], *, stream: TextIO) -> int:
         if parsed.performance:
             evidence = apply_performance(evidence, parsed.performance)
     except (ConfigError, serve_module.StartupError) as exc:
-        stream.write(f"ERROR: config: {exc}\n")
+        err.write(f"ERROR: config: {exc}\n")
         return 3
     except (OSError, EvidenceError) as exc:
-        stream.write(f"ERROR: evidence: {exc}\n")
+        err.write(f"ERROR: evidence: {exc}\n")
         return 3
 
     now = now_utc()
@@ -116,11 +119,12 @@ def main(argv: list[str], *, stream: TextIO) -> int:
         store=JsonCertificationStore(store_dir),
         fingerprint=fingerprint,
         stream=stream,
+        err=err,
         clock=lambda: now,
     )
 
 
-def _parse(argv: list[str], stream: TextIO) -> tuple[argparse.Namespace | None, int]:
+def _parse(argv: list[str], stream: TextIO, err: TextIO) -> tuple[argparse.Namespace | None, int]:
     """Parse and validate ``argv``; on ``None`` the int is the exit code."""
     parser = argparse.ArgumentParser(prog="hermes certify", add_help=False)
     parser.add_argument("strategy_id", nargs="?")
@@ -134,16 +138,16 @@ def _parse(argv: list[str], stream: TextIO) -> tuple[argparse.Namespace | None, 
     try:
         parsed = parser.parse_args(argv)
     except SystemExit:
-        stream.write("ERROR: could not parse `hermes certify` arguments.\n" + _USAGE)
+        err.write("ERROR: could not parse `hermes certify` arguments.\n" + _USAGE)
         return None, 2
     if parsed.help:
         stream.write(_USAGE)
         return None, 0
     if not parsed.strategy_id:
-        stream.write("ERROR: strategy_id is required.\n" + _USAGE)
+        err.write("ERROR: strategy_id is required.\n" + _USAGE)
         return None, 2
     if parsed.strategy_id != serve_module.SHADOW_STRATEGY_NAME:
-        stream.write(
+        err.write(
             f"ERROR: only {serve_module.SHADOW_STRATEGY_NAME!r} is pre-registered "
             f"(swing-mvp1-v1); got {parsed.strategy_id!r}.\n"
         )
@@ -160,6 +164,7 @@ def run(
     stream: TextIO,
     clock: Callable[[], datetime],
     pre_reg: PreRegistration | None = None,
+    err: TextIO | None = None,
 ) -> int:
     """Evaluate and record the next gate for ``strategy_id``.
 
@@ -171,16 +176,18 @@ def run(
         stream: Output stream.
         clock: Source of the current UTC time.
         pre_reg: Threshold source; defaults to the signed pre-registration.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         Process exit code.
     """
+    err = resolve_err(err)
     now = clock()
     rules = pre_reg or PreRegistration()
     try:
         stored = store.load(strategy_id) or CertificationRecord(strategy_id)
     except CertificationStoreError as exc:
-        stream.write(f"ERROR: store: {exc}\n")
+        err.write(f"ERROR: store: {exc}\n")
         return 3
 
     record = apply_guardrails(stored, fingerprint=fingerprint, evidence=evidence, now=now)
@@ -199,7 +206,7 @@ def run(
         try:
             store.save(updated)
         except CertificationStoreError as exc:
-            stream.write(f"ERROR: store: {exc}\n")
+            err.write(f"ERROR: store: {exc}\n")
             return 3
     if updated.state != record.state:
         stream.write(

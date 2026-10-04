@@ -37,6 +37,7 @@ from hermes.domain.fx.eur_pricing import fill_date_madrid
 from hermes.domain.value_objects.currency import Currency
 from hermes.entrypoints import fx as fx_module
 from hermes.entrypoints import serve as serve_module
+from hermes.entrypoints._streams import resolve_err
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.filing import load_filing_config, load_modelo721_history
 from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
@@ -71,6 +72,7 @@ def main(
     fx_factory: fx_module.FxFactory = fx_module.build_fx,
     env: Mapping[str, str] | None = None,
     today: date | None = None,
+    err: TextIO | None = None,
 ) -> int:
     """Parse ``argv`` (after the ``tax-filing`` token) and print the report.
 
@@ -80,14 +82,16 @@ def main(
         fx_factory: Builds the rate provider from config; tests inject a fake.
         env: Environment snapshot (defaults to ``os.environ``).
         today: Madrid date of the run (defaults to now).
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         Process exit code.
     """
-    parsed = _parse(argv, stream)
+    err = resolve_err(err)
+    parsed = _parse(argv, stream, err)
     if isinstance(parsed, int):
         return parsed
-    overrides = _parse_prices(parsed.price, stream)
+    overrides = _parse_prices(parsed.price, err)
     if overrides is None:
         return 2
     built = _build(
@@ -97,6 +101,7 @@ def main(
         env=dict(os.environ if env is None else env),
         today=today if today is not None else fill_date_madrid(now_utc()),
         stream=stream,
+        err=err,
     )
     if isinstance(built, int):
         return built
@@ -116,6 +121,7 @@ def _build(
     env: dict[str, str],
     today: date,
     stream: TextIO,
+    err: TextIO,
 ) -> FilingPack | int:
     """Load config, read the ledger and build the pack; an exit code on failure."""
     try:
@@ -123,7 +129,7 @@ def _build(
         filing = load_filing_config(parsed.config_dir, env=env)
         history = load_modelo721_history(parsed.history, env=env)
     except ConfigError as exc:
-        stream.write(f"ERROR: config load failed: {exc}\n")
+        err.write(f"ERROR: config load failed: {exc}\n")
         return 3
 
     fx = fx_factory(config.frankfurter)
@@ -141,17 +147,17 @@ def _build(
                 shadow=not parsed.live,
             )
     except FileNotFoundError:
-        stream.write(f"ERROR: no ledger at {parsed.db}\n")
+        err.write(f"ERROR: no ledger at {parsed.db}\n")
         return 1
     except LedgerError as exc:
-        stream.write(f"ERROR: {exc}\n")
+        err.write(f"ERROR: {exc}\n")
         return 1
     finally:
         close = getattr(fx, "close", None)
         if callable(close):
             close()
     if isinstance(built, Failure):
-        stream.write(f"ERROR: ledger trades are inconsistent: {built.failure()}\n")
+        err.write(f"ERROR: ledger trades are inconsistent: {built.failure()}\n")
         return 1
     return built.unwrap()
 
@@ -163,7 +169,7 @@ def _write_outputs(out: Path, report: str, csv_files: Mapping[str, str]) -> None
         (out / name).write_text(content, encoding="utf-8")
 
 
-def _parse(argv: list[str], stream: TextIO) -> argparse.Namespace | int:
+def _parse(argv: list[str], stream: TextIO, err: TextIO) -> argparse.Namespace | int:
     """Parse arguments; return an exit code when there is nothing to run."""
     if not argv:
         stream.write(_USAGE)
@@ -180,18 +186,18 @@ def _parse(argv: list[str], stream: TextIO) -> argparse.Namespace | int:
     try:
         parsed = parser.parse_args(argv)
     except SystemExit:
-        stream.write(f"ERROR: could not parse `hermes tax-filing` arguments.\n{_USAGE}")
+        err.write(f"ERROR: could not parse `hermes tax-filing` arguments.\n{_USAGE}")
         return 2
     if parsed.help:
         stream.write(_USAGE)
         return 0
     if parsed.year is None:
-        stream.write(f"ERROR: --year is required.\n{_USAGE}")
+        err.write(f"ERROR: --year is required.\n{_USAGE}")
         return 2
     return parsed
 
 
-def _parse_prices(raw: list[str], stream: TextIO) -> dict[Currency, Decimal] | None:
+def _parse_prices(raw: list[str], err: TextIO) -> dict[Currency, Decimal] | None:
     """Parse ``COIN=EUR`` pairs; ``None`` (after an error line) on a bad one."""
     prices: dict[Currency, Decimal] = {}
     for item in raw:
@@ -202,7 +208,7 @@ def _parse_prices(raw: list[str], stream: TextIO) -> dict[Currency, Decimal] | N
         except ValueError, InvalidOperation:
             value = None
         if not sep or value is None or not value.is_finite() or value < 0:
-            stream.write(f"ERROR: --price expects COIN=EUR with a known coin, got {item!r}\n")
+            err.write(f"ERROR: --price expects COIN=EUR with a known coin, got {item!r}\n")
             return None
         prices[asset] = value
     return prices

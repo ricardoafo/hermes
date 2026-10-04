@@ -7,11 +7,11 @@
 #   <sha12>      first 12 hex chars of the git sha; names the release dir.
 #   <stage_dir>  the untarred release bundle (see the `bundle` job in
 #                .github/workflows/cd.yml): one hermes-*.whl,
-#                requirements.txt, config/, deploy/, bin/.
+#                requirements.txt, config/, deploy/, docs/, bin/.
 #
 # Runs on the VPS as root, over SSH from cd.yml. Layout it maintains:
 #
-#   /opt/hermes/versions/<sha12>/   .venv, config/, deploy/, .installed
+#   /opt/hermes/versions/<sha12>/   .venv, config/, deploy/, docs/, .installed
 #   /opt/hermes/current            -> versions/<sha12>   (what systemd runs)
 #   /opt/hermes/previous           -> the release current replaced
 #   /opt/hermes/bin/               health_gate.sh, rollback.sh,
@@ -206,6 +206,11 @@ preflight() {
     [ -f "$stage/requirements.txt" ] || die "$stage/requirements.txt missing"
     [ -d "$stage/config" ] || die "$stage/config missing"
     [ -d "$stage/deploy" ] || die "$stage/deploy missing"
+    # hermes serve reads both from the release root; without them it exits 3.
+    [ -f "$stage/docs/experiments/swing-mvp1/pre-registration-v1.md" ] \
+        || die "$stage/docs/experiments/swing-mvp1/pre-registration-v1.md missing"
+    [ -f "$stage/docs/experiments/swing-mvp1/fee-history.csv" ] \
+        || die "$stage/docs/experiments/swing-mvp1/fee-history.csv missing"
     [ -f "$stage/deploy/hermes-notify-failure.sh" ] || die "$stage/deploy/hermes-notify-failure.sh missing"
     [ -f "$stage/deploy/hermes-notify-crash.sh" ] || die "$stage/deploy/hermes-notify-crash.sh missing"
     [ -f "$SCRIPT_DIR/health_gate.sh" ] || die "$SCRIPT_DIR/health_gate.sh missing"
@@ -225,6 +230,7 @@ install_version() {
     uv pip install --python "$vdir/.venv/bin/python" --no-deps --no-cache "$WHEEL"
     cp -r "$stage/config" "$vdir/config"
     cp -r "$stage/deploy" "$vdir/deploy"
+    cp -r "$stage/docs" "$vdir/docs"
     touch "$vdir/.installed"
     partial_dir=""
 }

@@ -69,11 +69,12 @@ def test_status_explicit_flags_beat_the_env(
 
 def test_activity_reads_the_ledger_named_by_the_env(tmp_path: Path) -> None:
     """Invariant: bare `hermes activity` looks for the ledger at HERMES_DB_PATH."""
-    out = io.StringIO()
+    out, err = io.StringIO(), io.StringIO()
     path = tmp_path / "env-ledger.sqlite3"
-    code = activity_module.run_activity([], out, env={"HERMES_DB_PATH": str(path)})
+    code = activity_module.run_activity([], out, env={"HERMES_DB_PATH": str(path)}, err=err)
     assert code == 3
-    assert str(path) in out.getvalue()
+    assert out.getvalue() == ""
+    assert str(path) in err.getvalue()
 
 
 def test_positions_reads_the_ledger_named_by_the_env(
