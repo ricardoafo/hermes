@@ -387,10 +387,10 @@ def test_tax_pack_flags_are_accepted_by_the_real_cli_parser(tmp_path: Path) -> N
     argv[argv.index("--out") + 1] = str(tmp_path / "packs")
     argv[argv.index("--config-dir") + 1] = str(_REPO_ROOT / "config")
     argv[argv.index("--db") + 1] = str(tmp_path / "missing.sqlite3")
-    stream = io.StringIO()
+    stream, err = io.StringIO(), io.StringIO()
 
-    assert cli_module.main(argv, stream=stream) == 1
-    assert "no ledger at" in stream.getvalue()
+    assert cli_module.main(argv, stream=stream, err=err) == 1
+    assert "no ledger at" in err.getvalue()
 
 
 _PROD_PATHS = ("/opt/hermes", "/var/lib/hermes", "/etc/hermes/env.production")

@@ -12,7 +12,8 @@ Without ``--year`` it refreshes the current Madrid tax year and the previous
 one unless that is frozen (D-3); the daily timer runs exactly that.
 
 Exit codes: 0 written, 1 ledger failure, 2 usage, 3 config error,
-5 the requested year is frozen (nothing written).
+5 the requested year is frozen (nothing written). ERROR and WARNING lines go
+to ``err`` (stderr), the report to ``stream``.
 
 Reference: openspec/changes/568-tax-pack/change.md.
 """
@@ -58,6 +59,7 @@ from hermes.domain.value_objects.currency import Currency
 from hermes.entrypoints import fx as fx_module
 from hermes.entrypoints import serve as serve_module
 from hermes.entrypoints import tax as tax_module
+from hermes.entrypoints._streams import resolve_err
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.filing import (
     FilingConfig,
@@ -133,12 +135,14 @@ def main(
     env: Mapping[str, str] | None = None,
     now: Callable[[], datetime] = now_utc,
     estimate_runner: EstimateRunner = run_estimate,
+    err: TextIO | None = None,
 ) -> int:
     """Parse ``argv`` (after the ``tax-pack`` token) and refresh the packs.
 
     Args:
         argv: Arguments after ``tax-pack``.
         stream: Output stream.
+        err: Stream for ERROR and WARNING lines; defaults to ``sys.stderr``.
         fx_factory: Builds the rate provider from config; tests inject a fake.
         env: Environment snapshot (defaults to ``os.environ``).
         now: Clock; tests inject a fixed instant.
@@ -147,10 +151,11 @@ def main(
     Returns:
         Process exit code.
     """
-    parsed = _parse(argv, stream)
+    err = resolve_err(err)
+    parsed = _parse(argv, stream, err)
     if isinstance(parsed, int):
         return parsed
-    overrides = _parse_prices(parsed.price, stream)
+    overrides = _parse_prices(parsed.price, err)
     if overrides is None:
         return 2
     snapshot = dict(os.environ if env is None else env)
@@ -160,7 +165,7 @@ def main(
         history = load_modelo721_history(parsed.history, env=snapshot)
         campaigns = load_renta_campaigns(parsed.config_dir, env=snapshot)
     except ConfigError as exc:
-        stream.write(f"ERROR: config load failed: {exc}\n")
+        err.write(f"ERROR: config load failed: {exc}\n")
         return 3
 
     refreshed_at = now()
@@ -177,6 +182,7 @@ def main(
         now=now,
         refreshed_at=refreshed_at,
         estimate_runner=estimate_runner,
+        err=err,
     )
     current = tax_year_of(refreshed_at)
     explicit = parsed.year is not None
@@ -209,12 +215,13 @@ class _Run:
     now: Callable[[], datetime]
     refreshed_at: datetime
     estimate_runner: EstimateRunner
+    err: TextIO
 
 
 def _refresh(year: int, run: _Run, stream: TextIO) -> int:
     """Rebuild and write one year's pack; an exit code."""
     today = fill_date_madrid(run.refreshed_at)
-    built = _read_ledger(year, run, today, stream)
+    built = _read_ledger(year, run, today)
     if isinstance(built, int):
         return built
     pack, trail = built
@@ -227,7 +234,7 @@ def _refresh(year: int, run: _Run, stream: TextIO) -> int:
             run.now,
         )
         if estimate is None:
-            stream.write(
+            run.err.write(
                 f"WARNING: `hermes tax` failed; pack {year} written without the estimate.\n"
             )
     directory = run.out_root / str(year)
@@ -246,7 +253,7 @@ def _refresh(year: int, run: _Run, stream: TextIO) -> int:
 
 
 def _read_ledger(
-    year: int, run: _Run, today: date, stream: TextIO
+    year: int, run: _Run, today: date
 ) -> tuple[FilingPack, tuple[TrailLine, ...]] | int:
     """Build the year's figures and trail; an exit code on failure."""
     parsed, filing = run.parsed, run.filing
@@ -269,17 +276,17 @@ def _read_ledger(
             )
             trail = collect_trail(year, reader, rates)
     except FileNotFoundError:
-        stream.write(f"ERROR: no ledger at {parsed.db}\n")
+        run.err.write(f"ERROR: no ledger at {parsed.db}\n")
         return 1
     except LedgerError as exc:
-        stream.write(f"ERROR: {exc}\n")
+        run.err.write(f"ERROR: {exc}\n")
         return 1
     finally:
         close = getattr(fx, "close", None)
         if callable(close):
             close()
     if isinstance(built, Failure):
-        stream.write(f"ERROR: ledger trades are inconsistent: {built.failure()}\n")
+        run.err.write(f"ERROR: ledger trades are inconsistent: {built.failure()}\n")
         return 1
     return built.unwrap(), trail
 
@@ -349,7 +356,7 @@ def _out_root(out: Path | None, env: Mapping[str, str]) -> Path:
     return (Path(configured) if configured else DEFAULT_PACK_DIR).expanduser()
 
 
-def _parse(argv: list[str], stream: TextIO) -> argparse.Namespace | int:
+def _parse(argv: list[str], stream: TextIO, err: TextIO) -> argparse.Namespace | int:
     """Parse arguments; return an exit code when there is nothing to run."""
     parser = argparse.ArgumentParser(prog="hermes tax-pack", add_help=False)
     parser.add_argument("--year", type=int)
@@ -363,7 +370,7 @@ def _parse(argv: list[str], stream: TextIO) -> argparse.Namespace | int:
     try:
         parsed = parser.parse_args(argv)
     except SystemExit:
-        stream.write(f"ERROR: could not parse `hermes tax-pack` arguments.\n{_USAGE}")
+        err.write(f"ERROR: could not parse `hermes tax-pack` arguments.\n{_USAGE}")
         return 2
     if parsed.help:
         stream.write(_USAGE)
@@ -371,7 +378,7 @@ def _parse(argv: list[str], stream: TextIO) -> argparse.Namespace | int:
     return parsed
 
 
-def _parse_prices(raw: list[str], stream: TextIO) -> dict[Currency, Decimal] | None:
+def _parse_prices(raw: list[str], err: TextIO) -> dict[Currency, Decimal] | None:
     """Parse ``COIN=EUR`` pairs; ``None`` (after an error line) on a bad one."""
     prices: dict[Currency, Decimal] = {}
     for item in raw:
@@ -382,7 +389,7 @@ def _parse_prices(raw: list[str], stream: TextIO) -> dict[Currency, Decimal] | N
         except ValueError, InvalidOperation:
             value = None
         if not sep or value is None or not value.is_finite() or value < 0:
-            stream.write(f"ERROR: --price expects COIN=EUR with a known coin, got {item!r}\n")
+            err.write(f"ERROR: --price expects COIN=EUR with a known coin, got {item!r}\n")
             return None
         prices[asset] = value
     return prices

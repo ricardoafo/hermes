@@ -61,6 +61,28 @@ def _ledger(tmp_path: Path) -> Path:
     return db
 
 
+def _invoke(
+    argv: list[str],
+    tmp_path: Path,
+    *,
+    at: datetime = _DURING_YEAR,
+    env: dict[str, str] | None = None,
+    estimate: FakeEstimate | None = None,
+    config_dir: Path = _CONFIG_DIR,
+) -> tuple[int, str, str]:
+    stream, err = io.StringIO(), io.StringIO()
+    code = tax_pack.main(
+        [*argv, "--config-dir", str(config_dir), "--history", str(tmp_path / "none.yaml")],
+        stream=stream,
+        fx_factory=lambda _cfg: constant_fx(),
+        env=env if env is not None else {},
+        now=lambda: at,
+        estimate_runner=estimate if estimate is not None else FakeEstimate(),
+        err=err,
+    )
+    return code, stream.getvalue(), err.getvalue()
+
+
 def _run(
     argv: list[str],
     tmp_path: Path,
@@ -70,16 +92,10 @@ def _run(
     estimate: FakeEstimate | None = None,
     config_dir: Path = _CONFIG_DIR,
 ) -> tuple[int, str]:
-    stream = io.StringIO()
-    code = tax_pack.main(
-        [*argv, "--config-dir", str(config_dir), "--history", str(tmp_path / "none.yaml")],
-        stream=stream,
-        fx_factory=lambda _cfg: constant_fx(),
-        env=env if env is not None else {},
-        now=lambda: at,
-        estimate_runner=estimate if estimate is not None else FakeEstimate(),
+    code, printed, _ = _invoke(
+        argv, tmp_path, at=at, env=env, estimate=estimate, config_dir=config_dir
     )
-    return code, stream.getvalue()
+    return code, printed
 
 
 def _snapshot(directory: Path) -> dict[str, bytes]:
@@ -222,14 +238,14 @@ def test_a_failed_estimate_still_writes_the_pack(tmp_path: Path) -> None:
     out = tmp_path / "packs"
     profile = tmp_path / "taxpayer.yaml"
     profile.write_text("years: {}\n", encoding="utf-8")
-    code, printed = _run(
+    code, _, errors = _invoke(
         ["--year", "2026", "--db", str(_ledger(tmp_path)), "--out", str(out)],
         tmp_path,
         env={"HERMES_TAXPAYER_PROFILE": str(profile)},
         estimate=FakeEstimate(text=None),
     )
     assert code == 0
-    assert "WARNING: `hermes tax` failed" in printed
+    assert "WARNING: `hermes tax` failed" in errors
     assert not (out / "2026" / "tax-estimate.txt").exists()
 
 
@@ -247,11 +263,17 @@ def test_out_defaults_to_the_environment_folder(tmp_path: Path) -> None:
 def test_missing_ledger_exits_1(tmp_path: Path) -> None:
     """Invariant: no ledger file is a ledger failure and writes no pack."""
     out = tmp_path / "packs"
-    code, printed = _run(
+    code, _, errors = _invoke(
         ["--year", "2026", "--db", str(tmp_path / "missing.sqlite3"), "--out", str(out)], tmp_path
     )
     assert (code, out.exists()) == (1, False)
-    assert "ERROR: no ledger at" in printed
+    assert "ERROR: no ledger at" in errors
+
+
+def test_error_lines_never_reach_the_report_stream(tmp_path: Path) -> None:
+    """Invariant (#543): ERROR lines go to stderr, so stdout stays the report only."""
+    _, printed, errors = _invoke(["--year", "2026", "--price", "BTC"], tmp_path)
+    assert (printed, errors.startswith("ERROR: --price expects COIN=EUR")) == ("", True)
 
 
 def test_bad_price_exits_2(tmp_path: Path) -> None:
@@ -269,6 +291,7 @@ def test_bad_config_dir_exits_3(tmp_path: Path) -> None:
         fx_factory=lambda _cfg: constant_fx(),
         env={},
         now=lambda: _DURING_YEAR,
+        err=io.StringIO(),
     )
     assert code == 3
 
