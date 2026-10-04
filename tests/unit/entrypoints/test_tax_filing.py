@@ -23,11 +23,12 @@ _CONFIG_DIR = _PROJECT_ROOT / "config"
 _AFTER_YEAR_END = date(2027, 1, 5)
 
 
-def _run(argv: list[str], tmp_path: Path) -> tuple[int, str]:
+def _run(argv: list[str], tmp_path: Path, err: io.StringIO | None = None) -> tuple[int, str]:
     stream = io.StringIO()
     code = tax_filing.main(
         [*argv, "--config-dir", str(_CONFIG_DIR), "--history", str(tmp_path / "none.yaml")],
         stream=stream,
+        err=err,
         fx_factory=lambda _cfg: constant_fx(),
         env={},
         today=_AFTER_YEAR_END,
@@ -96,20 +97,32 @@ def test_pending_eur_values_exit_4(tmp_path: Path) -> None:
 def test_missing_ledger_exits_1_and_creates_nothing(tmp_path: Path) -> None:
     """Invariant: no ledger file is an error, and the command never creates one."""
     missing = tmp_path / "absent.sqlite3"
-    code, out = _run(["--year", "2026", "--db", str(missing)], tmp_path)
-    assert (code, out, missing.exists()) == (1, f"ERROR: no ledger at {missing}\n", False)
+    err = io.StringIO()
+    code, out = _run(["--year", "2026", "--db", str(missing)], tmp_path, err)
+    assert (code, out, err.getvalue(), missing.exists()) == (
+        1,
+        "",
+        f"ERROR: no ledger at {missing}\n",
+        False,
+    )
 
 
 def test_missing_year_is_a_usage_error(tmp_path: Path) -> None:
     """Invariant: --year is required."""
-    code, out = _run(["--db", "x"], tmp_path)
-    assert (code, out.splitlines()[0]) == (2, "ERROR: --year is required.")
+    err = io.StringIO()
+    code, out = _run(["--db", "x"], tmp_path, err)
+    assert (code, out, err.getvalue().splitlines()[0]) == (2, "", "ERROR: --year is required.")
 
 
 def test_bad_price_is_a_usage_error(tmp_path: Path) -> None:
     """Invariant: a malformed or unknown --price is rejected before any read."""
-    code, out = _run(["--year", "2026", "--price", "DOGE=1"], tmp_path)
-    assert (code, out) == (2, "ERROR: --price expects COIN=EUR with a known coin, got 'DOGE=1'\n")
+    err = io.StringIO()
+    code, out = _run(["--year", "2026", "--price", "DOGE=1"], tmp_path, err)
+    assert (code, out, err.getvalue()) == (
+        2,
+        "",
+        "ERROR: --price expects COIN=EUR with a known coin, got 'DOGE=1'\n",
+    )
 
 
 def test_negative_price_is_a_usage_error(tmp_path: Path) -> None:
@@ -123,15 +136,20 @@ def test_broken_filing_config_exits_3(tmp_path: Path) -> None:
     config_dir = tmp_path / "config"
     shutil.copytree(_CONFIG_DIR, config_dir)
     (config_dir / "filing.yaml").write_text("modelo721: {}\n", encoding="utf-8")
-    stream = io.StringIO()
+    stream, err = io.StringIO(), io.StringIO()
     code = tax_filing.main(
         ["--year", "2026", "--config-dir", str(config_dir)],
         stream=stream,
+        err=err,
         fx_factory=lambda _cfg: constant_fx(),
         env={},
         today=_AFTER_YEAR_END,
     )
-    assert (code, stream.getvalue().startswith("ERROR: config load failed:")) == (3, True)
+    assert (code, stream.getvalue(), err.getvalue().startswith("ERROR: config load failed:")) == (
+        3,
+        "",
+        True,
+    )
 
 
 def test_help_exits_0(tmp_path: Path) -> None:

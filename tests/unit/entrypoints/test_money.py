@@ -26,9 +26,11 @@ from hermes.entrypoints import cli
 from hermes.entrypoints import money as money_module
 
 
-def _run(args: list[str], *, demo: str | None = "ok-two-positions") -> tuple[int, str]:
+def _run(
+    args: list[str], *, demo: str | None = "ok-two-positions", err: io.StringIO | None = None
+) -> tuple[int, str]:
     out = io.StringIO()
-    code = money_module.main(args, stream=out, demo_flag=demo, env={})
+    code = money_module.main(args, stream=out, demo_flag=demo, env={}, err=err)
     return code, out.getvalue()
 
 
@@ -61,10 +63,11 @@ def test_section_is_tagged_and_leads_with_the_total_for_the_range() -> None:
 @pytest.mark.parametrize("bad", [["--range", "decade"], ["--nope"]])
 def test_bad_arguments_exit_two(bad: list[str]) -> None:
     """An unknown range or flag is a usage error."""
-    code, out = _run(bad)
+    err = io.StringIO()
+    code, out = _run(bad, err=err)
 
-    assert code == 2
-    assert "Usage: hermes [--demo SCENARIO] money" in out
+    assert (code, out) == (2, "")
+    assert "Usage: hermes [--demo SCENARIO] money" in err.getvalue()
 
 
 def test_json_carries_the_figures_under_pnl() -> None:

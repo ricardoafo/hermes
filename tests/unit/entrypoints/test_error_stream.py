@@ -26,10 +26,36 @@ def _failing_calls(tmp_path: Path) -> dict[str, tuple[list[str], int]]:
         "activity": (["activity", "--json", "--db", str(tmp_path / "absent.sqlite3")], 3),
         "logs": (["logs", "--json", "--last", "0"], 2),
         "positions": (["positions", "--json", "--bogus"], 2),
+        "config check": (
+            ["config", "check", "--json", "--config-dir", str(tmp_path / "absent")],
+            3,
+        ),
+        "ledger verify": (
+            ["ledger", "verify", "--json", "--db", str(tmp_path / "absent.sqlite3")],
+            3,
+        ),
+        "health": (["health", "nope", "--json"], 2),
+        "journal list": (["journal", "list", "--json", "--bogus"], 2),
+        "money": (["money", "--json", "--bogus"], 2),
+        "version": (["version", "--json", "--bogus"], 2),
     }
 
 
-@pytest.mark.parametrize("command", ["status", "activity", "logs", "positions"])
+@pytest.mark.parametrize(
+    "command",
+    [
+        "status",
+        "activity",
+        "logs",
+        "positions",
+        "config check",
+        "ledger verify",
+        "health",
+        "journal list",
+        "money",
+        "version",
+    ],
+)
 def test_a_failing_json_call_leaves_stdout_empty_and_errors_on_err(
     command: str, tmp_path: Path
 ) -> None:

@@ -28,6 +28,7 @@ from pydantic import ValidationError
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
 from hermes.entrypoints import serve as serve_module
+from hermes.entrypoints._streams import resolve_err
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
 from hermes.infrastructure.config.root import HermesConfig
@@ -59,18 +60,26 @@ class Finding:
     detail: str
 
 
-def main(argv: list[str], *, stream: TextIO, env: Mapping[str, str] | None = None) -> int:
+def main(
+    argv: list[str],
+    *,
+    stream: TextIO,
+    env: Mapping[str, str] | None = None,
+    err: TextIO | None = None,
+) -> int:
     """Run ``hermes config check``.
 
     Args:
         argv: Arguments after ``config check``.
-        stream: Output stream; ERROR lines go here too.
+        stream: Output stream.
         env: Environment snapshot; ``None`` reads ``os.environ`` after
             ``.env.local``, as ``hermes serve`` does. A fake in tests.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         Process exit code.
     """
+    err = resolve_err(err)
     parser = argparse.ArgumentParser(prog="hermes config check", add_help=False)
     parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
     parser.add_argument("--json", action="store_true")
@@ -78,7 +87,7 @@ def main(argv: list[str], *, stream: TextIO, env: Mapping[str, str] | None = Non
     try:
         parsed = parser.parse_args(argv)
     except SystemExit:
-        stream.write(f"ERROR: bad arguments. {USAGE}\n")
+        err.write(f"ERROR: bad arguments. {USAGE}\n")
         return 2
     if parsed.help:
         stream.write(f"{USAGE}\n\nLoads the config and runs the startup checks without starting\n")
@@ -92,7 +101,7 @@ def main(argv: list[str], *, stream: TextIO, env: Mapping[str, str] | None = Non
         invalid = _invalid_values(exc)
         if invalid:
             return _report(invalid, parsed.json, stream)
-        stream.write(f"ERROR: config could not be read: {_without_values(exc)}\n")
+        err.write(f"ERROR: config could not be read: {_without_values(exc)}\n")
         return 3
 
     findings = _startup_findings(config, dict(os.environ) if snapshot is None else snapshot)

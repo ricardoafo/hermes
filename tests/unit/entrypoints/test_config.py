@@ -20,9 +20,12 @@ class TestConfigDispatch:
 
     def test_config_without_subcommand_exits_two(self) -> None:
         """Invariant: bare hermes config prints usage and returns 2."""
-        stream = io.StringIO()
-        assert cli.main(["config"], stream=stream) == 2
-        assert stream.getvalue() == f"ERROR: expected a subcommand. {check.USAGE}\n"
+        stream, err = io.StringIO(), io.StringIO()
+        assert cli.main(["config"], stream=stream, err=err) == 2
+        assert (stream.getvalue(), err.getvalue()) == (
+            "",
+            f"ERROR: expected a subcommand. {check.USAGE}\n",
+        )
 
     def test_config_help_exits_zero(self) -> None:
         """Invariant: hermes config -h prints usage and returns 0."""
@@ -32,12 +35,15 @@ class TestConfigDispatch:
 
     def test_config_unknown_subcommand_exits_two(self) -> None:
         """Invariant: an unknown subcommand is exit 2."""
-        stream = io.StringIO()
-        assert config_command.COMMAND.run(["nope"], stream=stream) == 2
-        assert stream.getvalue().startswith("ERROR: expected a subcommand.")
+        stream, err = io.StringIO(), io.StringIO()
+        assert config_command.COMMAND.run(["nope"], stream=stream, err=err) == 2
+        assert (stream.getvalue(), err.getvalue().startswith("ERROR: expected a subcommand.")) == (
+            "",
+            True,
+        )
 
     def test_config_check_dispatches(self) -> None:
         """Invariant: config check reaches the checker (a bad flag gives its exit 2)."""
-        stream = io.StringIO()
-        assert config_command.COMMAND.run(["check", "--bogus"], stream=stream) == 2
-        assert stream.getvalue().startswith("ERROR: bad arguments.")
+        stream, err = io.StringIO(), io.StringIO()
+        assert config_command.COMMAND.run(["check", "--bogus"], stream=stream, err=err) == 2
+        assert (stream.getvalue(), err.getvalue().startswith("ERROR: bad arguments.")) == ("", True)

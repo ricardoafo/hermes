@@ -257,10 +257,10 @@ class TestUnknownSubcommand:
 
     def test_close_miss_suggests_the_command(self) -> None:
         """A one-letter typo names the intended command and still exits 2."""
-        stream = io.StringIO()
-        rc = cli_module.main(["statsu"], stream=stream)
-        assert rc == 2
-        assert "Did you mean 'status'?" in stream.getvalue()
+        stream, err = io.StringIO(), io.StringIO()
+        rc = cli_module.main(["statsu"], stream=stream, err=err)
+        assert (rc, stream.getvalue()) == (2, "")
+        assert "Did you mean 'status'?" in err.getvalue()
 
     def test_distant_miss_offers_no_suggestion(self) -> None:
         """A token far from every command gets no suggestion."""

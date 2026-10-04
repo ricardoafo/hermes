@@ -127,12 +127,12 @@ def test_heartbeat_pushes_a_change_once_and_checks_at_most_every_minute() -> Non
 
 def test_missing_telegram_settings_exit_three() -> None:
     """Without a token and chat id the bot refuses to start."""
-    out = io.StringIO()
+    out, err = io.StringIO(), io.StringIO()
 
-    code = bot_module.main([], stream=out, env={})
+    code = bot_module.main([], stream=out, env={}, err=err)
 
-    assert code == 3
-    assert "HERMES_TELEGRAM__BOT_TOKEN" in out.getvalue()
+    assert (code, out.getvalue()) == (3, "")
+    assert "HERMES_TELEGRAM__BOT_TOKEN" in err.getvalue()
 
 
 def test_bot_is_a_registered_command() -> None:
