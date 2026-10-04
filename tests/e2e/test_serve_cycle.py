@@ -30,7 +30,8 @@ import dataclasses
 import io
 import json
 from collections.abc import Sequence
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -43,6 +44,8 @@ from hermes.application.status import UnitState
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
+from hermes.domain.market_data.orderbook import Orderbook, OrderbookLevel
+from hermes.domain.value_objects.pair import Pair
 from hermes.entrypoints import serve as serve_module
 from hermes.entrypoints import status as status_module
 from hermes.infrastructure import sentry_integration
@@ -56,7 +59,15 @@ from tests.support.recorded_bars import (
     delivered_after,
     delivered_at,
 )
-from tests.support.serve_loop import BTC, PROJECT_ROOT, FakeClock, RecordingChannel, drive, events
+from tests.support.serve_loop import (
+    BTC,
+    PROJECT_ROOT,
+    FakeClock,
+    RecordingChannel,
+    drive,
+    events,
+)
+from tests.unit.application.ledger.fake_fx import FakeFx
 
 pytestmark = [pytest.mark.e2e, pytest.mark.slow]
 
@@ -108,17 +119,72 @@ def sentry(monkeypatch: pytest.MonkeyPatch) -> list[Exception]:
     return recorded
 
 
+_EUR_PER_QUOTE = Decimal("0.96")
+"""A fixed USDT-to-EUR rate; the pinned results are pairs and sides, not EUR amounts."""
+
+
+def _fixed_eur_rate() -> FakeFx:
+    """Return an FX source that answers every day of the recording with one rate."""
+    first = date(2024, 11, 1)
+    days = (first + timedelta(days=n) for n in range(120))
+    return FakeFx(rates={day: (_EUR_PER_QUOTE, day) for day in days})
+
+
+class _RecordedBooks:
+    """Depth source answering a deep, tight book around each pair's last recorded close.
+
+    Stamped with the replay clock, so the risk overlay sees a fresh book, as it
+    would from Binance during a live run; no call leaves the machine (#620, #637).
+    """
+
+    _HALF_SPREAD = Decimal("0.0001")
+
+    def __init__(self, clock: FakeClock) -> None:
+        """Bind the replay clock that marks what has closed."""
+        self.clock = clock
+
+    async def snapshot(self, pair: Pair) -> Orderbook:
+        """Return a two-level book one basis point either side of the last close."""
+        last = max(
+            (b for b in closed_by(self.clock.current) if b.pair == pair), key=lambda b: b.close_time
+        )
+        mid = last.close
+        step = mid * self._HALF_SPREAD
+        return Orderbook(
+            pair=pair,
+            bids=(
+                OrderbookLevel(price=mid - step, quantity=Decimal("1000")),
+                OrderbookLevel(price=mid - 2 * step, quantity=Decimal("10000")),
+            ),
+            asks=(
+                OrderbookLevel(price=mid + step, quantity=Decimal("1000")),
+                OrderbookLevel(price=mid + 2 * step, quantity=Decimal("10000")),
+            ),
+            snapshot_time=self.clock.current,
+        )
+
+    async def aclose(self) -> None:
+        """Nothing to release."""
+
+
 def _boot(db: Path, feed: ReplayFeed, channel: RecordingChannel) -> serve_module.Composition:
     """Build the production composition over ``db`` with the replay feed and clock.
 
     The production config has no channel credentials here, so the recording
-    channel stands in for Telegram; everything else is what ``hermes serve``
-    wires.
+    channel stands in for Telegram. Depth comes from the recording and FX from
+    one fixed rate for every day of it, so no call reaches Binance or the FX
+    service (#620, #637). Everything else is what ``hermes serve`` wires.
     """
     config = load_config(PROJECT_ROOT / "config", env={})
     serve_module.check_startup(config, env={})
     composition = serve_module.build_composition(
-        config, db_path=db, env={}, feed=feed, clock=feed.clock
+        config,
+        db_path=db,
+        env={},
+        feed=feed,
+        clock=feed.clock,
+        orderbooks=_RecordedBooks(feed.clock),
+        fx=_fixed_eur_rate(),
     )
     return dataclasses.replace(
         composition, signal_notifier=SignalNotifier(RouterConfig(telegram=channel, slack=None))
