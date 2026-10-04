@@ -33,15 +33,16 @@ services:
     # GH runners list by RUNNER_NAME (hostname is a docker-generated
     # unique hex, so replicas get unique names).
     #
-    # Default 8 replicas. CI runs each PR's whole suite as one `Checks`
-    # job (#397), so replicas = PRs whose CI runs side by side; a ninth
-    # PR queues first come, first served. 12 would exceed the
-    # per-machine resource budget at 4GB × 12 = 48GB.
+    # 4 replicas x 4 CPUs x 3 GB: sized to Docker Desktop's VM (16 CPUs,
+    # 14.6 GB). Each replica runs one PR's whole CI job, so a fifth PR
+    # queues first come, first served. 8 x 4 CPU x 4 GB asked for 32 CPUs
+    # and 32 GB; under load the runners fought over the VM and the unit
+    # step took 188 s median against 87 s on an idle machine (#523).
     # Override at the CLI with `--scale runner=N` for troubleshooting
     # (e.g. `--scale runner=1` to isolate a flaky job).
     # Persists across `docker compose up -d --build`, unlike the CLI
     # --scale flag which reverts to 1 the next time it's omitted.
-    scale: 8
+    scale: 4
     #
     # 24/7 lifecycle: auto-restart on Docker Desktop startup, on PC
     # reboot, and after each --ephemeral job completes. `unless-stopped`
@@ -64,7 +65,7 @@ services:
       # here would give all replicas the same name and cause --replace
       # to kick each other out.
       RUNNER_LABELS: self-hosted,linux,x64,hermes
-    mem_limit: 4g
+    mem_limit: 3g
     cpus: 4
     volumes:
       # Host docker socket → runner can spawn sibling containers when a
