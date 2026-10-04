@@ -33,6 +33,7 @@ from hermes.application.console.views import ActivityDay
 from hermes.domain.errors import LedgerError
 from hermes.entrypoints import console as console_module
 from hermes.entrypoints import serve as serve_module
+from hermes.entrypoints._streams import resolve_err
 
 __all__ = ["run_activity"]
 
@@ -49,6 +50,7 @@ def run_activity(
     demo_flag: str | None = None,
     env: Mapping[str, str] | None = None,
     now: datetime | None = None,
+    err: TextIO | None = None,
 ) -> int:
     """Run ``hermes activity``.
 
@@ -58,23 +60,23 @@ def run_activity(
         demo_flag: Scenario from the leading ``--demo`` option, if any.
         env: Environment snapshot; defaults to empty.
         now: Read time for the ledger feed; defaults to the wall clock.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         Process exit code.
     """
-    parsed = _parse(args, stream)
+    err = resolve_err(err)
+    parsed = _parse(args, stream, err)
     if isinstance(parsed, int):
         return parsed
 
     tz = UTC if parsed.utc else MADRID
     console = Console(file=stream, emoji=False, markup=False, highlight=False)
     try:
-        model = console_module.resolve_read_model(demo_flag=demo_flag, env=env or {})
+        model = console_module.demo_read_model(demo_flag=demo_flag, env=env or {})
     except UnknownScenarioError as exc:
-        stream.write(f"ERROR: {exc}\n")
+        err.write(f"ERROR: {exc}\n")
         return 2
-    except console_module.LiveReadModelUnavailableError:
-        model = None
 
     if model is not None:
         ctx = RenderContext.for_model(
@@ -83,7 +85,7 @@ def run_activity(
         days = model.activity(include_quiet=parsed.all)
     else:
         at = now if now is not None else datetime.now(UTC)
-        ledger_days = _ledger_days(parsed, at, tz, stream)
+        ledger_days = _ledger_days(parsed, at, tz, err)
         if isinstance(ledger_days, int):
             return ledger_days
         days = ledger_days
@@ -96,7 +98,7 @@ def run_activity(
     return 0
 
 
-def _parse(args: list[str], stream: TextIO) -> argparse.Namespace | int:
+def _parse(args: list[str], stream: TextIO, err: TextIO) -> argparse.Namespace | int:
     """Parse the arguments, or return the exit code for help and usage errors."""
     parser = argparse.ArgumentParser(prog="hermes activity", add_help=False)
     parser.add_argument("--all", action="store_true")
@@ -108,28 +110,28 @@ def _parse(args: list[str], stream: TextIO) -> argparse.Namespace | int:
     try:
         parsed = parser.parse_args(args)
     except SystemExit:
-        stream.write(f"ERROR: bad arguments. {_USAGE}\n")
+        err.write(f"ERROR: bad arguments. {_USAGE}\n")
         return 2
     if parsed.help:
         stream.write(_USAGE + "\n")
         return 0
     if parsed.days < 1:
-        stream.write(f"ERROR: --days must be at least 1. {_USAGE}\n")
+        err.write(f"ERROR: --days must be at least 1. {_USAGE}\n")
         return 2
     return parsed
 
 
 def _ledger_days(
-    parsed: argparse.Namespace, at: datetime, tz: tzinfo, stream: TextIO
+    parsed: argparse.Namespace, at: datetime, tz: tzinfo, err: TextIO
 ) -> tuple[ActivityDay, ...] | int:
     """Read the ledger feed, or return exit code 3 when it is missing or unreadable."""
     try:
         with LedgerActivityReader.open(parsed.db) as reader:
             items = reader.items_since(at - timedelta(days=parsed.days))
     except FileNotFoundError:
-        stream.write(f"ERROR: no ledger at {parsed.db}.\n")
+        err.write(f"ERROR: no ledger at {parsed.db}.\n")
         return 3
     except LedgerError as exc:
-        stream.write(f"ERROR: could not read the ledger: {exc}\n")
+        err.write(f"ERROR: could not read the ledger: {exc}\n")
         return 3
     return group_activity(items, tz, include_quiet=parsed.all)

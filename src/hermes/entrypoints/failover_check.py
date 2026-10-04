@@ -33,6 +33,7 @@ from hermes.domain.errors import InfraError
 from hermes.domain.market_data.kline import Kline, KlineInterval
 from hermes.domain.market_data.venue_parity import PairParity, ParityVerdict, compare_closes
 from hermes.domain.value_objects.pair import Pair
+from hermes.entrypoints._streams import resolve_err
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
 from hermes.infrastructure.config.root import HermesConfig
@@ -94,7 +95,7 @@ def _usage() -> str:
     )
 
 
-def _parse(argv: list[str], stream: TextIO) -> argparse.Namespace | None:
+def _parse(argv: list[str], stream: TextIO, err: TextIO) -> argparse.Namespace | None:
     parser = argparse.ArgumentParser(prog="hermes failover-check", add_help=False)
     parser.add_argument("--interval", choices=sorted(_INTERVALS), default="4h")
     parser.add_argument("--bars", type=int, default=_DEFAULT_BARS)
@@ -105,21 +106,21 @@ def _parse(argv: list[str], stream: TextIO) -> argparse.Namespace | None:
     try:
         parsed = parser.parse_args(argv)
     except SystemExit:
-        stream.write(f"ERROR: could not parse `hermes failover-check` arguments.\n{_usage()}")
+        err.write(f"ERROR: could not parse `hermes failover-check` arguments.\n{_usage()}")
         return None
     if parsed.help:
         stream.write(_usage())
         return parsed
     if not 1 <= parsed.bars <= _MAX_BARS:
-        stream.write(f"ERROR: --bars must be between 1 and {_MAX_BARS}.\n")
+        err.write(f"ERROR: --bars must be between 1 and {_MAX_BARS}.\n")
         return None
     try:
         parsed.tolerance_bps = Decimal(parsed.tolerance_bps)
     except InvalidOperation:
-        stream.write("ERROR: --tolerance-bps must be a number.\n")
+        err.write("ERROR: --tolerance-bps must be a number.\n")
         return None
     if not parsed.tolerance_bps.is_finite() or parsed.tolerance_bps < 0:
-        stream.write("ERROR: --tolerance-bps must be zero or more.\n")
+        err.write("ERROR: --tolerance-bps must be zero or more.\n")
         return None
     return parsed
 
@@ -271,6 +272,7 @@ def main(
     stream: TextIO,
     venues: Venues | None = None,
     now: datetime | None = None,
+    err: TextIO | None = None,
 ) -> int:
     """Parse ``argv`` and compare the primary and backup venue.
 
@@ -280,11 +282,13 @@ def main(
         venues: Candle sources; defaults to the live Binance and Kraken
             public adapters built from the config.
         now: Current time; defaults to the wall clock.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         Process exit code.
     """
-    parsed = _parse(argv, stream)
+    err = resolve_err(err)
+    parsed = _parse(argv, stream, err)
     if parsed is None:
         return _EXIT_USAGE
     if parsed.help:
@@ -292,7 +296,7 @@ def main(
     try:
         config = load_config(parsed.config_dir)
     except ConfigError as exc:
-        stream.write(f"ERROR: config: {exc}\n")
+        err.write(f"ERROR: config: {exc}\n")
         return _EXIT_CONFIG
     close = _no_resources
     if venues is None:

@@ -144,9 +144,9 @@ class TestMain:
 
     def test_unknown_strategy_is_a_usage_error(self) -> None:
         """Only the pre-registered strategy can be certified."""
-        out = io.StringIO()
-        assert certify_module.main(["balancer"], stream=out) == 2
-        assert "pre-registered" in out.getvalue()
+        out, err = io.StringIO(), io.StringIO()
+        assert certify_module.main(["balancer"], stream=out, err=err) == 2
+        assert (out.getvalue(), "pre-registered" in err.getvalue()) == ("", True)
 
     def test_missing_strategy_is_a_usage_error(self) -> None:
         """The strategy id is required."""
@@ -155,7 +155,7 @@ class TestMain:
     def test_bad_evidence_exits_three(self, tmp_path: Path) -> None:
         """A malformed evidence file exits 3."""
         path = _evidence_file(tmp_path, [])
-        out = io.StringIO()
+        out, err = io.StringIO(), io.StringIO()
         code = certify_module.main(
             [
                 _SID,
@@ -167,9 +167,10 @@ class TestMain:
                 str(tmp_path / "store"),
             ],
             stream=out,
+            err=err,
         )
-        assert code == 3
-        assert "evidence" in out.getvalue()
+        assert (code, out.getvalue()) == (3, "")
+        assert "evidence" in err.getvalue()
 
     def test_end_to_end_fails_closed_today(self, tmp_path: Path) -> None:
         """With the shipped config and no evidence, the gate fails and nothing is stored."""

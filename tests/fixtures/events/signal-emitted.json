@@ -1,0 +1,11 @@
+{
+  "occurred_at": "2026-08-23T14:22:03+00:00",
+  "correlation_id": "01J9Z8T3M5BQR2FVKN4XWY6PH1",
+  "strategy_id": "swing-donchian-4h",
+  "pair": "BTC/USDT",
+  "kind": "entry",
+  "side": "long",
+  "entry_price": "61234.5",
+  "stop_price": "59100",
+  "atr_context": "1180"
+}

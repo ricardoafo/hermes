@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, TextIO
 
 from hermes.entrypoints import config_check as _check
+from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.commands import Command
 
 __all__ = ["COMMAND"]
@@ -12,7 +13,7 @@ __all__ = ["COMMAND"]
 _USAGE = "Usage: hermes config check [--config-dir DIR] [--json]"
 
 
-def _run(argv: list[str], *, stream: Any) -> int:
+def _run(argv: list[str], *, stream: Any, err: TextIO | None = None) -> int:
     """Dispatch ``hermes config <subcommand>``; only ``check`` exists.
 
     Returns:
@@ -22,8 +23,8 @@ def _run(argv: list[str], *, stream: Any) -> int:
         stream.write(f"{_USAGE}\n")
         return 0
     if argv and argv[0] == "check":
-        return _check.main(argv[1:], stream=stream)
-    stream.write(f"ERROR: expected a subcommand. {_USAGE}\n")
+        return _check.main(argv[1:], stream=stream, err=err)
+    resolve_err(err).write(f"ERROR: expected a subcommand. {_USAGE}\n")
     return 2
 
 

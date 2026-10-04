@@ -1,0 +1,1 @@
+- `hermes positions` and `hermes tui` answer `-h`/`--help` with their usage, flags and exit codes and exit 0, instead of "bad arguments" with exit 2.

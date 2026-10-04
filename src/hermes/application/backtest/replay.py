@@ -32,71 +32,20 @@ from hermes.application.execution.kernel import (
     Halted,
     MarketContext,
 )
+from hermes.application.execution.prereg_book import ExecutionModel
 from hermes.application.strategy_protocol.kill_trigger_evaluator import ExperimentState
 from hermes.domain.events.trade_executed import TradeExecuted
 from hermes.domain.fees.fee_schedule import FeeSchedule
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.market_data.orderbook import Orderbook
-from hermes.domain.market_data.synthetic_orderbook import synthesize_orderbook
 from hermes.domain.risk.state import MarketSnapshot
-from hermes.domain.strategy.signal import SignalKind, StrategySignal
+from hermes.domain.strategy.signal import StrategySignal
 from hermes.domain.trading.fill import Fill, Rejection
 from hermes.domain.value_objects.pair import Pair
 from hermes.ports.strategy import StrategyPort
 
 __all__ = ["BacktestRun", "ExecutionModel", "replay"]
-
-_STOP_EXIT_REASON = "chandelier"
-
-
-@dataclass(frozen=True, slots=True)
-class ExecutionModel:
-    """Execution prices (pre-registration §6.2) and the synthetic depth.
-
-    Attributes:
-        entry_bps: Cost of a market order over the bar close (§6.2: 5).
-        stop_bps: Cost of a stop exit over the stop trigger (§6.2: 15).
-        depth_frac: Fraction of the bar's volume resting on each book side.
-    """
-
-    entry_bps: Decimal = Decimal("5")
-    stop_bps: Decimal = Decimal("15")
-    depth_frac: Decimal = Decimal("0.30")
-
-    def reference(self, signal: StrategySignal, bar: Bar) -> tuple[Decimal, Decimal]:
-        """Return the reference price and the bps the touch sits from it.
-
-        Args:
-            signal: The signal to execute.
-            bar: The bar that produced ``signal``.
-
-        Returns:
-            ``(reference price, half-spread bps)``.
-        """
-        if signal.kind is SignalKind.EXIT and signal.exit_reason == _STOP_EXIT_REASON:
-            return signal.stop_price, self.stop_bps
-        return bar.close, self.entry_bps
-
-    def book(self, signal: StrategySignal, bar: Bar) -> Orderbook | None:
-        """Return the synthetic book for ``signal``, or ``None`` when the bar has no depth.
-
-        Args:
-            signal: The signal to execute.
-            bar: The bar that produced ``signal``.
-
-        Returns:
-            A book stamped at ``bar.close_time``, or ``None`` for a bar whose
-            volume is too small to build one.
-        """
-        reference, half_spread = self.reference(signal, bar)
-        depth = bar.volume * self.depth_frac
-        if depth <= 0 or reference <= 0:
-            return None
-        try:
-            return synthesize_orderbook(bar.pair, reference, half_spread, depth, bar.close_time)
-        except ValueError:
-            return None
 
 
 @dataclass(slots=True)

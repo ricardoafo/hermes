@@ -3,6 +3,11 @@
 CI runs these tests on Linux and skips them on Windows. A Windows contributor
 with Developer Mode on can run them by setting ``HERMES_TEST_BASH`` to the
 path of Git Bash's ``bash.exe`` (the ``bash`` on PATH may be the WSL launcher).
+
+Git for Windows ships two of them. ``Git/bin/bash.exe`` is a launcher that puts
+``/mingw64/bin:/usr/bin`` in front of ``PATH``, so the real ``id``, ``stat`` and
+``sleep`` would shadow the stubs a test puts first (#618). ``Git/usr/bin/bash.exe``
+is the bash it wraps and leaves ``PATH`` alone, so the launcher is swapped for it.
 """
 
 from __future__ import annotations
@@ -14,7 +19,30 @@ from pathlib import Path
 
 import pytest
 
-BASH = os.environ.get("HERMES_TEST_BASH") or "bash"
+
+def resolve_bash(configured: str | None) -> str:
+    """Return the bash to run, swapping Git for Windows' launcher for the bash it wraps.
+
+    Args:
+        configured: The ``HERMES_TEST_BASH`` value, or ``None`` when unset.
+
+    Returns:
+        ``bash`` when nothing is configured; ``<Git>/usr/bin/bash.exe`` when
+        ``configured`` is ``<Git>/bin/bash.exe`` and that file exists; otherwise
+        ``configured`` unchanged.
+
+    """
+    if not configured:
+        return "bash"
+    launcher = Path(configured)
+    if launcher.name.lower() == "bash.exe" and launcher.parent.name.lower() == "bin":
+        wrapped = launcher.parent.parent / "usr" / "bin" / "bash.exe"
+        if wrapped.is_file():
+            return str(wrapped)
+    return configured
+
+
+BASH = resolve_bash(os.environ.get("HERMES_TEST_BASH"))
 RUN_ON_THIS_PLATFORM = sys.platform != "win32" or bool(os.environ.get("HERMES_TEST_BASH"))
 SKIP_REASON = "needs bash, GNU coreutils and real symlinks (set HERMES_TEST_BASH on Windows)"
 

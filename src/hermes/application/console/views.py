@@ -220,6 +220,11 @@ class PositionRow:
         stop_distance_pct: Distance from current price to stop, percent.
         eur_per_usdt: EUR for one unit of the quote currency (USDT) at read time;
             the console shows every price in EUR through it.
+        entry_price_eur: Entry price in EUR at the fill-date rates, when the
+            source knows it; otherwise the entry is converted at ``eur_per_usdt``.
+        eur_pending: The fills are not priced in EUR yet. No EUR figure of this
+            row (net, EUR prices, ``eur_per_usdt``) is meaningful; surfaces show
+            prices in USDT and say the EUR values are pending.
     """
 
     coin: str
@@ -236,10 +241,14 @@ class PositionRow:
     stop_distance_atr: Decimal
     stop_distance_pct: Decimal
     eur_per_usdt: Decimal = Decimal(1)
+    entry_price_eur: Decimal | None = None
+    eur_pending: bool = False
 
     @property
     def entry_eur(self) -> Decimal:
-        """Return the entry price in EUR."""
+        """Return the entry price in EUR: the fill-date value when known."""
+        if self.entry_price_eur is not None:
+            return self.entry_price_eur
         return self.entry_price * self.eur_per_usdt
 
     @property

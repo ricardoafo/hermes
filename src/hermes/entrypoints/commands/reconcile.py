@@ -12,5 +12,5 @@ __all__ = ["COMMAND"]
 COMMAND = Command(
     name="reconcile",
     summary="Read-only monthly reconciliation: book vs events and lots, month P&L, open lots.",
-    run=lambda argv, *, stream: _impl.main(argv, stream=stream, env=os.environ),
+    run=lambda argv, *, stream, err=None: _impl.main(argv, stream=stream, env=os.environ, err=err),
 )

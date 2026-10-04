@@ -10,24 +10,29 @@ command, the flag prints the overview of the scenario.
 A console command is a module under :mod:`hermes.entrypoints.commands` whose
 ``Command`` sets ``wants_demo``; :func:`console_commands` reads the set from
 the registry, so no list here names them (#525). Console commands call
-:func:`resolve_read_model`.
+:func:`resolve_read_model`: a demo scenario when one is selected, otherwise the
+ledger-backed read model when the ledger file exists (#546).
 
-Reference: openspec/changes/console-read-model/change.md (D-4, D-9).
+Reference: openspec/changes/console-read-model/change.md (D-4, D-9);
+openspec/changes/ledger-read-model/change.md (D-8, D-9).
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Final, TextIO
 
 from rich.console import Console
 
 from hermes.adapters.console import FixtureReadModel, UnknownScenarioError, available_scenarios
+from hermes.adapters.console.ledger_read_model import LedgerReadModel
 from hermes.adapters.systemd_journal import JournalctlReader, JournalUnavailableError
 from hermes.application.console import ConsoleReadModel, Surface
 from hermes.application.console.logs import LogLine, parse_journal_entry
 from hermes.application.console.render import RenderContext, render_overview
+from hermes.entrypoints._streams import resolve_err
 
 __all__ = [
     "DEMO_ENV_VAR",
@@ -36,6 +41,7 @@ __all__ = [
     "LiveReadModelUnavailableError",
     "apply_demo_flag",
     "console_commands",
+    "demo_read_model",
     "recent_journal_lines",
     "resolve_read_model",
     "run_overview",
@@ -51,7 +57,7 @@ class DemoFlagError(ValueError):
 
 
 class LiveReadModelUnavailableError(RuntimeError):
-    """No ledger-backed read model exists yet; only ``--demo`` works."""
+    """No demo was selected and there is no ledger to read; only ``--demo`` works."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,61 +116,96 @@ def console_commands() -> frozenset[str]:
     return frozenset(name for name, command in discover().items() if command.wants_demo)
 
 
-def apply_demo_flag(args: list[str], stream: TextIO) -> tuple[int | None, list[str]]:
+def apply_demo_flag(
+    args: list[str], stream: TextIO, err: TextIO | None = None
+) -> tuple[int | None, list[str]]:
     """Handle a leading ``--demo`` for the top-level dispatcher.
 
     Args:
         args: Arguments after the program name.
-        stream: Output stream for the overview and errors.
+        stream: Output stream for the overview.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         ``(exit_code, rest)``: an exit code when the flag was fully handled
         here (overview printed, or a usage error), else ``None`` and the
         arguments left for normal dispatch.
     """
+    err = resolve_err(err)
     try:
         demo = split_demo_flag(args)
     except DemoFlagError as exc:
-        stream.write(f"ERROR: {exc}. Scenarios: {', '.join(available_scenarios())}\n")
+        err.write(f"ERROR: {exc}. Scenarios: {', '.join(available_scenarios())}\n")
         return 2, []
     if demo.scenario is None:
         return None, demo.rest
     if not demo.rest:
-        return run_overview(demo.scenario, stream), []
+        return run_overview(demo.scenario, stream, err), []
     if demo.rest[0] not in console_commands():
-        stream.write(f"ERROR: --demo only applies to console commands, not {demo.rest[0]!r}.\n")
+        err.write(f"ERROR: --demo only applies to console commands, not {demo.rest[0]!r}.\n")
         return 2, []
     return None, demo.rest
 
 
-def resolve_read_model(*, demo_flag: str | None, env: Mapping[str, str]) -> ConsoleReadModel:
-    """Return the read model a console command should use.
+def demo_read_model(*, demo_flag: str | None, env: Mapping[str, str]) -> FixtureReadModel | None:
+    """Return the fixture read model of the selected demo scenario, if any.
 
     The flag wins over :data:`DEMO_ENV_VAR`; an empty variable counts as unset.
+    Commands that read the ledger themselves (``activity``, ``status``) use this
+    instead of :func:`resolve_read_model`.
 
     Args:
         demo_flag: Scenario named by ``--demo``, if any.
         env: Environment snapshot.
 
     Returns:
-        A fixture read model for the chosen scenario.
+        The scenario's read model, or ``None`` when no demo is selected.
 
     Raises:
         UnknownScenarioError: The scenario does not exist.
-        LiveReadModelUnavailableError: No demo was asked for and the ledger-backed
-            read model has not landed yet.
     """
     scenario = demo_flag or env.get(DEMO_ENV_VAR, "").strip() or None
-    if scenario is None:
+    return None if scenario is None else FixtureReadModel.load(scenario)
+
+
+def resolve_read_model(
+    *, demo_flag: str | None, env: Mapping[str, str], db_path: Path | None = None
+) -> ConsoleReadModel:
+    """Return the read model a console command should use.
+
+    A demo scenario wins; otherwise the ledger is read, read-only.
+
+    Args:
+        demo_flag: Scenario named by ``--demo``, if any.
+        env: Environment snapshot.
+        db_path: Ledger file; defaults to ``hermes serve``'s default path.
+
+    Returns:
+        A fixture read model for the chosen scenario, or the ledger read model.
+
+    Raises:
+        UnknownScenarioError: The scenario does not exist.
+        LiveReadModelUnavailableError: No demo was asked for and there is no
+            ledger file at the path.
+    """
+    demo = demo_read_model(demo_flag=demo_flag, env=env)
+    if demo is not None:
+        return demo
+    if db_path is None:
+        from hermes.entrypoints.serve import DEFAULT_DB_PATH  # noqa: PLC0415 - slow import
+
+        db_path = DEFAULT_DB_PATH
+    try:
+        return LedgerReadModel.open(db_path)
+    except FileNotFoundError:
         msg = (
-            "the console has no live data source yet; "
+            f"there is no ledger at {db_path} to read; "
             f"use --demo <scenario> ({', '.join(available_scenarios())})"
         )
-        raise LiveReadModelUnavailableError(msg)
-    return FixtureReadModel.load(scenario)
+        raise LiveReadModelUnavailableError(msg) from None
 
 
-def run_overview(scenario: str, stream: TextIO) -> int:
+def run_overview(scenario: str, stream: TextIO, err: TextIO | None = None) -> int:
     """Print the home screen of ``scenario`` to ``stream`` as static text.
 
     This is the same screen ``hermes tui`` shows, without the keys.
@@ -172,6 +213,7 @@ def run_overview(scenario: str, stream: TextIO) -> int:
     Args:
         scenario: Scenario named by ``--demo``.
         stream: Output stream; colour follows Rich's TTY and ``NO_COLOR`` detection.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
         0 on success, 2 for an unknown scenario.
@@ -179,7 +221,7 @@ def run_overview(scenario: str, stream: TextIO) -> int:
     try:
         model = FixtureReadModel.load(scenario)
     except UnknownScenarioError as exc:
-        stream.write(f"ERROR: {exc}\n")
+        resolve_err(err).write(f"ERROR: {exc}\n")
         return 2
     console = Console(file=stream, emoji=False, markup=False, highlight=False)
     ctx = RenderContext.for_model(model, surface=Surface.OPERATOR_CLI, width=console.width)

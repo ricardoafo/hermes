@@ -673,12 +673,12 @@ class TestNotifyEvent:
             assert route.call_count == 1
             payload = json.loads(route.calls[0].request.content)
             assert payload["channel"] == _TEST_CHANNEL
-            # Template renders "Strategy paused — <strategy_id> — <reason>" as fallback text.
+            # Fallback text: "Strategy paused · <strategy_id> · <time> · <reason>".
             assert "Strategy paused" in payload["text"]
             assert "swing-btc" in payload["text"]
-            # Blocks list carries header + section + context (per template shape).
+            # Blocks list carries section + context (per template shape).
             block_types = [b["type"] for b in payload["blocks"]]
-            assert block_types == ["header", "section", "context"]
+            assert block_types == ["section", "context"]
 
     def test_notify_sends_bearer_authorization_header(self, adapter: SlackAdapter) -> None:
         """The Authorization header is Bearer <bot_token> for the template-driven path too."""

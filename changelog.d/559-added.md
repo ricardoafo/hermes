@@ -1,0 +1,1 @@
+- `hermes ledger verify` also reports lots whose remaining quantity does not match their consumptions, orphaned consumptions and lot-trade links, and applied migrations the release does not ship.
