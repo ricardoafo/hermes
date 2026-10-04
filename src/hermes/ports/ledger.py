@@ -25,13 +25,21 @@ from hermes.domain.lots.lot import Lot
 from hermes.domain.lots.lot_consumption import LotConsumption
 from hermes.domain.lots.quote_leg import CapitalSeed
 from hermes.domain.market_data.kline import KlineInterval
+from hermes.domain.trading.order import OrderSide
 from hermes.domain.trading.trade_record import TradeEur, TradeRecord
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
 
-__all__ = ["LedgerPort", "PendingSeed", "PendingTrade", "TradeLedgerPort"]
+__all__ = [
+    "EurTradeRow",
+    "LedgerPort",
+    "PendingSeed",
+    "PendingTrade",
+    "TaxTradeSourcePort",
+    "TradeLedgerPort",
+]
 
 
 @runtime_checkable
@@ -341,5 +349,55 @@ class TradeLedgerPort(Protocol):
         Raises:
             LedgerError: On any SQLite failure, an unknown ``seed_id`` or a
                 pricing for another currency.
+        """
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class EurTradeRow:
+    """One step of an asset's FIFO replay with its EUR values, as the tax estimate reads it.
+
+    A stored trade gives a base-asset row and, once its quote currency has a
+    capital seed, a quote-asset row with the opposite side; the seed itself is
+    a quote-asset BUY (change ``405-usdt-fifo``, ADR-016 item 4).
+
+    Attributes:
+        ref: Replay ref: the trade row id, or ``seed:<id>`` for a capital seed.
+        asset: The asset this row moves (the base, or the quote for a quote leg).
+        side: BUY opens a lot of ``asset``; SELL consumes its lots.
+        qty: Quantity of ``asset`` moved (net of a fee taken in it).
+        executed_at: Fill (or seed) time, timezone-aware.
+        price_eur: EUR price of one unit, ``None`` while pending.
+        fee_eur: EUR fee, ``None`` while pending.
+        quote_leg: ``True`` for a quote-currency row (a seed or a trade's quote leg).
+    """
+
+    ref: str
+    asset: Currency
+    side: OrderSide
+    qty: Decimal
+    executed_at: datetime
+    price_eur: Decimal | None
+    fee_eur: Decimal | None
+    quote_leg: bool = False
+
+
+@runtime_checkable
+class TaxTradeSourcePort(Protocol):
+    """Read side of the trade ledger for tax estimates (change ``tax-estimates``).
+
+    Adapters raise :class:`hermes.domain.errors.LedgerError` on failure.
+    """
+
+    def list_eur_trades(self) -> tuple[EurTradeRow, ...]:
+        """Return every row the FIFO projection replays, all assets and both legs.
+
+        Returns:
+            Each asset's rows in the ledger's replay order: base-asset lot-opening
+            BUYs and SELLs, and for a seeded quote currency its seed and the quote
+            leg of every trade quoted in it.
+
+        Raises:
+            LedgerError: On any SQLite read failure.
         """
         ...
