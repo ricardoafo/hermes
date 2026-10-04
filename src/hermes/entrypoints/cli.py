@@ -169,6 +169,38 @@ def _run_on_vps(args: list[str], out: Any, *, demo_first: bool) -> int:
     )
 
 
+def _split_late_demo(rest: list[str]) -> tuple[str | None, list[str]]:
+    """Remove a ``--demo SCENARIO`` or ``--demo=SCENARIO`` placed after the command.
+
+    Raises:
+        DemoFlagError: ``--demo`` has no scenario name.
+    """
+    kept: list[str] = []
+    scenario: str | None = None
+    items = iter(rest)
+    for arg in items:
+        if arg == "--demo" or arg.startswith("--demo="):
+            value = next(items, None) if arg == "--demo" else None
+            split = console_module.split_demo_flag([arg] if value is None else [arg, value])
+            scenario = split.scenario
+        else:
+            kept.append(arg)
+    return scenario, kept
+
+
+def _run_console(command: Command, rest: list[str], out: Any, demo_scenario: str | None) -> int:
+    """Run a console command, taking a ``--demo`` given after it as well as before."""
+    try:
+        late, rest = _split_late_demo(rest)
+    except console_module.DemoFlagError as exc:
+        out.write(f"ERROR: {exc}. Scenarios: {', '.join(available_scenarios())}\n")
+        return 2
+    if late is not None and demo_scenario is not None:
+        out.write("ERROR: give --demo once, before or after the command.\n")
+        return 2
+    return command.run(rest, stream=out, demo=late or demo_scenario)
+
+
 def _dispatch(args: list[str], out: Any, demo_scenario: str | None) -> int:
     """Run the version flag, the help, or the named subcommand."""
     if args[:1] in (["--version"], ["-V"]):
@@ -185,7 +217,7 @@ def _dispatch(args: list[str], out: Any, demo_scenario: str | None) -> int:
         out.write(_unknown_command_message(subcommand, commands))
         return 2
     if command.wants_demo:
-        return command.run(rest, stream=out, demo=demo_scenario)
+        return _run_console(command, rest, out, demo_scenario)
     return command.run(rest, stream=out)
 
 
