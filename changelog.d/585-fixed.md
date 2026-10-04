@@ -1,0 +1,1 @@
+- **Reconciliation property test**: `test_book_conserves_value_at_trade_prices` now checks the book in its own exact decimal context. The default 28-digit context rounded the expected side for inputs mixing 1E-16 and 1E12 flows, turning main red at random. The book itself was exact. Closes #585.
