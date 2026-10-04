@@ -89,6 +89,18 @@ def test_offline_optional_group_fails_overall_when_hermes_is_healthy() -> None:
     assert "hermes-ops   0/1" in out
 
 
+def test_review_runners_are_judged_and_keep_the_columns_aligned() -> None:
+    """Invariant: the AI review pool is judged, and its label widens the column."""
+    runners = [
+        _api_runner("a", online=True),
+        _api_runner("rev", online=False, label="hermes-review"),
+    ]
+    code, out = _run([], runners)
+    assert code == 1
+    assert "hermes-review  0/1" in out
+    assert "hermes         1/1" in out
+
+
 def test_absent_optional_groups_are_not_listed() -> None:
     """Invariant: planned pools that do not exist yet neither show up nor fail."""
     _, out = _run([], [_api_runner("a", online=True)])
