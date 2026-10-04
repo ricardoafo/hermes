@@ -150,18 +150,30 @@ operation is gated locally before it touches the remote.
 **Manual invocation** (when you want to check without pushing):
 
 ```bash
-bash scripts/dev/pr-preflight.sh              # full suite, mirrors CI
-bash scripts/dev/pr-preflight.sh --pre-push   # the subset the hook runs
-bash scripts/dev/pr-preflight.sh --body FILE  # also lint a draft PR body
+bash scripts/dev/pr-preflight.sh               # every CI check, changed-area tests
+bash scripts/dev/pr-preflight.sh --full-tests  # ... plus every test and the coverage floor
+bash scripts/dev/pr-preflight.sh --pre-push    # the subset the hook runs
+bash scripts/dev/pr-preflight.sh --body FILE   # also lint a draft PR body
 ```
+
+Every CI check is defined once, in `scripts/dev/ci-checks.sh`. CI's
+workflow steps, the merge queue's gates and the preflight all call it,
+so a check that passes locally runs the same command CI runs (#489).
+
+Locally, the unit and integration tiers run only the tests for the
+changed area: test files that import or name a changed file, picked by
+`scripts/dev/changed-tests.sh`. A change to `pyproject.toml`, `uv.lock`,
+a `conftest.py` or the shared test support runs the whole tier. CI and
+the merge queue's merged-tree gate always run every test.
 
 **What the hook runs** (`--pre-push`):
 
 1. PR title (HEAD subject) follows the conventional-commit rule
-2. `uv run ruff format --check .` and `uv run ruff check .`, full tree
-3. `uv run mypy --strict src/hermes`
-4. `uv run lint-imports`, the hexagonal boundary contracts
-5. `markdownlint-cli2 "**/*.md" "#node_modules" "#.venv"`, full tree
+2. `ci-checks.sh format` and `lint` (ruff), full tree
+3. `ci-checks.sh types` (mypy --strict)
+4. `ci-checks.sh imports`, the hexagonal boundary contracts
+5. `ci-checks.sh markdown`, `lockfile`, `codeowners` and
+   `merge-decisions`
 6. Guides index drift check on `docs/guides/README.md`
 7. CHANGELOG fragment and openspec change spec, when the commit type needs
    them
@@ -171,8 +183,8 @@ There is no "base up-to-date" check: the merge queue keeps branches fresh,
 so a push from an older base is fine.
 
 **Left to CI** in pre-push mode, because CI runs them on every head:
-`pytest tests/unit/` with coverage and the per-package thresholds,
-`pip-audit`, `radon` and `vulture`. The manual full run includes them.
+the test tiers, `pip-audit`, `radon`, `vulture` and the license check.
+The manual run includes them.
 This keeps a push to about a minute instead of about five (#416).
 
 If any check fails locally, it will fail on CI. Fix it at push time, not
