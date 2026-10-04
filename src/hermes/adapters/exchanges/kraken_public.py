@@ -122,8 +122,10 @@ _PAIR_OVERRIDES: Final[dict[str, str]] = {
     "BTC/EUR": "XXBTZEUR",
     # ETH family
     "ETH/USD": "XETHZUSD",
-    "ETH/USDT": "XETHZUSDT",
-    "ETH/USDC": "XETHZUSDC",
+    # Kraken lists the stablecoin quotes under the plain altname; the
+    # prefixed XETHZUSDT / XETHZUSDC forms answer "Unknown asset pair" (#31).
+    "ETH/USDT": "ETHUSDT",
+    "ETH/USDC": "ETHUSDC",
     "ETH/EUR": "XETHZEUR",
     # SOL family — Kraken lists these without the X/Z prefixes
     "SOL/USD": "SOLUSD",
@@ -906,7 +908,7 @@ def _interval_to_minutes(interval: KlineInterval) -> int:
     """Translate a :class:`KlineInterval` into Kraken's minute-based interval integer.
 
     Kraken supports 1, 5, 15, 30, 60, 240, 1440, 10080, 21600 minutes.
-    Our domain enum currently covers 1m / 5m / 1h / 1d — a strict
+    Our domain enum currently covers 1m / 5m / 1h / 4h / 1d — a strict
     subset. Extending the enum requires updating this table in the same
     PR.
 
@@ -925,6 +927,7 @@ def _interval_to_minutes(interval: KlineInterval) -> int:
         KlineInterval.M1: 1,
         KlineInterval.M5: 5,
         KlineInterval.H1: 60,
+        KlineInterval.H4: 240,
         KlineInterval.D1: 1440,
     }
     minutes = mapping.get(interval)

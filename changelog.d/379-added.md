@@ -1,0 +1,1 @@
+- `hermes bot` and `hermes-bot.service`: a read-only Telegram bot (ADR-015) that answers the operator's chat with `/status`, `/next`, `/signals`, `/money`, `/pos` and `/logs`, pushes change-only heartbeat alerts (silent when late, loud when down, reminders on a backoff, quiet hours), and never changes anything; `hermes status` shows the bot state (#379).

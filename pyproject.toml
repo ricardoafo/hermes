@@ -126,20 +126,20 @@ exclude = ["build/", "dist/", ".venv/"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
-  "smoke: post-deploy smoke tests",
-  # Tier-1 — PR CI (fast, hermetic, no I/O). See docs/guides/test-tiers.md.
-  "unit: tier-1 pure unit tests — no I/O, no network, millisecond-fast",
-  "property: tier-1 property-based tests via Hypothesis — run with unit tier in PR CI",
-  # Tier-2 — nightly (external deps allowed). See docs/guides/test-tiers.md.
-  "integration: tier-2 tests (SQLite :memory:, testnet)",
-  "chaos: tier-2b chaos / fault-injection tests — nightly only",
-  # Tier-2b — real third-party sandboxes. Skipped by default via the
-  # `-m 'not contract'` addopts filter. Run explicitly with
-  # `uv run pytest -m contract` (see docs/decisions/2026-08-23-contract-test-tier.md).
-  "contract: tier-2b tests — real HTTP against third-party sandbox APIs",
-  # Tier-3 — weekly cron. See docs/guides/test-tiers.md.
-  "mutation: tier-3 mutation-testing harness hooks — weekly via cosmic-ray",
-  "e2e: tier-3 end-to-end against testnet",
+  # Tiers are selected by directory (tests/unit/, tests/integration/, ...), not by
+  # marker. Where each tier runs: docs/guides/test-tiers.md. Markers are labels,
+  # except `contract` and `smoke`, which CI selects with -m.
+  "smoke: post-deploy smoke tests; selected with -m smoke by the CD job",
+  "unit: label for a pure unit test; not used for selection",
+  "property: label for a Hypothesis property test; not used for selection",
+  "integration: label for an integration test; not used for selection",
+  "chaos: fault-injection test; registered, no test uses it today",
+  # Contract tests are skipped by default via the `-m 'not contract'` addopts
+  # filter. The daily scheduled.yml job runs `pytest tests/contract -m contract`
+  # (see docs/decisions/2026-08-23-contract-test-tier.md).
+  "contract: real HTTP against third-party sandbox APIs; run daily by scheduled.yml",
+  "mutation: registered, no test uses it; mutation runs through cosmic-ray (cosmic-ray.toml)",
+  "e2e: end-to-end against testnet; registered, tests/e2e/ is empty (planned, #408)",
   "slow: >1s per test",
 ]
 addopts = "-ra --strict-markers --strict-config -m 'not contract'"

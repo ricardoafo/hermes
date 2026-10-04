@@ -150,7 +150,7 @@ Ubuntu creates `/var/run/reboot-required` when a reboot is needed
 Reboot procedure (2-3 min downtime):
 
 ```bash
-systemctl stop hermes-swing hermes-rebalancer.timer  # add other services as they land
+systemctl stop hermes.service   # the timers are idle while it is stopped
 sync
 reboot
 ```
@@ -158,7 +158,8 @@ reboot
 Wait ~90 seconds, then reconnect and verify services came back:
 
 ```bash
-systemctl status 'hermes-*'
+systemctl status hermes.service
+systemctl list-timers 'hermes-*'
 ```
 
 ### Disk and memory checks
@@ -176,15 +177,17 @@ Baseline expectations after a full hermes install:
 - `/` disk usage: 5-10 GB (OS + Docker + hermes + venv)
 - `/var/lib/hermes`: MB-scale for years (SQLite grows slowly)
 - RAM: <1 GB idle, up to 2 GB during rebalance calculations
-- Load: <0.5 idle; brief spikes during hourly rebalancer
+- Load: <0.5 idle; brief spikes at each bar close
 
 ### Journald log retention
 
-Configured to hold 30 days by default. Verify:
+`vps-bootstrap` writes `/etc/systemd/journald.conf.d/50-hermes.conf` with the ADR-008 §1 limits: at most 2G
+(`SystemMaxUse=2G`) and at most 180 days (`MaxRetentionSec=180day`). It restarts `systemd-journald` only when the
+file changed, and the limits apply once bootstrap has been re-run. Verify:
 
 ```bash
+cat /etc/systemd/journald.conf.d/50-hermes.conf
 journalctl --disk-usage
-journalctl --vacuum-time=30d       # manual prune (rarely needed)
 ```
 
 ## Docker operations
@@ -420,16 +423,17 @@ Hermes runs as a set of systemd units under user `hermes` (created in
 Phase 0). Common commands once services exist:
 
 ```bash
-systemctl status hermes-rebalancer.service
-systemctl status hermes-swing.service
-systemctl restart hermes-swing
-systemctl stop 'hermes-*'
-systemctl start 'hermes-*'
+systemctl status hermes.service
+systemctl restart hermes.service
+systemctl stop hermes.service
+systemctl start hermes.service
+systemctl list-timers 'hermes-*'     # health, backup, daily, archive-check
 
-# View logs
-journalctl -u hermes-rebalancer -f          # tail
-journalctl -u hermes-swing --since '1 hour ago'
-journalctl -u hermes-rebalancer --grep ERROR
+# View logs (see "Check on hermes" below for the hermes_run helper)
+hermes_run logs -f                              # tail
+hermes_run logs --since 1h
+hermes_run logs --level error --since 1h
+journalctl -u hermes-backup.service --since '1 day ago'   # other units
 ```
 
 ## Check on hermes
@@ -576,16 +580,16 @@ ps auxf | sort -k4 -r | head     # highest RAM
 ```
 
 Real-money guardrail: if load or RAM spikes correlate with
-`hermes-swing` timing out on Binance connections, check
-`journalctl -u hermes-swing --since '10 min ago'` for exchange
-API rate-limit messages. Do not restart hermes-swing while it holds
+`hermes.service` timing out on Binance connections, check
+`hermes_run logs --level warning --since 10m` for exchange
+API rate-limit messages. Do not restart `hermes.service` while it holds
 an open order.
 
 ### Systemd unit failed
 
 ```bash
 systemctl status <unit>          # last error + start attempts
-journalctl -u <unit> --since '1 hour ago' | grep -i error
+journalctl -u <unit> --since '1 hour ago' -p err   # hermes.service: hermes_run logs --level error --since 1h
 systemctl reset-failed <unit>    # clear failed state
 systemctl start <unit>           # retry
 ```
