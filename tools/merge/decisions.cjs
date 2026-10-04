@@ -685,7 +685,119 @@ function handMergeComment(input) {
   };
 }
 
+/**
+ * Select's whole verdict on one open PR, in the order the checks run.
+ *
+ * Select used to compose isCandidate, queueCanMerge and skipFailedHead
+ * inline in the workflow, where only a live run could test the
+ * composition. Here it is one pure function, fed by recorded API replies
+ * in decisions.test.cjs.
+ *
+ * @param {{ pr: PullSummary & { labels?: Array<{ name: string }> },
+ *           reviews: Review[], files: string[],
+ *           comments: Array<{ body?: string|null }>,
+ *           canMergeWorkflows: boolean }} input
+ * @returns {{ candidate: { n: number, head: string, approvedAt: string|null }|null,
+ *             reason: string, label: boolean, warn: boolean }}
+ */
+function selectDecision(input) {
+  const { pr, reviews } = input;
+  const base = isCandidate({ pr, reviews });
+  if (!base.eligible) {
+    // Conflicts are the only refusal a human must act on.
+    return { candidate: null, reason: base.reason, label: false, warn: base.reason.includes('CONFLICTS') };
+  }
+  const labels = (pr.labels || []).map((l) => l.name);
+  const access = queueCanMerge({ files: input.files, labels, canMergeWorkflows: input.canMergeWorkflows });
+  if (!access.eligible) {
+    return { candidate: null, reason: access.reason, label: access.label, warn: false };
+  }
+  const failed = skipFailedHead({ head: pr.head.sha, labels, comments: input.comments });
+  if (failed.skip) {
+    return { candidate: null, reason: failed.reason, label: false, warn: false };
+  }
+  return {
+    candidate: { n: pr.number, head: pr.head.sha, approvedAt: approvedAt(reviews) },
+    reason: base.reason,
+    label: false,
+    warn: false,
+  };
+}
+
+/**
+ * REST path of a branch ref, each segment encoded on its own.
+ *
+ * Octokit encodes a `ref` parameter as ONE path segment, so
+ * `heads/feat/x` went out as `heads%2Ffeat%2Fx` and GitHub answered
+ * 422 (after #477, the branch stayed; #490). Slashes in a branch name are
+ * path separators here and must reach GitHub as `/`.
+ *
+ * @param {'ref'|'refs'} kind - `ref` to read one ref, `refs` to delete it
+ * @param {string} branch - e.g. `feat/148-binance-testnet-spot`
+ * @returns {string} e.g. `git/refs/heads/feat/148-binance-testnet-spot`
+ */
+function branchRefPath(kind, branch) {
+  const encoded = branch.split('/').map(encodeURIComponent).join('/');
+  return `git/${kind}/heads/${encoded}`;
+}
+
+/**
+ * What a branch delete attempt amounted to.
+ *
+ * 404 and 422 mean "no such ref" for a delete, which is what we want
+ * when `delete_branch_on_merge` got there first. They count as gone
+ * only once a read of the ref confirms it is absent: a 422 from a
+ * malformed path also looks like "no such ref", and that is the bug
+ * that left merged branches behind.
+ *
+ * @param {{ deleteStatus: number|undefined, refStillExists: boolean|undefined }} input
+ *   `refStillExists` is undefined when it was not (or could not be) checked.
+ * @returns {{ outcome: 'deleted'|'already-gone'|'failed', reason: string }}
+ */
+function classifyBranchDelete(input) {
+  const { deleteStatus, refStillExists } = input;
+  if (deleteStatus === 204) {
+    return { outcome: 'deleted', reason: 'deleted' };
+  }
+  if ((deleteStatus === 404 || deleteStatus === 422) && refStillExists === false) {
+    return { outcome: 'already-gone', reason: `already deleted (${deleteStatus})` };
+  }
+  if (refStillExists === true) {
+    return { outcome: 'failed', reason: `delete refused (${deleteStatus ?? '?'}) and the branch still exists` };
+  }
+  const unchecked = refStillExists === undefined ? ' and the branch could not be checked' : '';
+  return { outcome: 'failed', reason: `delete refused (${deleteStatus ?? '?'})${unchecked}` };
+}
+
+/**
+ * Label on the one open issue the queue posts its alerts to.
+ */
+const ALERTS_LABEL = 'merge-queue:alerts';
+
+/**
+ * One alert line for the shared alerts issue, so whoever watches it
+ * (a person or a Claude session following the repo) sees a red batch
+ * without opening each PR: which PR, which branch, which gate or tests.
+ *
+ * @param {{ n: number, ref: string, head: string, gate: string, base: string }} input
+ * @returns {{ body: string }}
+ */
+function alertComment(input) {
+  return {
+    body: [
+      `${badMarker(input.head)}`,
+      `**#${input.n}** (\`${input.ref}\`, head ${input.head.slice(0, 7)}) failed the merge-queue gates on main ${input.base.slice(0, 7)}.`,
+      '',
+      `Failing: \`${input.gate}\``,
+      '',
+      'The PR is labelled and skipped until its branch gets a fix.',
+    ].join('\n'),
+  };
+}
+
 module.exports = {
+  branchRefPath,
+  classifyBranchDelete,
   MERGEABLE_STATES,
   BATCH_CONFLICT_REASON,
   isApproved,
@@ -709,4 +821,7 @@ module.exports = {
   queueCanMerge,
   classifyMergeFailure,
   handMergeComment,
+  ALERTS_LABEL,
+  alertComment,
+  selectDecision,
 };

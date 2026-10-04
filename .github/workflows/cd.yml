@@ -52,6 +52,9 @@ on:
         default: true
         required: false
 
+# Jobs run on the hermes-ops runner when OPS_RUNNER_LABEL is set, so a
+# deploy never waits behind PR CI; they fall back to the CI pool until
+# that runner exists.
 concurrency:
   group: deploy-vps
   cancel-in-progress: false
@@ -68,6 +71,8 @@ jobs:
   # ─────────────────────────────────────────────────────────────────
   build:
     uses: ./.github/workflows/_build-wheel.yml
+    with:
+      runner-label: ${{ vars.OPS_RUNNER_LABEL }}
 
   # ─────────────────────────────────────────────────────────────────
   # BUNDLE — one tarball per commit: the CI-built wheel, the hash-pinned
@@ -77,7 +82,7 @@ jobs:
   bundle:
     name: Build release bundle
     needs: build
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -139,7 +144,7 @@ jobs:
   deploy:
     name: Deploy to VPS
     needs: bundle
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 15
     environment:
       name: prod
@@ -184,7 +189,8 @@ jobs:
         with:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
           hostname: gh-actions-cd-${{ github.run_id }}
-          version: latest
+          # Pinned: `latest` downloads whatever shipped that day.
+          version: 1.102.4
           tailscaled-args: --tun=userspace-networking
 
       - name: Prepare SSH keyfile + known_hosts
@@ -308,7 +314,7 @@ jobs:
     name: Confirm deployment
     needs: [build, bundle, deploy]
     if: '!cancelled()'
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 1
     steps:
       - name: Fail when any gate failed

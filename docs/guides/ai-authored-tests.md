@@ -112,94 +112,43 @@ When you (an AI agent) author a test in this repo, you MUST:
 
 9. **When updating a test to accommodate a code change: STOP.** If the code change is a behavior change, the test SHOULD have failed — that's the point. Updating the test to make it pass is silencing the alarm. Ask: "is the new behavior correct, or did I just break the invariant the test was protecting?"
 
-For tests beyond Tier 1 (unit): the same nine rules apply, plus the tier-specific
-considerations in the next section. *(See [Test pyramid: tiers 2 and 3](#test-pyramid-tiers-2-and-3) for the integration test tier definition and markers.)*
+For tests in other tiers the same nine rules apply. Which tiers exist, where each one runs and how often is in
+[test-tiers.md](test-tiers.md); this guide does not restate it.
 
-## Test pyramid: tiers 2 and 3
+## Fakes, mocks and testnets
 
-Unit tests (this guide's primary focus) sit at Tier 1 of the hermes pyramid. Two more
-tiers exist. Each has a different marker, directory, dependency profile, and CI cadence.
+Use fakes (in-memory implementations of the port protocol) over mocks for adapter tests. Fakes validate real
+behaviour; mocks only validate call signatures. Mock only at the I/O boundary where a fake is impractical. Any
+test that reaches a real external service must be idempotent and use dedicated test-account credentials only.
 
-| Tier | Scope | Dependencies | Marker | Directory | When to write |
-| ---- | ----- | ------------ | ------ | --------- | ------------- |
-| 1 — unit | Pure functions, value objects, single-class invariants | None (no I/O, no time, no network) | *(none — the default)* | `tests/unit/` | Every branch, every invariant, every failure mode. See §"The hermes protocol". |
-| 2 — integration | Adapter-to-collaborator seams | Fakes for external services; SQLite `:memory:` for stateful ports; `respx` for HTTP | `@pytest.mark.integration` | `tests/integration/` | When code crosses a port boundary — the seam is the contract, so test it end-to-end from the port's perspective. |
-| 3 — e2e | Full stack against real testnet | Live testnet (Binance testnet, Telegram bot in test mode) | `@pytest.mark.e2e` | `tests/e2e/` | One happy-path per user story. Not exhaustive — smoke coverage that the deployed system responds. |
+Every adapter gets an integration suite covering: (a) happy path, (b) transient network failure with retry,
+(c) permanent failure with correct error propagation, (d) rate-limit response, (e) data-shape mismatch (test what
+the exchange actually returns, not what the docs claim it returns).
 
-**Marker cross-reference**: all four pytest markers live in `pyproject.toml`
-`[tool.pytest.ini_options].markers` (`smoke`, `integration`, `e2e`, `slow`). The `slow`
-marker overlays any tier — a unit test that takes >1s wall-clock, or a slow e2e that
-should skip on developer laptops, both mark `slow`. Do not invent new markers without
-updating `pyproject.toml`.
-
-**Fake vs mock vs testnet policy**: use fakes (in-memory implementations of the port
-protocol) over mocks for adapter tests — fakes validate real behaviour, mocks only
-validate call signatures. Mock only at the I/O boundary where a fake is impractical.
-Testnet means a real external service (Binance testnet, Telegram test bot) — tests
-must be idempotent and use dedicated test-account funds and credentials only.
-
-**Density guidance for hermes specifically** — this is a real-money system where a bug
-means real losses. Tier 2 density is higher than in a typical CRUD app:
-
-- **Phase 0/1 (now)**: 100% Tier 1. No adapters yet, no integration tests needed.
-- **Phase 2 target**: ≥ 90% Tier 1, ≤ 10% Tier 2, 0% Tier 3 in the PR gate. Tier 3
-  runs nightly/manual dispatch only — never blocks a PR merge.
-- Every adapter gets a full integration suite covering: (a) happy path, (b) transient
-  network failure with retry, (c) permanent failure with correct error propagation,
-  (d) rate-limit response, (e) data-shape mismatch (test what the exchange actually
-  returns, not what the docs claim it returns).
-
-**Tier 2/3 status (as of Phase 0)**: `tests/integration/` and `tests/e2e/` directories
-exist as empty scaffolds. Real tests land in Phase 2 when adapter code lands. This
-section is forward-looking so the discipline is documented before the code exists —
-avoids the "we will add tests later" trap.
-
-## AI development lifecycle × test tier
-
-This matrix maps every phase of `docs/guides/ai-development-lifecycle.md` to which
-test tier is expected to move. It answers: "when should I be writing which tier of test?"
-
-| Lifecycle phase | Tier 1 (unit) | Tier 2 (integration) | Tier 3 (e2e) |
-| --------------- | ------------- | -------------------- | ------------ |
-| SDD explore | — | — | — |
-| SDD propose | — | — | — |
-| SDD spec | Enumerate invariants (inputs for unit tests) | Enumerate adapter contracts | Enumerate flow guarantees |
-| SDD design | Design test structure (fixtures, hypothesis strategies) | Design fakes vs real stubs | Design testnet fixture and secrets access |
-| SDD tasks | One task per invariant | One task per adapter behaviour | One task per user story |
-| SDD apply | **WRITE** (mandatory for every code task) | **WRITE if the task touches a port** | Skip — Phase 3 concern |
-| SDD verify | **RUN** — must pass locally before commit | **RUN if written** | Skip |
-| SDD archive | — (tests already committed) | — | — |
-| PR open | Must pass in CI (blocks merge) | Must pass in CI if written | — |
-| Merge to main | Weekly cosmic-ray run (`scheduled.yml`, Sundays 11:45 UTC) | On-merge run in `unit` job | Nightly / manual dispatch (`e2e.yml`) |
-| Deploy | Smoke (`@pytest.mark.smoke`) fires post-deploy | — | Manual e2e against prod-mirror testnet |
-| Post-incident | Add regression unit test (every incident produces a test) | Add integration test if the incident crossed a port | Add e2e if the incident was cross-service |
-
-**Code Owner review** — every PR touching production code is reviewed against this
-matrix. Missing Tier 1 for a new function → REQUEST CHANGES. Missing Tier 2 for a new
-adapter method → REQUEST CHANGES. Missing Tier 3 for a new user story → note for
-follow-up (does not block merge, does block phase-close).
+**Code Owner review**: a new function without a unit test, or a new adapter method without an integration test, is
+REQUEST CHANGES.
 
 ## Enforcement in this repo (Phase 0+)
 
-Rules the CI pipeline enforces after `phase-1-prep-test-discipline` PR A (GH #116):
+Rules enforced today (tiers and cadences: [test-tiers.md](test-tiers.md)):
 
 | Rule | Tool | Gate | Status |
 | ---- | ---- | ---- | ------ |
-| Every test has a docstring | ruff `D103` (tests-only via `per-file-ignores`) | pre-commit + CI `quality` job | live |
-| Coverage floor (global) | coverage.py `fail_under = 90`, branch coverage | CI `unit` job — pytest exits non-zero | live |
-| Coverage floor (per-package) | `scripts/dev/coverage-check.py` (no `--bootstrap`) | CI `unit` job — per-package thresholds | live |
+| Every test has a docstring | ruff `D103` (tests-only via `per-file-ignores`) | pre-commit + `ci.yml` ruff step | live |
+| Coverage floor (global) | coverage.py `fail_under = 90`, branch coverage | `ci.yml` unit step — pytest exits non-zero | live |
+| Coverage floor (per-package) | `scripts/dev/coverage-check.py --bootstrap` (flag is a no-op while every listed package has code) | `ci.yml` coverage step — per-package thresholds | live |
 | No sole-vague test assertion | `scripts/dev/no-vague-test-assertions.py` (AST walker) | pre-commit hook — blocks commit | live |
-| Mutation kill floor | cosmic-ray (chosen — see `docs/decisions/2026-08-22-mutation-testing-cosmic-ray.md`) | ≥ 80% kill rate — advisory 2026-08-22 → 2026-09-05, blocking after | live (advisory) |
+| Mutation kill floor | cosmic-ray (see `docs/decisions/2026-08-22-mutation-testing-cosmic-ray.md`) | ≥ 80% kill rate on `src/hermes/domain/value_objects`, weekly in `scheduled.yml`; advisory until #406 | live (advisory) |
 | Property-based tests exist | manual review + `grep hypothesis` | reviewer checklist | manual |
-| No snapshot without reviewer comment on the diff | pytest-snapshot with review annotation | manual for now, tooling later | manual |
-| Test files never deleted without justification | `guards` job (test-deletion guard) | CI `guards` job | live |
+| No snapshot without reviewer comment on the diff | syrupy `__snapshots__/` folders next to the tests | reviewer checklist | manual |
+| Test files never deleted without justification | test-deletion guard | `ci.yml` step "Test-deletion guard" | live |
 | New `src/hermes/` module ships with a `tests/unit/**/test_<name>.py` | `scripts/dev/test-file-adjacency.sh` (exempt: `__init__`, `_private`, `ports/`) | pre-commit hook + `pr-preflight.sh` (`--base origin/main`) | live |
 | PR body names the test tiers touched | `scripts/dev/test-tiers-line-check.sh` | `create-pr.sh` refuses the PR (exit 6) | live |
 | Mutants on changed domain + application lines are killed | `scripts/dev/mutation-diff.sh` + `cosmic-ray-diff.toml` | run by the author before the PR; kill rate reported in the PR body | manual |
 
 The **mutation kill rate** is the load-bearing gate. Line coverage is table stakes — it
 tells you the test EXECUTED the line. Mutation testing tells you the test would DETECT
-if that line's logic were subtly wrong. Until the mutation gate is live (GH #118), the
+if that line's logic were subtly wrong. Until the mutation floor is blocking (#406), the
 combination of D103 (docstring names the invariant), no-vague-assertions (the assertion
 tests it), and per-package coverage (every path exercised) is the interim substitute.
 
@@ -277,11 +226,13 @@ than it should have been:
 
 - **pytest** — test runner. Fixtures are code — review them like production code.
 - **hypothesis** — property-based testing. Use for pure functions with data inputs (FIFO, tax calculations, price aggregation).
-- **cosmic-ray** — mutation testing. Runs weekly (Sunday leg of `.github/workflows/scheduled.yml`); kill rate is the real correctness gate. See `docs/decisions/2026-08-22-mutation-testing-cosmic-ray.md` for the tool choice + spike evidence.
+- **cosmic-ray** — mutation testing. Runs weekly (Sunday leg of `.github/workflows/scheduled.yml`) over the scope in `cosmic-ray.toml`; kill rate is the real correctness gate once #406 makes it blocking. See `docs/decisions/2026-08-22-mutation-testing-cosmic-ray.md` for the tool choice + spike evidence.
 - **coverage.py** with `--branch` — coverage floor as sanity check, not a goal.
 - **pytest-cov** — reporting in CI.
-- **pytest-xdist** — parallel execution (mutation runs are compute-heavy).
-- **freezegun** or `pytest-freezer` — frozen time when needed. **Also** parametrize over real time boundaries.
+- **pytest-xdist** — parallel execution (`-n 4` in CI).
+- **syrupy** — snapshot tests; snapshots live in `__snapshots__/` next to the test.
+- **respx** — HTTP mocking for `httpx` adapters.
+- Frozen time: pass the time in as an argument or use a fake clock rather than patching. `freezegun` is a dev dependency, but no test uses it today. Either way, parametrize over real time boundaries.
 - **ruff** with test-focused rules (`D`, `PT`) — test hygiene.
 
 ## The one question to ask before submitting

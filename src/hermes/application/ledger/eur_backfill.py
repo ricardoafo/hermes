@@ -4,7 +4,9 @@ Re-prices every trade stored with ``eur_status = 'pending'`` from the ECB rate
 of its fill date. Once the fill date is in the past, the closest prior business
 day counts (weekends, holidays, same-day fills made before the ECB published).
 Each priced trade is written with its lots and consumptions re-projected, so
-gains that depended on it gain their EUR values.
+gains that depended on it gain their EUR values. A pending capital seed is
+priced the same way, by the ECB rate of its seed date (change ``405-usdt-fifo``
+D-1), so the quote-currency leg gains its EUR values too.
 
 Reference: ADR-016 item 5.
 """
@@ -34,16 +36,20 @@ class BackfillReport:
     Attributes:
         filled: Trade ids that now carry EUR values.
         pending: Trade ids still pending (rate missing or not final).
+        seeds_filled: Capital seed ids that now carry their EUR value.
+        seeds_pending: Capital seed ids still pending.
     """
 
     filled: tuple[int, ...]
     pending: tuple[int, ...]
+    seeds_filled: tuple[int, ...] = ()
+    seeds_pending: tuple[int, ...] = ()
 
 
 def backfill_pending_eur(
     ledger: TradeLedgerPort, pricer: EurPricer, *, today: date
 ) -> BackfillReport:
-    """Price every pending trade whose rate is final and store it.
+    """Price every pending seed and trade whose rate is final and store it.
 
     Args:
         ledger: Trade-row persistence.
@@ -51,12 +57,21 @@ def backfill_pending_eur(
         today: Madrid calendar date of the run.
 
     Returns:
-        Which trades were filled and which stay pending. Provider failures
-        leave trades pending; they never raise.
+        Which seeds and trades were filled and which stay pending. Provider
+        failures leave them pending; they never raise.
 
     Raises:
         LedgerError: When reading or writing the ledger fails.
     """
+    seeds_filled: list[int] = []
+    seeds_pending: list[int] = []
+    for seed in ledger.list_pending_seeds():
+        seed_pricing = pricer.price(seed.asset, fill_date_madrid(seed.seeded_at), today=today)
+        if seed_pricing is None:
+            seeds_pending.append(seed.seed_id)
+            continue
+        ledger.apply_seed_eur(seed.seed_id, seed_pricing)
+        seeds_filled.append(seed.seed_id)
     filled: list[int] = []
     pending: list[int] = []
     for trade in ledger.list_pending_trades():
@@ -65,12 +80,26 @@ def backfill_pending_eur(
         eur = None
         if pricing is not None:
             eur = TradeEur.price(
-                pricing, price=Money(amount=trade.price, currency=quote), fee=trade.fee
+                pricing,
+                price=Money(amount=trade.price, currency=quote),
+                fee=trade.fee,
+                base=trade.pair.base,
             )
         if eur is None:
             pending.append(trade.trade_id)
             continue
         ledger.apply_trade_eur(trade.trade_id, eur)
         filled.append(trade.trade_id)
-    _log.info("eur_backfill_done", filled=len(filled), pending=len(pending))
-    return BackfillReport(filled=tuple(filled), pending=tuple(pending))
+    _log.info(
+        "eur_backfill_done",
+        filled=len(filled),
+        pending=len(pending),
+        seeds_filled=len(seeds_filled),
+        seeds_pending=len(seeds_pending),
+    )
+    return BackfillReport(
+        filled=tuple(filled),
+        pending=tuple(pending),
+        seeds_filled=tuple(seeds_filled),
+        seeds_pending=tuple(seeds_pending),
+    )
