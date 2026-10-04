@@ -239,3 +239,17 @@ def test_deploy_step_uses_the_command_the_sudoers_rule_allows() -> None:
         deploy_runs
     )
     assert "/usr/bin/bash /var/tmp/hermes-release-$sha/bin/install_release.sh $sha" in bootstrap
+
+
+def test_bundle_ships_the_experiment_files_serve_reads() -> None:
+    """Serve reads the signed pre-registration and the fee history from the release (#353)."""
+    bundle_text = "\n".join(str(step.get("run", "")) for step in _steps("bundle"))
+
+    assert [
+        name
+        for name in (
+            "docs/experiments/swing-mvp1/pre-registration-v1.md",
+            "docs/experiments/swing-mvp1/fee-history.csv",
+        )
+        if name not in bundle_text
+    ] == []

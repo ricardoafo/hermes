@@ -53,6 +53,7 @@ pytestmark = [
 _RELEASE_SCRIPTS = ("install_release.sh", "health_gate.sh", "rollback.sh")
 _NOTIFY_SCRIPT = "hermes-notify-failure.sh"
 _CRASH_SCRIPT = "hermes-notify-crash.sh"
+_EXPERIMENT_DIR = Path("docs/experiments/swing-mvp1")
 _BOOTSTRAP_SCRIPT = "vps_bootstrap.sh"
 
 _SHA_A = "a" * 12
@@ -254,6 +255,10 @@ class Box:
         (stage / "deploy" / _NOTIFY_SCRIPT).write_text(f"#!/bin/bash\n# {sha}\n", encoding="utf-8")
         (stage / "deploy" / _CRASH_SCRIPT).write_text(f"#!/bin/bash\n# {sha}\n", encoding="utf-8")
         (stage / "config" / "strategies.yaml").write_text(_STRATEGIES_YAML, encoding="utf-8")
+        experiment = stage / _EXPERIMENT_DIR
+        experiment.mkdir(parents=True)
+        (experiment / "pre-registration-v1.md").write_text(f"# {sha}\n", encoding="utf-8")
+        (experiment / "fee-history.csv").write_text("effective_date\n", encoding="utf-8")
         (stage / "requirements.txt").write_text(
             "pydantic==2.0 --hash=sha256:00\n", encoding="utf-8"
         )
@@ -527,6 +532,30 @@ def test_release_without_the_failure_alert_is_refused(box: Box) -> None:
     box.deploy(_SHA_A)
     stage = box.make_stage(_SHA_B)
     (stage / "deploy" / _NOTIFY_SCRIPT).unlink()
+
+    result = box.deploy(_SHA_B, stage=stage)
+
+    assert result.returncode != 0, _output(result)
+    assert box.target("current") == _SHA_A
+
+
+def test_release_carries_the_experiment_files_serve_reads(box: Box) -> None:
+    """Invariant (#353 D-6): serve reads the pre-registration and fees from the release root."""
+    box.deploy(_SHA_A)
+
+    shipped = box.root / "versions" / _SHA_A / _EXPERIMENT_DIR
+    assert sorted(p.name for p in shipped.iterdir()) == [
+        "fee-history.csv",
+        "pre-registration-v1.md",
+    ]
+
+
+@pytest.mark.parametrize("name", ["pre-registration-v1.md", "fee-history.csv"])
+def test_release_without_an_experiment_file_is_refused(box: Box, name: str) -> None:
+    """Invariant (#353 D-6): a bundle missing either file fails before `current` moves."""
+    box.deploy(_SHA_A)
+    stage = box.make_stage(_SHA_B)
+    (stage / _EXPERIMENT_DIR / name).unlink()
 
     result = box.deploy(_SHA_B, stage=stage)
 
