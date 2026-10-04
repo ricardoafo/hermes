@@ -105,11 +105,12 @@ def test_destructive_migration_never_runs_at_start(tmp_path: Path) -> None:
 
 
 def test_non_destructive_migrations_before_a_destructive_one_still_apply(tmp_path: Path) -> None:
-    """Start applies everything up to the destructive file, then stops."""
+    """On an existing ledger, start applies everything up to the destructive file, then stops."""
     mig = _migrations(tmp_path)
+    conn = sqlite3.connect(":memory:")
+    apply_migrations(conn, mig)
     (mig / "0002_extra.sql").write_text("CREATE TABLE extra (id INTEGER);")
     (mig / "0003_items_drop_default.sql").write_text(f"{DESTRUCTIVE_MARKER}\nDROP TABLE extra;")
-    conn = sqlite3.connect(":memory:")
     try:
         with pytest.raises(LedgerError):
             apply_migrations(conn, mig)
@@ -200,3 +201,15 @@ def test_corrupt_snapshot_is_not_restored(tmp_path: Path) -> None:
     with pytest.raises((LedgerError, sqlite3.DatabaseError)):
         restore_snapshot(bad, db)
     assert db.read_bytes() == before
+
+
+def test_fresh_ledger_gets_destructive_migrations_too(tmp_path: Path) -> None:
+    """A new ledger has no rows to protect, so start applies every migration."""
+    mig = _migrations(tmp_path)
+    _add_destructive(mig)
+    conn = sqlite3.connect(":memory:")
+    try:
+        applied = apply_migrations(conn, mig)
+    finally:
+        conn.close()
+    assert applied == ("0001_items.sql", "0002_items_drop_default.sql")
