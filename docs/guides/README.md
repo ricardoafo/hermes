@@ -26,6 +26,7 @@ a committed copy went stale whenever another PR merged first.
 | [dev-workflow.md](dev-workflow.md) | Branching, commits, PRs, merge policy, delete-branch safety, zero-footprint policy. |
 | [ledger-migrations.md](ledger-migrations.md) | How ledger schema migrations run, which ones need `hermes migrate`, and how to roll one back from its snapshot. |
 | [local-setup.md](local-setup.md) | Clone → install → run tests → open your first PR. One-time setup steps you do once per clone, then never again. |
+| [pr-flow.md](pr-flow.md) | How a PR travels from a branch to main and production, and the rules learned the hard way on 2026-10-03. |
 | [prose-style.md](prose-style.md) | Comments, docstrings, docs, PR/issue bodies — banned words, formatting rules, per-artifact style. |
 | [release.md](release.md) | How to tag a release, what the release workflow does, how to |
 | [test-tiers.md](test-tiers.md) | Six-tier marker taxonomy, CI pyramid tier assignments, coverage thresholds, and layer-isolation contracts — the single reference subsequent specs cite. |
