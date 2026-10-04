@@ -207,7 +207,6 @@ def test_0004_sorts_after_0003_live_bars_in_a_fresh_ledger() -> None:
         "0002_lots_add_strategy_id.sql",
         "0003_live_bars.sql",
         "0004_trade_eur_values.sql",
-        "0005_lots_drop_strategy_default.sql",
     )
 
 
