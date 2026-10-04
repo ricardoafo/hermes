@@ -58,9 +58,9 @@ All decisions below: DECIDED by implementer, Code Owner reviews in PR.
   base, and the result is reduced by the same scale applied to the part of that base that corresponds to the personal and
   family minimum. Art. 56.2: the minimum forms part of the general base up to its amount; the rest goes to the savings
   base.
-- **Alternatives**: subtract the minimum from the base and apply the scale to the rest (gives the same number when every
-  band starts at 0 and is progressive, but not the text of the law; the chosen form is the AEAT's literal method, manual
-  Renta 2025 §8.4.3.2).
+- **Alternatives**: subtract the minimum from the base and apply the scale to the rest (taxes the slice above the
+  minimum at the bottom rates, so it understates the tax: base 70,000 with minimum 10,000 gives 17,490.90 instead of
+  20,090.90; not the text of the law). The chosen form is the AEAT's literal method, manual Renta 2025 §8.4.3.2.
 - **Cost of reversal**: LOW — one pure function, pinned by worked examples.
 
 ### D-2: `general_deductions_eur` lowers the general base for the minimum remainder too
@@ -142,7 +142,7 @@ All decisions below: DECIDED by implementer, Code Owner reviews in PR.
 - **A-3.1**: `total == general_tax + savings_tax`; `savings_tax` is the full savings tax with hermes; `hermes_share` is
   the #395 hermes tax.
 - **A-3.2**: general base 35,000, hermes gain 10,000 -> savings 1,980.00, total 9,323.40; general base 3,000, hermes gain
-  10,000 -> general 0, savings 1,444.50 (2,550 of the minimum shelters savings), total 1,444.50.
+  5,000 -> general 0, savings 465.50 (2,550 of the minimum shelters savings), total 465.50.
 - **A-3.3**: the hermes tax (and every other #395 figure) is identical with the view on and off.
 
 ### R-4: Off by default, fails closed
@@ -218,6 +218,13 @@ total_eur}` or `{status: "unavailable", reason}`; the key is absent when the vie
 - **Quota deductions not modelled**: the total is the *cuota íntegra*; the real liability is lower by any deductions.
 - **Base reductions**: the operator must enter them in `general_deductions_eur`; with none entered the general base is
   gross income and the general tax is high (safe side).
+
+- **Savings-side minimum (found while writing this change, #395 code)**: art. 66.1.2 relieves the minimum's share of
+  the savings base at the savings scale's bottom rates, the same way art. 63.1.2 does for the general base. The #395
+  domain instead subtracts the remainder from the base before the scale, which understates the savings tax when the
+  savings base crosses 6,000 and part of the minimum reaches savings (general base below 5,550). Example: general 0,
+  gain 10,000 -> #395 gives 845.50, the art. 66 method gives 1,980.00 - 1,054.50 = 925.50. Not changed here (it
+  changes a pinned #395 figure); the worked examples of this change avoid that case. Flagged to the Code Owner.
 
 ## Dependencies on other changes
 
