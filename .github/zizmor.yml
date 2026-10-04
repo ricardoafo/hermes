@@ -14,8 +14,11 @@ rules:
       - vps-bootstrap.yml
   # By design: workflow_run and pull_request_target run base-branch code
   # only; nothing from the PR head is checked out or executed.
+  # cd.yml deploys only when CI succeeded on a push to main
+  # (workflow_run.event == 'push'), so a PR's run never reaches it.
   dangerous-triggers:
     ignore:
+      - cd.yml
       - merge-queue.yml
       - pr-housekeeping.yml
   github-app:
