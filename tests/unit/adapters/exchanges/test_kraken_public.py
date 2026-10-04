@@ -22,7 +22,7 @@ docs/decisions/2026-08-24-kraken-public-adapter.md.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -120,9 +120,14 @@ class TestPairSymbolMapping:
         """BTC/USDT translates to Kraken's XBTUSDT altname."""
         assert _pair_to_kraken_symbol(_BTC_USDT) == "XBTUSDT"
 
-    def test_eth_usdt_maps_to_xethzusdt(self) -> None:
-        """ETH/USDT translates to Kraken's XETHZUSDT legacy form."""
-        assert _pair_to_kraken_symbol(_ETH_USDT) == "XETHZUSDT"
+    def test_eth_usdt_maps_to_ethusdt(self) -> None:
+        """ETH/USDT translates to Kraken's ETHUSDT altname; XETHZUSDT is an unknown pair (#31)."""
+        assert _pair_to_kraken_symbol(_ETH_USDT) == "ETHUSDT"
+
+    def test_eth_usdc_maps_to_ethusdc(self) -> None:
+        """ETH/USDC translates to Kraken's ETHUSDC altname; XETHZUSDC is an unknown pair (#31)."""
+        pair = Pair(base=Currency.ETH, quote=Currency.USDC)
+        assert _pair_to_kraken_symbol(pair) == "ETHUSDC"
 
     def test_sol_usdt_falls_back_to_concatenation(self) -> None:
         """SOL/USDT is not in the override table — falls back to SOLUSDT."""
@@ -457,6 +462,34 @@ class TestFetchKlinesHappyPath:
                 request = route.calls[0].request
                 assert request.url.params["pair"] == "XBTUSDT"
                 assert request.url.params["interval"] == "1"
+        finally:
+            adapter.close()
+
+    def test_fetch_klines_supports_the_4h_strategy_interval(self) -> None:
+        """A 4h request is sent as interval=240, so the failover check can read swing bars (#31)."""
+        adapter = _make_adapter()
+        since = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+        until = datetime(2026, 1, 1, 4, 0, tzinfo=UTC)
+        try:
+            with respx.mock(assert_all_called=True) as router:
+                route = router.get(_OHLC_URL).mock(
+                    return_value=httpx.Response(
+                        200,
+                        json=_kraken_ok(
+                            {"XBTUSDT": [_ohlc_row(int(since.timestamp()))], "last": 0}
+                        ),
+                    )
+                )
+                klines = list(
+                    adapter.fetch_klines(
+                        pair=_BTC_USDT,
+                        interval=KlineInterval.H4,
+                        since=since,
+                        until=until,
+                    )
+                )
+                assert route.calls[0].request.url.params["interval"] == "240"
+                assert [k.close_time - k.open_time for k in klines] == [timedelta(hours=4)]
         finally:
             adapter.close()
 
