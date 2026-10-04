@@ -5,12 +5,14 @@ Usage: ``hermes [--demo SCENARIO] money [--range today|week|month|year] [--json]
 Prints the console's portfolio section through the shared renderer: total
 value in EUR with the change for the range, the Today / This year waterfall
 (gross, fees, estimated tax, net) and the open-positions line, then the tax
-footnote. Without a demo scenario there is no live money yet (fills start
-with #353), so the answer is the empty state, not an error.
+footnote. Without a demo scenario the ledger is read, read-only (#546); with
+no ledger, or a ledger with no portfolio mark or capital seed yet, the answer
+is the empty state, not an error.
 
-Exit codes: 0 success, 2 usage or unknown scenario.
+Exit codes: 0 success, 2 usage or unknown scenario, 3 unreadable ledger.
 
-Reference: issue #498; console build plan step 5.
+Reference: issue #498; console build plan step 5;
+openspec/changes/live-home-screen/change.md (D-1 to D-3).
 """
 
 from __future__ import annotations
@@ -25,7 +27,12 @@ from typing import Final, TextIO
 from rich.console import Console, Group
 
 from hermes.adapters.console import UnknownScenarioError
-from hermes.application.console import PortfolioRange, Surface
+from hermes.application.console import (
+    ConsoleReadModel,
+    PortfolioRange,
+    Surface,
+    ViewNotAvailableError,
+)
 from hermes.application.console.render import (
     MADRID,
     RenderContext,
@@ -33,6 +40,7 @@ from hermes.application.console.render import (
     render_tax_footnote,
 )
 from hermes.application.console.views import PortfolioSummary, TaxEstimate, WaterfallColumn
+from hermes.domain.errors import LedgerError
 from hermes.entrypoints import console as console_module
 
 __all__ = ["main", "portfolio_to_json"]
@@ -78,23 +86,38 @@ def main(
     try:
         model = console_module.resolve_read_model(demo_flag=demo_flag, env=env or {})
     except console_module.LiveReadModelUnavailableError:
-        if parsed.json:
-            stream.write(json.dumps({"money": None, "note": _NO_LIVE_MONEY}, indent=2) + "\n")
-        else:
-            stream.write(_NO_LIVE_MONEY + "\n")
-        return 0
+        return _empty(stream, _NO_LIVE_MONEY, as_json=parsed.json)
     except UnknownScenarioError as exc:
         stream.write(f"ERROR: {exc}\n")
         return 2
+    return _print(model, range_, stream, as_json=parsed.json, utc=parsed.utc)
+
+
+def _empty(stream: TextIO, note: str, *, as_json: bool) -> int:
+    """Print the no-money state and return exit code 0."""
+    if as_json:
+        stream.write(json.dumps({"money": None, "note": note}, indent=2) + "\n")
+    else:
+        stream.write(note + "\n")
+    return 0
+
+
+def _print(
+    model: ConsoleReadModel, range_: PortfolioRange, stream: TextIO, *, as_json: bool, utc: bool
+) -> int:
+    """Print the portfolio; return 0, or 3 when the ledger cannot be read."""
     console = Console(file=stream, emoji=False, markup=False, highlight=False)
-    ctx = RenderContext.for_model(
-        model,
-        surface=Surface.OPERATOR_CLI,
-        tz=UTC if parsed.utc else MADRID,
-        width=console.width,
-    )
-    summary = model.portfolio(range_)
-    if parsed.json:
+    try:
+        ctx = RenderContext.for_model(
+            model, surface=Surface.OPERATOR_CLI, tz=UTC if utc else MADRID, width=console.width
+        )
+        summary = model.portfolio(range_)
+    except ViewNotAvailableError as exc:
+        return _empty(stream, str(exc), as_json=as_json)
+    except LedgerError as exc:
+        stream.write(f"ERROR: could not read the ledger: {exc}\n")
+        return 3
+    if as_json:
         stream.write(json.dumps(portfolio_to_json(summary, ctx), indent=2) + "\n")
     else:
         console.print(Group(render_portfolio(summary, ctx), render_tax_footnote(summary)))
@@ -105,7 +128,8 @@ def portfolio_to_json(summary: PortfolioSummary, ctx: RenderContext) -> dict[str
     """Return the portfolio section as JSON-ready data.
 
     Money sits under ``pnl``, which a blind surface leaves out entirely, so a
-    consumer cannot render a figure that was never sent.
+    consumer cannot render a figure that was never sent. A figure still EUR
+    pending is replaced by ``"eur_pending": true``, never a guess.
 
     Args:
         summary: The portfolio view for the chosen range.
@@ -121,6 +145,12 @@ def portfolio_to_json(summary: PortfolioSummary, ctx: RenderContext) -> dict[str
     }
     if not ctx.shows_money:
         return data
+    if summary.eur_pending:
+        pending: dict[str, object] = {"eur_pending": True}
+        if summary.total_value_quote is not None:
+            pending["total_value_usdt"] = _amount(summary.total_value_quote)
+        data["pnl"] = pending
+        return data
     data["pnl"] = {
         "total_value_eur": _amount(summary.total_value),
         "change_eur": _amount(summary.change),
@@ -130,13 +160,15 @@ def portfolio_to_json(summary: PortfolioSummary, ctx: RenderContext) -> dict[str
         "invested_eur": _amount(summary.invested),
         "today": _column(summary.today),
         "year": _column(summary.year),
-        "open_net_eur": _amount(summary.open_pnl),
+        "open_net_eur": None if summary.open_pnl_pending else _amount(summary.open_pnl),
         "open_tax_if_sold_eur": _tax(summary.open_tax_if_sold),
     }
     return data
 
 
 def _column(column: WaterfallColumn) -> dict[str, object]:
+    if column.eur_pending:
+        return {"eur_pending": True}
     return {
         "gross_eur": _amount(column.gross),
         "fees_eur": _amount(column.fees),

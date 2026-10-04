@@ -147,11 +147,14 @@ class WaterfallColumn:
         gross: Realised P&L before costs.
         fees: Fees paid, as a positive cost.
         tax: Estimated tax on the period, or pending.
+        eur_pending: A closed trade of the period is not priced in EUR yet;
+            ``gross``, ``fees`` and ``net`` are then not meaningful.
     """
 
     gross: Decimal
     fees: Decimal
     tax: Tax
+    eur_pending: bool = False
 
     @property
     def net(self) -> Decimal:
@@ -180,6 +183,16 @@ class PortfolioSummary:
         tax_band: Footnote data; ``None`` while tax is pending.
         starting_capital: EUR the account started with, if known.
         started_on: Day the account started, if known.
+        starting_capital_quote: The start capital in its quote currency (the
+            USDT capital seed), when the source records it; ``starting_capital``
+            is then its EUR equivalent at the seed-date rate, or ``None`` while
+            that rate is pending.
+        eur_pending: No EUR rate is known yet, so no money figure of this
+            summary is meaningful; surfaces show ``total_value_quote`` instead.
+        total_value_quote: Cash plus open positions in the quote currency (USDT),
+            when the source knows it.
+        open_pnl_pending: An open position is not priced in EUR yet, so
+            ``open_pnl`` is not meaningful.
     """
 
     range: PortfolioRange
@@ -198,6 +211,10 @@ class PortfolioSummary:
     tax_band: TaxBand | None
     starting_capital: Decimal | None = None
     started_on: date | None = None
+    starting_capital_quote: Decimal | None = None
+    eur_pending: bool = False
+    total_value_quote: Decimal | None = None
+    open_pnl_pending: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -378,9 +395,14 @@ class ActivityDay:
 
 
 class ShadowTestStatus(StrEnum):
-    """Progress verdict of the 90-day shadow test."""
+    """Progress verdict of the 90-day shadow test.
+
+    ``RUNNING`` is a test under way whose verdict nobody can give yet (the
+    ledger knows the day count, not whether the run is on track).
+    """
 
     NOT_STARTED = "not started"
+    RUNNING = "running"
     ON_TRACK = "on track"
     OFF_TRACK = "off track"
     FINISHED = "finished"

@@ -11,16 +11,23 @@ the position detail opens as its own screen). From 120 columns the portfolio
 and activity sit left and the positions and detail right. The portfolio total
 is drawn three rows tall on terminals 30 rows or higher.
 
+Every card is drawn on its own: a view the read model cannot serve yet (or a
+ledger read that fails) turns that card into a plain "not available yet" (or
+"could not read the ledger") line and leaves the others standing, so the live
+screen never stops on a missing figure (change ``live-home-screen`` D-6).
+
 Keys: ``1`` ``7`` ``3`` ``Y`` range (``3`` selects the 30-day range), up and
 down select a position, Enter opens it, ``L`` logs, ``?`` help, ``Q`` quit.
 
-Reference: openspec/changes/readonly-tui-dashboard/change.md.
+Reference: openspec/changes/readonly-tui-dashboard/change.md;
+openspec/changes/live-home-screen/change.md (D-6).
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import replace
+from datetime import UTC, datetime
 from typing import ClassVar, Final
 
 from rich.console import Group, RenderableType
@@ -38,6 +45,7 @@ from hermes.application.console import (
     HeartbeatState,
     PortfolioRange,
     Surface,
+    ViewNotAvailableError,
 )
 from hermes.application.console.logs import LogLine, render_log_line
 from hermes.application.console.render import (
@@ -52,6 +60,7 @@ from hermes.application.console.render import (
     render_tax_footnote,
     to_plain_text,
 )
+from hermes.domain.errors import LedgerError
 
 __all__ = ["REFRESH_SECONDS", "HomeApp", "run_home"]
 
@@ -94,6 +103,24 @@ _BLUE_ORANGE: Final = TerminalTheme(
         (246, 246, 239),
     ],
 )
+
+_CARD_ERRORS: Final = (ViewNotAvailableError, LedgerError)
+
+
+def _unavailable(title: str, exc: Exception) -> Text:
+    """Return the one plain line a card shows instead of its content."""
+    if isinstance(exc, LedgerError):
+        return Text(f"{title} · could not read the ledger: {exc.msg}", style="yellow")
+    return Text(f"{title} · not available yet", style="dim")
+
+
+def _card(title: str, build: Callable[[], RenderableType]) -> RenderableType:
+    """Return ``build()``, or the line naming why the card has nothing to show."""
+    try:
+        return build()
+    except _CARD_ERRORS as exc:
+        return _unavailable(title, exc)
+
 
 _RANGE_KEYS: Final[dict[str, PortfolioRange]] = {
     "today": PortfolioRange.TODAY,
@@ -262,12 +289,17 @@ class HomeApp(App[None]):
         return width - _LEFT_COLUMN - 2 if self.is_wide else width
 
     def _render_context(self) -> RenderContext:
-        ctx = RenderContext.for_model(
-            self._model,
-            surface=Surface.OPERATOR_TUI,
-            width=self._panel_width(),
-            down_hint="press L for why",
-        )
+        try:
+            ctx = RenderContext.for_model(
+                self._model,
+                surface=Surface.OPERATOR_TUI,
+                width=self._panel_width(),
+                down_hint="press L for why",
+            )
+        except _CARD_ERRORS:
+            return RenderContext(
+                surface=Surface.OPERATOR_TUI, now=datetime.now(UTC), width=self._panel_width()
+            )
         return replace(ctx, demo_scenario=None)
 
     def _set(self, widget_id: str, content: RenderableType) -> None:
@@ -279,15 +311,16 @@ class HomeApp(App[None]):
         return self.screen_stack[0]
 
     def _positions_coins(self) -> list[str]:
-        return [row.coin for row in self._model.positions()]
+        try:
+            return [row.coin for row in self._model.positions()]
+        except _CARD_ERRORS:
+            return []
 
     def _redraw(self) -> None:
         if not self.is_running or not self.screen_stack:
             return
         model = self._model
         ctx = self._render_context()
-        heartbeat = model.heartbeat()
-        down = heartbeat.state is HeartbeatState.DOWN
         scenario = model.demo_scenario
         tag = (
             Text(f" {DEMO_TAG} · scenario {scenario} ", style="bold black on yellow")
@@ -295,8 +328,16 @@ class HomeApp(App[None]):
             else Text("")
         )
         self._set("demo-tag", tag)
-        self._set("heartbeat", Text("") if down else render_heartbeat(heartbeat, ctx))
-        self._set("down-row", render_heartbeat(heartbeat, ctx) if down else Text(""))
+        try:
+            heartbeat = model.heartbeat()
+        except _CARD_ERRORS as exc:
+            self._set("heartbeat", _unavailable("Heartbeat", exc))
+            self._set("down-row", Text(""))
+            down = False
+        else:
+            down = heartbeat.state is HeartbeatState.DOWN
+            self._set("heartbeat", Text("") if down else render_heartbeat(heartbeat, ctx))
+            self._set("down-row", render_heartbeat(heartbeat, ctx) if down else Text(""))
         self._home.query_one("#down-row").set_class(down, "-down")
 
         coins = self._positions_coins()
@@ -305,11 +346,29 @@ class HomeApp(App[None]):
         body = self._home.query_one("#body")
         body.set_class(self.is_wide, "-wide")
         big = self.size.height >= _BIG_TOTAL_FROM_ROWS
-        self._set("portfolio", render_portfolio(model.portfolio(self._range), ctx, big_total=big))
-        self._set("positions", render_positions(model.positions(), ctx, selected=self._selected))
         rows = _ACTIVITY_ROWS if big else _ACTIVITY_ROWS_SHORT
-        self._set("activity", render_activity(model.activity(), ctx, limit=rows))
-        self._set("shadow", render_shadow_test(model.shadow_test(), ctx))
+        selected = self._selected
+        self._set(
+            "portfolio",
+            _card(
+                "Portfolio",
+                lambda: render_portfolio(model.portfolio(self._range), ctx, big_total=big),
+            ),
+        )
+        self._set(
+            "positions",
+            _card(
+                "Positions",
+                lambda: render_positions(model.positions(), ctx, selected=selected),
+            ),
+        )
+        self._set(
+            "activity",
+            _card("Activity", lambda: render_activity(model.activity(), ctx, limit=rows)),
+        )
+        self._set(
+            "shadow", _card("Shadow test", lambda: render_shadow_test(model.shadow_test(), ctx))
+        )
         self._redraw_detail(ctx)
         screen = self.screen
         if isinstance(screen, _PanelScreen):
@@ -317,8 +376,12 @@ class HomeApp(App[None]):
 
     def _detail_content(self, ctx: RenderContext | None = None) -> RenderableType:
         ctx = ctx or self._render_context()
-        detail = self._model.position(self._selected) if self._selected else None
-        return render_position_detail(detail, ctx)
+        selected = self._selected
+        model = self._model
+        return _card(
+            "Position",
+            lambda: render_position_detail(model.position(selected) if selected else None, ctx),
+        )
 
     def _redraw_detail(self, ctx: RenderContext) -> None:
         shown = self._detail_open and self.is_wide and self._selected is not None
@@ -406,7 +469,7 @@ class HomeApp(App[None]):
             ),
             Text(""),
             Text("Tax", style="bold"),
-            render_tax_footnote(self._model.portfolio(self._range)),
+            _card("Tax", lambda: render_tax_footnote(self._model.portfolio(self._range))),
             Text(""),
             Text("Prices and money are shown in EUR.", style="dim"),
         ]

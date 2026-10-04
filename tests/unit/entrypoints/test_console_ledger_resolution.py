@@ -1,4 +1,6 @@
-"""Which read model console commands get once a ledger exists (#546 D-8, D-9).
+"""Which read model console commands get once a ledger exists (#546).
+
+Reference: change ledger-read-model D-8, D-9; change live-home-screen D-6.
 
 Invariants:
 
@@ -6,7 +8,8 @@ Invariants:
   DATA tag); a demo still wins; no file means the "use --demo" error;
 - ``hermes positions --db PATH`` reads that file; a missing ``--db`` value is a
   usage error and an unreadable ledger exits 3;
-- ``hermes tui`` stays demo-only until the home slice, even with a ledger.
+- ``hermes tui`` reads the ledger when there is no demo (``--db PATH`` too), and
+  ``hermes activity`` reads it through the same live model (live-home-screen D-6).
 """
 
 from __future__ import annotations
@@ -102,18 +105,36 @@ def test_positions_unreadable_ledger_exits_3(tmp_path: Path) -> None:
     assert (rc, "could not read the ledger" in stream.getvalue()) == (3, True)
 
 
-def test_tui_stays_demo_only_with_a_ledger(ledger: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The home screen needs every view, so a ledger alone still asks for --demo (D-8)."""
+def test_tui_reads_the_ledger_without_a_demo(ledger: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """With a ledger and no demo, the home screen runs on the live model (A-4.1)."""
     monkeypatch.chdir(ledger.parent)
+    seen: list[str | None] = []
+    rc = run_tui([], io.StringIO(), env={}, runner=lambda model: seen.append(model.demo_scenario))
+    assert (rc, seen) == (0, [None])
+
+
+def test_tui_reads_the_db_option(ledger: Path) -> None:
+    """``hermes tui --db PATH`` opens that file, wherever the command runs."""
+    seen: list[str | None] = []
+    rc = run_tui(
+        ["--db", str(ledger)],
+        io.StringIO(),
+        env={},
+        runner=lambda model: seen.append(model.demo_scenario),
+    )
+    assert (rc, seen) == (0, [None])
+
+
+@pytest.mark.parametrize("args", [["--db"], ["--db="], ["--db", "a", "b"], ["--json"]])
+def test_tui_rejects_a_bad_db_option(args: list[str]) -> None:
+    """A missing ``--db`` value or an extra argument is a usage error, exit 2."""
     stream = io.StringIO()
-    rc = run_tui([], stream, env={}, runner=lambda model: None)
-    assert (rc, "use --demo <scenario>" in stream.getvalue()) == (2, True)
+    rc = run_tui(args, stream, env={}, runner=lambda model: None)
+    assert (rc, "bad arguments" in stream.getvalue()) == (2, True)
 
 
-def test_activity_keeps_its_own_ledger_reader(
-    ledger: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """With the default ledger present, ``activity`` reads it itself, not via the live model."""
+def test_activity_reads_the_live_model(ledger: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """With the default ledger present, ``activity`` reads it through the live model."""
     monkeypatch.chdir(ledger.parent)
     stream = io.StringIO()
     rc = run_activity(["--all", "--days", "30"], stream, env={}, now=T0 + timedelta(hours=9))
