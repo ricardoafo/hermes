@@ -495,17 +495,35 @@ class SqliteLedger:
             ).fetchall()
         except sqlite3.Error as exc:
             raise LedgerError(msg=f"trade_events failed: {exc}") from exc
-        trades: list[TradeExecuted] = []
-        for version, payload_json in rows:
-            if version != TradeExecuted.__event_schema_version__:
-                raise LedgerError(
-                    msg=f"trade_events: unsupported TradeExecuted schema version {version}"
-                )
-            try:
-                trades.append(_trade_from_payload(json.loads(payload_json)))
-            except (KeyError, ValueError, TypeError) as exc:
-                raise LedgerError(msg=f"trade_events: unreadable payload: {exc}") from exc
-        return tuple(trades)
+        return _trades_from_rows(rows, op="trade_events")
+
+    def trades_between(self, start: datetime, end: datetime) -> tuple[TradeExecuted, ...]:
+        """Return every ``TradeExecuted`` with ``start <= occurred_at <= end``, oldest first.
+
+        All strategies are included: the recharacterization guard measures the
+        taxpayer's activity, not one bucket's (ADR-002 §6, #135).
+
+        Args:
+            start: Window start (UTC, inclusive).
+            end: Window end (UTC, inclusive).
+
+        Returns:
+            The rehydrated events ordered by ``occurred_at`` then row id.
+
+        Raises:
+            LedgerError: On any SQLite read failure, a row whose schema version
+                is not 2, or an unreadable payload.
+        """
+        try:
+            rows = self._conn.execute(
+                "SELECT event_schema_version, payload_json FROM events "
+                "WHERE event_type = 'TradeExecuted' AND occurred_at >= ? AND occurred_at <= ? "
+                "ORDER BY occurred_at ASC, id ASC",
+                (_iso_utc(start), _iso_utc(end)),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"trades_between failed: {exc}") from exc
+        return _trades_from_rows(rows, op="trades_between")
 
     # ------------------------------------------------------------------
     # Private helpers — SQL and (de)serialisation
@@ -852,6 +870,19 @@ def _signal_from_payload(payload: dict[str, Any]) -> SignalEmitted:
         exit_reason=payload["exit_reason"],
         f_star_estimate=_optional_decimal(payload["f_star_estimate"]),
     )
+
+
+def _trades_from_rows(rows: list[Any], *, op: str) -> tuple[TradeExecuted, ...]:
+    """Rehydrate ``(event_schema_version, payload_json)`` rows into events."""
+    trades: list[TradeExecuted] = []
+    for version, payload_json in rows:
+        if version != TradeExecuted.__event_schema_version__:
+            raise LedgerError(msg=f"{op}: unsupported TradeExecuted schema version {version}")
+        try:
+            trades.append(_trade_from_payload(json.loads(payload_json)))
+        except (KeyError, ValueError, TypeError) as exc:
+            raise LedgerError(msg=f"{op}: unreadable payload: {exc}") from exc
+    return tuple(trades)
 
 
 def _trade_from_payload(payload: dict[str, Any]) -> TradeExecuted:
