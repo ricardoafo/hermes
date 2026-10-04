@@ -59,11 +59,11 @@ def test_code_fences_are_rejected(text: str) -> None:
 @pytest.mark.parametrize(
     "text",
     [
-        "key AKIAABCDEFGHIJKLMNOP",
-        "token sk-abcdefghijklmnopqrstu",
-        "slack xoxb-abc-def",
-        "gh ghp_abcdefghijklmnopqrstuvwxyz",
-        "-----BEGIN RSA PRIVATE KEY",
+        "key AKIAABCDEFGHIJKLMNOP",  # gitleaks:allow
+        "token sk-abcdefghijklmnopqrstu",  # gitleaks:allow
+        "slack xoxb-abc-def",  # gitleaks:allow
+        "gh ghp_abcdefghijklmnopqrstuvwxyz",  # gitleaks:allow
+        "-----BEGIN RSA PRIVATE KEY",  # gitleaks:allow
         "opaque " + "a" * 40,
     ],
 )
