@@ -64,6 +64,9 @@ jobs:
         with:
           # The diff and main's pinned review files need full history.
           fetch-depth: 0
+          # The reviewer reads untrusted PR content; nothing here pushes,
+          # so the token must not sit in .git/config.
+          persist-credentials: false
 
       - name: Check the reviewer token
         id: token

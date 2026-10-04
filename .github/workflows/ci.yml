@@ -236,6 +236,13 @@ jobs:
         if: ${{ !cancelled() }}
         run: bash scripts/dev/ci-checks.sh codeowners
 
+      # actionlint + zizmor; findings that predate the check are in
+      # .github/zizmor.yml (#529).
+      - name: Workflow lint and audit
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        run: bash scripts/dev/ci-checks.sh workflows
+
       - name: Install gitleaks (if not already pre-baked)
         timeout-minutes: 3
         id: gitleaks-install
