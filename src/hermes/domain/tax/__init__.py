@@ -17,8 +17,8 @@ from hermes.domain.tax.marginal import (
     MarginalTax,
     SavingsTax,
     marginal_tax,
+    minimum_remainder,
     savings_tax,
-    taxable_savings_base,
 )
 from hermes.domain.tax.netting import (
     CARRY_FORWARD_YEARS,
@@ -62,10 +62,10 @@ __all__ = [
     "add_months",
     "general_tax",
     "marginal_tax",
+    "minimum_remainder",
     "net_savings_base",
     "savings_tax",
     "tax_year_of",
-    "taxable_savings_base",
     "total_irpf",
     "two_month_flags",
 ]

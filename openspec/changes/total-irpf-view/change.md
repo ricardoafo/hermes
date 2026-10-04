@@ -219,12 +219,11 @@ total_eur}` or `{status: "unavailable", reason}`; the key is absent when the vie
 - **Base reductions**: the operator must enter them in `general_deductions_eur`; with none entered the general base is
   gross income and the general tax is high (safe side).
 
-- **Savings-side minimum (found while writing this change, #395 code)**: art. 66.1.2 relieves the minimum's share of
-  the savings base at the savings scale's bottom rates, the same way art. 63.1.2 does for the general base. The #395
-  domain instead subtracts the remainder from the base before the scale, which understates the savings tax when the
-  savings base crosses 6,000 and part of the minimum reaches savings (general base below 5,550). Example: general 0,
-  gain 10,000 -> #395 gives 845.50, the art. 66 method gives 1,980.00 - 1,054.50 = 925.50. Not changed here (it
-  changes a pinned #395 figure); the worked examples of this change avoid that case. Flagged to the Code Owner.
+- **Savings-side minimum (found while writing this change, fixed in #395)**: art. 66.1.2 relieves the minimum's share
+  of the savings base at the savings scale's bottom rates, as art. 63.1.2 does for the general base. The #395 domain
+  first subtracted the remainder from the base before the scale, understating the tax when the savings base crossed
+  6,000 (general 0, gain 10,000: 845.50 instead of 1,980.00 - 1,054.50 = 925.50). PR #528 now uses the art. 66.1.2
+  method (`minimum_remainder`, `SavingsTax.sheltered`); this branch merges it, and the view's savings tax follows.
 
 ## Dependencies on other changes
 

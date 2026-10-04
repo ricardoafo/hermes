@@ -288,7 +288,7 @@ def estimate_year(
         per_position_if_sold_now=per_position,
         carry_forward_used=exact_sum(c.amount for c in netting.carried_used),
         carry_forward_left=netting.carried_left,
-        band=_band(scale, marginal.with_hermes.taxable),
+        band=_band(scale, marginal.with_hermes.netting.savings_base),
         flags=flags,
         notices=notices,
         is_shadow=is_shadow,
@@ -376,8 +376,8 @@ def _percent(rate: Decimal) -> Decimal:
     return value.quantize(Decimal(1)) if value == value.to_integral_value() else value
 
 
-def _band(scale: SavingsScale, taxable: Decimal) -> TaxBand:
-    position = scale.band_at(taxable)
+def _band(scale: SavingsScale, savings_base: Decimal) -> TaxBand:
+    position = scale.band_at(savings_base)
     return TaxBand(
         rate=_percent(position.rate),
         next_rate=None if position.next_rate is None else _percent(position.next_rate),

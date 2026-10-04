@@ -27,7 +27,7 @@ remainder, shared 25% limit), so every reading is written down here and pinned b
 - `domain/tax/scale.py`: `SavingsBand`, `SavingsScale.tax(base)`, `SavingsScale.band_at(base)`.
 - `domain/tax/year_position.py`: `tax_year_of(at)` (Europe/Madrid), `Disposal`, `YearPosition`.
 - `domain/tax/netting.py`: `CarriedLoss`, `TaxpayerYear` (values hidden from repr), `NettingResult`, `net_savings_base`.
-- `domain/tax/marginal.py`: `taxable_savings_base`, `savings_tax`, `MarginalTax`, `marginal_tax`.
+- `domain/tax/marginal.py`: `minimum_remainder`, `savings_tax`, `MarginalTax`, `marginal_tax`.
 - `domain/tax/two_month.py`: `Acquisition`, `TwoMonthFlag`, `two_month_flags`.
 - `ports/ledger.py`: `EurTradeRow` and `TaxTradeSourcePort.list_eur_trades()`; `SqliteLedger` implements it.
 - `application/tax/`: `TaxYearEstimate`, `PositionTax`, `estimate_year` (pure), `TaxService` (reads the port).
@@ -63,8 +63,13 @@ All decisions below: DECIDED by implementer, Code Owner reviews in PR.
      positive RCM balance within the same 25% room left by step 1 (art. 49.2: "same order and limits").
   3. A carried loss from before `Y-4` is expired and ignored; one from `Y-4` not used in `Y` expires at the end of `Y`
      (flagged). The year's own leftover net loss carries forward with origin `Y`.
-  4. Personal minimum: `remainder = max(0, personal_minimum - general_income)`; the scale applies to
-     `max(0, savings_base - remainder)` (art. 56.2 and art. 66.1 "the part of the savings base that exceeds the minimum").
+  4. Personal minimum: `remainder = max(0, personal_minimum - general_income)` (art. 56.2: the minimum goes to the
+     general base first, the rest to the savings base); `sheltered = min(remainder, savings_base)`;
+     `savings_tax = max(0, scale(savings_base) - scale(sheltered))`. Art. 66.1.2º: the scale is applied to the whole
+     savings base and the result is reduced by the same scale applied to the part of the base that corresponds to the
+     minimum (Ley 35/2006, BOE consolidated text <https://www.boe.es/buscar/act.php?id=BOE-A-2006-20764>, read
+     2026-10-04). The relief is at the scale's bottom rates; subtracting the remainder from the base before the scale
+     (the first reading of this change) understated the tax whenever the base crossed 6,000.
      The profile's `personal_minimum_eur` overrides the config default; `general_income_eur` is read as the general
      liquidable base.
 - **Alternatives**: flat 19% (understates tax above the first band, ADR-016 item 7); hermes alone on the scale
@@ -161,7 +166,10 @@ All decisions below: DECIDED by implementer, Code Owner reviews in PR.
   older than `Y-4` is ignored.
 - **A-2.3**: hypothesis: every carried loss used has origin `>= Y-4`; every loss left has origin `>= Y-3`.
 - **A-2.4**: hypothesis: marginal tax is never negative when hermes net is positive.
-- **A-2.5**: personal-minimum edge case: general income 0, minimum 5,550, hermes gain 10,000 -> tax 845.50.
+- **A-2.5**: personal-minimum edge case: general income 0, minimum 5,550, hermes gain 10,000 -> tax 925.50
+  (1,980.00 - 1,054.50, art. 66.1.2º).
+- **A-2.6**: hypothesis: the savings tax is never below `scale(max(0, base - remainder))`, and is 0 while the savings
+  base is at most the minimum remainder.
 
 ### R-3: Today's tax
 
@@ -264,14 +272,14 @@ def net_savings_base(year: int, hermes_net: Decimal, taxpayer: TaxpayerYear) -> 
 
 
 # marginal.py
-def taxable_savings_base(savings_base: Decimal, taxpayer: TaxpayerYear) -> Decimal: ...
+def minimum_remainder(taxpayer: TaxpayerYear) -> Decimal: ...  # max(0, minimum - general_income)
 
 
 @dataclass(frozen=True, slots=True)
 class SavingsTax:
     netting: NettingResult
-    taxable: Decimal
-    tax: Decimal  # repr=False
+    sheltered: Decimal  # min(minimum_remainder, savings_base)
+    tax: Decimal  # scale(base) - scale(sheltered); repr=False
 
 
 def savings_tax(scale, taxpayer, hermes_net, *, year) -> SavingsTax: ...

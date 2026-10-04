@@ -162,10 +162,13 @@ def test_pending_trades_of_other_years_do_not_block_the_year() -> None:
 
 
 def test_no_profile_assumes_zero_income_with_the_default_minimum_and_says_so() -> None:
-    """No profile: the 5,550 minimum shelters part of a 10,000 gain (845.50) and a notice shows."""
+    """No profile: the 5,550 minimum relieves a 10,000 gain and a notice shows.
+
+    Art. 66.1.2: 1,980.00 (scale on 10,000) - 1,054.50 (scale on 5,550) = 925.50.
+    """
     rows = _Rows().buy(_at(1, 5), "0").sell(_at(3, 5), "10000").rows
     estimate = _ok(_estimate(rows, taxpayer=None, default_minimum="5550"))
-    assert estimate.hermes_tax == TaxEstimate(_D("845.50"))
+    assert estimate.hermes_tax == TaxEstimate(_D("925.50"))
     assert estimate.notices == (NO_PROFILE_NOTICE,)
 
 
