@@ -1,13 +1,16 @@
 """Yearly tax estimate of hermes gains, built from the ledger's EUR trades.
 
 :func:`estimate_year` replays the trades FIFO per asset (fees in the values,
-ADR-016 decision 3), folds each sale into one transmission, and computes for
+ADR-016 decision 3), including the quote currency once it has a capital seed
+(decision 4: buying BTC with USDT disposes of USDT, so EUR/USD drift on held
+USDT is a gain or loss), folds each sale into one transmission, and computes for
 one Madrid tax year:
 
 - the hermes tax: marginal over the taxpayer profile (decision 7);
 - today's tax: the year's hermes tax after today minus before today;
-- tax if sold now: the marginal tax of selling every open lot at the given
-  EUR prices, split per asset pro rata to unrealised gain;
+- tax if sold now: the marginal tax of selling every open base-asset lot at
+  the given EUR prices, split per asset pro rata to unrealised gain (the quote
+  currency the sale receives is not disposed of, so its lots are left out);
 - carried-loss bookkeeping and two-month flags (decision 8).
 
 Every figure is a console :class:`TaxEstimate` or :class:`TaxPending`, so the
@@ -135,16 +138,18 @@ class _Replay:
     disposals: tuple[Disposal, ...]
     pending_disposal_years: frozenset[int]
     projections: Mapping[Currency, FifoEurProjection]
-    buy_qty: Mapping[str, Decimal]
+    buy_qty: Mapping[tuple[Currency, str], Decimal]
     acquisitions: tuple[Acquisition, ...]
+    quote_assets: frozenset[Currency]
 
 
 def _replay(trades: Sequence[EurTradeRow]) -> _Replay | TaxPending:
     by_asset: dict[Currency, list[EurTrade]] = defaultdict(list)
-    for row in sorted(trades, key=lambda t: (t.executed_at, t.trade_id)):
+    # Stable sort: rows at one instant keep the source's replay order (a seed first).
+    for row in sorted(trades, key=lambda t: t.executed_at):
         by_asset[row.asset].append(
             EurTrade(
-                ref=str(row.trade_id),
+                ref=row.ref,
                 side=row.side,
                 qty=row.qty,
                 executed_at=row.executed_at,
@@ -184,11 +189,11 @@ def _replay(trades: Sequence[EurTradeRow]) -> _Replay | TaxPending:
         disposals=tuple(disposals),
         pending_disposal_years=frozenset(pending_years),
         projections=projections,
-        buy_qty={str(row.trade_id): row.qty for row in buys},
+        buy_qty={(row.asset, row.ref): row.qty for row in buys},
         acquisitions=tuple(
-            Acquisition(asset=row.asset.value, ref=str(row.trade_id), at=row.executed_at)
-            for row in buys
+            Acquisition(asset=row.asset.value, ref=row.ref, at=row.executed_at) for row in buys
         ),
+        quote_assets=frozenset(row.asset for row in trades if row.quote_leg),
     )
 
 
@@ -304,6 +309,9 @@ def _if_sold_now(
     reason: str | None = None
     with exact():
         for asset, projection in replay.projections.items():
+            if asset in replay.quote_assets:
+                # Selling a position receives the quote currency; it disposes of none.
+                continue
             lots = [lot for lot in projection.lots if lot.remaining_qty > _ZERO]
             if not lots:
                 continue
@@ -311,7 +319,7 @@ def _if_sold_now(
             costs = [
                 None
                 if lot.acquisition_eur is None
-                else lot.acquisition_eur * lot.remaining_qty / replay.buy_qty[lot.buy_ref]
+                else lot.acquisition_eur * lot.remaining_qty / replay.buy_qty[(asset, lot.buy_ref)]
                 for lot in lots
             ]
             if price is None:

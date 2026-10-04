@@ -355,25 +355,31 @@ class TradeLedgerPort(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class EurTradeRow:
-    """A stored trade with its EUR values, as the tax estimate reads it.
+    """One step of an asset's FIFO replay with its EUR values, as the tax estimate reads it.
+
+    A stored trade gives a base-asset row and, once its quote currency has a
+    capital seed, a quote-asset row with the opposite side; the seed itself is
+    a quote-asset BUY (change ``405-usdt-fifo``, ADR-016 item 4).
 
     Attributes:
-        trade_id: Ledger row id; also the FIFO order tie-breaker.
-        asset: Base asset traded.
-        side: BUY opens a lot; SELL consumes lots.
-        qty: Base quantity.
-        executed_at: Fill time, timezone-aware.
+        ref: Replay ref: the trade row id, or ``seed:<id>`` for a capital seed.
+        asset: The asset this row moves (the base, or the quote for a quote leg).
+        side: BUY opens a lot of ``asset``; SELL consumes its lots.
+        qty: Quantity of ``asset`` moved (net of a fee taken in it).
+        executed_at: Fill (or seed) time, timezone-aware.
         price_eur: EUR price of one unit, ``None`` while pending.
         fee_eur: EUR fee, ``None`` while pending.
+        quote_leg: ``True`` for a quote-currency row (a seed or a trade's quote leg).
     """
 
-    trade_id: int
+    ref: str
     asset: Currency
     side: OrderSide
     qty: Decimal
     executed_at: datetime
     price_eur: Decimal | None
     fee_eur: Decimal | None
+    quote_leg: bool = False
 
 
 @runtime_checkable
@@ -384,10 +390,12 @@ class TaxTradeSourcePort(Protocol):
     """
 
     def list_eur_trades(self) -> tuple[EurTradeRow, ...]:
-        """Return every trade the FIFO projection replays, all assets.
+        """Return every row the FIFO projection replays, all assets and both legs.
 
         Returns:
-            Lot-opening BUYs and every SELL, ordered by ``executed_at`` then id.
+            Each asset's rows in the ledger's replay order: base-asset lot-opening
+            BUYs and SELLs, and for a seeded quote currency its seed and the quote
+            leg of every trade quoted in it.
 
         Raises:
             LedgerError: On any SQLite read failure.
