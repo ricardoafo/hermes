@@ -1,0 +1,19 @@
+# Tax-filing report settings (hermes tax-filing, issue 36).
+#
+# Loaded by hermes.infrastructure.config.load_filing_config. Amounts are strings
+# so they parse as Decimal. Nothing personal goes here: the operator's earlier
+# Modelo 721 values live in a local file outside the repo
+# (~/.config/hermes/modelo721.yaml, see config/modelo721.example.yaml).
+
+modelo721:
+  # Orden HFP/887/2023: due the first time the 31 December total exceeds this.
+  threshold_eur: "50000"
+  # Due again when the total rose more than this over the last declaration.
+  increase_eur: "20000"
+
+custodian:
+  name: "Binance"
+  # ISO 3166-1 alpha-2 country of the entity that holds the account. Left
+  # unset until the gestor confirms it for the account's KYC (ADR-002 Pending);
+  # the report then prints "to confirm with the gestor".
+  country: null
