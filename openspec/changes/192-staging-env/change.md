@@ -2,7 +2,7 @@
 
 **SDD change**: `192-staging-env`
 **Date**: 2026-10-04
-**Status**: Proposed
+**Status**: Applied
 **Tracking issue**: see sibling `issue.md` (#192)
 
 Mirror of engram topic key `sdd/192-staging-env/change` (see
