@@ -1,0 +1,1 @@
+- The `hermes tui` home screen no longer crashes when a refresh lands between opening a panel (detail, logs or help) and the panel drawing; this also fixes the flaky `test_app_refreshes_and_only_reads`.
