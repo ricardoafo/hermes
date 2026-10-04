@@ -99,3 +99,28 @@ def test_cli_routes_migrate(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(module, "main", fake_main)
     assert cli.main(["migrate", "--status"], stream=io.StringIO()) == 0
     assert seen == [["--status"]]
+
+
+def test_dry_run_reports_and_writes_nothing(tmp_path: Path, mig: Path) -> None:
+    """--dry-run prints what would run and the row counts, and leaves the ledger as it was."""
+    db = _ledger(tmp_path, mig)
+    (mig / "0002_drop.sql").write_text(f"{DESTRUCTIVE_MARKER}\nDROP TABLE items;")
+    before = db.read_bytes()
+
+    code, out = _run(["--db", str(db), "--dry-run"])
+
+    assert code == 0
+    assert "dry run: 0002_drop.sql (destructive): applies\n" in out
+    assert "dry run: rows items: 0 -> -\n" in out
+    assert db.read_bytes() == before
+
+
+def test_dry_run_of_a_failing_migration_exits_1(tmp_path: Path, mig: Path) -> None:
+    """A migration that fails on the copy is reported with exit 1."""
+    db = _ledger(tmp_path, mig)
+    (mig / "0002_bad.sql").write_text("NOT SQL;")
+
+    code, out = _run(["--db", str(db), "--dry-run"])
+
+    assert code == 1
+    assert "dry run: FAILED 0002_bad.sql: " in out

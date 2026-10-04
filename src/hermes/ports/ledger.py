@@ -20,8 +20,10 @@ from typing import Protocol, runtime_checkable
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.events.trade_executed import TradeExecuted
+from hermes.domain.fx.eur_pricing import EurPricing
 from hermes.domain.lots.lot import Lot
 from hermes.domain.lots.lot_consumption import LotConsumption
+from hermes.domain.lots.quote_leg import CapitalSeed
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.trading.order import OrderSide
 from hermes.domain.trading.trade_record import TradeEur, TradeRecord
@@ -33,6 +35,7 @@ from hermes.domain.value_objects.strategy_id import StrategyId
 __all__ = [
     "EurTradeRow",
     "LedgerPort",
+    "PendingSeed",
     "PendingTrade",
     "TaxTradeSourcePort",
     "TradeLedgerPort",
@@ -226,6 +229,21 @@ class PendingTrade:
     fee: Money
 
 
+@dataclass(frozen=True, slots=True)
+class PendingSeed:
+    """A stored capital seed whose EUR value is still pending.
+
+    Attributes:
+        seed_id: Ledger row id.
+        asset: Currency the capital is held in; the currency to price.
+        seeded_at: Seed date; its Madrid date picks the EUR rate.
+    """
+
+    seed_id: int
+    asset: Currency
+    seeded_at: datetime
+
+
 @runtime_checkable
 class TradeLedgerPort(Protocol):
     """Trade-row persistence with EUR values (change ``trade-eur-values``).
@@ -273,6 +291,64 @@ class TradeLedgerPort(Protocol):
 
         Raises:
             LedgerError: On any SQLite failure or an unknown ``trade_id``.
+        """
+        ...
+
+    def record_capital_seed(self, seed: CapitalSeed, event: DomainEvent) -> int:
+        """Store a strategy's start capital as one quote-asset lot, with its event.
+
+        The seed is stored EUR-pending; :meth:`apply_seed_eur` prices it. From
+        then on the seed's asset is replayed FIFO as the quote leg of every
+        trade quoted in it (change ``405-usdt-fifo`` D-3).
+
+        Args:
+            seed: The seed, without an EUR rate.
+            event: The ``ShadowCapitalSeeded`` event.
+
+        Returns:
+            The new seed row id.
+
+        Raises:
+            LedgerError: On any SQLite failure, a second seed for the same
+                strategy, a priced seed or a quote leg that cannot be replayed.
+                Nothing is stored.
+        """
+        ...
+
+    def capital_seed(self, strategy_id: StrategyId) -> CapitalSeed | None:
+        """Return the strategy's seed, or ``None`` when it has none.
+
+        Raises:
+            LedgerError: On any SQLite read failure.
+        """
+        ...
+
+    def earliest_activity(self) -> datetime | None:
+        """Return the earliest bar, signal or trade event time, or ``None`` without any.
+
+        Raises:
+            LedgerError: On any SQLite read failure.
+        """
+        ...
+
+    def list_pending_seeds(self) -> tuple[PendingSeed, ...]:
+        """Return every seed whose EUR value is pending, oldest first.
+
+        Raises:
+            LedgerError: On any SQLite read failure.
+        """
+        ...
+
+    def apply_seed_eur(self, seed_id: int, pricing: EurPricing) -> None:
+        """Price a pending seed and re-project its asset.
+
+        Args:
+            seed_id: Row id of the seed.
+            pricing: The EUR rate of the seed's asset on its seed date.
+
+        Raises:
+            LedgerError: On any SQLite failure, an unknown ``seed_id`` or a
+                pricing for another currency.
         """
         ...
 

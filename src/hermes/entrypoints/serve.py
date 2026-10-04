@@ -72,7 +72,9 @@ from hermes.application.signal_notifier import SignalNotifier
 from hermes.domain.errors import HermesError, LedgerError
 from hermes.domain.events.bar_processed import BarProcessed
 from hermes.domain.events.event_bus import EventBus, EventDispatchError
+from hermes.domain.events.shadow_capital_seeded import ShadowCapitalSeeded
 from hermes.domain.events.signal_emitted import SignalEmitted
+from hermes.domain.lots.quote_leg import CapitalSeed, seed_timestamp
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.bar_schedule import (
     Stream,
@@ -81,6 +83,7 @@ from hermes.domain.market_data.bar_schedule import (
     within_catchup,
 )
 from hermes.domain.market_data.kline import KlineInterval
+from hermes.domain.portfolio.mark import PortfolioMark
 from hermes.domain.portfolio.snapshot import PortfolioSnapshot
 from hermes.domain.strategy.signal import OpenPosition, SignalKind
 from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
@@ -274,6 +277,50 @@ def _check_live_approval(
         raise StartupError(f"allow_mainnet is set but {refusal}")
 
 
+def seed_capital_once(
+    ledger: SqliteLedger, strategy_id: StrategyId, capital: Money, *, now: datetime
+) -> bool:
+    """Record the strategy's start capital in the ledger unless it is already there.
+
+    The seed is dated by the ledger's earliest bar, signal or trade, or ``now``
+    for a ledger without any, so a restart never moves the start of the run.
+    Its EUR value stays pending until ``hermes fx backfill`` prices the seed
+    date (change ``405-usdt-fifo`` D-1).
+
+    Args:
+        ledger: The ledger.
+        strategy_id: Strategy the capital belongs to.
+        capital: The strategy's capital budget in its quote currency.
+        now: Current time, from the composition's clock.
+
+    Returns:
+        ``True`` when this call wrote the seed.
+
+    Raises:
+        LedgerError: When the ledger cannot be read or written.
+    """
+    if ledger.capital_seed(strategy_id) is not None:
+        return False
+    seeded_at = seed_timestamp(ledger.earliest_activity(), now)
+    ledger.record_capital_seed(
+        CapitalSeed(strategy_id=strategy_id, amount=capital, seeded_at=seeded_at),
+        ShadowCapitalSeeded(
+            occurred_at=seeded_at,
+            correlation_id=new_correlation_id(),
+            strategy_id=strategy_id,
+            amount=capital,
+        ),
+    )
+    _log.info(
+        "serve.capital_seeded",
+        strategy_id=strategy_id.value,
+        amount=str(capital.amount),
+        currency=capital.currency.value,
+        seeded_at=seeded_at.isoformat(),
+    )
+    return True
+
+
 def build_composition(
     config: HermesConfig,
     *,
@@ -303,8 +350,9 @@ def build_composition(
         A fully wired :class:`Composition` ready to hand to :func:`run`.
 
     Raises:
-        StartupError: The ledger's recorded trades cannot be replayed into the
-            portfolio. The SQLite connection is closed before raising.
+        StartupError: The start capital cannot be recorded, or the ledger's
+            recorded trades cannot be replayed into the portfolio. The SQLite
+            connection is closed before raising.
     """
     db_target = db_path if db_path is not None else DEFAULT_DB_PATH
     env_snapshot: Mapping[str, str] = dict(os.environ) if env is None else env
@@ -319,9 +367,13 @@ def build_composition(
 
     roster = next(s for s in config.strategies.strategies if s.enabled)
     strategy_id = StrategyId(roster.name)
-    seed = PortfolioSnapshot.seed(
-        strategy_id, Money(amount=roster.capital_budget, currency=roster.quote)
-    )
+    capital = Money(amount=roster.capital_budget, currency=roster.quote)
+    seed = PortfolioSnapshot.seed(strategy_id, capital)
+    try:
+        seed_capital_once(ledger, strategy_id, capital, now=wall.now())
+    except LedgerError as exc:
+        connection.close()
+        raise StartupError(f"cannot record the start capital in the ledger: {exc.msg}") from exc
     try:
         rebuilt = PortfolioTracker.rebuilt(seed, ledger.trade_events(strategy_id))
     except LedgerError as exc:
@@ -583,6 +635,15 @@ class _BarLoop:
         # values back; nothing in the strategy does. Stored before BarProcessed
         # so a processed bar always has its values on record.
         stored = c.ledger.record_live_bar(bar)
+        # The console reads the portfolio from the ledger, not from this process (#387).
+        c.ledger.record_portfolio_mark(
+            PortfolioMark(
+                snapshot=c.tracker.current,
+                pair=bar.pair,
+                interval=bar.interval,
+                bar_close_time=bar.close_time,
+            )
+        )
         if stored is not None:
             _log.warning(
                 "serve.live_bar.differs_from_stored",
