@@ -29,7 +29,7 @@ of conflict entirely.
 | [prose-style.md](prose-style.md) | Comments, docstrings, docs, PR/issue bodies — banned words, formatting rules, per-artifact style. | 2026-10-03 |
 | [release.md](release.md) | How to tag a release, what the release workflow does, how to | 2026-10-03 |
 | [test-tiers.md](test-tiers.md) | Six-tier marker taxonomy, CI pyramid tier assignments, coverage thresholds, and layer-isolation contracts — the single reference subsequent specs cite. | 2026-10-03 |
-| [vps-operations.md](vps-operations.md) | SSH access, OS maintenance, Docker + Tailscale + ufw ops, systemd services, troubleshooting. | 2026-10-03 |
+| [vps-operations.md](vps-operations.md) | SSH access, OS maintenance, Docker + Tailscale + ufw ops, systemd services, troubleshooting. | 2026-10-04 |
 <!-- guides-index-end -->
 
 ## When to add a guide
