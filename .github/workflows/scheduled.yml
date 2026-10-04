@@ -52,7 +52,7 @@ permissions:
   contents: read
 
 env:
-  KILL_RATE_ADVISORY: "true"   # #406 flips this once the widened scope has a baseline
+  KILL_RATE_ADVISORY: "false"  # #406: blocking on lots + value objects
   KILL_RATE_FLOOR: "80"
 
 jobs:
