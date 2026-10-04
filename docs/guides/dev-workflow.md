@@ -174,7 +174,7 @@ the merge queue's merged-tree gate always run every test.
 4. `ci-checks.sh imports`, the hexagonal boundary contracts
 5. `ci-checks.sh markdown`, `lockfile`, `codeowners` and
    `merge-decisions`
-6. Guides index drift check on `docs/guides/README.md`
+6. `ci-checks.sh guides-index`: the guides index still builds
 7. CHANGELOG fragment and openspec change spec, when the commit type needs
    them
 8. (Optional with `--body`) `scripts/dev/pr-body-lint.sh` against the file

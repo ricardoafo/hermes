@@ -276,10 +276,9 @@ if [[ "$FULL_TESTS" == "1" && "${SKIP_PYTEST:-0}" != "1" ]]; then
     run_slow_check "coverage floor (per-package)" ci_check coverage-floor
 fi
 
-# 11. Guides index builds: the same command as CI's "Verify guides index
-# builds". The index itself is rebuilt on main after merge, never in a PR.
-run_check "Guides index builds" \
-    bash scripts/dev/regenerate-guides-index.sh --check
+# 11. Guides index builds. The index itself is rebuilt on main after
+# merge, never in a PR.
+run_check "Guides index builds"               ci_check guides-index
 
 # 12. CHANGELOG check — infers PR title's conventional-commit type from
 #     the LATEST commit on the branch (matches what the eventual squash

@@ -21,6 +21,7 @@
 #   merge-decisions                   node tests for the merge queue and PR metadata
 #   codeowners                        CODEOWNERS syntax
 #   markdown                          markdownlint on the full tree
+#   guides-index                      the guides index still builds (--check)
 #
 # `--changed <base>` (unit, integration) runs only the tests for the files
 # changed since <base>: see scripts/dev/changed-tests.sh. CI always runs
@@ -37,7 +38,8 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$REPO_ROOT" || exit 2
 
 CHECKS=(format lint types imports deps complexity deadcode licenses unit
-    integration coverage-floor lockfile merge-decisions codeowners markdown)
+    integration coverage-floor lockfile merge-decisions codeowners markdown
+    guides-index)
 
 # -n 4, not auto: auto counts the host's CPUs, not the container's 4, and
 # 10+ workers overrun the CI runner's 4 GB limit (#397).
@@ -107,6 +109,7 @@ run_one() {
         merge-decisions) node --test tools/merge/*.test.cjs tools/pr-metadata/*.test.cjs ;;
         codeowners) bash scripts/dev/codeowners-syntax-check.sh ;;
         markdown) markdownlint-cli2 "**/*.md" "#node_modules" "#.venv" ;;
+        guides-index) bash scripts/dev/regenerate-guides-index.sh --check ;;
         *)
             echo "ERROR: unknown check '$check'. Known: ${CHECKS[*]}" >&2
             return 2
@@ -140,7 +143,7 @@ fi
 
 case "${1:-}" in
     "" | -h | --help)
-        sed -n '2,32p' "$0"
+        sed -n '2,33p' "$0"
         [[ -n "${1:-}" ]] && exit 0
         exit 2
         ;;

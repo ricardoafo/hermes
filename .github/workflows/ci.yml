@@ -223,11 +223,10 @@ jobs:
         run: bash scripts/dev/ci-checks.sh markdown
 
       # The index is rebuilt on main after merge and never committed by a
-      # PR, so this only proves it still builds. pr-preflight.sh runs the
-      # same command.
+      # PR, so this only proves it still builds.
       - name: Verify guides index builds
         if: ${{ !cancelled() && steps.changeset.outputs.docs == 'true' }}
-        run: bash scripts/dev/regenerate-guides-index.sh --check
+        run: bash scripts/dev/ci-checks.sh guides-index
 
       # A broken CODEOWNERS silently disables code-owner review
       # enforcement — GitHub skips the check instead of failing it.
