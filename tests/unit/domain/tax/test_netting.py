@@ -149,3 +149,22 @@ def test_carried_loss_rejects_a_negative_amount() -> None:
     """A carried loss is a magnitude."""
     with pytest.raises(ValueError, match="non-negative"):
         CarriedLoss(2024, _D("-1"))
+
+
+def test_general_base_is_income_less_deductions() -> None:
+    """The general liquidable base is income minus the operator's deductions (art. 50.1)."""
+    taxpayer = TaxpayerYear(general_income=Decimal("37000"), general_deductions=Decimal("2000"))
+    assert taxpayer.general_base == Decimal("35000")
+
+
+def test_general_base_never_turns_negative() -> None:
+    """Deductions above income leave a zero base, not a negative one (art. 50.1)."""
+    taxpayer = TaxpayerYear(general_income=Decimal("1000"), general_deductions=Decimal("1500"))
+    assert taxpayer.general_base == Decimal(0)
+
+
+def test_negative_deductions_are_rejected_without_echoing_the_value() -> None:
+    """A negative deduction is a profile error; the message names the field only."""
+    with pytest.raises(ValueError, match="general_deductions") as caught:
+        TaxpayerYear(general_deductions=Decimal("-1234.56"))
+    assert "1234" not in str(caught.value)

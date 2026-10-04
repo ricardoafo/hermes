@@ -31,13 +31,14 @@ def taxable_savings_base(savings_base: Decimal, taxpayer: TaxpayerYear) -> Decim
 
     Args:
         savings_base: Netted savings base.
-        taxpayer: Supplies the general income and the personal minimum.
+        taxpayer: Supplies the general base and the personal minimum.
 
     Returns:
-        ``max(0, savings_base - max(0, personal_minimum - general_income))``.
+        ``max(0, savings_base - max(0, personal_minimum - general_base))``, where
+        ``general_base`` is general income less the operator's deductions.
     """
     with exact():
-        remainder = max(taxpayer.personal_minimum - taxpayer.general_income, _ZERO)
+        remainder = max(taxpayer.personal_minimum - taxpayer.general_base, _ZERO)
         return max(savings_base - remainder, _ZERO)
 
 

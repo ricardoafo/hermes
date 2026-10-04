@@ -255,3 +255,129 @@ def test_config_scales_map_onto_the_domain() -> None:
     """The repo's 2026 scale taxes 6,000 at 1,140, as the YAML states."""
     scales = tax_module.to_domain_scales(load_tax_scales(_CONFIG_DIR))
     assert scales[2026].tax(Decimal("6000")) == Decimal("1140.00")
+
+
+# ---------------------------------------------------------------------------
+# Total IRPF view (change total-irpf-view R-4, R-5)
+# ---------------------------------------------------------------------------
+
+_VIEW_PROFILE = """\
+show_total_irpf: true
+region: murcia
+years:
+  2026:
+    general_income_eur: "37000"
+    general_deductions_eur: "2000"
+"""
+
+
+def test_total_irpf_view_prints_when_switched_on(tmp_path: Path) -> None:
+    """Murcia, salary 37,000 less 2,000 deductions, hermes gain 18.
+
+    General base 35,000 -> 7,343.40 (domain test_total). Savings 18 * 0.19 = 3.42.
+    Total 7,346.82.
+    """
+    db = _ledger(tmp_path / "ledger.sqlite3")
+    code, out = _run(tmp_path, "--db", str(db), profile=_VIEW_PROFILE)
+    assert code == 0
+    assert "total IRPF (estimate, before quota deductions)" in out
+    assert "  general tax   7343.40 EUR" in out
+    assert "  savings tax   3.42 EUR" in out
+    assert "  hermes share  3.42 EUR" in out
+    assert "  total         7346.82 EUR" in out
+
+
+def test_total_irpf_view_json(tmp_path: Path) -> None:
+    """The JSON form carries the same four figures as strings."""
+    db = _ledger(tmp_path / "ledger.sqlite3")
+    code, out = _run(tmp_path, "--db", str(db), "--json", profile=_VIEW_PROFILE)
+    assert code == 0
+    assert json.loads(out)["total_irpf"] == {
+        "status": "estimate",
+        "general_tax_eur": "7343.40",
+        "savings_tax_eur": "3.42",
+        "hermes_share_eur": "3.42",
+        "total_eur": "7346.82",
+    }
+
+
+def test_view_off_by_default_prints_nothing_extra(tmp_path: Path) -> None:
+    """Without show_total_irpf neither the text nor the JSON mentions total IRPF."""
+    db = _ledger(tmp_path / "ledger.sqlite3")
+    _, text = _run(tmp_path, "--db", str(db))
+    _, raw = _run(tmp_path, "--db", str(db), "--json")
+    assert "total IRPF" not in text
+    assert "total_irpf" not in json.loads(raw)
+
+
+def test_hermes_tax_line_is_the_same_with_the_view_on_and_off(tmp_path: Path) -> None:
+    """Switching the view on changes no hermes figure (ADR-016 item 11)."""
+    db = _ledger(tmp_path / "ledger.sqlite3")
+    off_profile = _VIEW_PROFILE.replace("show_total_irpf: true", "show_total_irpf: false")
+    _, on = _run(tmp_path, "--db", str(db), "--json", profile=_VIEW_PROFILE)
+    _, off = _run(tmp_path, "--db", str(db), "--json", profile=off_profile)
+    on_payload = json.loads(on)
+    on_payload.pop("total_irpf")
+    assert on_payload == json.loads(off)
+
+
+@pytest.mark.parametrize(
+    ("profile", "line"),
+    [
+        (
+            "show_total_irpf: true\n",
+            "total IRPF unavailable: no region in the taxpayer profile",
+        ),
+        (
+            "show_total_irpf: true\nregion: andalucia\n",
+            "total IRPF unavailable: no scale for andalucia 2026",
+        ),
+    ],
+)
+def test_missing_region_or_scale_prints_unavailable(
+    tmp_path: Path, profile: str, line: str
+) -> None:
+    """The view fails closed with a reason, never a guessed figure."""
+    db = _ledger(tmp_path / "ledger.sqlite3")
+    code, out = _run(tmp_path, "--db", str(db), profile=profile)
+    assert code == 0
+    assert line in out.splitlines()
+
+
+def test_missing_year_scale_is_unavailable_in_json(tmp_path: Path) -> None:
+    """A config without the general tables reports the state scale missing for the year."""
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "tax_scales.yaml").write_text(
+        'personal_minimum_eur: "5550"\nsavings:\n  2026:\n    bands: [{ rate: "0.19" }]\n',
+        encoding="utf-8",
+    )
+    db = _ledger(tmp_path / "ledger.sqlite3")
+    code, out = _run(
+        tmp_path, "--db", str(db), "--json", "--config-dir", str(config_dir), profile=_VIEW_PROFILE
+    )
+    assert code == 0
+    assert json.loads(out)["total_irpf"] == {
+        "status": "unavailable",
+        "reason": "total IRPF unavailable: no scale for state 2026",
+    }
+
+
+def test_view_logs_no_profile_value(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """With the view on, salary, deductions and region reach no log record."""
+    db = _ledger(tmp_path / "ledger.sqlite3")
+    with caplog.at_level(logging.DEBUG):
+        code, _ = _run(tmp_path, "--db", str(db), profile=_VIEW_PROFILE)
+    assert code == 0
+    for secret in ("37000", "2000", "murcia"):
+        assert secret not in caplog.text
+
+
+def test_general_deductions_map_onto_the_domain() -> None:
+    """general_deductions_eur reaches TaxpayerYear.general_deductions."""
+    profile = TaxpayerProfile.model_validate(
+        {"years": {2026: {"general_income_eur": "100", "general_deductions_eur": "40"}}}
+    )
+    mapped = tax_module.to_domain_taxpayer(profile, 2026, default_personal_minimum=Decimal("5550"))
+    assert mapped is not None
+    assert mapped.general_base == Decimal("60")

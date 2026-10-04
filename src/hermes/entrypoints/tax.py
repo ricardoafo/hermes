@@ -6,6 +6,10 @@ as text or JSON. Every output is labelled an estimate, and a shadow estimate
 says no real tax is due (ADR-016 decision 10). Profile values are never logged
 (decision 12); only figures derived from them are printed, to this terminal.
 
+When the profile sets ``show_total_irpf: true`` the output adds the total IRPF
+view (general plus savings tax, change ``total-irpf-view``); a missing region or
+scale prints ``total IRPF unavailable: <reason>`` instead.
+
 Exit codes: 0 printed (an estimate or a pending notice), 1 ledger failure,
 2 usage, 3 config error.
 
@@ -34,6 +38,7 @@ from hermes.application.tax.estimate import (
 from hermes.domain.errors import LedgerError
 from hermes.domain.tax.netting import CarriedLoss, TaxpayerYear
 from hermes.domain.tax.scale import SavingsBand, SavingsScale
+from hermes.domain.tax.total import GeneralScales, TotalIrpf, TotalIrpfUnavailable
 from hermes.domain.tax.year_position import tax_year_of
 from hermes.entrypoints import serve as serve_module
 from hermes.infrastructure.config.errors import ConfigError
@@ -48,7 +53,15 @@ from hermes.infrastructure.config.tax import (
 )
 from hermes.infrastructure.time import now_utc
 
-__all__ = ["main", "to_domain_scales", "to_domain_taxpayer"]
+__all__ = [
+    "NO_REGION_REASON",
+    "general_scales_view",
+    "main",
+    "to_domain_scales",
+    "to_domain_taxpayer",
+]
+
+NO_REGION_REASON: Final[str] = "no region in the taxpayer profile"
 
 _USAGE: Final[str] = (
     "Usage: hermes tax [--year YYYY] [--json] [--price ASSET=EUR]... "
@@ -83,6 +96,31 @@ def _scale(scale: SavingsScaleConfig) -> SavingsScale:
     )
 
 
+def general_scales_view(
+    config: TaxScalesConfig, profile: TaxpayerProfile, year: int
+) -> GeneralScales | TotalIrpfUnavailable | None:
+    """Resolve the total IRPF view's scales for ``year`` from config and profile.
+
+    Args:
+        config: Contents of ``tax_scales.yaml``.
+        profile: The loaded taxpayer profile.
+        year: Tax year.
+
+    Returns:
+        ``None`` when the view is off, :class:`TotalIrpfUnavailable` when the
+        region or a scale is missing (fails closed), else the domain scales.
+    """
+    if not profile.show_total_irpf:
+        return None
+    if profile.region is None:
+        return TotalIrpfUnavailable(reason=NO_REGION_REASON)
+    try:
+        state, regional = config.general_scales_for(profile.region, year)
+    except ConfigError as exc:
+        return TotalIrpfUnavailable(reason=exc.msg)
+    return GeneralScales(state=_scale(state), regional=_scale(regional))
+
+
 def to_domain_taxpayer(
     profile: TaxpayerProfile, year: int, *, default_personal_minimum: Decimal
 ) -> TaxpayerYear | None:
@@ -102,6 +140,7 @@ def to_domain_taxpayer(
     minimum = figures.personal_minimum_eur
     return TaxpayerYear(
         general_income=figures.general_income_eur,
+        general_deductions=figures.general_deductions_eur,
         personal_minimum=default_personal_minimum if minimum is None else minimum,
         other_savings_income=figures.other_savings_income_eur,
         other_capital_gains=figures.other_capital_gains_eur,
@@ -162,6 +201,7 @@ def main(
             prices=prices,
             as_of=as_of,
             is_shadow=_IS_SHADOW,
+            general_scales=general_scales_view(scales_config, profile, year),
         )
     except (LedgerError, sqlite3.Error) as exc:
         stream.write(f"ERROR: cannot read ledger {db}: {exc}\n")
@@ -246,9 +286,40 @@ def _as_text(year: int, result: TaxYearEstimate | TaxPending) -> str:
     width = max(len(name) for name, _ in rows)
     lines = [f"hermes tax {year} ({result.label})"]
     lines.extend(f"{name.ljust(width)}  {value}" for name, value in rows)
+    lines.extend(_total_irpf_text(result.total_irpf))
     lines.extend(f"flag: {flag}" for flag in result.flags)
     lines.extend(f"notice: {notice}" for notice in result.notices)
     return "\n".join(lines) + "\n"
+
+
+def _total_irpf_text(view: TotalIrpf | TotalIrpfUnavailable | None) -> list[str]:
+    if view is None:
+        return []
+    if isinstance(view, TotalIrpfUnavailable):
+        return [view.label]
+    rows = [
+        ("general tax", view.general_tax),
+        ("savings tax", view.savings_tax),
+        ("hermes share", view.hermes_share),
+        ("total", view.total),
+    ]
+    width = max(len(name) for name, _ in rows)
+    return [
+        f"total IRPF ({ESTIMATE_LABEL}, before quota deductions)",
+        *(f"  {name.ljust(width)}  {_money(amount)}" for name, amount in rows),
+    ]
+
+
+def _total_irpf_json(view: TotalIrpf | TotalIrpfUnavailable) -> dict[str, object]:
+    if isinstance(view, TotalIrpfUnavailable):
+        return {"status": "unavailable", "reason": view.label}
+    return {
+        "status": "estimate",
+        "general_tax_eur": str(_cents(view.general_tax)),
+        "savings_tax_eur": str(_cents(view.savings_tax)),
+        "hermes_share_eur": str(_cents(view.hermes_share)),
+        "total_eur": str(_cents(view.total)),
+    }
 
 
 def _band_text(result: TaxYearEstimate) -> str:
@@ -277,7 +348,7 @@ def _as_json(year: int, result: TaxYearEstimate | TaxPending) -> dict[str, objec
             "is_shadow": _IS_SHADOW,
         }
     band = result.band
-    return {
+    payload: dict[str, object] = {
         "year": year,
         "status": "estimate",
         "label": result.label,
@@ -315,3 +386,6 @@ def _as_json(year: int, result: TaxYearEstimate | TaxPending) -> dict[str, objec
         "flags": list(result.flags),
         "notices": list(result.notices),
     }
+    if result.total_irpf is not None:
+        payload["total_irpf"] = _total_irpf_json(result.total_irpf)
+    return payload

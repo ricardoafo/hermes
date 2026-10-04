@@ -134,3 +134,19 @@ def test_marginal_tax_is_monotonic_in_hermes_net(
     low_tax = marginal_tax(SCALE_2026, taxpayer, low, year=2026).hermes_tax
     high_tax = marginal_tax(SCALE_2026, taxpayer, high, year=2026).hermes_tax
     assert low_tax <= high_tax
+
+
+def test_deductions_free_more_of_the_minimum_for_savings() -> None:
+    """Income 6,000 less 2,000 deductions: base 4,000, so 1,550 of 5,550 shelters savings.
+
+    Hermes gain 3,000: taxable 3,000 - 1,550 = 1,450; 1,450 * 0.19 = 275.50.
+    Without the deduction the 6,000 salary absorbs the whole minimum: 3,000 * 0.19 = 570.00.
+    """
+    with_deductions = TaxpayerYear(
+        general_income=_D("6000"), general_deductions=_D("2000"), personal_minimum=_D("5550")
+    )
+    without = TaxpayerYear(general_income=_D("6000"), personal_minimum=_D("5550"))
+    assert marginal_tax(SCALE_2026, with_deductions, _D("3000"), year=2026).hermes_tax == _D(
+        "275.50"
+    )
+    assert marginal_tax(SCALE_2026, without, _D("3000"), year=2026).hermes_tax == _D("570.00")

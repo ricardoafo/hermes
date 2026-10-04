@@ -1,9 +1,10 @@
-"""Tax configuration: per-year savings scales and the local taxpayer profile.
+"""Tax configuration: per-year IRPF scales and the local taxpayer profile.
 
-Pure data and loading, no tax computation (that is #395). Two sources:
+Pure data and loading, no tax computation (that is #395 and #396). Two sources:
 
-- ``config/tax_scales.yaml`` in the repo: IRPF savings bands per tax year. A year
-  with no scale fails closed, never a guess (ADR-016 decision 1).
+- ``config/tax_scales.yaml`` in the repo: IRPF savings bands per tax year, and
+  the general-base state and regional bands for the optional total IRPF view.
+  A year with no scale fails closed, never a guess (ADR-016 decision 1).
 - The taxpayer profile, outside the repo (default ``~/.config/hermes/taxpayer.yaml``,
   override ``HERMES_TAXPAYER_PROFILE``). Its values are private: they are excluded
   from ``repr``/``str``, never logged, and never copied into error messages
@@ -28,8 +29,10 @@ from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_yaml_mo
 __all__ = [
     "DEFAULT_TAXPAYER_PROFILE_PATH",
     "NO_PROFILE_NOTICE",
+    "STATE_SCALE_NAME",
     "TAXPAYER_PROFILE_ENV",
     "CarriedLoss",
+    "GeneralScalesConfig",
     "SavingsBand",
     "SavingsScale",
     "TaxScalesConfig",
@@ -48,7 +51,10 @@ TAXPAYER_PROFILE_ENV: Final[str] = "HERMES_TAXPAYER_PROFILE"
 DEFAULT_TAXPAYER_PROFILE_PATH: Final[Path] = Path("~/.config/hermes/taxpayer.yaml")
 NO_PROFILE_NOTICE: Final[str] = "no taxpayer profile, assuming no other income"
 
+STATE_SCALE_NAME: Final[str] = "state"
+
 _ZERO: Final[Decimal] = Decimal("0")
+_REGION_PATTERN: Final[str] = r"^[a-z][a-z0-9-]*$"
 
 
 class SavingsBand(BaseModel):
@@ -91,6 +97,20 @@ class SavingsScale(BaseModel):
         return self
 
 
+class GeneralScalesConfig(BaseModel):
+    """General-base scales for the total IRPF view, in the savings band format.
+
+    Attributes:
+        state: State scale per tax year (Ley 35/2006 art. 63).
+        regions: Regional scale per region slug and tax year (art. 74).
+    """
+
+    model_config = _MODEL_CONFIG
+
+    state: dict[int, SavingsScale] = Field(default_factory=dict)
+    regions: dict[str, dict[int, SavingsScale]] = Field(default_factory=dict)
+
+
 class TaxScalesConfig(BaseModel):
     """Contents of ``config/tax_scales.yaml``.
 
@@ -98,12 +118,37 @@ class TaxScalesConfig(BaseModel):
         personal_minimum_eur: Default personal minimum, used when the profile
             gives none for the year.
         savings: Savings scale per tax year.
+        general: General-base scales for the total IRPF view; absent means the
+            view is unavailable for every year.
     """
 
     model_config = _MODEL_CONFIG
 
     personal_minimum_eur: Decimal = Field(ge=_ZERO, allow_inf_nan=False)
     savings: dict[int, SavingsScale] = Field(min_length=1)
+    general: GeneralScalesConfig = Field(default_factory=GeneralScalesConfig)
+
+    def general_scales_for(self, region: str, year: int) -> tuple[SavingsScale, SavingsScale]:
+        """Return the state and regional general-base scales of ``year``.
+
+        Args:
+            region: Region slug from the taxpayer profile (``"murcia"``).
+            year: Tax year.
+
+        Returns:
+            ``(state_scale, regional_scale)``.
+
+        Raises:
+            ConfigError: ``no scale for <region> <year>`` when either is missing;
+                a missing state scale names the region ``state``.
+        """
+        state = self.general.state.get(year)
+        if state is None:
+            raise ConfigError(f"no scale for {STATE_SCALE_NAME} {year}")
+        regional = self.general.regions.get(region, {}).get(year)
+        if regional is None:
+            raise ConfigError(f"no scale for {region} {year}")
+        return state, regional
 
     def savings_scale_for(self, year: int) -> SavingsScale:
         """Return the savings scale for ``year``.
@@ -143,7 +188,11 @@ class TaxpayerYearProfile(BaseModel):
     Every field is excluded from ``repr``/``str``.
 
     Attributes:
-        general_income_eur: General-base income (salary etc.).
+        general_income_eur: General-base income (salary etc.) before the
+            operator's deductions.
+        general_deductions_eur: Reductions of the general base the operator
+            enters as one figure (social security, pension contributions, the
+            work-income reduction); income minus this is the general liquidable base.
         personal_minimum_eur: Override of the default personal minimum, or ``None``.
         other_savings_income_eur: Interest, dividends and other savings income.
         other_capital_gains_eur: Net gains (negative for a net loss) from other
@@ -154,6 +203,9 @@ class TaxpayerYearProfile(BaseModel):
     model_config = _MODEL_CONFIG
 
     general_income_eur: Decimal = Field(default=_ZERO, ge=_ZERO, allow_inf_nan=False, repr=False)
+    general_deductions_eur: Decimal = Field(
+        default=_ZERO, ge=_ZERO, allow_inf_nan=False, repr=False
+    )
     personal_minimum_eur: Decimal | None = Field(
         default=None, ge=_ZERO, allow_inf_nan=False, repr=False
     )
@@ -170,11 +222,16 @@ class TaxpayerProfile(BaseModel):
 
     Attributes:
         years: Profile per tax year. Excluded from ``repr``/``str``.
+        region: Region slug of residence (``murcia``) for the total IRPF view,
+            or ``None``. Private: excluded from ``repr``/``str``.
+        show_total_irpf: Whether ``hermes tax`` adds the total IRPF view; off by default.
     """
 
     model_config = _MODEL_CONFIG
 
     years: dict[int, TaxpayerYearProfile] = Field(default_factory=dict, repr=False)
+    region: str | None = Field(default=None, pattern=_REGION_PATTERN, repr=False)
+    show_total_irpf: bool = False
 
     def for_year(self, year: int) -> TaxpayerYearProfile:
         """Return the profile for ``year``, or zeros when none is configured.

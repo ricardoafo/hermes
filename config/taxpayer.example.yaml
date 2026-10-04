@@ -8,9 +8,19 @@
 # Amounts are strings so they parse as Decimal. A year absent from the file is
 # treated as zeros, with the notice "no taxpayer profile, assuming no other income".
 
+# Optional total IRPF view (general plus savings tax) in `hermes tax`; off by
+# default. It needs `region` (a slug with a scale in config/tax_scales.yaml,
+# e.g. murcia) and prints "total IRPF unavailable: <reason>" without one.
+show_total_irpf: false
+# region: murcia
+
 years:
   2026:
     general_income_eur: "0"
+    # Reductions of the general base, as one figure: social security, pension
+    # contributions, the work-income reduction. Income minus this is the general
+    # liquidable base.
+    general_deductions_eur: "0"
     # Optional: omit to use the default personal minimum from config/tax_scales.yaml.
     personal_minimum_eur: "5550"
     other_savings_income_eur: "0"

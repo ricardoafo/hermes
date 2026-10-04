@@ -8,9 +8,18 @@
 # has up_to_eur: null (no upper limit). Rates are fractions (0.19 = 19%).
 # Amounts and rates are strings so they parse as Decimal, never float.
 #
-# Reserved for issue 396 (not implemented): general.state.<year> and
-# general.regions.<region>.<year> band tables.
+# The general-base scales (general.state.<year>, general.regions.<region>.<year>)
+# feed only the optional total IRPF view (issue 396). Every table below was read
+# from the official text cited next to it on 2026-10-04. A region or year with
+# no table makes the view say "total IRPF unavailable", never a guess. The view
+# uses one personal minimum for both halves, so a region with its own minimum
+# (art. 56.3 Ley 35/2006) cannot be added here without code support.
 
+# Ley 35/2006 art. 57.1: minimo del contribuyente 5,550 EUR (BOE consolidated
+# text https://www.boe.es/buscar/act.php?id=BOE-A-2006-20764, unchanged since Ley
+# 26/2014). Murcia has no own minimum (none in Decreto Legislativo 1/2010; not in
+# the AEAT Renta 2025 manual's table of regional minimums), so it applies to the
+# regional half too.
 personal_minimum_eur: "5550"
 
 savings:
@@ -22,3 +31,40 @@ savings:
       - { up_to_eur: "300000", rate: "0.27" }
       - { up_to_eur: null, rate: "0.30" }
   2026: *scale_2025
+
+general:
+  state:
+    # Ley 35/2006 art. 63.1.1 (escala general estatal), BOE consolidated text
+    # https://www.boe.es/buscar/act.php?id=BOE-A-2006-20764 (last updated
+    # 30/09/2026; art. 63.1 last changed by Ley 11/2020, in force since
+    # 01/01/2021), so the same table applies to 2025 and 2026.
+    # Published cuota integra: 1,182.75 / 2,112.75 / 4,362.75 / 8,950.75 / 62,950.75.
+    2025: &state_2025
+      bands:
+        - { up_to_eur: "12450", rate: "0.095" }
+        - { up_to_eur: "20200", rate: "0.12" }
+        - { up_to_eur: "35200", rate: "0.15" }
+        - { up_to_eur: "60000", rate: "0.185" }
+        - { up_to_eur: "300000", rate: "0.225" }
+        - { up_to_eur: null, rate: "0.245" }
+    2026: *state_2025
+  regions:
+    murcia:
+      # Region de Murcia: Decreto Legislativo 1/2010 (texto refundido de tributos
+      # cedidos) art. 2, tarifa autonomica, BOE consolidated text
+      # https://www.boe.es/buscar/act.php?id=BOE-A-2011-10542 (last updated
+      # 24/07/2025; art. 2 last changed by Ley 14/2018; the transitional scales
+      # of disposicion adicional quinta cover 2019-2022 only). Cross-checked with
+      # the AEAT manual Modelo 100 Renta 2025, 8.4.3.2 Cuota integra autonomica:
+      # https://sede.agenciatributaria.gob.es/Sede/ayuda/manuales-videos-folletos/manuales-ayuda-presentacion/irpf-2025/8-cumplimentacion-irpf/8_4-cuota-integra/8_4_3-gravamen-base-liquidable-general/8_4_3_2-cuota-integra-autonomica.html
+      # 2026: the 2025 budget was extended into 2026 and no 2026 law amends
+      # art. 2 in the consolidated text, so the same table is in force.
+      # Published cuota integra: 1,182.75 / 2,050.75 / 3,886.15 / 8,540.15.
+      2025: &murcia_2025
+        bands:
+          - { up_to_eur: "12450", rate: "0.095" }
+          - { up_to_eur: "20200", rate: "0.112" }
+          - { up_to_eur: "34000", rate: "0.133" }
+          - { up_to_eur: "60000", rate: "0.179" }
+          - { up_to_eur: null, rate: "0.225" }
+      2026: *murcia_2025

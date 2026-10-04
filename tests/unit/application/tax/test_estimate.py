@@ -6,6 +6,7 @@ Reference: ADR-016 decisions 2, 3, 6, 7, 8, 10 and 12.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
@@ -22,11 +23,12 @@ from hermes.application.tax.estimate import (
 )
 from hermes.domain.lots.eur_fifo import exact_sum
 from hermes.domain.tax.netting import CarriedLoss, TaxpayerYear
+from hermes.domain.tax.total import GeneralScales, TotalIrpf, TotalIrpfUnavailable
 from hermes.domain.trading.order import OrderSide
 from hermes.domain.value_objects.currency import Currency
 from hermes.infrastructure.config.tax import NO_PROFILE_NOTICE as CONFIG_NO_PROFILE_NOTICE
 from hermes.ports.ledger import EurTradeRow
-from tests.unit.domain.tax.scales import SCALE_2026
+from tests.unit.domain.tax.scales import MURCIA_GENERAL_2026, SCALE_2026, STATE_GENERAL_2026
 
 _D = Decimal
 _SCALES = {2026: SCALE_2026}
@@ -383,3 +385,99 @@ def test_today_tax_summed_over_every_day_equals_the_year_tax(
         for day in range(365)
     ]
     assert exact_sum(daily) == year_tax
+
+
+# ---------------------------------------------------------------------------
+# Total IRPF view (change total-irpf-view R-3, R-4)
+# ---------------------------------------------------------------------------
+
+_MURCIA = GeneralScales(state=STATE_GENERAL_2026, regional=MURCIA_GENERAL_2026)
+
+
+def _with_view(
+    rows: Sequence[EurTradeRow],
+    taxpayer: TaxpayerYear | None,
+    view: GeneralScales | TotalIrpfUnavailable | None,
+    prices: dict[str, Decimal] | None = None,
+) -> TaxYearEstimate:
+    return _ok(
+        estimate_year(
+            rows,
+            year=2026,
+            scales=_SCALES,
+            taxpayer=taxpayer,
+            default_personal_minimum=_D("5550"),
+            prices=prices or {},
+            as_of=_NOW,
+            is_shadow=True,
+            general_scales=view,
+        )
+    )
+
+
+def test_view_is_off_unless_scales_are_passed() -> None:
+    """The default leaves total_irpf None: off by default (ADR-016 item 11).
+
+    Gain 100 with no profile minimum: hermes tax 100 * 0.19 = 19, and no view.
+    """
+    rows = _Rows().buy(_at(1, 5), "100").sell(_at(3, 5), "200").rows
+    estimate = _ok(_estimate(rows))
+    assert (estimate.hermes_tax, estimate.total_irpf) == (TaxEstimate(_D("19")), None)
+
+
+def test_view_adds_general_and_savings_tax_from_the_ledger() -> None:
+    """Salary 35,000 in Murcia, hermes gain 6,000 (buy 100, sell 6,100).
+
+    General 7,343.40 (see test_total). Savings 6,000 * 0.19 = 1,140.00, all hermes.
+    Total 8,483.40.
+    """
+    rows = _Rows().buy(_at(1, 5), "100").sell(_at(3, 5), "6100").rows
+    taxpayer = TaxpayerYear(general_income=_D("35000"), personal_minimum=_D("5550"))
+    view = _with_view(rows, taxpayer, _MURCIA).total_irpf
+    assert view == TotalIrpf(
+        general_tax=_D("7343.40"),
+        savings_tax=_D("1140.00"),
+        hermes_share=_D("1140.00"),
+        total=_D("8483.40"),
+    )
+
+
+def test_unavailable_view_passes_through_unchanged() -> None:
+    """A missing scale reaches the output as its reason, never as a number."""
+    rows = _Rows().buy(_at(1, 5), "100").sell(_at(3, 5), "200").rows
+    missing = TotalIrpfUnavailable("no scale for murcia 2026")
+    assert _with_view(rows, _ZERO_PROFILE, missing).total_irpf == missing
+
+
+@settings(max_examples=50)
+@given(
+    income=st.decimals(min_value=0, max_value=200000, places=2, allow_nan=False),
+    deductions=st.decimals(min_value=0, max_value=20000, places=2, allow_nan=False),
+    sell_price=st.decimals(min_value=0, max_value=100000, places=2, allow_nan=False),
+    price=st.decimals(min_value=0, max_value=100000, places=2, allow_nan=False),
+    with_profile=st.booleans(),
+)
+def test_hermes_figures_are_identical_with_the_view_on_and_off(
+    income: Decimal, deductions: Decimal, sell_price: Decimal, price: Decimal, with_profile: bool
+) -> None:
+    """The view never feeds back: every #395 figure is the same with it on or off."""
+    rows = (
+        _Rows()
+        .buy(_at(1, 5), "1000")
+        .sell(_at(3, 5), str(sell_price))
+        .buy(_at(4, 5), "500", asset=Currency.ETH)
+        .rows
+    )
+    taxpayer = (
+        TaxpayerYear(
+            general_income=income, general_deductions=deductions, personal_minimum=_D("5550")
+        )
+        if with_profile
+        else None
+    )
+    prices = {"ETH": price}
+    off = _with_view(rows, taxpayer, None, prices)
+    on = _with_view(rows, taxpayer, _MURCIA, prices)
+    assert isinstance(on.total_irpf, TotalIrpf)
+    assert on.total_irpf.hermes_share == off.hermes_tax.amount
+    assert replace(on, total_irpf=None) == off

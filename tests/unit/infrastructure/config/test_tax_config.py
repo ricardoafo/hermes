@@ -133,6 +133,105 @@ def test_scales_config_requires_at_least_one_year() -> None:
 
 
 # ---------------------------------------------------------------------------
+# General-base scales (total IRPF view, change total-irpf-view)
+# ---------------------------------------------------------------------------
+
+
+def _quotas_at_limits(scale: SavingsScale) -> list[Decimal]:
+    """Cumulative quota at each bounded band limit, as the official tables print it."""
+    quotas: list[Decimal] = []
+    total, lower = Decimal(0), Decimal(0)
+    for band in scale.bands:
+        if band.up_to_eur is None:
+            break
+        total += (band.up_to_eur - lower) * band.rate
+        quotas.append(total)
+        lower = band.up_to_eur
+    return quotas
+
+
+@pytest.mark.parametrize("year", [2025, 2026])
+def test_repo_state_scale_reproduces_the_published_quotas(year: int) -> None:
+    """Ley 35/2006 art. 63.1.1: the published cuota integra at each limit.
+
+    1,182.75 / 2,112.75 / 4,362.75 / 8,950.75 / 62,950.75 at
+    12,450 / 20,200 / 35,200 / 60,000 / 300,000, then 24.5%.
+    """
+    state, _ = load_tax_scales(_REPO_CONFIG, env={}).general_scales_for("murcia", year)
+    limits = ("12450", "20200", "35200", "60000", "300000")
+    assert [b.up_to_eur for b in state.bands] == [*(Decimal(v) for v in limits), None]
+    quotas = ("1182.75", "2112.75", "4362.75", "8950.75", "62950.75")
+    assert _quotas_at_limits(state) == [Decimal(v) for v in quotas]
+    assert state.bands[-1].rate == Decimal("0.245")
+
+
+@pytest.mark.parametrize("year", [2025, 2026])
+def test_repo_murcia_scale_reproduces_the_published_quotas(year: int) -> None:
+    """Decreto Legislativo 1/2010 (Murcia) art. 2: the published cuota integra at each limit.
+
+    1,182.75 / 2,050.75 / 3,886.15 / 8,540.15 at 12,450 / 20,200 / 34,000 / 60,000,
+    then 22.5%.
+    """
+    _, murcia = load_tax_scales(_REPO_CONFIG, env={}).general_scales_for("murcia", year)
+    limits = ("12450", "20200", "34000", "60000")
+    assert [b.up_to_eur for b in murcia.bands] == [*(Decimal(v) for v in limits), None]
+    quotas = ("1182.75", "2050.75", "3886.15", "8540.15")
+    assert _quotas_at_limits(murcia) == [Decimal(v) for v in quotas]
+    assert murcia.bands[-1].rate == Decimal("0.225")
+
+
+@pytest.mark.parametrize(
+    ("region", "year", "message"),
+    [
+        ("murcia", 2027, "no scale for state 2027"),
+        ("madrid", 2026, "no scale for madrid 2026"),
+    ],
+)
+def test_missing_general_scale_fails_closed(region: str, year: int, message: str) -> None:
+    """A region or year without a table is an error naming it, never a borrowed scale."""
+    cfg = load_tax_scales(_REPO_CONFIG, env={})
+    with pytest.raises(ConfigError, match=message):
+        cfg.general_scales_for(region, year)
+
+
+def test_missing_regional_year_names_the_region() -> None:
+    """With the state scale present, a missing regional year names the region and year."""
+    cfg = TaxScalesConfig.model_validate(
+        {
+            "personal_minimum_eur": "5550",
+            "savings": {2026: {"bands": [{"rate": "0.19"}]}},
+            "general": {
+                "state": {2027: {"bands": [{"rate": "0.2"}]}},
+                "regions": {"murcia": {2026: {"bands": [{"rate": "0.2"}]}}},
+            },
+        }
+    )
+    with pytest.raises(ConfigError, match="no scale for murcia 2027"):
+        cfg.general_scales_for("murcia", 2027)
+
+
+def test_scales_file_without_general_section_still_loads() -> None:
+    """The general tables are optional; without them every lookup fails closed."""
+    cfg = TaxScalesConfig.model_validate(
+        {"personal_minimum_eur": "5550", "savings": {2026: {"bands": [{"rate": "0.19"}]}}}
+    )
+    with pytest.raises(ConfigError, match="no scale for state 2026"):
+        cfg.general_scales_for("murcia", 2026)
+
+
+def test_unknown_key_in_general_section_is_rejected(tmp_path: Path) -> None:
+    """extra="forbid": a typo such as `region:` instead of `regions:` fails load."""
+    _write(
+        tmp_path,
+        'personal_minimum_eur: "5550"\nsavings:\n  2026:\n    bands: [{ rate: "0.19" }]\n'
+        "general:\n  region: {}\n",
+        "tax_scales.yaml",
+    )
+    with pytest.raises(ConfigError, match="validation failed"):
+        load_tax_scales(tmp_path, env={})
+
+
+# ---------------------------------------------------------------------------
 # Taxpayer profile: loading
 # ---------------------------------------------------------------------------
 
@@ -295,3 +394,51 @@ def test_other_capital_gains_may_be_a_net_loss(tmp_path: Path) -> None:
         _write(tmp_path, 'years:\n  2026:\n    other_capital_gains_eur: "-1200.50"\n')
     )
     assert profile.for_year(2026).other_capital_gains_eur == Decimal("-1200.50")
+
+
+def test_total_irpf_view_is_off_by_default(tmp_path: Path) -> None:
+    """A profile that does not mention the view leaves it off, with no region."""
+    profile = load_taxpayer_profile(_write(tmp_path, _SECRET_PROFILE))
+    assert (profile.show_total_irpf, profile.region) == (False, None)
+
+
+def test_view_fields_load_and_deductions_are_per_year(tmp_path: Path) -> None:
+    """Region and show_total_irpf are top level; general_deductions_eur is per year."""
+    body = (
+        "show_total_irpf: true\nregion: murcia\n"
+        'years:\n  2026:\n    general_income_eur: "40000"\n    general_deductions_eur: "2500"\n'
+    )
+    profile = load_taxpayer_profile(_write(tmp_path, body))
+    assert (profile.show_total_irpf, profile.region) == (True, "murcia")
+    assert profile.for_year(2026).general_deductions_eur == Decimal("2500")
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        'years:\n  2026:\n    general_deductions_eur: "-1"\n',
+        "region: Murcia Region\n",
+        "show_total_irpf: maybe\n",
+    ],
+)
+def test_bad_view_fields_raise_config_error(tmp_path: Path, body: str) -> None:
+    """Negative deductions, a non-slug region and a non-boolean switch all fail closed."""
+    with pytest.raises(ConfigError, match="invalid taxpayer profile"):
+        load_taxpayer_profile(_write(tmp_path, body))
+
+
+def test_region_and_deductions_never_appear_in_repr_errors_or_logs(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The region and deductions are private like every other profile value (ADR-016 item 12)."""
+    caplog.set_level(logging.DEBUG)
+    good = load_taxpayer_profile(
+        _write(tmp_path, 'region: murcia\nyears:\n  2026:\n    general_deductions_eur: "9876.54"\n')
+    )
+    assert "murcia" not in repr(good)
+    assert "9876" not in repr(good.for_year(2026))
+    with pytest.raises(ConfigError) as caught:
+        load_taxpayer_profile(_write(tmp_path, "region: Secret Town 42\n", "bad.yaml"))
+    assert "Secret Town" not in str(caught.value)
+    assert "murcia" not in caplog.text
+    assert "Secret Town" not in caplog.text

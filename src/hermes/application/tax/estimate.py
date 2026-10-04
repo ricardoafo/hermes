@@ -8,7 +8,9 @@ one Madrid tax year:
 - today's tax: the year's hermes tax after today minus before today;
 - tax if sold now: the marginal tax of selling every open lot at the given
   EUR prices, split per asset pro rata to unrealised gain;
-- carried-loss bookkeeping and two-month flags (decision 8).
+- carried-loss bookkeeping and two-month flags (decision 8);
+- optionally the total IRPF view (decision 11), built from the hermes figures
+  and never feeding back into them.
 
 Every figure is a console :class:`TaxEstimate` or :class:`TaxPending`, so the
 read model can place it straight into its views. Any EUR-pending trade in the
@@ -45,6 +47,7 @@ from hermes.domain.tax.marginal import marginal_tax
 from hermes.domain.tax.netting import CarriedLoss, TaxpayerYear
 from hermes.domain.tax.precision import exact
 from hermes.domain.tax.scale import SavingsScale
+from hermes.domain.tax.total import GeneralScales, TotalIrpf, TotalIrpfUnavailable, total_irpf
 from hermes.domain.tax.two_month import Acquisition, TwoMonthFlag, two_month_flags
 from hermes.domain.tax.year_position import Disposal, YearPosition, tax_year_of
 from hermes.domain.trading.order import OrderSide
@@ -103,6 +106,7 @@ class TaxYearEstimate:
         flags: Items for the gestor (two-month rule, expiring losses).
         notices: Assumptions the figure rests on (e.g. no profile).
         is_shadow: The trades are shadow trades; no real tax is due.
+        total_irpf: The total IRPF view, why it is unavailable, or ``None`` when off.
         is_estimate: Always ``True``: never a filing (ADR-016 decision 10).
     """
 
@@ -118,6 +122,7 @@ class TaxYearEstimate:
     flags: tuple[str, ...]
     notices: tuple[str, ...]
     is_shadow: bool
+    total_irpf: TotalIrpf | TotalIrpfUnavailable | None = None
     is_estimate: Literal[True] = True
 
     @property
@@ -202,6 +207,7 @@ def estimate_year(
     prices: Mapping[str, Decimal],
     as_of: datetime,
     is_shadow: bool,
+    general_scales: GeneralScales | TotalIrpfUnavailable | None = None,
 ) -> TaxYearEstimate | TaxPending:
     """Estimate the hermes tax of ``year`` from the ledger's EUR trades.
 
@@ -215,6 +221,8 @@ def estimate_year(
         prices: Current EUR price per asset (``"BTC"``), net of selling costs.
         as_of: Now; fixes "today" (Madrid) and whether ``year`` is current.
         is_shadow: Whether the trades are shadow trades.
+        general_scales: The year's general-base scales when the total IRPF view
+            is on, why it is unavailable, or ``None`` when the view is off.
 
     Returns:
         The estimate, or :class:`TaxPending` naming why there is none.
@@ -284,6 +292,11 @@ def estimate_year(
         flags=flags,
         notices=notices,
         is_shadow=is_shadow,
+        total_irpf=(
+            total_irpf(general_scales, taxpayer, marginal)
+            if isinstance(general_scales, GeneralScales)
+            else general_scales
+        ),
     )
 
 
@@ -426,6 +439,7 @@ class TaxService:
         prices: Mapping[str, Decimal],
         as_of: datetime,
         is_shadow: bool,
+        general_scales: GeneralScales | TotalIrpfUnavailable | None = None,
     ) -> TaxYearEstimate | TaxPending:
         """Estimate ``year`` from every trade in the ledger.
 
@@ -437,6 +451,8 @@ class TaxService:
             prices: Current EUR price per asset, net of selling costs.
             as_of: Now.
             is_shadow: Whether the trades are shadow trades.
+            general_scales: General-base scales for the total IRPF view, why it
+                is unavailable, or ``None`` when off.
 
         Returns:
             The estimate, or :class:`TaxPending` naming why there is none.
@@ -453,4 +469,5 @@ class TaxService:
             prices=prices,
             as_of=as_of,
             is_shadow=is_shadow,
+            general_scales=general_scales,
         )

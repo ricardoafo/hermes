@@ -68,7 +68,8 @@ class TaxpayerYear:
     """The operator's other income for one tax year. All values are private.
 
     Attributes:
-        general_income: General liquidable base (salary and the like).
+        general_income: General-base income (salary and the like).
+        general_deductions: Reductions of the general base the operator enters.
         personal_minimum: Personal and family minimum for the year.
         other_savings_income: Positive savings income outside hermes (RCM group).
         other_capital_gains: Net gains from other transmissions; negative is a loss.
@@ -76,6 +77,7 @@ class TaxpayerYear:
     """
 
     general_income: Decimal = field(default=_ZERO, repr=False)
+    general_deductions: Decimal = field(default=_ZERO, repr=False)
     personal_minimum: Decimal = field(default=_ZERO, repr=False)
     other_savings_income: Decimal = field(default=_ZERO, repr=False)
     other_capital_gains: Decimal = field(default=_ZERO, repr=False)
@@ -87,9 +89,23 @@ class TaxpayerYear:
         Raises:
             ValueError: Naming the field only, never its value.
         """
-        for name in ("general_income", "personal_minimum", "other_savings_income"):
+        for name in (
+            "general_income",
+            "general_deductions",
+            "personal_minimum",
+            "other_savings_income",
+        ):
             if getattr(self, name) < _ZERO:
                 raise ValueError(f"TaxpayerYear.{name} must be non-negative")
+
+    @property
+    def general_base(self) -> Decimal:
+        """Return the general liquidable base: income less deductions, never negative.
+
+        Reference: Ley 35/2006 art. 50.1 (the base cannot turn negative through reductions).
+        """
+        with exact():
+            return max(self.general_income - self.general_deductions, _ZERO)
 
 
 @dataclass(frozen=True, slots=True)
