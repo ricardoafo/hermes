@@ -21,7 +21,8 @@ still imports no adapter.
 ### In
 
 - `HomeApp(journal=...)` and the logs panel in `entrypoints/tui.py`.
-- `recent_journal_lines` in `entrypoints/console.py`, wired into `run_tui`.
+- `recent_journal_lines` in `entrypoints/console.py`, wired into `run_tui` in
+  `entrypoints/commands/tui.py`.
 
 ### Out
 
