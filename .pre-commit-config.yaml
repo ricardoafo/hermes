@@ -207,6 +207,28 @@ repos:
         files: ^scripts/dev/no-vague-test-assertions\.py$
         pass_filenames: false
 
+      - id: test-file-adjacency
+        name: new src module needs a matching tests/unit test file
+        entry: bash scripts/dev/test-file-adjacency.sh
+        language: system
+        files: ^src/hermes/.*\.py$
+        pass_filenames: false
+        stages: [pre-commit]
+
+      - id: test-file-adjacency-self-test
+        name: test-file-adjacency self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/test-file-adjacency.sh'
+        language: system
+        files: ^scripts/dev/test-file-adjacency\.sh$
+        pass_filenames: false
+
+      - id: test-tiers-line-check-self-test
+        name: test-tiers-line-check self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/test-tiers-line-check.sh'
+        language: system
+        files: ^scripts/dev/test-tiers-line-check\.sh$
+        pass_filenames: false
+
       - id: no-domain-mode-check
         name: no TradingMode in domain (grep guard)
         entry: bash scripts/dev/no-domain-mode-check.sh

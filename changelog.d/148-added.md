@@ -1,0 +1,1 @@
+- **Binance spot trading adapter** (`adapters/exchanges/binance_spot.py`): signed market, IOC limit and exchange-side stop-loss orders, cancels, order book, balances and fees behind `ExchangePort` and a new `StopLossPort`; testnet only unless the live-approval gate allows mainnet. Closes #148.

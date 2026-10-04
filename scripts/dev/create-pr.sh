@@ -63,6 +63,8 @@
 #       or conflicting with origin/main, or no full preflight pass on
 #       HEAD. Bypass: SKIP_READY_CHECK="reason". See
 #       scripts/dev/pr-ready-check.sh.
+#   6 — ## Testing has no valid "Test tiers touched:" line (gh NOT
+#       invoked). See scripts/dev/test-tiers-line-check.sh.
 
 set -uo pipefail
 
@@ -210,6 +212,7 @@ Real summary content.
 - Issue: Closes #1
 ## Testing
 Real testing steps.
+Test tiers touched: unit
 ## Risk
 Low.
 EOF
@@ -270,6 +273,15 @@ EOF
     out=$(GH_CMD=echo HERMES_SELF_TEST=0 bash "$0" --title "$T_OK" --body-file "$tmp_bad" 2>&1); rc=$?
     [[ $rc -eq 1 ]] || { echo "SELF-TEST FAIL: bad body → rc=$rc, want 1"; fail=1; }
     grep -q 'pr create' <<< "$out" && { echo "SELF-TEST FAIL: gh MUST NOT be invoked on lint fail"; fail=1; }
+
+    # 4b. FAIL: body passes lint but has no "Test tiers touched" line
+    #     → exit 6, gh NOT invoked (#160)
+    tmp_notiers=$(mktemp -t create-pr-notiers.XXXXXX.md)
+    grep -v '^Test tiers touched:' "$tmp_ok" > "$tmp_notiers"
+    out=$(GH_CMD=echo HERMES_SELF_TEST=0 bash "$0" --title "$T_OK" --body-file "$tmp_notiers" 2>&1); rc=$?
+    [[ $rc -eq 6 ]] || { echo "SELF-TEST FAIL 4b: no tiers line → rc=$rc, want 6"; fail=1; }
+    grep -q 'pr create' <<< "$out" && { echo "SELF-TEST FAIL 4b: gh MUST NOT be invoked without a tiers line"; fail=1; }
+    rm -f "$tmp_notiers"
 
     # 5. FAIL: missing --body-file arg → exit 2
     out=$(HERMES_SELF_TEST=0 bash "$0" --title "$T_OK" 2>&1); rc=$?
@@ -503,6 +515,15 @@ BODY_FILE="$lf_body"
 if ! PR_BODY="$(cat "$BODY_FILE")" bash scripts/dev/pr-body-lint.sh; then
     echo "ERROR: pr-body-lint.sh rejected $BODY_FILE — PR NOT opened." >&2
     exit 1
+fi
+
+# ────────────────────────────────────────────────────────────────
+# Test-tier gate — ## Testing must say which pyramid tiers the PR
+# touches (#160). See scripts/dev/test-tiers-line-check.sh.
+# ────────────────────────────────────────────────────────────────
+if ! PR_BODY="$(cat "$BODY_FILE")" bash scripts/dev/test-tiers-line-check.sh; then
+    echo "ERROR: test-tiers-line-check.sh rejected $BODY_FILE — PR NOT opened." >&2
+    exit 6
 fi
 
 # ────────────────────────────────────────────────────────────────
