@@ -283,9 +283,9 @@ repos:
         pass_filenames: false
 
       # Pre-push: the fast subset of the CI suite. A stale base fails in
-      # seconds; pytest + coverage, pip-audit, radon and vulture are left to
-      # CI, which runs them on every head (#416). Run
-      # `bash scripts/dev/pr-preflight.sh` by hand for the full suite.
+      # seconds; the test tiers, pip-audit, radon, vulture and the license
+      # check are left to CI, which runs them on every head (#416). Run
+      # `bash scripts/dev/pr-preflight.sh` by hand for every CI check.
       # One-time install: `pre-commit install --hook-type pre-push`.
       - id: pr-preflight
         name: pr-preflight (fast pre-push subset)
@@ -301,4 +301,18 @@ repos:
         entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/pr-preflight.sh'
         language: system
         files: ^scripts/dev/pr-preflight\.sh$
+        pass_filenames: false
+
+      - id: ci-checks-self-test
+        name: ci-checks self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/ci-checks.sh'
+        language: system
+        files: ^scripts/dev/ci-checks\.sh$
+        pass_filenames: false
+
+      - id: changed-tests-self-test
+        name: changed-tests self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/changed-tests.sh'
+        language: system
+        files: ^scripts/dev/changed-tests\.sh$
         pass_filenames: false

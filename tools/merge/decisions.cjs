@@ -686,6 +686,45 @@ function handMergeComment(input) {
 }
 
 /**
+ * Select's whole verdict on one open PR, in the order the checks run.
+ *
+ * Select used to compose isCandidate, queueCanMerge and skipFailedHead
+ * inline in the workflow, where only a live run could test the
+ * composition. Here it is one pure function, fed by recorded API replies
+ * in decisions.test.cjs.
+ *
+ * @param {{ pr: PullSummary & { labels?: Array<{ name: string }> },
+ *           reviews: Review[], files: string[],
+ *           comments: Array<{ body?: string|null }>,
+ *           canMergeWorkflows: boolean }} input
+ * @returns {{ candidate: { n: number, head: string, approvedAt: string|null }|null,
+ *             reason: string, label: boolean, warn: boolean }}
+ */
+function selectDecision(input) {
+  const { pr, reviews } = input;
+  const base = isCandidate({ pr, reviews });
+  if (!base.eligible) {
+    // Conflicts are the only refusal a human must act on.
+    return { candidate: null, reason: base.reason, label: false, warn: base.reason.includes('CONFLICTS') };
+  }
+  const labels = (pr.labels || []).map((l) => l.name);
+  const access = queueCanMerge({ files: input.files, labels, canMergeWorkflows: input.canMergeWorkflows });
+  if (!access.eligible) {
+    return { candidate: null, reason: access.reason, label: access.label, warn: false };
+  }
+  const failed = skipFailedHead({ head: pr.head.sha, labels, comments: input.comments });
+  if (failed.skip) {
+    return { candidate: null, reason: failed.reason, label: false, warn: false };
+  }
+  return {
+    candidate: { n: pr.number, head: pr.head.sha, approvedAt: approvedAt(reviews) },
+    reason: base.reason,
+    label: false,
+    warn: false,
+  };
+}
+
+/**
  * REST path of a branch ref, each segment encoded on its own.
  *
  * Octokit encodes a `ref` parameter as ONE path segment, so
@@ -784,4 +823,5 @@ module.exports = {
   handMergeComment,
   ALERTS_LABEL,
   alertComment,
+  selectDecision,
 };
