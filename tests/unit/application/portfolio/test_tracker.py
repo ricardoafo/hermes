@@ -83,6 +83,16 @@ class TestAcceptedFill:
         tracker.apply_fill(make_fill(OrderSide.BUY, "0.005", "50000"))
         assert tracker.open_position_count() == 1
 
+    def test_snapshot_is_the_state_after_the_last_accepted_fill(self) -> None:
+        """BUY 0.005 at 50000 with fee 0.25: the snapshot holds 4749.75 cash and 0.005 BTC."""
+        tracker = PortfolioTracker(_seed())
+        tracker.apply_fill(make_fill(OrderSide.BUY, "0.005", "50000", fee="0.25"))
+        snapshot = tracker.snapshot
+        assert (snapshot.cash, snapshot.positions[BTC_USDT].quantity) == (
+            Decimal("4749.75"),
+            Decimal("0.005"),
+        )
+
     def test_accepted_fill_returns_the_new_snapshot(self) -> None:
         """apply_fill returns Success holding the snapshot that is now current."""
         tracker = PortfolioTracker(_seed())

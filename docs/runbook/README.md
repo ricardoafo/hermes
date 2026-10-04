@@ -57,12 +57,14 @@ encodes the fix so this doesn't happen again.
 
 ## Living index
 
-None yet — populate as procedures are needed.
+- [`vps-restart-procedure.md`](vps-restart-procedure.md) — restart a
+  degraded service or the whole VPS
+- [`cve-response.md`](cve-response.md) — triage and patch a CVE in a
+  dependency, Action, runtime or the VPS OS (ADR-010)
+- [`failover-to-kraken.md`](failover-to-kraken.md) — monthly Binance to
+  Kraken drill and the real cutover (ADR-004, #31)
 
 ## Planned entries (Phase 0+)
 
-- `vps-restart-procedure.md` — when the VPS reboots (ADR-003 §09)
-- `exchange-failover.md` — Binance → Kraken cold backup drill (ADR-004)
 - `tax-lot-corruption-recovery.md` — FIFO ledger repair (ADR-002 + §03)
-- `cve-response.md` — supply-chain CVE triage (ADR-010)
 - `llm-supervisor-mcp-outage.md` — Phase 3+ (ADR-003 §08)
