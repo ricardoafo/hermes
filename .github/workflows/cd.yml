@@ -36,7 +36,8 @@
 #
 # ## Secrets (populated on `prod` GH Environment)
 #
-#   TAILSCALE_AUTHKEY       — tagged authkey (tag:ci-runner)
+#   TS_OAUTH_CLIENT_ID      — Tailscale OAuth client (auth_keys write, tag:ci-runner)
+#   TS_OAUTH_SECRET         — that client's secret
 #   VPS_SSH_HOST            — hermes-01 (tailnet hostname or 100.96.83.123)
 #   VPS_SSH_USER            — root
 #   VPS_SSH_KEY             — hermes_ci_ed25519 (unencrypted ed25519 private)
@@ -256,9 +257,13 @@ jobs:
 
       - name: Join tailnet
         if: inputs.dry_run != true
-        uses: tailscale/github-action@v4
+        uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4.2.0
         with:
-          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          # OAuth client, not an auth key: each run mints a short-lived
+          # tagged key, so nothing here expires (#314).
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci-runner
           hostname: gh-actions-cd-${{ github.run_id }}
           # Pinned: `latest` downloads whatever shipped that day.
           version: 1.102.4
