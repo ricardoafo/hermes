@@ -287,7 +287,7 @@ def test_status_json_after_a_serve_cycle_matches_its_snapshot(
     """``hermes status --json`` over the ledger one full cycle wrote is stable.
 
     The report is read just after the last recorded close was delivered, with
-    systemd reporting the unit running, so every stream must be on time.
+    systemd reporting both units running, so every stream must be on time.
     """
     db = tmp_path / "ledger.sqlite3"
     _serve(db, boot_at=LIVE_FROM)
@@ -298,6 +298,7 @@ def test_status_json_after_a_serve_cycle_matches_its_snapshot(
         stream=out,
         now=LIVE_UNTIL + timedelta(seconds=10),
         unit_state=lambda: UnitState.RUNNING,
+        bot_state=lambda: UnitState.RUNNING,
     )
 
     assert (code, json.loads(out.getvalue())) == snapshot
