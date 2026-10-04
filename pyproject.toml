@@ -230,6 +230,24 @@ forbidden_modules = [
   "hermes.domain.trading.trade_record",
 ]
 
+# change 36-modelo-100-721 D-10: tax-filing figures are measurement only, like
+# the EUR values they read. Nothing that decides trades may import them.
+[[tool.importlinter.contracts]]
+name = "filing-is-measurement-only"
+type = "forbidden"
+source_modules = [
+  "hermes.application.order_router",
+  "hermes.application.strategy_protocol",
+  "hermes.domain.strategy",
+  "hermes.domain.fees",
+  "hermes.domain.risk",
+]
+forbidden_modules = [
+  "hermes.application.filing",
+  "hermes.domain.filing",
+  "hermes.ports.filing",
+]
+
 # ADR-012 D-08: the supervisor layer reads through read-only ports and
 # projections only. It never reaches an exchange, an order path, the ledger's
 # write port, the portfolio or the composition root (change 34-supervisor-read-tools).
