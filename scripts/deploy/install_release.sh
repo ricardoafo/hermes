@@ -33,6 +33,9 @@
 #      binary. Serve never applies those at start. A failed migration rolls
 #      back inside its transaction; the old release restarts and the deploy
 #      stops.
+#   3c. (prod) Install the release's systemd units and timers whose content
+#      differs from /etc/systemd/system, as vps-bootstrap does (#626). The
+#      replaced files are kept, so a failed gate puts them back.
 #   4. Flip previous, flip current, restart the unit.
 #   5. Run the health gate. On failure roll back, restoring the snapshot
 #      (or stop the unit on a first deploy), and exit 1.
@@ -48,7 +51,8 @@
 #   HERMES_TARGET=staging bash <stage>/bin/install_release.sh <sha12> <stage>
 #
 # Test seams: HERMES_ROOT, HERMES_ENV_FILE, SYSTEMCTL, HERMES_DB,
-# HERMES_BACKUP_DIR, HERMES_BACKUP_PYTHON, HERMES_MIGRATE_BIN, RUNUSER. The
+# HERMES_BACKUP_DIR, HERMES_BACKUP_PYTHON, HERMES_MIGRATE_BIN, RUNUSER,
+# HERMES_UNIT_DIR. The
 # seams override the target's paths, and the staging guard still checks them.
 # The script can be sourced to reach prune_versions on its own.
 #
@@ -92,6 +96,7 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 DB=${HERMES_DB:-$target_state/hermes.sqlite3}
 BACKUP_DIR=${HERMES_BACKUP_DIR:-$target_state/backups}
 RUNUSER=${RUNUSER:-runuser}
+UNIT_DIR=${HERMES_UNIT_DIR:-/etc/systemd/system}
 
 # The 3 newest releases survive a prune, plus whatever `current` and
 # `previous` point to.
@@ -117,6 +122,9 @@ export UV_PYTHON_PREFERENCE=only-managed
 partial_dir=""
 # Path of the single wheel in the stage, set by preflight.
 WHEEL=""
+# Set while unit files are replaced: the old copies, and the units that are new.
+unit_backup=""
+units_added=()
 
 log() {
     echo "[install_release] $*"
@@ -299,6 +307,59 @@ migrate_ledger() {
     "$RUNUSER" -u "$RUN_AS" -- "$bin" migrate --db "$DB" --snapshot-dir "$BACKUP_DIR/migrations"
 }
 
+# Install every *.service and *.timer from the release's deploy/systemd whose
+# content differs from the copy in UNIT_DIR, 0644, as vps_bootstrap.sh step 4
+# does. Without this a unit change merged to main waits for a manual bootstrap
+# (#626). The replaced files go to a backup dir so restore_units can put them
+# back. Enabling a new unit stays with vps-bootstrap: whether a timer runs
+# depends on the env file, which a deploy never touches. Staging shares prod's
+# unit dir, so only a prod deploy syncs. activate_and_gate reloads systemd.
+sync_units() {
+    local src_dir=$1/deploy/systemd src dst name
+    [ "$TARGET" = prod ] || return 0
+    if [ ! -d "$src_dir" ]; then
+        log "release carries no deploy/systemd: units left as they are"
+        return 0
+    fi
+    unit_backup="$ROOT/units-before-deploy"
+    rm -rf "$unit_backup"
+    install -d -m 0700 "$unit_backup" || return 1
+    for src in "$src_dir"/*.service "$src_dir"/*.timer; do
+        [ -f "$src" ] || continue
+        name=$(basename "$src")
+        dst="$UNIT_DIR/$name"
+        if cmp -s "$src" "$dst"; then
+            continue
+        fi
+        if [ -f "$dst" ]; then
+            cp -p "$dst" "$unit_backup/$name" || return 1
+        else
+            units_added+=("$name")
+            echo "::warning::new unit $name installed but not enabled: run vps-bootstrap to enable it"
+        fi
+        install -m 0644 "$src" "$dst" || return 1
+        log "unit $name: installed"
+    done
+}
+
+# Put back the unit files sync_units replaced and remove the ones it added.
+# The caller reloads systemd (rollback.sh does, before it restarts the unit).
+restore_units() {
+    local saved name
+    [ -n "$unit_backup" ] || return 0
+    for saved in "$unit_backup"/*; do
+        [ -f "$saved" ] || continue
+        install -m 0644 "$saved" "$UNIT_DIR/$(basename "$saved")"
+        log "unit $(basename "$saved"): restored"
+    done
+    for name in ${units_added[@]+"${units_added[@]}"}; do
+        rm -f "$UNIT_DIR/$name"
+        log "unit $name: removed"
+    done
+    rm -rf "$unit_backup"
+    unit_backup=""
+}
+
 # Atomic symlink swap: write a temp link, then rename(2) it over the real one.
 flip_link() {
     local target=$1 link=$2
@@ -367,6 +428,13 @@ main() {
         die "hermes migrate failed on $DB: not deploying $sha"
     fi
 
+    if ! sync_units "$stage"; then
+        # Nothing reloaded systemd yet, so the old units still run the old release.
+        restore_units
+        "$SYSTEMCTL" start "$UNIT" || true
+        die "installing the release's systemd units failed: not deploying $sha"
+    fi
+
     # `readlink -f` exits 0 on a missing link, so `current` needs `-L`.
     # Without it the first deploy would write `previous -> current`.
     if [ -L "$ROOT/current" ]; then
@@ -386,12 +454,14 @@ main() {
         if [ -L "$ROOT/previous" ] && ! [ "$ROOT/previous" -ef "$ROOT/current" ]; then
             prev_ok=true
         fi
+        restore_units
         if [ "$prev_ok" = true ]; then
             # The failed release may have migrated the ledger; the
             # snapshot puts it back to what `previous` expects.
             HERMES_RESTORE_DB=$snapshot bash "$SCRIPT_DIR/rollback.sh" || echo "::error::rollback failed too"
         else
             log "no previous release: stopping $UNIT"
+            "$SYSTEMCTL" daemon-reload || true
             "$SYSTEMCTL" stop "$UNIT" || true
         fi
         exit 1
@@ -404,6 +474,7 @@ main() {
     install -m 0755 "$SCRIPT_DIR/health_gate.sh" "$SCRIPT_DIR/rollback.sh" \
         "$stage/deploy/hermes-notify-failure.sh" "$stage/deploy/hermes-notify-crash.sh" \
         "$ROOT/bin/"
+    rm -rf "$unit_backup"
     prune_versions
     # The read-only bot runs from the same release; pick up the new code.
     # try-restart leaves a stopped or uninstalled bot alone (ADR-015). The bot

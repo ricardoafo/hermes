@@ -399,6 +399,19 @@ mountpoint reports mounted (or the WARN case if creds are still absent).
   the mount step that previously WARN-skipped).
 - After a VPS reprovision — before enabling any hermes systemd unit.
 
+A unit or timer whose file changed does not need a re-run: each deploy
+installs the release's changed `deploy/systemd/` files before it restarts
+the unit, and a failed health gate puts the old files back (#626). A
+deploy never enables a new unit, so a new timer still needs this
+workflow once. The env file and journald drop-in stay bootstrap-only.
+
+### Which version is live
+
+Each good deploy publishes a GitHub release tagged `deploy-<sha12>`
+listing the PRs and changelog lines since the previous deploy, and posts
+the same summary to Telegram (#626). On the box,
+`readlink /opt/hermes/current` names the live `versions/<sha12>`.
+
 ### Failure modes
 
 - **Tailscale-join fails** — the workflow's `Join tailnet` step
