@@ -2,7 +2,9 @@
 
 **SDD change**: `144-notification-system`
 **Date**: 2026-10-04
-**Status**: Proposed (design awaits the Code Owner's pick)
+**Status**: Applied (phase 2). The shape per family and channel lives in one table, `SHAPES` in
+`src/hermes/application/messages/shapes.py`; swapping a shape is a one-line edit there plus a
+snapshot update. The recommended shapes ship until the Code Owner picks otherwise.
 **Tracking issue**: see sibling `issue.md`
 
 Mirror of engram topic key `sdd/144-notification-system/change` (see

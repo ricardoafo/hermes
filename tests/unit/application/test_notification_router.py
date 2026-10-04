@@ -127,7 +127,7 @@ _EXPECTED_ROUTING: dict[EventClass, tuple[bool, bool]] = {
     # MVP1 additions — see 2026-08-23-slack-alongside-telegram.md §
     # "Extended MVP1 events".
     EventClass.STRATEGY_PAUSED: (True, True),
-    EventClass.STRATEGY_RESUMED: (False, True),
+    EventClass.STRATEGY_RESUMED: (True, True),
     EventClass.BALANCE_LOW: (True, False),
     EventClass.TRADE_REJECTED_ESCALATED: (True, False),
     EventClass.DAILY_TRADE_DIGEST: (False, True),
@@ -135,6 +135,8 @@ _EXPECTED_ROUTING: dict[EventClass, tuple[bool, bool]] = {
     EventClass.ANOMALY_DETECTED: (True, True),
     # 2026-10-03-signal-notification-routing.md
     EventClass.SIGNAL_EMITTED: (True, True),
+    # notification templates v2 (#144): the rebalance heads-up is routed.
+    EventClass.REBALANCE_TRIGGERED: (True, True),
 }
 
 
@@ -189,6 +191,8 @@ class TestFanOutOrdering:
             EventClass.STRATEGY_PAUSED,
             EventClass.POSITION_LARGE,
             EventClass.ANOMALY_DETECTED,
+            EventClass.STRATEGY_RESUMED,
+            EventClass.REBALANCE_TRIGGERED,
         ],
     )
     def test_telegram_precedes_slack_in_fan_out(self, event_class: EventClass) -> None:
@@ -234,7 +238,6 @@ class TestSlackOnlyClasses:
         [
             EventClass.WEEKLY_REBALANCE_REPORT,
             EventClass.MONTHLY_TAX_REPORT,
-            EventClass.STRATEGY_RESUMED,
             EventClass.DAILY_TRADE_DIGEST,
         ],
     )

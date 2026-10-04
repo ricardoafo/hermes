@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import Final
 
-__all__ = ["CORRELATION_TAIL_LEN", "correlation_tail", "escape_markdown_v2"]
+__all__ = ["CORRELATION_TAIL_LEN", "correlation_tail", "escape_markdown_v2", "escape_slack"]
 
 # MarkdownV2 reserved characters that MUST be escaped to render literally.
 _MARKDOWN_V2_RESERVED: Final[frozenset[str]] = frozenset(
@@ -61,3 +61,18 @@ def correlation_tail(correlation_id: str) -> str:
         tail length). Never raises.
     """
     return correlation_id[-CORRELATION_TAIL_LEN:]
+
+
+def escape_slack(text: str) -> str:
+    """Escape the three characters Slack treats as markup in ``mrkdwn`` text.
+
+    Slack reads ``&``, ``<`` and ``>`` as control characters (links and
+    mentions), so a reason such as ``a < b`` must not reach the API raw.
+
+    Args:
+        text: The raw text.
+
+    Returns:
+        The text with ``&``, ``<`` and ``>`` replaced by their entities.
+    """
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
