@@ -8,14 +8,17 @@
 # deploy scripts, one tarball) -> deploy (tailnet + scp + install_release.sh
 # over SSH, which flips `current`, restarts the unit and runs the health
 # gate, then the tests/smoke suite over the same SSH path, #407) ->
-# confirm. A failed gate or a failed smoke run rolls back to `previous`
-# and fails the deploy job.
+# release (GitHub release deploy-<sha12> with the notes job's PR and
+# changelog list, plus a Telegram summary, #626) -> confirm. A failed
+# gate or a failed smoke run rolls back to `previous` and fails the
+# deploy job.
 #
 # ## Prerequisites on hermes-01 (one-time: run the `vps-bootstrap` workflow)
 #
 #   - `hermes` OS user, /opt/hermes/{versions,bin,python}, /var/lib/hermes
 #   - uv (pinned) and Python 3.14 under /opt/hermes/python
-#   - hermes.service installed and enabled (a deploy starts it)
+#   - hermes.service installed and enabled (a deploy starts it; later
+#     deploys install changed unit and timer files themselves, #626)
 #   - /etc/hermes/env.production, root:root 0600, HERMES_ALLOW_MAINNET=no
 #
 # See docs/guides/vps-operations.md for the operator checklist and
@@ -141,6 +144,48 @@ jobs:
       ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
   # ─────────────────────────────────────────────────────────────────
+  # NOTES — what this deploy carries: the commits on main since the
+  # previous deploy tag and the changelog.d lines they added (#626).
+  # Never fails: a notes problem must not hold a release back.
+  # ─────────────────────────────────────────────────────────────────
+  notes:
+    name: Release notes
+    needs: gate
+    runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          # Full history and tags: the notes run from the previous deploy tag.
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with: { version: "0.12.5" }
+
+      - name: Write the release notes
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          mkdir -p notes
+          for format in markdown telegram; do
+              if ! uv run --no-project --python 3.14 scripts/deploy/release_notes.py \
+                  --release "$RELEASE_SHA" --repo "$REPO" --format "$format" > "notes/$format.txt"; then
+                  echo "::warning::release notes ($format) failed; shipping a placeholder"
+                  printf 'hermes %s is live on hermes-01. Release notes could not be built.\n' \
+                      "${RELEASE_SHA::12}" > "notes/$format.txt"
+              fi
+          done
+          cat notes/markdown.txt
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: hermes-release-notes
+          path: notes/
+          if-no-files-found: error
+
+  # ─────────────────────────────────────────────────────────────────
   # BUNDLE — one tarball per commit: the CI-built wheel, the hash-pinned
   # requirements from uv.lock, the config/ YAML and the deploy scripts.
   # Runs in dry-run too, so a dry run proves the bundle builds.
@@ -198,6 +243,10 @@ jobs:
           install -m 0755 deploy/hermes-health-ping.sh deploy/hermes-notify-failure.sh deploy/hermes-notify-crash.sh deploy/hermes-daily-line.sh deploy/hermes-backup.sh deploy/hermes-console.sh "$stage/deploy/"
           install -m 0755 scripts/deploy/install_release.sh scripts/deploy/health_gate.sh \
               scripts/deploy/rollback.sh "$stage/bin/"
+          # install_release.sh installs the units and timers that changed, as
+          # vps-bootstrap does, so a unit change ships with its release (#626).
+          install -d "$stage/deploy/systemd"
+          install -m 0644 deploy/systemd/*.service deploy/systemd/*.timer "$stage/deploy/systemd/"
 
           tar -czf "hermes-release-${sha12}.tar.gz" -C "$stage" .
           tar -tzf "hermes-release-${sha12}.tar.gz"
@@ -215,9 +264,10 @@ jobs:
   # ─────────────────────────────────────────────────────────────────
   deploy:
     name: Deploy to VPS
-    needs: bundle
+    needs: [bundle, notes]
     runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
-    timeout-minutes: 15
+    # install_release.sh may hold up to 10 min for the bar close (#626).
+    timeout-minutes: 25
     environment:
       name: prod
       url: https://${{ env.VPS_HOST }}
@@ -379,16 +429,91 @@ jobs:
           ssh -i ~/.ssh/vps_id -o StrictHostKeyChecking=yes -o ServerAliveInterval=15 \
               "$VPS_SSH_USER@$VPS_SSH_HOST" /opt/hermes/bin/rollback.sh
 
+      - name: Download release notes
+        if: inputs.dry_run != true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: hermes-release-notes
+          path: notes/
+
+      # The prod environment holds the bot token and chat id, so the message
+      # goes from this job. A Telegram outage never fails a good deploy.
+      - name: Announce the release on Telegram
+        if: inputs.dry_run != true
+        continue-on-error: true
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.HERMES_TELEGRAM__BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.HERMES_TELEGRAM__CHAT_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TELEGRAM_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+              echo "::warning::no Telegram token or chat id in the prod environment; not announcing"
+              exit 0
+          fi
+          curl -fsS --max-time 20 -o /dev/null \
+              --data-urlencode "chat_id=$TELEGRAM_CHAT_ID" \
+              --data-urlencode "text@notes/telegram.txt" \
+              --data-urlencode "disable_web_page_preview=true" \
+              "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage"
+
       - name: Dry-run notice
         if: inputs.dry_run == true
         run: echo "::notice::dry_run=true — built the bundle, skipped tailnet + scp + install + smoke."
+
+  # ─────────────────────────────────────────────────────────────────
+  # RELEASE — a GitHub release per good deploy, tagged deploy-<sha12> on
+  # the commit that shipped, with the notes as its body (#626). The tag
+  # is how the next deploy finds where its notes start. A failure here
+  # is a warning: the box is already running the release.
+  # ─────────────────────────────────────────────────────────────────
+  release:
+    name: Publish the GitHub release
+    needs: [deploy, notes]
+    if: inputs.dry_run != true
+    runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Download release notes
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: hermes-release-notes
+          path: notes/
+
+      - name: Create the release
+        continue-on-error: true
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          script: |
+            const fs = require('fs');
+            const sha = process.env.RELEASE_SHA;
+            const tag = `deploy-${sha.slice(0, 12)}`;
+            const when = new Date().toISOString().slice(0, 16).replace('T', ' ');
+            const body = fs.readFileSync('notes/markdown.txt', 'utf8');
+            try {
+              await github.rest.repos.getReleaseByTag({ ...context.repo, tag });
+              core.notice(`${tag} already has a release: a redeploy, left as is.`);
+              return;
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+            const { data } = await github.rest.repos.createRelease({
+              ...context.repo,
+              tag_name: tag,
+              target_commitish: sha,
+              name: `hermes ${when} UTC · ${sha.slice(0, 12)}`,
+              body,
+              make_latest: 'true',
+            });
+            core.notice(`Published ${data.html_url}`);
 
   # ─────────────────────────────────────────────────────────────────
   # CONFIRM — deploy-gate aggregator
   # ─────────────────────────────────────────────────────────────────
   confirm:
     name: Confirm deployment
-    needs: [gate, build, bundle, deploy]
+    needs: [gate, build, notes, bundle, deploy, release]
     if: '!cancelled()'
     runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 1

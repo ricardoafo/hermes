@@ -40,7 +40,11 @@ from returns.result import Failure
 from hermes.adapters.ledger.migration_runner import apply_migrations
 from hermes.domain.errors import LedgerError
 from hermes.domain.events.base import DomainEvent
-from hermes.domain.events.fill_quality_recorded import BookSource, FillQualityRecorded
+from hermes.domain.events.fill_quality_recorded import (
+    BookSource,
+    FillQualityRecorded,
+    upcast_fill_quality_payload,
+)
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.events.trade_executed import TradeExecuted, TradeSide
 from hermes.domain.fx.eur_pricing import EurPricing, EurStatus
@@ -859,7 +863,7 @@ class SqliteLedger:
 
         Raises:
             LedgerError: On any SQLite read failure, a row whose schema version
-                is not 1, or an unreadable payload.
+                is unknown, or an unreadable payload.
         """
         try:
             rows = self._conn.execute(
@@ -873,10 +877,9 @@ class SqliteLedger:
             raise LedgerError(msg=f"fill_quality_events failed: {exc}") from exc
         events: list[FillQualityRecorded] = []
         for version, payload_json in rows:
-            if version != FillQualityRecorded.__event_schema_version__:
-                raise LedgerError(msg=f"fill_quality_events: unsupported schema version {version}")
             try:
-                events.append(_fill_quality_from_payload(json.loads(payload_json)))
+                payload = upcast_fill_quality_payload(version, json.loads(payload_json))
+                events.append(_fill_quality_from_payload(payload))
             except (KeyError, ValueError, TypeError) as exc:
                 raise LedgerError(msg=f"fill_quality_events: unreadable payload: {exc}") from exc
         return tuple(events)
@@ -1536,4 +1539,6 @@ def _fill_quality_from_payload(payload: dict[str, Any]) -> FillQualityRecorded:
         drift_bps=_optional_decimal(payload["drift_bps"]),
         book_mid=_optional_decimal(payload["book_mid"]),
         slippage=_optional_decimal(payload["slippage"]),
+        arrival_price=_optional_decimal(payload["arrival_price"]),
+        delta_ms=None if payload["delta_ms"] is None else int(payload["delta_ms"]),
     )

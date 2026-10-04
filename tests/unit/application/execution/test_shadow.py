@@ -292,6 +292,52 @@ def test_live_fill_records_its_drift_against_the_prereg_entry_price(
     )
 
 
+def test_quality_row_records_the_signal_bar_close_as_arrival_price(
+    connection: sqlite3.Connection,
+) -> None:
+    """Arrival price is the signal bar's close, not the fill or the book price."""
+    rig = _rig(connection, book=_live_book("84999", "85001"))
+    bar = _bar("85000")
+
+    rig.run(_entry(bar), bar)
+
+    (quality,) = rig.ledger.fill_quality_events(STRATEGY)
+    assert quality.arrival_price == Decimal("85000")
+
+
+def test_live_fill_records_the_latency_from_signal_close_to_the_snapshot(
+    connection: sqlite3.Connection,
+) -> None:
+    """The live fill is stamped 6 s after the bar close, so delta_ms is 6000."""
+    rig = _rig(connection, book=_live_book("84999", "85001"))
+    bar = _bar("85000")
+
+    rig.run(_entry(bar), bar)
+
+    (quality,) = rig.ledger.fill_quality_events(STRATEGY)
+    assert quality.delta_ms == 6000
+
+
+def test_synthetic_fill_at_the_signal_time_records_zero_latency(
+    connection: sqlite3.Connection,
+) -> None:
+    """A fill on the §6.2 book is stamped at the signal time: no latency."""
+    rig = _rig(connection, book=_live_book("84999", "85001"))
+    entry_bar = _bar("85000")
+    rig.run(_entry(entry_bar), entry_bar)
+    exit_bar = _bar("84000", open_time=_OPEN + timedelta(hours=4))
+    rig.clock.set(exit_bar.close_time + timedelta(hours=3))
+
+    rig.run(_exit(exit_bar, "84100"), exit_bar, cid="c2")
+
+    synthetic = rig.ledger.fill_quality_events(STRATEGY)[-1]
+    assert (synthetic.book_source, synthetic.delta_ms, synthetic.arrival_price) == (
+        BookSource.SYNTHETIC,
+        0,
+        Decimal("84000"),
+    )
+
+
 def test_quality_row_shares_the_trade_correlation_id(connection: sqlite3.Connection) -> None:
     """The gate can join a quality row to its trade."""
     rig = _rig(connection, book=_live_book("84999", "85001"))
@@ -441,3 +487,16 @@ def test_a_slippage_recorded_before_a_restart_feeds_ro03(connection: sqlite3.Con
     bar = _bar("85000")
 
     assert _declined(rig.run(_entry(bar), bar)).rule == "HALT"
+
+
+def test_clock_behind_the_bar_close_records_no_latency_and_still_fills(
+    connection: sqlite3.Connection,
+) -> None:
+    """Record-only (#30): a negative latency is stored as None and never blocks the fill."""
+    rig = _rig(connection, book=_live_book("84999", "85001"))
+    bar = _bar("85000", open_time=_OPEN + timedelta(hours=4))
+
+    rig.run(_entry(bar), bar)
+
+    (quality,) = rig.ledger.fill_quality_events(STRATEGY)
+    assert (quality.delta_ms, quality.arrival_price) == (None, Decimal("85000"))
