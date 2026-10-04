@@ -60,6 +60,7 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+      issues: read # the closed issue the review reads alongside the PR
       pull-requests: write # the sticky review comment
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -90,7 +91,7 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        # The self-hosted runner has no gh or jq; curl + python3 it does have.
+        # The self-hosted runner has no gh or jq; python3 it does have.
         run: |
           set -euo pipefail
           tools="$RUNNER_TEMP/ai-review"
@@ -108,29 +109,35 @@ jobs:
           git diff "$BASE_SHA...$HEAD_SHA" > .ai-review/diff.patch
           git diff --name-status "$BASE_SHA...$HEAD_SHA" > .ai-review/files.txt
 
-          api() {
-            curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/$GITHUB_REPOSITORY/$1"
-          }
-          api "pulls/$PR_NUMBER" > "$tools/pr.json"
-          python3 - "$tools/pr.json" .ai-review/pr.md <<'PY'
-          import json, re, subprocess, sys, os
-          pr = json.load(open(sys.argv[1]))
+          # The token travels only in a request header, never in a command
+          # line or an error message: pr.md goes to the model (#642).
+          python3 - .ai-review/pr.md <<'PY'
+          import json, os, re, sys, urllib.request
+          repo = f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}"
+
+          def api(path):
+              req = urllib.request.Request(f"{repo}/{path}", headers={
+                  "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+                  "Accept": "application/vnd.github+json",
+              })
+              with urllib.request.urlopen(req, timeout=30) as resp:
+                  return json.load(resp)
+
+          def failure(err):
+              status = getattr(err, "code", None)
+              return type(err).__name__ + (f" (HTTP {status})" if status else "")
+
+          pr = api(f"pulls/{os.environ['PR_NUMBER']}")
           body = pr.get("body") or ""
           out = [f"# PR #{pr['number']}: {pr['title']}", "", body, ""]
           m = re.search(r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)\b", body, re.I)
           if m:
-              url = f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/issues/{m.group(1)}"
               try:
-                  raw = subprocess.run(
-                      ["curl", "-fsSL", "-H", f"Authorization: Bearer {os.environ['GH_TOKEN']}", url],
-                      check=True, capture_output=True, text=True).stdout
-                  issue = json.loads(raw)
+                  issue = api(f"issues/{m.group(1)}")
                   out += [f"# Closed issue #{issue['number']}: {issue['title']}", "", issue.get("body") or ""]
               except Exception as err:  # the review still runs without the issue
-                  out += [f"(Could not read issue #{m.group(1)}: {err})"]
-          open(sys.argv[2], "w").write("\n".join(out))
+                  out += [f"(Could not read issue #{m.group(1)}: {failure(err)})"]
+          open(sys.argv[1], "w").write("\n".join(out))
           PY
 
           {
