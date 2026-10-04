@@ -5,12 +5,14 @@ Usage: ``hermes [--demo SCENARIO] activity [--all] [--json] [--utc] [--db PATH] 
 A day-grouped feed, newest first: positions opened and closed, stop raises,
 restarts, warnings and errors. Quiet bar checks and signals only show with
 ``--all``. With ``--demo`` (or ``HERMES_CONSOLE_DEMO``) the feed comes from a
-packaged fixture scenario and carries the DEMO DATA tag; otherwise it is read
-from the ledger, read-only, over the last ``--days`` days.
+packaged fixture scenario and carries the DEMO DATA tag; otherwise it comes
+from the live console read model over the ledger, read-only, over the last
+``--days`` days (#546).
 
 Exit codes: 0 success, 2 usage or unknown scenario, 3 no ledger or unreadable.
 
-Reference: openspec/changes/374-hermes-activity/change.md.
+Reference: openspec/changes/374-hermes-activity/change.md;
+openspec/changes/live-home-screen/change.md (D-5, D-6).
 """
 
 from __future__ import annotations
@@ -25,11 +27,10 @@ from typing import Final, TextIO
 from rich.console import Console
 
 from hermes.adapters.console import UnknownScenarioError
-from hermes.adapters.console.ledger_activity import LedgerActivityReader
-from hermes.application.console import Surface
-from hermes.application.console.activity import activity_to_json, group_activity
+from hermes.adapters.console.ledger_read_model import LedgerReadModel
+from hermes.application.console import ConsoleReadModel, Surface
+from hermes.application.console.activity import activity_to_json
 from hermes.application.console.render import MADRID, RenderContext, render_activity
-from hermes.application.console.views import ActivityDay
 from hermes.domain.errors import LedgerError
 from hermes.entrypoints import console as console_module
 from hermes.entrypoints._streams import resolve_err
@@ -71,24 +72,27 @@ def run_activity(
 
     tz = UTC if parsed.utc else MADRID
     console = Console(file=stream, emoji=False, markup=False, highlight=False)
+    model: ConsoleReadModel | None
     try:
         model = console_module.demo_read_model(demo_flag=demo_flag, env=env or {})
     except UnknownScenarioError as exc:
         err.write(f"ERROR: {exc}\n")
         return 2
 
-    if model is not None:
+    if model is None:
+        at = now if now is not None else datetime.now(UTC)
+        live = _ledger_model(parsed, at, tz, err)
+        if isinstance(live, int):
+            return live
+        model = live
+    try:
         ctx = RenderContext.for_model(
             model, surface=Surface.OPERATOR_CLI, tz=tz, width=console.width
         )
         days = model.activity(include_quiet=parsed.all)
-    else:
-        at = now if now is not None else datetime.now(UTC)
-        ledger_days = _ledger_days(parsed, at, tz, err)
-        if isinstance(ledger_days, int):
-            return ledger_days
-        days = ledger_days
-        ctx = RenderContext(surface=Surface.OPERATOR_CLI, now=at, tz=tz, width=console.width)
+    except LedgerError as exc:
+        err.write(f"ERROR: could not read the ledger: {exc}\n")
+        return 3
 
     if parsed.json:
         stream.write(json.dumps(activity_to_json(days, ctx), indent=2) + "\n")
@@ -123,17 +127,14 @@ def _parse(
     return parsed
 
 
-def _ledger_days(
+def _ledger_model(
     parsed: argparse.Namespace, at: datetime, tz: tzinfo, err: TextIO
-) -> tuple[ActivityDay, ...] | int:
-    """Read the ledger feed, or return exit code 3 when it is missing or unreadable."""
+) -> ConsoleReadModel | int:
+    """Open the ledger read model, or return exit code 3 when there is no ledger."""
     try:
-        with LedgerActivityReader.open(parsed.db) as reader:
-            items = reader.items_since(at - timedelta(days=parsed.days))
+        return LedgerReadModel.open(
+            parsed.db, clock=lambda: at, tz=tz, activity_window=timedelta(days=parsed.days)
+        )
     except FileNotFoundError:
         err.write(f"ERROR: no ledger at {parsed.db}.\n")
         return 3
-    except LedgerError as exc:
-        err.write(f"ERROR: could not read the ledger: {exc}\n")
-        return 3
-    return group_activity(items, tz, include_quiet=parsed.all)

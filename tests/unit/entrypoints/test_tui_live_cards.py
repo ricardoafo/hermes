@@ -1,0 +1,115 @@
+"""The live home screen draws card by card (#546, change live-home-screen D-6).
+
+Invariants:
+
+- a view the read model cannot serve yet turns only its own card into a plain
+  "not available yet" line; every other card still shows its content;
+- a ledger read failure in one card names the failure in that card and does
+  not stop the app;
+- a failing heartbeat leaves the rest of the screen drawn.
+"""
+
+from __future__ import annotations
+
+import asyncio
+
+from hermes.adapters.console import FixtureReadModel
+from hermes.application.console import (
+    ActivityDay,
+    ConsoleReadModel,
+    Heartbeat,
+    PortfolioRange,
+    PortfolioSummary,
+    PositionDetail,
+    PositionRow,
+    ShadowTest,
+    ViewNotAvailableError,
+)
+from hermes.domain.errors import LedgerError
+from hermes.entrypoints.tui import HomeApp
+
+_CARDS = ("heartbeat", "portfolio", "positions", "activity", "shadow")
+
+
+class _Failing:
+    """A demo scenario whose portfolio, shadow test or heartbeat raise a given error."""
+
+    def __init__(self, **errors: Exception) -> None:
+        self._base = FixtureReadModel.load("ok-two-positions")
+        self._errors = errors
+
+    def _raise(self, view: str) -> None:
+        error = self._errors.get(view)
+        if error is not None:
+            raise error
+
+    @property
+    def demo_scenario(self) -> str | None:
+        return None
+
+    def heartbeat(self) -> Heartbeat:
+        self._raise("heartbeat")
+        return self._base.heartbeat()
+
+    def portfolio(self, range_: PortfolioRange = PortfolioRange.TODAY) -> PortfolioSummary:
+        self._raise("portfolio")
+        return self._base.portfolio(range_)
+
+    def positions(self) -> tuple[PositionRow, ...]:
+        return self._base.positions()
+
+    def position(self, coin: str) -> PositionDetail | None:
+        return self._base.position(coin)
+
+    def activity(self, *, include_quiet: bool = False) -> tuple[ActivityDay, ...]:
+        return self._base.activity(include_quiet=include_quiet)
+
+    def shadow_test(self) -> ShadowTest:
+        self._raise("shadow")
+        return self._base.shadow_test()
+
+
+def _model(**errors: Exception) -> ConsoleReadModel:
+    return _Failing(**errors)
+
+
+def _texts(model: ConsoleReadModel) -> dict[str, str]:
+    async def drive() -> dict[str, str]:
+        app = HomeApp(model)
+        async with app.run_test(size=(80, 30)) as pilot:
+            await pilot.pause()
+            return {card: app.plain_text(card).strip() for card in _CARDS}
+
+    return asyncio.run(drive())
+
+
+def _first_line(text: str) -> str:
+    return text.splitlines()[0] if text else ""
+
+
+def test_unavailable_portfolio_is_one_line_and_the_rest_stands() -> None:
+    """The portfolio card says "not available yet"; positions and shadow still render (A-4.2)."""
+    texts = _texts(_model(portfolio=ViewNotAvailableError("no mark yet")))
+    assert (
+        texts["portfolio"],
+        "ETH" in texts["positions"],
+        _first_line(texts["shadow"]).startswith("Shadow test"),
+    ) == ("Portfolio · not available yet", True, True)
+
+
+def test_ledger_failure_is_named_in_its_card() -> None:
+    """A failed read shows in the shadow card only; the portfolio still has its total."""
+    texts = _texts(_model(shadow=LedgerError(msg="database is locked")))
+    assert (texts["shadow"], "€" in texts["portfolio"]) == (
+        "Shadow test · could not read the ledger: database is locked",
+        True,
+    )
+
+
+def test_failing_heartbeat_keeps_the_screen() -> None:
+    """A heartbeat that cannot be read is one line; the positions are still listed."""
+    texts = _texts(_model(heartbeat=LedgerError(msg="disk I/O error")))
+    assert (texts["heartbeat"], "ETH" in texts["positions"]) == (
+        "Heartbeat · could not read the ledger: disk I/O error",
+        True,
+    )

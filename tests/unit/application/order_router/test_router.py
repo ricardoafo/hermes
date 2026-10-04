@@ -13,12 +13,16 @@ Tests cover:
 
 from __future__ import annotations
 
+from collections.abc import MutableMapping
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
 import pytest
+import structlog
+from hypothesis import given
+from hypothesis import strategies as st
 
 from hermes.application.order_router.risk_engine import RiskEngine
 from hermes.application.order_router.router import (
@@ -633,3 +637,69 @@ class TestOrderRouterStrategyAttribution:
         assert isinstance(result, Fill)
         assert [o.strategy_id for o in seen] == [inp.strategy_id]
         assert result.strategy_id == inp.strategy_id
+
+
+# ---------------------------------------------------------------------------
+# Risk-overlay log lines stay value-free (#513)
+# ---------------------------------------------------------------------------
+
+_DRAWDOWN_HALT = "RO-08: portfolio drawdown HALT — drawdown=17.2500% >= threshold=15.0000%"
+
+
+def _route_with_rules(
+    rules: list[RiskOverlayPort],
+) -> tuple[Fill | RiskRejected | KillCircuitBreaker, list[MutableMapping[str, object]]]:
+    order = Order(
+        side=OrderSide.BUY,
+        pair=_BTC_USDT,
+        qty=Quantity(amount=Decimal("0.001"), asset=Currency.BTC),
+        strategy_id=_STRATEGY_ID,
+    )
+    router, inp = _make_routing_input(
+        fill_model=_FixedFillModel(result=_make_fill(order)),
+        risk_rules=rules,
+    )
+    with structlog.testing.capture_logs() as logs:
+        result = router.route(inp)
+    overlay = [entry for entry in logs if str(entry["event"]).startswith("risk_overlay_")]
+    return result, overlay
+
+
+class TestRiskOverlayLogsAreValueFree:
+    """Risk-overlay log lines carry the rule id and a fixed reason, never a figure."""
+
+    def test_drawdown_halt_logs_the_rule_and_a_fixed_reason(self) -> None:
+        """An RO-08 halt logs rule=RO-08 reason=drawdown_limit and no drawdown figure."""
+        _, overlay = _route_with_rules([_FixedRule(RiskAction.HALT, _DRAWDOWN_HALT)])
+        halt = next(entry for entry in overlay if entry["event"] == "risk_overlay_halt")
+        assert (halt["rule"], halt["reason"], halt["log_level"]) == (
+            "RO-08",
+            "drawdown_limit",
+            "warning",
+        )
+
+    def test_drawdown_figure_stays_on_the_rejection_for_operators(self) -> None:
+        """The RiskRejected result keeps the full reason, figure included."""
+        result, _ = _route_with_rules([_FixedRule(RiskAction.HALT, _DRAWDOWN_HALT)])
+        assert isinstance(result, RiskRejected)
+        assert result.reason == _DRAWDOWN_HALT
+
+    def test_reason_without_a_known_rule_is_unclassified(self) -> None:
+        """A reason that names no RO rule logs rule=unknown reason=unclassified."""
+        _, overlay = _route_with_rules([_FixedRule(RiskAction.HALT, "halt at 12.5% equity")])
+        halt = next(entry for entry in overlay if entry["event"] == "risk_overlay_halt")
+        assert (halt["rule"], halt["reason"]) == ("unknown", "unclassified")
+
+    @given(
+        rule=st.sampled_from([f"RO-0{n}" for n in range(1, 9)]),
+        action=st.sampled_from(list(RiskAction)),
+        figure=st.decimals(min_value=0, max_value=1_000_000, places=4),
+    )
+    def test_no_overlay_line_carries_a_figure(
+        self, rule: str, action: RiskAction, figure: Decimal
+    ) -> None:
+        """Whatever figure a rule quotes, no overlay line holds a digit beyond the rule id."""
+        reason = f"{rule}: value={figure}% equity={figure} pnl={figure}"
+        _, overlay = _route_with_rules([_FixedRule(action, reason)])
+        values = [str(value) for entry in overlay for key, value in entry.items() if key != "rule"]
+        assert (bool(overlay), [v for v in values if any(c.isdigit() for c in v)]) == (True, [])
