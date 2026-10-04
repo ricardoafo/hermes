@@ -685,7 +685,54 @@ function handMergeComment(input) {
   };
 }
 
+/**
+ * REST path of a branch ref, each segment encoded on its own.
+ *
+ * Octokit encodes a `ref` parameter as ONE path segment, so
+ * `heads/feat/x` went out as `heads%2Ffeat%2Fx` and GitHub answered
+ * 422 (after #477, the branch stayed; #490). Slashes in a branch name are
+ * path separators here and must reach GitHub as `/`.
+ *
+ * @param {'ref'|'refs'} kind - `ref` to read one ref, `refs` to delete it
+ * @param {string} branch - e.g. `feat/148-binance-testnet-spot`
+ * @returns {string} e.g. `git/refs/heads/feat/148-binance-testnet-spot`
+ */
+function branchRefPath(kind, branch) {
+  const encoded = branch.split('/').map(encodeURIComponent).join('/');
+  return `git/${kind}/heads/${encoded}`;
+}
+
+/**
+ * What a branch delete attempt amounted to.
+ *
+ * 404 and 422 mean "no such ref" for a delete, which is what we want
+ * when `delete_branch_on_merge` got there first. They count as gone
+ * only once a read of the ref confirms it is absent: a 422 from a
+ * malformed path also looks like "no such ref", and that is the bug
+ * that left merged branches behind.
+ *
+ * @param {{ deleteStatus: number|undefined, refStillExists: boolean|undefined }} input
+ *   `refStillExists` is undefined when it was not (or could not be) checked.
+ * @returns {{ outcome: 'deleted'|'already-gone'|'failed', reason: string }}
+ */
+function classifyBranchDelete(input) {
+  const { deleteStatus, refStillExists } = input;
+  if (deleteStatus === 204) {
+    return { outcome: 'deleted', reason: 'deleted' };
+  }
+  if ((deleteStatus === 404 || deleteStatus === 422) && refStillExists === false) {
+    return { outcome: 'already-gone', reason: `already deleted (${deleteStatus})` };
+  }
+  if (refStillExists === true) {
+    return { outcome: 'failed', reason: `delete refused (${deleteStatus ?? '?'}) and the branch still exists` };
+  }
+  const unchecked = refStillExists === undefined ? ' and the branch could not be checked' : '';
+  return { outcome: 'failed', reason: `delete refused (${deleteStatus ?? '?'})${unchecked}` };
+}
+
 module.exports = {
+  branchRefPath,
+  classifyBranchDelete,
   MERGEABLE_STATES,
   BATCH_CONFLICT_REASON,
   isApproved,
