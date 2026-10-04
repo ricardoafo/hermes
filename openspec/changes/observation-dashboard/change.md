@@ -35,7 +35,8 @@ and without money and require identical output.
   verdict and the gate constants (pure).
 - `application/console/observation_render.py`: the Rich panel.
 - `application/console/weekly_report.py`: the blind weekly text.
-- `observation_to_json` in `application/console/serialize.py`.
+- `observation_to_json` beside the renderer in `observation_render.py`
+  (`serialize.py` holds the positions JSON only).
 - An `observation` object in all six fixture scenarios.
 - `hermes observe [--json] [--utc] [--weekly]` as a console panel module
   (`wants_demo=True`).
@@ -165,9 +166,9 @@ src/hermes/application/console/
   views.py                + KillCriterion, KillState, KillTrigger,
                           ObservationStats, ObservationMoney, ObservationWindow
   read_model.py           + observation() -> ObservationWindow
-  observation_render.py   render_observation(window, ctx) -> Group
+  observation_render.py   render_observation(window, ctx) -> Group,
+                          observation_to_json(window, ctx)
   weekly_report.py        weekly_report(window, *, demo_scenario, tz) -> str
-  serialize.py            + observation_to_json(window, ctx)
   render.py               + framed(ctx, parts) (public alias of _framed)
 src/hermes/adapters/console/fixture_read_model.py  + _observation parser
 src/hermes/adapters/console/scenarios/*.json       + "observation"

@@ -457,6 +457,9 @@ hermes_run logs -f                 # follow, Ctrl-C to stop
 - `hermes positions`: open shadow positions.
 - `hermes activity`: what changed, grouped by day; `--all` adds bar checks
   and signals.
+- `hermes observe`: the 90-day shadow observation window: day N of 90, fill
+  drift against the 30 bps gate, slippage, decision latency, data gaps,
+  uptime and the kill triggers. `--weekly` prints the blind weekly report.
 - `hermes logs`: the journal, one readable line per entry, times in Madrid
   (`--utc` for UTC). `--json` prints the same entries as data.
 
