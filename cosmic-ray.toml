@@ -15,10 +15,9 @@
 ##     3.14-native), installs cleanly from PyPI wheels.
 ##
 ## Cadence (see `.github/workflows/scheduled.yml`, Sunday leg):
-##   - Weekly cron (Sundays 03:00 UTC).
-##   - Advisory for 2 weeks (2026-08-22 → 2026-09-05): kill-rate
-##     reported but never fails the workflow.
-##   - Blocking at ≥80% kill-rate after the soak window.
+##   - Weekly cron (Sundays 11:45 UTC), or manual dispatch.
+##   - Advisory: the kill rate is reported but never fails the run.
+##     #406 widens the scope and turns the 80% floor into a block.
 ##
 ## Local invocation:
 ##   uv run cosmic-ray init cosmic-ray.toml session.sqlite

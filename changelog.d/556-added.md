@@ -1,0 +1,1 @@
+- **`hermes migrate --dry-run`** (`migration_runner.dry_run`): applies every pending migration, destructive ones included, to a temporary copy of the ledger and reports what ran, the copy's integrity check and each table's row count before and after; the real ledger is only read. Closes #556.

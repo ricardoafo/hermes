@@ -34,8 +34,6 @@
 
 set -uo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-
 usage() {
     sed -n '2,32p' "$0" | sed 's/^# \?//'
 }
