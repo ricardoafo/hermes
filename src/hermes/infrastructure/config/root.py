@@ -33,7 +33,7 @@ from hermes.infrastructure.config.models import (
 __all__ = ["HermesConfig"]
 
 
-EnvName = Literal["dev", "sandbox", "prod"]
+EnvName = Literal["dev", "sandbox", "staging", "prod"]
 
 
 class HermesConfig(BaseModel):
@@ -43,7 +43,8 @@ class HermesConfig(BaseModel):
         env: Runtime environment tier. Controls which adapters may be wired
             (dev + sandbox reject anything that touches mainnet money;
             ``prod`` is the only tier where ``allow_mainnet=True`` is
-            permitted). Sourced from ``HERMES_ENV``.
+            permitted; ``staging`` is the isolated pre-prod copy on the
+            prod box and stays off mainnet too). Sourced from ``HERMES_ENV``.
         allow_mainnet: Belt-and-suspenders kill switch for real-capital
             paths. Even in ``prod`` this must be flipped explicitly before
             any adapter that touches mainnet exchange endpoints is allowed

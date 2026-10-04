@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import pytest
 import structlog
 from structlog.contextvars import (
     clear_contextvars,
@@ -75,3 +76,25 @@ def test_configure_logging_is_idempotent() -> None:
     # If we got here without exceptions, idempotency holds.
     log = structlog.get_logger("hermes.tests.idempotent")
     log.info("post.reconfigure")
+
+
+@pytest.mark.parametrize(
+    ("env", "renderer"),
+    [
+        ("prod", structlog.processors.JSONRenderer),
+        ("staging", structlog.processors.JSONRenderer),
+        ("dev", structlog.dev.ConsoleRenderer),
+        ("sandbox", structlog.dev.ConsoleRenderer),
+    ],
+)
+def test_configure_logging_renders_json_only_for_the_journald_tiers(
+    env: str, renderer: type[object]
+) -> None:
+    """Prod and staging log JSON for journald (#192); local tiers keep the console renderer."""
+    configure_logging(env=env)
+    try:
+        last = structlog.get_config()["processors"][-1]
+    finally:
+        structlog.reset_defaults()
+
+    assert isinstance(last, renderer)
