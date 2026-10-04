@@ -19,7 +19,7 @@ shadow figures say no real tax is due.
 `<out>/<year>/`:
 
 | File | Content |
-|---|---|
+| --- | --- |
 | `README.md` | status, headline figures, readiness checklist, changes in the last refresh |
 | `report.md` | the Modelo 100 and 721 figures per form field, with every sale (`hermes tax-filing`) |
 | `modelo100-summary.csv`, `modelo100-sales.csv`, `modelo721.csv` | the same figures as CSV |

@@ -171,7 +171,7 @@ flowchart LR
 Files in `<out>/<year>/`:
 
 | File | Content |
-|---|---|
+| --- | --- |
 | `README.md` | status, headline figures, checklist, latest changes, file index |
 | `report.md` + 3 CSV | the #504 report, unchanged |
 | `trail.csv` | sale, lot, quantities, EUR values, ECB rates, gain |
