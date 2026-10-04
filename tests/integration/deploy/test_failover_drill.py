@@ -15,6 +15,7 @@ Reference: openspec/changes/31-failover-drill/change.md (Test plan).
 from __future__ import annotations
 
 import json
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -90,11 +91,7 @@ def _positions(path: Path, rows: list[dict[str, str]]) -> Path:
 
 
 def _ledger(path: Path) -> Path:
-    # S603: fixed argv, the test's own interpreter.
-    subprocess.run(  # noqa: S603
-        [sys.executable, "-c", "import sqlite3,sys; sqlite3.connect(sys.argv[1]).close()", path],
-        check=True,
-    )
+    sqlite3.connect(path).close()
     return path
 
 
