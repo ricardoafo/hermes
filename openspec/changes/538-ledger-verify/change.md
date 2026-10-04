@@ -43,10 +43,11 @@ does not consume an AUTOINCREMENT id, so it is not a false positive. Gaps are
 reported as runs (`7-9`). No `occurred_at` or `correlation_id` ordering is
 checked: those are not sequences.
 
-### D-2: schema level is the number of the latest applied migration
+### D-2: schema level is the version prefix of the latest applied migration
 
-The level is the `NNNN` prefix of the highest applied migration file, 0 when none
-is applied. It reuses `pending_migrations` from the migration runner (the same
+The level is the version prefix of the highest applied migration file, kept as
+text because migration names moved from `NNNN` to timestamps such as
+`20261004T0300`; it is `0` when none is applied. It reuses `pending_migrations` from the migration runner (the same
 source as `hermes migrate --status`). That function creates its bookkeeping table
 if absent, which a read-only connection cannot do, so when `schema_migrations`
 does not exist every migration is treated as pending without calling it.

@@ -23,7 +23,7 @@ from hermes.entrypoints import cli
 from hermes.entrypoints import ledger as module
 from hermes.entrypoints.commands import discover
 
-_LATEST = int(sorted(MIGRATIONS_DIR.glob("*.sql"))[-1].name.split("_", 1)[0])
+_LATEST = sorted(MIGRATIONS_DIR.glob("*.sql"))[-1].name.split("_", 1)[0]
 
 
 @pytest.fixture

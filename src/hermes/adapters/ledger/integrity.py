@@ -43,7 +43,8 @@ class LedgerReport:
 
     Attributes:
         integrity: Rows of ``PRAGMA integrity_check`` (``("ok",)`` when intact).
-        schema_level: Number of the latest applied migration (0 when none).
+        schema_level: Version prefix of the latest applied migration, such as
+            ``0005`` or ``20261004T0300`` (``0`` when none is applied).
         pending: Names of migrations not yet applied.
         event_count: Rows in the ``events`` table (0 when the table is absent).
         gaps: Runs of missing event ids.
@@ -51,7 +52,7 @@ class LedgerReport:
     """
 
     integrity: tuple[str, ...]
-    schema_level: int
+    schema_level: str
     pending: tuple[str, ...]
     event_count: int
     gaps: tuple[IdGap, ...]
@@ -112,7 +113,7 @@ def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
     return row.fetchone() is not None
 
 
-def _schema(conn: sqlite3.Connection) -> tuple[int, tuple[str, ...]]:
+def _schema(conn: sqlite3.Connection) -> tuple[str, tuple[str, ...]]:
     if _table_exists(conn, "schema_migrations"):
         pending = tuple(path.name for path in pending_migrations(conn))
     else:
@@ -120,7 +121,7 @@ def _schema(conn: sqlite3.Connection) -> tuple[int, tuple[str, ...]]:
     applied = [
         path.name for path in sorted(MIGRATIONS_DIR.glob("*.sql")) if path.name not in pending
     ]
-    level = int(applied[-1].split("_", 1)[0]) if applied else 0
+    level = applied[-1].split("_", 1)[0] if applied else "0"
     return level, pending
 
 

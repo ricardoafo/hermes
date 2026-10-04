@@ -29,7 +29,8 @@ from hermes.adapters.ledger.integrity import (
 )
 from hermes.adapters.ledger.migration_runner import MIGRATIONS_DIR, apply_migrations
 
-_LATEST = int(sorted(MIGRATIONS_DIR.glob("*.sql"))[-1].name.split("_", 1)[0])
+_MIGRATIONS = sorted(MIGRATIONS_DIR.glob("*.sql"))
+_LATEST = _MIGRATIONS[-1].name.split("_", 1)[0]
 
 
 def _insert_events(conn: sqlite3.Connection, count: int) -> None:
@@ -110,16 +111,16 @@ def test_deleted_first_event_is_a_leading_gap(ledger: Path) -> None:
 def test_unapplied_migration_is_a_finding(ledger: Path) -> None:
     """A migration missing from schema_migrations lowers the level and is reported."""
     conn = sqlite3.connect(ledger)
-    conn.execute("DELETE FROM schema_migrations WHERE filename LIKE '0005%'")
+    conn.execute("DELETE FROM schema_migrations WHERE filename = ?", (_pending_name(),))
     conn.commit()
     conn.close()
     report = _check(ledger)
-    assert report.schema_level == _LATEST - 1
+    assert report.schema_level == _MIGRATIONS[-2].name.split("_", 1)[0]
     assert report.findings == (f"pending migrations: {_pending_name()}",)
 
 
 def _pending_name() -> str:
-    return next(p.name for p in MIGRATIONS_DIR.glob("0005*.sql"))
+    return _MIGRATIONS[-1].name
 
 
 def test_unmigrated_database_reports_level_zero_without_writing(tmp_path: Path) -> None:
@@ -131,8 +132,8 @@ def test_unmigrated_database_reports_level_zero_without_writing(tmp_path: Path) 
     conn.close()
     before = db.read_bytes()
     report = _check(db)
-    assert report.schema_level == 0
-    assert len(report.pending) == _LATEST
+    assert report.schema_level == "0"
+    assert len(report.pending) == len(_MIGRATIONS)
     assert "events table is missing" in report.findings
     assert db.read_bytes() == before
 
