@@ -222,20 +222,19 @@ jobs:
 
       - name: Markdown lint
         if: ${{ !cancelled() && steps.mdl-install.outcome == 'success' }}
-        run: markdownlint-cli2 "**/*.md" "#node_modules" "#.venv"
+        run: bash scripts/dev/ci-checks.sh markdown
 
       # The index is rebuilt on main after merge and never committed by a
-      # PR, so this only proves it still builds. pr-preflight.sh runs the
-      # same command.
+      # PR, so this only proves it still builds.
       - name: Verify guides index builds
         if: ${{ !cancelled() && steps.changeset.outputs.docs == 'true' }}
-        run: bash scripts/dev/regenerate-guides-index.sh --check
+        run: bash scripts/dev/ci-checks.sh guides-index
 
       # A broken CODEOWNERS silently disables code-owner review
       # enforcement — GitHub skips the check instead of failing it.
       - name: CODEOWNERS syntax
         if: ${{ !cancelled() }}
-        run: bash scripts/dev/codeowners-syntax-check.sh
+        run: bash scripts/dev/ci-checks.sh codeowners
 
       - name: Install gitleaks (if not already pre-baked)
         timeout-minutes: 3
@@ -267,12 +266,12 @@ jobs:
       - name: Merge-decisions tests
         if: ${{ !cancelled() }}
         timeout-minutes: 2
-        run: node --test tools/merge/*.test.cjs
+        run: bash scripts/dev/ci-checks.sh merge-decisions
 
       # Python 3.14 has tomllib in stdlib — no uv setup needed.
       - name: Lockfile hash integrity
         if: ${{ !cancelled() && steps.changeset.outputs.code == 'true' }}
-        run: python3 scripts/dev/reproducibility-check.py
+        run: bash scripts/dev/ci-checks.sh lockfile
 
       # A PR that removes a test must opt in with a `SEV-1:` header.
       - name: Test-deletion guard
@@ -323,65 +322,57 @@ jobs:
         timeout-minutes: 5
         run: uv sync --frozen
 
-      # Quality gates. See docs/decisions/2026-08-22-drop-safety.md re: no safety.
+      # Quality gates. Every command lives in scripts/dev/ci-checks.sh, which
+      # pr-preflight.sh also runs, so local and CI checks cannot drift.
+      # See docs/decisions/2026-08-22-drop-safety.md re: no safety.
       - name: format
         if: ${{ !cancelled() && steps.sync.outcome == 'success' }}
-        run: uv run ruff format --check .
+        run: bash scripts/dev/ci-checks.sh format
 
       - name: lint
         if: ${{ !cancelled() && steps.sync.outcome == 'success' }}
-        run: uv run ruff check .
+        run: bash scripts/dev/ci-checks.sh lint
 
       - name: types
         if: ${{ !cancelled() && steps.sync.outcome == 'success' }}
-        run: uv run mypy --strict src/hermes
+        run: bash scripts/dev/ci-checks.sh types
 
       - name: imports
         if: ${{ !cancelled() && steps.sync.outcome == 'success' }}
-        run: uv run lint-imports
+        run: bash scripts/dev/ci-checks.sh imports
 
-      # `--skip-editable` skips our own local hermes package (not on PyPI).
-      # `--strict` dropped because it upgrades the skip warning to an error.
       - name: deps
         if: ${{ !cancelled() && steps.sync.outcome == 'success' }}
-        run: uv run pip-audit --skip-editable
+        run: bash scripts/dev/ci-checks.sh deps
 
       - name: complexity
         if: ${{ !cancelled() && steps.sync.outcome == 'success' }}
-        run: uv run radon cc --min B src/
+        run: bash scripts/dev/ci-checks.sh complexity
 
       - name: deadcode
         if: ${{ !cancelled() && steps.sync.outcome == 'success' }}
-        run: uv run vulture src/
+        run: bash scripts/dev/ci-checks.sh deadcode
 
       # Blocks GPL/AGPL/LGPL, which create commercial-use constraints.
       # See scripts/dev/license-check.py header for allowlist rationale.
       - name: License compliance
         if: ${{ !cancelled() && steps.sync.outcome == 'success' }}
-        run: |
-          uv tool install pip-licenses==5.5.5
-          uv tool run pip-licenses --format=json \
-            | python3 scripts/dev/license-check.py
+        run: bash scripts/dev/ci-checks.sh licenses
 
-      # -n 4, not auto: auto counts the host's CPUs, not the container's
-      # 4, and 10+ workers overrun the runner's 4 GB limit (#397).
       - name: Unit tests + coverage
         id: unit
         if: ${{ !cancelled() && steps.sync.outcome == 'success' }}
-        run: uv run pytest tests/unit/ -n 4 --cov=src/hermes --cov-branch --cov-report=xml --cov-report=json --cov-report=term
+        run: bash scripts/dev/ci-checks.sh unit
 
       # Integration tier: ~150 tests, seconds under xdist. Real adapters
       # against local fakes; no network, no secrets.
       - name: Integration tests
         if: ${{ !cancelled() && steps.sync.outcome == 'success' }}
-        run: uv run pytest tests/integration/ -n 4
+        run: bash scripts/dev/ci-checks.sh integration
 
-      # --bootstrap: skip EMPTY-package FAILs while Phase 0 skeleton is not yet
-      # populated. Drop the flag when Phase 1 lands code in application/,
-      # adapters/*, entrypoints/. Tracked in #71 (Phase 0 meta backlog).
       - name: Coverage floor
         if: ${{ !cancelled() && steps.unit.outcome == 'success' }}
-        run: uv run python scripts/dev/coverage-check.py --bootstrap
+        run: bash scripts/dev/ci-checks.sh coverage-floor
 
   # Add-to-project step deliberately removed.
   #
