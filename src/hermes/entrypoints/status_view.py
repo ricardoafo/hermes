@@ -32,6 +32,7 @@ from hermes.application.status import (
     UnitState,
     VerdictLevel,
 )
+from hermes.entrypoints.version import ReleaseInfo
 
 __all__ = ["render_status", "report_to_dict"]
 
@@ -49,7 +50,11 @@ _DASH: Final = "-"
 
 
 def render_status(
-    report: StatusReport, console: Console, *, bot: UnitState = UnitState.UNKNOWN
+    report: StatusReport,
+    console: Console,
+    *,
+    bot: UnitState = UnitState.UNKNOWN,
+    release: ReleaseInfo | None = None,
 ) -> None:
     """Print the human view of ``report`` to ``console``.
 
@@ -57,8 +62,12 @@ def render_status(
         report: The report to show.
         console: Where to print. Its colour and terminal settings decide
             whether the verdict is a panel or plain lines.
+        bot: State of the bot unit.
+        release: The running release; no release line when ``None``.
     """
     console.print(_header(report, bot))
+    if release is not None:
+        console.print(_release_line(release))
     console.print()
     verdict = _verdict(report)
     if console.is_terminal:
@@ -88,16 +97,23 @@ def render_status(
         )
 
 
-def report_to_dict(report: StatusReport, *, bot: UnitState = UnitState.UNKNOWN) -> dict[str, Any]:
+def report_to_dict(
+    report: StatusReport,
+    *,
+    bot: UnitState = UnitState.UNKNOWN,
+    release: ReleaseInfo | None = None,
+) -> dict[str, Any]:
     """Return ``report`` as JSON-ready data with the same facts as the human view.
 
     Args:
         report: The report to convert.
+        bot: State of the bot unit.
+        release: The running release; omitted from the data when ``None``.
 
     Returns:
         A dict of strings, ints and lists; datetimes as ISO-8601 UTC.
     """
-    return {
+    payload: dict[str, Any] = {
         "generated_at": report.generated_at.isoformat(),
         "unit": report.unit.value,
         "bot": _bot_label(bot),
@@ -130,6 +146,10 @@ def report_to_dict(report: StatusReport, *, bot: UnitState = UnitState.UNKNOWN) 
             for e in report.open_entries
         ],
     }
+    if release is not None:
+        payload["release"] = release.name
+        payload["live_since"] = _iso(release.live_since)
+    return payload
 
 
 def _header(report: StatusReport, bot: UnitState) -> Text:
@@ -140,6 +160,14 @@ def _header(report: StatusReport, bot: UnitState) -> Text:
         ("hermes status", "bold"),
         f"   {_utc(at)} UTC ({_madrid(at)} Madrid)   unit: {report.unit.value}{bot_part}",
     )
+
+
+def _release_line(release: ReleaseInfo) -> str:
+    """Return the release line: the name, and when it went live in Madrid time."""
+    if release.live_since is None:
+        return f"release: {release.name}"
+    live = release.live_since.astimezone(MADRID).strftime("%Y-%m-%d %H:%M")
+    return f"release: {release.name}   live since {live} Madrid"
 
 
 def _bot_label(bot: UnitState) -> str:

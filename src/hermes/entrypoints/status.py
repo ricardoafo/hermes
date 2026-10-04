@@ -11,6 +11,9 @@ Usage: ``hermes status [--config-dir DIR] [--db PATH] [--json | --summary]``
 ``--journal FILE`` (``-`` for stdin) it adds the window's journal error and
 warning counts, and ``--restarts N`` the systemd restart count.
 
+The header block also shows the running release (the ``/opt/hermes/current``
+target name) and when it went live; ``release: unknown`` without the link.
+
 Exit codes: 0 all good, 1 late or down, 2 usage, 3 config error or no ledger.
 
 Reference: openspec/changes/370-hermes-status/change.md.
@@ -47,6 +50,7 @@ from hermes.entrypoints import console as console_module
 from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.daily_line import JournalCounts, count_journal, daily_line
 from hermes.entrypoints.status_view import render_status, report_to_dict
+from hermes.entrypoints.version import DEFAULT_RELEASE_LINK, ReleaseInfo, read_release
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.loader import load_config
 
@@ -75,6 +79,7 @@ def main(
     env: Mapping[str, str] | None = None,
     bot_state: Callable[[], UnitState] | None = None,
     err: TextIO | None = None,
+    release_link: Path = DEFAULT_RELEASE_LINK,
 ) -> int:
     """Handle ``hermes status``.
 
@@ -92,6 +97,7 @@ def main(
         env: Environment snapshot for ``HERMES_CONSOLE_DEMO``; defaults to empty.
         bot_state: Probe for ``hermes-bot.service``; defaults to systemd.
         err: Stream for ERROR lines; defaults to ``sys.stderr``.
+        release_link: The ``current`` symlink the release is read from.
 
     Returns:
         Process exit code.
@@ -126,6 +132,7 @@ def main(
         unit_state=unit_state,
         stdin=stdin or sys.stdin,
         bot_state=bot_state,
+        release=read_release(release_link),
     )
 
 
@@ -138,6 +145,7 @@ def _ledger_status(
     unit_state: Callable[[], UnitState] | None,
     stdin: TextIO,
     bot_state: Callable[[], UnitState] | None,
+    release: ReleaseInfo,
 ) -> int:
     """Build the report from config, the ledger and systemd, then print it."""
     try:
@@ -174,7 +182,7 @@ def _ledger_status(
         counts = _journal_counts(parsed.journal, stdin)
         stream.write(daily_line(report, counts, parsed.restarts) + "\n")
     else:
-        _emit(report, stream, as_json=parsed.json, bot=bot)
+        _emit(report, stream, as_json=parsed.json, bot=bot, release=release)
     return code
 
 
@@ -277,11 +285,16 @@ def _demo_status(
 
 
 def _emit(
-    report: StatusReport, stream: TextIO, *, as_json: bool, bot: UnitState = UnitState.UNKNOWN
+    report: StatusReport,
+    stream: TextIO,
+    *,
+    as_json: bool,
+    bot: UnitState = UnitState.UNKNOWN,
+    release: ReleaseInfo | None = None,
 ) -> None:
     """Write ``report`` as JSON or as the Rich human view."""
     if as_json:
-        payload: dict[str, Any] = report_to_dict(report, bot=bot)
+        payload: dict[str, Any] = report_to_dict(report, bot=bot, release=release)
         stream.write(json.dumps(payload, indent=2) + "\n")
         return
-    render_status(report, Console(file=stream, highlight=False), bot=bot)
+    render_status(report, Console(file=stream, highlight=False), bot=bot, release=release)

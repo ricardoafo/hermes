@@ -21,6 +21,7 @@ import json
 import platform
 import sqlite3
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from importlib import metadata
 from pathlib import Path
 from typing import TextIO
@@ -29,7 +30,14 @@ from hermes.adapters.ledger.migration_runner import pending_migrations
 from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.serve import DEFAULT_DB_PATH
 
-__all__ = ["DEFAULT_RELEASE_LINK", "VersionInfo", "collect_info", "main"]
+__all__ = [
+    "DEFAULT_RELEASE_LINK",
+    "ReleaseInfo",
+    "VersionInfo",
+    "collect_info",
+    "main",
+    "read_release",
+]
 
 DEFAULT_RELEASE_LINK = Path("/opt/hermes/current")
 _UNKNOWN = "unknown"
@@ -69,11 +77,40 @@ def _package_version() -> str:
         return _UNKNOWN
 
 
-def _release(link: Path) -> str:
-    if not link.is_symlink():
-        return _UNKNOWN
-    target = link.resolve()
-    return target.name if target.exists() else _UNKNOWN
+@dataclass(frozen=True, slots=True)
+class ReleaseInfo:
+    """The running release as the ``current`` symlink shows it.
+
+    Attributes:
+        name: Name of the directory ``current`` points at, or ``unknown``.
+        live_since: When the link was last flipped (its own mtime, UTC), or
+            ``None`` when the release is unknown.
+    """
+
+    name: str
+    live_since: datetime | None
+
+
+def read_release(link: Path = DEFAULT_RELEASE_LINK) -> ReleaseInfo:
+    """Read the running release from the ``current`` symlink; never raises.
+
+    Args:
+        link: The ``current`` symlink; injectable for tests.
+
+    Returns:
+        The release name and when the link was flipped; ``unknown`` and no
+        time when the link is missing or dangling.
+    """
+    try:
+        if not link.is_symlink():
+            return ReleaseInfo(_UNKNOWN, None)
+        target = link.resolve()
+        if not target.exists():
+            return ReleaseInfo(_UNKNOWN, None)
+        flipped = datetime.fromtimestamp(link.lstat().st_mtime, tz=UTC)
+    except OSError:
+        return ReleaseInfo(_UNKNOWN, None)
+    return ReleaseInfo(target.name, flipped)
 
 
 def _ledger_level(db: Path) -> str:
@@ -107,7 +144,7 @@ def collect_info(*, db: Path, release_link: Path = DEFAULT_RELEASE_LINK) -> Vers
     """
     return VersionInfo(
         version=_package_version(),
-        release=_release(release_link),
+        release=read_release(release_link).name,
         python=platform.python_version(),
         ledger=_ledger_level(db),
     )
