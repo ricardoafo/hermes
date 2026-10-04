@@ -301,7 +301,7 @@ sudo systemctl restart hermes.service
 Verify:
 
 ```bash
-readlink /opt/hermes/current
+readlink /opt/hermes/current   # or: hermes version
 systemctl status hermes.service
 hermes_run logs --level warning --since 5m
 ```
