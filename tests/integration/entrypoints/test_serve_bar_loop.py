@@ -23,6 +23,7 @@ import asyncio
 import dataclasses
 import json
 import sqlite3
+from collections.abc import AsyncIterator, Mapping, Sequence
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -40,10 +41,13 @@ from hermes.application.notification_router import RouterConfig
 from hermes.application.signal_notifier import SignalNotifier
 from hermes.domain.errors import ExchangeError
 from hermes.domain.events.bar_processed import BarProcessed
+from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
+from hermes.domain.value_objects.pair import Pair
 from hermes.entrypoints import serve as serve_module
 from tests.support.serve_loop import (
     BTC,
+    FakeClock,
     FakeFeed,
     RecordingChannel,
     build,
@@ -494,14 +498,46 @@ def _stop_rows(db: Path) -> list[tuple[str, str, str, str, str, str | None, int 
         connection.close()
 
 
+class _SteppingFeed(FakeFeed):
+    """Feed whose clock reads one second after each bar it delivers, as a live feed does.
+
+    A fixed clock after the last bar makes every earlier book stale, so RO-04
+    refuses the entry and no position is ever held (#707).
+    """
+
+    def __init__(self, clock: FakeClock, warm: list[Bar], live_bars: list[Bar]) -> None:
+        """Script the feed and keep the clock it steps."""
+        super().__init__(warm=warm, live_bars=live_bars)
+        self.clock = clock
+
+    async def stream_closed_bars(
+        self,
+        pairs: Sequence[Pair],
+        intervals: Sequence[KlineInterval],
+        *,
+        resume_after: Mapping[tuple[Pair, KlineInterval], datetime] | None = None,
+    ) -> AsyncIterator[Bar]:
+        """Step the clock to each bar's delivery time, then yield it."""
+        stream = super().stream_closed_bars(pairs, intervals, resume_after=resume_after)
+        async for bar in stream:
+            self.clock.current = bar.close_time + timedelta(seconds=1)
+            yield bar
+
+
+def _stepping_run(db: Path, *, warm_upto: int, live_from: int, live_to: int) -> None:
+    """Run one boot whose bars each arrive one second after they close."""
+    clock = FakeClock(_after(warm_upto))
+    feed = _SteppingFeed(clock, history(warm_upto), live(live_from, live_to))
+    run_once(build(db, feed, clock.now(), clock=clock), feed)
+
+
 def test_every_held_bar_writes_one_stop_mark_from_entry_to_exit(tmp_path: Path) -> None:
     """#388: the entry bar, each held bar and the exit bar get one row; flat bars none.
 
     The entry row carries the stop the entry signal carries, with no move yet.
     """
     db = tmp_path / "ledger.sqlite3"
-    feed = FakeFeed(warm=history(10), live_bars=live(11, 14))
-    run_once(build(db, feed, _after(14)), feed)
+    _stepping_run(db, warm_upto=10, live_from=11, live_to=14)
 
     rows = _stop_rows(db)
     entry = json.loads(events(db, "SignalEmitted")[0]["payload_json"])
@@ -521,13 +557,14 @@ def test_restart_while_held_writes_the_same_stop_marks_as_an_unbroken_run(
     whether the stop moved.
     """
     unbroken = tmp_path / "unbroken.sqlite3"
-    feed = FakeFeed(warm=history(10), live_bars=live(11, 14))
-    run_once(build(unbroken, feed, _after(14)), feed)
+    _stepping_run(unbroken, warm_upto=10, live_from=11, live_to=14)
     restarted = tmp_path / "restarted.sqlite3"
-    boot1 = FakeFeed(warm=history(10), live_bars=live(11, 12))
-    run_once(build(restarted, boot1, _after(12)), boot1)
-    boot2 = FakeFeed(warm=history(12), live_bars=live(13, 14))
+    _stepping_run(restarted, warm_upto=10, live_from=11, live_to=12)
 
-    run_once(build(restarted, boot2, _after(14)), boot2)
+    _stepping_run(restarted, warm_upto=12, live_from=13, live_to=14)
 
-    assert _stop_rows(restarted) == _stop_rows(unbroken)
+    held = [h4_bar(i).close_time.isoformat() for i in (11, 12, 13, 14)]
+    assert ([r[1] for r in _stop_rows(restarted)], _stop_rows(restarted)) == (
+        held,
+        _stop_rows(unbroken),
+    )
