@@ -22,6 +22,10 @@ the top line. The main risk is the blinding of the shadow test. The market
 watch must never show how close a pair is to an entry, so it carries no price
 at all.
 
+## Scope note
+
+Issue #650 was narrowed on 2026-10-05 (comment on the issue): the market watch stays price-free under the blinding ruling, and the visual layout (full width, empty states, snapshot tests at 100 and 200 columns) moved to issue #711. This change delivers the remaining data part in full.
+
 ## Scope
 
 ### In
