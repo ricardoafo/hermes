@@ -1,0 +1,1 @@
+- `hermes serve` logs which of the three entry conditions (breakout, momentum, regime) held on each 4h check, as yes/no fields on `serve.bar.processed`. Record-only; no prices or indicator values.

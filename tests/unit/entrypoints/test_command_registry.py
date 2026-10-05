@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import inspect
 import io
+import sys
 import types
 from pathlib import Path
 
@@ -72,3 +74,37 @@ def test_name_must_match_module() -> None:
     command = Command("other", "x", lambda rest, *, stream: 0)
     with pytest.raises(CommandRegistryError, match="name the module after the command"):
         collect([("thing", _module(command))])
+
+
+def test_json_flag_matches_the_commands_that_parse_json() -> None:
+    """A command sets json=True exactly when its code accepts ``--json`` (#654).
+
+    The top-level help lists the ``--json`` commands from this flag, so a command
+    that gains ``--json`` without the flag (or keeps the flag after dropping it)
+    would make the help lie.
+    """
+    mismatched: list[str] = []
+    for name, command in discover().items():
+        module = sys.modules[command.run.__module__]
+        sources = [inspect.getsource(module)] + [
+            inspect.getsource(value)
+            for value in vars(module).values()
+            if isinstance(value, types.ModuleType)
+            and value.__name__.startswith("hermes.entrypoints.")
+            and not value.__name__.startswith("hermes.entrypoints.commands")
+        ]
+        parses_json = any('"--json"' in source for source in sources)
+        if parses_json != command.json:
+            mismatched.append(name)
+    assert mismatched == []
+
+
+def test_help_lists_every_json_command() -> None:
+    """``hermes --help`` names each command whose json flag is set."""
+    stream = io.StringIO()
+    cli_module.main(["--help"], stream=stream)
+    flat = " ".join(stream.getvalue().split())
+    names = sorted(name for name, command in discover().items() if command.json)
+    assert (
+        f"--json One JSON document on stdout. Commands that accept it: {', '.join(names)}" in flat
+    )

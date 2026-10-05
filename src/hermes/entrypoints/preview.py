@@ -585,6 +585,12 @@ def run_preview(
     stream.write("## Slack — Block Kit\n")
     stream.write(json.dumps(slack_message.blocks, indent=2, ensure_ascii=False))
     stream.write("\n\n")
+    if slack_message.plan is not None:
+        stream.write("## Slack — thread reply (plan)\n")
+        stream.write(f"{slack_message.plan.text}\n\n")
+        stream.write("## Slack — thread reply Block Kit\n")
+        stream.write(json.dumps(slack_message.plan.blocks, indent=2, ensure_ascii=False))
+        stream.write("\n\n")
     stream.write("## Slack — attachments\n")
     if slack_message.attachments:
         for attachment, path in zip(slack_message.attachments, attachments_written, strict=True):

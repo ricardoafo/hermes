@@ -6,8 +6,12 @@ against recorded responses in ``tests/integration/adapters/fx``.
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
-from datetime import date
+import sqlite3
+import threading
+import time
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -15,9 +19,17 @@ import pytest
 from structlog.testing import capture_logs
 
 from hermes.application.ledger.eur_pricer import EurPricer
+from hermes.application.ledger.trade_recorder import TradeRecorder
 from hermes.domain.errors import LedgerError
+from hermes.domain.fx.fx_rate import FxRate
+from hermes.domain.trading.fill import Fill
+from hermes.domain.trading.order import Order, OrderSide
+from hermes.domain.value_objects.currency import Currency
+from hermes.domain.value_objects.money import Money
+from hermes.domain.value_objects.quantity import Quantity
+from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.entrypoints import serve as serve_module
-from tests.support.serve_loop import BASE, FakeFeed, build, run_once
+from tests.support.serve_loop import BASE, BTC, FakeFeed, build, h4_bar, history, run_once
 from tests.unit.application.ledger.fake_fx import FakeFx
 
 _SEED_DAY = date(2024, 1, 1)
@@ -39,7 +51,11 @@ def test_serve_prices_the_pending_seed_at_boot_when_fx_works(tmp_path: Path) -> 
     assert _seed_row(composition)[0] == "pending"
 
     with capture_logs() as logs:
-        code = run_once(composition, FakeFeed())
+        code = run_once(
+            composition,
+            FakeFeed(),
+            until=lambda: any(e["event"] == "serve.eur_priced" for e in logs),
+        )
 
     priced = [entry for entry in logs if entry["event"] == "serve.eur_priced"]
     assert code == 0
@@ -59,7 +75,11 @@ def test_serve_keeps_running_and_leaves_the_seed_pending_when_fx_is_down(tmp_pat
     composition = build(db, FakeFeed(), BASE, fx=fx)
 
     with capture_logs() as logs:
-        code = run_once(composition, FakeFeed())
+        code = run_once(
+            composition,
+            FakeFeed(),
+            until=lambda: any(e["event"] == "serve.eur_priced" for e in logs),
+        )
 
     priced = [entry for entry in logs if entry["event"] == "serve.eur_priced"]
     assert code == 0
@@ -109,3 +129,166 @@ def test_boot_pricing_leaves_an_already_priced_seed_untouched(tmp_path: Path) ->
         (e["seeds_filled"], e["seeds_pending"]) for e in logs if e["event"] == "serve.eur_priced"
     ] == [(0, 0)]
     composition.sqlite_connection.close()
+
+
+class _ProbeFx(FakeFx):
+    """FakeFx that notes how many trades the ledger held at each worker-thread call.
+
+    The fill path prices on the loop thread; only boot pricing runs in a worker.
+    """
+
+    def __init__(self, db: Path, *, hang: threading.Event | None = None) -> None:
+        """Remember the ledger file to probe, and an optional gate to block calls on."""
+        super().__init__(down=True)
+        self.db = db
+        self.hang = hang
+        self.trades_seen: list[int] = []
+
+    def get_for_date(self, from_currency: Currency, to_currency: Currency, on: date) -> FxRate:
+        """Record the ledger's trade count, optionally block, then fail like an outage."""
+        if threading.current_thread() is not threading.main_thread():
+            self.trades_seen.append(_count(self.db, "SELECT COUNT(*) FROM trades"))
+            if self.hang is not None:
+                self.hang.wait(timeout=30)
+        return super().get_for_date(from_currency, to_currency, on)
+
+
+def _buy(at: datetime) -> Fill:
+    """Return a one-BTC BUY fill at ``at``."""
+    return Fill(
+        order=Order(
+            side=OrderSide.BUY,
+            pair=BTC,
+            qty=Quantity(amount=Decimal("1"), asset=Currency.BTC),
+            strategy_id=StrategyId("swing-donchian-4h"),
+        ),
+        executed_qty=Decimal("1"),
+        avg_price=Decimal("100"),
+        fee=Money(amount=Decimal("0.1"), currency=Currency.USDT),
+        timestamp=at,
+    )
+
+
+def _record_pending_buys(composition: serve_module.Composition, times: list[datetime]) -> None:
+    """Store one BUY per instant, all left EUR-pending because the pricer is down."""
+    recorder = TradeRecorder(composition.ledger, EurPricer(FakeFx(down=True)))
+    for index, at in enumerate(times):
+        recorder.record(_buy(at), correlation_id=f"pending-{index}")
+
+
+def _count(db: Path, query: str) -> int:
+    """Run a COUNT query on a fresh connection to the ledger file."""
+    probe = sqlite3.connect(db)
+    try:
+        return int(probe.execute(query).fetchone()[0])
+    finally:
+        probe.close()
+
+
+def _pending_trades(db: Path) -> int:
+    """Count trades still EUR-pending in the ledger file."""
+    return _count(db, "SELECT COUNT(*) FROM trades WHERE eur_status = 'pending'")
+
+
+def _priced(logs: list[dict[str, object]]) -> bool:
+    """Return whether the boot pricing has logged its outcome."""
+    return any(e["event"] == "serve.eur_priced" for e in logs)
+
+
+def test_boot_pricing_runs_after_catch_up_has_filled(tmp_path: Path) -> None:
+    """Invariant (#658): the first FX lookup happens after catch-up recorded its fill."""
+    db = tmp_path / "t.sqlite3"
+    first = FakeFeed(warm=history(10))
+    run_once(build(db, first, h4_bar(10).close_time + timedelta(seconds=1)), first)
+    fx = _ProbeFx(db)
+    feed = FakeFeed(warm=history(11))
+    started = h4_bar(11).close_time + timedelta(seconds=1)
+    composition = build(db, feed, started, fx=fx)
+
+    code = run_once(composition, feed, until=lambda: bool(fx.trades_seen))
+
+    assert (code, fx.trades_seen[:1]) == (0, [1])
+
+
+def test_boot_pricing_stops_at_the_call_cap_and_leaves_trades_pending(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Invariant (#658): with FX down, boot makes at most the capped calls; serve goes on."""
+    monkeypatch.setattr(serve_module, "BOOT_EUR_MAX_FX_CALLS", 3)
+    fx = FakeFx(down=True)
+    db = tmp_path / "t.sqlite3"
+    composition = build(db, FakeFeed(), BASE, fx=fx)
+    _record_pending_buys(composition, [datetime(2024, 1, 2 + d, 10, tzinfo=UTC) for d in range(8)])
+
+    with capture_logs() as logs:
+        code = run_once(composition, FakeFeed(), until=lambda: _priced(logs))
+
+    capped = [e for e in logs if e["event"] == "serve.eur_pricing_capped"]
+    assert (code, len(fx.calls), _pending_trades(db)) == (0, 3, 8)
+    assert [(e["rates_skipped"], e["rates_total"]) for e in capped] == [(6, 9)]
+
+
+def test_boot_pricing_stops_at_the_time_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Invariant (#658): once the time budget is spent no further FX call is made."""
+    monkeypatch.setattr(serve_module, "BOOT_EUR_BUDGET_SEC", 0.0)
+    fx = FakeFx(down=True)
+    db = tmp_path / "t.sqlite3"
+    composition = build(db, FakeFeed(), BASE, fx=fx)
+    _record_pending_buys(composition, [datetime(2024, 1, 2 + d, 10, tzinfo=UTC) for d in range(4)])
+
+    with capture_logs() as logs:
+        code = run_once(composition, FakeFeed(), until=lambda: _priced(logs))
+
+    assert (code, fx.calls, _pending_trades(db)) == (0, [], 4)
+
+
+def test_boot_pricing_tries_a_failing_rate_once_for_many_trades_on_that_date(
+    tmp_path: Path,
+) -> None:
+    """Invariant (#658): ten pending trades on one date cost one FX attempt, plus the seed's."""
+    fx = FakeFx(down=True)
+    db = tmp_path / "t.sqlite3"
+    composition = build(db, FakeFeed(), BASE, fx=fx)
+    _record_pending_buys(
+        composition, [datetime(2024, 1, 5, 10, minute, tzinfo=UTC) for minute in range(10)]
+    )
+
+    with capture_logs() as logs:
+        run_once(composition, FakeFeed(), until=lambda: _priced(logs))
+
+    assert (sorted(on for _, _, on in fx.calls), _pending_trades(db)) == (
+        [_SEED_DAY, date(2024, 1, 5)],
+        10,
+    )
+
+
+def test_cancelling_during_boot_pricing_exits_promptly_and_releases_resources(
+    tmp_path: Path,
+) -> None:
+    """Invariant (#658): a shutdown while FX hangs ends serve in seconds and runs cleanup."""
+    gate = threading.Event()
+    db = tmp_path / "t.sqlite3"
+    fx = _ProbeFx(db, hang=gate)
+    feed = FakeFeed()
+    composition = build(db, feed, BASE, fx=fx)
+
+    async def scenario() -> tuple[int, float]:
+        shutdown = asyncio.Event()
+        task = asyncio.create_task(serve_module.run(composition, shutdown))
+        while not fx.trades_seen:
+            await asyncio.sleep(0.01)
+        began = time.monotonic()
+        shutdown.set()
+        code = await asyncio.wait_for(task, timeout=5)
+        elapsed = time.monotonic() - began
+        gate.set()
+        return code, elapsed
+
+    try:
+        code, elapsed = asyncio.run(scenario())
+    finally:
+        gate.set()
+
+    assert (code, feed.closed, elapsed < 2.0) == (0, True, True)

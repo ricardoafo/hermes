@@ -84,8 +84,8 @@ from hermes.application.execution.shadow import (
     ShadowExecutor,
     shadow_risk_engine,
 )
-from hermes.application.ledger.eur_backfill import backfill_pending_eur
-from hermes.application.ledger.eur_pricer import EurPricer
+from hermes.application.ledger.eur_backfill import backfill_pending_eur, pending_rate_keys
+from hermes.application.ledger.eur_pricer import EurPricer, LookupBudget
 from hermes.application.ledger.trade_recorder import TradeRecorder
 from hermes.application.notification_router import RouterConfig
 from hermes.application.order_router.sizing import SizingPolicy
@@ -105,8 +105,8 @@ from hermes.domain.lots.quote_leg import CapitalSeed, seed_timestamp
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.bar_schedule import (
     Stream,
-    delivery_key,
     interval_duration,
+    order_for_delivery,
     within_catchup,
 )
 from hermes.domain.market_data.kline import KlineInterval
@@ -164,6 +164,14 @@ SHADOW_STRATEGY_NAME: Final = "swing-donchian-4h"
 
 EXPERIMENT_DIR: Final = Path("docs/experiments/swing-mvp1")
 """Where the signed pre-registration and the fee history sit under the experiment root."""
+
+# Boot EUR pricing caps. Why 20 calls / 60 s: a healthy boot needs a handful of
+# distinct (quote, date) rates; with the FX source down each call costs up to
+# its 10 s timeout, so the caps bound the wasted time to one minute while the
+# live stream already runs. Rates left over stay pending for the next boot or
+# ``hermes fx backfill``.
+BOOT_EUR_MAX_FX_CALLS: Final = 20
+BOOT_EUR_BUDGET_SEC: Final = 60.0
 
 _ONE_MS: Final = timedelta(milliseconds=1)
 _NEVER: Final = datetime(1970, 1, 1, tzinfo=UTC)
@@ -605,8 +613,6 @@ async def run(composition: Composition, shutdown: asyncio.Event) -> int:
         pairs=len(composition.strategies),
     )
     code = 0
-    if not shutdown.is_set():
-        price_pending_eur_once(composition)
     try:
         async with asyncio.TaskGroup() as group:
             group.create_task(_bar_loop(composition, shutdown))
@@ -621,20 +627,25 @@ async def run(composition: Composition, shutdown: asyncio.Event) -> int:
     return code
 
 
-def price_pending_eur_once(c: Composition) -> None:
-    """Price the pending capital seed and trades once, before the bar loop starts.
+def price_pending_eur_once(c: Composition, pricer: EurPricer | None = None) -> None:
+    """Price the pending capital seed and trades once, on the calling thread.
 
     Runs the same backfill service as ``hermes fx backfill`` (same rate source
-    and rules). Each FX lookup is bounded by the configured FX timeout and the
-    pricer caches per day, so the cost is a few lookups at boot, never on the
-    bar path. Any failure is logged and swallowed: a value that stays pending
-    is priced by the next boot or ``hermes fx backfill``.
+    and rules). :func:`_price_pending_eur_capped` is the boot entry point: it
+    warms the rate cache off the event loop first, so this call only reads the
+    cache. Any failure is logged and swallowed: a value that stays pending is
+    priced by the next boot or ``hermes fx backfill``.
 
     Args:
         c: The wired container.
+        pricer: The pricer to use; the container's own when omitted.
     """
     try:
-        report = backfill_pending_eur(c.ledger, c.eur_pricer, today=fill_date_madrid(c.clock.now()))
+        report = backfill_pending_eur(
+            c.ledger,
+            pricer if pricer is not None else c.eur_pricer,
+            today=fill_date_madrid(c.clock.now()),
+        )
     except Exception as exc:
         _log.warning("serve.eur_pricing_failed", error=type(exc).__name__, detail=str(exc))
         return
@@ -645,6 +656,47 @@ def price_pending_eur_once(c: Composition) -> None:
         trades_filled=len(report.filled),
         trades_pending=len(report.pending),
     )
+
+
+async def _price_pending_eur_capped(c: Composition, shutdown: asyncio.Event) -> None:
+    """Price pending EUR values after catch-up without blocking the event loop.
+
+    The blocking FX lookups run in a worker thread under a call and time
+    budget; the SQLite reads and writes stay on the loop thread (the connection
+    is bound to it). Shutdown or cancellation aborts the lookups at the next
+    one; at most the call in flight finishes in the background. Rates not
+    looked up stay pending, and the next boot or ``hermes fx backfill`` prices
+    them.
+    """
+    today = fill_date_madrid(c.clock.now())
+    budget = LookupBudget(max_calls=BOOT_EUR_MAX_FX_CALLS, max_seconds=BOOT_EUR_BUDGET_SEC)
+    try:
+        keys = pending_rate_keys(c.ledger)
+    except Exception as exc:
+        _log.warning("serve.eur_pricing_failed", error=type(exc).__name__, detail=str(exc))
+        return
+    if not keys:
+        price_pending_eur_once(c)
+        return
+    warm = asyncio.ensure_future(
+        asyncio.to_thread(c.eur_pricer.warm, keys, today=today, budget=budget)
+    )
+    stop = asyncio.ensure_future(shutdown.wait())
+    try:
+        await asyncio.wait({warm, stop}, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        budget.stop.set()
+        stop.cancel()
+    if not warm.done():
+        return
+    try:
+        skipped = warm.result()
+    except Exception as exc:
+        _log.warning("serve.eur_pricing_failed", error=type(exc).__name__, detail=str(exc))
+        return
+    if skipped:
+        _log.warning("serve.eur_pricing_capped", rates_skipped=skipped, rates_total=len(keys))
+    price_pending_eur_once(c, c.eur_pricer.cached_only())
 
 
 def report_failure(exc: BaseException) -> None:
@@ -694,10 +746,17 @@ async def _bar_loop(c: Composition, shutdown: asyncio.Event) -> None:
     await loop.warm_up_and_catch_up(shutdown)
     if shutdown.is_set():
         return
-    loop.log_next_due()
-    stream = c.feed.stream_closed_bars(c.pairs, c.intervals).__aiter__()
-    while (bar := await _next_or_stop(stream, shutdown)) is not None:
-        await loop.handle(bar)
+    # After catch-up so its fills keep the live book; as a task so the live
+    # stream is not held back; cancelled with the loop so shutdown is prompt.
+    pricing = asyncio.create_task(_price_pending_eur_capped(c, shutdown))
+    try:
+        loop.log_next_due()
+        stream = c.feed.stream_closed_bars(c.pairs, c.intervals).__aiter__()
+        while (bar := await _next_or_stop(stream, shutdown)) is not None:
+            await loop.handle(bar)
+    finally:
+        pricing.cancel()
+        await asyncio.gather(pricing, return_exceptions=True)
 
 
 async def _anext(stream: AsyncIterator[Bar]) -> Bar:
@@ -754,7 +813,7 @@ class _BarLoop:
             for interval in c.intervals:
                 count = c.config.market_data.warmup_bars(interval)
                 warm.extend(await c.feed.warm_up(pair, interval, count))
-        warm.sort(key=delivery_key)
+        warm = list(order_for_delivery(warm))
         cursors = self._load_cursors(warm)
         for pair, strategy in c.strategies.items():
             seeded = [
@@ -879,6 +938,7 @@ class _BarLoop:
             close_time=bar.close_time.isoformat(),
             signal="none" if signal_ is None else signal_.kind.value,
             next_due=self.next_due(stream).isoformat(),
+            **_entry_check_fields(c.strategies[bar.pair]),
         )
 
     def next_due(self, stream: Stream) -> datetime:
@@ -941,6 +1001,29 @@ class _BarLoop:
             for failure in exc.failures:
                 if isinstance(failure, Exception):
                     sentry_integration.capture(failure)
+
+
+def _entry_check_fields(strategy: StrategyPort) -> dict[str, str]:
+    """Return which entry conditions held on the bar just evaluated, as yes/no.
+
+    Booleans only, never a price or an indicator value, so the journal line
+    stays outcome-blind for the reviews that read it (ADR-012 D-06, #656).
+    Empty when the bar was not an entry check (a daily bar, or a position open).
+    """
+    if not isinstance(strategy, SwingStrategyAdapter):
+        return {}
+    check = strategy.last_entry_check
+    if check is None:
+        return {}
+    return {
+        "entry_breakout": _yes_no(check.breakout),
+        "entry_momentum": _yes_no(check.momentum),
+        "entry_regime": _yes_no(check.regime),
+    }
+
+
+def _yes_no(held: bool) -> str:
+    return "yes" if held else "no"
 
 
 def _log_execution(pair: Pair, kind: SignalKind, result: ShadowExecution) -> None:

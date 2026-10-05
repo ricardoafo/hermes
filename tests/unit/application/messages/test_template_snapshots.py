@@ -34,4 +34,9 @@ def test_slack_message_matches_snapshot(name: str, snapshot: SnapshotAssertion) 
     """The Slack fallback text and blocks of each event match their reviewed snapshot."""
     message = slack_template(samples()[name])
 
-    assert {"text": message.text, "blocks": message.blocks} == snapshot
+    plan = message.plan
+    assert {
+        "text": message.text,
+        "blocks": message.blocks,
+        **({} if plan is None else {"plan": {"text": plan.text, "blocks": plan.blocks}}),
+    } == snapshot
