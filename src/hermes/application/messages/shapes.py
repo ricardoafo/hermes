@@ -27,7 +27,16 @@ from typing import Final
 
 from hermes.application.messages.format import SEPARATOR
 
-__all__ = ["SHAPES", "Channel", "Family", "Note", "Shape", "render_lines", "shape_for"]
+__all__ = [
+    "SHAPES",
+    "Channel",
+    "Family",
+    "Note",
+    "Shape",
+    "render_lines",
+    "render_parent_and_plan",
+    "shape_for",
+]
 
 
 class Family(StrEnum):
@@ -92,14 +101,19 @@ class Note:
     Fields:
         minimal: A single line, without the ref.
         compact: Headline and detail lines, without the footer.
-        verbose: The same with UTC times and the plan, without the footer.
+        verbose: The same with UTC times, without the plan and the footer.
         footer: Parts of the last line (strategy, hint); the ref follows them.
+        plan: The plan lines of the verbose shape (stop, distance, withheld
+            actual). Empty when the event has no plan. A channel that threads
+            replies posts them apart from ``verbose``; any other renders them
+            right after it.
     """
 
     minimal: str
     compact: tuple[str, ...]
     verbose: tuple[str, ...]
     footer: tuple[str, ...] = ()
+    plan: tuple[str, ...] = ()
 
 
 def render_lines(note: Note, shape: Shape, ref: str) -> tuple[str, ...]:
@@ -116,5 +130,27 @@ def render_lines(note: Note, shape: Shape, ref: str) -> tuple[str, ...]:
     """
     if shape is Shape.MINIMAL:
         return (f"{note.minimal}{SEPARATOR}{ref}",)
-    body = note.compact if shape is Shape.COMPACT else note.verbose
+    body = note.compact if shape is Shape.COMPACT else (*note.verbose, *note.plan)
     return (*body, SEPARATOR.join((*note.footer, ref)))
+
+
+def render_parent_and_plan(
+    note: Note, shape: Shape, ref: str
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Split ``note`` into the parent lines and the plan lines of a thread.
+
+    Only the verbose shape carries a plan apart from the headline. Every
+    other shape, and a verbose note without a plan, comes back whole as the
+    parent with an empty plan.
+
+    Args:
+        note: The event's text in every shape.
+        shape: Which shape to render.
+        ref: The correlation-id tail, already formatted.
+
+    Returns:
+        The parent lines (ending with the ref line) and the plan lines.
+    """
+    if shape is not Shape.VERBOSE or not note.plan:
+        return render_lines(note, shape, ref), ()
+    return (*note.verbose, SEPARATOR.join((*note.footer, ref))), note.plan

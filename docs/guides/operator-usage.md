@@ -151,12 +151,16 @@ hermes tui
 ```
 
 The interactive home screen reads the ledger read-only: the portfolio
-total in EUR, open positions, recent activity and the shadow test's day
-count toward 90. Keys: `1`, `7`, `3` and `Y` switch the range (today, week,
-30 days, year), the arrow keys (or `j`/`k`) and Enter open a position, `L`
-shows logs, `?` help and `Q` quits. A figure without an EUR value shows
-"EUR pending", and a card the ledger cannot answer yet says "not available
-yet". `--db PATH` reads another ledger.
+total in EUR (with the date of the ECB rate it uses), open positions, a market watch, recent activity and the
+shadow test's day count toward 90. The top line names the running release,
+read from the same link `hermes status` reads. The market watch lists each
+checked coin with its last check, whether that check produced an entry or
+exit signal, and the next check; it shows no prices. Keys: `D`, `W`, `M`
+and `Y` switch the range (day, week, month, year), the arrow keys (or
+`j`/`k`) and Enter open a position, Esc closes it, `L` shows logs, `?`
+help and `Q` quits. A figure without an EUR value shows "EUR pending", and
+a card the ledger cannot answer yet says "not available yet". `--db PATH`
+reads another ledger.
 
 ## What does it hold and what did it do?
 
@@ -305,9 +309,10 @@ To see a deploy, open the repository's Actions tab, workflow **CD**. A
 manual run (`Run workflow`) defaults to `dry_run=true`, which builds the
 bundle and touches nothing on the VPS.
 
-Systemd units, timers and env files are not part of a release. A change to
-them still needs the **vps-bootstrap** workflow run by hand until issue #626
-lands; see [vps-operations.md § Hermes bootstrap](vps-operations.md#hermes-bootstrap-automated).
+Each deploy installs changed systemd unit and timer files (issue #626). A
+new unit still needs the **vps-bootstrap** workflow once to enable it, and
+env files stay bootstrap-only; see
+[vps-operations.md § Hermes bootstrap](vps-operations.md#hermes-bootstrap-automated).
 
 To roll back by hand from your PC:
 
@@ -317,6 +322,19 @@ ssh hermes /opt/hermes/bin/rollback.sh
 
 It exits 1 when `current` already equals `previous`. It does not roll back
 the ledger.
+
+It also refuses when the ledger holds events newer than `previous` can read
+(issue #655). For example, after a release writes schema v2 fill-quality
+rows, an older release fails at start. Roll back with the snapshot taken
+before that release went live instead:
+
+```powershell
+ssh hermes "HERMES_RESTORE_DB=/var/lib/hermes/backups/pre-<release>.sqlite3 /opt/hermes/bin/rollback.sh"
+```
+
+Restoring a snapshot drops what hermes recorded since it was taken. To roll
+back anyway with the live ledger, set `HERMES_SKIP_SCHEMA_GUARD=1`. A deploy
+of an older commit is refused the same way.
 
 ## When something is wrong
 

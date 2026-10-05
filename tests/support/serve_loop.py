@@ -274,12 +274,18 @@ async def drive(
     feed: FakeFeed,
     *,
     until: Callable[[], bool] | None = None,
+    timeout: float = 20.0,
 ) -> int:
     """Run the loop until the feed idles or the run ends, then shut it down.
 
-    ``until`` replaces the wait for the feed to idle: shutdown waits until it returns
-    true (at most 20 s), for
-    work that runs beside the live stream, such as the boot EUR pricing.
+    Args:
+        composition: The wired loop to run.
+        feed: The feed whose ``drained`` event ends the run.
+        until: Replaces the wait for the feed to idle: shutdown waits until it
+            returns true (at most ``timeout``), for work that runs beside the
+            live stream, such as the boot EUR pricing.
+        timeout: Seconds to wait for the feed to drain, and again for the
+            shutdown; a hang guard, so size it well above the normal run time.
 
     Returns:
         The exit code of :func:`hermes.entrypoints.serve.run`.
@@ -289,14 +295,14 @@ async def drive(
     task = asyncio.create_task(serve_module.run(composition, shutdown))
     waiter = asyncio.create_task(feed.drained.wait())
     if until is None:
-        await asyncio.wait({task, waiter}, timeout=20, return_when=asyncio.FIRST_COMPLETED)
-    for _ in range(400):
+        await asyncio.wait({task, waiter}, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+    for _ in range(int(timeout / 0.05)):
         if until is None or until() or task.done():
             break
         await asyncio.sleep(0.05)
     shutdown.set()
     waiter.cancel()
-    return await asyncio.wait_for(task, timeout=20)
+    return await asyncio.wait_for(task, timeout=timeout)
 
 
 def run_once(

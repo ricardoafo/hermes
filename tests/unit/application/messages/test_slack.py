@@ -71,22 +71,40 @@ def test_every_event_is_a_section_then_a_context_ending_in_the_ref(name: str) ->
     ) == (["section", "context"], True, True)
 
 
-def test_signal_entry_is_verbose_with_the_plan_and_the_withheld_actual() -> None:
-    """A signal is verbose on Slack: UTC time, the plan with ATR, and the withheld actual."""
+def test_signal_entry_parent_is_the_headline_with_the_utc_time() -> None:
+    """A signal's parent message is only the verbose headline and the ref: the plan is not in it."""
     message = slack_template(samples()["signal-entry"])
 
-    assert _section(message).splitlines() == [
+    assert (_section(message), _context(message)) == (
         "*▲ Entry long BTC · 52,410.20 USDT · Sat 14:00 (12:00 UTC)*",
+        "swing-donchian-4h · …K7Q2ZP",
+    )
+
+
+def test_signal_entry_plan_reply_has_the_plan_and_the_withheld_actual() -> None:
+    """The thread reply of a signal carries the stop, distance, ATR multiple and withheld actual."""
+    plan = slack_template(samples()["signal-entry"]).plan
+
+    assert plan is not None
+    assert plan.blocks[0]["text"]["text"].splitlines() == [
         "Plan: stop 50,516.00 USDT (−3.6%, 1.8 ATR)",
         "Actual: withheld until certification",
     ]
 
 
-def test_signal_fallback_text_carries_the_headline_and_the_plan() -> None:
-    """The plain-text fallback, which is the notification preview, names the coin and the stop."""
-    text = slack_template(samples()["signal-entry"]).text
+def test_signal_fallback_text_is_the_headline_and_the_plan_text_is_the_plan() -> None:
+    """The parent fallback names the coin; the reply fallback names the stop."""
+    message = slack_template(samples()["signal-entry"])
 
-    assert text.startswith("▲ Entry long BTC") and "stop 50,516.00 USDT" in text
+    assert message.plan is not None
+    assert message.text.startswith("▲ Entry long BTC") and "stop" not in message.text
+    assert message.plan.text.startswith("Plan: stop 50,516.00 USDT")
+
+
+def test_event_without_a_plan_has_no_thread_reply() -> None:
+    """A compact health event stays one message: it has no plan reply."""
+    message = slack_template(samples()["strategy-paused-critical"])
+    assert (message.plan, message.text.count("Plan:")) == (None, 0)
 
 
 def test_health_event_is_compact_on_slack() -> None:

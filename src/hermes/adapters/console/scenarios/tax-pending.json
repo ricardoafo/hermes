@@ -385,6 +385,32 @@
       ]
     }
   ],
+  "market_watch": [
+    {
+      "coin": "BTC",
+      "quote": "USDT",
+      "timeframe": "4h",
+      "last_check_at": "2026-10-03T12:00:00+00:00",
+      "signal": null,
+      "next_check_at": "2026-10-03T16:00:00+00:00"
+    },
+    {
+      "coin": "ETH",
+      "quote": "USDT",
+      "timeframe": "4h",
+      "last_check_at": "2026-10-03T12:00:00+00:00",
+      "signal": null,
+      "next_check_at": "2026-10-03T16:00:00+00:00"
+    },
+    {
+      "coin": "SOL",
+      "quote": "USDT",
+      "timeframe": "1d",
+      "last_check_at": "2026-10-03T00:00:00+00:00",
+      "signal": null,
+      "next_check_at": "2026-10-04T00:00:00+00:00"
+    }
+  ],
   "shadow_test": {
     "status": "on track",
     "day": 12,

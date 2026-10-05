@@ -25,6 +25,7 @@ from hermes.application.console.views import (
     TaxEstimate,
     TaxPending,
     TimelineEvent,
+    WatchedPair,
     WaterfallColumn,
     tax_amount,
 )
@@ -52,6 +53,7 @@ __all__ = [
     "TaxPending",
     "TimelineEvent",
     "ViewNotAvailableError",
+    "WatchedPair",
     "WaterfallColumn",
     "pnl_visible",
     "tax_amount",

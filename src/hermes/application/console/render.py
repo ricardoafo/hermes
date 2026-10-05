@@ -21,7 +21,7 @@ from __future__ import annotations
 import io
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta, tzinfo
+from datetime import date, datetime, timedelta, tzinfo
 from decimal import Decimal
 from typing import Final
 from zoneinfo import ZoneInfo
@@ -68,6 +68,7 @@ from hermes.application.console.views import (
     Tax,
     TaxEstimate,
     TaxPending,
+    WatchedPair,
     WaterfallColumn,
 )
 from hermes.application.console.visibility import Surface, pnl_visible
@@ -78,6 +79,7 @@ __all__ = [
     "RenderContext",
     "render_activity",
     "render_heartbeat",
+    "render_market_watch",
     "render_overview",
     "render_portfolio",
     "render_position_detail",
@@ -95,10 +97,7 @@ _SPARK_MAX: Final = 48
 _OVERVIEW_ACTIVITY_ROWS: Final = 4
 _HIDDEN_NOTE: Final = "money hidden on this surface"
 _EUR_PENDING: Final = "EUR pending"
-_EUR_PENDING_NOTE: Final = (
-    "EUR values pending: a fill is not priced in EUR yet · run hermes fx backfill"
-)
-_NO_RATE_NOTE: Final = "EUR values pending: no EUR rate in the ledger yet · run hermes fx backfill"
+_EUR_PENDING_NOTE: Final = "EUR pending · priced on the next restart, or run hermes fx backfill"
 _ZERO: Final = Decimal(0)
 _CENT: Final = Decimal("0.01")
 
@@ -224,6 +223,14 @@ def _framed(ctx: RenderContext, parts: Sequence[RenderableType]) -> Group:
 
 def _clock(ctx: RenderContext, at: datetime) -> str:
     return at.astimezone(ctx.tz).strftime("%H:%M")
+
+
+def _day_clock(ctx: RenderContext, at: datetime) -> str:
+    """Return ``HH:MM`` on the read day, else ``Sun 02:00``."""
+    local = at.astimezone(ctx.tz)
+    if local.date() == ctx.now.astimezone(ctx.tz).date():
+        return local.strftime("%H:%M")
+    return local.strftime("%a %H:%M")
 
 
 def _stamp(ctx: RenderContext, at: datetime) -> str:
@@ -382,24 +389,44 @@ def _fmt_quote(value: Decimal) -> str:
     return f"{value.quantize(_CENT):,} USDT"
 
 
+def _fmt_seed(value: Decimal, currency: str) -> str:
+    """Return a seed amount as the operator funded it: ``5,000 USDT``, cents only if any."""
+    cents = value.quantize(_CENT)
+    shown = f"{cents:,.0f}" if cents == cents.to_integral_value() else f"{cents:,}"
+    return f"{shown} {currency}"
+
+
 def _started_line(summary: PortfolioSummary) -> Text | None:
     """Return the start capital line, or ``None`` when the start is unknown.
 
-    A USDT capital seed shows as its EUR equivalent at the seed-date rate,
-    labelled as such (USDT stays off the home screen), or as USDT with "EUR
-    pending" until that rate is known.
+    A capital seed in its quote currency shows the seed as funded and its EUR
+    equivalent at the seed-date ECB rate, or the seed with "EUR pending" until
+    that rate is known.
     """
     started = summary.started_on
     if started is None:
         return None
-    on = f"on {started.day} {started:%b}"
+    on = f"on {_day(started)}"
     quote = summary.starting_capital_quote
     eur = summary.starting_capital
     if quote is None:
         return None if eur is None else Text(f"started {fmt_level(eur)} {on}", style="dim")
     if eur is None:
         return Text(f"started {_fmt_quote(quote)} {on} · {_EUR_PENDING}", style="dim")
-    return Text(f"started {fmt_level(eur)} {on} · Equivalent in EUR", style="dim")
+    seed = _fmt_seed(quote, summary.quote_currency)
+    rate_day = _day(summary.starting_capital_rate_date or started)
+    return Text(f"started {seed} ({fmt_level(eur)} at ECB rate, {rate_day})", style="dim")
+
+
+def _day(on: date) -> str:
+    return f"{on.day} {on:%b}"
+
+
+def _rate_note(summary: PortfolioSummary) -> str:
+    """Return " at ECB rate, 3 Oct" for the rate the EUR total uses, or "" (#692)."""
+    if summary.eur_rate_date is None:
+        return ""
+    return f" at ECB rate, {_day(summary.eur_rate_date)}"
 
 
 def _pending_portfolio(ctx: RenderContext, summary: PortfolioSummary) -> Group:
@@ -408,7 +435,7 @@ def _pending_portfolio(ctx: RenderContext, summary: PortfolioSummary) -> Group:
         head += f" {_fmt_quote(summary.total_value_quote)}"
     parts: list[RenderableType] = [
         Text(f"{head} · {_EUR_PENDING}", style="bold"),
-        Text(_NO_RATE_NOTE, style="dim"),
+        Text(_EUR_PENDING_NOTE, style="dim"),
     ]
     started = _started_line(summary)
     if started is not None:
@@ -449,11 +476,14 @@ def render_portfolio(
     hero = Text()
     if not big_total:
         hero.append(fmt_level(summary.total_value), style=total_style)
+        hero.append(_rate_note(summary), style="dim")
         hero.append("   ")
     hero.append(
         f"{fmt_change(summary.change, summary.change_pct)} {label}",
         style=_money_style(ctx, summary.change),
     )
+    if big_total:
+        hero.append(_rate_note(summary), style="dim")
     hero.append(_stale_note(ctx), style="dim")
     net_line = Text("net ")
     net_line.append_text(_money(ctx, summary.net, f" {label}"))
@@ -597,6 +627,43 @@ def render_positions(
     if pending:
         return _framed(ctx, [table, Text(_EUR_PENDING_NOTE, style="dim")])
     return _framed(ctx, [table])
+
+
+# ----------------------------------------------------------------------
+# Market watch
+# ----------------------------------------------------------------------
+
+
+def render_market_watch(rows: Sequence[WatchedPair], ctx: RenderContext) -> Group:
+    """Render each checked stream: last check, its result, next check (#650).
+
+    The result is the kind of signal the last check produced (``entry`` or
+    ``exit``) or ``none``. The view carries no price, so every surface shows
+    the same rows: nothing here is money that :func:`pnl_visible` would hide.
+
+    Args:
+        rows: The checked streams.
+        ctx: Render context.
+
+    Returns:
+        The market watch table under its title, or the empty-state line.
+    """
+    title = Text("Market watch", style="bold")
+    if not rows:
+        return _framed(ctx, [title, Text("No pairs checked yet.", style="dim")])
+    table = Table(box=box.SIMPLE_HEAD, pad_edge=False, show_edge=False)
+    for name in ("coin", "tf", "last check", "result", "next check"):
+        table.add_column(name)
+    for row in rows:
+        result = Text("none", style="dim") if row.signal is None else Text(row.signal, style="bold")
+        table.add_row(
+            row.coin,
+            row.timeframe,
+            _day_clock(ctx, row.last_check_at),
+            result,
+            _day_clock(ctx, row.next_check_at),
+        )
+    return _framed(ctx, [title, table])
 
 
 # ----------------------------------------------------------------------
@@ -879,8 +946,8 @@ def render_overview(model: ConsoleReadModel, ctx: RenderContext) -> Group:
         ctx: Render context (one DEMO DATA tag heads the whole overview).
 
     Returns:
-        Heartbeat, portfolio for today, positions, the latest activity rows
-        and the shadow test line.
+        Heartbeat, portfolio for today, positions, the market watch, the
+        latest activity rows and the shadow test line.
     """
     inner = replace(ctx, demo_scenario=None)
     parts: list[RenderableType] = [
@@ -888,6 +955,8 @@ def render_overview(model: ConsoleReadModel, ctx: RenderContext) -> Group:
         render_portfolio(model.portfolio(PortfolioRange.TODAY), inner),
         Text(""),
         render_positions(model.positions(), inner),
+        Text(""),
+        render_market_watch(model.market_watch(), inner),
         Text(""),
         render_activity(model.activity(), inner, limit=_OVERVIEW_ACTIVITY_ROWS),
         Text(""),
