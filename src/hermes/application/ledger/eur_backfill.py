@@ -21,10 +21,11 @@ import structlog
 from hermes.application.ledger.eur_pricer import EurPricer
 from hermes.domain.fx.eur_pricing import fill_date_madrid
 from hermes.domain.trading.trade_record import TradeEur
+from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
 from hermes.ports.ledger import TradeLedgerPort
 
-__all__ = ["BackfillReport", "backfill_pending_eur"]
+__all__ = ["BackfillReport", "backfill_pending_eur", "pending_rate_keys"]
 
 _log = structlog.get_logger(__name__)
 
@@ -44,6 +45,19 @@ class BackfillReport:
     pending: tuple[int, ...]
     seeds_filled: tuple[int, ...] = ()
     seeds_pending: tuple[int, ...] = ()
+
+
+def pending_rate_keys(ledger: TradeLedgerPort) -> list[tuple[Currency, date]]:
+    """Return the distinct ``(quote, Madrid date)`` rates the pending rows need.
+
+    Raises:
+        LedgerError: When reading the ledger fails.
+    """
+    keys = [(s.asset, fill_date_madrid(s.seeded_at)) for s in ledger.list_pending_seeds()]
+    keys.extend(
+        (t.pair.quote, fill_date_madrid(t.executed_at)) for t in ledger.list_pending_trades()
+    )
+    return list(dict.fromkeys(keys))
 
 
 def backfill_pending_eur(

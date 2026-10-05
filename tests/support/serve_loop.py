@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import sqlite3
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -269,8 +269,17 @@ def build(
     )
 
 
-async def drive(composition: serve_module.Composition, feed: FakeFeed) -> int:
+async def drive(
+    composition: serve_module.Composition,
+    feed: FakeFeed,
+    *,
+    until: Callable[[], bool] | None = None,
+) -> int:
     """Run the loop until the feed idles or the run ends, then shut it down.
+
+    ``until`` replaces the wait for the feed to idle: shutdown waits until it returns
+    true (at most 20 s), for
+    work that runs beside the live stream, such as the boot EUR pricing.
 
     Returns:
         The exit code of :func:`hermes.entrypoints.serve.run`.
@@ -279,15 +288,25 @@ async def drive(composition: serve_module.Composition, feed: FakeFeed) -> int:
     shutdown = asyncio.Event()
     task = asyncio.create_task(serve_module.run(composition, shutdown))
     waiter = asyncio.create_task(feed.drained.wait())
-    await asyncio.wait({task, waiter}, timeout=20, return_when=asyncio.FIRST_COMPLETED)
+    if until is None:
+        await asyncio.wait({task, waiter}, timeout=20, return_when=asyncio.FIRST_COMPLETED)
+    for _ in range(400):
+        if until is None or until() or task.done():
+            break
+        await asyncio.sleep(0.05)
     shutdown.set()
     waiter.cancel()
     return await asyncio.wait_for(task, timeout=20)
 
 
-def run_once(composition: serve_module.Composition, feed: FakeFeed) -> int:
+def run_once(
+    composition: serve_module.Composition,
+    feed: FakeFeed,
+    *,
+    until: Callable[[], bool] | None = None,
+) -> int:
     """Run :func:`drive` to completion and return the exit code."""
-    return asyncio.run(drive(composition, feed))
+    return asyncio.run(drive(composition, feed, until=until))
 
 
 def events(db_path: Path, event_type: str) -> list[dict[str, str]]:
