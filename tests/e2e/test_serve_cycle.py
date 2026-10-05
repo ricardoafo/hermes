@@ -29,7 +29,7 @@ import asyncio
 import dataclasses
 import io
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -41,6 +41,7 @@ from syrupy.assertion import SnapshotAssertion
 from hermes.application.notification_router import RouterConfig
 from hermes.application.signal_notifier import SignalNotifier
 from hermes.application.status import UnitState
+from hermes.domain.errors import NetworkError
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
@@ -167,7 +168,23 @@ class _RecordedBooks:
         """Nothing to release."""
 
 
-def _boot(db: Path, feed: ReplayFeed, channel: RecordingChannel) -> serve_module.Composition:
+DEPTH_DOWN_FROM = datetime.fromisoformat("2025-01-05T00:00Z")
+"""After the first BTC and SOL entries fill and before either exits."""
+
+
+class _DepthDownFrom(_RecordedBooks):
+    """Recorded depth until :data:`DEPTH_DOWN_FROM`, then an outage like Binance's."""
+
+    async def snapshot(self, pair: Pair) -> Orderbook:
+        """Fail from the outage on; answer from the recording before it."""
+        if self.clock.current >= DEPTH_DOWN_FROM:
+            raise NetworkError(f"depth for {pair} unavailable")
+        return await super().snapshot(pair)
+
+
+def _boot(
+    db: Path, feed: ReplayFeed, channel: RecordingChannel, books: _RecordedBooks | None = None
+) -> serve_module.Composition:
     """Build the production composition over ``db`` with the replay feed and clock.
 
     The production config has no channel credentials here, so the recording
@@ -183,7 +200,7 @@ def _boot(db: Path, feed: ReplayFeed, channel: RecordingChannel) -> serve_module
         env={},
         feed=feed,
         clock=feed.clock,
-        orderbooks=_RecordedBooks(feed.clock),
+        orderbooks=books if books is not None else _RecordedBooks(feed.clock),
         fx=_fixed_eur_rate(),
     )
     return dataclasses.replace(
@@ -192,12 +209,17 @@ def _boot(db: Path, feed: ReplayFeed, channel: RecordingChannel) -> serve_module
 
 
 def _serve(
-    db: Path, *, boot_at: datetime, live: Sequence[Bar] | None = None
+    db: Path,
+    *,
+    boot_at: datetime,
+    live: Sequence[Bar] | None = None,
+    depth: Callable[[FakeClock], _RecordedBooks] | None = None,
 ) -> tuple[int, RecordingChannel]:
     """Boot at ``boot_at`` and serve until the replay idles or the run fails.
 
     Warm-up sees every bar delivered by ``boot_at``; ``live`` defaults to every
-    bar delivered after it.
+    bar delivered after it. ``depth`` builds the depth source on the replay
+    clock; it defaults to :class:`_RecordedBooks`.
 
     Returns:
         The exit code of :func:`serve_module.run` and the channel it notified.
@@ -206,7 +228,8 @@ def _serve(
     clock = FakeClock(boot_at)
     feed = ReplayFeed(closed_by(boot_at), delivered_after(boot_at) if live is None else live, clock)
     channel = RecordingChannel()
-    code = asyncio.run(drive(_boot(db, feed, channel), feed))
+    books = depth(clock) if depth is not None else None
+    code = asyncio.run(drive(_boot(db, feed, channel, books), feed))
     return code, channel
 
 
@@ -387,3 +410,21 @@ def test_status_json_after_a_serve_cycle_matches_its_snapshot(
     )
 
     assert (code, json.loads(out.getvalue())) == snapshot
+
+
+def test_depth_outage_lets_open_positions_exit_but_blocks_new_entries(tmp_path: Path) -> None:
+    """With depth down, exits still fill on the §6.2 book and new entries are declined.
+
+    The standing decision: with a stale or missing order book hermes skips new
+    entries (RO-04 halts them) but never strands an open position. BTC and SOL
+    enter while depth answers; depth fails from 2025-01-05; both still exit,
+    and every later entry signal is declined.
+    """
+    db = tmp_path / "ledger.sqlite3"
+
+    code, _ = _serve(db, boot_at=LIVE_FROM, depth=_DepthDownFrom)
+
+    assert (code, _ledger_trades(db)) == (
+        0,
+        [("SOL/USDT", "BUY"), ("BTC/USDT", "BUY"), ("BTC/USDT", "SELL"), ("SOL/USDT", "SELL")],
+    )
