@@ -33,8 +33,12 @@ def _is_sev1_test(nodeid: str) -> bool:
 
 
 def pytest_report_teststatus(report: pytest.TestReport) -> None:
-    """Collect SEV-1-annotated tests that are skipped during the setup phase."""
-    if report.when == "setup" and report.skipped and _is_sev1_test(report.nodeid):
+    """Collect SEV-1-annotated tests that are skipped, by a marker or from inside the body.
+
+    A marker or ``skipif`` reports the skip in the setup phase; ``pytest.skip()``
+    called in the test body reports it in the call phase (#704).
+    """
+    if report.when in ("setup", "call") and report.skipped and _is_sev1_test(report.nodeid):
         _skipped_sev1.append(report.nodeid)
 
 
