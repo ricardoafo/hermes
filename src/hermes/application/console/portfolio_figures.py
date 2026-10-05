@@ -156,7 +156,7 @@ def range_start(range_: PortfolioRange, as_of: datetime, tz: tzinfo) -> datetime
     """Return when ``range_`` starts.
 
     Today is since local midnight, the week the last 7 days, the month the last
-    30 days (the TUI's ``3`` key) and the year since 1 January, local time (the
+    30 days (the TUI's ``M`` key) and the year since 1 January, local time (the
     tax year).
 
     Args:

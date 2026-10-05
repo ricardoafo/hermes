@@ -16,8 +16,9 @@ ledger read that fails) turns that card into a plain "not available yet" (or
 "could not read the ledger") line and leaves the others standing, so the live
 screen never stops on a missing figure (change ``live-home-screen`` D-6).
 
-Keys: ``1`` ``7`` ``3`` ``Y`` range (``3`` selects the 30-day range), up and
-down select a position, Enter opens it, ``L`` logs, ``?`` help, ``Q`` quit.
+Keys: ``D`` ``W`` ``M`` ``Y`` range (day, week, month, year), up and down
+(or ``j`` ``k``) select a position, Enter opens it, Esc closes it, ``L`` logs,
+``?`` help, ``Q`` quit.
 
 Reference: openspec/changes/readonly-tui-dashboard/change.md;
 openspec/changes/live-home-screen/change.md (D-6).
@@ -70,7 +71,7 @@ _LEFT_COLUMN: Final = 46
 _BIG_TOTAL_FROM_ROWS: Final = 30
 _ACTIVITY_ROWS: Final = 4
 _ACTIVITY_ROWS_SHORT: Final = 3
-_FOOTER: Final = "1 7 30 Y range · ↵ detail · L logs · ? help · Q quit · read-only"
+_FOOTER: Final = "D W M Y range · ↵ detail · L logs · ? help · Q quit · read-only"
 _LOGS_LINES: Final = 50
 _LOGS_DEMO: Final = "Logs come from the VPS journal; demo data has none."
 _LOGS_UNAVAILABLE: Final = "The journal is not readable here; run hermes logs on the VPS."
@@ -200,9 +201,9 @@ class HomeApp(App[None]):
     #panel { height: 1fr; padding: 0 1; overflow-y: auto; }
     """
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("1", "range('today')", "today", show=False),
-        Binding("7", "range('week')", "week", show=False),
-        Binding("3", "range('month')", "30 days", show=False),
+        Binding("d,D", "range('today')", "today", show=False),
+        Binding("w,W", "range('week')", "week", show=False),
+        Binding("m,M", "range('month')", "month", show=False),
         Binding("y,Y", "range('year')", "year", show=False),
         Binding("up,k", "select(-1)", "previous", show=False),
         Binding("down,j", "select(1)", "next", show=False),
@@ -461,7 +462,7 @@ class HomeApp(App[None]):
     def _help_content(self) -> RenderableType:
         keys = [
             Text("Keys", style="bold"),
-            Text("  1 today · 7 week · 30 month (press 3) · Y year"),
+            Text("  D day · W week · M month · Y year"),
             Text("  ↑ ↓ choose a position · Enter open its detail · Esc back"),
             Text("  L logs · ? this help · Q quit"),
             Text(

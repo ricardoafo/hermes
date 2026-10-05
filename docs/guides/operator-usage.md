@@ -152,9 +152,9 @@ hermes tui
 
 The interactive home screen reads the ledger read-only: the portfolio
 total in EUR, open positions, recent activity and the shadow test's day
-count toward 90. Keys: `1`, `7`, `3` and `Y` switch the range (today, week,
-30 days, year), the arrow keys (or `j`/`k`) and Enter open a position, `L`
-shows logs, `?` help and `Q` quits. A figure without an EUR value shows
+count toward 90. Keys: `D`, `W`, `M` and `Y` switch the range (day, week,
+month, year), the arrow keys (or `j`/`k`) and Enter open a position, Esc
+closes it, `L` shows logs, `?` help and `Q` quits. A figure without an EUR value shows
 "EUR pending", and a card the ledger cannot answer yet says "not available
 yet". `--db PATH` reads another ledger.
 
