@@ -145,11 +145,19 @@ exit 0
 """
 
 # `runuser -u hermes -- <cmd>` drops privileges on the box; here it logs
-# the call and runs <cmd> as the test user.
+# the call and runs <cmd> as the test user. On the box the staging dir is
+# root-only (0700), so the service user cannot open a path inside it: an
+# argument under STUB_RUNUSER_DENY fails the way python does there.
 _STUB_RUNUSER = """\
 #!/usr/bin/env bash
 echo "runuser $*" >> "$STUB_LOG"
 [ -z "${STUB_RUNUSER_FAIL:-}" ] || exit 1
+for arg in "$@"; do
+    if [ -n "${STUB_RUNUSER_DENY:-}" ] && [[ "$arg" == "$STUB_RUNUSER_DENY"/* ]]; then
+        echo "can't open file '$arg': [Errno 13] Permission denied" >&2
+        exit 2
+    fi
+done
 while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do shift; done
 shift
 exec "$@"
@@ -325,6 +333,7 @@ class Box:
                 "HERMES_UNIT_DIR": _posix(self.units),
                 "HERMES_NOW_EPOCH": _QUIET_EPOCH,
                 "HERMES_SCHEMA_PYTHON": _posix(Path(sys.executable)),
+                "STUB_RUNUSER_DENY": _posix(self.base / "stages"),
                 **extra,
             }
         )
@@ -1585,6 +1594,38 @@ def test_deploy_of_a_release_older_than_the_ledger_is_refused(box: Box) -> None:
 
     assert result.returncode == 1, _output(result)
     assert "cannot read the events" in result.stdout
+    assert box.target("current") == _SHA_A
+
+
+def test_deploy_runs_the_schema_guard_although_the_service_user_cannot_open_the_stage(
+    box: Box,
+) -> None:
+    """Invariant: a current ledger deploys; the guard never needs a path in the root-only stage.
+
+    deploy 4bbcb6106736 failed on hermes-01 because the service user could
+    not open bin/schema_guard.py inside the 0700 staging dir (#655).
+    """
+    box.deploy(_SHA_A)
+    box.write_ledger("live")
+    _write_events(box, 1)
+
+    result = box.deploy(_SHA_B)
+
+    assert result.returncode == 0, _output(result)
+    assert box.target("current") == _SHA_B
+
+
+def test_a_guard_that_cannot_run_is_reported_as_such(box: Box) -> None:
+    """Invariant: a crashed guard still stops the deploy, and says it crashed, not refused."""
+    box.deploy(_SHA_A)
+    box.write_ledger("live")
+    _write_events(box, 1)
+
+    result = box.deploy(_SHA_B, HERMES_SCHEMA_PYTHON=_posix(box.base / "no-such-python"))
+
+    assert result.returncode == 1, _output(result)
+    assert "the schema guard failed to run" in result.stdout
+    assert "cannot read the events" not in result.stdout
     assert box.target("current") == _SHA_A
 
 
