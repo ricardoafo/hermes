@@ -230,7 +230,7 @@ VERTICAL_BREAKPOINTS: Final[list[tuple[int, str]]] = [
 # Home layout per width class (issue #712): the left column's width, the
 # Market panel's width beside Activity, and the curve rows (doubled when
 # towering). Compact draws a sparkline line instead of the curve.
-LEFT_COLUMN_STANDARD: Final = 50
+LEFT_COLUMN_STANDARD: Final = 46
 LEFT_COLUMN_WIDE: Final = 60
 MARKET_COLUMN_WIDE: Final = 46
 CURVE_ROWS_STANDARD: Final = 5

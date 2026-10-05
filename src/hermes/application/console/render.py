@@ -88,6 +88,7 @@ __all__ = [
     "render_positions",
     "render_shadow_test",
     "render_tax_footnote",
+    "shadow_test_line",
     "to_plain_text",
 ]
 
@@ -1039,13 +1040,25 @@ def render_shadow_test(test: ShadowTest, ctx: RenderContext) -> Group:
     Returns:
         For example ``Shadow test · day 12 of 90 · on track``.
     """
+    return _framed(ctx, [Text(shadow_test_line(test), style="dim")])
+
+
+def shadow_test_line(test: ShadowTest) -> str:
+    """Return the 90-day line's words, for example ``Shadow test · day 12 of 90 · on track``.
+
+    Args:
+        test: The shadow test view.
+
+    Returns:
+        The line, with the note after it when there is one.
+    """
     if test.status is ShadowTestStatus.NOT_STARTED or test.day is None:
         line = "Shadow test · not started"
     else:
         line = f"Shadow test · day {test.day} of {test.length_days} · {test.status.value}"
     if test.note:
         line += f" · {test.note}"
-    return _framed(ctx, [Text(line, style="dim")])
+    return line
 
 
 def render_overview(model: ConsoleReadModel, ctx: RenderContext) -> Group:
