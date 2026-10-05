@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import csv
 import io
+from decimal import Decimal
 from typing import Any, Final, NamedTuple
 
 from hermes.application.messages._escape import escape_slack
@@ -157,7 +158,10 @@ def _daily_digest_csv(event: DailyTradeDigest) -> bytes:
 
 
 def slack_template(
-    event: DomainEvent, *, phase: ReportingPhase = DEFAULT_REPORTING_PHASE
+    event: DomainEvent,
+    *,
+    phase: ReportingPhase = DEFAULT_REPORTING_PHASE,
+    eur_rate: Decimal | None = None,
 ) -> SlackMessage:
     """Render a domain event as a :class:`SlackMessage`.
 
@@ -165,6 +169,8 @@ def slack_template(
         event: A concrete :class:`DomainEvent` instance.
         phase: Reporting phase. Defaults to pre-certification, so outcome
             figures stay withheld unless the caller unblinds explicitly.
+        eur_rate: Quote units per euro for the event's pair, or ``None`` to
+            keep prices in the quote currency.
 
     Returns:
         A :class:`SlackMessage` with plain-text fallback, Block Kit
@@ -175,7 +181,7 @@ def slack_template(
             message names the missing type so the operator can fix the
             registry.
     """
-    family, note = build_note(event, phase)
+    family, note = build_note(event, phase, eur_rate)
     shape = shape_for(family, Channel.SLACK)
     lines, plan_lines = render_parent_and_plan(note, shape, fmt_ref(event.correlation_id))
     attachments: tuple[FileAttachment, ...] = ()

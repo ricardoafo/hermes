@@ -40,11 +40,21 @@ __all__ = [
     "publishable",
 ]
 
-SOURCES: Final = ("health", "signals", "positions", "decisions", "certification")
+SOURCES: Final = ("health", "signals", "engine", "positions", "decisions", "certification")
 """The tools a brief reads, in the order it reads them."""
 
 NOT_ON_CONNECTION: Final = "Not on the data connection yet."
 """What a brief says about an item no tool serves yet, rather than guessing."""
+
+_WINDOWED: Final = frozenset({"signals", "engine"})
+"""The tools a brief asks for its window, ``since`` to now."""
+
+ENGINE_RULES: Final = (
+    "No signal means no check met all three frozen entry rules (breakout, momentum, "
+    "regime). Which rules held on each check, and fills the engine declined: "
+    f"{NOT_ON_CONNECTION[0].lower()}{NOT_ON_CONNECTION[1:]}"
+)
+"""How the brief explains a quiet engine: against the rules, never with a market value."""
 
 
 class BriefKind(StrEnum):
@@ -128,7 +138,7 @@ def gather(dispatcher: ToolDispatcher, *, kind: BriefKind, now: datetime) -> dic
     since = now - _WINDOW[kind]
     bundle: dict[str, object] = {"now": now.isoformat(), "since": since.isoformat()}
     for name in SOURCES:
-        args: dict[str, object] = {"since": since.isoformat()} if name == "signals" else {}
+        args: dict[str, object] = {"since": since.isoformat()} if name in _WINDOWED else {}
         try:
             result = dispatcher.call(name, args)
         except UnknownToolError:
@@ -157,10 +167,11 @@ def compose(inputs: Mapping[str, object], *, kind: BriefKind, titles: bool = Tru
         The brief.
     """
     if kind is BriefKind.DAILY:
-        return Brief(kind, (_daily(inputs, titles=titles),), inputs)
+        return Brief(kind, (_daily(inputs, titles=titles), _engine(inputs)), inputs)
     items = (
         _health(inputs, titles=titles),
         _signals(inputs),
+        _engine(inputs),
         _positions(inputs),
         _decisions(inputs, titles=titles),
         _certification(inputs),
@@ -241,6 +252,36 @@ def _signals(inputs: Mapping[str, object]) -> BriefItem:
         )
         text += "."
     return BriefItem("Signals", text, ("signals",))
+
+
+def _engine(inputs: Mapping[str, object]) -> BriefItem:
+    heading = "What the engine did"
+    view = _section(inputs, "engine")
+    if view is None:
+        return BriefItem(heading, _unavailable(inputs, "engine"), _cited(inputs, ("engine",)))
+    lines = [_pair_activity(row) for row in _rows(view, "pairs")]
+    lines.append(ENGINE_RULES)
+    return BriefItem(heading, " ".join(lines), ("engine",))
+
+
+def _pair_activity(row: Mapping[str, object]) -> str:
+    bars = " and ".join(f"{b.get('count')} {b.get('interval')}" for b in _rows(row, "bars"))
+    parts = [f"{bars} bars checked" if bars else "no bars checked"]
+    entries = row.get("entries") or 0
+    reasons = row.get("exit_reasons")
+    exits = [str(r) for r in reasons] if isinstance(reasons, list) else []
+    if not entries and not exits:
+        parts.append("no signal")
+    else:
+        if entries:
+            parts.append(f"{entries} entry signal(s)")
+        if exits:
+            parts.append(f"exit signal(s) by rule: {', '.join(exits)}")
+    buys, sells = row.get("fills_buy") or 0, row.get("fills_sell") or 0
+    parts.append(f"fills: {buys} buy, {sells} sell" if buys or sells else "no fills")
+    since = row.get("holding_since")
+    parts.append(f"holding since {_when(since)}" if since else "flat")
+    return f"{row.get('pair')}: {'; '.join(parts)}."
 
 
 def _positions(inputs: Mapping[str, object]) -> BriefItem:

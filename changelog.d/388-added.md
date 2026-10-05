@@ -1,0 +1,1 @@
+- `hermes serve` records the trailing stop of each open position on every 4h bar (new `stop_marks` ledger table: stop, chandelier level, ATR, high since entry, whether the stop moved), and hands the last stored stop back to the strategy after a restart. Record-only: no signal changes.
