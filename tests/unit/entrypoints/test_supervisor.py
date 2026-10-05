@@ -215,13 +215,14 @@ def test_a_broken_config_dir_exits_3(tmp_path: Path) -> None:
 
 _ALL_GRANTS = {
     "HERMES_SUPERVISOR_GRANTS": ",".join(
-        f"hermes:read:{n}" for n in ("health", "signals", "positions", "decisions", "certification")
+        f"hermes:read:{n}"
+        for n in ("health", "signals", "engine", "positions", "decisions", "certification")
     )
 }
 
 
 def test_brief_prints_the_daily_line_from_a_real_ledger(tmp_path: Path) -> None:
-    """``brief`` prints the cited daily line and audits one read per tool (#365)."""
+    """``brief`` prints the cited daily line and the engine, auditing one read per tool (#365)."""
     db = write_ledger(
         tmp_path / "hermes.sqlite3", signals=(signal(ETH, SignalKind.ENTRY, LAST_4H, "2618.45"),)
     )
@@ -233,8 +234,10 @@ def test_brief_prints_the_daily_line_from_a_real_ledger(tmp_path: Path) -> None:
     assert lines[0] == "Hermes daily brief, 2026-10-03 16:10 UTC"
     assert "1 signal(s), 1 open position(s)" in lines[1]
     assert lines[1].endswith("[health] [signals] [positions] [decisions]")
+    assert lines[2].startswith("- What the engine did: BTC/USDT: 1 4h and 1 1d bars checked;")
+    assert "ETH/USDT: 1 4h and 1 1d bars checked; 1 entry signal(s); no fills; holding" in out
     assert "2618" not in out
-    assert len(audit.splitlines()) == 5
+    assert len(audit.splitlines()) == 6
 
 
 def test_brief_weekly_lists_every_item(tmp_path: Path) -> None:
@@ -248,6 +251,7 @@ def test_brief_weekly_lists_every_item(tmp_path: Path) -> None:
     assert headings == [
         "- Health",
         "- Signals",
+        "- What the engine did",
         "- Open positions",
         "- Decisions waiting",
         "- Certification",

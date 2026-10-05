@@ -46,7 +46,7 @@ import sys
 import tempfile
 from collections.abc import Callable
 from datetime import UTC, date, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Final, TextIO
 
@@ -528,7 +528,12 @@ def _write_attachments(message: SlackMessage, event_name: str) -> list[Path]:
 
 
 def run_preview(
-    event_name: str, *, fixture: Path | None, stream: Any, err: TextIO | None = None
+    event_name: str,
+    *,
+    fixture: Path | None,
+    stream: Any,
+    err: TextIO | None = None,
+    eur_rate: Decimal | None = None,
 ) -> int:
     """Render templates for ``event_name`` and print them to ``stream``.
 
@@ -538,6 +543,8 @@ def run_preview(
             the canned sample factory.
         stream: File-like output stream.
         err: Stream for ERROR lines; defaults to ``sys.stderr``.
+        eur_rate: Sample rate (quote units per euro). With it the prices
+            render in EUR; without it they keep the quote currency.
 
     Returns:
         Exit code 0 on success, 2 on unknown event name, 1 on fixture
@@ -571,12 +578,12 @@ def run_preview(
     if not telegram_fires:
         stream.write("(routing table: Telegram does not fire for this event; shown for review)\n")
     try:
-        telegram_text = telegram_template(event)
+        telegram_text = telegram_template(event, eur_rate=eur_rate)
     except ValueError:
         telegram_text = "(Telegram has no template for this event: Slack-only report)"
     stream.write(f"{telegram_text}\n\n")
 
-    slack_message = slack_template(event)
+    slack_message = slack_template(event, eur_rate=eur_rate)
     attachments_written = _write_attachments(slack_message, event_name)
     stream.write("## Slack — text fallback\n")
     if not slack_fires:
@@ -652,6 +659,21 @@ def run_send(  # pragma: no cover
 # ---------------------------------------------------------------------------
 
 
+def _parse_eur_rate(value: str) -> Decimal:
+    """Parse ``--eur-rate``: a positive decimal number.
+
+    Raises:
+        argparse.ArgumentTypeError: On anything else (argparse exits 2).
+    """
+    try:
+        rate = Decimal(value)
+    except InvalidOperation as exc:
+        raise argparse.ArgumentTypeError(f"{value!r} is not a number") from exc
+    if not rate.is_finite() or rate <= Decimal(0):
+        raise argparse.ArgumentTypeError(f"{value!r} must be a positive number")
+    return rate
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Return the argparse parser for the ``preview`` subcommand tree.
 
@@ -673,6 +695,16 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="Optional JSON fixture file to load instead of the canned sample.",
+    )
+    parser.add_argument(
+        "--eur-rate",
+        type=_parse_eur_rate,
+        default=None,
+        metavar="RATE",
+        help=(
+            "Sample EUR rate (units of the quote currency per euro, e.g. 1.1721): "
+            "prices render in EUR. Without it they show the quote currency."
+        ),
     )
     parser.add_argument(
         "--send",
@@ -704,4 +736,6 @@ def main(
         return list_events(out)
     if args.send:
         return run_send(args.event, fixture=args.fixture, stream=out, err=err)
-    return run_preview(args.event, fixture=args.fixture, stream=out, err=err)
+    return run_preview(
+        args.event, fixture=args.fixture, stream=out, err=err, eur_rate=args.eur_rate
+    )
