@@ -103,7 +103,6 @@ from hermes.entrypoints.tui_theme import (
     NIGHT_THEME,
     TALL_FROM,
     THEMES,
-    TWO_COLUMNS_FROM,
     VERTICAL_BREAKPOINTS,
     ThemeChoice,
     data_tokens,
@@ -658,7 +657,7 @@ class HomeApp(App[None]):
     @property
     def is_wide(self) -> bool:
         """Return whether the home screen splits into two columns."""
-        return self.size.width >= TWO_COLUMNS_FROM
+        return self.size.width >= COMPACT_BELOW
 
     @property
     def tab(self) -> int:

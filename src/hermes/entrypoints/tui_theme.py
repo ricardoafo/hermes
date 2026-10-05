@@ -36,7 +36,16 @@ __all__ = [
     "COMPACT_BELOW",
     "CONTROL_ROOM",
     "CONTROL_THEME",
+    "CURVE_ROWS_STANDARD",
+    "CURVE_ROWS_WIDE",
     "HORIZONTAL_BREAKPOINTS",
+    "LEFT_COLUMN_STANDARD",
+    "LEFT_COLUMN_WIDE",
+    "LOG_TAIL_ROWS",
+    "MARKET_COLUMN_WIDE",
+    "METER_EMPTY",
+    "METER_FULL",
+    "METER_WARN_SHARE",
     "MOTION",
     "MOTION_ENV",
     "NEON",
@@ -45,10 +54,15 @@ __all__ = [
     "NIGHT_END",
     "NIGHT_START",
     "NIGHT_THEME",
+    "RADAR_FRAMES",
+    "TALL_FROM",
     "THEMES",
     "TOKENS_BY_THEME",
-    "TWO_COLUMNS_FROM",
+    "TOWERING_CHART_FACTOR",
+    "TOWERING_FROM",
+    "ULTRA_FROM",
     "VERTICAL_BREAKPOINTS",
+    "WIDE_FROM",
     "WORDMARK",
     "Motion",
     "ThemeChoice",
@@ -204,9 +218,6 @@ HORIZONTAL_BREAKPOINTS: Final[list[tuple[int, str]]] = [
     (WIDE_FROM, "-wide"),
     (ULTRA_FROM, "-ultra"),
 ]
-# Today's home screen splits into two columns from 120; the per-breakpoint
-# home layout replaces this in issue #712.
-TWO_COLUMNS_FROM: Final = 120
 # Height classes: < 30 rows hides the curve, >= 45 rows doubles the charts.
 TALL_FROM: Final = 30
 TOWERING_FROM: Final = 45
@@ -215,6 +226,23 @@ VERTICAL_BREAKPOINTS: Final[list[tuple[int, str]]] = [
     (TALL_FROM, "-tall"),
     (TOWERING_FROM, "-towering"),
 ]
+
+# Home layout per width class (issue #712): the left column's width, the
+# Market panel's width beside Activity, and the curve rows (doubled when
+# towering). Compact draws a sparkline line instead of the curve.
+LEFT_COLUMN_STANDARD: Final = 50
+LEFT_COLUMN_WIDE: Final = 60
+MARKET_COLUMN_WIDE: Final = 46
+CURVE_ROWS_STANDARD: Final = 5
+CURVE_ROWS_WIDE: Final = 6
+TOWERING_CHART_FACTOR: Final = 2
+LOG_TAIL_ROWS: Final = 10
+# A risk meter turns amber from this share of its cap.
+METER_WARN_SHARE: Final = 0.8
+METER_FULL: Final = "█"
+METER_EMPTY: Final = "░"
+# The empty-positions radar: one braille dot sweeping round.
+RADAR_FRAMES: Final = "⠁⠂⠄⡀⢀⠠⠐⠈"
 
 AI_GLYPH: Final = "✦"
 LIVE_GLYPH: Final = "●"
@@ -240,8 +268,9 @@ WORDMARK: Final = (
 class Motion:
     """Timings in seconds.
 
-    Only ``pulse_*``, ``strip_tick`` and ``clock_tick`` drive timers in issue
-    #711; the others are defined for the effects later issues build.
+    ``pulse_*``, ``strip_tick`` and ``clock_tick`` drive timers since issue
+    #711; ``slow``, ``shimmer``, ``shimmer_step`` and ``radar_tick`` since
+    issue #712; the others are defined for the effects later issues build.
 
     Attributes:
         instant: Instant feedback.
@@ -253,6 +282,8 @@ class Motion:
         pulse_steps: Colour steps per pulse.
         aurora: One drift of the aurora rule.
         shimmer: Pause between shimmer passes on big numbers (issue #712).
+        shimmer_step: One step of a shimmer pass (8 fps, the ambient cap).
+        radar_tick: One step of the empty-positions radar.
         flash: A live price flash (issue #713).
         strip_tick: One step of the window bar's binary strip.
         clock_tick: The clock and the next-bar countdown.
@@ -268,6 +299,8 @@ class Motion:
     pulse_steps: int = 4
     aurora: float = 9.0
     shimmer: float = 6.0
+    shimmer_step: float = 0.125
+    radar_tick: float = 0.25
     flash: float = 0.9
     strip_tick: float = 1.0
     clock_tick: float = 1.0
