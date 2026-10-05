@@ -568,10 +568,10 @@ hermes_sup call health --grant hermes:read:health
 hermes_sup call signals --since 2026-10-01T00:00:00+00:00 --grant hermes:read:signals
 ```
 
-Scopes: `hermes:read:health`, `hermes:read:signals`, `hermes:read:positions`,
-`hermes:read:decisions`, `hermes:read:certification`. History before
-2026-02-01 is refused (memorization guard, ADR-003 §08); `--guard-date`
-can only move that later.
+Scopes: `hermes:read:health`, `hermes:read:signals`, `hermes:read:engine`,
+`hermes:read:positions`, `hermes:read:decisions`,
+`hermes:read:certification`. History before 2026-02-01 is refused
+(memorization guard, ADR-003 §08); `--guard-date` can only move that later.
 
 `hermes supervisor mcp` is the same set of tools as an MCP server over
 stdio, so an MCP client reaches it by SSH over the tailnet, for example
@@ -587,9 +587,15 @@ same tools and grants, with no model call, and every line cites the tool it
 came from, such as `[health]`. A tool you did not grant shows as
 "Unavailable (not granted)".
 
+Both briefs include "What the engine did": for each pair, the bars it
+checked per interval, its entry and exit signals (with the exit rule that
+fired), its fills by side and whether it holds a position. A quiet engine is
+explained against the frozen entry rules. Which rules held on each check and
+the fills the engine declined are not on the data connection yet.
+
 ```bash
 grants=()
-for s in health signals positions decisions certification; do
+for s in health signals engine positions decisions certification; do
     grants+=(--grant "hermes:read:$s")
 done
 hermes_sup brief "${grants[@]}"

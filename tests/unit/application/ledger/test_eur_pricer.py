@@ -5,10 +5,15 @@ Reference: ADR-016 item 5.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
-from hermes.application.ledger.eur_pricer import FAILURE_RETRY_SEC, EurPricer, LookupBudget
+from hermes.application.ledger.eur_pricer import (
+    FAILURE_RETRY_SEC,
+    MAX_CACHED_RATE_AGE_DAYS,
+    EurPricer,
+    LookupBudget,
+)
 from hermes.domain.fx.eur_pricing import EurPricing
 from hermes.domain.value_objects.currency import Currency
 from tests.unit.application.ledger.fake_fx import FakeFx
@@ -131,3 +136,57 @@ def test_eur_quote_needs_no_lookup() -> None:
     fx = FakeFx(down=True)
     pricing = EurPricer(fx).price(Currency.EUR, _FRI, today=_FRI)
     assert (pricing, fx.calls) == (EurPricing.identity(_FRI), [])
+
+
+def test_cached_rate_never_calls_the_provider() -> None:
+    """Invariant (D-1 of 668): the notify path asks the cache only, so FX can never delay a push."""
+    fx = FakeFx(rates={_FRI: (Decimal("1.1721"), _FRI)})
+    pricer = EurPricer(fx)
+    rates = (
+        pricer.cached_rate(Currency.USDT, _FRI),
+        pricer.cached_rate(Currency.USDT, _MON),
+        pricer.cached_rate(Currency.EUR, _FRI),
+    )
+    assert (rates, fx.calls) == ((None, None, Decimal(1)), [])
+
+
+def test_cached_rate_serves_the_final_rate_cached_for_that_date() -> None:
+    """Invariant: after a fill priced the day, a push of that day reads the same ECB rate."""
+    pricer = EurPricer(FakeFx(rates={_FRI: (Decimal("1.1721"), _FRI)}))
+    pricer.price(Currency.USDT, _FRI, today=_FRI)
+    assert pricer.cached_rate(Currency.USDT, _FRI) == Decimal("1.1721")
+
+
+def test_cached_rate_serves_a_provisional_rate_fetched_but_not_final() -> None:
+    """Invariant: a rate not final for a fill is still shown by a push."""
+    pricer = EurPricer(FakeFx(rates={_MON: (Decimal("1.17"), _FRI)}))
+    assert pricer.price(Currency.USDT, _MON, today=_MON) is None
+    assert pricer.cached_rate(Currency.USDT, _MON) == Decimal("1.17")
+
+
+def test_cached_rate_prefers_the_exact_date_over_the_latest() -> None:
+    """Invariant: the final rate of the asked date wins over a later provisional one."""
+    pricer = EurPricer(
+        FakeFx(rates={_FRI: (Decimal("1.1721"), _FRI), _MON: (Decimal("1.30"), _MON)})
+    )
+    pricer.price(Currency.USDT, _FRI, today=_MON)
+    pricer.price(Currency.USDT, _MON, today=_MON)
+    assert pricer.cached_rate(Currency.USDT, _FRI) == Decimal("1.1721")
+
+
+def test_cached_rate_goes_stale_after_the_age_limit() -> None:
+    """Invariant (D-1): a rate past the age limit reads as unknown; at the limit it is served."""
+    pricer = EurPricer(FakeFx(rates={_FRI: (Decimal("1.1721"), _FRI)}))
+    pricer.price(Currency.USDT, _FRI, today=_FRI)
+    limit = timedelta(days=MAX_CACHED_RATE_AGE_DAYS)
+    assert (
+        pricer.cached_rate(Currency.USDT, _FRI + limit),
+        pricer.cached_rate(Currency.USDT, _FRI + limit + timedelta(days=1)),
+    ) == (Decimal("1.1721"), None)
+
+
+def test_cached_rate_is_per_quote_currency() -> None:
+    """Invariant: a USDT rate is never served for another quote."""
+    pricer = EurPricer(FakeFx(rates={_FRI: (Decimal("1.1721"), _FRI)}))
+    pricer.price(Currency.USDT, _FRI, today=_FRI)
+    assert [pricer.cached_rate(Currency.USDC, _FRI)] == [None]
