@@ -22,7 +22,7 @@ import json
 import sqlite3
 from collections.abc import Callable
 from contextlib import closing
-from datetime import UTC, datetime, timedelta, tzinfo
+from datetime import UTC, date, datetime, timedelta, tzinfo
 from decimal import Decimal
 from pathlib import Path
 from typing import Final, Self
@@ -51,6 +51,7 @@ from hermes.application.console.views import (
     PositionDetail,
     PositionRow,
     ShadowTest,
+    WatchedPair,
 )
 from hermes.domain.errors import LedgerError
 from hermes.domain.market_data.bar_schedule import interval_duration
@@ -198,7 +199,7 @@ class LedgerReadModel:
                 reader = _Reader(conn)
                 books, quote = reader.books()
                 closed = reader.closed_pieces(year_start)
-                rate = reader.eur_per_quote(quote) if quote is not None else None
+                newest = reader.eur_rate(quote) if quote is not None else None
                 seeds = reader.seeds()
         except sqlite3.Error as exc:
             raise LedgerError(msg=f"console portfolio read failed: {exc}") from exc
@@ -218,8 +219,10 @@ class LedgerReadModel:
             books=books,
             closed=closed,
             open_net=open_net,
-            eur_per_quote=rate,
+            eur_per_quote=None if newest is None else newest[0],
             seeds=seeds,
+            quote=quote,
+            eur_rate_date=None if newest is None else newest[1],
         )
         return build_portfolio(facts, range_)
 
@@ -286,6 +289,55 @@ class LedgerReadModel:
         return build_shadow_test(
             seeded_at=seeded_at, as_of=as_of, tz=self._tz, fills=fills, quality_checked=checked
         )
+
+    def market_watch(self) -> tuple[WatchedPair, ...]:
+        """Return each checked stream's last bar check, its signal and the next check (#650).
+
+        A stream is a (pair, interval) with at least one ``BarProcessed`` row.
+        The signal of the last check is the ``SignalEmitted`` row written in
+        the same processing cycle (same correlation id). No price is read.
+
+        Raises:
+            LedgerError: On any SQLite failure or an unreadable row.
+        """
+        rows = self._query(
+            "SELECT json_extract(b.payload_json, '$.pair.base'), "
+            "       json_extract(b.payload_json, '$.pair.quote'), "
+            "       json_extract(b.payload_json, '$.interval'), b.occurred_at, "
+            "       (SELECT json_extract(s.payload_json, '$.kind') FROM events s "
+            "        WHERE s.event_type = 'SignalEmitted' "
+            "          AND s.correlation_id = b.correlation_id "
+            "        ORDER BY s.id DESC LIMIT 1) "
+            "FROM events b "
+            "WHERE b.event_type = 'BarProcessed' AND b.id = ("
+            "  SELECT n.id FROM events n WHERE n.event_type = 'BarProcessed' "
+            "    AND json_extract(n.payload_json, '$.pair.base') "
+            "        = json_extract(b.payload_json, '$.pair.base') "
+            "    AND json_extract(n.payload_json, '$.pair.quote') "
+            "        = json_extract(b.payload_json, '$.pair.quote') "
+            "    AND json_extract(n.payload_json, '$.interval') "
+            "        = json_extract(b.payload_json, '$.interval') "
+            "  ORDER BY n.occurred_at DESC, n.id DESC LIMIT 1)",
+            (),
+        )
+        watched: list[WatchedPair] = []
+        try:
+            for base, quote, interval, occurred_at, signal in rows:
+                timeframe = KlineInterval(str(interval))
+                last = datetime.fromisoformat(str(occurred_at)) + _ONE_MS
+                watched.append(
+                    WatchedPair(
+                        coin=str(base),
+                        quote=str(quote),
+                        timeframe=timeframe.value,
+                        last_check_at=last,
+                        signal=None if signal is None else str(signal),
+                        next_check_at=last + interval_duration(timeframe),
+                    )
+                )
+        except ValueError as exc:
+            raise LedgerError(msg=f"market watch: unreadable bar check: {exc}") from exc
+        return tuple(sorted(watched, key=lambda w: (w.coin, w.quote, w.timeframe)))
 
     # ------------------------------------------------------------------
     # Reads
@@ -441,6 +493,11 @@ class _Reader:
 
         Reference: ``ledger-read-model`` D-4; ``live-home-screen`` D-1.
         """
+        newest = self.eur_rate(quote)
+        return None if newest is None else newest[0]
+
+    def eur_rate(self, quote: str) -> tuple[Decimal, date] | None:
+        """Return EUR per quote unit and its ECB rate date, by the newest-rate rule (#692)."""
         row = self._conn.execute(
             "SELECT eur_rate, eur_rate_date, 1, executed_at, id FROM trades "
             "WHERE eur_status = 'ok' AND pair_quote = ? AND eur_rate IS NOT NULL "
@@ -452,7 +509,7 @@ class _Reader:
         ).fetchone()
         if row is None:
             return None
-        return 1 / Decimal(str(row[0]))
+        return 1 / Decimal(str(row[0])), date.fromisoformat(str(row[1]))
 
     def books(self) -> tuple[tuple[StrategyBook, ...], str | None]:
         """Return each strategy's equity history and the one quote currency they share."""
@@ -529,7 +586,7 @@ class _Reader:
     def seeds(self) -> tuple[SeedFacts, ...]:
         """Return every capital seed, with its EUR value once priced (live-home-screen D-3)."""
         rows = self._conn.execute(
-            "SELECT amount, seeded_at, value_eur, eur_status FROM capital_seeds "
+            "SELECT amount, seeded_at, value_eur, eur_status, eur_rate_date FROM capital_seeds "
             "ORDER BY seeded_at, id"
         ).fetchall()
         return tuple(
@@ -537,8 +594,13 @@ class _Reader:
                 amount=Decimal(str(amount)),
                 seeded_at=datetime.fromisoformat(str(at)),
                 value_eur=_optional(value) if status == _OK else None,
+                rate_date=(
+                    date.fromisoformat(str(rate_date))
+                    if status == _OK and rate_date is not None
+                    else None
+                ),
             )
-            for amount, at, value, status in rows
+            for amount, at, value, status, rate_date in rows
         )
 
 

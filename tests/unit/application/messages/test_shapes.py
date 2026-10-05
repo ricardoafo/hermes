@@ -30,6 +30,7 @@ from hermes.application.messages.shapes import (
     Note,
     Shape,
     render_lines,
+    render_parent_and_plan,
     shape_for,
 )
 from tests.support.notification_samples import samples
@@ -37,8 +38,9 @@ from tests.support.notification_samples import samples
 _NOTE = Note(
     minimal="▲ Long BTC",
     compact=("▲ Entry long BTC", "stop 1"),
-    verbose=("▲ Entry long BTC (UTC)", "Plan: stop 1", "Actual: withheld"),
+    verbose=("▲ Entry long BTC (UTC)",),
     footer=("strat",),
+    plan=("Plan: stop 1", "Actual: withheld"),
 )
 
 
@@ -91,6 +93,27 @@ def test_verbose_uses_the_verbose_body() -> None:
         "Plan: stop 1",
         "Actual: withheld",
         "strat · …K7Q2ZP",
+    )
+
+
+def test_parent_and_plan_split_a_verbose_note_with_a_plan() -> None:
+    """A verbose note with a plan gives the headline and ref as parent and the plan apart."""
+    assert render_parent_and_plan(_NOTE, Shape.VERBOSE, "…K7Q2ZP") == (
+        ("▲ Entry long BTC (UTC)", "strat · …K7Q2ZP"),
+        ("Plan: stop 1", "Actual: withheld"),
+    )
+
+
+def test_parent_and_plan_keep_other_shapes_whole() -> None:
+    """A compact note, or a verbose one with no plan, is one parent with an empty plan."""
+    bare = Note(minimal="m", compact=("c",), verbose=("v",))
+
+    assert (
+        render_parent_and_plan(_NOTE, Shape.COMPACT, "…ABC123"),
+        render_parent_and_plan(bare, Shape.VERBOSE, "…ABC123"),
+    ) == (
+        (("▲ Entry long BTC", "stop 1", "strat · …ABC123"), ()),
+        (("v", "…ABC123"), ()),
     )
 
 

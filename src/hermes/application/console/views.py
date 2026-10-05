@@ -35,6 +35,7 @@ __all__ = [
     "TaxEstimate",
     "TaxPending",
     "TimelineEvent",
+    "WatchedPair",
     "WaterfallColumn",
     "tax_amount",
 ]
@@ -193,6 +194,12 @@ class PortfolioSummary:
             when the source knows it.
         open_pnl_pending: An open position is not priced in EUR yet, so
             ``open_pnl`` is not meaningful.
+        quote_currency: The currency ``starting_capital_quote`` and
+            ``total_value_quote`` are counted in (the capital seed's asset).
+        eur_rate_date: Date of the ECB rate the EUR figures were converted
+            at, when the source records it, so a stale rate shows (#692).
+        starting_capital_rate_date: Date of the ECB rate behind
+            ``starting_capital``, when the source records it.
     """
 
     range: PortfolioRange
@@ -215,6 +222,9 @@ class PortfolioSummary:
     eur_pending: bool = False
     total_value_quote: Decimal | None = None
     open_pnl_pending: bool = False
+    quote_currency: str = "USDT"
+    eur_rate_date: date | None = None
+    starting_capital_rate_date: date | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -334,6 +344,33 @@ class PositionDetail:
     def cost(self) -> Decimal:
         """Return ``size x entry + buy fee`` in EUR."""
         return self.row.size * self.row.entry_eur + self.fees_paid
+
+
+@dataclass(frozen=True, slots=True)
+class WatchedPair:
+    """One stream hermes checks, as the market watch shows it (#650).
+
+    It holds only what hermes records about its own checks: no price, no
+    entry level and no distance to one. Live prices sit inside the sealed
+    shadow-test window, so the console does not show how close a pair is to
+    an entry.
+
+    Attributes:
+        coin: Base asset (``"BTC"``).
+        quote: Quote asset (``"USDT"``).
+        timeframe: Bar timeframe of the stream (``"4h"``).
+        last_check_at: When the last bar check of this stream completed.
+        signal: Kind of the signal that check produced (``"entry"`` or
+            ``"exit"``), or ``None`` when it produced none.
+        next_check_at: When the next bar check of this stream is due.
+    """
+
+    coin: str
+    quote: str
+    timeframe: str
+    last_check_at: datetime
+    signal: str | None
+    next_check_at: datetime
 
 
 class ActivityKind(StrEnum):

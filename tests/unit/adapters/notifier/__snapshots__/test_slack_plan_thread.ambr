@@ -1,0 +1,44 @@
+# serializer version: 1
+# name: test_signal_posts_the_headline_then_the_plan_in_its_thread
+  list([
+    dict({
+      'blocks': list([
+        dict({
+          'text': dict({
+            'text': '*▲ Entry long BTC · 52,410.20 USDT · Sat 14:00 (12:00 UTC)*',
+            'type': 'mrkdwn',
+          }),
+          'type': 'section',
+        }),
+        dict({
+          'elements': list([
+            dict({
+              'text': 'swing-donchian-4h · …K7Q2ZP',
+              'type': 'mrkdwn',
+            }),
+          ]),
+          'type': 'context',
+        }),
+      ]),
+      'channel': 'C0123ABCD',
+      'text': '▲ Entry long BTC · 52,410.20 USDT · Sat 14:00 (12:00 UTC)',
+    }),
+    dict({
+      'blocks': list([
+        dict({
+          'text': dict({
+            'text': '''
+              Plan: stop 50,516.00 USDT (−3.6%, 1.8 ATR)
+              Actual: withheld until certification
+            ''',
+            'type': 'mrkdwn',
+          }),
+          'type': 'section',
+        }),
+      ]),
+      'channel': 'C0123ABCD',
+      'text': 'Plan: stop 50,516.00 USDT (−3.6%, 1.8 ATR) · Actual: withheld until certification',
+      'thread_ts': '1759660800.000100',
+    }),
+  ])
+# ---

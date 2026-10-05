@@ -105,12 +105,9 @@ def _signal_note(event: SignalEmitted) -> Note:
                 f"{glyph} Entry {side} {coin}{SEPARATOR}{price}",
                 _join(stop_compact, when),
             ),
-            verbose=(
-                _join(f"{glyph} Entry {side} {coin}", price, when_utc),
-                stop_verbose,
-                ACTUAL_WITHHELD,
-            ),
+            verbose=(_join(f"{glyph} Entry {side} {coin}", price, when_utc),),
             footer=footer,
+            plan=(stop_verbose, ACTUAL_WITHHELD),
         )
     reason = f" ({event.exit_reason})" if event.exit_reason else ""
     entry_ref = f"entry ref {price}"
@@ -120,12 +117,9 @@ def _signal_note(event: SignalEmitted) -> Note:
             f"{glyph} Exit {side} {coin}{reason}",
             _join(entry_ref, f"stop {stop}", when),
         ),
-        verbose=(
-            _join(f"{glyph} Exit {side} {coin}{reason}", when_utc),
-            _join(f"Plan: {entry_ref}", f"stop {stop}"),
-            ACTUAL_WITHHELD,
-        ),
+        verbose=(_join(f"{glyph} Exit {side} {coin}{reason}", when_utc),),
         footer=footer,
+        plan=(_join(f"Plan: {entry_ref}", f"stop {stop}"), ACTUAL_WITHHELD),
     )
 
 
