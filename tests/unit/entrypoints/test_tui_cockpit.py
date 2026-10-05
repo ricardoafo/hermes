@@ -216,7 +216,10 @@ def test_range_keys_still_set_the_range_on_another_screen() -> None:
 
 
 def test_every_home_card_sits_in_a_computed_hud_panel() -> None:
-    """Portfolio, positions, market, activity and detail are each framed and labelled computed."""
+    """Portfolio, positions, market, activity and detail are each framed and labelled computed.
+
+    Issue #712 renamed the market panel "Market" (the design spec's name).
+    """
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> dict[str, tuple[str, str]]:
         del pilot
@@ -231,7 +234,7 @@ def test_every_home_card_sits_in_a_computed_hud_panel() -> None:
     assert _run(probe) == {
         "portfolio": ("Portfolio", "computed"),
         "positions": ("Positions", "computed"),
-        "market": ("Market watch", "computed"),
+        "market": ("Market", "computed"),
         "activity": ("Activity", "computed"),
         "detail": ("Position detail", "computed"),
     }
@@ -569,13 +572,16 @@ def test_motion_off_runs_no_effect_timer() -> None:
 
 
 def test_motion_on_runs_the_pulse_and_the_strip() -> None:
-    """With motion on by day both effects run and the strip advances."""
+    """With motion on by day every effect runs and the strip advances.
+
+    Issue #712 added the big total's shimmer and the empty-positions radar.
+    """
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[list[str], bool]:
         await pilot.pause(1.3)
         return sorted(app.effect_timers), app.query_one(WindowBar).tick > 0
 
-    assert _run(probe, motion=True) == (["pulse", "strip"], True)
+    assert _run(probe, motion=True) == (["pulse", "radar", "shimmer", "strip"], True)
 
 
 def test_night_runs_only_the_slow_pulse() -> None:

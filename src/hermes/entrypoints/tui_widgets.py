@@ -2,6 +2,8 @@
 
 One implementation each, styled only through :mod:`hermes.entrypoints.tui_theme`:
 
+- :class:`BigNumber`: the big total in brand-gradient digits that counts up
+  and shimmers (issue #712);
 - :class:`HudPanel`: the frame every panel sits in (bracket corners, gradient
   title bar, "computed" or "✦ AI supervisor" label, key-hint subtitle, focus
   state, AI variant);
@@ -19,6 +21,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import ClassVar, Final
 
 from rich.cells import cell_len
@@ -30,20 +33,25 @@ from textual.containers import Vertical
 from textual.message import Message
 from textual.reactive import reactive
 from textual.screen import ModalScreen
+from textual.timer import Timer
 from textual.widget import Widget
-from textual.widgets import OptionList, Static
+from textual.widgets import Digits, OptionList, Static
 from textual.widgets.option_list import Option
 
+from hermes.application.console.format import fmt_level
+from hermes.entrypoints.tui_charts import gradient_digits
 from hermes.entrypoints.tui_theme import (
     AI_GLYPH,
     CORNER_BOTTOM_RIGHT,
     CORNER_TOP_LEFT,
     EDGE,
+    MOTION,
     WINDOW_MARK,
     WINDOW_TITLE,
     ThemeChoice,
     Tokens,
     binary_strip,
+    data_tokens,
     gradient,
     tokens_for,
 )
@@ -51,6 +59,7 @@ from hermes.entrypoints.tui_theme import (
 __all__ = [
     "LABEL_AI",
     "LABEL_COMPUTED",
+    "BigNumber",
     "HudPanel",
     "Tab",
     "TabBar",
@@ -500,3 +509,117 @@ def key_chips(chips: Sequence[tuple[str, str]], tokens: Tokens) -> Text:
         if label:
             out.append(label, style=tokens.muted)
     return out
+
+
+_SHIMMER_EDGE: Final = 1.5
+
+
+class BigNumber(Digits):
+    """The big total: Textual's digit glyphs in the brand gradient, one colour per character.
+
+    :meth:`show` sets the figure. With motion on, a change of value counts up
+    from the old value over ``MOTION.slow`` (``out_cubic``), and
+    :meth:`start_shimmer` sweeps a bright band across the figure at 8 fps.
+    With motion off the figure is set at once and the shimmer never runs.
+
+    Args:
+        motion: Run the count-up and the shimmer.
+        id: Widget id.
+        classes: Extra CSS classes.
+    """
+
+    DEFAULT_CSS = """
+    BigNumber { width: auto; height: 3; }
+    """
+
+    shown: reactive[float] = reactive(0.0)
+
+    def __init__(
+        self, *, motion: bool = True, id: str | None = None, classes: str | None = None
+    ) -> None:
+        """Start empty and hidden until :meth:`show` gets a figure."""
+        super().__init__("", id=id, classes=classes)
+        self._motion = motion
+        self._figure = ""
+        self._target: float | None = None
+        self._counting = False
+        self._stale = False
+        self.shimmer_at: float | None = None
+        self._shimmer_timer: Timer | None = None
+
+    def on_mount(self) -> None:
+        """Redraw when the theme changes."""
+        self.app.theme_changed_signal.subscribe(self, lambda _theme: self.refresh())
+
+    @property
+    def figure(self) -> str:
+        """Return the figure the number shows once any count-up has ended."""
+        return self._figure
+
+    def show(self, figure: str | None, value: float | None, *, stale: bool = False) -> None:
+        """Show a figure, counting up from the previous value when motion is on.
+
+        Args:
+            figure: The formatted figure (``€1,021.06``), or ``None`` to hide
+                the number (a blind surface, EUR pending, a short terminal).
+            value: The figure's value, the count-up target.
+            stale: Draw it in one dim colour (hermes is down).
+        """
+        if figure is None or value is None:
+            self.display = False
+            self._target = None
+            return
+        self.display = True
+        self._stale = stale
+        previous, self._target, self._figure = self._target, value, figure
+        if self._motion and previous is not None and previous != value:
+            self._counting = True
+            self.set_reactive(BigNumber.shown, previous)
+            self.animate(
+                "shown",
+                value,
+                duration=MOTION.slow,
+                easing="out_cubic",
+                on_complete=self._settle,
+            )
+            return
+        self._settle()
+
+    def watch_shown(self, shown: float) -> None:
+        """Draw the counting figure."""
+        if self._counting:
+            self.update(fmt_level(Decimal(f"{shown:.2f}")))
+
+    def _settle(self) -> None:
+        self._counting = False
+        self.update(self._figure)
+
+    def start_shimmer(self) -> None:
+        """Start one shimmer pass across the figure (motion on, figure shown)."""
+        if not self._motion or not self.display or self._shimmer_timer is not None:
+            return
+        self.shimmer_at = -_SHIMMER_EDGE
+        self._shimmer_timer = self.set_interval(MOTION.shimmer_step, self._step_shimmer)
+
+    def _step_shimmer(self) -> None:
+        position = (self.shimmer_at or 0.0) + 1
+        if position > len(self.value) + _SHIMMER_EDGE:
+            self.shimmer_at = None
+            if self._shimmer_timer is not None:
+                self._shimmer_timer.stop()
+                self._shimmer_timer = None
+        else:
+            self.shimmer_at = position
+        self.refresh()
+
+    def render(self) -> Text:
+        """Draw the glyphs in the brand gradient, dim when stale."""
+        theme = self.app.theme
+        tokens = tokens_for(theme)
+        return gradient_digits(
+            self.value,
+            tokens.brand,
+            shimmer=self.shimmer_at,
+            highlight=tokens.text,
+            flat=data_tokens(theme).dim if self._stale else None,
+        )

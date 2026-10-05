@@ -113,10 +113,10 @@ def test_rising_series_fills_from_the_bottom_left_to_the_top_right() -> None:
     ]
 
 
-def test_flat_series_is_a_level_band_at_half_height() -> None:
-    """A flat series draws every dot column to half the chart height."""
+def test_flat_series_is_the_bottom_line() -> None:
+    """A flat series draws one dot per column: a level line at the bottom, read as "no change"."""
     rows = braille_area([5.0, 5.0, 5.0], width=3, rows=2)
-    assert _column_heights(rows) == [4] * 6
+    assert _column_heights(rows) == [1] * 6
 
 
 def test_empty_series_is_blank_cells() -> None:

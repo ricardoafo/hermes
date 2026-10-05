@@ -95,12 +95,12 @@ def test_breakpoint_choice(size: tuple[int, int], expected: tuple[object, ...]) 
 
 
 def test_columns_fill_the_width_with_one_cell_gutters() -> None:
-    """At 240 columns: Portfolio 60, then two equal columns, each after a one-cell gutter."""
+    """At 240 columns: a 1-cell scrollbar, Portfolio 60, then the rest 3:2 after 1-cell gutters."""
     layout = home_layout(240, 60)
     assert (layout.left, layout.right, layout.third, layout.classes) == (
         60,
-        89,
-        89,
+        107,
+        70,
         ("-ultra", "-towering"),
     )
 
@@ -164,9 +164,7 @@ def test_exposure_meter_is_the_gain_gradient_below_the_warning_share() -> None:
 def test_unknown_cap_is_said_not_guessed() -> None:
     """Without a roster cap the exposure line says so and draws no meter."""
     exposure = portfolio_meters(_model().portfolio(), _ctx(), BASE, width=60, cap=None)
-    assert _plain(exposure.renderables[-1]).strip() == (
-        "exposure 23.1% · cap not known (roster not readable)"
-    )
+    assert _plain(exposure.renderables[-1]).strip() == ("exposure 23.1% · cap unknown")
 
 
 def test_cash_and_invested_meters_carry_level_and_share() -> None:
@@ -201,7 +199,7 @@ def test_position_rows_mark_the_selected_coin() -> None:
 
 
 def test_wide_position_row_shows_prices_change_net_and_stop_room() -> None:
-    """From 78 cells: entry → now, the change, the net and 'stop −3.0%'."""
+    """From 92 cells: entry → now, the change, the net and 'stop −3.0%'."""
     sol = _rows_text(100)[2]
     assert (
         "→" in sol,
@@ -212,7 +210,7 @@ def test_wide_position_row_shows_prices_change_net_and_stop_room() -> None:
 
 
 def test_narrow_position_row_drops_prices_and_trend() -> None:
-    """Under 56 cells a row is coin, tf, change, net and the stop meter only."""
+    """Under 64 cells a row is coin, tf, change, net and the stop meter only."""
     sol = _rows_text(50)[2].split()
     assert (sol[0], sol[1], sol[-1]) == ("▸SOL", "1d", "−3.0%")
 

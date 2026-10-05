@@ -109,7 +109,7 @@ def _heights(values: Sequence[float], columns: int, dots: int) -> list[int]:
         if span > 0:
             heights.append(1 + round((value - lo) / span * (dots - 1)))
         else:
-            heights.append(max(1, dots // 2))
+            heights.append(1)
     return heights
 
 
@@ -118,7 +118,7 @@ def braille_area(values: Sequence[float], *, width: int, rows: int) -> list[str]
 
     Each cell holds 2x4 dots, so the chart has ``2 x width`` dot columns,
     sampled evenly from the series, and ``4 x rows`` dot levels. The lowest
-    value fills one dot, the highest the full height; a flat series fills half.
+    value fills one dot, the highest the full height; a flat series is the bottom line.
 
     Args:
         values: The series, oldest first.

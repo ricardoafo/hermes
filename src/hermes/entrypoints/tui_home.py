@@ -79,6 +79,9 @@ LOGS_DEMO: Final = "Logs come from the VPS journal; demo data has none."
 LOGS_UNAVAILABLE: Final = "The journal is not readable here; run hermes logs on the VPS."
 _NO_LOGS: Final = "No journal lines yet."
 _GUTTER: Final = 1
+# The home body keeps a one-cell vertical scrollbar gutter at every width.
+_SCROLLBAR: Final = 1
+_MAX_METER: Final = 32
 _LABEL: Final = 9
 _FIGURE: Final = 11
 _SHARE: Final = 7
@@ -86,8 +89,8 @@ _MIN_METER: Final = 6
 _POSITION_SPARK: Final = 10
 _STOP_METER: Final = 8
 _STOP_METER_NARROW: Final = 6
-_PRICES_FROM: Final = 78
-_TREND_FROM: Final = 56
+_PRICES_FROM: Final = 92
+_TREND_FROM: Final = 64
 _RUN_TAIL: Final = 6
 _MIN_RUN_BAR: Final = 10
 _HUNDRED: Final = Decimal(100)
@@ -120,7 +123,8 @@ class HomeLayout:
         columns: 1, 2 or 3 columns of panels.
         left: Width of the Portfolio column in cells.
         right: Width of the Positions column in cells.
-        third: Width of the Signals / log-tail column (ultra only, else 0).
+        third: Width of the Signals / log-tail column (ultra only, else 0); the
+            Positions and third columns share the rest 3:2.
         curve_rows: Rows of the braille curve; 0 hides it.
         sparklines: Charts are sparkline lines (compact).
         big_total: The total is the big gradient number.
@@ -190,16 +194,17 @@ def home_layout(width: int, height: int) -> HomeLayout:
     height_class = _height_class(height)
     factor = TOWERING_CHART_FACTOR if height_class is HeightClass.TOWERING else 1
     compact = width_class is WidthClass.COMPACT
+    usable = width - _SCROLLBAR
     if compact:
-        left = right = width
+        left = right = usable
         third = 0
         curve = 0
     else:
         left = LEFT_COLUMN_STANDARD if width_class is WidthClass.STANDARD else LEFT_COLUMN_WIDE
-        rest = width - left - _GUTTER
+        rest = usable - left - _GUTTER
         if width_class is WidthClass.ULTRA:
-            right = (rest - _GUTTER) // 2
-            third = rest - _GUTTER - right
+            third = (rest - _GUTTER) * 2 // 5
+            right = rest - _GUTTER - third
         else:
             right, third = rest, 0
         base = CURVE_ROWS_STANDARD if width_class is WidthClass.STANDARD else CURVE_ROWS_WIDE
@@ -331,7 +336,7 @@ def portfolio_meters(
     """
     if not _shows_figures(summary, ctx):
         return Group()
-    cells = max(_MIN_METER, width - _LABEL - _FIGURE - _SHARE)
+    cells = min(_MAX_METER, max(_MIN_METER, width - _LABEL - _FIGURE - _SHARE))
     total = summary.total_value
     lines: list[RenderableType] = []
     if cash:
@@ -351,22 +356,21 @@ def portfolio_meters(
             _meter_line(
                 "exposure",
                 Text(_pct(exposure), style=tokens.muted),
-                " · cap not known (roster not readable)",
+                " · cap unknown",
             )
         )
         return Group(*lines)
     of_cap = exposure / cap
     near = of_cap >= Decimal(str(METER_WARN_SHARE))
+    tail = f" {_pct(exposure)} of {_pct(cap).replace('.0%', '%')} cap"
+    cells = min(cells, max(_MIN_METER, width - _LABEL - len(tail)))
     bar = (
         meter(float(of_cap), cells, colour=tokens.warn, empty=tokens.line)
         if near
         else meter(float(of_cap), cells, stops=tokens.gain, empty=tokens.line)
     )
     line = _meter_line("exposure", bar, "")
-    line.append(
-        f" {_pct(exposure)} of {_pct(cap).replace('.0%', '%')} cap",
-        style=tokens.warn if near else "",
-    )
+    line.append(tail, style=tokens.warn if near else "")
     lines.append(line)
     return Group(*lines)
 
@@ -473,8 +477,8 @@ def position_rows(
         details: Each coin's detail (for its price path), when the model has it.
         ctx: Render context.
         tokens: Data token sheet.
-        width: Cells available: from 78 the entry and current prices show, from
-            56 the trend sparkline.
+        width: Cells available: from 92 the entry and current prices show, from
+            64 the trend sparkline.
         selected: Coin marked with ``▸`` (the cursor).
 
     Returns:
