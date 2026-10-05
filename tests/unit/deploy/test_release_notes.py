@@ -140,6 +140,30 @@ def test_markdown_carries_the_changelog_lines_under_their_section(repo: Repo) ->
     assert "not a fragment" not in body
 
 
+def test_a_wrapped_fragment_line_stays_one_changelog_item(repo: Repo) -> None:
+    """Invariant: a bullet wrapped over several lines is one item, not one item per line."""
+    base = repo.commit("chore: base (#1)")
+    repo.tag(f"deploy-{base[:12]}", base)
+    release = repo.commit(
+        "fix: tidy (#7)",
+        {
+            "changelog.d/7-fixed.md": (
+                "- **Bootstrap** skips the mount when\n"
+                "  it is already mounted. Closes #7.\n"
+                "- Second item.\n"
+            ),
+        },
+    )
+
+    body = NOTES.render_markdown(NOTES.collect(repo.path, release), _REPO)
+
+    assert (
+        "### Fixed\n\n"
+        "- **Bootstrap** skips the mount when it is already mounted. Closes #7. (#7)\n"
+        "- Second item. (#7)\n"
+    ) in body
+
+
 def test_markdown_says_redeploy_when_nothing_is_new(repo: Repo) -> None:
     """Invariant: an empty range reads as a redeploy, not as a release with no changes."""
     release = repo.commit("feat: one (#1)")
