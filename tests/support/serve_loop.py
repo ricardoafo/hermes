@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import sqlite3
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -270,13 +270,20 @@ def build(
 
 
 async def drive(
-    composition: serve_module.Composition, feed: FakeFeed, *, timeout: float = 20.0
+    composition: serve_module.Composition,
+    feed: FakeFeed,
+    *,
+    until: Callable[[], bool] | None = None,
+    timeout: float = 20.0,
 ) -> int:
     """Run the loop until the feed idles or the run ends, then shut it down.
 
     Args:
         composition: The wired loop to run.
         feed: The feed whose ``drained`` event ends the run.
+        until: Replaces the wait for the feed to idle: shutdown waits until it
+            returns true (at most ``timeout``), for work that runs beside the
+            live stream, such as the boot EUR pricing.
         timeout: Seconds to wait for the feed to drain, and again for the
             shutdown; a hang guard, so size it well above the normal run time.
 
@@ -287,15 +294,25 @@ async def drive(
     shutdown = asyncio.Event()
     task = asyncio.create_task(serve_module.run(composition, shutdown))
     waiter = asyncio.create_task(feed.drained.wait())
-    await asyncio.wait({task, waiter}, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+    if until is None:
+        await asyncio.wait({task, waiter}, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+    for _ in range(int(timeout / 0.05)):
+        if until is None or until() or task.done():
+            break
+        await asyncio.sleep(0.05)
     shutdown.set()
     waiter.cancel()
     return await asyncio.wait_for(task, timeout=timeout)
 
 
-def run_once(composition: serve_module.Composition, feed: FakeFeed) -> int:
+def run_once(
+    composition: serve_module.Composition,
+    feed: FakeFeed,
+    *,
+    until: Callable[[], bool] | None = None,
+) -> int:
     """Run :func:`drive` to completion and return the exit code."""
-    return asyncio.run(drive(composition, feed))
+    return asyncio.run(drive(composition, feed, until=until))
 
 
 def events(db_path: Path, event_type: str) -> list[dict[str, str]]:
