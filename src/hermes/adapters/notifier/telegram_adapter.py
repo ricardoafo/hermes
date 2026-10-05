@@ -41,6 +41,7 @@ from typing import Any, Final
 import httpx
 import structlog
 
+from hermes.application.messages.eur_rate import EurRateLookup, resolve_eur_rate
 from hermes.application.messages.telegram import telegram_template
 from hermes.application.notification_router import is_event_loud
 from hermes.domain.errors import InfraError
@@ -160,15 +161,23 @@ class TelegramAdapter:
         timeout_sec: Per-request timeout — Telegram Bot API is typically
             fast; a 10s ceiling catches wedged connections without
             starving the notification path.
+        eur_rate: Optional lookup of the EUR rate of an event's quote
+            currency. It must answer from memory (no network): with a rate
+            the push shows prices in EUR, without one in the quote currency.
     """
 
     config: TelegramConfig
     client: httpx.Client = field()
     timeout_sec: float = _DEFAULT_TIMEOUT_SEC
+    eur_rate: EurRateLookup | None = None
 
     @classmethod
     def create(
-        cls, config: TelegramConfig, *, timeout_sec: float = _DEFAULT_TIMEOUT_SEC
+        cls,
+        config: TelegramConfig,
+        *,
+        timeout_sec: float = _DEFAULT_TIMEOUT_SEC,
+        eur_rate: EurRateLookup | None = None,
     ) -> TelegramAdapter:
         """Build an adapter with a default :class:`httpx.Client`.
 
@@ -179,12 +188,13 @@ class TelegramAdapter:
         Args:
             config: Bot API credentials.
             timeout_sec: Per-request timeout in seconds.
+            eur_rate: Optional in-memory EUR rate lookup (see the class).
 
         Returns:
             A new adapter owning its :class:`httpx.Client`.
         """
         client = httpx.Client(base_url=_TELEGRAM_API_BASE, timeout=timeout_sec)
-        return cls(config=config, client=client, timeout_sec=timeout_sec)
+        return cls(config=config, client=client, timeout_sec=timeout_sec, eur_rate=eur_rate)
 
     def close(self) -> None:
         """Release the underlying :class:`httpx.Client` resources.
@@ -213,7 +223,7 @@ class TelegramAdapter:
             ValueError: If no template is registered for ``type(event)``
                 (bubbled from :func:`telegram_template`).
         """
-        text = telegram_template(event)
+        text = telegram_template(event, eur_rate=resolve_eur_rate(self.eur_rate, event))
         payload = {
             "chat_id": self.config.chat_id,
             "text": text,

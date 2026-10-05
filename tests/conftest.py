@@ -1,8 +1,8 @@
 """Shared pytest fixtures, plugin registration and the Hypothesis profiles.
 
-The sev1_guard, sentry_guard and network_guard plugins are registered here (not via addopts -p)
-because pytest loads conftest.py from the rootdir before importing plugins, so it can resolve
-the `tests.plugins.sev1_guard` module by path.
+The sev1_guard, sentry_guard, network_guard and structlog_guard plugins are registered
+here (not via addopts -p) because pytest loads conftest.py from the rootdir before
+importing plugins, so it can resolve the `tests.plugins.sev1_guard` module by path.
 
 Hypothesis runs derandomized by default (#637): the PR and merge-queue gates
 must give the same verdict on the same commit, and random seeds made them
@@ -21,6 +21,7 @@ pytest_plugins = [
     "tests.plugins.sev1_guard",
     "tests.plugins.sentry_guard",
     "tests.plugins.network_guard",
+    "tests.plugins.structlog_guard",
     "pytester",  # enables the `pytester` fixture used by test_sev1_guard.py
 ]
 

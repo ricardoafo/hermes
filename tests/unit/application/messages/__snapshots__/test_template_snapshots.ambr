@@ -337,6 +337,108 @@
     'text': '■ Order rejected · BUY BTC · Sat 14:00 (12:00 UTC) · binance: insufficient balance · Pair: BTC/USDT',
   })
 # ---
+# name: test_slack_message_with_a_rate_matches_snapshot[position-large]
+  dict({
+    'blocks': list([
+      dict({
+        'text': dict({
+          'text': '''
+            *▲ Position large · BUY BTC · €41,928.16 · Sat 14:00 (12:00 UTC)*
+            0.0040 BTC · value €167.71 · fee €0.17
+          ''',
+          'type': 'mrkdwn',
+        }),
+        'type': 'section',
+      }),
+      dict({
+        'elements': list([
+          dict({
+            'text': 'swing-donchian-4h · …K7Q2ZP',
+            'type': 'mrkdwn',
+          }),
+        ]),
+        'type': 'context',
+      }),
+    ]),
+    'text': '▲ Position large · BUY BTC · €41,928.16 · Sat 14:00 (12:00 UTC) · 0.0040 BTC · value €167.71 · fee €0.17',
+  })
+# ---
+# name: test_slack_message_with_a_rate_matches_snapshot[signal-entry]
+  dict({
+    'blocks': list([
+      dict({
+        'text': dict({
+          'text': '*▲ Entry long BTC · €41,928.16 · Sat 14:00 (12:00 UTC)*',
+          'type': 'mrkdwn',
+        }),
+        'type': 'section',
+      }),
+      dict({
+        'elements': list([
+          dict({
+            'text': 'swing-donchian-4h · …K7Q2ZP',
+            'type': 'mrkdwn',
+          }),
+        ]),
+        'type': 'context',
+      }),
+    ]),
+    'plan': dict({
+      'blocks': list([
+        dict({
+          'text': dict({
+            'text': '''
+              Plan: stop €40,412.80 (−3.6%, 1.8 ATR)
+              Actual: withheld until certification
+            ''',
+            'type': 'mrkdwn',
+          }),
+          'type': 'section',
+        }),
+      ]),
+      'text': 'Plan: stop €40,412.80 (−3.6%, 1.8 ATR) · Actual: withheld until certification',
+    }),
+    'text': '▲ Entry long BTC · €41,928.16 · Sat 14:00 (12:00 UTC)',
+  })
+# ---
+# name: test_slack_message_with_a_rate_matches_snapshot[signal-exit]
+  dict({
+    'blocks': list([
+      dict({
+        'text': dict({
+          'text': '*▼ Exit long BTC (trailing_stop) · Sat 14:00 (12:00 UTC)*',
+          'type': 'mrkdwn',
+        }),
+        'type': 'section',
+      }),
+      dict({
+        'elements': list([
+          dict({
+            'text': 'swing-donchian-4h · …K7Q2ZP',
+            'type': 'mrkdwn',
+          }),
+        ]),
+        'type': 'context',
+      }),
+    ]),
+    'plan': dict({
+      'blocks': list([
+        dict({
+          'text': dict({
+            'text': '''
+              Plan: entry ref €41,928.16 · stop €43,280.00
+              Actual: withheld until certification
+            ''',
+            'type': 'mrkdwn',
+          }),
+          'type': 'section',
+        }),
+      ]),
+      'text': 'Plan: entry ref €41,928.16 · stop €43,280.00 · Actual: withheld until certification',
+    }),
+    'text': '▼ Exit long BTC (trailing_stop) · Sat 14:00 (12:00 UTC)',
+  })
+# ---
 # name: test_telegram_message_matches_snapshot[anomaly-critical]
   list([
     '■ Anomaly · reconciler · Sat 14:00',
@@ -410,5 +512,26 @@
     '■ Order rejected · BUY BTC',
     'binance: insufficient balance · Sat 14:00',
     '…K7Q2ZP',
+  ])
+# ---
+# name: test_telegram_message_with_a_rate_matches_snapshot[position-large]
+  list([
+    '▲ Position large · BUY BTC · €41,928\\.16',
+    '0\\.0040 BTC · fee €0\\.17 · Sat 14:00',
+    'swing\\-donchian\\-4h · …K7Q2ZP',
+  ])
+# ---
+# name: test_telegram_message_with_a_rate_matches_snapshot[signal-entry]
+  list([
+    '▲ Entry long BTC · €41,928\\.16',
+    'stop €40,412\\.80 \\(−3\\.6%\\) · Sat 14:00',
+    'swing\\-donchian\\-4h · …K7Q2ZP',
+  ])
+# ---
+# name: test_telegram_message_with_a_rate_matches_snapshot[signal-exit]
+  list([
+    '▼ Exit long BTC \\(trailing\\_stop\\)',
+    'entry ref €41,928\\.16 · stop €43,280\\.00 · Sat 14:00',
+    'swing\\-donchian\\-4h · …K7Q2ZP',
   ])
 # ---

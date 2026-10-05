@@ -47,10 +47,12 @@ install_markdownlint() {
 }
 
 install_gitleaks() {
-  if ! command -v gitleaks >/dev/null 2>&1; then
-    local version=8.21.2
+  local version=8.30.1
+  local sha256=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+  if [ "$(gitleaks version 2>/dev/null)" != "$version" ]; then
     curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz" \
       -o /tmp/gitleaks.tar.gz
+    echo "$sha256  /tmp/gitleaks.tar.gz" | sha256sum -c -
     sudo tar -xzf /tmp/gitleaks.tar.gz -C /usr/local/bin gitleaks
     sudo chmod +x /usr/local/bin/gitleaks
   fi

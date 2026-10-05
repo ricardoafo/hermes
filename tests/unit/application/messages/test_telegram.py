@@ -20,6 +20,7 @@ from __future__ import annotations
 import dataclasses
 import re
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import ClassVar
 
 import pytest
@@ -112,3 +113,19 @@ def test_two_calls_return_equal_strings() -> None:
     event = samples()["strategy-paused-critical"]
 
     assert telegram_template(event) == telegram_template(event)
+
+
+def test_telegram_entry_with_a_rate_is_in_euros_and_escaped() -> None:
+    """Invariant (668 R-1): the push shows EUR prices and the dot stays MarkdownV2-escaped."""
+    text = telegram_template(samples()["signal-entry"], eur_rate=Decimal("1.25"))
+    assert text.splitlines()[:2] == [
+        "▲ Entry long BTC · €41,928\\.16",
+        "stop €40,412\\.80 \\(−3\\.6%\\) · Sat 14:00",  # noqa: RUF001 - the typographic minus is the character under test
+    ]
+
+
+def test_telegram_entry_without_a_rate_stays_in_usdt() -> None:
+    """Invariant (668 R-2): no rate, the USDT text of before."""
+    assert telegram_template(samples()["signal-entry"]).splitlines()[0] == (
+        "▲ Entry long BTC · 52,410\\.20 USDT"
+    )

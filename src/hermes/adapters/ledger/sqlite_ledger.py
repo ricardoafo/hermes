@@ -65,6 +65,7 @@ from hermes.domain.portfolio.mark import PortfolioMark
 from hermes.domain.portfolio.position import Position
 from hermes.domain.portfolio.snapshot import PortfolioSnapshot
 from hermes.domain.strategy.signal import SignalKind, SignalSide
+from hermes.domain.strategy.stop_mark import StopMark, StopRecord
 from hermes.domain.trading.order import OrderSide
 from hermes.domain.trading.trade_record import TradeEur, TradeRecord
 from hermes.domain.value_objects.currency import Currency
@@ -664,6 +665,74 @@ class SqliteLedger:
         except sqlite3.Error as exc:
             raise LedgerError(msg=f"latest_portfolio_mark failed: {exc}") from exc
         return None if row is None else _row_to_mark(row)
+
+    # ------------------------------------------------------------------
+    # StopHistoryPort — the stop of each open position per 4h bar (#388)
+    # ------------------------------------------------------------------
+
+    def record_stop_mark(self, mark: StopMark) -> bool:
+        """Store the stop a strategy evaluated on one bar while holding a position.
+
+        Args:
+            mark: The stop record and the bar it followed.
+
+        Returns:
+            ``False`` when that bar's mark is already stored (a replay after a
+            restart); the stored row is kept.
+
+        Raises:
+            LedgerError: On any SQLite failure.
+        """
+        record = mark.record
+        try:
+            inserted = self._conn.execute(
+                "INSERT OR IGNORE INTO stop_marks (strategy_id, pair_base, pair_quote, "
+                "entry_time, bar_close_time, stop_price, chandelier_level, atr, "
+                "high_since_entry, stop_moved, recorded_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    mark.strategy_id.value,
+                    mark.pair.base.value,
+                    mark.pair.quote.value,
+                    _iso_utc(record.entry_time),
+                    _iso_utc(mark.bar_close_time),
+                    str(record.stop_price),
+                    str(record.chandelier_level),
+                    str(record.atr),
+                    None if record.high_since_entry is None else str(record.high_since_entry),
+                    None if record.stop_moved is None else int(record.stop_moved),
+                    _iso_utc(datetime.now(UTC)),
+                ),
+            ).rowcount
+            self._conn.commit()
+        except sqlite3.Error as exc:
+            self._conn.rollback()
+            raise LedgerError(msg=f"record_stop_mark failed: {exc}") from exc
+        return bool(inserted)
+
+    def latest_stop_mark(
+        self, strategy_id: StrategyId, pair: Pair, entry_time: datetime
+    ) -> StopMark | None:
+        """Return the newest mark of the position that opened at ``entry_time``.
+
+        Keyed on the entry time, so a new position never inherits the stop of an
+        earlier one on the same pair.
+
+        Raises:
+            LedgerError: On any SQLite failure or an unreadable row.
+        """
+        try:
+            row = self._conn.execute(
+                "SELECT strategy_id, pair_base, pair_quote, entry_time, bar_close_time, "
+                "stop_price, chandelier_level, atr, high_since_entry, stop_moved "
+                "FROM stop_marks "
+                "WHERE strategy_id = ? AND pair_base = ? AND pair_quote = ? AND entry_time = ? "
+                "ORDER BY bar_close_time DESC LIMIT 1",
+                (strategy_id.value, pair.base.value, pair.quote.value, _iso_utc(entry_time)),
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"latest_stop_mark failed: {exc}") from exc
+        return None if row is None else _row_to_stop_mark(row)
 
     # ------------------------------------------------------------------
     # LedgerPort — read methods
@@ -1340,6 +1409,27 @@ def _row_to_mark(row: tuple[Any, ...]) -> PortfolioMark:
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise LedgerError(msg=f"portfolio mark row is unreadable: {exc}") from exc
+
+
+def _row_to_stop_mark(row: tuple[Any, ...]) -> StopMark:
+    """Rebuild a :class:`StopMark` from a ``stop_marks`` row."""
+    strategy, base, quote, entry, close_time, stop, level, atr, high, moved = row
+    try:
+        return StopMark(
+            strategy_id=StrategyId(strategy),
+            pair=Pair(base=Currency(base), quote=Currency(quote)),
+            bar_close_time=datetime.fromisoformat(close_time),
+            record=StopRecord(
+                entry_time=datetime.fromisoformat(entry),
+                stop_price=Decimal(stop),
+                chandelier_level=Decimal(level),
+                atr=Decimal(atr),
+                high_since_entry=None if high is None else Decimal(high),
+                stop_moved=None if moved is None else bool(moved),
+            ),
+        )
+    except (TypeError, ValueError, ArithmeticError) as exc:
+        raise LedgerError(msg=f"stop mark row is unreadable: {exc}") from exc
 
 
 def _iso_utc(dt: datetime) -> str:

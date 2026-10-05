@@ -15,6 +15,7 @@ import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import date
+from decimal import Decimal
 from typing import Final
 
 import structlog
@@ -25,9 +26,12 @@ from hermes.domain.fx.fx_rate import FxRate
 from hermes.domain.value_objects.currency import Currency
 from hermes.ports.fx import FxRateProviderPort
 
-__all__ = ["DEFAULT_EUR_SOURCE", "EurPricer", "LookupBudget"]
+__all__ = ["DEFAULT_EUR_SOURCE", "MAX_CACHED_RATE_AGE_DAYS", "EurPricer", "LookupBudget"]
 
 DEFAULT_EUR_SOURCE: Final[str] = "ecb:frankfurter"
+
+MAX_CACHED_RATE_AGE_DAYS: Final[int] = 7
+"""Oldest rate, in days from the asked date, that :meth:`EurPricer.cached_rate` serves."""
 
 # Why 300: a (quote, date) the provider just failed on is not asked again for
 # five minutes, so one unreachable rate costs one timeout instead of one per
@@ -90,6 +94,7 @@ class EurPricer:
         # read them. Each access is one dict get or set, which the GIL keeps
         # atomic; a stale read only costs an extra lookup, never a wrong rate.
         self._cache: dict[tuple[Currency, date], EurPricing] = {}
+        self._latest: dict[Currency, EurPricing] = {}
         self._failed_until: dict[tuple[Currency, date], float] = {}
         self.provider_calls = 0
 
@@ -155,6 +160,7 @@ class EurPricer:
             )
             self._remember_failure(quote, fill_date)
             return None
+        self._latest[quote] = pricing
         if not rate_is_final(fill_date=fill_date, rate_date=pricing.rate_date, today=today):
             _log.info(
                 "eur_rate_not_final",
@@ -166,6 +172,33 @@ class EurPricer:
             return None
         self._cache[(quote, fill_date)] = pricing
         return pricing
+
+    def cached_rate(self, quote: Currency, on_date: date) -> Decimal | None:
+        """Return an already-known rate of ``quote`` per euro, never fetching.
+
+        Serves the notification path, which must not wait on a rate source
+        (change ``668-eur-prices-in-pushes`` D-1). The final rate cached for
+        ``on_date`` wins; otherwise the most recent rate fetched for ``quote``,
+        final or provisional, is used while its date is within
+        :data:`MAX_CACHED_RATE_AGE_DAYS` of ``on_date``.
+
+        Args:
+            quote: The pair's quote currency.
+            on_date: Madrid calendar date the rate is wanted for.
+
+        Returns:
+            Units of ``quote`` per one EUR, or ``None`` when no recent enough
+            rate is held. Never calls the provider and never raises.
+        """
+        if quote == Currency.EUR:
+            return Decimal(1)
+        exact = self._cache.get((quote, on_date))
+        if exact is not None:
+            return exact.rate
+        latest = self._latest.get(quote)
+        if latest is None or abs((on_date - latest.rate_date).days) > MAX_CACHED_RATE_AGE_DAYS:
+            return None
+        return latest.rate
 
     def _remember_failure(self, quote: Currency, fill_date: date) -> None:
         """Skip the provider for this key until ``FAILURE_RETRY_SEC`` has passed."""
