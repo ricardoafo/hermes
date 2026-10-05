@@ -19,7 +19,7 @@ a committed copy went stale whenever another PR merged first.
 <!-- guides-index-start -->
 | Guide | What it covers |
 | ----- | -------------- |
-| [ai-authored-tests.md](ai-authored-tests.md) | What makes a unit test meaningful, how AI typically fails at writing tests, the protocol AI must follow in this repo, and the tooling that enforces it. |
+| [ai-authored-tests.md](ai-authored-tests.md) | What makes a unit test meaningful, how AI typically fails at writing tests, the unit-test standard every test in this repo follows, and the tooling that enforces it. |
 | [ai-development-lifecycle.md](ai-development-lifecycle.md) | End-to-end flow from idea to VPS runtime; how milestones, issues, and the project board fill in as work moves. |
 | [ai-review.md](ai-review.md) | How the independent AI review works on every PR, what the "For Rick" card means, how writers act on findings, and how the reviewer token is set up. |
 | [automation-trust-chain.md](automation-trust-chain.md) | How PRs #209 + #210 + #213 combine to give a hands-off "idea → merge to main" flow. Cross-repo reproduction reference. |
