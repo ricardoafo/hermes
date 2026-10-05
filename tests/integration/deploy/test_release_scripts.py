@@ -1751,7 +1751,9 @@ def test_a_guard_that_raises_is_reported_as_a_crash_not_a_refusal(box: Box) -> N
     box.write_ledger("live")
     _write_events(box, 1)
     raising = box.base / "raising-python"
-    raising.write_text("#!/usr/bin/env bash\necho Traceback >&2\nexit 1\n", encoding="utf-8")
+    raising.write_text(
+        "#!/usr/bin/env bash\necho Traceback >&2\nexit 1\n", encoding="utf-8", newline="\n"
+    )
     raising.chmod(0o755)
 
     result = box.deploy(_SHA_B, HERMES_SCHEMA_PYTHON=_posix(raising))
