@@ -32,6 +32,9 @@
 #      the newest BACKUPS_KEPT. The new release may migrate the schema at
 #      start; the snapshot is the way back. A failed snapshot stops the
 #      deploy before anything goes live.
+#   3a. Refuse a release that cannot read the ledger's events (#655): a
+#      ledger holding a newer event schema than the release knows (an old
+#      commit deployed after a newer one wrote) would fail it at start.
 #   3b. If the new release has a destructive migration pending (#447), stop
 #      the unit and run it through `hermes migrate` with the new release's
 #      binary. Serve never applies those at start. A failed migration rolls
@@ -56,7 +59,7 @@
 #
 # Test seams: HERMES_ROOT, HERMES_ENV_FILE, SYSTEMCTL, HERMES_DB,
 # HERMES_BACKUP_DIR, HERMES_BACKUP_PYTHON, HERMES_MIGRATE_BIN, RUNUSER,
-# HERMES_UNIT_DIR, HERMES_NOW_EPOCH. The
+# HERMES_UNIT_DIR, HERMES_NOW_EPOCH, HERMES_SCHEMA_PYTHON. The
 # seams override the target's paths, and the staging guard still checks them.
 # The script can be sourced to reach prune_versions on its own.
 #
@@ -234,6 +237,7 @@ preflight() {
     [ -f "$stage/deploy/hermes-notify-crash.sh" ] || die "$stage/deploy/hermes-notify-crash.sh missing"
     [ -f "$SCRIPT_DIR/health_gate.sh" ] || die "$SCRIPT_DIR/health_gate.sh missing"
     [ -f "$SCRIPT_DIR/rollback.sh" ] || die "$SCRIPT_DIR/rollback.sh missing"
+    [ -f "$SCRIPT_DIR/schema_guard.py" ] || die "$SCRIPT_DIR/schema_guard.py missing"
 }
 
 # Build versions/<sha> from the stage. `.installed` is written last, so an
@@ -470,6 +474,20 @@ main() {
     snapshot=$(backup_ledger "$sha" "${HERMES_BACKUP_PYTHON:-$vdir/.venv/bin/python}") \
         || die "ledger snapshot of $DB failed: not deploying $sha"
 
+    if [ -f "$DB" ]; then
+        # Read-only, as the service user that owns the ledger and its WAL files.
+        # The script goes in on stdin: the staging dir is root-only (0700), so
+        # the service user cannot open a path inside it.
+        local guard_rc=0
+        "$RUNUSER" -u "$RUN_AS" -- "${HERMES_SCHEMA_PYTHON:-$vdir/.venv/bin/python}" \
+            - "$DB" < "$SCRIPT_DIR/schema_guard.py" || guard_rc=$?
+        case $guard_rc in
+            0) ;;
+            1) die "release $sha cannot read the events in $DB: not deploying it" ;;
+            *) die "the schema guard failed to run (exit $guard_rc): not deploying $sha" ;;
+        esac
+    fi
+
     if ! migrate_ledger "$vdir"; then
         # current still points at the old release and the failed migration
         # rolled back in its transaction, so the old release can run as before.
@@ -520,7 +538,7 @@ main() {
     # scripts a manual rollback depends on, nor the failure alert, which runs
     # from here so it survives a broken release (#364).
     install -d -m 0755 "$ROOT/bin"
-    install -m 0755 "$SCRIPT_DIR/health_gate.sh" "$SCRIPT_DIR/rollback.sh" \
+    install -m 0755 "$SCRIPT_DIR/health_gate.sh" "$SCRIPT_DIR/rollback.sh" "$SCRIPT_DIR/schema_guard.py" \
         "$stage/deploy/hermes-notify-failure.sh" "$stage/deploy/hermes-notify-crash.sh" \
         "$ROOT/bin/"
     rm -rf "$unit_backup"

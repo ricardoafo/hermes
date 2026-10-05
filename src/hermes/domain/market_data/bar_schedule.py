@@ -23,7 +23,7 @@ Domain purity: stdlib and domain types only.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Final
@@ -40,6 +40,7 @@ __all__ = [
     "interval_duration",
     "is_closed",
     "next_boundary",
+    "order_for_delivery",
     "plan_delivery",
     "previous_boundary",
     "within_catchup",
@@ -219,6 +220,24 @@ def delivery_key(bar: Bar) -> tuple[datetime, float, str]:
     )
 
 
+def order_for_delivery(bars: Iterable[Bar]) -> tuple[Bar, ...]:
+    """Return ``bars`` in delivery order: close time, longer candle first, pair.
+
+    The one place the order is decided. Serve (warm-up and live delivery) and
+    the parity replay (#358) both call it, so they cannot disagree on the order
+    a strategy sees. Merging streams by open time instead is the #343 R-4 bug:
+    a 4h bar closing with a 1d bar would reach the strategy before it.
+
+    Args:
+        bars: Closed bars of any streams, in any order.
+
+    Returns:
+        The bars sorted by :func:`delivery_key`. The sort is stable, so bars
+        with equal keys keep their input order.
+    """
+    return tuple(sorted(bars, key=delivery_key))
+
+
 @dataclass(frozen=True, slots=True)
 class DeliveryPlan:
     """Outcome of :func:`plan_delivery`.
@@ -283,7 +302,7 @@ def plan_delivery(
                 advanced[(bar.pair, bar.interval)] = bar.open_time
             delivered.extend(bars_at)
             gaps.extend(gaps_at)
-    delivered.sort(key=delivery_key)
+    delivered = list(order_for_delivery(delivered))
     return DeliveryPlan(bars=tuple(delivered), cursors=advanced, gaps=tuple(gaps))
 
 

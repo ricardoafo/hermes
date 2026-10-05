@@ -41,6 +41,8 @@ class Command:
         stub: True for a placeholder that is not implemented yet.
         wants_demo: True when ``run`` also takes ``demo=``, the scenario of a
             leading ``hermes --demo SCENARIO`` (``None`` without one).
+        json: True when the command (or one of its subcommands) prints one
+            JSON document with ``--json``; ``hermes --help`` lists these.
     """
 
     name: str
@@ -48,6 +50,7 @@ class Command:
     run: Callable[..., int]
     stub: bool = False
     wants_demo: bool = False
+    json: bool = False
 
 
 def discover() -> dict[str, Command]:

@@ -16,4 +16,5 @@ COMMAND = Command(
         argv, stream=stream, demo_flag=demo, env=os.environ, err=err
     ),
     wants_demo=True,
+    json=True,
 )

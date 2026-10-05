@@ -15,12 +15,13 @@ Invariants:
 from __future__ import annotations
 
 import io
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from hermes.entrypoints.activity import run_activity
+from hermes.entrypoints.commands import tui as tui_command
 from hermes.entrypoints.commands.positions import run_positions
 from hermes.entrypoints.commands.tui import run_tui
 from hermes.entrypoints.console import (
@@ -29,6 +30,7 @@ from hermes.entrypoints.console import (
     demo_read_model,
     resolve_read_model,
 )
+from hermes.entrypoints.version import ReleaseInfo
 from tests.unit.adapters.console._ledger_builder import (
     ETH,
     T0,
@@ -139,3 +141,13 @@ def test_activity_reads_the_live_model(ledger: Path, monkeypatch: pytest.MonkeyP
     stream = io.StringIO()
     rc = run_activity(["--all", "--days", "30"], stream, env={}, now=T0 + timedelta(hours=9))
     assert (rc, "4h check" in stream.getvalue()) == (0, True)
+
+
+def test_tui_release_comes_from_the_status_release_reader(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The TUI names the release ``read_release`` returns, the reader ``hermes status`` uses."""
+    monkeypatch.setattr(
+        tui_command,
+        "read_release",
+        lambda: ReleaseInfo("abc123def456", datetime(2026, 10, 5, tzinfo=UTC)),
+    )
+    assert tui_command._release_name() == "abc123def456"

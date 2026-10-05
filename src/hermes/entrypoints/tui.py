@@ -6,9 +6,10 @@ the two can never disagree. The app never writes: it only calls the read
 methods of the read model, so opening it while ``hermes serve`` runs neither
 blocks nor touches the ledger.
 
-Layout: below 120 columns everything stacks (portfolio, positions, activity;
-the position detail opens as its own screen). From 120 columns the portfolio
-and activity sit left and the positions and detail right. The portfolio total
+Layout: below 120 columns everything stacks (portfolio, positions, market
+watch, activity; the position detail opens as its own screen). From 120
+columns the portfolio and activity sit left and the positions (with the market
+watch under them) and detail right. The portfolio total
 is drawn three rows tall on terminals 30 rows or higher.
 
 Every card is drawn on its own: a view the read model cannot serve yet (or a
@@ -16,8 +17,13 @@ ledger read that fails) turns that card into a plain "not available yet" (or
 "could not read the ledger") line and leaves the others standing, so the live
 screen never stops on a missing figure (change ``live-home-screen`` D-6).
 
-Keys: ``1`` ``7`` ``3`` ``Y`` range (``3`` selects the 30-day range), up and
-down select a position, Enter opens it, ``L`` logs, ``?`` help, ``Q`` quit.
+The top line names the running release when the caller passes a release
+source (``hermes tui`` reads the same ``current`` link as ``hermes status``,
+issue #649).
+
+Keys: ``D`` ``W`` ``M`` ``Y`` range (day, week, month, year), up and down
+(or ``j`` ``k``) select a position, Enter opens it, Esc closes it, ``L`` logs,
+``?`` help, ``Q`` quit.
 
 Reference: openspec/changes/readonly-tui-dashboard/change.md;
 openspec/changes/live-home-screen/change.md (D-6).
@@ -36,7 +42,7 @@ from rich.text import Text
 from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
-from textual.containers import Container, Horizontal
+from textual.containers import Container, Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Static
 
@@ -53,6 +59,7 @@ from hermes.application.console.render import (
     RenderContext,
     render_activity,
     render_heartbeat,
+    render_market_watch,
     render_portfolio,
     render_position_detail,
     render_positions,
@@ -70,7 +77,7 @@ _LEFT_COLUMN: Final = 46
 _BIG_TOTAL_FROM_ROWS: Final = 30
 _ACTIVITY_ROWS: Final = 4
 _ACTIVITY_ROWS_SHORT: Final = 3
-_FOOTER: Final = "1 7 30 Y range · ↵ detail · L logs · ? help · Q quit · read-only"
+_FOOTER: Final = "D W M Y range · ↵ detail · L logs · ? help · Q quit · read-only"
 _LOGS_LINES: Final = 50
 _LOGS_DEMO: Final = "Logs come from the VPS journal; demo data has none."
 _LOGS_UNAVAILABLE: Final = "The journal is not readable here; run hermes logs on the VPS."
@@ -180,6 +187,7 @@ class HomeApp(App[None]):
     Screen { background: $surface; }
     #top { height: 1; }
     #demo-tag { width: auto; }
+    #release { width: auto; color: $text-muted; }
     #heartbeat { width: 1fr; }
     #down-row { display: none; height: auto; }
     #down-row.-down { display: block; }
@@ -193,6 +201,8 @@ class HomeApp(App[None]):
     }
     #body.-wide { grid-size: 2; grid-columns: 46 1fr; grid-gutter: 1 2; }
     .cell { height: auto; }
+    #watch-column { height: auto; }
+    #positions, #market { height: auto; }
     #detail { display: none; }
     #detail.-open { display: block; }
     #shadow, #footer, #panel-footer { height: 1; }
@@ -200,9 +210,9 @@ class HomeApp(App[None]):
     #panel { height: 1fr; padding: 0 1; overflow-y: auto; }
     """
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("1", "range('today')", "today", show=False),
-        Binding("7", "range('week')", "week", show=False),
-        Binding("3", "range('month')", "30 days", show=False),
+        Binding("d,D", "range('today')", "today", show=False),
+        Binding("w,W", "range('week')", "week", show=False),
+        Binding("m,M", "range('month')", "month", show=False),
         Binding("y,Y", "range('year')", "year", show=False),
         Binding("up,k", "select(-1)", "previous", show=False),
         Binding("down,j", "select(1)", "next", show=False),
@@ -219,6 +229,7 @@ class HomeApp(App[None]):
         *,
         refresh_seconds: float = REFRESH_SECONDS,
         journal: Callable[[int], Sequence[LogLine] | None] | None = None,
+        release: Callable[[], str] | None = None,
     ) -> None:
         """Hold the read model, the journal source and the screen state.
 
@@ -227,10 +238,13 @@ class HomeApp(App[None]):
             refresh_seconds: Seconds between redraws.
             journal: Returns the last N journal lines, or ``None`` when the
                 journal is not readable here; ``None`` means no journal at all.
+            release: Returns the running release's name, re-read on every
+                redraw; ``None`` leaves the top line without a release.
         """
         super().__init__()
         self._model = model
         self._journal = journal
+        self._release = release
         self._refresh_seconds = refresh_seconds
         self._range = PortfolioRange.TODAY
         self._selected: str | None = None
@@ -241,11 +255,14 @@ class HomeApp(App[None]):
         """Lay out the status bar, the four cells, the 90-day line and the footer."""
         with Horizontal(id="top"):
             yield Static(id="demo-tag")
+            yield Static(id="release")
             yield Static(id="heartbeat")
         yield Static(id="down-row")
         with Container(id="body"):
             yield Static(id="portfolio", classes="cell")
-            yield Static(id="positions", classes="cell")
+            with Vertical(id="watch-column", classes="cell"):
+                yield Static(id="positions")
+                yield Static(id="market")
             yield Static(id="activity", classes="cell")
             yield Static(id="detail", classes="cell")
         yield Static(id="shadow")
@@ -275,8 +292,8 @@ class HomeApp(App[None]):
         """Return the text of one widget without styles (for tests and review).
 
         Args:
-            widget_id: ``demo-tag``, ``heartbeat``, ``down-row``, ``portfolio``,
-                ``positions``, ``activity``, ``detail`` or ``shadow``.
+            widget_id: ``demo-tag``, ``release``, ``heartbeat``, ``down-row``, ``portfolio``,
+                ``positions``, ``market``, ``activity``, ``detail`` or ``shadow``.
 
         Returns:
             The rendered text, one line per row.
@@ -328,6 +345,9 @@ class HomeApp(App[None]):
             else Text("")
         )
         self._set("demo-tag", tag)
+        self._set(
+            "release", Text("") if self._release is None else Text(f"release {self._release()}")
+        )
         try:
             heartbeat = model.heartbeat()
         except _CARD_ERRORS as exc:
@@ -360,6 +380,13 @@ class HomeApp(App[None]):
             _card(
                 "Positions",
                 lambda: render_positions(model.positions(), ctx, selected=selected),
+            ),
+        )
+        self._set(
+            "market",
+            _card(
+                "Market watch",
+                lambda: Group(Text(""), render_market_watch(model.market_watch(), ctx)),
             ),
         )
         self._set(
@@ -461,7 +488,7 @@ class HomeApp(App[None]):
     def _help_content(self) -> RenderableType:
         keys = [
             Text("Keys", style="bold"),
-            Text("  1 today · 7 week · 30 month (press 3) · Y year"),
+            Text("  D day · W week · M month · Y year"),
             Text("  ↑ ↓ choose a position · Enter open its detail · Esc back"),
             Text("  L logs · ? this help · Q quit"),
             Text(
@@ -479,11 +506,13 @@ class HomeApp(App[None]):
 def run_home(
     model: ConsoleReadModel,
     journal: Callable[[int], Sequence[LogLine] | None] | None = None,
+    release: Callable[[], str] | None = None,
 ) -> None:
     """Run the home screen until the operator quits.
 
     Args:
         model: The read model to show.
         journal: Source of the logs panel's lines; see :class:`HomeApp`.
+        release: Source of the running release's name; see :class:`HomeApp`.
     """
-    HomeApp(model, journal=journal).run()
+    HomeApp(model, journal=journal, release=release).run()

@@ -536,6 +536,11 @@ shows as usual; to type it once per session, load the key into the agent
 administrator PowerShell, then `ssh-add $HOME\.ssh\hermes_vps_ed25519`).
 This is optional.
 
+The session sends an ssh keepalive, so a dead link is noticed in about 30
+seconds. If the connection drops, the console prints `connection lost ·
+reconnecting in Ns (Ctrl+C to stop)` and reconnects with a 2 to 30 second
+backoff; Ctrl+C stops it. Authentication failures never retry.
+
 On the VPS itself, a deploy installs `/usr/local/bin/hermes`, a wrapper that
 does what `hermes_run` does and allows only the same console commands (plus
 `--help`); `hermes status` works bare there because the wrapper sets
