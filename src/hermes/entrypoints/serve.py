@@ -113,6 +113,7 @@ from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.portfolio.mark import PortfolioMark
 from hermes.domain.portfolio.snapshot import PortfolioSnapshot
 from hermes.domain.strategy.signal import OpenPosition, SignalKind, StrategySignal
+from hermes.domain.strategy.stop_mark import StopMark
 from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
@@ -865,7 +866,12 @@ class _BarLoop:
         latest = self.c.ledger.latest_signal_event(self.c.strategy_id, pair, at_or_before=cursor)
         if latest is None or latest.kind is not SignalKind.ENTRY or latest.entry_price is None:
             return None
-        return OpenPosition(entry_time=latest.occurred_at, entry_price=latest.entry_price)
+        stop = self.c.ledger.latest_stop_mark(self.c.strategy_id, pair, latest.occurred_at)
+        return OpenPosition(
+            entry_time=latest.occurred_at,
+            entry_price=latest.entry_price,
+            last_stop=None if stop is None else stop.record.stop_price,
+        )
 
     async def handle(self, bar: Bar) -> None:
         """Evaluate one closed bar, record any signal, notify, then move the cursor."""
@@ -917,6 +923,7 @@ class _BarLoop:
                 bar_close_time=bar.close_time,
             )
         )
+        self._record_stop(bar)
         if stored is not None:
             _log.warning(
                 "serve.live_bar.differs_from_stored",
@@ -939,6 +946,27 @@ class _BarLoop:
             signal="none" if signal_ is None else signal_.kind.value,
             next_due=self.next_due(stream).isoformat(),
             **_entry_check_fields(c.strategies[bar.pair]),
+        )
+
+    def _record_stop(self, bar: Bar) -> None:
+        """Store the stop the strategy evaluated on this bar, when it holds a position (#388).
+
+        Ledger only, never the journal: the stop is a price, and the reviews
+        read the journal (ADR-012 D-02).
+        """
+        strategy = self.c.strategies[bar.pair]
+        if not isinstance(strategy, SwingStrategyAdapter):
+            return
+        record = strategy.last_stop_record
+        if record is None:
+            return
+        self.c.ledger.record_stop_mark(
+            StopMark(
+                strategy_id=self.c.strategy_id,
+                pair=bar.pair,
+                bar_close_time=bar.close_time,
+                record=record,
+            )
         )
 
     def next_due(self, stream: Stream) -> datetime:
