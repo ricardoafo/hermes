@@ -28,6 +28,7 @@ from typing import cast
 from rich.console import Console, RenderableType
 from syrupy.assertion import SnapshotAssertion
 from syrupy.extensions.image import SVGImageSnapshotExtension
+from textual.binding import Binding
 from textual.widgets import Static
 
 from hermes.adapters.console import FixtureReadModel
@@ -46,6 +47,7 @@ _READ_METHODS = {
     "position",
     "activity",
     "shadow_test",
+    "market_watch",
 }
 _WIDGETS = (
     "demo-tag",
@@ -53,6 +55,7 @@ _WIDGETS = (
     "down-row",
     "portfolio",
     "positions",
+    "market",
     "activity",
     "detail",
     "shadow",
@@ -153,18 +156,54 @@ def test_total_and_change_lead_the_portfolio() -> None:
 
 
 def test_range_keys_change_hero_and_sparkline() -> None:
-    """1, 7, 3 (30 days) and Y each change the change line and the sparkline together."""
+    """D, W, M and Y each change the change line and the sparkline together (#650)."""
     seen = {}
-    for key in ("1", "7", "3", "y"):
+    for key in ("d", "w", "m", "y"):
         lines = _shoot("ok-two-positions", [key]).texts["portfolio"].splitlines()
         seen[key] = (lines[0], lines[2])
     assert seen == {
-        "1": ("€1,021.06   ▲ +€12.30 +1.22% today", "▁▂▁▄▆█"),
-        "7": ("€1,021.06   ▲ +€15.20 +1.51% this week", seen["7"][1]),
-        "3": ("€1,021.06   ▲ +€19.00 +1.90% this month", seen["3"][1]),
+        "d": ("€1,021.06   ▲ +€12.30 +1.22% today", "▁▂▁▄▆█"),
+        "w": ("€1,021.06   ▲ +€15.20 +1.51% this week", seen["w"][1]),
+        "m": ("€1,021.06   ▲ +€19.00 +1.90% this month", seen["m"][1]),
         "y": ("€1,021.06   ▲ +€21.06 +2.11% this year", seen["y"][1]),
     }
     assert len({sparkline for _, sparkline in seen.values()}) == 4
+
+
+def test_range_keys_work_in_upper_case() -> None:
+    """Shift+W reaches the same range as w: the footer prints the keys in capitals."""
+    first = _shoot("ok-two-positions", ["W"]).texts["portfolio"].splitlines()[0]
+    assert first == "€1,021.06   ▲ +€15.20 +1.51% this week"
+
+
+def test_old_number_keys_no_longer_switch_the_range() -> None:
+    """1, 7 and 3 were replaced by D, W and M: pressing them leaves the range on today."""
+    first = _shoot("ok-two-positions", ["7", "3"]).texts["portfolio"].splitlines()[0]
+    assert first == "€1,021.06   ▲ +€12.30 +1.22% today"
+
+
+def test_every_key_has_exactly_one_action() -> None:
+    """No key of the home screen is bound twice, so D W M Y collide with nothing (#650)."""
+    keys = [
+        key.strip()
+        for binding in HomeApp.BINDINGS
+        if isinstance(binding, Binding)
+        for key in binding.key.split(",")
+    ]
+    duplicates = sorted({key for key in keys if keys.count(key) > 1})
+    assert (duplicates, {"d", "w", "m", "y"} <= set(keys)) == ([], True)
+
+
+def test_footer_and_help_name_the_new_keys() -> None:
+    """The footer and the help screen both list D W M Y, and neither mentions 30 or 1/7."""
+    home = _shoot("ok-two-positions")
+    helped = _shoot("ok-two-positions", ["question_mark"])
+    footer = home.screen.splitlines()[-1]
+    assert (
+        footer.strip().startswith("D W M Y range"),
+        "D day · W week · M month · Y year" in helped.screen,
+        "press 3" in helped.screen,
+    ) == (True, True, False)
 
 
 def test_home_has_no_tax_footnote_and_no_usdt() -> None:
@@ -402,3 +441,45 @@ def test_svg_snapshot_down_80x24(snapshot: SnapshotAssertion) -> None:
     """The reviewed 80x24 rendering while hermes is down: red row, dimmed money."""
     svg = _shoot("down-stale").svg
     assert svg == snapshot(extension_class=SVGImageSnapshotExtension)
+
+
+def _top_line(release: Callable[[], str] | None, size: tuple[int, int] = (100, 30)) -> str:
+    async def run() -> str:
+        app = HomeApp(FixtureReadModel.load("ok-two-positions"), release=release)
+        async with app.run_test(size=size) as pilot:
+            await pilot.pause()
+            return app.screen._compositor.render_strips()[0].text.rstrip()
+
+    return asyncio.run(run())
+
+
+def test_top_line_names_the_running_release() -> None:
+    """With a release source the top line reads "release <name>" beside the heartbeat (#649)."""
+    top = _top_line(lambda: "abc123def456")
+    assert (
+        top.startswith(" DEMO DATA · scenario ok-two-positions release abc123def456"),
+        top.endswith("● live · checked 14:00 · next 18:00"),
+    ) == (True, True)
+
+
+def test_top_line_has_no_release_without_a_source() -> None:
+    """Without a release source nothing about a release is drawn."""
+    assert "release" not in _top_line(None)
+
+
+def test_release_is_read_again_on_every_redraw() -> None:
+    """A deploy flips the link while the screen is open: the next redraw shows the new name."""
+    names = iter(["aaaaaaaaaaaa", "bbbbbbbbbbbb"])
+    current = {"name": next(names)}
+
+    async def run() -> tuple[str, str]:
+        app = HomeApp(FixtureReadModel.load("ok-two-positions"), release=lambda: current["name"])
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            before = app.plain_text("release").strip()
+            current["name"] = next(names)
+            app._redraw()
+            await pilot.pause()
+            return before, app.plain_text("release").strip()
+
+    assert asyncio.run(run()) == ("release aaaaaaaaaaaa", "release bbbbbbbbbbbb")

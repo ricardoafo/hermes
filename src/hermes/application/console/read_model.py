@@ -20,6 +20,7 @@ from hermes.application.console.views import (
     PositionDetail,
     PositionRow,
     ShadowTest,
+    WatchedPair,
 )
 
 __all__ = ["ConsoleReadModel", "ViewNotAvailableError"]
@@ -71,4 +72,12 @@ class ConsoleReadModel(Protocol):
 
     def shadow_test(self) -> ShadowTest:
         """Return the 90-day shadow test status."""
+        ...
+
+    def market_watch(self) -> tuple[WatchedPair, ...]:
+        """Return each checked stream's last check, its signal and the next check.
+
+        No prices: the market watch shows only what hermes records about its
+        own bar checks (#650).
+        """
         ...

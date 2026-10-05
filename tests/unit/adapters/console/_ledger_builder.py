@@ -178,6 +178,43 @@ class LedgerBuilder:
             )
         )
 
+    def check(
+        self,
+        boundary: datetime,
+        *,
+        pair: Pair = BTC,
+        interval: KlineInterval = KlineInterval.H4,
+        signal: SignalKind | None = None,
+        strategy: StrategyId = SWING,
+    ) -> None:
+        """Record one processing cycle: an optional signal, then its bar check.
+
+        Both rows share one correlation id, as ``hermes serve`` writes them, and
+        carry no price the market watch could show (the signal's prices are
+        placeholders).
+        """
+        cid = self._cid()
+        if signal is not None:
+            self.ledger.append_event(
+                SignalEmitted(
+                    occurred_at=boundary - _ONE_MS,
+                    correlation_id=cid,
+                    strategy_id=strategy,
+                    pair=pair,
+                    kind=signal,
+                    side=SignalSide.LONG,
+                    entry_price=Decimal(1) if signal is SignalKind.ENTRY else None,
+                    stop_price=Decimal(1),
+                    atr_context=Decimal(1),
+                    exit_reason="chandelier" if signal is SignalKind.EXIT else None,
+                )
+            )
+        self.ledger.append_event(
+            BarProcessed(
+                occurred_at=boundary - _ONE_MS, correlation_id=cid, pair=pair, interval=interval
+            )
+        )
+
     def mark(
         self,
         boundary: datetime,
