@@ -25,6 +25,7 @@ Reference: docs/decisions/2026-10-04-notification-templates-v2.md;
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Final
 
 from hermes.application.messages._escape import escape_markdown_v2
@@ -40,11 +41,13 @@ __all__ = ["telegram_template"]
 _SLACK_ONLY: Final[tuple[type[DomainEvent], ...]] = (DailyTradeDigest,)
 
 
-def telegram_template(event: DomainEvent) -> str:
+def telegram_template(event: DomainEvent, *, eur_rate: Decimal | None = None) -> str:
     """Render a domain event as a MarkdownV2-safe Telegram message.
 
     Args:
         event: A concrete :class:`DomainEvent` instance.
+        eur_rate: Quote units per euro for the event's pair, or ``None`` to
+            keep prices in the quote currency.
 
     Returns:
         The message lines joined by newlines, escaped and ending with one
@@ -60,7 +63,7 @@ def telegram_template(event: DomainEvent) -> str:
             f"No Telegram template registered for {type(event).__qualname__} - "
             f"reports are Slack-only."
         )
-    family, note = build_note(event, DEFAULT_REPORTING_PHASE)
+    family, note = build_note(event, DEFAULT_REPORTING_PHASE, eur_rate)
     shape = shape_for(family, Channel.TELEGRAM)
     lines = render_lines(note, shape, fmt_ref(event.correlation_id))
     return "\n".join(escape_markdown_v2(line) for line in lines)

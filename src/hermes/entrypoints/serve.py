@@ -53,6 +53,7 @@ import sqlite3
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Final
 
@@ -87,6 +88,7 @@ from hermes.application.execution.shadow import (
 from hermes.application.ledger.eur_backfill import backfill_pending_eur, pending_rate_keys
 from hermes.application.ledger.eur_pricer import EurPricer, LookupBudget
 from hermes.application.ledger.trade_recorder import TradeRecorder
+from hermes.application.messages.eur_rate import EurRateLookup
 from hermes.application.notification_router import RouterConfig
 from hermes.application.order_router.sizing import SizingPolicy
 from hermes.application.portfolio.tracker import PortfolioTracker
@@ -95,6 +97,7 @@ from hermes.application.strategy_protocol.kill_trigger_evaluator import KillTrig
 from hermes.application.strategy_protocol.preregistration import PreRegistration
 from hermes.domain.errors import HermesError, LedgerError
 from hermes.domain.events.bar_processed import BarProcessed
+from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.event_bus import EventBus, EventDispatchError
 from hermes.domain.events.shadow_capital_seeded import ShadowCapitalSeeded
 from hermes.domain.events.signal_emitted import SignalEmitted
@@ -266,6 +269,29 @@ class Composition:
     orderbooks: OrderbookSnapshotPort
     fx_adapter: FrankfurterAdapter | None
     eur_pricer: EurPricer
+
+
+def _eur_rate_lookup(pricer: EurPricer) -> EurRateLookup:
+    """Return the notifier's rate lookup: the pricer's memory, never its provider.
+
+    An event with a pair is looked up by the pair's quote currency and the
+    Madrid date of ``occurred_at``; any other event has no rate. The lookup
+    never touches the network, so a push cannot wait on the FX source.
+
+    Args:
+        pricer: The shared pricer whose cache the fill path and boot warm.
+
+    Returns:
+        A callable mapping an event to units of its quote per euro, or ``None``.
+    """
+
+    def lookup(event: DomainEvent) -> Decimal | None:
+        pair = getattr(event, "pair", None)
+        if pair is None:
+            return None
+        return pricer.cached_rate(pair.quote, fill_date_madrid(event.occurred_at))
+
+    return lookup
 
 
 def _telegram_config(env: Mapping[str, str]) -> TelegramConfig | None:
@@ -504,8 +530,15 @@ def build_composition(
 
     telegram_config = _telegram_config(env_snapshot)
     slack_config = _slack_config(env_snapshot)
-    telegram = TelegramAdapter.create(telegram_config) if telegram_config is not None else None
-    slack = SlackAdapter.create(slack_config) if slack_config is not None else None
+    eur_rate = _eur_rate_lookup(eur_pricer)
+    telegram = (
+        TelegramAdapter.create(telegram_config, eur_rate=eur_rate)
+        if telegram_config is not None
+        else None
+    )
+    slack = (
+        SlackAdapter.create(slack_config, eur_rate=eur_rate) if slack_config is not None else None
+    )
 
     return Composition(
         config=config,
