@@ -11,4 +11,5 @@ COMMAND = Command(
     name="ledger",
     summary="Ledger tools; `verify` checks it read-only (integrity, schema, event gaps).",
     run=lambda argv, *, stream, err=None: _impl.main(argv, stream=stream, err=err),
+    json=True,
 )
