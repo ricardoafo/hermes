@@ -144,3 +144,20 @@ def test_every_committed_fixture_is_covered_by_the_migration_test() -> None:
     }
 
     assert {path.stem for path in _FIXTURES.glob("*.json")} == covered
+
+
+def test_signal_preview_shows_the_plan_as_a_thread_reply() -> None:
+    """A signal previews both Slack posts: the headline parent and the plan reply."""
+    _, output = _run(["signal-emitted"])
+
+    assert (
+        "## Slack — thread reply (plan)" in output,
+        "Actual: withheld until certification" in output.split("## Slack — thread reply (plan)")[1],
+    ) == (True, True)
+
+
+def test_event_without_a_plan_previews_no_thread_reply() -> None:
+    """A compact health event previews one Slack message and no thread-reply section."""
+    _, output = _run(["strategy-paused"])
+
+    assert "## Slack — thread reply" not in output
