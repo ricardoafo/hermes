@@ -79,8 +79,11 @@ def _call_name(node: ast.AST) -> str | None:
     return None
 
 
-def _is_vague_compare(node: ast.Compare) -> bool:
-    """Return True if ``node`` is a vague comparison."""
+def _is_vague_compare(node: ast.Compare, name_kinds: dict[str, str] | None = None) -> bool:
+    """Return True if ``node`` is a vague comparison.
+
+    ``name_kinds`` classifies the test's local names (see ``_name_kinds``).
+    """
     if len(node.ops) != 1 or len(node.comparators) != 1:
         return False
     op = node.ops[0]
@@ -97,12 +100,50 @@ def _is_vague_compare(node: ast.Compare) -> bool:
         return True
     if _call_name(node.left) == "len" and isinstance(rhs, ast.Constant):
         return True
-    # Name == Name: which side is the answer? An Attribute on either side is a
-    # legitimate anchor (enum member, dataclass field) and passes.
-    return isinstance(op, ast.Eq) and isinstance(rhs, ast.Name) and isinstance(node.left, ast.Name)
+    if not (
+        isinstance(op, ast.Eq) and isinstance(rhs, ast.Name) and isinstance(node.left, ast.Name)
+    ):
+        return False
+    # Name == Name: a result compared with a hand-built expected value is what
+    # standard rule 2 asks for (#756). It is vague when both sides are plain
+    # literals (a tautology) or both are computed (two runs of the code).
+    known = name_kinds or {}
+    kinds = {known.get(rhs.id, "computed"), known.get(node.left.id, "computed")}
+    return kinds in ({"literal"}, {"computed"})
 
 
-def _is_vague_assertion(assert_node: ast.Assert) -> bool:
+def _is_hand_built(value: ast.AST, oracles: frozenset[str]) -> bool:
+    """Return True for a literal, a container, a constructor or a test-file helper call.
+
+    ``oracles`` are the functions the test file defines itself: an expected
+    value they compute comes from the test, not from the code under test.
+    """
+    if isinstance(value, (ast.Constant, ast.Tuple, ast.List, ast.Dict, ast.Set)):
+        return True
+    name = _call_name(value)
+    return name is not None and (name[:1].isupper() or name in oracles)
+
+
+def _name_kinds(fn: ast.FunctionDef, oracles: frozenset[str] = frozenset()) -> dict[str, str]:
+    """Classify each local name as ``literal``, ``built`` (by hand) or ``computed``."""
+    kinds: dict[str, str] = {}
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Assign):
+            continue
+        if isinstance(node.value, ast.Constant):
+            kind = "literal"
+        elif _is_hand_built(node.value, oracles):
+            kind = "built"
+        else:
+            kind = "computed"
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                previous = kinds.get(target.id)
+                kinds[target.id] = kind if previous in (None, kind) else "computed"
+    return kinds
+
+
+def _is_vague_assertion(assert_node: ast.Assert, name_kinds: dict[str, str] | None = None) -> bool:
     """Return True if the assertion can't tell a right value from a wrong one."""
     test = assert_node.test
     if isinstance(test, ast.UnaryOp) and isinstance(test.op, ast.Not):
@@ -112,7 +153,7 @@ def _is_vague_assertion(assert_node: ast.Assert) -> bool:
     if _call_name(test) in _VAGUE_CALLS:
         return True
     if isinstance(test, ast.Compare):
-        return _is_vague_compare(test)
+        return _is_vague_compare(test, name_kinds)
     return False
 
 
@@ -185,7 +226,7 @@ def _raises_blocks(fn: ast.FunctionDef) -> list[tuple[ast.With, bool]]:
     return blocks
 
 
-def classify(fn: ast.FunctionDef) -> tuple[str, str] | None:
+def classify(fn: ast.FunctionDef, oracles: frozenset[str] = frozenset()) -> tuple[str, str] | None:
     """Return ``(rule, snippet)`` when ``fn`` breaks a rule, else ``None``."""
     blocks = _raises_blocks(fn)
     in_raises = {
@@ -208,7 +249,8 @@ def classify(fn: ast.FunctionDef) -> tuple[str, str] | None:
     python_checks = [a for a in asserts if _is_python_check(a)]
     mock_asserts = [a for a in asserts if _is_mock_check(a)]
     restatements = [a for a in asserts if _is_constant_restatement(a)]
-    vague = [a for a in asserts if _is_vague_assertion(a)]
+    kinds = _name_kinds(fn, oracles)
+    vague = [a for a in asserts if _is_vague_assertion(a, kinds)]
     meaningful = [
         a
         for a in asserts
@@ -241,12 +283,18 @@ def check_file(path: Path) -> list[tuple[int, str, str, str]]:
     except SyntaxError:
         return []
     violations: list[tuple[int, str, str, str]] = []
+    oracles = frozenset(
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and not node.name.startswith("test_")
+    )
     for node in ast.walk(tree):
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         if not node.name.startswith("test_"):
             continue
-        found = classify(node)  # type: ignore[arg-type]
+        found = classify(node, oracles)  # type: ignore[arg-type]
         if found is not None:
             violations.append((node.lineno, node.name, found[0], found[1]))
     return violations
@@ -272,6 +320,10 @@ def _run_self_test() -> int:
             "    with pytest.raises(ValueError):\n        int('x')\n"
         ),
         "def test_mix():\n    r = {'a': 1}\n    assert r is not None\n    assert r['a'] == 1\n",
+        (
+            "def test_hand_built_expected():\n    record = make(3)\n"
+            "    expected = Record(stop=3)\n    assert record == expected\n"
+        ),
         (
             "def test_enum_rhs():\n    class S:\n        BUY = 'BUY'\n"
             "    side = 'BUY'\n    assert side == S.BUY\n"
