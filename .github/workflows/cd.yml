@@ -34,8 +34,12 @@
 #
 # ## Serialization
 #
-# `concurrency: deploy-vps` + `cancel-in-progress: false`. Two deploys
-# racing would flip `current` under each other.
+# The deploy job holds `concurrency: deploy-vps` with
+# `cancel-in-progress: false`: two deploys racing would flip `current`
+# under each other. The lock is on that job, not the workflow. Every CI
+# run on main starts a CD run, and most skip at the gate (a cancelled or
+# failed CI); as workflow-level runs they took the group's one pending
+# slot and could displace a real deploy waiting there (#694).
 #
 # ## Secrets (populated on `prod` GH Environment)
 #
@@ -63,10 +67,6 @@ on:
 # Jobs run on the hermes-ops runner when OPS_RUNNER_LABEL is set, so a
 # deploy never waits behind PR CI; they fall back to the CI pool until
 # that runner exists.
-concurrency:
-  group: deploy-vps
-  cancel-in-progress: false
-
 permissions:
   contents: read
 
@@ -93,7 +93,10 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push')
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    # The ops runner, not the CI pool: the e2e serve cycle failed on
+    # contention beside PR CI (run 37304489094, #694). With one ops
+    # runner it never overlaps the merge queue's Revalidate either.
+    runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -268,6 +271,11 @@ jobs:
     runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     # install_release.sh may hold up to 10 min for the bar close (#626).
     timeout-minutes: 25
+    # Only real deploys reach this job, so a pending one can be replaced
+    # only by a newer release, never by a no-op run.
+    concurrency:
+      group: deploy-vps
+      cancel-in-progress: false
     environment:
       name: prod
       url: https://${{ env.VPS_HOST }}
@@ -514,7 +522,9 @@ jobs:
   confirm:
     name: Confirm deployment
     needs: [gate, build, notes, bundle, deploy, release]
-    if: '!cancelled()'
+    # Runs after a failure so it can report it, but not when the gate
+    # skipped: a CD run for a cancelled or failed CI takes no runner.
+    if: "!cancelled() && needs.gate.result != 'skipped'"
     runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 1
     steps:
