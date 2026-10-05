@@ -20,4 +20,5 @@ COMMAND = Command(
     summary="What changed, grouped by day; `--all` adds bar checks and signals.",
     run=_run,
     wants_demo=True,
+    json=True,
 )

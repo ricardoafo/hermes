@@ -1,0 +1,1 @@
+- **`--vps` reconnects**: the ssh session now sends a keepalive (a dead link is noticed in about 30 s), a dropped connection is retried with a 2 to 30 s backoff until Ctrl+C, and the terminal leaves the alternate screen after every exit. Closes #651.

@@ -879,6 +879,7 @@ class _BarLoop:
             close_time=bar.close_time.isoformat(),
             signal="none" if signal_ is None else signal_.kind.value,
             next_due=self.next_due(stream).isoformat(),
+            **_entry_check_fields(c.strategies[bar.pair]),
         )
 
     def next_due(self, stream: Stream) -> datetime:
@@ -941,6 +942,29 @@ class _BarLoop:
             for failure in exc.failures:
                 if isinstance(failure, Exception):
                     sentry_integration.capture(failure)
+
+
+def _entry_check_fields(strategy: StrategyPort) -> dict[str, str]:
+    """Return which entry conditions held on the bar just evaluated, as yes/no.
+
+    Booleans only, never a price or an indicator value, so the journal line
+    stays outcome-blind for the reviews that read it (ADR-012 D-06, #656).
+    Empty when the bar was not an entry check (a daily bar, or a position open).
+    """
+    if not isinstance(strategy, SwingStrategyAdapter):
+        return {}
+    check = strategy.last_entry_check
+    if check is None:
+        return {}
+    return {
+        "entry_breakout": _yes_no(check.breakout),
+        "entry_momentum": _yes_no(check.momentum),
+        "entry_regime": _yes_no(check.regime),
+    }
+
+
+def _yes_no(held: bool) -> str:
+    return "yes" if held else "no"
 
 
 def _log_execution(pair: Pair, kind: SignalKind, result: ShadowExecution) -> None:

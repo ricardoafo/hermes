@@ -9,8 +9,10 @@
       }),
       'bot': 'running',
       'generated_at': '2025-01-21T00:00:10+00:00',
+      'live_since': None,
       'open_positions': list([
       ]),
+      'release': 'unknown',
       'signals': dict({
         'last_24h': 2,
         'last_7d': 8,
