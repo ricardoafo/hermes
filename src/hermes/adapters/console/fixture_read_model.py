@@ -38,6 +38,7 @@ from hermes.application.console.views import (
     TaxEstimate,
     TaxPending,
     TimelineEvent,
+    WatchedPair,
     WaterfallColumn,
     tax_amount,
 )
@@ -53,6 +54,7 @@ _SCENARIO_PACKAGE: Final = "hermes.adapters.console"
 _SCENARIO_DIR: Final = "scenarios"
 _SUFFIX: Final = ".json"
 _HUNDRED: Final = Decimal(100)
+_SIGNAL_KINDS: Final = frozenset({"entry", "exit"})
 
 type _Json = Mapping[str, object]
 
@@ -384,6 +386,26 @@ def _shadow_test(raw: _Json) -> ShadowTest:
     )
 
 
+def _watched(raw: _Json) -> WatchedPair:
+    signal = _opt_str(raw, "signal")
+    if signal is not None and signal not in _SIGNAL_KINDS:
+        msg = f"field 'signal' has unknown value {signal!r}"
+        raise ScenarioError(msg)
+    last = _dt(raw, "last_check_at")
+    following = _dt(raw, "next_check_at")
+    if following <= last:
+        msg = f"market watch {raw.get('coin')!r}: next_check_at must follow last_check_at"
+        raise ScenarioError(msg)
+    return WatchedPair(
+        coin=_str(raw, "coin"),
+        quote=_str(raw, "quote"),
+        timeframe=_str(raw, "timeframe"),
+        last_check_at=last,
+        signal=signal,
+        next_check_at=following,
+    )
+
+
 # ----------------------------------------------------------------------
 # Read model
 # ----------------------------------------------------------------------
@@ -418,6 +440,7 @@ class FixtureReadModel:
         self._rows = tuple(detail.row for detail in details)
         self._activity = _activity(document, rate)
         self._shadow_test = _shadow_test(_obj(document, "shadow_test"))
+        self._market_watch = tuple(_watched(raw) for raw in _items(document, "market_watch"))
 
     @classmethod
     def load(cls, name: str) -> FixtureReadModel:
@@ -491,6 +514,10 @@ class FixtureReadModel:
     def shadow_test(self) -> ShadowTest:
         """Return the scenario's shadow test status."""
         return self._shadow_test
+
+    def market_watch(self) -> tuple[WatchedPair, ...]:
+        """Return the scenario's checked streams in file order (no prices, #650)."""
+        return self._market_watch
 
 
 def _decode(text: str) -> _Json:

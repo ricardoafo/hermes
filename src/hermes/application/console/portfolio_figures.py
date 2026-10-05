@@ -44,6 +44,7 @@ _ZERO: Final = Decimal(0)
 _HUNDRED: Final = Decimal(100)
 _WEEK: Final = timedelta(days=7)
 _MONTH: Final = timedelta(days=30)
+_DEFAULT_QUOTE: Final = "USDT"
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,11 +119,13 @@ class SeedFacts:
         amount: The seed in its quote currency (the 5,000 USDT shadow capital).
         seeded_at: When the run started.
         value_eur: Its EUR value at the seed-date rate; ``None`` while pending.
+        rate_date: Date of the ECB rate behind ``value_eur``, when known.
     """
 
     amount: Decimal
     seeded_at: datetime
     value_eur: Decimal | None
+    rate_date: date | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,6 +141,8 @@ class PortfolioFacts:
             them is EUR pending.
         eur_per_quote: EUR for one quote unit at the newest recorded rate.
         seeds: The capital seeds, one per strategy that has one.
+        quote: The quote currency every book is counted in, when known.
+        eur_rate_date: Date of the ECB rate behind ``eur_per_quote``, when known.
     """
 
     as_of: datetime
@@ -147,13 +152,15 @@ class PortfolioFacts:
     open_net: Decimal | None
     eur_per_quote: Decimal | None
     seeds: tuple[SeedFacts, ...]
+    quote: str | None = None
+    eur_rate_date: date | None = None
 
 
 def range_start(range_: PortfolioRange, as_of: datetime, tz: tzinfo) -> datetime:
     """Return when ``range_`` starts.
 
     Today is since local midnight, the week the last 7 days, the month the last
-    30 days (the TUI's ``3`` key) and the year since 1 January, local time (the
+    30 days (the TUI's ``M`` key) and the year since 1 January, local time (the
     tax year).
 
     Args:
@@ -232,6 +239,8 @@ def build_portfolio(facts: PortfolioFacts, range_: PortfolioRange) -> PortfolioS
             starting_capital=seed.value_eur,
             started_on=seed.started_on,
             starting_capital_quote=seed.amount,
+            quote_currency=facts.quote or _DEFAULT_QUOTE,
+            starting_capital_rate_date=seed.rate_date,
         )
     samples = _samples(facts, start)
     change = samples[-1] - samples[0]
@@ -258,6 +267,9 @@ def build_portfolio(facts: PortfolioFacts, range_: PortfolioRange) -> PortfolioS
         starting_capital=seed.value_eur,
         started_on=seed.started_on,
         starting_capital_quote=seed.amount,
+        quote_currency=facts.quote or _DEFAULT_QUOTE,
+        eur_rate_date=facts.eur_rate_date,
+        starting_capital_rate_date=seed.rate_date,
     )
 
 
@@ -293,14 +305,18 @@ class _SeedLine:
     amount: Decimal | None = None
     value_eur: Decimal | None = None
     started_on: date | None = None
+    rate_date: date | None = None
 
 
 def _seed_line(facts: PortfolioFacts) -> _SeedLine:
     if not facts.seeds:
         return _SeedLine()
     values = [s.value_eur for s in facts.seeds if s.value_eur is not None]
+    priced = len(values) == len(facts.seeds)
+    dates = [s.rate_date for s in facts.seeds if s.rate_date is not None]
     return _SeedLine(
         amount=sum((s.amount for s in facts.seeds), start=_ZERO),
-        value_eur=sum(values, start=_ZERO) if len(values) == len(facts.seeds) else None,
+        value_eur=sum(values, start=_ZERO) if priced else None,
         started_on=min(_local_day(s.seeded_at, facts.tz) for s in facts.seeds),
+        rate_date=max(dates) if priced and len(dates) == len(facts.seeds) else None,
     )
