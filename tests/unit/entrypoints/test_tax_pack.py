@@ -71,11 +71,14 @@ def _invoke(
     config_dir: Path = _CONFIG_DIR,
 ) -> tuple[int, str, str]:
     stream, err = io.StringIO(), io.StringIO()
+    # An empty env would fall back to ~/.config/hermes/taxpayer.yaml, which exists on
+    # the operator's machine; tests that want a profile pass their own path.
+    isolated = {"HERMES_TAXPAYER_PROFILE": str(tmp_path / "no-profile.yaml"), **(env or {})}
     code = tax_pack.main(
         [*argv, "--config-dir", str(config_dir), "--history", str(tmp_path / "none.yaml")],
         stream=stream,
         fx_factory=lambda _cfg: constant_fx(),
-        env=env if env is not None else {},
+        env=isolated,
         now=lambda: at,
         estimate_runner=estimate if estimate is not None else FakeEstimate(),
         err=err,
