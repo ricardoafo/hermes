@@ -1,0 +1,124 @@
+"""Invariants for the review input that ``.github/workflows/ai-review.yml`` builds (#642).
+
+The "Gather review context" step writes ``.ai-review/pr.md``, which the
+reviewer model reads. A failed linked-issue fetch once wrote the curl
+argv, job token included, into that file. These tests run the step's
+own Python block with ``urllib.request.urlopen`` replaced, so no network
+is touched; the real API call is exercised by every AI review run.
+"""
+
+from __future__ import annotations
+
+import io
+import json
+import re
+import sys
+import textwrap
+import urllib.error
+import urllib.request
+from email.message import Message
+from pathlib import Path
+from typing import Any
+
+import pytest
+import yaml
+
+_ROOT = Path(__file__).resolve().parents[3]
+_WORKFLOW = _ROOT / ".github" / "workflows" / "ai-review.yml"
+_FAKE_BEARER = "ghs_FAKEtokenFAKEtokenFAKEtokenFAKE0000"  # gitleaks:allow (fake test token)
+_STEP = "Gather review context"
+
+
+def _step_run() -> str:
+    """Return the shell of the step that builds the review input."""
+    workflow = yaml.safe_load(_WORKFLOW.read_text(encoding="utf-8"))
+    steps = workflow["jobs"]["review"]["steps"]
+    return str(next(step["run"] for step in steps if step.get("name") == _STEP))
+
+
+def _python_block() -> str:
+    """Return the step's inline Python program (the ``<<'PY'`` heredoc)."""
+    match = re.search(r"<<'PY'\n(.*?)\n\s*PY\n", _step_run(), re.S)
+    assert match is not None
+    return textwrap.dedent(match.group(1))
+
+
+def _build_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str, issue_reply: Any
+) -> str:
+    """Run the step's Python block for a PR with ``body``; return the written pr.md.
+
+    The PR read is answered with a fixed PR; the issue read calls ``issue_reply``.
+    """
+
+    def urlopen(request: urllib.request.Request, timeout: float) -> Any:
+        if "/pulls/" in request.full_url:
+            pr = {"number": 7, "title": "t", "body": body}
+            return io.BytesIO(json.dumps(pr).encode())
+        return issue_reply(request, timeout)
+
+    out = tmp_path / "pr.md"
+    monkeypatch.setenv("GH_TOKEN", _FAKE_BEARER)
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repo")
+    monkeypatch.setenv("PR_NUMBER", "7")
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(sys, "argv", ["-", str(out)])
+    exec(compile(_python_block(), "ai-review-step", "exec"), {"__name__": "__main__"})  # noqa: S102
+    return out.read_text(encoding="utf-8")
+
+
+def test_failed_issue_fetch_never_writes_the_token(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Invariant: the text the model reads names the error type and status, never the token."""
+
+    def refuse(request: urllib.request.Request, timeout: float) -> Any:
+        raise urllib.error.HTTPError(request.full_url, 403, "Forbidden", Message(), None)
+
+    text = _build_input(tmp_path, monkeypatch, "Closes #44", refuse)
+
+    assert _FAKE_BEARER not in text
+    assert "(Could not read issue #44: HTTPError (HTTP 403))" in text
+
+
+def test_network_error_names_only_the_exception_type(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Invariant: a non-HTTP failure adds no message text that could carry request details."""
+
+    def drop(request: urllib.request.Request, timeout: float) -> Any:
+        raise urllib.error.URLError(f"tunnel failed with {_FAKE_BEARER}")
+
+    text = _build_input(tmp_path, monkeypatch, "Closes #44", drop)
+
+    assert _FAKE_BEARER not in text
+    assert "(Could not read issue #44: URLError)" in text
+
+
+def test_token_goes_only_in_the_authorization_header(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Invariant: the token is sent only as a header, and the issue title reaches the input."""
+    seen: list[urllib.request.Request] = []
+
+    def answer(request: urllib.request.Request, timeout: float) -> Any:
+        seen.append(request)
+        return io.BytesIO(json.dumps({"number": 44, "title": "Linked", "body": "b"}).encode())
+
+    text = _build_input(tmp_path, monkeypatch, "Fixes #44", answer)
+
+    assert seen[-1].full_url == "https://api.github.com/repos/owner/repo/issues/44"
+    assert seen[-1].get_header("Authorization") == f"Bearer {_FAKE_BEARER}"
+    assert "# Closed issue #44: Linked" in text
+
+
+def test_issue_fetch_starts_no_subprocess() -> None:
+    """Invariant: no child process gets the token on its command line."""
+    assert "subprocess" not in _python_block()
+
+
+def test_review_job_can_read_issues() -> None:
+    """Invariant: the Issues API needs issues: read; without it every linked-issue fetch fails."""
+    workflow = yaml.safe_load(_WORKFLOW.read_text(encoding="utf-8"))
+
+    assert workflow["jobs"]["review"]["permissions"]["issues"] == "read"

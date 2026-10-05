@@ -9,6 +9,7 @@ scratch git repository; nothing is mocked.
 from __future__ import annotations
 
 import importlib.util
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -56,7 +57,9 @@ class Repo:
 
     def commit(self, subject: str, files: dict[str, str] | None = None) -> str:
         """Commit ``files`` (or a touch file) with ``subject``; return the sha."""
-        for name, text in (files or {f"f-{subject[:8]}.txt": subject}).items():
+        # Subjects carry ':' and '#', which Windows refuses in filenames (#660).
+        safe = re.sub(r"[^A-Za-z0-9]", "-", subject[:8])
+        for name, text in (files or {f"f-{safe}.txt": subject}).items():
             target = self.path / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(text, encoding="utf-8")

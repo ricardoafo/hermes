@@ -121,6 +121,10 @@ def test_argv_for_defaults_is_exact() -> None:
         "k",
         "-o",
         "ConnectTimeout=10",
+        "-o",
+        "ServerAliveInterval=15",
+        "-o",
+        "ServerAliveCountMax=2",
         "root@hermes-01",
         remote,
     ]
@@ -426,3 +430,172 @@ def test_cli_trailing_vps_still_refuses_a_non_console_command() -> None:
     """Invariant: `hermes serve --vps` is refused like `hermes --vps serve`."""
     code, out = _cli(["serve", "--vps"])
     assert (code, "not 'serve'" in out) == (2, True)
+
+
+class _Script:
+    """Runner fake that plays a list of results in order and counts the calls."""
+
+    def __init__(self, results: list[SshResult | BaseException]) -> None:
+        self.results = list(results)
+        self.calls = 0
+
+    def __call__(self, argv: list[str]) -> SshResult:
+        self.calls += 1
+        item = self.results.pop(0)
+        if isinstance(item, BaseException):
+            raise item
+        return item
+
+
+class _Tty(io.StringIO):
+    def __init__(self, tty: bool) -> None:
+        super().__init__()
+        self._tty = tty
+
+    def isatty(self) -> bool:
+        return self._tty
+
+
+def _loop(
+    tmp_path: Path,
+    results: list[SshResult | BaseException],
+    stdout: io.StringIO | None = None,
+    sleep_error: BaseException | None = None,
+) -> tuple[int, str, _Script, list[float]]:
+    script = _Script(results)
+    waited: list[float] = []
+    err = io.StringIO()
+
+    def sleep(seconds: float) -> None:
+        waited.append(seconds)
+        if sleep_error is not None:
+            raise sleep_error
+
+    code = run_vps(
+        "positions",
+        [],
+        err,
+        console_commands=_CONSOLE,
+        env={"HERMES_VPS_KEY": str(_key(tmp_path))},
+        runner=script,
+        sleep=sleep,
+        stdout=stdout if stdout is not None else _Tty(False),
+    )
+    return code, err.getvalue(), script, waited
+
+
+_DROPS = [
+    "Connection to hermes-01 closed by remote host.",
+    "client_loop: send disconnect: Connection reset",
+    "packet_write_wait: Connection to 100.1.2.3 port 22: Broken pipe",
+    "Timeout, server not responding.",
+    "Connection to hermes-01 closed.",
+]
+_LOST = "connection lost · reconnecting in {}s (Ctrl+C to stop)\n"
+
+
+def test_keepalive_options_are_in_the_argv() -> None:
+    """Invariant: a dead link is noticed in about 30 s (15 s interval x 2 misses)."""
+    argv = build_ssh_argv(VpsSettings("h", "u", Path("k")), "status", [])
+    assert argv[argv.index("ServerAliveInterval=15") - 1] == "-o"
+    assert argv[argv.index("ServerAliveCountMax=2") - 1] == "-o"
+
+
+@pytest.mark.parametrize("stderr", _DROPS)
+def test_a_dropped_connection_is_retried_after_a_two_second_wait(
+    tmp_path: Path, stderr: str
+) -> None:
+    """Invariant: each connection-drop marker on exit 255 reconnects once, then ends on exit 0."""
+    code, err, script, waited = _loop(tmp_path, [SshResult(255, stderr), SshResult(0, "")])
+    assert (code, script.calls, waited, err) == (0, 2, [2], _LOST.format(2))
+
+
+def test_backoff_doubles_and_caps_at_thirty_seconds(tmp_path: Path) -> None:
+    """Invariant: repeated unreachable retries wait 2, 4, 8, 16, 30, 30."""
+    drop = SshResult(255, "Timeout, server not responding.")
+    down = SshResult(255, "ssh: connect to host hermes-01 port 22: Connection timed out")
+    results: list[SshResult | BaseException] = [drop, *[down] * 5, SshResult(0, "")]
+    code, _, script, waited = _loop(tmp_path, results)
+    assert (code, script.calls) == (0, 7)
+    assert waited == [2, 4, 8, 16, 30, 30]
+
+
+def test_backoff_restarts_after_a_new_drop(tmp_path: Path) -> None:
+    """Invariant: a session that connected and dropped again waits 2 s, not the grown delay."""
+    drop = SshResult(255, "Timeout, server not responding.")
+    down = SshResult(255, "ssh: connect to host hermes-01 port 22: Connection refused")
+    _, _, _, waited = _loop(tmp_path, [drop, down, down, drop, SshResult(0, "")])
+    assert waited == [2, 4, 8, 2]
+
+
+@pytest.mark.parametrize(
+    ("result", "expected"),
+    [
+        (SshResult(255, "root@hermes-01: Permission denied (publickey)."), 255),
+        (SshResult(255, "ssh: connect to host hermes-01 port 22: Connection timed out"), 255),
+        (SshResult(255, "Connection reset by 100.1.2.3 port 22"), 255),
+        (SshResult(255, "Host key verification failed."), 255),
+        (SshResult(127, "Connection to hermes-01 closed."), 127),
+        (SshResult(1, "Connection to hermes-01 closed by remote host."), 1),
+        (SshResult(0, ""), 0),
+    ],
+)
+def test_non_drop_results_never_retry(tmp_path: Path, result: SshResult, expected: int) -> None:
+    """Invariant: auth, first-try unreachable, deploy-needed and a remote exit never retry."""
+    code, err, script, waited = _loop(tmp_path, [result])
+    assert (code, script.calls, waited) == (expected, 1, [])
+    assert "reconnecting" not in err
+
+
+def test_auth_failure_after_a_drop_stops_at_once(tmp_path: Path) -> None:
+    """Invariant: a reconnect that fails authentication ends the loop with the key hint."""
+    drop = SshResult(255, "Timeout, server not responding.")
+    auth = SshResult(255, "Permission denied (publickey).")
+    code, err, script, waited = _loop(tmp_path, [drop, auth])
+    assert (code, script.calls, waited) == (255, 2, [2])
+    assert "authentication to root@hermes-01 failed" in err
+
+
+def test_refused_command_never_reaches_the_runner_or_retries(tmp_path: Path) -> None:
+    """Invariant: a refused command exits 2 before ssh; nothing is retried."""
+    script = _Script([])
+    err = io.StringIO()
+    code = run_vps(
+        "serve",
+        [],
+        err,
+        console_commands=_CONSOLE,
+        env={"HERMES_VPS_KEY": str(_key(tmp_path))},
+        runner=script,
+        sleep=lambda _s: None,
+        stdout=_Tty(True),
+    )
+    assert (code, script.calls) == (2, 0)
+
+
+def test_ctrl_c_during_the_wait_exits_130(tmp_path: Path) -> None:
+    """Invariant: Ctrl+C while waiting to reconnect ends the loop with 130, no more runs."""
+    drop = SshResult(255, "Timeout, server not responding.")
+    code, _, script, waited = _loop(tmp_path, [drop], sleep_error=KeyboardInterrupt())
+    assert (code, script.calls, waited) == (130, 1, [2])
+
+
+def test_ctrl_c_during_ssh_exits_130(tmp_path: Path) -> None:
+    """Invariant: a KeyboardInterrupt out of the runner is a clean 130."""
+    code, _, script, waited = _loop(tmp_path, [KeyboardInterrupt()])
+    assert (code, script.calls, waited) == (130, 1, [])
+
+
+def test_terminal_reset_is_written_after_every_exit_on_a_tty(tmp_path: Path) -> None:
+    """Invariant: the alt-screen-off and show-cursor codes follow each ssh exit on a TTY."""
+    tty = _Tty(True)
+    drop = SshResult(255, "Timeout, server not responding.")
+    _loop(tmp_path, [drop, SshResult(0, "")], stdout=tty)
+    assert tty.getvalue() == "\x1b[?1049l\x1b[?25h" * 2
+
+
+def test_terminal_reset_is_not_written_when_stdout_is_not_a_tty(tmp_path: Path) -> None:
+    """Invariant: piped output never receives escape sequences."""
+    pipe = _Tty(False)
+    _loop(tmp_path, [SshResult(0, "")], stdout=pipe)
+    assert pipe.getvalue() == ""
