@@ -51,6 +51,7 @@ pytestmark = [
     pytest.mark.skipif(not RUN_ON_THIS_PLATFORM, reason=SKIP_REASON),
 ]
 _RELEASE_SCRIPTS = ("install_release.sh", "health_gate.sh", "rollback.sh")
+_SCHEMA_GUARD = "schema_guard.py"
 _NOTIFY_SCRIPT = "hermes-notify-failure.sh"
 _CRASH_SCRIPT = "hermes-notify-crash.sh"
 _EXPERIMENT_DIR = Path("docs/experiments/swing-mvp1")
@@ -276,7 +277,7 @@ class Box:
         )
         for index in range(wheels):
             (stage / f"hermes-0.0.{index}-py3-none-any.whl").write_bytes(b"wheel")
-        for script in _RELEASE_SCRIPTS:
+        for script in (*_RELEASE_SCRIPTS, _SCHEMA_GUARD):
             shutil.copy(_SCRIPT_DIR / script, stage / "bin" / script)
         return stage
 
@@ -323,6 +324,7 @@ class Box:
                 "HERMES_MIGRATE_BIN": _posix(self._stubs / "hermes"),
                 "HERMES_UNIT_DIR": _posix(self.units),
                 "HERMES_NOW_EPOCH": _QUIET_EPOCH,
+                "HERMES_SCHEMA_PYTHON": _posix(Path(sys.executable)),
                 **extra,
             }
         )
@@ -1556,3 +1558,79 @@ def test_staging_deploy_never_installs_the_console_wrapper(box: Box, tmp_path: P
 
     assert result.returncode == 0, _output(result)
     assert list(bin_dir.iterdir()) == []
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Schema guard (#655): never put live a release that cannot read the
+# ledger's events.
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _write_events(box: Box, version: int) -> None:
+    """Add an events table holding one FillQualityRecorded row at ``version``."""
+    conn = sqlite3.connect(box.db)
+    with conn:
+        conn.execute("CREATE TABLE events (event_type TEXT, event_schema_version INTEGER)")
+        conn.execute("INSERT INTO events VALUES ('FillQualityRecorded', ?)", (version,))
+    conn.close()
+
+
+def test_deploy_of_a_release_older_than_the_ledger_is_refused(box: Box) -> None:
+    """Invariant: an old commit deployed after newer events exist never goes live."""
+    box.deploy(_SHA_A)
+    box.write_ledger("live")
+    _write_events(box, 999)
+
+    result = box.deploy(_SHA_B)
+
+    assert result.returncode == 1, _output(result)
+    assert "cannot read the events" in result.stdout
+    assert box.target("current") == _SHA_A
+
+
+def test_rollback_onto_a_release_older_than_the_ledger_is_refused(box: Box) -> None:
+    """Invariant: without a snapshot, rollback refuses a previous that would crash-loop."""
+    box.deploy(_SHA_A)
+    box.deploy(_SHA_B)
+    box.write_ledger("live")
+    _write_events(box, 999)
+
+    result = box.rollback()
+
+    assert result.returncode == 1, _output(result)
+    assert "HERMES_RESTORE_DB" in result.stdout
+    assert box.target("current") == _SHA_B
+
+
+def test_rollback_with_a_snapshot_skips_the_schema_guard(box: Box) -> None:
+    """Invariant: restoring the matching snapshot is the safe way back, so it is allowed."""
+    box.deploy(_SHA_A)
+    box.deploy(_SHA_B)
+    snapshot = box.write_ledger("old", box.base / "snapshot.sqlite3")
+    box.write_ledger("live")
+    _write_events(box, 999)
+
+    result = box.rollback(HERMES_RESTORE_DB=_posix(snapshot))
+
+    assert result.returncode == 0, _output(result)
+    assert box.target("current") == _SHA_A
+
+
+def test_rollback_override_skips_the_schema_guard(box: Box) -> None:
+    """Invariant: the operator can still force a rollback, by name."""
+    box.deploy(_SHA_A)
+    box.deploy(_SHA_B)
+    box.write_ledger("live")
+    _write_events(box, 999)
+
+    result = box.rollback(HERMES_SKIP_SCHEMA_GUARD="1")
+
+    assert result.returncode == 0, _output(result)
+    assert box.target("current") == _SHA_A
+
+
+def test_good_deploy_installs_the_schema_guard_for_manual_rollbacks(box: Box) -> None:
+    """Invariant: /opt/hermes/bin/rollback.sh finds the guard next to it."""
+    box.deploy(_SHA_A)
+
+    assert (box.root / "bin" / _SCHEMA_GUARD).is_file()
