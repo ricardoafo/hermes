@@ -52,7 +52,6 @@ tests/unit/adapters/ledger/test_sqlite_tax_source.py::test_sqlite_ledger_satisfi
 tests/unit/adapters/ledger/test_sqlite_trade_ledger.py::test_sqlite_ledger_satisfies_trade_ledger_port U6
 tests/unit/adapters/ledger/test_trade_rates_reader.py::test_lookup_satisfies_the_port U6
 tests/unit/adapters/ledger/test_trade_rates_reader.py::test_rates_are_decimals_not_floats U3
-tests/unit/adapters/market_data/test_binance_depth_snapshot.py::test_a_book_older_than_the_cache_window_is_refetched U10
 tests/unit/adapters/market_data/test_binance_depth_snapshot.py::test_a_book_younger_than_the_cache_window_is_reused U10
 tests/unit/adapters/market_data/test_binance_historical.py::test_read_csv_from_zip_returns_rows U3
 tests/unit/adapters/market_data/test_binance_live_klines.py::test_adapter_satisfies_the_port U3

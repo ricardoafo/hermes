@@ -159,9 +159,13 @@ def _is_mock_check(node: ast.AST) -> bool:
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
         return bool(_MOCK_ASSERTS.match(node.func.attr))
     if isinstance(node, ast.Assert):
-        return any(
-            isinstance(n, ast.Attribute) and n.attr in _MOCK_ATTRS for n in ast.walk(node.test)
-        )
+        test = node.test
+        if isinstance(test, ast.UnaryOp) and isinstance(test.op, ast.Not):
+            test = test.operand
+        if isinstance(test, ast.Compare):
+            test = test.left
+        # Only a bare mock read counts; a tuple that also pins a real value is meaningful.
+        return isinstance(test, ast.Attribute) and test.attr in _MOCK_ATTRS
     return False
 
 
