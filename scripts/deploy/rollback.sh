@@ -112,9 +112,16 @@ fi
 
 if [ -z "$RESTORE" ] && [ -f "$DB" ] && [ -z "${HERMES_SKIP_SCHEMA_GUARD:-}" ]; then
     if [ -f "$SCRIPT_DIR/schema_guard.py" ]; then
+        # On stdin, as in install_release.sh: the service user may not be
+        # able to open the script's own path.
+        guard_rc=0
         "$RUNUSER" -u "$RUN_AS" -- "${HERMES_SCHEMA_PYTHON:-$prev/.venv/bin/python}" \
-            "$SCRIPT_DIR/schema_guard.py" "$DB" \
-            || die "previous ($prev) cannot read the ledger's newer events: restore its snapshot with HERMES_RESTORE_DB, or set HERMES_SKIP_SCHEMA_GUARD=1"
+            - "$DB" < "$SCRIPT_DIR/schema_guard.py" || guard_rc=$?
+        case $guard_rc in
+            0) ;;
+            1) die "previous ($prev) cannot read the ledger's newer events: restore its snapshot with HERMES_RESTORE_DB, or set HERMES_SKIP_SCHEMA_GUARD=1" ;;
+            *) die "the schema guard failed to run (exit $guard_rc): check it, or set HERMES_SKIP_SCHEMA_GUARD=1" ;;
+        esac
     else
         echo "::warning::no schema_guard.py next to rollback.sh: not checking the ledger's event schemas"
     fi

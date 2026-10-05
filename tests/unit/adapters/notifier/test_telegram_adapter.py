@@ -27,9 +27,11 @@ from hermes.adapters.notifier import (
 from hermes.domain.errors import HermesError, InfraError
 from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
 from hermes.domain.events.balance_low import BalanceLow
+from hermes.domain.events.base import DomainEvent
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
 from hermes.ports.notifier import NotifierPort
+from tests.support.notification_samples import samples
 
 _TEST_TOKEN = "123456:ABC-DEF"  # noqa: S105 - test-only bot token, never real
 _TEST_CHAT = "-1001234567890"
@@ -556,3 +558,66 @@ class TestGetMe:
             router.get(_GET_ME_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
             with pytest.raises(TelegramNotifierError, match="missing 'result'"):
                 adapter.get_me()
+
+
+class TestEurRate:
+    """The injected rate lookup decides whether a push shows EUR or USDT (change 668)."""
+
+    @staticmethod
+    def _sent_text(adapter: TelegramAdapter) -> str:
+        with respx.mock() as router:
+            route = router.post(_API_URL).mock(
+                return_value=httpx.Response(200, json={"ok": True, "result": {}})
+            )
+            adapter.notify(samples()["signal-entry"])
+            return str(json.loads(route.calls[0].request.content)["text"])
+
+    def test_the_lookup_receives_the_event_and_its_rate_reaches_the_wire(
+        self, config: TelegramConfig
+    ) -> None:
+        """Invariant (668 R-4): the lookup gets the event; its rate prices the push."""
+        seen: list[DomainEvent] = []
+
+        def lookup(event: DomainEvent) -> Decimal | None:
+            seen.append(event)
+            return Decimal("1.25")
+
+        client = httpx.Client(base_url="https://api.telegram.org", timeout=5.0)
+        adapter = TelegramAdapter(config=config, client=client, eur_rate=lookup)
+
+        text = self._sent_text(adapter)
+
+        assert (seen, text.splitlines()[0]) == (
+            [samples()["signal-entry"]],
+            "\u25b2 Entry long BTC \u00b7 \u20ac41,928\\.16",
+        )
+
+    def test_a_lookup_with_no_rate_sends_the_usdt_text(self, config: TelegramConfig) -> None:
+        """Invariant (668 R-2): a cold cache keeps the USDT text, visibly and never wrong."""
+        client = httpx.Client(base_url="https://api.telegram.org", timeout=5.0)
+        adapter = TelegramAdapter(config=config, client=client, eur_rate=lambda _event: None)
+        assert self._sent_text(adapter).splitlines()[0] == (
+            "\u25b2 Entry long BTC \u00b7 52,410\\.20 USDT"
+        )
+
+    def test_a_failing_lookup_still_delivers_the_push_in_usdt(self, config: TelegramConfig) -> None:
+        """Invariant (668 R-2): a lookup that raises never stops the notification."""
+
+        def boom(_event: DomainEvent) -> Decimal | None:
+            raise RuntimeError("cache exploded")
+
+        client = httpx.Client(base_url="https://api.telegram.org", timeout=5.0)
+        adapter = TelegramAdapter(config=config, client=client, eur_rate=boom)
+        assert "52,410\\.20 USDT" in self._sent_text(adapter)
+
+    def test_create_passes_the_lookup_to_the_adapter(self, config: TelegramConfig) -> None:
+        """Invariant (668 D-2): the factory serve uses carries the lookup into the adapter."""
+
+        def lookup(_event: DomainEvent) -> Decimal | None:
+            return Decimal("1.25")
+
+        adapter = TelegramAdapter.create(config, eur_rate=lookup)
+        try:
+            assert adapter.eur_rate is lookup
+        finally:
+            adapter.close()

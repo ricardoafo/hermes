@@ -10,7 +10,10 @@ Invariants protected here:
 - strategy decisions show as sealed, without their titles;
 - a brief whose free text fails the gate falls back to the digest of states
   and counts, which passes;
-- items no tool serves yet say so rather than guessing.
+- items no tool serves yet say so rather than guessing;
+- "What the engine did" states, per pair, the checks, signals, exit rules,
+  fills and holding the engine recorded, and explains a quiet engine against
+  the rules only.
 
 The fake reader stands in for ``SqliteSupervisorReader``; the CLI test in
 ``tests/unit/entrypoints/test_supervisor.py`` covers the seam over a real
@@ -29,6 +32,7 @@ from hypothesis import strategies as st
 
 from hermes.application.status import UnitState
 from hermes.application.supervisor.briefing import (
+    ENGINE_RULES,
     NOT_ON_CONNECTION,
     SOURCES,
     BriefKind,
@@ -46,7 +50,7 @@ from hermes.domain.journal.entries import Decision, OutcomeKind, Review
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.pair import Pair
 from hermes.ports.status import ShadowEntry
-from hermes.ports.supervisor import SignalFact
+from hermes.ports.supervisor import BarCount, FillFact, SignalFact
 from tests.support.status_ledger import BTC, ETH, INTERVALS, LAST_4H, NOW, PAIRS
 
 _ALL = [t.scope for t in TOOLS.values()]
@@ -73,6 +77,12 @@ class _Reader:
 
     def signals_since(self, since: datetime) -> tuple[SignalFact, ...]:
         return tuple(f for f in self.facts if f.occurred_at >= since)
+
+    def bars_since(self, since: datetime) -> tuple[BarCount, ...]:
+        return _BARS
+
+    def fills_since(self, since: datetime) -> tuple[FillFact, ...]:
+        return tuple(f for f in _FILLS if f.occurred_at >= since)
 
 
 class _Journal:
@@ -103,8 +113,14 @@ def _decision(entry_id: str, title: str, kind: OutcomeKind) -> Decision:
 _ENTRY_TIME = LAST_4H - timedelta(days=2)
 _SIGNALS = (
     SignalFact(ETH, "entry", _ENTRY_TIME),
-    SignalFact(BTC, "exit", LAST_4H - timedelta(hours=8)),
+    SignalFact(BTC, "exit", LAST_4H - timedelta(hours=8), exit_reason="chandelier"),
 )
+_BARS = (
+    BarCount(BTC, KlineInterval.H4, 6),
+    BarCount(ETH, KlineInterval.H4, 6),
+    BarCount(ETH, KlineInterval.D1, 1),
+)
+_FILLS = (FillFact(BTC, "SELL", LAST_4H - timedelta(hours=8)),)
 _DECISIONS: list[Decision | Review] = [
     _decision("DJ-1", "Keep the runner on Windows", OutcomeKind.PROCESS),
     _decision("DJ-2", "Widen the stop", OutcomeKind.STRATEGY),
@@ -196,6 +212,7 @@ def test_an_ungranted_tool_is_reported_unavailable_and_audited_as_denied() -> No
     assert [(r.tool, r.outcome.value) for r in records] == [
         ("health", "ok"),
         ("signals", "denied"),
+        ("engine", "denied"),
         ("positions", "denied"),
         ("decisions", "denied"),
         ("certification", "denied"),
@@ -203,12 +220,12 @@ def test_an_ungranted_tool_is_reported_unavailable_and_audited_as_denied() -> No
     assert brief.gate().passed
 
 
-def test_the_daily_line_is_one_item_that_passes_the_gate() -> None:
-    """The daily brief is a single line over the last day, and passes the gate."""
+def test_the_daily_brief_is_the_day_line_then_the_engine_and_passes_the_gate() -> None:
+    """The daily brief is the line over the last day plus what the engine did (#365)."""
     dispatcher, _ = _dispatcher(_ALL)
     brief = compose(gather(dispatcher, kind=BriefKind.DAILY, now=NOW), kind=BriefKind.DAILY)
 
-    assert len(brief.items) == 1
+    assert [item.heading for item in brief.items] == ["Today", "What the engine did"]
     assert brief.items[0].text.endswith(
         "Since 2026-10-02 16:10 UTC: 1 signal(s), 1 open position(s), 1 decision(s) waiting."
     )
@@ -250,3 +267,41 @@ def test_a_passing_brief_is_published_in_full() -> None:
 
     assert verdict.passed
     assert "Keep the runner on Windows" in brief.render()
+
+
+def test_what_the_engine_did_states_each_pair_from_the_engine_tool() -> None:
+    """Each pair's checks, signals, exit rule, fills and holding come from the tool's facts."""
+    dispatcher, _ = _dispatcher(_ALL)
+    brief = compose(gather(dispatcher, kind=BriefKind.WEEKLY, now=NOW), kind=BriefKind.WEEKLY)
+
+    item = {i.heading: i for i in brief.items}["What the engine did"]
+
+    assert item.sources == ("engine",)
+    assert item.text == " ".join(
+        (
+            "BTC/USDT: 6 4h and 0 1d bars checked; exit signal(s) by rule: chandelier; "
+            "fills: 0 buy, 1 sell; flat.",
+            "ETH/USDT: 6 4h and 1 1d bars checked; 1 entry signal(s); no fills; "
+            "holding since 2026-10-01 16:00 UTC.",
+            "SOL/USDT: 0 4h and 0 1d bars checked; no signal; no fills; flat.",
+            ENGINE_RULES,
+        )
+    )
+    assert brief.gate().passed
+
+
+def test_a_quiet_engine_is_explained_against_the_rules_only() -> None:
+    """The explanation names the frozen rules and says what is not served yet; no number."""
+    assert "breakout, momentum, regime" in ENGINE_RULES
+    assert ENGINE_RULES.endswith("not on the data connection yet.")
+    assert not any(ch.isdigit() for ch in ENGINE_RULES)
+
+
+def test_what_the_engine_did_is_unavailable_without_its_grant() -> None:
+    """Without the engine grant the section says so instead of guessing."""
+    grants = [scope for scope in _ALL if scope != "hermes:read:engine"]
+    dispatcher, _ = _dispatcher(grants)
+    brief = compose(gather(dispatcher, kind=BriefKind.DAILY, now=NOW), kind=BriefKind.DAILY)
+
+    assert brief.items[-1].text == "Unavailable (not granted)."
+    assert brief.gate().passed

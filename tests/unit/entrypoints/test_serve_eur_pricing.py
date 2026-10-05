@@ -11,6 +11,7 @@ import dataclasses
 import sqlite3
 import threading
 import time
+from collections.abc import Mapping, Sequence
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -21,15 +22,31 @@ from structlog.testing import capture_logs
 from hermes.application.ledger.eur_pricer import EurPricer
 from hermes.application.ledger.trade_recorder import TradeRecorder
 from hermes.domain.errors import LedgerError
+from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
+from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.fx.fx_rate import FxRate
+from hermes.domain.strategy.signal import SignalKind, SignalSide
 from hermes.domain.trading.fill import Fill
 from hermes.domain.trading.order import Order, OrderSide
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
+from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.entrypoints import serve as serve_module
-from tests.support.serve_loop import BASE, BTC, FakeFeed, build, h4_bar, history, run_once
+from hermes.infrastructure.config.loader import load_config
+from tests.support.serve_loop import (
+    BASE,
+    BTC,
+    PROJECT_ROOT,
+    FakeClock,
+    FakeFeed,
+    UnavailableBooks,
+    build,
+    h4_bar,
+    history,
+    run_once,
+)
 from tests.unit.application.ledger.fake_fx import FakeFx
 
 _SEED_DAY = date(2024, 1, 1)
@@ -131,6 +148,95 @@ def test_boot_pricing_leaves_an_already_priced_seed_untouched(tmp_path: Path) ->
     composition.sqlite_connection.close()
 
 
+def _entry_event(pair_quote_ccy: Currency = Currency.USDT, at: datetime = BASE) -> SignalEmitted:
+    """Return an entry signal on a pair quoted in ``pair_quote_ccy``."""
+    return SignalEmitted(
+        occurred_at=at,
+        correlation_id="01J9Z8T3M5BQR2FVKN4YK7Q2ZP",
+        strategy_id=StrategyId("swing-donchian-4h"),
+        pair=Pair(base=Currency.BTC, quote=pair_quote_ccy),
+        kind=SignalKind.ENTRY,
+        side=SignalSide.LONG,
+        entry_price=Decimal("100"),
+        stop_price=Decimal("90"),
+        atr_context=Decimal("5"),
+    )
+
+
+def test_the_notifier_lookup_reads_the_pricer_cache_and_never_the_provider() -> None:
+    """Invariant (668 D-1): the push path answers from memory; cold is None, no FX call."""
+    fx = FakeFx(rates={_SEED_DAY: (Decimal("1.25"), _SEED_DAY)})
+    pricer = EurPricer(fx)
+    lookup = serve_module._eur_rate_lookup(pricer)
+
+    cold = lookup(_entry_event())
+    pricer.price(Currency.USDT, _SEED_DAY, today=_SEED_DAY)
+    warm = lookup(_entry_event())
+
+    assert (cold, warm, len(fx.calls)) == (None, Decimal("1.25"), 1)
+
+
+def test_the_notifier_lookup_uses_the_madrid_date_of_the_event() -> None:
+    """Invariant (668 D-2): 23:30 UTC on Dec 31 is Jan 1 in Madrid; that day's rate is used."""
+    jan1 = date(2024, 1, 1)
+    fx = FakeFx(rates={jan1: (Decimal("1.25"), jan1)})
+    pricer = EurPricer(fx)
+    pricer.price(Currency.USDT, jan1, today=jan1)
+    lookup = serve_module._eur_rate_lookup(pricer)
+
+    late_utc = datetime(2023, 12, 31, 23, 30, tzinfo=UTC)
+    assert lookup(_entry_event(at=late_utc)) == Decimal("1.25")
+
+
+def test_the_notifier_lookup_has_no_rate_for_an_event_without_a_pair() -> None:
+    """Invariant (668 D-2): events that carry no pair (an anomaly) get no rate and no lookup."""
+    fx = FakeFx()
+    lookup = serve_module._eur_rate_lookup(EurPricer(fx))
+    anomaly = AnomalyDetected(
+        occurred_at=BASE,
+        correlation_id="01J9Z8T3M5BQR2FVKN4YK7Q2ZP",
+        source="swing.risk",
+        severity=AnomalySeverity.CRITICAL,
+        reason="ledger reconciliation mismatch",
+    )
+    assert (lookup(anomaly), fx.calls) == (None, [])
+
+
+def test_serve_gives_both_notifiers_the_pricer_lookup(tmp_path: Path) -> None:
+    """Invariant (668 D-2): with credentials set, Telegram and Slack are built with the lookup."""
+    env = {
+        "HERMES_TELEGRAM__BOT_TOKEN": "token-abc",  # gitleaks:allow
+        "HERMES_TELEGRAM__CHAT_ID": "chat-xyz",
+        "HERMES_SLACK__BOT_TOKEN": "xoxb-test",  # gitleaks:allow
+        "HERMES_SLACK__DEFAULT_CHANNEL": "C0TEST",
+    }
+    composition = serve_module.build_composition(
+        load_config(PROJECT_ROOT / "config", env={}),
+        db_path=tmp_path / "t.sqlite3",
+        env=env,
+        feed=FakeFeed(),
+        clock=FakeClock(BASE),
+        orderbooks=UnavailableBooks(),
+        fx=FakeFx(down=True),
+    )
+    try:
+        assert composition.telegram is not None
+        assert composition.slack is not None
+        assert (
+            composition.telegram.eur_rate is not None,
+            composition.slack.eur_rate is not None,
+        ) == (
+            True,
+            True,
+        )
+    finally:
+        composition.sqlite_connection.close()
+        if composition.telegram is not None:
+            composition.telegram.close()
+        if composition.slack is not None:
+            composition.slack.close()
+
+
 class _ProbeFx(FakeFx):
     """FakeFx that notes how many trades the ledger held at each worker-thread call.
 
@@ -190,7 +296,7 @@ def _pending_trades(db: Path) -> int:
     return _count(db, "SELECT COUNT(*) FROM trades WHERE eur_status = 'pending'")
 
 
-def _priced(logs: list[dict[str, object]]) -> bool:
+def _priced(logs: Sequence[Mapping[str, object]]) -> bool:
     """Return whether the boot pricing has logged its outcome."""
     return any(e["event"] == "serve.eur_priced" for e in logs)
 

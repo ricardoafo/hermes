@@ -1,0 +1,1 @@
+- The supervisor desk briefs (`hermes supervisor brief`, daily and `--weekly`) now include "What the engine did". For each pair, the section shows the bars checked, the entry and exit signals with the exit rule, the fills by side, and whether a position is held. The data comes from a new read-only `engine` tool (`hermes:read:engine`). No prices or values are shown.

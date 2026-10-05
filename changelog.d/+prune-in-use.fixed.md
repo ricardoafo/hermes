@@ -1,0 +1,1 @@
+- A deploy no longer prunes an older release that a running process, such as a console opened before the deploy, still runs from; it keeps it and logs the pid.

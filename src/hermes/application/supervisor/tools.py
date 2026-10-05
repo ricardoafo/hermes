@@ -44,12 +44,15 @@ __all__ = [
     "TOOLS",
     "UNSEALED_STATES",
     "AuditRecord",
+    "BarCountView",
     "CallOutcome",
     "CertificationView",
     "DecisionsView",
     "DueDecisionView",
+    "EngineView",
     "HealthView",
     "MemorizationGuardError",
+    "PairActivityView",
     "PositionView",
     "PositionsView",
     "SealedDecisionView",
@@ -221,6 +224,38 @@ class CertificationView:
     entered_at: datetime | None
 
 
+@dataclass(frozen=True, slots=True)
+class BarCountView:
+    """How many bars of one interval the loop handled for a pair."""
+
+    interval: str
+    count: int
+
+
+@dataclass(frozen=True, slots=True)
+class PairActivityView:
+    """What the engine did on one pair: checks, signals, fills and whether it holds.
+
+    Counts, rule names and times only; never a price, size or value (ADR-012 D-06).
+    """
+
+    pair: str
+    bars: tuple[BarCountView, ...]
+    entries: int
+    exit_reasons: tuple[str, ...]
+    fills_buy: int
+    fills_sell: int
+    holding_since: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class EngineView:
+    """What the engine did on every configured pair since ``since``."""
+
+    since: datetime
+    pairs: tuple[PairActivityView, ...]
+
+
 def health(ctx: SupervisorContext, _args: Mapping[str, object]) -> HealthView:
     """Return the system's verdict and stream progress."""
     report = build_report(
@@ -259,17 +294,53 @@ def signals(ctx: SupervisorContext, args: Mapping[str, object]) -> SignalsView:
         ToolArgumentError: ``since`` is missing or not a UTC-aware ISO time.
         MemorizationGuardError: ``since`` is before the guard.
     """
-    since = _since(args)
-    if since < ctx.guard:
-        raise MemorizationGuardError(
-            f"since {since.isoformat()} is before the memorization guard "
-            f"{ctx.guard.date().isoformat()} (ADR-003 §08)"
-        )
+    since = _guarded_since(ctx, args)
     return SignalsView(
         since=since,
         signals=tuple(
             SignalView(pair=str(f.pair), kind=f.kind, occurred_at=f.occurred_at)
             for f in ctx.reader.signals_since(since)
+        ),
+    )
+
+
+def engine(ctx: SupervisorContext, args: Mapping[str, object]) -> EngineView:
+    """Return what the engine did on each configured pair since ``args["since"]``.
+
+    Raises:
+        ToolArgumentError: ``since`` is missing or not a UTC-aware ISO time.
+        MemorizationGuardError: ``since`` is before the guard.
+    """
+    since = _guarded_since(ctx, args)
+    bars = ctx.reader.bars_since(since)
+    signals_ = ctx.reader.signals_since(since)
+    fills = ctx.reader.fills_since(since)
+    held = {e.pair: e.entry_time for e in ctx.reader.open_entries()}
+    return EngineView(
+        since=since,
+        pairs=tuple(
+            PairActivityView(
+                pair=str(pair),
+                bars=tuple(
+                    BarCountView(
+                        interval=interval.value,
+                        count=sum(
+                            b.count for b in bars if (b.pair, b.interval) == (pair, interval)
+                        ),
+                    )
+                    for interval in ctx.intervals
+                ),
+                entries=sum(1 for f in signals_ if f.pair == pair and f.kind == "entry"),
+                exit_reasons=tuple(
+                    f.exit_reason or "unknown"
+                    for f in signals_
+                    if f.pair == pair and f.kind == "exit"
+                ),
+                fills_buy=sum(1 for f in fills if f.pair == pair and f.side == "BUY"),
+                fills_sell=sum(1 for f in fills if f.pair == pair and f.side == "SELL"),
+                holding_since=held.get(pair),
+            )
+            for pair in ctx.pairs
         ),
     )
 
@@ -314,6 +385,16 @@ def _due_view(decision: Decision) -> DueDecisionView:
     return DueDecisionView(decision.entry_id, decision.decision, decision.review_on)
 
 
+def _guarded_since(ctx: SupervisorContext, args: Mapping[str, object]) -> datetime:
+    since = _since(args)
+    if since < ctx.guard:
+        raise MemorizationGuardError(
+            f"since {since.isoformat()} is before the memorization guard "
+            f"{ctx.guard.date().isoformat()} (ADR-003 §08)"
+        )
+    return since
+
+
 def _since(args: Mapping[str, object]) -> datetime:
     raw = args.get("since")
     if not isinstance(raw, str):
@@ -330,6 +411,19 @@ def _since(args: Mapping[str, object]) -> datetime:
 _NO_ARGS: Final[Mapping[str, object]] = {
     "type": "object",
     "properties": {},
+    "additionalProperties": False,
+}
+
+_SINCE_ARGS: Final[Mapping[str, object]] = {
+    "type": "object",
+    "properties": {
+        "since": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 with offset, on or after 2026-02-01.",
+        }
+    },
+    "required": ["since"],
     "additionalProperties": False,
 }
 
@@ -370,20 +464,17 @@ TOOLS: Final[Mapping[str, SupervisorTool]] = {
             "signals",
             "hermes:read:signals",
             "Signals since a time: pair, entry or exit, and when. No prices.",
-            {
-                "type": "object",
-                "properties": {
-                    "since": {
-                        "type": "string",
-                        "format": "date-time",
-                        "description": "ISO 8601 with offset, on or after 2026-02-01.",
-                    }
-                },
-                "required": ["since"],
-                "additionalProperties": False,
-            },
+            _SINCE_ARGS,
             SignalsView,
             signals,
+        ),
+        SupervisorTool(
+            "engine",
+            "hermes:read:engine",
+            "Per pair since a time: bars checked, signals, exit rules, fills, holding. No prices.",
+            _SINCE_ARGS,
+            EngineView,
+            engine,
         ),
         SupervisorTool(
             "positions",
