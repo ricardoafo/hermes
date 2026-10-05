@@ -21,6 +21,6 @@ pytest_plugins = [
     "pytester",  # enables the `pytester` fixture used by test_sev1_guard.py
 ]
 
-settings.register_profile("deterministic", derandomize=True, database=None, print_blob=True)
+settings.register_profile("ci", derandomize=True, database=None, print_blob=True)
 settings.register_profile("explore", derandomize=False, print_blob=True)
-settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "deterministic"))
+settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "ci"))
