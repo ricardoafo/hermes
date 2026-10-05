@@ -117,6 +117,7 @@ from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
+from hermes.entrypoints._release import read_release
 from hermes.infrastructure import sentry_integration
 from hermes.infrastructure.config.models import FrankfurterConfig
 from hermes.infrastructure.config.root import HermesConfig
@@ -611,6 +612,7 @@ async def run(composition: Composition, shutdown: asyncio.Event) -> int:
         "serve.run.started",
         env=composition.config.env,
         pairs=len(composition.strategies),
+        release=read_release().name,
     )
     code = 0
     try:

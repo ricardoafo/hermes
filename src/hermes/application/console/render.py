@@ -873,6 +873,8 @@ def _activity_text(ctx: RenderContext, item: ActivityItem) -> Text:
             text = Text(f"⚠ {note}", style="yellow")
         case ActivityKind.ERROR:
             text = Text(f"✖ {note}", style="red")
+        case ActivityKind.BAR if item.coin is None and note:
+            text = Text(note, style="dim")
         case ActivityKind.BAR | ActivityKind.SIGNAL:
             text = Text(f"{item.kind.value} {coin} {note}".rstrip(), style="dim")
     return text
