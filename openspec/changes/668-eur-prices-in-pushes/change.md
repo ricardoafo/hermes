@@ -26,7 +26,6 @@ in its `EurPricer`, and falls back to the USDT text when no rate is known.
   `eur_rate` (quote units per euro) and format the quote-currency prices in EUR.
 - `TelegramAdapter` and `SlackAdapter` take an optional `eur_rate` lookup
   callable at construction; `serve` injects it from the pricer.
-- `serve` warms the pricer once at boot for the roster's quote currencies.
 - `hermes preview --eur-rate RATE` renders the samples with a sample rate.
 
 ### Out
@@ -46,8 +45,9 @@ most recent rate fetched for that quote (final or provisional) when its
 `rate_date` is at most 7 days from `on_date`. It never calls the provider. A
 slow or failing FX source therefore cannot delay a push or a bar (PR #659 was
 reverted for making serve 10x slower per bar). Rates reach the cache from the
-fill path, from the boot backfill, and from one boot warm-up per quote
-currency, all of which already run off the bar path.
+fill path and from the boot backfill, both of which already run off the bar
+path. No new boot lookup is added: boot EUR pricing must not delay catch-up
+(issue #658), so warming the cache at boot belongs to that work.
 
 **Staleness**: a rate older than 7 days (a long holiday weekend plus slack)
 is treated as unknown, so the push shows USDT rather than a stale euro figure.
@@ -99,8 +99,7 @@ on main.
 EUR, else `fmt_money(amount, quote)`. The signal and trade builders call it for
 every price. `serve._eur_rate_lookup(pricer)` returns the callable that maps an
 event with a `pair` to `pricer.cached_rate(pair.quote, fill_date_madrid(occurred_at))`.
-`price_pending_eur_once` also asks the pricer for today's rate of each roster
-quote so the cache is warm before the first bar.
+Serve adds no new FX call; until a rate is cached the push keeps its USDT text.
 
 ## Test plan
 
@@ -129,4 +128,4 @@ Test tiers touched: unit.
 
 ## Dependencies
 
-- Issue #658 (boot EUR pricing) provides the pricer and its warm-up path.
+- Issue #658 (boot EUR pricing) owns any boot-time warm-up of the pricer cache.

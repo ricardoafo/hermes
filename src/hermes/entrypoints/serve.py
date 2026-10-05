@@ -640,7 +640,6 @@ async def run(composition: Composition, shutdown: asyncio.Event) -> int:
     code = 0
     if not shutdown.is_set():
         price_pending_eur_once(composition)
-        warm_eur_rates(composition)
     try:
         async with asyncio.TaskGroup() as group:
             group.create_task(_bar_loop(composition, shutdown))
@@ -679,32 +678,6 @@ def price_pending_eur_once(c: Composition) -> None:
         trades_filled=len(report.filled),
         trades_pending=len(report.pending),
     )
-
-
-def warm_eur_rates(c: Composition) -> None:
-    """Fetch today's EUR rate once per quote currency that has none, before the loop.
-
-    The notifier reads rates from the pricer's memory only (D-1 of change
-    ``668-eur-prices-in-pushes``), so the first push of a boot shows EUR only
-    if a rate is already held. This is the one bounded lookup per quote at
-    boot; it never runs on the bar path. A failure is logged and swallowed.
-
-    Args:
-        c: The wired container.
-    """
-    today = fill_date_madrid(c.clock.now())
-    for quote in sorted({pair.quote for pair in c.pairs}, key=lambda q: q.value):
-        if c.eur_pricer.cached_rate(quote, today) is not None:
-            continue
-        try:
-            c.eur_pricer.price(quote, today, today=today)
-        except Exception as exc:
-            _log.warning(
-                "serve.eur_warm_failed",
-                quote=quote.value,
-                error=type(exc).__name__,
-                detail=str(exc),
-            )
 
 
 def report_failure(exc: BaseException) -> None:

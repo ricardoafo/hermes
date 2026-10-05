@@ -180,53 +180,6 @@ def test_the_notifier_lookup_has_no_rate_for_an_event_without_a_pair() -> None:
     assert (lookup(anomaly), fx.calls) == (None, [])
 
 
-def test_boot_warms_one_rate_per_quote_currency(tmp_path: Path) -> None:
-    """Invariant (668 D-1): one bounded boot lookup per quote, so the first push can show EUR."""
-    fx = FakeFx(rates={BASE.date(): (Decimal("1.25"), BASE.date())})
-    composition = build(tmp_path / "t.sqlite3", FakeFeed(), BASE, fx=fx)
-
-    serve_module.warm_eur_rates(composition)
-
-    assert (
-        fx.calls,
-        composition.eur_pricer.cached_rate(Currency.USDT, BASE.date()),
-    ) == ([(Currency.EUR, Currency.USDT, BASE.date())], Decimal("1.25"))
-    composition.sqlite_connection.close()
-
-
-def test_boot_does_not_refetch_a_rate_it_already_holds(tmp_path: Path) -> None:
-    """Invariant (668 D-1): the warm-up skips a quote the pricer already knows."""
-    fx = FakeFx(rates={BASE.date(): (Decimal("1.25"), BASE.date())})
-    composition = build(tmp_path / "t.sqlite3", FakeFeed(), BASE, fx=fx)
-    composition.eur_pricer.price(Currency.USDT, BASE.date(), today=BASE.date())
-    fx.calls.clear()
-
-    serve_module.warm_eur_rates(composition)
-
-    assert fx.calls == []
-    composition.sqlite_connection.close()
-
-
-def test_a_failing_warm_up_is_logged_and_never_raises(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Invariant (668 D-1): an FX outage or a pricer bug at boot never stops serve."""
-    composition = build(tmp_path / "t.sqlite3", FakeFeed(), BASE, fx=FakeFx(down=True))
-
-    def _boom(*_args: object, **_kwargs: object) -> None:
-        raise RuntimeError("pricer broke")
-
-    monkeypatch.setattr(composition.eur_pricer, "price", _boom)
-    with capture_logs() as logs:
-        serve_module.warm_eur_rates(composition)
-
-    warned = [e for e in logs if e["event"] == "serve.eur_warm_failed"]
-    assert [(w["log_level"], w["quote"], w["error"]) for w in warned] == [
-        ("warning", "USDT", "RuntimeError")
-    ]
-    composition.sqlite_connection.close()
-
-
 def test_serve_gives_both_notifiers_the_pricer_lookup(tmp_path: Path) -> None:
     """Invariant (668 D-2): with credentials set, Telegram and Slack are built with the lookup."""
     env = {
