@@ -21,9 +21,12 @@ The top line names the running release when the caller passes a release
 source (``hermes tui`` reads the same ``current`` link as ``hermes status``,
 issue #649).
 
+When the release the console started on is no longer the current one, a
+persistent notice offers ``R`` to restart onto the new release (issue #652).
+
 Keys: ``D`` ``W`` ``M`` ``Y`` range (day, week, month, year), up and down
 (or ``j`` ``k``) select a position, Enter opens it, Esc closes it, ``L`` logs,
-``?`` help, ``Q`` quit.
+``?`` help, ``R`` restart (only while the notice shows), ``Q`` quit.
 
 Reference: openspec/changes/readonly-tui-dashboard/change.md;
 openspec/changes/live-home-screen/change.md (D-6).
@@ -31,6 +34,8 @@ openspec/changes/live-home-screen/change.md (D-6).
 
 from __future__ import annotations
 
+import os
+import sys
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -77,6 +82,8 @@ _LEFT_COLUMN: Final = 46
 _BIG_TOTAL_FROM_ROWS: Final = 30
 _ACTIVITY_ROWS: Final = 4
 _ACTIVITY_ROWS_SHORT: Final = 3
+_NEW_VERSION_NOTICE: Final = "new version deployed · press R to restart"
+_UNKNOWN_RELEASE: Final = "unknown"
 _FOOTER: Final = "D W M Y range · ↵ detail · L logs · ? help · Q quit · read-only"
 _LOGS_LINES: Final = 50
 _LOGS_DEMO: Final = "Logs come from the VPS journal; demo data has none."
@@ -191,6 +198,8 @@ class HomeApp(App[None]):
     #heartbeat { width: 1fr; }
     #down-row { display: none; height: auto; }
     #down-row.-down { display: block; }
+    #notice { display: none; height: 1; }
+    #notice.-on { display: block; }
     #body {
         layout: grid;
         grid-size: 1;
@@ -220,6 +229,7 @@ class HomeApp(App[None]):
         Binding("escape", "close_detail", "back", show=False),
         Binding("l,L", "logs", "logs", show=False),
         Binding("question_mark", "help", "help", show=False),
+        Binding("r,R", "restart", "restart", show=False),
         Binding("q,Q", "quit", "quit", show=False),
     ]
 
@@ -250,6 +260,9 @@ class HomeApp(App[None]):
         self._selected: str | None = None
         self._detail_open = False
         self._content: dict[str, RenderableType] = {}
+        self._started_release: str | None = None
+        self._release_is_new = False
+        self.restart_requested = False
 
     def compose(self) -> ComposeResult:
         """Lay out the status bar, the four cells, the 90-day line and the footer."""
@@ -258,6 +271,7 @@ class HomeApp(App[None]):
             yield Static(id="release")
             yield Static(id="heartbeat")
         yield Static(id="down-row")
+        yield Static(id="notice")
         with Container(id="body"):
             yield Static(id="portfolio", classes="cell")
             with Vertical(id="watch-column", classes="cell"):
@@ -345,9 +359,11 @@ class HomeApp(App[None]):
             else Text("")
         )
         self._set("demo-tag", tag)
-        self._set(
-            "release", Text("") if self._release is None else Text(f"release {self._release()}")
-        )
+        name = self._read_release()
+        self._set("release", Text("") if name is None else Text(f"release {name}"))
+        self._release_is_new = self._release_changed()
+        self._set("notice", Text(_NEW_VERSION_NOTICE) if self._release_is_new else Text(""))
+        self._home.query_one("#notice").set_class(self._release_is_new, "-on")
         try:
             heartbeat = model.heartbeat()
         except _CARD_ERRORS as exc:
@@ -400,6 +416,24 @@ class HomeApp(App[None]):
         screen = self.screen
         if isinstance(screen, _PanelScreen):
             screen.refresh_panel()
+
+    def _read_release(self) -> str | None:
+        """Return the current release name, or ``None`` without a source or when it fails."""
+        if self._release is None:
+            return None
+        try:
+            return self._release()
+        except Exception:
+            return None
+
+    def _release_changed(self) -> bool:
+        """Return whether the current release differs from the one this console started on."""
+        current = self._read_release()
+        if current is None or current == _UNKNOWN_RELEASE:
+            return False
+        if self._started_release is None:
+            self._started_release = current
+        return current != self._started_release
 
     def _detail_content(self, ctx: RenderContext | None = None) -> RenderableType:
         ctx = ctx or self._render_context()
@@ -480,6 +514,12 @@ class HomeApp(App[None]):
         tz = self._render_context().tz
         return Group(Text("Logs", style="bold"), *(render_log_line(line, tz) for line in lines))
 
+    def action_restart(self) -> None:
+        """Quit so the caller can re-exec onto the new release; ignored without the notice."""
+        if self._on_home and self._release_is_new:
+            self.restart_requested = True
+            self.exit()
+
     def action_help(self) -> None:
         """Show the keys and the tax footnote."""
         if self._on_home:
@@ -507,12 +547,27 @@ def run_home(
     model: ConsoleReadModel,
     journal: Callable[[int], Sequence[LogLine] | None] | None = None,
     release: Callable[[], str] | None = None,
+    *,
+    exec_fn: Callable[[str, list[str]], object] = os.execv,
+    argv: Sequence[str] | None = None,
+    platform: str = sys.platform,
 ) -> None:
-    """Run the home screen until the operator quits.
+    """Run the home screen until the operator quits, or restarts onto a new release.
 
     Args:
         model: The read model to show.
         journal: Source of the logs panel's lines; see :class:`HomeApp`.
         release: Source of the running release's name; see :class:`HomeApp`.
+        exec_fn: ``os.execv``-shaped replacement of the process; injectable for tests.
+        argv: The command line to restart with; defaults to ``sys.argv``.
+        platform: ``sys.platform``; where exec is not meaningful (Windows) the
+            console exits with a message instead.
     """
-    HomeApp(model, journal=journal, release=release).run()
+    app = HomeApp(model, journal=journal, release=release)
+    app.run()
+    if not app.restart_requested:
+        return
+    if platform == "win32":
+        sys.stdout.write("New version deployed: start hermes again to use it.\n")
+        return
+    exec_fn(sys.executable, [sys.executable, *(sys.argv if argv is None else argv)])

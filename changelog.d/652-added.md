@@ -1,0 +1,1 @@
+- **Console new-version notice** (`src/hermes/entrypoints/tui.py`): an open `hermes tui` compares the release it started on with the current one (the link `hermes status` reads) on its 5 s refresh and shows "new version deployed · press R to restart"; R exits and re-execs the console with the same arguments (on Windows it exits with a message). Closes #652.
