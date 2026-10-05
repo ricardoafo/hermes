@@ -83,7 +83,7 @@ def test_entry_minimal_is_one_line_with_the_stop() -> None:
 def test_exit_names_the_rule_and_the_reference_entry() -> None:
     """An exit shows the rule that fired, the entry reference and the stop level."""
     assert _note("signal-exit", Shape.COMPACT) == (
-        "▼ Exit long BTC (trailing_stop)",
+        "▼ Exit long BTC (chandelier)",
         "entry ref 52,410.20 USDT · stop 54,100.00 USDT · Sat 14:00",
         "swing-donchian-4h · …REF",
     )

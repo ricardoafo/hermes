@@ -194,12 +194,12 @@
     'text': '▲ Entry long BTC · 52,410.20 USDT · Sat 14:00 (12:00 UTC)',
   })
 # ---
-# name: test_slack_message_matches_snapshot[signal-exit]
+# name: test_slack_message_matches_snapshot[signal-exit-regime-break]
   dict({
     'blocks': list([
       dict({
         'text': dict({
-          'text': '*▼ Exit long BTC (trailing_stop) · Sat 14:00 (12:00 UTC)*',
+          'text': '*▼ Exit long BTC (regime_break) · Sat 14:00 (12:00 UTC)*',
           'type': 'mrkdwn',
         }),
         'type': 'section',
@@ -229,7 +229,83 @@
       ]),
       'text': 'Plan: entry ref 52,410.20 USDT · stop 54,100.00 USDT · Actual: withheld until certification',
     }),
-    'text': '▼ Exit long BTC (trailing_stop) · Sat 14:00 (12:00 UTC)',
+    'text': '▼ Exit long BTC (regime_break) · Sat 14:00 (12:00 UTC)',
+  })
+# ---
+# name: test_slack_message_matches_snapshot[signal-exit-time-stop]
+  dict({
+    'blocks': list([
+      dict({
+        'text': dict({
+          'text': '*▼ Exit long BTC (time_stop) · Sat 14:00 (12:00 UTC)*',
+          'type': 'mrkdwn',
+        }),
+        'type': 'section',
+      }),
+      dict({
+        'elements': list([
+          dict({
+            'text': 'swing-donchian-4h · …K7Q2ZP',
+            'type': 'mrkdwn',
+          }),
+        ]),
+        'type': 'context',
+      }),
+    ]),
+    'plan': dict({
+      'blocks': list([
+        dict({
+          'text': dict({
+            'text': '''
+              Plan: entry ref 52,410.20 USDT · stop 54,100.00 USDT
+              Actual: withheld until certification
+            ''',
+            'type': 'mrkdwn',
+          }),
+          'type': 'section',
+        }),
+      ]),
+      'text': 'Plan: entry ref 52,410.20 USDT · stop 54,100.00 USDT · Actual: withheld until certification',
+    }),
+    'text': '▼ Exit long BTC (time_stop) · Sat 14:00 (12:00 UTC)',
+  })
+# ---
+# name: test_slack_message_matches_snapshot[signal-exit]
+  dict({
+    'blocks': list([
+      dict({
+        'text': dict({
+          'text': '*▼ Exit long BTC (chandelier) · Sat 14:00 (12:00 UTC)*',
+          'type': 'mrkdwn',
+        }),
+        'type': 'section',
+      }),
+      dict({
+        'elements': list([
+          dict({
+            'text': 'swing-donchian-4h · …K7Q2ZP',
+            'type': 'mrkdwn',
+          }),
+        ]),
+        'type': 'context',
+      }),
+    ]),
+    'plan': dict({
+      'blocks': list([
+        dict({
+          'text': dict({
+            'text': '''
+              Plan: entry ref 52,410.20 USDT · stop 54,100.00 USDT
+              Actual: withheld until certification
+            ''',
+            'type': 'mrkdwn',
+          }),
+          'type': 'section',
+        }),
+      ]),
+      'text': 'Plan: entry ref 52,410.20 USDT · stop 54,100.00 USDT · Actual: withheld until certification',
+    }),
+    'text': '▼ Exit long BTC (chandelier) · Sat 14:00 (12:00 UTC)',
   })
 # ---
 # name: test_slack_message_matches_snapshot[strategy-paused-critical]
@@ -377,9 +453,23 @@
     'swing\\-donchian\\-4h · …K7Q2ZP',
   ])
 # ---
+# name: test_telegram_message_matches_snapshot[signal-exit-regime-break]
+  list([
+    '▼ Exit long BTC \\(regime\\_break\\)',
+    'entry ref 52,410\\.20 USDT · stop 54,100\\.00 USDT · Sat 14:00',
+    'swing\\-donchian\\-4h · …K7Q2ZP',
+  ])
+# ---
+# name: test_telegram_message_matches_snapshot[signal-exit-time-stop]
+  list([
+    '▼ Exit long BTC \\(time\\_stop\\)',
+    'entry ref 52,410\\.20 USDT · stop 54,100\\.00 USDT · Sat 14:00',
+    'swing\\-donchian\\-4h · …K7Q2ZP',
+  ])
+# ---
 # name: test_telegram_message_matches_snapshot[signal-exit]
   list([
-    '▼ Exit long BTC \\(trailing\\_stop\\)',
+    '▼ Exit long BTC \\(chandelier\\)',
     'entry ref 52,410\\.20 USDT · stop 54,100\\.00 USDT · Sat 14:00',
     'swing\\-donchian\\-4h · …K7Q2ZP',
   ])
