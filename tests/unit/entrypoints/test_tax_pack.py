@@ -10,11 +10,14 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import re
 import shutil
 import sqlite3
+import zlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 
 from hermes.domain.trading.order import OrderSide
@@ -26,6 +29,9 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _CONFIG_DIR = _PROJECT_ROOT / "config"
 _DURING_YEAR = datetime(2026, 10, 4, 5, 30, tzinfo=UTC)
 _AFTER_YEAR_END = datetime(2027, 1, 5, 6, 30, tzinfo=UTC)
+_STREAM = re.compile(rb"stream\r?\n(.*?)\r?\nendstream", re.DOTALL)
+_SHOW_TEXT = re.compile(rb"\(((?:[^()\\]|\\.)*)\) ?Tj")
+_ESCAPE = re.compile(rb"\\(.)")
 
 
 @dataclass
@@ -320,3 +326,91 @@ def test_closed_year_waits_for_its_own_renta_boxes(tmp_path: Path) -> None:
         at=_AFTER_YEAR_END,
     )
     assert not (out / "2026" / "FROZEN").exists()
+
+
+def _pdf_text(path: Path) -> list[str]:
+    """Return each string the PDF's pages show, in order, from its compressed streams."""
+    shown: list[str] = []
+    for raw in _STREAM.findall(path.read_bytes()):
+        try:
+            body = zlib.decompress(raw)
+        except zlib.error:
+            body = raw
+        shown += [_ESCAPE.sub(rb"\1", text).decode("latin-1") for text in _SHOW_TEXT.findall(body)]
+    return shown
+
+
+def _has_row(shown: list[str], row: list[str]) -> bool:
+    return any(shown[i : i + len(row)] == row for i in range(len(shown)))
+
+
+def _amount(text: str) -> Decimal:
+    return Decimal(text.replace(".", "").replace(",", "."))
+
+
+def _written_pack(tmp_path: Path) -> Path:
+    out = tmp_path / "packs"
+    code, _ = _run(
+        ["--year", "2026", "--db", str(_ledger(tmp_path)), "--out", str(out)],
+        tmp_path,
+        config_dir=_config_with_2026_boxes(tmp_path),
+    )
+    assert code == 0
+    return out / "2026"
+
+
+def test_renta_web_sheet_prints_the_ledger_figures(tmp_path: Path) -> None:
+    """Invariant (R-1): the box 1804 row, the totals and the 721 balance are the ledger's figures.
+
+    Worked by hand from ``standard_ledger`` at 1.25 USD per EUR: the sale of 1.5 BTC
+    at 70,000 less its 105 fee transmits 104,895 / 1.25 = 83,916.00; it consumes lot 1
+    (50,050) and half of lot 2 (30,030), 80,080 / 1.25 = 64,064.00; the gain is
+    19,852.00. The 0.5 BTC held at the last Madrid close of 80,000 is 32,000.00.
+    """
+    shown = _pdf_text(_written_pack(tmp_path) / "renta-web.pdf")
+    assert (
+        _has_row(
+            shown,
+            ["1", "Bitcoin (BTC)", "N: Otra moneda virtual", "83.916,00", "64.064,00", "19.852,00"],
+        ),
+        "Ganancias: 19.852,00 EUR · Pérdidas: 0,00 EUR · Saldo neto: 19.852,00 EUR" in shown,
+        any("saldo conjunto 32.000,00 EUR" in line for line in shown),
+    ) == (True, True, True)
+
+
+def test_dossier_prints_each_consumed_lot_with_its_share_of_the_sale(tmp_path: Path) -> None:
+    """Invariant (R-4): each lot row carries its gross, fee share, cost and gain in EUR.
+
+    Lot 1 (1 BTC): 70,000 / 1.25 = 56,000.00 gross, 70 fee / 1.25 = 56.00,
+    50,050 / 1.25 = 40,040.00 cost, gain 15,904.00. Lot 2 (0.5 BTC): 28,000.00,
+    28.00, 30,030 / 1.25 = 24,024.00, gain 3,948.00.
+    """
+    shown = _pdf_text(_written_pack(tmp_path) / "dossier.pdf")
+    lot_rows = [
+        ["3", "01/06/2026", "1", "02/03/2026", "1", "56.000,00", "56,00", "40.040,00", "15.904,00"],
+        [
+            "3",
+            "01/06/2026",
+            "2",
+            "01/04/2026",
+            "0,5",
+            "28.000,00",
+            "28,00",
+            "24.024,00",
+            "3.948,00",
+        ],
+    ]
+    assert [_has_row(shown, row) for row in lot_rows] == [True, True]
+
+
+def test_dossier_lot_gains_add_up_to_the_renta_web_gain(tmp_path: Path) -> None:
+    """Invariant: the gains the dossier itemises per lot sum to the gain declared in box 1804."""
+    pack = _written_pack(tmp_path)
+    dossier = _pdf_text(pack / "dossier.pdf")
+    lots = dossier[dossier.index("Lotes consumidos por cada venta") :]
+    gains = [
+        _amount(lots[i + 8]) for i in range(len(lots) - 8) if lots[i : i + 2] == ["3", "01/06/2026"]
+    ]
+    renta = _pdf_text(pack / "renta-web.pdf")
+    declared = _amount(renta[renta.index("N: Otra moneda virtual") + 3])
+    assert (len(gains), sum(gains)) == (2, declared)

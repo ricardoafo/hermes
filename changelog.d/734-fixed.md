@@ -1,0 +1,1 @@
+- Hermes errors raised inside a `with` block of a generator context manager now reach the caller as themselves instead of `FrozenInstanceError`, so `hermes parity` reports an exchange outage cleanly and the supervisor and tax maths keep their error messages (issue #734).

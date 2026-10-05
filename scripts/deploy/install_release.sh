@@ -59,7 +59,7 @@
 #
 # Test seams: HERMES_ROOT, HERMES_ENV_FILE, SYSTEMCTL, HERMES_DB,
 # HERMES_BACKUP_DIR, HERMES_BACKUP_PYTHON, HERMES_MIGRATE_BIN, RUNUSER,
-# HERMES_UNIT_DIR, HERMES_NOW_EPOCH, HERMES_SCHEMA_PYTHON. The
+# HERMES_UNIT_DIR, HERMES_NOW_EPOCH, HERMES_SCHEMA_PYTHON, HERMES_PROC_DIR. The
 # seams override the target's paths, and the staging guard still checks them.
 # The script can be sourced to reach prune_versions on its own.
 #
@@ -104,6 +104,7 @@ DB=${HERMES_DB:-$target_state/hermes.sqlite3}
 BACKUP_DIR=${HERMES_BACKUP_DIR:-$target_state/backups}
 RUNUSER=${RUNUSER:-runuser}
 UNIT_DIR=${HERMES_UNIT_DIR:-/etc/systemd/system}
+PROC_DIR=${HERMES_PROC_DIR:-/proc}
 
 # The 3 newest releases survive a prune, plus whatever `current` and
 # `previous` point to.
@@ -431,11 +432,28 @@ activate_and_gate() {
     bash "$SCRIPT_DIR/health_gate.sh" "$since"
 }
 
-# Delete every release directory except the KEEP_NEWEST newest by mtime and
-# the two that `current` and `previous` point to. Sorting by mtime, not by
-# name, because sha prefixes carry no order. LC_ALL=C pins sort's decimal point.
+# Print the pid of a running process that has files of release dir $1
+# mapped (its python extension modules), or nothing. An open console runs
+# from the release it started on until it exits, so pruning that release
+# would pull its code out from under it (#652). /proc maps hold resolved
+# paths, so `current` links do not hide the release; root reads every pid.
+release_in_use() {
+    local real maps
+    real=$(readlink -f "$1") || return 0
+    for maps in "$PROC_DIR"/[0-9]*/maps; do
+        if grep -qF -- "$real/" "$maps" 2>/dev/null; then
+            basename "$(dirname "$maps")"
+            return 0
+        fi
+    done
+}
+
+# Delete every release directory except the KEEP_NEWEST newest by mtime,
+# the two that `current` and `previous` point to, and any a running
+# process still uses. Sorting by mtime, not by name, because sha prefixes
+# carry no order. LC_ALL=C pins sort's decimal point.
 prune_versions() {
-    local keep_cur="" keep_prev="" dir name n=0
+    local keep_cur="" keep_prev="" dir name n=0 pid
     if [ -L "$ROOT/current" ]; then
         keep_cur=$(basename "$(readlink -f "$ROOT/current")")
     fi
@@ -446,6 +464,11 @@ prune_versions() {
         n=$((n + 1))
         name=$(basename "$dir")
         if [ "$n" -le "$KEEP_NEWEST" ] || [ "$name" = "$keep_cur" ] || [ "$name" = "$keep_prev" ]; then
+            continue
+        fi
+        pid=$(release_in_use "$dir")
+        if [ -n "$pid" ]; then
+            log "keeping $dir: process $pid still runs from it"
             continue
         fi
         log "pruning $dir"
