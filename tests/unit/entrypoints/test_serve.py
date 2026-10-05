@@ -54,7 +54,7 @@ from hermes.domain.market_data.bar_schedule import delivery_key
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.risk.state import PortfolioState
 from hermes.domain.strategy.signal import OpenPosition, SignalKind, SignalSide, StrategySignal
-from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
+from hermes.domain.strategy.swing.adapter import EntryCheck, SwingStrategyAdapter
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
@@ -650,6 +650,43 @@ class TestBarLogging:
 
         assert [line["signal"] for line in _processed(logs)] == ["entry", "none"]
 
+    def test_a_4h_entry_check_logs_each_condition_as_yes_or_no(self, tmp_path: Path) -> None:
+        """Each §5.1 condition is logged under its own field, as yes or no (#656)."""
+        composition = build(tmp_path / "test.sqlite3", FakeFeed(), BASE)
+        strategy = _FixedEntryCheckStrategy(EntryCheck(breakout=True, momentum=False, regime=True))
+        composition = dataclasses.replace(composition, strategies={BTC: strategy})
+        loop = serve_module._BarLoop(composition)
+
+        with capture_logs() as logs:
+            asyncio.run(loop.handle(h4_bar(0)))
+        composition.sqlite_connection.close()
+
+        line = _processed(logs)[0]
+        assert {k: line[k] for k in line if k.startswith("entry_")} == {
+            "entry_breakout": "yes",
+            "entry_momentum": "no",
+            "entry_regime": "yes",
+        }
+
+    def test_a_bar_without_an_entry_check_logs_no_condition_fields(self, tmp_path: Path) -> None:
+        """A daily bar is no entry check, so its line carries no stale yes/no (#656)."""
+        composition = build(tmp_path / "test.sqlite3", FakeFeed(), BASE)
+        composition = dataclasses.replace(composition, strategies={BTC: SwingStrategyAdapter()})
+        loop = serve_module._BarLoop(composition)
+
+        with capture_logs() as logs:
+            asyncio.run(loop.handle(h4_bar(0)))
+            asyncio.run(loop.handle(d1_bar(0)))
+        composition.sqlite_connection.close()
+
+        h4_line, d1_line = _processed(logs)
+        assert [k for k in h4_line if k.startswith("entry_")] == [
+            "entry_breakout",
+            "entry_momentum",
+            "entry_regime",
+        ]
+        assert [k for k in d1_line if k.startswith("entry_")] == []
+
     def test_a_repeated_bar_logs_nothing(self, tmp_path: Path) -> None:
         """A duplicate is skipped, so it must not read as a second processed bar."""
         composition = build(tmp_path / "test.sqlite3", FakeFeed(), BASE)
@@ -753,3 +790,20 @@ class TestFillKernelWiring:
         asyncio.run(serve_module.run(composition, shutdown))
 
         assert closed == [True]
+
+
+class _FixedEntryCheckStrategy(SwingStrategyAdapter):
+    """A swing adapter that never signals and reports a fixed entry record."""
+
+    def __init__(self, check: EntryCheck) -> None:
+        super().__init__()
+        self._check = check
+
+    def on_bar(self, bar: Bar, portfolio_state: PortfolioState) -> StrategySignal | None:
+        """Return no signal, whatever the bar."""
+        return None
+
+    @property
+    def last_entry_check(self) -> EntryCheck | None:
+        """Return the fixed record."""
+        return self._check
