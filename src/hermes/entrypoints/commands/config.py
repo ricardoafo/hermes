@@ -32,4 +32,5 @@ COMMAND = Command(
     name="config",
     summary="Check the config and secrets without starting anything (hermes config check).",
     run=_run,
+    json=True,
 )

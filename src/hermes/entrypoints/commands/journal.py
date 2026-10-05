@@ -11,4 +11,5 @@ COMMAND = Command(
     name="journal",
     summary="Record, list and review Code Owner decisions (decision journal).",
     run=lambda argv, *, stream, err=None: _impl.main(argv, stream=stream, err=err),
+    json=True,
 )

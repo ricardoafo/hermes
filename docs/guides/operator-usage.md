@@ -201,6 +201,10 @@ correlation id, and `-f` follows until Ctrl-C. Each processed bar logs a
 hermes_run logs --since 4h | grep serve.bar.processed
 ```
 
+On a 4h bar checked for an entry, the line also says which of the three
+pre-registered entry conditions held: `entry_breakout`, `entry_momentum`
+and `entry_regime`, each `yes` or `no`. A signal needs all three.
+
 `logs` reads the systemd journal, so it works on the VPS only.
 
 ## Which release is live? `version`

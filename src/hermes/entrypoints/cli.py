@@ -35,6 +35,7 @@ import difflib
 import io
 import os
 import sys
+import textwrap
 from typing import Any
 
 from hermes.adapters.console import available_scenarios
@@ -48,8 +49,6 @@ from hermes.infrastructure import sentry_integration
 __all__ = ["main"]
 
 _FLAG_VPS = "--vps"
-
-_JSON_NOTE = "status, activity, logs, version."
 
 
 def _leading_demo_scenario(args: list[str]) -> str | None:
@@ -77,10 +76,11 @@ def _print_top_help(stream: Any, commands: dict[str, Command]) -> None:
     lines.append("Options:")
     lines.append("  --demo SCENARIO  Show console screens on demo data (DEMO DATA tag).")
     lines.append(f"                   Scenarios: {', '.join(available_scenarios())}")
-    lines.append(f"                   Commands that accept it: {demo_commands}")
+    lines.extend(_accepted_by(demo_commands))
     lines.append("  --vps            Run a console command on the VPS over ssh (read-only).")
     lines.append("                   Settings: HERMES_VPS_HOST, HERMES_VPS_USER, HERMES_VPS_KEY.")
-    lines.append("  --json           One JSON document on stdout; per command: " + _JSON_NOTE)
+    lines.append("  --json           One JSON document on stdout.")
+    lines.extend(_accepted_by(", ".join(sorted(n for n, cmd in commands.items() if cmd.json))))
     lines.append("")
     lines.append("Run `hermes <command> --help` for a command's options and exit codes.")
     lines.append("")
@@ -279,3 +279,14 @@ def main(
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main())
+
+
+def _accepted_by(names: str) -> list[str]:
+    """Wrap a "Commands that accept it" note under the option column."""
+    indent = " " * 19
+    return textwrap.wrap(
+        f"Commands that accept it: {names}",
+        width=88,
+        initial_indent=indent,
+        subsequent_indent=indent + "  ",
+    )
