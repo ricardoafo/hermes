@@ -90,11 +90,22 @@ def _fragments(root: Path, sha: str) -> tuple[tuple[str, str], ...]:
         match = _FRAGMENT.match(path)
         if not match or match["section"] not in SECTIONS:
             continue
-        for line in _git(root, "show", f"{sha}:{path}").splitlines():
-            text = line.strip().removeprefix("- ").removeprefix("* ").strip()
-            if text:
-                found.append((match["section"], text))
+        found += [(match["section"], item) for item in _items(_git(root, "show", f"{sha}:{path}"))]
     return tuple(found)
+
+
+def _items(fragment: str) -> list[str]:
+    """Return the bullets of a fragment, joining each bullet's wrapped lines."""
+    items: list[str] = []
+    for line in fragment.splitlines():
+        text = line.strip()
+        if not text:
+            continue
+        if text.startswith(("- ", "* ")) or not items:
+            items.append(text.removeprefix("- ").removeprefix("* ").strip())
+        else:
+            items[-1] = f"{items[-1]} {text}"
+    return items
 
 
 def collect(root: Path, release: str) -> Notes:

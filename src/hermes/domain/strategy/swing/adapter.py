@@ -55,6 +55,7 @@ from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.risk.state import PortfolioState
 from hermes.domain.strategy.signal import OpenPosition, SignalKind, SignalSide, StrategySignal
+from hermes.domain.strategy.stop_mark import StopRecord
 from hermes.domain.strategy.swing.engines.adx import AdxEngine
 from hermes.domain.strategy.swing.engines.atr import AtrEngine
 from hermes.domain.strategy.swing.engines.chandelier import ChandelierEngine
@@ -177,6 +178,8 @@ class SwingStrategyAdapter:
         self._entry_time: datetime | None = None
         self._entry_price: Decimal | None = None
         self._last_entry_check: EntryCheck | None = None
+        self._stop_in_force: Decimal | None = None
+        self._last_stop_record: StopRecord | None = None
 
     @property
     def last_entry_check(self) -> EntryCheck | None:
@@ -187,6 +190,17 @@ class SwingStrategyAdapter:
         the signal path reads it back (#656).
         """
         return self._last_entry_check
+
+    @property
+    def last_stop_record(self) -> StopRecord | None:
+        """Return the stop evaluated on the latest bar while a position was held, or ``None``.
+
+        Set on the entry bar, on each 4h bar while the position is open, and on
+        the exit bar. ``None`` on daily bars, while flat, and on a held bar
+        whose chandelier stop has too little history. Read-only: nothing in the
+        signal path reads it back (#388).
+        """
+        return self._last_stop_record
 
     # ------------------------------------------------------------------
     # StrategyPort implementation
@@ -214,6 +228,7 @@ class SwingStrategyAdapter:
             entry or exit, or ``None``.
         """
         self._last_entry_check = None
+        self._last_stop_record = None
         if bar.interval == KlineInterval.H4:
             return self._on_4h_bar(bar)
         if bar.interval == KlineInterval.D1:
@@ -231,7 +246,9 @@ class SwingStrategyAdapter:
         evaluation, so it can never emit a signal.
 
         Position state is set only from ``open_position``; it is never
-        derived from the bars. With ``None`` the adapter ends flat.
+        derived from the bars. With ``None`` the adapter ends flat. The
+        position's ``last_stop`` only tells the next stop record whether the
+        stop moved; it does not change the stop.
 
         Args:
             bars: Closed bars in delivery order (ascending ``close_time``,
@@ -260,10 +277,12 @@ class SwingStrategyAdapter:
             self._in_position = False
             self._entry_time = None
             self._entry_price = None
+            self._stop_in_force = None
         else:
             self._in_position = True
             self._entry_time = open_position.entry_time
             self._entry_price = open_position.entry_price
+            self._stop_in_force = open_position.last_stop
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -344,6 +363,7 @@ class SwingStrategyAdapter:
         self._in_position = True
         self._entry_time = bar.close_time
         self._entry_price = entry_price
+        self._record_stop(bar.close_time, stop)
 
         return StrategySignal(
             kind=SignalKind.ENTRY,
@@ -377,6 +397,9 @@ class SwingStrategyAdapter:
         )
         atr = AtrEngine.value(self._bars_4h, period=self._atr_sizing_period)
 
+        if stop is not None:
+            self._record_stop(self._entry_time, stop)
+
         # Fallback ATR when buffer is freshly seeded (should not happen post-entry)
         if atr is None:
             atr = Decimal("1")
@@ -403,6 +426,7 @@ class SwingStrategyAdapter:
         # Reset position state
         self._in_position = False
         self._entry_time = None
+        self._stop_in_force = None
         entry_price_saved = self._entry_price
         self._entry_price = None
 
@@ -420,3 +444,27 @@ class SwingStrategyAdapter:
             exit_reason=exit_reason,
             f_star_estimate=None,
         )
+
+    def _record_stop(self, entry_time: datetime, stop: Decimal) -> None:
+        """Record the stop in force after this bar; record-only, no decision reads it (#388).
+
+        ``stop`` is the chandelier level the caller already decided with. The
+        ATR and the highest high are recomputed from the same buffer, so they
+        are exactly the values that produced it.
+        """
+        atr = AtrEngine.value(self._bars_4h, period=self._chandelier_period)
+        assert atr is not None, (  # noqa: S101 — invariant
+            "SwingStrategyAdapter: a computed chandelier stop implies a computable ATR"
+        )
+        reaches_entry = self._bars_4h[0].close_time <= entry_time
+        held = [b.high for b in self._bars_4h if b.close_time >= entry_time]
+        previous = self._stop_in_force
+        self._last_stop_record = StopRecord(
+            entry_time=entry_time,
+            stop_price=stop,
+            chandelier_level=stop,
+            atr=atr,
+            high_since_entry=max(held) if reaches_entry else None,
+            stop_moved=None if previous is None else stop != previous,
+        )
+        self._stop_in_force = stop

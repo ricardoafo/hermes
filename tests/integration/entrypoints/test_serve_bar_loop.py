@@ -480,3 +480,54 @@ def test_restart_then_one_bar_writes_an_equal_mark_at_the_new_close(tmp_path: Pa
     assert len(rows) == 3
     assert rows[-1][0] == h4_bar(13).close_time.isoformat()
     assert rows[-1][1:] == before[1:]
+
+
+def _stop_rows(db: Path) -> list[tuple[str, str, str, str, str, str | None, int | None]]:
+    """Return every stop mark without its write time, oldest bar first."""
+    connection = sqlite3.connect(db)
+    try:
+        return connection.execute(
+            "SELECT entry_time, bar_close_time, stop_price, chandelier_level, atr, "
+            "high_since_entry, stop_moved FROM stop_marks ORDER BY bar_close_time"
+        ).fetchall()
+    finally:
+        connection.close()
+
+
+def test_every_held_bar_writes_one_stop_mark_from_entry_to_exit(tmp_path: Path) -> None:
+    """#388: the entry bar, each held bar and the exit bar get one row; flat bars none.
+
+    The entry row carries the stop the entry signal carries, with no move yet.
+    """
+    db = tmp_path / "ledger.sqlite3"
+    feed = FakeFeed(warm=history(10), live_bars=live(11, 14))
+    run_once(build(db, feed, _after(14)), feed)
+
+    rows = _stop_rows(db)
+    entry = json.loads(events(db, "SignalEmitted")[0]["payload_json"])
+    entry_time = h4_bar(11).close_time.isoformat()
+    assert [(r[0], r[1]) for r in rows] == [
+        (entry_time, h4_bar(i).close_time.isoformat()) for i in (11, 12, 13, 14)
+    ]
+    assert (rows[0][2], rows[0][6]) == (entry["stop_price"], None)
+
+
+def test_restart_while_held_writes_the_same_stop_marks_as_an_unbroken_run(
+    tmp_path: Path,
+) -> None:
+    """#388: a restart while held writes the same stop rows as an unbroken run.
+
+    The stop restored from the ledger lets the first bar after the restart say
+    whether the stop moved.
+    """
+    unbroken = tmp_path / "unbroken.sqlite3"
+    feed = FakeFeed(warm=history(10), live_bars=live(11, 14))
+    run_once(build(unbroken, feed, _after(14)), feed)
+    restarted = tmp_path / "restarted.sqlite3"
+    boot1 = FakeFeed(warm=history(10), live_bars=live(11, 12))
+    run_once(build(restarted, boot1, _after(12)), boot1)
+    boot2 = FakeFeed(warm=history(12), live_bars=live(13, 14))
+
+    run_once(build(restarted, boot2, _after(14)), boot2)
+
+    assert _stop_rows(restarted) == _stop_rows(unbroken)
