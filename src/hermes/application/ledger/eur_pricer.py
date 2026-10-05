@@ -86,6 +86,9 @@ class EurPricer:
         self._fx = fx
         self._source = source
         self._monotonic = monotonic
+        # The boot warm-up writes these from a worker thread while the loop may
+        # read them. Each access is one dict get or set, which the GIL keeps
+        # atomic; a stale read only costs an extra lookup, never a wrong rate.
         self._cache: dict[tuple[Currency, date], EurPricing] = {}
         self._failed_until: dict[tuple[Currency, date], float] = {}
         self.provider_calls = 0
