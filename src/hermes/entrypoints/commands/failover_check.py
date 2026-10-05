@@ -11,4 +11,5 @@ COMMAND = Command(
     name="failover-check",
     summary="Check Kraken can stand in for Binance: compare recent closes (read-only).",
     run=lambda argv, *, stream, err=None: _impl.main(argv, stream=stream, err=err),
+    json=True,
 )

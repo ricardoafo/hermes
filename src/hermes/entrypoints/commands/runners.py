@@ -20,4 +20,5 @@ COMMAND = Command(
     name="runners",
     summary="`hermes runners [--json]` shows the health of the self-hosted CI runners.",
     run=_run,
+    json=True,
 )

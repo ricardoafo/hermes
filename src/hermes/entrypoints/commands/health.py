@@ -131,4 +131,5 @@ COMMAND = Command(
         "`--json` prints the same data as JSON."
     ),
     run=_run,
+    json=True,
 )
