@@ -242,7 +242,7 @@ jobs:
           install -d "$stage/deploy" "$stage/bin"
           install -m 0755 deploy/hermes-health-ping.sh deploy/hermes-notify-failure.sh deploy/hermes-notify-crash.sh deploy/hermes-daily-line.sh deploy/hermes-backup.sh deploy/hermes-console.sh "$stage/deploy/"
           install -m 0755 scripts/deploy/install_release.sh scripts/deploy/health_gate.sh \
-              scripts/deploy/rollback.sh "$stage/bin/"
+              scripts/deploy/rollback.sh scripts/deploy/schema_guard.py "$stage/bin/"
           # install_release.sh installs the units and timers that changed, as
           # vps-bootstrap does, so a unit change ships with its release (#626).
           install -d "$stage/deploy/systemd"

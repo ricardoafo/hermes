@@ -31,7 +31,13 @@
 #
 #   ssh hermes-01 HERMES_TARGET=staging /opt/hermes-staging/bin/rollback.sh
 #
-# Test seams: HERMES_ROOT, SYSTEMCTL, HERMES_DB (health_gate.sh adds its own).
+# Without a snapshot the old release meets the live ledger, so the rollback
+# is refused when the ledger holds a newer event schema than `previous` can
+# read (#655): it would fail at start. Restore the matching snapshot, or set
+# HERMES_SKIP_SCHEMA_GUARD=1 to roll back anyway.
+#
+# Test seams: HERMES_ROOT, SYSTEMCTL, HERMES_DB, RUNUSER, HERMES_SCHEMA_PYTHON
+# (health_gate.sh adds its own).
 #
 # Reference: openspec/changes/179-cd-first-real-deploy/change.md (D-6),
 # openspec/changes/192-staging-env/change.md (D-3).
@@ -53,11 +59,13 @@ case "$TARGET" in
         target_root=$PROD_ROOT
         target_state=$PROD_STATE
         UNIT=$PROD_UNIT
+        RUN_AS=hermes
         ;;
     staging)
         target_root=/opt/hermes-staging
         target_state=/var/lib/hermes-staging
         UNIT=hermes-staging.service
+        RUN_AS=hermes-staging
         ;;
     *) die "unknown HERMES_TARGET '$TARGET': expected prod or staging" ;;
 esac
@@ -66,6 +74,7 @@ ROOT=${HERMES_ROOT:-$target_root}
 SYSTEMCTL=${SYSTEMCTL:-systemctl}
 DB=${HERMES_DB:-$target_state/hermes.sqlite3}
 RESTORE=${HERMES_RESTORE_DB:-}
+RUNUSER=${RUNUSER:-runuser}
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # True when $1, symlinks resolved, is $2 or lies under it.
@@ -99,6 +108,16 @@ fi
 # `-ef` compares device and inode, so two spellings of one path still match.
 if [ "$ROOT/current" -ef "$ROOT/previous" ]; then
     die "current already equals previous ($cur): nothing to roll back to"
+fi
+
+if [ -z "$RESTORE" ] && [ -f "$DB" ] && [ -z "${HERMES_SKIP_SCHEMA_GUARD:-}" ]; then
+    if [ -f "$SCRIPT_DIR/schema_guard.py" ]; then
+        "$RUNUSER" -u "$RUN_AS" -- "${HERMES_SCHEMA_PYTHON:-$prev/.venv/bin/python}" \
+            "$SCRIPT_DIR/schema_guard.py" "$DB" \
+            || die "previous ($prev) cannot read the ledger's newer events: restore its snapshot with HERMES_RESTORE_DB, or set HERMES_SKIP_SCHEMA_GUARD=1"
+    else
+        echo "::warning::no schema_guard.py next to rollback.sh: not checking the ledger's event schemas"
+    fi
 fi
 
 echo "rolling back: current $cur -> $prev"

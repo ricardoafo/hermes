@@ -7,6 +7,10 @@ after posting. The facts and the shapes come from
 :mod:`hermes.application.messages.shapes`; this module picks the shape the
 event's family gets on Slack and wraps the lines in blocks.
 
+A trade event on Slack posts its headline lines as the parent message and the
+plan (stop, distance, ATR multiple, the withheld actual) as a reply in the
+thread, so the channel view stays one line per trade.
+
 Block layout: the headline is bold in one section block together with the
 detail lines, and the last line (strategy, hint, correlation ref) sits in a
 context block. A one-line shape is a single section block.
@@ -44,11 +48,11 @@ from hermes.application.messages.reporting_phase import (
     DEFAULT_REPORTING_PHASE,
     ReportingPhase,
 )
-from hermes.application.messages.shapes import Channel, render_lines, shape_for
+from hermes.application.messages.shapes import Channel, render_parent_and_plan, shape_for
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.daily_trade_digest import DailyTradeDigest
 
-__all__ = ["FileAttachment", "SlackMessage", "slack_template"]
+__all__ = ["FileAttachment", "SlackMessage", "SlackReply", "slack_template"]
 
 _CSV_MIME: Final[str] = "text/csv"
 
@@ -72,12 +76,24 @@ class FileAttachment(NamedTuple):
     content: bytes
 
 
+class SlackReply(NamedTuple):
+    """The thread reply of a message: the plan, posted under the headline.
+
+    Fields:
+        text: Plain-text fallback for clients that do not render Block Kit.
+        blocks: Block Kit blocks of the reply.
+    """
+
+    text: str
+    blocks: list[dict[str, Any]]
+
+
 class SlackMessage(NamedTuple):
     """A rendered Slack post: fallback text, Block Kit blocks, and files.
 
     Frozen NamedTuple. The adapter posts ``text`` + ``blocks`` in one
-    ``chat.postMessage`` call, then uploads every ``attachments`` entry
-    as a threaded reply.
+    ``chat.postMessage`` call, then posts ``plan`` (when there is one) and
+    uploads every ``attachments`` entry as threaded replies.
 
     Fields:
         text: Plain-text fallback for clients that do not render Block
@@ -86,11 +102,14 @@ class SlackMessage(NamedTuple):
             (https://api.slack.com/reference/block-kit/blocks).
         attachments: Files to upload after the message. Empty tuple for
             short events; populated for the certified daily digest.
+        plan: The plan block to post as a reply in the parent's thread.
+            ``None`` for events that have no plan: one message, no thread.
     """
 
     text: str
     blocks: list[dict[str, Any]]
     attachments: tuple[FileAttachment, ...]
+    plan: SlackReply | None = None
 
 
 def _section_block(text: str) -> dict[str, Any]:
@@ -164,10 +183,14 @@ def slack_template(
     """
     family, note = build_note(event, phase, eur_rate)
     shape = shape_for(family, Channel.SLACK)
-    lines = render_lines(note, shape, fmt_ref(event.correlation_id))
+    lines, plan_lines = render_parent_and_plan(note, shape, fmt_ref(event.correlation_id))
     attachments: tuple[FileAttachment, ...] = ()
     if isinstance(event, DailyTradeDigest) and phase.shows_outcomes:
         name = f"digest-{event.day.isoformat()}.csv"
         attachments = (FileAttachment(name=name, mime=_CSV_MIME, content=_daily_digest_csv(event)),)
     text = SEPARATOR.join(lines[:-1]) if len(lines) > 1 else lines[0]
-    return SlackMessage(text=text, blocks=_blocks(lines), attachments=attachments)
+    plan = None
+    if plan_lines:
+        plan_text = "\n".join(escape_slack(line) for line in plan_lines)
+        plan = SlackReply(text=SEPARATOR.join(plan_lines), blocks=[_section_block(plan_text)])
+    return SlackMessage(text=text, blocks=_blocks(lines), attachments=attachments, plan=plan)

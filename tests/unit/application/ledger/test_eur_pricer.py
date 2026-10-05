@@ -8,7 +8,12 @@ from __future__ import annotations
 from datetime import date, timedelta
 from decimal import Decimal
 
-from hermes.application.ledger.eur_pricer import MAX_CACHED_RATE_AGE_DAYS, EurPricer
+from hermes.application.ledger.eur_pricer import (
+    FAILURE_RETRY_SEC,
+    MAX_CACHED_RATE_AGE_DAYS,
+    EurPricer,
+    LookupBudget,
+)
 from hermes.domain.fx.eur_pricing import EurPricing
 from hermes.domain.value_objects.currency import Currency
 from tests.unit.application.ledger.fake_fx import FakeFx
@@ -34,14 +39,70 @@ def test_lookup_asks_for_eur_to_quote() -> None:
 
 
 def test_provider_failure_yields_none_without_raising() -> None:
-    """Invariant (A-2.2): an FX outage never raises, and a failure is retried, not cached."""
+    """Invariant (A-2.2, #658): an outage never raises and a failing rate is asked once."""
     fx = FakeFx(down=True)
     pricer = EurPricer(fx)
     results = (
         pricer.price(Currency.USDT, _FRI, today=_FRI),
         pricer.price(Currency.USDT, _FRI, today=_MON),
     )
-    assert (results, len(fx.calls)) == ((None, None), 2)
+    assert (results, len(fx.calls)) == ((None, None), 1)
+
+
+def test_a_failed_rate_is_retried_once_the_retry_window_has_passed() -> None:
+    """Invariant (#658): the failure memo expires, so a fill after the outage is still priced."""
+    now = [0.0]
+    fx = FakeFx(down=True)
+    pricer = EurPricer(fx, monotonic=lambda: now[0])
+    pricer.price(Currency.USDT, _FRI, today=_MON)
+    fx.down = False
+    fx.rates[_FRI] = (Decimal("1.17"), _FRI)
+    inside = pricer.price(Currency.USDT, _FRI, today=_MON)
+    now[0] = FAILURE_RETRY_SEC + 1
+    after = pricer.price(Currency.USDT, _FRI, today=_MON)
+    assert (inside, after is not None and after.rate, len(fx.calls)) == (None, Decimal("1.17"), 2)
+
+
+def test_warm_stops_at_the_call_cap_and_reports_the_skipped_keys() -> None:
+    """Invariant (#658): a warm-up never makes more provider calls than its budget."""
+    fx = FakeFx(down=True)
+    pricer = EurPricer(fx)
+    days = [date(2026, 1, d) for d in range(1, 8)]
+    skipped = pricer.warm(
+        [(Currency.USDT, d) for d in days], today=_MON, budget=LookupBudget(3, 60.0)
+    )
+    assert (skipped, len(fx.calls)) == (4, 3)
+
+
+def test_warm_stops_when_the_time_budget_is_spent() -> None:
+    """Invariant (#658): a spent wall-clock budget means no further provider call."""
+    now = [0.0]
+    fx = FakeFx(down=True)
+    pricer = EurPricer(fx)
+    budget = LookupBudget(100, 10.0, monotonic=lambda: now[0])
+    now[0] = 10.0
+    skipped = pricer.warm([(Currency.USDT, _FRI), (Currency.USDT, _SAT)], today=_MON, budget=budget)
+    assert (skipped, fx.calls) == (2, [])
+
+
+def test_warm_stops_when_the_stop_flag_is_set() -> None:
+    """Invariant (#658): shutdown aborts a warm-up at its next lookup."""
+    fx = FakeFx(down=True)
+    budget = LookupBudget(100, 60.0)
+    budget.stop.set()
+    skipped = EurPricer(fx).warm([(Currency.USDT, _FRI)], today=_MON, budget=budget)
+    assert (skipped, fx.calls) == (1, [])
+
+
+def test_cached_only_view_prices_warmed_rates_and_never_calls_the_provider() -> None:
+    """Invariant (#658): the view serves what warm cached and fails the rest without the network."""
+    fx = FakeFx(rates={_FRI: (Decimal("1.1721"), _FRI)})
+    pricer = EurPricer(fx)
+    pricer.warm([(Currency.USDT, _FRI)], today=_MON, budget=LookupBudget(5, 60.0))
+    view = pricer.cached_only()
+    warmed = view.price(Currency.USDT, _FRI, today=_MON)
+    cold = view.price(Currency.USDT, _SAT, today=_MON)
+    assert (warmed is not None and warmed.rate, cold, len(fx.calls)) == (Decimal("1.1721"), None, 1)
 
 
 def test_prior_day_rate_on_the_fill_day_is_not_final() -> None:

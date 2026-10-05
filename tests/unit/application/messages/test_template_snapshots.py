@@ -36,7 +36,12 @@ def test_slack_message_matches_snapshot(name: str, snapshot: SnapshotAssertion) 
     """The Slack fallback text and blocks of each event match their reviewed snapshot."""
     message = slack_template(samples()[name])
 
-    assert {"text": message.text, "blocks": message.blocks} == snapshot
+    plan = message.plan
+    assert {
+        "text": message.text,
+        "blocks": message.blocks,
+        **({} if plan is None else {"plan": {"text": plan.text, "blocks": plan.blocks}}),
+    } == snapshot
 
 
 _EUR_RATE = Decimal("1.25")
@@ -56,4 +61,9 @@ def test_slack_message_with_a_rate_matches_snapshot(name: str, snapshot: Snapsho
     """The Slack text and blocks of each priced event, in EUR at 1.25 USDT per euro, match."""
     message = slack_template(samples()[name], eur_rate=_EUR_RATE)
 
-    assert {"text": message.text, "blocks": message.blocks} == snapshot
+    plan = message.plan
+    assert {
+        "text": message.text,
+        "blocks": message.blocks,
+        **({} if plan is None else {"plan": {"text": plan.text, "blocks": plan.blocks}}),
+    } == snapshot
