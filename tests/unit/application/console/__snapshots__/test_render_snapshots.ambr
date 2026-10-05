@@ -19,6 +19,17 @@
     '✖ hermes down since 18:04 · run hermes logs for why',
   ])
 # ---
+# name: test_blind_screen_matches_snapshot[down-stale-market-watch]
+  list([
+    ' DEMO DATA · scenario down-stale',
+    'Market watch',
+    'coin   tf   last check   result   next check',
+    '────────────────────────────────────────────',
+    'BTC    4h   18:00        none     22:00',
+    'ETH    4h   18:00        none     22:00',
+    'SOL    1d   02:00        none     Sun 02:00',
+  ])
+# ---
 # name: test_blind_screen_matches_snapshot[down-stale-overview]
   list([
     ' DEMO DATA · scenario down-stale',
@@ -30,6 +41,13 @@
     'ETH    long   Fri 02 Oct 10:00   2,243   0.035   2,210',
     'SOL    long   Mon 28 Sep 02:00   119.1   1.2     121.7',
     'prices in EUR',
+    '',
+    'Market watch',
+    'coin   tf   last check   result   next check',
+    '────────────────────────────────────────────',
+    'BTC    4h   18:00        none     22:00',
+    'ETH    4h   18:00        none     22:00',
+    'SOL    1d   02:00        none     Sun 02:00',
     '',
     'Today',
     '6h ago      closed BTC',
@@ -89,6 +107,13 @@
     '                                             ● live · checked 14:00 · next 18:00',
   ])
 # ---
+# name: test_blind_screen_matches_snapshot[empty-market-watch]
+  list([
+    ' DEMO DATA · scenario empty',
+    'Market watch',
+    'No pairs checked yet.',
+  ])
+# ---
 # name: test_blind_screen_matches_snapshot[empty-overview]
   list([
     ' DEMO DATA · scenario empty',
@@ -96,6 +121,9 @@
     'Portfolio · money hidden on this surface',
     '',
     'No open shadow positions.',
+    '',
+    'Market watch',
+    'No pairs checked yet.',
     '',
     'No activity yet.',
     '',
@@ -152,6 +180,17 @@
     '                                                        ◐ 18:00 check late · 12m',
   ])
 # ---
+# name: test_blind_screen_matches_snapshot[late-market-watch]
+  list([
+    ' DEMO DATA · scenario late',
+    'Market watch',
+    'coin   tf   last check   result   next check',
+    '────────────────────────────────────────────',
+    'BTC    4h   14:00        none     18:00',
+    'ETH    4h   14:00        none     18:00',
+    'SOL    1d   02:00        none     Sun 02:00',
+  ])
+# ---
 # name: test_blind_screen_matches_snapshot[late-overview]
   list([
     ' DEMO DATA · scenario late',
@@ -163,6 +202,13 @@
     'ETH    long   Fri 02 Oct 10:00   2,243   0.035   2,210',
     'SOL    long   Mon 28 Sep 02:00   119.1   1.2     121.7',
     'prices in EUR',
+    '',
+    'Market watch',
+    'coin   tf   last check   result   next check',
+    '────────────────────────────────────────────',
+    'BTC    4h   14:00        none     18:00',
+    'ETH    4h   14:00        none     18:00',
+    'SOL    1d   02:00        none     Sun 02:00',
     '',
     'Today',
     '6h ago      closed BTC',
@@ -227,6 +273,17 @@
     '                                             ● live · checked 14:00 · next 18:00',
   ])
 # ---
+# name: test_blind_screen_matches_snapshot[losing-year-market-watch]
+  list([
+    ' DEMO DATA · scenario losing-year',
+    'Market watch',
+    'coin   tf   last check   result   next check',
+    '────────────────────────────────────────────',
+    'BTC    4h   14:00        none     18:00',
+    'ETH    4h   14:00        none     18:00',
+    'SOL    4h   14:00        none     18:00',
+  ])
+# ---
 # name: test_blind_screen_matches_snapshot[losing-year-overview]
   list([
     ' DEMO DATA · scenario losing-year',
@@ -237,6 +294,13 @@
     '─────────────────────────────────────────────────────────',
     'BTC    long   Sat 03 Oct 02:00   53,458   0.0016   52,858',
     'prices in EUR',
+    '',
+    'Market watch',
+    'coin   tf   last check   result   next check',
+    '────────────────────────────────────────────',
+    'BTC    4h   14:00        none     18:00',
+    'ETH    4h   14:00        none     18:00',
+    'SOL    4h   14:00        none     18:00',
     '',
     'Today',
     '3h ago      closed ADA',
@@ -303,6 +367,17 @@
     '                                             ● live · checked 14:00 · next 18:00',
   ])
 # ---
+# name: test_blind_screen_matches_snapshot[ok-two-positions-market-watch]
+  list([
+    ' DEMO DATA · scenario ok-two-positions',
+    'Market watch',
+    'coin   tf   last check   result   next check',
+    '────────────────────────────────────────────',
+    'BTC    4h   14:00        none     18:00',
+    'ETH    4h   14:00        none     18:00',
+    'SOL    1d   02:00        none     Sun 02:00',
+  ])
+# ---
 # name: test_blind_screen_matches_snapshot[ok-two-positions-overview]
   list([
     ' DEMO DATA · scenario ok-two-positions',
@@ -314,6 +389,13 @@
     'ETH    long   Fri 02 Oct 10:00   2,243   0.035   2,210',
     'SOL    long   Mon 28 Sep 02:00   119.1   1.2     121.7',
     'prices in EUR',
+    '',
+    'Market watch',
+    'coin   tf   last check   result   next check',
+    '────────────────────────────────────────────',
+    'BTC    4h   14:00        none     18:00',
+    'ETH    4h   14:00        none     18:00',
+    'SOL    1d   02:00        none     Sun 02:00',
     '',
     'Today',
     '2h ago      closed BTC',
@@ -381,6 +463,17 @@
     '                                             ● live · checked 14:00 · next 18:00',
   ])
 # ---
+# name: test_blind_screen_matches_snapshot[tax-pending-market-watch]
+  list([
+    ' DEMO DATA · scenario tax-pending',
+    'Market watch',
+    'coin   tf   last check   result   next check',
+    '────────────────────────────────────────────',
+    'BTC    4h   14:00        none     18:00',
+    'ETH    4h   14:00        none     18:00',
+    'SOL    1d   02:00        none     Sun 02:00',
+  ])
+# ---
 # name: test_blind_screen_matches_snapshot[tax-pending-overview]
   list([
     ' DEMO DATA · scenario tax-pending',
@@ -392,6 +485,13 @@
     'ETH    long   Fri 02 Oct 10:00   2,243   0.035   2,210',
     'SOL    long   Mon 28 Sep 02:00   119.1   1.2     121.7',
     'prices in EUR',
+    '',
+    'Market watch',
+    'coin   tf   last check   result   next check',
+    '────────────────────────────────────────────',
+    'BTC    4h   14:00        none     18:00',
+    'ETH    4h   14:00        none     18:00',
+    'SOL    1d   02:00        none     Sun 02:00',
     '',
     'Today',
     '2h ago      closed BTC',
@@ -479,6 +579,28 @@
     '✖ hermes down since 18:04 · run hermes logs for why',
   ])
 # ---
+# name: test_operator_screen_matches_snapshot[down-stale-market-watch-120]
+  list([
+    ' DEMO DATA · scenario down-stale',
+    'Market watch',
+    'coin   tf   last check   result   next check',
+    '────────────────────────────────────────────',
+    'BTC    4h   18:00        none     22:00',
+    'ETH    4h   18:00        none     22:00',
+    'SOL    1d   02:00        none     Sun 02:00',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[down-stale-market-watch-80]
+  list([
+    ' DEMO DATA · scenario down-stale',
+    'Market watch',
+    'coin   tf   last check   result   next check',
+    '────────────────────────────────────────────',
+    'BTC    4h   18:00        none     22:00',
+    'ETH    4h   18:00        none     22:00',
+    'SOL    1d   02:00        none     Sun 02:00',
+  ])
+# ---
 # name: test_operator_screen_matches_snapshot[down-stale-overview-120]
   list([
     ' DEMO DATA · scenario down-stale',
@@ -500,6 +622,13 @@
     '───────────────────────────────────────────────────────────────────────────',
     'ETH    4h   €2,243 → €2,289   ▲ +2.06%        ▲ +€1.54 net   €2,210 · −3.4%',
     'SOL    1d   €119.1 → €125.5   ▲ +5.40%        ▲ +€6.05 net   €121.7 · −3.0%',
+    '',
+    'Market watch',
+    'coin   tf   last check   result   next check',
+    '────────────────────────────────────────────',
+    'BTC    4h   18:00        none     22:00',
+    'ETH    4h   18:00        none     22:00',
+    'SOL    1d   02:00        none     Sun 02:00',
     '',
     'Today',
     '6h ago      closed BTC at €52,464 · ▲ +€3.18 net',
@@ -532,6 +661,13 @@
     '───────────────────────────────────────────────────────────────────────────',
     'ETH    4h   €2,243 → €2,289   ▲ +2.06%        ▲ +€1.54 net   €2,210 · −3.4%',
     'SOL    1d   €119.1 → €125.5   ▲ +5.40%        ▲ +€6.05 net   €121.7 · −3.0%',
+    '',
+    'Market watch',
+    'coin   tf   last check   result   next check',
+    '────────────────────────────────────────────',
+    'BTC    4h   18:00        none     22:00',
+    'ETH    4h   18:00        none     22:00',
+    'SOL    1d   02:00        none     Sun 02:00',
     '',
     'Today',
     '6h ago      closed BTC at €52,464 · ▲ +€3.18 net',
@@ -719,6 +855,20 @@
     '                                             ● live · checked 14:00 · next 18:00',
   ])
 # ---
+# name: test_operator_screen_matches_snapshot[empty-market-watch-120]
+  list([
+    ' DEMO DATA · scenario empty',
+    'Market watch',
+    'No pairs checked yet.',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[empty-market-watch-80]
+  list([
+    ' DEMO DATA · scenario empty',
+    'Market watch',
+    'No pairs checked yet.',
+  ])
+# ---
 # name: test_operator_screen_matches_snapshot[empty-overview-120]
   list([
     ' DEMO DATA · scenario empty',
@@ -737,6 +887,9 @@
     'Open · €0.00 · tax if sold now · €0.00',
     '',
     'No open shadow positions.',
+    '',
+    'Market watch',
+    'No pairs checked yet.',
     '',
     'No activity yet.',
     '',
@@ -761,6 +914,9 @@
     'Open · €0.00 · tax if sold now · €0.00',
     '',
     'No open shadow positions.',
+    '',
+    'Market watch',
+    'No pairs checked yet.',
     '',
     'No activity yet.',
     '',
@@ -911,6 +1067,28 @@
     '                                                        ◐ 18:00 check late · 12m',
   ])
 # ---
+# name: test_operator_screen_matches_snapshot[late-market-watch-120]
+  list([
+    ' DEMO DATA · scenario late',
+    'Market watch',
+    'coin   tf   last check   result   next check',
+    '────────────────────────────────────────────',
+    'BTC    4h   14:00        none     18:00',
+    'ETH    4h   14:00        none     18:00',
+    'SOL    1d   02:00        none     Sun 02:00',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[late-market-watch-80]
+  list([
+    ' DEMO DATA · scenario late',
+    'Market watch',
+    'coin   tf   last check   result   next check',
+    '────────────────────────────────────────────',
+    'BTC    4h   14:00        none     18:00',
+    'ETH    4h   14:00        none     18:00',
+    'SOL    1d   02:00        none     Sun 02:00',
+  ])
+# ---
 # name: test_operator_screen_matches_snapshot[late-overview-120]
   list([
     ' DEMO DATA · scenario late',
@@ -932,6 +1110,13 @@
     '──────────────────────────────────────────────────────────────────────',
     'ETH    4h   €2,243 → €2,289   ▲ +2.06%   ▲ +€1.54 net   €2,210 · −3.4%',
     'SOL    1d   €119.1 → €125.5   ▲ +5.40%   ▲ +€6.05 net   €121.7 · −3.0%',
+    '',
+    'Market watch',
+    'coin   tf   last check   result   next check',
+    '────────────────────────────────────────────',
+    'BTC    4h   14:00        none     18:00',
+    'ETH    4h   14:00        none     18:00',
+    'SOL    1d   02:00        none     Sun 02:00',
     '',
     'Today',
     '6h ago      closed BTC at €52,464 · ▲ +€3.18 net',
@@ -964,6 +1149,13 @@
     '──────────────────────────────────────────────────────────────────────',
     'ETH    4h   €2,243 → €2,289   ▲ +2.06%   ▲ +€1.54 net   €2,210 · −3.4%',
     'SOL    1d   €119.1 → €125.5   ▲ +5.40%   ▲ +€6.05 net   €121.7 · −3.0%',
+    '',
+    'Market watch',
+    'coin   tf   last check   result   next check',
+    '────────────────────────────────────────────',
+    'BTC    4h   14:00        none     18:00',
+    'ETH    4h   14:00        none     18:00',
+    'SOL    1d   02:00        none     Sun 02:00',
     '',
     'Today',
     '6h ago      closed BTC at €52,464 · ▲ +€3.18 net',
@@ -1161,6 +1353,28 @@
     '                                             ● live · checked 14:00 · next 18:00',
   ])
 # ---
+# name: test_operator_screen_matches_snapshot[losing-year-market-watch-120]
+  list([
+    ' DEMO DATA · scenario losing-year',
+    'Market watch',
+    'coin   tf   last check   result   next check',
+    '────────────────────────────────────────────',
+    'BTC    4h   14:00        none     18:00',
+    'ETH    4h   14:00        none     18:00',
+    'SOL    4h   14:00        none     18:00',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[losing-year-market-watch-80]
+  list([
+    ' DEMO DATA · scenario losing-year',
+    'Market watch',
+    'coin   tf   last check   result   next check',
+    '────────────────────────────────────────────',
+    'BTC    4h   14:00        none     18:00',
+    'ETH    4h   14:00        none     18:00',
+    'SOL    4h   14:00        none     18:00',
+  ])
+# ---
 # name: test_operator_screen_matches_snapshot[losing-year-overview-120]
   list([
     ' DEMO DATA · scenario losing-year',
@@ -1181,6 +1395,13 @@
     'coin   tf   entry → now           change            net   stop',
     '─────────────────────────────────────────────────────────────────────────',
     'BTC    4h   €53,458 → €53,073   ▼ −0.72%   ▼ −€0.65 net   €52,858 · −0.4%',
+    '',
+    'Market watch',
+    'coin   tf   last check   result   next check',
+    '────────────────────────────────────────────',
+    'BTC    4h   14:00        none     18:00',
+    'ETH    4h   14:00        none     18:00',
+    'SOL    4h   14:00        none     18:00',
     '',
     'Today',
     '3h ago      closed ADA at €0.2923 · ▼ −€2.61 net',
@@ -1212,6 +1433,13 @@
     'coin   tf   entry → now           change            net   stop',
     '─────────────────────────────────────────────────────────────────────────',
     'BTC    4h   €53,458 → €53,073   ▼ −0.72%   ▼ −€0.65 net   €52,858 · −0.4%',
+    '',
+    'Market watch',
+    'coin   tf   last check   result   next check',
+    '────────────────────────────────────────────',
+    'BTC    4h   14:00        none     18:00',
+    'ETH    4h   14:00        none     18:00',
+    'SOL    4h   14:00        none     18:00',
     '',
     'Today',
     '3h ago      closed ADA at €0.2923 · ▼ −€2.61 net',
@@ -1409,6 +1637,28 @@
     '                                             ● live · checked 14:00 · next 18:00',
   ])
 # ---
+# name: test_operator_screen_matches_snapshot[ok-two-positions-market-watch-120]
+  list([
+    ' DEMO DATA · scenario ok-two-positions',
+    'Market watch',
+    'coin   tf   last check   result   next check',
+    '────────────────────────────────────────────',
+    'BTC    4h   14:00        none     18:00',
+    'ETH    4h   14:00        none     18:00',
+    'SOL    1d   02:00        none     Sun 02:00',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[ok-two-positions-market-watch-80]
+  list([
+    ' DEMO DATA · scenario ok-two-positions',
+    'Market watch',
+    'coin   tf   last check   result   next check',
+    '────────────────────────────────────────────',
+    'BTC    4h   14:00        none     18:00',
+    'ETH    4h   14:00        none     18:00',
+    'SOL    1d   02:00        none     Sun 02:00',
+  ])
+# ---
 # name: test_operator_screen_matches_snapshot[ok-two-positions-overview-120]
   list([
     ' DEMO DATA · scenario ok-two-positions',
@@ -1430,6 +1680,13 @@
     '──────────────────────────────────────────────────────────────────────',
     'ETH    4h   €2,243 → €2,289   ▲ +2.06%   ▲ +€1.54 net   €2,210 · −3.4%',
     'SOL    1d   €119.1 → €125.5   ▲ +5.40%   ▲ +€6.05 net   €121.7 · −3.0%',
+    '',
+    'Market watch',
+    'coin   tf   last check   result   next check',
+    '────────────────────────────────────────────',
+    'BTC    4h   14:00        none     18:00',
+    'ETH    4h   14:00        none     18:00',
+    'SOL    1d   02:00        none     Sun 02:00',
     '',
     'Today',
     '2h ago      closed BTC at €52,464 · ▲ +€3.18 net',
@@ -1462,6 +1719,13 @@
     '──────────────────────────────────────────────────────────────────────',
     'ETH    4h   €2,243 → €2,289   ▲ +2.06%   ▲ +€1.54 net   €2,210 · −3.4%',
     'SOL    1d   €119.1 → €125.5   ▲ +5.40%   ▲ +€6.05 net   €121.7 · −3.0%',
+    '',
+    'Market watch',
+    'coin   tf   last check   result   next check',
+    '────────────────────────────────────────────',
+    'BTC    4h   14:00        none     18:00',
+    'ETH    4h   14:00        none     18:00',
+    'SOL    1d   02:00        none     Sun 02:00',
     '',
     'Today',
     '2h ago      closed BTC at €52,464 · ▲ +€3.18 net',
@@ -1665,6 +1929,28 @@
     '                                             ● live · checked 14:00 · next 18:00',
   ])
 # ---
+# name: test_operator_screen_matches_snapshot[tax-pending-market-watch-120]
+  list([
+    ' DEMO DATA · scenario tax-pending',
+    'Market watch',
+    'coin   tf   last check   result   next check',
+    '────────────────────────────────────────────',
+    'BTC    4h   14:00        none     18:00',
+    'ETH    4h   14:00        none     18:00',
+    'SOL    1d   02:00        none     Sun 02:00',
+  ])
+# ---
+# name: test_operator_screen_matches_snapshot[tax-pending-market-watch-80]
+  list([
+    ' DEMO DATA · scenario tax-pending',
+    'Market watch',
+    'coin   tf   last check   result   next check',
+    '────────────────────────────────────────────',
+    'BTC    4h   14:00        none     18:00',
+    'ETH    4h   14:00        none     18:00',
+    'SOL    1d   02:00        none     Sun 02:00',
+  ])
+# ---
 # name: test_operator_screen_matches_snapshot[tax-pending-overview-120]
   list([
     ' DEMO DATA · scenario tax-pending',
@@ -1686,6 +1972,13 @@
     '──────────────────────────────────────────────────────────────────────',
     'ETH    4h   €2,243 → €2,289   ▲ +2.06%   ▲ +€1.93 net   €2,210 · −3.4%',
     'SOL    1d   €119.1 → €125.5   ▲ +5.40%   ▲ +€7.43 net   €121.7 · −3.0%',
+    '',
+    'Market watch',
+    'coin   tf   last check   result   next check',
+    '────────────────────────────────────────────',
+    'BTC    4h   14:00        none     18:00',
+    'ETH    4h   14:00        none     18:00',
+    'SOL    1d   02:00        none     Sun 02:00',
     '',
     'Today',
     '2h ago      closed BTC at €52,464 · ▲ +€3.18 net',
@@ -1718,6 +2011,13 @@
     '──────────────────────────────────────────────────────────────────────',
     'ETH    4h   €2,243 → €2,289   ▲ +2.06%   ▲ +€1.93 net   €2,210 · −3.4%',
     'SOL    1d   €119.1 → €125.5   ▲ +5.40%   ▲ +€7.43 net   €121.7 · −3.0%',
+    '',
+    'Market watch',
+    'coin   tf   last check   result   next check',
+    '────────────────────────────────────────────',
+    'BTC    4h   14:00        none     18:00',
+    'ETH    4h   14:00        none     18:00',
+    'SOL    1d   02:00        none     Sun 02:00',
     '',
     'Today',
     '2h ago      closed BTC at €52,464 · ▲ +€3.18 net',

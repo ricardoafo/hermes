@@ -100,7 +100,7 @@ def test_entry_with_no_atr_omits_the_atr_multiple_only() -> None:
 
     _family, note = build_note(event, _BLIND)
 
-    assert note.verbose[1] == "Plan: stop 50,516.00 USDT (−3.6%)"
+    assert note.plan[0] == "Plan: stop 50,516.00 USDT (−3.6%)"
 
 
 def test_entry_with_no_price_says_so_and_omits_the_distance() -> None:
@@ -109,7 +109,7 @@ def test_entry_with_no_price_says_so_and_omits_the_distance() -> None:
 
     _family, note = build_note(event, _BLIND)
 
-    assert (note.compact[0], note.compact[1], note.verbose[1]) == (
+    assert (note.compact[0], note.compact[1], note.plan[0]) == (
         "▲ Entry long BTC · price n/a",
         "stop 50,516.00 USDT · Sat 14:00",
         "Plan: stop 50,516.00 USDT",
