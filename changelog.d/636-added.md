@@ -1,0 +1,1 @@
+- **Release in status** (`src/hermes/entrypoints/status.py`, `status_view.py`): `hermes status` shows the running release (the `/opt/hermes/current` target) and when it went live, in the text header and `--json`; `release: unknown` without the link. Closes #636.

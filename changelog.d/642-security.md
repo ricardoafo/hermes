@@ -1,0 +1,1 @@
+- The AI review no longer puts the workflow's GitHub token on a command line or into the model's input when it cannot read a PR's closed issue; it reads the issue with the `issues: read` permission it was missing (#642).

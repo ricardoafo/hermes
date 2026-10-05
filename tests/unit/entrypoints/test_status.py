@@ -16,9 +16,10 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import re
 import subprocess
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -44,11 +45,17 @@ from tests.support.status_ledger import (
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _CONFIG = _PROJECT_ROOT / "config"
+_NO_LINK = _PROJECT_ROOT / "no-such-release-link"
+_FLIPPED_AT = datetime(2026, 10, 3, 12, 22, tzinfo=UTC)
 _PNL_WORDS = re.compile(r"p&l|pnl|profit|loss|equity|sharpe|drawdown|win rate|return", re.I)
 
 
 def _run(
-    args: list[str], *, now: Any = NOW, unit: UnitState = UnitState.RUNNING
+    args: list[str],
+    *,
+    now: Any = NOW,
+    unit: UnitState = UnitState.RUNNING,
+    release_link: Path | None = None,
 ) -> tuple[int, str]:
     """Run ``hermes status`` with a fixed clock and unit state; return code and output."""
     out = io.StringIO()
@@ -58,6 +65,7 @@ def _run(
         now=now,
         unit_state=lambda: unit,
         bot_state=lambda: UnitState.UNKNOWN,
+        release_link=release_link or _NO_LINK,
     )
     return code, out.getvalue()
 
@@ -71,6 +79,7 @@ def _run_split(args: list[str]) -> tuple[int, str, str]:
         err=err,
         now=NOW,
         unit_state=lambda: UnitState.RUNNING,
+        release_link=_NO_LINK,
     )
     return code, out.getvalue(), err.getvalue()
 
@@ -91,7 +100,7 @@ def test_current_ledger_exits_zero_and_leads_with_all_good(tmp_path: Path) -> No
     code, out = _run(["--db", str(_ledger(tmp_path))])
 
     assert code == 0
-    assert out.splitlines()[2] == "● All good"
+    assert out.splitlines()[3] == "● All good"
 
 
 def test_overdue_ledger_exits_one_and_says_late(tmp_path: Path) -> None:
@@ -194,6 +203,56 @@ def test_no_pnl_field_in_any_output(tmp_path: Path, as_json: bool) -> None:
     _, out = _run(args)
 
     assert _PNL_WORDS.findall(out) == []
+
+
+def _release_link(tmp_path: Path) -> Path:
+    """Create a ``current`` link to ``abc123def456`` whose own mtime is ``_FLIPPED_AT``."""
+    target = tmp_path / "releases" / "abc123def456"
+    target.mkdir(parents=True)
+    link = tmp_path / "current"
+    try:
+        link.symlink_to(target, target_is_directory=True)
+        os.utime(link, (_FLIPPED_AT.timestamp(),) * 2, follow_symlinks=False)
+    except OSError, NotImplementedError:
+        pytest.skip("symlinks or symlink mtimes unavailable")
+    return link
+
+
+def test_text_header_shows_release_and_live_since_in_madrid(tmp_path: Path) -> None:
+    """The release line names the link target and the flip time in Madrid (CEST, UTC+2)."""
+    link = _release_link(tmp_path)
+
+    code, out = _run(["--db", str(_ledger(tmp_path))], release_link=link)
+
+    assert code == 0
+    assert "release: abc123def456   live since 2026-10-03 14:22 Madrid" in out.splitlines()
+
+
+def test_json_carries_release_and_live_since_in_utc(tmp_path: Path) -> None:
+    """--json has the release name and the link's mtime as ISO-8601 UTC."""
+    link = _release_link(tmp_path)
+
+    _, out = _run(["--db", str(_ledger(tmp_path)), "--json"], release_link=link)
+    data = json.loads(out)
+
+    assert (data["release"], data["live_since"]) == ("abc123def456", "2026-10-03T12:22:00+00:00")
+
+
+def test_text_without_a_release_link_says_unknown_and_exits_unchanged(tmp_path: Path) -> None:
+    """No link: `release: unknown`, no live-since, and the verdict exit code stays 0."""
+    code, out = _run(["--db", str(_ledger(tmp_path))])
+
+    assert code == 0
+    assert "release: unknown" in out.splitlines()
+    assert "live since" not in out
+
+
+def test_json_without_a_release_link_has_unknown_and_null_live_since(tmp_path: Path) -> None:
+    """No link: the JSON release is `unknown` and live_since is null."""
+    _, out = _run(["--db", str(_ledger(tmp_path)), "--json"])
+    data = json.loads(out)
+
+    assert (data["release"], data["live_since"]) == ("unknown", None)
 
 
 def test_status_is_reachable_from_the_top_level_cli(tmp_path: Path) -> None:

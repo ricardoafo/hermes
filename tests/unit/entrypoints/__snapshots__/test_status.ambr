@@ -2,6 +2,7 @@
 # name: test_plain_output_snapshot
   '''
   hermes status   2026-10-03 16:10 UTC (Sat 18:10 Madrid)   unit: running
+  release: unknown
   
   ● All good
   Watching BTC, ETH and SOL. Every check ran on time.

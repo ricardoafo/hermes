@@ -177,3 +177,23 @@ def test_command_is_registered_and_runs(tmp_path: Path) -> None:
     out = io.StringIO()
     assert command.run(["--db", str(tmp_path / "none.db"), "--json"], stream=out) == 0
     assert json.loads(out.getvalue())["ledger"] == "no ledger"
+
+
+def test_read_release_without_a_link_has_no_live_since(tmp_path: Path) -> None:
+    """A missing link yields `unknown` and no time, never an exception."""
+    info = version_module.read_release(tmp_path / "current")
+
+    assert (info.name, info.live_since) == ("unknown", None)
+
+
+def test_read_release_of_a_dangling_link_has_no_live_since(tmp_path: Path) -> None:
+    """A link whose target is gone yields `unknown` and no time."""
+    link = tmp_path / "current"
+    try:
+        link.symlink_to(tmp_path / "gone", target_is_directory=True)
+    except OSError:
+        pytest.skip("symlinks unavailable")
+
+    info = version_module.read_release(link)
+
+    assert (info.name, info.live_since) == ("unknown", None)
