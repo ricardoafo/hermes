@@ -103,6 +103,13 @@ case "$1" in
             *" $name "*) exit 3 ;;
         esac
         ;;
+    daemon-reload)
+        # The unit backup exists only between the unit sync and the end of
+        # the deploy; record its mode while it is there.
+        if [ -d "$HERMES_ROOT/units-before-deploy" ]; then
+            /usr/bin/stat -c %a "$HERMES_ROOT/units-before-deploy" > "$STUB_STATE/unit-backup-mode"
+        fi
+        ;;
     show)
         if [ -n "${STUB_PID_CHANGES:-}" ]; then
             n=$(cat "$STUB_STATE/pid" 2>/dev/null || echo 4000)
@@ -174,7 +181,35 @@ esac
 exit 0
 """
 
+# `install` wraps the real one and records each call. On Git Bash over NTFS
+# the real one cannot set some modes ("cannot change permissions"); only
+# there, and only after it failed, the call is retried without -m/-o/-g and
+# the dropped mode is recorded, so the test box runs and no test mistakes
+# that for the 0700 the VPS gets (#683).
+_STUB_INSTALL = """\
+#!/usr/bin/env bash
+echo "install $*" >> "$STUB_STATE/install.log"
+/usr/bin/install "$@" 2>/dev/null && exit 0
+case "$(uname -s)" in
+    MINGW* | MSYS* | CYGWIN*) ;;
+    *) exec /usr/bin/install "$@" ;;
+esac
+args=()
+skip=0
+for arg in "$@"; do
+    if [ "$skip" = 1 ]; then skip=0; continue; fi
+    case "$arg" in
+        -m | -o | -g) skip=1 ;;
+        -m* | -o* | -g* | --mode=* | --owner=* | --group=*) ;;
+        *) args+=("$arg") ;;
+    esac
+done
+echo "mode dropped: install $*" >> "$STUB_STATE/install.log"
+exec /usr/bin/install "${args[@]}"
+"""
+
 _STUBS = {
+    "install": _STUB_INSTALL,
     "hermes": _STUB_HERMES,
     "runuser": _STUB_RUNUSER,
     "uv": _STUB_UV,
@@ -1261,7 +1296,8 @@ def test_staging_deploy_writes_only_under_the_staging_root_and_backups(staging_b
     assert result.returncode == 0, _output(result)
     after = _files_and_bytes(staging_box.base)
     changed = {path for path, data in after.items() if before.get(path) != data}
-    allowed = (staging_box.root, staging_box.backups, staging_box.log)
+    # The stubs' own call log and state are the test harness, not the deploy.
+    allowed = (staging_box.root, staging_box.backups, staging_box.log, staging_box._state)
     stray = sorted(
         path
         for path in changed
@@ -1458,6 +1494,23 @@ def test_unit_install_comes_before_the_daemon_reload_and_restart(box: Box) -> No
     out = result.stdout
     assert out.index(f"unit {_UNIT}: installed") < out.index("current -> ")
     assert "systemctl daemon-reload" in box.calls()
+
+
+def test_unit_backup_is_private_to_root_while_the_deploy_runs(box: Box) -> None:
+    """Invariant: the copies of the old unit files sit in a 0700 directory (#683).
+
+    The mode is read while the deploy runs, at the daemon-reload. Only Git
+    Bash over NTFS may refuse it, and then the install stub says it dropped
+    the mode; on Linux, as on the VPS, the directory must really be 0700.
+    """
+    result = box.deploy(_SHA_A)
+
+    install_log = (box._state / "install.log").read_text(encoding="utf-8")
+    backup = _posix(box.root / "units-before-deploy")
+    assert result.returncode == 0, _output(result)
+    assert f"install -d -m 0700 {backup}" in install_log
+    if f"mode dropped: install -d -m 0700 {backup}" not in install_log:
+        assert (box._state / "unit-backup-mode").read_text(encoding="utf-8").strip() == "700"
 
 
 def test_unchanged_units_are_left_alone(box: Box) -> None:
