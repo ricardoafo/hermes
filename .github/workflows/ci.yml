@@ -55,8 +55,10 @@ jobs:
     runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     # A normal run takes 5-8 minutes on a busy pool. Each network step
     # has its own short timeout, so a hung download fails that step
-    # instead of holding a runner until this cap.
-    timeout-minutes: 20
+    # instead of holding a runner until this cap. 35, not 20: with many
+    # PRs at once the unit tests alone passed 20 minutes under CPU
+    # contention and every run was cancelled (#752).
+    timeout-minutes: 35
     permissions:
       contents: read
       pull-requests: write # PR body read, auto-label, coverage comment
