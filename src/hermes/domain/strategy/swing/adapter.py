@@ -47,6 +47,7 @@ spec-5-swing-strategy-adapter change.md D-1 through D-4.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 
@@ -60,7 +61,7 @@ from hermes.domain.strategy.swing.engines.chandelier import ChandelierEngine
 from hermes.domain.strategy.swing.engines.donchian import DonchianEngine
 from hermes.domain.strategy.swing.engines.ema import EmaRegimeFilter
 
-__all__ = ["SwingStrategyAdapter", "swing_parameters"]
+__all__ = ["EntryCheck", "SwingStrategyAdapter", "swing_parameters"]
 
 # Pre-reg §5.1 parameters
 _DONCHIAN_PERIOD = 20
@@ -81,6 +82,29 @@ _ATR_SIZING_PERIOD = 14
 # ADX = 2*14+1 = 29 bars minimum.  Add a margin of 50.
 _4H_BUFFER_CAP = 300
 _1D_BUFFER_CAP = 300
+
+
+@dataclass(frozen=True, slots=True)
+class EntryCheck:
+    """Which of the three §5.1 entry conditions held on one 4h bar.
+
+    Booleans only: the record explains "why no signal" without carrying a
+    price or an indicator value, so it stays outcome-blind (ADR-012 D-06).
+
+    Fields:
+        breakout: The close is above the highest high of the prior 20 bars.
+        momentum: ADX(14) is at least 25; ``False`` while ADX has too little history.
+        regime: The last daily close is above its EMA(200).
+    """
+
+    breakout: bool
+    momentum: bool
+    regime: bool
+
+    @property
+    def all_met(self) -> bool:
+        """Return True when all three conditions hold, the §5.1 entry rule."""
+        return self.breakout and self.momentum and self.regime
 
 
 def swing_parameters() -> dict[str, str]:
@@ -152,6 +176,17 @@ class SwingStrategyAdapter:
         self._in_position: bool = False
         self._entry_time: datetime | None = None
         self._entry_price: Decimal | None = None
+        self._last_entry_check: EntryCheck | None = None
+
+    @property
+    def last_entry_check(self) -> EntryCheck | None:
+        """Return the entry evaluation of the latest bar, or ``None``.
+
+        ``None`` when the latest bar was a daily bar, was evaluated for an exit
+        (a position was open), or no bar has been evaluated yet. Read-only: nothing in
+        the signal path reads it back (#656).
+        """
+        return self._last_entry_check
 
     # ------------------------------------------------------------------
     # StrategyPort implementation
@@ -178,6 +213,7 @@ class SwingStrategyAdapter:
             A :class:`~hermes.domain.strategy.signal.StrategySignal` on
             entry or exit, or ``None``.
         """
+        self._last_entry_check = None
         if bar.interval == KlineInterval.H4:
             return self._on_4h_bar(bar)
         if bar.interval == KlineInterval.D1:
@@ -250,17 +286,25 @@ class SwingStrategyAdapter:
             return self._evaluate_exit(bar)
         return self._evaluate_entry(bar)
 
+    def _entry_check(self, as_of: datetime) -> EntryCheck:
+        """Evaluate each of the three entry conditions (pre-reg §5.1).
+
+        All three are evaluated so the record names every condition that held;
+        each is a pure read of the buffers, so evaluating all of them decides
+        exactly what the short-circuit form decided.
+        """
+        breakout = DonchianEngine.high_break(self._bars_4h, period=self._donchian_period)
+        adx = AdxEngine.value(self._bars_4h, period=self._adx_period)
+        momentum = adx is not None and adx >= self._adx_threshold
+        return EntryCheck(
+            breakout=breakout, momentum=momentum, regime=self._regime_above_ema(as_of)
+        )
+
     def _entry_conditions_met(self, as_of: datetime) -> bool:
         """Return True when all three entry conditions fire simultaneously (pre-reg §5.1)."""
-        # Condition 1: Donchian(20) breakout
-        if not DonchianEngine.high_break(self._bars_4h, period=self._donchian_period):
-            return False
-        # Condition 2: ADX(14) >= threshold
-        adx = AdxEngine.value(self._bars_4h, period=self._adx_period)
-        if adx is None or adx < self._adx_threshold:
-            return False
-        # Condition 3: 1D close > EMA(200)
-        return self._regime_above_ema(as_of)
+        check = self._entry_check(as_of)
+        self._last_entry_check = check
+        return check.all_met
 
     def _evaluate_entry(self, bar: Bar) -> StrategySignal | None:
         """Check whether all three entry conditions fire on this 4h bar.
