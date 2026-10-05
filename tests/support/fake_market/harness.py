@@ -14,6 +14,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import dataclasses
+import json
+import sqlite3
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -44,6 +46,7 @@ from tests.support.fake_market.script import Market
 from tests.support.serve_loop import PROJECT_ROOT, RecordingChannel
 
 _RUN_TIMEOUT_SECONDS = 120
+_REFERENCE_EVERY_BARS = 5
 
 
 @dataclass
@@ -56,6 +59,7 @@ class ServeRun:
         exchange: The fake exchange, holding every request served.
         clock: The simulated clock, at the instant the run stopped.
         bar_seconds: CPU seconds the event loop's thread spent handling each bar, in order.
+        reference_seconds: CPU seconds of each reference workload timed between bars.
 
     """
 
@@ -64,6 +68,24 @@ class ServeRun:
     exchange: FakeExchange
     clock: SimClock
     bar_seconds: list[float] = field(default_factory=list)
+    reference_seconds: list[float] = field(default_factory=list)
+
+
+def reference_workload() -> None:
+    """Do a fixed piece of what a bar does: Decimal maths, JSON and SQLite inserts.
+
+    It costs about what one bar costs, and its CPU time, measured on the same
+    thread between bars, says how fast the core was while serve ran.
+    """
+    db = sqlite3.connect(":memory:")
+    db.execute("create table t (k text, v text)")
+    price = Decimal("43210.12")
+    for i in range(100):
+        price = (price * Decimal("1.0003")).quantize(Decimal("0.01"))
+        row = {"pair": "BTC/USDT", "i": i, "close": str(price), "tags": [str(i), "x"]}
+        db.execute("insert into t values (?, ?)", (str(i), json.dumps(row, sort_keys=True)))
+    db.commit()
+    db.close()
 
 
 def production_config() -> HermesConfig:
@@ -181,15 +203,21 @@ def serve(
     channel = RecordingChannel(raises=notifier_error)
     composition = compose(production_config(), db, exchange, channel)
     bar_seconds: list[float] = []
-    with _timed_bars(bar_seconds):
+    reference_seconds: list[float] = []
+    with _timed_bars(bar_seconds, reference_seconds):
         code = asyncio.run(_drive(composition, clock))
     return ServeRun(
-        exit_code=code, channel=channel, exchange=exchange, clock=clock, bar_seconds=bar_seconds
+        exit_code=code,
+        channel=channel,
+        exchange=exchange,
+        clock=clock,
+        bar_seconds=bar_seconds,
+        reference_seconds=reference_seconds,
     )
 
 
 @contextlib.contextmanager
-def _timed_bars(into: list[float]) -> Iterator[None]:
+def _timed_bars(into: list[float], references: list[float]) -> Iterator[None]:
     """Record how long each bar takes in serve's bar loop.
 
     The per-bar cost is what decides whether serve keeps up with the feed, and
@@ -201,10 +229,18 @@ def _timed_bars(into: list[float]) -> Iterator[None]:
     wall time of the same bars from 4 ms to over 30 ms. Work serve hands to a
     worker thread (the notifier send) is not counted; it does not hold up the
     loop.
+
+    CPU time still depends on the core: a loaded CI runner ran one scenario's
+    bars about thirty times slower than a developer machine. So before every fifth
+    bar it also times :func:`reference_workload`, to judge the bars against.
     """
     original = serve_module._BarLoop.handle
 
     async def timed(self: serve_module._BarLoop, bar: Bar) -> None:
+        if len(into) % _REFERENCE_EVERY_BARS == 0:
+            started = time.thread_time()
+            reference_workload()
+            references.append(time.thread_time() - started)
         started = time.thread_time()
         try:
             await original(self, bar)

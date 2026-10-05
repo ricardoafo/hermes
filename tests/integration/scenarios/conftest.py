@@ -21,14 +21,16 @@ from hermes.entrypoints import serve as serve_module
 from tests.integration.scenarios.markets import Scenario
 from tests.support.fake_market import harness
 
-BAR_BUDGET_SECONDS = 0.020
-"""Median CPU time serve's event loop may spend on one bar.
+BAR_BUDGET_REFERENCES = 4
+"""Median CPU time serve's event loop may spend on one bar, in reference workloads.
 
-Measured at 1.8 to 2.5 ms per scenario on a developer machine (2026-10-05),
-the same with the CPU idle or three times oversubscribed, because CPU time
-leaves out the time other processes hold the core. The budget leaves room for
-a slower runner core, while a tenfold slowdown of the bar path still fails
-here, in PR CI, before it reaches the deploy gate.
+CPU time per bar depends on the core: with the ledger's fsync off it was 0.6 to
+0.8 ms on a developer machine (2026-10-05) and 22 ms in one scenario on a loaded
+CI runner. So the budget is a multiple of ``harness.reference_workload``, timed
+on the same thread between the bars. Bars cost 0.8 to 1.1 references across
+the scenarios on the developer machine; four leaves room above that, while a
+tenfold slowdown of the bar path still fails here, in PR CI, before it reaches
+the deploy gate.
 """
 
 
@@ -42,6 +44,7 @@ class Run:
         notified: Every event handed to the Telegram stand-in.
         logs: Every structured log line serve emitted.
         bar_seconds: CPU time of the event loop's thread per handled bar.
+        reference_seconds: CPU time of each reference workload timed between bars.
 
     """
 
@@ -50,6 +53,7 @@ class Run:
     notified: list[object]
     logs: list[dict[str, Any]]
     bar_seconds: list[float] = field(default_factory=list)
+    reference_seconds: list[float] = field(default_factory=list)
 
     def log_events(self, name: str) -> list[dict[str, Any]]:
         """Return the log lines whose event is ``name``, in order."""
@@ -113,6 +117,7 @@ def run_scenario(tmp_path: Path) -> Iterator[RunScenario]:
             notified=list(served.channel.seen),
             logs=[dict(line) for line in logs],
             bar_seconds=served.bar_seconds,
+            reference_seconds=served.reference_seconds,
         )
         runs.append(outcome)
         return outcome
@@ -121,7 +126,9 @@ def run_scenario(tmp_path: Path) -> Iterator[RunScenario]:
     seconds = [s for r in runs for s in r.bar_seconds]
     if seconds:
         median = statistics.median(seconds)
-        assert median <= BAR_BUDGET_SECONDS, (
-            f"serve took a median {median * 1000:.1f} ms per bar over {len(seconds)} bars; "
-            f"the budget is {BAR_BUDGET_SECONDS * 1000:.0f} ms"
+        reference = statistics.median(s for r in runs for s in r.reference_seconds)
+        assert median <= BAR_BUDGET_REFERENCES * reference, (
+            f"serve took a median {median * 1000:.2f} ms per bar over {len(seconds)} bars, "
+            f"{median / reference:.1f} times the reference workload's {reference * 1000:.2f} ms; "
+            f"the budget is {BAR_BUDGET_REFERENCES} times"
         )
