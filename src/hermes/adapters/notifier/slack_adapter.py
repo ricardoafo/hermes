@@ -78,7 +78,7 @@ from hermes.application.messages.reporting_phase import (
     DEFAULT_REPORTING_PHASE,
     ReportingPhase,
 )
-from hermes.application.messages.slack import FileAttachment, slack_template
+from hermes.application.messages.slack import FileAttachment, SlackReply, slack_template
 from hermes.domain.errors import InfraError
 from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
 from hermes.domain.events.base import DomainEvent
@@ -264,7 +264,11 @@ class SlackAdapter:
              ``attachments`` tuple).
           2. POST to ``chat.postMessage`` with ``text`` + ``blocks``.
              The response body carries the parent message ``ts``.
-          3. For each ``FileAttachment``, upload via the Slack v2
+          3. When the event has a plan block, POST it as a reply in the
+             parent's thread (``thread_ts`` = the parent ``ts``). If that
+             reply fails the parent stays, a warning is logged without the
+             message text, and the error is raised.
+          4. For each ``FileAttachment``, upload via the Slack v2
              external-upload flow AND thread the completed file to the
              parent message via ``thread_ts``. Threading keeps the
              channel view clean — a Daily Trade Digest posts one parent
@@ -291,6 +295,9 @@ class SlackAdapter:
         response_body = self._post_json("/api/chat.postMessage", payload)
         parent_ts = response_body.get("ts")
 
+        if rendered.plan is not None:
+            self._post_plan_reply(rendered.plan, parent_ts)
+
         for attachment in rendered.attachments:
             # Thread each attachment under the parent post so the channel
             # timeline stays a single card per event. Fall back to no
@@ -298,6 +305,41 @@ class SlackAdapter:
             # docs guarantee it, but the field is not typed at the wire).
             thread_ts = parent_ts if isinstance(parent_ts, str) and parent_ts else None
             self._upload_attachment(attachment, thread_ts=thread_ts)
+
+    def _post_plan_reply(self, plan: SlackReply, parent_ts: object) -> None:
+        """Post the plan block as a reply in the parent message's thread.
+
+        The parent is already posted: a failure here keeps it, logs a
+        structured warning that carries no message text, and raises.
+
+        Args:
+            plan: The rendered plan reply.
+            parent_ts: The ``ts`` the parent post returned.
+
+        Raises:
+            SlackNotifierError: When the parent returned no ``ts`` to thread
+                under, or the reply call fails at any layer.
+        """
+        try:
+            if not isinstance(parent_ts, str) or not parent_ts:
+                raise SlackNotifierError("chat.postMessage returned no ts to thread the plan under")
+            self._post_json(
+                "/api/chat.postMessage",
+                {
+                    "channel": self.config.default_channel,
+                    "thread_ts": parent_ts,
+                    "text": plan.text,
+                    "blocks": plan.blocks,
+                },
+            )
+        except SlackNotifierError as exc:
+            _log.warning(
+                "slack_plan_reply_failed",
+                channel=self.config.default_channel,
+                thread_ts=parent_ts if isinstance(parent_ts, str) else None,
+                error_type=type(exc).__name__,
+            )
+            raise
 
     def auth_test(self) -> dict[str, Any]:
         """Call the Web API ``auth.test`` endpoint and return the response body.

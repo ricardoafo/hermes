@@ -29,6 +29,7 @@ import asyncio
 import dataclasses
 import io
 import json
+import time
 from collections.abc import Sequence
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -58,7 +59,24 @@ from tests.support.recorded_bars import (
 )
 from tests.support.serve_loop import BTC, PROJECT_ROOT, FakeClock, RecordingChannel, drive, events
 
-pytestmark = [pytest.mark.e2e, pytest.mark.slow]
+pytestmark = [pytest.mark.e2e, pytest.mark.slow, pytest.mark.timeout(900)]
+
+HANG_FLOOR_S = 20.0
+"""Seconds every serve run gets before the per-bar allowance."""
+
+PER_BAR_BUDGET_S = 0.5
+"""Seconds allowed per live bar: about twenty times the 25 ms a bar takes on a
+quiet CI runner (CD run 37237426620), so a busy runner sharing the VM does not
+time the release gate out while a hang still does."""
+
+
+def serve_budget(live_bars: int) -> float:
+    """Return the hang guard, in seconds, for a serve run over ``live_bars`` bars."""
+    return HANG_FLOOR_S + PER_BAR_BUDGET_S * live_bars
+
+
+SERVE_TIMINGS: list[tuple[int, float]] = []
+"""``(live bars, seconds)`` of every serve run; ``conftest.py`` prints them."""
 
 Signal = tuple[str, str, str, str | None]
 """``(pair, kind, occurred_at, exit_reason)`` of one recorded signal."""
@@ -138,9 +156,12 @@ def _serve(
 
     """
     clock = FakeClock(boot_at)
-    feed = ReplayFeed(closed_by(boot_at), delivered_after(boot_at) if live is None else live, clock)
+    live_bars = delivered_after(boot_at) if live is None else live
+    feed = ReplayFeed(closed_by(boot_at), live_bars, clock)
     channel = RecordingChannel()
-    code = asyncio.run(drive(_boot(db, feed, channel), feed))
+    started = time.perf_counter()
+    code = asyncio.run(drive(_boot(db, feed, channel), feed, timeout=serve_budget(len(live_bars))))
+    SERVE_TIMINGS.append((len(live_bars), time.perf_counter() - started))
     return code, channel
 
 

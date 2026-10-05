@@ -107,8 +107,8 @@ from hermes.domain.lots.quote_leg import CapitalSeed, seed_timestamp
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.bar_schedule import (
     Stream,
-    delivery_key,
     interval_duration,
+    order_for_delivery,
     within_catchup,
 )
 from hermes.domain.market_data.kline import KlineInterval
@@ -756,7 +756,7 @@ class _BarLoop:
             for interval in c.intervals:
                 count = c.config.market_data.warmup_bars(interval)
                 warm.extend(await c.feed.warm_up(pair, interval, count))
-        warm.sort(key=delivery_key)
+        warm = list(order_for_delivery(warm))
         cursors = self._load_cursors(warm)
         for pair, strategy in c.strategies.items():
             seeded = [

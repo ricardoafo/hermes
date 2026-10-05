@@ -6,7 +6,8 @@ Invariants:
   "not available yet" line; every other card still shows its content;
 - a ledger read failure in one card names the failure in that card and does
   not stop the app;
-- a failing heartbeat leaves the rest of the screen drawn.
+- a failing heartbeat leaves the rest of the screen drawn;
+- a failing market watch is one line and the positions above it still show (#650).
 """
 
 from __future__ import annotations
@@ -24,11 +25,12 @@ from hermes.application.console import (
     PositionRow,
     ShadowTest,
     ViewNotAvailableError,
+    WatchedPair,
 )
 from hermes.domain.errors import LedgerError
 from hermes.entrypoints.tui import HomeApp
 
-_CARDS = ("heartbeat", "portfolio", "positions", "activity", "shadow")
+_CARDS = ("heartbeat", "portfolio", "positions", "market", "activity", "shadow")
 
 
 class _Failing:
@@ -67,6 +69,10 @@ class _Failing:
     def shadow_test(self) -> ShadowTest:
         self._raise("shadow")
         return self._base.shadow_test()
+
+    def market_watch(self) -> tuple[WatchedPair, ...]:
+        self._raise("market")
+        return self._base.market_watch()
 
 
 def _model(**errors: Exception) -> ConsoleReadModel:
@@ -111,5 +117,14 @@ def test_failing_heartbeat_keeps_the_screen() -> None:
     texts = _texts(_model(heartbeat=LedgerError(msg="disk I/O error")))
     assert (texts["heartbeat"], "ETH" in texts["positions"]) == (
         "Heartbeat · could not read the ledger: disk I/O error",
+        True,
+    )
+
+
+def test_failing_market_watch_is_one_line_and_positions_stand() -> None:
+    """A ledger failure in the market watch names it there; positions still list ETH."""
+    texts = _texts(_model(market=LedgerError(msg="disk I/O error")))
+    assert (texts["market"], "ETH" in texts["positions"]) == (
+        "Market watch · could not read the ledger: disk I/O error",
         True,
     )
