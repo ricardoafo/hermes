@@ -9,7 +9,8 @@ Entry conditions (ALL three must fire simultaneously on 4h bar close, §5.1):
     3. 1D close > EMA(200) (last fully closed 1D bar)
 
 Exit conditions (first triggered wins, §5.2):
-    A. Chandelier stop: current 4h bar's low <= highest_high(22) - 3*ATR(22)
+    A. Chandelier stop: current 4h bar's low <= the stop in force, the highest
+       highest_high(22) - 3*ATR(22) level since entry (it never moves down, §5.3)
     B. Time stop: 90 calendar days from entry bar close_time
     C. Regime break: 1D close < EMA(200) on a new 1D bar
 
@@ -247,8 +248,8 @@ class SwingStrategyAdapter:
 
         Position state is set only from ``open_position``; it is never
         derived from the bars. With ``None`` the adapter ends flat. The
-        position's ``last_stop`` only tells the next stop record whether the
-        stop moved; it does not change the stop.
+        position's ``last_stop`` is the stop in force before the restart: the
+        next stop never falls below it (#680).
 
         Args:
             bars: Closed bars in delivery order (ascending ``close_time``,
@@ -351,7 +352,9 @@ class SwingStrategyAdapter:
         self._in_position = True
         self._entry_time = bar.close_time
         self._entry_price = entry_price
-        self._record_stop(bar.close_time, stop)
+        # A new position starts from its own level, never from an earlier position's stop.
+        self._stop_in_force = None
+        self._record_stop(bar.close_time, stop=stop, level=stop)
 
         return StrategySignal(
             kind=SignalKind.ENTRY,
@@ -368,7 +371,7 @@ class SwingStrategyAdapter:
         """Check whether any exit condition fires on this 4h bar.
 
         Exit conditions in priority order (pre-reg §5.2):
-            A. Chandelier stop: bar.low ≤ chandelier_stop
+            A. Chandelier stop: bar.low ≤ the stop in force (ratcheted, §5.3)
             B. Time stop: 90 days from entry
             C. Regime break: 1D close < EMA(200)
 
@@ -378,15 +381,17 @@ class SwingStrategyAdapter:
             "SwingStrategyAdapter: _entry_time must be set when in_position=True"
         )
 
-        stop = ChandelierEngine.trailing_stop(
+        level = ChandelierEngine.trailing_stop(
             self._bars_4h,
             period=self._chandelier_period,
             atr_mult=self._chandelier_atr_mult,
         )
         atr = AtrEngine.value(self._bars_4h, period=self._atr_sizing_period)
 
-        if stop is not None:
-            self._record_stop(self._entry_time, stop)
+        stop: Decimal | None = None
+        if level is not None:
+            stop = self._ratchet(level)
+            self._record_stop(self._entry_time, stop=stop, level=level)
 
         # Fallback ATR when buffer is freshly seeded (should not happen post-entry)
         if atr is None:
@@ -433,12 +438,24 @@ class SwingStrategyAdapter:
             f_star_estimate=None,
         )
 
-    def _record_stop(self, entry_time: datetime, stop: Decimal) -> None:
-        """Record the stop in force after this bar; record-only, no decision reads it (#388).
+    def _ratchet(self, level: Decimal) -> Decimal:
+        """Return the stop in force for this bar's chandelier ``level`` (#680).
 
-        ``stop`` is the chandelier level the caller already decided with. The
-        ATR and the highest high are recomputed from the same buffer, so they
-        are exactly the values that produced it.
+        A long stop only moves up while the position is open (pre-reg §5.3,
+        SA-7): the higher of the previous stop in force and the new level. With
+        no previous stop (the entry bar, or a restart with none stored) it is
+        the level itself.
+        """
+        previous = self._stop_in_force
+        return level if previous is None else max(previous, level)
+
+    def _record_stop(self, entry_time: datetime, *, stop: Decimal, level: Decimal) -> None:
+        """Record the stop in force after this bar and keep it for the next bar (#388, #680).
+
+        ``stop`` is the stop the caller decided with; ``level`` is the raw
+        chandelier level this bar computed. The ATR and the highest high are
+        recomputed from the same buffer, so they are exactly the values that
+        produced ``level``.
         """
         atr = AtrEngine.value(self._bars_4h, period=self._chandelier_period)
         assert atr is not None, (  # noqa: S101 — invariant
@@ -450,7 +467,7 @@ class SwingStrategyAdapter:
         self._last_stop_record = StopRecord(
             entry_time=entry_time,
             stop_price=stop,
-            chandelier_level=stop,
+            chandelier_level=level,
             atr=atr,
             high_since_entry=max(held) if reaches_entry else None,
             stop_moved=None if previous is None else stop != previous,
