@@ -13,6 +13,8 @@ Reference: openspec/changes/144-notification-system/change.md (test plan).
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pytest
 from syrupy.assertion import SnapshotAssertion
 
@@ -33,5 +35,25 @@ def test_telegram_message_matches_snapshot(name: str, snapshot: SnapshotAssertio
 def test_slack_message_matches_snapshot(name: str, snapshot: SnapshotAssertion) -> None:
     """The Slack fallback text and blocks of each event match their reviewed snapshot."""
     message = slack_template(samples()[name])
+
+    assert {"text": message.text, "blocks": message.blocks} == snapshot
+
+
+_EUR_RATE = Decimal("1.25")
+_PRICED_EVENTS = ("signal-entry", "signal-exit", "position-large")
+
+
+@pytest.mark.parametrize("name", _PRICED_EVENTS)
+def test_telegram_message_with_a_rate_matches_snapshot(
+    name: str, snapshot: SnapshotAssertion
+) -> None:
+    """The Telegram text of each priced event, in EUR at 1.25 USDT per euro, matches."""
+    assert telegram_template(samples()[name], eur_rate=_EUR_RATE).splitlines() == snapshot
+
+
+@pytest.mark.parametrize("name", _PRICED_EVENTS)
+def test_slack_message_with_a_rate_matches_snapshot(name: str, snapshot: SnapshotAssertion) -> None:
+    """The Slack text and blocks of each priced event, in EUR at 1.25 USDT per euro, match."""
+    message = slack_template(samples()[name], eur_rate=_EUR_RATE)
 
     assert {"text": message.text, "blocks": message.blocks} == snapshot

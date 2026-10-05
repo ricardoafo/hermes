@@ -228,3 +228,28 @@ class TestBuildParser:
         assert args.event == "strategy-paused"
         assert args.send is True
         assert args.fixture == Path("some/path.json")
+
+
+class TestEurRateOption:
+    """`--eur-rate` renders the prices in EUR; without it they keep the quote currency."""
+
+    def test_with_a_sample_rate_the_prices_are_in_euros(self) -> None:
+        """Invariant (668 D-4, R-5): a 1.25 sample rate shows 61,234.50 USDT as EUR 48,987.60."""
+        stream = io.StringIO()
+        rc = preview_module.main(["signal-emitted", "--eur-rate", "1.25"], stream=stream)
+        output = stream.getvalue()
+        assert (rc, "\u20ac48,987.60" in output, "USDT" in output) == (0, True, False)
+
+    def test_without_a_rate_the_prices_stay_in_the_quote_currency(self) -> None:
+        """Invariant (668 D-4, R-2): both forms are covered; no option is the USDT fallback."""
+        stream = io.StringIO()
+        rc = preview_module.main(["signal-emitted"], stream=stream)
+        output = stream.getvalue()
+        assert (rc, "61,234.50 USDT" in output, "\u20ac" in output) == (0, True, False)
+
+    @pytest.mark.parametrize("bad", ["0", "-1.2", "abc", "nan", "inf"])
+    def test_an_invalid_rate_exits_two(self, bad: str) -> None:
+        """Invariant (668 R-5): a non-positive or non-numeric rate is a usage error (exit 2)."""
+        with pytest.raises(SystemExit) as raised:
+            preview_module.main(["signal-emitted", "--eur-rate", bad], stream=io.StringIO())
+        assert raised.value.code == 2

@@ -250,3 +250,21 @@ def test_file_attachment_field_layout() -> None:
         "text/csv",
         b"x",
     )
+
+
+def test_slack_entry_with_a_rate_is_in_euros() -> None:
+    """Invariant (668 R-1): the fallback text and the blocks show EUR prices."""
+    message = slack_template(samples()["signal-entry"], eur_rate=Decimal("1.25"))
+    assert (
+        message.text.startswith("▲ Entry long BTC · €41,928.16"),
+        "USDT" in str(message.blocks),
+    ) == (
+        True,
+        False,
+    )
+
+
+def test_slack_entry_without_a_rate_stays_in_usdt() -> None:
+    """Invariant (668 R-2): no rate, the USDT text of before."""
+    message = slack_template(samples()["signal-entry"])
+    assert message.text.startswith("▲ Entry long BTC · 52,410.20 USDT")

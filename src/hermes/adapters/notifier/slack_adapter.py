@@ -74,6 +74,7 @@ from typing import Any, Final
 import httpx
 import structlog
 
+from hermes.application.messages.eur_rate import EurRateLookup, resolve_eur_rate
 from hermes.application.messages.reporting_phase import (
     DEFAULT_REPORTING_PHASE,
     ReportingPhase,
@@ -207,12 +208,16 @@ class SlackAdapter:
             Defaults to pre-certification; building the adapter with
             ``CERTIFIED`` is the explicit unblinding step and logs a
             warning (ADR-012 ruling 1).
+        eur_rate: Optional lookup of the EUR rate of an event's quote
+            currency. It must answer from memory (no network): with a rate
+            the post shows prices in EUR, without one in the quote currency.
     """
 
     config: SlackConfig
     client: httpx.Client = field()
     timeout_sec: float = _DEFAULT_TIMEOUT_SEC
     reporting_phase: ReportingPhase = DEFAULT_REPORTING_PHASE
+    eur_rate: EurRateLookup | None = None
 
     def __post_init__(self) -> None:
         """Log the unblinding step when the adapter may render outcome figures."""
@@ -221,7 +226,11 @@ class SlackAdapter:
 
     @classmethod
     def create(
-        cls, config: SlackConfig, *, timeout_sec: float = _DEFAULT_TIMEOUT_SEC
+        cls,
+        config: SlackConfig,
+        *,
+        timeout_sec: float = _DEFAULT_TIMEOUT_SEC,
+        eur_rate: EurRateLookup | None = None,
     ) -> SlackAdapter:
         """Build an adapter with a default :class:`httpx.Client`.
 
@@ -232,12 +241,13 @@ class SlackAdapter:
         Args:
             config: Web API credentials + default channel.
             timeout_sec: Per-request timeout in seconds.
+            eur_rate: Optional in-memory EUR rate lookup (see the class).
 
         Returns:
             A new adapter owning its :class:`httpx.Client`.
         """
         client = httpx.Client(base_url=_SLACK_API_BASE, timeout=timeout_sec)
-        return cls(config=config, client=client, timeout_sec=timeout_sec)
+        return cls(config=config, client=client, timeout_sec=timeout_sec, eur_rate=eur_rate)
 
     def close(self) -> None:
         """Release the underlying :class:`httpx.Client` resources.
@@ -281,7 +291,9 @@ class SlackAdapter:
             ValueError: If no template is registered for ``type(event)``
                 (bubbled from :func:`slack_template`).
         """
-        rendered = slack_template(event, phase=self.reporting_phase)
+        rendered = slack_template(
+            event, phase=self.reporting_phase, eur_rate=resolve_eur_rate(self.eur_rate, event)
+        )
 
         payload: dict[str, Any] = {
             "channel": self.config.default_channel,

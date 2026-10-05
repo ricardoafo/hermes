@@ -11,6 +11,7 @@ Reference: ADR-016 item 5.
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 from typing import Final
 
 import structlog
@@ -20,9 +21,12 @@ from hermes.domain.fx.eur_pricing import EurPricing, rate_is_final
 from hermes.domain.value_objects.currency import Currency
 from hermes.ports.fx import FxRateProviderPort
 
-__all__ = ["DEFAULT_EUR_SOURCE", "EurPricer"]
+__all__ = ["DEFAULT_EUR_SOURCE", "MAX_CACHED_RATE_AGE_DAYS", "EurPricer"]
 
 DEFAULT_EUR_SOURCE: Final[str] = "ecb:frankfurter"
+
+MAX_CACHED_RATE_AGE_DAYS: Final[int] = 7
+"""Oldest rate, in days from the asked date, that :meth:`EurPricer.cached_rate` serves."""
 
 _log = structlog.get_logger(__name__)
 
@@ -41,6 +45,7 @@ class EurPricer:
         self._fx = fx
         self._source = source
         self._cache: dict[tuple[Currency, date], EurPricing] = {}
+        self._latest: dict[Currency, EurPricing] = {}
 
     def price(self, quote: Currency, fill_date: date, *, today: date) -> EurPricing | None:
         """Return the final EUR rate of ``quote`` for ``fill_date``, or ``None``.
@@ -71,6 +76,7 @@ class EurPricer:
                 error=str(exc),
             )
             return None
+        self._latest[quote] = pricing
         if not rate_is_final(fill_date=fill_date, rate_date=pricing.rate_date, today=today):
             _log.info(
                 "eur_rate_not_final",
@@ -81,3 +87,30 @@ class EurPricer:
             return None
         self._cache[(quote, fill_date)] = pricing
         return pricing
+
+    def cached_rate(self, quote: Currency, on_date: date) -> Decimal | None:
+        """Return an already-known rate of ``quote`` per euro, never fetching.
+
+        Serves the notification path, which must not wait on a rate source
+        (change ``668-eur-prices-in-pushes`` D-1). The final rate cached for
+        ``on_date`` wins; otherwise the most recent rate fetched for ``quote``,
+        final or provisional, is used while its date is within
+        :data:`MAX_CACHED_RATE_AGE_DAYS` of ``on_date``.
+
+        Args:
+            quote: The pair's quote currency.
+            on_date: Madrid calendar date the rate is wanted for.
+
+        Returns:
+            Units of ``quote`` per one EUR, or ``None`` when no recent enough
+            rate is held. Never calls the provider and never raises.
+        """
+        if quote == Currency.EUR:
+            return Decimal(1)
+        exact = self._cache.get((quote, on_date))
+        if exact is not None:
+            return exact.rate
+        latest = self._latest.get(quote)
+        if latest is None or abs((on_date - latest.rate_date).days) > MAX_CACHED_RATE_AGE_DAYS:
+            return None
+        return latest.rate

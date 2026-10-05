@@ -291,3 +291,64 @@ def test_digest_is_the_only_phase_aware_builder() -> None:
     )
 
     assert differing == ["daily-digest"]
+
+
+_RATE = Decimal("1.25")
+
+
+def _eur_note(name: str, shape: Shape) -> tuple[str, ...]:
+    _family, note = build_note(samples()[name], _BLIND, _RATE)
+    return render_lines(note, shape, "…REF")
+
+
+def test_entry_with_a_rate_shows_price_and_stop_in_euros() -> None:
+    """Invariant (668 R-1): the entry price and the stop read in EUR, the distance is unchanged."""
+    assert _eur_note("signal-entry", Shape.COMPACT) == (
+        "▲ Entry long BTC · €41,928.16",
+        "stop €40,412.80 (−3.6%) · Sat 14:00",
+        "swing-donchian-4h · …REF",
+    )
+
+
+def test_exit_with_a_rate_shows_the_reference_and_stop_in_euros() -> None:
+    """Invariant (668 R-1): the exit's entry reference and stop read in EUR."""
+    assert _eur_note("signal-exit", Shape.COMPACT)[1] == (
+        "entry ref €41,928.16 · stop €43,280.00 · Sat 14:00"
+    )
+
+
+def test_verbose_entry_with_a_rate_keeps_the_plan_and_the_withheld_actual() -> None:
+    """Invariant (668 R-1, D-3): EUR changes the figures only; the actual stays withheld."""
+    assert _eur_note("signal-entry", Shape.VERBOSE)[1:3] == (
+        "Plan: stop €40,412.80 (−3.6%, 1.8 ATR)",
+        ACTUAL_WITHHELD,
+    )
+
+
+def test_fill_with_a_rate_shows_price_value_and_fee_in_euros() -> None:
+    """Invariant (668 R-1): the fill price, its value and the fee are all in EUR."""
+    assert _eur_note("position-large", Shape.VERBOSE)[1] == (
+        "0.0040 BTC · value €167.71 · fee €0.17"
+    )
+
+
+def test_without_a_rate_the_text_is_the_quote_currency_text() -> None:
+    """Invariant (668 R-2): no rate gives exactly the text built before this change."""
+    _family, with_none = build_note(samples()["signal-entry"], _BLIND, None)
+    _family, default = build_note(samples()["signal-entry"], _BLIND)
+    assert (with_none, "USDT" in "".join(with_none.compact)) == (default, True)
+
+
+def test_a_rate_leaves_events_without_prices_untouched() -> None:
+    """Invariant: events that carry no quote price render the same with or without a rate."""
+    plain = build_note(samples()["trade-rejected"], _BLIND)
+    rated = build_note(samples()["trade-rejected"], _BLIND, _RATE)
+    assert rated == plain
+    assert rated[1].compact == plain[1].compact
+
+
+@pytest.mark.parametrize("name", ["signal-entry", "signal-exit", "position-large"])
+@pytest.mark.parametrize("shape", list(Shape))
+def test_no_euro_note_contains_a_pnl_word(name: str, shape: Shape) -> None:
+    """Invariant (668 R-6, D-3): converting to EUR adds no profit, loss or return word."""
+    assert not _PNL_WORDS.search(" ".join(_eur_note(name, shape)))
