@@ -9,6 +9,9 @@ Invariants (backtest-driver-mvp1-phase2 change.md D-1, D-4, R-2):
 - A zero-volume bar has no book, so its signal is declined as ``no-book``.
 - An entry the kernel does not fill returns the strategy to flat (#707): no
   later exit for a position that does not exist, and the pair can enter again.
+- An exit the kernel does not fill returns the strategy to the position still
+  held, with its entry time and price (#706): the next qualifying bar exits
+  it, once. An exit for a pair not held leaves the strategy flat.
 - The equity curve holds the marked equity at each in-window 1D close.
 """
 
@@ -255,8 +258,8 @@ def test_declined_entry_restores_the_strategy_to_flat() -> None:
     assert (dict(run.declined), strategy.restored) == ({"no-book": 1}, [None])
 
 
-def test_filled_entry_and_declined_exit_restore_nothing() -> None:
-    """A filled entry keeps the strategy long; a declined exit is out of scope (#706)."""
+def test_declined_exit_restores_the_filled_entry() -> None:
+    """A filled entry, then a no-book exit: one restore, to the entry's time and price (#706)."""
     t1, t2 = _at(4), _at(8)
     strategy = _ScriptedStrategy(
         {t1: _entry(t1, Decimal("200")), t2: _exit(t2, Decimal("190"), "chandelier")}
@@ -265,7 +268,38 @@ def test_filled_entry_and_declined_exit_restore_nothing() -> None:
         strategy,
         [_bar(t1, Decimal("200")), _bar(t2, Decimal("190"), volume=Decimal("0"))],
     )
-    assert (len(run.fills), dict(run.declined), strategy.restored) == (1, {"no-book": 1}, [])
+    assert (len(run.fills), dict(run.declined)) == (1, {"no-book": 1})
+    assert strategy.restored == [OpenPosition(entry_time=t1, entry_price=Decimal("200"))]
+
+
+def test_declined_exit_for_a_pair_not_held_restores_flat() -> None:
+    """An exit with no position behind it is declined and leaves the strategy flat."""
+    t = _at(4)
+    strategy = _ScriptedStrategy({t: _exit(t, Decimal("190"), "chandelier")})
+    run = _replay_with(strategy, [_bar(t, Decimal("190"))])
+    assert (dict(run.declined), strategy.restored) == ({"no-position": 1}, [None])
+
+
+def test_entries_passed_in_carry_a_held_position_across_calls() -> None:
+    """A caller replaying bar by bar keeps the entry, so a later declined exit restores it."""
+    t1, t2 = _at(4), _at(8)
+    strategy = _ScriptedStrategy(
+        {t1: _entry(t1, Decimal("200")), t2: _exit(t2, Decimal("190"), "chandelier")}
+    )
+    k = kernel()
+    entries: dict[Pair, OpenPosition] = {}
+    for bar in (_bar(t1, Decimal("200")), _bar(t2, Decimal("190"), volume=Decimal("0"))):
+        replay(
+            [bar],
+            strategy=strategy,
+            kernel=k,
+            window_start=_WINDOW,
+            window_end=_END,
+            fees_at=_fees_at,
+            correlation_id=lambda: "c",
+            entries=entries,
+        )
+    assert strategy.restored == [OpenPosition(entry_time=t1, entry_price=Decimal("200"))]
 
 
 _SWING_H4_BASE = _WINDOW + timedelta(days=15)
@@ -322,3 +356,33 @@ def test_real_strategy_enters_again_after_a_refused_entry() -> None:
     assert [(f.order.side.value, f.avg_price) for f in run.fills] == [
         ("BUY", Decimal("3000") * Decimal("1.0005"))
     ]
+
+
+def _filled_breakout_history() -> list[Bar]:
+    """Rising 1d bars, eleven flat 4h bars, then a breakout with volume (a filled entry)."""
+    daily = [_swing_bar(str(1000 + 200 * i // 11), i, daily=True) for i in range(12)]
+    flat = [_swing_bar("1000", i) for i in range(11)]
+    return [*daily, *flat, _swing_bar("2000", 11)]
+
+
+def _crash(index: int, *, volume: str = "1000") -> Bar:
+    return dataclasses.replace(_swing_bar("500", index, volume=volume), low=Decimal("100"))
+
+
+def test_real_strategy_exits_on_the_bar_after_a_declined_exit() -> None:
+    """A no-book chandelier exit is retried on the next crash bar and fills: one SELL (#706)."""
+    run = _replay_with(
+        _swing_strategy(),
+        [*_filled_breakout_history(), _crash(12, volume="0"), _crash(13)],
+    )
+    assert (run.signals_seen, dict(run.declined)) == (3, {"no-book": 1})
+    assert [f.order.side.value for f in run.fills] == ["BUY", "SELL"]
+
+
+def test_real_strategy_is_flat_after_the_retried_exit_fills() -> None:
+    """After the retried exit fills, a further crash bar signals nothing: the strategy is flat."""
+    run = _replay_with(
+        _swing_strategy(),
+        [*_filled_breakout_history(), _crash(12, volume="0"), _crash(13), _crash(14)],
+    )
+    assert (run.signals_seen, dict(run.declined), len(run.fills)) == (3, {"no-book": 1}, 2)

@@ -34,6 +34,7 @@ from hermes.domain.fees.fee_schedule import FeeSchedule
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.bar_schedule import interval_duration, order_for_delivery
 from hermes.domain.market_data.kline import KlineInterval
+from hermes.domain.portfolio.position import Position
 from hermes.domain.portfolio.snapshot import PortfolioSnapshot
 from hermes.domain.risk.state import PortfolioState
 from hermes.domain.strategy.signal import (
@@ -78,15 +79,22 @@ class _PairRouter:
 
     strategies: Mapping[Pair, StrategyPort]
     last: StrategySignal | None = field(default=None)
+    last_pair: Pair | None = field(default=None)
 
     def on_bar(self, bar: Bar, portfolio_state: PortfolioState) -> StrategySignal | None:
         """Hand ``bar`` to its pair's strategy, as serve does."""
+        self.last_pair = bar.pair
         self.last = self.strategies[bar.pair].on_bar(bar, portfolio_state)
         return self.last
 
     def seed(self, bars: Sequence[Bar], open_position: OpenPosition | None = None) -> None:
         """Do nothing: each pair's strategy is seeded before the router is built."""
         _ = (bars, open_position)
+
+    def restore_position(self, open_position: OpenPosition | None) -> None:
+        """Restore the position of the strategy that saw the last bar, as serve does."""
+        if self.last_pair is not None:
+            self.strategies[self.last_pair].restore_position(open_position)
 
 
 def check_day(
@@ -189,19 +197,24 @@ def check_day(
         raise ParityDataError(f"the recorded trades cannot be replayed: {rebuilt.failure()}")
     tracker = rebuilt.unwrap()
 
-    router = _PairRouter(
-        _seeded_strategies(
-            source,
-            strategy_id=strategy_id,
-            pairs=pairs,
-            warm_bars=warm_bars,
-            start=start,
-            make_strategy=make_strategy,
-        )
+    strategies, entries = _seeded_strategies(
+        source,
+        strategy_id=strategy_id,
+        pairs=pairs,
+        warm_bars=warm_bars,
+        start=start,
+        held=tracker.snapshot.positions,
+        make_strategy=make_strategy,
     )
     kernel = make_kernel(tracker)
     replayed = _replay_decisions(
-        order(day_bars), router=router, kernel=kernel, start=start, end=end, fees_at=fees_at
+        order(day_bars),
+        router=_PairRouter(strategies),
+        kernel=kernel,
+        entries=entries,
+        start=start,
+        end=end,
+        fees_at=fees_at,
     )
     return compare(day, serve_decisions, replayed)
 
@@ -245,24 +258,35 @@ def _seeded_strategies(
     pairs: Sequence[Pair],
     warm_bars: Sequence[Bar],
     start: datetime,
+    held: Mapping[Pair, Position],
     make_strategy: Callable[[], StrategyPort],
-) -> dict[Pair, StrategyPort]:
-    """Return one strategy per pair, seeded as serve seeds it at warm-up."""
+) -> tuple[dict[Pair, StrategyPort], dict[Pair, OpenPosition]]:
+    """Return one strategy per pair, seeded as serve seeds it at warm-up, and their positions.
+
+    As in serve, a pair the portfolio does not hold starts flat (#707), and a
+    held pair starts from its latest entry, past any exit declined after it
+    (#706).
+    """
     ordered = order_for_delivery(warm_bars)
     strategies: dict[Pair, StrategyPort] = {}
+    positions: dict[Pair, OpenPosition] = {}
     for pair in pairs:
-        latest = source.latest_signal(strategy_id, pair, at_or_before=start)
-        position = (
-            OpenPosition(entry_time=latest.occurred_at, entry_price=latest.entry_price)
-            if latest is not None
-            and latest.kind is SignalKind.ENTRY
-            and latest.entry_price is not None
+        entry = (
+            source.latest_signal(strategy_id, pair, at_or_before=start, kind=SignalKind.ENTRY)
+            if pair in held
             else None
         )
+        position = (
+            OpenPosition(entry_time=entry.occurred_at, entry_price=entry.entry_price)
+            if entry is not None and entry.entry_price is not None
+            else None
+        )
+        if position is not None:
+            positions[pair] = position
         strategy = make_strategy()
         strategy.seed([b for b in ordered if b.pair == pair], open_position=position)
         strategies[pair] = strategy
-    return strategies
+    return strategies, positions
 
 
 def _replay_decisions(
@@ -270,11 +294,16 @@ def _replay_decisions(
     *,
     router: _PairRouter,
     kernel: FillKernel,
+    entries: dict[Pair, OpenPosition],
     start: datetime,
     end: datetime,
     fees_at: Callable[[datetime, Pair], FeeSchedule],
 ) -> list[Decision]:
-    """Replay ``bars`` one at a time so each signal's outcome is known on its own."""
+    """Replay ``bars`` one at a time so each signal's outcome is known on its own.
+
+    ``entries`` carries the held positions from one bar's replay to the next,
+    so a declined exit returns the strategy to its position (#706).
+    """
     decisions: list[Decision] = []
     counter = 0
 
@@ -293,6 +322,7 @@ def _replay_decisions(
             window_end=end,
             fees_at=fees_at,
             correlation_id=next_id,
+            entries=entries,
         )
         signal = router.last
         if signal is None:

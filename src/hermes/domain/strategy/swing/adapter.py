@@ -249,9 +249,14 @@ class SwingStrategyAdapter:
     def restore_position(self, open_position: OpenPosition | None) -> None:
         """Set the position state to what the portfolio holds; buffers untouched.
 
-        The adapter marks itself long when it emits an entry. When that entry
-        is not filled the caller passes ``None`` here, so the adapter is flat
-        again as if the entry never fired (#707).
+        The adapter marks itself long when it emits an entry and flat when it
+        emits an exit. When that entry is not filled the caller passes
+        ``None`` here, so the adapter is flat again as if the entry never
+        fired (#707). When that exit is not filled the caller passes the
+        position still held, so the exit rules run again on the next bar
+        (#706). The Chandelier stop is recomputed from the bar buffers on
+        every bar and the time stop from ``entry_time``, so no exit state is
+        lost.
 
         Args:
             open_position: Position held, or ``None`` for flat.
