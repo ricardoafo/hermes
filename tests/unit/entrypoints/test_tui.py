@@ -47,6 +47,7 @@ _READ_METHODS = {
     "position",
     "activity",
     "shadow_test",
+    "market_watch",
 }
 _WIDGETS = (
     "demo-tag",
@@ -54,6 +55,7 @@ _WIDGETS = (
     "down-row",
     "portfolio",
     "positions",
+    "market",
     "activity",
     "detail",
     "shadow",

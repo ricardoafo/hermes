@@ -144,6 +144,7 @@
   },
   "positions": [],
   "activity": [],
+  "market_watch": [],
   "shadow_test": {
     "status": "not started",
     "day": null,

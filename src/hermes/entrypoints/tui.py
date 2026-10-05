@@ -6,9 +6,10 @@ the two can never disagree. The app never writes: it only calls the read
 methods of the read model, so opening it while ``hermes serve`` runs neither
 blocks nor touches the ledger.
 
-Layout: below 120 columns everything stacks (portfolio, positions, activity;
-the position detail opens as its own screen). From 120 columns the portfolio
-and activity sit left and the positions and detail right. The portfolio total
+Layout: below 120 columns everything stacks (portfolio, positions, market
+watch, activity; the position detail opens as its own screen). From 120
+columns the portfolio and activity sit left and the positions (with the market
+watch under them) and detail right. The portfolio total
 is drawn three rows tall on terminals 30 rows or higher.
 
 Every card is drawn on its own: a view the read model cannot serve yet (or a
@@ -37,7 +38,7 @@ from rich.text import Text
 from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
-from textual.containers import Container, Horizontal
+from textual.containers import Container, Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Static
 
@@ -54,6 +55,7 @@ from hermes.application.console.render import (
     RenderContext,
     render_activity,
     render_heartbeat,
+    render_market_watch,
     render_portfolio,
     render_position_detail,
     render_positions,
@@ -194,6 +196,8 @@ class HomeApp(App[None]):
     }
     #body.-wide { grid-size: 2; grid-columns: 46 1fr; grid-gutter: 1 2; }
     .cell { height: auto; }
+    #watch-column { height: auto; }
+    #positions, #market { height: auto; }
     #detail { display: none; }
     #detail.-open { display: block; }
     #shadow, #footer, #panel-footer { height: 1; }
@@ -246,7 +250,9 @@ class HomeApp(App[None]):
         yield Static(id="down-row")
         with Container(id="body"):
             yield Static(id="portfolio", classes="cell")
-            yield Static(id="positions", classes="cell")
+            with Vertical(id="watch-column", classes="cell"):
+                yield Static(id="positions")
+                yield Static(id="market")
             yield Static(id="activity", classes="cell")
             yield Static(id="detail", classes="cell")
         yield Static(id="shadow")
@@ -277,7 +283,7 @@ class HomeApp(App[None]):
 
         Args:
             widget_id: ``demo-tag``, ``heartbeat``, ``down-row``, ``portfolio``,
-                ``positions``, ``activity``, ``detail`` or ``shadow``.
+                ``positions``, ``market``, ``activity``, ``detail`` or ``shadow``.
 
         Returns:
             The rendered text, one line per row.
@@ -361,6 +367,13 @@ class HomeApp(App[None]):
             _card(
                 "Positions",
                 lambda: render_positions(model.positions(), ctx, selected=selected),
+            ),
+        )
+        self._set(
+            "market",
+            _card(
+                "Market watch",
+                lambda: Group(Text(""), render_market_watch(model.market_watch(), ctx)),
             ),
         )
         self._set(

@@ -13,6 +13,7 @@ from hermes.application.console.render import (
     RenderContext,
     render_activity,
     render_heartbeat,
+    render_market_watch,
     render_overview,
     render_portfolio,
     render_position_detail,
@@ -37,6 +38,7 @@ SCREENS: Final[dict[str, Screen]] = {
     "position-detail": _detail,
     "activity": lambda m, c: render_activity(m.activity(), c),
     "shadow-test": lambda m, c: render_shadow_test(m.shadow_test(), c),
+    "market-watch": lambda m, c: render_market_watch(m.market_watch(), c),
     "overview": render_overview,
 }
 

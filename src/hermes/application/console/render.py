@@ -68,6 +68,7 @@ from hermes.application.console.views import (
     Tax,
     TaxEstimate,
     TaxPending,
+    WatchedPair,
     WaterfallColumn,
 )
 from hermes.application.console.visibility import Surface, pnl_visible
@@ -78,6 +79,7 @@ __all__ = [
     "RenderContext",
     "render_activity",
     "render_heartbeat",
+    "render_market_watch",
     "render_overview",
     "render_portfolio",
     "render_position_detail",
@@ -221,6 +223,14 @@ def _framed(ctx: RenderContext, parts: Sequence[RenderableType]) -> Group:
 
 def _clock(ctx: RenderContext, at: datetime) -> str:
     return at.astimezone(ctx.tz).strftime("%H:%M")
+
+
+def _day_clock(ctx: RenderContext, at: datetime) -> str:
+    """Return ``HH:MM`` on the read day, else ``Sun 02:00``."""
+    local = at.astimezone(ctx.tz)
+    if local.date() == ctx.now.astimezone(ctx.tz).date():
+        return local.strftime("%H:%M")
+    return local.strftime("%a %H:%M")
 
 
 def _stamp(ctx: RenderContext, at: datetime) -> str:
@@ -606,6 +616,43 @@ def render_positions(
 
 
 # ----------------------------------------------------------------------
+# Market watch
+# ----------------------------------------------------------------------
+
+
+def render_market_watch(rows: Sequence[WatchedPair], ctx: RenderContext) -> Group:
+    """Render each checked stream: last check, its result, next check (#650).
+
+    The result is the kind of signal the last check produced (``entry`` or
+    ``exit``) or ``none``. The view carries no price, so every surface shows
+    the same rows: nothing here is money that :func:`pnl_visible` would hide.
+
+    Args:
+        rows: The checked streams.
+        ctx: Render context.
+
+    Returns:
+        The market watch table under its title, or the empty-state line.
+    """
+    title = Text("Market watch", style="bold")
+    if not rows:
+        return _framed(ctx, [title, Text("No pairs checked yet.", style="dim")])
+    table = Table(box=box.SIMPLE_HEAD, pad_edge=False, show_edge=False)
+    for name in ("coin", "tf", "last check", "result", "next check"):
+        table.add_column(name)
+    for row in rows:
+        result = Text("none", style="dim") if row.signal is None else Text(row.signal, style="bold")
+        table.add_row(
+            row.coin,
+            row.timeframe,
+            _day_clock(ctx, row.last_check_at),
+            result,
+            _day_clock(ctx, row.next_check_at),
+        )
+    return _framed(ctx, [title, table])
+
+
+# ----------------------------------------------------------------------
 # Position detail
 # ----------------------------------------------------------------------
 
@@ -885,8 +932,8 @@ def render_overview(model: ConsoleReadModel, ctx: RenderContext) -> Group:
         ctx: Render context (one DEMO DATA tag heads the whole overview).
 
     Returns:
-        Heartbeat, portfolio for today, positions, the latest activity rows
-        and the shadow test line.
+        Heartbeat, portfolio for today, positions, the market watch, the
+        latest activity rows and the shadow test line.
     """
     inner = replace(ctx, demo_scenario=None)
     parts: list[RenderableType] = [
@@ -894,6 +941,8 @@ def render_overview(model: ConsoleReadModel, ctx: RenderContext) -> Group:
         render_portfolio(model.portfolio(PortfolioRange.TODAY), inner),
         Text(""),
         render_positions(model.positions(), inner),
+        Text(""),
+        render_market_watch(model.market_watch(), inner),
         Text(""),
         render_activity(model.activity(), inner, limit=_OVERVIEW_ACTIVITY_ROWS),
         Text(""),

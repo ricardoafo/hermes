@@ -51,6 +51,7 @@ from hermes.application.console.views import (
     PositionDetail,
     PositionRow,
     ShadowTest,
+    WatchedPair,
 )
 from hermes.domain.errors import LedgerError
 from hermes.domain.market_data.bar_schedule import interval_duration
@@ -287,6 +288,55 @@ class LedgerReadModel:
         return build_shadow_test(
             seeded_at=seeded_at, as_of=as_of, tz=self._tz, fills=fills, quality_checked=checked
         )
+
+    def market_watch(self) -> tuple[WatchedPair, ...]:
+        """Return each checked stream's last bar check, its signal and the next check (#650).
+
+        A stream is a (pair, interval) with at least one ``BarProcessed`` row.
+        The signal of the last check is the ``SignalEmitted`` row written in
+        the same processing cycle (same correlation id). No price is read.
+
+        Raises:
+            LedgerError: On any SQLite failure or an unreadable row.
+        """
+        rows = self._query(
+            "SELECT json_extract(b.payload_json, '$.pair.base'), "
+            "       json_extract(b.payload_json, '$.pair.quote'), "
+            "       json_extract(b.payload_json, '$.interval'), b.occurred_at, "
+            "       (SELECT json_extract(s.payload_json, '$.kind') FROM events s "
+            "        WHERE s.event_type = 'SignalEmitted' "
+            "          AND s.correlation_id = b.correlation_id "
+            "        ORDER BY s.id DESC LIMIT 1) "
+            "FROM events b "
+            "WHERE b.event_type = 'BarProcessed' AND b.id = ("
+            "  SELECT n.id FROM events n WHERE n.event_type = 'BarProcessed' "
+            "    AND json_extract(n.payload_json, '$.pair.base') "
+            "        = json_extract(b.payload_json, '$.pair.base') "
+            "    AND json_extract(n.payload_json, '$.pair.quote') "
+            "        = json_extract(b.payload_json, '$.pair.quote') "
+            "    AND json_extract(n.payload_json, '$.interval') "
+            "        = json_extract(b.payload_json, '$.interval') "
+            "  ORDER BY n.occurred_at DESC, n.id DESC LIMIT 1)",
+            (),
+        )
+        watched: list[WatchedPair] = []
+        try:
+            for base, quote, interval, occurred_at, signal in rows:
+                timeframe = KlineInterval(str(interval))
+                last = datetime.fromisoformat(str(occurred_at)) + _ONE_MS
+                watched.append(
+                    WatchedPair(
+                        coin=str(base),
+                        quote=str(quote),
+                        timeframe=timeframe.value,
+                        last_check_at=last,
+                        signal=None if signal is None else str(signal),
+                        next_check_at=last + interval_duration(timeframe),
+                    )
+                )
+        except ValueError as exc:
+            raise LedgerError(msg=f"market watch: unreadable bar check: {exc}") from exc
+        return tuple(sorted(watched, key=lambda w: (w.coin, w.quote, w.timeframe)))
 
     # ------------------------------------------------------------------
     # Reads
