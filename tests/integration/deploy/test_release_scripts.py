@@ -909,11 +909,21 @@ def test_six_deploys_keep_the_three_newest_releases(box: Box) -> None:
     assert kept == [f"{index:012x}" for index in (5, 6, 7)]
 
 
-def _prune(root: Path, script: Path) -> subprocess.CompletedProcess[str]:
-    """Source ``install_release.sh`` and run only ``prune_versions`` against ``root``."""
+def _prune(
+    root: Path, script: Path, *, proc: Path | None = None
+) -> subprocess.CompletedProcess[str]:
+    """Source ``install_release.sh`` and run only ``prune_versions`` against ``root``.
+
+    ``proc`` stands in for /proc; by default an empty one, so no real process
+    on the test host can keep a scratch release alive.
+    """
+    proc_dir = proc or root / "proc"
+    proc_dir.mkdir(exist_ok=True)
     return run_bash(
         ["-c", 'source "$1" && prune_versions', "bash", _posix(script)],
-        clean_env(PATH=os.environ["PATH"], HERMES_ROOT=_posix(root)),
+        clean_env(
+            PATH=os.environ["PATH"], HERMES_ROOT=_posix(root), HERMES_PROC_DIR=_posix(proc_dir)
+        ),
     )
 
 
@@ -957,6 +967,59 @@ def test_prune_keeps_exactly_the_three_newest_plus_current_and_previous(
         kept = sorted(path.name for path in (root / "versions").iterdir())
     assert result.returncode == 0, result.stderr
     assert kept == expected
+
+
+def test_prune_keeps_a_release_a_running_process_still_maps(tmp_path: Path) -> None:
+    """Invariant: a release an open console still runs from is never pruned (#652).
+
+    The console keeps the release it started on; its extension modules stay
+    mapped from that directory, which /proc/<pid>/maps shows by real path.
+    """
+    root = tmp_path / "opt-hermes"
+    names = [f"{index:012x}" for index in range(6)]
+    epoch = time.time() - 10_000
+    for rank, name in enumerate(names):
+        release = root / "versions" / name
+        release.mkdir(parents=True)
+        os.utime(release, (epoch + rank, epoch + rank))
+    (root / "current").symlink_to(root / "versions" / names[5], target_is_directory=True)
+    (root / "previous").symlink_to(root / "versions" / names[4], target_is_directory=True)
+    held = root / "versions" / names[0]
+    proc = tmp_path / "proc"
+    (proc / "4242").mkdir(parents=True)
+    (proc / "4242" / "maps").write_text(
+        f"7f00-7f01 r-xp 00000000 08:01 1 {_posix(held.resolve())}/.venv/lib/core.so\n",
+        encoding="utf-8",
+    )
+    (proc / "self").mkdir()
+
+    result = _prune(root, _SCRIPT_DIR / "install_release.sh", proc=proc)
+
+    kept = sorted(path.name for path in (root / "versions").iterdir())
+    assert result.returncode == 0, result.stderr
+    assert kept == sorted([names[0], names[3], names[4], names[5]])
+    assert f"keeping {_posix(held)}: process 4242 still runs from it" in result.stdout
+
+
+def test_prune_is_not_fooled_by_a_release_whose_name_extends_another(tmp_path: Path) -> None:
+    """Invariant: a process mapping release `abc1` does not keep release `abc` alive."""
+    root = tmp_path / "opt-hermes"
+    names = ["aaaaaaaaaaaa", "aaaaaaaaaaaab", "c0", "c1", "c2"]
+    epoch = time.time() - 10_000
+    for rank, name in enumerate(names):
+        release = root / "versions" / name
+        release.mkdir(parents=True)
+        os.utime(release, (epoch + rank, epoch + rank))
+    proc = tmp_path / "proc"
+    (proc / "77").mkdir(parents=True)
+    longer = (root / "versions" / names[1]).resolve()
+    (proc / "77" / "maps").write_text(f"7f00 r-xp 0 0 1 {_posix(longer)}/x.so\n", encoding="utf-8")
+
+    result = _prune(root, _SCRIPT_DIR / "install_release.sh", proc=proc)
+
+    kept = sorted(path.name for path in (root / "versions").iterdir())
+    assert result.returncode == 0, result.stderr
+    assert kept == sorted(names[1:])
 
 
 # ─────────────────────────────────────────────────────────────────────
