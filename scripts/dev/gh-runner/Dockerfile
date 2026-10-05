@@ -29,7 +29,8 @@ ARG PYTHON_VERSION=3.14
 ARG UV_VERSION=0.12.5
 ARG NODE_MAJOR=24
 ARG MARKDOWNLINT_VERSION=0.23.2
-ARG GITLEAKS_VERSION=8.21.2
+ARG GITLEAKS_VERSION=8.30.1
+ARG GITLEAKS_SHA256=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
 # The AI review action (ai-review.yml) pins these two; bump them together
 # with the action SHA or the job falls back to downloading its own.
 ARG BUN_VERSION=1.3.6
@@ -101,6 +102,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # ────────────────────────────────────────────────────────────────
 RUN curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
       -o /tmp/gitleaks.tar.gz \
+ && echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tar.gz" | sha256sum -c - \
  && tar -xzf /tmp/gitleaks.tar.gz -C /usr/local/bin gitleaks \
  && rm /tmp/gitleaks.tar.gz \
  && chmod +x /usr/local/bin/gitleaks

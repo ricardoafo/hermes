@@ -42,12 +42,14 @@ from hermes.adapters.notifier import (
 from hermes.application.messages.reporting_phase import ReportingPhase
 from hermes.domain.errors import HermesError, InfraError
 from hermes.domain.events.anomaly_detected import AnomalySeverity
+from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.daily_trade_digest import DailyTradeDigest, TradeSummary
 from hermes.domain.events.strategy_paused import StrategyPaused
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.ports.notifier import NotifierPort
+from tests.support.notification_samples import samples
 
 _TEST_TOKEN = "xoxb-test"  # noqa: S105 - test-only bot token, never real
 _TEST_CHANNEL = "C0123ABCD"
@@ -915,3 +917,64 @@ class TestAuthTest:
             router.post(_AUTH_TEST_URL).mock(side_effect=httpx.ConnectError("DNS failed"))
             with pytest.raises(SlackNotifierError, match="transport failure"):
                 adapter.auth_test()
+
+
+class TestEurRate:
+    """The injected rate lookup decides whether a post shows EUR or USDT (change 668)."""
+
+    @staticmethod
+    def _sent_text(adapter: SlackAdapter) -> str:
+        with respx.mock() as router:
+            route = router.post(_POST_MESSAGE_URL).mock(
+                return_value=httpx.Response(200, json={"ok": True, "ts": "1234.5"})
+            )
+            adapter.notify(samples()["signal-entry"])
+            return str(json.loads(route.calls[0].request.content)["text"])
+
+    def test_the_lookup_receives_the_event_and_its_rate_reaches_the_wire(
+        self, config: SlackConfig
+    ) -> None:
+        """Invariant (668 R-4): the lookup gets the event; its rate prices the post."""
+        seen: list[DomainEvent] = []
+
+        def lookup(event: DomainEvent) -> Decimal | None:
+            seen.append(event)
+            return Decimal("1.25")
+
+        client = httpx.Client(base_url="https://slack.com", timeout=5.0)
+        adapter = SlackAdapter(config=config, client=client, eur_rate=lookup)
+
+        text = self._sent_text(adapter)
+
+        assert (seen, text.startswith("\u25b2 Entry long BTC \u00b7 \u20ac41,928.16")) == (
+            [samples()["signal-entry"]],
+            True,
+        )
+
+    def test_a_lookup_with_no_rate_sends_the_usdt_text(self, config: SlackConfig) -> None:
+        """Invariant (668 R-2): a cold cache keeps the USDT text."""
+        client = httpx.Client(base_url="https://slack.com", timeout=5.0)
+        adapter = SlackAdapter(config=config, client=client, eur_rate=lambda _event: None)
+        assert self._sent_text(adapter).startswith("\u25b2 Entry long BTC \u00b7 52,410.20 USDT")
+
+    def test_a_failing_lookup_still_delivers_the_post_in_usdt(self, config: SlackConfig) -> None:
+        """Invariant (668 R-2): a lookup that raises never stops the notification."""
+
+        def boom(_event: DomainEvent) -> Decimal | None:
+            raise RuntimeError("cache exploded")
+
+        client = httpx.Client(base_url="https://slack.com", timeout=5.0)
+        adapter = SlackAdapter(config=config, client=client, eur_rate=boom)
+        assert "52,410.20 USDT" in self._sent_text(adapter)
+
+    def test_create_passes_the_lookup_to_the_adapter(self, config: SlackConfig) -> None:
+        """Invariant (668 D-2): the factory serve uses carries the lookup into the adapter."""
+
+        def lookup(_event: DomainEvent) -> Decimal | None:
+            return Decimal("1.25")
+
+        adapter = SlackAdapter.create(config, eur_rate=lookup)
+        try:
+            assert adapter.eur_rate is lookup
+        finally:
+            adapter.close()

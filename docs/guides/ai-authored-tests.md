@@ -3,7 +3,7 @@
 **Type**: Guide (living document — PR any change)
 **Owners**: Code Owner
 **Applies to**: every test file in this repo, whether authored by a human or an AI agent (`ai-bot`).
-**Description**: What makes a unit test meaningful, how AI typically fails at writing tests, the protocol AI must follow in this repo, and the tooling that enforces it.
+**Description**: What makes a unit test meaningful, how AI typically fails at writing tests, the unit-test standard every test in this repo follows, and the tooling that enforces it.
 
 This guide exists because AI-authored tests have a specific failure mode: they *look* like tests, they satisfy line-coverage gates, and they pass — but they don't catch bugs. This guide is the discipline that prevents that from happening in hermes.
 
@@ -88,31 +88,55 @@ Every test freezes time to a specific timestamp. The code's behavior around real
 
 **Fix**: frozen time for reproducibility, but ALSO parametrize tests over meaningful time boundaries (year-end, month-end, DST transitions in Europe/Madrid).
 
-## The hermes protocol for AI-authored tests
+## The unit-test standard
 
-When you (an AI agent) author a test in this repo, you MUST:
+These rules apply to every test in the repo, written by a person or an AI agent. A reviewer can check each one,
+and the AI review applies them on every PR. Rules 3, 6, 7 and 10 are also enforced by
+`scripts/dev/no-vague-test-assertions.py` (see [Enforcement](#enforcement-in-this-repo-phase-0)). Adopted under
+issue #691 from the 2026-10-05 testing review.
 
-1. **Write a docstring naming the invariant.** One sentence. `"""FIFO consumption never draws from a lot dated after the sale."""` — not "test fifo function".
+1. **Name the rule.** Every test protects one rule from the pre-registration, an ADR, an issue or a documented
+   behaviour, and its docstring cites it: `"""FIFO never draws from a lot dated after the sale (ADR-003)."""`,
+   not "test fifo function". No rule, no test.
+2. **Write the expected value by hand.** Use a worked example computed outside the code. Never compute it with
+   the code under test, and never read it from the same table or config the code reads.
+3. **Pin exact values.** Never use these as the only assertion: `is not None`, truthiness, `> 0`, a length,
+   `isinstance`, a substring joined with `or`, `all()` or `any()` over a list that could be empty, or an
+   absence check with no matching presence check. For a function that returns a `bool`, assert `is True` or
+   `is False`.
+4. **Test every limit at the limit.** Every threshold gets a test exactly at it and one just past it, so `>`
+   versus `>=` is pinned.
+5. **Assert every claim in the name.** If the name says "per currency and day", the test changes the currency
+   and the day. If it lists four exit codes, it checks four. One behaviour per test: an `and` in the docstring
+   usually means two tests.
+6. **Don't test Python, libraries or mypy.** No tests that a dataclass is frozen or slotted, that values compare
+   by value, that an object satisfies a Protocol, a function's signature, enum literals, a default `repr`, or the
+   system clock. mypy and the language already guarantee them.
+7. **Don't restate constants.** The signed pre-registration parameters are pinned once, in one table test against
+   the pre-registration text. Everywhere else, test the logic that uses them.
+8. **Check both directions of a round trip.** A to/from pair gets a round-trip test plus one exact value each way.
+9. **Parsers check real fields.** An adapter or parser test pins at least one parsed field value and the exact
+   error reason, using recorded production payloads (what the exchange actually returns, not what its docs say).
+10. **Mock only at the edge.** A test whose only assertion is that a mock was called does not count. Prefer
+    fakes, and assert the resulting state. Every mock names the integration test at its seam in a comment:
+    `# integration: tests/integration/.../test_x.py::test_y`.
+11. **"Doesn't raise" checks the state afterwards**, for example that the open orders are unchanged after
+    cancelling an unknown one. Every function that can raise has a test for the specific exception on the
+    specific bad input.
+12. **Pure maths gets a property test** (indicators, sizing, tax, statistics). The gates run Hypothesis on the
+    derandomized `ci` profile (issue #637), so a property test is as repeatable as an example test. Pin known
+    regressions with `@example`. A test that needs more than the 60s `pytest-timeout` default says so with
+    `@pytest.mark.timeout(N)` and a comment naming the reason.
+13. **Prove it with a mutant.** A new or changed test must catch at least one planted bug the old suite missed
+    (`scripts/dev/mutation-diff.sh`; a gate under issue #675), and the PR says which.
+14. **Deleting a weak test is fine** when the PR gives the reason. A test that can't fail is debt, not safety.
+15. **Cross-module behaviour belongs in a scenario** (issue #689), not in a unit test full of mocks.
 
-2. **Start from the spec, not the code.** Look at the ADR, the interface contract, or the failing production incident. Enumerate the invariants the code must satisfy. Write one test per invariant. THEN look at coverage.
+**When a code change breaks a test: STOP.** If the change is a behaviour change, the test should have failed;
+that's its job. Updating the test to make it pass silences the alarm. Ask whether the new behaviour is correct, or
+whether the change broke the rule the test protects.
 
-3. **For pure-logic modules: add a property-based test.** Hypothesis will find edge cases. One `@given` decorator is worth ten hand-crafted examples. Use `@example` to pin specific regressions.
-
-   **Hypothesis and timeouts** — every test in this repo inherits the 60s `pytest-timeout` default configured in `pyproject.toml` `[tool.pytest.ini_options]`. Property-based tests with high `max_examples` counts, integration tests over slow adapters, and tests that legitimately need to sleep MUST override the cap explicitly with `@pytest.mark.timeout(N)` and a comment naming the reason. Silence is the worst failure mode — a test that hangs past the cap fails LOUDLY with a stack trace pointing at the frame that stopped progressing. Introduced by process-hardening wave 5 after a sub-agent burned its entire token budget on a rate-limiter test that hit a real float-drift infinite loop in production (fixed in PR #138) — the runner produced no output and the sub-agent kept blaming test infra.
-
-4. **For every mock, name the integration test at the seam.** Add a comment: `# integration: tests/integration/exchange_adapter/test_binance_ws.py::test_reconnect_survives_1006`. If you can't name one, the mock is untethered — either add the integration test or don't mock.
-
-5. **Assert on outputs, not internal state.** If the assertion requires accessing a private attribute, either widen the public surface (if the state is genuinely relevant) or restructure the test to observe behavior instead.
-
-6. **Assert exactly the values that would change if the invariant broke.** Not `is not None`. Not `> 0`. The specific value or the specific relationship.
-
-7. **One behavior claim per test.** If you find yourself using `and` in the docstring, split the test.
-
-8. **Include the failure modes.** Every function that can raise MUST have a test that verifies the specific exception on the specific bad input. Every branch in the code MUST have a test that exercises it with a real input pattern, not just a coverage-hit.
-
-9. **When updating a test to accommodate a code change: STOP.** If the code change is a behavior change, the test SHOULD have failed — that's the point. Updating the test to make it pass is silencing the alarm. Ask: "is the new behavior correct, or did I just break the invariant the test was protecting?"
-
-For tests in other tiers the same nine rules apply. Which tiers exist, where each one runs and how often is in
+For other tiers the same rules apply. Which tiers exist, where each one runs and how often is in
 [test-tiers.md](test-tiers.md); this guide does not restate it.
 
 ## Fakes, mocks and testnets
@@ -137,8 +161,8 @@ Rules enforced today (tiers and cadences: [test-tiers.md](test-tiers.md)):
 | Every test has a docstring | ruff `D103` (tests-only via `per-file-ignores`) | pre-commit + `ci.yml` ruff step | live |
 | Coverage floor (global) | coverage.py `fail_under = 90`, branch coverage | `ci.yml` unit step — pytest exits non-zero | live |
 | Coverage floor (per-package) | `scripts/dev/coverage-check.py --bootstrap` (flag is a no-op while every listed package has code) | `ci.yml` coverage step — per-package thresholds | live |
-| No sole-vague test assertion | `scripts/dev/no-vague-test-assertions.py` (AST walker) | pre-commit hook — blocks commit | live |
-| Mutation kill floor | cosmic-ray (see `docs/decisions/2026-08-22-mutation-testing-cosmic-ray.md`) | ≥ 80% kill rate on `src/hermes/domain/value_objects`, weekly in `scheduled.yml`; advisory until #406 | live (advisory) |
+| Standard rules 3, 6, 7 and 10 (vague-only, tests Python, restated constant, mock-only) | `scripts/dev/no-vague-test-assertions.py` (AST walker) with `no-vague-test-assertions.baseline` (violations known on adoption; the list only shrinks) | pre-commit hook on staged tests; a full run also fails on stale baseline lines | live |
+| Mutation kill floor | cosmic-ray (see `docs/decisions/2026-08-22-mutation-testing-cosmic-ray.md`) | ≥ 80% kill rate on `src/hermes/domain/value_objects` and `src/hermes/domain/lots`, weekly in `scheduled.yml`; blocking since #406 | live |
 | Property-based tests exist | manual review + `grep hypothesis` | reviewer checklist | manual |
 | No snapshot without reviewer comment on the diff | syrupy `__snapshots__/` folders next to the tests | reviewer checklist | manual |
 | Test files never deleted without justification | test-deletion guard | `ci.yml` step "Test-deletion guard" | live |

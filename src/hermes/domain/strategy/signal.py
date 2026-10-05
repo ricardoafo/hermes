@@ -104,22 +104,26 @@ class StrategySignal:
 class OpenPosition:
     """A position a strategy already holds, restored at warm-up.
 
-    The swing strategy reads only an entry time and price from its position
-    state (the exit stop comes from its bar buffers), so that is all a
-    restart needs to carry over.
+    The swing strategy decides from an entry time and price (the exit stop
+    comes from its bar buffers), so that is what a restart must carry over.
+    ``last_stop`` is the stop recorded after the last handled bar (#388); a
+    stop rule that depends on the previous stop reads it after a restart.
 
     Attributes:
         entry_time: ``close_time`` of the entry bar. UTC-aware.
         entry_price: Entry reference price. Always > 0.
+        last_stop: Stop in force after the last handled bar, or ``None``
+            when none is recorded for this position.
 
     Raises:
         ValueError: On a naive ``entry_time`` or a non-positive ``entry_price``.
 
-    Reference: 309-serve-bar-loop change.md D-6.
+    Reference: 309-serve-bar-loop change.md D-6; 388-stop-marks change.md D-4.
     """
 
     entry_time: datetime
     entry_price: Decimal
+    last_stop: Decimal | None = None
 
     def __post_init__(self) -> None:
         """Enforce the position invariants."""
