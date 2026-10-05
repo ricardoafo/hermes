@@ -21,7 +21,7 @@ if ! command -v gitleaks >/dev/null 2>&1; then
     echo ""
     echo "!!  gitleaks NOT INSTALLED on this machine"
     echo "!!  Pre-commit secrets scan SKIPPED — commit allowed, CI will catch."
-    echo "!!  Install locally with: curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz | tar -xz -C \$HOME/.local/bin gitleaks"
+    echo "!!  Install locally with: curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz | tar -xz -C \$HOME/.local/bin gitleaks"
     echo "!!  (or the equivalent for macOS / Windows)"
     echo ""
     exit 0

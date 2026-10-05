@@ -12,10 +12,15 @@ in serve, so nothing can trade (ADR-003 §00 I-08).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
-from dataclasses import dataclass
+import time
+from collections.abc import Iterator
+from dataclasses import dataclass, field
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
+from unittest import mock
 
 import httpx
 
@@ -28,6 +33,9 @@ from hermes.adapters.market_data.binance_depth_snapshot import BinanceDepthSnaps
 from hermes.adapters.market_data.binance_live_klines import BinanceLiveKlinesAdapter
 from hermes.application.notification_router import RouterConfig
 from hermes.application.signal_notifier import SignalNotifier
+from hermes.domain.market_data.bar import Bar
+from hermes.domain.market_data.kline import KlineInterval
+from hermes.domain.value_objects.pair import Pair
 from hermes.entrypoints import serve as serve_module
 from hermes.infrastructure.config.loader import load_config
 from hermes.infrastructure.config.root import HermesConfig
@@ -47,6 +55,7 @@ class ServeRun:
         channel: The Telegram stand-in, holding every event notified.
         exchange: The fake exchange, holding every request served.
         clock: The simulated clock, at the instant the run stopped.
+        bar_seconds: CPU seconds the event loop's thread spent handling each bar, in order.
 
     """
 
@@ -54,6 +63,7 @@ class ServeRun:
     channel: RecordingChannel
     exchange: FakeExchange
     clock: SimClock
+    bar_seconds: list[float] = field(default_factory=list)
 
 
 def production_config() -> HermesConfig:
@@ -126,7 +136,10 @@ def serve(
     live_from: datetime,
     until: datetime | None = None,
     book_outages: list[tuple[datetime, datetime]] | None = None,
+    book_step_bps: Decimal = Decimal(1),
+    late_bars: list[tuple[Pair, KlineInterval, datetime, datetime]] | None = None,
     fx_down: bool = False,
+    notifier_error: Exception | None = None,
 ) -> ServeRun:
     """Boot ``hermes serve`` at ``live_from`` and run it on the fake market.
 
@@ -139,7 +152,10 @@ def serve(
         live_from: Boot instant. Warm-up sees every bar closed by then.
         until: Stop instant.
         book_outages: Windows when the depth endpoint answers HTTP 503.
+        book_step_bps: Gap between depth levels; wider means a thinner book.
+        late_bars: Bars the klines endpoint publishes late; see ``FakeExchange``.
         fx_down: Make Frankfurter answer HTTP 503 for the whole run.
+        notifier_error: Make every Telegram send raise this.
 
     Returns:
         The run's exit code, notifications, requests and final clock.
@@ -153,12 +169,45 @@ def serve(
         fx_host=fx_url.host,
         fx_prefix=fx_url.path.rstrip("/"),
         book_outages=book_outages or [],
+        book_step_bps=book_step_bps,
+        late_bars=late_bars or [],
         fx_down=fx_down,
     )
-    channel = RecordingChannel()
+    channel = RecordingChannel(raises=notifier_error)
     composition = compose(production_config(), db, exchange, channel)
-    code = asyncio.run(_drive(composition, clock))
-    return ServeRun(exit_code=code, channel=channel, exchange=exchange, clock=clock)
+    bar_seconds: list[float] = []
+    with _timed_bars(bar_seconds):
+        code = asyncio.run(_drive(composition, clock))
+    return ServeRun(
+        exit_code=code, channel=channel, exchange=exchange, clock=clock, bar_seconds=bar_seconds
+    )
+
+
+@contextlib.contextmanager
+def _timed_bars(into: list[float]) -> Iterator[None]:
+    """Record how long each bar takes in serve's bar loop.
+
+    The per-bar cost is what decides whether serve keeps up with the feed, and
+    the bar loop has no public hook for it, so the handler is wrapped for the
+    length of one run (issue #689 time budget).
+
+    It records the CPU time of the event loop's thread, not wall time: on a
+    shared CI runner other jobs take the CPU away mid-bar, which stretched the
+    wall time of the same bars from 4 ms to over 30 ms. Work serve hands to a
+    worker thread (the notifier send) is not counted; it does not hold up the
+    loop.
+    """
+    original = serve_module._BarLoop.handle
+
+    async def timed(self: serve_module._BarLoop, bar: Bar) -> None:
+        started = time.thread_time()
+        try:
+            await original(self, bar)
+        finally:
+            into.append(time.thread_time() - started)
+
+    with mock.patch.object(serve_module._BarLoop, "handle", timed):
+        yield
 
 
 async def _drive(composition: serve_module.Composition, clock: SimClock) -> int:
