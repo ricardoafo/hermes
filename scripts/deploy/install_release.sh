@@ -476,9 +476,16 @@ main() {
 
     if [ -f "$DB" ]; then
         # Read-only, as the service user that owns the ledger and its WAL files.
+        # The script goes in on stdin: the staging dir is root-only (0700), so
+        # the service user cannot open a path inside it.
+        local guard_rc=0
         "$RUNUSER" -u "$RUN_AS" -- "${HERMES_SCHEMA_PYTHON:-$vdir/.venv/bin/python}" \
-            "$SCRIPT_DIR/schema_guard.py" "$DB" \
-            || die "release $sha cannot read the events in $DB: not deploying it"
+            - "$DB" < "$SCRIPT_DIR/schema_guard.py" || guard_rc=$?
+        case $guard_rc in
+            0) ;;
+            1) die "release $sha cannot read the events in $DB: not deploying it" ;;
+            *) die "the schema guard failed to run (exit $guard_rc): not deploying $sha" ;;
+        esac
     fi
 
     if ! migrate_ledger "$vdir"; then
