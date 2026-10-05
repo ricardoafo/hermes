@@ -12,6 +12,8 @@ Invariants (live-bar-stream change D-3 and D-5):
 
 from __future__ import annotations
 
+import itertools
+import random
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -28,6 +30,7 @@ from hermes.domain.market_data.bar_schedule import (
     interval_duration,
     is_closed,
     next_boundary,
+    order_for_delivery,
     plan_delivery,
     previous_boundary,
 )
@@ -238,6 +241,55 @@ class TestDeliveryKey:
             early_four_hour,
             later_day,
         ]
+
+
+class TestOrderForDelivery:
+    """`order_for_delivery` is the close-time, 1d-first order serve and the parity replay share."""
+
+    @given(
+        picks=st.lists(
+            st.tuples(
+                st.sampled_from([_BTC, _ETH, _SOL]),
+                st.sampled_from([_H4, _D1]),
+                st.integers(min_value=0, max_value=60),
+            ),
+            unique=True,
+            max_size=30,
+        ),
+        seed=st.randoms(use_true_random=False),
+    )
+    @settings(max_examples=60)
+    def test_order_is_close_time_then_1d_first_whatever_the_input_order(
+        self, picks: list[tuple[Pair, KlineInterval, int]], seed: random.Random
+    ) -> None:
+        """Invariant: close time ascends, 1d precedes 4h on a tie, and input order is irrelevant."""
+        bars = [
+            _bar(pair, interval, _MIDNIGHT + interval_duration(interval) * n)
+            for pair, interval, n in picks
+        ]
+        shuffled = list(bars)
+        seed.shuffle(shuffled)
+
+        ordered = order_for_delivery(shuffled)
+
+        assert ordered == order_for_delivery(bars)
+        assert [b.close_time for b in ordered] == sorted(b.close_time for b in bars)
+        for earlier, later in itertools.pairwise(ordered):
+            if earlier.close_time == later.close_time and earlier.pair == later.pair:
+                assert (earlier.interval, later.interval) != (_H4, _D1)
+
+    def test_open_time_order_would_put_the_4h_bar_before_the_1d_bar_it_closes_with(self) -> None:
+        """#343 R-4: the 4h bar opening at 20:00 closes with the 1d bar that opened at 00:00."""
+        day = _bar(_BTC, _D1, _MIDNIGHT)
+        last_four_hour = _bar(_BTC, _H4, _MIDNIGHT + timedelta(hours=20))
+        by_open_time = sorted([last_four_hour, day], key=lambda b: b.open_time)
+        assert by_open_time == [day, last_four_hour]
+        early_four_hour = _bar(_BTC, _H4, _MIDNIGHT + timedelta(hours=4))
+        assert order_for_delivery([day, early_four_hour, last_four_hour]) == (
+            early_four_hour,
+            day,
+            last_four_hour,
+        )
 
 
 def _streams(*pairs: Pair, intervals: tuple[KlineInterval, ...] = (_H4, _D1)) -> list[Stream]:
