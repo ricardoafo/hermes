@@ -244,6 +244,18 @@ class SwingStrategyAdapter:
                 self._update_4h_buffer(bar)
             elif bar.interval == KlineInterval.D1:
                 self._update_1d_buffer(bar)
+        self.restore_position(open_position)
+
+    def restore_position(self, open_position: OpenPosition | None) -> None:
+        """Set the position state to what the portfolio holds; buffers untouched.
+
+        The adapter marks itself long when it emits an entry. When that entry
+        is not filled the caller passes ``None`` here, so the adapter is flat
+        again as if the entry never fired (#707).
+
+        Args:
+            open_position: Position held, or ``None`` for flat.
+        """
         if open_position is None:
             self._in_position = False
             self._entry_time = None
