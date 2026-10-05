@@ -11,7 +11,9 @@ Reference: code-conventions.md §2 — Error handling — hybrid Result/exceptio
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Final
 
 __all__ = [
     "CurrencyMismatch",
@@ -41,7 +43,43 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 
-class HermesError(Exception):
+_EXCEPTION_STATE: Final[frozenset[str]] = frozenset(
+    {"__traceback__", "__cause__", "__context__", "__suppress_context__", "__notes__"}
+)
+
+
+class _ErrorType(type):
+    """Metaclass that keeps frozen error dataclasses raisable through any ``with``.
+
+    ``@dataclass(frozen=True)`` installs a ``__setattr__`` that refuses every
+    name. The interpreter sets an exception's traceback and chaining in C, but
+    ``contextlib.contextmanager`` re-raises with ``exc.__traceback__ = tb`` in
+    Python, so a frozen error raised inside such a block became
+    ``FrozenInstanceError`` and slipped past every ``except`` for its own type
+    (issue #734). Wrapping the installed ``__setattr__`` lets that exception
+    state through while every declared field stays frozen.
+    """
+
+    def __setattr__(cls, name: str, value: object) -> None:
+        if name == "__setattr__" and callable(value):
+            value = _passing_exception_state(value)
+        super().__setattr__(name, value)
+
+
+type _SetAttr = Callable[[BaseException, str, object], None]
+
+
+def _passing_exception_state(frozen: _SetAttr) -> _SetAttr:
+    def set_attribute(self: BaseException, name: str, value: object) -> None:
+        if name in _EXCEPTION_STATE:
+            BaseException.__setattr__(self, name, value)
+        else:
+            frozen(self, name, value)
+
+    return set_attribute
+
+
+class HermesError(Exception, metaclass=_ErrorType):
     """Root of the hermes exception hierarchy.
 
     All custom exceptions in the project extend this class so callers can
