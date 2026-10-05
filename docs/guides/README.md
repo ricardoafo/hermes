@@ -28,10 +28,12 @@ a committed copy went stale whenever another PR merged first.
 | [dev-workflow.md](dev-workflow.md) | Branching, commits, PRs, merge policy, delete-branch safety, zero-footprint policy. |
 | [ledger-migrations.md](ledger-migrations.md) | How ledger schema migrations run, which ones need `hermes migrate`, and how to roll one back from its snapshot. |
 | [local-setup.md](local-setup.md) | Clone → install → run tests → open your first PR. One-time setup steps you do once per clone, then never again. |
+| [operator-usage.md](operator-usage.md) | Day-to-day use: connect with `ssh hermes` or `hermes --vps`, read the console commands, see the live release, how auto-deploy works, and where to look when something is wrong. |
 | [pr-flow.md](pr-flow.md) | How a PR travels from a branch to main and production, and the rules learned the hard way on 2026-10-03. |
 | [prose-style.md](prose-style.md) | Comments, docstrings, docs, PR/issue bodies — banned words, formatting rules, per-artifact style. |
 | [release.md](release.md) | How to tag a release, what the release workflow does, how to |
 | [staging-on-hermes-01.md](staging-on-hermes-01.md) | How the staging tier runs beside prod on hermes-01 without sharing its user, paths, ledger or secrets, and every manual step to set it up, deploy to it, roll it back and remove it. |
+| [tax-pack.md](tax-pack.md) | What the yearly tax filing pack holds, how it refreshes during the year, when it freezes, and how to reopen a frozen year. |
 | [test-tiers.md](test-tiers.md) | The single table of test tiers: what each one is, which workflow or command runs it, how often, and whether it is live or planned; plus coverage floors and layer-isolation contracts. |
 | [vps-operations.md](vps-operations.md) | SSH access, OS maintenance, Docker + Tailscale + ufw ops, systemd services, troubleshooting. |
 <!-- guides-index-end -->
