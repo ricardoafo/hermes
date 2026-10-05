@@ -16,9 +16,11 @@ Reference: openspec/changes/console-vps/change.md.
 
 from __future__ import annotations
 
+import re
 import shlex
 import subprocess
 import sys
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -63,6 +65,13 @@ _FLAG: Final = "--vps"
 _SSH_FAILED: Final = 255
 _COMMAND_NOT_FOUND: Final = 127
 _CONNECT_TIMEOUT_SECONDS: Final = 10
+_ALIVE_INTERVAL_SECONDS: Final = 15
+_ALIVE_COUNT_MAX: Final = 2
+_SIGINT_EXIT: Final = 130
+_BACKOFF_SECONDS: Final = (2, 4, 8, 16, 30)
+# Leave the alternate screen and show the cursor, so a dropped full-screen console
+# never strands the operator's terminal.
+_TERMINAL_RESET: Final = "\x1b[?1049l\x1b[?25h"
 
 _UNREACHABLE_MARKERS: Final = (
     "could not resolve hostname",
@@ -73,6 +82,13 @@ _UNREACHABLE_MARKERS: Final = (
     "operation timed out",
     "connection closed by",
     "connection reset",
+)
+# Messages ssh prints only after it had connected. "Connection reset by <ip> port"
+# is the pre-auth form (the server never accepted us), so it is excluded.
+_DROP_PATTERN: Final = re.compile(
+    r"connection reset(?! by \S+ port)|broken pipe|timeout, server not responding"
+    r"|closed by remote host|connection to \S+ closed|client_loop: send disconnect"
+    r"|connection to \S+ timed out"
 )
 _AUTH_MARKERS: Final = ("permission denied", "too many authentication failures")
 
@@ -147,6 +163,10 @@ def build_ssh_argv(settings: VpsSettings, command: str, args: list[str]) -> list
         str(settings.key),
         "-o",
         f"ConnectTimeout={_CONNECT_TIMEOUT_SECONDS}",
+        "-o",
+        f"ServerAliveInterval={_ALIVE_INTERVAL_SECONDS}",
+        "-o",
+        f"ServerAliveCountMax={_ALIVE_COUNT_MAX}",
         f"{settings.user}@{settings.host}",
         f"sudo {remote}",
     ]
@@ -233,6 +253,41 @@ def _exit_message(result: SshResult, settings: VpsSettings) -> str | None:
     return None
 
 
+def _is_drop(result: SshResult) -> bool:
+    """True when ssh died with 255 because an established connection went away."""
+    return (
+        result.returncode == _SSH_FAILED and _DROP_PATTERN.search(result.stderr.lower()) is not None
+    )
+
+
+def _is_unreachable(result: SshResult) -> bool:
+    """True for exit 255 with a host-unreachable diagnostic (and no auth failure)."""
+    text = result.stderr.lower()
+    return (
+        result.returncode == _SSH_FAILED
+        and not any(marker in text for marker in _AUTH_MARKERS)
+        and any(marker in text for marker in _UNREACHABLE_MARKERS)
+    )
+
+
+def _reset_terminal(stdout: TextIO) -> None:
+    """Leave the alternate screen and show the cursor, only on a real terminal."""
+    if stdout.isatty():
+        stdout.write(_TERMINAL_RESET)
+        stdout.flush()
+
+
+def _finish(result: SshResult, settings: VpsSettings, err: TextIO) -> int:
+    """Report a final ssh result on ``err`` and return its exit code."""
+    message = _exit_message(result, settings)
+    if message is not None:
+        err.write(f"ERROR: {message}\n")
+    hint = _agent_hint(result, settings)
+    if hint is not None:
+        err.write(hint + "\n")
+    return result.returncode
+
+
 def run_vps(
     command: str,
     args: list[str],
@@ -241,8 +296,16 @@ def run_vps(
     console_commands: frozenset[str],
     env: Mapping[str, str],
     runner: SshRunner = _subprocess_runner,
+    sleep: Callable[[float], None] = time.sleep,
+    stdout: TextIO | None = None,
 ) -> int:
     """Run console ``command`` on the VPS and return its exit code.
+
+    When an established connection drops (ssh exit 255 with a connection-drop
+    message) the run is retried with capped exponential backoff until the operator
+    presses Ctrl+C. A failure on the very first attempt that is not a drop (host
+    unreachable, auth, missing key) never retries, nor does a deploy-needed (127)
+    or any normal exit.
 
     Args:
         command: The command named after ``--vps``.
@@ -251,26 +314,43 @@ def run_vps(
         console_commands: The commands allowed through; anything else is refused.
         env: Environment snapshot holding the optional ``HERMES_VPS_*`` settings.
         runner: Runs the ssh argv; injected by tests so nothing ever connects.
+        sleep: Waits between reconnect attempts; injected by tests.
+        stdout: Stream that gets the terminal reset after each ssh exit; defaults to
+            ``sys.stdout`` and is written only when it is a TTY.
 
     Returns:
         The remote command's exit code; 2 for a refusal, bad settings or no ssh
         client; 255 for an ssh failure (message on ``err``); 127 when the
-        VPS has no console to run.
+        VPS has no console to run; 130 when Ctrl+C stops the run.
     """
     settings = VpsSettings.from_env(env)
     problem = _refusal(command, settings, console_commands)
     if problem is not None:
         err.write(f"ERROR: {problem}\n")
         return 2
-    try:
-        result = runner(build_ssh_argv(settings, command, args))
-    except FileNotFoundError:
-        err.write("ERROR: ssh not found; install the OpenSSH client.\n")
-        return 2
-    message = _exit_message(result, settings)
-    if message is not None:
-        err.write(f"ERROR: {message}\n")
-    hint = _agent_hint(result, settings)
-    if hint is not None:
-        err.write(hint + "\n")
-    return result.returncode
+    out = stdout if stdout is not None else sys.stdout
+    argv = build_ssh_argv(settings, command, args)
+    started = False
+    waits = 0
+    while True:
+        try:
+            result = runner(argv)
+        except FileNotFoundError:
+            err.write("ERROR: ssh not found; install the OpenSSH client.\n")
+            return 2
+        except KeyboardInterrupt:
+            _reset_terminal(out)
+            return _SIGINT_EXIT
+        _reset_terminal(out)
+        if _is_drop(result):
+            started = True
+            waits = 0
+        elif not (started and _is_unreachable(result)):
+            return _finish(result, settings, err)
+        delay = _BACKOFF_SECONDS[min(waits, len(_BACKOFF_SECONDS) - 1)]
+        waits += 1
+        err.write(f"connection lost · reconnecting in {delay}s (Ctrl+C to stop)\n")
+        try:
+            sleep(delay)
+        except KeyboardInterrupt:
+            return _SIGINT_EXIT
