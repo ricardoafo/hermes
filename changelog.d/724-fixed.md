@@ -1,0 +1,1 @@
+- CD deploys again: the schema guard added for issue #655 is fed to the service user on stdin instead of from the root-only staging dir, which it could not open, and a guard that fails to run is reported as such instead of as a schema refusal.
