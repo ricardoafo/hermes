@@ -9,11 +9,12 @@
 #
 # ## Schedule
 #
-#   15 2 * * *    daily: Semgrep + contract tests
+#   30 11 * * *   daily (Europe/Madrid): Semgrep + contract tests
 #   45 11 * * 0   Sundays: the cosmic-ray mutation run, e2e tests, remote branch prune
 #
-# 02:15 UTC keeps the daily checks off the runners during the 12:00 UTC
-# approval window and the merges that follow it (#694). The Sunday
+# 11:30 Madrid time keeps the daily checks in the day, when the
+# self-hosted runners are awake, and off the 14:00 Madrid approval window
+# and the merges that follow it (#694). The Sunday
 # cron is a separate entry so the long mutation run never delays the
 # daily checks. Manual dispatch runs the daily jobs and the e2e tests,
 # and the mutation run too when `mutation` is ticked.
@@ -42,7 +43,8 @@ name: Scheduled
 
 on:
   schedule:
-    - cron: '15 2 * * *'
+    - cron: '30 11 * * *'
+      timezone: Europe/Madrid
     - cron: '45 11 * * 0'
   workflow_dispatch:
     inputs:
