@@ -81,6 +81,10 @@ jobs:
   contract:
     name: Contract tests
     if: github.event.schedule != '45 11 * * 0'
+    # The notifier, Sentry, healthchecks and Kraken secrets live in the
+    # main-only prod environment, never at repo level, so no branch can
+    # read them (#768).
+    environment: prod
     runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
