@@ -47,14 +47,21 @@ from hermes.application.supervisor.tools import (
     SupervisorContext,
     ToolDispatcher,
     UnknownToolError,
+    engine,
     signals,
 )
 from hermes.domain.journal.entries import Decision, OutcomeKind, Review
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.pair import Pair
 from hermes.ports.status import ShadowEntry
-from hermes.ports.supervisor import CertificationFact, SignalFact, SupervisorReadPort
-from tests.support.status_ledger import BTC, ETH, INTERVALS, LAST_4H, NOW, PAIRS
+from hermes.ports.supervisor import (
+    BarCount,
+    CertificationFact,
+    FillFact,
+    SignalFact,
+    SupervisorReadPort,
+)
+from tests.support.status_ledger import BTC, ETH, INTERVALS, LAST_4H, NOW, PAIRS, SOL
 
 _SRC = Path(__file__).resolve().parents[4] / "src" / "hermes"
 _ALL_SCOPES = [t.scope for t in TOOLS.values()]
@@ -78,6 +85,17 @@ ALLOWED_FIELDS = {
     "DueDecisionView": {"entry_id", "decision", "review_on"},
     "SealedDecisionView": {"entry_id", "review_on"},
     "CertificationView": {"strategy_id", "state", "entered_at"},
+    "EngineView": {"since", "pairs"},
+    "PairActivityView": {
+        "pair",
+        "bars",
+        "entries",
+        "exit_reasons",
+        "fills_buy",
+        "fills_sell",
+        "holding_since",
+    },
+    "BarCountView": {"interval", "count"},
 }
 """The reviewed allow list. A new projection field must be added here on purpose."""
 
@@ -95,9 +113,13 @@ class _FakeReader:
         self,
         facts: tuple[SignalFact, ...] = (),
         entries: tuple[ShadowEntry, ...] = (),
+        bars: tuple[BarCount, ...] = (),
+        fills: tuple[FillFact, ...] = (),
     ) -> None:
         self.facts = facts
         self.entries = entries
+        self.bars = bars
+        self.fills = fills
 
     def last_processed_close(self, pair: Pair, interval: KlineInterval) -> datetime | None:
         return LAST_4H - timedelta(milliseconds=1) if interval is KlineInterval.H4 else None
@@ -113,6 +135,12 @@ class _FakeReader:
 
     def signals_since(self, since: datetime) -> tuple[SignalFact, ...]:
         return tuple(f for f in self.facts if f.occurred_at >= since)
+
+    def bars_since(self, since: datetime) -> tuple[BarCount, ...]:
+        return self.bars
+
+    def fills_since(self, since: datetime) -> tuple[FillFact, ...]:
+        return tuple(f for f in self.fills if f.occurred_at >= since)
 
 
 class _FakeJournal:
@@ -360,15 +388,24 @@ def test_no_price_reaches_any_output(price: Decimal, hours: int) -> None:
     """Whatever the entry price, it appears nowhere in the positions or signals JSON."""
     at = MEMORIZATION_GUARD + timedelta(hours=hours)
     reader = _FakeReader(
-        facts=(SignalFact(BTC, "entry", at),), entries=(ShadowEntry(BTC, at, price),)
+        facts=(SignalFact(BTC, "entry", at),),
+        entries=(ShadowEntry(BTC, at, price),),
+        fills=(FillFact(BTC, "BUY", at),),
     )
-    grants = ["hermes:read:positions", "hermes:read:signals", "hermes:read:health"]
+    grants = [
+        "hermes:read:positions",
+        "hermes:read:signals",
+        "hermes:read:health",
+        "hermes:read:engine",
+    ]
     dispatcher, _ = _dispatcher(grants, _ctx(reader))
+    since = {"since": MEMORIZATION_GUARD.isoformat()}
 
     outputs = [
         dispatcher.call("positions", {}).payload,
-        dispatcher.call("signals", {"since": MEMORIZATION_GUARD.isoformat()}).payload,
+        dispatcher.call("signals", since).payload,
         dispatcher.call("health", {}).payload,
+        dispatcher.call("engine", since).payload,
     ]
 
     assert str(price) not in json.dumps(outputs)
@@ -441,3 +478,55 @@ def test_certification_reports_state_and_entry_time() -> None:
         "state": "SHADOW_CERTIFIED",
         "entered_at": NOW.isoformat(),
     }
+
+
+def test_engine_reports_each_configured_pair_from_the_ledger_facts() -> None:
+    """Per pair: bars per interval, entries, exit rules, fills by side and holding time."""
+    since = LAST_4H - timedelta(days=1)
+    reader = _FakeReader(
+        facts=(
+            SignalFact(BTC, "entry", since),
+            SignalFact(BTC, "exit", LAST_4H, exit_reason="chandelier"),
+            SignalFact(ETH, "entry", LAST_4H),
+        ),
+        entries=(ShadowEntry(ETH, LAST_4H, Decimal("2618.45")),),
+        bars=(
+            BarCount(BTC, KlineInterval.H4, 6),
+            BarCount(BTC, KlineInterval.D1, 1),
+            BarCount(ETH, KlineInterval.H4, 5),
+        ),
+        fills=(
+            FillFact(BTC, "BUY", since),
+            FillFact(BTC, "SELL", LAST_4H),
+            FillFact(ETH, "BUY", LAST_4H),
+        ),
+    )
+
+    view = engine(_ctx(reader), {"since": since.isoformat()})
+
+    assert [
+        (
+            p.pair,
+            [(b.interval, b.count) for b in p.bars],
+            p.entries,
+            p.exit_reasons,
+            p.fills_buy,
+            p.fills_sell,
+            p.holding_since,
+        )
+        for p in view.pairs
+    ] == [
+        (str(BTC), [("4h", 6), ("1d", 1)], 1, ("chandelier",), 1, 1, None),
+        (str(ETH), [("4h", 5), ("1d", 0)], 1, (), 1, 0, LAST_4H),
+        (str(SOL), [("4h", 0), ("1d", 0)], 0, (), 0, 0, None),
+    ]
+
+
+def test_engine_before_the_guard_is_refused() -> None:
+    """The engine tool holds the same memorization guard as the signals tool."""
+    dispatcher, records = _dispatcher(["hermes:read:engine"])
+
+    result = dispatcher.call("engine", {"since": "2026-01-31T23:59:59+00:00"})
+
+    assert result.payload is None
+    assert records[-1].outcome is CallOutcome.GUARD
