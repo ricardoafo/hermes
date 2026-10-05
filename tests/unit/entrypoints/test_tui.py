@@ -441,3 +441,45 @@ def test_svg_snapshot_down_80x24(snapshot: SnapshotAssertion) -> None:
     """The reviewed 80x24 rendering while hermes is down: red row, dimmed money."""
     svg = _shoot("down-stale").svg
     assert svg == snapshot(extension_class=SVGImageSnapshotExtension)
+
+
+def _top_line(release: Callable[[], str] | None, size: tuple[int, int] = (100, 30)) -> str:
+    async def run() -> str:
+        app = HomeApp(FixtureReadModel.load("ok-two-positions"), release=release)
+        async with app.run_test(size=size) as pilot:
+            await pilot.pause()
+            return app.screen._compositor.render_strips()[0].text.rstrip()
+
+    return asyncio.run(run())
+
+
+def test_top_line_names_the_running_release() -> None:
+    """With a release source the top line reads "release <name>" beside the heartbeat (#649)."""
+    top = _top_line(lambda: "abc123def456")
+    assert (
+        top.startswith(" DEMO DATA · scenario ok-two-positions release abc123def456"),
+        top.endswith("● live · checked 14:00 · next 18:00"),
+    ) == (True, True)
+
+
+def test_top_line_has_no_release_without_a_source() -> None:
+    """Without a release source nothing about a release is drawn."""
+    assert "release" not in _top_line(None)
+
+
+def test_release_is_read_again_on_every_redraw() -> None:
+    """A deploy flips the link while the screen is open: the next redraw shows the new name."""
+    names = iter(["aaaaaaaaaaaa", "bbbbbbbbbbbb"])
+    current = {"name": next(names)}
+
+    async def run() -> tuple[str, str]:
+        app = HomeApp(FixtureReadModel.load("ok-two-positions"), release=lambda: current["name"])
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            before = app.plain_text("release").strip()
+            current["name"] = next(names)
+            app._redraw()
+            await pilot.pause()
+            return before, app.plain_text("release").strip()
+
+    assert asyncio.run(run()) == ("release aaaaaaaaaaaa", "release bbbbbbbbbbbb")

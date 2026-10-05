@@ -16,6 +16,7 @@ from hermes.entrypoints.console import (
     recent_journal_lines,
     resolve_read_model,
 )
+from hermes.entrypoints.version import read_release
 
 __all__ = ["COMMAND", "run_tui"]
 
@@ -79,10 +80,15 @@ def run_tui(
         from hermes.entrypoints.tui import run_home  # noqa: PLC0415 - Textual is slow to import
 
         def runner(read_model: ConsoleReadModel) -> None:
-            run_home(read_model, journal=recent_journal_lines)
+            run_home(read_model, journal=recent_journal_lines, release=_release_name)
 
     runner(model)
     return 0
+
+
+def _release_name() -> str:
+    """Return the running release, read from the link ``hermes status`` reads (#649)."""
+    return read_release().name
 
 
 def _db_path(args: list[str]) -> Path | None:

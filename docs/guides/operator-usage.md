@@ -151,12 +151,16 @@ hermes tui
 ```
 
 The interactive home screen reads the ledger read-only: the portfolio
-total in EUR, open positions, recent activity and the shadow test's day
-count toward 90. Keys: `D`, `W`, `M` and `Y` switch the range (day, week,
-month, year), the arrow keys (or `j`/`k`) and Enter open a position, Esc
-closes it, `L` shows logs, `?` help and `Q` quits. A figure without an EUR value shows
-"EUR pending", and a card the ledger cannot answer yet says "not available
-yet". `--db PATH` reads another ledger.
+total in EUR, open positions, a market watch, recent activity and the
+shadow test's day count toward 90. The top line names the running release,
+read from the same link `hermes status` reads. The market watch lists each
+checked coin with its last check, whether that check produced an entry or
+exit signal, and the next check; it shows no prices. Keys: `D`, `W`, `M`
+and `Y` switch the range (day, week, month, year), the arrow keys (or
+`j`/`k`) and Enter open a position, Esc closes it, `L` shows logs, `?`
+help and `Q` quits. A figure without an EUR value shows "EUR pending", and
+a card the ledger cannot answer yet says "not available yet". `--db PATH`
+reads another ledger.
 
 ## What does it hold and what did it do?
 
