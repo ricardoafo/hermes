@@ -21,7 +21,7 @@ from __future__ import annotations
 import io
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta, tzinfo
+from datetime import date, datetime, timedelta, tzinfo
 from decimal import Decimal
 from typing import Final
 from zoneinfo import ZoneInfo
@@ -406,8 +406,7 @@ def _started_line(summary: PortfolioSummary) -> Text | None:
     started = summary.started_on
     if started is None:
         return None
-    day = f"{started.day} {started:%b}"
-    on = f"on {day}"
+    on = f"on {_day(started)}"
     quote = summary.starting_capital_quote
     eur = summary.starting_capital
     if quote is None:
@@ -415,7 +414,19 @@ def _started_line(summary: PortfolioSummary) -> Text | None:
     if eur is None:
         return Text(f"started {_fmt_quote(quote)} {on} · {_EUR_PENDING}", style="dim")
     seed = _fmt_seed(quote, summary.quote_currency)
-    return Text(f"started {seed} ({fmt_level(eur)} at ECB rate, {day})", style="dim")
+    rate_day = _day(summary.starting_capital_rate_date or started)
+    return Text(f"started {seed} ({fmt_level(eur)} at ECB rate, {rate_day})", style="dim")
+
+
+def _day(on: date) -> str:
+    return f"{on.day} {on:%b}"
+
+
+def _rate_note(summary: PortfolioSummary) -> str:
+    """Return " at ECB rate, 3 Oct" for the rate the EUR total uses, or "" (#692)."""
+    if summary.eur_rate_date is None:
+        return ""
+    return f" at ECB rate, {_day(summary.eur_rate_date)}"
 
 
 def _pending_portfolio(ctx: RenderContext, summary: PortfolioSummary) -> Group:
@@ -465,11 +476,14 @@ def render_portfolio(
     hero = Text()
     if not big_total:
         hero.append(fmt_level(summary.total_value), style=total_style)
+        hero.append(_rate_note(summary), style="dim")
         hero.append("   ")
     hero.append(
         f"{fmt_change(summary.change, summary.change_pct)} {label}",
         style=_money_style(ctx, summary.change),
     )
+    if big_total:
+        hero.append(_rate_note(summary), style="dim")
     hero.append(_stale_note(ctx), style="dim")
     net_line = Text("net ")
     net_line.append_text(_money(ctx, summary.net, f" {label}"))

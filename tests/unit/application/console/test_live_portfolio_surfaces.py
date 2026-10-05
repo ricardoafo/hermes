@@ -8,7 +8,8 @@ actually produces.
 
 Invariants:
 
-- the hero is the EUR total; the start line is the seed as funded in USDT
+- the hero is the EUR total with the date of the ECB rate it uses (#692),
+  so a stale rate shows; the start line is the seed as funded in USDT
   with its EUR value at the ECB rate (#650), and no other USDT figure appears
   on the priced card;
 - an EUR-pending portfolio shows the USDT total and "EUR pending", no € figure;
@@ -20,7 +21,7 @@ Invariants:
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -54,9 +55,9 @@ def _text(summary: PortfolioSummary, surface: Surface = Surface.OPERATOR_CLI) ->
 
 
 def test_priced_card_leads_with_the_eur_total(tmp_path: Path) -> None:
-    """The first line is the EUR total and today's change."""
+    """The first line is the EUR total with its ECB rate date (#692), then today's change."""
     first = _text(_summary(tmp_path)).splitlines()[0]
-    assert first == "€4,078.76   ▲ +€78.76 +1.97% today"
+    assert first == "€4,078.76 at ECB rate, 1 Oct   ▲ +€78.76 +1.97% today"
 
 
 def test_start_line_shows_the_seed_and_its_ecb_value(tmp_path: Path) -> None:
@@ -77,6 +78,38 @@ def test_start_line_keeps_the_seed_currency_and_cents(tmp_path: Path) -> None:
     )
     started = next(line for line in _text(summary).splitlines() if line.startswith("started"))
     assert started == "started 5,000.50 USDC (€4,000.00 at ECB rate, 1 Oct)"
+
+
+def test_an_old_rate_date_shows_on_the_total_and_the_start_line(tmp_path: Path) -> None:
+    """A stale ECB rate is visible: both EUR figures name the date of the rate they use (#692)."""
+    summary = replace(
+        _summary(tmp_path),
+        eur_rate_date=date(2026, 9, 18),
+        starting_capital_rate_date=date(2026, 9, 17),
+    )
+    lines = _text(summary).splitlines()
+    started = next(line for line in lines if line.startswith("started"))
+    assert (lines[0], started) == (
+        "€4,078.76 at ECB rate, 18 Sep   ▲ +€78.76 +1.97% today",
+        "started 5,000 USDT (€4,000.00 at ECB rate, 17 Sep)",
+    )
+
+
+def test_big_total_keeps_the_rate_date_on_the_change_line(tmp_path: Path) -> None:
+    """With the three-row total the rate date moves to the change line below it."""
+    summary = replace(_summary(tmp_path), eur_rate_date=date(2026, 9, 18))
+    ctx = RenderContext(surface=Surface.OPERATOR_TUI, now=_READ_AT, width=80)
+    lines = to_plain_text(render_portfolio(summary, ctx, big_total=True), width=80).splitlines()
+    assert lines[3] == "▲ +€78.76 +1.97% today at ECB rate, 18 Sep"
+
+
+def test_ledger_summary_carries_the_rate_dates_it_used(tmp_path: Path) -> None:
+    """The ledger model reports the newest rate's date and the seed's own rate date (#692)."""
+    summary = _summary(tmp_path)
+    assert (summary.eur_rate_date, summary.starting_capital_rate_date) == (
+        date(2026, 10, 1),
+        date(2026, 10, 1),
+    )
 
 
 def test_pending_card_shows_usdt_and_no_euro(tmp_path: Path) -> None:

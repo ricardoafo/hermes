@@ -22,7 +22,7 @@ import json
 import sqlite3
 from collections.abc import Callable
 from contextlib import closing
-from datetime import UTC, datetime, timedelta, tzinfo
+from datetime import UTC, date, datetime, timedelta, tzinfo
 from decimal import Decimal
 from pathlib import Path
 from typing import Final, Self
@@ -199,7 +199,7 @@ class LedgerReadModel:
                 reader = _Reader(conn)
                 books, quote = reader.books()
                 closed = reader.closed_pieces(year_start)
-                rate = reader.eur_per_quote(quote) if quote is not None else None
+                newest = reader.eur_rate(quote) if quote is not None else None
                 seeds = reader.seeds()
         except sqlite3.Error as exc:
             raise LedgerError(msg=f"console portfolio read failed: {exc}") from exc
@@ -219,9 +219,10 @@ class LedgerReadModel:
             books=books,
             closed=closed,
             open_net=open_net,
-            eur_per_quote=rate,
+            eur_per_quote=None if newest is None else newest[0],
             seeds=seeds,
             quote=quote,
+            eur_rate_date=None if newest is None else newest[1],
         )
         return build_portfolio(facts, range_)
 
@@ -492,6 +493,11 @@ class _Reader:
 
         Reference: ``ledger-read-model`` D-4; ``live-home-screen`` D-1.
         """
+        newest = self.eur_rate(quote)
+        return None if newest is None else newest[0]
+
+    def eur_rate(self, quote: str) -> tuple[Decimal, date] | None:
+        """Return EUR per quote unit and its ECB rate date, by the newest-rate rule (#692)."""
         row = self._conn.execute(
             "SELECT eur_rate, eur_rate_date, 1, executed_at, id FROM trades "
             "WHERE eur_status = 'ok' AND pair_quote = ? AND eur_rate IS NOT NULL "
@@ -503,7 +509,7 @@ class _Reader:
         ).fetchone()
         if row is None:
             return None
-        return 1 / Decimal(str(row[0]))
+        return 1 / Decimal(str(row[0])), date.fromisoformat(str(row[1]))
 
     def books(self) -> tuple[tuple[StrategyBook, ...], str | None]:
         """Return each strategy's equity history and the one quote currency they share."""
@@ -580,7 +586,7 @@ class _Reader:
     def seeds(self) -> tuple[SeedFacts, ...]:
         """Return every capital seed, with its EUR value once priced (live-home-screen D-3)."""
         rows = self._conn.execute(
-            "SELECT amount, seeded_at, value_eur, eur_status FROM capital_seeds "
+            "SELECT amount, seeded_at, value_eur, eur_status, eur_rate_date FROM capital_seeds "
             "ORDER BY seeded_at, id"
         ).fetchall()
         return tuple(
@@ -588,8 +594,13 @@ class _Reader:
                 amount=Decimal(str(amount)),
                 seeded_at=datetime.fromisoformat(str(at)),
                 value_eur=_optional(value) if status == _OK else None,
+                rate_date=(
+                    date.fromisoformat(str(rate_date))
+                    if status == _OK and rate_date is not None
+                    else None
+                ),
             )
-            for amount, at, value, status in rows
+            for amount, at, value, status, rate_date in rows
         )
 
 

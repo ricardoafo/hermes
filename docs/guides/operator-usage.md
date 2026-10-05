@@ -151,7 +151,7 @@ hermes tui
 ```
 
 The interactive home screen reads the ledger read-only: the portfolio
-total in EUR, open positions, a market watch, recent activity and the
+total in EUR (with the date of the ECB rate it uses), open positions, a market watch, recent activity and the
 shadow test's day count toward 90. The top line names the running release,
 read from the same link `hermes status` reads. The market watch lists each
 checked coin with its last check, whether that check produced an entry or

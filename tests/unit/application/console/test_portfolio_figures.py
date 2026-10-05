@@ -227,6 +227,29 @@ def test_summary_carries_the_ledger_quote_currency(rate: Decimal | None) -> None
     assert build_portfolio(facts, PortfolioRange.TODAY).quote_currency == "USDC"
 
 
+def test_rate_dates_pass_through_and_pending_seed_has_none() -> None:
+    """The summary keeps the newest rate's date; an unpriced seed gives no seed rate date (#692)."""
+    seeded_at = datetime(2026, 9, 30, 22, 30, tzinfo=UTC)
+    priced = SeedFacts(
+        amount=Decimal(5000),
+        seeded_at=seeded_at,
+        value_eur=Decimal(4000),
+        rate_date=date(2026, 9, 30),
+    )
+    pending = SeedFacts(amount=Decimal(5000), seeded_at=seeded_at, value_eur=None)
+    dates = [
+        (s.eur_rate_date, s.starting_capital_rate_date)
+        for s in (
+            build_portfolio(
+                replace(_facts((_book(),), seeds=(seed,)), eur_rate_date=date(2026, 10, 2)),
+                PortfolioRange.TODAY,
+            )
+            for seed in (priced, pending)
+        )
+    ]
+    assert dates == [(date(2026, 10, 2), date(2026, 9, 30)), (date(2026, 10, 2), None)]
+
+
 def test_no_seed_leaves_the_start_unknown() -> None:
     """Without a seed no start line is offered."""
     summary = build_portfolio(_facts((_book(),)), PortfolioRange.TODAY)

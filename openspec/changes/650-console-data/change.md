@@ -45,6 +45,12 @@ at all.
 - **Start line** (`render.py`, `portfolio_figures.py`, `views.py`): the line
   reads "started 5,000 USDT (€X at ECB rate, D)", with the real seed amount and
   the ledger's quote currency (`PortfolioSummary.quote_currency`).
+- **ECB rate date** (`render.py`, `portfolio_figures.py`, `views.py`,
+  `ledger_read_model.py`, issue #692): the EUR total reads
+  "€4,454.34 at ECB rate, 3 Oct" with the date (`eur_rate_date`) of the rate
+  the newest-rate rule picked, so a stale rate shows. The start line uses the
+  seed's own rate date, or the start day when the source has no date. The demo
+  scenarios carry no rate date, so their hero line is unchanged.
 - **Pending hint** (`render.py`): the hint reads "EUR pending · priced on the
   next restart, or run hermes fx backfill".
 - **Release on the top line** (`entrypoints/tui.py`,
@@ -148,6 +154,12 @@ at all.
 - **A-5.1**: `uv run pytest tests/unit/entrypoints/test_tui.py -k release`
   passes.
 
+### R-6: ECB rate date next to the EUR total (#692)
+
+- **A-6.1**: `uv run pytest tests/unit/application/console/test_live_portfolio_surfaces.py -k "rate"`
+  passes. It covers an old rate date on the hero and the start line, the big
+  total, and the ledger's rate dates.
+
 ## Design
 
 ```text
@@ -197,4 +209,5 @@ Test tiers touched: unit, integration
 
 - Closes #650
 - Closes #649
+- Issue #692 (ECB rate date next to the EUR total) is folded in here
 - Builds on #546 (PR #629), #630 (PR #638) and #636 (PR #647)

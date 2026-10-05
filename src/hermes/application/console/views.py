@@ -196,6 +196,10 @@ class PortfolioSummary:
             ``open_pnl`` is not meaningful.
         quote_currency: The currency ``starting_capital_quote`` and
             ``total_value_quote`` are counted in (the capital seed's asset).
+        eur_rate_date: Date of the ECB rate the EUR figures were converted
+            at, when the source records it, so a stale rate shows (#692).
+        starting_capital_rate_date: Date of the ECB rate behind
+            ``starting_capital``, when the source records it.
     """
 
     range: PortfolioRange
@@ -219,6 +223,8 @@ class PortfolioSummary:
     total_value_quote: Decimal | None = None
     open_pnl_pending: bool = False
     quote_currency: str = "USDT"
+    eur_rate_date: date | None = None
+    starting_capital_rate_date: date | None = None
 
 
 @dataclass(frozen=True, slots=True)
