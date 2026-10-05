@@ -4,7 +4,8 @@ Invariants protected here:
 
 - rows group by the display timezone's calendar day, newest day and row first;
 - bar checks and signals are dropped unless asked for;
-- the JSON form carries a closed row's net only where ``pnl_visible`` allows.
+- the JSON form carries a closed row's net only where ``pnl_visible`` allows;
+- query rows carry local time facets and no money (#729).
 """
 
 from __future__ import annotations
@@ -15,7 +16,12 @@ from decimal import Decimal
 import pytest
 
 from hermes.application.console import Surface
-from hermes.application.console.activity import activity_to_json, group_activity
+from hermes.application.console.activity import (
+    ACTIVITY_QUERY_FIELDS,
+    activity_query_rows,
+    activity_to_json,
+    group_activity,
+)
 from hermes.application.console.render import MADRID, RenderContext
 from hermes.application.console.views import ActivityDay, ActivityItem, ActivityKind
 
@@ -78,3 +84,43 @@ def test_json_carries_net_only_on_operator_surfaces(surface: Surface, has_net: b
     row = data["days"][0]["items"][0]  # type: ignore[index]
     assert ("net_eur" in row) is has_net
     assert row["price"] == "61240"
+
+
+def test_query_rows_use_local_time_facets_newest_first() -> None:
+    """23:00 UTC on 31 Dec is already the next year, month and day in Madrid."""
+    late = ActivityItem(at=datetime(2025, 12, 31, 23, tzinfo=UTC), kind=ActivityKind.OPENED)
+    early = _item(8, ActivityKind.CLOSED, net=Decimal("12.5"), price=Decimal(3000))
+
+    rows = activity_query_rows([late, early], MADRID)
+
+    assert rows == (
+        {
+            "at": early.at,
+            "when": "2026-10-03 10:00",
+            "year": 2026,
+            "month": "2026-10",
+            "day": "2026-10-03",
+            "coin": "ETH",
+            "kind": "closed",
+            "text": None,
+        },
+        {
+            "at": late.at,
+            "when": "2026-01-01 00:00",
+            "year": 2026,
+            "month": "2026-01",
+            "day": "2026-01-01",
+            "coin": None,
+            "kind": "opened",
+            "text": None,
+        },
+    )
+
+
+def test_query_fields_are_shared_facets_the_rows_carry() -> None:
+    """Every activity query field is a row key, so no condition is silently empty."""
+    row = activity_query_rows([_item(8, ActivityKind.OPENED)], MADRID)[0]
+    assert (ACTIVITY_QUERY_FIELDS, set(ACTIVITY_QUERY_FIELDS) <= row.keys()) == (
+        ("year", "month", "day", "coin", "kind"),
+        True,
+    )

@@ -8,6 +8,9 @@
   :func:`~hermes.application.console.visibility.pnl_visible` allows it, so a
   blind consumer never receives a figure. Prices keep their USDT quote value
   under ``price`` and the EUR value the console shows under ``price_eur``.
+- :func:`activity_query_rows` gives the rows a console query list filters and
+  sorts (issue #729): local time facets, coin, kind and text, never money, so
+  the same rows suit every surface.
 
 Reference: openspec/changes/374-hermes-activity/change.md.
 """
@@ -18,6 +21,7 @@ from collections.abc import Iterable, Sequence
 from datetime import date, tzinfo
 from decimal import Decimal
 from itertools import groupby
+from typing import Final
 
 from hermes.application.console.render import RenderContext
 from hermes.application.console.views import (
@@ -26,11 +30,18 @@ from hermes.application.console.views import (
     ActivityItem,
 )
 
-__all__ = ["activity_to_json", "group_activity"]
+__all__ = [
+    "ACTIVITY_QUERY_FIELDS",
+    "activity_query_rows",
+    "activity_to_json",
+    "group_activity",
+]
 
 type JsonObject = dict[str, object]
 
 _EUR_PRECISION = Decimal("0.0001")
+
+ACTIVITY_QUERY_FIELDS: Final = ("year", "month", "day", "coin", "kind")
 
 
 def group_activity(
@@ -106,3 +117,32 @@ def _item(item: ActivityItem, ctx: RenderContext) -> JsonObject:
     if item.net is not None and ctx.shows_money:
         data["net_eur"] = format(item.net, "f")
     return data
+
+
+def activity_query_rows(items: Iterable[ActivityItem], tz: tzinfo) -> tuple[dict[str, object], ...]:
+    """Return activity as rows for a console query list, newest first.
+
+    Args:
+        items: Activity rows in any order (quiet kinds included if passed).
+        tz: The timezone the time facets and the ``when`` column use.
+
+    Returns:
+        One mapping per item with ``at`` (for ``since:``), ``when``, ``year``,
+        ``month``, ``day``, ``coin``, ``kind`` and ``text``; no money figure.
+    """
+    rows: list[dict[str, object]] = []
+    for item in sorted(items, key=lambda i: i.at, reverse=True):
+        local = item.at.astimezone(tz)
+        rows.append(
+            {
+                "at": item.at,
+                "when": f"{local:%Y-%m-%d %H:%M}",
+                "year": local.year,
+                "month": f"{local:%Y-%m}",
+                "day": local.date().isoformat(),
+                "coin": item.coin,
+                "kind": item.kind.value,
+                "text": item.text,
+            }
+        )
+    return tuple(rows)
