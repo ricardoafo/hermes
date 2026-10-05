@@ -3,6 +3,10 @@
 A test is SEV-1-annotated if the source has `# SEV-1:` comment above `def test_*`.
 If any such test is skipped and `PYTEST_SEV1_ALLOW_SKIP` env var is not set,
 the session exits 1 (post-run).
+
+Pytest reports an xfail outcome as skipped, so a SEV-1 test marked xfail trips
+the guard too. That is intended: an expected failure hides a broken SEV-1
+path just as a skip does.
 """
 
 from __future__ import annotations
@@ -33,8 +37,12 @@ def _is_sev1_test(nodeid: str) -> bool:
 
 
 def pytest_report_teststatus(report: pytest.TestReport) -> None:
-    """Collect SEV-1-annotated tests that are skipped during the setup phase."""
-    if report.when == "setup" and report.skipped and _is_sev1_test(report.nodeid):
+    """Collect SEV-1-annotated tests that are skipped, by a marker or from inside the body.
+
+    A marker or ``skipif`` reports the skip in the setup phase; ``pytest.skip()``
+    called in the test body reports it in the call phase (#704).
+    """
+    if report.when in ("setup", "call") and report.skipped and _is_sev1_test(report.nodeid):
         _skipped_sev1.append(report.nodeid)
 
 
