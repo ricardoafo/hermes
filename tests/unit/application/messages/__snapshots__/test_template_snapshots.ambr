@@ -161,11 +161,7 @@
     'blocks': list([
       dict({
         'text': dict({
-          'text': '''
-            *▲ Entry long BTC · 52,410.20 USDT · Sat 14:00 (12:00 UTC)*
-            Plan: stop 50,516.00 USDT (−3.6%, 1.8 ATR)
-            Actual: withheld until certification
-          ''',
+          'text': '*▲ Entry long BTC · 52,410.20 USDT · Sat 14:00 (12:00 UTC)*',
           'type': 'mrkdwn',
         }),
         'type': 'section',
@@ -180,7 +176,22 @@
         'type': 'context',
       }),
     ]),
-    'text': '▲ Entry long BTC · 52,410.20 USDT · Sat 14:00 (12:00 UTC) · Plan: stop 50,516.00 USDT (−3.6%, 1.8 ATR) · Actual: withheld until certification',
+    'plan': dict({
+      'blocks': list([
+        dict({
+          'text': dict({
+            'text': '''
+              Plan: stop 50,516.00 USDT (−3.6%, 1.8 ATR)
+              Actual: withheld until certification
+            ''',
+            'type': 'mrkdwn',
+          }),
+          'type': 'section',
+        }),
+      ]),
+      'text': 'Plan: stop 50,516.00 USDT (−3.6%, 1.8 ATR) · Actual: withheld until certification',
+    }),
+    'text': '▲ Entry long BTC · 52,410.20 USDT · Sat 14:00 (12:00 UTC)',
   })
 # ---
 # name: test_slack_message_matches_snapshot[signal-exit]
@@ -188,11 +199,7 @@
     'blocks': list([
       dict({
         'text': dict({
-          'text': '''
-            *▼ Exit long BTC (trailing_stop) · Sat 14:00 (12:00 UTC)*
-            Plan: entry ref 52,410.20 USDT · stop 54,100.00 USDT
-            Actual: withheld until certification
-          ''',
+          'text': '*▼ Exit long BTC (trailing_stop) · Sat 14:00 (12:00 UTC)*',
           'type': 'mrkdwn',
         }),
         'type': 'section',
@@ -207,7 +214,22 @@
         'type': 'context',
       }),
     ]),
-    'text': '▼ Exit long BTC (trailing_stop) · Sat 14:00 (12:00 UTC) · Plan: entry ref 52,410.20 USDT · stop 54,100.00 USDT · Actual: withheld until certification',
+    'plan': dict({
+      'blocks': list([
+        dict({
+          'text': dict({
+            'text': '''
+              Plan: entry ref 52,410.20 USDT · stop 54,100.00 USDT
+              Actual: withheld until certification
+            ''',
+            'type': 'mrkdwn',
+          }),
+          'type': 'section',
+        }),
+      ]),
+      'text': 'Plan: entry ref 52,410.20 USDT · stop 54,100.00 USDT · Actual: withheld until certification',
+    }),
+    'text': '▼ Exit long BTC (trailing_stop) · Sat 14:00 (12:00 UTC)',
   })
 # ---
 # name: test_slack_message_matches_snapshot[strategy-paused-critical]
