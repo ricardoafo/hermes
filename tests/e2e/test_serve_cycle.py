@@ -315,6 +315,9 @@ def test_status_json_after_a_serve_cycle_matches_its_snapshot(
         now=LIVE_UNTIL + timedelta(seconds=10),
         unit_state=lambda: UnitState.RUNNING,
         bot_state=lambda: UnitState.RUNNING,
+        # A link that never exists: the report must not depend on the host's
+        # /opt/hermes/current, so the release reads as unknown everywhere.
+        release_link=tmp_path / "no-current-release",
     )
 
     assert (code, json.loads(out.getvalue())) == snapshot
