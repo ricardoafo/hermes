@@ -55,7 +55,7 @@ class ServeRun:
         channel: The Telegram stand-in, holding every event notified.
         exchange: The fake exchange, holding every request served.
         clock: The simulated clock, at the instant the run stopped.
-        bar_seconds: Wall-clock seconds serve spent handling each bar, in order.
+        bar_seconds: CPU seconds the event loop's thread spent handling each bar, in order.
 
     """
 
@@ -190,15 +190,21 @@ def _timed_bars(into: list[float]) -> Iterator[None]:
     The per-bar cost is what decides whether serve keeps up with the feed, and
     the bar loop has no public hook for it, so the handler is wrapped for the
     length of one run (issue #689 time budget).
+
+    It records the CPU time of the event loop's thread, not wall time: on a
+    shared CI runner other jobs take the CPU away mid-bar, which stretched the
+    wall time of the same bars from 4 ms to over 30 ms. Work serve hands to a
+    worker thread (the notifier send) is not counted; it does not hold up the
+    loop.
     """
     original = serve_module._BarLoop.handle
 
     async def timed(self: serve_module._BarLoop, bar: Bar) -> None:
-        started = time.perf_counter()
+        started = time.thread_time()
         try:
             await original(self, bar)
         finally:
-            into.append(time.perf_counter() - started)
+            into.append(time.thread_time() - started)
 
     with mock.patch.object(serve_module._BarLoop, "handle", timed):
         yield

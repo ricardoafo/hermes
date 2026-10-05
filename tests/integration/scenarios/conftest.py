@@ -22,11 +22,13 @@ from tests.integration.scenarios.markets import Scenario
 from tests.support.fake_market import harness
 
 BAR_BUDGET_SECONDS = 0.020
-"""Median wall time serve may spend on one bar.
+"""Median CPU time serve's event loop may spend on one bar.
 
-Measured at about 4 ms on a developer machine (2026-10-05). Five times that
-leaves room for a loaded CI runner, while a tenfold slowdown of the bar path
-still fails here, in PR CI, before it reaches the deploy gate.
+Measured at 1.8 to 2.5 ms per scenario on a developer machine (2026-10-05),
+the same with the CPU idle or three times oversubscribed, because CPU time
+leaves out the time other processes hold the core. The budget leaves room for
+a slower runner core, while a tenfold slowdown of the bar path still fails
+here, in PR CI, before it reaches the deploy gate.
 """
 
 
@@ -39,7 +41,7 @@ class Run:
         db: The ledger file.
         notified: Every event handed to the Telegram stand-in.
         logs: Every structured log line serve emitted.
-        bar_seconds: Wall time per handled bar.
+        bar_seconds: CPU time of the event loop's thread per handled bar.
 
     """
 
@@ -109,7 +111,7 @@ def run_scenario(tmp_path: Path) -> Iterator[RunScenario]:
             exit_code=served.exit_code,
             db=db,
             notified=list(served.channel.seen),
-            logs=list(logs),
+            logs=[dict(line) for line in logs],
             bar_seconds=served.bar_seconds,
         )
         runs.append(outcome)
