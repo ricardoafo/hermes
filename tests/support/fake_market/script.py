@@ -42,6 +42,7 @@ class Step:
         high: High, or ``None`` for close plus half the default range.
         low: Low, or ``None`` for close minus half the default range.
         volume: Base-asset volume.
+        spread: High-low range used for a missing high or low, as a fraction of the close.
 
     """
 
@@ -49,6 +50,7 @@ class Step:
     high: Decimal | None = None
     low: Decimal | None = None
     volume: Decimal = _VOLUME
+    spread: Decimal = _SPREAD
 
 
 @dataclass
@@ -80,13 +82,14 @@ class MarketScript:
         steps = self.steps[pair]
         return steps[-1].close if steps else self.prices[pair]
 
-    def ramp(self, pair: Pair, *, days: float, to: Decimal) -> Self:
+    def ramp(self, pair: Pair, *, days: float, to: Decimal, spread: Decimal = _SPREAD) -> Self:
         """Move ``pair`` in a straight line to ``to`` over ``days`` of 4h bars.
 
         Args:
             pair: Pair to move.
             days: Length of the move; rounded to whole 4h bars, at least one.
             to: Close of the last bar of the move.
+            spread: High-low range of each bar, as a fraction of its close.
 
         Returns:
             The script, for chaining.
@@ -96,12 +99,12 @@ class MarketScript:
         first = self.last_close(pair)
         for i in range(1, bars + 1):
             close = first + (to - first) * Decimal(i) / Decimal(bars)
-            self.steps[pair].append(Step(close=close.quantize(_TICK)))
+            self.steps[pair].append(Step(close=close.quantize(_TICK), spread=spread))
         return self
 
-    def hold(self, pair: Pair, *, days: float) -> Self:
+    def hold(self, pair: Pair, *, days: float, spread: Decimal = _SPREAD) -> Self:
         """Keep ``pair`` flat at its last close for ``days``."""
-        return self.ramp(pair, days=days, to=self.last_close(pair))
+        return self.ramp(pair, days=days, to=self.last_close(pair), spread=spread)
 
     def bar(
         self,
@@ -178,7 +181,7 @@ def _h4_bars(pair: Pair, start: datetime, first_open: Decimal, steps: list[Step]
     open_price = first_open
     for i, step in enumerate(steps):
         open_time = start + H4 * i
-        half = step.close * _SPREAD / 2
+        half = step.close * step.spread / 2
         high = step.high if step.high is not None else max(open_price, step.close) + half
         low = step.low if step.low is not None else min(open_price, step.close) - half
         yield Bar(
