@@ -269,8 +269,16 @@ def build(
     )
 
 
-async def drive(composition: serve_module.Composition, feed: FakeFeed) -> int:
+async def drive(
+    composition: serve_module.Composition, feed: FakeFeed, *, timeout: float = 20.0
+) -> int:
     """Run the loop until the feed idles or the run ends, then shut it down.
+
+    Args:
+        composition: The wired loop to run.
+        feed: The feed whose ``drained`` event ends the run.
+        timeout: Seconds to wait for the feed to drain, and again for the
+            shutdown; a hang guard, so size it well above the normal run time.
 
     Returns:
         The exit code of :func:`hermes.entrypoints.serve.run`.
@@ -279,10 +287,10 @@ async def drive(composition: serve_module.Composition, feed: FakeFeed) -> int:
     shutdown = asyncio.Event()
     task = asyncio.create_task(serve_module.run(composition, shutdown))
     waiter = asyncio.create_task(feed.drained.wait())
-    await asyncio.wait({task, waiter}, timeout=20, return_when=asyncio.FIRST_COMPLETED)
+    await asyncio.wait({task, waiter}, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
     shutdown.set()
     waiter.cancel()
-    return await asyncio.wait_for(task, timeout=20)
+    return await asyncio.wait_for(task, timeout=timeout)
 
 
 def run_once(composition: serve_module.Composition, feed: FakeFeed) -> int:
