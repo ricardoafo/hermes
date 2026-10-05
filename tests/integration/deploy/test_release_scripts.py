@@ -929,16 +929,23 @@ def test_deploy_reloads_the_unit_files_before_restarting(box: Box) -> None:
     assert reload < restart
 
 
-def test_six_deploys_keep_the_three_newest_releases(box: Box) -> None:
+def test_a_seventh_deploy_keeps_the_three_newest_releases(box: Box) -> None:
     """Invariant (A-3.2): old releases are pruned down to the 3 newest."""
+    # Six earlier deploys are seeded rather than run: each deploy spawns dozens
+    # of processes, and seven of them outran the timeout under Git Bash (#683).
+    # The prune rule itself is covered by the property test below.
     shas = [f"{index:012x}" for index in range(1, 7)]
     epoch = time.time() - 10_000
     for index, sha in enumerate(shas):
-        box.deploy(sha)
+        release = box.seed_release(sha)
         # Distinct, increasing mtimes so "newest" never depends on clock resolution.
-        os.utime(box.root / "versions" / sha, (epoch + index, epoch + index))
+        os.utime(release, (epoch + index, epoch + index))
+    box.link("previous", shas[4])
+    box.link("current", shas[5])
 
-    box.deploy(f"{7:012x}")
+    result = box.deploy(f"{7:012x}")
+
+    assert result.returncode == 0, _output(result)
 
     kept = sorted(path.name for path in (box.root / "versions").iterdir())
     assert kept == [f"{index:012x}" for index in (5, 6, 7)]
