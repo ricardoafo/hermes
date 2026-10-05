@@ -79,6 +79,9 @@ class FakeExchange:
         fx_prefix: Path prefix of that base URL (``/v1`` in ``config/``).
         eur_usd: Euro rate in dollars Frankfurter reports for every weekday.
         book_outages: ``(start, end)`` windows when depth answers HTTP 503.
+        book_step_bps: Gap between depth levels; wider means a thinner book.
+        late_bars: ``(pair, interval, open_time, shown_from)``: the bar is left
+            out of klines answers until ``shown_from``, as if published late.
         fx_down: When ``True`` Frankfurter answers HTTP 503.
         requests: Every request served, as ``(host, path, params)``.
 
@@ -90,6 +93,8 @@ class FakeExchange:
     fx_prefix: str = "/v1"
     eur_usd: Decimal = Decimal("1.10")
     book_outages: list[tuple[datetime, datetime]] = field(default_factory=list)
+    book_step_bps: Decimal = Decimal(1)
+    late_bars: list[tuple[Pair, KlineInterval, datetime, datetime]] = field(default_factory=list)
     fx_down: bool = False
     requests: list[tuple[str, str, dict[str, str]]] = field(default_factory=list)
     _update_id: int = 1
@@ -140,7 +145,16 @@ class FakeExchange:
             return _binance_error(400, -1120, "Invalid interval.")
         limit = min(int(params.get("limit", _KLINES_LIMIT_DEFAULT)), _KLINES_LIMIT_MAX)
         now = self.clock.now()
-        opened = [b for b in self.market.bars(pair, interval) if b.open_time <= now]
+        hidden = {
+            open_time
+            for p, i, open_time, shown_from in self.late_bars
+            if (p, i) == (pair, interval) and now < shown_from
+        }
+        opened = [
+            b
+            for b in self.market.bars(pair, interval)
+            if b.open_time <= now and b.open_time not in hidden
+        ]
         if "startTime" in params:
             start = int(params["startTime"])
             rows = [b for b in opened if wire.ms(b.open_time) >= start][:limit]
@@ -162,7 +176,14 @@ class FakeExchange:
             return _binance_error(400, -1121, "Invalid symbol.")
         self._update_id += 1
         levels = min(int(params.get("limit", 100)), DEPTH_LEVELS_MAX)
-        return _json(wire.depth(closed[-1].close, levels=levels, update_id=self._update_id))
+        return _json(
+            wire.depth(
+                closed[-1].close,
+                levels=levels,
+                update_id=self._update_id,
+                step_bps=self.book_step_bps,
+            )
+        )
 
     # -- Frankfurter -----------------------------------------------------
 

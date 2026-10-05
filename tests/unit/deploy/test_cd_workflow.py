@@ -336,15 +336,26 @@ def test_bundle_ships_every_unit_and_timer_for_install_release() -> None:
     )
 
 
-def test_release_job_runs_only_after_a_good_real_deploy() -> None:
-    """A release names what is live, so it waits on the deploy and skips dry runs (#626)."""
-    release = _workflow()["jobs"]["release"]
+def test_release_is_published_after_smoke_and_before_the_telegram_link() -> None:
+    """The release names what is live, and the Telegram message links to it (#626).
 
-    assert "deploy" in release["needs"]
-    assert release["if"] == _DRY_RUN_GUARD
+    It must exist before the message goes out: a separate job waiting for a
+    runner left the link dead for minutes after deploy-43487cc58ce0.
+    """
+    labels = [_label(s) for s in _steps("deploy")]
+    step = next(s for s in _steps("deploy") if _label(s) == "Create the release")
+
+    assert step["if"] == _DRY_RUN_GUARD
+    assert step["continue-on-error"] is True
+    assert (
+        labels.index("Smoke tests")
+        < labels.index("Create the release")
+        < labels.index("Announce the release on Telegram")
+    )
+    assert "release" not in _workflow()["jobs"]
 
 
-def test_only_the_release_job_can_write_to_the_repo() -> None:
+def test_only_the_deploy_job_can_write_to_the_repo() -> None:
     """contents: write is scoped to the job that creates the tag; the rest stay read-only."""
     workflow = _workflow()
     writers = [
@@ -354,20 +365,34 @@ def test_only_the_release_job_can_write_to_the_repo() -> None:
     ]
 
     assert workflow["permissions"] == {"contents": "read"}
-    assert writers == ["release"]
+    assert writers == ["deploy"]
+    assert workflow["jobs"]["deploy"]["permissions"] == {"contents": "write"}
+    checkout = next(
+        step
+        for step in _steps("deploy")
+        if str(step.get("uses", "")).startswith("actions/checkout@")
+    )
+    assert checkout["with"]["persist-credentials"] is False
 
 
 def test_release_is_tagged_with_the_shipped_commit() -> None:
     """The tag deploy-<sha12> sits on RELEASE_SHA, so the next deploy's notes start there."""
     script = next(
         str(step["with"]["script"])
-        for step in _steps("release")
+        for step in _steps("deploy")
         if str(step.get("uses", "")).startswith("actions/github-script@")
     )
 
     assert "const sha = process.env.RELEASE_SHA;" in script
     assert "const tag = `deploy-${sha.slice(0, 12)}`;" in script
     assert "target_commitish: sha," in script
+
+
+def test_empty_release_notes_ship_a_placeholder() -> None:
+    """A blank notes file never becomes a blank release page or message."""
+    run = next(str(s["run"]) for s in _steps("notes") if _label(s) == "Write the release notes")
+
+    assert "|| ! grep -q '[^[:space:]]' \"notes/$format.txt\"; then" in run
 
 
 def test_notes_checkout_has_the_history_and_tags_the_notes_need() -> None:

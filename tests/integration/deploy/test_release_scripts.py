@@ -103,6 +103,13 @@ case "$1" in
             *" $name "*) exit 3 ;;
         esac
         ;;
+    daemon-reload)
+        # The unit backup exists only between the unit sync and the end of
+        # the deploy; record its mode while it is there.
+        if [ -d "$HERMES_ROOT/units-before-deploy" ]; then
+            /usr/bin/stat -c %a "$HERMES_ROOT/units-before-deploy" > "$STUB_STATE/unit-backup-mode"
+        fi
+        ;;
     show)
         if [ -n "${STUB_PID_CHANGES:-}" ]; then
             n=$(cat "$STUB_STATE/pid" 2>/dev/null || echo 4000)
@@ -145,11 +152,19 @@ exit 0
 """
 
 # `runuser -u hermes -- <cmd>` drops privileges on the box; here it logs
-# the call and runs <cmd> as the test user.
+# the call and runs <cmd> as the test user. On the box the staging dir is
+# root-only (0700), so the service user cannot open a path inside it: an
+# argument under STUB_RUNUSER_DENY fails the way python does there.
 _STUB_RUNUSER = """\
 #!/usr/bin/env bash
 echo "runuser $*" >> "$STUB_LOG"
 [ -z "${STUB_RUNUSER_FAIL:-}" ] || exit 1
+for arg in "$@"; do
+    if [ -n "${STUB_RUNUSER_DENY:-}" ] && [[ "$arg" == "$STUB_RUNUSER_DENY"/* ]]; then
+        echo "can't open file '$arg': [Errno 13] Permission denied" >&2
+        exit 2
+    fi
+done
 while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do shift; done
 shift
 exec "$@"
@@ -166,7 +181,35 @@ esac
 exit 0
 """
 
+# `install` wraps the real one and records each call. On Git Bash over NTFS
+# the real one cannot set some modes ("cannot change permissions"); only
+# there, and only after it failed, the call is retried without -m/-o/-g and
+# the dropped mode is recorded, so the test box runs and no test mistakes
+# that for the 0700 the VPS gets (#683).
+_STUB_INSTALL = """\
+#!/usr/bin/env bash
+echo "install $*" >> "$STUB_STATE/install.log"
+/usr/bin/install "$@" 2>/dev/null && exit 0
+case "$(uname -s)" in
+    MINGW* | MSYS* | CYGWIN*) ;;
+    *) exec /usr/bin/install "$@" ;;
+esac
+args=()
+skip=0
+for arg in "$@"; do
+    if [ "$skip" = 1 ]; then skip=0; continue; fi
+    case "$arg" in
+        -m | -o | -g) skip=1 ;;
+        -m* | -o* | -g* | --mode=* | --owner=* | --group=*) ;;
+        *) args+=("$arg") ;;
+    esac
+done
+echo "mode dropped: install $*" >> "$STUB_STATE/install.log"
+exec /usr/bin/install "${args[@]}"
+"""
+
 _STUBS = {
+    "install": _STUB_INSTALL,
     "hermes": _STUB_HERMES,
     "runuser": _STUB_RUNUSER,
     "uv": _STUB_UV,
@@ -325,6 +368,7 @@ class Box:
                 "HERMES_UNIT_DIR": _posix(self.units),
                 "HERMES_NOW_EPOCH": _QUIET_EPOCH,
                 "HERMES_SCHEMA_PYTHON": _posix(Path(sys.executable)),
+                "STUB_RUNUSER_DENY": _posix(self.base / "stages"),
                 **extra,
             }
         )
@@ -900,11 +944,21 @@ def test_six_deploys_keep_the_three_newest_releases(box: Box) -> None:
     assert kept == [f"{index:012x}" for index in (5, 6, 7)]
 
 
-def _prune(root: Path, script: Path) -> subprocess.CompletedProcess[str]:
-    """Source ``install_release.sh`` and run only ``prune_versions`` against ``root``."""
+def _prune(
+    root: Path, script: Path, *, proc: Path | None = None
+) -> subprocess.CompletedProcess[str]:
+    """Source ``install_release.sh`` and run only ``prune_versions`` against ``root``.
+
+    ``proc`` stands in for /proc; by default an empty one, so no real process
+    on the test host can keep a scratch release alive.
+    """
+    proc_dir = proc or root / "proc"
+    proc_dir.mkdir(exist_ok=True)
     return run_bash(
         ["-c", 'source "$1" && prune_versions', "bash", _posix(script)],
-        clean_env(PATH=os.environ["PATH"], HERMES_ROOT=_posix(root)),
+        clean_env(
+            PATH=os.environ["PATH"], HERMES_ROOT=_posix(root), HERMES_PROC_DIR=_posix(proc_dir)
+        ),
     )
 
 
@@ -948,6 +1002,59 @@ def test_prune_keeps_exactly_the_three_newest_plus_current_and_previous(
         kept = sorted(path.name for path in (root / "versions").iterdir())
     assert result.returncode == 0, result.stderr
     assert kept == expected
+
+
+def test_prune_keeps_a_release_a_running_process_still_maps(tmp_path: Path) -> None:
+    """Invariant: a release an open console still runs from is never pruned (#652).
+
+    The console keeps the release it started on; its extension modules stay
+    mapped from that directory, which /proc/<pid>/maps shows by real path.
+    """
+    root = tmp_path / "opt-hermes"
+    names = [f"{index:012x}" for index in range(6)]
+    epoch = time.time() - 10_000
+    for rank, name in enumerate(names):
+        release = root / "versions" / name
+        release.mkdir(parents=True)
+        os.utime(release, (epoch + rank, epoch + rank))
+    (root / "current").symlink_to(root / "versions" / names[5], target_is_directory=True)
+    (root / "previous").symlink_to(root / "versions" / names[4], target_is_directory=True)
+    held = root / "versions" / names[0]
+    proc = tmp_path / "proc"
+    (proc / "4242").mkdir(parents=True)
+    (proc / "4242" / "maps").write_text(
+        f"7f00-7f01 r-xp 00000000 08:01 1 {_posix(held.resolve())}/.venv/lib/core.so\n",
+        encoding="utf-8",
+    )
+    (proc / "self").mkdir()
+
+    result = _prune(root, _SCRIPT_DIR / "install_release.sh", proc=proc)
+
+    kept = sorted(path.name for path in (root / "versions").iterdir())
+    assert result.returncode == 0, result.stderr
+    assert kept == sorted([names[0], names[3], names[4], names[5]])
+    assert f"keeping {_posix(held)}: process 4242 still runs from it" in result.stdout
+
+
+def test_prune_is_not_fooled_by_a_release_whose_name_extends_another(tmp_path: Path) -> None:
+    """Invariant: a process mapping release `abc1` does not keep release `abc` alive."""
+    root = tmp_path / "opt-hermes"
+    names = ["aaaaaaaaaaaa", "aaaaaaaaaaaab", "c0", "c1", "c2"]
+    epoch = time.time() - 10_000
+    for rank, name in enumerate(names):
+        release = root / "versions" / name
+        release.mkdir(parents=True)
+        os.utime(release, (epoch + rank, epoch + rank))
+    proc = tmp_path / "proc"
+    (proc / "77").mkdir(parents=True)
+    longer = (root / "versions" / names[1]).resolve()
+    (proc / "77" / "maps").write_text(f"7f00 r-xp 0 0 1 {_posix(longer)}/x.so\n", encoding="utf-8")
+
+    result = _prune(root, _SCRIPT_DIR / "install_release.sh", proc=proc)
+
+    kept = sorted(path.name for path in (root / "versions").iterdir())
+    assert result.returncode == 0, result.stderr
+    assert kept == sorted(names[1:])
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -1189,7 +1296,8 @@ def test_staging_deploy_writes_only_under_the_staging_root_and_backups(staging_b
     assert result.returncode == 0, _output(result)
     after = _files_and_bytes(staging_box.base)
     changed = {path for path, data in after.items() if before.get(path) != data}
-    allowed = (staging_box.root, staging_box.backups, staging_box.log)
+    # The stubs' own call log and state are the test harness, not the deploy.
+    allowed = (staging_box.root, staging_box.backups, staging_box.log, staging_box._state)
     stray = sorted(
         path
         for path in changed
@@ -1386,6 +1494,23 @@ def test_unit_install_comes_before_the_daemon_reload_and_restart(box: Box) -> No
     out = result.stdout
     assert out.index(f"unit {_UNIT}: installed") < out.index("current -> ")
     assert "systemctl daemon-reload" in box.calls()
+
+
+def test_unit_backup_is_private_to_root_while_the_deploy_runs(box: Box) -> None:
+    """Invariant: the copies of the old unit files sit in a 0700 directory (#683).
+
+    The mode is read while the deploy runs, at the daemon-reload. Only Git
+    Bash over NTFS may refuse it, and then the install stub says it dropped
+    the mode; on Linux, as on the VPS, the directory must really be 0700.
+    """
+    result = box.deploy(_SHA_A)
+
+    install_log = (box._state / "install.log").read_text(encoding="utf-8")
+    backup = _posix(box.root / "units-before-deploy")
+    assert result.returncode == 0, _output(result)
+    assert f"install -d -m 0700 {backup}" in install_log
+    if f"mode dropped: install -d -m 0700 {backup}" not in install_log:
+        assert (box._state / "unit-backup-mode").read_text(encoding="utf-8").strip() == "700"
 
 
 def test_unchanged_units_are_left_alone(box: Box) -> None:
@@ -1585,6 +1710,38 @@ def test_deploy_of_a_release_older_than_the_ledger_is_refused(box: Box) -> None:
 
     assert result.returncode == 1, _output(result)
     assert "cannot read the events" in result.stdout
+    assert box.target("current") == _SHA_A
+
+
+def test_deploy_runs_the_schema_guard_although_the_service_user_cannot_open_the_stage(
+    box: Box,
+) -> None:
+    """Invariant: a current ledger deploys; the guard never needs a path in the root-only stage.
+
+    deploy 4bbcb6106736 failed on hermes-01 because the service user could
+    not open bin/schema_guard.py inside the 0700 staging dir (#655).
+    """
+    box.deploy(_SHA_A)
+    box.write_ledger("live")
+    _write_events(box, 1)
+
+    result = box.deploy(_SHA_B)
+
+    assert result.returncode == 0, _output(result)
+    assert box.target("current") == _SHA_B
+
+
+def test_a_guard_that_cannot_run_is_reported_as_such(box: Box) -> None:
+    """Invariant: a crashed guard still stops the deploy, and says it crashed, not refused."""
+    box.deploy(_SHA_A)
+    box.write_ledger("live")
+    _write_events(box, 1)
+
+    result = box.deploy(_SHA_B, HERMES_SCHEMA_PYTHON=_posix(box.base / "no-such-python"))
+
+    assert result.returncode == 1, _output(result)
+    assert "the schema guard failed to run" in result.stdout
+    assert "cannot read the events" not in result.stdout
     assert box.target("current") == _SHA_A
 
 

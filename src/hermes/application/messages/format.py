@@ -3,8 +3,9 @@
 One rule per quantity, so a message reads the same on Telegram and Slack:
 
 - money has two decimals and thousands separators (``€1,234.50``; a quote
-  asset other than EUR keeps its code, ``61,234.50 USDT``, because an event
-  carries no exchange rate and a notification must not invent one);
+  asset other than EUR is shown in euros when the caller holds the official
+  rate (:func:`fmt_quote_money`) and otherwise keeps its code,
+  ``61,234.50 USDT``, because a notification must not invent a rate);
 - percentages carry a sign and one decimal (minus 3.6%), weights are shown as
   a plain percentage (``35.0%``) and drift as percentage points;
 - durations are words (``15 min``), never raw seconds;
@@ -44,6 +45,7 @@ __all__ = [
     "fmt_money",
     "fmt_pp",
     "fmt_qty",
+    "fmt_quote_money",
     "fmt_ref",
     "fmt_weight",
     "fmt_when",
@@ -118,6 +120,23 @@ def fmt_money(amount: Decimal, currency: Currency) -> str:
     if currency is Currency.EUR:
         return fmt_level(amount)
     return f"{_grouped(amount, _CENT)} {currency.value}"
+
+
+def fmt_quote_money(amount: Decimal, currency: Currency, eur_rate: Decimal | None) -> str:
+    """Return a quote-currency amount in EUR when a rate is known, else as is.
+
+    Args:
+        amount: The amount in ``currency``.
+        currency: Its currency.
+        eur_rate: Units of ``currency`` per one euro (the ECB quotation), or
+            ``None`` when no rate is known. Ignored for EUR itself.
+
+    Returns:
+        ``€52,410.20`` with a rate, ``61,234.50 USDT`` without one.
+    """
+    if eur_rate is None or currency is Currency.EUR:
+        return fmt_money(amount, currency)
+    return fmt_money(amount / eur_rate, Currency.EUR)
 
 
 def fmt_qty(amount: Decimal, asset: Currency) -> str:

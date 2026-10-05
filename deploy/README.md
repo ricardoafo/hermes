@@ -273,11 +273,14 @@ The deploy ships `hermes-release-<sha12>.tar.gz` to the VPS and runs
   versions/<sha12>/   .venv, config/, deploy/, .installed    (3 newest kept)
   current  -> versions/<sha12>                      (what systemd runs)
   previous -> versions/<older>                      (rollback target)
-  bin/                health_gate.sh, rollback.sh
+  bin/                health_gate.sh, rollback.sh, schema_guard.py
   python/             uv-managed Python 3.14.7
 /etc/hermes/env.production                          (secrets, root:root 0600)
 /var/lib/hermes/hermes.sqlite3                      (state, hermes:hermes)
 ```
+
+A prune also keeps any older release that a running process still runs
+from, such as a console opened before the deploy, and logs its pid.
 
 The release installs from the hash-pinned requirements plus the CI-built
 wheel (`docs/decisions/2026-10-02-vps-install-from-hashed-requirements.md`),
