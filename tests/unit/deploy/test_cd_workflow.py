@@ -374,3 +374,10 @@ def test_telegram_announcement_never_fails_the_deploy() -> None:
 
     assert step["continue-on-error"] is True
     assert labels.index("Smoke tests") < labels.index("Announce the release on Telegram")
+
+
+def test_bundle_ships_the_schema_guard() -> None:
+    """install_release.sh and rollback.sh run schema_guard.py from the bundle's bin (#655)."""
+    bundle_text = "\n".join(str(step.get("run", "")) for step in _steps("bundle"))
+
+    assert "scripts/deploy/schema_guard.py" in bundle_text
