@@ -177,7 +177,7 @@ jobs:
       - name: Review
         id: review
         if: steps.token.outputs.present == 'true'
-        uses: anthropics/claude-code-action@756cc22e19660d20e8cc9496b4f242475a7f7790 # v1.0.235
+        uses: anthropics/claude-code-action@8ce9314fa9a404564fa7e954cd84f25bcba2b829 # v1.0.236
         with:
           path_to_bun_executable: ${{ steps.baked.outputs.bun }}
           path_to_claude_code_executable: ${{ steps.baked.outputs.claude }}
