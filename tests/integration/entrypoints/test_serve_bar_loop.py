@@ -10,6 +10,8 @@ Invariants protected here (change ``309-serve-bar-loop``):
 - one signal gives one ledger row and one call per channel;
 - a restart never re-notifies, never skips a bar and never forgets an open
   position, whatever happened while the service was down;
+- an entry that was not filled leaves the strategy flat, in the same boot and
+  after a restart (#707);
 - warm-up seeds history and never evaluates it;
 - failures are loud (exit 1, Sentry) except a notifier outage, which never
   stops the loop; SIGTERM while idle closes every resource and exits 0.
@@ -219,11 +221,12 @@ def test_signal_missed_during_downtime_is_emitted_once_across_two_restarts(
 
 
 def test_restart_between_entry_and_exit_still_emits_exactly_one_exit(tmp_path: Path) -> None:
-    """After a restart the open position is restored, so the crash bar emits one EXIT."""
+    """After a restart the filled position is restored, so the crash bar emits one EXIT."""
     db = tmp_path / "ledger.sqlite3"
-    boot1 = FakeFeed(warm=history(10), live_bars=live(11, 12))
-    run_once(build(db, boot1, _after(12)), boot1)
-    boot2 = FakeFeed(warm=history(12), live_bars=live(13, 14))
+    # Delivered one second after its close, the entry fills on a fresh book.
+    boot1 = FakeFeed(warm=history(10), live_bars=live(11, 11))
+    run_once(build(db, boot1, _after(11)), boot1)
+    boot2 = FakeFeed(warm=history(11), live_bars=live(12, 14))
     slack = RecordingChannel()
 
     code = run_once(build(db, boot2, _after(14), slack=slack), boot2)
@@ -240,7 +243,11 @@ def test_restart_between_entry_and_exit_still_emits_exactly_one_exit(tmp_path: P
 
 
 def test_stale_signal_from_downtime_is_recorded_but_not_notified(tmp_path: Path) -> None:
-    """An entry older than two bars is written to the ledger and not notified; the fresh exit is."""
+    """An entry older than two bars is recorded and not notified, and the crash exits nothing.
+
+    The book behind that entry is hours old, so RO-04 refuses it; the strategy
+    is flat again and raises no exit for a position never held (#707).
+    """
     db = tmp_path / "ledger.sqlite3"
     boot1 = FakeFeed(warm=history(10))
     run_once(build(db, boot1, _after(10)), boot1)
@@ -249,9 +256,33 @@ def test_stale_signal_from_downtime_is_recorded_but_not_notified(tmp_path: Path)
 
     run_once(build(db, boot2, _after(14), telegram=telegram), boot2)
 
-    assert ([k for k, _ in _signals(db)], signal_kinds(telegram)) == (
-        ["entry", "exit"],
-        ["exit"],
+    assert ([k for k, _ in _signals(db)], signal_kinds(telegram), events(db, "TradeExecuted")) == (
+        ["entry"],
+        [],
+        [],
+    )
+
+
+def test_restart_after_a_refused_entry_restores_no_position(tmp_path: Path) -> None:
+    """A restart after a stale-book entry starts flat, so the crash bar exits nothing (#707).
+
+    The ledger holds the entry signal but no trade; the restored position comes
+    from the portfolio, which never held the pair.
+    """
+    db = tmp_path / "ledger.sqlite3"
+    boot1 = FakeFeed(warm=history(10))
+    run_once(build(db, boot1, _after(10)), boot1)
+    boot2 = FakeFeed(warm=history(12))
+    run_once(build(db, boot2, _after(12)), boot2)
+    boot3 = FakeFeed(warm=history(12), live_bars=live(13, 14))
+    telegram = RecordingChannel()
+
+    run_once(build(db, boot3, _after(14), telegram=telegram), boot3)
+
+    assert ([k for k, _ in _signals(db)], signal_kinds(telegram), events(db, "TradeExecuted")) == (
+        ["entry"],
+        [],
+        [],
     )
 
 
