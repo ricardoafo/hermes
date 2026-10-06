@@ -86,7 +86,32 @@ Actors: `operator` | `claude-experimentalist` | `claude-integrity-checker` | `en
 
 <!-- entry-sha256: 9d0b2e9efe4eccfc2bdc23b22de599922c2478158e28b54d719cc68a67832f59 -->
 
-### 2026-10-05T22:10:32Z | shadow | operator | engine bug fix: the chandelier stop ratchets up while in a position (issue #680, not a deviation)
+### 2026-10-06T11:13:17Z | shadow | operator | shadow clock reset: the run since 2026-10-04 is a warm-up; day 0 waits for the shadow Ready rules (not a deviation)
+
+**Observed metrics**: N/A (no metrics this entry)
+
+**Decision**:
+
+- The shadow run started 2026-10-04T20:13Z (PR #617) does not count toward the §7 90-day shadow: the §7/§10 backtest gate had not run and v1 is still UNTRUSTED (issue #735).
+- It keeps running as an engine warm-up. Day 0 is the first bar after every ADR-021 shadow Ready rule holds; the 90 days run from there.
+- At day 0 the warm-up ledger is archived read-only and a fresh run starts with an empty ledger and its own run id; the operator runs that step (issue #797).
+- The backtest replay starts the test window flat (issue #723) before the gate runs.
+
+**Rationale**:
+
+- Operator words, verbatim: "Current is invalid because it wasnt back tested" and "we will need to kill current shadow later as is invalid" (2026-10-06).
+- Governing sections: pre-registration v1 §7 (BACKTEST_CERTIFIED precedes SHADOW_CERTIFIED) and §10 (a failed backtest does not proceed to shadow).
+- Not a deviation per §11: no §3, §4, §5, §6 or §9 item changes and the signed file is not edited; this restores the signed order.
+- Consequence: certification cannot start before day 0 + 90 days, so the one-shot OOS test moves past 2027-01-01 by however long day 0 lands after 2026-10-03.
+
+**Files touched**:
+
+- docs/architecture/adr-021-strategy-lifecycle-ready-and-done.md (added)
+- docs/experiments/swing-mvp1/lab-notebook.md (modified)
+
+<!-- entry-sha256: 0870906765a57d764d7a2180c8fa359c749c9fa8842b450762a8f66f8fe03294 -->
+
+### 2026-10-06T12:32:30Z | shadow | operator | engine bug fix: the chandelier stop ratchets up while in a position (issue #680, not a deviation)
 
 **Observed metrics**:
 
@@ -121,4 +146,4 @@ Actors: `operator` | `claude-experimentalist` | `claude-integrity-checker` | `en
 - changelog.d/680-fixed.md (added)
 - docs/experiments/swing-mvp1/lab-notebook.md (modified)
 
-<!-- entry-sha256: 07990a377bfa7722547a9fa06724e46a610601bf05eb4b8cbcbbd97ef70c6260 -->
+<!-- entry-sha256: dd4890f09afcedf43be07fb7a438f71f7f2754b4635fb5a63a8372b0c97c6c59 -->

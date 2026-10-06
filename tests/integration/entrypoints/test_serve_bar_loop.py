@@ -10,6 +10,8 @@ Invariants protected here (change ``309-serve-bar-loop``):
 - one signal gives one ledger row and one call per channel;
 - a restart never re-notifies, never skips a bar and never forgets an open
   position, whatever happened while the service was down;
+- an entry that was not filled leaves the strategy flat, in the same boot and
+  after a restart (#707);
 - warm-up seeds history and never evaluates it;
 - failures are loud (exit 1, Sentry) except a notifier outage, which never
   stops the loop; SIGTERM while idle closes every resource and exits 0.
@@ -21,6 +23,7 @@ import asyncio
 import dataclasses
 import json
 import sqlite3
+from collections.abc import AsyncIterator, Mapping, Sequence
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -38,10 +41,13 @@ from hermes.application.notification_router import RouterConfig
 from hermes.application.signal_notifier import SignalNotifier
 from hermes.domain.errors import ExchangeError
 from hermes.domain.events.bar_processed import BarProcessed
+from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
+from hermes.domain.value_objects.pair import Pair
 from hermes.entrypoints import serve as serve_module
 from tests.support.serve_loop import (
     BTC,
+    FakeClock,
     FakeFeed,
     RecordingChannel,
     build,
@@ -219,11 +225,12 @@ def test_signal_missed_during_downtime_is_emitted_once_across_two_restarts(
 
 
 def test_restart_between_entry_and_exit_still_emits_exactly_one_exit(tmp_path: Path) -> None:
-    """After a restart the open position is restored, so the crash bar emits one EXIT."""
+    """After a restart the filled position is restored, so the crash bar emits one EXIT."""
     db = tmp_path / "ledger.sqlite3"
-    boot1 = FakeFeed(warm=history(10), live_bars=live(11, 12))
-    run_once(build(db, boot1, _after(12)), boot1)
-    boot2 = FakeFeed(warm=history(12), live_bars=live(13, 14))
+    # Delivered one second after its close, the entry fills on a fresh book.
+    boot1 = FakeFeed(warm=history(10), live_bars=live(11, 11))
+    run_once(build(db, boot1, _after(11)), boot1)
+    boot2 = FakeFeed(warm=history(11), live_bars=live(12, 14))
     slack = RecordingChannel()
 
     code = run_once(build(db, boot2, _after(14), slack=slack), boot2)
@@ -240,7 +247,11 @@ def test_restart_between_entry_and_exit_still_emits_exactly_one_exit(tmp_path: P
 
 
 def test_stale_signal_from_downtime_is_recorded_but_not_notified(tmp_path: Path) -> None:
-    """An entry older than two bars is written to the ledger and not notified; the fresh exit is."""
+    """An entry older than two bars is recorded and not notified, and the crash exits nothing.
+
+    The book behind that entry is hours old, so RO-04 refuses it; the strategy
+    is flat again and raises no exit for a position never held (#707).
+    """
     db = tmp_path / "ledger.sqlite3"
     boot1 = FakeFeed(warm=history(10))
     run_once(build(db, boot1, _after(10)), boot1)
@@ -249,9 +260,33 @@ def test_stale_signal_from_downtime_is_recorded_but_not_notified(tmp_path: Path)
 
     run_once(build(db, boot2, _after(14), telegram=telegram), boot2)
 
-    assert ([k for k, _ in _signals(db)], signal_kinds(telegram)) == (
-        ["entry", "exit"],
-        ["exit"],
+    assert ([k for k, _ in _signals(db)], signal_kinds(telegram), events(db, "TradeExecuted")) == (
+        ["entry"],
+        [],
+        [],
+    )
+
+
+def test_restart_after_a_refused_entry_restores_no_position(tmp_path: Path) -> None:
+    """A restart after a stale-book entry starts flat, so the crash bar exits nothing (#707).
+
+    The ledger holds the entry signal but no trade; the restored position comes
+    from the portfolio, which never held the pair.
+    """
+    db = tmp_path / "ledger.sqlite3"
+    boot1 = FakeFeed(warm=history(10))
+    run_once(build(db, boot1, _after(10)), boot1)
+    boot2 = FakeFeed(warm=history(12))
+    run_once(build(db, boot2, _after(12)), boot2)
+    boot3 = FakeFeed(warm=history(12), live_bars=live(13, 14))
+    telegram = RecordingChannel()
+
+    run_once(build(db, boot3, _after(14), telegram=telegram), boot3)
+
+    assert ([k for k, _ in _signals(db)], signal_kinds(telegram), events(db, "TradeExecuted")) == (
+        ["entry"],
+        [],
+        [],
     )
 
 
@@ -463,14 +498,46 @@ def _stop_rows(db: Path) -> list[tuple[str, str, str, str, str, str | None, int 
         connection.close()
 
 
+class _SteppingFeed(FakeFeed):
+    """Feed whose clock reads one second after each bar it delivers, as a live feed does.
+
+    A fixed clock after the last bar makes every earlier book stale, so RO-04
+    refuses the entry and no position is ever held (#707).
+    """
+
+    def __init__(self, clock: FakeClock, warm: list[Bar], live_bars: list[Bar]) -> None:
+        """Script the feed and keep the clock it steps."""
+        super().__init__(warm=warm, live_bars=live_bars)
+        self.clock = clock
+
+    async def stream_closed_bars(
+        self,
+        pairs: Sequence[Pair],
+        intervals: Sequence[KlineInterval],
+        *,
+        resume_after: Mapping[tuple[Pair, KlineInterval], datetime] | None = None,
+    ) -> AsyncIterator[Bar]:
+        """Step the clock to each bar's delivery time, then yield it."""
+        stream = super().stream_closed_bars(pairs, intervals, resume_after=resume_after)
+        async for bar in stream:
+            self.clock.current = bar.close_time + timedelta(seconds=1)
+            yield bar
+
+
+def _stepping_run(db: Path, *, warm_upto: int, live_from: int, live_to: int) -> None:
+    """Run one boot whose bars each arrive one second after they close."""
+    clock = FakeClock(_after(warm_upto))
+    feed = _SteppingFeed(clock, history(warm_upto), live(live_from, live_to))
+    run_once(build(db, feed, clock.now(), clock=clock), feed)
+
+
 def test_every_held_bar_writes_one_stop_mark_from_entry_to_exit(tmp_path: Path) -> None:
     """#388: the entry bar, each held bar and the exit bar get one row; flat bars none.
 
     The entry row carries the stop the entry signal carries, with no move yet.
     """
     db = tmp_path / "ledger.sqlite3"
-    feed = FakeFeed(warm=history(10), live_bars=live(11, 14))
-    run_once(build(db, feed, _after(14)), feed)
+    _stepping_run(db, warm_upto=10, live_from=11, live_to=14)
 
     rows = _stop_rows(db)
     entry = json.loads(events(db, "SignalEmitted")[0]["payload_json"])
@@ -490,13 +557,14 @@ def test_restart_while_held_writes_the_same_stop_marks_as_an_unbroken_run(
     whether the stop moved.
     """
     unbroken = tmp_path / "unbroken.sqlite3"
-    feed = FakeFeed(warm=history(10), live_bars=live(11, 14))
-    run_once(build(unbroken, feed, _after(14)), feed)
+    _stepping_run(unbroken, warm_upto=10, live_from=11, live_to=14)
     restarted = tmp_path / "restarted.sqlite3"
-    boot1 = FakeFeed(warm=history(10), live_bars=live(11, 12))
-    run_once(build(restarted, boot1, _after(12)), boot1)
-    boot2 = FakeFeed(warm=history(12), live_bars=live(13, 14))
+    _stepping_run(restarted, warm_upto=10, live_from=11, live_to=12)
 
-    run_once(build(restarted, boot2, _after(14)), boot2)
+    _stepping_run(restarted, warm_upto=12, live_from=13, live_to=14)
 
-    assert _stop_rows(restarted) == _stop_rows(unbroken)
+    held = [h4_bar(i).close_time.isoformat() for i in (11, 12, 13, 14)]
+    assert ([r[1] for r in _stop_rows(restarted)], _stop_rows(restarted)) == (
+        held,
+        _stop_rows(unbroken),
+    )
