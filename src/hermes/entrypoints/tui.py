@@ -412,6 +412,7 @@ class HomeApp(App[None]):
         Binding("down,j", "select(1)", "next", show=False),
         Binding("enter", "open_detail", "detail", show=False),
         Binding("escape", "go_back", "back", show=False),
+        Binding("a,A", "toggle_quiet", "checks", show=False),
         Binding("l,L", "logs", "logs", show=False),
         Binding("t,T", "pick_theme", "theme", show=False),
         Binding("question_mark", "help", "help", show=False),
@@ -460,6 +461,7 @@ class HomeApp(App[None]):
         self._range = PortfolioRange.TODAY
         self._selected: str | None = None
         self._detail_open = False
+        self._show_quiet = False
         self._tab = _HOME
         self._tab_history: list[int] = []
         self._content: dict[str, RenderableType] = {}
@@ -816,7 +818,12 @@ class HomeApp(App[None]):
         )
         self._set(
             "activity",
-            _card("Activity", lambda: render_activity(model.activity(), ctx, limit=rows)),
+            _card(
+                "Activity",
+                lambda: render_activity(
+                    model.activity(include_quiet=self._show_quiet), ctx, limit=rows
+                ),
+            ),
         )
         self._set(
             "shadow", _card("Shadow test", lambda: render_shadow_test(model.shadow_test(), ctx))
@@ -995,6 +1002,13 @@ class HomeApp(App[None]):
             if command.title != "Theme":
                 yield command
 
+    def action_toggle_quiet(self) -> None:
+        """Show or fold the one-line 4h checks in the activity card."""
+        if not self._on_home:
+            return
+        self._show_quiet = not self._show_quiet
+        self._redraw()
+
     def action_logs(self) -> None:
         """Show the last journal lines, as ``hermes logs`` prints them."""
         if self._on_home:
@@ -1025,6 +1039,7 @@ class HomeApp(App[None]):
             Text("  1-8 screens · Tab / Shift+Tab next / previous · Ctrl+P command palette"),
             Text("  D day · W week · M month · Y year"),
             Text("  ↑ ↓ choose a position · Enter open its detail · Esc back"),
+            Text("  A show or fold the 4h check lines in Activity"),
             Text("  L logs · T theme · ? this help · Q quit"),
             Text(
                 "This screen is read-only: nothing here changes a position, a stop or the ledger."
