@@ -33,8 +33,6 @@ Exit codes:
   2  usage error
 """
 
-from __future__ import annotations
-
 import os
 import re
 import shutil
