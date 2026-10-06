@@ -28,6 +28,7 @@ from hermes.entrypoints.tui_charts import (
     BRAILLE_BLANK,
     area_chart,
     braille_area,
+    braille_spark,
     gradient_digits,
     meter,
     run_bar,
@@ -210,3 +211,14 @@ def test_run_bar_fills_day_over_length() -> None:
     """Day 45 of 90 over 10 cells fills 5 cells in the brand gradient."""
     bar = run_bar(45, 90, 10, BASE)
     assert (bar.plain, bar.spans[0].style) == ("█████░░░░░", BASE.brand[0])
+
+
+def test_braille_spark_is_one_row_of_braille_in_one_colour() -> None:
+    """A rising 4-tick series is 2 cells, low at the left, full at the right, all one colour."""
+    spark = braille_spark([Decimal(1), Decimal(2), Decimal(3), Decimal(4)], 2, "#468CE6")
+    assert (spark.plain, spark.style) == ("⣠⣾", "#468CE6")
+
+
+def test_braille_spark_of_no_width_is_empty() -> None:
+    """Zero cells draw nothing rather than a blank cell."""
+    assert braille_spark([Decimal(1)], 0, "#468CE6").plain == ""

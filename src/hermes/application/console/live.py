@@ -53,6 +53,7 @@ __all__ = [
     "LiveQuote",
     "LiveState",
     "LiveStatus",
+    "LiveTickerPort",
     "LiveTotal",
     "TickOutcome",
     "TickerPoller",

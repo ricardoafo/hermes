@@ -77,6 +77,8 @@ __all__ = [
     "DEMO_TAG",
     "MADRID",
     "RenderContext",
+    "day_clock",
+    "range_label",
     "render_activity",
     "render_heartbeat",
     "render_market_watch",
@@ -110,6 +112,20 @@ _RANGE_LABEL: Final[dict[PortfolioRange, str]] = {
     PortfolioRange.MONTH: "this month",
     PortfolioRange.YEAR: "this year",
 }
+
+
+def range_label(range_: PortfolioRange) -> str:
+    """Return the words a range is shown with: ``today``, ``this week``, ...
+
+    Args:
+        range_: The portfolio range.
+
+    Returns:
+        Its label.
+    """
+    return _RANGE_LABEL[range_]
+
+
 _CUSHION_STYLE: Final[dict[CushionLevel, str]] = {
     CushionLevel.GREEN: "green",
     CushionLevel.AMBER: "yellow",
@@ -230,8 +246,16 @@ def _clock(ctx: RenderContext, at: datetime) -> str:
     return at.astimezone(ctx.tz).strftime("%H:%M")
 
 
-def _day_clock(ctx: RenderContext, at: datetime) -> str:
-    """Return ``HH:MM`` on the read day, else ``Sun 02:00``."""
+def day_clock(ctx: RenderContext, at: datetime) -> str:
+    """Return ``HH:MM`` on the read day, else ``Sun 02:00``.
+
+    Args:
+        ctx: Render context (its clock and timezone).
+        at: The moment.
+
+    Returns:
+        The local clock time, with the weekday when it is not the read day.
+    """
     local = at.astimezone(ctx.tz)
     if local.date() == ctx.now.astimezone(ctx.tz).date():
         return local.strftime("%H:%M")
@@ -704,7 +728,6 @@ def render_market_watch(
     ctx: RenderContext,
     *,
     title: bool = True,
-    chart_slot: str | None = None,
 ) -> Group:
     """Render each checked stream: last check, its result, next check (#650).
 
@@ -716,8 +739,6 @@ def render_market_watch(
         rows: The checked streams.
         ctx: Render context.
         title: Lead with the "Market watch" title (a framed panel has its own).
-        chart_slot: Text of a dim "chart" column held for the live per-coin
-            chart (issue #713), or ``None`` for no such column.
 
     Returns:
         The market watch table, or the empty-state line.
@@ -728,19 +749,15 @@ def render_market_watch(
     table = Table(box=box.SIMPLE_HEAD, pad_edge=False, show_edge=False)
     for name in ("coin", "tf", "last check", "result", "next check"):
         table.add_column(name)
-    if chart_slot is not None:
-        table.add_column("chart", no_wrap=True)
     for row in rows:
         result = Text("none", style="dim") if row.signal is None else Text(row.signal, style="bold")
         cells: list[RenderableType] = [
             row.coin,
             row.timeframe,
-            _day_clock(ctx, row.last_check_at),
+            day_clock(ctx, row.last_check_at),
             result,
-            _day_clock(ctx, row.next_check_at),
+            day_clock(ctx, row.next_check_at),
         ]
-        if chart_slot is not None:
-            cells.append(Text(chart_slot, style="dim"))
         table.add_row(*cells)
     return _framed(ctx, [*head, table])
 

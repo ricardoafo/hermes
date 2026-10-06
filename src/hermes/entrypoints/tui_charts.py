@@ -23,6 +23,7 @@ __all__ = [
     "BRAILLE_BLANK",
     "area_chart",
     "braille_area",
+    "braille_spark",
     "gradient_digits",
     "meter",
     "run_bar",
@@ -162,6 +163,22 @@ def area_chart(values: Sequence[float], *, width: int, rows: int, stops: Sequenc
         position = 1 - index / max(rows - 1, 1)
         out.append(Text(line, style=gradient(stops, position)))
     return Text("\n").join(out)
+
+
+def braille_spark(values: Sequence[Decimal], width: int, colour: str) -> Text:
+    """Return a one-row braille sparkline of ``values`` in one colour.
+
+    Args:
+        values: The series, oldest first.
+        width: Cells.
+        colour: Its colour (up or down, from the data tokens).
+
+    Returns:
+        ``width`` braille cells; blank cells for an empty series, nothing for no width.
+    """
+    if width < 1:
+        return Text("")
+    return Text(braille_area([float(v) for v in values], width=width, rows=1)[0], style=colour)
 
 
 def meter(

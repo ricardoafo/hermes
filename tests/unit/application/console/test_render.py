@@ -360,15 +360,9 @@ def test_activity_without_icons_is_unchanged() -> None:
     assert rows[1].split()[:2] == ["2h", "ago"]
 
 
-def test_market_watch_without_title_and_with_a_chart_slot() -> None:
-    """No "Market watch" title; the header ends with a chart column holding the slot text."""
+def test_market_watch_without_title() -> None:
+    """No "Market watch" title; the header ends with the next check column."""
     model, ctx = _operator()
-    text = to_plain_text(
-        render_market_watch(model.market_watch(), ctx, title=False, chart_slot="┈┈"), width=100
-    )
+    text = to_plain_text(render_market_watch(model.market_watch(), ctx, title=False), width=100)
     lines = text.splitlines()
-    assert (lines[0].split()[-1], "Market watch" in text, lines[2].split()[-1]) == (
-        "chart",
-        False,
-        "┈┈",
-    )
+    assert (lines[0].split()[-2:], "Market watch" in text) == (["next", "check"], False)
