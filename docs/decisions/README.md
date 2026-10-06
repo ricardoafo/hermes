@@ -53,28 +53,28 @@ What this locks in. What it forecloses. What we'll revisit.
 
 ## Living index
 
-| Date       | Entry                                                                                        | Supersedes                                    |
-| ---------- | -------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| 2026-08-21 | [PR flow hardening](2026-08-21-pr-flow-hardening.md)                                         | —                                             |
-| 2026-08-21 | [Revalidate-then-merge](2026-08-21-revalidate-then-merge.md)                                 | —                                             |
-| 2026-08-21 | [Dependabot over Renovate](2026-08-21-dependabot-over-renovate.md)                           | ADR-010 §Renovate                             |
-| 2026-08-21 | [Python 3.14 pin](2026-08-21-python-3-14-pin.md)                                             | ADR-003 §User Interface + README §64          |
-| 2026-08-22 | [Drop `safety` from dev deps](2026-08-22-drop-safety.md)                                     | ADR-010 §3 CVE scanning (safety+pip-audit)    |
-| 2026-08-22 | [ci-success aggregator fix](2026-08-22-ci-success-aggregator-fix.md)                         | Inline shell aggregator in ci.yml             |
-| 2026-08-23 | [Add Slack alongside Telegram](2026-08-23-slack-alongside-telegram.md)                       | ADR-008 §4 Telegram alerts scope              |
-| 2026-08-23 | [Binance testnet klines + SQLite kline store](2026-08-23-binance-testnet-klines.md)          | —                                             |
-| 2026-08-23 | [FX rate source — Frankfurter](2026-08-23-fx-rate-source-frankfurter.md)                     | ADR-002 §4 (EUR-first, ECB rates)             |
-| 2026-08-23 | [Fetch-before-launch tooling gate](2026-08-23-fetch-before-launch-tooling.md)                | AGENTS.md §sub-agent-delegation rule 4 (norm) |
-| 2026-08-24 | [Dependency-upgrade review checklist](2026-08-24-dependency-upgrade-checklist.md)            | ADR-010 §CVE-scanning (checklist codified)    |
-| 2026-10-02 | [Binance public market-data host](2026-10-02-binance-public-market-data-host.md)             | Testnet-only stance of 2026-08-23 (live bars) |
-| 2026-10-02 | [Forward testing inside the OOS window](2026-10-02-forward-testing-during-oos-window.md)     | —                                             |
-| 2026-10-02 | [VPS installs from hashed requirements](2026-10-02-vps-install-from-hashed-requirements.md)  | ADR-010 §1 (VPS install step only)            |
-| 2026-10-02 | [Prod env file path](2026-10-02-env-file-path-etc-hermes-env-production.md)                  | 2026-08-23 credential-storage (prod path)     |
-| 2026-10-03 | [ADR-011 accepted](2026-10-03-adr-011-accepted.md)                                           | ADR-011 status PROPOSED                       |
-| 2026-10-03 | [Route shadow signals to Telegram and Slack](2026-10-03-signal-notification-routing.md)      | —                                             |
-| 2026-10-03 | [Sharpe kill window, M-09/M-10](2026-10-03-calibration-metrics-and-shadow-sharpe-kill.md)    | Draft M-09/M-10 thresholds                    |
-| 2026-10-04 | [Kraken spot trading adapter](2026-10-04-kraken-spot-adapter.md)                             | 2026-08-24 Kraken entry (public-only scope)   |
-| 2026-10-04 | [Tax-filing report defaults](2026-10-04-tax-filing-defaults.md)                              | —                                             |
+One line per entry, appended at the end: date, link, and what it supersedes if anything.
+
+- 2026-08-21 [PR flow hardening](2026-08-21-pr-flow-hardening.md)
+- 2026-08-21 [Revalidate-then-merge](2026-08-21-revalidate-then-merge.md)
+- 2026-08-21 [Dependabot over Renovate](2026-08-21-dependabot-over-renovate.md) (supersedes ADR-010 §Renovate)
+- 2026-08-21 [Python 3.14 pin](2026-08-21-python-3-14-pin.md) (supersedes ADR-003 §User Interface + README §64)
+- 2026-08-22 [Drop `safety` from dev deps](2026-08-22-drop-safety.md) (supersedes ADR-010 §3 CVE scanning (safety+pip-audit))
+- 2026-08-22 [ci-success aggregator fix](2026-08-22-ci-success-aggregator-fix.md) (supersedes Inline shell aggregator in ci.yml)
+- 2026-08-23 [Add Slack alongside Telegram](2026-08-23-slack-alongside-telegram.md) (supersedes ADR-008 §4 Telegram alerts scope)
+- 2026-08-23 [Binance testnet klines + SQLite kline store](2026-08-23-binance-testnet-klines.md)
+- 2026-08-23 [FX rate source — Frankfurter](2026-08-23-fx-rate-source-frankfurter.md) (supersedes ADR-002 §4 (EUR-first, ECB rates))
+- 2026-08-23 [Fetch-before-launch tooling gate](2026-08-23-fetch-before-launch-tooling.md) (supersedes AGENTS.md §sub-agent-delegation rule 4 (norm))
+- 2026-08-24 [Dependency-upgrade review checklist](2026-08-24-dependency-upgrade-checklist.md) (supersedes ADR-010 §CVE-scanning (checklist codified))
+- 2026-10-02 [Binance public market-data host](2026-10-02-binance-public-market-data-host.md) (supersedes Testnet-only stance of 2026-08-23 (live bars))
+- 2026-10-02 [Forward testing inside the OOS window](2026-10-02-forward-testing-during-oos-window.md)
+- 2026-10-02 [VPS installs from hashed requirements](2026-10-02-vps-install-from-hashed-requirements.md) (supersedes ADR-010 §1 (VPS install step only))
+- 2026-10-02 [Prod env file path](2026-10-02-env-file-path-etc-hermes-env-production.md) (supersedes 2026-08-23 credential-storage (prod path))
+- 2026-10-03 [ADR-011 accepted](2026-10-03-adr-011-accepted.md) (supersedes ADR-011 status PROPOSED)
+- 2026-10-03 [Route shadow signals to Telegram and Slack](2026-10-03-signal-notification-routing.md)
+- 2026-10-03 [Sharpe kill window, M-09/M-10](2026-10-03-calibration-metrics-and-shadow-sharpe-kill.md) (supersedes Draft M-09/M-10 thresholds)
+- 2026-10-04 [Kraken spot trading adapter](2026-10-04-kraken-spot-adapter.md) (supersedes 2026-08-24 Kraken entry (public-only scope))
+- 2026-10-04 [Tax-filing report defaults](2026-10-04-tax-filing-defaults.md)
 
 ## Anti-patterns
 

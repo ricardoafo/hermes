@@ -106,8 +106,12 @@ jobs:
             fi
           done
 
+          # Everything the reviewer needs from git is written here, because
+          # it gets no shell: `git log --output=` and friends could write
+          # files (#778).
           git diff "$BASE_SHA...$HEAD_SHA" > .ai-review/diff.patch
           git diff --name-status "$BASE_SHA...$HEAD_SHA" > .ai-review/files.txt
+          git log --format='commit %h%n%s%n%n%b' "$BASE_SHA..$HEAD_SHA" > .ai-review/log.txt
 
           # The token travels only in a request header, never in a command
           # line or an error message: pr.md goes to the model (#642).
@@ -148,26 +152,49 @@ jobs:
           echo "schema=$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1])), separators=(",", ":")))' "$tools/schema.json")" >> "$GITHUB_OUTPUT"
           echo "tools=$tools" >> "$GITHUB_OUTPUT"
 
+      # The checkout is the PR's merge ref, so a PR could add hooks,
+      # permissions, MCP servers or instructions that Claude Code loads
+      # from the working tree. The reviewer needs none of them (#778).
+      - name: Remove the PR's agent settings from the checkout
+        if: steps.token.outputs.present == 'true'
+        run: |
+          set -euo pipefail
+          find . -path ./.git -prune -o \( -name .claude -o -name .mcp.json -o -name CLAUDE.md -o -name CLAUDE.local.md \) -print0 \
+            | xargs -0 -r rm -rf
+
       # The runner image bakes the Bun and Claude Code versions this action
       # pins (gh-runner Dockerfile), and its bun cache is a volume. Use the
       # baked binaries when they are the pinned versions, so a review
       # downloads nothing; otherwise the action installs its own.
+      #
+      # The pins are read from the action's own downloaded copy, not
+      # written here: they drifted from the action twice, and every review
+      # then downloaded both (about 75 s, #686). A Dependabot bump of the
+      # action now moves the pins with it; rebuild the runner image to
+      # match (scripts/dev/gh-runner/Dockerfile).
       - name: Baked Bun and Claude Code
         id: baked
         if: steps.token.outputs.present == 'true'
-        env:
-          BUN_PIN: "1.3.6"
-          CLAUDE_PIN: "2.1.112"
         run: |
+          action=$(ls -d "$RUNNER_WORKSPACE"/../_actions/anthropics/claude-code-action/*/ 2>/dev/null | head -n 1)
+          BUN_PIN=
+          CLAUDE_PIN=
+          # No action copy found: leave both pins empty, so the action
+          # downloads its own, rather than reading files from the checkout.
+          if [ -n "$action" ]; then
+            BUN_PIN=$(sed -n 's/^ *bun-version: *\([0-9.]*\).*/\1/p' "${action}action.yml" 2>/dev/null | head -n 1)
+            CLAUDE_PIN=$(sed -n 's/.*claudeCodeVersion = "\([0-9.]*\)".*/\1/p' "${action}src/entrypoints/run.ts" 2>/dev/null | head -n 1)
+          fi
+          echo "The action pins bun ${BUN_PIN:-?} and Claude Code ${CLAUDE_PIN:-?}"
           bun=$(command -v bun || true)
-          if [ -n "$bun" ] && [ "$("$bun" --version)" = "$BUN_PIN" ]; then
+          if [ -n "$BUN_PIN" ] && [ -n "$bun" ] && [ "$("$bun" --version)" = "$BUN_PIN" ]; then
             echo "bun=$bun" >> "$GITHUB_OUTPUT"
             echo "Using baked bun $BUN_PIN at $bun"
           else
             echo "::notice::No baked bun $BUN_PIN; the action downloads it."
           fi
           claude=$(command -v claude || true)
-          if [ -n "$claude" ] && "$claude" --version 2>/dev/null | grep -q "^$CLAUDE_PIN "; then
+          if [ -n "$CLAUDE_PIN" ] && [ -n "$claude" ] && "$claude" --version 2>/dev/null | grep -q "^$CLAUDE_PIN "; then
             echo "claude=$claude" >> "$GITHUB_OUTPUT"
             echo "Using baked Claude Code $CLAUDE_PIN at $claude"
           else
@@ -188,8 +215,8 @@ jobs:
           claude_args: >-
             ${{ vars.AI_REVIEW_MODEL && format('--model {0}', vars.AI_REVIEW_MODEL) || '' }}
             --max-turns 80
-            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*)"
-            --disallowedTools "Edit,Write,NotebookEdit,WebFetch,WebSearch"
+            --allowedTools "Read,Grep,Glob"
+            --disallowedTools "Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch"
             --json-schema '${{ steps.ctx.outputs.schema }}'
 
       - name: Post the review and set the check
@@ -203,8 +230,21 @@ jobs:
         with:
           script: |
             const fs = require('fs');
+            const os = require('os');
             const path = require('path');
-            const lib = require(path.join(process.env.TOOLS, 'ai-review.cjs'));
+            const { execFileSync } = require('child_process');
+            // main's copy, read now into a fresh directory: nothing the
+            // review step could have touched is loaded with this token
+            // (#778). The PR's own copy only bootstraps a main without one.
+            let libPath = path.join(process.env.TOOLS, 'ai-review.cjs');
+            try {
+              const fresh = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ai-review-')), 'ai-review.cjs');
+              fs.writeFileSync(fresh, execFileSync('git', ['show', 'origin/main:tools/pr-metadata/ai-review.cjs']));
+              libPath = fresh;
+            } catch (err) {
+              core.warning(`ai-review.cjs not on main yet; using the PR's copy (${err.message.split('\n')[0]})`);
+            }
+            const lib = require(libPath);
             const file = process.env.EXECUTION_FILE;
             const metrics = lib.parseMetrics(file && fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '');
             const { owner, repo } = context.repo;
@@ -218,7 +258,11 @@ jobs:
             let body;
             let result;
             try {
-              const review = lib.parseReview(process.env.OUTPUT);
+              let review = lib.parseReview(process.env.OUTPUT);
+              if (typeof lib.guardReviewPath === 'function') {
+                const touched = lib.reviewPathChanges(fs.readFileSync('.ai-review/files.txt', 'utf8'));
+                review = lib.guardReviewPath(review, touched);
+              }
               body = lib.renderComment(review, meta);
               result = lib.outcome(review);
             } catch (err) {

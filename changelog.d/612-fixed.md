@@ -1,1 +1,0 @@
-- `hermes ledger verify` names a consumption whose quantity cannot be read, instead of reporting its lot as a remainder mismatch.

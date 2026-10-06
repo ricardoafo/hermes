@@ -82,30 +82,28 @@ Cross-references:
 
 ## Contents
 
-| File                                     | Purpose                                                                                            | Status                                                            |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `systemd/hermes.service`                 | Main hermes process unit (reads `/etc/hermes/env.production`, runs `hermes serve`)                 | installed and enabled by `vps-bootstrap`; first deploy starts it  |
-| `systemd/hermes.env.example`             | Shape of `/etc/hermes/env.production` — the EnvironmentFile prod systemd loads. Documentation only | template — never installed automatically                          |
-| `systemd/hermes-health.service`          | Pings healthchecks.io via `hermes-health-ping.sh`, only while `hermes.service` is active           | installed by `vps-bootstrap`                                      |
-| `systemd/hermes-health.timer`            | Fires the ping every 5 min                                                                         | installed by `vps-bootstrap`; enabled once the ping URL is set    |
-| `systemd/hermes-backup.service`          | Nightly borg backup of L2 Parquet and SQLite                                                       | installed by `vps-bootstrap`                                      |
-| `systemd/hermes-backup.timer`            | Fires the backup daily at 03:00 UTC                                                                | installed by `vps-bootstrap`; stays disabled until borg is set up |
-| `systemd/hermes-tax-pack.service`        | Refreshes the tax filing packs in `/var/lib/hermes-tax-pack` (`hermes tax-pack`, ledger read-only) | installed by `vps-bootstrap`                                      |
-| `systemd/hermes-tax-pack.timer`          | Fires the refresh daily at 07:30 Europe/Madrid                                                     | installed by `vps-bootstrap`; left off until enabled by hand      |
-| `systemd/hermes-notify-failure@.service` | Started by `hermes.service`'s `OnFailure=`; sends one Telegram message                             | installed by `vps-bootstrap`                                      |
-| `systemd/hermes-bot.service`             | Read-only Telegram bot (`hermes bot`, ADR-015); reads only `/etc/hermes/env.bot`                   | `vps-bootstrap` enables it when the Telegram secrets are set      |
-| `hermes-health-ping.sh`                  | The progress ping: `hermes status --json` decides success or `/fail` while the unit is active      | shipped in each release                                           |
-| `hermes-notify-failure.sh`               | Builds and sends the Telegram failure message; needs only bash and curl                            | `/opt/hermes/bin`: `vps-bootstrap`, then each good deploy         |
-| `hermes-notify-crash.sh`                 | `hermes.service`'s `ExecStopPost=`: one Slack line after a stop that was not clean                 | `/opt/hermes/bin`: `vps-bootstrap`, then each good deploy         |
+- `systemd/hermes.service`: Main hermes process unit (reads `/etc/hermes/env.production`, runs `hermes serve`). Status: installed and enabled by `vps-bootstrap`; first deploy starts it.
+- `systemd/hermes.env.example`: Shape of `/etc/hermes/env.production` — the EnvironmentFile prod systemd loads. Documentation only. Status: template — never installed automatically.
+- `systemd/hermes-health.service`: Pings healthchecks.io via `hermes-health-ping.sh`, only while `hermes.service` is active. Status: installed by `vps-bootstrap`.
+- `systemd/hermes-health.timer`: Fires the ping every 5 min. Status: installed by `vps-bootstrap`; enabled once the ping URL is set.
+- `systemd/hermes-backup.service`: Nightly borg backup of L2 Parquet and SQLite. Status: installed by `vps-bootstrap`.
+- `systemd/hermes-backup.timer`: Fires the backup daily at 03:00 UTC. Status: installed by `vps-bootstrap`; stays disabled until borg is set up.
+- `systemd/hermes-tax-pack.service`: Refreshes the tax filing packs in `/var/lib/hermes-tax-pack` (`hermes tax-pack`, ledger read-only). Status: installed by `vps-bootstrap`.
+- `systemd/hermes-tax-pack.timer`: Fires the refresh daily at 07:30 Europe/Madrid. Status: installed by `vps-bootstrap`; left off until enabled by hand.
+- `systemd/hermes-notify-failure@.service`: Started by `hermes.service`'s `OnFailure=`; sends one Telegram message. Status: installed by `vps-bootstrap`.
+- `systemd/hermes-bot.service`: Read-only Telegram bot (`hermes bot`, ADR-015); reads only `/etc/hermes/env.bot`. Status: `vps-bootstrap` enables it when the Telegram secrets are set.
+- `hermes-health-ping.sh`: The progress ping: `hermes status --json` decides success or `/fail` while the unit is active. Status: shipped in each release.
+- `hermes-notify-failure.sh`: Builds and sends the Telegram failure message; needs only bash and curl. Status: `/opt/hermes/bin`: `vps-bootstrap`, then each good deploy.
+- `hermes-notify-crash.sh`: `hermes.service`'s `ExecStopPost=`: one Slack line after a stop that was not clean. Status: `/opt/hermes/bin`: `vps-bootstrap`, then each good deploy.
 
 The scripts the workflows run live in `scripts/deploy/`:
 
-| Script               | Runs on                                   | Purpose                                                                            |
-| -------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------- |
-| `vps_bootstrap.sh`   | VPS, from `vps-bootstrap.yml`             | Idempotent provisioning: user, dirs, uv, Python 3.14, units, env file, storage box |
-| `install_release.sh` | VPS, from `cd.yml`                        | Installs one release, flips `current`, restarts the unit, runs the gate            |
-| `health_gate.sh`     | VPS, from the two scripts here            | Unit active for 30 s, same `MainPID`, `serve.run.started` in the journal           |
-| `rollback.sh`        | VPS, by hand or from `install_release.sh` | Flips `current` back to `previous` and re-runs the gate                            |
+- `vps_bootstrap.sh` (VPS, from `vps-bootstrap.yml`): Idempotent provisioning: user, dirs, uv, Python 3.14, units, env file, storage box.
+- `install_release.sh` (VPS, from `cd.yml`): Installs one release, flips `current`, restarts the unit, runs the gate.
+- `health_gate.sh` (VPS, from the two scripts here): Unit active for 30 s, same `MainPID`, `serve.run.started` in the journal.
+- `rollback.sh` (VPS, by hand or from `install_release.sh`): Flips `current` back to `previous` and re-runs the gate.
+- `schema_guard.py` (VPS, from `install_release.sh` and `rollback.sh`): Refuses a release older than the ledger's newest event schemas.
+- `release_notes.py` (runner, from `cd.yml`): Builds the release notes and the Telegram message for a deploy.
 
 ## First-time VPS setup
 

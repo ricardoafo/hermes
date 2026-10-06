@@ -1,1 +1,0 @@
-- Tidy the top-level `hermes` help: accurate header, name column sized to the longest command, a note on `--demo` and `--json` commands, and a "did you mean" hint for a mistyped command.

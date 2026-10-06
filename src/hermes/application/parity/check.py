@@ -78,15 +78,22 @@ class _PairRouter:
 
     strategies: Mapping[Pair, StrategyPort]
     last: StrategySignal | None = field(default=None)
+    last_pair: Pair | None = field(default=None)
 
     def on_bar(self, bar: Bar, portfolio_state: PortfolioState) -> StrategySignal | None:
         """Hand ``bar`` to its pair's strategy, as serve does."""
+        self.last_pair = bar.pair
         self.last = self.strategies[bar.pair].on_bar(bar, portfolio_state)
         return self.last
 
     def seed(self, bars: Sequence[Bar], open_position: OpenPosition | None = None) -> None:
         """Do nothing: each pair's strategy is seeded before the router is built."""
         _ = (bars, open_position)
+
+    def restore_position(self, open_position: OpenPosition | None) -> None:
+        """Restore the position of the strategy that saw the last bar, as serve does."""
+        if self.last_pair is not None:
+            self.strategies[self.last_pair].restore_position(open_position)
 
 
 def check_day(

@@ -1,1 +1,0 @@
-- `hermes status` joins the console: `hermes --demo SCENARIO status` (or `HERMES_CONSOLE_DEMO`) shows the scenario heartbeat with the DEMO DATA tag, and `heartbeat_from_report` maps the status verdict onto the console heartbeat for the TUI and Telegram (#454).
