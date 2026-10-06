@@ -110,3 +110,40 @@ Actors: `operator` | `claude-experimentalist` | `claude-integrity-checker` | `en
 - docs/experiments/swing-mvp1/lab-notebook.md (modified)
 
 <!-- entry-sha256: 0870906765a57d764d7a2180c8fa359c749c9fa8842b450762a8f66f8fe03294 -->
+
+### 2026-10-06T12:32:30Z | shadow | operator | engine bug fix: the chandelier stop ratchets up while in a position (issue #680, not a deviation)
+
+**Observed metrics**:
+
+- In-sample Train window 2020-09-01 to 2024-06-30 only, measured after the decision; base 23892f9 vs the fix
+- BTCUSDT: 45 / 45 closed trades, realized PnL -44.69 / -17.56 USDT, daily Sharpe -0.0135 / -0.0053, 33 exits moved (5 earlier, 28 same bar at a higher stop)
+- ETHUSDT: 57 / 59 closed trades, realized PnL -208.60 / -193.19 USDT, daily Sharpe -0.0430 / -0.0399, 46 exits moved (7 earlier, 39 same bar at a higher stop)
+- SOLUSDT: 56 / 58 closed trades, realized PnL -58.51 / -82.52 USDT, daily Sharpe -0.0071 / -0.0107, 43 exits moved (6 earlier, 37 same bar at a higher stop)
+- No data from the sealed 2025-09-01 to 2026-12-31 window was read
+
+**Decision**:
+
+- While a position is open, the stop in force is max(previous stop in force, HH22 - 3 x ATR22). The entry bar and a new position start from the raw level; a restart continues from the position's stored last_stop (stop marks keyed by entry_time).
+- The recorded stop_price is the stop in force; chandelier_level stays the raw HH22 - 3 x ATR22. Parameters (22, 3.0), entry rules, sizing, fees and risk rules are unchanged.
+- Approved by the operator before the in-sample measurement: ship the ratchet now; the current-bar self-trigger and the close - 1 tick clamp are separate decisions.
+- Out of scope, pending the operator: (1) HH22 and ATR22 include the current bar, so a wide up-bar can raise the stop and trigger it on the same bar; (2) the clamp to close - 1 tick described in chandelier.py is not implemented.
+
+**Rationale**:
+
+- Pre-registration v1 §5.3 (pre-registration-v1.md:126): the exit stop is moved as the trailing stop advances. Its source SA-7 (sa7-strategy-design.md:153, :261): the long chandelier stop only moves up, never down. ADR-003 02-data-flow.md:138 says the same. The engine recomputed the raw level every 4h bar, so the stop could fall.
+- Integrity rules §4.1 (integrity-checker-rules.md:259-272): an engine bug fix that makes the engine match the already-specified §5 is permitted and is not flagged. This fix matches §5.3; it does not change what §5 says.
+- Not a deviation per §11 of pre-registration-v1.md: no §11 item changes and the signed file is not edited. The parameter fingerprint (swing_parameters) is unchanged.
+- Backtest parity (ADR-011): the backtest replay drives the same SwingStrategyAdapter bar by bar, so it gets the ratchet with no separate change.
+
+**Files touched**:
+
+- src/hermes/domain/strategy/swing/adapter.py (modified)
+- src/hermes/domain/strategy/stop_mark.py (modified, docstring)
+- tests/unit/domain/strategy/swing/test_stop_ratchet.py (added)
+- tests/unit/domain/strategy/swing/test_stop_record.py (modified)
+- tests/integration/scenarios/rules.py (modified)
+- tests/e2e/test_serve_cycle.py (modified: the pinned SOL/USDT exit of the 2025-01-19T07:59Z entry moves from 23:59Z to 15:59Z, the raw level fell under the held stop)
+- changelog.d/680-fixed.md (added)
+- docs/experiments/swing-mvp1/lab-notebook.md (modified)
+
+<!-- entry-sha256: dd4890f09afcedf43be07fb7a438f71f7f2754b4635fb5a63a8372b0c97c6c59 -->

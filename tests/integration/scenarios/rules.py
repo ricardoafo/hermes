@@ -103,8 +103,8 @@ PRE_REGISTERED: dict[str, tuple[Rule, ...]] = {
         Rule(
             "Exit: **on-exchange stop-market**",
             gap=(
-                "issue #680: shadow sells at market on the bar after the stop is touched; "
-                "no resting stop, no ratchet, no clamp under the close"
+                "issue #785: shadow sells at market on the bar after the stop is touched; "
+                "no resting stop, no clamp under the close"
             ),
         ),
     ),
@@ -253,6 +253,16 @@ PRE_REGISTERED: dict[str, tuple[Rule, ...]] = {
 
 IN_CODE: tuple[Rule, ...] = (
     Rule(
+        "Chandelier stop never moves down while a position is open",
+        proved_by=(
+            _UNIT + "domain/strategy/swing/test_stop_ratchet.py"
+            "::TestStopNeverFallsInAPosition::test_the_stop_in_force_never_decreases_bar_to_bar",
+            _UNIT + "domain/strategy/swing/test_stop_ratchet.py"
+            "::TestStopHoldsWhenTheLevelFalls"
+            "::test_the_exit_fires_on_the_held_stop_the_raw_level_would_miss",
+        ),
+    ),
+    Rule(
         "Closed-bar rule: a bar is evaluated only after its close plus the settle delay",
         proved_by=(
             "tests/integration/fake_market/test_fake_market.py"
@@ -271,7 +281,7 @@ IN_CODE: tuple[Rule, ...] = (
     ),
     Rule(
         "Chandelier stop clamped under the close",
-        gap="issue #680: the clamp the engine docstring describes is not implemented",
+        gap="issue #785: the clamp the engine docstring describes is not implemented",
     ),
     Rule(
         "RO-03 slippage halt",
