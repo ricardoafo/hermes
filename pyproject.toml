@@ -304,6 +304,39 @@ forbidden_modules = [
   "hermes.domain.fx",
 ]
 
+# change 713-live-ticker D-6: live ticker prices are display-only in the console.
+# The engine, the ledger, the supervisor, briefs and notifications never import them.
+[[tool.importlinter.contracts]]
+name = "live-prices-are-console-only"
+type = "forbidden"
+source_modules = [
+  "hermes.domain",
+  "hermes.application.order_router",
+  "hermes.application.strategy_protocol",
+  "hermes.application.execution",
+  "hermes.application.portfolio",
+  "hermes.application.ledger",
+  "hermes.application.supervisor",
+  "hermes.application.notification_router",
+  "hermes.application.signal_notifier",
+  "hermes.application.messages",
+  "hermes.application.bot",
+  "hermes.ports.supervisor",
+  "hermes.ports.notifier",
+  "hermes.adapters.ledger",
+  "hermes.adapters.notifier",
+  "hermes.adapters.telegram_bot",
+  "hermes.entrypoints.serve",
+  "hermes.entrypoints.supervisor",
+  "hermes.entrypoints.bot",
+  "hermes.entrypoints.daily_line",
+]
+forbidden_modules = [
+  "hermes.application.console.live",
+  "hermes.ports.live_prices",
+  "hermes.entrypoints.tui_live",
+]
+
 # Issue #835: the RO-01 / RO-02 inputs (spread samples, pair correlations) are
 # recorded only. Nothing that decides or sizes trades may read them until the
 # Code Owner rules on wiring RO-01 and RO-02 (issue #514); lifting this is a

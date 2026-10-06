@@ -606,47 +606,48 @@ def test_cli_accepts_db_and_theme_together(tmp_path: Path) -> None:
 
 
 def test_motion_off_runs_no_effect_timer() -> None:
-    """With motion off there is no pulse or strip timer; the strip and the dot stay still."""
+    """With motion off there is no effect timer and the live dot stays still."""
 
-    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[dict[str, object], int, str]:
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[dict[str, object], str]:
         await pilot.pause(1.3)
-        return dict(app.effect_timers), app.query_one(WindowBar).tick, app.live_dot_colour
+        return dict(app.effect_timers), app.live_dot_colour
 
-    assert _run(probe, motion=False) == ({}, 0, NEON.live)
+    assert _run(probe, motion=False) == ({}, NEON.live)
 
 
-def test_motion_on_runs_the_pulse_and_the_strip() -> None:
-    """With motion on by day every effect runs and the strip advances.
+def test_motion_on_runs_the_pulse_shimmer_and_radar() -> None:
+    """With motion on by day the pulse, the shimmer and the radar run.
 
-    Issue #712 added the big total's shimmer and the empty-positions radar.
+    Issue #712 added the shimmer and the radar; issue #713 removed the binary
+    strip (Code Owner 2026-10-06), so no strip timer runs.
     """
 
-    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[list[str], bool]:
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> list[str]:
         await pilot.pause(1.3)
-        return sorted(app.effect_timers), app.query_one(WindowBar).tick > 0
+        return sorted(app.effect_timers)
 
-    assert _run(probe, motion=True) == (["pulse", "radar", "shimmer", "strip"], True)
+    assert _run(probe, motion=True) == ["pulse", "radar", "shimmer"]
 
 
 def test_night_runs_only_the_slow_pulse() -> None:
-    """At night there is no binary strip, and the pulse steps every 0.8 s instead of 0.4 s."""
+    """At night only the pulse runs, stepping every 0.8 s instead of 0.4 s."""
 
-    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[list[str], float, bool]:
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[list[str], float]:
         del pilot
         pulse = app.effect_timers["pulse"]
-        return sorted(app.effect_timers), pulse._interval, app.query_one(WindowBar).strip
+        return sorted(app.effect_timers), pulse._interval
 
-    assert _run(probe, motion=True, clock=lambda: _NIGHT) == (["pulse"], 0.8, False)
+    assert _run(probe, motion=True, clock=lambda: _NIGHT) == (["pulse"], 0.8)
 
 
 def test_effect_steps_survive_widgets_torn_down() -> None:
-    """A pulse or strip tick after the status widgets are gone does not crash the app."""
+    """A pulse step or a feed redraw after the status widgets are gone does not crash the app."""
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[int, bool]:
         await app.query_one("#heartbeat").remove()
         await app.query_one(WindowBar).remove()
         app._step_pulse()
-        app._step_strip()
+        app._dim_feed()
         await pilot.pause()
         return app._pulse, app.is_running
 
@@ -794,7 +795,7 @@ def test_picking_control_room_hides_the_window_bar_and_recolours_the_title_bars(
     ids=["neon", "control", "auto-day", "auto-night"],
 )
 def test_window_bar_shows_only_in_neon(theme: ThemeChoice, now: datetime, shown: bool) -> None:
-    """The Neon window bar and its strip lead the screen in Neon only."""
+    """The Neon window bar leads the screen in Neon only."""
 
     async def drive() -> tuple[bool, bool]:
         app = HomeApp(
@@ -1029,10 +1030,11 @@ def test_a_hand_picked_control_room_ignores_the_night(tmp_path: Path) -> None:
     )
 
 
-def test_entering_night_slows_the_pulse_and_stops_the_strip() -> None:
-    """With motion on, crossing 23:00 restarts the pulse at 0.8 s per step and drops the strip.
+def test_entering_night_slows_the_pulse_and_stops_the_day_effects() -> None:
+    """With motion on, crossing 23:00 restarts the pulse at 0.8 s per step.
 
-    Issue #712's day effects (radar, shimmer) stop at night too.
+    Issue #712's day effects (radar, shimmer) stop at night; the binary strip
+    is gone since issue #713.
     """
     clock = _Clock(datetime(2026, 10, 3, 20, 59, 59, tzinfo=UTC))
 
@@ -1043,7 +1045,7 @@ def test_entering_night_slows_the_pulse_and_stops_the_strip() -> None:
         return before, sorted(app.effect_timers), app.effect_timers["pulse"]._interval
 
     assert _run(probe, clock=clock, motion=True) == (
-        ["pulse", "radar", "shimmer", "strip"],
+        ["pulse", "radar", "shimmer"],
         ["pulse"],
         0.8,
     )

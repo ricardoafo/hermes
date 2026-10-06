@@ -204,21 +204,6 @@ def test_clock_ticks_every_second_and_the_model_every_five() -> None:
     assert (theme.MOTION.clock_tick, theme.MOTION.poll) == (1.0, 5.0)
 
 
-def test_binary_strip_changes_each_tick_and_repeats_for_the_same_tick() -> None:
-    """The strip is deterministic per tick and moves from one tick to the next."""
-    assert (
-        theme.binary_strip(3) == theme.binary_strip(3),
-        theme.binary_strip(3) != theme.binary_strip(4),
-    ) == (True, True)
-
-
-@given(tick=st.integers(min_value=0, max_value=10**9), width=st.integers(1, 64))
-def test_binary_strip_is_width_binary_digits(tick: int, width: int) -> None:
-    """Any tick gives exactly ``width`` characters, each 0 or 1."""
-    strip = theme.binary_strip(tick, width)
-    assert (len(strip), set(strip) <= {"0", "1"}) == (width, True)
-
-
 @given(start=_HEX, end=_HEX)
 def test_blend_ends_at_its_stops(start: str, end: str) -> None:
     """Blending 0 of the way gives the start and all the way gives the end."""

@@ -171,12 +171,16 @@ def test_body_carries_the_breakpoint_classes(
 
 
 def test_curve_doubles_from_45_rows_and_hides_under_30() -> None:
-    """At 160 columns the curve is 6 rows at 44 rows, 12 at 45, and hidden at 29."""
+    """At 160 columns the curve is 6 braille rows at 44 rows, 12 at 45, and hidden at 29.
+
+    The axis and caption lines under the curve (issue #713) are not curve rows.
+    """
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[int, bool]:
         del pilot
         shown = app.query_one("#portfolio-curve").display
-        return len(app.plain_text("portfolio-curve").splitlines()), shown
+        lines = app.plain_text("portfolio-curve").splitlines()
+        return sum(1 for line in lines if line and "⠀" <= line[0] <= "⣿"), shown
 
     heights = {rows: _run(_fixture(), probe, size=(160, rows)) for rows in (29, 44, 45)}
     assert (heights[44], heights[45], heights[29][1]) == ((6, True), (12, True), False)

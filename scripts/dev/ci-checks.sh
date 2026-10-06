@@ -23,6 +23,9 @@
 #   markdown                          markdownlint on the full tree
 #   guides-index                      the guides index still builds (--check)
 #   workflows                         actionlint + zizmor on .github/workflows
+#   guards                            the pre-commit guards, over the whole tree,
+#                                     and every hook covered by CI (#840)
+#   self-tests                        every *-self-test pre-commit hook (#840)
 #
 # `--changed <base>` (unit, integration) runs only the tests for the files
 # changed since <base>: see scripts/dev/changed-tests.sh. CI always runs
@@ -40,7 +43,7 @@ cd "$REPO_ROOT" || exit 2
 
 CHECKS=(format lint types imports deps complexity deadcode licenses unit
     integration coverage-floor lockfile merge-decisions codeowners markdown
-    guides-index workflows)
+    guides-index workflows guards self-tests)
 
 # -n 4, not auto: auto counts the host's CPUs, not the container's 4, and
 # 10+ workers overrun the CI runner's 4 GB limit (#397).
@@ -84,6 +87,22 @@ run_tier() {
     esac
 }
 
+# Pre-commit runs these on staged files only, and only where it is installed;
+# cloud writer sessions have none. Run here over the whole tree so a commit
+# made without the hooks still fails CI (#840). Every guard runs, so one red
+# run lists every problem.
+run_guards() {
+    local base="${GITHUB_BASE_REF:+origin/$GITHUB_BASE_REF}"
+    local rc=0
+    uv run python scripts/dev/no-vague-test-assertions.py || rc=1
+    bash scripts/dev/no-naive-datetime.sh || rc=1
+    bash scripts/dev/no-domain-mode-check.sh || rc=1
+    uv run python scripts/dev/migration-sql-check.py || rc=1
+    bash scripts/dev/test-file-adjacency.sh --base "${base:-origin/main}" || rc=1
+    uv run python scripts/dev/hook-coverage-check.py || rc=1
+    return "$rc"
+}
+
 run_one() {
     local check="$1"
     shift
@@ -118,6 +137,8 @@ run_one() {
             uv tool run --quiet --from "actionlint-py==1.7.12.*" actionlint \
                 && uv tool run --quiet zizmor==1.30.1 --offline --config .github/zizmor.yml .github/workflows
             ;;
+        guards) run_guards ;;
+        self-tests) uv run python scripts/dev/hook-coverage-check.py --run-self-tests ;;
         *)
             echo "ERROR: unknown check '$check'. Known: ${CHECKS[*]}" >&2
             return 2
@@ -151,7 +172,7 @@ fi
 
 case "${1:-}" in
     "" | -h | --help)
-        sed -n '2,33p' "$0"
+        sed -n '2,36p' "$0"
         [[ -n "${1:-}" ]] && exit 0
         exit 2
         ;;

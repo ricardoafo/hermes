@@ -28,7 +28,7 @@ from rich.style import Style
 from rich.text import Text
 
 from hermes.entrypoints.tui_settings import ThemeChoice
-from hermes.entrypoints.tui_theme import BASE, NEON, binary_strip
+from hermes.entrypoints.tui_theme import BASE, NEON
 from hermes.entrypoints.tui_widgets import (
     LABEL_AI,
     LABEL_COMPUTED,
@@ -121,21 +121,21 @@ def test_narrow_top_edge_drops_the_label_before_the_title() -> None:
     assert edge.plain == "┏━ ACTIVITY  " + "─" * 3
 
 
-def test_window_bar_has_mark_strip_and_clock() -> None:
-    """The bar opens with ▐ HERMES // SHADOW CONSOLE, shows tick 3's strip, ends with the clock."""
-    bar = window_bar_text(80, NEON, tick=3, clock="14:12:00").plain
+def test_window_bar_has_mark_status_and_clock() -> None:
+    """The bar opens with ▐ HERMES // SHADOW CONSOLE, then the status, and ends with the clock."""
+    status = Text("next bar 03:48:00")
+    bar = window_bar_text(80, NEON, status=status, clock="14:12:00").plain
     assert (
-        bar.startswith("▐ HERMES // SHADOW CONSOLE  "),
-        binary_strip(3) in bar,
+        bar.startswith("▐ HERMES // SHADOW CONSOLE  next bar 03:48:00 "),
         bar.endswith("14:12:00 "),
         len(bar),
-    ) == (True, True, True, 80)
+    ) == (True, True, 80)
 
 
-def test_window_bar_has_no_strip_at_night() -> None:
-    """With the strip off (night) no binary digits are drawn."""
-    bar = window_bar_text(80, NEON, tick=3, clock="23:30:00", strip=False).plain
-    assert binary_strip(3) not in bar
+def test_window_bar_with_empty_status_has_only_mark_and_clock() -> None:
+    """With nothing to show (hermes late or down, no ticker) the bar is the mark and the clock."""
+    bar = window_bar_text(40, NEON, status=Text(""), clock="14:12:00").plain
+    assert bar == "▐ HERMES // SHADOW CONSOLE" + " " * 5 + "14:12:00 "
 
 
 def test_tabs_show_names_and_numbers_when_wide() -> None:
