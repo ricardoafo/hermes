@@ -92,7 +92,10 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "A NaN in the forming candle blocks the closed bar before it",
-            gap="issue #850: the whole page fails to parse, so the closed bar is never delivered",
+            proved_by=(
+                _FAULTS
+                + "test_a_nan_in_the_forming_candle_does_not_block_the_closed_bar_before_it",
+            ),
         ),
         FailureMode(
             "A candle is never published",
