@@ -42,7 +42,9 @@ _TITLE_UPDATE = re.compile(
     r"(?:bump|update)\s+(?P<pkg>\S+?)(?:\s+requirement)?\s+from\s+(?P<old>\S+)\s+to\s+(?P<new>\S+)",
     re.IGNORECASE,
 )
-_BODY_UPDATE = re.compile(r"Updates? `(?P<pkg>[^`]+)` from (?P<old>\S+) to (?P<new>\S+?)\.?$", re.M)
+_BODY_UPDATE = re.compile(
+    r"Updates? `(?P<pkg>[^`]+)` from (?P<old>\S+) to (?P<new>\S+?)\.?$", re.MULTILINE
+)
 _FLOOR = re.compile(r">=\s*(\d+(?:\.\d+)*)")
 _VERSION = re.compile(r"\d+(?:\.\d+)*")
 _MD_LINK = re.compile(r"\[(?P<text>[^\]]+)\]\((?P<url>https://github\.com/[^)\s]+)\)")

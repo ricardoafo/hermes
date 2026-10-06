@@ -13,8 +13,8 @@ The ledger holds bar checks (``BarProcessed``), strategy signals
   row, both without price or net;
 - with ``--all``, every bar check and every signal also gets its own quiet row.
 
-Restarts, warnings and errors live in the journal, not the ledger; they join
-the feed when the journal reader (#376) lands.
+Restarts, warnings and errors live in the journal, not the ledger; the read
+model adds them from the journal reader when it is readable (#653).
 
 The connection is opened with SQLite's ``mode=ro`` URI and never migrates, so
 the feed is safe to read next to a running ``hermes serve``.
@@ -27,17 +27,17 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Final, Self
 
+from hermes.application.console.activity import candle_boundary
 from hermes.application.console.views import ActivityItem, ActivityKind
 from hermes.domain.errors import LedgerError
 
 __all__ = ["LedgerActivityReader"]
 
-_ONE_MS: Final = timedelta(milliseconds=1)
 _ONE: Final = Decimal(1)
 _OK: Final = "ok"
 _BUY: Final = "BUY"
@@ -156,7 +156,7 @@ def _trade_item(row: tuple[object, ...]) -> ActivityItem:
 def _items(
     event_type: str, payload: dict[str, object], *, from_signals: bool = True
 ) -> list[ActivityItem]:
-    at = _boundary(datetime.fromisoformat(str(payload["occurred_at"])))
+    at = candle_boundary(datetime.fromisoformat(str(payload["occurred_at"])))
     pair = payload["pair"]
     if not isinstance(pair, dict):
         msg = "pair is not an object"
@@ -176,9 +176,3 @@ def _items(
     if kind == "entry":
         return [signal, ActivityItem(at=at, kind=ActivityKind.OPENED, coin=coin)]
     return [signal, ActivityItem(at=at, kind=ActivityKind.CLOSED, coin=coin)]
-
-
-def _boundary(at: datetime) -> datetime:
-    """Return the candle boundary for Binance's inclusive close (boundary - 1 ms)."""
-    bumped = at + _ONE_MS
-    return bumped if bumped.second == 0 and bumped.microsecond == 0 else at

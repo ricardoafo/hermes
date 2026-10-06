@@ -117,7 +117,7 @@ def _fixture_signal_exit() -> SignalEmitted:
         entry_price=Decimal("61234.5"),
         stop_price=Decimal("62800"),
         atr_context=Decimal("1180"),
-        exit_reason="trailing_stop",
+        exit_reason="chandelier",
     )
 
 

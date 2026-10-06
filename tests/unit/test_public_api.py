@@ -25,10 +25,10 @@ import hermes.ports
 
 def _walk(pkg: ModuleType) -> list[str]:
     """Return every importable submodule name (including the package itself)."""
-    names = [pkg.__name__]
-    for info in pkgutil.walk_packages(pkg.__path__, prefix=f"{pkg.__name__}."):
-        names.append(info.name)
-    return names
+    return [
+        pkg.__name__,
+        *(info.name for info in pkgutil.walk_packages(pkg.__path__, prefix=f"{pkg.__name__}.")),
+    ]
 
 
 ALL_MODULES = sorted(set(_walk(hermes.domain) + _walk(hermes.ports)))

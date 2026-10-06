@@ -363,3 +363,21 @@ class TestRiskStateMapping:
         snap = _applied(_seed("5000"), make_fill(_BUY, "1", "1000"))
         snap = snap.after_bar(make_bar(BTC_USDT, "500", minutes=240))
         assert snap.to_risk_state().drawdown == Decimal("0.1")
+
+
+class TestWithPeakAtLeast:
+    """with_peak_at_least restores a recorded high without ever lowering the peak."""
+
+    def test_a_higher_peak_replaces_the_current_one(self) -> None:
+        """A recorded peak of 5300 over a rebuilt 5000 becomes the peak; cash is untouched."""
+        raised = _seed().with_peak_at_least(Decimal("5300"))
+        assert (raised.peak_equity, raised.cash) == (Decimal("5300"), Decimal("5000"))
+
+    def test_a_lower_peak_never_lowers_the_current_one(self) -> None:
+        """A recorded peak of 4000 under a rebuilt 5000 leaves 5000."""
+        assert _seed().with_peak_at_least(Decimal("4000")).peak_equity == Decimal("5000")
+
+    def test_drawdown_reads_from_the_restored_peak(self) -> None:
+        """Peak 5500 against equity 5000 is a 10% drawdown in the risk state."""
+        state = _seed().with_peak_at_least(Decimal("5500")).to_risk_state()
+        assert state.drawdown == Decimal("500") / Decimal("5500")

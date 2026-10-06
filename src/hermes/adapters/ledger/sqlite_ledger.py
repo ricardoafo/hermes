@@ -61,6 +61,8 @@ from hermes.domain.lots.quote_leg import (
 )
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
+from hermes.domain.market_data.spread_sample import SpreadSample
+from hermes.domain.portfolio.correlation import PairCorrelation
 from hermes.domain.portfolio.mark import PortfolioMark
 from hermes.domain.portfolio.position import Position
 from hermes.domain.portfolio.snapshot import PortfolioSnapshot
@@ -735,6 +737,120 @@ class SqliteLedger:
         return None if row is None else _row_to_stop_mark(row)
 
     # ------------------------------------------------------------------
+    # RiskInputStorePort — RO-01 / RO-02 inputs, read by no rule (#835)
+    # ------------------------------------------------------------------
+
+    def record_spread_sample(self, sample: SpreadSample) -> bool:
+        """Store one sampled spread and the 1-hour median it closes.
+
+        Args:
+            sample: The sample.
+
+        Returns:
+            ``False`` when that book is already stored (a cached book read
+            twice); the stored row is kept.
+
+        Raises:
+            LedgerError: On any SQLite failure.
+        """
+        try:
+            inserted = self._conn.execute(
+                "INSERT OR IGNORE INTO spread_samples (pair_base, pair_quote, book_time, "
+                "sampled_at, spread, median_spread_1h, samples_1h, recorded_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    sample.pair.base.value,
+                    sample.pair.quote.value,
+                    _iso_utc(sample.book_time.astimezone(UTC)),
+                    _iso_utc(sample.sampled_at.astimezone(UTC)),
+                    str(sample.spread),
+                    str(sample.median_spread_1h),
+                    sample.samples_1h,
+                    _iso_utc(datetime.now(UTC)),
+                ),
+            ).rowcount
+            self._conn.commit()
+        except sqlite3.Error as exc:
+            self._conn.rollback()
+            raise LedgerError(msg=f"record_spread_sample failed: {exc}") from exc
+        return bool(inserted)
+
+    def spread_samples(
+        self, pair: Pair, start: datetime, end: datetime
+    ) -> tuple[SpreadSample, ...]:
+        """Return the pair's samples with ``start <= book_time < end``, oldest first.
+
+        Raises:
+            LedgerError: On any SQLite failure or an unreadable row.
+        """
+        try:
+            rows = self._conn.execute(
+                "SELECT pair_base, pair_quote, book_time, sampled_at, spread, "
+                "median_spread_1h, samples_1h FROM spread_samples "
+                "WHERE pair_base = ? AND pair_quote = ? AND book_time >= ? AND book_time < ? "
+                "ORDER BY book_time",
+                (
+                    pair.base.value,
+                    pair.quote.value,
+                    _iso_utc(start.astimezone(UTC)),
+                    _iso_utc(end.astimezone(UTC)),
+                ),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"spread_samples failed: {exc}") from exc
+        return tuple(_row_to_spread_sample(row) for row in rows)
+
+    def record_pair_correlation(self, correlation: PairCorrelation) -> bool:
+        """Store one pair correlation.
+
+        Args:
+            correlation: The value and the window it covers.
+
+        Returns:
+            ``False`` when that (pairs, window, as-of) is already stored (a
+            1D bar replayed after a restart); the stored row is kept.
+
+        Raises:
+            LedgerError: On any SQLite failure.
+        """
+        try:
+            inserted = self._conn.execute(
+                "INSERT OR IGNORE INTO pair_correlations (pair_a, pair_b, window_days, as_of, "
+                "correlation, sample_count, computed_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    str(correlation.pair_a),
+                    str(correlation.pair_b),
+                    correlation.window_days,
+                    _iso_utc(correlation.as_of.astimezone(UTC)),
+                    correlation.correlation,
+                    correlation.sample_count,
+                    _iso_utc(datetime.now(UTC)),
+                ),
+            ).rowcount
+            self._conn.commit()
+        except sqlite3.Error as exc:
+            self._conn.rollback()
+            raise LedgerError(msg=f"record_pair_correlation failed: {exc}") from exc
+        return bool(inserted)
+
+    def pair_correlations(self, start: datetime, end: datetime) -> tuple[PairCorrelation, ...]:
+        """Return the correlations with ``start <= as_of < end``, oldest first.
+
+        Raises:
+            LedgerError: On any SQLite failure or an unreadable row.
+        """
+        try:
+            rows = self._conn.execute(
+                "SELECT pair_a, pair_b, window_days, as_of, correlation, sample_count "
+                "FROM pair_correlations WHERE as_of >= ? AND as_of < ? "
+                "ORDER BY as_of, pair_a, pair_b, window_days",
+                (_iso_utc(start.astimezone(UTC)), _iso_utc(end.astimezone(UTC))),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"pair_correlations failed: {exc}") from exc
+        return tuple(_row_to_pair_correlation(row) for row in rows)
+
+    # ------------------------------------------------------------------
     # LedgerPort — read methods
     # ------------------------------------------------------------------
 
@@ -829,7 +945,12 @@ class SqliteLedger:
         return None if row is None else datetime.fromisoformat(row[0])
 
     def latest_signal_event(
-        self, strategy_id: StrategyId, pair: Pair, *, at_or_before: datetime
+        self,
+        strategy_id: StrategyId,
+        pair: Pair,
+        *,
+        at_or_before: datetime,
+        kind: SignalKind | None = None,
     ) -> SignalEmitted | None:
         """Return the newest ``SignalEmitted`` of a strategy and pair up to a bound.
 
@@ -837,6 +958,7 @@ class SqliteLedger:
             strategy_id: Strategy bucket that emitted the signal.
             pair: Trading pair.
             at_or_before: Inclusive upper bound on ``occurred_at``.
+            kind: Only signals of this kind, or any kind when ``None``.
 
         Returns:
             The rehydrated event, or ``None`` when there is none.
@@ -844,6 +966,7 @@ class SqliteLedger:
         Raises:
             LedgerError: On any SQLite read failure or an unreadable payload.
         """
+        wanted = None if kind is None else kind.value
         try:
             row = self._conn.execute(
                 "SELECT payload_json FROM events "
@@ -851,12 +974,15 @@ class SqliteLedger:
                 "  AND json_extract(payload_json, '$.strategy_id.value') = ? "
                 "  AND json_extract(payload_json, '$.pair.base') = ? "
                 "  AND json_extract(payload_json, '$.pair.quote') = ? "
+                "  AND (? IS NULL OR json_extract(payload_json, '$.kind') = ?) "
                 "ORDER BY occurred_at DESC, id DESC LIMIT 1",
                 (
                     _iso_utc(at_or_before),
                     strategy_id.value,
                     pair.base.value,
                     pair.quote.value,
+                    wanted,
+                    wanted,
                 ),
             ).fetchone()
         except sqlite3.Error as exc:
@@ -1430,6 +1556,44 @@ def _row_to_stop_mark(row: tuple[Any, ...]) -> StopMark:
         )
     except (TypeError, ValueError, ArithmeticError) as exc:
         raise LedgerError(msg=f"stop mark row is unreadable: {exc}") from exc
+
+
+def _row_to_spread_sample(row: tuple[Any, ...]) -> SpreadSample:
+    """Rebuild a :class:`SpreadSample` from a ``spread_samples`` row."""
+    base, quote, book_time, sampled_at, spread, median, count = row
+    try:
+        return SpreadSample(
+            pair=Pair(base=Currency(base), quote=Currency(quote)),
+            sampled_at=datetime.fromisoformat(sampled_at),
+            book_time=datetime.fromisoformat(book_time),
+            spread=Decimal(spread),
+            median_spread_1h=Decimal(median),
+            samples_1h=int(count),
+        )
+    except (TypeError, ValueError, ArithmeticError) as exc:
+        raise LedgerError(msg=f"spread sample row is unreadable: {exc}") from exc
+
+
+def _pair_from_text(text: str) -> Pair:
+    """Parse the ``BASE/QUOTE`` form :meth:`Pair.__str__` writes."""
+    base, _, quote = text.partition("/")
+    return Pair(base=Currency(base), quote=Currency(quote))
+
+
+def _row_to_pair_correlation(row: tuple[Any, ...]) -> PairCorrelation:
+    """Rebuild a :class:`PairCorrelation` from a ``pair_correlations`` row."""
+    pair_a, pair_b, window, as_of, value, count = row
+    try:
+        return PairCorrelation(
+            pair_a=_pair_from_text(pair_a),
+            pair_b=_pair_from_text(pair_b),
+            window_days=int(window),
+            as_of=datetime.fromisoformat(as_of),
+            correlation=float(value),
+            sample_count=int(count),
+        )
+    except (TypeError, ValueError, ArithmeticError) as exc:
+        raise LedgerError(msg=f"pair correlation row is unreadable: {exc}") from exc
 
 
 def _iso_utc(dt: datetime) -> str:

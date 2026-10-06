@@ -46,6 +46,7 @@ __all__ = [
     "signed_pct",
     "sparkline",
     "stop_bar",
+    "stop_room_share",
 ]
 
 ARROW_UP: Final = "▲"
@@ -282,6 +283,23 @@ def sparkline(values: Sequence[Decimal], width: int) -> str:
     )
 
 
+def stop_room_share(stop: Decimal, current: Decimal, high: Decimal) -> Decimal:
+    """Return how much of the room from the stop up to the high is left, in [0, 1].
+
+    Args:
+        stop: Stop level.
+        current: Current price.
+        high: Highest price since entry.
+
+    Returns:
+        ``(current - stop) / (high - stop)``, clamped; 1 above a stop that is at
+        the high, 0 at or under it.
+    """
+    if high <= stop:
+        return Decimal(1) if current > stop else _ZERO
+    return min(max((current - stop) / (high - stop), _ZERO), Decimal(1))
+
+
 def stop_bar(stop: Decimal, current: Decimal, high: Decimal, cells: int = 8) -> str:
     """Return the cushion bar from the stop (empty) to the high since entry (full).
 
@@ -294,10 +312,7 @@ def stop_bar(stop: Decimal, current: Decimal, high: Decimal, cells: int = 8) -> 
     Returns:
         For example ``▕██████░░▏``; the fill is clamped to the bar.
     """
-    if high <= stop:
-        fraction = Decimal(1) if current > stop else _ZERO
-    else:
-        fraction = min(max((current - stop) / (high - stop), _ZERO), Decimal(1))
+    fraction = stop_room_share(stop, current, high)
     filled = int((fraction * cells).to_integral_value(ROUND_HALF_UP))
     return "▕" + "█" * filled + "░" * (cells - filled) + "▏"
 

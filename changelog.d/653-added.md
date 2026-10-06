@@ -1,0 +1,1 @@
+- **Live activity feed** shows restarts (with the release), deploys, warnings and errors read from the journal, and one quiet `checked N coins · no signal` line per 4h check (`--all`, or `A` in the TUI); read-only, omitted when the journal is unreadable. Closes #653.
