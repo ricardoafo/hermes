@@ -1,1 +1,0 @@
-- Daily alive line: at 07:00 Madrid hermes posts one Slack line with bars processed in 24 h, signals, the next 4h bar, journal error and warning counts and restarts (`hermes status --summary`); a late or down verdict replaces "alive" (#373).

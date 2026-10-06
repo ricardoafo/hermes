@@ -1,1 +1,0 @@
-- The chandelier stop no longer moves down while a position is open: the stop in force is the highest level since entry, a new position starts from its own level, and a restart continues from the stored stop (pre-registration §5.3).

@@ -1,1 +1,0 @@
-- **Backtest**: an entry signalled during warm-up, before the test window, now leaves the strategy flat as a refused entry does, so every window starts flat and no longer skips its first real entry or signals an exit for a position it never held (#723).
