@@ -44,13 +44,19 @@ const groupExpr = foldedScalar('group', 2);
 const selectIf = foldedScalar('if', 4);
 const noopCondition = groupExpr.match(/^\$\{\{ (.*) && format\('mq-noop-\{0\}', github\.run_id\) \|\| 'revalidate-and-merge' \}\}$/)?.[1];
 
+const QUEUE_APP = 'hermes-automation-bot[bot]';
+const GREEN_PR_CI = { event_name: 'workflow_run', event: { workflow_run: { conclusion: 'success', event: 'pull_request' } } };
+const RED_PR_CI = { event_name: 'workflow_run', event: { workflow_run: { conclusion: 'failure', event: 'pull_request' } } };
+
 const EVENTS = [
-  { event_name: 'push' },
+  { event_name: 'push', actor: 'ricardoafo' },
+  { event_name: 'push', actor: QUEUE_APP },
   { event_name: 'schedule' },
   { event_name: 'workflow_dispatch' },
-  ...['success', 'failure', 'cancelled', 'skipped', 'timed_out', null].map((conclusion) => ({
-    event_name: 'workflow_run', event: { workflow_run: { conclusion } },
-  })),
+  ...['pull_request', 'push'].flatMap((runEvent) =>
+    ['success', 'failure', 'cancelled', 'skipped', 'timed_out', null].map((conclusion) => ({
+      event_name: 'workflow_run', event: { workflow_run: { conclusion, event: runEvent } },
+    }))),
   ...['approved', 'commented', 'changes_requested'].map((state) => ({
     event_name: 'pull_request_review', event: { review: { state } },
   })),
@@ -68,6 +74,13 @@ for (const github of EVENTS) {
 }
 
 test('a failed CI run goes to a no-op group, a green one queues for real', () => {
-  assert.equal(evaluate(noopCondition, EVENTS[3]), false);
-  assert.equal(evaluate(noopCondition, EVENTS[4]), true);
+  assert.equal(evaluate(noopCondition, GREEN_PR_CI), false);
+  assert.equal(evaluate(noopCondition, RED_PR_CI), true);
+});
+
+test('CI on main and the queue\'s own merges take no merge pass (#694)', () => {
+  const greenMainCi = { event_name: 'workflow_run', event: { workflow_run: { conclusion: 'success', event: 'push' } } };
+  assert.equal(evaluate(selectIf, greenMainCi), false);
+  assert.equal(evaluate(selectIf, { event_name: 'push', actor: QUEUE_APP }), false);
+  assert.equal(evaluate(selectIf, { event_name: 'push', actor: 'ricardoafo' }), true);
 });

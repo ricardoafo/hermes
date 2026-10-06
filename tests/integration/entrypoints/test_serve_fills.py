@@ -20,11 +20,15 @@ Invariants (change 353-fill-kernel-in-serve R-1, R-4, R-5):
   at the capital seed's time, so the seed lot pays for it (405-usdt-fifo D-1).
 - Pushed notifications carry signals only, and fill log lines carry no
   equity, P&L, drawdown or drift.
+- An entry refused on a stale book leaves the strategy flat (#707): no later
+  exit is signalled, declined ``no-position`` or notified, and the pair
+  enters again on the next breakout.
 """
 
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import sqlite3
 from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
@@ -55,6 +59,7 @@ from tests.support.serve_loop import (
     history,
     live,
     run_once,
+    signal_kinds,
 )
 
 pytestmark = pytest.mark.integration
@@ -345,3 +350,76 @@ def test_fill_log_lines_carry_no_pnl_equity_drawdown_or_drift(tmp_path: Path) ->
     fill_lines = [e for e in logs if str(e["event"]).startswith("serve.fill.")]
     blind = {"pnl", "equity", "drawdown", "drift", "drift_bps", "realized_pnl", "unrealized_pnl"}
     assert (len(fill_lines), [sorted(set(e) & blind) for e in fill_lines]) == (2, [[], []])
+
+
+class _StaleFirstBooks(_LiveBooks):
+    """Live books whose first snapshot is ten seconds old, so RO-04 refuses that entry."""
+
+    def __init__(self, clock: SimulatedClock) -> None:
+        """Start with the stale snapshot still to serve."""
+        super().__init__(clock)
+        self.served = 0
+
+    async def snapshot(self, pair: Pair) -> Orderbook:
+        """Return the live book, aged past the two-second limit on the first call."""
+        book = await super().snapshot(pair)
+        self.served += 1
+        if self.served == 1:
+            return dataclasses.replace(
+                book, snapshot_time=book.snapshot_time - timedelta(seconds=10)
+            )
+        return book
+
+
+def _refused_entry_run(
+    db: Path, after: Sequence[Bar]
+) -> tuple[RecordingChannel, list[dict[str, object]]]:
+    """Run bar 11 (entry refused on a stale book) then ``after``; return telegram and logs."""
+    clock = SimulatedClock(start=h4_bar(10).close_time + _DELIVERY_DELAY)
+    books = _StaleFirstBooks(clock)
+    books.mid = h4_bar(10).close
+    feed = _SteppingFeed(clock, books, warm=history(10), live_bars=[h4_bar(11), *after])
+    telegram = RecordingChannel()
+    composition = build(db, feed, clock.now(), telegram=telegram, books=books, clock=clock)
+    with capture_logs() as logs:
+        run_once(composition, feed)
+    return telegram, logs
+
+
+def _declined_rules(logs: list[dict[str, object]]) -> list[tuple[object, object]]:
+    """Return ``(kind, rule)`` of every ``serve.fill.declined`` line (RO-04 logs ``HALT``)."""
+    return [(e["kind"], e["rule"]) for e in logs if e["event"] == "serve.fill.declined"]
+
+
+def test_refused_entry_raises_no_later_exit_or_notification(tmp_path: Path) -> None:
+    """A stale-book entry is the only decline: the crash bar signals and notifies no exit."""
+    db = tmp_path / "ledger.sqlite3"
+
+    telegram, logs = _refused_entry_run(db, live(12, 14))
+
+    kinds = [p["kind"] for p in _payloads(db, "SignalEmitted")]
+    assert (kinds, signal_kinds(telegram), _trade_rows(db)) == (["entry"], ["entry"], [])
+    assert _declined_rules(logs) == [("entry", "HALT")]
+
+
+def test_pair_enters_again_after_a_refused_entry(tmp_path: Path) -> None:
+    """After the refused entry, the next breakout is a new entry that fills one BUY."""
+    db = tmp_path / "ledger.sqlite3"
+    breakout = dataclasses.replace(
+        h4_bar(12),
+        open=Decimal("3000"),
+        high=Decimal("3002"),
+        low=Decimal("2998"),
+        close=Decimal("3000"),
+    )
+
+    telegram, logs = _refused_entry_run(db, [breakout])
+
+    signals = [(p["kind"], p["entry_price"]) for p in _payloads(db, "SignalEmitted")]
+    sides = [p["side"] for p in _payloads(db, "TradeExecuted")]
+    assert (signals, signal_kinds(telegram), sides) == (
+        [("entry", "2000"), ("entry", "3000")],
+        ["entry", "entry"],
+        ["BUY"],
+    )
+    assert _declined_rules(logs) == [("entry", "HALT")]

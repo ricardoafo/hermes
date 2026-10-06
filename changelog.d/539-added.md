@@ -1,1 +1,0 @@
-- **`hermes version` reports what is running** (`hermes version [--db PATH] [--json]`, also `hermes --version`): package version, live release (the `/opt/hermes/current` target), Python version and ledger migration level, read-only; always exits 0 except 2 on usage. Closes #539.

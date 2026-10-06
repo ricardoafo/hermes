@@ -162,6 +162,10 @@ class ScriptedStrategy:
         _ = open_position
         self.seeded = list(bars)
 
+    def restore_position(self, open_position: OpenPosition | None) -> None:
+        """Ignore the restore: the signals are scripted."""
+        _ = open_position
+
 
 @dataclass
 class AfterDailyStrategy:
@@ -195,6 +199,10 @@ class AfterDailyStrategy:
         """Seeding never changes which interval came last."""
         _ = (bars, open_position)
 
+    def restore_position(self, open_position: OpenPosition | None) -> None:
+        """Ignore the restore: the signals are scripted."""
+        _ = open_position
+
 
 @dataclass
 class ScriptedExit:
@@ -220,3 +228,7 @@ class ScriptedExit:
     def seed(self, bars: Sequence[Bar], open_position: OpenPosition | None = None) -> None:
         """Ignore the seed: the exit is scripted."""
         _ = (bars, open_position)
+
+    def restore_position(self, open_position: OpenPosition | None) -> None:
+        """Ignore the restore: the signals are scripted."""
+        _ = open_position
