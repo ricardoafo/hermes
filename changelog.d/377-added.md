@@ -1,1 +1,0 @@
-- **Read-only home screen** (`hermes tui`, `hermes --demo <scenario>`): a Textual dashboard on the console read model with the portfolio total first, a heartbeat that is one dim line when all is well, range keys 1/7/30/Y, positions with a plain stop column, activity, the 90-day line and a `?` help screen that carries the tax footnote. Closes #377.

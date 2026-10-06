@@ -1,1 +1,0 @@
-- Position sizing now follows pre-registration §5.4/§5.5: each trade risks 1% of the configured experiment capital (risk ÷ stop distance × entry), capped at 5% per position and 15% total open notional, with the shares and capital read from `config/strategies.yaml`; the Kelly cap and the equity-based ATR formula are removed (#480).

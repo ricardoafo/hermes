@@ -131,7 +131,8 @@ class HomeLayout:
             Positions and third columns share the rest 3:2.
         curve_rows: Rows of the braille curve; 0 hides it.
         sparklines: Charts are sparkline lines (compact).
-        big_total: The total is the big gradient number.
+        big_total: The total is the big number (not compact, not short);
+            otherwise the head's plain bold total line.
         market_beside_activity: Market and Activity share a row (the mock layout).
         log_rows: Lines of the log tail (ultra only, else 0).
         activity_rows: Activity rows shown.
@@ -191,7 +192,8 @@ def home_layout(width: int, height: int) -> HomeLayout:
     Returns:
         One column under 100 columns (charts as sparklines), two from 100, the
         mock layout from 160 (Market beside Activity), three from 220. Under 30
-        rows the curve and the big total are hidden; from 45 rows the curve is
+        rows the curve is hidden; the big total shows only from 100 columns and
+        30 rows; from 45 rows the curve is
         twice as tall.
     """
     width_class = _width_class(width)
@@ -223,7 +225,7 @@ def home_layout(width: int, height: int) -> HomeLayout:
         third=third,
         curve_rows=curve,
         sparklines=compact,
-        big_total=height_class is not HeightClass.SHORT,
+        big_total=not compact and height_class is not HeightClass.SHORT,
         market_beside_activity=width_class in (WidthClass.WIDE, WidthClass.ULTRA),
         log_rows=LOG_TAIL_ROWS * factor if ultra else 0,
         activity_rows=_ACTIVITY_ROWS[height_class],

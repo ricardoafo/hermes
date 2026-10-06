@@ -1,1 +1,0 @@
-- `hermes tui`: the `L` key opens the last 50 journal lines, rendered like `hermes logs`, instead of a placeholder (#508).

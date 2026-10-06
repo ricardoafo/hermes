@@ -38,6 +38,8 @@ __all__ = [
     "CONTROL_THEME",
     "CURVE_ROWS_STANDARD",
     "CURVE_ROWS_WIDE",
+    "HERO_MIN_CONTRAST",
+    "HERO_RULE_GLYPH",
     "HORIZONTAL_BREAKPOINTS",
     "LEFT_COLUMN_STANDARD",
     "LEFT_COLUMN_WIDE",
@@ -72,6 +74,7 @@ __all__ = [
     "Tokens",
     "binary_strip",
     "blend",
+    "contrast_ratio",
     "data_tokens",
     "gradient",
     "is_night",
@@ -110,6 +113,11 @@ class Tokens:
         gain: Gradient stops for gain meters and charts.
         loss: Gradient stops for loss meters and charts.
         ai_gradient: Gradient stops for AI marks.
+        hero_digits: Token ``hero-digits``: every big number's digits, one
+            bold colour at full contrast (at least 7:1 on ``panel`` in every
+            theme). Night never dims it: it keeps the day text colour.
+        hero_underline: Token ``hero-underline``: gradient stops of the 1-row
+            underline under a big number, which also carries the shimmer.
     """
 
     void: str
@@ -132,6 +140,8 @@ class Tokens:
     gain: tuple[str, ...]
     loss: tuple[str, ...]
     ai_gradient: tuple[str, ...]
+    hero_digits: str
+    hero_underline: tuple[str, ...]
 
 
 BASE: Final = Tokens(
@@ -143,6 +153,9 @@ BASE: Final = Tokens(
     line="#1A2740",
     live="#58D1EB",
     ai="#9D65FF",
+    # The spec gives `frame` and `chrome` for Neon only; Control room's values
+    # are an implementer decision (change.md D-9): the focus border and the
+    # live -> up -> ai stops of the base sheet.
     frame="#2C4F86",
     up="#468CE6",
     down="#F07814",
@@ -155,6 +168,10 @@ BASE: Final = Tokens(
     gain=("#1B3A6B", "#468CE6", "#8BE9FF"),
     loss=("#7A3A0A", "#F07814", "#E6BE28"),
     ai_gradient=("#3A2A66", "#9D65FF", "#E0C8FF"),
+    # The Code Owner, 2026-10-06: gradient digits were illegible; the digits
+    # take the text colour and the gradient moves to a rule under them.
+    hero_digits="#E6ECF5",
+    hero_underline=("#8BE9FF", "#468CE6", "#9D65FF"),
 )
 
 NEON: Final = replace(
@@ -162,6 +179,7 @@ NEON: Final = replace(
     void="#0B0420",
     panel="#120731",
     panel_focus="#170A3D",
+    # The spec leaves Neon's focus border open; it is the Neon `frame` (D-9).
     focus_border="#8A5CFF",
     line="#4A2399",
     live="#00F0FF",
@@ -172,6 +190,8 @@ NEON: Final = replace(
     dim="#5A5F9A",
     chrome=("#FF3DF0", "#8A5CFF", "#00F0FF"),
     brand=("#00F0FF", "#8A5CFF", "#FF3DF0"),
+    hero_digits="#C8FBFF",
+    hero_underline=("#00F0FF", "#8A5CFF", "#FF3DF0"),
 )
 
 CONTROL_ROOM: Final = BASE
@@ -194,6 +214,10 @@ NIGHT: Final = replace(
     dim="#454D62",
     chrome=("#3B8FA1", "#2F5E9A", "#6B45AD"),
     brand=("#5E9FB0", "#2F5E9A", "#6B45AD"),
+    # Night dims text and data, never a big number: the digits keep the
+    # day text colour (a 40% dim would drop them to about 5.9:1).
+    hero_digits="#E6ECF5",
+    hero_underline=("#5E9FB0", "#2F5E9A", "#6B45AD"),
 )
 
 
@@ -242,6 +266,10 @@ TOWERING_CHART_FACTOR: Final = 2
 LOG_TAIL_ROWS: Final = 10
 # The empty-positions radar: one braille dot sweeping round.
 RADAR_FRAMES: Final = "⠁⠂⠄⡀⢀⠠⠐⠈"
+# The big total's rule: one row of this glyph under the digits.
+HERO_RULE_GLYPH: Final = "▔"
+# Legibility floor of the big total on its panel (WCAG 2 AAA for text).
+HERO_MIN_CONTRAST: Final = 7.0
 
 # Every meter on every screen draws with these glyphs: full and empty cells,
 # the optional end caps, and the default width in cells.
@@ -380,6 +408,37 @@ def _rgb(hex_colour: str) -> tuple[int, int, int]:
     return int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16)
 
 
+# WCAG 2 sRGB linearisation: the threshold, the linear slope, and the curve.
+_SRGB_KNEE: Final = 0.03928
+_SRGB_SLOPE: Final = 12.92
+_SRGB_GAMMA: Final = 2.4
+
+
+def _luminance(hex_colour: str) -> float:
+    """Return the WCAG 2 relative luminance of ``#RRGGBB``."""
+
+    def channel(value: int) -> float:
+        c = value / 255
+        return c / _SRGB_SLOPE if c <= _SRGB_KNEE else ((c + 0.055) / 1.055) ** _SRGB_GAMMA
+
+    r, g, b = (channel(v) for v in _rgb(hex_colour))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def contrast_ratio(foreground: str, background: str) -> float:
+    """Return the WCAG 2 contrast ratio of two colours, from 1 to 21.
+
+    Args:
+        foreground: ``#RRGGBB``.
+        background: ``#RRGGBB``.
+
+    Returns:
+        ``(L1 + 0.05) / (L2 + 0.05)`` with ``L1`` the lighter luminance.
+    """
+    lighter, darker = sorted((_luminance(foreground), _luminance(background)), reverse=True)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
 def blend(start: str, end: str, amount: float) -> str:
     """Return the colour ``amount`` of the way from ``start`` to ``end``.
 
@@ -507,6 +566,7 @@ def theme_variables(tokens: Tokens) -> dict[str, str]:
         "hud-text": tokens.text,
         "hud-muted": tokens.muted,
         "hud-dim": tokens.dim,
+        "hud-hero-digits": tokens.hero_digits,
     }
 
 

@@ -8,6 +8,10 @@ Invariants:
   width draws the sparkline line instead;
 - the big total counts up to a new value with motion on and jumps with motion
   off; the shimmer never starts with motion off;
+- a big number's digits are one bold ``hero-digits`` colour in every theme,
+  night and stale included; the gradient and the shimmer live only on the
+  1-row ``hero-underline`` (the Code Owner, 2026-10-06); compact width keeps
+  the plain bold total line;
 - no position: the radar empty state names the watched coins and the next look;
 - the exposure meter names the roster cap passed to the app, or says it is unknown;
 - the log tail shows the journal at ultra width, or why it cannot;
@@ -38,6 +42,7 @@ from hermes.application.console import ConsoleReadModel, PortfolioRange, Portfol
 from hermes.application.console.logs import LogLine
 from hermes.entrypoints.tui import HomeApp
 from hermes.entrypoints.tui_home import LOGS_UNAVAILABLE
+from hermes.entrypoints.tui_theme import HERO_RULE_GLYPH
 from hermes.entrypoints.tui_widgets import BigNumber, HudPanel
 from tests.unit.adapters.console._ledger_builder import LedgerBuilder
 
@@ -69,11 +74,12 @@ def _run[T](
     motion: bool = False,
     cap: Decimal | None = _CAP,
     journal: Callable[[int], Sequence[LogLine] | None] | None = None,
+    at: datetime = _FROZEN,
 ) -> T:
     async def drive() -> T:
         app = HomeApp(
             model,
-            clock=lambda: _FROZEN,
+            clock=lambda: at,
             motion=motion,
             refresh_seconds=3600,
             exposure_cap=cap,
@@ -226,18 +232,72 @@ def test_big_total_jumps_with_motion_off_and_never_shimmers() -> None:
     assert _run(cast("ConsoleReadModel", model), probe) == ("€1,121.06", None)
 
 
-def test_shimmer_pass_moves_across_and_ends() -> None:
-    """With motion on a shimmer pass starts left of the figure and is gone after it crosses."""
+def test_shimmer_pass_moves_along_the_underline_and_ends() -> None:
+    """A shimmer pass moves along the underline, leaves the digits one colour, and ends."""
 
-    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[bool, float | None]:
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[bool, set[str], float | None]:
         big = app.query_one(BigNumber)
         big.start_shimmer()
         await pilot.pause(0.3)
-        moving = big.shimmer_at is not None and big.shimmer_at > -1.5
-        await pilot.pause(2.0)
-        return moving, big.shimmer_at
+        moving = big.shimmer_at is not None and big.shimmer_at > 0
+        digits = _digit_styles(big)
+        await pilot.pause(2.5)
+        return moving, digits, big.shimmer_at
 
-    assert _run(_fixture(), probe, motion=True) == (True, None)
+    assert _run(_fixture(), probe, motion=True) == (True, {"bold #C8FBFF"}, None)
+
+
+def _digit_styles(big: BigNumber) -> set[str]:
+    """Return the styles of the drawn glyph cells on the three digit rows."""
+    text = big.render()
+    digits_end = text.plain.rindex("\n")
+    return {
+        str(span.style)
+        for span in text.spans
+        if span.start < digits_end and text.plain[span.start : span.end].strip()
+    }
+
+
+_NIGHT = datetime(2026, 10, 3, 21, 30, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    ("scenario", "at", "colour"),
+    [
+        ("ok-two-positions", _FROZEN, "#C8FBFF"),
+        ("ok-two-positions", _NIGHT, "#E6ECF5"),
+        ("down-stale", _FROZEN, "#C8FBFF"),
+    ],
+    ids=["neon", "night", "stale"],
+)
+def test_big_number_digits_are_one_full_contrast_colour(
+    scenario: str, at: datetime, colour: str
+) -> None:
+    """Neon, night (23:30 Madrid) and a stale total all draw the digits in bold hero-digits.
+
+    Under the digits is one row of the underline glyph, as wide as the digits.
+    """
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[set[str], str, int]:
+        del pilot
+        big = app.query_one(BigNumber)
+        rows = big.render().plain.split("\n")
+        return _digit_styles(big), rows[3], len(rows[0])
+
+    styles, underline, width = _run(_fixture(scenario), probe, at=at)
+    assert (styles, underline) == ({f"bold {colour}"}, HERO_RULE_GLYPH * width)
+
+
+def test_compact_width_keeps_the_plain_bold_total() -> None:
+    """At 80x40 (tall but compact) the big number hides; the text line leads with the total."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[bool, str]:
+        del pilot
+        first = app.plain_text("portfolio").splitlines()[0]
+        return app.query_one(BigNumber).display, first
+
+    shown, first = _run(_fixture(), probe, size=(80, 40))
+    assert (shown, first.startswith("€1,021.06   ▲")) == (False, True)
 
 
 # ----------------------------------------------------------------------

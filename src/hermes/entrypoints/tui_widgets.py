@@ -2,8 +2,8 @@
 
 One implementation each, styled only through :mod:`hermes.entrypoints.tui_theme`:
 
-- :class:`BigNumber`: the big total in brand-gradient digits that counts up
-  and shimmers (issue #712);
+- :class:`BigNumber`: the big total in bold high-contrast digits over a
+  gradient rule that shimmers; it counts up on a change (issue #712);
 - :class:`HudPanel`: the frame every panel sits in (bracket corners, gradient
   title bar, "computed" or "✦ AI supervisor" label, key-hint subtitle, focus
   state, AI variant);
@@ -32,8 +32,10 @@ from textual import events
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Vertical
+from textual.geometry import Size
 from textual.message import Message
 from textual.reactive import reactive
+from textual.renderables.digits import Digits as DigitsRenderable
 from textual.screen import ModalScreen
 from textual.timer import Timer
 from textual.widget import Widget
@@ -41,7 +43,7 @@ from textual.widgets import Digits, OptionList, Static
 from textual.widgets.option_list import Option
 
 from hermes.application.console.format import fmt_level
-from hermes.entrypoints.tui_charts import gradient_digits
+from hermes.entrypoints.tui_charts import gradient_rule, hero_digits
 from hermes.entrypoints.tui_theme import (
     AI_GLYPH,
     CORNER_BOTTOM_RIGHT,
@@ -519,16 +521,26 @@ def key_chips(chips: Sequence[tuple[str, str]], tokens: Tokens) -> Text:
     return out
 
 
-_SHIMMER_EDGE: Final = 1.5
+_SHIMMER_EDGE: Final = 3.0
+_SHIMMER_CELLS_PER_STEP: Final = 2
+_HERO_ROWS: Final = 4
 
 
 class BigNumber(Digits):
-    """The big total: Textual's digit glyphs in the brand gradient, one colour per character.
+    """The big total: Textual's digit glyphs in one bold colour, over a gradient rule.
+
+    The digits always use the ``hero-digits`` token, bold, at full contrast
+    (at least 7:1 on the panel in every theme): no theme, night mode or stale
+    state dims them. The brand gradient is a 1-row underline below them
+    (``hero-underline``); a stale figure dims only the underline. This is a
+    property of the component, so every big number (Home, detail screens)
+    keeps it. The Code Owner, 2026-10-06: gradient digits were illegible.
 
     :meth:`show` sets the figure. With motion on, a change of value counts up
     from the old value over ``MOTION.slow`` (``out_cubic``), and
-    :meth:`start_shimmer` sweeps a bright band across the figure at 8 fps.
-    With motion off the figure is set at once and the shimmer never runs.
+    :meth:`start_shimmer` sweeps a bright band along the rule (never the
+    digits) at 8 fps. With motion off the figure is set at once and the
+    shimmer never runs.
 
     Args:
         motion: Run the count-up and the shimmer.
@@ -537,7 +549,7 @@ class BigNumber(Digits):
     """
 
     DEFAULT_CSS = """
-    BigNumber { width: auto; height: 3; }
+    BigNumber { width: auto; height: 4; }
     """
 
     shown: reactive[float] = reactive(0.0)
@@ -571,7 +583,7 @@ class BigNumber(Digits):
             figure: The formatted figure (``€1,021.06``), or ``None`` to hide
                 the number (a blind surface, EUR pending, a short terminal).
             value: The figure's value, the count-up target.
-            stale: Draw it in one dim colour (hermes is down).
+            stale: Hermes is down: the underline dims; the digits never do.
         """
         if figure is None or value is None:
             self.display = False
@@ -609,9 +621,19 @@ class BigNumber(Digits):
         self.shimmer_at = -_SHIMMER_EDGE
         self._shimmer_timer = self.set_interval(MOTION.shimmer_step, self._step_shimmer)
 
+    def get_content_height(self, container: Size, viewport: Size, width: int) -> int:
+        """Return four rows: three of digits and the rule."""
+        del container, viewport, width
+        return _HERO_ROWS
+
+    @property
+    def rule_width(self) -> int:
+        """Return the rule's width: the width of the drawn digits."""
+        return DigitsRenderable.get_width(self.value)
+
     def _step_shimmer(self) -> None:
-        position = (self.shimmer_at or 0.0) + 1
-        if position > len(self.value) + _SHIMMER_EDGE:
+        position = (self.shimmer_at or 0.0) + _SHIMMER_CELLS_PER_STEP
+        if position > self.rule_width + _SHIMMER_EDGE:
             self.shimmer_at = None
             if self._shimmer_timer is not None:
                 self._shimmer_timer.stop()
@@ -621,16 +643,22 @@ class BigNumber(Digits):
         self.refresh()
 
     def render(self) -> Text:
-        """Draw the glyphs in the brand gradient, dim when stale."""
+        """Draw the digits in ``hero-digits`` over the underline; stale dims the underline only."""
         theme = self.app.theme
         tokens = tokens_for(theme)
-        return gradient_digits(
-            self.value,
-            tokens.brand,
-            shimmer=self.shimmer_at,
-            highlight=tokens.text,
-            flat=data_tokens(theme).dim if self._stale else None,
+        dim = data_tokens(theme).dim if self._stale else None
+        out = hero_digits(self.value, tokens.hero_digits)
+        out.append("\n")
+        out.append_text(
+            gradient_rule(
+                self.rule_width,
+                tokens.hero_underline,
+                shimmer=self.shimmer_at,
+                highlight=tokens.hero_digits,
+                flat=dim,
+            )
         )
+        return out
 
 
 @dataclass(frozen=True, slots=True)

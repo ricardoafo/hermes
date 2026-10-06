@@ -1,1 +1,0 @@
-- **Taxpayer profile accepts a same-year loss outside hermes** (`src/hermes/infrastructure/config/tax.py`): `other_capital_gains_eur` may now be negative, so a loss on other investments nets against hermes gains in the same tax year (#438).

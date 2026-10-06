@@ -4,8 +4,10 @@
   terminal size: one column under 100 columns (charts become sparklines), two
   from 100, the mock layout from 160, and a third column from 220 with a
   Signals placeholder and a live log tail. Under 30 rows the curve hides; from
-  45 rows charts are twice as tall. The portfolio total is a big gradient
-  number that counts up when it changes, over a braille curve, cash /
+  45 rows charts are twice as tall. The portfolio total is a big number in
+  bold, high-contrast digits (at least 7:1 in every theme, never dimmed at
+  night) over a gradient underline; it counts up when it changes. Below it are
+  a braille curve, cash /
   invested meters and an exposure meter against the roster's cap (amber near
   it). Positions show a sparkline, change, net and a stop-room meter that turns
   amber when the stop is close, or a radar with "hermes is watching … and will

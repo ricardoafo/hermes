@@ -1,1 +1,0 @@
-- **Portfolio history in the ledger** (`portfolio_marks` table, `PortfolioHistoryPort`): `hermes serve` stores the strategy's portfolio after every handled bar (cash, positions, market value, equity, realized PnL, peak equity), so the console can read value and history without access to the engine's memory. One row per bar; a replayed bar writes nothing. Closes #387.
