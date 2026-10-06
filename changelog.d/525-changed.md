@@ -1,1 +1,0 @@
-- **Console panels are discovered like CLI commands**: `run_positions` and `run_tui` moved from `entrypoints/console.py` into their command modules, and `CONSOLE_COMMANDS` is replaced by `console_commands()`, derived from each command's `wants_demo`. A new panel adds one file and edits no shared list. No output changes. Closes #525.

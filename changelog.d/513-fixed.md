@@ -1,1 +1,0 @@
-- Risk-overlay log lines (halt, warn and per-rule decisions) now carry only the rule id and a fixed reason, such as `rule=RO-08 reason=drawdown_limit`, so no drawdown or other P&L-derived figure reaches the journal that blind surfaces read; the full reason stays on the rejection for operator surfaces.
