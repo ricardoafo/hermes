@@ -177,8 +177,14 @@ jobs:
         if: steps.token.outputs.present == 'true'
         run: |
           action=$(ls -d "$RUNNER_WORKSPACE"/../_actions/anthropics/claude-code-action/*/ 2>/dev/null | head -n 1)
-          BUN_PIN=$(sed -n 's/^ *bun-version: *\([0-9.]*\).*/\1/p' "${action}action.yml" 2>/dev/null | head -n 1)
-          CLAUDE_PIN=$(sed -n 's/.*claudeCodeVersion = "\([0-9.]*\)".*/\1/p' "${action}src/entrypoints/run.ts" 2>/dev/null | head -n 1)
+          BUN_PIN=
+          CLAUDE_PIN=
+          # No action copy found: leave both pins empty, so the action
+          # downloads its own, rather than reading files from the checkout.
+          if [ -n "$action" ]; then
+            BUN_PIN=$(sed -n 's/^ *bun-version: *\([0-9.]*\).*/\1/p' "${action}action.yml" 2>/dev/null | head -n 1)
+            CLAUDE_PIN=$(sed -n 's/.*claudeCodeVersion = "\([0-9.]*\)".*/\1/p' "${action}src/entrypoints/run.ts" 2>/dev/null | head -n 1)
+          fi
           echo "The action pins bun ${BUN_PIN:-?} and Claude Code ${CLAUDE_PIN:-?}"
           bun=$(command -v bun || true)
           if [ -n "$BUN_PIN" ] && [ -n "$bun" ] && [ "$("$bun" --version)" = "$BUN_PIN" ]; then
