@@ -21,15 +21,16 @@ from hermes.entrypoints import serve as serve_module
 from tests.integration.scenarios.markets import Scenario
 from tests.support.fake_market import harness
 
-BAR_BUDGET_SECONDS = 0.060
+BAR_BUDGET_SECONDS = 0.050
 """Median CPU time serve's event loop may spend on one bar.
 
 Measured on 2026-10-05: 0.6 to 0.8 ms per scenario on a developer machine, and
 5 to 22 ms on the loaded CI runners, where the same bars vary that much from
 run to run while a fixed pure-Python workload only doubles. The cause of that
-spread is not known. The budget sits near three times the slowest CI median,
-and a tenfold slowdown of a typical CI bar (about 6 ms) reaches it, so such a
-regression fails here, in PR CI, before it reaches the deploy gate. A
+spread is not known. The budget sits above twice the slowest CI median, and
+below ten times the fastest (5.3 ms), so a tenfold slowdown of the bar path
+fails in PR CI before it reaches the deploy gate. On a developer machine,
+where a bar takes under 1 ms, only about a seventyfold slowdown fails it. A
 pure-Python reference workload was tried as the yardstick instead (issue
 #788), but on CI the bars cost 4 to 12 times it.
 """
