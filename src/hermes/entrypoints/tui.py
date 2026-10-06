@@ -18,9 +18,10 @@ Screens: ``1`` Home re-hosts the home screen with unchanged content (its full
 width layout is issue #712); ``2``-``8`` name the issue that builds them next.
 
 Home layout: below 120 columns everything stacks (portfolio, positions,
-market watch, activity; the position detail opens as its own screen). From
-120 columns the portfolio and activity sit left and the positions (with the
-market watch under them) and detail right. The full-width layout per
+market watch, activity; the position detail opens as a
+:class:`~hermes.entrypoints.tui_drilldown.DetailScreen`). From 120 columns the
+portfolio and activity sit left and the positions (with the market watch under
+them) and the :class:`~hermes.entrypoints.tui_drilldown.DetailPane` right. The full-width layout per
 breakpoint is issue #712. The portfolio
 total is drawn three rows tall on terminals 30 rows or higher.
 
@@ -35,12 +36,14 @@ with ``HERMES_CONSOLE_MOTION=off``.
 
 Keys: ``1``-``8`` screens, Tab / Shift+Tab cycle them, Ctrl+P command palette,
 ``D`` ``W`` ``M`` ``Y`` range (day, week, month, year), up and down (or ``j``
-``k``) select a position, Enter opens it, Esc goes back, ``L`` logs, ``T``
-theme, ``?`` help, ``Q`` quit.
+``k``) select a position, Enter opens it, Esc or Backspace goes back, ``[``
+``]`` previous / next inside a detail screen, ``L`` logs, ``T`` theme, ``?``
+help, ``Q`` quit.
 
 Reference: openspec/changes/readonly-tui-dashboard/change.md;
 openspec/changes/live-home-screen/change.md (D-6);
-openspec/changes/711-cockpit-theme/change.md.
+openspec/changes/711-cockpit-theme/change.md;
+openspec/changes/730-drill-down/change.md.
 """
 
 from __future__ import annotations
@@ -86,6 +89,13 @@ from hermes.application.console.render import (
     to_plain_text,
 )
 from hermes.domain.errors import LedgerError
+from hermes.entrypoints.tui_drilldown import (
+    DetailMode,
+    DetailPane,
+    DetailScreen,
+    ListState,
+    detail_mode,
+)
 from hermes.entrypoints.tui_settings import (
     DEFAULT_SETTINGS_PATH,
     ConsoleSettings,
@@ -173,6 +183,14 @@ _FOOTER_CHIPS: Final = (
     ("^P", "palette"),
     ("Q", "quit"),
 )
+_DETAIL_CHIPS: Final = (
+    ("Esc", "back"),
+    ("[ ]", "prev/next"),
+    ("1-8", "screens"),
+    ("^P", "palette"),
+    ("Q", "quit"),
+)
+_POSITIONS_TRAIL: Final = ("Home", "Positions")
 _FOOTER_CHIPS_COMPACT: Final = (
     ("D W M Y", "range"),
     ("1-8", ""),
@@ -370,8 +388,6 @@ class HomeApp(App[None]):
     #body.-split { grid-size: 2; grid-columns: 48 1fr; grid-gutter: 1 2; }
     .cell { height: auto; }
     #watch-column { height: auto; }
-    #detail-panel { display: none; }
-    #detail-panel.-open { display: block; }
     #shadow, #footer-row, #panel-footer { height: 1; }
     #footer { width: 1fr; }
     #footer-status, #panel-footer { width: auto; color: $hud-muted; }
@@ -385,7 +401,7 @@ class HomeApp(App[None]):
         Binding("up,k", "select(-1)", "previous", show=False),
         Binding("down,j", "select(1)", "next", show=False),
         Binding("enter", "open_detail", "detail", show=False),
-        Binding("escape", "go_back", "back", show=False),
+        Binding("escape,backspace", "go_back", "back", show=False),
         Binding("l,L", "logs", "logs", show=False),
         Binding("t,T", "pick_theme", "theme", show=False),
         Binding("question_mark", "help", "help", show=False),
@@ -480,7 +496,7 @@ class HomeApp(App[None]):
                 yield HudPanel(
                     Static(id="activity"), title="Activity", id="activity-panel", classes="cell"
                 )
-                yield HudPanel(
+                yield DetailPane(
                     Static(id="detail"),
                     title="Position detail",
                     subtitle="Esc close",
@@ -791,7 +807,7 @@ class HomeApp(App[None]):
                 f"screen-{logs.key}", Group(_placeholder(logs), Text(""), self._logs_content())
             )
         screen = self.screen
-        if isinstance(screen, _PanelScreen):
+        if isinstance(screen, _PanelScreen | DetailScreen):
             screen.refresh_panel()
 
     def _redraw_chrome(self) -> None:
@@ -807,20 +823,19 @@ class HomeApp(App[None]):
         )
         self._home.query_one("#detail-panel", HudPanel).active = on_home and self._detail_open
 
-    def _detail_content(self, ctx: RenderContext | None = None) -> RenderableType:
+    def _detail_content(self, coin: str | None, ctx: RenderContext | None = None) -> RenderableType:
         ctx = ctx or self._render_context()
-        selected = self._selected
         model = self._model
         return _card(
             "Position",
-            lambda: render_position_detail(model.position(selected) if selected else None, ctx),
+            lambda: render_position_detail(model.position(coin) if coin else None, ctx),
         )
 
     def _redraw_detail(self, ctx: RenderContext) -> None:
         shown = self._detail_open and self.is_wide and self._selected is not None
-        self._home.query_one("#detail-panel").set_class(shown, "-open")
+        self._home.query_one("#detail-panel", DetailPane).is_open = shown
         if shown:
-            self._set("detail", self._detail_content(ctx))
+            self._set("detail", self._detail_content(self._selected, ctx))
 
     # ------------------------------------------------------------------
     # Actions
@@ -896,15 +911,46 @@ class HomeApp(App[None]):
         self._selected = coins[(current + step) % len(coins)]
         self._redraw()
 
-    def action_open_detail(self) -> None:
-        """Open the selected position: beside the list when wide, else full screen."""
-        if not self._home_shown or self._selected is None:
+    def list_state(self) -> ListState:
+        """Return the positions list's state; it has no filters or sort yet, only a cursor."""
+        return ListState(cursor=self._selected)
+
+    def restore_list_state(self, state: ListState | None) -> None:
+        """Put the positions cursor back where a detail screen left it.
+
+        Args:
+            state: The state the detail screen returned; ``None`` changes nothing.
+        """
+        if state is None:
             return
-        if self.is_wide:
+        self._selected = state.cursor
+        self._redraw()
+
+    def action_open_detail(self) -> None:
+        """Open the selected position: a pane beside the list, else a detail screen.
+
+        Home places the pane beside the list only from 120 columns (two
+        columns until issue #712), so between 100 and 119 it opens a screen too.
+        """
+        selected = self._selected
+        if not self._home_shown or selected is None:
+            return
+        if detail_mode(self.size.width, beside=self.is_wide) is DetailMode.PANE:
             self._detail_open = True
             self._redraw()
             return
-        self.push_screen(_PanelScreen(self._detail_content))
+        self.push_screen(
+            DetailScreen(
+                trail=_POSITIONS_TRAIL,
+                keys=self._positions_coins,
+                current=selected,
+                body=self._detail_content,
+                title="Position detail",
+                state=self.list_state(),
+                chips=_DETAIL_CHIPS,
+            ),
+            self.restore_list_state,
+        )
 
     def action_pick_theme(self) -> None:
         """Offer Neon, Control room or Auto."""
@@ -982,7 +1028,8 @@ class HomeApp(App[None]):
             Text("Keys", style="bold"),
             Text("  1-8 screens · Tab / Shift+Tab next / previous · Ctrl+P command palette"),
             Text("  D day · W week · M month · Y year"),
-            Text("  ↑ ↓ choose a position · Enter open its detail · Esc back"),
+            Text("  ↑ ↓ choose a position · Enter open its detail · Esc or Backspace back"),
+            Text("  [ ] previous / next item inside a detail screen"),
             Text("  L logs · T theme · ? this help · Q quit"),
             Text(
                 "This screen is read-only: nothing here changes a position, a stop or the ledger."
