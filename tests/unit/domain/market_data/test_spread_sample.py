@@ -30,7 +30,7 @@ _AT = datetime(2026, 10, 6, 12, tzinfo=UTC)
 _NAIVE = datetime(2026, 10, 6, 12)
 
 _spreads = st.lists(
-    st.decimals(min_value=Decimal("0"), max_value=Decimal("0.1"), places=8),
+    st.decimals(min_value=Decimal(0), max_value=Decimal("0.1"), places=8),
     min_size=1,
     max_size=40,
 )

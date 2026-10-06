@@ -33,7 +33,7 @@ from hermes.domain.value_objects.strategy_id import StrategyId
 def test_risk_state_still_passes_no_correlations() -> None:
     """``to_risk_state`` keeps ``correlations == {}``: RO-01 has no input yet."""
     snapshot = PortfolioSnapshot.seed(
-        StrategyId("swing-donchian-4h"), Money(amount=Decimal("10000"), currency=Currency.USDT)
+        StrategyId("swing-donchian-4h"), Money(amount=Decimal(10000), currency=Currency.USDT)
     )
     assert snapshot.to_risk_state().correlations == {}
 

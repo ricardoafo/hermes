@@ -76,8 +76,8 @@ class _TickingBooks:
         self.calls += 1
         return Orderbook(
             pair=pair,
-            bids=(OrderbookLevel(price=Decimal("999"), quantity=Decimal("10")),),
-            asks=(OrderbookLevel(price=Decimal("1001"), quantity=Decimal("10")),),
+            bids=(OrderbookLevel(price=Decimal(999), quantity=Decimal(10)),),
+            asks=(OrderbookLevel(price=Decimal(1001), quantity=Decimal(10)),),
             snapshot_time=datetime(2026, 10, 6, tzinfo=UTC) + timedelta(seconds=self.calls),
         )
 

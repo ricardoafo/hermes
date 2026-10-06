@@ -29,7 +29,7 @@ __all__ = ["SPREAD_MEDIAN_WINDOW", "SpreadSample", "median_spread"]
 SPREAD_MEDIAN_WINDOW: Final[timedelta] = timedelta(hours=1)
 """Length of the rolling window RO-02's median covers."""
 
-_TWO: Final[Decimal] = Decimal("2")
+_TWO: Final[Decimal] = Decimal(2)
 
 
 def median_spread(spreads: Sequence[Decimal]) -> Decimal | None:
