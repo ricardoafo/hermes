@@ -36,6 +36,7 @@ from hermes.application.messages.format import (
     fmt_money,
     fmt_pp,
     fmt_qty,
+    fmt_quote_money,
     fmt_weight,
     fmt_when,
     fmt_when_utc,
@@ -57,6 +58,7 @@ from hermes.domain.events.strategy_resumed import StrategyResumed
 from hermes.domain.events.trade_executed import TradeExecuted, TradeSide
 from hermes.domain.events.trade_rejected import TradeRejected
 from hermes.domain.strategy.signal import SignalKind
+from hermes.domain.value_objects.currency import Currency
 
 __all__ = ["ACTUAL_WITHHELD", "build_note"]
 
@@ -73,16 +75,21 @@ def _join(*parts: str) -> str:
     return SEPARATOR.join(parts)
 
 
-def _signal_note(event: SignalEmitted) -> Note:
+def _rate_for(currency: Currency, quote: Currency, eur_rate: Decimal | None) -> Decimal | None:
+    """Return the rate only when ``currency`` is the quote the rate was looked up for."""
+    return eur_rate if currency is quote else None
+
+
+def _signal_note(event: SignalEmitted, eur_rate: Decimal | None) -> Note:
     """Build the note for a signal: the plan, never the outcome."""
     coin = event.pair.base.value
     quote = event.pair.quote
     entering = event.kind is SignalKind.ENTRY
     glyph = GLYPH_UP if entering else GLYPH_DOWN
     side = event.side.value
-    stop = fmt_money(event.stop_price, quote)
+    stop = fmt_quote_money(event.stop_price, quote, eur_rate)
     entry = event.entry_price
-    price = fmt_money(entry, quote) if entry is not None else _PRICE_UNKNOWN
+    price = fmt_quote_money(entry, quote, eur_rate) if entry is not None else _PRICE_UNKNOWN
     when = fmt_when(event.occurred_at)
     when_utc = fmt_when_utc(event.occurred_at)
     footer = (str(event.strategy_id),)
@@ -123,14 +130,18 @@ def _signal_note(event: SignalEmitted) -> Note:
     )
 
 
-def _trade_executed_note(event: TradeExecuted) -> Note:
+def _trade_executed_note(event: TradeExecuted, eur_rate: Decimal | None) -> Note:
     """Build the note for a fill escalated as a large position."""
     coin = event.pair.base.value
     glyph = GLYPH_UP if event.side is TradeSide.BUY else GLYPH_DOWN
-    price = fmt_money(event.price.amount, event.pair.quote)
+    quote = event.pair.quote
+    price = fmt_quote_money(event.price.amount, quote, eur_rate)
     qty = fmt_qty(event.qty.amount, event.qty.asset)
-    fee = f"fee {fmt_money(event.fee.amount, event.fee.currency)}"
-    notional = f"value {fmt_money(event.qty.amount * event.price.amount, event.pair.quote)}"
+    fee_currency = event.fee.currency
+    fee_rate = _rate_for(fee_currency, quote, eur_rate)
+    fee = f"fee {fmt_quote_money(event.fee.amount, fee_currency, fee_rate)}"
+    value = fmt_quote_money(event.qty.amount * event.price.amount, quote, eur_rate)
+    notional = f"value {value}"
     headline = f"{glyph} Position large{SEPARATOR}{event.side.value} {coin}{SEPARATOR}{price}"
     return Note(
         minimal=f"{glyph} {event.side.value} {qty} @ {price}",
@@ -288,12 +299,17 @@ def _digest_note(event: DailyTradeDigest, phase: ReportingPhase) -> Note:
     )
 
 
-def build_note(event: DomainEvent, phase: ReportingPhase) -> tuple[Family, Note]:
+def build_note(
+    event: DomainEvent, phase: ReportingPhase, eur_rate: Decimal | None = None
+) -> tuple[Family, Note]:
     """Return the family and the note of ``event``.
 
     Args:
         event: A concrete domain event.
         phase: Reporting phase. Only the daily digest reads it.
+        eur_rate: Units of the event's quote currency per one euro, or
+            ``None``. With a rate, signal and fill prices read in EUR; without
+            one they keep the quote currency, so the fallback is visible.
 
     Returns:
         The family that picks the shape, and the text of every shape.
@@ -303,9 +319,9 @@ def build_note(event: DomainEvent, phase: ReportingPhase) -> tuple[Family, Note]
     """
     match event:
         case SignalEmitted():
-            built = (Family.TRADE_LIFECYCLE, _signal_note(event))
+            built = (Family.TRADE_LIFECYCLE, _signal_note(event, eur_rate))
         case TradeExecuted():
-            built = (Family.TRADE_LIFECYCLE, _trade_executed_note(event))
+            built = (Family.TRADE_LIFECYCLE, _trade_executed_note(event, eur_rate))
         case TradeRejected():
             built = (Family.TRADE_LIFECYCLE, _trade_rejected_note(event))
         case StrategyPaused():
