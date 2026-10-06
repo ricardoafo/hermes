@@ -12,20 +12,27 @@ Invariants:
 - the tab bar shows names, or numbers only at compact width, and highlights
   the shown tab;
 - footer keys are reverse-video chips;
-- the theme chip names the choice and says when Auto is at night.
+- the theme chip names the choice and says when Auto is at night;
+- the one meter fills ``round(value / cap x width)`` cells, clamps to its
+  width, runs its fill along a gradient, turns the whole fill amber from its
+  warning share or on the caller's warning, and adds label, caps and percent
+  only when asked.
 """
 
 from __future__ import annotations
 
+from hypothesis import given
+from hypothesis import strategies as st
 from rich.console import Console
 from rich.style import Style
 from rich.text import Text
 
 from hermes.entrypoints.tui_settings import ThemeChoice
-from hermes.entrypoints.tui_theme import NEON, binary_strip
+from hermes.entrypoints.tui_theme import BASE, NEON, binary_strip
 from hermes.entrypoints.tui_widgets import (
     LABEL_AI,
     LABEL_COMPUTED,
+    Meter,
     Tab,
     bottom_edge,
     key_chips,
@@ -182,3 +189,84 @@ def test_theme_chip_names_the_choice() -> None:
         " ◑ NEON ",
         " ◑ ",
     ]
+
+
+def test_meter_fills_its_share_of_the_cap() -> None:
+    """15 of a 20 cap over 8 cells is 6 full cells and 2 empty ones."""
+    assert Meter(15, cap=20, width=8).render(BASE).plain == "██████░░"
+
+
+def test_meter_default_width_is_ten_cells() -> None:
+    """Without a width a meter is ten cells: 0.42 rounds to four full."""
+    assert Meter(0.42).render(BASE).plain == "████░░░░░░"
+
+
+def test_meter_clamps_out_of_range_values() -> None:
+    """A load above the cap fills every cell; a negative value or no cap fills none."""
+    plains = [
+        Meter(1.7, width=4).render(BASE).plain,
+        Meter(-0.2, width=4).render(BASE).plain,
+        Meter(5, cap=0, width=4).render(BASE).plain,
+    ]
+    assert plains == ["████", "░░░░", "░░░░"]
+
+
+def test_meter_fill_follows_the_gain_gradient_and_empty_is_line() -> None:
+    """Full fill over 3 cells: first, middle and last gain stop; an empty cell is ``line``."""
+    full = Meter(1, width=3).render(BASE)
+    empty = Meter(0, width=1).render(BASE)
+    assert [_hex(_style_at(full, i).color) for i in range(3)] == ["#1B3A6B", "#468CE6", "#8BE9FF"]
+    assert _hex(_style_at(empty, 0).color) == "#1A2740"
+
+
+def test_meter_takes_other_gradient_stops() -> None:
+    """The 90-day bar passes the brand stops: its first cell is the first brand stop."""
+    bar = Meter(1, width=4).render(BASE, stops=BASE.brand)
+    assert _hex(_style_at(bar, 0).color) == BASE.brand[0].upper()
+    assert _hex(_style_at(bar, 3).color) == BASE.brand[-1].upper()
+
+
+def test_meter_turns_amber_from_the_warning_share() -> None:
+    """With an amber share of 0.8: 16 of a 20 cap is amber in every cell, 15 is not."""
+    warned = Meter(16, cap=20, width=4, warn_from=0.8).render(BASE)
+    calm = Meter(15, cap=20, width=4, warn_from=0.8).render(BASE)
+    assert {_hex(_style_at(warned, i).color) for i in range(3)} == {"#E6BE28"}
+    assert _hex(_style_at(calm, 0).color) == "#1B3A6B"
+
+
+def test_meter_turns_amber_on_the_callers_warning() -> None:
+    """``warn=True`` draws the fill amber whatever the share."""
+    bar = Meter(0.25, width=4, warn=True).render(BASE)
+    assert _hex(_style_at(bar, 0).color) == "#E6BE28"
+
+
+def test_meter_solid_colour_wins_over_gradient_and_warning() -> None:
+    """A stale stop meter is drawn ``dim`` even while the stop is close."""
+    bar = Meter(1, width=2, warn=True).render(BASE, colour=BASE.dim)
+    assert {_hex(_style_at(bar, i).color) for i in range(2)} == {"#5D6780"}
+
+
+def test_meter_with_caps_label_and_percent() -> None:
+    """Label padded to 6, caps round the cells, and the share as a whole percent."""
+    bar = Meter(0.42, width=10, label="disk", label_width=6, caps=True, percent=True)
+    assert bar.render(BASE).plain == "disk   ▕████░░░░░░▏ 42%"
+
+
+def test_meter_percent_is_not_clamped() -> None:
+    """A cpu load of 1.7 reads 170% while the cells stop at full."""
+    assert Meter(1.7, width=2, percent=True).render(BASE).plain == "██ 170%"
+
+
+@given(
+    low=st.floats(-2, 3, allow_nan=False),
+    high=st.floats(-2, 3, allow_nan=False),
+    width=st.integers(0, 64),
+)
+def test_meter_fill_is_monotonic_and_clamped_to_the_width(
+    low: float, high: float, width: int
+) -> None:
+    """More value never draws fewer full cells, and the fill stays within 0..width."""
+    low, high = min(low, high), max(low, high)
+    lower, upper = Meter(low, width=width), Meter(high, width=width)
+    assert 0 <= lower.filled <= upper.filled <= width
+    assert len(upper.render(BASE).plain) == width
