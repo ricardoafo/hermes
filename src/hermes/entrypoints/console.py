@@ -22,6 +22,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Final, TextIO
 
@@ -50,6 +51,7 @@ __all__ = [
     "journal_window_lines",
     "recent_journal_lines",
     "resolve_read_model",
+    "roster_exposure_cap",
     "run_overview",
     "split_demo_flag",
 ]
@@ -274,6 +276,35 @@ def recent_journal_lines(count: int) -> list[LogLine] | None:
         return [line for line in map(parse_journal_entry, raw) if line is not None]
     except JournalUnavailableError:
         return None
+
+
+def roster_exposure_cap(env: Mapping[str, str]) -> Decimal | None:
+    """Return the pre-registered exposure cap the roster sets, as a share (``0.15``).
+
+    The Home exposure meter measures against it (#712); the console never
+    hardcodes the pre-registration's figure. The roster is
+    ``strategies.yaml`` in the console's config dir (``HERMES_CONFIG_DIR`` or
+    ``./config``), read-only.
+
+    Args:
+        env: Environment snapshot (config dir and ``HERMES_STRATEGIES__*`` overrides).
+
+    Returns:
+        ``sizing.max_total_exposure_pct`` when every enabled strategy sets the
+        same cap; ``None`` when the roster is missing or invalid, no strategy is
+        enabled, or the caps differ.
+    """
+    from hermes.infrastructure.config.errors import ConfigError  # noqa: PLC0415 - slow import
+    from hermes.infrastructure.config.loader import load_yaml_model  # noqa: PLC0415
+    from hermes.infrastructure.config.models import StrategiesConfig  # noqa: PLC0415
+
+    path = default_config_dir(env) / "strategies.yaml"
+    try:
+        roster = load_yaml_model(path, StrategiesConfig, env_section="STRATEGIES", env=dict(env))
+    except ConfigError:
+        return None
+    caps = {s.sizing.max_total_exposure_pct for s in roster.strategies if s.enabled}
+    return caps.pop() if len(caps) == 1 else None
 
 
 _JOURNAL_WINDOW_LINES: Final = 20_000
