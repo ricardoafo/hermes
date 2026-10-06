@@ -9,12 +9,15 @@ from typing import Final, TextIO
 
 from hermes.adapters.console import UnknownScenarioError
 from hermes.application.console import ConsoleReadModel
+from hermes.application.console.system import LiveRelease
 from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.commands import Command
 from hermes.entrypoints.console import (
     LiveReadModelUnavailableError,
+    default_db_path,
     recent_journal_lines,
     resolve_read_model,
+    system_sources,
 )
 from hermes.entrypoints.tui_settings import (
     DEFAULT_SETTINGS_PATH,
@@ -95,12 +98,18 @@ def run_tui(
     if runner is None:
         from hermes.entrypoints.tui import run_home  # noqa: PLC0415 - Textual is slow to import
 
+        ledger = db_path or default_db_path(env or {})
+        system = system_sources(
+            db_path=ledger, live=_live_release, ledger=model.demo_scenario is None
+        )
+
         def runner(read_model: ConsoleReadModel) -> None:
             run_home(
                 read_model,
                 journal=recent_journal_lines,
                 release=_release_name,
                 settings_path=settings_path,
+                system=system,
             )
 
     runner(model)
@@ -110,6 +119,12 @@ def run_tui(
 def _release_name() -> str:
     """Return the running release, read from the link ``hermes status`` reads (#649)."""
     return read_release().name
+
+
+def _live_release() -> LiveRelease:
+    """Return the live release for the System screen, from the same link (#717)."""
+    info = read_release()
+    return LiveRelease(info.name, info.live_since)
 
 
 def _parse(args: list[str]) -> tuple[Path | None, ThemeChoice | None]:
