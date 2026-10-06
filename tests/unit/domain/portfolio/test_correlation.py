@@ -66,6 +66,12 @@ def test_pearson_is_undefined_without_two_points_or_variance(
     assert [pearson(xs, ys)] == [None]
 
 
+def test_pearson_survives_variances_whose_product_underflows() -> None:
+    """Two tiny variances (~1e-242) multiply to 0.0; the coefficient is still 1.0 (hypothesis)."""
+    series = [0.0, 3.462674987231344e-121]
+    assert pearson(series, series) == pytest.approx(1.0)
+
+
 def test_pearson_refuses_series_of_different_length() -> None:
     """Misaligned series are a caller bug, not a correlation."""
     with pytest.raises(ValueError, match="length"):

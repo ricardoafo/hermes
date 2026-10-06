@@ -78,7 +78,12 @@ def pearson(xs: Sequence[float], ys: Sequence[float]) -> float | None:
     if var_x == 0 or var_y == 0:
         return None
     covariance = math.fsum(a * b for a, b in zip(dx, dy, strict=True))
-    return max(-1.0, min(1.0, covariance / math.sqrt(var_x * var_y)))
+    # Each root is taken on its own: the product of two tiny variances can
+    # underflow to zero although neither is zero.
+    scale = math.sqrt(var_x) * math.sqrt(var_y)
+    if scale == 0:
+        return None
+    return max(-1.0, min(1.0, covariance / scale))
 
 
 def aligned_daily_returns(
