@@ -1,1 +1,0 @@
-- **Boot EUR pricing no longer delays catch-up or blocks shutdown** (`hermes serve`): pending EUR values are priced after the catch-up fills, off the event loop, capped at 20 FX calls and 60 s per boot, and a failing `(quote, date)` rate is tried once instead of once per trade. Leftovers stay pending for the next boot or `hermes fx backfill`. Closes #658.

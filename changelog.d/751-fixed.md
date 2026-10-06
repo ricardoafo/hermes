@@ -1,1 +1,0 @@
-- Deploy and rollback now tell a schema-guard refusal (exit 3) from a guard that crashed, instead of reporting both as "cannot read the events" (issue #751).

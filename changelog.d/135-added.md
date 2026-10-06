@@ -1,1 +1,0 @@
-- **Tax guard reads the ledger** (`TradeHistoryPort`, `SqliteLedger.trades_between`, `evaluate_ledger`): the recharacterization guard can now evaluate the trades the ledger records for its rolling 90-day window, across all strategies, instead of an in-memory event list. Closes #135.
