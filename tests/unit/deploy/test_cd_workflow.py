@@ -85,8 +85,22 @@ def test_confirm_fails_through_contains_on_needs_results() -> None:
 
 
 def test_confirm_runs_even_when_an_upstream_job_failed() -> None:
-    """`if: !cancelled()` makes confirm run after a failed job, so it can report the failure."""
-    assert _workflow()["jobs"]["confirm"]["if"] == "!cancelled()"
+    """`!cancelled()` makes confirm run after a failed job, so it can report the failure."""
+    assert str(_workflow()["jobs"]["confirm"]["if"]).startswith("!cancelled() && ")
+
+
+def test_confirm_takes_no_runner_when_the_gate_skipped() -> None:
+    """Invariant (#694): a CD run for a cancelled or failed CI skips every job, confirm included."""
+    assert "needs.gate.result != 'skipped'" in str(_workflow()["jobs"]["confirm"]["if"])
+
+
+def test_only_the_deploy_job_holds_the_deploy_lock() -> None:
+    """Invariant (#694): runs that skip never queue against a real deploy for the lock."""
+    workflow = _workflow()
+    deploy_lock = workflow["jobs"]["deploy"]["concurrency"]
+
+    assert "concurrency" not in workflow
+    assert deploy_lock == {"group": "deploy-vps", "cancel-in-progress": False}
 
 
 def test_every_real_deploy_step_is_skipped_on_dry_run() -> None:
