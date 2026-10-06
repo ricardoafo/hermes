@@ -154,8 +154,9 @@ def _report(findings: list[Finding], as_json: bool, stream: TextIO) -> int:
         stream.write(json.dumps({"ok": not findings, "findings": [asdict(f) for f in findings]}))
         stream.write("\n")
     elif findings:
-        for finding in findings:
-            stream.write(f"FINDING {finding.kind} {finding.name}: {finding.detail}\n")
+        stream.writelines(
+            f"FINDING {finding.kind} {finding.name}: {finding.detail}\n" for finding in findings
+        )
     else:
         stream.write("OK: config loads and the startup checks pass.\n")
     return 1 if findings else 0

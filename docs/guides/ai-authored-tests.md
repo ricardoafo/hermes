@@ -259,6 +259,22 @@ than it should have been:
 - Frozen time: pass the time in as an argument or use a fake clock rather than patching. `freezegun` is a dev dependency, but no test uses it today. Either way, parametrize over real time boundaries.
 - **ruff** with test-focused rules (`D`, `PT`) — test hygiene.
 
+## Start by asking how it breaks
+
+Before writing a test for runtime code, list how the code could fail:
+bad input from outside, a crash between two writes, a second process, a
+clock that jumps, a service that is slow instead of down. Then check
+each item against the failure-mode catalogue in
+`tests/integration/scenarios/failure_modes.py` (issue #839).
+
+- Every PR that changes runtime code adds the failure modes it finds to
+  the catalogue, or says in the PR body that it found none.
+- Every bug fixed adds its catalogue entry and the test that would have
+  caught it.
+- An entry is proved by tests, a gap naming its open issue, or accepted
+  with Rick's dated approval. `test_failure_mode_list.py` fails on
+  anything else, and on a proof that names a test that does not exist.
+
 ## The one question to ask before submitting
 
 Before opening the PR, look at each test you wrote and ask:

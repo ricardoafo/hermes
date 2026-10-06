@@ -148,8 +148,9 @@ def _run_mode(
     if args.mode == "brief":
         return _brief(dispatcher, args, stream, diagnostics, clock)
     if args.mode == "list":
-        for tool in dispatcher.available():
-            stream.write(f"{tool.name:<14} {tool.scope:<28} {tool.summary}\n")
+        stream.writelines(
+            f"{tool.name:<14} {tool.scope:<28} {tool.summary}\n" for tool in dispatcher.available()
+        )
         return 0
     if args.mode == "mcp":
         return _serve(McpServer(dispatcher, version=hermes.__version__), stdin, stream)

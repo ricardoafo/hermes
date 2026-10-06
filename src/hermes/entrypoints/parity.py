@@ -172,8 +172,7 @@ def _check(
     if report.in_parity:
         stream.write(f"OK — {report.matched} signals match for {day.isoformat()}\n")
         return 0
-    for mismatch in report.mismatches:
-        stream.write(mismatch.line() + "\n")
+    stream.writelines(mismatch.line() + "\n" for mismatch in report.mismatches)
     if parsed.alert:
         _send_alert(report, at, env, router_factory, err)
     return 1

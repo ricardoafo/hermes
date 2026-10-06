@@ -82,6 +82,18 @@ class PortfolioTracker:
         """Return the current snapshot (read-only value object)."""
         return self._snapshot
 
+    def restore_peak(self, peak: Decimal) -> None:
+        """Raise the peak equity to ``peak`` when it is higher than the current one.
+
+        Called once after :meth:`rebuilt`: replaying fills cannot see the highs
+        the bar marks reached, so the caller passes the peak the latest stored
+        portfolio mark recorded.
+
+        Args:
+            peak: A previously recorded peak equity, in the snapshot's quote currency.
+        """
+        self._snapshot = self._snapshot.with_peak_at_least(peak)
+
     def mark(self, bar: Bar) -> None:
         """Mark the bar's pair at the bar close when the bar is newer than its mark.
 

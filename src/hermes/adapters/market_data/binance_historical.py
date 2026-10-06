@@ -410,11 +410,16 @@ def _decimal_field(raw: str, *, field_name: str, source: Path) -> Decimal:
         hermes.domain.errors.ExchangeError: On unparseable input.
     """
     try:
-        return Decimal(raw)
+        value = Decimal(raw)
     except InvalidOperation as exc:
         raise ExchangeError(
             f"BinanceHistoricalAdapter: {field_name} is not a decimal ({raw!r}) in {source}"
         ) from exc
+    if not value.is_finite():
+        raise ExchangeError(
+            f"BinanceHistoricalAdapter: {field_name} is not a finite number ({raw!r}) in {source}"
+        )
+    return value
 
 
 def _row_to_bar(
