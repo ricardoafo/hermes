@@ -5,7 +5,8 @@ Invariants protected here:
 - ``last_processed_close`` returns the newest ``BarProcessed`` close time of
   exactly one ``(pair, interval)`` stream, never another stream's;
 - ``latest_signal_event`` returns the newest ``SignalEmitted`` of one
-  strategy and pair at or before a bound, rehydrated field for field;
+  strategy and pair at or before a bound, rehydrated field for field; with
+  ``kind`` it skips newer signals of the other kind (#706);
 - ``has_signal_event`` matches on strategy, pair, kind and time only.
 
 All run against SQLite ``:memory:``.
@@ -182,6 +183,31 @@ class TestLatestSignalEvent:
         ledger.append_event(_signal(SignalKind.ENTRY, _T0, strategy=StrategyId("other")))
 
         found = [ledger.latest_signal_event(_STRATEGY, _BTC, at_or_before=_T0)]
+
+        assert found == [None]
+
+    def test_kind_entry_skips_the_exits_declined_after_it(self, ledger: SqliteLedger) -> None:
+        """Asked for an entry, the read passes over two newer exits to the entry (#706)."""
+        ledger.append_event(_signal(SignalKind.ENTRY, _T0))
+        for hours in (4, 8):
+            ledger.append_event(
+                _signal(SignalKind.EXIT, _T0 + timedelta(hours=hours), exit_reason="chandelier")
+            )
+
+        found = ledger.latest_signal_event(
+            _STRATEGY, _BTC, at_or_before=_T0 + timedelta(hours=8), kind=SignalKind.ENTRY
+        )
+
+        summary = None if found is None else (found.kind, found.occurred_at, found.entry_price)
+        assert summary == (SignalKind.ENTRY, _T0, Decimal("50000.5"))
+
+    def test_kind_exit_without_an_exit_returns_none(self, ledger: SqliteLedger) -> None:
+        """Asked for an exit when only an entry is stored, the read finds nothing."""
+        ledger.append_event(_signal(SignalKind.ENTRY, _T0))
+
+        found = [
+            ledger.latest_signal_event(_STRATEGY, _BTC, at_or_before=_T0, kind=SignalKind.EXIT)
+        ]
 
         assert found == [None]
 
