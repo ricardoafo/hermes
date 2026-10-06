@@ -12,7 +12,9 @@ Invariants:
 - the tab bar shows names, or numbers only at compact width, and highlights
   the shown tab;
 - footer keys are reverse-video chips;
-- the theme chip names the choice and says when Auto is at night.
+- the theme chip names the choice and says when Auto is at night;
+- a meter fills in proportion, clamps out-of-range values, and turns amber
+  from its warning level (#717).
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ from hermes.entrypoints.tui_widgets import (
     Tab,
     bottom_edge,
     key_chips,
+    meter_text,
     tab_text,
     theme_chip_text,
     top_edge,
@@ -182,3 +185,26 @@ def test_theme_chip_names_the_choice() -> None:
         " ◑ NEON ",
         " ◑ ",
     ]
+
+
+def test_meter_fills_in_proportion_between_its_caps() -> None:
+    """42% of 10 cells is 4 full cells and 6 empty ones, inside the end caps."""
+    assert meter_text(0.42, NEON).plain == "▕████░░░░░░▏"
+
+
+def test_meter_clamps_values_outside_zero_to_one() -> None:
+    """A load above 1 (every cpu busy) fills the meter; a negative value leaves it empty."""
+    assert (meter_text(1.7, NEON, cells=4).plain, meter_text(-0.2, NEON, cells=4).plain) == (
+        "▕████▏",
+        "▕░░░░▏",
+    )
+
+
+def test_meter_turns_amber_from_its_warning_level() -> None:
+    """At or above warn_from every full cell is the warn token; below it, the gain gradient."""
+    warned = meter_text(0.9, NEON, cells=4, warn_from=0.85)
+    calm = meter_text(0.5, NEON, cells=4, warn_from=0.85)
+    assert (_hex(_style_at(warned, 1).color), _hex(_style_at(calm, 1).color)) == (
+        NEON.warn.upper(),
+        NEON.gain[0].upper(),
+    )

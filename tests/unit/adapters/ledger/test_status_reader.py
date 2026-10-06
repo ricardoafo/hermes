@@ -7,7 +7,8 @@ Invariants protected here:
 - a missing file is reported as ``FileNotFoundError``, not created;
 - ``last_processed_close`` is per stream and newest-wins;
 - ``count_signals_since`` is inclusive of its bound;
-- ``open_entries`` lists a pair only while its newest signal is an entry.
+- ``open_entries`` lists a pair only while its newest signal is an entry;
+- ``bar_check_seconds`` is recorded_at minus the bar close, oldest first (#717).
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ import pytest
 
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.adapters.ledger.status_reader import SqliteStatusReader
+from hermes.domain.errors import LedgerError
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.strategy.signal import SignalKind
 from hermes.ports.status import ShadowEntry, StatusReadPort
@@ -126,3 +128,45 @@ def test_open_entries_keep_only_pairs_whose_newest_signal_is_an_entry(tmp_path: 
             entry_price=Decimal("2618.45"),
         ),
     )
+
+
+def _insert_bar_check(path: Path, occurred: str, recorded: str) -> None:
+    connection = sqlite3.connect(path)
+    with connection:
+        connection.execute(
+            "INSERT INTO events (event_type, event_schema_version, correlation_id, "
+            "occurred_at, payload_json, recorded_at) VALUES ('BarProcessed', 1, 'c', ?, '{}', ?)",
+            (occurred, recorded),
+        )
+    connection.close()
+
+
+def test_bar_check_seconds_is_recorded_minus_close_oldest_first(tmp_path: Path) -> None:
+    """Each BarProcessed row's recorded_at minus its close, in whole seconds, oldest first.
+
+    The System screen draws these as the bar-check time sparkline (#717).
+    """
+    path = write_ledger(tmp_path / "hermes.sqlite3", last_4h=None, last_1d=None)
+    _insert_bar_check(path, "2026-10-03T12:00:00+00:00", "2026-10-03T12:00:04.900000+00:00")
+    _insert_bar_check(path, "2026-10-03T16:00:00+00:00", "2026-10-03T16:00:09+00:00")
+    _insert_bar_check(path, "2026-10-03T20:00:00+00:00", "2026-10-03T20:00:03+00:00")
+
+    with SqliteStatusReader.open(path) as reader:
+        assert reader.bar_check_seconds(2) == (Decimal(9), Decimal(3))
+
+
+def test_bar_check_seconds_is_empty_before_the_first_bar(tmp_path: Path) -> None:
+    """No BarProcessed row yet: an empty tuple, which the screen shows as not available yet."""
+    path = write_ledger(tmp_path / "hermes.sqlite3", last_4h=None, last_1d=None)
+
+    with SqliteStatusReader.open(path) as reader:
+        assert reader.bar_check_seconds(30) == ()
+
+
+def test_bar_check_seconds_reports_an_unreadable_time(tmp_path: Path) -> None:
+    """A row whose time does not parse raises LedgerError, so the panel degrades."""
+    path = write_ledger(tmp_path / "hermes.sqlite3", last_4h=None, last_1d=None)
+    _insert_bar_check(path, "not a time", "2026-10-03T20:00:03+00:00")
+
+    with SqliteStatusReader.open(path) as reader, pytest.raises(LedgerError):
+        reader.bar_check_seconds(30)

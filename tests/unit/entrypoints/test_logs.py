@@ -227,3 +227,13 @@ def test_level_filter_treats_unknown_levels_as_info() -> None:
     assert line is not None
 
     assert [entry.event for entry in filter_lines([line], min_level=LogLevel.INFO)] == ["x.y"]
+
+
+def test_journalctl_reads_another_unit_when_asked() -> None:
+    """The System screen's service detail reads hermes-daily's journal, not hermes.service's."""
+    spawn = _Spawn([])
+    reader = JournalctlReader(
+        executable="/usr/bin/journalctl", spawn=cast("Any", spawn), unit="hermes-daily.service"
+    )
+    list(reader.lines(last=5))
+    assert spawn.argv[1:3] == ["--unit", "hermes-daily.service"]
