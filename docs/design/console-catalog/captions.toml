@@ -120,3 +120,11 @@ state = "The wordmark where images are not drawn"
 means = "The text logo the console falls back to on terminals without image support."
 check = "Neon uses the brand gradient, Control room plain cyan; the letters stay legible at every width."
 demo = "any console on a terminal without image support"
+
+[views."test_tui_positions/positions"]
+screen = "Positions"
+state = "Two open positions, the first selected"
+means = "The open positions with the selected one's detail beside them (under them on narrow screens): why it opened, the stop, the money if sold now, the price since entry and the timeline."
+check = "Rows and detail match Home's for the same coin; the selected row has the cursor; up and down move it and the detail follows."
+scenario = "ok-two-positions"
+keys = "3"
