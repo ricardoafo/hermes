@@ -154,10 +154,13 @@ def test_activity_rows_come_from_the_fills(home: Path) -> None:
 
 
 def test_signals_are_quiet_rows_once_fills_exist(home: Path) -> None:
-    """With fills, the entry signal adds a quiet signal row, not a second opened row."""
+    """With fills, the entry signal is named on its check line, not a second opened row (#653)."""
     (day,) = _model(home).activity(include_quiet=True)
     kinds = [i.kind for i in day.items]
-    assert (kinds.count(ActivityKind.OPENED), kinds.count(ActivityKind.SIGNAL)) == (1, 1)
+    assert (kinds.count(ActivityKind.OPENED), kinds.count(ActivityKind.SIGNAL)) == (1, 0)
+    assert [i.text for i in day.items if i.kind is ActivityKind.BAR][-1] == (
+        "checked 1 coin · entry long BTC"
+    )
 
 
 def test_unpriced_fills_show_no_price_and_no_net(unpriced_home: Path) -> None:

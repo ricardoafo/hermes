@@ -112,5 +112,4 @@ def _write_text(report: LedgerReport, stream: TextIO) -> None:
         f"FINDINGS — {report.event_count} events, {len(report.gaps)} gaps, "
         f"schema v{report.schema_level}\n"
     )
-    for finding in report.findings:
-        stream.write(f"- {finding}\n")
+    stream.writelines(f"- {finding}\n" for finding in report.findings)

@@ -35,7 +35,9 @@ from tests.support.status_ledger import (
 )
 
 _CONFIG = Path(__file__).resolve().parents[3] / "config"
-_PNL_WORDS = re.compile(r"p&l|pnl|profit|loss|equity|sharpe|drawdown|win rate|return", re.I)
+_PNL_WORDS = re.compile(
+    r"p&l|pnl|profit|loss|equity|sharpe|drawdown|win rate|return", re.IGNORECASE
+)
 
 
 def _report(tmp_path: Path, *, now=NOW, unit: UnitState = UnitState.RUNNING) -> StatusReport:

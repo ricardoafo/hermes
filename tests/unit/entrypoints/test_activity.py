@@ -107,15 +107,17 @@ def test_ledger_feed_shows_opened_and_closed_from_signals(tmp_path: Path) -> Non
 
 
 def test_ledger_feed_with_all_includes_bar_checks(tmp_path: Path) -> None:
-    """--all adds one quiet row per processed bar."""
+    """--all adds one quiet check line per candle, folding its per-coin bar checks (#653)."""
     path = write_ledger(
         tmp_path / "hermes.sqlite3", signals=(signal(BTC, SignalKind.ENTRY, LAST_4H),)
     )
 
     _, out = _run(["--db", str(path), "--json", "--all", "--utc"], now=NOW)
-    kinds = sorted(i["kind"] for d in json.loads(out)["days"] for i in d["items"])
+    items = [i for d in json.loads(out)["days"] for i in d["items"]]
 
-    assert kinds == ["bar"] * 6 + ["opened", "signal"]
+    assert sorted(i["kind"] for i in items) == ["bar", "bar", "opened"]
+    assert sorted(i["count"] for i in items if i["kind"] == "bar") == [3, 3]
+    assert sum("entry long BTC" in i.get("text", "") for i in items) == 1
 
 
 def test_ledger_reader_cannot_write(tmp_path: Path) -> None:

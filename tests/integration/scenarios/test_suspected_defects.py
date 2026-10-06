@@ -24,11 +24,6 @@ from tests.support.serve_loop import events
 pytestmark = pytest.mark.integration
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="issue #690 item 1: an exit with no book is declined and never retried",
-)
 def test_an_exit_on_a_bar_with_no_volume_and_no_live_book_still_closes_the_position(
     run_scenario: RunScenario,
 ) -> None:

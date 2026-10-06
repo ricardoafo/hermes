@@ -222,7 +222,10 @@ def test_range_keys_still_set_the_range_on_another_screen() -> None:
 
 
 def test_every_home_card_sits_in_a_computed_hud_panel() -> None:
-    """Portfolio, positions, market, activity and detail are each framed and labelled computed."""
+    """Portfolio, positions, market, activity and detail are each framed and labelled computed.
+
+    Issue #712 renamed the market panel "Market" (the design spec's name).
+    """
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> dict[str, tuple[str, str]]:
         del pilot
@@ -237,7 +240,7 @@ def test_every_home_card_sits_in_a_computed_hud_panel() -> None:
     assert _run(probe) == {
         "portfolio": ("Portfolio", "computed"),
         "positions": ("Positions", "computed"),
-        "market": ("Market watch", "computed"),
+        "market": ("Market", "computed"),
         "activity": ("Activity", "computed"),
         "detail": ("Position detail", "computed"),
     }
@@ -612,13 +615,16 @@ def test_motion_off_runs_no_effect_timer() -> None:
 
 
 def test_motion_on_runs_the_pulse_and_the_strip() -> None:
-    """With motion on by day both effects run and the strip advances."""
+    """With motion on by day every effect runs and the strip advances.
+
+    Issue #712 added the big total's shimmer and the empty-positions radar.
+    """
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[list[str], bool]:
         await pilot.pause(1.3)
         return sorted(app.effect_timers), app.query_one(WindowBar).tick > 0
 
-    assert _run(probe, motion=True) == (["pulse", "strip"], True)
+    assert _run(probe, motion=True) == (["pulse", "radar", "shimmer", "strip"], True)
 
 
 def test_night_runs_only_the_slow_pulse() -> None:
@@ -1023,7 +1029,10 @@ def test_a_hand_picked_control_room_ignores_the_night(tmp_path: Path) -> None:
 
 
 def test_entering_night_slows_the_pulse_and_stops_the_strip() -> None:
-    """With motion on, crossing 23:00 restarts the pulse at 0.8 s per step and drops the strip."""
+    """With motion on, crossing 23:00 restarts the pulse at 0.8 s per step and drops the strip.
+
+    Issue #712's day effects (radar, shimmer) stop at night too.
+    """
     clock = _Clock(datetime(2026, 10, 3, 20, 59, 59, tzinfo=UTC))
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[list[str], list[str], float]:
@@ -1032,4 +1041,8 @@ def test_entering_night_slows_the_pulse_and_stops_the_strip() -> None:
         await pilot.pause(1.3)
         return before, sorted(app.effect_timers), app.effect_timers["pulse"]._interval
 
-    assert _run(probe, clock=clock, motion=True) == (["pulse", "strip"], ["pulse"], 0.8)
+    assert _run(probe, clock=clock, motion=True) == (
+        ["pulse", "radar", "shimmer", "strip"],
+        ["pulse"],
+        0.8,
+    )
