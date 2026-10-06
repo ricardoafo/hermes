@@ -33,8 +33,8 @@ ARG GITLEAKS_VERSION=8.30.1
 ARG GITLEAKS_SHA256=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
 # The AI review action (ai-review.yml) pins these two; bump them together
 # with the action SHA or the job falls back to downloading its own.
-ARG BUN_VERSION=1.3.6
-ARG CLAUDE_CODE_VERSION=2.1.112
+ARG BUN_VERSION=1.3.14
+ARG CLAUDE_CODE_VERSION=2.1.284
 ARG DOCKER_CE_CLI_VERSION=5:27.4.1-1~ubuntu.24.04~noble
 ARG DEBIAN_FRONTEND=noninteractive
 
@@ -158,6 +158,10 @@ RUN curl -fsSL https://bun.sh/install | bash -s "bun-v${BUN_VERSION}" \
 
 ENV PATH="/home/runner/.bun/bin:${PATH}"
 ENV BUN_INSTALL_CACHE_DIR=/home/runner/.cache/bun
+# The native install updates itself in the background, which moved the
+# baked binary off the action's pin and made every review download its
+# own (#686). Keep the version this image was built with.
+ENV DISABLE_AUTOUPDATER=1
 
 # ────────────────────────────────────────────────────────────────
 # GH Actions runner (pinned)

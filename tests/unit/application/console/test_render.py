@@ -18,12 +18,14 @@ from __future__ import annotations
 from dataclasses import replace
 
 import pytest
+from rich.text import Text
 
 from hermes.adapters.console import FixtureReadModel
 from hermes.application.console import Surface
 from hermes.application.console.render import (
     RenderContext,
     render_activity,
+    render_heartbeat,
     render_positions,
     render_tax_footnote,
     to_plain_text,
@@ -79,6 +81,22 @@ def test_ok_heartbeat_is_one_quiet_line() -> None:
     """When all is well the heartbeat is a single live line with both check times."""
     text = render("ok-two-positions", "heartbeat", surface=Surface.OPERATOR_CLI)
     assert text.splitlines()[1].strip() == "● live · checked 14:00 · next 18:00"
+
+
+def test_ok_heartbeat_dot_carries_the_live_style_and_the_words_stay_dim() -> None:
+    """The OK dot uses ``ctx.live_dot``, not dim; only the words are dim (#711, "live is gray")."""
+    model = FixtureReadModel.load("ok-two-positions")
+    ctx = replace(
+        RenderContext.for_model(model, surface=Surface.OPERATOR_TUI),
+        demo_scenario=None,
+        live_dot="bold #00F0FF",
+    )
+    line = render_heartbeat(model.heartbeat(), ctx).renderables[0]
+    assert isinstance(line, Text)
+    spans = [
+        (line.plain[span.start : span.end].strip()[:6], str(span.style)) for span in line.spans
+    ]
+    assert spans == [("●", "bold #00F0FF"), ("live ·", "dim")]
 
 
 def test_late_heartbeat_names_the_missed_check_and_delay() -> None:

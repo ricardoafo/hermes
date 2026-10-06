@@ -2,7 +2,9 @@
 
 Invariants (backtest-driver-mvp1-phase2 change.md D-1, D-4, R-2):
 
-- Signals before the window warm the strategy up and are never executed.
+- Signals before the window warm the strategy up and are never executed; a
+  warm-up entry returns the strategy to flat like a refused entry, so the
+  window starts flat (#723).
 - An entry fills at close * 1.0005; a chandelier exit at stop * 0.9985; a
   time-stop or regime-break exit at close * 0.9995; the reference price is
   recorded as the M-02 mid.
@@ -236,14 +238,17 @@ def test_default_execution_model_is_the_pre_registered_one() -> None:
 
 
 def _replay_with(
-    strategy: _ScriptedStrategy | SwingStrategyAdapter, bars: list[Bar]
+    strategy: _ScriptedStrategy | SwingStrategyAdapter,
+    bars: list[Bar],
+    *,
+    window_start: datetime = _WINDOW,
 ) -> BacktestRun:
     ids = iter(f"c{i}" for i in range(1000))
     return replay(
         bars,
         strategy=strategy,
         kernel=kernel(),
-        window_start=_WINDOW,
+        window_start=window_start,
         window_end=_END,
         fees_at=_fees_at,
         correlation_id=lambda: next(ids),
@@ -300,6 +305,16 @@ def test_entries_passed_in_carry_a_held_position_across_calls() -> None:
             entries=entries,
         )
     assert strategy.restored == [OpenPosition(entry_time=t1, entry_price=Decimal("200"))]
+
+
+def test_warm_up_entry_restores_flat_once_and_warm_up_exit_restores_nothing() -> None:
+    """A warm-up entry counts as refused: one restore to flat; a warm-up exit adds none (#723)."""
+    t1, t2 = _WINDOW - timedelta(hours=8), _WINDOW - timedelta(hours=4)
+    strategy = _ScriptedStrategy(
+        {t1: _entry(t1, Decimal("200")), t2: _exit(t2, Decimal("190"), "chandelier")}
+    )
+    run = _replay_with(strategy, [_bar(t1, Decimal("200")), _bar(t2, Decimal("190"))])
+    assert (run.signals_seen, strategy.restored) == (0, [None])
 
 
 _SWING_H4_BASE = _WINDOW + timedelta(days=15)
@@ -386,3 +401,24 @@ def test_real_strategy_is_flat_after_the_retried_exit_fills() -> None:
         [*_filled_breakout_history(), _crash(12, volume="0"), _crash(13), _crash(14)],
     )
     assert (run.signals_seen, dict(run.declined), len(run.fills)) == (3, {"no-book": 1}, 2)
+
+
+def test_real_strategy_starts_the_window_flat_after_a_warm_up_breakout() -> None:
+    """A warm-up breakout leaves the strategy flat, so the window's own breakout fills (#723).
+
+    Without the reset the adapter would still be long at window start, skip the
+    window's breakout and later signal an exit for a position never held.
+    """
+    daily = [_swing_bar(str(1000 + 200 * i // 11), i, daily=True) for i in range(12)]
+    flat = [_swing_bar("1000", i) for i in range(11)]
+    warm_breakout = _swing_bar("2000", 11)
+    window_breakout = _swing_bar("3000", 12)
+    run = _replay_with(
+        _swing_strategy(),
+        [*daily, *flat, warm_breakout, window_breakout],
+        window_start=window_breakout.close_time,
+    )
+    assert (run.signals_seen, dict(run.declined)) == (1, {})
+    assert [(f.order.side.value, f.avg_price) for f in run.fills] == [
+        ("BUY", Decimal("3000") * Decimal("1.0005"))
+    ]

@@ -126,6 +126,7 @@ class RenderContext:
         demo_scenario: Fixture scenario name; set means DEMO DATA is shown.
         stale_since: When numbers froze because hermes is down, else ``None``.
         down_hint: Call to action on the down row (the TUI says "press L").
+        live_dot: Style of the OK line's dot; the TUI pulses it (issue #711).
     """
 
     surface: Surface
@@ -135,6 +136,7 @@ class RenderContext:
     demo_scenario: str | None = None
     stale_since: datetime | None = None
     down_hint: str = _DEFAULT_DOWN_HINT
+    live_dot: str = "bold cyan"
 
     @classmethod
     def for_model(
@@ -306,11 +308,14 @@ def render_heartbeat(heartbeat: Heartbeat, ctx: RenderContext) -> Group:
             justify="right",
         )
     else:
-        line = Text(
-            f"● live · checked {_clock(ctx, heartbeat.last_check_at)}"
+        # The dot carries the live colour; only the words stay muted (#711:
+        # a fully dim line read as "live is gray").
+        line = Text(justify="right")
+        line.append("●", style=ctx.live_dot)
+        line.append(
+            f" live · checked {_clock(ctx, heartbeat.last_check_at)}"
             f" · next {_clock(ctx, heartbeat.next_check_at)}",
             style="dim",
-            justify="right",
         )
     return _framed(ctx, [line])
 
