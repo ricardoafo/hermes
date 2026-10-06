@@ -75,10 +75,9 @@ def issue_body(failures: list[tuple[str, int, str]], spec: str) -> str:
     lines += [
         "## Fix",
         "",
-        "Find the defect each seed shows and fix it. Add each seed to "
+        "Find the defect each seed shows and fix it. The same PR adds each seed to "
         "`REGRESSION_SEEDS` in `tests/integration/scenarios/test_generated_paths.py` "
-        "so every PR runs it from then on. A seed whose fix waits goes in "
-        "`KNOWN_FAILURES` with this issue number, which makes it a strict xfail.",
+        "so every PR runs it from then on. A seed never lands on main as an xfail.",
         "",
         "## Done when",
         "",

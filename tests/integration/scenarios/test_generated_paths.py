@@ -45,9 +45,6 @@ pytestmark = pytest.mark.integration
 SEEDS_ENV = "HERMES_SCENARIO_SEEDS"
 _DEFAULT_SEEDS = 10
 
-KNOWN_FAILURES: dict[tuple[str, int], str] = {}
-"""Seeds that hit a filed defect, with the reason; each becomes a strict xfail."""
-
 REGRESSION_SEEDS: dict[str, tuple[int, ...]] = {"walk": (), "hater": ()}
 """Seeds the daily fresh-seed run found failing (issue #869); every PR runs them too."""
 
@@ -82,15 +79,10 @@ def seeds_for(kind: str, spec: str | None) -> list[int]:
     return sorted({*seeds(None), *REGRESSION_SEEDS[kind]})
 
 
-def _marks(kind: str, seed: int) -> list[pytest.MarkDecorator]:
-    reason = KNOWN_FAILURES.get((kind, seed))
-    return [pytest.mark.xfail(strict=True, raises=AssertionError, reason=reason)] if reason else []
-
-
 @pytest.mark.parametrize(
     ("build", "seed"),
     [
-        pytest.param(build, seed, id=f"{kind}-{seed}", marks=_marks(kind, seed))
+        pytest.param(build, seed, id=f"{kind}-{seed}")
         for kind, build in GENERATORS.items()
         for seed in seeds_for(kind, os.environ.get(SEEDS_ENV))
     ],
@@ -169,7 +161,7 @@ def test_seeds_come_from_the_environment_variable() -> None:
 def test_a_saved_regression_seed_runs_on_every_pr_but_not_in_a_named_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Issue #869: a seed the daily run found failing joins the PR set; a named run stays as named."""
+    """Issue #869: a seed the daily run found failing joins the PR set; a named run is unchanged."""
     monkeypatch.setitem(REGRESSION_SEEDS, "hater", (20261007, 3))
     assert (seeds_for("hater", None), seeds_for("walk", None), seeds_for("hater", "2@5")) == (
         [*range(10), 20261007],
