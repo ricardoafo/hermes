@@ -29,7 +29,11 @@ from typing import Final, Self
 
 from hermes.adapters.console.ledger_activity import LedgerActivityReader
 from hermes.application.console.activity import group_activity
-from hermes.application.console.journal_activity import fold_checks, journal_activity
+from hermes.application.console.journal_activity import (
+    fold_checks,
+    journal_activity,
+    rule_checks,
+)
 from hermes.application.console.logs import LogLine
 from hermes.application.console.portfolio_figures import (
     ClosedPiece,
@@ -52,6 +56,7 @@ from hermes.application.console.views import (
     PortfolioSummary,
     PositionDetail,
     PositionRow,
+    RuleCheck,
     ShadowTest,
     WatchedPair,
 )
@@ -290,6 +295,21 @@ class LedgerReadModel:
         lines = self._journal(self._activity_window)
         self._journal_read = (now, lines)
         return lines
+
+    def rule_checks(self) -> tuple[RuleCheck, ...]:
+        """Return the yes/no entry rules per coin and check of the activity window (#714).
+
+        They come from the journal's bar lines; the ledger does not record them.
+
+        Raises:
+            ViewNotAvailableError: The journal cannot be read here.
+        """
+        lines = self._journal_lines()
+        if lines is None:
+            msg = "rule checks: the hermes journal is not readable here"
+            raise ViewNotAvailableError(msg)
+        since = self._clock() - self._activity_window
+        return rule_checks(lines, since=since.astimezone(UTC))
 
     def shadow_test(self) -> ShadowTest:
         """Return the day count since the capital seed and the fills so far (live-home-screen D-4).

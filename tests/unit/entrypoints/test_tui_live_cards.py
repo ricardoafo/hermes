@@ -23,6 +23,7 @@ from hermes.application.console import (
     PortfolioSummary,
     PositionDetail,
     PositionRow,
+    RuleCheck,
     ShadowTest,
     ViewNotAvailableError,
     WatchedPair,
@@ -65,6 +66,9 @@ class _Failing:
 
     def activity(self, *, include_quiet: bool = False) -> tuple[ActivityDay, ...]:
         return self._base.activity(include_quiet=include_quiet)
+
+    def rule_checks(self) -> tuple[RuleCheck, ...]:
+        return self._base.rule_checks()
 
     def shadow_test(self) -> ShadowTest:
         self._raise("shadow")

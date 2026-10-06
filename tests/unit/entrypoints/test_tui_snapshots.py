@@ -6,7 +6,7 @@ ultra), only changes when a reviewer accepts the new picture. Each file is
 named ``<view>_<theme>_<cols>x<rows>.svg`` so a PR body can link it directly.
 
 Views: Home on the ``ok-two-positions`` and ``empty`` demo scenarios, the
-Signals placeholder (tab 2) and the theme picker open over Home.
+Positions placeholder (tab 3) and the theme picker open over Home.
 
 Every app here runs with motion off, a frozen clock and synthetic demo data,
 and never reads or writes the real settings file.
@@ -40,7 +40,7 @@ _THEMES: tuple[tuple[str, ThemeChoice], ...] = (
 _VIEWS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("home_ok", "ok-two-positions", ()),
     ("home_empty", "empty", ()),
-    ("tab2_placeholder", "ok-two-positions", ("2",)),
+    ("tab3_placeholder", "ok-two-positions", ("3",)),
     ("theme_picker", "ok-two-positions", ("t",)),
 )
 

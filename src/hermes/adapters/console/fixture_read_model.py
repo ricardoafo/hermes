@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from importlib import resources
 from pathlib import Path
@@ -31,6 +31,7 @@ from hermes.application.console.views import (
     PortfolioSummary,
     PositionDetail,
     PositionRow,
+    RuleCheck,
     ShadowTest,
     ShadowTestStatus,
     Tax,
@@ -377,6 +378,45 @@ def _activity(raw: _Json, rate: Decimal) -> tuple[ActivityDay, ...]:
     return tuple(days)
 
 
+# A scenario stores no rule checks, so each 4h stream gets a fixed, varied
+# pattern over the last week (#714). Breakout and momentum never hold together,
+# so the only signal is the bar a held coin opened on: all three rules met and
+# no entry check after it, as serve logs none while a position is open.
+_CHECK_STEP: Final = timedelta(hours=4)
+_CHECK_WINDOW: Final = timedelta(days=7)
+# The second coin's trend rule is off for 3 of every 12 checks (12 hours every two days).
+_TREND_OFF_FROM: Final = 9
+
+
+def _rule_checks(
+    watched: Sequence[WatchedPair], rows: Sequence[PositionRow]
+) -> tuple[RuleCheck, ...]:
+    opened = {row.coin.upper(): row.opened_at for row in rows if row.timeframe == "4h"}
+    checks: list[RuleCheck] = []
+    for lane, pair in enumerate(sorted(watched, key=lambda w: w.coin)):
+        if pair.timeframe != "4h":
+            continue
+        entry = opened.get(pair.coin.upper())
+        at = pair.last_check_at if entry is None else entry
+        step = 0
+        while pair.last_check_at - at <= _CHECK_WINDOW:
+            signal_bar = entry is not None and step == 0
+            breakout = (step + 2 * lane) % 7 == 0
+            checks.append(
+                RuleCheck(
+                    at=at,
+                    coin=pair.coin,
+                    interval=pair.timeframe,
+                    breakout=signal_bar or breakout,
+                    momentum=signal_bar or (not breakout and (step + lane) % 3 != 0),
+                    regime=signal_bar or lane != 1 or step % 12 < _TREND_OFF_FROM,
+                )
+            )
+            at -= _CHECK_STEP
+            step += 1
+    return tuple(sorted(checks, key=lambda c: (-c.at.timestamp(), c.coin)))
+
+
 def _shadow_test(raw: _Json) -> ShadowTest:
     return ShadowTest(
         status=_enum(ShadowTestStatus, _str(raw, "status"), "status"),
@@ -441,6 +481,7 @@ class FixtureReadModel:
         self._activity = _activity(document, rate)
         self._shadow_test = _shadow_test(_obj(document, "shadow_test"))
         self._market_watch = tuple(_watched(raw) for raw in _items(document, "market_watch"))
+        self._rule_checks = _rule_checks(self._market_watch, self._rows)
 
     @classmethod
     def load(cls, name: str) -> FixtureReadModel:
@@ -510,6 +551,10 @@ class FixtureReadModel:
             for day in self._activity
         )
         return tuple(day for day in days if day.items)
+
+    def rule_checks(self) -> tuple[RuleCheck, ...]:
+        """Return the scenario's yes/no entry rules per 4h check, newest first (#714)."""
+        return self._rule_checks
 
     def shadow_test(self) -> ShadowTest:
         """Return the scenario's shadow test status."""
