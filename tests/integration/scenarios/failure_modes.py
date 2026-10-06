@@ -39,6 +39,7 @@ _UNITS = _U + "deploy/test_systemd_units.py::"
 _RELEASE = _I + "deploy/test_release_scripts.py::"
 _LEDGER = _U + "adapters/ledger/test_sqlite_ledger.py::"
 _TRADES = _U + "adapters/ledger/test_sqlite_trade_ledger.py::"
+_ROLLBACK = _U + "adapters/ledger/test_sqlite_ledger_rollback_any_error.py::"
 _MIGRATE = _U + "adapters/ledger/test_migration_rollback.py::"
 _INTEGRITY = _U + "adapters/ledger/test_integrity.py::"
 _SNAPSHOT = _U + "domain/portfolio/"
@@ -271,7 +272,15 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "A non-SQL error mid-write leaves rows the next write commits",
-            gap="issue #853: only sqlite errors roll back (reproduced with a probe)",
+            proved_by=(
+                _ROLLBACK + "test_a_non_sqlite_error_in_a_write_leaves_nothing_for_the_next_commit",
+                _ROLLBACK + "TestErrorsFromTheWritesOwnData"
+                "::test_record_trade_whose_base_fee_is_its_quantity_stores_nothing",
+                _ROLLBACK + "test_a_migration_failing_on_a_non_sqlite_error"
+                "_leaves_nothing_for_the_next_commit",
+                _S + "test_chaos_storage.py"
+                "::test_a_non_sqlite_error_mid_write_leaves_nothing_for_the_next_commit",
+            ),
         ),
         FailureMode(
             "A crash after the trade, before the cursor, fills the bar twice",

@@ -30,6 +30,8 @@ from __future__ import annotations
 import dataclasses
 import json
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
@@ -139,9 +141,38 @@ class SqliteLedger:
         self._conn = connection
         # isolation_level=None would put us in autocommit and break the
         # I-06 grouping. The default (BEGIN implicit on first DML) is what
-        # every write method relies on — an explicit `commit()` at the end
-        # of the batch marks the single transaction boundary.
+        # every write method relies on — `_write` commits at the end of the
+        # batch, marking the single transaction boundary.
         apply_migrations(self._conn)
+
+    @contextmanager
+    def _write(self, op: str) -> Iterator[None]:
+        """Run one write as ONE transaction: commit on success, roll back on any error.
+
+        A failed write leaves the implicit transaction open, so any error not
+        rolled back here would be committed by the next successful write on
+        the connection (issue #853). That is why every exception rolls back,
+        not only SQLite ones.
+
+        Args:
+            op: The write method's name, used in the error message.
+
+        Yields:
+            Nothing; the ``with`` body runs the write's statements.
+
+        Raises:
+            LedgerError: On any SQLite failure, the commit included. Any
+                other exception is re-raised unchanged after the rollback.
+        """
+        try:
+            yield
+            self._conn.commit()
+        except sqlite3.Error as exc:
+            self._conn.rollback()
+            raise LedgerError(msg=f"{op} failed: {exc}") from exc
+        except BaseException:
+            self._conn.rollback()
+            raise
 
     # ------------------------------------------------------------------
     # LedgerPort — write methods (each is ONE transaction)
@@ -161,13 +192,9 @@ class SqliteLedger:
         Raises:
             LedgerError: On any SQLite failure.
         """
-        try:
+        with self._write("open_lot"):
             self._insert_lot(lot)
             self._insert_event(event)
-            self._conn.commit()
-        except sqlite3.Error as exc:
-            self._conn.rollback()
-            raise LedgerError(msg=f"open_lot failed: {exc}") from exc
 
     def consume_lot(
         self,
@@ -193,15 +220,11 @@ class SqliteLedger:
                     f"updated_lots ({len(updated_lots)}) must have equal length"
                 )
             )
-        try:
+        with self._write("consume_lot"):
             for consumption, updated in zip(consumptions, updated_lots, strict=True):
                 self._insert_consumption(consumption)
                 self._update_lot_remaining(updated)
             self._insert_event(event)
-            self._conn.commit()
-        except sqlite3.Error as exc:
-            self._conn.rollback()
-            raise LedgerError(msg=f"consume_lot failed: {exc}") from exc
 
     def append_event(self, event: DomainEvent) -> None:
         """Append a standalone :class:`DomainEvent` to the ``events`` table.
@@ -214,12 +237,8 @@ class SqliteLedger:
         Raises:
             LedgerError: On any SQLite failure.
         """
-        try:
+        with self._write("append_event"):
             self._insert_event(event)
-            self._conn.commit()
-        except sqlite3.Error as exc:
-            self._conn.rollback()
-            raise LedgerError(msg=f"append_event failed: {exc}") from exc
 
     def record_live_bar(self, bar: Bar) -> Bar | None:
         """Store one closed live bar unless its key is already stored (#421).
@@ -242,7 +261,7 @@ class SqliteLedger:
             bar.interval.value,
             _iso_utc(bar.open_time),
         )
-        try:
+        with self._write("record_live_bar"):
             inserted = self._conn.execute(
                 "INSERT OR IGNORE INTO live_bars (pair_base, pair_quote, interval, open_time, "
                 "close_time, open, high, low, close, volume, recorded_at) "
@@ -258,16 +277,15 @@ class SqliteLedger:
                     _iso_utc(datetime.now(UTC)),
                 ),
             ).rowcount
-            self._conn.commit()
-            if inserted:
-                return None
+        if inserted:
+            return None
+        try:
             row = self._conn.execute(
                 "SELECT open_time, close_time, open, high, low, close, volume FROM live_bars "
                 "WHERE pair_base = ? AND pair_quote = ? AND interval = ? AND open_time = ?",
                 key,
             ).fetchone()
         except sqlite3.Error as exc:
-            self._conn.rollback()
             raise LedgerError(msg=f"record_live_bar failed: {exc}") from exc
         stored = _row_to_bar(bar.pair, bar.interval, row)
         return None if stored == bar else stored
@@ -315,7 +333,7 @@ class SqliteLedger:
             LedgerError: On any SQLite failure or a SELL beyond the open
                 quantity; the transaction is rolled back.
         """
-        try:
+        with self._write("record_trade"):
             trade_id = self._insert_trade(trade)
             if trade.lot_id is not None:
                 self._insert_trade_lot(trade, trade_id)
@@ -324,13 +342,6 @@ class SqliteLedger:
             self._reproject(trade.pair.base)
             self._reproject_quote(trade.pair.quote)
             self._insert_event(event)
-            self._conn.commit()
-        except sqlite3.Error as exc:
-            self._conn.rollback()
-            raise LedgerError(msg=f"record_trade failed: {exc}") from exc
-        except LedgerError:
-            self._conn.rollback()
-            raise
         return trade_id
 
     def list_pending_trades(self) -> tuple[PendingTrade, ...]:
@@ -374,7 +385,7 @@ class SqliteLedger:
             LedgerError: On any SQLite failure or an unknown ``trade_id``;
                 the transaction is rolled back.
         """
-        try:
+        with self._write("apply_trade_eur"):
             row = self._conn.execute(
                 "SELECT pair_base, pair_quote FROM trades WHERE id = ?", (trade_id,)
             ).fetchone()
@@ -388,13 +399,6 @@ class SqliteLedger:
             )
             self._reproject(Currency(row[0]))
             self._reproject_quote(Currency(row[1]))
-            self._conn.commit()
-        except sqlite3.Error as exc:
-            self._conn.rollback()
-            raise LedgerError(msg=f"apply_trade_eur failed: {exc}") from exc
-        except LedgerError:
-            self._conn.rollback()
-            raise
 
     # ------------------------------------------------------------------
     # TradeLedgerPort — capital seeds (change 405-usdt-fifo)
@@ -423,7 +427,7 @@ class SqliteLedger:
             raise LedgerError(msg="record_capital_seed: store the seed pending, then price it")
         asset = seed.amount.currency
         lot_id = LotId.new().value
-        try:
+        with self._write("record_capital_seed"):
             self._insert_quote_lot_row(
                 lot_id=lot_id,
                 asset=asset,
@@ -449,13 +453,6 @@ class SqliteLedger:
                 raise LedgerError(msg="record_capital_seed: INSERT returned no row id")
             self._reproject_quote(asset)
             self._insert_event(event)
-            self._conn.commit()
-        except sqlite3.Error as exc:
-            self._conn.rollback()
-            raise LedgerError(msg=f"record_capital_seed failed: {exc}") from exc
-        except LedgerError:
-            self._conn.rollback()
-            raise
         return seed_id
 
     def capital_seed(self, strategy_id: StrategyId) -> CapitalSeed | None:
@@ -530,7 +527,7 @@ class SqliteLedger:
             LedgerError: On any SQLite failure, an unknown ``seed_id`` or a
                 pricing for another currency; the transaction is rolled back.
         """
-        try:
+        with self._write("apply_seed_eur"):
             row = self._conn.execute(
                 "SELECT asset, amount, strategy_id, seeded_at FROM capital_seeds WHERE id = ?",
                 (seed_id,),
@@ -563,13 +560,6 @@ class SqliteLedger:
                 ),
             )
             self._reproject_quote(asset)
-            self._conn.commit()
-        except sqlite3.Error as exc:
-            self._conn.rollback()
-            raise LedgerError(msg=f"apply_seed_eur failed: {exc}") from exc
-        except LedgerError:
-            self._conn.rollback()
-            raise
 
     # ------------------------------------------------------------------
     # PortfolioHistoryPort — one portfolio mark per processed bar (#387)
@@ -600,7 +590,7 @@ class SqliteLedger:
             }
             for p in sorted(snap.positions.values(), key=lambda p: str(p.pair))
         ]
-        try:
+        with self._write("record_portfolio_mark"):
             inserted = self._conn.execute(
                 "INSERT OR IGNORE INTO portfolio_marks (strategy_id, pair_base, pair_quote, "
                 "interval, bar_close_time, quote, starting_cash, cash, market_value, equity, "
@@ -623,10 +613,6 @@ class SqliteLedger:
                     _iso_utc(datetime.now(UTC)),
                 ),
             ).rowcount
-            self._conn.commit()
-        except sqlite3.Error as exc:
-            self._conn.rollback()
-            raise LedgerError(msg=f"record_portfolio_mark failed: {exc}") from exc
         return bool(inserted)
 
     def portfolio_marks(
@@ -686,7 +672,7 @@ class SqliteLedger:
             LedgerError: On any SQLite failure.
         """
         record = mark.record
-        try:
+        with self._write("record_stop_mark"):
             inserted = self._conn.execute(
                 "INSERT OR IGNORE INTO stop_marks (strategy_id, pair_base, pair_quote, "
                 "entry_time, bar_close_time, stop_price, chandelier_level, atr, "
@@ -706,10 +692,6 @@ class SqliteLedger:
                     _iso_utc(datetime.now(UTC)),
                 ),
             ).rowcount
-            self._conn.commit()
-        except sqlite3.Error as exc:
-            self._conn.rollback()
-            raise LedgerError(msg=f"record_stop_mark failed: {exc}") from exc
         return bool(inserted)
 
     def latest_stop_mark(
@@ -753,7 +735,7 @@ class SqliteLedger:
         Raises:
             LedgerError: On any SQLite failure.
         """
-        try:
+        with self._write("record_spread_sample"):
             inserted = self._conn.execute(
                 "INSERT OR IGNORE INTO spread_samples (pair_base, pair_quote, book_time, "
                 "sampled_at, spread, median_spread_1h, samples_1h, recorded_at) "
@@ -769,10 +751,6 @@ class SqliteLedger:
                     _iso_utc(datetime.now(UTC)),
                 ),
             ).rowcount
-            self._conn.commit()
-        except sqlite3.Error as exc:
-            self._conn.rollback()
-            raise LedgerError(msg=f"record_spread_sample failed: {exc}") from exc
         return bool(inserted)
 
     def spread_samples(
@@ -813,7 +791,7 @@ class SqliteLedger:
         Raises:
             LedgerError: On any SQLite failure.
         """
-        try:
+        with self._write("record_pair_correlation"):
             inserted = self._conn.execute(
                 "INSERT OR IGNORE INTO pair_correlations (pair_a, pair_b, window_days, as_of, "
                 "correlation, sample_count, computed_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -827,10 +805,6 @@ class SqliteLedger:
                     _iso_utc(datetime.now(UTC)),
                 ),
             ).rowcount
-            self._conn.commit()
-        except sqlite3.Error as exc:
-            self._conn.rollback()
-            raise LedgerError(msg=f"record_pair_correlation failed: {exc}") from exc
         return bool(inserted)
 
     def pair_correlations(self, start: datetime, end: datetime) -> tuple[PairCorrelation, ...]:
