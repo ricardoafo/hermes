@@ -23,6 +23,7 @@ from hypothesis import strategies as st
 
 from hermes.entrypoints import tui_theme as theme
 from hermes.entrypoints.tui_settings import ThemeChoice
+from hermes.entrypoints.tui_widgets import top_edge
 
 _HEX = st.from_regex(r"#[0-9A-F]{6}", fullmatch=True)
 
@@ -220,7 +221,8 @@ def test_blend_stays_between_its_stops(start: str, end: str, amount: float) -> N
         (int(start[i : i + 2], 16), int(mixed[i : i + 2], 16), int(end[i : i + 2], 16))
         for i in (1, 3, 5)
     ]
-    assert all(min(a, b) <= m <= max(a, b) for a, m, b in channels)
+    outside = [(a, m, b) for a, m, b in channels if not min(a, b) <= m <= max(a, b)]
+    assert outside == []
 
 
 def test_gradient_passes_through_its_middle_stop() -> None:
@@ -239,5 +241,5 @@ def test_wordmark_stands_in_until_the_logo_is_chosen() -> None:
 
 
 def test_ai_glyph_is_the_four_pointed_star() -> None:
-    """Anything the AI supervisor wrote is marked with ✦."""
-    assert theme.AI_GLYPH == "✦"
+    """Anything the AI supervisor wrote is marked with ✦: the AI panel title starts with it."""
+    assert top_edge("Brief", "", 20, theme.NEON, ai=True).plain.startswith("┏━ ✦ BRIEF ")

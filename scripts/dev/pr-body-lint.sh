@@ -59,6 +59,13 @@ lint_body() {
         fi
     done
 
+    # A release PR (ADR-022 §7) must say whether it changes engine decisions:
+    # a yes restarts the shadow clock under ADR-021.
+    if printf '%s\n' "$body" | grep -qE '^## Release$' \
+        && ! printf '%s\n' "$body" | grep -qE '^Engine change: (yes|no)[[:space:]]*$'; then
+        missing+=("Release")
+    fi
+
     printf '%s' "${missing[*]}"
 }
 
@@ -186,6 +193,34 @@ None.'
         echo "PASS: multi-line comment stripped, real content preserved"
     else
         echo "FAIL: multi-line comment case reported [$result], expected pass"
+        failed=1
+    fi
+
+    # FAIL: release PR with its Engine change line not filled in
+    body_release_blank="${body_ok}
+
+## Release
+
+Engine change: <yes or no>"
+    result=$(lint_body "$body_release_blank")
+    if [[ "$result" == "Release" ]]; then
+        echo "PASS: release body without a yes/no Engine change reports [Release]"
+    else
+        echo "FAIL: unfilled release body reported [$result], expected [Release]"
+        failed=1
+    fi
+
+    # PASS: release PR with Engine change answered
+    body_release_ok="${body_ok}
+
+## Release
+
+Engine change: no"
+    result=$(lint_body "$body_release_ok")
+    if [[ -z "$result" ]]; then
+        echo "PASS: release body with Engine change: no passes"
+    else
+        echo "FAIL: answered release body reported [$result], expected pass"
         failed=1
     fi
 
