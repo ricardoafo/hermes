@@ -116,8 +116,15 @@ def _to_ms(moment: datetime) -> int:
 
 
 def _from_ms(value: int) -> datetime:
-    """Return the UTC datetime for ``value`` milliseconds since the epoch."""
-    return _EPOCH + timedelta(milliseconds=value)
+    """Return the UTC datetime for ``value`` milliseconds since the epoch.
+
+    Raises:
+        ExchangeError: ``value`` is outside the calendar ``datetime`` supports.
+    """
+    try:
+        return _EPOCH + timedelta(milliseconds=value)
+    except OverflowError as exc:
+        raise ExchangeError(f"klines timestamp out of range: {value}") from exc
 
 
 def _symbol(pair: Pair) -> str:
@@ -144,9 +151,12 @@ def _decimal(raw: object, *, field: str) -> Decimal:
     if not isinstance(raw, (str, int, float)) or isinstance(raw, bool):
         raise ExchangeError(f"klines row field {field!r} is not string or numeric: {raw!r}")
     try:
-        return Decimal(str(raw))
+        value = Decimal(str(raw))
     except InvalidOperation as exc:
         raise ExchangeError(f"klines row field {field!r} is not a decimal: {raw!r}") from exc
+    if not value.is_finite():
+        raise ExchangeError(f"klines row field {field!r} is not a finite number: {raw!r}")
+    return value
 
 
 def _row_to_bar(row: object, pair: Pair, interval: KlineInterval) -> Bar:
