@@ -190,6 +190,21 @@ class PortfolioSnapshot:
             realized_pnl=self.realized_pnl,
         )
 
+    def with_peak_at_least(self, peak: Decimal) -> PortfolioSnapshot:
+        """Return this snapshot with its peak equity raised to ``peak`` when that is higher.
+
+        Restores a mark-to-market high a fills-only rebuild cannot see. The peak
+        never goes down, and cash, positions and PnL are untouched.
+
+        Args:
+            peak: A peak equity recorded earlier for the same strategy, in the
+                snapshot's quote currency.
+
+        Returns:
+            A snapshot with ``peak_equity = max(self.peak_equity, peak)``.
+        """
+        return replace(self, peak_equity=max(self.peak_equity, peak))
+
     def to_risk_state(self) -> PortfolioState:
         """Return the thin state the risk rules consume.
 

@@ -424,6 +424,31 @@ def seed_capital_once(
     return True
 
 
+def _rebuild_tracker(
+    ledger: SqliteLedger, seed: PortfolioSnapshot, strategy_id: StrategyId
+) -> PortfolioTracker:
+    """Replay the ledger's trades over ``seed`` and restore the recorded peak equity.
+
+    Fills cannot see mark-to-market highs, so the peak is raised to the one the
+    latest portfolio mark stored; without it the RO-08 drawdown reads low after
+    a restart (integrity rules 4.1, pre-registration 10).
+
+    Raises:
+        StartupError: The trades or the mark cannot be read, or a trade cannot be replayed.
+    """
+    try:
+        rebuilt = PortfolioTracker.rebuilt(seed, ledger.trade_events(strategy_id))
+        last_mark = ledger.latest_portfolio_mark(strategy_id)
+    except LedgerError as exc:
+        raise StartupError(f"cannot rebuild the portfolio from the ledger: {exc.msg}") from exc
+    if isinstance(rebuilt, Failure):
+        raise StartupError(f"cannot rebuild the portfolio from the ledger: {rebuilt.failure()}")
+    tracker = rebuilt.unwrap()
+    if last_mark is not None and last_mark.snapshot.quote == tracker.snapshot.quote:
+        tracker.restore_peak(last_mark.snapshot.peak_equity)
+    return tracker
+
+
 def build_composition(
     config: HermesConfig,
     *,
@@ -490,14 +515,10 @@ def build_composition(
         connection.close()
         raise StartupError(f"cannot record the start capital in the ledger: {exc.msg}") from exc
     try:
-        rebuilt = PortfolioTracker.rebuilt(seed, ledger.trade_events(strategy_id))
-    except LedgerError as exc:
+        tracker = _rebuild_tracker(ledger, seed, strategy_id)
+    except StartupError:
         connection.close()
-        raise StartupError(f"cannot rebuild the portfolio from the ledger: {exc.msg}") from exc
-    if isinstance(rebuilt, Failure):
-        connection.close()
-        raise StartupError(f"cannot rebuild the portfolio from the ledger: {rebuilt.failure()}")
-    tracker = rebuilt.unwrap()
+        raise
     fill_model = OrderbookWalkFillModel()
     books = (
         orderbooks
