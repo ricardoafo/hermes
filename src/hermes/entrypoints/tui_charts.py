@@ -1,7 +1,8 @@
 """Chart pieces of the Cockpit console, drawn as Rich text (design spec, issue #712).
 
-No chart add-on: the big total uses Textual's own 3x3 digit glyphs, the curve
-is braille dots, the meters are block cells. Every colour comes from the
+No chart add-on: the big total uses Textual's own 3x3 digit glyphs and the
+curve is braille dots; meters are the shared
+:class:`~hermes.entrypoints.tui_widgets.Meter`. Every colour comes from the
 :mod:`hermes.entrypoints.tui_theme` tokens and is blended with its
 :func:`~hermes.entrypoints.tui_theme.gradient`, so a token change restyles
 every chart. Each function is pure, so tests check the text directly.
@@ -17,7 +18,7 @@ from rich.text import Text
 from textual.renderables.digits import DIGITS, DIGITS3X3_BOLD
 
 from hermes.application.console.format import sparkline
-from hermes.entrypoints.tui_theme import METER_EMPTY, METER_FULL, Tokens, blend, gradient
+from hermes.entrypoints.tui_theme import blend, gradient
 
 __all__ = [
     "BRAILLE_BLANK",
@@ -25,8 +26,6 @@ __all__ = [
     "braille_area",
     "braille_spark",
     "gradient_digits",
-    "meter",
-    "run_bar",
     "spark_text",
 ]
 
@@ -181,39 +180,6 @@ def braille_spark(values: Sequence[Decimal], width: int, colour: str) -> Text:
     return Text(braille_area([float(v) for v in values], width=width, rows=1)[0], style=colour)
 
 
-def meter(
-    share: float,
-    cells: int,
-    *,
-    empty: str,
-    colour: str | None = None,
-    stops: Sequence[str] | None = None,
-) -> Text:
-    """Return a block meter: ``round(share x cells)`` full cells, the rest empty.
-
-    Args:
-        share: Fill, clamped to [0, 1].
-        cells: Width in cells.
-        empty: Colour of the empty cells.
-        colour: One colour for the full cells; wins over ``stops``.
-        stops: Gradient over the whole meter width when no ``colour``.
-
-    Returns:
-        Exactly ``cells`` cells.
-    """
-    share = min(max(share, 0.0), 1.0)
-    filled = round(share * cells)
-    out = Text()
-    for index in range(filled):
-        if colour is not None:
-            style = colour
-        else:
-            style = gradient(stops or (empty, empty), index / max(cells - 1, 1))
-        out.append(METER_FULL, style=style)
-    out.append(METER_EMPTY * (cells - filled), style=empty)
-    return out
-
-
 def spark_text(values: Sequence[Decimal], width: int, colour: str) -> Text:
     """Return the console sparkline of ``values`` in one colour.
 
@@ -226,19 +192,3 @@ def spark_text(values: Sequence[Decimal], width: int, colour: str) -> Text:
         The sparkline.
     """
     return Text(sparkline(values, width), style=colour)
-
-
-def run_bar(day: int, length: int, cells: int, tokens: Tokens) -> Text:
-    """Return the 90-day run bar: ``day / length`` of the cells in the brand gradient.
-
-    Args:
-        day: Current day of the run.
-        length: Planned days.
-        cells: Width in cells.
-        tokens: Token sheet.
-
-    Returns:
-        Exactly ``cells`` cells.
-    """
-    share = day / length if length > 0 else 0.0
-    return meter(share, cells, stops=tokens.brand, empty=tokens.line)

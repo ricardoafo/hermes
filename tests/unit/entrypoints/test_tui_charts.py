@@ -10,10 +10,9 @@ Invariants:
   lower than a smaller one (property);
 - the curve's rows run from the brightest stop at the top to the darkest at the
   bottom;
-- a meter fills ``round(share x cells)`` cells and leaves the rest empty, clamps
-  its share to [0, 1], and draws a solid colour when given one;
-- the gradient sparkline is the console sparkline in one colour;
-- the 90-day run bar fills day / length of its cells.
+- the gradient sparkline is the console sparkline in one colour.
+
+The meters are the shared ``Meter`` and are checked in ``test_tui_widgets.py``.
 """
 
 from __future__ import annotations
@@ -30,11 +29,8 @@ from hermes.entrypoints.tui_charts import (
     braille_area,
     braille_spark,
     gradient_digits,
-    meter,
-    run_bar,
     spark_text,
 )
-from hermes.entrypoints.tui_theme import BASE
 
 _BRAND = ("#000000", "#FFFFFF")
 _LEFT_DOTS = (0x40, 0x04, 0x02, 0x01)
@@ -170,47 +166,14 @@ def test_area_chart_rows_go_from_the_bright_stop_down_to_the_dark_one() -> None:
 
 
 # ----------------------------------------------------------------------
-# Meters, sparkline, run bar
+# Sparkline
 # ----------------------------------------------------------------------
-
-
-def test_meter_fills_the_rounded_share_of_cells() -> None:
-    """A 0.25 share of 8 cells fills 2 and leaves 6 empty."""
-    assert meter(0.25, 8, colour="#468CE6", empty="#1A2740").plain == "██░░░░░░"
-
-
-def test_meter_clamps_its_share() -> None:
-    """A share above 1 fills every cell; below 0 fills none."""
-    assert (
-        meter(1.7, 4, colour="#468CE6", empty="#1A2740").plain,
-        meter(-0.2, 4, colour="#468CE6", empty="#1A2740").plain,
-    ) == (
-        "████",
-        "░░░░",
-    )
-
-
-def test_solid_meter_uses_its_colour_and_gradient_meter_its_stops() -> None:
-    """A solid meter is one colour; a gradient meter's first cell is the first stop."""
-    solid = meter(1.0, 3, colour="#E6BE28", empty="#1A2740")
-    graded = meter(1.0, 3, stops=("#000000", "#FFFFFF"), empty="#1A2740")
-    assert ({s.style for s in solid.spans}, graded.spans[0].style, graded.spans[-1].style) == (
-        {"#E6BE28"},
-        "#000000",
-        "#FFFFFF",
-    )
 
 
 def test_spark_text_is_the_console_sparkline_in_one_colour() -> None:
     """Rising values draw low to high blocks in the given colour."""
     text = spark_text([Decimal(1), Decimal(2), Decimal(3)], 3, "#468CE6")
     assert (text.plain, text.style) == ("▁▅█", "#468CE6")
-
-
-def test_run_bar_fills_day_over_length() -> None:
-    """Day 45 of 90 over 10 cells fills 5 cells in the brand gradient."""
-    bar = run_bar(45, 90, 10, BASE)
-    assert (bar.plain, bar.spans[0].style) == ("█████░░░░░", BASE.brand[0])
 
 
 def test_braille_spark_is_one_row_of_braille_in_one_colour() -> None:

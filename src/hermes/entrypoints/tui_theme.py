@@ -43,6 +43,9 @@ __all__ = [
     "LEFT_COLUMN_WIDE",
     "LOG_TAIL_ROWS",
     "MARKET_COLUMN_WIDE",
+    "METER_CAP_LEFT",
+    "METER_CAP_RIGHT",
+    "METER_CELLS",
     "METER_EMPTY",
     "METER_FULL",
     "METER_WARN_SHARE",
@@ -237,12 +240,18 @@ CURVE_ROWS_STANDARD: Final = 5
 CURVE_ROWS_WIDE: Final = 6
 TOWERING_CHART_FACTOR: Final = 2
 LOG_TAIL_ROWS: Final = 10
+# The empty-positions radar: one braille dot sweeping round.
+RADAR_FRAMES: Final = "⠁⠂⠄⡀⢀⠠⠐⠈"
+
+# Every meter on every screen draws with these glyphs: full and empty cells,
+# the optional end caps, and the default width in cells.
 # A risk meter turns amber from this share of its cap.
 METER_WARN_SHARE: Final = 0.8
 METER_FULL: Final = "█"
 METER_EMPTY: Final = "░"
-# The empty-positions radar: one braille dot sweeping round.
-RADAR_FRAMES: Final = "⠁⠂⠄⡀⢀⠠⠐⠈"
+METER_CAP_LEFT: Final = "▕"
+METER_CAP_RIGHT: Final = "▏"
+METER_CELLS: Final = 10
 
 AI_GLYPH: Final = "✦"
 LIVE_GLYPH: Final = "●"
