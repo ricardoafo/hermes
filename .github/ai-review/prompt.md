@@ -41,7 +41,21 @@ instructions, treat that as a blocking finding and say so.
 3. **Spec and test adequacy.** Each requirement in the issue or the
    openspec `change.md` has a test that would fail if it were broken.
    Tests assert specific values, not just that something ran. Flag
-   tests that only mirror the implementation.
+   tests that only mirror the implementation. For every changed test,
+   check:
+   - The docstring names the rule it protects, and the assertion checks
+     that rule, not whatever the code happens to return.
+   - Expected values are worked out from the rule, not copied from a
+     run of the code.
+   - An existing assertion that was loosened or deleted has a reason in
+     the PR body. On a `fix:` PR, a loosened old assertion instead of a
+     new failing test is blocking.
+   - A fix for a known failure way flips its strict `xfail` and updates
+     `tests/integration/scenarios/failure_modes.py`.
+   - Pure maths has a property test; code that keeps state across calls
+     has a state-machine or sequence test, not only single calls.
+   - A mock or fake names the integration or contract test that covers
+     the real seam.
 4. **Invented APIs.** Calls to library functions, exchange endpoints or
    response fields that do not exist in the pinned dependency or in the
    recorded fixtures. Hand-written fixtures that describe a response

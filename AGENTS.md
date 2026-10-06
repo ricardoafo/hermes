@@ -462,6 +462,14 @@ Non-negotiable summary:
 The one question before submitting: *"if I broke the invariant this
 test claims to protect, would this test fail?"* If not, rewrite it.
 
+Three skills in `.claude/skills/` walk through this work step by step
+(#847): `hermes-break-it` (list how a change can fail before writing it),
+`hermes-write-tests` (the order to write a test in) and `hermes-scenario`
+(end-to-end, chaos and generated-path scenarios). Two hooks in
+`.claude/settings.json` back them: cloud sessions install the git hooks at
+start, and editing an assertion that is already committed asks for the
+reason.
+
 Coverage floor: 90% line, 85% branch. Mutation kill rate is
 the load-bearing gate (target ≥ 80%). Line coverage alone is not proof
 of correctness.

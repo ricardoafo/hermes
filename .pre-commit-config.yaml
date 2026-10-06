@@ -179,6 +179,20 @@ repos:
         files: ^scripts/dev/license-check\.py$
         pass_filenames: false
 
+      - id: cloud-session-start-self-test
+        name: cloud-session-start self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/cloud-session-start.sh'
+        language: system
+        files: ^scripts/dev/cloud-session-start\.sh$
+        pass_filenames: false
+
+      - id: assertion-edit-warning-self-test
+        name: assertion-edit-warning self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 uv run --no-sync python scripts/dev/assertion-edit-warning.py'
+        language: system
+        files: ^scripts/dev/assertion-edit-warning\.py$
+        pass_filenames: false
+
       - id: reproducibility-check-self-test
         name: reproducibility-check self-test
         entry: bash -c 'HERMES_SELF_TEST=1 python3 scripts/dev/reproducibility-check.py'
