@@ -8,7 +8,8 @@ Invariants protected here:
 - bars are selected by close time, ``after < close <= upto`` (a bar belongs to
   the day it closes in);
 - signals are selected by ``after < occurred_at <= upto`` and the latest signal
-  is per pair and bounded;
+  is per pair and bounded; asked for one kind, it skips newer signals of the
+  other kind (#706);
 - trades come back with their stored fields, oldest first.
 """
 
@@ -107,6 +108,16 @@ def test_latest_signal_is_the_newest_up_to_the_bound(db: Path) -> None:
     assert latest is not None
     assert (latest.occurred_at, latest.kind) == (DAY_START + timedelta(hours=8), SignalKind.ENTRY)
     assert none is None
+
+
+def test_latest_signal_of_a_kind_skips_the_newer_other_kind(db: Path) -> None:
+    """Asked for an entry after the stored exit, the newest entry comes back, not the exit."""
+    with SqliteParityReader.open(db) as reader:
+        entry = reader.latest_signal(
+            STRATEGY, BTC_USDT, at_or_before=DAY_END + timedelta(hours=4), kind=SignalKind.ENTRY
+        )
+
+    assert entry == signal_event(DAY_START + timedelta(hours=8))
 
 
 def test_trades_come_back_oldest_first_with_their_side(db: Path) -> None:
