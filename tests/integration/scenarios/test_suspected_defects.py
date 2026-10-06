@@ -62,11 +62,6 @@ def test_an_entry_refused_by_a_risk_halt_is_recorded_in_the_ledger(
     assert len(events(run.db, "TradeRejected")) == 1
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="issue #690 item 4: a refused entry leaves the strategy believing it is long",
-)
 def test_after_a_refused_entry_the_strategy_is_flat_again(run_scenario: RunScenario) -> None:
     """With the entry refused, no exit may be signalled for a position that does not exist.
 
