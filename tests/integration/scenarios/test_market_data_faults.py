@@ -139,8 +139,8 @@ def test_a_closed_bar_with_a_nan_close_stops_serve_loudly_and_a_restart_handles_
 
 @pytest.mark.xfail(
     strict=True,
-    reason="issue #839 catalogue: a broken forming candle fails the poll that carries the "
-    "closed breakout bar, so the entry is never taken",
+    reason="issue #850: a broken forming candle fails the poll that carries the closed "
+    "breakout bar, so the entry is never taken",
 )
 def test_a_nan_in_the_forming_candle_does_not_block_the_closed_bar_before_it(
     run_scenario: RunScenario,
