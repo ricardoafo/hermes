@@ -34,6 +34,7 @@ from hermes.application.messages.format import (
     fmt_money,
     fmt_pp,
     fmt_qty,
+    fmt_quote_money,
     fmt_ref,
     fmt_weight,
     fmt_when,
@@ -220,3 +221,28 @@ def test_ref_is_the_ellipsis_and_the_last_six_characters(cid: str) -> None:
 def test_severity_maps_to_one_glyph(severity: AnomalySeverity, glyph: str) -> None:
     """Critical is a stop, warning a half circle, info a filled circle."""
     assert severity_glyph(severity) == glyph
+
+
+def test_quote_money_with_a_rate_is_the_amount_in_euros() -> None:
+    """Invariant (668 R-1): 52,410.20 USDT at 1.25 USDT per euro reads EUR 41,928.16."""
+    assert fmt_quote_money(Decimal("52410.2"), Currency.USDT, Decimal("1.25")) == "€41,928.16"
+
+
+def test_quote_money_without_a_rate_keeps_the_quote_code() -> None:
+    """Invariant (668 R-2): no rate, no invented euro figure."""
+    assert fmt_quote_money(Decimal("52410.2"), Currency.USDT, None) == "52,410.20 USDT"
+
+
+def test_quote_money_in_euros_ignores_the_rate() -> None:
+    """Invariant: an amount already in EUR is never divided again."""
+    assert fmt_quote_money(Decimal("100"), Currency.EUR, Decimal("1.25")) == "€100.00"
+
+
+@given(
+    amount=st.decimals(min_value=Decimal("0.01"), max_value=Decimal("1000000"), places=2),
+    rate=st.decimals(min_value=Decimal("0.5"), max_value=Decimal("2"), places=4),
+)
+def test_quote_money_with_a_rate_is_always_a_euro_figure(amount: Decimal, rate: Decimal) -> None:
+    """Invariant: with a rate the text starts with the euro sign and never names USDT."""
+    text = fmt_quote_money(amount, Currency.USDT, rate)
+    assert re.findall(r"€[\d,]+\.\d{2}", text) == [text]

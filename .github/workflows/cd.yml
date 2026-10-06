@@ -34,8 +34,12 @@
 #
 # ## Serialization
 #
-# `concurrency: deploy-vps` + `cancel-in-progress: false`. Two deploys
-# racing would flip `current` under each other.
+# The deploy job holds `concurrency: deploy-vps` with
+# `cancel-in-progress: false`: two deploys racing would flip `current`
+# under each other. The lock is on that job, not the workflow. Every CI
+# run on main starts a CD run, and most skip at the gate (a cancelled or
+# failed CI); as workflow-level runs they took the group's one pending
+# slot and could displace a real deploy waiting there (#694).
 #
 # ## Secrets (populated on `prod` GH Environment)
 #
@@ -63,10 +67,6 @@ on:
 # Jobs run on the hermes-ops runner when OPS_RUNNER_LABEL is set, so a
 # deploy never waits behind PR CI; they fall back to the CI pool until
 # that runner exists.
-concurrency:
-  group: deploy-vps
-  cancel-in-progress: false
-
 permissions:
   contents: read
 
@@ -93,7 +93,10 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push')
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    # The ops runner, not the CI pool: the e2e serve cycle failed on
+    # contention beside PR CI (run 37304489094, #694). With one ops
+    # runner it never overlaps the merge queue's Revalidate either.
+    runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -171,10 +174,11 @@ jobs:
           mkdir -p notes
           for format in markdown telegram; do
               if ! uv run --no-project --python 3.14 scripts/deploy/release_notes.py \
-                  --release "$RELEASE_SHA" --repo "$REPO" --format "$format" > "notes/$format.txt"; then
-                  echo "::warning::release notes ($format) failed; shipping a placeholder"
-                  printf 'hermes %s is live on hermes-01. Release notes could not be built.\n' \
-                      "${RELEASE_SHA::12}" > "notes/$format.txt"
+                  --release "$RELEASE_SHA" --repo "$REPO" --format "$format" > "notes/$format.txt" \
+                  || ! grep -q '[^[:space:]]' "notes/$format.txt"; then
+                  echo "::warning::release notes ($format) failed or came out empty; shipping a placeholder"
+                  printf 'hermes %s is live on hermes-01. Release notes could not be built; commits: %s\n' \
+                      "${RELEASE_SHA::12}" "https://github.com/$REPO/commits/$RELEASE_SHA" > "notes/$format.txt"
               fi
           done
           cat notes/markdown.txt
@@ -268,6 +272,14 @@ jobs:
     runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     # install_release.sh may hold up to 10 min for the bar close (#626).
     timeout-minutes: 25
+    # Only real deploys reach this job, so a pending one can be replaced
+    # only by a newer release, never by a no-op run.
+    concurrency:
+      group: deploy-vps
+      cancel-in-progress: false
+    # contents: write only to create the deploy-<sha12> release and tag.
+    permissions:
+      contents: write
     environment:
       name: prod
       url: https://${{ env.VPS_HOST }}
@@ -398,6 +410,8 @@ jobs:
         with:
           ref: ${{ env.RELEASE_SHA }}
           fetch-depth: 1
+          # This job's token can write; smoke never needs it in .git/config.
+          persist-credentials: false
 
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         if: inputs.dry_run != true
@@ -436,52 +450,14 @@ jobs:
           name: hermes-release-notes
           path: notes/
 
-      # The prod environment holds the bot token and chat id, so the message
-      # goes from this job. A Telegram outage never fails a good deploy.
-      - name: Announce the release on Telegram
-        if: inputs.dry_run != true
-        continue-on-error: true
-        env:
-          TELEGRAM_TOKEN: ${{ secrets.HERMES_TELEGRAM__BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.HERMES_TELEGRAM__CHAT_ID }}
-        run: |
-          set -euo pipefail
-          if [ -z "$TELEGRAM_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
-              echo "::warning::no Telegram token or chat id in the prod environment; not announcing"
-              exit 0
-          fi
-          curl -fsS --max-time 20 -o /dev/null \
-              --data-urlencode "chat_id=$TELEGRAM_CHAT_ID" \
-              --data-urlencode "text@notes/telegram.txt" \
-              --data-urlencode "disable_web_page_preview=true" \
-              "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage"
-
-      - name: Dry-run notice
-        if: inputs.dry_run == true
-        run: echo "::notice::dry_run=true — built the bundle, skipped tailnet + scp + install + smoke."
-
-  # ─────────────────────────────────────────────────────────────────
-  # RELEASE — a GitHub release per good deploy, tagged deploy-<sha12> on
-  # the commit that shipped, with the notes as its body (#626). The tag
-  # is how the next deploy finds where its notes start. A failure here
-  # is a warning: the box is already running the release.
-  # ─────────────────────────────────────────────────────────────────
-  release:
-    name: Publish the GitHub release
-    needs: [deploy, notes]
-    if: inputs.dry_run != true
-    runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
-    timeout-minutes: 5
-    permissions:
-      contents: write
-    steps:
-      - name: Download release notes
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: hermes-release-notes
-          path: notes/
-
+      # A GitHub release per good deploy, tagged deploy-<sha12> on the commit
+      # that shipped, with the notes as its body (#626). The tag is how the
+      # next deploy finds where its notes start. It is created here, before
+      # the Telegram message, because the message links to it: a separate
+      # job could wait minutes for a runner and leave the link dead. A
+      # failure here is a warning: the box is already running the release.
       - name: Create the release
+        if: inputs.dry_run != true
         continue-on-error: true
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
@@ -508,13 +484,39 @@ jobs:
             });
             core.notice(`Published ${data.html_url}`);
 
+      # The prod environment holds the bot token and chat id, so the message
+      # goes from this job. A Telegram outage never fails a good deploy.
+      - name: Announce the release on Telegram
+        if: inputs.dry_run != true
+        continue-on-error: true
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.HERMES_TELEGRAM__BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.HERMES_TELEGRAM__CHAT_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TELEGRAM_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+              echo "::warning::no Telegram token or chat id in the prod environment; not announcing"
+              exit 0
+          fi
+          curl -fsS --max-time 20 -o /dev/null \
+              --data-urlencode "chat_id=$TELEGRAM_CHAT_ID" \
+              --data-urlencode "text@notes/telegram.txt" \
+              --data-urlencode "disable_web_page_preview=true" \
+              "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage"
+
+      - name: Dry-run notice
+        if: inputs.dry_run == true
+        run: echo "::notice::dry_run=true — built the bundle, skipped tailnet + scp + install + smoke."
+
   # ─────────────────────────────────────────────────────────────────
   # CONFIRM — deploy-gate aggregator
   # ─────────────────────────────────────────────────────────────────
   confirm:
     name: Confirm deployment
-    needs: [gate, build, notes, bundle, deploy, release]
-    if: '!cancelled()'
+    needs: [gate, build, notes, bundle, deploy]
+    # Runs after a failure so it can report it, but not when the gate
+    # skipped: a CD run for a cancelled or failed CI takes no runner.
+    if: "!cancelled() && needs.gate.result != 'skipped'"
     runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 1
     steps:

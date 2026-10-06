@@ -34,7 +34,3 @@ rules:
     ignore:
       - ci.yml
       - scheduled.yml
-  # actions/checkout in scheduled.yml is still on a tag; #596 pins it.
-  unpinned-uses:
-    ignore:
-      - scheduled.yml
