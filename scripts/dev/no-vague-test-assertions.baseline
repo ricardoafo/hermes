@@ -271,13 +271,10 @@ tests/unit/entrypoints/test_serve.py::test_default_depth_source_is_the_keyless_b
 tests/unit/entrypoints/test_serve.py::test_each_stream_has_its_own_contiguity U3
 tests/unit/entrypoints/test_serve.py::test_in_order_bars_each_write_a_cursor_row U3
 tests/unit/entrypoints/test_tui.py::test_refresh_interval_is_five_seconds U7
-tests/unit/infrastructure/config/test_loader.py::test_config_error_is_infra_error U3
-tests/unit/infrastructure/config/test_loader.py::test_env_override_out_of_range_index_is_ignored U3
 tests/unit/infrastructure/config/test_renta.py::test_layout_type_is_the_domain_layout U3
 tests/unit/infrastructure/test_aggregate_changelog.py::test_gitkeep_and_readme_are_skipped U3
 tests/unit/infrastructure/test_aggregate_changelog.py::test_missing_fragment_dir_returns_empty_sections U3
 tests/unit/infrastructure/test_cve_triage.py::test_duplicate_advisory_yields_one_row U3
-tests/unit/infrastructure/test_env_gate.py::test_env_gate_error_is_infra_error U3
 tests/unit/ports/test_clock_port.py::test_all_adapters_are_clock_port_instances U6
 tests/unit/ports/test_clock_port.py::test_simulated_clock_is_clock_port U6
 tests/unit/ports/test_clock_port.py::test_simulated_clock_now_returns_datetime U3
