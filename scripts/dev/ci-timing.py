@@ -48,8 +48,8 @@ class StepStats:
 def _seconds(start: object, end: object) -> float | None:
     if not isinstance(start, str) or not isinstance(end, str) or not start or not end:
         return None
-    started = datetime.fromisoformat(start.replace("Z", "+00:00"))
-    ended = datetime.fromisoformat(end.replace("Z", "+00:00"))
+    started = datetime.fromisoformat(start)
+    ended = datetime.fromisoformat(end)
     return max((ended - started).total_seconds(), 0.0)
 
 
@@ -180,11 +180,11 @@ def fetch_jobs(repo: str, workflow: str, runs: int) -> list[dict[str, object]]:
 def render(stats: Sequence[StepStats], waits: Sequence[float]) -> str:
     """Render the report as a plain text table."""
     lines = [f"{'step':<44} {'runs':>4} {'median':>8} {'p90':>8} {'max':>8} {'share':>6}"]
-    for s in stats:
-        lines.append(
-            f"{s.name[:44]:<44} {s.runs:>4} {s.median:>7.0f}s {s.p90:>7.0f}s "
-            f"{s.max:>7.0f}s {s.share:>5.0%}"
-        )
+    lines.extend(
+        f"{s.name[:44]:<44} {s.runs:>4} {s.median:>7.0f}s {s.p90:>7.0f}s "
+        f"{s.max:>7.0f}s {s.share:>5.0%}"
+        for s in stats
+    )
     if waits:
         lines.append(
             f"queue wait: median {statistics.median(waits):.0f}s, "

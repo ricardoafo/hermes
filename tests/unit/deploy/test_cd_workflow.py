@@ -197,7 +197,9 @@ def _setup_uv_versions(job: str) -> list[str]:
 
 def test_bootstrap_installs_the_same_uv_version_as_the_bundle_job() -> None:
     """The VPS uv and the CI uv that built the lock must be the same version."""
-    match = re.search(r"^UV_VERSION=(\S+)$", _BOOTSTRAP_PATH.read_text(encoding="utf-8"), re.M)
+    match = re.search(
+        r"^UV_VERSION=(\S+)$", _BOOTSTRAP_PATH.read_text(encoding="utf-8"), re.MULTILINE
+    )
 
     assert match is not None
     assert [match.group(1)] == _setup_uv_versions("bundle")
@@ -220,7 +222,9 @@ def test_setup_uv_versions_agree_across_jobs(job: str) -> None:
 
 def test_bootstrap_python_pin_is_an_exact_patch_inside_the_supported_range() -> None:
     """The VPS interpreter is one exact 3.14.x, matching `requires-python = ">=3.14,<3.15"`."""
-    match = re.search(r"^PYTHON_VERSION=(\S+)$", _BOOTSTRAP_PATH.read_text(encoding="utf-8"), re.M)
+    match = re.search(
+        r"^PYTHON_VERSION=(\S+)$", _BOOTSTRAP_PATH.read_text(encoding="utf-8"), re.MULTILINE
+    )
     pyproject = (_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
 
     assert match is not None
@@ -426,6 +430,47 @@ def test_notes_job_ships_the_version_description_and_never_fails_on_it() -> None
     assert labels.index("Describe the version release") < next(
         i for i, label in enumerate(labels) if label.startswith("actions/upload-artifact@")
     )
+
+
+def _cadence_step() -> dict[str, Any]:
+    return next(s for s in _steps("notes") if _label(s) == "Decide whether this commit deploys")
+
+
+def test_deploy_runs_only_when_the_cadence_says_so() -> None:
+    """With DEPLOY_ON=version a commit without a new version stops before the box (ADR-022 §6)."""
+    workflow = _workflow()
+
+    assert workflow["jobs"]["notes"]["outputs"]["deploy"] == "${{ steps.cadence.outputs.deploy }}"
+    assert workflow["jobs"]["deploy"]["if"] == (
+        "inputs.dry_run == true || needs.notes.outputs.deploy == 'true'"
+    )
+
+
+def test_every_green_main_deploys_until_deploy_on_is_set() -> None:
+    """An unset DEPLOY_ON keeps today's behaviour; only the Code Owner's variable changes it."""
+    step = _cadence_step()
+
+    assert step["env"]["DEPLOY_ON"] == "${{ vars.DEPLOY_ON || 'every-green' }}"
+    assert "every-green) deploy=true ;;" in str(step["run"])
+
+
+def test_version_cadence_deploys_only_a_first_deploy_from_version_json() -> None:
+    """DEPLOY_ON=version reads first_deploy; a missing or failed description means no deploy."""
+    run = str(_cadence_step()["run"])
+    labels = [_label(s) for s in _steps("notes")]
+
+    assert 'get("first_deploy") is True' in run
+    assert labels.index("Describe the version release") < labels.index(
+        "Decide whether this commit deploys"
+    )
+
+
+def test_an_unknown_deploy_on_value_fails_the_run() -> None:
+    """A mistyped DEPLOY_ON fails loudly instead of silently deploying or not."""
+    run = str(_cadence_step()["run"])
+
+    assert "*)" in run
+    assert "exit 1 ;;" in run.split("*)", 1)[1]
 
 
 def test_empty_release_notes_ship_a_placeholder() -> None:

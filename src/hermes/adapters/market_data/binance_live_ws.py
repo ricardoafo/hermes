@@ -346,11 +346,16 @@ def _decimal_or_raise(raw: str, *, field_name: str, source: str) -> Decimal:
         hermes.domain.errors.ExchangeError: On unparseable input.
     """
     try:
-        return Decimal(raw)
+        value = Decimal(raw)
     except InvalidOperation as exc:
         raise ExchangeError(
             f"BinanceLiveWsAdapter: {field_name} is not a decimal ({raw!r}) from {source}"
         ) from exc
+    if not value.is_finite():
+        raise ExchangeError(
+            f"BinanceLiveWsAdapter: {field_name} is not a finite number ({raw!r}) from {source}"
+        )
+    return value
 
 
 def _parse_level_list(

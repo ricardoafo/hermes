@@ -49,7 +49,7 @@ a test uses it. Registered markers are labels; the directory decides what runs, 
 
 `unit`, `property`, `integration` and `slow` are used by some tests and are not used for selection. `e2e` marks
 the end-to-end tests; the scheduled job runs their directory with `-m e2e`.
-`chaos` and `mutation` are registered and used by no test today. Do not invent a new marker without registering it in
+`chaos` marks the fault-injection tests in `tests/integration/scenarios/test_chaos_*.py`; they run with the integration tier. `mutation` is registered and used by no test today. Do not invent a new marker without registering it in
 `pyproject.toml`.
 
 ## Rules per tier

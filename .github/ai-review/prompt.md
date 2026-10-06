@@ -65,6 +65,15 @@ calling anything a syntax error, check that 3.14 really rejects it. CI
 imports and type-checks every file, so a real syntax error fails CI
 before you see it.
 
+Also check that new or changed code is written for 3.14. Report an
+`optional` finding when the diff writes something the way an older
+Python needed it and no lint rule already catches it: a newly added
+`from __future__ import annotations` (3.14 evaluates annotations
+lazily, PEP 649), a hand-rolled helper the standard library now
+provides, or a workaround for a limit 3.14 no longer has. Name the 3.14
+way to write it. Leave alone lines the PR did not touch; ruff's
+pyupgrade, refurb and perflint rules already cover the rest.
+
 ## Verdict
 
 - `approve`: no blocking finding. Rick can approve without reading code.
