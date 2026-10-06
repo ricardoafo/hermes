@@ -87,12 +87,14 @@ def _apply_one(conn: sqlite3.Connection, sql_file: Path) -> None:
     # executescript() commits any open transaction and then runs in autocommit,
     # so without an explicit BEGIN a failure half-way would keep the first
     # statements. An explicit BEGIN keeps the script and its bookkeeping row in
-    # one transaction, committed together or rolled back together.
+    # one transaction, committed together or rolled back together. Any error
+    # rolls back, not only SQLite ones: a transaction left open would be
+    # committed by the connection's next write (issue #853).
     try:
         conn.executescript(f"BEGIN;\n{script}\n;")
         conn.execute("INSERT INTO schema_migrations (filename) VALUES (?)", (sql_file.name,))
         conn.commit()
-    except sqlite3.Error:
+    except BaseException:
         if conn.in_transaction:
             conn.rollback()
         raise
