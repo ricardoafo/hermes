@@ -26,13 +26,12 @@ import pytest
 
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.adapters.ledger.status_reader import SqliteStatusReader
+from hermes.domain.errors import LedgerError
 from hermes.domain.events.anomaly_detected import (
     CLOCK_SKEW_SOURCE,
     AnomalyDetected,
     AnomalySeverity,
 )
-
-from hermes.domain.errors import LedgerError
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.strategy.signal import SignalKind
 from hermes.ports.status import ShadowEntry, StatusReadPort
@@ -249,6 +248,7 @@ def test_last_clock_skew_is_none_when_only_other_anomalies_were_recorded(tmp_pat
         ).fetchone()[0]
 
     assert (skew, recorded) == (None, 1)
+
 
 def _insert_bar_check(path: Path, occurred: str, recorded: str) -> None:
     connection = sqlite3.connect(path)

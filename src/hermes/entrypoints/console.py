@@ -19,7 +19,7 @@ openspec/changes/ledger-read-model/change.md (D-8, D-9).
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import timedelta
 from decimal import Decimal
@@ -31,11 +31,19 @@ from rich.console import Console
 from hermes.adapters.console import FixtureReadModel, UnknownScenarioError, available_scenarios
 from hermes.adapters.console.ledger_read_model import LedgerReadModel
 from hermes.adapters.console.shadow_records import NotebookFile, RunsDirectory, runs_dir_for
+from hermes.adapters.ledger.status_reader import SqliteStatusReader
+from hermes.adapters.system import (
+    ProcMachineReader,
+    ReleaseDirectoryReader,
+    SystemctlServiceReader,
+)
 from hermes.adapters.systemd_journal import JournalctlReader, JournalUnavailableError
 from hermes.application.console import ConsoleReadModel, Surface
 from hermes.application.console.logs import LogLine, parse_journal_entry
 from hermes.application.console.render import RenderContext, render_overview
 from hermes.application.console.shadow_screen import ShadowSources, sources_from
+from hermes.application.console.system import LiveRelease, SystemSources
+from hermes.domain.errors import LedgerError
 from hermes.entrypoints._streams import resolve_err
 
 __all__ = [
@@ -54,12 +62,14 @@ __all__ = [
     "journal_window_lines",
     "lab_notebook_path",
     "recent_journal_lines",
+    "recent_unit_journal_lines",
     "resolve_read_model",
     "roster_exposure_cap",
     "roster_strategy_id",
     "run_overview",
     "shadow_sources",
     "split_demo_flag",
+    "system_sources",
 ]
 
 DEMO_ENV_VAR: Final = "HERMES_CONSOLE_DEMO"
@@ -443,3 +453,54 @@ def journal_window_lines(window: timedelta) -> list[LogLine] | None:
         return [line for line in map(parse_journal_entry, raw) if line is not None]
     except JournalUnavailableError, OSError:
         return None
+
+
+def recent_unit_journal_lines(unit: str, count: int) -> list[LogLine] | None:
+    """Return the last ``count`` journal lines of ``unit``, or ``None`` without journalctl.
+
+    The System screen's service detail calls this (#717).
+
+    Args:
+        unit: The systemd unit (``hermes-daily.service``).
+        count: How many entries to read.
+
+    Returns:
+        Parsed lines, oldest first, or ``None`` on a machine with no journal.
+    """
+    try:
+        raw = JournalctlReader(unit=unit).lines(last=count)
+        return [line for line in map(parse_journal_entry, raw) if line is not None]
+    except JournalUnavailableError:
+        return None
+
+
+def system_sources(
+    *, db_path: Path, live: Callable[[], LiveRelease], ledger: bool = True
+) -> SystemSources:
+    """Return the System screen's read-only sources on this machine (#717).
+
+    Off the VPS each reader answers "not available here" on its own: no
+    systemd units, no release directory, no ``/proc``.
+
+    Args:
+        db_path: The ledger; its size is shown and its bar checks are timed.
+        live: Returns the live release, as ``hermes status`` reads it.
+        ledger: Read the ledger's bar timing; ``False`` for a demo scenario,
+            whose figures are not the ledger's.
+
+    Returns:
+        The readers for the services, releases, machine and bar timing.
+    """
+    bar_timing = None
+    if ledger:
+        try:
+            bar_timing = SqliteStatusReader.open(db_path)
+        except FileNotFoundError, LedgerError:
+            bar_timing = None
+    return SystemSources(
+        services=SystemctlServiceReader(),
+        releases=ReleaseDirectoryReader(live=live),
+        machine=ProcMachineReader(ledger=db_path),
+        bar_timing=bar_timing,
+        unit_journal=recent_unit_journal_lines,
+    )
