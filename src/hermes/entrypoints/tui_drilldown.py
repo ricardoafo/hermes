@@ -34,8 +34,6 @@ without running an app.
 
 # ruff: noqa: RUF002 - the single right angle quote is the design spec's breadcrumb separator
 
-from __future__ import annotations
-
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from enum import StrEnum
