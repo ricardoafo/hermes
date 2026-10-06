@@ -67,6 +67,13 @@ _NESTED_DELIMITER: str = "__"
 # specific YAML section.
 _ENV_TIER: str = "HERMES_ENV"
 _ENV_ALLOW_MAINNET: str = "HERMES_ALLOW_MAINNET"
+# Credentials that share a section's prefix but belong to an adapter, not
+# to the section's YAML model (BinanceSpotConfig.from_env reads these).
+# Treating them as overrides failed validation under extra=forbid and
+# echoed the secret in the error (#794).
+_CREDENTIAL_ENV_VARS: frozenset[str] = frozenset(
+    {"HERMES_BINANCE__API_KEY", "HERMES_BINANCE__API_SECRET"}
+)
 
 
 def _read_yaml(path: Path) -> dict[str, Any]:
@@ -151,7 +158,7 @@ def _apply_env_overrides(
     prefix = f"{_ENV_PREFIX}{section}{_NESTED_DELIMITER}"
     merged: dict[str, Any] = _deep_copy_dict(data)
     for key, value in env.items():
-        if not key.startswith(prefix):
+        if not key.startswith(prefix) or key in _CREDENTIAL_ENV_VARS:
             continue
         path = key[len(prefix) :].split(_NESTED_DELIMITER)
         # Empty path segment means the env-var was malformed (e.g. trailing
@@ -160,6 +167,22 @@ def _apply_env_overrides(
             continue
         _set_nested(merged, [p.lower() for p in path], _coerce_scalar(value))
     return merged
+
+
+def _describe(exc: ValidationError) -> str:
+    """Render ``exc`` like pydantic does, minus every input value.
+
+    Pydantic's own text includes ``input_value=...``, which for a
+    credential is the secret itself. Each line keeps the location, the
+    message and the error type, which is all an operator needs (#794).
+    """
+    count = exc.error_count()
+    noun = "error" if count == 1 else "errors"
+    lines = [f"{count} validation {noun} for {exc.title}"]
+    for error in exc.errors(include_input=False, include_url=False):
+        lines.append(".".join(str(part) for part in error["loc"]))
+        lines.append(f"  {error['msg']} [type={error['type']}]")
+    return "\n".join(lines)
 
 
 def _deep_copy_dict(data: dict[str, Any]) -> dict[str, Any]:
@@ -234,7 +257,7 @@ def load_yaml_model[T: BaseModel](
         return model_cls.model_validate(merged)
     except ValidationError as exc:
         raise ConfigError(
-            f"validation failed for {path} against {model_cls.__name__}: {exc}"
+            f"validation failed for {path} against {model_cls.__name__}: {_describe(exc)}"
         ) from exc
 
 
@@ -396,4 +419,4 @@ def load_config(
         # Root-level validation covers env-tier gates (mainnet outside prod)
         # + env literal narrowing. Wrap in ConfigError for a consistent
         # error type across the loader.
-        raise ConfigError(f"HermesConfig validation failed: {exc}") from exc
+        raise ConfigError(f"HermesConfig validation failed: {_describe(exc)}") from exc
