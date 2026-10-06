@@ -6,8 +6,6 @@ the new picture. Files are named ``logo_wordmark_<theme>_<cols>x<rows>.svg``,
 like the Cockpit snapshots in ``test_tui_snapshots``.
 """
 
-from __future__ import annotations
-
 import asyncio
 from typing import ClassVar
 

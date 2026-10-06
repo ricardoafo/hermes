@@ -7,8 +7,6 @@ deterministic: running it twice writes the same bytes.
 Usage: ``uv run python scripts/assets/make_winged_h_logo.py``
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 from typing import Final
 

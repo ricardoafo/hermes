@@ -16,8 +16,6 @@ imported lazily and only on the image path.
 Reference: openspec/changes/733-image/change.md.
 """
 
-from __future__ import annotations
-
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Final

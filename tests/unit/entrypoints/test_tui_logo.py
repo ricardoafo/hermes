@@ -16,8 +16,6 @@ Invariants:
 No test asks a real terminal what it supports.
 """
 
-from __future__ import annotations
-
 import asyncio
 import sys
 from collections.abc import Sequence
