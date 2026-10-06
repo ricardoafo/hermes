@@ -6,8 +6,6 @@ re-execs with the original command line, and a failing reader never breaks the
 screen. The release reader and the exec function are fakes; nothing execs.
 """
 
-from __future__ import annotations
-
 import asyncio
 import sys
 from datetime import UTC, datetime
