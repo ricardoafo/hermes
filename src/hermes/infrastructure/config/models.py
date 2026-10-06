@@ -357,7 +357,8 @@ class HealthchecksConfig(BaseModel):
 
     model_config = _MODEL_CONFIG
 
-    ping_url: str = Field(default="")
+    # The ping URL is a credential: anyone holding it can mark the check up.
+    ping_url: str = Field(default="", repr=False)
     timeout_sec: float = Field(default=5.0, gt=0)
     requests_per_minute: int = Field(default=30, gt=0, le=6000)
 
@@ -398,7 +399,7 @@ class SentryConfig(BaseModel):
 
     model_config = _MODEL_CONFIG
 
-    dsn: str = Field(default="")
+    dsn: str = Field(default="", repr=False)
     environment: str = Field(default="dev", min_length=1)
 
     @property

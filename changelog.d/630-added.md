@@ -1,1 +1,0 @@
-- **Serve prices pending EUR values at boot** (`price_pending_eur_once`): `hermes serve` runs the existing EUR backfill once after seeding, so the capital seed shows its EUR value without `hermes fx backfill`; an FX failure is logged and leaves the value pending. Closes #630.

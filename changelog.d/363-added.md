@@ -1,1 +1,0 @@
-- **Decision journal** (`hermes journal`): append-only, hash-chained record of Code Owner decisions with options, reasoning, expected outcome and review date; due list and scored reviews; strategy decisions stay sealed until certification. Closes #363.

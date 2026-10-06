@@ -80,7 +80,9 @@ from hermes.application.calibration.certification_gates import (
     v1_parameter_fingerprint,
 )
 from hermes.application.execution.kernel import Declined, Executed, FillKernel, Halted
+from hermes.application.execution.position_sync import sync_after_signal
 from hermes.application.execution.shadow import (
+    AlreadyFilled,
     ShadowExecution,
     ShadowExecutor,
     shadow_risk_engine,
@@ -894,9 +896,13 @@ class _BarLoop:
     def _restore_position(
         self, pair: Pair, cursors: Mapping[Stream, datetime]
     ) -> OpenPosition | None:
-        """Rebuild the open position from the ledger, bounded by the 4h cursor."""
+        """Rebuild the open position from the ledger, bounded by the 4h cursor.
+
+        An entry signal that was never filled leaves the portfolio without the
+        pair, so it restores nothing (#707).
+        """
         cursor = cursors.get((pair, KlineInterval.H4))
-        if cursor is None:
+        if cursor is None or pair not in self.c.tracker.snapshot.positions:
             return None
         latest = self.c.ledger.latest_signal_event(self.c.strategy_id, pair, at_or_before=cursor)
         if latest is None or latest.kind is not SignalKind.ENTRY or latest.entry_price is None:
@@ -1051,9 +1057,15 @@ class _BarLoop:
         return True
 
     async def _execute(self, signal_: StrategySignal, bar: Bar, correlation_id: str) -> None:
-        """Simulate the signal's order and log the outcome, never its P&L (D-7)."""
+        """Simulate the signal's order, log the outcome (never its P&L, D-7), sync the strategy."""
         result = await self.c.executor.execute(signal_, bar, correlation_id=correlation_id)
         _log_execution(bar.pair, signal_.kind, result)
+        # An entry that did not fill leaves the strategy flat again (#707).
+        sync_after_signal(
+            self.c.strategies[bar.pair],
+            signal_,
+            filled=isinstance(result.outcome, Executed | AlreadyFilled),
+        )
 
     async def _notify(self, event: SignalEmitted) -> None:
         """Fan the event out in a worker thread; a channel outage is logged, not fatal."""

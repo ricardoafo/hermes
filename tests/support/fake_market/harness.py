@@ -124,6 +124,11 @@ def compose(
     composition = serve_module.build_composition(
         config, db_path=db, env={}, feed=feed, clock=clock, orderbooks=books, fx=fx
     )
+    # Serve commits several times per bar, and each commit waits for the disk: a 90-day
+    # run made about 25,800 fsync calls. Cheap here, but on a loaded runner's virtual
+    # disk they took the run past its timeout. A test ledger needs no crash durability;
+    # what serve reads and writes is unchanged.
+    composition.sqlite_connection.execute("PRAGMA synchronous = OFF")
     return dataclasses.replace(
         composition, signal_notifier=SignalNotifier(RouterConfig(telegram=channel, slack=None))
     )

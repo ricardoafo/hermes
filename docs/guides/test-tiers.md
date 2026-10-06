@@ -19,7 +19,7 @@ Tiers are chosen by directory, not by marker. Status is `live` (a workflow or sc
 | --- | --- | --- | --- | --- | --- |
 | Unit | `tests/unit/` | Hermetic: no network, no real clock. Includes hypothesis and syrupy tests | `ci.yml` job `ci-success`: `pytest tests/unit/ -n 4 --cov=src/hermes --cov-branch`, then `scripts/dev/coverage-check.py --bootstrap`. Merge queue: `scripts/dev/merge-gates.sh` gate `pytest` | Every PR; every merge-queue batch | live |
 | Integration | `tests/integration/` | Real adapters against local fakes; no network, no secrets | `ci.yml`: `pytest tests/integration/ -n 4`. Merge queue: same `pytest` gate as unit | Every PR; every merge-queue batch | live |
-| Contract | `tests/contract/` | Real HTTPS to third-party sandboxes; each test skips when its secret is absent | `scheduled.yml` job `contract`: `pytest tests/contract -m contract` | Daily 11:30 UTC | live |
+| Contract | `tests/contract/` | Real HTTPS to third-party sandboxes; each test skips when its secret is absent | `scheduled.yml` job `contract`: `pytest tests/contract -m contract` | Daily 11:30 Madrid | live |
 | Smoke | `tests/smoke/` | Read-only checks on hermes-01 over SSH | `cd.yml` step "Smoke tests": `pytest tests/smoke -m smoke`. Exit 5 (nothing collected) fails the deploy | After each deploy | live |
 | Mutation | `tests/unit/domain/value_objects` (rerun by cosmic-ray) | cosmic-ray over `src/hermes/domain/value_objects`; scope is `module-path` in `cosmic-ray.toml` | `scheduled.yml` job `mutation` | Sundays 11:45 UTC; manual dispatch with `mutation` ticked | live; kill-rate floor (80%) advisory until #406 |
 | End-to-end | `tests/e2e/` | The real `hermes serve` composition root replays recorded Binance bars (`tests/fixtures/e2e/`); offline and keyless | `scheduled.yml` job `e2e`: `pytest tests/e2e -m e2e` | Sundays 11:45 UTC; every manual dispatch | live |
@@ -36,7 +36,7 @@ These are not test tiers but they run next to them:
 | --- | --- |
 | ruff format and check, `mypy --strict src/hermes`, `lint-imports`, pip-audit, radon, vulture, licenses, gitleaks, markdownlint, test-deletion guard | `ci.yml` (job `ci-success`, the only required check) |
 | ruff, mypy, `lint-imports`, markdownlint, gitleaks on the merged batch | merge queue (`scripts/dev/merge-gates.sh`) |
-| Semgrep over the whole tree | `scheduled.yml` job `semgrep`, daily 11:30 UTC |
+| Semgrep over the whole tree | `scheduled.yml` job `semgrep`, daily 11:30 Madrid |
 
 ## Markers
 

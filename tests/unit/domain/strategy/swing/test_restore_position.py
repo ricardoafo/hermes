@@ -1,0 +1,148 @@
+"""Tests for ``SwingStrategyAdapter.restore_position`` after a refused entry (#707).
+
+Invariants protected here:
+
+- an adapter that emitted an entry and is restored to flat signals no exit on
+  later bars, even a crash far below any Chandelier stop;
+- once flat again it emits a new entry on the next qualifying bar;
+- restoring touches no bar history: the next evaluation equals that of an
+  adapter that never saw the refused entry;
+- a restored open position exits with the restored entry price.
+
+Reference: issue #707; pre-registration-v1 §6.3 (a rejected trade is skipped).
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+
+from hermes.domain.market_data.bar import Bar
+from hermes.domain.market_data.kline import KlineInterval
+from hermes.domain.risk.state import PortfolioState
+from hermes.domain.strategy.signal import OpenPosition, SignalKind, StrategySignal
+from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
+from hermes.domain.value_objects.currency import Currency
+from hermes.domain.value_objects.pair import Pair
+
+_PAIR = Pair(base=Currency.BTC, quote=Currency.USDT)
+_BASE = datetime(2024, 1, 1, tzinfo=UTC)
+_H4_BASE = _BASE + timedelta(days=15)
+_STATE = PortfolioState(
+    peak_value=Decimal("10000"),
+    current_value=Decimal("10000"),
+    realized_slippage_cumulative=Decimal("0"),
+    correlations={},
+    dd_halt_required=False,
+)
+
+
+def _bar(close: str, index: int, *, daily: bool = False, low: str | None = None) -> Bar:
+    """Build a closed bar; 4h bars start after every 1d bar has closed."""
+    span = timedelta(days=1) if daily else timedelta(hours=4)
+    open_time = (_BASE if daily else _H4_BASE) + span * index
+    price = Decimal(close)
+    return Bar(
+        pair=_PAIR,
+        interval=KlineInterval.D1 if daily else KlineInterval.H4,
+        open_time=open_time,
+        open=price,
+        high=price + Decimal("2"),
+        low=Decimal(low) if low is not None else price - Decimal("2"),
+        close=price,
+        volume=Decimal("100"),
+        close_time=open_time + span,
+    )
+
+
+def _adapter() -> SwingStrategyAdapter:
+    """Return a fast adapter with small periods, as the integration tests do."""
+    return SwingStrategyAdapter(
+        donchian_period=5,
+        adx_period=5,
+        adx_threshold=Decimal("5"),
+        ema_period=10,
+        chandelier_period=5,
+        chandelier_atr_mult=Decimal("3.0"),
+        atr_sizing_period=5,
+    )
+
+
+def _history() -> list[Bar]:
+    """Rising 1d bars, then eleven flat 4h bars: no signal yet."""
+    daily = [_bar(str(1000 + 200 * i // 11), i, daily=True) for i in range(12)]
+    return [*daily, *(_bar("1000", i) for i in range(11))]
+
+
+def _entered_adapter() -> SwingStrategyAdapter:
+    """Return an adapter that has just emitted the breakout entry at bar 11."""
+    adapter = _adapter()
+    for bar in _history():
+        assert adapter.on_bar(bar, _STATE) is None
+    signal = adapter.on_bar(_bar("2000", 11), _STATE)
+    assert isinstance(signal, StrategySignal)
+    assert signal.kind is SignalKind.ENTRY
+    return adapter
+
+
+def test_refused_entry_restored_to_flat_signals_no_exit_on_a_crash() -> None:
+    """Restored to flat after its entry, the adapter emits nothing on a crash bar."""
+    adapter = _entered_adapter()
+    adapter.restore_position(None)
+
+    later = [
+        adapter.on_bar(_bar("2000", 12), _STATE),
+        adapter.on_bar(_bar("2000", 13), _STATE),
+        adapter.on_bar(_bar("500", 14, low="100"), _STATE),
+    ]
+
+    assert later == [None, None, None]
+
+
+def test_without_restore_the_crash_bar_signals_an_exit() -> None:
+    """Control: the same adapter left long exits on the crash (the #707 symptom)."""
+    adapter = _entered_adapter()
+
+    signal = adapter.on_bar(_bar("500", 12, low="100"), _STATE)
+
+    assert isinstance(signal, StrategySignal)
+    assert (signal.kind, signal.exit_reason) == (SignalKind.EXIT, "chandelier")
+
+
+def test_refused_entry_restored_to_flat_enters_again_on_the_next_breakout() -> None:
+    """Flat again, the adapter emits a new entry at the next breakout's close."""
+    adapter = _entered_adapter()
+    adapter.restore_position(None)
+
+    signal = adapter.on_bar(_bar("3000", 12), _STATE)
+
+    assert isinstance(signal, StrategySignal)
+    assert (signal.kind, signal.entry_price, signal.signal_time) == (
+        SignalKind.ENTRY,
+        Decimal("3000"),
+        _bar("3000", 12).close_time,
+    )
+
+
+def test_restore_keeps_history_so_the_next_bar_matches_a_never_entered_adapter() -> None:
+    """Restoring touches no buffer: the next bar evaluates as if the entry was never long."""
+    restored = _entered_adapter()
+    restored.restore_position(None)
+    control = _adapter()
+    control.seed([*_history(), _bar("2000", 11)])
+
+    assert restored.on_bar(_bar("3000", 12), _STATE) == control.on_bar(_bar("3000", 12), _STATE)
+
+
+def test_restore_with_an_open_position_exits_with_that_entry_price() -> None:
+    """A restored position (the #706 path) exits on the crash carrying its entry price."""
+    adapter = _adapter()
+    adapter.seed([*_history(), _bar("2000", 11)])
+    adapter.restore_position(
+        OpenPosition(entry_time=_bar("2000", 11).close_time, entry_price=Decimal("1999"))
+    )
+
+    signal = adapter.on_bar(_bar("500", 12, low="100"), _STATE)
+
+    assert isinstance(signal, StrategySignal)
+    assert (signal.kind, signal.entry_price) == (SignalKind.EXIT, Decimal("1999"))
