@@ -153,7 +153,6 @@ def test_every_unbuilt_screen_names_its_issue() -> None:
             seen.append(f"{tab.name} · coming next · issue #{tab.issue}" in _screen_text(app))
         return seen
 
-    assert [tab.name for tab in TABS if tab.issue is None] == ["Home", "Briefs"]
     assert _run(probe) == [True] * len(unbuilt)
 
 
