@@ -11,8 +11,10 @@ ones that release will run with:
 Exit codes:
     0  the release knows every event type at or above the ledger's
        newest version, or there is no ledger or events table yet.
-    1  the ledger holds a newer version of an event type than the
-       release knows; each one is printed.
+    3  the ledger holds a newer version of an event type than the
+       release knows; each one is printed. Not 1, which is also what
+       Python exits with on an uncaught exception, so the deploy scripts
+       can tell a refusal from a guard that crashed.
 
 An event type the release does not know at all is printed as a warning
 and does not fail the check: older releases skip types they never read.
@@ -61,6 +63,9 @@ def ledger_versions(db: Path) -> dict[str, int]:
     return {str(name): int(version) for name, version in rows}
 
 
+REFUSED = 3
+
+
 def main(argv: list[str]) -> int:
     """Compare the ledger at ``argv[1]`` with this interpreter's release."""
     known = release_versions()
@@ -74,7 +79,7 @@ def main(argv: list[str]) -> int:
         print(
             "::error::the ledger holds newer events than this release can read: " + ", ".join(newer)
         )
-        return 1
+        return REFUSED
     return 0
 
 
