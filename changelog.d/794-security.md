@@ -1,0 +1,1 @@
+- Setting `HERMES_BINANCE__API_KEY` / `HERMES_BINANCE__API_SECRET` no longer breaks config loading. Config errors no longer echo the rejected value, so a secret can't leak through one, and the config's repr masks the Sentry DSN and healthchecks ping URL (#794).
