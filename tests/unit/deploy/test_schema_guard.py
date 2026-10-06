@@ -60,7 +60,7 @@ def test_newer_event_version_fails_the_check(
     """Invariant: a ledger written by a newer schema stops the older release."""
     db = _ledger(tmp_path / "l.sqlite3", [("FillQualityRecorded", _KNOWN + 1)])
 
-    assert GUARD.main(["guard", str(db)]) == 1
+    assert GUARD.main(["guard", str(db)]) == 3
     assert f"FillQualityRecorded v{_KNOWN + 1} (release knows v{_KNOWN})" in capsys.readouterr().out
 
 
