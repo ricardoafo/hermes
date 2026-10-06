@@ -166,22 +166,35 @@ jobs:
       # pins (gh-runner Dockerfile), and its bun cache is a volume. Use the
       # baked binaries when they are the pinned versions, so a review
       # downloads nothing; otherwise the action installs its own.
+      #
+      # The pins are read from the action's own downloaded copy, not
+      # written here: they drifted from the action twice, and every review
+      # then downloaded both (about 75 s, #686). A Dependabot bump of the
+      # action now moves the pins with it; rebuild the runner image to
+      # match (scripts/dev/gh-runner/Dockerfile).
       - name: Baked Bun and Claude Code
         id: baked
         if: steps.token.outputs.present == 'true'
-        env:
-          BUN_PIN: "1.3.6"
-          CLAUDE_PIN: "2.1.112"
         run: |
+          action=$(ls -d "$RUNNER_WORKSPACE"/../_actions/anthropics/claude-code-action/*/ 2>/dev/null | head -n 1)
+          BUN_PIN=
+          CLAUDE_PIN=
+          # No action copy found: leave both pins empty, so the action
+          # downloads its own, rather than reading files from the checkout.
+          if [ -n "$action" ]; then
+            BUN_PIN=$(sed -n 's/^ *bun-version: *\([0-9.]*\).*/\1/p' "${action}action.yml" 2>/dev/null | head -n 1)
+            CLAUDE_PIN=$(sed -n 's/.*claudeCodeVersion = "\([0-9.]*\)".*/\1/p' "${action}src/entrypoints/run.ts" 2>/dev/null | head -n 1)
+          fi
+          echo "The action pins bun ${BUN_PIN:-?} and Claude Code ${CLAUDE_PIN:-?}"
           bun=$(command -v bun || true)
-          if [ -n "$bun" ] && [ "$("$bun" --version)" = "$BUN_PIN" ]; then
+          if [ -n "$BUN_PIN" ] && [ -n "$bun" ] && [ "$("$bun" --version)" = "$BUN_PIN" ]; then
             echo "bun=$bun" >> "$GITHUB_OUTPUT"
             echo "Using baked bun $BUN_PIN at $bun"
           else
             echo "::notice::No baked bun $BUN_PIN; the action downloads it."
           fi
           claude=$(command -v claude || true)
-          if [ -n "$claude" ] && "$claude" --version 2>/dev/null | grep -q "^$CLAUDE_PIN "; then
+          if [ -n "$CLAUDE_PIN" ] && [ -n "$claude" ] && "$claude" --version 2>/dev/null | grep -q "^$CLAUDE_PIN "; then
             echo "claude=$claude" >> "$GITHUB_OUTPUT"
             echo "Using baked Claude Code $CLAUDE_PIN at $claude"
           else
