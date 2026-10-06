@@ -11,8 +11,6 @@ orange (``down``), pending muted.
 Reference: openspec/changes/718-shadow-screen/change.md (D-4 to D-6).
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from datetime import date, datetime, timedelta, tzinfo
 from typing import Final

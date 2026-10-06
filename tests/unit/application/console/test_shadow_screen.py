@@ -13,8 +13,6 @@ Invariants:
 - the frozen settings are exactly what ``swing_parameters`` gives serve.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo

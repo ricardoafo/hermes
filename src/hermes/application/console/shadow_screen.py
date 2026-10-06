@@ -16,8 +16,6 @@ Reference: openspec/changes/718-shadow-screen/change.md; ADR-021 §2 and §3;
 docs/experiments/swing-mvp1/success-criteria.md (G8 ``SHADOW_CERTIFIED``).
 """
 
-from __future__ import annotations
-
 import re
 import statistics
 from collections.abc import Iterable, Mapping

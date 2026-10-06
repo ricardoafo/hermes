@@ -10,8 +10,6 @@ release. Neither writes anything.
 Reference: openspec/changes/718-shadow-screen/change.md (D-2, D-3); ADR-021 §2.
 """
 
-from __future__ import annotations
-
 import json
 from collections.abc import Mapping
 from datetime import datetime

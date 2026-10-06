@@ -18,8 +18,6 @@ Invariants:
 - the bottom 90-day line on every tab counts from the same day 0 as tab 5.
 """
 
-from __future__ import annotations
-
 import asyncio
 import io
 from collections.abc import Awaitable, Callable

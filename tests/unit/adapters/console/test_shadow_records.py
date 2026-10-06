@@ -14,8 +14,6 @@ Invariants:
 - the notebook file reads to its entries, and a missing file to ``None``.
 """
 
-from __future__ import annotations
-
 import json
 import shutil
 from datetime import UTC, datetime
