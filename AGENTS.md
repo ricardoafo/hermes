@@ -458,6 +458,11 @@ Non-negotiable summary:
 - **When updating a test to accommodate a code change: STOP.** If the
   test SHOULD have failed on the behavior change, silencing it defeats
   the point. Ask before updating.
+- **No xfail on main.** A test that exposes a defect ships in the same PR
+  as its fix. If the fix needs the Code Owner's decision or belongs to
+  another PR, hold the test back and record the failure mode as a gap in
+  `tests/integration/scenarios/failure_modes.py` with its issue. A green
+  CI must mean every test passed.
 
 The one question before submitting: *"if I broke the invariant this
 test claims to protect, would this test fail?"* If not, rewrite it.

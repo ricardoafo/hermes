@@ -49,8 +49,9 @@ They live in `tests/integration/scenarios/`.
 
 - `HERMES_SCENARIO_SEEDS=N` or `N@START` runs more seeds locally; the PR seeds
   are fixed so CI is reproducible.
-- A failing seed is a bug report: add it as a fixed example and fix the code
-  or pin it with a strict xfail and an issue.
+- A failing seed is a bug report: fix the code and add the seed as a fixed
+  example in the same PR. It never lands as an xfail; if the fix needs a
+  decision, file the issue with the seed and hold the example until then.
 - A new rule goes in the oracle with a deliberate break in a scratch copy, to
   prove the oracle catches it.
 

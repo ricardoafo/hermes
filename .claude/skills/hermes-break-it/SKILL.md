@@ -53,23 +53,28 @@ For each failure mode your change claims to handle, write the test and run it
 on the code before your change. It must fail for the right reason. Paste that
 red run into your notes; the PR body says it happened.
 
-A known defect you are not fixing gets a strict expected failure, so the day
-it is fixed the run turns red and someone flips it:
+A test that exposes a defect ships in the same PR as its fix. No xfail lands
+on main, strict or not: CI green has to mean every test passed.
 
-```python
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="issue #N: what happens")
-```
+- Defect you can fix (a clear bug, no behaviour choice): fix it in this PR,
+  with its test, and say so in the PR body.
+- Defect whose fix needs Rick's decision or belongs to another PR: keep the
+  test out of the PR (save it where the fix's owner can find it), file the
+  issue with the evidence, and record the failure mode as a `gap` in the
+  catalogue.
 
 ## 4. Say what you found
 
 The PR body keeps the "How does Hermes fail here?" framing: which failure
-modes the change handles, which it found and pinned, which issues it filed.
+modes the change handles, which defects it found and fixed, which tests it
+held back and why, which issues it filed.
 If you found none, say so.
 
 ## Rules that still apply
 
 - Behaviour choices on halts, caps, sizing, fees, metrics or kills go to Rick.
-  Pin today's behaviour and ask; never change it on your own.
+  Ask, and hold the test until he answers; never change the behaviour on
+  your own.
 - Synthetic data only. Never use live prices, or any data from 2025-09-01 on.
 - No outside project names and no AI attribution (AGENTS.md rules 5 and 11).
 
