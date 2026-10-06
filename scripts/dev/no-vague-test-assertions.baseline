@@ -309,5 +309,3 @@ tests/unit/ports/test_market_data_port.py::test_partial_implementation_does_not_
 tests/unit/ports/test_market_data_port.py::test_plain_object_does_not_satisfy_protocol U6
 tests/unit/scripts_backtest/test_run_calibration.py::test_git_state_returns_a_full_commit_sha U3
 tests/unit/scripts_dev/test_migration_sql_check.py::test_transaction_control_is_reported U3
-tests/unit/test_logging.py::test_configure_logging_renders_json_only_for_the_journald_tiers U3
-tests/unit/test_logging.py::test_new_correlation_id_is_26_char_ulid U3

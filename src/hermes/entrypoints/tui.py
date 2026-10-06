@@ -54,9 +54,10 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable, Iterable, Sequence
+from contextlib import suppress
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta, tzinfo
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from functools import partial
 from pathlib import Path
 from typing import ClassVar, Final
@@ -67,6 +68,7 @@ from textual import events
 from textual.app import App, ComposeResult, SystemCommand
 from textual.binding import Binding, BindingType
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
+from textual.css.query import NoMatches
 from textual.screen import ModalScreen, Screen
 from textual.timer import Timer
 from textual.widgets import ContentSwitcher, Static
@@ -78,7 +80,9 @@ from hermes.application.console import (
     PortfolioRange,
     Surface,
     ViewNotAvailableError,
+    pnl_visible,
 )
+from hermes.application.console.format import MINUS
 from hermes.application.console.logs import LogLine, render_log_line
 from hermes.application.console.render import (
     DEMO_TAG,
@@ -123,6 +127,7 @@ from hermes.entrypoints.tui_theme import (
     LIVE_GLYPH,
     MARKET_COLUMN_WIDE,
     MOTION,
+    NEON_THEME,
     NIGHT_THEME,
     THEMES,
     VERTICAL_BREAKPOINTS,
@@ -158,6 +163,7 @@ __all__ = [
     "osc_title",
     "run_home",
     "terminal_title",
+    "title_total",
 ]
 
 REFRESH_SECONDS: Final = MOTION.poll
@@ -236,24 +242,43 @@ def _clock(at: datetime, tz: tzinfo) -> str:
     return at.astimezone(tz).strftime("%H:%M")
 
 
-def terminal_title(heartbeat: Heartbeat | None, tz: tzinfo) -> str:
+def title_total(total_value: Decimal, surface: Surface) -> str | None:
+    """Return the portfolio total for the terminal tab title, in whole euros.
+
+    Args:
+        total_value: Cash plus open positions, EUR.
+        surface: Where the title is shown; money only where ``pnl_visible`` allows it.
+
+    Returns:
+        ``€1,021`` on a surface that may show money, else ``None``.
+    """
+    if not pnl_visible(surface):
+        return None
+    whole = total_value.quantize(Decimal(1), rounding=ROUND_HALF_UP)
+    sign = MINUS if whole < 0 else ""
+    return f"{sign}€{abs(whole):,}"
+
+
+def terminal_title(heartbeat: Heartbeat | None, tz: tzinfo, total: str | None = None) -> str:
     """Return the terminal tab title for a heartbeat.
 
     Args:
         heartbeat: The last heartbeat read, or ``None`` when it could not be read.
         tz: Display timezone.
+        total: The portfolio total from :func:`title_total`; ``None`` leaves money out.
 
     Returns:
-        ``hermes ● live · next 16:00``, ``hermes ◐ check late · 16:00``,
-        ``hermes ✖ down since 18:04``, or ``hermes``.
+        ``hermes ● live · €4,456 · next 16:00``, ``hermes ◐ check late · €4,456 · 16:00``,
+        ``hermes ✖ down since 18:04``, or ``hermes`` (no total without a heartbeat or when down).
     """
     if heartbeat is None:
         return "hermes"
     if heartbeat.state is HeartbeatState.DOWN and heartbeat.down_since is not None:
         return f"hermes {DOWN_GLYPH} down since {_clock(heartbeat.down_since, tz)}"
+    money = f"{total} · " if total else ""
     if heartbeat.state is HeartbeatState.LATE:
-        return f"hermes {LATE_GLYPH} check late · {_clock(heartbeat.next_check_at, tz)}"
-    return f"hermes {LIVE_GLYPH} live · next {_clock(heartbeat.next_check_at, tz)}"
+        return f"hermes {LATE_GLYPH} check late · {money}{_clock(heartbeat.next_check_at, tz)}"
+    return f"hermes {LIVE_GLYPH} live · {money}next {_clock(heartbeat.next_check_at, tz)}"
 
 
 def osc_title(text: str) -> str:
@@ -488,6 +513,7 @@ class HomeApp(App[None]):
         self._layout: HomeLayout = home_layout(80, 24)
         self._empty_facts: tuple[tuple[str, ...], datetime | None] | None = None
         self._title_sent: str | None = None
+        self._title_total: str | None = None
         self.effect_timers: dict[str, Timer] = {}
         for hermes_theme in THEMES:
             self.register_theme(hermes_theme)
@@ -622,12 +648,16 @@ class HomeApp(App[None]):
                 "positions", empty_positions(coins, next_at, self._ctx, self._data, self._radar)
             )
 
+    # An effect timer can fire while the app is tearing its widgets down; a
+    # missing widget then means there is nothing left to animate.
     def _step_pulse(self) -> None:
         self._pulse = (self._pulse + 1) % MOTION.pulse_steps
-        self._paint_heartbeat()
+        with suppress(NoMatches):
+            self._paint_heartbeat()
 
     def _step_strip(self) -> None:
-        self._home.query_one(WindowBar).tick += 1
+        with suppress(NoMatches):
+            self._home.query_one(WindowBar).tick += 1
 
     @property
     def live_dot_colour(self) -> str:
@@ -652,7 +682,7 @@ class HomeApp(App[None]):
         short = countdown.removeprefix("in ")
         status = f"next {short} · {_READ_ONLY}" if countdown and not on_row else _READ_ONLY
         self._set("footer-status", Text(status))
-        self._write_title(terminal_title(self._heartbeat, self._ctx.tz))
+        self._write_title(terminal_title(self._heartbeat, self._ctx.tz, self._title_total))
 
     def _status_row_layout(self, countdown: str) -> tuple[bool, bool]:
         """Return whether the countdown and the full theme chip fit on the status row.
@@ -686,7 +716,9 @@ class HomeApp(App[None]):
         if self.theme != name:
             self.ansi_theme_dark = terminal_theme(data_tokens(name))
             self.theme = name
-        self._home.query_one(WindowBar).strip = name != NIGHT_THEME
+        bar = self._home.query_one(WindowBar)
+        bar.strip = name != NIGHT_THEME
+        bar.display = name == NEON_THEME
         if night_changed and self.effect_timers:
             self._start_effects()
 
@@ -825,7 +857,7 @@ class HomeApp(App[None]):
         self._ctx = ctx
         scenario = model.demo_scenario
         tag = (
-            Text(f" {DEMO_TAG} · scenario {scenario} ", style="bold black on yellow")
+            Text(f" {DEMO_TAG} · scenario {scenario} ", style=self._demo_tag_style())
             if scenario
             else Text("")
         )
@@ -842,6 +874,11 @@ class HomeApp(App[None]):
             self._home.query_one("#down-row").set_class(False, "-down")
         else:
             self._paint_heartbeat()
+
+        try:
+            self._title_total = title_total(model.portfolio(self._range).total_value, ctx.surface)
+        except _CARD_ERRORS:
+            self._title_total = None
 
         layout = home_layout(self.size.width, self.size.height)
         self._layout = layout
@@ -980,6 +1017,10 @@ class HomeApp(App[None]):
         demo = self._model.demo_scenario is not None
         lines = None if demo or self._journal is None else self._journal(layout.log_rows)
         self._set("log-tail", log_tail(lines, ctx, demo=demo, count=layout.log_rows))
+
+    def _demo_tag_style(self) -> str:
+        tokens = tokens_for(self.theme)
+        return f"bold {tokens.void} on {tokens.warn}"
 
     def _redraw_chrome(self) -> None:
         compact = self.size.width < COMPACT_BELOW
