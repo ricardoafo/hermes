@@ -434,6 +434,23 @@ listing the PRs and changelog lines since the previous deploy, and posts
 the same summary to Telegram (#626). On the box,
 `readlink /opt/hermes/current` names the live `versions/<sha12>`.
 
+### Day 0: deploy only new versions
+
+Until the shadow's day 0, every green `main` deploys. At day 0 (ADR-021,
+issue #797), right after archiving the warm-up ledger, set the repository
+variable that makes CD deploy only a cut version's first deploy
+(ADR-022 §6):
+
+```bash
+gh variable set DEPLOY_ON --body version --repo ricardoafo/hermes
+```
+
+From then on, CD still gates and bundles every green `main`, but deploys
+only a commit that carries a version with no `v<version>` tag and no
+earlier deploy. Other runs show a notice and a skipped deploy job. To go
+back, set it to `every-green` or delete it. Any other value fails CD on
+purpose. Only the Code Owner changes this variable.
+
 ### Failure modes
 
 - **Tailscale-join fails** — the workflow's `Join tailnet` step
