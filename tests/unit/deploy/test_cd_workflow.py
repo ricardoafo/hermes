@@ -403,13 +403,13 @@ def test_version_is_tagged_after_the_deploy_release_and_before_telegram() -> Non
 
 
 def test_version_tag_is_created_once_on_the_shipped_commit() -> None:
-    """The first deploy of a version tags RELEASE_SHA; an existing tag is left alone."""
+    """The tag goes on the commit that first shipped the version; an existing tag stays."""
     script = str(
         next(s for s in _steps("deploy") if _label(s) == "Tag the version")["with"]["script"]
     )
 
     assert "getReleaseByTag({ ...context.repo, tag: version.tag })" in script
-    assert "target_commitish: process.env.RELEASE_SHA," in script
+    assert "target_commitish: version.target," in script
     assert "make_latest: 'false'," in script
     assert "${{" not in script
 
@@ -421,7 +421,7 @@ def test_notes_job_ships_the_version_description_and_never_fails_on_it() -> None
         str(s["run"]) for s in _steps("notes") if _label(s) == "Describe the version release"
     )
 
-    assert "scripts/deploy/version_release.py > notes/version.json; then" in run
+    assert '--release "$RELEASE_SHA" > notes/version.json; then' in run
     assert "echo '{}' > notes/version.json" in run
     assert labels.index("Describe the version release") < next(
         i for i, label in enumerate(labels) if label.startswith("actions/upload-artifact@")

@@ -189,7 +189,8 @@ jobs:
       - name: Describe the version release
         run: |
           set -uo pipefail
-          if ! uv run --no-project --python 3.14 scripts/deploy/version_release.py > notes/version.json; then
+          if ! uv run --no-project --python 3.14 scripts/deploy/version_release.py \
+                  --release "$RELEASE_SHA" > notes/version.json; then
               echo "::warning::version release could not be described; nothing will be tagged"
               echo '{}' > notes/version.json
           fi
@@ -497,10 +498,11 @@ jobs:
             core.notice(`Published ${data.html_url}`);
 
       # The first deploy of a cut version also tags it v<version>, with that
-      # version's CHANGELOG section as the release body (ADR-022 §3). A later
-      # deploy of the same version finds the tag and leaves it. The deploy-<sha12>
-      # release stays the latest one, since the notes chain runs on those tags.
-      # A failure here is a warning: the box is already running the release.
+      # version's CHANGELOG section as the release body (ADR-022 §3). The tag
+      # goes on the commit that first shipped the version (version.target), so
+      # it names one build; a later deploy of the same version leaves it. The
+      # deploy-<sha12> release stays the latest one, since the notes chain runs
+      # on those tags. A failure here is a warning: the box already runs the release.
       - name: Tag the version
         if: inputs.dry_run != true
         continue-on-error: true
@@ -523,7 +525,7 @@ jobs:
             const { data } = await github.rest.repos.createRelease({
               ...context.repo,
               tag_name: version.tag,
-              target_commitish: process.env.RELEASE_SHA,
+              target_commitish: version.target,
               name: version.name,
               body: version.body,
               prerelease: version.tag.includes('-shadow.'),
