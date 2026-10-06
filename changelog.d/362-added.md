@@ -1,1 +1,0 @@
-- **Execution-quality control charts** (`domain/monitoring/control_chart.py`, `application/monitoring/execution_quality.py`): EWMA and CUSUM charts on fee, slippage and latency raise one `AnomalyDetected` warning per breach episode, with no P&L in the inputs and no automatic pause. Closes #362.

@@ -6,11 +6,12 @@ strategy exposes a :class:`StopRecord` for each such bar, and the serve loop
 stores it as a :class:`StopMark` (#388) so the console can show the stop
 history and a restart can hand the last stop back to the strategy.
 
-Record-only: nothing here changes which bars signal (pre-registration v1 §11).
-These rows hold prices, so AI-facing tools must not read them before
-certification (ADR-012 D-02, D-06).
+The stop never moves down while the position is open (#680), so the stored
+stop is the floor the strategy continues from after a restart; that is the
+only way a mark is read back into a decision. These rows hold prices, so
+AI-facing tools must not read them before certification (ADR-012 D-02, D-06).
 
-Reference: GitHub issue #388, openspec/changes/388-stop-marks/change.md.
+Reference: GitHub issues #388 and #680, openspec/changes/388-stop-marks/change.md.
 """
 
 from __future__ import annotations

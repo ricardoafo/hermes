@@ -122,3 +122,31 @@ def test_review_job_can_read_issues() -> None:
     workflow = yaml.safe_load(_WORKFLOW.read_text(encoding="utf-8"))
 
     assert workflow["jobs"]["review"]["permissions"]["issues"] == "read"
+
+
+def _review_steps() -> list[dict[str, Any]]:
+    """Return the review job's steps."""
+    workflow = yaml.safe_load(_WORKFLOW.read_text(encoding="utf-8"))
+    return list(workflow["jobs"]["review"]["steps"])
+
+
+def test_reviewer_gets_no_shell() -> None:
+    """Invariant (#778): the model reads only; no Bash prefix rule it could extend with --output."""
+    review = next(step for step in _review_steps() if step.get("name") == "Review")
+    args = str(review["with"]["claude_args"])
+    allowed = re.search(r'--allowedTools "([^"]*)"', args)
+    denied = re.search(r'--disallowedTools "([^"]*)"', args)
+
+    assert allowed is not None and allowed.group(1) == "Read,Grep,Glob"
+    assert denied is not None and "Bash" in denied.group(1).split(",")
+
+
+def test_pr_agent_settings_are_removed_before_the_review() -> None:
+    """Invariant (#778): the PR's .claude, .mcp.json and CLAUDE.md never reach the reviewer."""
+    names = [str(step.get("name", "")) for step in _review_steps()]
+    remove = names.index("Remove the PR's agent settings from the checkout")
+    run = str(_review_steps()[remove]["run"])
+
+    assert remove < names.index("Review")
+    for target in (".claude", ".mcp.json", "CLAUDE.md", "CLAUDE.local.md"):
+        assert f"-name {target}" in run

@@ -1,22 +1,28 @@
 """Unit tests for :mod:`hermes.infrastructure.sentry_integration`.
 
-Every test protects one invariant of the Sentry SDK wrapper:
+Every test protects one rule of the Sentry SDK wrapper, as documented in the
+module docstring:
 
 - ``initialize`` is a silent no-op when the DSN is empty (integration disabled).
 - ``initialize`` passes hermes-safe defaults to :func:`sentry_sdk.init`.
-- ``initialize`` never raises — SDK failures are caught + logged.
-- ``capture`` ships exceptions with optional structured context via a
-  short-lived scope; SDK failures are swallowed.
-- ``set_correlation_id`` tags the current scope; SDK failures are swallowed.
+- ``initialize``, ``capture`` and ``set_correlation_id`` never raise: an SDK
+  failure is logged as a structured warning instead.
+- ``capture`` ships the exception, with ``extra`` under a per-capture
+  ``structured_context`` that does not leak into the next event.
+- ``set_correlation_id`` tags later events with the correlation ID.
 - Error events carry no credential held in a local variable (#506).
 
-All calls to :mod:`sentry_sdk` are monkeypatched — no real network wire.
+Where the rule is about what reaches Sentry, the real SDK runs and its events
+are kept in memory by a recording transport, so no test touches the network.
+Where the rule is about the options hermes hands the SDK, or about an SDK
+crash, the SDK function is replaced at the module boundary.
 
 Reference: docs/guides/ai-authored-tests.md.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 import httpx
@@ -25,217 +31,269 @@ import respx
 import sentry_sdk
 import sentry_sdk.envelope
 import sentry_sdk.transport
+from structlog.testing import capture_logs
 
 from hermes.adapters.notifier import TelegramAdapter, TelegramConfig, TelegramNotifierError
 from hermes.infrastructure import sentry_integration
 
+_DSN = "https://public@sentry.example.com/1"
 
-class TestInitializeDisabled:
-    """When DSN is empty, ``initialize`` returns without touching the SDK."""
-
-    def test_empty_dsn_is_silent_noop(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Empty DSN → :func:`sentry_sdk.init` is NEVER called."""
-        calls: list[dict[str, Any]] = []
-
-        def _spy_init(**kwargs: Any) -> None:
-            calls.append(kwargs)
-
-        monkeypatch.setattr(sentry_integration.sentry_sdk, "init", _spy_init)
-        sentry_integration.initialize(dsn="", environment="dev")
-        assert calls == []
-
-
-class TestInitializeEnabled:
-    """When DSN is present, ``initialize`` calls the SDK with hermes defaults."""
-
-    def test_valid_dsn_invokes_init_with_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Non-empty DSN → :func:`sentry_sdk.init` invoked with expected kwargs."""
-        captured: dict[str, Any] = {}
-
-        def _spy_init(**kwargs: Any) -> None:
-            captured.update(kwargs)
-
-        monkeypatch.setattr(sentry_integration.sentry_sdk, "init", _spy_init)
-        sentry_integration.initialize(
-            dsn="https://public@sentry.example.com/1",
-            environment="sandbox",
-        )
-        assert captured["dsn"] == "https://public@sentry.example.com/1"
-        assert captured["environment"] == "sandbox"
-        assert captured["send_default_pii"] is False
-        assert captured["traces_sample_rate"] == 0.0
-        assert captured["default_integrations"] is False
-        assert captured["integrations"] == []
-
-    def test_init_failure_is_swallowed(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """SDK init raising → ``initialize`` catches + does not re-raise."""
-
-        def _boom_init(**_kwargs: Any) -> None:
-            raise RuntimeError("simulated SDK init failure")
-
-        monkeypatch.setattr(sentry_integration.sentry_sdk, "init", _boom_init)
-        sentry_integration.initialize(
-            dsn="https://public@sentry.example.com/1",
-            environment="dev",
-        )
-
-
-class TestCaptureHappyPath:
-    """Successful ``capture`` invokes :func:`sentry_sdk.capture_exception`."""
-
-    def test_capture_without_extra_calls_capture_exception(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """``extra=None`` path calls capture_exception directly (no scope push)."""
-        captured: list[Exception] = []
-
-        def _spy_capture(exc: Exception) -> None:
-            captured.append(exc)
-
-        monkeypatch.setattr(sentry_integration.sentry_sdk, "capture_exception", _spy_capture)
-        error = ValueError("boom")
-        sentry_integration.capture(error)
-        assert captured == [error]
-
-    def test_capture_with_extra_pushes_scope_with_context(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """``extra`` payload is set via a per-capture scope, not the global one."""
-        captured: list[Exception] = []
-        context_calls: list[tuple[str, dict[str, Any]]] = []
-
-        class _StubScope:
-            def set_context(self, key: str, value: dict[str, Any]) -> None:
-                context_calls.append((key, value))
-
-        class _StubScopeCM:
-            def __enter__(self) -> _StubScope:
-                return _StubScope()
-
-            def __exit__(self, *_args: object) -> None:
-                return None
-
-        def _spy_capture(exc: Exception) -> None:
-            captured.append(exc)
-
-        monkeypatch.setattr(sentry_integration.sentry_sdk, "capture_exception", _spy_capture)
-
-        def _push_scope() -> _StubScopeCM:
-            return _StubScopeCM()
-
-        monkeypatch.setattr(sentry_integration.sentry_sdk, "push_scope", _push_scope)
-
-        error = RuntimeError("kaboom")
-        sentry_integration.capture(error, extra={"adapter": "telegram", "retries": 2})
-
-        assert captured == [error]
-        assert context_calls == [("structured_context", {"adapter": "telegram", "retries": 2})]
-
-
-class TestCaptureSwallowsSdkFailures:
-    """SDK errors inside ``capture`` never propagate to the caller."""
-
-    def test_capture_exception_error_is_swallowed(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """capture_exception raising → caller sees no exception."""
-
-        def _boom_capture(_exc: Exception) -> None:
-            raise RuntimeError("SDK crashed during capture")
-
-        monkeypatch.setattr(sentry_integration.sentry_sdk, "capture_exception", _boom_capture)
-        sentry_integration.capture(ValueError("original error"))
-
-
-class TestSetCorrelationId:
-    """``set_correlation_id`` tags the current scope; errors swallowed."""
-
-    def test_set_correlation_id_calls_set_tag(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """The correlation_id lands as a tag via :func:`sentry_sdk.set_tag`."""
-        tags: list[tuple[str, str]] = []
-
-        def _spy_set_tag(key: str, value: str) -> None:
-            tags.append((key, value))
-
-        monkeypatch.setattr(sentry_integration.sentry_sdk, "set_tag", _spy_set_tag)
-        sentry_integration.set_correlation_id("ABC123XYZ")
-        assert tags == [("correlation_id", "ABC123XYZ")]
-
-    def test_set_correlation_id_swallows_sdk_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """set_tag raising → caller sees no exception."""
-
-        def _boom_set_tag(_key: str, _value: str) -> None:
-            raise RuntimeError("SDK crashed setting tag")
-
-        monkeypatch.setattr(sentry_integration.sentry_sdk, "set_tag", _boom_set_tag)
-        sentry_integration.set_correlation_id("XYZ789")
+# push_scope is deprecated in sentry-sdk 2.x and the suite turns
+# DeprecationWarning into an error, which capture() catches, so the event
+# would be dropped. Ignored here so the real SDK path can be observed.
+_IGNORE_PUSH_SCOPE_DEPRECATION = pytest.mark.filterwarnings(
+    "ignore:sentry_sdk.push_scope is deprecated:DeprecationWarning"
+)
 
 
 class _RecordingTransport(sentry_sdk.transport.Transport):
-    """Keeps every envelope the SDK would send, serialised, in memory."""
+    """Keeps every envelope the SDK would send, in memory."""
 
     def __init__(self, options: dict[str, Any] | None = None) -> None:
         super().__init__(options)
-        self.payloads: list[str] = []
+        self.envelopes: list[sentry_sdk.envelope.Envelope] = []
 
     def capture_envelope(self, envelope: sentry_sdk.envelope.Envelope) -> None:
-        self.payloads.append(envelope.serialize().decode("utf-8", errors="replace"))
+        self.envelopes.append(envelope)
+
+    def events(self) -> list[dict[str, Any]]:
+        """Return the error events received so far."""
+        return [event for env in self.envelopes if (event := env.get_event()) is not None]
 
 
-class TestEventsCarryNoCredentials:
-    """An error event never carries a credential held in a local variable (#506)."""
+@pytest.fixture
+def recording_sentry(monkeypatch: pytest.MonkeyPatch) -> Iterator[_RecordingTransport]:
+    """Initialise the real SDK through ``initialize`` with an in-memory transport."""
+    transport = _RecordingTransport()
+    real_init = sentry_sdk.init
 
-    def test_initialize_turns_off_local_variables(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """``initialize`` passes ``include_local_variables=False`` to the SDK."""
-        captured: dict[str, Any] = {}
+    def _init_with_transport(**kwargs: Any) -> Any:
+        return real_init(transport=transport, **kwargs)
 
-        def _spy_init(**kwargs: Any) -> None:
-            captured.update(kwargs)
-
-        monkeypatch.setattr(sentry_integration.sentry_sdk, "init", _spy_init)
-        sentry_integration.initialize(dsn="https://public@sentry.example.com/1", environment="dev")
-        assert captured["include_local_variables"] is False
-
-    def test_telegram_failure_event_omits_the_bot_token(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """A failed Telegram send, captured to Sentry, ships no bot token.
-
-        The adapter builds ``url = f"/bot{token}/sendMessage"`` as a local.
-        The real SDK serialises the event through a recording transport
-        (no network); the token must not appear anywhere in it.
-        """
-        token = "987654:SECRET-TOKEN-VALUE"  # noqa: S105  # gitleaks:allow
-        transport = _RecordingTransport()
-        real_init = sentry_sdk.init
-
-        def _init_with_transport(**kwargs: Any) -> Any:
-            return real_init(transport=transport, **kwargs)
-
-        monkeypatch.setattr(sentry_integration.sentry_sdk, "init", _init_with_transport)
-        sentry_integration.initialize(dsn="https://public@sentry.example.com/1", environment="dev")
-        adapter = TelegramAdapter(
-            config=TelegramConfig(bot_token=token, chat_id="-100123"),
-            client=httpx.Client(base_url="https://api.telegram.org", timeout=5.0),
-        )
+    monkeypatch.setattr(sentry_integration.sentry_sdk, "init", _init_with_transport)
+    with sentry_sdk.isolation_scope():
+        sentry_integration.initialize(dsn=_DSN, environment="dev")
         try:
-            with respx.mock() as router:
-                router.post(f"https://api.telegram.org/bot{token}/sendMessage").mock(
-                    return_value=httpx.Response(500, json={"ok": False})
-                )
-                with pytest.raises(TelegramNotifierError) as raised:
-                    adapter.notify_urgent(
-                        event="deploy.done",
-                        correlation_id="01HKQMZXYZ0123456789ABCDEF",
-                        message="deploy shipped",
-                    )
-            sentry_integration.capture(raised.value)
-            sentry_sdk.flush()
+            yield transport
         finally:
             # A bare init(dsn=None) turns on Sentry's default integrations,
             # and their patches outlive the client: the threading one then
             # assigns __traceback__ on frozen-dataclass errors in every later
             # test of this worker (test_notifier_outage_does_not_stop_the_loop).
             real_init(dsn=None, default_integrations=False)
+    assert "threading" not in sentry_sdk.integrations._installed_integrations
 
-        assert len(transport.payloads) == 1
-        assert token not in transport.payloads[0]
-        assert "threading" not in sentry_sdk.integrations._installed_integrations
+
+def _spy_init(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    calls: list[dict[str, Any]] = []
+
+    def _spy(**kwargs: Any) -> None:
+        calls.append(kwargs)
+
+    monkeypatch.setattr(sentry_integration.sentry_sdk, "init", _spy)
+    return calls
+
+
+class TestInitialize:
+    """``initialize`` configures the SDK with hermes-safe options, or not at all."""
+
+    def test_empty_dsn_never_initialises_the_sdk(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """An empty DSN disables Sentry: :func:`sentry_sdk.init` is never called."""
+        calls = _spy_init(monkeypatch)
+
+        sentry_integration.initialize(dsn="", environment="dev")
+
+        assert calls == []
+
+    def test_empty_dsn_logs_nothing(self) -> None:
+        """A disabled Sentry stays silent, so a fresh clone does not log on every command."""
+        with capture_logs() as logs:
+            sentry_integration.initialize(dsn="", environment="dev")
+
+        assert logs == []
+
+    def test_dsn_initialises_the_sdk_with_exactly_the_safe_options(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A DSN initialises the SDK once, with no PII, no locals, no traces, no integrations."""
+        calls = _spy_init(monkeypatch)
+
+        sentry_integration.initialize(dsn=_DSN, environment="sandbox")
+
+        assert calls == [
+            {
+                "dsn": _DSN,
+                "environment": "sandbox",
+                "send_default_pii": False,
+                "include_local_variables": False,
+                "traces_sample_rate": 0.0,
+                "default_integrations": False,
+                "integrations": [],
+            }
+        ]
+
+    def test_sdk_init_failure_is_logged_not_raised(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """An SDK init crash becomes one ``sentry.init.failed`` warning naming the error."""
+
+        def _boom_init(**_kwargs: Any) -> None:
+            raise RuntimeError("simulated SDK init failure")
+
+        monkeypatch.setattr(sentry_integration.sentry_sdk, "init", _boom_init)
+
+        with capture_logs() as logs:
+            sentry_integration.initialize(dsn=_DSN, environment="prod")
+
+        assert logs == [
+            {
+                "event": "sentry.init.failed",
+                "log_level": "warning",
+                "error": "simulated SDK init failure",
+                "error_type": "RuntimeError",
+                "environment": "prod",
+            }
+        ]
+
+
+class TestCapture:
+    """``capture`` ships the exception and its structured context to Sentry."""
+
+    def test_capture_ships_the_exception(self, recording_sentry: _RecordingTransport) -> None:
+        """A captured exception reaches Sentry as one event with its type and message."""
+        sentry_integration.capture(ValueError("price feed stale"))
+        sentry_sdk.flush()
+
+        [event] = recording_sentry.events()
+        [exc] = event["exception"]["values"]
+        assert (exc["type"], exc["value"]) == ("ValueError", "price feed stale")
+
+    def test_capture_tags_the_event_with_the_environment(
+        self, recording_sentry: _RecordingTransport
+    ) -> None:
+        """Events carry the environment passed to ``initialize`` so the UI can filter."""
+        sentry_integration.capture(ValueError("boom"))
+        sentry_sdk.flush()
+
+        [event] = recording_sentry.events()
+        assert event["environment"] == "dev"
+
+    @_IGNORE_PUSH_SCOPE_DEPRECATION
+    def test_extra_lands_under_structured_context(
+        self, recording_sentry: _RecordingTransport
+    ) -> None:
+        """``extra`` is attached to the event under the ``structured_context`` key."""
+        sentry_integration.capture(
+            RuntimeError("kaboom"), extra={"adapter": "telegram", "retry": 2}
+        )
+        sentry_sdk.flush()
+
+        [event] = recording_sentry.events()
+        assert event["contexts"]["structured_context"] == {"adapter": "telegram", "retry": 2}
+
+    @_IGNORE_PUSH_SCOPE_DEPRECATION
+    def test_extra_does_not_leak_into_the_next_event(
+        self, recording_sentry: _RecordingTransport
+    ) -> None:
+        """Context from one capture is gone from the next capture without ``extra``."""
+        sentry_integration.capture(RuntimeError("first"), extra={"adapter": "telegram"})
+        sentry_integration.capture(RuntimeError("second"))
+        sentry_sdk.flush()
+
+        first, second = recording_sentry.events()
+        assert "structured_context" in first["contexts"]
+        assert "structured_context" not in second.get("contexts", {})
+
+    def test_sdk_capture_failure_is_logged_not_raised(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An SDK crash during capture becomes a warning naming both errors."""
+
+        def _boom_capture(_exc: Exception) -> None:
+            raise RuntimeError("SDK crashed during capture")
+
+        monkeypatch.setattr(sentry_integration.sentry_sdk, "capture_exception", _boom_capture)
+
+        with capture_logs() as logs:
+            sentry_integration.capture(ValueError("original error"))
+
+        assert logs == [
+            {
+                "event": "sentry.capture.failed",
+                "log_level": "warning",
+                "error": "SDK crashed during capture",
+                "error_type": "RuntimeError",
+                "original_error": "ValueError",
+            }
+        ]
+
+
+class TestSetCorrelationId:
+    """``set_correlation_id`` tags later events; SDK failures are logged."""
+
+    def test_later_events_carry_the_correlation_id_tag(
+        self, recording_sentry: _RecordingTransport
+    ) -> None:
+        """An event captured after the call carries ``correlation_id=<value>`` as a tag."""
+        sentry_integration.set_correlation_id("01HKQMZXYZ0123456789ABCDEF")
+        sentry_integration.capture(ValueError("boom"))
+        sentry_sdk.flush()
+
+        [event] = recording_sentry.events()
+        assert event["tags"]["correlation_id"] == "01HKQMZXYZ0123456789ABCDEF"
+
+    def test_sdk_set_tag_failure_is_logged_not_raised(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An SDK crash while tagging becomes one ``sentry.set_correlation_id.failed`` warning."""
+
+        def _boom_set_tag(_key: str, _value: str) -> None:
+            raise RuntimeError("SDK crashed setting tag")
+
+        monkeypatch.setattr(sentry_integration.sentry_sdk, "set_tag", _boom_set_tag)
+
+        with capture_logs() as logs:
+            sentry_integration.set_correlation_id("XYZ789")
+
+        assert logs == [
+            {
+                "event": "sentry.set_correlation_id.failed",
+                "log_level": "warning",
+                "error": "SDK crashed setting tag",
+                "error_type": "RuntimeError",
+            }
+        ]
+
+
+class TestEventsCarryNoCredentials:
+    """An error event never carries a credential held in a local variable (#506)."""
+
+    def test_telegram_failure_event_omits_the_bot_token(
+        self, recording_sentry: _RecordingTransport
+    ) -> None:
+        """A failed Telegram send, captured to Sentry, ships no bot token.
+
+        The adapter builds ``url = f"/bot{token}/sendMessage"`` as a local.
+        The real SDK serialises the event through the recording transport
+        (no network); the token must not appear anywhere in it.
+        """
+        token = "987654:SECRET-TOKEN-VALUE"  # noqa: S105  # gitleaks:allow
+        adapter = TelegramAdapter(
+            config=TelegramConfig(bot_token=token, chat_id="-100123"),
+            client=httpx.Client(base_url="https://api.telegram.org", timeout=5.0),
+        )
+        with respx.mock() as router:
+            router.post(f"https://api.telegram.org/bot{token}/sendMessage").mock(
+                return_value=httpx.Response(500, json={"ok": False})
+            )
+            with pytest.raises(TelegramNotifierError) as raised:
+                adapter.notify_urgent(
+                    event="deploy.done",
+                    correlation_id="01HKQMZXYZ0123456789ABCDEF",
+                    message="deploy shipped",
+                )
+        sentry_integration.capture(raised.value)
+        sentry_sdk.flush()
+
+        [envelope] = recording_sentry.envelopes
+        payload = envelope.serialize().decode("utf-8", errors="replace")
+        assert "TelegramNotifierError" in payload
+        assert token not in payload

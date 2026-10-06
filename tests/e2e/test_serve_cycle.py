@@ -104,8 +104,8 @@ EXPECTED_SIGNALS: list[Signal] = [
     ("SOL/USDT", "entry", "2025-01-15T15:59:59.999000+00:00", None),
     ("SOL/USDT", "exit", "2025-01-18T19:59:59.999000+00:00", "chandelier"),
     ("SOL/USDT", "entry", "2025-01-19T07:59:59.999000+00:00", None),
+    ("SOL/USDT", "exit", "2025-01-19T15:59:59.999000+00:00", "chandelier"),
     ("BTC/USDT", "exit", "2025-01-19T23:59:59.999000+00:00", "chandelier"),
-    ("SOL/USDT", "exit", "2025-01-19T23:59:59.999000+00:00", "chandelier"),
     ("BTC/USDT", "entry", "2025-01-20T07:59:59.999000+00:00", None),
     ("BTC/USDT", "exit", "2025-01-20T19:59:59.999000+00:00", "chandelier"),
 ]
@@ -379,9 +379,11 @@ def test_a_skipped_bar_stops_the_loop_and_the_restart_reconciles_the_ledger(
     The first run must fail loudly (exit 1, a BarGapError sent to Sentry) when
     the next BTC 4h bar shows the gap, before recording the stop. Restarting
     from the ledger cursor, as systemd does, must recover the missing bar from
-    warm-up and end with the uninterrupted run's ledger. ETH's entry on the
-    same close was recorded before the failure, so the rows are compared in
-    signal order rather than insertion order.
+    warm-up and end with the uninterrupted run's ledger, less one row. ETH's
+    entry on the same close was recorded before the failure, so the rows are
+    compared in signal order rather than insertion order. With BTC's stop not
+    yet seen, BTC is still held when ETH's entry comes, so sizing refuses it:
+    ETH stays flat and raises no exit on 7 January (#707).
     """
     db = tmp_path / "ledger.sqlite3"
     dropped = bar_at(BTC, KlineInterval.H4, GAP_BAR_OPEN)
@@ -404,7 +406,7 @@ def test_a_skipped_bar_stops_the_loop_and_the_restart_reconciles_the_ledger(
         "sentry": ["BarGapError"],
         "before_restart": [*EXPECTED_SIGNALS[:2], EXPECTED_SIGNALS[3]],
         "second_code": 0,
-        "ledger": EXPECTED_SIGNALS,
+        "ledger": [s for s in EXPECTED_SIGNALS if s[:2] != ("ETH/USDT", "exit")],
         "bar_rows": STREAMS + LIVE_BARS,
     }
 

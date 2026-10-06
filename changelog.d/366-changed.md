@@ -1,1 +1,0 @@
-- ADR-014: the signed pre-registration v1 is the binding gate for real capital — no live capital before the one-shot OOS certification, which cannot run before 2027-01-01. Partially supersedes the real-capital dates in ADR-004 and ADR-006. The forward-testing guardrail (D-8) is recorded as confirmed by the Code Owner.

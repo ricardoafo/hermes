@@ -1,1 +1,0 @@
-- `hermes journal -h` now prints usage and the exit codes and exits 0, and `journal list --json` and `journal due --json` print the entries as one JSON document (#544).
