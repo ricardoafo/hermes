@@ -40,7 +40,7 @@ from hermes.application.console.render import (
     render_positions,
     shadow_test_line,
 )
-from hermes.entrypoints.tui_charts import area_chart, meter, run_bar, spark_text
+from hermes.entrypoints.tui_charts import area_chart, spark_text
 from hermes.entrypoints.tui_theme import (
     COMPACT_BELOW,
     CURVE_ROWS_STANDARD,
@@ -57,6 +57,7 @@ from hermes.entrypoints.tui_theme import (
     WIDE_FROM,
     Tokens,
 )
+from hermes.entrypoints.tui_widgets import Meter
 
 __all__ = [
     "LOGS_DEMO",
@@ -346,7 +347,7 @@ def portfolio_meters(
         ):
             share = value / total if total > 0 else Decimal(0)
             tail = f" {fmt_level(value):>{_FIGURE - 1}} {_pct(share):>{_SHARE - 1}}"
-            bar = meter(float(share), cells, colour=colour, empty=tokens.line)
+            bar = Meter(float(share), width=cells).render(tokens, colour=colour)
             lines.append(_meter_line(label, bar, tail))
     exposure = exposure_share(summary)
     if exposure is None:
@@ -360,17 +361,11 @@ def portfolio_meters(
             )
         )
         return Group(*lines)
-    of_cap = exposure / cap
-    near = of_cap >= Decimal(str(METER_WARN_SHARE))
     tail = f" {_pct(exposure)} of {_pct(cap).replace('.0%', '%')} cap"
     cells = min(cells, max(_MIN_METER, width - _LABEL - len(tail)))
-    bar = (
-        meter(float(of_cap), cells, colour=tokens.warn, empty=tokens.line)
-        if near
-        else meter(float(of_cap), cells, stops=tokens.gain, empty=tokens.line)
-    )
-    line = _meter_line("exposure", bar, "")
-    line.append(tail, style=tokens.warn if near else "")
+    exposure_meter = Meter(float(exposure / cap), width=cells, warn_from=METER_WARN_SHARE)
+    line = _meter_line("exposure", exposure_meter.render(tokens), "")
+    line.append(tail, style=tokens.warn if exposure_meter.warned else "")
     lines.append(line)
     return Group(*lines)
 
@@ -397,12 +392,10 @@ def _stop_room(row: PositionRow, ctx: RenderContext, tokens: Tokens, columns: _R
     """Return the stop-room meter and its words; amber when the stop is within 2 ATR."""
     share = float(stop_room_share(row.stop_price, row.current_price, row.high_since_entry))
     close = cushion_level(row.stop_distance_atr) is not CushionLevel.GREEN
-    if ctx.stale_since is not None:
-        bar = meter(share, columns.meter, colour=tokens.dim, empty=tokens.line)
-    elif close:
-        bar = meter(share, columns.meter, colour=tokens.warn, empty=tokens.line)
-    else:
-        bar = meter(share, columns.meter, stops=tokens.gain, empty=tokens.line)
+    stale = ctx.stale_since is not None
+    bar = Meter(share, width=columns.meter, warn=close).render(
+        tokens, colour=tokens.dim if stale else None
+    )
     word = " stop" if columns.stop_word else ""
     distance = f"{word} {MINUS}{abs(row.stop_distance_pct):.1f}%"
     bar.append(distance, style=tokens.warn if close else tokens.muted)
@@ -570,7 +563,8 @@ def run_line(test: ShadowTest, tokens: Tokens, *, width: int) -> Text:
     if cells < _MIN_RUN_BAR:
         return out
     out.append("  ")
-    out.append_text(run_bar(test.day, test.length_days, cells, tokens))
+    run = Meter(test.day, cap=test.length_days, width=cells)
+    out.append_text(run.render(tokens, stops=tokens.brand))
     share = round(test.day * 100 / test.length_days)
     out.append(f" {share:>3}%", style=tokens.muted)
     return out

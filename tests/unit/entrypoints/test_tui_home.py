@@ -291,6 +291,17 @@ def test_run_line_ends_with_the_bar_and_percentage() -> None:
     ) == (True, True, 5)
 
 
+def test_run_bar_fills_day_over_length_in_the_brand_gradient() -> None:
+    """Day 45 of 90 over 35 cells: 18 full (17.5 rounds to even), the first the first brand stop."""
+    test = ShadowTest(status=ShadowTestStatus.ON_TRACK, day=45, length_days=90)
+    line = run_line(test, BASE, width=80)
+    assert (line.plain[39:74], line.spans[0].start, line.spans[0].style) == (
+        "█" * 18 + "░" * 17,
+        39,
+        "#8BE9FF",
+    )
+
+
 def test_run_line_before_the_start_is_the_words_only() -> None:
     """A test that has not started has no bar."""
     test = ShadowTest(status=ShadowTestStatus.NOT_STARTED, day=None, note="waits on #353")
