@@ -10,14 +10,19 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from datetime import UTC, datetime
 
 import pytest
 
 from hermes.adapters.console import FixtureReadModel
 from hermes.entrypoints import tui as tui_module
 from hermes.entrypoints.tui import HomeApp, run_home
+from hermes.entrypoints.tui_settings import ThemeChoice
+from hermes.entrypoints.tui_theme import NEON
 
 _NOTICE = "new version deployed · press R to restart"
+# 14:12 Madrid: inside Auto's day window, so no night theme flips the colours.
+_FROZEN = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
 
 
 class _Release:
@@ -33,8 +38,14 @@ class _Release:
         return self.name
 
 
-def _app(reader: _Release) -> HomeApp:
-    return HomeApp(FixtureReadModel.load("ok-two-positions"), release=reader)
+def _app(reader: _Release, theme: ThemeChoice | None = None) -> HomeApp:
+    return HomeApp(
+        FixtureReadModel.load("ok-two-positions"),
+        release=reader,
+        clock=lambda: _FROZEN,
+        motion=False,
+        theme=theme,
+    )
 
 
 def test_no_notice_when_the_release_is_unchanged() -> None:
@@ -120,6 +131,65 @@ def test_unknown_release_is_not_a_change() -> None:
             return app.plain_text("notice").strip()
 
     assert asyncio.run(run()) == ""
+
+
+def test_notice_and_restart_work_on_another_tab() -> None:
+    """Invariant: the notice sits above the screens, so tab 2 shows it and R restarts from there."""
+    reader = _Release("aaaaaaaaaaaa")
+
+    async def run() -> tuple[bool, bool]:
+        app = _app(reader)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            await pilot.press("2")
+            reader.name = "bbbbbbbbbbbb"
+            app._redraw()
+            await pilot.pause()
+            shown = app.query_one("#notice").display
+            await pilot.press("r")
+            await pilot.pause()
+        return shown, app.restart_requested
+
+    assert asyncio.run(run()) == (True, True)
+
+
+def test_notice_row_sits_below_the_neon_window_bar_and_the_status_row() -> None:
+    """Invariant: at 80x24 in Neon the notice has its own row, under the status row.
+
+    Rows: window bar 0, tabs 1, status row 2, notice 3, screens from 4.
+    """
+    reader = _Release("aaaaaaaaaaaa")
+
+    async def run() -> tuple[int, ...]:
+        app = _app(reader, ThemeChoice.NEON)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await pilot.pause()
+            reader.name = "bbbbbbbbbbbb"
+            app._redraw()
+            await pilot.pause()
+            rows = (
+                app.query_one(f"#{widget}").region.y
+                for widget in ("window-bar", "top", "notice", "screens")
+            )
+            return (*rows, app.query_one("#notice").region.height)
+
+    assert asyncio.run(run()) == (0, 2, 3, 4, 1)
+
+
+def test_notice_is_drawn_in_the_theme_warn_token() -> None:
+    """Invariant: the notice's text is the theme's amber ``warn`` token, not a raw colour."""
+    reader = _Release("aaaaaaaaaaaa")
+
+    async def run() -> str:
+        app = _app(reader, ThemeChoice.NEON)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await pilot.pause()
+            reader.name = "bbbbbbbbbbbb"
+            app._redraw()
+            await pilot.pause()
+            return app.query_one("#notice").styles.color.hex.upper()
+
+    assert asyncio.run(run()) == NEON.warn.upper()
 
 
 def _fake_run(monkeypatch: pytest.MonkeyPatch, *, restart: bool) -> None:

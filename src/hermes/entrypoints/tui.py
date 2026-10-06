@@ -41,6 +41,8 @@ radar, the count-up and the shimmer) stop with ``HERMES_CONSOLE_MOTION=off``.
 
 When the release the console started on is no longer the current one, a
 persistent notice offers ``R`` to restart onto the new release (issue #652).
+It is an amber ``warn`` row on the panel surface, under the status row and
+above the screens, so it shows on every tab.
 
 Keys: ``1``-``8`` screens, Tab / Shift+Tab cycle them, Ctrl+P command palette,
 ``D`` ``W`` ``M`` ``Y`` range (day, week, month, year), up and down (or ``j``
@@ -185,7 +187,7 @@ _LEFT_IDS: Final = frozenset(
     {"portfolio", "portfolio-curve", "portfolio-meters", "portfolio-books"}
 )
 _THIRD_IDS: Final = frozenset({"signals", "log-tail"})
-_FULL_WIDTH_IDS: Final = frozenset({"shadow", "footer", "footer-status", "countdown"})
+_FULL_WIDTH_IDS: Final = frozenset({"shadow", "footer", "footer-status", "countdown", "notice"})
 _WIDTH_CLASSES: Final = ("-compact", "-standard", "-wide", "-ultra")
 _HEIGHT_CLASSES: Final = ("-short", "-tall", "-towering")
 # Spaces the status row's widgets add around their text (padding, margins).
@@ -418,7 +420,11 @@ class HomeApp(App[None]):
     #theme-chip {{ width: auto; margin-left: 1; }}
     #down-row {{ display: none; height: auto; }}
     #down-row.-down {{ display: block; }}
-    #notice {{ display: none; height: 1; }}
+    #notice {{
+        display: none; height: 1; padding: 0 1;
+        background: $hud-panel; color: $hud-warn; text-style: bold;
+        border-left: outer $hud-warn;
+    }}
     #notice.-on {{ display: block; }}
     #screens {{ height: 1fr; }}
     #tab-1 {{ height: 1fr; }}
@@ -1265,6 +1271,7 @@ class HomeApp(App[None]):
             Text("  ↑ ↓ choose a position · Enter open its detail · Esc back"),
             Text("  A show or fold the 4h check lines in Activity"),
             Text("  L logs · T theme · ? this help · Q quit"),
+            Text("  R restart onto a new version (only while its notice shows)"),
             Text(
                 "This screen is read-only: nothing here changes a position, a stop or the ledger."
             ),

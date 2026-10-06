@@ -6,7 +6,8 @@ ultra), only changes when a reviewer accepts the new picture. Each file is
 named ``<view>_<theme>_<cols>x<rows>.svg`` so a PR body can link it directly.
 
 Views: Home on the ``ok-two-positions`` and ``empty`` demo scenarios, the
-Signals placeholder (tab 2) and the theme picker open over Home.
+Signals placeholder (tab 2), the theme picker open over Home, and Home with
+the new-version notice up after the release changed (issue #652).
 
 Every app here runs with motion off, a frozen clock and synthetic demo data,
 and never reads or writes the real settings file.
@@ -112,4 +113,59 @@ def test_cockpit_svg_snapshot(
     """The reviewed picture of one view, in one theme, at one spec breakpoint."""
     name = f"{view}_{theme_name}_{size[0]}x{size[1]}"
     svg = _svg(scenario, keys, size, theme)
+    assert svg == snapshot(extension_class=_NamedSVG, name=name)
+
+
+class _FlippingRelease:
+    """A release reader that reports a new release once ``deploy`` is called."""
+
+    def __init__(self) -> None:
+        self.name = "1.0.0-shadow.1"
+
+    def __call__(self) -> str:
+        return self.name
+
+    def deploy(self) -> None:
+        self.name = "1.0.0-shadow.2"
+
+
+def _notice_svg(size: tuple[int, int], theme: ThemeChoice) -> str:
+    async def drive() -> str:
+        release = _FlippingRelease()
+        app = HomeApp(
+            FixtureReadModel.load("ok-two-positions"),
+            release=release,
+            clock=lambda: _FROZEN,
+            motion=False,
+            settings_path=None,
+            theme=theme,
+            refresh_seconds=3600,
+        )
+        async with app.run_test(size=size) as pilot:
+            await pilot.pause()
+            release.deploy()
+            app._redraw()
+            await pilot.pause()
+            return _repo_clean(app.export_screenshot())
+
+    return asyncio.run(drive())
+
+
+_NOTICE_CASES = [
+    pytest.param(theme_name, theme, size, id=f"notice_new_version_{theme_name}_{size[0]}x{size[1]}")
+    for theme_name, theme in _THEMES
+    for size in _SIZES
+]
+
+
+@pytest.mark.parametrize(("theme_name", "theme", "size"), _NOTICE_CASES)
+def test_new_version_notice_svg_snapshot(
+    snapshot: SnapshotAssertion,
+    theme_name: str,
+    theme: ThemeChoice,
+    size: tuple[int, int],
+) -> None:
+    """The reviewed picture of the amber new-version notice under the status row (issue #652)."""
+    name = f"notice_new_version_{theme_name}_{size[0]}x{size[1]}"
+    svg = _notice_svg(size, theme)
     assert svg == snapshot(extension_class=_NamedSVG, name=name)
