@@ -17,7 +17,8 @@ Invariants:
 - on Home the positions detail is a ``DetailPane`` when wide and a
   ``DetailScreen`` on compact terminals, with its content unchanged.
 
-Every app here gets a frozen clock and motion off.
+Every app here gets a frozen clock and motion off; the SVG pictures live in
+``test_tui_snapshots.py`` (``drill_position_*`` and ``drill_breadcrumb_*``).
 """
 
 # ruff: noqa: RUF001, RUF002 - the single right angle quote is the design spec's breadcrumb separator
@@ -32,8 +33,6 @@ from hypothesis import given
 from hypothesis import strategies as st
 from rich.cells import cell_len
 from rich.text import Text
-from syrupy.assertion import SnapshotAssertion
-from syrupy.extensions.image import SVGImageSnapshotExtension
 from textual.app import App, ComposeResult
 from textual.command import CommandPalette
 from textual.pilot import Pilot
@@ -58,11 +57,6 @@ from hermes.entrypoints.tui_theme import BASE, theme_variables
 
 _FROZEN = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
 _ITEMS = ("2bc2798", "9f01a3c", "77de210")
-
-
-def _repo_clean(svg: str) -> str:
-    """Strip trailing whitespace, as the repository's pre-commit hook does to committed SVGs."""
-    return "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
 
 
 def _screen_text(app: App[None]) -> str:
@@ -455,6 +449,7 @@ def _home[T](
             FixtureReadModel.load("ok-two-positions"),
             clock=lambda: _FROZEN,
             motion=False,
+            settings_path=None,
             refresh_seconds=3600,
         )
         async with app.run_test(size=size) as pilot:
@@ -482,6 +477,41 @@ def test_home_wide_enter_opens_the_pane_beside_the_list() -> None:
         return app.query_one("#detail-panel", DetailPane).is_open, len(app.screen_stack)
 
     assert _home(probe, size=(160, 45)) == (True, 1)
+
+
+def test_home_from_100_columns_opens_the_pane_not_a_screen() -> None:
+    """At 100 columns Home has two columns, so Enter opens the pane, not a screen."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[bool, int]:
+        await _press(pilot, ["enter"])
+        return app.query_one("#detail-panel", DetailPane).is_open, len(app.screen_stack)
+
+    assert _home(probe, size=(100, 30)) == (True, 1)
+
+
+def test_backspace_closes_the_home_pane_like_escape() -> None:
+    """Backspace closes the open DetailPane on Home and stays on Home."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[bool, bool, int]:
+        await _press(pilot, ["enter"])
+        opened = app.query_one("#detail-panel", DetailPane).is_open
+        await _press(pilot, ["backspace"])
+        return opened, app.query_one("#detail-panel", DetailPane).is_open, app.tab
+
+    assert _home(probe, size=(160, 45)) == (True, False, 0)
+
+
+def test_help_names_the_drill_down_keys() -> None:
+    """Help lists Backspace as back and [ ] as previous / next inside a detail screen."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[bool, bool]:
+        await _press(pilot, ["question_mark"])
+        text = _screen_text(app)
+        return "Esc or Backspace back" in text, (
+            "[ ] previous / next item inside a detail screen" in text
+        )
+
+    assert _home(probe, size=(120, 36)) == (True, True)
 
 
 def test_home_detail_content_is_the_same_as_a_pane_or_a_screen() -> None:
@@ -538,26 +568,3 @@ def test_home_list_state_carries_the_cursor() -> None:
         return saved, app.list_state().cursor
 
     assert _home(probe) == (ListState(cursor="ETH"), "SOL")
-
-
-# ----------------------------------------------------------------------
-# Snapshots (motion off, frozen clock)
-# ----------------------------------------------------------------------
-
-
-def _svg(keys: Sequence[str], size: tuple[int, int]) -> str:
-    async def probe(app: HomeApp, pilot: Pilot[None]) -> str:
-        await _press(pilot, keys)
-        return _repo_clean(app.export_screenshot())
-
-    return _home(probe, size=size)
-
-
-def test_svg_snapshot_detail_screen_80x24(snapshot: SnapshotAssertion) -> None:
-    """The reviewed 80x24 position DetailScreen: breadcrumb, framed detail, footer chips."""
-    assert _svg(["enter"], (80, 24)) == snapshot(extension_class=SVGImageSnapshotExtension)
-
-
-def test_svg_snapshot_detail_pane_160x45(snapshot: SnapshotAssertion) -> None:
-    """The reviewed 160x45 home with the position DetailPane open beside the list."""
-    assert _svg(["enter"], (160, 45)) == snapshot(extension_class=SVGImageSnapshotExtension)

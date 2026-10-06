@@ -6,7 +6,11 @@ ultra), only changes when a reviewer accepts the new picture. Each file is
 named ``<view>_<theme>_<cols>x<rows>.svg`` so a PR body can link it directly.
 
 Views: Home on the ``ok-two-positions`` and ``empty`` demo scenarios, the
-Signals placeholder (tab 2) and the theme picker open over Home.
+Signals placeholder (tab 2), the theme picker open over Home, and the position
+drill-down (issue #730): ``drill_position`` is Enter on the first position (the
+detail pane beside the list from 100 columns, a detail screen at 80), and
+``drill_breadcrumb`` is the detail screen with its breadcrumb after ``]``,
+opened at 80x24 and then widened to the size in its name.
 
 Every app here runs with motion off, a frozen clock and synthetic demo data,
 and never reads or writes the real settings file.
@@ -37,11 +41,18 @@ _THEMES: tuple[tuple[str, ThemeChoice], ...] = (
     ("neon", ThemeChoice.NEON),
     ("control", ThemeChoice.CONTROL),
 )
+_COMPACT: tuple[int, int] = (80, 24)
 _VIEWS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("home_ok", "ok-two-positions", ()),
     ("home_empty", "empty", ()),
     ("tab2_placeholder", "ok-two-positions", ("2",)),
     ("theme_picker", "ok-two-positions", ("t",)),
+    ("drill_position", "ok-two-positions", ("enter",)),
+)
+# Views opened at the compact size (where Enter opens a detail screen) and then
+# widened, so the screen and its breadcrumb are pictured at every breakpoint.
+_OPENED_COMPACT: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("drill_breadcrumb", "ok-two-positions", ("enter", "right_square_bracket")),
 )
 
 
@@ -63,7 +74,14 @@ def _repo_clean(svg: str) -> str:
     return "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
 
 
-def _svg(scenario: str, keys: Sequence[str], size: tuple[int, int], theme: ThemeChoice) -> str:
+def _svg(
+    scenario: str,
+    keys: Sequence[str],
+    size: tuple[int, int],
+    theme: ThemeChoice,
+    *,
+    open_at: tuple[int, int] | None = None,
+) -> str:
     async def drive() -> str:
         app = HomeApp(
             FixtureReadModel.load(scenario),
@@ -73,10 +91,13 @@ def _svg(scenario: str, keys: Sequence[str], size: tuple[int, int], theme: Theme
             theme=theme,
             refresh_seconds=3600,
         )
-        async with app.run_test(size=size) as pilot:
+        async with app.run_test(size=open_at or size) as pilot:
             await pilot.pause()
             for key in keys:
                 await pilot.press(key)
+                await pilot.pause()
+            if open_at is not None:
+                await pilot.resize_terminal(*size)
                 await pilot.pause()
             return _repo_clean(app.export_screenshot())
 
@@ -91,15 +112,19 @@ _CASES = [
         theme_name,
         theme,
         size,
+        open_at,
         id=f"{view}_{theme_name}_{size[0]}x{size[1]}",
     )
-    for view, scenario, keys in _VIEWS
+    for views, open_at in ((_VIEWS, None), (_OPENED_COMPACT, _COMPACT))
+    for view, scenario, keys in views
     for theme_name, theme in _THEMES
     for size in _SIZES
 ]
 
 
-@pytest.mark.parametrize(("view", "scenario", "keys", "theme_name", "theme", "size"), _CASES)
+@pytest.mark.parametrize(
+    ("view", "scenario", "keys", "theme_name", "theme", "size", "open_at"), _CASES
+)
 def test_cockpit_svg_snapshot(
     snapshot: SnapshotAssertion,
     view: str,
@@ -108,8 +133,9 @@ def test_cockpit_svg_snapshot(
     theme_name: str,
     theme: ThemeChoice,
     size: tuple[int, int],
+    open_at: tuple[int, int] | None,
 ) -> None:
     """The reviewed picture of one view, in one theme, at one spec breakpoint."""
     name = f"{view}_{theme_name}_{size[0]}x{size[1]}"
-    svg = _svg(scenario, keys, size, theme)
+    svg = _svg(scenario, keys, size, theme, open_at=open_at)
     assert svg == snapshot(extension_class=_NamedSVG, name=name)
