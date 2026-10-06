@@ -3,7 +3,8 @@
 The loop does what the serve loop does per bar (mark the portfolio, ask the
 strategy) and hands every in-window signal to the
 :class:`~hermes.application.execution.kernel.FillKernel`; an entry it does not
-fill returns the strategy to flat, as in serve (#707). The only
+fill returns the strategy to flat, as in serve (#707), and so does an entry
+signalled during warm-up, which is never executed (#723). The only
 backtest-specific part is the order book: Binance Vision has no depth, so each
 signal gets a synthetic book whose touch sits at the pre-registered execution
 price (pre-registration §5.3, §6.2):
@@ -88,7 +89,9 @@ def replay(
     """Replay ``bars`` (already in delivery order) through the strategy and kernel.
 
     Bars before ``window_start`` warm the strategy up; their signals are not
-    executed. Every bar marks the portfolio before the strategy sees it, as
+    executed. A warm-up entry is handled like a refused entry, so the strategy
+    is flat when the window starts (#723); a warm-up exit changes nothing.
+    Every bar marks the portfolio before the strategy sees it, as
     the serve loop does.
 
     Args:
@@ -111,7 +114,11 @@ def replay(
     for bar in bars:
         tracker.mark(bar)
         signal = strategy.on_bar(bar, tracker.state())
-        if signal is not None and signal.signal_time >= window_start:
+        if signal is not None and signal.signal_time < window_start:
+            # A warm-up signal is never executed, so its entry counts as refused
+            # and the window starts flat (#723, pre-registration §4).
+            sync_after_signal(strategy, signal, filled=False)
+        elif signal is not None:
             run.signals_seen += 1
             filled = _execute(
                 run,

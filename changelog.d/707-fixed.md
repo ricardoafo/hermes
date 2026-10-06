@@ -1,1 +1,0 @@
-- **Shadow loop and backtest**: an entry that is not filled (stale book, exposure cap, a risk or kill halt, no book) now leaves the strategy flat for that pair, also after a restart, so it no longer signals and notifies an exit for a position it never held and can enter that pair again (#707).

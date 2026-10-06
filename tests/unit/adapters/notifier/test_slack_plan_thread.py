@@ -112,10 +112,14 @@ def test_failed_reply_raises_the_notifier_error_after_the_parent_posted(
                 httpx.Response(200, json=_RECORDED_REJECTION),
             ]
         )
-        with pytest.raises(SlackNotifierError, match="ratelimited"):
+        with pytest.raises(SlackNotifierError) as excinfo:
             adapter.notify(samples()["signal-entry"])
 
-    assert route.call_count == 2
+    assert (str(excinfo.value), route.call_count) == (
+        "Slack notifier error: Slack API rejected /api/chat.postMessage: "
+        "{'ok': False, 'error': 'ratelimited'}",
+        2,
+    )
 
 
 def test_failed_reply_logs_a_warning_without_the_message_text(adapter: SlackAdapter) -> None:
@@ -127,7 +131,7 @@ def test_failed_reply_logs_a_warning_without_the_message_text(adapter: SlackAdap
                 httpx.Response(500, text="boom"),
             ]
         )
-        with pytest.raises(SlackNotifierError):
+        with pytest.raises(SlackNotifierError, match=r"HTTP 500 from /api/chat\.postMessage: boom"):
             adapter.notify(samples()["signal-entry"])
 
     warnings = [entry for entry in logs if entry["event"] == "slack_plan_reply_failed"]
@@ -166,6 +170,26 @@ def test_parent_without_a_ts_cannot_be_threaded_and_raises(adapter: SlackAdapter
             adapter.notify(samples()["signal-entry"])
 
     assert (route.call_count, [e["event"] for e in logs]) == (1, ["slack_plan_reply_failed"])
+
+
+def test_non_string_parent_ts_is_logged_as_no_thread(adapter: SlackAdapter) -> None:
+    """A ts that is not a string is not threaded under and is logged as no thread at all."""
+    with respx.mock() as router, capture_logs() as logs:
+        router.post(_POST_MESSAGE_URL).mock(
+            return_value=httpx.Response(200, json={"ok": True, "ts": 1759660800})
+        )
+        with pytest.raises(SlackNotifierError, match="no ts to thread the plan under"):
+            adapter.notify(samples()["signal-entry"])
+
+    assert logs == [
+        {
+            "event": "slack_plan_reply_failed",
+            "log_level": "warning",
+            "channel": _CHANNEL,
+            "thread_ts": None,
+            "error_type": "SlackNotifierError",
+        }
+    ]
 
 
 def test_failed_parent_behaves_as_before_and_posts_no_reply(adapter: SlackAdapter) -> None:

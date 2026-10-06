@@ -70,22 +70,21 @@ feat/fix/refactor/perf, not a hard requirement.
 
 ## Aggregation
 
-At release cut:
+Fragments are compiled when a version is cut (ADR-022), by the release-cut
+script, from a fresh branch off `main`:
 
 ```bash
-uv run python scripts/dev/aggregate-changelog.py --apply
+uv run python scripts/dev/cut-release.py 1.0.0-shadow.1
 ```
 
-- With `--apply`: rewrites the `[Unreleased]` block of `CHANGELOG.md` in
-  place, merging all fragments under their sections.
-- Without `--apply`: prints the merged `[Unreleased]` block to stdout for
-  review.
+It merges the hand-written `[Unreleased]` entries and every numbered or
+orphan fragment into a dated `## [<version>] - <date>` section under a fresh
+empty `[Unreleased]`, deletes the compiled fragments, sets the version and
+writes the release PR body. `--dry-run` prints the new section and changes
+nothing.
 
-After a successful release cut, delete the aggregated fragments:
-
-```bash
-rm changelog.d/*-{added,changed,deprecated,removed,fixed,security}.md    changelog.d/+*.{added,changed,deprecated,removed,fixed,security}.md
-```
+`scripts/dev/aggregate-changelog.py` still prints the merged fragments for
+review; the release-cut script uses it to read them.
 
 Legacy placeholder fragments (`wave-*.md`) are NOT deleted; they are
 visible only to humans reading the directory.

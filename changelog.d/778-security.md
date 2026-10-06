@@ -1,1 +1,0 @@
-- The AI reviewer can no longer write files, load a PR's own agent settings, pass the check on a PR that changes the review or merge gates, take over another person's comment, or render links and images from model text (#778).
