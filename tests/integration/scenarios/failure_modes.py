@@ -33,6 +33,7 @@ _REPLAY = _I + "adapters/market_data/test_binance_live_klines_replay.py::"
 _DEPTH = _U + "adapters/market_data/test_binance_depth_snapshot.py::"
 _FX = _U + "adapters/fx/test_frankfurter.py::"
 _LOOP = _I + "entrypoints/test_serve_bar_loop.py::"
+_CHAOS = _S + "test_chaos_crash_mid_bar.py::"
 _FILLS = _I + "entrypoints/test_serve_fills.py::"
 _SERVE = _U + "entrypoints/test_serve.py::"
 _UNITS = _U + "deploy/test_systemd_units.py::"
@@ -480,16 +481,27 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "A crash after the signal row means the trade is never pushed",
-            gap="issue #854: the restart sees the signal as old; inferred",
+            proved_by=(
+                _CHAOS + "test_a_crash_mid_bar_does_not_lose_the_entry_push",
+                _CHAOS + "test_a_crash_between_the_push_and_its_record_pushes_the_entry_once_more",
+            ),
         ),
         FailureMode(
             "A non-infrastructure error in the notifier stops serve after the fill",
-            gap="issue #854: only InfraError is isolated; inferred",
+            proved_by=(
+                _LOOP
+                + "test_a_notifier_bug_does_not_stop_serve_and_the_push_is_retried_on_the_next_bar",
+                _LOOP + "test_a_settled_push_is_not_retried_after_a_restart",
+                _U
+                + "application/test_signal_notifier.py::"
+                + "test_a_non_infra_exception_is_isolated_and_the_fan_out_goes_on",
+            ),
         ),
         FailureMode(
             "A signal is pushed twice after a crash",
             proved_by=(
                 _LOOP + "test_crash_between_signal_row_and_cursor_row_does_not_notify_twice",
+                _CHAOS + "test_a_crash_mid_bar_does_not_lose_the_entry_push",
             ),
         ),
         FailureMode(
