@@ -14,14 +14,17 @@ import asyncio
 import hashlib
 import io
 import json
+import shutil
 from datetime import timedelta
 from pathlib import Path
 
 import pytest
 
+from hermes.adapters.console.ledger_read_model import LedgerReadModel
 from hermes.application.console import ConsoleReadModel
 from hermes.entrypoints.activity import run_activity
 from hermes.entrypoints.commands.tui import run_tui
+from hermes.entrypoints.console import shadow_sources
 from hermes.entrypoints.tui import HomeApp
 from tests.unit.adapters.console._ledger_builder import T0, home_ledger
 
@@ -29,6 +32,12 @@ pytestmark = pytest.mark.integration
 
 _READ_AT = T0 + timedelta(hours=9)
 _CARDS = ("demo-tag", "portfolio", "positions", "shadow")
+_RECORD = (
+    Path(__file__).resolve().parents[2]
+    / "fixtures"
+    / "shadow_runs"
+    / "swing-donchian-4h-20261015T000000Z.json"
+)
 
 
 @pytest.fixture
@@ -75,9 +84,10 @@ def test_activity_missing_ledger_exits_3(tmp_path: Path) -> None:
     )
 
 
-def _home_texts(model: ConsoleReadModel) -> dict[str, str]:
+def _home_texts(model: ConsoleReadModel, ledger: Path | None = None) -> dict[str, str]:
     async def drive() -> dict[str, str]:
-        app = HomeApp(model)
+        sources = None if ledger is None else shadow_sources(model, env={}, db_path=ledger)
+        app = HomeApp(model, shadow=sources)
         async with app.run_test(size=(80, 24)) as pilot:
             await pilot.pause()
             return {card: app.plain_text(card) for card in _CARDS}
@@ -86,7 +96,11 @@ def _home_texts(model: ConsoleReadModel) -> dict[str, str]:
 
 
 def test_tui_runs_live_on_the_ledger(ledger: Path) -> None:
-    """``hermes tui --db`` shows the EUR total, the seed line, the position and the 90-day line."""
+    """``hermes tui --db`` shows the EUR total, the seed line, the position and the 90-day line.
+
+    The ledger has a seed but no ``hermes shadow-start`` record beside it, so
+    under ADR-021 the 90-day line reads the warm-up (issue #718).
+    """
     seen: dict[str, str] = {}
 
     def runner(model: ConsoleReadModel) -> None:
@@ -98,8 +112,21 @@ def test_tui_runs_live_on_the_ledger(ledger: Path) -> None:
     assert seen["portfolio"].splitlines()[0].startswith("€4,078.76 at ECB rate, 1 Oct   ")
     assert "started 5,000 USDT (€4,000.00 at ECB rate, 1 Oct)" in seen["portfolio"]
     assert "BTC" in seen["positions"]
-    assert seen["shadow"].strip().startswith("Shadow test · day ")
+    assert seen["shadow"].strip() == "Shadow test · warm-up · not counting"
     assert hashlib.sha256(ledger.read_bytes()).hexdigest() == before
+
+
+def test_tui_counts_from_the_day_zero_record_beside_the_ledger(ledger: Path) -> None:
+    """A ``runs/`` record of the roster's strategy next to the ledger starts the count (#718).
+
+    The record is read from the file format ``hermes shadow-start`` writes
+    (issue #797); the roster is the repository's ``config/strategies.yaml``.
+    """
+    runs = ledger.parent / "runs"
+    runs.mkdir()
+    shutil.copy(_RECORD, runs / _RECORD.name)
+    seen = _home_texts(LedgerReadModel.open(ledger), ledger)
+    assert seen["shadow"].strip().startswith("Shadow test · day ")
 
 
 def test_tui_on_an_unpriced_ledger_shows_eur_pending(tmp_path: Path) -> None:
