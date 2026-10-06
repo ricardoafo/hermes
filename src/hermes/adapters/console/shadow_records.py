@@ -152,6 +152,11 @@ class RunsDirectory:
         """Remember the directory; nothing is read until asked."""
         self._dir = runs_dir
 
+    @property
+    def directory(self) -> Path:
+        """Return the directory the records are read from."""
+        return self._dir
+
     def latest_run(self, strategy_id: str) -> ShadowRunRecord | None:
         """Return the record of ``strategy_id`` with the latest day 0.
 

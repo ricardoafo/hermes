@@ -204,7 +204,7 @@ def test_big_total_counts_up_with_motion_on() -> None:
     model = _Growing()
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[str, str, str]:
-        big = app.query_one(BigNumber)
+        big = app.query_one("#portfolio-total", BigNumber)
         before = big.value
         model.grown = True
         app._redraw()
@@ -223,7 +223,7 @@ def test_big_total_jumps_with_motion_off_and_never_shimmers() -> None:
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[str, float | None]:
         del pilot
-        big = app.query_one(BigNumber)
+        big = app.query_one("#portfolio-total", BigNumber)
         model.grown = True
         app._redraw()
         big.start_shimmer()
@@ -236,7 +236,7 @@ def test_shimmer_pass_moves_along_the_underline_and_ends() -> None:
     """A shimmer pass moves along the underline, leaves the digits one colour, and ends."""
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[bool, set[str], float | None]:
-        big = app.query_one(BigNumber)
+        big = app.query_one("#portfolio-total", BigNumber)
         big.start_shimmer()
         await pilot.pause(0.3)
         moving = big.shimmer_at is not None and big.shimmer_at > 0
@@ -280,7 +280,7 @@ def test_big_number_digits_are_one_full_contrast_colour(
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[set[str], str, int]:
         del pilot
-        big = app.query_one(BigNumber)
+        big = app.query_one("#portfolio-total", BigNumber)
         rows = big.render().plain.split("\n")
         return _digit_styles(big), rows[3], len(rows[0])
 
@@ -294,7 +294,7 @@ def test_compact_width_keeps_the_plain_bold_total() -> None:
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[bool, str]:
         del pilot
         first = app.plain_text("portfolio").splitlines()[0]
-        return app.query_one(BigNumber).display, first
+        return app.query_one("#portfolio-total", BigNumber).display, first
 
     shown, first = _run(_fixture(), probe, size=(80, 40))
     assert (shown, first.startswith("€1,021.06   ▲")) == (False, True)

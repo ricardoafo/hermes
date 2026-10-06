@@ -8,7 +8,10 @@ Invariants:
 - the environment variable only feeds console commands, and the flag wins;
 - without a demo there is no live console source yet;
 - the Home exposure cap is the roster's pre-registered value, or ``None`` when
-  the roster cannot say one cap (#712).
+  the roster cannot say one cap (#712);
+- the Shadow test (issue #718) reads the first enabled strategy's day-0
+  record from the ``runs`` directory beside the ledger, and the notebook
+  shipped with the release.
 """
 
 from __future__ import annotations
@@ -16,11 +19,15 @@ from __future__ import annotations
 import io
 from decimal import Decimal
 from pathlib import Path
+from typing import cast
 
 import pytest
 
-from hermes.adapters.console import UnknownScenarioError
+from hermes.adapters.console import FixtureReadModel, UnknownScenarioError
+from hermes.adapters.console.ledger_read_model import LedgerReadModel
+from hermes.adapters.console.shadow_records import RunsDirectory
 from hermes.application.console import ConsoleReadModel
+from hermes.application.console.shadow_screen import ShadowSources
 from hermes.entrypoints import cli as cli_module
 from hermes.entrypoints.commands import Command
 from hermes.entrypoints.commands.tui import run_tui
@@ -28,8 +35,11 @@ from hermes.entrypoints.console import (
     DEMO_ENV_VAR,
     DemoFlagError,
     LiveReadModelUnavailableError,
+    lab_notebook_path,
     resolve_read_model,
     roster_exposure_cap,
+    roster_strategy_id,
+    shadow_sources,
     split_demo_flag,
 )
 
@@ -247,3 +257,53 @@ def test_exposure_cap_is_unknown_without_a_roster(tmp_path: Path) -> None:
     absent = roster_exposure_cap({"HERMES_CONFIG_DIR": str(tmp_path)})
     present = roster_exposure_cap(_roster(tmp_path, ("swing", "1.0", "0.12")))
     assert (absent, present) == (None, Decimal("0.12"))
+
+
+def test_roster_strategy_is_the_first_enabled_one(tmp_path: Path) -> None:
+    """The Shadow test reads the day-0 record of the strategy serve trades: the first enabled."""
+    two = _roster(tmp_path / "two", ("a", "0.5", "0.15"), ("b", "0.5", "0.15"))
+    repo_config = Path(__file__).parents[3] / "config"
+    assert (
+        roster_strategy_id(two),
+        roster_strategy_id({"HERMES_CONFIG_DIR": str(repo_config)}),
+        roster_strategy_id({"HERMES_CONFIG_DIR": str(tmp_path / "none")}),
+    ) == ("a", "swing-donchian-4h", None)
+
+
+def test_lab_notebook_is_found_up_the_tree_or_none(tmp_path: Path) -> None:
+    """The notebook is found from any folder below the release root; elsewhere it is None."""
+    notebook = tmp_path / "release" / "docs" / "experiments" / "swing-mvp1" / "lab-notebook.md"
+    notebook.parent.mkdir(parents=True)
+    notebook.write_text("## Entries\n", encoding="utf-8")
+    deep = tmp_path / "release" / "src" / "hermes"
+    deep.mkdir(parents=True)
+    (tmp_path / "bare").mkdir()
+    assert (lab_notebook_path(deep), lab_notebook_path(tmp_path / "bare")) == (
+        notebook.resolve(),
+        None,
+    )
+
+
+def test_shadow_sources_follow_the_read_model(tmp_path: Path) -> None:
+    """A demo serves its own shadow data; a ledger reads runs/ beside it; others read nothing."""
+    demo = FixtureReadModel.load("empty")
+    ledger_path = tmp_path / "data" / "hermes.sqlite3"
+    ledger_path.parent.mkdir()
+    ledger_path.write_bytes(b"")
+    ledger = LedgerReadModel.open(ledger_path)
+    env = _roster(tmp_path / "config", ("swing", "1.0", "0.15"))
+    from_demo = shadow_sources(demo, env=env)
+    from_ledger = shadow_sources(ledger, env=env, db_path=ledger_path)
+    runs = from_ledger.runs
+    assert isinstance(runs, RunsDirectory)
+    assert (
+        (from_demo.evidence, from_demo.runs, from_demo.notebook),
+        (from_ledger.evidence, from_ledger.strategy_id),
+        runs.directory,
+        shadow_sources(cast("ConsoleReadModel", object()), env=env),
+    ) == (
+        (demo, demo, demo),
+        (ledger, "swing"),
+        tmp_path / "data" / "runs",
+        ShadowSources(),
+    )

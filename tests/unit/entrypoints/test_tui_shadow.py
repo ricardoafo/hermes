@@ -5,7 +5,7 @@ Invariants:
 - the hero's figure is ``N / 90`` with the day capped at 90, and none during
   the warm-up (whose days never get the big number);
 - the hero bar is the shared run bar: the same cells as the bottom 90-day
-  line for the same day;
+  line for the same day, and its fill never shrinks as the day grows;
 - month ticks mark each first of a month inside the run; the warm-up marks
   days 30, 60 and 90;
 - each check row shows a glyph, its name and only pass, fail or pending, in
@@ -26,6 +26,8 @@ from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 from rich.console import Console, RenderableType
 from textual.pilot import Pilot
 
@@ -300,3 +302,16 @@ def test_unreadable_record_turns_the_hero_into_one_line() -> None:
 def test_day_counts_up_and_ninety_plus_holds_at_ninety() -> None:
     """Days past 90 never show more than 90 / 90 on the hero."""
     assert day_figure(_screen(90 + 4, day_zero_at=_DAY0 - timedelta(days=94))) == "90 / 90"
+
+
+@given(
+    st.integers(min_value=-10, max_value=200),
+    st.integers(min_value=0, max_value=200),
+    st.integers(min_value=1, max_value=200),
+)
+def test_run_bar_fill_is_monotonic_in_the_day(day: int, step: int, width: int) -> None:
+    """A later day never fills fewer cells of the hero bar, and the bar keeps its width."""
+    earlier = run_bar(day, 90, BASE, width=width).plain
+    later = run_bar(day + step, 90, BASE, width=width).plain
+    assert (len(earlier), len(later)) == (width, width)
+    assert earlier.count("█") <= later.count("█") <= width
