@@ -153,6 +153,25 @@ def test_notice_and_restart_work_on_another_tab() -> None:
     assert asyncio.run(run()) == (True, True)
 
 
+def test_r_under_the_help_screen_does_not_restart() -> None:
+    """Invariant: with help open over the console, R neither quits nor flags a restart."""
+    reader = _Release("aaaaaaaaaaaa")
+
+    async def run() -> tuple[bool, bool]:
+        app = _app(reader)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            reader.name = "bbbbbbbbbbbb"
+            app._redraw()
+            await pilot.press("question_mark")
+            await pilot.pause()
+            await pilot.press("r")
+            await pilot.pause()
+            return app.restart_requested, app.is_running
+
+    assert asyncio.run(run()) == (False, True)
+
+
 def test_notice_row_sits_below_the_neon_window_bar_and_the_status_row() -> None:
     """Invariant: at 80x24 in Neon the notice has its own row, under the status row.
 
