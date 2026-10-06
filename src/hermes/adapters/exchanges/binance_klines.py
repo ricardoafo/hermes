@@ -340,8 +340,15 @@ def _from_epoch_ms(ms: int) -> datetime:
 
     Returns:
         UTC-aware datetime.
+
+    Raises:
+        hermes.domain.errors.ExchangeError: ``ms`` is outside the calendar
+            ``datetime`` supports.
     """
-    return datetime.fromtimestamp(ms / _MS_PER_SECOND, tz=UTC)
+    try:
+        return datetime.fromtimestamp(ms / _MS_PER_SECOND, tz=UTC)
+    except (OverflowError, OSError, ValueError) as exc:
+        raise ExchangeError(f"klines timestamp out of range: {ms}") from exc
 
 
 def _decimal_or_raise(raw: object, *, field_name: str) -> Decimal:
@@ -361,9 +368,12 @@ def _decimal_or_raise(raw: object, *, field_name: str) -> Decimal:
     if not isinstance(raw, (str, int, float)):
         raise ExchangeError(f"klines row field {field_name!r} not string/numeric: {raw!r}")
     try:
-        return Decimal(str(raw))
+        value = Decimal(str(raw))
     except InvalidOperation as exc:
         raise ExchangeError(f"klines row field {field_name!r} is not a decimal: {raw!r}") from exc
+    if not value.is_finite():
+        raise ExchangeError(f"klines row field {field_name!r} is not a finite number: {raw!r}")
+    return value
 
 
 def _row_to_kline(
