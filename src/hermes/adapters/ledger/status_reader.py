@@ -251,6 +251,40 @@ class SqliteStatusReader:
         """
         return latest_anomaly(self._conn, CLOCK_SKEW_SOURCE)
 
+    def bar_check_seconds(self, limit: int) -> tuple[Decimal, ...]:
+        """Return how many seconds after each bar's close its check was recorded.
+
+        The console's System screen draws these as the bar-check time
+        sparkline (issue #717). ``BarProcessed.occurred_at`` is the bar's
+        close and ``recorded_at`` the wall clock when the row was written, so
+        the gap is the time the loop took to fetch, check and record the bar.
+
+        Args:
+            limit: How many of the newest bar checks to return.
+
+        Returns:
+            Whole seconds, oldest first; empty when no bar was checked yet.
+
+        Raises:
+            LedgerError: On any SQLite read failure or an unreadable time.
+        """
+        try:
+            rows = self._conn.execute(
+                "SELECT occurred_at, recorded_at FROM events "
+                "WHERE event_type = 'BarProcessed' ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"bar_check_seconds failed: {exc}") from exc
+        try:
+            gaps = [
+                datetime.fromisoformat(recorded) - datetime.fromisoformat(occurred)
+                for occurred, recorded in rows
+            ]
+        except (TypeError, ValueError) as exc:
+            raise LedgerError(msg=f"bar_check_seconds: unreadable time: {exc}") from exc
+        return tuple(Decimal(int(gap.total_seconds())) for gap in reversed(gaps))
+
     def _fetchone(self, sql: str, params: tuple[str, ...]) -> tuple[str | int | None, ...] | None:
         """Run one read query and return its first row."""
         try:
