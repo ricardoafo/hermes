@@ -506,7 +506,7 @@ main() {
             - "$DB" < "$SCRIPT_DIR/schema_guard.py" || guard_rc=$?
         case $guard_rc in
             0) ;;
-            1) die "release $sha cannot read the events in $DB: not deploying it" ;;
+            3) die "release $sha cannot read the events in $DB: not deploying it" ;;
             *) die "the schema guard failed to run (exit $guard_rc): not deploying $sha" ;;
         esac
     fi
