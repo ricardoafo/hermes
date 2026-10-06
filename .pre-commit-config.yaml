@@ -323,3 +323,10 @@ repos:
         language: system
         files: ^scripts/dev/changed-tests\.sh$
         pass_filenames: false
+
+      - id: hook-coverage-check-self-test
+        name: hook-coverage-check self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 uv run python scripts/dev/hook-coverage-check.py'
+        language: system
+        files: ^scripts/dev/hook-coverage-check\.py$
+        pass_filenames: false
