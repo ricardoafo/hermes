@@ -58,6 +58,13 @@ Do not report style that ruff, mypy or the other CI gates already
 enforce. Do not invent problems to look thorough: an empty findings
 list is a good outcome.
 
+Hermes runs on Python 3.14 only (`requires-python = ">=3.14,<3.15"`).
+Judge syntax against 3.14, not an older Python you remember. For
+example, `except A, B:` without parentheses is valid (PEP 758). Before
+calling anything a syntax error, check that 3.14 really rejects it. CI
+imports and type-checks every file, so a real syntax error fails CI
+before you see it.
+
 ## Verdict
 
 - `approve`: no blocking finding. Rick can approve without reading code.
