@@ -6,12 +6,16 @@ Invariants:
 - an unknown or missing scenario is a usage error (exit 2);
 - ``--demo`` never reaches a non-console command such as ``serve``;
 - the environment variable only feeds console commands, and the flag wins;
-- without a demo there is no live console source yet.
+- without a demo there is no live console source yet;
+- the Home exposure cap is the roster's pre-registered value, or ``None`` when
+  the roster cannot say one cap (#712).
 """
 
 from __future__ import annotations
 
 import io
+from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
@@ -25,6 +29,7 @@ from hermes.entrypoints.console import (
     DemoFlagError,
     LiveReadModelUnavailableError,
     resolve_read_model,
+    roster_exposure_cap,
     split_demo_flag,
 )
 
@@ -194,3 +199,51 @@ def test_tui_help_prints_usage_and_exit_codes_without_starting_the_app(flag: str
         True,
         True,
     )
+
+
+_STRATEGY = """
+  - name: {name}
+    enabled: true
+    weight: "{weight}"
+    capital_budget: "5000"
+    quote: USDT
+    sizing:
+      risk_pct: "0.01"
+      max_position_pct: "0.05"
+      max_total_exposure_pct: "{cap}"
+"""
+
+
+def _roster(tmp_path: Path, *entries: tuple[str, str, str]) -> dict[str, str]:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    body = "strategies:" + "".join(
+        _STRATEGY.format(name=name, weight=weight, cap=cap) for name, weight, cap in entries
+    )
+    (tmp_path / "strategies.yaml").write_text(body, encoding="utf-8")
+    return {"HERMES_CONFIG_DIR": str(tmp_path)}
+
+
+def test_exposure_cap_is_read_from_the_roster(tmp_path: Path) -> None:
+    """A roster whose strategy caps exposure at 0.2 gives 0.2: the figure comes from the file."""
+    env = _roster(tmp_path, ("swing", "1.0", "0.2"))
+    assert roster_exposure_cap(env) == Decimal("0.2")
+
+
+def test_exposure_cap_of_the_repository_roster() -> None:
+    """The shipped roster (pre-registration §5.5) caps exposure at 15%."""
+    repo_config = Path(__file__).parents[3] / "config"
+    assert roster_exposure_cap({"HERMES_CONFIG_DIR": str(repo_config)}) == Decimal("0.15")
+
+
+def test_exposure_cap_is_unknown_when_caps_differ(tmp_path: Path) -> None:
+    """Two enabled strategies with different caps give no cap; with equal caps, that cap."""
+    differ = _roster(tmp_path / "differ", ("a", "0.5", "0.15"), ("b", "0.5", "0.10"))
+    agree = _roster(tmp_path / "agree", ("a", "0.5", "0.15"), ("b", "0.5", "0.15"))
+    assert (roster_exposure_cap(differ), roster_exposure_cap(agree)) == (None, Decimal("0.15"))
+
+
+def test_exposure_cap_is_unknown_without_a_roster(tmp_path: Path) -> None:
+    """No strategies.yaml in the config dir: None, never a guess; adding one gives its cap."""
+    absent = roster_exposure_cap({"HERMES_CONFIG_DIR": str(tmp_path)})
+    present = roster_exposure_cap(_roster(tmp_path, ("swing", "1.0", "0.12")))
+    assert (absent, present) == (None, Decimal("0.12"))

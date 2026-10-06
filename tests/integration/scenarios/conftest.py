@@ -96,6 +96,7 @@ def run_scenario(tmp_path: Path) -> Iterator[RunScenario]:
         book_outages: list[tuple[datetime, datetime]] | None = None,
         book_step_bps: Decimal = Decimal(1),
         late_bars: list[tuple[Pair, KlineInterval, datetime, datetime]] | None = None,
+        corrupt_bars: list[tuple[Pair, KlineInterval, datetime, datetime, datetime]] | None = None,
         fx_down: bool = False,
         notifier_error: Exception | None = None,
     ) -> Run:
@@ -108,6 +109,7 @@ def run_scenario(tmp_path: Path) -> Iterator[RunScenario]:
                 book_outages=book_outages,
                 book_step_bps=book_step_bps,
                 late_bars=late_bars,
+                corrupt_bars=corrupt_bars,
                 fx_down=fx_down,
                 notifier_error=notifier_error,
             )

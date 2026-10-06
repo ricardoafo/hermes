@@ -70,8 +70,7 @@ def _print_top_help(stream: Any, commands: dict[str, Command]) -> None:
         "",
         "Commands:",
     ]
-    for name in sorted(commands):
-        lines.append(f"  {name:{width}s}  {commands[name].summary}")
+    lines.extend(f"  {name:{width}s}  {commands[name].summary}" for name in sorted(commands))
     lines.append("")
     lines.append("Options:")
     lines.append("  --demo SCENARIO  Show console screens on demo data (DEMO DATA tag).")

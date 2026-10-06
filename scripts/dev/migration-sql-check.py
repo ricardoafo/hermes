@@ -38,7 +38,9 @@ _LEGACY_NAME = re.compile(r"^000[1-6]_[a-z0-9_]+\.sql$")
 _LINE_COMMENT = re.compile(r"--[^\n]*")
 _BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
 _STRING = re.compile(r"'(?:[^']|'')*'")
-_TRIGGER = re.compile(r"\bCREATE\s+(?:TEMP\w*\s+)?TRIGGER\b.*?\bBEGIN\b.*?\bEND\s*;", re.I | re.S)
+_TRIGGER = re.compile(
+    r"\bCREATE\s+(?:TEMP\w*\s+)?TRIGGER\b.*?\bBEGIN\b.*?\bEND\s*;", re.IGNORECASE | re.DOTALL
+)
 _TRANSACTION = re.compile(
     r"^(?:BEGIN(?:\s+(?:DEFERRED|IMMEDIATE|EXCLUSIVE))?(?:\s+TRANSACTION)?"
     r"|COMMIT(?:\s+TRANSACTION)?"
@@ -46,7 +48,7 @@ _TRANSACTION = re.compile(
     r"|ROLLBACK\b.*"
     r"|SAVEPOINT\b.*"
     r"|RELEASE\b.*)$",
-    re.I | re.S,
+    re.IGNORECASE | re.DOTALL,
 )
 
 
@@ -77,11 +79,11 @@ def check(paths: list[Path]) -> list[str]:
         bad_name = name_violation(path)
         if bad_name:
             problems.append(bad_name)
-        for statement in transaction_statements(path.read_text(encoding="utf-8")):
-            problems.append(
-                f"{path}: '{statement}' controls the transaction; the runner wraps each "
-                "migration in one transaction, so remove it"
-            )
+        problems.extend(
+            f"{path}: '{statement}' controls the transaction; the runner wraps each "
+            "migration in one transaction, so remove it"
+            for statement in transaction_statements(path.read_text(encoding="utf-8"))
+        )
     return problems
 
 
