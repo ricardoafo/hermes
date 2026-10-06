@@ -6,6 +6,8 @@
 **Supersedes**: none. It builds on [ADR-010](adr-010-dependency-management-and-supply-chain.md) (supply chain),
 [ADR-014](adr-014-pre-registration-binds-real-capital.md) (real capital) and ADR-018 (CI/CD infrastructure, where the
 runner isolation decisions live).
+**Superseded in part by**: [ADR-020](adr-020-read-only-exchange-query-keys.md) (Decision 2 and §Exchange API keys,
+"Until MVP2": a read-only query key for contract tests is allowed)
 
 ---
 
