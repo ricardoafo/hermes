@@ -87,3 +87,15 @@ class StrategyPort(Protocol):
                 ledger, or ``None`` when flat.
         """
         ...  # pragma: no cover
+
+    def restore_position(self, open_position: OpenPosition | None) -> None:
+        """Set the adapter's position to the one the portfolio holds.
+
+        Called after a signal the executor did not fill, so the adapter's
+        view matches the portfolio again (#707). Touches no bar history and
+        never returns a signal.
+
+        Args:
+            open_position: The position held, or ``None`` when flat.
+        """
+        ...  # pragma: no cover

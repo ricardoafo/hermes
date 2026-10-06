@@ -29,7 +29,14 @@ from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.domain.value_objects.weight import Weight
 
-__all__ = ["BTC_USDT", "CORRELATION_ID", "NOON_SATURDAY_UTC", "STRATEGY", "samples"]
+__all__ = [
+    "BTC_USDT",
+    "CORRELATION_ID",
+    "EXIT_REASONS",
+    "NOON_SATURDAY_UTC",
+    "STRATEGY",
+    "samples",
+]
 
 NOON_SATURDAY_UTC = datetime(2026, 10, 3, 12, 0, 0, tzinfo=UTC)
 """Saturday 14:00 in Madrid (CEST, UTC+2)."""
@@ -52,7 +59,11 @@ def _entry() -> SignalEmitted:
     )
 
 
-def _exit() -> SignalEmitted:
+EXIT_REASONS = ("chandelier", "time_stop", "regime_break")
+"""Every exit reason the swing strategy emits (pre-registration §5.2), in its own words."""
+
+
+def _exit(reason: str = "chandelier") -> SignalEmitted:
     return SignalEmitted(
         occurred_at=NOON_SATURDAY_UTC,
         correlation_id=CORRELATION_ID,
@@ -63,7 +74,7 @@ def _exit() -> SignalEmitted:
         entry_price=Decimal("52410.2"),
         stop_price=Decimal("54100"),
         atr_context=Decimal("1052"),
-        exit_reason="trailing_stop",
+        exit_reason=reason,
     )
 
 
@@ -170,7 +181,7 @@ def samples() -> dict[str, DomainEvent]:
     """Return one fixed sample per notifiable event, keyed by a snapshot-friendly name.
 
     Returns:
-        Entry and exit signals, fill, rejection, pause (critical and
+        Entry signal, an exit signal per exit reason, fill, rejection, pause (critical and
         warning), resume, anomaly (critical and info), low balance,
         rebalance heads-up and daily digest.
 
@@ -178,6 +189,8 @@ def samples() -> dict[str, DomainEvent]:
     return {
         "signal-entry": _entry(),
         "signal-exit": _exit(),
+        "signal-exit-time-stop": _exit("time_stop"),
+        "signal-exit-regime-break": _exit("regime_break"),
         "position-large": _fill(),
         "trade-rejected": _rejected(),
         "strategy-paused-critical": _paused(AnomalySeverity.CRITICAL),

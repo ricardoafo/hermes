@@ -1,1 +1,0 @@
-- `hermes --help` now lists every command that accepts `--json` (activity, config, failover-check, health, journal, ledger, logs, money, positions, reconcile, runners, status, tax, version), built from the command registry instead of a hand-kept list that had fallen behind.
