@@ -1,1 +1,0 @@
-- vps-diagnose prints one plain Sentry line (`CONFIGURED`, `NOT_CONFIGURED` or `FAIL`), and `deploy/README.md` documents the prod Sentry alert rule to Slack `#hermes-reports` (#381).

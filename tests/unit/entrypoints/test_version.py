@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pytest
 
+import hermes
 from hermes.adapters.ledger.migration_runner import MIGRATIONS_DIR, apply_migrations
 from hermes.entrypoints import cli
 from hermes.entrypoints import version as version_module
@@ -68,7 +69,7 @@ def test_python_and_package_version_fields(tmp_path: Path) -> None:
     """The Python field is the running interpreter; the package version is non-empty."""
     info = version_module.collect_info(db=tmp_path / "none.db", release_link=tmp_path / "c")
     assert info.python == platform.python_version()
-    assert info.version == "0.0.0"
+    assert info.version == hermes.__version__
 
 
 def test_package_version_unknown_when_not_installed(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -129,7 +130,7 @@ def test_plain_output_has_four_lines_and_exits_zero(tmp_path: Path) -> None:
     code, text = _run(["--db", str(tmp_path / "none.db")], _link(tmp_path))
     assert code == 0
     assert text == (
-        "hermes 0.0.0\n"
+        f"hermes {hermes.__version__}\n"
         "release: abc123def456\n"
         f"python: {platform.python_version()}\n"
         "ledger: no ledger\n"
@@ -141,7 +142,7 @@ def test_json_output_is_one_document(tmp_path: Path) -> None:
     code, text = _run(["--db", str(tmp_path / "none.db"), "--json"], tmp_path / "current")
     assert code == 0
     assert json.loads(text) == {
-        "version": "0.0.0",
+        "version": hermes.__version__,
         "release": "unknown",
         "python": platform.python_version(),
         "ledger": "no ledger",
@@ -168,7 +169,7 @@ def test_cli_version_flags_print_plain_report(flag: str) -> None:
     """`hermes --version` and `-V` delegate to the version command's plain output."""
     out = io.StringIO()
     assert cli.main([flag], stream=out) == 0
-    assert out.getvalue().splitlines()[0] == "hermes 0.0.0"
+    assert out.getvalue().splitlines()[0] == f"hermes {hermes.__version__}"
 
 
 def test_command_is_registered_and_runs(tmp_path: Path) -> None:
