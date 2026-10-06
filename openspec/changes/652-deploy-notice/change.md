@@ -18,11 +18,13 @@ onto the new release. Main risk: a re-exec that loops or loses arguments.
 
 - `HomeApp` notice row, R binding, `run_home` re-exec (`src/hermes/entrypoints/tui.py`).
 - Unit tests with a fake release reader and an injected exec function.
+- The notice in the Cockpit theme tokens (issue #711), SVG snapshots in Neon
+  and Control room at the four spec sizes, and `design-check.md`.
 
 ### Out
 
 - The release-prune guard in the install script (issue #655, deploy owners).
-- Restyling (issue #711).
+- The System screen's MVP2 `R` action key (issue #717).
 
 ## Decisions
 
@@ -47,6 +49,13 @@ onto the new release. Main risk: a re-exec that loops or loses arguments.
 - **Rationale**: Textual restores the terminal before exec; env is inherited by `execv`.
 - **Cost of reversal**: LOW.
 
+### D-4: An amber row in the theme tokens, above the screens
+
+- **Decision**: `#notice` is one row on `$hud-panel` with bold `$hud-warn` text and a `$hud-warn` left edge, between the status row (and the down row) and the screens.
+- **Alternatives**: a toast (fades while old code keeps running); a full `HudPanel` frame (three rows at 80x24); a Rich style from the token sheet (needs a repaint on every theme switch).
+- **Rationale**: TCSS variables follow the theme by themselves; one row costs the least height and shows on every tab.
+- **Cost of reversal**: LOW.
+
 ## Requirements
 
 ### R-1: Notice on change
@@ -57,9 +66,14 @@ onto the new release. Main risk: a re-exec that loops or loses arguments.
 
 - **A-2.1**: same test file covers exec argv, no exec on plain quit, Windows message, reader errors.
 
+### R-3: Themed, on every tab, clear of the chrome
+
+- **A-3.1**: `uv run pytest -q tests/unit/entrypoints/test_tui_snapshots.py -k notice` passes 8 snapshots.
+- **A-3.2**: the deploy-notice tests cover tab 2, the help screen, the row placement and the `warn` colour.
+
 ## Design
 
-`HomeApp._release_changed()` returns whether the current name differs from the
+`HomeApp._release_changed(current)` returns whether the current name differs from the
 baseline; `_redraw` toggles `#notice`; `action_restart` quits when the notice is up.
 `run_home(..., exec_fn=os.execv, argv=None, platform=sys.platform)`.
 
