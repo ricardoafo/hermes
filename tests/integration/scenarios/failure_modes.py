@@ -47,6 +47,7 @@ _FIFO = _U + "domain/lots/test_eur_fifo.py::"
 _WIRE = _U + "adapters/test_wire_numbers.py::"
 _PATHS = _S + "test_generated_paths.py::"
 _EVERY_BAR = _PATHS + "test_every_rule_holds_after_every_bar_and_a_restart_changes_nothing"
+_META = _I + "metamorphic/test_backtest_relations.py::"
 
 
 @dataclass(frozen=True)
@@ -77,6 +78,7 @@ AREAS = (
     "notifications",
     "risk halts",
     "money",
+    "backtest and replay",
 )
 
 CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
@@ -603,6 +605,69 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         FailureMode(
             "The portfolio and the ledger lots drift apart in a run",
             gap="issue #358: no scenario compares tracker cash with the USDT lots after serve",
+        ),
+        FailureMode(
+            "Splitting a sale in two changes the tax lots or the total gain",
+            proved_by=(_FIFO + "test_splitting_a_sale_in_two_changes_no_lot_and_no_total_gain",),
+        ),
+        FailureMode(
+            "EUR values do not scale with the prices behind them",
+            proved_by=(
+                _FIFO + "test_scaling_every_price_and_fee_by_k_scales_every_eur_value_by_k",
+            ),
+        ),
+        FailureMode(
+            "A tax lot loses, makes up or double-sells units",
+            proved_by=(_FIFO + "test_every_unit_bought_is_either_consumed_once_or_still_open",),
+        ),
+    ),
+    "backtest and replay": (
+        FailureMode(
+            "Two runs of one path write different ledgers",
+            proved_by=(_META + "test_the_same_seed_twice_gives_a_byte_identical_ledger",),
+        ),
+        FailureMode(
+            "A restart between two halves of a run changes its trades",
+            proved_by=(_META + "test_ninety_days_equal_forty_five_plus_forty_five_with_a_restart",),
+        ),
+        FailureMode(
+            "A pair that never signals changes another pair's trades",
+            proved_by=(
+                _META + "test_adding_a_pair_that_never_signals_changes_nothing_for_the_others",
+            ),
+        ),
+        FailureMode(
+            "The order of the pairs in the config changes the trades",
+            proved_by=(_META + "test_reordering_the_pairs_in_the_config_changes_nothing",),
+        ),
+        FailureMode(
+            "The calendar date of a path, not its bars, changes the trades",
+            proved_by=(
+                _META + "test_shifting_a_path_by_whole_days_shifts_every_trade_by_the_same_time",
+            ),
+        ),
+        FailureMode(
+            "The price level, not the moves, changes quantities or P&L",
+            proved_by=(
+                _META
+                + "test_scaling_prices_and_capital_by_k_scales_money_by_k_and_keeps_quantities",
+            ),
+        ),
+        FailureMode(
+            "A decision reads a bar that has not closed yet (lookahead)",
+            proved_by=(_META + "test_cutting_the_data_after_a_bar_changes_no_decision_up_to_it",),
+        ),
+        FailureMode(
+            "Warm-up past the strategy's buffers changes a decision",
+            proved_by=(_META + "test_more_warm_up_than_the_indicators_need_changes_no_decision",),
+        ),
+        FailureMode(
+            "Warm-up at the configured floor of 200 daily bars decides otherwise than 300",
+            gap=(
+                "issue #880: reproduced, the EMA(200) is seeded from the oldest buffered "
+                "closes; strict xfail "
+                "test_the_configured_floor_of_200_daily_bars_decides_what_300_decide"
+            ),
         ),
     ),
 }
