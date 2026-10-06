@@ -25,6 +25,8 @@ from tests.support.serve_loop import events
 pytestmark = pytest.mark.integration
 
 _OUTAGE = timedelta(minutes=10)
+_DECADE = timedelta(days=3650)
+"""Long enough that a late bar is never shown within a run: the exchange never publishes it."""
 
 
 def _first_close_at(scenario: markets.Scenario, close: Decimal) -> datetime:
@@ -108,6 +110,33 @@ def test_a_bar_published_after_the_next_one_stops_serve_and_a_restart_handles_it
     second = run_scenario(scenario, live_from=shown + timedelta(hours=1))
     assert (first.exit_code, "BarGapError" in failure[0], second.exit_code) == (1, True, 0)
     assert _btc_4h_handled(second).count(late.close_time) == 1
+
+
+def test_a_bar_that_is_never_published_stops_serve_once_and_the_restart_passes_over_it(
+    run_scenario: RunScenario,
+) -> None:
+    """Issue #852: a candle the exchange never publishes cannot crash-loop serve.
+
+    The live feed delivers past the hole, serve refuses the next bar and exits
+    1 as for a late bar. The restart's warm-up still lacks the bar, so instead
+    of exiting again (five times, then systemd gives up and the open position
+    has no exit watching it) serve reports the gap once and goes on: the
+    position bought on the breakout is still sold by its exit rule.
+    """
+    scenario = markets.chandelier_exit()
+    missing = _bar_after(scenario, scenario.breakout_at)
+    never = [(markets.BTC, KlineInterval.H4, missing.open_time, missing.close_time + _DECADE)]
+    first = run_scenario(scenario, late_bars=never)
+    restarted = run_scenario(
+        scenario, live_from=missing.close_time + timedelta(hours=9), late_bars=never
+    )
+    assert (
+        first.exit_code,
+        restarted.exit_code,
+        len(restarted.log_events("serve.bar.gap_passed_over")),
+        missing.close_time in _btc_4h_handled(restarted),
+        outline(restarted.db)["trades"],
+    ) == (1, 0, 1, False, [("BTC/USDT", "BUY"), ("BTC/USDT", "SELL")])
 
 
 def test_a_closed_bar_with_a_nan_close_stops_serve_loudly_and_a_restart_handles_it(

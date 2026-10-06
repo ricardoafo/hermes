@@ -342,8 +342,14 @@ def test_first_boot_notifies_nothing_and_writes_the_cursor(tmp_path: Path) -> No
     ) == (0, [], h4_bar(10).close_time, d1_bar(11).close_time)
 
 
-def test_cursor_older_than_history_exits_one(tmp_path: Path, captured: list[Exception]) -> None:
-    """A cursor that predates the warm-up window means bars were lost: BarGapError, exit 1."""
+def test_cursor_older_than_history_reports_the_lost_bars_and_carries_on(
+    tmp_path: Path, captured: list[Exception]
+) -> None:
+    """Downtime past the warm-up window loses bars for good: report them once, then go on.
+
+    Exiting instead would fail every boot the same way, since no history can
+    bring those bars back (#852).
+    """
     db = tmp_path / "ledger.sqlite3"
     connection = sqlite3.connect(db)
     SqliteLedger(connection).append_event(
@@ -354,7 +360,11 @@ def test_cursor_older_than_history_exits_one(tmp_path: Path, captured: list[Exce
 
     code = run_once(build(db, feed, _after(10)), feed)
 
-    assert (code, [type(e) for e in captured]) == (1, [serve_module.BarGapError])
+    assert (code, [type(e) for e in captured], _cursor(db, KlineInterval.H4)) == (
+        0,
+        [serve_module.BarGapError],
+        h4_bar(10).close_time,
+    )
 
 
 def test_bar_gap_exits_one(tmp_path: Path, captured: list[Exception]) -> None:

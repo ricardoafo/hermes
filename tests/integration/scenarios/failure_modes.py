@@ -96,11 +96,16 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "A candle is never published",
-            gap="issue #852: serve exits 1 on every boot and systemd gives up (reproduced)",
+            proved_by=(
+                _FAULTS + "test_a_bar_that_is_never_published_stops_serve_once"
+                "_and_the_restart_passes_over_it",
+            ),
         ),
         FailureMode(
             "Serve was down longer than the warm-up window",
-            gap="issue #852: the cursor is older than the history, so every boot exits 1",
+            proved_by=(
+                _LOOP + "test_cursor_older_than_history_reports_the_lost_bars_and_carries_on",
+            ),
         ),
         FailureMode(
             "A bar is published late but in time",
