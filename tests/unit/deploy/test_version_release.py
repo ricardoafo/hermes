@@ -4,6 +4,8 @@ Protects what CD tags after a deploy:
 - A cut version yields its v<release> tag and that version's changelog section.
 - The tag targets the commit that first shipped the version, so one version
   names one build, even when the version deployed before CD could tag it.
+- A commit is a version's first deploy only until a commit of that version ships,
+  which is what DEPLOY_ON=version deploys (ADR-022 §6).
 - An uncut version yields nothing to tag.
 - Any problem yields nothing to tag and exit 0, so a deploy never fails on it.
 - The script runs with the standard library alone, before ``uv sync``.
@@ -98,6 +100,7 @@ def test_a_cut_shadow_version_is_described_for_tagging(tmp_path: Path) -> None:
         "name": "hermes v1.0.0-shadow.1",
         "body": "### Added\n\n- First feature.\n",
         "target": cut,
+        "first_deploy": True,
     }
 
 
@@ -132,6 +135,50 @@ def test_a_deploy_of_an_older_version_is_not_a_target(tmp_path: Path) -> None:
     now = _commit(root, "1.0.0a1", "cut, deploying now")
 
     assert version_release.describe(root, now)["target"] == now
+
+
+def test_a_version_that_shipped_is_no_longer_a_first_deploy(tmp_path: Path) -> None:
+    """Once a commit of the version deployed, later commits of it are not first deploys."""
+    root = _repo(tmp_path)
+    _deployed(root, _commit(root, "1.0.0a1", "cut"))
+    now = _commit(root, "1.0.0a1", "fix merged after the cut")
+
+    assert version_release.describe(root, now)["first_deploy"] is False
+
+
+def test_a_cut_whose_deploy_failed_is_still_a_first_deploy(tmp_path: Path) -> None:
+    """A failed deploy writes no deploy tag, so the next commit of the version still ships."""
+    root = _repo(tmp_path)
+    _deployed(root, _commit(root, "0.0.0", "before"))
+    _commit(root, "1.0.0a1", "cut, deploy rolled back")
+    now = _commit(root, "1.0.0a1", "the fix")
+
+    assert version_release.describe(root, now)["first_deploy"] is True
+
+
+def test_an_existing_version_tag_means_the_version_shipped(tmp_path: Path) -> None:
+    """A v<release> tag already in the repository is never deployed over again."""
+    root = _repo(tmp_path)
+    cut = _commit(root, "1.0.0a1", "cut")
+    _git(root, "tag", "v1.0.0-shadow.1", cut)
+    now = _commit(root, "1.0.0a1", "later")
+
+    assert version_release.describe(root, now)["first_deploy"] is False
+
+
+def test_a_new_cut_after_a_shipped_version_is_a_first_deploy(tmp_path: Path) -> None:
+    """Cutting the next version makes its commit deployable again."""
+    changelog = _CHANGELOG.replace(
+        "## [1.0.0-shadow.1]", "## [1.0.0-shadow.2] - 2026-10-20\n\n- Next.\n\n## [1.0.0-shadow.1]"
+    )
+    root = _repo(tmp_path, changelog)
+    _deployed(root, _commit(root, "1.0.0a1", "first cut"))
+    _git(root, "tag", "v1.0.0-shadow.1", "HEAD")
+    now = _commit(root, "1.0.0a2", "second cut")
+
+    described = version_release.describe(root, now)
+
+    assert (described["tag"], described["first_deploy"]) == ("v1.0.0-shadow.2", True)
 
 
 def test_an_uncut_version_has_nothing_to_tag(tmp_path: Path) -> None:
