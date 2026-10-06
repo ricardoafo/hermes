@@ -54,7 +54,7 @@ from hermes.application.console.views import (
     WatchedPair,
 )
 from hermes.domain.errors import LedgerError
-from hermes.domain.market_data.bar_schedule import interval_duration
+from hermes.domain.market_data.bar_schedule import interval_duration, next_boundary
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.infrastructure.time import now_utc
 
@@ -69,6 +69,7 @@ ACTIVITY_WINDOW: Final = timedelta(days=7)
 _NO_BOOK: Final = "the portfolio is not available yet: no portfolio mark or capital seed"
 
 _ONE_MS: Final = timedelta(milliseconds=1)
+_FIRST_CHECK_INTERVAL: Final = KlineInterval.H4
 _ZERO: Final = Decimal(0)
 _OK: Final = "ok"
 
@@ -164,8 +165,11 @@ class LedgerReadModel:
             (),
         )
         if not rows:
+            # No bar check yet: the first one is due at the next boundary of the
+            # strategy's timeframe, not "now" (which would read "due" at once).
+            first = next_boundary(as_of.astimezone(UTC), _FIRST_CHECK_INTERVAL)
             return Heartbeat(
-                state=HeartbeatState.OK, as_of=as_of, last_check_at=as_of, next_check_at=as_of
+                state=HeartbeatState.OK, as_of=as_of, last_check_at=as_of, next_check_at=first
             )
         try:
             boundaries = [
