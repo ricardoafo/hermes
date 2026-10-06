@@ -30,6 +30,7 @@ from hermes.application.console.format import (
     signed_eur,
     sparkline,
     stop_bar,
+    stop_room_share,
 )
 
 _amounts = st.decimals(min_value=-1_000_000, max_value=1_000_000, places=4, allow_nan=False)
@@ -166,6 +167,15 @@ def test_stop_bar_keeps_its_width(stop: Decimal, current: Decimal, gap: Decimal)
 def test_stop_bar_fill_is_the_share_of_cushion_left() -> None:
     """Three quarters of the way from stop to high fills six of eight cells."""
     assert stop_bar(Decimal(100), Decimal(175), Decimal(200)) == "▕██████░░▏"
+
+
+def test_stop_room_share_is_the_room_left_up_to_the_high() -> None:
+    """Room left is (current - stop) / (high - stop), clamped; a stop at the high is all room."""
+    assert (
+        stop_room_share(Decimal(100), Decimal(175), Decimal(200)),
+        stop_room_share(Decimal(100), Decimal(250), Decimal(200)),
+        stop_room_share(Decimal(100), Decimal(101), Decimal(100)),
+    ) == (Decimal("0.75"), Decimal(1), Decimal(1))
 
 
 def test_stop_bar_is_empty_at_or_below_the_stop() -> None:

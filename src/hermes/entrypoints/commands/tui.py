@@ -15,6 +15,7 @@ from hermes.entrypoints.console import (
     LiveReadModelUnavailableError,
     recent_journal_lines,
     resolve_read_model,
+    roster_exposure_cap,
 )
 from hermes.entrypoints.tui_settings import (
     DEFAULT_SETTINGS_PATH,
@@ -95,12 +96,15 @@ def run_tui(
     if runner is None:
         from hermes.entrypoints.tui import run_home  # noqa: PLC0415 - Textual is slow to import
 
+        cap = roster_exposure_cap(env or {})
+
         def runner(read_model: ConsoleReadModel) -> None:
             run_home(
                 read_model,
                 journal=recent_journal_lines,
                 release=_release_name,
                 settings_path=settings_path,
+                exposure_cap=cap,
             )
 
     runner(model)
