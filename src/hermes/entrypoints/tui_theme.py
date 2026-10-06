@@ -37,6 +37,12 @@ __all__ = [
     "CONTROL_ROOM",
     "CONTROL_THEME",
     "HORIZONTAL_BREAKPOINTS",
+    "METER_CAP_LEFT",
+    "METER_CAP_RIGHT",
+    "METER_CELLS",
+    "METER_EMPTY",
+    "METER_FULL",
+    "METER_WARN_SHARE",
     "MOTION",
     "MOTION_ENV",
     "NEON",
@@ -215,6 +221,16 @@ VERTICAL_BREAKPOINTS: Final[list[tuple[int, str]]] = [
     (TALL_FROM, "-tall"),
     (TOWERING_FROM, "-towering"),
 ]
+
+# Every meter on every screen draws with these glyphs: full and empty cells,
+# the optional end caps, and the default width in cells.
+# A risk meter turns amber from this share of its cap.
+METER_WARN_SHARE: Final = 0.8
+METER_FULL: Final = "█"
+METER_EMPTY: Final = "░"
+METER_CAP_LEFT: Final = "▕"
+METER_CAP_RIGHT: Final = "▏"
+METER_CELLS: Final = 10
 
 AI_GLYPH: Final = "✦"
 LIVE_GLYPH: Final = "●"
