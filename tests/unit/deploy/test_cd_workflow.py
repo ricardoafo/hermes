@@ -197,7 +197,9 @@ def _setup_uv_versions(job: str) -> list[str]:
 
 def test_bootstrap_installs_the_same_uv_version_as_the_bundle_job() -> None:
     """The VPS uv and the CI uv that built the lock must be the same version."""
-    match = re.search(r"^UV_VERSION=(\S+)$", _BOOTSTRAP_PATH.read_text(encoding="utf-8"), re.M)
+    match = re.search(
+        r"^UV_VERSION=(\S+)$", _BOOTSTRAP_PATH.read_text(encoding="utf-8"), re.MULTILINE
+    )
 
     assert match is not None
     assert [match.group(1)] == _setup_uv_versions("bundle")
@@ -220,7 +222,9 @@ def test_setup_uv_versions_agree_across_jobs(job: str) -> None:
 
 def test_bootstrap_python_pin_is_an_exact_patch_inside_the_supported_range() -> None:
     """The VPS interpreter is one exact 3.14.x, matching `requires-python = ">=3.14,<3.15"`."""
-    match = re.search(r"^PYTHON_VERSION=(\S+)$", _BOOTSTRAP_PATH.read_text(encoding="utf-8"), re.M)
+    match = re.search(
+        r"^PYTHON_VERSION=(\S+)$", _BOOTSTRAP_PATH.read_text(encoding="utf-8"), re.MULTILINE
+    )
     pyproject = (_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
 
     assert match is not None

@@ -86,9 +86,12 @@ def _decimal(raw: object, field_name: str) -> Decimal:
     if isinstance(raw, bool) or not isinstance(raw, (str, int, float)):
         raise ExchangeError(msg=f"{field_name} is not numeric: {raw!r}")
     try:
-        return Decimal(str(raw))
+        value = Decimal(str(raw))
     except InvalidOperation as exc:
         raise ExchangeError(msg=f"{field_name} is not a decimal: {raw!r}") from exc
+    if not value.is_finite():
+        raise ExchangeError(msg=f"{field_name} is not a finite number: {raw!r}")
+    return value
 
 
 @dataclass(frozen=True, slots=True)

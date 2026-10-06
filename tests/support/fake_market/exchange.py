@@ -21,6 +21,7 @@ from decimal import Decimal
 
 import httpx
 
+from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.pair import Pair
 from tests.support.fake_market import wire
@@ -82,6 +83,10 @@ class FakeExchange:
         book_step_bps: Gap between depth levels; wider means a thinner book.
         late_bars: ``(pair, interval, open_time, shown_from)``: the bar is left
             out of klines answers until ``shown_from``, as if published late.
+        corrupt_bars: ``(pair, interval, open_time, broken_from, clean_from)``:
+            the bar's close is served as ``"NaN"`` from ``broken_from`` until
+            ``clean_from``, as if the feed published a broken row and
+            corrected it later.
         fx_down: When ``True`` Frankfurter answers HTTP 503.
         requests: Every request served, as ``(host, path, params)``.
 
@@ -95,6 +100,9 @@ class FakeExchange:
     book_outages: list[tuple[datetime, datetime]] = field(default_factory=list)
     book_step_bps: Decimal = Decimal(1)
     late_bars: list[tuple[Pair, KlineInterval, datetime, datetime]] = field(default_factory=list)
+    corrupt_bars: list[tuple[Pair, KlineInterval, datetime, datetime, datetime]] = field(
+        default_factory=list
+    )
     fx_down: bool = False
     requests: list[tuple[str, str, dict[str, str]]] = field(default_factory=list)
     _update_id: int = 1
@@ -160,9 +168,14 @@ class FakeExchange:
             rows = [b for b in opened if wire.ms(b.open_time) >= start][:limit]
         else:
             rows = opened[-limit:]
+        broken = {
+            open_time
+            for p, i, open_time, broken_from, clean_from in self.corrupt_bars
+            if (p, i) == (pair, interval) and broken_from <= now < clean_from
+        }
         # The forming candle is served with its scripted values: the adapter
         # drops it by the closed-bar rule, so its numbers are never read.
-        return _json([wire.kline_row(b) for b in rows])
+        return _json([_row(b, broken=b.open_time in broken) for b in rows])
 
     def _depth(self, params: dict[str, str]) -> httpx.Response:
         pair = self._pair(params.get("symbol"))
@@ -197,6 +210,12 @@ class FakeExchange:
         while day.weekday() >= 5:  # the ECB publishes on weekdays; weekends answer Friday
             day -= timedelta(days=1)
         return _json(wire.fx_rate("EUR", "USD", day, self.eur_usd))
+
+
+def _row(bar: Bar, *, broken: bool) -> list[object]:
+    """Return the klines row for ``bar``, with a ``"NaN"`` close when ``broken``."""
+    row = wire.kline_row(bar)
+    return [*row[:4], "NaN", *row[5:]] if broken else row
 
 
 def _json(body: object, status: int = 200) -> httpx.Response:

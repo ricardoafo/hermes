@@ -8,14 +8,13 @@ list in ``rules.py`` is reviewed against it.
 from __future__ import annotations
 
 import hashlib
-import importlib
 import re
 
 import pytest
 
 from tests.integration.scenarios import rules
 from tests.integration.scenarios.rules import IN_CODE, PRE_REGISTERED, PRE_REGISTRATION, Rule
-from tests.support.serve_loop import PROJECT_ROOT
+from tests.support.node_ids import PROJECT_ROOT, names_a_test
 
 pytestmark = pytest.mark.integration
 
@@ -58,19 +57,6 @@ def _all_rules() -> list[Rule]:
     return [rule for listed in PRE_REGISTERED.values() for rule in listed] + list(IN_CODE)
 
 
-def _test_exists(node_id: str) -> bool:
-    """Return whether ``path::[Class::]function`` names a test function in this repo."""
-    path, *names = node_id.split("::")
-    if not names or not (PROJECT_ROOT / path).is_file():
-        return False
-    target: object = importlib.import_module(path.removesuffix(".py").replace("/", "."))
-    for name in names:
-        target = getattr(target, name, None)
-        if target is None:
-            return False
-    return callable(target) and names[-1].startswith("test_")
-
-
 def test_the_signed_pre_registration_is_the_one_the_list_was_reviewed_against() -> None:
     """A changed document fails until ``rules.py`` is reviewed and its hash updated."""
     digest = hashlib.sha256((PROJECT_ROOT / PRE_REGISTRATION).read_bytes()).hexdigest()
@@ -109,5 +95,5 @@ def test_every_rule_has_exactly_one_kind_of_answer() -> None:
 
 def test_every_named_proof_is_a_test_that_exists() -> None:
     """A renamed or deleted test cannot leave a rule pointing at nothing."""
-    missing = [node for rule in _all_rules() for node in rule.proved_by if not _test_exists(node)]
+    missing = [node for rule in _all_rules() for node in rule.proved_by if not names_a_test(node)]
     assert missing == []

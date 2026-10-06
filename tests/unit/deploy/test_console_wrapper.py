@@ -69,7 +69,7 @@ def sandbox(tmp_path: Path) -> tuple[Path, Path]:
         "DB_PATH": "/state/hermes.sqlite3",
         "CONFIG_DIR": "/release/config",
     }.items():
-        text, count = re.subn(rf"^{name}=.*$", f"{name}={value}", text, flags=re.M)
+        text, count = re.subn(rf"^{name}=.*$", f"{name}={value}", text, flags=re.MULTILINE)
         assert count == 1, name
     # Pretend to be root: the real check needs uid 0, which a test run never has.
     assert '"$(id -u)"' in text
@@ -90,7 +90,9 @@ def test_script_is_valid_bash() -> None:
 
 def test_allowed_commands_are_exactly_the_registry_console_commands() -> None:
     """Invariant: the wrapper's allow-list is the registry's `wants_demo` set, no more."""
-    match = re.search(r'^CONSOLE_COMMANDS="([^"]*)"$', _SCRIPT.read_text(encoding="utf-8"), re.M)
+    match = re.search(
+        r'^CONSOLE_COMMANDS="([^"]*)"$', _SCRIPT.read_text(encoding="utf-8"), re.MULTILINE
+    )
     assert match is not None
     assert frozenset(match.group(1).split()) == console_module.console_commands()
 

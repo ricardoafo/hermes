@@ -27,9 +27,7 @@ class TestAdxInsufficientBars:
         result = AdxEngine.value([], period=14)
         assert result is None, "AdxEngine.value([]) must return None"
         # Concrete anchor: with 29 bars the result is non-None
-        assert isinstance(AdxEngine.value([], period=14), type(None)), (
-            "AdxEngine.value([]) type must be NoneType"
-        )
+        assert AdxEngine.value([], period=14) is None, "AdxEngine.value([]) type must be NoneType"
 
     def test_none_on_exactly_2_period_bars(self) -> None:
         """2*period=28 bars is not sufficient; needs 2*period+1=29."""
