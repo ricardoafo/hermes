@@ -267,6 +267,7 @@ run_check "lockfile hash integrity"           ci_check lockfile
 run_check "CODEOWNERS syntax"                 ci_check codeowners
 run_check "merge-decisions tests (node)"      ci_check merge-decisions
 run_check "markdownlint (full tree)"          ci_check markdown
+run_check "workflows (actionlint + zizmor)"   ci_check workflows
 run_slow_check "deps (pip-audit)"             ci_check deps
 run_slow_check "complexity (radon)"           ci_check complexity
 run_slow_check "deadcode (vulture)"           ci_check deadcode

@@ -15,9 +15,8 @@ Every hook id in ``.pre-commit-config.yaml`` must be in exactly one place:
 - a ``*-self-test`` hook, which the ``self-tests`` check runs in CI.
 
 ``--run-self-tests`` runs every ``*-self-test`` hook's command, so a new
-self-test is picked up with no edit here. ``KNOWN_FAILING`` lists self-tests
-that fail on main with the issue fixing them; one that starts passing must be
-removed from the list.
+self-test is picked up with no edit here. Every one must pass: a failing
+self-test is fixed, never listed as expected to fail.
 
 Called by:
   - ``bash scripts/dev/ci-checks.sh guards`` (coverage) and ``self-tests``
@@ -76,10 +75,6 @@ LOCAL_ONLY: dict[str, str] = {
     "pr-preflight": "the local pre-push wrapper that runs these same CI checks",
 }
 
-KNOWN_FAILING: dict[str, str] = {
-    "pr-preflight-self-test": "issue #836, fixed by the issue #663 PR",
-}
-
 
 def hooks(config: Path) -> dict[str, str]:
     """Return every hook id in ``config`` mapped to its entry command."""
@@ -124,8 +119,8 @@ def coverage_problems(
     return problems
 
 
-def run_self_tests(entries: dict[str, str], known_failing: dict[str, str]) -> list[str]:
-    """Run every ``*-self-test`` entry; return one line per unexpected result."""
+def run_self_tests(entries: dict[str, str]) -> list[str]:
+    """Run every ``*-self-test`` entry; return one line per failure."""
     problems: list[str] = []
     env = os.environ.copy()
     env.pop("HERMES_SELF_TEST", None)
@@ -141,20 +136,10 @@ def run_self_tests(entries: dict[str, str], known_failing: dict[str, str]) -> li
             check=False,
         )
         passed = result.returncode == 0
-        if hook_id in known_failing:
-            status = "passes" if passed else "fails as expected"
-            print(f"{hook_id}: {status} ({known_failing[hook_id]})")
-            if passed:
-                problems.append(f"{hook_id}: passes now; remove it from KNOWN_FAILING")
-            continue
         print(f"{hook_id}: {'ok' if passed else 'FAILED'}")
         if not passed:
             tail = (result.stdout + result.stderr).strip().splitlines()[-5:]
             problems.append(f"{hook_id}: failed\n    " + "\n    ".join(tail))
-    problems.extend(
-        f"{hook_id}: in KNOWN_FAILING but no such self-test hook exists"
-        for hook_id in sorted(known_failing.keys() - entries.keys())
-    )
     return problems
 
 
@@ -213,18 +198,8 @@ def _self_test() -> int:
     ok, bad = "a-self-test", "b-self-test"
     entries = {ok: "true", bad: "false", "plain": "false"}
     runs: list[tuple[str, list[str], int]] = [
-        ("a failing self-test is reported", run_self_tests(entries, {}), 1),
-        ("a known failure is tolerated", run_self_tests(entries, {bad: "#1"}), 0),
-        (
-            "a known failure that passes is reported",
-            run_self_tests(entries, {ok: "#1", bad: "#1"}),
-            1,
-        ),
-        (
-            "a stale known failure is reported",
-            run_self_tests({ok: "true"}, {"gone-self-test": "#1"}),
-            1,
-        ),
+        ("a failing self-test is reported", run_self_tests(entries), 1),
+        ("passing self-tests report nothing", run_self_tests({ok: "true"}), 0),
     ]
     for name, problems, want in runs:
         if len(problems) != want:
@@ -253,7 +228,7 @@ def main(argv: list[str]) -> int:
         return 2
     entries = hooks(REPO_ROOT / ".pre-commit-config.yaml")
     if argv == ["--run-self-tests"]:
-        problems = run_self_tests(entries, KNOWN_FAILING)
+        problems = run_self_tests(entries)
     else:
         workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
         problems = coverage_problems(set(entries), _ci_checks(), workflow, CI_ENFORCED, LOCAL_ONLY)
