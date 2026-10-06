@@ -2,6 +2,7 @@
 tests/integration/calibration/test_harness_end_to_end.py::test_m02_is_fill_price_delta_bps_instance U3
 tests/integration/calibration/test_harness_end_to_end.py::test_m07_queue_quality_is_none U3
 tests/integration/deploy/test_release_scripts.py::test_failed_gate_restarts_the_unit_on_the_old_release U3
+tests/integration/scenarios/test_suspected_defects.py::test_an_entry_refused_by_a_risk_halt_is_recorded_in_the_ledger U3
 tests/integration/strategy/swing/test_swing_adapter_integration.py::test_isinstance_strategy_port U6
 tests/integration/strategy/swing/test_swing_adapter_integration.py::test_no_1d_bars_blocks_entry U3
 tests/integration/strategy/swing/test_swing_adapter_integration.py::test_no_entry_when_1d_below_ema U3
@@ -48,6 +49,9 @@ tests/unit/adapters/ledger/test_sqlite_capital_seed.py::test_adapter_still_satis
 tests/unit/adapters/ledger/test_sqlite_ledger.py::test_sqlite_ledger_is_a_ledger_port U6
 tests/unit/adapters/ledger/test_sqlite_ledger_live_bars.py::test_ledger_satisfies_the_live_bar_port U6
 tests/unit/adapters/ledger/test_sqlite_ledger_portfolio_marks.py::test_ledger_satisfies_the_port U6
+tests/unit/adapters/ledger/test_sqlite_ledger_stop_marks.py::test_a_new_position_does_not_inherit_the_previous_stop U3
+tests/unit/adapters/ledger/test_sqlite_ledger_stop_marks.py::test_latest_is_per_pair U3
+tests/unit/adapters/ledger/test_sqlite_ledger_stop_marks.py::test_ledger_satisfies_the_port U6
 tests/unit/adapters/ledger/test_sqlite_tax_source.py::test_sqlite_ledger_satisfies_the_tax_source_port U6
 tests/unit/adapters/ledger/test_sqlite_trade_ledger.py::test_sqlite_ledger_satisfies_trade_ledger_port U6
 tests/unit/adapters/ledger/test_trade_rates_reader.py::test_lookup_satisfies_the_port U6
@@ -61,17 +65,6 @@ tests/unit/adapters/market_data/test_binance_ticker.py::test_satisfies_the_port 
 tests/unit/adapters/market_data/test_binance_vision_daily.py::test_adapter_satisfies_the_port U6
 tests/unit/adapters/market_data/test_consolidator.py::test_consolidate_empty_stream_yields_no_bars U3
 tests/unit/adapters/market_data/test_consolidator.py::test_consolidate_single_trade_produces_one_bar U3
-tests/unit/adapters/notifier/test_slack_adapter.py::test_adapter_is_notifier_port_instance U6
-tests/unit/adapters/notifier/test_slack_adapter.py::test_daily_digest_uploads_csv_via_three_step_flow U10
-tests/unit/adapters/notifier/test_slack_adapter.py::test_notifier_error_inherits_from_infra_error U3
-tests/unit/adapters/notifier/test_slack_adapter.py::test_notify_report_empty_attachments_list_makes_only_one_post U10
-tests/unit/adapters/notifier/test_slack_adapter.py::test_notify_urgent_posts_to_chat_post_message U10
-tests/unit/adapters/notifier/test_slack_adapter.py::test_notify_without_attachments_makes_exactly_one_post U10
-tests/unit/adapters/notifier/test_telegram_adapter.py::test_adapter_is_notifier_port_instance U6
-tests/unit/adapters/notifier/test_telegram_adapter.py::test_notifier_error_inherits_from_infra_error U3
-tests/unit/adapters/notifier/test_telegram_adapter.py::test_notify_report_does_not_call_telegram_api U10
-tests/unit/adapters/notifier/test_telegram_adapter.py::test_notify_report_logs_warning_with_correlation_tail U3
-tests/unit/adapters/notifier/test_telegram_adapter.py::test_notify_urgent_posts_to_send_message_endpoint U10
 tests/unit/adapters/trial_log/test_jsonl_file.py::test_adapter_satisfies_the_port U6
 tests/unit/adapters/trial_log/test_jsonl_file.py::test_removing_the_last_line_is_not_detectable_by_the_chain U3
 tests/unit/application/calibration/test_certification_gates.py::test_win_rate_boundary_passes U3
@@ -96,7 +89,6 @@ tests/unit/application/ledger/test_eur_pricer.py::test_final_rates_are_cached_pe
 tests/unit/application/ledger/test_eur_pricer.py::test_prior_day_rate_on_the_fill_day_is_not_final U3
 tests/unit/application/messages/test_escape.py::test_tail_length_constant_matches_documentation U7
 tests/unit/application/messages/test_shapes.py::test_shape_table_is_read_only U3
-tests/unit/application/order_router/test_risk_engine.py::test_all_decisions_preserved U3
 tests/unit/application/order_router/test_router.py::test_above_max_concurrent_also_rejected U3
 tests/unit/application/order_router/test_router.py::test_at_max_concurrent_returns_risk_rejected U3
 tests/unit/application/order_router/test_router.py::test_halt_rule_returns_risk_rejected U3
@@ -215,6 +207,9 @@ tests/unit/domain/strategy/swing/engines/test_ema_regime_filter.py::test_above_e
 tests/unit/domain/strategy/swing/engines/test_ema_regime_filter.py::test_deterministic_on_identical_inputs U3
 tests/unit/domain/strategy/swing/engines/test_ema_regime_filter.py::test_ema_value_deterministic U3
 tests/unit/domain/strategy/swing/engines/test_ema_regime_filter.py::test_ema_value_not_none_at_period U3
+tests/unit/domain/strategy/swing/test_stop_record.py::test_daily_bar_while_held_leaves_no_record U3
+tests/unit/domain/strategy/swing/test_stop_record.py::test_entry_older_than_the_buffer_has_no_high_since_entry U3
+tests/unit/domain/strategy/swing/test_stop_record.py::test_no_stored_stop_leaves_stop_moved_unknown U3
 tests/unit/domain/tax/test_netting.py::test_carry_forward_never_exceeds_four_years U3
 tests/unit/domain/test_errors.py::test_currency_mismatch_is_domain_error U3
 tests/unit/domain/test_errors.py::test_currency_mismatch_is_hermes_error U3
@@ -226,6 +221,7 @@ tests/unit/domain/test_errors.py::test_invalid_lot_is_hermes_error U3
 tests/unit/domain/test_errors.py::test_ledger_error_is_infra_error U3
 tests/unit/domain/test_errors.py::test_network_error_is_hermes_error U3
 tests/unit/domain/test_errors.py::test_network_error_is_infra_error U3
+tests/unit/domain/test_errors_raisable.py::test_declared_fields_stay_frozen U6
 tests/unit/domain/value_objects/test_currency.py::test_currency_is_str_enum U7
 tests/unit/domain/value_objects/test_currency.py::test_from_str_empty_returns_failure U3
 tests/unit/domain/value_objects/test_currency.py::test_from_str_unknown_returns_failure U3
@@ -264,13 +260,10 @@ tests/unit/entrypoints/test_serve.py::test_default_depth_source_is_the_keyless_b
 tests/unit/entrypoints/test_serve.py::test_each_stream_has_its_own_contiguity U3
 tests/unit/entrypoints/test_serve.py::test_in_order_bars_each_write_a_cursor_row U3
 tests/unit/entrypoints/test_tui.py::test_refresh_interval_is_five_seconds U7
-tests/unit/infrastructure/config/test_loader.py::test_config_error_is_infra_error U3
-tests/unit/infrastructure/config/test_loader.py::test_env_override_out_of_range_index_is_ignored U3
 tests/unit/infrastructure/config/test_renta.py::test_layout_type_is_the_domain_layout U3
 tests/unit/infrastructure/test_aggregate_changelog.py::test_gitkeep_and_readme_are_skipped U3
 tests/unit/infrastructure/test_aggregate_changelog.py::test_missing_fragment_dir_returns_empty_sections U3
 tests/unit/infrastructure/test_cve_triage.py::test_duplicate_advisory_yields_one_row U3
-tests/unit/infrastructure/test_env_gate.py::test_env_gate_error_is_infra_error U3
 tests/unit/ports/test_clock_port.py::test_all_adapters_are_clock_port_instances U6
 tests/unit/ports/test_clock_port.py::test_simulated_clock_is_clock_port U6
 tests/unit/ports/test_clock_port.py::test_simulated_clock_now_returns_datetime U3
@@ -302,5 +295,3 @@ tests/unit/ports/test_market_data_port.py::test_partial_implementation_does_not_
 tests/unit/ports/test_market_data_port.py::test_plain_object_does_not_satisfy_protocol U6
 tests/unit/scripts_backtest/test_run_calibration.py::test_git_state_returns_a_full_commit_sha U3
 tests/unit/scripts_dev/test_migration_sql_check.py::test_transaction_control_is_reported U3
-tests/unit/test_logging.py::test_configure_logging_renders_json_only_for_the_journald_tiers U3
-tests/unit/test_logging.py::test_new_correlation_id_is_26_char_ulid U3

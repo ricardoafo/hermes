@@ -85,3 +85,65 @@ Actors: `operator` | `claude-experimentalist` | `claude-integrity-checker` | `en
 - docs/experiments/swing-mvp1/lab-notebook.md (modified)
 
 <!-- entry-sha256: 9d0b2e9efe4eccfc2bdc23b22de599922c2478158e28b54d719cc68a67832f59 -->
+
+### 2026-10-06T11:13:17Z | shadow | operator | shadow clock reset: the run since 2026-10-04 is a warm-up; day 0 waits for the shadow Ready rules (not a deviation)
+
+**Observed metrics**: N/A (no metrics this entry)
+
+**Decision**:
+
+- The shadow run started 2026-10-04T20:13Z (PR #617) does not count toward the §7 90-day shadow: the §7/§10 backtest gate had not run and v1 is still UNTRUSTED (issue #735).
+- It keeps running as an engine warm-up. Day 0 is the first bar after every ADR-021 shadow Ready rule holds; the 90 days run from there.
+- At day 0 the warm-up ledger is archived read-only and a fresh run starts with an empty ledger and its own run id; the operator runs that step (issue #797).
+- The backtest replay starts the test window flat (issue #723) before the gate runs.
+
+**Rationale**:
+
+- Operator words, verbatim: "Current is invalid because it wasnt back tested" and "we will need to kill current shadow later as is invalid" (2026-10-06).
+- Governing sections: pre-registration v1 §7 (BACKTEST_CERTIFIED precedes SHADOW_CERTIFIED) and §10 (a failed backtest does not proceed to shadow).
+- Not a deviation per §11: no §3, §4, §5, §6 or §9 item changes and the signed file is not edited; this restores the signed order.
+- Consequence: certification cannot start before day 0 + 90 days, so the one-shot OOS test moves past 2027-01-01 by however long day 0 lands after 2026-10-03.
+
+**Files touched**:
+
+- docs/architecture/adr-021-strategy-lifecycle-ready-and-done.md (added)
+- docs/experiments/swing-mvp1/lab-notebook.md (modified)
+
+<!-- entry-sha256: 0870906765a57d764d7a2180c8fa359c749c9fa8842b450762a8f66f8fe03294 -->
+
+### 2026-10-06T12:32:30Z | shadow | operator | engine bug fix: the chandelier stop ratchets up while in a position (issue #680, not a deviation)
+
+**Observed metrics**:
+
+- In-sample Train window 2020-09-01 to 2024-06-30 only, measured after the decision; base 23892f9 vs the fix
+- BTCUSDT: 45 / 45 closed trades, realized PnL -44.69 / -17.56 USDT, daily Sharpe -0.0135 / -0.0053, 33 exits moved (5 earlier, 28 same bar at a higher stop)
+- ETHUSDT: 57 / 59 closed trades, realized PnL -208.60 / -193.19 USDT, daily Sharpe -0.0430 / -0.0399, 46 exits moved (7 earlier, 39 same bar at a higher stop)
+- SOLUSDT: 56 / 58 closed trades, realized PnL -58.51 / -82.52 USDT, daily Sharpe -0.0071 / -0.0107, 43 exits moved (6 earlier, 37 same bar at a higher stop)
+- No data from the sealed 2025-09-01 to 2026-12-31 window was read
+
+**Decision**:
+
+- While a position is open, the stop in force is max(previous stop in force, HH22 - 3 x ATR22). The entry bar and a new position start from the raw level; a restart continues from the position's stored last_stop (stop marks keyed by entry_time).
+- The recorded stop_price is the stop in force; chandelier_level stays the raw HH22 - 3 x ATR22. Parameters (22, 3.0), entry rules, sizing, fees and risk rules are unchanged.
+- Approved by the operator before the in-sample measurement: ship the ratchet now; the current-bar self-trigger and the close - 1 tick clamp are separate decisions.
+- Out of scope, pending the operator: (1) HH22 and ATR22 include the current bar, so a wide up-bar can raise the stop and trigger it on the same bar; (2) the clamp to close - 1 tick described in chandelier.py is not implemented.
+
+**Rationale**:
+
+- Pre-registration v1 §5.3 (pre-registration-v1.md:126): the exit stop is moved as the trailing stop advances. Its source SA-7 (sa7-strategy-design.md:153, :261): the long chandelier stop only moves up, never down. ADR-003 02-data-flow.md:138 says the same. The engine recomputed the raw level every 4h bar, so the stop could fall.
+- Integrity rules §4.1 (integrity-checker-rules.md:259-272): an engine bug fix that makes the engine match the already-specified §5 is permitted and is not flagged. This fix matches §5.3; it does not change what §5 says.
+- Not a deviation per §11 of pre-registration-v1.md: no §11 item changes and the signed file is not edited. The parameter fingerprint (swing_parameters) is unchanged.
+- Backtest parity (ADR-011): the backtest replay drives the same SwingStrategyAdapter bar by bar, so it gets the ratchet with no separate change.
+
+**Files touched**:
+
+- src/hermes/domain/strategy/swing/adapter.py (modified)
+- src/hermes/domain/strategy/stop_mark.py (modified, docstring)
+- tests/unit/domain/strategy/swing/test_stop_ratchet.py (added)
+- tests/unit/domain/strategy/swing/test_stop_record.py (modified)
+- tests/integration/scenarios/rules.py (modified)
+- tests/e2e/test_serve_cycle.py (modified: the pinned SOL/USDT exit of the 2025-01-19T07:59Z entry moves from 23:59Z to 15:59Z, the raw level fell under the held stop)
+- changelog.d/680-fixed.md (added)
+- docs/experiments/swing-mvp1/lab-notebook.md (modified)
+
+<!-- entry-sha256: dd4890f09afcedf43be07fb7a438f71f7f2754b4635fb5a63a8372b0c97c6c59 -->

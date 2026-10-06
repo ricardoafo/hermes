@@ -21,20 +21,30 @@ from typing import Any
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from hermes.infrastructure.config import (
     BinanceExchangeConfig,
+    KrakenPublicConfig,
+    MarketDataConfig,
     MLConfig,
+    SentryConfig,
     StrategiesConfig,
     TaxGuardConfig,
+)
+from hermes.infrastructure.config.models import (
+    FrankfurterConfig,
+    HealthchecksConfig,
+    KlinesConfig,
 )
 
 # Deterministic profile — CI must be reproducible.
 _SETTINGS = settings(max_examples=50, deadline=None, derandomize=True)
 
 
-def _assert_field_in_validation_error(data: dict[str, Any], model: type, field: str) -> None:
+def _assert_field_in_validation_error(
+    data: dict[str, Any], model: type[BaseModel], field: str
+) -> None:
     """Validate ``data`` against ``model``, expect failure, assert error names ``field``."""
     with pytest.raises(ValidationError) as excinfo:
         model.model_validate(data)
@@ -273,3 +283,293 @@ def test_strategy_rejects_quote_outside_the_currency_allowlist() -> None:
         StrategiesConfig,
         "quote",
     )
+
+
+# ---------------------------------------------------------------------------
+# Every numeric and length bound, pinned at the limit and one step past it
+# ---------------------------------------------------------------------------
+
+_BINANCE: dict[str, Any] = {
+    "base_url": "https://x.example",
+    "ws_url": "wss://x.example/ws",
+    "recv_window_ms": 5000,
+    "testnet": True,
+}
+_KLINES: dict[str, Any] = {
+    "store_db_path": "k.db",
+    "rate_limit_max_weight": 5000,
+    "rate_limit_window_seconds": 60,
+}
+_TAX_GUARD: dict[str, Any] = {
+    "annual_realised_pnl_alert_eur": "1000",
+    "wash_sale_window_days": 30,
+    "max_position_pct_portfolio": "0.25",
+    "recharacterization_window_days": 90,
+    "trade_count_90d_max": 500,
+    "distinct_assets_90d_max": 12,
+    "fee_income_90d_max_eur": "0",
+}
+_ML: dict[str, Any] = {
+    "supervisor_model": "claude",
+    "temperature": "0.2",
+    "max_tokens": 100,
+    "enabled": True,
+}
+# Slow retry must stay >= retry, so the slow-retry floor is probed with a tiny retry.
+_FAST_RETRY: dict[str, Any] = {"retry_interval_seconds": 0.001}
+
+# (model, valid base, field, value exactly at the limit)
+_AT_LIMIT: list[tuple[type[Any], dict[str, Any], str, Any]] = [
+    (BinanceExchangeConfig, _BINANCE, "recv_window_ms", 1),
+    (BinanceExchangeConfig, _BINANCE, "recv_window_ms", 60_000),
+    (FrankfurterConfig, {}, "timeout_sec", 0.001),
+    (FrankfurterConfig, {}, "requests_per_minute", 1),
+    (FrankfurterConfig, {}, "requests_per_minute", 6000),
+    (KrakenPublicConfig, {}, "timeout_sec", 0.001),
+    (KrakenPublicConfig, {}, "requests_per_second", 1),
+    (KrakenPublicConfig, {}, "requests_per_second", 60),
+    (KrakenPublicConfig, {}, "fees_cache_ttl_seconds", 0),
+    (KrakenPublicConfig, {}, "fees_cache_ttl_seconds", 604_800),
+    (MarketDataConfig, {}, "settle_delay_seconds", 0.001),
+    (MarketDataConfig, {}, "settle_delay_seconds", 60),
+    (MarketDataConfig, {}, "retry_interval_seconds", 0.001),
+    (MarketDataConfig, {"slow_retry_interval_seconds": 300}, "retry_interval_seconds", 300),
+    (MarketDataConfig, _FAST_RETRY, "slow_retry_interval_seconds", 0.001),
+    (MarketDataConfig, {}, "slow_retry_interval_seconds", 3_600),
+    (MarketDataConfig, {}, "stale_after_seconds", 0.001),
+    (MarketDataConfig, {}, "stale_after_seconds", 86_400),
+    (MarketDataConfig, {}, "timeout_sec", 0.001),
+    (MarketDataConfig, {}, "rate_limit_max_weight", 3),
+    (MarketDataConfig, {}, "rate_limit_max_weight", 6_000),
+    (MarketDataConfig, {}, "rate_limit_window_seconds", 1),
+    (MarketDataConfig, {}, "rate_limit_window_seconds", 3_600),
+    (HealthchecksConfig, {}, "timeout_sec", 0.001),
+    (HealthchecksConfig, {}, "requests_per_minute", 1),
+    (HealthchecksConfig, {}, "requests_per_minute", 6000),
+    (SentryConfig, {}, "environment", "d"),
+    (KlinesConfig, _KLINES, "store_db_path", "k"),
+    (KlinesConfig, _KLINES, "rate_limit_max_weight", 1),
+    (KlinesConfig, _KLINES, "rate_limit_max_weight", 6_000),
+    (KlinesConfig, _KLINES, "rate_limit_window_seconds", 1),
+    (KlinesConfig, _KLINES, "rate_limit_window_seconds", 3_600),
+    (TaxGuardConfig, _TAX_GUARD, "wash_sale_window_days", 1),
+    (TaxGuardConfig, _TAX_GUARD, "wash_sale_window_days", 365),
+    (TaxGuardConfig, _TAX_GUARD, "recharacterization_window_days", 1),
+    (TaxGuardConfig, _TAX_GUARD, "recharacterization_window_days", 365),
+    (TaxGuardConfig, _TAX_GUARD, "trade_count_90d_max", 1),
+    (TaxGuardConfig, _TAX_GUARD, "distinct_assets_90d_max", 1),
+    (MLConfig, _ML, "max_tokens", 1),
+    (MLConfig, _ML, "max_tokens", 200_000),
+    (MLConfig, _ML, "supervisor_model", "m"),
+]
+
+# (model, valid base, field, value one step past the limit, the exact pydantic message)
+_PAST_LIMIT: list[tuple[type[Any], dict[str, Any], str, Any, str]] = [
+    (
+        BinanceExchangeConfig,
+        _BINANCE,
+        "recv_window_ms",
+        60_001,
+        "Input should be less than or equal to 60000",
+    ),
+    (FrankfurterConfig, {}, "timeout_sec", 0, "Input should be greater than 0"),
+    (FrankfurterConfig, {}, "requests_per_minute", 0, "Input should be greater than 0"),
+    (
+        FrankfurterConfig,
+        {},
+        "requests_per_minute",
+        6001,
+        "Input should be less than or equal to 6000",
+    ),
+    (KrakenPublicConfig, {}, "timeout_sec", 0, "Input should be greater than 0"),
+    (KrakenPublicConfig, {}, "requests_per_second", 0, "Input should be greater than 0"),
+    (KrakenPublicConfig, {}, "requests_per_second", 61, "Input should be less than or equal to 60"),
+    (
+        KrakenPublicConfig,
+        {},
+        "fees_cache_ttl_seconds",
+        -1,
+        "Input should be greater than or equal to 0",
+    ),
+    (
+        KrakenPublicConfig,
+        {},
+        "fees_cache_ttl_seconds",
+        604_801,
+        "Input should be less than or equal to 604800",
+    ),
+    (MarketDataConfig, {}, "settle_delay_seconds", 0, "Input should be greater than 0"),
+    (
+        MarketDataConfig,
+        {},
+        "settle_delay_seconds",
+        60.001,
+        "Input should be less than or equal to 60",
+    ),
+    (MarketDataConfig, {}, "retry_interval_seconds", 0, "Input should be greater than 0"),
+    (
+        MarketDataConfig,
+        {"slow_retry_interval_seconds": 3_600},
+        "retry_interval_seconds",
+        300.001,
+        "Input should be less than or equal to 300",
+    ),
+    (
+        MarketDataConfig,
+        _FAST_RETRY,
+        "slow_retry_interval_seconds",
+        0,
+        "Input should be greater than 0",
+    ),
+    (
+        MarketDataConfig,
+        {},
+        "slow_retry_interval_seconds",
+        3_600.001,
+        "Input should be less than or equal to 3600",
+    ),
+    (MarketDataConfig, {}, "stale_after_seconds", 0, "Input should be greater than 0"),
+    (
+        MarketDataConfig,
+        {},
+        "stale_after_seconds",
+        86_400.001,
+        "Input should be less than or equal to 86400",
+    ),
+    (MarketDataConfig, {}, "timeout_sec", 0, "Input should be greater than 0"),
+    (MarketDataConfig, {}, "rate_limit_window_seconds", 0, "Input should be greater than 0"),
+    (
+        MarketDataConfig,
+        {},
+        "rate_limit_window_seconds",
+        3_601,
+        "Input should be less than or equal to 3600",
+    ),
+    (HealthchecksConfig, {}, "timeout_sec", 0, "Input should be greater than 0"),
+    (HealthchecksConfig, {}, "requests_per_minute", 0, "Input should be greater than 0"),
+    (
+        HealthchecksConfig,
+        {},
+        "requests_per_minute",
+        6001,
+        "Input should be less than or equal to 6000",
+    ),
+    (SentryConfig, {}, "environment", "", "String should have at least 1 character"),
+    (KlinesConfig, _KLINES, "store_db_path", "", "String should have at least 1 character"),
+    (KlinesConfig, _KLINES, "rate_limit_max_weight", 0, "Input should be greater than 0"),
+    (
+        KlinesConfig,
+        _KLINES,
+        "rate_limit_max_weight",
+        6_001,
+        "Input should be less than or equal to 6000",
+    ),
+    (KlinesConfig, _KLINES, "rate_limit_window_seconds", 0, "Input should be greater than 0"),
+    (
+        KlinesConfig,
+        _KLINES,
+        "rate_limit_window_seconds",
+        3_601,
+        "Input should be less than or equal to 3600",
+    ),
+    (
+        TaxGuardConfig,
+        _TAX_GUARD,
+        "recharacterization_window_days",
+        0,
+        "Input should be greater than or equal to 1",
+    ),
+    (
+        TaxGuardConfig,
+        _TAX_GUARD,
+        "recharacterization_window_days",
+        366,
+        "Input should be less than or equal to 365",
+    ),
+    (
+        TaxGuardConfig,
+        _TAX_GUARD,
+        "trade_count_90d_max",
+        0,
+        "Input should be greater than or equal to 1",
+    ),
+    (
+        TaxGuardConfig,
+        _TAX_GUARD,
+        "distinct_assets_90d_max",
+        0,
+        "Input should be greater than or equal to 1",
+    ),
+    (MLConfig, _ML, "max_tokens", 200_001, "Input should be less than or equal to 200000"),
+    (MLConfig, _ML, "supervisor_model", "", "String should have at least 1 character"),
+]
+
+
+@pytest.mark.parametrize(
+    ("model", "base", "field", "value"),
+    _AT_LIMIT,
+    ids=[f"{m.__name__}.{f}={v!r}" for m, _, f, v in _AT_LIMIT],
+)
+def test_config_bound_accepts_the_value_exactly_at_the_limit(
+    model: type[Any], base: dict[str, Any], field: str, value: Any
+) -> None:
+    """A value exactly at a declared bound loads unchanged: every declared bound is inclusive."""
+    loaded = model.model_validate({**base, field: value})
+    assert getattr(loaded, field) == value
+
+
+@pytest.mark.parametrize(
+    ("model", "base", "field", "value", "message"),
+    _PAST_LIMIT,
+    ids=[f"{m.__name__}.{f}={v!r}" for m, _, f, v, _ in _PAST_LIMIT],
+)
+def test_config_bound_rejects_the_value_one_step_past_the_limit(
+    model: type[Any], base: dict[str, Any], field: str, value: Any, message: str
+) -> None:
+    """A value one step past a declared bound fails on that field alone, naming the bound."""
+    with pytest.raises(ValidationError) as excinfo:
+        model.model_validate({**base, field: value})
+    assert [(e["loc"], e["msg"]) for e in excinfo.value.errors()] == [((field,), message)]
+
+
+def test_strategy_rejects_an_empty_name() -> None:
+    """A strategy name needs at least one character: it keys event payloads and log lines."""
+    with pytest.raises(ValidationError) as excinfo:
+        StrategiesConfig.model_validate({"strategies": [_strategy_entry(name="")]})
+    assert [(e["loc"], e["msg"]) for e in excinfo.value.errors()] == [
+        (("strategies", 0, "name"), "String should have at least 1 character")
+    ]
+
+
+def test_strategy_roster_rejects_an_empty_list() -> None:
+    """The roster needs at least one strategy: an empty strategies.yaml never starts the bot."""
+    with pytest.raises(ValidationError) as excinfo:
+        StrategiesConfig.model_validate({"strategies": []})
+    assert [(e["loc"], e["msg"]) for e in excinfo.value.errors()] == [
+        (("strategies",), "List should have at least 1 item after validation, not 0")
+    ]
+
+
+def test_strategy_roster_accepts_a_single_one_character_strategy() -> None:
+    """One strategy named with one character is the smallest valid roster."""
+    roster = StrategiesConfig.model_validate({"strategies": [_strategy_entry(name="x")]})
+    assert [s.name for s in roster.strategies] == ["x"]
+
+
+# ---------------------------------------------------------------------------
+# Opt-in integrations: an empty URL or DSN means disabled
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("ping_url", "enabled"), [("", False), ("https://hc-ping.com/0000-uuid", True)]
+)
+def test_healthchecks_is_enabled_only_with_a_ping_url(ping_url: str, enabled: bool) -> None:
+    """Healthchecks is enabled exactly when a ping URL is configured; blank means opted out."""
+    assert HealthchecksConfig(ping_url=ping_url).enabled is enabled
+
+
+@pytest.mark.parametrize(("dsn", "enabled"), [("", False), ("https://k@o1.ingest.example/1", True)])
+def test_sentry_is_enabled_only_with_a_dsn(dsn: str, enabled: bool) -> None:
+    """Sentry is enabled exactly when a DSN is configured; blank means opted out."""
+    assert SentryConfig(dsn=dsn).enabled is enabled
