@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import shutil
 import sqlite3
+from collections.abc import Iterator
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -23,11 +25,11 @@ def _columns(conn: sqlite3.Connection, table: str) -> dict[str, tuple[bool, str 
 
 
 @pytest.fixture
-def migrated() -> sqlite3.Connection:
-    """Return an in-memory ledger with every shipped migration applied."""
-    conn = sqlite3.connect(":memory:")
-    apply_migrations(conn)
-    return conn
+def migrated() -> Iterator[sqlite3.Connection]:
+    """Yield an in-memory ledger with every shipped migration applied, closed after the test."""
+    with closing(sqlite3.connect(":memory:")) as conn:
+        apply_migrations(conn)
+        yield conn
 
 
 def test_trades_gain_eur_columns_with_pending_default(migrated: sqlite3.Connection) -> None:
@@ -198,61 +200,59 @@ def _foreign_keys(conn: sqlite3.Connection, table: str) -> set[tuple[str, str, s
 
 def test_0004_sorts_after_0003_live_bars_in_a_fresh_ledger() -> None:
     """Invariant: the runner orders by filename, so 0004 applies after 0003_live_bars."""
-    conn = sqlite3.connect(":memory:")
+    with closing(sqlite3.connect(":memory:")) as conn:
+        applied = apply_migrations(conn)
 
-    applied = apply_migrations(conn)
-
-    assert applied[:4] == (
-        "0001_initial_schema.sql",
-        "0002_lots_add_strategy_id.sql",
-        "0003_live_bars.sql",
-        "0004_trade_eur_values.sql",
-    )
+        assert applied[:4] == (
+            "0001_initial_schema.sql",
+            "0002_lots_add_strategy_id.sql",
+            "0003_live_bars.sql",
+            "0004_trade_eur_values.sql",
+        )
 
 
 def test_ledger_migrated_through_0003_live_bars_upgrades_cleanly_to_0004(tmp_path: Path) -> None:
     """Invariant: a ledger already at 0003_live_bars applies 0004 next and keeps live_bars."""
-    conn = _seeded_at_0003(tmp_path)
-    conn.execute(
-        "INSERT INTO live_bars VALUES ('BTC', 'USDT', '1h', 't0', 't1', '1', '2', '0.5', '1.5', "
-        "'10', 'r')"
-    )
-    conn.commit()
+    with closing(_seeded_at_0003(tmp_path)) as conn:
+        conn.execute(
+            "INSERT INTO live_bars VALUES ('BTC', 'USDT', '1h', 't0', 't1', '1', '2', '0.5', "
+            "'1.5', '10', 'r')"
+        )
+        conn.commit()
 
-    applied = apply_migrations(conn, _through_0004(tmp_path))
+        applied = apply_migrations(conn, _through_0004(tmp_path))
 
-    assert applied[0] == "0004_trade_eur_values.sql"
-    assert conn.execute(
-        "SELECT filename FROM schema_migrations ORDER BY filename LIMIT 4"
-    ).fetchall() == [
-        ("0001_initial_schema.sql",),
-        ("0002_lots_add_strategy_id.sql",),
-        ("0003_live_bars.sql",),
-        ("0004_trade_eur_values.sql",),
-    ]
-    assert conn.execute("SELECT pair_base, close FROM live_bars").fetchall() == [("BTC", "1.5")]
+        assert applied[0] == "0004_trade_eur_values.sql"
+        assert conn.execute(
+            "SELECT filename FROM schema_migrations ORDER BY filename LIMIT 4"
+        ).fetchall() == [
+            ("0001_initial_schema.sql",),
+            ("0002_lots_add_strategy_id.sql",),
+            ("0003_live_bars.sql",),
+            ("0004_trade_eur_values.sql",),
+        ]
+        assert conn.execute("SELECT pair_base, close FROM live_bars").fetchall() == [("BTC", "1.5")]
 
 
 def test_rows_written_before_0004_survive_it(tmp_path: Path) -> None:
     """Invariant (A-1.4): old trades read pending; old lots and consumptions have no trade link."""
-    conn = _seeded_at_0003(tmp_path)
+    with closing(_seeded_at_0003(tmp_path)) as conn:
+        apply_migrations(conn, _through_0004(tmp_path))
 
-    apply_migrations(conn, _through_0004(tmp_path))
-
-    assert conn.execute("SELECT correlation_id, eur_status, price_eur FROM trades").fetchall() == [
-        ("c-1", "pending", None)
-    ]
-    assert conn.execute("SELECT lot_id, trade_id FROM lots ORDER BY lot_id").fetchall() == [
-        ("L1", None),
-        ("L2", None),
-        ("L3", None),
-        ("L4", None),
-    ]
-    assert conn.execute("SELECT id, trade_id FROM lot_consumptions ORDER BY id").fetchall() == [
-        (1, None),
-        (2, None),
-        (3, None),
-    ]
+        assert conn.execute(
+            "SELECT correlation_id, eur_status, price_eur FROM trades"
+        ).fetchall() == [("c-1", "pending", None)]
+        assert conn.execute("SELECT lot_id, trade_id FROM lots ORDER BY lot_id").fetchall() == [
+            ("L1", None),
+            ("L2", None),
+            ("L3", None),
+            ("L4", None),
+        ]
+        assert conn.execute("SELECT id, trade_id FROM lot_consumptions ORDER BY id").fetchall() == [
+            (1, None),
+            (2, None),
+            (3, None),
+        ]
 
 
 def test_rebuild_preserves_every_lot_and_consumption_value(tmp_path: Path) -> None:
@@ -261,62 +261,68 @@ def test_rebuild_preserves_every_lot_and_consumption_value(tmp_path: Path) -> No
     Includes lots.strategy_id: explicit values ('swing', 'trend') and the legacy DEFAULT
     ('swing') applied to a row written without it.
     """
-    conn = _seeded_at_0003(tmp_path)
-    lots_before = conn.execute(_LOTS_SQL).fetchall()
-    consumptions_before = conn.execute(_CONSUMPTIONS_SQL).fetchall()
+    with closing(_seeded_at_0003(tmp_path)) as conn:
+        lots_before = conn.execute(_LOTS_SQL).fetchall()
+        consumptions_before = conn.execute(_CONSUMPTIONS_SQL).fetchall()
 
-    apply_migrations(conn, _through_0004(tmp_path))
+        apply_migrations(conn, _through_0004(tmp_path))
 
-    lots_after = conn.execute(_LOTS_SQL).fetchall()
-    consumptions_after = conn.execute(_CONSUMPTIONS_SQL).fetchall()
-    assert lots_after == lots_before
-    assert consumptions_after == consumptions_before
-    assert lots_after == [
-        ("L1", "BTC", "1", "0.5", "60000", "2026-01-02T10:00:00+00:00", "swing"),
-        ("L2", "ETH", "10", "10", "2500.12345678", "2026-01-03T10:00:00+00:00", "trend"),
-        ("L3", "BTC", "0.25", "0", "61000", "2026-01-04T10:00:00+00:00", "swing"),
-        ("L4", "SOL", "5", "5", "150", "2026-01-05T10:00:00+00:00", "swing"),
-    ]
-    assert consumptions_after[1] == (2, "L3", "0.25", "BTC", "-12.5", "2026-01-06T10:00:00+00:00")
+        lots_after = conn.execute(_LOTS_SQL).fetchall()
+        consumptions_after = conn.execute(_CONSUMPTIONS_SQL).fetchall()
+        assert lots_after == lots_before
+        assert consumptions_after == consumptions_before
+        assert lots_after == [
+            ("L1", "BTC", "1", "0.5", "60000", "2026-01-02T10:00:00+00:00", "swing"),
+            ("L2", "ETH", "10", "10", "2500.12345678", "2026-01-03T10:00:00+00:00", "trend"),
+            ("L3", "BTC", "0.25", "0", "61000", "2026-01-04T10:00:00+00:00", "swing"),
+            ("L4", "SOL", "5", "5", "150", "2026-01-05T10:00:00+00:00", "swing"),
+        ]
+        assert consumptions_after[1] == (
+            2,
+            "L3",
+            "0.25",
+            "BTC",
+            "-12.5",
+            "2026-01-06T10:00:00+00:00",
+        )
 
 
 def test_strategy_id_keeps_not_null_and_legacy_default_after_0004(tmp_path: Path) -> None:
     """Invariant: 0004 leaves lots.strategy_id NOT NULL DEFAULT 'swing' (dropped later by 0005)."""
-    conn = _seeded_at_0003(tmp_path)
+    with closing(_seeded_at_0003(tmp_path)) as conn:
+        apply_migrations(conn, _through_0004(tmp_path))
 
-    apply_migrations(conn, _through_0004(tmp_path))
-
-    assert _columns(conn, "lots")["strategy_id"] == (True, "'swing'")
+        assert _columns(conn, "lots")["strategy_id"] == (True, "'swing'")
 
 
 def test_second_migration_run_is_a_noop(tmp_path: Path) -> None:
     """Invariant: re-running the runner after 0004 applies nothing and changes nothing."""
-    conn = _seeded_at_0003(tmp_path)
-    apply_migrations(conn, _through_0004(tmp_path))
-    schema_before = _schema_snapshot(conn)
-    rows_before = {t: conn.execute(q).fetchall() for t, q in _ALL_ROWS_SQL.items()}
+    with closing(_seeded_at_0003(tmp_path)) as conn:
+        apply_migrations(conn, _through_0004(tmp_path))
+        schema_before = _schema_snapshot(conn)
+        rows_before = {t: conn.execute(q).fetchall() for t, q in _ALL_ROWS_SQL.items()}
 
-    second = apply_migrations(conn, _through_0004(tmp_path))
+        second = apply_migrations(conn, _through_0004(tmp_path))
 
-    assert second == ()
-    assert _schema_snapshot(conn) == schema_before
-    rows_after = {t: conn.execute(q).fetchall() for t, q in _ALL_ROWS_SQL.items()}
-    assert rows_after == rows_before
+        assert second == ()
+        assert _schema_snapshot(conn) == schema_before
+        rows_after = {t: conn.execute(q).fetchall() for t, q in _ALL_ROWS_SQL.items()}
+        assert rows_after == rows_before
 
 
 def test_indexes_and_foreign_keys_present_before_0004_still_exist_after(tmp_path: Path) -> None:
     """Invariant: every index and foreign key of lots / lot_consumptions survives the rebuild."""
-    conn = _seeded_at_0003(tmp_path)
-    lots_indexes_before = _indexes(conn, "lots")
-    consumption_indexes_before = _indexes(conn, "lot_consumptions")
-    consumption_fks_before = _foreign_keys(conn, "lot_consumptions")
-    assert lots_indexes_before == {"idx_lots_asset_opened_at"}
-    assert consumption_fks_before == {("lots", "lot_id", "lot_id")}
+    with closing(_seeded_at_0003(tmp_path)) as conn:
+        lots_indexes_before = _indexes(conn, "lots")
+        consumption_indexes_before = _indexes(conn, "lot_consumptions")
+        consumption_fks_before = _foreign_keys(conn, "lot_consumptions")
+        assert lots_indexes_before == {"idx_lots_asset_opened_at"}
+        assert consumption_fks_before == {("lots", "lot_id", "lot_id")}
 
-    apply_migrations(conn, _through_0004(tmp_path))
+        apply_migrations(conn, _through_0004(tmp_path))
 
-    assert lots_indexes_before <= _indexes(conn, "lots")
-    assert consumption_indexes_before <= _indexes(conn, "lot_consumptions")
-    assert consumption_fks_before <= _foreign_keys(conn, "lot_consumptions")
-    assert ("trades", "trade_id", "id") in _foreign_keys(conn, "lots")
-    assert ("trades", "trade_id", "id") in _foreign_keys(conn, "lot_consumptions")
+        assert lots_indexes_before <= _indexes(conn, "lots")
+        assert consumption_indexes_before <= _indexes(conn, "lot_consumptions")
+        assert consumption_fks_before <= _foreign_keys(conn, "lot_consumptions")
+        assert ("trades", "trade_id", "id") in _foreign_keys(conn, "lots")
+        assert ("trades", "trade_id", "id") in _foreign_keys(conn, "lot_consumptions")

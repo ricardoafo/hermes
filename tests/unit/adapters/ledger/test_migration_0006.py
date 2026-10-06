@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import shutil
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -60,32 +61,32 @@ def test_0006_is_additive_so_every_ledger_start_applies_it() -> None:
 
 def test_ledger_at_0004_applies_0006_and_keeps_its_lots(tmp_path: Path) -> None:
     """Invariant: upgrading adds capital_seeds and leaves existing lot rows untouched."""
-    conn = _at_0004(tmp_path)
-    before = conn.execute("SELECT * FROM lots").fetchall()
-    # Pinned to 0006 so later migrations do not change what this run applies.
-    through_0006 = tmp_path / "pre_0006"
-    shutil.copy(MIGRATIONS_DIR / _MIGRATION, through_0006 / _MIGRATION)
+    with closing(_at_0004(tmp_path)) as conn:
+        before = conn.execute("SELECT * FROM lots").fetchall()
+        # Pinned to 0006 so later migrations do not change what this run applies.
+        through_0006 = tmp_path / "pre_0006"
+        shutil.copy(MIGRATIONS_DIR / _MIGRATION, through_0006 / _MIGRATION)
 
-    applied = apply_migrations(conn, through_0006)
+        applied = apply_migrations(conn, through_0006)
 
-    assert (applied, conn.execute("SELECT * FROM lots").fetchall()) == ((_MIGRATION,), before)
+        assert (applied, conn.execute("SELECT * FROM lots").fetchall()) == ((_MIGRATION,), before)
 
 
 def test_seed_rows_start_pending() -> None:
     """Invariant (D-1): a seed row without EUR columns reads eur_status 'pending'."""
-    conn = sqlite3.connect(":memory:")
-    apply_migrations(conn)
-    _seed_row(conn, "swing", "L1")
-    assert conn.execute("SELECT eur_status, value_eur FROM capital_seeds").fetchone() == (
-        "pending",
-        None,
-    )
+    with closing(sqlite3.connect(":memory:")) as conn:
+        apply_migrations(conn)
+        _seed_row(conn, "swing", "L1")
+        assert conn.execute("SELECT eur_status, value_eur FROM capital_seeds").fetchone() == (
+            "pending",
+            None,
+        )
 
 
 def test_one_seed_per_strategy() -> None:
     """Invariant (A-1.1): the schema refuses a second seed for the same strategy."""
-    conn = sqlite3.connect(":memory:")
-    apply_migrations(conn)
-    _seed_row(conn, "swing", "L1")
-    with pytest.raises(sqlite3.IntegrityError, match="UNIQUE"):
-        _seed_row(conn, "swing", "L2")
+    with closing(sqlite3.connect(":memory:")) as conn:
+        apply_migrations(conn)
+        _seed_row(conn, "swing", "L1")
+        with pytest.raises(sqlite3.IntegrityError, match="UNIQUE"):
+            _seed_row(conn, "swing", "L2")

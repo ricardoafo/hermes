@@ -179,7 +179,12 @@ timeout_method = "thread"
 # line WITH A COMMENT explaining WHY + a link to the upstream tracking
 # issue. Never a bare `default::DeprecationWarning` — that silences the
 # whole class and defeats the discipline.
+#
+# "error" makes every other warning fail the run too, including a
+# ResourceWarning from an unclosed SQLite connection or file (issue #759):
+# fix the leak, never ignore it.
 filterwarnings = [
+  "error",
   "error::DeprecationWarning",
   "error::PendingDeprecationWarning",
   # Third-party warnings we cannot fix — allow with a comment explaining why:

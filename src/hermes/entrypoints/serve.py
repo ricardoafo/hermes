@@ -508,7 +508,11 @@ def build_composition(
     pre_registration, fee_rows = _load_experiment(experiment_root)
 
     connection = sqlite3.connect(db_target)
-    ledger = SqliteLedger(connection)
+    try:
+        ledger = SqliteLedger(connection)
+    except Exception:
+        connection.close()
+        raise
 
     wall: ClockPort = clock if clock is not None else WallClock()
     event_bus = EventBus()

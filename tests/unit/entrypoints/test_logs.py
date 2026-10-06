@@ -227,3 +227,17 @@ def test_level_filter_treats_unknown_levels_as_info() -> None:
     assert line is not None
 
     assert [entry.event for entry in filter_lines([line], min_level=LogLevel.INFO)] == ["x.y"]
+
+
+def test_the_journalctl_pipe_is_closed_after_reading() -> None:
+    """Issue #759: the stdout pipe is closed with the process, not left to the garbage collector."""
+    pipe = io.StringIO("".join(line + "\n" for line in _JOURNAL))
+    process = _FakeProcess([])
+    process.stdout = pipe
+    reader = JournalctlReader(
+        executable="/usr/bin/journalctl", spawn=cast("Any", lambda _argv: process)
+    )
+
+    lines = list(reader.lines(last=10))
+
+    assert (len(lines), pipe.closed, process.terminated) == (len(_JOURNAL), True, True)

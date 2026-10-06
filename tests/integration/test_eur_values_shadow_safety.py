@@ -14,6 +14,7 @@ ADR-016 item 9.
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -133,13 +134,13 @@ def test_strategy_sizing_and_fills_are_identical_with_and_without_fx() -> None:
     """Invariant (A-5.1): FX availability changes only ledger EUR columns, never behaviour."""
     with_fx, ledger_with = _run(_fx_up())
     without_fx, ledger_without = _run(FakeFx(down=True))
-
-    assert "\n".join(with_fx).encode() == "\n".join(without_fx).encode()
-    statuses = (
-        ledger_with.execute("SELECT side, eur_status FROM trades ORDER BY id").fetchall(),
-        ledger_without.execute("SELECT side, eur_status FROM trades ORDER BY id").fetchall(),
-    )
-    assert statuses == (
-        [("BUY", "ok"), ("SELL", "ok")],
-        [("BUY", "pending"), ("SELL", "pending")],
-    )
+    with closing(ledger_with), closing(ledger_without):
+        assert "\n".join(with_fx).encode() == "\n".join(without_fx).encode()
+        statuses = (
+            ledger_with.execute("SELECT side, eur_status FROM trades ORDER BY id").fetchall(),
+            ledger_without.execute("SELECT side, eur_status FROM trades ORDER BY id").fetchall(),
+        )
+        assert statuses == (
+            [("BUY", "ok"), ("SELL", "ok")],
+            [("BUY", "pending"), ("SELL", "pending")],
+        )

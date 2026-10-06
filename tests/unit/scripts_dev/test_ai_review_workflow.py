@@ -16,6 +16,7 @@ import sys
 import textwrap
 import urllib.error
 import urllib.request
+import warnings
 from email.message import Message
 from pathlib import Path
 from typing import Any
@@ -63,7 +64,11 @@ def _build_input(
     monkeypatch.setenv("PR_NUMBER", "7")
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
     monkeypatch.setattr(sys, "argv", ["-", str(out)])
-    exec(compile(_python_block(), "ai-review-step", "exec"), {"__name__": "__main__"})  # noqa: S102
+    with warnings.catch_warnings():
+        # The step writes pr.md with open(...).write(...) and never closes it. The fix
+        # is in the workflow file, which changes only through the CI line (issue #759).
+        warnings.filterwarnings("ignore", r"unclosed file .*pr\.md", ResourceWarning)
+        exec(compile(_python_block(), "ai-review-step", "exec"), {"__name__": "__main__"})  # noqa: S102
     return out.read_text(encoding="utf-8")
 
 
@@ -71,11 +76,15 @@ def test_failed_issue_fetch_never_writes_the_token(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Invariant: the text the model reads names the error type and status, never the token."""
+    raised: list[urllib.error.HTTPError] = []
 
     def refuse(request: urllib.request.Request, timeout: float) -> Any:
-        raise urllib.error.HTTPError(request.full_url, 403, "Forbidden", Message(), None)
+        raised.append(urllib.error.HTTPError(request.full_url, 403, "Forbidden", Message(), None))
+        raise raised[-1]
 
     text = _build_input(tmp_path, monkeypatch, "Closes #44", refuse)
+    for error in raised:
+        error.close()
 
     assert _FAKE_BEARER not in text
     assert "(Could not read issue #44: HTTPError (HTTP 403))" in text

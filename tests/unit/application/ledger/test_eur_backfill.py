@@ -6,6 +6,7 @@ Reference: ADR-016 item 5.
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
@@ -64,36 +65,41 @@ def _ledger_with_pending_round_trip() -> tuple[SqliteLedger, sqlite3.Connection]
 def test_backfill_prices_pending_rows_and_fills_the_gain() -> None:
     """Invariant (A-3.1): after backfill both rows are ok and the consumption has its EUR gain."""
     ledger, conn = _ledger_with_pending_round_trip()
-    fx = FakeFx(rates={_SAT: (Decimal("1.25"), _FRI)})
+    with closing(conn):
+        fx = FakeFx(rates={_SAT: (Decimal("1.25"), _FRI)})
 
-    report = backfill_pending_eur(ledger, EurPricer(fx), today=_MON)
+        report = backfill_pending_eur(ledger, EurPricer(fx), today=_MON)
 
-    statuses = conn.execute("SELECT eur_status, eur_rate_date FROM trades ORDER BY id").fetchall()
-    (gain,) = conn.execute("SELECT realized_gain_eur FROM lot_consumptions").fetchone()
-    assert (report, statuses, Decimal(gain)) == (
-        BackfillReport(filled=(1, 2), pending=()),
-        [("ok", "2026-01-02"), ("ok", "2026-01-02")],
-        Decimal("18"),
-    )
-    assert len(fx.calls) == 1
+        statuses = conn.execute(
+            "SELECT eur_status, eur_rate_date FROM trades ORDER BY id"
+        ).fetchall()
+        (gain,) = conn.execute("SELECT realized_gain_eur FROM lot_consumptions").fetchone()
+        assert (report, statuses, Decimal(gain)) == (
+            BackfillReport(filled=(1, 2), pending=()),
+            [("ok", "2026-01-02"), ("ok", "2026-01-02")],
+            Decimal("18"),
+        )
+        assert len(fx.calls) == 1
 
 
 def test_backfill_during_an_outage_leaves_rows_pending() -> None:
     """Invariant (A-3.2): a provider failure keeps rows pending and does not raise."""
     ledger, conn = _ledger_with_pending_round_trip()
-    report = backfill_pending_eur(ledger, EurPricer(FakeFx(down=True)), today=_MON)
-    assert report == BackfillReport(filled=(), pending=(1, 2))
-    assert conn.execute("SELECT COUNT(*) FROM trades WHERE eur_status = 'pending'").fetchone() == (
-        2,
-    )
+    with closing(conn):
+        report = backfill_pending_eur(ledger, EurPricer(FakeFx(down=True)), today=_MON)
+        assert report == BackfillReport(filled=(), pending=(1, 2))
+        assert conn.execute(
+            "SELECT COUNT(*) FROM trades WHERE eur_status = 'pending'"
+        ).fetchone() == (2,)
 
 
 def test_backfill_on_the_fill_day_waits_for_the_days_rate() -> None:
     """Invariant (D-2): before the fill date has passed, a prior-day rate is not accepted."""
     ledger, _conn = _ledger_with_pending_round_trip()
-    fx = FakeFx(rates={_SAT: (Decimal("1.25"), _FRI)})
-    report = backfill_pending_eur(ledger, EurPricer(fx), today=_SAT)
-    assert report == BackfillReport(filled=(), pending=(1, 2))
+    with closing(_conn):
+        fx = FakeFx(rates={_SAT: (Decimal("1.25"), _FRI)})
+        report = backfill_pending_eur(ledger, EurPricer(fx), today=_SAT)
+        assert report == BackfillReport(filled=(), pending=(1, 2))
 
 
 def _seeded_ledger_with_pending_buy() -> tuple[SqliteLedger, sqlite3.Connection]:
@@ -124,29 +130,33 @@ def _seeded_ledger_with_pending_buy() -> tuple[SqliteLedger, sqlite3.Connection]
 def test_backfill_prices_a_pending_seed_by_its_seed_date() -> None:
     """Invariant (405 D-1): the seed is priced with the rate of its Madrid seed date."""
     ledger, conn = _seeded_ledger_with_pending_buy()
-    fx = FakeFx(rates={_SAT: (Decimal("1.25"), _FRI)})
+    with closing(conn):
+        fx = FakeFx(rates={_SAT: (Decimal("1.25"), _FRI)})
 
-    report = backfill_pending_eur(ledger, EurPricer(fx), today=_MON)
+        report = backfill_pending_eur(ledger, EurPricer(fx), today=_MON)
 
-    assert (report.seeds_filled, report.seeds_pending) == ((1,), ())
-    assert conn.execute("SELECT eur_status, value_eur FROM capital_seeds").fetchone()[0] == "ok"
+        assert (report.seeds_filled, report.seeds_pending) == ((1,), ())
+        assert conn.execute("SELECT eur_status, value_eur FROM capital_seeds").fetchone()[0] == "ok"
 
 
 def test_backfill_values_the_quote_leg_once_seed_and_trade_are_priced() -> None:
     """Invariant: after backfill the BUY's USDT consumption has its EUR gain (0 at one rate)."""
     ledger, conn = _seeded_ledger_with_pending_buy()
-    fx = FakeFx(rates={_SAT: (Decimal("1.25"), _FRI)})
+    with closing(conn):
+        fx = FakeFx(rates={_SAT: (Decimal("1.25"), _FRI)})
 
-    backfill_pending_eur(ledger, EurPricer(fx), today=_MON)
+        backfill_pending_eur(ledger, EurPricer(fx), today=_MON)
 
-    rows = conn.execute(
-        "SELECT consumed_qty, realized_gain_eur FROM lot_consumptions WHERE consumed_asset = 'USDT'"
-    ).fetchall()
-    assert [(Decimal(qty), Decimal(gain)) for qty, gain in rows] == [(Decimal("126.25"), 0)]
+        rows = conn.execute(
+            "SELECT consumed_qty, realized_gain_eur FROM lot_consumptions "
+            "WHERE consumed_asset = 'USDT'"
+        ).fetchall()
+        assert [(Decimal(qty), Decimal(gain)) for qty, gain in rows] == [(Decimal("126.25"), 0)]
 
 
 def test_backfill_during_an_outage_leaves_the_seed_pending() -> None:
     """Invariant: a provider failure keeps the seed pending and does not raise."""
     ledger, _conn = _seeded_ledger_with_pending_buy()
-    report = backfill_pending_eur(ledger, EurPricer(FakeFx(down=True)), today=_MON)
-    assert (report.seeds_filled, report.seeds_pending) == ((), (1,))
+    with closing(_conn):
+        report = backfill_pending_eur(ledger, EurPricer(FakeFx(down=True)), today=_MON)
+        assert (report.seeds_filled, report.seeds_pending) == ((), (1,))
