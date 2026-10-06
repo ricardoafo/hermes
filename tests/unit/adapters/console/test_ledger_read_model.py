@@ -17,7 +17,7 @@ Reference: openspec/changes/ledger-read-model/change.md (R-1 to R-3, D-8).
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -233,6 +233,19 @@ def test_heartbeat_reports_the_newest_bar_check(btc_ledger: Path) -> None:
         HeartbeatState.OK,
         T0 + H4 * 2,
         T0 + H4 * 3,
+    )
+
+
+def test_empty_ledger_heartbeat_looks_ahead_to_the_next_4h_boundary(tmp_path: Path) -> None:
+    """With no bar check yet, the next check is the next 4h boundary, never the read time."""
+    path = tmp_path / "hermes.sqlite3"
+    LedgerBuilder(path).close()
+    at = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
+    heartbeat = _model(path, at=at).heartbeat()
+    assert (heartbeat.state, heartbeat.last_check_at, heartbeat.next_check_at) == (
+        HeartbeatState.OK,
+        at,
+        datetime(2026, 10, 3, 16, 0, tzinfo=UTC),
     )
 
 
