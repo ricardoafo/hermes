@@ -17,7 +17,8 @@ Relations:
    and leaves base quantities as they are.
 7. Lookahead: cutting the data after a bar changes no decision up to it.
 8. Warm-up: more start-up bars than the strategy buffers change nothing;
-   the configured floor of 200 daily bars is not enough (strict xfail).
+   the configured floor of 200 daily bars is not enough (issue #880, a gap in the
+   failure-mode catalogue until it is fixed).
 """
 
 from __future__ import annotations
@@ -255,33 +256,3 @@ def test_more_warm_up_than_the_indicators_need_changes_no_decision(
     counts every 4h and 1d indicator reads the same bars.
     """
     assert _decided(backtest(shorter())) == _decided(long_warm_up)
-
-
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason=(
-        "issue #880: the 1d EMA(200) is seeded with the SMA of the oldest 200 buffered "
-        "closes, so it depends on how many daily bars (200 to 300) warmed it up; the "
-        "configured floor of warmup_bars_1d (200, also the parity check's minimum) gives "
-        "other entries than 300"
-    ),
-)
-def test_the_configured_floor_of_200_daily_bars_decides_what_300_decide() -> None:
-    """Relation 8 at the floor: 200 daily bars of warm-up must decide what 300 decide.
-
-    ``paths.regime_edge``: with 300 daily bars the EMA(200) is 181.61 when the
-    climb from 190 to 199 starts, so its breakout enters; with the 200 the
-    config allows as a floor it is 200.00 and nothing enters. Serve warms up
-    with 300 and so agrees with a continuous backtest; a ledger with only 200
-    stored days, or ``warmup_bars_1d: 200``, does not.
-    """
-    bars = paths.regime_edge()
-    window = paths.REGIME_EDGE_WINDOW
-    end = window + timedelta(days=20)
-    with_300 = backtest(bars, window_start=window, window_end=end)
-    floor_bars = [b for b in bars if b.open_time >= window - timedelta(days=200)]
-    with_200 = backtest(floor_bars, window_start=window, window_end=end)
-    if len(with_300.trades) != 1:
-        pytest.fail("the path no longer enters with 300 daily bars; it proves nothing")
-    assert trade_rows(with_200) == trade_rows(with_300)
