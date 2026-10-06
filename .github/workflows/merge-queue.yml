@@ -94,9 +94,9 @@
 #
 #   push: [main]
 #     A merge moved `main`; every candidate behind it must be re-checked
-#     against the new tip. Fires for HUMAN merges only. Merges performed
-#     by this workflow (with GITHUB_TOKEN) raise no events; the merge
-#     step hand-starts the next pass to close that gap.
+#     against the new tip. This workflow merges with the automation app's
+#     token, which does raise push events; Select skips those, because
+#     the merge step already hand-starts the next pass (#694).
 #
 #   pull_request_review: [submitted]
 #     The reviewer just approved. Often approval lands seconds after PR
@@ -154,8 +154,9 @@ on:
 # condition below the exact negation of Select's `if:`.
 concurrency:
   group: >-
-    ${{ ((github.event_name == 'workflow_run' && github.event.workflow_run.conclusion != 'success')
-    || (github.event_name == 'pull_request_review' && github.event.review.state != 'approved'))
+    ${{ ((github.event_name == 'workflow_run' && (github.event.workflow_run.conclusion != 'success' || github.event.workflow_run.event != 'pull_request'))
+    || (github.event_name == 'pull_request_review' && github.event.review.state != 'approved')
+    || (github.event_name == 'push' && github.actor == 'hermes-automation-bot[bot]'))
     && format('mq-noop-{0}', github.run_id) || 'revalidate-and-merge' }}
   cancel-in-progress: false
 
@@ -171,17 +172,23 @@ jobs:
   # ─────────────────────────────────────────────────────────────────
   select:
     name: Select
-    # Two triggers are narrowed here; every other one is unconditional.
-    # A failed CI run must never start a merge pass, and a review that
-    # is not `approved` cannot make a PR mergeable (`types: [submitted]`
-    # fires on plain comments too). The `concurrency:` group above
-    # routes exactly these skipped events to a no-op group; change both
-    # together (tools/merge/workflow.test.cjs checks they agree).
+    # Three triggers are narrowed here; every other one is unconditional.
+    # Only a green CI run on a PR can make a candidate mergeable: a failed
+    # run must never start a merge pass, and CI on main changes no PR.
+    # A review that is not `approved` cannot make a PR mergeable either
+    # (`types: [submitted]` fires on plain comments too). A push by the
+    # automation app is this queue's own merge, and the merge step already
+    # starts the next pass (#694). The `concurrency:` group above routes
+    # exactly these skipped events to a no-op group; change both together
+    # (tools/merge/workflow.test.cjs checks they agree).
     if: >-
       (github.event_name != 'workflow_run'
-       || github.event.workflow_run.conclusion == 'success')
+       || (github.event.workflow_run.conclusion == 'success'
+       && github.event.workflow_run.event == 'pull_request'))
       && (github.event_name != 'pull_request_review'
        || github.event.review.state == 'approved')
+      && (github.event_name != 'push'
+       || github.actor != 'hermes-automation-bot[bot]')
     runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions:
