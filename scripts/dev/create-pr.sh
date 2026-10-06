@@ -200,6 +200,10 @@ if [[ "${HERMES_SELF_TEST:-0}" == "1" ]]; then
     # committed. Fixtures 12-14 build a throwaway repo, and an inherited
     # index makes its commits write into the real repo's index instead.
     unset GIT_INDEX_FILE
+    # The fixtures run the real actor check, which asks gh who is logged in.
+    # A fixed author keeps them from passing or failing on the machine's gh
+    # login: on a CI runner gh has none, so every PR-opening fixture exited 4.
+    export HERMES_ACTOR_OVERRIDE=fixture-bot
     fail=0
     tmp_ok=$(mktemp -t create-pr-ok.XXXXXX.md)
     tmp_bad=$(mktemp -t create-pr-bad.XXXXXX.md)
