@@ -484,6 +484,10 @@ class _RecordingStrategy:
         self.seeded = list(bars)
         self.position = open_position
 
+    def restore_position(self, open_position: OpenPosition | None) -> None:
+        """Record the restored position."""
+        self.position = open_position
+
 
 class TestBarLoop:
     """The loop's per-bar rules: contiguity and warm-up order."""

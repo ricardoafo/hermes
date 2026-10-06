@@ -1,1 +1,0 @@
-- The deploy integration tests now pass on Windows when `HERMES_TEST_BASH` points at Git's `bin/bash.exe` launcher: the harness runs the `usr/bin/bash.exe` it wraps, so the test stubs stay first on `PATH` (#618).

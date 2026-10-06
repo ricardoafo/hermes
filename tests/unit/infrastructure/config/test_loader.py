@@ -1,9 +1,11 @@
-"""Config loader — YAML + env override + failure paths.
+"""Config loader: YAML, env overrides, dotenv, runtime-tier gate and failure paths.
 
-Every test protects one invariant of the config-loader contract established
-in ``hermes.infrastructure.config``. Failures here mean the process could
-start with wrong or corrupted config — a real-capital risk (per ADR-003 §00
-invariant I-05).
+Every test protects one rule of the config-loader contract in
+``hermes.infrastructure.config.loader`` (precedence: shell env over
+``.env.local`` over the YAML file; see
+``docs/decisions/2026-08-23-credential-storage-layered-by-env.md``). A
+failure here means the process could start with wrong or corrupted config,
+a real-capital risk (ADR-003 §00 invariant I-05).
 """
 
 from __future__ import annotations
@@ -13,21 +15,29 @@ from pathlib import Path
 from textwrap import dedent
 
 import pytest
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
 
-from hermes.domain.errors import HermesError, InfraError
+from hermes.domain.errors import InfraError
 from hermes.domain.value_objects.currency import Currency
 from hermes.infrastructure.config import (
     BinanceExchangeConfig,
     ConfigError,
-    HermesConfig,
+    KrakenPublicConfig,
     MLConfig,
+    SentryConfig,
     StrategiesConfig,
     load_config,
 )
 from hermes.infrastructure.config.loader import load_yaml_model
+from hermes.infrastructure.config.models import FrankfurterConfig, HealthchecksConfig
+
+_REPO_CONFIG = Path(__file__).resolve().parents[4] / "config"
 
 # ---------------------------------------------------------------------------
-# Fixtures — full valid config tree written to a tmp dir per test
+# Fixtures: a full valid config tree written to a tmp dir per test. Values
+# differ from the model defaults where possible, so a section read from the
+# wrong file (or not read at all) shows up.
 # ---------------------------------------------------------------------------
 
 _VALID_STRATEGIES = dedent(
@@ -115,7 +125,7 @@ _VALID_FRANKFURTER = dedent(
 _VALID_HEALTHCHECKS = dedent(
     """
     ping_url: ""
-    timeout_sec: 5.0
+    timeout_sec: 4.0
     requests_per_minute: 30
     """
 ).strip()
@@ -123,14 +133,14 @@ _VALID_HEALTHCHECKS = dedent(
 _VALID_SENTRY = dedent(
     """
     dsn: ""
-    environment: dev
+    environment: sandbox
     """
 ).strip()
 
 _VALID_KRAKEN_PUBLIC = dedent(
     """
     base_url: https://api.kraken.com
-    timeout_sec: 10.0
+    timeout_sec: 7.5
     requests_per_second: 1
     fees_cache_ttl_seconds: 86400
     """
@@ -141,79 +151,134 @@ _VALID_MARKET_DATA = dedent(
     base_url: https://data-api.binance.vision
     pairs: [BTC/USDT, ETH/USDT, SOL/USDT]
     intervals: [4h, 1d]
+    warmup_bars_4h: 120
     """
 ).strip()
+
+
+def _write_tree(root: Path) -> Path:
+    """Write a fully-valid config tree under ``root`` and return ``root``."""
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "strategies.yaml").write_text(_VALID_STRATEGIES, encoding="utf-8")
+    (root / "exchanges").mkdir()
+    (root / "exchanges" / "binance.yaml").write_text(_VALID_BINANCE, encoding="utf-8")
+    (root / "fees.yaml").write_text(_VALID_FEES, encoding="utf-8")
+    (root / "tax_guard.yaml").write_text(_VALID_TAX_GUARD, encoding="utf-8")
+    (root / "ml.yaml").write_text(_VALID_ML, encoding="utf-8")
+    (root / "klines.yaml").write_text(_VALID_KLINES, encoding="utf-8")
+    (root / "frankfurter.yaml").write_text(_VALID_FRANKFURTER, encoding="utf-8")
+    (root / "healthchecks.yaml").write_text(_VALID_HEALTHCHECKS, encoding="utf-8")
+    (root / "sentry.yaml").write_text(_VALID_SENTRY, encoding="utf-8")
+    (root / "kraken_public.yaml").write_text(_VALID_KRAKEN_PUBLIC, encoding="utf-8")
+    (root / "market_data.yaml").write_text(_VALID_MARKET_DATA, encoding="utf-8")
+    return root
 
 
 @pytest.fixture()
 def config_dir(tmp_path: Path) -> Path:
     """Write a fully-valid config tree under ``tmp_path`` and return the root."""
-    (tmp_path / "strategies.yaml").write_text(_VALID_STRATEGIES, encoding="utf-8")
-    (tmp_path / "exchanges").mkdir()
-    (tmp_path / "exchanges" / "binance.yaml").write_text(_VALID_BINANCE, encoding="utf-8")
-    (tmp_path / "fees.yaml").write_text(_VALID_FEES, encoding="utf-8")
-    (tmp_path / "tax_guard.yaml").write_text(_VALID_TAX_GUARD, encoding="utf-8")
-    (tmp_path / "ml.yaml").write_text(_VALID_ML, encoding="utf-8")
-    (tmp_path / "klines.yaml").write_text(_VALID_KLINES, encoding="utf-8")
-    (tmp_path / "frankfurter.yaml").write_text(_VALID_FRANKFURTER, encoding="utf-8")
-    (tmp_path / "healthchecks.yaml").write_text(_VALID_HEALTHCHECKS, encoding="utf-8")
-    (tmp_path / "sentry.yaml").write_text(_VALID_SENTRY, encoding="utf-8")
-    (tmp_path / "kraken_public.yaml").write_text(_VALID_KRAKEN_PUBLIC, encoding="utf-8")
-    (tmp_path / "market_data.yaml").write_text(_VALID_MARKET_DATA, encoding="utf-8")
-    return tmp_path
+    return _write_tree(tmp_path)
+
+
+@pytest.fixture()
+def clean_process_env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
+    """Remove the env vars the dotenv tests touch, restoring them afterwards.
+
+    ``load_dotenv`` writes into ``os.environ`` directly. Setting each name
+    before deleting it makes monkeypatch record it, so whatever the dotenv
+    file wrote is undone at teardown and cannot leak into the next test.
+    """
+    for name in ("HERMES_ENV", "HERMES_ALLOW_MAINNET", "HERMES_BINANCE__RECV_WINDOW_MS"):
+        monkeypatch.setenv(name, "placeholder")
+        monkeypatch.delenv(name)
+    return monkeypatch
+
+
+def _strategy_weights(config_dir: Path, env: dict[str, str]) -> list[tuple[str, Decimal]]:
+    """Return ``(name, weight)`` per strategy after loading ``config_dir`` with ``env``."""
+    return [(s.name, s.weight) for s in load_config(config_dir, env=env).strategies.strategies]
 
 
 # ---------------------------------------------------------------------------
-# Happy path — a valid tree parses into the composite root
+# Happy path: a valid tree parses into the composite root
 # ---------------------------------------------------------------------------
 
 
-def test_load_config_returns_hermes_config_with_all_five_sections(config_dir: Path) -> None:
-    """A valid config tree yields a HermesConfig with every section populated."""
+def test_load_config_reads_every_section_from_its_own_file(config_dir: Path) -> None:
+    """Each of the eleven sections takes its values from its own YAML file."""
     cfg = load_config(config_dir, env={})
-    assert isinstance(cfg, HermesConfig)
-    assert len(cfg.strategies.strategies) == 2
-    assert cfg.binance.testnet is True
-    assert cfg.fees.default.maker_bps == Decimal("10")
-    assert cfg.tax_guard.wash_sale_window_days == 30
-    assert cfg.ml.max_tokens == 4096
+    assert (
+        [s.name for s in cfg.strategies.strategies],
+        cfg.binance.base_url,
+        cfg.fees.venues["binance"].maker_bps,
+        cfg.tax_guard.max_position_pct_portfolio,
+        cfg.ml.max_tokens,
+        cfg.klines.store_db_path,
+        cfg.frankfurter.base_url,
+        cfg.healthchecks.timeout_sec,
+        cfg.sentry.environment,
+        cfg.kraken_public.timeout_sec,
+        cfg.market_data.warmup_bars_4h,
+    ) == (
+        ["rebalancer", "donchian"],
+        "https://testnet.binance.vision",
+        Decimal("8"),
+        Decimal("0.25"),
+        4096,
+        "var/hermes/klines.db",
+        "https://api.frankfurter.app",
+        4.0,
+        "sandbox",
+        7.5,
+        120,
+    )
 
 
 def test_load_config_preserves_decimal_precision_from_string_yaml(config_dir: Path) -> None:
-    """Weights authored as quoted YAML strings become Decimal — no float rounding."""
-    cfg = load_config(config_dir, env={})
-    # Exact Decimal comparison — if pydantic went through float, this would
-    # be Decimal("0.6000000000000000888178419700125232338905334472656250").
-    assert cfg.strategies.strategies[0].weight == Decimal("0.6")
-    assert cfg.strategies.strategies[1].weight == Decimal("0.4")
-
-
-def test_load_config_preserves_strategy_order(config_dir: Path) -> None:
-    """Strategies come out in the same order as the YAML — replay determinism."""
-    cfg = load_config(config_dir, env={})
-    assert [s.name for s in cfg.strategies.strategies] == ["rebalancer", "donchian"]
+    """Weights authored as quoted YAML strings become exact Decimals, in YAML order."""
+    assert _strategy_weights(config_dir, env={}) == [
+        ("rebalancer", Decimal("0.6")),
+        ("donchian", Decimal("0.4")),
+    ]
 
 
 def test_load_config_parses_capital_budget_and_quote_exactly(config_dir: Path) -> None:
     """capital_budget stays an exact Decimal and quote becomes the Currency member."""
     first = load_config(config_dir, env={}).strategies.strategies[0]
-    assert first.capital_budget == Decimal("3000")
-    assert first.quote is Currency.USDT
+    assert (first.capital_budget, first.quote) == (Decimal("3000"), Currency.USDT)
 
 
-def test_env_override_lifts_capital_budget(config_dir: Path) -> None:
-    """HERMES_STRATEGIES__STRATEGIES__0__CAPITAL_BUDGET replaces the seed, as an exact Decimal."""
-    cfg = load_config(
-        config_dir,
-        env={"HERMES_STRATEGIES__STRATEGIES__0__CAPITAL_BUDGET": "1234.5"},
-    )
-    assert cfg.strategies.strategies[0].capital_budget == Decimal("1234.5")
+def test_load_config_reads_the_config_directory_in_cwd_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With no ``config_dir`` the loader reads ``./config`` relative to the working directory."""
+    _write_tree(tmp_path / "config")
+    monkeypatch.chdir(tmp_path)
+    assert load_config(env={}).klines.store_db_path == "var/hermes/klines.db"
+
+
+@pytest.mark.parametrize(
+    ("model", "section", "filename"),
+    [
+        (FrankfurterConfig, "FRANKFURTER", "frankfurter.yaml"),
+        (KrakenPublicConfig, "KRAKEN_PUBLIC", "kraken_public.yaml"),
+        (HealthchecksConfig, "HEALTHCHECKS", "healthchecks.yaml"),
+        (SentryConfig, "SENTRY", "sentry.yaml"),
+    ],
+)
+def test_shipped_optional_section_yaml_equals_the_model_defaults(
+    model: type[FrankfurterConfig | KrakenPublicConfig | HealthchecksConfig | SentryConfig],
+    section: str,
+    filename: str,
+) -> None:
+    """A section left out of the YAML behaves exactly like the shipped file for that section."""
+    shipped = load_yaml_model(_REPO_CONFIG / filename, model, env_section=section, env={})
+    assert shipped == model()
 
 
 def test_shipped_strategies_yaml_is_the_swing_only_roster() -> None:
     """The committed strategies.yaml loads as one swing-donchian-4h entry seeded 5000 USDT."""
-    shipped = Path(__file__).resolve().parents[4] / "config" / "strategies.yaml"
-    roster = load_yaml_model(shipped, StrategiesConfig, env_section="STRATEGIES", env={})
+    roster = _shipped_roster(env={})
     assert [
         (s.name, s.enabled, s.weight, s.capital_budget, s.quote) for s in roster.strategies
     ] == [("swing-donchian-4h", True, Decimal("1.0"), Decimal("5000"), Currency.USDT)]
@@ -221,8 +286,9 @@ def test_shipped_strategies_yaml_is_the_swing_only_roster() -> None:
 
 def _shipped_roster(env: dict[str, str]) -> StrategiesConfig:
     """Load the committed strategies.yaml with ``env`` as the only overrides."""
-    shipped = Path(__file__).resolve().parents[4] / "config" / "strategies.yaml"
-    return load_yaml_model(shipped, StrategiesConfig, env_section="STRATEGIES", env=env)
+    return load_yaml_model(
+        _REPO_CONFIG / "strategies.yaml", StrategiesConfig, env_section="STRATEGIES", env=env
+    )
 
 
 # SEV-1: no rubric row matches; pre-reg §5.4/§5.5 limits must reach sizing unchanged
@@ -248,8 +314,17 @@ def test_changing_the_configured_capital_scales_every_sizing_limit() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Env override — HERMES_<section>__<field> lifts values above YAML
+# Env override: HERMES_<section>__<field> lifts values above YAML
 # ---------------------------------------------------------------------------
+
+
+def test_env_override_lifts_capital_budget(config_dir: Path) -> None:
+    """HERMES_STRATEGIES__STRATEGIES__0__CAPITAL_BUDGET replaces the seed, as an exact Decimal."""
+    cfg = load_config(
+        config_dir,
+        env={"HERMES_STRATEGIES__STRATEGIES__0__CAPITAL_BUDGET": "1234.5"},
+    )
+    assert cfg.strategies.strategies[0].capital_budget == Decimal("1234.5")
 
 
 def test_env_override_flips_scalar_bool(config_dir: Path) -> None:
@@ -258,230 +333,126 @@ def test_env_override_flips_scalar_bool(config_dir: Path) -> None:
     assert cfg.binance.testnet is False
 
 
-def test_env_override_flips_scalar_int(config_dir: Path) -> None:
-    """HERMES_BINANCE__RECV_WINDOW_MS=10000 overrides the YAML integer."""
-    cfg = load_config(config_dir, env={"HERMES_BINANCE__RECV_WINDOW_MS": "10000"})
-    assert cfg.binance.recv_window_ms == 10000
+@settings(max_examples=25, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(window=st.integers(min_value=1, max_value=60_000))
+def test_env_override_reaches_an_int_field_exactly(config_dir: Path, window: int) -> None:
+    """Any in-range integer in HERMES_BINANCE__RECV_WINDOW_MS replaces the YAML value exactly."""
+    cfg = load_config(config_dir, env={"HERMES_BINANCE__RECV_WINDOW_MS": str(window)})
+    assert cfg.binance.recv_window_ms == window
 
 
-def test_env_override_lifts_nested_list_element(config_dir: Path) -> None:
-    """HERMES_STRATEGIES__STRATEGIES__0__WEIGHT lifts strategies[0].weight."""
-    cfg = load_config(
-        config_dir,
-        env={"HERMES_STRATEGIES__STRATEGIES__0__WEIGHT": "0.9"},
-    )
-    assert cfg.strategies.strategies[0].weight == Decimal("0.9")
-    # Other list elements untouched.
-    assert cfg.strategies.strategies[1].weight == Decimal("0.4")
+def test_env_override_lifts_one_list_element_and_leaves_the_others(config_dir: Path) -> None:
+    """HERMES_STRATEGIES__STRATEGIES__0__WEIGHT lifts strategies[0].weight only."""
+    assert _strategy_weights(
+        config_dir, env={"HERMES_STRATEGIES__STRATEGIES__0__WEIGHT": "0.9"}
+    ) == [("rebalancer", Decimal("0.9")), ("donchian", Decimal("0.4"))]
+
+
+def test_env_override_replaces_a_list_item_addressed_by_its_index(config_dir: Path) -> None:
+    """HERMES_MARKET_DATA__PAIRS__2 replaces the third pair in place."""
+    cfg = load_config(config_dir, env={"HERMES_MARKET_DATA__PAIRS__2": "SOL/USDC"})
+    assert cfg.market_data.pairs == ["BTC/USDT", "ETH/USDT", "SOL/USDC"]
 
 
 def test_env_override_lifts_nested_dict_entry(config_dir: Path) -> None:
     """HERMES_FEES__VENUES__BINANCE__MAKER_BPS lifts the per-venue override."""
-    cfg = load_config(
-        config_dir,
-        env={"HERMES_FEES__VENUES__BINANCE__MAKER_BPS": "5"},
-    )
+    cfg = load_config(config_dir, env={"HERMES_FEES__VENUES__BINANCE__MAKER_BPS": "5"})
     assert cfg.fees.venues["binance"].maker_bps == Decimal("5")
 
 
-def test_env_override_out_of_range_index_is_ignored(config_dir: Path) -> None:
-    """An env override targeting a non-existent list index is silently ignored."""
-    cfg = load_config(
-        config_dir,
-        env={"HERMES_STRATEGIES__STRATEGIES__99__WEIGHT": "0.1"},
+@pytest.mark.parametrize("index", ["2", "99"])
+def test_env_override_past_the_end_of_a_list_is_ignored(config_dir: Path, index: str) -> None:
+    """An override at or past the list length is dropped; the list is not extended."""
+    assert _strategy_weights(
+        config_dir, env={f"HERMES_STRATEGIES__STRATEGIES__{index}__WEIGHT": "0.1"}
+    ) == [("rebalancer", Decimal("0.6")), ("donchian", Decimal("0.4"))]
+
+
+@pytest.mark.parametrize(
+    "key", ["HERMES_BINANCE__", "HERMES_BINANCE__TESTNET__", "HERMES_BINANCE____X"]
+)
+def test_env_override_with_an_empty_path_segment_is_ignored(config_dir: Path, key: str) -> None:
+    """A key with an empty segment (trailing or doubled ``__``) is skipped, not applied."""
+    assert load_config(config_dir, env={key: "x"}).binance == BinanceExchangeConfig(
+        base_url="https://testnet.binance.vision",
+        ws_url="wss://testnet.binance.vision/ws",
+        recv_window_ms=5000,
+        testnet=True,
     )
-    assert len(cfg.strategies.strategies) == 2
 
 
-def test_env_override_malformed_key_is_ignored(config_dir: Path) -> None:
-    """An env key with a trailing __ (empty path segment) is skipped, not raised."""
-    cfg = load_config(config_dir, env={"HERMES_BINANCE__": "x"})
-    # If the malformed key had crashed, load_config would raise; reaching this
-    # assertion proves it was skipped.
+def test_env_override_after_a_malformed_key_still_applies(config_dir: Path) -> None:
+    """Skipping a malformed key does not stop the overrides listed after it."""
+    cfg = load_config(
+        config_dir, env={"HERMES_BINANCE__": "x", "HERMES_BINANCE__RECV_WINDOW_MS": "7000"}
+    )
+    assert cfg.binance.recv_window_ms == 7000
+
+
+def test_env_override_below_a_scalar_list_item_is_ignored(config_dir: Path) -> None:
+    """HERMES_MARKET_DATA__PAIRS__0__X cannot drill into the string ``BTC/USDT``; it is dropped."""
+    cfg = load_config(config_dir, env={"HERMES_MARKET_DATA__PAIRS__0__X": "y"})
+    assert cfg.market_data.pairs == ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+
+
+def test_env_override_without_the_hermes_prefix_is_ignored(config_dir: Path) -> None:
+    """A section-shaped name without the HERMES_ prefix never reaches config."""
+    cfg = load_config(config_dir, env={"BINANCE__RECV_WINDOW_MS": "7"})
     assert cfg.binance.recv_window_ms == 5000
 
 
-def test_env_override_non_matching_prefix_is_ignored(config_dir: Path) -> None:
-    """Env vars without the HERMES_ prefix never leak into config."""
-    cfg = load_config(
-        config_dir,
-        env={"PATH": "/opt/nasty", "HERMES_OTHER__STUFF": "x"},
-    )
-    assert cfg.binance.testnet is True
+def test_env_override_for_one_section_does_not_reach_another(config_dir: Path) -> None:
+    """A HERMES_KLINES__ override leaves the same-named market-data knob alone."""
+    cfg = load_config(config_dir, env={"HERMES_KLINES__RATE_LIMIT_MAX_WEIGHT": "1200"})
+    assert (cfg.klines.rate_limit_max_weight, cfg.market_data.rate_limit_max_weight) == (1200, 600)
 
 
 # ---------------------------------------------------------------------------
-# Failure paths — each mode raises ConfigError with a specific message
+# Scalar coercion: the 12-factor bool / int / float pre-pass
 # ---------------------------------------------------------------------------
 
 
-def test_missing_file_raises_config_error_with_path(tmp_path: Path) -> None:
-    """A missing YAML file raises ConfigError naming the missing path."""
-    with pytest.raises(ConfigError) as excinfo:
-        load_config(tmp_path, env={})
-    assert "strategies.yaml" in str(excinfo.value)
-    assert "not found" in str(excinfo.value)
-
-
-def test_invalid_yaml_raises_config_error_with_path(tmp_path: Path) -> None:
-    """A YAML syntax error raises ConfigError naming the offending file."""
-    (tmp_path / "strategies.yaml").write_text(": : : not yaml", encoding="utf-8")
-    with pytest.raises(ConfigError) as excinfo:
-        load_yaml_model(
-            tmp_path / "strategies.yaml",
-            StrategiesConfig,
-            env_section="STRATEGIES",
-            env={},
-        )
-    assert "strategies.yaml" in str(excinfo.value)
-    assert "invalid YAML" in str(excinfo.value)
-
-
-def test_non_mapping_root_raises_config_error(tmp_path: Path) -> None:
-    """A YAML file whose root is a list (not a mapping) fails with a typed error."""
-    (tmp_path / "strategies.yaml").write_text("- just\n- a\n- list\n", encoding="utf-8")
-    with pytest.raises(ConfigError) as excinfo:
-        load_yaml_model(
-            tmp_path / "strategies.yaml",
-            StrategiesConfig,
-            env_section="STRATEGIES",
-            env={},
-        )
-    assert "must be a mapping" in str(excinfo.value)
-
-
-def test_schema_validation_failure_names_the_model(tmp_path: Path) -> None:
-    """A wrong-typed field raises ConfigError naming the model that failed."""
-    (tmp_path / "binance.yaml").write_text(
-        dedent(
-            """
-            base_url: not-a-url
-            ws_url: wss://x
-            recv_window_ms: 5000
-            testnet: true
-            """
-        ).strip(),
-        encoding="utf-8",
-    )
-    with pytest.raises(ConfigError) as excinfo:
-        load_yaml_model(
-            tmp_path / "binance.yaml",
-            BinanceExchangeConfig,
-            env_section="BINANCE",
-            env={},
-        )
-    msg = str(excinfo.value)
-    assert "BinanceExchangeConfig" in msg
-    assert "validation failed" in msg
-
-
-def test_unknown_field_is_forbidden(tmp_path: Path) -> None:
-    """extra=forbid catches typos — an unknown key aborts load."""
-    (tmp_path / "ml.yaml").write_text(
-        dedent(
-            """
-            supervisor_model: claude-sonnet-4-7
-            temperature: "0.2"
-            max_tokens: 4096
-            enabled: true
-            typoed_field: 1
-            """
-        ).strip(),
-        encoding="utf-8",
-    )
-    with pytest.raises(ConfigError) as excinfo:
-        load_yaml_model(tmp_path / "ml.yaml", MLConfig, env_section="ML", env={})
-    assert "typoed_field" in str(excinfo.value)
-
-
-# ---------------------------------------------------------------------------
-# Frozen / immutability — mutating an attribute raises
-# ---------------------------------------------------------------------------
-
-
-def test_loaded_config_is_frozen(config_dir: Path) -> None:
-    """HermesConfig instances refuse attribute reassignment."""
-    cfg = load_config(config_dir, env={})
-    with pytest.raises((TypeError, ValueError)):
-        cfg.binance.recv_window_ms = 999  # type: ignore[misc]
-
-
-# ---------------------------------------------------------------------------
-# Empty YAML — pydantic surfaces the missing-field error
-# ---------------------------------------------------------------------------
-
-
-def test_empty_yaml_file_fails_required_field_check(tmp_path: Path) -> None:
-    """An empty YAML file yields the required-field validation error, not a crash."""
-    (tmp_path / "ml.yaml").write_text("", encoding="utf-8")
-    with pytest.raises(ConfigError) as excinfo:
-        load_yaml_model(tmp_path / "ml.yaml", MLConfig, env_section="ML", env={})
-    assert "supervisor_model" in str(excinfo.value) or "Field required" in str(excinfo.value)
-
-
-# ---------------------------------------------------------------------------
-# ConfigError shape — subclasses InfraError so adapter catch-alls work
-# ---------------------------------------------------------------------------
-
-
-def test_config_error_is_infra_error() -> None:
-    """ConfigError sits under InfraError so existing except-InfraError catches it."""
-    err = ConfigError(msg="test")
-    assert isinstance(err, InfraError)
-    assert isinstance(err, HermesError)
-
-
-def test_config_error_message_includes_context() -> None:
-    """__str__ formats the message with the 'Config error:' prefix for logs."""
-    err = ConfigError(msg="binance.yaml: base_url required")
-    assert str(err) == "Config error: binance.yaml: base_url required"
-
-
-# ---------------------------------------------------------------------------
-# Scalar coercion — the 12-factor bool/int/float pre-pass
-# ---------------------------------------------------------------------------
-
-
-def test_env_override_accepts_yes_as_bool_true(config_dir: Path) -> None:
-    """12-factor style: 'yes' becomes True (alongside 'true' / 'on')."""
-    cfg = load_config(config_dir, env={"HERMES_BINANCE__TESTNET": "yes"})
-    assert cfg.binance.testnet is True
-
-
-def test_env_override_accepts_off_as_bool_false(config_dir: Path) -> None:
-    """12-factor style: 'off' becomes False (alongside 'false' / 'no')."""
-    cfg = load_config(config_dir, env={"HERMES_BINANCE__TESTNET": "off"})
-    assert cfg.binance.testnet is False
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("true", True),
+        ("Yes", True),
+        (" on ", True),
+        ("FALSE", False),
+        ("no", False),
+        ("off", False),
+    ],
+)
+def test_env_override_reads_12_factor_booleans(config_dir: Path, raw: str, expected: bool) -> None:
+    """true/yes/on and false/no/off, any case and padding, set a bool field."""
+    assert load_config(config_dir, env={"HERMES_ML__ENABLED": raw}).ml.enabled is expected
 
 
 def test_env_override_float_string_reaches_decimal_field(config_dir: Path) -> None:
-    """A non-int numeric env string coerces via the float path, then Decimal accepts."""
-    # 0.15 is not an int → falls through to float → pydantic accepts as Decimal.
-    cfg = load_config(
-        config_dir,
-        env={"HERMES_TAX_GUARD__MAX_POSITION_PCT_PORTFOLIO": "0.15"},
-    )
-    # Decimal comparison via str because float→Decimal may add trailing digits.
+    """A non-int numeric string goes through the float path and still lands as Decimal 0.15."""
+    cfg = load_config(config_dir, env={"HERMES_TAX_GUARD__MAX_POSITION_PCT_PORTFOLIO": "0.15"})
     assert cfg.tax_guard.max_position_pct_portfolio == Decimal("0.15")
 
 
+def test_env_override_float_string_reaches_float_field(config_dir: Path) -> None:
+    """HERMES_KRAKEN_PUBLIC__TIMEOUT_SEC=2.5 sets the float timeout to 2.5."""
+    cfg = load_config(config_dir, env={"HERMES_KRAKEN_PUBLIC__TIMEOUT_SEC": "2.5"})
+    assert cfg.kraken_public.timeout_sec == 2.5
+
+
 def test_env_override_non_numeric_string_stays_string(config_dir: Path) -> None:
-    """A non-numeric, non-boolean env value stays as-is for the field to accept."""
-    cfg = load_config(
-        config_dir,
-        env={"HERMES_ML__SUPERVISOR_MODEL": "gpt-4o-mini"},
-    )
+    """A non-numeric, non-boolean env value reaches a str field unchanged."""
+    cfg = load_config(config_dir, env={"HERMES_ML__SUPERVISOR_MODEL": "gpt-4o-mini"})
     assert cfg.ml.supervisor_model == "gpt-4o-mini"
 
 
 # ---------------------------------------------------------------------------
-# Nested traversal — non-terminal list index, missing intermediate dict
+# Nested traversal: missing intermediate dicts, list elements, scalars
 # ---------------------------------------------------------------------------
 
 
 def test_env_override_creates_missing_intermediate_dict(config_dir: Path) -> None:
-    """A deeply-nested override path materialises missing intermediate dicts."""
-    # venues.newvenue is not in the YAML — the override creates it.
+    """A deeply-nested override path materialises a venue the YAML does not list."""
     cfg = load_config(
         config_dir,
         env={
@@ -489,191 +460,278 @@ def test_env_override_creates_missing_intermediate_dict(config_dir: Path) -> Non
             "HERMES_FEES__VENUES__NEWVENUE__TAKER_BPS": "15",
         },
     )
-    assert cfg.fees.venues["newvenue"].maker_bps == Decimal("12")
-    assert cfg.fees.venues["newvenue"].taker_bps == Decimal("15")
+    venue = cfg.fees.venues["newvenue"]
+    assert (venue.maker_bps, venue.taker_bps) == (Decimal("12"), Decimal("15"))
 
 
-def test_env_override_traversing_list_element_reaches_nested_field(
-    config_dir: Path,
-) -> None:
-    """A non-terminal list index resolves onto the dict element for further traversal."""
+def test_env_override_numeric_segment_under_a_mapping_is_a_key(config_dir: Path) -> None:
+    """A digit segment under a mapping (venues) names a key, not a list index."""
     cfg = load_config(
         config_dir,
-        env={"HERMES_STRATEGIES__STRATEGIES__1__NAME": "alt_strategy"},
+        env={
+            "HERMES_FEES__VENUES__2024__MAKER_BPS": "3",
+            "HERMES_FEES__VENUES__2024__TAKER_BPS": "4",
+        },
     )
-    assert cfg.strategies.strategies[1].name == "alt_strategy"
+    venue = cfg.fees.venues["2024"]
+    assert (venue.maker_bps, venue.taker_bps) == (Decimal("3"), Decimal("4"))
+
+
+def test_env_override_traversing_list_element_reaches_nested_field(config_dir: Path) -> None:
+    """A non-terminal list index resolves onto the dict element for further traversal."""
+    cfg = load_config(config_dir, env={"HERMES_STRATEGIES__STRATEGIES__1__NAME": "alt_strategy"})
+    assert [s.name for s in cfg.strategies.strategies] == ["rebalancer", "alt_strategy"]
 
 
 def test_env_override_that_would_shadow_a_scalar_fails_loudly(config_dir: Path) -> None:
-    """Drilling past a scalar (SUPERVISOR_MODEL__NESTED) makes the field invalid — fail loud."""
-    # ml.supervisor_model is a string; the env path drills PAST it, so the
-    # loader replaces the scalar with a dict, which then fails pydantic
-    # validation. Loud failure is the desired outcome — the operator sees
-    # the typo, not a silently-ignored override.
+    """Drilling past a scalar (SUPERVISOR_MODEL__NESTED) replaces it with a dict and fails load."""
+    with pytest.raises(ConfigError) as excinfo:
+        load_config(config_dir, env={"HERMES_ML__SUPERVISOR_MODEL__NESTED": "ignored"})
+    assert "supervisor_model\n  Input should be a valid string" in str(excinfo.value)
+
+
+# ---------------------------------------------------------------------------
+# Failure paths: each mode raises ConfigError with a specific message
+# ---------------------------------------------------------------------------
+
+
+def test_missing_file_raises_config_error_with_path(tmp_path: Path) -> None:
+    """A missing YAML file raises ConfigError naming the missing path."""
+    with pytest.raises(ConfigError) as excinfo:
+        load_config(tmp_path, env={})
+    assert (
+        str(excinfo.value) == f"Config error: config file not found: {tmp_path / 'strategies.yaml'}"
+    )
+
+
+def test_config_failure_is_caught_by_an_infra_error_handler(tmp_path: Path) -> None:
+    """An adapter's ``except InfraError`` catch-all also catches a config failure."""
+    with pytest.raises(InfraError, match=r"^Config error: config file not found: "):
+        load_config(tmp_path, env={})
+
+
+def test_unreadable_file_raises_config_error_with_path_and_cause(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An OS error while reading the file becomes ConfigError naming the path and the cause."""
+    path = tmp_path / "ml.yaml"
+    path.write_text(_VALID_ML, encoding="utf-8")
+
+    def _deny(self: Path, encoding: str | None = None) -> str:
+        raise PermissionError("access denied")
+
+    monkeypatch.setattr(Path, "read_text", _deny)
+    with pytest.raises(ConfigError) as excinfo:
+        load_yaml_model(path, MLConfig, env_section="ML", env={})
+    assert str(excinfo.value) == f"Config error: cannot read {path}: access denied"
+
+
+def test_invalid_yaml_raises_config_error_with_path(tmp_path: Path) -> None:
+    """A YAML syntax error raises ConfigError naming the offending file."""
+    path = tmp_path / "strategies.yaml"
+    path.write_text(": : : not yaml", encoding="utf-8")
+    with pytest.raises(ConfigError) as excinfo:
+        load_yaml_model(path, StrategiesConfig, env_section="STRATEGIES", env={})
+    assert str(excinfo.value).startswith(f"Config error: invalid YAML in {path}: ")
+
+
+def test_non_mapping_root_raises_config_error(tmp_path: Path) -> None:
+    """A YAML file whose root is a list (not a mapping) fails naming the file and the type."""
+    path = tmp_path / "strategies.yaml"
+    path.write_text("- just\n- a\n- list\n", encoding="utf-8")
+    with pytest.raises(ConfigError) as excinfo:
+        load_yaml_model(path, StrategiesConfig, env_section="STRATEGIES", env={})
+    assert str(excinfo.value) == f"Config error: top-level of {path} must be a mapping, got list"
+
+
+def test_schema_validation_failure_names_the_file_and_model(tmp_path: Path) -> None:
+    """A wrong-typed field raises ConfigError naming the file, the model and the field."""
+    path = tmp_path / "binance.yaml"
+    path.write_text(
+        "base_url: not-a-url\nws_url: wss://x\nrecv_window_ms: 5000\ntestnet: true\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError) as excinfo:
+        load_yaml_model(path, BinanceExchangeConfig, env_section="BINANCE", env={})
+    assert str(excinfo.value).startswith(
+        f"Config error: validation failed for {path} against BinanceExchangeConfig: "
+        "1 validation error for BinanceExchangeConfig\nbase_url\n"
+    )
+
+
+def test_unknown_field_is_forbidden(tmp_path: Path) -> None:
+    """extra=forbid catches typos: an unknown key aborts load and is named."""
+    path = tmp_path / "ml.yaml"
+    path.write_text(_VALID_ML + "\ntypoed_field: 1\n", encoding="utf-8")
+    with pytest.raises(ConfigError) as excinfo:
+        load_yaml_model(path, MLConfig, env_section="ML", env={})
+    assert "typoed_field\n  Extra inputs are not permitted" in str(excinfo.value)
+
+
+def test_empty_yaml_file_fails_every_required_field(tmp_path: Path) -> None:
+    """An empty YAML file is an empty mapping, so all four required MLConfig fields fail."""
+    path = tmp_path / "ml.yaml"
+    path.write_text("", encoding="utf-8")
+    with pytest.raises(ConfigError) as excinfo:
+        load_yaml_model(path, MLConfig, env_section="ML", env={})
+    assert str(excinfo.value).startswith(
+        f"Config error: validation failed for {path} against MLConfig: "
+        "4 validation errors for MLConfig\n"
+    )
+
+
+def test_config_error_message_carries_the_prefix() -> None:
+    """__str__ prefixes the message with 'Config error:' so log grep is deterministic."""
+    err = ConfigError(msg="binance.yaml: base_url required")
+    assert str(err) == "Config error: binance.yaml: base_url required"
+
+
+# ---------------------------------------------------------------------------
+# Secrets never surface in error text
+# ---------------------------------------------------------------------------
+
+
+def test_section_validation_error_does_not_echo_a_secret_from_another_field(
+    config_dir: Path,
+) -> None:
+    """A bad Sentry environment fails load without printing the configured DSN."""
+    secret = "PLANTED-SENTRY-KEY"  # noqa: S105  # gitleaks:allow
     with pytest.raises(ConfigError) as excinfo:
         load_config(
             config_dir,
-            env={"HERMES_ML__SUPERVISOR_MODEL__NESTED": "ignored"},
+            env={
+                "HERMES_SENTRY__DSN": f"https://{secret}@o1.ingest.example/1",
+                "HERMES_SENTRY__ENVIRONMENT": "",
+            },
         )
-    assert "supervisor_model" in str(excinfo.value)
+    message = str(excinfo.value)
+    assert (message.startswith("Config error: validation failed for "), secret in message) == (
+        True,
+        False,
+    )
 
 
-# ---------------------------------------------------------------------------
-# Root-level env vars — HERMES_ENV + HERMES_ALLOW_MAINNET
-# ---------------------------------------------------------------------------
-
-
-def test_load_config_defaults_env_to_dev_when_unset(config_dir: Path) -> None:
-    """HermesConfig.env defaults to 'dev' when HERMES_ENV is not in the env snapshot."""
-    cfg = load_config(config_dir, env={})
-    assert cfg.env == "dev"
-    assert cfg.allow_mainnet is False
-
-
-def test_load_config_reads_hermes_env_from_env(config_dir: Path) -> None:
-    """HERMES_ENV=sandbox sets HermesConfig.env accordingly."""
-    cfg = load_config(config_dir, env={"HERMES_ENV": "sandbox"})
-    assert cfg.env == "sandbox"
-
-
-def test_load_config_reads_hermes_env_prod(config_dir: Path) -> None:
-    """HERMES_ENV=prod sets HermesConfig.env to prod."""
-    cfg = load_config(config_dir, env={"HERMES_ENV": "prod"})
-    assert cfg.env == "prod"
-
-
-def test_load_config_reads_hermes_env_staging(config_dir: Path) -> None:
-    """HERMES_ENV=staging is a valid tier (#192), so the staging unit's config loads."""
-    cfg = load_config(config_dir, env={"HERMES_ENV": "staging"})
-    assert cfg.env == "staging"
-
-
-def test_load_config_allow_mainnet_in_staging_raises_config_error(config_dir: Path) -> None:
-    """Staging shares the prod box but never real capital: allow_mainnet stays prod-only."""
-    with pytest.raises(ConfigError):
+def test_tier_gate_error_does_not_echo_configured_secrets(config_dir: Path) -> None:
+    """The mainnet-outside-prod rejection names the tier but neither the DSN nor the ping URL."""
+    with pytest.raises(ConfigError) as excinfo:
         load_config(
             config_dir,
-            env={"HERMES_ENV": "staging", "HERMES_ALLOW_MAINNET": "yes"},
+            env={
+                "HERMES_ENV": "dev",
+                "HERMES_ALLOW_MAINNET": "yes",
+                "HERMES_SENTRY__DSN": "https://PLANTED-SENTRY-KEY@o1.ingest.example/1",
+                "HERMES_HEALTHCHECKS__PING_URL": "https://hc-ping.com/PLANTED-PING-UUID",
+            },
         )
+    message = str(excinfo.value)
+    assert (
+        "current env='dev'" in message,
+        "PLANTED-SENTRY-KEY" in message,
+        "PLANTED-PING-UUID" in message,
+    ) == (True, False, False)
+
+
+# ---------------------------------------------------------------------------
+# Root-level env vars: HERMES_ENV + HERMES_ALLOW_MAINNET
+# ---------------------------------------------------------------------------
+
+
+def test_load_config_defaults_to_dev_without_mainnet_when_unset(config_dir: Path) -> None:
+    """With neither HERMES_ENV nor HERMES_ALLOW_MAINNET set, the tier is dev and mainnet is off."""
+    cfg = load_config(config_dir, env={})
+    assert (cfg.env, cfg.allow_mainnet) == ("dev", False)
+
+
+@pytest.mark.parametrize("tier", ["dev", "sandbox", "staging", "prod"])
+def test_load_config_reads_the_tier_from_hermes_env(config_dir: Path, tier: str) -> None:
+    """Each of the four tiers in HERMES_ENV becomes HermesConfig.env, mainnet still off."""
+    cfg = load_config(config_dir, env={"HERMES_ENV": tier, "HERMES_ALLOW_MAINNET": "no"})
+    assert (cfg.env, cfg.allow_mainnet) == (tier, False)
 
 
 def test_load_config_rejects_unknown_hermes_env_value(config_dir: Path) -> None:
-    """HERMES_ENV=qa (not in Literal set) raises ConfigError."""
+    """HERMES_ENV=qa is not one of the four tiers, so the root fails validation on ``env``."""
     with pytest.raises(ConfigError) as excinfo:
         load_config(config_dir, env={"HERMES_ENV": "qa"})
-    assert "HermesConfig" in str(excinfo.value)
-
-
-def test_load_config_allow_mainnet_in_prod_is_permitted(config_dir: Path) -> None:
-    """HERMES_ALLOW_MAINNET=yes + HERMES_ENV=prod succeeds."""
-    cfg = load_config(
-        config_dir,
-        env={"HERMES_ENV": "prod", "HERMES_ALLOW_MAINNET": "yes"},
+    assert str(excinfo.value).startswith(
+        "Config error: HermesConfig validation failed: 1 validation error for HermesConfig\nenv\n"
     )
-    assert cfg.env == "prod"
-    assert cfg.allow_mainnet is True
 
 
-def test_load_config_allow_mainnet_in_dev_raises_config_error(config_dir: Path) -> None:
-    """HERMES_ALLOW_MAINNET=yes outside prod raises ConfigError at load time.
+# SEV-1: no rubric row matches; real-capital gate (ADR-003 §00 I-08)
+def test_load_config_allows_mainnet_in_prod(config_dir: Path) -> None:
+    """HERMES_ALLOW_MAINNET=yes with HERMES_ENV=prod is the one tier that may touch mainnet."""
+    cfg = load_config(config_dir, env={"HERMES_ENV": "prod", "HERMES_ALLOW_MAINNET": "yes"})
+    assert (cfg.env, cfg.allow_mainnet) == ("prod", True)
 
-    Belt-and-suspenders: the composite validator refuses to instantiate
-    a HermesConfig with allow_mainnet=True + env!=prod, so the misconfig
-    surfaces at process start (not at first trade).
-    """
+
+# SEV-1: no rubric row matches; real-capital gate (ADR-003 §00 I-08)
+@pytest.mark.parametrize("tier", ["dev", "sandbox", "staging"])
+def test_load_config_rejects_mainnet_outside_prod(config_dir: Path, tier: str) -> None:
+    """HERMES_ALLOW_MAINNET=yes in any non-prod tier fails load, naming the tier."""
     with pytest.raises(ConfigError) as excinfo:
-        load_config(
-            config_dir,
-            env={"HERMES_ENV": "dev", "HERMES_ALLOW_MAINNET": "yes"},
-        )
-    msg = str(excinfo.value)
-    assert "HERMES_ALLOW_MAINNET" in msg or "allow_mainnet" in msg
-
-
-def test_load_config_allow_mainnet_in_sandbox_raises_config_error(
-    config_dir: Path,
-) -> None:
-    """HERMES_ALLOW_MAINNET=yes in sandbox tier raises — sandbox is not prod."""
-    with pytest.raises(ConfigError):
-        load_config(
-            config_dir,
-            env={"HERMES_ENV": "sandbox", "HERMES_ALLOW_MAINNET": "yes"},
-        )
-
-
-def test_load_config_allow_mainnet_false_in_dev_is_ok(config_dir: Path) -> None:
-    """HERMES_ALLOW_MAINNET=no + HERMES_ENV=dev is the default happy state."""
-    cfg = load_config(
-        config_dir,
-        env={"HERMES_ENV": "dev", "HERMES_ALLOW_MAINNET": "no"},
+        load_config(config_dir, env={"HERMES_ENV": tier, "HERMES_ALLOW_MAINNET": "yes"})
+    assert f"HERMES_ALLOW_MAINNET may only be set in prod env; current env={tier!r}" in str(
+        excinfo.value
     )
-    assert cfg.env == "dev"
-    assert cfg.allow_mainnet is False
 
 
 # ---------------------------------------------------------------------------
-# Dotenv loading — .env.local is read when env is not injected
+# Dotenv: shell env over .env.local over the YAML file
 # ---------------------------------------------------------------------------
+
+
+def test_dotenv_value_overrides_the_yaml_file(
+    config_dir: Path, tmp_path: Path, clean_process_env: pytest.MonkeyPatch
+) -> None:
+    """A section override in .env.local beats the YAML value when no shell var is set."""
+    dotenv = tmp_path / ".env.local"
+    dotenv.write_text("HERMES_BINANCE__RECV_WINDOW_MS=7000\n", encoding="utf-8")
+    assert load_config(config_dir, dotenv_path=dotenv).binance.recv_window_ms == 7000
+
+
+def test_shell_env_overrides_dotenv(
+    config_dir: Path, tmp_path: Path, clean_process_env: pytest.MonkeyPatch
+) -> None:
+    """A real shell env var wins over a conflicting .env.local value."""
+    clean_process_env.setenv("HERMES_ENV", "prod")
+    dotenv = tmp_path / ".env.local"
+    dotenv.write_text("HERMES_ENV=sandbox\n", encoding="utf-8")
+    assert load_config(config_dir, dotenv_path=dotenv).env == "prod"
 
 
 def test_load_config_reads_dotenv_file_when_env_not_injected(
-    config_dir: Path,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    config_dir: Path, tmp_path: Path, clean_process_env: pytest.MonkeyPatch
 ) -> None:
-    """When ``env`` is None, load_config populates os.environ from the dotenv file.
-
-    Simulates the local-dev flow: developer copies .env.local.example to
-    .env.local, sets HERMES_ENV=sandbox, then runs the app. The loader
-    picks it up without the developer setting shell env vars.
-    """
-    # Clear any ambient HERMES_ENV so the dotenv is the sole source.
-    monkeypatch.delenv("HERMES_ENV", raising=False)
-    monkeypatch.delenv("HERMES_ALLOW_MAINNET", raising=False)
+    """With ``env`` unset, HERMES_ENV from the dotenv file sets the tier."""
     dotenv = tmp_path / ".env.local"
     dotenv.write_text("HERMES_ENV=sandbox\n", encoding="utf-8")
+    assert load_config(config_dir, dotenv_path=dotenv).env == "sandbox"
 
-    cfg = load_config(config_dir, dotenv_path=dotenv)
-    assert cfg.env == "sandbox"
+
+def test_load_config_reads_env_local_in_cwd_by_default(
+    config_dir: Path, tmp_path: Path, clean_process_env: pytest.MonkeyPatch
+) -> None:
+    """With no ``dotenv_path`` the loader reads ``.env.local`` in the working directory."""
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    (workdir / ".env.local").write_text("HERMES_ENV=sandbox\n", encoding="utf-8")
+    clean_process_env.chdir(workdir)
+    assert load_config(config_dir).env == "sandbox"
 
 
 def test_load_config_dotenv_missing_is_silent_noop(
-    config_dir: Path,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    config_dir: Path, tmp_path: Path, clean_process_env: pytest.MonkeyPatch
 ) -> None:
-    """A missing dotenv file does not raise — prod runs without .env.local."""
-    monkeypatch.delenv("HERMES_ENV", raising=False)
-    monkeypatch.delenv("HERMES_ALLOW_MAINNET", raising=False)
-    missing = tmp_path / "does-not-exist.env"
-    cfg = load_config(config_dir, dotenv_path=missing)
-    # Default tier applied — no crash from the missing file.
+    """A missing dotenv file does not raise and the default tier applies: prod has no .env.local."""
+    cfg = load_config(config_dir, dotenv_path=tmp_path / "does-not-exist.env")
     assert cfg.env == "dev"
 
 
 def test_load_config_dotenv_ignored_when_env_snapshot_supplied(
-    config_dir: Path,
-    tmp_path: Path,
+    config_dir: Path, tmp_path: Path, clean_process_env: pytest.MonkeyPatch
 ) -> None:
-    """When ``env`` is explicitly passed, dotenv_path is ignored — tests own env."""
+    """When ``env`` is passed explicitly, the dotenv file is never read: tests own their env."""
     dotenv = tmp_path / ".env.local"
     dotenv.write_text("HERMES_ENV=sandbox\n", encoding="utf-8")
-    # env={} means "no env vars at all" — dotenv MUST NOT slip in.
-    cfg = load_config(config_dir, env={}, dotenv_path=dotenv)
-    assert cfg.env == "dev"
-
-
-def test_load_config_shell_env_overrides_dotenv(
-    config_dir: Path,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A real shell env var wins over a conflicting dotenv value (override=False)."""
-    # Shell env sets prod; dotenv sets sandbox; loader must honour shell.
-    monkeypatch.setenv("HERMES_ENV", "prod")
-    monkeypatch.delenv("HERMES_ALLOW_MAINNET", raising=False)
-    dotenv = tmp_path / ".env.local"
-    dotenv.write_text("HERMES_ENV=sandbox\n", encoding="utf-8")
-
-    cfg = load_config(config_dir, dotenv_path=dotenv)
-    assert cfg.env == "prod"
+    assert load_config(config_dir, env={}, dotenv_path=dotenv).env == "dev"

@@ -61,9 +61,12 @@ on:
 permissions:
   contents: read
 
+# Pushes to main share one group that cancels the run in progress: a
+# merge-queue batch lands several squashes in a row, and only the check
+# against the newest tip matters (#694). PR events stay per PR.
 concurrency:
-  group: pr-housekeeping-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.run_id }}
-  cancel-in-progress: false
+  group: pr-housekeeping-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || (github.event_name == 'push' && 'main-push') || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 jobs:
   rewrite:

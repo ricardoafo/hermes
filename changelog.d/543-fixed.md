@@ -1,1 +1,0 @@
-- **Every `hermes` command writes its ERROR lines to stderr** (`src/hermes/entrypoints/_streams.py`): stdout now holds only a command's real output, so a failing `--json` call no longer feeds an error line to the JSON consumer. Exit codes and message wording are unchanged. Closes #543.
