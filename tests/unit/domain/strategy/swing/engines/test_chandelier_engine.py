@@ -184,19 +184,21 @@ class TestChandelierPreRegisteredDefaults:
             f"Chandelier(22, 3.0) stop must be 3865/44 = 87.8409..., got {stop}"
         )
 
-    def test_default_period_needs_23_bars(self) -> None:
-        """With no arguments 22 bars return None and 23 bars return a stop.
+    def test_default_period_answers_from_23_bars(self) -> None:
+        """With no arguments the last 23 bars give the hand-computed Chandelier(22) stop.
 
-        ATR(22) needs 22 true ranges, so 23 bars. A default of 21 would answer on
-        22 bars; a default of 23 would still answer None on 23 bars.
+        ``bars[-23:]`` is ``bars[1..23]``: ``bars[1]`` only supplies the previous
+        close, so the 22 true ranges are 30 (``bars[2]``) and 21 bars of 10.
+        Wilder seed: (30 + 210) / 22 = 120 / 11, with no smoothing step.
+        highest_high(``bars[2..23]``) = 125.
+        Stop = 125 - 3 x 120 / 11 = (1375 - 360) / 11 = 1015 / 11 = 92.2727...
+        A default of 23 would need 24 bars and return None here.
         """
-        bars = _pinning_bars()
+        stop = ChandelierEngine.trailing_stop(_pinning_bars()[-23:])
 
-        assert ChandelierEngine.trailing_stop(bars[-22:]) is None, (
-            "Chandelier(22) must not answer with only 22 bars"
-        )
-        assert ChandelierEngine.trailing_stop(bars[-23:]) is not None, (
-            "Chandelier(22) must answer with 23 bars"
+        assert stop is not None, "Chandelier(22) must answer with 23 bars"
+        assert abs(stop - Decimal(1015) / Decimal(11)) < Decimal("1e-20"), (
+            f"Chandelier(22, 3.0) stop on 23 bars must be 1015/11 = 92.27..., got {stop}"
         )
 
 
