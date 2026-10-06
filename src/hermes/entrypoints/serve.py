@@ -8,9 +8,10 @@ ADR-011 D-02).
 
 What one process does:
 
-- :func:`build_composition` is pure wiring. The only I/O is the SQLite
-  ``connect`` (the ledger runs migrations idempotently) and the HTTP clients
-  the adapters own.
+- :func:`build_composition` is pure wiring. The only I/O is the serve lock
+  next to the ledger (one serve per ledger, #855), the SQLite ``connect``
+  (the ledger runs migrations idempotently) and the HTTP clients the adapters
+  own.
 - :func:`run` opens an :class:`asyncio.TaskGroup` holding the bar loop, logs
   and reports to Sentry whatever escapes it, closes every resource in order
   and returns the process exit code (0 clean, 1 runtime failure).
@@ -51,6 +52,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import os
 import signal
 import sqlite3
@@ -71,6 +73,7 @@ from hermes.adapters.fills.orderbook_walk import OrderbookWalkFillModel
 from hermes.adapters.fx.frankfurter import FrankfurterAdapter
 from hermes.adapters.fx.frankfurter import FrankfurterConfig as FrankfurterWireConfig
 from hermes.adapters.fx.rate_limiter import RateLimitConfig
+from hermes.adapters.ledger.connection import open_ledger
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.adapters.market_data.binance_depth_snapshot import BinanceDepthSnapshotAdapter
 from hermes.adapters.market_data.binance_live_klines import BinanceLiveKlinesAdapter
@@ -134,6 +137,7 @@ from hermes.entrypoints._release import read_release
 from hermes.infrastructure import sentry_integration
 from hermes.infrastructure.config.models import FrankfurterConfig
 from hermes.infrastructure.config.root import HermesConfig
+from hermes.infrastructure.file_lock import FileLock
 from hermes.infrastructure.logging import bind_correlation_id, new_correlation_id
 from hermes.ports.bar_feed import ClosedBarFeedPort
 from hermes.ports.certification import CertificationStoreError, CertificationStorePort
@@ -145,10 +149,12 @@ from hermes.ports.strategy import StrategyPort
 __all__ = [
     "CATCHUP_BARS",
     "EXPERIMENT_DIR",
+    "SERVE_LOCK_SUFFIX",
     "SHADOW_STRATEGY_NAME",
     "SHADOW_UNIVERSE",
     "BarGapError",
     "Composition",
+    "LedgerInUseError",
     "StartupError",
     "build_composition",
     "certification_dir_for",
@@ -158,6 +164,7 @@ __all__ = [
     "parameter_fingerprint_for",
     "report_failure",
     "run",
+    "serve_lock_path",
 ]
 
 _log = structlog.get_logger(__name__)
@@ -193,6 +200,23 @@ _NEVER: Final = datetime(1970, 1, 1, tzinfo=UTC)
 
 class StartupError(HermesError):
     """The configuration cannot run the shadow loop; the process exits 3."""
+
+
+class LedgerInUseError(StartupError):
+    """Another ``hermes serve`` holds the ledger's serve lock; the process exits 4."""
+
+
+SERVE_LOCK_SUFFIX: Final = ".serve.lock"
+"""Suffix of the lock file next to the ledger that one running serve holds."""
+
+
+def serve_lock_path(db_path: Path) -> Path:
+    """Return the serve lock file for the ledger at ``db_path``.
+
+    Only ``hermes serve`` takes this lock. Readers (console, bot, tax pack,
+    ``hermes status``) never touch it, so they keep working while serve runs.
+    """
+    return db_path.with_name(db_path.name + SERVE_LOCK_SUFFIX)
 
 
 def certification_dir_for(db_path: Path) -> Path:
@@ -261,6 +285,9 @@ class Composition:
             start-up pricing of pending values.
         spread_sample_seconds: Step of the spread sampler that records the
             RO-02 input (#835); no rule reads the samples.
+        serve_lock: The ledger's serve lock, held from build until
+            :func:`run` releases it after closing SQLite; ``None`` for a
+            composition built by hand in a test.
     """
 
     config: HermesConfig
@@ -282,6 +309,7 @@ class Composition:
     fx_adapter: FrankfurterAdapter | None
     eur_pricer: EurPricer
     spread_sample_seconds: float = SPREAD_SAMPLE_SECONDS
+    serve_lock: FileLock | None = None
 
 
 def _eur_rate_lookup(pricer: EurPricer) -> EurRateLookup:
@@ -473,9 +501,10 @@ def build_composition(
 ) -> Composition:
     """Wire every adapter the shadow loop needs and return the container.
 
-    Pure wiring: the only I/O is the SQLite ``connect`` (migrations run
-    idempotently in the ledger constructor) and the HTTP clients the adapters
-    own.
+    Pure wiring: the only I/O is the serve lock next to the ledger (held until
+    :func:`run` returns, so a second serve on the same ledger is refused), the
+    SQLite ``connect`` (migrations run idempotently in the ledger constructor)
+    and the HTTP clients the adapters own.
 
     Args:
         config: The validated :class:`HermesConfig` snapshot. Callers run
@@ -498,16 +527,60 @@ def build_composition(
         A fully wired :class:`Composition` ready to hand to :func:`run`.
 
     Raises:
+        LedgerInUseError: Another ``hermes serve`` holds this ledger's serve
+            lock. Nothing was opened.
         StartupError: The pre-registration or the fee history cannot be read,
             the start capital cannot be recorded, or the ledger's recorded
             trades or fill-quality rows cannot be read or replayed into the
             portfolio. The SQLite connection is closed before raising.
     """
     db_target = db_path if db_path is not None else DEFAULT_DB_PATH
+    lock = FileLock(serve_lock_path(db_target))
+    try:
+        acquired = lock.try_acquire()
+    except OSError as exc:
+        raise StartupError(f"cannot create the serve lock {lock.path}: {exc}") from exc
+    if not acquired:
+        holder = lock.holder_pid()
+        raise LedgerInUseError(
+            f"another hermes serve is running on {db_target}"
+            + (f" (pid {holder})" if holder else "")
+            + f"; it holds {lock.path}. Stop it first, or point --db at another ledger."
+        )
+    try:
+        composition = _wire_composition(
+            config,
+            db_path=db_target,
+            env=env,
+            feed=feed,
+            clock=clock,
+            experiment_root=experiment_root,
+            orderbooks=orderbooks,
+            fx=fx,
+        )
+    except BaseException:
+        lock.release()
+        raise
+    return dataclasses.replace(composition, serve_lock=lock)
+
+
+def _wire_composition(
+    config: HermesConfig,
+    *,
+    db_path: Path | None = None,
+    env: Mapping[str, str] | None = None,
+    feed: ClosedBarFeedPort | None = None,
+    clock: ClockPort | None = None,
+    experiment_root: Path | None = None,
+    orderbooks: OrderbookSnapshotPort | None = None,
+    fx: FxRateProviderPort | None = None,
+) -> Composition:
+    """Wire the composition once the serve lock is held; see :func:`build_composition`."""
+    db_target = db_path if db_path is not None else DEFAULT_DB_PATH
     env_snapshot: Mapping[str, str] = dict(os.environ) if env is None else env
     pre_registration, fee_rows = _load_experiment(experiment_root)
 
-    connection = sqlite3.connect(db_target)
+    connection = open_ledger(db_target)
     ledger = SqliteLedger(connection)
 
     wall: ClockPort = clock if clock is not None else WallClock()
@@ -781,7 +854,7 @@ def report_failure(exc: BaseException) -> None:
 
 
 async def _release(c: Composition) -> None:
-    """Close the feed and the depth source, then FX, Slack, Telegram, SQLite last."""
+    """Close the feeds, then FX, Slack, Telegram, SQLite and, last, the serve lock."""
     try:
         await c.feed.aclose()
     except Exception as exc:
@@ -791,6 +864,9 @@ async def _release(c: Composition) -> None:
     except Exception as exc:
         _log.error("serve.close.orderbooks_failed", exc_info=exc)
     with contextlib.ExitStack() as stack:
+        # Callbacks run last-in first-out: the lock goes only after SQLite has closed.
+        if c.serve_lock is not None:
+            stack.callback(_close_quietly, c.serve_lock.release)
         stack.callback(_close_quietly, c.sqlite_connection.close)
         if c.fx_adapter is not None:
             stack.callback(_close_quietly, c.fx_adapter.close)
