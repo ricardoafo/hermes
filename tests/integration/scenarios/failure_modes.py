@@ -44,6 +44,13 @@ _MIGRATE = _U + "adapters/ledger/test_migration_rollback.py::"
 _INTEGRITY = _U + "adapters/ledger/test_integrity.py::"
 _SNAPSHOT = _U + "domain/portfolio/"
 _FIFO = _U + "domain/lots/test_eur_fifo.py::"
+_CRASH = _S + "test_chaos_crash_mid_bar.py::"
+_STORAGE = _S + "test_chaos_storage.py::"
+_CLOCK = _S + "test_chaos_clock.py::"
+_PORTFOLIO_MACHINE = _U + "application/portfolio/test_portfolio_risk_state_machine.py::"
+_LEDGER_MACHINE = _U + "adapters/ledger/test_sqlite_ledger_state_machine.py::"
+_BOOK_MACHINE = _U + "adapters/market_data/test_orderbook_diff_state_machine.py::"
+_LOTS_MACHINE = _U + "domain/lots/test_fifo_lots_state_machine.py::"
 _WIRE = _U + "adapters/test_wire_numbers.py::"
 _PATHS = _S + "test_generated_paths.py::"
 _EVERY_BAR = _PATHS + "test_every_rule_holds_after_every_bar_and_a_restart_changes_nothing"
@@ -170,7 +177,7 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "Klines are down or answer an error page while serve boots",
-            gap="issue #846: serve exits 1 with no in-process retry; inferred, no serve-level test",
+            gap="issue #871: serve exits 1 with no in-process retry; inferred, no serve-level test",
         ),
         FailureMode(
             "An outage spans a bar boundary",
@@ -200,6 +207,14 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         FailureMode(
             "A cached or frozen depth book counts as fresh",
             gap="issue #859: the book is stamped on arrival; inferred, untested",
+        ),
+        FailureMode(
+            "A gapped or replayed depth diff reaches the book",
+            proved_by=(_BOOK_MACHINE + "TestOrderbookDiffMachine::runTest",),
+        ),
+        FailureMode(
+            "A depth diff older than the snapshot reaches the book",
+            gap="issue #866: the snapshot drops lastUpdateId, so stale diffs cannot be dropped",
         ),
     ),
     "exchange and FX": (
@@ -293,18 +308,32 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "A real kill or power loss lands mid-transaction",
-            gap="issue #846: crashes are only simulated by deleting cursor rows",
+            proved_by=(
+                _CRASH + "test_a_crash_mid_bar_leaves_only_whole_transactions_on_disk",
+                _CRASH + "test_a_restart_after_a_crash_mid_bar_records_each_trade_once",
+            ),
         ),
         FailureMode(
             "The disk fills during a ledger write",
-            gap="issue #846: inferred rollback and exit 1; no test fills a real disk",
+            proved_by=(
+                _STORAGE + "test_a_full_disk_at_boot_stops_serve_with_exit_1_and_the_cause_logged",
+                _STORAGE + "test_a_full_disk_at_boot_commits_no_row",
+                _STORAGE + "test_a_storage_error_mid_bar_stops_serve"
+                "_with_exit_1_and_the_cause_logged",
+                _STORAGE + "test_a_storage_error_mid_bar_commits_no_part_of_the_trade",
+                _STORAGE + "test_a_restart_after_a_storage_error_mid_bar_trades_once",
+            ),
         ),
         FailureMode(
             "A torn last line in the trial log or decision journal",
-            gap="issue #846: detected, but every later append is blocked; no recovery path",
+            gap="issue #871: detected, but every later append is blocked; no recovery path",
         ),
         FailureMode(
-            "Another process holds the ledger while serve commits",
+            "Another process holds the ledger briefly while serve commits",
+            proved_by=(_STORAGE + "test_serve_waits_out_a_write_lock_held_by_another_process",),
+        ),
+        FailureMode(
+            "Another process holds the ledger past sqlite's default five-second wait",
             gap="issue #855: no WAL and no busy timeout, so serve exits 1; inferred",
         ),
         FailureMode(
@@ -332,6 +361,19 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             proved_by=(
                 _MIGRATE + "test_migrate_snapshots_before_applying_and_restore_inverts_it",
                 _MIGRATE + "test_corrupt_snapshot_is_not_restored",
+            ),
+        ),
+        FailureMode(
+            "Restart, migration or snapshot restore loses or doubles a ledger row",
+            proved_by=(_LEDGER_MACHINE + "TestSqliteLedgerMachine::runTest",),
+        ),
+        FailureMode(
+            "Two migration snapshots taken in one second overwrite each other",
+            proved_by=(
+                _LEDGER_MACHINE + "test_a_second_snapshot_never_overwrites_the_first",
+                _U
+                + "adapters/ledger/test_migration_rollback.py::"
+                + "test_a_second_snapshot_in_the_same_second_gets_its_own_name",
             ),
         ),
         FailureMode(
@@ -384,13 +426,16 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "The wall clock steps backwards",
-            gap="issue #846: sleeps, cursors and the push window misbehave; inferred, untested",
+            proved_by=(
+                _CLOCK + "test_a_clock_jump_across_a_bar_close_handles_every_bar_exactly_once",
+                _CLOCK + "test_a_clock_jump_across_a_bar_close_sends_the_entry_push_once",
+            ),
         ),
     ),
     "process": (
         FailureMode(
             "Two serves run on the same ledger",
-            gap="issue #855: no single-instance lock; both can push and fill; inferred",
+            gap="issue #855: no single-instance lock; both can push and fill (strict xfail)",
         ),
         FailureMode(
             "A restart with a position open",
@@ -409,7 +454,7 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "SIGTERM while a bar is being handled",
-            gap="issue #846: slow handling can outlast systemd's stop timeout; untested",
+            gap="issue #871: slow handling can outlast systemd's stop timeout; untested",
         ),
         FailureMode(
             "A runtime failure exits with the code that makes systemd restart",
@@ -513,6 +558,10 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
     ),
     "risk halts": (
         FailureMode(
+            "Cash, equity, stops or refusals drift under halt, kill and restart",
+            proved_by=(_PORTFOLIO_MACHINE + "TestPortfolioRiskMachine::runTest",),
+        ),
+        FailureMode(
             "RO-03, RO-04 and RO-07 halt entries in serve",
             proved_by=(
                 _RISK + "test_a_fill_slipping_over_half_a_percent_halts_later_entries",
@@ -538,7 +587,7 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "A halt survives, or is lost across, a restart",
-            gap="issue #844: no test restarts during an RO-03 or RO-07 halt",
+            gap="issue #873: no test restarts during an RO-03 or RO-07 halt",
         ),
     ),
     "money": (
@@ -585,7 +634,7 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "A coin is held with no entry signal or entry price",
-            gap="issue #844: the strategy is seeded flat, so no exit rule watches it; inferred",
+            gap="issue #873: the strategy is seeded flat, so no exit rule watches it; inferred",
         ),
         FailureMode(
             "Fees are charged wrongly",
@@ -594,6 +643,22 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
                 "::test_the_entry_size_price_and_fee_follow_the_pre_registration",
                 _FIFO + "TestWorkedExamples::test_round_trip_gain_is_net_of_both_fees",
             ),
+        ),
+        FailureMode(
+            "The entry spread pushes total exposure past the cap",
+            gap="issue #864: the cap is checked at the signal price, not the fill",
+        ),
+        FailureMode(
+            "A position built by two entries on one pair cannot be sold",
+            proved_by=(_PORTFOLIO_MACHINE + "test_an_exit_sells_a_position_built_by_two_entries",),
+        ),
+        FailureMode(
+            "Tax lots across several assets lose or invent quantity",
+            proved_by=(_LOTS_MACHINE + "TestFifoLotsMachine::runTest",),
+        ),
+        FailureMode(
+            "Lot selection draws a lot dated after the sale",
+            proved_by=(_LOTS_MACHINE + "test_fifo_never_draws_a_lot_opened_after_the_sale",),
         ),
         FailureMode(
             "Tax lots are consumed out of order or beyond inventory",

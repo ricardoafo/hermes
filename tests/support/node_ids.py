@@ -15,7 +15,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def names_a_test(node_id: str) -> bool:
-    """Return whether ``path::[Class::]function`` names a test function in this repo."""
+    """Return whether ``path::[Class::]function`` names a test function in this repo.
+
+    ``runTest`` counts: it is the one test a Hypothesis state machine's ``TestCase`` runs.
+    """
     path, *names = node_id.split("::")
     if not names or not (PROJECT_ROOT / path).is_file():
         return False
@@ -24,4 +27,4 @@ def names_a_test(node_id: str) -> bool:
         target = getattr(target, name, None)
         if target is None:
             return False
-    return callable(target) and names[-1].startswith("test_")
+    return callable(target) and (names[-1].startswith("test_") or names[-1] == "runTest")
