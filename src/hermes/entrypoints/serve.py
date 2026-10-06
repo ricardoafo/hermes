@@ -108,6 +108,7 @@ from hermes.application.signal_notifier import SignalNotifier
 from hermes.application.strategy_protocol.kill_trigger_evaluator import KillTriggerEvaluator
 from hermes.application.strategy_protocol.preregistration import PreRegistration
 from hermes.domain.errors import HermesError, LedgerError
+from hermes.domain.events.anomaly_detected import AnomalyDetected
 from hermes.domain.events.bar_processed import BarProcessed
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.event_bus import EventBus, EventDispatchError
@@ -259,8 +260,9 @@ class Composition:
     Attributes:
         config: The fully-validated :class:`HermesConfig` snapshot the
             composition was built from.
-        event_bus: Synchronous in-process pub/sub. ``SignalEmitted`` and
-            ``BarProcessed`` are subscribed to the ledger at build time.
+        event_bus: Synchronous in-process pub/sub. ``SignalEmitted``,
+            ``BarProcessed`` and ``AnomalyDetected`` are subscribed to the
+            ledger at build time; anomalies are recorded only (#136).
         ledger: SQLite-backed ledger. Holds signals and the bar cursor.
         clock: Production time source.
         feed: Closed-bar source (warm-up history plus the live stream).
@@ -619,6 +621,8 @@ def _wire_on_ledger(
     event_bus = EventBus()
     event_bus.subscribe(SignalEmitted, ledger.append_event)
     event_bus.subscribe(BarProcessed, ledger.append_event)
+    # Record-only (#136): no subscriber pauses or gates entries on an anomaly.
+    event_bus.subscribe(AnomalyDetected, ledger.append_event)
 
     roster = next(s for s in config.strategies.strategies if s.enabled)
     strategy_id = StrategyId(roster.name)
@@ -1010,6 +1014,10 @@ class _BarLoop:
             strategy.seed(seeded, open_position=self._restore_position(pair, cursors))
         for bar in warm:
             if bar.close_time <= cursors[(bar.pair, bar.interval)]:
+                # The tracker is rebuilt from trades at fill prices; without the
+                # marks, exposure, equity and drawdown read cost until each
+                # pair's next bar (#863).
+                c.tracker.mark(bar)
                 c.executor.observe(bar)
         _log.info("serve.warmup.done", bars=len(warm))
         for bar in warm:

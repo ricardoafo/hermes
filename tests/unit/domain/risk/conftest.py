@@ -34,6 +34,7 @@ def make_portfolio_state(
     realized_slippage_cumulative: Decimal = Decimal("0"),
     correlations: dict[tuple[Pair, Pair], float] | None = None,
     dd_halt_required: bool = False,
+    held_pairs: frozenset[Pair] = frozenset(),
 ) -> PortfolioState:
     """Build a PortfolioState with safe defaults for testing.
 
@@ -43,6 +44,7 @@ def make_portfolio_state(
         realized_slippage_cumulative: Running cumulative slippage fraction.
         correlations: Pair-pair correlation dict (default: empty — uncorrelated).
         dd_halt_required: Drawdown halt flag (default: False).
+        held_pairs: Pairs with an open position (default: none).
 
     Returns:
         A fully-specified :class:`~hermes.domain.risk.state.PortfolioState`.
@@ -54,6 +56,7 @@ def make_portfolio_state(
         realized_slippage_cumulative=realized_slippage_cumulative,
         correlations=correlations if correlations is not None else {},
         dd_halt_required=dd_halt_required,
+        held_pairs=held_pairs,
     )
 
 
