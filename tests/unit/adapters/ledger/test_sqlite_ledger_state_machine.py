@@ -120,7 +120,7 @@ def _record(
     # Excluded transition (issue #853): a fee in the base asset that reaches
     # the quantity raises a non-SQLite error mid-write, and the ledger leaves
     # the half-written rows for the next write to commit. The machine only
-    # pays fees in the quote; the pin below reproduces the defect.
+    # pays fees in the quote; the fix and its test are issue #853's.
     fee = Money(amount=Decimal("0.1"), currency=Currency.USDT)
     eur = (
         TradeEur.price(_PRICING, price=Money(amount=_PRICE, currency=Currency.USDT), fee=fee)
@@ -312,9 +312,8 @@ class SqliteLedgerMachine(RuleBasedStateMachine):
             encoding="utf-8",
         )
         self.probe_files.add(name)
-        # A distinct time per snapshot: snapshot names have one-second
-        # resolution and a second snapshot in the same second overwrites the
-        # first (issue #865, pinned below).
+        # A distinct time per snapshot keeps the names readable; a reused
+        # second gets a suffix instead of overwriting (issue #865, tested below).
         applied, snapshot = migrate_with_snapshot(
             self.db,
             self.tmp / "snapshots",
@@ -427,56 +426,13 @@ SqliteLedgerMachine.TestCase.settings = settings(
 TestSqliteLedgerMachine = SqliteLedgerMachine.TestCase
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "issue #853: SqliteLedger rolls back only on sqlite3.Error; a non-SQLite "
-        "exception mid-write leaves rows the next write commits"
-    ),
-)
-def test_a_write_that_raises_mid_transaction_leaves_nothing_behind(tmp_path: Path) -> None:
-    """A write that raises commits nothing, not even through the next write (I-06).
-
-    Shrunk from the machine's excluded transition: a BUY whose base-asset fee
-    equals its quantity raises ``DivisionByZero`` in the lot projection; the
-    next good BUY then commits the first trade row too.
-    """
-    conn = _connect(tmp_path / "ledger.sqlite3")
-    ledger = SqliteLedger(conn)
-    pair = _PAIRS[0]
-    broken = TradeRecord(
-        correlation_id="broken",
-        pair=pair,
-        side=OrderSide.BUY,
-        qty=Decimal("1"),
-        price=_PRICE,
-        fee=Money(amount=Decimal("1"), currency=Currency.BTC),
-        executed_at=_T0,
-        strategy_id=_STRATEGY,
-        lot_id=LotId.new(),
-        eur=None,
-    )
-    with pytest.raises(ArithmeticError):
-        ledger.record_trade(broken, _event(broken))
-    good = _record(pair, OrderSide.BUY, Decimal("1"), _T0, priced=False, tag="good")
-    ledger.record_trade(good, _event(good))
-    rows = conn.execute("SELECT correlation_id FROM trades ORDER BY id").fetchall()
-    assert rows == [("good",)]
-
-
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "issue #865: migrate_with_snapshot names snapshots to the second and overwrites an "
-        "existing file, so a second snapshot in the same second destroys the first rollback point"
-    ),
-)
 def test_a_second_snapshot_never_overwrites_the_first(tmp_path: Path) -> None:
     """Every snapshot taken stays restorable (ADR-006 §2: recovery is restoring a backup).
 
     Shrunk from the machine: snapshot before probe migration A, restore it,
-    record a trade, snapshot again before A in the same second. The first
-    snapshot file now holds the trade, so restoring it no longer rolls back.
+    record a trade, snapshot again before A in the same second. If the second
+    snapshot reused the first one's name, the first file would hold the trade
+    and restoring it would no longer roll back (issue #865).
     """
     migrations = tmp_path / "migrations"
     shutil.copytree(MIGRATIONS_DIR, migrations, ignore=shutil.ignore_patterns("*.py"))

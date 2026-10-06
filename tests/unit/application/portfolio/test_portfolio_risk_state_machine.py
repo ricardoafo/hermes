@@ -24,7 +24,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_DOWN, Context, Decimal, localcontext
 
-import pytest
 from hypothesis import event, settings
 from hypothesis import strategies as st
 from hypothesis.stateful import RuleBasedStateMachine, invariant, precondition, rule
@@ -219,8 +218,8 @@ class PortfolioRiskMachine(RuleBasedStateMachine):
             # Excluded transition: a second entry on a held pair. The strategy
             # never sends one (SwingStrategyAdapter holds one position per
             # pair); the kernel takes it, and the summed quantity can need more
-            # than 28 digits, which makes the exit unfillable (issue #866,
-            # pinned below). With three pairs held the SA-4 guard
+            # than 28 digits (issue #866, the exit case tested below). With
+            # three pairs held the SA-4 guard
             # refuses it first, so that case stays in.
             return
         ref = _BASE_PRICE[pair.base] * move
@@ -279,7 +278,7 @@ class PortfolioRiskMachine(RuleBasedStateMachine):
             if spread == 0:
                 # With the touch at the signal price the cap holds at the marks
                 # too. A wider touch can pass it by the spread on the last entry
-                # (issue #864, pinned below), so only zero-spread entries
+                # (issue #864, which waits on a decision), so only zero-spread entries
                 # are held to it.
                 assert self._exposure().quantize(_PRICE_GRID) <= _EXPOSURE_CAP
             return
@@ -442,36 +441,6 @@ PortfolioRiskMachine.TestCase.settings = settings(
 TestPortfolioRiskMachine = PortfolioRiskMachine.TestCase
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "issue #864: the §5.5 exposure cap is checked with the new position at the signal's "
-        "entry price, so the fill's spread can leave exposure at the marks above the cap"
-    ),
-)
-def test_exposure_at_the_marks_stays_within_the_cap_after_an_entry() -> None:
-    """Total exposure at the marks never passes 15% of capital after an entry (pre-reg §5.5).
-
-    Shrunk from the machine: BTC and ETH entered on zero-spread books at their
-    signal prices (250 + 250 at the marks), then SOL entered on a book whose
-    ask sits 30 bps above the 150 signal price. Sizing admits it
-    (500 + 250 <= 750), the fill at 150.45 marks it at 250.75, and exposure
-    ends at 750.75.
-    """
-    machine = PortfolioRiskMachine()
-    for pair, spread in zip(_PAIRS, ("0", "0", "30"), strict=True):
-        machine.clock += _BAR
-        ref = _BASE_PRICE[pair.base]
-        outcome = machine.kernel.execute(
-            _signal(SignalKind.ENTRY, ref, machine.clock),
-            pair,
-            machine._market(pair, _book(pair, ref, Decimal(spread), machine.clock, thin=False)),
-            correlation_id=f"e-{pair}",
-        )
-        assert isinstance(outcome, Executed), outcome
-    assert machine.tracker.open_notional() <= _EXPOSURE_CAP
-
-
 def _signal(kind: SignalKind, ref: Decimal, at: datetime) -> StrategySignal:
     return StrategySignal(
         kind=kind,
@@ -484,22 +453,15 @@ def _signal(kind: SignalKind, ref: Decimal, at: datetime) -> StrategySignal:
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "issue #866: a position built by two entries on one pair can need more than 28 "
-        "significant places; the walk fill model sums the exit in the default 28-place "
-        "context, matches less than the order and refuses the exit as INSUFFICIENT_DEPTH"
-    ),
-)
 def test_an_exit_sells_a_position_built_by_two_entries() -> None:
-    """An exit sells the whole held quantity (FillKernel docstring; change D-2).
+    """An exit sells the whole held quantity (FillKernel docstring; change D-2; issue #866).
 
     Shrunk from the machine: BTC entered at 36000 (qty 250/36000 to 28
     places), entered again at 39000 (qty 250/39000), then exited on a deep
-    book. The held 0.013354700854700854700854700854 BTC needs 29 places; the
-    walk matches 0.01335470085470085470085470085 and declines, so the
-    position can never be closed.
+    book. The held 0.013354700854700854700854700854 BTC needs 29 places;
+    summing the walked parts in the default 28-place context would match
+    0.01335470085470085470085470085 and decline, so the position could never
+    be closed.
     """
     machine = PortfolioRiskMachine()
     btc = _PAIRS[0]

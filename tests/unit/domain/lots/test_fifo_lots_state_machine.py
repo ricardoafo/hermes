@@ -18,7 +18,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_DOWN, Decimal
 
-import pytest
 from hypothesis import settings
 from hypothesis import strategies as st
 from hypothesis.stateful import RuleBasedStateMachine, invariant, precondition, rule
@@ -203,10 +202,9 @@ class FifoLotsMachine(RuleBasedStateMachine):
     def sell_between_buys(self, asset: Currency, percent: int) -> None:
         """Sell at a time before the newest lot: only lots opened by then are drawn.
 
-        Excluded transition (issue #866, pinned below): a sale bigger than
-        the inventory opened by its time. :func:`select_lots_fifo` then draws the
-        rest from a lot opened after the sale. The rule only sells what the
-        older lots hold.
+        The rule only sells what the older lots hold; a sale bigger than that
+        must be refused, which ``test_fifo_never_draws_a_lot_opened_after_the_sale``
+        checks (issue #866).
         """
         lots = self.model[asset]
         if len(lots) < 2 or lots[-1].opened_at == lots[0].opened_at:
@@ -284,19 +282,12 @@ FifoLotsMachine.TestCase.settings = settings(
 TestFifoLotsMachine = FifoLotsMachine.TestCase
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "issue #866: select_lots_fifo draws a lot opened after the sale time when the "
-        "older lots cannot cover the sale (selection.py filters by asset only)"
-    ),
-)
 def test_fifo_never_draws_a_lot_opened_after_the_sale() -> None:
-    """FIFO never draws from a lot dated after the sale (ADR-003 §03).
+    """FIFO never draws from a lot dated after the sale (ADR-003 §03, issue #866).
 
     Shrunk from the machine: buy 1 BTC at 09:00, buy 1 BTC at 10:00, sell
     1.5 BTC at 09:30. Only the 09:00 lot existed at the sale, so the sale must
-    be refused; the function instead draws 0.5 from the 10:00 lot.
+    be refused rather than draw 0.5 from the 10:00 lot.
     """
     early = Lot.open(
         lot_id=_lot_id(1),

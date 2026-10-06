@@ -355,7 +355,12 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "Two migration snapshots taken in one second overwrite each other",
-            gap="issue #865: snapshot names have one-second resolution",
+            proved_by=(
+                _LEDGER_MACHINE + "test_a_second_snapshot_never_overwrites_the_first",
+                _U
+                + "adapters/ledger/test_migration_rollback.py::"
+                + "test_a_second_snapshot_in_the_same_second_gets_its_own_name",
+            ),
         ),
         FailureMode(
             "Ledger rows disagree (orphan lot, wrong remainder)",
@@ -631,7 +636,7 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "A position built by two entries on one pair cannot be sold",
-            gap="issue #866: its quantity needs more digits than the order-book walk keeps",
+            proved_by=(_PORTFOLIO_MACHINE + "test_an_exit_sells_a_position_built_by_two_entries",),
         ),
         FailureMode(
             "Tax lots across several assets lose or invent quantity",
@@ -639,7 +644,7 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "Lot selection draws a lot dated after the sale",
-            gap="issue #866: select_lots_fifo filters by asset only; no production caller yet",
+            proved_by=(_LOTS_MACHINE + "test_fifo_never_draws_a_lot_opened_after_the_sale",),
         ),
         FailureMode(
             "Tax lots are consumed out of order or beyond inventory",

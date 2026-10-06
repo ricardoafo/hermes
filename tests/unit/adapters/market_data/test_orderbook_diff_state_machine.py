@@ -29,7 +29,6 @@ from decimal import Decimal
 from types import SimpleNamespace, TracebackType
 from typing import Any, Self, cast
 
-import pytest
 from hypothesis import settings
 from hypothesis import strategies as st
 from hypothesis.stateful import RuleBasedStateMachine, invariant, precondition, rule
@@ -203,7 +202,8 @@ class OrderbookDiffMachine(RuleBasedStateMachine):
 
         The first diff after a snapshot straddles ``lastUpdateId + 1`` (SA-3
         step 4). A first diff wholly at or before ``lastUpdateId`` is excluded:
-        issue #866, pinned below (the snapshot drops ``lastUpdateId``).
+        the snapshot drops ``lastUpdateId``, so no caller can discard it yet
+        (issue #866).
         """
         first = self.exchange_id + 1
         final = first + span
@@ -295,45 +295,3 @@ OrderbookDiffMachine.TestCase.settings = settings(
     stateful_step_count=60 if _EXPLORE else 25,
 )
 TestOrderbookDiffMachine = OrderbookDiffMachine.TestCase
-
-
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "issue #866: get_snapshot/_parse_snapshot drop lastUpdateId, so no caller can do SA-3 "
-        "step 3; a diff older than the snapshot is yielded and applied over it"
-    ),
-)
-def test_a_diff_older_than_the_snapshot_never_reaches_the_book() -> None:
-    """A diff with final id <= the snapshot's lastUpdateId is never applied (SA-3 step 3).
-
-    Shrunk from the machine: snapshot at lastUpdateId=1000 with bid 95 x 1;
-    a stale diff U=990 u=995 deleting bid 95 arrives first on the new stream.
-    The snapshot already contains that change's successors, so applying it
-    deletes a live level. Either the snapshot carries the id for the caller to
-    filter on, or the stream filters; today neither happens.
-    """
-    inbox: deque[str] = deque()
-    saved = ws_module.websockets  # type: ignore[attr-defined]
-    ws_module.websockets = SimpleNamespace(connect=lambda _url: _FakeSocket(inbox))  # type: ignore[attr-defined]
-    try:
-        snapshot = _parse_snapshot(
-            data={"lastUpdateId": 1000, "bids": [["95", "1"]], "asks": [["105", "1"]]},
-            pair=_PAIR,
-        )
-        stale = {"e": "depthUpdate", "E": 1, "s": "BTCUSDT", "U": 990, "u": 995}
-        inbox.append(json.dumps({**stale, "b": [["95", "0"]], "a": []}))
-
-        async def first_yield() -> list[OrderbookDiff]:
-            return [
-                diff async for diff in BinanceLiveWsAdapter.create().stream_orderbook_diffs(_PAIR)
-            ]
-
-        yielded = asyncio.run(first_yield())
-        last_update_id = getattr(snapshot, "last_update_id", None)
-        applied = [
-            d for d in yielded if last_update_id is None or d.final_update_id > last_update_id
-        ]
-        assert applied == []
-    finally:
-        ws_module.websockets = saved  # type: ignore[attr-defined]
