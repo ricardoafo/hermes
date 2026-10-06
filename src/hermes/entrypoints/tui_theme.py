@@ -132,6 +132,9 @@ BASE: Final = Tokens(
     line="#1A2740",
     live="#58D1EB",
     ai="#9D65FF",
+    # The spec gives `frame` and `chrome` for Neon only; Control room's values
+    # are an implementer decision (change.md D-9): the focus border and the
+    # live -> up -> ai stops of the base sheet.
     frame="#2C4F86",
     up="#468CE6",
     down="#F07814",
@@ -151,6 +154,7 @@ NEON: Final = replace(
     void="#0B0420",
     panel="#120731",
     panel_focus="#170A3D",
+    # The spec leaves Neon's focus border open; it is the Neon `frame` (D-9).
     focus_border="#8A5CFF",
     line="#4A2399",
     live="#00F0FF",

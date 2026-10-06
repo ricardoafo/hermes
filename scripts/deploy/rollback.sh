@@ -119,7 +119,7 @@ if [ -z "$RESTORE" ] && [ -f "$DB" ] && [ -z "${HERMES_SKIP_SCHEMA_GUARD:-}" ]; 
             - "$DB" < "$SCRIPT_DIR/schema_guard.py" || guard_rc=$?
         case $guard_rc in
             0) ;;
-            1) die "previous ($prev) cannot read the ledger's newer events: restore its snapshot with HERMES_RESTORE_DB, or set HERMES_SKIP_SCHEMA_GUARD=1" ;;
+            3) die "previous ($prev) cannot read the ledger's newer events: restore its snapshot with HERMES_RESTORE_DB, or set HERMES_SKIP_SCHEMA_GUARD=1" ;;
             *) die "the schema guard failed to run (exit $guard_rc): check it, or set HERMES_SKIP_SCHEMA_GUARD=1" ;;
         esac
     else

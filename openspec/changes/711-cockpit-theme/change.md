@@ -108,6 +108,20 @@ of Textual borders. The main risk is visual churn in the existing snapshots.
 - **Rationale**: motion off means no animation, not stale figures.
 - **Cost of reversal**: LOW.
 
+### D-9: token values the spec leaves open (implementer decision)
+
+- **Decision**: Control room's `frame` is #2C4F86 (the base focus border) and its `chrome` gradient is #58D1EB → #468CE6 → #9D65FF (the base live → up → ai); Neon's `focus_border` is #8A5CFF (the Neon `frame`). All three live as tokens in `tui_theme.py`.
+- **Alternatives**: flat Control room title bars (no gradient); a separate Neon focus colour.
+- **Rationale**: the spec gives `frame` and `chrome` for Neon only and no Neon focus border; reusing colours each theme already has keeps every theme to its own palette.
+- **Cost of reversal**: LOW (three token values).
+
+### D-10: the window bar is Neon chrome
+
+- **Decision**: the window bar ("▐ HERMES // SHADOW CONSOLE", binary strip, clock) shows in Neon only; Control room and night hide it, so the tab bar leads the screen and no clock is shown there.
+- **Alternatives**: keep the bar in Control room in calmer colours (the first build).
+- **Rationale**: the spec lists the gradient window bar and the ticking strip among what Neon adds to the chrome.
+- **Cost of reversal**: LOW (one `display` switch in `_apply_theme`).
+
 ## Requirements
 
 ### R-1: tokens and themes
@@ -121,7 +135,9 @@ of Textual borders. The main risk is visual churn in the existing snapshots.
 ### R-3: live dot, title and motion
 
 - **A-3.1**: the OK dot is drawn in the live colour and not dim; late is amber; down is red.
-- **A-3.2**: the terminal title reads `hermes ● live · next 18:00` on the OK fixture and is written as OSC 2.
+- **A-3.2**: the terminal title reads `hermes ● live · €1,021 · next 18:00` on the OK fixture and is written as OSC 2. The total (whole euros) appears only where `pnl_visible` allows money for the surface and never in the down title; without it the title is `hermes ● live · next 18:00`.
+- **A-3.4**: the window bar shows in Neon only; Control room and night hide it.
+- **A-3.5**: the DEMO DATA tag is drawn on the `warn` amber.
 - **A-3.3**: with motion off no effect timer exists and the strip never advances.
 
 ### R-4: theme switch

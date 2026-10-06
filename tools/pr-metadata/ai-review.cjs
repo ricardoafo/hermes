@@ -8,6 +8,12 @@
  */
 
 const MARKER = '<!-- hermes-ai-review -->';
+// The account ai-review.yml posts with (the job's GITHUB_TOKEN).
+const AUTHOR = 'github-actions[bot]';
+// Paths that steer the reviewer or the merge gates. A PR touching them
+// can rewrite what the review checks, so its own review never passes the
+// check: Rick decides (#778).
+const REVIEW_PATH = [/^\.github\//, /^tools\/pr-metadata\//, /^AGENTS\.md$/];
 const VERDICTS = ['approve', 'changes_needed', 'needs_decision'];
 const RISKS = ['low', 'medium', 'high'];
 const SEVERITIES = ['blocking', 'optional'];
@@ -74,6 +80,39 @@ function parseReview(raw) {
 }
 
 /**
+ * Changed paths that steer the reviewer or the merge gates.
+ *
+ * @param {string} nameStatus `git diff --name-status` output
+ * @returns {string[]} the changed paths under {@link REVIEW_PATH}
+ */
+function reviewPathChanges(nameStatus) {
+  const paths = String(nameStatus || '')
+    .split('\n')
+    .flatMap((line) => line.split('\t').slice(1))
+    .filter(Boolean);
+  return [...new Set(paths.filter((p) => REVIEW_PATH.some((re) => re.test(p))))];
+}
+
+/**
+ * Turns an Approve on a PR that touches the review path into a decision
+ * for Rick: such a PR can change what its own review checks.
+ *
+ * @param {ReturnType<typeof parseReview>} review
+ * @param {string[]} touched from {@link reviewPathChanges}
+ */
+function guardReviewPath(review, touched) {
+  if (review.verdict !== 'approve' || touched.length === 0) return review;
+  return {
+    ...review,
+    verdict: 'needs_decision',
+    forRick: {
+      ...review.forRick,
+      decision: `This PR changes the review or merge gates themselves (${touched.slice(0, 3).join(', ')}${touched.length > 3 ? ', …' : ''}), so the AI review cannot vouch for it on its own. The reviewer found no blocking problem; approve if you accept the change.`,
+    },
+  };
+}
+
+/**
  * The check passes only on an Approve with no blocking finding. An
  * Approve that still lists a blocking finding contradicts itself and
  * fails, so a confused reviewer can never wave a PR through.
@@ -92,12 +131,17 @@ function outcome(review) {
 }
 
 // Model text is untrusted: it must not ping people, forge the sticky
-// marker, or break out of the comment's layout.
+// marker, break out of the comment's layout, or carry links, images or
+// code spans that dress injected text up as ours (#778).
 function clean(text) {
   return String(text)
     .slice(0, MAX_TEXT)
     .split(MARKER).join('')
     .replace(/<!--|-->/g, '')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/<\s*\/?\s*(img|a)\b[^>]*>/gi, '')
+    .replace(/`/g, '')
     .replace(/@(?=[A-Za-z0-9-])/g, '@​');
 }
 
@@ -206,12 +250,19 @@ function renderFailure(reason, meta) {
 }
 
 /**
- * @param {{id: number, body: ?string}[]} comments
+ * The review's own comment: it carries the marker and was posted by the
+ * workflow. Anyone can paste the marker into a comment; only the author
+ * check keeps a stranger's comment from being taken over (#778).
+ *
+ * @param {{id: number, body: ?string, user?: ?{login: string}}[]} comments
  * @returns {?number} id of the existing sticky comment
  */
 function stickyCommentId(comments) {
-  const found = comments.find((c) => (c.body || '').startsWith(MARKER));
+  const found = comments.find((c) => (c.body || '').startsWith(MARKER) && c.user?.login === AUTHOR);
   return found ? found.id : null;
 }
 
-module.exports = { MARKER, parseReview, outcome, parseMetrics, metricsLine, renderComment, renderFailure, stickyCommentId };
+module.exports = {
+  MARKER, AUTHOR, parseReview, outcome, reviewPathChanges, guardReviewPath,
+  parseMetrics, metricsLine, renderComment, renderFailure, stickyCommentId,
+};

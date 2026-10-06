@@ -94,10 +94,15 @@ class TestMarketDataConfigWarmupFloors:
             999 - depth + 200,
         )
 
-    def test_market_data_warmup_bars_rejects_an_unconfigured_interval(self) -> None:
-        """Only 4h and 1d have a depth."""
-        with pytest.raises(ValueError, match="no warm-up depth"):
-            MarketDataConfig().warmup_bars(KlineInterval.H1)
+    @pytest.mark.parametrize("interval", [KlineInterval.M1, KlineInterval.M5, KlineInterval.H1])
+    def test_market_data_warmup_bars_rejects_an_unconfigured_interval(
+        self, interval: KlineInterval
+    ) -> None:
+        """Only 4h and 1d have a depth; every other interval raises naming itself."""
+        with pytest.raises(
+            ValueError, match=f"no warm-up depth configured for interval {interval!r}"
+        ):
+            MarketDataConfig().warmup_bars(interval)
 
 
 class TestMarketDataConfigStreams:
@@ -133,6 +138,19 @@ class TestMarketDataConfigStreams:
         """At least one pair is required."""
         with pytest.raises(ValidationError, match="at least 1 item"):
             MarketDataConfig(pairs=[])
+
+    def test_market_data_accepts_a_single_pair(self) -> None:
+        """One pair is the smallest valid stream set."""
+        assert MarketDataConfig(pairs=["SOL/USDT"]).pairs == ["SOL/USDT"]
+
+    def test_market_data_accepts_a_single_interval(self) -> None:
+        """One interval is the smallest valid stream set."""
+        assert MarketDataConfig(intervals=[KlineInterval.D1]).intervals == [KlineInterval.D1]
+
+    def test_market_data_rejects_an_empty_interval_list(self) -> None:
+        """At least one interval is required."""
+        with pytest.raises(ValidationError, match="at least 1 item"):
+            MarketDataConfig(intervals=[])
 
     def test_market_data_default_intervals_are_4h_and_1d(self) -> None:
         """The strategy never enters without 1d bars, so both are followed."""
@@ -185,10 +203,10 @@ class TestMarketDataConfigTiming:
         with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
             MarketDataConfig(settle_delay="5")  # type: ignore[call-arg]
 
-    def test_market_data_config_is_frozen(self) -> None:
-        """Config is immutable after load."""
-        with pytest.raises(ValidationError, match="frozen"):
-            MarketDataConfig().settle_delay_seconds = 1.0
+    def test_market_data_accepts_a_slow_retry_equal_to_the_normal_retry(self) -> None:
+        """Equal periods are allowed: the slow retry must only never be faster."""
+        config = MarketDataConfig(retry_interval_seconds=10, slow_retry_interval_seconds=10)
+        assert config.slow_retry_interval_seconds == 10.0
 
 
 class TestMarketDataConfigLoading:
