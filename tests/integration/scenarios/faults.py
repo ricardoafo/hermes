@@ -133,7 +133,12 @@ def faulty_ledger(plan: FaultPlan) -> Iterator[None]:
         connection.plan = plan
         return connection
 
-    with mock.patch.object(serve_module, "sqlite3", types.SimpleNamespace(connect=connect)):
+    fake_module = types.SimpleNamespace(
+        connect=connect,
+        DatabaseError=sqlite3.DatabaseError,
+        OperationalError=sqlite3.OperationalError,
+    )
+    with mock.patch.object(serve_module, "sqlite3", fake_module):
         yield
 
 

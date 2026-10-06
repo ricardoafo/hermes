@@ -364,11 +364,6 @@ def test_a_second_serve_on_a_ledger_in_use_refuses_to_run(tmp_path: Path) -> Non
     assert handled_by_second == 0
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="issue #856: older code on a newer ledger boots and writes without a word",
-)
 def test_serve_refuses_a_ledger_a_newer_release_has_migrated(
     run_scenario: RunScenario, tmp_path: Path
 ) -> None:
