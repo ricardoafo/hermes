@@ -200,6 +200,10 @@ class PortfolioSummary:
             at, when the source records it, so a stale rate shows (#692).
         starting_capital_rate_date: Date of the ECB rate behind
             ``starting_capital``, when the source records it.
+        sparkline_at: When each ``sparkline`` sample took effect, oldest
+            first; empty when the source does not know (the demo fixtures).
+        range_from: When the range starts, when the source knows it; a first
+            sample after it means the history is shorter than the range.
     """
 
     range: PortfolioRange
@@ -225,6 +229,8 @@ class PortfolioSummary:
     quote_currency: str = "USDT"
     eur_rate_date: date | None = None
     starting_capital_rate_date: date | None = None
+    sparkline_at: tuple[datetime, ...] = ()
+    range_from: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
