@@ -314,7 +314,7 @@ class SqliteLedgerMachine(RuleBasedStateMachine):
         self.probe_files.add(name)
         # A distinct time per snapshot: snapshot names have one-second
         # resolution and a second snapshot in the same second overwrites the
-        # first (suspected defect, pinned below).
+        # first (issue #865, pinned below).
         applied, snapshot = migrate_with_snapshot(
             self.db,
             self.tmp / "snapshots",
@@ -467,7 +467,7 @@ def test_a_write_that_raises_mid_transaction_leaves_nothing_behind(tmp_path: Pat
 @pytest.mark.xfail(
     strict=True,
     reason=(
-        "suspected: migrate_with_snapshot names snapshots to the second and overwrites an "
+        "issue #865: migrate_with_snapshot names snapshots to the second and overwrites an "
         "existing file, so a second snapshot in the same second destroys the first rollback point"
     ),
 )

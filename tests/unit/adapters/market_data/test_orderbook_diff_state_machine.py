@@ -203,7 +203,7 @@ class OrderbookDiffMachine(RuleBasedStateMachine):
 
         The first diff after a snapshot straddles ``lastUpdateId + 1`` (SA-3
         step 4). A first diff wholly at or before ``lastUpdateId`` is excluded:
-        suspected defect, pinned below (the snapshot drops ``lastUpdateId``).
+        issue #866, pinned below (the snapshot drops ``lastUpdateId``).
         """
         first = self.exchange_id + 1
         final = first + span
@@ -300,7 +300,7 @@ TestOrderbookDiffMachine = OrderbookDiffMachine.TestCase
 @pytest.mark.xfail(
     strict=True,
     reason=(
-        "suspected: get_snapshot/_parse_snapshot drop lastUpdateId, so no caller can do SA-3 "
+        "issue #866: get_snapshot/_parse_snapshot drop lastUpdateId, so no caller can do SA-3 "
         "step 3; a diff older than the snapshot is yielded and applied over it"
     ),
 )

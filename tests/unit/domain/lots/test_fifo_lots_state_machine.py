@@ -203,7 +203,7 @@ class FifoLotsMachine(RuleBasedStateMachine):
     def sell_between_buys(self, asset: Currency, percent: int) -> None:
         """Sell at a time before the newest lot: only lots opened by then are drawn.
 
-        Excluded transition (suspected defect, pinned below): a sale bigger than
+        Excluded transition (issue #866, pinned below): a sale bigger than
         the inventory opened by its time. :func:`select_lots_fifo` then draws the
         rest from a lot opened after the sale. The rule only sells what the
         older lots hold.
@@ -287,7 +287,7 @@ TestFifoLotsMachine = FifoLotsMachine.TestCase
 @pytest.mark.xfail(
     strict=True,
     reason=(
-        "suspected: select_lots_fifo draws a lot opened after the sale time when the "
+        "issue #866: select_lots_fifo draws a lot opened after the sale time when the "
         "older lots cannot cover the sale (selection.py filters by asset only)"
     ),
 )

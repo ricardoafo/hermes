@@ -219,8 +219,8 @@ class PortfolioRiskMachine(RuleBasedStateMachine):
             # Excluded transition: a second entry on a held pair. The strategy
             # never sends one (SwingStrategyAdapter holds one position per
             # pair); the kernel takes it, and the summed quantity can need more
-            # than 28 digits, which makes the exit unfillable (suspected
-            # defect, pinned below). With three pairs held the SA-4 guard
+            # than 28 digits, which makes the exit unfillable (issue #866,
+            # pinned below). With three pairs held the SA-4 guard
             # refuses it first, so that case stays in.
             return
         ref = _BASE_PRICE[pair.base] * move
@@ -279,7 +279,7 @@ class PortfolioRiskMachine(RuleBasedStateMachine):
             if spread == 0:
                 # With the touch at the signal price the cap holds at the marks
                 # too. A wider touch can pass it by the spread on the last entry
-                # (suspected defect, pinned below), so only zero-spread entries
+                # (issue #864, pinned below), so only zero-spread entries
                 # are held to it.
                 assert self._exposure().quantize(_PRICE_GRID) <= _EXPOSURE_CAP
             return
@@ -445,7 +445,7 @@ TestPortfolioRiskMachine = PortfolioRiskMachine.TestCase
 @pytest.mark.xfail(
     strict=True,
     reason=(
-        "suspected: the §5.5 exposure cap is checked with the new position at the signal's "
+        "issue #864: the §5.5 exposure cap is checked with the new position at the signal's "
         "entry price, so the fill's spread can leave exposure at the marks above the cap"
     ),
 )
@@ -487,7 +487,7 @@ def _signal(kind: SignalKind, ref: Decimal, at: datetime) -> StrategySignal:
 @pytest.mark.xfail(
     strict=True,
     reason=(
-        "suspected: a position built by two entries on one pair can need more than 28 "
+        "issue #866: a position built by two entries on one pair can need more than 28 "
         "significant places; the walk fill model sums the exit in the default 28-place "
         "context, matches less than the order and refuses the exit as INSUFFICIENT_DEPTH"
     ),
