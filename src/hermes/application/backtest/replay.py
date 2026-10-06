@@ -29,7 +29,7 @@ openspec/changes/822-portfolio-backtest/change.md D-1, D-3.
 from __future__ import annotations
 
 import re
-from collections import Counter, deque
+from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, MutableMapping
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -53,8 +53,12 @@ from hermes.domain.fees.fee_schedule import FeeSchedule
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.market_data.orderbook import Orderbook
+from hermes.domain.portfolio.correlation import (
+    CORRELATION_WINDOW_DAYS,
+    aligned_daily_returns,
+    pearson,
+)
 from hermes.domain.risk.state import MarketSnapshot
-from hermes.domain.statistics.correlation import CORRELATION_DAYS, return_correlation
 from hermes.domain.strategy.signal import OpenPosition, SignalKind, StrategySignal
 from hermes.domain.trading.fill import Fill, Rejection
 from hermes.domain.value_objects.pair import Pair
@@ -199,27 +203,30 @@ class _DailyCloses:
     """The latest daily closes of each pair, for the §5.5 correlation lock.
 
     Only bars already delivered are held, so a coefficient never sees a close
-    after the signal it is checked for.
+    after the signal it is checked for. The series and estimator are the ones
+    serve records (#835): Pearson on simple daily returns.
     """
 
-    _KEEP = 2 * (CORRELATION_DAYS + 1)
+    _KEEP = 2 * (CORRELATION_WINDOW_DAYS + 1)
 
     def __init__(self) -> None:
-        self._closes: dict[Pair, deque[tuple[datetime, float]]] = {}
+        self._closes: dict[Pair, dict[datetime, Decimal]] = {}
 
     def add(self, bar: Bar) -> None:
-        """Record a closed 1D bar."""
-        series = self._closes.setdefault(bar.pair, deque(maxlen=self._KEEP))
-        series.append((bar.close_time, float(bar.close)))
+        """Record a closed 1D bar, keeping a bounded tail per pair."""
+        series = self._closes.setdefault(bar.pair, {})
+        series[bar.open_time] = bar.close
+        if len(series) > self._KEEP:
+            del series[min(series)]
 
     def correlations(self) -> dict[tuple[Pair, Pair], float]:
-        """Return the 30-day return correlation of every two pairs with enough shared closes."""
+        """Return the coefficient of every two pairs with a full 30-return window."""
         out: dict[tuple[Pair, Pair], float] = {}
         for a, b in combinations(sorted(self._closes, key=str), 2):
-            closes_a = dict(self._closes[a])
-            closes_b = dict(self._closes[b])
-            shared = sorted(closes_a.keys() & closes_b.keys())
-            coeff = return_correlation([closes_a[t] for t in shared], [closes_b[t] for t in shared])
+            returns_a, returns_b = aligned_daily_returns(self._closes[a], self._closes[b])
+            if len(returns_a) < CORRELATION_WINDOW_DAYS:
+                continue
+            coeff = pearson(returns_a, returns_b)
             if coeff is not None:
                 out[(a, b)] = coeff
         return out
