@@ -10,7 +10,9 @@ Invariants protected here:
   without the flag, and the alert carries no price, equity or P&L;
 - usage errors exit 2; a missing ledger, a day with no stored bars and a
   config that cannot run exit 3;
-- the ledger file is byte-identical after any run;
+- the ledger file is byte-identical after any run without ``--alert``;
+- an ``--alert`` alert is recorded once as an ``AnomalyDetected`` row, and a
+  run in parity records none (#136);
 - the command is registered as ``parity``.
 """
 
@@ -41,6 +43,7 @@ from hermes.entrypoints import parity as module
 from hermes.entrypoints.commands import discover
 from hermes.infrastructure.config.models import MarketDataConfig
 from hermes.ports.bar_feed import SourceState
+from tests.support.anomaly_rows import recorded_anomalies
 from tests.support.parity import D1, DAY_END, DAY_START, H4, bar, signal_event
 from tests.unit.adapters.market_data.fake_binance_public import (
     BTC_USDT,
@@ -261,6 +264,25 @@ def test_the_ledger_is_byte_identical_after_a_mismatching_run(ledger: Path) -> N
 
     assert _run(_args(ledger))[0] == 1
     assert _digest(ledger) == before
+
+
+def test_a_mismatch_alert_is_recorded_once_and_matches_the_sent_alert(ledger: Path) -> None:
+    """#136: --alert on a mismatch leaves exactly the sent alert in the ledger."""
+    _with_signal(ledger, signal_event(DAY_START + timedelta(hours=8)))
+    channel = _Channel()
+
+    _run(_args(ledger, "--alert"), channel=channel)
+
+    (sent,) = channel.events
+    assert [
+        (r["source"], r["reason"], r["correlation_id"]) for r in recorded_anomalies(ledger)
+    ] == [(getattr(sent, "source", None), getattr(sent, "reason", None), sent.correlation_id)]
+
+
+def test_parity_with_the_alert_flag_records_no_anomaly(ledger: Path) -> None:
+    """#136: no mismatch, no alert, no AnomalyDetected row."""
+    assert _run(_args(ledger, "--alert"), channel=_Channel())[0] == 0
+    assert recorded_anomalies(ledger) == []
 
 
 def test_a_missing_ledger_exits_three_and_is_not_created(tmp_path: Path) -> None:
