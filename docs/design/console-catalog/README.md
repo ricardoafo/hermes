@@ -9,7 +9,7 @@ each changed view with the live console.
 ## Build it
 
 ```bash
-python3 scripts/dev/console-catalog.py
+uv run python scripts/dev/console-catalog.py
 ```
 
 The page lands in `build/console-catalog/index.html`. It names the release it
@@ -26,5 +26,5 @@ the previous `v*` release tag; `--since <tag>` compares with another one.
   `hermes --demo <scenario> tui`.
 - `tests/unit/scripts_dev/test_console_catalog.py` fails when a snapshot has
   no caption or a caption lacks a field. A PR that adds a snapshot adds its
-  caption in the same PR; `python3 scripts/dev/console-catalog.py --check`
+  caption in the same PR; `uv run python scripts/dev/console-catalog.py --check`
   says which one is missing.

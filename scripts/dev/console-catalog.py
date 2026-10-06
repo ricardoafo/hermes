@@ -13,9 +13,9 @@ from the code; ``--check`` (and a unit test) fail when a snapshot has no
 caption.
 
 Usage:
-    python3 scripts/dev/console-catalog.py                 # build/console-catalog/index.html
-    python3 scripts/dev/console-catalog.py --check         # captions cover every snapshot?
-    python3 scripts/dev/console-catalog.py --since v1.0.0-shadow.1 --out /tmp/catalog.html
+    uv run python scripts/dev/console-catalog.py                 # build/console-catalog/index.html
+    uv run python scripts/dev/console-catalog.py --check         # captions cover every snapshot?
+    uv run python scripts/dev/console-catalog.py --since v1.0.0-shadow.1 --out /tmp/catalog.html
 
 Read-only on the repo. Needs ``git`` only for the release name and the
 checklist; without it the page says so.
