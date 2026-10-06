@@ -39,6 +39,9 @@ from hermes.entrypoints import tui as tui_module
 from hermes.entrypoints.tui import REFRESH_SECONDS, HomeApp, _PanelScreen
 
 _TAX_FOOTNOTE = "est. · FIFO · 19% band · €5,988.30 left before 21%"
+# The fixture's read time (14:12 Madrid): snapshots never show the wall clock.
+_FROZEN = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
+_STATUS_ROW = 2
 _READ_METHODS = {
     "demo_scenario",
     "heartbeat",
@@ -92,7 +95,7 @@ async def _drive(
     size: tuple[int, int],
     journal: Callable[[int], Sequence[LogLine] | None] | None = None,
 ) -> tuple[Shot, HomeApp]:
-    app = HomeApp(model, journal=journal)
+    app = HomeApp(model, journal=journal, clock=lambda: _FROZEN, motion=False)
     async with app.run_test(size=size) as pilot:
         await pilot.pause()
         for key in keys:
@@ -431,9 +434,21 @@ def test_svg_snapshot_80x24(snapshot: SnapshotAssertion) -> None:
     assert svg == snapshot(extension_class=SVGImageSnapshotExtension)
 
 
-def test_svg_snapshot_120x40(snapshot: SnapshotAssertion) -> None:
-    """The reviewed 120x40 rendering of ok-two-positions with the detail open."""
-    svg = _shoot("ok-two-positions", ["enter"], size=(120, 40)).svg
+def test_svg_snapshot_120x36(snapshot: SnapshotAssertion) -> None:
+    """The reviewed 120x36 rendering of ok-two-positions with the detail open."""
+    svg = _shoot("ok-two-positions", ["enter"], size=(120, 36)).svg
+    assert svg == snapshot(extension_class=SVGImageSnapshotExtension)
+
+
+def test_svg_snapshot_160x45(snapshot: SnapshotAssertion) -> None:
+    """The reviewed 160x45 (wide) rendering of ok-two-positions."""
+    svg = _shoot("ok-two-positions", size=(160, 45)).svg
+    assert svg == snapshot(extension_class=SVGImageSnapshotExtension)
+
+
+def test_svg_snapshot_240x60(snapshot: SnapshotAssertion) -> None:
+    """The reviewed 240x60 (ultra) rendering of ok-two-positions."""
+    svg = _shoot("ok-two-positions", size=(240, 60)).svg
     assert svg == snapshot(extension_class=SVGImageSnapshotExtension)
 
 
@@ -445,20 +460,29 @@ def test_svg_snapshot_down_80x24(snapshot: SnapshotAssertion) -> None:
 
 def _top_line(release: Callable[[], str] | None, size: tuple[int, int] = (100, 30)) -> str:
     async def run() -> str:
-        app = HomeApp(FixtureReadModel.load("ok-two-positions"), release=release)
+        app = HomeApp(
+            FixtureReadModel.load("ok-two-positions"),
+            release=release,
+            clock=lambda: _FROZEN,
+            motion=False,
+        )
         async with app.run_test(size=size) as pilot:
             await pilot.pause()
-            return app.screen._compositor.render_strips()[0].text.rstrip()
+            return app.screen._compositor.render_strips()[_STATUS_ROW].text.rstrip()
 
     return asyncio.run(run())
 
 
 def test_top_line_names_the_running_release() -> None:
-    """With a release source the top line reads "release <name>" beside the heartbeat (#649)."""
+    """The status row reads "release <name>" beside the heartbeat (#649).
+
+    Since issue #711 the window bar and the tabs sit above it and the theme
+    chip follows the heartbeat; the heartbeat is still drawn whole.
+    """
     top = _top_line(lambda: "abc123def456")
     assert (
         top.startswith(" DEMO DATA · scenario ok-two-positions release abc123def456"),
-        top.endswith("● live · checked 14:00 · next 18:00"),
+        "● live · checked 14:00 · next 18:00" in top,
     ) == (True, True)
 
 

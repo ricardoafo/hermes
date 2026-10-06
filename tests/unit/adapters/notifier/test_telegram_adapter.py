@@ -1,8 +1,13 @@
 """Contract tests for :class:`hermes.adapters.notifier.TelegramAdapter`.
 
 Every test protects one invariant of the Telegram adapter contract. Wire
-calls are mocked via ``respx`` (declared in dev deps per ADR-007). No real
-socket ever opens; no real credentials are ever transmitted.
+calls are mocked via ``respx`` (declared in dev deps per ADR-007); every
+request the adapter makes is pinned by method, URL and JSON body, and every
+failure by its exact exception message. No real socket ever opens; no real
+credentials are ever transmitted.
+
+The mocked wire is the Bot API seam; its real counterpart is
+``tests/contract/test_telegram_getme.py::test_get_me_against_real_telegram_api``.
 
 Reference: docs/decisions/2026-08-23-slack-alongside-telegram.md.
 """
@@ -12,11 +17,11 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Any
 
 import httpx
 import pytest
 import respx
-import structlog
 from structlog.testing import capture_logs
 
 from hermes.adapters.notifier import (
@@ -24,21 +29,26 @@ from hermes.adapters.notifier import (
     TelegramConfig,
     TelegramNotifierError,
 )
-from hermes.domain.errors import HermesError, InfraError
+from hermes.domain.errors import InfraError
 from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
 from hermes.domain.events.balance_low import BalanceLow
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
-from hermes.ports.notifier import NotifierPort
 from tests.support.notification_samples import samples
 
-_TEST_TOKEN = "123456:ABC-DEF"  # noqa: S105 - test-only bot token, never real
+_TEST_TOKEN = "123456:ABC-DEF"  # noqa: S105 - test-only bot token, never real  # gitleaks:allow
 _TEST_CHAT = "-1001234567890"
 _TEST_CORRELATION_ID = "01HKQMZXYZ0123456789ABCDEF"  # 26-char pseudo-ULID
-_TEST_CORRELATION_TAIL = "ABCDEF"  # last 6 chars
 _API_URL = f"https://api.telegram.org/bot{_TEST_TOKEN}/sendMessage"
 _GET_ME_URL = f"https://api.telegram.org/bot{_TEST_TOKEN}/getMe"
+# 14:22:03 UTC on Sunday 2026-08-23 is 16:22 in Madrid (CEST, UTC+2).
+_AT = datetime(2026, 8, 23, 14, 22, 3, tzinfo=UTC)
+
+
+def _ok() -> httpx.Response:
+    """Return a fresh successful sendMessage response."""
+    return httpx.Response(200, json={"ok": True, "result": {}})
 
 
 @pytest.fixture
@@ -51,45 +61,97 @@ def config() -> TelegramConfig:
 def adapter(config: TelegramConfig) -> TelegramAdapter:
     """Return a :class:`TelegramAdapter` wired with a plain httpx.Client.
 
-    ``respx`` patches transport globally in the ``respx_mock`` context
+    ``respx`` patches transport globally in the ``respx.mock`` context
     manager per test, so the client here does NOT need MockTransport.
     """
     client = httpx.Client(base_url="https://api.telegram.org", timeout=5.0)
     return TelegramAdapter(config=config, client=client)
 
 
+def _anomaly(severity: AnomalySeverity = AnomalySeverity.CRITICAL) -> AnomalyDetected:
+    """Return a fixed anomaly event at :data:`_AT`."""
+    return AnomalyDetected(
+        occurred_at=_AT,
+        correlation_id=_TEST_CORRELATION_ID,
+        source="swing.risk",
+        severity=severity,
+        reason="30% drawdown breached",
+    )
+
+
+def _sent_payload(adapter: TelegramAdapter, **urgent: str) -> dict[str, Any]:
+    """Run ``notify_urgent`` against a 200 sendMessage and return the JSON body sent."""
+    with respx.mock() as router:
+        route = router.post(_API_URL).mock(return_value=_ok())
+        adapter.notify_urgent(**urgent)
+    body: dict[str, Any] = json.loads(route.calls[0].request.content)
+    return body
+
+
+def _urgent_error(adapter: TelegramAdapter, response: httpx.Response) -> str:
+    """Return the message of the error ``notify_urgent`` raises for ``response``."""
+    with respx.mock() as router:
+        router.post(_API_URL).mock(return_value=response)
+        with pytest.raises(TelegramNotifierError) as excinfo:
+            adapter.notify_urgent(event="deploy.done", correlation_id="c", message="m")
+    return str(excinfo.value)
+
+
+def _get_me_error(adapter: TelegramAdapter, response: httpx.Response) -> str:
+    """Return the message of the error ``get_me`` raises for ``response``."""
+    with respx.mock() as router:
+        router.get(_GET_ME_URL).mock(return_value=response)
+        with pytest.raises(TelegramNotifierError) as excinfo:
+            adapter.get_me()
+    return str(excinfo.value)
+
+
 class TestTelegramConfig:
     """Verify credential-loading contract for :class:`TelegramConfig`."""
 
-    def test_from_env_loads_both_variables(self) -> None:
-        """from_env returns config populated from the two HERMES_TELEGRAM__* env vars."""
+    def test_from_env_loads_both_variables_stripped(self) -> None:
+        """from_env takes the two HERMES_TELEGRAM__* values with surrounding blanks removed."""
         env = {
-            "HERMES_TELEGRAM__BOT_TOKEN": "token-abc",
-            "HERMES_TELEGRAM__CHAT_ID": "chat-xyz",
+            "HERMES_TELEGRAM__BOT_TOKEN": "  token-abc\n",
+            "HERMES_TELEGRAM__CHAT_ID": " chat-xyz ",
         }
         cfg = TelegramConfig.from_env(env)
-        assert cfg.bot_token == "token-abc"  # noqa: S105 - test literal, not a real secret
-        assert cfg.chat_id == "chat-xyz"
+        assert (cfg.bot_token, cfg.chat_id) == ("token-abc", "chat-xyz")
 
     def test_from_env_raises_when_bot_token_missing(self) -> None:
-        """Missing HERMES_TELEGRAM__BOT_TOKEN raises TelegramNotifierError at load time."""
+        """A missing HERMES_TELEGRAM__BOT_TOKEN fails at load time and names the variable."""
         env = {"HERMES_TELEGRAM__CHAT_ID": "chat-xyz"}
-        with pytest.raises(TelegramNotifierError, match="BOT_TOKEN"):
+        with pytest.raises(TelegramNotifierError) as excinfo:
             TelegramConfig.from_env(env)
+        assert str(excinfo.value) == (
+            "Telegram notifier error: HERMES_TELEGRAM__BOT_TOKEN is not set (or empty)"
+        )
 
     def test_from_env_raises_when_chat_id_missing(self) -> None:
-        """Missing HERMES_TELEGRAM__CHAT_ID raises TelegramNotifierError at load time."""
+        """A missing HERMES_TELEGRAM__CHAT_ID fails at load time and names the variable."""
         env = {"HERMES_TELEGRAM__BOT_TOKEN": "token-abc"}
-        with pytest.raises(TelegramNotifierError, match="CHAT_ID"):
+        with pytest.raises(TelegramNotifierError) as excinfo:
             TelegramConfig.from_env(env)
+        assert str(excinfo.value) == (
+            "Telegram notifier error: HERMES_TELEGRAM__CHAT_ID is not set (or empty)"
+        )
 
-    def test_from_env_treats_whitespace_as_missing(self) -> None:
-        """A whitespace-only env var is treated as missing (fail-fast, no silent success)."""
+    def test_from_env_treats_whitespace_token_as_missing(self) -> None:
+        """A whitespace-only token is missing (fail-fast, no silent success)."""
         env = {
             "HERMES_TELEGRAM__BOT_TOKEN": "   ",
             "HERMES_TELEGRAM__CHAT_ID": "chat-xyz",
         }
-        with pytest.raises(TelegramNotifierError, match="BOT_TOKEN"):
+        with pytest.raises(TelegramNotifierError, match=r"BOT_TOKEN is not set \(or empty\)$"):
+            TelegramConfig.from_env(env)
+
+    def test_from_env_treats_whitespace_chat_id_as_missing(self) -> None:
+        """A whitespace-only chat id is missing (fail-fast, no silent success)."""
+        env = {
+            "HERMES_TELEGRAM__BOT_TOKEN": "token-abc",
+            "HERMES_TELEGRAM__CHAT_ID": " \t ",
+        }
+        with pytest.raises(TelegramNotifierError, match=r"CHAT_ID is not set \(or empty\)$"):
             TelegramConfig.from_env(env)
 
     def test_repr_hides_the_bot_token(self, adapter: TelegramAdapter) -> None:
@@ -98,239 +160,197 @@ class TestTelegramConfig:
         Logs, tracebacks and error reports render objects with ``repr``.
         """
         rendered = repr(adapter.config) + repr(adapter)
-        assert _TEST_TOKEN not in rendered
-        assert _TEST_CHAT in rendered
+        assert (_TEST_TOKEN in rendered, _TEST_CHAT in rendered) == (False, True)
+
+
+class TestNotifierError:
+    """The error type operators see in logs and the router catches."""
+
+    def test_error_text_names_the_channel_and_the_cause(self) -> None:
+        """str() of the error prefixes the Telegram channel to the wrapped message."""
+        assert str(TelegramNotifierError("boom")) == "Telegram notifier error: boom"
+
+    def test_wire_errors_are_caught_as_infra_errors(self, adapter: TelegramAdapter) -> None:
+        """A failed send is catchable as InfraError, the layer the router converts to Result."""
+        with respx.mock() as router:
+            router.post(_API_URL).mock(return_value=httpx.Response(500, text="down"))
+            with pytest.raises(InfraError, match="HTTP 500 from sendMessage: down"):
+                adapter.notify_urgent(event="e", correlation_id="c", message="m")
 
 
 class TestNotifyUrgentHappyPath:
-    """Verify successful message-send behaviour of :meth:`notify_urgent`."""
+    """Verify the request :meth:`notify_urgent` puts on the wire."""
 
-    def test_notify_urgent_posts_to_send_message_endpoint(self, adapter: TelegramAdapter) -> None:
-        """notify_urgent hits POST /bot<TOKEN>/sendMessage on api.telegram.org."""
+    def test_notify_urgent_sends_one_json_post_to_the_bot_send_message_url(
+        self, adapter: TelegramAdapter
+    ) -> None:
+        """notify_urgent is exactly one JSON POST to /bot<TOKEN>/sendMessage."""
         with respx.mock(assert_all_called=True) as router:
-            route = router.post(_API_URL).mock(
-                return_value=httpx.Response(200, json={"ok": True, "result": {}})
-            )
+            route = router.post(_API_URL).mock(return_value=_ok())
             adapter.notify_urgent(
                 event="rollback.fired",
                 correlation_id=_TEST_CORRELATION_ID,
                 message="Rollback executed on api node 3.",
             )
-            assert route.called
-            assert route.call_count == 1
+        (call,) = route.calls
+        request = call.request
+        assert (request.method, str(request.url), request.headers["content-type"]) == (
+            "POST",
+            _API_URL,
+            "application/json",
+        )
 
-    def test_notify_urgent_payload_includes_chat_id_and_markdown_v2(
+    def test_notify_urgent_payload_fields_besides_text(self, adapter: TelegramAdapter) -> None:
+        """The payload is chat_id, MarkdownV2, no link preview and a loud push, nothing else."""
+        payload = _sent_payload(
+            adapter,
+            event="health.check.fail",
+            correlation_id=_TEST_CORRELATION_ID,
+            message="Simple message",
+        )
+        payload.pop("text")
+        assert payload == {
+            "chat_id": _TEST_CHAT,
+            "parse_mode": "MarkdownV2",
+            "disable_web_page_preview": True,
+            "disable_notification": False,
+        }
+
+    def test_notify_urgent_ends_with_the_correlation_tail(self, adapter: TelegramAdapter) -> None:
+        """The last line of the push is the last 6 chars of the correlation ID (ADR-008)."""
+        payload = _sent_payload(
+            adapter, event="service.crash", correlation_id=_TEST_CORRELATION_ID, message="node down"
+        )
+        assert payload["text"].splitlines()[-1] == "…ABCDEF"
+
+    def test_notify_urgent_escapes_markdown_v2_reserved_chars_in_the_message(
         self, adapter: TelegramAdapter
     ) -> None:
-        """Payload carries chat_id, MarkdownV2 parse_mode, and disable_web_page_preview=True."""
-        with respx.mock() as router:
-            route = router.post(_API_URL).mock(
-                return_value=httpx.Response(200, json={"ok": True, "result": {}})
-            )
-            adapter.notify_urgent(
-                event="health.check.fail",
-                correlation_id=_TEST_CORRELATION_ID,
-                message="Simple message",
-            )
-            request = route.calls[0].request
-            payload = json.loads(request.content)
-            assert payload["chat_id"] == _TEST_CHAT
-            assert payload["parse_mode"] == "MarkdownV2"
-            assert payload["disable_web_page_preview"] is True
+        """Reserved MarkdownV2 chars in the message are backslash-escaped for a literal render."""
+        payload = _sent_payload(
+            adapter,
+            event="rebalance.cycle.decided",
+            correlation_id=_TEST_CORRELATION_ID,
+            message="pair=BTC_USDT (delta=+0.5%)",
+        )
+        assert payload["text"].splitlines()[1] == r"pair\=BTC\_USDT \(delta\=\+0\.5%\)"
 
-    def test_notify_urgent_includes_correlation_tail_in_message_text(
+    def test_notify_urgent_heads_the_push_with_the_escaped_event_name(
         self, adapter: TelegramAdapter
     ) -> None:
-        """The message text contains the last 6 chars of the correlation ID per ADR-008."""
-        with respx.mock() as router:
-            route = router.post(_API_URL).mock(
-                return_value=httpx.Response(200, json={"ok": True, "result": {}})
-            )
-            adapter.notify_urgent(
-                event="service.crash",
-                correlation_id=_TEST_CORRELATION_ID,
-                message="node down",
-            )
-            payload = json.loads(route.calls[0].request.content)
-            # correlation tail escaped inside brackets
-            assert _TEST_CORRELATION_TAIL in payload["text"]
-
-    def test_notify_urgent_escapes_markdown_v2_reserved_chars(
-        self, adapter: TelegramAdapter
-    ) -> None:
-        """Reserved MarkdownV2 chars in event/message are backslash-escaped for literal render."""
-        with respx.mock() as router:
-            route = router.post(_API_URL).mock(
-                return_value=httpx.Response(200, json={"ok": True, "result": {}})
-            )
-            # event has dots (reserved); message has parens + underscore + dot
-            adapter.notify_urgent(
-                event="rebalance.cycle.decided",
-                correlation_id=_TEST_CORRELATION_ID,
-                message="pair=BTC_USDT (delta=+0.5%)",
-            )
-            text = json.loads(route.calls[0].request.content)["text"]
-            # Each reserved char in the event must appear escaped
-            assert "rebalance\\.cycle\\.decided" in text
-            # Message chars: _ ( ) . % + - are reserved
-            assert "BTC\\_USDT" in text
-            assert "\\(delta" in text
-            assert "0\\.5" in text
+        """The headline names the event as the anomaly source, dots escaped for MarkdownV2."""
+        payload = _sent_payload(
+            adapter, event="rebalance.cycle.decided", correlation_id="c", message="m"
+        )
+        assert payload["text"].startswith("■ Anomaly · rebalance\\.cycle\\.decided · ")
 
     def test_notify_urgent_short_correlation_id_used_verbatim(
         self, adapter: TelegramAdapter
     ) -> None:
-        """A correlation ID shorter than 6 chars is used in full (no exception)."""
+        """A correlation ID shorter than 6 chars is shown in full, not padded or dropped."""
+        payload = _sent_payload(adapter, event="deploy.ok", correlation_id="abc", message="ok")
+        assert payload["text"].splitlines()[-1] == "…abc"
+
+
+class TestSendErrorPaths:
+    """Every documented sendMessage failure raises with an operator-readable message."""
+
+    def test_rate_limit_429_raises_with_status_and_body(self, adapter: TelegramAdapter) -> None:
+        """HTTP 429 raises instead of retrying; the message carries status and body."""
+        body = '{"ok":false,"error_code":429,"description":"Too Many Requests: retry after 30"}'
+        assert _urgent_error(adapter, httpx.Response(429, text=body)) == (
+            f"Telegram notifier error: HTTP 429 from sendMessage: {body}"
+        )
+
+    def test_auth_failure_401_raises_with_status_and_body(self, adapter: TelegramAdapter) -> None:
+        """HTTP 401 (bad bot token) raises with the status and body in the message."""
+        assert _urgent_error(adapter, httpx.Response(401, text="Unauthorized")) == (
+            "Telegram notifier error: HTTP 401 from sendMessage: Unauthorized"
+        )
+
+    def test_status_400_is_the_first_error_status(self, adapter: TelegramAdapter) -> None:
+        """HTTP 400 is an error even when the body claims ok=true (threshold at 400)."""
+        assert _urgent_error(adapter, httpx.Response(400, text='{"ok":true}')) == (
+            'Telegram notifier error: HTTP 400 from sendMessage: {"ok":true}'
+        )
+
+    def test_error_body_excerpt_is_capped_at_200_chars(self, adapter: TelegramAdapter) -> None:
+        """A huge error body is cut to its first 200 chars in the message."""
+        body = "x" * 200 + "TAIL"
+        assert _urgent_error(adapter, httpx.Response(502, text=body)) == (
+            f"Telegram notifier error: HTTP 502 from sendMessage: {'x' * 200}"
+        )
+
+    def test_network_error_wraps_the_httpx_exception(self, adapter: TelegramAdapter) -> None:
+        """A transport failure is re-raised as TelegramNotifierError chained to the cause."""
+        cause = httpx.ConnectError("DNS failed")
         with respx.mock() as router:
-            route = router.post(_API_URL).mock(
-                return_value=httpx.Response(200, json={"ok": True, "result": {}})
-            )
-            adapter.notify_urgent(
-                event="deploy.ok",
-                correlation_id="abc",
-                message="ok",
-            )
-            text = json.loads(route.calls[0].request.content)["text"]
-            assert "abc" in text
+            router.post(_API_URL).mock(side_effect=cause)
+            with pytest.raises(TelegramNotifierError) as excinfo:
+                adapter.notify_urgent(event="e", correlation_id="c", message="m")
+        assert (str(excinfo.value), excinfo.value.__cause__) == (
+            "Telegram notifier error: transport failure calling sendMessage: "
+            "ConnectError('DNS failed')",
+            cause,
+        )
 
+    def test_ok_false_on_http_200_raises(self, adapter: TelegramAdapter) -> None:
+        """A 200 with ok=false still raises, quoting the parsed body (Bot API rejected us)."""
+        response = httpx.Response(
+            200, json={"ok": False, "error_code": 400, "description": "Bad Request: chat not found"}
+        )
+        assert _urgent_error(adapter, response) == (
+            "Telegram notifier error: Bot API rejected sendMessage: "
+            "{'ok': False, 'error_code': 400, 'description': 'Bad Request: chat not found'}"
+        )
 
-class TestNotifyUrgentErrorPaths:
-    """Verify :meth:`notify_urgent` raises on every documented failure mode."""
+    def test_body_without_ok_field_raises(self, adapter: TelegramAdapter) -> None:
+        """A 200 JSON body with no ok field counts as a rejection, not a success."""
+        assert _urgent_error(adapter, httpx.Response(200, json={"result": {}})) == (
+            "Telegram notifier error: Bot API rejected sendMessage: {'result': {}}"
+        )
 
-    def test_rate_limit_429_raises_notifier_error(self, adapter: TelegramAdapter) -> None:
-        """HTTP 429 (rate limit) raises TelegramNotifierError instead of silent retry."""
-        with respx.mock() as router:
-            router.post(_API_URL).mock(
-                return_value=httpx.Response(
-                    429,
-                    json={
-                        "ok": False,
-                        "error_code": 429,
-                        "description": "Too Many Requests: retry after 30",
-                        "parameters": {"retry_after": 30},
-                    },
-                )
-            )
-            with pytest.raises(TelegramNotifierError, match="429"):
-                adapter.notify_urgent(
-                    event="deploy.done",
-                    correlation_id=_TEST_CORRELATION_ID,
-                    message="deploy 1.2.3 shipped",
-                )
+    def test_non_object_json_body_raises(self, adapter: TelegramAdapter) -> None:
+        """A 200 JSON body that is not an object counts as a rejection."""
+        assert _urgent_error(adapter, httpx.Response(200, json=[True])) == (
+            "Telegram notifier error: Bot API rejected sendMessage: [True]"
+        )
 
-    def test_auth_failure_401_raises_notifier_error(self, adapter: TelegramAdapter) -> None:
-        """HTTP 401 (bad bot token) raises TelegramNotifierError with the status in the message."""
-        with respx.mock() as router:
-            router.post(_API_URL).mock(
-                return_value=httpx.Response(
-                    401,
-                    json={"ok": False, "error_code": 401, "description": "Unauthorized"},
-                )
-            )
-            with pytest.raises(TelegramNotifierError, match="401"):
-                adapter.notify_urgent(
-                    event="cve.detected",
-                    correlation_id=_TEST_CORRELATION_ID,
-                    message="CVE-2026-9999 in urllib3",
-                )
+    def test_rejection_excerpt_is_capped_at_200_chars(self, adapter: TelegramAdapter) -> None:
+        """A huge ok=false body is quoted only up to its first 200 chars."""
+        response = httpx.Response(200, json={"ok": False, "description": "d" * 300})
+        quoted = "{'ok': False, 'description': '" + "d" * 300
+        assert _urgent_error(adapter, response) == (
+            f"Telegram notifier error: Bot API rejected sendMessage: {quoted[:200]}"
+        )
 
-    def test_forbidden_403_raises_notifier_error(self, adapter: TelegramAdapter) -> None:
-        """HTTP 403 (bot kicked from chat) raises TelegramNotifierError with the status."""
-        with respx.mock() as router:
-            router.post(_API_URL).mock(
-                return_value=httpx.Response(
-                    403,
-                    json={"ok": False, "error_code": 403, "description": "Forbidden"},
-                )
-            )
-            with pytest.raises(TelegramNotifierError, match="403"):
-                adapter.notify_urgent(
-                    event="rollback.fired",
-                    correlation_id=_TEST_CORRELATION_ID,
-                    message="rollback fired",
-                )
-
-    def test_network_error_wraps_httpx_exception(self, adapter: TelegramAdapter) -> None:
-        """A transport-level failure (httpx.ConnectError) is wrapped as TelegramNotifierError."""
-        with respx.mock() as router:
-            router.post(_API_URL).mock(side_effect=httpx.ConnectError("DNS failed"))
-            with pytest.raises(TelegramNotifierError, match="transport failure"):
-                adapter.notify_urgent(
-                    event="health.check.fail",
-                    correlation_id=_TEST_CORRELATION_ID,
-                    message="db unreachable",
-                )
-
-    def test_ok_false_response_raises_notifier_error(self, adapter: TelegramAdapter) -> None:
-        """A 200 response with ok=false in the body still raises — Bot API rejected us."""
-        with respx.mock() as router:
-            router.post(_API_URL).mock(
-                return_value=httpx.Response(
-                    200,
-                    json={
-                        "ok": False,
-                        "error_code": 400,
-                        "description": "Bad Request: chat not found",
-                    },
-                )
-            )
-            with pytest.raises(TelegramNotifierError, match="rejected"):
-                adapter.notify_urgent(
-                    event="deploy.failed",
-                    correlation_id=_TEST_CORRELATION_ID,
-                    message="deploy 1.2.3 rolled back",
-                )
-
-    def test_non_json_response_raises_notifier_error(self, adapter: TelegramAdapter) -> None:
+    def test_non_json_response_raises(self, adapter: TelegramAdapter) -> None:
         """A 2xx response that is not JSON raises TelegramNotifierError, not ValueError."""
-        with respx.mock() as router:
-            router.post(_API_URL).mock(
-                return_value=httpx.Response(
-                    200,
-                    content=b"<html>gateway proxy error</html>",
-                    headers={"content-type": "text/html"},
-                )
-            )
-            with pytest.raises(TelegramNotifierError, match="non-JSON"):
-                adapter.notify_urgent(
-                    event="service.crash",
-                    correlation_id=_TEST_CORRELATION_ID,
-                    message="oops",
-                )
+        response = httpx.Response(
+            200, content=b"<html>gateway proxy error</html>", headers={"content-type": "text/html"}
+        )
+        assert _urgent_error(adapter, response) == (
+            "Telegram notifier error: non-JSON response from sendMessage: "
+            "<html>gateway proxy error</html>"
+        )
 
-    def test_notifier_error_inherits_from_infra_error(self) -> None:
-        """TelegramNotifierError is an InfraError so 'except InfraError' catches it."""
-        err = TelegramNotifierError("something")
-        assert isinstance(err, InfraError)
-        assert isinstance(err, HermesError)
+    def test_non_json_excerpt_is_capped_at_200_chars(self, adapter: TelegramAdapter) -> None:
+        """A huge non-JSON body is cut to its first 200 chars in the message."""
+        response = httpx.Response(200, text="<" * 200 + "TAIL")
+        assert _urgent_error(adapter, response) == (
+            f"Telegram notifier error: non-JSON response from sendMessage: {'<' * 200}"
+        )
 
 
 class TestNotifyReportNoOp:
     """Verify :meth:`notify_report` is a no-op with a warning log per decisions journal."""
 
-    def test_notify_report_does_not_call_telegram_api(self, adapter: TelegramAdapter) -> None:
-        """notify_report makes ZERO HTTP calls (Telegram is urgent-only channel)."""
-        with respx.mock(assert_all_called=False) as router:
-            route = router.post(_API_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
-            adapter.notify_report(
-                event="weekly.rebalance.report",
-                correlation_id=_TEST_CORRELATION_ID,
-                title="Weekly rebalance",
-                body="Some long body",
-                attachments=None,
-            )
-            assert not route.called
-
-    def test_notify_report_logs_warning_with_correlation_tail(
+    def test_notify_report_only_logs_one_warning_with_the_correlation_tail(
         self, adapter: TelegramAdapter
     ) -> None:
-        """notify_report emits a WARNING log with event name + correlation tail for triage."""
-        structlog.configure(
-            processors=[structlog.processors.KeyValueRenderer()],
-            wrapper_class=structlog.make_filtering_bound_logger(0),
-            cache_logger_on_first_use=False,
-        )
-        with capture_logs() as logs:
+        """notify_report sends nothing and logs one warning naming the event and the ID tail."""
+        # No route is registered: any HTTP call would raise inside respx.mock.
+        with respx.mock(assert_all_mocked=True), capture_logs() as logs:
             adapter.notify_report(
                 event="monthly.tax.report",
                 correlation_id=_TEST_CORRELATION_ID,
@@ -338,155 +358,109 @@ class TestNotifyReportNoOp:
                 body="body",
                 attachments=None,
             )
-        assert any(
-            entry.get("log_level") == "warning"
-            and entry.get("event") == "telegram.notify_report.noop"
-            and entry.get("event_name") == "monthly.tax.report"
-            and entry.get("correlation_tail") == _TEST_CORRELATION_TAIL
-            for entry in logs
-        ), f"expected a warning noop entry, got: {logs}"
-
-
-class TestPortConformance:
-    """Verify :class:`TelegramAdapter` satisfies the :class:`NotifierPort` Protocol."""
-
-    def test_adapter_is_notifier_port_instance(self, adapter: TelegramAdapter) -> None:
-        """The isinstance check against the runtime_checkable Protocol returns True."""
-        assert isinstance(adapter, NotifierPort)
+        assert logs == [
+            {
+                "event": "telegram.notify_report.noop",
+                "log_level": "warning",
+                "event_name": "monthly.tax.report",
+                "correlation_tail": "ABCDEF",
+                "reason": "telegram channel is urgent-only per decisions journal",
+            }
+        ]
 
 
 class TestCreateAndClose:
     """Verify the :meth:`TelegramAdapter.create` factory and :meth:`close` lifecycle."""
 
-    def test_create_returns_adapter_with_default_client(self, config: TelegramConfig) -> None:
-        """create() builds an adapter whose client targets api.telegram.org."""
-        adapter = TelegramAdapter.create(config)
+    def test_create_targets_the_bot_api_with_the_given_timeout(
+        self, config: TelegramConfig
+    ) -> None:
+        """create() builds a client on api.telegram.org bounded by the requested timeout."""
+        adapter = TelegramAdapter.create(config, timeout_sec=7.5)
         try:
-            assert isinstance(adapter.client, httpx.Client)
-            assert str(adapter.client.base_url) == "https://api.telegram.org"
+            assert (str(adapter.client.base_url), adapter.client.timeout) == (
+                "https://api.telegram.org",
+                httpx.Timeout(7.5),
+            )
         finally:
             adapter.close()
 
-    def test_close_is_idempotent(self, config: TelegramConfig) -> None:
-        """close() called twice does not raise (second call is a no-op)."""
+    def test_create_defaults_to_a_ten_second_timeout(self, config: TelegramConfig) -> None:
+        """Without a timeout, create() bounds every request at 10 s (module design notes)."""
+        adapter = TelegramAdapter.create(config)
+        try:
+            assert adapter.client.timeout == httpx.Timeout(10.0)
+        finally:
+            adapter.close()
+
+    def test_close_releases_the_client_and_tolerates_a_second_call(
+        self, config: TelegramConfig
+    ) -> None:
+        """close() closes the HTTP client, and calling it again does not raise."""
         adapter = TelegramAdapter.create(config)
         adapter.close()
-        adapter.close()  # must not raise
+        adapter.close()
+        assert adapter.client.is_closed is True
 
 
 class TestNotifyEvent:
-    """Verify :meth:`notify` (event-based) delegates to the template registry."""
+    """Verify :meth:`notify` (event-based) sends the rendered template."""
 
-    def test_notify_posts_rendered_template_to_send_message(self, adapter: TelegramAdapter) -> None:
-        """notify(event) hits sendMessage with the text produced by telegram_template."""
-        event = AnomalyDetected(
-            occurred_at=datetime(2026, 8, 23, 14, 22, 3, tzinfo=UTC),
-            correlation_id=_TEST_CORRELATION_ID,
-            source="swing.risk",
-            severity=AnomalySeverity.CRITICAL,
-            reason="30% drawdown breached",
-        )
+    def test_notify_posts_the_rendered_anomaly(self, adapter: TelegramAdapter) -> None:
+        """notify(event) sends the full payload with the anomaly rendered in MarkdownV2."""
         with respx.mock() as router:
-            route = router.post(_API_URL).mock(
-                return_value=httpx.Response(200, json={"ok": True, "result": {}})
-            )
-            adapter.notify(event)
-            assert route.call_count == 1
-            payload = json.loads(route.calls[0].request.content)
-            assert payload["chat_id"] == _TEST_CHAT
-            assert payload["parse_mode"] == "MarkdownV2"
-            assert payload["disable_web_page_preview"] is True
-            # The anomaly template renders the source (dot escaped for MarkdownV2).
-            assert "Anomaly \u00b7 swing\\.risk" in payload["text"]
-            assert _TEST_CORRELATION_TAIL in payload["text"]
+            route = router.post(_API_URL).mock(return_value=_ok())
+            adapter.notify(_anomaly())
+        (call,) = route.calls
+        assert json.loads(call.request.content) == {
+            "chat_id": _TEST_CHAT,
+            "text": "■ Anomaly · swing\\.risk · Sun 16:22\n30% drawdown breached\n…ABCDEF",
+            "parse_mode": "MarkdownV2",
+            "disable_web_page_preview": True,
+            "disable_notification": False,
+        }
 
-    def test_notify_uses_template_for_different_event_types(self, adapter: TelegramAdapter) -> None:
-        """Notify dispatches on event type: BalanceLow renders as a low-balance message."""
+    def test_notify_dispatches_on_event_type(self, adapter: TelegramAdapter) -> None:
+        """A BalanceLow event is rendered by its own template, not the anomaly one."""
         usdt = Currency.USDT
         event = BalanceLow(
-            occurred_at=datetime(2026, 8, 23, 14, 22, 3, tzinfo=UTC),
+            occurred_at=_AT,
             correlation_id=_TEST_CORRELATION_ID,
             asset=usdt,
             current=Money(amount=Decimal("50"), currency=usdt),
             threshold=Money(amount=Decimal("100"), currency=usdt),
-            checked_at=datetime(2026, 8, 23, 14, 22, 3, tzinfo=UTC),
+            checked_at=_AT,
         )
         with respx.mock() as router:
-            route = router.post(_API_URL).mock(
-                return_value=httpx.Response(200, json={"ok": True, "result": {}})
-            )
+            route = router.post(_API_URL).mock(return_value=_ok())
             adapter.notify(event)
-            payload = json.loads(route.calls[0].request.content)
-            assert "Balance low \u00b7 USDT" in payload["text"]
-
-    def test_critical_event_rings_the_phone(self, adapter: TelegramAdapter) -> None:
-        """A CRITICAL anomaly (P0) is sent loud: disable_notification is false."""
-        event = AnomalyDetected(
-            occurred_at=datetime(2026, 8, 23, 14, 22, 3, tzinfo=UTC),
-            correlation_id=_TEST_CORRELATION_ID,
-            source="swing.risk",
-            severity=AnomalySeverity.CRITICAL,
-            reason="kill switch",
+        assert json.loads(route.calls[0].request.content)["text"] == (
+            "■ Balance low · USDT · Sun 16:22\n"
+            "50\\.00 USDT left, threshold 100\\.00 USDT\ntop up · …ABCDEF"
         )
-        with respx.mock() as router:
-            route = router.post(_API_URL).mock(
-                return_value=httpx.Response(200, json={"ok": True, "result": {}})
-            )
-            adapter.notify(event)
-            payload = json.loads(route.calls[0].request.content)
-            assert payload["disable_notification"] is False
 
     def test_non_critical_event_is_sent_silently(self, adapter: TelegramAdapter) -> None:
         """A WARNING anomaly is sent silent: disable_notification is true."""
-        event = AnomalyDetected(
-            occurred_at=datetime(2026, 8, 23, 14, 22, 3, tzinfo=UTC),
-            correlation_id=_TEST_CORRELATION_ID,
-            source="reconciler",
-            severity=AnomalySeverity.WARNING,
-            reason="drift detected",
-        )
         with respx.mock() as router:
-            route = router.post(_API_URL).mock(
-                return_value=httpx.Response(200, json={"ok": True, "result": {}})
-            )
-            adapter.notify(event)
-            payload = json.loads(route.calls[0].request.content)
-            assert payload["disable_notification"] is True
-
-    def test_notify_urgent_is_loud(self, adapter: TelegramAdapter) -> None:
-        """The legacy urgent wrapper wraps a CRITICAL anomaly, so it still rings the phone."""
-        with respx.mock() as router:
-            route = router.post(_API_URL).mock(
-                return_value=httpx.Response(200, json={"ok": True, "result": {}})
-            )
-            adapter.notify_urgent(
-                event="health.check.fail",
-                correlation_id=_TEST_CORRELATION_ID,
-                message="db unreachable",
-            )
-            payload = json.loads(route.calls[0].request.content)
-            assert payload["disable_notification"] is False
+            route = router.post(_API_URL).mock(return_value=_ok())
+            adapter.notify(_anomaly(AnomalySeverity.WARNING))
+        assert json.loads(route.calls[0].request.content)["disable_notification"] is True
 
     def test_notify_wire_failure_raises_notifier_error(self, adapter: TelegramAdapter) -> None:
         """A network error inside notify() surfaces as TelegramNotifierError."""
-        event = AnomalyDetected(
-            occurred_at=datetime(2026, 8, 23, 14, 22, 3, tzinfo=UTC),
-            correlation_id=_TEST_CORRELATION_ID,
-            source="reconciler",
-            severity=AnomalySeverity.WARNING,
-            reason="drift detected",
-        )
         with respx.mock() as router:
             router.post(_API_URL).mock(side_effect=httpx.ConnectError("DNS failed"))
-            with pytest.raises(TelegramNotifierError, match="transport failure"):
-                adapter.notify(event)
+            with pytest.raises(
+                TelegramNotifierError, match=r"transport failure calling sendMessage"
+            ):
+                adapter.notify(_anomaly())
 
 
 class TestGetMe:
     """Verify :meth:`get_me` — the read-only health probe used by `hermes health`."""
 
-    def test_get_me_returns_result_object_on_success(self, adapter: TelegramAdapter) -> None:
-        """get_me returns the 'result' object from a successful Bot API response."""
+    def test_get_me_returns_the_result_object(self, adapter: TelegramAdapter) -> None:
+        """get_me GETs /bot<TOKEN>/getMe and returns the 'result' object unchanged."""
         with respx.mock() as router:
             router.get(_GET_ME_URL).mock(
                 return_value=httpx.Response(
@@ -503,74 +477,110 @@ class TestGetMe:
                 )
             )
             result = adapter.get_me()
-        assert result["username"] == "hermes_bot"
-        assert result["is_bot"] is True
+        assert result == {
+            "id": 42,
+            "is_bot": True,
+            "username": "hermes_bot",
+            "first_name": "Hermes",
+        }
 
-    def test_get_me_401_raises_notifier_error(self, adapter: TelegramAdapter) -> None:
-        """HTTP 401 from getMe raises TelegramNotifierError with the status in the msg."""
-        with respx.mock() as router:
-            router.get(_GET_ME_URL).mock(
-                return_value=httpx.Response(
-                    401,
-                    json={"ok": False, "error_code": 401, "description": "Unauthorized"},
-                )
-            )
-            with pytest.raises(TelegramNotifierError, match="401"):
-                adapter.get_me()
+    def test_get_me_401_raises_with_status_and_body(self, adapter: TelegramAdapter) -> None:
+        """HTTP 401 from getMe raises with the status and body in the message."""
+        assert _get_me_error(adapter, httpx.Response(401, text="Unauthorized")) == (
+            "Telegram notifier error: HTTP 401 from getMe: Unauthorized"
+        )
 
-    def test_get_me_ok_false_raises_notifier_error(self, adapter: TelegramAdapter) -> None:
-        """A 200 response with ok=false still raises — Bot API rejected the probe."""
-        with respx.mock() as router:
-            router.get(_GET_ME_URL).mock(
-                return_value=httpx.Response(
-                    200,
-                    json={"ok": False, "error_code": 400, "description": "Bad Request"},
-                )
-            )
-            with pytest.raises(TelegramNotifierError, match="rejected"):
-                adapter.get_me()
-
-    def test_get_me_transport_error_wraps_httpx_exception(self, adapter: TelegramAdapter) -> None:
-        """A transport-level failure during getMe wraps to TelegramNotifierError."""
-        with respx.mock() as router:
-            router.get(_GET_ME_URL).mock(side_effect=httpx.ConnectError("DNS failed"))
-            with pytest.raises(TelegramNotifierError, match="transport failure"):
-                adapter.get_me()
-
-    def test_get_me_non_json_response_raises_notifier_error(self, adapter: TelegramAdapter) -> None:
-        """A 2xx response that is not JSON raises TelegramNotifierError, not ValueError."""
-        with respx.mock() as router:
-            router.get(_GET_ME_URL).mock(
-                return_value=httpx.Response(
-                    200,
-                    content=b"<html>gateway error</html>",
-                    headers={"content-type": "text/html"},
-                )
-            )
-            with pytest.raises(TelegramNotifierError, match="non-JSON"):
-                adapter.get_me()
-
-    def test_get_me_missing_result_object_raises_notifier_error(
+    def test_get_me_status_400_is_an_error_with_a_capped_excerpt(
         self, adapter: TelegramAdapter
     ) -> None:
-        """A 200 ok=true response without a 'result' object raises TelegramNotifierError."""
+        """HTTP 400 is the first error status for getMe; the body is cut to 200 chars."""
+        assert _get_me_error(adapter, httpx.Response(400, text="y" * 200 + "TAIL")) == (
+            f"Telegram notifier error: HTTP 400 from getMe: {'y' * 200}"
+        )
+
+    def test_get_me_status_399_with_result_is_accepted(self, adapter: TelegramAdapter) -> None:
+        """A status just below 400 with ok=true returns the result (threshold is >= 400)."""
         with respx.mock() as router:
-            router.get(_GET_ME_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
-            with pytest.raises(TelegramNotifierError, match="missing 'result'"):
+            router.get(_GET_ME_URL).mock(
+                return_value=httpx.Response(399, json={"ok": True, "result": {"id": 7}})
+            )
+            assert adapter.get_me() == {"id": 7}
+
+    def test_get_me_ok_false_raises(self, adapter: TelegramAdapter) -> None:
+        """A 200 with ok=false still raises, quoting the parsed body."""
+        response = httpx.Response(200, json={"ok": False, "description": "Bad Request"})
+        assert _get_me_error(adapter, response) == (
+            "Telegram notifier error: Bot API rejected getMe: "
+            "{'ok': False, 'description': 'Bad Request'}"
+        )
+
+    def test_get_me_body_without_ok_raises(self, adapter: TelegramAdapter) -> None:
+        """A getMe body with a result but no ok field counts as a rejection."""
+        assert _get_me_error(adapter, httpx.Response(200, json={"result": {"id": 1}})) == (
+            "Telegram notifier error: Bot API rejected getMe: {'result': {'id': 1}}"
+        )
+
+    def test_get_me_non_object_body_raises(self, adapter: TelegramAdapter) -> None:
+        """A getMe body that is a JSON list counts as a rejection."""
+        assert _get_me_error(adapter, httpx.Response(200, json=[1])) == (
+            "Telegram notifier error: Bot API rejected getMe: [1]"
+        )
+
+    def test_get_me_rejection_excerpt_is_capped_at_200_chars(
+        self, adapter: TelegramAdapter
+    ) -> None:
+        """A huge ok=false getMe body is quoted only up to its first 200 chars."""
+        response = httpx.Response(200, json={"ok": False, "description": "d" * 300})
+        quoted = "{'ok': False, 'description': '" + "d" * 300
+        assert _get_me_error(adapter, response) == (
+            f"Telegram notifier error: Bot API rejected getMe: {quoted[:200]}"
+        )
+
+    def test_get_me_transport_error_wraps_the_httpx_exception(
+        self, adapter: TelegramAdapter
+    ) -> None:
+        """A transport failure during getMe is re-raised chained to the cause."""
+        cause = httpx.ConnectError("DNS failed")
+        with respx.mock() as router:
+            router.get(_GET_ME_URL).mock(side_effect=cause)
+            with pytest.raises(TelegramNotifierError) as excinfo:
                 adapter.get_me()
+        assert (str(excinfo.value), excinfo.value.__cause__) == (
+            "Telegram notifier error: transport failure calling getMe: ConnectError('DNS failed')",
+            cause,
+        )
+
+    def test_get_me_non_json_response_raises(self, adapter: TelegramAdapter) -> None:
+        """A 2xx getMe response that is not JSON raises with a capped body excerpt."""
+        assert _get_me_error(adapter, httpx.Response(200, text="<" * 200 + "TAIL")) == (
+            f"Telegram notifier error: non-JSON response from getMe: {'<' * 200}"
+        )
+
+    def test_get_me_missing_result_object_raises(self, adapter: TelegramAdapter) -> None:
+        """A 200 ok=true response without a 'result' object raises, quoting the body."""
+        assert _get_me_error(adapter, httpx.Response(200, json={"ok": True})) == (
+            "Telegram notifier error: getMe response missing 'result' object: {'ok': True}"
+        )
+
+    def test_get_me_non_object_result_raises(self, adapter: TelegramAdapter) -> None:
+        """A 'result' that is not an object is as unusable as a missing one."""
+        response = httpx.Response(200, json={"ok": True, "result": "bot", "pad": "p" * 300})
+        quoted = "{'ok': True, 'result': 'bot', 'pad': '" + "p" * 300
+        assert _get_me_error(adapter, response) == (
+            f"Telegram notifier error: getMe response missing 'result' object: {quoted[:200]}"
+        )
 
 
 class TestEurRate:
     """The injected rate lookup decides whether a push shows EUR or USDT (change 668)."""
 
     @staticmethod
-    def _sent_text(adapter: TelegramAdapter) -> str:
+    def _sent_headline(adapter: TelegramAdapter) -> str:
+        """Notify the sample signal entry and return the first line of the sent text."""
         with respx.mock() as router:
-            route = router.post(_API_URL).mock(
-                return_value=httpx.Response(200, json={"ok": True, "result": {}})
-            )
+            route = router.post(_API_URL).mock(return_value=_ok())
             adapter.notify(samples()["signal-entry"])
-            return str(json.loads(route.calls[0].request.content)["text"])
+        return str(json.loads(route.calls[0].request.content)["text"]).splitlines()[0]
 
     def test_the_lookup_receives_the_event_and_its_rate_reaches_the_wire(
         self, config: TelegramConfig
@@ -585,20 +595,18 @@ class TestEurRate:
         client = httpx.Client(base_url="https://api.telegram.org", timeout=5.0)
         adapter = TelegramAdapter(config=config, client=client, eur_rate=lookup)
 
-        text = self._sent_text(adapter)
+        headline = self._sent_headline(adapter)
 
-        assert (seen, text.splitlines()[0]) == (
+        assert (seen, headline) == (
             [samples()["signal-entry"]],
-            "\u25b2 Entry long BTC \u00b7 \u20ac41,928\\.16",
+            "▲ Entry long BTC · €41,928\\.16",
         )
 
     def test_a_lookup_with_no_rate_sends_the_usdt_text(self, config: TelegramConfig) -> None:
         """Invariant (668 R-2): a cold cache keeps the USDT text, visibly and never wrong."""
         client = httpx.Client(base_url="https://api.telegram.org", timeout=5.0)
         adapter = TelegramAdapter(config=config, client=client, eur_rate=lambda _event: None)
-        assert self._sent_text(adapter).splitlines()[0] == (
-            "\u25b2 Entry long BTC \u00b7 52,410\\.20 USDT"
-        )
+        assert self._sent_headline(adapter) == "▲ Entry long BTC · 52,410\\.20 USDT"
 
     def test_a_failing_lookup_still_delivers_the_push_in_usdt(self, config: TelegramConfig) -> None:
         """Invariant (668 R-2): a lookup that raises never stops the notification."""
@@ -608,16 +616,12 @@ class TestEurRate:
 
         client = httpx.Client(base_url="https://api.telegram.org", timeout=5.0)
         adapter = TelegramAdapter(config=config, client=client, eur_rate=boom)
-        assert "52,410\\.20 USDT" in self._sent_text(adapter)
+        assert self._sent_headline(adapter) == "▲ Entry long BTC · 52,410\\.20 USDT"
 
-    def test_create_passes_the_lookup_to_the_adapter(self, config: TelegramConfig) -> None:
-        """Invariant (668 D-2): the factory serve uses carries the lookup into the adapter."""
-
-        def lookup(_event: DomainEvent) -> Decimal | None:
-            return Decimal("1.25")
-
-        adapter = TelegramAdapter.create(config, eur_rate=lookup)
+    def test_create_wires_the_lookup_into_the_sent_push(self, config: TelegramConfig) -> None:
+        """Invariant (668 D-2): an adapter built by the factory prices pushes with the lookup."""
+        adapter = TelegramAdapter.create(config, eur_rate=lambda _event: Decimal("1.25"))
         try:
-            assert adapter.eur_rate is lookup
+            assert self._sent_headline(adapter) == "▲ Entry long BTC · €41,928\\.16"
         finally:
             adapter.close()

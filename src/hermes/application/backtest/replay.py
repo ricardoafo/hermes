@@ -2,7 +2,9 @@
 
 The loop does what the serve loop does per bar (mark the portfolio, ask the
 strategy) and hands every in-window signal to the
-:class:`~hermes.application.execution.kernel.FillKernel`. The only
+:class:`~hermes.application.execution.kernel.FillKernel`; an entry it does not
+fill returns the strategy to flat, as in serve (#707), and so does an entry
+signalled during warm-up, which is never executed (#723). The only
 backtest-specific part is the order book: Binance Vision has no depth, so each
 signal gets a synthetic book whose touch sits at the pre-registered execution
 price (pre-registration §5.3, §6.2):
@@ -32,6 +34,7 @@ from hermes.application.execution.kernel import (
     Halted,
     MarketContext,
 )
+from hermes.application.execution.position_sync import sync_after_signal
 from hermes.application.execution.prereg_book import ExecutionModel
 from hermes.application.strategy_protocol.kill_trigger_evaluator import ExperimentState
 from hermes.domain.events.trade_executed import TradeExecuted
@@ -86,7 +89,9 @@ def replay(
     """Replay ``bars`` (already in delivery order) through the strategy and kernel.
 
     Bars before ``window_start`` warm the strategy up; their signals are not
-    executed. Every bar marks the portfolio before the strategy sees it, as
+    executed. A warm-up entry is handled like a refused entry, so the strategy
+    is flat when the window starts (#723); a warm-up exit changes nothing.
+    Every bar marks the portfolio before the strategy sees it, as
     the serve loop does.
 
     Args:
@@ -109,9 +114,13 @@ def replay(
     for bar in bars:
         tracker.mark(bar)
         signal = strategy.on_bar(bar, tracker.state())
-        if signal is not None and signal.signal_time >= window_start:
+        if signal is not None and signal.signal_time < window_start:
+            # A warm-up signal is never executed, so its entry counts as refused
+            # and the window starts flat (#723, pre-registration §4).
+            sync_after_signal(strategy, signal, filled=False)
+        elif signal is not None:
             run.signals_seen += 1
-            _execute(
+            filled = _execute(
                 run,
                 kernel,
                 execution=execution,
@@ -120,6 +129,8 @@ def replay(
                 fees_at=fees_at,
                 correlation_id=correlation_id(),
             )
+            # An entry that did not fill leaves the strategy flat again (#707).
+            sync_after_signal(strategy, signal, filled=filled)
         if bar.interval is KlineInterval.D1 and window_start <= bar.close_time <= window_end:
             run.daily_equity.append((bar.close_time, tracker.snapshot.equity))
     return run
@@ -134,8 +145,8 @@ def _execute(
     bar: Bar,
     fees_at: Callable[[datetime, Pair], FeeSchedule],
     correlation_id: str,
-) -> None:
-    """Execute one signal and record its outcome in ``run``."""
+) -> bool:
+    """Execute one signal, record its outcome in ``run`` and say whether it filled."""
     book = execution.book(signal, bar)
     market = MarketContext(
         orderbook=book,
@@ -151,12 +162,14 @@ def _execute(
         run.fills.append(outcome.fill)
         run.trades.append(outcome.trade)
         run.reference_prices.append(execution.reference(signal, bar)[0])
-    elif isinstance(outcome, Declined):
+        return True
+    if isinstance(outcome, Declined):
         run.declined[outcome.rule] += 1
         if outcome.rejection is not None:
             run.rejections.append(outcome.rejection)
     elif isinstance(outcome, Halted):
         run.declined["kill"] += 1
+    return False
 
 
 def _snapshot(bar: Bar, book: Orderbook | None) -> MarketSnapshot:

@@ -1,1 +1,0 @@
-- **Fill quality rows record arrival price and latency** (`FillQualityRecorded` schema v2): each shadow fill now stores the signal bar close (`arrival_price`) and the milliseconds from signal close to fill (`delta_ms`); record-only, v1 rows read back with both as none. Refs #30.

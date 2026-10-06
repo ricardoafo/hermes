@@ -2,16 +2,21 @@
 
 Invariants (backtest-driver-mvp1-phase2 change.md D-1, D-4, R-2):
 
-- Signals before the window warm the strategy up and are never executed.
+- Signals before the window warm the strategy up and are never executed; a
+  warm-up entry returns the strategy to flat like a refused entry, so the
+  window starts flat (#723).
 - An entry fills at close * 1.0005; a chandelier exit at stop * 0.9985; a
   time-stop or regime-break exit at close * 0.9995; the reference price is
   recorded as the M-02 mid.
 - A zero-volume bar has no book, so its signal is declined as ``no-book``.
+- An entry the kernel does not fill returns the strategy to flat (#707): no
+  later exit for a position that does not exist, and the pair can enter again.
 - The equity curve holds the marked equity at each in-window 1D close.
 """
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -24,6 +29,7 @@ from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.portfolio.precision import EXACT_CONTEXT
 from hermes.domain.risk.state import PortfolioState
 from hermes.domain.strategy.signal import OpenPosition, SignalKind, SignalSide, StrategySignal
+from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
 from hermes.domain.value_objects.pair import Pair
 from tests.support.fill_kernel import BTC_USDT, fees, kernel
 
@@ -83,6 +89,7 @@ class _ScriptedStrategy:
 
     script: dict[datetime, StrategySignal]
     seen: list[PortfolioState] = field(default_factory=list)
+    restored: list[OpenPosition | None] = field(default_factory=list)
 
     def on_bar(self, bar: Bar, portfolio_state: PortfolioState) -> StrategySignal | None:
         self.seen.append(portfolio_state)
@@ -92,6 +99,9 @@ class _ScriptedStrategy:
 
     def seed(self, bars: Sequence[Bar], open_position: OpenPosition | None = None) -> None:
         _ = (bars, open_position)
+
+    def restore_position(self, open_position: OpenPosition | None) -> None:
+        self.restored.append(open_position)
 
 
 def _fees_at(at: datetime, pair: Pair) -> FeeSchedule:
@@ -222,3 +232,129 @@ def test_default_execution_model_is_the_pre_registered_one() -> None:
     assert ExecutionModel() == ExecutionModel(
         entry_bps=Decimal("5"), stop_bps=Decimal("15"), depth_frac=Decimal("0.30")
     )
+
+
+def _replay_with(
+    strategy: _ScriptedStrategy | SwingStrategyAdapter,
+    bars: list[Bar],
+    *,
+    window_start: datetime = _WINDOW,
+) -> BacktestRun:
+    ids = iter(f"c{i}" for i in range(1000))
+    return replay(
+        bars,
+        strategy=strategy,
+        kernel=kernel(),
+        window_start=window_start,
+        window_end=_END,
+        fees_at=_fees_at,
+        correlation_id=lambda: next(ids),
+    )
+
+
+def test_declined_entry_restores_the_strategy_to_flat() -> None:
+    """A no-book entry is followed by exactly one restore to flat (#707)."""
+    t = _at(4)
+    strategy = _ScriptedStrategy({t: _entry(t, Decimal("200"))})
+    run = _replay_with(strategy, [_bar(t, Decimal("200"), volume=Decimal("0"))])
+    assert (dict(run.declined), strategy.restored) == ({"no-book": 1}, [None])
+
+
+def test_filled_entry_and_declined_exit_restore_nothing() -> None:
+    """A filled entry keeps the strategy long; a declined exit is out of scope (#706)."""
+    t1, t2 = _at(4), _at(8)
+    strategy = _ScriptedStrategy(
+        {t1: _entry(t1, Decimal("200")), t2: _exit(t2, Decimal("190"), "chandelier")}
+    )
+    run = _replay_with(
+        strategy,
+        [_bar(t1, Decimal("200")), _bar(t2, Decimal("190"), volume=Decimal("0"))],
+    )
+    assert (len(run.fills), dict(run.declined), strategy.restored) == (1, {"no-book": 1}, [])
+
+
+def test_warm_up_entry_restores_flat_once_and_warm_up_exit_restores_nothing() -> None:
+    """A warm-up entry counts as refused: one restore to flat; a warm-up exit adds none (#723)."""
+    t1, t2 = _WINDOW - timedelta(hours=8), _WINDOW - timedelta(hours=4)
+    strategy = _ScriptedStrategy(
+        {t1: _entry(t1, Decimal("200")), t2: _exit(t2, Decimal("190"), "chandelier")}
+    )
+    run = _replay_with(strategy, [_bar(t1, Decimal("200")), _bar(t2, Decimal("190"))])
+    assert (run.signals_seen, strategy.restored) == (0, [None])
+
+
+_SWING_H4_BASE = _WINDOW + timedelta(days=15)
+
+
+def _swing_bar(close: str, index: int, *, daily: bool = False, volume: str = "1000") -> Bar:
+    """Build a bar of the small-period swing script; 4h bars follow every 1d bar."""
+    span = timedelta(days=1) if daily else timedelta(hours=4)
+    open_time = (_WINDOW if daily else _SWING_H4_BASE) + span * index
+    price = Decimal(close)
+    return Bar(
+        pair=BTC_USDT,
+        interval=KlineInterval.D1 if daily else KlineInterval.H4,
+        open_time=open_time,
+        open=price,
+        high=price + Decimal("2"),
+        low=price - Decimal("2"),
+        close=price,
+        volume=Decimal(volume),
+        close_time=open_time + span,
+    )
+
+
+def _swing_strategy() -> SwingStrategyAdapter:
+    return SwingStrategyAdapter(
+        donchian_period=5,
+        adx_period=5,
+        adx_threshold=Decimal("5"),
+        ema_period=10,
+        chandelier_period=5,
+        chandelier_atr_mult=Decimal("3.0"),
+        atr_sizing_period=5,
+    )
+
+
+def _refused_breakout_history() -> list[Bar]:
+    """Rising 1d bars, eleven flat 4h bars, then a breakout with no volume (no book)."""
+    daily = [_swing_bar(str(1000 + 200 * i // 11), i, daily=True) for i in range(12)]
+    flat = [_swing_bar("1000", i) for i in range(11)]
+    return [*daily, *flat, _swing_bar("2000", 11, volume="0")]
+
+
+def test_real_strategy_after_a_refused_entry_signals_no_exit() -> None:
+    """After a no-book entry, a crash bar raises no exit, so nothing is declined no-position."""
+    crash = dataclasses.replace(_swing_bar("500", 12), low=Decimal("100"))
+    run = _replay_with(_swing_strategy(), [*_refused_breakout_history(), crash])
+    assert (run.signals_seen, dict(run.declined), run.fills) == (1, {"no-book": 1}, [])
+
+
+def test_real_strategy_enters_again_after_a_refused_entry() -> None:
+    """After a no-book entry, the next breakout is a new entry and fills at close + 5 bps."""
+    run = _replay_with(_swing_strategy(), [*_refused_breakout_history(), _swing_bar("3000", 12)])
+    assert (run.signals_seen, dict(run.declined)) == (2, {"no-book": 1})
+    assert [(f.order.side.value, f.avg_price) for f in run.fills] == [
+        ("BUY", Decimal("3000") * Decimal("1.0005"))
+    ]
+
+
+def test_real_strategy_starts_the_window_flat_after_a_warm_up_breakout() -> None:
+    """A warm-up breakout leaves the strategy flat, so the window's own breakout fills (#723).
+
+    Without the reset the adapter would still be long at window start, skip the
+    window's breakout and later signal an exit for a position never held.
+    """
+    daily = [_swing_bar(str(1000 + 200 * i // 11), i, daily=True) for i in range(12)]
+    flat = [_swing_bar("1000", i) for i in range(11)]
+    warm_breakout = _swing_bar("2000", 11)
+    window_breakout = _swing_bar("3000", 12)
+    run = _replay_with(
+        _swing_strategy(),
+        [*daily, *flat, warm_breakout, window_breakout],
+        window_start=window_breakout.close_time,
+    )
+    assert (run.signals_seen, dict(run.declined)) == (1, {})
+    assert [(f.order.side.value, f.avg_price) for f in run.fills] == [
+        ("BUY", Decimal("3000") * Decimal("1.0005"))
+    ]
