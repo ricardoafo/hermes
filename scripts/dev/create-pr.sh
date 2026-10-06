@@ -357,15 +357,17 @@ EOF
     unset GIT_DIR GIT_WORK_TREE
     rm -rf "$neutral"
     tmpdir=$(mktemp -d -t create-pr-selftest.XXXXXX)
+    # Each commit names its author: a CI runner has no global git identity,
+    # and a failed commit here leaves fixture 12 an empty branch that passes.
     (
         export GIT_DIR="$tmpdir/.git" GIT_WORK_TREE="$tmpdir"
         git init -q "$tmpdir"
-        git -C "$tmpdir" commit -q --allow-empty -m "chore: initial"
+        git -C "$tmpdir" -c user.name=t -c user.email=t@invalid commit -q --allow-empty -m "chore: initial"
         git -C "$tmpdir" branch -m main 2>/dev/null || true
         # Simulate origin/main at the initial (chore) commit — so a feat
         # commit added later shows up as HEAD-only in the diff.
         git -C "$tmpdir" update-ref refs/remotes/origin/main HEAD
-        git -C "$tmpdir" commit -q --allow-empty -m "feat(x): valid"
+        git -C "$tmpdir" -c user.name=t -c user.email=t@invalid commit -q --allow-empty -m "feat(x): valid"
     ) >/dev/null 2>&1
 
     # 12. FAIL: feat title + no openspec change in diff → exit 3, gh NOT
@@ -393,7 +395,7 @@ EOF
         (
             export GIT_DIR="$tmpdir/.git" GIT_WORK_TREE="$tmpdir"
             git -C "$tmpdir" add openspec/changes/x-change/change.md
-            git -C "$tmpdir" commit -q --amend --no-edit
+            git -C "$tmpdir" -c user.name=t -c user.email=t@invalid commit -q --amend --no-edit
         ) >/dev/null 2>&1
         out=$(GIT_DIR="$tmpdir/.git" GIT_WORK_TREE="$tmpdir" GH_CMD=echo HERMES_SELF_TEST=0 bash "$0" --title "feat(x): valid" --body-file "$tmp_ok" 2>&1); rc=$?
         [[ $rc -eq 0 ]] || { echo "SELF-TEST FAIL 14: feat + openspec present → rc=$rc, want 0"; fail=1; }
