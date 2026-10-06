@@ -280,6 +280,8 @@ fi
 # 11. Guides index builds. The index itself is rebuilt on main after
 # merge, never in a PR.
 run_check "Guides index builds"               ci_check guides-index
+run_check "pre-commit guards (whole tree)"    ci_check guards
+run_check "script self-tests"                 ci_check self-tests
 
 # 12. CHANGELOG check — infers PR title's conventional-commit type from
 #     the LATEST commit on the branch (matches what the eventual squash

@@ -35,6 +35,7 @@ These are not test tiers but they run next to them:
 | Gate | Where it runs |
 | --- | --- |
 | ruff format and check, `mypy --strict src/hermes`, `lint-imports`, pip-audit, radon, vulture, licenses, gitleaks, markdownlint, test-deletion guard | `ci.yml` (job `ci-success`, the only required check) |
+| The pre-commit guards over the whole tree (weak assertions, naive datetimes, domain trading mode, migration SQL, new modules without tests) and every script self-test; every pre-commit hook must be enforced in CI or listed as local-only with a reason (`scripts/dev/hook-coverage-check.py`) | `ci.yml` steps `guards` and `self-tests` (#840) |
 | ruff, mypy, `lint-imports`, markdownlint, gitleaks on the merged batch | merge queue (`scripts/dev/merge-gates.sh`) |
 | Semgrep over the whole tree | `scheduled.yml` job `semgrep`, daily 11:30 Madrid |
 
