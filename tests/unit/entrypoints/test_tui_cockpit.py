@@ -26,6 +26,7 @@ import asyncio
 import io
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -35,10 +36,10 @@ from rich.text import Text
 from textual.binding import Binding
 from textual.command import CommandPalette
 from textual.pilot import Pilot
-from textual.widgets import ContentSwitcher, OptionList
+from textual.widgets import ContentSwitcher, OptionList, Static
 
 from hermes.adapters.console import FixtureReadModel
-from hermes.application.console import Heartbeat, HeartbeatState
+from hermes.application.console import Heartbeat, HeartbeatState, Surface
 from hermes.entrypoints.commands.tui import run_tui
 from hermes.entrypoints.tui import (
     TABS,
@@ -46,6 +47,7 @@ from hermes.entrypoints.tui import (
     countdown_text,
     osc_title,
     terminal_title,
+    title_total,
 )
 from hermes.entrypoints.tui_settings import ThemeChoice, load_settings
 from hermes.entrypoints.tui_theme import BASE, CONTROL_ROOM, NEON, NIGHT, pulse_steps
@@ -391,6 +393,43 @@ def test_terminal_title_names_each_state() -> None:
     ]
 
 
+def test_terminal_title_carries_the_total_when_money_may_show() -> None:
+    """With a total, OK and late titles carry it; the down title never does."""
+    base = datetime(2026, 10, 3, 12, 0, tzinfo=UTC)
+    ok = Heartbeat(HeartbeatState.OK, base, base, base + timedelta(hours=4))
+    late = Heartbeat(HeartbeatState.LATE, base, base, base)
+    down = Heartbeat(HeartbeatState.DOWN, base, base, base, down_since=base)
+    assert [terminal_title(h, _MADRID, "€4,456") for h in (ok, late, down)] == [
+        "hermes ● live · €4,456 · next 18:00",
+        "hermes ◐ check late · €4,456 · 14:00",
+        "hermes ✖ down since 14:00",
+    ]
+
+
+# SEV-1: Security axis S3 — money must never reach a surface pnl_visible blocks
+@pytest.mark.parametrize(
+    ("surface", "expected"),
+    [
+        (Surface.OPERATOR_TUI, "€4,456"),
+        (Surface.OPERATOR_CLI, "€4,456"),
+        (Surface.TELEGRAM_PUSHED, None),
+        (Surface.SLACK, None),
+        (Surface.SUPERVISOR_DESK, None),
+    ],
+)
+def test_title_total_follows_pnl_visible(surface: Surface, expected: str | None) -> None:
+    """The title total is whole euros on operator surfaces and absent wherever P&L is hidden."""
+    assert title_total(Decimal("4455.50"), surface) == expected
+
+
+def test_title_without_a_total_has_no_figure() -> None:
+    """When pnl_visible withholds the total, the OK title is the money-free one."""
+    base = datetime(2026, 10, 3, 12, 0, tzinfo=UTC)
+    ok = Heartbeat(HeartbeatState.OK, base, base, base + timedelta(hours=4))
+    total = title_total(Decimal("4455.50"), Surface.TELEGRAM_PUSHED)
+    assert terminal_title(ok, _MADRID, total) == "hermes ● live · next 18:00"
+
+
 def test_osc_title_is_one_escape_without_control_characters() -> None:
     """The title escape is ESC ] 2 ; text BEL, and control characters in the text are dropped."""
     assert osc_title("hermes\x07\x1b]0;evil ● live") == "\x1b]2;hermes]0;evil ● live\x07"
@@ -410,7 +449,7 @@ def test_app_writes_the_title_through_its_driver_once() -> None:
         app._tick()
         return written
 
-    assert _run(probe) == ["\x1b]2;hermes ● live · next 18:00\x07"]
+    assert _run(probe) == ["\x1b]2;hermes ● live · €1,021 · next 18:00\x07"]
 
 
 def test_countdown_reads_due_once_the_check_time_passed() -> None:
@@ -693,27 +732,75 @@ def test_picking_neon_at_night_keeps_neon_and_saves_it(tmp_path: Path) -> None:
     )
 
 
-def _window_bar_start(app: HomeApp) -> str:
-    content = app.query_one(WindowBar).content
-    assert isinstance(content, Text)
-    bgcolor = content.get_style_at_offset(Console(), 0).bgcolor
+def _title_bar_start(app: HomeApp) -> str:
+    top = app.query_one("#portfolio-panel").query_one(".hud-top", Static).content
+    assert isinstance(top, Text)
+    bgcolor = top.get_style_at_offset(Console(), len("┏━")).bgcolor
     assert bgcolor is not None
     return bgcolor.name
 
 
-def test_picking_a_theme_repaints_the_chrome_in_its_tokens(tmp_path: Path) -> None:
-    """After picking Control room the window bar's first cell uses Control room's chrome start."""
+def test_picking_control_room_hides_the_window_bar_and_recolours_the_title_bars(
+    tmp_path: Path,
+) -> None:
+    """After picking Control room the window bar is gone and title bars start on its chrome."""
     path = tmp_path / "console.toml"
 
-    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[str, str]:
-        before = _window_bar_start(app)
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[bool, str, bool, str, str]:
+        bar = app.query_one(WindowBar)
+        shown_before, start_before = bar.display, _title_bar_start(app)
         await _press(pilot, ["t", "up", "enter"])
-        return before, _window_bar_start(app)
+        first_row = _screen_text(app).splitlines()[0]
+        return shown_before, start_before, bar.display, _title_bar_start(app), first_row
 
     assert _run(probe, settings_path=path) == (
+        True,
         NEON.chrome[0].lower(),
+        False,
         CONTROL_ROOM.chrome[0].lower(),
+        "  1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Shadow test · 6 Briefs · 7 System · 8 Logs",
     )
+
+
+@pytest.mark.parametrize(
+    ("theme", "now", "shown"),
+    [
+        (ThemeChoice.NEON, _DAY, True),
+        (ThemeChoice.CONTROL, _DAY, False),
+        (ThemeChoice.AUTO, _DAY, True),
+        (ThemeChoice.AUTO, _NIGHT, False),
+    ],
+    ids=["neon", "control", "auto-day", "auto-night"],
+)
+def test_window_bar_shows_only_in_neon(theme: ThemeChoice, now: datetime, shown: bool) -> None:
+    """The Neon window bar and its strip lead the screen in Neon only."""
+
+    async def drive() -> tuple[bool, bool]:
+        app = HomeApp(
+            FixtureReadModel.load("ok-two-positions"),
+            clock=lambda: now,
+            motion=False,
+            theme=theme,
+            refresh_seconds=3600,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await pilot.pause()
+            first = _screen_text(app).splitlines()[0]
+            return app.query_one(WindowBar).display, first.startswith("▐ HERMES // SHADOW CONSOLE")
+
+    assert asyncio.run(drive()) == (shown, shown)
+
+
+def test_demo_tag_is_drawn_on_the_warn_amber() -> None:
+    """The DEMO DATA tag is bold void text on the warn amber, not raw ANSI yellow."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> str:
+        del pilot
+        tag = app._content["demo-tag"]
+        assert isinstance(tag, Text)
+        return str(tag.style)
+
+    assert _run(probe) == f"bold {NEON.void} on {NEON.warn}"
 
 
 async def _palette_pick(pilot: Pilot[None], query: str) -> None:
