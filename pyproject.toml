@@ -137,7 +137,7 @@ markers = [
   "unit: label for a pure unit test; not used for selection",
   "property: label for a Hypothesis property test; not used for selection",
   "integration: label for an integration test; not used for selection",
-  "chaos: fault-injection test; registered, no test uses it today",
+  "chaos: fault-injection test (crash mid-write, storage, clock); runs in the integration tier",
   # Contract tests are skipped by default via the `-m 'not contract'` addopts
   # filter. The daily scheduled.yml job runs `pytest tests/contract -m contract`
   # (see docs/decisions/2026-08-23-contract-test-tier.md).
