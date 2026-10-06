@@ -30,7 +30,7 @@ class AnomalySeverity(StrEnum):
     """
 
     CRITICAL = "CRITICAL"
-    """Immediate action required — auto-pause fires."""
+    """Immediate action required. Recorded and notified; nothing pauses on it yet (#136)."""
 
     WARNING = "WARNING"
     """Degraded state — human review requested, no auto-action."""

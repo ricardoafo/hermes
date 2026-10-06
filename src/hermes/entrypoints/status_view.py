@@ -55,6 +55,7 @@ def render_status(
     *,
     bot: UnitState = UnitState.UNKNOWN,
     release: ReleaseInfo | None = None,
+    version: str | None = None,
 ) -> None:
     """Print the human view of ``report`` to ``console``.
 
@@ -64,8 +65,12 @@ def render_status(
             whether the verdict is a panel or plain lines.
         bot: State of the bot unit.
         release: The running release; no release line when ``None``.
+        version: The running version as screens name it (``v1.0.0-shadow.1``);
+            no version line when ``None``.
     """
     console.print(_header(report, bot))
+    if version is not None:
+        console.print(f"version: {version}")
     if release is not None:
         console.print(_release_line(release))
     console.print()
@@ -102,6 +107,7 @@ def report_to_dict(
     *,
     bot: UnitState = UnitState.UNKNOWN,
     release: ReleaseInfo | None = None,
+    version: str | None = None,
 ) -> dict[str, Any]:
     """Return ``report`` as JSON-ready data with the same facts as the human view.
 
@@ -109,6 +115,7 @@ def report_to_dict(
         report: The report to convert.
         bot: State of the bot unit.
         release: The running release; omitted from the data when ``None``.
+        version: The running version as screens name it; omitted when ``None``.
 
     Returns:
         A dict of strings, ints and lists; datetimes as ISO-8601 UTC.
@@ -146,6 +153,8 @@ def report_to_dict(
             for e in report.open_entries
         ],
     }
+    if version is not None:
+        payload["version"] = version
     if release is not None:
         payload["release"] = release.name
         payload["live_since"] = _iso(release.live_since)

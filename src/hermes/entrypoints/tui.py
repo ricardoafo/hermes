@@ -7,10 +7,11 @@ the read methods of the read model, so opening it while ``hermes serve`` runs
 neither blocks nor touches the ledger. The only file it writes is the
 operator's theme choice (``~/.config/hermes/console.toml``).
 
-Chrome (top to bottom): the window bar ("▐ HERMES // SHADOW CONSOLE", a ticking
-binary strip, the clock), the screen tabs, the status row (demo tag, release,
-heartbeat with the pulsing live dot, next-bar countdown, theme chip), the
-screen, the 90-day line and the footer key chips. Every panel sits in a
+Chrome (top to bottom): the window bar ("▐ HERMES // SHADOW CONSOLE", the
+live-feed pulse or the next-bar countdown, the clock; Neon only), the screen
+tabs, the status row (demo tag, release, heartbeat with the pulsing live dot,
+next-bar countdown, theme chip), the screen, the 90-day line and the footer
+key chips. Every panel sits in a
 :class:`~hermes.entrypoints.tui_widgets.HudPanel`. Tokens, themes, breakpoints
 and timings live in :mod:`hermes.entrypoints.tui_theme`.
 
@@ -36,8 +37,18 @@ ledger read that fails) turns that card into a plain "not available yet" (or
 screen never stops on a missing figure (change ``live-home-screen`` D-6).
 
 Refresh: the read model is polled every 5 s; the clock and the countdown tick
-every 1 s locally. Animations (the live-dot pulse, the binary strip, the
-radar, the count-up and the shimmer) stop with ``HERMES_CONSOLE_MOTION=off``.
+every 1 s locally. Animations (the live-dot pulse, the feed pulse's bright newest glyph, the
+radar, the count-up, the shimmer and the tick flash) stop with
+``HERMES_CONSOLE_MOTION=off``.
+
+Live between bars (issue #713): with a ticker, the 1 s tick starts a thread
+worker every 10 s that reads BTC, ETH and SOL from the ticker port, so the UI
+never blocks. The ticks drive the Market rows, each open position's now price,
+change, net, stop room and trend, the big total and the range change, all
+tagged ``live`` and kept apart from the booked values ("booked as of 16:00").
+The views read on the last poll are cached, so a tick repaints those cards
+without reading the ledger. Live values stay in this process: nothing here
+writes the ledger or reaches the engine, the supervisor or a notification.
 
 Keys: ``1``-``8`` screens, Tab / Shift+Tab cycle them, Ctrl+P command palette,
 ``D`` ``W`` ``M`` ``Y`` range (day, week, month, year), up and down (or ``j``
@@ -47,12 +58,14 @@ theme, ``?`` help, ``Q`` quit.
 Reference: openspec/changes/readonly-tui-dashboard/change.md;
 openspec/changes/live-home-screen/change.md (D-6);
 openspec/changes/711-cockpit-theme/change.md;
-openspec/changes/712-cockpit-home/change.md.
+openspec/changes/712-cockpit-home/change.md;
+openspec/changes/713-live-ticker/change.md.
 """
 
 from __future__ import annotations
 
 import os
+from collections import deque
 from collections.abc import Callable, Iterable, Sequence
 from contextlib import suppress
 from dataclasses import replace
@@ -78,11 +91,28 @@ from hermes.application.console import (
     Heartbeat,
     HeartbeatState,
     PortfolioRange,
+    PortfolioSummary,
+    PositionDetail,
+    PositionRow,
     Surface,
     ViewNotAvailableError,
+    WatchedPair,
     pnl_visible,
 )
-from hermes.application.console.format import MINUS
+from hermes.application.console.format import MINUS, fmt_level
+from hermes.application.console.live import (
+    LiveBoard,
+    LivePosition,
+    LiveQuote,
+    LiveState,
+    LiveTickerPort,
+    LiveTotal,
+    TickerPoller,
+    TickOutcome,
+    live_position,
+    live_total,
+    poll_succeeded,
+)
 from hermes.application.console.logs import LogLine, render_log_line
 from hermes.application.console.render import (
     DEMO_TAG,
@@ -101,6 +131,7 @@ from hermes.entrypoints.tui_home import (
     LOGS_DEMO,
     LOGS_UNAVAILABLE,
     HomeLayout,
+    LiveRows,
     empty_positions,
     home_layout,
     log_tail,
@@ -109,6 +140,13 @@ from hermes.entrypoints.tui_home import (
     position_rows,
     run_line,
     total_text,
+)
+from hermes.entrypoints.tui_live import (
+    LiveLook,
+    eur_rate,
+    live_detail_line,
+    live_portfolio_lines,
+    market_rows,
 )
 from hermes.entrypoints.tui_settings import (
     DEFAULT_SETTINGS_PATH,
@@ -120,6 +158,7 @@ from hermes.entrypoints.tui_theme import (
     BASE,
     COMPACT_BELOW,
     DOWN_GLYPH,
+    FEED_WIDTH,
     HORIZONTAL_BREAKPOINTS,
     LATE_GLYPH,
     LEFT_COLUMN_STANDARD,
@@ -160,6 +199,7 @@ __all__ = [
     "TABS",
     "HomeApp",
     "countdown_text",
+    "next_bar_text",
     "osc_title",
     "run_home",
     "terminal_title",
@@ -172,9 +212,6 @@ _LOGS_LINES: Final = 50
 _READ_ONLY: Final = "read-only"
 _BRIEF_PENDING: Final = "brief not available yet"
 _SIGNALS_PENDING: Final = "Heat grid · coming next · issue #714"
-# Held for the live per-coin chart of issue #713.
-_CHART_SLOT: Final = "┈" * 6
-_CHART_SLOT_FROM: Final = 48
 _LEFT_IDS: Final = frozenset(
     {"portfolio", "portfolio-curve", "portfolio-meters", "portfolio-books"}
 )
@@ -320,6 +357,30 @@ def countdown_text(heartbeat: Heartbeat | None, now: datetime) -> str:
     return f"in {hours}h {minutes:02d}m {secs:02d}s" if hours else f"in {minutes}m {secs:02d}s"
 
 
+def next_bar_text(heartbeat: Heartbeat | None, now: datetime) -> str:
+    """Return the Neon window bar's countdown to the next 4h check, ticking every second.
+
+    Shown in place of the live-feed pulse while there is no ticker (demo data,
+    or before the first poll), Code Owner 2026-10-06.
+
+    Args:
+        heartbeat: The last heartbeat read.
+        now: The current time.
+
+    Returns:
+        ``next bar 01:12:05``, ``next bar due`` once the check time has passed,
+        or empty when hermes is late, down or unknown.
+    """
+    if heartbeat is None or heartbeat.state is not HeartbeatState.OK:
+        return ""
+    left = heartbeat.next_check_at - now
+    if left <= timedelta(0):
+        return "next bar due"
+    hours, rest = divmod(int(left.total_seconds()), 3600)
+    minutes, seconds = divmod(rest, 60)
+    return f"next bar {hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
 _RANGE_KEYS: Final[dict[str, PortfolioRange]] = {
     "today": PortfolioRange.TODAY,
     "week": PortfolioRange.WEEK,
@@ -404,6 +465,10 @@ class HomeApp(App[None]):
     VERTICAL_BREAKPOINTS = VERTICAL_BREAKPOINTS
     CSS = f"""
     Screen {{ background: $hud-void; }}
+    #screens, #screens > Container, #screens > VerticalScroll, #body,
+    #left-column, #right-column, #third-column, #mid-row, #top, #footer-row {{
+        background: $hud-void;
+    }}
     #window-bar, #tabs, #top {{ height: 1; }}
     #demo-tag {{ width: auto; }}
     #release {{ width: auto; color: $hud-muted; }}
@@ -470,6 +535,7 @@ class HomeApp(App[None]):
         settings_path: Path | None = None,
         theme: ThemeChoice | None = None,
         exposure_cap: Decimal | None = None,
+        ticker: LiveTickerPort | None = None,
     ) -> None:
         """Hold the read model, the journal source and the screen state.
 
@@ -488,6 +554,8 @@ class HomeApp(App[None]):
             theme: A choice from ``--theme``; it wins over the saved one and is saved.
             exposure_cap: The roster's pre-registered exposure cap as a share
                 (``0.15``); ``None`` makes the exposure meter say it is unknown.
+            ticker: The live public ticker (issue #713); ``None`` shows booked
+                values only and the Market panel without prices.
         """
         super().__init__()
         self._model = model
@@ -517,6 +585,18 @@ class HomeApp(App[None]):
         self._title_sent: str | None = None
         self._title_total: str | None = None
         self.effect_timers: dict[str, Timer] = {}
+        self._poller = None if ticker is None else TickerPoller(ticker, clock)
+        self._board = LiveBoard()
+        self._fetching = False
+        self._flashes: dict[str, int] = {}
+        self._flash_timer: Timer | None = None
+        self._polls: deque[bool] = deque(maxlen=FEED_WIDTH)
+        self._feed_timer: Timer | None = None
+        self._live_state = LiveState.WAITING
+        self._summary: PortfolioSummary | None = None
+        self._rows: tuple[PositionRow, ...] = ()
+        self._details: dict[str, PositionDetail] = {}
+        self._watch: tuple[WatchedPair, ...] | None = None
         for hermes_theme in THEMES:
             self.register_theme(hermes_theme)
 
@@ -624,7 +704,7 @@ class HomeApp(App[None]):
         return self.theme == NIGHT_THEME
 
     def _start_effects(self) -> None:
-        """Start the pulse and the binary strip; nothing runs with motion off."""
+        """Start the pulse, the shimmer and the radar; nothing runs with motion off."""
         for timer in self.effect_timers.values():
             timer.stop()
         self.effect_timers = {}
@@ -636,7 +716,6 @@ class HomeApp(App[None]):
             period / MOTION.pulse_steps, self._step_pulse
         )
         if not self.is_night:
-            self.effect_timers["strip"] = self.set_interval(MOTION.strip_tick, self._step_strip)
             big = self._home.query_one(BigNumber)
             self.effect_timers["shimmer"] = self.set_interval(MOTION.shimmer, big.start_shimmer)
             self.effect_timers["radar"] = self.set_interval(MOTION.radar_tick, self._step_radar)
@@ -658,10 +737,8 @@ class HomeApp(App[None]):
         self._pulse = (self._pulse + 1) % MOTION.pulse_steps
         with suppress(NoMatches):
             self._paint_heartbeat()
-
-    def _step_strip(self) -> None:
-        with suppress(NoMatches):
-            self._home.query_one(WindowBar).tick += 1
+            if self._live_state is LiveState.LIVE:
+                self._paint_live()
 
     @property
     def live_dot_colour(self) -> str:
@@ -678,7 +755,10 @@ class HomeApp(App[None]):
             return
         now = self._clock()
         self._apply_theme(now)
-        self._home.query_one(WindowBar).clock = now.astimezone(self._ctx.tz).strftime("%H:%M:%S")
+        bar = self._home.query_one(WindowBar)
+        bar.clock = now.astimezone(self._ctx.tz).strftime("%H:%M:%S")
+        if not self._polls:
+            bar.show_next_bar(next_bar_text(self._heartbeat, now))
         countdown = countdown_text(self._heartbeat, now)
         on_row, full_chip = self._status_row_layout(countdown)
         self._paint_chip(compact=not full_chip)
@@ -687,6 +767,7 @@ class HomeApp(App[None]):
         status = f"next {short} · {_READ_ONLY}" if countdown and not on_row else _READ_ONLY
         self._set("footer-status", Text(status))
         self._write_title(terminal_title(self._heartbeat, self._ctx.tz, self._title_total))
+        self._tick_live(now)
 
     def _status_row_layout(self, countdown: str) -> tuple[bool, bool]:
         """Return whether the countdown and the full theme chip fit on the status row.
@@ -720,9 +801,7 @@ class HomeApp(App[None]):
         if self.theme != name:
             self.ansi_theme_dark = terminal_theme(data_tokens(name))
             self.theme = name
-        bar = self._home.query_one(WindowBar)
-        bar.strip = name != NIGHT_THEME
-        bar.display = name == NEON_THEME
+        self._home.query_one(WindowBar).display = name == NEON_THEME
         if night_changed and self.effect_timers:
             self._start_effects()
 
@@ -759,6 +838,129 @@ class HomeApp(App[None]):
             driver.write(osc_title(title))
             driver.flush()
         self._title_sent = title
+
+    # ------------------------------------------------------------------
+    # Live ticker (issue #713)
+    # ------------------------------------------------------------------
+
+    @property
+    def board(self) -> LiveBoard:
+        """Return the live ticks received so far (in memory only)."""
+        return self._board
+
+    @property
+    def flashing(self) -> dict[str, int]:
+        """Return the coins whose cells flash now: ``1`` up, ``-1`` down."""
+        return dict(self._flashes)
+
+    def _tick_live(self, now: datetime) -> None:
+        """Start a ticker poll when one is due; repaint when the live state changes."""
+        state = self._board.status(now).state
+        if state is not self._live_state:
+            self._live_state = state
+            self._paint_live()
+        poller = self._poller
+        if poller is None or self._fetching or not poller.due(now):
+            return
+        poller.begin(now)
+        self._fetching = True
+        self.run_worker(
+            partial(self._fetch_ticks, poller),
+            name="ticker",
+            group="ticker",
+            thread=True,
+            exit_on_error=False,
+        )
+
+    def _fetch_ticks(self, poller: TickerPoller) -> None:
+        """Fetch one tick per coin (worker thread) and hand them to the UI thread."""
+        outcomes = poller.fetch()
+        # The app may be closing while the fetch ran; its ticks are then dropped.
+        with suppress(RuntimeError):
+            self.call_from_thread(self.apply_ticks, outcomes)
+
+    def apply_ticks(self, outcomes: Sequence[TickOutcome]) -> None:
+        """Record fetched ticks, flash the moved cells and repaint the live cards.
+
+        Runs on the UI thread. The ticks go to the in-memory board only.
+
+        Args:
+            outcomes: One tick per coin from :meth:`TickerPoller.fetch`.
+        """
+        self._fetching = False
+        self._polls.append(poll_succeeded(outcomes))
+        self._show_feed(bright=self._motion)
+        moved = self._board.apply(outcomes)
+        self._live_state = self._board.status(self._clock()).state
+        if moved and self._motion:
+            self._flashes = moved
+            if self._flash_timer is not None:
+                self._flash_timer.stop()
+            self._flash_timer = self.set_timer(MOTION.flash, self._end_flash)
+        self._paint_live()
+
+    @property
+    def feed(self) -> tuple[bool, ...]:
+        """Return the recent poll results the window bar's feed pulse shows, oldest first."""
+        return tuple(self._polls)
+
+    def _show_feed(self, *, bright: bool) -> None:
+        """Draw the feed pulse; a bright newest glyph dims again after ``MOTION.flash``."""
+        with suppress(NoMatches):
+            self._home.query_one(WindowBar).show_feed(self._polls, bright=bright)
+        if self._feed_timer is not None:
+            self._feed_timer.stop()
+            self._feed_timer = None
+        if bright:
+            self._feed_timer = self.set_timer(MOTION.flash, self._dim_feed)
+
+    def _dim_feed(self) -> None:
+        self._feed_timer = None
+        self._show_feed(bright=False)
+
+    def _end_flash(self) -> None:
+        self._flashes = {}
+        self._flash_timer = None
+        self._paint_live()
+
+    def _live_look(self) -> LiveLook | None:
+        """Return the live layer's look, or ``None`` with no ticker."""
+        if self._poller is None:
+            return None
+        heartbeat = self._heartbeat
+        return LiveLook(
+            status=self._board.status(self._clock()),
+            tokens=self._data,
+            dot=self.live_dot_colour,
+            ctx=self._ctx,
+            flashes=self._flashes,
+            booked_at=None if heartbeat is None else heartbeat.last_check_at,
+        )
+
+    def _live_positions(self, look: LiveLook | None) -> dict[str, LivePosition]:
+        if look is None or not look.showing:
+            return {}
+        prices = self._board.prices()
+        return {
+            row.coin: live_position(row, self._details.get(row.coin), prices[row.coin])
+            for row in self._rows
+            if row.coin in prices
+        }
+
+    def _live_total(self, look: LiveLook | None) -> LiveTotal | None:
+        if look is None or not look.showing or self._summary is None:
+            return None
+        return live_total(self._summary, self._rows, self._board.prices())
+
+    def _paint_live(self) -> None:
+        """Repaint the cards that show live values, from the views of the last poll."""
+        if not self.is_running or not self.screen_stack or self._poller is None:
+            return
+        self._paint_portfolio()
+        self._paint_positions()
+        self._paint_market()
+        if self._detail_open and self.is_wide and self._selected is not None:
+            self._set("detail", self._detail_content(self._ctx, cached=True))
 
     # ------------------------------------------------------------------
     # Drawing
@@ -889,20 +1091,9 @@ class HomeApp(App[None]):
         body = self._home.query_one("#body")
         for name in (*_WIDTH_CLASSES, *_HEIGHT_CLASSES):
             body.set_class(name in layout.classes, name)
-        self._redraw_portfolio(ctx, layout)
-        self._redraw_positions(ctx)
-        self._set(
-            "market",
-            _card(
-                "Market watch",
-                lambda: render_market_watch(
-                    model.market_watch(),
-                    ctx,
-                    title=False,
-                    chart_slot=_CHART_SLOT if self._inner("market") >= _CHART_SLOT_FROM else None,
-                ),
-            ),
-        )
+        self._redraw_portfolio()
+        self._redraw_positions()
+        self._redraw_market()
         self._set(
             "activity",
             _card(
@@ -943,27 +1134,51 @@ class HomeApp(App[None]):
         self._set(widget_id, content)
         self._home.query_one(f"#{widget_id}").display = shown
 
-    def _redraw_portfolio(self, ctx: RenderContext, layout: HomeLayout) -> None:
-        """Draw the big total, the head, the curve, the meters and the books."""
-        big = self._home.query_one("#portfolio-total", BigNumber)
+    def _redraw_portfolio(self) -> None:
+        """Read the portfolio, then draw the total, the head, the curve, the meters, the books."""
         try:
-            summary = self._model.portfolio(self._range)
+            self._summary = self._model.portfolio(self._range)
         except _CARD_ERRORS as exc:
-            big.show(None, None)
+            self._summary = None
+            self._home.query_one("#portfolio-total", BigNumber).show(None, None)
             self._set("portfolio", _unavailable("Portfolio", exc))
             for part in ("portfolio-curve", "portfolio-meters", "portfolio-books"):
                 self._show(part, Text(""), shown=False)
             return
+        self._paint_portfolio(curve=True)
+
+    def _paint_portfolio(self, *, curve: bool = False) -> None:
+        """Draw the portfolio from the last read: the live total and line when live.
+
+        Args:
+            curve: Also redraw the curve, the meters and the books (booked-only,
+                so a tick leaves them alone).
+        """
+        summary = self._summary
+        if summary is None:
+            return
+        ctx, layout = self._ctx, self._layout
+        big = self._home.query_one("#portfolio-total", BigNumber)
+        look = self._live_look()
+        live = self._live_total(look) if ctx.shows_money else None
         figure = total_text(summary, ctx) if layout.big_total else None
-        big.show(figure, float(summary.total_value), stale=ctx.stale_since is not None)
-        self._set(
-            "portfolio",
-            render_portfolio_head(summary, ctx, total=figure is None, charts=layout.sparklines),
-        )
+        value = summary.total_value
+        if live is not None and figure is not None:
+            figure, value = fmt_level(live.total), live.total
+        paused = live is not None and look is not None and look.paused
+        big.show(figure, float(value), stale=ctx.stale_since is not None or paused)
+        head = render_portfolio_head(summary, ctx, total=figure is None, charts=layout.sparklines)
+        if live is not None and look is not None:
+            lines = live_portfolio_lines(summary, live, look, total_shown=figure is not None)
+            self._set("portfolio", Group(*lines, head))
+        else:
+            self._set("portfolio", head)
+        if not curve:
+            return
         width = self._inner("portfolio")
         data = self._data
-        curve = portfolio_curve(summary, ctx, data, width=width, rows=layout.curve_rows)
-        self._show("portfolio-curve", curve, shown=bool(curve.plain))
+        chart = portfolio_curve(summary, ctx, data, width=width, rows=layout.curve_rows)
+        self._show("portfolio-curve", chart, shown=bool(chart.plain))
         meters = portfolio_meters(
             summary, ctx, data, width=width, cap=self._exposure_cap, cash=not layout.sparklines
         )
@@ -985,36 +1200,92 @@ class HomeApp(App[None]):
             return coins, heartbeat.next_check_at
         return coins, None
 
-    def _redraw_positions(self, ctx: RenderContext) -> None:
-        """Draw the position rows, or the radar empty state when there is none."""
+    def _redraw_positions(self) -> None:
+        """Read the positions and their details, then draw them."""
         self._empty_facts = None
         try:
-            rows = self._model.positions()
+            rows = tuple(self._model.positions())
         except _CARD_ERRORS as exc:
             self._selected = None
+            self._rows, self._details = (), {}
             self._set("positions", _unavailable("Positions", exc))
             return
         coins = [row.coin for row in rows]
         if self._selected not in coins:
             self._selected = coins[0] if coins else None
+        self._rows = rows
+        self._details = {}
         if not rows:
             self._empty_facts = self._watch_facts()
+        else:
+            try:
+                details = {row.coin: self._model.position(row.coin) for row in rows}
+            except _CARD_ERRORS:
+                details = {}
+            self._details = {coin: d for coin, d in details.items() if d is not None}
+        self._paint_positions()
+
+    def _paint_positions(self) -> None:
+        """Draw the position rows from the last read, live when there are live prices."""
+        if self._empty_facts is not None:
             facts = self._empty_facts
-            self._set("positions", empty_positions(*facts, ctx, self._data, self._radar))
+            self._set("positions", empty_positions(*facts, self._ctx, self._data, self._radar))
             return
-        try:
-            details = {row.coin: self._model.position(row.coin) for row in rows}
-        except _CARD_ERRORS:
-            details = {}
+        if not self._rows:
+            return
+        look = self._live_look()
+        live = None
+        if look is not None:
+            live = LiveRows(
+                look=look,
+                positions=self._live_positions(look),
+                ticks={coin: quote.history for coin, quote in self._quotes().items()},
+            )
         self._set(
             "positions",
             position_rows(
-                rows,
-                details,
-                ctx,
+                self._rows,
+                self._details,
+                self._ctx,
                 self._data,
                 width=self._inner("positions"),
                 selected=self._selected,
+                live=live,
+            ),
+        )
+
+    def _quotes(self) -> dict[str, LiveQuote]:
+        board = self._board
+        return {coin: quote for coin in board.prices() if (quote := board.quote(coin)) is not None}
+
+    def _redraw_market(self) -> None:
+        """Read the market watch, then draw the Market rows."""
+        try:
+            self._watch = tuple(self._model.market_watch())
+        except _CARD_ERRORS as exc:
+            self._watch = None
+            self._set("market", _unavailable("Market watch", exc))
+            return
+        self._paint_market()
+
+    def _paint_market(self) -> None:
+        """Draw the Market rows: live prices with a ticker, else the checks only."""
+        watch = self._watch
+        if watch is None:
+            return
+        look = self._live_look()
+        ctx = self._ctx
+        if look is None or not ctx.shows_money:
+            self._set("market", render_market_watch(watch, ctx, title=False))
+            return
+        self._set(
+            "market",
+            market_rows(
+                watch,
+                self._quotes(),
+                look,
+                width=self._inner("market"),
+                rate=eur_rate(self._rows, self._summary),
             ),
         )
 
@@ -1042,14 +1313,32 @@ class HomeApp(App[None]):
         )
         self._home.query_one("#detail-panel", HudPanel).active = on_home and self._detail_open
 
-    def _detail_content(self, ctx: RenderContext | None = None) -> RenderableType:
+    def _detail_content(
+        self, ctx: RenderContext | None = None, *, cached: bool = False
+    ) -> RenderableType:
+        """Return the selected position's detail, with its live line when live.
+
+        Args:
+            ctx: Render context; a fresh one when ``None``.
+            cached: Use the detail read on the last poll (a tick or a pulse
+                repaints without reading the ledger).
+        """
         ctx = ctx or self._render_context()
         selected = self._selected
         model = self._model
-        return _card(
-            "Position",
-            lambda: render_position_detail(model.position(selected) if selected else None, ctx),
-        )
+        booked: RenderableType
+        if cached:
+            booked = render_position_detail(self._details.get(selected or ""), ctx)
+        else:
+            booked = _card(
+                "Position",
+                lambda: render_position_detail(model.position(selected) if selected else None, ctx),
+            )
+        look = self._live_look()
+        live = self._live_positions(look).get(selected or "")
+        if look is None or live is None or not ctx.shows_money:
+            return booked
+        return Group(live_detail_line(live, look), Text(""), booked)
 
     def _redraw_detail(self, ctx: RenderContext) -> None:
         shown = self._detail_open and self.is_wide and self._selected is not None
@@ -1247,6 +1536,7 @@ def run_home(
     theme: ThemeChoice | None = None,
     settings_path: Path | None = DEFAULT_SETTINGS_PATH,
     exposure_cap: Decimal | None = None,
+    ticker: LiveTickerPort | None = None,
 ) -> None:
     """Run the console until the operator quits.
 
@@ -1257,6 +1547,7 @@ def run_home(
         theme: A ``--theme`` choice; saved, and wins over the saved one.
         settings_path: Where the theme choice is read and saved.
         exposure_cap: The roster's exposure cap; see :class:`HomeApp`.
+        ticker: The live public ticker; see :class:`HomeApp`.
     """
     HomeApp(
         model,
@@ -1265,4 +1556,5 @@ def run_home(
         theme=theme,
         settings_path=settings_path,
         exposure_cap=exposure_cap,
+        ticker=ticker,
     ).run()

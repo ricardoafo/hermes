@@ -335,6 +335,22 @@ def test_head_without_total_and_charts_starts_with_the_change() -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    ("width", "caption"),
+    [
+        (80, "D · 6 checks · €1,009 → €1,021 · high €1,021"),
+        (120, "today · 6 checks · €1,009 → €1,021 · high €1,021"),
+    ],
+)
+def test_sparkline_has_its_caption_short_when_compact(width: int, caption: str) -> None:
+    """Under the sparkline the dim caption: range letter under 100 columns, words from 100."""
+    model, ctx = _operator()
+    head = render_portfolio_head(model.portfolio(), replace(ctx, width=width))
+    lines = to_plain_text(head, width=width).splitlines()
+    spark = next(i for i, line in enumerate(lines) if line and line[0] in "▁▂▃▄▅▆▇█")
+    assert lines[spark + 1] == caption
+
+
 def test_books_are_empty_on_a_blind_surface() -> None:
     """A blind surface gets no waterfall at all; the head carries the hidden note."""
     model, ctx = _operator()
@@ -360,15 +376,9 @@ def test_activity_without_icons_is_unchanged() -> None:
     assert rows[1].split()[:2] == ["2h", "ago"]
 
 
-def test_market_watch_without_title_and_with_a_chart_slot() -> None:
-    """No "Market watch" title; the header ends with a chart column holding the slot text."""
+def test_market_watch_without_title() -> None:
+    """No "Market watch" title; the header ends with the next check column."""
     model, ctx = _operator()
-    text = to_plain_text(
-        render_market_watch(model.market_watch(), ctx, title=False, chart_slot="┈┈"), width=100
-    )
+    text = to_plain_text(render_market_watch(model.market_watch(), ctx, title=False), width=100)
     lines = text.splitlines()
-    assert (lines[0].split()[-1], "Market watch" in text, lines[2].split()[-1]) == (
-        "chart",
-        False,
-        "┈┈",
-    )
+    assert (lines[0].split()[-2:], "Market watch" in text) == (["next", "check"], False)

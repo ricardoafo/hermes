@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Final, TextIO
+from typing import TYPE_CHECKING, Final, TextIO
 
 from hermes.adapters.console import UnknownScenarioError
 from hermes.application.console import ConsoleReadModel
@@ -25,7 +25,10 @@ from hermes.entrypoints.tui_settings import (
 )
 from hermes.entrypoints.version import read_release
 
-__all__ = ["COMMAND", "run_tui"]
+if TYPE_CHECKING:
+    from hermes.adapters.exchanges.kraken_public import KrakenPublicAdapter
+
+__all__ = ["COMMAND", "live_ticker", "run_tui"]
 
 _TUI_USAGE: Final = "Usage: hermes [--demo SCENARIO] tui [--db PATH] [--theme neon|control|auto]"
 _TUI_HELP: Final = (
@@ -99,16 +102,45 @@ def run_tui(
         cap = roster_exposure_cap(env or {})
 
         def runner(read_model: ConsoleReadModel) -> None:
-            run_home(
-                read_model,
-                journal=recent_journal_lines,
-                release=_release_name,
-                settings_path=settings_path,
-                exposure_cap=cap,
-            )
+            ticker = live_ticker(read_model)
+            try:
+                run_home(
+                    read_model,
+                    journal=recent_journal_lines,
+                    release=_release_name,
+                    settings_path=settings_path,
+                    exposure_cap=cap,
+                    ticker=ticker,
+                )
+            finally:
+                if ticker is not None:
+                    ticker.close()
 
     runner(model)
     return 0
+
+
+def live_ticker(model: ConsoleReadModel) -> KrakenPublicAdapter | None:
+    """Return the live public ticker for the console, or ``None`` for demo data.
+
+    The ticker runs in the console process, so over ``--vps`` (where the
+    console runs on the VPS) it runs there too. Demo positions are synthetic,
+    so they are never shown at real prices. Creating the adapter opens no
+    connection; the console's worker makes the first call.
+
+    Args:
+        model: The read model the console shows.
+
+    Returns:
+        A Kraken public adapter, or ``None`` when the model is a demo scenario.
+    """
+    if model.demo_scenario is not None:
+        return None
+    from hermes.adapters.exchanges.kraken_public import (  # noqa: PLC0415 - httpx only when used
+        KrakenPublicAdapter,
+    )
+
+    return KrakenPublicAdapter.create()
 
 
 def _release_name() -> str:
