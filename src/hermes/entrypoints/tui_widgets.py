@@ -9,7 +9,9 @@ One implementation each, styled only through :mod:`hermes.entrypoints.tui_theme`
   and the clock;
 - :class:`TabBar`: the screen tabs, numbers only at compact width;
 - :class:`ThemeChip` and :class:`ThemePicker`: the theme switch;
-- :func:`key_chips`: reverse-video key chips for the footer.
+- :func:`key_chips`: reverse-video key chips for the footer;
+- :class:`Meter`: the one meter every panel draws (cash and exposure on Home,
+  stop room on a position row, the 90-day run bar, cpu, memory and disk).
 
 The text of each piece is built by a pure function so tests can check it
 without running an app.
@@ -39,6 +41,11 @@ from hermes.entrypoints.tui_theme import (
     CORNER_BOTTOM_RIGHT,
     CORNER_TOP_LEFT,
     EDGE,
+    METER_CAP_LEFT,
+    METER_CAP_RIGHT,
+    METER_CELLS,
+    METER_EMPTY,
+    METER_FULL,
     WINDOW_MARK,
     WINDOW_TITLE,
     ThemeChoice,
@@ -52,6 +59,7 @@ __all__ = [
     "LABEL_AI",
     "LABEL_COMPUTED",
     "HudPanel",
+    "Meter",
     "Tab",
     "TabBar",
     "ThemeChip",
@@ -500,3 +508,103 @@ def key_chips(chips: Sequence[tuple[str, str]], tokens: Tokens) -> Text:
         if label:
             out.append(label, style=tokens.muted)
     return out
+
+
+@dataclass(frozen=True, slots=True)
+class Meter:
+    """The one meter renderer: ``value / cap`` of ``width`` block cells.
+
+    The fill follows a gradient (the ``gain`` tokens unless the caller names
+    other stops, or one solid colour), and the whole fill turns amber (the
+    ``warn`` token) once ``value / cap`` reaches ``warn_from`` or when the
+    caller raises ``warn`` on its own measure. The empty cells are drawn in the
+    ``line`` token, the optional end caps and label in ``dim`` and ``muted``.
+
+    Attributes:
+        value: How much is used, in the cap's unit.
+        cap: The full-scale value; zero or less draws an empty meter.
+        width: Fill cells, without the end caps or the words.
+        warn_from: Share of the cap from which the fill is amber; ``None``
+            never warns on the share.
+        warn: Draw the fill amber whatever the share (a warning the caller
+            judges by another measure, such as the stop's ATR distance).
+        label: Words before the meter; empty draws none.
+        label_width: Pad the label to this many cells.
+        percent: Append the share of the cap as a whole percent, unclamped,
+            so a load above every cpu reads above 100%.
+        caps: Draw ``▕`` and ``▏`` round the cells.
+    """
+
+    value: float
+    cap: float = 1.0
+    width: int = METER_CELLS
+    warn_from: float | None = None
+    warn: bool = False
+    label: str = ""
+    label_width: int = 0
+    percent: bool = False
+    caps: bool = False
+
+    @property
+    def ratio(self) -> float:
+        """Return ``value / cap`` unclamped; 0 when the cap is zero or less."""
+        return self.value / self.cap if self.cap > 0 else 0.0
+
+    @property
+    def share(self) -> float:
+        """Return the fill share, clamped to [0, 1]."""
+        return min(max(self.ratio, 0.0), 1.0)
+
+    @property
+    def filled(self) -> int:
+        """Return the full cells: ``round(share x width)``, never past the width."""
+        cells = max(self.width, 0)
+        return min(round(self.share * cells), cells)
+
+    @property
+    def warned(self) -> bool:
+        """Return whether the fill is amber."""
+        return self.warn or (self.warn_from is not None and self.ratio >= self.warn_from)
+
+    def render(
+        self,
+        tokens: Tokens,
+        *,
+        stops: Sequence[str] | None = None,
+        colour: str | None = None,
+    ) -> Text:
+        """Return the meter as Rich text.
+
+        Args:
+            tokens: Token sheet.
+            stops: Gradient over the whole width; the ``gain`` tokens when
+                ``None``.
+            colour: One solid colour for the fill instead of a gradient (a
+                series colour, or ``dim`` while the data is stale); wins over
+                the amber warning.
+
+        Returns:
+            Label, caps and ``width`` cells, then the percent when asked.
+        """
+        out = Text()
+        if self.label:
+            out.append(f"{self.label:<{self.label_width}} ", style=tokens.muted)
+        if self.caps:
+            out.append(METER_CAP_LEFT, style=tokens.dim)
+        cells = max(self.width, 0)
+        filled = self.filled
+        warned = self.warned
+        for index in range(filled):
+            if colour is not None:
+                style = colour
+            elif warned:
+                style = tokens.warn
+            else:
+                style = gradient(stops or tokens.gain, index / max(cells - 1, 1))
+            out.append(METER_FULL, style=style)
+        out.append(METER_EMPTY * (cells - filled), style=tokens.line)
+        if self.caps:
+            out.append(METER_CAP_RIGHT, style=tokens.dim)
+        if self.percent:
+            out.append(f" {round(self.ratio * 100)}%", style=tokens.text)
+        return out
