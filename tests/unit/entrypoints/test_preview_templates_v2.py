@@ -110,7 +110,7 @@ def test_no_preview_shows_a_pnl_word_before_certification(event_name: str) -> No
     ("fixture", "expected"),
     [
         ("signal-emitted", "Entry long BTC"),
-        ("signal-exit", "Exit long BTC (trailing_stop)"),
+        ("signal-exit", "Exit long BTC (chandelier)"),
         ("strategy-paused", "30% drawdown breached"),
         ("strategy-resumed", "back after 15 min"),
         ("balance-low", "50.00 USDT left"),

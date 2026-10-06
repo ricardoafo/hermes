@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import closing
 from datetime import UTC, date, datetime, timedelta, tzinfo
 from decimal import Decimal
@@ -29,6 +29,8 @@ from typing import Final, Self
 
 from hermes.adapters.console.ledger_activity import LedgerActivityReader
 from hermes.application.console.activity import group_activity
+from hermes.application.console.journal_activity import fold_checks, journal_activity
+from hermes.application.console.logs import LogLine
 from hermes.application.console.portfolio_figures import (
     ClosedPiece,
     EquityPoint,
@@ -66,6 +68,12 @@ LATE_AFTER: Final = timedelta(minutes=15)
 ACTIVITY_WINDOW: Final = timedelta(days=7)
 """How far back :meth:`LedgerReadModel.activity` reads by default."""
 
+JOURNAL_CACHE: Final = timedelta(seconds=30)
+"""How long one journal read serves the activity feed before it is read again."""
+
+type JournalSource = Callable[[timedelta], Sequence[LogLine] | None]
+"""Returns the hermes journal lines of the last ``window``, or ``None`` when it is not readable."""
+
 _NO_BOOK: Final = "the portfolio is not available yet: no portfolio mark or capital seed"
 
 _ONE_MS: Final = timedelta(milliseconds=1)
@@ -101,6 +109,7 @@ class LedgerReadModel:
         clock: Callable[[], datetime] = now_utc,
         tz: tzinfo = MADRID,
         activity_window: timedelta = ACTIVITY_WINDOW,
+        journal: JournalSource | None = None,
     ) -> None:
         """Bind to a ledger file without opening it.
 
@@ -110,11 +119,16 @@ class LedgerReadModel:
             tz: Timezone of the calendar days (activity days, "today", the
                 tax year, shadow test days).
             activity_window: How far back :meth:`activity` reads.
+            journal: Where restarts, warnings, errors and entry-condition counts
+                come from; ``None`` or an unreadable journal leaves those rows
+                out of the feed.
         """
         self._path = path
         self._clock = clock
         self._tz = tz
         self._activity_window = activity_window
+        self._journal = journal
+        self._journal_read: tuple[datetime, Sequence[LogLine] | None] | None = None
 
     @classmethod
     def open(
@@ -124,6 +138,7 @@ class LedgerReadModel:
         clock: Callable[[], datetime] = now_utc,
         tz: tzinfo = MADRID,
         activity_window: timedelta = ACTIVITY_WINDOW,
+        journal: JournalSource | None = None,
     ) -> Self:
         """Return a read model over ``path``, which must already exist.
 
@@ -132,6 +147,7 @@ class LedgerReadModel:
             clock: Read time of every view.
             tz: Timezone of the calendar days.
             activity_window: How far back :meth:`activity` reads.
+            journal: Journal source for the feed's journal rows; see ``__init__``.
 
         Returns:
             The read model; nothing is created on disk.
@@ -141,7 +157,7 @@ class LedgerReadModel:
         """
         if not path.is_file():
             raise FileNotFoundError(str(path))
-        return cls(path, clock=clock, tz=tz, activity_window=activity_window)
+        return cls(path, clock=clock, tz=tz, activity_window=activity_window, journal=journal)
 
     @property
     def demo_scenario(self) -> str | None:
@@ -256,7 +272,24 @@ class LedgerReadModel:
                 items = LedgerActivityReader(conn).items_since(since.astimezone(UTC))
         except sqlite3.Error as exc:
             raise LedgerError(msg=f"console activity read failed: {exc}") from exc
-        return group_activity(items, self._tz, include_quiet=include_quiet)
+        lines = self._journal_lines()
+        if not lines:
+            return group_activity(fold_checks(items), self._tz, include_quiet=include_quiet)
+        from_journal = journal_activity(lines, since=since.astimezone(UTC))
+        folded = fold_checks(items, from_journal.entry_counts)
+        return group_activity((*folded, *from_journal.items), self._tz, include_quiet=include_quiet)
+
+    def _journal_lines(self) -> Sequence[LogLine] | None:
+        """Return the journal lines of the activity window, re-read at most every 30 s."""
+        if self._journal is None:
+            return None
+        now = self._clock()
+        cached = self._journal_read
+        if cached is not None and now - cached[0] < JOURNAL_CACHE:
+            return cached[1]
+        lines = self._journal(self._activity_window)
+        self._journal_read = (now, lines)
+        return lines
 
     def shadow_test(self) -> ShadowTest:
         """Return the day count since the capital seed and the fills so far (live-home-screen D-4).

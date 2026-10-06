@@ -105,7 +105,7 @@ def detail_mode(width: int, *, beside: bool = True) -> DetailMode:
     Args:
         width: Terminal width in columns.
         beside: The host has room to place the pane beside the list at this
-            width (Home splits into two columns only from 120 until issue #712).
+            width (a host whose layout stacks wider than the compact width).
 
     Returns:
         :attr:`DetailMode.SCREEN` on compact terminals (below 100 columns) or

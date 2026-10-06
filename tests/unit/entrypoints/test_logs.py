@@ -33,7 +33,7 @@ from hermes.entrypoints import logs as logs_module
 _T0 = datetime(2026, 10, 3, 16, 0, 5, tzinfo=UTC)
 _CORR_A = "01J9Z8T3M5BQR2FVKN4XK7Q2ZP"
 _CORR_B = "01J9Z8T3M5BQR2FVKN4XH1M9XA"
-_PNL_WORDS = re.compile(r"p&l|pnl|profit|equity|sharpe|drawdown|win rate", re.I)
+_PNL_WORDS = re.compile(r"p&l|pnl|profit|equity|sharpe|drawdown|win rate", re.IGNORECASE)
 
 
 def _envelope(message: str, seconds: int = 0) -> str:

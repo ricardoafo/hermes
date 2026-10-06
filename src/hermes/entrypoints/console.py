@@ -21,6 +21,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Final, TextIO
 
@@ -46,8 +48,10 @@ __all__ = [
     "default_config_dir",
     "default_db_path",
     "demo_read_model",
+    "journal_window_lines",
     "recent_journal_lines",
     "resolve_read_model",
+    "roster_exposure_cap",
     "run_overview",
     "split_demo_flag",
 ]
@@ -223,7 +227,7 @@ def resolve_read_model(
     if db_path is None:
         db_path = default_db_path(env)
     try:
-        return LedgerReadModel.open(db_path)
+        return LedgerReadModel.open(db_path, journal=journal_window_lines)
     except FileNotFoundError:
         msg = (
             f"there is no ledger at {db_path} to read; "
@@ -271,4 +275,60 @@ def recent_journal_lines(count: int) -> list[LogLine] | None:
         raw = JournalctlReader().lines(last=count)
         return [line for line in map(parse_journal_entry, raw) if line is not None]
     except JournalUnavailableError:
+        return None
+
+
+def roster_exposure_cap(env: Mapping[str, str]) -> Decimal | None:
+    """Return the pre-registered exposure cap the roster sets, as a share (``0.15``).
+
+    The Home exposure meter measures against it (#712); the console never
+    hardcodes the pre-registration's figure. The roster is
+    ``strategies.yaml`` in the console's config dir (``HERMES_CONFIG_DIR`` or
+    ``./config``), read-only.
+
+    Args:
+        env: Environment snapshot (config dir and ``HERMES_STRATEGIES__*`` overrides).
+
+    Returns:
+        ``sizing.max_total_exposure_pct`` when every enabled strategy sets the
+        same cap; ``None`` when the roster is missing or invalid, no strategy is
+        enabled, or the caps differ.
+    """
+    from hermes.infrastructure.config.errors import ConfigError  # noqa: PLC0415 - slow import
+    from hermes.infrastructure.config.loader import load_yaml_model  # noqa: PLC0415
+    from hermes.infrastructure.config.models import StrategiesConfig  # noqa: PLC0415
+
+    path = default_config_dir(env) / "strategies.yaml"
+    try:
+        roster = load_yaml_model(path, StrategiesConfig, env_section="STRATEGIES", env=dict(env))
+    except ConfigError:
+        return None
+    caps = {s.sizing.max_total_exposure_pct for s in roster.strategies if s.enabled}
+    return caps.pop() if len(caps) == 1 else None
+
+
+_JOURNAL_WINDOW_LINES: Final = 20_000
+
+
+def journal_window_lines(window: timedelta) -> list[LogLine] | None:
+    """Return the hermes journal lines of the last ``window``, or ``None`` when unreadable.
+
+    The activity feed reads restarts, warnings and errors from here. Locally,
+    and for a user who may not read the unit's journal, there is nothing to
+    read and the feed simply omits those rows; over ``--vps`` the same call
+    runs on the VPS.
+
+    Args:
+        window: How far back to read.
+
+    Returns:
+        Parsed lines, oldest first, or ``None`` when journalctl is missing or
+        cannot be started.
+    """
+    try:
+        raw = JournalctlReader().lines(
+            last=_JOURNAL_WINDOW_LINES, since=f"-{int(window.total_seconds())}s"
+        )
+        return [line for line in map(parse_journal_entry, raw) if line is not None]
+    except JournalUnavailableError, OSError:
         return None

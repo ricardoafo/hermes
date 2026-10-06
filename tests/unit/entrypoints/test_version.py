@@ -110,7 +110,7 @@ def test_fully_migrated_ledger_shows_latest_and_zero_pending(tmp_path: Path) -> 
     conn = sqlite3.connect(db)
     apply_migrations(conn)
     conn.close()
-    latest = sorted(p.name for p in MIGRATIONS_DIR.glob("*.sql"))[-1]
+    latest = max(p.name for p in MIGRATIONS_DIR.glob("*.sql"))
     assert version_module._ledger_level(db) == f"{latest} (0 pending)"
 
 

@@ -133,8 +133,7 @@ def _migrate(db: Path, snapshot_dir: Path, stream: TextIO, err: TextIO) -> int:
         stream.write("No pending migrations.\n")
         return 0
     stream.write(f"Snapshot: {snapshot}\n")
-    for name in applied:
-        stream.write(f"applied: {name}\n")
+    stream.writelines(f"applied: {name}\n" for name in applied)
     return 0
 
 
