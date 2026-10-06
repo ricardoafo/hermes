@@ -912,6 +912,10 @@ class _BarLoop:
             strategy.seed(seeded, open_position=self._restore_position(pair, cursors))
         for bar in warm:
             if bar.close_time <= cursors[(bar.pair, bar.interval)]:
+                # The tracker is rebuilt from trades at fill prices; without the
+                # marks, exposure, equity and drawdown read cost until each
+                # pair's next bar (#863).
+                c.tracker.mark(bar)
                 c.executor.observe(bar)
         _log.info("serve.warmup.done", bars=len(warm))
         for bar in warm:

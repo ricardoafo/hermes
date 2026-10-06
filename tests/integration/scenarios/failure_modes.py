@@ -630,7 +630,10 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "The cap and drawdown read entry prices right after a restart",
-            gap="issue #863: positions are marked at their fill price until their next bar",
+            proved_by=(
+                _PATHS + "test_after_a_restart_open_positions_keep_their_last_marks",
+                _EVERY_BAR,
+            ),
         ),
         FailureMode(
             "A coin is held with no entry signal or entry price",
