@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable, Iterable, Sequence
+from contextlib import suppress
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta, tzinfo
 from decimal import ROUND_HALF_UP, Decimal
@@ -60,6 +61,7 @@ from textual import events
 from textual.app import App, ComposeResult, SystemCommand
 from textual.binding import Binding, BindingType
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
+from textual.css.query import NoMatches
 from textual.screen import ModalScreen, Screen
 from textual.timer import Timer
 from textual.widgets import ContentSwitcher, Static
@@ -574,12 +576,16 @@ class HomeApp(App[None]):
         if not self.is_night:
             self.effect_timers["strip"] = self.set_interval(MOTION.strip_tick, self._step_strip)
 
+    # An effect timer can fire while the app is tearing its widgets down; a
+    # missing widget then means there is nothing left to animate.
     def _step_pulse(self) -> None:
         self._pulse = (self._pulse + 1) % MOTION.pulse_steps
-        self._paint_heartbeat()
+        with suppress(NoMatches):
+            self._paint_heartbeat()
 
     def _step_strip(self) -> None:
-        self._home.query_one(WindowBar).tick += 1
+        with suppress(NoMatches):
+            self._home.query_one(WindowBar).tick += 1
 
     @property
     def live_dot_colour(self) -> str:

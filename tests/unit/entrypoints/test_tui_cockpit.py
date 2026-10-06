@@ -632,6 +632,20 @@ def test_night_runs_only_the_slow_pulse() -> None:
     assert _run(probe, motion=True, clock=lambda: _NIGHT) == (["pulse"], 0.8, False)
 
 
+def test_effect_steps_survive_widgets_torn_down() -> None:
+    """A pulse or strip tick after the status widgets are gone does not crash the app."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[int, bool]:
+        await app.query_one("#heartbeat").remove()
+        await app.query_one(WindowBar).remove()
+        app._step_pulse()
+        app._step_strip()
+        await pilot.pause()
+        return app._pulse, app.is_running
+
+    assert _run(probe) == (1, True)
+
+
 def test_motion_env_off_reaches_the_app(monkeypatch: pytest.MonkeyPatch) -> None:
     """HERMES_CONSOLE_MOTION=off with no explicit motion argument turns motion off."""
     monkeypatch.setenv("HERMES_CONSOLE_MOTION", "off")
