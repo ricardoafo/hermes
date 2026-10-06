@@ -206,8 +206,10 @@ def _render_table(repo: str, report: Report, stream: TextIO) -> None:
     # 12 fits every label but hermes-review, which widens the column.
     width = max([12, *(len(g.label) + 1 for g in report.groups)])
     stream.write(f"{'label':<{width}} {'online':<8} {'busy':<5} status\n")
-    for g in report.groups:
-        stream.write(f"{g.label:<{width}} {f'{g.online}/{g.total}':<8} {g.busy:<5} {g.status}\n")
+    stream.writelines(
+        f"{g.label:<{width}} {f'{g.online}/{g.total}':<8} {g.busy:<5} {g.status}\n"
+        for g in report.groups
+    )
     stream.write(f"overall: {report.status}\n")
 
 
