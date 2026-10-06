@@ -251,7 +251,9 @@ def test_rebuilt_equals_the_live_tracker_for_any_accepted_fill_sequence(
     live = PortfolioTracker(_seed(cash))
     recorded: list[TradeExecuted] = []
     for op in ops:
-        if isinstance(op, FillOp) and isinstance(live.apply_fill(op.fill), Success):
+        if not isinstance(op, FillOp):
+            continue
+        if isinstance(live.apply_fill(op.fill), Success):
             recorded.append(_trade_of(op.fill))
     result = PortfolioTracker.rebuilt(_seed(cash), recorded)
     assert isinstance(result, Success)

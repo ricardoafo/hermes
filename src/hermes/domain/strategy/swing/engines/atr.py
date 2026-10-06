@@ -80,9 +80,9 @@ class AtrEngine:
         window = bars[-(period * 2 + 1) :]
 
         # Compute all True Ranges (needs i>0 for prev_close)
-        trs: list[Decimal] = []
-        for i in range(1, len(window)):
-            trs.append(_true_range(window[i], window[i - 1].close))
+        trs: list[Decimal] = [
+            _true_range(window[i], window[i - 1].close) for i in range(1, len(window))
+        ]
 
         if len(trs) < period:
             return None

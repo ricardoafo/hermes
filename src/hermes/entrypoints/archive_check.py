@@ -107,8 +107,9 @@ def _write_report(report: ArchiveCheckReport, stream: TextIO) -> None:
         f"archive-check {report.day.isoformat()}: {len(report.checked)} streams checked, "
         f"{len(report.unpublished)} not published yet, {len(report.mismatches)} mismatches\n"
     )
-    for pair, interval in report.unpublished:
-        stream.write(f"  not published: {pair} {interval.value}\n")
+    stream.writelines(
+        f"  not published: {pair} {interval.value}\n" for pair, interval in report.unpublished
+    )
     for m in report.mismatches:
         detail = f" ({m.detail})" if m.detail else ""
         stream.write(
