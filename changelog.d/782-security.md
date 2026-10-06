@@ -1,0 +1,1 @@
+- The nightly backup sends its healthchecks.io ping URL to curl on stdin instead of in argv, where `ps` showed the secret to every local user on hermes-01.
