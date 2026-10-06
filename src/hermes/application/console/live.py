@@ -59,6 +59,7 @@ __all__ = [
     "TickerPoller",
     "live_position",
     "live_total",
+    "poll_succeeded",
 ]
 
 TICK_EVERY: Final = timedelta(seconds=10)
@@ -86,6 +87,22 @@ class TickOutcome:
     at: datetime
     price: Decimal | None
     error: str | None = None
+
+
+def poll_succeeded(outcomes: Sequence[TickOutcome]) -> bool:
+    """Return whether one ticker poll priced every coin it asked for.
+
+    The Neon window bar's feed pulse draws one glyph per poll (issue #713);
+    a poll with any failed coin counts as failed, so a half-working feed
+    never looks healthy.
+
+    Args:
+        outcomes: One poll's ticks, one per coin.
+
+    Returns:
+        ``True`` when there is at least one tick and every tick has a price.
+    """
+    return bool(outcomes) and all(outcome.price is not None for outcome in outcomes)
 
 
 @dataclass(frozen=True, slots=True)

@@ -335,6 +335,22 @@ def test_head_without_total_and_charts_starts_with_the_change() -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    ("width", "caption"),
+    [
+        (80, "D · 6 checks · €1,009 → €1,021 · high €1,021"),
+        (120, "today · 6 checks · €1,009 → €1,021 · high €1,021"),
+    ],
+)
+def test_sparkline_has_its_caption_short_when_compact(width: int, caption: str) -> None:
+    """Under the sparkline the dim caption: range letter under 100 columns, words from 100."""
+    model, ctx = _operator()
+    head = render_portfolio_head(model.portfolio(), replace(ctx, width=width))
+    lines = to_plain_text(head, width=width).splitlines()
+    spark = next(i for i, line in enumerate(lines) if line and line[0] in "▁▂▃▄▅▆▇█")
+    assert lines[spark + 1] == caption
+
+
 def test_books_are_empty_on_a_blind_surface() -> None:
     """A blind surface gets no waterfall at all; the head carries the hidden note."""
     model, ctx = _operator()

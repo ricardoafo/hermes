@@ -31,6 +31,7 @@ from rich.console import Console, Group, RenderableType
 from rich.table import Table
 from rich.text import Text
 
+from hermes.application.console.chart_caption import chart_caption
 from hermes.application.console.format import (
     MINUS,
     TIMES,
@@ -511,8 +512,16 @@ def _head_parts(
     parts += [hero, net_line]
     if charts:
         spark = sparkline(summary.sparkline, min(_SPARK_MAX, ctx.width - 2))
+        caption = chart_caption(
+            summary,
+            tz=ctx.tz,
+            width=ctx.width - 2,
+            compact=ctx.width < _WIDE_FROM,
+            show_values=ctx.shows_money,
+        )
         parts += [
             Text(spark, style="dim" if ctx.stale_since else "cyan"),
+            Text(caption, style="dim"),
             Text(
                 f"cash {fmt_level(summary.cash)} {_share(summary.cash, summary.total_value)}"
                 f" · invested {fmt_level(summary.invested)}"

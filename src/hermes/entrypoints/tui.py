@@ -7,10 +7,11 @@ the read methods of the read model, so opening it while ``hermes serve`` runs
 neither blocks nor touches the ledger. The only file it writes is the
 operator's theme choice (``~/.config/hermes/console.toml``).
 
-Chrome (top to bottom): the window bar ("▐ HERMES // SHADOW CONSOLE", a ticking
-binary strip, the clock), the screen tabs, the status row (demo tag, release,
-heartbeat with the pulsing live dot, next-bar countdown, theme chip), the
-screen, the 90-day line and the footer key chips. Every panel sits in a
+Chrome (top to bottom): the window bar ("▐ HERMES // SHADOW CONSOLE", the
+live-feed pulse or the next-bar countdown, the clock; Neon only), the screen
+tabs, the status row (demo tag, release, heartbeat with the pulsing live dot,
+next-bar countdown, theme chip), the screen, the 90-day line and the footer
+key chips. Every panel sits in a
 :class:`~hermes.entrypoints.tui_widgets.HudPanel`. Tokens, themes, breakpoints
 and timings live in :mod:`hermes.entrypoints.tui_theme`.
 
@@ -36,7 +37,7 @@ ledger read that fails) turns that card into a plain "not available yet" (or
 screen never stops on a missing figure (change ``live-home-screen`` D-6).
 
 Refresh: the read model is polled every 5 s; the clock and the countdown tick
-every 1 s locally. Animations (the live-dot pulse, the binary strip, the
+every 1 s locally. Animations (the live-dot pulse, the feed pulse's bright newest glyph, the
 radar, the count-up, the shimmer and the tick flash) stop with
 ``HERMES_CONSOLE_MOTION=off``.
 
@@ -64,6 +65,7 @@ openspec/changes/713-live-ticker/change.md.
 from __future__ import annotations
 
 import os
+from collections import deque
 from collections.abc import Callable, Iterable, Sequence
 from contextlib import suppress
 from dataclasses import replace
@@ -109,6 +111,7 @@ from hermes.application.console.live import (
     TickOutcome,
     live_position,
     live_total,
+    poll_succeeded,
 )
 from hermes.application.console.logs import LogLine, render_log_line
 from hermes.application.console.render import (
@@ -155,6 +158,7 @@ from hermes.entrypoints.tui_theme import (
     BASE,
     COMPACT_BELOW,
     DOWN_GLYPH,
+    FEED_WIDTH,
     HORIZONTAL_BREAKPOINTS,
     LATE_GLYPH,
     LEFT_COLUMN_STANDARD,
@@ -195,6 +199,7 @@ __all__ = [
     "TABS",
     "HomeApp",
     "countdown_text",
+    "next_bar_text",
     "osc_title",
     "run_home",
     "terminal_title",
@@ -352,6 +357,30 @@ def countdown_text(heartbeat: Heartbeat | None, now: datetime) -> str:
     return f"in {hours}h {minutes:02d}m {secs:02d}s" if hours else f"in {minutes}m {secs:02d}s"
 
 
+def next_bar_text(heartbeat: Heartbeat | None, now: datetime) -> str:
+    """Return the Neon window bar's countdown to the next 4h check, ticking every second.
+
+    Shown in place of the live-feed pulse while there is no ticker (demo data,
+    or before the first poll), Code Owner 2026-10-06.
+
+    Args:
+        heartbeat: The last heartbeat read.
+        now: The current time.
+
+    Returns:
+        ``next bar 01:12:05``, ``next bar due`` once the check time has passed,
+        or empty when hermes is late, down or unknown.
+    """
+    if heartbeat is None or heartbeat.state is not HeartbeatState.OK:
+        return ""
+    left = heartbeat.next_check_at - now
+    if left <= timedelta(0):
+        return "next bar due"
+    hours, rest = divmod(int(left.total_seconds()), 3600)
+    minutes, seconds = divmod(rest, 60)
+    return f"next bar {hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
 _RANGE_KEYS: Final[dict[str, PortfolioRange]] = {
     "today": PortfolioRange.TODAY,
     "week": PortfolioRange.WEEK,
@@ -436,6 +465,10 @@ class HomeApp(App[None]):
     VERTICAL_BREAKPOINTS = VERTICAL_BREAKPOINTS
     CSS = f"""
     Screen {{ background: $hud-void; }}
+    #screens, #screens > Container, #screens > VerticalScroll, #body,
+    #left-column, #right-column, #third-column, #mid-row, #top, #footer-row {{
+        background: $hud-void;
+    }}
     #window-bar, #tabs, #top {{ height: 1; }}
     #demo-tag {{ width: auto; }}
     #release {{ width: auto; color: $hud-muted; }}
@@ -557,6 +590,8 @@ class HomeApp(App[None]):
         self._fetching = False
         self._flashes: dict[str, int] = {}
         self._flash_timer: Timer | None = None
+        self._polls: deque[bool] = deque(maxlen=FEED_WIDTH)
+        self._feed_timer: Timer | None = None
         self._live_state = LiveState.WAITING
         self._summary: PortfolioSummary | None = None
         self._rows: tuple[PositionRow, ...] = ()
@@ -669,7 +704,7 @@ class HomeApp(App[None]):
         return self.theme == NIGHT_THEME
 
     def _start_effects(self) -> None:
-        """Start the pulse and the binary strip; nothing runs with motion off."""
+        """Start the pulse, the shimmer and the radar; nothing runs with motion off."""
         for timer in self.effect_timers.values():
             timer.stop()
         self.effect_timers = {}
@@ -681,7 +716,6 @@ class HomeApp(App[None]):
             period / MOTION.pulse_steps, self._step_pulse
         )
         if not self.is_night:
-            self.effect_timers["strip"] = self.set_interval(MOTION.strip_tick, self._step_strip)
             big = self._home.query_one(BigNumber)
             self.effect_timers["shimmer"] = self.set_interval(MOTION.shimmer, big.start_shimmer)
             self.effect_timers["radar"] = self.set_interval(MOTION.radar_tick, self._step_radar)
@@ -706,10 +740,6 @@ class HomeApp(App[None]):
             if self._live_state is LiveState.LIVE:
                 self._paint_live()
 
-    def _step_strip(self) -> None:
-        with suppress(NoMatches):
-            self._home.query_one(WindowBar).tick += 1
-
     @property
     def live_dot_colour(self) -> str:
         """Return the live dot's colour at the current pulse step."""
@@ -725,7 +755,10 @@ class HomeApp(App[None]):
             return
         now = self._clock()
         self._apply_theme(now)
-        self._home.query_one(WindowBar).clock = now.astimezone(self._ctx.tz).strftime("%H:%M:%S")
+        bar = self._home.query_one(WindowBar)
+        bar.clock = now.astimezone(self._ctx.tz).strftime("%H:%M:%S")
+        if not self._polls:
+            bar.show_next_bar(next_bar_text(self._heartbeat, now))
         countdown = countdown_text(self._heartbeat, now)
         on_row, full_chip = self._status_row_layout(countdown)
         self._paint_chip(compact=not full_chip)
@@ -768,9 +801,7 @@ class HomeApp(App[None]):
         if self.theme != name:
             self.ansi_theme_dark = terminal_theme(data_tokens(name))
             self.theme = name
-        bar = self._home.query_one(WindowBar)
-        bar.strip = name != NIGHT_THEME
-        bar.display = name == NEON_THEME
+        self._home.query_one(WindowBar).display = name == NEON_THEME
         if night_changed and self.effect_timers:
             self._start_effects()
 
@@ -857,6 +888,8 @@ class HomeApp(App[None]):
             outcomes: One tick per coin from :meth:`TickerPoller.fetch`.
         """
         self._fetching = False
+        self._polls.append(poll_succeeded(outcomes))
+        self._show_feed(bright=self._motion)
         moved = self._board.apply(outcomes)
         self._live_state = self._board.status(self._clock()).state
         if moved and self._motion:
@@ -865,6 +898,25 @@ class HomeApp(App[None]):
                 self._flash_timer.stop()
             self._flash_timer = self.set_timer(MOTION.flash, self._end_flash)
         self._paint_live()
+
+    @property
+    def feed(self) -> tuple[bool, ...]:
+        """Return the recent poll results the window bar's feed pulse shows, oldest first."""
+        return tuple(self._polls)
+
+    def _show_feed(self, *, bright: bool) -> None:
+        """Draw the feed pulse; a bright newest glyph dims again after ``MOTION.flash``."""
+        with suppress(NoMatches):
+            self._home.query_one(WindowBar).show_feed(self._polls, bright=bright)
+        if self._feed_timer is not None:
+            self._feed_timer.stop()
+            self._feed_timer = None
+        if bright:
+            self._feed_timer = self.set_timer(MOTION.flash, self._dim_feed)
+
+    def _dim_feed(self) -> None:
+        self._feed_timer = None
+        self._show_feed(bright=False)
 
     def _end_flash(self) -> None:
         self._flashes = {}

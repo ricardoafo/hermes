@@ -21,6 +21,12 @@ from rich.console import Group, RenderableType
 from rich.text import Text
 
 from hermes.application.console import PortfolioSummary, PositionDetail, PositionRow, ShadowTest
+from hermes.application.console.chart_caption import (
+    axis_span,
+    chart_caption,
+    resample_by_time,
+    time_axis,
+)
 from hermes.application.console.format import (
     MINUS,
     CushionLevel,
@@ -260,10 +266,14 @@ def total_text(summary: PortfolioSummary, ctx: RenderContext) -> str | None:
 def portfolio_curve(
     summary: PortfolioSummary, ctx: RenderContext, tokens: Tokens, *, width: int, rows: int
 ) -> Text:
-    """Return the braille area curve of the range's total value.
+    """Return the braille area curve of the range's total value, its time axis and caption.
 
     The gain gradient when the range ends at or above its start, the loss
-    gradient below; one dim colour while hermes is down.
+    gradient below; one dim colour while hermes is down. With sample times the
+    curve has a time scale (each dot column is the value in force at its
+    instant) and a dim axis of hours, weekdays, day numbers or months under it
+    (left out when three marks do not fit); the dim caption says what the chart
+    covers (issue #713, Code Owner 2026-10-06).
 
     Args:
         summary: The portfolio view.
@@ -273,8 +283,8 @@ def portfolio_curve(
         rows: Rows; 0 draws nothing.
 
     Returns:
-        The curve, or empty text on a blind surface, while EUR is pending, or
-        with no samples.
+        The curve, axis and caption, or empty text on a blind surface, while
+        EUR is pending, or with no samples.
     """
     values = summary.sparkline
     if rows < 1 or width < 1 or not values or not _shows_figures(summary, ctx):
@@ -283,7 +293,19 @@ def portfolio_curve(
         stops: tuple[str, ...] = (tokens.dim, tokens.dim)
     else:
         stops = tokens.gain if values[-1] >= values[0] else tokens.loss
-    return area_chart([float(v) for v in values], width=width, rows=rows, stops=stops)
+    span = axis_span(summary)
+    drawn: Sequence[Decimal] = values
+    if span is not None and len(summary.sparkline_at) == len(values):
+        drawn = resample_by_time(values, summary.sparkline_at, span, width * 2)
+    lines = [area_chart([float(v) for v in drawn], width=width, rows=rows, stops=stops)]
+    axis = None if span is None else time_axis(summary.range, span, tz=ctx.tz, width=width)
+    if axis:
+        lines.append(Text(axis, style=tokens.dim))
+    caption = chart_caption(
+        summary, tz=ctx.tz, width=width, compact=False, show_values=ctx.shows_money
+    )
+    lines.append(Text(caption, style=tokens.dim))
+    return Text("\n").join(lines)
 
 
 def exposure_share(summary: PortfolioSummary) -> Decimal | None:

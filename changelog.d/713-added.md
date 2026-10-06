@@ -15,4 +15,10 @@
   ledger and never reach the engine, the supervisor or a notification
   (import-linter contract `live-prices-are-console-only`). Demo data gets no
   live prices. The empty-ledger heartbeat now names the next 4h check instead
-  of "due". No new dependency. Closes #713.
+  of "due". Every Portfolio chart now has a dim caption saying what it
+  covers ("this week · 18 checks since 3 Oct · flat", or start → end and the
+  high), and the braille curve has a time axis (hours, weekdays, days or
+  months). The Neon window bar's decorative binary strip is replaced by a
+  live-feed pulse (one dot per recent poll, hollow for a failed one), or the
+  time to the next 4h check when there is no ticker, and the whole window
+  now takes the theme background. No new dependency. Closes #713.

@@ -142,6 +142,38 @@ the supervisor, briefs, notifications or any AI. No new dependency.
   ledger, the supervisor or any notification".
 - **Cost of reversal**: LOW.
 
+### D-7: Code Owner feedback 2026-10-06
+
+- **Chart caption.** The Portfolio sparkline/curve read as a flat row of
+  blocks with no period or meaning. Decision: one dim caption under every
+  Portfolio chart, built once in `application/console/chart_caption.py` and
+  used by the compact sparkline (`render.py`) and the braille curve
+  (`tui_home.py`). It names the range (`today`, `this week`, `this month`,
+  `this year`; the letter `D W M Y` under 100 columns), the number of checks
+  and, when the history starts inside the range, "since 3 Oct" (wide only),
+  then `flat` when the series does not move at cent precision, otherwise
+  start → end and the high in whole EUR (`€4,454 → €5,932 · high €6,612`).
+  Values are the summary's EUR samples (the portfolio rate rule) and show only
+  where `pnl_visible` allows money. Too long for the panel: the high goes
+  first, then the values, then "since".
+- **Time axis.** Under the braille curve (not the compact sparkline) a dim
+  axis: hours for D (`00 06 12 18`), weekdays for W, day numbers for M, month
+  names for Y; a coarser step when the marks would touch, a finer one when
+  the history is too short; left out when no step places three marks. With
+  sample times the curve is resampled on a time scale so the marks line up;
+  `PortfolioSummary` gains `sparkline_at` and `range_from` for this.
+- **Window bar.** The decorative binary strip is removed (code, `strip_tick`
+  timing and the `binary_strip` token). The Neon bar shows a live-feed pulse:
+  one glyph per recent ticker poll, 16 wide, newest right, `●` live colour for
+  a poll that priced every coin, `○` dim otherwise; the newest brightens for
+  `MOTION.flash` on each poll (never with motion off). With no ticker, or
+  before the first poll, it shows `next bar HH:MM:SS` ticking every second.
+  Control room and night keep no window bar.
+- **Void background.** On a large terminal the area outside the panels showed
+  the terminal's black. Screen, `#screens`, each tab, `#body`, the columns,
+  `#mid-row`, `#top` and `#footer-row` now take `$hud-void` in every theme,
+  night included.
+
 ## Requirements
 
 ### R-1: ticker worker
@@ -185,6 +217,20 @@ the supervisor, briefs, notifications or any AI. No new dependency.
 
 - **A-6.1**: SVG snapshots at 80x24, 120x36, 160x45 and 240x60 with a frozen
   clock and a fake ticker.
+- **A-6.2**: Home with a fake ticker in Neon and Control room at the four
+  sizes (`home_live_<theme>_<cols>x<rows>.svg`).
+
+### R-7: Code Owner feedback 2026-10-06 (D-7)
+
+- **A-7.1**: every Portfolio chart carries the caption: range, checks, "since"
+  for a short history, `flat` or start → end and the high; compact form
+  `W · 18 checks · flat`; never wider than the panel.
+- **A-7.2**: the braille curve has a time axis fitted to its width, or none
+  when three marks do not fit.
+- **A-7.3**: the Neon window bar shows the feed pulse while the ticker runs and
+  the next-bar countdown otherwise; the binary strip is gone.
+- **A-7.4**: the screen and every container that can show empty space are the
+  theme's void colour in every theme.
 
 ## Design
 
@@ -212,6 +258,9 @@ live cards without reading the ledger again.
    `tests/unit/entrypoints/test_tui_live.py`, `tests/unit/entrypoints/test_tui_live_screen.py`,
    `tests/unit/test_live_import_guard.py`, `tests/unit/entrypoints/test_console.py`,
    `tests/unit/entrypoints/test_tui_charts.py`,
+   `tests/unit/application/console/test_chart_caption.py`,
+   `tests/unit/entrypoints/test_tui_window_bar.py`,
+   `tests/unit/entrypoints/test_tui_snapshots.py` (`home_live_*`),
    `tests/unit/adapters/console/test_ledger_read_model.py`).
 2. `bash scripts/dev/pr-preflight.sh` → all checks green.
 3. All CI jobs green on the PR.
