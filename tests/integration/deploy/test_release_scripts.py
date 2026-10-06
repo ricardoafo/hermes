@@ -1745,6 +1745,25 @@ def test_a_guard_that_cannot_run_is_reported_as_such(box: Box) -> None:
     assert box.target("current") == _SHA_A
 
 
+def test_a_guard_that_raises_is_reported_as_a_crash_not_a_refusal(box: Box) -> None:
+    """Invariant: an uncaught exception (exit 1) is not read as "the ledger is too new"."""
+    box.deploy(_SHA_A)
+    box.write_ledger("live")
+    _write_events(box, 1)
+    raising = box.base / "raising-python"
+    raising.write_text(
+        "#!/usr/bin/env bash\necho Traceback >&2\nexit 1\n", encoding="utf-8", newline="\n"
+    )
+    raising.chmod(0o755)
+
+    result = box.deploy(_SHA_B, HERMES_SCHEMA_PYTHON=_posix(raising))
+
+    assert result.returncode == 1, _output(result)
+    assert "the schema guard failed to run (exit 1)" in result.stdout
+    assert "cannot read the events" not in result.stdout
+    assert box.target("current") == _SHA_A
+
+
 def test_rollback_onto_a_release_older_than_the_ledger_is_refused(box: Box) -> None:
     """Invariant: without a snapshot, rollback refuses a previous that would crash-loop."""
     box.deploy(_SHA_A)
