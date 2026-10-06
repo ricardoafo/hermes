@@ -14,8 +14,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import dataclasses
+import functools
+import sqlite3
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
@@ -45,6 +47,9 @@ from tests.support.serve_loop import PROJECT_ROOT, RecordingChannel
 
 _RUN_TIMEOUT_SECONDS = 120
 
+type AfterBar = Callable[[Bar, datetime, sqlite3.Connection], None]
+"""Called after serve handled a bar: the bar, the simulated time, serve's ledger connection."""
+
 
 @dataclass
 class ServeRun:
@@ -66,8 +71,12 @@ class ServeRun:
     bar_seconds: list[float] = field(default_factory=list)
 
 
+@functools.cache
 def production_config() -> HermesConfig:
-    """Load and startup-check the repository's ``config/`` with no secrets."""
+    """Load and startup-check the repository's ``config/`` with no secrets, once per process.
+
+    The config is frozen, and a generated scenario boots serve a dozen times.
+    """
     config = load_config(PROJECT_ROOT / "config", env={})
     serve_module.check_startup(config, env={})
     return config
@@ -145,6 +154,10 @@ def serve(
     late_bars: list[tuple[Pair, KlineInterval, datetime, datetime]] | None = None,
     fx_down: bool = False,
     notifier_error: Exception | None = None,
+    klines_outages: list[tuple[datetime, datetime]] | None = None,
+    fx_outages: list[tuple[datetime, datetime]] | None = None,
+    duplicate_bars: list[tuple[Pair, KlineInterval, datetime]] | None = None,
+    after_bar: AfterBar | None = None,
 ) -> ServeRun:
     """Boot ``hermes serve`` at ``live_from`` and run it on the fake market.
 
@@ -161,6 +174,12 @@ def serve(
         late_bars: Bars the klines endpoint publishes late; see ``FakeExchange``.
         fx_down: Make Frankfurter answer HTTP 503 for the whole run.
         notifier_error: Make every Telegram send raise this.
+        klines_outages: Windows when the klines endpoint answers HTTP 503.
+        fx_outages: Windows when Frankfurter answers HTTP 503.
+        duplicate_bars: Bars whose row the klines endpoint sends twice.
+        after_bar: Called after each bar serve's loop handled without raising,
+            outside the timed part, with serve's own ledger connection so
+            rows it has not committed yet are visible.
 
     Returns:
         The run's exit code, notifications, requests and final clock.
@@ -177,11 +196,14 @@ def serve(
         book_step_bps=book_step_bps,
         late_bars=late_bars or [],
         fx_down=fx_down,
+        klines_outages=klines_outages or [],
+        fx_outages=fx_outages or [],
+        duplicate_bars=duplicate_bars or [],
     )
     channel = RecordingChannel(raises=notifier_error)
     composition = compose(production_config(), db, exchange, channel)
     bar_seconds: list[float] = []
-    with _timed_bars(bar_seconds):
+    with _timed_bars(bar_seconds, after_bar):
         code = asyncio.run(_drive(composition, clock))
     return ServeRun(
         exit_code=code, channel=channel, exchange=exchange, clock=clock, bar_seconds=bar_seconds
@@ -189,7 +211,7 @@ def serve(
 
 
 @contextlib.contextmanager
-def _timed_bars(into: list[float]) -> Iterator[None]:
+def _timed_bars(into: list[float], after_bar: AfterBar | None = None) -> Iterator[None]:
     """Record how long each bar takes in serve's bar loop.
 
     The per-bar cost is what decides whether serve keeps up with the feed, and
@@ -210,6 +232,8 @@ def _timed_bars(into: list[float]) -> Iterator[None]:
             await original(self, bar)
         finally:
             into.append(time.thread_time() - started)
+        if after_bar is not None:
+            after_bar(bar, self.c.clock.now(), self.c.sqlite_connection)
 
     with mock.patch.object(serve_module._BarLoop, "handle", timed):
         yield
