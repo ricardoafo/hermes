@@ -16,22 +16,31 @@ from hermes.entrypoints.console import (
     recent_journal_lines,
     resolve_read_model,
 )
+from hermes.entrypoints.tui_settings import (
+    DEFAULT_SETTINGS_PATH,
+    ConsoleSettings,
+    ThemeChoice,
+    save_settings,
+)
 from hermes.entrypoints.version import read_release
 
 __all__ = ["COMMAND", "run_tui"]
 
-_TUI_USAGE: Final = "Usage: hermes [--demo SCENARIO] tui [--db PATH]"
+_TUI_USAGE: Final = "Usage: hermes [--demo SCENARIO] tui [--db PATH] [--theme neon|control|auto]"
 _TUI_HELP: Final = (
     f"{_TUI_USAGE}\n"
-    "  --db PATH   ledger to read (default: the service ledger)\n"
-    "  -h, --help  show this help\n"
+    "  --db PATH     ledger to read (default: the service ledger)\n"
+    "  --theme NAME  neon, control (control room) or auto (night 23:00-08:00);\n"
+    "                saved in ~/.config/hermes/console.toml\n"
+    "  -h, --help    show this help\n"
     "Exit codes: 0 after the operator quits, 2 usage, unknown scenario or no data source."
 )
 _DB: Final = "--db"
+_THEME: Final = "--theme"
 
 
 class _BadArgumentsError(ValueError):
-    """The arguments are not ``[--db PATH]``."""
+    """The arguments are not ``[--db PATH] [--theme NAME]``."""
 
 
 def run_tui(
@@ -42,6 +51,7 @@ def run_tui(
     env: Mapping[str, str] | None = None,
     runner: Callable[[ConsoleReadModel], None] | None = None,
     err: TextIO | None = None,
+    settings_path: Path = DEFAULT_SETTINGS_PATH,
 ) -> int:
     """Run ``hermes tui``, the read-only home screen.
 
@@ -50,13 +60,14 @@ def run_tui(
     says so on the screen instead of stopping the app.
 
     Args:
-        args: Arguments after ``tui``: only ``--db PATH``.
+        args: Arguments after ``tui``: ``--db PATH`` and ``--theme NAME``.
         stream: Output stream.
         demo_flag: Scenario from the leading ``--demo`` option, if any.
         env: Environment snapshot; defaults to empty.
         runner: Runs the app on the read model; defaults to the Textual home
             screen (imported lazily so the other commands stay fast).
         err: Stream for ERROR lines; defaults to ``sys.stderr``.
+        settings_path: Where ``--theme`` is saved; the app reads it from there.
 
     Returns:
         0 after the operator quits, 2 for a usage error, an unknown scenario or
@@ -67,7 +78,7 @@ def run_tui(
         stream.write(_TUI_HELP + "\n")
         return 0
     try:
-        db_path = _db_path(args)
+        db_path, theme = _parse(args)
     except _BadArgumentsError:
         err.write(f"ERROR: bad arguments. {_TUI_USAGE}\n")
         return 2
@@ -76,11 +87,21 @@ def run_tui(
     except (UnknownScenarioError, LiveReadModelUnavailableError) as exc:
         err.write(f"ERROR: {exc}\n")
         return 2
+    if theme is not None:
+        try:
+            save_settings(settings_path, ConsoleSettings(theme=theme))
+        except OSError as exc:
+            err.write(f"WARNING: could not save the theme: {exc}\n")
     if runner is None:
         from hermes.entrypoints.tui import run_home  # noqa: PLC0415 - Textual is slow to import
 
         def runner(read_model: ConsoleReadModel) -> None:
-            run_home(read_model, journal=recent_journal_lines, release=_release_name)
+            run_home(
+                read_model,
+                journal=recent_journal_lines,
+                release=_release_name,
+                settings_path=settings_path,
+            )
 
     runner(model)
     return 0
@@ -91,21 +112,34 @@ def _release_name() -> str:
     return read_release().name
 
 
-def _db_path(args: list[str]) -> Path | None:
-    """Return the ``--db`` path, or ``None`` without one.
+def _parse(args: list[str]) -> tuple[Path | None, ThemeChoice | None]:
+    """Return the ``--db`` path and the ``--theme`` choice, each ``None`` when absent.
 
     Raises:
-        _BadArgumentsError: Anything other than ``--db PATH`` or ``--db=PATH``.
+        _BadArgumentsError: Anything other than ``--db PATH`` / ``--db=PATH`` and
+            ``--theme NAME`` / ``--theme=NAME``, each at most once.
     """
-    match args:
-        case []:
-            return None
-        case [flag, value] if flag == _DB and value and not value.startswith("-"):
-            return Path(value)
-        case [single] if single.startswith(f"{_DB}=") and single != f"{_DB}=":
-            return Path(single.removeprefix(f"{_DB}="))
-        case _:
+    values: dict[str, str] = {}
+    rest = list(args)
+    while rest:
+        head = rest.pop(0)
+        flag, equals, value = head.partition("=")
+        if flag not in (_DB, _THEME) or flag in values:
             raise _BadArgumentsError
+        if not equals:
+            if not rest:
+                raise _BadArgumentsError
+            value = rest.pop(0)
+        if not value or value.startswith("-"):
+            raise _BadArgumentsError
+        values[flag] = value
+    db = values.get(_DB)
+    theme = values.get(_THEME)
+    try:
+        choice = None if theme is None else ThemeChoice(theme)
+    except ValueError as exc:
+        raise _BadArgumentsError from exc
+    return (None if db is None else Path(db)), choice
 
 
 def _run(argv: list[str], *, stream: TextIO, demo: str | None, err: TextIO | None = None) -> int:
