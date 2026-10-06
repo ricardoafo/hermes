@@ -21,7 +21,7 @@ without running an app.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import ClassVar, Final
@@ -521,6 +521,11 @@ def key_chips(chips: Sequence[tuple[str, str]], tokens: Tokens) -> Text:
     return out
 
 
+def _euro_level(value: float) -> str:
+    """Return a money figure mid count-up, as the big total shows it."""
+    return fmt_level(Decimal(f"{value:.2f}"))
+
+
 _SHIMMER_EDGE: Final = 3.0
 _SHIMMER_CELLS_PER_STEP: Final = 2
 _HERO_ROWS: Final = 4
@@ -544,6 +549,8 @@ class BigNumber(Digits):
 
     Args:
         motion: Run the count-up and the shimmer.
+        counting: Formats a value mid count-up; euros (``fmt_level``) by
+            default, so a day count (``12 / 90``) passes its own.
         id: Widget id.
         classes: Extra CSS classes.
     """
@@ -555,11 +562,17 @@ class BigNumber(Digits):
     shown: reactive[float] = reactive(0.0)
 
     def __init__(
-        self, *, motion: bool = True, id: str | None = None, classes: str | None = None
+        self,
+        *,
+        motion: bool = True,
+        counting: Callable[[float], str] | None = None,
+        id: str | None = None,
+        classes: str | None = None,
     ) -> None:
         """Start empty and hidden until :meth:`show` gets a figure."""
         super().__init__("", id=id, classes=classes)
         self._motion = motion
+        self._counting_text = counting or _euro_level
         self._figure = ""
         self._target: float | None = None
         self._counting = False
@@ -608,7 +621,7 @@ class BigNumber(Digits):
     def watch_shown(self, shown: float) -> None:
         """Draw the counting figure."""
         if self._counting:
-            self.update(fmt_level(Decimal(f"{shown:.2f}")))
+            self.update(self._counting_text(shown))
 
     def _settle(self) -> None:
         self._counting = False

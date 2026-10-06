@@ -6,7 +6,9 @@ ultra), only changes when a reviewer accepts the new picture. Each file is
 named ``<view>_<theme>_<cols>x<rows>.svg`` so a PR body can link it directly.
 
 Views: Home on the ``ok-two-positions`` and ``empty`` demo scenarios, the
-Signals placeholder (tab 2) and the theme picker open over Home.
+Signals placeholder (tab 2), the theme picker open over Home, and the Shadow
+test screen (tab 5, issue #718) counting from a day-0 record
+(``ok-two-positions``) and in the warm-up with no record (``empty``).
 
 Every app here runs with motion off, a frozen clock and synthetic demo data,
 and never reads or writes the real settings file.
@@ -26,6 +28,7 @@ from syrupy.location import PyTestLocation
 from syrupy.types import SnapshotIndex
 
 from hermes.adapters.console import FixtureReadModel
+from hermes.application.console.shadow_screen import ShadowSources
 from hermes.entrypoints.tui import HomeApp
 from hermes.entrypoints.tui_settings import ThemeChoice
 
@@ -42,6 +45,8 @@ _VIEWS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("home_empty", "empty", ()),
     ("tab2_placeholder", "ok-two-positions", ("2",)),
     ("theme_picker", "ok-two-positions", ("t",)),
+    ("shadow_counting", "ok-two-positions", ("5",)),
+    ("shadow_warmup", "empty", ("5",)),
 )
 
 
@@ -65,13 +70,15 @@ def _repo_clean(svg: str) -> str:
 
 def _svg(scenario: str, keys: Sequence[str], size: tuple[int, int], theme: ThemeChoice) -> str:
     async def drive() -> str:
+        model = FixtureReadModel.load(scenario)
         app = HomeApp(
-            FixtureReadModel.load(scenario),
+            model,
             clock=lambda: _FROZEN,
             motion=False,
             settings_path=None,
             theme=theme,
             refresh_seconds=3600,
+            shadow=ShadowSources(evidence=model, runs=model, notebook=model, strategy_id="demo"),
         )
         async with app.run_test(size=size) as pilot:
             await pilot.pause()

@@ -72,6 +72,7 @@ __all__ = [
     "portfolio_curve",
     "portfolio_meters",
     "position_rows",
+    "run_bar",
     "run_line",
     "total_text",
 ]
@@ -545,6 +546,24 @@ def log_tail(
     return Group(*(render_log_line(line, ctx.tz) for line in list(lines)[-count:]))
 
 
+def run_bar(day: int, length_days: int, tokens: Tokens, *, width: int) -> Text:
+    """Return the shared 90-day run bar: the brand-gradient :class:`Meter` of ``day``.
+
+    The bottom run line and the Shadow test hero (issue #718) both draw it, so
+    they can never disagree on how far the run is.
+
+    Args:
+        day: The run's day.
+        length_days: The run's length.
+        tokens: Token sheet.
+        width: Cells.
+
+    Returns:
+        ``width`` block cells, filled ``round(day / length_days x width)``.
+    """
+    return Meter(day, cap=length_days, width=width).render(tokens, stops=tokens.brand)
+
+
 def run_line(test: ShadowTest, tokens: Tokens, *, width: int) -> Text:
     """Return the 90-day line with its gradient run bar and percentage.
 
@@ -565,8 +584,7 @@ def run_line(test: ShadowTest, tokens: Tokens, *, width: int) -> Text:
     if cells < _MIN_RUN_BAR:
         return out
     out.append("  ")
-    run = Meter(test.day, cap=test.length_days, width=cells)
-    out.append_text(run.render(tokens, stops=tokens.brand))
+    out.append_text(run_bar(test.day, test.length_days, tokens, width=cells))
     share = round(test.day * 100 / test.length_days)
     out.append(f" {share:>3}%", style=tokens.muted)
     return out

@@ -1,0 +1,20 @@
+{
+  "run_id": "swing-donchian-4h-20261015T000000Z",
+  "strategy_id": "swing-donchian-4h",
+  "day_zero_at": "2026-10-15T00:00:00+00:00",
+  "package_version": "0.42.0",
+  "release": "2026-10-14-abc1234",
+  "engine_version": "0.42.0",
+  "config_hash": "fixture-config-hash",
+  "pre_registration_hash": "8d73e99ec658712e2304b872e3231421a5f5eeeafbe8255b199cbb8092db3433",
+  "data_manifest_hash": "fixture-manifest-hash",
+  "checks": [
+    {"rule": "signed pre-registration, hash in the lab notebook", "verdict": "pass"},
+    {"rule": "backtest gate recorded by hermes certify", "verdict": "pass"},
+    {"rule": "decision-changing defects fixed", "verdict": "confirm by hand"},
+    {"rule": "shadow kills and drift check run inside serve", "verdict": "pass"},
+    {"rule": "versions and hashes recorded at day 0", "verdict": "pass"},
+    {"rule": "backtest and serve make the same decisions", "verdict": "pass"},
+    {"rule": "own strategy id, capital and ledger rows", "verdict": "pass"}
+  ]
+}
