@@ -148,6 +148,7 @@ from hermes.entrypoints.tui_live import (
     live_portfolio_lines,
     market_rows,
 )
+from hermes.entrypoints.tui_notices import bar_checked_notice, beep_enabled, should_beep
 from hermes.entrypoints.tui_settings import (
     DEFAULT_SETTINGS_PATH,
     ConsoleSettings,
@@ -235,6 +236,7 @@ TABS: Final = (
 _HOME: Final = 0
 _BRIEFS: Final = 5
 _LOGS: Final = 7
+_NOTICE_SECONDS: Final = 6
 
 _FOOTER_CHIPS: Final = (
     ("D W M Y", "range"),
@@ -1055,6 +1057,14 @@ class HomeApp(App[None]):
         self._set("down-row", render_heartbeat(heartbeat, ctx) if down else Text(""))
         self._home.query_one("#down-row").set_class(down, "-down")
 
+    def _announce(self, previous: Heartbeat | None, current: Heartbeat, ctx: RenderContext) -> None:
+        """Toast a newly checked bar; ring the bell on turning late or down when asked to."""
+        notice = bar_checked_notice(previous, current, ctx.tz)
+        if notice is not None:
+            self.notify(notice, timeout=_NOTICE_SECONDS)
+        if beep_enabled(os.environ) and should_beep(previous, current):
+            self.bell()
+
     def _redraw(self) -> None:
         if not self.is_running or not self.screen_stack:
             return
@@ -1071,6 +1081,7 @@ class HomeApp(App[None]):
         self._set(
             "release", Text("") if self._release is None else Text(f"release {self._release()}")
         )
+        previous = self._heartbeat
         try:
             self._heartbeat = model.heartbeat()
         except _CARD_ERRORS as exc:
@@ -1079,6 +1090,7 @@ class HomeApp(App[None]):
             self._set("down-row", Text(""))
             self._home.query_one("#down-row").set_class(False, "-down")
         else:
+            self._announce(previous, self._heartbeat, ctx)
             self._paint_heartbeat()
 
         try:
