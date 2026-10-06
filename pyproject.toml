@@ -370,6 +370,25 @@ forbidden_modules = [
   "hermes.domain.market_data.spread_sample",
 ]
 
+# The Logs screen shows the journal, which can hold money figures, to the
+# operator only: nothing from it reaches an AI or a notification channel (#716).
+[[tool.importlinter.contracts]]
+name = "logs-screen-never-leaves-the-console"
+type = "forbidden"
+source_modules = [
+  "hermes.application.console.log_figures",
+  "hermes.entrypoints.tui_logs",
+]
+forbidden_modules = [
+  "hermes.adapters.notifier",
+  "hermes.adapters.telegram_bot",
+  "hermes.ports.notifier",
+  "hermes.ports.supervisor",
+  "hermes.application.supervisor",
+  "hermes.application.notification_router",
+  "hermes.application.signal_notifier",
+]
+
 [[tool.importlinter.contracts]]
 name = "domain-no-pydantic"
 type = "forbidden"

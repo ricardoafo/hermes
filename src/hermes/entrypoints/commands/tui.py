@@ -112,11 +112,13 @@ def run_tui(
         # Textual reads the colour depth once, at import, so it is set first.
         apply_console_colors(env or {}, os.environ)
         from hermes.entrypoints.tui import run_home  # noqa: PLC0415 - Textual is slow to import
+        from hermes.entrypoints.tui_logs import export_dir  # noqa: PLC0415 - with Textual
         from hermes.entrypoints.tui_tax import tax_inputs  # noqa: PLC0415 - with Textual
 
         snapshot = env or {}
         cap = roster_exposure_cap(snapshot)
         allow_mainnet = config_allow_mainnet(snapshot)
+        exports = export_dir(snapshot, Path.home())
 
         ledger = db_path or default_db_path(env or {})
         system = system_sources(
@@ -147,6 +149,7 @@ def run_tui(
                     tax_pack=tax.pack,
                     shadow=shadow_sources(read_model, env=snapshot, db_path=db_path),
                     system=system,
+                    exports=exports,
                 )
             finally:
                 tax.close()
