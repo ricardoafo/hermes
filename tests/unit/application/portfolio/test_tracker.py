@@ -282,3 +282,19 @@ class TestOpenNotional:
         tracker.apply_fill(make_fill(OrderSide.BUY, "0.005", "50000"))
         tracker.apply_fill(make_fill(OrderSide.SELL, "0.005", "50000", minutes=1))
         assert tracker.open_notional() == Decimal("0")
+
+
+class TestRestorePeak:
+    """restore_peak seeds a rebuilt tracker with the peak a stored mark recorded."""
+
+    def test_a_higher_stored_peak_is_taken(self) -> None:
+        """Rebuilt from no trades (peak 5000), a stored peak of 5400 becomes the state's peak."""
+        tracker = PortfolioTracker(_seed())
+        tracker.restore_peak(Decimal("5400"))
+        assert tracker.state().peak_value == Decimal("5400")
+
+    def test_a_lower_stored_peak_is_ignored(self) -> None:
+        """A stored peak under the rebuilt one leaves it as it was."""
+        tracker = PortfolioTracker(_seed())
+        tracker.restore_peak(Decimal("100"))
+        assert tracker.state().peak_value == Decimal("5000")

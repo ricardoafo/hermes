@@ -392,6 +392,46 @@ def test_release_is_tagged_with_the_shipped_commit() -> None:
     assert "target_commitish: sha," in script
 
 
+def test_version_is_tagged_after_the_deploy_release_and_before_telegram() -> None:
+    """A cut version is tagged once the box runs it, never failing the deploy (ADR-022 §3)."""
+    labels = [_label(s) for s in _steps("deploy")]
+    step = next(s for s in _steps("deploy") if _label(s) == "Tag the version")
+
+    assert step["if"] == _DRY_RUN_GUARD
+    assert step["continue-on-error"] is True
+    assert (
+        labels.index("Create the release")
+        < labels.index("Tag the version")
+        < labels.index("Announce the release on Telegram")
+    )
+
+
+def test_version_tag_is_created_once_on_the_shipped_commit() -> None:
+    """The tag goes on the commit that first shipped the version; an existing tag stays."""
+    script = str(
+        next(s for s in _steps("deploy") if _label(s) == "Tag the version")["with"]["script"]
+    )
+
+    assert "getReleaseByTag({ ...context.repo, tag: version.tag })" in script
+    assert "target_commitish: version.target," in script
+    assert "make_latest: 'false'," in script
+    assert "${{" not in script
+
+
+def test_notes_job_ships_the_version_description_and_never_fails_on_it() -> None:
+    """version.json rides the notes artifact, and a failed description means nothing to tag."""
+    labels = [_label(s) for s in _steps("notes")]
+    run = next(
+        str(s["run"]) for s in _steps("notes") if _label(s) == "Describe the version release"
+    )
+
+    assert '--release "$RELEASE_SHA" > notes/version.json; then' in run
+    assert "echo '{}' > notes/version.json" in run
+    assert labels.index("Describe the version release") < next(
+        i for i, label in enumerate(labels) if label.startswith("actions/upload-artifact@")
+    )
+
+
 def test_empty_release_notes_ship_a_placeholder() -> None:
     """A blank notes file never becomes a blank release page or message."""
     run = next(str(s["run"]) for s in _steps("notes") if _label(s) == "Write the release notes")

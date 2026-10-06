@@ -183,6 +183,19 @@ jobs:
           done
           cat notes/markdown.txt
 
+      # The cut version this commit carries, if any, for the deploy job to
+      # tag v<version> on its first deploy (ADR-022 §3). Never fails: `{}`
+      # means nothing to tag.
+      - name: Describe the version release
+        run: |
+          set -uo pipefail
+          if ! uv run --no-project --python 3.14 scripts/deploy/version_release.py \
+                  --release "$RELEASE_SHA" > notes/version.json; then
+              echo "::warning::version release could not be described; nothing will be tagged"
+              echo '{}' > notes/version.json
+          fi
+          cat notes/version.json
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: hermes-release-notes
@@ -277,7 +290,7 @@ jobs:
     concurrency:
       group: deploy-vps
       cancel-in-progress: false
-    # contents: write only to create the deploy-<sha12> release and tag.
+    # contents: write only to create the deploy-<sha12> and v<version> releases and tags.
     permissions:
       contents: write
     environment:
@@ -481,6 +494,42 @@ jobs:
               name: `hermes ${when} UTC · ${sha.slice(0, 12)}`,
               body,
               make_latest: 'true',
+            });
+            core.notice(`Published ${data.html_url}`);
+
+      # The first deploy of a cut version also tags it v<version>, with that
+      # version's CHANGELOG section as the release body (ADR-022 §3). The tag
+      # goes on the commit that first shipped the version (version.target), so
+      # it names one build; a later deploy of the same version leaves it. The
+      # deploy-<sha12> release stays the latest one, since the notes chain runs
+      # on those tags. A failure here is a warning: the box already runs the release.
+      - name: Tag the version
+        if: inputs.dry_run != true
+        continue-on-error: true
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          script: |
+            const fs = require('fs');
+            const version = JSON.parse(fs.readFileSync('notes/version.json', 'utf8'));
+            if (!version.tag) {
+              core.notice('This release carries no cut version: nothing to tag.');
+              return;
+            }
+            try {
+              await github.rest.repos.getReleaseByTag({ ...context.repo, tag: version.tag });
+              core.notice(`${version.tag} was tagged by an earlier deploy: left as is.`);
+              return;
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+            const { data } = await github.rest.repos.createRelease({
+              ...context.repo,
+              tag_name: version.tag,
+              target_commitish: version.target,
+              name: version.name,
+              body: version.body,
+              prerelease: version.tag.includes('-shadow.'),
+              make_latest: 'false',
             });
             core.notice(`Published ${data.html_url}`);
 
