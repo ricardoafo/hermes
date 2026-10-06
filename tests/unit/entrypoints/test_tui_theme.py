@@ -23,6 +23,15 @@ from hypothesis import strategies as st
 
 from hermes.entrypoints import tui_theme as theme
 from hermes.entrypoints.tui_settings import ThemeChoice
+from hermes.entrypoints.tui_theme import (
+    CONTROL_ROOM,
+    HERO_MIN_CONTRAST,
+    NEON,
+    NIGHT,
+    Tokens,
+    contrast_ratio,
+)
+from hermes.entrypoints.tui_widgets import top_edge
 
 _HEX = st.from_regex(r"#[0-9A-F]{6}", fullmatch=True)
 
@@ -111,14 +120,18 @@ def test_three_textual_themes_are_built_from_the_sheets() -> None:
 
 
 def test_theme_variables_expose_every_hud_token() -> None:
-    """TCSS sees the tokens as $hud-* variables with the sheet's values."""
+    """TCSS sees the tokens as $hud-* variables with the sheet's values.
+
+    Issue #712 added ``hud-hero-digits`` (the big numbers' digit colour), so 16.
+    """
     variables = theme.theme_variables(theme.NEON)
-    assert (variables["hud-live"], variables["hud-ai"], variables["hud-line"], len(variables)) == (
-        "#00F0FF",
-        "#FF3DF0",
-        "#4A2399",
-        15,
-    )
+    assert (
+        variables["hud-live"],
+        variables["hud-ai"],
+        variables["hud-line"],
+        variables["hud-hero-digits"],
+        len(variables),
+    ) == ("#00F0FF", "#FF3DF0", "#4A2399", "#C8FBFF", 16)
 
 
 @pytest.mark.parametrize(
@@ -220,7 +233,8 @@ def test_blend_stays_between_its_stops(start: str, end: str, amount: float) -> N
         (int(start[i : i + 2], 16), int(mixed[i : i + 2], 16), int(end[i : i + 2], 16))
         for i in (1, 3, 5)
     ]
-    assert all(min(a, b) <= m <= max(a, b) for a, m, b in channels)
+    outside = [(a, m, b) for a, m, b in channels if not min(a, b) <= m <= max(a, b)]
+    assert outside == []
 
 
 def test_gradient_passes_through_its_middle_stop() -> None:
@@ -239,5 +253,44 @@ def test_wordmark_stands_in_until_the_logo_is_chosen() -> None:
 
 
 def test_ai_glyph_is_the_four_pointed_star() -> None:
-    """Anything the AI supervisor wrote is marked with ✦."""
-    assert theme.AI_GLYPH == "✦"
+    """Anything the AI supervisor wrote is marked with ✦: the AI panel title starts with it."""
+    assert top_edge("Brief", "", 20, theme.NEON, ai=True).plain.startswith("┏━ ✦ BRIEF ")
+
+
+@pytest.mark.parametrize(
+    ("name", "tokens"), [("neon", NEON), ("control room", CONTROL_ROOM), ("night", NIGHT)]
+)
+def test_big_total_digits_read_at_7_to_1_on_their_panel(name: str, tokens: Tokens) -> None:
+    """Every big number's digits clear WCAG 7:1 on their panel in every theme.
+
+    Checked on the panel and on the focused panel (the Code Owner, 2026-10-06:
+    gradient digits were illegible).
+    """
+    del name
+    assert (
+        contrast_ratio(tokens.hero_digits, tokens.panel) >= HERO_MIN_CONTRAST,
+        contrast_ratio(tokens.hero_digits, tokens.panel_focus) >= HERO_MIN_CONTRAST,
+    ) == (True, True)
+
+
+def test_contrast_ratio_matches_the_wcag_extremes() -> None:
+    """Black on white is 21:1, a colour on itself 1:1, and the order does not matter."""
+    assert (
+        round(contrast_ratio("#000000", "#FFFFFF"), 2),
+        round(contrast_ratio("#FFFFFF", "#000000"), 2),
+        contrast_ratio("#468CE6", "#468CE6"),
+    ) == (21.0, 21.0, 1.0)
+
+
+def test_rule_gradient_is_the_brand_gradient_of_each_sheet() -> None:
+    """The rule under the big total keeps the design's brand gradient in every theme."""
+    assert [t.hero_underline == t.brand for t in (NEON, CONTROL_ROOM, NIGHT)] == [
+        True,
+        True,
+        True,
+    ]
+
+
+def test_night_never_dims_the_big_number() -> None:
+    """Night dims the text but keeps the big number's digits at the day text colour."""
+    assert (NIGHT.hero_digits, NIGHT.text == NIGHT.hero_digits) == (CONTROL_ROOM.text, False)

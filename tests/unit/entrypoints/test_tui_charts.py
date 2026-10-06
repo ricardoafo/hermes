@@ -2,9 +2,10 @@
 
 Invariants:
 
-- the big total is the Textual 3x3 digit glyphs, one brand-gradient colour per
-  character from the first stop to the last; a shimmer brightens only the
-  characters near its position; a stale total is one flat colour;
+- the big total is the Textual 3x3 digit glyphs in one bold colour (the Code
+  Owner, 2026-10-06: gradient digits were illegible); the gradient is a 1-row
+  rule under them, from the first stop to the last; a shimmer brightens only
+  the rule cells near its position; a stale rule is one flat colour;
 - the braille area curve has exactly the asked rows and columns, only braille
   cells, fills every dot column from the bottom, and never draws a higher value
   lower than a smaller one (property);
@@ -27,9 +28,11 @@ from hermes.entrypoints.tui_charts import (
     BRAILLE_BLANK,
     area_chart,
     braille_area,
-    gradient_digits,
+    gradient_rule,
+    hero_digits,
     spark_text,
 )
+from hermes.entrypoints.tui_theme import HERO_RULE_GLYPH
 
 _BRAND = ("#000000", "#FFFFFF")
 _LEFT_DOTS = (0x40, 0x04, 0x02, 0x01)
@@ -61,40 +64,46 @@ def _column_heights(rows: list[str]) -> list[int]:
 
 
 # ----------------------------------------------------------------------
-# Gradient digits
+# Big total: single-colour digits over a gradient rule
 # ----------------------------------------------------------------------
 
 
-def test_gradient_digits_draw_the_textual_glyphs() -> None:
+def test_hero_digits_draw_the_textual_glyphs() -> None:
     """'€1' is three rows: the bold euro glyph then the bold one, as Textual draws them."""
-    text = gradient_digits("€1", _BRAND)
+    text = hero_digits("€1", "#E6ECF5")
     assert text.plain.split("\n") == ["╭─╮╺┓ ", "╪═  ┃ ", "╰─╯╺┻╸"]
 
 
-def test_gradient_runs_from_the_first_to_the_last_stop_per_character() -> None:
-    """The first character is the first stop and the last character the last stop."""
-    text = gradient_digits("00", _BRAND)
-    colours = _colours(text)
-    assert (colours[0], colours[1]) == ("#000000", "#FFFFFF")
+def test_hero_digits_are_one_bold_colour() -> None:
+    """Every glyph cell of '€1,021.06' is the one colour given, in bold (no per-digit gradient)."""
+    text = hero_digits("€1,021.06", "#E6ECF5")
+    styles = {str(span.style) for span in text.spans if text.plain[span.start : span.end].strip()}
+    assert styles == {"bold #E6ECF5"}
 
 
-def test_a_comma_is_one_cell_wide_and_keeps_its_colour_slot() -> None:
+def test_a_comma_is_one_cell_wide() -> None:
     """'1,0' renders the comma in one column on the bottom row, between two 3-wide digits."""
-    text = gradient_digits("1,0", _BRAND)
-    assert text.plain.split("\n")[2] == "╺┻╸,┗━┛"
+    assert hero_digits("1,0", "#E6ECF5").plain.split("\n")[2] == "╺┻╸,┗━┛"
 
 
-def test_shimmer_brightens_only_the_characters_near_it() -> None:
-    """A shimmer at character 0 turns the first glyph to the highlight; the last stays its stop."""
-    text = gradient_digits("000", ("#000000", "#000000"), shimmer=0.0, highlight="#FFFFFF")
-    first_row = _colours(text)[:3]
-    assert (first_row[0], first_row[-1]) == ("#FFFFFF", "#000000")
+def test_rule_runs_from_the_first_to_the_last_stop() -> None:
+    """A 5-cell rule is 5 rule glyphs; the first cell is the first stop, the last the last."""
+    rule = gradient_rule(5, _BRAND)
+    colours = _colours(rule)
+    assert (rule.plain, colours[0], colours[-1]) == (HERO_RULE_GLYPH * 5, "#000000", "#FFFFFF")
 
 
-def test_a_stale_total_is_one_flat_colour() -> None:
-    """``flat`` overrides the gradient: every cell is that colour."""
-    text = gradient_digits("12", _BRAND, flat="#5D6780")
-    assert set(_colours(text)) == {"#5D6780"}
+def test_shimmer_brightens_only_the_rule_cells_near_it() -> None:
+    """A shimmer at cell 0 turns cell 0 to the highlight; cell 9 keeps its stop."""
+    rule = gradient_rule(10, ("#000000", "#000000"), shimmer=0.0, highlight="#FFFFFF")
+    colours = _colours(rule)
+    assert (colours[0], colours[-1]) == ("#FFFFFF", "#000000")
+
+
+def test_a_stale_rule_is_one_flat_colour_even_while_shimmering() -> None:
+    """``flat`` overrides the gradient and the shimmer: every cell is that colour."""
+    rule = gradient_rule(6, _BRAND, shimmer=2.0, flat="#5D6780")
+    assert set(_colours(rule)) == {"#5D6780"}
 
 
 # ----------------------------------------------------------------------

@@ -4,7 +4,8 @@ Invariants:
 
 - the breakpoint tokens pick one column under 100 columns, two from 100, the
   mock layout (Market beside Activity) from 160 and three columns from 220;
-  under 30 rows the curve and the big total hide; from 45 rows the curve doubles;
+  under 30 rows the curve hides; the big total shows only from 100 columns and
+  30 rows (compact keeps the plain bold total line); from 45 rows the curve doubles;
 - every money figure obeys ``pnl_visible``: a blind surface gets no total, no
   curve, no meter and no net;
 - exposure is invested over the start capital and its meter is measured
@@ -71,7 +72,7 @@ def _plain(renderable: object, width: int = 100) -> str:
     ("size", "expected"),
     [
         ((80, 24), (WidthClass.COMPACT, HeightClass.SHORT, 1, 0, True, False, False, 0)),
-        ((99, 30), (WidthClass.COMPACT, HeightClass.TALL, 1, 0, True, True, False, 0)),
+        ((99, 30), (WidthClass.COMPACT, HeightClass.TALL, 1, 0, True, False, False, 0)),
         ((100, 29), (WidthClass.STANDARD, HeightClass.SHORT, 2, 0, False, False, False, 0)),
         ((120, 36), (WidthClass.STANDARD, HeightClass.TALL, 2, 5, False, True, False, 0)),
         ((160, 45), (WidthClass.WIDE, HeightClass.TOWERING, 2, 12, False, True, True, 0)),

@@ -644,9 +644,11 @@ class HomeApp(App[None]):
         self._radar += 1
         if self._empty_facts is not None and self.screen_stack:
             coins, next_at = self._empty_facts
-            self._set(
-                "positions", empty_positions(coins, next_at, self._ctx, self._data, self._radar)
-            )
+            with suppress(NoMatches):
+                self._set(
+                    "positions",
+                    empty_positions(coins, next_at, self._ctx, self._data, self._radar),
+                )
 
     # An effect timer can fire while the app is tearing its widgets down; a
     # missing widget then means there is nothing left to animate.

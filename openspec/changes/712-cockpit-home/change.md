@@ -14,8 +14,8 @@ dual-source rule).
 Step 2 of the Cockpit console (design spec `docs/design/console-cockpit.md`:
 the Home row, round 3 "Look A with C's best parts", the responsiveness table).
 The `hermes tui` home screen gets a layout per breakpoint token (compact,
-standard, wide, ultra; short, tall, towering), a gradient big total that
-counts up and shimmers, a braille area curve with a vertical gradient,
+standard, wide, ultra; short, tall, towering), a big total in bold
+high-contrast digits over a gradient underline that counts up and shimmers, a braille area curve with a vertical gradient,
 cash / invested / exposure meters, position rows with a sparkline and a
 stop-room meter, the designed empty state, a Market panel on the existing
 market watch, Activity with icons, an Engine brief slot (AI variant), a
@@ -29,14 +29,14 @@ prices (issue #713) are out of scope.
 ### In
 
 - `src/hermes/entrypoints/tui_charts.py` (new): pure renderers for the
-  gradient digits, the braille area curve, the meters, the gradient sparkline
+  big-number digits and underline, the braille area curve, the meters, the gradient sparkline
   and the 90-day bar.
 - `src/hermes/entrypoints/tui_home.py` (new): the breakpoint choice
   (`home_layout`), the cockpit portfolio, position, market, empty-state,
   log-tail and run-bar content; every money figure goes through
   `RenderContext.shows_money` (`pnl_visible`).
-- `src/hermes/entrypoints/tui_widgets.py`: `BigNumber` (a `Digits` with the
-  brand gradient, count-up and shimmer).
+- `src/hermes/entrypoints/tui_widgets.py`: `BigNumber` (a `Digits` in the
+  `hero-digits` colour over a `hero-underline` gradient, count-up and shimmer).
 - `src/hermes/entrypoints/tui.py`: the per-breakpoint home layout, the Engine
   brief, Signals and log-tail panels, the radar spinner, the exposure cap.
 - `src/hermes/entrypoints/tui_theme.py`: chart heights, the radar frames;
@@ -61,6 +61,12 @@ prices (issue #713) are out of scope.
 - `textual-plotext`: its own PR (issue #732).
 
 ## Decisions
+
+### Code Owner decisions
+
+| Date | Decision |
+| --- | --- |
+| 2026-10-06 | Gradient digits were illegible; the big number's digits are one bold colour (`hero-digits`, the theme's text colour) and the gradient moved to a 1-row underline (`hero-underline`), which alone carries the shimmer. Big numbers keep at least 7:1 contrast in every theme (measured on `panel`: Neon 17.0:1, Control room 15.5:1, night 16.3:1); night never dims them. This is a property of `BigNumber`, so it holds on detail screens too. Compact width and under 30 rows keep the plain bold total line. |
 
 ### D-1: one layout function, breakpoints as classes on `#body`
 
@@ -99,15 +105,19 @@ prices (issue #713) are out of scope.
 
 ### D-4: the big total is a `Digits` subclass
 
-- **Decision**: `BigNumber(Digits)` renders the same 3x3 glyphs per
-  character with the brand gradient (`tui_theme.gradient`, the token blend).
-  A reactive float counts up over `MOTION.slow` with `out_cubic`; a shimmer
-  pass every `MOTION.shimmer` moves a bright band across at 8 fps. With motion
-  off both are skipped and the value is set at once.
-- **Alternatives**: the box glyphs of `format.big_digits` (no per-character
-  colour); a second gradient routine on Rich `blend_rgb` (two blends for one
-  token).
-- **Rationale**: one widget, one blend, the Textual glyph set.
+- **Decision**: `BigNumber(Digits)` renders Textual's bold 3x3 glyphs in
+  the `hero-digits` token, never dimmed (not at night, not when stale), and a
+  4th row: a `hero-underline` gradient rule as wide as the digits
+  (`tui_theme.gradient`, the token blend). A reactive float counts up over
+  `MOTION.slow` with `out_cubic`; a shimmer pass every `MOTION.shimmer` moves a
+  bright band along the underline at 8 fps, never over the digits. With motion
+  off both are skipped and the value is set at once. A stale figure dims only
+  the underline; the head line says "as of".
+- **Alternatives**: per-character gradient digits (the first build; the Code
+  Owner found them illegible on 2026-10-06); the box glyphs of
+  `format.big_digits`.
+- **Rationale**: legibility first for money figures; the gradient stays as an
+  accent; one widget for every big number.
 - **Cost of reversal**: LOW.
 
 ### D-5: the curve is drawn with braille in Rich text
@@ -142,9 +152,11 @@ prices (issue #713) are out of scope.
 
 ### R-2: portfolio
 
-- **A-2.1**: the big total is drawn per character in the brand gradient and
-  counts up when the value changes (motion on); with motion off the final
-  value shows at once and no shimmer timer runs.
+- **A-2.1**: the big total's digits are one bold `hero-digits` colour with at
+  least 7:1 contrast on the panel in Neon, Control room and night (stale
+  included), over a 1-row `hero-underline` gradient; it counts up when the value
+  changes (motion on) and the shimmer moves only along the underline; with
+  motion off the final value shows at once and no shimmer timer runs.
 - **A-2.2**: the braille curve has exactly the asked rows and columns, uses
   only braille cells, and a higher value never draws a lower column.
 - **A-2.3**: cash, invested and exposure meters; the exposure meter names the
@@ -183,8 +195,9 @@ prices (issue #713) are out of scope.
 
 ```text
 src/hermes/entrypoints/
-  tui_theme.py   + CURVE_ROWS, RADAR_FRAMES, METER_WARN_SHARE; - TWO_COLUMNS_FROM
-  tui_charts.py  gradient_digits, braille_area, area_chart, meter, spark_text, run_bar
+  tui_theme.py   + CURVE_ROWS, RADAR_FRAMES, hero_digits / hero_underline,
+                 HERO_MIN_CONTRAST, contrast_ratio; - TWO_COLUMNS_FROM
+  tui_charts.py  hero_digits, gradient_rule, braille_area, area_chart, spark_text
   tui_home.py    HomeLayout, home_layout, total_text, portfolio_curve, portfolio_meters,
                  exposure_share, position_rows, empty_positions, log_tail, run_line
   tui_widgets.py + BigNumber

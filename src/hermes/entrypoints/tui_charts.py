@@ -1,11 +1,11 @@
 """Chart pieces of the Cockpit console, drawn as Rich text (design spec, issue #712).
 
-No chart add-on: the big total uses Textual's own 3x3 digit glyphs and the
-curve is braille dots; meters are the shared
-:class:`~hermes.entrypoints.tui_widgets.Meter`. Every colour comes from the
-:mod:`hermes.entrypoints.tui_theme` tokens and is blended with its
-:func:`~hermes.entrypoints.tui_theme.gradient`, so a token change restyles
-every chart. Each function is pure, so tests check the text directly.
+No chart add-on: the big total uses Textual's own 3x3 digit glyphs in one
+high-contrast colour over a 1-row gradient rule, and the curve is braille
+dots; meters are the shared :class:`~hermes.entrypoints.tui_widgets.Meter`.
+Every colour comes from the :mod:`hermes.entrypoints.tui_theme` tokens and
+is blended with its :func:`~hermes.entrypoints.tui_theme.gradient`, so a
+token change restyles every chart. Each function is pure, so tests check the text directly.
 """
 
 from __future__ import annotations
@@ -18,13 +18,14 @@ from rich.text import Text
 from textual.renderables.digits import DIGITS, DIGITS3X3_BOLD
 
 from hermes.application.console.format import sparkline
-from hermes.entrypoints.tui_theme import blend, gradient
+from hermes.entrypoints.tui_theme import HERO_RULE_GLYPH, blend, gradient
 
 __all__ = [
     "BRAILLE_BLANK",
     "area_chart",
     "braille_area",
-    "gradient_digits",
+    "gradient_rule",
+    "hero_digits",
     "spark_text",
 ]
 
@@ -35,7 +36,7 @@ _DOTS_PER_ROW: Final = 4
 # Braille dot bits, bottom dot first: the left column, then the right column.
 _LEFT_DOTS: Final = (0x40, 0x04, 0x02, 0x01)
 _RIGHT_DOTS: Final = (0x80, 0x20, 0x10, 0x08)
-_SHIMMER_BAND: Final = 1.5
+_SHIMMER_BAND: Final = 3.0
 _DIGIT_SWAPS: Final = str.maketrans({".": "•"})
 
 
@@ -53,48 +54,52 @@ def _glyph(char: str) -> tuple[str, str, str]:
     )
 
 
-def _char_colour(
-    index: int, count: int, stops: Sequence[str], shimmer: float | None, highlight: str
-) -> str:
-    base = gradient(stops, index / max(count - 1, 1))
-    if shimmer is None:
-        return base
-    distance = abs(index - shimmer)
-    if distance >= _SHIMMER_BAND:
-        return base
-    return blend(base, highlight, 1 - distance / _SHIMMER_BAND)
+def hero_digits(text: str, colour: str) -> Text:
+    """Return ``text`` as three rows of bold digit glyphs in one colour.
+
+    Args:
+        text: The figure, for example ``€1,021.06``.
+        colour: The ``hero`` token (or ``dim`` while hermes is down).
+
+    Returns:
+        Three lines joined by newlines.
+    """
+    rows = [Text(), Text(), Text()]
+    for char in text.translate(_DIGIT_SWAPS):
+        for row, piece in zip(rows, _glyph(char), strict=True):
+            row.append(piece, style=f"bold {colour}")
+    return Text("\n").join(rows)
 
 
-def gradient_digits(
-    text: str,
+def gradient_rule(
+    width: int,
     stops: Sequence[str],
     *,
     shimmer: float | None = None,
     highlight: str = "#FFFFFF",
     flat: str | None = None,
 ) -> Text:
-    """Return ``text`` as three rows of bold digit glyphs, one gradient colour per character.
+    """Return the 1-row rule under the big total, one gradient colour per cell.
 
     Args:
-        text: The figure, for example ``€1,021.06``.
-        stops: Gradient stops; the first character gets the first stop and the
-            last character the last.
-        shimmer: Character position of a shimmer pass, or ``None``; characters
-            within 1.5 positions blend toward ``highlight``.
+        width: Cells.
+        stops: Gradient stops, first cell to last (the ``hero-underline`` token).
+        shimmer: Cell position of a shimmer pass, or ``None``; cells within
+            the band blend toward ``highlight``.
         highlight: The shimmer's colour.
-        flat: One colour for every character (a stale total), overriding the
-            gradient and the shimmer.
+        flat: One colour for every cell (stale), overriding gradient and shimmer.
 
     Returns:
-        Three lines joined by newlines.
+        ``width`` cells of ``HERO_RULE_GLYPH``.
     """
-    chars = text.translate(_DIGIT_SWAPS)
-    rows = [Text(), Text(), Text()]
-    for index, char in enumerate(chars):
-        colour = flat or _char_colour(index, len(chars), stops, shimmer, highlight)
-        for row, piece in zip(rows, _glyph(char), strict=True):
-            row.append(piece, style=f"bold {colour}")
-    return Text("\n").join(rows)
+    out = Text()
+    last = max(width - 1, 1)
+    for index in range(max(width, 0)):
+        colour = flat or gradient(stops, index / last)
+        if flat is None and shimmer is not None and abs(index - shimmer) < _SHIMMER_BAND:
+            colour = blend(colour, highlight, 1 - abs(index - shimmer) / _SHIMMER_BAND)
+        out.append(HERO_RULE_GLYPH, style=colour)
+    return out
 
 
 def _heights(values: Sequence[float], columns: int, dots: int) -> list[int]:
