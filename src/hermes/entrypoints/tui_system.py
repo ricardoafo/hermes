@@ -51,7 +51,7 @@ from hermes.application.console.system import (
     age_text,
 )
 from hermes.entrypoints.tui_theme import Tokens
-from hermes.entrypoints.tui_widgets import meter_text
+from hermes.entrypoints.tui_widgets import Meter
 
 __all__ = [
     "BAR_CHECKS",
@@ -377,17 +377,13 @@ def timing_text(
     return Text("\n").join(rows)
 
 
-def _percent(fraction: float) -> str:
-    return f" {round(fraction * 100)}%"
-
-
 def _meter_row(
     label: str, fraction: float | None, tokens: Tokens, *, warn_from: float, extra: str = ""
 ) -> Text:
     if fraction is None:
         return _row(label, Text(NOT_HERE, style=tokens.dim), tokens)
-    value = meter_text(fraction, tokens, warn_from=warn_from)
-    value.append(_percent(fraction) + extra, style=tokens.text)
+    value = Meter(fraction, warn_from=warn_from, caps=True, percent=True).render(tokens)
+    value.append(extra, style=tokens.text)
     return _row(label, value, tokens)
 
 
