@@ -24,13 +24,14 @@ licence allowlist does not list (see Risks).
 
 - `textual-image` in `pyproject.toml` and `uv.lock` (via `uv add`).
 - `src/hermes/entrypoints/tui_logo.py`: `Logo`, `wordmark()`,
-  `terminal_shows_images()`.
+  `terminal_shows_images()`, `wordmark_text()`: the wordmark takes its colours
+  from the theme tokens (Neon `brand` gradient, Control room plain `live` cyan).
 - The packaged picture `src/hermes/entrypoints/assets/winged_h.png`, drawn by
   `scripts/assets/make_winged_h_logo.py`.
 
 ### Out
 
-- Showing the logo at start-up and the plain cyan Control room variant: issue #721.
+- Showing the logo at start-up: issue #721.
 
 ## Decisions
 

@@ -8,6 +8,8 @@ Invariants:
   session, and named as image-capable in the environment;
 - the Logo widget shows the wordmark and never imports ``textual_image``
   (which would probe the terminal) unless the caller asks for the picture;
+- the wordmark is coloured from theme tokens only: the brand gradient in Neon
+  (first cell the first stop, last cell the last), plain ``live`` in Control room;
 - the packaged PNG loads as a transparent RGBA picture of the agreed size
   that uses cyan, violet and magenta tones.
 
@@ -33,7 +35,9 @@ from hermes.entrypoints.tui_logo import (
     Logo,
     terminal_shows_images,
     wordmark,
+    wordmark_text,
 )
+from hermes.entrypoints.tui_theme import BASE, NEON
 
 _EXPECTED_WORDMARK = "\n".join(
     (
@@ -134,3 +138,24 @@ def test_packaged_logo_png_is_a_transparent_cyan_violet_magenta_picture() -> Non
     assert any(b > 200 and r < 100 for r, _, b in opaque), "cyan end of the gradient"
     assert any(r > 200 and g < 110 and b > 150 for r, g, b in opaque), "magenta end"
     assert any(100 < r < 180 and g < 120 and b > 220 for r, g, b in opaque), "violet middle"
+
+
+def test_neon_wordmark_runs_the_brand_gradient_left_to_right() -> None:
+    """Invariant: Neon draws the brand gradient; the text itself is unchanged."""
+    text = wordmark_text(NEON, neon=True)
+    first = next(span for span in text.spans if span.start == 0)
+    last = max(text.spans, key=lambda span: span.end)
+    assert (text.plain, str(first.style), str(last.style)) == (
+        wordmark(),
+        f"bold {NEON.brand[0]}",
+        f"bold {NEON.brand[-1]}",
+    )
+
+
+def test_control_room_wordmark_is_one_plain_live_colour() -> None:
+    """Invariant: Control room paints every row in the single ``live`` cyan."""
+    text = wordmark_text(BASE, neon=False)
+    assert (text.plain, {str(span.style) for span in text.spans}) == (
+        wordmark(),
+        {f"bold {BASE.live}"},
+    )

@@ -6,6 +6,10 @@ multiplexers, ssh, and tests). The choice is made from the environment
 only, with no terminal probing, so it is cheap and deterministic;
 ``use_image`` overrides it.
 
+The wordmark takes its colours from the console theme tokens
+(:mod:`hermes.entrypoints.tui_theme`): the brand gradient in Neon, plain
+``live`` cyan in Control room and at night.
+
 ``textual_image`` queries the terminal when it is imported, so it is
 imported lazily and only on the image path.
 
@@ -18,9 +22,12 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Final
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.widget import Widget
 from textual.widgets import Static
+
+from hermes.entrypoints.tui_theme import NEON_THEME, Tokens, gradient, tokens_for
 
 LOGO_PATH: Final = Path(__file__).resolve().parent / "assets" / "winged_h.png"
 
@@ -41,6 +48,32 @@ def wordmark(text: str = "HERMES") -> str:
     """Render ``text`` in five-row block letters, one blank column between letters."""
     rows = [" ".join(_GLYPHS[letter][row] for letter in text) for row in range(_LETTER_ROWS)]
     return "\n".join(rows)
+
+
+def wordmark_text(tokens: Tokens, *, neon: bool, text: str = "HERMES") -> Text:
+    """Return the wordmark coloured from a token sheet.
+
+    Args:
+        tokens: The token sheet of the shown theme.
+        neon: Draw the ``brand`` gradient left to right (Neon); otherwise the
+            whole mark is bold ``live`` (Control room, night).
+        text: The word to spell.
+
+    Returns:
+        Five rows of block letters, one style run per cell on the gradient.
+    """
+    rows = wordmark(text).split("\n")
+    out = Text()
+    last = max(len(rows[0]) - 1, 1)
+    for number, row in enumerate(rows):
+        if number:
+            out.append("\n")
+        if neon:
+            for column, char in enumerate(row):
+                out.append(char, style=f"bold {gradient(tokens.brand, column / last)}")
+        else:
+            out.append(row, style=f"bold {tokens.live}")
+    return out
 
 
 def terminal_shows_images(env: Mapping[str, str], *, is_tty: bool) -> bool:
@@ -66,6 +99,7 @@ class Logo(Widget):
         height: auto;
         width: auto;
     }
+    Logo > #logo-wordmark { height: auto; width: auto; }
     """
 
     def __init__(
@@ -99,3 +133,15 @@ class Logo(Widget):
             except ImportError, OSError:
                 self.use_image = False
         yield Static(wordmark(), id="logo-wordmark")
+
+    def on_mount(self) -> None:
+        """Colour the wordmark from the theme and recolour it when the theme changes."""
+        if not self.use_image:
+            self.app.theme_changed_signal.subscribe(self, lambda _theme: self.paint())
+            self.paint()
+
+    def paint(self) -> None:
+        """Redraw the wordmark from the current theme's tokens."""
+        tokens = tokens_for(self.app.theme)
+        for mark in self.query("#logo-wordmark").results(Static):
+            mark.update(wordmark_text(tokens, neon=self.app.theme == NEON_THEME))
