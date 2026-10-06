@@ -12,7 +12,10 @@ Invariants:
 - the clock and the countdown tick every second from the injected clock;
 - Auto switches to the night theme at 23:00 local; a hand-picked theme stays;
 - T opens the theme picker and the pick is saved (to a tmp path, never home);
-- with motion off no timer-driven effect runs.
+- with motion off no timer-driven effect runs;
+- the design-conformance block at the end walks every screen key, the
+  picker and palette paths, Esc in each context, every range key, the dot
+  per theme and state, and both night edges (``design-check.md``).
 
 Every app here gets a frozen clock; none reads or writes the real home folder.
 """
@@ -32,6 +35,7 @@ from rich.text import Text
 from textual.binding import Binding
 from textual.command import CommandPalette
 from textual.pilot import Pilot
+from textual.widgets import ContentSwitcher, OptionList
 
 from hermes.adapters.console import FixtureReadModel
 from hermes.application.console import Heartbeat, HeartbeatState
@@ -44,8 +48,8 @@ from hermes.entrypoints.tui import (
     terminal_title,
 )
 from hermes.entrypoints.tui_settings import ThemeChoice, load_settings
-from hermes.entrypoints.tui_theme import BASE, NEON, NIGHT, pulse_steps
-from hermes.entrypoints.tui_widgets import HudPanel, ThemePicker, WindowBar
+from hermes.entrypoints.tui_theme import BASE, CONTROL_ROOM, NEON, NIGHT, pulse_steps
+from hermes.entrypoints.tui_widgets import HudPanel, TabBar, ThemePicker, WindowBar
 
 _MADRID = ZoneInfo("Europe/Madrid")
 # The fixture's read time: 14:12 Madrid, next check 18:00 Madrid.
@@ -594,3 +598,337 @@ def test_motion_env_off_reaches_the_app(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setenv("HERMES_CONSOLE_MOTION", "off")
     app = HomeApp(FixtureReadModel.load("ok-two-positions"), clock=lambda: _DAY)
     assert app.motion is False
+
+
+# ----------------------------------------------------------------------
+# Design conformance: keys, picker, palette, Esc, range, dot, night
+# ----------------------------------------------------------------------
+
+
+def _switcher_and_bar(app: HomeApp) -> tuple[int, str | None, int]:
+    switcher = app.query_one("#screens", ContentSwitcher)
+    return app.tab, switcher.current, app.query_one(TabBar).active
+
+
+def test_each_number_key_selects_its_screen_in_the_switcher_and_the_tab_bar() -> None:
+    """Keys 1-8 each show their own screen body and highlight their own tab."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> list[tuple[int, str | None, int]]:
+        seen = []
+        for tab in (*TABS[1:], TABS[0]):
+            await _press(pilot, [tab.key])
+            seen.append(_switcher_and_bar(app))
+        return seen
+
+    assert _run(probe) == [
+        (1, "tab-2", 1),
+        (2, "tab-3", 2),
+        (3, "tab-4", 3),
+        (4, "tab-5", 4),
+        (5, "tab-6", 5),
+        (6, "tab-7", 6),
+        (7, "tab-8", 7),
+        (0, "tab-1", 0),
+    ]
+
+
+def test_tab_walks_every_screen_in_order_and_wraps_home() -> None:
+    """Eight Tab presses visit Signals ... Logs, then Home again."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> list[int]:
+        seen = []
+        for _ in TABS:
+            await _press(pilot, ["tab"])
+            seen.append(app.tab)
+        return seen
+
+    assert _run(probe) == [1, 2, 3, 4, 5, 6, 7, 0]
+
+
+def test_shift_tab_walks_every_screen_backwards() -> None:
+    """Eight Shift+Tab presses visit Logs ... Signals, then Home again."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> list[int]:
+        seen = []
+        for _ in TABS:
+            await _press(pilot, ["shift+tab"])
+            seen.append(app.tab)
+        return seen
+
+    assert _run(probe) == [7, 6, 5, 4, 3, 2, 1, 0]
+
+
+def test_tab_does_nothing_while_the_theme_picker_is_open() -> None:
+    """Under the picker Tab neither switches the screen nor closes the dialog."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[int, bool]:
+        await _press(pilot, ["t", "tab"])
+        return app.tab, isinstance(app.screen, ThemePicker)
+
+    assert _run(probe) == (0, True)
+
+
+def test_picker_highlights_the_current_choice() -> None:
+    """T on Auto opens the picker with the third option, Auto, highlighted."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> int | None:
+        await _press(pilot, ["t"])
+        return app.screen.query_one(OptionList).highlighted
+
+    assert _run(probe) == 2
+
+
+def test_picking_neon_at_night_keeps_neon_and_saves_it(tmp_path: Path) -> None:
+    """At 23:30 Auto shows night; T, up, up, Enter picks Neon, which shows and is saved."""
+    path = tmp_path / "console.toml"
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[str, str]:
+        before = app.theme
+        await _press(pilot, ["t", "up", "up", "enter"])
+        return before, app.theme
+
+    assert (_run(probe, clock=lambda: _NIGHT, settings_path=path), load_settings(path).theme) == (
+        ("hermes-night", "hermes-neon"),
+        ThemeChoice.NEON,
+    )
+
+
+def _window_bar_start(app: HomeApp) -> str:
+    content = app.query_one(WindowBar).content
+    assert isinstance(content, Text)
+    bgcolor = content.get_style_at_offset(Console(), 0).bgcolor
+    assert bgcolor is not None
+    return bgcolor.name
+
+
+def test_picking_a_theme_repaints_the_chrome_in_its_tokens(tmp_path: Path) -> None:
+    """After picking Control room the window bar's first cell uses Control room's chrome start."""
+    path = tmp_path / "console.toml"
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[str, str]:
+        before = _window_bar_start(app)
+        await _press(pilot, ["t", "up", "enter"])
+        return before, _window_bar_start(app)
+
+    assert _run(probe, settings_path=path) == (
+        NEON.chrome[0].lower(),
+        CONTROL_ROOM.chrome[0].lower(),
+    )
+
+
+async def _palette_pick(pilot: Pilot[None], query: str) -> None:
+    await _press(pilot, ["ctrl+p"])
+    await pilot.press(*query)
+    await pilot.pause(0.5)
+    await _press(pilot, ["enter"])
+
+
+def test_palette_search_goes_to_a_screen() -> None:
+    """Ctrl+P, "Go to Logs", Enter shows the Logs screen and closes the palette."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[int, bool]:
+        await _palette_pick(pilot, "Go to Logs")
+        return app.tab, isinstance(app.screen, CommandPalette)
+
+    assert _run(probe) == (7, False)
+
+
+def test_palette_search_switches_and_saves_the_theme(tmp_path: Path) -> None:
+    """Ctrl+P, "Theme: Control room", Enter applies Control room and saves it."""
+    path = tmp_path / "console.toml"
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> str:
+        await _palette_pick(pilot, "Theme: Control room")
+        return app.theme
+
+    assert (_run(probe, settings_path=path), load_settings(path).theme) == (
+        "hermes-control-room",
+        ThemeChoice.CONTROL,
+    )
+
+
+def test_escape_closes_the_palette_and_keeps_the_screen() -> None:
+    """On Signals, Ctrl+P then Esc closes the palette and Signals stays shown."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[bool, int]:
+        await _press(pilot, ["2", "ctrl+p", "escape"])
+        return isinstance(app.screen, CommandPalette), app.tab
+
+    assert _run(probe) == (False, 1)
+
+
+def test_escape_on_home_with_no_history_changes_nothing() -> None:
+    """Esc on a fresh Home keeps Home shown and the app running."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[int, bool]:
+        await _press(pilot, ["escape", "escape"])
+        return app.tab, app.is_running
+
+    assert _run(probe) == (0, True)
+
+
+def test_escape_closes_the_detail_pane_before_leaving_home() -> None:
+    """Wide: 2, 1, Enter opens the detail; Esc closes it on Home; Esc again goes to Signals."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[bool, int, bool, int]:
+        await _press(pilot, ["2", "1", "enter"])
+        panel = app.query_one("#detail-panel")
+        opened = panel.has_class("-open")
+        await _press(pilot, ["escape"])
+        closed_tab, still_open = app.tab, panel.has_class("-open")
+        await _press(pilot, ["escape"])
+        return opened, closed_tab, still_open, app.tab
+
+    assert _run(probe, size=(160, 45)) == (True, 0, False, 1)
+
+
+def test_escape_leaves_the_help_screen_and_keeps_the_tab() -> None:
+    """On Tax, ? opens help over the console; Esc closes it and Tax is still shown."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[int, int, int]:
+        await _press(pilot, ["4", "question_mark"])
+        depth = len(app.screen_stack)
+        await _press(pilot, ["escape"])
+        return depth, len(app.screen_stack), app.tab
+
+    assert _run(probe) == (2, 1, 3)
+
+
+@pytest.mark.parametrize(
+    ("key", "line"),
+    [
+        ("d", "+€12.30 +1.22% today"),
+        ("w", "+€15.20 +1.51% this week"),
+        ("m", "+€19.00 +1.90% this month"),
+        ("y", "+€21.06 +2.11% this year"),
+        ("D", "+€12.30 +1.22% today"),
+        ("M", "+€19.00 +1.90% this month"),
+        ("Y", "+€21.06 +2.11% this year"),
+    ],
+)
+def test_range_key_sets_the_range_from_another_screen(key: str, line: str) -> None:
+    """On Positions, a range key (either case) sets the range Home shows on return."""
+    other = "y" if key.lower() == "d" else "d"
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> str:
+        await _press(pilot, [other, "3", key, "1"])
+        return app.plain_text("portfolio").splitlines()[0]
+
+    assert _run(probe, size=(80, 24)) == f"€1,021.06   ▲ {line}"
+
+
+def test_range_keys_are_ignored_under_the_help_screen() -> None:
+    """With help open, Y does not change the range: Home still shows today."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> str:
+        await _press(pilot, ["question_mark", "y", "escape"])
+        return app.plain_text("portfolio").splitlines()[0]
+
+    assert _run(probe, size=(80, 24)) == "€1,021.06   ▲ +€12.30 +1.22% today"
+
+
+def _themed_dot(theme: ThemeChoice, now: datetime) -> tuple[str, str]:
+    async def drive() -> tuple[str, str]:
+        app = HomeApp(
+            FixtureReadModel.load("ok-two-positions"),
+            clock=lambda: now,
+            motion=False,
+            theme=theme,
+            refresh_seconds=3600,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await pilot.pause()
+            return _dot_and_text_styles(app._content["heartbeat"], "●")
+
+    return asyncio.run(drive())
+
+
+@pytest.mark.parametrize(
+    ("theme", "now", "colour"),
+    [
+        (ThemeChoice.NEON, _DAY, NEON.live),
+        (ThemeChoice.CONTROL, _DAY, CONTROL_ROOM.live),
+        (ThemeChoice.AUTO, _NIGHT, NIGHT.live),
+    ],
+    ids=["neon", "control", "night"],
+)
+def test_ok_dot_takes_each_themes_live_colour(
+    theme: ThemeChoice, now: datetime, colour: str
+) -> None:
+    """OK: the dot is bold in the shown theme's live colour, and the words stay dim."""
+    assert _themed_dot(theme, now) == (f"bold {colour.lower()}", "dim")
+
+
+def test_ok_dot_on_the_empty_scenario_is_live_coloured() -> None:
+    """With no positions the heartbeat is still OK and its dot still the live colour."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> str:
+        del pilot
+        return _dot_and_text_styles(app._content["heartbeat"], "●")[0]
+
+    assert _run(probe, scenario="empty") == f"bold {NEON.live.lower()}"
+
+
+def test_late_amber_keeps_the_day_warn_colour_at_night() -> None:
+    """At night the ◐ line is still yellow, and yellow is still the full warn amber."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[str, str]:
+        del pilot
+        style = _dot_and_text_styles(app._content["heartbeat"], "◐")[0]
+        return style, app.ansi_theme_dark.ansi_colors[3].hex.upper()
+
+    assert _run(probe, scenario="late", clock=lambda: _NIGHT) == ("yellow", BASE.warn)
+
+
+def test_late_and_down_have_no_live_dot() -> None:
+    """Late shows ◐ and down shows ✖; neither status line carries the live ●."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> str:
+        del pilot
+        return app.plain_text("heartbeat") + app.plain_text("down-row")
+
+    assert ["●" in _run(probe, scenario=s) for s in ("late", "down-stale")] == [False, False]
+
+
+def test_auto_leaves_night_at_eight() -> None:
+    """When the clock passes 08:00 Madrid, the next tick switches Auto back to Neon."""
+    clock = _Clock(datetime(2026, 10, 4, 5, 59, 59, tzinfo=UTC))
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[str, str]:
+        before = app.theme
+        clock.now = datetime(2026, 10, 4, 6, 0, 0, tzinfo=UTC)
+        await pilot.pause(1.3)
+        return before, app.theme
+
+    assert _run(probe, clock=clock) == ("hermes-night", "hermes-neon")
+
+
+def test_a_hand_picked_control_room_ignores_the_night(tmp_path: Path) -> None:
+    """A saved Control room choice stays Control room across 23:00."""
+    path = tmp_path / "console.toml"
+    path.write_text('theme = "control"\n', encoding="utf-8")
+    clock = _Clock(datetime(2026, 10, 3, 20, 59, 59, tzinfo=UTC))
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[str, str]:
+        before = app.theme
+        clock.now = datetime(2026, 10, 3, 21, 0, 1, tzinfo=UTC)
+        await pilot.pause(1.3)
+        return before, app.theme
+
+    assert _run(probe, clock=clock, settings_path=path) == (
+        "hermes-control-room",
+        "hermes-control-room",
+    )
+
+
+def test_entering_night_slows_the_pulse_and_stops_the_strip() -> None:
+    """With motion on, crossing 23:00 restarts the pulse at 0.8 s per step and drops the strip."""
+    clock = _Clock(datetime(2026, 10, 3, 20, 59, 59, tzinfo=UTC))
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[list[str], list[str], float]:
+        before = sorted(app.effect_timers)
+        clock.now = datetime(2026, 10, 3, 21, 0, 0, tzinfo=UTC)
+        await pilot.pause(1.3)
+        return before, sorted(app.effect_timers), app.effect_timers["pulse"]._interval
+
+    assert _run(probe, clock=clock, motion=True) == (["pulse", "strip"], ["pulse"], 0.8)
