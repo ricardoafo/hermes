@@ -8,6 +8,9 @@ Invariants protected here:
 - ``--json`` carries exact decimal strings;
 - ``--notify`` sends one alert for a non-clean month, none for a clean one,
   and a failed send never changes the exit code;
+- every ``--notify`` alert is recorded once as an ``AnomalyDetected`` row,
+  even when Telegram is not configured, and a run without one records none
+  (#136);
 - the command is registered and reachable through ``hermes``.
 """
 
@@ -26,6 +29,7 @@ from hermes.domain.events.base import DomainEvent
 from hermes.entrypoints import reconcile as reconcile_module
 from hermes.entrypoints.commands import discover
 from hermes.ports.notifier import NotifierPort
+from tests.support.anomaly_rows import recorded_anomalies
 from tests.support.reconciliation_ledger import write_september
 
 _CONFIG = Path(__file__).resolve().parents[3] / "config"
@@ -235,6 +239,42 @@ def test_notify_without_telegram_warns_and_keeps_the_exit_code(tmp_path: Path) -
     code, out = _run(["2026-09", "--db", str(db), "--notify"], notifier=None)
 
     assert (code, "Telegram is not configured" in out) == (1, True)
+
+
+def test_a_notify_alert_is_recorded_once_and_matches_the_sent_alert(tmp_path: Path) -> None:
+    """#136: the alert sent for a REVIEW month is the one AnomalyDetected row in the ledger."""
+    db = write_september(tmp_path / "l.sqlite3", priced=False)
+    notifier = _Recorder()
+
+    _run(["2026-09", "--db", str(db), "--notify"], notifier=notifier)
+
+    rows = recorded_anomalies(db)
+    (sent,) = notifier.sent
+    assert [(r["source"], r["reason"], r["correlation_id"]) for r in rows] == [
+        (
+            getattr(sent, "source", None),
+            getattr(sent, "reason", None),
+            sent.correlation_id,
+        )
+    ]
+
+
+def test_a_notify_alert_is_recorded_even_without_telegram(tmp_path: Path) -> None:
+    """#136: no channel configured still leaves the alert in the ledger."""
+    db = write_september(tmp_path / "l.sqlite3", priced=False)
+
+    _run(["2026-09", "--db", str(db), "--notify"], notifier=None)
+
+    assert [r["source"] for r in recorded_anomalies(db)] == ["reconciler"]
+
+
+def test_a_clean_month_with_notify_records_no_anomaly(tmp_path: Path) -> None:
+    """#136: no alert, no AnomalyDetected row."""
+    db = write_september(tmp_path / "l.sqlite3")
+
+    _run(["2026-09", "--db", str(db), "--notify"], notifier=_Recorder())
+
+    assert recorded_anomalies(db) == []
 
 
 def test_a_failed_send_warns_and_keeps_the_exit_code(tmp_path: Path) -> None:
