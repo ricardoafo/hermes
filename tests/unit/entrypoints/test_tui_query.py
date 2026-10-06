@@ -12,8 +12,6 @@ Invariants protected here:
   live in ``test_tui_snapshots.py`` (``query_activity_*``).
 """
 
-from __future__ import annotations
-
 import ast
 import asyncio
 import re

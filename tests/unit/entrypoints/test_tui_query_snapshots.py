@@ -9,8 +9,6 @@ reviewer accepts the new picture. Each file is named
 The app runs with motion off, a frozen clock and synthetic activity items.
 """
 
-from __future__ import annotations
-
 import asyncio
 from datetime import UTC, datetime
 from decimal import Decimal

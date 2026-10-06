@@ -24,8 +24,6 @@ are a demo harness, not wired into ``hermes tui``.
 Reference: openspec/changes/729-query-bar/change.md.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable, Iterable, Sequence
 from datetime import datetime, tzinfo
 from typing import ClassVar, Final

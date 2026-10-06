@@ -21,8 +21,6 @@ way in tests, in the TUI and anywhere else.
 Reference: openspec/changes/729-query-bar/change.md.
 """
 
-from __future__ import annotations
-
 import difflib
 import os
 import re

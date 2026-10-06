@@ -12,8 +12,6 @@ Invariants protected here:
 - Tab completion completes field names only, uniquely or to the common prefix.
 """
 
-from __future__ import annotations
-
 from collections.abc import Mapping, Sequence
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
