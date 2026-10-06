@@ -1,1 +1,0 @@
-- **Journal retention per ADR-008** (`scripts/deploy/vps_bootstrap.sh` step 9): bootstrap writes a journald drop-in capping the journal at 2G and 180 days, and restarts journald only when the file changed. It takes effect on hermes-01 once bootstrap is re-run. Closes #512.
