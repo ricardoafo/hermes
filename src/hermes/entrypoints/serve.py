@@ -581,6 +581,38 @@ def _wire_composition(
     pre_registration, fee_rows = _load_experiment(experiment_root)
 
     connection = open_ledger(db_target)
+    # Any failure after the ledger opened (a migration refused, an adapter that
+    # cannot be built) must close it, or the connection leaks (#855).
+    try:
+        return _wire_on_ledger(
+            config,
+            connection,
+            env_snapshot=env_snapshot,
+            pre_registration=pre_registration,
+            fee_rows=fee_rows,
+            feed=feed,
+            clock=clock,
+            orderbooks=orderbooks,
+            fx=fx,
+        )
+    except BaseException:
+        connection.close()
+        raise
+
+
+def _wire_on_ledger(
+    config: HermesConfig,
+    connection: sqlite3.Connection,
+    *,
+    env_snapshot: Mapping[str, str],
+    pre_registration: PreRegistration,
+    fee_rows: list[FeeScheduleRow],
+    feed: ClosedBarFeedPort | None,
+    clock: ClockPort | None,
+    orderbooks: OrderbookSnapshotPort | None,
+    fx: FxRateProviderPort | None,
+) -> Composition:
+    """Wire everything that needs the open ledger; the caller closes it on failure."""
     ledger = SqliteLedger(connection)
 
     wall: ClockPort = clock if clock is not None else WallClock()
@@ -596,13 +628,8 @@ def _wire_composition(
         seed_capital_once(ledger, strategy_id, capital, now=wall.now())
         recorded_seed = ledger.capital_seed(strategy_id)
     except LedgerError as exc:
-        connection.close()
         raise StartupError(f"cannot record the start capital in the ledger: {exc.msg}") from exc
-    try:
-        tracker = _rebuild_tracker(ledger, seed, strategy_id)
-    except StartupError:
-        connection.close()
-        raise
+    tracker = _rebuild_tracker(ledger, seed, strategy_id)
     fill_model = OrderbookWalkFillModel()
     books = (
         orderbooks
@@ -630,7 +657,6 @@ def _wire_composition(
             not_before=None if recorded_seed is None else recorded_seed.seeded_at,
         )
     except LedgerError as exc:
-        connection.close()
         raise StartupError(f"cannot read the fill-quality rows: {exc.msg}") from exc
     pairs = config.market_data.parsed_pairs()
     strategies: dict[Pair, StrategyPort] = {pair: SwingStrategyAdapter() for pair in pairs}
