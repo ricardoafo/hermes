@@ -24,6 +24,10 @@ What one process does:
   pair's open position from the ledger, then evaluates every later bar as if
   it were live. A restart therefore neither re-notifies, skips a bar nor
   forgets an open position (change ``309-serve-bar-loop`` D-6).
+- Beside the bar loop, a sampler records each pair's spread every few
+  minutes, and each completed 1D bar records the 30-day pair correlations
+  (#835). These RO-01 / RO-02 inputs are recorded only: no rule reads them,
+  and a failed sample or correlation is logged and skipped.
 - A notifier outage is logged and sent to Sentry; it never stops the loop.
   Every other error exits 1 so systemd restarts the unit. Exit codes 2 and 3
   are reserved for usage and config errors found before the loop starts.
@@ -95,6 +99,8 @@ from hermes.application.messages.eur_rate import EurRateLookup
 from hermes.application.notification_router import RouterConfig
 from hermes.application.order_router.sizing import SizingPolicy
 from hermes.application.portfolio.tracker import PortfolioTracker
+from hermes.application.risk_inputs.correlation_recorder import CorrelationRecorder
+from hermes.application.risk_inputs.spread_sampler import SPREAD_SAMPLE_SECONDS, SpreadSampler
 from hermes.application.signal_notifier import SignalNotifier
 from hermes.application.strategy_protocol.kill_trigger_evaluator import KillTriggerEvaluator
 from hermes.application.strategy_protocol.preregistration import PreRegistration
@@ -252,6 +258,8 @@ class Composition:
             was injected.
         eur_pricer: The EUR rate lookups shared by the trade recorder and the
             start-up pricing of pending values.
+        spread_sample_seconds: Step of the spread sampler that records the
+            RO-02 input (#835); no rule reads the samples.
     """
 
     config: HermesConfig
@@ -272,6 +280,7 @@ class Composition:
     orderbooks: OrderbookSnapshotPort
     fx_adapter: FrankfurterAdapter | None
     eur_pricer: EurPricer
+    spread_sample_seconds: float = SPREAD_SAMPLE_SECONDS
 
 
 def _eur_rate_lookup(pricer: EurPricer) -> EurRateLookup:
@@ -653,6 +662,7 @@ async def run(composition: Composition, shutdown: asyncio.Event) -> int:
     try:
         async with asyncio.TaskGroup() as group:
             group.create_task(_bar_loop(composition, shutdown))
+            group.create_task(_sample_spreads(composition, shutdown))
     except* Exception as failures:
         code = 1
         for exc in failures.exceptions:
@@ -794,6 +804,22 @@ async def _bar_loop(c: Composition, shutdown: asyncio.Event) -> None:
     finally:
         pricing.cancel()
         await asyncio.gather(pricing, return_exceptions=True)
+
+
+async def _sample_spreads(c: Composition, shutdown: asyncio.Event) -> None:
+    """Record each pair's spread on a fixed step beside the bar loop (#835).
+
+    Record only: no rule reads the samples. The sampler logs and skips every
+    failed sample, so this task never ends the TaskGroup; the TaskGroup
+    cancels it when the bar loop fails.
+    """
+    await SpreadSampler(
+        books=c.orderbooks,
+        store=c.ledger,
+        clock=c.clock,
+        pairs=c.pairs,
+        interval_seconds=c.spread_sample_seconds,
+    ).run(shutdown)
 
 
 async def _anext(stream: AsyncIterator[Bar]) -> Bar:
@@ -963,6 +989,7 @@ class _BarLoop:
         # values back; nothing in the strategy does. Stored before BarProcessed
         # so a processed bar always has its values on record.
         stored = c.ledger.record_live_bar(bar)
+        self._record_correlations(bar)
         # The console reads the portfolio from the ledger, not from this process (#387).
         c.ledger.record_portfolio_mark(
             PortfolioMark(
@@ -996,6 +1023,32 @@ class _BarLoop:
             next_due=self.next_due(stream).isoformat(),
             **_entry_check_fields(c.strategies[bar.pair]),
         )
+
+    def _record_correlations(self, bar: Bar) -> None:
+        """Store the 30-day pair correlations when ``bar`` completes a day (#835).
+
+        Record only: no rule reads them. A failure is logged and skipped, so it
+        never stops the loop; the journal gets counts, never the values.
+        """
+        if bar.interval is not KlineInterval.D1:
+            return
+        recorder = CorrelationRecorder(bars=self.c.ledger, store=self.c.ledger, pairs=self.c.pairs)
+        try:
+            written = recorder.record_for(bar)
+        except Exception as exc:
+            _log.warning(
+                "serve.correlations.failed",
+                close_time=bar.close_time.isoformat(),
+                error=type(exc).__name__,
+                detail=str(exc),
+            )
+            return
+        if written:
+            _log.info(
+                "serve.correlations.recorded",
+                close_time=bar.close_time.isoformat(),
+                count=written,
+            )
 
     def _record_stop(self, bar: Bar) -> None:
         """Store the stop the strategy evaluated on this bar, when it holds a position (#388).
