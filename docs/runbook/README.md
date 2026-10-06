@@ -63,6 +63,8 @@ encodes the fix so this doesn't happen again.
   dependency, Action, runtime or the VPS OS (ADR-010)
 - [`failover-to-kraken.md`](failover-to-kraken.md) — monthly Binance to
   Kraken drill and the real cutover (ADR-004, #31)
+- [`secret-rotation.md`](secret-rotation.md) — rotate a credential in
+  GitHub, on the VPS and locally, then revoke the old one (#679)
 
 ## Planned entries (Phase 0+)
 

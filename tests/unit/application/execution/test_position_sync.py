@@ -1,10 +1,13 @@
-"""Tests for ``sync_after_signal``, the rule serve and the replay share (#707).
+"""Tests for ``sync_after_signal``, the rule serve and the replay share (#707, #706).
 
 Invariants protected here:
 
 - an ENTRY that did not fill restores the strategy to flat, exactly once;
-- a filled ENTRY leaves the strategy's position untouched;
-- an EXIT, filled or not, leaves it untouched (a declined exit is #706).
+- an EXIT that did not fill restores the strategy to the position the
+  portfolio still holds, with its original entry time and price, exactly once;
+- an EXIT not filled for a pair the portfolio does not hold leaves it flat;
+- a filled signal, ENTRY or EXIT, leaves the strategy's position untouched and
+  never looks the held position up.
 """
 
 from __future__ import annotations
@@ -22,6 +25,11 @@ from hermes.domain.risk.state import PortfolioState
 from hermes.domain.strategy.signal import OpenPosition, SignalKind, SignalSide, StrategySignal
 
 _AT = datetime(2024, 1, 2, tzinfo=UTC)
+_HELD = OpenPosition(entry_time=datetime(2024, 1, 1, 4, tzinfo=UTC), entry_price=Decimal("95"))
+
+
+def _never() -> OpenPosition | None:
+    raise AssertionError("the held position must not be looked up")
 
 
 @dataclass
@@ -57,16 +65,27 @@ def _signal(kind: SignalKind) -> StrategySignal:
 def test_unfilled_entry_restores_the_strategy_to_flat_once() -> None:
     """A refused entry gives exactly one restore, to flat (``None``)."""
     strategy = _Strategy()
-    sync_after_signal(strategy, _signal(SignalKind.ENTRY), filled=False)
+    sync_after_signal(strategy, _signal(SignalKind.ENTRY), filled=False, held=_never)
     assert strategy.restored == [None]
 
 
-@pytest.mark.parametrize(
-    ("kind", "filled"),
-    [(SignalKind.ENTRY, True), (SignalKind.EXIT, True), (SignalKind.EXIT, False)],
-)
-def test_filled_entries_and_all_exits_restore_nothing(kind: SignalKind, filled: bool) -> None:
-    """Only the refused-entry case touches the strategy; exits stay as they were (#706)."""
+def test_unfilled_exit_restores_the_held_position_once() -> None:
+    """A declined exit puts the strategy back in the position still held (#706)."""
     strategy = _Strategy()
-    sync_after_signal(strategy, _signal(kind), filled=filled)
+    sync_after_signal(strategy, _signal(SignalKind.EXIT), filled=False, held=lambda: _HELD)
+    assert strategy.restored == [_HELD]
+
+
+def test_unfilled_exit_for_a_pair_not_held_leaves_the_strategy_flat() -> None:
+    """An exit for a position already closed restores flat, not a phantom position."""
+    strategy = _Strategy()
+    sync_after_signal(strategy, _signal(SignalKind.EXIT), filled=False, held=lambda: None)
+    assert strategy.restored == [None]
+
+
+@pytest.mark.parametrize("kind", [SignalKind.ENTRY, SignalKind.EXIT])
+def test_filled_signals_restore_nothing(kind: SignalKind) -> None:
+    """A filled signal already matches the portfolio, so the strategy is left as it is."""
+    strategy = _Strategy()
+    sync_after_signal(strategy, _signal(kind), filled=True, held=_never)
     assert strategy.restored == []

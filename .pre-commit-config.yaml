@@ -296,6 +296,13 @@ repos:
         always_run: true
 
       # Self-test of pr-preflight — runs on every commit that touches it.
+      - id: secret-ages-self-test
+        name: secret-ages self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/secret-ages.sh'
+        language: system
+        files: ^scripts/dev/secret-ages\.sh$
+        pass_filenames: false
+
       - id: pr-preflight-self-test
         name: pr-preflight self-test
         entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/pr-preflight.sh'
