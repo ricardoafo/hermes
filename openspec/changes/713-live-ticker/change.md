@@ -71,9 +71,12 @@ the supervisor, briefs, notifications or any AI. No new dependency.
 - **Decision**: `LiveTickerPort` is a `Protocol` with `get_ticker(pair) ->
   Ticker`. The console passes `KrakenPublicAdapter.create()`; tests pass a
   fake with the same method.
-- **Alternatives**: a console-specific `LivePrice` value (would need a new
-  adapter method).
-- **Rationale**: no adapter change, no new dependency, one seam to fake.
+- **Alternatives**: the existing `PriceLookupPort` (async, served by the
+  Binance ticker adapter; the spec names Kraken's `get_ticker`, and the worker
+  is a thread); a console-specific `LivePrice` value (a new adapter method).
+- **Rationale**: no adapter change, no new dependency, one seam to fake. The
+  application module re-exports the port, so `tui.py` still imports no port
+  or adapter (its existing guard test).
 - **Cost of reversal**: LOW.
 
 ### D-2: the cadence is decided by the 1 s clock tick, the fetch runs in a thread
@@ -191,8 +194,9 @@ src/hermes/application/console/live.py     TickOutcome, LiveQuote, LiveStatus,
                                            LiveBoard, TickerPoller,
                                            LivePosition, live_position,
                                            LiveTotal, live_total
-src/hermes/entrypoints/tui_live.py         LiveLook, live_tag, market_rows,
-                                           eur_rate
+src/hermes/entrypoints/tui_live.py         LiveLook, live_tag, market_rows, eur_rate,
+                                           live_portfolio_lines, live_detail_line
+src/hermes/entrypoints/tui_home.py         LiveRows; position_rows(live=...)
 src/hermes/entrypoints/tui.py              1 s tick -> poller.due -> run_worker(thread)
                                            -> fetch -> call_from_thread(apply)
                                            -> board.apply -> flash + _paint_live()
@@ -206,7 +210,9 @@ live cards without reading the ledger again.
 
 1. Every acceptance criterion above passes (`tests/unit/application/console/test_live.py`,
    `tests/unit/entrypoints/test_tui_live.py`, `tests/unit/entrypoints/test_tui_live_screen.py`,
-   `tests/unit/test_live_import_guard.py`, `tests/unit/adapters/console/test_ledger_read_model.py`).
+   `tests/unit/test_live_import_guard.py`, `tests/unit/entrypoints/test_console.py`,
+   `tests/unit/entrypoints/test_tui_charts.py`,
+   `tests/unit/adapters/console/test_ledger_read_model.py`).
 2. `bash scripts/dev/pr-preflight.sh` → all checks green.
 3. All CI jobs green on the PR.
 
