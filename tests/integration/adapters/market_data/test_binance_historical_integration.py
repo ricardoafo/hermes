@@ -131,10 +131,7 @@ def test_stream_bars_yields_bars_from_zip_fixture(tmp_path: Path) -> None:
     adapter = BinanceHistoricalAdapter.create(data_dir=tmp_path)
 
     async def _collect() -> list:
-        bars = []
-        async for bar in adapter.stream_bars(_BTC_USDT, KlineInterval.M1):
-            bars.append(bar)
-        return bars
+        return [bar async for bar in adapter.stream_bars(_BTC_USDT, KlineInterval.M1)]
 
     bars = anyio.run(_collect)
     assert len(bars) == 2, f"Expected 2 bars from 2 klines rows, got {len(bars)}"
@@ -169,10 +166,7 @@ def test_stream_bars_multiple_zip_files_merged_in_order(tmp_path: Path) -> None:
     adapter = BinanceHistoricalAdapter.create(data_dir=tmp_path)
 
     async def _collect() -> list:
-        bars = []
-        async for bar in adapter.stream_bars(_BTC_USDT, KlineInterval.M1):
-            bars.append(bar)
-        return bars
+        return [bar async for bar in adapter.stream_bars(_BTC_USDT, KlineInterval.M1)]
 
     bars = anyio.run(_collect)
     assert len(bars) == 2, f"Expected 2 bars from 2 ZIP files, got {len(bars)}"
@@ -202,10 +196,7 @@ def test_adapter_to_consolidator_pipeline(tmp_path: Path) -> None:
     adapter = BinanceHistoricalAdapter.create(data_dir=tmp_path)
 
     async def _collect_trades() -> list:
-        trades = []
-        async for trade in adapter.stream_trades(_BTC_USDT):
-            trades.append(trade)
-        return trades
+        return [trade async for trade in adapter.stream_trades(_BTC_USDT)]
 
     trades = anyio.run(_collect_trades)
     assert len(trades) == 5, f"Expected 5 trades from fixture, got {len(trades)}"

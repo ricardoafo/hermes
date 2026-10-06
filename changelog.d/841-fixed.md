@@ -1,0 +1,1 @@
+- Market data, exchange and FX parsers now refuse NaN and infinite numbers and out-of-range timestamps with their own error, so a broken row fails the feed cleanly instead of escaping as a raw decimal or overflow error (issue #841).

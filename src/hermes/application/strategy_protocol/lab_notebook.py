@@ -116,8 +116,7 @@ class LabNotebookEntry:
         # Observed metrics section
         if self.observed_metrics:
             lines.append("**Observed metrics**:")
-            for m in self.observed_metrics:
-                lines.append(f"- {m}")
+            lines.extend(f"- {m}" for m in self.observed_metrics)
         else:
             lines.append("**Observed metrics**: N/A (no metrics this entry)")
         lines.append("")
@@ -125,15 +124,13 @@ class LabNotebookEntry:
         # Decision section
         if self.decision:
             lines.append("**Decision**:")
-            for d in self.decision:
-                lines.append(f"- {d}")
+            lines.extend(f"- {d}" for d in self.decision)
             lines.append("")
 
         # Rationale section (always present)
         lines.append("**Rationale**:")
         if self.rationale:
-            for r in self.rationale:
-                lines.append(f"- {r}")
+            lines.extend(f"- {r}" for r in self.rationale)
         else:
             lines.append("- (no rationale provided)")
         lines.append("")
@@ -141,8 +138,7 @@ class LabNotebookEntry:
         # Files touched section
         if self.files_touched:
             lines.append("**Files touched**:")
-            for f in self.files_touched:
-                lines.append(f"- {f}")
+            lines.extend(f"- {f}" for f in self.files_touched)
             lines.append("")
 
         return "\n".join(lines)

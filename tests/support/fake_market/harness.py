@@ -152,6 +152,7 @@ def serve(
     book_outages: list[tuple[datetime, datetime]] | None = None,
     book_step_bps: Decimal = Decimal(1),
     late_bars: list[tuple[Pair, KlineInterval, datetime, datetime]] | None = None,
+    corrupt_bars: list[tuple[Pair, KlineInterval, datetime, datetime, datetime]] | None = None,
     fx_down: bool = False,
     notifier_error: Exception | None = None,
     klines_outages: list[tuple[datetime, datetime]] | None = None,
@@ -172,6 +173,7 @@ def serve(
         book_outages: Windows when the depth endpoint answers HTTP 503.
         book_step_bps: Gap between depth levels; wider means a thinner book.
         late_bars: Bars the klines endpoint publishes late; see ``FakeExchange``.
+        corrupt_bars: Bars served with a NaN close for a while; see ``FakeExchange``.
         fx_down: Make Frankfurter answer HTTP 503 for the whole run.
         notifier_error: Make every Telegram send raise this.
         klines_outages: Windows when the klines endpoint answers HTTP 503.
@@ -195,6 +197,7 @@ def serve(
         book_outages=book_outages or [],
         book_step_bps=book_step_bps,
         late_bars=late_bars or [],
+        corrupt_bars=corrupt_bars or [],
         fx_down=fx_down,
         klines_outages=klines_outages or [],
         fx_outages=fx_outages or [],

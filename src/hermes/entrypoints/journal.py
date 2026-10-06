@@ -189,12 +189,13 @@ def _dispatch(
             }
             stream.write(json.dumps(payload, default=_json_default) + "\n")
             return 0
-        for d in report.reviewable:
-            stream.write(f"DUE     {d.entry_id}  {d.review_on}  {d.decision}\n")
-        for d in report.sealed:
-            stream.write(
-                f"SEALED  {d.entry_id}  {d.review_on}  {d.decision} (until certification)\n"
-            )
+        stream.writelines(
+            f"DUE     {d.entry_id}  {d.review_on}  {d.decision}\n" for d in report.reviewable
+        )
+        stream.writelines(
+            f"SEALED  {d.entry_id}  {d.review_on}  {d.decision} (until certification)\n"
+            for d in report.sealed
+        )
         if not report.reviewable and not report.sealed:
             stream.write("Nothing due.\n")
     elif args.as_json:
@@ -203,8 +204,7 @@ def _dispatch(
             + "\n"
         )
     else:
-        for entry in journal.entries():
-            stream.write(_line(entry) + "\n")
+        stream.writelines(_line(entry) + "\n" for entry in journal.entries())
     return 0
 
 

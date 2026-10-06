@@ -38,7 +38,7 @@ def _step_run() -> str:
 
 def _python_block() -> str:
     """Return the step's inline Python program (the ``<<'PY'`` heredoc)."""
-    match = re.search(r"<<'PY'\n(.*?)\n\s*PY\n", _step_run(), re.S)
+    match = re.search(r"<<'PY'\n(.*?)\n\s*PY\n", _step_run(), re.DOTALL)
     assert match is not None
     return textwrap.dedent(match.group(1))
 

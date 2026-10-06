@@ -47,7 +47,9 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _CONFIG = _PROJECT_ROOT / "config"
 _NO_LINK = _PROJECT_ROOT / "no-such-release-link"
 _FLIPPED_AT = datetime(2026, 10, 3, 12, 22, tzinfo=UTC)
-_PNL_WORDS = re.compile(r"p&l|pnl|profit|loss|equity|sharpe|drawdown|win rate|return", re.I)
+_PNL_WORDS = re.compile(
+    r"p&l|pnl|profit|loss|equity|sharpe|drawdown|win rate|return", re.IGNORECASE
+)
 
 
 def _run(

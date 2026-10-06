@@ -886,10 +886,13 @@ def _row_to_kline(*, row: Any, pair: Pair, interval: KlineInterval) -> Kline:
     close_dec = _decimal_or_raise(row[4], field_name="Kraken OHLC close")
     volume_dec = _decimal_or_raise(row[6], field_name="Kraken OHLC volume")
 
-    open_time = datetime.fromtimestamp(int(open_time_s), tz=UTC)
-    close_time = datetime.fromtimestamp(
-        int(open_time_s) + _SECONDS_PER_MINUTE * _interval_to_minutes(interval), tz=UTC
-    )
+    try:
+        open_time = datetime.fromtimestamp(int(open_time_s), tz=UTC)
+        close_time = datetime.fromtimestamp(
+            int(open_time_s) + _SECONDS_PER_MINUTE * _interval_to_minutes(interval), tz=UTC
+        )
+    except (OverflowError, OSError, ValueError) as exc:
+        raise KrakenPublicError(f"Kraken OHLC open_time out of range: {open_time_s!r}") from exc
     base_asset: Currency = pair.base
     try:
         return Kline(
@@ -982,6 +985,9 @@ def _decimal_or_raise(raw: Any, *, field_name: str) -> Decimal:
     if not isinstance(raw, (str, int, float)):
         raise KrakenPublicError(f"Kraken field {field_name!r} not string/numeric: {raw!r}")
     try:
-        return Decimal(str(raw))
+        value = Decimal(str(raw))
     except InvalidOperation as exc:
         raise KrakenPublicError(f"Kraken field {field_name!r} not a decimal: {raw!r}") from exc
+    if not value.is_finite():
+        raise KrakenPublicError(f"Kraken field {field_name!r} is not a finite number: {raw!r}")
+    return value

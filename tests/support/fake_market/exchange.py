@@ -84,6 +84,10 @@ class FakeExchange:
         book_step_bps: Gap between depth levels; wider means a thinner book.
         late_bars: ``(pair, interval, open_time, shown_from)``: the bar is left
             out of klines answers until ``shown_from``, as if published late.
+        corrupt_bars: ``(pair, interval, open_time, broken_from, clean_from)``:
+            the bar's close is served as ``"NaN"`` from ``broken_from`` until
+            ``clean_from``, as if the feed published a broken row and
+            corrected it later.
         fx_down: When ``True`` Frankfurter answers HTTP 503.
         klines_outages: ``(start, end)`` windows when klines answer HTTP 503.
         fx_outages: ``(start, end)`` windows when Frankfurter answers HTTP 503.
@@ -101,6 +105,9 @@ class FakeExchange:
     book_outages: list[tuple[datetime, datetime]] = field(default_factory=list)
     book_step_bps: Decimal = Decimal(1)
     late_bars: list[tuple[Pair, KlineInterval, datetime, datetime]] = field(default_factory=list)
+    corrupt_bars: list[tuple[Pair, KlineInterval, datetime, datetime, datetime]] = field(
+        default_factory=list
+    )
     fx_down: bool = False
     klines_outages: list[tuple[datetime, datetime]] = field(default_factory=list)
     fx_outages: list[tuple[datetime, datetime]] = field(default_factory=list)
@@ -191,13 +198,19 @@ class FakeExchange:
         doubled = {
             open_time for p, i, open_time in self.duplicate_bars if (p, i) == (pair, interval)
         }
+        broken = {
+            open_time
+            for p, i, open_time, broken_from, clean_from in self.corrupt_bars
+            if (p, i) == (pair, interval) and broken_from <= now < clean_from
+        }
         # The forming candle is served with its scripted values: the adapter
         # drops it by the closed-bar rule, so its numbers are never read.
         return _json(
             [
                 row
                 for b in rows
-                for row in [wire.kline_row(b)] * (2 if b.open_time in doubled else 1)
+                for row in [_row(b, broken=b.open_time in broken)]
+                * (2 if b.open_time in doubled else 1)
             ]
         )
 
@@ -249,6 +262,12 @@ class _Stream:
 
 def _inside(now: datetime, windows: list[tuple[datetime, datetime]]) -> bool:
     return any(start <= now < end for start, end in windows)
+
+
+def _row(bar: Bar, *, broken: bool) -> list[object]:
+    """Return the klines row for ``bar``, with a ``"NaN"`` close when ``broken``."""
+    row = wire.kline_row(bar)
+    return [*row[:4], "NaN", *row[5:]] if broken else row
 
 
 def _json(body: object, status: int = 200) -> httpx.Response:

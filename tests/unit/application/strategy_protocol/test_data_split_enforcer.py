@@ -188,8 +188,9 @@ class TestDataSplitEnforcerBars:
         bars_received: list[Bar] = []
 
         async def run() -> None:
-            async for bar in enforcer.stream_bars(_PAIR, KlineInterval.H1):
-                bars_received.append(bar)
+            bars_received.extend(
+                [bar async for bar in enforcer.stream_bars(_PAIR, KlineInterval.H1)]
+            )
 
         asyncio.run(run())
         assert len(bars_received) == 1, (
@@ -203,8 +204,9 @@ class TestDataSplitEnforcerBars:
         bars_received: list[Bar] = []
 
         async def run() -> None:
-            async for bar in enforcer.stream_bars(_PAIR, KlineInterval.H1):
-                bars_received.append(bar)
+            bars_received.extend(
+                [bar async for bar in enforcer.stream_bars(_PAIR, KlineInterval.H1)]
+            )
 
         asyncio.run(run())
         assert len(bars_received) == 1, (
@@ -218,8 +220,9 @@ class TestDataSplitEnforcerBars:
         bars_received: list[Bar] = []
 
         async def run() -> None:
-            async for bar in enforcer.stream_bars(_PAIR, KlineInterval.H1):
-                bars_received.append(bar)
+            bars_received.extend(
+                [bar async for bar in enforcer.stream_bars(_PAIR, KlineInterval.H1)]
+            )
 
         asyncio.run(run())
         assert len(bars_received) == 1, (
@@ -233,8 +236,9 @@ class TestDataSplitEnforcerBars:
 
         async def run() -> None:
             with certification_context():
-                async for bar in enforcer.stream_bars(_PAIR, KlineInterval.H1):
-                    bars_received.append(bar)
+                bars_received.extend(
+                    [bar async for bar in enforcer.stream_bars(_PAIR, KlineInterval.H1)]
+                )
 
         asyncio.run(run())
         assert len(bars_received) == 1, (
@@ -269,8 +273,7 @@ class TestDataSplitEnforcerTrades:
 
         async def run() -> None:
             with certification_context():
-                async for trade in enforcer.stream_trades(_PAIR):
-                    trades_received.append(trade)
+                trades_received.extend([trade async for trade in enforcer.stream_trades(_PAIR)])
 
         asyncio.run(run())
         assert len(trades_received) == 1, (
@@ -283,8 +286,7 @@ class TestDataSplitEnforcerTrades:
         trades_received: list[Trade] = []
 
         async def run() -> None:
-            async for trade in enforcer.stream_trades(_PAIR):
-                trades_received.append(trade)
+            trades_received.extend([trade async for trade in enforcer.stream_trades(_PAIR)])
 
         asyncio.run(run())
         assert len(trades_received) == 1, (
