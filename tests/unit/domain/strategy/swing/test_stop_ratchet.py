@@ -266,3 +266,31 @@ class TestStopNeverFallsInAPosition:
         for position in _positions(_path(steps)):
             stops = [record.stop_price for _, record in position]
             assert stops == sorted(stops)
+
+
+class TestRetryAfterADeclinedExitKeepsTheStop:
+    """A declined exit restored without ``last_stop`` keeps the stop in force (#706, #680)."""
+
+    def test_the_retry_bar_exits_at_the_held_stop_under_a_lower_level(self) -> None:
+        """Exit at 95 declined, then low 94.8: the retry fires at 95, not at the lower raw level.
+
+        Replay and the parity check restore the held position with no stored
+        stop; the adapter keeps the stop it recorded for that entry, so the
+        retry decides as serve does (ADR-011).
+        """
+        adapter = _held(None)
+        _record(adapter, _h4(_FLAT_BARS))
+        declined, _ = _record(adapter, _h4(_FLAT_BARS + 1, low="94.5"))
+        assert declined is not None
+        adapter.restore_position(
+            OpenPosition(entry_time=_h4(_ENTRY_INDEX).close_time, entry_price=Decimal("100"))
+        )
+
+        signal, record = _record(adapter, _h4(_FLAT_BARS + 2, low="94.8"))
+
+        assert signal is not None
+        assert (signal.exit_reason, signal.stop_price, record.chandelier_level) == (
+            "chandelier",
+            Decimal("95"),
+            Decimal("90.320"),
+        )
