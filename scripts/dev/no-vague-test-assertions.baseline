@@ -65,17 +65,6 @@ tests/unit/adapters/market_data/test_binance_ticker.py::test_satisfies_the_port 
 tests/unit/adapters/market_data/test_binance_vision_daily.py::test_adapter_satisfies_the_port U6
 tests/unit/adapters/market_data/test_consolidator.py::test_consolidate_empty_stream_yields_no_bars U3
 tests/unit/adapters/market_data/test_consolidator.py::test_consolidate_single_trade_produces_one_bar U3
-tests/unit/adapters/notifier/test_slack_adapter.py::test_adapter_is_notifier_port_instance U6
-tests/unit/adapters/notifier/test_slack_adapter.py::test_daily_digest_uploads_csv_via_three_step_flow U10
-tests/unit/adapters/notifier/test_slack_adapter.py::test_notifier_error_inherits_from_infra_error U3
-tests/unit/adapters/notifier/test_slack_adapter.py::test_notify_report_empty_attachments_list_makes_only_one_post U10
-tests/unit/adapters/notifier/test_slack_adapter.py::test_notify_urgent_posts_to_chat_post_message U10
-tests/unit/adapters/notifier/test_slack_adapter.py::test_notify_without_attachments_makes_exactly_one_post U10
-tests/unit/adapters/notifier/test_telegram_adapter.py::test_adapter_is_notifier_port_instance U6
-tests/unit/adapters/notifier/test_telegram_adapter.py::test_notifier_error_inherits_from_infra_error U3
-tests/unit/adapters/notifier/test_telegram_adapter.py::test_notify_report_does_not_call_telegram_api U10
-tests/unit/adapters/notifier/test_telegram_adapter.py::test_notify_report_logs_warning_with_correlation_tail U3
-tests/unit/adapters/notifier/test_telegram_adapter.py::test_notify_urgent_posts_to_send_message_endpoint U10
 tests/unit/adapters/trial_log/test_jsonl_file.py::test_adapter_satisfies_the_port U6
 tests/unit/adapters/trial_log/test_jsonl_file.py::test_removing_the_last_line_is_not_detectable_by_the_chain U3
 tests/unit/application/calibration/test_certification_gates.py::test_win_rate_boundary_passes U3
