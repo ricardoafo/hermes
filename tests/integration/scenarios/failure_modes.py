@@ -243,8 +243,16 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             ),
         ),
         FailureMode(
-            "The FX answer has the wrong date or base currency",
-            gap="issue #859: neither is checked; inferred, untested",
+            "The FX answer is for another base currency or a later day",
+            proved_by=(
+                _FX + "TestAnswerMatchesTheQuestion::test_a_response_for_another_base_raises",
+                _FX
+                + "TestAnswerMatchesTheQuestion::test_a_rate_dated_after_the_requested_day_raises",
+            ),
+        ),
+        FailureMode(
+            "The FX answer is dated well before the fill day",
+            gap="issue #859: any earlier date is accepted; the allowed gap is a tax-rule call",
         ),
         FailureMode(
             "A slow FX service stalls the bar loop",
