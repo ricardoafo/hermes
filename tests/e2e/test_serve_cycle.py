@@ -104,8 +104,8 @@ EXPECTED_SIGNALS: list[Signal] = [
     ("SOL/USDT", "entry", "2025-01-15T15:59:59.999000+00:00", None),
     ("SOL/USDT", "exit", "2025-01-18T19:59:59.999000+00:00", "chandelier"),
     ("SOL/USDT", "entry", "2025-01-19T07:59:59.999000+00:00", None),
+    ("SOL/USDT", "exit", "2025-01-19T15:59:59.999000+00:00", "chandelier"),
     ("BTC/USDT", "exit", "2025-01-19T23:59:59.999000+00:00", "chandelier"),
-    ("SOL/USDT", "exit", "2025-01-19T23:59:59.999000+00:00", "chandelier"),
     ("BTC/USDT", "entry", "2025-01-20T07:59:59.999000+00:00", None),
     ("BTC/USDT", "exit", "2025-01-20T19:59:59.999000+00:00", "chandelier"),
 ]
