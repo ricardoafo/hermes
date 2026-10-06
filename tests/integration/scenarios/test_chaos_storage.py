@@ -228,14 +228,6 @@ def test_a_restart_after_a_storage_error_mid_bar_trades_once(
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason=(
-        "issue #853: SqliteLedger rolls back only on sqlite3.Error, so a non-SQLite error "
-        "mid-write leaves rows the next write commits"
-    ),
-)
 def test_a_non_sqlite_error_mid_write_leaves_nothing_for_the_next_commit(
     run_scenario: RunScenario,
 ) -> None:

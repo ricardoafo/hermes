@@ -110,12 +110,14 @@ def _apply_one(conn: sqlite3.Connection, sql_file: Path) -> None:
     # executescript() commits any open transaction and then runs in autocommit,
     # so without an explicit BEGIN a failure half-way would keep the first
     # statements. An explicit BEGIN keeps the script and its bookkeeping row in
-    # one transaction, committed together or rolled back together.
+    # one transaction, committed together or rolled back together. Any error
+    # rolls back, not only SQLite ones: a transaction left open would be
+    # committed by the connection's next write (issue #853).
     try:
         conn.executescript(f"BEGIN;\n{script}\n;")
         conn.execute("INSERT INTO schema_migrations (filename) VALUES (?)", (sql_file.name,))
         conn.commit()
-    except sqlite3.Error:
+    except BaseException:
         if conn.in_transaction:
             conn.rollback()
         raise
@@ -172,6 +174,18 @@ def _check_integrity(conn: sqlite3.Connection, path: Path) -> None:
         raise LedgerError(msg=f"snapshot {path} failed integrity_check: {check!r}")
 
 
+def _unused_path(path: Path) -> Path:
+    # Names have one-second resolution, so two snapshots in one second would
+    # share a name, and the backup API would overwrite the first rollback
+    # point with the second (#865).
+    candidate = path
+    counter = 2
+    while candidate.exists():
+        candidate = path.with_stem(f"{path.stem}-{counter}")
+        counter += 1
+    return candidate
+
+
 def _snapshot(conn: sqlite3.Connection, snapshot_path: Path) -> None:
     snapshot_path.parent.mkdir(parents=True, exist_ok=True)
     target = sqlite3.connect(snapshot_path)
@@ -200,6 +214,8 @@ def migrate_with_snapshot(
         snapshot_dir: Where the snapshot is written.
         migrations_dir: Directory to scan. Defaults to :data:`MIGRATIONS_DIR`.
         now: Timestamp for the snapshot name. Defaults to the current UTC time.
+            A name already taken gets a ``-2``, ``-3`` ... suffix; an existing
+            snapshot is never overwritten.
 
     Returns:
         The filenames applied, and the snapshot path (``None`` when nothing
@@ -218,7 +234,9 @@ def migrate_with_snapshot(
         if not pending:
             return (), None
         stamp = (now or datetime.now(UTC)).strftime("%Y%m%dT%H%M%SZ")
-        snapshot_path = snapshot_dir / f"{db_path.stem}-pre-{pending[0].stem}-{stamp}.sqlite3"
+        snapshot_path = _unused_path(
+            snapshot_dir / f"{db_path.stem}-pre-{pending[0].stem}-{stamp}.sqlite3"
+        )
         _snapshot(conn, snapshot_path)
         applied: list[str] = []
         for sql_file in pending:

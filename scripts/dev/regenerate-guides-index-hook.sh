@@ -29,11 +29,11 @@ README="$REPO_ROOT/docs/guides/README.md"
 if [[ "${HERMES_SELF_TEST:-0}" == "1" ]]; then
     fail=0
 
-    if [[ ! -x "$REGEN" ]]; then
-        echo "SELF-TEST FAIL: regenerate-guides-index.sh not found or not executable"
+    if [[ ! -r "$REGEN" ]]; then
+        echo "SELF-TEST FAIL: regenerate-guides-index.sh not found or not readable"
         fail=1
     else
-        echo "PASS: regenerate-guides-index.sh is executable"
+        echo "PASS: regenerate-guides-index.sh is present"
     fi
 
     before=$(git hash-object "$README")

@@ -95,12 +95,12 @@ _DEFAULT_START = "2024-01-01"
 _DEFAULT_END = "2024-03-31"
 _DEFAULT_STARTING_EQUITY_USD = Decimal("10000")
 
-# The strategy needs at least 200 daily bars for the EMA(200) regime
-# filter to fire. Load an additional warm-up buffer BEFORE the trading
-# window so the strategy's internal state is populated by the time the
-# window opens. 250 days = ~8 months (plenty for EMA(200) + Donchian(20)
-# 4h + ADX(14) 4h + Chandelier(22) 4h).
-_WARMUP_DAYS = 250
+# The EMA(200) regime filter is seeded from the oldest closes of the
+# strategy's 300-bar daily buffer, so its value depends on how many daily
+# bars it has seen until that buffer is full (issue #880). Serve warms up
+# with 300 daily bars; loading 300 days before the window makes the
+# backtest's first decisions match serve's.
+_WARMUP_DAYS = 300
 
 
 def _parse_pair(sym: str) -> Pair:
