@@ -63,6 +63,7 @@ from tests.support.serve_loop import (
     h4_bar,
     history,
     live,
+    make_h4_bar,
     run_once,
     signal_kinds,
 )
@@ -307,6 +308,38 @@ def test_exit_after_a_restart_closes_the_rebuilt_position(tmp_path: Path) -> Non
 
     sides = [p["side"] for p in _payloads(db, "TradeExecuted")]
     assert (sides, second.tracker.snapshot.positions) == (["BUY", "SELL"], {})
+
+
+def test_restart_restores_the_mark_to_market_peak_equity(tmp_path: Path) -> None:
+    """Invariant (#828, integrity rules 4.1): a restart keeps the peak a bar mark set.
+
+    Bar 12 marks the position at 2400 (the high), bar 13 falls back to 2200.
+    A fills-only rebuild would restart from the seed peak of 5000, so the
+    RO-08 drawdown would read low; the restart must hold the peak boot 1 had.
+    """
+    db = tmp_path / "ledger.sqlite3"
+    first, first_feed = _boot(db, warm_upto=10, live_from=11, live_to=11)
+    first_feed.live_bars = [
+        h4_bar(11),
+        make_h4_bar(12, "2400"),
+        make_h4_bar(13, "2200"),
+    ]
+    run_once(first, first_feed)
+    live_peak = first.tracker.snapshot.peak_equity
+    connection = sqlite3.connect(db)
+    try:
+        (marked_high,) = connection.execute(
+            "SELECT MAX(peak_equity) FROM portfolio_marks"
+        ).fetchone()
+    finally:
+        connection.close()
+
+    second, _ = _boot(db, warm_upto=13, live_from=14, live_to=14)
+    state = second.tracker.state()
+    second.sqlite_connection.close()
+
+    assert live_peak > Decimal("5000")
+    assert (state.peak_value, Decimal(str(marked_high))) == (live_peak, live_peak)
 
 
 def test_bar_re_evaluated_after_a_crash_fills_nothing_twice(tmp_path: Path) -> None:
