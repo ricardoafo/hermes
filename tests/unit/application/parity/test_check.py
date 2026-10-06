@@ -9,6 +9,9 @@ Invariants protected here (openspec/changes/358-parity-check/change.md):
 - a signal on one side only, or executed on one side and declined on the
   other, is a mismatch;
 - the strategy is seeded with the bars before the day, never with the day's;
+- as in serve, a held position is seeded from its entry past any exit declined
+  after it, and an exit declined on the day returns the strategy to that
+  entry (#706);
 - a day with no stored bars, or too little history to warm up, is a data
   error and not a parity verdict.
 """
@@ -18,6 +21,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from dataclasses import replace
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 
@@ -29,7 +33,7 @@ from hermes.domain.fees.fee_schedule import FeeSchedule
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.bar_schedule import order_for_delivery
 from hermes.domain.market_data.kline import KlineInterval
-from hermes.domain.strategy.signal import SignalKind
+from hermes.domain.strategy.signal import OpenPosition, SignalKind
 from hermes.domain.value_objects.pair import Pair
 from hermes.ports.strategy import StrategyPort
 from tests.support.fill_kernel import BTC_USDT, STRATEGY, fees, kernel, seed
@@ -242,6 +246,59 @@ def test_a_position_serve_held_at_the_start_of_the_day_is_restored() -> None:
 
     assert report.mismatches == ()
     assert report.matched == 1
+
+
+def _exit_maker(exit_at: datetime, made: list[ScriptedExit]) -> Callable[[], ScriptedExit]:
+    def make() -> ScriptedExit:
+        strategy = ScriptedExit(exit_at)
+        made.append(strategy)
+        return strategy
+
+    return make
+
+
+def test_a_held_position_is_seeded_from_its_entry_past_a_declined_exit() -> None:
+    """Serve declined an exit before the day; the coin is held, so the entry is seeded (#706)."""
+    entry_at = DAY_START - timedelta(hours=8)
+    declined_at = DAY_START - timedelta(hours=4)
+    exit_at = _FIRST_FOUR_HOUR
+    source = _source(
+        signals=[
+            signal_event(entry_at),
+            signal_event(declined_at, SignalKind.EXIT),
+            signal_event(exit_at, SignalKind.EXIT),
+        ],
+        fills=[trade_event(entry_at + _SEC), trade_event(exit_at + _SEC, TradeSide.SELL)],
+    )
+    made: list[ScriptedExit] = []
+
+    report = _check(source, _exit_maker(exit_at, made))
+
+    assert made[0].seeded_position == OpenPosition(
+        entry_time=entry_at, entry_price=Decimal("2618.45")
+    )
+    assert (report.in_parity, report.matched) == (True, 1)
+
+
+def test_an_exit_declined_on_the_day_returns_the_strategy_to_its_entry() -> None:
+    """A no-book exit leaves the coin held, so the strategy gets its entry back (#706)."""
+    entry_at = DAY_START - timedelta(hours=4)
+    exit_at = _FIRST_FOUR_HOUR
+    bars = [
+        replace(b, volume=Decimal("0")) if b.interval is H4 and b.close_time == exit_at else b
+        for b in day_bars()
+    ]
+    source = FakeSource(
+        bars=[*warmup_bars(), *bars],
+        signals=[signal_event(entry_at), signal_event(exit_at, SignalKind.EXIT)],
+        fills=[trade_event(entry_at + _SEC)],
+    )
+    made: list[ScriptedExit] = []
+
+    report = _check(source, _exit_maker(exit_at, made))
+
+    assert made[0].restored == [OpenPosition(entry_time=entry_at, entry_price=Decimal("2618.45"))]
+    assert (report.in_parity, report.matched) == (True, 1)
 
 
 def test_a_day_without_stored_bars_is_a_data_error() -> None:

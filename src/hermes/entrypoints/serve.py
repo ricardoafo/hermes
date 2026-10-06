@@ -54,6 +54,7 @@ from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from functools import partial
 from pathlib import Path
 from typing import Final
 
@@ -896,21 +897,30 @@ class _BarLoop:
     def _restore_position(
         self, pair: Pair, cursors: Mapping[Stream, datetime]
     ) -> OpenPosition | None:
-        """Rebuild the open position from the ledger, bounded by the 4h cursor.
+        """Rebuild the open position from the ledger, bounded by the 4h cursor."""
+        cursor = cursors.get((pair, KlineInterval.H4))
+        if cursor is None:
+            return None
+        return self._held_position(pair, at_or_before=cursor)
+
+    def _held_position(self, pair: Pair, *, at_or_before: datetime) -> OpenPosition | None:
+        """Return the position the portfolio holds in ``pair``, from its entry signal.
 
         An entry signal that was never filled leaves the portfolio without the
-        pair, so it restores nothing (#707).
+        pair, so it gives nothing (#707). Exits declined after the entry are
+        skipped: the coin is still held, and so is that entry (#706).
         """
-        cursor = cursors.get((pair, KlineInterval.H4))
-        if cursor is None or pair not in self.c.tracker.snapshot.positions:
+        if pair not in self.c.tracker.snapshot.positions:
             return None
-        latest = self.c.ledger.latest_signal_event(self.c.strategy_id, pair, at_or_before=cursor)
-        if latest is None or latest.kind is not SignalKind.ENTRY or latest.entry_price is None:
+        entry = self.c.ledger.latest_signal_event(
+            self.c.strategy_id, pair, at_or_before=at_or_before, kind=SignalKind.ENTRY
+        )
+        if entry is None or entry.entry_price is None:
             return None
-        stop = self.c.ledger.latest_stop_mark(self.c.strategy_id, pair, latest.occurred_at)
+        stop = self.c.ledger.latest_stop_mark(self.c.strategy_id, pair, entry.occurred_at)
         return OpenPosition(
-            entry_time=latest.occurred_at,
-            entry_price=latest.entry_price,
+            entry_time=entry.occurred_at,
+            entry_price=entry.entry_price,
             last_stop=None if stop is None else stop.record.stop_price,
         )
 
@@ -1060,11 +1070,13 @@ class _BarLoop:
         """Simulate the signal's order, log the outcome (never its P&L, D-7), sync the strategy."""
         result = await self.c.executor.execute(signal_, bar, correlation_id=correlation_id)
         _log_execution(bar.pair, signal_.kind, result)
-        # An entry that did not fill leaves the strategy flat again (#707).
+        # A signal that did not fill leaves the strategy in the position the
+        # portfolio holds: flat after an entry (#707), still long after an exit (#706).
         sync_after_signal(
             self.c.strategies[bar.pair],
             signal_,
             filled=isinstance(result.outcome, Executed | AlreadyFilled),
+            held=partial(self._held_position, bar.pair, at_or_before=signal_.signal_time),
         )
 
     async def _notify(self, event: SignalEmitted) -> None:
