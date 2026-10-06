@@ -32,8 +32,9 @@ embed the same `QueryList` instead of writing their own filter.
 
 - Wiring into `hermes tui` or any existing screen: the home screen's activity
   card is a four-row Rich card, not a list, so the first use is a harness.
-- Theme and tokens (issue #711): the widgets carry a few `DEFAULT_CSS` lines
-  the theme overrides.
+- Own colours: the widgets read only the `$hud-*` variables of the console
+  theme (issue #711) and the harness sits in a `HudPanel`, so Neon and Control
+  room restyle them with no colour of their own.
 - Completing values (only field names complete).
 
 ## Decisions

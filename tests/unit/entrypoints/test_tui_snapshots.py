@@ -6,7 +6,9 @@ ultra), only changes when a reviewer accepts the new picture. Each file is
 named ``<view>_<theme>_<cols>x<rows>.svg`` so a PR body can link it directly.
 
 Views: Home on the ``ok-two-positions`` and ``empty`` demo scenarios, the
-Signals placeholder (tab 2) and the theme picker open over Home.
+Signals placeholder (tab 2) and the theme picker open over Home. The
+reusable query list (issue #729) is shown as ``query_activity``: the activity
+harness with ``since:2d`` typed and the facet counts under the bar.
 
 Every app here runs with motion off, a frozen clock and synthetic demo data,
 and never reads or writes the real settings file.
@@ -17,6 +19,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import ClassVar
 
 import pytest
@@ -26,8 +29,12 @@ from syrupy.location import PyTestLocation
 from syrupy.types import SnapshotIndex
 
 from hermes.adapters.console import FixtureReadModel
+from hermes.application.console.render import MADRID
+from hermes.application.console.views import ActivityItem, ActivityKind
 from hermes.entrypoints.tui import HomeApp
+from hermes.entrypoints.tui_query import QueryInput, activity_query_app
 from hermes.entrypoints.tui_settings import ThemeChoice
+from hermes.entrypoints.tui_theme import CONTROL_THEME, NEON_THEME
 
 # The fixtures' read time (14:12 Madrid), well inside Auto's day window.
 _FROZEN = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
@@ -113,3 +120,65 @@ def test_cockpit_svg_snapshot(
     name = f"{view}_{theme_name}_{size[0]}x{size[1]}"
     svg = _svg(scenario, keys, size, theme)
     assert svg == snapshot(extension_class=_NamedSVG, name=name)
+
+
+_QUERY_THEMES: tuple[tuple[str, str], ...] = (("neon", NEON_THEME), ("control", CONTROL_THEME))
+_QUERY = "since:2d"
+
+
+def _stamp(day: int, hour: int, minute: int = 0) -> datetime:
+    return datetime(2026, 10, day, hour, minute, tzinfo=UTC)
+
+
+_QUERY_ITEMS: tuple[ActivityItem, ...] = (
+    ActivityItem(
+        at=_stamp(3, 11, 59), kind=ActivityKind.BAR, text="checked 3 coins · no signal", count=3
+    ),
+    ActivityItem(
+        at=_stamp(3, 8, 1), kind=ActivityKind.RESTART, text="deployed 9f3a1c0 (was 2bc2798)"
+    ),
+    ActivityItem(
+        at=_stamp(3, 7), kind=ActivityKind.WARNING, coin="ETH", text="exchange.slow (Timeout)"
+    ),
+    ActivityItem(
+        at=_stamp(2, 16),
+        kind=ActivityKind.CLOSED,
+        coin="BTC",
+        price=Decimal(61240),
+        net=Decimal("3.18"),
+    ),
+    ActivityItem(at=_stamp(2, 12), kind=ActivityKind.STOP_RAISED, coin="BTC", count=2),
+    ActivityItem(at=_stamp(1, 20), kind=ActivityKind.ERROR, text="order.failed (ApiError)"),
+    ActivityItem(at=_stamp(1, 9), kind=ActivityKind.OPENED, coin="BTC", price=Decimal(60100)),
+    ActivityItem(at=_stamp(1, 8), kind=ActivityKind.OPENED, coin="SOL"),
+    ActivityItem(at=_stamp(1, 7), kind=ActivityKind.RESTART, text="restarted · release 2bc2798"),
+    ActivityItem(at=_stamp(1, 6), kind=ActivityKind.CLOSED, coin="ETH", net=Decimal("-1.20")),
+)
+
+
+def _query_svg(theme: str, size: tuple[int, int]) -> str:
+    async def drive() -> str:
+        app = activity_query_app(_QUERY_ITEMS, MADRID, lambda: _FROZEN, theme=theme, motion=False)
+        async with app.run_test(size=size) as pilot:
+            await pilot.pause()
+            app.query_one(QueryInput).value = _QUERY
+            await pilot.pause()
+            return _repo_clean(app.export_screenshot())
+
+    return asyncio.run(drive())
+
+
+@pytest.mark.parametrize(
+    ("theme_name", "theme", "size"),
+    [
+        pytest.param(name, theme, size, id=f"query_activity_{name}_{size[0]}x{size[1]}")
+        for name, theme in _QUERY_THEMES
+        for size in _SIZES
+    ],
+)
+def test_query_activity_svg_snapshot(
+    snapshot: SnapshotAssertion, theme_name: str, theme: str, size: tuple[int, int]
+) -> None:
+    """The reviewed picture of the activity query list, in one theme, at one breakpoint."""
+    name = f"query_activity_{theme_name}_{size[0]}x{size[1]}"
+    assert _query_svg(theme, size) == snapshot(extension_class=_NamedSVG, name=name)

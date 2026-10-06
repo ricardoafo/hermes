@@ -12,11 +12,14 @@ the same way, through :mod:`hermes.application.console.query`:
 - :class:`QueryList`: the three wired together over a list of rows; this is
   what a screen embeds.
 
-Styling is a few ``DEFAULT_CSS`` lines that a console theme can override; the
-widgets only read, so a list screen stays read-only.
+Styling is a few ``DEFAULT_CSS`` lines that read only the console's ``$hud-*``
+theme variables (:mod:`hermes.entrypoints.tui_theme`), so Neon, Control room and
+night each restyle the widgets with no colour of their own; the widgets only
+read, so a list screen stays read-only.
 
 :class:`QueryHarnessApp` and :func:`activity_query_app` show the widgets over
-activity rows. They are a demo harness, not wired into ``hermes tui``.
+activity rows inside a :class:`~hermes.entrypoints.tui_widgets.HudPanel`. They
+are a demo harness, not wired into ``hermes tui``.
 
 Reference: openspec/changes/729-query-bar/change.md.
 """
@@ -51,6 +54,15 @@ from hermes.application.console.query import (
     toggle_sort,
 )
 from hermes.application.console.views import ActivityItem
+from hermes.entrypoints.tui_theme import (
+    BASE,
+    NEON_THEME,
+    THEMES,
+    data_tokens,
+    terminal_theme,
+    theme_variables,
+)
+from hermes.entrypoints.tui_widgets import HudPanel
 
 __all__ = [
     "ACTIVITY_COLUMNS",
@@ -119,6 +131,16 @@ def facet_lines(rows: Iterable[Row], facets: Sequence[str], limit: int = _FACET_
 class QueryInput(Input):
     """The query line; Tab completes the field name being typed."""
 
+    DEFAULT_CSS = """
+    QueryInput {
+        height: 1; border: none; padding: 0 1;
+        background: $hud-void; color: $hud-text;
+    }
+    QueryInput:focus { background: $hud-panel-focus; border: none; }
+    QueryInput > .input--placeholder { color: $hud-dim; }
+    QueryInput > .input--cursor { background: $hud-live; color: $hud-void; }
+    QueryInput > .input--selection { background: $hud-frame; }
+    """
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("tab", "complete", "complete", show=False),
     ]
@@ -153,8 +175,8 @@ class QueryBar(Widget):
 
     DEFAULT_CSS = """
     QueryBar { height: auto; }
-    QueryBar > #query-status { height: 1; color: $text-muted; }
-    QueryBar > #query-status.-error { color: $warning; }
+    QueryBar > #query-status { height: 1; color: $hud-muted; }
+    QueryBar > #query-status.-error { color: $hud-warn; }
     """
 
     class Changed(Message):
@@ -230,7 +252,7 @@ class FacetFilter(Static):
     """Facet values with their counts in the current result."""
 
     DEFAULT_CSS = """
-    FacetFilter { height: auto; color: $text-muted; }
+    FacetFilter { height: auto; color: $hud-muted; }
     """
 
     def __init__(self, facets: Sequence[str], *, id: str | None = None) -> None:
@@ -253,6 +275,13 @@ class FacetFilter(Static):
 class SortableTable(DataTable[str]):
     """A table sorted by a header click or ``S`` on the cursor's column."""
 
+    DEFAULT_CSS = """
+    SortableTable { background: $hud-panel; color: $hud-text; }
+    SortableTable > .datatable--header { background: $hud-panel-focus; color: $hud-live; }
+    SortableTable > .datatable--cursor { background: $hud-live; color: $hud-void; }
+    SortableTable > .datatable--hover { background: $hud-panel-focus; }
+    SortableTable:focus > .datatable--cursor { background: $hud-live; color: $hud-void; }
+    """
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("s,S", "sort_column", "sort", show=False),
     ]
@@ -326,7 +355,7 @@ class QueryList(Widget):
     """A query bar, facet counts and a sortable table over one list of rows."""
 
     DEFAULT_CSS = """
-    QueryList { height: 1fr; }
+    QueryList { height: 1fr; background: $hud-panel; }
     QueryList > SortableTable { height: 1fr; }
     """
 
@@ -406,26 +435,66 @@ class QueryHarnessApp(App[None]):
     """A demo screen holding one :class:`QueryList` (not part of ``hermes tui``)."""
 
     TITLE = "hermes · query"
+    CSS = """
+    Screen { background: $hud-void; }
+    #query-panel { height: 1fr; }
+    #query-panel > .hud-body { height: 1fr; }
+    """
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("ctrl+q", "quit", "quit", show=False),
     ]
 
-    def __init__(self, query_list: Callable[[], QueryList]) -> None:
-        """Remember how to build the list.
+    def __init__(
+        self,
+        query_list: Callable[[], QueryList],
+        *,
+        title: str = "Query",
+        theme: str = NEON_THEME,
+        motion: bool = True,
+    ) -> None:
+        """Remember how to build the list and which theme draws it.
 
         Args:
             query_list: Builds the :class:`QueryList` to show.
+            title: Title of the panel the list sits in.
+            theme: A hermes theme name from :mod:`hermes.entrypoints.tui_theme`.
+            motion: Blink the input cursor; off gives a still picture.
         """
         super().__init__()
         self._build = query_list
+        self._title = title
+        self._motion = motion
+        for hermes_theme in THEMES:
+            self.register_theme(hermes_theme)
+        self.ansi_theme_dark = terminal_theme(data_tokens(theme))
+        self.theme = theme
+
+    def get_theme_variable_defaults(self) -> dict[str, str]:
+        """Give TCSS the ``hud-*`` variables before a hermes theme is applied."""
+        return theme_variables(BASE)
 
     def compose(self) -> ComposeResult:
-        """Lay out the list."""
-        yield self._build()
+        """Lay out the list in a panel."""
+        yield HudPanel(
+            self._build(),
+            title=self._title,
+            subtitle="Tab completes · Enter table · S sorts",
+            id="query-panel",
+        )
+
+    def on_mount(self) -> None:
+        """Freeze the input cursor when motion is off."""
+        if not self._motion:
+            self.query_one(QueryInput).cursor_blink = False
 
 
 def activity_query_app(
-    items: Iterable[ActivityItem], tz: tzinfo, now: Callable[[], datetime]
+    items: Iterable[ActivityItem],
+    tz: tzinfo,
+    now: Callable[[], datetime],
+    *,
+    theme: str = NEON_THEME,
+    motion: bool = True,
 ) -> QueryHarnessApp:
     """Return the demo harness over activity rows, newest first.
 
@@ -433,6 +502,8 @@ def activity_query_app(
         items: Activity rows.
         tz: Timezone for the time facets and the ``when`` column.
         now: The moment ``since:`` windows end at.
+        theme: A hermes theme name (Neon by default).
+        motion: Blink the input cursor; off gives a still picture.
 
     Returns:
         An app showing the activity in a :class:`QueryList`.
@@ -447,5 +518,8 @@ def activity_query_app(
             sort=(SortKey("when", descending=True),),
             now=now,
             id="activity-query",
-        )
+        ),
+        title="Activity",
+        theme=theme,
+        motion=motion,
     )

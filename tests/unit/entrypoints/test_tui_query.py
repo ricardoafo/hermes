@@ -8,20 +8,19 @@ Invariants protected here:
 - a header click or ``S`` sorts by that column, again flips the direction;
 - the facet line counts the current result, most common first;
 - the widgets read only: the module imports no adapter and no port;
-- the bar's reviewed look at 80 and 160 columns.
+- the widgets draw only from the console's theme tokens; the reviewed pictures
+  live in ``test_tui_snapshots.py`` (``query_activity_*``).
 """
 
 from __future__ import annotations
 
 import ast
 import asyncio
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-
-from syrupy.assertion import SnapshotAssertion
-from syrupy.extensions.image import SVGImageSnapshotExtension
 
 from hermes.application.console.query import Row, SortKey
 from hermes.application.console.render import MADRID
@@ -37,6 +36,7 @@ from hermes.entrypoints.tui_query import (
     facet_lines,
     status_line,
 )
+from hermes.entrypoints.tui_theme import CONTROL_THEME, NEON_THEME
 
 _NOW = datetime(2026, 10, 5, 12, tzinfo=UTC)
 
@@ -258,13 +258,24 @@ def test_query_widgets_import_no_adapter_or_port() -> None:
     assert {m for m in imported if m.startswith(("hermes.adapters", "hermes.ports"))} == set()
 
 
-def test_bar_snapshot_80_columns(snapshot: SnapshotAssertion) -> None:
-    """The reviewed 80x24 harness with ``kind:closed`` typed."""
-    svg = _shoot(list("kind:closed")).svg
-    assert svg == snapshot(extension_class=SVGImageSnapshotExtension)
+def test_query_widgets_use_theme_tokens_and_no_raw_colour() -> None:
+    """Every colour in the widgets' CSS is a ``$hud-*`` token, so a theme restyles them."""
+    source = Path(tui_query_module.__file__).read_text(encoding="utf-8")
+    blocks = re.findall(r'DEFAULT_CSS = """(.*?)"""|CSS = """(.*?)"""', source, flags=re.DOTALL)
+    css = " ".join(part for block in blocks for part in block)
+    colours = re.findall(r"(?:color|background):\s*([^;}\s]+)", css)
+    assert (bool(colours), [c for c in colours if not c.startswith("$hud-")]) == (True, [])
 
 
-def test_bar_snapshot_160_columns(snapshot: SnapshotAssertion) -> None:
-    """The reviewed 160x24 harness with ``kind:closed`` typed."""
-    svg = _shoot(list("kind:closed"), size=(160, 24)).svg
-    assert svg == snapshot(extension_class=SVGImageSnapshotExtension)
+def test_the_harness_takes_its_colours_from_the_chosen_theme() -> None:
+    """The same list is drawn on the Neon void in Neon and on the base void in Control room."""
+
+    async def screen(theme: str) -> str:
+        app = activity_query_app(_ITEMS, MADRID, lambda: _NOW, theme=theme, motion=False)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await pilot.pause()
+            return app.export_screenshot()
+
+    neon, control = asyncio.run(screen(NEON_THEME)), asyncio.run(screen(CONTROL_THEME))
+    neon, control = neon.lower(), control.lower()
+    assert ("#0b0420" in neon, "#0b0420" in control, "#070b14" in control) == (True, False, True)

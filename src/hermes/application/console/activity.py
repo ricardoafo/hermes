@@ -142,7 +142,10 @@ def activity_query_rows(items: Iterable[ActivityItem], tz: tzinfo) -> tuple[dict
 
     Returns:
         One mapping per item with ``at`` (for ``since:``), ``when``, ``year``,
-        ``month``, ``day``, ``coin``, ``kind`` and ``text``; no money figure.
+        ``month``, ``day``, ``coin``, ``kind``, ``text`` and ``count`` (the coins
+        a folded check line covers, else 1). Restarts, deploys, warnings, errors
+        and folded check lines are rows like any other; no price, stop level or
+        net is ever copied, so the rows suit every surface.
     """
     rows: list[dict[str, object]] = []
     for item in sorted(items, key=lambda i: i.at, reverse=True):
@@ -157,6 +160,7 @@ def activity_query_rows(items: Iterable[ActivityItem], tz: tzinfo) -> tuple[dict
                 "coin": item.coin,
                 "kind": item.kind.value,
                 "text": item.text,
+                "count": item.count,
             }
         )
     return tuple(rows)
