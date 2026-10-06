@@ -108,3 +108,59 @@ def test_a_bar_published_after_the_next_one_stops_serve_and_a_restart_handles_it
     second = run_scenario(scenario, live_from=shown + timedelta(hours=1))
     assert (first.exit_code, "BarGapError" in failure[0], second.exit_code) == (1, True, 0)
     assert _btc_4h_handled(second).count(late.close_time) == 1
+
+
+def test_a_closed_bar_with_a_nan_close_stops_serve_loudly_and_a_restart_handles_it(
+    run_scenario: RunScenario,
+) -> None:
+    """Issue #841: a NaN close on a closed bar is a typed feed failure, never a raw decimal error.
+
+    After the breakout entry, the next BTC 4h bar is served with a ``"NaN"``
+    close for eight hours, then corrected. Serve refuses the broken row with
+    ExchangeError and exits 1 (systemd restarts it), the same policy as a bar
+    gap. The restart after the correction handles that bar once and the
+    position still exits on its stop.
+    """
+    scenario = markets.chandelier_exit()
+    broken = _bar_after(scenario, scenario.breakout_at)
+    clean_from = broken.close_time + timedelta(hours=8)
+    window = (markets.BTC, KlineInterval.H4, broken.open_time, broken.close_time, clean_from)
+    first = run_scenario(scenario, corrupt_bars=[window])
+    failure = [repr(line.get("exc_info")) for line in first.log_events("serve.run.failed")]
+    second = run_scenario(scenario, live_from=clean_from + timedelta(hours=1))
+    assert (first.exit_code, "not a finite number: 'NaN'" in failure[0], second.exit_code) == (
+        1,
+        True,
+        0,
+    )
+    assert _btc_4h_handled(second).count(broken.close_time) == 1
+    assert outline(second.db)["trades"] == [("BTC/USDT", "BUY"), ("BTC/USDT", "SELL")]
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="issue #839 catalogue: a broken forming candle fails the poll that carries the "
+    "closed breakout bar, so the entry is never taken",
+)
+def test_a_nan_in_the_forming_candle_does_not_block_the_closed_bar_before_it(
+    run_scenario: RunScenario,
+) -> None:
+    """The open candle is dropped unread by the closed-bar rule, so its values can't stop serve.
+
+    The candle after the breakout carries a ``"NaN"`` close while it is still
+    forming. The breakout bar closed before it and must be delivered and traded.
+    """
+    scenario = markets.chandelier_exit()
+    forming = _bar_after(scenario, scenario.breakout_at)
+    window = (
+        markets.BTC,
+        KlineInterval.H4,
+        forming.open_time,
+        forming.open_time,
+        forming.close_time,
+    )
+    run = run_scenario(scenario, corrupt_bars=[window])
+    assert (run.exit_code, outline(run.db)["trades"]) == (
+        0,
+        [("BTC/USDT", "BUY"), ("BTC/USDT", "SELL")],
+    )

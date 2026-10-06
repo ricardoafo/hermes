@@ -56,9 +56,12 @@ def _decimal(raw: object, *, field: str) -> Decimal:
     if not isinstance(raw, str):
         raise ExchangeError(f"depth {field} is not a string: {raw!r}")
     try:
-        return Decimal(raw)
+        value = Decimal(raw)
     except InvalidOperation as exc:
         raise ExchangeError(f"depth {field} is not a number: {raw!r}") from exc
+    if not value.is_finite():
+        raise ExchangeError(f"depth {field} is not a finite number: {raw!r}")
+    return value
 
 
 def _levels(raw: object, *, side: str) -> tuple[OrderbookLevel, ...]:

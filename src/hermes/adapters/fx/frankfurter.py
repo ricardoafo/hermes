@@ -372,6 +372,10 @@ def _parse_response(
         raise FxRateError(
             f"Frankfurter rate for {rate_key!r} not parseable as Decimal: {rate_value!r}"
         ) from exc
+    if not rate_decimal.is_finite():
+        raise FxRateError(
+            f"Frankfurter rate for {rate_key!r} is not a finite number: {rate_value!r}"
+        )
 
     try:
         return FxRate(
