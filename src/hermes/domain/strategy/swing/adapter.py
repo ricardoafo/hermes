@@ -272,9 +272,11 @@ class SwingStrategyAdapter:
         ``None`` here, so the adapter is flat again as if the entry never
         fired (#707). When that exit is not filled the caller passes the
         position still held, so the exit rules run again on the next bar
-        (#706). The Chandelier stop is recomputed from the bar buffers on
-        every bar and the time stop from ``entry_time``, so no exit state is
-        lost.
+        (#706). The time stop counts from ``entry_time``. The ratcheted stop
+        (#680) is the larger of ``open_position.last_stop`` and the stop this
+        adapter recorded for the same entry on the bar whose exit failed, so a
+        retry never trails below a stop already in force (pre-registration
+        §5.3), whichever caller restores it.
 
         Args:
             open_position: Position held, or ``None`` for flat.
@@ -284,11 +286,16 @@ class SwingStrategyAdapter:
             self._entry_time = None
             self._entry_price = None
             self._stop_in_force = None
-        else:
-            self._in_position = True
-            self._entry_time = open_position.entry_time
-            self._entry_price = open_position.entry_price
-            self._stop_in_force = open_position.last_stop
+            return
+        stops = [open_position.last_stop]
+        record = self._last_stop_record
+        if record is not None and record.entry_time == open_position.entry_time:
+            stops.append(record.stop_price)
+        known = [s for s in stops if s is not None]
+        self._in_position = True
+        self._entry_time = open_position.entry_time
+        self._entry_price = open_position.entry_price
+        self._stop_in_force = max(known) if known else None
 
     # ------------------------------------------------------------------
     # Internal helpers
