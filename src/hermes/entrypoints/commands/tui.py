@@ -94,6 +94,9 @@ def run_tui(
             err.write(f"WARNING: could not save the theme: {exc}\n")
     if runner is None:
         from hermes.entrypoints.tui import run_home  # noqa: PLC0415 - Textual is slow to import
+        from hermes.entrypoints.tui_logs import export_dir  # noqa: PLC0415 - same
+
+        exports = export_dir(env or {}, Path.home())
 
         def runner(read_model: ConsoleReadModel) -> None:
             run_home(
@@ -101,6 +104,7 @@ def run_tui(
                 journal=recent_journal_lines,
                 release=_release_name,
                 settings_path=settings_path,
+                exports=exports,
             )
 
     runner(model)

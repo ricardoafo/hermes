@@ -15,7 +15,9 @@ screen, the 90-day line and the footer key chips. Every panel sits in a
 and timings live in :mod:`hermes.entrypoints.tui_theme`.
 
 Screens: ``1`` Home re-hosts the home screen with unchanged content (its full
-width layout is issue #712); ``2``-``8`` name the issue that builds them next.
+width layout is issue #712); ``8`` Logs is the journal as a queryable list
+(:class:`~hermes.entrypoints.tui_logs.LogsView`, issue #716); ``2``-``7`` name
+the issue that builds them next.
 
 Home layout: below 120 columns everything stacks (portfolio, positions,
 market watch, activity; the position detail opens as a
@@ -38,12 +40,16 @@ Keys: ``1``-``8`` screens, Tab / Shift+Tab cycle them, Ctrl+P command palette,
 ``D`` ``W`` ``M`` ``Y`` range (day, week, month, year), up and down (or ``j``
 ``k``) select a position, Enter opens it, Esc or Backspace goes back, ``[``
 ``]`` previous / next inside a detail screen, ``L`` logs, ``T`` theme, ``?``
-help, ``Q`` quit.
+help, ``Q`` quit. On the Logs screen ``/`` goes to the query line (Tab
+completes a field there), ``T`` opens the selected line's trace, ``F``
+follows, ``C`` copies, ``E`` exports and ``D`` ``W`` ``M`` ``Y`` zoom the
+volume histogram.
 
 Reference: openspec/changes/readonly-tui-dashboard/change.md;
 openspec/changes/live-home-screen/change.md (D-6);
 openspec/changes/711-cockpit-theme/change.md;
-openspec/changes/730-drill-down/change.md.
+openspec/changes/730-drill-down/change.md;
+openspec/changes/716-logs-screen/change.md.
 """
 
 from __future__ import annotations
@@ -96,6 +102,8 @@ from hermes.entrypoints.tui_drilldown import (
     ListState,
     detail_mode,
 )
+from hermes.entrypoints.tui_logs import LogsView
+from hermes.entrypoints.tui_query import QueryInput
 from hermes.entrypoints.tui_settings import (
     DEFAULT_SETTINGS_PATH,
     ConsoleSettings,
@@ -167,7 +175,7 @@ TABS: Final = (
     Tab("5", "Shadow test", 718),
     Tab("6", "Briefs", 720),
     Tab("7", "System", 717),
-    Tab("8", "Logs", 716),
+    Tab("8", "Logs"),
 )
 _HOME: Final = 0
 _BRIEFS: Final = 5
@@ -188,6 +196,25 @@ _DETAIL_CHIPS: Final = (
     ("[ ]", "prev/next"),
     ("1-8", "screens"),
     ("^P", "palette"),
+    ("Q", "quit"),
+)
+_LOGS_FOOTER_CHIPS: Final = (
+    ("/", "query"),
+    ("↵", "line"),
+    ("T", "trace"),
+    ("F", "follow"),
+    ("C", "copy"),
+    ("E", "export"),
+    ("D W M Y", "window"),
+    ("Q", "quit"),
+)
+_LOGS_FOOTER_CHIPS_COMPACT: Final = (
+    ("/", ""),
+    ("↵", ""),
+    ("T", "trace"),
+    ("F", "follow"),
+    ("C", ""),
+    ("E", ""),
     ("Q", "quit"),
 )
 _POSITIONS_TRAIL: Final = ("Home", "Positions")
@@ -419,6 +446,7 @@ class HomeApp(App[None]):
         motion: bool | None = None,
         settings_path: Path | None = None,
         theme: ThemeChoice | None = None,
+        exports: Path | None = None,
     ) -> None:
         """Hold the read model, the journal source and the screen state.
 
@@ -435,8 +463,11 @@ class HomeApp(App[None]):
             settings_path: Where the theme choice is read and saved; ``None``
                 neither reads nor writes a file.
             theme: A choice from ``--theme``; it wins over the saved one and is saved.
+            exports: Where the Logs screen exports a line; ``None`` (over
+                ``--vps``) says export works from the PC instead.
         """
         super().__init__()
+        self._exports = exports
         self._model = model
         self._journal = journal
         self._release = release
@@ -504,6 +535,17 @@ class HomeApp(App[None]):
                     classes="cell",
                 )
             for index, tab in enumerate(TABS[1:], start=1):
+                if index == _LOGS:
+                    with Container(id=f"tab-{tab.key}"):
+                        yield LogsView(
+                            journal=self._journal,
+                            now=self._clock,
+                            tz=lambda: self._ctx.tz,
+                            exports=self._exports,
+                            demo=self._model.demo_scenario is not None,
+                            id="logs-view",
+                        )
+                    continue
                 ai = index == _BRIEFS
                 yield VerticalScroll(
                     HudPanel(
@@ -802,10 +844,7 @@ class HomeApp(App[None]):
         self._redraw_detail(ctx)
         self._redraw_chrome()
         if self._tab == _LOGS:
-            logs = TABS[_LOGS]
-            self._set(
-                f"screen-{logs.key}", Group(_placeholder(logs), Text(""), self._logs_content())
-            )
+            self.logs_view.tick()
         screen = self.screen
         if isinstance(screen, _PanelScreen | DetailScreen):
             screen.refresh_panel()
@@ -813,7 +852,11 @@ class HomeApp(App[None]):
     def _redraw_chrome(self) -> None:
         compact = self.size.width < COMPACT_BELOW
         tokens = tokens_for(self.theme)
-        self._set("footer", key_chips(_FOOTER_CHIPS_COMPACT if compact else _FOOTER_CHIPS, tokens))
+        if self._tab == _LOGS:
+            chips = _LOGS_FOOTER_CHIPS_COMPACT if compact else _LOGS_FOOTER_CHIPS
+        else:
+            chips = _FOOTER_CHIPS_COMPACT if compact else _FOOTER_CHIPS
+        self._set("footer", key_chips(chips, tokens))
         tabs = self._home.query_one(TabBar)
         tabs.compact = compact
         tabs.active = self._tab
@@ -850,9 +893,19 @@ class HomeApp(App[None]):
     def _home_shown(self) -> bool:
         return self._on_home and self._tab == _HOME
 
+    @property
+    def logs_view(self) -> LogsView:
+        """Return the Logs screen."""
+        return self._home.query_one(LogsView)
+
     def _switch_to(self, index: int) -> None:
         self._tab = index
         self._home.query_one("#screens", ContentSwitcher).current = f"tab-{TABS[index].key}"
+        if index == _LOGS:
+            self.logs_view.load()
+            self.logs_view.table.focus()
+        else:
+            self.set_focus(None)
         self._redraw()
 
     def action_show_tab(self, index: int) -> None:
@@ -874,6 +927,10 @@ class HomeApp(App[None]):
             step: Direction.
         """
         if isinstance(self.screen, ModalScreen):
+            return
+        focused = self.focused
+        if step > 0 and isinstance(focused, QueryInput):
+            focused.action_complete()
             return
         self.action_show_tab((self._tab + step) % len(TABS))
 
@@ -1031,6 +1088,8 @@ class HomeApp(App[None]):
             Text("  ↑ ↓ choose a position · Enter open its detail · Esc or Backspace back"),
             Text("  [ ] previous / next item inside a detail screen"),
             Text("  L logs · T theme · ? this help · Q quit"),
+            Text("  Logs: / query (Tab completes) · Enter line · T trace · F follow"),
+            Text("        C copy · E export to the PC · D W M Y histogram window"),
             Text(
                 "This screen is read-only: nothing here changes a position, a stop or the ledger."
             ),
@@ -1050,6 +1109,7 @@ def run_home(
     *,
     theme: ThemeChoice | None = None,
     settings_path: Path | None = DEFAULT_SETTINGS_PATH,
+    exports: Path | None = None,
 ) -> None:
     """Run the console until the operator quits.
 
@@ -1059,5 +1119,13 @@ def run_home(
         release: Source of the running release's name; see :class:`HomeApp`.
         theme: A ``--theme`` choice; saved, and wins over the saved one.
         settings_path: Where the theme choice is read and saved.
+        exports: Where the Logs screen exports a line; ``None`` over ``--vps``.
     """
-    HomeApp(model, journal=journal, release=release, theme=theme, settings_path=settings_path).run()
+    HomeApp(
+        model,
+        journal=journal,
+        release=release,
+        theme=theme,
+        settings_path=settings_path,
+        exports=exports,
+    ).run()

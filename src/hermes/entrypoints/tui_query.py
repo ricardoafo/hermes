@@ -10,7 +10,9 @@ the same way, through :mod:`hermes.application.console.query`:
 - :class:`SortableTable`: a ``DataTable`` sorted by clicking a header or
   pressing ``S`` on a column; the sorted columns carry an arrow.
 - :class:`QueryList`: the three wired together over a list of rows; this is
-  what a screen embeds.
+  what a screen embeds. It posts :class:`QueryList.Refreshed` after every
+  filter or sort, so a screen can draw more from the same result (the Logs
+  volume histogram, issue #716).
 
 Styling is a few ``DEFAULT_CSS`` lines that a console theme can override; the
 widgets only read, so a list screen stays read-only.
@@ -330,6 +332,14 @@ class QueryList(Widget):
     QueryList > SortableTable { height: 1fr; }
     """
 
+    class Refreshed(Message):
+        """The list now shows ``shown`` (filtered and sorted)."""
+
+        def __init__(self, shown: tuple[Row, ...]) -> None:
+            """Carry the rows shown."""
+            super().__init__()
+            self.shown = shown
+
     def __init__(
         self,
         rows: Sequence[Row],
@@ -339,6 +349,7 @@ class QueryList(Widget):
         facets: Sequence[str] = (),
         sort: Sequence[SortKey] = (),
         now: Callable[[], datetime],
+        placeholder: str = _PLACEHOLDER,
         id: str | None = None,
     ) -> None:
         """Hold the rows and how to query them.
@@ -350,9 +361,11 @@ class QueryList(Widget):
             facets: Facets counted under the bar.
             sort: Sort levels to start with.
             now: The moment ``since:`` windows end at, read on every filter.
+            placeholder: Hint shown in the empty query line.
             id: Widget id.
         """
         super().__init__(id=id)
+        self._placeholder = placeholder
         self.rows = tuple(rows)
         self._columns = tuple(columns)
         self._fields = tuple(fields)
@@ -363,7 +376,7 @@ class QueryList(Widget):
 
     def compose(self) -> ComposeResult:
         """Lay out the bar, the facets and the table."""
-        yield QueryBar(self._fields, id="query-bar")
+        yield QueryBar(self._fields, placeholder=self._placeholder, id="query-bar")
         yield FacetFilter(self._facets, id="facets")
         yield SortableTable(self._columns, sort=self._sort, id="query-table")
 
@@ -385,6 +398,7 @@ class QueryList(Widget):
         table.show_rows(self.shown)
         self.query_one(FacetFilter).show_counts(self.shown)
         bar.show_result(len(self.shown), len(self.rows), table.sort_keys)
+        self.post_message(self.Refreshed(self.shown))
 
     def on_query_bar_changed(self, event: QueryBar.Changed) -> None:
         """Re-filter on a new query."""
