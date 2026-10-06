@@ -143,16 +143,18 @@ def test_number_keys_switch_screens() -> None:
 
 
 def test_every_unbuilt_screen_names_its_issue() -> None:
-    """Screens 2-8 each say "coming next · issue #N" with their own issue."""
+    """Each screen not built yet says "coming next · issue #N" with its own issue."""
+    unbuilt = [tab for tab in TABS[1:] if tab.issue is not None]
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> list[bool]:
         seen = []
-        for tab in TABS[1:]:
+        for tab in unbuilt:
             await _press(pilot, [tab.key])
             seen.append(f"{tab.name} · coming next · issue #{tab.issue}" in _screen_text(app))
         return seen
 
-    assert _run(probe) == [True] * 7
+    assert [tab.name for tab in TABS if tab.issue is None] == ["Home", "Briefs"]
+    assert _run(probe) == [True] * len(unbuilt)
 
 
 def test_tab_and_shift_tab_cycle_the_screens() -> None:

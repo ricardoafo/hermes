@@ -15,8 +15,12 @@ from __future__ import annotations
 
 import io
 import json
+from datetime import timedelta
 from pathlib import Path
 
+import pytest
+
+from hermes.application.console import ViewNotAvailableError
 from hermes.application.status import UnitState
 from hermes.domain.strategy.signal import SignalKind
 from hermes.entrypoints import supervisor as supervisor_module
@@ -270,3 +274,52 @@ def test_brief_without_grants_reads_nothing(tmp_path: Path) -> None:
     assert code == 0
     assert "Health unavailable." in out
     assert {json.loads(line)["outcome"] for line in audit.splitlines()} == {"denied"}
+
+
+def test_desk_briefs_serve_the_published_daily_brief(tmp_path: Path) -> None:
+    """The console's desk source holds the same daily brief ``brief`` prints (#720)."""
+    db = write_ledger(
+        tmp_path / "hermes.sqlite3", signals=(signal(ETH, SignalKind.ENTRY, LAST_4H, "2618.45"),)
+    )
+    source = supervisor_module.desk_briefs(
+        db, config_dir=_CONFIG, clock=lambda: NOW, unit_state=lambda: UnitState.RUNNING
+    )
+
+    (brief,) = source()
+
+    _, printed, _ = _run(["brief"], db, env=_ALL_GRANTS)
+    shown = [
+        f"- {s.heading}: {s.text} {' '.join(f'[{c}]' for c in s.sources)}" for s in brief.sections
+    ]
+    assert (brief.kind, brief.as_of, brief.digest) == ("daily", NOW, False)
+    assert shown == printed.splitlines()[1:]
+    assert "2618" not in "\n".join(shown)
+
+
+def test_desk_briefs_are_built_once_per_cache_window(tmp_path: Path) -> None:
+    """Within :data:`BRIEF_CACHE` the console reuses the brief; after it, builds a new one."""
+    db = write_ledger(tmp_path / "hermes.sqlite3")
+    now = [NOW]
+    source = supervisor_module.desk_briefs(
+        db, config_dir=_CONFIG, clock=lambda: now[0], unit_state=lambda: UnitState.RUNNING
+    )
+
+    first = source()
+    now[0] = NOW + supervisor_module.BRIEF_CACHE - timedelta(seconds=1)
+    cached = source()
+    now[0] = NOW + supervisor_module.BRIEF_CACHE
+    rebuilt = source()
+
+    assert cached is first
+    assert rebuilt[0].as_of == NOW + supervisor_module.BRIEF_CACHE
+
+
+def test_desk_briefs_without_a_config_are_not_available(tmp_path: Path) -> None:
+    """A config that cannot load makes the Briefs view "not available", not a crash."""
+    db = write_ledger(tmp_path / "hermes.sqlite3")
+    source = supervisor_module.desk_briefs(
+        db, config_dir=tmp_path / "nope", clock=lambda: NOW, unit_state=lambda: UnitState.RUNNING
+    )
+
+    with pytest.raises(ViewNotAvailableError, match="config load failed"):
+        source()
