@@ -15,7 +15,7 @@ Reference: openspec/changes/374-hermes-activity/change.md.
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from datetime import date, tzinfo
+from datetime import date, datetime, timedelta, tzinfo
 from decimal import Decimal
 from itertools import groupby
 
@@ -26,11 +26,23 @@ from hermes.application.console.views import (
     ActivityItem,
 )
 
-__all__ = ["activity_to_json", "group_activity"]
+__all__ = ["activity_to_json", "candle_boundary", "group_activity"]
 
 type JsonObject = dict[str, object]
 
 _EUR_PRECISION = Decimal("0.0001")
+_ONE_MS = timedelta(milliseconds=1)
+
+
+def candle_boundary(at: datetime) -> datetime:
+    """Return the candle boundary for Binance's inclusive close (boundary - 1 ms).
+
+    A bar that closes at ``12:59:59.999`` belongs to the ``13:00:00`` boundary;
+    any other time is returned unchanged. Ledger events and journal lines both
+    pass through this so one 4h check lines up across the two sources.
+    """
+    bumped = at + _ONE_MS
+    return bumped if bumped.second == 0 and bumped.microsecond == 0 else at
 
 
 def group_activity(

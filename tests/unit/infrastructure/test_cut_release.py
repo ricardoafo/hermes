@@ -1,7 +1,6 @@
 """Unit and property tests for scripts/dev/cut-release.py (ADR-022 §1, §2, §7).
 
 Protects the release-cut invariants:
-- Release versions map one-to-one onto PEP 440 package versions, in order.
 - A cut refuses malformed, equal or older versions and mismatched version files.
 - Compiling keeps every hand-written ``[Unreleased]`` entry and every fragment.
 - The cut leaves an empty ``[Unreleased]`` and deletes only compiled fragments.
@@ -16,9 +15,8 @@ import sys
 from pathlib import Path
 
 import pytest
-from hypothesis import given
-from hypothesis import strategies as st
-from packaging.version import Version
+
+from hermes.release_version import to_package_version, to_semver
 
 _ROOT = Path(__file__).resolve().parents[3]
 _SCRIPT_PATH = _ROOT / "scripts" / "dev" / "cut-release.py"
@@ -45,16 +43,6 @@ Intro text.
 [Unreleased]: https://github.com/ricardoafo/hermes/commits/main
 """
 
-release_versions = st.builds(
-    lambda major, minor, patch, shadow: (
-        f"{major}.{minor}.{patch}" + (f"-shadow.{shadow}" if shadow else "")
-    ),
-    st.integers(0, 30),
-    st.integers(0, 30),
-    st.integers(0, 30),
-    st.one_of(st.none(), st.integers(1, 500)),
-)
-
 
 def _repo(tmp_path: Path, version: str = "0.0.0") -> Path:
     (tmp_path / "src" / "hermes").mkdir(parents=True)
@@ -72,38 +60,6 @@ def _repo(tmp_path: Path, version: str = "0.0.0") -> Path:
     (frags / "README.md").write_text("# Fragments\n", encoding="utf-8")
     (frags / "wave-old.md").write_text("Legacy note.\n", encoding="utf-8")
     return tmp_path
-
-
-@given(release_versions)
-def test_package_version_round_trips_to_the_release_version(version: str) -> None:
-    """Every release version maps to a valid PEP 440 version and back unchanged."""
-    package = cut_release.to_package_version(version)
-
-    assert str(Version(package)) == package
-    assert cut_release.to_semver(package) == version
-
-
-@given(release_versions, release_versions)
-def test_package_versions_order_like_semver(a: str, b: str) -> None:
-    """Shadow N sorts before shadow N+1, and every shadow before its final release."""
-
-    def semver_key(v: str) -> tuple[int, int, int, int]:
-        core, _, shadow = v.partition("-shadow.")
-        major, minor, patch = (int(x) for x in core.split("."))
-        return (major, minor, patch, int(shadow) if shadow else sys.maxsize)
-
-    pa, pb = Version(cut_release.to_package_version(a)), Version(cut_release.to_package_version(b))
-
-    assert (pa < pb) == (semver_key(a) < semver_key(b))
-
-
-@pytest.mark.parametrize(
-    "bad", ["1.0", "v1.0.0", "1.0.0-rc.1", "1.0.0-shadow.0", "1.0.0-shadow", "1.0.0a1"]
-)
-def test_malformed_release_versions_are_refused(bad: str) -> None:
-    """Only X.Y.Z and X.Y.Z-shadow.N (N >= 1) are release versions."""
-    with pytest.raises(ValueError, match=r"X\.Y\.Z"):
-        cut_release.to_package_version(bad)
 
 
 @pytest.mark.parametrize(
@@ -128,7 +84,7 @@ def test_the_repository_version_files_agree() -> None:
         (_ROOT / "src" / "hermes" / "__init__.py").read_text(encoding="utf-8"),
     )
 
-    assert version == cut_release.to_package_version(cut_release.to_semver(version))
+    assert version == to_package_version(to_semver(version))
 
 
 def test_compiling_keeps_hand_written_entries_and_fragments() -> None:

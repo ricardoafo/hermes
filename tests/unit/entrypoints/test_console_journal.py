@@ -35,3 +35,32 @@ def test_recent_journal_lines_parses_the_reader_output(monkeypatch: pytest.Monke
     missing = console_module.recent_journal_lines(50)
 
     assert ([line.event for line in parsed or []], missing) == (["feed.retry"], None)
+
+
+def test_journal_window_lines_reads_the_window_and_is_none_without_journalctl(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """INV: the activity feed asks for the last window only, and an unreadable journal is None."""
+    from datetime import timedelta  # noqa: PLC0415 - local to this test
+
+    asked: list[str | None] = []
+
+    class _Reader:
+        def lines(self, *, last: int, since: str | None = None) -> list[str]:
+            asked.append(since)
+            return ['{"__REALTIME_TIMESTAMP": "1791043205000000", "MESSAGE": "raw text"}']
+
+    class _Missing:
+        def lines(self, *, last: int, since: str | None = None) -> list[str]:
+            raise JournalUnavailableError("no journalctl")
+
+    monkeypatch.setattr(console_module, "JournalctlReader", _Reader)
+    parsed = console_module.journal_window_lines(timedelta(days=1))
+    monkeypatch.setattr(console_module, "JournalctlReader", _Missing)
+    missing = console_module.journal_window_lines(timedelta(days=1))
+
+    assert (asked, [line.raw for line in parsed or []], missing) == (
+        ["-86400s"],
+        ["raw text"],
+        None,
+    )

@@ -54,6 +54,7 @@ from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from functools import partial
 from pathlib import Path
 from typing import Final
 
@@ -123,6 +124,7 @@ from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
+from hermes.entrypoints._release import read_release
 from hermes.infrastructure import sentry_integration
 from hermes.infrastructure.config.models import FrankfurterConfig
 from hermes.infrastructure.config.root import HermesConfig
@@ -424,6 +426,31 @@ def seed_capital_once(
     return True
 
 
+def _rebuild_tracker(
+    ledger: SqliteLedger, seed: PortfolioSnapshot, strategy_id: StrategyId
+) -> PortfolioTracker:
+    """Replay the ledger's trades over ``seed`` and restore the recorded peak equity.
+
+    Fills cannot see mark-to-market highs, so the peak is raised to the one the
+    latest portfolio mark stored; without it the RO-08 drawdown reads low after
+    a restart (integrity rules 4.1, pre-registration 10).
+
+    Raises:
+        StartupError: The trades or the mark cannot be read, or a trade cannot be replayed.
+    """
+    try:
+        rebuilt = PortfolioTracker.rebuilt(seed, ledger.trade_events(strategy_id))
+        last_mark = ledger.latest_portfolio_mark(strategy_id)
+    except LedgerError as exc:
+        raise StartupError(f"cannot rebuild the portfolio from the ledger: {exc.msg}") from exc
+    if isinstance(rebuilt, Failure):
+        raise StartupError(f"cannot rebuild the portfolio from the ledger: {rebuilt.failure()}")
+    tracker = rebuilt.unwrap()
+    if last_mark is not None and last_mark.snapshot.quote == tracker.snapshot.quote:
+        tracker.restore_peak(last_mark.snapshot.peak_equity)
+    return tracker
+
+
 def build_composition(
     config: HermesConfig,
     *,
@@ -490,14 +517,10 @@ def build_composition(
         connection.close()
         raise StartupError(f"cannot record the start capital in the ledger: {exc.msg}") from exc
     try:
-        rebuilt = PortfolioTracker.rebuilt(seed, ledger.trade_events(strategy_id))
-    except LedgerError as exc:
+        tracker = _rebuild_tracker(ledger, seed, strategy_id)
+    except StartupError:
         connection.close()
-        raise StartupError(f"cannot rebuild the portfolio from the ledger: {exc.msg}") from exc
-    if isinstance(rebuilt, Failure):
-        connection.close()
-        raise StartupError(f"cannot rebuild the portfolio from the ledger: {rebuilt.failure()}")
-    tracker = rebuilt.unwrap()
+        raise
     fill_model = OrderbookWalkFillModel()
     books = (
         orderbooks
@@ -647,6 +670,7 @@ async def run(composition: Composition, shutdown: asyncio.Event) -> int:
         "serve.run.started",
         env=composition.config.env,
         pairs=len(composition.strategies),
+        release=read_release().name,
     )
     code = 0
     try:
@@ -894,21 +918,30 @@ class _BarLoop:
     def _restore_position(
         self, pair: Pair, cursors: Mapping[Stream, datetime]
     ) -> OpenPosition | None:
-        """Rebuild the open position from the ledger, bounded by the 4h cursor.
+        """Rebuild the open position from the ledger, bounded by the 4h cursor."""
+        cursor = cursors.get((pair, KlineInterval.H4))
+        if cursor is None:
+            return None
+        return self._held_position(pair, at_or_before=cursor)
+
+    def _held_position(self, pair: Pair, *, at_or_before: datetime) -> OpenPosition | None:
+        """Return the position the portfolio holds in ``pair``, from its entry signal.
 
         An entry signal that was never filled leaves the portfolio without the
-        pair, so it restores nothing (#707).
+        pair, so it gives nothing (#707). Exits declined after the entry are
+        skipped: the coin is still held, and so is that entry (#706).
         """
-        cursor = cursors.get((pair, KlineInterval.H4))
-        if cursor is None or pair not in self.c.tracker.snapshot.positions:
+        if pair not in self.c.tracker.snapshot.positions:
             return None
-        latest = self.c.ledger.latest_signal_event(self.c.strategy_id, pair, at_or_before=cursor)
-        if latest is None or latest.kind is not SignalKind.ENTRY or latest.entry_price is None:
+        entry = self.c.ledger.latest_signal_event(
+            self.c.strategy_id, pair, at_or_before=at_or_before, kind=SignalKind.ENTRY
+        )
+        if entry is None or entry.entry_price is None:
             return None
-        stop = self.c.ledger.latest_stop_mark(self.c.strategy_id, pair, latest.occurred_at)
+        stop = self.c.ledger.latest_stop_mark(self.c.strategy_id, pair, entry.occurred_at)
         return OpenPosition(
-            entry_time=latest.occurred_at,
-            entry_price=latest.entry_price,
+            entry_time=entry.occurred_at,
+            entry_price=entry.entry_price,
             last_stop=None if stop is None else stop.record.stop_price,
         )
 
@@ -1058,11 +1091,13 @@ class _BarLoop:
         """Simulate the signal's order, log the outcome (never its P&L, D-7), sync the strategy."""
         result = await self.c.executor.execute(signal_, bar, correlation_id=correlation_id)
         _log_execution(bar.pair, signal_.kind, result)
-        # An entry that did not fill leaves the strategy flat again (#707).
+        # A signal that did not fill leaves the strategy in the position the
+        # portfolio holds: flat after an entry (#707), still long after an exit (#706).
         sync_after_signal(
             self.c.strategies[bar.pair],
             signal_,
             filled=isinstance(result.outcome, Executed | AlreadyFilled),
+            held=partial(self._held_position, bar.pair, at_or_before=signal_.signal_time),
         )
 
     async def _notify(self, event: SignalEmitted) -> None:

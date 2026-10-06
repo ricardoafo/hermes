@@ -23,6 +23,10 @@ Invariants (change 353-fill-kernel-in-serve R-1, R-4, R-5):
 - An entry refused on a stale book leaves the strategy flat (#707): no later
   exit is signalled, declined ``no-position`` or notified, and the pair
   enters again on the next breakout.
+- An exit declined ``no-book`` (a zero-volume bar while the depth endpoint is
+  down) leaves the strategy in the position (#706): the next crash bar, with
+  the book back, exits it again with the original entry price and sells the
+  coin once, on the same boot or after a restart.
 """
 
 from __future__ import annotations
@@ -42,6 +46,7 @@ from structlog.testing import capture_logs
 
 from hermes.adapters.clock import SimulatedClock
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
+from hermes.domain.errors import NetworkError
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
@@ -58,6 +63,7 @@ from tests.support.serve_loop import (
     h4_bar,
     history,
     live,
+    make_h4_bar,
     run_once,
     signal_kinds,
 )
@@ -304,6 +310,38 @@ def test_exit_after_a_restart_closes_the_rebuilt_position(tmp_path: Path) -> Non
     assert (sides, second.tracker.snapshot.positions) == (["BUY", "SELL"], {})
 
 
+def test_restart_restores_the_mark_to_market_peak_equity(tmp_path: Path) -> None:
+    """Invariant (#828, integrity rules 4.1): a restart keeps the peak a bar mark set.
+
+    Bar 12 marks the position at 2400 (the high), bar 13 falls back to 2200.
+    A fills-only rebuild would restart from the seed peak of 5000, so the
+    RO-08 drawdown would read low; the restart must hold the peak boot 1 had.
+    """
+    db = tmp_path / "ledger.sqlite3"
+    first, first_feed = _boot(db, warm_upto=10, live_from=11, live_to=11)
+    first_feed.live_bars = [
+        h4_bar(11),
+        make_h4_bar(12, "2400"),
+        make_h4_bar(13, "2200"),
+    ]
+    run_once(first, first_feed)
+    live_peak = first.tracker.snapshot.peak_equity
+    connection = sqlite3.connect(db)
+    try:
+        (marked_high,) = connection.execute(
+            "SELECT MAX(peak_equity) FROM portfolio_marks"
+        ).fetchone()
+    finally:
+        connection.close()
+
+    second, _ = _boot(db, warm_upto=13, live_from=14, live_to=14)
+    state = second.tracker.state()
+    second.sqlite_connection.close()
+
+    assert live_peak > Decimal("5000")
+    assert (state.peak_value, Decimal(str(marked_high))) == (live_peak, live_peak)
+
+
 def test_bar_re_evaluated_after_a_crash_fills_nothing_twice(tmp_path: Path) -> None:
     """With the cursor rows of bars 11-12 lost, boot 2 re-evaluates bar 11 and adds no trade."""
     db = tmp_path / "ledger.sqlite3"
@@ -423,3 +461,74 @@ def test_pair_enters_again_after_a_refused_entry(tmp_path: Path) -> None:
         ["BUY"],
     )
     assert _declined_rules(logs) == [("entry", "HALT")]
+
+
+class _DownOnSecondCallBooks(_LiveBooks):
+    """Live books whose second snapshot fails, like a depth endpoint outage."""
+
+    def __init__(self, clock: SimulatedClock) -> None:
+        """Start with no snapshot served."""
+        super().__init__(clock)
+        self.calls = 0
+
+    async def snapshot(self, pair: Pair) -> Orderbook:
+        """Fail on the second call; answer the live book otherwise."""
+        self.calls += 1
+        if self.calls == 2:
+            raise NetworkError(f"no depth for {pair} in tests")
+        return await super().snapshot(pair)
+
+
+def _declined_exit_boot(
+    db: Path, live_bars: Sequence[Bar], *, warm_upto: int = 10
+) -> tuple[serve_module.Composition, _SteppingFeed]:
+    """Build a boot whose second depth read fails, delivering ``live_bars``."""
+    clock = SimulatedClock(start=h4_bar(warm_upto).close_time + _DELIVERY_DELAY)
+    books = _DownOnSecondCallBooks(clock)
+    books.mid = h4_bar(warm_upto).close
+    feed = _SteppingFeed(clock, books, warm=history(warm_upto), live_bars=live_bars)
+    return build(db, feed, clock.now(), books=books, clock=clock), feed
+
+
+def _zero_volume_crash() -> Bar:
+    """Bar 14, the crash, with no volume: with the depth down it has no book."""
+    return dataclasses.replace(h4_bar(14), volume=Decimal("0"))
+
+
+def test_exit_declined_for_no_book_is_retried_on_the_next_bar(tmp_path: Path) -> None:
+    """Bar 14's exit is declined no-book; bar 15 exits again and sells the coin, once (#706)."""
+    db = tmp_path / "ledger.sqlite3"
+    composition, feed = _declined_exit_boot(
+        db, [*live(11, 13), _zero_volume_crash(), h4_bar(15, crash=True)]
+    )
+
+    with capture_logs() as logs:
+        run_once(composition, feed)
+
+    signals = [(p["kind"], p["entry_price"]) for p in _payloads(db, "SignalEmitted")]
+    sides = [p["side"] for p in _payloads(db, "TradeExecuted")]
+    assert (signals, sides, composition.tracker.snapshot.positions) == (
+        [("entry", "2000"), ("exit", "2000"), ("exit", "2000")],
+        ["BUY", "SELL"],
+        {},
+    )
+    assert _declined_rules(logs) == [("exit", "no-book")]
+
+
+def test_exit_declined_before_a_restart_is_retried_after_it(tmp_path: Path) -> None:
+    """Boot 2 restores the entry past the declined exit, so bar 15 sells the coin (#706)."""
+    db = tmp_path / "ledger.sqlite3"
+    first, first_feed = _declined_exit_boot(db, [*live(11, 13), _zero_volume_crash()])
+    run_once(first, first_feed)
+    second, second_feed = _boot(db, warm_upto=14, live_from=15, live_to=15)
+    second_feed.live_bars = [h4_bar(15, crash=True)]
+
+    run_once(second, second_feed)
+
+    kinds = [p["kind"] for p in _payloads(db, "SignalEmitted")]
+    sides = [p["side"] for p in _payloads(db, "TradeExecuted")]
+    assert (kinds, sides, second.tracker.snapshot.positions) == (
+        ["entry", "exit", "exit"],
+        ["BUY", "SELL"],
+        {},
+    )
