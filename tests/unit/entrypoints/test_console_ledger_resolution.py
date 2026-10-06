@@ -140,7 +140,7 @@ def test_activity_reads_the_live_model(ledger: Path, monkeypatch: pytest.MonkeyP
     monkeypatch.chdir(ledger.parent)
     stream = io.StringIO()
     rc = run_activity(["--all", "--days", "30"], stream, env={}, now=T0 + timedelta(hours=9))
-    assert (rc, "4h check" in stream.getvalue()) == (0, True)
+    assert (rc, "checked 1 coin" in stream.getvalue()) == (0, True)
 
 
 def test_tui_release_comes_from_the_status_release_reader(monkeypatch: pytest.MonkeyPatch) -> None:

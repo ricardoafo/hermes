@@ -8,5 +8,5 @@
   "entry_price": "61234.5",
   "stop_price": "62800",
   "atr_context": "1180",
-  "exit_reason": "trailing_stop"
+  "exit_reason": "chandelier"
 }
