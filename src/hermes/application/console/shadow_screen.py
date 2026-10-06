@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, tzinfo
 from decimal import Decimal
 from enum import StrEnum
-from typing import Final, Protocol
+from typing import Final, Protocol, runtime_checkable
 
 from hermes.application.console.shadow_figures import SHADOW_TEST_DAYS
 from hermes.domain.strategy.swing.adapter import swing_parameters
@@ -60,7 +60,9 @@ __all__ = [
     "missed_days",
     "parse_notebook",
     "run_progress",
+    "run_words",
     "shadow_day",
+    "sources_from",
     "warmup_days",
 ]
 
@@ -134,6 +136,7 @@ class ShadowRunRecord:
     ready_rules: tuple[ReadyRule, ...] = ()
 
 
+@runtime_checkable
 class ShadowRunRecords(Protocol):
     """Read-only source of day-0 records."""
 
@@ -169,6 +172,7 @@ class NotebookEntry:
         return "deviation" in action and "not a deviation" not in action
 
 
+@runtime_checkable
 class NotebookSource(Protocol):
     """Read-only source of the lab notebook."""
 
@@ -199,6 +203,7 @@ class ShadowEvidence:
     kill_check_clean: bool | None = None
 
 
+@runtime_checkable
 class ShadowEvidenceSource(Protocol):
     """Read-only source of the shadow evidence."""
 
@@ -526,6 +531,46 @@ class ShadowScreen:
     def progress(self) -> float:
         """Return the share of the run done; 0 during the warm-up."""
         return 0.0 if self.day is None else run_progress(self.day, self.length_days)
+
+
+def sources_from(model: object, strategy_id: str = "") -> ShadowSources:
+    """Return the shadow sources ``model`` itself serves.
+
+    A demo scenario serves all three; the ledger read model serves only the
+    evidence (its day-0 records and notebook are files, see the console's
+    composition root).
+
+    Args:
+        model: Any read model.
+        strategy_id: Whose day-0 record counts.
+
+    Returns:
+        The sources the model implements; the rest ``None``.
+    """
+    return ShadowSources(
+        evidence=model if isinstance(model, ShadowEvidenceSource) else None,
+        runs=model if isinstance(model, ShadowRunRecords) else None,
+        notebook=model if isinstance(model, NotebookSource) else None,
+        strategy_id=strategy_id,
+    )
+
+
+def run_words(screen: ShadowScreen) -> str:
+    """Return the bottom 90-day line's words, counted from the same day 0 as tab 5.
+
+    Args:
+        screen: The Shadow test screen.
+
+    Returns:
+        ``Shadow test · warm-up · not counting`` without a day 0;
+        ``Shadow test · day 12 of 90`` while counting, with ``· run complete``
+        from day 90 on.
+    """
+    if screen.day is None:
+        return "Shadow test · warm-up · not counting"
+    day = min(screen.day, screen.length_days)
+    words = f"Shadow test · day {day} of {screen.length_days}"
+    return words + " · run complete" if screen.day >= screen.length_days else words
 
 
 def build_shadow_screen(

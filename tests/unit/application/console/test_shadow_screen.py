@@ -43,7 +43,9 @@ from hermes.application.console.shadow_screen import (
     missed_days,
     parse_notebook,
     run_progress,
+    run_words,
     shadow_day,
+    sources_from,
     warmup_days,
 )
 from hermes.domain.strategy.swing.adapter import swing_parameters
@@ -365,3 +367,37 @@ def test_screen_with_a_record_counts_from_its_day_zero() -> None:
         [None, _DAY0],
         CheckState.FAIL,
     )
+
+
+# --- the bottom 90-day line ----------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("record", "as_of", "words"),
+    [
+        (None, _DAY0 + timedelta(days=5), "Shadow test · warm-up · not counting"),
+        (_RECORD, _DAY0 + timedelta(hours=1), "Shadow test · day 0 of 90"),
+        (_RECORD, _DAY0 + timedelta(days=12, hours=10), "Shadow test · day 12 of 90"),
+        (
+            _RECORD,
+            _DAY0 + timedelta(days=97, hours=10),
+            "Shadow test · day 90 of 90 · run complete",
+        ),
+    ],
+    ids=["warm-up", "day-0", "mid-run", "past-90"],
+)
+def test_run_words_count_from_the_same_day_zero(
+    record: ShadowRunRecord | None, as_of: datetime, words: str
+) -> None:
+    """The bottom line's words come from the screen's own day 0: one source of truth."""
+    screen = build_shadow_screen(
+        record=record, evidence=None, notebook=None, as_of=as_of, tz=_MADRID
+    )
+    assert run_words(screen) == words
+
+
+def test_sources_from_takes_only_what_the_model_serves() -> None:
+    """A model with only shadow_evidence gives evidence and nothing else."""
+    evidence = _Evidence()
+    sources = sources_from(evidence)
+    assert (sources.evidence, sources.runs, sources.notebook) == (evidence, None, None)

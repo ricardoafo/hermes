@@ -35,7 +35,7 @@ from hermes.adapters.systemd_journal import JournalctlReader, JournalUnavailable
 from hermes.application.console import ConsoleReadModel, Surface
 from hermes.application.console.logs import LogLine, parse_journal_entry
 from hermes.application.console.render import RenderContext, render_overview
-from hermes.application.console.shadow_screen import ShadowSources
+from hermes.application.console.shadow_screen import ShadowSources, sources_from
 from hermes.entrypoints._streams import resolve_err
 
 __all__ = [
@@ -373,7 +373,7 @@ def shadow_sources(
         other read model.
     """
     if isinstance(model, FixtureReadModel):
-        return ShadowSources(evidence=model, runs=model, notebook=model, strategy_id="demo")
+        return sources_from(model)
     if isinstance(model, LedgerReadModel):
         ledger = db_path if db_path is not None else default_db_path(env)
         return ShadowSources(

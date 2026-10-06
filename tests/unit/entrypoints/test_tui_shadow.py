@@ -14,7 +14,8 @@ Invariants:
   M-02 threshold in a check name;
 - tab 5 opens with the key 5, shows each check state per scenario, and Esc
   returns to the previous tab;
-- the big day number keeps the hero-digits colour (the legible big-number rule).
+- the big day number keeps the hero-digits colour (the legible big-number rule);
+- the bottom 90-day line on every tab counts from the same day 0 as tab 5.
 """
 
 from __future__ import annotations
@@ -42,7 +43,7 @@ from hermes.application.console.shadow_screen import (
     ShadowSources,
 )
 from hermes.entrypoints.tui import HomeApp
-from hermes.entrypoints.tui_home import run_bar
+from hermes.entrypoints.tui_home import counted_line, run_bar
 from hermes.entrypoints.tui_settings import ThemeChoice
 from hermes.entrypoints.tui_shadow import (
     WARMUP_HEADLINE,
@@ -315,3 +316,28 @@ def test_run_bar_fill_is_monotonic_in_the_day(day: int, step: int, width: int) -
     later = run_bar(day + step, 90, BASE, width=width).plain
     assert (len(earlier), len(later)) == (width, width)
     assert earlier.count("█") <= later.count("█") <= width
+
+
+@pytest.mark.parametrize(
+    ("scenario", "line"),
+    [
+        ("ok-two-positions", "Shadow test · day 12 of 90  "),
+        ("empty", "Shadow test · warm-up · not counting"),
+    ],
+)
+def test_bottom_line_counts_from_the_same_day_zero_on_every_tab(scenario: str, line: str) -> None:
+    """Home and tab 5 show the same day: the bottom line reads the screen's day 0."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[str, str]:
+        home = app.plain_text("shadow")
+        await _open(pilot)
+        return home, app.plain_text("shadow")
+
+    home, shadow = _run(scenario, probe)
+    assert (home.startswith(line), home == shadow) == (True, True)
+
+
+def test_counted_line_without_a_day_is_words_only() -> None:
+    """No counted day draws no bar: the warm-up line is its words alone."""
+    line = counted_line("Shadow test · warm-up · not counting", None, 90, BASE, width=120)
+    assert line.plain == "Shadow test · warm-up · not counting"

@@ -20,7 +20,13 @@ from typing import Final
 from rich.console import Group, RenderableType
 from rich.text import Text
 
-from hermes.application.console import PortfolioSummary, PositionDetail, PositionRow, ShadowTest
+from hermes.application.console import (
+    PortfolioSummary,
+    PositionDetail,
+    PositionRow,
+    ShadowTest,
+    ShadowTestStatus,
+)
 from hermes.application.console.format import (
     MINUS,
     CushionLevel,
@@ -65,6 +71,7 @@ __all__ = [
     "HeightClass",
     "HomeLayout",
     "WidthClass",
+    "counted_line",
     "empty_positions",
     "exposure_share",
     "home_layout",
@@ -565,7 +572,7 @@ def run_bar(day: int, length_days: int, tokens: Tokens, *, width: int) -> Text:
 
 
 def run_line(test: ShadowTest, tokens: Tokens, *, width: int) -> Text:
-    """Return the 90-day line with its gradient run bar and percentage.
+    """Return the 90-day line of a :class:`ShadowTest` view (the seed-based count).
 
     Args:
         test: The shadow test view.
@@ -573,18 +580,36 @@ def run_line(test: ShadowTest, tokens: Tokens, *, width: int) -> Text:
         width: Cells available.
 
     Returns:
-        ``Shadow test · day 12 of 90 · on track  █████░░░ 13%``; the words only
-        before the test starts or when there is no room for a bar.
+        See :func:`counted_line`.
     """
-    words = shadow_test_line(test)
+    day = None if test.status is ShadowTestStatus.NOT_STARTED else test.day
+    return counted_line(shadow_test_line(test), day, test.length_days, tokens, width=width)
+
+
+def counted_line(
+    words: str, day: int | None, length_days: int, tokens: Tokens, *, width: int
+) -> Text:
+    """Return the 90-day line: words, the shared run bar and the percentage.
+
+    Args:
+        words: The line's words.
+        day: The counted day, ``None`` when nothing counts (no bar).
+        length_days: The run's length.
+        tokens: Token sheet.
+        width: Cells available.
+
+    Returns:
+        ``Shadow test · day 12 of 90  █████░░░ 13%``; the words only when no
+        day counts or there is no room for a bar.
+    """
     out = Text(words, style="dim")
-    if test.day is None or test.length_days <= 0:
+    if day is None or length_days <= 0:
         return out
     cells = width - len(words) - 2 - _RUN_TAIL
     if cells < _MIN_RUN_BAR:
         return out
     out.append("  ")
-    out.append_text(run_bar(test.day, test.length_days, tokens, width=cells))
-    share = round(test.day * 100 / test.length_days)
+    out.append_text(run_bar(day, length_days, tokens, width=cells))
+    share = round(min(max(day, 0), length_days) * 100 / length_days)
     out.append(f" {share:>3}%", style=tokens.muted)
     return out

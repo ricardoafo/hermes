@@ -7,5 +7,6 @@
   pre-registered settings and the lab notebook entries. Under ADR-021 day 0 is
   the record `hermes shadow-start` will write beside the ledger (`runs/`);
   until it exists the screen says "warm-up · not counting". Which fact starts
-  the count is one switch. Read-only, no money shown, no new dependency.
+  the count is one switch, and the 90-day line at the bottom of every tab
+  counts from the same day 0. Read-only, no money shown, no new dependency.
   Closes #718.

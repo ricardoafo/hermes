@@ -29,10 +29,13 @@ Small, kept on purpose or cheap to change:
   coordinator's update of 2026-10-07), not the capital seed. Without a record
   the hero reads "warm-up · not counting" and the checks are all pending. The
   spec row predates ADR-021 and does not name a warm-up state (1.4).
-- D2: The bottom 90-day line on every tab still reads the seed-based
-  `shadow_test()` view, so with a seed and no record it says "day N of 90"
-  while tab 5 says warm-up. Follow-up needed (no issue yet; fits issue #731's
-  run-aware work).
+- D2 (fixed in this branch): the bottom 90-day line on every tab now counts
+  from the same `day_zero()` as tab 5 (`run_words` + `counted_line`, one
+  source). Without a day-0 record it reads "Shadow test · warm-up · not
+  counting" with no bar; with one, "Shadow test · day N of 90" and the
+  shared bar. It no longer shows the seed-based status word ("· on track")
+  or note ("· waits on #353"). The static `hermes` overview (CLI) still
+  prints the seed-based `shadow_test()` line; that is not a console tab.
 - D3: Standard width (100-159) stacks the four panels in one column; the
   spec's "two columns, as today" applies from 160 here, because the check
   details wrap in a half-width column (1.2).
@@ -59,6 +62,16 @@ Owned by a later issue:
 | 1.4 | Day 0 follows the Code Owner's pick | One switch, `DAY_ZERO_SOURCE`, default the shadow-start record; day 0 line `day 0 21 Sep 2026 02:00 · day 90 on 20 Dec 2026` | `test_the_switch_defaults_to_the_shadow_start_record`, `test_day_zero_follows_the_chosen_source` | diff (D1) |
 | 1.5 | (warm-up) | `WARM-UP · NOT COUNTING`, warm-up days since the seed in dim, an empty bar, "Day 0 starts with hermes shadow-start (issue #797) …" | `shadow_warmup_*`; `test_warm_up_has_no_big_number_and_says_not_counting` | match (D1) |
 | 1.6 | Compact and short terminals | Under 100 columns or 30 rows a bold `day 12 / 90` line replaces the big number, as Home does | `shadow_counting_neon_80x24.svg`; `test_hero_without_the_big_number_leads_with_a_bold_day_line` | match |
+
+## 1b. The bottom 90-day line (every tab)
+
+Rows checked one by one in every updated snapshot: exactly one text row
+changed per picture, the bottom line, and nothing else.
+
+| # | Before | After | Evidence | Status |
+| --- | --- | --- | --- | --- |
+| 1b.1 | `Shadow test · day 12 of 90 · on track  █…` (seed-based view) | `Shadow test · day 12 of 90  █…` (day 0 from the record) | `home_ok_*`, `tab2_placeholder_*`, `shadow_counting_*`, `test_tui/test_svg_snapshot_*`; `test_bottom_line_counts_from_the_same_day_zero_on_every_tab` | match |
+| 1b.2 | `Shadow test · not started · waits on #353` / `… no capital seed in the ledger yet` | `Shadow test · warm-up · not counting` | `home_empty_*`, `shadow_warmup_*`, `test_tui_home_screen/test_svg_snapshot_empty*`; `test_run_words_count_from_the_same_day_zero` | match |
 
 ## 2. Certification checks
 

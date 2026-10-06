@@ -110,19 +110,21 @@ from hermes.application.console.shadow_screen import (
     ShadowScreen,
     ShadowSources,
     build_shadow_screen,
+    run_words,
+    sources_from,
 )
 from hermes.domain.errors import LedgerError
 from hermes.entrypoints.tui_home import (
     LOGS_DEMO,
     LOGS_UNAVAILABLE,
     HomeLayout,
+    counted_line,
     empty_positions,
     home_layout,
     log_tail,
     portfolio_curve,
     portfolio_meters,
     position_rows,
-    run_line,
     total_text,
 )
 from hermes.entrypoints.tui_settings import (
@@ -541,8 +543,8 @@ class HomeApp(App[None]):
             theme: A choice from ``--theme``; it wins over the saved one and is saved.
             exposure_cap: The roster's pre-registered exposure cap as a share
                 (``0.15``); ``None`` makes the exposure meter say it is unknown.
-            shadow: Where the Shadow test screen reads from; ``None`` reads
-                nothing, so the screen shows a warm-up with no seed.
+            shadow: Where the Shadow test screen and the 90-day line read
+                from; ``None`` takes what ``model`` itself serves.
         """
         super().__init__()
         self._model = model
@@ -567,7 +569,7 @@ class HomeApp(App[None]):
         self._pulse = 0
         self._radar = 0
         self._exposure_cap = exposure_cap
-        self._shadow = shadow or ShadowSources()
+        self._shadow = shadow or sources_from(model)
         self._layout: HomeLayout = home_layout(80, 24)
         self._empty_facts: tuple[tuple[str, ...], datetime | None] | None = None
         self._title_sent: str | None = None
@@ -1023,15 +1025,7 @@ class HomeApp(App[None]):
         self._set("brief", Text(_BRIEF_PENDING, style="dim"))
         if layout.third:
             self._redraw_third_column(ctx, layout)
-        self._set(
-            "shadow",
-            _card(
-                "Shadow test",
-                lambda: run_line(
-                    model.shadow_test(), tokens_for(self.theme), width=self.size.width
-                ),
-            ),
-        )
+        self._redraw_run_line()
         self._redraw_detail(ctx)
         if self._tab == _SHADOW:
             self._redraw_shadow(ctx, layout)
@@ -1124,6 +1118,22 @@ class HomeApp(App[None]):
                 selected=self._selected,
             ),
         )
+
+    def _redraw_run_line(self) -> None:
+        """Draw the bottom 90-day line from the same day 0 as tab 5 (one source)."""
+        try:
+            screen = self.shadow_screen()
+        except _SHADOW_ERRORS as exc:
+            self._set("shadow", _unavailable("Shadow test", exc))
+            return
+        line = counted_line(
+            run_words(screen),
+            None if screen.day is None else min(screen.day, screen.length_days),
+            screen.length_days,
+            tokens_for(self.theme),
+            width=self.size.width,
+        )
+        self._set("shadow", line)
 
     def shadow_screen(self) -> ShadowScreen:
         """Return the Shadow test screen read now from the shadow sources.

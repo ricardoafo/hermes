@@ -59,8 +59,8 @@ record format drifting from what #797 ships; the fixture copies its field list.
 - `hermes shadow-start` itself and the warm-up ledger archive: issue #797.
 - A recorded kill-trigger check verdict from `hermes serve`: issue #796 (the
   check stays pending and says so).
-- The bottom run line on every tab still reads `shadow_test()` (seed-based);
-  making it follow the day-0 switch is design-check difference D2.
+- The static `hermes` overview (CLI) still prints the seed-based
+  `shadow_test()` line.
 - Run selector and per-run scoping: issue #731.
 
 ## Decisions
@@ -110,6 +110,15 @@ record format drifting from what #797 ships; the fixture copies its field list.
 - **Decision**: `run_bar(day, length, tokens, width)` in `tui_home.py` draws
   the brand-gradient `Meter`; `run_line` and the hero both call it.
 - **Rationale**: the spec's rule "never build a second variant".
+- **Cost of reversal**: LOW.
+
+### D-4b: the bottom line counts from the same day 0
+
+- **Decision**: `run_words(screen)` and `counted_line(...)` draw the 90-day
+  line on every tab from the same `ShadowScreen` as tab 5; `run_line` keeps
+  only the seed-based view for its existing callers. `HomeApp` takes its
+  shadow sources from the model by default (`sources_from`).
+- **Rationale**: one source of truth; the coordinator's D2 ruling of 2026-10-07.
 - **Cost of reversal**: LOW.
 
 ### D-5: the big number is the shared `BigNumber`
@@ -183,6 +192,6 @@ the four panels stack. The notebook shows 3, 5 or 10 entries by height.
 - **#797's format changes before it lands.** The adapter rejects an
   unreadable record loudly; the fixture and `parse_run_record` are the one
   place to update.
-- **The bottom line disagrees with tab 5** while the ledger has a seed and no
-  record (D2 in the design check). Follow-up needed.
+- **The CLI overview disagrees with the console** while the ledger has a
+  seed and no record: it still prints the seed-based line.
 - **Snapshot churn** on later chrome changes, as with every screen.
