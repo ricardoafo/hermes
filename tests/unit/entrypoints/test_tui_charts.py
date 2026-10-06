@@ -151,7 +151,7 @@ def test_curve_shape_and_order_property(values: list[float], width: int, rows: i
     """
     chart = braille_area(values, width=width, rows=rows)
     heights = _column_heights(chart)
-    total_dots = sum(bin(ord(c) - 0x2800).count("1") for row in chart for c in row)
+    total_dots = sum((ord(c) - 0x2800).bit_count() for row in chart for c in row)
     columns = width * 2
     sampled = [values[round(x * (len(values) - 1) / (columns - 1))] for x in range(columns)]
     ordered = all(

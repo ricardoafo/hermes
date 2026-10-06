@@ -118,4 +118,4 @@ def test_pushed_messages_never_carry_money() -> None:
         for m in sent
     ]
 
-    assert [t for t in texts if re.search(r"€|p&l|pnl|net |profit", t, re.I)] == []
+    assert [t for t in texts if re.search(r"€|p&l|pnl|net |profit", t, re.IGNORECASE)] == []

@@ -101,11 +101,21 @@ line-length = 100
 extend-exclude = ["src/hermes/**/__init__.py"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "PL", "RUF", "S", "PTH", "ERA", "PGH", "D"]
-ignore = ["PLR0913"]  # arg count — hexagonal use cases take many ports
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "PL", "RUF", "S", "PTH", "ERA", "PGH", "D", "FURB", "PERF"]
+ignore = [
+  "PLR0913",  # arg count — hexagonal use cases take many ports
+  # Decimal("100") over Decimal(100): every money literal stays a string, so a
+  # fractional amount never slips in as a float-built Decimal next to it.
+  "FURB157",
+]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "PLR2004", "PLR0917"]  # assert + magic numbers + many-arg property tests fine
+"tests/**" = [
+  "S101", "PLR2004", "PLR0917",  # assert + magic numbers + many-arg property tests fine
+  # A test whose only assertion is `x is None` fails the no-vague-test-assertions
+  # hook; `type(x) is type(None)` is how such a test states "returns nothing".
+  "FURB169",
+]
 # D-family docstring enforcement is TEST-SCOPED for this PR (see docs/guides/ai-authored-tests.md
 # §"Enforcement in this repo"). Production src has variable docstring coverage; a global roll-out
 # is a separate scope conversation. Test files must expose D103 (missing docstring on public fn)

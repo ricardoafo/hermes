@@ -78,12 +78,14 @@ def failed_tests(log: str) -> list[str]:
 
 def failed_steps(jobs: Iterable[Mapping[str, object]]) -> list[str]:
     """Return the names of the steps that failed in an attempt's jobs."""
-    names = []
+    names: list[str] = []
     for job in jobs:
         steps = job.get("steps")
-        for step in steps if isinstance(steps, list) else []:
-            if isinstance(step, Mapping) and step.get("conclusion") == "failure":
-                names.append(str(step.get("name")))
+        names.extend(
+            str(step.get("name"))
+            for step in (steps if isinstance(steps, list) else [])
+            if isinstance(step, Mapping) and step.get("conclusion") == "failure"
+        )
     return names
 
 
