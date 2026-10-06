@@ -130,29 +130,30 @@ def test_number_keys_one_to_eight_each_name_a_screen() -> None:
 
 
 def test_number_keys_switch_screens() -> None:
-    """Pressing 3 shows Positions, pressing 1 returns Home."""
+    """Pressing 4 shows Tax, pressing 1 returns Home."""
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[int, str, int]:
-        await _press(pilot, ["3"])
+        await _press(pilot, ["4"])
         shown, text = app.tab, _screen_text(app)
         await _press(pilot, ["1"])
         return shown, text, app.tab
 
     shown, text, back = _run(probe)
-    assert (shown, "Positions · coming next · issue #715" in text, back) == (2, True, 0)
+    assert (shown, "Tax · coming next · issue #719" in text, back) == (3, True, 0)
 
 
 def test_every_unbuilt_screen_names_its_issue() -> None:
-    """Screens 2-8 each say "coming next · issue #N" with their own issue."""
+    """Each screen not built yet says "coming next · issue #N" with its own issue."""
+    unbuilt = [tab for tab in TABS[1:] if tab.issue is not None]
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> list[bool]:
         seen = []
-        for tab in TABS[1:]:
+        for tab in unbuilt:
             await _press(pilot, [tab.key])
             seen.append(f"{tab.name} · coming next · issue #{tab.issue}" in _screen_text(app))
         return seen
 
-    assert _run(probe) == [True] * 7
+    assert _run(probe) == [True] * len(unbuilt)
 
 
 def test_tab_and_shift_tab_cycle_the_screens() -> None:

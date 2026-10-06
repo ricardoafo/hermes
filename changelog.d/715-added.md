@@ -1,0 +1,1 @@
+- Console: the Positions screen (tab 3) lists the open positions beside the selected one's detail, live between bars like Home, with ↑↓ to choose (#715).

@@ -148,6 +148,7 @@ from hermes.entrypoints.tui_live import (
     live_portfolio_lines,
     market_rows,
 )
+from hermes.entrypoints.tui_positions import list_width, positions_screen
 from hermes.entrypoints.tui_settings import (
     DEFAULT_SETTINGS_PATH,
     ConsoleSettings,
@@ -225,7 +226,7 @@ _STATUS_ROW_SLACK: Final = 8
 TABS: Final = (
     Tab("1", "Home"),
     Tab("2", "Signals", 714),
-    Tab("3", "Positions", 715),
+    Tab("3", "Positions"),
     Tab("4", "Tax", 719),
     Tab("5", "Shadow test", 718),
     Tab("6", "Briefs", 720),
@@ -235,6 +236,9 @@ TABS: Final = (
 _HOME: Final = 0
 _BRIEFS: Final = 5
 _LOGS: Final = 7
+_POSITIONS: Final = 2
+# Columns a tab screen loses to its panel frame, padding and scrollbar.
+_SCREEN_CHROME: Final = 6
 
 _FOOTER_CHIPS: Final = (
     ("D W M Y", "range"),
@@ -959,6 +963,7 @@ class HomeApp(App[None]):
         self._paint_portfolio()
         self._paint_positions()
         self._paint_market()
+        self._paint_positions_screen()
         if self._detail_open and self.is_wide and self._selected is not None:
             self._set("detail", self._detail_content(self._ctx, cached=True))
 
@@ -1118,6 +1123,7 @@ class HomeApp(App[None]):
                 ),
             ),
         )
+        self._paint_positions_screen()
         self._redraw_detail(ctx)
         self._redraw_chrome()
         if self._tab == _LOGS:
@@ -1233,14 +1239,6 @@ class HomeApp(App[None]):
             return
         if not self._rows:
             return
-        look = self._live_look()
-        live = None
-        if look is not None:
-            live = LiveRows(
-                look=look,
-                positions=self._live_positions(look),
-                ticks={coin: quote.history for coin, quote in self._quotes().items()},
-            )
         self._set(
             "positions",
             position_rows(
@@ -1250,9 +1248,47 @@ class HomeApp(App[None]):
                 self._data,
                 width=self._inner("positions"),
                 selected=self._selected,
-                live=live,
+                live=self._live_rows(),
             ),
         )
+
+    def _live_rows(self) -> LiveRows | None:
+        """Return the live look of the position rows, or ``None`` without live prices."""
+        look = self._live_look()
+        if look is None:
+            return None
+        return LiveRows(
+            look=look,
+            positions=self._live_positions(look),
+            ticks={coin: quote.history for coin, quote in self._quotes().items()},
+        )
+
+    def _paint_positions_screen(self) -> None:
+        """Draw the Positions screen (tab 3) from the last read, live like Home's rows."""
+        if self._tab != _POSITIONS:
+            return
+        ctx = self._ctx
+        width = self.size.width - _SCREEN_CHROME
+        content: RenderableType
+        if self._empty_facts is not None:
+            facts = self._empty_facts
+            empty = empty_positions(*facts, ctx, self._data, self._radar)
+            content = positions_screen(empty, None, 0, self._data, width=width)
+        elif not self._rows:
+            content = Text("Positions · not available yet", style="dim")
+        else:
+            rows = position_rows(
+                self._rows,
+                self._details,
+                ctx,
+                self._data,
+                width=list_width(width),
+                selected=self._selected,
+                live=self._live_rows(),
+            )
+            detail = self._detail_content(ctx, cached=True)
+            content = positions_screen(rows, detail, len(self._rows), self._data, width=width)
+        self._set(f"screen-{TABS[_POSITIONS].key}", content)
 
     def _quotes(self) -> dict[str, LiveQuote]:
         board = self._board
@@ -1414,7 +1450,7 @@ class HomeApp(App[None]):
             step: ``-1`` for the previous position, ``1`` for the next.
         """
         coins = self._positions_coins()
-        if not self._home_shown or not coins:
+        if not self._on_home or self._tab not in {_HOME, _POSITIONS} or not coins:
             return
         current = coins.index(self._selected) if self._selected in coins else 0
         self._selected = coins[(current + step) % len(coins)]
