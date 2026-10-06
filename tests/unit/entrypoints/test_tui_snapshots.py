@@ -6,7 +6,9 @@ ultra), only changes when a reviewer accepts the new picture. Each file is
 named ``<view>_<theme>_<cols>x<rows>.svg`` so a PR body can link it directly.
 
 Views: Home on the ``ok-two-positions`` and ``empty`` demo scenarios, the
-Signals placeholder (tab 2) and the theme picker open over Home.
+Signals placeholder (tab 2), the theme picker open over Home, and Home with a
+fake ticker (``home_live``, issue #713): live market prices, a position valued
+live and the window bar's feed pulse after a run of polls, one of them failed.
 
 Every app here runs with motion off, a frozen clock and synthetic demo data,
 and never reads or writes the real settings file.
@@ -17,6 +19,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import ClassVar
 
 import pytest
@@ -26,6 +29,10 @@ from syrupy.location import PyTestLocation
 from syrupy.types import SnapshotIndex
 
 from hermes.adapters.console import FixtureReadModel
+from hermes.application.console.live import TickOutcome
+from hermes.domain.errors import KrakenPublicError
+from hermes.domain.market_data.ticker import Ticker
+from hermes.domain.value_objects.pair import Pair
 from hermes.entrypoints.tui import HomeApp
 from hermes.entrypoints.tui_settings import ThemeChoice
 
@@ -37,11 +44,43 @@ _THEMES: tuple[tuple[str, ThemeChoice], ...] = (
     ("neon", ThemeChoice.NEON),
     ("control", ThemeChoice.CONTROL),
 )
+_PRICES = {"BTC": Decimal(62000), "ETH": Decimal(2700), "SOL": Decimal(150)}
+# The feed pulse's history after the opening poll: good polls, one with SOL failed.
+_POLLS: tuple[str | None, ...] = (None, None, None, "SOL", None, None, None)
+
+
+class _FakeTicker:
+    """Synthetic prices; never reaches the network."""
+
+    def get_ticker(self, pair: Pair) -> Ticker:
+        price = _PRICES[pair.base.value]
+        return Ticker(
+            pair=pair,
+            best_bid=price - 1,
+            best_ask=price + 1,
+            last_price=price,
+            snapshot_time=_FROZEN,
+        )
+
+
+def _poll(failed: str | None) -> tuple[TickOutcome, ...]:
+    return tuple(
+        TickOutcome(
+            coin=coin,
+            at=_FROZEN,
+            price=None if coin == failed else price,
+            error=KrakenPublicError.__name__ if coin == failed else None,
+        )
+        for coin, price in _PRICES.items()
+    )
+
+
 _VIEWS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("home_ok", "ok-two-positions", ()),
     ("home_empty", "empty", ()),
     ("tab2_placeholder", "ok-two-positions", ("2",)),
     ("theme_picker", "ok-two-positions", ("t",)),
+    ("home_live", "ok-two-positions", ()),
 )
 
 
@@ -63,7 +102,14 @@ def _repo_clean(svg: str) -> str:
     return "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
 
 
-def _svg(scenario: str, keys: Sequence[str], size: tuple[int, int], theme: ThemeChoice) -> str:
+def _svg(
+    scenario: str,
+    keys: Sequence[str],
+    size: tuple[int, int],
+    theme: ThemeChoice,
+    *,
+    live: bool = False,
+) -> str:
     async def drive() -> str:
         app = HomeApp(
             FixtureReadModel.load(scenario),
@@ -72,9 +118,16 @@ def _svg(scenario: str, keys: Sequence[str], size: tuple[int, int], theme: Theme
             settings_path=None,
             theme=theme,
             refresh_seconds=3600,
+            ticker=_FakeTicker() if live else None,
         )
         async with app.run_test(size=size) as pilot:
             await pilot.pause()
+            if live:
+                await app.workers.wait_for_complete()
+                await pilot.pause()
+                for failed in _POLLS:
+                    app.apply_ticks(_poll(failed))
+                await pilot.pause()
             for key in keys:
                 await pilot.press(key)
                 await pilot.pause()
@@ -111,5 +164,5 @@ def test_cockpit_svg_snapshot(
 ) -> None:
     """The reviewed picture of one view, in one theme, at one spec breakpoint."""
     name = f"{view}_{theme_name}_{size[0]}x{size[1]}"
-    svg = _svg(scenario, keys, size, theme)
+    svg = _svg(scenario, keys, size, theme, live=view == "home_live")
     assert svg == snapshot(extension_class=_NamedSVG, name=name)
