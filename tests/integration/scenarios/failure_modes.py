@@ -43,6 +43,10 @@ _MIGRATE = _U + "adapters/ledger/test_migration_rollback.py::"
 _INTEGRITY = _U + "adapters/ledger/test_integrity.py::"
 _SNAPSHOT = _U + "domain/portfolio/"
 _FIFO = _U + "domain/lots/test_eur_fifo.py::"
+_PORTFOLIO_MACHINE = _U + "application/portfolio/test_portfolio_risk_state_machine.py::"
+_LEDGER_MACHINE = _U + "adapters/ledger/test_sqlite_ledger_state_machine.py::"
+_BOOK_MACHINE = _U + "adapters/market_data/test_orderbook_diff_state_machine.py::"
+_LOTS_MACHINE = _U + "domain/lots/test_fifo_lots_state_machine.py::"
 
 
 @dataclass(frozen=True)
@@ -186,6 +190,14 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             "A cached or frozen depth book counts as fresh",
             gap="issue #859: the book is stamped on arrival; inferred, untested",
         ),
+        FailureMode(
+            "A gapped or replayed depth diff reaches the book",
+            proved_by=(_BOOK_MACHINE + "TestOrderbookDiffMachine::runTest",),
+        ),
+        FailureMode(
+            "A depth diff older than the snapshot reaches the book",
+            gap="issue #866: the snapshot drops lastUpdateId, so stale diffs cannot be dropped",
+        ),
     ),
     "exchange and FX": (
         FailureMode(
@@ -310,6 +322,14 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
                 _MIGRATE + "test_migrate_snapshots_before_applying_and_restore_inverts_it",
                 _MIGRATE + "test_corrupt_snapshot_is_not_restored",
             ),
+        ),
+        FailureMode(
+            "Restart, migration or snapshot restore loses or doubles a ledger row",
+            proved_by=(_LEDGER_MACHINE + "TestSqliteLedgerMachine::runTest",),
+        ),
+        FailureMode(
+            "Two migration snapshots taken in one second overwrite each other",
+            gap="issue #865: snapshot names have one-second resolution",
         ),
         FailureMode(
             "Ledger rows disagree (orphan lot, wrong remainder)",
@@ -490,6 +510,10 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
     ),
     "risk halts": (
         FailureMode(
+            "Cash, equity, stops or refusals drift under halt, kill and restart",
+            proved_by=(_PORTFOLIO_MACHINE + "TestPortfolioRiskMachine::runTest",),
+        ),
+        FailureMode(
             "RO-03, RO-04 and RO-07 halt entries in serve",
             proved_by=(
                 _RISK + "test_a_fill_slipping_over_half_a_percent_halts_later_entries",
@@ -561,6 +585,22 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
                 "::test_the_entry_size_price_and_fee_follow_the_pre_registration",
                 _FIFO + "TestWorkedExamples::test_round_trip_gain_is_net_of_both_fees",
             ),
+        ),
+        FailureMode(
+            "The entry spread pushes total exposure past the cap",
+            gap="issue #864: the cap is checked at the signal price, not the fill",
+        ),
+        FailureMode(
+            "A position built by two entries on one pair cannot be sold",
+            gap="issue #866: its quantity needs more digits than the order-book walk keeps",
+        ),
+        FailureMode(
+            "Tax lots across several assets lose or invent quantity",
+            proved_by=(_LOTS_MACHINE + "TestFifoLotsMachine::runTest",),
+        ),
+        FailureMode(
+            "Lot selection draws a lot dated after the sale",
+            gap="issue #866: select_lots_fifo filters by asset only; no production caller yet",
         ),
         FailureMode(
             "Tax lots are consumed out of order or beyond inventory",
