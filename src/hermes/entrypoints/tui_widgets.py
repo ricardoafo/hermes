@@ -10,8 +10,6 @@ One implementation each, styled only through :mod:`hermes.entrypoints.tui_theme`
 - :class:`TabBar`: the screen tabs, numbers only at compact width;
 - :class:`ThemeChip` and :class:`ThemePicker`: the theme switch;
 - :func:`key_chips`: reverse-video key chips for the footer;
-- :func:`meter_text`: the gradient meter (System screen cpu, memory and disk,
-  issue #717; the countdown, cash and stop-room meters of #712 / #714 reuse it);
 - :class:`Meter`: the one meter every panel draws (cash and exposure on Home,
   stop room on a position row, the 90-day run bar, cpu, memory and disk).
 
@@ -69,7 +67,6 @@ __all__ = [
     "WindowBar",
     "bottom_edge",
     "key_chips",
-    "meter_text",
     "tab_text",
     "theme_chip_text",
     "top_edge",
@@ -510,43 +507,6 @@ def key_chips(chips: Sequence[tuple[str, str]], tokens: Tokens) -> Text:
         out.append(f" {key} ", style=f"reverse {tokens.muted}")
         if label:
             out.append(label, style=tokens.muted)
-    return out
-
-
-_METER_LEFT: Final = "▕"
-_METER_RIGHT: Final = "▏"
-_METER_FULL: Final = "█"
-_METER_EMPTY: Final = "░"
-
-
-def meter_text(
-    fraction: float,
-    tokens: Tokens,
-    *,
-    cells: int = METER_CELLS,
-    warn_from: float | None = None,
-) -> Text:
-    """Return a gradient meter: ``▕██████░░░░▏``.
-
-    Args:
-        fraction: How full, 0 to 1; values outside are clamped.
-        tokens: Token sheet; the fill follows the ``gain`` gradient.
-        cells: Bar width in characters, without the end caps.
-        warn_from: From this fraction on the whole fill is drawn in the
-            ``warn`` token (amber), so a near-full disk stands out.
-
-    Returns:
-        ``cells + 2`` characters; the empty part in the ``dim`` token.
-    """
-    fraction = min(max(fraction, 0.0), 1.0)
-    filled = round(fraction * cells)
-    warn = warn_from is not None and fraction >= warn_from
-    out = Text(_METER_LEFT, style=tokens.dim)
-    for index in range(filled):
-        position = index / (cells - 1) if cells > 1 else 1.0
-        out.append(_METER_FULL, style=tokens.warn if warn else gradient(tokens.gain, position))
-    out.append(_METER_EMPTY * (cells - filled), style=tokens.dim)
-    out.append(_METER_RIGHT, style=tokens.dim)
     return out
 
 
