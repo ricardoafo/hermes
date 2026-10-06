@@ -293,7 +293,7 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "A torn last line in the trial log or decision journal",
-            gap="issue #846: detected, but every later append is blocked; no recovery path",
+            gap="issue #891: detected, but every later append is blocked; recovery is undecided",
         ),
         FailureMode(
             "Another process holds the ledger while serve commits",
