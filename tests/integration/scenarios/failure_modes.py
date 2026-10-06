@@ -43,6 +43,9 @@ _MIGRATE = _U + "adapters/ledger/test_migration_rollback.py::"
 _INTEGRITY = _U + "adapters/ledger/test_integrity.py::"
 _SNAPSHOT = _U + "domain/portfolio/"
 _FIFO = _U + "domain/lots/test_eur_fifo.py::"
+_WIRE = _U + "adapters/test_wire_numbers.py::"
+_PATHS = _S + "test_generated_paths.py::"
+_EVERY_BAR = _PATHS + "test_every_rule_holds_after_every_bar_and_a_restart_changes_nothing"
 
 
 @dataclass(frozen=True)
@@ -79,7 +82,13 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
     "market data": (
         FailureMode(
             "A wire value is NaN, infinite or an impossible timestamp",
-            gap="issue #841: raw decimal errors escape the parsers; Infinity is taken as a price",
+            proved_by=(
+                _WIRE + "test_a_non_finite_number_is_refused_with_the_adapters_own_error",
+                _WIRE + "test_a_live_kline_time_past_the_calendar_is_an_exchange_error",
+                _WIRE + "test_a_kraken_kline_time_past_the_calendar_is_a_kraken_error",
+                _FAULTS
+                + "test_a_closed_bar_with_a_nan_close_stops_serve_loudly_and_a_restart_handles_it",
+            ),
         ),
         FailureMode(
             "A NaN in the forming candle blocks the closed bar before it",
@@ -533,6 +542,7 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             "Cash goes negative",
             proved_by=(
                 _SNAPSHOT + "test_snapshot_properties.py::test_cash_is_never_negative",
+                _EVERY_BAR,
                 _SNAPSHOT + "test_snapshot.py::TestRefusedFills"
                 "::test_buy_whose_fee_tips_it_over_cash_is_refused",
                 _U + "adapters/ledger/test_sqlite_capital_seed.py::TestQuoteLeg"
@@ -544,11 +554,20 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             proved_by=(
                 _RISK + "test_three_breakouts_fill_until_the_exposure_cap",
                 _RISK + "test_the_exposure_cap_is_checked_at_marked_value_not_cost",
+                _EVERY_BAR,
             ),
         ),
         FailureMode(
+            "A trade risks more than 1% or sizes over the 5% cap on any generated path",
+            proved_by=(_EVERY_BAR,),
+        ),
+        FailureMode(
+            "Generated paths with outages, late bars and restarts break a rule",
+            proved_by=(_EVERY_BAR,),
+        ),
+        FailureMode(
             "The cap and drawdown read entry prices right after a restart",
-            gap="issue #844: positions are marked at their fill price until the next bar; inferred",
+            gap="issue #863: positions are marked at their fill price until their next bar",
         ),
         FailureMode(
             "A coin is held with no entry signal or entry price",

@@ -32,6 +32,13 @@
 #     a few manual runs. `dry_run` defaults to true: it builds the bundle
 #     and touches nothing else (no tailnet, scp or ssh).
 #
+# ## Deploy cadence (ADR-022 §6)
+#
+# The repository variable DEPLOY_ON is every-green (unset means the
+# same: every green main deploys) or version (only a cut version's first
+# deploy ships; other commits are gated and bundled, not deployed). The
+# Code Owner sets it at day 0; agents never change it.
+#
 # ## Serialization
 #
 # The deploy job holds `concurrency: deploy-vps` with
@@ -148,12 +155,15 @@ jobs:
 
   # ─────────────────────────────────────────────────────────────────
   # NOTES — what this deploy carries: the commits on main since the
-  # previous deploy tag and the changelog.d lines they added (#626).
-  # Never fails: a notes problem must not hold a release back.
+  # previous deploy tag and the changelog.d lines they added (#626),
+  # and whether this commit deploys at all (ADR-022 §6). A notes
+  # problem never fails it; only a DEPLOY_ON value it does not know does.
   # ─────────────────────────────────────────────────────────────────
   notes:
     name: Release notes
     needs: gate
+    outputs:
+      deploy: ${{ steps.cadence.outputs.deploy }}
     runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     timeout-minutes: 5
     steps:
@@ -195,6 +205,30 @@ jobs:
               echo '{}' > notes/version.json
           fi
           cat notes/version.json
+
+      # ADR-022 §6: DEPLOY_ON=every-green (the default) deploys every green
+      # main; DEPLOY_ON=version deploys only a cut version's first deploy,
+      # so the shadow changes only through a release PR. Every other commit
+      # is still gated and bundled. The Code Owner flips it at day 0.
+      - name: Decide whether this commit deploys
+        id: cadence
+        env:
+          DEPLOY_ON: ${{ vars.DEPLOY_ON || 'every-green' }}
+        run: |
+          set -euo pipefail
+          case "$DEPLOY_ON" in
+              every-green) deploy=true ;;
+              version)
+                  deploy=$(uv run --no-project --python 3.14 python -c \
+                      'import json; print(str(json.load(open("notes/version.json")).get("first_deploy") is True).lower())')
+                  if [ "$deploy" != true ]; then
+                      echo "::notice::DEPLOY_ON=version: this commit carries no new version, so it is checked but not deployed"
+                  fi ;;
+              *)
+                  echo "::error::DEPLOY_ON must be every-green or version, not '$DEPLOY_ON'"
+                  exit 1 ;;
+          esac
+          echo "deploy=$deploy" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -282,6 +316,7 @@ jobs:
   deploy:
     name: Deploy to VPS
     needs: [bundle, notes]
+    if: inputs.dry_run == true || needs.notes.outputs.deploy == 'true'
     runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
     # install_release.sh may hold up to 10 min for the bar close (#626).
     timeout-minutes: 25

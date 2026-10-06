@@ -5,8 +5,9 @@ Reads ``version`` from ``pyproject.toml`` at the checked-out release commit,
 names it in SemVer (``1.0.0a1`` is ``1.0.0-shadow.1``) and takes that
 release's section from ``CHANGELOG.md``. Prints one JSON object:
 
-- ``{"tag": "v1.0.0-shadow.1", "name": ..., "body": ..., "target": <sha>}``
-  when the version has a dated changelog section, so it was cut;
+- ``{"tag": "v1.0.0-shadow.1", "name": ..., "body": ..., "target": <sha>,
+  "first_deploy": <bool>}`` when the version has a dated changelog section,
+  so it was cut;
 - ``{}`` otherwise (an uncut version such as ``0.0.0``), and CD tags nothing.
 
 ``target`` is the commit that first shipped the version, so the tag answers
@@ -17,6 +18,10 @@ tag it is so tagged later on the commit that first shipped it.
 
 The CD deploy job creates the tag and release only if the tag does not exist
 yet, so the first deploy of a version tags it and later deploys leave it.
+
+``first_deploy`` is true when no commit of this version has deployed and its
+tag does not exist yet. With ``DEPLOY_ON=version`` (ADR-022 §6), CD deploys
+only such commits.
 
 Usage::
 
@@ -85,8 +90,8 @@ def _load_release_version(root: Path) -> ModuleType:
     return module
 
 
-def describe(root: Path, release: str) -> dict[str, str]:
-    """Return the tag, name, body and target for the version at ``root``, or ``{}``.
+def describe(root: Path, release: str) -> dict[str, str | bool]:
+    """Return the tag, name, body, target and first_deploy for the version at ``root``, or ``{}``.
 
     Raises:
         FileNotFoundError: ``pyproject.toml``, ``CHANGELOG.md`` or the mapping module is missing.
@@ -103,11 +108,17 @@ def describe(root: Path, release: str) -> dict[str, str]:
     )
     if body is None:
         return {}
+    tag = f"v{name}"
+    target = first_shipped(root, release, match.group("v"))
+    # first_shipped returns a deployed commit whenever one exists, so only
+    # its own deploy tag (or an existing version tag) says this version shipped.
+    shipped_tags = _git(root, "tag", "--list", tag, f"{DEPLOY_TAG_PREFIX}{target[:12]}").split()
     return {
-        "tag": f"v{name}",
+        "tag": tag,
         "name": f"hermes v{name}",
         "body": body,
-        "target": first_shipped(root, release, match.group("v")),
+        "target": target,
+        "first_deploy": not shipped_tags,
     }
 
 

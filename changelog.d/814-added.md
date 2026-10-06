@@ -1,0 +1,1 @@
+- CD can deploy hermes-01 only when a new version lands: setting the `DEPLOY_ON` repository variable to `version` at day 0 makes every other green `main` build and check without deploying (ADR-022 §6).
