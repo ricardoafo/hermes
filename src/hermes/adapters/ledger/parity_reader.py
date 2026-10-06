@@ -26,6 +26,7 @@ from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.events.trade_executed import TradeExecuted
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
+from hermes.domain.strategy.signal import SignalKind
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
 
@@ -118,21 +119,37 @@ class SqliteParityReader:
         return self._signals(rows, op="signals_between")
 
     def latest_signal(
-        self, strategy_id: StrategyId, pair: Pair, *, at_or_before: datetime
+        self,
+        strategy_id: StrategyId,
+        pair: Pair,
+        *,
+        at_or_before: datetime,
+        kind: SignalKind | None = None,
     ) -> SignalEmitted | None:
         """Return the newest ``SignalEmitted`` of the strategy and pair up to a bound.
+
+        With ``kind``, only signals of that kind count (any kind when ``None``).
 
         Raises:
             LedgerError: On a read failure or an unreadable payload.
         """
+        wanted = None if kind is None else kind.value
         rows = self._fetchall(
             "SELECT payload_json FROM events "
             "WHERE event_type = 'SignalEmitted' AND occurred_at <= ? "
             "  AND json_extract(payload_json, '$.strategy_id.value') = ? "
             "  AND json_extract(payload_json, '$.pair.base') = ? "
             "  AND json_extract(payload_json, '$.pair.quote') = ? "
+            "  AND (? IS NULL OR json_extract(payload_json, '$.kind') = ?) "
             "ORDER BY occurred_at DESC, id DESC LIMIT 1",
-            (at_or_before.isoformat(), strategy_id.value, pair.base.value, pair.quote.value),
+            (
+                at_or_before.isoformat(),
+                strategy_id.value,
+                pair.base.value,
+                pair.quote.value,
+                wanted,
+                wanted,
+            ),
         )
         found = self._signals(rows, op="latest_signal")
         return found[0] if found else None

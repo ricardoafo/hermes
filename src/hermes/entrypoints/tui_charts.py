@@ -6,6 +6,8 @@ dots; meters are the shared :class:`~hermes.entrypoints.tui_widgets.Meter`.
 Every colour comes from the :mod:`hermes.entrypoints.tui_theme` tokens and
 is blended with its :func:`~hermes.entrypoints.tui_theme.gradient`, so a
 token change restyles every chart. Each function is pure, so tests check the text directly.
+:class:`PriceChart` is the one plotted chart (``textual-plotext``, issue #732);
+charts are display-only and never decide anything.
 """
 
 from __future__ import annotations
@@ -16,12 +18,14 @@ from typing import Final
 
 from rich.text import Text
 from textual.renderables.digits import DIGITS, DIGITS3X3_BOLD
+from textual_plotext import PlotextPlot
 
 from hermes.application.console.format import sparkline
 from hermes.entrypoints.tui_theme import HERO_RULE_GLYPH, blend, gradient
 
 __all__ = [
     "BRAILLE_BLANK",
+    "PriceChart",
     "area_chart",
     "braille_area",
     "gradient_rule",
@@ -180,3 +184,29 @@ def spark_text(values: Sequence[Decimal], width: int, colour: str) -> Text:
         The sparkline.
     """
     return Text(sparkline(values, width), style=colour)
+
+
+class PriceChart(PlotextPlot):
+    """Line chart of a series of closing prices."""
+
+    def __init__(self, *, id: str | None = None) -> None:
+        super().__init__(id=id)
+        self._closes: tuple[Decimal, ...] = ()
+
+    @property
+    def closes(self) -> tuple[Decimal, ...]:
+        """The closes currently plotted, oldest first."""
+        return self._closes
+
+    def set_closes(self, closes: Sequence[Decimal]) -> None:
+        """Replace the plotted series and redraw.
+
+        Args:
+            closes: Closing prices, oldest first. Converted to float only for
+                drawing; the Decimal values are kept as given.
+        """
+        self._closes = tuple(closes)
+        self.plt.clear_data()
+        if self._closes:
+            self.plt.plot([float(close) for close in self._closes])
+        self.refresh()

@@ -86,6 +86,11 @@ def h4_bar(index: int, pair: Pair = BTC, *, crash: bool = False) -> Bar:
     return _make_bar(pair, KlineInterval.H4, open_time, "1000" if index < 11 else "2000")
 
 
+def make_h4_bar(index: int, close: str, pair: Pair = BTC) -> Bar:
+    """Return a 4h bar ``index`` closing at ``close``, for a scripted price path."""
+    return _make_bar(pair, KlineInterval.H4, H4_BASE + _H4 * index, close)
+
+
 def history(h4_upto: int, *, h4_from: int = 0, pair: Pair = BTC) -> list[Bar]:
     """Return the twelve 1d bars plus 4h bars ``h4_from..h4_upto``, in delivery order."""
     bars = [d1_bar(i, pair) for i in range(12)]

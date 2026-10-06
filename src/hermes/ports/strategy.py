@@ -92,8 +92,9 @@ class StrategyPort(Protocol):
         """Set the adapter's position to the one the portfolio holds.
 
         Called after a signal the executor did not fill, so the adapter's
-        view matches the portfolio again (#707). Touches no bar history and
-        never returns a signal.
+        view matches the portfolio again: flat after an unfilled entry
+        (#707), the held position after an unfilled exit (#706). Touches no
+        bar history and never returns a signal.
 
         Args:
             open_position: The position held, or ``None`` when flat.

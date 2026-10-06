@@ -1,4 +1,4 @@
-"""Tests for ``SwingStrategyAdapter.restore_position`` after a refused entry (#707).
+"""Tests for ``SwingStrategyAdapter.restore_position`` after an unfilled signal (#707, #706).
 
 Invariants protected here:
 
@@ -7,9 +7,13 @@ Invariants protected here:
 - once flat again it emits a new entry on the next qualifying bar;
 - restoring touches no bar history: the next evaluation equals that of an
   adapter that never saw the refused entry;
-- a restored open position exits with the restored entry price.
+- a restored open position exits with the restored entry price;
+- after its exit is declined and the position restored, the adapter exits
+  again on the next qualifying bar, with the same entry price (#706);
+- the time stop counts from the restored entry time, not from the restore.
 
-Reference: issue #707; pre-registration-v1 §6.3 (a rejected trade is skipped).
+Reference: issues #707 and #706; pre-registration-v1 §5.2 (exits), §6.3 (a
+rejected trade is skipped).
 """
 
 from __future__ import annotations
@@ -146,3 +150,41 @@ def test_restore_with_an_open_position_exits_with_that_entry_price() -> None:
 
     assert isinstance(signal, StrategySignal)
     assert (signal.kind, signal.entry_price) == (SignalKind.EXIT, Decimal("1999"))
+
+
+def test_declined_exit_restored_exits_again_on_the_next_crash() -> None:
+    """Exit emitted, declined and restored: the next crash bar exits again at the entry price."""
+    adapter = _entered_adapter()
+    entry = OpenPosition(entry_time=_bar("2000", 11).close_time, entry_price=Decimal("2000"))
+    first = adapter.on_bar(_bar("500", 12, low="100"), _STATE)
+    adapter.restore_position(entry)
+
+    retry = adapter.on_bar(_bar("500", 13, low="100"), _STATE)
+
+    assert isinstance(first, StrategySignal)
+    assert isinstance(retry, StrategySignal)
+    assert (retry.kind, retry.exit_reason, retry.entry_price) == (
+        SignalKind.EXIT,
+        "chandelier",
+        first.entry_price,
+    )
+
+
+def test_time_stop_counts_from_the_restored_entry_time() -> None:
+    """A restored entry 90 days back hits the time stop; the same bar a day after entry does not."""
+    bar = _bar("2000", 12)
+    old = _adapter()
+    old.seed([*_history(), _bar("2000", 11)])
+    old.restore_position(
+        OpenPosition(entry_time=bar.close_time - timedelta(days=90), entry_price=Decimal("2000"))
+    )
+    recent = _adapter()
+    recent.seed([*_history(), _bar("2000", 11)])
+    recent.restore_position(
+        OpenPosition(entry_time=_bar("2000", 11).close_time, entry_price=Decimal("2000"))
+    )
+
+    old_signal = old.on_bar(bar, _STATE)
+
+    assert isinstance(old_signal, StrategySignal)
+    assert (old_signal.exit_reason, recent.on_bar(bar, _STATE)) == ("time_stop", None)

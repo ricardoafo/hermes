@@ -1,0 +1,1 @@
+- **Console charts library**: `textual-plotext` (pinned `>=1.0.1,<2`, MIT) and a reusable `PriceChart` widget in `hermes.entrypoints.tui_charts` that plots a series of Decimal closes. The Code Owner approved the library on 2026-10-05 in the console design's "needs your OK" list. Not wired into a screen yet (issues #712 and #715 do that). Closes #732.

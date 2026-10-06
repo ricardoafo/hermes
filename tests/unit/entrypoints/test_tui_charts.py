@@ -11,21 +11,26 @@ Invariants:
   lower than a smaller one (property);
 - the curve's rows run from the brightest stop at the top to the darkest at the
   bottom;
-- the gradient sparkline is the console sparkline in one colour.
+- the gradient sparkline is the console sparkline in one colour;
+- PriceChart (#732) keeps the exact Decimal closes it was given, in order; its
+  plot spans the series low to high; an empty series draws an empty plot.
 
 The meters are the shared ``Meter`` and are checked in ``test_tui_widgets.py``.
 """
 
 from __future__ import annotations
 
+import asyncio
 from decimal import Decimal
 
 from hypothesis import given
 from hypothesis import strategies as st
 from rich.text import Text
+from textual.app import App, ComposeResult
 
 from hermes.entrypoints.tui_charts import (
     BRAILLE_BLANK,
+    PriceChart,
     area_chart,
     braille_area,
     gradient_rule,
@@ -182,3 +187,42 @@ def test_spark_text_is_the_console_sparkline_in_one_colour() -> None:
     """Rising values draw low to high blocks in the given colour."""
     text = spark_text([Decimal(1), Decimal(2), Decimal(3)], 3, "#468CE6")
     assert (text.plain, text.style) == ("▁▅█", "#468CE6")
+
+
+# ----------------------------------------------------------------------
+# PriceChart (#732)
+# ----------------------------------------------------------------------
+
+
+class _ChartApp(App[None]):
+    def compose(self) -> ComposeResult:
+        yield PriceChart(id="chart")
+
+
+async def _render(closes: list[Decimal]) -> tuple[tuple[Decimal, ...], str]:
+    app = _ChartApp()
+    async with app.run_test(size=(60, 16)) as pilot:
+        chart = app.query_one(PriceChart)
+        chart.set_closes(closes)
+        await pilot.pause()
+        return chart.closes, chart.plt.build()
+
+
+def test_chart_keeps_decimal_closes_in_order() -> None:
+    """Invariant: the widget stores the given closes unchanged and in order."""
+    closes = [Decimal("100.5"), Decimal("101.25"), Decimal("99.75")]
+    kept, _ = asyncio.run(_render(closes))
+    assert kept == (Decimal("100.5"), Decimal("101.25"), Decimal("99.75"))
+
+
+def test_chart_axis_spans_series_low_and_high() -> None:
+    """Invariant: the drawn plot labels cover the lowest and highest close."""
+    _, drawn = asyncio.run(_render([Decimal("100"), Decimal("110"), Decimal("105")]))
+    assert "100" in drawn
+    assert "110" in drawn
+
+
+def test_chart_with_no_closes_is_empty_and_does_not_raise() -> None:
+    """Invariant: an empty series leaves an empty chart, never an error."""
+    kept, _ = asyncio.run(_render([]))
+    assert kept == ()

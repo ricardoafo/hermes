@@ -829,7 +829,12 @@ class SqliteLedger:
         return None if row is None else datetime.fromisoformat(row[0])
 
     def latest_signal_event(
-        self, strategy_id: StrategyId, pair: Pair, *, at_or_before: datetime
+        self,
+        strategy_id: StrategyId,
+        pair: Pair,
+        *,
+        at_or_before: datetime,
+        kind: SignalKind | None = None,
     ) -> SignalEmitted | None:
         """Return the newest ``SignalEmitted`` of a strategy and pair up to a bound.
 
@@ -837,6 +842,7 @@ class SqliteLedger:
             strategy_id: Strategy bucket that emitted the signal.
             pair: Trading pair.
             at_or_before: Inclusive upper bound on ``occurred_at``.
+            kind: Only signals of this kind, or any kind when ``None``.
 
         Returns:
             The rehydrated event, or ``None`` when there is none.
@@ -844,6 +850,7 @@ class SqliteLedger:
         Raises:
             LedgerError: On any SQLite read failure or an unreadable payload.
         """
+        wanted = None if kind is None else kind.value
         try:
             row = self._conn.execute(
                 "SELECT payload_json FROM events "
@@ -851,12 +858,15 @@ class SqliteLedger:
                 "  AND json_extract(payload_json, '$.strategy_id.value') = ? "
                 "  AND json_extract(payload_json, '$.pair.base') = ? "
                 "  AND json_extract(payload_json, '$.pair.quote') = ? "
+                "  AND (? IS NULL OR json_extract(payload_json, '$.kind') = ?) "
                 "ORDER BY occurred_at DESC, id DESC LIMIT 1",
                 (
                     _iso_utc(at_or_before),
                     strategy_id.value,
                     pair.base.value,
                     pair.quote.value,
+                    wanted,
+                    wanted,
                 ),
             ).fetchone()
         except sqlite3.Error as exc:
