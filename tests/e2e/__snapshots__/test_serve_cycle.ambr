@@ -80,6 +80,7 @@
         'next_step': 'nothing',
         'reason': 'Watching BTC, ETH and SOL. Every check ran on time.',
       }),
+      'version': 'v1.0.0-shadow.1',
     }),
   )
 # ---

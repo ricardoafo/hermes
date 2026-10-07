@@ -224,10 +224,16 @@ def resolve_read_model(
     demo = demo_read_model(demo_flag=demo_flag, env=env)
     if demo is not None:
         return demo
+    from hermes.entrypoints.supervisor import desk_briefs  # noqa: PLC0415 - it imports this module
+
     if db_path is None:
         db_path = default_db_path(env)
     try:
-        return LedgerReadModel.open(db_path, journal=journal_window_lines)
+        return LedgerReadModel.open(
+            db_path,
+            journal=journal_window_lines,
+            briefs=desk_briefs(db_path, config_dir=default_config_dir(env)),
+        )
     except FileNotFoundError:
         msg = (
             f"there is no ledger at {db_path} to read; "

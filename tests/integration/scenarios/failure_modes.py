@@ -32,7 +32,9 @@ _LIVE = _U + "adapters/market_data/test_binance_live_klines.py::"
 _REPLAY = _I + "adapters/market_data/test_binance_live_klines_replay.py::"
 _DEPTH = _U + "adapters/market_data/test_binance_depth_snapshot.py::"
 _FX = _U + "adapters/fx/test_frankfurter.py::"
+_TG_429 = _U + "adapters/notifier/test_telegram_adapter.py::TestRateLimitBackOff::"
 _LOOP = _I + "entrypoints/test_serve_bar_loop.py::"
+_CHAOS = _S + "test_chaos_crash_mid_bar.py::"
 _FILLS = _I + "entrypoints/test_serve_fills.py::"
 _SERVE = _U + "entrypoints/test_serve.py::"
 _UNITS = _U + "deploy/test_systemd_units.py::"
@@ -111,11 +113,16 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "A candle is never published",
-            gap="issue #852: serve exits 1 on every boot and systemd gives up (reproduced)",
+            proved_by=(
+                _FAULTS + "test_a_bar_that_is_never_published_stops_serve_once"
+                "_and_the_restart_passes_over_it",
+            ),
         ),
         FailureMode(
             "Serve was down longer than the warm-up window",
-            gap="issue #852: the cursor is older than the history, so every boot exits 1",
+            proved_by=(
+                _LOOP + "test_cursor_older_than_history_reports_the_lost_bars_and_carries_on",
+            ),
         ),
         FailureMode(
             "A bar is published late but in time",
@@ -266,8 +273,16 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             ),
         ),
         FailureMode(
-            "The FX answer has the wrong date or base currency",
-            gap="issue #859: neither is checked; inferred, untested",
+            "The FX answer is for another base currency or a later day",
+            proved_by=(
+                _FX + "TestAnswerMatchesTheQuestion::test_a_response_for_another_base_raises",
+                _FX
+                + "TestAnswerMatchesTheQuestion::test_a_rate_dated_after_the_requested_day_raises",
+            ),
+        ),
+        FailureMode(
+            "The FX answer is dated well before the fill day",
+            gap="issue #859: any earlier date is accepted; the allowed gap is a tax-rule call",
         ),
         FailureMode(
             "A slow FX service stalls the bar loop",
@@ -569,21 +584,44 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "A crash after the signal row means the trade is never pushed",
-            gap="issue #854: the restart sees the signal as old; inferred",
+            proved_by=(
+                _CHAOS + "test_a_crash_mid_bar_does_not_lose_the_entry_push",
+                _CHAOS + "test_a_crash_between_the_push_and_its_record_pushes_the_entry_once_more",
+            ),
         ),
         FailureMode(
             "A non-infrastructure error in the notifier stops serve after the fill",
-            gap="issue #854: only InfraError is isolated; inferred",
+            proved_by=(
+                _LOOP
+                + "test_a_notifier_bug_does_not_stop_serve_and_the_push_is_retried_on_the_next_bar",
+                _LOOP + "test_a_settled_push_is_not_retried_after_a_restart",
+                _U
+                + "application/test_signal_notifier.py::"
+                + "test_a_non_infra_exception_is_isolated_and_the_fan_out_goes_on",
+            ),
         ),
         FailureMode(
             "A signal is pushed twice after a crash",
             proved_by=(
                 _LOOP + "test_crash_between_signal_row_and_cursor_row_does_not_notify_twice",
+                _CHAOS + "test_a_crash_mid_bar_does_not_lose_the_entry_push",
             ),
         ),
         FailureMode(
-            "Telegram answers 429 or is slow",
-            gap="issue #859: no retry, the message is lost and the bar loop waits",
+            "Telegram answers 429",
+            proved_by=(
+                _TG_429 + "test_one_429_then_ok_delivers_the_message_once",
+                _TG_429 + "test_retry_after_in_the_body_is_the_wait",
+                _TG_429 + "test_repeated_429s_give_up_after_three_retries",
+                _TG_429 + "test_waits_never_add_up_past_the_cap",
+            ),
+        ),
+        FailureMode(
+            "A slow Telegram holds up the bar that sent the push",
+            gap=(
+                "issue #859: the push runs in a thread, but serve awaits it before it "
+                "finishes the bar (up to 30 s per channel on 429); inferred, untested"
+            ),
         ),
     ),
     "risk halts": (
