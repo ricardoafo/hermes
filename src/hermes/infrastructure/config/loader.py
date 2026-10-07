@@ -95,6 +95,10 @@ def _read_yaml(path: Path) -> dict[str, Any]:
         raw = path.read_text(encoding="utf-8")
     except OSError as exc:
         raise ConfigError(f"cannot read {path}: {exc}") from exc
+    except UnicodeDecodeError as exc:
+        raise ConfigError(
+            f"cannot read {path}: not valid UTF-8 (byte {exc.start}: {exc.reason})"
+        ) from exc
     try:
         parsed = yaml.safe_load(raw)
     except yaml.YAMLError as exc:

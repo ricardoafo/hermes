@@ -45,6 +45,9 @@ _BLIND: Final = "Money is not shown here."
 _TAX_PENDING: Final = "tax estimate: not available yet"
 _EUR_PENDING: Final = "EUR pending"
 _LOG_LINES: Final = 20
+# A line that is not structlog JSON can be a traceback quoting an upstream
+# response body, so its text never goes to Telegram.
+_RAW_LINE: Final = "(unstructured journal line, see the console)"
 
 
 def parse_command(text: str) -> tuple[str, list[str]] | None:
@@ -233,7 +236,7 @@ class Replies:
         if not lines:
             return "No warnings or errors in the journal."
         return "\n".join(
-            f"{line.at.astimezone(self.tz):%H:%M} {line.level.upper()} {line.event or line.raw}"
+            f"{line.at.astimezone(self.tz):%H:%M} {line.level.upper()} {line.event or _RAW_LINE}"
             for line in lines
         )
 

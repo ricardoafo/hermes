@@ -526,6 +526,17 @@ def test_unreadable_file_raises_config_error_with_path_and_cause(
     assert str(excinfo.value) == f"Config error: cannot read {path}: access denied"
 
 
+def test_non_utf8_file_raises_config_error_not_a_decode_traceback(tmp_path: Path) -> None:
+    """Issue #807: bytes that are not UTF-8 become a ConfigError naming the path and the byte."""
+    path = tmp_path / "ml.yaml"
+    path.write_bytes(b"model: caf\xe9\n")
+    with pytest.raises(ConfigError) as excinfo:
+        load_yaml_model(path, MLConfig, env_section="ML", env={})
+    assert str(excinfo.value) == (
+        f"Config error: cannot read {path}: not valid UTF-8 (byte 10: invalid continuation byte)"
+    )
+
+
 def test_invalid_yaml_raises_config_error_with_path(tmp_path: Path) -> None:
     """A YAML syntax error raises ConfigError naming the offending file."""
     path = tmp_path / "strategies.yaml"
