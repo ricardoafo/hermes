@@ -13,7 +13,10 @@ Invariants:
   figures use the live price for every price term (D-4);
 - a live total exists only when every open position has a live price, and it
   is then cash plus every position at its live price: never half live, half
-  booked (D-4, property).
+  booked (D-4, property);
+- each good tick carries its book's spread in basis points of the midpoint and
+  how long its fetch took; a failed tick carries neither, and the board keeps
+  the last good spread per coin and the newest good round trip (issue #722).
 
 Reference: openspec/changes/713-live-ticker/change.md.
 """
@@ -36,6 +39,7 @@ from hermes.application.console.live import (
     TickOutcome,
     live_position,
     live_total,
+    spread_bps,
 )
 from hermes.application.console.position_figures import LotFacts, PositionFacts, build_detail
 from hermes.application.console.views import (
@@ -142,6 +146,44 @@ def test_fetch_turns_every_failure_into_a_failed_tick() -> None:
     ]
 
 
+class _Timer:
+    """A monotonic clock that moves on ``step`` seconds each time it is read."""
+
+    def __init__(self, step: float) -> None:
+        self.step = step
+        self.reads = 0
+
+    def __call__(self) -> float:
+        self.reads += 1
+        return self.reads * self.step
+
+
+def test_fetch_records_each_good_ticks_spread_and_round_trip() -> None:
+    """Bid and ask 1 either side of 60,000 is 0.333... bp; each fetch takes one 84 ms step."""
+    fake = _FakeTicker({"BTC": "60000", "ETH": "2600"}, fail={"ETH": RuntimeError("down")})
+    outcomes = TickerPoller(fake, _Clock(), coins=("BTC", "ETH"), timer=_Timer(0.084)).fetch()
+    assert [(o.coin, o.spread_bps, o.round_trip) for o in outcomes] == [
+        ("BTC", Decimal(2) * 2 * 10_000 / Decimal(120_000), timedelta(milliseconds=84)),
+        ("ETH", None, None),
+    ]
+
+
+def test_spread_is_measured_against_the_midpoint() -> None:
+    """99 / 101: a spread of 2 on a midpoint of 100 is 200 bp."""
+    assert spread_bps(Decimal(99), Decimal(101)) == Decimal(200)
+
+
+@given(
+    bid=st.decimals(min_value="0.0001", max_value="1000000", places=4),
+    gap=st.decimals(min_value="0.0001", max_value="1000000", places=4),
+)
+def test_property_spread_is_positive_and_under_two_whole_midpoints(
+    bid: Decimal, gap: Decimal
+) -> None:
+    """INV: any uncrossed book has a spread above 0 and below 20,000 bp, its ceiling."""
+    assert Decimal(0) < spread_bps(bid, bid + gap) < Decimal(20_000)
+
+
 # ----------------------------------------------------------------------
 # Board
 # ----------------------------------------------------------------------
@@ -174,6 +216,27 @@ def test_a_coin_that_never_ticked_has_no_quote() -> None:
     board = LiveBoard()
     board.apply([_failed("SOL", _T0)])
     assert (board.quote("SOL"), board.prices()) == (None, {})
+
+
+def test_board_keeps_the_last_good_spread_and_the_newest_round_trip() -> None:
+    """A failed tick after a good one keeps the good spread and round trip on show."""
+    board = LiveBoard()
+    board.apply(
+        [
+            replace(
+                _ok("BTC", "60000", _T0),
+                spread_bps=Decimal("0.3"),
+                round_trip=timedelta(milliseconds=84),
+            )
+        ]
+    )
+    board.apply([_failed("BTC", _T0 + timedelta(seconds=10))])
+    quote = board.quote("BTC")
+    assert quote is not None
+    assert (quote.spread_bps, board.status(_T0 + timedelta(seconds=10)).round_trip) == (
+        Decimal("0.3"),
+        timedelta(milliseconds=84),
+    )
 
 
 def test_status_waits_then_goes_live_then_pauses_after_sixty_seconds() -> None:

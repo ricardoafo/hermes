@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import ClassVar
 
@@ -29,7 +29,7 @@ from syrupy.location import PyTestLocation
 from syrupy.types import SnapshotIndex
 
 from hermes.adapters.console import FixtureReadModel
-from hermes.application.console.live import TickOutcome
+from hermes.application.console.live import TickOutcome, spread_bps
 from hermes.domain.errors import KrakenPublicError
 from hermes.domain.market_data.ticker import Ticker
 from hermes.domain.value_objects.pair import Pair
@@ -70,6 +70,8 @@ def _poll(failed: str | None) -> tuple[TickOutcome, ...]:
             at=_FROZEN,
             price=None if coin == failed else price,
             error=KrakenPublicError.__name__ if coin == failed else None,
+            spread_bps=None if coin == failed else spread_bps(price - 1, price + 1),
+            round_trip=None if coin == failed else timedelta(milliseconds=84),
         )
         for coin, price in _PRICES.items()
     )

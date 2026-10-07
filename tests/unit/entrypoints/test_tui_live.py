@@ -12,7 +12,10 @@ Invariants:
 - prices show in EUR at the booked rate, else in USDT;
 - live position rows carry the live tag and a booked line; paused rows are dim;
   a blind surface gets no live money at all (``pnl_visible``);
-- the portfolio and detail live lines name both layers.
+- the portfolio and detail live lines name both layers;
+- from 70 cells each Market row shows the book's spread in basis points (one
+  decimal below 10, whole above, an ellipsis when unknown), and while live the
+  tag line says how long the newest fetch took (issue #722).
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+import pytest
 from rich.console import Group
 from rich.text import Text
 
@@ -166,10 +170,67 @@ def test_market_rows_show_price_change_and_sparkline_per_coin() -> None:
 
 
 def test_market_rows_add_timeframe_and_result_from_64_cells() -> None:
-    """At 70 cells the header also names the timeframe and the result."""
+    """At 64 cells the header also names the timeframe and the result."""
     watch = _model().market_watch()
-    text = _plain(market_rows(watch, {}, _look(), width=70, rate=None), width=70)
+    text = _plain(market_rows(watch, {}, _look(), width=64, rate=None), width=64)
     assert text.splitlines()[1].split() == ["coin", "tf", "USDT", "15m", "chart", "result", "next"]
+
+
+def _spread_quote(coin: str, price: str, bps: str | None) -> LiveQuote:
+    return replace(_quote(coin, price), spread_bps=None if bps is None else Decimal(bps))
+
+
+@pytest.mark.parametrize(
+    ("width", "header", "cells"),
+    [
+        (
+            70,
+            ["coin", "tf", "USDT", "15m", "chart", "spread", "result", "next"],
+            ["0.3bp", "10.0bp", "134bp"],
+        ),
+        (69, ["coin", "tf", "USDT", "15m", "chart", "result", "next"], []),
+    ],
+)
+def test_market_rows_add_the_book_spread_from_70_cells(
+    width: int, header: list[str], cells: list[str]
+) -> None:
+    """0.32, 9.96 and 134.2 bp read 0.3bp, 10.0bp and 134bp at 70 cells; no column at 69."""
+    watch = _model().market_watch()
+    quotes = {
+        "BTC": _spread_quote("BTC", "62100", "0.32"),
+        "ETH": _spread_quote("ETH", "2710", "9.96"),
+        "SOL": _spread_quote("SOL", "149", "134.2"),
+    }
+    lines = _plain(market_rows(watch, quotes, _look(), width=width, rate=None), width).splitlines()
+    found = [word for line in lines[2:] for word in line.split() if word.endswith("bp")]
+    assert (lines[1].split(), found) == (header, cells)
+
+
+def test_a_coin_without_a_known_spread_shows_an_ellipsis() -> None:
+    """A quote with no spread never shows a made-up number."""
+    watch = _model().market_watch()
+    quotes = {"BTC": _spread_quote("BTC", "62100", None)}
+    text = _plain(market_rows(watch, quotes, _look(), width=70, rate=None), 70)
+    btc = next(line for line in text.splitlines() if line.startswith("BTC"))
+    assert btc.split()[-3:-2] == ["…"]
+
+
+@pytest.mark.parametrize(
+    ("state", "tag"),
+    [
+        (LiveState.LIVE, "● live · 84 ms"),
+        (LiveState.PAUSED, "● live · paused 14:12:05"),
+        (LiveState.WAITING, "○ live · waiting for prices"),
+    ],
+)
+def test_the_tag_line_says_how_long_the_newest_fetch_took_only_while_live(
+    state: LiveState, tag: str
+) -> None:
+    """An 84 ms fetch shows beside the live tag; paused or waiting, it never shows."""
+    look = _look(state)
+    look = replace(look, status=replace(look.status, round_trip=timedelta(milliseconds=84)))
+    rows = market_rows(_model().market_watch(), {}, look, width=44, rate=None)
+    assert _plain(rows, 44).splitlines()[0] == tag
 
 
 def test_failed_coin_keeps_its_last_price_dimmed_with_as_of() -> None:

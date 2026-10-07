@@ -1,0 +1,1 @@
+- Console: from 70 columns, the Market panel shows each coin's book spread in basis points, and while prices are live its tag line shows how long the newest ticker fetch took (#722).

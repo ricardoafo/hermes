@@ -7,10 +7,13 @@ between bars"). This module holds the pure parts:
 
 - :class:`TickerPoller` decides when a poll is due (the cadence follows the
   console clock) and fetches one tick per coin, turning every failure into a
-  failed tick so nothing is ever raised into the UI;
-- :class:`LiveBoard` keeps the ticks in memory: the last good price per coin,
-  a ring buffer of recent prices, the time of a failure, and whether the live
-  layer is waiting, live or paused (no good tick for more than 60 s);
+  failed tick so nothing is ever raised into the UI; each good tick also
+  carries the book's spread in basis points and how long the fetch took
+  (issue #722);
+- :class:`LiveBoard` keeps the ticks in memory: the last good price and spread
+  per coin, a ring buffer of recent prices, the time of a failure, the newest
+  round trip, and whether the live layer is waiting, live or paused (no good
+  tick for more than 60 s);
 - :func:`live_position` and :func:`live_total` value a position and the
   portfolio at live prices. A live figure uses the live price for every price
   term; a live total exists only when every open position has a live price, so
@@ -34,6 +37,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
+from time import perf_counter
 from typing import Final
 
 from hermes.application.console.format import stop_room_share
@@ -60,6 +64,7 @@ __all__ = [
     "live_position",
     "live_total",
     "poll_succeeded",
+    "spread_bps",
 ]
 
 TICK_EVERY: Final = timedelta(seconds=10)
@@ -70,6 +75,7 @@ LIVE_COINS: Final = ("BTC", "ETH", "SOL")
 LIVE_QUOTE: Final = "USDT"
 _ZERO: Final = Decimal(0)
 _HUNDRED: Final = Decimal(100)
+_BPS: Final = Decimal(10_000)
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,12 +87,17 @@ class TickOutcome:
         at: Console-clock time of the fetch.
         price: Last traded price in the quote currency; ``None`` when it failed.
         error: Name of the failure, when it failed.
+        spread_bps: Best ask less best bid over their midpoint, in basis
+            points; ``None`` when the fetch failed.
+        round_trip: How long the fetch took; ``None`` when it failed.
     """
 
     coin: str
     at: datetime
     price: Decimal | None
     error: str | None = None
+    spread_bps: Decimal | None = None
+    round_trip: timedelta | None = None
 
 
 def poll_succeeded(outcomes: Sequence[TickOutcome]) -> bool:
@@ -116,6 +127,7 @@ class LiveQuote:
         previous: The good price before it, if any.
         history: The kept good prices, oldest first (at most ``RING_TICKS``).
         failed_at: When the newest fetch failed; ``None`` when it succeeded.
+        spread_bps: The book's spread at the last good price, in basis points.
     """
 
     coin: str
@@ -124,6 +136,7 @@ class LiveQuote:
     previous: Decimal | None
     history: tuple[Decimal, ...]
     failed_at: datetime | None = None
+    spread_bps: Decimal | None = None
 
     @property
     def change_pct(self) -> Decimal:
@@ -148,10 +161,12 @@ class LiveStatus:
         state: WAITING before the first good tick, LIVE while the newest good
             tick is at most ``STALE_AFTER`` old, PAUSED after that.
         last_tick_at: When the newest good tick was fetched, if any.
+        round_trip: How long the newest good tick took to fetch, if known.
     """
 
     state: LiveState
     last_tick_at: datetime | None = None
+    round_trip: timedelta | None = None
 
 
 class LiveBoard:
@@ -167,7 +182,9 @@ class LiveBoard:
         self._history: dict[str, deque[Decimal]] = {}
         self._at: dict[str, datetime] = {}
         self._failed: dict[str, datetime] = {}
+        self._spread: dict[str, Decimal | None] = {}
         self._last_good: datetime | None = None
+        self._round_trip: timedelta | None = None
 
     def apply(self, outcomes: Iterable[TickOutcome]) -> dict[str, int]:
         """Record fetched ticks.
@@ -190,9 +207,11 @@ class LiveBoard:
                 moved[outcome.coin] = 1 if outcome.price > history[-1] else -1
             history.append(outcome.price)
             self._at[outcome.coin] = outcome.at
+            self._spread[outcome.coin] = outcome.spread_bps
             self._failed.pop(outcome.coin, None)
-            if self._last_good is None or outcome.at > self._last_good:
+            if self._last_good is None or outcome.at >= self._last_good:
                 self._last_good = outcome.at
+                self._round_trip = outcome.round_trip
         return moved
 
     def quote(self, coin: str) -> LiveQuote | None:
@@ -207,6 +226,7 @@ class LiveBoard:
             previous=history[-2] if len(history) > 1 else None,
             history=tuple(history),
             failed_at=self._failed.get(coin),
+            spread_bps=self._spread.get(coin),
         )
 
     def prices(self) -> dict[str, Decimal]:
@@ -219,7 +239,7 @@ class LiveBoard:
         if last is None:
             return LiveStatus(LiveState.WAITING)
         state = LiveState.PAUSED if now - last > STALE_AFTER else LiveState.LIVE
-        return LiveStatus(state, last)
+        return LiveStatus(state, last, self._round_trip)
 
 
 class TickerPoller:
@@ -234,6 +254,8 @@ class TickerPoller:
         coins: Base assets to fetch.
         quote: Quote asset of every pair.
         every: Time between polls.
+        timer: Seconds from a monotonic clock, timing each fetch; ``None`` uses
+            :func:`time.perf_counter`.
     """
 
     def __init__(
@@ -244,10 +266,12 @@ class TickerPoller:
         coins: Sequence[str] = LIVE_COINS,
         quote: str = LIVE_QUOTE,
         every: timedelta = TICK_EVERY,
+        timer: Callable[[], float] | None = None,
     ) -> None:
         """Remember the port and the cadence; no poll has started yet."""
         self._port = port
         self._clock = clock
+        self._timer = timer or perf_counter
         self._pairs = tuple((coin, Pair(Currency(coin), Currency(quote))) for coin in coins)
         self._every = every
         self._started: datetime | None = None
@@ -268,15 +292,39 @@ class TickerPoller:
         """
         outcomes = []
         for coin, pair in self._pairs:
+            started = self._timer()
             try:
-                price: Decimal | None = self._port.get_ticker(pair).last_price
-                error = None
+                ticker = self._port.get_ticker(pair)
             # Any failure (network, HTTP, schema, a bug in the fake) must stay a
             # failed tick: the console never lets the ticker raise into the UI.
             except Exception as exc:
-                price, error = None, type(exc).__name__
-            outcomes.append(TickOutcome(coin=coin, at=self._clock(), price=price, error=error))
+                outcomes.append(
+                    TickOutcome(coin=coin, at=self._clock(), price=None, error=type(exc).__name__)
+                )
+                continue
+            outcomes.append(
+                TickOutcome(
+                    coin=coin,
+                    at=self._clock(),
+                    price=ticker.last_price,
+                    spread_bps=spread_bps(ticker.best_bid, ticker.best_ask),
+                    round_trip=timedelta(seconds=max(self._timer() - started, 0.0)),
+                )
+            )
         return tuple(outcomes)
+
+
+def spread_bps(bid: Decimal, ask: Decimal) -> Decimal:
+    """Return the spread of a book in basis points of its midpoint.
+
+    Args:
+        bid: Best bid, above zero.
+        ask: Best ask, above ``bid``.
+
+    Returns:
+        ``(ask - bid) / ((ask + bid) / 2) * 10,000``.
+    """
+    return (ask - bid) * 2 * _BPS / (ask + bid)
 
 
 @dataclass(frozen=True, slots=True)

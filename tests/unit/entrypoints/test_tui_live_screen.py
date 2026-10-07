@@ -15,6 +15,9 @@ Invariants:
 - a tick flashes the moved cells with motion on, and the flash ends; with
   motion off nothing flashes (A-3.4);
 - ticks never write the ledger: its bytes are the same before and after (A-4.1);
+- the Market panel shows each coin's book spread in basis points from 80
+  cells, and its tag line how long the newest fetch took while live, never
+  while paused (issue #722);
 - reviewed SVG snapshots with a fake ticker at 80x24, 120x36, 160x45 and
   240x60, motion off and a frozen clock (A-6.1).
 """
@@ -22,6 +25,7 @@ Invariants:
 from __future__ import annotations
 
 import asyncio
+import itertools
 import threading
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
@@ -38,6 +42,7 @@ from textual.pilot import Pilot
 from hermes.adapters.console import FixtureReadModel
 from hermes.adapters.console.ledger_read_model import LedgerReadModel
 from hermes.application.console import ConsoleReadModel
+from hermes.application.console import live as live_module
 from hermes.domain.errors import KrakenPublicError
 from hermes.domain.market_data.ticker import Ticker
 from hermes.domain.value_objects.pair import Pair
@@ -79,6 +84,13 @@ class _FakeTicker:
             last_price=price,
             snapshot_time=_FROZEN,
         )
+
+
+@pytest.fixture(autouse=True)
+def _steady_round_trip(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every fetch takes 84 ms on a fake monotonic clock, so the tag line is reproducible."""
+    steps = itertools.count()
+    monkeypatch.setattr(live_module, "perf_counter", lambda: next(steps) * 0.084)
 
 
 class _Clock:
@@ -213,6 +225,35 @@ def test_stale_ticker_pauses_the_live_values() -> None:
         "● live · paused 14:12:00",
         True,
     )
+
+
+def test_the_tag_line_says_how_long_the_newest_fetch_took() -> None:
+    """While live, the Market tag line reads "● live · 84 ms" (the fake clock's fetch time)."""
+    tag = _run(
+        _fixture(),
+        _FakeTicker(_FIRST),
+        lambda app, _pilot, _clock: _first_line(app),
+    )
+    assert tag == "● live · 84 ms"
+
+
+async def _first_line(app: HomeApp) -> str:
+    return app.plain_text("market").splitlines()[0]
+
+
+def test_the_home_market_panel_shows_each_book_spread() -> None:
+    """At 120x36, bid and ask one either side of the last price read 0.3, 7.4 and 134 bp."""
+    text = _run(
+        _fixture(),
+        _FakeTicker(_SECOND),
+        lambda app, _pilot, _clock: _all_lines(app),
+        size=(120, 36),
+    )
+    assert [word for word in text.split() if word.endswith("bp")] == ["0.3bp", "7.4bp", "134bp"]
+
+
+async def _all_lines(app: HomeApp) -> str:
+    return app.plain_text("market")
 
 
 # ----------------------------------------------------------------------

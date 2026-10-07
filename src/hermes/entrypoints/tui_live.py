@@ -8,8 +8,10 @@ apart from booked values (the ledger at the last bar close):
   the time of the booked values. Paused (no tick for more than 60 s) dims
   every live value; a tick flashes the changed cell blue (up) or orange (down).
 - :func:`market_rows` draws the Market panel: per coin the live price, its
-  change over the kept ticks, a braille sparkline and the next check. A coin
-  whose last fetch failed keeps its last price, dimmed, with "as of HH:MM:SS".
+  change over the kept ticks, a braille sparkline, the book's spread in basis
+  points (from 70 cells) and the next check; the tag line adds how long the
+  newest fetch took (issue #722). A coin whose last fetch failed keeps its last
+  price, dimmed, with "as of HH:MM:SS".
 
 Display only: nothing here is written anywhere, and no engine, supervisor or
 notification code imports this module (import-linter contract
@@ -22,8 +24,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
-from decimal import Decimal
+from datetime import datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Final
 
 from rich.console import Group, RenderableType
@@ -68,10 +70,15 @@ _CHANGE: Final = 10
 _RESULT: Final = 7
 _NEXT: Final = 9
 _FULL_FROM: Final = 64
+_SPREAD: Final = 7
+_SPREAD_FROM: Final = 70
 _MIN_CHART: Final = 4
 _MAX_CHART: Final = 24
 _WINDOW: Final = "15m"
 _NONE: Final = "…"
+_TENTH: Final = Decimal("0.1")
+_ONE: Final = Decimal(1)
+_WHOLE_BPS_FROM: Final = Decimal(10)
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,13 +198,16 @@ def _price(price: Decimal, rate: Decimal | None) -> str:
 class _Columns:
     full: bool
     chart: int
+    spread: bool
 
     @classmethod
     def for_width(cls, width: int) -> _Columns:
         full = width >= _FULL_FROM
+        spread = width >= _SPREAD_FROM
         fixed = _COIN + _PRICE + _CHANGE + 1 + _NEXT + ((_TF + _RESULT) if full else 0)
+        fixed += _SPREAD if spread else 0
         chart = min(_MAX_CHART, width - fixed - 1)
-        return cls(full=full, chart=chart if chart >= _MIN_CHART else 0)
+        return cls(full=full, chart=chart if chart >= _MIN_CHART else 0, spread=spread)
 
 
 def _header(columns: _Columns, rate: Decimal | None) -> Text:
@@ -208,6 +218,8 @@ def _header(columns: _Columns, rate: Decimal | None) -> Text:
     out.append(f"{price:>{_PRICE - 1}} {_WINDOW:>{_CHANGE - 1}} ")
     if columns.chart:
         out.append(f"{'chart':<{columns.chart}} ")
+    if columns.spread:
+        out.append(f"{'spread':<{_SPREAD}}")
     if columns.full:
         out.append(f"{'result':<{_RESULT}}")
     out.append("next")
@@ -220,6 +232,7 @@ def _quote_cells(
     """Return the price, change and chart cells of one coin."""
     tokens = look.tokens
     width = _CHANGE + (columns.chart + 1 if columns.chart else 0)
+    width += _SPREAD if columns.spread else 0
     if quote is None:
         out = Text(f"{_NONE:>{_PRICE - 1}} ", style=tokens.dim)
         out.append(" " * width)
@@ -239,7 +252,25 @@ def _quote_cells(
     if columns.chart:
         out.append_text(braille_spark(quote.history, columns.chart, look.style(colour)))
         out.append(" ")
+    if columns.spread:
+        out.append(f"{_spread(quote.spread_bps):<{_SPREAD}}", style=look.style(tokens.muted))
     return out
+
+
+def _spread(bps: Decimal | None) -> str:
+    """Return a spread in basis points: one decimal below 10, whole above."""
+    if bps is None:
+        return _NONE
+    places = _TENTH if bps < _WHOLE_BPS_FROM else _ONE
+    return f"{bps.quantize(places, rounding=ROUND_HALF_UP)}bp"
+
+
+def _round_trip(status: LiveStatus) -> str | None:
+    """Return ``84 ms`` for the newest good fetch while live, else ``None``."""
+    if status.state is not LiveState.LIVE or status.round_trip is None:
+        return None
+    ms = status.round_trip / timedelta(milliseconds=1)
+    return f"{ms:.0f} ms"
 
 
 def market_rows(
@@ -256,17 +287,22 @@ def market_rows(
         watch: The checked streams (their coin, timeframe, result and next check).
         quotes: Live quote per coin.
         look: The live layer's look.
-        width: Cells available; from 64 the timeframe and the result show too.
+        width: Cells available; from 64 the timeframe and the result show
+            too, and from 70 the spread.
         rate: EUR per quote unit for the prices, or ``None`` to show USDT.
 
     Returns:
-        The tag line, a header and one row per coin.
+        The tag line (with the newest fetch's round trip while live), a
+        header and one row per coin.
     """
     columns = _Columns.for_width(width)
     tokens = look.tokens
     header = _header(columns, rate)
     header.stylize(tokens.muted)
-    lines: list[RenderableType] = [look.tag(), header]
+    tag = look.tag()
+    if (trip := _round_trip(look.status)) is not None:
+        tag.append(f" · {trip}", style=tokens.muted)
+    lines: list[RenderableType] = [tag, header]
     pairs: Sequence[WatchedPair | str] = watch or [coin for coin in LIVE_COINS if coin in quotes]
     for pair in pairs:
         coin = pair if isinstance(pair, str) else pair.coin
