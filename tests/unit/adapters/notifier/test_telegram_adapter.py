@@ -65,7 +65,36 @@ def adapter(config: TelegramConfig) -> TelegramAdapter:
     manager per test, so the client here does NOT need MockTransport.
     """
     client = httpx.Client(base_url="https://api.telegram.org", timeout=5.0)
-    return TelegramAdapter(config=config, client=client)
+    return TelegramAdapter(config=config, client=client, sleep=lambda _sec: None)
+
+
+class _FakeTime:
+    """A monotonic clock that only moves when the adapter sleeps or a request runs."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.sleeps: list[float] = []
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+def _timed_adapter(config: TelegramConfig, fake: _FakeTime) -> TelegramAdapter:
+    """Return an adapter whose back-off sleeps and reads ``fake`` instead of real time."""
+    client = httpx.Client(base_url="https://api.telegram.org", timeout=10.0)
+    return TelegramAdapter(config=config, client=client, sleep=fake.sleep, monotonic=fake.monotonic)
+
+
+def _too_many(retry_after: int | None = None, **headers: str) -> httpx.Response:
+    """Return a Bot API 429, with ``parameters.retry_after`` when given."""
+    body: dict[str, Any] = {"ok": False, "error_code": 429, "description": "Too Many Requests"}
+    if retry_after is not None:
+        body["parameters"] = {"retry_after": retry_after}
+    return httpx.Response(429, json=body, headers=headers)
 
 
 def _anomaly(severity: AnomalySeverity = AnomalySeverity.CRITICAL) -> AnomalyDetected:
@@ -256,7 +285,7 @@ class TestSendErrorPaths:
     """Every documented sendMessage failure raises with an operator-readable message."""
 
     def test_rate_limit_429_raises_with_status_and_body(self, adapter: TelegramAdapter) -> None:
-        """HTTP 429 raises instead of retrying; the message carries status and body."""
+        """A 429 that outlasts the retries raises; the message carries status and body."""
         body = '{"ok":false,"error_code":429,"description":"Too Many Requests: retry after 30"}'
         assert _urgent_error(adapter, httpx.Response(429, text=body)) == (
             f"Telegram notifier error: HTTP 429 from sendMessage: {body}"
@@ -340,6 +369,105 @@ class TestSendErrorPaths:
         assert _urgent_error(adapter, response) == (
             f"Telegram notifier error: non-JSON response from sendMessage: {'<' * 200}"
         )
+
+
+class TestRateLimitBackOff:
+    """A 429 is waited out a bounded number of times, never longer than the cap (#859 item 5)."""
+
+    @staticmethod
+    def _send(adapter: TelegramAdapter, *responses: httpx.Response) -> tuple[int, str]:
+        """Send one push against ``responses`` in order; return the call count and any error."""
+        with respx.mock() as router:
+            route = router.post(_API_URL).mock(side_effect=list(responses))
+            try:
+                adapter.notify(_anomaly())
+            except TelegramNotifierError as exc:
+                return route.call_count, str(exc)
+        return route.call_count, ""
+
+    def test_one_429_then_ok_delivers_the_message_once(self, config: TelegramConfig) -> None:
+        """Invariant: a single 429 is waited out and the push goes through on the retry."""
+        fake = _FakeTime()
+        calls, error = self._send(_timed_adapter(config, fake), _too_many(2), _ok())
+        assert (calls, error, fake.sleeps) == (2, "", [2.0])
+
+    def test_retry_after_in_the_body_is_the_wait(self, config: TelegramConfig) -> None:
+        """Invariant: the Bot API's ``parameters.retry_after`` sets the back-off, not a default."""
+        fake = _FakeTime()
+        self._send(_timed_adapter(config, fake), _too_many(7, **{"Retry-After": "3"}), _ok())
+        assert fake.sleeps == [7.0]
+
+    def test_retry_after_header_is_the_wait_when_the_body_has_none(
+        self, config: TelegramConfig
+    ) -> None:
+        """Invariant: without ``parameters.retry_after`` the ``Retry-After`` header is honoured."""
+        fake = _FakeTime()
+        self._send(_timed_adapter(config, fake), _too_many(**{"Retry-After": "3"}), _ok())
+        assert fake.sleeps == [3.0]
+
+    @pytest.mark.parametrize(
+        "response",
+        [
+            httpx.Response(429, text="Too Many Requests"),
+            _too_many(-5),
+            httpx.Response(429, json={"ok": False, "parameters": {"retry_after": True}}),
+            _too_many(**{"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"}),
+        ],
+        ids=["plain-text-body", "negative", "boolean", "http-date-header"],
+    )
+    def test_an_unreadable_wait_falls_back_to_one_second(
+        self, config: TelegramConfig, response: httpx.Response
+    ) -> None:
+        """Invariant: a 429 without a usable wait is retried after 1 s, never at once or never."""
+        fake = _FakeTime()
+        self._send(_timed_adapter(config, fake), response, _ok())
+        assert fake.sleeps == [1.0]
+
+    def test_repeated_429s_give_up_after_three_retries(self, config: TelegramConfig) -> None:
+        """Invariant: at most 3 retries, then the same InfraError as any other HTTP failure."""
+        fake = _FakeTime()
+        calls, error = self._send(_timed_adapter(config, fake), *[_too_many(5)] * 6)
+        assert (calls, fake.sleeps, error.startswith("Telegram notifier error: HTTP 429")) == (
+            4,
+            [5.0, 5.0, 5.0],
+            True,
+        )
+
+    def test_waits_never_add_up_past_the_cap(self, config: TelegramConfig) -> None:
+        """Invariant: a second 20 s wait would pass the 30 s cap, so the adapter gives up."""
+        fake = _FakeTime()
+        calls, error = self._send(_timed_adapter(config, fake), *[_too_many(20)] * 4)
+        assert (calls, fake.sleeps, bool(error)) == (2, [20.0], True)
+
+    def test_a_wait_longer_than_the_cap_is_not_slept(self, config: TelegramConfig) -> None:
+        """Invariant: a retry_after beyond the cap fails at once instead of stalling serve."""
+        fake = _FakeTime()
+        calls, error = self._send(_timed_adapter(config, fake), _too_many(60), _ok())
+        assert (calls, fake.sleeps, bool(error)) == (1, [], True)
+
+    def test_slow_attempts_count_towards_the_cap(self, config: TelegramConfig) -> None:
+        """Invariant: request time plus waits stay within 30 s even when every call is slow."""
+        fake = _FakeTime()
+
+        def slow_429(request: httpx.Request) -> httpx.Response:
+            fake.now += request.extensions["timeout"]["read"]
+            return _too_many(1)
+
+        adapter = _timed_adapter(config, fake)
+        with respx.mock() as router:
+            router.post(_API_URL).mock(side_effect=slow_429)
+            with pytest.raises(TelegramNotifierError, match="HTTP 429"):
+                adapter.notify(_anomaly())
+        assert fake.now <= 30.0
+
+    def test_a_429_from_the_production_factory_is_retried(self, config: TelegramConfig) -> None:
+        """Invariant: :meth:`TelegramAdapter.create` wires the back-off, not only the tests."""
+        adapter = TelegramAdapter.create(config)
+        try:
+            calls, error = self._send(adapter, _too_many(0), _ok())
+        finally:
+            adapter.close()
+        assert (calls, error) == (2, "")
 
 
 class TestNotifyReportNoOp:
@@ -427,8 +555,8 @@ class TestNotifyEvent:
             occurred_at=_AT,
             correlation_id=_TEST_CORRELATION_ID,
             asset=usdt,
-            current=Money(amount=Decimal("50"), currency=usdt),
-            threshold=Money(amount=Decimal("100"), currency=usdt),
+            current=Money(amount=Decimal(50), currency=usdt),
+            threshold=Money(amount=Decimal(100), currency=usdt),
             checked_at=_AT,
         )
         with respx.mock() as router:
