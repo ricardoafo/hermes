@@ -56,6 +56,8 @@ _LOTS_MACHINE = _U + "domain/lots/test_fifo_lots_state_machine.py::"
 _WIRE = _U + "adapters/test_wire_numbers.py::"
 _PATHS = _S + "test_generated_paths.py::"
 _EVERY_BAR = _PATHS + "test_every_rule_holds_after_every_bar_and_a_restart_changes_nothing"
+_CONTENTION = _I + "adapters/ledger/test_ledger_contention.py::"
+_FILE_LOCK = _U + "infrastructure/test_file_lock.py::"
 _META = _I + "metamorphic/test_backtest_relations.py::"
 
 
@@ -111,11 +113,16 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "A candle is never published",
-            gap="issue #852: serve exits 1 on every boot and systemd gives up (reproduced)",
+            proved_by=(
+                _FAULTS + "test_a_bar_that_is_never_published_stops_serve_once"
+                "_and_the_restart_passes_over_it",
+            ),
         ),
         FailureMode(
             "Serve was down longer than the warm-up window",
-            gap="issue #852: the cursor is older than the history, so every boot exits 1",
+            proved_by=(
+                _LOOP + "test_cursor_older_than_history_reports_the_lost_bars_and_carries_on",
+            ),
         ),
         FailureMode(
             "A bar is published late but in time",
@@ -339,16 +346,39 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             gap="issue #871: detected, but every later append is blocked; no recovery path",
         ),
         FailureMode(
-            "Another process holds the ledger briefly while serve commits",
-            proved_by=(_STORAGE + "test_serve_waits_out_a_write_lock_held_by_another_process",),
+            "Another process holds the ledger while serve commits",
+            proved_by=(
+                _CONTENTION
+                + "test_a_reader_holding_a_read_transaction_does_not_fail_a_serve_write",
+                _STORAGE + "test_serve_waits_out_a_write_lock_held_by_another_process",
+                _U + "adapters/ledger/test_connection.py::"
+                "test_every_ledger_connection_waits_out_a_lock",
+            ),
         ),
         FailureMode(
-            "Another process holds the ledger past sqlite's default five-second wait",
-            gap="issue #855: no WAL and no busy timeout, so serve exits 1; inferred",
+            "A reader holds the ledger past serve's 10 s busy wait",
+            gap=(
+                "issue #855: no WAL, so serve exits 1; WAL needs a writable ledger dir for "
+                "the read-only units (bot, tax pack, archive check, health, daily line)"
+            ),
         ),
         FailureMode(
             "Two processes append to the trial log at once",
-            gap="issue #855: no file lock, so the hash chain forks; inferred",
+            proved_by=(
+                _U + "adapters/trial_log/test_jsonl_file.py::"
+                "test_an_append_waits_while_another_appender_holds_the_lock",
+                _U + "adapters/trial_log/test_jsonl_file.py::"
+                "test_concurrent_appenders_leave_one_unbroken_chain",
+            ),
+        ),
+        FailureMode(
+            "Two processes append to the decision journal at once",
+            proved_by=(
+                _U + "application/journal/test_service.py::"
+                "test_an_append_waits_while_another_appender_holds_the_lock",
+                _U + "application/journal/test_service.py::"
+                "test_concurrent_journal_appenders_leave_one_unbroken_chain",
+            ),
         ),
         FailureMode(
             "A migration fails halfway",
@@ -445,7 +475,12 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
     "process": (
         FailureMode(
             "Two serves run on the same ledger",
-            gap="issue #855: no single-instance lock; both can push and fill (strict xfail)",
+            proved_by=(
+                _STORAGE + "test_a_second_serve_on_a_ledger_in_use_refuses_to_run",
+                _STORAGE + "test_hermes_serve_on_a_ledger_in_use_exits_with_the_refusal_code",
+                _STORAGE + "test_the_serve_lock_is_released_when_the_first_serve_exits",
+                _FILE_LOCK + "test_a_holder_process_that_is_killed_frees_the_lock",
+            ),
         ),
         FailureMode(
             "A restart with a position open",
