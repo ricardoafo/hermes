@@ -112,8 +112,8 @@ from hermes.application.risk_inputs.spread_sampler import SPREAD_SAMPLE_SECONDS,
 from hermes.application.signal_notifier import SignalNotifier
 from hermes.application.strategy_protocol.kill_trigger_evaluator import KillTriggerEvaluator
 from hermes.application.strategy_protocol.preregistration import PreRegistration
-from hermes.domain.errors import HermesError, LedgerError
-from hermes.domain.events.anomaly_detected import AnomalyDetected
+from hermes.domain.errors import HermesError, InfraError, LedgerError
+from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
 from hermes.domain.events.bar_processed import BarProcessed
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.event_bus import EventBus, EventDispatchError
@@ -903,6 +903,7 @@ class _BarLoop:
 
     c: Composition
     previous: dict[Stream, datetime] = field(default_factory=dict)
+    catching_up: bool = False
 
     async def warm_up_and_catch_up(self, shutdown: asyncio.Event) -> None:
         """Seed history up to each cursor, then evaluate the bars after it."""
@@ -927,11 +928,15 @@ class _BarLoop:
                 c.tracker.mark(bar)
                 c.executor.observe(bar)
         _log.info("serve.warmup.done", bars=len(warm))
-        for bar in warm:
-            if shutdown.is_set():
-                return
-            if bar.close_time > cursors[(bar.pair, bar.interval)]:
-                await self.handle(bar)
+        self.catching_up = True
+        try:
+            for bar in warm:
+                if shutdown.is_set():
+                    return
+                if bar.close_time > cursors[(bar.pair, bar.interval)]:
+                    await self.handle(bar)
+        finally:
+            self.catching_up = False
 
     def _load_cursors(self, warm: list[Bar]) -> dict[Stream, datetime]:
         """Return each stream's cursor; a first boot starts at its last warm-up bar."""
@@ -989,11 +994,27 @@ class _BarLoop:
         )
 
     async def handle(self, bar: Bar) -> None:
-        """Evaluate one closed bar, record any signal, notify, then move the cursor."""
+        """Evaluate one closed bar, record any signal, notify, then move the cursor.
+
+        A gap in the warm-up history is a bar the exchange still does not
+        publish after a restart, so it is reported and passed over instead of
+        stopping serve (#852).
+
+        Raises:
+            BarGapError: A live bar skips one; the restart picks up a late bar.
+        """
         c = self.c
         stream = (bar.pair, bar.interval)
-        if not self._is_next(stream, bar):
-            return
+        try:
+            if not self._is_next(stream, bar):
+                return
+        except BarGapError as gap:
+            # Exiting here again would loop until systemd gives up, with any
+            # open position left unwatched; the exchange's history keeps the
+            # same hole, so the backtest reads it the same way.
+            if not self.catching_up:
+                raise
+            await self._report_missing_bars(gap)
         correlation_id = new_correlation_id()
         bind_correlation_id(correlation_id)
 
@@ -1151,6 +1172,25 @@ class _BarLoop:
                 f"{expected.isoformat()}, got {bar.open_time.isoformat()}"
             )
         return True
+
+    async def _report_missing_bars(self, gap: BarGapError) -> None:
+        """Tell the operator a bar is passed over: error log, Sentry and a Telegram alert."""
+        _log.error("serve.bar.gap_passed_over", reason=str(gap))
+        sentry_integration.capture(gap)
+        telegram = self.c.telegram
+        if telegram is None:
+            return
+        alert = AnomalyDetected(
+            occurred_at=self.c.clock.now(),
+            correlation_id=new_correlation_id(),
+            source="serve.bar_gap",
+            severity=AnomalySeverity.CRITICAL,
+            reason=f"bar never published, passed over: {gap}",
+        )
+        try:
+            await asyncio.to_thread(telegram.notify, alert)
+        except InfraError as exc:
+            _log.error("serve.bar.gap_alert_failed", exc_info=exc)
 
     async def _execute(self, signal_: StrategySignal, bar: Bar, correlation_id: str) -> None:
         """Simulate the signal's order, log the outcome (never its P&L, D-7), sync the strategy."""
