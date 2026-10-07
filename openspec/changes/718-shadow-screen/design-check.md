@@ -90,7 +90,7 @@ changed per picture, the bottom line, and nothing else.
 | # | Spec | Build | Evidence | Status |
 | --- | --- | --- | --- | --- |
 | 3.1 | Frozen settings | `swing_parameters()` (what serve trades and certification fingerprints), shown read-only | `test_frozen_settings_are_what_serve_trades_with` | match |
-| 3.2 | (day-0 record) | Run id, day 0, release, the seven Ready rules with ✓ / ✗ / ? | `shadow_counting_*`; `test_fixture_record_parses_to_the_shown_fields` | match (ADR-021 §2) |
+| 3.2 | (day-0 record) | Run id, day 0, release, and the Ready rules `hermes shadow-start` checks or lists (1, 2, 3, 4, 6, 7; rule 5 is the record itself) with ✓ / ✗ / ? | `shadow_counting_*`; `test_fixture_record_parses_to_the_shown_fields` | match (ADR-021 §2) |
 | 3.3 | Lab notebook entries | Newest first, one line each with an ellipsis, `+N older`; "not available here" when the release has none | `test_notebook_missing_says_not_available_here`, `test_notebook_file_reads_its_entries` | match |
 
 ## 4. Layout per breakpoint

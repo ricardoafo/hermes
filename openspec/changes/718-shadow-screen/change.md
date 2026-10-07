@@ -19,11 +19,12 @@ day-0 record with its Ready-rule verdicts, the frozen pre-registered settings
 and the lab notebook entries. Under
 [ADR-021 §2 and §3](../../../docs/architecture/adr-021-strategy-lifecycle-ready-and-done.md)
 the run since 2026-10-04 is a warm-up: day 0 is the record `hermes
-shadow-start` writes (issue #797, not on main yet), so until that record
-exists the screen says "warm-up · not counting". The console reads the
-record's file format through a read-only port and imports nothing from #797.
-Which fact starts the count sits behind one switch. The main risk is the
-record format drifting from what #797 ships; the fixture copies its field list.
+shadow-start` writes (issue #797, PR #888), so until that record exists the
+screen says "warm-up · not counting". The console reads the record's file
+format through a read-only port and imports nothing from the command. Which
+fact starts the count sits behind one switch. The main risk is the record
+format drifting from the command's writer; a contract test parses what
+`DayZeroRecord.to_json` writes.
 
 ## Scope
 
@@ -81,14 +82,21 @@ record format drifting from what #797 ships; the fixture copies its field list.
 
 - **Decision**: a `ShadowRunRecords` port with one method, `latest_run`, and a
   `RunsDirectory` adapter that parses `run_id`, `strategy_id`, `day_zero_at`
-  (timezone-aware ISO), `release` and `checks` (pass / fail / "confirm by
-  hand"), ignoring the hashes and versions. A record that exists but cannot
+  (timezone-aware ISO), `release` and `checks` (each `{rule, name, verdict,
+  detail}`, verdict pass / fail / "confirm by hand"), ignoring the hashes and
+  versions. A record that exists but cannot
   be read raises `ShadowRecordError`; the hero says so rather than showing a
   warm-up.
-- **Alternatives**: import #797's module (not on main); read the ledger (the
-  record lives beside it, created once with O_EXCL).
-- **Rationale**: keeps this PR independent of #797; the fixture
-  `tests/fixtures/shadow_runs/*.json` copies the field list.
+- **Alternatives**: import `application/strategy_protocol/day_zero.py` (PR
+  #888) into the console (it would tie the console's read path to the
+  command's checks and hashing); read the ledger (the record lives beside it,
+  created once and never rewritten).
+- **Rationale**: the console needs five fields of a file. The fixture
+  `tests/fixtures/shadow_runs/*.json` is written by `DayZeroRecord.to_json`,
+  and `test_the_record_hermes_shadow_start_writes_reads_back` fails if the
+  writer drifts. PR #888 landed while this branch was open; its `checks`
+  carry the rule number in `rule` and the text in `name`, and the parser
+  follows that.
 - **Cost of reversal**: LOW.
 
 ### D-3: the checks are mechanical and say no number
