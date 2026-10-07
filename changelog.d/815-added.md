@@ -1,0 +1,1 @@
+- `hermes status` shows the running version as its release tag (`version: v1.0.0-shadow.1`, also in `--json`), and the Telegram deploy message leads with `hermes v<version> (<sha12>)` (ADR-022 §4).

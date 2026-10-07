@@ -47,6 +47,8 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _CONFIG = _PROJECT_ROOT / "config"
 _NO_LINK = _PROJECT_ROOT / "no-such-release-link"
 _FLIPPED_AT = datetime(2026, 10, 3, 12, 22, tzinfo=UTC)
+# Fixed so the snapshots do not change at every release cut.
+_PACKAGE_VERSION = "1.0.0a1"
 _PNL_WORDS = re.compile(
     r"p&l|pnl|profit|loss|equity|sharpe|drawdown|win rate|return", re.IGNORECASE
 )
@@ -58,6 +60,7 @@ def _run(
     now: Any = NOW,
     unit: UnitState = UnitState.RUNNING,
     release_link: Path | None = None,
+    package_version: str = _PACKAGE_VERSION,
 ) -> tuple[int, str]:
     """Run ``hermes status`` with a fixed clock and unit state; return code and output."""
     out = io.StringIO()
@@ -68,6 +71,7 @@ def _run(
         unit_state=lambda: unit,
         bot_state=lambda: UnitState.UNKNOWN,
         release_link=release_link or _NO_LINK,
+        package_version=package_version,
     )
     return code, out.getvalue()
 
@@ -82,6 +86,7 @@ def _run_split(args: list[str]) -> tuple[int, str, str]:
         now=NOW,
         unit_state=lambda: UnitState.RUNNING,
         release_link=_NO_LINK,
+        package_version=_PACKAGE_VERSION,
     )
     return code, out.getvalue(), err.getvalue()
 
@@ -102,7 +107,7 @@ def test_current_ledger_exits_zero_and_leads_with_all_good(tmp_path: Path) -> No
     code, out = _run(["--db", str(_ledger(tmp_path))])
 
     assert code == 0
-    assert out.splitlines()[3] == "● All good"
+    assert out.splitlines()[4] == "● All good"
 
 
 def test_overdue_ledger_exits_one_and_says_late(tmp_path: Path) -> None:
@@ -238,6 +243,27 @@ def test_json_carries_release_and_live_since_in_utc(tmp_path: Path) -> None:
     data = json.loads(out)
 
     assert (data["release"], data["live_since"]) == ("abc123def456", "2026-10-03T12:22:00+00:00")
+
+
+def test_text_header_names_the_running_version_like_its_tag(tmp_path: Path) -> None:
+    """Package 1.0.0a1 shows as `version: v1.0.0-shadow.1`, the tag CD gives it (ADR-022 §4)."""
+    _, out = _run(["--db", str(_ledger(tmp_path))], package_version="1.0.0a2")
+
+    assert "version: v1.0.0-shadow.2" in out.splitlines()
+
+
+def test_json_carries_the_running_version(tmp_path: Path) -> None:
+    """--json names the version the same way the text view does."""
+    _, out = _run(["--db", str(_ledger(tmp_path)), "--json"], package_version="1.0.0")
+
+    assert json.loads(out)["version"] == "v1.0.0"
+
+
+def test_a_development_version_is_shown_as_it_is(tmp_path: Path) -> None:
+    """A version no cut wrote, such as a local build, still prints and never fails status."""
+    code, out = _run(["--db", str(_ledger(tmp_path))], package_version="1.0.1.dev4")
+
+    assert (code, "version: 1.0.1.dev4" in out.splitlines()) == (0, True)
 
 
 def test_text_without_a_release_link_says_unknown_and_exits_unchanged(tmp_path: Path) -> None:
