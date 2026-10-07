@@ -15,7 +15,9 @@ key chips. Every panel sits in a
 :class:`~hermes.entrypoints.tui_widgets.HudPanel`. Tokens, themes, breakpoints
 and timings live in :mod:`hermes.entrypoints.tui_theme`.
 
-Screens: ``1`` Home (issue #712); ``2``-``8`` name the issue that builds them next.
+Screens: ``1`` Home (issue #712), ``2`` Signals, ``4`` Tax (issue #719, view only:
+:mod:`hermes.entrypoints.tui_tax`), ``6`` Briefs; the others name the issue that
+builds them next.
 
 Home layout, per breakpoint token (:func:`~hermes.entrypoints.tui_home.home_layout`):
 under 100 columns one column (Portfolio, Positions, Market, Activity, Engine
@@ -53,13 +55,15 @@ writes the ledger or reaches the engine, the supervisor or a notification.
 Keys: ``1``-``8`` screens, Tab / Shift+Tab cycle them, Ctrl+P command palette,
 ``D`` ``W`` ``M`` ``Y`` range (day, week, month, year), up and down (or ``j``
 ``k``) select a position, Enter opens it, Esc goes back, ``L`` logs, ``T``
-theme, ``?`` help, ``Q`` quit.
+theme, ``?`` help, ``Q`` quit. On the Tax screen ``[`` ``]`` switch its sub-tabs,
+``S`` shows or masks the taxpayer profile and ``E`` says editing waits for MVP2.
 
 Reference: openspec/changes/readonly-tui-dashboard/change.md;
 openspec/changes/live-home-screen/change.md (D-6);
 openspec/changes/711-cockpit-theme/change.md;
 openspec/changes/712-cockpit-home/change.md;
-openspec/changes/713-live-ticker/change.md.
+openspec/changes/713-live-ticker/change.md;
+openspec/changes/719-tax-screen/change.md.
 """
 
 from __future__ import annotations
@@ -126,6 +130,8 @@ from hermes.application.console.render import (
     render_tax_footnote,
     to_plain_text,
 )
+from hermes.application.console.views import TaxPending
+from hermes.application.tax.screen import TaxpayerProfileView, TaxScreen, TaxScreenSource
 from hermes.domain.errors import LedgerError
 from hermes.entrypoints.tui_briefs import briefs_screen
 from hermes.entrypoints.tui_home import (
@@ -150,6 +156,7 @@ from hermes.entrypoints.tui_live import (
     market_rows,
 )
 from hermes.entrypoints.tui_notices import bar_checked_notice, beep_enabled, should_beep
+from hermes.entrypoints.tui_query import QueryInput
 from hermes.entrypoints.tui_settings import (
     DEFAULT_SETTINGS_PATH,
     ConsoleSettings,
@@ -157,6 +164,7 @@ from hermes.entrypoints.tui_settings import (
     save_settings,
 )
 from hermes.entrypoints.tui_signals import signals_screen
+from hermes.entrypoints.tui_tax import EDIT_LATER, PROFILE, TaxPackStatus, TaxTab
 from hermes.entrypoints.tui_theme import (
     BASE,
     COMPACT_BELOW,
@@ -229,7 +237,7 @@ TABS: Final = (
     Tab("1", "Home"),
     Tab("2", "Signals"),
     Tab("3", "Positions", 715),
-    Tab("4", "Tax", 719),
+    Tab("4", "Tax"),
     Tab("5", "Shadow test", 718),
     Tab("6", "Briefs"),
     Tab("7", "System", 717),
@@ -237,9 +245,12 @@ TABS: Final = (
 )
 _HOME: Final = 0
 _SIGNALS: Final = 1
+_TAX: Final = 3
 _BRIEFS: Final = 5
 _LOGS: Final = 7
 _NOTICE_SECONDS: Final = 6
+# The big estimated-tax figure shows from the height the big total shows (30 rows).
+_BIG_FROM_ROWS: Final = 30
 
 _FOOTER_CHIPS: Final = (
     ("D W M Y", "range"),
@@ -522,6 +533,10 @@ class HomeApp(App[None]):
         Binding("enter", "open_detail", "detail", show=False),
         Binding("escape", "go_back", "back", show=False),
         Binding("a,A", "toggle_quiet", "checks", show=False),
+        Binding("left_square_bracket", "tax_subtab(-1)", "previous sub-tab", show=False),
+        Binding("right_square_bracket", "tax_subtab(1)", "next sub-tab", show=False),
+        Binding("s,S", "tax_show_profile", "show profile", show=False),
+        Binding("e,E", "tax_edit_profile", "edit profile", show=False),
         Binding("l,L", "logs", "logs", show=False),
         Binding("t,T", "pick_theme", "theme", show=False),
         Binding("question_mark", "help", "help", show=False),
@@ -541,6 +556,9 @@ class HomeApp(App[None]):
         theme: ThemeChoice | None = None,
         exposure_cap: Decimal | None = None,
         ticker: LiveTickerPort | None = None,
+        tax: TaxScreenSource | None = None,
+        taxpayer_profile: TaxpayerProfileView | None = None,
+        tax_pack: Callable[[int], TaxPackStatus | None] | None = None,
     ) -> None:
         """Hold the read model, the journal source and the screen state.
 
@@ -561,6 +579,11 @@ class HomeApp(App[None]):
                 (``0.15``); ``None`` makes the exposure meter say it is unknown.
             ticker: The live public ticker (issue #713); ``None`` shows booked
                 values only and the Market panel without prices.
+            tax: The Tax screen's source (issue #719); ``None`` makes it say the
+                estimate is not available.
+            taxpayer_profile: What the Tax screen may say about the profile;
+                read once by the caller, never over ``--vps``.
+            tax_pack: Returns the year's tax pack state.
         """
         super().__init__()
         self._model = model
@@ -604,6 +627,9 @@ class HomeApp(App[None]):
         self._rows: tuple[PositionRow, ...] = ()
         self._details: dict[str, PositionDetail] = {}
         self._watch: tuple[WatchedPair, ...] | None = None
+        self._tax = tax
+        self._taxpayer_profile = taxpayer_profile
+        self._tax_pack = tax_pack
         for hermes_theme in THEMES:
             self.register_theme(hermes_theme)
 
@@ -664,6 +690,9 @@ class HomeApp(App[None]):
                         Static(id="log-tail"), title="Log tail", subtitle="L logs", id="log-panel"
                     )
             for index, tab in enumerate(TABS[1:], start=1):
+                if index == _TAX:
+                    yield TaxTab(now=self._clock, motion=self._motion, id=f"tab-{tab.key}")
+                    continue
                 ai = index == _BRIEFS
                 yield VerticalScroll(
                     HudPanel(
@@ -1164,9 +1193,39 @@ class HomeApp(App[None]):
                     ),
                 ),
             )
+        if self._tab == _TAX:
+            self._redraw_tax(ctx)
         screen = self.screen
         if isinstance(screen, _PanelScreen):
             screen.refresh_panel()
+
+    def _tax_screen(self, ctx: RenderContext) -> TaxScreen | TaxPending:
+        """Read the Tax screen from its source; a failed read becomes a pending line."""
+        if self._tax is None:
+            return TaxPending(label="tax estimate not available yet")
+        try:
+            prices = {row.coin: row.current_eur for row in self._model.positions()}
+        except _CARD_ERRORS:
+            prices = {}
+        try:
+            return self._tax.tax_screen(as_of=ctx.now, prices=prices)
+        except LedgerError:
+            return TaxPending(label="could not read the ledger")
+
+    def _redraw_tax(self, ctx: RenderContext) -> None:
+        """Draw the Tax screen from one read of the tax service."""
+        screen = self._tax_screen(ctx)
+        year = screen.year if isinstance(screen, TaxScreen) else ctx.now.astimezone(ctx.tz).year
+        self._home.query_one(TaxTab).show(
+            screen,
+            profile=self._taxpayer_profile,
+            pack=None if self._tax_pack is None else self._tax_pack(year),
+            tokens=self._data,
+            tz=ctx.tz,
+            money=ctx.shows_money,
+            width=self.size.width,
+            big_number=self.size.height >= _BIG_FROM_ROWS,
+        )
 
     def _show(self, widget_id: str, content: RenderableType, *, shown: bool) -> None:
         """Set a widget's content and show it only when it has something to show."""
@@ -1343,7 +1402,7 @@ class HomeApp(App[None]):
         compact = self.size.width < COMPACT_BELOW
         tokens = tokens_for(self.theme)
         self._set("footer", key_chips(_FOOTER_CHIPS_COMPACT if compact else _FOOTER_CHIPS, tokens))
-        tabs = self._home.query_one(TabBar)
+        tabs = self._home.query_one("#tabs", TabBar)
         tabs.compact = compact
         tabs.active = self._tab
         on_home = self._tab == _HOME
@@ -1423,7 +1482,33 @@ class HomeApp(App[None]):
         """
         if isinstance(self.screen, ModalScreen):
             return
+        if isinstance(self.focused, QueryInput):
+            self.focused.action_complete()
+            return
         self.action_show_tab((self._tab + step) % len(TABS))
+
+    def action_tax_subtab(self, step: int) -> None:
+        """Show the Tax screen's next (``1``) or previous (``-1``) sub-tab.
+
+        Args:
+            step: Direction.
+        """
+        if self._on_home and self._tab == _TAX:
+            self._home.query_one(TaxTab).switch(step)
+
+    def action_tax_show_profile(self) -> None:
+        """``S`` on Your profile: show or mask the taxpayer figures."""
+        if not (self._on_home and self._tab == _TAX):
+            return
+        tax = self._home.query_one(TaxTab)
+        if tax.sub == PROFILE:
+            tax.toggle_profile()
+            self._redraw()
+
+    def action_tax_edit_profile(self) -> None:
+        """``E`` on Your profile: say that editing waits for MVP2."""
+        if self._on_home and self._tab == _TAX and self._home.query_one(TaxTab).sub == PROFILE:
+            self.notify(EDIT_LATER, timeout=_NOTICE_SECONDS)
 
     def action_go_back(self) -> None:
         """Close the detail pane, else return to the previous tab."""
@@ -1576,6 +1661,9 @@ def run_home(
     settings_path: Path | None = DEFAULT_SETTINGS_PATH,
     exposure_cap: Decimal | None = None,
     ticker: LiveTickerPort | None = None,
+    tax: TaxScreenSource | None = None,
+    taxpayer_profile: TaxpayerProfileView | None = None,
+    tax_pack: Callable[[int], TaxPackStatus | None] | None = None,
 ) -> None:
     """Run the console until the operator quits.
 
@@ -1587,6 +1675,9 @@ def run_home(
         settings_path: Where the theme choice is read and saved.
         exposure_cap: The roster's exposure cap; see :class:`HomeApp`.
         ticker: The live public ticker; see :class:`HomeApp`.
+        tax: The Tax screen's source; see :class:`HomeApp`.
+        taxpayer_profile: What the Tax screen may say about the profile.
+        tax_pack: Returns the year's tax pack state.
     """
     HomeApp(
         model,
@@ -1596,4 +1687,7 @@ def run_home(
         settings_path=settings_path,
         exposure_cap=exposure_cap,
         ticker=ticker,
+        tax=tax,
+        taxpayer_profile=taxpayer_profile,
+        tax_pack=tax_pack,
     ).run()
