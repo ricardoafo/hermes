@@ -84,6 +84,7 @@ from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.css.query import NoMatches
 from textual.screen import ModalScreen, Screen
 from textual.timer import Timer
+from textual.widget import Widget
 from textual.widgets import ContentSwitcher, Static
 
 from hermes.application.console import (
@@ -716,29 +717,29 @@ class HomeApp(App[None]):
             period / MOTION.pulse_steps, self._step_pulse
         )
         if not self.is_night:
-            big = self._home.query_one(BigNumber)
-            self.effect_timers["shimmer"] = self.set_interval(MOTION.shimmer, big.start_shimmer)
+            self.effect_timers["shimmer"] = self.set_interval(MOTION.shimmer, self._start_shimmer)
             self.effect_timers["radar"] = self.set_interval(MOTION.radar_tick, self._step_radar)
+
+    def _start_shimmer(self) -> None:
+        big = self._alive(BigNumber)
+        if big is not None:
+            big.start_shimmer()
 
     def _step_radar(self) -> None:
         """Turn the empty-positions radar one step (only while there is no position)."""
         self._radar += 1
-        if self._empty_facts is not None and self.screen_stack:
+        if self._empty_facts is not None:
             coins, next_at = self._empty_facts
-            with suppress(NoMatches):
-                self._set(
-                    "positions",
-                    empty_positions(coins, next_at, self._ctx, self._data, self._radar),
-                )
+            self._set(
+                "positions",
+                empty_positions(coins, next_at, self._ctx, self._data, self._radar),
+            )
 
-    # An effect timer can fire while the app is tearing its widgets down; a
-    # missing widget then means there is nothing left to animate.
     def _step_pulse(self) -> None:
         self._pulse = (self._pulse + 1) % MOTION.pulse_steps
-        with suppress(NoMatches):
-            self._paint_heartbeat()
-            if self._live_state is LiveState.LIVE:
-                self._paint_live()
+        self._paint_heartbeat()
+        if self._live_state is LiveState.LIVE:
+            self._paint_live()
 
     @property
     def live_dot_colour(self) -> str:
@@ -755,10 +756,11 @@ class HomeApp(App[None]):
             return
         now = self._clock()
         self._apply_theme(now)
-        bar = self._home.query_one(WindowBar)
-        bar.clock = now.astimezone(self._ctx.tz).strftime("%H:%M:%S")
-        if not self._polls:
-            bar.show_next_bar(next_bar_text(self._heartbeat, now))
+        bar = self._alive(WindowBar)
+        if bar is not None:
+            bar.clock = now.astimezone(self._ctx.tz).strftime("%H:%M:%S")
+            if not self._polls:
+                bar.show_next_bar(next_bar_text(self._heartbeat, now))
         countdown = countdown_text(self._heartbeat, now)
         on_row, full_chip = self._status_row_layout(countdown)
         self._paint_chip(compact=not full_chip)
@@ -793,7 +795,9 @@ class HomeApp(App[None]):
         )
 
     def _paint_chip(self, *, compact: bool) -> None:
-        self._home.query_one(ThemeChip).update(self._chip_text(compact=compact))
+        chip = self._alive(ThemeChip)
+        if chip is not None:
+            chip.update(self._chip_text(compact=compact))
 
     def _apply_theme(self, now: datetime) -> None:
         name = resolve_theme(self._choice, now.astimezone(self._ctx.tz).time())
@@ -801,7 +805,9 @@ class HomeApp(App[None]):
         if self.theme != name:
             self.ansi_theme_dark = terminal_theme(data_tokens(name))
             self.theme = name
-        self._home.query_one(WindowBar).display = name == NEON_THEME
+        bar = self._alive(WindowBar)
+        if bar is not None:
+            bar.display = name == NEON_THEME
         if night_changed and self.effect_timers:
             self._start_effects()
 
@@ -906,8 +912,9 @@ class HomeApp(App[None]):
 
     def _show_feed(self, *, bright: bool) -> None:
         """Draw the feed pulse; a bright newest glyph dims again after ``MOTION.flash``."""
-        with suppress(NoMatches):
-            self._home.query_one(WindowBar).show_feed(self._polls, bright=bright)
+        bar = self._alive(WindowBar)
+        if bar is not None:
+            bar.show_feed(self._polls, bright=bright)
         if self._feed_timer is not None:
             self._feed_timer.stop()
             self._feed_timer = None
@@ -1033,11 +1040,36 @@ class HomeApp(App[None]):
 
     def _set(self, widget_id: str, content: RenderableType) -> None:
         self._content[widget_id] = content
-        self._home.query_one(f"#{widget_id}", Static).update(content)
+        static = self._alive(Static, f"#{widget_id}")
+        if static is not None:
+            static.update(content)
 
     @property
     def _home(self) -> Screen[object]:
         return self.screen_stack[0]
+
+    # The clock, the poll and the effect timers keep firing while the app
+    # tears its widgets down at exit; a widget that is gone then has nothing
+    # left to draw, so its lookup gives ``None`` instead of raising.
+    def _alive[W: Widget](self, kind: type[W], selector: str | None = None) -> W | None:
+        """Return a home-screen widget, or ``None`` once it is torn down.
+
+        Args:
+            kind: The widget class to find (and the type to expect).
+            selector: A CSS selector such as ``#portfolio-total``; ``None``
+                matches on ``kind`` alone.
+
+        Returns:
+            The first matching widget, or ``None`` when the home screen or the
+            widget is gone.
+        """
+        if not self.screen_stack:
+            return None
+        home = self._home
+        try:
+            return home.query_one(kind) if selector is None else home.query_one(selector, kind)
+        except NoMatches:
+            return None
 
     def _positions_coins(self) -> list[str]:
         try:
@@ -1053,7 +1085,9 @@ class HomeApp(App[None]):
         down = heartbeat.state is HeartbeatState.DOWN
         self._set("heartbeat", Text("") if down else render_heartbeat(heartbeat, ctx))
         self._set("down-row", render_heartbeat(heartbeat, ctx) if down else Text(""))
-        self._home.query_one("#down-row").set_class(down, "-down")
+        row = self._alive(Widget, "#down-row")
+        if row is not None:
+            row.set_class(down, "-down")
 
     def _redraw(self) -> None:
         if not self.is_running or not self.screen_stack:
@@ -1077,7 +1111,9 @@ class HomeApp(App[None]):
             self._heartbeat = None
             self._set("heartbeat", _unavailable("Heartbeat", exc))
             self._set("down-row", Text(""))
-            self._home.query_one("#down-row").set_class(False, "-down")
+            row = self._alive(Widget, "#down-row")
+            if row is not None:
+                row.set_class(False, "-down")
         else:
             self._paint_heartbeat()
 
@@ -1088,9 +1124,10 @@ class HomeApp(App[None]):
 
         layout = home_layout(self.size.width, self.size.height)
         self._layout = layout
-        body = self._home.query_one("#body")
-        for name in (*_WIDTH_CLASSES, *_HEIGHT_CLASSES):
-            body.set_class(name in layout.classes, name)
+        body = self._alive(Widget, "#body")
+        if body is not None:
+            for name in (*_WIDTH_CLASSES, *_HEIGHT_CLASSES):
+                body.set_class(name in layout.classes, name)
         self._redraw_portfolio()
         self._redraw_positions()
         self._redraw_market()
@@ -1132,7 +1169,9 @@ class HomeApp(App[None]):
     def _show(self, widget_id: str, content: RenderableType, *, shown: bool) -> None:
         """Set a widget's content and show it only when it has something to show."""
         self._set(widget_id, content)
-        self._home.query_one(f"#{widget_id}").display = shown
+        widget = self._alive(Widget, f"#{widget_id}")
+        if widget is not None:
+            widget.display = shown
 
     def _redraw_portfolio(self) -> None:
         """Read the portfolio, then draw the total, the head, the curve, the meters, the books."""
@@ -1140,7 +1179,9 @@ class HomeApp(App[None]):
             self._summary = self._model.portfolio(self._range)
         except _CARD_ERRORS as exc:
             self._summary = None
-            self._home.query_one("#portfolio-total", BigNumber).show(None, None)
+            big = self._alive(BigNumber, "#portfolio-total")
+            if big is not None:
+                big.show(None, None)
             self._set("portfolio", _unavailable("Portfolio", exc))
             for part in ("portfolio-curve", "portfolio-meters", "portfolio-books"):
                 self._show(part, Text(""), shown=False)
@@ -1158,7 +1199,6 @@ class HomeApp(App[None]):
         if summary is None:
             return
         ctx, layout = self._ctx, self._layout
-        big = self._home.query_one("#portfolio-total", BigNumber)
         look = self._live_look()
         live = self._live_total(look) if ctx.shows_money else None
         figure = total_text(summary, ctx) if layout.big_total else None
@@ -1166,7 +1206,9 @@ class HomeApp(App[None]):
         if live is not None and figure is not None:
             figure, value = fmt_level(live.total), live.total
         paused = live is not None and look is not None and look.paused
-        big.show(figure, float(value), stale=ctx.stale_since is not None or paused)
+        big = self._alive(BigNumber, "#portfolio-total")
+        if big is not None:
+            big.show(figure, float(value), stale=ctx.stale_since is not None or paused)
         head = render_portfolio_head(summary, ctx, total=figure is None, charts=layout.sparklines)
         if live is not None and look is not None:
             lines = live_portfolio_lines(summary, live, look, total_shown=figure is not None)
@@ -1304,14 +1346,17 @@ class HomeApp(App[None]):
         compact = self.size.width < COMPACT_BELOW
         tokens = tokens_for(self.theme)
         self._set("footer", key_chips(_FOOTER_CHIPS_COMPACT if compact else _FOOTER_CHIPS, tokens))
-        tabs = self._home.query_one(TabBar)
-        tabs.compact = compact
-        tabs.active = self._tab
+        tabs = self._alive(TabBar)
+        if tabs is not None:
+            tabs.compact = compact
+            tabs.active = self._tab
         on_home = self._tab == _HOME
-        self._home.query_one("#positions-panel", HudPanel).active = (
-            on_home and not self._detail_open
-        )
-        self._home.query_one("#detail-panel", HudPanel).active = on_home and self._detail_open
+        positions = self._alive(HudPanel, "#positions-panel")
+        if positions is not None:
+            positions.active = on_home and not self._detail_open
+        detail = self._alive(HudPanel, "#detail-panel")
+        if detail is not None:
+            detail.active = on_home and self._detail_open
 
     def _detail_content(
         self, ctx: RenderContext | None = None, *, cached: bool = False
@@ -1342,7 +1387,9 @@ class HomeApp(App[None]):
 
     def _redraw_detail(self, ctx: RenderContext) -> None:
         shown = self._detail_open and self.is_wide and self._selected is not None
-        self._home.query_one("#detail-panel").set_class(shown, "-open")
+        panel = self._alive(Widget, "#detail-panel")
+        if panel is not None:
+            panel.set_class(shown, "-open")
         if shown:
             self._set("detail", self._detail_content(ctx))
 
