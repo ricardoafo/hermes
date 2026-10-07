@@ -5,8 +5,6 @@ are the Home cards' own renderables, live between bars when the ticker runs,
 so both screens always agree; this module only lays them out.
 """
 
-from __future__ import annotations
-
 from typing import Final
 
 from rich.console import Group, RenderableType
