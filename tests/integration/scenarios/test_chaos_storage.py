@@ -400,11 +400,6 @@ def _already_set() -> asyncio.Event:
     return event
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="issue #856: older code on a newer ledger boots and writes without a word",
-)
 def test_serve_refuses_a_ledger_a_newer_release_has_migrated(
     run_scenario: RunScenario, tmp_path: Path
 ) -> None:

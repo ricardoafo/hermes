@@ -329,6 +329,30 @@ class TestPortfolioRebuiltOnStartup:
         with pytest.raises(serve_module.StartupError, match="01J9Z8T3M5BQR2FVKN4XWY6PH7"):
             serve_module.build_composition(shadow_config, db_path=db_path, env={}, feed=FakeFeed())
 
+    def test_a_file_that_is_not_a_ledger_raises_startup_error_naming_it(
+        self, shadow_config: HermesConfig, tmp_path: Path
+    ) -> None:
+        """A corrupt ledger stops startup with a message naming the file, not a raw sqlite error."""
+        db_path = tmp_path / "test.sqlite3"
+        db_path.write_bytes(b"not a database " * 300)
+        with pytest.raises(serve_module.StartupError, match="cannot be opened as a SQLite ledger"):
+            serve_module.build_composition(shadow_config, db_path=db_path, env={}, feed=FakeFeed())
+
+    def test_a_ledger_a_newer_release_migrated_raises_startup_error_naming_the_migration(
+        self, shadow_config: HermesConfig, tmp_path: Path
+    ) -> None:
+        """Old code refuses a schema it does not know instead of writing to it (issue #856)."""
+        db_path = tmp_path / "test.sqlite3"
+        conn = sqlite3.connect(db_path)
+        try:
+            SqliteLedger(conn)
+            conn.execute("INSERT INTO schema_migrations (filename) VALUES ('9999_newer.sql')")
+            conn.commit()
+        finally:
+            conn.close()
+        with pytest.raises(serve_module.StartupError, match=r"9999_newer\.sql"):
+            serve_module.build_composition(shadow_config, db_path=db_path, env={}, feed=FakeFeed())
+
     def test_a_ledger_read_failure_raises_startup_error(
         self, shadow_config: HermesConfig, tmp_path: Path
     ) -> None:
