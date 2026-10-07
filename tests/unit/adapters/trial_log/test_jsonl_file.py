@@ -5,12 +5,14 @@ Invariants under test (openspec/changes/357-trial-log/change.md D-2, R-2):
 - Appended trials read back equal and in order.
 - Editing, removing, reordering or emptying lines breaks the chain, and both
   reading and appending then fail instead of returning a lower trial count.
+- Concurrent appenders never fork the chain (issue #855).
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import threading
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -21,6 +23,7 @@ from hermes.adapters.trial_log.jsonl_file import GENESIS_SHA256, JsonlTrialLog
 from hermes.domain.calibration.trial_record import DatasetRef, TrialRecord
 from hermes.domain.errors import TrialLogError
 from hermes.domain.market_data.dataset_manifest import DataSplit
+from hermes.infrastructure.file_lock import FileLock
 from hermes.ports.trial_log import TrialLogPort
 
 Edit = Callable[[list[str]], list[str]]
@@ -129,3 +132,41 @@ def test_malformed_record_fields_are_reported_with_the_line(tmp_path: Path) -> N
     )
     with pytest.raises(TrialLogError, match="line 1"):
         rebuilt.records()
+
+
+# -- concurrent appenders (issue #855) ----------------------------------------
+
+
+def test_an_append_waits_while_another_appender_holds_the_lock(tmp_path: Path) -> None:
+    """An append writes nothing while another appender holds the lock, then links to its line.
+
+    Without the lock both appenders read the same last line and write two
+    lines with the same ``prev_sha256``: a forked chain that no read accepts.
+    """
+    log = _log_with(tmp_path, 1)
+    other = FileLock(log.lock_path)
+    assert other.try_acquire()
+    waiting = threading.Thread(target=log.append, args=(_record(1),))
+    waiting.start()
+    waiting.join(timeout=0.3)
+    lines_while_held = len(log.path.read_text(encoding="utf-8").splitlines())
+    other.release()
+    waiting.join(timeout=10)
+    assert (lines_while_held, len(log.records())) == (1, 2)
+
+
+def test_concurrent_appenders_leave_one_unbroken_chain(tmp_path: Path) -> None:
+    """Four appenders racing 25 appends each leave 100 trials on one verified chain."""
+    log = JsonlTrialLog(tmp_path / "trial-log.jsonl")
+
+    def appender(worker: int) -> None:
+        for i in range(25):
+            log.append(_record(i, sharpe=float(worker)))
+
+    workers = [threading.Thread(target=appender, args=(w,)) for w in range(4)]
+    for thread in workers:
+        thread.start()
+    for thread in workers:
+        thread.join()
+    expected = sorted((float(w), str(20 + i)) for w in range(4) for i in range(25))
+    assert sorted((r.sharpe, r.parameters["donchian_period"]) for r in log.records()) == expected

@@ -646,3 +646,57 @@ def test_crash_notice_without_credentials_logs_and_exits_zero(
 
     assert (result.returncode, server.requests) == (0, [])
     assert "HERMES_SLACK__BOT_TOKEN" in result.stderr
+
+
+# integration: none feasible in CI (borg needs a Storage Box); the operator check is
+# `systemctl start hermes-backup.service` on hermes-01 and the healthchecks.io check.
+_BACKUP = "hermes-backup.sh"
+
+_STUB_BORG = """#!/usr/bin/env bash
+exit 0
+"""
+
+_APPENDING_SPY_CURL = """#!/usr/bin/env bash
+printf '%s\\n' "$@" >> "$(dirname "$0")/curl.argv"
+exec "$REAL_CURL" "$@"
+"""
+
+
+def _run_backup(
+    host: _Host, server: _FakeServer, tmp_path: Path
+) -> subprocess.CompletedProcess[str]:
+    """Run the backup with a no-op borg, an empty data dir and every curl call recorded."""
+    host._write_exe("borg", _STUB_BORG)
+    host._write_exe("curl", _APPENDING_SPY_CURL)
+    data = tmp_path / "data"
+    data.mkdir()
+    return _run(
+        _BACKUP,
+        host,
+        server,
+        env={
+            "HERMES_BACKUP_BORG_REPO": "ssh://u0@example.invalid:23/./hermes",
+            "BORG_PASSPHRASE": "fake-passphrase",  # gitleaks:allow
+            "HERMES_BACKUP_HEALTHCHECK_URL": f"{server.url}{_PING_PATH}",
+            "HERMES_DATA_DIR": data.as_posix(),
+        },
+    )
+
+
+def test_backup_pings_start_then_success(host: _Host, server: _FakeServer, tmp_path: Path) -> None:
+    """A good backup pings /start, then the bare URL, so healthchecks.io sees it finish."""
+    result = _run_backup(host, server, tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert [r.path for r in server.requests] == [f"{_PING_PATH}/start", _PING_PATH]
+
+
+def test_backup_keeps_the_ping_url_out_of_curl_argv(
+    host: _Host, server: _FakeServer, tmp_path: Path
+) -> None:
+    """The ping URL holds the check's secret, and `ps` shows argv to every local user (#782)."""
+    _run_backup(host, server, tmp_path)
+
+    argv = host.curl_argv()
+    assert argv.count("--config") == 2
+    assert _PING_PATH not in argv

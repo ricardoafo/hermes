@@ -8,9 +8,10 @@ ADR-011 D-02).
 
 What one process does:
 
-- :func:`build_composition` is pure wiring. The only I/O is the SQLite
-  ``connect`` (the ledger runs migrations idempotently) and the HTTP clients
-  the adapters own.
+- :func:`build_composition` is pure wiring. The only I/O is the serve lock
+  next to the ledger (one serve per ledger, #855), the SQLite ``connect``
+  (the ledger runs migrations idempotently) and the HTTP clients the adapters
+  own.
 - :func:`run` opens an :class:`asyncio.TaskGroup` holding the bar loop, logs
   and reports to Sentry whatever escapes it, closes every resource in order
   and returns the process exit code (0 clean, 1 runtime failure).
@@ -28,7 +29,15 @@ What one process does:
   minutes, and each completed 1D bar records the 30-day pair correlations
   (#835). These RO-01 / RO-02 inputs are recorded only: no rule reads them,
   and a failed sample or correlation is logged and skipped.
-- A notifier outage is logged and sent to Sentry; it never stops the loop.
+- Delivery rule (#854): each signal is pushed to each routed channel once,
+  in practice at least once with dedupe. The push is recorded in the ledger
+  (``SignalNotified``) after it is sent, so a crash before the record pushes
+  the signal again after the restart, and a crash before the push loses
+  nothing. A channel that failed is pushed again on the pair's next bars
+  while the signal is within the catch-up window; a stale signal is never
+  pushed.
+- A failing notifier channel, outage or bug, is logged and sent to Sentry;
+  it never stops the loop.
   Every other error exits 1 so systemd restarts the unit. Exit codes 2 and 3
   are reserved for usage and config errors found before the loop starts.
 - :func:`install_signal_handlers` binds SIGTERM + SIGINT to
@@ -51,6 +60,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import os
 import signal
 import sqlite3
@@ -71,6 +81,7 @@ from hermes.adapters.fills.orderbook_walk import OrderbookWalkFillModel
 from hermes.adapters.fx.frankfurter import FrankfurterAdapter
 from hermes.adapters.fx.frankfurter import FrankfurterConfig as FrankfurterWireConfig
 from hermes.adapters.fx.rate_limiter import RateLimitConfig
+from hermes.adapters.ledger.connection import open_ledger
 from hermes.adapters.ledger.migration_runner import unknown_applied_migrations
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.adapters.market_data.binance_depth_snapshot import BinanceDepthSnapshotAdapter
@@ -105,13 +116,14 @@ from hermes.application.risk_inputs.spread_sampler import SPREAD_SAMPLE_SECONDS,
 from hermes.application.signal_notifier import SignalNotifier
 from hermes.application.strategy_protocol.kill_trigger_evaluator import KillTriggerEvaluator
 from hermes.application.strategy_protocol.preregistration import PreRegistration
-from hermes.domain.errors import HermesError, LedgerError
-from hermes.domain.events.anomaly_detected import AnomalyDetected
+from hermes.domain.errors import HermesError, InfraError, LedgerError
+from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
 from hermes.domain.events.bar_processed import BarProcessed
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.event_bus import EventBus, EventDispatchError
 from hermes.domain.events.shadow_capital_seeded import ShadowCapitalSeeded
 from hermes.domain.events.signal_emitted import SignalEmitted
+from hermes.domain.events.signal_notified import SignalNotified
 from hermes.domain.fees.fee_schedule import FeeSchedule
 from hermes.domain.fees.fee_schedule_selector import FeeScheduleRow, select_fee_schedule
 from hermes.domain.fx.eur_pricing import fill_date_madrid
@@ -136,6 +148,7 @@ from hermes.entrypoints._release import read_release
 from hermes.infrastructure import sentry_integration
 from hermes.infrastructure.config.models import FrankfurterConfig
 from hermes.infrastructure.config.root import HermesConfig
+from hermes.infrastructure.file_lock import FileLock
 from hermes.infrastructure.logging import bind_correlation_id, new_correlation_id
 from hermes.ports.bar_feed import ClosedBarFeedPort
 from hermes.ports.certification import CertificationStoreError, CertificationStorePort
@@ -147,10 +160,12 @@ from hermes.ports.strategy import StrategyPort
 __all__ = [
     "CATCHUP_BARS",
     "EXPERIMENT_DIR",
+    "SERVE_LOCK_SUFFIX",
     "SHADOW_STRATEGY_NAME",
     "SHADOW_UNIVERSE",
     "BarGapError",
     "Composition",
+    "LedgerInUseError",
     "StartupError",
     "build_composition",
     "certification_dir_for",
@@ -160,6 +175,7 @@ __all__ = [
     "parameter_fingerprint_for",
     "report_failure",
     "run",
+    "serve_lock_path",
 ]
 
 _log = structlog.get_logger(__name__)
@@ -195,6 +211,23 @@ _NEVER: Final = datetime(1970, 1, 1, tzinfo=UTC)
 
 class StartupError(HermesError):
     """The configuration cannot run the shadow loop; the process exits 3."""
+
+
+class LedgerInUseError(StartupError):
+    """Another ``hermes serve`` holds the ledger's serve lock; the process exits 4."""
+
+
+SERVE_LOCK_SUFFIX: Final = ".serve.lock"
+"""Suffix of the lock file next to the ledger that one running serve holds."""
+
+
+def serve_lock_path(db_path: Path) -> Path:
+    """Return the serve lock file for the ledger at ``db_path``.
+
+    Only ``hermes serve`` takes this lock. Readers (console, bot, tax pack,
+    ``hermes status``) never touch it, so they keep working while serve runs.
+    """
+    return db_path.with_name(db_path.name + SERVE_LOCK_SUFFIX)
 
 
 def certification_dir_for(db_path: Path) -> Path:
@@ -235,20 +268,17 @@ def _open_ledger(connection: sqlite3.Connection, path: Path) -> SqliteLedger:
 
     Raises:
         StartupError: The file is corrupt or not a SQLite database, or a newer
-            release has migrated it. The connection is closed before raising.
+            release has migrated it. The caller closes the connection.
     """
     try:
         ledger = SqliteLedger(connection)
         newer = unknown_applied_migrations(connection)
     except sqlite3.OperationalError:
         # A full disk or a held lock is not a corrupt file; it keeps its own error.
-        connection.close()
         raise
     except sqlite3.DatabaseError as exc:
-        connection.close()
         raise StartupError(f"the ledger {path} cannot be opened as a SQLite ledger: {exc}") from exc
     if newer:
-        connection.close()
         # The deploy and rollback scripts refuse this; a manual symlink flip
         # or a direct start does not, and old code would write to a schema it
         # does not know (#856).
@@ -293,6 +323,9 @@ class Composition:
             start-up pricing of pending values.
         spread_sample_seconds: Step of the spread sampler that records the
             RO-02 input (#835); no rule reads the samples.
+        serve_lock: The ledger's serve lock, held from build until
+            :func:`run` releases it after closing SQLite; ``None`` for a
+            composition built by hand in a test.
     """
 
     config: HermesConfig
@@ -314,6 +347,7 @@ class Composition:
     fx_adapter: FrankfurterAdapter | None
     eur_pricer: EurPricer
     spread_sample_seconds: float = SPREAD_SAMPLE_SECONDS
+    serve_lock: FileLock | None = None
 
 
 def _eur_rate_lookup(pricer: EurPricer) -> EurRateLookup:
@@ -505,9 +539,10 @@ def build_composition(
 ) -> Composition:
     """Wire every adapter the shadow loop needs and return the container.
 
-    Pure wiring: the only I/O is the SQLite ``connect`` (migrations run
-    idempotently in the ledger constructor) and the HTTP clients the adapters
-    own.
+    Pure wiring: the only I/O is the serve lock next to the ledger (held until
+    :func:`run` returns, so a second serve on the same ledger is refused), the
+    SQLite ``connect`` (migrations run idempotently in the ledger constructor)
+    and the HTTP clients the adapters own.
 
     Args:
         config: The validated :class:`HermesConfig` snapshot. Callers run
@@ -530,17 +565,95 @@ def build_composition(
         A fully wired :class:`Composition` ready to hand to :func:`run`.
 
     Raises:
+        LedgerInUseError: Another ``hermes serve`` holds this ledger's serve
+            lock. Nothing was opened.
         StartupError: The pre-registration or the fee history cannot be read,
             the start capital cannot be recorded, or the ledger's recorded
             trades or fill-quality rows cannot be read or replayed into the
             portfolio. The SQLite connection is closed before raising.
     """
     db_target = db_path if db_path is not None else DEFAULT_DB_PATH
+    lock = FileLock(serve_lock_path(db_target))
+    try:
+        acquired = lock.try_acquire()
+    except OSError as exc:
+        raise StartupError(f"cannot create the serve lock {lock.path}: {exc}") from exc
+    if not acquired:
+        holder = lock.holder_pid()
+        raise LedgerInUseError(
+            f"another hermes serve is running on {db_target}"
+            + (f" (pid {holder})" if holder else "")
+            + f"; it holds {lock.path}. Stop it first, or point --db at another ledger."
+        )
+    try:
+        composition = _wire_composition(
+            config,
+            db_path=db_target,
+            env=env,
+            feed=feed,
+            clock=clock,
+            experiment_root=experiment_root,
+            orderbooks=orderbooks,
+            fx=fx,
+        )
+    except BaseException:
+        lock.release()
+        raise
+    return dataclasses.replace(composition, serve_lock=lock)
+
+
+def _wire_composition(
+    config: HermesConfig,
+    *,
+    db_path: Path | None = None,
+    env: Mapping[str, str] | None = None,
+    feed: ClosedBarFeedPort | None = None,
+    clock: ClockPort | None = None,
+    experiment_root: Path | None = None,
+    orderbooks: OrderbookSnapshotPort | None = None,
+    fx: FxRateProviderPort | None = None,
+) -> Composition:
+    """Wire the composition once the serve lock is held; see :func:`build_composition`."""
+    db_target = db_path if db_path is not None else DEFAULT_DB_PATH
     env_snapshot: Mapping[str, str] = dict(os.environ) if env is None else env
     pre_registration, fee_rows = _load_experiment(experiment_root)
 
-    connection = sqlite3.connect(db_target)
-    ledger = _open_ledger(connection, db_target)
+    connection = open_ledger(db_target)
+    # Any failure after the ledger opened (a migration refused, an adapter that
+    # cannot be built) must close it, or the connection leaks (#855).
+    try:
+        return _wire_on_ledger(
+            config,
+            connection,
+            env_snapshot=env_snapshot,
+            pre_registration=pre_registration,
+            fee_rows=fee_rows,
+            feed=feed,
+            clock=clock,
+            orderbooks=orderbooks,
+            fx=fx,
+            ledger_path=db_target,
+        )
+    except BaseException:
+        connection.close()
+        raise
+
+
+def _wire_on_ledger(
+    config: HermesConfig,
+    connection: sqlite3.Connection,
+    *,
+    env_snapshot: Mapping[str, str],
+    pre_registration: PreRegistration,
+    fee_rows: list[FeeScheduleRow],
+    feed: ClosedBarFeedPort | None,
+    clock: ClockPort | None,
+    orderbooks: OrderbookSnapshotPort | None,
+    fx: FxRateProviderPort | None,
+    ledger_path: Path,
+) -> Composition:
+    """Wire everything that needs the open ledger; the caller closes it on failure."""
+    ledger = _open_ledger(connection, ledger_path)
 
     wall: ClockPort = clock if clock is not None else WallClock()
     event_bus = EventBus()
@@ -557,13 +670,8 @@ def build_composition(
         seed_capital_once(ledger, strategy_id, capital, now=wall.now())
         recorded_seed = ledger.capital_seed(strategy_id)
     except LedgerError as exc:
-        connection.close()
         raise StartupError(f"cannot record the start capital in the ledger: {exc.msg}") from exc
-    try:
-        tracker = _rebuild_tracker(ledger, seed, strategy_id)
-    except StartupError:
-        connection.close()
-        raise
+    tracker = _rebuild_tracker(ledger, seed, strategy_id)
     fill_model = OrderbookWalkFillModel()
     books = (
         orderbooks
@@ -591,7 +699,6 @@ def build_composition(
             not_before=None if recorded_seed is None else recorded_seed.seeded_at,
         )
     except LedgerError as exc:
-        connection.close()
         raise StartupError(f"cannot read the fill-quality rows: {exc.msg}") from exc
     pairs = config.market_data.parsed_pairs()
     strategies: dict[Pair, StrategyPort] = {pair: SwingStrategyAdapter() for pair in pairs}
@@ -815,7 +922,7 @@ def report_failure(exc: BaseException) -> None:
 
 
 async def _release(c: Composition) -> None:
-    """Close the feed and the depth source, then FX, Slack, Telegram, SQLite last."""
+    """Close the feeds, then FX, Slack, Telegram, SQLite and, last, the serve lock."""
     try:
         await c.feed.aclose()
     except Exception as exc:
@@ -825,6 +932,9 @@ async def _release(c: Composition) -> None:
     except Exception as exc:
         _log.error("serve.close.orderbooks_failed", exc_info=exc)
     with contextlib.ExitStack() as stack:
+        # Callbacks run last-in first-out: the lock goes only after SQLite has closed.
+        if c.serve_lock is not None:
+            stack.callback(_close_quietly, c.serve_lock.release)
         stack.callback(_close_quietly, c.sqlite_connection.close)
         if c.fx_adapter is not None:
             stack.callback(_close_quietly, c.fx_adapter.close)
@@ -924,6 +1034,7 @@ class _BarLoop:
 
     c: Composition
     previous: dict[Stream, datetime] = field(default_factory=dict)
+    catching_up: bool = False
 
     async def warm_up_and_catch_up(self, shutdown: asyncio.Event) -> None:
         """Seed history up to each cursor, then evaluate the bars after it."""
@@ -948,11 +1059,15 @@ class _BarLoop:
                 c.tracker.mark(bar)
                 c.executor.observe(bar)
         _log.info("serve.warmup.done", bars=len(warm))
-        for bar in warm:
-            if shutdown.is_set():
-                return
-            if bar.close_time > cursors[(bar.pair, bar.interval)]:
-                await self.handle(bar)
+        self.catching_up = True
+        try:
+            for bar in warm:
+                if shutdown.is_set():
+                    return
+                if bar.close_time > cursors[(bar.pair, bar.interval)]:
+                    await self.handle(bar)
+        finally:
+            self.catching_up = False
 
     def _load_cursors(self, warm: list[Bar]) -> dict[Stream, datetime]:
         """Return each stream's cursor; a first boot starts at its last warm-up bar."""
@@ -1010,17 +1125,34 @@ class _BarLoop:
         )
 
     async def handle(self, bar: Bar) -> None:
-        """Evaluate one closed bar, record any signal, notify, then move the cursor."""
+        """Evaluate one closed bar, record any signal, notify, then move the cursor.
+
+        A gap in the warm-up history is a bar the exchange still does not
+        publish after a restart, so it is reported and passed over instead of
+        stopping serve (#852).
+
+        Raises:
+            BarGapError: A live bar skips one; the restart picks up a late bar.
+        """
         c = self.c
         stream = (bar.pair, bar.interval)
-        if not self._is_next(stream, bar):
-            return
+        try:
+            if not self._is_next(stream, bar):
+                return
+        except BarGapError as gap:
+            # Exiting here again would loop until systemd gives up, with any
+            # open position left unwatched; the exchange's history keeps the
+            # same hole, so the backtest reads it the same way.
+            if not self.catching_up:
+                raise
+            await self._report_missing_bars(gap)
         correlation_id = new_correlation_id()
         bind_correlation_id(correlation_id)
 
         c.tracker.mark(bar)
         c.executor.observe(bar)
         signal_ = c.strategies[bar.pair].on_bar(bar, c.tracker.state())
+        emitted: tuple[SignalEmitted, bool] | None = None
         if signal_ is not None:
             event = SignalEmitted.from_signal(
                 signal_,
@@ -1034,18 +1166,12 @@ class _BarLoop:
             # The signal row comes first, then the fill (D-5): a crash between
             # them re-evaluates the bar, and the executor sees no trade yet.
             await self._execute(signal_, bar, correlation_id)
-            if is_new:
-                if within_catchup(
-                    c.clock.now(), event.occurred_at, bar.interval, bars=CATCHUP_BARS
-                ):
-                    await self._notify(event)
-                else:
-                    _log.warning(
-                        "serve.signal.stale_not_notified",
-                        pair=str(event.pair),
-                        kind=event.kind.value,
-                        occurred_at=event.occurred_at.isoformat(),
-                    )
+            emitted = (event if is_new else self._stored_signal(event), is_new)
+        # Failed pushes of earlier bars go out first: this bar's signal has no
+        # failed push yet, so it is never pushed twice in one bar (#854).
+        await self._push_owed(bar.pair)
+        if emitted is not None:
+            await self._push_first(*emitted, bar=bar)
         # Data only (#421): the archive check and the parity replay read these
         # values back; nothing in the strategy does. Stored before BarProcessed
         # so a processed bar always has its values on record.
@@ -1178,6 +1304,25 @@ class _BarLoop:
             )
         return True
 
+    async def _report_missing_bars(self, gap: BarGapError) -> None:
+        """Tell the operator a bar is passed over: error log, Sentry and a Telegram alert."""
+        _log.error("serve.bar.gap_passed_over", reason=str(gap))
+        sentry_integration.capture(gap)
+        telegram = self.c.telegram
+        if telegram is None:
+            return
+        alert = AnomalyDetected(
+            occurred_at=self.c.clock.now(),
+            correlation_id=new_correlation_id(),
+            source="serve.bar_gap",
+            severity=AnomalySeverity.CRITICAL,
+            reason=f"bar never published, passed over: {gap}",
+        )
+        try:
+            await asyncio.to_thread(telegram.notify, alert)
+        except InfraError as exc:
+            _log.error("serve.bar.gap_alert_failed", exc_info=exc)
+
     async def _execute(self, signal_: StrategySignal, bar: Bar, correlation_id: str) -> None:
         """Simulate the signal's order, log the outcome (never its P&L, D-7), sync the strategy."""
         result = await self.c.executor.execute(signal_, bar, correlation_id=correlation_id)
@@ -1191,15 +1336,67 @@ class _BarLoop:
             held=partial(self._held_position, bar.pair, at_or_before=signal_.signal_time),
         )
 
-    async def _notify(self, event: SignalEmitted) -> None:
-        """Fan the event out in a worker thread; a channel outage is logged, not fatal."""
-        try:
-            await asyncio.to_thread(self.c.signal_notifier.dispatch, event)
-        except EventDispatchError as exc:
-            _log.error("serve.notify.failed", exc_info=exc)
-            for failure in exc.failures:
-                if isinstance(failure, Exception):
-                    sentry_integration.capture(failure)
+    def _stored_signal(self, event: SignalEmitted) -> SignalEmitted:
+        """Return the stored row of a re-evaluated signal: its push record keys on it."""
+        stored = self.c.ledger.latest_signal_event(
+            self.c.strategy_id, event.pair, at_or_before=event.occurred_at, kind=event.kind
+        )
+        return event if stored is None else stored
+
+    async def _push_first(self, event: SignalEmitted, is_new: bool, *, bar: Bar) -> None:
+        """Push this bar's signal unless it is stale or a push of it is on record."""
+        c = self.c
+        if not within_catchup(c.clock.now(), event.occurred_at, bar.interval, bars=CATCHUP_BARS):
+            if is_new:
+                _log.warning(
+                    "serve.signal.stale_not_notified",
+                    pair=str(event.pair),
+                    kind=event.kind.value,
+                    occurred_at=event.occurred_at.isoformat(),
+                )
+            return
+        if c.ledger.latest_signal_notified(event) is None:
+            await self._push(event)
+
+    async def _push_owed(self, pair: Pair) -> None:
+        """Push again, to the failed channels only, each recent signal whose last push failed.
+
+        Recent is the catch-up window of the shortest stream, where signals come from.
+        """
+        c = self.c
+        now = c.clock.now()
+        window = CATCHUP_BARS * min(interval_duration(i) for i in c.intervals)
+        owed = c.ledger.signals_owed_a_push(c.strategy_id, pair, since=now - window, until=now)
+        for event, failed in owed:
+            _log.info(
+                "serve.notify.retry",
+                pair=str(event.pair),
+                kind=event.kind.value,
+                occurred_at=event.occurred_at.isoformat(),
+                channels=list(failed),
+            )
+            await self._push(event, only=failed)
+
+    async def _push(self, event: SignalEmitted, only: tuple[str, ...] | None = None) -> None:
+        """Push in a worker thread, then record the push; a failing channel is logged, not fatal."""
+        delivery = await asyncio.to_thread(self.c.signal_notifier.deliver, event, only)
+        # Push, then record (#854): a crash between the two pushes the signal
+        # again after the restart. Twice beats never for a trade.
+        self.c.ledger.append_event(
+            SignalNotified.after(event, delivered=delivery.delivered, failed=delivery.failed)
+        )
+        if not delivery.failures:
+            return
+        failures = tuple(exc for _, exc in delivery.failures)
+        _log.error(
+            "serve.notify.failed",
+            channels=list(delivery.failed),
+            exc_info=EventDispatchError(
+                event_type_name=type(event).__qualname__, failures=failures
+            ),
+        )
+        for failure in failures:
+            sentry_integration.capture(failure)
 
 
 def _entry_check_fields(strategy: StrategyPort) -> dict[str, str]:

@@ -1,6 +1,6 @@
 """Storage and clock faults for the chaos suite (issue #846).
 
-Serve opens its ledger with ``sqlite3.connect`` inside
+Serve opens its ledger with ``open_ledger`` inside
 :func:`hermes.entrypoints.serve.build_composition`. :func:`faulty_ledger`
 swaps that call for one returning a connection that counts every write
 statement and every commit while it is *armed*, and raises a chosen error
@@ -24,7 +24,6 @@ from __future__ import annotations
 import contextlib
 import json
 import sqlite3
-import types
 from collections.abc import Callable, Iterator, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -33,6 +32,7 @@ from pathlib import Path
 from typing import cast
 from unittest import mock
 
+from hermes.adapters.ledger.connection import BUSY_TIMEOUT_SECONDS
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.strategy.signal import SignalKind
@@ -128,17 +128,15 @@ class _FaultyConnection(sqlite3.Connection):
 def faulty_ledger(plan: FaultPlan) -> Iterator[None]:
     """Make serve open its ledger through a connection that follows ``plan``."""
 
-    def connect(database: str | Path) -> sqlite3.Connection:
-        connection = sqlite3.connect(database, factory=_FaultyConnection)
+    def connect(database: Path, *, read_only: bool = False) -> sqlite3.Connection:
+        assert not read_only, "serve opens its ledger for writing"
+        connection = sqlite3.connect(
+            database, timeout=BUSY_TIMEOUT_SECONDS, factory=_FaultyConnection
+        )
         connection.plan = plan
         return connection
 
-    fake_module = types.SimpleNamespace(
-        connect=connect,
-        DatabaseError=sqlite3.DatabaseError,
-        OperationalError=sqlite3.OperationalError,
-    )
-    with mock.patch.object(serve_module, "sqlite3", fake_module):
+    with mock.patch.object(serve_module, "open_ledger", connect):
         yield
 
 

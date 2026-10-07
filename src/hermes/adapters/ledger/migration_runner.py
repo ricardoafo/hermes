@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from hermes.adapters.ledger.connection import open_ledger
 from hermes.domain.errors import LedgerError
 
 __all__ = [
@@ -228,7 +229,7 @@ def migrate_with_snapshot(
     """
     if not db_path.exists():
         raise LedgerError(msg=f"ledger {db_path} does not exist")
-    conn = sqlite3.connect(db_path)
+    conn = open_ledger(db_path)
     try:
         pending = pending_migrations(conn, migrations_dir)
         if not pending:
@@ -265,7 +266,7 @@ def restore_snapshot(snapshot_path: Path, db_path: Path) -> None:
     source = sqlite3.connect(f"{snapshot_path.resolve().as_uri()}?mode=ro", uri=True)
     try:
         _check_integrity(source, snapshot_path)
-        target = sqlite3.connect(db_path)
+        target = open_ledger(db_path)
         try:
             source.backup(target)
         finally:
@@ -337,7 +338,7 @@ def dry_run(db_path: Path, *, migrations_dir: Path | None = None) -> DryRunRepor
     with tempfile.TemporaryDirectory(prefix="hermes-dry-run-") as tmp:
         copy_path = Path(tmp) / db_path.name
         try:
-            source = sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True)
+            source = open_ledger(db_path, read_only=True)
             target = sqlite3.connect(copy_path)
             try:
                 source.backup(target)
