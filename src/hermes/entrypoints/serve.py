@@ -82,6 +82,7 @@ from hermes.adapters.fx.frankfurter import FrankfurterAdapter
 from hermes.adapters.fx.frankfurter import FrankfurterConfig as FrankfurterWireConfig
 from hermes.adapters.fx.rate_limiter import RateLimitConfig
 from hermes.adapters.ledger.connection import open_ledger
+from hermes.adapters.ledger.migration_runner import unknown_applied_migrations
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.adapters.market_data.binance_depth_snapshot import BinanceDepthSnapshotAdapter
 from hermes.adapters.market_data.binance_live_klines import BinanceLiveKlinesAdapter
@@ -260,6 +261,32 @@ def experiment_files(experiment_root: Path) -> tuple[Path, Path]:
 
 class BarGapError(HermesError):
     """A stream skipped a bar, so the strategy buffers would be wrong; exits 1."""
+
+
+def _open_ledger(connection: sqlite3.Connection, path: Path) -> SqliteLedger:
+    """Open the ledger, refusing a file that is not one or a schema newer than this code.
+
+    Raises:
+        StartupError: The file is corrupt or not a SQLite database, or a newer
+            release has migrated it. The caller closes the connection.
+    """
+    try:
+        ledger = SqliteLedger(connection)
+        newer = unknown_applied_migrations(connection)
+    except sqlite3.OperationalError:
+        # A full disk or a held lock is not a corrupt file; it keeps its own error.
+        raise
+    except sqlite3.DatabaseError as exc:
+        raise StartupError(f"the ledger {path} cannot be opened as a SQLite ledger: {exc}") from exc
+    if newer:
+        # The deploy and rollback scripts refuse this; a manual symlink flip
+        # or a direct start does not, and old code would write to a schema it
+        # does not know (#856).
+        raise StartupError(
+            f"the ledger {path} was migrated by a newer release ({', '.join(newer)}); "
+            "start the release that migrated it"
+        )
+    return ledger
 
 
 @dataclass(frozen=True)
@@ -605,6 +632,7 @@ def _wire_composition(
             clock=clock,
             orderbooks=orderbooks,
             fx=fx,
+            ledger_path=db_target,
         )
     except BaseException:
         connection.close()
@@ -622,9 +650,10 @@ def _wire_on_ledger(
     clock: ClockPort | None,
     orderbooks: OrderbookSnapshotPort | None,
     fx: FxRateProviderPort | None,
+    ledger_path: Path,
 ) -> Composition:
     """Wire everything that needs the open ledger; the caller closes it on failure."""
-    ledger = SqliteLedger(connection)
+    ledger = _open_ledger(connection, ledger_path)
 
     wall: ClockPort = clock if clock is not None else WallClock()
     event_bus = EventBus()

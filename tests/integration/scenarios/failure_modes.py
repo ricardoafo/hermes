@@ -53,6 +53,7 @@ _PORTFOLIO_MACHINE = _U + "application/portfolio/test_portfolio_risk_state_machi
 _LEDGER_MACHINE = _U + "adapters/ledger/test_sqlite_ledger_state_machine.py::"
 _BOOK_MACHINE = _U + "adapters/market_data/test_orderbook_diff_state_machine.py::"
 _LOTS_MACHINE = _U + "domain/lots/test_fifo_lots_state_machine.py::"
+_ALERTS = _U + "deploy/test_alert_scripts.py::"
 _WIRE = _U + "adapters/test_wire_numbers.py::"
 _PATHS = _S + "test_generated_paths.py::"
 _EVERY_BAR = _PATHS + "test_every_rule_holds_after_every_bar_and_a_restart_changes_nothing"
@@ -426,11 +427,14 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "The ledger file is corrupt when serve starts",
-            gap="issue #856: a raw sqlite error escapes instead of a clear startup error",
+            proved_by=(
+                _SERVE + "TestPortfolioRebuiltOnStartup"
+                "::test_a_file_that_is_not_a_ledger_raises_startup_error_naming_it",
+            ),
         ),
         FailureMode(
             "The ledger path is wrong or the disk is not mounted",
-            gap="issue #856: serve creates a fresh ledger and drops the open position; inferred",
+            gap="issue #876: serve creates a fresh ledger and drops the open position; inferred",
         ),
     ),
     "clock": (
@@ -559,19 +563,29 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "Older code is started on a newer ledger outside the deploy script",
-            gap="issue #856: unknown applied migrations are ignored at boot; inferred",
+            proved_by=(
+                _SERVE + "TestPortfolioRebuiltOnStartup"
+                "::test_a_ledger_a_newer_release_migrated_raises_startup_error_naming_the_migration",
+                _S + "test_chaos_storage.py"
+                "::test_serve_refuses_a_ledger_a_newer_release_has_migrated",
+            ),
         ),
         FailureMode(
             "HERMES_ENV is missing on the production box",
-            gap="issue #856: serve runs as dev, so a missing alert channel is not refused",
+            proved_by=(
+                _UNITS
+                + "test_hermes_service_runs_as_prod_when_the_environment_file_omits_hermes_env",
+            ),
         ),
         FailureMode(
             "The health ping reports green while hermes status is broken",
-            gap="issue #856: exit 2 from status is read as an old release",
+            proved_by=(
+                _ALERTS + "test_health_ping_reports_a_status_argument_error_as_fail_with_the_error",
+            ),
         ),
         FailureMode(
             "capital_budget is changed after the first boot",
-            gap="issue #856: the portfolio sizes from config while the ledger keeps the old seed",
+            gap="issue #876: the portfolio sizes from config while the ledger keeps the old seed",
         ),
     ),
     "notifications": (
