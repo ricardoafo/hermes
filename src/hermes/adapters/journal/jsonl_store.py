@@ -4,7 +4,9 @@ One JSON object per line: ``{"kind", "data", "prev", "hash"}``, where
 ``hash = sha256(prev + canonical_json(kind, data))`` and ``prev`` is the
 previous line's hash (64 zeros for the first). Editing, reordering or
 deleting a line breaks the chain, and :meth:`JsonlDecisionJournal.entries`
-raises instead of returning a doctored history.
+raises instead of returning a doctored history. Each read-verify-append runs
+under an exclusive lock on ``<path>.lock``, so two appenders cannot link to the
+same tail and fork the chain (issue #855).
 
 Reference: issue #363; openspec/changes/363-decision-journal D-2.
 """
@@ -19,11 +21,15 @@ from pathlib import Path
 from typing import Any
 
 from hermes.domain.journal.entries import Decision, OutcomeKind, Review, Score
+from hermes.infrastructure.file_lock import locked
 from hermes.ports.decision_journal import JournalIntegrityError
 
 __all__ = ["GENESIS_HASH", "JsonlDecisionJournal"]
 
 GENESIS_HASH = "0" * 64
+
+APPEND_LOCK_TIMEOUT_SECONDS = 10.0
+"""How long an append waits for another one; an append takes milliseconds."""
 
 
 def _chain_hash(prev: str, kind: str, data: dict[str, Any]) -> str:
@@ -91,18 +97,30 @@ class JsonlDecisionJournal:
     def __init__(self, path: Path) -> None:
         self._path = path
 
+    @property
+    def lock_path(self) -> Path:
+        """The lock file every append holds while it reads, verifies and writes."""
+        return self._path.with_name(self._path.name + ".lock")
+
     def append(self, entry: Decision | Review) -> None:
-        """Verify the chain, then append ``entry`` linked to the last hash.
+        """Verify the chain, then append ``entry`` linked to the last hash, under the lock.
 
         Raises:
             JournalIntegrityError: The existing file fails verification.
+            OSError: The write fails, or another append held the lock for
+                :data:`APPEND_LOCK_TIMEOUT_SECONDS` (a :class:`TimeoutError`).
         """
-        prev = self._verified_tail()
-        kind, data = _encode(entry)
-        line = {"kind": kind, "data": data, "prev": prev, "hash": _chain_hash(prev, kind, data)}
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        with self._path.open("a", encoding="utf-8", newline="\n") as handle:
-            handle.write(json.dumps(line, sort_keys=True) + "\n")
+        with locked(self.lock_path, timeout=APPEND_LOCK_TIMEOUT_SECONDS):
+            prev = self._verified_tail()
+            kind, data = _encode(entry)
+            line = {
+                "kind": kind,
+                "data": data,
+                "prev": prev,
+                "hash": _chain_hash(prev, kind, data),
+            }
+            with self._path.open("a", encoding="utf-8", newline="\n") as handle:
+                handle.write(json.dumps(line, sort_keys=True) + "\n")
 
     def entries(self) -> Sequence[Decision | Review]:
         """Return every entry, verifying the whole chain first.

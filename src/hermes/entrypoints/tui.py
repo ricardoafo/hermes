@@ -128,6 +128,7 @@ from hermes.application.console.render import (
     to_plain_text,
 )
 from hermes.domain.errors import LedgerError
+from hermes.entrypoints.tui_briefs import briefs_screen
 from hermes.entrypoints.tui_home import (
     LOGS_DEMO,
     LOGS_UNAVAILABLE,
@@ -229,7 +230,7 @@ TABS: Final = (
     Tab("3", "Positions", 715),
     Tab("4", "Tax", 719),
     Tab("5", "Shadow test", 718),
-    Tab("6", "Briefs", 720),
+    Tab("6", "Briefs"),
     Tab("7", "System", 717),
     Tab("8", "Logs", 716),
 )
@@ -1157,6 +1158,14 @@ class HomeApp(App[None]):
         )
         self._redraw_detail(ctx)
         self._redraw_chrome()
+        if self._tab == _BRIEFS:
+            self._set(
+                f"screen-{TABS[_BRIEFS].key}",
+                _card(
+                    "Briefs",
+                    lambda: briefs_screen(model.briefs(), ctx, self._data, width=self.size.width),
+                ),
+            )
         if self._tab == _LOGS:
             logs = TABS[_LOGS]
             self._set(

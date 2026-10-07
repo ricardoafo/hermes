@@ -123,8 +123,8 @@ class SqliteLedger:
 
     The adapter owns its :class:`sqlite3.Connection`. Callers pass a
     pre-opened connection at construction time so tests can inject
-    ``sqlite3.connect(":memory:")`` and production can inject a WAL-mode
-    file connection.
+    ``sqlite3.connect(":memory:")`` and production injects a file connection
+    from :func:`~hermes.adapters.ledger.connection.open_ledger`.
 
     Threading: not thread-safe (matches ADR-003 §03 single-writer model).
     The application uses one process, one writer at a time.

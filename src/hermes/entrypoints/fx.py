@@ -15,7 +15,6 @@ Reference: change ``trade-eur-values`` R-3, ADR-016 item 5.
 from __future__ import annotations
 
 import argparse
-import sqlite3
 from collections.abc import Callable
 from pathlib import Path
 from typing import TextIO
@@ -23,6 +22,7 @@ from typing import TextIO
 from hermes.adapters.fx.frankfurter import FrankfurterAdapter
 from hermes.adapters.fx.frankfurter import FrankfurterConfig as FrankfurterWireConfig
 from hermes.adapters.fx.rate_limiter import RateLimitConfig
+from hermes.adapters.ledger.connection import open_ledger
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.application.ledger.eur_backfill import BackfillReport, backfill_pending_eur
 from hermes.application.ledger.eur_pricer import EurPricer
@@ -81,7 +81,7 @@ def run_backfill(db_path: Path, fx: FxRateProviderPort) -> BackfillReport:
     Raises:
         LedgerError: When the ledger cannot be read or written.
     """
-    connection = sqlite3.connect(db_path)
+    connection = open_ledger(db_path)
     try:
         ledger = SqliteLedger(connection)
         return backfill_pending_eur(ledger, EurPricer(fx), today=fill_date_madrid(now_utc()))
