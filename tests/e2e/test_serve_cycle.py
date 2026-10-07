@@ -432,6 +432,8 @@ def test_status_json_after_a_serve_cycle_matches_its_snapshot(
         # A link that never exists: the report must not depend on the host's
         # /opt/hermes/current, so the release reads as unknown everywhere.
         release_link=tmp_path / "no-current-release",
+        # Pinned so cutting a new release does not rewrite this snapshot.
+        package_version="1.0.0a1",
     )
 
     assert (code, json.loads(out.getvalue())) == snapshot
