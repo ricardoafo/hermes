@@ -4,12 +4,14 @@ Invariant: the top bar the operator sees (the mainnet badge, the version and
 release line, the next-bar countdown and its meter) only changes when a
 reviewer accepts the new picture, in Neon and in Control room at the design
 spec's four breakpoints. Files are named ``topbar_<theme>_<cols>x<rows>.svg``;
-``topbar_on_*`` and ``topbar_unknown_*`` show the badge when the config says
-mainnet is on and when the config could not be read.
+``topbar_on_*`` and ``topbar_unknown_*`` show a live console (no demo
+scenario, so no demo tag) when the config says mainnet is on and when the
+config could not be read; a demo scenario always reads mainnet off.
 
 The clock is frozen at 16:00 Madrid, half way from the 14:00 check to the
 18:00 one, so the meter is visibly half full. Every app runs with motion off,
-synthetic demo data, a fixed version and release, and no settings file.
+synthetic data (the demo fixture, wrapped as live for the on and unknown
+views), a fixed version and release, and no settings file.
 """
 
 import asyncio
@@ -23,6 +25,7 @@ from syrupy.location import PyTestLocation
 from syrupy.types import SnapshotIndex
 
 from hermes.adapters.console import FixtureReadModel
+from hermes.application.console import ConsoleReadModel
 from hermes.entrypoints.tui import HomeApp
 from hermes.entrypoints.tui_settings import ThemeChoice
 
@@ -38,6 +41,20 @@ _STATES: tuple[tuple[str, bool | None, tuple[tuple[int, int], ...]], ...] = (
     ("topbar_on", True, ((160, 45),)),
     ("topbar_unknown", None, ((160, 45),)),
 )
+
+
+class _Live:
+    """The demo fixture claiming to be live data (no demo scenario), as a ledger model is."""
+
+    def __init__(self) -> None:
+        self._inner = FixtureReadModel.load("ok-two-positions")
+
+    @property
+    def demo_scenario(self) -> None:
+        return None
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._inner, name)
 
 
 class _NamedSVG(SVGImageSnapshotExtension):
@@ -60,8 +77,11 @@ def _repo_clean(svg: str) -> str:
 
 def _svg(size: tuple[int, int], theme: ThemeChoice, allow_mainnet: bool | None) -> str:
     async def drive() -> str:
+        model: ConsoleReadModel = (
+            FixtureReadModel.load("ok-two-positions") if allow_mainnet is False else _Live()  # type: ignore[assignment]
+        )
         app = HomeApp(
-            FixtureReadModel.load("ok-two-positions"),
+            model,
             clock=lambda: _HALF_WAY,
             motion=False,
             settings_path=None,

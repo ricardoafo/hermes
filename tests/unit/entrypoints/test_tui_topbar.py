@@ -2,8 +2,9 @@
 
 Invariants:
 
-- the mainnet badge follows the config's ``allow_mainnet`` (off, on, unread)
-  and is never hardcoded: ``SHADOW · mainnet off``, ``LIVE · mainnet ON`` in
+- a live console's mainnet badge follows the config's ``allow_mainnet``
+  (off, on, unread) and is never hardcoded (a demo scenario cannot trade and
+  always reads off): ``SHADOW · mainnet off``, ``LIVE · mainnet ON`` in
   the down colour reversed, or ``mainnet ?`` in amber;
 - the badge sits in the Neon window bar and on the Control room status row,
   and a narrow window bar drops the clock before it drops the badge;
@@ -69,17 +70,33 @@ def _ok() -> Heartbeat:
     return Heartbeat(HeartbeatState.OK, _LAST, _LAST, _NEXT)
 
 
+class _Live:
+    """The demo fixture claiming to be live data (no demo scenario), as a ledger model is."""
+
+    def __init__(self) -> None:
+        self._inner = FixtureReadModel.load("ok-two-positions")
+
+    @property
+    def demo_scenario(self) -> None:
+        return None
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._inner, name)
+
+
 def _run[T](
     probe: Callable[[HomeApp, Pilot[None]], Awaitable[T]],
     *,
     allow_mainnet: bool | None = False,
+    live: bool = False,
     theme: ThemeChoice = ThemeChoice.NEON,
     size: tuple[int, int] = (120, 36),
     clock: datetime = _DAY,
 ) -> T:
     async def drive() -> T:
+        model = _Live() if live else FixtureReadModel.load("ok-two-positions")
         app = HomeApp(
-            FixtureReadModel.load("ok-two-positions"),
+            model,  # type: ignore[arg-type]
             clock=lambda: clock,
             motion=False,
             settings_path=None,
@@ -195,7 +212,9 @@ def test_control_room_status_row_shows_mainnet_on() -> None:
         del pilot
         return app.plain_text("mainnet").strip()
 
-    assert _run(probe, theme=ThemeChoice.CONTROL, allow_mainnet=True) == "LIVE · mainnet ON"
+    assert (
+        _run(probe, theme=ThemeChoice.CONTROL, allow_mainnet=True, live=True) == "LIVE · mainnet ON"
+    )
 
 
 def test_neon_window_bar_shows_mainnet_unknown() -> None:
@@ -205,7 +224,33 @@ def test_neon_window_bar_shows_mainnet_unknown() -> None:
         del pilot
         return _row(app, 0)
 
-    assert _run(probe, allow_mainnet=None).endswith("  mainnet ?  14:12:00")
+    assert _run(probe, allow_mainnet=None, live=True).endswith("  mainnet ?  14:12:00")
+
+
+def test_demo_scenario_reads_mainnet_off_whatever_the_config_says() -> None:
+    """A demo cannot trade: unread or "on" config, the demo badge still reads mainnet off."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[bool | None, str]:
+        del pilot
+        return app.mainnet_state, _row(app, 1)
+
+    unread = _run(probe, theme=ThemeChoice.CONTROL, allow_mainnet=None)
+    on = _run(probe, theme=ThemeChoice.CONTROL, allow_mainnet=True)
+    assert (unread[0], on[0], unread[1].startswith("SHADOW · mainnet off")) == (False, False, True)
+
+
+def test_live_console_shows_the_config_state() -> None:
+    """A live console (no demo scenario) shows exactly what the config said: on, off or unread."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> bool | None:
+        del pilot
+        return app.mainnet_state
+
+    assert [_run(probe, allow_mainnet=state, live=True) for state in (True, False, None)] == [
+        True,
+        False,
+        None,
+    ]
 
 
 def test_narrow_window_bar_drops_the_clock_before_the_badge() -> None:

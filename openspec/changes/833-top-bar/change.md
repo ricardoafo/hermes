@@ -104,20 +104,25 @@ churn: every console picture's top rows change.
   the issue's "at compact width, drop the meter and keep the text".
 - **Cost of reversal**: LOW.
 
-### D-6: An app built without a flag shows `mainnet ?`
+### D-6: Demo data reads off; an unread flag reads unknown
 
-- **Decision**: `HomeApp(allow_mainnet=None)` is the default and draws the
-  amber unknown badge.
-- **Rationale**: the badge is never missing and never claims "off" without
-  having read it. The tests on main build apps without a flag, so their
-  pictures show `mainnet ?`.
-- **Cost of reversal**: LOW.
+- **Decision**: a demo scenario (fixture model) always shows
+  `SHADOW · mainnet off`, whatever the config says; a live console shows the
+  config's state, and `HomeApp(allow_mainnet=None)` (the default) draws the
+  amber `mainnet ?` there.
+- **Alternatives**: `mainnet ?` for demos built without a flag (rejected in
+  review: it reads as a warning on every demo screen when nothing is wrong).
+- **Rationale**: a demo cannot trade by definition; a live console never
+  claims "off" without having read it.
+- **Cost of reversal**: LOW (`HomeApp.mainnet_state`).
 
 ## Requirements
 
 ### R-1: The mainnet badge follows the config
 
 - **A-1.1**: `uv run pytest tests/unit/entrypoints/test_tui_topbar.py -k "mainnet or config"` passes.
+- **A-1.2**: A demo scenario reads mainnet off:
+  `uv run pytest tests/unit/entrypoints/test_tui_topbar.py -k demo_scenario` passes.
 
 ### R-2: The version shows in its release form next to the release
 
@@ -156,8 +161,9 @@ Test tiers touched: unit
 ## Risks
 
 - **Snapshot churn**: every console picture's top rows change (badge,
-  meter). Mitigation: the regenerated files were compared row by row; only
-  rows 0-2 changed.
+  meter). Mitigation: the regenerated files were compared row by row with
+  main's; only rows 0-2 changed, plus the footer of five Control room
+  120x36 demo pictures where the countdown moves there (design check D3).
 - **Config dir on the VPS**: a console started outside the release
   directory without `HERMES_CONFIG_DIR` shows `mainnet ?`. Mitigation: the
   `--vps` wrapper exports `HERMES_CONFIG_DIR`; `?` is the honest reading.

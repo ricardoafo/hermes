@@ -14,7 +14,8 @@ tag, version and release, heartbeat with the pulsing live dot, next-bar
 countdown and its meter, theme chip), the screen, the 90-day line and the
 footer key chips. The mainnet badge (issue #833) follows the config's
 ``allow_mainnet``: ``SHADOW · mainnet off``, ``LIVE · mainnet ON`` in the down
-colour, or an amber ``mainnet ?`` when the config could not be read. Every panel sits in a
+colour, or an amber ``mainnet ?`` when the config could not be read; a demo
+scenario always reads mainnet off. Every panel sits in a
 :class:`~hermes.entrypoints.tui_widgets.HudPanel`. Tokens, themes, breakpoints
 and timings live in :mod:`hermes.entrypoints.tui_theme`.
 
@@ -573,8 +574,9 @@ class HomeApp(App[None]):
                 ``None`` shows the release alone, as ``release <name>``.
             allow_mainnet: The config's ``allow_mainnet``, read the way
                 ``hermes serve`` reads it (issue #833); ``None`` when the
-                config could not be read, which the top bar shows as an
-                amber ``mainnet ?``. Never a default of "off".
+                config could not be read, which a live console shows as an
+                amber ``mainnet ?`` (never a default of "off"). A demo
+                scenario cannot trade, so it always shows mainnet off.
             clock: Returns the current time; the clock, the countdown and night
                 mode tick from it.
             motion: Run the animations; ``None`` reads ``HERMES_CONSOLE_MOTION``.
@@ -880,11 +882,24 @@ class HomeApp(App[None]):
             return None
         return Meter(share, width=METER_CELLS, caps=True).render(tokens_for(self.theme))
 
+    @property
+    def mainnet_state(self) -> bool | None:
+        """Return the mainnet state the badge shows.
+
+        A demo scenario cannot trade, so it reads off whatever the config
+        says; a live console shows the config's ``allow_mainnet``, ``None``
+        when the config could not be read.
+        """
+        if self._model.demo_scenario is not None:
+            return False
+        return self._allow_mainnet
+
     def _paint_mainnet(self) -> None:
         """Draw the mainnet badge: in the window bar in Neon, on the status row otherwise."""
         neon = self.theme == NEON_THEME
-        self._home.query_one(WindowBar).show_mainnet(self._allow_mainnet)
-        badge = mainnet_text(self._allow_mainnet, tokens_for(self.theme))
+        allow_mainnet = self.mainnet_state
+        self._home.query_one(WindowBar).show_mainnet(allow_mainnet)
+        badge = mainnet_text(allow_mainnet, tokens_for(self.theme))
         self._set("mainnet", Text("") if neon else badge)
         self._home.query_one("#mainnet").display = not neon
 

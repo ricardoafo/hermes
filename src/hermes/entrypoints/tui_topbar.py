@@ -4,7 +4,7 @@ The badge reads the same ``allow_mainnet`` flag ``hermes serve`` loads from
 config: ``SHADOW · mainnet off`` while it is off, ``LIVE · mainnet ON`` in the
 down colour, reversed, while it is on, and an amber ``mainnet ?`` when the
 config could not be read. Nothing here hardcodes the flag; the app is handed
-what the config said.
+what the config said. A demo scenario cannot trade, so the app shows it off.
 
 The version line names the package in its release form (``v1.0.0-shadow.1``)
 next to the running release read from the ``current`` link.
