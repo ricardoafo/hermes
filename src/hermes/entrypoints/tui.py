@@ -149,6 +149,7 @@ from hermes.entrypoints.tui_live import (
     live_portfolio_lines,
     market_rows,
 )
+from hermes.entrypoints.tui_notices import bar_checked_notice, beep_enabled, should_beep
 from hermes.entrypoints.tui_settings import (
     DEFAULT_SETTINGS_PATH,
     ConsoleSettings,
@@ -238,6 +239,7 @@ _HOME: Final = 0
 _SIGNALS: Final = 1
 _BRIEFS: Final = 5
 _LOGS: Final = 7
+_NOTICE_SECONDS: Final = 6
 
 _FOOTER_CHIPS: Final = (
     ("D W M Y", "range"),
@@ -579,6 +581,8 @@ class HomeApp(App[None]):
         self._tab_history: list[int] = []
         self._content: dict[str, RenderableType] = {}
         self._heartbeat: Heartbeat | None = None
+        # The last heartbeat read, kept across a failed read so the bell never rings twice.
+        self._last_read: Heartbeat | None = None
         self._ctx = RenderContext(surface=Surface.OPERATOR_TUI, now=clock())
         self._pulse = 0
         self._radar = 0
@@ -1058,6 +1062,14 @@ class HomeApp(App[None]):
         self._set("down-row", render_heartbeat(heartbeat, ctx) if down else Text(""))
         self._home.query_one("#down-row").set_class(down, "-down")
 
+    def _announce(self, previous: Heartbeat | None, current: Heartbeat, ctx: RenderContext) -> None:
+        """Toast a newly checked bar; ring the bell on turning late or down when asked to."""
+        notice = bar_checked_notice(previous, current, ctx.tz)
+        if notice is not None:
+            self.notify(notice, timeout=_NOTICE_SECONDS)
+        if beep_enabled(os.environ) and should_beep(previous, current):
+            self.bell()
+
     def _redraw(self) -> None:
         if not self.is_running or not self.screen_stack:
             return
@@ -1082,6 +1094,8 @@ class HomeApp(App[None]):
             self._set("down-row", Text(""))
             self._home.query_one("#down-row").set_class(False, "-down")
         else:
+            self._announce(self._last_read, self._heartbeat, ctx)
+            self._last_read = self._heartbeat
             self._paint_heartbeat()
 
         try:
