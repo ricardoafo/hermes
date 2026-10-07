@@ -789,6 +789,30 @@ class TestWireEdgeCases:
             SourceState.FAILED,
         )
 
+    def test_a_malformed_forming_candle_does_not_fail_warm_up(self) -> None:
+        """Issue #850: the forming candle is dropped unread, so the closed bar before it is kept."""
+        closed_open = int(datetime(2026, 9, 30, 16, 0, tzinfo=UTC).timestamp() * 1000)
+        forming_open = closed_open + 14_400_000
+        fake = _fake()
+        fake.klines_script = [
+            httpx.Response(
+                200,
+                json=[
+                    [closed_open, "1", "2", "1", "2", "3", forming_open - 1],
+                    [forming_open, "2", "2", "2", "NaN", "1", forming_open + 14_399_999],
+                ],
+            )
+        ]
+
+        async def _drive() -> list[tuple[datetime, Decimal]]:
+            with respx.mock(assert_all_called=False) as router:
+                fake.install(router)
+                adapter = build_adapter(fake.clock, SimulatedSleep(fake.clock))
+                bars = await adapter.warm_up(BTC_USDT, _H4, 5)
+                return [(bar.open_time, bar.close) for bar in bars]
+
+        assert anyio.run(_drive) == [(datetime(2026, 9, 30, 16, 0, tzinfo=UTC), Decimal(2))]
+
     def test_invalid_used_weight_header_is_ignored(self) -> None:
         """A garbled x-mbx-used-weight-1m keeps the last good value instead of raising."""
         fake = _fake()

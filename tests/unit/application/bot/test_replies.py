@@ -204,6 +204,16 @@ def test_logs_shows_the_last_twenty_warning_lines(tmp_path: Path) -> None:
     assert (len(text), text[0], text[-1]) == (20, "18:15 WARNING e5", "18:34 WARNING e24")
 
 
+def test_logs_never_sends_the_text_of_an_unstructured_line(tmp_path: Path) -> None:
+    """Issue #783: a raw journal line (a traceback, a response body) stays off Telegram."""
+    traceback = "Traceback ... upstream answered: <html>internal detail</html>"
+    lines = [LogLine(at=NOW, level="error", raw=traceback)]
+
+    text = _replies(tmp_path, warnings=lines).reply("logs", [], NOW)
+
+    assert text == "18:10 ERROR (unstructured journal line, see the console)"
+
+
 def test_unknown_commands_get_the_help_line(tmp_path: Path) -> None:
     """Anything else gets one line listing the commands."""
     assert _replies(tmp_path).reply("pause", [], NOW).startswith("Commands: /status")

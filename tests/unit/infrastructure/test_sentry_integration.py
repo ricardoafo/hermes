@@ -38,13 +38,6 @@ from hermes.infrastructure import sentry_integration
 
 _DSN = "https://public@sentry.example.com/1"
 
-# push_scope is deprecated in sentry-sdk 2.x and the suite turns
-# DeprecationWarning into an error, which capture() catches, so the event
-# would be dropped. Ignored here so the real SDK path can be observed.
-_IGNORE_PUSH_SCOPE_DEPRECATION = pytest.mark.filterwarnings(
-    "ignore:sentry_sdk.push_scope is deprecated:DeprecationWarning"
-)
-
 
 class _RecordingTransport(sentry_sdk.transport.Transport):
     """Keeps every envelope the SDK would send, in memory."""
@@ -176,7 +169,6 @@ class TestCapture:
         [event] = recording_sentry.events()
         assert event["environment"] == "dev"
 
-    @_IGNORE_PUSH_SCOPE_DEPRECATION
     def test_extra_lands_under_structured_context(
         self, recording_sentry: _RecordingTransport
     ) -> None:
@@ -189,7 +181,6 @@ class TestCapture:
         [event] = recording_sentry.events()
         assert event["contexts"]["structured_context"] == {"adapter": "telegram", "retry": 2}
 
-    @_IGNORE_PUSH_SCOPE_DEPRECATION
     def test_extra_does_not_leak_into_the_next_event(
         self, recording_sentry: _RecordingTransport
     ) -> None:

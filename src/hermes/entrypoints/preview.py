@@ -519,7 +519,11 @@ def _write_attachments(message: SlackMessage, event_name: str) -> list[Path]:
         List of paths written (empty when the message has no attachments).
     """
     written: list[Path] = []
-    tmpdir = Path(tempfile.gettempdir())
+    if not message.attachments:
+        return written
+    # A fresh 0700 directory, so no other local user can plant a symlink at
+    # a predictable path and have the preview write through it.
+    tmpdir = Path(tempfile.mkdtemp(prefix=f"hermes-preview-{event_name}-"))
     for attachment in message.attachments:
         target = tmpdir / f"hermes-preview-{event_name}-{attachment.name}"
         target.write_bytes(attachment.content)
