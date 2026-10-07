@@ -97,15 +97,13 @@ def test_the_bell_rings_on_turning_late_or_down(
 
 @given(states=st.lists(st.sampled_from(HeartbeatState), min_size=1, max_size=20))
 def test_the_bell_never_rings_twice_for_one_spell(states: list[HeartbeatState]) -> None:
-    """INV: over any run of readings, rings equal the number of entries into late or down."""
+    """INV: over any run of readings, the bell rings exactly at each entry into late or down."""
     beats = [_state(state) for state in states]
-    rings = sum(should_beep(prev, cur) for prev, cur in zip([None, *beats], beats, strict=False))
-    entries = sum(
+
+    assert [should_beep(prev, cur) for prev, cur in zip([None, *beats], beats, strict=False)] == [
         cur in {HeartbeatState.LATE, HeartbeatState.DOWN} and cur is not prev
         for prev, cur in zip([None, *states], states, strict=False)
-    )
-
-    assert rings == entries
+    ]
 
 
 @pytest.mark.parametrize(
