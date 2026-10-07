@@ -655,7 +655,12 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "A halt survives, or is lost across, a restart",
-            gap="issue #873: no test restarts during an RO-03 or RO-07 halt",
+            proved_by=(
+                _S + "test_restart.py"
+                "::test_a_restart_during_an_ro07_halt_keeps_it_until_btc_closes_a_steady_day",
+                _S + "test_restart.py"
+                "::test_a_restart_during_an_ro03_halt_keeps_it_until_a_fill_slips_less",
+            ),
         ),
     ),
     "money": (
@@ -705,7 +710,8 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "A coin is held with no entry signal or entry price",
-            gap="issue #873: the strategy is seeded flat, so no exit rule watches it; inferred",
+            gap="issue #902: the strategy is seeded flat, so no exit rule watches it and a"
+            " second breakout buys it again",
         ),
         FailureMode(
             "Fees are charged wrongly",
