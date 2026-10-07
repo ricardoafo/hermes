@@ -25,6 +25,7 @@ from importlib import metadata
 from pathlib import Path
 from typing import TextIO
 
+from hermes.adapters.ledger.connection import open_ledger
 from hermes.adapters.ledger.migration_runner import pending_migrations
 from hermes.entrypoints._release import DEFAULT_RELEASE_LINK, ReleaseInfo, read_release
 from hermes.entrypoints._streams import resolve_err
@@ -80,7 +81,7 @@ def _ledger_level(db: Path) -> str:
     if not db.is_file():
         return _NO_LEDGER
     try:
-        conn = sqlite3.connect(f"{db.resolve().as_uri()}?mode=ro", uri=True)
+        conn = open_ledger(db, read_only=True)
         try:
             applied = sorted(
                 row[0] for row in conn.execute("SELECT filename FROM schema_migrations")
