@@ -12,8 +12,6 @@ Invariants:
 No test starts a real systemctl: the runner is a fake.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from datetime import UTC, datetime
 

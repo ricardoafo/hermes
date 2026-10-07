@@ -21,8 +21,6 @@ Every app here gets a frozen clock, motion off and fake readers.
 
 # ruff: noqa: RUF001, RUF002 - the single right angle quote is the design spec's breadcrumb separator
 
-from __future__ import annotations
-
 import asyncio
 import io
 import os

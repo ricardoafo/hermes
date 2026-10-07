@@ -22,8 +22,6 @@ Every app here gets a frozen clock and motion off.
 
 # ruff: noqa: RUF001, RUF002 - the single right angle quote is the design spec's breadcrumb separator
 
-from __future__ import annotations
-
 import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime

@@ -18,8 +18,6 @@ available here". Nothing here runs a command: the VPS actions are only shown as
 Reference: openspec/changes/717-system-screen/change.md.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime

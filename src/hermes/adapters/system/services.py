@@ -12,8 +12,6 @@ reader returns ``None`` and the screen says "not available here".
 Reference: openspec/changes/717-system-screen/change.md.
 """
 
-from __future__ import annotations
-
 import shutil
 import subprocess
 from collections.abc import Callable, Sequence

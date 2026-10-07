@@ -12,8 +12,6 @@ Off the VPS there is no ``versions`` directory and the reader returns ``None``.
 Reference: openspec/changes/717-system-screen/change.md.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
