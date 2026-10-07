@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Final, Self
 
 from hermes.adapters.console.ledger_activity import LedgerActivityReader
+from hermes.adapters.ledger.connection import open_ledger
 from hermes.application.console.activity import group_activity
 from hermes.application.console.journal_activity import fold_checks, journal_activity
 from hermes.application.console.logs import LogLine
@@ -99,7 +100,7 @@ def connect_read_only(path: Path) -> sqlite3.Connection:
         LedgerError: SQLite refused to open the file.
     """
     try:
-        return sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
+        return open_ledger(path, read_only=True)
     except sqlite3.Error as exc:
         raise LedgerError(msg=f"cannot open {path} read-only: {exc}") from exc
 
