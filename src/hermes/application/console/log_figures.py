@@ -23,8 +23,6 @@ logged for the operator's own screen; nothing here is sent anywhere.
 Reference: openspec/changes/716-logs-screen/change.md.
 """
 
-from __future__ import annotations
-
 import json
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass

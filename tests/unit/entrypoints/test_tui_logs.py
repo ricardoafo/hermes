@@ -26,8 +26,6 @@ journal is the fixture export tests/fixtures/journal/logs_screen.jsonl.
 
 # ruff: noqa: RUF001, RUF002 - the single right angle quote is the design spec's breadcrumb separator
 
-from __future__ import annotations
-
 import asyncio
 import io
 import json
