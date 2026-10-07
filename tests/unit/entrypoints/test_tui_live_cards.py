@@ -27,6 +27,7 @@ from hermes.application.console import (
     ViewNotAvailableError,
     WatchedPair,
 )
+from hermes.application.console.views import ConsoleBrief
 from hermes.domain.errors import LedgerError
 from hermes.entrypoints.tui import HomeApp
 
@@ -73,6 +74,10 @@ class _Failing:
     def market_watch(self) -> tuple[WatchedPair, ...]:
         self._raise("market")
         return self._base.market_watch()
+
+    def briefs(self) -> tuple[ConsoleBrief, ...]:
+        self._raise("briefs")
+        return self._base.briefs()
 
 
 def _model(**errors: Exception) -> ConsoleReadModel:
