@@ -28,7 +28,15 @@ What one process does:
   minutes, and each completed 1D bar records the 30-day pair correlations
   (#835). These RO-01 / RO-02 inputs are recorded only: no rule reads them,
   and a failed sample or correlation is logged and skipped.
-- A notifier outage is logged and sent to Sentry; it never stops the loop.
+- Delivery rule (#854): each signal is pushed to each routed channel once,
+  in practice at least once with dedupe. The push is recorded in the ledger
+  (``SignalNotified``) after it is sent, so a crash before the record pushes
+  the signal again after the restart, and a crash before the push loses
+  nothing. A channel that failed is pushed again on the pair's next bars
+  while the signal is within the catch-up window; a stale signal is never
+  pushed.
+- A failing notifier channel, outage or bug, is logged and sent to Sentry;
+  it never stops the loop.
   Every other error exits 1 so systemd restarts the unit. Exit codes 2 and 3
   are reserved for usage and config errors found before the loop starts.
 - :func:`install_signal_handlers` binds SIGTERM + SIGINT to
@@ -111,6 +119,7 @@ from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.event_bus import EventBus, EventDispatchError
 from hermes.domain.events.shadow_capital_seeded import ShadowCapitalSeeded
 from hermes.domain.events.signal_emitted import SignalEmitted
+from hermes.domain.events.signal_notified import SignalNotified
 from hermes.domain.fees.fee_schedule import FeeSchedule
 from hermes.domain.fees.fee_schedule_selector import FeeScheduleRow, select_fee_schedule
 from hermes.domain.fx.eur_pricing import fill_date_madrid
@@ -991,6 +1000,7 @@ class _BarLoop:
         c.tracker.mark(bar)
         c.executor.observe(bar)
         signal_ = c.strategies[bar.pair].on_bar(bar, c.tracker.state())
+        emitted: tuple[SignalEmitted, bool] | None = None
         if signal_ is not None:
             event = SignalEmitted.from_signal(
                 signal_,
@@ -1004,18 +1014,12 @@ class _BarLoop:
             # The signal row comes first, then the fill (D-5): a crash between
             # them re-evaluates the bar, and the executor sees no trade yet.
             await self._execute(signal_, bar, correlation_id)
-            if is_new:
-                if within_catchup(
-                    c.clock.now(), event.occurred_at, bar.interval, bars=CATCHUP_BARS
-                ):
-                    await self._notify(event)
-                else:
-                    _log.warning(
-                        "serve.signal.stale_not_notified",
-                        pair=str(event.pair),
-                        kind=event.kind.value,
-                        occurred_at=event.occurred_at.isoformat(),
-                    )
+            emitted = (event if is_new else self._stored_signal(event), is_new)
+        # Failed pushes of earlier bars go out first: this bar's signal has no
+        # failed push yet, so it is never pushed twice in one bar (#854).
+        await self._push_owed(bar.pair)
+        if emitted is not None:
+            await self._push_first(*emitted, bar=bar)
         # Data only (#421): the archive check and the parity replay read these
         # values back; nothing in the strategy does. Stored before BarProcessed
         # so a processed bar always has its values on record.
@@ -1161,15 +1165,67 @@ class _BarLoop:
             held=partial(self._held_position, bar.pair, at_or_before=signal_.signal_time),
         )
 
-    async def _notify(self, event: SignalEmitted) -> None:
-        """Fan the event out in a worker thread; a channel outage is logged, not fatal."""
-        try:
-            await asyncio.to_thread(self.c.signal_notifier.dispatch, event)
-        except EventDispatchError as exc:
-            _log.error("serve.notify.failed", exc_info=exc)
-            for failure in exc.failures:
-                if isinstance(failure, Exception):
-                    sentry_integration.capture(failure)
+    def _stored_signal(self, event: SignalEmitted) -> SignalEmitted:
+        """Return the stored row of a re-evaluated signal: its push record keys on it."""
+        stored = self.c.ledger.latest_signal_event(
+            self.c.strategy_id, event.pair, at_or_before=event.occurred_at, kind=event.kind
+        )
+        return event if stored is None else stored
+
+    async def _push_first(self, event: SignalEmitted, is_new: bool, *, bar: Bar) -> None:
+        """Push this bar's signal unless it is stale or a push of it is on record."""
+        c = self.c
+        if not within_catchup(c.clock.now(), event.occurred_at, bar.interval, bars=CATCHUP_BARS):
+            if is_new:
+                _log.warning(
+                    "serve.signal.stale_not_notified",
+                    pair=str(event.pair),
+                    kind=event.kind.value,
+                    occurred_at=event.occurred_at.isoformat(),
+                )
+            return
+        if c.ledger.latest_signal_notified(event) is None:
+            await self._push(event)
+
+    async def _push_owed(self, pair: Pair) -> None:
+        """Push again, to the failed channels only, each recent signal whose last push failed.
+
+        Recent is the catch-up window of the shortest stream, where signals come from.
+        """
+        c = self.c
+        now = c.clock.now()
+        window = CATCHUP_BARS * min(interval_duration(i) for i in c.intervals)
+        owed = c.ledger.signals_owed_a_push(c.strategy_id, pair, since=now - window, until=now)
+        for event, failed in owed:
+            _log.info(
+                "serve.notify.retry",
+                pair=str(event.pair),
+                kind=event.kind.value,
+                occurred_at=event.occurred_at.isoformat(),
+                channels=list(failed),
+            )
+            await self._push(event, only=failed)
+
+    async def _push(self, event: SignalEmitted, only: tuple[str, ...] | None = None) -> None:
+        """Push in a worker thread, then record the push; a failing channel is logged, not fatal."""
+        delivery = await asyncio.to_thread(self.c.signal_notifier.deliver, event, only)
+        # Push, then record (#854): a crash between the two pushes the signal
+        # again after the restart. Twice beats never for a trade.
+        self.c.ledger.append_event(
+            SignalNotified.after(event, delivered=delivery.delivered, failed=delivery.failed)
+        )
+        if not delivery.failures:
+            return
+        failures = tuple(exc for _, exc in delivery.failures)
+        _log.error(
+            "serve.notify.failed",
+            channels=list(delivery.failed),
+            exc_info=EventDispatchError(
+                event_type_name=type(event).__qualname__, failures=failures
+            ),
+        )
+        for failure in failures:
+            sentry_integration.capture(failure)
 
 
 def _entry_check_fields(strategy: StrategyPort) -> dict[str, str]:
