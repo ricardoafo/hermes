@@ -48,6 +48,7 @@ from hermes.domain.events.fill_quality_recorded import (
     upcast_fill_quality_payload,
 )
 from hermes.domain.events.signal_emitted import SignalEmitted
+from hermes.domain.events.signal_notified import SignalNotified
 from hermes.domain.events.trade_executed import TradeExecuted, TradeSide
 from hermes.domain.fx.eur_pricing import EurPricing, EurStatus
 from hermes.domain.lots.eur_fifo import EurTrade, acquisition_value, replay_fifo_eur
@@ -968,6 +969,87 @@ class SqliteLedger:
         except (KeyError, ValueError, TypeError) as exc:
             raise LedgerError(msg=f"latest_signal_event: unreadable payload: {exc}") from exc
 
+    def latest_signal_notified(self, signal: SignalEmitted) -> SignalNotified | None:
+        """Return the newest push record of a stored signal (#854).
+
+        Args:
+            signal: The signal as stored; matched by its ``correlation_id``.
+
+        Returns:
+            The newest ``SignalNotified`` row, or ``None`` when it was never pushed.
+
+        Raises:
+            LedgerError: On any SQLite read failure or an unreadable payload.
+        """
+        try:
+            row = self._conn.execute(
+                "SELECT payload_json FROM events "
+                "WHERE event_type = 'SignalNotified' AND correlation_id = ? "
+                "ORDER BY id DESC LIMIT 1",
+                (signal.correlation_id,),
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"latest_signal_notified failed: {exc}") from exc
+        if row is None:
+            return None
+        try:
+            return _notified_from_payload(json.loads(row[0]))
+        except (KeyError, ValueError, TypeError) as exc:
+            raise LedgerError(msg=f"latest_signal_notified: unreadable payload: {exc}") from exc
+
+    def signals_owed_a_push(
+        self, strategy_id: StrategyId, pair: Pair, *, since: datetime, until: datetime
+    ) -> tuple[tuple[SignalEmitted, tuple[str, ...]], ...]:
+        """Return the signals whose newest push failed on some channel (#854).
+
+        A signal never pushed is not listed: only the bar that emitted it
+        pushes it the first time.
+
+        Args:
+            strategy_id: Strategy bucket that emitted the signals.
+            pair: Trading pair.
+            since: Inclusive lower bound on the signal time.
+            until: Inclusive upper bound on the signal time.
+
+        Returns:
+            ``(signal, failed channels)`` pairs, oldest signal first.
+
+        Raises:
+            LedgerError: On any SQLite read failure or an unreadable payload.
+        """
+        try:
+            rows = self._conn.execute(
+                "SELECT s.payload_json, n.payload_json FROM events n "
+                "JOIN events s ON s.correlation_id = n.correlation_id "
+                "  AND s.event_type = 'SignalEmitted' "
+                "WHERE n.event_type = 'SignalNotified' AND n.occurred_at >= ? "
+                "  AND n.occurred_at <= ? "
+                "  AND n.id = (SELECT MAX(m.id) FROM events m "
+                "              WHERE m.event_type = 'SignalNotified' "
+                "                AND m.correlation_id = n.correlation_id) "
+                "  AND json_extract(s.payload_json, '$.strategy_id.value') = ? "
+                "  AND json_extract(s.payload_json, '$.pair.base') = ? "
+                "  AND json_extract(s.payload_json, '$.pair.quote') = ? "
+                "ORDER BY s.occurred_at ASC, s.id ASC",
+                (
+                    _iso_utc(since),
+                    _iso_utc(until),
+                    strategy_id.value,
+                    pair.base.value,
+                    pair.quote.value,
+                ),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"signals_owed_a_push failed: {exc}") from exc
+        try:
+            owed = [
+                (_signal_from_payload(json.loads(signal)), _notified_from_payload(json.loads(mark)))
+                for signal, mark in rows
+            ]
+        except (KeyError, ValueError, TypeError) as exc:
+            raise LedgerError(msg=f"signals_owed_a_push: unreadable payload: {exc}") from exc
+        return tuple((signal, mark.failed) for signal, mark in owed if not mark.settled)
+
     def trade_events(self, strategy_id: StrategyId) -> tuple[TradeExecuted, ...]:
         """Return every ``TradeExecuted`` of a strategy, oldest first.
 
@@ -1687,6 +1769,22 @@ def _signal_from_payload(payload: dict[str, Any]) -> SignalEmitted:
         atr_context=Decimal(str(payload["atr_context"])),
         exit_reason=payload["exit_reason"],
         f_star_estimate=_optional_decimal(payload["f_star_estimate"]),
+    )
+
+
+def _notified_from_payload(payload: dict[str, Any]) -> SignalNotified:
+    """Rehydrate a :class:`SignalNotified` from its stored JSON payload.
+
+    Raises:
+        KeyError: A field is missing from the payload.
+        ValueError: A field holds a value of the wrong shape.
+    """
+    return SignalNotified(
+        occurred_at=datetime.fromisoformat(payload["occurred_at"]),
+        correlation_id=payload["correlation_id"],
+        event_seq=int(payload["event_seq"]),
+        delivered=tuple(str(name) for name in payload["delivered"]),
+        failed=tuple(str(name) for name in payload["failed"]),
     )
 
 

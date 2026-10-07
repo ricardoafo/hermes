@@ -1,18 +1,22 @@
 """SignalNotifier — fan one signal event out to the routed notifier channels.
 
-The serve loop calls :meth:`SignalNotifier.dispatch` from a worker thread
+The serve loop calls :meth:`SignalNotifier.deliver` from a worker thread
 (both channel adapters use a blocking HTTP client), after the event has been
 written to the ledger. The ledger row is the record of truth; a notification
-is a side effect, so a channel outage must not stop signal evaluation.
+is a side effect, so a channel failure must not stop signal evaluation.
 
 Failure policy:
 
-- An :class:`~hermes.domain.errors.InfraError` from one channel (transport,
-  HTTP or API failure) is collected and the next channel still runs. After
-  the last channel one :class:`~hermes.domain.events.event_bus.EventDispatchError`
-  carries every collected failure.
-- Any other exception (a missing template is a ``ValueError``) is a bug and
-  propagates at once.
+- Any exception from one channel is collected and the next channel still
+  runs: an :class:`~hermes.domain.errors.InfraError` (transport, HTTP or API
+  failure) and a bug alike, such as the ``ValueError`` of a missing template
+  (issue #854). A bug that escaped would stop serve after the fill and lose
+  the push for good.
+- :meth:`deliver` reports which channels took the push and which raised, so
+  the caller can record it and push the failed ones again later.
+  :meth:`dispatch` raises one
+  :class:`~hermes.domain.events.event_bus.EventDispatchError` carrying every
+  failure instead.
 - Zero wired channels is not an error: the router drops unwired slots.
 
 Reference: 309-serve-bar-loop change.md D-3, D-4, D-5;
@@ -21,12 +25,33 @@ Reference: 309-serve-bar-loop change.md D-3, D-4, D-5;
 
 from __future__ import annotations
 
-from hermes.application.notification_router import EventClass, RouterConfig, route
-from hermes.domain.errors import InfraError
+from collections.abc import Collection
+from dataclasses import dataclass
+
+from hermes.application.notification_router import EventClass, RouterConfig, channels_for
 from hermes.domain.events.event_bus import EventDispatchError
 from hermes.domain.events.signal_emitted import SignalEmitted
+from hermes.ports.notifier import NotifierPort
 
-__all__ = ["SignalNotifier"]
+__all__ = ["Delivery", "SignalNotifier"]
+
+
+@dataclass(frozen=True, slots=True)
+class Delivery:
+    """Outcome of one push of a signal.
+
+    Fields:
+        delivered: Channels that took the push, in push order.
+        failures: ``(channel, exception)`` for each channel that raised.
+    """
+
+    delivered: tuple[str, ...]
+    failures: tuple[tuple[str, Exception], ...]
+
+    @property
+    def failed(self) -> tuple[str, ...]:
+        """Return the channels that raised, in push order."""
+        return tuple(name for name, _ in self.failures)
 
 
 class SignalNotifier:
@@ -40,25 +65,51 @@ class SignalNotifier:
         """Bind to the wired channels."""
         self._channels = channels
 
+    def deliver(self, event: SignalEmitted, only: Collection[str] | None = None) -> Delivery:
+        """Push ``event`` to every routed channel, isolating each channel's failure.
+
+        Args:
+            event: The signal event to announce.
+            only: Push to these channels alone (a retry), or to all when ``None``.
+
+        Returns:
+            Which channels took the push and which raised.
+        """
+        delivered: list[str] = []
+        failures: list[tuple[str, Exception]] = []
+        for name, adapter in self._routed():
+            if only is not None and name not in only:
+                continue
+            try:
+                adapter.notify(event)
+            except Exception as exc:
+                failures.append((name, exc))
+            else:
+                delivered.append(name)
+        return Delivery(delivered=tuple(delivered), failures=tuple(failures))
+
     def dispatch(self, event: SignalEmitted) -> None:
-        """Notify every routed channel, isolating per-channel infra failures.
+        """Notify every routed channel, isolating per-channel failures.
 
         Args:
             event: The signal event to announce.
 
         Raises:
-            EventDispatchError: At least one channel raised an
-                :class:`InfraError`; every channel was still attempted.
-            ValueError: No template exists for the event (not isolated).
+            EventDispatchError: At least one channel raised; every channel
+                was still attempted.
         """
-        failures: list[BaseException] = []
-        for adapter in route(EventClass.SIGNAL_EMITTED, self._channels):
-            try:
-                adapter.notify(event)
-            except InfraError as exc:
-                failures.append(exc)
-        if failures:
+        delivery = self.deliver(event)
+        if delivery.failures:
             raise EventDispatchError(
                 event_type_name=type(event).__qualname__,
-                failures=tuple(failures),
+                failures=tuple(exc for _, exc in delivery.failures),
             )
+
+    def _routed(self) -> tuple[tuple[str, NotifierPort], ...]:
+        """Return the wired channels the signal row routes to, Telegram first."""
+        telegram_fires, slack_fires = channels_for(EventClass.SIGNAL_EMITTED)
+        slots = (
+            ("telegram", self._channels.telegram if telegram_fires else None),
+            ("slack", self._channels.slack if slack_fires else None),
+        )
+        return tuple((name, adapter) for name, adapter in slots if adapter is not None)

@@ -22,10 +22,16 @@ Design decisions
   :class:`hermes.domain.errors.InfraError`) on any wire, HTTP-status, or
   API-response failure. Never swallows silently — per code-conventions §2
   adapters raise, the application layer converts to :class:`Result`.
-- **Rate limits**: Telegram's Bot API rate-limits at ~30 messages/second
-  globally. This adapter does NOT implement client-side back-off yet; it
-  raises on HTTP 429 so the caller sees the pressure. Follow-up: adaptive
-  back-off via a token-bucket at the router layer.
+- **Rate limits** (issue #859 item 5): Telegram's Bot API rate-limits at
+  ~30 messages/second globally and answers HTTP 429 with
+  ``parameters.retry_after``. ``sendMessage`` waits that long (or the
+  ``Retry-After`` header, or 1 s) and retries, at most
+  :data:`_MAX_429_RETRIES` times and only while the whole send, request
+  time included, stays within :data:`_MAX_SEND_SEC`. Then it raises the
+  same :class:`TelegramNotifierError` as any HTTP failure, so callers'
+  ``InfraError`` isolation is unchanged. Serve dispatches from a worker
+  thread (``asyncio.to_thread``), so the wait never blocks the event loop.
+  No queue: an undelivered message is not stored here (issue #854).
 - **notify_report**: intentional no-op with a WARNING log line. Long-form
   content does not render well as a phone push (per decisions-journal
   entry); routing a report to Telegram is almost always a misuse.
@@ -33,6 +39,8 @@ Design decisions
 
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -59,6 +67,14 @@ _HTTP_ERROR_THRESHOLD: Final[int] = 400
 # Truncate response-body excerpts included in raised errors — keeps the
 # exception message readable even when the upstream returns a huge blob.
 _ERROR_EXCERPT_MAX_CHARS: Final[int] = 200
+_HTTP_TOO_MANY_REQUESTS: Final[int] = 429
+_MAX_429_RETRIES: Final[int] = 3
+# Whole-send budget, waits and request time together. Serve awaits the
+# dispatch before it finishes the bar, so a longer stall delays the next bar.
+_MAX_SEND_SEC: Final[float] = 30.0
+_DEFAULT_429_WAIT_SEC: Final[float] = 1.0
+# A retry with less time than this left would be cut off by its own timeout.
+_MIN_ATTEMPT_SEC: Final[float] = 1.0
 
 _log = structlog.get_logger(__name__)
 
@@ -148,6 +164,39 @@ def _correlation_tail(correlation_id: str) -> str:
     return correlation_id[-_CORRELATION_TAIL_LEN:]
 
 
+def _retry_after(response: httpx.Response) -> float:
+    """Return how long a 429 asks the client to wait, in seconds.
+
+    The Bot API puts it in the body as ``parameters.retry_after``; a proxy may
+    send only the ``Retry-After`` header (seconds form). Neither, or an
+    unreadable or negative value, gives :data:`_DEFAULT_429_WAIT_SEC`.
+
+    Args:
+        response: The HTTP 429 response.
+
+    Returns:
+        The wait in seconds, never negative.
+    """
+    candidates: list[object] = []
+    try:
+        body = response.json()
+    except ValueError:
+        body = None
+    if isinstance(body, dict) and isinstance(params := body.get("parameters"), dict):
+        candidates.append(params.get("retry_after"))
+    candidates.append(response.headers.get("Retry-After"))
+    for raw in candidates:
+        if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
+            continue
+        try:
+            wait = float(raw)
+        except ValueError:
+            continue
+        if 0 <= wait < float("inf"):
+            return wait
+    return _DEFAULT_429_WAIT_SEC
+
+
 @dataclass(slots=True)
 class TelegramAdapter:
     """Concrete :class:`NotifierPort` for the Telegram urgent channel.
@@ -164,12 +213,16 @@ class TelegramAdapter:
         eur_rate: Optional lookup of the EUR rate of an event's quote
             currency. It must answer from memory (no network): with a rate
             the push shows prices in EUR, without one in the quote currency.
+        sleep: Waits out a 429. Tests pass a fake so no real time passes.
+        monotonic: Clock the 429 time cap is measured on.
     """
 
     config: TelegramConfig
     client: httpx.Client = field()
     timeout_sec: float = _DEFAULT_TIMEOUT_SEC
     eur_rate: EurRateLookup | None = None
+    sleep: Callable[[float], None] = time.sleep
+    monotonic: Callable[[], float] = time.monotonic
 
     @classmethod
     def create(
@@ -362,14 +415,29 @@ class TelegramAdapter:
         Raises:
             TelegramNotifierError: On transport failure (wraps
                 ``httpx.HTTPError``), non-2xx HTTP status (includes the
-                status code and a body excerpt), or an ``ok=false``
+                status code and a body excerpt; a 429 only once its
+                retries or time cap are spent), or an ``ok=false``
                 response body.
         """
         url = f"/bot{self.config.bot_token}/{method}"
-        try:
-            response = self.client.post(url, json=payload)
-        except httpx.HTTPError as exc:
-            raise TelegramNotifierError(f"transport failure calling {method}: {exc!r}") from exc
+        started = self.monotonic()
+        timeout = self.timeout_sec
+        retries = 0
+        while True:
+            try:
+                response = self.client.post(url, json=payload, timeout=timeout)
+            except httpx.HTTPError as exc:
+                raise TelegramNotifierError(f"transport failure calling {method}: {exc!r}") from exc
+            if response.status_code != _HTTP_TOO_MANY_REQUESTS or retries >= _MAX_429_RETRIES:
+                break
+            wait = _retry_after(response)
+            left = _MAX_SEND_SEC - (self.monotonic() - started) - wait
+            if left < _MIN_ATTEMPT_SEC:
+                break
+            retries += 1
+            _log.warning("telegram.rate_limited", method=method, retry=retries, wait_sec=wait)
+            self.sleep(wait)
+            timeout = min(self.timeout_sec, left)
 
         if response.status_code >= _HTTP_ERROR_THRESHOLD:
             excerpt = response.text[:_ERROR_EXCERPT_MAX_CHARS]
