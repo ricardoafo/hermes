@@ -8,7 +8,8 @@ Invariants:
 - the bell rings once each time hermes turns late or down, never twice for
   the same state, and only with ``HERMES_CONSOLE_BEEP=on``;
 - in the running console a new check raises exactly one toast and no bell,
-  and turning down rings the bell once when it is on.
+  and turning down rings the bell once when it is on, even across a failed
+  heartbeat read.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from textual.notifications import SeverityLevel
 
 from hermes.adapters.console import FixtureReadModel
 from hermes.application.console import Heartbeat
+from hermes.application.console.read_model import ViewNotAvailableError
 from hermes.application.console.render import MADRID
 from hermes.application.console.views import HeartbeatState
 from hermes.entrypoints.tui import HomeApp
@@ -117,11 +119,13 @@ def test_the_bell_is_off_unless_asked_for(value: str, *, on: bool) -> None:
 
 
 class _Moving(FixtureReadModel):
-    """A demo scenario whose heartbeat the test sets."""
+    """A demo scenario whose heartbeat the test sets; ``None`` makes the read fail."""
 
-    beat: Heartbeat = _OK
+    beat: Heartbeat | None = _OK
 
     def heartbeat(self) -> Heartbeat:
+        if self.beat is None:
+            raise ViewNotAvailableError("heartbeat: the ledger is busy")
         return self.beat
 
 
@@ -147,7 +151,7 @@ class _Recording(HomeApp):
         self.bells += 1
 
 
-def _run(beats: list[Heartbeat]) -> tuple[list[str], int]:
+def _run(beats: list[Heartbeat | None]) -> tuple[list[str], int]:
     model = _Moving.load("ok-two-positions")
     assert isinstance(model, _Moving)
 
@@ -183,3 +187,13 @@ def test_the_console_rings_once_on_going_down_when_asked(monkeypatch: pytest.Mon
     toasts, bells = _run([down, down])
 
     assert (toasts, bells) == ([], 1)
+
+
+def test_a_failed_read_while_down_does_not_ring_the_bell_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Down, a failed read, down again: one bell, not two."""
+    monkeypatch.setenv(BEEP_ENV, "on")
+    down = _state(HeartbeatState.DOWN)
+
+    assert _run([down, None, down]) == ([], 1)

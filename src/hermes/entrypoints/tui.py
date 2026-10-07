@@ -578,6 +578,8 @@ class HomeApp(App[None]):
         self._tab_history: list[int] = []
         self._content: dict[str, RenderableType] = {}
         self._heartbeat: Heartbeat | None = None
+        # The last heartbeat read, kept across a failed read so the bell never rings twice.
+        self._last_read: Heartbeat | None = None
         self._ctx = RenderContext(surface=Surface.OPERATOR_TUI, now=clock())
         self._pulse = 0
         self._radar = 0
@@ -1081,7 +1083,6 @@ class HomeApp(App[None]):
         self._set(
             "release", Text("") if self._release is None else Text(f"release {self._release()}")
         )
-        previous = self._heartbeat
         try:
             self._heartbeat = model.heartbeat()
         except _CARD_ERRORS as exc:
@@ -1090,7 +1091,8 @@ class HomeApp(App[None]):
             self._set("down-row", Text(""))
             self._home.query_one("#down-row").set_class(False, "-down")
         else:
-            self._announce(previous, self._heartbeat, ctx)
+            self._announce(self._last_read, self._heartbeat, ctx)
+            self._last_read = self._heartbeat
             self._paint_heartbeat()
 
         try:
