@@ -8,10 +8,13 @@ neither blocks nor touches the ledger. The only file it writes is the
 operator's theme choice (``~/.config/hermes/console.toml``).
 
 Chrome (top to bottom): the window bar ("▐ HERMES // SHADOW CONSOLE", the
-live-feed pulse or the next-bar countdown, the clock; Neon only), the screen
-tabs, the status row (demo tag, release, heartbeat with the pulsing live dot,
-next-bar countdown, theme chip), the screen, the 90-day line and the footer
-key chips. Every panel sits in a
+live-feed pulse or the next-bar countdown, the mainnet badge, the clock; Neon
+only), the screen tabs, the status row (the mainnet badge outside Neon, demo
+tag, version and release, heartbeat with the pulsing live dot, next-bar
+countdown and its meter, theme chip), the screen, the 90-day line and the
+footer key chips. The mainnet badge (issue #833) follows the config's
+``allow_mainnet``: ``SHADOW · mainnet off``, ``LIVE · mainnet ON`` in the down
+colour, or an amber ``mainnet ?`` when the config could not be read. Every panel sits in a
 :class:`~hermes.entrypoints.tui_widgets.HudPanel`. Tokens, themes, breakpoints
 and timings live in :mod:`hermes.entrypoints.tui_theme`.
 
@@ -168,6 +171,7 @@ from hermes.entrypoints.tui_theme import (
     LEFT_COLUMN_WIDE,
     LIVE_GLYPH,
     MARKET_COLUMN_WIDE,
+    METER_CELLS,
     MOTION,
     NEON_THEME,
     NIGHT_THEME,
@@ -184,10 +188,12 @@ from hermes.entrypoints.tui_theme import (
     theme_variables,
     tokens_for,
 )
+from hermes.entrypoints.tui_topbar import bar_elapsed_share, mainnet_text, version_text
 from hermes.entrypoints.tui_widgets import (
     LABEL_AI,
     BigNumber,
     HudPanel,
+    Meter,
     Tab,
     TabBar,
     ThemeChip,
@@ -219,11 +225,18 @@ _LEFT_IDS: Final = frozenset(
     {"portfolio", "portfolio-curve", "portfolio-meters", "portfolio-books"}
 )
 _THIRD_IDS: Final = frozenset({"signals", "log-tail"})
-_FULL_WIDTH_IDS: Final = frozenset({"shadow", "footer", "footer-status", "countdown"})
+_FULL_WIDTH_IDS: Final = frozenset(
+    {"shadow", "footer", "footer-status", "countdown", "countdown-meter", "mainnet"}
+)
 _WIDTH_CLASSES: Final = ("-compact", "-standard", "-wide", "-ultra")
 _HEIGHT_CLASSES: Final = ("-short", "-tall", "-towering")
 # Spaces the status row's widgets add around their text (padding, margins).
 _STATUS_ROW_SLACK: Final = 8
+# The countdown meter: a space, the end caps and the cells (issue #833).
+_COUNTDOWN_METER_CELLS: Final = METER_CELLS + 3
+# The margins the theme chip and the mainnet badge keep on the status row.
+_CHIP_MARGIN: Final = 1
+_MAINNET_MARGIN: Final = 1
 
 TABS: Final = (
     Tab("1", "Home"),
@@ -479,6 +492,8 @@ class HomeApp(App[None]):
     #release {{ width: auto; color: $hud-muted; }}
     #heartbeat {{ width: 1fr; }}
     #countdown {{ width: auto; color: $hud-muted; }}
+    #mainnet {{ width: auto; margin-right: 1; }}
+    #countdown-meter {{ width: auto; }}
     #theme-chip {{ width: auto; margin-left: 1; }}
     #down-row {{ display: none; height: auto; }}
     #down-row.-down {{ display: block; }}
@@ -535,6 +550,8 @@ class HomeApp(App[None]):
         refresh_seconds: float = REFRESH_SECONDS,
         journal: Callable[[int], Sequence[LogLine] | None] | None = None,
         release: Callable[[], str] | None = None,
+        version: str | None = None,
+        allow_mainnet: bool | None = None,
         clock: Callable[[], datetime] = _system_time,
         motion: bool | None = None,
         settings_path: Path | None = None,
@@ -551,6 +568,13 @@ class HomeApp(App[None]):
                 journal is not readable here; ``None`` means no journal at all.
             release: Returns the running release's name, re-read on every
                 redraw; ``None`` leaves the top line without a release.
+            version: The package version in its release form
+                (``v1.0.0-shadow.1``, issue #815), shown before the release;
+                ``None`` shows the release alone, as ``release <name>``.
+            allow_mainnet: The config's ``allow_mainnet``, read the way
+                ``hermes serve`` reads it (issue #833); ``None`` when the
+                config could not be read, which the top bar shows as an
+                amber ``mainnet ?``. Never a default of "off".
             clock: Returns the current time; the clock, the countdown and night
                 mode tick from it.
             motion: Run the animations; ``None`` reads ``HERMES_CONSOLE_MOTION``.
@@ -566,6 +590,10 @@ class HomeApp(App[None]):
         self._model = model
         self._journal = journal
         self._release = release
+        self._version = version
+        self._release_name: str | None = None
+        self._demo_tag = Text("")
+        self._allow_mainnet = allow_mainnet
         self._refresh_seconds = refresh_seconds
         self._clock = clock
         self._motion = motion_enabled(os.environ) if motion is None else motion
@@ -616,10 +644,12 @@ class HomeApp(App[None]):
         yield WindowBar(id="window-bar")
         yield TabBar(TABS, id="tabs")
         with Horizontal(id="top"):
+            yield Static(id="mainnet")
             yield Static(id="demo-tag")
             yield Static(id="release")
             yield Static(id="heartbeat")
             yield Static(id="countdown")
+            yield Static(id="countdown-meter")
             yield ThemeChip(id="theme-chip")
         yield Static(id="down-row")
         with ContentSwitcher(initial="tab-1", id="screens"):
@@ -766,10 +796,14 @@ class HomeApp(App[None]):
         bar.clock = now.astimezone(self._ctx.tz).strftime("%H:%M:%S")
         if not self._polls:
             bar.show_next_bar(next_bar_text(self._heartbeat, now))
+        self._paint_mainnet()
+        self._fit_release()
         countdown = countdown_text(self._heartbeat, now)
         on_row, full_chip = self._status_row_layout(countdown)
         self._paint_chip(compact=not full_chip)
         self._set("countdown", Text(f" {countdown}" if on_row else ""))
+        meter = self._countdown_meter(now) if on_row and self._meter_fits(countdown) else None
+        self._set("countdown-meter", Text("") if meter is None else Text(" ").append_text(meter))
         short = countdown.removeprefix("in ")
         status = f"next {short} · {_READ_ONLY}" if countdown and not on_row else _READ_ONLY
         self._set("footer-status", Text(status))
@@ -786,13 +820,73 @@ class HomeApp(App[None]):
         width = self.size.width
         if width < COMPACT_BELOW:
             return False, False
-        used = _STATUS_ROW_SLACK + sum(
-            len(to_plain_text(self._content.get(part, Text("")), width=width).strip())
-            for part in ("demo-tag", "release", "heartbeat")
-        )
+        used = self._status_row_used()
         chip = self._chip_text(compact=False).cell_len
         on_row = bool(countdown) and used + chip + len(countdown) + 1 <= width
         return on_row, used + chip <= width
+
+    def _status_row_used(self, *, release: bool = True) -> int:
+        """Return the cells the status row's fixed parts take, slack included."""
+        width = self.size.width
+        parts = ["demo-tag", "heartbeat"]
+        if release:
+            parts.append("release")
+        if self.theme != NEON_THEME:
+            parts.append("mainnet")
+        return _STATUS_ROW_SLACK + sum(
+            len(to_plain_text(self._content.get(part, Text("")), width=width).strip())
+            for part in parts
+        )
+
+    def _fit_release(self) -> None:
+        """Shorten the version line, then the demo tag, until the heartbeat fits whole.
+
+        With a version (issue #815) the line drops the release first, then
+        itself; without one the ``release <name>`` line is kept as before.
+        If the heartbeat still does not fit, the demo tag drops its scenario
+        name. The mainnet badge and the heartbeat are never cut.
+        Measured in real cells (no slack), so a row that fits is left as it is.
+        """
+        full = version_text(self._version, self._release_name)
+        candidates = (full, self._version, "") if self._version else (full,)
+        scenario = self._model.demo_scenario
+        short_tag = Text(f" {DEMO_TAG} ", style=self._demo_tag_style()) if scenario else Text("")
+        width = self.size.width
+        fixed = self._chip_text(compact=True).cell_len + _CHIP_MARGIN
+        fixed += len(to_plain_text(self._content.get("heartbeat", Text("")), width=width).strip())
+        if self.theme != NEON_THEME:
+            mainnet = self._content.get("mainnet", Text(""))
+            fixed += len(to_plain_text(mainnet, width=width).strip()) + _MAINNET_MARGIN
+        fitted: str | None = None
+        tag = self._demo_tag
+        for tag in (self._demo_tag, short_tag):
+            room = width - fixed - tag.cell_len
+            fitted = next((text for text in candidates if len(text) <= room), None)
+            if fitted is not None:
+                break
+        self._set("demo-tag", tag)
+        self._set("release", Text(candidates[-1] if fitted is None else fitted))
+
+    def _meter_fits(self, countdown: str) -> bool:
+        """Return whether the countdown meter fits after the countdown and the full chip."""
+        chip = self._chip_text(compact=False).cell_len
+        needed = self._status_row_used() + chip + len(countdown) + 1 + _COUNTDOWN_METER_CELLS
+        return needed <= self.size.width
+
+    def _countdown_meter(self, now: datetime) -> Text | None:
+        """Return the meter of the time passed since the last bar check, or ``None``."""
+        share = bar_elapsed_share(self._heartbeat, now)
+        if share is None:
+            return None
+        return Meter(share, width=METER_CELLS, caps=True).render(tokens_for(self.theme))
+
+    def _paint_mainnet(self) -> None:
+        """Draw the mainnet badge: in the window bar in Neon, on the status row otherwise."""
+        neon = self.theme == NEON_THEME
+        self._home.query_one(WindowBar).show_mainnet(self._allow_mainnet)
+        badge = mainnet_text(self._allow_mainnet, tokens_for(self.theme))
+        self._set("mainnet", Text("") if neon else badge)
+        self._home.query_one("#mainnet").display = not neon
 
     def _chip_text(self, *, compact: bool) -> Text:
         return theme_chip_text(
@@ -997,9 +1091,10 @@ class HomeApp(App[None]):
         """Return the text of one widget without styles (for tests and review).
 
         Args:
-            widget_id: ``demo-tag``, ``release``, ``heartbeat``, ``down-row``, ``portfolio``,
-                ``positions``, ``market``, ``activity``, ``detail``, ``shadow``,
-                ``countdown``, ``footer`` or ``footer-status``.
+            widget_id: ``mainnet``, ``demo-tag``, ``release``, ``heartbeat``, ``down-row``,
+                ``portfolio``, ``positions``, ``market``, ``activity``, ``detail``,
+                ``shadow``, ``countdown``, ``countdown-meter``, ``footer`` or
+                ``footer-status``.
 
         Returns:
             The rendered text, one line per row.
@@ -1077,15 +1172,13 @@ class HomeApp(App[None]):
         ctx = self._render_context()
         self._ctx = ctx
         scenario = model.demo_scenario
-        tag = (
+        # Drawn by _fit_release once the heartbeat and the badge are known.
+        self._demo_tag = (
             Text(f" {DEMO_TAG} · scenario {scenario} ", style=self._demo_tag_style())
             if scenario
             else Text("")
         )
-        self._set("demo-tag", tag)
-        self._set(
-            "release", Text("") if self._release is None else Text(f"release {self._release()}")
-        )
+        self._release_name = None if self._release is None else self._release()
         try:
             self._heartbeat = model.heartbeat()
         except _CARD_ERRORS as exc:
@@ -1097,6 +1190,8 @@ class HomeApp(App[None]):
             self._announce(self._last_read, self._heartbeat, ctx)
             self._last_read = self._heartbeat
             self._paint_heartbeat()
+        self._paint_mainnet()
+        self._fit_release()
 
         try:
             self._title_total = title_total(model.portfolio(self._range).total_value, ctx.surface)
@@ -1572,6 +1667,8 @@ def run_home(
     journal: Callable[[int], Sequence[LogLine] | None] | None = None,
     release: Callable[[], str] | None = None,
     *,
+    version: str | None = None,
+    allow_mainnet: bool | None = None,
     theme: ThemeChoice | None = None,
     settings_path: Path | None = DEFAULT_SETTINGS_PATH,
     exposure_cap: Decimal | None = None,
@@ -1583,6 +1680,9 @@ def run_home(
         model: The read model to show.
         journal: Source of the logs panel's lines; see :class:`HomeApp`.
         release: Source of the running release's name; see :class:`HomeApp`.
+        version: The package version in its release form; see :class:`HomeApp`.
+        allow_mainnet: The config's ``allow_mainnet``, ``None`` when unread;
+            see :class:`HomeApp`.
         theme: A ``--theme`` choice; saved, and wins over the saved one.
         settings_path: Where the theme choice is read and saved.
         exposure_cap: The roster's exposure cap; see :class:`HomeApp`.
@@ -1592,6 +1692,8 @@ def run_home(
         model,
         journal=journal,
         release=release,
+        version=version,
+        allow_mainnet=allow_mainnet,
         theme=theme,
         settings_path=settings_path,
         exposure_cap=exposure_cap,
