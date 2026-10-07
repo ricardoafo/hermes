@@ -17,7 +17,6 @@ from decimal import Decimal
 from typing import Protocol
 
 from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
-from hermes.domain.events.base import DomainEvent
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.bar_comparison import BarMismatch, compare_bars
 from hermes.domain.market_data.kline import KlineInterval
@@ -78,7 +77,7 @@ def run_archive_check(
     pairs: Sequence[Pair],
     intervals: Sequence[KlineInterval],
     day: date,
-    notify: Callable[[DomainEvent], None],
+    notify: Callable[[AnomalyDetected], None],
     now: datetime,
     correlation_id: str,
     tolerance: Decimal = Decimal(0),

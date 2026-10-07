@@ -1,0 +1,1 @@
+- Backtests now load 300 days of daily bars before their window, as serve warms up with, so the EMA regime filter's first decisions match serve's (issue #880).
