@@ -21,7 +21,7 @@
 # Runner binary version is PINNED. Self-updates during a job break the
 # --ephemeral lifecycle; bump this manually + rebuild the image.
 
-FROM ubuntu:24.04
+FROM ubuntu:25.10
 
 ARG RUNNER_VERSION=2.337.0
 ARG RUNNER_ARCH=x64
