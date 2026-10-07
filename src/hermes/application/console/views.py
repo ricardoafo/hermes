@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "QUIET_ACTIVITY_KINDS",
+    "RULE_COUNT",
     "ActivityDay",
     "ActivityItem",
     "ActivityKind",
@@ -35,6 +36,7 @@ __all__ = [
     "PortfolioSummary",
     "PositionDetail",
     "PositionRow",
+    "RuleCheck",
     "ShadowTest",
     "ShadowTestStatus",
     "Tax",
@@ -48,6 +50,9 @@ __all__ = [
 ]
 
 _ZERO = Decimal(0)
+
+RULE_COUNT = 3
+"""The frozen entry rules: breakout, momentum and regime (pre-registration §5.1)."""
 
 
 class HeartbeatState(StrEnum):
@@ -384,6 +389,41 @@ class WatchedPair:
     last_check_at: datetime
     signal: str | None
     next_check_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class RuleCheck:
+    """Which frozen entry rules held for one coin on one bar check (#714).
+
+    Yes or no only, never a price, an indicator value or how close a rule
+    came to holding (ADR-012 D-06): the Signals screen shows rules, not
+    distances.
+
+    Attributes:
+        at: The checked candle's boundary (its close), UTC-aware.
+        coin: Base asset (``"BTC"``).
+        interval: The checked timeframe (``"4h"``).
+        breakout: The Donchian breakout held (4h, pre-registration §5.1).
+        momentum: The ADX momentum gate held (4h, §5.1).
+        regime: The EMA trend filter held (1D, §5.1).
+    """
+
+    at: datetime
+    coin: str
+    interval: str
+    breakout: bool
+    momentum: bool
+    regime: bool
+
+    @property
+    def met(self) -> int:
+        """Return how many of the three entry rules held."""
+        return self.breakout + self.momentum + self.regime
+
+    @property
+    def signal(self) -> bool:
+        """Return whether all three held, which is an entry signal (§5.1)."""
+        return self.met == RULE_COUNT
 
 
 class ActivityKind(StrEnum):

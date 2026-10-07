@@ -155,6 +155,7 @@ from hermes.entrypoints.tui_settings import (
     load_settings,
     save_settings,
 )
+from hermes.entrypoints.tui_signals import signals_screen
 from hermes.entrypoints.tui_theme import (
     BASE,
     COMPACT_BELOW,
@@ -225,7 +226,7 @@ _STATUS_ROW_SLACK: Final = 8
 
 TABS: Final = (
     Tab("1", "Home"),
-    Tab("2", "Signals", 714),
+    Tab("2", "Signals"),
     Tab("3", "Positions", 715),
     Tab("4", "Tax", 719),
     Tab("5", "Shadow test", 718),
@@ -234,6 +235,7 @@ TABS: Final = (
     Tab("8", "Logs", 716),
 )
 _HOME: Final = 0
+_SIGNALS: Final = 1
 _BRIEFS: Final = 5
 _LOGS: Final = 7
 
@@ -1133,6 +1135,20 @@ class HomeApp(App[None]):
             logs = TABS[_LOGS]
             self._set(
                 f"screen-{logs.key}", Group(_placeholder(logs), Text(""), self._logs_content())
+            )
+        if self._tab == _SIGNALS:
+            self._set(
+                f"screen-{TABS[_SIGNALS].key}",
+                _card(
+                    "Signals",
+                    lambda: signals_screen(
+                        model.rule_checks(),
+                        ctx,
+                        self._data,
+                        width=self.size.width,
+                        held={row.coin for row in model.positions()},
+                    ),
+                ),
             )
         screen = self.screen
         if isinstance(screen, _PanelScreen):
