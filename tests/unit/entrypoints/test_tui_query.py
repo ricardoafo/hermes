@@ -35,6 +35,7 @@ from hermes.entrypoints.tui_query import (
     status_line,
 )
 from hermes.entrypoints.tui_theme import CONTROL_THEME, NEON_THEME
+from tests.unit.entrypoints._settle import settle
 
 _NOW = datetime(2026, 10, 5, 12, tzinfo=UTC)
 
@@ -82,17 +83,17 @@ async def _drive(
 ) -> Shot:
     app = activity_query_app(_ITEMS, MADRID, lambda: _NOW)
     async with app.run_test(size=size) as pilot:
-        await pilot.pause()
+        await settle(pilot)
         for value in values:
             app.query_one(QueryInput).value = value
-            await pilot.pause()
+            await settle(pilot)
         for key in keys:
             await pilot.press(key)
-            await pilot.pause()
+            await settle(pilot)
         table = app.query_one(SortableTable)
         if header is not None:
             await pilot.click(SortableTable, offset=(_header_x(table, header), 0))
-            await pilot.pause()
+            await settle(pilot)
         bar = app.query_one(QueryBar)
         listing = app.query_one(QueryList)
         status = bar.query_one("#query-status")

@@ -6,7 +6,8 @@ spec's four breakpoints (80x24, 120x36, 160x45, 240x60), only changes when a
 reviewer accepts the new picture. Each file is named
 ``query_activity_<theme>_<cols>x<rows>.svg``.
 
-The app runs with motion off, a frozen clock and synthetic activity items.
+The app runs with motion off, a frozen clock and synthetic activity items, and
+every picture waits for the app to settle (``_settle``), never for CPU idle alone.
 """
 
 import asyncio
@@ -24,6 +25,7 @@ from hermes.application.console.render import MADRID
 from hermes.application.console.views import ActivityItem, ActivityKind
 from hermes.entrypoints.tui_query import QueryInput, activity_query_app
 from hermes.entrypoints.tui_theme import CONTROL_THEME, NEON_THEME
+from tests.unit.entrypoints._settle import settle
 
 _FROZEN = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
 
@@ -86,9 +88,9 @@ def _query_svg(theme: str, size: tuple[int, int]) -> str:
     async def drive() -> str:
         app = activity_query_app(_QUERY_ITEMS, MADRID, lambda: _FROZEN, theme=theme, motion=False)
         async with app.run_test(size=size) as pilot:
-            await pilot.pause()
+            await settle(pilot)
             app.query_one(QueryInput).value = _QUERY
-            await pilot.pause()
+            await settle(pilot)
             return _repo_clean(app.export_screenshot())
 
     return asyncio.run(drive())
