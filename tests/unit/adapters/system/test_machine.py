@@ -11,8 +11,6 @@ Invariants:
   here"), so a PC without ``/proc`` still shows the disk.
 """
 
-from __future__ import annotations
-
 import os
 from datetime import UTC, datetime
 from pathlib import Path

@@ -15,8 +15,6 @@ here" for that value only. Nothing is written.
 Reference: openspec/changes/717-system-screen/change.md.
 """
 
-from __future__ import annotations
-
 import os
 import shutil
 from collections.abc import Callable
