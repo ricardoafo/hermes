@@ -21,7 +21,8 @@ Reference: openspec/changes/backtest-driver-mvp1-phase2/change.md D-2, D-3, R-4.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 
 from returns.result import Failure
@@ -72,6 +73,9 @@ class MarketContext:
         at: UTC-aware time stamped on the fill.
         market_snapshot: Microstructure inputs for the risk overlay.
         experiment_state: Inputs for the kill-trigger evaluation.
+        correlations: 30-day return correlation of pair pairs, for the RO-01
+            correlation lock (pre-registration §5.5). The portfolio has no
+            market data, so the caller supplies them; empty means none known.
     """
 
     orderbook: Orderbook | None
@@ -79,6 +83,7 @@ class MarketContext:
     at: datetime
     market_snapshot: MarketSnapshot
     experiment_state: ExperimentState
+    correlations: Mapping[tuple[Pair, Pair], float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -234,7 +239,9 @@ class FillKernel:
                     stop_px=signal.stop_price,
                     open_notional=self._tracker.open_notional(),
                 ),
-                portfolio_state=self._tracker.state(),
+                portfolio_state=replace(
+                    self._tracker.state(), correlations=dict(market.correlations)
+                ),
                 market_snapshot=market.market_snapshot,
                 experiment_state=market.experiment_state,
                 orderbook=book,

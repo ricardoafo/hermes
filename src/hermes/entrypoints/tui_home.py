@@ -27,6 +27,12 @@ from hermes.application.console import (
     ShadowTest,
     ShadowTestStatus,
 )
+from hermes.application.console.chart_caption import (
+    axis_span,
+    chart_caption,
+    resample_by_time,
+    time_axis,
+)
 from hermes.application.console.format import (
     MINUS,
     CushionLevel,
@@ -40,6 +46,7 @@ from hermes.application.console.format import (
     round2,
     stop_room_share,
 )
+from hermes.application.console.live import LivePosition
 from hermes.application.console.logs import LogLine, render_log_line
 from hermes.application.console.render import (
     RenderContext,
@@ -47,6 +54,7 @@ from hermes.application.console.render import (
     shadow_test_line,
 )
 from hermes.entrypoints.tui_charts import area_chart, spark_text
+from hermes.entrypoints.tui_live import LiveLook
 from hermes.entrypoints.tui_theme import (
     COMPACT_BELOW,
     CURVE_ROWS_STANDARD,
@@ -70,6 +78,7 @@ __all__ = [
     "LOGS_UNAVAILABLE",
     "HeightClass",
     "HomeLayout",
+    "LiveRows",
     "WidthClass",
     "counted_line",
     "empty_positions",
@@ -265,10 +274,14 @@ def total_text(summary: PortfolioSummary, ctx: RenderContext) -> str | None:
 def portfolio_curve(
     summary: PortfolioSummary, ctx: RenderContext, tokens: Tokens, *, width: int, rows: int
 ) -> Text:
-    """Return the braille area curve of the range's total value.
+    """Return the braille area curve of the range's total value, its time axis and caption.
 
     The gain gradient when the range ends at or above its start, the loss
-    gradient below; one dim colour while hermes is down.
+    gradient below; one dim colour while hermes is down. With sample times the
+    curve has a time scale (each dot column is the value in force at its
+    instant) and a dim axis of hours, weekdays, day numbers or months under it
+    (left out when three marks do not fit); the dim caption says what the chart
+    covers (issue #713, Code Owner 2026-10-06).
 
     Args:
         summary: The portfolio view.
@@ -278,8 +291,8 @@ def portfolio_curve(
         rows: Rows; 0 draws nothing.
 
     Returns:
-        The curve, or empty text on a blind surface, while EUR is pending, or
-        with no samples.
+        The curve, axis and caption, or empty text on a blind surface, while
+        EUR is pending, or with no samples.
     """
     values = summary.sparkline
     if rows < 1 or width < 1 or not values or not _shows_figures(summary, ctx):
@@ -288,7 +301,19 @@ def portfolio_curve(
         stops: tuple[str, ...] = (tokens.dim, tokens.dim)
     else:
         stops = tokens.gain if values[-1] >= values[0] else tokens.loss
-    return area_chart([float(v) for v in values], width=width, rows=rows, stops=stops)
+    span = axis_span(summary)
+    drawn: Sequence[Decimal] = values
+    if span is not None and len(summary.sparkline_at) == len(values):
+        drawn = resample_by_time(values, summary.sparkline_at, span, width * 2)
+    lines = [area_chart([float(v) for v in drawn], width=width, rows=rows, stops=stops)]
+    axis = None if span is None else time_axis(summary.range, span, tz=ctx.tz, width=width)
+    if axis:
+        lines.append(Text(axis, style=tokens.dim))
+    caption = chart_caption(
+        summary, tz=ctx.tz, width=width, compact=False, show_values=ctx.shows_money
+    )
+    lines.append(Text(caption, style=tokens.dim))
+    return Text("\n").join(lines)
 
 
 def exposure_share(summary: PortfolioSummary) -> Decimal | None:
@@ -398,17 +423,36 @@ class _RowColumns:
         return cls(prices=False, trend=0, meter=_STOP_METER_NARROW, stop_word=False)
 
 
-def _stop_room(row: PositionRow, ctx: RenderContext, tokens: Tokens, columns: _RowColumns) -> Text:
-    """Return the stop-room meter and its words; amber when the stop is within 2 ATR."""
-    share = float(stop_room_share(row.stop_price, row.current_price, row.high_since_entry))
-    close = cushion_level(row.stop_distance_atr) is not CushionLevel.GREEN
-    stale = ctx.stale_since is not None
+def _stop_room(
+    row: PositionRow,
+    ctx: RenderContext,
+    tokens: Tokens,
+    columns: _RowColumns,
+    *,
+    live: LivePosition | None = None,
+    look: LiveLook | None = None,
+) -> Text:
+    """Return the stop-room meter and its words; amber when the stop is within 2 ATR.
+
+    With a live position the meter and the distance are measured from the live price.
+    """
+    if live is None:
+        share = float(stop_room_share(row.stop_price, row.current_price, row.high_since_entry))
+        atr, pct = row.stop_distance_atr, row.stop_distance_pct
+    else:
+        share = float(live.stop_room)
+        atr = row.stop_distance_atr if live.stop_distance_atr is None else live.stop_distance_atr
+        pct = live.stop_distance_pct
+    close = cushion_level(atr) is not CushionLevel.GREEN
+    paused = live is not None and look is not None and look.paused
+    dimmed = ctx.stale_since is not None or paused
     bar = Meter(share, width=columns.meter, warn=close).render(
-        tokens, colour=tokens.dim if stale else None
+        tokens, colour=tokens.dim if dimmed else None
     )
     word = " stop" if columns.stop_word else ""
-    distance = f"{word} {MINUS}{abs(row.stop_distance_pct):.1f}%"
-    bar.append(distance, style=tokens.warn if close else tokens.muted)
+    distance = f"{word} {MINUS}{abs(pct):.1f}%"
+    style = tokens.warn if close else tokens.muted
+    bar.append(distance, style=tokens.dim if paused else style)
     return bar
 
 
@@ -425,6 +469,42 @@ def _header(columns: _RowColumns, ctx: RenderContext, tokens: Tokens) -> Text:
     return header
 
 
+def _tagged(header: Text, look: LiveLook | None, width: int) -> list[RenderableType]:
+    """Return the header with the live tag at its end, or the tag on its own line above."""
+    if look is None:
+        return [header]
+    tag = look.tag()
+    if header.cell_len + 2 + tag.cell_len <= width:
+        header.append("  ")
+        header.append_text(tag)
+        return [header]
+    return [tag, header]
+
+
+@dataclass(frozen=True, slots=True)
+class LiveRows:
+    """The live layer of the position rows (issue #713).
+
+    Attributes:
+        look: The live tag, the flash and the paused state.
+        positions: Each coin's position valued at its live price.
+        ticks: Each coin's kept live prices, oldest first, appended to its trend.
+    """
+
+    look: LiveLook
+    positions: Mapping[str, LivePosition]
+    ticks: Mapping[str, Sequence[Decimal]]
+
+
+def _move(row: PositionRow, live: LivePosition | None) -> tuple[str, str]:
+    """Return the entry and the now price, the now price live when there is one."""
+    if row.eur_pending:
+        now = row.current_price if live is None else live.price
+        return fmt_price(row.entry_price), fmt_usdt_price(now)
+    now_eur = row.current_eur if live is None or live.price_eur is None else live.price_eur
+    return fmt_eur_price(row.entry_eur), fmt_eur_price(now_eur)
+
+
 def _row(
     row: PositionRow,
     detail: PositionDetail | None,
@@ -433,30 +513,55 @@ def _row(
     tokens: Tokens,
     columns: _RowColumns,
     selected: str | None,
+    live: LiveRows | None = None,
 ) -> Text:
+    position = None if live is None else live.positions.get(row.coin)
+    look = None if live is None or position is None else live.look
     line = Text("▸" if row.coin == selected else " ", style=f"bold {tokens.live}")
     line.append(f"{row.coin:<6}", style="bold")
     line.append(f"{row.timeframe:<4}")
+    change = row.change_pct if position is None else position.change_pct
+    colour = _direction(tokens, change, ctx)
+    if look is not None:
+        colour = look.style(colour)
     if columns.prices:
-        move = (
-            f"{fmt_price(row.entry_price)} → {fmt_usdt_price(row.current_price)}"
-            if row.eur_pending
-            else f"{fmt_eur_price(row.entry_eur)} → {fmt_eur_price(row.current_eur)}"
-        )
-        line.append(f"{move:<24}")
-    colour = _direction(tokens, row.change_pct, ctx)
+        entry, now = _move(row, position)
+        line.append(f"{entry} → ")
+        line.append(now, style="" if look is None else look.flash(row.coin, ""))
+        line.append(" " * max(0, 24 - len(entry) - 3 - len(now)))
     if columns.trend:
-        path = detail.price_path if detail is not None else ()
+        path = list(detail.price_path) if detail is not None else []
+        if live is not None and position is not None:
+            path += live.ticks.get(row.coin, ())
         spark = spark_text(path, columns.trend, colour)
         line.append_text(spark)
         line.append(" " * (columns.trend + 1 - spark.cell_len))
-    line.append(f"{fmt_pct(row.change_pct):>9}", style=colour)
+    change_style = colour if look is None else look.flash(row.coin, colour)
+    line.append(f"{fmt_pct(change):>9}", style=change_style)
+    net = row.net if position is None else position.net
     if row.eur_pending:
         line.append(f" {'EUR pending':>12}", style=tokens.dim)
+    elif net is None:
+        line.append(f" {'…':>12}", style=tokens.dim)
     else:
-        line.append(f" {fmt_eur(row.net):>12}", style=_direction(tokens, row.net, ctx))
+        net_colour = _direction(tokens, net, ctx)
+        line.append(
+            f" {fmt_eur(net):>12}", style=net_colour if look is None else look.style(net_colour)
+        )
     line.append("  ")
-    line.append_text(_stop_room(row, ctx, tokens, columns))
+    line.append_text(_stop_room(row, ctx, tokens, columns, live=position, look=look))
+    return line
+
+
+def _booked_line(rows: Sequence[PositionRow], look: LiveLook, tokens: Tokens) -> Text:
+    """Return ``booked as of 16:00 · net ETH ▲ +€1.54 · SOL ▲ +€6.05`` (net at the last bar)."""
+    line = look.booked()
+    line.append(" · net ", style=tokens.muted)
+    for index, row in enumerate(rows):
+        if index:
+            line.append(" · ", style=tokens.dim)
+        figure = "EUR pending" if row.eur_pending else fmt_eur(row.net)
+        line.append(f"{row.coin} {figure}", style=tokens.muted)
     return line
 
 
@@ -468,12 +573,19 @@ def position_rows(
     *,
     width: int,
     selected: str | None = None,
+    live: LiveRows | None = None,
 ) -> Group:
     """Return one cockpit row per open position: trend, change, net, stop room.
 
     The stop-room meter is the share of room left from the stop up to the high
     since entry; it is amber when the stop is within 2 ATR. Blind surfaces get
     the shared positions table without money.
+
+    With a live layer, a position with a live price shows its now price,
+    change, net (before tax), stop room and trend at that price; the header
+    carries the live tag and a last line keeps the booked net per coin ("booked
+    as of 16:00"). Paused, the live cells dim; a tick flashes the now price and
+    the change.
 
     Args:
         rows: Open positions.
@@ -483,18 +595,31 @@ def position_rows(
         width: Cells available: from 92 the entry and current prices show, from
             64 the trend sparkline.
         selected: Coin marked with ``▸`` (the cursor).
+        live: The live layer, or ``None`` to draw the booked rows only.
 
     Returns:
-        A header line and the rows.
+        A header line and the rows (and the booked line when live).
     """
     if not ctx.shows_money:
         return render_positions(rows, ctx, selected=selected)
     columns = _RowColumns.for_width(width)
-    lines: list[RenderableType] = [_header(columns, ctx, tokens)]
+    showing = live is not None and live.look.showing and bool(live.positions)
+    look = live.look if live is not None and showing else None
+    lines = _tagged(_header(columns, ctx, tokens), look, width)
     lines += [
-        _row(row, details.get(row.coin), ctx, tokens=tokens, columns=columns, selected=selected)
+        _row(
+            row,
+            details.get(row.coin),
+            ctx,
+            tokens=tokens,
+            columns=columns,
+            selected=selected,
+            live=live if showing else None,
+        )
         for row in rows
     ]
+    if look is not None:
+        lines.append(_booked_line(rows, look, tokens))
     return Group(*lines)
 
 

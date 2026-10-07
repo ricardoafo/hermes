@@ -79,13 +79,19 @@ def _verdict(raw: object, rule: str) -> ReadyVerdict:
         raise ShadowRecordError(msg) from exc
 
 
+def _rule_name(entry: _Json) -> str:
+    """Return ``3 known decision-changing defects fixed``: the rule number, then its name."""
+    name = entry.get("name")
+    if not isinstance(name, str) or not name:
+        msg = "every entry of 'checks' needs a 'name'"
+        raise ShadowRecordError(msg)
+    number = entry.get("rule")
+    return f"{number} {name}" if isinstance(number, int) and not isinstance(number, bool) else name
+
+
 def _rules(raw: object) -> tuple[ReadyRule, ...]:
-    if raw is None:
-        return ()
-    if isinstance(raw, Mapping):
-        return tuple(ReadyRule(str(rule), _verdict(v, str(rule))) for rule, v in raw.items())
     if not isinstance(raw, list):
-        msg = "field 'checks' must be a list or an object"
+        msg = "field 'checks' must be a list"
         raise ShadowRecordError(msg)
     rules: list[ReadyRule] = []
     for item in raw:
@@ -93,10 +99,7 @@ def _rules(raw: object) -> tuple[ReadyRule, ...]:
             msg = "every entry of 'checks' must be an object"
             raise ShadowRecordError(msg)
         entry = cast("_Json", item)
-        name = entry.get("rule", entry.get("name"))
-        if not isinstance(name, str) or not name:
-            msg = "every entry of 'checks' needs a 'rule'"
-            raise ShadowRecordError(msg)
+        name = _rule_name(entry)
         rules.append(ReadyRule(name, _verdict(entry.get("verdict"), name)))
     return tuple(rules)
 
@@ -119,7 +122,7 @@ def parse_run_record(document: _Json) -> ShadowRunRecord:
         strategy_id=_text(document, "strategy_id"),
         day_zero_at=_aware(_text(document, "day_zero_at"), "day_zero_at"),
         release=_text(document, "release"),
-        ready_rules=_rules(document.get("checks")),
+        ready_rules=_rules(document.get("checks", [])),
     )
 
 

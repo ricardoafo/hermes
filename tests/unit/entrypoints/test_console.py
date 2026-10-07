@@ -7,6 +7,8 @@ Invariants:
 - ``--demo`` never reaches a non-console command such as ``serve``;
 - the environment variable only feeds console commands, and the flag wins;
 - without a demo there is no live console source yet;
+- the live ticker is the Kraken public adapter for a ledger-backed console and
+  absent for demo data (issue #713);
 - the Home exposure cap is the roster's pre-registered value, or ``None`` when
   the roster cannot say one cap (#712);
 - the Shadow test (issue #718) reads the first enabled strategy's day-0
@@ -26,11 +28,12 @@ import pytest
 from hermes.adapters.console import FixtureReadModel, UnknownScenarioError
 from hermes.adapters.console.ledger_read_model import LedgerReadModel
 from hermes.adapters.console.shadow_records import RunsDirectory
+from hermes.adapters.exchanges.kraken_public import KrakenPublicAdapter
 from hermes.application.console import ConsoleReadModel
 from hermes.application.console.shadow_screen import ShadowSources
 from hermes.entrypoints import cli as cli_module
 from hermes.entrypoints.commands import Command
-from hermes.entrypoints.commands.tui import run_tui
+from hermes.entrypoints.commands.tui import live_ticker, run_tui
 from hermes.entrypoints.console import (
     DEMO_ENV_VAR,
     DemoFlagError,
@@ -307,3 +310,21 @@ def test_shadow_sources_follow_the_read_model(tmp_path: Path) -> None:
         tmp_path / "data" / "runs",
         ShadowSources(),
     )
+
+
+def test_live_ticker_is_kraken_for_a_ledger_console(tmp_path: Path) -> None:
+    """A ledger-backed console gets the Kraken public adapter; creating it opens no connection."""
+    ticker = live_ticker(LedgerReadModel(tmp_path / "hermes.sqlite3"))
+    try:
+        assert (type(ticker), ticker.config.base_url if ticker else None) == (
+            KrakenPublicAdapter,
+            "https://api.kraken.com",
+        )
+    finally:
+        if ticker is not None:
+            ticker.close()
+
+
+def test_live_ticker_is_absent_for_demo_data() -> None:
+    """Demo positions are synthetic, so they never meet real prices."""
+    assert [live_ticker(FixtureReadModel.load("ok-two-positions"))] == [None]

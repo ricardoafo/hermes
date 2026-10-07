@@ -21,6 +21,8 @@ from pathlib import Path
 from typing import Final, cast
 
 from hermes.adapters.console.shadow_records import ShadowRecordError, parse_run_record
+from hermes.application.console.portfolio_figures import range_start
+from hermes.application.console.render import MADRID
 from hermes.application.console.shadow_screen import (
     NotebookEntry,
     ShadowEvidence,
@@ -287,6 +289,7 @@ def _portfolios(raw: _Json) -> dict[PortfolioRange, PortfolioSummary]:
             tax_band=band,
             starting_capital=_opt_dec(raw, "starting_capital"),
             started_on=_to_date(started_on, "started_on") if started_on else None,
+            range_from=range_start(range_, as_of, MADRID),
         )
     return out
 

@@ -31,11 +31,16 @@ trap cleanup EXIT
 
 log()  { echo "[hermes-backup $(date -Iseconds)] $*"; }
 fail() { log "FAIL: $*" >&2; exit 1; }
+# The ping URL carries the check's secret key, so it goes to curl as a config
+# on stdin (printf is a builtin, so no argv either): `ps` shows argv to every
+# local user. Escape for a double-quoted config value first.
 ping() {
-    local endpoint="$1"
+    local url="${HERMES_BACKUP_HEALTHCHECK_URL}$1"
     [ -n "${HERMES_BACKUP_HEALTHCHECK_URL}" ] || return 0
-    curl -fsS -m 10 --retry 3 -o /dev/null \
-        "${HERMES_BACKUP_HEALTHCHECK_URL}${endpoint}" || true
+    url="${url//\\/\\\\}"
+    url="${url//\"/\\\"}"
+    printf 'url = "%s"\n' "$url" \
+        | curl -fsS -m 10 --retry 3 -o /dev/null --config - || true
 }
 
 if [ "${1:-}" = "--init" ]; then

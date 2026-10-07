@@ -1,7 +1,8 @@
 """Reading the day-0 records and the lab notebook from files (issue #718).
 
-The record fixture copies the field list ``hermes shadow-start`` writes
-(issue #797); the console reads that format without importing the command.
+The record fixture is written by ``DayZeroRecord.to_json``, the writer
+``hermes shadow-start`` uses (issue #797, PR #888); the console reads the file
+format and imports nothing from the command.
 
 Invariants:
 
@@ -32,6 +33,12 @@ from hermes.application.console.shadow_screen import (
     ReadyVerdict,
     ShadowRecordError,
 )
+from hermes.application.strategy_protocol.day_zero import (
+    MANUAL_RULES,
+    Check,
+    DayZeroRecord,
+    Verdict,
+)
 
 _FIXTURE = (
     Path(__file__).resolve().parents[3]
@@ -58,7 +65,7 @@ def test_runs_dir_sits_beside_the_ledger() -> None:
 
 
 def test_fixture_record_parses_to_the_shown_fields() -> None:
-    """Run id, strategy, aware day 0, release and the seven Ready verdicts come through."""
+    """Run id, strategy, aware day 0, release and the six checked Ready rules come through."""
     record = parse_run_record(_document())
     assert (
         record.run_id,
@@ -72,8 +79,8 @@ def test_fixture_record_parses_to_the_shown_fields() -> None:
         _STRATEGY,
         datetime(2026, 10, 15, tzinfo=UTC),
         "2026-10-14-abc1234",
-        7,
-        ReadyRule("decision-changing defects fixed", ReadyVerdict.BY_HAND),
+        6,
+        ReadyRule("3 known decision-changing defects fixed", ReadyVerdict.BY_HAND),
     )
 
 
@@ -118,9 +125,10 @@ def test_newest_day_zero_of_the_strategy_wins(tmp_path: Path) -> None:
         ({"day_zero_at": "2026-10-15T00:00:00"}, "no timezone offset"),
         ({"day_zero_at": None}, "'day_zero_at' must be a non-empty string"),
         ({"run_id": ""}, "'run_id' must be a non-empty string"),
-        ({"checks": [{"rule": "x", "verdict": "maybe"}]}, "unknown verdict"),
+        ({"checks": [{"rule": 1, "name": "x", "verdict": "maybe"}]}, "unknown verdict"),
+        ({"checks": [{"rule": 1, "verdict": "pass"}]}, "needs a 'name'"),
     ],
-    ids=["naive", "missing-day-zero", "empty-run-id", "unknown-verdict"],
+    ids=["naive", "missing-day-zero", "empty-run-id", "unknown-verdict", "unnamed-rule"],
 )
 def test_a_broken_record_is_an_error(
     tmp_path: Path, change: dict[str, object], message: str
@@ -131,10 +139,36 @@ def test_a_broken_record_is_an_error(
         RunsDirectory(tmp_path).latest_run(_STRATEGY)
 
 
-def test_checks_as_an_object_read_as_rule_verdict_pairs() -> None:
-    """``checks`` written as ``{rule: verdict}`` reads to the same rules."""
-    record = parse_run_record(_document() | {"checks": {"parity": "fail"}})
-    assert record.ready_rules == (ReadyRule("parity", ReadyVerdict.FAIL),)
+def test_the_record_hermes_shadow_start_writes_reads_back() -> None:
+    """Contract with issue #797: ``DayZeroRecord.to_json`` parses to the same run.
+
+    If the command's writer changes a field the console reads, this fails.
+    """
+    record = DayZeroRecord(
+        run_id="swing-donchian-4h-20261101T040000Z",
+        strategy_id=_STRATEGY,
+        day_zero_at=datetime(2026, 11, 1, 4, tzinfo=UTC),
+        package_version="0.50.0",
+        release="2026-10-31-def5678",
+        config_sha256="c",
+        preregistration_sha256="p",
+        preregistration_signed_sha256="s",
+        data_manifest_sha256="m",
+        parameter_fingerprint="f",
+        archived_ledger=None,
+        archived_ledger_sha256=None,
+        checks=(*MANUAL_RULES[:1], Check(2, "gate", Verdict.FAIL, "no record")),
+    )
+    parsed = parse_run_record(json.loads(record.to_json()))
+    assert (parsed.run_id, parsed.day_zero_at, parsed.release, parsed.ready_rules) == (
+        "swing-donchian-4h-20261101T040000Z",
+        datetime(2026, 11, 1, 4, tzinfo=UTC),
+        "2026-10-31-def5678",
+        (
+            ReadyRule("3 known decision-changing defects fixed", ReadyVerdict.BY_HAND),
+            ReadyRule("2 gate", ReadyVerdict.FAIL),
+        ),
+    )
 
 
 def test_notebook_file_reads_its_entries(tmp_path: Path) -> None:

@@ -208,9 +208,10 @@ class PortfolioSnapshot:
     def to_risk_state(self) -> PortfolioState:
         """Return the thin state the risk rules consume.
 
-        Peak and current value map to ``peak_equity`` and ``equity``.
-        Cumulative slippage stays ``0``, correlations stay empty and the halt
-        flag stays ``False``: nothing supplies them yet.
+        Peak and current value map to ``peak_equity`` and ``equity``, and
+        the held pairs to the open positions. Cumulative slippage stays ``0``,
+        correlations stay empty and the halt flag stays ``False``: the
+        snapshot has no market data, so the caller supplies correlations.
 
         Returns:
             A :class:`~hermes.domain.risk.state.PortfolioState`.
@@ -221,6 +222,7 @@ class PortfolioSnapshot:
             realized_slippage_cumulative=_ZERO,
             correlations={},
             dd_halt_required=False,
+            held_pairs=frozenset(self.positions),
         )
 
     def _after_buy(self, fill: Fill) -> Result[PortfolioSnapshot, DomainError]:

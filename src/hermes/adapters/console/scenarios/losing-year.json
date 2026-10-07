@@ -329,32 +329,40 @@
       "data_manifest_hash": "demo-manifest-5b21e0",
       "checks": [
         {
-          "rule": "signed pre-registration, hash in the lab notebook",
-          "verdict": "pass"
+          "rule": 1,
+          "name": "signed pre-registration, hash in the lab notebook",
+          "verdict": "pass",
+          "detail": "demo"
         },
         {
-          "rule": "backtest gate recorded by hermes certify",
-          "verdict": "pass"
+          "rule": 2,
+          "name": "backtest gate recorded by `hermes certify`",
+          "verdict": "pass",
+          "detail": "demo"
         },
         {
-          "rule": "decision-changing defects fixed",
-          "verdict": "pass"
+          "rule": 3,
+          "name": "known decision-changing defects fixed",
+          "verdict": "confirm by hand",
+          "detail": "demo"
         },
         {
-          "rule": "shadow kills and drift check run inside serve",
-          "verdict": "pass"
+          "rule": 4,
+          "name": "§10 shadow kills and §7 drift check run inside serve",
+          "verdict": "confirm by hand",
+          "detail": "demo"
         },
         {
-          "rule": "versions and hashes recorded at day 0",
-          "verdict": "pass"
+          "rule": 6,
+          "name": "backtest and serve make the same decisions",
+          "verdict": "confirm by hand",
+          "detail": "demo"
         },
         {
-          "rule": "backtest and serve make the same decisions",
-          "verdict": "pass"
-        },
-        {
-          "rule": "own strategy id, capital and ledger rows",
-          "verdict": "pass"
+          "rule": 7,
+          "name": "the only enabled roster entry",
+          "verdict": "pass",
+          "detail": "demo"
         }
       ]
     },

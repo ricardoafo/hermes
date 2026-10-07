@@ -33,6 +33,7 @@ from hermes.entrypoints.tui_charts import (
     PriceChart,
     area_chart,
     braille_area,
+    braille_spark,
     gradient_rule,
     hero_digits,
     spark_text,
@@ -226,3 +227,14 @@ def test_chart_with_no_closes_is_empty_and_does_not_raise() -> None:
     """Invariant: an empty series leaves an empty chart, never an error."""
     kept, _ = asyncio.run(_render([]))
     assert kept == ()
+
+
+def test_braille_spark_is_one_row_of_braille_in_one_colour() -> None:
+    """A rising 4-tick series is 2 cells, low at the left, full at the right, all one colour."""
+    spark = braille_spark([Decimal(1), Decimal(2), Decimal(3), Decimal(4)], 2, "#468CE6")
+    assert (spark.plain, spark.style) == ("⣠⣾", "#468CE6")
+
+
+def test_braille_spark_of_no_width_is_empty() -> None:
+    """Zero cells draw nothing rather than a blank cell."""
+    assert braille_spark([Decimal(1)], 0, "#468CE6").plain == ""

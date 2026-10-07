@@ -7,8 +7,8 @@ One implementation each, styled only through :mod:`hermes.entrypoints.tui_theme`
 - :class:`HudPanel`: the frame every panel sits in (bracket corners, gradient
   title bar, "computed" or "✦ AI supervisor" label, key-hint subtitle, focus
   state, AI variant);
-- :class:`WindowBar`: "▐ HERMES // SHADOW CONSOLE" with a ticking binary strip
-  and the clock;
+- :class:`WindowBar`: "▐ HERMES // SHADOW CONSOLE" with the live-feed pulse
+  (or the next-bar countdown when there is no ticker) and the clock;
 - :class:`TabBar`: the screen tabs, numbers only at compact width;
 - :class:`ThemeChip` and :class:`ThemePicker`: the theme switch;
 - :func:`key_chips`: reverse-video key chips for the footer;
@@ -49,6 +49,7 @@ from hermes.entrypoints.tui_theme import (
     CORNER_BOTTOM_RIGHT,
     CORNER_TOP_LEFT,
     EDGE,
+    FEED_WIDTH,
     METER_CAP_LEFT,
     METER_CAP_RIGHT,
     METER_CELLS,
@@ -59,13 +60,15 @@ from hermes.entrypoints.tui_theme import (
     WINDOW_TITLE,
     ThemeChoice,
     Tokens,
-    binary_strip,
+    blend,
     data_tokens,
     gradient,
     tokens_for,
 )
 
 __all__ = [
+    "FEED_FAILED",
+    "FEED_OK",
     "LABEL_AI",
     "LABEL_COMPUTED",
     "BigNumber",
@@ -77,6 +80,7 @@ __all__ = [
     "ThemePicker",
     "WindowBar",
     "bottom_edge",
+    "feed_pulse",
     "key_chips",
     "tab_text",
     "theme_chip_text",
@@ -87,6 +91,10 @@ __all__ = [
 LABEL_COMPUTED: Final = "computed"
 LABEL_AI: Final = f"{AI_GLYPH} AI supervisor"
 _CLOCK_PAD: Final = 1
+FEED_OK: Final = "●"
+FEED_FAILED: Final = "○"
+_BRIGHT: Final = "#FFFFFF"
+_BRIGHT_SHARE: Final = 0.5
 
 
 def _gradient_text(text: str, stops: Sequence[str], fg: str) -> Text:
@@ -237,25 +245,48 @@ class HudPanel(Vertical):
             bottom.update(bottom_edge(self.subtitle, width, tokens, ai=self.ai))
 
 
-def window_bar_text(
-    width: int, tokens: Tokens, *, tick: int, clock: str, strip: bool = True
-) -> Text:
-    """Return the window bar: brand mark, binary strip, clock at the right.
+def feed_pulse(polls: Sequence[bool], tokens: Tokens, *, bright: bool = False) -> Text:
+    """Return the live-feed pulse: one glyph per recent ticker poll, newest on the right.
+
+    Replaces the decorative binary strip (Code Owner, 2026-10-06): ``●`` in the
+    live colour for a poll that priced every coin, ``○`` in dim for a failed
+    one, right-aligned in :data:`FEED_WIDTH` cells.
+
+    Args:
+        polls: Poll results, oldest first; only the last :data:`FEED_WIDTH` show.
+        tokens: Token sheet.
+        bright: Brighten the newest glyph (just polled, motion on).
+
+    Returns:
+        :data:`FEED_WIDTH` cells.
+    """
+    recent = list(polls)[-FEED_WIDTH:]
+    out = Text(" " * (FEED_WIDTH - len(recent)))
+    for index, ok in enumerate(recent):
+        colour = tokens.live if ok else tokens.dim
+        if bright and index == len(recent) - 1:
+            colour = f"bold {blend(colour, _BRIGHT, _BRIGHT_SHARE)}"
+        out.append(FEED_OK if ok else FEED_FAILED, style=colour)
+    return out
+
+
+def window_bar_text(width: int, tokens: Tokens, *, status: Text, clock: str) -> Text:
+    """Return the window bar: brand mark, the feed pulse or next-bar countdown, clock at the right.
 
     Args:
         width: Columns to fill.
         tokens: Token sheet.
-        tick: Binary-strip step.
+        status: What sits after the brand: :func:`feed_pulse` while the ticker
+            runs, else the next-bar countdown; empty text for nothing.
         clock: Local time shown at the right (``HH:MM:SS``), or empty.
-        strip: Draw the binary strip (off in night mode).
 
     Returns:
         At most ``width`` cells.
     """
     out = _gradient_text(f"{WINDOW_MARK} {WINDOW_TITLE} ", tokens.chrome, tokens.void)
-    if strip:
+    if status.plain:
         out.append(" ")
-        out.append(binary_strip(tick), style=tokens.frame)
+        out.append_text(status)
     right = Text(f"{clock}{' ' * _CLOCK_PAD}" if clock else "", style=tokens.muted)
     gap = width - out.cell_len - right.cell_len
     if gap > 0:
@@ -266,11 +297,36 @@ def window_bar_text(
 
 
 class WindowBar(Static):
-    """The Neon window bar; the app sets ``tick`` and ``clock``."""
+    """The Neon window bar; the app sets ``clock`` and the feed or the next-bar countdown."""
 
-    tick: reactive[int] = reactive(0)
     clock: reactive[str] = reactive("")
-    strip: reactive[bool] = reactive(default=True)
+
+    def __init__(self, *, id: str | None = None) -> None:
+        super().__init__(id=id)
+        self._polls: tuple[bool, ...] = ()
+        self._bright = False
+        self._next_bar = ""
+
+    @property
+    def polls(self) -> tuple[bool, ...]:
+        """The poll results the feed pulse shows, oldest first."""
+        return self._polls
+
+    @property
+    def bright(self) -> bool:
+        """Whether the newest feed glyph is brightened."""
+        return self._bright
+
+    def show_feed(self, polls: Sequence[bool], *, bright: bool) -> None:
+        """Show the feed pulse of ``polls``; ``bright`` brightens the newest glyph."""
+        self._polls, self._bright = tuple(polls)[-FEED_WIDTH:], bright
+        self.paint()
+
+    def show_next_bar(self, text: str) -> None:
+        """Show the next-bar countdown (used while there is no feed)."""
+        if text != self._next_bar:
+            self._next_bar = text
+            self.paint()
 
     def on_mount(self) -> None:
         """Redraw when the theme changes."""
@@ -282,30 +338,20 @@ class WindowBar(Static):
         del event
         self.paint()
 
-    def watch_tick(self) -> None:
-        """Advance the strip."""
-        self.paint()
-
     def watch_clock(self) -> None:
         """Show the new time."""
         self.paint()
 
-    def watch_strip(self) -> None:
-        """Show or hide the strip."""
-        self.paint()
-
     def paint(self) -> None:
         """Redraw from the current theme's tokens."""
-        if self.is_mounted:
-            self.update(
-                window_bar_text(
-                    self.size.width,
-                    tokens_for(self.app.theme),
-                    tick=self.tick,
-                    clock=self.clock,
-                    strip=self.strip,
-                )
-            )
+        if not self.is_mounted:
+            return
+        tokens = tokens_for(self.app.theme)
+        if self._polls:
+            status = feed_pulse(self._polls, tokens, bright=self._bright)
+        else:
+            status = Text(self._next_bar, style=tokens.muted)
+        self.update(window_bar_text(self.size.width, tokens, status=status, clock=self.clock))
 
 
 @dataclass(frozen=True)
