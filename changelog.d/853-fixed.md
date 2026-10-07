@@ -1,0 +1,1 @@
+- A ledger write that fails on any error, not only a SQLite one, now rolls back, so the next successful write can no longer commit its partial rows (issue #853). The migration runner does the same for a failing migration.

@@ -99,6 +99,7 @@ run_guards() {
     bash scripts/dev/no-domain-mode-check.sh || rc=1
     uv run python scripts/dev/migration-sql-check.py || rc=1
     bash scripts/dev/test-file-adjacency.sh --base "${base:-origin/main}" || rc=1
+    bash scripts/dev/no-future-annotations.sh --base "${base:-origin/main}" || rc=1
     uv run python scripts/dev/hook-coverage-check.py || rc=1
     return "$rc"
 }
@@ -118,7 +119,9 @@ run_one() {
         # Blocks GPL/AGPL/LGPL, which create commercial-use constraints.
         licenses)
             uv tool install --quiet pip-licenses==5.5.5 \
-                && uv tool run pip-licenses --format=json | python3 scripts/dev/license-check.py
+                && uv tool run pip-licenses \
+                    --python "$(uv run python -c 'import sys; print(sys.executable)')" \
+                    --format=json | python3 scripts/dev/license-check.py
             ;;
         unit) run_tier unit "$@" ;;
         integration) run_tier integration "$@" ;;

@@ -237,6 +237,11 @@ class OrderbookWalkFillModel:
                 break
             consume = min(remaining_qty, level.quantity)
             total_cost += consume * level.price
+            if consume == remaining_qty:
+                # The order is matched in full. Summing the parts would round a
+                # quantity of more than 28 significant digits (two entries on
+                # one pair) to less than the order and refuse the exit (#866).
+                return order.qty.amount, total_cost
             executed_qty += consume
             remaining_qty -= consume
 

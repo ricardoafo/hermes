@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, date, datetime
@@ -13,6 +14,7 @@ import pytest
 from hermes.adapters.journal.jsonl_store import JsonlDecisionJournal
 from hermes.application.journal.service import JournalError, due, record_decision, record_review
 from hermes.domain.journal.entries import Decision, OutcomeKind, Score
+from hermes.infrastructure.file_lock import FileLock
 from hermes.ports.decision_journal import DecisionJournalPort, JournalIntegrityError
 
 _DAY = datetime(2026, 10, 3, 9, 0, tzinfo=UTC)
@@ -192,3 +194,44 @@ def test_invalid_decisions_are_rejected(build: Callable[[], Decision], match: st
     """Every field the journal needs to score later must be present and consistent."""
     with pytest.raises(ValueError, match=match):
         build()
+
+
+# -- concurrent appenders (issue #855) ----------------------------------------
+
+
+def test_an_append_waits_while_another_appender_holds_the_lock(
+    journal: JsonlDecisionJournal, tmp_path: Path
+) -> None:
+    """A journal append writes nothing while another appender holds the lock.
+
+    Without the lock both appenders link to the same tail hash and the
+    journal forks: every later read fails as an edited history.
+    """
+    record_decision(journal, _decision())
+    other = FileLock(journal.lock_path)
+    assert other.try_acquire()
+    waiting = threading.Thread(target=journal.append, args=(_decision("d2"),))
+    waiting.start()
+    waiting.join(timeout=0.3)
+    lines_while_held = len((tmp_path / "journal.jsonl").read_text(encoding="utf-8").splitlines())
+    other.release()
+    waiting.join(timeout=10)
+    assert (lines_while_held, [e.entry_id for e in journal.entries()]) == (1, ["d1", "d2"])
+
+
+def test_concurrent_journal_appenders_leave_one_unbroken_chain(
+    journal: JsonlDecisionJournal,
+) -> None:
+    """Four appenders racing 25 appends each leave 100 entries on one verified chain."""
+
+    def appender(worker: int) -> None:
+        for i in range(25):
+            journal.append(_decision(f"w{worker}-{i}"))
+
+    workers = [threading.Thread(target=appender, args=(w,)) for w in range(4)]
+    for thread in workers:
+        thread.start()
+    for thread in workers:
+        thread.join()
+    expected = sorted(f"w{w}-{i}" for w in range(4) for i in range(25))
+    assert sorted(e.entry_id for e in journal.entries()) == expected

@@ -42,6 +42,7 @@ dependencies = [
   # Writes the tax pack's Renta Web sheet and dossier as PDF (#568, change
   # 568-tax-pack D-8). Pure Python; approved by the Code Owner 2026-10-04.
   "fpdf2>=2.8,<3",
+  "textual-image>=0.14.1,<0.15",
   "textual-plotext>=1.0.1,<2",
 ]
 
@@ -340,7 +341,9 @@ forbidden_modules = [
 # Issue #835: the RO-01 / RO-02 inputs (spread samples, pair correlations) are
 # recorded only. Nothing that decides or sizes trades may read them until the
 # Code Owner rules on wiring RO-01 and RO-02 (issue #514); lifting this is a
-# deliberate change.
+# deliberate change. The backtest is lifted for RO-01 only (issue #822): the
+# §5.5 gate replays the lock as signed on the correlation of bars it has
+# already replayed, not on recorded rows; serve stays record-only.
 [[tool.importlinter.contracts]]
 name = "risk-inputs-are-record-only"
 type = "forbidden"
@@ -348,7 +351,6 @@ source_modules = [
   "hermes.application.execution",
   "hermes.application.order_router",
   "hermes.application.strategy_protocol",
-  "hermes.application.backtest",
   "hermes.application.portfolio",
   "hermes.domain.risk",
   "hermes.domain.strategy",

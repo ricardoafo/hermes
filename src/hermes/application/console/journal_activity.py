@@ -29,9 +29,9 @@ from typing import Final
 
 from hermes.application.console.activity import candle_boundary
 from hermes.application.console.logs import LogLevel, LogLine
-from hermes.application.console.views import ActivityItem, ActivityKind
+from hermes.application.console.views import ActivityItem, ActivityKind, RuleCheck
 
-__all__ = ["EntryCounts", "JournalActivity", "fold_checks", "journal_activity"]
+__all__ = ["EntryCounts", "JournalActivity", "fold_checks", "journal_activity", "rule_checks"]
 
 CheckKey = tuple[datetime, str]
 """One check: the candle boundary and the ``<interval> check`` text of its bar rows."""
@@ -148,6 +148,51 @@ def fold_checks(
         if at not in absorbed:
             kept.extend(loose)
     return tuple(sorted(kept, key=_at))
+
+
+def rule_checks(
+    lines: Iterable[LogLine], *, since: datetime | None = None
+) -> tuple[RuleCheck, ...]:
+    """Return which entry rules held per coin and check, newest first (#714).
+
+    Only ``serve.bar.processed`` lines that carry all three yes/no entry
+    fields count; a coin checked twice for the same candle (a restart) keeps
+    its latest line.
+
+    Args:
+        lines: Parsed journal lines in any order.
+        since: Drop checks of candles that closed before this instant, if given.
+
+    Returns:
+        One check per coin, interval and candle, newest candle first, then by coin.
+    """
+    latest: dict[tuple[datetime, str, str], RuleCheck] = {}
+    for line in sorted(lines, key=_at):
+        if line.event != _PROCESSED:
+            continue
+        check = _rule_check(dict(line.fields))
+        if check is not None and (since is None or check.at >= since):
+            latest[check.at, check.coin, check.interval] = check
+    return tuple(sorted(latest.values(), key=lambda c: (-c.at.timestamp(), c.coin, c.interval)))
+
+
+def _rule_check(fields: Mapping[str, str]) -> RuleCheck | None:
+    pair = fields.get("pair")
+    if not pair or not all(name in fields for name in _ENTRY_FIELDS):
+        return None
+    try:
+        closed = datetime.fromisoformat(fields["close_time"])
+    except KeyError, ValueError:
+        return None
+    breakout, momentum, regime = (fields[name] == _YES for name in _ENTRY_FIELDS)
+    return RuleCheck(
+        at=candle_boundary(closed),
+        coin=pair.split("/")[0],
+        interval=fields.get("interval", _DEFAULT_INTERVAL),
+        breakout=breakout,
+        momentum=momentum,
+        regime=regime,
+    )
 
 
 def _at(value: ActivityItem | LogLine) -> datetime:

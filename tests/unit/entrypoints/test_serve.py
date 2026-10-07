@@ -4,7 +4,8 @@ Verifies:
 
 - ``build_composition`` wires each field of :class:`Composition` to the
   expected concrete adapter, one strategy instance per pair, and subscribes
-  the ledger to ``SignalEmitted`` and ``BarProcessed``;
+  the ledger to ``SignalEmitted`` and ``BarProcessed``, and ``AnomalyDetected``
+  to the ledger only (record-only, #136);
 - ``check_startup`` refuses a roster, universe, interval set or prod
   credential set the shadow loop cannot run safely;
 - ``SHADOW_UNIVERSE`` mirrors pre-registration §3;
@@ -44,7 +45,8 @@ from hermes.application.backtest.replay import ExecutionModel as ReplayExecution
 from hermes.application.calibration.certification_gates import CertificationRecord
 from hermes.application.calibration.lifecycle import CertificationState
 from hermes.application.strategy_protocol.preregistration import PreRegistration
-from hermes.domain.errors import ExchangeError, LedgerError
+from hermes.domain.errors import ExchangeError, InfraError, LedgerError
+from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
 from hermes.domain.events.bar_processed import BarProcessed
 from hermes.domain.events.event_bus import EventBus
 from hermes.domain.events.signal_emitted import SignalEmitted
@@ -65,10 +67,12 @@ from hermes.entrypoints import serve as serve_module
 from hermes.infrastructure.config.loader import load_config
 from hermes.infrastructure.config.models import StrategiesConfig
 from hermes.infrastructure.config.root import HermesConfig
+from tests.support.anomaly_rows import recorded_anomalies
 from tests.support.serve_loop import (
     BASE,
     BTC,
     FakeFeed,
+    RecordingChannel,
     UnavailableBooks,
     build,
     d1_bar,
@@ -151,6 +155,29 @@ class TestBuildComposition:
         finally:
             composition.sqlite_connection.close()
         assert counts == (1, 1)
+
+    def test_an_anomaly_has_exactly_one_subscriber_the_ledger(
+        self, shadow_config: HermesConfig, tmp_path: Path
+    ) -> None:
+        """#136: one AnomalyDetected subscriber, and publishing one writes one ledger row."""
+        db = tmp_path / "test.sqlite3"
+        composition = serve_module.build_composition(
+            shadow_config, db_path=db, env={}, feed=FakeFeed()
+        )
+        try:
+            count = composition.event_bus.subscriber_count(AnomalyDetected)
+            composition.event_bus.publish(
+                AnomalyDetected(
+                    occurred_at=datetime(2026, 10, 6, tzinfo=UTC),
+                    correlation_id="01JABCDEFGHJKMNPQRSTVWXYZ0",
+                    source="test.injected",
+                    severity=AnomalySeverity.WARNING,
+                    reason="injected",
+                )
+            )
+        finally:
+            composition.sqlite_connection.close()
+        assert (count, [r["source"] for r in recorded_anomalies(db)]) == (1, ["test.injected"])
 
     def test_credentials_in_env_wire_both_channels(
         self, shadow_config: HermesConfig, tmp_path: Path
@@ -523,6 +550,51 @@ class TestBarLoop:
         with pytest.raises(serve_module.BarGapError, match="expected the bar opening at"):
             asyncio.run(loop.handle(h4_bar(2)))
         composition.sqlite_connection.close()
+
+    def _catching_up_with_telegram(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, telegram: RecordingChannel
+    ) -> tuple[serve_module.Composition, serve_module._BarLoop, list[Exception]]:
+        """Return a loop in its boot catch-up with ``telegram`` wired and Sentry recorded."""
+        sentry: list[Exception] = []
+        monkeypatch.setattr(serve_module.sentry_integration, "capture", sentry.append)
+        composition = dataclasses.replace(
+            build(tmp_path / "test.sqlite3", FakeFeed(), BASE),
+            telegram=telegram,  # type: ignore[arg-type]
+        )
+        loop = serve_module._BarLoop(composition, catching_up=True)
+        return composition, loop, sentry
+
+    def test_a_gap_in_the_boot_catch_up_is_handled_past_and_alerted_once(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A bar still missing after a restart cannot crash-loop serve; Telegram and Sentry hear."""
+        telegram = RecordingChannel()
+        composition, loop, sentry = self._catching_up_with_telegram(tmp_path, monkeypatch, telegram)
+        asyncio.run(loop.handle(h4_bar(0)))
+        asyncio.run(loop.handle(h4_bar(2)))
+        composition.sqlite_connection.close()
+
+        assert (
+            len(events(tmp_path / "test.sqlite3", "BarProcessed")),
+            [(type(e), getattr(e, "source", None)) for e in telegram.seen],
+            [type(e) for e in sentry],
+        ) == (2, [(AnomalyDetected, "serve.bar_gap")], [serve_module.BarGapError])
+
+    def test_a_failed_gap_alert_does_not_stop_the_boot_catch_up(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Telegram being down is logged; the bar after the gap is still handled."""
+        telegram = RecordingChannel(raises=InfraError("telegram down"))
+        composition, loop, _ = self._catching_up_with_telegram(tmp_path, monkeypatch, telegram)
+        asyncio.run(loop.handle(h4_bar(0)))
+        with capture_logs() as logs:
+            asyncio.run(loop.handle(h4_bar(2)))
+        composition.sqlite_connection.close()
+
+        assert (
+            len(events(tmp_path / "test.sqlite3", "BarProcessed")),
+            [line["event"] for line in logs if line["log_level"] == "error"],
+        ) == (2, ["serve.bar.gap_passed_over", "serve.bar.gap_alert_failed"])
 
     def test_each_stream_has_its_own_contiguity(self, tmp_path: Path) -> None:
         """A 1d bar does not count as the 4h stream's previous bar."""

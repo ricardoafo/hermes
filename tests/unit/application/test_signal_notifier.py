@@ -4,11 +4,14 @@ Invariants protected here:
 
 - one failing channel never stops the other from being notified;
 - every channel failure arrives in ONE ``EventDispatchError``;
-- a non-infra exception is a bug and propagates without being collected;
+- a non-infra exception (a bug) is isolated like an outage, so it cannot stop
+  serve after the fill (#854);
+- ``deliver`` names the channels that took the push and the ones that raised,
+  and with ``only`` pushes to those channels alone (a retry);
 - zero wired channels is not an error;
 - Telegram is notified before Slack (router order).
 
-Reference: 309-serve-bar-loop change.md D-3, D-5, R-2.
+Reference: 309-serve-bar-loop change.md D-3, D-5, R-2; issue #854.
 """
 
 from __future__ import annotations
@@ -19,6 +22,8 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from hermes.application.notification_router import RouterConfig
 from hermes.application.signal_notifier import SignalNotifier
@@ -121,18 +126,72 @@ def test_every_failure_arrives_in_one_dispatch_error() -> None:
     )
 
 
-def test_a_non_infra_exception_propagates_and_stops_the_fan_out() -> None:
-    """A missing template (ValueError) is a bug: it propagates, uncollected."""
+def test_a_non_infra_exception_is_isolated_and_the_fan_out_goes_on() -> None:
+    """A missing template (ValueError) is collected like an outage; Slack still gets the push."""
     log: list[str] = []
-    channels = RouterConfig(
-        telegram=_Channel("telegram", log, raises=ValueError("no template")),
-        slack=_Channel("slack", log),
-    )
+    bug = ValueError("no template")
+    slack = _Channel("slack", log)
+    channels = RouterConfig(telegram=_Channel("telegram", log, raises=bug), slack=slack)
 
-    with pytest.raises(ValueError, match="no template"):
+    with pytest.raises(EventDispatchError) as caught:
         SignalNotifier(channels).dispatch(_event())
 
-    assert log == ["telegram"]
+    assert (log, len(slack.seen), caught.value.failures) == (["telegram", "slack"], 1, (bug,))
+
+
+def test_deliver_names_the_channels_that_took_the_push_and_the_ones_that_raised() -> None:
+    """A failing Telegram and a working Slack give delivered=slack, failed=telegram."""
+    log: list[str] = []
+    bug = ValueError("no template")
+    channels = RouterConfig(
+        telegram=_Channel("telegram", log, raises=bug), slack=_Channel("slack", log)
+    )
+
+    delivery = SignalNotifier(channels).deliver(_event())
+
+    assert (delivery.delivered, delivery.failed, delivery.failures) == (
+        ("slack",),
+        ("telegram",),
+        (("telegram", bug),),
+    )
+
+
+def test_deliver_with_only_pushes_to_those_channels_alone() -> None:
+    """A retry of the Telegram push does not push Slack a second time."""
+    log: list[str] = []
+    telegram, slack = _Channel("telegram", log), _Channel("slack", log)
+
+    delivery = SignalNotifier(RouterConfig(telegram=telegram, slack=slack)).deliver(
+        _event(), only=("telegram",)
+    )
+
+    assert (log, delivery.delivered, delivery.failed) == (["telegram"], ("telegram",), ())
+
+
+@given(
+    telegram=st.sampled_from(["absent", "ok", "raises"]),
+    slack=st.sampled_from(["absent", "ok", "raises"]),
+    only=st.none() | st.sets(st.sampled_from(["telegram", "slack"])),
+)
+def test_deliver_reports_every_attempted_channel_once(
+    telegram: str, slack: str, only: set[str] | None
+) -> None:
+    """Delivered and failed split the wired channels ``only`` allows, with no channel in both."""
+    log: list[str] = []
+
+    def wire(name: str, state: str) -> _Channel | None:
+        if state == "absent":
+            return None
+        return _Channel(name, log, raises=NetworkError("x") if state == "raises" else None)
+
+    delivery = SignalNotifier(
+        RouterConfig(telegram=wire("telegram", telegram), slack=wire("slack", slack))
+    ).deliver(_event(), only=only)
+
+    wired = [n for n, state in (("telegram", telegram), ("slack", slack)) if state != "absent"]
+    attempted = [n for n in wired if only is None or n in only]
+    assert (sorted(delivery.delivered + delivery.failed), log) == (sorted(attempted), attempted)
+    assert not set(delivery.delivered) & set(delivery.failed)
 
 
 def test_zero_wired_channels_is_not_an_error() -> None:

@@ -28,8 +28,13 @@ from pathlib import Path
 from typing import Final, Self
 
 from hermes.adapters.console.ledger_activity import LedgerActivityReader
+from hermes.adapters.ledger.connection import open_ledger
 from hermes.application.console.activity import group_activity
-from hermes.application.console.journal_activity import fold_checks, journal_activity
+from hermes.application.console.journal_activity import (
+    fold_checks,
+    journal_activity,
+    rule_checks,
+)
 from hermes.application.console.logs import LogLine
 from hermes.application.console.portfolio_figures import (
     ClosedPiece,
@@ -46,12 +51,14 @@ from hermes.application.console.render import MADRID
 from hermes.application.console.shadow_figures import build_shadow_test
 from hermes.application.console.views import (
     ActivityDay,
+    ConsoleBrief,
     Heartbeat,
     HeartbeatState,
     PortfolioRange,
     PortfolioSummary,
     PositionDetail,
     PositionRow,
+    RuleCheck,
     ShadowTest,
     WatchedPair,
 )
@@ -74,6 +81,9 @@ JOURNAL_CACHE: Final = timedelta(seconds=30)
 type JournalSource = Callable[[timedelta], Sequence[LogLine] | None]
 """Returns the hermes journal lines of the last ``window``, or ``None`` when it is not readable."""
 
+type BriefSource = Callable[[], tuple[ConsoleBrief, ...]]
+"""Returns the supervisor desk's published briefs, newest first."""
+
 _NO_BOOK: Final = "the portfolio is not available yet: no portfolio mark or capital seed"
 
 _ONE_MS: Final = timedelta(milliseconds=1)
@@ -95,7 +105,7 @@ def connect_read_only(path: Path) -> sqlite3.Connection:
         LedgerError: SQLite refused to open the file.
     """
     try:
-        return sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
+        return open_ledger(path, read_only=True)
     except sqlite3.Error as exc:
         raise LedgerError(msg=f"cannot open {path} read-only: {exc}") from exc
 
@@ -111,6 +121,7 @@ class LedgerReadModel:
         tz: tzinfo = MADRID,
         activity_window: timedelta = ACTIVITY_WINDOW,
         journal: JournalSource | None = None,
+        briefs: BriefSource | None = None,
     ) -> None:
         """Bind to a ledger file without opening it.
 
@@ -123,6 +134,8 @@ class LedgerReadModel:
             journal: Where restarts, warnings, errors and entry-condition counts
                 come from; ``None`` or an unreadable journal leaves those rows
                 out of the feed.
+            briefs: The supervisor desk's published briefs; ``None`` leaves the
+                Briefs screen "not available yet".
         """
         self._path = path
         self._clock = clock
@@ -130,6 +143,7 @@ class LedgerReadModel:
         self._activity_window = activity_window
         self._journal = journal
         self._journal_read: tuple[datetime, Sequence[LogLine] | None] | None = None
+        self._briefs = briefs
 
     @classmethod
     def open(
@@ -140,6 +154,7 @@ class LedgerReadModel:
         tz: tzinfo = MADRID,
         activity_window: timedelta = ACTIVITY_WINDOW,
         journal: JournalSource | None = None,
+        briefs: BriefSource | None = None,
     ) -> Self:
         """Return a read model over ``path``, which must already exist.
 
@@ -149,6 +164,7 @@ class LedgerReadModel:
             tz: Timezone of the calendar days.
             activity_window: How far back :meth:`activity` reads.
             journal: Journal source for the feed's journal rows; see ``__init__``.
+            briefs: The desk's published briefs; see ``__init__``.
 
         Returns:
             The read model; nothing is created on disk.
@@ -158,7 +174,14 @@ class LedgerReadModel:
         """
         if not path.is_file():
             raise FileNotFoundError(str(path))
-        return cls(path, clock=clock, tz=tz, activity_window=activity_window, journal=journal)
+        return cls(
+            path,
+            clock=clock,
+            tz=tz,
+            activity_window=activity_window,
+            journal=journal,
+            briefs=briefs,
+        )
 
     @property
     def demo_scenario(self) -> str | None:
@@ -295,6 +318,21 @@ class LedgerReadModel:
         self._journal_read = (now, lines)
         return lines
 
+    def rule_checks(self) -> tuple[RuleCheck, ...]:
+        """Return the yes/no entry rules per coin and check of the activity window (#714).
+
+        They come from the journal's bar lines; the ledger does not record them.
+
+        Raises:
+            ViewNotAvailableError: The journal cannot be read here.
+        """
+        lines = self._journal_lines()
+        if lines is None:
+            msg = "rule checks: the hermes journal is not readable here"
+            raise ViewNotAvailableError(msg)
+        since = self._clock() - self._activity_window
+        return rule_checks(lines, since=since.astimezone(UTC))
+
     def shadow_test(self) -> ShadowTest:
         """Return the day count since the capital seed and the fills so far (live-home-screen D-4).
 
@@ -379,6 +417,17 @@ class LedgerReadModel:
     # ------------------------------------------------------------------
     # Reads
     # ------------------------------------------------------------------
+
+    def briefs(self) -> tuple[ConsoleBrief, ...]:
+        """Return the supervisor desk's published briefs, newest first (#720).
+
+        Raises:
+            ViewNotAvailableError: No desk was given to read them from.
+        """
+        if self._briefs is None:
+            msg = "briefs: no supervisor desk to read them from"
+            raise ViewNotAvailableError(msg)
+        return self._briefs()
 
     def _query(self, sql: str, params: tuple[str, ...]) -> list[tuple[object, ...]]:
         """Run one query on a fresh read-only connection and close it."""
