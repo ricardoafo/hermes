@@ -11,8 +11,6 @@ Invariants protected here:
 - the bar's reviewed look at 80 and 160 columns.
 """
 
-from __future__ import annotations
-
 import ast
 import asyncio
 from collections.abc import Sequence

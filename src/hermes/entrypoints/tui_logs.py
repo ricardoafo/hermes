@@ -27,8 +27,6 @@ Reference: openspec/changes/716-logs-screen/change.md.
 
 # ruff: noqa: RUF002 - the single right angle quote is the design spec's breadcrumb separator
 
-from __future__ import annotations
-
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta, tzinfo

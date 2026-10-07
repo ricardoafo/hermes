@@ -19,8 +19,6 @@ Invariants protected here:
 The fixture is a journalctl JSON export (tests/fixtures/journal/logs_screen.jsonl).
 """
 
-from __future__ import annotations
-
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path

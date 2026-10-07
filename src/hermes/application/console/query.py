@@ -26,8 +26,6 @@ openspec/changes/716-logs-screen/change.md (the level order and the
 ``service`` / ``trace`` fields).
 """
 
-from __future__ import annotations
-
 import difflib
 import os
 import re
