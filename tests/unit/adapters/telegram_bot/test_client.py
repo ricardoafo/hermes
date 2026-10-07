@@ -81,6 +81,27 @@ def test_get_updates_long_polls_with_the_offset_and_parses_text_messages() -> No
 
 
 @respx.mock
+def test_malformed_updates_are_skipped_not_raised() -> None:
+    """Issue #783: an item with no integer update_id is dropped; the good ones still come back."""
+    body = {
+        "ok": True,
+        "result": [
+            {"message": {"chat": {"id": 1}, "text": "/status"}},
+            {"update_id": "x", "message": {"chat": {"id": 1}, "text": "/status"}},
+            "not an object",
+            {"update_id": 503, "message": "not an object"},
+            {"update_id": 504, "message": {"chat": {"id": 9}, "text": "/logs"}},
+        ],
+    }
+    respx.post(f"{_BASE}/getUpdates").mock(return_value=httpx.Response(200, json=body))
+
+    assert _client().get_updates(offset=None) == [
+        Update(update_id=503, chat_id="", text=""),
+        Update(update_id=504, chat_id="9", text="/logs"),
+    ]
+
+
+@respx.mock
 @pytest.mark.parametrize(("silent", "flag"), [(True, "true"), (False, "false")])
 def test_send_message_posts_plain_text_with_the_notification_flag(silent: bool, flag: str) -> None:
     """Silent messages carry disable_notification=true; no parse mode is sent."""

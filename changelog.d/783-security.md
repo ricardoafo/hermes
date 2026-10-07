@@ -1,0 +1,1 @@
+- **Bot and preview hardening.** `/logs` on Telegram no longer sends the text of an unstructured journal line (a traceback can quote an upstream response), the bot skips a malformed Telegram update instead of restart-looping, and `hermes preview` writes attachments into a fresh private folder instead of a predictable `/tmp` path. Part of #783.
