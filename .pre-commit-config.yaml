@@ -1,6 +1,6 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       # syrupy's .ambr files indent blank snapshot lines with two spaces and
       # end without a final newline; stripping either breaks the snapshot.
@@ -15,7 +15,7 @@ repos:
         args: [--fix=lf]
 
   - repo: https://github.com/compilerla/conventional-pre-commit
-    rev: v3.6.0
+    rev: v4.4.0
     hooks:
       - id: conventional-pre-commit
         stages: [commit-msg]
