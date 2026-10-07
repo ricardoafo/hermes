@@ -32,6 +32,7 @@ _LIVE = _U + "adapters/market_data/test_binance_live_klines.py::"
 _REPLAY = _I + "adapters/market_data/test_binance_live_klines_replay.py::"
 _DEPTH = _U + "adapters/market_data/test_binance_depth_snapshot.py::"
 _FX = _U + "adapters/fx/test_frankfurter.py::"
+_TG_429 = _U + "adapters/notifier/test_telegram_adapter.py::TestRateLimitBackOff::"
 _LOOP = _I + "entrypoints/test_serve_bar_loop.py::"
 _CHAOS = _S + "test_chaos_crash_mid_bar.py::"
 _FILLS = _I + "entrypoints/test_serve_fills.py::"
@@ -572,8 +573,20 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             ),
         ),
         FailureMode(
-            "Telegram answers 429 or is slow",
-            gap="issue #859: no retry, the message is lost and the bar loop waits",
+            "Telegram answers 429",
+            proved_by=(
+                _TG_429 + "test_one_429_then_ok_delivers_the_message_once",
+                _TG_429 + "test_retry_after_in_the_body_is_the_wait",
+                _TG_429 + "test_repeated_429s_give_up_after_three_retries",
+                _TG_429 + "test_waits_never_add_up_past_the_cap",
+            ),
+        ),
+        FailureMode(
+            "A slow Telegram holds up the bar that sent the push",
+            gap=(
+                "issue #859: the push runs in a thread, but serve awaits it before it "
+                "finishes the bar (up to 30 s per channel on 429); inferred, untested"
+            ),
         ),
     ),
     "risk halts": (
