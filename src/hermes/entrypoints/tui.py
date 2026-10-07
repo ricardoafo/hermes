@@ -149,12 +149,14 @@ from hermes.entrypoints.tui_live import (
     live_portfolio_lines,
     market_rows,
 )
+from hermes.entrypoints.tui_notices import bar_checked_notice, beep_enabled, should_beep
 from hermes.entrypoints.tui_settings import (
     DEFAULT_SETTINGS_PATH,
     ConsoleSettings,
     load_settings,
     save_settings,
 )
+from hermes.entrypoints.tui_signals import signals_screen
 from hermes.entrypoints.tui_theme import (
     BASE,
     COMPACT_BELOW,
@@ -225,7 +227,7 @@ _STATUS_ROW_SLACK: Final = 8
 
 TABS: Final = (
     Tab("1", "Home"),
-    Tab("2", "Signals", 714),
+    Tab("2", "Signals"),
     Tab("3", "Positions", 715),
     Tab("4", "Tax", 719),
     Tab("5", "Shadow test", 718),
@@ -234,8 +236,10 @@ TABS: Final = (
     Tab("8", "Logs", 716),
 )
 _HOME: Final = 0
+_SIGNALS: Final = 1
 _BRIEFS: Final = 5
 _LOGS: Final = 7
+_NOTICE_SECONDS: Final = 6
 
 _FOOTER_CHIPS: Final = (
     ("D W M Y", "range"),
@@ -577,6 +581,8 @@ class HomeApp(App[None]):
         self._tab_history: list[int] = []
         self._content: dict[str, RenderableType] = {}
         self._heartbeat: Heartbeat | None = None
+        # The last heartbeat read, kept across a failed read so the bell never rings twice.
+        self._last_read: Heartbeat | None = None
         self._ctx = RenderContext(surface=Surface.OPERATOR_TUI, now=clock())
         self._pulse = 0
         self._radar = 0
@@ -1056,6 +1062,14 @@ class HomeApp(App[None]):
         self._set("down-row", render_heartbeat(heartbeat, ctx) if down else Text(""))
         self._home.query_one("#down-row").set_class(down, "-down")
 
+    def _announce(self, previous: Heartbeat | None, current: Heartbeat, ctx: RenderContext) -> None:
+        """Toast a newly checked bar; ring the bell on turning late or down when asked to."""
+        notice = bar_checked_notice(previous, current, ctx.tz)
+        if notice is not None:
+            self.notify(notice, timeout=_NOTICE_SECONDS)
+        if beep_enabled(os.environ) and should_beep(previous, current):
+            self.bell()
+
     def _redraw(self) -> None:
         if not self.is_running or not self.screen_stack:
             return
@@ -1080,6 +1094,8 @@ class HomeApp(App[None]):
             self._set("down-row", Text(""))
             self._home.query_one("#down-row").set_class(False, "-down")
         else:
+            self._announce(self._last_read, self._heartbeat, ctx)
+            self._last_read = self._heartbeat
             self._paint_heartbeat()
 
         try:
@@ -1133,6 +1149,20 @@ class HomeApp(App[None]):
             logs = TABS[_LOGS]
             self._set(
                 f"screen-{logs.key}", Group(_placeholder(logs), Text(""), self._logs_content())
+            )
+        if self._tab == _SIGNALS:
+            self._set(
+                f"screen-{TABS[_SIGNALS].key}",
+                _card(
+                    "Signals",
+                    lambda: signals_screen(
+                        model.rule_checks(),
+                        ctx,
+                        self._data,
+                        width=self.size.width,
+                        held={row.coin for row in model.positions()},
+                    ),
+                ),
             )
         screen = self.screen
         if isinstance(screen, _PanelScreen):

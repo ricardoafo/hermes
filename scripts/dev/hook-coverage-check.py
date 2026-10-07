@@ -59,6 +59,7 @@ CI_ENFORCED: dict[str, str] = {
     "no-naive-datetime": "guards",
     "no-vague-test-assertions": "guards",
     "test-file-adjacency": "guards",
+    "no-future-annotations": "guards",
     "no-domain-mode-check": "guards",
     "secrets-scan": "step:Secrets scan",
     "conventional-pre-commit": "step:PR title",

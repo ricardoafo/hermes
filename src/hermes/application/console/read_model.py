@@ -20,6 +20,7 @@ from hermes.application.console.views import (
     PortfolioSummary,
     PositionDetail,
     PositionRow,
+    RuleCheck,
     ShadowTest,
     WatchedPair,
 )
@@ -68,6 +69,14 @@ class ConsoleReadModel(Protocol):
 
         Args:
             include_quiet: Also return bar checks and signals (debugging).
+        """
+        ...
+
+    def rule_checks(self) -> tuple[RuleCheck, ...]:
+        """Return which entry rules held per coin on each check of the last 7 days.
+
+        Newest check first. Yes or no only, never a price or a distance to a
+        rule (ADR-012 D-06, #714).
         """
         ...
 
