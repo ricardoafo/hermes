@@ -42,6 +42,7 @@ dependencies = [
   # Writes the tax pack's Renta Web sheet and dossier as PDF (#568, change
   # 568-tax-pack D-8). Pure Python; approved by the Code Owner 2026-10-04.
   "fpdf2>=2.8,<3",
+  "textual-image>=0.14.1,<0.15",
   "textual-plotext>=1.0.1,<2",
 ]
 
