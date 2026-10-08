@@ -117,7 +117,7 @@ def run(
         The exit code.
     """
     try:
-        signed = pre_reg if pre_reg is not None else PreRegistration()
+        signed = pre_reg if pre_reg is not None else serve_module.pre_registration_for(config_dir)
         config = load_config(config_dir)
         fingerprint = serve_module.parameter_fingerprint_for(config)
         record = JsonCertificationStore(serve_module.certification_dir_for(db)).load(strategy_id)
