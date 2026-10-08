@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import io
 import json
+import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -19,6 +20,7 @@ from hermes.application.calibration.certification_gates import (
     GateEvidence,
 )
 from hermes.application.calibration.lifecycle import CertificationState
+from hermes.application.strategy_protocol.preregistration import PreRegistration
 from hermes.entrypoints import certify as certify_module
 from hermes.entrypoints.certify import EvidenceError, load_evidence, run
 
@@ -272,3 +274,68 @@ class TestPerformance:
         assert code == 0, out.getvalue()
         assert record is not None
         assert record.state == CertificationState.BACKTEST_CERTIFIED
+
+
+class TestReleaseLayout:
+    """On the VPS the pre-registration sits beside ``config/``, not in a repository (#923)."""
+
+    def test_certify_reads_the_pre_registration_beside_the_config(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An installed package with no repository above it still certifies a release."""
+        release = tmp_path / "release"
+        shutil.copytree(_PROJECT_ROOT / "config", release / "config")
+        experiment = release / "docs" / "experiments" / "swing-mvp1"
+        experiment.mkdir(parents=True)
+        shutil.copy(
+            _PROJECT_ROOT / "docs" / "experiments" / "swing-mvp1" / "pre-registration-v1.md",
+            experiment,
+        )
+
+        def _no_repository() -> Path:
+            raise FileNotFoundError("no pyproject.toml above the installed package")
+
+        monkeypatch.setattr(PreRegistration, "_detect_project_root", staticmethod(_no_repository))
+        evidence_path = _evidence_file(tmp_path, {"backtest": {"calibration_fill_count": 40}})
+        performance_path = _performance_file(tmp_path, _strong_performance("train_val"))
+        store_dir = tmp_path / "store"
+        out = io.StringIO()
+        code = certify_module.main(
+            [
+                _SID,
+                "--evidence",
+                str(evidence_path),
+                "--performance",
+                str(performance_path),
+                "--config-dir",
+                str(release / "config"),
+                "--store-dir",
+                str(store_dir),
+            ],
+            stream=out,
+            err=io.StringIO(),
+        )
+        record = JsonCertificationStore(store_dir).load(_SID)
+        assert (code, record.state if record else None) == (
+            0,
+            CertificationState.BACKTEST_CERTIFIED,
+        ), out.getvalue()
+
+    def test_missing_pre_registration_is_an_error_line(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """No file beside the config and no repository: exit 3 with one ERROR line."""
+        release = tmp_path / "release"
+        shutil.copytree(_PROJECT_ROOT / "config", release / "config")
+
+        def _no_repository() -> Path:
+            raise FileNotFoundError("no pyproject.toml above the installed package")
+
+        monkeypatch.setattr(PreRegistration, "_detect_project_root", staticmethod(_no_repository))
+        err = io.StringIO()
+        code = certify_module.main(
+            [_SID, "--config-dir", str(release / "config"), "--store-dir", str(tmp_path / "s")],
+            stream=io.StringIO(),
+            err=err,
+        )
+        assert (code, err.getvalue().startswith("ERROR: pre-registration:")) == (3, True)

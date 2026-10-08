@@ -259,6 +259,23 @@ def experiment_files(experiment_root: Path) -> tuple[Path, Path]:
     return folder / "pre-registration-v1.md", folder / "fee-history.csv"
 
 
+def pre_registration_for(config_dir: Path) -> PreRegistration:
+    """Return the signed pre-registration that sits beside ``config_dir``.
+
+    A release keeps ``config/`` and the experiment folder side by side, and
+    an installed package has no repository to search from (issue #923).
+    Without that file beside the config, the repository's copy is read.
+
+    Raises:
+        FileNotFoundError: Neither copy exists.
+        ValueError: The file is not the v1 pre-registration.
+    """
+    root = config_dir.resolve().parent
+    if experiment_files(root)[0].is_file():
+        return PreRegistration(project_root=root)
+    return PreRegistration()
+
+
 class BarGapError(HermesError):
     """A stream skipped a bar, so the strategy buffers would be wrong; exits 1."""
 
