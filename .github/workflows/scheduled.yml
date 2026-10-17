@@ -111,6 +111,8 @@ jobs:
         # -m contract overrides the `not contract` addopts filter.
         run: uv run pytest tests/contract -m contract --tb=short -p no:cacheprovider
 
+  # Runs on the daily 11:30 trigger, Sundays included; it skips the separate
+  # Sunday 11:45 mutation trigger so it runs once a day, not twice on Sunday.
   fresh-seeds:
     name: Fresh scenario seeds
     if: github.event.schedule != '45 11 * * 0'

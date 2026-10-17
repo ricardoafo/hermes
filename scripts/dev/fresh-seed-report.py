@@ -16,7 +16,8 @@ Exit codes:
 
 - 0: every seed passed; nothing is printed
 - 1: at least one seed failed; the issue body is on stdout
-- 2: usage error or an unreadable report
+- 2: usage error, an unreadable report, or a report with no seed in it
+  (pytest crashed before running any seed, so nothing was proved)
 """
 
 import os
@@ -43,6 +44,12 @@ def failing_seeds(report: str) -> list[tuple[str, int, str]]:
             text = (problem.text or problem.get("message") or "").strip()
             found.append((match["kind"], int(match["seed"]), text))
     return found
+
+
+def seed_count(report: str) -> int:
+    """Return how many seed testcases a JUnit report holds, whatever their outcome."""
+    root = ET.fromstring(report)  # noqa: S314 — the job's own pytest report
+    return sum(1 for case in root.iter("testcase") if _SEED_ID.match(case.get("name", "")))
 
 
 def issue_body(failures: list[tuple[str, int, str]], spec: str) -> str:
@@ -127,6 +134,15 @@ AssertionError</failure></testcase>
         else:
             print("FAIL: a clean run did not exit 0")
             failed = 1
+        crashed = Path(tmp) / "crashed.xml"
+        crashed.write_text(
+            '<testsuite><testcase name="test_collection"><error>x</error></testcase></testsuite>'
+        )
+        if _main([str(crashed), "1@1"]) == 2:
+            print("PASS: a report with no seed exits 2, not 0")
+        else:
+            print("FAIL: a report with no seed did not exit 2")
+            failed = 1
     print("\nSELF-TEST FAILED" if failed else "\nAll self-tests passed.")
     return failed
 
@@ -136,9 +152,14 @@ def _main(argv: list[str]) -> int:
         print("usage: fresh-seed-report.py <junit.xml> <seeds-spec>", file=sys.stderr)
         return 2
     try:
-        failures = failing_seeds(Path(argv[0]).read_text(encoding="utf-8"))
+        report = Path(argv[0]).read_text(encoding="utf-8")
+        failures = failing_seeds(report)
+        seeds = seed_count(report)
     except (OSError, ET.ParseError) as exc:
         print(f"ERROR: cannot read the report {argv[0]}: {exc}", file=sys.stderr)
+        return 2
+    if seeds == 0:
+        print(f"ERROR: the report {argv[0]} holds no seed; pytest ran none", file=sys.stderr)
         return 2
     if not failures:
         return 0
