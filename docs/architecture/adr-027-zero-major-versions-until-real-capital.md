@@ -112,6 +112,6 @@ The only "must be newer" check is the cut script's. The rest of the release path
 - [ADR-014](adr-014-pre-registration-binds-real-capital.md) — real-capital calendar
 - [ADR-021](adr-021-strategy-lifecycle-ready-and-done.md) — shadow clock and engine changes
 - [ADR-022](adr-022-release-versions-and-deploy-cadence.md) — release PR, tags, deploy cadence
-- ADR-024 — environments and the hermes-01 cutover (PR #1082)
+- [ADR-024](adr-024-four-environments-and-promotion.md) — environments and the hermes-01 cutover
 - [ADR-026](adr-026-research-batch-and-signed-champion-rule.md) — research funnel
 - Issue #1086
