@@ -58,6 +58,7 @@ _LOTS_MACHINE = _U + "domain/lots/test_fifo_lots_state_machine.py::"
 _ALERTS = _U + "deploy/test_alert_scripts.py::"
 _WIRE = _U + "adapters/test_wire_numbers.py::"
 _PATHS = _S + "test_generated_paths.py::"
+_READS = _U + "entrypoints/test_tui_reads.py::"
 _LOTS_AGREE = _S + "test_portfolio_matches_ledger_lots.py::"
 _KLINES_DOWN = _S + "test_chaos_klines_down_at_boot.py::"
 _SIGTERM = _S + "test_chaos_sigterm_mid_bar.py::"
@@ -635,6 +636,20 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
                 _U + "deploy/test_alert_scripts.py"
                 "::test_health_ping_reports_a_late_check_as_fail_with_the_status_body",
             ),
+        ),
+        FailureMode(
+            "A slow ledger or journal read freezes the console's keys and screen switches",
+            proved_by=(_READS + "test_a_screen_switch_paints_before_a_slow_read_returns",),
+        ),
+        FailureMode(
+            "Redraws asked for during a slow read are lost, or pile up as one read each",
+            proved_by=(
+                _READS + "test_redraws_during_a_held_read_run_one_more_read_with_the_newest_state",
+            ),
+        ),
+        FailureMode(
+            "Quitting the console while a read is in flight raises an error",
+            proved_by=(_READS + "test_quitting_while_a_read_is_held_ends_quietly",),
         ),
     ),
     "config and deploy": (

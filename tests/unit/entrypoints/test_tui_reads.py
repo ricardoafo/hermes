@@ -228,10 +228,17 @@ def test_a_screen_switch_paints_before_a_slow_read_returns() -> None:
 
 
 def test_quitting_while_a_read_is_held_ends_quietly() -> None:
-    """Q during a held read closes the console without an error once the read returns."""
+    """Q during a held read exits cleanly, and a read finishing after the exit raises nothing."""
     model = _SlowModel()
 
-    async def run() -> bool:
+    def late_read(app: HomeApp) -> str:
+        try:
+            app._read_off_thread(ReadRequest(width=80))
+        except RuntimeError as exc:
+            return repr(exc)
+        return "dropped quietly"
+
+    async def run() -> tuple[int | None, BaseException | None, str]:
         app = HomeApp(
             model,  # type: ignore[arg-type]
             clock=lambda: _FROZEN,
@@ -243,9 +250,52 @@ def test_quitting_while_a_read_is_held_ends_quietly() -> None:
             model.held.wait(timeout=5)
             await pilot.press("q")
         model.gate.set()
-        return app.return_code in (None, 0)
+        late = await asyncio.to_thread(late_read, app)
+        return app.return_code, app._exception, late
 
-    assert asyncio.run(run()) is True
+    assert asyncio.run(run()) == (0, None, "dropped quietly")
+
+
+class _RangeSpy(_SlowModel):
+    """A held model that also records the range of every portfolio read."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.ranges: list[PortfolioRange] = []
+
+    def portfolio(self, range_: PortfolioRange = PortfolioRange.TODAY) -> object:
+        self.ranges.append(range_)
+        return self._inner.portfolio(range_)
+
+
+def test_redraws_during_a_held_read_run_one_more_read_with_the_newest_state() -> None:
+    """Two redraws during a held read make exactly one more read, over the newest range."""
+    model = _RangeSpy()
+
+    async def run() -> tuple[list[PortfolioRange], PortfolioRange | None]:
+        app = HomeApp(
+            model,  # type: ignore[arg-type]
+            clock=lambda: _FROZEN,
+            motion=False,
+            refresh_seconds=3600,
+            background_reads=True,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            model.held.wait(timeout=5)
+            await pilot.press("w")
+            await pilot.press("m")
+            model.gate.set()
+            for _ in range(20):
+                await app.workers.wait_for_complete()
+                await pilot.pause()
+            summary = app._summary
+        return model.ranges, None if summary is None else summary.range
+
+    # The held read was for today; W then M while it ran ask for one read, made over month.
+    assert asyncio.run(run()) == (
+        [PortfolioRange.TODAY, PortfolioRange.MONTH],
+        PortfolioRange.MONTH,
+    )
 
 
 def test_run_home_reads_in_the_background(monkeypatch: pytest.MonkeyPatch) -> None:
