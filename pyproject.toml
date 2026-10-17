@@ -372,9 +372,13 @@ forbidden_modules = [
 
 # The Logs screen shows the journal, which can hold money figures, to the
 # operator only: nothing from it reaches an AI or a notification channel (#716).
+# Direct imports only: the shared console widgets reach the Briefs screen's
+# supervisor reader through hermes.application.console.views, and that read-only
+# path is not a way for a journal line to leave.
 [[tool.importlinter.contracts]]
 name = "logs-screen-never-leaves-the-console"
 type = "forbidden"
+allow_indirect_imports = true
 source_modules = [
   "hermes.application.console.log_figures",
   "hermes.entrypoints.tui_logs",
