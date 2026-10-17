@@ -23,7 +23,7 @@ it. The question is not "what is best-practice testing?" but "which testing
 practices earn their maintenance cost at N=1 while preserving the SEV-1
 protection the money demands?"
 
-The severity rubric (`~/.claude/rules/severity-rubric.md`) categorizes bugs
+The severity rubric (`docs/guides/severity-rubric.md`) categorizes bugs
 by blast radius: SEV-1 is a tenant-cross data leak, tax miscalculation,
 auth bypass, or an LOPDGDD violation. Tests covering SEV-1 paths must
 exist, must run in CI, must never be quarantined without triggering a
