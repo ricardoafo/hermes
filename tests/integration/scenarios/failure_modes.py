@@ -350,7 +350,7 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             "Another process holds the ledger while serve commits",
             proved_by=(
                 _CONTENTION
-                + "test_a_reader_holding_a_read_transaction_does_not_fail_a_serve_write",
+                + "test_a_serve_write_lands_at_once_while_a_reader_holds_a_read_transaction",
                 _STORAGE + "test_serve_waits_out_a_write_lock_held_by_another_process",
                 _U + "adapters/ledger/test_connection.py::"
                 "test_every_ledger_connection_waits_out_a_lock",
@@ -358,9 +358,20 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "A reader holds the ledger past serve's 10 s busy wait",
-            gap=(
-                "issue #855: no WAL, so serve exits 1; WAL needs a writable ledger dir for "
-                "the read-only units (bot, tax pack, archive check, health, daily line)"
+            proved_by=(
+                _CONTENTION
+                + "test_a_serve_write_lands_at_once_while_a_reader_holds_a_read_transaction",
+                _U + "adapters/ledger/test_connection.py::"
+                "test_a_read_write_connection_puts_the_ledger_in_wal",
+            ),
+        ),
+        FailureMode(
+            "A read-only unit opens the ledger while serve is stopped (WAL files gone)",
+            proved_by=(
+                _U + "adapters/ledger/test_connection.py::"
+                "test_closing_the_last_writer_keeps_the_wal_and_shm_files",
+                _U + "adapters/ledger/test_connection.py::"
+                "test_a_read_only_unit_opens_the_ledger_while_serve_is_stopped",
             ),
         ),
         FailureMode(
