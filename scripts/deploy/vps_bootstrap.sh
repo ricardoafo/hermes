@@ -9,7 +9,7 @@
 # `prod` GH environment. The script arrives on stdin, so it cannot find
 # files next to itself: the workflow ships deploy/systemd/ and the two
 # alert scripts (deploy/hermes-notify-failure.sh, deploy/hermes-notify-crash.sh)
-# to /var/tmp/hermes-bootstrap/ in an earlier step.
+# to /var/lib/hermes-bootstrap/ in an earlier step.
 #
 # Safe to re-run any number of times. Every step checks state before it
 # acts; the hazards a re-run can hit are named where they apply:
@@ -58,7 +58,7 @@ umask 022
 # Same pin as `astral-sh/setup-uv` in .github/workflows/cd.yml; a test keeps
 # the two equal.
 UV_VERSION=0.12.5
-BOOTSTRAP_DIR=/var/tmp/hermes-bootstrap
+BOOTSTRAP_DIR=/var/lib/hermes-bootstrap
 SYSTEMD_SRC="$BOOTSTRAP_DIR/systemd"
 # Alert scripts the units run from /opt/hermes/bin, outside any release.
 NOTIFIERS=(hermes-notify-failure.sh hermes-notify-crash.sh)
