@@ -105,3 +105,15 @@ class TestOrderbookInvariants:
         assert book.bids[0].price == Decimal("50050")
         assert book.asks[0].price == Decimal("50100")
         assert book.snapshot_time == _NOW
+
+
+def test_orderbook_refuses_a_negative_last_update_id() -> None:
+    """A venue sequence number below zero cannot come from a real book (issue #866)."""
+    with pytest.raises(ValueError, match="last_update_id must be >= 0"):
+        Orderbook(
+            pair=_BTC_USDT,
+            bids=(OrderbookLevel(price=Decimal(100), quantity=Decimal(1)),),
+            asks=(),
+            snapshot_time=_NOW,
+            last_update_id=-1,
+        )
