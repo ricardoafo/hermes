@@ -14,6 +14,7 @@ Invariants protected here:
 
 import io
 import sqlite3
+from contextlib import closing
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -140,7 +141,8 @@ def test_the_ro01_lines_show_the_newest_recorded_correlation(tmp_path: Path) -> 
 def test_an_empty_ledger_says_nothing_is_recorded(tmp_path: Path) -> None:
     """A ledger with no rows exits 0 and names each missing input."""
     db = tmp_path / "ledger.sqlite3"
-    SqliteLedger(sqlite3.connect(db))
+    with closing(sqlite3.connect(db)) as connection:
+        SqliteLedger(connection)
 
     code, out, _ = _run(["--db", str(db)])
 
