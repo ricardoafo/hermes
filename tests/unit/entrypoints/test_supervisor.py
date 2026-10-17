@@ -323,3 +323,131 @@ def test_desk_briefs_without_a_config_are_not_available(tmp_path: Path) -> None:
 
     with pytest.raises(ViewNotAvailableError, match="config load failed"):
         source()
+
+
+def _kept(db: Path) -> list[dict[str, object]]:
+    path = db.parent / supervisor_module.BRIEF_ARCHIVE_NAME
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+
+
+def test_brief_keep_stores_exactly_what_was_printed_beside_the_ledger(tmp_path: Path) -> None:
+    """Invariant: the kept brief is the text that passed the output gate, with no price in it."""
+    db = write_ledger(
+        tmp_path / "hermes.sqlite3", signals=(signal(ETH, SignalKind.ENTRY, LAST_4H, "2618.45"),)
+    )
+
+    code, printed, _ = _run(["brief", "--keep"], db, env=_ALL_GRANTS)
+
+    (line,) = _kept(db)
+    sections = line["sections"]
+    assert isinstance(sections, list)
+    shown = [
+        f"- {s['heading']}: {s['text']} {' '.join(f'[{c}]' for c in s['sources'])}"
+        for s in sections
+    ]
+    assert (code, line["kind"], line["as_of"], line["digest"]) == (
+        0,
+        "daily",
+        NOW.isoformat(),
+        False,
+    )
+    assert shown == printed.splitlines()[1:]
+    assert "2618" not in json.dumps(line)
+
+
+def test_brief_without_keep_writes_nothing(tmp_path: Path) -> None:
+    """Invariant: only the timer's explicit ``--keep`` run writes next to the ledger."""
+    db = write_ledger(tmp_path / "hermes.sqlite3")
+
+    _run(["brief"], db, env=_ALL_GRANTS)
+
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["hermes.sqlite3"]
+
+
+def test_brief_keep_twice_the_same_day_keeps_one_brief(tmp_path: Path) -> None:
+    """Invariant: a manual run beside the timer does not list the day twice."""
+    db = write_ledger(tmp_path / "hermes.sqlite3")
+
+    codes = [_run(["brief", "--keep"], db, env=_ALL_GRANTS)[0] for _ in range(2)]
+
+    assert (codes, len(_kept(db))) == ([0, 0], 1)
+
+
+def test_brief_keep_into_a_named_file(tmp_path: Path) -> None:
+    """Invariant: ``--briefs FILE`` moves the archive, and the ledger's directory stays clean."""
+    db = write_ledger(tmp_path / "hermes.sqlite3")
+    target = tmp_path / "elsewhere" / "kept.jsonl"
+
+    code, _, _ = _run(["brief", "--keep", "--briefs", str(target)], db, env=_ALL_GRANTS)
+
+    assert (code, target.is_file(), (tmp_path / "briefs.jsonl").exists()) == (0, True, False)
+
+
+def test_a_brief_that_cannot_be_kept_exits_1_and_says_so(tmp_path: Path) -> None:
+    """Invariant: the timer unit fails, so ``systemctl --failed`` shows it, when nothing is kept."""
+    db = write_ledger(tmp_path / "hermes.sqlite3")
+    (tmp_path / "briefs.jsonl").mkdir()
+    out, audit, err = io.StringIO(), io.StringIO(), io.StringIO()
+
+    code = supervisor_module.main(
+        ["brief", "--keep", "--config-dir", str(_CONFIG), "--db", str(db)],
+        stream=out,
+        env=_ALL_GRANTS,
+        audit_stream=audit,
+        err=err,
+        now=lambda: NOW,
+        unit_state=lambda: UnitState.RUNNING,
+    )
+
+    assert code == 1
+    assert "the brief was not kept" in audit.getvalue()
+
+
+def test_desk_briefs_list_the_kept_days_behind_today(tmp_path: Path) -> None:
+    """Invariant: the Briefs screen lists earlier days, newest first, as they were published."""
+    db = write_ledger(tmp_path / "hermes.sqlite3")
+    for days in (3, 1):
+        past = NOW - timedelta(days=days)
+        supervisor_module.main(
+            ["brief", "--keep", "--config-dir", str(_CONFIG), "--db", str(db)],
+            stream=io.StringIO(),
+            env=_ALL_GRANTS,
+            audit_stream=io.StringIO(),
+            now=lambda past=past: past,
+            unit_state=lambda: UnitState.RUNNING,
+        )
+    source = supervisor_module.desk_briefs(
+        db, config_dir=_CONFIG, clock=lambda: NOW, unit_state=lambda: UnitState.RUNNING
+    )
+
+    briefs = source()
+
+    assert [b.as_of for b in briefs] == [NOW, NOW - timedelta(days=1), NOW - timedelta(days=3)]
+
+
+def test_todays_kept_brief_gives_way_to_the_live_one(tmp_path: Path) -> None:
+    """Invariant: the list shows today once, built live, not the morning copy beside it."""
+    db = write_ledger(tmp_path / "hermes.sqlite3")
+    _run(["brief", "--keep"], db, env=_ALL_GRANTS)
+    source = supervisor_module.desk_briefs(
+        db,
+        config_dir=_CONFIG,
+        clock=lambda: NOW + timedelta(hours=2),
+        unit_state=lambda: UnitState.RUNNING,
+    )
+
+    (today,) = source()
+
+    assert today.as_of == NOW + timedelta(hours=2)
+
+
+def test_desk_briefs_with_an_unreadable_archive_are_not_available(tmp_path: Path) -> None:
+    """Invariant: a corrupt archive is named on the screen, not hidden behind today's brief."""
+    db = write_ledger(tmp_path / "hermes.sqlite3")
+    (tmp_path / supervisor_module.BRIEF_ARCHIVE_NAME).write_text("[]\n", encoding="utf-8")
+    source = supervisor_module.desk_briefs(
+        db, config_dir=_CONFIG, clock=lambda: NOW, unit_state=lambda: UnitState.RUNNING
+    )
+
+    with pytest.raises(ViewNotAvailableError, match="kept briefs unreadable"):
+        source()
