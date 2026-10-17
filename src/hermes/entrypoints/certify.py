@@ -14,6 +14,12 @@ changes no pass or fail rule.
 terminal and refuses when stdin is not one, so a script cannot approve live
 trading unattended (issue #949).
 
+``--shadow-parity FILE`` reads the M-09 and M-10 statuses ``hermes parity
+window --out FILE`` wrote for the gate out of ``BACKTEST_CERTIFIED`` (ADR-021
+Done rule 3, issue #965). The file must start at day 0 of the latest counted
+run (the record beside ``--db``) and cover the shadow length; the recorded
+evidence hash covers it.
+
 ``swing-mvp1-v2`` is judged by pre-registration v2: its backtest gate is DSR
 ≥ 0.95, v1's §9 secondary rows and the ADR-021 §5 funnel, read from
 ``--funnel-evidence`` (change v2-certify-gate).
@@ -22,7 +28,8 @@ Exit codes: 0 gate passed and recorded, 1 gate failed or refused, 2 usage,
 3 config, evidence or store error.
 
 Reference: openspec/changes/355-certification-gates/change.md;
-openspec/changes/v2-certify-gate/change.md; ADR-014.
+openspec/changes/v2-certify-gate/change.md;
+openspec/changes/965-shadow-parity-window/change.md; ADR-014.
 """
 
 from __future__ import annotations
@@ -33,12 +40,13 @@ import json
 import sys
 from collections.abc import Callable
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import partial
 from pathlib import Path
 from typing import Any, TextIO
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
+from hermes.adapters.console.shadow_records import RunsDirectory, ShadowRecordError, runs_dir_for
 from hermes.adapters.ledger.status_reader import SqliteStatusReader
 from hermes.application.calibration.backtest_funnel import (
     FunnelEvidence,
@@ -67,6 +75,7 @@ from hermes.application.calibration.certification_gates_v2 import (
     parse_v2_backtest_rules,
 )
 from hermes.application.calibration.lifecycle import CertificationState
+from hermes.application.calibration.shadow_parity import MetricStatus
 from hermes.application.calibration.window_metrics import (
     PerformanceRecord,
     TrialStats,
@@ -85,16 +94,25 @@ from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
 from hermes.infrastructure.time import now_utc
 from hermes.ports.certification import CertificationStoreError, CertificationStorePort
 
-__all__ = ["EvidenceError", "apply_performance", "load_evidence", "main", "run"]
+__all__ = [
+    "EvidenceError",
+    "apply_performance",
+    "apply_shadow_parity",
+    "load_evidence",
+    "main",
+    "run",
+]
 
 _USAGE = (
     "Usage: hermes certify <strategy_id> [--evidence FILE] [--store-dir DIR]\n"
     "                      [--config-dir DIR] [--db PATH] [--sign-off NAME]\n"
+    "                      [--shadow-parity FILE]\n"
     "                      [--funnel-evidence FILE]  (swing-mvp1-v2 only)\n"
     "\n"
     "Evaluates the next certification gate (pre-registration §7) and prints every\n"
     "check with its evidence. A passed gate is recorded; a failed one is not, except\n"
     "the one-shot OOS test, which is recorded either way.\n"
+    "--shadow-parity reads the M-09/M-10 statuses `hermes parity window --out` wrote.\n"
     f"--sign-off asks you to type {LIVE_APPROVAL_PHRASE} on an interactive terminal.\n"
     "Exit codes: 0 passed, 1 failed or refused, 2 usage, 3 config/evidence/store.\n"
 )
@@ -154,23 +172,10 @@ def main(
     if parsed is None:
         return code
 
-    try:
-        config = load_config(parsed.config_dir)
-        fingerprint = _fingerprint_for(config, parsed.strategy_id)
-        evidence = load_evidence(parsed.evidence) if parsed.evidence else GateEvidence()
-        if parsed.performance:
-            evidence = apply_performance(evidence, parsed.performance)
-    except (ConfigError, serve_module.StartupError) as exc:
-        err.write(f"ERROR: config: {exc}\n")
-        return 3
-    except (OSError, EvidenceError) as exc:
-        err.write(f"ERROR: evidence: {exc}\n")
-        return 3
-    try:
-        pre_reg = serve_module.pre_registration_for(parsed.config_dir)
-    except (OSError, ValueError) as exc:
-        err.write(f"ERROR: pre-registration: {exc}\n")
-        return 3
+    loaded = _load(parsed, err)
+    if isinstance(loaded, int):
+        return loaded
+    fingerprint, evidence, pre_reg = loaded
     gate: _Gate | None = None
     if parsed.strategy_id == V2_STRATEGY_ID:
         prepared = _prepare_v2(pre_reg, evidence, parsed.funnel_evidence, err)
@@ -201,6 +206,42 @@ def main(
         round_trips=partial(_round_trips, parsed.db, parsed.strategy_id),
         gate=gate,
     )
+
+
+def _load(
+    parsed: argparse.Namespace, err: TextIO
+) -> tuple[str, GateEvidence, PreRegistration] | int:
+    """Return the fingerprint, the evidence and the pre-registration, or exit code 3."""
+    try:
+        config = load_config(parsed.config_dir)
+        fingerprint = _fingerprint_for(config, parsed.strategy_id)
+        evidence = load_evidence(parsed.evidence) if parsed.evidence else GateEvidence()
+        if parsed.performance:
+            evidence = apply_performance(evidence, parsed.performance)
+    except (ConfigError, serve_module.StartupError) as exc:
+        err.write(f"ERROR: config: {exc}\n")
+        return 3
+    except (OSError, EvidenceError) as exc:
+        err.write(f"ERROR: evidence: {exc}\n")
+        return 3
+    try:
+        pre_reg = serve_module.pre_registration_for(parsed.config_dir)
+    except (OSError, ValueError) as exc:
+        err.write(f"ERROR: pre-registration: {exc}\n")
+        return 3
+    if parsed.shadow_parity:
+        try:
+            evidence = apply_shadow_parity(
+                evidence,
+                parsed.shadow_parity,
+                parsed.strategy_id,
+                day_zero=_day_zero(parsed.db, parsed.strategy_id),
+                min_days=pre_reg.certification_schedule().shadow_min_days,
+            )
+        except (OSError, EvidenceError, ShadowRecordError) as exc:
+            err.write(f"ERROR: evidence: {exc}\n")
+            return 3
+    return fingerprint, evidence, pre_reg
 
 
 def _round_trips(db: Path, strategy_id: str) -> int | None:
@@ -280,6 +321,7 @@ def _parse(argv: list[str], stream: TextIO, err: TextIO) -> tuple[argparse.Names
     parser.add_argument("--db", type=Path, default=serve_module.DEFAULT_DB_PATH)
     parser.add_argument("--sign-off", default=None)
     parser.add_argument("--funnel-evidence", type=Path)
+    parser.add_argument("--shadow-parity", type=Path)
     parser.add_argument("-h", "--help", action="store_true")
     try:
         parsed = parser.parse_args(argv)
@@ -498,6 +540,90 @@ def apply_performance(evidence: GateEvidence, path: Path) -> GateEvidence:
     if window == "oos":
         return replace(evidence, oos=metrics, sha256=digest)
     return replace(evidence, backtest=metrics, sha256=digest)
+
+
+_PARITY_KEYS = frozenset({"strategy_id", "since", "until", "m09", "m10"})
+
+
+def apply_shadow_parity(
+    evidence: GateEvidence,
+    path: Path,
+    strategy_id: str,
+    *,
+    day_zero: datetime,
+    min_days: int,
+) -> GateEvidence:
+    """Add the M-09 and M-10 statuses of a ``hermes parity window`` file to ``evidence``.
+
+    The file must judge the counted run itself: from its day 0, over at least
+    the shadow length, so a favourable sub-window or an earlier run's file is
+    refused (``--since`` is free on ``hermes parity window``).
+
+    Args:
+        evidence: Evidence loaded so far.
+        path: The file ``hermes parity window --out`` wrote.
+        strategy_id: The strategy being certified; the file must name it.
+        day_zero: Day 0 of the strategy's latest counted run; the file's
+            ``since`` must be exactly this.
+        min_days: Shadow days the gate requires; the file's window must be at
+            least this long.
+
+    Returns:
+        ``evidence`` with the shadow statuses set; its hash then covers the file too.
+
+    Raises:
+        EvidenceError: The file is not a parity window file of ``strategy_id``,
+            or does not cover the counted run from its day 0 for ``min_days``.
+        OSError: The file cannot be read.
+    """
+    raw = path.read_bytes()
+    try:
+        payload = json.loads(raw)
+    except ValueError as exc:
+        raise EvidenceError(f"{path} is not JSON: {exc}") from exc
+    if not isinstance(payload, dict) or set(payload) != _PARITY_KEYS:
+        raise EvidenceError(f"{path} must hold exactly {sorted(_PARITY_KEYS)}")
+    if payload["strategy_id"] != strategy_id:
+        raise EvidenceError(f"{path} is for {payload['strategy_id']!r}, not {strategy_id!r}")
+    since, until = (_time(path, payload, key) for key in ("since", "until"))
+    if since != day_zero:
+        raise EvidenceError(
+            f"{path} starts at {since.isoformat()}, not at day 0 ({day_zero.isoformat()})"
+        )
+    if until - since < timedelta(days=min_days):
+        raise EvidenceError(f"{path} covers {(until - since).days} days, not {min_days}")
+    m09, m10 = (_status(path, payload, key) for key in ("m09", "m10"))
+    digest = hashlib.sha256(
+        ((evidence.sha256 or "") + hashlib.sha256(raw).hexdigest()).encode("ascii")
+    ).hexdigest()
+    shadow = replace(evidence.shadow or ShadowEvidence(), m09=m09, m10=m10)
+    return replace(evidence, shadow=shadow, sha256=digest)
+
+
+def _time(path: Path, payload: dict[str, Any], key: str) -> datetime:
+    raw = payload[key]
+    try:
+        at = datetime.fromisoformat(raw) if isinstance(raw, str) else None
+    except ValueError:
+        at = None
+    if at is None or at.tzinfo is None:
+        raise EvidenceError(f"{path}: {key} must be an ISO time with a UTC offset")
+    return at
+
+
+def _day_zero(db: Path, strategy_id: str) -> datetime:
+    """Return day 0 of the strategy's latest counted run, recorded beside the ledger."""
+    record = RunsDirectory(runs_dir_for(db)).latest_run(strategy_id)
+    if record is None:
+        raise EvidenceError(f"no day-0 record for {strategy_id} in {runs_dir_for(db)}")
+    return record.day_zero_at
+
+
+def _status(path: Path, payload: dict[str, Any], key: str) -> MetricStatus:
+    try:
+        return MetricStatus(payload[key])
+    except ValueError as exc:
+        raise EvidenceError(f"{path}: {key} must be pass, block or insufficient") from exc
 
 
 def _performance_record(payload: dict[str, Any]) -> tuple[str, PerformanceRecord]:
