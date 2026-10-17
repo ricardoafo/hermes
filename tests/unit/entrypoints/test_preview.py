@@ -15,10 +15,12 @@ Reference: docs/decisions/2026-08-23-slack-alongside-telegram.md.
 from __future__ import annotations
 
 import io
+import sys
 from pathlib import Path
 
 import pytest
 
+from hermes.application.messages.slack import FileAttachment, SlackMessage
 from hermes.entrypoints import preview as preview_module
 
 _FIXTURES = Path(__file__).resolve().parent.parent.parent / "fixtures" / "events"
@@ -253,3 +255,62 @@ class TestEurRateOption:
         with pytest.raises(SystemExit) as raised:
             preview_module.main(["signal-emitted", "--eur-rate", bad], stream=io.StringIO())
         assert raised.value.code == 2
+
+
+def _digest_message() -> SlackMessage:
+    return SlackMessage(
+        text="x", blocks=[], attachments=(FileAttachment("digest.csv", "text/csv", b"a,b\n"),)
+    )
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX mode bits; Windows has its own test")
+def test_attachments_are_written_into_a_fresh_0700_directory_on_posix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Issue #783 on POSIX: the folder is new and 0700, so a planted symlink is never followed.
+
+    POSIX is where the VPS runs; the mode bits are what keep other local
+    users from reading the attachments or planting files inside the folder.
+    """
+    monkeypatch.setattr(preview_module.tempfile, "tempdir", str(tmp_path))
+    planted = tmp_path / "hermes-preview-daily-digest-digest.csv"
+    planted.symlink_to(tmp_path / "victim")
+
+    [written] = preview_module._write_attachments(_digest_message(), "daily-digest")
+
+    assert (
+        written.read_bytes(),
+        written.parent.parent == tmp_path,
+        written.parent.stat().st_mode & 0o777,
+        (tmp_path / "victim").exists(),
+    ) == (b"a,b\n", True, 0o700, False)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows privacy check; POSIX checks mode bits")
+def test_attachments_are_written_into_a_fresh_unique_directory_on_windows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Issue #783 on Windows: each call writes into a new, uniquely named folder under the temp dir.
+
+    Windows ignores mode bits (``st_mode`` always reads 0o777 for a folder);
+    privacy comes from ``tempfile.mkdtemp``, which creates the folder inside
+    the user's own temp directory with an owner-only ACL. So the invariant
+    here is freshness: the folder did not exist before the call, its name is
+    unpredictable, and a file planted at the old predictable path is left alone.
+    """
+    monkeypatch.setattr(preview_module.tempfile, "tempdir", str(tmp_path))
+    planted = tmp_path / "hermes-preview-daily-digest-digest.csv"
+    planted.write_bytes(b"planted")
+    before = set(tmp_path.iterdir())
+
+    [first] = preview_module._write_attachments(_digest_message(), "daily-digest")
+    [second] = preview_module._write_attachments(_digest_message(), "daily-digest")
+
+    assert (
+        first.read_bytes(),
+        first.parent.parent == tmp_path,
+        first.parent.is_dir() and first.parent not in before,
+        first.parent.name.startswith("hermes-preview-daily-digest-"),
+        first.parent != second.parent,
+        planted.read_bytes(),
+    ) == (b"a,b\n", True, True, True, True, b"planted")

@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from typing import Any, Final
 
 import httpx
+import structlog
 from pydantic import SecretStr
 
 __all__ = ["TelegramBotClient", "TelegramBotError", "Update"]
@@ -31,6 +32,8 @@ _API_BASE: Final = "https://api.telegram.org"
 _PER_SECOND: Final = 1.0
 _PER_MINUTE: Final = 20
 _MINUTE_S: Final = 60.0
+
+_log = structlog.get_logger(__name__)
 
 
 class TelegramBotError(RuntimeError):
@@ -92,7 +95,12 @@ class TelegramBotClient:
         items = body.get("result", [])
         if not isinstance(items, list):
             raise TelegramBotError("getUpdates failed: result is not a list")
-        return [_update(item) for item in items]
+        updates: list[Update] = []
+        for item in items:
+            update = _parse_update(item)
+            if update is not None:
+                updates.append(update)
+        return updates
 
     def send_message(self, chat_id: str, text: str, *, silent: bool = False) -> None:
         """Send ``text`` to ``chat_id`` as plain text.
@@ -160,18 +168,25 @@ class TelegramBotClient:
         return dict(body)
 
 
-def _update(item: object) -> Update:
-    """Read one ``getUpdates`` entry; only a missing or non-integer id is fatal."""
-    update_id = item.get("update_id") if isinstance(item, dict) else None
+def _parse_update(item: object) -> Update | None:
+    """Return the update in ``item``, or ``None`` when it is malformed.
+
+    A malformed update is skipped rather than raised so one bad item cannot
+    restart-loop the bot; a later well-formed update moves the offset past it.
+    """
+    if not isinstance(item, dict):
+        _log.warning("telegram_bot.update.malformed", reason="not an object")
+        return None
+    update_id = item.get("update_id")
     if not isinstance(update_id, int) or isinstance(update_id, bool):
-        raise TelegramBotError("getUpdates failed: an update has no integer update_id")
-    message = item.get("message") if isinstance(item, dict) else None
+        _log.warning("telegram_bot.update.malformed", reason="no integer update_id")
+        return None
+    message = item.get("message")
     message = message if isinstance(message, dict) else {}
     chat = message.get("chat")
     chat = chat if isinstance(chat, dict) else {}
-    text = message.get("text", "")
     return Update(
         update_id=update_id,
         chat_id=str(chat.get("id", "")),
-        text=text if isinstance(text, str) else "",
+        text=str(message.get("text", "")),
     )

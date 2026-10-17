@@ -146,6 +146,26 @@ def test_change_starts_from_the_equity_in_force_at_the_range_start() -> None:
     )
 
 
+def test_samples_carry_when_each_took_effect_and_the_range_start() -> None:
+    """A covered range starts its samples at the range start; a younger history at its first point.
+
+    Issue #713: the chart caption says "since" and the axis spans the samples' times.
+    """
+    midnight = datetime(2026, 9, 30, 22, tzinfo=UTC)
+    early = datetime(2026, 10, 1, 8, tzinfo=UTC)
+    late = datetime(2026, 10, 1, 12, tzinfo=UTC)
+    covered = _book((datetime(2026, 9, 1, tzinfo=UTC), "1000"), (early, "1100"))
+    young = _book((early, "1000"), (late, "1100"))
+    summaries = [
+        build_portfolio(_facts((book,), rate=Decimal(1)), PortfolioRange.TODAY)
+        for book in (covered, young)
+    ]
+    assert [(s.sparkline_at, s.range_from) for s in summaries] == [
+        ((midnight, early), midnight),
+        ((early, late), midnight),
+    ]
+
+
 def test_closed_piece_waterfall_nets_to_the_realised_gain() -> None:
     """Gross 40, fees 0.84, net 39.16 today and this year; tax stays pending."""
     piece = _piece(datetime(2026, 10, 1, 12, tzinfo=UTC))

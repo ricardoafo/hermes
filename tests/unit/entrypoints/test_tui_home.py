@@ -127,12 +127,33 @@ def test_blind_surface_gets_no_total_curve_or_meters() -> None:
 
 
 def test_rising_range_draws_the_curve_in_the_gain_gradient() -> None:
-    """The fixture's day rises, so the top row is the gain gradient's bright stop."""
+    """The fixture's day rises, so the top row is the gain gradient's bright stop.
+
+    The curve is 3 braille rows; the axis and caption lines under it (issue
+    #713) are not curve rows.
+    """
     curve = portfolio_curve(_model().portfolio(), _ctx(), BASE, width=12, rows=3)
-    top = curve.split("\n")[0]
-    assert (len(curve.split("\n")), {str(span.style) for span in top.spans}) == (
+    lines = curve.split("\n")
+    braille = [line for line in lines if line.plain and "⠀" <= line.plain[0] <= "⣿"]
+    assert (len(braille), {str(span.style) for span in lines[0].spans}) == (
         3,
         {BASE.gain[-1]},
+    )
+
+
+def test_curve_ends_with_its_time_axis_and_caption_in_dim() -> None:
+    """Under the curve: the six-hourly axis, then the caption, both in the dim token.
+
+    The fixture's today range starts at local midnight and holds 6 samples
+    that rise to the high; at 40 cells the high is left out.
+    """
+    curve = portfolio_curve(_model().portfolio(), _ctx(), BASE, width=40, rows=3)
+    *_, axis, caption = curve.split("\n")
+    styles = {str(span.style) for span in (*axis.spans, *caption.spans)}
+    assert (axis.plain.split(), caption.plain, styles) == (
+        ["00", "06", "12"],
+        "today · 6 checks · €1,009 → €1,021",
+        {BASE.dim},
     )
 
 

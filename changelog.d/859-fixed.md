@@ -1,0 +1,1 @@
+- **FX answers are checked against the question.** The Frankfurter adapter refuses a response quoted from a different base currency, which would read the rate in the wrong direction, and a rate dated after the requested day. Part of #859.

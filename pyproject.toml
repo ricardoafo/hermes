@@ -33,15 +33,16 @@ dependencies = [
   # sentry_sdk.capture_exception() calls. No framework integrations enabled
   # (we run vanilla Python, no Django/Flask/etc.). See
   # docs/decisions/ (Sentry wiring entry) for the design rationale.
-  "sentry-sdk>=2.70.0,<3",
+  "sentry-sdk>=2.71.0,<3",
   # Cross-platform file lock for multi-writer manifest transactions in
   # the ingest scripts (scripts/data/_manifest_util.py). Was a transitive
   # dep of virtualenv; promoted to direct after we started depending on
   # it explicitly. See docs/decisions/... and change data-manifest-file-lock (#257).
-  "filelock>=4.0.4,<5",
+  "filelock>=4.0.7,<5",
   # Writes the tax pack's Renta Web sheet and dossier as PDF (#568, change
   # 568-tax-pack D-8). Pure Python; approved by the Code Owner 2026-10-04.
   "fpdf2>=2.8,<3",
+  "textual-image>=0.14.1,<0.15",
   "textual-plotext>=1.0.1,<2",
 ]
 
@@ -63,7 +64,7 @@ dev = [
   # for Windows compatibility (signals do not interrupt blocking C-level
   # calls on Windows the way they do on POSIX).
   "pytest-timeout>=2.3,<3",
-  "hypothesis>=6.168.2,<7",
+  "hypothesis>=6.168.3,<7",
   "syrupy>=6.1.1,<7",  # bumped to unblock pytest 9 (see PYSEC-2026-1845 note above)
   "respx>=0.21,<1",
   "freezegun>=1.5,<2",
@@ -304,10 +305,45 @@ forbidden_modules = [
   "hermes.domain.fx",
 ]
 
+# change 713-live-ticker D-6: live ticker prices are display-only in the console.
+# The engine, the ledger, the supervisor, briefs and notifications never import them.
+[[tool.importlinter.contracts]]
+name = "live-prices-are-console-only"
+type = "forbidden"
+source_modules = [
+  "hermes.domain",
+  "hermes.application.order_router",
+  "hermes.application.strategy_protocol",
+  "hermes.application.execution",
+  "hermes.application.portfolio",
+  "hermes.application.ledger",
+  "hermes.application.supervisor",
+  "hermes.application.notification_router",
+  "hermes.application.signal_notifier",
+  "hermes.application.messages",
+  "hermes.application.bot",
+  "hermes.ports.supervisor",
+  "hermes.ports.notifier",
+  "hermes.adapters.ledger",
+  "hermes.adapters.notifier",
+  "hermes.adapters.telegram_bot",
+  "hermes.entrypoints.serve",
+  "hermes.entrypoints.supervisor",
+  "hermes.entrypoints.bot",
+  "hermes.entrypoints.daily_line",
+]
+forbidden_modules = [
+  "hermes.application.console.live",
+  "hermes.ports.live_prices",
+  "hermes.entrypoints.tui_live",
+]
+
 # Issue #835: the RO-01 / RO-02 inputs (spread samples, pair correlations) are
 # recorded only. Nothing that decides or sizes trades may read them until the
 # Code Owner rules on wiring RO-01 and RO-02 (issue #514); lifting this is a
-# deliberate change.
+# deliberate change. The backtest is lifted for RO-01 only (issue #822): the
+# §5.5 gate replays the lock as signed on the correlation of bars it has
+# already replayed, not on recorded rows; serve stays record-only.
 [[tool.importlinter.contracts]]
 name = "risk-inputs-are-record-only"
 type = "forbidden"
@@ -315,7 +351,6 @@ source_modules = [
   "hermes.application.execution",
   "hermes.application.order_router",
   "hermes.application.strategy_protocol",
-  "hermes.application.backtest",
   "hermes.application.portfolio",
   "hermes.domain.risk",
   "hermes.domain.strategy",

@@ -18,7 +18,7 @@ from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.risk.state import PortfolioState
 from hermes.domain.strategy.signal import OpenPosition, SignalKind
-from hermes.domain.strategy.swing.adapter import EntryCheck, SwingStrategyAdapter
+from hermes.domain.strategy.swing.adapter import EntryCheck, SwingStrategyAdapter, swing_parameters
 from hermes.domain.strategy.swing.engines.adx import AdxEngine
 from hermes.domain.strategy.swing.engines.donchian import DonchianEngine
 from hermes.domain.strategy.swing.engines.ema import EmaRegimeFilter
@@ -208,3 +208,24 @@ class TestRecordOnASignal:
 
 def _open_position() -> OpenPosition:
     return OpenPosition(entry_time=_H4_BASE + timedelta(hours=4), entry_price=Decimal("1000"))
+
+
+def test_swing_parameters_are_the_pre_registered_values() -> None:
+    """The parameter set the certification gates fingerprint matches pre-reg v1 §5 exactly.
+
+    §5.1: Donchian 20 (4h), ADX(14) >= 25 (4h), EMA(200) (1D).
+    §5.2: Chandelier highest_high(22) - 3 x ATR(22), time stop 90 days.
+    ATR(14) for sizing comes from ADR-011 (SA-7 ATR baseline).
+    Unit tests build the adapter with short periods (5) for speed, so this is the
+    test that fails if a pre-registered constant drifts (for example 22 -> 23).
+    """
+    assert swing_parameters() == {
+        "donchian_period": "20",
+        "adx_period": "14",
+        "adx_threshold": "25",
+        "ema_period": "200",
+        "chandelier_period": "22",
+        "chandelier_atr_mult": "3.0",
+        "time_stop_days": "90",
+        "atr_sizing_period": "14",
+    }, "swing_parameters() must equal the pre-registered §5 values"

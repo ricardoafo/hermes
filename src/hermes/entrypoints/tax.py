@@ -23,6 +23,7 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 from typing import Final, TextIO
 
+from hermes.adapters.ledger.connection import open_ledger
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.application.console.views import Tax, TaxEstimate, TaxPending
 from hermes.application.tax.estimate import (
@@ -154,7 +155,7 @@ def main(
     if not db.is_file():
         err.write(f"ERROR: ledger not found at {db}\n")
         return 1
-    connection = sqlite3.connect(db)
+    connection = open_ledger(db)
     try:
         result = TaxService(SqliteLedger(connection)).estimate(
             year=year,

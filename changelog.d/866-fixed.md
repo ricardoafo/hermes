@@ -1,0 +1,1 @@
+- Lot selection never draws a lot opened after the sale, and the order-book walk fills an exit of a quantity with more than 28 significant digits in full instead of refusing it (issue #866).

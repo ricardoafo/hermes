@@ -27,6 +27,8 @@ Invariants (change 353-fill-kernel-in-serve R-1, R-4, R-5):
   down) leaves the strategy in the position (#706): the next crash bar, with
   the book back, exits it again with the original entry price and sells the
   coin once, on the same boot or after a restart.
+- An ``AnomalyDetected`` published on serve's bus is recorded in the ledger
+  and changes no signal, fill, position or notification (#136, record-only).
 """
 
 from __future__ import annotations
@@ -47,6 +49,8 @@ from structlog.testing import capture_logs
 from hermes.adapters.clock import SimulatedClock
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.domain.errors import NetworkError
+from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
+from hermes.domain.events.event_bus import EventBus
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
@@ -156,12 +160,13 @@ def _boot(
     live_from: int,
     live_to: int,
     telegram: RecordingChannel | None = None,
+    feed_class: type[_SteppingFeed] = _SteppingFeed,
 ) -> tuple[serve_module.Composition, _SteppingFeed]:
     """Build one boot of the loop over ``db`` with live books."""
     clock = SimulatedClock(start=h4_bar(warm_upto).close_time + _DELIVERY_DELAY)
     books = _LiveBooks(clock)
     books.mid = h4_bar(warm_upto).close
-    feed = _SteppingFeed(clock, books, warm=history(warm_upto), live_bars=live(live_from, live_to))
+    feed = feed_class(clock, books, warm=history(warm_upto), live_bars=live(live_from, live_to))
     composition = build(db, feed, clock.now(), telegram=telegram, books=books, clock=clock)
     return composition, feed
 
@@ -532,3 +537,82 @@ def test_exit_declined_before_a_restart_is_retried_after_it(tmp_path: Path) -> N
         ["BUY", "SELL"],
         {},
     )
+
+
+class _AnomalousFeed(_SteppingFeed):
+    """Stepping feed that publishes one CRITICAL anomaly on serve's bus before each live bar."""
+
+    bus: EventBus | None = None
+
+    async def stream_closed_bars(
+        self,
+        pairs: Sequence[Pair],
+        intervals: Sequence[KlineInterval],
+        *,
+        resume_after: Mapping[tuple[Pair, KlineInterval], datetime] | None = None,
+    ) -> AsyncIterator[Bar]:
+        """Publish the anomaly, then yield the bar the stepping feed delivers."""
+        async for bar in super().stream_closed_bars(pairs, intervals, resume_after=resume_after):
+            assert self.bus is not None
+            self.bus.publish(
+                AnomalyDetected(
+                    occurred_at=self.clock.now(),
+                    correlation_id="01JABCDEFGHJKMNPQRSTVWXYZ0",
+                    source="test.injected",
+                    severity=AnomalySeverity.CRITICAL,
+                    reason=f"injected before {bar.close_time.isoformat()}",
+                )
+            )
+            yield bar
+
+
+_RUN_SPECIFIC = frozenset({"correlation_id", "payload_sha256"})
+
+
+def _decisions(db: Path) -> dict[str, list[dict[str, object]]]:
+    """Return the signal, trade and fill-quality payloads without their per-run ids."""
+    return {
+        event_type: [
+            {k: v for k, v in payload.items() if k not in _RUN_SPECIFIC}
+            for payload in _payloads(db, event_type)
+        ]
+        for event_type in ("SignalEmitted", "TradeExecuted", "FillQualityRecorded")
+    }
+
+
+# SEV-1: real-money guard (AGENTS.md prohibition 7) — an anomaly is recorded only;
+# it must never change what serve decides or fills (binding rule 2, issue #136).
+def test_an_anomaly_on_the_bus_is_recorded_and_changes_no_decision_or_fill(
+    tmp_path: Path,
+) -> None:
+    """Entry and exit run with a CRITICAL anomaly before every bar: same fills, rows recorded."""
+    plain_db = tmp_path / "plain.sqlite3"
+    plain_channel = RecordingChannel()
+    plain, plain_feed = _boot(
+        plain_db, warm_upto=10, live_from=11, live_to=14, telegram=plain_channel
+    )
+    assert run_once(plain, plain_feed) == 0
+
+    noisy_db = tmp_path / "noisy.sqlite3"
+    noisy_channel = RecordingChannel()
+    noisy, noisy_feed = _boot(
+        noisy_db,
+        warm_upto=10,
+        live_from=11,
+        live_to=14,
+        telegram=noisy_channel,
+        feed_class=_AnomalousFeed,
+    )
+    assert isinstance(noisy_feed, _AnomalousFeed)
+    noisy_feed.bus = noisy.event_bus
+    assert run_once(noisy, noisy_feed) == 0
+
+    recorded = _payloads(noisy_db, "AnomalyDetected")
+    assert [(r["source"], r["severity"]) for r in recorded] == [("test.injected", "CRITICAL")] * 4
+    assert _payloads(plain_db, "AnomalyDetected") == []
+    assert [t["side"] for t in _decisions(plain_db)["TradeExecuted"]] == ["BUY", "SELL"]
+    assert _decisions(noisy_db) == _decisions(plain_db)
+    assert (
+        signal_kinds(noisy_channel),
+        noisy.tracker.snapshot.positions,
+    ) == (signal_kinds(plain_channel), plain.tracker.snapshot.positions)

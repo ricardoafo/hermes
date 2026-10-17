@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import io
 from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -40,6 +41,7 @@ from textual.widgets import ContentSwitcher, OptionList, Static
 
 from hermes.adapters.console import FixtureReadModel
 from hermes.application.console import Heartbeat, HeartbeatState, Surface
+from hermes.entrypoints import tui as tui_module
 from hermes.entrypoints.commands.tui import run_tui
 from hermes.entrypoints.tui import (
     TABS,
@@ -50,7 +52,7 @@ from hermes.entrypoints.tui import (
     title_total,
 )
 from hermes.entrypoints.tui_settings import ThemeChoice, load_settings
-from hermes.entrypoints.tui_theme import BASE, CONTROL_ROOM, NEON, NIGHT, pulse_steps
+from hermes.entrypoints.tui_theme import BASE, CONTROL_ROOM, MOTION, NEON, NIGHT, pulse_steps
 from hermes.entrypoints.tui_widgets import HudPanel, TabBar, ThemePicker, WindowBar
 
 _MADRID = ZoneInfo("Europe/Madrid")
@@ -143,16 +145,17 @@ def test_number_keys_switch_screens() -> None:
 
 
 def test_every_unbuilt_screen_names_its_issue() -> None:
-    """Screens 2-8 each say "coming next · issue #N" with their own issue."""
+    """Each screen not built yet says "coming next · issue #N" with its own issue."""
+    unbuilt = [tab for tab in TABS[1:] if tab.issue is not None]
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> list[bool]:
         seen = []
-        for tab in TABS[1:]:
+        for tab in unbuilt:
             await _press(pilot, [tab.key])
             seen.append(f"{tab.name} · coming next · issue #{tab.issue}" in _screen_text(app))
         return seen
 
-    assert _run(probe) == [True] * 7
+    assert _run(probe) == [True] * len(unbuilt)
 
 
 def test_tab_and_shift_tab_cycle_the_screens() -> None:
@@ -605,51 +608,124 @@ def test_cli_accepts_db_and_theme_together(tmp_path: Path) -> None:
 
 
 def test_motion_off_runs_no_effect_timer() -> None:
-    """With motion off there is no pulse or strip timer; the strip and the dot stay still."""
+    """With motion off there is no effect timer and the live dot stays still."""
 
-    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[dict[str, object], int, str]:
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[dict[str, object], str]:
         await pilot.pause(1.3)
-        return dict(app.effect_timers), app.query_one(WindowBar).tick, app.live_dot_colour
+        return dict(app.effect_timers), app.live_dot_colour
 
-    assert _run(probe, motion=False) == ({}, 0, NEON.live)
+    assert _run(probe, motion=False) == ({}, NEON.live)
 
 
-def test_motion_on_runs_the_pulse_and_the_strip() -> None:
-    """With motion on by day every effect runs and the strip advances.
+def test_motion_on_runs_the_pulse_shimmer_and_radar() -> None:
+    """With motion on by day the pulse, the shimmer and the radar run.
 
-    Issue #712 added the big total's shimmer and the empty-positions radar.
+    Issue #712 added the shimmer and the radar; issue #713 removed the binary
+    strip (Code Owner 2026-10-06), so no strip timer runs.
     """
 
-    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[list[str], bool]:
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> list[str]:
         await pilot.pause(1.3)
-        return sorted(app.effect_timers), app.query_one(WindowBar).tick > 0
+        return sorted(app.effect_timers)
 
-    assert _run(probe, motion=True) == (["pulse", "radar", "shimmer", "strip"], True)
+    assert _run(probe, motion=True) == ["pulse", "radar", "shimmer"]
 
 
 def test_night_runs_only_the_slow_pulse() -> None:
-    """At night there is no binary strip, and the pulse steps every 0.8 s instead of 0.4 s."""
+    """At night only the pulse runs, stepping every 0.8 s instead of 0.4 s."""
 
-    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[list[str], float, bool]:
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[list[str], float]:
         del pilot
         pulse = app.effect_timers["pulse"]
-        return sorted(app.effect_timers), pulse._interval, app.query_one(WindowBar).strip
+        return sorted(app.effect_timers), pulse._interval
 
-    assert _run(probe, motion=True, clock=lambda: _NIGHT) == (["pulse"], 0.8, False)
+    assert _run(probe, motion=True, clock=lambda: _NIGHT) == (["pulse"], 0.8)
 
 
+@pytest.fixture
+def frozen_clock_timer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Push the 1 s clock timer out of the test's reach, so only explicit ticks run."""
+    monkeypatch.setattr(tui_module, "MOTION", replace(tui_module.MOTION, clock_tick=3600.0))
+
+
+def _capture_title(app: HomeApp) -> list[str]:
+    written: list[str] = []
+    driver = app._driver
+    assert driver is not None
+    driver.write = written.append  # type: ignore[method-assign,assignment]
+    app._title_sent = None
+    return written
+
+
+_OK_TITLE = "\x1b]2;hermes ● live · €1,021 · next 18:00\x07"
+
+
+@pytest.mark.usefixtures("frozen_clock_timer")
 def test_effect_steps_survive_widgets_torn_down() -> None:
-    """A pulse or strip tick after the status widgets are gone does not crash the app."""
+    """A pulse step, a feed redraw or a clock tick after the status widgets are gone survives.
 
-    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[int, bool]:
+    The clock timer is pushed out of reach, so the tick after the teardown is
+    the explicit one below, not a race with the 1 s timer.
+    """
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[int, bool, list[str]]:
         await app.query_one("#heartbeat").remove()
         await app.query_one(WindowBar).remove()
         app._step_pulse()
-        app._step_strip()
+        app._dim_feed()
+        written = _capture_title(app)
+        app._tick()
         await pilot.pause()
-        return app._pulse, app.is_running
+        return app._pulse, app.is_running, written
 
-    assert _run(probe) == (1, True)
+    assert _run(probe) == (1, True, [_OK_TITLE])
+
+
+# Every widget the clock tick or the theme switch looks up.
+_TICKED_WIDGETS = (
+    "WindowBar",
+    "ThemeChip",
+    "#countdown",
+    "#footer-status",
+    "#heartbeat",
+    "#down-row",
+)
+
+
+@pytest.mark.usefixtures("frozen_clock_timer")
+@pytest.mark.parametrize("selector", _TICKED_WIDGETS)
+def test_tick_and_theme_survive_any_ticked_widget_torn_down(selector: str) -> None:
+    """With any one ticked widget gone, a tick and a theme pass still set the title and theme."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[list[str], str, bool]:
+        await app.query_one(selector).remove()
+        written = _capture_title(app)
+        app._tick()
+        app._apply_theme(_NIGHT)
+        await pilot.pause()
+        return written, app.theme, app.is_running
+
+    assert _run(probe) == ([_OK_TITLE], "hermes-night", True)
+
+
+@pytest.mark.usefixtures("frozen_clock_timer")
+def test_radar_shimmer_and_pulse_survive_their_widgets_torn_down() -> None:
+    """The radar, the shimmer and the pulse step on after the positions card and big total go."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[int, int, bool]:
+        for timer in app.effect_timers.values():
+            timer.stop()
+        radar, pulse = app._radar, app._pulse
+        await app.query_one("#positions").remove()
+        await app.query_one("#portfolio-total").remove()
+        await app.query_one("#down-row").remove()
+        app._step_radar()
+        app._start_shimmer()
+        app._step_pulse()
+        await pilot.pause()
+        return app._radar - radar, (app._pulse - pulse) % MOTION.pulse_steps, app.is_running
+
+    assert _run(probe, scenario="empty", motion=True) == (1, 1, True)
 
 
 def test_motion_env_off_reaches_the_app(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -793,7 +869,7 @@ def test_picking_control_room_hides_the_window_bar_and_recolours_the_title_bars(
     ids=["neon", "control", "auto-day", "auto-night"],
 )
 def test_window_bar_shows_only_in_neon(theme: ThemeChoice, now: datetime, shown: bool) -> None:
-    """The Neon window bar and its strip lead the screen in Neon only."""
+    """The Neon window bar leads the screen in Neon only."""
 
     async def drive() -> tuple[bool, bool]:
         app = HomeApp(
@@ -1028,10 +1104,11 @@ def test_a_hand_picked_control_room_ignores_the_night(tmp_path: Path) -> None:
     )
 
 
-def test_entering_night_slows_the_pulse_and_stops_the_strip() -> None:
-    """With motion on, crossing 23:00 restarts the pulse at 0.8 s per step and drops the strip.
+def test_entering_night_slows_the_pulse_and_stops_the_day_effects() -> None:
+    """With motion on, crossing 23:00 restarts the pulse at 0.8 s per step.
 
-    Issue #712's day effects (radar, shimmer) stop at night too.
+    Issue #712's day effects (radar, shimmer) stop at night; the binary strip
+    is gone since issue #713.
     """
     clock = _Clock(datetime(2026, 10, 3, 20, 59, 59, tzinfo=UTC))
 
@@ -1042,7 +1119,7 @@ def test_entering_night_slows_the_pulse_and_stops_the_strip() -> None:
         return before, sorted(app.effect_timers), app.effect_timers["pulse"]._interval
 
     assert _run(probe, clock=clock, motion=True) == (
-        ["pulse", "radar", "shimmer", "strip"],
+        ["pulse", "radar", "shimmer"],
         ["pulse"],
         0.8,
     )

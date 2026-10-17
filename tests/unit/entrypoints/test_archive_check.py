@@ -3,14 +3,15 @@
 Invariant under test: the command checks the requested day for every
 configured pair and interval and maps the outcome to its exit code (0 match,
 1 mismatch, 2 usage, 3 failure). The archive is faked; the ledger is a real
-file.
+file. Each mismatch alert is recorded once as an ``AnomalyDetected`` row (#136).
 """
 
 from __future__ import annotations
 
 import io
 import sqlite3
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import ClassVar
 
@@ -18,12 +19,14 @@ import httpx
 import pytest
 
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
+from hermes.application.archive_check import ALERT_SOURCE
 from hermes.domain.errors import InfraError
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.pair import Pair
 from hermes.entrypoints import archive_check as module
 from hermes.entrypoints import cli
+from tests.support.anomaly_rows import recorded_anomalies
 
 _PROJECT_CONFIG = Path(__file__).resolve().parents[3] / "config"
 
@@ -187,3 +190,51 @@ def test_a_failed_ping_never_changes_the_exit_code(
     )
     assert code == 0
     assert "WARNING: healthcheck ping failed: ConnectError" in out.getvalue()
+
+
+class _OneBarArchive(_EmptyArchive):
+    """Publishes one 4h BTC bar the empty live store does not hold: one mismatch."""
+
+    def daily_bars(self, pair: Pair, interval: KlineInterval, day: date) -> tuple[Bar, ...]:
+        if pair.base.value != "BTC" or interval is not KlineInterval.H4:
+            return ()
+        open_time = datetime(2026, 10, 2, tzinfo=UTC)
+        return (
+            Bar(
+                pair=pair,
+                interval=interval,
+                open_time=open_time,
+                close_time=open_time + timedelta(hours=4) - timedelta(milliseconds=1),
+                open=Decimal(60000),
+                high=Decimal(60500),
+                low=Decimal(59500),
+                close=Decimal(60100),
+                volume=Decimal(10),
+            ),
+        )
+
+
+def test_each_mismatch_alert_is_recorded_once_in_the_ledger(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#136: one mismatch is one AnomalyDetected row from the archive check."""
+    monkeypatch.setattr(module, "BinanceVisionDailyArchive", _OneBarArchive)
+    db = _ledger(tmp_path)
+
+    code, _ = _main(["--date", "2026-10-02", "--db", str(db), "--config-dir", str(_PROJECT_CONFIG)])
+
+    rows = recorded_anomalies(db)
+    assert (code, [(r["source"], r["severity"]) for r in rows]) == (
+        1,
+        [(ALERT_SOURCE, "WARNING")],
+    )
+
+
+def test_a_matching_day_records_no_anomaly(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """#136: no mismatch, no alert, no AnomalyDetected row."""
+    monkeypatch.setattr(module, "BinanceVisionDailyArchive", _EmptyArchive)
+    db = _ledger(tmp_path)
+
+    code, _ = _main(["--date", "2026-10-02", "--db", str(db), "--config-dir", str(_PROJECT_CONFIG)])
+
+    assert (code, recorded_anomalies(db)) == (0, [])

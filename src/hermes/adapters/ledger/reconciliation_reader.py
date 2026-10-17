@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Self
 
 from hermes.adapters.ledger._cells import decimal_cell, optional_decimal_cell, time_cell
+from hermes.adapters.ledger.connection import open_ledger
 from hermes.adapters.ledger.sqlite_ledger import _trade_from_payload
 from hermes.domain.errors import LedgerError
 from hermes.domain.events.trade_executed import TradeExecuted
@@ -54,7 +55,7 @@ class SqliteReconciliationReader:
         if not resolved.is_file():
             raise FileNotFoundError(str(path))
         try:
-            connection = sqlite3.connect(f"{resolved.as_uri()}?mode=ro", uri=True)
+            connection = open_ledger(resolved, read_only=True)
         except sqlite3.Error as exc:
             raise LedgerError(msg=f"cannot open {path} read-only: {exc}") from exc
         return cls(connection)

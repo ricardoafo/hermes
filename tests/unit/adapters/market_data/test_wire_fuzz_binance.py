@@ -174,7 +174,10 @@ def test_a_live_klines_page_parses_or_raises_exchange_error(rows: object) -> Non
     """Invariant: any page of rows (empty, duplicated, nested) gives bars or ExchangeError."""
     page = rows if isinstance(rows, list) else [rows]
     assert (
-        foreign_error(lambda: binance_live_klines._parse_rows(page, _PAIR, _H4), ExchangeError)
+        foreign_error(
+            lambda: binance_live_klines._parse_rows(page, _PAIR, _H4, keep=lambda _: True),
+            ExchangeError,
+        )
         == ""
     )
 

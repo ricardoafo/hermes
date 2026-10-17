@@ -14,11 +14,13 @@ from typing import Protocol
 
 from hermes.application.console.views import (
     ActivityDay,
+    ConsoleBrief,
     Heartbeat,
     PortfolioRange,
     PortfolioSummary,
     PositionDetail,
     PositionRow,
+    RuleCheck,
     ShadowTest,
     WatchedPair,
 )
@@ -70,6 +72,14 @@ class ConsoleReadModel(Protocol):
         """
         ...
 
+    def rule_checks(self) -> tuple[RuleCheck, ...]:
+        """Return which entry rules held per coin on each check of the last 7 days.
+
+        Newest check first. Yes or no only, never a price or a distance to a
+        rule (ADR-012 D-06, #714).
+        """
+        ...
+
     def shadow_test(self) -> ShadowTest:
         """Return the 90-day shadow test status."""
         ...
@@ -79,5 +89,14 @@ class ConsoleReadModel(Protocol):
 
         No prices: the market watch shows only what hermes records about its
         own bar checks (#650).
+        """
+        ...
+
+    def briefs(self) -> tuple[ConsoleBrief, ...]:
+        """Return the supervisor desk's published briefs, newest first.
+
+        Each one is built from the P&L-blind supervisor tools and has passed
+        the desk's output gate (ADR-012 D-06, D-08), so no price, value or
+        P&L can be in it (#720).
         """
         ...
