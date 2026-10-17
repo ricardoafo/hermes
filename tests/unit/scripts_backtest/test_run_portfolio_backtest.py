@@ -10,6 +10,8 @@ Invariants (822-portfolio-backtest change.md D-1, D-5, R-5):
 - ``--funnel-evidence-out`` writes evidence ``hermes funnel`` accepts and
   logs every §8.5 replay as a trial; without it the run logs one trial and
   writes no evidence (v2-funnel-evidence R-1 to R-3).
+- A v2 trial names its close-based exit pricing; a v1 trial keeps its shape
+  (v2-strategy-config D-4).
 """
 
 from __future__ import annotations
@@ -35,6 +37,7 @@ from hermes.application.calibration.backtest_funnel import (
     parse_funnel_front_matter,
     validate_evidence,
 )
+from hermes.application.execution.prereg_book import ExitPricing
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.dataset_manifest import DataSplit
 from hermes.domain.market_data.kline import KlineInterval
@@ -123,6 +126,13 @@ def test_trial_parameters_name_the_portfolio() -> None:
     }
 
 
+def test_v2_trial_parameters_name_the_close_based_exit_pricing() -> None:
+    """A v2 portfolio trial adds ``execution.exit_pricing = bar_close`` to v1's fields."""
+    model = ExecutionModel(depth_frac=Decimal("0.1"), exit_pricing=ExitPricing.BAR_CLOSE)
+    params = DRIVER._trial_parameters({"donchian_period": 20}, model, (_BTC,))
+    assert params["execution.exit_pricing"] == "bar_close"
+
+
 def test_report_lists_every_rule_left_off() -> None:
     """Every SA-9 rule other than RO-01, and the kill evaluator, is listed as stubbed."""
     assert sorted(DRIVER.STUBBED) == [
@@ -202,6 +212,7 @@ def _v2_roster() -> StrategyConfig:
             "weight": "1.0",
             "capital_budget": "5000",
             "quote": "USDT",
+            "exit_pricing": "bar_close",
             "sizing": {
                 "risk_pct": "0.01",
                 "max_position_pct": "0.05",
@@ -247,7 +258,14 @@ def _run_driver(tmp: Path, *, funnel: bool) -> _SyntheticRun:
         mp.setattr(DRIVER, "_load_manifest", lambda _path: object())
         mp.setattr(DRIVER, "_load", load)
         mp.setattr(DRIVER, "trial_split", lambda *_args: DataSplit.TRAIN)
-        mp.setattr(DRIVER, "_enabled_roster", lambda _dir: _v2_roster())
+        mp.setattr(
+            DRIVER,
+            "_select",
+            lambda _dir, _name, depth: (
+                _v2_roster(),
+                _v2_roster().execution_model(depth_frac=depth),
+            ),
+        )
         code = DRIVER.main(argv)
     return replace(out, exit_code=code)
 
