@@ -19,7 +19,9 @@ Rules checked after every bar (``RULES`` names each one):
   within 15% of capital (§5.5).
 - stop: every open position has a stop recorded on each 4h bar, below the
   entry price on the entry bar, never lower than the bar before (stop ratchet),
-  and a bar whose low reaches the stop signals the exit on that bar (§5.2).
+  and a bar whose low reaches the stop in force when it opened (the stop
+  recorded on the bar before, §5.3, issue #785) signals the exit on that bar
+  (§5.2).
 - pairing: every BUY answers an entry signal of its bar on a pair not held;
   every SELL answers an exit signal of its bar and sells the whole position;
   no exit is signalled for a pair not held; a bar delivered again writes nothing.
@@ -401,8 +403,11 @@ class Oracle:
         if held.last_stop is not None and stop < held.last_stop:
             self._fail(bar, "stop", f"stop fell from {held.last_stop} to {stop}")
         exits = [s for s in signals if s["kind"] == "exit"]
-        if pair in held_before and bar.low <= stop and not exits:
-            self._fail(bar, "stop", f"low {bar.low} reached the stop {stop} and no exit fired")
+        # A daily close posts the next day's stop on this bar's record, so the
+        # stop this bar was tested against is the one recorded before it (#785).
+        tested = held.last_stop
+        if pair in held_before and tested is not None and bar.low <= tested and not exits:
+            self._fail(bar, "stop", f"low {bar.low} reached the stop {tested} and no exit fired")
         held.last_stop = stop
 
     def finish(self, db: Path, exits: list[tuple[int, bool]]) -> None:

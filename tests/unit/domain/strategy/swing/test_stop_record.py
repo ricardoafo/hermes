@@ -97,21 +97,17 @@ def _run(
     return out
 
 
-def _expected(bars: list[Bar], entry_time: datetime, previous: Decimal | None) -> StopRecord:
-    """Compute the record independently from the bars the strategy had seen."""
+def _level(bars: list[Bar]) -> tuple[Decimal, Decimal]:
+    """Return the chandelier level and its ATR over ``bars``, computed independently."""
     level = ChandelierEngine.trailing_stop(bars, period=_CHANDELIER, atr_mult=_MULT)
     atr = AtrEngine.value(bars, period=_CHANDELIER)
     assert level is not None
     assert atr is not None
-    stop = level if previous is None else max(previous, level)
-    return StopRecord(
-        entry_time=entry_time,
-        stop_price=stop,
-        chandelier_level=level,
-        atr=atr,
-        high_since_entry=max(b.high for b in bars if b.close_time >= entry_time),
-        stop_moved=None if previous is None else stop != previous,
-    )
+    return level, atr
+
+
+def _ends_a_day(bar: Bar) -> bool:
+    return (bar.open_time + timedelta(hours=4)).hour == 0
 
 
 _steps = st.lists(
@@ -127,20 +123,40 @@ class TestRecordFollowsThePosition:
     @given(steps=_steps)
     @settings(max_examples=60, suppress_health_check=[HealthCheck.too_slow])
     def test_every_held_bar_records_the_chandelier_stop(self, steps: list[Decimal]) -> None:
-        """Entry bar to exit bar each record the ratcheted stop and raw level; flat bars none."""
+        """Each held bar records the stop in force after it and the level last posted.
+
+        The level is posted at the entry bar and at each held bar that ends a
+        UTC day (§5.3, #785), and the stop is the highest level posted since
+        entry (#680). Flat bars record nothing.
+        """
         bars = _path(steps)
         entry_time: datetime | None = None
-        previous: Decimal | None = None
+        stop: Decimal | None = None
+        posted: tuple[Decimal, Decimal] | None = None
         for i, (signal, record) in enumerate(_run(_adapter(), bars)):
             seen = bars[: i + 1]
-            if entry_time is None and signal is not None and signal.kind is SignalKind.ENTRY:
-                entry_time, previous = bars[i].close_time, None
+            entering = signal is not None and signal.kind is SignalKind.ENTRY
+            if entry_time is None and entering:
+                entry_time, stop, posted = bars[i].close_time, None, None
             if entry_time is None:
                 assert record is None
                 continue
-            assert record == _expected(seen, entry_time, previous)
-            previous = record.stop_price
-            if signal is not None and signal.kind is SignalKind.EXIT:
+            previous = stop
+            exiting = signal is not None and signal.kind is SignalKind.EXIT
+            if entering or (not exiting and _ends_a_day(bars[i])):
+                posted = _level(seen)
+                stop = posted[0] if stop is None else max(stop, posted[0])
+            assert stop is not None
+            assert posted is not None
+            assert record == StopRecord(
+                entry_time=entry_time,
+                stop_price=stop,
+                chandelier_level=posted[0],
+                atr=posted[1],
+                high_since_entry=max(b.high for b in seen if b.close_time >= entry_time),
+                stop_moved=None if previous is None else stop != previous,
+            )
+            if exiting:
                 entry_time = None
 
     def test_the_entry_bar_records_the_signal_stop(self) -> None:
