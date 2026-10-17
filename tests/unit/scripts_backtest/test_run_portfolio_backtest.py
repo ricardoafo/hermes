@@ -46,6 +46,7 @@ from hermes.domain.value_objects.pair import Pair
 from hermes.entrypoints.funnel import load_funnel_evidence, read_front_matter
 from hermes.entrypoints.funnel import main as funnel_main
 from hermes.infrastructure.config.models import StrategyConfig
+from tests.support.research_batch import BATCH_PATH, batch_front_matter, batch_text
 
 _SCRIPTS = Path(__file__).resolve().parents[3] / "scripts" / "backtest"
 _BTC = Pair(base=Currency.BTC, quote=Currency.USDT)
@@ -230,7 +231,7 @@ class _SyntheticRun:
     performance: Path
 
 
-def _run_driver(tmp: Path, *, funnel: bool) -> _SyntheticRun:
+def _run_driver(tmp: Path, *, funnel: bool, extra: list[str] | None = None) -> _SyntheticRun:
     """Run the driver's main on synthetic bars, with the manifest, roster and split stubbed."""
     bars = DRIVER._merge(_walk(_BTC, 1) + _walk(_ETH, 2))
     datasets = [{"dataset_id": "synthetic", "content_sha256": "0" * 64}]
@@ -254,6 +255,7 @@ def _run_driver(tmp: Path, *, funnel: bool) -> _SyntheticRun:
     ]
     if funnel:
         argv.append(f"--funnel-evidence-out={out.evidence}")
+    argv += extra or []
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(DRIVER, "_load_manifest", lambda _path: object())
         mp.setattr(DRIVER, "_load", load)
@@ -377,3 +379,94 @@ def test_neighbour_and_stress_replays_run_their_own_configuration(
     ]
     assert copies == []
     assert evidence["cost_stress"]["daily_equity"] != evidence["daily_equity"]
+
+
+# ---------------------------------------------------------------------------
+# --batch --candidate (ADR-026 §2, research-funnel contract §2, issue #1057)
+# ---------------------------------------------------------------------------
+
+
+def _batch_file(tmp: Path, parameters: dict[str, object]) -> Path:
+    """Write a two-candidate batch whose first candidate is v2 with ``parameters``."""
+    fm = batch_front_matter()
+    fm["candidates"][0].update(strategy_id=_V2, parameters=parameters)
+    path = tmp / BATCH_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(batch_text(fm), encoding="utf-8")
+    return path
+
+
+def _run_candidate(tmp: Path, parameters: dict[str, object]) -> _SyntheticRun:
+    batch = _batch_file(tmp, parameters)
+    return _run_driver(tmp, funnel=True, extra=[f"--batch={batch}", f"--candidate={_V2}"])
+
+
+@pytest.fixture(scope="module")
+def candidate_run(tmp_path_factory: pytest.TempPathFactory) -> _SyntheticRun:
+    """One synthetic run of a batch candidate whose grid moves only the Donchian period."""
+    return _run_candidate(
+        tmp_path_factory.mktemp("candidate"),
+        {"donchian_period": {"base": 20, "neighbours": [25]}},
+    )
+
+
+def test_a_candidate_run_uses_its_own_grid(candidate_run: _SyntheticRun) -> None:
+    """Contract §2: the candidate's replays replace FUNNEL_REPLAYS: base, one neighbour, stress."""
+    replays = [
+        r.parameters.get("funnel.replay", "base")
+        for r in JsonlTrialLog(candidate_run.trial_log).records()
+    ]
+    evidence = json.loads(candidate_run.evidence.read_text())
+
+    assert (candidate_run.exit_code, replays, evidence["neighbour_trial_ids"]) == (
+        0,
+        ["base", "donchian_period=25", "cost_stress=2"],
+        ["donchian_period=25"],
+    )
+
+
+def test_every_candidate_trial_line_names_its_batch(candidate_run: _SyntheticRun) -> None:
+    """Contract §2: every trial line's parameters carry batch.id."""
+    records = JsonlTrialLog(candidate_run.trial_log).records()
+
+    assert {r.parameters.get("batch.id") for r in records} == {"b1"}
+
+
+def test_a_v2_run_without_a_batch_names_no_batch(funnel_run: _SyntheticRun) -> None:
+    """Without --batch nothing changes: no trial line carries batch.id."""
+    records = JsonlTrialLog(funnel_run.trial_log).records()
+
+    assert [("batch.id" in r.parameters) for r in records] == [False] * len(records)
+
+
+def test_a_candidate_whose_signed_base_differs_from_the_strategy_is_refused(
+    tmp_path: Path,
+) -> None:
+    """The run must start from the base the batch signed, or its trials test something else."""
+    run = _run_candidate(tmp_path, {"donchian_period": {"base": 30, "neighbours": [25]}})
+
+    assert (run.exit_code, run.trial_log.exists()) == (1, False)
+
+
+def test_a_candidate_parameter_the_strategy_lacks_is_refused(tmp_path: Path) -> None:
+    """Contract §1: parameter names are keys of the strategy's parameter mapping."""
+    run = _run_candidate(tmp_path, {"no_such_knob": {"base": 1, "neighbours": [2]}})
+
+    assert (run.exit_code, run.trial_log.exists()) == (1, False)
+
+
+def test_a_candidate_the_batch_does_not_name_is_refused(tmp_path: Path) -> None:
+    """--candidate must be one of the batch's strategy ids."""
+    batch = _batch_file(tmp_path, {"donchian_period": {"base": 20, "neighbours": [25]}})
+
+    run = _run_driver(tmp_path, funnel=True, extra=[f"--batch={batch}", "--candidate=swing-x"])
+
+    assert (run.exit_code, run.trial_log.exists()) == (1, False)
+
+
+def test_batch_without_candidate_is_a_usage_error(tmp_path: Path) -> None:
+    """The two flags go together; argparse exits 2."""
+    with pytest.raises(SystemExit) as caught:
+        DRIVER.main([f"--batch={tmp_path / 'b1.md'}"])
+
+    assert caught.value.code == 2
