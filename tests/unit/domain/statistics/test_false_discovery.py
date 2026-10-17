@@ -59,7 +59,7 @@ class TestHandComputed:
 class TestRefusals:
     """A level or p-value outside its range is a caller error, never a silent result."""
 
-    @pytest.mark.parametrize("q", [F(0), F(1), F("-0.1")])
+    @pytest.mark.parametrize("q", [F(0), F(1), F("-0.1"), F("1.5")])
     def test_q_outside_the_open_unit_interval_is_refused(self, q: Fraction) -> None:
         """BH needs 0 < q < 1; q = 0 rejects nothing and q = 1 everything."""
         with pytest.raises(ValueError, match="q must be"):

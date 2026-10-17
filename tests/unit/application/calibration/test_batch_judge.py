@@ -95,6 +95,15 @@ class TestRanking:
         judgement = _judge(_candidate("a", 0.99), _candidate("b", 0.999))
         assert judgement.survivors == ("b", "a")
 
+    def test_the_champion_is_the_first_survivor_not_the_last(self) -> None:
+        """With two survivors, b has the higher DSR, so b is the champion."""
+        assert _judge(_candidate("a", 0.99), _candidate("b", 0.999)).champion == "b"
+
+    def test_an_eligible_dsr_of_zero_ranks_below_a_higher_one(self) -> None:
+        """A DSR of 0 is a real value, not a missing one, and ranks last."""
+        judgement = _judge(_candidate("a", 0.0), _candidate("b", 0.5))
+        assert judgement.eligible == ("b", "a")
+
     def test_a_dsr_tie_goes_to_the_lowest_mean_correlation(self) -> None:
         """Candidates a and b move together (correlation 1); c moves against both.
 
@@ -123,6 +132,20 @@ class TestRanking:
             _candidate("c", 0.99, returns=(1.0, -1.0, 1.0, -1.0)),
         )
         assert judgement.survivors == ("b", "c", "a")
+
+    def test_a_flat_series_ties_with_two_fully_correlated_ones(self) -> None:
+        """Candidate c is flat, so its correlations count as 1; a and b move together (1).
+
+        Every mean correlation is 1, so the three tie and fall back to the id.
+        Counting the undefined correlation as 0 would wrongly put c first.
+        """
+        rising = (1.0, 2.0, 3.0, 4.0)
+        judgement = _judge(
+            _candidate("a", 0.99, returns=rising),
+            _candidate("b", 0.99, returns=rising),
+            _candidate("c", 0.99, returns=_FLAT),
+        )
+        assert judgement.survivors == ("a", "b", "c")
 
 
 class TestEligible:
@@ -202,7 +225,7 @@ class TestRefusals:
         with pytest.raises(ValueError, match="dsr must be"):
             _candidate("a", dsr)
 
-    @pytest.mark.parametrize("q", [0.0, 1.0, math.nan])
+    @pytest.mark.parametrize("q", [-0.1, 0.0, 1.0, 1.5, math.nan])
     def test_a_q_outside_the_open_unit_interval_is_refused(self, q: float) -> None:
         """BH needs 0 < q < 1."""
         with pytest.raises(ValueError, match="fdr_q"):
