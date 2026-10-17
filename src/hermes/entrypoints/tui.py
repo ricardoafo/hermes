@@ -138,6 +138,7 @@ from hermes.application.console.render import (
     to_plain_text,
 )
 from hermes.domain.errors import LedgerError
+from hermes.entrypoints.tui_boot import BootScreen, boot_checks
 from hermes.entrypoints.tui_briefs import briefs_screen
 from hermes.entrypoints.tui_drilldown import (
     DetailMode,
@@ -574,6 +575,7 @@ class HomeApp(App[None]):
         theme: ThemeChoice | None = None,
         exposure_cap: Decimal | None = None,
         ticker: LiveTickerPort | None = None,
+        boot: bool = False,
     ) -> None:
         """Hold the read model, the journal source and the screen state.
 
@@ -594,8 +596,10 @@ class HomeApp(App[None]):
                 (``0.15``); ``None`` makes the exposure meter say it is unknown.
             ticker: The live public ticker (issue #713); ``None`` shows booked
                 values only and the Market panel without prices.
+            boot: Open on the cold start screen (#1020); shown only with motion on.
         """
         super().__init__()
+        self._boot = boot
         self._model = model
         self._journal = journal
         self._release = release
@@ -629,6 +633,7 @@ class HomeApp(App[None]):
         self._title_sent: str | None = None
         self._title_total: str | None = None
         self.effect_timers: dict[str, Timer] = {}
+        self._ticker = ticker
         self._poller = None if ticker is None else TickerPoller(ticker, clock)
         self._board = LiveBoard()
         self._fetching = False
@@ -727,6 +732,17 @@ class HomeApp(App[None]):
         self.set_interval(self._refresh_seconds, self._redraw)
         self.set_interval(MOTION.clock_tick, self._tick)
         self._start_effects()
+        if self._boot and self._motion:
+            self.push_screen(self._boot_screen())
+
+    def _boot_screen(self) -> BootScreen:
+        checks = boot_checks(
+            self._model,
+            tz=self._render_context().tz,
+            journal=self._journal,
+            ticker=self._ticker,
+        )
+        return BootScreen(checks, lambda: tokens_for(self.theme), release=self._read_release())
 
     def on_resize(self, event: events.Resize) -> None:
         """Re-flow when the terminal size changes."""
@@ -1748,6 +1764,7 @@ def run_home(
         settings_path=settings_path,
         exposure_cap=exposure_cap,
         ticker=ticker,
+        boot=True,
     )
     app.run()
     if not app.restart_requested:
