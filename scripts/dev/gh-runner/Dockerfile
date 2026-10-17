@@ -34,7 +34,7 @@ ARG GITLEAKS_SHA256=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f24
 # The AI review action (ai-review.yml) pins these two; bump them together
 # with the action SHA or the job falls back to downloading its own.
 ARG BUN_VERSION=1.3.14
-ARG CLAUDE_CODE_VERSION=2.1.284
+ARG CLAUDE_CODE_VERSION=2.1.296
 ARG DOCKER_CE_CLI_VERSION=5:27.4.1-1~ubuntu.24.04~noble
 ARG DEBIAN_FRONTEND=noninteractive
 
