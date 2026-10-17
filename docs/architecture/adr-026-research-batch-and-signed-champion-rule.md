@@ -61,8 +61,9 @@ and strategies that pass wait in order without displacing a running shadow.
 A batch lives at `docs/experiments/<experiment>/batches/<batch-id>.md`. Its front matter holds:
 
 - `batch_id`, `status: SIGNED`, `signed_by`, `content_sha256` and its scope, as pre-registrations do today;
-- `candidates`: 2 to 6 entries, each with `strategy_id`, `idea_family`, `card_sha256` and the section that holds its
-  rules;
+- `candidates`: 2 to 6 entries, each with `strategy_id`, `idea_family`, `card_sha256`, the section that holds its
+  rules, and a `summary`: a few plain lines on the idea, its mechanism and its expected sign, which the console's
+  Lab screen shows (issue #1056);
 - `selection`: the champion rule of §5, with its numbers;
 - `backtest_funnel`: the gate thresholds, the same block pre-registration v2 introduced. One block binds every
   candidate in the batch; a batch cannot loosen the ADR-021 §5 floors (DSR ≥ 0.95, PBO ≤ 0.05, t > 3, ≥ 100 trades).
@@ -153,6 +154,9 @@ bot PR that:
 
 - appends the trial lines byte for byte, in order;
 - appends one lab-notebook entry per candidate with PASS/FAIL per check and no values;
+- commits one verdict record per candidate at `docs/experiments/<experiment>/verdicts/<batch-id>/<strategy-id>.json`,
+  next to the trial lines: the batch id, the run, the commit, the split, and PASS, FAIL or not applicable for every
+  certify and funnel check, with no metric value. The console's Lab screen reads these (issue #1056);
 - records the champion's id or `none`.
 
 No agent downloads the artifact. The values stay in it for the Code Owner (ADR-023 §7). The exact token and its
@@ -237,6 +241,7 @@ Alternatives considered:
   Validation budget
 - [ADR-023](adr-023-backtest-runs-on-server-01.md) — the backtest runner, data and artifacts
 - Issue #967 — the MVP2 lab and the Code Owner's six answers
+- Issue #1056 — the console's read-only Lab screen, which reads `summary` and the verdict records
 - Issue #1054 — this ADR
 
 ## Sources
