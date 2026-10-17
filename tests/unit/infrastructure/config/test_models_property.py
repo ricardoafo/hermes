@@ -311,7 +311,7 @@ def test_strategy_without_a_signal_is_the_donchian_breakout() -> None:
 
 
 def test_strategy_reads_a_known_signal() -> None:
-    """``signal: donchian-breakout`` names the same kind as leaving it out."""
+    """``signal: donchian_breakout`` names the same kind as leaving it out."""
     data = {"strategies": [_strategy_entry(signal=DONCHIAN_BREAKOUT)]}
     entry = StrategiesConfig.model_validate(data).strategies[0]
     assert entry.strategy_kind() == strategy_kind(DONCHIAN_BREAKOUT)

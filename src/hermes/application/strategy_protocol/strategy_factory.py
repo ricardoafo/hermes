@@ -32,7 +32,7 @@ __all__ = [
     "strategy_kind",
 ]
 
-DONCHIAN_BREAKOUT: Final = "donchian-breakout"
+DONCHIAN_BREAKOUT: Final = "donchian_breakout"
 """The v1/v2 rule (pre-registration v1 §5): the kind of an entry with no ``signal:``."""
 
 

@@ -45,7 +45,7 @@ the replay is identical on the existing fixtures.
 ## Decisions
 
 - **D-1 Key by `signal:`, default Donchian.** A missing key means the Donchian
-  breakout (`donchian-breakout`), so the signed v1/v2 entries need no edit and
+  breakout (`donchian_breakout`), so the signed v1/v2 entries need no edit and
   their pre-registration fingerprints do not move.
 - **D-2 Unknown signal fails closed.** `strategy_kind` raises
   `UnknownSignalError`; the config validator turns it into a `ConfigError` at
