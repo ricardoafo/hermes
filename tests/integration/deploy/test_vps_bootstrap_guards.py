@@ -351,11 +351,41 @@ def test_sudoers_rule_grants_only_the_cd_commands(box: Harness) -> None:
     ]
     assert rules == [
         "ci-deploy ALL=(root) NOPASSWD: /usr/bin/bash "
-        f"/var/tmp/hermes-release-{_HEX12}/bin/install_release.sh {_HEX12} "  # noqa: S108
-        f"/var/tmp/hermes-release-{_HEX12}",  # noqa: S108
+        f"/var/lib/hermes-deploy/hermes-release-{_HEX12}/bin/install_release.sh {_HEX12} "
+        f"/var/lib/hermes-deploy/hermes-release-{_HEX12}",
         "ci-deploy ALL=(root) NOPASSWD: /opt/hermes/bin/rollback.sh",
     ]
     assert "*" not in "".join(rules)
+
+
+@NEEDS_POSIX_MODES
+def test_stage_dir_is_private_to_the_deploy_user(box: Harness) -> None:
+    """Invariant: the CD staging dir is 0700 and the deploy user's, so no one else plants a release.
+
+    Issue #782: in world-writable /var/tmp a local user could swap the tarball.
+    """
+    stage = box.base / "var" / "lib" / "hermes-deploy"
+    result = box.run(
+        "ensure_deploy_stage_dir ci-deploy",
+        ("ensure_deploy_stage_dir",),
+        DEPLOY_STAGE_DIR=posix(stage),
+    )
+
+    assert result.returncode == 0, output(result)
+    assert stat.S_IMODE(stage.stat().st_mode) == 0o700
+    assert box.calls("chown") == [f"chown ci-deploy: {posix(stage)}"]
+
+
+def test_stage_dir_belongs_to_root_while_cd_runs_as_root(box: Harness) -> None:
+    """Invariant: with no deploy user the staging dir is root's, matching today's root CD login."""
+    stage = box.base / "var" / "lib" / "hermes-deploy"
+    stage.mkdir(parents=True, mode=0o777)
+    result = box.run(
+        'ensure_deploy_stage_dir ""', ("ensure_deploy_stage_dir",), DEPLOY_STAGE_DIR=posix(stage)
+    )
+
+    assert result.returncode == 0, output(result)
+    assert box.calls("chown") == [f"chown root: {posix(stage)}"]
 
 
 @NEEDS_POSIX_MODES

@@ -32,8 +32,10 @@
 #      file is absent; when present only owner and mode are repaired. The
 #      health timer is enabled once the file has a healthchecks.io ping URL.
 #   6. Hetzner Storage Box SSHFS mount (guarded: skipped without credentials).
-#   7. sudoers rule for a non-root CD deploy user (guarded: skipped unless
-#      DEPLOY_USER names one; CD runs as root today, so nothing is written).
+#   7. CD staging directory /var/lib/hermes-deploy, 0700 and owned by the
+#      deploy account (root today), and the sudoers rule for a non-root CD
+#      deploy user (guarded: skipped unless DEPLOY_USER names one; CD runs
+#      as root today, so no rule is written).
 #   8. Unattended security upgrades with an automatic reboot at 03:30 box
 #      time (Europe/Madrid) when an update needs one: clear of the 00:00
 #      and 04:00 UTC bar closes and the 03:00 UTC backup in both summer
@@ -68,6 +70,11 @@ PYTHON_VERSION=3.14.7
 # Optional: the non-root account CD connects as. Unset or root: no sudoers rule.
 DEPLOY_USER=${DEPLOY_USER:-}
 SUDOERS_FILE=/etc/sudoers.d/hermes-deploy
+# Where CD copies and unpacks a release. Private to the deploy account, so no
+# other local user can plant the tarball or the stage before root runs it
+# (#782); /var/tmp is world-writable. Keep in step with cd.yml and the
+# sudoers rule below (a test checks).
+DEPLOY_STAGE_DIR=/var/lib/hermes-deploy
 AUTO_REBOOT_FILE=/etc/apt/apt.conf.d/52hermes-auto-reboot
 # The reboot time is read in the box's own timezone; 03:30 is chosen for
 # Europe/Madrid, so the bootstrap refuses to arm it on any other zone.
@@ -311,9 +318,19 @@ render_deploy_sudoers() {
     cat <<SUDOERS
 # Managed by scripts/deploy/vps_bootstrap.sh; edits are overwritten on the next run.
 # CD deploy (cd.yml) and manual rollback, as root, for $user only.
-$user ALL=(root) NOPASSWD: /usr/bin/bash /var/tmp/hermes-release-$sha/bin/install_release.sh $sha /var/tmp/hermes-release-$sha
+$user ALL=(root) NOPASSWD: /usr/bin/bash /var/lib/hermes-deploy/hermes-release-$sha/bin/install_release.sh $sha /var/lib/hermes-deploy/hermes-release-$sha
 $user ALL=(root) NOPASSWD: /opt/hermes/bin/rollback.sh
 SUDOERS
+}
+
+# Create $DEPLOY_STAGE_DIR, 0700 and owned by the deploy account $1 (root when
+# unset). `mkdir -p` then chmod and chown, so a re-run repairs mode and owner.
+ensure_deploy_stage_dir() {
+    local owner=${1:-root}
+    mkdir -p "$DEPLOY_STAGE_DIR"
+    chmod 0700 "$DEPLOY_STAGE_DIR"
+    chown "$owner:" "$DEPLOY_STAGE_DIR"
+    echo "  $DEPLOY_STAGE_DIR: 0700, owned by $owner"
 }
 
 # Write $SUDOERS_FILE for user $1 (0440 root:root) when absent or different.
@@ -620,8 +637,10 @@ echo ""
 # ────────────────────────────────────────────────────────────────
 # 7. sudoers for a non-root CD deploy user (guarded, validated)
 # ────────────────────────────────────────────────────────────────
-echo "---- 7. deploy sudoers ----"
+echo "---- 7. deploy staging dir and sudoers ----"
+# Sudoers first: it refuses a malformed or missing DEPLOY_USER before chown sees it.
 ensure_deploy_sudoers "$DEPLOY_USER"
+ensure_deploy_stage_dir "$DEPLOY_USER"
 echo ""
 
 # ────────────────────────────────────────────────────────────────
