@@ -225,3 +225,36 @@ Actors: `operator` | `claude-experimentalist` | `claude-integrity-checker` | `en
 - changelog.d/785-fixed.md (added)
 - docs/experiments/swing-mvp1/lab-notebook.md (modified)
 <!-- entry-sha256: 8cb420aff39d90ca390d428ca3d7f19bb719f0dc574f33cf836c46f103385e49 -->
+
+### 2026-10-17T18:07:43Z | train | claude-experimentalist | first logged v2 Train run (issue #735): GATE FAILED on Train
+
+**Observed metrics**:
+
+- window = 2020-09-01 to 2024-06-30 (Train), backtest workflow run 39056430551 on main at 25c795d, server-01, clean tree
+- pre-registration = pre-registration-v2.md, content_sha256 212a109f39b1c31384803d94c842ec550181628883a708deab25eaf2a5535128
+- dsr: FAIL
+- max_drawdown, recovery_days, profit_factor, ulcer_index, fees_to_gross_pnl, win_rate, calibration_fills: PASS
+- funnel pbo, t_stat, positive_years, bear_return, validation_vs_train: FAIL
+- funnel trade_count, cost_stress, bull_return, neighbours, correlation: PASS
+- hermes certify verdict = GATE FAILED
+- trials logged = 8 (base, six §8.5 neighbours, 2x cost stress), all split train
+
+**Decision**:
+
+- swing-mvp1-v2 stays UNTRUSTED.
+- Whether to spend a Validation touch on v2 is the Code Owner's call; no Validation run was started.
+
+**Rationale**:
+
+- Pre-registration v2 §10: the backtest gate is judged on Train + Validation; this Train run is development use (§4) and is recorded as observed.
+- Values are not recorded here: the AI side sees PASS/FAIL only (ADR-012 D-06). They are in the run's artifact for the Code Owner.
+- validation_vs_train cannot pass on a Train-only window: the Validation stretch is empty. It does not change this verdict, since dsr and four other checks fail.
+- The workflow's Certify step ended red although certify ran and printed its verdict: the runner shell aborts on certify's exit 1, so the Funnel step was skipped. hermes certify already evaluates every funnel row.
+- Not a deviation per §11: no signed rule, window, metric or threshold changes.
+- No data from the sealed window (2025-09-01 on) was read.
+
+**Files touched**:
+
+- docs/experiments/swing-mvp1/trial-log.jsonl (modified)
+- docs/experiments/swing-mvp1/lab-notebook.md (modified)
+<!-- entry-sha256: febf45342a83ab685170de5ded6d8a2c3aebd2453c1cc496125108539750b255 -->
