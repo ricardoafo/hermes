@@ -190,12 +190,28 @@ class PortfolioSnapshot:
             realized_pnl=self.realized_pnl,
         )
 
+    def with_peak_at_least(self, peak: Decimal) -> PortfolioSnapshot:
+        """Return this snapshot with its peak equity raised to ``peak`` when that is higher.
+
+        Restores a mark-to-market high a fills-only rebuild cannot see. The peak
+        never goes down, and cash, positions and PnL are untouched.
+
+        Args:
+            peak: A peak equity recorded earlier for the same strategy, in the
+                snapshot's quote currency.
+
+        Returns:
+            A snapshot with ``peak_equity = max(self.peak_equity, peak)``.
+        """
+        return replace(self, peak_equity=max(self.peak_equity, peak))
+
     def to_risk_state(self) -> PortfolioState:
         """Return the thin state the risk rules consume.
 
-        Peak and current value map to ``peak_equity`` and ``equity``.
-        Cumulative slippage stays ``0``, correlations stay empty and the halt
-        flag stays ``False``: nothing supplies them yet.
+        Peak and current value map to ``peak_equity`` and ``equity``, and
+        the held pairs to the open positions. Cumulative slippage stays ``0``,
+        correlations stay empty and the halt flag stays ``False``: the
+        snapshot has no market data, so the caller supplies correlations.
 
         Returns:
             A :class:`~hermes.domain.risk.state.PortfolioState`.
@@ -206,6 +222,7 @@ class PortfolioSnapshot:
             realized_slippage_cumulative=_ZERO,
             correlations={},
             dd_halt_required=False,
+            held_pairs=frozenset(self.positions),
         )
 
     def _after_buy(self, fill: Fill) -> Result[PortfolioSnapshot, DomainError]:

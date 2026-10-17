@@ -26,6 +26,7 @@ from hermes.domain.lots.lot import Lot
 from hermes.domain.lots.lot_consumption import LotConsumption
 from hermes.domain.lots.quote_leg import CapitalSeed
 from hermes.domain.market_data.kline import KlineInterval
+from hermes.domain.strategy.signal import SignalKind
 from hermes.domain.trading.order import OrderSide
 from hermes.domain.trading.trade_record import TradeEur, TradeRecord
 from hermes.domain.value_objects.currency import Currency
@@ -176,7 +177,12 @@ class LedgerPort(Protocol):
         ...
 
     def latest_signal_event(
-        self, strategy_id: StrategyId, pair: Pair, *, at_or_before: datetime
+        self,
+        strategy_id: StrategyId,
+        pair: Pair,
+        *,
+        at_or_before: datetime,
+        kind: SignalKind | None = None,
     ) -> SignalEmitted | None:
         """Return the newest signal of one strategy and pair, bounded in time.
 
@@ -186,6 +192,8 @@ class LedgerPort(Protocol):
             at_or_before: Inclusive upper bound on ``occurred_at``. A signal
                 newer than this (written before a crash, ahead of its cursor
                 row) is ignored.
+            kind: Only signals of this kind, or any kind when ``None``. An
+                entry is looked up past the exits declined after it (#706).
 
         Returns:
             The newest matching event, or ``None`` when there is none.
@@ -257,12 +265,14 @@ class TradeLedgerPort(Protocol):
     Adapters raise :class:`hermes.domain.errors.LedgerError` on failure.
     """
 
-    def record_trade(self, trade: TradeRecord, event: DomainEvent) -> int:
-        """Store one trade, its lot effects and its event atomically.
+    def record_trade(self, trade: TradeRecord, event: DomainEvent, *also: DomainEvent) -> int:
+        """Store one trade, its lot effects and its events atomically.
 
         Args:
             trade: The trade; ``trade.eur is None`` stores it pending.
             event: The ``TradeExecuted`` event for the trade.
+            *also: Further events about the same fill, such as its
+                ``FillQualityRecorded`` row, stored in the same transaction.
 
         Returns:
             The new trade row id.

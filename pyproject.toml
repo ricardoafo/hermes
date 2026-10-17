@@ -19,7 +19,9 @@ dependencies = [
   "rich>=15,<16",
   "apscheduler>=3.10,<4",
   "python-telegram-bot>=22.8,<23",
-  "ulid-py>=1.1,<2",
+  # ULID generator for lot, journal and correlation IDs (issue #784 replaced
+  # the unmaintained ulid-py). Approved by the Code Owner 2026-10-17.
+  "python-ulid>=4.0.1,<5",
   "returns>=0.24,<1",
   "anyio>=4.15.1,<5",
   "pyyaml>=6,<7",
@@ -33,15 +35,17 @@ dependencies = [
   # sentry_sdk.capture_exception() calls. No framework integrations enabled
   # (we run vanilla Python, no Django/Flask/etc.). See
   # docs/decisions/ (Sentry wiring entry) for the design rationale.
-  "sentry-sdk>=2.70.0,<3",
+  "sentry-sdk>=2.71.0,<3",
   # Cross-platform file lock for multi-writer manifest transactions in
   # the ingest scripts (scripts/data/_manifest_util.py). Was a transitive
   # dep of virtualenv; promoted to direct after we started depending on
   # it explicitly. See docs/decisions/... and change data-manifest-file-lock (#257).
-  "filelock>=4.0.4,<5",
+  "filelock>=4.0.7,<5",
   # Writes the tax pack's Renta Web sheet and dossier as PDF (#568, change
   # 568-tax-pack D-8). Pure Python; approved by the Code Owner 2026-10-04.
   "fpdf2>=2.8,<3",
+  "textual-image>=0.14.1,<0.15",
+  "textual-plotext>=1.0.1,<2",
 ]
 
 [project.scripts]
@@ -62,7 +66,7 @@ dev = [
   # for Windows compatibility (signals do not interrupt blocking C-level
   # calls on Windows the way they do on POSIX).
   "pytest-timeout>=2.3,<3",
-  "hypothesis>=6.168.2,<7",
+  "hypothesis>=6.168.3,<7",
   "syrupy>=6.1.1,<7",  # bumped to unblock pytest 9 (see PYSEC-2026-1845 note above)
   "respx>=0.21,<1",
   "freezegun>=1.5,<2",
@@ -100,11 +104,21 @@ line-length = 100
 extend-exclude = ["src/hermes/**/__init__.py"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "PL", "RUF", "S", "PTH", "ERA", "PGH", "D"]
-ignore = ["PLR0913"]  # arg count — hexagonal use cases take many ports
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "PL", "RUF", "S", "PTH", "ERA", "PGH", "D", "FURB", "PERF"]
+ignore = [
+  "PLR0913",  # arg count — hexagonal use cases take many ports
+  # Decimal("100") over Decimal(100): every money literal stays a string, so a
+  # fractional amount never slips in as a float-built Decimal next to it.
+  "FURB157",
+]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "PLR2004", "PLR0917"]  # assert + magic numbers + many-arg property tests fine
+"tests/**" = [
+  "S101", "PLR2004", "PLR0917",  # assert + magic numbers + many-arg property tests fine
+  # A test whose only assertion is `x is None` fails the no-vague-test-assertions
+  # hook; `type(x) is type(None)` is how such a test states "returns nothing".
+  "FURB169",
+]
 # D-family docstring enforcement is TEST-SCOPED for this PR (see docs/guides/ai-authored-tests.md
 # §"Enforcement in this repo"). Production src has variable docstring coverage; a global roll-out
 # is a separate scope conversation. Test files must expose D103 (missing docstring on public fn)
@@ -136,13 +150,13 @@ markers = [
   "unit: label for a pure unit test; not used for selection",
   "property: label for a Hypothesis property test; not used for selection",
   "integration: label for an integration test; not used for selection",
-  "chaos: fault-injection test; registered, no test uses it today",
+  "chaos: fault-injection test (crash mid-write, storage, clock); runs in the integration tier",
   # Contract tests are skipped by default via the `-m 'not contract'` addopts
   # filter. The daily scheduled.yml job runs `pytest tests/contract -m contract`
   # (see docs/decisions/2026-08-23-contract-test-tier.md).
   "contract: real HTTP against third-party sandbox APIs; run daily by scheduled.yml",
   "mutation: registered, no test uses it; mutation runs through cosmic-ray (cosmic-ray.toml)",
-  "e2e: end-to-end serve cycle on recorded bars (tests/e2e/); weekly + manual dispatch in scheduled.yml",
+  "e2e: end-to-end serve cycle on recorded bars (tests/e2e/); PR CI (ci.yml) and the CD gate",
   "slow: >1s per test",
 ]
 addopts = "-ra --strict-markers --strict-config -m 'not contract'"
@@ -171,6 +185,10 @@ timeout_method = "thread"
 filterwarnings = [
   "error::DeprecationWarning",
   "error::PendingDeprecationWarning",
+  # Unclosed connections/files are real leaks (#759); GC-time warnings
+  # surface as unraisable exceptions, so both must fail the run.
+  "error::ResourceWarning",
+  "error::pytest.PytestUnraisableExceptionWarning",
   # Third-party warnings we cannot fix — allow with a comment explaining why:
   # (add exceptions here as they surface, with justification + upstream link)
 ]
@@ -291,6 +309,65 @@ forbidden_modules = [
   "hermes.domain.lots",
   "hermes.domain.trading",
   "hermes.domain.fx",
+]
+
+# change 713-live-ticker D-6: live ticker prices are display-only in the console.
+# The engine, the ledger, the supervisor, briefs and notifications never import them.
+[[tool.importlinter.contracts]]
+name = "live-prices-are-console-only"
+type = "forbidden"
+source_modules = [
+  "hermes.domain",
+  "hermes.application.order_router",
+  "hermes.application.strategy_protocol",
+  "hermes.application.execution",
+  "hermes.application.portfolio",
+  "hermes.application.ledger",
+  "hermes.application.supervisor",
+  "hermes.application.notification_router",
+  "hermes.application.signal_notifier",
+  "hermes.application.messages",
+  "hermes.application.bot",
+  "hermes.ports.supervisor",
+  "hermes.ports.notifier",
+  "hermes.adapters.ledger",
+  "hermes.adapters.notifier",
+  "hermes.adapters.telegram_bot",
+  "hermes.entrypoints.serve",
+  "hermes.entrypoints.supervisor",
+  "hermes.entrypoints.bot",
+  "hermes.entrypoints.daily_line",
+]
+forbidden_modules = [
+  "hermes.application.console.live",
+  "hermes.ports.live_prices",
+  "hermes.entrypoints.tui_live",
+]
+
+# Issue #835: the recorded RO-01 / RO-02 inputs (spread samples, pair
+# correlation rows) are for review. Nothing that decides or sizes trades may
+# read them; lifting this is a deliberate change. RO-01 runs on the
+# correlation of 1D closes already delivered, computed in process by
+# hermes.domain.portfolio.correlation in the backtest (issue #822) and in
+# serve (issue #514), so that module is shared; RO-02 stays off in shadow
+# (issue #514).
+[[tool.importlinter.contracts]]
+name = "risk-inputs-are-record-only"
+type = "forbidden"
+source_modules = [
+  "hermes.application.execution",
+  "hermes.application.order_router",
+  "hermes.application.strategy_protocol",
+  "hermes.application.portfolio",
+  "hermes.domain.risk",
+  "hermes.domain.strategy",
+  "hermes.domain.fees",
+  "hermes.domain.portfolio.snapshot",
+]
+forbidden_modules = [
+  "hermes.application.risk_inputs",
+  "hermes.ports.risk_inputs",
+  "hermes.domain.market_data.spread_sample",
 ]
 
 [[tool.importlinter.contracts]]

@@ -18,7 +18,7 @@ the PR; ``pr-body-lint.sh`` rejects it otherwise.
 Versions are SemVer: ``X.Y.Z`` or ``X.Y.Z-shadow.N`` (ADR-006, ADR-014).
 PEP 440 cannot hold ``-shadow.N``, so the package metadata stores the shadow
 pre-release as alpha ``N``: ``1.0.0-shadow.1`` is ``1.0.0a1`` in the wheel.
-:func:`to_semver` is the inverse used for tags and display.
+``hermes.release_version`` holds the mapping both ways.
 
 Exit codes: 0 success (or dry run), 2 refused (bad or non-increasing version,
 mismatched version files, malformed fragment, missing changelog).
@@ -39,8 +39,8 @@ from types import ModuleType
 
 from packaging.version import Version
 
-SEMVER_RE = re.compile(r"^(?P<core>\d+\.\d+\.\d+)(?:-shadow\.(?P<n>[1-9]\d*))?$")
-PACKAGE_RE = re.compile(r"^(?P<core>\d+\.\d+\.\d+)(?:a(?P<n>[1-9]\d*))?$")
+from hermes.release_version import to_package_version
+
 PYPROJECT_VERSION_RE = re.compile(r'^version = "(?P<v>[^"]+)"$', re.MULTILINE)
 INIT_VERSION_RE = re.compile(r'^__version__ = "(?P<v>[^"]+)"$', re.MULTILINE)
 UNRELEASED_HEADER = "## [Unreleased]"
@@ -65,32 +65,6 @@ def _load_aggregator() -> ModuleType:
 
 
 aggregate_changelog = _load_aggregator()
-
-
-def to_package_version(semver: str) -> str:
-    """Map a release version to the PEP 440 string the package declares.
-
-    Raises:
-        ValueError: ``semver`` is not ``X.Y.Z`` or ``X.Y.Z-shadow.N``.
-    """
-    match = SEMVER_RE.match(semver)
-    if match is None:
-        raise ValueError(f"{semver!r} is not X.Y.Z or X.Y.Z-shadow.N (ADR-022)")
-    n = match.group("n")
-    return match.group("core") + (f"a{n}" if n else "")
-
-
-def to_semver(package_version: str) -> str:
-    """Map a declared package version back to its release version.
-
-    Raises:
-        ValueError: ``package_version`` is not one :func:`to_package_version` makes.
-    """
-    match = PACKAGE_RE.match(package_version)
-    if match is None:
-        raise ValueError(f"{package_version!r} is not a hermes package version")
-    n = match.group("n")
-    return match.group("core") + (f"-shadow.{n}" if n else "")
 
 
 def read_current_version(pyproject_text: str, init_text: str) -> str:

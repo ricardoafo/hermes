@@ -29,12 +29,15 @@ from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import ClassVar
 from zoneinfo import ZoneInfo
 
 import pytest
 from rich.console import Console
 from syrupy.assertion import SnapshotAssertion
 from syrupy.extensions.image import SVGImageSnapshotExtension
+from syrupy.location import PyTestLocation
+from syrupy.types import SnapshotIndex
 from textual.app import App
 from textual.binding import Binding
 from textual.pilot import Pilot
@@ -54,6 +57,7 @@ from hermes.application.console.system import (
 from hermes.entrypoints.console import system_sources
 from hermes.entrypoints.tui import HomeApp
 from hermes.entrypoints.tui_drilldown import DetailPane, DetailScreen
+from hermes.entrypoints.tui_settings import ThemeChoice
 from hermes.entrypoints.tui_system import (
     NOT_HERE,
     NOT_YET,
@@ -178,6 +182,7 @@ def _run[T](
     size: tuple[int, int] = (160, 45),
     system: SystemSources | None = None,
     use_default: bool = False,
+    theme: ThemeChoice | None = None,
 ) -> T:
     async def drive() -> T:
         app = HomeApp(
@@ -185,6 +190,7 @@ def _run[T](
             clock=lambda: _FROZEN,
             motion=False,
             refresh_seconds=3600,
+            theme=theme,
             system=None if use_default else (system or _sources()),
         )
         async with app.run_test(size=size) as pilot:
@@ -455,16 +461,18 @@ def test_no_key_on_the_system_screen_starts_a_process(monkeypatch: pytest.Monkey
 
 
 def test_no_key_is_bound_to_a_vps_action() -> None:
-    """B, R and K (the MVP2 action keys) are bound to nothing; no action names a VPS change.
+    """B and K (the MVP2 action keys) are bound to nothing; no action names a VPS change.
 
-    Lower-case k stays the vim-style "previous" cursor key.
+    Lower-case k stays the vim-style "previous" cursor key. R restarts this
+    console onto a new local version (only while its notice shows); it changes
+    nothing on the VPS, so it is the one allowed ``restart`` action.
     """
     bindings = [b for b in HomeApp.BINDINGS if isinstance(b, Binding)]
     keys = {key.strip() for binding in bindings for key in binding.key.split(",")}
     actions = {binding.action.split("(")[0] for binding in bindings}
     assert (
-        {"b", "B", "r", "R", "K"} & keys,
-        {"bootstrap", "restart", "rollback", "run", "execute"} & actions,
+        {"b", "B", "K"} & keys,
+        {"bootstrap", "rollback", "run", "execute"} & actions,
     ) == (set(), set())
 
 
@@ -549,18 +557,44 @@ def _repo_clean(svg: str) -> str:
     return "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
 
 
-def _svg(size: tuple[int, int]) -> str:
+class _NamedSVG(SVGImageSnapshotExtension):
+    """Store each snapshot under the name given to ``snapshot(name=...)`` alone."""
+
+    _file_extension: ClassVar[str] = "svg"
+
+    @classmethod
+    def get_snapshot_name(cls, *, test_location: PyTestLocation, index: SnapshotIndex = 0) -> str:
+        """Return the bare custom name, e.g. ``system_neon_160x45``."""
+        if isinstance(index, str):
+            return index
+        return super().get_snapshot_name(test_location=test_location, index=index)
+
+
+_SIZES: tuple[tuple[int, int], ...] = ((80, 24), (120, 36), (160, 45), (240, 60))
+_THEMES: tuple[tuple[str, ThemeChoice], ...] = (
+    ("neon", ThemeChoice.NEON),
+    ("control", ThemeChoice.CONTROL),
+)
+
+
+def _svg(size: tuple[int, int], theme: ThemeChoice) -> str:
     async def probe(app: HomeApp, pilot: Pilot[None]) -> str:
         return _repo_clean(app.export_screenshot())
 
-    return _run(probe, size=size)
+    return _run(probe, size=size, theme=theme)
 
 
-def test_svg_snapshot_system_80x24(snapshot: SnapshotAssertion) -> None:
-    """The reviewed 80x24 System screen: stacked panels, numbers-only tabs."""
-    assert _svg((80, 24)) == snapshot(extension_class=SVGImageSnapshotExtension)
-
-
-def test_svg_snapshot_system_160x45(snapshot: SnapshotAssertion) -> None:
-    """The reviewed 160x45 System screen: lists and actions left, timing and machine right."""
-    assert _svg((160, 45)) == snapshot(extension_class=SVGImageSnapshotExtension)
+@pytest.mark.parametrize(
+    ("theme_name", "theme", "size"),
+    [
+        pytest.param(name, theme, size, id=f"system_{name}_{size[0]}x{size[1]}")
+        for name, theme in _THEMES
+        for size in _SIZES
+    ],
+)
+def test_system_svg_snapshot(
+    snapshot: SnapshotAssertion, theme_name: str, theme: ThemeChoice, size: tuple[int, int]
+) -> None:
+    """The reviewed System screen in one theme at one of the four spec breakpoints."""
+    name = f"system_{theme_name}_{size[0]}x{size[1]}"
+    assert _svg(size, theme) == snapshot(extension_class=_NamedSVG, name=name)

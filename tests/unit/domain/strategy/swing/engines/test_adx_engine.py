@@ -4,7 +4,6 @@ Covers:
 - Returns None for insufficient bars (< 2*period+1)
 - ADX is within [0, 100] for valid inputs
 - ADX is higher for strongly trending bars than flat bars
-- Deterministic on identical inputs
 - Period parameter is respected
 
 Reference: spec-5-swing-strategy-adapter change.md.
@@ -15,39 +14,59 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from hermes.domain.market_data.bar import Bar
 from hermes.domain.strategy.swing.engines.adx import AdxEngine
 from tests.unit.domain.strategy.swing.conftest import make_bars
+
+
+def _climb(count: int) -> list[Bar]:
+    """Bars whose high, low and close each rise by 1: range 10, close 5 under the high."""
+    return make_bars(
+        [100 + i for i in range(count)],
+        highs=[105 + i for i in range(count)],
+        lows=[95 + i for i in range(count)],
+    )
 
 
 class TestAdxInsufficientBars:
     """Returns None when fewer than 2*period+1 bars are available."""
 
-    def test_none_on_empty_bars(self) -> None:
-        """ADX must return None for empty bar sequence."""
-        result = AdxEngine.value([], period=14)
-        assert result is None, "AdxEngine.value([]) must return None"
-        # Concrete anchor: with 29 bars the result is non-None
-        assert isinstance(AdxEngine.value([], period=14), type(None)), (
-            "AdxEngine.value([]) type must be NoneType"
-        )
+    def test_needs_two_periods_plus_one_bars(self) -> None:
+        """ADX(14) is None for 0 and 28 bars and exactly 100 at 29 bars on a one-way climb.
 
-    def test_none_on_exactly_2_period_bars(self) -> None:
-        """2*period=28 bars is not sufficient; needs 2*period+1=29."""
-        bars = make_bars([100] * 28, highs=[105] * 28, lows=[95] * 28)
-        result = AdxEngine.value(bars, period=14)
-        assert result is None, f"ADX(14) with {len(bars)} bars must return None (needs 29 minimum)"
-        assert len(bars) == 28, "fixture must have exactly 28 bars for this boundary test"
+        Each bar's high, low and close are one above the previous bar's, so
+        every +DM is 1, every -DM is 0 and every true range is 10: +DI is
+        positive, -DI is 0, DX = 100 x +DI / +DI = 100 on every bar, and the
+        ADX mean of 14 of them is 100.
+        """
+        bars = _climb(29)
 
-    def test_returns_value_with_minimum_bars(self) -> None:
-        """ADX must compute with exactly 2*period+1=29 bars."""
+        assert AdxEngine.value([], period=14) is None, "no bars, no ADX"
+        assert AdxEngine.value(bars[:28], period=14) is None, "28 bars is one short of 2 x 14 + 1"
+        assert AdxEngine.value(bars, period=14) == Decimal(100), "29 bars on a pure climb give 100"
+
+
+class TestAdxDirection:
+    """ADX measures how strong a trend is, whichever way it points."""
+
+    def test_a_one_way_fall_reads_100_like_a_one_way_climb(self) -> None:
+        """Mirror of the climb: every -DM is 1 and every +DM is 0, so -DI replaces +DI and DX = 100.
+
+        A formula that dropped the absolute value of +DI minus -DI would read -100.
+        """
         bars = make_bars(
-            [100 + i for i in range(29)],
-            highs=[105 + i for i in range(29)],
-            lows=[95 + i for i in range(29)],
+            [200 - i for i in range(40)],
+            highs=[205 - i for i in range(40)],
+            lows=[195 - i for i in range(40)],
         )
-        result = AdxEngine.value(bars, period=14)
-        assert result is not None, "ADX(14) must compute with 29 bars (minimum for 2*14+1)"
-        assert isinstance(result, Decimal), f"ADX must return Decimal, got {type(result)}"
+
+        assert AdxEngine.value(bars, period=14) == Decimal(100), "a pure fall is a full trend"
+
+    def test_bars_with_no_directional_movement_read_0(self) -> None:
+        """Highs and lows that never move give +DM = -DM = 0, so DX and ADX are 0, not None."""
+        bars = make_bars([100] * 50, highs=[101] * 50, lows=[99] * 50)
+
+        assert AdxEngine.value(bars, period=14) == Decimal(0), "flat bars have no trend"
 
 
 class TestAdxBounds:
@@ -75,14 +94,6 @@ class TestAdxBounds:
         assert result is not None, "ADX(14) must compute with 50 bars"
         assert result <= Decimal("100"), f"ADX must be ≤ 100, got {result}"
 
-    def test_adx_non_negative_flat(self) -> None:
-        """ADX must be ≥ 0 for flat (ranging) bars."""
-        bars = make_bars([100] * 50, highs=[101] * 50, lows=[99] * 50)
-        result = AdxEngine.value(bars, period=14)
-        # May be None or a number; if not None it must be ≥ 0
-        if result is not None:
-            assert result >= Decimal("0"), f"ADX must be ≥ 0 even for flat bars, got {result}"
-
 
 class TestAdxTrendStrength:
     """ADX should be larger for strongly trending bars than choppy bars."""
@@ -109,18 +120,6 @@ class TestAdxTrendStrength:
         assert adx_trend > adx_choppy, (
             f"Trending ADX ({adx_trend:.2f}) must exceed choppy ADX ({adx_choppy:.2f})"
         )
-
-
-class TestAdxDeterminism:
-    """Determinism property."""
-
-    def test_deterministic_on_identical_inputs(self) -> None:
-        """ADX must return the same value on two identical calls."""
-        bars = make_bars([100 + i for i in range(40)])
-        r1 = AdxEngine.value(bars, period=14)
-        r2 = AdxEngine.value(bars, period=14)
-        assert isinstance(r1, Decimal), f"ADX must return Decimal with 40 bars, got {type(r1)}"
-        assert r1 == r2, f"ADX must be deterministic: first={r1}, second={r2}"
 
 
 class TestAdxPeriodParameter:

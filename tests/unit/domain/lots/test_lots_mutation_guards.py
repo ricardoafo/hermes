@@ -176,7 +176,10 @@ def test_selection_ignores_lots_of_an_asset_sorting_lower() -> None:
     btc = _lot(Currency.BTC, "5", lot_id=_ID_A)
     eth = _lot(Currency.ETH, "1", lot_id=_ID_B, opened_at=_T0 + timedelta(days=1))
     result = select_lots_fifo(
-        [btc, eth], Quantity(amount=Decimal("1"), asset=Currency.ETH), _eur("150"), _T0
+        [btc, eth],
+        Quantity(amount=Decimal("1"), asset=Currency.ETH),
+        _eur("150"),
+        _T0 + timedelta(days=1),
     )
     assert isinstance(result, Success)
     assert [c.lot_id for c in result.unwrap()] == [_ID_B]

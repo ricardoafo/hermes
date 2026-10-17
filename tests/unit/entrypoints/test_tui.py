@@ -37,6 +37,7 @@ from hermes.application.console.format import big_digits
 from hermes.application.console.logs import LogLine
 from hermes.entrypoints import tui as tui_module
 from hermes.entrypoints.tui import REFRESH_SECONDS, HomeApp, _PanelScreen
+from hermes.entrypoints.tui_widgets import BigNumber
 
 _TAX_FOOTNOTE = "est. · FIFO · 19% band · €5,988.30 left before 21%"
 # The fixture's read time (14:12 Madrid): snapshots never show the wall clock.
@@ -341,10 +342,28 @@ def test_screen_fits_80x24_with_footer_and_90_day_line() -> None:
 
 
 def test_big_total_appears_only_on_tall_terminals() -> None:
-    """The total is drawn three rows tall from 30 rows; at 24 rows it is one line."""
-    tall = _shoot("ok-two-positions", size=(120, 40)).texts["portfolio"].splitlines()[0]
-    short = _shoot("ok-two-positions").texts["portfolio"].splitlines()[0]
-    assert (tall.startswith("╭─╴"), short.startswith("€1,021.06")) == (True, True)
+    """The big total shows from 30 rows; under 30 the text line leads with the total.
+
+    From 30 rows the total is the big gradient number and the text opens with
+    the change; at 24 rows the big number is hidden (#712).
+    """
+
+    async def run(size: tuple[int, int]) -> tuple[bool, str, str]:
+        app = HomeApp(
+            FixtureReadModel.load("ok-two-positions"), clock=lambda: _FROZEN, motion=False
+        )
+        async with app.run_test(size=size) as pilot:
+            await pilot.pause()
+            big = app.query_one("#portfolio-total", BigNumber)
+            return big.display, big.figure, app.plain_text("portfolio").splitlines()[0]
+
+    tall = asyncio.run(run((120, 40)))
+    short = asyncio.run(run((80, 24)))
+    assert (tall, short[0], short[2].startswith("€1,021.06")) == (
+        (True, "€1,021.06", "▲ +€12.30 +1.22% today"),
+        False,
+        True,
+    )
 
 
 def test_big_digits_are_three_rows_tall() -> None:

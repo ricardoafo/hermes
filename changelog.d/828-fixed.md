@@ -1,0 +1,1 @@
+- serve now restores the peak equity from the latest portfolio mark on restart, so the RO-08 drawdown no longer reads low until bars are marked again (integrity rules 4.1; no risk-rule or threshold change).

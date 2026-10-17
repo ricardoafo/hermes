@@ -133,7 +133,11 @@ def _ledger_model(
     """Open the ledger read model, or return exit code 3 when there is no ledger."""
     try:
         return LedgerReadModel.open(
-            parsed.db, clock=lambda: at, tz=tz, activity_window=timedelta(days=parsed.days)
+            parsed.db,
+            clock=lambda: at,
+            tz=tz,
+            activity_window=timedelta(days=parsed.days),
+            journal=console_module.journal_window_lines,
         )
     except FileNotFoundError:
         err.write(f"ERROR: no ledger at {parsed.db}.\n")

@@ -34,6 +34,9 @@ def _start(db: Path) -> StrategyId:
     """Build the composition once, as a serve start does, and release the ledger."""
     composition = build(db, FakeFeed(), _NOW)
     composition.sqlite_connection.close()
+    # A process that exits drops its serve lock; this in-process start must do it itself.
+    if composition.serve_lock is not None:
+        composition.serve_lock.release()
     return composition.strategy_id
 
 

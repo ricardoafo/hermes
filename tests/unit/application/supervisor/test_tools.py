@@ -50,6 +50,8 @@ from hermes.application.supervisor.tools import (
     engine,
     signals,
 )
+from hermes.domain.events.anomaly_detected import AnomalyDetected
+from hermes.domain.events.risk_halt_recorded import RiskHaltRecorded
 from hermes.domain.journal.entries import Decision, OutcomeKind, Review
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.pair import Pair
@@ -132,6 +134,12 @@ class _FakeReader:
 
     def open_entries(self) -> tuple[ShadowEntry, ...]:
         return self.entries
+
+    def halts_since(self, since: datetime) -> tuple[RiskHaltRecorded, ...]:
+        return ()
+
+    def last_clock_skew(self) -> AnomalyDetected | None:
+        return None
 
     def signals_since(self, since: datetime) -> tuple[SignalFact, ...]:
         return tuple(f for f in self.facts if f.occurred_at >= since)

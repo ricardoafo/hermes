@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import closing
 from datetime import UTC, date, datetime, timedelta, tzinfo
 from decimal import Decimal
@@ -28,7 +28,14 @@ from pathlib import Path
 from typing import Final, Self
 
 from hermes.adapters.console.ledger_activity import LedgerActivityReader
+from hermes.adapters.ledger.connection import open_ledger
 from hermes.application.console.activity import group_activity
+from hermes.application.console.journal_activity import (
+    fold_checks,
+    journal_activity,
+    rule_checks,
+)
+from hermes.application.console.logs import LogLine
 from hermes.application.console.portfolio_figures import (
     ClosedPiece,
     EquityPoint,
@@ -42,19 +49,22 @@ from hermes.application.console.position_figures import LotFacts, PositionFacts,
 from hermes.application.console.read_model import ViewNotAvailableError
 from hermes.application.console.render import MADRID
 from hermes.application.console.shadow_figures import build_shadow_test
+from hermes.application.console.shadow_screen import ShadowEvidence, missed_days
 from hermes.application.console.views import (
     ActivityDay,
+    ConsoleBrief,
     Heartbeat,
     HeartbeatState,
     PortfolioRange,
     PortfolioSummary,
     PositionDetail,
     PositionRow,
+    RuleCheck,
     ShadowTest,
     WatchedPair,
 )
 from hermes.domain.errors import LedgerError
-from hermes.domain.market_data.bar_schedule import interval_duration
+from hermes.domain.market_data.bar_schedule import interval_duration, next_boundary
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.infrastructure.time import now_utc
 
@@ -66,9 +76,19 @@ LATE_AFTER: Final = timedelta(minutes=15)
 ACTIVITY_WINDOW: Final = timedelta(days=7)
 """How far back :meth:`LedgerReadModel.activity` reads by default."""
 
+JOURNAL_CACHE: Final = timedelta(seconds=30)
+"""How long one journal read serves the activity feed before it is read again."""
+
+type JournalSource = Callable[[timedelta], Sequence[LogLine] | None]
+"""Returns the hermes journal lines of the last ``window``, or ``None`` when it is not readable."""
+
+type BriefSource = Callable[[], tuple[ConsoleBrief, ...]]
+"""Returns the supervisor desk's published briefs, newest first."""
+
 _NO_BOOK: Final = "the portfolio is not available yet: no portfolio mark or capital seed"
 
 _ONE_MS: Final = timedelta(milliseconds=1)
+_FIRST_CHECK_INTERVAL: Final = KlineInterval.H4
 _ZERO: Final = Decimal(0)
 _OK: Final = "ok"
 
@@ -86,7 +106,7 @@ def connect_read_only(path: Path) -> sqlite3.Connection:
         LedgerError: SQLite refused to open the file.
     """
     try:
-        return sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
+        return open_ledger(path, read_only=True)
     except sqlite3.Error as exc:
         raise LedgerError(msg=f"cannot open {path} read-only: {exc}") from exc
 
@@ -101,6 +121,8 @@ class LedgerReadModel:
         clock: Callable[[], datetime] = now_utc,
         tz: tzinfo = MADRID,
         activity_window: timedelta = ACTIVITY_WINDOW,
+        journal: JournalSource | None = None,
+        briefs: BriefSource | None = None,
     ) -> None:
         """Bind to a ledger file without opening it.
 
@@ -110,11 +132,19 @@ class LedgerReadModel:
             tz: Timezone of the calendar days (activity days, "today", the
                 tax year, shadow test days).
             activity_window: How far back :meth:`activity` reads.
+            journal: Where restarts, warnings, errors and entry-condition counts
+                come from; ``None`` or an unreadable journal leaves those rows
+                out of the feed.
+            briefs: The supervisor desk's published briefs; ``None`` leaves the
+                Briefs screen "not available yet".
         """
         self._path = path
         self._clock = clock
         self._tz = tz
         self._activity_window = activity_window
+        self._journal = journal
+        self._journal_read: tuple[datetime, Sequence[LogLine] | None] | None = None
+        self._briefs = briefs
 
     @classmethod
     def open(
@@ -124,6 +154,8 @@ class LedgerReadModel:
         clock: Callable[[], datetime] = now_utc,
         tz: tzinfo = MADRID,
         activity_window: timedelta = ACTIVITY_WINDOW,
+        journal: JournalSource | None = None,
+        briefs: BriefSource | None = None,
     ) -> Self:
         """Return a read model over ``path``, which must already exist.
 
@@ -132,6 +164,8 @@ class LedgerReadModel:
             clock: Read time of every view.
             tz: Timezone of the calendar days.
             activity_window: How far back :meth:`activity` reads.
+            journal: Journal source for the feed's journal rows; see ``__init__``.
+            briefs: The desk's published briefs; see ``__init__``.
 
         Returns:
             The read model; nothing is created on disk.
@@ -141,7 +175,14 @@ class LedgerReadModel:
         """
         if not path.is_file():
             raise FileNotFoundError(str(path))
-        return cls(path, clock=clock, tz=tz, activity_window=activity_window)
+        return cls(
+            path,
+            clock=clock,
+            tz=tz,
+            activity_window=activity_window,
+            journal=journal,
+            briefs=briefs,
+        )
 
     @property
     def demo_scenario(self) -> str | None:
@@ -164,8 +205,11 @@ class LedgerReadModel:
             (),
         )
         if not rows:
+            # No bar check yet: the first one is due at the next boundary of the
+            # strategy's timeframe, not "now" (which would read "due" at once).
+            first = next_boundary(as_of.astimezone(UTC), _FIRST_CHECK_INTERVAL)
             return Heartbeat(
-                state=HeartbeatState.OK, as_of=as_of, last_check_at=as_of, next_check_at=as_of
+                state=HeartbeatState.OK, as_of=as_of, last_check_at=as_of, next_check_at=first
             )
         try:
             boundaries = [
@@ -256,7 +300,39 @@ class LedgerReadModel:
                 items = LedgerActivityReader(conn).items_since(since.astimezone(UTC))
         except sqlite3.Error as exc:
             raise LedgerError(msg=f"console activity read failed: {exc}") from exc
-        return group_activity(items, self._tz, include_quiet=include_quiet)
+        lines = self._journal_lines()
+        if not lines:
+            return group_activity(fold_checks(items), self._tz, include_quiet=include_quiet)
+        from_journal = journal_activity(lines, since=since.astimezone(UTC))
+        folded = fold_checks(items, from_journal.entry_counts)
+        return group_activity((*folded, *from_journal.items), self._tz, include_quiet=include_quiet)
+
+    def _journal_lines(self) -> Sequence[LogLine] | None:
+        """Return the journal lines of the activity window, re-read at most every 30 s."""
+        if self._journal is None:
+            return None
+        now = self._clock()
+        cached = self._journal_read
+        if cached is not None and now - cached[0] < JOURNAL_CACHE:
+            return cached[1]
+        lines = self._journal(self._activity_window)
+        self._journal_read = (now, lines)
+        return lines
+
+    def rule_checks(self) -> tuple[RuleCheck, ...]:
+        """Return the yes/no entry rules per coin and check of the activity window (#714).
+
+        They come from the journal's bar lines; the ledger does not record them.
+
+        Raises:
+            ViewNotAvailableError: The journal cannot be read here.
+        """
+        lines = self._journal_lines()
+        if lines is None:
+            msg = "rule checks: the hermes journal is not readable here"
+            raise ViewNotAvailableError(msg)
+        since = self._clock() - self._activity_window
+        return rule_checks(lines, since=since.astimezone(UTC))
 
     def shadow_test(self) -> ShadowTest:
         """Return the day count since the capital seed and the fills so far (live-home-screen D-4).
@@ -290,6 +366,69 @@ class LedgerReadModel:
             seeded_at=seeded_at, as_of=as_of, tz=self._tz, fills=fills, quality_checked=checked
         )
 
+    def shadow_evidence(self, since: datetime | None) -> ShadowEvidence:
+        """Return the facts the Shadow test checks read (issue #718); never money.
+
+        The seed and the first fill come from the whole ledger. From ``since``
+        on: the local days with no bar check, the drift of every live-book
+        fill (M-02), and whether a strategy pause (the kill switch) was
+        recorded. ``hermes serve`` records no kill-trigger check verdict yet
+        (issue #796), so that stays unknown.
+
+        Args:
+            since: Day 0, or ``None`` during the warm-up (seed and first fill only).
+
+        Raises:
+            LedgerError: On any SQLite failure or an unreadable row.
+        """
+        try:
+            with closing(connect_read_only(self._path)) as conn:
+                first = conn.execute("SELECT MIN(seeded_at) FROM capital_seeds").fetchone()[0]
+                seeded_at = None if first is None else datetime.fromisoformat(str(first))
+                first_fill_at = None
+                if seeded_at is not None:
+                    fill = conn.execute(
+                        "SELECT MIN(executed_at) FROM trades WHERE executed_at >= ?",
+                        (seeded_at.astimezone(UTC).isoformat(),),
+                    ).fetchone()[0]
+                    first_fill_at = None if fill is None else datetime.fromisoformat(str(fill))
+                if since is None:
+                    return ShadowEvidence(seeded_at=seeded_at, first_fill_at=first_fill_at)
+                checks = conn.execute(
+                    "SELECT occurred_at FROM events WHERE event_type = 'BarProcessed'"
+                ).fetchall()
+                drifts = conn.execute(
+                    "SELECT occurred_at, json_extract(payload_json, '$.drift_bps') FROM events "
+                    "WHERE event_type = 'FillQualityRecorded' "
+                    "AND json_extract(payload_json, '$.book_source') = 'live' "
+                    "AND json_extract(payload_json, '$.drift_bps') IS NOT NULL "
+                    "ORDER BY id"
+                ).fetchall()
+                pauses = conn.execute(
+                    "SELECT occurred_at FROM events WHERE event_type = 'StrategyPaused'"
+                ).fetchall()
+            # Stored times keep their own offset, so compare as datetimes, not text.
+            checked_at = [
+                at for row in checks if (at := datetime.fromisoformat(str(row[0]))) >= since
+            ]
+            live = tuple(
+                Decimal(str(row[1]))
+                for row in drifts
+                if datetime.fromisoformat(str(row[0])) >= since
+            )
+            kill_fired = any(datetime.fromisoformat(str(row[0])) >= since for row in pauses)
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"console shadow evidence read failed: {exc}") from exc
+        except (TypeError, ValueError, ArithmeticError) as exc:
+            raise LedgerError(msg=f"console shadow evidence: unreadable row: {exc}") from exc
+        return ShadowEvidence(
+            seeded_at=seeded_at,
+            first_fill_at=first_fill_at,
+            missed_days=missed_days(checked_at, since, self._clock(), self._tz),
+            live_drifts_bps=live,
+            kill_fired=kill_fired,
+        )
+
     def market_watch(self) -> tuple[WatchedPair, ...]:
         """Return each checked stream's last bar check, its signal and the next check (#650).
 
@@ -301,23 +440,23 @@ class LedgerReadModel:
             LedgerError: On any SQLite failure or an unreadable row.
         """
         rows = self._query(
-            "SELECT json_extract(b.payload_json, '$.pair.base'), "
-            "       json_extract(b.payload_json, '$.pair.quote'), "
-            "       json_extract(b.payload_json, '$.interval'), b.occurred_at, "
+            "WITH checks AS ("
+            "  SELECT json_extract(payload_json, '$.pair.base') AS base, "
+            "         json_extract(payload_json, '$.pair.quote') AS quote, "
+            "         json_extract(payload_json, '$.interval') AS interval, "
+            "         occurred_at, correlation_id, "
+            "         ROW_NUMBER() OVER ("
+            "           PARTITION BY json_extract(payload_json, '$.pair.base'), "
+            "                        json_extract(payload_json, '$.pair.quote'), "
+            "                        json_extract(payload_json, '$.interval') "
+            "           ORDER BY occurred_at DESC, id DESC) AS newest "
+            "  FROM events WHERE event_type = 'BarProcessed') "
+            "SELECT base, quote, interval, occurred_at, "
             "       (SELECT json_extract(s.payload_json, '$.kind') FROM events s "
-            "        WHERE s.event_type = 'SignalEmitted' "
-            "          AND s.correlation_id = b.correlation_id "
+            "        WHERE s.correlation_id = checks.correlation_id "
+            "          AND s.event_type = 'SignalEmitted' "
             "        ORDER BY s.id DESC LIMIT 1) "
-            "FROM events b "
-            "WHERE b.event_type = 'BarProcessed' AND b.id = ("
-            "  SELECT n.id FROM events n WHERE n.event_type = 'BarProcessed' "
-            "    AND json_extract(n.payload_json, '$.pair.base') "
-            "        = json_extract(b.payload_json, '$.pair.base') "
-            "    AND json_extract(n.payload_json, '$.pair.quote') "
-            "        = json_extract(b.payload_json, '$.pair.quote') "
-            "    AND json_extract(n.payload_json, '$.interval') "
-            "        = json_extract(b.payload_json, '$.interval') "
-            "  ORDER BY n.occurred_at DESC, n.id DESC LIMIT 1)",
+            "FROM checks WHERE newest = 1",
             (),
         )
         watched: list[WatchedPair] = []
@@ -342,6 +481,17 @@ class LedgerReadModel:
     # ------------------------------------------------------------------
     # Reads
     # ------------------------------------------------------------------
+
+    def briefs(self) -> tuple[ConsoleBrief, ...]:
+        """Return the supervisor desk's published briefs, newest first (#720).
+
+        Raises:
+            ViewNotAvailableError: No desk was given to read them from.
+        """
+        if self._briefs is None:
+            msg = "briefs: no supervisor desk to read them from"
+            raise ViewNotAvailableError(msg)
+        return self._briefs()
 
     def _query(self, sql: str, params: tuple[str, ...]) -> list[tuple[object, ...]]:
         """Run one query on a fresh read-only connection and close it."""

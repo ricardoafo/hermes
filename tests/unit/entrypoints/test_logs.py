@@ -19,7 +19,7 @@ from __future__ import annotations
 import io
 import json
 import re
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -33,7 +33,7 @@ from hermes.entrypoints import logs as logs_module
 _T0 = datetime(2026, 10, 3, 16, 0, 5, tzinfo=UTC)
 _CORR_A = "01J9Z8T3M5BQR2FVKN4XK7Q2ZP"
 _CORR_B = "01J9Z8T3M5BQR2FVKN4XH1M9XA"
-_PNL_WORDS = re.compile(r"p&l|pnl|profit|equity|sharpe|drawdown|win rate", re.I)
+_PNL_WORDS = re.compile(r"p&l|pnl|profit|equity|sharpe|drawdown|win rate", re.IGNORECASE)
 
 
 def _envelope(message: str, seconds: int = 0) -> str:
@@ -57,11 +57,24 @@ _JOURNAL = [
 ]
 
 
+class _FakeStdout:
+    """A pipe stand-in: iterates canned lines and can be closed, like a real stdout."""
+
+    def __init__(self, lines: Iterable[str]) -> None:
+        self._lines = iter(lines)
+
+    def __iter__(self) -> Iterator[str]:
+        return self._lines
+
+    def close(self) -> None:
+        """Accept the reader closing the pipe."""
+
+
 class _FakeProcess:
     """Stands in for subprocess.Popen: canned stdout, records termination."""
 
     def __init__(self, lines: list[str]) -> None:
-        self.stdout: Iterator[str] = iter(line + "\n" for line in lines)
+        self.stdout = _FakeStdout(line + "\n" for line in lines)
         self.terminated = False
 
     def terminate(self) -> None:

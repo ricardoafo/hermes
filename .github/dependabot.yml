@@ -100,3 +100,94 @@ updates:
       weekly:
         applies-to: version-updates
         patterns: ['*']
+
+  # ────────────────────────────────────────────────────────────────
+  # pre-commit hook revisions and the runner image's Docker bases
+  # ────────────────────────────────────────────────────────────────
+  # Rick 2026-10-06: every tool on its latest stable release (#906).
+  # Pins Dependabot cannot see (Dockerfile ARGs, the VPS bootstrap,
+  # versions inside workflow steps) are reported weekly by
+  # scripts/dev/freshness-check.py in the Scheduled workflow.
+  - package-ecosystem: pre-commit
+    directory: '/'
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Europe/Madrid
+    open-pull-requests-limit: 10
+    cooldown:
+      default-days: 7
+    labels:
+      - 'type:chore'
+      - 'area:tooling'
+    assignees:
+      - 'rafo-claude-bot'
+    reviewers:
+      - 'ricardoafo'
+    commit-message:
+      prefix: 'chore'
+      include: scope
+    groups:
+      weekly:
+        applies-to: version-updates
+        patterns: ['*']
+
+  # Runner image base (Dockerfile FROM) and the Docker-in-Docker sidecar
+  # (compose.yml image). A new image only reaches CI when Rick rebuilds
+  # the runners, so these PRs change files, not the running machines.
+  - package-ecosystem: docker
+    directory: '/scripts/dev/gh-runner'
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Europe/Madrid
+    open-pull-requests-limit: 10
+    cooldown:
+      default-days: 7
+    # The runner image tracks Ubuntu LTS only. Interim releases get nine
+    # months of support, so a bump to one leaves CI on an OS that loses
+    # security updates within the year (PR #916 proposed 25.10).
+    ignore:
+      - dependency-name: 'ubuntu'
+        versions: ['>= 26.10, < 28.04']
+    labels:
+      - 'type:ci'
+      - 'area:tooling'
+    assignees:
+      - 'rafo-claude-bot'
+    reviewers:
+      - 'ricardoafo'
+    commit-message:
+      prefix: 'ci'
+      include: scope
+    groups:
+      weekly:
+        applies-to: version-updates
+        patterns: ['*']
+
+  - package-ecosystem: docker-compose
+    directory: '/scripts/dev/gh-runner'
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Europe/Madrid
+    open-pull-requests-limit: 10
+    cooldown:
+      default-days: 7
+    labels:
+      - 'type:ci'
+      - 'area:tooling'
+    assignees:
+      - 'rafo-claude-bot'
+    reviewers:
+      - 'ricardoafo'
+    commit-message:
+      prefix: 'ci'
+      include: scope
+    groups:
+      weekly:
+        applies-to: version-updates
+        patterns: ['*']

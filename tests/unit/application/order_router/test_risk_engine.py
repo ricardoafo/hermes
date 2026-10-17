@@ -53,6 +53,7 @@ class _FixedRule:
 
 _BTC_USDT = Pair(base=Currency.BTC, quote=Currency.USDT)
 _ETH_USDT = Pair(base=Currency.ETH, quote=Currency.USDT)
+_SOL_USDT = Pair(base=Currency.SOL, quote=Currency.USDT)
 
 _EMPTY_PORTFOLIO = PortfolioState(
     peak_value=Decimal("100000"),
@@ -295,18 +296,24 @@ class TestRiskEngineCapitalBudget:
 
 
 class TestRiskEngineCorrelationLock:
-    """CorrelationLock (RO-01) wired into RiskEngine refuses correlated entries."""
+    """CorrelationLock (RO-01) wired into RiskEngine refuses the third correlated entry."""
 
-    def test_correlated_pair_returns_halt(self) -> None:
-        """RO-01 HALT when candidate pair correlation >= 0.80."""
-        portfolio_with_correlation = PortfolioState(
+    @staticmethod
+    def _evaluate(btc_eth: float) -> RiskAction:
+        """Evaluate a SOL entry with BTC and ETH held and SOL at 0.90 with both."""
+        state = PortfolioState(
             peak_value=Decimal("100000"),
             current_value=Decimal("100000"),
             realized_slippage_cumulative=Decimal("0"),
-            correlations={(_BTC_USDT, _ETH_USDT): 0.85},
+            correlations={
+                (_BTC_USDT, _ETH_USDT): btc_eth,
+                (_BTC_USDT, _SOL_USDT): 0.90,
+                (_ETH_USDT, _SOL_USDT): 0.90,
+            },
+            held_pairs=frozenset({_BTC_USDT, _ETH_USDT}),
         )
-        snapshot_with_candidate = MarketSnapshot(
-            pair=_ETH_USDT,
+        snapshot = MarketSnapshot(
+            pair=_SOL_USDT,
             current_spread=Decimal("0.001"),
             median_spread_1h=Decimal("0.001"),
             orderbook_age_seconds=0.3,
@@ -314,62 +321,18 @@ class TestRiskEngineCorrelationLock:
             realized_slippage_last=Decimal("0.001"),
             stable_price=None,
             btc_log_return_1d=None,
-            candidate_pair=_ETH_USDT,
+            candidate_pair=_SOL_USDT,
         )
-        engine = RiskEngine(rules=[CorrelationLock()])
-        result = engine.evaluate(portfolio_with_correlation, snapshot_with_candidate)
-        assert result.worst.action == RiskAction.HALT, (
-            f"Expected HALT from CorrelationLock for 0.85 correlation, "
-            f"got {result.worst.action!r}. RO-01 must block entry."
-        )
+        return RiskEngine(rules=[CorrelationLock()]).evaluate(state, snapshot).worst.action
 
-    def test_uncorrelated_pair_returns_ok(self) -> None:
-        """RO-01 OK when candidate pair correlation < 0.80."""
-        portfolio_low_corr = PortfolioState(
-            peak_value=Decimal("100000"),
-            current_value=Decimal("100000"),
-            realized_slippage_cumulative=Decimal("0"),
-            correlations={(_BTC_USDT, _ETH_USDT): 0.50},
-        )
-        snapshot_with_candidate = MarketSnapshot(
-            pair=_ETH_USDT,
-            current_spread=Decimal("0.001"),
-            median_spread_1h=Decimal("0.001"),
-            orderbook_age_seconds=0.3,
-            orderbook_timestamp=datetime(2026, 1, 1, tzinfo=UTC),
-            realized_slippage_last=Decimal("0.001"),
-            stable_price=None,
-            btc_log_return_1d=None,
-            candidate_pair=_ETH_USDT,
-        )
-        engine = RiskEngine(rules=[CorrelationLock()])
-        result = engine.evaluate(portfolio_low_corr, snapshot_with_candidate)
-        assert result.worst.action == RiskAction.OK, (
-            f"Expected OK from CorrelationLock for 0.50 correlation, got {result.worst.action!r}."
-        )
+    def test_third_correlated_pair_returns_halt(self) -> None:
+        """RO-01 HALT when the two open pairs correlate at 0.85 and SOL at 0.90 with both."""
+        assert self._evaluate(0.85) is RiskAction.HALT
 
-    def test_correlation_at_threshold_returns_halt(self) -> None:
-        """RO-01 HALT at exactly 0.80 (threshold is >=)."""
-        portfolio_at_threshold = PortfolioState(
-            peak_value=Decimal("100000"),
-            current_value=Decimal("100000"),
-            realized_slippage_cumulative=Decimal("0"),
-            correlations={(_BTC_USDT, _ETH_USDT): 0.80},
-        )
-        snapshot_with_candidate = MarketSnapshot(
-            pair=_ETH_USDT,
-            current_spread=Decimal("0.001"),
-            median_spread_1h=Decimal("0.001"),
-            orderbook_age_seconds=0.3,
-            orderbook_timestamp=datetime(2026, 1, 1, tzinfo=UTC),
-            realized_slippage_last=Decimal("0.001"),
-            stable_price=None,
-            btc_log_return_1d=None,
-            candidate_pair=_ETH_USDT,
-        )
-        engine = RiskEngine(rules=[CorrelationLock()])
-        result = engine.evaluate(portfolio_at_threshold, snapshot_with_candidate)
-        assert result.worst.action == RiskAction.HALT, (
-            f"Expected HALT from CorrelationLock at exactly 0.80 correlation "
-            f"(threshold is >=), got {result.worst.action!r}."
-        )
+    def test_uncorrelated_open_pairs_return_ok(self) -> None:
+        """RO-01 OK when the two open pairs correlate at only 0.50."""
+        assert self._evaluate(0.50) is RiskAction.OK
+
+    def test_correlation_at_threshold_returns_ok(self) -> None:
+        """RO-01 OK at exactly 0.80: §5.5 blocks only when correlation exceeds 0.80."""
+        assert self._evaluate(0.80) is RiskAction.OK

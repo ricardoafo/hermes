@@ -18,10 +18,17 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Self
 
+from hermes.adapters.ledger._cells import decimal_cell, time_cell
+from hermes.adapters.ledger.anomaly_reader import latest_anomaly
+from hermes.adapters.ledger.connection import open_ledger
+from hermes.adapters.ledger.risk_halt_rows import RISK_HALT_EVENT_TYPE, risk_halt_from_payload
 from hermes.domain.errors import LedgerError
+from hermes.domain.events.anomaly_detected import CLOCK_SKEW_SOURCE, AnomalyDetected
+from hermes.domain.events.risk_halt_recorded import RiskHaltRecorded
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
+from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.ports.status import ShadowEntry
 
 __all__ = ["SqliteStatusReader"]
@@ -57,7 +64,7 @@ class SqliteStatusReader:
         if not resolved.is_file():
             raise FileNotFoundError(str(path))
         try:
-            connection = sqlite3.connect(f"{resolved.as_uri()}?mode=ro", uri=True)
+            connection = open_ledger(resolved, read_only=True)
         except sqlite3.Error as exc:
             raise LedgerError(msg=f"cannot open {path} read-only: {exc}") from exc
         return cls(connection)
@@ -85,7 +92,8 @@ class SqliteStatusReader:
             The newest ``occurred_at``, or ``None`` when the stream has no row.
 
         Raises:
-            LedgerError: On any SQLite read failure.
+            LedgerError: On any SQLite read failure, or a stored time that is
+                not ISO 8601 with a UTC offset.
         """
         row = self._fetchone(
             "SELECT MAX(occurred_at) FROM events "
@@ -96,7 +104,12 @@ class SqliteStatusReader:
             (pair.base.value, pair.quote.value, interval.value),
         )
         value = None if row is None else row[0]
-        return datetime.fromisoformat(value) if isinstance(value, str) else None
+        if value is None:
+            return None
+        try:
+            return time_cell(value)
+        except ValueError as exc:
+            raise LedgerError(msg=f"last_processed_close: unreadable time: {exc}") from exc
 
     def count_bars_since(self, interval: KlineInterval, since: datetime) -> int:
         """Return the number of ``BarProcessed`` rows of ``interval`` at or after ``since``.
@@ -138,8 +151,29 @@ class SqliteStatusReader:
         value = None if row is None else row[0]
         return value if isinstance(value, int) else 0
 
+    def round_trips(self, strategy_id: StrategyId) -> int:
+        """Return how many round trips ``strategy_id`` closed: its SELL trades (#797).
+
+        Raises:
+            LedgerError: On any SQLite read failure.
+        """
+        try:
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM events WHERE event_type = 'TradeExecuted' "
+                "AND json_extract(payload_json, '$.side') = 'SELL' "
+                "AND json_extract(payload_json, '$.strategy_id.value') = ?",
+                (strategy_id.value,),
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"round_trips failed: {exc}") from exc
+        return int(row[0])
+
     def open_entries(self) -> tuple[ShadowEntry, ...]:
-        """Return every pair whose newest signal is an entry, oldest entry first.
+        """Return every pair whose newest filled entry has no exit after it, oldest first.
+
+        An entry counts only when a fill shares its correlation id: an entry
+        the executor refused or halted (exposure cap, stale book) opened
+        nothing, so it must not show as a position (#962).
 
         Returns:
             The open shadow positions, entry facts only.
@@ -149,15 +183,20 @@ class SqliteStatusReader:
         """
         try:
             rows = self._conn.execute(
-                "SELECT payload_json FROM events WHERE event_type = 'SignalEmitted' "
-                "ORDER BY occurred_at, id"
+                "SELECT s.payload_json, EXISTS ("
+                "  SELECT 1 FROM events t WHERE t.event_type = 'TradeExecuted' "
+                "  AND t.correlation_id = s.correlation_id"
+                ") FROM events s WHERE s.event_type = 'SignalEmitted' "
+                "ORDER BY s.occurred_at, s.id"
             ).fetchall()
         except sqlite3.Error as exc:
             raise LedgerError(msg=f"open_entries failed: {exc}") from exc
         latest: dict[Pair, ShadowEntry | None] = {}
         try:
-            for (payload_json,) in rows:
+            for payload_json, filled in rows:
                 payload = json.loads(payload_json)
+                if payload["kind"] == "entry" and not filled:
+                    continue
                 pair = Pair(
                     base=Currency(payload["pair"]["base"]),
                     quote=Currency(payload["pair"]["quote"]),
@@ -165,8 +204,8 @@ class SqliteStatusReader:
                 latest[pair] = (
                     ShadowEntry(
                         pair=pair,
-                        entry_time=datetime.fromisoformat(payload["occurred_at"]),
-                        entry_price=Decimal(str(payload["entry_price"])),
+                        entry_time=time_cell(payload["occurred_at"]),
+                        entry_price=decimal_cell(payload["entry_price"]),
                     )
                     if payload["kind"] == "entry"
                     else None
@@ -176,6 +215,42 @@ class SqliteStatusReader:
         return tuple(
             sorted((e for e in latest.values() if e is not None), key=lambda e: e.entry_time)
         )
+
+    def halts_since(self, since: datetime) -> tuple[RiskHaltRecorded, ...]:
+        """Return every halt and kill recorded at or after ``since``, newest first.
+
+        Args:
+            since: Inclusive lower bound on the signal time, UTC-aware.
+
+        Returns:
+            The rehydrated records.
+
+        Raises:
+            LedgerError: On any SQLite read failure or an unreadable payload.
+        """
+        try:
+            rows = self._conn.execute(
+                "SELECT payload_json FROM events WHERE event_type = ? AND occurred_at >= ? "
+                "ORDER BY occurred_at DESC, id DESC",
+                (RISK_HALT_EVENT_TYPE, since.isoformat()),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"halts_since failed: {exc}") from exc
+        try:
+            return tuple(risk_halt_from_payload(json.loads(payload)) for (payload,) in rows)
+        except (KeyError, ValueError, TypeError) as exc:
+            raise LedgerError(msg=f"halts_since: unreadable payload: {exc}") from exc
+
+    def last_clock_skew(self) -> AnomalyDetected | None:
+        """Return the newest clock-skew anomaly serve recorded, or ``None`` (#859).
+
+        Returns:
+            The anomaly; ``CRITICAL`` means the clock is still off.
+
+        Raises:
+            LedgerError: On any SQLite read failure or an unreadable payload.
+        """
+        return latest_anomaly(self._conn, CLOCK_SKEW_SOURCE)
 
     def bar_check_seconds(self, limit: int) -> tuple[Decimal, ...]:
         """Return how many seconds after each bar's close its check was recorded.

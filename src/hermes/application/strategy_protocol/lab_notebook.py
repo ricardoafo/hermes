@@ -46,6 +46,7 @@ Reference:
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -58,6 +59,10 @@ __all__ = [
 
 _SHA256_COMMENT_PREFIX = "<!-- entry-sha256: "
 _SHA256_COMMENT_SUFFIX = " -->"
+_ENTRY = re.compile(r"(?ms)^(### [^\n]*\n(?:(?!^### ).)*?)<!-- entry-sha256: ([0-9a-f]{64}) -->")
+# Entries appended before issue #786 were hashed with no blank line after a
+# bold label; the blank lines were added by hand afterwards for markdownlint.
+_HAND_ADDED_BLANK = re.compile(r"(?m)^(\*\*[^\n]*\*\*:)\n\n(?=- )")
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +111,9 @@ class LabNotebookEntry:
     def render(self) -> str:
         """Render the entry as a Markdown block (without trailing SHA256 comment).
 
+        Each bold label is followed by a blank line, as markdownlint requires
+        before a list, so the entry hashes exactly as it sits in the file.
+
         Returns:
             Formatted Markdown string. The SHA256 comment is added by
             :class:`LabNotebook` — not here — so the hash covers exactly this
@@ -115,34 +123,30 @@ class LabNotebookEntry:
 
         # Observed metrics section
         if self.observed_metrics:
-            lines.append("**Observed metrics**:")
-            for m in self.observed_metrics:
-                lines.append(f"- {m}")
+            lines.extend(("**Observed metrics**:", ""))
+            lines.extend(f"- {m}" for m in self.observed_metrics)
         else:
             lines.append("**Observed metrics**: N/A (no metrics this entry)")
         lines.append("")
 
         # Decision section
         if self.decision:
-            lines.append("**Decision**:")
-            for d in self.decision:
-                lines.append(f"- {d}")
+            lines.extend(("**Decision**:", ""))
+            lines.extend(f"- {d}" for d in self.decision)
             lines.append("")
 
         # Rationale section (always present)
-        lines.append("**Rationale**:")
+        lines.extend(("**Rationale**:", ""))
         if self.rationale:
-            for r in self.rationale:
-                lines.append(f"- {r}")
+            lines.extend(f"- {r}" for r in self.rationale)
         else:
             lines.append("- (no rationale provided)")
         lines.append("")
 
         # Files touched section
         if self.files_touched:
-            lines.append("**Files touched**:")
-            for f in self.files_touched:
-                lines.append(f"- {f}")
+            lines.extend(("**Files touched**:", ""))
+            lines.extend(f"- {f}" for f in self.files_touched)
             lines.append("")
 
         return "\n".join(lines)
@@ -261,6 +265,27 @@ class LabNotebook:
         expected_comment = f"{_SHA256_COMMENT_PREFIX}{expected_sha}{_SHA256_COMMENT_SUFFIX}"
         return expected_comment in text
 
+    def verify_file(self) -> dict[str, bool]:
+        """Check every hashed entry against the notebook's own text.
+
+        An entry verifies when the sha256 of its text, from its ``###``
+        header up to its ``entry-sha256`` comment, matches the comment. An
+        entry written before issue #786 also verifies when the only
+        difference is the blank lines added by hand after its bold labels
+        and the trailing blank lines.
+
+        Returns:
+            Each hashed entry's header line, in file order, mapped to whether
+            it verifies.
+        """
+        text = self._path.read_text(encoding="utf-8")
+        results: dict[str, bool] = {}
+        for match in _ENTRY.finditer(text):
+            body, stored = match.group(1), match.group(2)
+            legacy = _HAND_ADDED_BLANK.sub(r"\1\n", body).rstrip("\n") + "\n"
+            results[body.split("\n", 1)[0]] = stored in {_sha256(body), _sha256(legacy)}
+        return results
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
@@ -297,3 +322,7 @@ class LabNotebook:
         raise FileNotFoundError(
             f"Could not detect project root: no pyproject.toml found searching upward from {here}."
         )
+
+
+def _sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()

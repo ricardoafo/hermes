@@ -29,6 +29,7 @@ and creates five parallel merge chains. Reading YAML → deep-merging env →
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -86,8 +87,8 @@ def _read_yaml(path: Path) -> dict[str, Any]:
         Dict parsed from the YAML document. An empty file yields ``{}``.
 
     Raises:
-        ConfigError: File missing, unreadable, non-mapping root, or YAML
-            parse failure.
+        ConfigError: File missing, unreadable, not UTF-8, non-mapping root,
+            or YAML parse failure (including nesting too deep to parse).
     """
     if not path.is_file():
         raise ConfigError(f"config file not found: {path}")
@@ -95,10 +96,16 @@ def _read_yaml(path: Path) -> dict[str, Any]:
         raw = path.read_text(encoding="utf-8")
     except OSError as exc:
         raise ConfigError(f"cannot read {path}: {exc}") from exc
+    except UnicodeDecodeError as exc:
+        raise ConfigError(
+            f"cannot read {path}: not valid UTF-8 (byte {exc.start}: {exc.reason})"
+        ) from exc
     try:
         parsed = yaml.safe_load(raw)
     except yaml.YAMLError as exc:
         raise ConfigError(f"invalid YAML in {path}: {exc}") from exc
+    except RecursionError:
+        raise ConfigError(f"invalid YAML in {path}: nested too deep") from None
     if parsed is None:
         return {}
     if not isinstance(parsed, dict):
@@ -247,14 +254,17 @@ def load_yaml_model[T: BaseModel](
         A validated ``model_cls`` instance.
 
     Raises:
-        ConfigError: File missing / unreadable, YAML invalid, or schema
-            validation fails.
+        ConfigError: File missing / unreadable / not UTF-8, YAML invalid,
+            nested too deep or self-referencing, or schema validation fails.
     """
     env_snapshot = dict(os.environ) if env is None else env
     raw = _read_yaml(path)
-    merged = _apply_env_overrides(raw, env_section, env_snapshot)
     try:
+        merged = _apply_env_overrides(raw, env_section, env_snapshot)
         return model_cls.model_validate(merged)
+    except RecursionError:
+        # A YAML alias can make a mapping contain itself; copying it recurses.
+        raise ConfigError(f"{path} refers to itself or is nested too deep") from None
     except ValidationError as exc:
         raise ConfigError(
             f"validation failed for {path} against {model_cls.__name__}: {_describe(exc)}"
@@ -286,6 +296,10 @@ def _root_env_kwargs(env: dict[str, str]) -> dict[str, Any]:
     return kwargs
 
 
+def _is_prod(env: Mapping[str, str]) -> bool:
+    return env.get(_ENV_TIER, "").strip().lower() == "prod"
+
+
 def load_config(
     config_dir: Path | None = None,
     *,
@@ -300,6 +314,10 @@ def load_config(
     production reads env from a systemd ``EnvironmentFile`` and never has
     ``.env.local``. When ``env`` is supplied explicitly (tests) the
     dotenv step is skipped so tests never depend on the ambient shell.
+
+    With ``HERMES_ENV=prod`` the dotenv step is skipped and ``config_dir``
+    must be absolute, so the working directory can never choose the
+    config or the env a production process runs with.
 
     Args:
         config_dir: Directory containing the YAML files. Defaults to
@@ -318,19 +336,28 @@ def load_config(
     Raises:
         ConfigError: Any of the YAML files is missing, malformed, or fails
             schema validation. The message identifies the offending file and
-            the pydantic validation error.
+            the pydantic validation error. Also raised when the tier is prod
+            and ``config_dir`` is relative.
     """
     base = config_dir if config_dir is not None else DEFAULT_CONFIG_DIR
     if env is None:
         # Populate os.environ from .env.local (if it exists) BEFORE
         # snapshotting. `override=False` — a real shell env var always
         # wins over dotenv, so CI and prod are never silently shadowed
-        # by a stray developer .env.local.
-        dotenv_target = dotenv_path if dotenv_path is not None else DEFAULT_DOTENV_PATH
-        load_dotenv(dotenv_target, override=False)
+        # by a stray developer .env.local. Prod never reads one: its env
+        # comes from the systemd EnvironmentFile, and a relative dotenv
+        # resolves against whatever directory the process started in.
+        if not _is_prod(os.environ):
+            dotenv_target = dotenv_path if dotenv_path is not None else DEFAULT_DOTENV_PATH
+            load_dotenv(dotenv_target, override=False)
         env_snapshot = dict(os.environ)
     else:
         env_snapshot = env
+    if _is_prod(env_snapshot) and not base.is_absolute():
+        raise ConfigError(
+            f"config dir {str(base)!r} is relative; with HERMES_ENV=prod pass an "
+            "absolute --config-dir so the working directory cannot pick the config"
+        )
 
     strategies = load_yaml_model(
         base / "strategies.yaml",

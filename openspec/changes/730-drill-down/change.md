@@ -19,9 +19,9 @@ The shared drill-down of the Cockpit console (design spec
 and tokens. A small `ListState` / `DrillList` contract lets any list hand its
 filters, sort and cursor to a detail screen and get them back. Home's position
 detail adopts it with unchanged content, so the framework runs in the app
-before the screens of issues #715-#720 use it. The main pick is "stop at the
-ends" for `[` / `]`; the main risk is the 100-119 column band, where Home still
-opens a screen because it has no room beside the list until issue #712.
+before the screens of issues #715-#720 use it. On top of issue #712's Home
+layout the pane sits in the right column from 100 columns and the screen opens
+below 100. The main pick is "stop at the ends" for `[` / `]`.
 
 ## Scope
 
@@ -43,7 +43,8 @@ opens a screen because it has no room beside the list until issue #712.
 - The drill-downs of the other screens (Releases, History, Signals, Lots,
   Briefs, Logs, Services): issues #715-#720 adopt the components.
 - The query bar that fills `ListState.filters` and `ListState.sort`: issue #729.
-- Home's per-breakpoint layout (pane beside the list from 100 columns): issue #712.
+- Home's per-breakpoint layout itself: issue #712 (merged; this change only
+  swaps its detail panel for a `DetailPane`).
 
 ## Decisions
 
@@ -70,9 +71,9 @@ opens a screen because it has no room beside the list until issue #712.
 
 ### D-4: pane or screen is one function of width and room
 
-- **Decision**: `detail_mode(width, beside=...)` returns SCREEN below `COMPACT_BELOW` (100) columns or when the host has no room beside the list, else PANE. Home passes `beside=is_wide` (two columns from 120), so 100-119 still opens a screen.
-- **Alternatives**: open the pane stacked under Activity at 100-119 (far from the list, below the fold).
-- **Rationale**: the compact rule is shared by every screen; Home's extra condition goes away when issue #712 splits Home from 100 columns.
+- **Decision**: `detail_mode(width, beside=...)` returns SCREEN below `COMPACT_BELOW` (100) columns or when the host has no room beside the list, else PANE. Since issue #712 Home has two columns from 100, so it calls `detail_mode(width)` and opens the pane from 100 columns; `beside` stays for a later host whose layout stacks wider than the compact width.
+- **Alternatives**: a Home-only width check (a second rule for one screen).
+- **Rationale**: the compact rule is shared by every screen and lives in one function.
 - **Cost of reversal**: LOW.
 
 ### D-5: number keys and Ctrl+P stay app bindings
@@ -87,7 +88,7 @@ opens a screen because it has no room beside the list until issue #712.
 ### R-1: pane or screen
 
 - **A-1.1**: `detail_mode` returns SCREEN at 80 and 99 columns and PANE at 100 and 160; SCREEN when `beside=False`.
-- **A-1.2**: on Home at 80x24, Enter pushes a `DetailScreen` whose first row reads `◂ Home › Positions › ETH`; at 160x45 Enter opens the `DetailPane` and pushes no screen.
+- **A-1.2**: on Home at 80x24, Enter pushes a `DetailScreen` whose first row reads `◂ Home › Positions › ETH`; at 100x30 and 160x45 Enter opens the `DetailPane` and pushes no screen.
 
 ### R-2: back restores the list
 
@@ -106,9 +107,9 @@ opens a screen because it has no room beside the list until issue #712.
 
 ### R-5: snapshots
 
-- **A-5.1**: SVG snapshots at 80x24 (detail screen) and 160x45 (detail pane) with motion off and a frozen clock; the existing console snapshots are unchanged.
+- **A-5.1**: SVG snapshots in Neon and Control room at 80x24, 120x36, 160x45 and 240x60, with motion off, a frozen clock and demo data: `drill_position_<theme>_<size>` (Enter on the first position: a pane from 100 columns, a screen at 80) and `drill_breadcrumb_<theme>_<size>` (the detail screen after `]`, opened at 80x24 and widened). The existing console snapshots are unchanged.
 
-All of R-1..R-5: `uv run pytest -q tests/unit/entrypoints/test_tui_drilldown.py`.
+R-1..R-4: `uv run pytest -q tests/unit/entrypoints/test_tui_drilldown.py`; R-5: `tests/unit/entrypoints/test_tui_snapshots.py -k drill`. Item-by-item check against the spec: `design-check.md`.
 
 ## Design
 
@@ -138,7 +139,6 @@ Test tiers touched: unit, property
 
 ## Risks
 
-- **100-119 columns on Home open a screen, not a pane**: deliberate until issue #712 (D-4); the rule is one argument.
 - **Footer width at 80 columns**: the chips and the position count use 79 of 80 cells; longer chips must drop labels, as the compact Home footer does.
 - **Components need the `$hud-*` variables**: an app that does not provide them fails at CSS parse; every hermes app does through `theme_variables`.
 

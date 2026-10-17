@@ -86,3 +86,5 @@ class JournalctlReader:
         finally:
             process.terminate()
             process.wait(timeout=5)
+            if process.stdout is not None:
+                process.stdout.close()

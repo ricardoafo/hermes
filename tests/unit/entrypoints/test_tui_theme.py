@@ -6,6 +6,8 @@ Invariants:
   (240,120,20), warning amber; Neon restyles only the chrome;
 - night keeps the hues of gains and losses in darker shades and warnings fully
   bright;
+- every night colour that draws text reads at 4.5:1 or more on the night
+  panel, focused panel and overlay, and labels stay brighter than hints;
 - night mode runs from 23:00 up to 08:00 local, and only Auto follows it;
 - the breakpoints are compact < 100, standard 100-159, wide 160-219, ultra >= 220
   columns, with height classes at 30 and 45 rows;
@@ -23,6 +25,15 @@ from hypothesis import strategies as st
 
 from hermes.entrypoints import tui_theme as theme
 from hermes.entrypoints.tui_settings import ThemeChoice
+from hermes.entrypoints.tui_theme import (
+    CONTROL_ROOM,
+    HERO_MIN_CONTRAST,
+    NEON,
+    NIGHT,
+    TEXT_MIN_CONTRAST,
+    Tokens,
+    contrast_ratio,
+)
 from hermes.entrypoints.tui_widgets import top_edge
 
 _HEX = st.from_regex(r"#[0-9A-F]{6}", fullmatch=True)
@@ -112,14 +123,18 @@ def test_three_textual_themes_are_built_from_the_sheets() -> None:
 
 
 def test_theme_variables_expose_every_hud_token() -> None:
-    """TCSS sees the tokens as $hud-* variables with the sheet's values."""
+    """TCSS sees the tokens as $hud-* variables with the sheet's values.
+
+    Issue #712 added ``hud-hero-digits`` (the big numbers' digit colour), so 16.
+    """
     variables = theme.theme_variables(theme.NEON)
-    assert (variables["hud-live"], variables["hud-ai"], variables["hud-line"], len(variables)) == (
-        "#00F0FF",
-        "#FF3DF0",
-        "#4A2399",
-        15,
-    )
+    assert (
+        variables["hud-live"],
+        variables["hud-ai"],
+        variables["hud-line"],
+        variables["hud-hero-digits"],
+        len(variables),
+    ) == ("#00F0FF", "#FF3DF0", "#4A2399", "#C8FBFF", 16)
 
 
 @pytest.mark.parametrize(
@@ -192,21 +207,6 @@ def test_clock_ticks_every_second_and_the_model_every_five() -> None:
     assert (theme.MOTION.clock_tick, theme.MOTION.poll) == (1.0, 5.0)
 
 
-def test_binary_strip_changes_each_tick_and_repeats_for_the_same_tick() -> None:
-    """The strip is deterministic per tick and moves from one tick to the next."""
-    assert (
-        theme.binary_strip(3) == theme.binary_strip(3),
-        theme.binary_strip(3) != theme.binary_strip(4),
-    ) == (True, True)
-
-
-@given(tick=st.integers(min_value=0, max_value=10**9), width=st.integers(1, 64))
-def test_binary_strip_is_width_binary_digits(tick: int, width: int) -> None:
-    """Any tick gives exactly ``width`` characters, each 0 or 1."""
-    strip = theme.binary_strip(tick, width)
-    assert (len(strip), set(strip) <= {"0", "1"}) == (width, True)
-
-
 @given(start=_HEX, end=_HEX)
 def test_blend_ends_at_its_stops(start: str, end: str) -> None:
     """Blending 0 of the way gives the start and all the way gives the end."""
@@ -243,3 +243,66 @@ def test_wordmark_stands_in_until_the_logo_is_chosen() -> None:
 def test_ai_glyph_is_the_four_pointed_star() -> None:
     """Anything the AI supervisor wrote is marked with ✦: the AI panel title starts with it."""
     assert top_edge("Brief", "", 20, theme.NEON, ai=True).plain.startswith("┏━ ✦ BRIEF ")
+
+
+@pytest.mark.parametrize(
+    ("name", "tokens"), [("neon", NEON), ("control room", CONTROL_ROOM), ("night", NIGHT)]
+)
+def test_big_total_digits_read_at_7_to_1_on_their_panel(name: str, tokens: Tokens) -> None:
+    """Every big number's digits clear WCAG 7:1 on their panel in every theme.
+
+    Checked on the panel and on the focused panel (the Code Owner, 2026-10-06:
+    gradient digits were illegible).
+    """
+    del name
+    assert (
+        contrast_ratio(tokens.hero_digits, tokens.panel) >= HERO_MIN_CONTRAST,
+        contrast_ratio(tokens.hero_digits, tokens.panel_focus) >= HERO_MIN_CONTRAST,
+    ) == (True, True)
+
+
+_NIGHT_TEXT_TOKENS = ("text", "muted", "dim", "live", "up", "down", "warn", "ai")
+
+
+@pytest.mark.parametrize("token", _NIGHT_TEXT_TOKENS)
+def test_night_text_reads_at_4_5_to_1_on_every_night_surface(token: str) -> None:
+    """Night text never fades into its panel (issue #1046: labels at 4.0:1, hints at 2.3:1).
+
+    Checked on the panel, the focused panel and the overlay, the three
+    surfaces night draws text on.
+    """
+    colour = getattr(NIGHT, token)
+    surfaces = (NIGHT.panel, NIGHT.panel_focus, NIGHT.overlay)
+    assert [contrast_ratio(colour, surface) >= TEXT_MIN_CONTRAST for surface in surfaces] == [
+        True,
+        True,
+        True,
+    ]
+
+
+def test_night_labels_stay_brighter_than_hints() -> None:
+    """Raising night contrast keeps the hierarchy: labels (muted) outshine hints (dim)."""
+    assert _luminance(NIGHT.muted) > _luminance(NIGHT.dim)
+
+
+def test_contrast_ratio_matches_the_wcag_extremes() -> None:
+    """Black on white is 21:1, a colour on itself 1:1, and the order does not matter."""
+    assert (
+        round(contrast_ratio("#000000", "#FFFFFF"), 2),
+        round(contrast_ratio("#FFFFFF", "#000000"), 2),
+        contrast_ratio("#468CE6", "#468CE6"),
+    ) == (21.0, 21.0, 1.0)
+
+
+def test_rule_gradient_is_the_brand_gradient_of_each_sheet() -> None:
+    """The rule under the big total keeps the design's brand gradient in every theme."""
+    assert [t.hero_underline == t.brand for t in (NEON, CONTROL_ROOM, NIGHT)] == [
+        True,
+        True,
+        True,
+    ]
+
+
+def test_night_never_dims_the_big_number() -> None:
+    """Night dims the text but keeps the big number's digits at the day text colour."""
+    assert (NIGHT.hero_digits, NIGHT.text == NIGHT.hero_digits) == (CONTROL_ROOM.text, False)

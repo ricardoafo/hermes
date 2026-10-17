@@ -10,6 +10,11 @@ one, ``https://data-api.binance.vision``).
 - **Clock**: the book is stamped with the injected clock when the response
   arrives, so its age (risk rule RO-04) is measured on the same clock as the
   loop's.
+- **Frozen upstream** (#859 item 1, option A): a book whose ``lastUpdateId``
+  has not moved since an earlier response is as old as that response, so it
+  keeps the earlier stamp and RO-04 halts entries on it. A cached or frozen
+  upstream book no longer passes as fresh. Rick approved this new reason to
+  halt as a kill-rule change on 17 Oct 2026.
 - **Cache**: the last book per pair is reused for ``cache_seconds`` (1 s by
   default, below RO-04's 2 s limit), so a burst of reads costs one request.
 - **Budget**: a depth request of up to 100 levels weighs 5; a token bucket
@@ -25,12 +30,13 @@ docs/decisions/2026-10-02-binance-public-market-data-host.md.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Final
 
 import anyio
 import httpx
+import structlog
 
 from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.domain.errors import ExchangeError, NetworkError
@@ -50,15 +56,20 @@ _HTTP_ERROR_MIN: Final[int] = 400
 _ERROR_EXCERPT_CHARS: Final[int] = 200
 _LEVEL_FIELDS: Final[int] = 2
 
+_log = structlog.get_logger(__name__)
+
 
 def _decimal(raw: object, *, field: str) -> Decimal:
     """Parse a wire number given as a string."""
     if not isinstance(raw, str):
         raise ExchangeError(f"depth {field} is not a string: {raw!r}")
     try:
-        return Decimal(raw)
+        value = Decimal(raw)
     except InvalidOperation as exc:
         raise ExchangeError(f"depth {field} is not a number: {raw!r}") from exc
+    if not value.is_finite():
+        raise ExchangeError(f"depth {field} is not a finite number: {raw!r}")
+    return value
 
 
 def _levels(raw: object, *, side: str) -> tuple[OrderbookLevel, ...]:
@@ -79,6 +90,14 @@ def _levels(raw: object, *, side: str) -> tuple[OrderbookLevel, ...]:
         except ValueError as exc:
             raise ExchangeError(f"depth {side} level is invalid: {exc}") from exc
     return tuple(levels)
+
+
+def _update_id(body: dict[str, object]) -> int:
+    """Return the book's ``lastUpdateId``: the exchange's sequence number for it."""
+    raw = body.get("lastUpdateId")
+    if not isinstance(raw, int) or isinstance(raw, bool) or raw < 0:
+        raise ExchangeError(f"{_DEPTH_PATH} lastUpdateId is not a non-negative integer: {raw!r}")
+    return raw
 
 
 class BinanceDepthSnapshotAdapter:
@@ -125,6 +144,7 @@ class BinanceDepthSnapshotAdapter:
         self._ttl = timedelta(seconds=cache_seconds)
         self._sleep = sleep
         self._cache: dict[Pair, Orderbook] = {}
+        self._newest: dict[Pair, tuple[int, datetime]] = {}
 
     @classmethod
     def create(cls, config: MarketDataConfig, clock: ClockPort) -> BinanceDepthSnapshotAdapter:
@@ -157,7 +177,9 @@ class BinanceDepthSnapshotAdapter:
 
         Returns:
             The book, stamped with the clock when the response arrived (or the
-            cached book, when it is younger than ``cache_seconds``).
+            cached book, when it is younger than ``cache_seconds``). A book
+            whose ``lastUpdateId`` is not newer than one already seen keeps
+            the stamp of the response that first carried that id.
 
         Raises:
             NetworkError: The request did not complete.
@@ -190,12 +212,27 @@ class BinanceDepthSnapshotAdapter:
                 pair=pair,
                 bids=_levels(body.get("bids"), side="bids"),
                 asks=_levels(body.get("asks"), side="asks"),
-                snapshot_time=received,
+                snapshot_time=self._stamp(pair, _update_id(body), received),
             )
         except ValueError as exc:
             raise ExchangeError(f"{_DEPTH_PATH} returned an invalid book: {exc}") from exc
         self._cache[pair] = book
         return book
+
+    def _stamp(self, pair: Pair, update_id: int, received: datetime) -> datetime:
+        """Return when the book carrying ``update_id`` was first seen."""
+        newest = self._newest.get(pair)
+        if newest is None or update_id > newest[0]:
+            self._newest[pair] = (update_id, received)
+            return received
+        _log.warning(
+            "depth.book_not_moving",
+            pair=str(pair),
+            last_update_id=update_id,
+            newest_update_id=newest[0],
+            first_seen=newest[1].isoformat(),
+        )
+        return newest[1]
 
     async def aclose(self) -> None:
         """Close the owned HTTP client."""

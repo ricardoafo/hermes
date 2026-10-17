@@ -2,11 +2,13 @@
 
 One implementation each, styled only through :mod:`hermes.entrypoints.tui_theme`:
 
+- :class:`BigNumber`: the big total in bold high-contrast digits over a
+  gradient rule that shimmers; it counts up on a change (issue #712);
 - :class:`HudPanel`: the frame every panel sits in (bracket corners, gradient
   title bar, "computed" or "✦ AI supervisor" label, key-hint subtitle, focus
   state, AI variant);
-- :class:`WindowBar`: "▐ HERMES // SHADOW CONSOLE" with a ticking binary strip
-  and the clock;
+- :class:`WindowBar`: "▐ HERMES // SHADOW CONSOLE" with the live-feed pulse
+  (or the next-bar countdown when there is no ticker) and the clock;
 - :class:`TabBar`: the screen tabs, numbers only at compact width;
 - :class:`ThemeChip` and :class:`ThemePicker`: the theme switch;
 - :func:`key_chips`: reverse-video key chips for the footer;
@@ -19,8 +21,9 @@ without running an app.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import ClassVar, Final
 
 from rich.cells import cell_len
@@ -29,35 +32,47 @@ from textual import events
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Vertical
+from textual.geometry import Size
 from textual.message import Message
 from textual.reactive import reactive
+from textual.renderables.digits import Digits as DigitsRenderable
 from textual.screen import ModalScreen
+from textual.timer import Timer
 from textual.widget import Widget
-from textual.widgets import OptionList, Static
+from textual.widgets import Digits, OptionList, Static
 from textual.widgets.option_list import Option
 
+from hermes.application.console.format import fmt_level
+from hermes.entrypoints.tui_charts import gradient_rule, hero_digits
 from hermes.entrypoints.tui_theme import (
     AI_GLYPH,
     CORNER_BOTTOM_RIGHT,
     CORNER_TOP_LEFT,
     EDGE,
+    FEED_WIDTH,
     METER_CAP_LEFT,
     METER_CAP_RIGHT,
     METER_CELLS,
     METER_EMPTY,
     METER_FULL,
+    MOTION,
     WINDOW_MARK,
     WINDOW_TITLE,
     ThemeChoice,
     Tokens,
-    binary_strip,
+    blend,
+    data_tokens,
     gradient,
     tokens_for,
 )
+from hermes.entrypoints.tui_topbar import mainnet_text
 
 __all__ = [
+    "FEED_FAILED",
+    "FEED_OK",
     "LABEL_AI",
     "LABEL_COMPUTED",
+    "BigNumber",
     "HudPanel",
     "Meter",
     "Tab",
@@ -66,6 +81,7 @@ __all__ = [
     "ThemePicker",
     "WindowBar",
     "bottom_edge",
+    "feed_pulse",
     "key_chips",
     "tab_text",
     "theme_chip_text",
@@ -76,6 +92,11 @@ __all__ = [
 LABEL_COMPUTED: Final = "computed"
 LABEL_AI: Final = f"{AI_GLYPH} AI supervisor"
 _CLOCK_PAD: Final = 1
+_BADGE_GAP: Final = 2
+FEED_OK: Final = "●"
+FEED_FAILED: Final = "○"
+_BRIGHT: Final = "#FFFFFF"
+_BRIGHT_SHARE: Final = 0.5
 
 
 def _gradient_text(text: str, stops: Sequence[str], fg: str) -> Text:
@@ -226,26 +247,63 @@ class HudPanel(Vertical):
             bottom.update(bottom_edge(self.subtitle, width, tokens, ai=self.ai))
 
 
+def feed_pulse(polls: Sequence[bool], tokens: Tokens, *, bright: bool = False) -> Text:
+    """Return the live-feed pulse: one glyph per recent ticker poll, newest on the right.
+
+    Replaces the decorative binary strip (Code Owner, 2026-10-06): ``●`` in the
+    live colour for a poll that priced every coin, ``○`` in dim for a failed
+    one, right-aligned in :data:`FEED_WIDTH` cells.
+
+    Args:
+        polls: Poll results, oldest first; only the last :data:`FEED_WIDTH` show.
+        tokens: Token sheet.
+        bright: Brighten the newest glyph (just polled, motion on).
+
+    Returns:
+        :data:`FEED_WIDTH` cells.
+    """
+    recent = list(polls)[-FEED_WIDTH:]
+    out = Text(" " * (FEED_WIDTH - len(recent)))
+    for index, ok in enumerate(recent):
+        colour = tokens.live if ok else tokens.dim
+        if bright and index == len(recent) - 1:
+            colour = f"bold {blend(colour, _BRIGHT, _BRIGHT_SHARE)}"
+        out.append(FEED_OK if ok else FEED_FAILED, style=colour)
+    return out
+
+
 def window_bar_text(
-    width: int, tokens: Tokens, *, tick: int, clock: str, strip: bool = True
+    width: int, tokens: Tokens, *, status: Text, clock: str, badge: Text | None = None
 ) -> Text:
-    """Return the window bar: brand mark, binary strip, clock at the right.
+    """Return the window bar: brand mark, the feed pulse or next-bar countdown, clock at the right.
 
     Args:
         width: Columns to fill.
         tokens: Token sheet.
-        tick: Binary-strip step.
+        status: What sits after the brand: :func:`feed_pulse` while the ticker
+            runs, else the next-bar countdown; empty text for nothing.
         clock: Local time shown at the right (``HH:MM:SS``), or empty.
-        strip: Draw the binary strip (off in night mode).
+        badge: The mainnet badge, drawn before the clock (issue #833); it
+            outranks the clock and the status when the bar is narrow.
 
     Returns:
         At most ``width`` cells.
     """
     out = _gradient_text(f"{WINDOW_MARK} {WINDOW_TITLE} ", tokens.chrome, tokens.void)
-    if strip:
+    if status.plain:
         out.append(" ")
-        out.append(binary_strip(tick), style=tokens.frame)
-    right = Text(f"{clock}{' ' * _CLOCK_PAD}" if clock else "", style=tokens.muted)
+        out.append_text(status)
+    clock_text = Text(f"{clock}{' ' * _CLOCK_PAD}" if clock else "", style=tokens.muted)
+    right = Text()
+    if badge is not None and badge.plain:
+        right.append_text(badge)
+        right.append(" " * _BADGE_GAP)
+    right.append_text(clock_text)
+    if badge is not None and badge.plain and width - out.cell_len - right.cell_len <= 0:
+        # The mainnet badge outranks the clock and the feed: a narrow bar drops
+        # the time first, then cuts the status, never the badge.
+        right = Text().append_text(badge).append(" " * _CLOCK_PAD)
+        out.truncate(max(width - right.cell_len - 1, 0))
     gap = width - out.cell_len - right.cell_len
     if gap > 0:
         out.append(" " * gap)
@@ -255,11 +313,43 @@ def window_bar_text(
 
 
 class WindowBar(Static):
-    """The Neon window bar; the app sets ``tick`` and ``clock``."""
+    """The Neon window bar; the app sets ``clock`` and the feed or the next-bar countdown."""
 
-    tick: reactive[int] = reactive(0)
     clock: reactive[str] = reactive("")
-    strip: reactive[bool] = reactive(default=True)
+
+    def __init__(self, *, id: str | None = None) -> None:
+        super().__init__(id=id)
+        self._polls: tuple[bool, ...] = ()
+        self._bright = False
+        self._next_bar = ""
+        self._mainnet: tuple[bool | None] | None = None
+
+    @property
+    def polls(self) -> tuple[bool, ...]:
+        """The poll results the feed pulse shows, oldest first."""
+        return self._polls
+
+    @property
+    def bright(self) -> bool:
+        """Whether the newest feed glyph is brightened."""
+        return self._bright
+
+    def show_feed(self, polls: Sequence[bool], *, bright: bool) -> None:
+        """Show the feed pulse of ``polls``; ``bright`` brightens the newest glyph."""
+        self._polls, self._bright = tuple(polls)[-FEED_WIDTH:], bright
+        self.paint()
+
+    def show_next_bar(self, text: str) -> None:
+        """Show the next-bar countdown (used while there is no feed)."""
+        if text != self._next_bar:
+            self._next_bar = text
+            self.paint()
+
+    def show_mainnet(self, allow_mainnet: bool | None) -> None:
+        """Show the mainnet badge for the config's ``allow_mainnet`` (``None``: unread)."""
+        if self._mainnet != (allow_mainnet,):
+            self._mainnet = (allow_mainnet,)
+            self.paint()
 
     def on_mount(self) -> None:
         """Redraw when the theme changes."""
@@ -271,30 +361,23 @@ class WindowBar(Static):
         del event
         self.paint()
 
-    def watch_tick(self) -> None:
-        """Advance the strip."""
-        self.paint()
-
     def watch_clock(self) -> None:
         """Show the new time."""
         self.paint()
 
-    def watch_strip(self) -> None:
-        """Show or hide the strip."""
-        self.paint()
-
     def paint(self) -> None:
         """Redraw from the current theme's tokens."""
-        if self.is_mounted:
-            self.update(
-                window_bar_text(
-                    self.size.width,
-                    tokens_for(self.app.theme),
-                    tick=self.tick,
-                    clock=self.clock,
-                    strip=self.strip,
-                )
-            )
+        if not self.is_mounted:
+            return
+        tokens = tokens_for(self.app.theme)
+        if self._polls:
+            status = feed_pulse(self._polls, tokens, bright=self._bright)
+        else:
+            status = Text(self._next_bar, style=tokens.muted)
+        badge = None if self._mainnet is None else mainnet_text(self._mainnet[0], tokens)
+        self.update(
+            window_bar_text(self.size.width, tokens, status=status, clock=self.clock, badge=badge)
+        )
 
 
 @dataclass(frozen=True)
@@ -508,6 +591,159 @@ def key_chips(chips: Sequence[tuple[str, str]], tokens: Tokens) -> Text:
         if label:
             out.append(label, style=tokens.muted)
     return out
+
+
+def _euro_level(value: float) -> str:
+    """Return a money figure mid count-up, as the big total shows it."""
+    return fmt_level(Decimal(f"{value:.2f}"))
+
+
+_SHIMMER_EDGE: Final = 3.0
+_SHIMMER_CELLS_PER_STEP: Final = 2
+_HERO_ROWS: Final = 4
+
+
+class BigNumber(Digits):
+    """The big total: Textual's digit glyphs in one bold colour, over a gradient rule.
+
+    The digits always use the ``hero-digits`` token, bold, at full contrast
+    (at least 7:1 on the panel in every theme): no theme, night mode or stale
+    state dims them. The brand gradient is a 1-row underline below them
+    (``hero-underline``); a stale figure dims only the underline. This is a
+    property of the component, so every big number (Home, detail screens)
+    keeps it. The Code Owner, 2026-10-06: gradient digits were illegible.
+
+    :meth:`show` sets the figure. With motion on, a change of value counts up
+    from the old value over ``MOTION.slow`` (``out_cubic``), and
+    :meth:`start_shimmer` sweeps a bright band along the rule (never the
+    digits) at 8 fps. With motion off the figure is set at once and the
+    shimmer never runs.
+
+    Args:
+        motion: Run the count-up and the shimmer.
+        counting: Formats a value mid count-up; euros (``fmt_level``) by
+            default, so a day count (``12 / 90``) passes its own.
+        id: Widget id.
+        classes: Extra CSS classes.
+    """
+
+    DEFAULT_CSS = """
+    BigNumber { width: auto; height: 4; }
+    """
+
+    shown: reactive[float] = reactive(0.0)
+
+    def __init__(
+        self,
+        *,
+        motion: bool = True,
+        counting: Callable[[float], str] | None = None,
+        id: str | None = None,
+        classes: str | None = None,
+    ) -> None:
+        """Start empty and hidden until :meth:`show` gets a figure."""
+        super().__init__("", id=id, classes=classes)
+        self._motion = motion
+        self._counting_text = counting or _euro_level
+        self._figure = ""
+        self._target: float | None = None
+        self._counting = False
+        self._stale = False
+        self.shimmer_at: float | None = None
+        self._shimmer_timer: Timer | None = None
+
+    def on_mount(self) -> None:
+        """Redraw when the theme changes."""
+        self.app.theme_changed_signal.subscribe(self, lambda _theme: self.refresh())
+
+    @property
+    def figure(self) -> str:
+        """Return the figure the number shows once any count-up has ended."""
+        return self._figure
+
+    def show(self, figure: str | None, value: float | None, *, stale: bool = False) -> None:
+        """Show a figure, counting up from the previous value when motion is on.
+
+        Args:
+            figure: The formatted figure (``€1,021.06``), or ``None`` to hide
+                the number (a blind surface, EUR pending, a short terminal).
+            value: The figure's value, the count-up target.
+            stale: Hermes is down: the underline dims; the digits never do.
+        """
+        if figure is None or value is None:
+            self.display = False
+            self._target = None
+            return
+        self.display = True
+        self._stale = stale
+        previous, self._target, self._figure = self._target, value, figure
+        if self._motion and previous is not None and previous != value:
+            self._counting = True
+            self.set_reactive(BigNumber.shown, previous)
+            self.animate(
+                "shown",
+                value,
+                duration=MOTION.slow,
+                easing="out_cubic",
+                on_complete=self._settle,
+            )
+            return
+        self._settle()
+
+    def watch_shown(self, shown: float) -> None:
+        """Draw the counting figure."""
+        if self._counting:
+            self.update(self._counting_text(shown))
+
+    def _settle(self) -> None:
+        self._counting = False
+        self.update(self._figure)
+
+    def start_shimmer(self) -> None:
+        """Start one shimmer pass across the figure (motion on, figure shown)."""
+        if not self._motion or not self.display or self._shimmer_timer is not None:
+            return
+        self.shimmer_at = -_SHIMMER_EDGE
+        self._shimmer_timer = self.set_interval(MOTION.shimmer_step, self._step_shimmer)
+
+    def get_content_height(self, container: Size, viewport: Size, width: int) -> int:
+        """Return four rows: three of digits and the rule."""
+        del container, viewport, width
+        return _HERO_ROWS
+
+    @property
+    def rule_width(self) -> int:
+        """Return the rule's width: the width of the drawn digits."""
+        return DigitsRenderable.get_width(self.value)
+
+    def _step_shimmer(self) -> None:
+        position = (self.shimmer_at or 0.0) + _SHIMMER_CELLS_PER_STEP
+        if position > self.rule_width + _SHIMMER_EDGE:
+            self.shimmer_at = None
+            if self._shimmer_timer is not None:
+                self._shimmer_timer.stop()
+                self._shimmer_timer = None
+        else:
+            self.shimmer_at = position
+        self.refresh()
+
+    def render(self) -> Text:
+        """Draw the digits in ``hero-digits`` over the underline; stale dims the underline only."""
+        theme = self.app.theme
+        tokens = tokens_for(theme)
+        dim = data_tokens(theme).dim if self._stale else None
+        out = hero_digits(self.value, tokens.hero_digits)
+        out.append("\n")
+        out.append_text(
+            gradient_rule(
+                self.rule_width,
+                tokens.hero_underline,
+                shimmer=self.shimmer_at,
+                highlight=tokens.hero_digits,
+                flat=dim,
+            )
+        )
+        return out
 
 
 @dataclass(frozen=True, slots=True)

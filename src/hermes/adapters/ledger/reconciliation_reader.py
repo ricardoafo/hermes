@@ -13,11 +13,12 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime
-from decimal import Decimal, InvalidOperation, localcontext
+from decimal import Decimal, localcontext
 from pathlib import Path
 from typing import Self
 
+from hermes.adapters.ledger._cells import decimal_cell, optional_decimal_cell, time_cell
+from hermes.adapters.ledger.connection import open_ledger
 from hermes.adapters.ledger.sqlite_ledger import _trade_from_payload
 from hermes.domain.errors import LedgerError
 from hermes.domain.events.trade_executed import TradeExecuted
@@ -54,7 +55,7 @@ class SqliteReconciliationReader:
         if not resolved.is_file():
             raise FileNotFoundError(str(path))
         try:
-            connection = sqlite3.connect(f"{resolved.as_uri()}?mode=ro", uri=True)
+            connection = open_ledger(resolved, read_only=True)
         except sqlite3.Error as exc:
             raise LedgerError(msg=f"cannot open {path} read-only: {exc}") from exc
         return cls(connection)
@@ -90,7 +91,7 @@ class SqliteReconciliationReader:
             ) from exc
         try:
             trades = [_row_to_trade(row) for row in rows]
-        except (ValueError, InvalidOperation) as exc:
+        except (ValueError, TypeError) as exc:
             raise LedgerError(msg=f"unreadable trade row: {exc}") from exc
         return tuple(sorted(trades, key=lambda t: (t.executed_at, t.trade_id)))
 
@@ -109,8 +110,8 @@ class SqliteReconciliationReader:
             with localcontext(EXACT_CONTEXT):
                 for asset, remaining in rows:
                     ccy = Currency(asset)
-                    totals[ccy] = totals.get(ccy, Decimal("0")) + Decimal(remaining)
-        except (ValueError, InvalidOperation) as exc:
+                    totals[ccy] = totals.get(ccy, Decimal("0")) + decimal_cell(remaining)
+        except (ValueError, ArithmeticError) as exc:
             raise LedgerError(msg=f"unreadable lot row: {exc}") from exc
         return totals
 
@@ -145,10 +146,10 @@ def _row_to_trade(row: tuple[object, ...]) -> LedgerTrade:
         trade_id=int(str(trade_id)),
         pair=Pair(base=Currency(str(base)), quote=Currency(str(quote))),
         side=OrderSide(str(side)),
-        qty=Decimal(str(qty)),
-        price=Decimal(str(price)),
-        fee=Money(amount=Decimal(str(fee)), currency=Currency(str(fee_ccy))),
-        executed_at=datetime.fromisoformat(str(executed_at)),
-        price_eur=None if price_eur is None else Decimal(str(price_eur)),
-        fee_eur=None if fee_eur is None else Decimal(str(fee_eur)),
+        qty=decimal_cell(qty),
+        price=decimal_cell(price),
+        fee=Money(amount=decimal_cell(fee), currency=Currency(str(fee_ccy))),
+        executed_at=time_cell(executed_at),
+        price_eur=optional_decimal_cell(price_eur),
+        fee_eur=optional_decimal_cell(fee_eur),
     )

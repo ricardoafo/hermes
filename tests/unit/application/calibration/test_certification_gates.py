@@ -397,13 +397,27 @@ class TestGuardrails:
             is record
         )
 
-    def test_shadow_drift_breach_reverts(self) -> None:
-        """A drift breach while SHADOW_CERTIFIED returns to UNTRUSTED (§7 exit rule)."""
+    @pytest.mark.parametrize("state", [_S.BACKTEST_CERTIFIED, _S.SHADOW_CERTIFIED])
+    def test_shadow_drift_breach_reverts(self, state: CertificationState) -> None:
+        """A drift breach in shadow or after it returns to UNTRUSTED (§7, ADR-021, #796)."""
         evidence = replace(_ALL_PASS, shadow=ShadowEvidence(drift_breached=True))
-        after = apply_guardrails(
-            _record(_S.SHADOW_CERTIFIED), fingerprint=_FP, evidence=evidence, now=_OOS_DAY
-        )
+        after = apply_guardrails(_record(state), fingerprint=_FP, evidence=evidence, now=_OOS_DAY)
         assert after.state == _S.UNTRUSTED
+
+    # SEV-1: S6 a fired shadow kill must end the strategy, not let it reach live (#796)
+    @pytest.mark.parametrize("state", [_S.BACKTEST_CERTIFIED, _S.SHADOW_CERTIFIED])
+    def test_shadow_kill_is_dead(self, state: CertificationState) -> None:
+        """A fired §10 shadow kill moves the shadow states to DEAD, even with a drift breach."""
+        evidence = replace(_ALL_PASS, shadow=ShadowEvidence(kill_fired=True, drift_breached=True))
+        after = apply_guardrails(_record(state), fingerprint=_FP, evidence=evidence, now=_OOS_DAY)
+        assert after.state == _S.DEAD
+
+    @pytest.mark.parametrize("state", [_S.OOS_CERTIFIED, _S.LIVE_APPROVED, _S.CERTIFIED])
+    def test_shadow_evidence_does_not_move_later_states(self, state: CertificationState) -> None:
+        """Past shadow, a stale shadow kill or drift flag leaves the record as it is."""
+        evidence = replace(_ALL_PASS, shadow=ShadowEvidence(kill_fired=True, drift_breached=True))
+        record = _record(state, oos_evaluated_at=_OOS_DAY)
+        assert apply_guardrails(record, fingerprint=_FP, evidence=evidence, now=_OOS_DAY) is record
 
     # SEV-1: a live kill trigger halts the strategy for good (§10 live phase)
     @pytest.mark.parametrize("state", [_S.LIVE_APPROVED, _S.CERTIFIED])

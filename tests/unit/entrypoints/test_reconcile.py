@@ -8,7 +8,16 @@ Invariants protected here:
 - ``--json`` carries exact decimal strings;
 - ``--notify`` sends one alert for a non-clean month, none for a clean one,
   and a failed send never changes the exit code;
-- the command is registered and reachable through ``hermes``.
+- every ``--notify`` alert is recorded once as an ``AnomalyDetected`` row,
+  even when Telegram is not configured, and a run without one records none
+  (#136);
+- with ``allow_mainnet`` a month still open is compared with the live
+  balances, the reader is closed, and a missing read-only key or an
+  unreadable exchange exits 3 instead of falling back to the ledger-only
+  check; an ended month or a run without it builds no reader (#29);
+- the command is registered and reachable through ``hermes``;
+- only enabled roster entries seed the book: the shipped roster's disabled
+  ``swing-mvp1-v2`` adds no capital (v2-strategy-config).
 """
 
 from __future__ import annotations
@@ -16,16 +25,21 @@ from __future__ import annotations
 import io
 import json
 import sqlite3
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
 from hermes.adapters.notifier.telegram_adapter import TelegramAdapter
-from hermes.domain.errors import InfraError
+from hermes.domain.errors import ExchangeError, InfraError
 from hermes.domain.events.base import DomainEvent
+from hermes.domain.value_objects.currency import Currency
 from hermes.entrypoints import reconcile as reconcile_module
 from hermes.entrypoints.commands import discover
 from hermes.ports.notifier import NotifierPort
+from tests.support.anomaly_rows import recorded_anomalies
 from tests.support.reconciliation_ledger import write_september
 
 _CONFIG = Path(__file__).resolve().parents[3] / "config"
@@ -137,6 +151,16 @@ def test_json_carries_exact_decimal_strings(tmp_path: Path) -> None:
     assert (usdt["book"], payload["tax"]["realized_eur"]) == ("4659.14", "15.6")
 
 
+def test_a_disabled_roster_entry_adds_no_capital_to_the_book(tmp_path: Path) -> None:
+    """The shipped roster carries v2 disabled; the USDT book stays v1's 4659.14, not +5000."""
+    db = write_september(tmp_path / "l.sqlite3")
+
+    _, out = _run(["2026-09", "--db", str(db), "--json"])
+
+    usdt = next(c for c in json.loads(out)["checks"] if c["asset"] == "USDT")
+    assert usdt["book"] == "4659.14"
+
+
 def test_a_missing_ledger_exits_three_and_creates_nothing(tmp_path: Path) -> None:
     """A wrong --db is a ledger error; no empty file is left behind."""
     db = tmp_path / "absent.sqlite3"
@@ -237,6 +261,42 @@ def test_notify_without_telegram_warns_and_keeps_the_exit_code(tmp_path: Path) -
     assert (code, "Telegram is not configured" in out) == (1, True)
 
 
+def test_a_notify_alert_is_recorded_once_and_matches_the_sent_alert(tmp_path: Path) -> None:
+    """#136: the alert sent for a REVIEW month is the one AnomalyDetected row in the ledger."""
+    db = write_september(tmp_path / "l.sqlite3", priced=False)
+    notifier = _Recorder()
+
+    _run(["2026-09", "--db", str(db), "--notify"], notifier=notifier)
+
+    rows = recorded_anomalies(db)
+    (sent,) = notifier.sent
+    assert [(r["source"], r["reason"], r["correlation_id"]) for r in rows] == [
+        (
+            getattr(sent, "source", None),
+            getattr(sent, "reason", None),
+            sent.correlation_id,
+        )
+    ]
+
+
+def test_a_notify_alert_is_recorded_even_without_telegram(tmp_path: Path) -> None:
+    """#136: no channel configured still leaves the alert in the ledger."""
+    db = write_september(tmp_path / "l.sqlite3", priced=False)
+
+    _run(["2026-09", "--db", str(db), "--notify"], notifier=None)
+
+    assert [r["source"] for r in recorded_anomalies(db)] == ["reconciler"]
+
+
+def test_a_clean_month_with_notify_records_no_anomaly(tmp_path: Path) -> None:
+    """#136: no alert, no AnomalyDetected row."""
+    db = write_september(tmp_path / "l.sqlite3")
+
+    _run(["2026-09", "--db", str(db), "--notify"], notifier=_Recorder())
+
+    assert recorded_anomalies(db) == []
+
+
 def test_a_failed_send_warns_and_keeps_the_exit_code(tmp_path: Path) -> None:
     """A Telegram outage is reported, never mistaken for a verdict."""
     db = write_september(tmp_path / "l.sqlite3", priced=False)
@@ -265,3 +325,164 @@ def test_the_command_is_registered() -> None:
     command = discover()["reconcile"]
 
     assert (command.name, command.stub) == ("reconcile", False)
+
+
+# ---------------------------------------------------------------------------
+# Live balances behind allow_mainnet (#29)
+# ---------------------------------------------------------------------------
+
+# The September ledger leaves 0.006 BTC and 4659.14 USDT in the trade book.
+_BOOK = {Currency.BTC: Decimal("0.006"), Currency.USDT: Decimal("4659.14")}
+
+
+class _FakeBalances:
+    """BalanceReadPort double; integration seam: test_binance_balance_reader.py."""
+
+    def __init__(self, held: Mapping[Currency, Decimal], *, fail: bool = False) -> None:
+        self.held = held
+        self.fail = fail
+        self.closed = False
+
+    def balances(self, assets: Iterable[Currency]) -> Mapping[Currency, Decimal]:
+        if self.fail:
+            raise ExchangeError(msg="Binance refused /api/v3/account (HTTP 401, code -2015)")
+        return {asset: self.held.get(asset, Decimal("0")) for asset in assets}
+
+    def close(self) -> None:
+        self.closed = True
+
+
+@pytest.fixture
+def mainnet(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Load the config as the prod tier with allow_mainnet set."""
+    monkeypatch.setenv("HERMES_ENV", "prod")
+    monkeypatch.setenv("HERMES_ALLOW_MAINNET", "yes")
+
+
+def _run_live(
+    args: list[str],
+    factory: reconcile_module.BalanceReaderFactory,
+    *,
+    env: Mapping[str, str] | None = None,
+) -> tuple[int, str, str]:
+    out, err = io.StringIO(), io.StringIO()
+    code = reconcile_module.main(
+        ["--config-dir", str(_CONFIG), *args],
+        stream=out,
+        now=_OCT_4,
+        env=env,
+        balance_reader_factory=factory,
+        err=err,
+    )
+    return code, out.getvalue(), err.getvalue()
+
+
+@pytest.mark.usefixtures("mainnet")
+def test_with_mainnet_allowed_the_live_balances_are_compared(tmp_path: Path) -> None:
+    """An exchange that holds exactly the book reads as matching exchange rows, exit 0."""
+    db = write_september(tmp_path / "l.sqlite3")
+
+    code, out, _ = _run_live(
+        ["2026-10", "--db", str(db), "--json"], lambda _env: _FakeBalances(_BOOK)
+    )
+
+    exchange = [
+        (c["asset"], c["observed"], c["status"])
+        for c in json.loads(out)["checks"]
+        if c["view"] == "exchange"
+    ]
+    assert (code, exchange) == (0, [("BTC", "0.006", "match"), ("USDT", "4659.14", "match")])
+
+
+@pytest.mark.usefixtures("mainnet")
+def test_a_live_balance_short_of_the_book_is_drift(tmp_path: Path) -> None:
+    """0.005 BTC on the exchange against 0.006 in the book is DRIFT, exit 1."""
+    db = write_september(tmp_path / "l.sqlite3")
+    short = {**_BOOK, Currency.BTC: Decimal("0.005")}
+
+    code, out, _ = _run_live(["2026-10", "--db", str(db)], lambda _env: _FakeBalances(short))
+
+    assert (code, "  exchange BTC" in out, "Verdict: DRIFT" in out) == (1, True, True)
+
+
+@pytest.mark.usefixtures("mainnet")
+def test_the_live_reader_is_closed_after_the_run(tmp_path: Path) -> None:
+    """The reader's connection is released once the report is built."""
+    db = write_september(tmp_path / "l.sqlite3")
+    reader = _FakeBalances(_BOOK)
+
+    _run_live(["2026-10", "--db", str(db)], lambda _env: reader)
+
+    assert reader.closed is True
+
+
+# SEV-1: no silent fallback when the live check cannot run (AGENTS.md rule 7)
+@pytest.mark.usefixtures("mainnet")
+def test_with_mainnet_allowed_a_missing_read_key_exits_three(tmp_path: Path) -> None:
+    """The default factory with no key prints an ERROR naming both variables, no report."""
+    db = write_september(tmp_path / "l.sqlite3")
+
+    code, out, err = _run_live(
+        ["2026-10", "--db", str(db)], reconcile_module._binance_balance_reader, env={}
+    )
+
+    assert (
+        code,
+        out,
+        err.startswith("ERROR: "),
+        "HERMES_BINANCE_READ__API_KEY" in err,
+        "HERMES_BINANCE_READ__API_SECRET" in err,
+    ) == (3, "", True, True, True)
+
+
+# SEV-1: no silent fallback when the live check cannot run (AGENTS.md rule 7)
+@pytest.mark.usefixtures("mainnet")
+def test_an_unreadable_exchange_exits_three_and_closes_the_reader(tmp_path: Path) -> None:
+    """A venue refusal is an ERROR line and exit 3, never a ledger-only report."""
+    db = write_september(tmp_path / "l.sqlite3")
+    reader = _FakeBalances(_BOOK, fail=True)
+
+    code, out, err = _run_live(["2026-10", "--db", str(db)], lambda _env: reader)
+
+    assert (
+        code,
+        out,
+        err.startswith("ERROR: could not read the exchange balances"),
+        reader.closed,
+    ) == (
+        3,
+        "",
+        True,
+        True,
+    )
+
+
+def test_without_mainnet_no_balance_reader_is_built(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Shadow mode never builds a reader and reports the exchange as not compared."""
+    monkeypatch.delenv("HERMES_ALLOW_MAINNET", raising=False)
+    db = write_september(tmp_path / "l.sqlite3")
+
+    def refuse(_env: Mapping[str, str]) -> reconcile_module.ClosableBalanceReader:
+        raise AssertionError("no balance reader may be built without allow_mainnet")
+
+    code, out, _ = _run_live(["2026-10", "--db", str(db)], refuse)
+
+    assert (code, "exchange: no account connected (shadow mode)" in out) == (0, True)
+
+
+@pytest.mark.usefixtures("mainnet")
+def test_an_ended_month_builds_no_reader_and_needs_no_key(tmp_path: Path) -> None:
+    """September has ended on 4 Oct, so the live balances are never read and no key is asked for."""
+    db = write_september(tmp_path / "l.sqlite3")
+
+    code, out, err = _run_live(
+        ["2026-09", "--db", str(db)], reconcile_module._binance_balance_reader, env={}
+    )
+
+    assert (code, err, "exchange: balances are current, 2026-09 has ended" in out) == (
+        0,
+        "",
+        True,
+    )

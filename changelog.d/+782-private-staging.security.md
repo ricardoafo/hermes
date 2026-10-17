@@ -1,0 +1,1 @@
+- CD now copies and unpacks each release in `/var/lib/hermes-deploy`, a 0700 directory owned by the deploy account, instead of world-writable `/var/tmp`, and the non-root deploy sudoers rule points there; the VPS bootstrap upload moves from `/var/tmp` to `/var/lib/hermes-bootstrap` for the same reason (issue #782).

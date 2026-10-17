@@ -22,6 +22,7 @@ import sqlite3
 from pathlib import Path
 from typing import TextIO
 
+from hermes.adapters.ledger.connection import open_ledger
 from hermes.adapters.ledger.migration_runner import (
     DESTRUCTIVE_MARKER,
     DryRunReport,
@@ -93,7 +94,7 @@ def _status(db: Path, stream: TextIO, err: TextIO) -> int:
     if not db.exists():
         err.write(f"ERROR: ledger {db} does not exist\n")
         return 3
-    conn = sqlite3.connect(db)
+    conn = open_ledger(db)
     try:
         pending = pending_migrations(conn)
     finally:
@@ -133,8 +134,7 @@ def _migrate(db: Path, snapshot_dir: Path, stream: TextIO, err: TextIO) -> int:
         stream.write("No pending migrations.\n")
         return 0
     stream.write(f"Snapshot: {snapshot}\n")
-    for name in applied:
-        stream.write(f"applied: {name}\n")
+    stream.writelines(f"applied: {name}\n" for name in applied)
     return 0
 
 

@@ -7,7 +7,11 @@ Each test protects one rule of the approved console UX:
 - the heartbeat is quiet when OK, amber when late and a red row when down;
 - when hermes is down, money reads "as of" the stop time;
 - a pending tax reads "tax estimate: not available yet"; a loss is a credit;
-- the home overview shows at most four activity rows.
+- the home overview shows at most four activity rows;
+- the portfolio head and books together are the CLI portfolio block; the head
+  can leave out the total and the chart lines (the TUI draws those, #712);
+- activity icons lead each row only when asked, without doubling ⚠ and ✖;
+- the market watch can drop its title and hold a chart column (#712).
 """
 
 # The console prints the typographic minus (U+2212) and times sign on purpose.
@@ -26,6 +30,10 @@ from hermes.application.console.render import (
     RenderContext,
     render_activity,
     render_heartbeat,
+    render_market_watch,
+    render_portfolio,
+    render_portfolio_books,
+    render_portfolio_head,
     render_positions,
     render_tax_footnote,
     to_plain_text,
@@ -296,3 +304,81 @@ def test_plain_text_has_no_trailing_spaces() -> None:
     ctx = RenderContext.for_model(model, surface=Surface.OPERATOR_CLI)
     text = to_plain_text(render_positions(model.positions(), ctx), width=80)
     assert [line for line in text.splitlines() if line != line.rstrip()] == []
+
+
+def _operator(scenario: str = "ok-two-positions") -> tuple[FixtureReadModel, RenderContext]:
+    model = FixtureReadModel.load(scenario)
+    ctx = replace(RenderContext.for_model(model, surface=Surface.OPERATOR_TUI), demo_scenario=None)
+    return model, ctx
+
+
+def test_head_and_books_together_are_the_portfolio_block() -> None:
+    """Head (with total and charts) then books renders exactly what render_portfolio renders."""
+    model, ctx = _operator()
+    summary = model.portfolio()
+    joined = to_plain_text(render_portfolio_head(summary, ctx), width=80) + to_plain_text(
+        render_portfolio_books(summary, ctx), width=80
+    )
+    assert joined == to_plain_text(render_portfolio(summary, ctx), width=80)
+
+
+def test_head_without_total_and_charts_starts_with_the_change() -> None:
+    """The TUI's big-total head: change, net and start; no total, sparkline or cash line."""
+    model, ctx = _operator()
+    text = to_plain_text(
+        render_portfolio_head(model.portfolio(), ctx, total=False, charts=False), width=80
+    )
+    assert text.splitlines() == [
+        "▲ +€12.30 +1.22% today",
+        "net ▲ +€10.66 today",
+        "started €1,000.00 on 27 Sep",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("width", "caption"),
+    [
+        (80, "D · 6 checks · €1,009 → €1,021 · high €1,021"),
+        (120, "today · 6 checks · €1,009 → €1,021 · high €1,021"),
+    ],
+)
+def test_sparkline_has_its_caption_short_when_compact(width: int, caption: str) -> None:
+    """Under the sparkline the dim caption: range letter under 100 columns, words from 100."""
+    model, ctx = _operator()
+    head = render_portfolio_head(model.portfolio(), replace(ctx, width=width))
+    lines = to_plain_text(head, width=width).splitlines()
+    spark = next(i for i, line in enumerate(lines) if line and line[0] in "▁▂▃▄▅▆▇█")
+    assert lines[spark + 1] == caption
+
+
+def test_books_are_empty_on_a_blind_surface() -> None:
+    """A blind surface gets no waterfall at all; the head carries the hidden note."""
+    model, ctx = _operator()
+    blind = replace(ctx, surface=Surface.SLACK)
+    assert (
+        to_plain_text(render_portfolio_books(model.portfolio(), blind), width=80),
+        to_plain_text(render_portfolio_head(model.portfolio(), blind), width=80),
+    ) == ("", "Portfolio · money hidden on this surface\n")
+
+
+def test_activity_icons_lead_each_row_once() -> None:
+    """With icons the warning row reads '⚠  <when>  <text>' and its text has no second ⚠."""
+    model, ctx = _operator()
+    plain = to_plain_text(render_activity(model.activity(), ctx, icons=True), width=100)
+    warning = next(line for line in plain.splitlines() if "⚠" in line)
+    assert (warning.count("⚠"), warning.lstrip().startswith("⚠")) == (1, True)
+
+
+def test_activity_without_icons_is_unchanged() -> None:
+    """The default feed has no icon column: the first row starts with its time."""
+    model, ctx = _operator()
+    rows = to_plain_text(render_activity(model.activity(), ctx), width=100).splitlines()
+    assert rows[1].split()[:2] == ["2h", "ago"]
+
+
+def test_market_watch_without_title() -> None:
+    """No "Market watch" title; the header ends with the next check column."""
+    model, ctx = _operator()
+    text = to_plain_text(render_market_watch(model.market_watch(), ctx, title=False), width=100)
+    lines = text.splitlines()
+    assert (lines[0].split()[-2:], "Market watch" in text) == (["next", "check"], False)

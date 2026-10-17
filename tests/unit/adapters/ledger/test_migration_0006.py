@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import shutil
 import sqlite3
+from collections.abc import Iterator
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -20,8 +22,9 @@ from hermes.adapters.ledger.migration_runner import (
 _MIGRATION = "0006_capital_seeds.sql"
 
 
-def _at_0004(tmp_path: Path) -> sqlite3.Connection:
-    """Return a ledger migrated through 0004 holding one trade-linked lot."""
+@pytest.fixture
+def at_0004(tmp_path: Path) -> Iterator[sqlite3.Connection]:
+    """Yield a ledger migrated through 0004 holding one trade-linked lot; closed afterwards."""
     pre = tmp_path / "pre_0006"
     pre.mkdir()
     for path in MIGRATIONS_DIR.glob("*.sql"):
@@ -41,7 +44,8 @@ def _at_0004(tmp_path: Path) -> sqlite3.Connection:
         "VALUES ('L1', 'BTC', '1', '1', '48000', '2026-01-02T10:00:00+00:00', 'swing', 1)"
     )
     conn.commit()
-    return conn
+    yield conn
+    conn.close()
 
 
 def _seed_row(conn: sqlite3.Connection, strategy_id: str, lot_id: str) -> None:
@@ -58,9 +62,11 @@ def test_0006_is_additive_so_every_ledger_start_applies_it() -> None:
     assert first_line.strip() != DESTRUCTIVE_MARKER
 
 
-def test_ledger_at_0004_applies_0006_and_keeps_its_lots(tmp_path: Path) -> None:
+def test_ledger_at_0004_applies_0006_and_keeps_its_lots(
+    tmp_path: Path, at_0004: sqlite3.Connection
+) -> None:
     """Invariant: upgrading adds capital_seeds and leaves existing lot rows untouched."""
-    conn = _at_0004(tmp_path)
+    conn = at_0004
     before = conn.execute("SELECT * FROM lots").fetchall()
     # Pinned to 0006 so later migrations do not change what this run applies.
     through_0006 = tmp_path / "pre_0006"
@@ -73,19 +79,19 @@ def test_ledger_at_0004_applies_0006_and_keeps_its_lots(tmp_path: Path) -> None:
 
 def test_seed_rows_start_pending() -> None:
     """Invariant (D-1): a seed row without EUR columns reads eur_status 'pending'."""
-    conn = sqlite3.connect(":memory:")
-    apply_migrations(conn)
-    _seed_row(conn, "swing", "L1")
-    assert conn.execute("SELECT eur_status, value_eur FROM capital_seeds").fetchone() == (
-        "pending",
-        None,
-    )
+    with closing(sqlite3.connect(":memory:")) as conn:
+        apply_migrations(conn)
+        _seed_row(conn, "swing", "L1")
+        assert conn.execute("SELECT eur_status, value_eur FROM capital_seeds").fetchone() == (
+            "pending",
+            None,
+        )
 
 
 def test_one_seed_per_strategy() -> None:
     """Invariant (A-1.1): the schema refuses a second seed for the same strategy."""
-    conn = sqlite3.connect(":memory:")
-    apply_migrations(conn)
-    _seed_row(conn, "swing", "L1")
-    with pytest.raises(sqlite3.IntegrityError, match="UNIQUE"):
-        _seed_row(conn, "swing", "L2")
+    with closing(sqlite3.connect(":memory:")) as conn:
+        apply_migrations(conn)
+        _seed_row(conn, "swing", "L1")
+        with pytest.raises(sqlite3.IntegrityError, match="UNIQUE"):
+            _seed_row(conn, "swing", "L2")

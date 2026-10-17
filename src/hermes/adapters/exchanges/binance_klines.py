@@ -39,7 +39,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Final
 
@@ -48,6 +48,7 @@ import structlog
 
 from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.domain.errors import ExchangeError, NetworkError
+from hermes.domain.market_data.bar_schedule import close_time_of, previous_boundary
 from hermes.domain.market_data.kline import Kline, KlineInterval
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
@@ -78,6 +79,7 @@ _MS_PER_SECOND: Final[int] = 1000
 # Number of positional fields the exchange returns per candle. Anything
 # else is a schema break we refuse to silently paper over.
 _MIN_KLINE_FIELDS: Final[int] = 7
+_EPOCH: Final[datetime] = datetime(1970, 1, 1, tzinfo=UTC)
 
 _log = structlog.get_logger(__name__)
 
@@ -340,8 +342,15 @@ def _from_epoch_ms(ms: int) -> datetime:
 
     Returns:
         UTC-aware datetime.
+
+    Raises:
+        hermes.domain.errors.ExchangeError: ``ms`` is outside the calendar
+            ``datetime`` supports.
     """
-    return datetime.fromtimestamp(ms / _MS_PER_SECOND, tz=UTC)
+    try:
+        return _EPOCH + timedelta(milliseconds=ms)
+    except OverflowError as exc:
+        raise ExchangeError(f"klines timestamp out of range: {ms}") from exc
 
 
 def _decimal_or_raise(raw: object, *, field_name: str) -> Decimal:
@@ -361,9 +370,12 @@ def _decimal_or_raise(raw: object, *, field_name: str) -> Decimal:
     if not isinstance(raw, (str, int, float)):
         raise ExchangeError(f"klines row field {field_name!r} not string/numeric: {raw!r}")
     try:
-        return Decimal(str(raw))
+        value = Decimal(str(raw))
     except InvalidOperation as exc:
         raise ExchangeError(f"klines row field {field_name!r} is not a decimal: {raw!r}") from exc
+    if not value.is_finite():
+        raise ExchangeError(f"klines row field {field_name!r} is not a finite number: {raw!r}")
+    return value
 
 
 def _row_to_kline(
@@ -391,17 +403,32 @@ def _row_to_kline(
 
     Raises:
         hermes.domain.errors.ExchangeError: On a non-list row, too few
-            fields, or unparseable numeric fields.
+            fields, unparseable numeric fields, an ``open_time`` off the
+            interval grid, a ``close_time`` that is not ``open + interval -
+            1 ms``, or a price that is not positive.
     """
     if not isinstance(row, list) or len(row) < _MIN_KLINE_FIELDS:
         raise ExchangeError(f"klines row must be list of ≥{_MIN_KLINE_FIELDS} fields, got {row!r}")
 
     open_time_ms = row[0]
     close_time_ms = row[6]
-    if not isinstance(open_time_ms, int) or not isinstance(close_time_ms, int):
+    if (
+        not isinstance(open_time_ms, int)
+        or isinstance(open_time_ms, bool)
+        or not isinstance(close_time_ms, int)
+        or isinstance(close_time_ms, bool)
+    ):
         raise ExchangeError(
             f"klines row timestamps must be ints, got open={open_time_ms!r}, "
             f"close={close_time_ms!r}"
+        )
+    open_time = _from_epoch_ms(open_time_ms)
+    close_time = _from_epoch_ms(close_time_ms)
+    if previous_boundary(open_time, interval) != open_time:
+        raise ExchangeError(f"klines open_time {open_time.isoformat()} is not {interval} aligned")
+    if close_time != close_time_of(open_time, interval):
+        raise ExchangeError(
+            f"klines close_time {close_time.isoformat()} is not open + {interval} - 1 ms"
         )
 
     open_dec = _decimal_or_raise(row[1], field_name="open")
@@ -409,19 +436,21 @@ def _row_to_kline(
     low_dec = _decimal_or_raise(row[3], field_name="low")
     close_dec = _decimal_or_raise(row[4], field_name="close")
     volume_dec = _decimal_or_raise(row[5], field_name="volume")
+    if low_dec <= 0:
+        raise ExchangeError(f"klines row low price is not positive: {row[3]!r}")
 
     base_asset: Currency = pair.base
     try:
         return Kline(
             pair=pair,
             interval=interval,
-            open_time=_from_epoch_ms(open_time_ms),
+            open_time=open_time,
             open=Price(amount=open_dec, pair=pair),
             high=Price(amount=high_dec, pair=pair),
             low=Price(amount=low_dec, pair=pair),
             close=Price(amount=close_dec, pair=pair),
             volume=Quantity(amount=volume_dec, asset=base_asset),
-            close_time=_from_epoch_ms(close_time_ms),
+            close_time=close_time,
         )
     except ValueError as exc:
         # Domain validation failed — the exchange returned self-inconsistent

@@ -31,6 +31,7 @@ from rich.console import Console, Group, RenderableType
 from rich.table import Table
 from rich.text import Text
 
+from hermes.application.console.chart_caption import chart_caption
 from hermes.application.console.format import (
     MINUS,
     TIMES,
@@ -77,15 +78,20 @@ __all__ = [
     "DEMO_TAG",
     "MADRID",
     "RenderContext",
+    "day_clock",
+    "range_label",
     "render_activity",
     "render_heartbeat",
     "render_market_watch",
     "render_overview",
     "render_portfolio",
+    "render_portfolio_books",
+    "render_portfolio_head",
     "render_position_detail",
     "render_positions",
     "render_shadow_test",
     "render_tax_footnote",
+    "shadow_test_line",
     "to_plain_text",
 ]
 
@@ -107,6 +113,20 @@ _RANGE_LABEL: Final[dict[PortfolioRange, str]] = {
     PortfolioRange.MONTH: "this month",
     PortfolioRange.YEAR: "this year",
 }
+
+
+def range_label(range_: PortfolioRange) -> str:
+    """Return the words a range is shown with: ``today``, ``this week``, ...
+
+    Args:
+        range_: The portfolio range.
+
+    Returns:
+        Its label.
+    """
+    return _RANGE_LABEL[range_]
+
+
 _CUSHION_STYLE: Final[dict[CushionLevel, str]] = {
     CushionLevel.GREEN: "green",
     CushionLevel.AMBER: "yellow",
@@ -227,8 +247,16 @@ def _clock(ctx: RenderContext, at: datetime) -> str:
     return at.astimezone(ctx.tz).strftime("%H:%M")
 
 
-def _day_clock(ctx: RenderContext, at: datetime) -> str:
-    """Return ``HH:MM`` on the read day, else ``Sun 02:00``."""
+def day_clock(ctx: RenderContext, at: datetime) -> str:
+    """Return ``HH:MM`` on the read day, else ``Sun 02:00``.
+
+    Args:
+        ctx: Render context (its clock and timezone).
+        at: The moment.
+
+    Returns:
+        The local clock time, with the weekday when it is not the read day.
+    """
     local = at.astimezone(ctx.tz)
     if local.date() == ctx.now.astimezone(ctx.tz).date():
         return local.strftime("%H:%M")
@@ -454,6 +482,110 @@ def _share(part: Decimal, whole: Decimal) -> str:
     return f"{(part * 100 / whole):.2f}%"
 
 
+def _head_parts(
+    summary: PortfolioSummary, ctx: RenderContext, *, total: str, charts: bool
+) -> list[RenderableType]:
+    """Return the hero, net, sparkline, cash and started lines (money surfaces, EUR known)."""
+    label = _RANGE_LABEL[summary.range]
+    total_style = "dim" if ctx.stale_since else "bold"
+    hero = Text()
+    if total == "inline":
+        hero.append(fmt_level(summary.total_value), style=total_style)
+        hero.append(_rate_note(summary), style="dim")
+        hero.append("   ")
+    hero.append(
+        f"{fmt_change(summary.change, summary.change_pct)} {label}",
+        style=_money_style(ctx, summary.change),
+    )
+    if total != "inline":
+        hero.append(_rate_note(summary), style="dim")
+    hero.append(_stale_note(ctx), style="dim")
+    net_line = Text("net ")
+    net_line.append_text(_money(ctx, summary.net, f" {label}"))
+    if isinstance(summary.year.tax, TaxPending):
+        net_line.append(" · before tax", style="dim")
+    parts: list[RenderableType] = []
+    if total == "big":
+        parts += [
+            Text(row, style=total_style) for row in big_digits(fmt_level(summary.total_value))
+        ]
+    parts += [hero, net_line]
+    if charts:
+        spark = sparkline(summary.sparkline, min(_SPARK_MAX, ctx.width - 2))
+        caption = chart_caption(
+            summary,
+            tz=ctx.tz,
+            width=ctx.width - 2,
+            compact=ctx.width < _WIDE_FROM,
+            show_values=ctx.shows_money,
+        )
+        parts += [
+            Text(spark, style="dim" if ctx.stale_since else "cyan"),
+            Text(caption, style="dim"),
+            Text(
+                f"cash {fmt_level(summary.cash)} {_share(summary.cash, summary.total_value)}"
+                f" · invested {fmt_level(summary.invested)}"
+                f" {_share(summary.invested, summary.total_value)}",
+                style="dim",
+            ),
+        ]
+    started_line = _started_line(summary)
+    if started_line is not None:
+        parts.append(started_line)
+    return parts
+
+
+def _books_parts(summary: PortfolioSummary, ctx: RenderContext) -> list[RenderableType]:
+    """Return the waterfall and the open line, after one blank row."""
+    return [Text(""), _waterfall(ctx, summary), _open_line(ctx, summary)]
+
+
+def render_portfolio_head(
+    summary: PortfolioSummary,
+    ctx: RenderContext,
+    *,
+    total: bool = True,
+    charts: bool = True,
+) -> Group:
+    """Render the portfolio's figures above the books: change, net, chart line, start.
+
+    The TUI draws the total and the charts itself on large terminals, so it can
+    leave them out here; the waterfall is :func:`render_portfolio_books`.
+
+    Args:
+        summary: The portfolio view for the chosen range.
+        ctx: Render context.
+        total: Lead with the one-line total.
+        charts: Include the sparkline and the cash / invested line.
+
+    Returns:
+        The head block; on a blind surface the hidden line, while EUR is
+        pending the pending block.
+    """
+    if not ctx.shows_money:
+        return _framed(ctx, [Text(f"Portfolio · {_HIDDEN_NOTE}", style="dim")])
+    if summary.eur_pending:
+        return _pending_portfolio(ctx, summary)
+    parts = _head_parts(summary, ctx, total="inline" if total else "none", charts=charts)
+    return _framed(ctx, parts)
+
+
+def render_portfolio_books(summary: PortfolioSummary, ctx: RenderContext) -> Group:
+    """Render the Today / This year waterfall and the open line (closed and open books).
+
+    Args:
+        summary: The portfolio view.
+        ctx: Render context.
+
+    Returns:
+        The books; empty on a blind surface or while EUR is pending (the head
+        says why).
+    """
+    if not ctx.shows_money or summary.eur_pending:
+        return Group()
+    return Group(*_books_parts(summary, ctx))
+
+
 def render_portfolio(
     summary: PortfolioSummary, ctx: RenderContext, *, big_total: bool = False
 ) -> Group:
@@ -476,47 +608,8 @@ def render_portfolio(
         return _framed(ctx, [Text(f"Portfolio · {_HIDDEN_NOTE}", style="dim")])
     if summary.eur_pending:
         return _pending_portfolio(ctx, summary)
-    label = _RANGE_LABEL[summary.range]
-    total_style = "dim" if ctx.stale_since else "bold"
-    hero = Text()
-    if not big_total:
-        hero.append(fmt_level(summary.total_value), style=total_style)
-        hero.append(_rate_note(summary), style="dim")
-        hero.append("   ")
-    hero.append(
-        f"{fmt_change(summary.change, summary.change_pct)} {label}",
-        style=_money_style(ctx, summary.change),
-    )
-    if big_total:
-        hero.append(_rate_note(summary), style="dim")
-    hero.append(_stale_note(ctx), style="dim")
-    net_line = Text("net ")
-    net_line.append_text(_money(ctx, summary.net, f" {label}"))
-    if isinstance(summary.year.tax, TaxPending):
-        net_line.append(" · before tax", style="dim")
-    spark = sparkline(summary.sparkline, min(_SPARK_MAX, ctx.width - 2))
-    cash_line = Text(
-        f"cash {fmt_level(summary.cash)} {_share(summary.cash, summary.total_value)}"
-        f" · invested {fmt_level(summary.invested)}"
-        f" {_share(summary.invested, summary.total_value)}",
-        style="dim",
-    )
-    parts: list[RenderableType] = [
-        *(
-            [Text(row, style=total_style) for row in big_digits(fmt_level(summary.total_value))]
-            if big_total
-            else []
-        ),
-        hero,
-        net_line,
-        Text(spark, style="dim" if ctx.stale_since else "cyan"),
-        cash_line,
-    ]
-    started_line = _started_line(summary)
-    if started_line is not None:
-        parts.append(started_line)
-    parts += [Text(""), _waterfall(ctx, summary), _open_line(ctx, summary)]
-    return _framed(ctx, parts)
+    head = _head_parts(summary, ctx, total="big" if big_total else "inline", charts=True)
+    return _framed(ctx, [*head, *_books_parts(summary, ctx)])
 
 
 # ----------------------------------------------------------------------
@@ -639,7 +732,12 @@ def render_positions(
 # ----------------------------------------------------------------------
 
 
-def render_market_watch(rows: Sequence[WatchedPair], ctx: RenderContext) -> Group:
+def render_market_watch(
+    rows: Sequence[WatchedPair],
+    ctx: RenderContext,
+    *,
+    title: bool = True,
+) -> Group:
     """Render each checked stream: last check, its result, next check (#650).
 
     The result is the kind of signal the last check produced (``entry`` or
@@ -649,26 +747,28 @@ def render_market_watch(rows: Sequence[WatchedPair], ctx: RenderContext) -> Grou
     Args:
         rows: The checked streams.
         ctx: Render context.
+        title: Lead with the "Market watch" title (a framed panel has its own).
 
     Returns:
-        The market watch table under its title, or the empty-state line.
+        The market watch table, or the empty-state line.
     """
-    title = Text("Market watch", style="bold")
+    head: list[RenderableType] = [Text("Market watch", style="bold")] if title else []
     if not rows:
-        return _framed(ctx, [title, Text("No pairs checked yet.", style="dim")])
+        return _framed(ctx, [*head, Text("No pairs checked yet.", style="dim")])
     table = Table(box=box.SIMPLE_HEAD, pad_edge=False, show_edge=False)
     for name in ("coin", "tf", "last check", "result", "next check"):
         table.add_column(name)
     for row in rows:
         result = Text("none", style="dim") if row.signal is None else Text(row.signal, style="bold")
-        table.add_row(
+        cells: list[RenderableType] = [
             row.coin,
             row.timeframe,
-            _day_clock(ctx, row.last_check_at),
+            day_clock(ctx, row.last_check_at),
             result,
-            _day_clock(ctx, row.next_check_at),
-        )
-    return _framed(ctx, [title, table])
+            day_clock(ctx, row.next_check_at),
+        ]
+        table.add_row(*cells)
+    return _framed(ctx, [*head, table])
 
 
 # ----------------------------------------------------------------------
@@ -860,7 +960,27 @@ def _stop_raised_text(ctx: RenderContext, item: ActivityItem, coin: str) -> Text
     return Text(f"{coin} stop raised{times}{levels}")
 
 
-def _activity_text(ctx: RenderContext, item: ActivityItem) -> Text:
+_ICONS: Final[dict[ActivityKind, tuple[str, str]]] = {
+    ActivityKind.OPENED: ("◆", "cyan"),
+    ActivityKind.CLOSED: ("✓", ""),
+    ActivityKind.STOP_RAISED: ("▲", "green"),
+    ActivityKind.RESTART: ("•", "dim"),
+    ActivityKind.WARNING: ("⚠", "yellow"),
+    ActivityKind.ERROR: ("✖", "red"),
+    ActivityKind.BAR: ("·", "dim"),
+    ActivityKind.SIGNAL: ("·", "dim"),
+}
+
+
+def _icon(ctx: RenderContext, item: ActivityItem) -> Text:
+    """Return the row's icon; a closed row's tick takes the colour of its net."""
+    glyph, style = _ICONS[item.kind]
+    if item.kind is ActivityKind.CLOSED:
+        style = _money_style(ctx, item.net) if item.net is not None and ctx.shows_money else ""
+    return Text(glyph, style=style)
+
+
+def _activity_text(ctx: RenderContext, item: ActivityItem, *, icons: bool = False) -> Text:
     coin = item.coin or ""
     price_eur = item.price_eur
     price = f" at {_price_text(ctx, price_eur)}" if price_eur is not None else ""
@@ -875,16 +995,22 @@ def _activity_text(ctx: RenderContext, item: ActivityItem) -> Text:
         case ActivityKind.RESTART:
             text = Text(f"restart · {note}" if note else "restart", style="dim")
         case ActivityKind.WARNING:
-            text = Text(f"⚠ {note}", style="yellow")
+            text = Text(note if icons else f"⚠ {note}", style="yellow")
         case ActivityKind.ERROR:
-            text = Text(f"✖ {note}", style="red")
+            text = Text(note if icons else f"✖ {note}", style="red")
+        case ActivityKind.BAR if item.coin is None and note:
+            text = Text(note, style="dim")
         case ActivityKind.BAR | ActivityKind.SIGNAL:
             text = Text(f"{item.kind.value} {coin} {note}".rstrip(), style="dim")
     return text
 
 
 def render_activity(
-    days: Sequence[ActivityDay], ctx: RenderContext, *, limit: int | None = None
+    days: Sequence[ActivityDay],
+    ctx: RenderContext,
+    *,
+    limit: int | None = None,
+    icons: bool = False,
 ) -> Group:
     """Render the day-grouped activity feed, newest first.
 
@@ -892,6 +1018,8 @@ def render_activity(
         days: Activity grouped by local day, newest day first.
         ctx: Render context.
         limit: Maximum number of rows across all days (the home screen shows 3-4).
+        icons: Lead each row with one icon per kind (◆ opened, ✓ closed,
+            ▲ stop raised, • restart, ⚠ warning, ✖ error); the TUI's Cockpit.
 
     Returns:
         The feed, or the empty-state line.
@@ -907,10 +1035,16 @@ def render_activity(
         header = _day_header(ctx, day)
         parts.append(Text(header, style="bold"))
         table = _grid(wide_padding=True)
+        if icons:
+            table.add_column("", no_wrap=True)
         table.add_column("", style="dim", min_width=8)
         table.add_column("")
         for item in items:
-            table.add_row(_when(ctx, item, is_today=header == "Today"), _activity_text(ctx, item))
+            cells: list[RenderableType] = [
+                _when(ctx, item, is_today=header == "Today"),
+                _activity_text(ctx, item, icons=icons),
+            ]
+            table.add_row(*([_icon(ctx, item), *cells] if icons else cells))
         parts.append(table)
         if remaining is not None:
             remaining -= len(items)
@@ -934,13 +1068,25 @@ def render_shadow_test(test: ShadowTest, ctx: RenderContext) -> Group:
     Returns:
         For example ``Shadow test · day 12 of 90 · on track``.
     """
+    return _framed(ctx, [Text(shadow_test_line(test), style="dim")])
+
+
+def shadow_test_line(test: ShadowTest) -> str:
+    """Return the 90-day line's words, for example ``Shadow test · day 12 of 90 · on track``.
+
+    Args:
+        test: The shadow test view.
+
+    Returns:
+        The line, with the note after it when there is one.
+    """
     if test.status is ShadowTestStatus.NOT_STARTED or test.day is None:
         line = "Shadow test · not started"
     else:
         line = f"Shadow test · day {test.day} of {test.length_days} · {test.status.value}"
     if test.note:
         line += f" · {test.note}"
-    return _framed(ctx, [Text(line, style="dim")])
+    return line
 
 
 def render_overview(model: ConsoleReadModel, ctx: RenderContext) -> Group:

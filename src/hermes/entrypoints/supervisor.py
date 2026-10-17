@@ -19,7 +19,12 @@ Every call is audited as one JSON line on stderr, or appended to ``--audit``.
 The ledger is opened with SQLite's ``mode=ro`` for each call, so the server
 never writes and is safe next to a running ``hermes serve``.
 
-Exit codes: 0 ok, 1 the tool refused the call, 2 usage, 3 config error.
+``brief --keep`` also keeps the published brief in ``briefs.jsonl`` beside the
+ledger (or ``--briefs FILE``), once per kind and UTC day, for the console's
+Briefs screen (issue #897).
+
+Exit codes: 0 ok, 1 the tool refused the call or the brief was not kept,
+2 usage, 3 config error.
 
 Reference: openspec/changes/34-supervisor-read-tools/change.md; issues #34, #470.
 """
@@ -28,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import AbstractContextManager, contextmanager
@@ -36,11 +42,14 @@ from pathlib import Path
 from typing import Final, TextIO
 
 import hermes
+from hermes.adapters.brief_archive import JsonlBriefArchive
 from hermes.adapters.certification.json_store import JsonCertificationStore
 from hermes.adapters.journal.jsonl_store import JsonlDecisionJournal
 from hermes.adapters.ledger.supervisor_reader import SqliteSupervisorReader
+from hermes.application.console.read_model import ViewNotAvailableError
+from hermes.application.console.views import ConsoleBrief
 from hermes.application.status import UnitState
-from hermes.application.supervisor.briefing import BriefKind, gather, publishable
+from hermes.application.supervisor.briefing import SOURCES, BriefKind, gather, publishable
 from hermes.application.supervisor.mcp import McpServer
 from hermes.application.supervisor.tools import (
     MEMORIZATION_GUARD,
@@ -49,6 +58,7 @@ from hermes.application.supervisor.tools import (
     ToolDispatcher,
     UnknownToolError,
 )
+from hermes.domain.errors import BriefArchiveError
 from hermes.entrypoints import serve as serve_module
 from hermes.entrypoints import status as status_module
 from hermes.entrypoints._streams import resolve_err
@@ -57,18 +67,26 @@ from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
 from hermes.infrastructure.config.root import HermesConfig
 from hermes.ports.supervisor import CertificationFact, CertificationLookup
 
-__all__ = ["GRANTS_ENV_VAR", "main"]
+__all__ = ["BRIEF_ARCHIVE_NAME", "BRIEF_CACHE", "GRANTS_ENV_VAR", "desk_briefs", "main"]
+
+BRIEF_ARCHIVE_NAME: Final = "briefs.jsonl"
+"""The kept briefs, in the ledger's directory like the decision journal."""
+
+BRIEF_CACHE: Final = timedelta(seconds=60)
+"""How long one desk brief serves the console's Briefs screen before it is built again."""
+
+_AUDIT_LOG: Final = logging.getLogger("hermes.supervisor.audit")
 
 GRANTS_ENV_VAR: Final = "HERMES_SUPERVISOR_GRANTS"
 _USAGE: Final = (
     "Usage: hermes supervisor list|mcp [OPTIONS]\n"
     "       hermes supervisor call TOOL [--since ISO] [OPTIONS]\n"
-    "       hermes supervisor brief [--weekly] [OPTIONS]\n"
+    "       hermes supervisor brief [--weekly] [--keep] [OPTIONS]\n"
     "\n"
     "Read-only, outcome-blind supervisor tools; `mcp` serves them over stdio.\n"
     "Options: --grant SCOPE (repeatable; or HERMES_SUPERVISOR_GRANTS), --config-dir DIR,\n"
     "         --db PATH, --journal FILE, --store-dir DIR, --guard-date YYYY-MM-DD,\n"
-    "         --audit FILE\n"
+    "         --audit FILE, --briefs FILE (where `brief --keep` keeps the brief)\n"
     "Exit codes: 0 ok, 1 refused, 2 usage, 3 config error.\n"
 )
 
@@ -148,8 +166,9 @@ def _run_mode(
     if args.mode == "brief":
         return _brief(dispatcher, args, stream, diagnostics, clock)
     if args.mode == "list":
-        for tool in dispatcher.available():
-            stream.write(f"{tool.name:<14} {tool.scope:<28} {tool.summary}\n")
+        stream.writelines(
+            f"{tool.name:<14} {tool.scope:<28} {tool.summary}\n" for tool in dispatcher.available()
+        )
         return 0
     if args.mode == "mcp":
         return _serve(McpServer(dispatcher, version=hermes.__version__), stdin, stream)
@@ -162,6 +181,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("tool", nargs="?")
     parser.add_argument("--since", default=None)
     parser.add_argument("--weekly", action="store_true")
+    parser.add_argument("--keep", action="store_true")
+    parser.add_argument("--briefs", type=Path, default=None)
     parser.add_argument("--grant", action="append", default=[])
     parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
     parser.add_argument("--db", type=Path, default=serve_module.DEFAULT_DB_PATH)
@@ -273,7 +294,8 @@ def _brief(
     clock: Callable[[], datetime],
 ) -> int:
     kind = BriefKind.WEEKLY if args.weekly else BriefKind.DAILY
-    brief, verdict = publishable(gather(dispatcher, kind=kind, now=clock()), kind=kind)
+    at = clock()
+    brief, verdict = publishable(gather(dispatcher, kind=kind, now=at), kind=kind)
     if not verdict.passed:
         line = {"brief": kind.value, "gate": "digest", "reasons": list(verdict.reasons)}
         diagnostics.write(json.dumps(line, sort_keys=True) + "\n")
@@ -281,7 +303,27 @@ def _brief(
         stream.write("REFUSED: the brief did not pass the output gate.\n")
         return 1
     stream.write(brief.render())
+    if args.keep:
+        archive = JsonlBriefArchive(args.briefs or _brief_archive_path(args.db))
+        published = ConsoleBrief.published(brief, verdict, as_of=at)
+        try:
+            archive.append(published)
+        except (BriefArchiveError, OSError) as exc:
+            diagnostics.write(f"ERROR: the brief was not kept: {exc}\n")
+            return 1
     return 0
+
+
+def _brief_archive_path(db_path: Path) -> Path:
+    return db_path.parent / BRIEF_ARCHIVE_NAME
+
+
+def _replaced_by(kept: ConsoleBrief, today: ConsoleBrief) -> bool:
+    """Whether the live brief stands in for ``kept``: same kind, same UTC day."""
+    return (
+        kept.kind == today.kind
+        and kept.as_of.astimezone(UTC).date() == today.as_of.astimezone(UTC).date()
+    )
 
 
 def _serve(server: McpServer, stdin: TextIO | None, stream: TextIO) -> int:
@@ -291,3 +333,73 @@ def _serve(server: McpServer, stdin: TextIO | None, stream: TextIO) -> int:
             stream.write(json.dumps(reply, separators=(",", ":")) + "\n")
             stream.flush()
     return 0
+
+
+def desk_briefs(
+    db_path: Path,
+    *,
+    config_dir: Path = DEFAULT_CONFIG_DIR,
+    clock: Callable[[], datetime] | None = None,
+    unit_state: Callable[[], UnitState] | None = None,
+    archive: Path | None = None,
+) -> Callable[[], tuple[ConsoleBrief, ...]]:
+    """Return the console's source of the desk's briefs (#720, #897).
+
+    The brief is the one ``hermes supervisor brief`` prints with every source
+    tool granted (docs/guides/vps-operations.md, Desk briefings): built by code
+    from the same read-only, P&L-blind tools and published only through the
+    output gate. Each brief serves for :data:`BRIEF_CACHE`. Behind today's brief
+    come the ones ``hermes supervisor brief --keep`` kept on earlier days,
+    exactly as they were published.
+
+    Args:
+        db_path: The ledger the tools read.
+        config_dir: Where the config lives. It loads with an empty environment,
+            as ``hermes supervisor`` runs without the env file: no secret
+            reaches the desk even when the console holds them (ADR-012 D-07).
+        clock: Wall clock; injected by tests.
+        unit_state: systemd probe; defaults to ``hermes status``'s.
+        archive: The kept briefs; defaults to :data:`BRIEF_ARCHIVE_NAME` beside the ledger.
+
+    Returns:
+        A callable returning today's brief and the kept ones, newest first; it
+        raises ``ViewNotAvailableError`` when the config cannot be loaded or
+        the kept briefs cannot be read.
+    """
+    now = clock or (lambda: datetime.now(UTC))
+    args = _parser().parse_args(["brief", "--db", str(db_path), "--config-dir", str(config_dir)])
+    grants = [f"hermes:read:{name}" for name in SOURCES]
+    kept = JsonlBriefArchive(archive or _brief_archive_path(db_path))
+    built: list[tuple[datetime, tuple[ConsoleBrief, ...]]] = []
+
+    def build() -> tuple[ConsoleBrief, ...]:
+        at = now()
+        if built and at - built[0][0] < BRIEF_CACHE:
+            return built[0][1]
+        try:
+            config = load_config(args.config_dir, env={})
+        except ConfigError as exc:
+            raise ViewNotAvailableError(f"briefs: config load failed: {exc}") from exc
+        dispatcher = ToolDispatcher(
+            grants=grants,
+            context=_context_factory(args, config, lambda: at, unit_state),
+            # The console has no stream of its own for audit lines: a TUI owns the
+            # terminal. They go to logging, where a configured handler keeps them.
+            audit=lambda record: _AUDIT_LOG.info(
+                "%s %s %s", record.tool, record.scope, record.outcome.value
+            ),
+            clock=now,
+        )
+        brief, verdict = publishable(
+            gather(dispatcher, kind=BriefKind.DAILY, now=at), kind=BriefKind.DAILY
+        )
+        today = ConsoleBrief.published(brief, verdict, as_of=at)
+        try:
+            earlier = tuple(b for b in kept.briefs() if not _replaced_by(b, today))
+        except (BriefArchiveError, OSError) as exc:
+            raise ViewNotAvailableError(f"briefs: kept briefs unreadable: {exc}") from exc
+        briefs = (today, *earlier)
+        built[:] = [(at, briefs)]
+        return briefs
+
+    return build

@@ -1,11 +1,12 @@
 """``hermes archive-check`` — compare one day of live bars with the Binance archive (#359).
 
-Run daily by ``hermes-archive-check.timer`` for the previous UTC day. Opens
-the ledger read-only, downloads the day's archived klines for every traded
-pair and interval, and sends one alert per mismatch through the anomaly
-routing row. Unpublished archive days are reported and skipped; the next run
-cannot catch them up, so the timer runs late enough in the day (see the unit
-file).
+Run daily by ``hermes-archive-check.timer`` for the previous UTC day. Reads
+the ledger's live bars read-only, downloads the day's archived klines for every
+traded pair and interval, and sends one alert per mismatch through the anomaly
+routing row. Each alert is first appended to the ledger ``events`` table
+(#136); that append is the command's only write. Unpublished archive days
+are reported and skipped; the next run cannot catch them up, so the timer runs
+late enough in the day (see the unit file).
 
 Dead-man's switch (#38): when ``HERMES_HEALTHCHECKS__ARCHIVE_CHECK_PING_URL``
 is set, a run that completed (match or mismatch) pings it with the summary line,
@@ -38,7 +39,8 @@ from hermes.adapters.notifier.telegram_adapter import (
 from hermes.application.archive_check import ArchiveCheckReport, run_archive_check
 from hermes.application.notification_router import EventClass, RouterConfig, route
 from hermes.domain.errors import InfraError
-from hermes.domain.events.base import DomainEvent
+from hermes.domain.events.anomaly_detected import AnomalyDetected
+from hermes.entrypoints._anomaly_record import record_anomaly
 from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.serve import DEFAULT_DB_PATH
 from hermes.infrastructure.config.errors import ConfigError
@@ -84,7 +86,8 @@ def _parse(argv: list[str], stream: TextIO, err: TextIO) -> argparse.Namespace |
             "Usage: hermes archive-check [--date YYYY-MM-DD] [--db PATH] [--config-dir DIR]\n"
             "\n"
             "Compares the stored live bars of one UTC day (default: yesterday) with the\n"
-            "Binance public archive and alerts on any mismatch. Read-only.\n"
+            "Binance public archive and alerts on any mismatch. Each alert is recorded\n"
+            "in the ledger; nothing else is written.\n"
             "Exit codes: 0 match, 1 mismatch, 2 usage, 3 config, ledger or archive failure.\n"
         )
     return parsed
@@ -107,8 +110,9 @@ def _write_report(report: ArchiveCheckReport, stream: TextIO) -> None:
         f"archive-check {report.day.isoformat()}: {len(report.checked)} streams checked, "
         f"{len(report.unpublished)} not published yet, {len(report.mismatches)} mismatches\n"
     )
-    for pair, interval in report.unpublished:
-        stream.write(f"  not published: {pair} {interval.value}\n")
+    stream.writelines(
+        f"  not published: {pair} {interval.value}\n" for pair, interval in report.unpublished
+    )
     for m in report.mismatches:
         detail = f" ({m.detail})" if m.detail else ""
         stream.write(
@@ -152,7 +156,8 @@ def main(
     day = parsed.date if parsed.date is not None else (now - timedelta(days=1)).date()
     router = _router(env)
 
-    def notify(event: DomainEvent) -> None:
+    def notify(event: AnomalyDetected) -> None:
+        record_anomaly(parsed.db, event, err)
         for adapter in route(EventClass.ANOMALY_DETECTED, router):
             adapter.notify(event)
 

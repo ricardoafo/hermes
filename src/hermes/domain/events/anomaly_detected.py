@@ -13,11 +13,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import ClassVar
+from typing import ClassVar, Final
 
 from hermes.domain.events.base import DomainEvent
 
-__all__ = ["AnomalyDetected", "AnomalySeverity"]
+__all__ = ["CLOCK_SKEW_SOURCE", "AnomalyDetected", "AnomalySeverity"]
+
+CLOCK_SKEW_SOURCE: Final = "serve.clock_skew"
+"""Source of the anomaly serve records when its clock leaves, or comes back to,
+exchange time (#859); ``hermes status`` reads the latest one."""
 
 
 class AnomalySeverity(StrEnum):
@@ -30,7 +34,7 @@ class AnomalySeverity(StrEnum):
     """
 
     CRITICAL = "CRITICAL"
-    """Immediate action required — auto-pause fires."""
+    """Immediate action required. Recorded and notified; nothing pauses on it yet (#136)."""
 
     WARNING = "WARNING"
     """Degraded state — human review requested, no auto-action."""

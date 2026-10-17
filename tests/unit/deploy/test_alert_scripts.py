@@ -66,6 +66,9 @@ tail -n "$lines" "$here/journal.txt"
 
 _FAKE_HERMES = """#!/usr/bin/env bash
 here="$(dirname "$0")"
+if [ "${2:-}" = "--help" ]; then
+    exit "$(cat "$here/hermes.help.rc")"
+fi
 printf '%s\\n' "$@" > "$here/hermes.argv"
 cat "$here/hermes.out"
 exit "$(cat "$here/hermes.rc")"
@@ -144,6 +147,7 @@ class _Host:
         self._write_exe("hermes", _FAKE_HERMES)
         self.set_hermes_active(True)
         self.set_status(0, _STATUS_OK)
+        self.set_has_status(True)
         self.set_journal([])
 
     def _write_exe(self, name: str, text: str) -> None:
@@ -162,6 +166,10 @@ class _Host:
         """Make the fake `hermes status --json` print ``output`` and exit ``rc``."""
         self._write("hermes.rc", str(rc))
         self._write("hermes.out", output)
+
+    def set_has_status(self, has: bool) -> None:
+        """`hermes status --help` exits 0 when the release has the command, 2 when not."""
+        self._write("hermes.help.rc", "0" if has else "2")
 
     def hermes_argv(self) -> list[str]:
         """Return the argv the ping script gave `hermes`."""
@@ -428,12 +436,27 @@ def test_health_ping_falls_back_to_a_plain_success_on_a_release_without_status(
     host: _Host, server: _FakeServer
 ) -> None:
     """Exit 2 (no `status` command yet) keeps the pre-#372 behaviour during the rollout."""
+    host.set_has_status(False)
     host.set_status(2, "ERROR: unknown command")
 
     result = _run(_PING, host, server)
 
     assert result.returncode == 0, result.stderr
     assert [(r.path, r.body) for r in server.requests] == [(_PING_PATH, "")]
+
+
+def test_health_ping_reports_a_status_argument_error_as_fail_with_the_error(
+    host: _Host, server: _FakeServer
+) -> None:
+    """Exit 2 from a release that has `status` is a broken call, not an old release (#856)."""
+    host.set_status(2, "error: unrecognized arguments: --json")
+
+    result = _run(_PING, host, server)
+
+    assert result.returncode == 0, result.stderr
+    assert [(r.path, r.body) for r in server.requests] == [
+        (f"{_PING_PATH}/fail", "error: unrecognized arguments: --json")
+    ]
 
 
 def test_health_ping_asks_hermes_status_for_json_on_the_release_paths(
@@ -623,3 +646,57 @@ def test_crash_notice_without_credentials_logs_and_exits_zero(
 
     assert (result.returncode, server.requests) == (0, [])
     assert "HERMES_SLACK__BOT_TOKEN" in result.stderr
+
+
+# integration: none feasible in CI (borg needs a Storage Box); the operator check is
+# `systemctl start hermes-backup.service` on hermes-01 and the healthchecks.io check.
+_BACKUP = "hermes-backup.sh"
+
+_STUB_BORG = """#!/usr/bin/env bash
+exit 0
+"""
+
+_APPENDING_SPY_CURL = """#!/usr/bin/env bash
+printf '%s\\n' "$@" >> "$(dirname "$0")/curl.argv"
+exec "$REAL_CURL" "$@"
+"""
+
+
+def _run_backup(
+    host: _Host, server: _FakeServer, tmp_path: Path
+) -> subprocess.CompletedProcess[str]:
+    """Run the backup with a no-op borg, an empty data dir and every curl call recorded."""
+    host._write_exe("borg", _STUB_BORG)
+    host._write_exe("curl", _APPENDING_SPY_CURL)
+    data = tmp_path / "data"
+    data.mkdir()
+    return _run(
+        _BACKUP,
+        host,
+        server,
+        env={
+            "HERMES_BACKUP_BORG_REPO": "ssh://u0@example.invalid:23/./hermes",
+            "BORG_PASSPHRASE": "fake-passphrase",  # gitleaks:allow
+            "HERMES_BACKUP_HEALTHCHECK_URL": f"{server.url}{_PING_PATH}",
+            "HERMES_DATA_DIR": data.as_posix(),
+        },
+    )
+
+
+def test_backup_pings_start_then_success(host: _Host, server: _FakeServer, tmp_path: Path) -> None:
+    """A good backup pings /start, then the bare URL, so healthchecks.io sees it finish."""
+    result = _run_backup(host, server, tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert [r.path for r in server.requests] == [f"{_PING_PATH}/start", _PING_PATH]
+
+
+def test_backup_keeps_the_ping_url_out_of_curl_argv(
+    host: _Host, server: _FakeServer, tmp_path: Path
+) -> None:
+    """The ping URL holds the check's secret, and `ps` shows argv to every local user (#782)."""
+    _run_backup(host, server, tmp_path)
+
+    argv = host.curl_argv()
+    assert argv.count("--config") == 2
+    assert _PING_PATH not in argv

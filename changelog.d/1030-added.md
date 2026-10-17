@@ -1,0 +1,1 @@
+- `hermes risk-inputs` shows the risk inputs shadow records but never acts on (the RO-02 spread against its 1-hour median, the days since the equity high and the deepest drawdown since) with whether each rule would fire, plus the latest recorded RO-01 correlations (#1030).

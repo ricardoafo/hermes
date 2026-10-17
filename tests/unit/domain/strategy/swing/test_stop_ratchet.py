@@ -5,7 +5,9 @@ its source SA-7 says the long chandelier stop "only moves up, never down". The
 stop in force while a position is open is therefore the highest chandelier
 level since entry: ``max(previous stop in force, HH - 3 * ATR)``. A new
 position starts from its own raw level, and a restart continues from the
-stored ``last_stop`` of the same position.
+stored ``last_stop`` of the same position. Levels are posted at the entry and
+at each daily close (§5.3, #785); bar ``i`` ends a UTC day when
+``(i + 1) % 6 == 0``.
 
 Hand-worked examples use period 5 and flat bars (close 100, high 101, low 99):
 every true range is 2, so ATR(5) = 2 and the raw level is 101 - 3 * 2 = 95.
@@ -39,6 +41,8 @@ _DAILY_SEEDS = 12
 _H4_BASE = _D1_BASE + timedelta(days=_DAILY_SEEDS)
 _FLAT_BARS = 12
 _ENTRY_INDEX = 3
+# Bar 17 is the last 4h bar of the third day: its close posts that day's level (#785).
+_DAY_END = 17
 _STATE = PortfolioState(
     peak_value=Decimal("10000"),
     current_value=Decimal("10000"),
@@ -118,11 +122,12 @@ class TestStopHoldsWhenTheLevelFalls:
     """While a position is open the stop in force is the highest level since entry."""
 
     def test_a_falling_level_leaves_the_stop_where_it_was(self) -> None:
-        """Level 95 then 93.2 (TR 5 widens ATR to 2.6): the stop stays at 95, not 93.2."""
+        """Level 95, then 93.2 posted at bar 17's daily close (TR 5, ATR 2.6): the stop stays 95."""
         adapter = _held(None)
-        _record(adapter, _h4(_FLAT_BARS))
+        for index in range(_FLAT_BARS, _DAY_END):
+            _record(adapter, _h4(index))
 
-        signal, record = _record(adapter, _h4(_FLAT_BARS + 1, low="96"))
+        signal, record = _record(adapter, _h4(_DAY_END, low="96"))
 
         assert signal is None
         assert (record.stop_price, record.chandelier_level, record.stop_moved) == (
@@ -132,11 +137,13 @@ class TestStopHoldsWhenTheLevelFalls:
         )
 
     def test_the_exit_fires_on_the_held_stop_the_raw_level_would_miss(self) -> None:
-        """Low 94.5 is above the raw level 92.3 (TR 6.5, ATR 2.9) but under the held 95."""
+        """Low 94.5 the day after level 93.2 is posted: above that level, under the held 95."""
         adapter = _held(None)
-        _record(adapter, _h4(_FLAT_BARS))
+        for index in range(_FLAT_BARS, _DAY_END):
+            _record(adapter, _h4(index))
+        _record(adapter, _h4(_DAY_END, low="96"))
 
-        signal, record = _record(adapter, _h4(_FLAT_BARS + 1, low="94.5"))
+        signal, record = _record(adapter, _h4(_DAY_END + 1, low="94.5"))
 
         assert signal is not None
         assert (signal.kind, signal.exit_reason, signal.stop_price) == (
@@ -144,7 +151,7 @@ class TestStopHoldsWhenTheLevelFalls:
             "chandelier",
             Decimal("95"),
         )
-        assert (record.stop_price, record.chandelier_level) == (Decimal("95"), Decimal("92.3"))
+        assert (record.stop_price, record.chandelier_level) == (Decimal("95"), Decimal("93.2"))
 
     def test_a_rising_level_raises_the_stop(self) -> None:
         """A stored 93 under the raw 95: the stop rises to 95 and is marked as moved."""
@@ -175,10 +182,9 @@ class TestRestartSeedsTheStop:
         )
 
     def test_the_stored_stop_can_fire_the_exit(self) -> None:
-        """Stored 97 and a low of 96.9: the exit fires at 97, the raw level 93.74 would not.
+        """Stored 97 and a low of 96.9: the exit fires at 97, the posted level 95 would not.
 
-        TR = 101 - 96.9 = 4.1, so ATR = (8 + 4.1) / 5 = 2.42 and the raw level is
-        101 - 7.26 = 93.74.
+        The bar's own level (93.74) is never what it is tested against (#785).
         """
         adapter = _held("97")
 
@@ -186,7 +192,7 @@ class TestRestartSeedsTheStop:
 
         assert signal is not None
         assert (signal.exit_reason, signal.stop_price) == ("chandelier", Decimal("97"))
-        assert record.chandelier_level == Decimal("93.74")
+        assert record.chandelier_level == Decimal("95")
 
     def test_no_stored_stop_starts_from_the_raw_level(self) -> None:
         """A restart without a stored stop takes the raw 95 and reports no move."""
@@ -266,3 +272,34 @@ class TestStopNeverFallsInAPosition:
         for position in _positions(_path(steps)):
             stops = [record.stop_price for _, record in position]
             assert stops == sorted(stops)
+
+
+class TestRetryAfterADeclinedExitKeepsTheStop:
+    """A declined exit restored without ``last_stop`` keeps the stop in force (#706, #680)."""
+
+    def test_the_retry_bar_exits_at_the_held_stop_under_a_lower_level(self) -> None:
+        """Exit at 95 declined on bar 17, then low 94.8: the retry fires at 95, not at 92.3.
+
+        The declined bar ends a day, so its level 92.3 (TR 6.5, ATR 2.9) is
+        posted before the retry bar is tested, and ratchets under the held 95.
+        Replay and the parity check restore the held position with no stored
+        stop; the adapter keeps the stop it recorded for that entry, so the
+        retry decides as serve does (ADR-011).
+        """
+        adapter = _held(None)
+        for index in range(_FLAT_BARS, _DAY_END):
+            _record(adapter, _h4(index))
+        declined, _ = _record(adapter, _h4(_DAY_END, low="94.5"))
+        assert declined is not None
+        adapter.restore_position(
+            OpenPosition(entry_time=_h4(_ENTRY_INDEX).close_time, entry_price=Decimal("100"))
+        )
+
+        signal, record = _record(adapter, _h4(_DAY_END + 1, low="94.8"))
+
+        assert signal is not None
+        assert (signal.exit_reason, signal.stop_price, record.chandelier_level) == (
+            "chandelier",
+            Decimal("95"),
+            Decimal("92.3"),
+        )

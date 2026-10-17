@@ -123,11 +123,20 @@ class FakeSource:
         return tuple(s for s in self.signals if after < s.occurred_at <= upto)
 
     def latest_signal(
-        self, strategy_id: object, pair: Pair, *, at_or_before: datetime
+        self,
+        strategy_id: object,
+        pair: Pair,
+        *,
+        at_or_before: datetime,
+        kind: SignalKind | None = None,
     ) -> SignalEmitted | None:
-        """Return the newest signal of ``pair`` up to the bound."""
+        """Return the newest signal of ``pair`` (of ``kind``, when given) up to the bound."""
         _ = strategy_id
-        found = [s for s in self.signals if s.pair == pair and s.occurred_at <= at_or_before]
+        found = [
+            s
+            for s in self.signals
+            if s.pair == pair and s.occurred_at <= at_or_before and (kind is None or s.kind is kind)
+        ]
         return max(found, key=lambda s: s.occurred_at, default=None)
 
     def trades(self, strategy_id: object) -> tuple[TradeExecuted, ...]:
@@ -163,7 +172,7 @@ class ScriptedStrategy:
         self.seeded = list(bars)
 
     def restore_position(self, open_position: OpenPosition | None) -> None:
-        """Ignore the restore: the signals are scripted."""
+        """Ignore the restore: the entries are scripted."""
         _ = open_position
 
 
@@ -200,15 +209,17 @@ class AfterDailyStrategy:
         _ = (bars, open_position)
 
     def restore_position(self, open_position: OpenPosition | None) -> None:
-        """Ignore the restore: the signals are scripted."""
+        """Ignore the restore: the entries depend only on delivery order."""
         _ = open_position
 
 
 @dataclass
 class ScriptedExit:
-    """Emits a long exit on the 4h bar closing at ``at``, and nothing else."""
+    """Emits a long exit on the 4h bar closing at ``at``; records seeded and restored positions."""
 
     at: datetime
+    seeded_position: OpenPosition | None = None
+    restored: list[OpenPosition | None] = field(default_factory=list)
 
     def on_bar(self, bar: Bar, portfolio_state: PortfolioState) -> StrategySignal | None:
         """Emit the exit when ``bar`` is the scripted 4h close."""
@@ -226,9 +237,10 @@ class ScriptedExit:
         )
 
     def seed(self, bars: Sequence[Bar], open_position: OpenPosition | None = None) -> None:
-        """Ignore the seed: the exit is scripted."""
-        _ = (bars, open_position)
+        """Remember the position seeded; the exit itself is scripted."""
+        _ = bars
+        self.seeded_position = open_position
 
     def restore_position(self, open_position: OpenPosition | None) -> None:
-        """Ignore the restore: the signals are scripted."""
-        _ = open_position
+        """Record the position restored after an unfilled exit."""
+        self.restored.append(open_position)

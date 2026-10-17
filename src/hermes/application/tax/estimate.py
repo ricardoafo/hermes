@@ -106,6 +106,8 @@ class TaxYearEstimate:
         flags: Items for the gestor (two-month rule, expiring losses).
         notices: Assumptions the figure rests on (e.g. no profile).
         is_shadow: The trades are shadow trades; no real tax is due.
+        savings_base: The year's taxable savings base with hermes, after netting.
+        two_month: The two-month-rule flags behind ``flags``, traded coins only.
         is_estimate: Always ``True``: never a filing (ADR-016 decision 10).
     """
 
@@ -121,6 +123,8 @@ class TaxYearEstimate:
     flags: tuple[str, ...]
     notices: tuple[str, ...]
     is_shadow: bool
+    savings_base: Decimal = _ZERO
+    two_month: tuple[TwoMonthFlag, ...] = ()
     is_estimate: Literal[True] = True
 
     @property
@@ -269,10 +273,14 @@ def estimate_year(
         hermes_tax=marginal.hermes_tax,
         is_current=is_current,
     )
-    flags = _flags(
+    two_month = _two_month(
         replay.disposals,
         replay.acquisitions,
         not_flagged=frozenset(asset.value for asset in replay.quote_assets),
+        year=year,
+    )
+    flags = _flags(
+        two_month,
         year=year,
         expiring=netting.expiring,
         expired=netting.expired,
@@ -290,6 +298,8 @@ def estimate_year(
         flags=flags,
         notices=notices,
         is_shadow=is_shadow,
+        savings_base=netting.savings_base,
+        two_month=two_month,
     )
 
 
@@ -393,20 +403,28 @@ def _describe(flag: TwoMonthFlag) -> str:
     )
 
 
-def _flags(
+def _two_month(
     disposals: Iterable[Disposal],
     acquisitions: Iterable[Acquisition],
     *,
     not_flagged: frozenset[str],
     year: int,
-    expiring: Iterable[CarriedLoss],
-    expired: Iterable[CarriedLoss],
-) -> tuple[str, ...]:
+) -> tuple[TwoMonthFlag, ...]:
     # Code Owner decision 2026-10-04: the two-month rule flags traded coins only, never the
     # quote currency (USDT), whose every trade would otherwise raise a flag.
     in_year = [d for d in disposals if d.tax_year == year and d.asset not in not_flagged]
     bought = [a for a in acquisitions if a.asset not in not_flagged]
-    lines = [_describe(flag) for flag in two_month_flags(in_year, bought)]
+    return two_month_flags(in_year, bought)
+
+
+def _flags(
+    two_month: Iterable[TwoMonthFlag],
+    *,
+    year: int,
+    expiring: Iterable[CarriedLoss],
+    expired: Iterable[CarriedLoss],
+) -> tuple[str, ...]:
+    lines = [_describe(flag) for flag in two_month]
     lines.extend(
         f"a carried loss from {loss.origin_year} expires unused at the end of {year}"
         for loss in expiring

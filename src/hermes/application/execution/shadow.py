@@ -12,11 +12,18 @@ The executor does what the backtest replay does around the
   closed just before a first boot would otherwise spend capital the ledger
   records only from the boot on (change ``405-usdt-fifo`` D-1).
 - **Risk and kill inputs** (D-3): computed from the book, the BTC/USDT 1d
-  closes the loop has seen, the last recorded fill slippage and the portfolio.
+  closes the loop has seen, the 30-day correlations of every pair's 1d
+  closes (RO-01, the same :class:`~hermes.domain.portfolio.correlation.DailyCloses`
+  the backtest replay uses), the recorded fill slippage of the last
+  :data:`SLIPPAGE_WINDOW` and the portfolio. The live-phase §10 recovery,
+  single SA-9 and 30-trade Sharpe kills get neutral inputs, as in the
+  backtest (#514, the shadow set): the drawdown kill and the shadow-phase
+  kills are the ones that act.
 - **Records** (D-4): the fill goes to the ledger through the trade recorder
-  (``TradeExecuted`` v2 with ``strategy_id``), then one
+  (``TradeExecuted`` v2 with ``strategy_id``), with one
   :class:`~hermes.domain.events.fill_quality_recorded.FillQualityRecorded`
-  with the drift against the §6.2 model price of the same order.
+  carrying the drift against the §6.2 model price of the same order, in the
+  same transaction.
 - **Idempotency** (D-5): a signal whose pair and side already has a trade at or
   after the signal time is not executed again (a bar re-evaluated after a crash).
 
@@ -30,7 +37,7 @@ from __future__ import annotations
 
 import math
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -46,12 +53,15 @@ from hermes.application.execution.prereg_book import ExecutionModel
 from hermes.application.order_router.risk_engine import RiskEngine
 from hermes.application.strategy_protocol.kill_trigger_evaluator import ExperimentState
 from hermes.domain.errors import InfraError
+from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.fill_quality_recorded import BookSource, FillQualityRecorded
 from hermes.domain.events.trade_executed import TradeExecuted, TradeSide
 from hermes.domain.fees.fee_schedule import FeeSchedule
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.market_data.orderbook import Orderbook
+from hermes.domain.portfolio.correlation import DailyCloses
+from hermes.domain.risk.correlation_lock import CorrelationLock
 from hermes.domain.risk.depeg_halt import DepegHalt
 from hermes.domain.risk.depeg_warn import DepegWarn
 from hermes.domain.risk.macro_atr_halt import MacroATRHalt
@@ -78,6 +88,7 @@ from hermes.ports.orderbook_snapshot import OrderbookSnapshotPort
 __all__ = [
     "LIVE_BOOK_WINDOW",
     "MACRO_PAIR",
+    "SLIPPAGE_WINDOW",
     "AlreadyFilled",
     "FillRecorder",
     "ShadowExecution",
@@ -92,6 +103,13 @@ LIVE_BOOK_WINDOW: Final = timedelta(minutes=5)
 MACRO_PAIR: Final = Pair(base=Currency.BTC, quote=Currency.USDT)
 """Pair whose 1d log-return feeds risk rule RO-07."""
 
+SLIPPAGE_WINDOW: Final = timedelta(hours=24)
+"""How long a fill's slippage feeds RO-03 (#857).
+
+Without it a slipping exit with nothing held left entries halted for good:
+only a fill could replace the last slippage, and no entry could fill.
+"""
+
 _ZERO = Decimal("0")
 _MACRO_WINDOW: Final = 2
 
@@ -99,15 +117,19 @@ _MACRO_WINDOW: Final = 2
 def shadow_risk_engine() -> RiskEngine:
     """Return the risk overlay serve applies to entries (D-3).
 
-    RO-02 (spread spike) and RO-01 (correlation lock) are left out: serve has
-    no 1-hour spread median and the portfolio state carries no correlations,
-    and a rule fed an invented input would change trading without evidence.
+    RO-01 (correlation lock) runs as the backtest that gated the strategy runs
+    it (#822), fed the same 30-day correlations (#514). RO-02 (spread spike) is
+    left out: the backtest's synthetic book never spikes, so a shadow that
+    acted on it would trade differently from the backtest it is checked
+    against (#514, the shadow set); its 1-hour median is recorded for review
+    (#835).
 
     Returns:
-        An engine with RO-03, RO-04, RO-05, RO-06, RO-07 and RO-08.
+        An engine with RO-01, RO-03, RO-04, RO-05, RO-06, RO-07 and RO-08.
     """
     return RiskEngine(
         rules=[
+            CorrelationLock(),
             MaxSlippage(),
             StaleBook(),
             DepegWarn(),
@@ -121,8 +143,8 @@ def shadow_risk_engine() -> RiskEngine:
 class FillRecorder(Protocol):
     """Persists one fill as a ledger trade (``TradeRecorder`` in production)."""
 
-    def record(self, fill: Fill, *, correlation_id: str) -> int:
-        """Store ``fill`` and return its trade row id."""
+    def record(self, fill: Fill, *, correlation_id: str, also: Sequence[DomainEvent] = ()) -> int:
+        """Store ``fill`` and the ``also`` events in one transaction; return its trade row id."""
         ...
 
 
@@ -193,7 +215,7 @@ class ShadowExecutor:
         live_window: timedelta = LIVE_BOOK_WINDOW,
         not_before: datetime | None = None,
     ) -> None:
-        """Bind the collaborators and load the last recorded fill slippage.
+        """Bind the collaborators and load the recorded fill slippages.
 
         Raises:
             LedgerError: The fill-quality rows cannot be read.
@@ -207,25 +229,47 @@ class ShadowExecutor:
         self._fees_at = fees_at
         self._strategy_id = strategy_id
         self._model = model if model is not None else ExecutionModel()
+        self._daily_closes = DailyCloses()
         self._live_window = live_window
         self._not_before = not_before
         self._macro_closes: deque[tuple[datetime, Decimal]] = deque(maxlen=_MACRO_WINDOW)
-        recorded = ledger.fill_quality_events(strategy_id)
-        last = recorded[-1].slippage if recorded else None
-        self._last_slippage = last if last is not None else _ZERO
+        self._killed_by = ""
+        self._slippages: deque[tuple[datetime, Decimal]] = deque(
+            (row.occurred_at, row.slippage)
+            for row in ledger.fill_quality_events(strategy_id)
+            if row.slippage is not None
+        )
 
     @property
     def model(self) -> ExecutionModel:
         """The §6.2 execution book this executor falls back to."""
         return self._model
 
+    @property
+    def killed_by(self) -> str:
+        """Rule id of the recorded shadow kill that stops entries, or empty."""
+        return self._killed_by
+
+    def hold_kill(self, rule: str) -> None:
+        """Stop every later entry under the recorded shadow kill ``rule`` (#796).
+
+        Exits keep filling: they skip the kill check, as for any kill.
+
+        Args:
+            rule: The ``KillDecision.rule`` of the kill serve recorded.
+        """
+        self._killed_by = rule
+
     def observe(self, bar: Bar) -> None:
-        """Remember the closes of the BTC/USDT 1d bars, for RO-07.
+        """Remember the 1d closes: every pair's for RO-01, BTC/USDT's for RO-07.
 
         Args:
             bar: Any bar the loop has seen, warm-up included, in delivery order.
         """
-        if bar.pair != MACRO_PAIR or bar.interval is not KlineInterval.D1:
+        if bar.interval is not KlineInterval.D1:
+            return
+        self._daily_closes.add(bar)
+        if bar.pair != MACRO_PAIR:
             return
         if self._macro_closes and bar.close_time <= self._macro_closes[-1][0]:
             return
@@ -262,19 +306,24 @@ class ShadowExecutor:
         if self._not_before is not None and at < self._not_before:
             at = self._not_before
         fees = self._fees_at(at, pair)
+        while self._slippages and now - self._slippages[0][0] > SLIPPAGE_WINDOW:
+            self._slippages.popleft()
         market = MarketContext(
             orderbook=book,
             fees=fees,
             at=at,
             market_snapshot=self._market_snapshot(pair, book, bar, now),
             experiment_state=self._experiment_state(),
+            correlations=(
+                self._daily_closes.correlations() if signal.kind is SignalKind.ENTRY else {}
+            ),
+            realized_slippage_cumulative=sum((s for _, s in self._slippages), _ZERO),
         )
         outcome = self._kernel.execute(signal, pair, market, correlation_id=correlation_id)
         quality = None
         if isinstance(outcome, Executed):
             if book is None:  # pragma: no cover — the kernel declines a signal without a book
                 raise RuntimeError("the kernel filled an order without a book")
-            self._recorder.record(outcome.fill, correlation_id=correlation_id)
             quality = self._quality(
                 outcome.fill,
                 signal=signal,
@@ -284,9 +333,11 @@ class ShadowExecutor:
                 fees=fees,
                 correlation_id=correlation_id,
             )
-            self._ledger.append_event(quality)
+            # One transaction: a crash between two writes would keep the trade
+            # and lose the quality row RO-03 reloads on boot (#857).
+            self._recorder.record(outcome.fill, correlation_id=correlation_id, also=(quality,))
             if quality.slippage is not None:
-                self._last_slippage = quality.slippage
+                self._slippages.append((quality.occurred_at, quality.slippage))
         return ShadowExecution(
             outcome=outcome, book_source=source, quality=quality, snapshot_error=error
         )
@@ -322,7 +373,7 @@ class ShadowExecutor:
             median_spread_1h=spread,
             orderbook_age_seconds=max(0.0, (now - book_time).total_seconds()),
             orderbook_timestamp=book_time,
-            realized_slippage_last=self._last_slippage,
+            realized_slippage_last=self._slippages[-1][1] if self._slippages else _ZERO,
             stable_price=None,
             btc_log_return_1d=self._btc_log_return_1d(),
             candidate_pair=pair,
@@ -338,12 +389,15 @@ class ShadowExecutor:
         return math.log(latest / previous)
 
     def _experiment_state(self) -> ExperimentState:
-        """Build the kill inputs (D-3): drawdown from the tracker, the rest not yet supplied."""
+        """Build the kill inputs (D-3): drawdown from the tracker, any held shadow kill (#796)."""
         snapshot = self._kernel.tracker.snapshot
         peak = snapshot.peak_equity
         drawdown = _ZERO if peak <= 0 else max(_ZERO, (peak - snapshot.equity) / peak)
         return ExperimentState(
-            max_drawdown=float(drawdown), days_since_equity_high=0.0, sa9_halt=False
+            max_drawdown=float(drawdown),
+            days_since_equity_high=0.0,
+            sa9_halt=False,
+            killed_by=self._killed_by,
         )
 
     def _quality(

@@ -12,13 +12,14 @@ Invariants:
 - activity rows come from fills when the ledger has fills, from signals when
   it has none, and only inside the read window (D-5);
 - the shadow test counts days from the seed, with the fill count (D-4);
+- the Shadow test evidence (issue #718) reads only facts from day 0 on;
 - reading every view leaves the ledger file byte-for-byte unchanged.
 """
 
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -26,9 +27,17 @@ import pytest
 
 from hermes.adapters.console.ledger_read_model import ACTIVITY_WINDOW, LedgerReadModel
 from hermes.application.console import PortfolioRange, ViewNotAvailableError
+from hermes.application.console.shadow_screen import ShadowEvidence
 from hermes.application.console.views import ActivityKind, ShadowTestStatus
+from hermes.domain.events.anomaly_detected import AnomalySeverity
+from hermes.domain.events.fill_quality_recorded import BookSource, FillQualityRecorded
+from hermes.domain.events.strategy_paused import StrategyPaused
+from hermes.domain.events.trade_executed import TradeSide
 from tests.unit.adapters.console._ledger_builder import (
+    BTC,
     H4,
+    SEEDED_AT,
+    SWING,
     T0,
     LedgerBuilder,
     home_ledger,
@@ -154,10 +163,13 @@ def test_activity_rows_come_from_the_fills(home: Path) -> None:
 
 
 def test_signals_are_quiet_rows_once_fills_exist(home: Path) -> None:
-    """With fills, the entry signal adds a quiet signal row, not a second opened row."""
+    """With fills, the entry signal is named on its check line, not a second opened row (#653)."""
     (day,) = _model(home).activity(include_quiet=True)
     kinds = [i.kind for i in day.items]
-    assert (kinds.count(ActivityKind.OPENED), kinds.count(ActivityKind.SIGNAL)) == (1, 1)
+    assert (kinds.count(ActivityKind.OPENED), kinds.count(ActivityKind.SIGNAL)) == (1, 0)
+    assert [i.text for i in day.items if i.kind is ActivityKind.BAR][-1] == (
+        "checked 1 coin · entry long BTC"
+    )
 
 
 def test_unpriced_fills_show_no_price_and_no_net(unpriced_home: Path) -> None:
@@ -216,3 +228,68 @@ def test_reading_the_home_views_leaves_the_file_unchanged(home: Path) -> None:
     model.activity(include_quiet=True)
     model.shadow_test()
     assert hashlib.sha256(home.read_bytes()).hexdigest() == before
+
+
+def _quality(at: datetime, drift: str, source: BookSource = BookSource.LIVE) -> FillQualityRecorded:
+    return FillQualityRecorded(
+        occurred_at=at,
+        correlation_id=f"q-{at.isoformat()}-{drift}",
+        strategy_id=SWING,
+        pair=BTC,
+        side=TradeSide.BUY,
+        qty=Decimal("0.01"),
+        book_source=source,
+        book_time=at,
+        fill_price=Decimal(50000),
+        model_price=Decimal(49990),
+        drift_bps=Decimal(drift),
+        book_mid=None,
+        slippage=None,
+    )
+
+
+def test_shadow_evidence_reads_checks_drifts_and_kills_since_day_zero(home: Path) -> None:
+    """From day 0 on: missed days, live drifts only, and a recorded pause as a kill (#718).
+
+    The home ledger checks bars on 1 Oct only, so read on 4 Oct with day 0 on
+    1 Oct the 2nd and 3rd are missed. A synthetic-book fill never counts toward
+    M-02, nor does a live fill before day 0.
+    """
+    day0 = T0 - timedelta(hours=8)
+    b = LedgerBuilder(home)
+    try:
+        b.ledger.append_event(_quality(day0 - timedelta(hours=1), "99"))
+        b.ledger.append_event(_quality(T0 + H4, "12.5"))
+        b.ledger.append_event(_quality(T0 + H4, "80", BookSource.SYNTHETIC))
+        b.ledger.append_event(
+            StrategyPaused(
+                occurred_at=T0 + H4 * 2,
+                correlation_id="pause-1",
+                strategy_id=SWING.value,
+                reason="shadow kill (test)",
+                paused_at=T0 + H4 * 2,
+                severity=AnomalySeverity.CRITICAL,
+            )
+        )
+    finally:
+        b.close()
+    evidence = _model(home, at=T0 + timedelta(days=3)).shadow_evidence(day0)
+    assert (
+        evidence.seeded_at,
+        evidence.missed_days,
+        evidence.live_drifts_bps,
+        evidence.kill_fired,
+        evidence.kill_check_clean,
+    ) == (
+        SEEDED_AT,
+        (date(2026, 10, 2), date(2026, 10, 3)),
+        (Decimal("12.5"),),
+        True,
+        None,
+    )
+
+
+def test_shadow_evidence_before_day_zero_reads_seed_and_first_fill_only(home: Path) -> None:
+    """During the warm-up only the seed and the first fill are read; no check facts."""
+    evidence = _model(home).shadow_evidence(None)
+    assert evidence == ShadowEvidence(seeded_at=SEEDED_AT, first_fill_at=T0 + timedelta(seconds=5))
