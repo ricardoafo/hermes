@@ -7,8 +7,9 @@ console can run it in a worker thread while keys and animations carry on.
 """
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Final
 
 from hermes.application.console import (
@@ -30,9 +31,16 @@ from hermes.application.console.shadow_screen import (
     ShadowSources,
     build_shadow_screen,
 )
+from hermes.application.console.system import (
+    MachineStats,
+    ReleaseHistory,
+    ServiceStatus,
+    SystemSources,
+)
 from hermes.application.console.views import ActivityDay, ConsoleBrief, RuleCheck, TaxPending
 from hermes.application.tax.screen import TaxScreen, TaxScreenSource
 from hermes.domain.errors import LedgerError
+from hermes.entrypoints.tui_system import BAR_CHECKS
 from hermes.entrypoints.tui_tax import TaxPackStatus
 
 __all__ = [
@@ -43,8 +51,10 @@ __all__ = [
     "ReadRequest",
     "ReadSources",
     "ShadowFailed",
+    "SystemReads",
     "read_console",
     "read_shadow",
+    "read_system",
 ]
 
 type Failed = ViewNotAvailableError | LedgerError
@@ -66,6 +76,7 @@ class ReadSources:
         release: Returns the running release's name.
         tax: The Tax screen's source.
         tax_pack: Returns the year's tax pack state.
+        system: The System screen's sources.
     """
 
     model: ConsoleReadModel
@@ -74,6 +85,7 @@ class ReadSources:
     release: Callable[[], str] | None = None
     tax: TaxScreenSource | None = None
     tax_pack: Callable[[int], TaxPackStatus | None] | None = None
+    system: SystemSources = field(default_factory=SystemSources)
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +101,7 @@ class ReadRequest:
         briefs: The Briefs screen shows.
         signals: The Signals screen shows.
         tax: The Tax screen shows.
+        system: The System screen shows.
     """
 
     width: int
@@ -99,6 +112,24 @@ class ReadRequest:
     briefs: bool = False
     signals: bool = False
     tax: bool = False
+    system: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class SystemReads:
+    """One read of the System screen's sources; a missing source stays ``None``.
+
+    Attributes:
+        services: systemd state of the hermes units.
+        releases: The releases on disk.
+        machine: cpu, memory, disk, ledger size, last snapshot.
+        bar_seconds: The last bar checks' durations; ``None`` when unreadable.
+    """
+
+    services: tuple[ServiceStatus, ...] | None = None
+    releases: ReleaseHistory | None = None
+    machine: MachineStats | None = None
+    bar_seconds: tuple[Decimal, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,6 +157,7 @@ class ConsoleReads:
         rule_checks: The Signals screen's rule checks.
         tax: The Tax screen, or why there is none.
         tax_pack: The tax pack state for the Tax screen's year.
+        system: The System screen's reads.
     """
 
     ctx: RenderContext
@@ -144,6 +176,7 @@ class ConsoleReads:
     rule_checks: tuple[RuleCheck, ...] | Failed | None = None
     tax: TaxScreen | TaxPending | None = None
     tax_pack: TaxPackStatus | None = None
+    system: SystemReads | None = None
 
 
 def read_console(sources: ReadSources, request: ReadRequest) -> ConsoleReads:
@@ -177,6 +210,7 @@ def read_console(sources: ReadSources, request: ReadRequest) -> ConsoleReads:
         rule_checks=_attempt(model.rule_checks) if request.signals else None,
         tax=tax,
         tax_pack=tax_pack,
+        system=read_system(sources.system) if request.system else None,
     )
 
 
@@ -201,6 +235,29 @@ def read_shadow(sources: ShadowSources, ctx: RenderContext) -> ShadowScreen:
         notebook=notebook,
         as_of=ctx.now,
         tz=ctx.tz,
+    )
+
+
+def read_system(sources: SystemSources) -> SystemReads:
+    """Read the System screen's sources; a missing source stays ``None``.
+
+    Args:
+        sources: The System screen's sources.
+
+    Returns:
+        The reads; unreadable bar timing is ``None``.
+    """
+    bar_seconds = None
+    if sources.bar_timing is not None:
+        try:
+            bar_seconds = sources.bar_timing.bar_check_seconds(BAR_CHECKS)
+        except LedgerError:
+            bar_seconds = None
+    return SystemReads(
+        services=None if sources.services is None else sources.services.services(),
+        releases=None if sources.releases is None else sources.releases.releases(),
+        machine=None if sources.machine is None else sources.machine.machine(),
+        bar_seconds=bar_seconds,
     )
 
 

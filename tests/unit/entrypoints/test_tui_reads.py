@@ -22,10 +22,11 @@ from textual.widgets import ContentSwitcher
 from hermes.adapters.console import FixtureReadModel
 from hermes.application.console import PortfolioRange, ViewNotAvailableError
 from hermes.application.console.shadow_screen import ShadowSources
+from hermes.application.console.system import SystemSources
 from hermes.application.console.views import TaxPending
 from hermes.domain.errors import LedgerError
 from hermes.entrypoints.tui import HomeApp, run_home
-from hermes.entrypoints.tui_reads import ReadRequest, ReadSources, read_console
+from hermes.entrypoints.tui_reads import ReadRequest, ReadSources, SystemReads, read_console
 
 _FROZEN: Final = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
 _METHODS: Final = (
@@ -320,3 +321,27 @@ def test_the_view_error_is_kept_as_the_card_error() -> None:
 
     reads = read_console(_sources(_NoActivity()), ReadRequest(width=80))
     assert (type(reads.activity), str(reads.activity)) == (ViewNotAvailableError, "activity")
+
+
+class _CountingServices:
+    """A services reader that counts its reads and finds no unit."""
+
+    def __init__(self) -> None:
+        self.reads = 0
+
+    def services(self) -> tuple[()]:
+        self.reads += 1
+        return ()
+
+
+def test_system_sources_are_read_only_while_the_system_screen_shows() -> None:
+    """The service states are read once with the System screen shown, and not at all without it."""
+    services = _CountingServices()
+    sources = ReadSources(
+        _CountingModel(),  # type: ignore[arg-type]
+        ShadowSources(),
+        system=SystemSources(services=services),
+    )
+    hidden = read_console(sources, ReadRequest(width=80))
+    shown = read_console(sources, ReadRequest(width=80, system=True))
+    assert (hidden.system, shown.system, services.reads) == (None, SystemReads(services=()), 1)

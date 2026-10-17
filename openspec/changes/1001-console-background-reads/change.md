@@ -33,12 +33,17 @@ a read, which the next paint replaces.
   read twice.
 - Cursor moves, opening and closing the detail pane, and the position
   detail screen paint from the last reads instead of reading again.
+- The System screen (issue #717) reads its services, releases, machine
+  and bar timing in the same read, while it shows; its EUR rate date comes
+  from the last portfolio read.
 
 ### Out
 
 - The cold start screen's time zone read at mount (one read before Home
   shows).
 - Rendering cost on the UI thread; not measured as slow.
+- A System service's detail screen reads that unit's journal when it opens
+  and on each poll while open.
 
 ## Decisions
 
