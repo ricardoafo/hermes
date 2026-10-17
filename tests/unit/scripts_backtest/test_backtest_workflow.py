@@ -306,3 +306,55 @@ def test_backtest_runner_shares_no_cache_and_no_docker_socket() -> None:
         "/srv/hermes-data:/srv/hermes-data",
         "backtest-uv-cache:/home/runner/.cache/uv",
     ]
+
+
+def _approval_check(tmp_path: Path, approvals: list[dict[str, Any]]) -> int:
+    """Run the approval step against a stubbed approvals API response; return its exit code."""
+    stub = tmp_path / "bin"
+    stub.mkdir()
+    (tmp_path / "approvals.json").write_text(json.dumps(approvals))
+    curl = stub / "curl"
+    curl.write_text(f'#!/usr/bin/env bash\ncat "{tmp_path / "approvals.json"}"\n')
+    curl.chmod(0o755)
+    path = f"{stub}:{os.environ.get('PATH', '/usr/bin:/bin')}"
+    result = _run_step(
+        "Code Owner approved this Validation touch",
+        {"PATH": path, "GH_TOKEN": "t", "REPO": "o/r", "RUN_ID": "1", "OWNER": "ricardoafo"},
+        tmp_path,
+    )
+    return result.returncode
+
+
+def _approval(state: str, login: str, environment: str) -> dict[str, Any]:
+    """One entry of GET /repos/{owner}/{repo}/actions/runs/{run_id}/approvals."""
+    return {
+        "state": state,
+        "comment": "",
+        "user": {"login": login},
+        "environments": [{"id": 1, "name": environment}],
+    }
+
+
+@needs_tools
+def test_owner_approval_of_backtest_validation_passes(tmp_path: Path) -> None:
+    """The Code Owner's approval of backtest-validation lets the Validation touch proceed."""
+    approvals = [_approval("approved", "ricardoafo", "backtest-validation")]
+    assert _approval_check(tmp_path, approvals) == 0
+
+
+@needs_tools
+@pytest.mark.parametrize(
+    "approvals",
+    [
+        [],
+        [_approval("rejected", "ricardoafo", "backtest-validation")],
+        [_approval("approved", "someone-else", "backtest-validation")],
+        [_approval("approved", "ricardoafo", "backtest-train")],
+    ],
+    ids=["no-approval", "rejected", "other-user", "other-environment"],
+)
+def test_validation_without_owner_approval_fails_closed(
+    tmp_path: Path, approvals: list[dict[str, Any]]
+) -> None:
+    """Anything short of the owner approving backtest-validation stops the run before data."""
+    assert _approval_check(tmp_path, approvals) == 1

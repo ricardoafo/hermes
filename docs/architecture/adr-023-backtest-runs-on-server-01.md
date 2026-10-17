@@ -78,7 +78,7 @@ Owner. His approval click on the run is the pre-registration's Validation OK: on
   every run executes that code on server-01 and logs a trial.
 - Before reading data, the run reads its own approval history and stops unless the Code Owner approved
   `backtest-validation`. A missing or unprotected environment therefore fails closed instead of running unapproved.
-- A `train` run uses the unprotected environment `backtest-train` and needs no click.
+- A `train` run uses the environment `backtest-train`, which needs no click but accepts only `main`.
 - Each Validation touch counts against the family budget of [ADR-021](adr-021-strategy-lifecycle-ready-and-done.md) §5
   from v2 on. For v1, pre-registration §4 ("touch sparingly") applies.
 
@@ -132,10 +132,12 @@ is a trial too, so agents dispatch one only when the Code Owner asks for it.
 ## Security (ADR-019)
 
 - **No secret.** The data is public Binance Vision archives, so the workflow reads no secret. Its token is read-only.
-- **Branch code on the runner.** A Train run may be dispatched from a branch, so branch code can run on
-  `hermes-backtest`. That runner holds the same registration PAT as every other runner and no deploy or exchange
-  credential. It can write `/srv/hermes-data`, but a poisoned file fails the next run's hash check. This matches
-  ADR-019 threat T3's existing controls (ephemeral runner, least-privilege token). No threat row changes.
+- **Branch code on the runner.** The workflow refuses any ref but `main`, but a branch could carry an edited
+  workflow without that check. Both environments, `backtest-train` and `backtest-validation`, therefore limit
+  deployment branches to `main`, which GitHub enforces outside the workflow file. The runner holds the same
+  registration PAT as every other runner and no deploy or exchange credential. It can write `/srv/hermes-data`, but a
+  poisoned file fails the next run's hash check. This matches ADR-019 threat T3's existing controls (ephemeral
+  runner, least-privilege token). No threat row changes.
 - **Runs from `main` only**, for both splits; Validation is also held by the environment's branch rule.
 
 ## Why
