@@ -17,6 +17,7 @@ Tests cover:
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -184,6 +185,23 @@ class TestKillTriggerEvaluatorIndividualTriggers:
 # ---------------------------------------------------------------------------
 # Priority ordering
 # ---------------------------------------------------------------------------
+
+
+class TestHeldShadowKill:
+    """A shadow kill serve recorded holds on every later evaluation (#796)."""
+
+    # SEV-1: S6 a recorded kill that a healthy snapshot clears would reopen entries (#796)
+    def test_a_held_kill_fires_on_an_otherwise_safe_state(
+        self, evaluator: KillTriggerEvaluator
+    ) -> None:
+        """``killed_by`` set fires under that rule even with every metric safe."""
+        decision = evaluator.evaluate(replace(_safe_state(), killed_by="sa9_repeat"))
+        assert (decision.triggered, decision.rule) == (True, "sa9_repeat")
+
+    def test_the_held_kill_wins_over_a_live_drawdown(self, evaluator: KillTriggerEvaluator) -> None:
+        """The held rule is reported, not the drawdown that would also fire."""
+        state = replace(_safe_state(max_drawdown=0.5), killed_by="shadow_sharpe")
+        assert evaluator.evaluate(state).rule == "shadow_sharpe"
 
 
 class TestKillTriggerEvaluatorPriority:

@@ -1,0 +1,36 @@
+# Keep the supervisor desk's daily brief (#897). Runs `hermes supervisor brief
+# --keep`: the same read-only, P&L-blind tools and output gate as the console's
+# Briefs screen (ADR-012 D-07, D-08), and appends the brief that passed the gate
+# to briefs.jsonl beside the ledger, once per UTC day, so the screen can list
+# earlier days. The ledger is opened mode=ro; the only file written is the
+# archive.
+#
+# There is no EnvironmentFile: the supervisor never reads the env file, so no
+# secret can reach the desk. The grants are the six source scopes of the brief.
+#
+# Fired by hermes-brief.timer. The command ships inside each release, so
+# ExecStart follows the `current` symlink.
+
+[Unit]
+Description=Hermes supervisor desk daily brief, kept for the console
+After=hermes.service
+
+[Service]
+Type=oneshot
+User=hermes
+Group=hermes
+
+ExecStart=/opt/hermes/current/.venv/bin/hermes supervisor brief --keep --config-dir /opt/hermes/current/config --db /var/lib/hermes/hermes.sqlite3 --grant hermes:read:health --grant hermes:read:signals --grant hermes:read:engine --grant hermes:read:positions --grant hermes:read:decisions --grant hermes:read:certification
+TimeoutStartSec=120s
+
+# Hardening — matches the pattern used by real hermes services (ADR-003 §09).
+# Only the ledger's directory is writable, for briefs.jsonl and its lock file.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+CapabilityBoundingSet=
+ReadWritePaths=/var/lib/hermes
+
+[Install]
+WantedBy=multi-user.target

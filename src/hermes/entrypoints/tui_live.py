@@ -260,9 +260,12 @@ def market_rows(
         rate: EUR per quote unit for the prices, or ``None`` to show USDT.
 
     Returns:
-        The tag line, a header and one row per coin.
+        The tag line, a header and one row per stream; under 64 cells, where
+        the timeframe is hidden, one row per coin with its soonest next check.
     """
     columns = _Columns.for_width(width)
+    if not columns.full:
+        watch = _soonest_per_coin(watch)
     tokens = look.tokens
     header = _header(columns, rate)
     header.stylize(tokens.muted)
@@ -283,6 +286,16 @@ def market_rows(
         line.append(day_clock(look.ctx, pair.next_check_at))
         lines.append(line)
     return Group(*lines)
+
+
+def _soonest_per_coin(watch: Sequence[WatchedPair]) -> list[WatchedPair]:
+    """Return one stream per coin, the one checked next, in first-seen coin order."""
+    soonest: dict[str, WatchedPair] = {}
+    for pair in watch:
+        kept = soonest.get(pair.coin)
+        if kept is None or pair.next_check_at < kept.next_check_at:
+            soonest[pair.coin] = pair
+    return list(soonest.values())
 
 
 def _signed_style(look: LiveLook, value: Decimal) -> str:

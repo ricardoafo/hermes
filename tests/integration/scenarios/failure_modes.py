@@ -29,6 +29,7 @@ _FAULTS = _S + "test_market_data_faults.py::"
 _OUTAGES = _S + "test_outages.py::"
 _RISK = _S + "test_risk_limits.py::"
 _LIVE = _U + "adapters/market_data/test_binance_live_klines.py::"
+_KLINE_ROWS = _U + "adapters/market_data/test_binance_live_klines_rows.py::"
 _REPLAY = _I + "adapters/market_data/test_binance_live_klines_replay.py::"
 _DEPTH = _U + "adapters/market_data/test_binance_depth_snapshot.py::"
 _FX = _U + "adapters/fx/test_frankfurter.py::"
@@ -174,7 +175,11 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "One klines response holds duplicate or unsorted rows",
-            gap="issue #842: the last duplicate wins silently; inferred, no test feeds such rows",
+            proved_by=(
+                _KLINE_ROWS + "test_rows_in_any_order_come_out_ascending",
+                _KLINE_ROWS + "test_an_exact_repeat_of_a_row_is_dropped",
+                _KLINE_ROWS + "test_two_different_rows_for_one_bar_are_refused",
+            ),
         ),
         FailureMode(
             "The forming candle is delivered as closed",
@@ -253,7 +258,10 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "A depth diff older than the snapshot reaches the book",
-            gap="issue #866: the snapshot drops lastUpdateId, so stale diffs cannot be dropped",
+            proved_by=(
+                _BOOK_MACHINE + "test_a_diff_older_than_the_snapshot_never_reaches_the_book",
+                _BOOK_MACHINE + "TestOrderbookDiffMachine::runTest",
+            ),
         ),
     ),
     "exchange and FX": (
@@ -758,7 +766,13 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "A halt is silent and the refused entry is still pushed as ENTRY",
-            gap="issue #690: nothing is recorded or alerted; the push goes out regardless",
+            proved_by=(
+                _FILLS + "test_a_halted_entry_is_recorded_once_and_alerted_once",
+                _FILLS + "test_a_halt_changes_no_decision_and_its_entry_is_not_pushed",
+                _S
+                + "test_suspected_defects.py::"
+                + "test_an_entry_refused_by_a_risk_halt_is_not_announced",
+            ),
         ),
         FailureMode(
             "RO-03 loses its input or stays latched for good",

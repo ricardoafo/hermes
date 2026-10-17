@@ -129,10 +129,10 @@ def reconcile_month(
             )
         )
 
-    if exchange is None:
-        skipped.append("exchange: no account connected (shadow mode)")
-    elif month_closed:
+    if month_closed:
         skipped.append(f"exchange: balances are current, {month} has ended")
+    elif exchange is None:
+        skipped.append("exchange: no account connected (shadow mode)")
     else:
         balances = exchange.balances(sorted(book, key=lambda a: a.value))
         checks.extend(compare_holdings(book, balances, source="exchange", tolerance=tolerance))

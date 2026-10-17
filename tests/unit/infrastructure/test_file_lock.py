@@ -61,22 +61,22 @@ def test_a_holder_process_that_is_killed_frees_the_lock(tmp_path: Path) -> None:
     This is what lets systemd restart serve after a crash or ``kill -9``.
     """
     path = tmp_path / "x.lock"
-    holder = subprocess.Popen(  # noqa: S603 - fixed interpreter and script
+    with subprocess.Popen(  # noqa: S603 - fixed interpreter and script
         [sys.executable, "-c", _HOLD_AND_WAIT, str(path)],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         text=True,
-    )
-    try:
-        assert holder.stdout is not None
-        # The pid the script itself reports: on Windows a venv python may be a
-        # launcher whose child is the process that holds the lock.
-        holder_pid = int(holder.stdout.readline())
-        refused_while_alive = FileLock(path).try_acquire() is False
-        os.kill(holder_pid, signal.SIGTERM)
-    finally:
-        holder.kill()
-        holder.wait(timeout=30)
+    ) as holder:
+        try:
+            assert holder.stdout is not None
+            # The pid the script itself reports: on Windows a venv python may be a
+            # launcher whose child is the process that holds the lock.
+            holder_pid = int(holder.stdout.readline())
+            refused_while_alive = FileLock(path).try_acquire() is False
+            os.kill(holder_pid, signal.SIGTERM)
+        finally:
+            holder.kill()
+            holder.wait(timeout=30)
     after = FileLock(path)
     after.acquire(timeout=_RELEASE_WAIT_SECONDS)
     assert (refused_while_alive, after.held) == (True, True)
