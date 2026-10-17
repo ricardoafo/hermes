@@ -10,6 +10,9 @@ Serve runs these once per completed UTC day, over what its own ledger holds:
 - **Drift** (§10, §7): the median size of the fills' drift from the §6.2
   model price over the last 7 days above 30 bps. Direction is ignored;
   a window with no measured fill never breaches (Code Owner card, #796).
+  Exits count only when the pre-registration models them at a market
+  price: v1 models a stop exit at the stop, while serve sells at the bar
+  close, so v1's exit gap is a known model choice, not execution drift.
 
 A kill stops new entries for good (exits still fill) and makes the strategy
 DEAD; a drift breach sends it back to UNTRUSTED (ADR-021). Each check
@@ -36,6 +39,7 @@ from hermes.application.strategy_protocol.shadow_sharpe_kill import (
 )
 from hermes.domain.events.fill_quality_recorded import FillQualityRecorded
 from hermes.domain.events.risk_halt_recorded import HaltKind, RiskHaltRecorded
+from hermes.domain.events.trade_executed import TradeSide
 from hermes.domain.portfolio.mark import PortfolioMark
 from hermes.domain.statistics.performance import daily_returns
 
@@ -67,10 +71,13 @@ class ShadowCheckResult:
     Args:
         kill: The first kill that fired, or an untriggered decision.
         drift_breached: The drift p50 was above its limit on this day.
+        exits_left_out: Exit fills of the window the drift p50 did not count,
+            because the pre-registration's exit model is not a market price.
     """
 
     kill: KillDecision
     drift_breached: bool
+    exits_left_out: int = 0
 
 
 def day_end(day: date) -> datetime:
@@ -118,7 +125,8 @@ def run_shadow_checks(
     kill = _sa9_repeat(end, halts, triggers)
     if not kill.triggered:
         kill = _shadow_sharpe(day, equity, triggers)
-    return ShadowCheckResult(kill=kill, drift_breached=_drift_breached(end, fills, triggers))
+    breached, left_out = _drift(end, fills, triggers)
+    return ShadowCheckResult(kill=kill, drift_breached=breached, exits_left_out=left_out)
 
 
 def _sa9_repeat(
@@ -163,12 +171,13 @@ def _shadow_sharpe(
     return _NOT_TRIGGERED
 
 
-def _drift_breached(
+def _drift(
     end: datetime, fills: Sequence[FillQualityRecorded], triggers: KillTriggers
-) -> bool:
-    """Return whether the median drift size of the window's fills is above the limit."""
+) -> tuple[bool, int]:
+    """Return whether the window's median drift size is above the limit, and exits left out."""
     start = end - timedelta(days=triggers.shadow_drift_window_days)
-    sizes = [
-        abs(f.drift_bps) for f in fills if f.drift_bps is not None and start <= f.occurred_at < end
-    ]
-    return bool(sizes) and statistics.median(sizes) > triggers.shadow_drift_limit_bps
+    measured = [f for f in fills if f.drift_bps is not None and start <= f.occurred_at < end]
+    counted = [f for f in measured if triggers.shadow_drift_counts_exits or f.side is TradeSide.BUY]
+    sizes = [abs(f.drift_bps) for f in counted if f.drift_bps is not None]
+    breached = bool(sizes) and statistics.median(sizes) > triggers.shadow_drift_limit_bps
+    return breached, len(measured) - len(counted)

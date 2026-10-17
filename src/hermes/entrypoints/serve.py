@@ -1481,6 +1481,12 @@ class _BarLoop:
             fills=c.ledger.fill_quality_events(c.strategy_id),
             triggers=c.kill_triggers,
         )
+        if result.exits_left_out:
+            _log.info(
+                "serve.shadow_check.exits_left_out",
+                day=day.isoformat(),
+                fills=result.exits_left_out,
+            )
         held = bool(c.executor.killed_by)
         if result.kill.triggered and not held:
             c.executor.hold_kill(result.kill.rule)

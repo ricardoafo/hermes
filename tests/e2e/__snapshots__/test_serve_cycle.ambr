@@ -10,14 +10,7 @@
       'bot': 'running',
       'generated_at': '2025-01-21T00:00:10+00:00',
       'halts': dict({
-        'last': dict({
-          'kind': 'drift',
-          'occurred_at': '2025-01-14T00:00:00+00:00',
-          'pair': None,
-          'pre_registration_ref': '§7',
-          'reason': 'drift_p50_above_limit',
-          'rule': 'sim_live_drift',
-        }),
+        'last': None,
         'last_24h': 0,
       }),
       'live_since': None,

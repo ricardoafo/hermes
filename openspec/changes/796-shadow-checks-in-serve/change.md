@@ -56,6 +56,11 @@ shadow drift breach into UNTRUSTED. No threshold changes; every output is a rule
   days above 30 bps is a breach. Direction is ignored ("divergence"); a window without a measured
   fill never breaches. No baseline is subtracted: none is measured, and the signed text and the
   certification gate both use 30 bps flat.
+- **D-5b Which fills (Code Owner card, 2026-10-17: "v1 entries only").** v1's §6.2 model prices a
+  stop exit at stop × 0.9985 while serve sells at the 4h close, so v1 exits drift 70 to 390 bps by
+  construction (issue #785's gap). `KillTriggers.shadow_drift_counts_exits` is `False` for v1: its
+  exits stay out of the median and serve logs how many were left out. A pre-registration that models
+  exits at a market price (the v2 draft: close × 0.9995) sets it `True` and counts every fill.
 - **D-6 Kill vs drift.** Following ADR-021 (the later ADR wins): a kill is DEAD and stops entries;
   a drift breach sends the strategy back to UNTRUSTED and does not stop trading.
 - **D-7 Rows.** Strategy-wide rows have no pair and are stamped at the end of the checked day, so

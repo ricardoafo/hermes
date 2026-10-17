@@ -9,12 +9,13 @@ Invariants protected here:
   60 consecutive days, counted over the whole history;
 - the drift rule breaches when the median drift size of the last 7 days'
   fills is above 30 bps, whatever the drift's direction, and never without a
-  measured fill.
+  measured fill; v1's exits, priced at the stop by its model, stay out.
 
 The thresholds are the signed ones (pre-registration-v1.md §10), read from
 :class:`PreRegistration`, so a change to them fails these tests.
 """
 
+import dataclasses
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
@@ -70,14 +71,14 @@ def _halt(at: datetime, rule: str = "RO-04", kind: HaltKind = HaltKind.HALT) -> 
     )
 
 
-def _fill(at: datetime, drift: str | None) -> FillQualityRecorded:
+def _fill(at: datetime, drift: str | None, side: TradeSide = TradeSide.BUY) -> FillQualityRecorded:
     """Return a fill-quality row with ``drift`` bps (``None``: no model price)."""
     return FillQualityRecorded(
         occurred_at=at,
         correlation_id=_CID,
         strategy_id=_SID,
         pair=_BTC,
-        side=TradeSide.BUY,
+        side=side,
         qty=Decimal("0.001"),
         book_source=BookSource.LIVE,
         book_time=at,
@@ -218,3 +219,20 @@ def test_the_drift_rule_ignores_direction(drifts: list[int]) -> None:
     straight = tuple(_fill(at, str(d)) for d in drifts)
     flipped = tuple(_fill(at, str(-d)) for d in drifts)
     assert _check(fills=straight)[2] == _check(fills=flipped)[2]
+
+
+def test_v1_exits_stay_out_of_the_drift_median_and_are_counted() -> None:
+    """v1 models a stop exit at the stop: exit drift never breaches and is reported as left out."""
+    at = _END - timedelta(hours=1)
+    fills = (_fill(at, "4"), _fill(at, "380", TradeSide.SELL), _fill(at, "-250", TradeSide.SELL))
+    result = run_shadow_checks(_DAY, equity=(), halts=(), fills=fills, triggers=_TRIGGERS)
+    assert (result.drift_breached, result.exits_left_out) == (False, 2)
+
+
+def test_exits_count_when_the_pre_registration_prices_them_at_market() -> None:
+    """With exits counted (a v2-style exit model), the same fills breach and none are left out."""
+    at = _END - timedelta(hours=1)
+    fills = (_fill(at, "4"), _fill(at, "380", TradeSide.SELL), _fill(at, "-250", TradeSide.SELL))
+    triggers = dataclasses.replace(_TRIGGERS, shadow_drift_counts_exits=True)
+    result = run_shadow_checks(_DAY, equity=(), halts=(), fills=fills, triggers=triggers)
+    assert (result.drift_breached, result.exits_left_out) == (True, 0)
