@@ -58,6 +58,7 @@ _LOTS_MACHINE = _U + "domain/lots/test_fifo_lots_state_machine.py::"
 _ALERTS = _U + "deploy/test_alert_scripts.py::"
 _WIRE = _U + "adapters/test_wire_numbers.py::"
 _PATHS = _S + "test_generated_paths.py::"
+_LOTS_AGREE = _S + "test_portfolio_matches_ledger_lots.py::"
 _KLINES_DOWN = _S + "test_chaos_klines_down_at_boot.py::"
 _SIGTERM = _S + "test_chaos_sigterm_mid_bar.py::"
 _EVERY_BAR = _PATHS + "test_every_rule_holds_after_every_bar_and_a_restart_changes_nothing"
@@ -904,7 +905,10 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "The portfolio and the ledger lots drift apart in a run",
-            gap="issue #358: no scenario compares tracker cash with the USDT lots after serve",
+            proved_by=(
+                _LOTS_AGREE + "test_after_five_round_trips_the_portfolio_equals_the_ledger_lots",
+                _LOTS_AGREE + "test_on_every_generated_path_the_portfolio_equals_the_ledger_lots",
+            ),
         ),
         FailureMode(
             "Splitting a sale in two changes the tax lots or the total gain",
