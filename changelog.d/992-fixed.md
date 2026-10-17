@@ -1,0 +1,1 @@
+- `hermes --vps tui` draws the theme's real colours when the local terminal draws 24-bit colour: the VPS console is now told so, instead of falling back to 256 colours that turned the background black and the panels navy.
