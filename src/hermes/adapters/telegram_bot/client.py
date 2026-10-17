@@ -80,17 +80,23 @@ class TelegramBotClient:
             timeout_s: How long Telegram may hold the request open.
 
         Returns:
-            New text messages, oldest first; other update kinds are skipped.
+            New updates, oldest first. One that is not a text message (or
+            whose message is malformed) comes back with an empty chat id and
+            text, so the caller still advances the offset past it.
 
         Raises:
-            TelegramBotError: On a network error or a non-OK answer.
+            TelegramBotError: On a network error, a non-OK answer, or a reply
+                whose ``result`` is not a list of updates with integer ids.
         """
         params: dict[str, Any] = {"timeout": timeout_s, "allowed_updates": '["message"]'}
         if offset is not None:
             params["offset"] = offset
         body = self._call("getUpdates", params=params, read_timeout=timeout_s + 10)
+        items = body.get("result", [])
+        if not isinstance(items, list):
+            raise TelegramBotError("getUpdates failed: result is not a list")
         updates: list[Update] = []
-        for item in body.get("result", []):
+        for item in items:
             update = _parse_update(item)
             if update is not None:
                 updates.append(update)
@@ -153,6 +159,8 @@ class TelegramBotClient:
         try:
             body = response.json()
         except ValueError:
+            body = {}
+        if not isinstance(body, dict):
             body = {}
         if response.status_code != httpx.codes.OK or not body.get("ok"):
             msg = f"{method} failed: HTTP {response.status_code} {body.get('description', '')}"

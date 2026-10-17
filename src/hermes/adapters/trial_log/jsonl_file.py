@@ -95,7 +95,7 @@ class JsonlTrialLog:
                 continue
             try:
                 records.append(_parse(line))
-            except (KeyError, TypeError, ValueError) as exc:
+            except (KeyError, TypeError, ValueError, AttributeError) as exc:
                 raise TrialLogError(path=str(self.path), msg=f"line {number}: {exc}") from exc
         return tuple(records)
 
@@ -149,7 +149,7 @@ class JsonlTrialLog:
         if text is None:
             try:
                 text = self.path.read_text(encoding="utf-8")
-            except OSError as exc:
+            except (OSError, UnicodeDecodeError) as exc:
                 raise TrialLogError(path=str(self.path), msg=f"read failed: {exc}") from exc
         lines: list[dict[str, Any]] = []
         prev = GENESIS_SHA256
@@ -158,7 +158,7 @@ class JsonlTrialLog:
                 line = json.loads(raw)
                 body = {k: v for k, v in line.items() if k not in {"prev_sha256", "sha256"}}
                 claimed_prev, claimed = line["prev_sha256"], line["sha256"]
-            except (json.JSONDecodeError, KeyError, AttributeError) as exc:
+            except (json.JSONDecodeError, KeyError, AttributeError, RecursionError) as exc:
                 raise TrialLogError(
                     path=str(self.path),
                     msg=f"line {number} is malformed: {exc}; if a power loss cut the last "
