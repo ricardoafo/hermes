@@ -167,7 +167,28 @@ def _regimes(value: object, oos_start: date) -> tuple[Regime, ...]:
     for kind in ("bull", "bear"):
         if not any(r.kind == kind for r in out):
             raise FunnelThresholdError(f"{key} needs at least one {kind} stretch")
+    _refuse_shared_days(out, key)
     return tuple(out)
+
+
+def _refuse_shared_days(regimes: Sequence[Regime], key: str) -> None:
+    """Refuse two stretches of one kind that share a day, which would compound it twice.
+
+    Both ends are inclusive, so a stretch may start the day after another ends
+    but not on that day. Stretches of different kinds may share days.
+    """
+    by_start = sorted(enumerate(regimes), key=lambda pair: pair[1].start)
+    for kind in ("bull", "bear"):
+        previous: tuple[int, Regime] | None = None
+        for index, regime in by_start:
+            if regime.kind != kind:
+                continue
+            if previous is not None and regime.start <= previous[1].end:
+                raise FunnelThresholdError(
+                    f"{key}[{index}] overlaps {key}[{previous[0]}]: "
+                    f"two {kind} stretches share {regime.start}"
+                )
+            previous = (index, regime)
 
 
 def parse_funnel_front_matter(
