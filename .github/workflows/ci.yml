@@ -397,6 +397,22 @@ jobs:
         if: ${{ !cancelled() && steps.unit.outcome == 'success' }}
         run: bash scripts/dev/ci-checks.sh coverage-floor
 
+      # An engine change must not alter a shadowed strategy's decisions
+      # without the Code Owner knowing: an altered decision restarts its
+      # shadow clock (ADR-021). Replays Train on the base and on this tree
+      # and compares decisions only; no metric, no trial (ADR-024). Exits
+      # at once when no engine file changed. Last, so a red unit tier is
+      # reported before the replay's minutes are spent.
+      - name: Train decision replay
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && steps.unit.outcome == 'success' }}
+        timeout-minutes: 15
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+          HERMES_DATA_DIR: /srv/hermes-data
+        run: bash scripts/dev/train-decision-replay.sh
+
   # Add-to-project step deliberately removed.
   #
   # actions/add-to-project cannot write to a user-owned project via the
