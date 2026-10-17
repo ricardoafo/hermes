@@ -23,10 +23,12 @@ from hermes.application.console import (
     PortfolioSummary,
     PositionDetail,
     PositionRow,
+    RuleCheck,
     ShadowTest,
     ViewNotAvailableError,
     WatchedPair,
 )
+from hermes.application.console.views import ConsoleBrief
 from hermes.domain.errors import LedgerError
 from hermes.entrypoints.tui import HomeApp
 
@@ -66,6 +68,9 @@ class _Failing:
     def activity(self, *, include_quiet: bool = False) -> tuple[ActivityDay, ...]:
         return self._base.activity(include_quiet=include_quiet)
 
+    def rule_checks(self) -> tuple[RuleCheck, ...]:
+        return self._base.rule_checks()
+
     def shadow_test(self) -> ShadowTest:
         self._raise("shadow")
         return self._base.shadow_test()
@@ -73,6 +78,10 @@ class _Failing:
     def market_watch(self) -> tuple[WatchedPair, ...]:
         self._raise("market")
         return self._base.market_watch()
+
+    def briefs(self) -> tuple[ConsoleBrief, ...]:
+        self._raise("briefs")
+        return self._base.briefs()
 
 
 def _model(**errors: Exception) -> ConsoleReadModel:

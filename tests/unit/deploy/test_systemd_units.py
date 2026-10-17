@@ -121,6 +121,11 @@ def test_hermes_service_loads_the_environment_file() -> None:
     assert "EnvironmentFile" in _parse("hermes.service")["Service"]
 
 
+def test_hermes_service_runs_as_prod_when_the_environment_file_omits_hermes_env() -> None:
+    """A missing HERMES_ENV must not start the engine as dev, past the prod channel check."""
+    assert _parse("hermes.service")["Service"]["Environment"] == "HERMES_ENV=prod"
+
+
 def test_hermes_service_keeps_the_strict_filesystem_sandbox() -> None:
     """Loosening ProtectSystem would widen the blast radius of a compromised process."""
     assert _parse("hermes.service")["Service"]["ProtectSystem"] == "strict"

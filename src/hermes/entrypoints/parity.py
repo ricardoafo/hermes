@@ -6,8 +6,9 @@ Usage: ``hermes parity check [--date YYYY-MM-DD] [--db PATH] [--config-dir DIR]
 Reads the bars, signals and fills serve stored for one UTC day, replays the
 bars through the same strategy and fill kernel, and compares the decisions:
 which signals fired and which were executed. Prices are not compared. The
-ledger is opened with SQLite's ``mode=ro``; the command never writes and is
-safe next to ``hermes serve``. Without ``--date`` it checks the previous UTC
+ledger is read with SQLite's ``mode=ro`` and the command is safe next to
+``hermes serve``; its only write is the ``--alert`` alert, appended to the
+ledger ``events`` table before it is sent (#136). Without ``--date`` it checks the previous UTC
 day. A bar belongs to the day it closes in, so the day's 1d bar is the one
 closing at its end.
 
@@ -58,6 +59,7 @@ from hermes.domain.portfolio.snapshot import PortfolioSnapshot
 from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.strategy_id import StrategyId
+from hermes.entrypoints._anomaly_record import record_anomaly
 from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.serve import (
     DEFAULT_DB_PATH,
@@ -80,9 +82,10 @@ _USAGE: Final = (
     "                           [--alert] [--offline]\n"
     "\n"
     "Replays a UTC day of stored live bars and compares the decisions with the ones\n"
-    "serve recorded (signals, executed or not). Read-only. Without --date it checks\n"
-    "the previous UTC day. Missing warm-up bars are read from the public Binance\n"
-    "klines; --offline uses stored bars only. --alert sends one alert on a mismatch.\n"
+    "serve recorded (signals, executed or not). Without --date it checks the\n"
+    "previous UTC day. Missing warm-up bars are read from the public Binance\n"
+    "klines; --offline uses stored bars only. --alert sends one alert on a mismatch\n"
+    "and records it in the ledger, the command's only write.\n"
     "Exit codes: 0 parity, 1 mismatch, 2 usage, 3 no data, no ledger or bad config.\n"
 )
 
@@ -174,7 +177,7 @@ def _check(
         return 0
     stream.writelines(mismatch.line() + "\n" for mismatch in report.mismatches)
     if parsed.alert:
-        _send_alert(report, at, env, router_factory, err)
+        _send_alert(report, at, env, router_factory, err, db=db)
     return 1
 
 
@@ -284,11 +287,14 @@ def _send_alert(
     env: Mapping[str, str],
     factory: RouterFactory,
     err: TextIO,
+    *,
+    db: Path,
 ) -> None:
-    """Send the mismatch alert to every channel the router names, isolating failures."""
+    """Record the mismatch alert, then send it to every channel the router names."""
     alert = parity_alert(report, now=at)
     if alert is None:
         return
+    record_anomaly(db, alert, err)
     channels = factory(env)
     adapters = route(EventClass.ANOMALY_DETECTED, channels)
     if not adapters:

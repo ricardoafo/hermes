@@ -10,6 +10,8 @@
 #   status exit 1 (late or down)   -> /fail ping, the status JSON as body
 #   status exit 2 (no `status` command: a release older than #370)
 #                                  -> success ping, as before #372
+#   status exit 2 while `hermes status --help` works (bad arguments)
+#                                  -> /fail ping with the command's output
 #   anything else (no ledger, config error, binary missing)
 #                                  -> /fail ping with the command's output
 #
@@ -62,7 +64,15 @@ set -e
 
 case "$status_rc" in
     0) endpoint="$url" ; outcome="ok" ;;
-    2) endpoint="$url" ; outcome="ok (release has no hermes status)" ; : > "$body" ;;
+    2)
+        # Exit 2 is also argparse's code for bad arguments: a renamed flag must
+        # not keep the dead-man's switch green (#856).
+        if "$hermes_bin" status --help > /dev/null 2>&1; then
+            endpoint="${url%/}/fail" ; outcome="fail (hermes status exit 2)"
+        else
+            endpoint="$url" ; outcome="ok (release has no hermes status)" ; : > "$body"
+        fi
+        ;;
     *) endpoint="${url%/}/fail" ; outcome="fail (hermes status exit $status_rc)" ;;
 esac
 

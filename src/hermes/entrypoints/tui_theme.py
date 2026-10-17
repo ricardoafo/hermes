@@ -38,6 +38,7 @@ __all__ = [
     "CONTROL_THEME",
     "CURVE_ROWS_STANDARD",
     "CURVE_ROWS_WIDE",
+    "FEED_WIDTH",
     "HERO_MIN_CONTRAST",
     "HERO_RULE_GLYPH",
     "HORIZONTAL_BREAKPOINTS",
@@ -72,7 +73,6 @@ __all__ = [
     "Motion",
     "ThemeChoice",
     "Tokens",
-    "binary_strip",
     "blend",
     "contrast_ratio",
     "data_tokens",
@@ -305,7 +305,7 @@ WORDMARK: Final = (
 class Motion:
     """Timings in seconds.
 
-    ``pulse_*``, ``strip_tick`` and ``clock_tick`` drive timers since issue
+    ``pulse_*`` and ``clock_tick`` drive timers since issue
     #711; ``slow``, ``shimmer``, ``shimmer_step`` and ``radar_tick`` since
     issue #712; the others are defined for the effects later issues build.
 
@@ -321,8 +321,7 @@ class Motion:
         shimmer: Pause between shimmer passes on big numbers (issue #712).
         shimmer_step: One step of a shimmer pass (8 fps, the ambient cap).
         radar_tick: One step of the empty-positions radar.
-        flash: A live price flash (issue #713).
-        strip_tick: One step of the window bar's binary strip.
+        flash: A live price flash, and the feed pulse's bright newest glyph (issue #713).
         clock_tick: The clock and the next-bar countdown.
         poll: Re-reading the read model.
     """
@@ -339,7 +338,6 @@ class Motion:
     shimmer_step: float = 0.125
     radar_tick: float = 0.25
     flash: float = 0.9
-    strip_tick: float = 1.0
     clock_tick: float = 1.0
     poll: float = 5.0
 
@@ -347,7 +345,8 @@ class Motion:
 MOTION: Final = Motion()
 MOTION_ENV: Final = "HERMES_CONSOLE_MOTION"
 _MOTION_OFF: Final = frozenset({"off", "0", "false", "no"})
-_STRIP_WIDTH: Final = 16
+# Recent ticker polls the Neon window bar shows, newest on the right (issue #713).
+FEED_WIDTH: Final = 16
 
 
 def motion_enabled(env: Mapping[str, str]) -> bool:
@@ -483,26 +482,6 @@ def pulse_steps(tokens: Tokens) -> tuple[str, ...]:
     fading = blend(tokens.live, tokens.dim, 0.35)
     faint = blend(tokens.live, tokens.dim, 0.7)
     return (tokens.live, fading, faint, fading)
-
-
-def binary_strip(tick: int, width: int = _STRIP_WIDTH) -> str:
-    """Return the window bar's binary strip for one tick; the same tick, the same strip.
-
-    Args:
-        tick: Step counter; each step changes the strip.
-        width: Number of digits.
-
-    Returns:
-        ``width`` characters of ``0`` and ``1``.
-    """
-    state = (tick * 0x9E3779B1 + 0x7F4A7C15) & 0xFFFFFFFF or 1
-    digits = []
-    for _ in range(width):
-        state ^= (state << 13) & 0xFFFFFFFF
-        state ^= state >> 17
-        state ^= (state << 5) & 0xFFFFFFFF
-        digits.append("1" if state & 1 else "0")
-    return "".join(digits)
 
 
 def startup_logo() -> tuple[str, ...]:

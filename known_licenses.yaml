@@ -17,4 +17,24 @@
 #       reason: <why the non-allowlisted license is OK for our use>
 #       accepted_by: <initials>
 #       reviewed: <YYYY-MM-DD>
-exceptions: []
+exceptions:
+  - package: fpdf2
+    version: "*"
+    reason: "Tax-pack PDF sheets. LGPL-3.0, used as an unmodified library imported at run time and installed from PyPI as its own package, so it can be replaced; this keeps a proprietary app within the LGPL."
+    accepted_by: Code Owner, by approving the PR for issue #757
+    reviewed: 2026-10-06
+  - package: python-telegram-bot
+    version: "*"
+    reason: "Declared runtime dependency in pyproject.toml for Telegram. LGPL-3.0, used as an unmodified library imported at run time and installed from PyPI as its own package, so it can be replaced; this keeps a proprietary app within the LGPL."
+    accepted_by: Code Owner, by approving the PR for issue #757
+    reviewed: 2026-10-06
+  - package: yattag
+    version: "*"
+    reason: "Dev only, pulled in by cosmic-ray for mutation-test reports; never shipped to the VPS."
+    accepted_by: Code Owner, by approving the PR for issue #757
+    reviewed: 2026-10-06
+  - package: textual-image
+    version: "*"
+    reason: "Console pictures (issue #733). LGPL-3.0, used as an unmodified library imported at run time and installed from PyPI as its own package, so it can be replaced; this keeps a proprietary app within the LGPL."
+    accepted_by: Code Owner, by approving the PR for issue #757
+    reviewed: 2026-10-06

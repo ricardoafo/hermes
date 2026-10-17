@@ -107,6 +107,11 @@ def main(argv: list[str], *, stream: TextIO, err: TextIO | None = None) -> int:
     except (OSError, EvidenceError) as exc:
         err.write(f"ERROR: evidence: {exc}\n")
         return 3
+    try:
+        pre_reg = serve_module.pre_registration_for(parsed.config_dir)
+    except (OSError, ValueError) as exc:
+        err.write(f"ERROR: pre-registration: {exc}\n")
+        return 3
 
     now = now_utc()
     if parsed.sign_off is not None:
@@ -121,6 +126,7 @@ def main(argv: list[str], *, stream: TextIO, err: TextIO | None = None) -> int:
         stream=stream,
         err=err,
         clock=lambda: now,
+        pre_reg=pre_reg,
     )
 
 

@@ -179,7 +179,7 @@ services:
     networks: [dependabot]
 
   dependabot-dind:
-    image: docker:27-dind
+    image: docker:28-dind
     restart: unless-stopped
     privileged: true
     environment:

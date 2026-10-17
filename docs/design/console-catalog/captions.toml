@@ -1,0 +1,130 @@
+# Captions for the console catalog (issue #851), one per snapshot view.
+#
+# The key is "<test module>/<view>": the snapshot's folder under
+# tests/unit/entrypoints/__snapshots__ and its file name without the theme
+# and size. scripts/dev/console-catalog.py builds the page from the SVGs and
+# these captions, and fails when a snapshot has no caption.
+#
+# Fields: screen (one of the catalog's screens), state, means (what the state
+# is), check (what to look at when validating a deploy). Optional: scenario
+# and keys (to open it with `hermes --demo <scenario> tui`), or demo (any
+# other way to open it). A caption for a view that is not in the build yet
+# (an open PR's) is allowed and shows nowhere until its snapshots land.
+
+[views."test_tui_snapshots/home_ok"]
+screen = "Home"
+state = "Two open positions, everything OK"
+means = "hermes is live, the last bar was checked on time, two positions are open and the money is valued at the last bar close."
+check = "The big total is one bright colour with the gradient on the underline only; up is blue and down orange; both positions show trend, net and stop room; the live dot is cyan."
+scenario = "ok-two-positions"
+
+[views."test_tui_snapshots/home_empty"]
+screen = "Home"
+state = "No positions yet"
+means = "hermes is live and watching, with nothing open: the first days of a run."
+check = "The Positions panel shows the radar, the coins hermes watches and when it looks again; no empty table, no zero rows."
+scenario = "empty"
+
+[views."test_tui_snapshots/home_live"]
+screen = "Home"
+state = "Live prices flowing between bars"
+means = "The market watch and an open position are valued from live public prices between bar closes, and the window bar's feed pulse shows a run of polls with one failure."
+check = "Live figures are marked live; a failed poll shows on the pulse without hiding the last good price."
+scenario = "ok-two-positions"
+
+[views."test_tui_snapshots/tab2_placeholder"]
+screen = "Signals"
+state = "Not built yet"
+means = "Tab 2 before the Signals screen existed: a placeholder naming its issue."
+check = "The placeholder names the right issue and the tab bar marks tab 2."
+scenario = "ok-two-positions"
+keys = "2"
+
+[views."test_tui_snapshots/tab3_placeholder"]
+screen = "Positions"
+state = "Not built yet"
+means = "Tab 3 while the Positions screen is not built: a placeholder naming its issue."
+check = "The placeholder names the right issue and the tab bar marks tab 3."
+scenario = "ok-two-positions"
+keys = "3"
+
+[views."test_tui_snapshots/theme_picker"]
+screen = "Theme picker"
+state = "Theme picker open over Home"
+means = "T opens the picker for Neon, Control room and Auto (night from 23:00 to 08:00)."
+check = "The current theme is marked; the picker sits over Home without hiding the window bar."
+scenario = "ok-two-positions"
+keys = "T"
+
+[views."test_tui/test_svg_snapshot"]
+screen = "Home"
+state = "Two positions in the default theme (120x36 with the detail pane open)"
+means = "The same Home as above in the default theme; at 120x36 Enter has opened the selected position's detail beside the list."
+check = "The detail pane shows entry, now, stop, net and the timeline of the selected position; nothing overlaps."
+scenario = "ok-two-positions"
+
+[views."test_tui/test_svg_snapshot_down"]
+screen = "Home"
+state = "hermes is down"
+means = "The bar loop stopped answering: the status row turns red and every figure is frozen at its last value."
+check = "The red row says since when and what to press; money is dimmed and marked stale, never shown as current."
+scenario = "down-stale"
+
+[views."test_tui_home_screen/test_svg_snapshot_empty"]
+screen = "Home"
+state = "No positions yet, default theme"
+means = "The empty demo scenario in the default theme at each breakpoint."
+check = "Same as the Neon empty state: radar, watched coins, next check."
+scenario = "empty"
+
+[views."test_tui_home_screen/test_svg_snapshot_empty_live_ledger"]
+screen = "Home"
+state = "A fresh ledger with nothing in it"
+means = "The console reading a real ledger that serve has just created: no trades, no seed yet."
+check = "Every card says what is not there yet instead of showing zeros or errors."
+demo = "hermes tui --db <a new, empty ledger>"
+
+[views."test_tui_live_screen/test_svg_snapshot_live"]
+screen = "Home"
+state = "Live prices, default theme"
+means = "Home after two fake ticks from the live price feed, at each breakpoint."
+check = "Prices and position values move with the ticks and are marked live."
+scenario = "ok-two-positions"
+
+[views."test_tui_briefs/briefs"]
+screen = "Briefs"
+state = "Today's daily brief"
+means = "The supervisor desk's daily brief, as published through its output gate, beside the list of briefs."
+check = "Every item has its citations; the footer says the desk never sees profit, equity or prices; no price or money figure anywhere."
+scenario = "ok-two-positions"
+keys = "6"
+
+[views."test_tui_signals/signals"]
+screen = "Signals"
+state = "A week of bar checks with one signal"
+means = "One square per 4h bar check per coin, coloured by how many entry rules held, the last check's rules as yes or no, the week's counts and the frozen rules."
+check = "Rules show as yes or no only, never a price or how close a rule came; held coins read holding; the only diamond is the bar the position opened on."
+scenario = "ok-two-positions"
+keys = "2"
+
+[views."test_tui_query_snapshots/query_activity"]
+screen = "Parts"
+state = "The shared query bar on the activity list"
+means = "The reusable query, facet and sort bar with since:2d typed, over synthetic activity."
+check = "The query, facet counts and sort read clearly in both themes; the list under it follows the query."
+demo = "the activity list with since:2d typed into the query bar"
+
+[views."test_tui_logo_snapshots/logo_wordmark"]
+screen = "Parts"
+state = "The wordmark where images are not drawn"
+means = "The text logo the console falls back to on terminals without image support."
+check = "Neon uses the brand gradient, Control room plain cyan; the letters stay legible at every width."
+demo = "any console on a terminal without image support"
+
+[views."test_tui_positions/positions"]
+screen = "Positions"
+state = "Two open positions, the first selected"
+means = "The open positions with the selected one's detail beside them (under them on narrow screens): why it opened, the stop, the money if sold now, the price since entry and the timeline."
+check = "Rows and detail match Home's for the same coin; the selected row has the cursor; up and down move it and the detail follows."
+scenario = "ok-two-positions"
+keys = "3"

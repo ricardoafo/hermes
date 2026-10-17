@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+from hermes.adapters.ledger.connection import open_ledger
 from hermes.adapters.ledger.migration_runner import MIGRATIONS_DIR, pending_migrations
 
 __all__ = ["IdGap", "LedgerReport", "check_ledger", "find_id_gaps", "open_read_only"]
@@ -96,7 +97,7 @@ def open_read_only(path: Path) -> sqlite3.Connection:
     Raises:
         sqlite3.OperationalError: The file cannot be opened.
     """
-    return sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
+    return open_ledger(path, read_only=True)
 
 
 def find_id_gaps(ids: Iterable[int], high_water: int) -> tuple[IdGap, ...]:

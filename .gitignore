@@ -67,3 +67,7 @@ Thumbs.db
 taxpayer.yaml
 **/taxpayer.yaml
 .config/hermes/
+
+# Advisory lock files next to the ledger and the hash-chained logs (#855)
+*.serve.lock
+*.jsonl.lock
