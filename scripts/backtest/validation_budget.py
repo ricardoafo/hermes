@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Refuse a Validation touch that would pass an idea family's budget (ADR-026 §3).
 
-A touch is one Validation run of one strategy in one batch: the distinct
-``(strategy_id, batch.id)`` pairs among the trial log's ``split: validation``
-lines. A family's touches are those of every strategy that belongs to it: the
-candidates of every batch in the experiment, plus the strategies that predate
+A touch is one Validation run of one strategy: the distinct
+``(strategy_id, batch.id or "-", git_sha)`` triples among the trial log's
+``split: validation`` lines. The commit separates the several runs of a
+strategy that predates batches. A family's touches are those of every strategy that
+belongs to it: the candidates of every batch in the experiment, plus the strategies that predate
 batches (``LEGACY_FAMILIES``). The count comes from the log alone, never from a
 metric value.
 
@@ -27,7 +28,11 @@ from typing import Any
 import yaml
 
 # Strategies signed before batches existed, all in the 4h Donchian breakout family (ADR-026 §1).
-LEGACY_FAMILIES = {"swing-mvp1-v1": "donchian-breakout-4h", "swing-mvp1-v2": "donchian-breakout-4h"}
+LEGACY_FAMILIES = {
+    "swing-donchian-4h": "donchian-breakout-4h",  # v1
+    "swing-mvp1-v2": "donchian-breakout-4h",
+    "swing-b1-trend-slope": "donchian-breakout-4h",
+}
 DEFAULT_LIMIT = 5
 _FRONT_MATTER_FENCE = "---"
 
@@ -55,14 +60,15 @@ def family_by_strategy(batch: Path) -> dict[str, str]:
 
 def touches(trial_log: Path, strategy_ids: set[str]) -> int:
     """Count the distinct Validation touches the log holds for ``strategy_ids``."""
-    seen: set[tuple[str, object]] = set()
+    seen: set[tuple[str, object, object]] = set()
     for line in trial_log.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
         trial = json.loads(line)
         if trial.get("split") != "validation" or trial.get("strategy_id") not in strategy_ids:
             continue
-        seen.add((trial["strategy_id"], (trial.get("parameters") or {}).get("batch.id")))
+        batch_id = (trial.get("parameters") or {}).get("batch.id") or "-"
+        seen.add((trial["strategy_id"], batch_id, trial.get("git_sha")))
     return len(seen)
 
 
