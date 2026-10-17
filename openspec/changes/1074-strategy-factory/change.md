@@ -29,7 +29,7 @@ the replay is identical on the existing fixtures.
   `DONCHIAN_BREAKOUT`.
 - `StrategyConfig.signal` (optional) with a validator, and
   `StrategyConfig.strategy_kind()`.
-- `hermes serve`, `hermes parity`, `scripts/backtest/run_portfolio_backtest.py`
+- `hermes serve`, `hermes parity` (day and window), `scripts/backtest/run_portfolio_backtest.py`
   and `scripts/backtest/decision_replay.py` build through the factory.
 - The driver records `signal` in a trial line only when the entry names one.
 
