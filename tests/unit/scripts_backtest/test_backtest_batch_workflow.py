@@ -1,0 +1,361 @@
+"""Invariants for ``.github/workflows/backtest-batch.yml`` (ADR-026 §2, §3, issue #1060).
+
+The workflow cannot run outside server-01, so these tests pin what a first
+batch would otherwise discover: who may start it, which batch file it reads,
+the one-at-a-time order, the Validation guards, and that nothing but
+PASS/FAIL lines reaches the job summary. Steps with plain shell run against
+temporary files, with a stub in place of ``uv run hermes``.
+"""
+
+import json
+import os
+import shutil
+import stat
+import subprocess
+from pathlib import Path
+from typing import Any
+
+import pytest
+import yaml
+
+_ROOT = Path(__file__).resolve().parents[3]
+_WORKFLOW = _ROOT / ".github" / "workflows" / "backtest-batch.yml"
+
+needs_tools = pytest.mark.skipif(
+    shutil.which("bash") is None or shutil.which("jq") is None or shutil.which("git") is None,
+    reason="the steps' shell needs bash, jq and git, which the runner image has",
+)
+
+
+def _workflow() -> dict[Any, Any]:
+    """Parse backtest-batch.yml."""
+    loaded = yaml.safe_load(_WORKFLOW.read_text(encoding="utf-8"))
+    assert isinstance(loaded, dict)
+    return loaded
+
+
+def _step(job: str, name: str) -> dict[str, Any]:
+    """Return one step of a job by name."""
+    return next(s for s in _workflow()["jobs"][job]["steps"] if s.get("name") == name)
+
+
+def _run(
+    job: str, name: str, env: dict[str, str], cwd: Path, path_prefix: Path | None = None
+) -> subprocess.CompletedProcess[str]:
+    """Run a step's shell with ``env`` on top of a minimal environment."""
+    path = os.environ.get("PATH", "/usr/bin:/bin")
+    if path_prefix is not None:
+        path = f"{path_prefix}:{path}"
+    return subprocess.run(  # noqa: S603 — fixed interpreter, the workflow's own script
+        ["bash", "-c", str(_step(job, name)["run"])],  # noqa: S607 — bash from PATH, as on the runner
+        env={"PATH": path, **env},
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_batches_start_only_from_a_push_to_main_on_batch_paths() -> None:
+    """The automatic trigger is a push to main on batch documents and nothing else."""
+    on = _workflow()[True]
+
+    assert on == {"push": {"branches": ["main"], "paths": ["docs/experiments/*/batches/**"]}}
+
+
+def test_batch_runs_share_the_backtest_concurrency_group_and_queue() -> None:
+    """Never two backtests at once with backtest.yml, and a pending run is not cancelled."""
+    assert _workflow()["concurrency"] == {"group": "backtest", "cancel-in-progress": False}
+
+
+@pytest.mark.parametrize("job", ["train", "validation"])
+def test_candidates_run_one_after_another(job: str) -> None:
+    """The trial log chain is linear, so a candidate matrix never runs two jobs at once."""
+    strategy = _workflow()["jobs"][job]["strategy"]
+
+    assert (strategy["max-parallel"], strategy["fail-fast"]) == (1, True)
+
+
+def test_jobs_run_in_the_adr_026_order() -> None:
+    """Check, Train, Train judge, Validation, champion: each waits on the one before."""
+    jobs = _workflow()["jobs"]
+
+    assert {name: job.get("needs") for name, job in jobs.items()} == {
+        "check": None,
+        "train": "check",
+        "judge-train": ["check", "train"],
+        "validation": ["check", "judge-train"],
+        "judge-validation": ["check", "judge-train", "validation"],
+    }
+
+
+def test_no_job_holds_a_write_token_or_a_secret() -> None:
+    """The backtest jobs keep contents: read and read no secret (ADR-023 §6, ADR-026 §6)."""
+    text = _WORKFLOW.read_text(encoding="utf-8")
+    workflow = _workflow()
+
+    assert workflow["permissions"] == {"contents": "read"}
+    assert all("permissions" not in job for job in workflow["jobs"].values())
+    assert "secrets." not in text
+    assert "github.token" not in text
+
+
+def test_validation_runs_in_the_main_only_validation_environment() -> None:
+    """Validation and its champion pick use the environment that accepts only main."""
+    jobs = _workflow()["jobs"]
+
+    assert (jobs["validation"]["environment"], jobs["judge-validation"]["environment"]) == (
+        "backtest-validation",
+        "backtest-validation",
+    )
+    assert jobs["train"]["environment"] == "backtest-train"
+
+
+def test_validation_is_skipped_when_no_candidate_passed_train() -> None:
+    """A batch whose candidates all fail Train spends no Validation touch."""
+    assert _workflow()["jobs"]["validation"]["if"] == (
+        "${{ needs.judge-train.outputs.validation_count != '0' }}"
+    )
+
+
+@needs_tools
+def test_only_the_code_owner_may_start_a_batch(tmp_path: Path) -> None:
+    """A bot push starts nothing: the actor must be the repository owner (ADR-026 §2)."""
+    env = {"OWNER": "ricardoafo", "REF": "refs/heads/main"}
+
+    owner = _run("check", "Code Owner merged this", {**env, "ACTOR": "ricardoafo"}, tmp_path)
+    bot = _run("check", "Code Owner merged this", {**env, "ACTOR": "rafo-claude-bot"}, tmp_path)
+
+    assert (owner.returncode, bot.returncode) == (0, 1)
+
+
+@needs_tools
+def test_a_branch_never_starts_a_batch(tmp_path: Path) -> None:
+    """Only reviewed code on main runs on server-01, even for the owner's push."""
+    result = _run(
+        "check",
+        "Code Owner merged this",
+        {"OWNER": "ricardoafo", "ACTOR": "ricardoafo", "REF": "refs/heads/feature"},
+        tmp_path,
+    )
+
+    assert result.returncode == 1
+
+
+def _git(repo: Path, *args: str) -> str:
+    """Run git in ``repo`` with a fixed identity and return its stdout."""
+    identity = ["-c", "user.name=t", "-c", "user.email=t@t"]
+    return subprocess.run(  # noqa: S603 — fixed git arguments in a temporary repository
+        ["git", *identity, "-C", str(repo), *args],  # noqa: S607 — git from PATH, as on the runner
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
+
+def _repo_with_changes(tmp_path: Path, changed: list[str]) -> tuple[str, str]:
+    """Commit an empty tree, then a commit adding ``changed``; return both SHAs."""
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "commit", "-q", "--allow-empty", "-m", "base")
+    before = _git(tmp_path, "rev-parse", "HEAD")
+    for name in changed:
+        target = tmp_path / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("x\n")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "--allow-empty", "-m", "change")
+    return before, _git(tmp_path, "rev-parse", "HEAD")
+
+
+@needs_tools
+def test_the_changed_batch_is_named_from_the_push(tmp_path: Path) -> None:
+    """The run reads the one batch the push added, with its experiment and id."""
+    before, after = _repo_with_changes(tmp_path, ["docs/experiments/swing-mvp1/batches/b1.md"])
+    output = tmp_path / "out"
+    output.write_text("")
+
+    result = _run(
+        "check",
+        "The one batch this push changed",
+        {"BEFORE": before, "SHA": after, "GITHUB_OUTPUT": str(output)},
+        tmp_path,
+    )
+
+    assert (result.returncode, output.read_text().splitlines()) == (
+        0,
+        [
+            "file=docs/experiments/swing-mvp1/batches/b1.md",
+            "batch_id=b1",
+            "experiment=swing-mvp1",
+        ],
+    )
+
+
+@needs_tools
+@pytest.mark.parametrize(
+    "changed",
+    [
+        [],
+        [
+            "docs/experiments/swing-mvp1/batches/b1.md",
+            "docs/experiments/swing-mvp1/batches/b2.md",
+        ],
+    ],
+)
+def test_zero_or_several_changed_batches_start_nothing(tmp_path: Path, changed: list[str]) -> None:
+    """One push runs one batch; anything else is ambiguous about which hash was signed."""
+    before, after = _repo_with_changes(tmp_path, changed)
+    output = tmp_path / "out"
+    output.write_text("")
+
+    result = _run(
+        "check",
+        "The one batch this push changed",
+        {"BEFORE": before, "SHA": after, "GITHUB_OUTPUT": str(output)},
+        tmp_path,
+    )
+
+    assert (result.returncode, output.read_text()) == (1, "")
+
+
+@needs_tools
+def test_a_validation_rerun_is_refused(tmp_path: Path) -> None:
+    """A second attempt would be a second touch, so only the first attempt runs (ADR-026 §3)."""
+    first = _run("validation", "First attempt of a batch run", {"ATTEMPT": "1"}, tmp_path)
+    again = _run("validation", "First attempt of a batch run", {"ATTEMPT": "2"}, tmp_path)
+
+    assert (first.returncode, again.returncode) == (0, 1)
+
+
+def _stub_uv(directory: Path, stdout: str, exit_code: int, files: dict[str, str]) -> None:
+    """Put a ``uv`` on PATH that stands in for ``hermes funnel --batch``.
+
+    It writes ``files`` under the ``--out`` directory, prints ``stdout`` and exits ``exit_code``.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    writes = "\n".join(
+        f"printf '%s' '{content}' > \"$out/{name}\"" for name, content in files.items()
+    )
+    script = directory / "uv"
+    script.write_text(
+        "#!/usr/bin/env bash\n"
+        'while [ "$#" -gt 0 ]; do [ "$1" = --out ] && out="$2"; shift; done\n'
+        'mkdir -p "$out/verdicts"\n'
+        f"{writes}\n"
+        f"cat <<'EOF'\n{stdout}\nEOF\n"
+        f"exit {exit_code}\n"
+    )
+    script.chmod(script.stat().st_mode | stat.S_IXUSR)
+
+
+@needs_tools
+def test_train_judge_keeps_only_pass_fail_in_the_summary_and_lists_who_goes_on(
+    tmp_path: Path,
+) -> None:
+    """The summary shows PASS/FAIL only, and the Validation matrix keeps batch order."""
+    stdout = (
+        "PASS swing-b1-a dsr\nFAIL swing-b1-b pbo\nsharpe 1.87 secret detail\nCANDIDATES swing-b1-a"
+    )
+    _stub_uv(
+        tmp_path / "bin",
+        stdout,
+        0,
+        {"validation-candidates.json": '{"candidates": ["swing-b1-a"]}'},
+    )
+    runner_temp = tmp_path / "rt"
+    (runner_temp / "evidence-by-artifact" / "evidence-train-swing-b1-a").mkdir(parents=True)
+    (runner_temp / "chain").mkdir()
+    (runner_temp / "chain" / "trial-log.jsonl").write_text("")
+    summary, output = tmp_path / "summary", tmp_path / "output"
+    summary.write_text("")
+    output.write_text("")
+    candidates = [
+        {"strategy_id": "swing-b1-a", "idea_family": "fa", "index": 0},
+        {"strategy_id": "swing-b1-b", "idea_family": "fb", "index": 1},
+    ]
+
+    result = _run(
+        "judge-train",
+        "Judge the batch on Train",
+        {
+            "RUNNER_TEMP": str(runner_temp),
+            "BATCH_FILE": "docs/experiments/swing-mvp1/batches/b1.md",
+            "BATCH_ID": "b1",
+            "CANDIDATES": json.dumps(candidates),
+            "GITHUB_STEP_SUMMARY": str(summary),
+            "GITHUB_OUTPUT": str(output),
+        },
+        tmp_path,
+        path_prefix=tmp_path / "bin",
+    )
+
+    outputs = dict(line.split("=", 1) for line in output.read_text().splitlines())
+    assert result.returncode == 0
+    assert "1.87" not in summary.read_text()
+    assert "secret detail" not in summary.read_text()
+    assert "PASS swing-b1-a dsr" in summary.read_text()
+    assert outputs["validation_count"] == "1"
+    assert json.loads(outputs["validation_candidates"]) == [candidates[0]]
+
+
+@needs_tools
+def test_train_judge_with_no_candidate_going_on_is_not_a_failure(tmp_path: Path) -> None:
+    """Exit 1 from the judge means nobody goes on, which is a verdict and sets the count to 0."""
+    _stub_uv(
+        tmp_path / "bin",
+        "FAIL swing-b1-a dsr\nCANDIDATES",
+        1,
+        {"validation-candidates.json": '{"candidates": []}'},
+    )
+    runner_temp = tmp_path / "rt"
+    (runner_temp / "chain").mkdir(parents=True)
+    (runner_temp / "chain" / "trial-log.jsonl").write_text("")
+    output = tmp_path / "output"
+    output.write_text("")
+    summary = tmp_path / "summary"
+    summary.write_text("")
+
+    result = _run(
+        "judge-train",
+        "Judge the batch on Train",
+        {
+            "RUNNER_TEMP": str(runner_temp),
+            "BATCH_FILE": "b.md",
+            "BATCH_ID": "b1",
+            "CANDIDATES": '[{"strategy_id": "swing-b1-a", "idea_family": "fa", "index": 0}]',
+            "GITHUB_STEP_SUMMARY": str(summary),
+            "GITHUB_OUTPUT": str(output),
+        },
+        tmp_path,
+        path_prefix=tmp_path / "bin",
+    )
+
+    assert (result.returncode, "validation_count=0" in output.read_text()) == (0, True)
+
+
+@needs_tools
+@pytest.mark.parametrize("code", [2, 3])
+def test_a_judge_error_fails_the_job(tmp_path: Path, code: int) -> None:
+    """Usage and data errors (exit 2 or 3) are failed steps, never read as 'nobody goes on'."""
+    _stub_uv(tmp_path / "bin", "", code, {})
+    runner_temp = tmp_path / "rt"
+    (runner_temp / "chain").mkdir(parents=True)
+    output = tmp_path / "output"
+    output.write_text("")
+
+    result = _run(
+        "judge-train",
+        "Judge the batch on Train",
+        {
+            "RUNNER_TEMP": str(runner_temp),
+            "BATCH_FILE": "b.md",
+            "BATCH_ID": "b1",
+            "CANDIDATES": "[]",
+            "GITHUB_STEP_SUMMARY": str(tmp_path / "summary"),
+            "GITHUB_OUTPUT": str(output),
+        },
+        tmp_path,
+        path_prefix=tmp_path / "bin",
+    )
+
+    assert result.returncode == code
