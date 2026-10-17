@@ -52,8 +52,10 @@ jobs:
             train|validation) ;;
             *) echo "::error::split must be train or validation, got '$SPLIT'"; exit 1 ;;
           esac
-          if [ "$SPLIT" = validation ] && [ "$REF" != refs/heads/main ]; then
-            echo "::error::a Validation run is a logged touch and runs from main only, not $REF"
+          # Every run executes the ref's code on server-01 and logs a trial, so
+          # only reviewed code on main may run (AI review on PR #943).
+          if [ "$REF" != refs/heads/main ]; then
+            echo "::error::backtests run from main only, not $REF"
             exit 1
           fi
           manifest="docs/experiments/${EXPERIMENT}/data-manifest.json"

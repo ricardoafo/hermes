@@ -101,11 +101,12 @@ def test_oos_split_is_refused_before_any_data(tmp_path: Path) -> None:
 
 
 @needs_tools
-def test_validation_from_a_branch_is_refused(tmp_path: Path) -> None:
-    """A Validation touch runs only from main, whatever the environment allows."""
-    code, _ = _window(tmp_path, "validation", ref="refs/heads/feature")
+@pytest.mark.parametrize("split", ["train", "validation"])
+def test_any_split_from_a_branch_is_refused(tmp_path: Path, split: str) -> None:
+    """Only main's reviewed code runs on server-01 and logs a trial, for either split."""
+    code, out = _window(tmp_path, split, ref="refs/heads/feature")
 
-    assert code == 1
+    assert (code, out) == (1, {})
 
 
 @needs_tools

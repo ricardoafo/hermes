@@ -74,7 +74,8 @@ to fail before the first OOS bar is read.
 A `validation` run uses the protected GitHub environment `backtest-validation`, whose required reviewer is the Code
 Owner. His approval click on the run is the pre-registration's Validation OK: one click, one logged Validation touch.
 
-- The environment accepts only `main`, and the workflow refuses a Validation run from any other ref.
+- The environment accepts only `main`, and the workflow refuses any run, Train or Validation, from another ref:
+  every run executes that code on server-01 and logs a trial.
 - Before reading data, the run reads its own approval history and stops unless the Code Owner approved
   `backtest-validation`. A missing or unprotected environment therefore fails closed instead of running unapproved.
 - A `train` run uses the unprotected environment `backtest-train` and needs no click.
@@ -135,7 +136,7 @@ is a trial too, so agents dispatch one only when the Code Owner asks for it.
   `hermes-backtest`. That runner holds the same registration PAT as every other runner and no deploy or exchange
   credential. It can write `/srv/hermes-data`, but a poisoned file fails the next run's hash check. This matches
   ADR-019 threat T3's existing controls (ephemeral runner, least-privilege token). No threat row changes.
-- **Validation from `main` only**, enforced by both the environment's branch rule and the workflow.
+- **Runs from `main` only**, for both splits; Validation is also held by the environment's branch rule.
 
 ## Why
 
