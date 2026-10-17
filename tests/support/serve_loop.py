@@ -267,6 +267,7 @@ def build(
         clock=clock if clock is not None else FakeClock(now),
         orderbooks=books if books is not None else UnavailableBooks(),
         fx=fx if fx is not None else FakeFx(down=True),
+        new_ledger=True,
     )
     return dataclasses.replace(
         base,

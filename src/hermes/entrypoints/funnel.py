@@ -1,0 +1,285 @@
+"""``hermes funnel`` — evaluate the ADR-021 §5 backtest funnel for a v2+ strategy.
+
+Reads every threshold from the ``backtest_funnel:`` block of the signed
+pre-registration's YAML front matter, reads the run's evidence file, and
+prints one ``PASS``/``FAIL`` line per criterion in the ``hermes certify``
+layout. Observed numbers stay on the check lines, as certify prints them; the
+backtest workflow's summary keeps only the verdict and the name (ADR-023 §7).
+Nothing is recorded.
+
+Exit codes: 0 every check passed, 1 a check failed or the run was refused
+(missing threshold, unsigned document, hash mismatch), 2 usage,
+3 pre-registration file or evidence error.
+
+Reference: ADR-021 §5; openspec/changes/v2-backtest-funnel/change.md.
+"""
+
+import argparse
+import hashlib
+import json
+import math
+from collections.abc import Mapping
+from datetime import date
+from pathlib import Path
+from typing import NoReturn, TextIO
+
+import yaml
+
+from hermes.application.calibration.backtest_funnel import (
+    CostStress,
+    FunnelEvidence,
+    FunnelEvidenceError,
+    FunnelThresholdError,
+    FunnelThresholds,
+    evaluate_funnel,
+    parse_funnel_front_matter,
+    validate_evidence,
+)
+from hermes.entrypoints._streams import resolve_err
+
+__all__ = ["load_funnel_evidence", "main", "read_front_matter"]
+
+_USAGE = (
+    "Usage: hermes funnel <strategy_id> --pre-registration FILE\n"
+    "                     --evidence FILE --expect-sha256 HEX\n"
+    "\n"
+    "Evaluates the ADR-021 §5 backtest funnel. --expect-sha256 is the signed hash\n"
+    "of the pre-registration; any other file is refused. Every threshold comes from the\n"
+    "backtest_funnel block of the signed pre-registration's front matter; a missing\n"
+    "one refuses the run. Prints one PASS/FAIL line per check. Records nothing.\n"
+    "Exit codes: 0 passed, 1 failed or refused, 2 usage, 3 pre-registration/evidence.\n"
+)
+
+_EVIDENCE_KEYS = frozenset(
+    {
+        "strategy_id",
+        "start_date",
+        "daily_equity",
+        "trade_count",
+        "cost_stress",
+        "trials",
+        "neighbour_trial_ids",
+        "running_strategies",
+    }
+)
+
+
+class _UsageError(Exception):
+    pass
+
+
+class _Parser(argparse.ArgumentParser):
+    def error(self, message: str) -> NoReturn:
+        raise _UsageError(message)
+
+
+def main(argv: list[str], *, stream: TextIO, err: TextIO | None = None) -> int:
+    """Parse ``argv`` and run ``hermes funnel``.
+
+    Args:
+        argv: Arguments after the ``funnel`` token.
+        stream: Output stream.
+        err: Stream for ERROR lines; defaults to ``sys.stderr``.
+
+    Returns:
+        Process exit code.
+    """
+    err = resolve_err(err)
+    parser = _Parser(prog="hermes funnel", add_help=False)
+    parser.add_argument("strategy_id", nargs="?")
+    parser.add_argument("--pre-registration", type=Path)
+    parser.add_argument("--evidence", type=Path)
+    parser.add_argument("--expect-sha256", default=None)
+    parser.add_argument("-h", "--help", action="store_true")
+    try:
+        args = parser.parse_args(argv)
+    except _UsageError as exc:
+        err.write(f"ERROR: {exc}\n" + _USAGE)
+        return 2
+    if args.help:
+        stream.write(_USAGE)
+        return 0
+    if (
+        not args.strategy_id
+        or args.pre_registration is None
+        or args.evidence is None
+        or args.expect_sha256 is None
+    ):
+        err.write(
+            "ERROR: strategy_id, --pre-registration, --evidence and --expect-sha256 "
+            "are required.\n" + _USAGE
+        )
+        return 2
+    return _run(args, stream, err)
+
+
+def _run(args: argparse.Namespace, stream: TextIO, err: TextIO) -> int:
+    loaded = _load_inputs(args, err)
+    if isinstance(loaded, int):
+        return loaded
+    digest, front_matter, evidence = loaded
+    experiment = front_matter.get("experiment_id") or "-"
+    stream.write(
+        f"# hermes funnel {args.strategy_id}: {experiment} (pre-registration sha256 {digest})\n"
+    )
+    outcome = _thresholds_or_refusal(args.expect_sha256, digest, front_matter, args.strategy_id)
+    if isinstance(outcome, str):
+        stream.write(f"REFUSED: {outcome}\n")
+        return 1
+    try:
+        validate_evidence(evidence, outcome)
+    except FunnelEvidenceError as exc:
+        err.write(f"ERROR: evidence: {exc}\n")
+        return 3
+    checks = evaluate_funnel(evidence, outcome)
+    for check in checks:
+        mark = "PASS" if check.passed else "FAIL"
+        stream.write(
+            f"{mark}  {check.name:<24} observed {check.observed:<22} required {check.requirement}\n"
+        )
+    passed = all(check.passed for check in checks)
+    stream.write("FUNNEL PASSED\n" if passed else "FUNNEL FAILED\n")
+    return 0 if passed else 1
+
+
+def _load_inputs(
+    args: argparse.Namespace, err: TextIO
+) -> tuple[str, dict[str, object], FunnelEvidence] | int:
+    """Read both files; on failure write the ERROR line and return exit code 3."""
+    try:
+        raw = args.pre_registration.read_bytes()
+        front_matter = read_front_matter(raw.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        err.write(f"ERROR: pre-registration: {exc}\n")
+        return 3
+    try:
+        evidence = load_funnel_evidence(args.evidence, strategy_id=args.strategy_id)
+    except (OSError, FunnelEvidenceError) as exc:
+        err.write(f"ERROR: evidence: {exc}\n")
+        return 3
+    return hashlib.sha256(raw).hexdigest(), front_matter, evidence
+
+
+def _thresholds_or_refusal(
+    expected: str, digest: str, front_matter: dict[str, object], strategy_id: str
+) -> FunnelThresholds | str:
+    """Return the thresholds, or why the run is refused."""
+    if expected.lower() != digest:
+        return f"pre-registration sha256 {digest} does not match the expected {expected}"
+    try:
+        return parse_funnel_front_matter(front_matter, strategy_id=strategy_id)
+    except FunnelThresholdError as exc:
+        return str(exc)
+
+
+def read_front_matter(text: str) -> dict[str, object]:
+    """Return the YAML front matter of a Markdown document.
+
+    Args:
+        text: The document.
+
+    Returns:
+        The mapping between the first two ``---`` lines.
+
+    Raises:
+        ValueError: No front matter, an unterminated block, invalid YAML, or
+            YAML that is not a mapping.
+    """
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        raise ValueError("no YAML front matter (first line must be ---)")
+    try:
+        end = next(i for i, line in enumerate(lines[1:], start=1) if line.strip() == "---")
+    except StopIteration:
+        raise ValueError("YAML front matter is not closed by ---") from None
+    try:
+        parsed = yaml.safe_load("\n".join(lines[1:end]))
+    except yaml.YAMLError as exc:
+        raise ValueError(f"front matter is not valid YAML: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("front matter must be a mapping")
+    return {str(k): v for k, v in parsed.items()}
+
+
+def load_funnel_evidence(path: Path, *, strategy_id: str) -> FunnelEvidence:
+    """Parse a funnel evidence file (change Design §2). Absent sections mean not computed.
+
+    Args:
+        path: The evidence JSON file.
+        strategy_id: The strategy the run must be for.
+
+    Returns:
+        The parsed evidence. Call ``validate_evidence`` before evaluating it.
+
+    Raises:
+        FunnelEvidenceError: The file is not valid funnel evidence.
+        OSError: The file cannot be read.
+    """
+    try:
+        payload = json.loads(path.read_bytes())
+    except ValueError as exc:
+        raise FunnelEvidenceError(f"{path} is not JSON: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise FunnelEvidenceError(f"{path} must hold a JSON object")
+    unknown = sorted(set(payload) - _EVIDENCE_KEYS)
+    if unknown:
+        raise FunnelEvidenceError(f"unknown evidence keys: {unknown}")
+    if payload.get("strategy_id") != strategy_id:
+        raise FunnelEvidenceError(
+            f"evidence is for {payload.get('strategy_id')!r}, not {strategy_id!r}"
+        )
+    start = payload.get("start_date")
+    try:
+        start_date = date.fromisoformat(start) if isinstance(start, str) else None
+    except ValueError:
+        start_date = None
+    if start_date is None:
+        raise FunnelEvidenceError(f"start_date must be an ISO date, got {start!r}")
+    trades = payload.get("trade_count")
+    if trades is not None and (isinstance(trades, bool) or not isinstance(trades, int)):
+        raise FunnelEvidenceError(f"trade_count must be an integer, got {trades!r}")
+    neighbours = payload.get("neighbour_trial_ids")
+    if neighbours is not None and (
+        not isinstance(neighbours, list) or not all(isinstance(n, str) for n in neighbours)
+    ):
+        raise FunnelEvidenceError("neighbour_trial_ids must be a list of strings")
+    return FunnelEvidence(
+        strategy_id=strategy_id,
+        start_date=start_date,
+        daily_equity=_numbers(payload.get("daily_equity"), "daily_equity"),
+        trade_count=trades,
+        cost_stress=_cost_stress(payload.get("cost_stress")),
+        trials=_series_map(payload.get("trials"), "trials"),
+        neighbour_trial_ids=None if neighbours is None else tuple(neighbours),
+        running_strategies=_series_map(payload.get("running_strategies"), "running_strategies"),
+    )
+
+
+def _numbers(value: object, key: str) -> tuple[float, ...]:
+    if not isinstance(value, list):
+        raise FunnelEvidenceError(f"{key} must be a list of numbers")
+    for item in value:
+        if isinstance(item, bool) or not isinstance(item, int | float) or not math.isfinite(item):
+            raise FunnelEvidenceError(f"{key} values must be numbers, got {item!r}")
+    return tuple(float(item) for item in value)
+
+
+def _cost_stress(value: object) -> CostStress | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict) or set(value) != {"multiplier", "daily_equity"}:
+        raise FunnelEvidenceError("cost_stress needs exactly multiplier and daily_equity")
+    multiplier = value["multiplier"]
+    if isinstance(multiplier, bool) or not isinstance(multiplier, int | float):
+        raise FunnelEvidenceError(f"cost_stress.multiplier must be a number, got {multiplier!r}")
+    return CostStress(
+        float(multiplier), _numbers(value["daily_equity"], "cost_stress.daily_equity")
+    )
+
+
+def _series_map(value: object, key: str) -> Mapping[str, tuple[float, ...]] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise FunnelEvidenceError(f"{key} must map names to lists of returns")
+    return {str(name): _numbers(series, f"{key}.{name}") for name, series in value.items()}

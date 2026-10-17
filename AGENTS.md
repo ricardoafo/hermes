@@ -24,7 +24,7 @@ it), pause and ask before acting.
    or *how*, ADRs are the source of truth.
 4. **`docs/guides/dev-workflow.md`** — the git/gh discipline. Mechanical
    rules on branching, commits, PRs, merges.
-5. **`~/.claude/rules/severity-rubric.md`** — S1-S12 security + F1-F12
+5. **`docs/guides/severity-rubric.md`** — S1-S12 security + F1-F12
    functional severity rows. Used by `bug-triager` and by every PR that
    references a defect.
 
@@ -488,5 +488,5 @@ If you are Ricardo (or a future collaborator with write access):
   — mandatory discipline for every test authored in this repo
 - [`docs/architecture/`](docs/architecture/) — ADRs 001-010 (source of
   truth for architectural WHAT and HOW)
-- [`~/.claude/rules/severity-rubric.md`](../.claude/rules/severity-rubric.md)
+- [`docs/guides/severity-rubric.md`](docs/guides/severity-rubric.md)
   — severity classification for bugs and PRs

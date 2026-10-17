@@ -290,6 +290,9 @@ CORNER_TOP_LEFT: Final = "┏━"
 CORNER_BOTTOM_RIGHT: Final = "━┛"
 EDGE: Final = "─"
 WINDOW_TITLE: Final = "HERMES // SHADOW CONSOLE"
+BACK_GLYPH: Final = "◂"
+CRUMB_SEPARATOR: Final = " › "  # noqa: RUF001 - the design spec's breadcrumb separator
+ELLIPSIS: Final = "…"
 
 # The start-up logo is still being chosen (issue #711, theme switch comment):
 # set LOGO to its rows when it lands; until then the wordmark stands in.

@@ -221,6 +221,7 @@ def _boot(
         clock=feed.clock,
         orderbooks=books if books is not None else _RecordedBooks(feed.clock),
         fx=_fixed_eur_rate(),
+        new_ledger=True,
     )
     return dataclasses.replace(
         composition, signal_notifier=SignalNotifier(RouterConfig(telegram=channel, slack=None))

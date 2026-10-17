@@ -35,6 +35,7 @@ from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.application.backtest.replay import replay
 from hermes.application.execution.kernel import Declined, Executed, FillKernel
 from hermes.application.execution.shadow import (
+    SLIPPAGE_WINDOW,
     AlreadyFilled,
     ShadowExecution,
     ShadowExecutor,
@@ -516,29 +517,82 @@ def test_a_btc_daily_crash_beyond_ten_percent_halts_the_entry(
     assert _declined(rig.run(_entry(bar), bar)).rule == "HALT"
 
 
-def test_a_slippage_recorded_before_a_restart_feeds_ro03(connection: sqlite3.Connection) -> None:
-    """A last fill that slipped 0.6% (above RO-03's 0.5%) halts the next entry after a reboot."""
+def _slipped_fill(
+    connection: sqlite3.Connection, *, before_close: timedelta, slippage: str
+) -> None:
+    """Record the quality row of an earlier BTC sell that slipped by ``slippage``."""
+    at = _CLOSE - before_close
     SqliteLedger(connection).append_event(
         FillQualityRecorded(
-            occurred_at=_CLOSE - timedelta(days=1),
-            correlation_id="old",
+            occurred_at=at,
+            correlation_id=f"old-{before_close}",
             strategy_id=STRATEGY,
             pair=BTC_USDT,
             side=TradeSide.SELL,
             qty=Decimal("0.001"),
             book_source=BookSource.LIVE,
-            book_time=_CLOSE - timedelta(days=1),
-            fill_price=Decimal("99.4"),
+            book_time=at,
+            fill_price=Decimal(100) - Decimal(slippage) * 100,
             model_price=None,
             drift_bps=None,
             book_mid=Decimal("100"),
-            slippage=Decimal("0.006"),
+            slippage=Decimal(slippage),
         )
     )
+
+
+def test_a_slippage_recorded_before_a_restart_feeds_ro03(connection: sqlite3.Connection) -> None:
+    """A fill an hour ago that slipped 0.6% (limit 0.5%) halts the next entry after a reboot."""
+    _slipped_fill(connection, before_close=timedelta(hours=1), slippage="0.006")
     rig = _rig(connection, book=_live_book("84999", "85001"))
     bar = _bar("85000")
 
     assert _declined(rig.run(_entry(bar), bar)).rule == "HALT"
+
+
+# SEV-1: no rubric row matches; RO-03 must not halt entries for good after one slipping exit
+def test_a_slipping_fill_older_than_the_window_no_longer_halts_entries(
+    connection: sqlite3.Connection,
+) -> None:
+    """#857: a 0.6% slip 24 hours before the bar close no longer halts; the entry fills."""
+    _slipped_fill(connection, before_close=SLIPPAGE_WINDOW, slippage="0.006")
+    rig = _rig(connection, book=_live_book("84999", "85001"))
+    bar = _bar("85000")
+
+    rig.run(_entry(bar), bar)
+
+    bought = [(t.pair, t.side) for t in rig.ledger.trade_events(STRATEGY)]
+    assert bought == [(BTC_USDT, TradeSide.BUY)]
+
+
+# SEV-1: no rubric row matches; the RO-03 cumulative limit must reach the check
+def test_fills_inside_the_window_that_slip_over_2_percent_together_halt_entries(
+    connection: sqlite3.Connection,
+) -> None:
+    """#857: five 0.45% slips in the last day, each under the single limit, sum past 2% and halt."""
+    for hours in range(1, 6):
+        _slipped_fill(connection, before_close=timedelta(hours=hours), slippage="0.0045")
+    rig = _rig(connection, book=_live_book("84999", "85001"))
+    bar = _bar("85000")
+
+    assert _declined(rig.run(_entry(bar), bar)).reason.startswith("RO-03: cumulative slippage")
+
+
+def test_slips_older_than_the_window_do_not_count_toward_the_cumulative_limit(
+    connection: sqlite3.Connection,
+) -> None:
+    """#857: the same five slips a day and more ago no longer count, so the entry fills."""
+    for hours in range(1, 6):
+        _slipped_fill(
+            connection, before_close=SLIPPAGE_WINDOW + timedelta(hours=hours), slippage="0.0045"
+        )
+    rig = _rig(connection, book=_live_book("84999", "85001"))
+    bar = _bar("85000")
+
+    rig.run(_entry(bar), bar)
+
+    bought = [(t.pair, t.side) for t in rig.ledger.trade_events(STRATEGY)]
+    assert bought == [(BTC_USDT, TradeSide.BUY)]
 
 
 def test_clock_behind_the_bar_close_records_no_latency_and_still_fills(
