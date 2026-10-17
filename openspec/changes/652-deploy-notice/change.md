@@ -23,7 +23,7 @@ onto the new release. Main risk: a re-exec that loops or loses arguments.
 
 ### Out
 
-- The release-prune guard in the install script (issue #655, deploy owners).
+- The release-prune guard in the install script (issue #956, split from #652).
 - The System screen's MVP2 `R` action key (issue #717).
 
 ## Decisions
