@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import contextlib
 import functools
-from collections.abc import Callable, Collection
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -59,7 +59,8 @@ BREAKOUT_BAR_WRITES = (
     # 0-1: the SignalEmitted row.
     "INSERT events",
     COMMIT,
-    # 2-10: the BUY, its lot, the FIFO projection of both legs, TradeExecuted.
+    # 2-11: the BUY, its lot, the FIFO projection of both legs, TradeExecuted
+    # and FillQualityRecorded (issue #857). The Telegram push is sent after this commit.
     "INSERT trades",
     "INSERT lots",
     "UPDATE lots",
@@ -68,28 +69,25 @@ BREAKOUT_BAR_WRITES = (
     "DELETE lot_consumptions",
     "INSERT lot_consumptions",
     "INSERT events",
-    COMMIT,
-    # 11-12: FillQualityRecorded. The Telegram push is sent after this commit.
     "INSERT events",
     COMMIT,
-    # 13-14: SignalNotified, the record of that push (issue #854).
+    # 12-13: SignalNotified, the record of that push (issue #854).
     "INSERT events",
     COMMIT,
-    # 15-20: the live bar, the portfolio mark, the stop mark.
+    # 14-19: the live bar, the portfolio mark, the stop mark.
     "INSERT live_bars",
     COMMIT,
     "INSERT portfolio_marks",
     COMMIT,
     "INSERT stop_marks",
     COMMIT,
-    # 21-22: the BarProcessed cursor.
+    # 20-21: the BarProcessed cursor.
     "INSERT events",
     COMMIT,
 )
 """Every write statement and commit serve makes while handling the breakout bar, in order."""
 
-_PUSH_SENT_NOT_RECORDED = range(13, 15)
-_TRADE_SAVED_FILL_QUALITY_NOT = range(11, 13)
+_PUSH_SENT_NOT_RECORDED = range(12, 14)
 
 _EUR_COLUMNS = frozenset(
     {
@@ -208,17 +206,9 @@ def _crash_then_restart(index: int, work: Path) -> _CrashAndRestart:
     )
 
 
-def _each_write(*, xfail: Collection[int] = (), reason: str = "") -> list[ParameterSet]:
+def _each_write() -> list[ParameterSet]:
     return [
-        pytest.param(
-            index,
-            id=f"{index:02d}-{write.replace(' ', '-')}",
-            marks=(
-                [pytest.mark.xfail(strict=True, raises=AssertionError, reason=reason)]
-                if index in xfail
-                else []
-            ),
-        )
+        pytest.param(index, id=f"{index:02d}-{write.replace(' ', '-')}")
         for index, write in enumerate(BREAKOUT_BAR_WRITES)
     ]
 
@@ -245,17 +235,7 @@ def test_a_restart_after_a_crash_mid_bar_records_each_trade_once(
     assert crash_and_restart(index).trades == reference.trades
 
 
-@pytest.mark.parametrize(
-    "index",
-    _each_write(
-        xfail=_TRADE_SAVED_FILL_QUALITY_NOT,
-        reason=(
-            "issue #857: a crash after the trade commit and before the FillQualityRecorded "
-            "commit loses the fill-quality row for good; the restart sees the trade, "
-            "returns AlreadyFilled and records no quality row"
-        ),
-    ),
-)
+@pytest.mark.parametrize("index", _each_write())
 def test_a_restart_after_a_crash_mid_bar_leaves_the_ledger_an_uninterrupted_run_leaves(
     reference: _Reference, crash_and_restart: Callable[[int], _CrashAndRestart], index: int
 ) -> None:
