@@ -116,6 +116,10 @@ REFUSED_ENTRY: Signal = EXPECTED_SIGNALS[2]
 """ETH's entry: BTC and SOL are held at marks over 500 notional, so the §5.5
 exposure cap refuses it. It has no trade, and ETH raises no exit (#707)."""
 
+NOTIFIED_SIGNALS: list[Signal] = [s for s in EXPECTED_SIGNALS if s != REFUSED_ENTRY]
+"""What reaches the alert channels: every signal but the refused entry, whose
+push is withheld because no position was opened (#708)."""
+
 STREAMS = 6
 """Three pairs times two intervals: the cursor rows a first boot writes."""
 
@@ -329,7 +333,7 @@ def test_serve_on_recorded_bars_records_notifies_and_logs_exactly_the_pinned_sig
     } == {
         "exit_code": 0,
         "ledger": EXPECTED_SIGNALS,
-        "notified": EXPECTED_SIGNALS,
+        "notified": NOTIFIED_SIGNALS,
         "logged": [(pair, kind, at) for pair, kind, at, _ in EXPECTED_SIGNALS],
         "bar_lines": LIVE_BARS,
         "bar_rows": STREAMS + LIVE_BARS,
@@ -370,7 +374,7 @@ def test_restart_after_a_stop_rebuilds_open_positions_and_matches_an_uninterrupt
         "codes": (0, 0),
         "first_run": EXPECTED_SIGNALS[:7],
         "ledger": EXPECTED_SIGNALS,
-        "notified": EXPECTED_SIGNALS,
+        "notified": NOTIFIED_SIGNALS,
         "bar_rows": STREAMS + LIVE_BARS,
     }
 
