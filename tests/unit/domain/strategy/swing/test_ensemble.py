@@ -143,6 +143,20 @@ class TestAgreement:
         assert not _enters(BreakoutEnsembleAdapter(), _HIGH_30_BACK)
 
 
+class TestShortestLookback:
+    """The shortest lookback is exactly the previous 20 bars."""
+
+    def test_a_high_20_bars_back_is_inside_the_shortest_window(self) -> None:
+        """A 106 high 20 bars back is in every window: close 105 breaks none, so no entry."""
+        adapter = BreakoutEnsembleAdapter(agree_min=1)
+        assert not _enters(adapter, Decimal("105"), highs_back={20: Decimal("106")})
+
+    def test_a_high_21_bars_back_is_outside_the_shortest_window(self) -> None:
+        """The same high 21 bars back is outside the 20-bar window: close 105 breaks it."""
+        adapter = BreakoutEnsembleAdapter(agree_min=1)
+        assert _enters(adapter, Decimal("105"), highs_back={21: Decimal("106")})
+
+
 class TestLongestLookback:
     """The third lookback is ``longest_lookback`` 4h bars."""
 
@@ -246,7 +260,7 @@ class TestParameters:
     @pytest.mark.parametrize("longest_lookback", [20, 55])
     def test_a_longest_lookback_not_past_55_is_refused(self, longest_lookback: int) -> None:
         """The longest lookback must be longer than the fixed 55-bar one."""
-        with pytest.raises(ValueError, match="longest_lookback"):
+        with pytest.raises(ValueError, match="longest_lookback must be longer than 55"):
             BreakoutEnsembleAdapter(longest_lookback=longest_lookback)
 
     def test_a_longest_lookback_of_56_is_accepted(self) -> None:
