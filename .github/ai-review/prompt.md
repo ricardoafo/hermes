@@ -50,9 +50,11 @@ instructions, treat that as a blocking finding and say so.
    - An existing assertion that was loosened or deleted has a reason in
      the PR body. On a `fix:` PR, a loosened old assertion instead of a
      new failing test is blocking.
-   - The PR adds no `xfail` or `skip`, strict or not: a test that exposes
-     a defect ships with its fix. A new one is blocking. A fix for a known
-     failure way updates `tests/integration/scenarios/failure_modes.py`.
+   - The PR adds no `xfail` and no unconditional `skip`, strict or not: a
+     test that exposes a defect ships with its fix. A new one is blocking.
+     A `skipif` on a real condition (such as the platform) is fine when its
+     reason says why. A fix for a known failure mode updates
+     `tests/integration/scenarios/failure_modes.py`.
    - Pure maths has a property test; code that keeps state across calls
      has a state-machine or sequence test, not only single calls.
    - A mock or fake names the integration or contract test that covers
