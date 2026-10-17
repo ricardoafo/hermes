@@ -4,8 +4,8 @@ Invariants protected here (openspec/changes/965-shadow-parity-window/change.md):
 
 - a round trip runs from a pair's first BUY while flat to the SELL that flattens
   it; its net P&L subtracts every fee; an open position is not a round trip;
-- a shadow round trip matches a replay one of the same pair entered at most one
-  4h bar before it, one to one; anything else is left out of M-09;
+- a shadow round trip matches a replay one of the same pair entered less than
+  one 4h bar before it, one to one; anything else is left out of M-09;
 - the shadow's daily equity is rebuilt from its trades and the stored bars,
   and returns are taken over the 1D closes both curves have;
 - the verdicts are statuses only, and identical sides pass both metrics.
@@ -124,7 +124,7 @@ class TestRoundTrips:
 
 
 class TestMatching:
-    """Same pair, replay entry at most one 4h bar before the shadow's."""
+    """Same pair, replay entry less than one 4h bar before the shadow's."""
 
     def test_a_shadow_entry_seconds_after_the_replay_entry_matches(self) -> None:
         """Serve fills a few seconds after the bar close the replay fills at."""

@@ -65,8 +65,9 @@ the metrics, so a missing file fails both rows.
 - **Decision**: a round trip runs from a pair's first BUY while flat to the
   SELL that brings it back to flat; net P&L is sell value minus buy value
   minus every fee. A shadow round trip matches the replay round trip of the
-  same pair whose entry is at most one 4h bar before it. Unmatched round
-  trips are left out of M-09.
+  same pair entered at or less than one 4h bar before it (exactly one bar
+  earlier does not match, since serve fills inside the bar after the
+  replay's fill at the close). Unmatched round trips are left out of M-09.
 - **Alternatives**: match by exit too (an exit that differs is exactly what
   M-09 should measure).
 - **Rationale**: the same one-bar execution window as `hermes parity check`.
@@ -115,6 +116,9 @@ the metrics, so a missing file fails both rows.
 
 - **A-2.1**: the gate out of `BACKTEST_CERTIFIED` fails without
   `--shadow-parity`, and on `block` or `insufficient`.
+- **A-2.2**: certify refuses a parity file that does not start at day 0 of
+  the latest counted run or covers less than the shadow length (`--since` is
+  free on `hermes parity window`, so a sub-window could otherwise be judged).
 
 ### R-3: Independent replay
 

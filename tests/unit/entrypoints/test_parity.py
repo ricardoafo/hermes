@@ -34,7 +34,6 @@ from hermes.adapters.clock import SimulatedClock
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.application.notification_router import RouterConfig
 from hermes.application.parity.check import HistoryFetcher
-from hermes.application.strategy_protocol.day_zero import Check, DayZeroRecord, Verdict
 from hermes.domain.errors import ExchangeError
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.signal_emitted import SignalEmitted
@@ -46,6 +45,7 @@ from hermes.entrypoints.commands import discover
 from hermes.infrastructure.config.models import MarketDataConfig
 from hermes.ports.bar_feed import SourceState
 from tests.support.anomaly_rows import recorded_anomalies
+from tests.support.day_zero import write_day_zero
 from tests.support.parity import D1, DAY_END, DAY_START, H4, bar, signal_event
 from tests.unit.adapters.market_data.fake_binance_public import (
     BTC_USDT,
@@ -455,27 +455,6 @@ def _window_args(path: Path, *extra: str) -> list[str]:
     return ["window", "--db", str(path), "--config-dir", str(_CONFIG), *extra]
 
 
-def _write_day_zero(ledger: Path, day_zero_at: datetime) -> None:
-    record = DayZeroRecord(
-        run_id=f"swing-donchian-4h-{day_zero_at:%Y%m%dT%H%M%SZ}",
-        strategy_id="swing-donchian-4h",
-        day_zero_at=day_zero_at,
-        package_version="0.50.0",
-        release="r",
-        config_sha256="c",
-        preregistration_sha256="p",
-        preregistration_signed_sha256="s",
-        data_manifest_sha256="m",
-        parameter_fingerprint="f",
-        archived_ledger=None,
-        archived_ledger_sha256=None,
-        checks=(Check(2, "gate", Verdict.PASS, "recorded"),),
-    )
-    runs = ledger.parent / "runs"
-    runs.mkdir()
-    (runs / f"{record.run_id}.json").write_text(record.to_json(), encoding="utf-8")
-
-
 def test_window_prints_statuses_only_and_exits_one_when_not_both_pass(ledger: Path) -> None:
     """One flat day has no round trip and too few days: both insufficient, exit 1."""
     code, out, err = _run(_window_args(ledger, "--since", DAY_START.isoformat()))
@@ -502,7 +481,7 @@ def test_window_out_file_holds_the_window_and_the_two_statuses_only(
 
 def test_window_defaults_to_the_latest_day_zero_record(ledger: Path, tmp_path: Path) -> None:
     """Without --since, day 0 is read from the run record beside the ledger."""
-    _write_day_zero(ledger, DAY_START)
+    write_day_zero(ledger, "swing-donchian-4h", DAY_START)
     out_file = tmp_path / "parity.json"
 
     code, out, _ = _run(_window_args(ledger, "--out", str(out_file)))

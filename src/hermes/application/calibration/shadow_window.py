@@ -9,8 +9,10 @@ same days. This module turns both sides into what
   sold minus every fee on the way, as the backtest's performance file counts
   a trade. A position still open at the end is not a round trip.
 - **Matching**: a shadow round trip matches the first unmatched replay round
-  trip of its pair whose entry is at most one 4h bar before it, the execution
-  window of ``hermes parity check``. Unmatched round trips are left out.
+  trip of its pair entered at or less than one 4h bar before it (exactly
+  one bar earlier does not match): serve fills inside the bar after the
+  replay's fill at the bar close, the execution window of ``hermes parity
+  check``. Unmatched round trips are left out.
 - **Daily equity**: the shadow's is rebuilt from its recorded trades and the
   stored bars, marked bar by bar as serve marks them; the replay's is the
   run's own. Returns are taken over the 1D close times both curves have.
