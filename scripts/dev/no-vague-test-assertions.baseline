@@ -201,10 +201,6 @@ tests/unit/domain/value_objects/test_money.py::test_sub_different_currency_fails
 tests/unit/domain/value_objects/test_pair.py::test_ambiguous_concatenated_fails U3
 tests/unit/domain/value_objects/test_pair.py::test_from_str_same_base_quote_fails U3
 tests/unit/domain/value_objects/test_pair.py::test_from_str_unknown_base_fails U3
-tests/unit/domain/value_objects/test_price.py::test_apply_to_mismatched_asset_fails U3
-tests/unit/domain/value_objects/test_price.py::test_from_str_invalid_amount U3
-tests/unit/domain/value_objects/test_price.py::test_from_str_invalid_pair U3
-tests/unit/domain/value_objects/test_price.py::test_from_str_missing_parts U3
 tests/unit/domain/value_objects/test_quantity.py::test_from_str_invalid_amount U3
 tests/unit/domain/value_objects/test_quantity.py::test_from_str_missing_parts U3
 tests/unit/domain/value_objects/test_quantity.py::test_from_str_negative_fails U3
