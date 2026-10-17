@@ -8,9 +8,9 @@
 `bug-triager`, the `sev-*` labels, the `# SEV-1: <row>` test annotation (enforced by
 `tests/plugins/sev1_guard.py`) and the AI reviewer all use the rows below.
 
-The shape follows the severity bars used for AI-system bug triage (the MSRC AI Bug Bar
-is the generic reference): impact on confidentiality, integrity and availability decides
-the level, and a row names the failure, not the fix.
+The shape follows common severity bars for AI-system bug triage: impact on
+confidentiality, integrity and availability decides the level, and a row names the
+failure, not the fix.
 
 ## Levels
 
