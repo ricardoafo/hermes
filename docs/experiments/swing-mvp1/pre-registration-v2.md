@@ -4,12 +4,14 @@ version: 2
 supersedes: pre-registration-v1.md
 author: Claude (drafted 2026-10-17 from v1, the #735 audit and the Code Owner's decisions of 2026-10-17)
 date_drafted: 2026-10-17
-date_signed: null
+date_signed: 2026-10-17T13:31:46Z
 experiment_id: swing-mvp1-v2
 strategy_id: swing-mvp1-v2
-status: DRAFT
-signed_by: null
-content_sha256: null
+status: SIGNED
+signed_by: Rafo Afonso Montero <r.afonsomontero@gmail.com>
+content_sha256: 212a109f39b1c31384803d94c842ec550181628883a708deab25eaf2a5535128
+content_sha256_scope: git show 9d62a3d:docs/experiments/swing-mvp1/pre-registration-v2.md | sha256sum
+signing_commit_precursor: 9d62a3d
 backtest_funnel:
   train_end: 2024-06-30
   oos_start: 2025-09-01
@@ -307,11 +309,29 @@ Not part of the protocol; listed so signing does not wait on it.
 | Version | Date | Change |
 | --- | --- | --- |
 | v1 | 2026-08-25 | Signed. Gate failed on 2026-10-08 (issue #735). |
-| v2 | 2026-10-17 | Draft: the changes in §0. |
+| v2 | 2026-10-17 | Draft: the changes in §0 (PR #978). Signed by approval of the signing PR (issue #982). |
 
 ---
 
 ## 16. Signatures
 
-**Unsigned draft.** The Code Owner signs by approving the PR that sets `status: SIGNED`, `date_signed`, `signed_by`
-and the content hash, computed as for v1: `git show <pre-signing commit>:docs/experiments/swing-mvp1/pre-registration-v2.md | sha256sum`.
+**Signed 2026-10-17T13:31:46Z** by the Code Owner's approval of the signing PR (issue #982).
+
+- Operator: Rafo Afonso Montero (`r.afonsomontero@gmail.com`)
+- Timestamp: `2026-10-17T13:31:46Z`
+- Content SHA256 (pre-signing state at commit `9d62a3d`): `212a109f39b1c31384803d94c842ec550181628883a708deab25eaf2a5535128`
+- SHA256 of `data-manifest.json` at commit `9d62a3d`: `90ff67de27d0e9d6dc042a1f5bda42f4f2c9f5f6a699367aab82df0303b41902`
+- Git commit SHA of pre-signing state: `9d62a3d`
+- Git commit SHA of signing state: the squash commit of the signing PR
+
+**Verification protocol.** The content hash above is of the file's state in commit `9d62a3d`, immediately before
+this signing edit. To verify:
+
+```bash
+git show 9d62a3d:docs/experiments/swing-mvp1/pre-registration-v2.md | sha256sum
+# expect: 212a109f39b1c31384803d94c842ec550181628883a708deab25eaf2a5535128
+```
+
+Any later edit to the protocol is a new experiment (v3) under the §11 deviation protocol.
+
+**This document is now IMMUTABLE.**
