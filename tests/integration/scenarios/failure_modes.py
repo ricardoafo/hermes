@@ -350,7 +350,16 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "A torn last line in the trial log or decision journal",
-            gap="issue #891: detected, but every later append is blocked; recovery is undecided",
+            proved_by=(
+                _S + "test_chaos_torn_append.py"
+                "::test_a_trial_append_killed_halfway_is_repaired_and_the_next_run_records",
+                _S + "test_chaos_torn_append.py"
+                "::test_a_journal_append_killed_halfway_is_repaired_and_the_next_decision_records",
+                _U + "entrypoints/test_trials.py"
+                "::test_without_confirm_a_torn_log_is_refused_and_left_as_it_was",
+                _U + "adapters/trial_log/test_jsonl_file.py"
+                "::test_a_repair_refuses_a_log_edited_before_the_torn_line",
+            ),
         ),
         FailureMode(
             "Another process holds the ledger while serve commits",
