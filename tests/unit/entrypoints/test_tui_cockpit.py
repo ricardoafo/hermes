@@ -152,7 +152,7 @@ def test_every_unbuilt_screen_names_its_issue() -> None:
         seen = []
         for tab in unbuilt:
             await _press(pilot, [tab.key])
-            seen[tab.name] = f"{tab.name} · coming next · issue #{tab.issue}" in _screen_text(app)
+            seen.append(f"{tab.name} · coming next · issue #{tab.issue}" in _screen_text(app))
         return seen
 
     assert _run(probe) == [True] * len(unbuilt)

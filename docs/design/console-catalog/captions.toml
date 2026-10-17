@@ -211,3 +211,11 @@ means = "Every lot with its state, cost and gain, a filter line, a by-month roll
 check = "The flagged lot shows the two-month rule and says it is for the gestor; the detail's cost and gain match its table row."
 scenario = "ok-two-positions"
 keys = "4 ]"
+
+[views."test_tui_system/system"]
+screen = "System"
+state = "7 System, demo scenario with fixed service, release and machine figures"
+means = "What runs on the VPS and how it is doing: the services, the release history, the actions as commands to copy, the data and bar timing, and the machine load."
+check = "Every figure is read-only; the actions panel says nothing runs from here; a missing source reads 'not available here', never zero; meters fill by their share."
+scenario = "ok-two-positions"
+keys = "7"
