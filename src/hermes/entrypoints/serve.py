@@ -66,10 +66,11 @@ import signal
 import sqlite3
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from functools import partial
 from pathlib import Path
+from types import MappingProxyType
 from typing import Final
 
 import structlog
@@ -96,13 +97,15 @@ from hermes.application.calibration.certification_gates import (
     require_live_approval,
     v1_parameter_fingerprint,
 )
-from hermes.application.execution.halt_record import halt_record
+from hermes.application.execution.halt_record import halt_record, shadow_check_records
 from hermes.application.execution.kernel import Declined, Executed, FillKernel, Halted
 from hermes.application.execution.position_sync import sync_after_signal
+from hermes.application.execution.prereg_book import ExitPricing
 from hermes.application.execution.shadow import (
     AlreadyFilled,
     ShadowExecution,
     ShadowExecutor,
+    ShadowOutcome,
     shadow_risk_engine,
 )
 from hermes.application.ledger.eur_backfill import backfill_pending_eur, pending_rate_keys
@@ -116,13 +119,19 @@ from hermes.application.risk_inputs.correlation_recorder import CorrelationRecor
 from hermes.application.risk_inputs.spread_sampler import SPREAD_SAMPLE_SECONDS, SpreadSampler
 from hermes.application.signal_notifier import SignalNotifier
 from hermes.application.strategy_protocol.kill_trigger_evaluator import KillTriggerEvaluator
-from hermes.application.strategy_protocol.preregistration import PreRegistration
+from hermes.application.strategy_protocol.preregistration import KillTriggers, PreRegistration
+from hermes.application.strategy_protocol.shadow_checks import (
+    SHADOW_KILL_RULES,
+    daily_equity,
+    day_end,
+    run_shadow_checks,
+)
 from hermes.domain.errors import HermesError, InfraError, LedgerError
 from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
 from hermes.domain.events.bar_processed import BarProcessed
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.event_bus import EventBus, EventDispatchError
-from hermes.domain.events.risk_halt_recorded import RiskHaltRecorded
+from hermes.domain.events.risk_halt_recorded import HaltKind, RiskHaltRecorded
 from hermes.domain.events.shadow_capital_seeded import ShadowCapitalSeeded
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.events.signal_notified import SignalNotified
@@ -165,6 +174,7 @@ from hermes.ports.strategy import StrategyPort
 __all__ = [
     "CATCHUP_BARS",
     "EXPERIMENT_DIR",
+    "PRE_REGISTERED_EXITS",
     "SERVE_LOCK_SUFFIX",
     "SHADOW_STRATEGY_NAME",
     "SHADOW_UNIVERSE",
@@ -197,7 +207,18 @@ SHADOW_UNIVERSE: Final = ("BTC/USDT", "ETH/USDT", "SOL/USDT")
 """The three pairs of pre-registration §3."""
 
 SHADOW_STRATEGY_NAME: Final = "swing-donchian-4h"
-"""The one strategy the shadow roster may enable (pre-registration §5)."""
+"""The v1 strategy (pre-registration v1 §5), the one the shadow runs today."""
+
+V2_STRATEGY_NAME: Final = "swing-mvp1-v2"
+"""The v2 strategy (pre-registration v2 §5)."""
+
+PRE_REGISTERED_EXITS: Final[Mapping[str, ExitPricing]] = MappingProxyType(
+    {
+        SHADOW_STRATEGY_NAME: ExitPricing.STOP_ORDER,
+        V2_STRATEGY_NAME: ExitPricing.BAR_CLOSE,
+    }
+)
+"""Each strategy the shadow roster may enable, and the exit pricing it signed (§5.3, §6.2)."""
 
 EXPERIMENT_DIR: Final = Path("docs/experiments/swing-mvp1")
 """Where the signed pre-registration and the fee history sit under the experiment root."""
@@ -360,6 +381,7 @@ class Composition:
         tracker: Portfolio state handed to the strategies on every bar.
         signal_notifier: Fans a signal out to the routed channels.
         alert_channels: The channels a halt or kill alert is routed over (#749).
+        kill_triggers: The signed §10 thresholds of the daily shadow checks (#796).
         pairs: Pairs the feed follows.
         intervals: Intervals the feed follows.
         telegram: Telegram adapter, or ``None`` without credentials. Kept
@@ -392,6 +414,7 @@ class Composition:
     tracker: PortfolioTracker
     signal_notifier: SignalNotifier
     alert_channels: RouterConfig
+    kill_triggers: KillTriggers
     pairs: tuple[Pair, ...]
     intervals: tuple[KlineInterval, ...]
     telegram: TelegramAdapter | None
@@ -476,10 +499,18 @@ def check_startup(
         missing = [str(f) for f in experiment_files(experiment_root) if not f.is_file()]
         if missing:
             raise StartupError(f"experiment files missing: {', '.join(missing)}")
-    enabled = [s.name for s in config.strategies.strategies if s.enabled]
-    if enabled != [SHADOW_STRATEGY_NAME]:
+    enabled = [s for s in config.strategies.strategies if s.enabled]
+    if len(enabled) != 1 or enabled[0].name not in PRE_REGISTERED_EXITS:
         raise StartupError(
-            f"enabled strategies must be exactly [{SHADOW_STRATEGY_NAME!r}], got {enabled!r}"
+            "enabled strategies must be exactly one of "
+            f"{sorted(PRE_REGISTERED_EXITS)!r}, got {[s.name for s in enabled]!r}"
+        )
+    (roster,) = enabled
+    signed = PRE_REGISTERED_EXITS[roster.name]
+    if roster.exit_pricing is not signed:
+        raise StartupError(
+            f"{roster.name} must price its exits {signed.value}, as pre-registered; "
+            f"strategies.yaml sets exit_pricing: {roster.exit_pricing.value}"
         )
     if set(config.market_data.pairs) != set(SHADOW_UNIVERSE):
         raise StartupError(
@@ -502,13 +533,15 @@ def _check_live_approval(
     """Raise unless real capital is allowed for the enabled strategy."""
     if certification_store is None:
         raise StartupError("allow_mainnet is set but no certification store is configured")
+    # The enabled strategy's own record: a v1 approval never unlocks v2.
+    name = next(s.name for s in config.strategies.strategies if s.enabled)
     try:
-        record = certification_store.load(SHADOW_STRATEGY_NAME)
+        record = certification_store.load(name)
     except CertificationStoreError as exc:
         raise StartupError(f"allow_mainnet is set but {exc}") from exc
     refusal = require_live_approval(record, parameter_fingerprint_for(config))
     if refusal:
-        raise StartupError(f"allow_mainnet is set but {refusal}")
+        raise StartupError(f"allow_mainnet is set for {name!r} but {refusal}")
 
 
 def seed_capital_once(
@@ -773,10 +806,14 @@ def _wire_on_ledger(
             clock=wall,
             fees_at=_fees_at(fee_rows),
             strategy_id=strategy_id,
+            model=roster.execution_model(),
             not_before=None if recorded_seed is None else recorded_seed.seeded_at,
         )
+        held = _held_shadow_kill(ledger, strategy_id)
     except LedgerError as exc:
-        raise StartupError(f"cannot read the fill-quality rows: {exc.msg}") from exc
+        raise StartupError(f"cannot read the fill-quality or halt rows: {exc.msg}") from exc
+    if held:
+        executor.hold_kill(held)
     pairs = config.market_data.parsed_pairs()
     strategies: dict[Pair, StrategyPort] = {pair: SwingStrategyAdapter() for pair in pairs}
 
@@ -805,6 +842,7 @@ def _wire_on_ledger(
         tracker=tracker,
         signal_notifier=SignalNotifier(RouterConfig(telegram=telegram, slack=slack)),
         alert_channels=RouterConfig(telegram=telegram, slack=slack),
+        kill_triggers=pre_registration.kill_triggers(),
         pairs=pairs,
         intervals=tuple(config.market_data.intervals),
         telegram=telegram,
@@ -840,6 +878,22 @@ def _fees_at(rows: list[FeeScheduleRow]) -> Callable[[datetime, Pair], FeeSchedu
         return select_fee_schedule(rows, at, pair)
 
     return fees_at
+
+
+def _held_shadow_kill(ledger: SqliteLedger, strategy_id: StrategyId) -> str:
+    """Return the rule of a shadow kill this ledger recorded, or empty (#796).
+
+    A kill is final for the pre-registration (§10 post-kill protocol), so a
+    restart keeps entries stopped.
+    """
+    return next(
+        (
+            h.rule
+            for h in ledger.risk_halts(strategy_id)
+            if h.kind is HaltKind.KILL and h.pair is None and h.rule in SHADOW_KILL_RULES
+        ),
+        "",
+    )
 
 
 def _build_kernel(
@@ -1113,6 +1167,7 @@ class _BarLoop:
     c: Composition
     previous: dict[Stream, datetime] = field(default_factory=dict)
     catching_up: bool = False
+    checked_through: date | None = None
 
     async def warm_up_and_catch_up(self, shutdown: asyncio.Event) -> None:
         """Seed history up to each cursor, then evaluate the bars after it."""
@@ -1259,6 +1314,8 @@ class _BarLoop:
 
         c.tracker.mark(bar)
         c.executor.observe(bar)
+        # Before the strategy: a kill found for the day just ended stops this bar's entry.
+        await self._shadow_checks(bar)
         signal_ = c.strategies[bar.pair].on_bar(bar, c.tracker.state())
         emitted: tuple[SignalEmitted, bool] | None = None
         if signal_ is not None:
@@ -1273,8 +1330,15 @@ class _BarLoop:
                 c.event_bus.publish(event)
             # The signal row comes first, then the fill (D-5): a crash between
             # them re-evaluates the bar, and the executor sees no trade yet.
-            await self._execute(signal_, bar, correlation_id)
-            emitted = (event if is_new else self._stored_signal(event), is_new)
+            outcome = await self._execute(signal_, bar, correlation_id)
+            if signal_.kind is SignalKind.ENTRY and not isinstance(
+                outcome, Executed | AlreadyFilled
+            ):
+                # An entry announcement for a trade that never happened would
+                # misreport the portfolio; the halt alert or the log says why (#708).
+                _log.info("serve.signal.unfilled_entry_not_notified", pair=str(bar.pair))
+            else:
+                emitted = (event if is_new else self._stored_signal(event), is_new)
         # Failed pushes of earlier bars go out first: this bar's signal has no
         # failed push yet, so it is never pushed twice in one bar (#854).
         await self._push_owed(bar.pair)
@@ -1431,8 +1495,14 @@ class _BarLoop:
         except InfraError as exc:
             _log.error("serve.bar.gap_alert_failed", exc_info=exc)
 
-    async def _execute(self, signal_: StrategySignal, bar: Bar, correlation_id: str) -> None:
-        """Simulate the signal's order, log the outcome (never its P&L, D-7), sync the strategy."""
+    async def _execute(
+        self, signal_: StrategySignal, bar: Bar, correlation_id: str
+    ) -> ShadowOutcome:
+        """Simulate the signal's order, log the outcome (never its P&L, D-7), sync the strategy.
+
+        Returns:
+            The executor's outcome: filled, already filled, declined or halted.
+        """
         result = await self.c.executor.execute(signal_, bar, correlation_id=correlation_id)
         _log_execution(bar.pair, signal_.kind, result)
         record = halt_record(
@@ -1452,6 +1522,44 @@ class _BarLoop:
             filled=isinstance(result.outcome, Executed | AlreadyFilled),
             held=partial(self._held_position, bar.pair, at_or_before=signal_.signal_time),
         )
+        return result.outcome
+
+    async def _shadow_checks(self, bar: Bar) -> None:
+        """Run the §10 shadow kills and the drift rule once per completed UTC day (#796).
+
+        The first bar closing on a new UTC day checks the day before it. A
+        kill holds from then on: no new entries, exits still fill. Rows and
+        alerts carry rule ids only (ADR-012 D-06).
+        """
+        c = self.c
+        day = bar.close_time.astimezone(UTC).date() - timedelta(days=1)
+        if self.checked_through is not None and day <= self.checked_through:
+            return
+        self.checked_through = day
+        result = run_shadow_checks(
+            day,
+            equity=daily_equity(c.ledger.portfolio_marks(c.strategy_id, _NEVER, day_end(day))),
+            halts=c.ledger.risk_halts(c.strategy_id),
+            fills=c.ledger.fill_quality_events(c.strategy_id),
+            triggers=c.kill_triggers,
+        )
+        if result.exits_left_out:
+            _log.info(
+                "serve.shadow_check.exits_left_out",
+                day=day.isoformat(),
+                fills=result.exits_left_out,
+            )
+        held = bool(c.executor.killed_by)
+        if result.kill.triggered and not held:
+            c.executor.hold_kill(result.kill.rule)
+        for record in shadow_check_records(
+            result,
+            day=day,
+            strategy_id=c.strategy_id,
+            record_kill=not held,
+            correlation_id=new_correlation_id(),
+        ):
+            await self._record_halt(record)
 
     async def _record_halt(self, record: RiskHaltRecorded) -> None:
         """Record a halted or killed entry once, then alert it on every routed channel (#749).
@@ -1466,7 +1574,7 @@ class _BarLoop:
         c.ledger.append_event(record)
         _log.warning(
             "serve.halt.recorded",
-            pair=str(record.pair),
+            pair="all" if record.pair is None else str(record.pair),
             kind=record.kind.value,
             rule=record.rule,
             reason=record.reason,

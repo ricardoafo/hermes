@@ -2,7 +2,9 @@
 
 Every pre-registration and evidence file is synthetic and written to
 ``tmp_path``; no market data is read. One test reads the signed v1
-pre-registration's front matter to show v1 is refused, not evaluated.
+pre-registration's front matter to show v1 is refused, not evaluated, and
+one reads the signed v2 front matter to show it parses; neither holds market
+data.
 """
 
 import hashlib
@@ -14,9 +16,13 @@ from typing import Any
 
 import pytest
 
-from hermes.application.calibration.backtest_funnel import FUNNEL_CHECK_NAMES
+from hermes.application.calibration.backtest_funnel import (
+    FUNNEL_CHECK_NAMES,
+    Regime,
+    parse_funnel_front_matter,
+)
 from hermes.entrypoints.commands import discover
-from hermes.entrypoints.funnel import main
+from hermes.entrypoints.funnel import main, read_front_matter
 
 _SID = "swing-v2"
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -218,6 +224,45 @@ class TestRefusals:
         assert out.splitlines()[1].startswith("REFUSED: pre-registration sha256 ")
         assert out.splitlines()[1].endswith(f" does not match the expected {'0' * 64}")
 
+    @pytest.mark.parametrize(
+        "evidence_text",
+        ["{", json.dumps({"strategy_id": "other"})],
+        ids=["not-json", "wrong-strategy"],
+    )
+    def test_hash_mismatch_refuses_before_the_evidence_is_read(
+        self, tmp_path: Path, evidence_text: str
+    ) -> None:
+        """A wrong hash refuses (exit 1) even when the evidence would be an error (exit 3)."""
+        pre, evidence = _write(tmp_path, _FUNNEL_YAML, {})
+        evidence.write_text(evidence_text, encoding="utf-8")
+        code, out, err = _main(_args(pre, evidence, "--expect-sha256", "0" * 64))
+        assert (code, err) == (1, "")
+        assert out.splitlines()[1].startswith("REFUSED: pre-registration sha256 ")
+
+    def test_hash_mismatch_refuses_when_the_evidence_file_is_absent(self, tmp_path: Path) -> None:
+        """The evidence path is not even opened once the pre-registration is refused."""
+        pre, _ = _write(tmp_path, _FUNNEL_YAML, {})
+        absent = tmp_path / "absent.json"
+        code, out, err = _main(_args(pre, absent, "--expect-sha256", "0" * 64))
+        assert (code, err) == (1, "")
+        assert out.splitlines()[1].startswith("REFUSED: pre-registration sha256 ")
+
+    def test_hash_mismatch_refuses_a_file_with_no_front_matter(self, tmp_path: Path) -> None:
+        """Any file that is not the signed one refuses, whatever it holds."""
+        pre, evidence = _write(tmp_path, "# no front matter\n", _passing_evidence())
+        code, out, err = _main(_args(pre, evidence, "--expect-sha256", "0" * 64))
+        assert (code, err) == (1, "")
+        assert out.splitlines()[0].startswith(f"# hermes funnel {_SID}: - (pre-registration")
+
+    def test_missing_threshold_refuses_before_the_evidence_is_read(self, tmp_path: Path) -> None:
+        """A signed file without a usable threshold refuses (exit 1) over bad evidence."""
+        text = _FUNNEL_YAML.replace("  pbo_max: 0.05\n", "")
+        pre, evidence = _write(tmp_path, text, {})
+        evidence.write_text("{", encoding="utf-8")
+        code, out, err = _main(_args(pre, evidence))
+        assert (code, err) == (1, "")
+        assert out.splitlines()[1:] == ["REFUSED: backtest_funnel.pbo_max is missing"]
+
     def test_pre_registration_without_strategy_id_refuses(self, tmp_path: Path) -> None:
         """A pre-registration must name the strategy it binds."""
         text = _FUNNEL_YAML.replace("strategy_id: swing-v2\n", "")
@@ -353,6 +398,21 @@ class TestErrors:
         assert (code, out.splitlines()[0]) == (
             0,
             "Usage: hermes funnel <strategy_id> --pre-registration FILE",
+        )
+
+
+class TestSignedV2PreRegistration:
+    """The signed v2 document is what backtest.yml will judge swing-mvp1-v2 against."""
+
+    def test_signed_v2_front_matter_parses(self) -> None:
+        """Its funnel block, regimes included, passes the parser that ``hermes funnel`` runs."""
+        v2 = _PROJECT_ROOT / "docs/experiments/swing-mvp1/pre-registration-v2.md"
+        front = read_front_matter(v2.read_text(encoding="utf-8"))
+        thresholds = parse_funnel_front_matter(front, strategy_id="swing-mvp1-v2")
+        assert thresholds.regimes == (
+            Regime("bull", date(2020, 10, 1), date(2021, 11, 10)),
+            Regime("bear", date(2021, 11, 11), date(2022, 11, 21)),
+            Regime("bull", date(2022, 11, 22), date(2024, 3, 14)),
         )
 
 

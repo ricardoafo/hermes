@@ -31,7 +31,7 @@ __all__ = [
 BRIEFS_FOOTER: Final = "written by the AI supervisor desk · it never sees profit, equity or prices"
 """The line under every brief (design spec, screen 6)."""
 EARLIER_DAYS_NOTE: Final = "earlier days are not kept yet"
-"""Why the list holds only today: the desk does not keep its briefs yet (issue #897)."""
+"""Why the list holds only today: no earlier brief has been kept yet (issue #897)."""
 DIGEST_NOTE: Final = (
     "Shown as the digest of states and counts: the full brief did not pass the output gate."
 )
@@ -60,7 +60,8 @@ def _listing(briefs: Sequence[ConsoleBrief], ctx: RenderContext, tokens: Tokens)
         row.append(f"{_row_label(brief, ctx):<12}", style=f"bold {tokens.text}" if selected else "")
         row.append(brief.kind, style=tokens.muted)
         rows.append(row)
-    rows.extend((Text(""), Text(EARLIER_DAYS_NOTE, style=tokens.dim)))
+    if len(briefs) == 1:
+        rows.extend((Text(""), Text(EARLIER_DAYS_NOTE, style=tokens.dim)))
     return Group(*rows)
 
 

@@ -82,6 +82,14 @@ examples and to properties that hold by construction.
   that differs from the file refuses (exit 1). The caller passes the signed hash
   recorded for the pre-registration (its lab notebook entry), so an edited or
   swapped file can never be judged. The comparison ignores case.
+- **Order** (issue #987): the pre-registration is judged in full before the
+  evidence file is opened. The hash is compared on the file's raw bytes first,
+  before its front matter is parsed, so a file that is not the signed one
+  refuses (exit 1) whatever it or the evidence holds; the header then prints
+  `-` for the unverified `experiment_id`. A missing or unusable threshold also
+  refuses before the evidence is read. Only an unreadable pre-registration, or
+  a hash-matching file whose front matter does not parse, exits 3 on the
+  pre-registration side.
 - **Strategy binding** (review of PR #964): the front matter carries a
   top-level `strategy_id`, beside `experiment_id` and outside
   `backtest_funnel`, because it names what the whole document binds, not a
@@ -155,7 +163,11 @@ examples and to properties that hold by construction.
     (`regimes`, each `kind: bull|bear`). Two checks: the compounded return over
     all bull stretches is positive, and the same over all bear stretches. At
     least one stretch of each kind is required, and every stretch must lie
-    inside the evidence window.
+    inside the evidence window. Both ends of a stretch are inclusive, so two
+    stretches of the same kind that share a day (overlapping, nested or
+    duplicated) are refused, because the shared days would compound twice
+    (issue #987). A stretch may start the day after another of its kind ends.
+    A bull and a bear stretch may share days; each kind compounds on its own.
   - *Validation at least half of Train*: annualised (365-day) returns; passes
     iff Train is positive and Validation ≥ `validation_to_train_return_min` ×
     Train. The split day is the pre-registration's `train_end`.
@@ -215,6 +227,13 @@ examples and to properties that hold by construction.
 
 - **A-2.1**: `uv run pytest tests/unit/application/calibration/test_backtest_funnel.py -k missing`
 - **A-2.2**: `uv run pytest tests/unit/entrypoints/test_funnel.py -k refuse`
+  (including a wrong hash, or a missing threshold, over bad or absent
+  evidence: exit 1, never 3).
+- **A-2.3**: `uv run pytest tests/unit/application/calibration/test_backtest_funnel.py -k TestRegimeOverlap`
+  (same-kind stretches sharing a day refuse; touching ones parse).
+- **A-2.4**: `uv run pytest tests/unit/entrypoints/test_funnel.py -k signed_v2`
+  (the signed `docs/experiments/swing-mvp1/pre-registration-v2.md` front
+  matter parses).
 
 ### R-3: PBO and the t-statistic match hand-computed values and their properties
 
@@ -257,6 +276,7 @@ backtest_funnel:
   regimes:
     - {kind: bull, start: 2020-10-01, end: 2021-11-10}
     - {kind: bear, start: 2021-11-11, end: 2022-12-31}
+  # start and end are inclusive; stretches of one kind must not share a day
 ---
 ```
 
