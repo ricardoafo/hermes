@@ -188,6 +188,7 @@ jobs:
           uv run hermes certify "$strategy" \
             --performance "$out/performance.json" \
             --evidence "$out/evidence.json" \
+            --funnel-evidence "$out/funnel-evidence.json" \
             --config-dir config \
             --store-dir "$RUNNER_TEMP/cert" > "$out/certify.txt"
           code=$?

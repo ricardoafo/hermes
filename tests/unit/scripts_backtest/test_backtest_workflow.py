@@ -250,6 +250,13 @@ def test_certify_failed_gate_does_not_fail_the_job() -> None:
     assert '*) echo "::error::hermes certify exited $code' in script
 
 
+def test_certify_judges_the_funnel_evidence() -> None:
+    """v2's backtest gate includes the funnel (v2 §7), so certify gets the evidence file."""
+    script = str(_step("Certify (temporary store, nothing recorded)")["run"])
+
+    assert '--funnel-evidence "$out/funnel-evidence.json"' in script
+
+
 def test_certify_writes_to_a_temporary_store() -> None:
     """A workflow run never records a certification; that stays on the VPS."""
     script = str(_step("Certify (temporary store, nothing recorded)")["run"])
