@@ -34,6 +34,7 @@ from hermes.domain.fees.fee_schedule import FeeSchedule
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.bar_schedule import interval_duration, order_for_delivery
 from hermes.domain.market_data.kline import KlineInterval
+from hermes.domain.portfolio.correlation import DailyCloses
 from hermes.domain.portfolio.position import Position
 from hermes.domain.portfolio.snapshot import PortfolioSnapshot
 from hermes.domain.risk.state import PortfolioState
@@ -207,11 +208,16 @@ def check_day(
         make_strategy=make_strategy,
     )
     kernel = make_kernel(tracker)
+    closes = DailyCloses()
+    for bar in order_for_delivery(warm_bars):
+        if bar.interval is KlineInterval.D1:
+            closes.add(bar)
     replayed = _replay_decisions(
         order(day_bars),
         router=_PairRouter(strategies),
         kernel=kernel,
         entries=entries,
+        closes=closes,
         start=start,
         end=end,
         fees_at=fees_at,
@@ -295,6 +301,7 @@ def _replay_decisions(
     router: _PairRouter,
     kernel: FillKernel,
     entries: dict[Pair, OpenPosition],
+    closes: DailyCloses,
     start: datetime,
     end: datetime,
     fees_at: Callable[[datetime, Pair], FeeSchedule],
@@ -302,7 +309,9 @@ def _replay_decisions(
     """Replay ``bars`` one at a time so each signal's outcome is known on its own.
 
     ``entries`` carries the held positions from one bar's replay to the next,
-    so a declined exit returns the strategy to its position (#706).
+    so a declined exit returns the strategy to its position (#706); ``closes``
+    carries the 1D closes, seeded with the warm-up's, so RO-01 reads the
+    correlations serve's executor had (#514).
     """
     decisions: list[Decision] = []
     counter = 0
@@ -323,6 +332,7 @@ def _replay_decisions(
             fees_at=fees_at,
             correlation_id=next_id,
             entries=entries,
+            closes=closes,
         )
         signal = router.last
         if signal is None:

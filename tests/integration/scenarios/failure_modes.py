@@ -58,6 +58,7 @@ _LOTS_MACHINE = _U + "domain/lots/test_fifo_lots_state_machine.py::"
 _ALERTS = _U + "deploy/test_alert_scripts.py::"
 _WIRE = _U + "adapters/test_wire_numbers.py::"
 _PATHS = _S + "test_generated_paths.py::"
+_LOTS_AGREE = _S + "test_portfolio_matches_ledger_lots.py::"
 _KLINES_DOWN = _S + "test_chaos_klines_down_at_boot.py::"
 _SIGTERM = _S + "test_chaos_sigterm_mid_bar.py::"
 _EVERY_BAR = _PATHS + "test_every_rule_holds_after_every_bar_and_a_restart_changes_nothing"
@@ -250,7 +251,11 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "A cached or frozen depth book counts as fresh",
-            gap="issue #859: the book is stamped on arrival; inferred, untested",
+            proved_by=(
+                _DEPTH + "test_a_book_whose_update_id_has_not_moved_keeps_its_first_stamp",
+                _DEPTH + "test_a_book_whose_update_id_went_back_keeps_the_newest_stamp",
+                _DEPTH + "test_a_book_that_moved_after_freezing_is_fresh_again",
+            ),
         ),
         FailureMode(
             "A gapped or replayed depth diff reaches the book",
@@ -327,11 +332,11 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "The FX answer is dated well before the fill day",
-            gap="issue #859: any earlier date is accepted; the allowed gap is a tax-rule call",
+            gap="issue #996: any earlier date is accepted; the allowed gap is a tax-rule call",
         ),
         FailureMode(
             "A slow FX service stalls the bar loop",
-            gap="issue #859: a sync client runs on the event loop; inferred, untested",
+            gap="issue #996: a sync client runs on the event loop; inferred, untested",
         ),
     ),
     "ledger and disk": (
@@ -556,7 +561,17 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "The local clock is more than five minutes fast",
-            gap="issue #859: every entry is halted on a stale book and status stays green",
+            proved_by=(
+                _CLOCK + "test_a_clock_jump_is_recorded_as_off_then_back",
+                _CLOCK
+                + "test_a_clock_jumped_ahead_across_the_breakout_close_leaves_the_entry_halted",
+                _I
+                + "entrypoints/test_serve_clock_skew.py::"
+                + "test_a_clock_five_minutes_ahead_is_recorded_and_alerted_once",
+                _U
+                + "application/status/test_report.py::"
+                + "test_a_clock_left_off_turns_the_status_red_with_the_fix",
+            ),
         ),
         FailureMode(
             "The wall clock steps backwards",
@@ -746,7 +761,7 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         FailureMode(
             "A slow Telegram holds up the bar that sent the push",
             gap=(
-                "issue #859: the push runs in a thread, but serve awaits it before it "
+                "issue #996: the push runs in a thread, but serve awaits it before it "
                 "finishes the bar (up to 30 s per channel on 429); inferred, untested"
             ),
         ),
@@ -904,7 +919,10 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "The portfolio and the ledger lots drift apart in a run",
-            gap="issue #358: no scenario compares tracker cash with the USDT lots after serve",
+            proved_by=(
+                _LOTS_AGREE + "test_after_five_round_trips_the_portfolio_equals_the_ledger_lots",
+                _LOTS_AGREE + "test_on_every_generated_path_the_portfolio_equals_the_ledger_lots",
+            ),
         ),
         FailureMode(
             "Splitting a sale in two changes the tax lots or the total gain",

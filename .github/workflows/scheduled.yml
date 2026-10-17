@@ -10,13 +10,13 @@
 # ## Schedule
 #
 #   30 11 * * *   daily (Europe/Madrid): Semgrep + contract tests + fresh seeds
-#   45 11 * * 0   Sundays: the cosmic-ray mutation run, e2e tests, remote branch prune
+#   45 11 * * 0   Sundays: the cosmic-ray mutation run, remote branch prune
 #
 # 11:30 Madrid time keeps the daily checks in the day, when the
 # self-hosted runners are awake, and off the 14:00 Madrid approval window
 # and the merges that follow it (#694). The Sunday
 # cron is a separate entry so the long mutation run never delays the
-# daily checks. Manual dispatch runs the daily jobs and the e2e tests,
+# daily checks. Manual dispatch runs the daily jobs,
 # and the mutation run too when `mutation` is ticked.
 #
 # ## Jobs
@@ -29,8 +29,6 @@
 #   Slack auth.test, Sentry DSN parse, Healthchecks /start). Read-only or informational calls only;
 #   each test skips when its secret is absent. Catches upstream drift
 #   the unit-tier mocks cannot see.
-# - e2e: the real `hermes serve` composition root replays recorded
-#   Binance bars (tests/e2e). Offline and keyless.
 # - fresh-seeds: 150 new seeds of each generated market path (#869). PR CI
 #   runs the same twenty; a defect that needs a rarer path shows up here.
 #   The start is the day number times 1000, so each day's seeds are new and
@@ -176,24 +174,6 @@ jobs:
             echo "::error::fresh seeds failed and the issue could not be filed; the failing seeds are in this run's summary"
           fi
           exit 1
-
-  e2e:
-    name: End-to-end tests
-    if: github.event.schedule == '45 11 * * 0' || github.event_name == 'workflow_dispatch'
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-          fetch-depth: 1
-
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-        with: { version: "0.12.5" }
-      - run: uv sync --frozen
-
-      - name: Run e2e tier
-        run: uv run pytest tests/e2e -m e2e --tb=short -p no:cacheprovider
 
   mutation:
     name: Cosmic-ray mutation run

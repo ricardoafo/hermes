@@ -15,6 +15,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Protocol, runtime_checkable
 
+from hermes.domain.events.anomaly_detected import AnomalyDetected
 from hermes.domain.events.risk_halt_recorded import RiskHaltRecorded
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.pair import Pair
@@ -68,7 +69,7 @@ class StatusReadPort(Protocol):
         ...
 
     def open_entries(self) -> tuple[ShadowEntry, ...]:
-        """Return every pair whose latest signal is an entry, oldest first."""
+        """Return every pair whose latest filled entry has not exited, oldest first."""
         ...
 
     def halts_since(self, since: datetime) -> tuple[RiskHaltRecorded, ...]:
@@ -77,4 +78,8 @@ class StatusReadPort(Protocol):
         Args:
             since: Inclusive lower bound on the signal time, UTC-aware.
         """
+        ...
+
+    def last_clock_skew(self) -> AnomalyDetected | None:
+        """Return the newest clock-skew anomaly serve recorded, or ``None`` (#859)."""
         ...

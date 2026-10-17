@@ -40,6 +40,7 @@ SNAPSHOTS = ROOT / "tests" / "unit" / "entrypoints" / "__snapshots__"
 CAPTIONS = ROOT / "docs" / "design" / "console-catalog" / "captions.toml"
 DEFAULT_OUT = ROOT / "build" / "console-catalog" / "index.html"
 SCREENS = (
+    "Cold start",
     "Home",
     "Signals",
     "Positions",
@@ -53,7 +54,7 @@ SCREENS = (
     "Drill-down",
     "Parts",
 )
-"""Screen order on the page: the tab order, then overlays and shared parts."""
+"""Screen order on the page: the start-up screen, the tab order, then overlays and shared parts."""
 CAPTION_FIELDS = ("screen", "state", "means", "check")
 THEMES = ("neon", "control", "night")
 _SIZE = re.compile(r"(?:_(?P<a>\d+x\d+)|\[(?P<b>\d+x\d+)\])$")

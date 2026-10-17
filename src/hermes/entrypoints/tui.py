@@ -19,7 +19,16 @@ scenario always reads mainnet off. Every panel sits in a
 :class:`~hermes.entrypoints.tui_widgets.HudPanel`. Tokens, themes, breakpoints
 and timings live in :mod:`hermes.entrypoints.tui_theme`.
 
-Screens: ``1`` Home (issue #712); ``2``-``8`` name the issue that builds them next.
+Screens: ``1`` Home (issue #712); ``4`` Tax (issue #719, view only:
+:mod:`hermes.entrypoints.tui_tax`); ``5`` Shadow test (issue #718); ``6``
+Briefs; the others name the issue that builds them next.
+
+The Shadow test screen: the big "N / 90" over the shared 90-day run bar with
+month ticks (or "warm-up · not counting" while no ``hermes shadow-start``
+record exists), the five certification checks (pass, fail or pending only), the
+day-0 record with its Ready-rule verdicts, the frozen settings and the lab
+notebook. It shows no money. Its sources come in a
+:class:`~hermes.application.console.shadow_screen.ShadowSources`.
 
 Home layout, per breakpoint token (:func:`~hermes.entrypoints.tui_home.home_layout`):
 under 100 columns one column (Portfolio, Positions, Market, Activity, Engine
@@ -65,13 +74,16 @@ Keys: ``1``-``8`` screens, Tab / Shift+Tab cycle them, Ctrl+P command palette,
 ``D`` ``W`` ``M`` ``Y`` range (day, week, month, year), up and down (or ``j``
 ``k``) select a position, Enter opens it, Esc or Backspace goes back, ``[``
 ``]`` previous / next inside a detail screen, ``L`` logs, ``T`` theme, ``?``
-help, ``R`` restart (only while the notice shows), ``Q`` quit.
+help, ``R`` restart (only while the notice shows), ``Q`` quit. On the Tax screen
+``[`` ``]`` switch its sub-tabs, ``S`` shows or masks the taxpayer profile and
+``E`` says editing waits for MVP2.
 
 Reference: openspec/changes/readonly-tui-dashboard/change.md;
 openspec/changes/live-home-screen/change.md (D-6);
 openspec/changes/711-cockpit-theme/change.md;
 openspec/changes/712-cockpit-home/change.md;
 openspec/changes/713-live-ticker/change.md;
+openspec/changes/719-tax-screen/change.md;
 openspec/changes/730-drill-down/change.md.
 """
 
@@ -141,7 +153,19 @@ from hermes.application.console.render import (
     render_tax_footnote,
     to_plain_text,
 )
+from hermes.application.console.shadow_figures import SHADOW_TEST_DAYS
+from hermes.application.console.shadow_screen import (
+    ShadowRecordError,
+    ShadowScreen,
+    ShadowSources,
+    build_shadow_screen,
+    run_words,
+    sources_from,
+)
+from hermes.application.console.views import TaxPending
+from hermes.application.tax.screen import TaxpayerProfileView, TaxScreen, TaxScreenSource
 from hermes.domain.errors import LedgerError
+from hermes.entrypoints.tui_boot import BootScreen, boot_checks
 from hermes.entrypoints.tui_briefs import briefs_screen
 from hermes.entrypoints.tui_drilldown import (
     DetailMode,
@@ -155,13 +179,13 @@ from hermes.entrypoints.tui_home import (
     LOGS_UNAVAILABLE,
     HomeLayout,
     LiveRows,
+    counted_line,
     empty_positions,
     home_layout,
     log_tail,
     portfolio_curve,
     portfolio_meters,
     position_rows,
-    run_line,
     total_text,
 )
 from hermes.entrypoints.tui_live import (
@@ -172,13 +196,24 @@ from hermes.entrypoints.tui_live import (
     market_rows,
 )
 from hermes.entrypoints.tui_notices import bar_checked_notice, beep_enabled, should_beep
+from hermes.entrypoints.tui_query import QueryInput
 from hermes.entrypoints.tui_settings import (
     DEFAULT_SETTINGS_PATH,
     ConsoleSettings,
     load_settings,
     save_settings,
 )
+from hermes.entrypoints.tui_shadow import (
+    checks_table,
+    day_figure,
+    hero_text,
+    notebook_rows,
+    notebook_text,
+    record_text,
+    settings_text,
+)
 from hermes.entrypoints.tui_signals import signals_screen
+from hermes.entrypoints.tui_tax import EDIT_LATER, PROFILE, TaxPackStatus, TaxTab
 from hermes.entrypoints.tui_theme import (
     BASE,
     COMPACT_BELOW,
@@ -236,6 +271,7 @@ __all__ = [
 
 REFRESH_SECONDS: Final = MOTION.poll
 _PANEL_PADDING: Final = 2
+_SCROLLBAR_CELLS: Final = 1
 _NEW_VERSION_NOTICE: Final = "new version deployed · press R to restart"
 _UNKNOWN_RELEASE: Final = "unknown"
 _LOGS_LINES: Final = 50
@@ -247,8 +283,22 @@ _LEFT_IDS: Final = frozenset(
 )
 _THIRD_IDS: Final = frozenset({"signals", "log-tail"})
 _FULL_WIDTH_IDS: Final = frozenset(
-    {"shadow", "footer", "footer-status", "countdown", "countdown-meter", "mainnet", "notice"}
+    {
+        "shadow",
+        "footer",
+        "footer-status",
+        "countdown",
+        "countdown-meter",
+        "mainnet",
+        "notice",
+        "shadow-hero",
+        "shadow-checks",
+        "shadow-record",
+        "shadow-settings",
+        "shadow-notebook",
+    }
 )
+_SHADOW_PARTS: Final = ("shadow-checks", "shadow-record", "shadow-settings", "shadow-notebook")
 _WIDTH_CLASSES: Final = ("-compact", "-standard", "-wide", "-ultra")
 _HEIGHT_CLASSES: Final = ("-short", "-tall", "-towering")
 # Spaces the status row's widgets add around their text (padding, margins).
@@ -263,17 +313,21 @@ TABS: Final = (
     Tab("1", "Home"),
     Tab("2", "Signals"),
     Tab("3", "Positions", 715),
-    Tab("4", "Tax", 719),
-    Tab("5", "Shadow test", 718),
+    Tab("4", "Tax"),
+    Tab("5", "Shadow test"),
     Tab("6", "Briefs"),
     Tab("7", "System", 717),
     Tab("8", "Logs", 716),
 )
 _HOME: Final = 0
+_SHADOW: Final = 4
 _SIGNALS: Final = 1
+_TAX: Final = 3
 _BRIEFS: Final = 5
 _LOGS: Final = 7
 _NOTICE_SECONDS: Final = 6
+# The big estimated-tax figure shows from the height the big total shows (30 rows).
+_BIG_FROM_ROWS: Final = 30
 
 _FOOTER_CHIPS: Final = (
     ("D W M Y", "range"),
@@ -304,6 +358,7 @@ _FOOTER_CHIPS_COMPACT: Final = (
 )
 
 _CARD_ERRORS: Final = (ViewNotAvailableError, LedgerError)
+_SHADOW_ERRORS: Final = (ViewNotAvailableError, LedgerError, ShadowRecordError)
 _OSC_TITLE: Final = "\x1b]2;{}\x07"
 
 
@@ -311,7 +366,14 @@ def _unavailable(title: str, exc: Exception) -> Text:
     """Return the one plain line a card shows instead of its content."""
     if isinstance(exc, LedgerError):
         return Text(f"{title} · could not read the ledger: {exc.msg}", style="yellow")
+    if isinstance(exc, ShadowRecordError):
+        return Text(f"{title} · could not read the day-0 record: {exc}", style="yellow")
     return Text(f"{title} · not available yet", style="dim")
+
+
+def _day_count(value: float) -> str:
+    """Return the Shadow test day mid count-up (``12 / 90``)."""
+    return f"{round(value)} / {SHADOW_TEST_DAYS}"
 
 
 def _card(title: str, build: Callable[[], RenderableType]) -> RenderableType:
@@ -564,6 +626,11 @@ class HomeApp(App[None]):
     #footer {{ width: 1fr; }}
     #footer-status, #panel-footer {{ width: auto; color: $hud-muted; }}
     #panel {{ height: 1fr; padding: 0 1; overflow-y: auto; }}
+    #shadow-body {{ height: auto; layout: vertical; }}
+    #tab-5 {{ scrollbar-gutter: stable; scrollbar-size-vertical: 1; }}
+    #shadow-body.-wide, #shadow-body.-ultra {{ layout: horizontal; }}
+    #shadow-left, #shadow-right {{ height: auto; width: 1fr; }}
+    #shadow-body.-wide #shadow-right, #shadow-body.-ultra #shadow-right {{ margin-left: 1; }}
     """
     BINDINGS: ClassVar[list[BindingType]] = [
         *_range_bindings(),
@@ -575,6 +642,10 @@ class HomeApp(App[None]):
         Binding("enter", "open_detail", "detail", show=False),
         Binding("escape,backspace", "go_back", "back", show=False),
         Binding("a,A", "toggle_quiet", "checks", show=False),
+        Binding("left_square_bracket", "tax_subtab(-1)", "previous sub-tab", show=False),
+        Binding("right_square_bracket", "tax_subtab(1)", "next sub-tab", show=False),
+        Binding("s,S", "tax_show_profile", "show profile", show=False),
+        Binding("e,E", "tax_edit_profile", "edit profile", show=False),
         Binding("l,L", "logs", "logs", show=False),
         Binding("t,T", "pick_theme", "theme", show=False),
         Binding("question_mark", "help", "help", show=False),
@@ -596,7 +667,12 @@ class HomeApp(App[None]):
         settings_path: Path | None = None,
         theme: ThemeChoice | None = None,
         exposure_cap: Decimal | None = None,
+        shadow: ShadowSources | None = None,
         ticker: LiveTickerPort | None = None,
+        tax: TaxScreenSource | None = None,
+        taxpayer_profile: TaxpayerProfileView | None = None,
+        tax_pack: Callable[[int], TaxPackStatus | None] | None = None,
+        boot: bool = False,
     ) -> None:
         """Hold the read model, the journal source and the screen state.
 
@@ -623,10 +699,22 @@ class HomeApp(App[None]):
             theme: A choice from ``--theme``; it wins over the saved one and is saved.
             exposure_cap: The roster's pre-registered exposure cap as a share
                 (``0.15``); ``None`` makes the exposure meter say it is unknown.
+            shadow: Where the Shadow test screen and the 90-day line read
+                from; ``None`` takes what ``model`` itself serves.
             ticker: The live public ticker (issue #713); ``None`` shows booked
                 values only and the Market panel without prices.
+            tax: The Tax screen's source (issue #719); ``None`` makes it say the
+                estimate is not available.
+            taxpayer_profile: What the Tax screen may say about the profile;
+                read once by the caller, never over ``--vps``.
+            tax_pack: Returns the year's tax pack state.
+            boot: Open on the cold start screen (#1020); shown only with motion on.
         """
         super().__init__()
+        # The checks need the time zone, which the model only gives once mounted.
+        self._boot_checks = (
+            partial(boot_checks, model, journal=journal, ticker=ticker) if boot else None
+        )
         self._model = model
         self._journal = journal
         self._release = release
@@ -655,14 +743,34 @@ class HomeApp(App[None]):
         # The last heartbeat read, kept across a failed read so the bell never rings twice.
         self._last_read: Heartbeat | None = None
         self._ctx = RenderContext(surface=Surface.OPERATOR_TUI, now=clock())
-        self._pulse = 0
-        self._radar = 0
+        self._pulse = self._radar = 0
         self._exposure_cap = exposure_cap
+        self._shadow = shadow or sources_from(model)
+        self._init_tax(tax, taxpayer_profile, tax_pack)
         self._layout: HomeLayout = home_layout(80, 24)
         self._empty_facts: tuple[tuple[str, ...], datetime | None] | None = None
         self._title_sent: str | None = None
         self._title_total: str | None = None
         self.effect_timers: dict[str, Timer] = {}
+        self._init_live_feed(ticker, clock)
+        self._summary: PortfolioSummary | None = None
+        self._rows: tuple[PositionRow, ...] = ()
+        self._details: dict[str, PositionDetail] = {}
+        self._watch: tuple[WatchedPair, ...] | None = None
+        for hermes_theme in THEMES:
+            self.register_theme(hermes_theme)
+
+    def _init_tax(
+        self,
+        tax: TaxScreenSource | None,
+        taxpayer_profile: TaxpayerProfileView | None,
+        tax_pack: Callable[[int], TaxPackStatus | None] | None,
+    ) -> None:
+        self._tax = tax
+        self._taxpayer_profile = taxpayer_profile
+        self._tax_pack = tax_pack
+
+    def _init_live_feed(self, ticker: LiveTickerPort | None, clock: Callable[[], datetime]) -> None:
         self._poller = None if ticker is None else TickerPoller(ticker, clock)
         self._board = LiveBoard()
         self._fetching = False
@@ -671,12 +779,6 @@ class HomeApp(App[None]):
         self._polls: deque[bool] = deque(maxlen=FEED_WIDTH)
         self._feed_timer: Timer | None = None
         self._live_state = LiveState.WAITING
-        self._summary: PortfolioSummary | None = None
-        self._rows: tuple[PositionRow, ...] = ()
-        self._details: dict[str, PositionDetail] = {}
-        self._watch: tuple[WatchedPair, ...] | None = None
-        for hermes_theme in THEMES:
-            self.register_theme(hermes_theme)
 
     def get_theme_variable_defaults(self) -> dict[str, str]:
         """Give TCSS the ``hud-*`` variables before a hermes theme is applied."""
@@ -737,7 +839,13 @@ class HomeApp(App[None]):
                     yield HudPanel(
                         Static(id="log-tail"), title="Log tail", subtitle="L logs", id="log-panel"
                     )
+            yield self._compose_shadow()
             for index, tab in enumerate(TABS[1:], start=1):
+                if index == _TAX:
+                    yield TaxTab(now=self._clock, motion=self._motion, id=f"tab-{tab.key}")
+                    continue
+                if index == _SHADOW:
+                    continue
                 ai = index == _BRIEFS
                 yield VerticalScroll(
                     HudPanel(
@@ -754,6 +862,47 @@ class HomeApp(App[None]):
             yield Static(id="footer")
             yield Static(id="footer-status")
 
+    def _compose_shadow(self) -> VerticalScroll:
+        """Return tab 5: the hero, then checks and day 0 beside settings and notebook."""
+        return VerticalScroll(
+            HudPanel(
+                BigNumber(motion=self._motion, counting=_day_count, id="shadow-day"),
+                Static(id="shadow-hero"),
+                title="Shadow test",
+                subtitle="booked · read-only",
+                id="shadow-hero-panel",
+            ),
+            Container(
+                Vertical(
+                    HudPanel(
+                        Static(id="shadow-checks"),
+                        title="Certification checks",
+                        subtitle="pass · fail · pending",
+                        id="shadow-checks-panel",
+                    ),
+                    HudPanel(Static(id="shadow-record"), title="Day 0", id="shadow-record-panel"),
+                    id="shadow-left",
+                ),
+                Vertical(
+                    HudPanel(
+                        Static(id="shadow-settings"),
+                        title="Frozen settings",
+                        subtitle="never edited here",
+                        id="shadow-settings-panel",
+                    ),
+                    HudPanel(
+                        Static(id="shadow-notebook"),
+                        title="Lab notebook",
+                        subtitle="newest first",
+                        id="shadow-notebook-panel",
+                    ),
+                    id="shadow-right",
+                ),
+                id="shadow-body",
+            ),
+            id=f"tab-{TABS[_SHADOW].key}",
+        )
+
     def on_mount(self) -> None:
         """Apply the theme, draw, and start the poll, the clock and the effects."""
         if self._save_choice:
@@ -763,6 +912,14 @@ class HomeApp(App[None]):
         self.set_interval(self._refresh_seconds, self._redraw)
         self.set_interval(MOTION.clock_tick, self._tick)
         self._start_effects()
+        if self._boot_checks is not None and self._motion:
+            self.push_screen(
+                BootScreen(
+                    self._boot_checks(tz=self._render_context().tz),
+                    lambda: tokens_for(self.theme),
+                    release=self._read_release(),
+                )
+            )
 
     def on_resize(self, event: events.Resize) -> None:
         """Re-flow when the terminal size changes."""
@@ -801,8 +958,10 @@ class HomeApp(App[None]):
             self.effect_timers["radar"] = self.set_interval(MOTION.radar_tick, self._step_radar)
 
     def _start_shimmer(self) -> None:
-        big = self._alive(BigNumber)
-        if big is not None:
+        """Start a shimmer pass on every shown big number (Home total, Shadow day)."""
+        if not self.screen_stack:
+            return
+        for big in self._home.query(BigNumber).results(BigNumber):
             big.start_shimmer()
 
     def _step_radar(self) -> None:
@@ -1331,16 +1490,18 @@ class HomeApp(App[None]):
         self._set("brief", Text(_BRIEF_PENDING, style="dim"))
         if layout.third:
             self._redraw_third_column(ctx, layout)
-        self._set(
-            "shadow",
-            _card(
-                "Shadow test",
-                lambda: run_line(
-                    model.shadow_test(), tokens_for(self.theme), width=self.size.width
-                ),
-            ),
-        )
+        self._redraw_run_line()
         self._redraw_detail(ctx)
+        self._redraw_tab_screen(ctx, layout)
+        screen = self.screen
+        if isinstance(screen, _PanelScreen | DetailScreen):
+            screen.refresh_panel()
+
+    def _redraw_tab_screen(self, ctx: RenderContext, layout: HomeLayout) -> None:
+        """Draw the chrome and the screen of the shown tab."""
+        model = self._model
+        if self._tab == _SHADOW:
+            self._redraw_shadow(ctx, layout)
         self._redraw_chrome()
         if self._tab == _BRIEFS:
             self._set(
@@ -1369,9 +1530,8 @@ class HomeApp(App[None]):
                     ),
                 ),
             )
-        screen = self.screen
-        if isinstance(screen, _PanelScreen | DetailScreen):
-            screen.refresh_panel()
+        if self._tab == _TAX:
+            self._redraw_tax(ctx)
 
     def _read_release(self) -> str | None:
         """Return the current release name, or ``None`` without a source or when it fails."""
@@ -1389,6 +1549,34 @@ class HomeApp(App[None]):
         if self._started_release is None:
             self._started_release = current
         return current != self._started_release
+
+    def _tax_screen(self, ctx: RenderContext) -> TaxScreen | TaxPending:
+        """Read the Tax screen from its source; a failed read becomes a pending line."""
+        if self._tax is None:
+            return TaxPending(label="tax estimate not available yet")
+        try:
+            prices = {row.coin: row.current_eur for row in self._model.positions()}
+        except _CARD_ERRORS:
+            prices = {}
+        try:
+            return self._tax.tax_screen(as_of=ctx.now, prices=prices)
+        except LedgerError:
+            return TaxPending(label="could not read the ledger")
+
+    def _redraw_tax(self, ctx: RenderContext) -> None:
+        """Draw the Tax screen from one read of the tax service."""
+        screen = self._tax_screen(ctx)
+        year = screen.year if isinstance(screen, TaxScreen) else ctx.now.astimezone(ctx.tz).year
+        self._home.query_one(TaxTab).show(
+            screen,
+            profile=self._taxpayer_profile,
+            pack=None if self._tax_pack is None else self._tax_pack(year),
+            tokens=self._data,
+            tz=ctx.tz,
+            money=ctx.shows_money,
+            width=self.size.width,
+            big_number=self.size.height >= _BIG_FROM_ROWS,
+        )
 
     def _show(self, widget_id: str, content: RenderableType, *, shown: bool) -> None:
         """Set a widget's content and show it only when it has something to show."""
@@ -1555,6 +1743,72 @@ class HomeApp(App[None]):
             ),
         )
 
+    def _redraw_run_line(self) -> None:
+        """Draw the bottom 90-day line from the same day 0 as tab 5 (one source)."""
+        try:
+            screen = self.shadow_screen()
+        except _SHADOW_ERRORS as exc:
+            self._set("shadow", _unavailable("Shadow test", exc))
+            return
+        line = counted_line(
+            run_words(screen),
+            None if screen.day is None else min(screen.day, screen.length_days),
+            screen.length_days,
+            tokens_for(self.theme),
+            width=self.size.width,
+        )
+        self._set("shadow", line)
+
+    def shadow_screen(self) -> ShadowScreen:
+        """Return the Shadow test screen read now from the shadow sources.
+
+        Raises:
+            LedgerError: The ledger could not be read.
+            ShadowRecordError: A day-0 record could not be read.
+        """
+        sources = self._shadow
+        strategy = sources.strategy_id
+        runs = sources.runs
+        record = None if runs is None or strategy is None else runs.latest_run(strategy)
+        notebook = None if sources.notebook is None else sources.notebook.notebook_entries()
+        ctx = self._ctx
+        return build_shadow_screen(
+            record=record,
+            evidence=sources.evidence,
+            notebook=notebook,
+            as_of=ctx.now,
+            tz=ctx.tz,
+        )
+
+    def _redraw_shadow(self, ctx: RenderContext, layout: HomeLayout) -> None:
+        """Draw tab 5: the hero, the checks, the day-0 record, the settings, the notebook."""
+        big = self._home.query_one("#shadow-day", BigNumber)
+        body = self._home.query_one("#shadow-body")
+        for name in _WIDTH_CLASSES:
+            body.set_class(name in layout.classes, name)
+        try:
+            screen = self.shadow_screen()
+        except _SHADOW_ERRORS as exc:
+            big.show(None, None)
+            self._set("shadow-hero", _unavailable("Shadow test", exc))
+            for part in _SHADOW_PARTS:
+                self._set(part, Text(""))
+            return
+        tokens = tokens_for(self.theme)
+        figure = day_figure(screen) if layout.big_total else None
+        day = screen.day
+        big.show(figure, None if day is None else float(min(day, screen.length_days)))
+        width = self.size.width - _SCROLLBAR_CELLS - _PANEL_PADDING
+        self._set(
+            "shadow-hero",
+            hero_text(screen, tokens, width=width, tz=ctx.tz, big=figure is not None),
+        )
+        self._set("shadow-checks", checks_table(screen.checks, tokens))
+        self._set("shadow-record", record_text(screen, tokens, tz=ctx.tz))
+        self._set("shadow-settings", settings_text(screen.settings, tokens))
+        rows = notebook_rows(layout.height_class)
+        self._set("shadow-notebook", notebook_text(screen.notebook, tokens, tz=ctx.tz, rows=rows))
+
     def _redraw_third_column(self, ctx: RenderContext, layout: HomeLayout) -> None:
         """Draw the Signals placeholder and the log tail (ultra width)."""
         self._set("signals", Text(_SIGNALS_PENDING, style="dim"))
@@ -1655,7 +1909,33 @@ class HomeApp(App[None]):
         """
         if isinstance(self.screen, ModalScreen):
             return
+        if isinstance(self.focused, QueryInput):
+            self.focused.action_complete()
+            return
         self.action_show_tab((self._tab + step) % len(TABS))
+
+    def action_tax_subtab(self, step: int) -> None:
+        """Show the Tax screen's next (``1``) or previous (``-1``) sub-tab.
+
+        Args:
+            step: Direction.
+        """
+        if self._on_home and self._tab == _TAX:
+            self._home.query_one(TaxTab).switch(step)
+
+    def action_tax_show_profile(self) -> None:
+        """``S`` on Your profile: show or mask the taxpayer figures."""
+        if not (self._on_home and self._tab == _TAX):
+            return
+        tax = self._home.query_one(TaxTab)
+        if tax.sub == PROFILE:
+            tax.toggle_profile()
+            self._redraw()
+
+    def action_tax_edit_profile(self) -> None:
+        """``E`` on Your profile: say that editing waits for MVP2."""
+        if self._on_home and self._tab == _TAX and self._home.query_one(TaxTab).sub == PROFILE:
+            self.notify(EDIT_LATER, timeout=_NOTICE_SECONDS)
 
     def action_go_back(self) -> None:
         """Close the detail pane, else return to the previous tab."""
@@ -1847,7 +2127,11 @@ def run_home(
     theme: ThemeChoice | None = None,
     settings_path: Path | None = DEFAULT_SETTINGS_PATH,
     exposure_cap: Decimal | None = None,
+    shadow: ShadowSources | None = None,
     ticker: LiveTickerPort | None = None,
+    tax: TaxScreenSource | None = None,
+    taxpayer_profile: TaxpayerProfileView | None = None,
+    tax_pack: Callable[[int], TaxPackStatus | None] | None = None,
 ) -> None:
     """Run the console until the operator quits, or restarts onto a new release.
 
@@ -1866,7 +2150,11 @@ def run_home(
         theme: A ``--theme`` choice; saved, and wins over the saved one.
         settings_path: Where the theme choice is read and saved.
         exposure_cap: The roster's exposure cap; see :class:`HomeApp`.
+        shadow: The Shadow test screen's sources; see :class:`HomeApp`.
         ticker: The live public ticker; see :class:`HomeApp`.
+        tax: The Tax screen's source; see :class:`HomeApp`.
+        taxpayer_profile: What the Tax screen may say about the profile.
+        tax_pack: Returns the year's tax pack state.
     """
     app = HomeApp(
         model,
@@ -1877,7 +2165,12 @@ def run_home(
         theme=theme,
         settings_path=settings_path,
         exposure_cap=exposure_cap,
+        shadow=shadow,
         ticker=ticker,
+        tax=tax,
+        taxpayer_profile=taxpayer_profile,
+        tax_pack=tax_pack,
+        boot=True,
     )
     app.run()
     if not app.restart_requested:

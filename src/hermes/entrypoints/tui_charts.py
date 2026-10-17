@@ -43,10 +43,18 @@ _LEFT_DOTS: Final = (0x40, 0x04, 0x02, 0x01)
 _RIGHT_DOTS: Final = (0x80, 0x20, 0x10, 0x08)
 _SHIMMER_BAND: Final = 3.0
 _DIGIT_SWAPS: Final = str.maketrans({".": "•"})
+# One-cell glyphs Textual's digits lack, centred on the middle row so they keep
+# the one-cell width ``Digits.get_width`` gives every non-digit ("12 / 90").
+_NARROW_GLYPHS: Final[dict[str, tuple[str, str, str]]] = {
+    "/": (" ", "╱", " "),  # noqa: RUF001 - the drawn slash is meant
+}
 
 
 def _glyph(char: str) -> tuple[str, str, str]:
     """Return the three rows Textual's bold ``Digits`` draws for one character."""
+    narrow = _NARROW_GLYPHS.get(char)
+    if narrow is not None:
+        return narrow
     try:
         position = DIGITS.index(char) * _GLYPH_ROWS
     except ValueError:
