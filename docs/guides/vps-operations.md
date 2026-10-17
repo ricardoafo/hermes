@@ -668,6 +668,21 @@ number and reference must exist in what the tools returned. If free text
 such as a decision title fails the gate, the digest of states and counts is
 printed instead and the gate's reasons go to stderr as one JSON line.
 
+`brief --keep` also appends the published brief (the full one, or the digest
+when the gate refused it) to `briefs.jsonl` beside the ledger, once per kind
+and UTC day, so the console's Briefs screen lists earlier days. The file holds
+exactly the text that passed the gate and nothing recomposed later. A second
+run the same day keeps the first brief; a run that cannot write exits 1.
+`--briefs FILE` moves the archive.
+
+`hermes-brief.timer` runs it daily at 07:15 Madrid time as the `hermes` user,
+with the six source grants and no env file. `vps-bootstrap` installs it and
+leaves it off, as for the tax pack:
+
+```bash
+sudo systemctl enable --now hermes-brief.timer
+```
+
 ```mermaid
 flowchart LR
     T["Read tools (granted, audited)"] --> G["gather: payloads plus counts"]
