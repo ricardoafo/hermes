@@ -6,7 +6,7 @@ Verifies:
 - ``<event-name> --fixture <path>`` overrides the sample with JSON data.
 - An unknown event name exits with code 2 and a diagnostic message.
 - A missing fixture path exits with code 1.
-- ``--send`` refuses to run when HERMES_ENV=prod (exit code 3).
+- ``--send`` runs only when HERMES_ENV=dev; any other tier, unset included, exits 3.
 - The routing table gates which channel-specific output blocks render.
 
 Reference: docs/decisions/2026-08-23-slack-alongside-telegram.md.
@@ -194,7 +194,7 @@ class TestUnknownEvent:
 
 
 class TestSendGuard:
-    """`--send` refuses to spam prod channels — exit code 3."""
+    """`--send` runs only in the dev tier; anything else exits 3."""
 
     def test_send_refuses_in_prod(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """--send with HERMES_ENV=prod exits 3 without invoking any adapter."""
@@ -207,6 +207,21 @@ class TestSendGuard:
     def test_send_refuses_prod_case_insensitively(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """--send with HERMES_ENV=PROD (uppercase) still triggers the refusal."""
         monkeypatch.setenv("HERMES_ENV", "PROD")
+        stream = io.StringIO()
+        rc = preview_module.main(["strategy-paused", "--send"], stream=stream)
+        assert rc == 3
+
+    def test_send_refuses_when_the_tier_is_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """--send with no HERMES_ENV exits 3: sending is opt-in, so a missing tier fails closed."""
+        monkeypatch.delenv("HERMES_ENV", raising=False)
+        stream, err = io.StringIO(), io.StringIO()
+        rc = preview_module.main(["strategy-paused", "--send"], stream=stream, err=err)
+        assert (rc, stream.getvalue()) == (3, "")
+        assert "HERMES_ENV=(unset)" in err.getvalue()
+
+    def test_send_refuses_in_staging(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """--send with HERMES_ENV=staging exits 3: only the dev tier may send."""
+        monkeypatch.setenv("HERMES_ENV", "staging")
         stream = io.StringIO()
         rc = preview_module.main(["strategy-paused", "--send"], stream=stream)
         assert rc == 3
