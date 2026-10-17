@@ -1,9 +1,11 @@
 """Release names and the package versions that carry them (ADR-022).
 
-Releases are named in SemVer: ``X.Y.Z`` or ``X.Y.Z-shadow.N`` (ADR-006,
-ADR-014). PEP 440 cannot hold ``-shadow.N``, so the package metadata stores
-the shadow pre-release as alpha ``N``: release ``1.0.0-shadow.1`` is package
-``1.0.0a1``. Both map one-to-one and order the same way.
+Releases are named in SemVer: ``0.Y.Z`` until real capital, ``X.Y.Z`` after
+(ADR-027). The retired ``X.Y.Z-shadow.N`` line (ADR-022 §1) is still read,
+so old wheels, tags and changelog sections keep their names. PEP 440 cannot
+hold ``-shadow.N``, so its package metadata stored the pre-release as alpha
+``N``: release ``1.0.0-shadow.1`` is package ``1.0.0a1``. Both map
+one-to-one and order the same way.
 
 This module uses only the standard library and imports nothing from hermes,
 so the release scripts load it by path in CI jobs that have not installed the
