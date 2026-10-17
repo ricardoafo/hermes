@@ -6,6 +6,10 @@ prints one line per check with its evidence, and records the outcome. Only a
 passed gate advances the state; a failed one-shot OOS test is recorded too,
 because the shot is spent either way (pre-registration §7).
 
+Toward SHADOW_CERTIFIED it also reports the shadow round trips the ledger
+holds; under 30 the execution check is flagged weak (ADR-021 §3). The flag
+changes no pass or fail rule.
+
 Exit codes: 0 gate passed and recorded, 1 gate failed or refused, 2 usage,
 3 config, evidence or store error.
 
@@ -24,6 +28,7 @@ from pathlib import Path
 from typing import Any, TextIO
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
+from hermes.adapters.ledger.status_reader import SqliteStatusReader
 from hermes.application.calibration.certification_gates import (
     CertificationRecord,
     GateEvidence,
@@ -36,13 +41,16 @@ from hermes.application.calibration.certification_gates import (
     evaluate_next_gate,
     record_outcome,
 )
+from hermes.application.calibration.lifecycle import CertificationState
 from hermes.application.calibration.window_metrics import (
     PerformanceRecord,
     TrialStats,
     compute_window_metrics,
 )
 from hermes.application.strategy_protocol.preregistration import PreRegistration
+from hermes.domain.errors import LedgerError
 from hermes.domain.statistics.performance import TradeResult
+from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.entrypoints import serve as serve_module
 from hermes.entrypoints._streams import resolve_err
 from hermes.infrastructure.config.errors import ConfigError
@@ -54,7 +62,8 @@ __all__ = ["EvidenceError", "apply_performance", "load_evidence", "main", "run"]
 
 _USAGE = (
     "Usage: hermes certify <strategy_id> [--evidence FILE] [--store-dir DIR]\n"
-    "                      [--config-dir DIR] [--sign-off NAME --confirm LIVE_APPROVED]\n"
+    "                      [--config-dir DIR] [--db PATH]\n"
+    "                      [--sign-off NAME --confirm LIVE_APPROVED]\n"
     "\n"
     "Evaluates the next certification gate (pre-registration §7) and prints every\n"
     "check with its evidence. A passed gate is recorded; a failed one is not, except\n"
@@ -73,6 +82,10 @@ _METRIC_KEYS = (
     "fees_to_gross_pnl",
     "win_rate",
 )
+
+
+WEAK_ROUND_TRIPS = 30
+"""ADR-021 §3: fewer shadow round trips than this flag the execution check as weak."""
 
 
 class EvidenceError(ValueError):
@@ -117,6 +130,12 @@ def main(argv: list[str], *, stream: TextIO, err: TextIO | None = None) -> int:
     if parsed.sign_off is not None:
         evidence = replace(evidence, sign_off=OperatorSignOff(parsed.sign_off, parsed.confirm, now))
 
+    try:
+        round_trips = _round_trips(parsed.db, parsed.strategy_id)
+    except LedgerError as exc:
+        err.write(f"ERROR: ledger: {exc.msg}\n")
+        return 3
+
     store_dir = parsed.store_dir or serve_module.certification_dir_for(serve_module.DEFAULT_DB_PATH)
     return run(
         parsed.strategy_id,
@@ -127,7 +146,16 @@ def main(argv: list[str], *, stream: TextIO, err: TextIO | None = None) -> int:
         err=err,
         clock=lambda: now,
         pre_reg=pre_reg,
+        round_trips=round_trips,
     )
+
+
+def _round_trips(db: Path, strategy_id: str) -> int | None:
+    """Return the shadow round trips ``db`` holds, or ``None`` without a ledger there."""
+    if not db.is_file():
+        return None
+    with SqliteStatusReader.open(db) as reader:
+        return reader.round_trips(StrategyId(strategy_id))
 
 
 def _parse(argv: list[str], stream: TextIO, err: TextIO) -> tuple[argparse.Namespace | None, int]:
@@ -138,6 +166,7 @@ def _parse(argv: list[str], stream: TextIO, err: TextIO) -> tuple[argparse.Names
     parser.add_argument("--performance", type=Path)
     parser.add_argument("--store-dir", type=Path)
     parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
+    parser.add_argument("--db", type=Path, default=serve_module.DEFAULT_DB_PATH)
     parser.add_argument("--sign-off", default=None)
     parser.add_argument("--confirm", default="")
     parser.add_argument("-h", "--help", action="store_true")
@@ -171,6 +200,7 @@ def run(
     clock: Callable[[], datetime],
     pre_reg: PreRegistration | None = None,
     err: TextIO | None = None,
+    round_trips: int | None = None,
 ) -> int:
     """Evaluate and record the next gate for ``strategy_id``.
 
@@ -183,6 +213,8 @@ def run(
         clock: Source of the current UTC time.
         pre_reg: Threshold source; defaults to the signed pre-registration.
         err: Stream for ERROR lines; defaults to ``sys.stderr``.
+        round_trips: Shadow round trips in the ledger, reported toward
+            SHADOW_CERTIFIED; ``None`` without a ledger.
 
     Returns:
         Process exit code.
@@ -204,6 +236,8 @@ def run(
 
     report = evaluate_next_gate(record, evidence, now=now, pre_reg=rules)
     _print_report(report, stream)
+    if report.to_state == CertificationState.SHADOW_CERTIFIED:
+        _print_round_trips(round_trips, stream)
     updated = record_outcome(
         record, report, fingerprint=fingerprint, now=now, evidence_sha256=evidence.sha256
     )
@@ -234,6 +268,19 @@ def _print_report(report: GateReport, stream: TextIO) -> None:
             f"{mark}  {check.name:<24} observed {check.observed:<22} required {check.requirement}\n"
         )
     stream.write("GATE PASSED\n" if report.passed else "GATE FAILED\n")
+
+
+def _print_round_trips(round_trips: int | None, stream: TextIO) -> None:
+    """Report the shadow trade count; flag it weak under 30 (ADR-021 §3, decision 10)."""
+    if round_trips is None:
+        stream.write("NOTE  shadow round trips: no ledger found, not counted\n")
+    elif round_trips < WEAK_ROUND_TRIPS:
+        stream.write(
+            f"WEAK  shadow round trips: {round_trips}, under {WEAK_ROUND_TRIPS}; the execution "
+            "check is weak (ADR-021 §3). No pass or fail rule changes.\n"
+        )
+    else:
+        stream.write(f"NOTE  shadow round trips: {round_trips}\n")
 
 
 def load_evidence(path: Path) -> GateEvidence:

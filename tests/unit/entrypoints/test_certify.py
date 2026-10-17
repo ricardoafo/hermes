@@ -1,28 +1,38 @@
 """Unit tests for ``hermes certify`` (#355).
 
 ``run`` is driven with a JSON store in ``tmp_path`` and a fixed clock; ``main``
-is driven through argv for the parsing and exit-code contract.
+is driven through argv for the parsing and exit-code contract. Toward
+SHADOW_CERTIFIED the shadow round trips are reported and flagged weak under
+30, without changing the verdict (ADR-021 §3, #797).
 """
 
 from __future__ import annotations
 
+import dataclasses
 import io
 import json
 import shutil
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
+from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.application.calibration.certification_gates import (
     CertificationRecord,
     GateEvidence,
 )
 from hermes.application.calibration.lifecycle import CertificationState
 from hermes.application.strategy_protocol.preregistration import PreRegistration
+from hermes.domain.events.trade_executed import TradeExecuted, TradeSide
+from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.entrypoints import certify as certify_module
+from hermes.entrypoints import serve as serve_module
 from hermes.entrypoints.certify import EvidenceError, load_evidence, run
+from hermes.infrastructure.config.loader import load_config
+from tests.support.notification_samples import samples
 
 _SID = "swing-donchian-4h"
 _FP = "f" * 64
@@ -339,3 +349,112 @@ class TestReleaseLayout:
             err=err,
         )
         assert (code, err.getvalue().startswith("ERROR: pre-registration:")) == (3, True)
+
+
+def _trade(minute: int, side: TradeSide, strategy: str = _SID) -> TradeExecuted:
+    """Return a fill of ``side`` for ``strategy``, ``minute`` minutes past noon."""
+    sample = samples()["position-large"]
+    assert isinstance(sample, TradeExecuted)
+    return dataclasses.replace(
+        sample,
+        occurred_at=datetime(2026, 11, 1, 12, minute, tzinfo=UTC),
+        correlation_id=f"01JABCDEFGHJKMNPQRSTVWXY{minute:02d}",
+        side=side,
+        strategy_id=StrategyId(strategy),
+    )
+
+
+def _ledger_with_round_trips(tmp_path: Path, sells: int) -> Path:
+    """Write a ledger whose strategy closed ``sells`` round trips, plus noise it must ignore."""
+    db = tmp_path / "hermes.sqlite3"
+    connection = sqlite3.connect(db)
+    ledger = SqliteLedger(connection)
+    for i in range(sells):
+        ledger.append_event(_trade(2 * i, TradeSide.BUY))
+        ledger.append_event(_trade(2 * i + 1, TradeSide.SELL))
+    ledger.append_event(_trade(59, TradeSide.SELL, strategy="other-strategy"))
+    connection.close()
+    return db
+
+
+def _shadow_gate_out(tmp_path: Path, round_trips: int | None) -> str:
+    """Run the shadow gate from BACKTEST_CERTIFIED with ``round_trips`` and return the output."""
+    store = JsonCertificationStore(tmp_path / "store")
+    store.save(
+        CertificationRecord(_SID, CertificationState.BACKTEST_CERTIFIED, parameter_fingerprint=_FP)
+    )
+    out = io.StringIO()
+    run(
+        _SID,
+        GateEvidence(),
+        store=store,
+        fingerprint=_FP,
+        stream=out,
+        clock=lambda: datetime(2027, 1, 20, tzinfo=UTC),
+        round_trips=round_trips,
+    )
+    return out.getvalue()
+
+
+class TestShadowRoundTrips:
+    """Toward SHADOW_CERTIFIED the shadow trade count is reported, weak under 30 (#797)."""
+
+    def test_under_30_round_trips_is_flagged_weak(self, tmp_path: Path) -> None:
+        """29 round trips print the WEAK line and change no gate row."""
+        out = _shadow_gate_out(tmp_path, 29)
+        assert [line[:28] for line in out.splitlines() if "round trips" in line] == [
+            "WEAK  shadow round trips: 29"
+        ]
+
+    def test_30_round_trips_is_not_weak(self, tmp_path: Path) -> None:
+        """At 30 the count is a plain note."""
+        lines = [
+            line for line in _shadow_gate_out(tmp_path, 30).splitlines() if "round trips" in line
+        ]
+        assert lines == ["NOTE  shadow round trips: 30"]
+
+    def test_the_flag_does_not_change_the_gate_verdict(self, tmp_path: Path) -> None:
+        """The same evidence fails the gate with 0 or 100 round trips alike."""
+        verdicts = {"GATE FAILED" in _shadow_gate_out(tmp_path / str(n), n) for n in (0, 100)}
+        assert verdicts == {True}
+
+    def test_other_gates_print_no_count(self, tmp_path: Path) -> None:
+        """From UNTRUSTED (the backtest gate) nothing about round trips is printed."""
+        out = io.StringIO()
+        run(
+            _SID,
+            GateEvidence(),
+            store=JsonCertificationStore(tmp_path),
+            fingerprint=_FP,
+            stream=out,
+            clock=lambda: datetime(2026, 10, 3, tzinfo=UTC),
+            round_trips=3,
+        )
+        assert "round trips" not in out.getvalue()
+
+    def test_main_counts_the_ledgers_sells_for_the_strategy(self, tmp_path: Path) -> None:
+        """``--db`` reads 2 SELLs of this strategy and ignores the other strategy's."""
+        db = _ledger_with_round_trips(tmp_path, sells=2)
+        fingerprint = serve_module.parameter_fingerprint_for(load_config(_PROJECT_ROOT / "config"))
+        store_dir = tmp_path / "store"
+        JsonCertificationStore(store_dir).save(
+            CertificationRecord(
+                _SID, CertificationState.BACKTEST_CERTIFIED, parameter_fingerprint=fingerprint
+            )
+        )
+        out = io.StringIO()
+        certify_module.main(
+            [
+                _SID,
+                "--config-dir",
+                str(_PROJECT_ROOT / "config"),
+                "--store-dir",
+                str(store_dir),
+                "--db",
+                str(db),
+            ],
+            stream=out,
+        )
+        assert [line[:27] for line in out.getvalue().splitlines() if "round trips" in line] == [
+            "WEAK  shadow round trips: 2"
+        ]
