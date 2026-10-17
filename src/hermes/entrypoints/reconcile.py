@@ -113,12 +113,15 @@ def main(
     except ConfigError as exc:
         err.write(f"ERROR: config load failed: {exc}\n")
         return 3
+    # A disabled entry (v2 waiting for its shadow) has funded nothing; seeding
+    # it would add its capital to the book the ledger is checked against.
     seeds = [
         StrategySeed(
             strategy_id=StrategyId(s.name),
             capital=Money(amount=s.capital_budget, currency=s.quote),
         )
         for s in config.strategies.strategies
+        if s.enabled
     ]
 
     try:
