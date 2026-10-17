@@ -134,6 +134,11 @@ hermes status
 It prints the verdict (all good, late or down), then each stream's last
 and next 4h bar. Bars close at 00, 04, 08, 12, 16 and 20 UTC.
 
+Down also covers a server clock that serve found more than the 5 s settle
+delay away from Binance's time: "The server clock is off". It stays down
+until serve sees the clock back on time at its next bar. Serve sends a P0
+alert when the clock goes off, and a quiet one when it comes back.
+
 | Exit code | Meaning |
 | --- | --- |
 | 0 | All good |

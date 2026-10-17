@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from hermes.adapters.ledger.anomaly_reader import SqliteAnomalyReader
+from hermes.adapters.ledger.anomaly_reader import SqliteAnomalyReader, latest_anomaly
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.domain.errors import LedgerError
 from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
@@ -113,3 +113,20 @@ def test_a_naive_bound_is_refused(tmp_path: Path) -> None:
 
     with SqliteAnomalyReader.open(db) as reader, pytest.raises(LedgerError):
         reader.since(datetime(2026, 10, 5))
+
+
+def test_the_latest_anomaly_is_the_last_appended_even_when_stamped_earlier(
+    tmp_path: Path,
+) -> None:
+    """A clock that ran ahead stamps its alert late; the fix recorded after it still wins."""
+    ahead = _anomaly(5, source="serve.clock_skew")
+    back = _anomaly(0, source="serve.clock_skew")
+    db = _ledger(tmp_path, ahead, back)
+
+    connection = sqlite3.connect(db)
+    try:
+        latest = latest_anomaly(connection, "serve.clock_skew")
+    finally:
+        connection.close()
+
+    assert latest == back
