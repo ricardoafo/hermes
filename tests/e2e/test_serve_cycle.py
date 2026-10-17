@@ -96,16 +96,13 @@ Signal = tuple[str, str, str, str | None]
 EXPECTED_SIGNALS: list[Signal] = [
     ("SOL/USDT", "entry", "2025-01-03T11:59:59.999000+00:00", None),
     ("BTC/USDT", "entry", "2025-01-03T19:59:59.999000+00:00", None),
-    ("BTC/USDT", "exit", "2025-01-06T15:59:59.999000+00:00", "chandelier"),
     ("ETH/USDT", "entry", "2025-01-06T15:59:59.999000+00:00", None),
-    ("ETH/USDT", "exit", "2025-01-07T15:59:59.999000+00:00", "chandelier"),
+    ("BTC/USDT", "exit", "2025-01-07T15:59:59.999000+00:00", "chandelier"),
     ("SOL/USDT", "exit", "2025-01-07T15:59:59.999000+00:00", "chandelier"),
     ("BTC/USDT", "entry", "2025-01-14T11:59:59.999000+00:00", None),
     ("SOL/USDT", "entry", "2025-01-15T15:59:59.999000+00:00", None),
-    ("SOL/USDT", "exit", "2025-01-18T19:59:59.999000+00:00", "chandelier"),
-    ("SOL/USDT", "entry", "2025-01-19T07:59:59.999000+00:00", None),
-    ("SOL/USDT", "exit", "2025-01-19T15:59:59.999000+00:00", "chandelier"),
     ("BTC/USDT", "exit", "2025-01-19T23:59:59.999000+00:00", "chandelier"),
+    ("SOL/USDT", "exit", "2025-01-19T23:59:59.999000+00:00", "chandelier"),
     ("BTC/USDT", "entry", "2025-01-20T07:59:59.999000+00:00", None),
     ("BTC/USDT", "exit", "2025-01-20T19:59:59.999000+00:00", "chandelier"),
 ]
@@ -114,6 +111,10 @@ EXPECTED_SIGNALS: list[Signal] = [
 Pre-registration §5 freezes the strategy parameters and the recording never
 changes, so any difference here is a behaviour change in the serve path.
 """
+
+REFUSED_ENTRY: Signal = EXPECTED_SIGNALS[2]
+"""ETH's entry: BTC and SOL are held at marks over 500 notional, so the §5.5
+exposure cap refuses it. It has no trade, and ETH raises no exit (#707)."""
 
 STREAMS = 6
 """Three pairs times two intervals: the cursor rows a first boot writes."""
@@ -126,7 +127,7 @@ RESTART_AT = delivered_at(
 )
 """Second boot of the restart flow: the service was down for two 4h closes."""
 
-GAP_BAR_OPEN = datetime.fromisoformat("2025-01-06T12:00Z")
+GAP_BAR_OPEN = datetime.fromisoformat("2025-01-07T12:00Z")
 """Open of the BTC 4h bar the gap flow drops; it carries the first chandelier stop."""
 
 
@@ -332,7 +333,9 @@ def test_serve_on_recorded_bars_records_notifies_and_logs_exactly_the_pinned_sig
         "bar_lines": LIVE_BARS,
         "bar_rows": STREAMS + LIVE_BARS,
         "trades": sorted(
-            (pair, "BUY" if kind == "entry" else "SELL") for pair, kind, _, _ in EXPECTED_SIGNALS
+            (pair, "BUY" if kind == "entry" else "SELL")
+            for pair, kind, _, _ in EXPECTED_SIGNALS
+            if (pair, kind) != REFUSED_ENTRY[:2]
         ),
     }
 
@@ -342,11 +345,11 @@ def test_restart_after_a_stop_rebuilds_open_positions_and_matches_an_uninterrupt
 ) -> None:
     """A run that sees a stop, stops with BTC and SOL open, then restarts, equals one run.
 
-    The first run hits BTC's chandelier stop (2025-01-06) and shuts down after
-    the BTC and SOL entries of 14-15 January. The second boot comes two 4h
-    closes later: it must restore both open positions from the ledger (or it
-    could not emit their exits on the 18th and 19th), catch up the two closes
-    it missed, and notify nothing it already notified.
+    The first run hits BTC's and SOL's chandelier stops (2025-01-07) and shuts
+    down after the BTC and SOL entries of 14-15 January. The second boot comes
+    two 4h closes later: it must restore both open positions from the ledger
+    (or it could not emit their exits on the 19th), catch up the two closes it
+    missed, and notify nothing it already notified.
     """
     db = tmp_path / "ledger.sqlite3"
     shutdown_at = RESTART_AT - timedelta(hours=8)
@@ -364,7 +367,7 @@ def test_restart_after_a_stop_rebuilds_open_positions_and_matches_an_uninterrupt
         "bar_rows": len(events(db, "BarProcessed")),
     } == {
         "codes": (0, 0),
-        "first_run": EXPECTED_SIGNALS[:8],
+        "first_run": EXPECTED_SIGNALS[:7],
         "ledger": EXPECTED_SIGNALS,
         "notified": EXPECTED_SIGNALS,
         "bar_rows": STREAMS + LIVE_BARS,
@@ -379,11 +382,9 @@ def test_a_skipped_bar_stops_the_loop_and_the_restart_reconciles_the_ledger(
     The first run must fail loudly (exit 1, a BarGapError sent to Sentry) when
     the next BTC 4h bar shows the gap, before recording the stop. Restarting
     from the ledger cursor, as systemd does, must recover the missing bar from
-    warm-up and end with the uninterrupted run's ledger, less one row. ETH's
-    entry on the same close was recorded before the failure, so the rows are
-    compared in signal order rather than insertion order. With BTC's stop not
-    yet seen, BTC is still held when ETH's entry comes, so sizing refuses it:
-    ETH stays flat and raises no exit on 7 January (#707).
+    warm-up and end with the uninterrupted run's ledger. SOL's exit on the
+    same close was recorded before the failure, so the rows are compared in
+    signal order rather than insertion order.
     """
     db = tmp_path / "ledger.sqlite3"
     dropped = bar_at(BTC, KlineInterval.H4, GAP_BAR_OPEN)
@@ -404,9 +405,9 @@ def test_a_skipped_bar_stops_the_loop_and_the_restart_reconciles_the_ledger(
     } == {
         "first_code": 1,
         "sentry": ["BarGapError"],
-        "before_restart": [*EXPECTED_SIGNALS[:2], EXPECTED_SIGNALS[3]],
+        "before_restart": [*EXPECTED_SIGNALS[:3], EXPECTED_SIGNALS[4]],
         "second_code": 0,
-        "ledger": [s for s in EXPECTED_SIGNALS if s[:2] != ("ETH/USDT", "exit")],
+        "ledger": sorted(EXPECTED_SIGNALS, key=_signal_order),
         "bar_rows": STREAMS + LIVE_BARS,
     }
 

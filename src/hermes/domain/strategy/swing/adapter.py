@@ -9,13 +9,17 @@ Entry conditions (ALL three must fire simultaneously on 4h bar close, §5.1):
     3. 1D close > EMA(200) (last fully closed 1D bar)
 
 Exit conditions (first triggered wins, §5.2):
-    A. Chandelier stop: current 4h bar's low <= the stop in force, the highest
-       highest_high(22) - 3*ATR(22) level since entry (it never moves down, §5.3)
+    A. Chandelier stop: current 4h bar's low <= the stop in force. The stop is
+       posted at the entry fill and moved at each daily close to the
+       highest_high(22) - 3*ATR(22) level of the 4h bars closed by then; it
+       never moves down and the bar it is tested on never moves it (§5.3, #785)
     B. Time stop: 90 calendar days from entry bar close_time
     C. Regime break: 1D close < EMA(200) on a new 1D bar
 
 Order type (§5.3):
     Entry: market order at bar close of signal bar (entry_price = bar.close)
+    Exit: on-exchange stop-market at the stop in force; the fill price (the
+    lower of the stop and the bar's open) is the execution model's job
 
 Multi-timeframe coordination (D-1):
     - ``on_bar`` dispatches by ``bar.interval``.
@@ -53,6 +57,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 from hermes.domain.market_data.bar import Bar
+from hermes.domain.market_data.bar_schedule import interval_duration
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.risk.state import PortfolioState
 from hermes.domain.strategy.signal import OpenPosition, SignalKind, SignalSide, StrategySignal
@@ -183,6 +188,9 @@ class SwingStrategyAdapter:
         self._entry_price: Decimal | None = None
         self._last_entry_check: EntryCheck | None = None
         self._stop_in_force: Decimal | None = None
+        self._posted_level: Decimal | None = None
+        self._posted_atr: Decimal | None = None
+        self._posted_through: datetime | None = None
         self._last_stop_record: StopRecord | None = None
 
     @property
@@ -281,6 +289,11 @@ class SwingStrategyAdapter:
         retry never trails below a stop already in force (pre-registration
         §5.3), whichever caller restores it.
 
+        An adapter that did not record that entry itself (a restart) posts
+        again, before the next bar is tested, the entry level and every daily
+        close level since the entry that its 4h buffer holds (#785). Posting
+        only ever raises the stop, so a level already in force changes nothing.
+
         Args:
             open_position: Position held, or ``None`` for flat.
         """
@@ -289,16 +302,26 @@ class SwingStrategyAdapter:
             self._entry_time = None
             self._entry_price = None
             self._stop_in_force = None
+            self._forget_posting()
             return
         stops = [open_position.last_stop]
         record = self._last_stop_record
-        if record is not None and record.entry_time == open_position.entry_time:
+        recorded_here = record is not None and record.entry_time == open_position.entry_time
+        if record is not None and recorded_here:
             stops.append(record.stop_price)
+        else:
+            self._forget_posting()
         known = [s for s in stops if s is not None]
         self._in_position = True
         self._entry_time = open_position.entry_time
         self._entry_price = open_position.entry_price
         self._stop_in_force = max(known) if known else None
+
+    def _forget_posting(self) -> None:
+        """Drop the posted level so the next held bar posts again from the entry."""
+        self._posted_level = None
+        self._posted_atr = None
+        self._posted_through = None
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -379,9 +402,14 @@ class SwingStrategyAdapter:
         self._in_position = True
         self._entry_time = bar.close_time
         self._entry_price = entry_price
-        # A new position starts from its own level, never from an earlier position's stop.
+        # §5.3 posts the stop "immediately after entry fill". The market entry
+        # fills at this bar's close, so the bars closed by then, this one
+        # included, are what the stop can be computed from: the entry level is
+        # the signal's stop. A new position never inherits an earlier stop.
         self._stop_in_force = None
-        self._record_stop(bar.close_time, stop=stop, level=stop)
+        self._post(self._bars_4h)
+        self._posted_through = bar.close_time
+        self._record_stop(previous=None)
 
         return StrategySignal(
             kind=SignalKind.ENTRY,
@@ -398,7 +426,8 @@ class SwingStrategyAdapter:
         """Check whether any exit condition fires on this 4h bar.
 
         Exit conditions in priority order (pre-reg §5.2):
-            A. Chandelier stop: bar.low ≤ the stop in force (ratcheted, §5.3)
+            A. Chandelier stop: bar.low ≤ the stop in force, posted at the
+               entry or the latest daily close before this bar (§5.3, #785)
             B. Time stop: 90 days from entry
             C. Regime break: 1D close < EMA(200)
 
@@ -408,17 +437,11 @@ class SwingStrategyAdapter:
             "SwingStrategyAdapter: _entry_time must be set when in_position=True"
         )
 
-        level = ChandelierEngine.trailing_stop(
-            self._bars_4h,
-            period=self._chandelier_period,
-            atr_mult=self._chandelier_atr_mult,
-        )
+        previous = self._stop_in_force
+        # The stop resting during this bar was posted before it opened (§5.3).
+        self._post_daily_levels(through=bar.open_time)
+        stop = self._stop_in_force
         atr = AtrEngine.value(self._bars_4h, period=self._atr_sizing_period)
-
-        stop: Decimal | None = None
-        if level is not None:
-            stop = self._ratchet(level)
-            self._record_stop(self._entry_time, stop=stop, level=level)
 
         # Fallback ATR when buffer is freshly seeded (should not happen post-entry)
         if atr is None:
@@ -441,8 +464,12 @@ class SwingStrategyAdapter:
             stop = stop if stop is not None else bar.close - atr
 
         if exit_reason is None:
+            # Still held: a daily close at this bar's end moves the stop for the next bar.
+            self._post_daily_levels(through=bar.close_time)
+            self._record_stop(previous)
             return None
 
+        self._record_stop(previous)
         # Reset position state
         self._in_position = False
         self._entry_time = None
@@ -465,32 +492,69 @@ class SwingStrategyAdapter:
             f_star_estimate=None,
         )
 
-    def _ratchet(self, level: Decimal) -> Decimal:
-        """Return the stop in force for this bar's chandelier ``level`` (#680).
+    def _post(self, bars: Sequence[Bar]) -> None:
+        """Post the chandelier level of ``bars`` as the stop, never below the one in force (#680).
 
         A long stop only moves up while the position is open (pre-reg §5.3,
         SA-7): the higher of the previous stop in force and the new level. With
-        no previous stop (the entry bar, or a restart with none stored) it is
-        the level itself.
+        no previous stop (the entry, or a restart with none stored) it is the
+        level itself. Too little history posts nothing.
         """
-        previous = self._stop_in_force
-        return level if previous is None else max(previous, level)
-
-    def _record_stop(self, entry_time: datetime, *, stop: Decimal, level: Decimal) -> None:
-        """Record the stop in force after this bar and keep it for the next bar (#388, #680).
-
-        ``stop`` is the stop the caller decided with; ``level`` is the raw
-        chandelier level this bar computed. The ATR and the highest high are
-        recomputed from the same buffer, so they are exactly the values that
-        produced ``level``.
-        """
-        atr = AtrEngine.value(self._bars_4h, period=self._chandelier_period)
+        level = ChandelierEngine.trailing_stop(
+            bars, period=self._chandelier_period, atr_mult=self._chandelier_atr_mult
+        )
+        if level is None:
+            return
+        atr = AtrEngine.value(bars, period=self._chandelier_period)
         assert atr is not None, (  # noqa: S101 — invariant
             "SwingStrategyAdapter: a computed chandelier stop implies a computable ATR"
         )
+        previous = self._stop_in_force
+        self._stop_in_force = level if previous is None else max(previous, level)
+        self._posted_level = level
+        self._posted_atr = atr
+
+    def _post_daily_levels(self, *, through: datetime) -> None:
+        """Post every level not yet posted whose 4h bar closed by ``through`` (#785).
+
+        Pre-registration §5.3 moves the stop "daily": a level is posted when a
+        UTC day closes, from the 4h bars closed by then, and holds until the
+        next daily close. The 4h bar ending the day is the last bar that day's
+        level sees; the daily boundary is where the 1D bar closes. Without a
+        posting (a restart) the entry bar's level is posted first, when the
+        buffer still holds it. Levels post in time order, so each posting
+        ratchets on the one before.
+        """
+        entry_time = self._entry_time
+        assert entry_time is not None, (  # noqa: S101 — invariant
+            "SwingStrategyAdapter: a stop is posted only while a position is held"
+        )
+        since = self._posted_through
+        pending: list[int] = []
+        for index in range(len(self._bars_4h) - 1, -1, -1):
+            bar = self._bars_4h[index]
+            if bar.close_time < entry_time or (since is not None and bar.close_time <= since):
+                break
+            if bar.close_time <= through and (bar.close_time == entry_time or _ends_a_day(bar)):
+                pending.append(index)
+        for index in reversed(pending):
+            self._post(self._bars_4h[: index + 1])
+        if since is None or through > since:
+            self._posted_through = through
+
+    def _record_stop(self, previous: Decimal | None) -> None:
+        """Record the stop in force after this bar and the level it was posted from (#388, #680).
+
+        ``previous`` is the stop in force before this bar. ``chandelier_level``
+        and ``atr`` are those of the latest posting (the entry or a daily
+        close), before the ratchet. No record while no stop is posted.
+        """
+        entry_time = self._entry_time
+        stop, level, atr = self._stop_in_force, self._posted_level, self._posted_atr
+        if entry_time is None or stop is None or level is None or atr is None:
+            return
         reaches_entry = self._bars_4h[0].close_time <= entry_time
         held = [b.high for b in self._bars_4h if b.close_time >= entry_time]
-        previous = self._stop_in_force
         self._last_stop_record = StopRecord(
             entry_time=entry_time,
             stop_price=stop,
@@ -499,4 +563,9 @@ class SwingStrategyAdapter:
             high_since_entry=max(held) if reaches_entry else None,
             stop_moved=None if previous is None else stop != previous,
         )
-        self._stop_in_force = stop
+
+
+def _ends_a_day(bar: Bar) -> bool:
+    """Return True when ``bar`` is the last bar of its UTC day (it ends where a 1D bar closes)."""
+    end = bar.open_time + interval_duration(bar.interval)
+    return end == end.replace(hour=0, minute=0, second=0, microsecond=0)

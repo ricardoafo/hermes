@@ -184,3 +184,44 @@ Actors: `operator` | `claude-experimentalist` | `claude-integrity-checker` | `en
 - docs/experiments/swing-mvp1/trial-log.jsonl (added)
 - docs/experiments/swing-mvp1/lab-notebook.md (modified)
 <!-- entry-sha256: da57b21c57511189b9d23ce8f843e3022a9199c66bb8f96da0357e213a2dabac -->
+
+### 2026-10-17T11:50:44Z | shadow | operator | §11 deviation: the chandelier stop moves once per daily close and a gap under the stop fills at the open (issue #785)
+
+**Observed metrics**:
+
+- Evidence: Train-only harness audit of 2026-10-12 (gate #735), Train 2020-09 to 2024-06; Validation was not read and no data from the sealed 2025-09-01 to 2026-12-31 window was read
+- 27 of 154 Train exits fired only because bar t raised the stop with its own high and ATR and then reached it with its own low
+- 20 of those exits were booked above that bar's open, a price a resting stop-market cannot fill at
+- Counterfactual per pair, 250 notional, no portfolio caps, net PF: current 0.72; stop from bar t-1 with fill min(open, stop) 1.02; stop moved once per daily close 1.01
+
+**Decision**:
+
+- Code Owner decision, 2026-10-17: fix as signed.
+- The stop in force during a 4h bar is the ratcheted chandelier level posted at the entry fill or at the latest daily close before the bar; it is never computed from the bar it is tested on, and it only moves up (#680).
+- The entry level is posted from the bars closed at the entry fill (the entry bar included, since the market entry fills at its close). A daily close posts HH22 - 3 x ATR22 of the 4h bars closed by then.
+- Exit A fires when the bar's low reaches the stop in force. A chandelier exit fills at min(bar open, stop) less the 15 bps stop slippage, in the backtest and in serve's synthetic book alike (one ExecutionModel).
+- Time stop, regime break, parameters (22, 3.0), sizing, fees, metrics and kill rules are unchanged.
+
+**Rationale**:
+
+- Pre-registration v1 §5.3: the exit is an on-exchange stop-market at the chandelier level, posted immediately after entry fill and moved daily as the trailing stop advances. The engine recomputed it every 4h bar from that bar, and booked fills above the open.
+- Logged as a §11 deviation by the Code Owner's choice: the fix changes the exits the v1 engine produced (§5 as implemented), so it is recorded here before the change, not as a silent engine fix.
+- Effect: affects the shadow run and all future backtests. The v1 backtest gate already failed on 2026-10-08 and is not re-run.
+- Serve and the backtest share the fix: both drive SwingStrategyAdapter and price stop exits with the same ExecutionModel (ADR-011 parity).
+
+**Files touched**:
+
+- src/hermes/domain/strategy/swing/adapter.py (modified)
+- src/hermes/application/execution/prereg_book.py (modified)
+- src/hermes/domain/strategy/stop_mark.py (modified, docstring)
+- tests/unit/domain/strategy/swing/test_daily_stop.py (added)
+- tests/unit/domain/strategy/swing/test_stop_ratchet.py (modified)
+- tests/unit/domain/strategy/swing/test_stop_record.py (modified)
+- tests/unit/application/execution/test_prereg_book.py (modified)
+- tests/unit/application/execution/test_shadow.py (modified)
+- tests/unit/application/backtest/test_replay.py (modified)
+- tests/integration/scenarios/oracle.py (modified)
+- tests/e2e/test_serve_cycle.py (modified) and its status snapshot
+- changelog.d/785-fixed.md (added)
+- docs/experiments/swing-mvp1/lab-notebook.md (modified)
+<!-- entry-sha256: 8cb420aff39d90ca390d428ca3d7f19bb719f0dc574f33cf836c46f103385e49 -->

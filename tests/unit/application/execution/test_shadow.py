@@ -32,6 +32,7 @@ import pytest
 from hermes.adapters.clock import SimulatedClock
 from hermes.adapters.fills.orderbook_walk import OrderbookWalkFillModel
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
+from hermes.application.backtest.replay import replay
 from hermes.application.execution.kernel import Declined, Executed, FillKernel
 from hermes.application.execution.shadow import (
     AlreadyFilled,
@@ -52,6 +53,7 @@ from hermes.domain.market_data.orderbook import Orderbook, OrderbookLevel
 from hermes.domain.strategy.signal import SignalKind, SignalSide, StrategySignal
 from hermes.domain.value_objects.pair import Pair
 from tests.support.fill_kernel import BTC_USDT, SIZING, STRATEGY, fees, kill_evaluator, seed
+from tests.support.fill_kernel import kernel as backtest_kernel
 from tests.unit.application.ledger.fake_fx import FakeFx
 
 _OPEN = datetime(2026, 10, 4, 0, tzinfo=UTC)
@@ -386,12 +388,62 @@ def test_stale_bar_exit_fills_on_the_prereg_book_without_asking_the_venue(
     rig.clock.set(exit_bar.close_time + timedelta(hours=3))
     calls_before = len(rig.books.calls)
 
-    out = _executed(rig.run(_exit(exit_bar, "84100"), exit_bar, cid="b"))
+    out = _executed(rig.run(_exit(exit_bar, "83995"), exit_bar, cid="b"))
 
     assert (out.fill.avg_price, out.fill.timestamp, len(rig.books.calls)) == (
-        Decimal("84100") * Decimal("0.9985"),
+        Decimal("83995") * Decimal("0.9985"),
         exit_bar.close_time,
         calls_before,
+    )
+
+
+@dataclass
+class _Scripted:
+    """A strategy that emits a fixed signal on given bars; the backtest's stand-in."""
+
+    signals: dict[datetime, StrategySignal]
+
+    def on_bar(self, bar: Bar, portfolio_state: object) -> StrategySignal | None:
+        """Return the signal scripted for this bar's close, if any."""
+        return self.signals.get(bar.close_time)
+
+    def seed(self, bars: object, open_position: object = None) -> None:
+        """Nothing to warm up."""
+
+    def restore_position(self, open_position: object) -> None:
+        """Nothing to restore."""
+
+
+def test_a_gap_stop_exit_books_the_same_price_in_the_backtest_and_serve(
+    connection: sqlite3.Connection,
+) -> None:
+    """ADR-011 parity (#785): a bar opening under the stop sells from its open in both paths.
+
+    The exit bar opens at 84000 under the 84100 stop; the stale serve exit and
+    the backtest replay both book 84000 x 0.9985, never the stop.
+    """
+    entry_bar = _bar("85000")
+    exit_bar = _bar("84000", open_time=_OPEN + timedelta(hours=4))
+    entry, stop_exit = _entry(entry_bar), _exit(exit_bar, "84100")
+    rig = _rig(connection, book=_live_book("84999", "85001"))
+    _executed(rig.run(entry, entry_bar, cid="a"))
+    rig.clock.set(exit_bar.close_time + timedelta(hours=3))
+    serve_price = _executed(rig.run(stop_exit, exit_bar, cid="b")).fill.avg_price
+
+    ids = iter(("c", "d"))
+    run = replay(
+        [entry_bar, exit_bar],
+        strategy=_Scripted({entry_bar.close_time: entry, exit_bar.close_time: stop_exit}),
+        kernel=backtest_kernel(),
+        window_start=entry_bar.close_time,
+        window_end=exit_bar.close_time,
+        fees_at=lambda _at, _pair: fees(),
+        correlation_id=lambda: next(ids),
+    )
+
+    assert (_price(serve_price), _price(run.fills[-1].avg_price)) == (
+        Decimal("84000") * Decimal("0.9985"),
+        Decimal("84000") * Decimal("0.9985"),
     )
 
 
