@@ -62,6 +62,7 @@ __all__ = [
     "NIGHT_THEME",
     "RADAR_FRAMES",
     "TALL_FROM",
+    "TEXT_MIN_CONTRAST",
     "THEMES",
     "TOKENS_BY_THEME",
     "TOWERING_CHART_FACTOR",
@@ -205,13 +206,15 @@ NIGHT: Final = replace(
     overlay="#111A2B",
     line="#121C2E",
     live="#3B8FA1",
-    ai="#6B45AD",
+    # Night keeps day hues but lightens every text colour to at least 4.5:1 on
+    # its darker panels (issue #1046: labels read at 4.0:1, hints at 2.3:1).
+    ai="#9274C8",
     frame="#1F3961",
-    up="#2F5E9A",
-    down="#A3520E",
+    up="#5186CA",
+    down="#CE6812",
     text="#B4BCCB",
-    muted="#69728A",
-    dim="#454D62",
+    muted="#9098AB",
+    dim="#7883A0",
     chrome=("#3B8FA1", "#2F5E9A", "#6B45AD"),
     brand=("#5E9FB0", "#2F5E9A", "#6B45AD"),
     # Night dims text and data, never a big number: the digits keep the
@@ -270,6 +273,8 @@ RADAR_FRAMES: Final = "⠁⠂⠄⡀⢀⠠⠐⠈"
 HERO_RULE_GLYPH: Final = "▔"
 # Legibility floor of the big total on its panel (WCAG 2 AAA for text).
 HERO_MIN_CONTRAST: Final = 7.0
+# WCAG AA for body text; night draws every label, hint and data colour above it.
+TEXT_MIN_CONTRAST: Final = 4.5
 
 # Every meter on every screen draws with these glyphs: full and empty cells,
 # the optional end caps, and the default width in cells.
