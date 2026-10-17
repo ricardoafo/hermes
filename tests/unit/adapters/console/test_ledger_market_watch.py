@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
+from contextlib import closing
 from datetime import timedelta
 from pathlib import Path
 
@@ -134,7 +135,7 @@ def test_unknown_interval_is_a_ledger_error(tmp_path: Path) -> None:
         b.check(T0)
     finally:
         b.close()
-    with sqlite3.connect(path) as conn:
+    with closing(sqlite3.connect(path)) as conn, conn:
         conn.execute(
             "UPDATE events SET payload_json = json_set(payload_json, '$.interval', '7x') "
             "WHERE event_type = 'BarProcessed'"
