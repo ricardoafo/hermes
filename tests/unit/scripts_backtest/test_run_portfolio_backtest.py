@@ -386,9 +386,10 @@ def test_neighbour_and_stress_replays_run_their_own_configuration(
 # ---------------------------------------------------------------------------
 
 
-def _batch_file(tmp: Path, parameters: dict[str, object]) -> Path:
+def _batch_file(tmp: Path, parameters: dict[str, object], status: str = "SIGNED") -> Path:
     """Write a two-candidate batch whose first candidate is v2 with ``parameters``."""
     fm = batch_front_matter()
+    fm["status"] = status
     fm["candidates"][0].update(strategy_id=_V2, parameters=parameters)
     path = tmp / BATCH_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -460,6 +461,17 @@ def test_a_candidate_the_batch_does_not_name_is_refused(tmp_path: Path) -> None:
     batch = _batch_file(tmp_path, {"donchian_period": {"base": 20, "neighbours": [25]}})
 
     run = _run_driver(tmp_path, funnel=True, extra=[f"--batch={batch}", "--candidate=swing-x"])
+
+    assert (run.exit_code, run.trial_log.exists()) == (1, False)
+
+
+def test_a_draft_batch_is_refused(tmp_path: Path) -> None:
+    """ADR-026 §1: only a SIGNED batch runs; a DRAFT has no binding to count trials against."""
+    batch = _batch_file(
+        tmp_path, {"donchian_period": {"base": 20, "neighbours": [25]}}, status="DRAFT"
+    )
+
+    run = _run_driver(tmp_path, funnel=True, extra=[f"--batch={batch}", f"--candidate={_V2}"])
 
     assert (run.exit_code, run.trial_log.exists()) == (1, False)
 

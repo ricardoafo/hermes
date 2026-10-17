@@ -11,8 +11,7 @@ that read history through :class:`~hermes.ports.git_history.GitHistoryPort`
 (the signing hash, the card hashes and the bound code), and returns one
 :class:`BatchCheck` per check so the operator sees each pass and fail.
 
-Reference: ADR-026 §1, §2; ADR-021 §5; issue #1057;
-/mnt/project-files/hermes/research-funnel/interface.md §1 (contract v2).
+Reference: ADR-026 §1, §2; ADR-021 §5; issue #1057.
 """
 
 import hashlib

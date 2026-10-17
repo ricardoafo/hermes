@@ -330,8 +330,8 @@ def _grid(args: argparse.Namespace) -> _Grid:
     """v2's grid, or the named batch candidate's (ADR-026 §2); sets ``args.strategy``.
 
     Raises:
-        ValueError: The batch cannot be read or parsed, it does not name the
-            candidate, or ``--strategy`` names another strategy.
+        ValueError: The batch cannot be read or parsed, it is not SIGNED, it
+            does not name the candidate, or ``--strategy`` names another strategy.
     """
     if args.batch is None:
         return _Grid(FUNNEL_REPLAYS, {})
@@ -342,6 +342,8 @@ def _grid(args: argparse.Namespace) -> _Grid:
         raise ValueError(f"batch {path}: {err}") from err
     except BatchError as err:
         raise ValueError(f"batch {path} refused: {err}") from err
+    if batch.status != "SIGNED":
+        raise ValueError(f"batch {batch.batch_id} is {batch.status}, only a SIGNED batch runs")
     candidate = batch.candidate(args.candidate)
     if candidate is None:
         raise ValueError(f"batch {batch.batch_id} has no candidate {args.candidate!r}")

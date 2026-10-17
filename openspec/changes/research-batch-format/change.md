@@ -12,8 +12,7 @@ template for the batch and for a hypothesis card, a parser
 (`hermes.application.calibration.research_batch`), `hermes batch check`, and
 the backtest driver's `--batch FILE --candidate ID`. The format, the check
 names, the CLI flags and the exit codes follow the research funnel interface
-contract v2 that the Backtesting thread owns
-(`/mnt/project-files/hermes/research-funnel/interface.md` §1 and §2). Main
+contract (§1 and §2) agreed for ADR-026. Main
 risk: a check that passes a batch it should refuse would let an unsigned,
 edited or loosened batch start a run, so every refusal has its own test.
 
