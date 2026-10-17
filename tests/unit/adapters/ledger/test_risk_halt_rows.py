@@ -11,6 +11,8 @@ Invariants under test:
 """
 
 import sqlite3
+from collections.abc import Iterator
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -50,9 +52,10 @@ def _halt(
 
 
 @pytest.fixture
-def ledger() -> SqliteLedger:
-    """Return a migrated in-memory ledger."""
-    return SqliteLedger(sqlite3.connect(":memory:"))
+def ledger() -> Iterator[SqliteLedger]:
+    """Yield a migrated in-memory ledger, closed after the test."""
+    with closing(sqlite3.connect(":memory:")) as connection:
+        yield SqliteLedger(connection)
 
 
 def test_a_recorded_halt_is_found(ledger: SqliteLedger) -> None:
@@ -87,11 +90,10 @@ def test_the_status_reader_lists_halts_newest_first_from_the_bound(tmp_path: Pat
         tmp_path / "hermes.sqlite3", signals=(signal(BTC, SignalKind.ENTRY, LAST_4H),)
     )
     old, middle, newest = _halt(48), _halt(8, kind=HaltKind.KILL, rule="max_drawdown"), _halt(0)
-    connection = sqlite3.connect(path)
-    writer = SqliteLedger(connection)
-    for record in (middle, old, newest):
-        writer.append_event(record)
-    connection.close()
+    with closing(sqlite3.connect(path)) as connection:
+        writer = SqliteLedger(connection)
+        for record in (middle, old, newest):
+            writer.append_event(record)
 
     with SqliteStatusReader.open(path) as reader:
         halts = reader.halts_since(LAST_4H - timedelta(hours=24))
