@@ -509,6 +509,11 @@ hermes_run logs --cycle K7Q2ZP     # one bar cycle, by the tail of its correlati
 hermes_run logs -f                 # follow, Ctrl-C to stop
 ```
 
+The env file sets `HERMES_ENV=prod`, and in prod any command that loads the
+config needs an absolute `--config-dir` (here `/opt/hermes/current/config`).
+Without it the command stops with `config dir 'config' is relative`, because
+the working directory must never choose the production config (#783).
+
 - `hermes status`: the verdict (all good, late, down), then each stream's
   last and next bar. Exit 0 only when all good.
 - `hermes positions`: open shadow positions.
