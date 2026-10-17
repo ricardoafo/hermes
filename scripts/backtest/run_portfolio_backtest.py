@@ -34,6 +34,13 @@ Usage:
 priced with that entry's execution model: v2 sells every exit 5 bps under the
 exit bar's close (pre-registration v2 §5.3, §6.2), v1 as it was signed.
 
+``--batch FILE --candidate ID`` runs one candidate of a research batch
+(ADR-026 §2): the strategy is the candidate's, the funnel replays are the
+candidate's own grid instead of v2's, and every trial line records
+``batch.id``. The workflow checks the batch with ``hermes batch check`` first;
+the driver refuses a candidate whose signed base values differ from the
+strategy's own.
+
 Exit codes:
     0 - backtest completed, trial logged, report and performance file saved
     1 - fatal error (missing data, config, fee history, trial log)
@@ -76,6 +83,7 @@ from hermes.adapters.trial_log.jsonl_file import JsonlTrialLog
 from hermes.application.backtest.performance import performance_file, round_trips
 from hermes.application.backtest.replay import BacktestRun, ExecutionModel, replay
 from hermes.application.calibration.harness import CalibrationHarness
+from hermes.application.calibration.research_batch import BatchError, Candidate, parse_batch
 from hermes.application.execution.kernel import FillKernel
 from hermes.application.order_router.risk_engine import RiskEngine
 from hermes.application.order_router.sizing import SizingPolicy
@@ -318,10 +326,63 @@ async def _load(
     return _merge(bars), datasets
 
 
+@dataclass(frozen=True, slots=True)
+class _Grid:
+    """The replays a run makes and what each of its trial lines adds."""
+
+    replays: tuple[FunnelReplay, ...]
+    trial_fields: dict[str, Any]
+    candidate: Candidate | None = None
+
+
+def _grid(args: argparse.Namespace) -> _Grid:
+    """v2's grid, or the named batch candidate's (ADR-026 §2); sets ``args.strategy``.
+
+    Raises:
+        ValueError: The batch cannot be read or parsed, it is not SIGNED, it
+            does not name the candidate, or ``--strategy`` names another strategy.
+    """
+    if args.batch is None:
+        return _Grid(FUNNEL_REPLAYS, {})
+    path = Path(args.batch)
+    try:
+        batch = parse_batch(path.as_posix(), path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError) as err:
+        raise ValueError(f"batch {path}: {err}") from err
+    except BatchError as err:
+        raise ValueError(f"batch {path} refused: {err}") from err
+    if batch.status != "SIGNED":
+        raise ValueError(f"batch {batch.batch_id} is {batch.status}, only a SIGNED batch runs")
+    candidate = batch.candidate(args.candidate)
+    if candidate is None:
+        raise ValueError(f"batch {batch.batch_id} has no candidate {args.candidate!r}")
+    if args.strategy not in (None, candidate.strategy_id):
+        raise ValueError(f"--strategy {args.strategy} is not candidate {candidate.strategy_id}")
+    args.strategy = candidate.strategy_id
+    return _Grid(candidate.funnel_replays(), {"batch.id": batch.batch_id}, candidate)
+
+
+def _signed_bases(candidate: Candidate, base: dict[str, Any]) -> None:
+    """Refuse a run whose strategy would not start from the base values the batch signed."""
+    for parameter in candidate.parameters:
+        if parameter.name not in base:
+            raise ValueError(f"the strategy has no parameter {parameter.name}")
+        if base[parameter.name] != parameter.base:
+            raise ValueError(
+                f"{parameter.name} is {base[parameter.name]} in the strategy, "
+                f"{parameter.base} in the signed batch"
+            )
+
+
 async def _run(args: argparse.Namespace) -> int:
     pairs: tuple[Pair, ...] = args.pairs
     start = _parse_iso_date(args.start)
     end = _parse_iso_date(args.end)
+    try:
+        grid = _grid(args)
+    except ValueError as err:
+        print(f"ERROR: {err}", file=sys.stderr)
+        return 1
     try:
         roster, model = _select(Path(args.config_dir), args.strategy, args.depth_frac)
     except (ConfigError, ValueError) as err:
@@ -350,9 +411,11 @@ async def _run(args: argparse.Namespace) -> int:
     kind = roster.strategy_kind()
     base_parameters = kind.default_parameters()
     try:
+        if grid.candidate is not None:
+            _signed_bases(grid.candidate, base_parameters)
         plan = [
             (spec, spec.parameters(base_parameters))
-            for spec in (FUNNEL_REPLAYS if args.funnel_evidence_out else FUNNEL_REPLAYS[:1])
+            for spec in (grid.replays if args.funnel_evidence_out else grid.replays[:1])
         ]
     except ValueError as err:
         print(f"ERROR: {err}", file=sys.stderr)
@@ -388,6 +451,7 @@ async def _run(args: argparse.Namespace) -> int:
                 {
                     **_trial_parameters(result.parameters, result.model, pairs, roster.signal),
                     **result.replay.trial_fields(),
+                    **grid.trial_fields,
                 },
                 split,
                 start,
@@ -439,6 +503,7 @@ async def _run(args: argparse.Namespace) -> int:
                 strategy_id.value,
                 {r.replay.trial_id: r.run.daily_equity for r in results},
                 trade_count=len(round_trips(primary.run.fills)),
+                replays=grid.replays,
             )
         except ValueError as err:
             print(f"ERROR: trials logged, funnel evidence not written: {err}", file=sys.stderr)
@@ -499,7 +564,17 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Roster entry to run, e.g. swing-mvp1-v2 (default: the single enabled entry)",
     )
+    parser.add_argument(
+        "--batch",
+        default=None,
+        help="Signed research batch (ADR-026); run one of its candidates with --candidate",
+    )
+    parser.add_argument(
+        "--candidate", default=None, help="Strategy id of the batch candidate to run"
+    )
     args = parser.parse_args(argv)
+    if (args.batch is None) != (args.candidate is None):
+        parser.error("--batch and --candidate go together")
     return asyncio.run(_run(args))
 
 

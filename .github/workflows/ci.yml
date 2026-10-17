@@ -89,12 +89,14 @@ jobs:
                 echo "::notice::Tree already passed CI on its PR head; skipping the suite."
                 echo "code=false" >> "$GITHUB_OUTPUT"
                 echo "docs=false" >> "$GITHUB_OUTPUT"
+                echo "e2e=false" >> "$GITHUB_OUTPUT"
                 exit 0
               fi
               ;;
             *)
               echo "code=true" >> "$GITHUB_OUTPUT"
               echo "docs=true" >> "$GITHUB_OUTPUT"
+              echo "e2e=true" >> "$GITHUB_OUTPUT"
               exit 0
               ;;
           esac
@@ -102,6 +104,7 @@ jobs:
           if [[ "$base" =~ ^0+$ ]] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
             echo "code=true" >> "$GITHUB_OUTPUT"
             echo "docs=true" >> "$GITHUB_OUTPUT"
+            echo "e2e=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -124,6 +127,15 @@ jobs:
             echo "docs=false" >> "$GITHUB_OUTPUT"
           else
             echo "docs=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          # The serve cycle only changes with these paths. The merge
+          # queue's gates use the same list (merge-gates.sh).
+          e2e_paths='^(src/hermes/|tests/e2e/|tests/fixtures/e2e/|config/|pyproject\.toml$|uv\.lock$)'
+          if echo "$changed" | grep -qE "$e2e_paths"; then
+            echo "e2e=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "e2e=false" >> "$GITHUB_OUTPUT"
           fi
 
       # Every mandatory template section must have real content. The
@@ -392,6 +404,13 @@ jobs:
       - name: Integration tests
         if: ${{ !cancelled() && steps.sync.outcome == 'success' }}
         run: bash scripts/dev/ci-checks.sh integration
+
+      # The serve cycle failed on main after PRs merged with a green PR CI
+      # (#663). Serial after the suite on a runner the job already holds,
+      # so it takes no extra pool slot; about 35 s.
+      - name: End-to-end tests
+        if: ${{ !cancelled() && steps.sync.outcome == 'success' && steps.changeset.outputs.e2e == 'true' }}
+        run: bash scripts/dev/ci-checks.sh e2e
 
       - name: Coverage floor
         if: ${{ !cancelled() && steps.unit.outcome == 'success' }}
