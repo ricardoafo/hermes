@@ -436,18 +436,24 @@ def _declined_rules(logs: list[dict[str, object]]) -> list[tuple[object, object]
 
 
 def test_refused_entry_raises_no_later_exit_or_notification(tmp_path: Path) -> None:
-    """A stale-book entry is the only decline: the crash bar signals and notifies no exit."""
+    """A stale-book entry is the only decline: the crash bar signals and notifies no exit.
+
+    The refused entry itself is not announced either (#708).
+    """
     db = tmp_path / "ledger.sqlite3"
 
     telegram, logs = _refused_entry_run(db, live(12, 14))
 
     kinds = [p["kind"] for p in _payloads(db, "SignalEmitted")]
-    assert (kinds, signal_kinds(telegram), _trade_rows(db)) == (["entry"], ["entry"], [])
+    assert (kinds, signal_kinds(telegram), _trade_rows(db)) == (["entry"], [], [])
     assert _declined_rules(logs) == [("entry", "HALT")]
 
 
 def test_pair_enters_again_after_a_refused_entry(tmp_path: Path) -> None:
-    """After the refused entry, the next breakout is a new entry that fills one BUY."""
+    """After the refused entry, the next breakout is a new entry that fills one BUY.
+
+    Only the filled entry is announced (#708).
+    """
     db = tmp_path / "ledger.sqlite3"
     breakout = dataclasses.replace(
         h4_bar(12),
@@ -463,7 +469,7 @@ def test_pair_enters_again_after_a_refused_entry(tmp_path: Path) -> None:
     sides = [p["side"] for p in _payloads(db, "TradeExecuted")]
     assert (signals, signal_kinds(telegram), sides) == (
         [("entry", "2000"), ("entry", "3000")],
-        ["entry", "entry"],
+        ["entry"],
         ["BUY"],
     )
     assert _declined_rules(logs) == [("entry", "HALT")]
@@ -639,14 +645,17 @@ def test_a_halted_entry_is_recorded_once_and_alerted_once(tmp_path: Path) -> Non
     assert [(h.rule, h.pair) for h in _halts(telegram)] == [("RO-04", BTC)]
 
 
-def test_a_halt_changes_no_decision_or_signal_push(tmp_path: Path) -> None:
-    """Record-only: the halted run's signals, trades and pushed signals match before #749."""
+def test_a_halt_changes_no_decision_and_its_entry_is_not_pushed(tmp_path: Path) -> None:
+    """Record-only (#749): signals and trades match the run before; the halted entry is not pushed.
+
+    #708: no ENTRY announcement goes out for the entry the halt refused.
+    """
     db = tmp_path / "ledger.sqlite3"
 
     telegram, logs = _refused_entry_run(db, live(12, 14))
 
     kinds = [p["kind"] for p in _payloads(db, "SignalEmitted")]
-    assert (kinds, signal_kinds(telegram), _trade_rows(db)) == (["entry"], ["entry"], [])
+    assert (kinds, signal_kinds(telegram), _trade_rows(db)) == (["entry"], [], [])
     assert _declined_rules(logs) == [("entry", "HALT")]
 
 

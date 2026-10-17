@@ -103,6 +103,7 @@ from hermes.application.execution.shadow import (
     AlreadyFilled,
     ShadowExecution,
     ShadowExecutor,
+    ShadowOutcome,
     shadow_risk_engine,
 )
 from hermes.application.ledger.eur_backfill import backfill_pending_eur, pending_rate_keys
@@ -1251,8 +1252,15 @@ class _BarLoop:
                 c.event_bus.publish(event)
             # The signal row comes first, then the fill (D-5): a crash between
             # them re-evaluates the bar, and the executor sees no trade yet.
-            await self._execute(signal_, bar, correlation_id)
-            emitted = (event if is_new else self._stored_signal(event), is_new)
+            outcome = await self._execute(signal_, bar, correlation_id)
+            if signal_.kind is SignalKind.ENTRY and not isinstance(
+                outcome, Executed | AlreadyFilled
+            ):
+                # An entry announcement for a trade that never happened would
+                # misreport the portfolio; the halt alert or the log says why (#708).
+                _log.info("serve.signal.unfilled_entry_not_notified", pair=str(bar.pair))
+            else:
+                emitted = (event if is_new else self._stored_signal(event), is_new)
         # Failed pushes of earlier bars go out first: this bar's signal has no
         # failed push yet, so it is never pushed twice in one bar (#854).
         await self._push_owed(bar.pair)
@@ -1409,8 +1417,14 @@ class _BarLoop:
         except InfraError as exc:
             _log.error("serve.bar.gap_alert_failed", exc_info=exc)
 
-    async def _execute(self, signal_: StrategySignal, bar: Bar, correlation_id: str) -> None:
-        """Simulate the signal's order, log the outcome (never its P&L, D-7), sync the strategy."""
+    async def _execute(
+        self, signal_: StrategySignal, bar: Bar, correlation_id: str
+    ) -> ShadowOutcome:
+        """Simulate the signal's order, log the outcome (never its P&L, D-7), sync the strategy.
+
+        Returns:
+            The executor's outcome: filled, already filled, declined or halted.
+        """
         result = await self.c.executor.execute(signal_, bar, correlation_id=correlation_id)
         _log_execution(bar.pair, signal_.kind, result)
         record = halt_record(
@@ -1430,6 +1444,7 @@ class _BarLoop:
             filled=isinstance(result.outcome, Executed | AlreadyFilled),
             held=partial(self._held_position, bar.pair, at_or_before=signal_.signal_time),
         )
+        return result.outcome
 
     async def _record_halt(self, record: RiskHaltRecorded) -> None:
         """Record a halted or killed entry once, then alert it on every routed channel (#749).

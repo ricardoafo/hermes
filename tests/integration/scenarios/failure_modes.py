@@ -684,7 +684,13 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "A halt is silent and the refused entry is still pushed as ENTRY",
-            gap="issue #690: nothing is recorded or alerted; the push goes out regardless",
+            proved_by=(
+                _FILLS + "test_a_halted_entry_is_recorded_once_and_alerted_once",
+                _FILLS + "test_a_halt_changes_no_decision_and_its_entry_is_not_pushed",
+                _S
+                + "test_suspected_defects.py::"
+                + "test_an_entry_refused_by_a_risk_halt_is_not_announced",
+            ),
         ),
         FailureMode(
             "RO-03 loses its input or stays latched for good",
