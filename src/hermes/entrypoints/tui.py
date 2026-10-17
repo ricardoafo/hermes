@@ -337,7 +337,7 @@ TABS: Final = (
     Tab("4", "Tax"),
     Tab("5", "Shadow test"),
     Tab("6", "Briefs"),
-    Tab("7", "System", 717),
+    Tab("7", "System"),
     Tab("8", "Logs", 716),
 )
 _HOME: Final = 0
