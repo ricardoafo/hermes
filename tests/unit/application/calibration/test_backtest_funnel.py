@@ -12,6 +12,8 @@ from types import MappingProxyType
 from typing import Any
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from hermes.application.calibration.backtest_funnel import (
     FUNNEL_CHECK_NAMES,
@@ -673,6 +675,107 @@ class TestParseFrontMatter:
         """Every stretch is a dated bull or bear inside Train + Validation, one of each at least."""
         with pytest.raises(FunnelThresholdError, match=reason):
             parse_funnel_front_matter(_front_matter(regimes=regimes), strategy_id="swing-v2")
+
+
+_BEAR = {"kind": "bear", "start": date(2023, 1, 1), "end": date(2023, 2, 1)}
+
+
+def _bull(start: date, end: date) -> dict[str, object]:
+    return {"kind": "bull", "start": start, "end": end}
+
+
+def _regimes_of(*stretches: dict[str, object]) -> tuple[Regime, ...]:
+    front = _front_matter(regimes=list(stretches))
+    return parse_funnel_front_matter(front, strategy_id="swing-v2").regimes
+
+
+def _first_shared_day(base: date, spans: list[tuple[int, int]]) -> str | None:
+    """Oracle: the earliest day inside two ``(offset, length)`` spans, found day by day."""
+    days = [d for lo, length in spans for d in range(lo, lo + length + 1)]
+    repeated = sorted(d for d in set(days) if days.count(d) > 1)
+    return (base + timedelta(days=repeated[0])).isoformat() if repeated else None
+
+
+class TestRegimeOverlap:
+    """Stretches of one kind never share a day: ``end`` is inclusive, so it would count twice."""
+
+    def test_stretch_starting_on_the_previous_end_refuses(self) -> None:
+        """Ending on 1 Feb and starting on 1 Feb shares that day, which is an overlap."""
+        with pytest.raises(
+            FunnelThresholdError,
+            match=(
+                r"^backtest_funnel.regimes\[1\] overlaps backtest_funnel.regimes\[0\]: "
+                r"two bull stretches share 2021-02-01$"
+            ),
+        ):
+            _regimes_of(
+                _bull(date(2021, 1, 1), date(2021, 2, 1)),
+                _bull(date(2021, 2, 1), date(2021, 3, 1)),
+                _BEAR,
+            )
+
+    def test_stretch_starting_the_day_after_the_previous_end_is_accepted(self) -> None:
+        """Ending on 1 Feb and starting on 2 Feb touch without sharing a day."""
+        regimes = _regimes_of(
+            _bull(date(2021, 1, 1), date(2021, 2, 1)),
+            _bull(date(2021, 2, 2), date(2021, 3, 1)),
+            _BEAR,
+        )
+        assert [(r.start, r.end) for r in regimes if r.kind == "bull"] == [
+            (date(2021, 1, 1), date(2021, 2, 1)),
+            (date(2021, 2, 2), date(2021, 3, 1)),
+        ]
+
+    def test_duplicate_bear_stretch_refuses(self) -> None:
+        """The same bear stretch listed twice would count its return twice."""
+        with pytest.raises(FunnelThresholdError, match=r"two bear stretches share 2023-01-01$"):
+            _regimes_of(_bull(date(2021, 1, 1), date(2021, 2, 1)), _BEAR, dict(_BEAR))
+
+    def test_stretch_inside_another_refuses_whatever_the_list_order(self) -> None:
+        """Order in the list does not hide an overlap: the later-starting stretch is named."""
+        with pytest.raises(
+            FunnelThresholdError,
+            match=(
+                r"^backtest_funnel.regimes\[0\] overlaps backtest_funnel.regimes\[2\]: "
+                r"two bull stretches share 2021-03-01$"
+            ),
+        ):
+            _regimes_of(
+                _bull(date(2021, 3, 1), date(2021, 3, 31)),
+                _BEAR,
+                _bull(date(2021, 1, 1), date(2021, 12, 31)),
+            )
+
+    def test_bull_and_bear_sharing_a_day_are_accepted(self) -> None:
+        """Only same-kind overlap double-counts; each kind compounds on its own."""
+        regimes = _regimes_of(
+            _bull(date(2021, 1, 1), date(2021, 2, 1)),
+            {"kind": "bear", "start": date(2021, 2, 1), "end": date(2021, 3, 1)},
+        )
+        assert regimes == (
+            Regime("bull", date(2021, 1, 1), date(2021, 2, 1)),
+            Regime("bear", date(2021, 2, 1), date(2021, 3, 1)),
+        )
+
+    @given(
+        spans=st.lists(st.tuples(st.integers(0, 60), st.integers(0, 10)), min_size=1, max_size=5)
+    )
+    def test_refused_exactly_when_two_bull_stretches_share_a_day(
+        self, spans: list[tuple[int, int]]
+    ) -> None:
+        """Parsing refuses iff a day lies in two bull stretches, and names the earliest such day."""
+        base = date(2021, 1, 1)
+        stretches = [
+            _bull(base + timedelta(days=lo), base + timedelta(days=lo + length))
+            for lo, length in spans
+        ]
+        expected = _first_shared_day(base, spans)
+        try:
+            _regimes_of(*stretches, _BEAR)
+            refused_on = None
+        except FunnelThresholdError as exc:
+            refused_on = str(exc).rsplit(" ", 1)[-1]
+        assert refused_on == expected
 
 
 class TestValidateEvidence:

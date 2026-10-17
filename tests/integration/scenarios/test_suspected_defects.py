@@ -56,6 +56,16 @@ def test_an_entry_refused_by_a_risk_halt_is_recorded_in_the_ledger(
     ]
 
 
+# SEV-1: no rubric row matches; a halted entry must never be announced as a trade
+def test_an_entry_refused_by_a_risk_halt_is_not_announced(run_scenario: RunScenario) -> None:
+    """Issue #708: no ENTRY push goes out for the ETH entry RO-07 refused; it never traded.
+
+    The halt itself is recorded and alerted (test above, issue #749).
+    """
+    run = run_scenario(markets.btc_daily_crash_then_eth_breakout())
+    assert [type(event).__name__ for event in run.notified] == []
+
+
 def test_after_a_refused_entry_the_strategy_is_flat_again(run_scenario: RunScenario) -> None:
     """With the entry refused, no exit may be signalled for a position that does not exist.
 

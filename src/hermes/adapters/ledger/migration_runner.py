@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import sqlite3
 import tempfile
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -338,12 +339,13 @@ def dry_run(db_path: Path, *, migrations_dir: Path | None = None) -> DryRunRepor
     with tempfile.TemporaryDirectory(prefix="hermes-dry-run-") as tmp:
         copy_path = Path(tmp) / db_path.name
         try:
-            source = open_ledger(db_path, read_only=True)
-            target = sqlite3.connect(copy_path)
-            try:
-                source.backup(target)
-            finally:
-                source.close()
+            with closing(open_ledger(db_path, read_only=True)) as source:
+                target = sqlite3.connect(copy_path)
+                try:
+                    source.backup(target)
+                except BaseException:
+                    target.close()
+                    raise
         except sqlite3.Error as exc:
             raise LedgerError(msg=f"cannot copy {db_path} for a dry run: {exc}") from exc
         try:

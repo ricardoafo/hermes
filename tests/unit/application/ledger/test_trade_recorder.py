@@ -6,8 +6,12 @@ Reference: ADR-002 §3, ADR-016 items 3 and 5.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterator
+from contextlib import closing
 from datetime import UTC, date, datetime
 from decimal import Decimal
+
+import pytest
 
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.application.ledger.eur_pricer import EurPricer
@@ -42,14 +46,20 @@ def _fill(side: OrderSide, price: str, fee: str) -> Fill:
     )
 
 
-def _setup(fx: FakeFx) -> tuple[TradeRecorder, sqlite3.Connection]:
-    conn = sqlite3.connect(":memory:")
-    return TradeRecorder(SqliteLedger(conn), EurPricer(fx)), conn
+@pytest.fixture
+def conn() -> Iterator[sqlite3.Connection]:
+    """Yield a fresh in-memory SQLite connection and close it afterwards."""
+    with closing(sqlite3.connect(":memory:")) as connection:
+        yield connection
 
 
-def test_fill_with_rate_is_stored_in_eur() -> None:
+def _setup(fx: FakeFx, conn: sqlite3.Connection) -> TradeRecorder:
+    return TradeRecorder(SqliteLedger(conn), EurPricer(fx))
+
+
+def test_fill_with_rate_is_stored_in_eur(conn: sqlite3.Connection) -> None:
     """Invariant (A-2.1): price_eur = price / rate with the ECB rate of the fill date."""
-    recorder, conn = _setup(FakeFx(rates={_FRI: (Decimal("1.25"), _FRI)}))
+    recorder = _setup(FakeFx(rates={_FRI: (Decimal("1.25"), _FRI)}), conn)
     trade_id = recorder.record(_fill(OrderSide.BUY, "50000", "50"), correlation_id="c-1")
     row = conn.execute(
         "SELECT eur_status, eur_rate, price_eur, fee_eur FROM trades WHERE id = ?", (trade_id,)
@@ -57,9 +67,9 @@ def test_fill_with_rate_is_stored_in_eur() -> None:
     assert row == ("ok", "1.25", "40000", "40")
 
 
-def test_fx_outage_stores_the_fill_pending_and_does_not_raise() -> None:
+def test_fx_outage_stores_the_fill_pending_and_does_not_raise(conn: sqlite3.Connection) -> None:
     """Invariant (A-2.2): with FX down the fill is still recorded, pending, with its event."""
-    recorder, conn = _setup(FakeFx(down=True))
+    recorder = _setup(FakeFx(down=True), conn)
     trade_id = recorder.record(_fill(OrderSide.BUY, "50000", "50"), correlation_id="c-2")
     row = conn.execute(
         "SELECT eur_status, price_eur, price_amount FROM trades WHERE id = ?", (trade_id,)
@@ -68,9 +78,9 @@ def test_fx_outage_stores_the_fill_pending_and_does_not_raise() -> None:
     assert (row, events) == (("pending", None, "50000"), [("TradeExecuted", "c-2")])
 
 
-def test_round_trip_gain_includes_both_fees() -> None:
+def test_round_trip_gain_includes_both_fees(conn: sqlite3.Connection) -> None:
     """Invariant (R-4): buy 125 fee 1.25, sell 150 fee 1.25 at 1.25 -> gain 120 - 101 - 1 = 18."""
-    recorder, conn = _setup(FakeFx(rates={_FRI: (Decimal("1.25"), _FRI)}))
+    recorder = _setup(FakeFx(rates={_FRI: (Decimal("1.25"), _FRI)}), conn)
     recorder.record(_fill(OrderSide.BUY, "125", "1.25"), correlation_id="c-3")
     recorder.record(_fill(OrderSide.SELL, "150", "1.25"), correlation_id="c-4")
     (gain,) = conn.execute("SELECT realized_gain_eur FROM lot_consumptions").fetchone()

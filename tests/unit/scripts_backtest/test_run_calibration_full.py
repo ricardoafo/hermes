@@ -8,6 +8,10 @@ Invariants (backtest-driver-mvp1-phase2 change.md D-4, R-1, R-6):
   ``None`` when it is undefined.
 - ``--depth-frac`` accepts only a fraction in (0, 1].
 - The report carries the kernel's strategy id and final portfolio.
+- ``--strategy`` picks a roster entry by name, the single enabled one by
+  default, and the run prices with that entry's execution model; a v2 trial
+  and report name the close-based exit pricing, a v1 one keeps its shape
+  (v2-strategy-config D-4).
 
 The full run is smoke-tested against real data (see the change spec).
 """
@@ -26,11 +30,13 @@ from types import ModuleType
 import pytest
 
 from hermes.application.backtest.replay import BacktestRun, ExecutionModel
+from hermes.application.execution.prereg_book import ExitPricing
 from hermes.domain.statistics.performance import daily_returns
 from hermes.domain.statistics.sharpe import sharpe_ratio
 from tests.support.fill_kernel import seed
 
 _SCRIPTS = Path(__file__).resolve().parents[3] / "scripts" / "backtest"
+_CONFIG = Path(__file__).resolve().parents[3] / "config"
 
 
 def _import_driver() -> ModuleType:
@@ -125,3 +131,52 @@ def test_payload_reports_the_final_portfolio_and_strategy() -> None:
     )
     assert payload["execution"] == {"entry_bps": "5", "stop_bps": "15", "depth_frac": "0.30"}
     assert payload["fill_model"] == "orderbook_walk"
+
+
+_V2_MODEL = ExecutionModel(depth_frac=Decimal("0.1"), exit_pricing=ExitPricing.BAR_CLOSE)
+
+
+def test_without_a_strategy_name_the_run_takes_the_single_enabled_entry() -> None:
+    """No --strategy: the shipped roster runs swing-donchian-4h with v1's stop-order pricing."""
+    roster, model = DRIVER._select(_CONFIG, None, Decimal("0.30"))
+    assert (roster.name, model) == ("swing-donchian-4h", ExecutionModel())
+
+
+def test_strategy_swing_mvp1_v2_runs_the_v2_entry_with_its_close_based_exit() -> None:
+    """--strategy swing-mvp1-v2 runs the disabled v2 entry, priced bar_close at the given depth."""
+    roster, model = DRIVER._select(_CONFIG, "swing-mvp1-v2", Decimal("0.1"))
+    assert (roster.name, model) == ("swing-mvp1-v2", _V2_MODEL)
+
+
+def test_an_unknown_strategy_name_is_refused() -> None:
+    """A name not in the roster is an error naming the roster, never a silent v1 run."""
+    with pytest.raises(ValueError, match="swing-mvp1-v3"):
+        DRIVER._select(_CONFIG, "swing-mvp1-v3", Decimal("0.30"))
+
+
+def test_v2_trial_parameters_name_the_close_based_exit_pricing() -> None:
+    """A v2 trial records ``execution.exit_pricing = bar_close`` next to the §6.2 bps."""
+    params = DRIVER._trial_parameters({"donchian_period": 20}, _V2_MODEL, "btcusdt")
+    assert params["execution.exit_pricing"] == "bar_close"
+
+
+def test_v2_payload_names_the_close_based_exit_pricing() -> None:
+    """The v2 report's execution block carries the exit pricing it ran with."""
+    payload = DRIVER._payload(
+        pair="BTCUSDT",
+        start=_T0,
+        end=_T0 + timedelta(days=90),
+        run=BacktestRun(),
+        final=seed(),
+        sharpe=None,
+        model=_V2_MODEL,
+        datasets=[],
+        split="train",
+        report_json={},
+    )
+    assert payload["execution"] == {
+        "entry_bps": "5",
+        "stop_bps": "15",
+        "depth_frac": "0.1",
+        "exit_pricing": "bar_close",
+    }
