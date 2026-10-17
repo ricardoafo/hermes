@@ -184,20 +184,20 @@ def test_split_choices_exclude_oos() -> None:
 
 
 def test_validation_waits_on_the_protected_environment() -> None:
-    """A Validation run uses backtest-validation, whose reviewer click is the Validation OK."""
+    """A Validation run uses backtest-validation, whose branch rule admits only main."""
     assert _job()["environment"] == (
         "${{ inputs.split == 'validation' && 'backtest-validation' || 'backtest-train' }}"
     )
 
 
-def test_approval_check_runs_before_any_data_is_read() -> None:
-    """The run's own approval history is checked before data is filled or a trial logged."""
+def test_starter_check_runs_before_any_data_is_read() -> None:
+    """Who started a Validation run is checked before data is filled or a trial logged."""
     names = [s.get("name") for s in _job()["steps"]]
 
-    assert names.index("Code Owner approved this Validation touch") < names.index(
+    assert names.index("Code Owner started this Validation touch") < names.index(
         "Fill and verify the pinned data"
     )
-    assert _step("Code Owner approved this Validation touch")["if"] == (
+    assert _step("Code Owner started this Validation touch")["if"] == (
         "${{ inputs.split == 'validation' }}"
     )
 
@@ -216,7 +216,7 @@ def test_workflow_holds_no_write_permission() -> None:
     """Trial lines leave as artifacts; no token in the workflow can write to the repo."""
     scopes = [_workflow()["permissions"], _job()["permissions"]]
 
-    assert scopes == [{"contents": "read"}, {"contents": "read", "actions": "read"}]
+    assert scopes == [{"contents": "read"}, {"contents": "read"}]
 
 
 def test_checkout_does_not_persist_the_token() -> None:
@@ -308,53 +308,37 @@ def test_backtest_runner_shares_no_cache_and_no_docker_socket() -> None:
     ]
 
 
-def _approval_check(tmp_path: Path, approvals: list[dict[str, Any]]) -> int:
-    """Run the approval step against a stubbed approvals API response; return its exit code."""
-    stub = tmp_path / "bin"
-    stub.mkdir()
-    (tmp_path / "approvals.json").write_text(json.dumps(approvals))
-    curl = stub / "curl"
-    curl.write_text(f'#!/usr/bin/env bash\ncat "{tmp_path / "approvals.json"}"\n')
-    curl.chmod(0o755)
-    path = f"{stub}:{os.environ.get('PATH', '/usr/bin:/bin')}"
+def _starter_check(tmp_path: Path, actor: str, triggering_actor: str) -> int:
+    """Run the Validation starter step for the given run actors; return its exit code."""
     result = _run_step(
-        "Code Owner approved this Validation touch",
-        {"PATH": path, "GH_TOKEN": "t", "REPO": "o/r", "RUN_ID": "1", "OWNER": "ricardoafo"},
+        "Code Owner started this Validation touch",
+        {"OWNER": "ricardoafo", "ACTOR": actor, "TRIGGERING_ACTOR": triggering_actor},
         tmp_path,
     )
     return result.returncode
 
 
-def _approval(state: str, login: str, environment: str) -> dict[str, Any]:
-    """One entry of GET /repos/{owner}/{repo}/actions/runs/{run_id}/approvals."""
-    return {
-        "state": state,
-        "comment": "",
-        "user": {"login": login},
-        "environments": [{"id": 1, "name": environment}],
-    }
-
-
 @needs_tools
-def test_owner_approval_of_backtest_validation_passes(tmp_path: Path) -> None:
-    """The Code Owner's approval of backtest-validation lets the Validation touch proceed."""
-    approvals = [_approval("approved", "ricardoafo", "backtest-validation")]
-    assert _approval_check(tmp_path, approvals) == 0
+def test_validation_started_by_the_owner_proceeds(tmp_path: Path) -> None:
+    """The Code Owner pressing Run workflow himself is the Validation OK."""
+    assert _starter_check(tmp_path, "ricardoafo", "ricardoafo") == 0
 
 
 @needs_tools
 @pytest.mark.parametrize(
-    "approvals",
+    ("actor", "triggering_actor"),
     [
-        [],
-        [_approval("rejected", "ricardoafo", "backtest-validation")],
-        [_approval("approved", "someone-else", "backtest-validation")],
-        [_approval("approved", "ricardoafo", "backtest-train")],
+        ("rafo-claude-bot", "rafo-claude-bot"),
+        ("someone-else", "someone-else"),
+        ("ricardoafo", "rafo-claude-bot"),
+        ("rafo-claude-bot", "ricardoafo"),
+        ("RicardoAFO", "RicardoAFO"),
+        ("", ""),
     ],
-    ids=["no-approval", "rejected", "other-user", "other-environment"],
+    ids=["bot", "other-user", "bot-re-run", "bot-started", "case-variant", "empty"],
 )
-def test_validation_without_owner_approval_fails_closed(
-    tmp_path: Path, approvals: list[dict[str, Any]]
+def test_validation_started_by_anyone_else_fails_closed(
+    tmp_path: Path, actor: str, triggering_actor: str
 ) -> None:
-    """Anything short of the owner approving backtest-validation stops the run before data."""
-    assert _approval_check(tmp_path, approvals) == 1
+    """Any run not both started and (re-)triggered by the owner stops before data."""
+    assert _starter_check(tmp_path, actor, triggering_actor) == 1

@@ -29,12 +29,12 @@ jobs:
   backtest:
     name: Backtest (${{ inputs.split }})
     runs-on: [self-hosted, hermes-backtest]
-    # The approval click on backtest-validation is the Validation OK.
+    # Both environments accept only main; Validation also needs the owner
+    # to start the run himself (ADR-023 §5).
     environment: ${{ inputs.split == 'validation' && 'backtest-validation' || 'backtest-train' }}
     timeout-minutes: 120
     permissions:
       contents: read
-      actions: read # the run's own approval history, for the Validation check
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -73,29 +73,23 @@ jobs:
             echo "manifest=$manifest"
           } >> "$GITHUB_OUTPUT"
 
-      # Fails closed: a missing or unprotected environment has no approval.
-      - name: Code Owner approved this Validation touch
+      # Required reviewers are not offered on private repos under this
+      # plan, so the Code Owner starting the run himself is the Validation
+      # OK. Agents act on GitHub as the bot account and are refused, also
+      # when re-running a run he started.
+      - name: Code Owner started this Validation touch
         if: ${{ inputs.split == 'validation' }}
         env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          RUN_ID: ${{ github.run_id }}
           OWNER: ${{ github.repository_owner }}
+          ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
         run: |
           set -euo pipefail
-          approvals=$(curl -fsS --max-time 30 \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/$REPO/actions/runs/$RUN_ID/approvals")
-          approved=$(jq -r --arg owner "$OWNER" '
-            [.[] | select(.state == "approved" and .user.login == $owner
-                          and any(.environments[]; .name == "backtest-validation"))]
-            | length' <<< "$approvals")
-          if [ "$approved" -lt 1 ]; then
-            echo "::error::no approval by $OWNER on backtest-validation; protect the environment with $OWNER as required reviewer (ADR-023 §5)"
+          if [ "$ACTOR" != "$OWNER" ] || [ "$TRIGGERING_ACTOR" != "$OWNER" ]; then
+            echo "::error::a Validation run must be started by $OWNER, not ${TRIGGERING_ACTOR:-unknown} (ADR-023 §5)"
             exit 1
           fi
-          echo "Validation touch approved by $OWNER"
+          echo "Validation touch started by $OWNER"
 
       - name: Copy the experiment trial log
         id: trial-log

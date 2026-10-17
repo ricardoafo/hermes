@@ -71,21 +71,21 @@ to fail before the first OOS bar is read.
 
 ### 5. A Validation run waits for the Code Owner
 
-A `validation` run uses the protected GitHub environment `backtest-validation`, whose required reviewer is the Code
-Owner. His approval click on the run is the pre-registration's Validation OK: one click, one logged Validation touch.
+A `validation` run uses the GitHub environment `backtest-validation`. GitHub offers required reviewers on private
+repositories only under Enterprise, so the Code Owner's OK is that he starts the run himself: one Run workflow click
+from his account, one logged Validation touch. Agents act on GitHub as the bot account, so they cannot start one.
 
 - The environment accepts only `main`, and the workflow refuses any run, Train or Validation, from another ref:
   every run executes that code on server-01 and logs a trial.
-- Before reading data, the run reads its own approval history and stops unless the Code Owner approved
-  `backtest-validation`. A missing or unprotected environment therefore fails closed instead of running unapproved.
+- Before reading data, the run stops unless both `github.actor` and `github.triggering_actor` are the Code Owner,
+  so a bot dispatch, or a bot re-run of a run he started, fails closed.
 - A `train` run uses the environment `backtest-train`, which needs no click but accepts only `main`.
 - Each Validation touch counts against the family budget of [ADR-021](adr-021-strategy-lifecycle-ready-and-done.md) §5
   from v2 on. For v1, pre-registration §4 ("touch sparingly") applies.
 
 ### 6. Trial lines and reports leave as artifacts; a PR commits them
 
-The workflow holds no write token: `permissions: contents: read` at the top, `actions: read` only for the approval
-check, and `persist-credentials: false` on checkout.
+The workflow holds no write token: `permissions: contents: read`, and `persist-credentials: false` on checkout.
 
 - The run copies the committed log `docs/experiments/<exp>/trial-log.jsonl` to a temporary file and the driver appends
   to that copy. A run refuses to start when the committed log is missing, because every earlier trial must count.
@@ -126,7 +126,7 @@ artifacts, never read these runs' logs beyond pass or fail, and never put a numb
 
 ### 9. Who dispatches
 
-`workflow_dispatch` is the only trigger. A Validation run happens only with the Code Owner's approval (§5). A Train run
+`workflow_dispatch` is the only trigger. A Validation run happens only when the Code Owner starts it himself (§5). A Train run
 is a trial too, so agents dispatch one only when the Code Owner asks for it.
 
 ## Security (ADR-019)
@@ -144,7 +144,7 @@ is a trial too, so agents dispatch one only when the Code Owner asks for it.
 
 - server-01 is always on and is not the Code Owner's workstation, which is what ADR-018 D1-B wanted for heavy jobs.
 - Self-filling data with hash checks removes the manual "is the drive loaded" step without trusting the drive.
-- The environment click turns the written Validation OK into a recorded, per-run approval.
+- The Code Owner's own dispatch turns the written Validation OK into a per-run record GitHub keeps.
 - Artifacts and a follow-up PR keep the trial log reviewed and in the repo, without giving the workflow a write token.
 
 Alternatives considered:
@@ -161,7 +161,7 @@ Alternatives considered:
 ### Positive
 
 - Backtests stop loading the PC.
-- Every run records which data, which commit and, for Validation, whose approval.
+- Every run records which data, which commit and, for Validation, who started it.
 - The trial count lives in the repo, not on one laptop.
 
 ### Negative
