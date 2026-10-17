@@ -30,6 +30,7 @@ from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.ports.exchange import ExchangePort, StopLossPort
+from tests.support.mainnet_permit import issued_permit
 
 _ORDER_URL = f"{TESTNET_BASE_URL}/api/v3/order"
 _BTC = Pair(base=Currency.BTC, quote=Currency.USDT)
@@ -97,7 +98,7 @@ def test_signature_matches_the_binance_documentation_vector() -> None:
 
 # SEV-1: real capital stays behind the live-approval gate (AGENTS.md rule 7, ADR-014)
 def test_mainnet_host_is_refused_without_permission() -> None:
-    """api.binance.com is refused unless allow_mainnet is set."""
+    """api.binance.com is refused without a MainnetPermit."""
     with pytest.raises(ValueError, match="not the Binance testnet"):
         BinanceSpotConfig(
             api_key=_KEY, api_secret=_SIGNING_MATERIAL, base_url="https://api.binance.com"
@@ -105,14 +106,41 @@ def test_mainnet_host_is_refused_without_permission() -> None:
 
 
 def test_mainnet_host_is_accepted_with_permission() -> None:
-    """With allow_mainnet the composition root may build a mainnet config."""
+    """With an issued MainnetPermit the composition root may build a mainnet config."""
     config = BinanceSpotConfig(
         api_key=_KEY,
         api_secret=_SIGNING_MATERIAL,
         base_url="https://api.binance.com",
-        allow_mainnet=True,
+        mainnet_permit=issued_permit(),
     )
     assert config.base_url == "https://api.binance.com"
+
+
+# SEV-1: real capital stays behind the live-approval gate (AGENTS.md rule 7, ADR-014)
+@pytest.mark.parametrize(
+    "base_url",
+    ["https://api.binance.co", "https://evil.example", "https://api.binance.com.evil.example"],
+)
+def test_mainnet_permit_still_refuses_an_undocumented_host(base_url: str) -> None:
+    """Even with a permit, only documented Binance spot hosts get the key and orders (#781)."""
+    with pytest.raises(ValueError, match="not a documented Binance spot host"):
+        BinanceSpotConfig(
+            api_key=_KEY,
+            api_secret=_SIGNING_MATERIAL,
+            base_url=base_url,
+            mainnet_permit=issued_permit(),
+        )
+
+
+# SEV-1: real capital stays behind the live-approval gate (AGENTS.md rule 7, ADR-014)
+def test_a_truthy_override_is_not_a_permit() -> None:
+    """A bare True override no longer opens mainnet, as allow_mainnet could (#781)."""
+    with pytest.raises(ValueError, match="needs a MainnetPermit"):
+        BinanceSpotConfig.from_env(
+            {"HERMES_BINANCE__API_KEY": _KEY, "HERMES_BINANCE__API_SECRET": _SIGNING_MATERIAL},
+            base_url="https://api.binance.com",
+            mainnet_permit=True,
+        )
 
 
 def test_secret_is_kept_out_of_repr() -> None:
