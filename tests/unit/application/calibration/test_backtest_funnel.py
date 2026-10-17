@@ -8,6 +8,7 @@ limit and just past it (test rule 4).
 
 from dataclasses import replace
 from datetime import date, timedelta
+from types import MappingProxyType
 from typing import Any
 
 import pytest
@@ -126,12 +127,14 @@ class TestReport:
 class TestPbo:
     """PBO <= pbo_max, on the CSCV of every logged trial."""
 
-    _HALF = {  # noqa: RUF012 - read-only test table
-        "a": (0.05, 0.03, -0.03, -0.05),
-        "b": (0.04, 0.02, 0.04, 0.02),
-        "c": (0.03, 0.01, 0.03, 0.01),
-        "d": (0.02, 0.0, 0.02, 0.0),
-    }
+    _HALF = MappingProxyType(
+        {
+            "a": (0.05, 0.03, -0.03, -0.05),
+            "b": (0.04, 0.02, 0.04, 0.02),
+            "c": (0.03, 0.01, 0.03, 0.01),
+            "d": (0.02, 0.0, 0.02, 0.0),
+        }
+    )
     """PBO = 0.5 (worked in test_overfitting.py)."""
 
     def test_at_the_limit_passes(self) -> None:
@@ -464,7 +467,12 @@ def _front_matter(**funnel: Any) -> dict[str, Any]:
         ],
     }
     block.update(funnel)
-    return {"experiment_id": "swing-v2", "status": "SIGNED", "backtest_funnel": block}
+    return {
+        "experiment_id": "swing-v2",
+        "strategy_id": "swing-v2",
+        "status": "SIGNED",
+        "backtest_funnel": block,
+    }
 
 
 _REQUIRED = (
@@ -488,7 +496,7 @@ class TestParseFrontMatter:
 
     def test_valid_block_parses_every_field(self) -> None:
         """Dates arrive as dates or ISO strings; integers are accepted for floats."""
-        thresholds = parse_funnel_front_matter(_front_matter())
+        thresholds = parse_funnel_front_matter(_front_matter(), strategy_id="swing-v2")
         assert thresholds == FunnelThresholds(
             train_end=date(2024, 6, 30),
             oos_start=date(2025, 9, 1),
@@ -514,25 +522,25 @@ class TestParseFrontMatter:
         front = _front_matter()
         del front["backtest_funnel"][key]
         with pytest.raises(FunnelThresholdError, match=f"^backtest_funnel.{key} is missing$"):
-            parse_funnel_front_matter(front)
+            parse_funnel_front_matter(front, strategy_id="swing-v2")
 
     def test_missing_block_refuses(self) -> None:
         """A pre-registration without the block (v1) cannot run the funnel."""
         front = _front_matter()
         del front["backtest_funnel"]
         with pytest.raises(FunnelThresholdError, match="has no backtest_funnel block"):
-            parse_funnel_front_matter(front)
+            parse_funnel_front_matter(front, strategy_id="swing-v2")
 
     def test_unsigned_refuses(self) -> None:
         """Only a signed pre-registration binds thresholds."""
         front = {**_front_matter(), "status": "DRAFT"}
         with pytest.raises(FunnelThresholdError, match="status is 'DRAFT', not SIGNED"):
-            parse_funnel_front_matter(front)
+            parse_funnel_front_matter(front, strategy_id="swing-v2")
 
     def test_unknown_key_refuses(self) -> None:
         """A misspelt threshold must not be silently ignored."""
         with pytest.raises(FunnelThresholdError, match=r"unknown keys: \['pbo_maximum'\]"):
-            parse_funnel_front_matter(_front_matter(pbo_maximum=0.05))
+            parse_funnel_front_matter(_front_matter(pbo_maximum=0.05), strategy_id="swing-v2")
 
     @pytest.mark.parametrize(
         ("key", "value", "reason"),
@@ -548,18 +556,59 @@ class TestParseFrontMatter:
             ("positive_year_share_above", 1.0, "from 0 to below 1"),
             ("return_correlation_below", -1.0, "above -1 and at most 1"),
             ("t_stat_above", float("nan"), "must be a number"),
+            ("t_stat_above", 0, "above 0"),
+            ("validation_to_train_return_min", 0, "above 0 and at most 1"),
+            ("validation_to_train_return_min", 1.01, "above 0 and at most 1"),
+            ("neighbour_sharpe_ratio_min", 0, "above 0 and at most 1"),
+            ("neighbour_sharpe_ratio_min", 1.01, "above 0 and at most 1"),
             ("train_end", "30/06/2024", "must be a date"),
         ],
     )
     def test_out_of_range_value_refuses(self, key: str, value: object, reason: str) -> None:
         """Values a threshold cannot take refuse with the rule they break."""
         with pytest.raises(FunnelThresholdError, match=f"backtest_funnel.{key} .*{reason}"):
-            parse_funnel_front_matter(_front_matter(**{key: value}))
+            parse_funnel_front_matter(_front_matter(**{key: value}), strategy_id="swing-v2")
+
+    @pytest.mark.parametrize(
+        ("key", "value"),
+        [
+            ("t_stat_above", 0.01),
+            ("validation_to_train_return_min", 1.0),
+            ("validation_to_train_return_min", 0.01),
+            ("neighbour_sharpe_ratio_min", 1.0),
+            ("neighbour_sharpe_ratio_min", 0.01),
+        ],
+    )
+    def test_value_inside_the_bound_is_accepted(self, key: str, value: float) -> None:
+        """The edge of each range parses: t above 0, the two ratios in (0, 1]."""
+        thresholds = parse_funnel_front_matter(
+            _front_matter(**{key: value}), strategy_id="swing-v2"
+        )
+        assert getattr(thresholds, key) == value
+
+    def test_missing_strategy_id_refuses(self) -> None:
+        """A pre-registration that names no strategy cannot bind one."""
+        front = _front_matter()
+        del front["strategy_id"]
+        with pytest.raises(
+            FunnelThresholdError, match=r"^pre-registration swing-v2 names no strategy_id$"
+        ):
+            parse_funnel_front_matter(front, strategy_id="swing-v2")
+
+    def test_other_strategy_refuses(self) -> None:
+        """Thresholds signed for one strategy never judge another."""
+        with pytest.raises(
+            FunnelThresholdError,
+            match=r"^pre-registration swing-v2 is for strategy 'swing-v2', not 'swing-v3'$",
+        ):
+            parse_funnel_front_matter(_front_matter(), strategy_id="swing-v3")
 
     def test_train_end_must_precede_oos(self) -> None:
         """Train cannot end inside the sealed window."""
         with pytest.raises(FunnelThresholdError, match="train_end must be before oos_start"):
-            parse_funnel_front_matter(_front_matter(train_end=date(2025, 9, 1)))
+            parse_funnel_front_matter(
+                _front_matter(train_end=date(2025, 9, 1)), strategy_id="swing-v2"
+            )
 
     @pytest.mark.parametrize(
         ("regimes", "reason"),
@@ -591,7 +640,7 @@ class TestParseFrontMatter:
     def test_bad_regimes_refuse(self, regimes: object, reason: str) -> None:
         """Every stretch is a dated bull or bear inside Train + Validation, one of each at least."""
         with pytest.raises(FunnelThresholdError, match=reason):
-            parse_funnel_front_matter(_front_matter(regimes=regimes))
+            parse_funnel_front_matter(_front_matter(regimes=regimes), strategy_id="swing-v2")
 
 
 class TestValidateEvidence:

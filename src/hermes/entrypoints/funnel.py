@@ -113,7 +113,7 @@ def _run(args: argparse.Namespace, stream: TextIO, err: TextIO) -> int:
     stream.write(
         f"# hermes funnel {args.strategy_id}: {experiment} (pre-registration sha256 {digest})\n"
     )
-    outcome = _thresholds_or_refusal(args.expect_sha256, digest, front_matter)
+    outcome = _thresholds_or_refusal(args.expect_sha256, digest, front_matter, args.strategy_id)
     if isinstance(outcome, str):
         stream.write(f"REFUSED: {outcome}\n")
         return 1
@@ -152,13 +152,13 @@ def _load_inputs(
 
 
 def _thresholds_or_refusal(
-    expected: str | None, digest: str, front_matter: dict[str, object]
+    expected: str | None, digest: str, front_matter: dict[str, object], strategy_id: str
 ) -> FunnelThresholds | str:
     """Return the thresholds, or why the run is refused."""
     if expected is not None and expected.lower() != digest:
         return f"pre-registration sha256 {digest} does not match the expected {expected}"
     try:
-        return parse_funnel_front_matter(front_matter)
+        return parse_funnel_front_matter(front_matter, strategy_id=strategy_id)
     except FunnelThresholdError as exc:
         return str(exc)
 

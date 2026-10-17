@@ -140,6 +140,11 @@ def _bounded(key: str, value: object, ok: Callable[[float], bool], rule: str) ->
     return number
 
 
+def _ratio(key: str, value: object) -> float:
+    """A share of the base figure: 0 would pass anything, above 1 asks for more than the base."""
+    return _bounded(key, value, lambda v: 0.0 < v <= 1.0, "above 0 and at most 1")
+
+
 def _regimes(value: object, oos_start: date) -> tuple[Regime, ...]:
     key = "backtest_funnel.regimes"
     if not isinstance(value, list):
@@ -165,19 +170,23 @@ def _regimes(value: object, oos_start: date) -> tuple[Regime, ...]:
     return tuple(out)
 
 
-def parse_funnel_front_matter(front_matter: Mapping[str, object]) -> FunnelThresholds:
+def parse_funnel_front_matter(
+    front_matter: Mapping[str, object], *, strategy_id: str
+) -> FunnelThresholds:
     """Return the funnel thresholds a signed pre-registration's front matter states.
 
     Args:
         front_matter: The parsed YAML front matter of the pre-registration.
+        strategy_id: The strategy being judged; must equal the front matter's
+            top-level ``strategy_id``.
 
     Returns:
         The typed thresholds.
 
     Raises:
-        FunnelThresholdError: The document is not signed, has no
-            ``backtest_funnel`` block, or a key is missing, unknown or out of
-            range. The message names the key.
+        FunnelThresholdError: The document is not signed, names no or another
+            ``strategy_id``, has no ``backtest_funnel`` block, or a key is
+            missing, unknown or out of range. The message names the key.
     """
     experiment = front_matter.get("experiment_id")
     if not isinstance(experiment, str) or not experiment:
@@ -188,6 +197,13 @@ def parse_funnel_front_matter(front_matter: Mapping[str, object]) -> FunnelThres
     block = front_matter.get("backtest_funnel")
     if block is None:
         raise FunnelThresholdError(f"pre-registration {experiment} has no backtest_funnel block")
+    named = front_matter.get("strategy_id")
+    if named is None:
+        raise FunnelThresholdError(f"pre-registration {experiment} names no strategy_id")
+    if named != strategy_id:
+        raise FunnelThresholdError(
+            f"pre-registration {experiment} is for strategy {named!r}, not {strategy_id!r}"
+        )
     if not isinstance(block, Mapping):
         raise FunnelThresholdError("backtest_funnel must be a mapping")
     unknown = sorted(str(k) for k in set(block) - set(_THRESHOLD_KEYS))
@@ -227,7 +243,9 @@ def parse_funnel_front_matter(front_matter: Mapping[str, object]) -> FunnelThres
         pbo_max=_bounded(
             label("pbo_max"), block["pbo_max"], lambda v: 0.0 <= v <= 1.0, "from 0 to 1"
         ),
-        t_stat_above=_number(label("t_stat_above"), block["t_stat_above"]),
+        t_stat_above=_bounded(
+            label("t_stat_above"), block["t_stat_above"], lambda v: v > 0.0, "above 0"
+        ),
         trade_count_min=trades,
         cost_stress_multiplier=_bounded(
             label("cost_stress_multiplier"),
@@ -241,10 +259,10 @@ def parse_funnel_front_matter(front_matter: Mapping[str, object]) -> FunnelThres
             lambda v: 0.0 <= v < 1.0,
             "from 0 to below 1",
         ),
-        validation_to_train_return_min=_number(
+        validation_to_train_return_min=_ratio(
             label("validation_to_train_return_min"), block["validation_to_train_return_min"]
         ),
-        neighbour_sharpe_ratio_min=_number(
+        neighbour_sharpe_ratio_min=_ratio(
             label("neighbour_sharpe_ratio_min"), block["neighbour_sharpe_ratio_min"]
         ),
         return_correlation_below=_bounded(

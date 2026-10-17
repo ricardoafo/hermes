@@ -26,6 +26,7 @@ _DAYS = 730
 _FUNNEL_YAML = """\
 ---
 experiment_id: swing-v2
+strategy_id: swing-v2
 status: SIGNED
 backtest_funnel:
   train_end: 2021-12-31
@@ -212,6 +213,26 @@ class TestRefusals:
         assert code == 1
         assert out.splitlines()[1].startswith("REFUSED: pre-registration sha256 ")
         assert out.splitlines()[1].endswith(f" does not match the expected {'0' * 64}")
+
+    def test_pre_registration_without_strategy_id_refuses(self, tmp_path: Path) -> None:
+        """A pre-registration must name the strategy it binds."""
+        text = _FUNNEL_YAML.replace("strategy_id: swing-v2\n", "")
+        pre, evidence = _write(tmp_path, text, _passing_evidence())
+        code, out, _ = _main(_args(pre, evidence))
+        assert (code, out.splitlines()[1:]) == (
+            1,
+            ["REFUSED: pre-registration swing-v2 names no strategy_id"],
+        )
+
+    def test_pre_registration_for_another_strategy_refuses(self, tmp_path: Path) -> None:
+        """Thresholds signed for swing-v3 never judge swing-v2."""
+        text = _FUNNEL_YAML.replace("strategy_id: swing-v2\n", "strategy_id: swing-v3\n")
+        pre, evidence = _write(tmp_path, text, _passing_evidence())
+        code, out, _ = _main(_args(pre, evidence))
+        assert (code, out.splitlines()[1:]) == (
+            1,
+            ["REFUSED: pre-registration swing-v2 is for strategy 'swing-v3', not 'swing-v2'"],
+        )
 
     def test_unsigned_pre_registration_refuses(self, tmp_path: Path) -> None:
         """A draft states no binding threshold."""

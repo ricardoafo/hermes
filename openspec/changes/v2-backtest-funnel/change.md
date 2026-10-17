@@ -79,6 +79,13 @@ examples and to properties that hold by construction.
   any missing, unknown or out-of-range key, and prints the file's SHA-256 so the
   verdict is tied to the exact document. `--expect-sha256 HEX` refuses on a
   mismatch, for the workflow to pass the hash from the lab notebook.
+- **Strategy binding** (review of PR #964): the front matter carries a
+  top-level `strategy_id`, beside `experiment_id` and outside
+  `backtest_funnel`, because it names what the whole document binds, not a
+  threshold. The command refuses (exit 1, `REFUSED: ...`) when it is missing or
+  differs from the command's `strategy_id` argument, so thresholds signed for
+  one strategy never judge another. The `backtest_funnel` block is checked
+  first, so v1 still refuses with "has no backtest_funnel block".
 - **Alternatives**: a separate JSON thresholds file (two documents to sign);
   `config/` (an AI-writable path under ADR-012 D-08, and not signed);
   constants in `PreRegistration` (hard-coded, which #957 rules out).
@@ -93,6 +100,15 @@ examples and to properties that hold by construction.
   means <, following the ADR-021 §5 wording: PBO "≤", t-statistic "above",
   trades "at least", Validation "at least half", correlation "below", and
   "most years" as strictly more than the stated share.
+- **Ranges** (review of PR #964), each refused outside its bound:
+  `pbo_max` in [0, 1]; `t_stat_above` > 0 (a non-positive bar would pass a
+  losing strategy); `cost_stress_multiplier` >= 1;
+  `positive_year_share_above` in [0, 1); `validation_to_train_return_min` and
+  `neighbour_sharpe_ratio_min` in (0, 1] (0 would pass any positive
+  Validation or neighbour, and above 1 would demand more than the base run,
+  which is not what "at least half" or "also pass" mean);
+  `return_correlation_below` in (-1, 1]; `trade_count_min` a positive integer;
+  `cscv_blocks` an even integer from 2 to 20.
 - **Rationale**: test rule 4 pins every limit at the limit; the key name makes
   the direction reviewable in the pre-registration itself.
 - **Cost of reversal**: LOW.
@@ -209,18 +225,19 @@ examples and to properties that hold by construction.
 ```yaml
 ---
 experiment_id: <id>
+strategy_id: <strategy id>    # must equal hermes funnel's strategy_id argument
 status: SIGNED
 backtest_funnel:
   train_end: 2024-06-30          # last Train day; Validation starts the day after
   oos_start: 2025-09-01          # evidence must end before this day
   cscv_blocks: 16                # even, >= 2
   pbo_max: 0.05                  # PBO <= this
-  t_stat_above: 3.0              # t > this
+  t_stat_above: 3.0              # t > this; must be > 0
   trade_count_min: 100           # Train + Validation trades >= this
   cost_stress_multiplier: 2.0    # fees and slippage multiplier of the stress run (>= 1)
   positive_year_share_above: 0.5 # share of positive calendar years > this
-  validation_to_train_return_min: 0.5
-  neighbour_sharpe_ratio_min: 0.5
+  validation_to_train_return_min: 0.5  # in (0, 1]
+  neighbour_sharpe_ratio_min: 0.5      # in (0, 1]
   return_correlation_below: 0.7
   regimes:
     - {kind: bull, start: 2020-10-01, end: 2021-11-10}
