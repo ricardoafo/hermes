@@ -195,3 +195,19 @@ means = "No day 0 exists yet: the screen says warm-up days do not count, the che
 check = "The 90-day figure reads not counting, not 0 of 90; the way to start the run is named."
 scenario = "empty"
 keys = "5"
+
+[views."test_tui_tax_snapshots/tax_summary"]
+screen = "Tax"
+state = "4.1 Summary, demo tax year"
+means = "The year's estimate: realised gains, fees, taxable base and the estimated tax by FIFO, what a sale now would add by coin, today's tax, the two-month-rule flag and the savings brackets."
+check = "The figures agree with the Lots view; the title says estimate and shadow (no real tax due); the bracket bars fill by the taxable base."
+scenario = "ok-two-positions"
+keys = "4"
+
+[views."test_tui_tax_snapshots/tax_lots"]
+screen = "Tax"
+state = "4.2 Lots, a flagged lot open in the detail"
+means = "Every lot with its state, cost and gain, a filter line, a by-month roll-up and the detail of the selected lot with the sales that used it."
+check = "The flagged lot shows the two-month rule and says it is for the gestor; the detail's cost and gain match its table row."
+scenario = "ok-two-positions"
+keys = "4 ]"
