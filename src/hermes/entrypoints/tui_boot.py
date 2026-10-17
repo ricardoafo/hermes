@@ -224,8 +224,18 @@ class BootScreen(Screen[None]):
     def _run_checks(self) -> None:
         for index, check in enumerate(self._checks):
             result = run_check(check)
-            self.app.call_from_thread(self._show, index, result)
-        self.app.call_from_thread(self.set_timer, self._hold, self._close)
+            if not self._post(self._show, index, result):
+                return
+        self._post(self.set_timer, self._hold, self._close)
+
+    def _post(self, callback: Callable[..., object], *args: object) -> bool:
+        # Q can quit the console while a check is still in flight; Textual then
+        # raises here, and the remaining results have nowhere to show.
+        try:
+            self.app.call_from_thread(callback, *args)
+        except RuntimeError:
+            return False
+        return True
 
     def _show(self, index: int, result: BootResult) -> None:
         self.results[index] = result

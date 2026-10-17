@@ -294,6 +294,44 @@ def test_checks_run_off_the_ui_thread() -> None:
     assert seen == [False]
 
 
+def test_quitting_while_a_check_runs_ends_the_checks_quietly() -> None:
+    """A check still in flight when Q quits finishes without an error and stops the rest."""
+    ran: list[str] = []
+
+    def ledger() -> str:
+        ran.append("ledger")
+        return "ok"
+
+    def engine() -> str:
+        ran.append("engine")
+        return "ok"
+
+    async def drive() -> BootScreen:
+        app = _BootApp(NEON_THEME, ())
+        async with app.run_test(size=(80, 24)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            await pilot.press("q")
+            await pilot.pause()
+        assert isinstance(screen, BootScreen)
+        return screen
+
+    screen = asyncio.run(drive())
+    screen._checks = (BootCheck("ledger", ledger), BootCheck("engine", engine))
+    errors: list[BaseException] = []
+
+    def after_quit() -> None:
+        try:
+            screen._run_checks()
+        except BaseException as exc:
+            errors.append(exc)
+
+    worker = threading.Thread(target=after_quit)
+    worker.start()
+    worker.join(timeout=5)
+    assert (errors, ran) == ([], ["ledger"])
+
+
 # ----------------------------------------------------------------------
 # Snapshots
 # ----------------------------------------------------------------------
