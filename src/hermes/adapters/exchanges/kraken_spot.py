@@ -645,6 +645,8 @@ def _read_nonce(path: Path) -> int:
         text = path.read_text(encoding="ascii").strip()
     except FileNotFoundError:
         return 0
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ExchangeError(msg=f"cannot read Kraken nonce file {path}: {exc}") from exc
     if not text.isdigit():
         raise ExchangeError(msg=f"Kraken nonce file {path} does not hold a nonce: {text[:40]!r}")
     return int(text)
@@ -653,5 +655,8 @@ def _read_nonce(path: Path) -> int:
 def _write_nonce(path: Path, nonce: int) -> None:
     """Keep ``nonce`` in ``path``, atomically, before the request that uses it goes out."""
     staging = path.with_name(f"{path.name}.tmp")
-    staging.write_text(str(nonce), encoding="ascii")
-    staging.replace(path)
+    try:
+        staging.write_text(str(nonce), encoding="ascii")
+        staging.replace(path)
+    except OSError as exc:
+        raise ExchangeError(msg=f"cannot keep the Kraken nonce in {path}: {exc}") from exc

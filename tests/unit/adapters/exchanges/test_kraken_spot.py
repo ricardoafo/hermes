@@ -716,3 +716,31 @@ def test_a_bad_nonce_file_fails_an_order_before_sending_it(tmp_path: Path) -> No
     adapter.close()
 
     assert (type(caught.value), add.call_count) == (ExchangeError, 0)
+
+
+def test_a_nonce_file_that_cannot_be_read_is_an_exchange_error(tmp_path: Path) -> None:
+    """A nonce path that is unreadable (here a directory) fails as ExchangeError, not OSError."""
+    adapter = _with_nonce_file(tmp_path, _NOW_MS)
+
+    with pytest.raises(ExchangeError, match="cannot read Kraken nonce file") as caught:
+        adapter.get_balance(currency=Currency.BTC)
+    adapter.close()
+
+    assert (type(caught.value), isinstance(caught.value.__cause__, OSError)) == (
+        ExchangeError,
+        True,
+    )
+
+
+def test_a_nonce_file_that_cannot_be_written_is_an_exchange_error(tmp_path: Path) -> None:
+    """A nonce that cannot be kept fails as ExchangeError before the request goes out."""
+    adapter = _with_nonce_file(tmp_path / "missing" / "kraken.nonce", _NOW_MS)
+
+    with pytest.raises(ExchangeError, match="cannot keep the Kraken nonce") as caught:
+        adapter.get_balance(currency=Currency.BTC)
+    adapter.close()
+
+    assert (type(caught.value), isinstance(caught.value.__cause__, OSError)) == (
+        ExchangeError,
+        True,
+    )

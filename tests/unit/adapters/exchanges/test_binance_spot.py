@@ -397,6 +397,34 @@ def test_a_malformed_lookup_reply_still_names_the_client_id(adapter: BinanceSpot
 
 
 @respx.mock
+@pytest.mark.parametrize("status", ["NEW", "PARTIALLY_FILLED"])
+def test_a_lost_ioc_limit_found_still_working_is_unknown_not_rejected(
+    adapter: BinanceSpotAdapter, status: str
+) -> None:
+    """An IOC order found still working may yet fill, so it is unknown status, never a Rejection."""
+    post = respx.post(url__startswith=_ORDER_URL).mock(return_value=httpx.Response(503))
+    respx.get(url__startswith=_ORDER_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "orderId": 91,
+                "status": status,
+                "executedQty": "0",
+                "cummulativeQuoteQty": "0",
+                "updateTime": _NOW_MS,
+            },
+        )
+    )
+
+    with pytest.raises(
+        OrderStatusUnknownError, match=f"Binance order 91.*still {status}"
+    ) as caught:
+        adapter.place_limit_order(order=_order(limit="65000"))
+
+    assert caught.value.client_order_id == post.calls.last.request.url.params["newClientOrderId"]
+
+
+@respx.mock
 def test_a_stop_loss_whose_reply_was_lost_returns_the_found_order_id(
     adapter: BinanceSpotAdapter,
 ) -> None:

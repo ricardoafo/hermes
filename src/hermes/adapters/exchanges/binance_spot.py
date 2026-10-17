@@ -110,6 +110,7 @@ _WEIGHTS: Final[dict[str, int]] = {
     "ticker": 2,
 }
 _CLIENT_ID_PREFIX: Final = "hermes-"
+_STILL_WORKING: Final = frozenset({"PENDING_NEW", "NEW", "PARTIALLY_FILLED"})
 _FALLBACK_TAKER_RATE: Final = Decimal("0.001")
 """The pre-registered 10 bps taker fee, used when a third-asset commission cannot be priced."""
 _DEPTH_LIMIT: Final = 100
@@ -414,7 +415,8 @@ class BinanceSpotAdapter:
                 "price": str(limit.normalize()),
                 "stopPrice": str(stop_price),
                 "newOrderRespType": "ACK",
-            }
+            },
+            rests=True,
         )
         order_id = body.get("orderId")
         if not isinstance(order_id, int):
@@ -425,8 +427,12 @@ class BinanceSpotAdapter:
     # Wire
     # ------------------------------------------------------------------
 
-    def _submit(self, params: dict[str, str]) -> dict[str, Any]:
-        """POST an order under a fresh client id; on a 5xx or timeout, look it up."""
+    def _submit(self, params: dict[str, str], *, rests: bool = False) -> dict[str, Any]:
+        """POST an order under a fresh client id; on a 5xx or timeout, look it up.
+
+        ``rests`` is ``True`` for an order meant to stay on the book (the stop-loss);
+        for the others, a lookup that finds the order still working is unknown status.
+        """
         client_id = f"{_CLIENT_ID_PREFIX}{secrets.token_hex(10)}"
         try:
             return self._signed(
@@ -442,9 +448,11 @@ class BinanceSpotAdapter:
                 client_order_id=client_id,
                 error=str(exc),
             )
-            return self._look_up(params["symbol"], client_id, cause=exc)
+            return self._look_up(params["symbol"], client_id, cause=exc, rests=rests)
 
-    def _look_up(self, symbol: str, client_id: str, *, cause: Exception) -> dict[str, Any]:
+    def _look_up(
+        self, symbol: str, client_id: str, *, cause: Exception, rests: bool
+    ) -> dict[str, Any]:
         """Return the order sent as ``client_id`` in the shape of a ``FULL`` order reply."""
         try:
             found = self._signed(
@@ -465,6 +473,11 @@ class BinanceSpotAdapter:
         order_id = found.get("orderId")
         if not isinstance(order_id, int) or isinstance(order_id, bool):
             raise self._unknown(symbol, client_id, f"lookup has no orderId: {found!r}")
+        if not rests and found.get("status") in _STILL_WORKING:
+            # Reading a working market or IOC order as final would call a fill-in-progress a miss.
+            raise self._unknown(
+                symbol, client_id, f"found still {found.get('status')}", order_id=order_id
+            )
         reply: dict[str, Any] = {
             "orderId": order_id,
             "status": found.get("status"),
