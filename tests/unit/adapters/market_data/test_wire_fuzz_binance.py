@@ -13,8 +13,6 @@ No network: parsers are called directly, and the HTTP adapters answer from an
 ``httpx.MockTransport``.
 """
 
-from __future__ import annotations
-
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -125,7 +123,7 @@ def _ws_depth(raw: str | bytes) -> object:
 
 
 def _ws_snapshot(body: object) -> object:
-    return binance_live_ws._parse_snapshot(data=body, pair=_PAIR)  # type: ignore[arg-type]  # fuzzing the declared shape
+    return binance_live_ws._parse_snapshot(data=body, pair=_PAIR)
 
 
 def _ticker(body: bytes) -> object:

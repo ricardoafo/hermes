@@ -1535,18 +1535,26 @@ class SqliteLedger:
 
 
 def _row_to_bar(pair: Pair, interval: KlineInterval, row: tuple[Any, ...]) -> Bar:
+    """Rebuild a :class:`Bar` from a ``live_bars`` row.
+
+    Raises:
+        LedgerError: A cell is not a readable time or number.
+    """
     open_time, close_time, open_, high, low, close, volume = row
-    return Bar(
-        pair=pair,
-        interval=interval,
-        open_time=time_cell(open_time),
-        close_time=time_cell(close_time),
-        open=decimal_cell(open_),
-        high=decimal_cell(high),
-        low=decimal_cell(low),
-        close=decimal_cell(close),
-        volume=decimal_cell(volume),
-    )
+    try:
+        return Bar(
+            pair=pair,
+            interval=interval,
+            open_time=time_cell(open_time),
+            close_time=time_cell(close_time),
+            open=decimal_cell(open_),
+            high=decimal_cell(high),
+            low=decimal_cell(low),
+            close=decimal_cell(close),
+            volume=decimal_cell(volume),
+        )
+    except (ValueError, TypeError) as exc:
+        raise LedgerError(msg=f"unreadable live bar: {exc}") from exc
 
 
 def _row_to_mark(row: tuple[Any, ...]) -> PortfolioMark:

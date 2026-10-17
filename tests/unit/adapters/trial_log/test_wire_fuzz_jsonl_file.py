@@ -7,8 +7,6 @@ the file a bug in our own writer, or a careful hand edit, could leave behind.
 The seed is the body ``JsonlTrialLog.append`` writes for a synthetic trial.
 """
 
-from __future__ import annotations
-
 import json
 from datetime import UTC, datetime
 from pathlib import Path

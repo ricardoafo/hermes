@@ -10,8 +10,6 @@ replaced by bytes that are not YAML or not UTF-8. Env overrides are fuzzed
 the same way. An accepted config holds only finite numbers.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable
 from pathlib import Path
 from typing import Final

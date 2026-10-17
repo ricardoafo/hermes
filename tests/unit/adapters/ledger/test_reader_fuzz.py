@@ -14,12 +14,11 @@ and corrupts one cell, with the append-only triggers and CHECK constraints
 lifted so the corruption can be written at all.
 """
 
-from __future__ import annotations
-
 import json
 import shutil
 import sqlite3
 from collections.abc import Callable
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final
@@ -96,6 +95,12 @@ def _last_close(path: Path) -> object:
 @_read("live_bars")
 def _live_bars(path: Path) -> object:
     return SqliteLiveBarReader(path).live_bars(BTC_USDT, _H4, _FROM, _TO)
+
+
+@_read("ledger.live_bars")
+def _ledger_live_bars(path: Path) -> object:
+    with closing(sqlite3.connect(path)) as connection:
+        return SqliteLedger(connection).live_bars(BTC_USDT, _H4, _FROM, _TO)
 
 
 @_read("parity.bars_closing_between")

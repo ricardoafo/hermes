@@ -12,8 +12,6 @@ public replies with synthetic values. No network: each adapter's client
 answers from an ``httpx.MockTransport``.
 """
 
-from __future__ import annotations
-
 import json
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta

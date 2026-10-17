@@ -7,8 +7,6 @@ number above zero. The seed copies the shape of
 No network: the client answers from an ``httpx.MockTransport``.
 """
 
-from __future__ import annotations
-
 import json
 from datetime import date
 from typing import Final

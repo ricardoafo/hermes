@@ -16,8 +16,6 @@ The decimal values a parser accepts are checked against the domain: finite,
 times timezone-aware, OHLC ordered, bar times aligned to the interval.
 """
 
-from __future__ import annotations
-
 import copy
 import dataclasses
 import json

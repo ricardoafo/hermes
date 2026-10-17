@@ -7,8 +7,6 @@ expects a decimal string or an ISO time with an offset. These helpers raise
 the only error its callers handle (issue #842).
 """
 
-from __future__ import annotations
-
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 

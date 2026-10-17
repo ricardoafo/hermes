@@ -10,8 +10,6 @@ Seeds copy the recorded ``getUpdates``/``getMe``/``sendMessage`` shapes in
 the adapter tests. No network: clients answer from an ``httpx.MockTransport``.
 """
 
-from __future__ import annotations
-
 import json
 from typing import Final
 

@@ -6,8 +6,6 @@ re-chained with a valid hash, so the entry decoder is reached instead of the
 chain check. Seeds are a decision and a review encoded by the store itself.
 """
 
-from __future__ import annotations
-
 import json
 from datetime import UTC, date, datetime
 from pathlib import Path
