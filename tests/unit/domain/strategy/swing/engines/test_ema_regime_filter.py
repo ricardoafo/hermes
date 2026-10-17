@@ -4,7 +4,6 @@ Covers:
 - Returns False for insufficient bars
 - above_ema() returns True when close > EMA, False otherwise
 - EMA uses closed 1D bars only (no partial bar peeking)
-- Deterministic on identical inputs
 - ema_value() returns None for insufficient bars
 
 Reference: spec-5-swing-strategy-adapter change.md D-1, D-3.
@@ -26,7 +25,7 @@ class TestEmaRegimeInsufficientBars:
     def test_above_ema_false_on_empty_bars(self) -> None:
         """above_ema must return False for empty bar sequence."""
         result = EmaRegimeFilter.above_ema([], period=200)
-        assert not result, (
+        assert result is False, (
             "above_ema([]) must return False — conservative: no signal without regime data"
         )
 
@@ -34,7 +33,7 @@ class TestEmaRegimeInsufficientBars:
         """Returns False when fewer than period 1D bars exist."""
         bars = make_bars([Decimal("100")] * 50, interval=KlineInterval.D1, interval_hours=24)
         result = EmaRegimeFilter.above_ema(bars, period=200)
-        assert not result, "above_ema with only 50 bars and period=200 must return False"
+        assert result is False, "above_ema with only 50 bars and period=200 must return False"
 
     def test_ema_value_none_below_period(self) -> None:
         """ema_value returns None when fewer than period bars exist."""
@@ -50,8 +49,12 @@ class TestEmaRegimeInsufficientBars:
         """ema_value must compute with exactly period bars."""
         bars = make_bars([Decimal("100")] * 200, interval=KlineInterval.D1, interval_hours=24)
         result = EmaRegimeFilter.ema_value(bars, period=200)
-        assert result is not None, "ema_value must compute with exactly 200 bars (period=200)"
-        assert isinstance(result, Decimal), f"ema_value must return a Decimal, got {type(result)}"
+        assert result == Decimal("100"), (
+            f"ema_value of exactly 200 flat bars at 100 must equal Decimal('100'), got {result}"
+        )
+        assert EmaRegimeFilter.ema_value(bars[:-1], period=200) is None, (
+            "ema_value with 199 bars and period=200 must return None"
+        )
 
 
 class TestEmaRegimeAboveBelow:
@@ -73,7 +76,16 @@ class TestEmaRegimeAboveBelow:
         closes = [100] * 200 + [50] * 10
         bars = make_bars(closes, interval=KlineInterval.D1, interval_hours=24)
         result = EmaRegimeFilter.above_ema(bars, period=200)
-        assert not result, "above_ema must return False when recent close (50) is below EMA (~100)"
+        assert result is False, (
+            "above_ema must return False when recent close (50) is below EMA (~100)"
+        )
+
+    def test_above_ema_false_when_close_equals_ema(self) -> None:
+        """Regime is strictly above: a close equal to the EMA is not above it."""
+        bars = make_bars([100] * 210, interval=KlineInterval.D1, interval_hours=24)
+        assert EmaRegimeFilter.above_ema(bars, period=200) is False, (
+            "above_ema must return False when close (100) equals EMA (100)"
+        )
 
     def test_above_ema_with_small_period(self) -> None:
         """Works correctly with period=3 for fast testing."""
@@ -86,30 +98,7 @@ class TestEmaRegimeAboveBelow:
         """Works correctly with period=3 when below EMA."""
         bars = make_bars([100, 100, 100, 99], interval=KlineInterval.D1, interval_hours=24)
         result = EmaRegimeFilter.above_ema(bars, period=3)
-        assert not result, "above_ema must return False: close=99 < EMA(3)≈100"
-
-
-class TestEmaRegimeDeterminism:
-    """Determinism property."""
-
-    def test_deterministic_on_identical_inputs(self) -> None:
-        """above_ema must return the same result on two identical calls."""
-        bars = make_bars([100] * 210, interval=KlineInterval.D1, interval_hours=24)
-        r1 = EmaRegimeFilter.above_ema(bars, period=200)
-        r2 = EmaRegimeFilter.above_ema(bars, period=200)
-        # Both calls must produce a bool
-        assert isinstance(r1, bool), f"above_ema must return bool, got {type(r1)}"
-        assert r1 == r2, f"above_ema must be deterministic: first={r1}, second={r2}"
-
-    def test_ema_value_deterministic(self) -> None:
-        """ema_value must return the same result on two identical calls."""
-        bars = make_bars([100] * 210, interval=KlineInterval.D1, interval_hours=24)
-        r1 = EmaRegimeFilter.ema_value(bars, period=200)
-        r2 = EmaRegimeFilter.ema_value(bars, period=200)
-        # Value must be non-None (210 bars >= period=200)
-        assert r1 is not None, "ema_value must return Decimal with 210 bars and period=200"
-        assert isinstance(r1, Decimal), f"ema_value must return Decimal, got {type(r1)}"
-        assert r1 == r2, f"ema_value must be deterministic: first={r1}, second={r2}"
+        assert result is False, "above_ema must return False: close=99 < EMA(3)≈100"
 
 
 class TestEmaRegimeClosedBarOnly:

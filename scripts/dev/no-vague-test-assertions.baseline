@@ -178,13 +178,6 @@ tests/unit/domain/statistics/test_statistics_mutation_guards.py::test_split_has_
 tests/unit/domain/statistics/test_statistics_mutation_guards.py::test_split_is_frozen U6
 tests/unit/domain/statistics/test_statistics_mutation_guards.py::test_trade_result_has_slots U6
 tests/unit/domain/statistics/test_statistics_mutation_guards.py::test_trade_result_is_frozen U6
-tests/unit/domain/strategy/swing/engines/test_ema_regime_filter.py::test_above_ema_false_below_period U3
-tests/unit/domain/strategy/swing/engines/test_ema_regime_filter.py::test_above_ema_false_on_empty_bars U3
-tests/unit/domain/strategy/swing/engines/test_ema_regime_filter.py::test_above_ema_false_when_price_crashes_below U3
-tests/unit/domain/strategy/swing/engines/test_ema_regime_filter.py::test_above_ema_false_with_small_period_below U3
-tests/unit/domain/strategy/swing/engines/test_ema_regime_filter.py::test_deterministic_on_identical_inputs U3
-tests/unit/domain/strategy/swing/engines/test_ema_regime_filter.py::test_ema_value_deterministic U3
-tests/unit/domain/strategy/swing/engines/test_ema_regime_filter.py::test_ema_value_not_none_at_period U3
 tests/unit/domain/tax/test_netting.py::test_carry_forward_never_exceeds_four_years U3
 tests/unit/domain/test_errors.py::test_currency_mismatch_is_domain_error U3
 tests/unit/domain/test_errors.py::test_currency_mismatch_is_hermes_error U3
@@ -200,13 +193,6 @@ tests/unit/domain/test_errors_raisable.py::test_declared_fields_stay_frozen U6
 tests/unit/domain/value_objects/test_currency.py::test_currency_is_str_enum U7
 tests/unit/domain/value_objects/test_currency.py::test_from_str_empty_returns_failure U3
 tests/unit/domain/value_objects/test_currency.py::test_from_str_unknown_returns_failure U3
-tests/unit/domain/value_objects/test_lot_id.py::test_from_str_invalid_chars_fails U3
-tests/unit/domain/value_objects/test_lot_id.py::test_from_str_lowercase_accepted U3
-tests/unit/domain/value_objects/test_lot_id.py::test_from_str_valid_ulid U3
-tests/unit/domain/value_objects/test_lot_id.py::test_from_str_wrong_length_fails U3
-tests/unit/domain/value_objects/test_lot_id.py::test_new_produces_26_chars U3
-tests/unit/domain/value_objects/test_lot_id.py::test_new_produces_unique_ids U3
-tests/unit/domain/value_objects/test_lot_id.py::test_new_produces_valid_crockford U3
 tests/unit/domain/value_objects/test_money.py::test_divide_by_zero_fails U3
 tests/unit/domain/value_objects/test_money.py::test_from_str_invalid_amount U3
 tests/unit/domain/value_objects/test_money.py::test_from_str_missing_parts U3

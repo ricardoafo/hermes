@@ -5,10 +5,12 @@ Reference: R-5 (A-5.3, A-5.6, A-5.7).
 
 from __future__ import annotations
 
+import pytest
 from hypothesis import given
-from returns.result import Failure, Success
+from returns.result import Success
 
 import tests.strategies.lot_id  # noqa: F401
+from hermes.domain.errors import InvalidLot
 from hermes.domain.value_objects.lot_id import LotId
 from tests.strategies.lot_id import lot_id_strategy
 
@@ -16,21 +18,11 @@ from tests.strategies.lot_id import lot_id_strategy
 class TestLotIdNew:
     """LotId.new() generates valid ULIDs."""
 
-    def test_new_produces_26_chars(self) -> None:
-        """LotId.new() always produces a 26-character ULID string."""
-        lot_id = LotId.new()
-        assert len(lot_id.value) == 26
-
-    def test_new_produces_valid_crockford(self) -> None:
-        """LotId.new() produces a valid Crockford base32 ULID that passes from_str validation."""
-        lot_id = LotId.new()
-        result = LotId.from_str(lot_id.value)
-        assert isinstance(result, Success)
-
-    def test_new_produces_unique_ids(self) -> None:
-        """LotId.new() generates unique IDs — 10 consecutive calls produce 10 distinct values."""
-        ids = {LotId.new().value for _ in range(10)}
-        assert len(ids) == 10
+    def test_new_produces_26_crockford_chars(self) -> None:
+        """LotId.new() yields 26 characters, all from the Crockford alphabet (no I, L, O, U)."""
+        value = LotId.new().value
+        assert len(value) == 26
+        assert set(value) <= set("0123456789ABCDEFGHJKMNPQRSTVWXYZ")
 
     def test_new_ids_sort_in_creation_order(self) -> None:
         """IDs minted back to back, mostly in the same millisecond, sort in the order made.
@@ -59,26 +51,37 @@ class TestLotIdFromStr:
         assert result.unwrap() == lid
 
     def test_from_str_valid_ulid(self) -> None:
-        """from_str accepts a well-known valid ULID string and returns Success."""
-        # Known valid ULID (26 Crockford base32 chars)
-        result = LotId.from_str("01ARZ3NDEKTSV4RRFFQ69G5FAV")
-        assert isinstance(result, Success)
+        """from_str accepts a well-known valid ULID and keeps its value unchanged."""
+        assert LotId.from_str("01ARZ3NDEKTSV4RRFFQ69G5FAV").unwrap().value == (
+            "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+        )
 
-    def test_from_str_wrong_length_fails(self) -> None:
-        """from_str returns Failure when the input is shorter than 26 characters."""
-        result = LotId.from_str("TOOSHORT")
-        assert isinstance(result, Failure)
+    @pytest.mark.parametrize(
+        "text", ["TOOSHORT", "01ARZ3NDEKTSV4RRFFQ69G5FA", "01ARZ3NDEKTSV4RRFFQ69G5FAVX"]
+    )
+    def test_from_str_wrong_length_fails(self, text: str) -> None:
+        """from_str rejects 8, 25 and 27 characters: only exactly 26 is a ULID."""
+        error = LotId.from_str(text).failure()
+        assert isinstance(error, InvalidLot)
+        assert "must be 26 characters" in error.reason
 
     def test_from_str_invalid_chars_fails(self) -> None:
-        """from_str returns Failure when the input contains chars absent from Crockford base32."""
-        # Contains 'I', 'L', 'O', 'U' — excluded from Crockford base32
-        result = LotId.from_str("IIIIIIIIIIIIIIIIIIIIIIIIII")
-        assert isinstance(result, Failure)
+        """from_str rejects 26 x "I" (not in Crockford base32) and names the alphabet."""
+        error = LotId.from_str("IIIIIIIIIIIIIIIIIIIIIIIIII").failure()
+        assert isinstance(error, InvalidLot)
+        assert "invalid Crockford base32 characters" in error.reason
 
     def test_from_str_lowercase_accepted(self) -> None:
-        """from_str normalises to uppercase before validation."""
-        result = LotId.from_str("01arz3ndektsv4rrffq69g5fav")
-        assert isinstance(result, Success)
+        """from_str normalises to uppercase: the stored value is the upper-case form."""
+        assert LotId.from_str("01arz3ndektsv4rrffq69g5fav").unwrap().value == (
+            "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+        )
+
+    def test_from_str_strips_surrounding_whitespace(self) -> None:
+        """A ULID read from a padded ledger field parses to the bare value."""
+        assert LotId.from_str("  01ARZ3NDEKTSV4RRFFQ69G5FAV\n").unwrap().value == (
+            "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+        )
 
     def test_str_returns_value(self) -> None:
         """str(LotId) returns the raw ULID string value."""

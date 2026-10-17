@@ -21,7 +21,9 @@ and timings live in :mod:`hermes.entrypoints.tui_theme`.
 
 Screens: ``1`` Home (issue #712); ``4`` Tax (issue #719, view only:
 :mod:`hermes.entrypoints.tui_tax`); ``5`` Shadow test (issue #718); ``6``
-Briefs; the others name the issue that builds them next.
+Briefs; ``7`` System (issue #717, view only:
+:mod:`hermes.entrypoints.tui_system`); the others name the issue that builds
+them next.
 
 The Shadow test screen: the big "N / 90" over the shared 90-day run bar with
 month ticks (or "warm-up · not counting" while no ``hermes shadow-start``
@@ -84,7 +86,8 @@ openspec/changes/711-cockpit-theme/change.md;
 openspec/changes/712-cockpit-home/change.md;
 openspec/changes/713-live-ticker/change.md;
 openspec/changes/719-tax-screen/change.md;
-openspec/changes/730-drill-down/change.md.
+openspec/changes/730-drill-down/change.md;
+openspec/changes/717-system-screen/change.md.
 """
 
 from __future__ import annotations
@@ -95,7 +98,7 @@ from collections import deque
 from collections.abc import Callable, Iterable, Sequence
 from contextlib import suppress
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta, tzinfo
+from datetime import UTC, date, datetime, timedelta, tzinfo
 from decimal import ROUND_HALF_UP, Decimal
 from functools import partial
 from pathlib import Path
@@ -162,6 +165,12 @@ from hermes.application.console.shadow_screen import (
     run_words,
     sources_from,
 )
+from hermes.application.console.system import (
+    MachineStats,
+    ReleaseHistory,
+    ServiceStatus,
+    SystemSources,
+)
 from hermes.application.console.views import TaxPending
 from hermes.application.tax.screen import TaxpayerProfileView, TaxScreen, TaxScreenSource
 from hermes.domain.errors import LedgerError
@@ -213,6 +222,18 @@ from hermes.entrypoints.tui_shadow import (
     settings_text,
 )
 from hermes.entrypoints.tui_signals import signals_screen
+from hermes.entrypoints.tui_system import (
+    BAR_CHECKS,
+    RELEASES_TRAIL,
+    SERVICES_TRAIL,
+    actions_text,
+    machine_text,
+    release_detail,
+    releases_text,
+    service_detail,
+    services_text,
+    timing_text,
+)
 from hermes.entrypoints.tui_tax import EDIT_LATER, PROFILE, TaxPackStatus, TaxTab
 from hermes.entrypoints.tui_theme import (
     BASE,
@@ -316,7 +337,7 @@ TABS: Final = (
     Tab("4", "Tax"),
     Tab("5", "Shadow test"),
     Tab("6", "Briefs"),
-    Tab("7", "System", 717),
+    Tab("7", "System"),
     Tab("8", "Logs", 716),
 )
 _HOME: Final = 0
@@ -324,10 +345,14 @@ _SHADOW: Final = 4
 _SIGNALS: Final = 1
 _TAX: Final = 3
 _BRIEFS: Final = 5
+_SYSTEM: Final = 6
 _LOGS: Final = 7
 _NOTICE_SECONDS: Final = 6
 # The big estimated-tax figure shows from the height the big total shows (30 rows).
 _BIG_FROM_ROWS: Final = 30
+_SERVICE: Final = "service:"
+_RELEASE: Final = "release:"
+_SERVICE_JOURNAL_LINES: Final = 12
 
 _FOOTER_CHIPS: Final = (
     ("D W M Y", "range"),
@@ -631,6 +656,9 @@ class HomeApp(App[None]):
     #shadow-body.-wide, #shadow-body.-ultra {{ layout: horizontal; }}
     #shadow-left, #shadow-right {{ height: auto; width: 1fr; }}
     #shadow-body.-wide #shadow-right, #shadow-body.-ultra #shadow-right {{ margin-left: 1; }}
+    #system-body {{ layout: grid; grid-size: 1; grid-gutter: 0 2; grid-rows: auto; height: auto; }}
+    #system-body.-split {{ grid-size: 2; grid-gutter: 1 2; }}
+    .sys-column {{ height: auto; }}
     """
     BINDINGS: ClassVar[list[BindingType]] = [
         *_range_bindings(),
@@ -673,6 +701,7 @@ class HomeApp(App[None]):
         taxpayer_profile: TaxpayerProfileView | None = None,
         tax_pack: Callable[[int], TaxPackStatus | None] | None = None,
         boot: bool = False,
+        system: SystemSources | None = None,
     ) -> None:
         """Hold the read model, the journal source and the screen state.
 
@@ -709,6 +738,8 @@ class HomeApp(App[None]):
                 read once by the caller, never over ``--vps``.
             tax_pack: Returns the year's tax pack state.
             boot: Open on the cold start screen (#1020); shown only with motion on.
+            system: The System screen's read-only sources; ``None`` shows every
+                System panel as "not available here".
         """
         super().__init__()
         # The checks need the time zone, which the model only gives once mounted.
@@ -751,6 +782,7 @@ class HomeApp(App[None]):
         self._empty_facts: tuple[tuple[str, ...], datetime | None] | None = None
         self._title_sent: str | None = None
         self._title_total: str | None = None
+        self._init_system(system)
         self.effect_timers: dict[str, Timer] = {}
         self._init_live_feed(ticker, clock)
         self._summary: PortfolioSummary | None = None
@@ -759,6 +791,15 @@ class HomeApp(App[None]):
         self._watch: tuple[WatchedPair, ...] | None = None
         for hermes_theme in THEMES:
             self.register_theme(hermes_theme)
+
+    def _init_system(self, system: SystemSources | None) -> None:
+        self._system = system or SystemSources()
+        self._sys_cursor: str | None = None
+        self._service_open = False
+        self._services: tuple[ServiceStatus, ...] | None = None
+        self._releases: ReleaseHistory | None = None
+        self._machine: MachineStats | None = None
+        self._bar_seconds: tuple[Decimal, ...] | None = None
 
     def _init_tax(
         self,
@@ -840,11 +881,12 @@ class HomeApp(App[None]):
                         Static(id="log-tail"), title="Log tail", subtitle="L logs", id="log-panel"
                     )
             yield self._compose_shadow()
+            yield from self._compose_system()
             for index, tab in enumerate(TABS[1:], start=1):
                 if index == _TAX:
                     yield TaxTab(now=self._clock, motion=self._motion, id=f"tab-{tab.key}")
                     continue
-                if index == _SHADOW:
+                if index in (_SHADOW, _SYSTEM):
                     continue
                 ai = index == _BRIEFS
                 yield VerticalScroll(
@@ -902,6 +944,40 @@ class HomeApp(App[None]):
             ),
             id=f"tab-{TABS[_SHADOW].key}",
         )
+
+    def _compose_system(self) -> ComposeResult:
+        """Lay out the System screen: lists left, the service pane and figures right."""
+        with (
+            VerticalScroll(id=f"tab-{TABS[_SYSTEM].key}", can_focus=False),
+            Container(id="system-body"),
+        ):
+            with Vertical(classes="sys-column"):
+                yield HudPanel(
+                    Static(id="sys-services"),
+                    title="Services",
+                    subtitle="↑↓ select · ↵ detail",
+                    id="sys-services-panel",
+                )
+                yield HudPanel(
+                    Static(id="sys-releases"),
+                    title="Releases",
+                    subtitle="↑↓ select · ↵ detail",
+                    id="sys-releases-panel",
+                )
+                yield HudPanel(
+                    Static(id="sys-actions"),
+                    title="Actions",
+                    subtitle="copy · nothing runs from here",
+                    id="sys-actions-panel",
+                )
+            with Vertical(classes="sys-column"):
+                yield DetailPane(
+                    Static(id="sys-service-detail"),
+                    title="Service detail",
+                    id="sys-service-pane",
+                )
+                yield HudPanel(Static(id="sys-timing"), title="Data and timing")
+                yield HudPanel(Static(id="sys-machine"), title="Machine")
 
     def on_mount(self) -> None:
         """Apply the theme, draw, and start the poll, the clock and the effects."""
@@ -1511,6 +1587,9 @@ class HomeApp(App[None]):
                     lambda: briefs_screen(model.briefs(), ctx, self._data, width=self.size.width),
                 ),
             )
+        if self._tab == _SYSTEM:
+            self._read_system()
+            self._paint_system()
         if self._tab == _LOGS:
             logs = TABS[_LOGS]
             self._set(
@@ -1872,6 +1951,154 @@ class HomeApp(App[None]):
             self._set("detail", self._detail_content(self._selected, ctx))
 
     # ------------------------------------------------------------------
+    # System (view only: nothing here runs a command)
+    # ------------------------------------------------------------------
+
+    def _read_system(self) -> None:
+        """Re-read the System sources; a missing source stays ``None``."""
+        source = self._system
+        self._services = None if source.services is None else source.services.services()
+        self._releases = None if source.releases is None else source.releases.releases()
+        self._machine = None if source.machine is None else source.machine.machine()
+        self._bar_seconds = None
+        if source.bar_timing is not None:
+            try:
+                self._bar_seconds = source.bar_timing.bar_check_seconds(BAR_CHECKS)
+            except LedgerError:
+                self._bar_seconds = None
+
+    def _service_names(self) -> list[str]:
+        return [status.unit.name for status in self._services or ()]
+
+    def _release_names(self) -> list[str]:
+        return [] if self._releases is None else list(self._releases.names())
+
+    def _system_keys(self) -> list[str]:
+        return [f"{_SERVICE}{name}" for name in self._service_names()] + [
+            f"{_RELEASE}{name}" for name in self._release_names()
+        ]
+
+    def _system_selected(self, prefix: str) -> str | None:
+        cursor = self._sys_cursor
+        if cursor is None or not cursor.startswith(prefix):
+            return None
+        return cursor.removeprefix(prefix)
+
+    def _eur_rate_date(self) -> date | None:
+        try:
+            return self._model.portfolio(self._range).eur_rate_date
+        except _CARD_ERRORS:
+            return None
+
+    def _paint_system(self) -> None:
+        """Draw the System panels from the last read; moving the cursor reads nothing."""
+        keys = self._system_keys()
+        if self._sys_cursor not in keys:
+            self._sys_cursor = keys[0] if keys else None
+        tokens = tokens_for(self.theme)
+        tz = self._ctx.tz
+        now = self._clock()
+        service = self._system_selected(_SERVICE)
+        release = self._system_selected(_RELEASE)
+        self._home.query_one("#system-body").set_class(self.is_wide, "-split")
+        self._set("sys-services", services_text(self._services, service, tz, tokens))
+        self._set("sys-releases", releases_text(self._releases, release, tz, tokens))
+        self._set("sys-actions", actions_text(tokens))
+        self._set(
+            "sys-timing",
+            timing_text(
+                self._heartbeat,
+                eur_rate_date=self._eur_rate_date(),
+                bar_seconds=self._bar_seconds,
+                now=now,
+                tz=tz,
+                tokens=tokens,
+            ),
+        )
+        self._set("sys-machine", machine_text(self._machine, now, tz, tokens))
+        on_system = self._tab == _SYSTEM
+        services_panel = self._home.query_one("#sys-services-panel", HudPanel)
+        services_panel.active = on_system and service is not None
+        releases_panel = self._home.query_one("#sys-releases-panel", HudPanel)
+        releases_panel.active = on_system and release is not None
+        shown = (
+            self._service_open
+            and service is not None
+            and detail_mode(self.size.width, beside=self.is_wide) is DetailMode.PANE
+        )
+        self._home.query_one("#sys-service-pane", DetailPane).is_open = shown
+        if shown and service is not None:
+            self._set("sys-service-detail", self._service_content(service))
+
+    def _service_content(self, name: str) -> RenderableType:
+        unit = next((s.unit for s in self._services or () if s.unit.name == name), None)
+        reader = self._system.unit_journal
+        journal = (
+            None if unit is None or reader is None else reader(unit.unit, _SERVICE_JOURNAL_LINES)
+        )
+        return service_detail(
+            self._services,
+            name,
+            journal=journal,
+            now=self._clock(),
+            tz=self._ctx.tz,
+            tokens=tokens_for(self.theme),
+        )
+
+    def _release_content(self, name: str) -> RenderableType:
+        return release_detail(
+            self._releases, name, self._clock(), self._ctx.tz, tokens_for(self.theme)
+        )
+
+    def _restore_system_cursor(self, prefix: str, state: ListState | None) -> None:
+        if state is not None and state.cursor is not None:
+            self._sys_cursor = f"{prefix}{state.cursor}"
+        self._paint_system()
+
+    def _open_system_detail(self) -> None:
+        """Open the selected service (pane, or screen when compact) or release (screen)."""
+        service = self._system_selected(_SERVICE)
+        release = self._system_selected(_RELEASE)
+        if service is not None:
+            if detail_mode(self.size.width, beside=self.is_wide) is DetailMode.PANE:
+                self._service_open = True
+                self._paint_system()
+                return
+            self.push_screen(
+                DetailScreen(
+                    trail=SERVICES_TRAIL,
+                    keys=self._service_names,
+                    current=service,
+                    body=self._service_content,
+                    title="Service detail",
+                    state=ListState(cursor=service),
+                    chips=_DETAIL_CHIPS,
+                ),
+                partial(self._restore_system_cursor, _SERVICE),
+            )
+        elif release is not None:
+            self.push_screen(
+                DetailScreen(
+                    trail=RELEASES_TRAIL,
+                    keys=self._release_names,
+                    current=release,
+                    body=self._release_content,
+                    title="Release detail",
+                    state=ListState(cursor=release),
+                    chips=_DETAIL_CHIPS,
+                ),
+                partial(self._restore_system_cursor, _RELEASE),
+            )
+
+    def _step_system(self, step: int) -> None:
+        keys = self._system_keys()
+        if not keys:
+            return
+        current = keys.index(self._sys_cursor) if self._sys_cursor in keys else 0
+        self._sys_cursor = keys[(current + step) % len(keys)]
+        self._paint_system()
+
+    # ------------------------------------------------------------------
     # Actions
     # ------------------------------------------------------------------
 
@@ -1944,6 +2171,9 @@ class HomeApp(App[None]):
         if self._detail_open and self._tab == _HOME:
             self._detail_open = False
             self._redraw()
+        elif self._service_open and self._tab == _SYSTEM:
+            self._service_open = False
+            self._paint_system()
         elif self._tab_history:
             self._switch_to(self._tab_history.pop())
 
@@ -1959,11 +2189,14 @@ class HomeApp(App[None]):
         self._redraw()
 
     def action_select(self, step: int) -> None:
-        """Move the position cursor, wrapping around.
+        """Move the position cursor (on System, the service / release cursor), wrapping around.
 
         Args:
             step: ``-1`` for the previous position, ``1`` for the next.
         """
+        if self._on_home and self._tab == _SYSTEM:
+            self._step_system(step)
+            return
         coins = self._positions_coins()
         if not self._home_shown or not coins:
             return
@@ -1987,7 +2220,13 @@ class HomeApp(App[None]):
         self._redraw()
 
     def action_open_detail(self) -> None:
-        """Open the selected position: a pane beside the list, else a detail screen."""
+        """Open the selected position: a pane beside the list, else a detail screen.
+
+        On System it opens the selected service or release instead.
+        """
+        if self._on_home and self._tab == _SYSTEM:
+            self._open_system_detail()
+            return
         selected = self._selected
         if not self._home_shown or selected is None:
             return
@@ -2102,6 +2341,7 @@ class HomeApp(App[None]):
             Text("  A show or fold the 4h check lines in Activity"),
             Text("  L logs · T theme · ? this help · Q quit"),
             Text("  R restart onto a new version (only while its notice shows)"),
+            Text("  7 System is view only: each VPS action is a command to copy; no key runs one."),
             Text(
                 "This screen is read-only: nothing here changes a position, a stop or the ledger."
             ),
@@ -2132,6 +2372,7 @@ def run_home(
     tax: TaxScreenSource | None = None,
     taxpayer_profile: TaxpayerProfileView | None = None,
     tax_pack: Callable[[int], TaxPackStatus | None] | None = None,
+    system: SystemSources | None = None,
 ) -> None:
     """Run the console until the operator quits, or restarts onto a new release.
 
@@ -2155,6 +2396,7 @@ def run_home(
         tax: The Tax screen's source; see :class:`HomeApp`.
         taxpayer_profile: What the Tax screen may say about the profile.
         tax_pack: Returns the year's tax pack state.
+        system: The System screen's read-only sources; see :class:`HomeApp`.
     """
     app = HomeApp(
         model,
@@ -2170,6 +2412,7 @@ def run_home(
         tax=tax,
         taxpayer_profile=taxpayer_profile,
         tax_pack=tax_pack,
+        system=system,
         boot=True,
     )
     app.run()
