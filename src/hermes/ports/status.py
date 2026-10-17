@@ -69,7 +69,7 @@ class StatusReadPort(Protocol):
         ...
 
     def open_entries(self) -> tuple[ShadowEntry, ...]:
-        """Return every pair whose latest signal is an entry, oldest first."""
+        """Return every pair whose latest filled entry has not exited, oldest first."""
         ...
 
     def halts_since(self, since: datetime) -> tuple[RiskHaltRecorded, ...]:
