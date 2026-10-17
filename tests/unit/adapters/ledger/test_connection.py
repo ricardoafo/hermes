@@ -86,8 +86,12 @@ def test_a_read_only_unit_opens_the_ledger_while_serve_is_stopped(tmp_path: Path
     This is the tax pack at 07:30 with serve stopped for a deploy. It can
     neither create a ``-wal`` or ``-shm`` file nor open one for writing, as
     under the VPS's read-only mount. Committed rows still sitting in the
-    ``-wal`` file must be visible. The real read-only mount is in
-    ``tests/integration/adapters/ledger/test_ledger_read_only_mount.py``.
+    ``-wal`` file must be visible.
+
+    The VPS mount fails the write open with EROFS, this test with EACCES.
+    SQLite does not tell them apart: when ``open(O_RDWR)`` of ``-shm`` fails
+    for any reason it opens it ``O_RDONLY`` and runs read-only
+    (``unixOpenSharedMemory`` in ``os_unix.c``), so both take the same path.
     """
     state = tmp_path / "state"
     state.mkdir()

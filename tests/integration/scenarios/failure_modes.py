@@ -378,8 +378,7 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
                 "test_closing_the_last_writer_keeps_the_wal_and_shm_files",
                 _U + "adapters/ledger/test_connection.py::"
                 "test_a_read_only_unit_opens_the_ledger_while_serve_is_stopped",
-                _I + "adapters/ledger/test_ledger_read_only_mount.py::"
-                "test_a_unit_on_a_read_only_mount_reads_the_ledger_serve_left",
+                _U + "entrypoints/test_tax.py::test_a_ledger_it_cannot_switch_to_wal_exits_1",
             ),
         ),
         FailureMode(
