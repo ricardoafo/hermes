@@ -252,6 +252,22 @@ def test_parse_snapshot_missing_field_raises_exchange_error() -> None:
 
 
 @pytest.mark.unit
+def test_parse_snapshot_keeps_the_venue_last_update_id() -> None:
+    """The snapshot carries ``lastUpdateId`` so stale diffs can be dropped (issue #866)."""
+    book = _parse_snapshot(data=_snapshot_response(last_update_id=1027024), pair=_BTC_USDT)
+    assert book.last_update_id == 1027024
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("bad", ["1027024", 1027024.0, True, None])
+def test_parse_snapshot_refuses_a_last_update_id_that_is_not_an_integer(bad: object) -> None:
+    """A non-integer ``lastUpdateId`` is a schema error, not a book without a sequence."""
+    data = _snapshot_response() | {"lastUpdateId": bad}
+    with pytest.raises(ExchangeError, match="lastUpdateId must be an integer"):
+        _parse_snapshot(data=data, pair=_BTC_USDT)
+
+
+@pytest.mark.unit
 def test_get_snapshot_calls_depth_endpoint() -> None:
     """get_snapshot fetches /api/v3/depth with correct params."""
     response_data = _snapshot_response(
