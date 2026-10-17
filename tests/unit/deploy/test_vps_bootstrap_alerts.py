@@ -163,6 +163,20 @@ def test_bootstrap_workflow_ships_the_notifier_script() -> None:
     assert "tar -C deploy -cf - systemd hermes-notify-failure.sh hermes-notify-crash.sh" in runs
 
 
+def test_bootstrap_uploads_to_a_root_only_dir_the_script_reads() -> None:
+    """The unit and alert upload lands outside world-writable /var/tmp, where the script reads it.
+
+    In /var/tmp another local user could create the directory between the
+    workflow's rm and install -d and plant files root then installs (#782).
+    """
+    steps = yaml.safe_load(_WORKFLOW.read_text(encoding="utf-8"))["jobs"]["bootstrap"]["steps"]
+    runs = "\n".join(str(s.get("run", "")) for s in steps)
+
+    assert "BOOTSTRAP_DIR=/var/lib/hermes-bootstrap\n" in _SCRIPT.read_text(encoding="utf-8")
+    assert "tar -xf - -C /var/lib/hermes-bootstrap'" in runs
+    assert "/var/tmp" not in runs  # noqa: S108 - asserts the path is absent
+
+
 @_needs_bash
 def test_daily_timer_is_enabled_when_the_env_file_has_a_slack_token(tmp_path: Path) -> None:
     """With a Slack token the daily alive line runs (#373)."""

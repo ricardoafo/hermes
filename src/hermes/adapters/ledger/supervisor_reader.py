@@ -12,6 +12,7 @@ import json
 import sqlite3
 from datetime import datetime
 
+from hermes.adapters.ledger._cells import time_cell
 from hermes.adapters.ledger.status_reader import SqliteStatusReader
 from hermes.domain.errors import LedgerError
 from hermes.domain.market_data.kline import KlineInterval
@@ -91,7 +92,7 @@ class SqliteSupervisorReader(SqliteStatusReader):
                 FillFact(
                     pair=_pair(base, quote),
                     side=str(side),
-                    occurred_at=datetime.fromisoformat(str(occurred_at)),
+                    occurred_at=time_cell(occurred_at),
                 )
                 for base, quote, side, occurred_at in rows
             )
@@ -120,6 +121,6 @@ def _fact(payload: dict[str, object]) -> SignalFact:
     return SignalFact(
         pair=Pair(base=Currency(pair["base"]), quote=Currency(pair["quote"])),
         kind=str(payload["kind"]),
-        occurred_at=datetime.fromisoformat(str(payload["occurred_at"])),
+        occurred_at=time_cell(payload["occurred_at"]),
         exit_reason=None if reason is None else str(reason),
     )

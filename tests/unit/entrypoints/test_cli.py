@@ -180,6 +180,34 @@ class TestServeExitCodes:
 
         assert rc == 7
 
+    @pytest.mark.parametrize(("argv", "expected"), [([], False), (["--new-ledger"], True)])
+    def test_new_ledger_reaches_the_build_only_when_given(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        argv: list[str],
+        expected: bool,
+    ) -> None:
+        """#876: the build may create a missing ledger only when --new-ledger is given."""
+        seen: list[object] = []
+
+        def _build(*_a: object, **kwargs: object) -> object:
+            seen.append(kwargs["new_ledger"])
+            raise RuntimeError("stop after the build")
+
+        monkeypatch.setattr(serve_module, "check_startup", lambda *_a, **_k: None)
+        monkeypatch.setattr(serve_module, "build_composition", _build)
+        monkeypatch.setattr(serve_module, "report_failure", lambda _exc: None)
+        config_dir = Path(__file__).resolve().parents[3] / "config"
+
+        rc = cli_module.main(
+            ["serve", "--config-dir", str(config_dir), "--db", str(tmp_path / "x.sqlite3"), *argv],
+            stream=io.StringIO(),
+            err=io.StringIO(),
+        )
+
+        assert (rc, seen) == (1, [expected])
+
     def test_a_failed_build_exits_one_and_is_reported(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:

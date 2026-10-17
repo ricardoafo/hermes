@@ -23,6 +23,7 @@ import json
 import os
 import sqlite3
 import stat
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -35,6 +36,7 @@ from hermes.application.strategy_protocol.day_zero import sha256_file
 from hermes.entrypoints import serve as serve_module
 from hermes.entrypoints.shadow_start import main, run
 from hermes.infrastructure.config.loader import load_config
+from tests.support.serve_loop import FakeFeed
 
 _SID = "swing-donchian-4h"
 _ROOT = Path(__file__).resolve().parents[3]
@@ -127,14 +129,32 @@ class TestConfirmed:
         mode = stat.S_IMODE(archived.stat().st_mode)
         assert (rows, mode & 0o222) == (5, 0)
 
-    def test_ledger_and_wal_files_are_removed(self, tmp_path: Path) -> None:
-        """Serve starts a fresh ledger: the old file and its -wal/-shm are gone."""
+    def test_the_ledger_is_replaced_by_an_empty_one(self, tmp_path: Path) -> None:
+        """Day 0 starts on an empty ledger serve accepts (#876): no warm-up row is left."""
         db = _ledger(tmp_path)
         (tmp_path / "hermes.sqlite3-wal").write_bytes(b"")
         (tmp_path / "hermes.sqlite3-shm").write_bytes(b"")
         _certify(db)
         assert _run(db, confirm=True)[0] == 0
-        assert sorted(p.name for p in tmp_path.glob("hermes.sqlite3*")) == []
+        with closing(sqlite3.connect(db)) as fresh:
+            counts = [
+                fresh.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]  # noqa: S608
+                for table in ("trades", "events", "capital_seeds")
+            ]
+        assert counts == [0, 0, 0]
+
+    def test_serve_boots_on_the_day_zero_ledger_without_new_ledger(self, tmp_path: Path) -> None:
+        """#876: hermes.service has no --new-ledger, so day 0 must leave a ledger serve opens."""
+        db = _ledger(tmp_path)
+        _certify(db)
+        assert _run(db, confirm=True)[0] == 0
+        composition = serve_module.build_composition(
+            load_config(_CONFIG, env={}), db_path=db, env={}, feed=FakeFeed()
+        )
+        composition.sqlite_connection.close()
+        if composition.serve_lock is not None:
+            composition.serve_lock.release()
+        assert composition.tracker.open_position_count() == 0
 
     def test_record_holds_the_hashes_and_checks(self, tmp_path: Path) -> None:
         """The day-0 record names the run, the archived copy's hash and every rule."""
@@ -167,7 +187,6 @@ class TestConfirmed:
         db = _ledger(tmp_path)
         _certify(db)
         assert _run(db, confirm=True)[0] == 0
-        db = _ledger(tmp_path)
         assert _run(db, confirm=True)[0] == 3
 
 

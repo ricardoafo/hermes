@@ -90,7 +90,7 @@ def _boot_through_serve_main(db: Path) -> tuple[int, list[dict[str, Any]]]:
 
     with capture_logs() as logs, pytest.MonkeyPatch.context() as patch:
         patch.setattr(serve_module, "run", loop_must_not_start)
-        code = asyncio.run(serve_main(harness.production_config(), db_path=db))
+        code = asyncio.run(serve_main(harness.production_config(), db_path=db, new_ledger=True))
     return code, [dict(line) for line in logs]
 
 

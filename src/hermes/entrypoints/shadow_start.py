@@ -11,7 +11,7 @@ never run it). It:
 3. With it, first proves it can write every directory it will change (the
    ledger's, the archive's and the run records'), so a start never stops
    halfway; then copies the ledger read-only into the archive directory, checks
-   the copy, removes the ledger so serve starts a fresh one, and writes the
+   the copy, replaces the ledger with a fresh, empty one, and writes the
    day-0 record (engine version, config, pre-registration and data manifest
    hashes) next to the ledger. It prints a lab notebook entry to commit.
 
@@ -34,12 +34,15 @@ import sqlite3
 import subprocess
 import tempfile
 from collections.abc import Callable
+from contextlib import closing
 from datetime import UTC, datetime
 from importlib import metadata
 from pathlib import Path
 from typing import Final, TextIO
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
+from hermes.adapters.ledger.connection import open_ledger
+from hermes.adapters.ledger.migration_runner import apply_migrations
 from hermes.application.strategy_protocol.day_zero import (
     MANUAL_RULES,
     DayZeroRecord,
@@ -70,7 +73,7 @@ _USAGE = (
     "                           [--archive-dir DIR] [--confirm START]\n"
     "\n"
     "Check shadow Ready (ADR-021), then with --confirm START archive the warm-up\n"
-    "ledger read-only, remove it so serve starts fresh, and record day 0.\n"
+    "ledger read-only, replace it with an empty one, and record day 0.\n"
     "Stop hermes.service first. Without --confirm it changes nothing.\n"
     "Exit codes: 0 done, 1 not ready or service running, 2 usage, 3 error.\n"
 )
@@ -154,7 +157,8 @@ def run(
     if not confirm:
         stream.write(
             f"Dry run. With --confirm {CONFIRM_WORD} this would copy {db} to {archived} "
-            f"(read-only), remove {db}, and write {runs_dir / (run_id + '.json')}.\n"
+            f"(read-only), replace {db} with an empty ledger, "
+            f"and write {runs_dir / (run_id + '.json')}.\n"
         )
         return 0
 
@@ -178,6 +182,7 @@ def run(
         )
         record_path = _write_record(runs_dir, day_zero)
         _remove_ledger(db)
+        _create_ledger(db)
     except (OSError, sqlite3.Error, ValueError) as exc:
         err.write(f"ERROR: {exc}\n")
         return 3
@@ -185,7 +190,7 @@ def run(
     stream.write(f"Day 0 recorded: {record_path}\n")
     if archived_sha is not None:
         stream.write(f"Warm-up ledger archived read-only: {archived}\n")
-    stream.write(f"Start the service; serve creates a fresh ledger at {db}.\n\n")
+    stream.write(f"Start the service; serve runs on the fresh ledger at {db}.\n\n")
     stream.write(_notebook_entry(day_zero, record_path))
     return 0
 
@@ -259,6 +264,16 @@ def _remove_ledger(db: Path) -> None:
     """Remove the ledger and its WAL and shared-memory files."""
     for path in (db, db.with_name(db.name + "-wal"), db.with_name(db.name + "-shm")):
         path.unlink(missing_ok=True)
+
+
+def _create_ledger(db: Path) -> None:
+    """Create the empty ledger day 0 starts on.
+
+    Serve refuses a missing ledger (#876), so the fresh run needs one to
+    exist; serve records the capital seed on its first start.
+    """
+    with closing(open_ledger(db)) as connection:
+        apply_migrations(connection)
 
 
 def _package_version() -> str:
