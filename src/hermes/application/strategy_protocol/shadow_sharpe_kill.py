@@ -117,5 +117,6 @@ class ShadowSharpeKill:
                     f"Shadow Sharpe below the {self.floor:g} floor for "
                     f"{self.required_days} consecutive days (pre-reg §10)."
                 ),
+                rule="shadow_sharpe",
             )
         return KillDecision(triggered=False, reason="")

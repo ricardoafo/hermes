@@ -63,6 +63,25 @@ def _scenario(script: MarketScript, live_from: datetime, pair: Pair, breakout: D
     return Scenario(market, live_from, at)
 
 
+def breakout_twice_then_gap_down() -> Scenario:
+    """BTC breaks out to 156, holds, breaks out again to 165, then gaps down to 120.
+
+    A strategy watching the position from the first breakout ignores the
+    second one (it is already long) and exits on the gap bar, whose low of 115
+    is far under the chandelier stop. A strategy seeded flat would buy the
+    second breakout instead (issue #902).
+    """
+    script = _script()
+    script.ramp(BTC, days=_RAMP_DAYS, to=Decimal(150))
+    script.bar(BTC, close=Decimal(156), high=Decimal(157))
+    script.hold(BTC, days=2)
+    script.bar(BTC, close=Decimal(165), high=Decimal(166))
+    script.hold(BTC, days=1)
+    script.bar(BTC, close=Decimal(120), low=Decimal(115))
+    script.hold(BTC, days=1)
+    return _scenario(script, _boot_before_breakout(), BTC, Decimal(156))
+
+
 def chandelier_exit() -> Scenario:
     """BTC trends 100 to 150, breaks out to 156, holds two days, then gaps down to 120.
 
@@ -155,7 +174,8 @@ def three_breakouts(btc_climbs_to: Decimal = Decimal(175)) -> Scenario:
     Each entry is capped at 250 notional (§5.4). With BTC at 175 its position
     is worth about 280 by the ETH and SOL breakouts, so ETH fits under the 750
     exposure cap and SOL would take it to about 780 (§5.5). With BTC back at
-    156 all three fit: 3 x 250 is the cap itself.
+    156 the three make the cap itself at the signal price, but each fills a
+    little above it, so SOL does not fit; with BTC at 150 all three do.
     """
     script = _script()
     script.ramp(BTC, days=_RAMP_DAYS, to=Decimal(150), spread=_WIDE)

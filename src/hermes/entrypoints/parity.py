@@ -13,7 +13,7 @@ day. A bar belongs to the day it closes in, so the day's 1d bar is the one
 closing at its end.
 
 The strategy is warmed up from the stored bars before the day. When they fall
-short of the configured floors (45 4h, 200 1d), the gap is filled from the same
+short of the configured floors (45 4h, 300 1d), the gap is filled from the same
 public Binance klines read serve warms up with (no API key); stored bars win
 wherever both exist. ``--offline`` uses stored bars only and exits 3 on a
 shortfall.
@@ -89,7 +89,7 @@ _USAGE: Final = (
     "Exit codes: 0 parity, 1 mismatch, 2 usage, 3 no data, no ledger or bad config.\n"
 )
 
-_MIN_WARMUP: Final = {KlineInterval.H4: 45, KlineInterval.D1: 200}
+_MIN_WARMUP: Final = {KlineInterval.H4: 45, KlineInterval.D1: 300}
 """Floors of ``MarketDataConfig.warmup_bars_*``: fewer bars leave an indicator unsettled."""
 
 RouterFactory = Callable[[Mapping[str, str]], RouterConfig]

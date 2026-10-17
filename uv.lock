@@ -668,6 +668,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "python-dotenv" },
     { name = "python-telegram-bot" },
+    { name = "python-ulid" },
     { name = "pyyaml" },
     { name = "returns" },
     { name = "rich" },
@@ -677,7 +678,6 @@ dependencies = [
     { name = "textual-image" },
     { name = "textual-plotext" },
     { name = "typer" },
-    { name = "ulid-py" },
 ]
 
 [package.dev-dependencies]
@@ -714,6 +714,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.5,<3" },
     { name = "python-dotenv", specifier = ">=1,<2" },
     { name = "python-telegram-bot", specifier = ">=22.8,<23" },
+    { name = "python-ulid", specifier = ">=4.0.1,<5" },
     { name = "pyyaml", specifier = ">=6,<7" },
     { name = "returns", specifier = ">=0.24,<1" },
     { name = "rich", specifier = ">=15,<16" },
@@ -723,7 +724,6 @@ requires-dist = [
     { name = "textual-image", specifier = ">=0.14.1,<0.15" },
     { name = "textual-plotext", specifier = ">=1.0.1,<2" },
     { name = "typer", specifier = ">=0.27.2,<1" },
-    { name = "ulid-py", specifier = ">=1.1,<2" },
 ]
 
 [package.metadata.requires-dev]
@@ -1531,6 +1531,15 @@ wheels = [
 ]
 
 [[package]]
+name = "python-ulid"
+version = "4.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d6/41/65079023c81491a21799c0120bce5925366b6913596bf797806f19973290/python_ulid-4.0.1.tar.gz", hash = "sha256:bbeec02556190bb9dc3401faa7268696acbfbe7b6db9908c155dc3548629f20c", size = 101683, upload-time = "2026-07-20T15:21:41.256Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b4/15/8b39b36f55b6618ec4ca9b55134dcfd9c04cecbc72709f5d8e6bdebed9cd/python_ulid-4.0.1-py3-none-any.whl", hash = "sha256:6f1d69ceb97e99fe542df8476ebcd7a668284bf53ee14b3106bcc6a341a95ed9", size = 14609, upload-time = "2026-07-20T15:21:40.214Z" },
+]
+
+[[package]]
 name = "pyyaml"
 version = "6.0.3"
 source = { registry = "https://pypi.org/simple" }
@@ -1907,15 +1916,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/78/67/9a363818028526e2d4579334460df777115bdec1bb77c08f9db88f6389f2/uc_micro_py-2.0.0.tar.gz", hash = "sha256:c53691e495c8db60e16ffc4861a35469b0ba0821fe409a8a7a0a71864d33a811", size = 6611, upload-time = "2026-03-01T06:31:27.526Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/61/73/d21edf5b204d1467e06500080a50f79d49ef2b997c79123a536d4a17d97c/uc_micro_py-2.0.0-py3-none-any.whl", hash = "sha256:3603a3859af53e5a39bc7677713c78ea6589ff188d70f4fee165db88e22b242c", size = 6383, upload-time = "2026-03-01T06:31:26.257Z" },
-]
-
-[[package]]
-name = "ulid-py"
-version = "1.1.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/3b/53/d14a8ec344048e21431821cb49e9a6722384f982b889c2dd449428dbdcc1/ulid-py-1.1.0.tar.gz", hash = "sha256:dc6884be91558df077c3011b9fb0c87d1097cb8fc6534b11f310161afd5738f0", size = 22514, upload-time = "2020-09-15T15:35:09.414Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/42/7c/a12c879fe6c2b136a718c142115ff99397fbf62b4929d970d58ae386d55f/ulid_py-1.1.0-py2.py3-none-any.whl", hash = "sha256:b56a0f809ef90d6020b21b89a87a48edc7c03aea80e5ed5174172e82d76e3987", size = 25753, upload-time = "2020-09-15T15:35:08.075Z" },
 ]
 
 [[package]]

@@ -1,0 +1,1 @@
+- New `hermes trials repair` and `hermes journal repair` drop a torn last line that a power loss or kill left in the trial log or the decision journal. They need `--confirm REPAIR`, record the drop as a chain line, and refuse a file whose chain breaks before its last line (issue #891).

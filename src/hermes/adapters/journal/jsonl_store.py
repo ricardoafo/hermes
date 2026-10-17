@@ -8,6 +8,11 @@ raises instead of returning a doctored history. Each read-verify-append runs
 under an exclusive lock on ``<path>.lock``, so two appenders cannot link to the
 same tail and fork the chain (issue #855).
 
+A torn last line left by a power loss blocks every read and append until
+:meth:`JsonlDecisionJournal.repair` drops it (issue #891). The drop is itself a
+chain line of kind ``repair``, so the journal keeps the record that a line went
+missing; :meth:`JsonlDecisionJournal.entries` does not return it.
+
 Reference: issue #363; openspec/changes/363-decision-journal D-2.
 """
 
@@ -20,13 +25,15 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
+from hermes.adapters.jsonl_tail import TornLine, replace_torn_line, torn_line
 from hermes.domain.journal.entries import Decision, OutcomeKind, Review, Score
 from hermes.infrastructure.file_lock import locked
 from hermes.ports.decision_journal import JournalIntegrityError
 
-__all__ = ["GENESIS_HASH", "JsonlDecisionJournal"]
+__all__ = ["GENESIS_HASH", "REPAIR_KIND", "JsonlDecisionJournal"]
 
 GENESIS_HASH = "0" * 64
+REPAIR_KIND = "repair"
 
 APPEND_LOCK_TIMEOUT_SECONDS = 10.0
 """How long an append waits for another one; an append takes milliseconds."""
@@ -129,18 +136,64 @@ class JsonlDecisionJournal:
             JournalIntegrityError: A line is malformed, edited, reordered or
                 missing.
         """
-        return [entry for entry, _ in self._read()]
+        return [entry for entry, _ in self._read() if entry is not None]
+
+    def torn_line(self) -> TornLine | None:
+        """Return the torn last line, or ``None`` when there is none or no file.
+
+        Raises:
+            OSError: The file cannot be read.
+        """
+        return torn_line(self._path) if self._path.exists() else None
+
+    def repair(self, *, repaired_at: datetime) -> TornLine | None:
+        """Drop a torn last line and record the drop as a chain line, under the lock.
+
+        Every line before the torn one must verify; a journal broken anywhere
+        else is refused, because only an edit breaks a chain in the middle.
+
+        Returns:
+            The line dropped, or ``None`` when there was nothing to repair.
+
+        Raises:
+            JournalIntegrityError: The lines before the torn one fail verification.
+            OSError: The write fails, or another append held the lock for
+                :data:`APPEND_LOCK_TIMEOUT_SECONDS` (a :class:`TimeoutError`).
+        """
+        with locked(self.lock_path, timeout=APPEND_LOCK_TIMEOUT_SECONDS):
+            torn = self.torn_line()
+            if torn is None:
+                return None
+            kept = self._path.read_bytes()[: torn.offset].decode("utf-8")
+            records = self._read(kept)
+            prev = records[-1][1] if records else GENESIS_HASH
+            data = {
+                "repaired_at": repaired_at.isoformat(),
+                "dropped_line": torn.number,
+                "dropped_bytes": torn.size,
+                "dropped_sha256": torn.sha256,
+            }
+            line = {
+                "kind": REPAIR_KIND,
+                "data": data,
+                "prev": prev,
+                "hash": _chain_hash(prev, REPAIR_KIND, data),
+            }
+            replace_torn_line(self._path, torn, json.dumps(line, sort_keys=True))
+            return torn
 
     def _verified_tail(self) -> str:
         records = self._read()
         return records[-1][1] if records else GENESIS_HASH
 
-    def _read(self) -> list[tuple[Decision | Review, str]]:
-        if not self._path.exists():
-            return []
-        out: list[tuple[Decision | Review, str]] = []
+    def _read(self, text: str | None = None) -> list[tuple[Decision | Review | None, str]]:
+        if text is None:
+            if not self._path.exists():
+                return []
+            text = self._path.read_text(encoding="utf-8")
+        out: list[tuple[Decision | Review | None, str]] = []
         prev = GENESIS_HASH
-        for number, raw in enumerate(self._path.read_text(encoding="utf-8").splitlines(), 1):
+        for number, raw in enumerate(text.splitlines(), 1):
             try:
                 line = json.loads(raw)
                 kind, data, line_prev, line_hash = (
@@ -149,10 +202,11 @@ class JsonlDecisionJournal:
                     line["prev"],
                     line["hash"],
                 )
-                entry = _decode(kind, data)
+                entry = None if kind == REPAIR_KIND else _decode(kind, data)
             except (ValueError, KeyError, TypeError) as exc:
                 raise JournalIntegrityError(
-                    f"{self._path}:{number}: malformed entry: {exc}"
+                    f"{self._path}:{number}: malformed entry: {exc}; if a power loss cut "
+                    "the last append, `hermes journal repair` drops it"
                 ) from exc
             if line_prev != prev or line_hash != _chain_hash(prev, kind, data):
                 raise JournalIntegrityError(

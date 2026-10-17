@@ -235,3 +235,85 @@ def test_concurrent_journal_appenders_leave_one_unbroken_chain(
         thread.join()
     expected = sorted(f"w{w}-{i}" for w in range(4) for i in range(25))
     assert sorted(e.entry_id for e in journal.entries()) == expected
+
+
+# -- a torn last line (issue #891) ---------------------------------------------
+
+_REPAIRED_AT = datetime(2026, 10, 17, 12, 0, tzinfo=UTC)
+
+
+def _tear(journal: JsonlDecisionJournal) -> bytes:
+    """Cut the next append halfway, as a power loss would, and return the bytes left."""
+    torn = b'{"data": {"entry_id": "d9", "decision": "Cut sh'
+    with journal.lock_path.with_suffix("").open("ab") as fh:
+        fh.write(torn)
+    return torn
+
+
+def test_a_torn_last_line_blocks_the_next_decision(journal: JsonlDecisionJournal) -> None:
+    """Without a repair nothing more can be recorded, and the error names the fix."""
+    record_decision(journal, _decision())
+    _tear(journal)
+    with pytest.raises(JournalIntegrityError, match=r":2: malformed.*hermes journal repair"):
+        record_decision(journal, _decision("d2"))
+
+
+def test_a_repair_keeps_every_entry_and_lets_the_next_one_in(
+    journal: JsonlDecisionJournal,
+) -> None:
+    """The whole decision survives the repair, and the next decision lands after it."""
+    record_decision(journal, _decision())
+    _tear(journal)
+    journal.repair(repaired_at=_REPAIRED_AT)
+    record_decision(journal, _decision("d2"))
+    assert [e.entry_id for e in journal.entries()] == ["d1", "d2"]
+
+
+def test_a_repair_records_the_drop_as_a_chain_line(
+    journal: JsonlDecisionJournal, tmp_path: Path
+) -> None:
+    """The journal keeps a repair line naming the dropped bytes by their hash."""
+    record_decision(journal, _decision())
+    torn = _tear(journal)
+    dropped = journal.repair(repaired_at=_REPAIRED_AT)
+    lines = [json.loads(raw) for raw in (tmp_path / "journal.jsonl").read_text().splitlines()]
+    assert dropped is not None
+    assert (lines[-1]["kind"], lines[-1]["data"], lines[-1]["prev"]) == (
+        "repair",
+        {
+            "repaired_at": "2026-10-17T12:00:00+00:00",
+            "dropped_line": 2,
+            "dropped_bytes": len(torn),
+            "dropped_sha256": dropped.sha256,
+        },
+        lines[0]["hash"],
+    )
+
+
+def test_a_repair_refuses_a_journal_edited_before_the_torn_line(
+    journal: JsonlDecisionJournal, tmp_path: Path
+) -> None:
+    """An edit breaks the chain in the middle; a repair never hides it."""
+    record_decision(journal, _decision())
+    path = tmp_path / "journal.jsonl"
+    path.write_text(path.read_text().replace("Slim the", "Grow the"))
+    _tear(journal)
+    before = path.read_bytes()
+    with pytest.raises(JournalIntegrityError, match="hash chain broken"):
+        journal.repair(repaired_at=_REPAIRED_AT)
+    assert path.read_bytes() == before
+
+
+def test_a_journal_repair_with_nothing_torn_changes_nothing(
+    journal: JsonlDecisionJournal, tmp_path: Path
+) -> None:
+    """A whole journal is left byte for byte as it was."""
+    record_decision(journal, _decision())
+    before = (tmp_path / "journal.jsonl").read_bytes()
+    assert (
+        journal.repair(repaired_at=_REPAIRED_AT),
+        (tmp_path / "journal.jsonl").read_bytes(),
+    ) == (
+        None,
+        before,
+    )

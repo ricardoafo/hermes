@@ -111,3 +111,9 @@ def test_rolling_sharpe_needs_thirty_days() -> None:
     short = rolling_annualised_sharpe([0.01, 0.03] * 14 + [0.01])
     full = rolling_annualised_sharpe([0.01, 0.03] * 15)
     assert (short, full is not None) == (None, True)
+
+
+def test_the_kill_names_the_shadow_sharpe_rule(rule: ShadowSharpeKill) -> None:
+    """The fired decision carries ``shadow_sharpe``, which value-free records key on (#749)."""
+    decisions = [rule.observe(_START + timedelta(days=i), 0.1) for i in range(60)]
+    assert decisions[-1].rule == "shadow_sharpe"
