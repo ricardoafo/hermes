@@ -37,7 +37,7 @@
 #   a run is reproducible from its date. Failing seeds are filed as one
 #   issue with the rerun command. About 18 CPU-minutes, 4 workers.
 # - mutation: cosmic-ray on the modules in cosmic-ray.toml, with the
-#   kill-rate floor (advisory until #406 enforces it).
+#   kill-rate floor, which blocks since #406.
 # - branch-prune: deletes remote branches of PRs closed unmerged more
 #   than 3 days ago and no-PR branches idle more than 14 days
 #   (scripts/dev/prune-merged-branches.sh --remote-only). Merged PR

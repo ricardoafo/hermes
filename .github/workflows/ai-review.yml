@@ -116,7 +116,8 @@ jobs:
           # The token travels only in a request header, never in a command
           # line or an error message: pr.md goes to the model (#642).
           python3 - .ai-review/pr.md <<'PY'
-          import json, os, re, sys, urllib.request
+          import json, os, re, sys, urllib.error, urllib.request
+          from pathlib import Path
           repo = f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}"
 
           def api(path):
@@ -141,7 +142,9 @@ jobs:
                   out += [f"# Closed issue #{issue['number']}: {issue['title']}", "", issue.get("body") or ""]
               except Exception as err:  # the review still runs without the issue
                   out += [f"(Could not read issue #{m.group(1)}: {failure(err)})"]
-          open(sys.argv[1], "w").write("\n".join(out))
+                  if isinstance(err, urllib.error.HTTPError):
+                      err.close()  # it holds the response body open
+          Path(sys.argv[1]).write_text("\n".join(out), encoding="utf-8")
           PY
 
           {
@@ -149,7 +152,7 @@ jobs:
             cat "$tools/prompt.md"
             echo "AI_REVIEW_EOF"
           } >> "$GITHUB_OUTPUT"
-          echo "schema=$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1])), separators=(",", ":")))' "$tools/schema.json")" >> "$GITHUB_OUTPUT"
+          echo "schema=$(python3 -c 'import json,pathlib,sys; print(json.dumps(json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")), separators=(",", ":")))' "$tools/schema.json")" >> "$GITHUB_OUTPUT"
           echo "tools=$tools" >> "$GITHUB_OUTPUT"
 
       # The checkout is the PR's merge ref, so a PR could add hooks,
