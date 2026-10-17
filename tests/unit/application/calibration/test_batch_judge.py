@@ -16,7 +16,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from hermes.application.calibration.batch_selection import (
+from hermes.application.calibration.batch_judge import (
     BatchJudgement,
     CandidateResult,
     SelectionRule,

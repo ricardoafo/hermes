@@ -26,7 +26,7 @@ boundary would pick the wrong champion; both are pinned by tests.
 ### In (part 1)
 
 - `src/hermes/domain/statistics/false_discovery.py`: `benjamini_hochberg`.
-- `src/hermes/application/calibration/batch_selection.py`: `SelectionRule`,
+- `src/hermes/application/calibration/batch_judge.py`: `SelectionRule`,
   `CandidateResult`, `BatchJudgement`, `batch_trial_summary`, `judge_batch`.
 - Unit and property tests for both, and `changelog.d/1059-added.md`.
 
@@ -110,7 +110,7 @@ boundary would pick the wrong champion; both are pinned by tests.
 
 ### R-2: The judgement follows the signed rule and ignores run order
 
-- **A-2.1**: `uv run pytest tests/unit/application/calibration/test_batch_selection.py`
+- **A-2.1**: `uv run pytest tests/unit/application/calibration/test_batch_judge.py`
   passes, including the property that any permutation of the candidates gives
   the same judgement.
 
