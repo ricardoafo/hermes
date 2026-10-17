@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Final
 
 __all__ = [
+    "BriefArchiveError",
     "CurrencyMismatch",
     "DataManifestFormatError",
     "DatasetHashMismatchError",
@@ -459,6 +460,25 @@ class LabNotebookAppendError(DomainError):
             f"Lab notebook append error: entry with header '{self.header}' "
             f"already exists as the last entry. The notebook is append-only."
         )
+
+
+@dataclass(frozen=True, slots=True)
+class BriefArchiveError(InfraError):
+    """The kept supervisor briefs could not be read or written.
+
+    Args:
+        path: Brief archive path.
+        msg: What went wrong, with the line number when known.
+
+    Reference: issue #897.
+    """
+
+    path: str
+    msg: str
+
+    def __str__(self) -> str:
+        """Return human-readable description."""
+        return f"Brief archive {self.path}: {self.msg}"
 
 
 @dataclass(frozen=True, slots=True)

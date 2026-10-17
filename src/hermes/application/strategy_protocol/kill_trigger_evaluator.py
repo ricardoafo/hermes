@@ -60,6 +60,9 @@ class ExperimentState:
             correlation lock breach, stale-book detection).
         rolling_30d_sharpe: 30-rolling-trade Sharpe estimate. ``None`` when
             fewer than 30 OOS trades exist (insufficient sample — not evaluated).
+        killed_by: Rule id of a §10 shadow kill serve's daily check already
+            recorded (#796), or empty. A kill is final for the pre-registration,
+            so it holds on every later evaluation.
 
     Reference: pre-registration-v1.md §10.
     """
@@ -68,6 +71,7 @@ class ExperimentState:
     days_since_equity_high: float
     sa9_halt: bool
     rolling_30d_sharpe: float | None = field(default=None)
+    killed_by: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,6 +148,14 @@ class KillTriggerEvaluator:
         Reference: pre-registration-v1.md §10.
         """
         t = self._triggers
+
+        # A recorded kill is final (§10 post-kill protocol): entries stay stopped.
+        if state.killed_by:
+            return KillDecision(
+                triggered=True,
+                reason=f"Strategy killed by the {state.killed_by} rule (pre-reg §10).",
+                rule=state.killed_by,
+            )
 
         # 1. Max drawdown >= 15% peak-to-trough
         if state.max_drawdown >= t.max_drawdown_threshold:

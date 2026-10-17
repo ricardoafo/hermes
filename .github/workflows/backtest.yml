@@ -10,6 +10,10 @@ on:
         type: choice
         options: [train, validation]
         default: train
+      pre_registration_sha256:
+        description: 'SHA-256 of the signed pre-registration, copied from its lab notebook entry. Never computed from the checkout.'
+        type: string
+        required: true
 
 # Never two at once: both would append to copies of the same trial log
 # and their lines could not both be committed. A group holds one
@@ -24,6 +28,8 @@ permissions:
 env:
   EXPERIMENT: swing-mvp1
   HERMES_DATA_DIR: /srv/hermes-data
+  PRE_REGISTRATION: docs/experiments/swing-mvp1/pre-registration-v2.md
+  STRATEGY: swing-mvp1-v2
 
 jobs:
   backtest:
@@ -36,6 +42,20 @@ jobs:
     permissions:
       contents: read
     steps:
+      # The hash comes from the lab notebook entry, never from the checkout:
+      # a file edited after signing must not vouch for itself. Checked
+      # before anything else, so a mistyped hash never logs a trial.
+      - name: Signed pre-registration hash
+        env:
+          PRE_REG_SHA256: ${{ inputs.pre_registration_sha256 }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$PRE_REG_SHA256" =~ ^[0-9a-fA-F]{64}$ ]]; then
+            echo "::error::pre_registration_sha256 must be exactly 64 hex characters, the signed hash from the lab notebook entry"
+            exit 1
+          fi
+          echo "Pre-registration hash is well formed"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
@@ -149,9 +169,11 @@ jobs:
             --start "$START" --end "$END" \
             --manifest "$MANIFEST" \
             --config-dir config \
+            --strategy "$STRATEGY" \
             --trial-log "$RUNNER_TEMP/trial-log.jsonl" \
             --output "$RUNNER_TEMP/out/report.json" \
-            --performance-out "$RUNNER_TEMP/out/performance.json"
+            --performance-out "$RUNNER_TEMP/out/performance.json" \
+            --funnel-evidence-out "$RUNNER_TEMP/out/funnel-evidence.json"
 
       # Exit 1 is a failed gate, a valid outcome. Check lines go to a file,
       # not the log: observed metrics stay out of AI inputs (ADR-023 §7).
@@ -166,6 +188,7 @@ jobs:
           uv run hermes certify "$strategy" \
             --performance "$out/performance.json" \
             --evidence "$out/evidence.json" \
+            --funnel-evidence "$out/funnel-evidence.json" \
             --config-dir config \
             --store-dir "$RUNNER_TEMP/cert" > "$out/certify.txt"
           code=$?
@@ -178,6 +201,28 @@ jobs:
           uv run python scripts/backtest/trial_stats.py \
             --trial-log "$RUNNER_TEMP/trial-log.jsonl" --strategy-id "$strategy" \
             > "$out/trial-stats.json"
+
+      # Exit 1 is a failed or refused funnel, a valid outcome. Check lines
+      # go to a file, not the log (ADR-023 §7).
+      - name: Funnel (nothing recorded)
+        id: funnel
+        env:
+          PRE_REG_SHA256: ${{ inputs.pre_registration_sha256 }}
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/out"
+          strategy=$(jq -er '.strategy_id' "$out/report.json") || exit 1
+          uv run hermes funnel "$strategy" \
+            --pre-registration "$PRE_REGISTRATION" \
+            --evidence "$out/funnel-evidence.json" \
+            --expect-sha256 "$PRE_REG_SHA256" > "$out/funnel.txt"
+          code=$?
+          echo "exit=$code" >> "$GITHUB_OUTPUT"
+          case "$code" in
+            0) echo "Funnel passed" ;;
+            1) echo "Funnel failed or refused (a valid outcome)" ;;
+            *) echo "::error::hermes funnel exited $code (usage, pre-registration or evidence error)"; exit "$code" ;;
+          esac
 
       # Also after a failure: the driver may have logged a trial before
       # failing, and that trial must still be committed.
@@ -204,6 +249,7 @@ jobs:
           END: ${{ steps.window.outputs.end }}
           SHA: ${{ github.sha }}
           CERTIFY_EXIT: ${{ steps.certify.outputs.exit }}
+          FUNNEL_EXIT: ${{ steps.funnel.outputs.exit }}
         run: |
           set -uo pipefail
           out="$RUNNER_TEMP/out"
@@ -214,7 +260,7 @@ jobs:
             echo "- Commit: $SHA"
             echo "- New trial lines: $(wc -l < "$out/trial-log.new.jsonl" 2>/dev/null || echo 0)"
             if [ -f "$out/trial-stats.json" ]; then
-              echo "- Trials: $(jq -r '.count' "$out/trial-stats.json"), Validation touches: $(jq -r '.validation_count' "$out/trial-stats.json")"
+              echo "- Trials: $(jq -r '.count' "$out/trial-stats.json"), Validation trial lines: $(jq -r '.validation_count' "$out/trial-stats.json") (a funnel Validation touch logs 8)"
             fi
             echo "- Certify exit: ${CERTIFY_EXIT:-not run}"
             if [ -f "$out/certify.txt" ]; then
@@ -224,13 +270,20 @@ jobs:
               awk '/^(PASS|FAIL) /{print $1, $2; next} /^(# |GATE |REFUSED|REVERTED)/{print}' "$out/certify.txt"
               echo '```'
             fi
+            echo "- Funnel exit: ${FUNNEL_EXIT:-not run}"
+            if [ -f "$out/funnel.txt" ]; then
+              echo
+              echo '```text'
+              awk '/^(PASS|FAIL) /{print $1, $2; next} /^(# |GATE |FUNNEL |REFUSED|REVERTED)/{print}' "$out/funnel.txt"
+              echo '```'
+            fi
             echo
             echo "Commit the new trial lines to docs/experiments/$EXPERIMENT/trial-log.jsonl by PR before the next run (ADR-023 §6)."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload report, performance, evidence and trial lines
         if: ${{ always() && steps.trial-log.outcome == 'success' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: backtest-${{ inputs.split }}-${{ github.run_id }}
           path: ${{ runner.temp }}/out/

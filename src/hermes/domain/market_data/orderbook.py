@@ -62,12 +62,17 @@ class Orderbook:
         snapshot_time: UTC-aware :class:`~datetime.datetime` when the
             snapshot was captured (adapter-side clock — the venue's server
             time when the response arrived).
+        last_update_id: The venue's book sequence number at the snapshot
+            (Binance ``lastUpdateId``), or ``None`` when the source has
+            none (a replayed or modelled book). A depth-diff stream needs
+            it to drop the diffs the snapshot already contains.
     """
 
     pair: Pair
     bids: tuple[OrderbookLevel, ...]
     asks: tuple[OrderbookLevel, ...]
     snapshot_time: datetime
+    last_update_id: int | None = None
 
     def __post_init__(self) -> None:
         """Enforce UTC-aware timestamp and correct bid/ask ordering.
@@ -76,8 +81,14 @@ class Orderbook:
             ValueError: On naive / non-UTC ``snapshot_time``, empty book
                 (both sides empty is not a valid snapshot), bids not
                 descending, asks not ascending, or crossed book
-                (``best_bid >= best_ask``).
+                (``best_bid >= best_ask``), or a negative
+                ``last_update_id``.
         """
+        if self.last_update_id is not None and self.last_update_id < 0:
+            raise ValueError(
+                f"Orderbook.last_update_id must be >= 0, got {self.last_update_id} "
+                f"(pair={self.pair})"
+            )
         if self.snapshot_time.tzinfo is None or self.snapshot_time.tzinfo.utcoffset(
             None
         ) != UTC.utcoffset(None):
