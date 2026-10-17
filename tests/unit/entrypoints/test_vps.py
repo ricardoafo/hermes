@@ -27,7 +27,8 @@ _CONSOLE = frozenset({"positions", "status", "tui"})
 _SCRIPT_TAIL = (
     "set -a; . /etc/hermes/env.production; set +a; "
     'export HERMES_DB_PATH="${HERMES_DB_PATH:-/var/lib/hermes/hermes.sqlite3}" '
-    'HERMES_CONFIG_DIR="${HERMES_CONFIG_DIR:-/opt/hermes/current/config}"; '
+    'HERMES_CONFIG_DIR="${HERMES_CONFIG_DIR:-/opt/hermes/current/config}" '
+    "HERMES_CONSOLE_REMOTE=1; "
     'cd /var/lib/hermes && exec runuser -u hermes -- "$@"'
 )
 _BIN = "/opt/hermes/current/.venv/bin/hermes"

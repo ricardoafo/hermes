@@ -15,6 +15,8 @@ from hermes.entrypoints.commands import Command
 from hermes.entrypoints.console import (
     LiveReadModelUnavailableError,
     config_allow_mainnet,
+    default_config_dir,
+    default_db_path,
     recent_journal_lines,
     resolve_read_model,
     roster_exposure_cap,
@@ -27,6 +29,7 @@ from hermes.entrypoints.tui_settings import (
     save_settings,
 )
 from hermes.entrypoints.version import read_release
+from hermes.infrastructure.time import now_utc
 from hermes.release_version import release_label
 
 if TYPE_CHECKING:
@@ -107,13 +110,21 @@ def run_tui(
         # Textual reads the colour depth once, at import, so it is set first.
         apply_console_colors(env or {}, os.environ)
         from hermes.entrypoints.tui import run_home  # noqa: PLC0415 - Textual is slow to import
+        from hermes.entrypoints.tui_tax import tax_inputs  # noqa: PLC0415 - with Textual
 
-        cap = roster_exposure_cap(env or {})
         snapshot = env or {}
-        allow_mainnet = config_allow_mainnet(env or {})
+        cap = roster_exposure_cap(snapshot)
+        allow_mainnet = config_allow_mainnet(snapshot)
 
         def runner(read_model: ConsoleReadModel) -> None:
             ticker = live_ticker(read_model)
+            tax = tax_inputs(
+                demo=read_model.demo_scenario is not None,
+                env=snapshot,
+                db_path=db_path if db_path is not None else default_db_path(snapshot),
+                config_dir=default_config_dir(snapshot),
+                now=now_utc(),
+            )
             try:
                 run_home(
                     read_model,
@@ -124,9 +135,13 @@ def run_tui(
                     settings_path=settings_path,
                     exposure_cap=cap,
                     ticker=ticker,
+                    tax=tax.source,
+                    taxpayer_profile=tax.profile,
+                    tax_pack=tax.pack,
                     shadow=shadow_sources(read_model, env=snapshot, db_path=db_path),
                 )
             finally:
+                tax.close()
                 if ticker is not None:
                     ticker.close()
 
