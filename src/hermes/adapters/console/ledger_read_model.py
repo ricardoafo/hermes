@@ -49,6 +49,7 @@ from hermes.application.console.position_figures import LotFacts, PositionFacts,
 from hermes.application.console.read_model import ViewNotAvailableError
 from hermes.application.console.render import MADRID
 from hermes.application.console.shadow_figures import build_shadow_test
+from hermes.application.console.shadow_screen import ShadowEvidence, missed_days
 from hermes.application.console.views import (
     ActivityDay,
     ConsoleBrief,
@@ -363,6 +364,69 @@ class LedgerReadModel:
             raise LedgerError(msg=f"console shadow test: unreadable row: {exc}") from exc
         return build_shadow_test(
             seeded_at=seeded_at, as_of=as_of, tz=self._tz, fills=fills, quality_checked=checked
+        )
+
+    def shadow_evidence(self, since: datetime | None) -> ShadowEvidence:
+        """Return the facts the Shadow test checks read (issue #718); never money.
+
+        The seed and the first fill come from the whole ledger. From ``since``
+        on: the local days with no bar check, the drift of every live-book
+        fill (M-02), and whether a strategy pause (the kill switch) was
+        recorded. ``hermes serve`` records no kill-trigger check verdict yet
+        (issue #796), so that stays unknown.
+
+        Args:
+            since: Day 0, or ``None`` during the warm-up (seed and first fill only).
+
+        Raises:
+            LedgerError: On any SQLite failure or an unreadable row.
+        """
+        try:
+            with closing(connect_read_only(self._path)) as conn:
+                first = conn.execute("SELECT MIN(seeded_at) FROM capital_seeds").fetchone()[0]
+                seeded_at = None if first is None else datetime.fromisoformat(str(first))
+                first_fill_at = None
+                if seeded_at is not None:
+                    fill = conn.execute(
+                        "SELECT MIN(executed_at) FROM trades WHERE executed_at >= ?",
+                        (seeded_at.astimezone(UTC).isoformat(),),
+                    ).fetchone()[0]
+                    first_fill_at = None if fill is None else datetime.fromisoformat(str(fill))
+                if since is None:
+                    return ShadowEvidence(seeded_at=seeded_at, first_fill_at=first_fill_at)
+                checks = conn.execute(
+                    "SELECT occurred_at FROM events WHERE event_type = 'BarProcessed'"
+                ).fetchall()
+                drifts = conn.execute(
+                    "SELECT occurred_at, json_extract(payload_json, '$.drift_bps') FROM events "
+                    "WHERE event_type = 'FillQualityRecorded' "
+                    "AND json_extract(payload_json, '$.book_source') = 'live' "
+                    "AND json_extract(payload_json, '$.drift_bps') IS NOT NULL "
+                    "ORDER BY id"
+                ).fetchall()
+                pauses = conn.execute(
+                    "SELECT occurred_at FROM events WHERE event_type = 'StrategyPaused'"
+                ).fetchall()
+            # Stored times keep their own offset, so compare as datetimes, not text.
+            checked_at = [
+                at for row in checks if (at := datetime.fromisoformat(str(row[0]))) >= since
+            ]
+            live = tuple(
+                Decimal(str(row[1]))
+                for row in drifts
+                if datetime.fromisoformat(str(row[0])) >= since
+            )
+            kill_fired = any(datetime.fromisoformat(str(row[0])) >= since for row in pauses)
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"console shadow evidence read failed: {exc}") from exc
+        except (TypeError, ValueError, ArithmeticError) as exc:
+            raise LedgerError(msg=f"console shadow evidence: unreadable row: {exc}") from exc
+        return ShadowEvidence(
+            seeded_at=seeded_at,
+            first_fill_at=first_fill_at,
+            missed_days=missed_days(checked_at, since, self._clock(), self._tz),
+            live_drifts_bps=live,
+            kill_fired=kill_fired,
         )
 
     def market_watch(self) -> tuple[WatchedPair, ...]:

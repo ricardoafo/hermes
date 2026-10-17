@@ -30,10 +30,12 @@ from rich.console import Console
 
 from hermes.adapters.console import FixtureReadModel, UnknownScenarioError, available_scenarios
 from hermes.adapters.console.ledger_read_model import LedgerReadModel
+from hermes.adapters.console.shadow_records import NotebookFile, RunsDirectory, runs_dir_for
 from hermes.adapters.systemd_journal import JournalctlReader, JournalUnavailableError
 from hermes.application.console import ConsoleReadModel, Surface
 from hermes.application.console.logs import LogLine, parse_journal_entry
 from hermes.application.console.render import RenderContext, render_overview
+from hermes.application.console.shadow_screen import ShadowSources, sources_from
 from hermes.entrypoints._streams import resolve_err
 
 __all__ = [
@@ -50,10 +52,13 @@ __all__ = [
     "default_db_path",
     "demo_read_model",
     "journal_window_lines",
+    "lab_notebook_path",
     "recent_journal_lines",
     "resolve_read_model",
     "roster_exposure_cap",
+    "roster_strategy_id",
     "run_overview",
+    "shadow_sources",
     "split_demo_flag",
 ]
 
@@ -61,6 +66,7 @@ DEMO_ENV_VAR: Final = "HERMES_CONSOLE_DEMO"
 DB_ENV_VAR: Final = "HERMES_DB_PATH"
 CONFIG_DIR_ENV_VAR: Final = "HERMES_CONFIG_DIR"
 _FLAG: Final = "--demo"
+_NOTEBOOK_REL: Final = Path("docs/experiments/swing-mvp1/lab-notebook.md")
 
 
 class DemoFlagError(ValueError):
@@ -312,6 +318,78 @@ def roster_exposure_cap(env: Mapping[str, str]) -> Decimal | None:
         return None
     caps = {s.sizing.max_total_exposure_pct for s in roster.strategies if s.enabled}
     return caps.pop() if len(caps) == 1 else None
+
+
+def roster_strategy_id(env: Mapping[str, str]) -> str | None:
+    """Return the first enabled strategy of the roster, the one ``hermes serve`` trades.
+
+    Args:
+        env: Environment snapshot (config dir and ``HERMES_STRATEGIES__*`` overrides).
+
+    Returns:
+        Its name, or ``None`` when the roster is missing, invalid or has none enabled.
+    """
+    from hermes.infrastructure.config.errors import ConfigError  # noqa: PLC0415 - slow import
+    from hermes.infrastructure.config.loader import load_yaml_model  # noqa: PLC0415
+    from hermes.infrastructure.config.models import StrategiesConfig  # noqa: PLC0415
+
+    path = default_config_dir(env) / "strategies.yaml"
+    try:
+        roster = load_yaml_model(path, StrategiesConfig, env_section="STRATEGIES", env=dict(env))
+    except ConfigError:
+        return None
+    return next((s.name for s in roster.strategies if s.enabled), None)
+
+
+def lab_notebook_path(start: Path | None = None) -> Path | None:
+    """Return the lab notebook shipped with this release, if it is here.
+
+    Walks up from ``start`` (this module by default) to the first directory
+    holding ``docs/experiments/swing-mvp1/lab-notebook.md``.
+
+    Args:
+        start: Where to start looking.
+
+    Returns:
+        The notebook's path, or ``None`` when no parent holds it.
+    """
+    here = (start or Path(__file__)).resolve()
+    for folder in (here, *here.parents):
+        candidate = folder / _NOTEBOOK_REL
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def shadow_sources(
+    model: ConsoleReadModel, *, env: Mapping[str, str], db_path: Path | None = None
+) -> ShadowSources:
+    """Return where the Shadow test screen reads from (issue #718).
+
+    A demo scenario serves its own synthetic record, evidence and notebook.
+    The ledger read model serves the evidence; the day-0 records come from the
+    ledger's ``runs`` directory and the notebook from the release.
+
+    Args:
+        model: The read model the console shows.
+        env: Environment snapshot.
+        db_path: The ledger file; ``hermes serve``'s default when ``None``.
+
+    Returns:
+        The sources; ``ShadowSources()`` (a warm-up with nothing read) for any
+        other read model.
+    """
+    if isinstance(model, FixtureReadModel):
+        return sources_from(model)
+    if isinstance(model, LedgerReadModel):
+        ledger = db_path if db_path is not None else default_db_path(env)
+        return ShadowSources(
+            evidence=model,
+            runs=RunsDirectory(runs_dir_for(ledger)),
+            notebook=NotebookFile(lab_notebook_path()),
+            strategy_id=roster_strategy_id(env),
+        )
+    return ShadowSources()
 
 
 def config_allow_mainnet(env: Mapping[str, str]) -> bool | None:
