@@ -17,6 +17,7 @@ import sqlite3
 from pathlib import Path
 from typing import TextIO
 
+from hermes.adapters.ledger.connection import open_ledger
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.domain.errors import LedgerError
 from hermes.domain.events.anomaly_detected import AnomalyDetected
@@ -39,7 +40,7 @@ def record_anomaly(db: Path, event: AnomalyDetected, err: TextIO) -> bool:
         err.write(f"WARNING: no ledger at {db}; the anomaly was not recorded\n")
         return False
     try:
-        connection = sqlite3.connect(db)
+        connection = open_ledger(db)
     except sqlite3.Error as exc:
         err.write(f"WARNING: the anomaly could not be recorded: {exc}\n")
         return False
