@@ -63,6 +63,7 @@ __all__ = [
     "OrderRouterResult",
     "RiskRejected",
     "RoutingInput",
+    "value_free_reason",
 ]
 
 _log = structlog.get_logger(__name__)
@@ -295,7 +296,7 @@ class OrderRouter:
 
         # Log all individual rule decisions for audit.
         for decision in engine_result.decisions:
-            rule, rule_reason = _value_free(decision.reason)
+            rule, rule_reason = value_free_reason(decision.reason)
             if decision.action.value == "warn":
                 _log.warning(
                     "risk_overlay_warn",
@@ -313,7 +314,7 @@ class OrderRouter:
 
         worst = engine_result.worst
         if worst.action.value == "halt":
-            rule, rule_reason = _value_free(worst.reason)
+            rule, rule_reason = value_free_reason(worst.reason)
             _log.warning(
                 "risk_overlay_halt",
                 rule=rule,
@@ -399,7 +400,7 @@ class OrderRouter:
         return RiskRejected(reason=fill_result.reason, rule="fill_model")
 
 
-def _value_free(reason: str) -> tuple[str, str]:
+def value_free_reason(reason: str) -> tuple[str, str]:
     """Return the rule id and a fixed reason for a risk-overlay log line.
 
     Args:

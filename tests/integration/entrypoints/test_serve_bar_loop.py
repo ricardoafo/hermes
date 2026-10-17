@@ -42,6 +42,7 @@ from hermes.application.signal_notifier import SignalNotifier
 from hermes.domain.errors import ExchangeError
 from hermes.domain.events.bar_processed import BarProcessed
 from hermes.domain.events.base import DomainEvent
+from hermes.domain.events.risk_halt_recorded import RiskHaltRecorded
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.pair import Pair
@@ -173,7 +174,9 @@ def test_notifier_outage_does_not_stop_the_loop(tmp_path: Path, captured: list[E
     """Telegram failing is logged and captured; Slack is still notified; the next bar is handled.
 
     The next bar pushes the entry to Telegram again (#854), so the outage is
-    captured twice; Slack, which took the first push, is not pushed again.
+    captured twice; Slack, which took the first push, is not pushed again. The
+    entry is halted on the stale bar-close book, and its alert (#749) fails on
+    Telegram too: a third capture, while Slack takes the alert.
     """
     db = tmp_path / "ledger.sqlite3"
     feed = FakeFeed(warm=history(10), live_bars=live(11, 12))
@@ -182,10 +185,12 @@ def test_notifier_outage_does_not_stop_the_loop(tmp_path: Path, captured: list[E
 
     code = run_once(build(db, feed, _after(12), telegram=telegram, slack=slack), feed)
 
-    assert (code, signal_kinds(slack), captured, _cursor(db, KlineInterval.H4)) == (
+    halts = [e.rule for e in slack.seen if isinstance(e, RiskHaltRecorded)]
+    assert (code, signal_kinds(slack), halts, captured, _cursor(db, KlineInterval.H4)) == (
         0,
         ["entry"],
-        [outage, outage],
+        ["RO-04"],
+        [outage, outage, outage],
         h4_bar(12).close_time,
     )
 

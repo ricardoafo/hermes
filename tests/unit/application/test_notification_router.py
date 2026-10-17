@@ -137,6 +137,7 @@ _EXPECTED_ROUTING: dict[EventClass, tuple[bool, bool]] = {
     EventClass.SIGNAL_EMITTED: (True, True),
     # notification templates v2 (#144): the rebalance heads-up is routed.
     EventClass.REBALANCE_TRIGGERED: (True, True),
+    EventClass.RISK_HALT: (True, True),
 }
 
 
