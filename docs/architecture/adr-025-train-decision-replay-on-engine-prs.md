@@ -49,9 +49,11 @@ is not a change, as in `hermes parity check`.
 ### 4. When decisions change
 
 The step adds the `decisions-changed` label and fails, unless the PR body holds the line
-`Decision changes approved: <link to a comment on this PR>` and that comment was written by the Code Owner. The step
-reads the body from the API, so editing it and re-running the job is enough. Zero changes passes and removes the
-label.
+`Decision changes approved: <link to a comment on this PR>`, that comment was written by the Code Owner, and it quotes
+the changes fingerprint the step printed: a hash of the full list of changed decisions. An approval therefore covers
+exactly the changes it was given for. A later push that changes a different set prints a new fingerprint and needs a
+new comment; a push that leaves the set alone, such as a main merge, keeps the approval. The step reads the body from
+the API, so editing it and re-running the job is enough. Zero changes passes and removes the label.
 
 ### 5. Where the data comes from
 
@@ -70,7 +72,8 @@ replay of the same bars, decisions only, and no AI reads its output.
 - **PR code next to the data.** A CI runner already runs PR code and reaches the host Docker socket (ADR-018), so the
   read-only mount stops accidents, not a hostile PR. A tampered kline still fails the next run's hash check, on this
   pool and on the backtest runner. No threat row changes.
-- **The approval cannot be forged by the bot.** The cited comment must be the Code Owner's own, on this PR.
+- **The approval cannot be forged by the bot or go stale.** The cited comment must be the Code Owner's own, on this
+  PR, and quote the fingerprint of the current changes.
 
 ## Why
 

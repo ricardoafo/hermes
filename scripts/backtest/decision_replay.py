@@ -17,7 +17,8 @@ an UNTRUSTED run, and any window but Train is refused.
 ``diff`` matches the two files on signal time, pair, kind and side. A signal
 on one side only, or one whose outcome differs, is a changed decision; a
 different refusing rule with the same outcome is not, as in
-``hermes parity check``. It prints one line per change and the count.
+``hermes parity check``. It prints one line per change, the count and a
+fingerprint of the whole set, which the Code Owner's approval quotes.
 
 Usage:
     HERMES_DATA_DIR=/srv/hermes-data python scripts/backtest/decision_replay.py \\
@@ -33,6 +34,7 @@ Exit codes:
 
 import argparse
 import asyncio
+import hashlib
 import json
 import logging
 import re
@@ -246,6 +248,15 @@ def changed_decisions(base: list[Decision], head: list[Decision]) -> list[str]:
     return lines
 
 
+def changes_fingerprint(lines: list[str]) -> str:
+    """Return a short hash naming exactly this set of changed decisions.
+
+    The Code Owner's approval quotes it, so the approval lapses as soon as a
+    later push changes a different set of decisions (ADR-025 §4).
+    """
+    return hashlib.sha256("\n".join(lines).encode()).hexdigest()[:16]
+
+
 async def _record(args: argparse.Namespace) -> int:
     # The kernel logs fill prices, sizes and notionals; a CI log carries decisions only.
     structlog.configure(wrapper_class=structlog.make_filtering_bound_logger(logging.CRITICAL))
@@ -315,6 +326,7 @@ def _diff(args: argparse.Namespace) -> int:
         print(f"... {len(lines) - _SHOWN} more")
     if lines:
         print(f"{len(lines)} of {len(base)} base decisions changed on Train")
+        print(f"Changes fingerprint: {changes_fingerprint(lines)}")
         return EXIT_CHANGED
     print(f"OK: all {len(head)} Train decisions match the base")
     return EXIT_SAME

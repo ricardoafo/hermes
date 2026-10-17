@@ -52,7 +52,9 @@ read-only on the CI pool. ADR-025 records the design.
   and `fees/`, `config/strategies.yaml`, an experiment's fee history or data manifest, and `uv.lock`.
   Anything else passes without a replay.
 - **D-5 Approval.** A body line `Decision changes approved: <link to a comment on this PR>`, where
-  the comment's author is the Code Owner. The body is read from the API on every run.
+  the comment's author is the Code Owner and it quotes the changes fingerprint (a hash of the full
+  list of changed decisions). An approval lapses when a later push changes a different set, and
+  survives a push that does not (AI review on PR #988). The body is read from the API on every run.
 - **D-6 Rule changes are not decision changes.** A signal declined by another rule is still
   declined, as in `hermes parity check`.
 
@@ -66,7 +68,8 @@ read-only on the CI pool. ADR-025 records the design.
 - R-5 The window is the manifest's Train split in whole days, as the backtest workflow derives it.
 - R-6 A changeset with no engine file passes without a replay; an engine change without the Train
   data fails.
-- R-7 A decision change passes only with a cited comment of the Code Owner on this PR.
+- R-7 A decision change passes only with a cited comment of the Code Owner on this PR that quotes
+  the fingerprint of the current changes; a different set of changes gives a different fingerprint.
 - R-8 The CI step runs on pull requests after the unit tier; the CI pool mounts the data read-only.
 
 ## Design

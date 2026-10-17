@@ -74,8 +74,10 @@ echo "Replaying Train on the base tree ($BASE_SHA)..."
   record --out "$workdir/base.jsonl") || exit 1
 
 uv run --frozen --no-sync python scripts/backtest/decision_replay.py diff \
-  "$workdir/base.jsonl" "$workdir/head.jsonl"
+  "$workdir/base.jsonl" "$workdir/head.jsonl" > "$workdir/diff.txt"
 rc=$?
+cat "$workdir/diff.txt"
+fingerprint=$(sed -n 's/^Changes fingerprint: //p' "$workdir/diff.txt")
 case "$rc" in
   0)
     label DELETE "/$LABEL"
@@ -84,11 +86,12 @@ case "$rc" in
   1)
     label POST "" "{\"labels\":[\"$LABEL\"]}"
     if [[ -n "${PR_NUMBER:-}" ]] \
-      && python3 scripts/dev/decision_change_approval.py "$GITHUB_REPOSITORY" "$PR_NUMBER" "$CODE_OWNER"; then
+      && python3 scripts/dev/decision_change_approval.py \
+        "$GITHUB_REPOSITORY" "$PR_NUMBER" "$CODE_OWNER" "$fingerprint"; then
       echo "::notice::Train decisions changed; the Code Owner approved the change."
       exit 0
     fi
-    echo "::error::Train decisions changed. A changed decision restarts the shadow clock (ADR-021), so the PR body must cite the Code Owner's approval (ADR-025)."
+    echo "::error::Train decisions changed. A changed decision restarts the shadow clock (ADR-021), so the PR body must cite a comment of the Code Owner on this PR that quotes the changes fingerprint $fingerprint (ADR-025)."
     exit 1
     ;;
   *)

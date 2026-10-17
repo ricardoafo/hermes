@@ -252,6 +252,22 @@ class TestChangedDecisions:
         ]
 
 
+class TestFingerprint:
+    """The fingerprint names one exact set of changed decisions."""
+
+    def test_the_same_changes_give_the_same_fingerprint(self) -> None:
+        """Two diffs with the same changes share a 16-hex-digit fingerprint."""
+        lines = SCRIPT.changed_decisions([_decision(4)], [])
+        first, again = SCRIPT.changes_fingerprint(lines), SCRIPT.changes_fingerprint(list(lines))
+        assert (first == again, len(first), int(first, 16) >= 0) == (True, 16, True)
+
+    def test_different_changes_give_a_different_fingerprint(self) -> None:
+        """One more changed decision gives another fingerprint, so an old approval lapses."""
+        one = SCRIPT.changed_decisions([_decision(4)], [])
+        two = SCRIPT.changed_decisions([_decision(4), _decision(8)], [])
+        assert SCRIPT.changes_fingerprint(one) != SCRIPT.changes_fingerprint(two)
+
+
 class TestDiffExitCodes:
     """``diff`` exit codes."""
 
@@ -266,9 +282,12 @@ class TestDiffExitCodes:
         assert "OK: all 1 Train decisions match the base" in capsys.readouterr().out
 
     def test_any_change_exits_1(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """One changed decision exits 1 and prints the count."""
+        """One changed decision exits 1 and prints the count and the fingerprint of the set."""
         assert SCRIPT.main(self._files(tmp_path, [_decision(4)], [])) == 1
-        assert "1 of 1 base decisions changed on Train" in capsys.readouterr().out
+        out = capsys.readouterr().out
+        lines = SCRIPT.changed_decisions([_decision(4)], [])
+        assert "1 of 1 base decisions changed on Train" in out
+        assert f"Changes fingerprint: {SCRIPT.changes_fingerprint(lines)}" in out
 
     def test_unreadable_file_exits_3(self, tmp_path: Path) -> None:
         """A missing file exits 3, never 0."""

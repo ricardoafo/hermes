@@ -37,6 +37,7 @@ _WORKFLOW = _ROOT / ".github" / "workflows" / "ci.yml"
 _COMPOSE = _ROOT / "scripts" / "dev" / "gh-runner" / "compose.yml"
 _REPO = "ricardoafo/hermes"
 _PR = 798
+_FP = "0123456789abcdef"
 
 
 def _import_approval() -> ModuleType:
@@ -153,34 +154,39 @@ class TestApprovalCitation:
     ) -> None:
         """Another PR, another repo, no comment anchor or a quoted line is no citation."""
         monkeypatch.setattr(urllib.request, "urlopen", _answer(body, "ricardoafo"))
-        assert APPROVAL.main([_REPO, str(_PR), "ricardoafo"]) == 1
+        assert APPROVAL.main([_REPO, str(_PR), "ricardoafo", _FP]) == 1
         assert "No 'Decision changes approved:" in capsys.readouterr().out
 
     def test_the_owners_comment_on_this_pr_approves(self) -> None:
         """A comment by the Code Owner on this PR is an approval."""
         comment = {
             "user": {"login": "ricardoafo"},
+            "body": f"OK, changes {_FP} approved",
             "issue_url": f"https://api.github.com/repos/{_REPO}/issues/{_PR}",
         }
-        assert APPROVAL.is_owner_comment(comment, repo=_REPO, pr=_PR, owner="ricardoafo")
+        assert APPROVAL.approves(comment, repo=_REPO, pr=_PR, owner="ricardoafo", fingerprint=_FP)
 
     @pytest.mark.parametrize(("login", "issue"), [("rafo-claude-bot", _PR), ("ricardoafo", 1)])
     def test_another_author_or_another_pr_does_not_approve(self, login: str, issue: int) -> None:
         """The bot's comment, or the owner's comment on another PR, is no approval."""
         comment = {
             "user": {"login": login},
+            "body": f"OK, changes {_FP} approved",
             "issue_url": f"https://api.github.com/repos/{_REPO}/issues/{issue}",
         }
-        assert not APPROVAL.is_owner_comment(comment, repo=_REPO, pr=_PR, owner="ricardoafo")
+        assert not APPROVAL.approves(
+            comment, repo=_REPO, pr=_PR, owner="ricardoafo", fingerprint=_FP
+        )
 
 
-def _answer(pr_body: str, commenter: str) -> Any:
+def _answer(pr_body: str, commenter: str, comment_body: str = f"approved {_FP}") -> Any:
     def urlopen(request: urllib.request.Request, timeout: float) -> io.BytesIO:
         _ = timeout
         if "/pulls/" in request.full_url:
             return io.BytesIO(json.dumps({"body": pr_body}).encode())
         comment = {
             "user": {"login": commenter},
+            "body": comment_body,
             "issue_url": f"https://api.github.com/repos/{_REPO}/issues/{_PR}",
         }
         return io.BytesIO(json.dumps(comment).encode())
@@ -195,13 +201,21 @@ def test_main_passes_only_the_owners_cited_comment(
     """End to end over a faked API: the owner's cited comment exits 0, anyone else's 1."""
     body = f"Decision changes approved: https://github.com/{_REPO}/pull/{_PR}#issuecomment-7"
     monkeypatch.setattr(urllib.request, "urlopen", _answer(body, commenter))
-    assert APPROVAL.main([_REPO, str(_PR), "ricardoafo"]) == code
+    assert APPROVAL.main([_REPO, str(_PR), "ricardoafo", _FP]) == code
+
+
+def test_an_approval_of_other_changes_does_not_count(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The owner's comment quoting an earlier fingerprint lapses once the changes differ."""
+    body = f"Decision changes approved: https://github.com/{_REPO}/pull/{_PR}#issuecomment-7"
+    stale = _answer(body, "ricardoafo", comment_body="approved fedcba9876543210")
+    monkeypatch.setattr(urllib.request, "urlopen", stale)
+    assert APPROVAL.main([_REPO, str(_PR), "ricardoafo", _FP]) == 1
 
 
 def test_main_without_a_citation_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     """A body with no approval line exits 1."""
     monkeypatch.setattr(urllib.request, "urlopen", _answer("no approval here", "ricardoafo"))
-    assert APPROVAL.main([_REPO, str(_PR), "ricardoafo"]) == 1
+    assert APPROVAL.main([_REPO, str(_PR), "ricardoafo", _FP]) == 1
 
 
 def _ci_step() -> dict[str, Any]:
