@@ -153,8 +153,14 @@ def test_a_steady_clock_records_no_skew(steady: _Outcome) -> None:
 def test_a_clock_jump_across_a_bar_close_sends_the_entry_push_once(
     jumped: Callable[[str], _Outcome], direction: str
 ) -> None:
-    """The entry reaches Telegram once, not zero times as stale nor twice as new."""
-    assert jumped(direction).entries_sent == 1
+    """Each filled BUY reaches Telegram once: not twice as new, and none for a refused entry.
+
+    With the clock ahead, RO-04 refuses the entry on the stale book (issue
+    #859), so no BUY fills and, since #708, none is announced.
+    """
+    outcome = jumped(direction)
+    buys = sum(side == "BUY" for _, side in outcome.trades)
+    assert (outcome.entries_sent, buys) == ((0, 0) if direction == "ahead" else (1, 1))
 
 
 def test_a_steady_clock_buys_once_and_sells_once(steady: _Outcome) -> None:

@@ -114,24 +114,17 @@ def main(argv: list[str], *, stream: TextIO, err: TextIO | None = None) -> int:
 
 
 def _run(args: argparse.Namespace, stream: TextIO, err: TextIO) -> int:
-    loaded = _load_inputs(args, err)
-    if isinstance(loaded, int):
-        return loaded
-    digest, front_matter, evidence = loaded
-    experiment = front_matter.get("experiment_id") or "-"
-    stream.write(
-        f"# hermes funnel {args.strategy_id}: {experiment} (pre-registration sha256 {digest})\n"
-    )
-    outcome = _thresholds_or_refusal(args.expect_sha256, digest, front_matter, args.strategy_id)
-    if isinstance(outcome, str):
-        stream.write(f"REFUSED: {outcome}\n")
-        return 1
+    thresholds = _judge_pre_registration(args, stream, err)
+    if isinstance(thresholds, int):
+        return thresholds
     try:
-        validate_evidence(evidence, outcome)
-    except FunnelEvidenceError as exc:
+        evidence = validate_evidence(
+            load_funnel_evidence(args.evidence, strategy_id=args.strategy_id), thresholds
+        )
+    except (OSError, FunnelEvidenceError) as exc:
         err.write(f"ERROR: evidence: {exc}\n")
         return 3
-    checks = evaluate_funnel(evidence, outcome)
+    checks = evaluate_funnel(evidence, thresholds)
     for check in checks:
         mark = "PASS" if check.passed else "FAIL"
         stream.write(
@@ -142,34 +135,46 @@ def _run(args: argparse.Namespace, stream: TextIO, err: TextIO) -> int:
     return 0 if passed else 1
 
 
-def _load_inputs(
-    args: argparse.Namespace, err: TextIO
-) -> tuple[str, dict[str, object], FunnelEvidence] | int:
-    """Read both files; on failure write the ERROR line and return exit code 3."""
+def _judge_pre_registration(
+    args: argparse.Namespace, stream: TextIO, err: TextIO
+) -> FunnelThresholds | int:
+    """Return the thresholds, or write the refusal or ERROR line and return the exit code.
+
+    Runs before the evidence is opened, so a refusal exits 1 whatever the
+    evidence holds. The hash is compared on the raw bytes before any parsing:
+    a file that is not the signed one is refused, not diagnosed, and its
+    unverified ``experiment_id`` is not printed.
+    """
     try:
         raw = args.pre_registration.read_bytes()
-        front_matter = read_front_matter(raw.decode("utf-8"))
-    except (OSError, UnicodeDecodeError, ValueError) as exc:
+    except OSError as exc:
         err.write(f"ERROR: pre-registration: {exc}\n")
         return 3
+    digest = hashlib.sha256(raw).hexdigest()
+    if args.expect_sha256.lower() != digest:
+        _write_header(stream, args.strategy_id, "-", digest)
+        stream.write(
+            f"REFUSED: pre-registration sha256 {digest} does not match the expected "
+            f"{args.expect_sha256}\n"
+        )
+        return 1
     try:
-        evidence = load_funnel_evidence(args.evidence, strategy_id=args.strategy_id)
-    except (OSError, FunnelEvidenceError) as exc:
-        err.write(f"ERROR: evidence: {exc}\n")
+        front_matter = read_front_matter(raw.decode("utf-8"))
+    except ValueError as exc:
+        err.write(f"ERROR: pre-registration: {exc}\n")
         return 3
-    return hashlib.sha256(raw).hexdigest(), front_matter, evidence
-
-
-def _thresholds_or_refusal(
-    expected: str, digest: str, front_matter: dict[str, object], strategy_id: str
-) -> FunnelThresholds | str:
-    """Return the thresholds, or why the run is refused."""
-    if expected.lower() != digest:
-        return f"pre-registration sha256 {digest} does not match the expected {expected}"
+    _write_header(stream, args.strategy_id, front_matter.get("experiment_id") or "-", digest)
     try:
-        return parse_funnel_front_matter(front_matter, strategy_id=strategy_id)
+        return parse_funnel_front_matter(front_matter, strategy_id=args.strategy_id)
     except FunnelThresholdError as exc:
-        return str(exc)
+        stream.write(f"REFUSED: {exc}\n")
+        return 1
+
+
+def _write_header(stream: TextIO, strategy_id: str, experiment: object, digest: str) -> None:
+    stream.write(
+        f"# hermes funnel {strategy_id}: {experiment} (pre-registration sha256 {digest})\n"
+    )
 
 
 def read_front_matter(text: str) -> dict[str, object]:

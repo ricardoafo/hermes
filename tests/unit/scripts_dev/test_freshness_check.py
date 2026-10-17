@@ -7,6 +7,7 @@ Invariants under test:
 - Versions compare numerically (2.1.112 is newer than 2.1.99).
 - Only pins older than the latest release are reported.
 - The newest stable tag ignores ``v``/``bun-`` prefixes and pre-releases.
+- Registry reads speak only HTTPS: no ``file://`` or ``ftp://`` path (#1000).
 """
 
 import importlib.util
@@ -70,3 +71,27 @@ def test_report_lists_each_stale_pin() -> None:
     """The Markdown row names the tool, both versions and the file."""
     report = CHECK.render([(CHECK.Pin("Bun", "1.3.6", "Dockerfile"), "1.4.2")])
     assert "| Bun | 1.3.6 | 1.4.2 | `Dockerfile` |" in report
+
+
+@pytest.mark.parametrize(
+    "url", ["file:///etc/passwd", "ftp://example.org/x", "http://pypi.org/pypi/uv/json"]
+)
+def test_registry_read_refuses_a_non_https_url(url: str) -> None:
+    """A URL that is not https:// is refused before any request is made."""
+    with pytest.raises(ValueError, match="non-https"):
+        CHECK._get_json(url)
+
+
+def test_registry_opener_speaks_only_https() -> None:
+    """The opener has no file:// or ftp:// handler, so neither a URL nor a redirect reaches one."""
+    opener = CHECK._https_opener()
+
+    assert set(opener.handle_open) == {"https", "unknown"}
+
+
+def test_an_ftp_proxy_does_not_add_a_scheme(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Only the HTTPS proxy is honoured; ``ftp_proxy`` would otherwise register ``ftp_open``."""
+    monkeypatch.setenv("ftp_proxy", "http://proxy.invalid:3128")
+    monkeypatch.setenv("https_proxy", "http://proxy.invalid:3128")
+
+    assert set(CHECK._https_opener().handle_open) == {"https", "unknown"}

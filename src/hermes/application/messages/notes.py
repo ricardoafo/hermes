@@ -232,16 +232,19 @@ def _anomaly_note(event: AnomalyDetected) -> Note:
     )
 
 
+_HALT_WORDING: Final = {
+    HaltKind.HALT: ("Risk halt", "this entry skipped"),
+    HaltKind.KILL: ("Kill", "no new entries while it holds; exits still fill"),
+    HaltKind.DRIFT: ("Drift breach", "back to UNTRUSTED; the shadow clock restarts"),
+}
+"""Title and footer of each kind of halt note."""
+
+
 def _risk_halt_note(event: RiskHaltRecorded) -> Note:
-    """Build the note for an entry a risk halt or a §10 kill refused (value-free)."""
-    title = "Kill" if event.kind is HaltKind.KILL else "Risk halt"
-    coin = event.pair.base.value
+    """Build the note for a risk halt, a §10 kill or a drift breach (value-free)."""
+    title, effect = _HALT_WORDING[event.kind]
+    coin = "all pairs" if event.pair is None else event.pair.base.value
     cited = "" if event.pre_registration_ref is None else f" (pre-reg {event.pre_registration_ref})"
-    effect = (
-        "no new entries while it holds; exits still fill"
-        if event.kind is HaltKind.KILL
-        else "this entry skipped"
-    )
     return Note(
         minimal=f"{GLYPH_STOP} {title} {coin}: {event.rule}",
         compact=(
