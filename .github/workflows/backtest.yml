@@ -1,0 +1,242 @@
+name: Backtest
+
+# Backtests and Validation runs, on server-01 only (ADR-023). Manual
+# dispatch only: every run is a trial (pre-registration v1 §8.1).
+on:
+  workflow_dispatch:
+    inputs:
+      split:
+        description: 'train: the Train window. validation: Train start to Validation end, one logged Validation touch that waits for the Code Owner.'
+        type: choice
+        options: [train, validation]
+        default: train
+
+# Never two at once: both would append to copies of the same trial log
+# and their lines could not both be committed. A group holds one
+# pending run; a newer dispatch replaces it before it starts.
+concurrency:
+  group: backtest
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  EXPERIMENT: swing-mvp1
+  HERMES_DATA_DIR: /srv/hermes-data
+
+jobs:
+  backtest:
+    name: Backtest (${{ inputs.split }})
+    runs-on: [self-hosted, hermes-backtest]
+    # The approval click on backtest-validation is the Validation OK.
+    environment: ${{ inputs.split == 'validation' && 'backtest-validation' || 'backtest-train' }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      actions: read # the run's own approval history, for the Validation check
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Window from the manifest
+        id: window
+        env:
+          SPLIT: ${{ inputs.split }}
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          case "$SPLIT" in
+            train|validation) ;;
+            *) echo "::error::split must be train or validation, got '$SPLIT'"; exit 1 ;;
+          esac
+          if [ "$SPLIT" = validation ] && [ "$REF" != refs/heads/main ]; then
+            echo "::error::a Validation run is a logged touch and runs from main only, not $REF"
+            exit 1
+          fi
+          manifest="docs/experiments/${EXPERIMENT}/data-manifest.json"
+          start=$(jq -er '.splits.train.start[0:10]' "$manifest")
+          end=$(jq -er --arg s "$SPLIT" '.splits[$s].end[0:10]' "$manifest")
+          oos_start=$(jq -er '.splits.oos.start[0:10]' "$manifest")
+          if [[ ! "$end" < "$oos_start" ]]; then
+            echo "::error::window end $end reaches the OOS start $oos_start"
+            exit 1
+          fi
+          echo "Window: $start -> $end ($SPLIT)"
+          {
+            echo "start=$start"
+            echo "end=$end"
+            echo "manifest=$manifest"
+          } >> "$GITHUB_OUTPUT"
+
+      # Fails closed: a missing or unprotected environment has no approval.
+      - name: Code Owner approved this Validation touch
+        if: ${{ inputs.split == 'validation' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          approvals=$(curl -fsS --max-time 30 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/actions/runs/$RUN_ID/approvals")
+          approved=$(jq -r --arg owner "$OWNER" '
+            [.[] | select(.state == "approved" and .user.login == $owner
+                          and any(.environments[]; .name == "backtest-validation"))]
+            | length' <<< "$approvals")
+          if [ "$approved" -lt 1 ]; then
+            echo "::error::no approval by $OWNER on backtest-validation; protect the environment with $OWNER as required reviewer (ADR-023 §5)"
+            exit 1
+          fi
+          echo "Validation touch approved by $OWNER"
+
+      - name: Copy the experiment trial log
+        id: trial-log
+        run: |
+          set -euo pipefail
+          src="docs/experiments/${EXPERIMENT}/trial-log.jsonl"
+          if [ ! -f "$src" ]; then
+            echo "::error::$src is not committed. Every earlier trial counts toward the DSR, so a run never starts from a missing log (ADR-023 §6)."
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/out"
+          cp "$src" "$RUNNER_TEMP/trial-log.jsonl"
+          echo "src=$src" >> "$GITHUB_OUTPUT"
+          echo "base_bytes=$(stat -c %s "$src")" >> "$GITHUB_OUTPUT"
+
+      - name: uv 0.12.5
+        timeout-minutes: 3
+        env:
+          UV_PIN: "0.12.5"
+        run: |
+          set -euo pipefail
+          have=$(uv --version 2>/dev/null | cut -d' ' -f2 || true)
+          if [ "$have" != "$UV_PIN" ]; then
+            curl -LsSf "https://github.com/astral-sh/uv/releases/download/${UV_PIN}/uv-installer.sh" \
+              | env UV_INSTALL_DIR="$HOME/.local/bin" sh
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.local/bin:$PATH"
+          fi
+          have=$(uv --version | cut -d' ' -f2)
+          if [ "$have" != "$UV_PIN" ]; then
+            echo "::error::uv is $have, expected $UV_PIN"
+            exit 1
+          fi
+          echo "uv $have at $(command -v uv)"
+
+      - name: uv sync
+        timeout-minutes: 10
+        run: uv sync --frozen
+
+      - name: Fill and verify the pinned data
+        timeout-minutes: 30
+        env:
+          SPLIT: ${{ inputs.split }}
+          MANIFEST: ${{ steps.window.outputs.manifest }}
+        run: |
+          uv run python scripts/data/prepare_backtest_data.py \
+            --split "$SPLIT" --manifest "$MANIFEST" --data-dir "$HERMES_DATA_DIR"
+
+      - name: Backtest
+        id: backtest
+        env:
+          START: ${{ steps.window.outputs.start }}
+          END: ${{ steps.window.outputs.end }}
+          MANIFEST: ${{ steps.window.outputs.manifest }}
+        run: |
+          uv run python scripts/backtest/run_portfolio_backtest.py \
+            --start "$START" --end "$END" \
+            --manifest "$MANIFEST" \
+            --config-dir config \
+            --trial-log "$RUNNER_TEMP/trial-log.jsonl" \
+            --output "$RUNNER_TEMP/out/report.json" \
+            --performance-out "$RUNNER_TEMP/out/performance.json"
+
+      # Exit 1 is a failed gate, a valid outcome. Check lines go to a file,
+      # not the log: observed metrics stay out of AI inputs (ADR-023 §7).
+      - name: Certify (temporary store, nothing recorded)
+        id: certify
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/out"
+          strategy=$(jq -er '.strategy_id' "$out/report.json") || exit 1
+          jq -e '{backtest: {calibration_fill_count: .fills_count}}' "$out/report.json" \
+            > "$out/evidence.json" || exit 1
+          uv run hermes certify "$strategy" \
+            --performance "$out/performance.json" \
+            --evidence "$out/evidence.json" \
+            --config-dir config \
+            --store-dir "$RUNNER_TEMP/cert" > "$out/certify.txt"
+          code=$?
+          echo "exit=$code" >> "$GITHUB_OUTPUT"
+          case "$code" in
+            0) echo "Gate passed" ;;
+            1) echo "Gate failed or refused (a valid outcome)" ;;
+            *) echo "::error::hermes certify exited $code (usage, config, evidence or store error)"; exit "$code" ;;
+          esac
+          uv run python scripts/backtest/trial_stats.py \
+            --trial-log "$RUNNER_TEMP/trial-log.jsonl" --strategy-id "$strategy" \
+            > "$out/trial-stats.json"
+
+      # Also after a failure: the driver may have logged a trial before
+      # failing, and that trial must still be committed.
+      - name: New trial lines
+        if: ${{ always() && steps.trial-log.outcome == 'success' }}
+        env:
+          SRC: ${{ steps.trial-log.outputs.src }}
+          BASE_BYTES: ${{ steps.trial-log.outputs.base_bytes }}
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/trial-log.jsonl"
+          if ! cmp -s -n "$BASE_BYTES" "$SRC" "$log"; then
+            echo "::error::the trial log copy no longer starts with the committed log"
+            exit 1
+          fi
+          tail -c +"$((BASE_BYTES + 1))" "$log" > "$RUNNER_TEMP/out/trial-log.new.jsonl"
+          echo "New trial lines: $(wc -l < "$RUNNER_TEMP/out/trial-log.new.jsonl")"
+
+      - name: Summary
+        if: ${{ always() && steps.trial-log.outcome == 'success' }}
+        env:
+          SPLIT: ${{ inputs.split }}
+          START: ${{ steps.window.outputs.start }}
+          END: ${{ steps.window.outputs.end }}
+          SHA: ${{ github.sha }}
+          CERTIFY_EXIT: ${{ steps.certify.outputs.exit }}
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/out"
+          {
+            echo "## Backtest: $SPLIT"
+            echo
+            echo "- Window: $START to $END"
+            echo "- Commit: $SHA"
+            echo "- New trial lines: $(wc -l < "$out/trial-log.new.jsonl" 2>/dev/null || echo 0)"
+            if [ -f "$out/trial-stats.json" ]; then
+              echo "- Trials: $(jq -r '.count' "$out/trial-stats.json"), Validation touches: $(jq -r '.validation_count' "$out/trial-stats.json")"
+            fi
+            echo "- Certify exit: ${CERTIFY_EXIT:-not run}"
+            if [ -f "$out/certify.txt" ]; then
+              echo
+              echo '```text'
+              # Check names and PASS/FAIL only; the numbers are in the artifact.
+              awk '/^(PASS|FAIL) /{print $1, $2; next} /^(# |GATE |REFUSED|REVERTED)/{print}' "$out/certify.txt"
+              echo '```'
+            fi
+            echo
+            echo "Commit the new trial lines to docs/experiments/$EXPERIMENT/trial-log.jsonl by PR before the next run (ADR-023 §6)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload report, performance, evidence and trial lines
+        if: ${{ always() && steps.trial-log.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: backtest-${{ inputs.split }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/out/
+          retention-days: 90
+          if-no-files-found: warn
