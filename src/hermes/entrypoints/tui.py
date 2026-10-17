@@ -50,10 +50,15 @@ The views read on the last poll are cached, so a tick repaints those cards
 without reading the ledger. Live values stay in this process: nothing here
 writes the ledger or reaches the engine, the supervisor or a notification.
 
+When the release the console started on is no longer the current one, a
+persistent notice offers ``R`` to restart onto the new release (issue #652).
+It is an amber ``warn`` row on the panel surface, under the status row and
+above the screens, so it shows on every tab.
+
 Keys: ``1``-``8`` screens, Tab / Shift+Tab cycle them, Ctrl+P command palette,
 ``D`` ``W`` ``M`` ``Y`` range (day, week, month, year), up and down (or ``j``
 ``k``) select a position, Enter opens it, Esc goes back, ``L`` logs, ``T``
-theme, ``?`` help, ``Q`` quit.
+theme, ``?`` help, ``R`` restart (only while the notice shows), ``Q`` quit.
 
 Reference: openspec/changes/readonly-tui-dashboard/change.md;
 openspec/changes/live-home-screen/change.md (D-6);
@@ -65,6 +70,7 @@ openspec/changes/713-live-ticker/change.md.
 from __future__ import annotations
 
 import os
+import sys
 from collections import deque
 from collections.abc import Callable, Iterable, Sequence
 from contextlib import suppress
@@ -212,6 +218,8 @@ __all__ = [
 
 REFRESH_SECONDS: Final = MOTION.poll
 _PANEL_PADDING: Final = 2
+_NEW_VERSION_NOTICE: Final = "new version deployed · press R to restart"
+_UNKNOWN_RELEASE: Final = "unknown"
 _LOGS_LINES: Final = 50
 _READ_ONLY: Final = "read-only"
 _BRIEF_PENDING: Final = "brief not available yet"
@@ -220,7 +228,7 @@ _LEFT_IDS: Final = frozenset(
     {"portfolio", "portfolio-curve", "portfolio-meters", "portfolio-books"}
 )
 _THIRD_IDS: Final = frozenset({"signals", "log-tail"})
-_FULL_WIDTH_IDS: Final = frozenset({"shadow", "footer", "footer-status", "countdown"})
+_FULL_WIDTH_IDS: Final = frozenset({"shadow", "footer", "footer-status", "countdown", "notice"})
 _WIDTH_CLASSES: Final = ("-compact", "-standard", "-wide", "-ultra")
 _HEIGHT_CLASSES: Final = ("-short", "-tall", "-towering")
 # Spaces the status row's widgets add around their text (padding, margins).
@@ -483,6 +491,12 @@ class HomeApp(App[None]):
     #theme-chip {{ width: auto; margin-left: 1; }}
     #down-row {{ display: none; height: auto; }}
     #down-row.-down {{ display: block; }}
+    #notice {{
+        display: none; height: 1; padding: 0 1;
+        background: $hud-panel; color: $hud-warn; text-style: bold;
+        border-left: outer $hud-warn;
+    }}
+    #notice.-on {{ display: block; }}
     #screens {{ height: 1fr; }}
     #tab-1 {{ height: 1fr; }}
     #body {{
@@ -526,6 +540,7 @@ class HomeApp(App[None]):
         Binding("l,L", "logs", "logs", show=False),
         Binding("t,T", "pick_theme", "theme", show=False),
         Binding("question_mark", "help", "help", show=False),
+        Binding("r,R", "restart", "restart", show=False),
         Binding("q,Q", "quit", "quit", show=False),
     ]
 
@@ -581,6 +596,10 @@ class HomeApp(App[None]):
         self._tab = _HOME
         self._tab_history: list[int] = []
         self._content: dict[str, RenderableType] = {}
+        started = self._read_release()
+        self._started_release = None if started == _UNKNOWN_RELEASE else started
+        self._release_is_new = False
+        self.restart_requested = False
         self._heartbeat: Heartbeat | None = None
         # The last heartbeat read, kept across a failed read so the bell never rings twice.
         self._last_read: Heartbeat | None = None
@@ -623,6 +642,7 @@ class HomeApp(App[None]):
             yield Static(id="countdown")
             yield ThemeChip(id="theme-chip")
         yield Static(id="down-row")
+        yield Static(id="notice")
         with ContentSwitcher(initial="tab-1", id="screens"):
             with Container(id="tab-1"), Container(id="body"):
                 with Vertical(id="left-column"):
@@ -1104,6 +1124,16 @@ class HomeApp(App[None]):
         if beep_enabled(os.environ) and should_beep(previous, current):
             self.bell()
 
+    def _redraw_release(self) -> None:
+        """Show the running release, and the new-version notice once it changed."""
+        release = self._read_release()
+        self._set("release", Text("") if release is None else Text(f"release {release}"))
+        self._release_is_new = self._release_changed(release)
+        self._set("notice", Text(_NEW_VERSION_NOTICE) if self._release_is_new else Text(""))
+        notice = self._alive(Widget, "#notice")
+        if notice is not None:
+            notice.set_class(self._release_is_new, "-on")
+
     def _redraw(self) -> None:
         if not self.is_running or not self.screen_stack:
             return
@@ -1117,9 +1147,7 @@ class HomeApp(App[None]):
             else Text("")
         )
         self._set("demo-tag", tag)
-        self._set(
-            "release", Text("") if self._release is None else Text(f"release {self._release()}")
-        )
+        self._redraw_release()
         try:
             self._heartbeat = model.heartbeat()
         except _CARD_ERRORS as exc:
@@ -1204,6 +1232,23 @@ class HomeApp(App[None]):
         screen = self.screen
         if isinstance(screen, _PanelScreen):
             screen.refresh_panel()
+
+    def _read_release(self) -> str | None:
+        """Return the current release name, or ``None`` without a source or when it fails."""
+        if self._release is None:
+            return None
+        try:
+            return self._release()
+        except Exception:
+            return None
+
+    def _release_changed(self, current: str | None) -> bool:
+        """Return whether ``current`` differs from the release this console started on."""
+        if current is None or current == _UNKNOWN_RELEASE:
+            return False
+        if self._started_release is None:
+            self._started_release = current
+        return current != self._started_release
 
     def _show(self, widget_id: str, content: RenderableType, *, shown: bool) -> None:
         """Set a widget's content and show it only when it has something to show."""
@@ -1586,6 +1631,12 @@ class HomeApp(App[None]):
         tz = self._render_context().tz
         return Group(Text("Logs", style="bold"), *(render_log_line(line, tz) for line in lines))
 
+    def action_restart(self) -> None:
+        """Quit so the caller can re-exec onto the new release; ignored without the notice."""
+        if self._on_home and self._release_is_new:
+            self.restart_requested = True
+            self.exit()
+
     def action_help(self) -> None:
         """Show the keys and the tax footnote."""
         if self._on_home:
@@ -1602,6 +1653,7 @@ class HomeApp(App[None]):
             Text("  ↑ ↓ choose a position · Enter open its detail · Esc back"),
             Text("  A show or fold the 4h check lines in Activity"),
             Text("  L logs · T theme · ? this help · Q quit"),
+            Text("  R restart onto a new version (only while its notice shows)"),
             Text(
                 "This screen is read-only: nothing here changes a position, a stop or the ledger."
             ),
@@ -1619,23 +1671,31 @@ def run_home(
     journal: Callable[[int], Sequence[LogLine] | None] | None = None,
     release: Callable[[], str] | None = None,
     *,
+    exec_fn: Callable[[str, list[str]], object] = os.execv,
+    argv: Sequence[str] | None = None,
+    platform: str = sys.platform,
     theme: ThemeChoice | None = None,
     settings_path: Path | None = DEFAULT_SETTINGS_PATH,
     exposure_cap: Decimal | None = None,
     ticker: LiveTickerPort | None = None,
 ) -> None:
-    """Run the console until the operator quits.
+    """Run the console until the operator quits, or restarts onto a new release.
 
     Args:
         model: The read model to show.
         journal: Source of the logs panel's lines; see :class:`HomeApp`.
         release: Source of the running release's name; see :class:`HomeApp`.
+        exec_fn: ``os.execv``-shaped replacement of the process; injectable for tests.
+        argv: The command line to restart with, after the interpreter; defaults to
+            the interpreter's own ``sys.orig_argv``, so ``python -m hermes`` restarts the same way.
+        platform: ``sys.platform``; where exec is not meaningful (Windows) the
+            console exits with a message instead.
         theme: A ``--theme`` choice; saved, and wins over the saved one.
         settings_path: Where the theme choice is read and saved.
         exposure_cap: The roster's exposure cap; see :class:`HomeApp`.
         ticker: The live public ticker; see :class:`HomeApp`.
     """
-    HomeApp(
+    app = HomeApp(
         model,
         journal=journal,
         release=release,
@@ -1643,4 +1703,11 @@ def run_home(
         settings_path=settings_path,
         exposure_cap=exposure_cap,
         ticker=ticker,
-    ).run()
+    )
+    app.run()
+    if not app.restart_requested:
+        return
+    if platform == "win32":
+        sys.stdout.write("New version deployed: start hermes again to use it.\n")
+        return
+    exec_fn(sys.executable, [sys.executable, *(sys.orig_argv[1:] if argv is None else argv)])
