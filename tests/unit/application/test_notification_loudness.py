@@ -39,6 +39,7 @@ _LOUD = {
     EventClass.ROLLBACK_FIRED,
     EventClass.BALANCE_LOW,
     EventClass.TRADE_REJECTED_ESCALATED,
+    EventClass.RISK_HALT,
 }
 _SEVERITY_GATED = {EventClass.STRATEGY_PAUSED, EventClass.ANOMALY_DETECTED}
 

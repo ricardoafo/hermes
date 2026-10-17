@@ -156,6 +156,110 @@
     'text': '◐ Rebalance heads-up · BTC · Sat 14:00 · 35.0% vs target 25.0% · drift 10.0 pp (band 5.0 pp)',
   })
 # ---
+# name: test_slack_message_matches_snapshot[risk-halt]
+  dict({
+    'blocks': list([
+      dict({
+        'text': dict({
+          'text': '''
+            *■ Risk halt · BTC · Sat 14:00*
+            RO-04: stale_orderbook (pre-reg §10)
+          ''',
+          'type': 'mrkdwn',
+        }),
+        'type': 'section',
+      }),
+      dict({
+        'elements': list([
+          dict({
+            'text': 'this entry skipped · …K7Q2ZP',
+            'type': 'mrkdwn',
+          }),
+        ]),
+        'type': 'context',
+      }),
+    ]),
+    'text': '■ Risk halt · BTC · Sat 14:00 · RO-04: stale_orderbook (pre-reg §10)',
+  })
+# ---
+# name: test_slack_message_matches_snapshot[risk-kill]
+  dict({
+    'blocks': list([
+      dict({
+        'text': dict({
+          'text': '''
+            *■ Kill · BTC · Sat 14:00*
+            max_drawdown: drawdown_kill_threshold (pre-reg §10)
+          ''',
+          'type': 'mrkdwn',
+        }),
+        'type': 'section',
+      }),
+      dict({
+        'elements': list([
+          dict({
+            'text': 'no new entries while it holds; exits still fill · …K7Q2ZP',
+            'type': 'mrkdwn',
+          }),
+        ]),
+        'type': 'context',
+      }),
+    ]),
+    'text': '■ Kill · BTC · Sat 14:00 · max_drawdown: drawdown_kill_threshold (pre-reg §10)',
+  })
+# ---
+# name: test_slack_message_matches_snapshot[shadow-drift]
+  dict({
+    'blocks': list([
+      dict({
+        'text': dict({
+          'text': '''
+            *■ Drift breach · all pairs · Sat 14:00*
+            sim_live_drift: drift_p50_above_limit (pre-reg §7)
+          ''',
+          'type': 'mrkdwn',
+        }),
+        'type': 'section',
+      }),
+      dict({
+        'elements': list([
+          dict({
+            'text': 'back to UNTRUSTED; the shadow clock restarts · …K7Q2ZP',
+            'type': 'mrkdwn',
+          }),
+        ]),
+        'type': 'context',
+      }),
+    ]),
+    'text': '■ Drift breach · all pairs · Sat 14:00 · sim_live_drift: drift_p50_above_limit (pre-reg §7)',
+  })
+# ---
+# name: test_slack_message_matches_snapshot[shadow-kill]
+  dict({
+    'blocks': list([
+      dict({
+        'text': dict({
+          'text': '''
+            *■ Kill · all pairs · Sat 14:00*
+            sa9_repeat: sa9_rule_fired_repeatedly (pre-reg §10)
+          ''',
+          'type': 'mrkdwn',
+        }),
+        'type': 'section',
+      }),
+      dict({
+        'elements': list([
+          dict({
+            'text': 'no new entries while it holds; exits still fill · …K7Q2ZP',
+            'type': 'mrkdwn',
+          }),
+        ]),
+        'type': 'context',
+      }),
+    ]),
+    'text': '■ Kill · all pairs · Sat 14:00 · sa9_repeat: sa9_rule_fired_repeatedly (pre-reg §10)',
+  })
+# ---
 # name: test_slack_message_matches_snapshot[signal-entry]
   dict({
     'blocks': list([
@@ -546,6 +650,34 @@
 # name: test_telegram_message_matches_snapshot[rebalance-triggered]
   list([
     '◐ Rebalance heads\\-up BTC: drift 10\\.0 pp \\(band 5\\.0 pp\\) · …K7Q2ZP',
+  ])
+# ---
+# name: test_telegram_message_matches_snapshot[risk-halt]
+  list([
+    '■ Risk halt · BTC · Sat 14:00',
+    'RO\\-04: stale\\_orderbook \\(pre\\-reg §10\\)',
+    'this entry skipped · …K7Q2ZP',
+  ])
+# ---
+# name: test_telegram_message_matches_snapshot[risk-kill]
+  list([
+    '■ Kill · BTC · Sat 14:00',
+    'max\\_drawdown: drawdown\\_kill\\_threshold \\(pre\\-reg §10\\)',
+    'no new entries while it holds; exits still fill · …K7Q2ZP',
+  ])
+# ---
+# name: test_telegram_message_matches_snapshot[shadow-drift]
+  list([
+    '■ Drift breach · all pairs · Sat 14:00',
+    'sim\\_live\\_drift: drift\\_p50\\_above\\_limit \\(pre\\-reg §7\\)',
+    'back to UNTRUSTED; the shadow clock restarts · …K7Q2ZP',
+  ])
+# ---
+# name: test_telegram_message_matches_snapshot[shadow-kill]
+  list([
+    '■ Kill · all pairs · Sat 14:00',
+    'sa9\\_repeat: sa9\\_rule\\_fired\\_repeatedly \\(pre\\-reg §10\\)',
+    'no new entries while it holds; exits still fill · …K7Q2ZP',
   ])
 # ---
 # name: test_telegram_message_matches_snapshot[signal-entry]

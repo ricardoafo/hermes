@@ -11,6 +11,13 @@
 # other way to open it). A caption for a view that is not in the build yet
 # (an open PR's) is allowed and shows nowhere until its snapshots land.
 
+[views."test_tui_boot/boot"]
+screen = "Cold start"
+state = "All start-up checks passed"
+means = "The console has just started: it read the ledger, the engine heartbeat, the journal, one live price and the AI briefs, and every check passed. Home opens on its own a moment later."
+check = "The Winged H and the release line sit above five rows, each with a cyan tick and what it found; the panel is centred on the dark background; the bottom line reads \"any key opens the console · Q quits\"."
+demo = "Run `hermes tui` with motion on; the screen shows before Home on every start."
+
 [views."test_tui_snapshots/home_ok"]
 screen = "Home"
 state = "Two open positions, everything OK"
@@ -31,6 +38,13 @@ state = "Live prices flowing between bars"
 means = "The market watch and an open position are valued from live public prices between bar closes, and the window bar's feed pulse shows a run of polls with one failure."
 check = "Live figures are marked live; a failed poll shows on the pulse without hiding the last good price."
 scenario = "ok-two-positions"
+
+[views."test_tui_snapshots/notice_new_version"]
+screen = "Home"
+state = "New version deployed"
+means = "The release changed while the console was open: it still runs the old code until it restarts, and R restarts it onto the new one."
+check = "An amber row under the status row reads \"new version deployed · press R to restart\" and shows on every tab; the release label names the new version."
+demo = "Open `hermes tui` on the VPS, deploy a new release, and wait one 5 s refresh."
 
 [views."test_tui_snapshots/tab2_placeholder"]
 screen = "Signals"
@@ -128,3 +142,72 @@ means = "The open positions with the selected one's detail beside them (under th
 check = "Rows and detail match Home's for the same coin; the selected row has the cursor; up and down move it and the detail follows."
 scenario = "ok-two-positions"
 keys = "3"
+
+[views."test_tui_drill_snapshots/drill_position"]
+screen = "Positions"
+state = "Drill-down on the first position"
+means = "Enter on a position opens its detail: why it opened, the stop, the money if sold now, the price since entry and the timeline."
+check = "The detail matches the Positions row it came from; Esc goes back; the live price in the detail agrees with the ticker."
+scenario = "ok-two-positions"
+keys = "3 enter"
+
+[views."test_tui_drill_snapshots/drill_breadcrumb"]
+screen = "Positions"
+state = "Detail screen with its breadcrumb"
+means = "On a narrow console Enter pushes the detail as its own screen, and the breadcrumb shows the trail back to the list."
+check = "The breadcrumb names every level from Home to the coin; Esc steps back one level."
+scenario = "ok-two-positions"
+keys = "3 enter"
+
+[views."test_tui_topbar_snapshots/topbar"]
+screen = "Home"
+state = "Top bar on a demo console"
+means = "The top bar of a console on demo data: the mainnet badge reads off, the version and release line, the next-bar countdown and its meter half full."
+check = "Mainnet reads off; the version line shortens before the heartbeat does; the meter fills with the time since the last bar check."
+scenario = "ok-two-positions"
+
+[views."test_tui_topbar_snapshots/topbar_on"]
+screen = "Home"
+state = "Top bar, mainnet on"
+means = "A live console whose config says allow_mainnet is on: the badge says so."
+check = "The mainnet badge reads on and is impossible to miss; the heartbeat stays whole."
+demo = "Not reachable from demo data (a demo scenario always reads mainnet off); check it on a live console."
+
+[views."test_tui_topbar_snapshots/topbar_unknown"]
+screen = "Home"
+state = "Top bar, mainnet state unknown"
+means = "A live console that could not read its config: the badge shows mainnet ? instead of guessing."
+check = "The badge reads mainnet ? and never off; the rest of the bar is unchanged."
+demo = "Not reachable from demo data; check it on a live console with an unreadable config."
+
+[views."test_tui_snapshots/shadow_counting"]
+screen = "Shadow test"
+state = "Counting from a day-0 record"
+means = "The 90-day run has started: the big day figure, the share of the run behind it, the five certification checks, the day-0 record with the Ready rules as they stood and the frozen settings."
+check = "Day 12 of 90 matches the day-0 record; each check shows pass, fail or pending with its reason; rules the console cannot read say confirm by hand."
+scenario = "ok-two-positions"
+keys = "5"
+
+[views."test_tui_snapshots/shadow_warmup"]
+screen = "Shadow test"
+state = "Warm-up, no day-0 record yet"
+means = "No day 0 exists yet: the screen says warm-up days do not count, the checks wait for day 0 and the record says it is missing."
+check = "The 90-day figure reads not counting, not 0 of 90; the way to start the run is named."
+scenario = "empty"
+keys = "5"
+
+[views."test_tui_tax_snapshots/tax_summary"]
+screen = "Tax"
+state = "4.1 Summary, demo tax year"
+means = "The year's estimate: realised gains, fees, taxable base and the estimated tax by FIFO, what a sale now would add by coin, today's tax, the two-month-rule flag and the savings brackets."
+check = "The figures agree with the Lots view; the title says estimate and shadow (no real tax due); the bracket bars fill by the taxable base."
+scenario = "ok-two-positions"
+keys = "4"
+
+[views."test_tui_tax_snapshots/tax_lots"]
+screen = "Tax"
+state = "4.2 Lots, a flagged lot open in the detail"
+means = "Every lot with its state, cost and gain, a filter line, a by-month roll-up and the detail of the selected lot with the sales that used it."
+check = "The flagged lot shows the two-month rule and says it is for the gestor; the detail's cost and gain match its table row."
+scenario = "ok-two-positions"
+keys = "4 ]"

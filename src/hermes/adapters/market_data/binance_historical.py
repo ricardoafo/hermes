@@ -54,6 +54,7 @@ import structlog
 
 from hermes.domain.errors import ExchangeError, InfraError
 from hermes.domain.market_data.bar import Bar
+from hermes.domain.market_data.bar_schedule import interval_duration, previous_boundary
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.market_data.orderbook import Orderbook
 from hermes.domain.market_data.orderbook_diff import OrderbookDiff
@@ -452,7 +453,9 @@ def _row_to_bar(
         A validated :class:`~hermes.domain.market_data.bar.Bar`.
 
     Raises:
-        hermes.domain.errors.ExchangeError: On missing fields or unparseable values.
+        hermes.domain.errors.ExchangeError: On missing fields, unparseable
+            values, an ``open_time`` off the interval grid, or a
+            ``close_time`` at or past the next bar's open.
     """
     if len(row) < _KLINES_MIN_COLS:
         raise ExchangeError(
@@ -467,6 +470,16 @@ def _row_to_bar(
     close_price = _decimal_field(row[4], field_name="close", source=source)
     volume = _decimal_field(row[5], field_name="volume", source=source)
     close_time = _from_epoch_ms(row[6], field_name="close_time", source=source)
+    if previous_boundary(open_time, interval) != open_time:
+        raise ExchangeError(
+            f"BinanceHistoricalAdapter: klines open_time {open_time.isoformat()} is not "
+            f"{interval} aligned in {source}"
+        )
+    if close_time >= open_time + interval_duration(interval):
+        raise ExchangeError(
+            f"BinanceHistoricalAdapter: klines close_time {close_time.isoformat()} is past "
+            f"the {interval} window opening {open_time.isoformat()} in {source}"
+        )
 
     try:
         return Bar(

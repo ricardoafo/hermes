@@ -127,7 +127,10 @@ def test_rehearsal_checks_kraken_and_never_touches_the_unit(tmp_path: Path) -> N
     result, report, calls = _run(tmp_path)
     assert result.returncode == 0, output(result)
     assert [c for c in calls if c.startswith("systemctl")] == []
-    assert calls == ["run hermes failover-check", "run hermes positions --json --utc"]
+    assert calls == [
+        "run hermes failover-check --config-dir /opt/hermes/current/config",
+        "run hermes positions --json --utc",
+    ]
     assert "Verdict: **PASSED**" in (report / "report.md").read_text(encoding="utf-8")
 
 
@@ -136,7 +139,7 @@ def test_execute_restarts_the_unit_in_order(tmp_path: Path) -> None:
     result, report, calls = _run(tmp_path, "--execute")
     assert result.returncode == 0, output(result)
     assert calls == [
-        "run hermes failover-check",
+        "run hermes failover-check --config-dir /opt/hermes/current/config",
         "run hermes positions --json --utc",
         "systemctl stop hermes.service",
         "systemctl start hermes.service",

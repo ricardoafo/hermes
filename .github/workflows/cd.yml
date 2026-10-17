@@ -111,7 +111,7 @@ jobs:
           ref: ${{ env.RELEASE_SHA }}
           fetch-depth: 1
 
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with: { version: "0.12.5" }
       - run: uv sync --frozen
 
@@ -173,7 +173,7 @@ jobs:
           # Full history and tags: the notes run from the previous deploy tag.
           fetch-depth: 0
 
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with: { version: "0.12.5" }
 
       - name: Write the release notes
@@ -230,7 +230,7 @@ jobs:
           esac
           echo "deploy=$deploy" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: hermes-release-notes
           path: notes/
@@ -252,11 +252,11 @@ jobs:
           ref: ${{ env.RELEASE_SHA }}
           fetch-depth: 1
 
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with: { version: "0.12.5" }
 
       - name: Download wheel artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: hermes-wheel
           path: dist/
@@ -302,7 +302,7 @@ jobs:
           tar -czf "hermes-release-${sha12}.tar.gz" -C "$stage" .
           tar -tzf "hermes-release-${sha12}.tar.gz"
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: hermes-release
           path: hermes-release-*.tar.gz
@@ -360,7 +360,7 @@ jobs:
 
       - name: Download release bundle
         if: inputs.dry_run != true
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: hermes-release
           path: release/
@@ -405,9 +405,15 @@ jobs:
               echo "::error::no $bundle in the downloaded artifact"
               exit 1
           fi
-          echo "shipping $bundle ($(stat -c%s "$bundle") bytes) → $VPS_HOST:/var/tmp/"
+          # Private 0700 staging dir, not the world-writable tmp dir: another
+          # local user could plant the tarball there before root unpacks and
+          # runs it (#782). vps_bootstrap.sh creates it for a non-root deploy
+          # user; as root, install -d creates or repairs it here.
+          ssh -i ~/.ssh/vps_id -o StrictHostKeyChecking=yes \
+              "$VPS_SSH_USER@$VPS_SSH_HOST" install -d -m 0700 /var/lib/hermes-deploy
+          echo "shipping $bundle ($(stat -c%s "$bundle") bytes) → $VPS_HOST:/var/lib/hermes-deploy/"
           scp -i ~/.ssh/vps_id -o StrictHostKeyChecking=yes \
-              "$bundle" "$VPS_SSH_USER@$VPS_SSH_HOST:/var/tmp/"
+              "$bundle" "$VPS_SSH_USER@$VPS_SSH_HOST:/var/lib/hermes-deploy/"
 
       - name: Mark the deploy start
         id: start
@@ -429,8 +435,8 @@ jobs:
               "$VPS_SSH_USER@$VPS_SSH_HOST" bash -s -- "${RELEASE_SHA::12}" <<'REMOTE'
           set -euo pipefail
           sha12=$1
-          bundle="/var/tmp/hermes-release-$sha12.tar.gz"
-          stage="/var/tmp/hermes-release-$sha12"
+          bundle="/var/lib/hermes-deploy/hermes-release-$sha12.tar.gz"
+          stage="/var/lib/hermes-deploy/hermes-release-$sha12"
           cleanup() { rm -rf "$stage" "$bundle"; }
           trap cleanup EXIT
 
@@ -461,7 +467,7 @@ jobs:
           # This job's token can write; smoke never needs it in .git/config.
           persist-credentials: false
 
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         if: inputs.dry_run != true
         with: { version: "0.12.5" }
 
@@ -493,7 +499,7 @@ jobs:
 
       - name: Download release notes
         if: inputs.dry_run != true
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: hermes-release-notes
           path: notes/

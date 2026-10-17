@@ -21,7 +21,7 @@ without running an app.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import ClassVar, Final
@@ -65,6 +65,7 @@ from hermes.entrypoints.tui_theme import (
     gradient,
     tokens_for,
 )
+from hermes.entrypoints.tui_topbar import mainnet_text
 
 __all__ = [
     "FEED_FAILED",
@@ -91,6 +92,7 @@ __all__ = [
 LABEL_COMPUTED: Final = "computed"
 LABEL_AI: Final = f"{AI_GLYPH} AI supervisor"
 _CLOCK_PAD: Final = 1
+_BADGE_GAP: Final = 2
 FEED_OK: Final = "●"
 FEED_FAILED: Final = "○"
 _BRIGHT: Final = "#FFFFFF"
@@ -270,7 +272,9 @@ def feed_pulse(polls: Sequence[bool], tokens: Tokens, *, bright: bool = False) -
     return out
 
 
-def window_bar_text(width: int, tokens: Tokens, *, status: Text, clock: str) -> Text:
+def window_bar_text(
+    width: int, tokens: Tokens, *, status: Text, clock: str, badge: Text | None = None
+) -> Text:
     """Return the window bar: brand mark, the feed pulse or next-bar countdown, clock at the right.
 
     Args:
@@ -279,6 +283,8 @@ def window_bar_text(width: int, tokens: Tokens, *, status: Text, clock: str) -> 
         status: What sits after the brand: :func:`feed_pulse` while the ticker
             runs, else the next-bar countdown; empty text for nothing.
         clock: Local time shown at the right (``HH:MM:SS``), or empty.
+        badge: The mainnet badge, drawn before the clock (issue #833); it
+            outranks the clock and the status when the bar is narrow.
 
     Returns:
         At most ``width`` cells.
@@ -287,7 +293,17 @@ def window_bar_text(width: int, tokens: Tokens, *, status: Text, clock: str) -> 
     if status.plain:
         out.append(" ")
         out.append_text(status)
-    right = Text(f"{clock}{' ' * _CLOCK_PAD}" if clock else "", style=tokens.muted)
+    clock_text = Text(f"{clock}{' ' * _CLOCK_PAD}" if clock else "", style=tokens.muted)
+    right = Text()
+    if badge is not None and badge.plain:
+        right.append_text(badge)
+        right.append(" " * _BADGE_GAP)
+    right.append_text(clock_text)
+    if badge is not None and badge.plain and width - out.cell_len - right.cell_len <= 0:
+        # The mainnet badge outranks the clock and the feed: a narrow bar drops
+        # the time first, then cuts the status, never the badge.
+        right = Text().append_text(badge).append(" " * _CLOCK_PAD)
+        out.truncate(max(width - right.cell_len - 1, 0))
     gap = width - out.cell_len - right.cell_len
     if gap > 0:
         out.append(" " * gap)
@@ -306,6 +322,7 @@ class WindowBar(Static):
         self._polls: tuple[bool, ...] = ()
         self._bright = False
         self._next_bar = ""
+        self._mainnet: tuple[bool | None] | None = None
 
     @property
     def polls(self) -> tuple[bool, ...]:
@@ -326,6 +343,12 @@ class WindowBar(Static):
         """Show the next-bar countdown (used while there is no feed)."""
         if text != self._next_bar:
             self._next_bar = text
+            self.paint()
+
+    def show_mainnet(self, allow_mainnet: bool | None) -> None:
+        """Show the mainnet badge for the config's ``allow_mainnet`` (``None``: unread)."""
+        if self._mainnet != (allow_mainnet,):
+            self._mainnet = (allow_mainnet,)
             self.paint()
 
     def on_mount(self) -> None:
@@ -351,7 +374,10 @@ class WindowBar(Static):
             status = feed_pulse(self._polls, tokens, bright=self._bright)
         else:
             status = Text(self._next_bar, style=tokens.muted)
-        self.update(window_bar_text(self.size.width, tokens, status=status, clock=self.clock))
+        badge = None if self._mainnet is None else mainnet_text(self._mainnet[0], tokens)
+        self.update(
+            window_bar_text(self.size.width, tokens, status=status, clock=self.clock, badge=badge)
+        )
 
 
 @dataclass(frozen=True)
@@ -567,6 +593,11 @@ def key_chips(chips: Sequence[tuple[str, str]], tokens: Tokens) -> Text:
     return out
 
 
+def _euro_level(value: float) -> str:
+    """Return a money figure mid count-up, as the big total shows it."""
+    return fmt_level(Decimal(f"{value:.2f}"))
+
+
 _SHIMMER_EDGE: Final = 3.0
 _SHIMMER_CELLS_PER_STEP: Final = 2
 _HERO_ROWS: Final = 4
@@ -590,6 +621,8 @@ class BigNumber(Digits):
 
     Args:
         motion: Run the count-up and the shimmer.
+        counting: Formats a value mid count-up; euros (``fmt_level``) by
+            default, so a day count (``12 / 90``) passes its own.
         id: Widget id.
         classes: Extra CSS classes.
     """
@@ -601,11 +634,17 @@ class BigNumber(Digits):
     shown: reactive[float] = reactive(0.0)
 
     def __init__(
-        self, *, motion: bool = True, id: str | None = None, classes: str | None = None
+        self,
+        *,
+        motion: bool = True,
+        counting: Callable[[float], str] | None = None,
+        id: str | None = None,
+        classes: str | None = None,
     ) -> None:
         """Start empty and hidden until :meth:`show` gets a figure."""
         super().__init__("", id=id, classes=classes)
         self._motion = motion
+        self._counting_text = counting or _euro_level
         self._figure = ""
         self._target: float | None = None
         self._counting = False
@@ -654,7 +693,7 @@ class BigNumber(Digits):
     def watch_shown(self, shown: float) -> None:
         """Draw the counting figure."""
         if self._counting:
-            self.update(fmt_level(Decimal(f"{shown:.2f}")))
+            self.update(self._counting_text(shown))
 
     def _settle(self) -> None:
         self._counting = False

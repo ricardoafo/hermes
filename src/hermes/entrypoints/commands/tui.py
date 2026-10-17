@@ -7,17 +7,20 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, TextIO
 
+import hermes
 from hermes.adapters.console import UnknownScenarioError
 from hermes.application.console import ConsoleReadModel
 from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.commands import Command
 from hermes.entrypoints.console import (
     LiveReadModelUnavailableError,
+    config_allow_mainnet,
     default_config_dir,
     default_db_path,
     recent_journal_lines,
     resolve_read_model,
     roster_exposure_cap,
+    shadow_sources,
 )
 from hermes.entrypoints.tui_settings import (
     DEFAULT_SETTINGS_PATH,
@@ -27,6 +30,7 @@ from hermes.entrypoints.tui_settings import (
 )
 from hermes.entrypoints.version import read_release
 from hermes.infrastructure.time import now_utc
+from hermes.release_version import release_label
 
 if TYPE_CHECKING:
     from hermes.adapters.exchanges.kraken_public import KrakenPublicAdapter
@@ -105,6 +109,7 @@ def run_tui(
 
         snapshot = env or {}
         cap = roster_exposure_cap(snapshot)
+        allow_mainnet = config_allow_mainnet(snapshot)
 
         def runner(read_model: ConsoleReadModel) -> None:
             ticker = live_ticker(read_model)
@@ -120,12 +125,15 @@ def run_tui(
                     read_model,
                     journal=recent_journal_lines,
                     release=_release_name,
+                    version=release_label(hermes.__version__),
+                    allow_mainnet=allow_mainnet,
                     settings_path=settings_path,
                     exposure_cap=cap,
                     ticker=ticker,
                     tax=tax.source,
                     taxpayer_profile=tax.profile,
                     tax_pack=tax.pack,
+                    shadow=shadow_sources(read_model, env=snapshot, db_path=db_path),
                 )
             finally:
                 tax.close()

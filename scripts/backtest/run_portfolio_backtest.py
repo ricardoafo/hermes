@@ -19,10 +19,20 @@ Every run that evaluates the strategy appends one trial (pre-registration
 writes its report and the ``hermes certify --performance`` file. Bars load
 through the data manifest as an UNTRUSTED run, so the OOS window is refused.
 
+With ``--funnel-evidence-out`` the run also replays the six pre-registration
+v2 §8.5 neighbours and the 2x cost stress, appends each as its own trial, and
+writes the ``hermes funnel`` evidence file (#997).
+
 Usage:
     HERMES_DATA_DIR=D:/hermes-data python scripts/backtest/run_portfolio_backtest.py \\
-        --start 2020-09-01 --end 2025-08-31 --performance-out gate/train_val.json
+        --start 2020-09-01 --end 2025-08-31 --performance-out gate/train_val.json \\
+        --funnel-evidence-out gate/funnel-evidence.json
     python scripts/backtest/run_portfolio_backtest.py --dry-run   # load bars, exit
+    python scripts/backtest/run_portfolio_backtest.py --strategy swing-mvp1-v2 ...
+
+``--strategy`` runs a roster entry by name (default: the single enabled one),
+priced with that entry's execution model: v2 sells every exit 5 bps under the
+exit bar's close (pre-registration v2 §5.3, §6.2), v1 as it was signed.
 
 Exit codes:
     0 - backtest completed, trial logged, report and performance file saved
@@ -40,11 +50,13 @@ import random
 import subprocess
 import sys
 from collections import Counter
-from dataclasses import replace
+from collections.abc import Callable
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
+from funnel_evidence import FUNNEL_REPLAYS, FunnelReplay, funnel_evidence
 from run_calibration import (
     DATA_MANIFEST_JSON,
     FEE_HISTORY_CSV,
@@ -57,7 +69,7 @@ from run_calibration import (
     _strategy_parameters,
     _trial_record,
 )
-from run_calibration_full import _depth_frac, _enabled_roster, _sharpe
+from run_calibration_full import _depth_frac, _execution_fields, _select, _sharpe
 
 from hermes.adapters.fees.binance_history import load_binance_fee_history
 from hermes.adapters.fills.orderbook_walk import OrderbookWalkFillModel
@@ -147,9 +159,7 @@ def _trial_parameters(
         "portfolio": "shared-capital",
         "risk.rules": "RO-01",
         "execution.fill_model": "orderbook_walk",
-        "execution.entry_bps": model.entry_bps,
-        "execution.stop_bps": model.stop_bps,
-        "execution.depth_frac": model.depth_frac,
+        **{f"execution.{key}": value for key, value in _execution_fields(model).items()},
     }
 
 
@@ -194,11 +204,7 @@ def _payload(
         "window_start": start.isoformat(),
         "window_end": end.isoformat(),
         "fill_model": "orderbook_walk",
-        "execution": {
-            "entry_bps": str(model.entry_bps),
-            "stop_bps": str(model.stop_bps),
-            "depth_frac": str(model.depth_frac),
-        },
+        "execution": {key: str(value) for key, value in _execution_fields(model).items()},
         "signals_seen": run.signals_seen,
         "fills_count": len(run.fills),
         "round_trips": len(round_trips(run.fills)),
@@ -216,6 +222,66 @@ def _payload(
         "split": split,
         "report": report_json,
     }
+
+
+@dataclass(frozen=True, slots=True)
+class _Replayed:
+    """One replay of the run and what its trial line and outputs need."""
+
+    replay: FunnelReplay
+    parameters: dict[str, Any]
+    model: ExecutionModel
+    run: BacktestRun
+    final: PortfolioSnapshot
+    report_json: dict[str, Any]
+    sharpe: float | None
+
+
+def _replay_one(
+    spec: FunnelReplay,
+    bars: list[Bar],
+    *,
+    parameters: dict[str, Any],
+    model: ExecutionModel,
+    kernel: FillKernel,
+    fees_at: Callable[[datetime, Pair], FeeSchedule],
+    pairs: tuple[Pair, ...],
+    start: datetime,
+    end: datetime,
+) -> _Replayed:
+    """Replay ``bars`` with one strategy instance per pair on a fresh kernel."""
+    strategy_id = kernel.tracker.snapshot.strategy_id
+    run = replay(
+        bars,
+        strategy={pair: SwingStrategyAdapter(**parameters) for pair in pairs},
+        kernel=kernel,
+        window_start=start,
+        window_end=end,
+        fees_at=fees_at,
+        correlation_id=new_correlation_id,
+        model=model,
+    )
+    label = "Replay" if not spec.trial_fields() else f"Funnel replay {spec.trial_id}"
+    print(
+        f"{label}: {run.signals_seen} signals, {len(run.fills)} fills, "
+        f"{len(round_trips(run.fills))} round trips, declined={dict(run.declined)}"
+    )
+    report = CalibrationHarness(strategy_id=strategy_id.value).run(
+        window_start=start,
+        window_end=end,
+        fills=run.fills,
+        rejections=run.rejections,
+        mid_prices=run.reference_prices,
+    )
+    return _Replayed(
+        replay=spec,
+        parameters=parameters,
+        model=model,
+        run=run,
+        final=kernel.tracker.snapshot,
+        report_json=_report_to_json(report),
+        sharpe=_sharpe(run.daily_equity),
+    )
 
 
 async def _load(
@@ -238,10 +304,8 @@ async def _run(args: argparse.Namespace) -> int:
     pairs: tuple[Pair, ...] = args.pairs
     start = _parse_iso_date(args.start)
     end = _parse_iso_date(args.end)
-    model = ExecutionModel(depth_frac=args.depth_frac)
-
     try:
-        roster = _enabled_roster(Path(args.config_dir))
+        roster, model = _select(Path(args.config_dir), args.strategy, args.depth_frac)
     except (ConfigError, ValueError) as err:
         print(f"ERROR: {err}", file=sys.stderr)
         return 1
@@ -265,60 +329,59 @@ async def _run(args: argparse.Namespace) -> int:
     def fees_at(at: datetime, for_pair: Pair) -> FeeSchedule:
         return select_fee_schedule(fee_rows, at, for_pair)
 
-    parameters = _strategy_parameters()
-    kernel = _kernel(
-        strategy_id,
-        Money(amount=roster.capital_budget, currency=roster.quote),
-        roster.sizing_policy(),
-    )
+    base_parameters = _strategy_parameters()
     try:
-        run = replay(
-            bars,
-            strategy={pair: SwingStrategyAdapter(**parameters) for pair in pairs},
-            kernel=kernel,
-            window_start=start,
-            window_end=end,
-            fees_at=fees_at,
-            correlation_id=new_correlation_id,
-            model=model,
-        )
+        plan = [
+            (spec, spec.parameters(base_parameters))
+            for spec in (FUNNEL_REPLAYS if args.funnel_evidence_out else FUNNEL_REPLAYS[:1])
+        ]
+    except ValueError as err:
+        print(f"ERROR: {err}", file=sys.stderr)
+        return 1
+    starting_cash = Money(amount=roster.capital_budget, currency=roster.quote)
+    try:
+        results = [
+            _replay_one(
+                spec,
+                bars,
+                parameters=spec_parameters,
+                model=spec.model(model),
+                kernel=_kernel(strategy_id, starting_cash, roster.sizing_policy()),
+                fees_at=spec.fees(fees_at),
+                pairs=pairs,
+                start=start,
+                end=end,
+            )
+            for spec, spec_parameters in plan
+        ]
     except FeeHistoryOutOfRangeError as err:
         print(f"ERROR: fee history does not cover a signal: {err}", file=sys.stderr)
         return 1
-    print(
-        f"Replay: {run.signals_seen} signals, {len(run.fills)} fills, "
-        f"{len(round_trips(run.fills))} round trips, declined={dict(run.declined)}"
-    )
+    primary = results[0]
 
-    report = CalibrationHarness(strategy_id=strategy_id.value).run(
-        window_start=start,
-        window_end=end,
-        fills=run.fills,
-        rejections=run.rejections,
-        mid_prices=run.reference_prices,
-    )
-    report_json = _report_to_json(report)
-    sharpe = _sharpe(run.daily_equity)
-
-    # The trial is logged before any output exists, so no result exists without its trial.
+    # Every trial is logged before any output exists, so no result exists without its trial.
     trial_log = JsonlTrialLog(Path(args.trial_log))
     try:
-        record = _trial_record(
-            strategy_id,
-            _trial_parameters(parameters, model, pairs),
-            split,
-            start,
-            end,
-            datasets,
-            _headline(run, report_json),
-        )
-        trial_log.append(replace(record, sharpe=sharpe))
+        for result in results:
+            record = _trial_record(
+                strategy_id,
+                {
+                    **_trial_parameters(result.parameters, result.model, pairs),
+                    **result.replay.trial_fields(),
+                },
+                split,
+                start,
+                end,
+                datasets,
+                _headline(result.run, result.report_json),
+            )
+            trial_log.append(replace(record, sharpe=result.sharpe))
     except (TrialLogError, RuntimeError, OSError, ValueError, subprocess.CalledProcessError) as err:
         print(f"ERROR: trial not logged, nothing written: {err}", file=sys.stderr)
         return 1
     try:
         trials = trial_summary(trial_log, strategy_id=strategy_id.value)
-        performance = performance_file(run, trials=trials, bootstrap_seed=_BOOTSTRAP_SEED)
+        performance = performance_file(primary.run, trials=trials, bootstrap_seed=_BOOTSTRAP_SEED)
     except (TrialLogError, ValueError) as err:
         print(f"ERROR: trial logged, performance file not written: {err}", file=sys.stderr)
         return 1
@@ -332,23 +395,42 @@ async def _run(args: argparse.Namespace) -> int:
         if args.performance_out
         else base / f"mvp1-portfolio-{ts}-performance.json"
     )
-    payload = _payload(
-        pairs=pairs,
-        start=start,
-        end=end,
-        run=run,
-        final=kernel.tracker.snapshot,
-        sharpe=sharpe,
-        model=model,
-        datasets=datasets,
-        split=split.value,
-        report_json=report_json,
-    )
-    for path, body in ((out_path, payload), (perf_path, performance)):
+    outputs: list[tuple[Path, dict[str, Any]]] = [
+        (
+            out_path,
+            _payload(
+                pairs=pairs,
+                start=start,
+                end=end,
+                run=primary.run,
+                final=primary.final,
+                sharpe=primary.sharpe,
+                model=model,
+                datasets=datasets,
+                split=split.value,
+                report_json=primary.report_json,
+            ),
+        ),
+        (perf_path, performance),
+    ]
+    if args.funnel_evidence_out:
+        try:
+            evidence = funnel_evidence(
+                strategy_id.value,
+                {r.replay.trial_id: r.run.daily_equity for r in results},
+                trade_count=len(round_trips(primary.run.fills)),
+            )
+        except ValueError as err:
+            print(f"ERROR: trials logged, funnel evidence not written: {err}", file=sys.stderr)
+            return 1
+        outputs.append((Path(args.funnel_evidence_out), evidence))
+    for path, body in outputs:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(body, indent=2, sort_keys=True))
     print(f"Report saved: {out_path}")
     print(f"Performance file saved: {perf_path}")
+    if args.funnel_evidence_out:
+        print(f"Funnel evidence saved: {args.funnel_evidence_out}")
     return 0
 
 
@@ -386,6 +468,17 @@ def main(argv: list[str] | None = None) -> int:
         help="Fraction of each bar's volume resting on each synthetic book side",
     )
     parser.add_argument("--config-dir", default="config", help="Directory holding strategies.yaml")
+    parser.add_argument(
+        "--funnel-evidence-out",
+        default=None,
+        help="Also run the v2 §8.5 neighbour and cost-stress replays, log each as a trial, "
+        "and write the hermes funnel evidence file here",
+    )
+    parser.add_argument(
+        "--strategy",
+        default=None,
+        help="Roster entry to run, e.g. swing-mvp1-v2 (default: the single enabled entry)",
+    )
     args = parser.parse_args(argv)
     return asyncio.run(_run(args))
 

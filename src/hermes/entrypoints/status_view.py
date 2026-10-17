@@ -32,6 +32,7 @@ from hermes.application.status import (
     UnitState,
     VerdictLevel,
 )
+from hermes.domain.events.risk_halt_recorded import RiskHaltRecorded
 from hermes.entrypoints.version import ReleaseInfo
 
 __all__ = ["render_status", "report_to_dict"]
@@ -94,6 +95,9 @@ def render_status(
         console.print(_stream_table(report.streams))
         console.print()
     console.print(f"signals    24h: {report.signals_24h}   7d: {report.signals_7d}")
+    console.print(f"halts      24h: {report.halts_24h}   30d last: {_halt_line(report.last_halt)}")
+    if report.last_halt is not None:
+        console.print(f"  {_halt_detail(report.last_halt)}")
     console.print(f"positions  open: {len(report.open_entries)} (shadow, entry facts only)")
     for entry in report.open_entries:
         console.print(
@@ -144,6 +148,7 @@ def report_to_dict(
         ],
         "bars_24h": {interval.value: count for interval, count in report.bars_24h},
         "signals": {"last_24h": report.signals_24h, "last_7d": report.signals_7d},
+        "halts": {"last_24h": report.halts_24h, "last": _halt_data(report.last_halt)},
         "open_positions": [
             {
                 "pair": str(e.pair),
@@ -159,6 +164,35 @@ def report_to_dict(
         payload["release"] = release.name
         payload["live_since"] = _iso(release.live_since)
     return payload
+
+
+def _halt_line(halt: RiskHaltRecorded | None) -> str:
+    """Return the newest halt's kind, pair and rule, or say there was none."""
+    if halt is None:
+        return "none"
+    pair = "all pairs" if halt.pair is None else str(halt.pair)
+    return f"{halt.kind.value} {pair} {halt.rule}"
+
+
+def _halt_detail(halt: RiskHaltRecorded) -> str:
+    """Return when the newest halt fired and its value-free reason."""
+    at = halt.occurred_at
+    cited = "" if halt.pre_registration_ref is None else f" (pre-reg {halt.pre_registration_ref})"
+    return f"{_utc(at)} UTC ({_madrid(at)} Madrid)  {halt.reason}{cited}"
+
+
+def _halt_data(halt: RiskHaltRecorded | None) -> dict[str, str | None] | None:
+    """Return the JSON form of the newest halt, or ``None``."""
+    if halt is None:
+        return None
+    return {
+        "kind": halt.kind.value,
+        "pair": None if halt.pair is None else str(halt.pair),
+        "rule": halt.rule,
+        "reason": halt.reason,
+        "pre_registration_ref": halt.pre_registration_ref,
+        "occurred_at": halt.occurred_at.isoformat(),
+    }
 
 
 def _header(report: StatusReport, bot: UnitState) -> Text:

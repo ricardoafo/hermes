@@ -23,8 +23,8 @@ from typing import Any
 
 import pytest
 import structlog
-import ulid
 from structlog.contextvars import clear_contextvars
+from ulid import ULID
 
 from hermes.infrastructure.logging import (
     bind_correlation_id,
@@ -155,5 +155,5 @@ def test_new_correlation_id_is_a_ulid_stamped_with_now() -> None:
     cid = new_correlation_id()
     after = time.time()
 
-    stamped = ulid.parse(cid).timestamp().timestamp
+    stamped = ULID.from_str(cid).timestamp
     assert before - 0.001 <= stamped <= after + 0.001

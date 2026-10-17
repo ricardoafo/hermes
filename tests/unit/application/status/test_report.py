@@ -30,8 +30,10 @@ from hermes.application.status import (
     build_report,
     ledger_missing_report,
 )
+from hermes.domain.events.risk_halt_recorded import HaltKind, RiskHaltRecorded
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.pair import Pair
+from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.ports.status import ShadowEntry
 from tests.support.status_ledger import BTC, ETH, INTERVALS, LAST_1D, LAST_4H, NOW, PAIRS
 
@@ -48,11 +50,13 @@ class _FakeReader:
         closes: dict[tuple[Pair, KlineInterval], datetime | None],
         signal_times: tuple[datetime, ...] = (),
         entries: tuple[ShadowEntry, ...] = (),
+        halts: tuple[RiskHaltRecorded, ...] = (),
     ) -> None:
         """Store the canned answers."""
         self.closes = closes
         self.signal_times = signal_times
         self.entries = entries
+        self.halts = halts
 
     def last_processed_close(self, pair: Pair, interval: KlineInterval) -> datetime | None:
         """Return the canned inclusive close."""
@@ -73,6 +77,10 @@ class _FakeReader:
     def open_entries(self) -> tuple[ShadowEntry, ...]:
         """Return the canned entries."""
         return self.entries
+
+    def halts_since(self, since: datetime) -> tuple[RiskHaltRecorded, ...]:
+        """Return the canned halts at or after ``since``."""
+        return tuple(h for h in self.halts if h.occurred_at >= since)
 
 
 def _current() -> dict[tuple[Pair, KlineInterval], datetime | None]:
@@ -228,3 +236,40 @@ def test_late_iff_now_is_past_due_plus_grace(minutes_after_close: int) -> None:
 
     assert (report.streams[0].state is StreamState.LATE) == (now > due + _GRACE)
     assert (report.verdict.level is VerdictLevel.LATE) == (now > due + _GRACE)
+
+
+def _halt_at(at: datetime, kind: HaltKind = HaltKind.HALT) -> RiskHaltRecorded:
+    """Return a value-free halt record at ``at``."""
+    return RiskHaltRecorded(
+        occurred_at=at,
+        correlation_id="01JABCDEFGHJKMNPQRSTVWXYZ0",
+        strategy_id=StrategyId("swing-donchian-4h"),
+        pair=BTC,
+        kind=kind,
+        rule="RO-04",
+        reason="stale_orderbook",
+        pre_registration_ref="§10",
+    )
+
+
+def test_halts_of_the_last_24_hours_are_counted_and_the_newest_is_kept() -> None:
+    """Two halts inside 24 hours count 2; one 3 days old is the last only when alone (#749)."""
+    newest = _halt_at(NOW - timedelta(hours=1), HaltKind.KILL)
+    halts = (newest, _halt_at(NOW - timedelta(hours=20)), _halt_at(NOW - timedelta(days=3)))
+    report = _report(_FakeReader(_current(), halts=halts))
+
+    assert (report.halts_24h, report.last_halt) == (2, newest)
+
+
+def test_a_halt_older_than_30_days_is_not_shown() -> None:
+    """The lookback is the 30-day SA-9 window; nothing older reaches the report."""
+    report = _report(_FakeReader(_current(), halts=(_halt_at(NOW - timedelta(days=31)),)))
+
+    assert (report.halts_24h, report.last_halt) == (0, None)
+
+
+def test_a_halt_leaves_the_verdict_unchanged() -> None:
+    """Record-only: a halt is shown but does not turn the verdict late or down."""
+    report = _report(_FakeReader(_current(), halts=(_halt_at(NOW - timedelta(hours=1)),)))
+
+    assert report.verdict.level is VerdictLevel.OK

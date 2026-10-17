@@ -11,10 +11,10 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import Decimal
 from pathlib import Path
 
 from hermes.adapters.ledger.connection import open_ledger
+from hermes.adapters.ledger.sqlite_ledger import live_bar_from_row
 from hermes.domain.errors import LedgerError
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
@@ -39,8 +39,8 @@ class SqliteLiveBarReader:
         """Return stored bars with ``start <= open_time < end``, oldest first.
 
         Raises:
-            LedgerError: The file is missing, has no ``live_bars`` table, or a
-                read fails.
+            LedgerError: The file is missing, has no ``live_bars`` table, a
+                read fails, or a stored bar is unreadable.
         """
         try:
             connection = open_ledger(self.db_path, read_only=True)
@@ -63,17 +63,7 @@ class SqliteLiveBarReader:
             raise LedgerError(msg=f"live bar reader query failed: {exc}") from exc
         finally:
             connection.close()
-        return tuple(
-            Bar(
-                pair=pair,
-                interval=interval,
-                open_time=datetime.fromisoformat(r[0]),
-                close_time=datetime.fromisoformat(r[1]),
-                open=Decimal(r[2]),
-                high=Decimal(r[3]),
-                low=Decimal(r[4]),
-                close=Decimal(r[5]),
-                volume=Decimal(r[6]),
-            )
-            for r in rows
-        )
+        try:
+            return tuple(live_bar_from_row(pair, interval, row) for row in rows)
+        except (ValueError, TypeError) as exc:
+            raise LedgerError(msg=f"live bar reader found an unreadable bar: {exc}") from exc

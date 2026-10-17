@@ -60,6 +60,9 @@ class ExperimentState:
             correlation lock breach, stale-book detection).
         rolling_30d_sharpe: 30-rolling-trade Sharpe estimate. ``None`` when
             fewer than 30 OOS trades exist (insufficient sample — not evaluated).
+        killed_by: Rule id of a §10 shadow kill serve's daily check already
+            recorded (#796), or empty. A kill is final for the pre-registration,
+            so it holds on every later evaluation.
 
     Reference: pre-registration-v1.md §10.
     """
@@ -68,6 +71,7 @@ class ExperimentState:
     days_since_equity_high: float
     sa9_halt: bool
     rolling_30d_sharpe: float | None = field(default=None)
+    killed_by: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,12 +84,17 @@ class KillDecision:
             Empty string when ``triggered=False``. Where multiple criteria fire
             simultaneously, only the first matched criterion is reported — the
             caller should treat this as "kill immediately, reason logged".
+        rule: Stable id of the criterion that fired (``max_drawdown``,
+            ``sa9_halt``, ``recovery_days``, ``rolling_sharpe`` or
+            ``shadow_sharpe``), for value-free records (#749). Empty when
+            ``triggered=False``.
 
     Reference: pre-registration-v1.md §10.
     """
 
     triggered: bool
     reason: str
+    rule: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +149,14 @@ class KillTriggerEvaluator:
         """
         t = self._triggers
 
+        # A recorded kill is final (§10 post-kill protocol): entries stay stopped.
+        if state.killed_by:
+            return KillDecision(
+                triggered=True,
+                reason=f"Strategy killed by the {state.killed_by} rule (pre-reg §10).",
+                rule=state.killed_by,
+            )
+
         # 1. Max drawdown >= 15% peak-to-trough
         if state.max_drawdown >= t.max_drawdown_threshold:
             return KillDecision(
@@ -149,6 +166,7 @@ class KillTriggerEvaluator:
                     f"kill threshold {t.max_drawdown_threshold:.1%} "
                     f"(pre-reg §10)."
                 ),
+                rule="max_drawdown",
             )
 
         # 2. SA-9 P0 HALT signal
@@ -161,6 +179,7 @@ class KillTriggerEvaluator:
                     "correlation lock breach, stale book, or exchange downtime). "
                     "Pre-reg §10."
                 ),
+                rule="sa9_halt",
             )
 
         # 3. Recovery period > 90 days
@@ -172,6 +191,7 @@ class KillTriggerEvaluator:
                     f"{t.recovery_days_threshold:.0f}-day kill threshold "
                     f"(pre-reg §10)."
                 ),
+                rule="recovery_days",
             )
 
         # 4. 30-day rolling Sharpe < 0.3 (only evaluated when sample >= 30 trades)
@@ -183,6 +203,7 @@ class KillTriggerEvaluator:
                     f"kill floor {t.rolling_sharpe_min:.1f} "
                     f"(pre-reg §10)."
                 ),
+                rule="rolling_sharpe",
             )
 
         return KillDecision(triggered=False, reason="")

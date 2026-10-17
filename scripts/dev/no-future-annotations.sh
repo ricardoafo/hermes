@@ -25,11 +25,18 @@ set -euo pipefail
 # ────────────────────────────────────────────────────────────────
 # added_lines [base-ref] — "path:line" for every added import line.
 # Staged changes when no base is given; otherwise this branch's
-# changes since its merge-base with <base-ref>.
+# changes since its merge-base with <base-ref>. While a merge is in
+# progress the index is compared with MERGE_HEAD, not HEAD: lines the
+# merged branch brings in are not this branch's additions, which is
+# what CI's --base mode checks too.
 # ────────────────────────────────────────────────────────────────
 added_lines() {
     local range=(--cached)
-    [[ -n "${1:-}" ]] && range=("$1...HEAD")
+    if [[ -n "${1:-}" ]]; then
+        range=("$1...HEAD")
+    elif git rev-parse -q --verify MERGE_HEAD >/dev/null; then
+        range=(--cached MERGE_HEAD)
+    fi
     git diff --unified=0 --no-color "${range[@]}" -- '*.py' | awk '
         /^\+\+\+ / { path = substr($0, 7); next }
         /^@@ / { split($3, a, ","); line = substr(a[1], 2) + 0; next }
@@ -120,6 +127,20 @@ if [[ "${HERMES_SELF_TEST:-0}" == "1" ]]; then
     stage src/feat.py 'z = 1\n'
     git -C "$tmp/repo" commit -q -m "feat: feat"
     expect 0 "--base mode ignores the import already on the base" main
+
+    new_repo
+    git -C "$tmp/repo" checkout -q -b feature
+    stage src/feat.py 'z = 1\n'
+    git -C "$tmp/repo" commit -q -m "feat: feat"
+    git -C "$tmp/repo" checkout -q main
+    stage src/main_only.py 'from __future__ import annotations\n'
+    git -C "$tmp/repo" commit -q -m "feat: main"
+    git -C "$tmp/repo" checkout -q feature
+    git -C "$tmp/repo" merge -q --no-commit --no-ff main >/dev/null 2>&1
+    expect 0 "merging main ignores the imports main brings in"
+
+    stage src/fix.py 'from __future__ import annotations\n'
+    expect 1 "a merge still rejects an import this branch adds"
 
     if [[ "$failed" == "0" ]]; then
         echo "no-future-annotations self-test: all fixtures passed"
