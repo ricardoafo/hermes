@@ -170,7 +170,8 @@ def _halt_line(halt: RiskHaltRecorded | None) -> str:
     """Return the newest halt's kind, pair and rule, or say there was none."""
     if halt is None:
         return "none"
-    return f"{halt.kind.value} {halt.pair} {halt.rule}"
+    pair = "all pairs" if halt.pair is None else str(halt.pair)
+    return f"{halt.kind.value} {pair} {halt.rule}"
 
 
 def _halt_detail(halt: RiskHaltRecorded) -> str:
@@ -186,7 +187,7 @@ def _halt_data(halt: RiskHaltRecorded | None) -> dict[str, str | None] | None:
         return None
     return {
         "kind": halt.kind.value,
-        "pair": str(halt.pair),
+        "pair": None if halt.pair is None else str(halt.pair),
         "rule": halt.rule,
         "reason": halt.reason,
         "pre_registration_ref": halt.pre_registration_ref,
