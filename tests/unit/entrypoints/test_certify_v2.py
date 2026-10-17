@@ -296,3 +296,21 @@ class TestErrors:
         code, _, err = _certify(tmp_path, release / "config", 0.95, funnel=_funnel_evidence())
         assert (code, err.startswith("ERROR: pre-registration:")) == (3, True)
         assert "pre-registration-v2.md" in err
+
+
+class TestShippedConfig:
+    """The shipped roster carries swing-mvp1-v2 (PR #1007), so certify can judge it."""
+
+    def test_shipped_config_without_evidence_fails_closed(self, tmp_path: Path) -> None:
+        """No evidence: exit 1 with a failing dsr line at v2's floor, and nothing stored."""
+        out = io.StringIO()
+        code = certify_module.main(
+            [_V2, "--config-dir", str(_PROJECT_ROOT / "config"), "--store-dir", str(tmp_path)],
+            stream=out,
+            err=io.StringIO(),
+        )
+        assert (code, _line(out.getvalue(), "dsr"), list(tmp_path.iterdir())) == (
+            1,
+            "FAIL dsr observed not computed (#354) required >= 0.95",
+            [],
+        )

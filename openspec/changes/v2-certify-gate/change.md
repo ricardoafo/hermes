@@ -38,6 +38,8 @@ unfunnelled v2 into shadow, so a missing funnel evidence file fails the gate.
   rule (90 days and 30 round trips, 180-day cap); certify refuses every v2
   gate past `UNTRUSTED` until that lands, consuming nothing.
 - The `swing-mvp1-v2` roster entry in `config/strategies.yaml` (PR #1007).
+- Fingerprinting `exit_pricing` (PR #1007's roster field): v2's fingerprint
+  stays v1's formula over its own entry.
 - Workflow edits: `backtest.yml` must pass `--funnel-evidence` for v2.
 - The ADR-012 D-11 "implied independent trials" N (v2 §8.1): the DSR keeps
   reading the trial stats the performance file carries.
@@ -144,6 +146,7 @@ Test tiers touched: unit, property
 
 ## Dependencies on other changes
 
-- PR #1007 (roster entry). Until it merges, `hermes certify swing-mvp1-v2`
-  with the shipped config exits 3 naming the missing entry.
+- PR #1007 (roster entry, merged): the shipped `strategies.yaml` holds the
+  disabled `swing-mvp1-v2` entry certify fingerprints. A config without it
+  exits 3 naming the missing entry.
 - `openspec/changes/v2-backtest-funnel/change.md` (funnel evaluator).
