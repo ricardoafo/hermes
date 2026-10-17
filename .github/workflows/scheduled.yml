@@ -161,13 +161,18 @@ jobs:
             echo "::error::the seed run left no readable report"
             exit 1
           fi
-          gh issue create \
+          # The run summary keeps the failing seeds even if filing the issue fails.
+          cat issue.md >> "$GITHUB_STEP_SUMMARY"
+          if gh issue create \
             --title "test: fresh scenario seeds broke a rule ($(date -u +%F))" \
             --body-file issue.md \
             --label type:test --label p2 --label area:domain --label size:s \
             --milestone "MVP1 — Simulation ready" \
-            --assignee rafo-claude-bot
-          echo "::error::fresh seeds failed; filed as an issue"
+            --assignee rafo-claude-bot; then
+            echo "::error::fresh seeds failed; filed as an issue"
+          else
+            echo "::error::fresh seeds failed and the issue could not be filed; the failing seeds are in this run's summary"
+          fi
           exit 1
 
   e2e:
