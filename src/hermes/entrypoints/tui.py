@@ -159,6 +159,7 @@ from hermes.application.console.shadow_screen import (
     sources_from,
 )
 from hermes.domain.errors import LedgerError
+from hermes.entrypoints.tui_boot import BootScreen, boot_checks
 from hermes.entrypoints.tui_briefs import briefs_screen
 from hermes.entrypoints.tui_drilldown import (
     DetailMode,
@@ -653,6 +654,7 @@ class HomeApp(App[None]):
         exposure_cap: Decimal | None = None,
         shadow: ShadowSources | None = None,
         ticker: LiveTickerPort | None = None,
+        boot: bool = False,
     ) -> None:
         """Hold the read model, the journal source and the screen state.
 
@@ -683,8 +685,13 @@ class HomeApp(App[None]):
                 from; ``None`` takes what ``model`` itself serves.
             ticker: The live public ticker (issue #713); ``None`` shows booked
                 values only and the Market panel without prices.
+            boot: Open on the cold start screen (#1020); shown only with motion on.
         """
         super().__init__()
+        # The checks need the time zone, which the model only gives once mounted.
+        self._boot_checks = (
+            partial(boot_checks, model, journal=journal, ticker=ticker) if boot else None
+        )
         self._model = model
         self._journal = journal
         self._release = release
@@ -721,6 +728,15 @@ class HomeApp(App[None]):
         self._title_sent: str | None = None
         self._title_total: str | None = None
         self.effect_timers: dict[str, Timer] = {}
+        self._init_live_feed(ticker, clock)
+        self._summary: PortfolioSummary | None = None
+        self._rows: tuple[PositionRow, ...] = ()
+        self._details: dict[str, PositionDetail] = {}
+        self._watch: tuple[WatchedPair, ...] | None = None
+        for hermes_theme in THEMES:
+            self.register_theme(hermes_theme)
+
+    def _init_live_feed(self, ticker: LiveTickerPort | None, clock: Callable[[], datetime]) -> None:
         self._poller = None if ticker is None else TickerPoller(ticker, clock)
         self._board = LiveBoard()
         self._fetching = False
@@ -729,12 +745,6 @@ class HomeApp(App[None]):
         self._polls: deque[bool] = deque(maxlen=FEED_WIDTH)
         self._feed_timer: Timer | None = None
         self._live_state = LiveState.WAITING
-        self._summary: PortfolioSummary | None = None
-        self._rows: tuple[PositionRow, ...] = ()
-        self._details: dict[str, PositionDetail] = {}
-        self._watch: tuple[WatchedPair, ...] | None = None
-        for hermes_theme in THEMES:
-            self.register_theme(hermes_theme)
 
     def get_theme_variable_defaults(self) -> dict[str, str]:
         """Give TCSS the ``hud-*`` variables before a hermes theme is applied."""
@@ -865,6 +875,14 @@ class HomeApp(App[None]):
         self.set_interval(self._refresh_seconds, self._redraw)
         self.set_interval(MOTION.clock_tick, self._tick)
         self._start_effects()
+        if self._boot_checks is not None and self._motion:
+            self.push_screen(
+                BootScreen(
+                    self._boot_checks(tz=self._render_context().tz),
+                    lambda: tokens_for(self.theme),
+                    release=self._read_release(),
+                )
+            )
 
     def on_resize(self, event: events.Resize) -> None:
         """Re-flow when the terminal size changes."""
@@ -2050,6 +2068,7 @@ def run_home(
         exposure_cap=exposure_cap,
         shadow=shadow,
         ticker=ticker,
+        boot=True,
     )
     app.run()
     if not app.restart_requested:
