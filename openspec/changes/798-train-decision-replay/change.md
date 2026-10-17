@@ -16,7 +16,7 @@ Issue #798 turns the hand check of issue #707 into CI: every engine PR replays t
 Train on its base and on its head and reports the signal and fill decisions that changed. Zero
 changes passes; any change fails with a label unless the PR body cites the Code Owner's OK. The
 replay reads the klines from `/srv/hermes-data` on server-01 (Code Owner, 2026-10-17), mounted
-read-only on the CI pool. ADR-024 records the design.
+read-only on the CI pool. ADR-025 records the design.
 
 ## Scope
 
@@ -30,7 +30,7 @@ read-only on the CI pool. ADR-024 records the design.
 - A `Train decision replay` step in the `CI success` job, pull requests only, after the unit tier.
 - The CI runners mount `/srv/hermes-data` read-only; the `decisions-changed` label in
   `setup-labels.sh`.
-- ADR-024.
+- ADR-025.
 
 ### Out
 
@@ -97,7 +97,7 @@ kernel's fill logs carry no price into the CI log.
 
 ## Risks
 
-- Engine PRs fail until the CI runners are recreated with the mount and the backtest runner has
-  filled Train. The step says which.
+- Engine PRs fail until the CI runners are recreated with the mount (Train is already prepared in
+  `/srv/hermes-data`). The step says so.
 - A base tree whose engine API differs from the head's script fails the replay until this lands;
   after that each tree runs its own script.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check that a PR whose Train decisions changed cites the Code Owner's OK (#798, ADR-024).
+"""Check that a PR whose Train decisions changed cites the Code Owner's OK (#798, ADR-025).
 
 The PR body must hold one line
 

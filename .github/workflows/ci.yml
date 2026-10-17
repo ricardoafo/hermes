@@ -400,7 +400,7 @@ jobs:
       # An engine change must not alter a shadowed strategy's decisions
       # without the Code Owner knowing: an altered decision restarts its
       # shadow clock (ADR-021). Replays Train on the base and on this tree
-      # and compares decisions only; no metric, no trial (ADR-024). Exits
+      # and compares decisions only; no metric, no trial (ADR-025). Exits
       # at once when no engine file changed. Last, so a red unit tier is
       # reported before the replay's minutes are spent.
       - name: Train decision replay

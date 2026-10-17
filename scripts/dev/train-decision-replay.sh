@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Train decision replay for engine PRs (issue #798, ADR-024).
+# Train decision replay for engine PRs (issue #798, ADR-025).
 #
 # Replays the roster strategy over the Train split on the PR's base tree and
 # on the tree CI checked out, then compares their decisions. Nothing is
@@ -39,7 +39,7 @@ echo "Engine files changed:"
 echo "$engine_files"
 
 if [[ ! -d "$HERMES_DATA_DIR/klines" ]]; then
-  echo "::error::Train data not found under $HERMES_DATA_DIR on this runner (ADR-024 mounts it read-only on the CI pool)"
+  echo "::error::Train data not found under $HERMES_DATA_DIR on this runner (ADR-025 mounts it read-only on the CI pool)"
   exit 1
 fi
 
@@ -88,7 +88,7 @@ case "$rc" in
       echo "::notice::Train decisions changed; the Code Owner approved the change."
       exit 0
     fi
-    echo "::error::Train decisions changed. A changed decision restarts the shadow clock (ADR-021), so the PR body must cite the Code Owner's approval (ADR-024)."
+    echo "::error::Train decisions changed. A changed decision restarts the shadow clock (ADR-021), so the PR body must cite the Code Owner's approval (ADR-025)."
     exit 1
     ;;
   *)

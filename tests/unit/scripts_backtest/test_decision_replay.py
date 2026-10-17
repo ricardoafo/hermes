@@ -1,4 +1,4 @@
-"""Unit tests for scripts/backtest/decision_replay.py (#798, ADR-024).
+"""Unit tests for scripts/backtest/decision_replay.py (#798, ADR-025).
 
 Invariants (798-train-decision-replay change.md R-1 to R-5):
 

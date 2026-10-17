@@ -1,4 +1,4 @@
-"""Invariants for the Train decision replay on engine PRs (#798, ADR-024).
+"""Invariants for the Train decision replay on engine PRs (#798, ADR-025).
 
 Covers the CI wiring, ``scripts/dev/train-decision-replay.sh`` and
 ``scripts/dev/decision_change_approval.py``:
@@ -9,7 +9,7 @@ Covers the CI wiring, ``scripts/dev/train-decision-replay.sh`` and
 - A decision change passes only when the PR body cites a comment the Code
   Owner wrote on that PR.
 - The CI step runs on pull requests only, after the unit tier, with the data
-  path ADR-024 mounts; the CI pool mounts that path read-only.
+  path ADR-025 mounts; the CI pool mounts that path read-only.
 
 The shell tests run the script in a throwaway git repository with no data
 and no token, so nothing is replayed and no API is called; the replay itself

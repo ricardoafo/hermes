@@ -1,4 +1,4 @@
-# ADR-024: Engine PRs replay Train and compare decisions, on the CI pool with the klines mounted read-only
+# ADR-025: Engine PRs replay Train and compare decisions, on the CI pool with the klines mounted read-only
 
 **Date**: 2026-10-17
 **Status**: Proposed — Accepted when the Code Owner merges it
@@ -94,7 +94,7 @@ Alternatives considered:
 
 ### Negative
 
-- Engine PRs fail until the CI runners are recreated with the mount and the backtest runner has filled Train.
+- Engine PRs fail until the CI runners are recreated with the mount.
 - A changed decision needs one comment from the Code Owner and a body edit.
 
 ### Neutral

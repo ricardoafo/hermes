@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Train decision replay for engine PRs (issue #798, ADR-024).
+"""Train decision replay for engine PRs (issue #798, ADR-025).
 
 An engine change must not alter a shadowed strategy's decisions without the
 Code Owner knowing, because an altered decision restarts that strategy's

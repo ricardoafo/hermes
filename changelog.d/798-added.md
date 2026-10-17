@@ -1,1 +1,1 @@
-- Engine PRs now replay the strategy over Train on the base and on the head, and CI fails when a signal or fill decision changed unless the PR cites the Code Owner's OK; decisions only, no trial logged (ADR-024, issue #798).
+- Engine PRs now replay the strategy over Train on the base and on the head, and CI fails when a signal or fill decision changed unless the PR cites the Code Owner's OK; decisions only, no trial logged (ADR-025, issue #798).

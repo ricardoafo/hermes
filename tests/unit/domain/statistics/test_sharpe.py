@@ -14,6 +14,7 @@ from hermes.domain.statistics.sharpe import (
     kurtosis,
     probabilistic_sharpe_ratio,
     sharpe_ratio,
+    sharpe_t_statistic,
     skewness,
 )
 
@@ -118,3 +119,40 @@ class TestDeflatedSharpeRatio:
         one = probabilistic_sharpe_ratio(0.1, 0.0, 1, 0.0, 3.0)
         two = probabilistic_sharpe_ratio(0.1, 0.0, 2, 0.0, 3.0)
         assert (one, two) == (None, pytest.approx(0.53973, abs=1e-5))
+
+
+_RETURNS = st.lists(
+    st.integers(min_value=-500, max_value=500).map(lambda k: k / 10_000), min_size=2, max_size=60
+)
+
+
+class TestSharpeTStatistic:
+    """The t-statistic of the mean return is SR * sqrt(T) (ADR-021 §5; v2-backtest-funnel D-5)."""
+
+    def test_two_returns(self) -> None:
+        """[0.01, 0.03]: mean 0.02, s = 0.01 * sqrt(2), SR = sqrt(2), t = 2."""
+        assert sharpe_t_statistic([0.01, 0.03]) == pytest.approx(2.0, abs=1e-12)
+
+    def test_three_returns(self) -> None:
+        """[0.01, 0.02, 0.03]: mean 0.02, s = 0.01, SR = 2, t = 2 * sqrt(3)."""
+        assert sharpe_t_statistic([0.01, 0.02, 0.03]) == pytest.approx(3.4641016, abs=1e-7)
+
+    def test_degenerate_series_are_not_computed(self) -> None:
+        """No returns, one return, or no dispersion has no t-statistic; one more return has one."""
+        cases = ([], [0.01], [0.02, 0.02], [0.01, 0.03])
+        assert [sharpe_t_statistic(r) for r in cases] == [None, None, None, pytest.approx(2.0)]
+
+    @given(_RETURNS)
+    def test_doubling_every_return_changes_nothing(self, returns: list[float]) -> None:
+        """Doubling every return is exact and leaves the scale-free t identical."""
+        assert sharpe_t_statistic([2.0 * r for r in returns]) == sharpe_t_statistic(returns)
+
+    @given(_RETURNS)
+    def test_negating_the_returns_negates_t(self, returns: list[float]) -> None:
+        """A strategy and its mirror have opposite t-statistics."""
+        t = sharpe_t_statistic(returns)
+        mirrored = sharpe_t_statistic([-r for r in returns])
+        if t is None:
+            assert mirrored is None
+        else:
+            assert mirrored == pytest.approx(-t, abs=1e-9)
