@@ -40,6 +40,7 @@ from typing import Any
 from returns.result import Failure
 
 from hermes.adapters.ledger.migration_runner import apply_migrations
+from hermes.adapters.ledger.risk_halt_rows import RISK_HALT_EVENT_TYPE
 from hermes.domain.errors import LedgerError
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.fill_quality_recorded import (
@@ -47,6 +48,7 @@ from hermes.domain.events.fill_quality_recorded import (
     FillQualityRecorded,
     upcast_fill_quality_payload,
 )
+from hermes.domain.events.risk_halt_recorded import RiskHaltRecorded
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.events.signal_notified import SignalNotified
 from hermes.domain.events.trade_executed import TradeExecuted, TradeSide
@@ -890,6 +892,45 @@ class SqliteLedger:
             ).fetchone()
         except sqlite3.Error as exc:
             raise LedgerError(msg=f"has_signal_event failed: {exc}") from exc
+        return row is not None
+
+    def has_risk_halt(self, event: RiskHaltRecorded) -> bool:
+        """Return whether a ``RiskHaltRecorded`` row matches ``event`` (#749).
+
+        Matches on strategy, pair, kind, rule and ``occurred_at`` (the signal
+        time), so a bar evaluated again after a restart is recorded once.
+
+        Args:
+            event: The halt or kill record to look up.
+
+        Returns:
+            ``True`` when a matching row exists.
+
+        Raises:
+            LedgerError: On any SQLite read failure.
+        """
+        try:
+            row = self._conn.execute(
+                "SELECT 1 FROM events "
+                "WHERE event_type = ? AND occurred_at = ? "
+                "  AND json_extract(payload_json, '$.strategy_id.value') = ? "
+                "  AND json_extract(payload_json, '$.pair.base') = ? "
+                "  AND json_extract(payload_json, '$.pair.quote') = ? "
+                "  AND json_extract(payload_json, '$.kind') = ? "
+                "  AND json_extract(payload_json, '$.rule') = ? "
+                "LIMIT 1",
+                (
+                    RISK_HALT_EVENT_TYPE,
+                    _iso_utc(event.occurred_at),
+                    event.strategy_id.value,
+                    event.pair.base.value,
+                    event.pair.quote.value,
+                    event.kind.value,
+                    event.rule,
+                ),
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"has_risk_halt failed: {exc}") from exc
         return row is not None
 
     def last_processed_close(self, pair: Pair, interval: KlineInterval) -> datetime | None:

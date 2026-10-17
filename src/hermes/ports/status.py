@@ -15,6 +15,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Protocol, runtime_checkable
 
+from hermes.domain.events.risk_halt_recorded import RiskHaltRecorded
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.pair import Pair
 
@@ -68,4 +69,12 @@ class StatusReadPort(Protocol):
 
     def open_entries(self) -> tuple[ShadowEntry, ...]:
         """Return every pair whose latest signal is an entry, oldest first."""
+        ...
+
+    def halts_since(self, since: datetime) -> tuple[RiskHaltRecorded, ...]:
+        """Return every halt and kill recorded at or after ``since``, newest first.
+
+        Args:
+            since: Inclusive lower bound on the signal time, UTC-aware.
+        """
         ...

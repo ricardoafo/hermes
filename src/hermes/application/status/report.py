@@ -26,6 +26,7 @@ from enum import StrEnum
 from typing import Final
 from zoneinfo import ZoneInfo
 
+from hermes.domain.events.risk_halt_recorded import RiskHaltRecorded
 from hermes.domain.market_data.bar_schedule import interval_duration
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.pair import Pair
@@ -45,6 +46,8 @@ __all__ = [
 
 MADRID: Final = ZoneInfo("Europe/Madrid")
 _ONE_MS: Final = timedelta(milliseconds=1)
+_HALT_LOOKBACK: Final = timedelta(days=30)
+"""How far back the last halt is looked up: the SA-9 window of pre-registration §10."""
 _DIAGNOSE: Final = "run vps-diagnose from GitHub (gh workflow run vps-diagnose.yml)"
 
 
@@ -128,6 +131,8 @@ class StatusReport:
         signals_7d: Signals recorded in the last 7 days.
         open_entries: Open shadow positions, entry facts only.
         verdict: The verdict every surface leads with.
+        halts_24h: Halts and kills recorded in the last 24 hours (#749).
+        last_halt: The newest halt or kill of the last 30 days, or ``None``.
     """
 
     generated_at: datetime
@@ -138,6 +143,8 @@ class StatusReport:
     signals_7d: int
     open_entries: tuple[ShadowEntry, ...]
     verdict: Verdict
+    halts_24h: int = 0
+    last_halt: RiskHaltRecorded | None = None
 
 
 def build_report(
@@ -176,6 +183,8 @@ def build_report(
         for pair in pairs
         for interval in intervals
     )
+    halts = reader.halts_since(now - _HALT_LOOKBACK)
+    day_ago = now - timedelta(hours=24)
     return StatusReport(
         generated_at=now,
         unit=unit,
@@ -188,6 +197,8 @@ def build_report(
         signals_7d=reader.count_signals_since(now - timedelta(days=7)),
         open_entries=reader.open_entries(),
         verdict=_verdict(unit, streams, pairs),
+        halts_24h=sum(1 for h in halts if h.occurred_at >= day_ago),
+        last_halt=halts[0] if halts else None,
     )
 
 

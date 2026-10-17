@@ -32,6 +32,13 @@ means = "The market watch and an open position are valued from live public price
 check = "Live figures are marked live; a failed poll shows on the pulse without hiding the last good price."
 scenario = "ok-two-positions"
 
+[views."test_tui_snapshots/notice_new_version"]
+screen = "Home"
+state = "New version deployed"
+means = "The release changed while the console was open: it still runs the old code until it restarts, and R restarts it onto the new one."
+check = "An amber row under the status row reads \"new version deployed · press R to restart\" and shows on every tab; the release label names the new version."
+demo = "Open `hermes tui` on the VPS, deploy a new release, and wait one 5 s refresh."
+
 [views."test_tui_snapshots/tab2_placeholder"]
 screen = "Signals"
 state = "Not built yet"

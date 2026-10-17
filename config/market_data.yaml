@@ -12,10 +12,11 @@ base_url: https://data-api.binance.vision
 pairs: [BTC/USDT, ETH/USDT, SOL/USDT]
 # The swing strategy never enters without 1d bars, so both are followed.
 intervals: [4h, 1d]
-# Warm-up depth per stream. 4h indicator values stop changing at 45 bars;
-# the 1d EMA needs 200. 300 matches the strategy's own buffer cap.
+# Warm-up depth per stream. 4h indicator values stop changing at 45 bars.
+# The 1d floor is the strategy's 300-bar buffer: the EMA(200) is seeded from
+# the oldest buffered closes, so fewer bars can flip the regime (#880).
 warmup_bars_4h: 300   # floor 45, max 999
-warmup_bars_1d: 300   # floor 200, max 999
+warmup_bars_1d: 300   # floor 300, max 999
 # Wait after a candle boundary before the bar counts as closed.
 settle_delay_seconds: 5
 # Re-poll period while a bar is overdue, then once the source is stale.

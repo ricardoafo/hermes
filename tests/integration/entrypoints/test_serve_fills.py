@@ -51,6 +51,7 @@ from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.domain.errors import NetworkError
 from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
 from hermes.domain.events.event_bus import EventBus
+from hermes.domain.events.risk_halt_recorded import RiskHaltRecorded
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
@@ -616,3 +617,73 @@ def test_an_anomaly_on_the_bus_is_recorded_and_changes_no_decision_or_fill(
         signal_kinds(noisy_channel),
         noisy.tracker.snapshot.positions,
     ) == (signal_kinds(plain_channel), plain.tracker.snapshot.positions)
+
+
+def _halts(telegram: RecordingChannel) -> list[RiskHaltRecorded]:
+    """Return every halt or kill record the channel was sent."""
+    return [e for e in telegram.seen if isinstance(e, RiskHaltRecorded)]
+
+
+# SEV-1: S6 a risk halt that only logs is invisible to the operator (#749)
+def test_a_halted_entry_is_recorded_once_and_alerted_once(tmp_path: Path) -> None:
+    """The RO-04 halt of the stale-book entry is one ledger row and one alert, value-free."""
+    db = tmp_path / "ledger.sqlite3"
+
+    telegram, _ = _refused_entry_run(db, live(12, 14))
+
+    rows = _payloads(db, "RiskHaltRecorded")
+    assert [(r["kind"], r["rule"], r["reason"], r["pre_registration_ref"]) for r in rows] == [
+        ("halt", "RO-04", "stale_orderbook", "§10")
+    ]
+    assert rows[0]["occurred_at"] == h4_bar(11).close_time.isoformat()
+    assert [(h.rule, h.pair) for h in _halts(telegram)] == [("RO-04", BTC)]
+
+
+def test_a_halt_changes_no_decision_or_signal_push(tmp_path: Path) -> None:
+    """Record-only: the halted run's signals, trades and pushed signals match before #749."""
+    db = tmp_path / "ledger.sqlite3"
+
+    telegram, logs = _refused_entry_run(db, live(12, 14))
+
+    kinds = [p["kind"] for p in _payloads(db, "SignalEmitted")]
+    assert (kinds, signal_kinds(telegram), _trade_rows(db)) == (["entry"], ["entry"], [])
+    assert _declined_rules(logs) == [("entry", "HALT")]
+
+
+def test_a_halt_re_evaluated_after_a_crash_is_not_recorded_or_alerted_twice(
+    tmp_path: Path,
+) -> None:
+    """With the cursor rows lost, boot 2 halts bar 11 again and adds no row and no alert."""
+    db = tmp_path / "ledger.sqlite3"
+    _refused_entry_run(db, [])
+    connection = sqlite3.connect(db)
+    connection.execute(
+        "DELETE FROM events WHERE event_type = 'BarProcessed' AND occurred_at >= ?",
+        (h4_bar(11).close_time.isoformat(),),
+    )
+    connection.commit()
+    connection.close()
+
+    telegram, logs = _refused_entry_run(db, [])
+
+    assert _declined_rules(logs) == [("entry", "HALT")]
+    assert (len(_payloads(db, "RiskHaltRecorded")), _halts(telegram)) == (1, [])
+
+
+def test_a_failing_channel_does_not_stop_the_halt_record(tmp_path: Path) -> None:
+    """A channel raising on the halt alert is logged; the row is kept and the loop runs on."""
+    db = tmp_path / "ledger.sqlite3"
+    clock = SimulatedClock(start=h4_bar(10).close_time + _DELIVERY_DELAY)
+    books = _StaleFirstBooks(clock)
+    books.mid = h4_bar(10).close
+    feed = _SteppingFeed(clock, books, warm=history(10), live_bars=[h4_bar(11), *live(12, 14)])
+    telegram = RecordingChannel(raises=NetworkError("telegram down"))
+    composition = build(db, feed, clock.now(), telegram=telegram, books=books, clock=clock)
+
+    with capture_logs() as logs:
+        assert run_once(composition, feed) == 0
+
+    assert len(_payloads(db, "RiskHaltRecorded")) == 1
+    assert [e["event"] for e in logs if e["event"] == "serve.halt.alert_failed"] == [
+        "serve.halt.alert_failed"
+    ]

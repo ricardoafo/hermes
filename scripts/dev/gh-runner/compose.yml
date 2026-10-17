@@ -26,7 +26,7 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        RUNNER_VERSION: '2.337.0'
+        RUNNER_VERSION: '2.338.0'
     image: gh-runner:latest
     # No container_name — compose auto-names replicas gh-runner-runner-N
     # so `--scale runner=N` works. Runners identify themselves in the
@@ -179,7 +179,7 @@ services:
     networks: [dependabot]
 
   dependabot-dind:
-    image: docker:28-dind
+    image: docker:29-dind
     restart: unless-stopped
     privileged: true
     environment:
