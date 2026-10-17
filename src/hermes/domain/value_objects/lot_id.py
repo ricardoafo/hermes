@@ -12,8 +12,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-import ulid
 from returns.result import Failure, Result, Success
+from ulid import ULID
 
 from hermes.domain.errors import DomainError, InvalidLot
 
@@ -44,7 +44,7 @@ class LotId:
         Returns:
             New ``LotId`` with a monotonically increasing ULID value.
         """
-        return cls(value=str(ulid.new()))
+        return cls(value=str(ULID()))
 
     @classmethod
     def from_str(cls, s: str) -> Result[LotId, DomainError]:

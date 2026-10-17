@@ -30,7 +30,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Final, TextIO
 
-import ulid
+from ulid import ULID
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
 from hermes.adapters.journal.jsonl_store import JsonlDecisionJournal
@@ -153,7 +153,7 @@ def _dispatch(
     if args.command == "add":
         try:
             decision = Decision(
-                entry_id=str(ulid.new()),
+                entry_id=str(ULID()),
                 recorded_at=now,
                 decision=args.decision,
                 options=tuple(args.options),
@@ -171,7 +171,7 @@ def _dispatch(
     elif args.command == "review":
         review = record_review(
             journal,
-            entry_id=str(ulid.new()),
+            entry_id=str(ULID()),
             decision_id=args.decision_id,
             actual_outcome=args.outcome,
             score=Score(args.score),
