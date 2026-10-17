@@ -134,7 +134,7 @@ class PortfolioRiskMachine(RuleBasedStateMachine):
     - every open position has a stop, below its average entry price;
     - a refused entry (cap, halt, kill, thin book) leaves no position and no cash change;
     - right after an accepted entry, exposure at the marks stays within the
-      750 USDT cap (zero-spread books; see the pinned suspect for the rest).
+      750 USDT cap, whatever the spread (#864).
     """
 
     def __init__(self) -> None:
@@ -252,6 +252,9 @@ class PortfolioRiskMachine(RuleBasedStateMachine):
             assert isinstance(outcome, Declined) and outcome.rule == "sizing", outcome
         elif thin:
             assert isinstance(outcome, Declined) and outcome.rule == "fill_model", outcome
+        elif open_before + self._entry_cost_at_the_touch(ref, spread) > _EXPOSURE_CAP:
+            # §5.5 at the price paid: fits at the signal price, not at the ask (#864).
+            assert isinstance(outcome, Declined) and outcome.rule == "sizing", outcome
         else:
             assert isinstance(outcome, Executed), outcome
             fill = outcome.fill
@@ -271,14 +274,18 @@ class PortfolioRiskMachine(RuleBasedStateMachine):
                 qty=fill.executed_qty, mark=fill.avg_price, last_fill=fill.avg_price, stop=stop
             )
             self.trades.append(outcome.trade)
-            if spread == 0:
-                # With the touch at the signal price the cap holds at the marks
-                # too. A wider touch can pass it by the spread on the last entry
-                # (issue #864, which waits on a decision), so only zero-spread entries
-                # are held to it.
-                assert self._exposure().quantize(_PRICE_GRID) <= _EXPOSURE_CAP
+            assert self._exposure() <= _EXPOSURE_CAP
             return
         assert self._snapshot_state() == before
+
+    @staticmethod
+    def _entry_cost_at_the_touch(ref: Decimal, spread: Decimal) -> Decimal:
+        """Return what the sized entry costs on a deep book with the ask ``spread`` bps up."""
+        with localcontext() as ctx:
+            ctx.rounding = ROUND_DOWN
+            qty = _POSITION_NOTIONAL / ref
+        with localcontext(_EXACT):
+            return qty * (ref * (1 + spread / _BPS))
 
     @rule(pair=st.sampled_from(_PAIRS), move=_multipliers, spread=_spreads, thin=_thin)
     def exit(self, pair: Pair, move: Decimal, spread: Decimal, thin: bool) -> None:

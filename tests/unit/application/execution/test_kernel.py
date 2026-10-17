@@ -20,16 +20,18 @@ from decimal import Decimal
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from hermes.application.execution.kernel import Declined, Executed, Halted
+from hermes.application.execution.kernel import Declined, Executed, FillKernel, Halted
 from hermes.application.portfolio.tracker import PortfolioTracker
 from hermes.domain.events.trade_executed import TradeExecuted, TradeSide
 from hermes.domain.fees.fee_schedule import FeeSchedule
-from hermes.domain.market_data.orderbook import Orderbook
+from hermes.domain.market_data.orderbook import Orderbook, OrderbookLevel
 from hermes.domain.market_data.synthetic_orderbook import synthesize_orderbook
 from hermes.domain.strategy.signal import SignalKind, SignalSide, StrategySignal
 from hermes.domain.trading.fill import Fill, Rejection
 from hermes.domain.trading.order import Order
+from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
+from hermes.domain.value_objects.pair import Pair
 from tests.support.fill_kernel import (
     BTC_USDT,
     STARTING_CASH,
@@ -41,6 +43,8 @@ from tests.support.fill_kernel import (
 )
 
 _T0 = datetime(2024, 1, 2, 4, 0, tzinfo=UTC)
+_ETH_USDT = Pair(base=Currency.ETH, quote=Currency.USDT)
+_SOL_USDT = Pair(base=Currency.SOL, quote=Currency.USDT)
 _BPS = Decimal("10000")
 _SIZED_NOTIONAL = STARTING_CASH * Decimal("0.05")
 """Pre-registration §5.4 sizing for these signals: a 10% stop puts the 1% risk budget at
@@ -276,7 +280,7 @@ def test_kill_trigger_halts_the_entry() -> None:
 
 @dataclass
 class _OverpricedFillModel:
-    """Fills every order at a price no 5000 USDT portfolio can pay."""
+    """Fills every order at twice the signal price: 500 USDT for a 250 USDT entry."""
 
     def fill_order(
         self, order: Order, orderbook: Orderbook, clock: datetime, fees: FeeSchedule
@@ -284,15 +288,19 @@ class _OverpricedFillModel:
         return Fill(
             order=order,
             executed_qty=order.qty.amount,
-            avg_price=Decimal("1e9"),
+            avg_price=Decimal("200"),
             fee=Money(Decimal("0"), order.pair.quote),
             timestamp=clock,
         )
 
 
 def test_fill_the_portfolio_refuses_is_declined_and_not_recorded() -> None:
-    """A BUY costing more than cash declines as portfolio; no trade is returned, state unchanged."""
-    k = kernel(fill_model=_OverpricedFillModel())
+    """A BUY costing more than cash declines as portfolio; no trade is returned, state unchanged.
+
+    The 500 USDT fill is inside the 750 USDT exposure cap, so only the 100 USDT
+    of cash refuses it.
+    """
+    k = kernel(tracker=PortfolioTracker(seed(Decimal("100"))), fill_model=_OverpricedFillModel())
     out = k.execute(
         _entry(Decimal("100")),
         BTC_USDT,
@@ -302,7 +310,51 @@ def test_fill_the_portfolio_refuses_is_declined_and_not_recorded() -> None:
     assert isinstance(out, Declined)
     assert out.rule == "portfolio"
     assert out.rejection is None
-    assert k.tracker.snapshot == seed()
+    assert k.tracker.snapshot == seed(Decimal("100"))
+
+
+def _enter_at(k: FillKernel, pair: Pair, ask_bps: str, at: datetime) -> object:
+    """Enter ``pair`` at a signal price of 100 on a deep book whose ask is ``ask_bps`` above."""
+    ask = Decimal("100") * (1 + Decimal(ask_bps) / _BPS)
+    book = Orderbook(
+        pair=pair,
+        bids=(OrderbookLevel(price=Decimal("99.99"), quantity=Decimal("1000")),),
+        asks=(OrderbookLevel(price=ask, quantity=Decimal("1000")),),
+        snapshot_time=at,
+    )
+    return k.execute(_entry(Decimal("100"), at), pair, market(book, at), correlation_id=str(pair))
+
+
+# SEV-1: no rubric row matches; pre-reg §5.5 total exposure cap must hold at the price paid
+def test_an_entry_that_fits_the_cap_only_at_the_signal_price_is_declined() -> None:
+    """Issue #864: BTC and ETH at zero spread, then SOL on a 30 bps ask would end at 750.75.
+
+    The third 250 USDT entry fits the 750 cap at the signal price but costs
+    more at the ask, so it declines as sizing and the portfolio keeps two
+    positions at 500.
+    """
+    k = kernel()
+    _executed(_enter_at(k, BTC_USDT, "0", _T0))
+    _executed(_enter_at(k, _ETH_USDT, "0", _T0))
+    out = _enter_at(k, _SOL_USDT, "30", _T0)
+    assert isinstance(out, Declined)
+    assert (
+        out.rule,
+        sorted(map(str, k.tracker.snapshot.positions)),
+        k.tracker.open_notional(),
+    ) == (
+        "sizing",
+        ["BTC/USDT", "ETH/USDT"],
+        Decimal("500"),
+    )
+
+
+def test_an_entry_that_fits_the_cap_at_the_ask_still_fills() -> None:
+    """The same third entry at zero spread costs exactly 250 and fills: exposure ends at 750."""
+    k = kernel()
+    for pair in (BTC_USDT, _ETH_USDT, _SOL_USDT):
+        _executed(_enter_at(k, pair, "0", _T0))
+    assert k.tracker.open_notional() == Decimal("750")
 
 
 _prices = st.decimals(min_value=Decimal("1"), max_value=Decimal("100000"), places=2)
