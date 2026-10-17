@@ -142,7 +142,7 @@ run_one() {
         workflows)
             uv tool run --quiet --from "actionlint-py==1.7.12.*" actionlint \
                 && uv tool run --quiet zizmor==1.30.1 --offline --config .github/zizmor.yml .github/workflows \
-                && python3 scripts/dev/runs-on-check.py
+                && uv run python scripts/dev/runs-on-check.py
             ;;
         guards) run_guards ;;
         self-tests) uv run python scripts/dev/hook-coverage-check.py --run-self-tests ;;

@@ -58,6 +58,10 @@ flowchart LR
   so it queues for a server-01 runner. `scripts/dev/runs-on-check.py`, part of
   the `workflows` check in PR CI and `pr-preflight.sh`, fails any `runs-on`
   that names a hosted image or lacks that self-hosted ending (#1069).
+  The check reads the expressions in the files. It cannot see the value of a
+  repo variable, so a runner variable set to a hosted image would pass it:
+  keep `RUNNER_LABEL`, `OPS_RUNNER_LABEL` and `REVIEW_RUNNER_LABEL` on
+  server-01 labels.
 
 Runner commands, all run from `scripts/dev/gh-runner` on Workbench:
 
