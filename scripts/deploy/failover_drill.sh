@@ -24,7 +24,7 @@
 # operator to time by hand: see docs/runbook/failover-to-kraken.md.
 #
 # Test seams: SYSTEMCTL, HEALTH_GATE, HERMES_BIN, HERMES_PYTHON, HERMES_DB,
-# HERMES_ENV_FILE, HERMES_RUN (runs a command as the hermes user),
+# HERMES_CONFIG_DIR, HERMES_ENV_FILE, HERMES_RUN (runs a command as the hermes user),
 # NOW_EPOCH (fixes the clock for the bar-window guard).
 #
 # Reference: docs/runbook/failover-to-kraken.md; openspec/changes/31-failover-drill.
@@ -37,6 +37,9 @@ HEALTH_GATE=${HEALTH_GATE:-/opt/hermes/bin/health_gate.sh}
 HERMES_BIN=${HERMES_BIN:-/opt/hermes/current/.venv/bin/hermes}
 HERMES_PYTHON=${HERMES_PYTHON:-/opt/hermes/current/.venv/bin/python}
 HERMES_DB=${HERMES_DB:-/var/lib/hermes/hermes.sqlite3}
+# Absolute: with HERMES_ENV=prod the loader refuses a relative config dir, and
+# the drill runs from /var/lib/hermes, which has no config/ (#950).
+HERMES_CONFIG_DIR=${HERMES_CONFIG_DIR:-/opt/hermes/current/config}
 HERMES_ENV_FILE=${HERMES_ENV_FILE:-/etc/hermes/env.production}
 # 4h bars close at 00/04/08/12/16/20 UTC. Stay clear of the close, the
 # settle delay and the bar's processing so the restart never costs a bar.
@@ -132,7 +135,7 @@ record "bar window" OK 0 "$(( (BAR_SECONDS - offset) / 60 )) min to the next clo
 
 # 1. Can Kraken stand in? Read-only.
 t=$(now)
-if ! run_as_hermes "$HERMES_BIN" failover-check > "$REPORT_DIR/failover-check.txt" 2>&1; then
+if ! run_as_hermes "$HERMES_BIN" failover-check --config-dir "$HERMES_CONFIG_DIR" > "$REPORT_DIR/failover-check.txt" 2>&1; then
     fail "failover-check" $(( $(now) - t )) "Kraken not ready, see failover-check.txt"
 fi
 record "failover-check" OK $(( $(now) - t )) "$(tail -n 1 "$REPORT_DIR/failover-check.txt")"

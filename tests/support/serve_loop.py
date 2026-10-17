@@ -271,6 +271,7 @@ def build(
         strategies={BTC: fresh_strategy()},
         pairs=(BTC,),
         signal_notifier=SignalNotifier(RouterConfig(telegram=telegram, slack=slack)),
+        alert_channels=RouterConfig(telegram=telegram, slack=slack),
     )
 
 

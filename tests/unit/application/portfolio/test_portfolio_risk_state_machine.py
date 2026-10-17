@@ -46,8 +46,12 @@ from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.market_data.orderbook import Orderbook, OrderbookLevel
 from hermes.domain.risk.state import MarketSnapshot
 from hermes.domain.strategy.signal import SignalKind, SignalSide, StrategySignal
+from hermes.domain.trading.fill import Fill
+from hermes.domain.trading.order import Order, OrderSide
 from hermes.domain.value_objects.currency import Currency
+from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
+from hermes.domain.value_objects.quantity import Quantity
 from tests.support.fill_kernel import STARTING_CASH, STRATEGY, fees, kill_evaluator, seed
 
 _EXPLORE = os.environ.get("HYPOTHESIS_PROFILE") == "explore"
@@ -130,7 +134,7 @@ class PortfolioRiskMachine(RuleBasedStateMachine):
     - every open position has a stop, below its average entry price;
     - a refused entry (cap, halt, kill, thin book) leaves no position and no cash change;
     - right after an accepted entry, exposure at the marks stays within the
-      750 USDT cap (zero-spread books; see the pinned suspect for the rest).
+      750 USDT cap, whatever the spread (#864).
     """
 
     def __init__(self) -> None:
@@ -214,14 +218,6 @@ class PortfolioRiskMachine(RuleBasedStateMachine):
         As serve does, the pair is marked at the bar close before the strategy
         sees the bar, so the signal's entry price is the pair's mark.
         """
-        if pair in self.held and len(self.held) < _MAX_POSITIONS:
-            # Excluded transition: a second entry on a held pair. The strategy
-            # never sends one (SwingStrategyAdapter holds one position per
-            # pair); the kernel takes it, and the summed quantity can need more
-            # than 28 digits (issue #866, the exit case tested below). With
-            # three pairs held the SA-4 guard
-            # refuses it first, so that case stays in.
-            return
         ref = _BASE_PRICE[pair.base] * move
         self._close_bar(pair, ref)
         stop = ref * (1 - stop_frac)
@@ -246,6 +242,9 @@ class PortfolioRiskMachine(RuleBasedStateMachine):
             assert isinstance(outcome, Halted), outcome
         elif len(self.held) >= _MAX_POSITIONS:
             assert isinstance(outcome, Declined) and outcome.rule == "orphan-position", outcome
+        elif pair in self.held:
+            # §5.4: one position per pair, whatever the strategy sends (#902).
+            assert isinstance(outcome, Declined) and outcome.rule == "already-held", outcome
         elif self.halted:
             assert isinstance(outcome, Declined) and outcome.rule == "HALT", outcome
             assert outcome.reason.startswith("RO-04")
@@ -253,6 +252,9 @@ class PortfolioRiskMachine(RuleBasedStateMachine):
             assert isinstance(outcome, Declined) and outcome.rule == "sizing", outcome
         elif thin:
             assert isinstance(outcome, Declined) and outcome.rule == "fill_model", outcome
+        elif open_before + self._entry_cost_at_the_touch(ref, spread) > _EXPOSURE_CAP:
+            # §5.5 at the price paid: fits at the signal price, not at the ask (#864).
+            assert isinstance(outcome, Declined) and outcome.rule == "sizing", outcome
         else:
             assert isinstance(outcome, Executed), outcome
             fill = outcome.fill
@@ -268,21 +270,22 @@ class PortfolioRiskMachine(RuleBasedStateMachine):
                 # §5.5 as the sizing applies it: open exposure at the marks plus
                 # the new notional at the signal price never passes the cap.
                 assert open_before + fill.executed_qty * ref <= _EXPOSURE_CAP
-            held = self.held.get(pair)
-            with localcontext(_EXACT):
-                qty = fill.executed_qty + (held.qty if held else _ZERO)
             self.held[pair] = _Held(
-                qty=qty, mark=fill.avg_price, last_fill=fill.avg_price, stop=stop
+                qty=fill.executed_qty, mark=fill.avg_price, last_fill=fill.avg_price, stop=stop
             )
             self.trades.append(outcome.trade)
-            if spread == 0:
-                # With the touch at the signal price the cap holds at the marks
-                # too. A wider touch can pass it by the spread on the last entry
-                # (issue #864, which waits on a decision), so only zero-spread entries
-                # are held to it.
-                assert self._exposure().quantize(_PRICE_GRID) <= _EXPOSURE_CAP
+            assert self._exposure() <= _EXPOSURE_CAP
             return
         assert self._snapshot_state() == before
+
+    @staticmethod
+    def _entry_cost_at_the_touch(ref: Decimal, spread: Decimal) -> Decimal:
+        """Return what the sized entry costs on a deep book with the ask ``spread`` bps up."""
+        with localcontext() as ctx:
+            ctx.rounding = ROUND_DOWN
+            qty = _POSITION_NOTIONAL / ref
+        with localcontext(_EXACT):
+            return qty * (ref * (1 + spread / _BPS))
 
     @rule(pair=st.sampled_from(_PAIRS), move=_multipliers, spread=_spreads, thin=_thin)
     def exit(self, pair: Pair, move: Decimal, spread: Decimal, thin: bool) -> None:
@@ -465,15 +468,26 @@ def test_an_exit_sells_a_position_built_by_two_entries() -> None:
     """
     machine = PortfolioRiskMachine()
     btc = _PAIRS[0]
+    # The kernel now refuses a second entry on a held pair (#902), so the two
+    # buys reach the portfolio directly, as the issue #866 shrink left them.
     for move in (Decimal("0.6"), Decimal("0.65")):
         machine.clock += _BAR
         ref = _BASE_PRICE[btc.base] * move
-        machine.kernel.execute(
-            _signal(SignalKind.ENTRY, ref, machine.clock),
-            btc,
-            machine._market(btc, _book(btc, ref, Decimal("0"), machine.clock, thin=False)),
-            correlation_id=f"e-{move}",
-        )
+        qty = Decimal(250) / ref
+        machine.tracker.apply_fill(
+            Fill(
+                order=Order(
+                    side=OrderSide.BUY,
+                    pair=btc,
+                    qty=Quantity(amount=qty, asset=btc.base),
+                    strategy_id=STRATEGY,
+                ),
+                executed_qty=qty,
+                avg_price=ref,
+                fee=Money(amount=Decimal(0), currency=btc.quote),
+                timestamp=machine.clock,
+            )
+        ).unwrap()
     held = machine.tracker.snapshot.positions[btc].quantity
     assert held == Decimal("0.013354700854700854700854700854")
     machine.clock += _BAR

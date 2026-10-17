@@ -1,0 +1,1 @@
+- `hermes serve` records every risk-overlay halt and §10 kill of an entry in the ledger, alerts it on Telegram and Slack, and `hermes status` shows the last 24 hours and the newest one (#749).

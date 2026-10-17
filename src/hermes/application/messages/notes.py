@@ -52,6 +52,7 @@ from hermes.domain.events.balance_low import BalanceLow
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.daily_trade_digest import DailyTradeDigest
 from hermes.domain.events.rebalance_triggered import RebalanceTriggered
+from hermes.domain.events.risk_halt_recorded import HaltKind, RiskHaltRecorded
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.events.strategy_paused import StrategyPaused
 from hermes.domain.events.strategy_resumed import StrategyResumed
@@ -231,6 +232,31 @@ def _anomaly_note(event: AnomalyDetected) -> Note:
     )
 
 
+def _risk_halt_note(event: RiskHaltRecorded) -> Note:
+    """Build the note for an entry a risk halt or a §10 kill refused (value-free)."""
+    title = "Kill" if event.kind is HaltKind.KILL else "Risk halt"
+    coin = event.pair.base.value
+    cited = "" if event.pre_registration_ref is None else f" (pre-reg {event.pre_registration_ref})"
+    effect = (
+        "no new entries while it holds; exits still fill"
+        if event.kind is HaltKind.KILL
+        else "this entry skipped"
+    )
+    return Note(
+        minimal=f"{GLYPH_STOP} {title} {coin}: {event.rule}",
+        compact=(
+            _join(f"{GLYPH_STOP} {title}", coin, fmt_when(event.occurred_at)),
+            f"{event.rule}: {event.reason}{cited}",
+        ),
+        verbose=(
+            _join(f"{GLYPH_STOP} {title}", coin, fmt_when_utc(event.occurred_at)),
+            f"Strategy: {event.strategy_id}",
+            f"Rule {event.rule}: {event.reason}{cited}",
+        ),
+        footer=(effect,),
+    )
+
+
 def _balance_low_note(event: BalanceLow) -> Note:
     """Build the note for a balance under its floor."""
     asset = event.asset.value
@@ -332,6 +358,8 @@ def build_note(
             built = (Family.HEALTH_OPS, _anomaly_note(event))
         case BalanceLow():
             built = (Family.HEALTH_OPS, _balance_low_note(event))
+        case RiskHaltRecorded():
+            built = (Family.HEALTH_OPS, _risk_halt_note(event))
         case RebalanceTriggered():
             built = (Family.REPORTS, _rebalance_note(event))
         case DailyTradeDigest():

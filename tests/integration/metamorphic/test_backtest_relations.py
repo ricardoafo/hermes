@@ -16,9 +16,9 @@ Relations:
 6. Scaling every price and the capital by k scales cash, fees and P&L by k
    and leaves base quantities as they are.
 7. Lookahead: cutting the data after a bar changes no decision up to it.
-8. Warm-up: more start-up bars than the strategy buffers change nothing;
-   the configured floor of 200 daily bars is not enough (issue #880, a gap in the
-   failure-mode catalogue until it is fixed).
+8. Warm-up: more start-up bars than the strategy buffers change nothing,
+   and the configured floor of 300 daily bars decides what a longer warm-up
+   decides on a path built to sit on the EMA(200) regime edge (issue #880).
 """
 
 from __future__ import annotations
@@ -256,3 +256,25 @@ def test_more_warm_up_than_the_indicators_need_changes_no_decision(
     counts every 4h and 1d indicator reads the same bars.
     """
     assert _decided(backtest(shorter())) == _decided(long_warm_up)
+
+
+def test_the_configured_floor_of_300_daily_bars_decides_what_400_decide() -> None:
+    """Relation 8 (warm-up, #880): on the regime edge, 300 daily bars decide what 400 decide.
+
+    The regime-edge path enters only if the EMA(200) is seeded from the 300
+    daily closes the strategy buffers; 200 would leave the regime off. The
+    300-bar run is the default path moved 100 days later, so both runs share
+    one window and one climb, and the longer run only adds calm days in front.
+    """
+    window = paths.REGIME_EDGE_WINDOW + timedelta(days=100)
+    floor = paths.shifted(paths.regime_edge(), timedelta(days=100))
+    longer = paths.regime_edge(calm_days=200)
+    daily_before = [b for b in floor if b.interval is KlineInterval.D1 and b.close_time <= window]
+    floor_run = backtest(floor, window_start=window)
+
+    assert (len(daily_before), floor_run.trades[0].side, floor_run.trades[0].occurred_at) == (
+        300,
+        TradeSide.BUY,
+        datetime(2022, 2, 9, 7, 59, 59, 999000, tzinfo=UTC),
+    )
+    assert _decided(floor_run) == _decided(backtest(longer, window_start=window))

@@ -14,7 +14,9 @@ RO-03 should do across a restart in the long run is issue #857.
 from __future__ import annotations
 
 import json
+import sqlite3
 from collections.abc import Callable
+from contextlib import closing
 from datetime import timedelta
 from decimal import Decimal
 
@@ -138,3 +140,37 @@ def test_a_restart_during_an_ro03_halt_keeps_it_until_a_fill_slips_less(
         ],
         "trades": [("BTC/USDT", "BUY"), ("BTC/USDT", "SELL"), ("ETH/USDT", "BUY")],
     }
+
+
+def _lose_the_signal_rows(run: Run) -> None:
+    """Stand in for a trade that never had a signal: an old, manual or lost one."""
+    with closing(sqlite3.connect(run.db)) as conn:
+        conn.execute("DELETE FROM events WHERE event_type = 'SignalEmitted'")
+        conn.commit()
+
+
+def test_a_coin_held_without_its_entry_signal_is_watched_after_a_restart(
+    run_scenario: RunScenario,
+) -> None:
+    """A held coin keeps its exit rule after a restart, and is never bought twice (#902)."""
+    scenario = markets.breakout_twice_then_gap_down()
+    restart = scenario.breakout_at + timedelta(days=1)
+    _lose_the_signal_rows(run_scenario(scenario, until=restart))
+    second = run_scenario(scenario, live_from=restart)
+    assert outline(second.db)["trades"] == [("BTC/USDT", "BUY"), ("BTC/USDT", "SELL")]
+
+
+def test_a_coin_held_without_its_entry_signal_is_logged_with_its_first_buy(
+    run_scenario: RunScenario,
+) -> None:
+    """Serve warns which coin it restored from its fills, and from which buy (#902)."""
+    scenario = markets.chandelier_exit()
+    restart = scenario.breakout_at + timedelta(days=1)
+    first = run_scenario(scenario, until=restart)
+    _lose_the_signal_rows(first)
+    second = run_scenario(scenario, live_from=restart)
+    warned = [
+        (line["pair"], line["entry_time"])
+        for line in second.log_events("serve.position.no_entry_signal")
+    ]
+    assert warned == [("BTC/USDT", scenario.breakout_at.isoformat())]

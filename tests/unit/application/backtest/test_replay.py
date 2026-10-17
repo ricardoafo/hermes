@@ -154,11 +154,11 @@ def test_chandelier_exit_fills_fifteen_bps_under_the_stop() -> None:
     t1, t2 = _at(4), _at(8)
     run = _run(
         [_bar(t1, Decimal("200")), _bar(t2, Decimal("190"))],
-        {t1: _entry(t1, Decimal("200")), t2: _exit(t2, Decimal("192"), "chandelier")},
+        {t1: _entry(t1, Decimal("200")), t2: _exit(t2, Decimal("189"), "chandelier")},
     )
-    expected = Decimal("192") * (1 - Decimal("15") / _BPS)
+    expected = Decimal("189") * (1 - Decimal("15") / _BPS)
     assert abs(run.fills[1].avg_price - expected) < _PRECISION
-    assert run.reference_prices == [Decimal("200"), Decimal("192")]
+    assert run.reference_prices == [Decimal("200"), Decimal("189")]
 
 
 def test_time_stop_exit_fills_five_bps_under_close() -> None:
