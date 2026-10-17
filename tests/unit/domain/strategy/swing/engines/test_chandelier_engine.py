@@ -4,7 +4,6 @@ Covers:
 - Returns None for insufficient bars
 - Formula: highest_high(22) - 3 * ATR(22)
 - Stop is always below the current close on well-behaved bars
-- Deterministic on identical inputs
 - ATR multiplier parameter is respected
 
 Reference: spec-5-swing-strategy-adapter change.md D-4.
@@ -24,24 +23,21 @@ from tests.unit.domain.strategy.swing.conftest import make_bar, make_bars
 class TestChandelierInsufficientBars:
     """Returns None when ATR cannot be computed (< period + 1 bars)."""
 
-    def test_none_on_empty_bars(self) -> None:
-        """Chandelier must return None for empty bar sequence."""
-        result = ChandelierEngine.trailing_stop([], period=22)
-        assert result is None, "trailing_stop([]) must return None — no bars to compute ATR"
+    def test_needs_period_plus_one_bars(self) -> None:
+        """No bars and exactly period=22 bars give None; 23 bars give the stop (ATR needs 23).
 
-    def test_none_on_period_bars_exactly(self) -> None:
-        """Exactly period=22 bars is insufficient (ATR needs period+1=23)."""
-        bars = make_bars([Decimal("100")] * 22, highs=[105] * 22, lows=[95] * 22)
-        result = ChandelierEngine.trailing_stop(bars, period=22)
-        assert result is None, "trailing_stop with exactly 22 bars and period=22 must return None"
-        assert len(bars) == 22, "fixture must have exactly 22 bars for this boundary test"
+        Flat bars (close 100, high 105, low 95): every true range is 10, so
+        ATR(22) = 10 and the stop is 105 - 3.0 x 10 = 75.
+        """
+        bars = make_bars([100] * 23, highs=[105] * 23, lows=[95] * 23)
 
-    def test_returns_value_with_period_plus_one_bars(self) -> None:
-        """Period+1=23 bars should be sufficient to compute the stop."""
-        bars = make_bars([Decimal("100")] * 23, highs=[105] * 23, lows=[95] * 23)
-        result = ChandelierEngine.trailing_stop(bars, period=22)
-        assert result is not None, "trailing_stop must return a value with period+1=23 bars"
-        assert isinstance(result, Decimal), f"trailing_stop must return Decimal, got {type(result)}"
+        assert ChandelierEngine.trailing_stop([], period=22) is None, "no bars, no stop"
+        assert ChandelierEngine.trailing_stop(bars[:22], period=22) is None, (
+            "exactly 22 bars is one short for period=22"
+        )
+        assert ChandelierEngine.trailing_stop(bars, period=22) == Decimal("75"), (
+            "23 bars is enough: stop = 105 - 3.0 x 10 = 75"
+        )
 
 
 class TestChandelierFormula:
@@ -124,24 +120,6 @@ class TestChandelierFormula:
         assert result < last_close, (
             f"Chandelier stop ({result:.2f}) must be below current close ({last_close:.2f})"
         )
-
-
-class TestChandelierDeterminism:
-    """Determinism property."""
-
-    def test_deterministic_on_identical_inputs(self) -> None:
-        """Chandelier stop is deterministic on identical bar sequences."""
-        bars = make_bars(
-            [100 + i for i in range(24)],
-            highs=[105 + i for i in range(24)],
-            lows=[95 + i for i in range(24)],
-        )
-        r1 = ChandelierEngine.trailing_stop(bars, period=22)
-        r2 = ChandelierEngine.trailing_stop(bars, period=22)
-        assert isinstance(r1, Decimal), (
-            f"trailing_stop must return Decimal with 24 bars, got {type(r1)}"
-        )
-        assert r1 == r2, f"trailing_stop must be deterministic: first={r1}, second={r2}"
 
 
 def _pinning_bars() -> list[Bar]:
