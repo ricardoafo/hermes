@@ -6,6 +6,7 @@ is driven through argv for the parsing and exit-code contract.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import shutil
@@ -19,8 +20,10 @@ from hermes.application.calibration.certification_gates import (
     LIVE_APPROVAL_PHRASE,
     CertificationRecord,
     GateEvidence,
+    ShadowEvidence,
 )
 from hermes.application.calibration.lifecycle import CertificationState
+from hermes.application.calibration.shadow_parity import MetricStatus
 from hermes.application.strategy_protocol.preregistration import PreRegistration
 from hermes.entrypoints import certify as certify_module
 from hermes.entrypoints.certify import EvidenceError, load_evidence, run
@@ -413,3 +416,128 @@ class TestReleaseLayout:
             err=err,
         )
         assert (code, err.getvalue().startswith("ERROR: pre-registration:")) == (3, True)
+
+
+_SHADOW = {"days": 90, "drift_p50_bps": 10.0, "kill_fired": False, "drift_breached": False}
+
+
+def _parity_file(tmp_path: Path, **change: object) -> Path:
+    payload = {
+        "strategy_id": _SID,
+        "since": "2026-10-03T00:00:00+00:00",
+        "until": "2027-01-02T00:00:00+00:00",
+        "m09": "pass",
+        "m10": "pass",
+        **change,
+    }
+    path = tmp_path / "parity.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+class TestShadowParity:
+    """`--shadow-parity` feeds M-09 and M-10 to the shadow gate (#965)."""
+
+    def test_the_statuses_join_the_shadow_evidence_already_loaded(self, tmp_path: Path) -> None:
+        """The file sets M-09 and M-10 and keeps days, drift and kill from --evidence."""
+        loaded = load_evidence(_evidence_file(tmp_path, {"shadow": _SHADOW}))
+        path = _parity_file(tmp_path, m10="block")
+
+        evidence = certify_module.apply_shadow_parity(loaded, path, _SID)
+
+        assert evidence.shadow == ShadowEvidence(
+            days=90,
+            drift_p50_bps=10.0,
+            kill_fired=False,
+            drift_breached=False,
+            m09=MetricStatus.OK,
+            m10=MetricStatus.BLOCK,
+        )
+
+    def test_the_hash_chains_the_evidence_hash_with_the_parity_file(self, tmp_path: Path) -> None:
+        """The recorded hash is sha256(evidence hash + sha256(parity file)), like --performance."""
+        path = _parity_file(tmp_path)
+        file_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+
+        evidence = certify_module.apply_shadow_parity(GateEvidence(sha256="a" * 64), path, _SID)
+
+        assert evidence.sha256 == hashlib.sha256(("a" * 64 + file_hash).encode("ascii")).hexdigest()
+
+    @pytest.mark.parametrize(
+        "change",
+        [
+            {"m09": "ok"},
+            {"m10": 0.12},
+            {"strategy_id": "swing-mvp1-v2"},
+            {"correlation": 0.9},
+        ],
+    )
+    def test_a_malformed_parity_file_is_rejected(
+        self, tmp_path: Path, change: dict[str, object]
+    ) -> None:
+        """An unknown status, a value instead of a status, another strategy, an extra key."""
+        with pytest.raises(EvidenceError):
+            certify_module.apply_shadow_parity(
+                GateEvidence(), _parity_file(tmp_path, **change), _SID
+            )
+
+    def test_a_parity_file_without_a_status_is_rejected(self, tmp_path: Path) -> None:
+        """Both statuses are required: a file with M-09 only is not a window verdict."""
+        path = tmp_path / "parity.json"
+        path.write_text(json.dumps({"strategy_id": _SID, "m09": "pass"}), encoding="utf-8")
+
+        with pytest.raises(EvidenceError):
+            certify_module.apply_shadow_parity(GateEvidence(), path, _SID)
+
+    def _certify(self, tmp_path: Path, *extra: str) -> tuple[int, str, CertificationRecord | None]:
+        store_dir = tmp_path / "store"
+        JsonCertificationStore(store_dir).save(
+            CertificationRecord(
+                _SID,
+                CertificationState.BACKTEST_CERTIFIED,
+                parameter_fingerprint=certify_module._fingerprint_for(
+                    certify_module.load_config(_PROJECT_ROOT / "config"), _SID
+                ),
+            )
+        )
+        out = io.StringIO()
+        code = certify_module.main(
+            [
+                _SID,
+                "--evidence",
+                str(_evidence_file(tmp_path, {"shadow": _SHADOW})),
+                "--config-dir",
+                str(_PROJECT_ROOT / "config"),
+                "--store-dir",
+                str(store_dir),
+                *extra,
+            ],
+            stream=out,
+        )
+        return code, out.getvalue(), JsonCertificationStore(store_dir).load(_SID)
+
+    # SEV-1: the shadow gate must not certify without ADR-021 Done rule 3
+    def test_without_the_file_the_shadow_gate_fails_on_both_metrics(self, tmp_path: Path) -> None:
+        """90 days, low drift and no kill are not enough: M-09 and M-10 fail as not computed."""
+        code, out, record = self._certify(tmp_path)
+
+        assert code == 1
+        assert out.count("not computed (--shadow-parity)") == 2
+        assert record is not None
+        assert record.state == CertificationState.BACKTEST_CERTIFIED
+
+    def test_both_metrics_passed_certify_the_shadow(self, tmp_path: Path) -> None:
+        """With the window's pass verdicts the gate records SHADOW_CERTIFIED."""
+        code, out, record = self._certify(tmp_path, "--shadow-parity", str(_parity_file(tmp_path)))
+
+        assert code == 0, out
+        assert record is not None
+        assert record.state == CertificationState.SHADOW_CERTIFIED
+
+    def test_a_bad_parity_file_exits_three(self, tmp_path: Path) -> None:
+        """A parity file for another strategy is an evidence error, not a gate verdict."""
+        code, out, _ = self._certify(
+            tmp_path, "--shadow-parity", str(_parity_file(tmp_path, strategy_id="other"))
+        )
+
+        assert (code, out) == (3, "")

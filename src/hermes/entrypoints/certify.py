@@ -10,6 +10,10 @@ because the shot is spent either way (pre-registration §7).
 terminal and refuses when stdin is not one, so a script cannot approve live
 trading unattended (issue #949).
 
+``--shadow-parity FILE`` reads the M-09 and M-10 statuses ``hermes parity
+window --out FILE`` wrote for the gate out of ``BACKTEST_CERTIFIED`` (ADR-021
+Done rule 3, issue #965); the recorded evidence hash covers it.
+
 ``swing-mvp1-v2`` is judged by pre-registration v2: its backtest gate is DSR
 ≥ 0.95, v1's §9 secondary rows and the ADR-021 §5 funnel, read from
 ``--funnel-evidence`` (change v2-certify-gate).
@@ -18,7 +22,8 @@ Exit codes: 0 gate passed and recorded, 1 gate failed or refused, 2 usage,
 3 config, evidence or store error.
 
 Reference: openspec/changes/355-certification-gates/change.md;
-openspec/changes/v2-certify-gate/change.md; ADR-014.
+openspec/changes/v2-certify-gate/change.md;
+openspec/changes/965-shadow-parity-window/change.md; ADR-014.
 """
 
 from __future__ import annotations
@@ -60,6 +65,7 @@ from hermes.application.calibration.certification_gates_v2 import (
     evaluate_v2_gate,
     parse_v2_backtest_rules,
 )
+from hermes.application.calibration.shadow_parity import MetricStatus
 from hermes.application.calibration.window_metrics import (
     PerformanceRecord,
     TrialStats,
@@ -76,16 +82,25 @@ from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
 from hermes.infrastructure.time import now_utc
 from hermes.ports.certification import CertificationStoreError, CertificationStorePort
 
-__all__ = ["EvidenceError", "apply_performance", "load_evidence", "main", "run"]
+__all__ = [
+    "EvidenceError",
+    "apply_performance",
+    "apply_shadow_parity",
+    "load_evidence",
+    "main",
+    "run",
+]
 
 _USAGE = (
     "Usage: hermes certify <strategy_id> [--evidence FILE] [--store-dir DIR]\n"
     "                      [--config-dir DIR] [--sign-off NAME]\n"
+    "                      [--shadow-parity FILE]\n"
     "                      [--funnel-evidence FILE]  (swing-mvp1-v2 only)\n"
     "\n"
     "Evaluates the next certification gate (pre-registration §7) and prints every\n"
     "check with its evidence. A passed gate is recorded; a failed one is not, except\n"
     "the one-shot OOS test, which is recorded either way.\n"
+    "--shadow-parity reads the M-09/M-10 statuses `hermes parity window --out` wrote.\n"
     f"--sign-off asks you to type {LIVE_APPROVAL_PHRASE} on an interactive terminal.\n"
     "Exit codes: 0 passed, 1 failed or refused, 2 usage, 3 config/evidence/store.\n"
 )
@@ -148,6 +163,8 @@ def main(
         evidence = load_evidence(parsed.evidence) if parsed.evidence else GateEvidence()
         if parsed.performance:
             evidence = apply_performance(evidence, parsed.performance)
+        if parsed.shadow_parity:
+            evidence = apply_shadow_parity(evidence, parsed.shadow_parity, parsed.strategy_id)
     except (ConfigError, serve_module.StartupError) as exc:
         err.write(f"ERROR: config: {exc}\n")
         return 3
@@ -253,6 +270,7 @@ def _parse(argv: list[str], stream: TextIO, err: TextIO) -> tuple[argparse.Names
     parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
     parser.add_argument("--sign-off", default=None)
     parser.add_argument("--funnel-evidence", type=Path)
+    parser.add_argument("--shadow-parity", type=Path)
     parser.add_argument("-h", "--help", action="store_true")
     try:
         parsed = parser.parse_args(argv)
@@ -444,6 +462,48 @@ def apply_performance(evidence: GateEvidence, path: Path) -> GateEvidence:
     if window == "oos":
         return replace(evidence, oos=metrics, sha256=digest)
     return replace(evidence, backtest=metrics, sha256=digest)
+
+
+_PARITY_KEYS = frozenset({"strategy_id", "since", "until", "m09", "m10"})
+
+
+def apply_shadow_parity(evidence: GateEvidence, path: Path, strategy_id: str) -> GateEvidence:
+    """Add the M-09 and M-10 statuses of a ``hermes parity window`` file to ``evidence``.
+
+    Args:
+        evidence: Evidence loaded so far.
+        path: The file ``hermes parity window --out`` wrote.
+        strategy_id: The strategy being certified; the file must name it.
+
+    Returns:
+        ``evidence`` with the shadow statuses set; its hash then covers the file too.
+
+    Raises:
+        EvidenceError: The file is not a parity window file of ``strategy_id``.
+        OSError: The file cannot be read.
+    """
+    raw = path.read_bytes()
+    try:
+        payload = json.loads(raw)
+    except ValueError as exc:
+        raise EvidenceError(f"{path} is not JSON: {exc}") from exc
+    if not isinstance(payload, dict) or set(payload) != _PARITY_KEYS:
+        raise EvidenceError(f"{path} must hold exactly {sorted(_PARITY_KEYS)}")
+    if payload["strategy_id"] != strategy_id:
+        raise EvidenceError(f"{path} is for {payload['strategy_id']!r}, not {strategy_id!r}")
+    m09, m10 = (_status(path, payload, key) for key in ("m09", "m10"))
+    digest = hashlib.sha256(
+        ((evidence.sha256 or "") + hashlib.sha256(raw).hexdigest()).encode("ascii")
+    ).hexdigest()
+    shadow = replace(evidence.shadow or ShadowEvidence(), m09=m09, m10=m10)
+    return replace(evidence, shadow=shadow, sha256=digest)
+
+
+def _status(path: Path, payload: dict[str, Any], key: str) -> MetricStatus:
+    try:
+        return MetricStatus(payload[key])
+    except ValueError as exc:
+        raise EvidenceError(f"{path}: {key} must be pass, block or insufficient") from exc
 
 
 def _performance_record(payload: dict[str, Any]) -> tuple[str, PerformanceRecord]:

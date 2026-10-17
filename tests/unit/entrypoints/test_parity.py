@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
 import sqlite3
 from collections.abc import Callable
 from contextlib import AbstractContextManager, nullcontext
@@ -33,6 +34,7 @@ from hermes.adapters.clock import SimulatedClock
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.application.notification_router import RouterConfig
 from hermes.application.parity.check import HistoryFetcher
+from hermes.application.strategy_protocol.day_zero import Check, DayZeroRecord, Verdict
 from hermes.domain.errors import ExchangeError
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.signal_emitted import SignalEmitted
@@ -440,3 +442,108 @@ def test_the_default_warm_up_read_drives_the_klines_adapter_and_closes_it() -> N
         datetime(2026, 9, 30, 16, tzinfo=UTC),
     ]
     assert adapter.health().state is SourceState.STOPPED
+
+
+# ---------------------------------------------------------------------------
+# hermes parity window (#965)
+# ---------------------------------------------------------------------------
+
+_INSUFFICIENT = "M-09 P&L correlation: insufficient\nM-10 Sharpe match: insufficient\n"
+
+
+def _window_args(path: Path, *extra: str) -> list[str]:
+    return ["window", "--db", str(path), "--config-dir", str(_CONFIG), *extra]
+
+
+def _write_day_zero(ledger: Path, day_zero_at: datetime) -> None:
+    record = DayZeroRecord(
+        run_id=f"swing-donchian-4h-{day_zero_at:%Y%m%dT%H%M%SZ}",
+        strategy_id="swing-donchian-4h",
+        day_zero_at=day_zero_at,
+        package_version="0.50.0",
+        release="r",
+        config_sha256="c",
+        preregistration_sha256="p",
+        preregistration_signed_sha256="s",
+        data_manifest_sha256="m",
+        parameter_fingerprint="f",
+        archived_ledger=None,
+        archived_ledger_sha256=None,
+        checks=(Check(2, "gate", Verdict.PASS, "recorded"),),
+    )
+    runs = ledger.parent / "runs"
+    runs.mkdir()
+    (runs / f"{record.run_id}.json").write_text(record.to_json(), encoding="utf-8")
+
+
+def test_window_prints_statuses_only_and_exits_one_when_not_both_pass(ledger: Path) -> None:
+    """One flat day has no round trip and too few days: both insufficient, exit 1."""
+    code, out, err = _run(_window_args(ledger, "--since", DAY_START.isoformat()))
+
+    assert (code, out, err) == (1, _INSUFFICIENT, "")
+
+
+def test_window_out_file_holds_the_window_and_the_two_statuses_only(
+    ledger: Path, tmp_path: Path
+) -> None:
+    """The file certify reads names the strategy, the window and two statuses, no value."""
+    out_file = tmp_path / "parity.json"
+
+    _run(_window_args(ledger, "--since", DAY_START.isoformat(), "--out", str(out_file)))
+
+    assert json.loads(out_file.read_text(encoding="utf-8")) == {
+        "strategy_id": "swing-donchian-4h",
+        "since": DAY_START.isoformat(),
+        "until": _NOW.isoformat(),
+        "m09": "insufficient",
+        "m10": "insufficient",
+    }
+
+
+def test_window_defaults_to_the_latest_day_zero_record(ledger: Path, tmp_path: Path) -> None:
+    """Without --since, day 0 is read from the run record beside the ledger."""
+    _write_day_zero(ledger, DAY_START)
+    out_file = tmp_path / "parity.json"
+
+    code, out, _ = _run(_window_args(ledger, "--out", str(out_file)))
+
+    assert (code, out) == (1, _INSUFFICIENT)
+    assert json.loads(out_file.read_text(encoding="utf-8"))["since"] == DAY_START.isoformat()
+
+
+def test_window_without_since_or_a_day_zero_record_exits_three(ledger: Path) -> None:
+    """No counted run has started, so there is no window to judge."""
+    code, out, err = _run(_window_args(ledger))
+
+    assert (code, out) == (3, "")
+    assert err.startswith("ERROR: no day-0 record for swing-donchian-4h")
+
+
+def test_window_leaves_the_ledger_byte_identical(ledger: Path) -> None:
+    """The window replay only reads the ledger."""
+    before = _digest(ledger)
+
+    _run(_window_args(ledger, "--since", DAY_START.isoformat()))
+
+    assert _digest(ledger) == before
+
+
+def test_window_on_a_missing_ledger_exits_three(tmp_path: Path) -> None:
+    """No ledger, nothing replayed, and none created."""
+    missing = tmp_path / "none.sqlite3"
+
+    code, _, err = _run(_window_args(missing, "--since", DAY_START.isoformat()))
+
+    assert (code, err, missing.exists()) == (3, f"ERROR: no ledger at {missing}.\n", False)
+
+
+@pytest.mark.parametrize(
+    "since",
+    ["yesterday", "2026-10-03T00:00:00", _NOW.isoformat(), (_NOW + timedelta(days=1)).isoformat()],
+)
+def test_window_usage_errors_exit_two(ledger: Path, since: str) -> None:
+    """A non-ISO or offset-less --since, and a day 0 that is not in the past, exit 2."""
+    code, out, err = _run(_window_args(ledger, "--since", since))
+
+    assert (code, out) == (2, "")
+    assert err.startswith("ERROR: ")
