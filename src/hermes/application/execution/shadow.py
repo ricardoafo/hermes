@@ -12,8 +12,13 @@ The executor does what the backtest replay does around the
   closed just before a first boot would otherwise spend capital the ledger
   records only from the boot on (change ``405-usdt-fifo`` D-1).
 - **Risk and kill inputs** (D-3): computed from the book, the BTC/USDT 1d
-  closes the loop has seen, the recorded fill slippage of the last
-  :data:`SLIPPAGE_WINDOW` and the portfolio.
+  closes the loop has seen, the 30-day correlations of every pair's 1d
+  closes (RO-01, the same :class:`~hermes.domain.portfolio.correlation.DailyCloses`
+  the backtest replay uses), the recorded fill slippage of the last
+  :data:`SLIPPAGE_WINDOW` and the portfolio. The live-phase §10 recovery,
+  single SA-9 and 30-trade Sharpe kills get neutral inputs, as in the
+  backtest (#514, the shadow set): the drawdown kill and the shadow-phase
+  kills are the ones that act.
 - **Records** (D-4): the fill goes to the ledger through the trade recorder
   (``TradeExecuted`` v2 with ``strategy_id``), with one
   :class:`~hermes.domain.events.fill_quality_recorded.FillQualityRecorded`
@@ -55,6 +60,8 @@ from hermes.domain.fees.fee_schedule import FeeSchedule
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.market_data.orderbook import Orderbook
+from hermes.domain.portfolio.correlation import DailyCloses
+from hermes.domain.risk.correlation_lock import CorrelationLock
 from hermes.domain.risk.depeg_halt import DepegHalt
 from hermes.domain.risk.depeg_warn import DepegWarn
 from hermes.domain.risk.macro_atr_halt import MacroATRHalt
@@ -110,15 +117,19 @@ _MACRO_WINDOW: Final = 2
 def shadow_risk_engine() -> RiskEngine:
     """Return the risk overlay serve applies to entries (D-3).
 
-    RO-02 (spread spike) and RO-01 (correlation lock) are left out: serve has
-    no 1-hour spread median and the portfolio state carries no correlations,
-    and a rule fed an invented input would change trading without evidence.
+    RO-01 (correlation lock) runs as the backtest that gated the strategy runs
+    it (#822), fed the same 30-day correlations (#514). RO-02 (spread spike) is
+    left out: the backtest's synthetic book never spikes, so a shadow that
+    acted on it would trade differently from the backtest it is checked
+    against (#514, the shadow set); its 1-hour median is recorded for review
+    (#835).
 
     Returns:
-        An engine with RO-03, RO-04, RO-05, RO-06, RO-07 and RO-08.
+        An engine with RO-01, RO-03, RO-04, RO-05, RO-06, RO-07 and RO-08.
     """
     return RiskEngine(
         rules=[
+            CorrelationLock(),
             MaxSlippage(),
             StaleBook(),
             DepegWarn(),
@@ -218,6 +229,7 @@ class ShadowExecutor:
         self._fees_at = fees_at
         self._strategy_id = strategy_id
         self._model = model if model is not None else ExecutionModel()
+        self._daily_closes = DailyCloses()
         self._live_window = live_window
         self._not_before = not_before
         self._macro_closes: deque[tuple[datetime, Decimal]] = deque(maxlen=_MACRO_WINDOW)
@@ -249,12 +261,15 @@ class ShadowExecutor:
         self._killed_by = rule
 
     def observe(self, bar: Bar) -> None:
-        """Remember the closes of the BTC/USDT 1d bars, for RO-07.
+        """Remember the 1d closes: every pair's for RO-01, BTC/USDT's for RO-07.
 
         Args:
             bar: Any bar the loop has seen, warm-up included, in delivery order.
         """
-        if bar.pair != MACRO_PAIR or bar.interval is not KlineInterval.D1:
+        if bar.interval is not KlineInterval.D1:
+            return
+        self._daily_closes.add(bar)
+        if bar.pair != MACRO_PAIR:
             return
         if self._macro_closes and bar.close_time <= self._macro_closes[-1][0]:
             return
@@ -299,6 +314,9 @@ class ShadowExecutor:
             at=at,
             market_snapshot=self._market_snapshot(pair, book, bar, now),
             experiment_state=self._experiment_state(),
+            correlations=(
+                self._daily_closes.correlations() if signal.kind is SignalKind.ENTRY else {}
+            ),
             realized_slippage_cumulative=sum((s for _, s in self._slippages), _ZERO),
         )
         outcome = self._kernel.execute(signal, pair, market, correlation_id=correlation_id)
