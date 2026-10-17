@@ -344,7 +344,7 @@ TABS: Final = (
     Tab("5", "Shadow test"),
     Tab("6", "Briefs"),
     Tab("7", "System"),
-    Tab("8", "Logs", 716),
+    Tab("8", "Logs"),
 )
 _HOME: Final = 0
 _SHADOW: Final = 4
