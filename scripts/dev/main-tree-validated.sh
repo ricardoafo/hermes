@@ -79,10 +79,11 @@ if [[ -z "$pr" ]]; then
 fi
 read -r number head_sha <<< "$pr"
 
-head_tree=""
-if git fetch --no-tags --quiet origin "refs/pull/$number/head" 2>/dev/null; then
-    head_tree=$(git rev-parse "$head_sha^{tree}" 2>/dev/null || true)
-fi
+# Read the head's tree from the API, not a git fetch: the checkout keeps no
+# credentials (persist-credentials: false), and a private repo needs them.
+head_tree=$(api "git/commits/$head_sha" 2>/dev/null \
+    | python3 -c 'import json, sys; print(json.load(sys.stdin)["tree"]["sha"])' 2>/dev/null \
+    || true)
 
 passed=$(api "actions/workflows/ci.yml/runs?head_sha=$head_sha&status=success&per_page=1" 2>/dev/null \
     | python3 -c 'import json, sys; print("true" if json.load(sys.stdin).get("total_count", 0) > 0 else "false")' 2>/dev/null \

@@ -79,6 +79,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           fetch-depth: 1
 
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
@@ -94,6 +95,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           fetch-depth: 1
 
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
@@ -183,6 +185,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           fetch-depth: 1
 
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
@@ -202,6 +205,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           fetch-depth: 1
 
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
@@ -250,15 +254,17 @@ jobs:
 
       - name: Enforce kill-rate floor
         shell: bash
+        env:
+          KILL_RATE: ${{ steps.rate.outputs.kill }}
         run: |
           set -euo pipefail
-          kill="${{ steps.rate.outputs.kill }}"
+          kill="${KILL_RATE}"
           floor="${KILL_RATE_FLOOR}"
           if [[ "${KILL_RATE_ADVISORY}" == "true" ]]; then
             echo "Advisory mode — kill=${kill}% (floor ${floor}%), NOT blocking."
             exit 0
           fi
-          if python3 -c "import sys; sys.exit(0 if float('${kill}') >= float('${floor}') else 1)"; then
+          if python3 -c "import sys; sys.exit(0 if float(sys.argv[1]) >= float(sys.argv[2]) else 1)" "$kill" "$floor"; then
             echo "Kill rate ${kill}% ≥ ${floor}% — pass."
           else
             echo "::error::Kill rate ${kill}% below floor ${floor}%"
@@ -294,8 +300,10 @@ jobs:
       contents: write
       pull-requests: read
     steps:
+      # Keeps the token: the prune script deletes branches with `git push
+      # origin --delete`, and this job runs only main's own code.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
+        with: # zizmor: ignore[artipacked]
           fetch-depth: 0
 
       - name: Delete closed and orphaned remote branches

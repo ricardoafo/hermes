@@ -65,6 +65,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           # Full history: the changeset diff, the CHANGELOG check, the
           # test-deletion guard and gitleaks all read a commit range.
           fetch-depth: 0
@@ -290,10 +291,11 @@ jobs:
         if: ${{ !cancelled() && steps.changeset.outputs.code == 'true' }}
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_REF: ${{ github.base_ref }}
         run: |
           set -euo pipefail
           DELETED=$(git diff --name-only --diff-filter=D \
-            "origin/${{ github.base_ref }}...HEAD" -- 'tests/**/*.py' || true)
+            "origin/${BASE_REF}...HEAD" -- 'tests/**/*.py' || true)
           [ -z "$DELETED" ] && exit 0
           if ! grep -q '^SEV-1:' <<< "$PR_BODY"; then
             echo "Tests deleted but PR body lacks 'SEV-1:' opt-in header." >&2
