@@ -1,6 +1,6 @@
 ---
 card_id: swing-b1-trend-slope
-idea_family: breakout-trend-filter
+idea_family: donchian-breakout-4h
 batch: first research batch (issue #1062)
 status: DRAFT
 ---
@@ -38,4 +38,4 @@ Rejected if, on Train, the bear-stretch check or the trade-count check still fai
 
 ## Notes
 
-- Same entry signal family as v1 and v2 (ADR-026 §1). Its Validation touches share their family's budget of 5.
+- Same entry signal family as v1 and v2, `donchian-breakout-4h` (ADR-026 §1). Its Validation touches share their family's budget of 5.
