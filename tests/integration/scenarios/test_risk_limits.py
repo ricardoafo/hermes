@@ -66,8 +66,8 @@ def test_the_exposure_cap_is_checked_at_marked_value_not_cost(run_scenario: RunS
 def test_a_fill_slipping_over_half_a_percent_halts_later_entries(
     run_scenario: RunScenario,
 ) -> None:
-    """RO-03: after BTC fills ~70 bps over the mid, the ETH and SOL entries are refused."""
-    run = run_scenario(markets.three_breakouts(), book_step_bps=_THIN_BOOK_BPS)
+    """RO-03: after BTC fills ~70 bps over the mid, ETH and SOL later that day are refused."""
+    run = run_scenario(markets.three_breakouts_within_a_day(), book_step_bps=_THIN_BOOK_BPS)
     buy = trades(run.db)[0]
     slippage = (buy.price - Decimal(156)) / Decimal(156)
     assert slippage > Decimal("0.005")
@@ -75,6 +75,22 @@ def test_a_fill_slipping_over_half_a_percent_halts_later_entries(
         [("BTC/USDT", "BUY")],
         [("ETH/USDT", "HALT"), ("SOL/USDT", "HALT")],
         ["RO-03", "RO-03"],
+    )
+
+
+# SEV-1: no rubric row matches; RO-03 must not halt entries for good after one slipping fill
+def test_a_fill_slipping_over_half_a_percent_no_longer_halts_entries_four_days_later(
+    run_scenario: RunScenario,
+) -> None:
+    """RO-03 (#857): four days after BTC's slip, ETH fills; SOL, one bar after ETH's slip, halts.
+
+    Before the 24-hour window, BTC's slip halted both for good.
+    """
+    run = run_scenario(markets.three_breakouts(), book_step_bps=_THIN_BOOK_BPS)
+    assert (outline(run.db)["trades"], _declined(run), _halts(run)) == (
+        [("BTC/USDT", "BUY"), ("ETH/USDT", "BUY")],
+        [("SOL/USDT", "HALT")],
+        ["RO-03"],
     )
 
 

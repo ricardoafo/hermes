@@ -7,8 +7,8 @@ it, so the exit still fires once and nothing is bought twice.
 A restart during an RO-03 or RO-07 halt (issue #873) must neither lift the
 halt nor keep it past the point its own rule releases it. These tests pin
 today's behaviour: RO-07 is worked out again from the BTC/USDT 1d bars of the
-warm-up, and RO-03 reads the last fill's slippage back from the ledger. What
-RO-03 should do across a restart in the long run is issue #857.
+warm-up, and RO-03 reads the slippage of the last 24 hours of fills back from
+the ledger (issue #857).
 """
 
 from __future__ import annotations

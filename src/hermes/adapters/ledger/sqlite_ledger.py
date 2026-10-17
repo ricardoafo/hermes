@@ -314,8 +314,8 @@ class SqliteLedger:
     # TradeLedgerPort — trade rows with EUR values
     # ------------------------------------------------------------------
 
-    def record_trade(self, trade: TradeRecord, event: DomainEvent) -> int:
-        """Store a trade, its lot effects and its event in one transaction.
+    def record_trade(self, trade: TradeRecord, event: DomainEvent, *also: DomainEvent) -> int:
+        """Store a trade, its lot effects and its events in one transaction.
 
         A BUY inserts the lot it opens, linked to the trade; once the quote
         currency has a seed, a SELL inserts the quote-currency lot it opens.
@@ -326,6 +326,7 @@ class SqliteLedger:
         Args:
             trade: The trade. ``trade.eur is None`` stores it pending.
             event: The ``TradeExecuted`` event for the trade.
+            *also: Further events about the same fill, stored after ``event``.
 
         Returns:
             The new trade row id.
@@ -343,6 +344,8 @@ class SqliteLedger:
             self._reproject(trade.pair.base)
             self._reproject_quote(trade.pair.quote)
             self._insert_event(event)
+            for extra in also:
+                self._insert_event(extra)
         return trade_id
 
     def list_pending_trades(self) -> tuple[PendingTrade, ...]:
