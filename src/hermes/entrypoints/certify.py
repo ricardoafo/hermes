@@ -6,6 +6,10 @@ prints one line per check with its evidence, and records the outcome. Only a
 passed gate advances the state; a failed one-shot OOS test is recorded too,
 because the shot is spent either way (pre-registration §7).
 
+Toward SHADOW_CERTIFIED it also reports the shadow round trips the ledger
+holds; under 30 the execution check is flagged weak (ADR-021 §3). The flag
+changes no pass or fail rule.
+
 ``--sign-off NAME`` asks for the live-approval phrase on an interactive
 terminal and refuses when stdin is not one, so a script cannot approve live
 trading unattended (issue #949).
@@ -30,10 +34,12 @@ import sys
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 from typing import Any, TextIO
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
+from hermes.adapters.ledger.status_reader import SqliteStatusReader
 from hermes.application.calibration.backtest_funnel import (
     FunnelEvidence,
     FunnelEvidenceError,
@@ -60,13 +66,16 @@ from hermes.application.calibration.certification_gates_v2 import (
     evaluate_v2_gate,
     parse_v2_backtest_rules,
 )
+from hermes.application.calibration.lifecycle import CertificationState
 from hermes.application.calibration.window_metrics import (
     PerformanceRecord,
     TrialStats,
     compute_window_metrics,
 )
 from hermes.application.strategy_protocol.preregistration import PreRegistration
+from hermes.domain.errors import LedgerError
 from hermes.domain.statistics.performance import TradeResult
+from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.entrypoints import serve as serve_module
 from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.funnel import load_funnel_evidence, read_front_matter
@@ -80,7 +89,7 @@ __all__ = ["EvidenceError", "apply_performance", "load_evidence", "main", "run"]
 
 _USAGE = (
     "Usage: hermes certify <strategy_id> [--evidence FILE] [--store-dir DIR]\n"
-    "                      [--config-dir DIR] [--sign-off NAME]\n"
+    "                      [--config-dir DIR] [--db PATH] [--sign-off NAME]\n"
     "                      [--funnel-evidence FILE]  (swing-mvp1-v2 only)\n"
     "\n"
     "Evaluates the next certification gate (pre-registration §7) and prints every\n"
@@ -102,6 +111,9 @@ _METRIC_KEYS = (
     "win_rate",
 )
 
+
+WEAK_ROUND_TRIPS = 30
+"""ADR-021 §3: fewer shadow round trips than this flag the execution check as weak."""
 
 _Gate = Callable[[CertificationRecord, GateEvidence, datetime], GateReport]
 """Evaluates the next gate from the guarded record, the evidence and the time."""
@@ -186,8 +198,22 @@ def main(
         err=err,
         clock=lambda: now,
         pre_reg=pre_reg,
+        round_trips=partial(_round_trips, parsed.db, parsed.strategy_id),
         gate=gate,
     )
+
+
+def _round_trips(db: Path, strategy_id: str) -> int | None:
+    """Return the shadow round trips ``db`` holds, or ``None`` without a ledger there.
+
+    Raises:
+        LedgerError: The ledger cannot be read as one.
+        OSError: The file cannot be opened.
+    """
+    if not db.is_file():
+        return None
+    with SqliteStatusReader.open(db) as reader:
+        return reader.round_trips(StrategyId(strategy_id))
 
 
 def _fingerprint_for(config: HermesConfig, strategy_id: str) -> str:
@@ -251,6 +277,7 @@ def _parse(argv: list[str], stream: TextIO, err: TextIO) -> tuple[argparse.Names
     parser.add_argument("--performance", type=Path)
     parser.add_argument("--store-dir", type=Path)
     parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
+    parser.add_argument("--db", type=Path, default=serve_module.DEFAULT_DB_PATH)
     parser.add_argument("--sign-off", default=None)
     parser.add_argument("--funnel-evidence", type=Path)
     parser.add_argument("-h", "--help", action="store_true")
@@ -287,6 +314,7 @@ def run(
     clock: Callable[[], datetime],
     pre_reg: PreRegistration | None = None,
     err: TextIO | None = None,
+    round_trips: Callable[[], int | None] = lambda: None,
     gate: _Gate | None = None,
 ) -> int:
     """Evaluate and record the next gate for ``strategy_id``.
@@ -300,6 +328,9 @@ def run(
         clock: Source of the current UTC time.
         pre_reg: Threshold source; defaults to the signed pre-registration.
         err: Stream for ERROR lines; defaults to ``sys.stderr``.
+        round_trips: Counts the shadow round trips in the ledger (``None``
+            without one). Called only toward SHADOW_CERTIFIED, so no other
+            gate reads the ledger.
         gate: Evaluates the next gate; defaults to v1's gates read from ``pre_reg``.
 
     Returns:
@@ -325,6 +356,8 @@ def run(
     else:
         report = gate(record, evidence, now)
     _print_report(report, stream)
+    if report.to_state == CertificationState.SHADOW_CERTIFIED:
+        _print_round_trips(round_trips, stream)
     updated = record_outcome(
         record, report, fingerprint=fingerprint, now=now, evidence_sha256=evidence.sha256
     )
@@ -355,6 +388,27 @@ def _print_report(report: GateReport, stream: TextIO) -> None:
             f"{mark}  {check.name:<24} observed {check.observed:<22} required {check.requirement}\n"
         )
     stream.write("GATE PASSED\n" if report.passed else "GATE FAILED\n")
+
+
+def _print_round_trips(count: Callable[[], int | None], stream: TextIO) -> None:
+    """Report the shadow trade count; flag it weak under 30 (ADR-021 §3, decision 10).
+
+    The count is informational, so a ledger it cannot read is a note, never a failure.
+    """
+    try:
+        round_trips = count()
+    except (LedgerError, OSError) as exc:
+        stream.write(f"NOTE  shadow round trips: ledger unreadable, not counted ({exc})\n")
+        return
+    if round_trips is None:
+        stream.write("NOTE  shadow round trips: no ledger found, not counted\n")
+    elif round_trips < WEAK_ROUND_TRIPS:
+        stream.write(
+            f"WEAK  shadow round trips: {round_trips}, under {WEAK_ROUND_TRIPS}; the execution "
+            "check is weak (ADR-021 §3). No pass or fail rule changes.\n"
+        )
+    else:
+        stream.write(f"NOTE  shadow round trips: {round_trips}\n")
 
 
 def load_evidence(path: Path) -> GateEvidence:
