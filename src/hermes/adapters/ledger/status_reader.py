@@ -27,6 +27,7 @@ from hermes.domain.events.risk_halt_recorded import RiskHaltRecorded
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
+from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.ports.status import ShadowEntry
 
 __all__ = ["SqliteStatusReader"]
@@ -149,8 +150,29 @@ class SqliteStatusReader:
         value = None if row is None else row[0]
         return value if isinstance(value, int) else 0
 
+    def round_trips(self, strategy_id: StrategyId) -> int:
+        """Return how many round trips ``strategy_id`` closed: its SELL trades (#797).
+
+        Raises:
+            LedgerError: On any SQLite read failure.
+        """
+        try:
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM events WHERE event_type = 'TradeExecuted' "
+                "AND json_extract(payload_json, '$.side') = 'SELL' "
+                "AND json_extract(payload_json, '$.strategy_id.value') = ?",
+                (strategy_id.value,),
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"round_trips failed: {exc}") from exc
+        return int(row[0])
+
     def open_entries(self) -> tuple[ShadowEntry, ...]:
-        """Return every pair whose newest signal is an entry, oldest entry first.
+        """Return every pair whose newest filled entry has no exit after it, oldest first.
+
+        An entry counts only when a fill shares its correlation id: an entry
+        the executor refused or halted (exposure cap, stale book) opened
+        nothing, so it must not show as a position (#962).
 
         Returns:
             The open shadow positions, entry facts only.
@@ -160,15 +182,20 @@ class SqliteStatusReader:
         """
         try:
             rows = self._conn.execute(
-                "SELECT payload_json FROM events WHERE event_type = 'SignalEmitted' "
-                "ORDER BY occurred_at, id"
+                "SELECT s.payload_json, EXISTS ("
+                "  SELECT 1 FROM events t WHERE t.event_type = 'TradeExecuted' "
+                "  AND t.correlation_id = s.correlation_id"
+                ") FROM events s WHERE s.event_type = 'SignalEmitted' "
+                "ORDER BY s.occurred_at, s.id"
             ).fetchall()
         except sqlite3.Error as exc:
             raise LedgerError(msg=f"open_entries failed: {exc}") from exc
         latest: dict[Pair, ShadowEntry | None] = {}
         try:
-            for (payload_json,) in rows:
+            for payload_json, filled in rows:
                 payload = json.loads(payload_json)
+                if payload["kind"] == "entry" and not filled:
+                    continue
                 pair = Pair(
                     base=Currency(payload["pair"]["base"]),
                     quote=Currency(payload["pair"]["quote"]),

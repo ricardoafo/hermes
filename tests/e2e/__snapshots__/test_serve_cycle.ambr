@@ -15,11 +15,6 @@
       }),
       'live_since': None,
       'open_positions': list([
-        dict({
-          'entry_price': '3714.45000000',
-          'entry_time': '2025-01-06T15:59:59.999000+00:00',
-          'pair': 'ETH/USDT',
-        }),
       ]),
       'release': 'unknown',
       'signals': dict({
