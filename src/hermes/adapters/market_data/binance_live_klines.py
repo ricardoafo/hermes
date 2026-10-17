@@ -220,14 +220,24 @@ def _parse_rows(
     *,
     keep: Callable[[datetime], bool],
 ) -> list[Bar]:
-    """Parse the rows whose ``open_time`` passes ``keep``, ascending with duplicates dropped.
+    """Parse the rows whose ``open_time`` passes ``keep``, ascending with exact repeats dropped.
 
     Rows are filtered on their timestamps before their prices are read, so a
     malformed value in a dropped row (the still-forming candle) cannot fail
     the bars that closed before it (issue #850).
+
+    Raises:
+        ExchangeError: Two rows for the same ``open_time`` disagree, so the
+            reply cannot say which prices the bar closed at (issue #1013).
     """
     kept = [row for row in rows if keep(_row_times(row, interval)[1])]
-    by_open = {bar.open_time: bar for bar in (_row_to_bar(r, pair, interval) for r in kept)}
+    by_open: dict[datetime, Bar] = {}
+    for bar in (_row_to_bar(r, pair, interval) for r in kept):
+        first = by_open.setdefault(bar.open_time, bar)
+        if first != bar:
+            raise ExchangeError(
+                f"klines reply holds two different rows for {bar.open_time.isoformat()}"
+            )
     return [by_open[key] for key in sorted(by_open)]
 
 

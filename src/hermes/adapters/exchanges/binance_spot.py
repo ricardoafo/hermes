@@ -68,22 +68,25 @@ from hermes.domain.value_objects.quantity import Quantity
 from hermes.infrastructure.mainnet_permit import MainnetPermit
 
 __all__ = [
+    "MAINNET_HOSTS",
     "TESTNET_BASE_URL",
+    "TESTNET_HOST",
     "BinanceSpotAdapter",
     "BinanceSpotConfig",
     "OrderNotPlacedError",
     "OrderStatusUnknownError",
+    "parse_decimal",
     "sign",
 ]
 
 _log = structlog.get_logger(__name__)
 
 TESTNET_BASE_URL: Final = "https://testnet.binance.vision"
-_TESTNET_HOST: Final = "testnet.binance.vision"
+TESTNET_HOST: Final = "testnet.binance.vision"
 # Binance's documented spot REST hosts. With a permit only these are accepted,
 # so a typo or an injected base_url cannot send the key and signed orders
 # off-exchange (#781).
-_MAINNET_HOSTS: Final = frozenset(
+MAINNET_HOSTS: Final = frozenset(
     {
         "api.binance.com",
         "api-gcp.binance.com",
@@ -134,7 +137,16 @@ def _symbol(pair: Pair) -> str:
     return f"{pair.base.value}{pair.quote.value}"
 
 
-def _decimal(raw: object, field_name: str) -> Decimal:
+def parse_decimal(raw: object, field_name: str) -> Decimal:
+    """Return a Binance numeric field as a finite :class:`~decimal.Decimal`.
+
+    Args:
+        raw: The JSON value; Binance sends amounts as strings.
+        field_name: Named in the error message.
+
+    Raises:
+        ExchangeError: ``raw`` is a bool, not a number, or not finite.
+    """
     if isinstance(raw, bool) or not isinstance(raw, (str, int, float)):
         raise ExchangeError(msg=f"{field_name} is not numeric: {raw!r}")
     try:
@@ -186,13 +198,13 @@ class BinanceSpotConfig:
         parts = urlsplit(self.base_url)
         if parts.scheme != "https":
             raise ValueError(f"base_url must be https, got {self.base_url!r}")
-        if parts.hostname != _TESTNET_HOST:
+        if parts.hostname != TESTNET_HOST:
             if not isinstance(self.mainnet_permit, MainnetPermit):
                 raise ValueError(
                     f"{parts.hostname} is not the Binance testnet; mainnet needs a MainnetPermit "
                     "(issued only after live approval, ADR-014)"
                 )
-            if parts.hostname not in _MAINNET_HOSTS:
+            if parts.hostname not in MAINNET_HOSTS:
                 raise ValueError(f"{parts.hostname} is not a documented Binance spot host")
         if not self.api_key or not self.api_secret:
             raise ValueError("api_key and api_secret are required")
@@ -331,11 +343,15 @@ class BinanceSpotAdapter:
         )
         try:
             bids = tuple(
-                OrderbookLevel(price=_decimal(p, "bid price"), quantity=_decimal(q, "bid qty"))
+                OrderbookLevel(
+                    price=parse_decimal(p, "bid price"), quantity=parse_decimal(q, "bid qty")
+                )
                 for p, q in body["bids"]
             )
             asks = tuple(
-                OrderbookLevel(price=_decimal(p, "ask price"), quantity=_decimal(q, "ask qty"))
+                OrderbookLevel(
+                    price=parse_decimal(p, "ask price"), quantity=parse_decimal(q, "ask qty")
+                )
                 for p, q in body["asks"]
             )
             return Orderbook(
@@ -357,7 +373,7 @@ class BinanceSpotAdapter:
         account = self._account()
         for balance in account.get("balances", []):
             if isinstance(balance, dict) and balance.get("asset") == currency.value:
-                return Quantity(amount=_decimal(balance.get("free"), "free"), asset=currency)
+                return Quantity(amount=parse_decimal(balance.get("free"), "free"), asset=currency)
         return Quantity(amount=Decimal("0"), asset=currency)
 
     def get_fees(self, *, pair: Pair) -> FeeSchedule:
@@ -370,8 +386,8 @@ class BinanceSpotAdapter:
         rates = self._account().get("commissionRates")
         if not isinstance(rates, dict):
             raise ExchangeError(msg="account reply has no commissionRates")
-        maker = _decimal(rates.get("maker"), "maker") * _BPS
-        taker = _decimal(rates.get("taker"), "taker") * _BPS
+        maker = parse_decimal(rates.get("maker"), "maker") * _BPS
+        taker = parse_decimal(rates.get("taker"), "taker") * _BPS
         return FeeSchedule(
             pair=pair,
             tiers=(
@@ -493,7 +509,7 @@ class BinanceSpotAdapter:
             "fills": [],
         }
         try:
-            executed = _decimal(found.get("executedQty"), "executedQty")
+            executed = parse_decimal(found.get("executedQty"), "executedQty")
         except ExchangeError as exc:
             raise self._unknown(symbol, client_id, exc, order_id=order_id) from exc
         if executed > 0:
@@ -523,14 +539,16 @@ class BinanceSpotAdapter:
 
     def _quote_fee(self, part: Mapping[str, Any], asset: str, quote: str) -> Decimal:
         """Price a commission charged in a third asset, at its ticker or the pre-registered rate."""
-        commission = _decimal(part.get("commission"), "commission")
+        commission = parse_decimal(part.get("commission"), "commission")
         try:
             ticker = self._public(
                 "/api/v3/ticker/price", {"symbol": f"{asset}{quote}"}, weight=_WEIGHTS["ticker"]
             )
-            return commission * _decimal(ticker.get("price"), "ticker price")
+            return commission * parse_decimal(ticker.get("price"), "ticker price")
         except (ExchangeError, NetworkError) as exc:
-            notional = _decimal(part.get("price"), "price") * _decimal(part.get("qty"), "qty")
+            notional = parse_decimal(part.get("price"), "price") * parse_decimal(
+                part.get("qty"), "qty"
+            )
             _log.warning(
                 "binance.fee.priced_at_taker_rate",
                 commission_asset=asset,
@@ -633,21 +651,21 @@ class BinanceSpotAdapter:
         return body
 
     def _fill(self, order: Order, body: dict[str, Any]) -> Fill | None:
-        executed = _decimal(body.get("executedQty"), "executedQty")
+        executed = parse_decimal(body.get("executedQty"), "executedQty")
         if executed <= 0:
             return None
-        quote_spent = _decimal(body.get("cummulativeQuoteQty"), "cummulativeQuoteQty")
+        quote_spent = parse_decimal(body.get("cummulativeQuoteQty"), "cummulativeQuoteQty")
         avg_price = quote_spent / executed
         fee = Decimal("0")
         for part in body.get("fills", []):
             if not isinstance(part, dict):
                 raise ExchangeError(msg=f"malformed fill: {part!r}")
-            commission = _decimal(part.get("commission"), "commission")
+            commission = parse_decimal(part.get("commission"), "commission")
             asset = part.get("commissionAsset")
             if asset == order.pair.quote.value:
                 fee += commission
             elif asset == order.pair.base.value:
-                fee += commission * _decimal(part.get("price"), "price")
+                fee += commission * parse_decimal(part.get("price"), "price")
             elif commission != 0:
                 fee += self._quote_fee(part, str(asset), order.pair.quote.value)
         try:
@@ -657,7 +675,7 @@ class BinanceSpotAdapter:
                 avg_price=avg_price,
                 fee=Money(amount=fee, currency=order.pair.quote),
                 timestamp=datetime.fromtimestamp(
-                    float(_decimal(body.get("transactTime"), "transactTime")) / 1000, tz=UTC
+                    float(parse_decimal(body.get("transactTime"), "transactTime")) / 1000, tz=UTC
                 ),
             )
         except ValueError as exc:

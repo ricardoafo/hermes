@@ -376,23 +376,23 @@ class LedgerReadModel:
             LedgerError: On any SQLite failure or an unreadable row.
         """
         rows = self._query(
-            "SELECT json_extract(b.payload_json, '$.pair.base'), "
-            "       json_extract(b.payload_json, '$.pair.quote'), "
-            "       json_extract(b.payload_json, '$.interval'), b.occurred_at, "
+            "WITH checks AS ("
+            "  SELECT json_extract(payload_json, '$.pair.base') AS base, "
+            "         json_extract(payload_json, '$.pair.quote') AS quote, "
+            "         json_extract(payload_json, '$.interval') AS interval, "
+            "         occurred_at, correlation_id, "
+            "         ROW_NUMBER() OVER ("
+            "           PARTITION BY json_extract(payload_json, '$.pair.base'), "
+            "                        json_extract(payload_json, '$.pair.quote'), "
+            "                        json_extract(payload_json, '$.interval') "
+            "           ORDER BY occurred_at DESC, id DESC) AS newest "
+            "  FROM events WHERE event_type = 'BarProcessed') "
+            "SELECT base, quote, interval, occurred_at, "
             "       (SELECT json_extract(s.payload_json, '$.kind') FROM events s "
-            "        WHERE s.event_type = 'SignalEmitted' "
-            "          AND s.correlation_id = b.correlation_id "
+            "        WHERE s.correlation_id = checks.correlation_id "
+            "          AND s.event_type = 'SignalEmitted' "
             "        ORDER BY s.id DESC LIMIT 1) "
-            "FROM events b "
-            "WHERE b.event_type = 'BarProcessed' AND b.id = ("
-            "  SELECT n.id FROM events n WHERE n.event_type = 'BarProcessed' "
-            "    AND json_extract(n.payload_json, '$.pair.base') "
-            "        = json_extract(b.payload_json, '$.pair.base') "
-            "    AND json_extract(n.payload_json, '$.pair.quote') "
-            "        = json_extract(b.payload_json, '$.pair.quote') "
-            "    AND json_extract(n.payload_json, '$.interval') "
-            "        = json_extract(b.payload_json, '$.interval') "
-            "  ORDER BY n.occurred_at DESC, n.id DESC LIMIT 1)",
+            "FROM checks WHERE newest = 1",
             (),
         )
         watched: list[WatchedPair] = []
