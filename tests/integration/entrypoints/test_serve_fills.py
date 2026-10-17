@@ -23,6 +23,12 @@ Invariants (change 353-fill-kernel-in-serve R-1, R-4, R-5):
 - An entry refused on a stale book leaves the strategy flat (#707): no later
   exit is signalled, declined ``no-position`` or notified, and the pair
   enters again on the next breakout.
+- An exit declined ``no-book`` (a zero-volume bar while the depth endpoint is
+  down) leaves the strategy in the position (#706): the next crash bar, with
+  the book back, exits it again with the original entry price and sells the
+  coin once, on the same boot or after a restart.
+- An ``AnomalyDetected`` published on serve's bus is recorded in the ledger
+  and changes no signal, fill, position or notification (#136, record-only).
 """
 
 from __future__ import annotations
@@ -32,7 +38,7 @@ import dataclasses
 import json
 import sqlite3
 from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -42,6 +48,10 @@ from structlog.testing import capture_logs
 
 from hermes.adapters.clock import SimulatedClock
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
+from hermes.domain.errors import NetworkError
+from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
+from hermes.domain.events.event_bus import EventBus
+from hermes.domain.events.risk_halt_recorded import HaltKind, RiskHaltRecorded
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
@@ -58,6 +68,7 @@ from tests.support.serve_loop import (
     h4_bar,
     history,
     live,
+    make_h4_bar,
     run_once,
     signal_kinds,
 )
@@ -150,12 +161,13 @@ def _boot(
     live_from: int,
     live_to: int,
     telegram: RecordingChannel | None = None,
+    feed_class: type[_SteppingFeed] = _SteppingFeed,
 ) -> tuple[serve_module.Composition, _SteppingFeed]:
     """Build one boot of the loop over ``db`` with live books."""
     clock = SimulatedClock(start=h4_bar(warm_upto).close_time + _DELIVERY_DELAY)
     books = _LiveBooks(clock)
     books.mid = h4_bar(warm_upto).close
-    feed = _SteppingFeed(clock, books, warm=history(warm_upto), live_bars=live(live_from, live_to))
+    feed = feed_class(clock, books, warm=history(warm_upto), live_bars=live(live_from, live_to))
     composition = build(db, feed, clock.now(), telegram=telegram, books=books, clock=clock)
     return composition, feed
 
@@ -304,6 +316,38 @@ def test_exit_after_a_restart_closes_the_rebuilt_position(tmp_path: Path) -> Non
     assert (sides, second.tracker.snapshot.positions) == (["BUY", "SELL"], {})
 
 
+def test_restart_restores_the_mark_to_market_peak_equity(tmp_path: Path) -> None:
+    """Invariant (#828, integrity rules 4.1): a restart keeps the peak a bar mark set.
+
+    Bar 12 marks the position at 2400 (the high), bar 13 falls back to 2200.
+    A fills-only rebuild would restart from the seed peak of 5000, so the
+    RO-08 drawdown would read low; the restart must hold the peak boot 1 had.
+    """
+    db = tmp_path / "ledger.sqlite3"
+    first, first_feed = _boot(db, warm_upto=10, live_from=11, live_to=11)
+    first_feed.live_bars = [
+        h4_bar(11),
+        make_h4_bar(12, "2400"),
+        make_h4_bar(13, "2200"),
+    ]
+    run_once(first, first_feed)
+    live_peak = first.tracker.snapshot.peak_equity
+    connection = sqlite3.connect(db)
+    try:
+        (marked_high,) = connection.execute(
+            "SELECT MAX(peak_equity) FROM portfolio_marks"
+        ).fetchone()
+    finally:
+        connection.close()
+
+    second, _ = _boot(db, warm_upto=13, live_from=14, live_to=14)
+    state = second.tracker.state()
+    second.sqlite_connection.close()
+
+    assert live_peak > Decimal("5000")
+    assert (state.peak_value, Decimal(str(marked_high))) == (live_peak, live_peak)
+
+
 def test_bar_re_evaluated_after_a_crash_fills_nothing_twice(tmp_path: Path) -> None:
     """With the cursor rows of bars 11-12 lost, boot 2 re-evaluates bar 11 and adds no trade."""
     db = tmp_path / "ledger.sqlite3"
@@ -392,18 +436,24 @@ def _declined_rules(logs: list[dict[str, object]]) -> list[tuple[object, object]
 
 
 def test_refused_entry_raises_no_later_exit_or_notification(tmp_path: Path) -> None:
-    """A stale-book entry is the only decline: the crash bar signals and notifies no exit."""
+    """A stale-book entry is the only decline: the crash bar signals and notifies no exit.
+
+    The refused entry itself is not announced either (#708).
+    """
     db = tmp_path / "ledger.sqlite3"
 
     telegram, logs = _refused_entry_run(db, live(12, 14))
 
     kinds = [p["kind"] for p in _payloads(db, "SignalEmitted")]
-    assert (kinds, signal_kinds(telegram), _trade_rows(db)) == (["entry"], ["entry"], [])
+    assert (kinds, signal_kinds(telegram), _trade_rows(db)) == (["entry"], [], [])
     assert _declined_rules(logs) == [("entry", "HALT")]
 
 
 def test_pair_enters_again_after_a_refused_entry(tmp_path: Path) -> None:
-    """After the refused entry, the next breakout is a new entry that fills one BUY."""
+    """After the refused entry, the next breakout is a new entry that fills one BUY.
+
+    Only the filled entry is announced (#708).
+    """
     db = tmp_path / "ledger.sqlite3"
     breakout = dataclasses.replace(
         h4_bar(12),
@@ -419,7 +469,297 @@ def test_pair_enters_again_after_a_refused_entry(tmp_path: Path) -> None:
     sides = [p["side"] for p in _payloads(db, "TradeExecuted")]
     assert (signals, signal_kinds(telegram), sides) == (
         [("entry", "2000"), ("entry", "3000")],
-        ["entry", "entry"],
+        ["entry"],
         ["BUY"],
     )
     assert _declined_rules(logs) == [("entry", "HALT")]
+
+
+class _DownOnSecondCallBooks(_LiveBooks):
+    """Live books whose second snapshot fails, like a depth endpoint outage."""
+
+    def __init__(self, clock: SimulatedClock) -> None:
+        """Start with no snapshot served."""
+        super().__init__(clock)
+        self.calls = 0
+
+    async def snapshot(self, pair: Pair) -> Orderbook:
+        """Fail on the second call; answer the live book otherwise."""
+        self.calls += 1
+        if self.calls == 2:
+            raise NetworkError(f"no depth for {pair} in tests")
+        return await super().snapshot(pair)
+
+
+def _declined_exit_boot(
+    db: Path, live_bars: Sequence[Bar], *, warm_upto: int = 10
+) -> tuple[serve_module.Composition, _SteppingFeed]:
+    """Build a boot whose second depth read fails, delivering ``live_bars``."""
+    clock = SimulatedClock(start=h4_bar(warm_upto).close_time + _DELIVERY_DELAY)
+    books = _DownOnSecondCallBooks(clock)
+    books.mid = h4_bar(warm_upto).close
+    feed = _SteppingFeed(clock, books, warm=history(warm_upto), live_bars=live_bars)
+    return build(db, feed, clock.now(), books=books, clock=clock), feed
+
+
+def _zero_volume_crash() -> Bar:
+    """Bar 14, the crash, with no volume: with the depth down it has no book."""
+    return dataclasses.replace(h4_bar(14), volume=Decimal("0"))
+
+
+def test_exit_declined_for_no_book_is_retried_on_the_next_bar(tmp_path: Path) -> None:
+    """Bar 14's exit is declined no-book; bar 15 exits again and sells the coin, once (#706)."""
+    db = tmp_path / "ledger.sqlite3"
+    composition, feed = _declined_exit_boot(
+        db, [*live(11, 13), _zero_volume_crash(), h4_bar(15, crash=True)]
+    )
+
+    with capture_logs() as logs:
+        run_once(composition, feed)
+
+    signals = [(p["kind"], p["entry_price"]) for p in _payloads(db, "SignalEmitted")]
+    sides = [p["side"] for p in _payloads(db, "TradeExecuted")]
+    assert (signals, sides, composition.tracker.snapshot.positions) == (
+        [("entry", "2000"), ("exit", "2000"), ("exit", "2000")],
+        ["BUY", "SELL"],
+        {},
+    )
+    assert _declined_rules(logs) == [("exit", "no-book")]
+
+
+def test_exit_declined_before_a_restart_is_retried_after_it(tmp_path: Path) -> None:
+    """Boot 2 restores the entry past the declined exit, so bar 15 sells the coin (#706)."""
+    db = tmp_path / "ledger.sqlite3"
+    first, first_feed = _declined_exit_boot(db, [*live(11, 13), _zero_volume_crash()])
+    run_once(first, first_feed)
+    second, second_feed = _boot(db, warm_upto=14, live_from=15, live_to=15)
+    second_feed.live_bars = [h4_bar(15, crash=True)]
+
+    run_once(second, second_feed)
+
+    kinds = [p["kind"] for p in _payloads(db, "SignalEmitted")]
+    sides = [p["side"] for p in _payloads(db, "TradeExecuted")]
+    assert (kinds, sides, second.tracker.snapshot.positions) == (
+        ["entry", "exit", "exit"],
+        ["BUY", "SELL"],
+        {},
+    )
+
+
+class _AnomalousFeed(_SteppingFeed):
+    """Stepping feed that publishes one CRITICAL anomaly on serve's bus before each live bar."""
+
+    bus: EventBus | None = None
+
+    async def stream_closed_bars(
+        self,
+        pairs: Sequence[Pair],
+        intervals: Sequence[KlineInterval],
+        *,
+        resume_after: Mapping[tuple[Pair, KlineInterval], datetime] | None = None,
+    ) -> AsyncIterator[Bar]:
+        """Publish the anomaly, then yield the bar the stepping feed delivers."""
+        async for bar in super().stream_closed_bars(pairs, intervals, resume_after=resume_after):
+            assert self.bus is not None
+            self.bus.publish(
+                AnomalyDetected(
+                    occurred_at=self.clock.now(),
+                    correlation_id="01JABCDEFGHJKMNPQRSTVWXYZ0",
+                    source="test.injected",
+                    severity=AnomalySeverity.CRITICAL,
+                    reason=f"injected before {bar.close_time.isoformat()}",
+                )
+            )
+            yield bar
+
+
+_RUN_SPECIFIC = frozenset({"correlation_id", "payload_sha256"})
+
+
+def _decisions(db: Path) -> dict[str, list[dict[str, object]]]:
+    """Return the signal, trade and fill-quality payloads without their per-run ids."""
+    return {
+        event_type: [
+            {k: v for k, v in payload.items() if k not in _RUN_SPECIFIC}
+            for payload in _payloads(db, event_type)
+        ]
+        for event_type in ("SignalEmitted", "TradeExecuted", "FillQualityRecorded")
+    }
+
+
+# SEV-1: real-money guard (AGENTS.md prohibition 7) — an anomaly is recorded only;
+# it must never change what serve decides or fills (binding rule 2, issue #136).
+def test_an_anomaly_on_the_bus_is_recorded_and_changes_no_decision_or_fill(
+    tmp_path: Path,
+) -> None:
+    """Entry and exit run with a CRITICAL anomaly before every bar: same fills, rows recorded."""
+    plain_db = tmp_path / "plain.sqlite3"
+    plain_channel = RecordingChannel()
+    plain, plain_feed = _boot(
+        plain_db, warm_upto=10, live_from=11, live_to=14, telegram=plain_channel
+    )
+    assert run_once(plain, plain_feed) == 0
+
+    noisy_db = tmp_path / "noisy.sqlite3"
+    noisy_channel = RecordingChannel()
+    noisy, noisy_feed = _boot(
+        noisy_db,
+        warm_upto=10,
+        live_from=11,
+        live_to=14,
+        telegram=noisy_channel,
+        feed_class=_AnomalousFeed,
+    )
+    assert isinstance(noisy_feed, _AnomalousFeed)
+    noisy_feed.bus = noisy.event_bus
+    assert run_once(noisy, noisy_feed) == 0
+
+    recorded = _payloads(noisy_db, "AnomalyDetected")
+    assert [(r["source"], r["severity"]) for r in recorded] == [("test.injected", "CRITICAL")] * 4
+    assert _payloads(plain_db, "AnomalyDetected") == []
+    assert [t["side"] for t in _decisions(plain_db)["TradeExecuted"]] == ["BUY", "SELL"]
+    assert _decisions(noisy_db) == _decisions(plain_db)
+    assert (
+        signal_kinds(noisy_channel),
+        noisy.tracker.snapshot.positions,
+    ) == (signal_kinds(plain_channel), plain.tracker.snapshot.positions)
+
+
+def _halts(telegram: RecordingChannel) -> list[RiskHaltRecorded]:
+    """Return every halt or kill record the channel was sent."""
+    return [e for e in telegram.seen if isinstance(e, RiskHaltRecorded)]
+
+
+# SEV-1: S6 a risk halt that only logs is invisible to the operator (#749)
+def test_a_halted_entry_is_recorded_once_and_alerted_once(tmp_path: Path) -> None:
+    """The RO-04 halt of the stale-book entry is one ledger row and one alert, value-free."""
+    db = tmp_path / "ledger.sqlite3"
+
+    telegram, _ = _refused_entry_run(db, live(12, 14))
+
+    rows = _payloads(db, "RiskHaltRecorded")
+    assert [(r["kind"], r["rule"], r["reason"], r["pre_registration_ref"]) for r in rows] == [
+        ("halt", "RO-04", "stale_orderbook", "§10")
+    ]
+    assert rows[0]["occurred_at"] == h4_bar(11).close_time.isoformat()
+    assert [(h.rule, h.pair) for h in _halts(telegram)] == [("RO-04", BTC)]
+
+
+def test_a_halt_changes_no_decision_and_its_entry_is_not_pushed(tmp_path: Path) -> None:
+    """Record-only (#749): signals and trades match the run before; the halted entry is not pushed.
+
+    #708: no ENTRY announcement goes out for the entry the halt refused.
+    """
+    db = tmp_path / "ledger.sqlite3"
+
+    telegram, logs = _refused_entry_run(db, live(12, 14))
+
+    kinds = [p["kind"] for p in _payloads(db, "SignalEmitted")]
+    assert (kinds, signal_kinds(telegram), _trade_rows(db)) == (["entry"], [], [])
+    assert _declined_rules(logs) == [("entry", "HALT")]
+
+
+def test_a_halt_re_evaluated_after_a_crash_is_not_recorded_or_alerted_twice(
+    tmp_path: Path,
+) -> None:
+    """With the cursor rows lost, boot 2 halts bar 11 again and adds no row and no alert."""
+    db = tmp_path / "ledger.sqlite3"
+    _refused_entry_run(db, [])
+    connection = sqlite3.connect(db)
+    connection.execute(
+        "DELETE FROM events WHERE event_type = 'BarProcessed' AND occurred_at >= ?",
+        (h4_bar(11).close_time.isoformat(),),
+    )
+    connection.commit()
+    connection.close()
+
+    telegram, logs = _refused_entry_run(db, [])
+
+    assert _declined_rules(logs) == [("entry", "HALT")]
+    assert (len(_payloads(db, "RiskHaltRecorded")), _halts(telegram)) == (1, [])
+
+
+def test_a_failing_channel_does_not_stop_the_halt_record(tmp_path: Path) -> None:
+    """A channel raising on the halt alert is logged; the row is kept and the loop runs on."""
+    db = tmp_path / "ledger.sqlite3"
+    clock = SimulatedClock(start=h4_bar(10).close_time + _DELIVERY_DELAY)
+    books = _StaleFirstBooks(clock)
+    books.mid = h4_bar(10).close
+    feed = _SteppingFeed(clock, books, warm=history(10), live_bars=[h4_bar(11), *live(12, 14)])
+    telegram = RecordingChannel(raises=NetworkError("telegram down"))
+    composition = build(db, feed, clock.now(), telegram=telegram, books=books, clock=clock)
+
+    with capture_logs() as logs:
+        assert run_once(composition, feed) == 0
+
+    assert len(_payloads(db, "RiskHaltRecorded")) == 1
+    assert [e["event"] for e in logs if e["event"] == "serve.halt.alert_failed"] == [
+        "serve.halt.alert_failed"
+    ]
+
+
+def _seed_three_ro04_halts(db: Path) -> None:
+    """Record three RO-04 halts in the hours before the first live bar's UTC day (#796)."""
+    midnight = datetime.combine(h4_bar(11).close_time.date(), time(), tzinfo=UTC)
+    connection = sqlite3.connect(db)
+    ledger = SqliteLedger(connection)
+    for hours in (1, 2, 3):
+        ledger.append_event(
+            RiskHaltRecorded(
+                occurred_at=midnight - timedelta(hours=hours),
+                correlation_id=f"01JABCDEFGHJKMNPQRSTVWXY{hours:02d}",
+                strategy_id=StrategyId("swing-donchian-4h"),
+                pair=BTC,
+                kind=HaltKind.HALT,
+                rule="RO-04",
+                reason="stale_orderbook",
+                pre_registration_ref="§10",
+            )
+        )
+    connection.close()
+
+
+def _breakout_12() -> Bar:
+    """Return bar 12 as a fresh breakout at 3000, a new entry when the pair is flat."""
+    return dataclasses.replace(
+        h4_bar(12),
+        open=Decimal("3000"),
+        high=Decimal("3002"),
+        low=Decimal("2998"),
+        close=Decimal("3000"),
+    )
+
+
+# SEV-1: S6 a shadow kill that serve never evaluates lets a dead strategy keep entering (#796)
+def test_a_daily_sa9_repeat_kill_is_recorded_alerted_and_stops_every_entry(tmp_path: Path) -> None:
+    """Three RO-04 halts in 30 days kill at the first bar of the next day: one row, no BUY."""
+    db = tmp_path / "ledger.sqlite3"
+    _seed_three_ro04_halts(db)
+
+    telegram, _ = _refused_entry_run(db, [_breakout_12()])
+
+    wide = [r for r in _payloads(db, "RiskHaltRecorded") if r["pair"] is None]
+    assert [(r["kind"], r["rule"], r["reason"], r["pre_registration_ref"]) for r in wide] == [
+        ("kill", "sa9_repeat", "sa9_rule_fired_repeatedly", "§10")
+    ]
+    assert _trade_rows(db) == []
+    assert [(h.kind, h.rule, h.pair) for h in _halts(telegram)] == [
+        (HaltKind.KILL, "sa9_repeat", None),
+        (HaltKind.KILL, "sa9_repeat", BTC),
+        (HaltKind.KILL, "sa9_repeat", BTC),
+    ]
+
+
+def test_a_recorded_shadow_kill_still_holds_after_a_restart(tmp_path: Path) -> None:
+    """Boot 2 over the same ledger refuses the breakout entry with no new kill row."""
+    db = tmp_path / "ledger.sqlite3"
+    _seed_three_ro04_halts(db)
+    _refused_entry_run(db, [])
+
+    telegram, _ = _refused_entry_run(db, [_breakout_12()])
+
+    wide = [r for r in _payloads(db, "RiskHaltRecorded") if r["pair"] is None]
+    assert (len(wide), _trade_rows(db)) == (1, [])
+    assert [(h.kind, h.rule, h.pair) for h in _halts(telegram)] == [
+        (HaltKind.KILL, "sa9_repeat", BTC)
+    ]

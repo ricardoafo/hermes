@@ -45,6 +45,8 @@ class PortfolioState:
             when the drawdown threshold has been breached and the halt
             state must be persisted. RO-08 surfaces this flag to
             KillTriggerEvaluator (Spec 9, #227).
+        held_pairs: Pairs with an open position. RO-01 needs them: the
+            signed lock looks at the correlation between two open pairs.
     """
 
     peak_value: Decimal
@@ -52,6 +54,7 @@ class PortfolioState:
     realized_slippage_cumulative: Decimal
     correlations: dict[tuple[Pair, Pair], float] = field(default_factory=dict)
     dd_halt_required: bool = False
+    held_pairs: frozenset[Pair] = frozenset()
 
     @property
     def drawdown(self) -> Decimal:

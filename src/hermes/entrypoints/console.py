@@ -19,8 +19,10 @@ openspec/changes/ledger-read-model/change.md (D-8, D-9).
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Final, TextIO
 
@@ -28,10 +30,20 @@ from rich.console import Console
 
 from hermes.adapters.console import FixtureReadModel, UnknownScenarioError, available_scenarios
 from hermes.adapters.console.ledger_read_model import LedgerReadModel
+from hermes.adapters.console.shadow_records import NotebookFile, RunsDirectory, runs_dir_for
+from hermes.adapters.ledger.status_reader import SqliteStatusReader
+from hermes.adapters.system import (
+    ProcMachineReader,
+    ReleaseDirectoryReader,
+    SystemctlServiceReader,
+)
 from hermes.adapters.systemd_journal import JournalctlReader, JournalUnavailableError
 from hermes.application.console import ConsoleReadModel, Surface
 from hermes.application.console.logs import LogLine, parse_journal_entry
 from hermes.application.console.render import RenderContext, render_overview
+from hermes.application.console.shadow_screen import ShadowSources, sources_from
+from hermes.application.console.system import LiveRelease, SystemSources
+from hermes.domain.errors import LedgerError
 from hermes.entrypoints._streams import resolve_err
 
 __all__ = [
@@ -42,20 +54,29 @@ __all__ = [
     "DemoSplit",
     "LiveReadModelUnavailableError",
     "apply_demo_flag",
+    "config_allow_mainnet",
     "console_commands",
     "default_config_dir",
     "default_db_path",
     "demo_read_model",
+    "journal_window_lines",
+    "lab_notebook_path",
     "recent_journal_lines",
+    "recent_unit_journal_lines",
     "resolve_read_model",
+    "roster_exposure_cap",
+    "roster_strategy_id",
     "run_overview",
+    "shadow_sources",
     "split_demo_flag",
+    "system_sources",
 ]
 
 DEMO_ENV_VAR: Final = "HERMES_CONSOLE_DEMO"
 DB_ENV_VAR: Final = "HERMES_DB_PATH"
 CONFIG_DIR_ENV_VAR: Final = "HERMES_CONFIG_DIR"
 _FLAG: Final = "--demo"
+_NOTEBOOK_REL: Final = Path("docs/experiments/swing-mvp1/lab-notebook.md")
 
 
 class DemoFlagError(ValueError):
@@ -220,10 +241,16 @@ def resolve_read_model(
     demo = demo_read_model(demo_flag=demo_flag, env=env)
     if demo is not None:
         return demo
+    from hermes.entrypoints.supervisor import desk_briefs  # noqa: PLC0415 - it imports this module
+
     if db_path is None:
         db_path = default_db_path(env)
     try:
-        return LedgerReadModel.open(db_path)
+        return LedgerReadModel.open(
+            db_path,
+            journal=journal_window_lines,
+            briefs=desk_briefs(db_path, config_dir=default_config_dir(env)),
+        )
     except FileNotFoundError:
         msg = (
             f"there is no ledger at {db_path} to read; "
@@ -272,3 +299,208 @@ def recent_journal_lines(count: int) -> list[LogLine] | None:
         return [line for line in map(parse_journal_entry, raw) if line is not None]
     except JournalUnavailableError:
         return None
+
+
+def roster_exposure_cap(env: Mapping[str, str]) -> Decimal | None:
+    """Return the pre-registered exposure cap the roster sets, as a share (``0.15``).
+
+    The Home exposure meter measures against it (#712); the console never
+    hardcodes the pre-registration's figure. The roster is
+    ``strategies.yaml`` in the console's config dir (``HERMES_CONFIG_DIR`` or
+    ``./config``), read-only.
+
+    Args:
+        env: Environment snapshot (config dir and ``HERMES_STRATEGIES__*`` overrides).
+
+    Returns:
+        ``sizing.max_total_exposure_pct`` when every enabled strategy sets the
+        same cap; ``None`` when the roster is missing or invalid, no strategy is
+        enabled, or the caps differ.
+    """
+    from hermes.infrastructure.config.errors import ConfigError  # noqa: PLC0415 - slow import
+    from hermes.infrastructure.config.loader import load_yaml_model  # noqa: PLC0415
+    from hermes.infrastructure.config.models import StrategiesConfig  # noqa: PLC0415
+
+    path = default_config_dir(env) / "strategies.yaml"
+    try:
+        roster = load_yaml_model(path, StrategiesConfig, env_section="STRATEGIES", env=dict(env))
+    except ConfigError:
+        return None
+    caps = {s.sizing.max_total_exposure_pct for s in roster.strategies if s.enabled}
+    return caps.pop() if len(caps) == 1 else None
+
+
+def roster_strategy_id(env: Mapping[str, str]) -> str | None:
+    """Return the first enabled strategy of the roster, the one ``hermes serve`` trades.
+
+    Args:
+        env: Environment snapshot (config dir and ``HERMES_STRATEGIES__*`` overrides).
+
+    Returns:
+        Its name, or ``None`` when the roster is missing, invalid or has none enabled.
+    """
+    from hermes.infrastructure.config.errors import ConfigError  # noqa: PLC0415 - slow import
+    from hermes.infrastructure.config.loader import load_yaml_model  # noqa: PLC0415
+    from hermes.infrastructure.config.models import StrategiesConfig  # noqa: PLC0415
+
+    path = default_config_dir(env) / "strategies.yaml"
+    try:
+        roster = load_yaml_model(path, StrategiesConfig, env_section="STRATEGIES", env=dict(env))
+    except ConfigError:
+        return None
+    return next((s.name for s in roster.strategies if s.enabled), None)
+
+
+def lab_notebook_path(start: Path | None = None) -> Path | None:
+    """Return the lab notebook shipped with this release, if it is here.
+
+    Walks up from ``start`` (this module by default) to the first directory
+    holding ``docs/experiments/swing-mvp1/lab-notebook.md``.
+
+    Args:
+        start: Where to start looking.
+
+    Returns:
+        The notebook's path, or ``None`` when no parent holds it.
+    """
+    here = (start or Path(__file__)).resolve()
+    for folder in (here, *here.parents):
+        candidate = folder / _NOTEBOOK_REL
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def shadow_sources(
+    model: ConsoleReadModel, *, env: Mapping[str, str], db_path: Path | None = None
+) -> ShadowSources:
+    """Return where the Shadow test screen reads from (issue #718).
+
+    A demo scenario serves its own synthetic record, evidence and notebook.
+    The ledger read model serves the evidence; the day-0 records come from the
+    ledger's ``runs`` directory and the notebook from the release.
+
+    Args:
+        model: The read model the console shows.
+        env: Environment snapshot.
+        db_path: The ledger file; ``hermes serve``'s default when ``None``.
+
+    Returns:
+        The sources; ``ShadowSources()`` (a warm-up with nothing read) for any
+        other read model.
+    """
+    if isinstance(model, FixtureReadModel):
+        return sources_from(model)
+    if isinstance(model, LedgerReadModel):
+        ledger = db_path if db_path is not None else default_db_path(env)
+        return ShadowSources(
+            evidence=model,
+            runs=RunsDirectory(runs_dir_for(ledger)),
+            notebook=NotebookFile(lab_notebook_path()),
+            strategy_id=roster_strategy_id(env),
+        )
+    return ShadowSources()
+
+
+def config_allow_mainnet(env: Mapping[str, str]) -> bool | None:
+    """Return the config's ``allow_mainnet``, loaded the way ``hermes serve`` loads it.
+
+    The console's top bar shows it (issue #833) and never hardcodes it. The
+    whole config is loaded and validated, as serve does, from the console's
+    config dir (``HERMES_CONFIG_DIR`` or ``./config``) with ``env`` as the
+    environment, so ``HERMES_ALLOW_MAINNET`` and ``HERMES_ENV`` count exactly
+    as they do for serve (``--vps`` sources the service's env file first).
+
+    Args:
+        env: Environment snapshot.
+
+    Returns:
+        ``True`` or ``False`` as the config says, or ``None`` when the config
+        cannot be loaded (missing, invalid, or mainnet set outside prod), so
+        the screen says the state is unknown instead of guessing "off".
+    """
+    from hermes.infrastructure.config.errors import ConfigError  # noqa: PLC0415 - slow import
+    from hermes.infrastructure.config.loader import load_config  # noqa: PLC0415
+
+    try:
+        return load_config(default_config_dir(env), env=dict(env)).allow_mainnet
+    except ConfigError:
+        return None
+
+
+_JOURNAL_WINDOW_LINES: Final = 20_000
+
+
+def journal_window_lines(window: timedelta) -> list[LogLine] | None:
+    """Return the hermes journal lines of the last ``window``, or ``None`` when unreadable.
+
+    The activity feed reads restarts, warnings and errors from here. Locally,
+    and for a user who may not read the unit's journal, there is nothing to
+    read and the feed simply omits those rows; over ``--vps`` the same call
+    runs on the VPS.
+
+    Args:
+        window: How far back to read.
+
+    Returns:
+        Parsed lines, oldest first, or ``None`` when journalctl is missing or
+        cannot be started.
+    """
+    try:
+        raw = JournalctlReader().lines(
+            last=_JOURNAL_WINDOW_LINES, since=f"-{int(window.total_seconds())}s"
+        )
+        return [line for line in map(parse_journal_entry, raw) if line is not None]
+    except JournalUnavailableError, OSError:
+        return None
+
+
+def recent_unit_journal_lines(unit: str, count: int) -> list[LogLine] | None:
+    """Return the last ``count`` journal lines of ``unit``, or ``None`` without journalctl.
+
+    The System screen's service detail calls this (#717).
+
+    Args:
+        unit: The systemd unit (``hermes-daily.service``).
+        count: How many entries to read.
+
+    Returns:
+        Parsed lines, oldest first, or ``None`` on a machine with no journal.
+    """
+    try:
+        raw = JournalctlReader(unit=unit).lines(last=count)
+        return [line for line in map(parse_journal_entry, raw) if line is not None]
+    except JournalUnavailableError:
+        return None
+
+
+def system_sources(
+    *, db_path: Path, live: Callable[[], LiveRelease], ledger: bool = True
+) -> SystemSources:
+    """Return the System screen's read-only sources on this machine (#717).
+
+    Off the VPS each reader answers "not available here" on its own: no
+    systemd units, no release directory, no ``/proc``.
+
+    Args:
+        db_path: The ledger; its size is shown and its bar checks are timed.
+        live: Returns the live release, as ``hermes status`` reads it.
+        ledger: Read the ledger's bar timing; ``False`` for a demo scenario,
+            whose figures are not the ledger's.
+
+    Returns:
+        The readers for the services, releases, machine and bar timing.
+    """
+    bar_timing = None
+    if ledger:
+        try:
+            bar_timing = SqliteStatusReader.open(db_path)
+        except FileNotFoundError, LedgerError:
+            bar_timing = None
+    return SystemSources(
+        services=SystemctlServiceReader(),
+        releases=ReleaseDirectoryReader(live=live),
+        machine=ProcMachineReader(ledger=db_path),
+        bar_timing=bar_timing,
+        unit_journal=recent_unit_journal_lines,
+    )

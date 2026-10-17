@@ -1,8 +1,8 @@
 """FX and Telegram outages: trading carries on and nothing is lost.
 
 The EUR values are measurement only (ADR-016): a Frankfurter outage stores the
-trades pending and the next boot prices them. A Telegram outage is logged; the
-fills are recorded all the same.
+trades pending and the next boot prices them. A Telegram outage is logged and the
+push is tried again on the next bar; the fills are recorded all the same.
 """
 
 from __future__ import annotations
@@ -32,14 +32,20 @@ def test_trades_made_while_fx_is_down_are_priced_in_euros_at_the_next_boot(
 
 
 def test_a_telegram_outage_does_not_stop_trading(run_scenario: RunScenario) -> None:
-    """Every send fails, yet serve keeps running and records the BUY and the SELL."""
+    """Every send fails, yet serve keeps running and records the BUY and the SELL.
+
+    Each of the two signals is pushed on its bar and once more on the next
+    bar (#854), and every failed push is logged.
+    """
     run = run_scenario(markets.chandelier_exit(), notifier_error=InfraError("telegram unreachable"))
     assert (
         run.exit_code,
         outline(run.db)["trades"],
+        len(run.log_events("serve.notify.retry")),
         len(run.log_events("serve.notify.failed")),
     ) == (
         0,
         [("BTC/USDT", "BUY"), ("BTC/USDT", "SELL")],
         2,
+        4,
     )

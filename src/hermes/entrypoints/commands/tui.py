@@ -3,18 +3,26 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, MutableMapping
 from pathlib import Path
-from typing import Final, TextIO
+from typing import TYPE_CHECKING, Final, TextIO
 
+import hermes
 from hermes.adapters.console import UnknownScenarioError
 from hermes.application.console import ConsoleReadModel
+from hermes.application.console.system import LiveRelease
 from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.commands import Command
 from hermes.entrypoints.console import (
     LiveReadModelUnavailableError,
+    config_allow_mainnet,
+    default_config_dir,
+    default_db_path,
     recent_journal_lines,
     resolve_read_model,
+    roster_exposure_cap,
+    shadow_sources,
+    system_sources,
 )
 from hermes.entrypoints.tui_settings import (
     DEFAULT_SETTINGS_PATH,
@@ -23,8 +31,13 @@ from hermes.entrypoints.tui_settings import (
     save_settings,
 )
 from hermes.entrypoints.version import read_release
+from hermes.infrastructure.time import now_utc
+from hermes.release_version import release_label
 
-__all__ = ["COMMAND", "run_tui"]
+if TYPE_CHECKING:
+    from hermes.adapters.exchanges.kraken_public import KrakenPublicAdapter
+
+__all__ = ["COMMAND", "apply_console_colors", "console_color_system", "live_ticker", "run_tui"]
 
 _TUI_USAGE: Final = "Usage: hermes [--demo SCENARIO] tui [--db PATH] [--theme neon|control|auto]"
 _TUI_HELP: Final = (
@@ -35,6 +48,9 @@ _TUI_HELP: Final = (
     "  -h, --help    show this help\n"
     "Exit codes: 0 after the operator quits, 2 usage, unknown scenario or no data source."
 )
+# Read by the console's UI library when it is first imported.
+_COLOR_SYSTEM_ENV: Final = "TEXTUAL_COLOR_SYSTEM"
+_PLAIN_TERMS: Final = frozenset({"dumb", "linux"})
 _DB: Final = "--db"
 _THEME: Final = "--theme"
 
@@ -93,27 +109,121 @@ def run_tui(
         except OSError as exc:
             err.write(f"WARNING: could not save the theme: {exc}\n")
     if runner is None:
+        # Textual reads the colour depth once, at import, so it is set first.
+        apply_console_colors(env or {}, os.environ)
         from hermes.entrypoints.tui import run_home  # noqa: PLC0415 - Textual is slow to import
-        from hermes.entrypoints.tui_logs import export_dir  # noqa: PLC0415 - same
+        from hermes.entrypoints.tui_logs import export_dir  # noqa: PLC0415 - with Textual
+        from hermes.entrypoints.tui_tax import tax_inputs  # noqa: PLC0415 - with Textual
 
-        exports = export_dir(env or {}, Path.home())
+        snapshot = env or {}
+        cap = roster_exposure_cap(snapshot)
+        allow_mainnet = config_allow_mainnet(snapshot)
+        exports = export_dir(snapshot, Path.home())
+
+        ledger = db_path or default_db_path(env or {})
+        system = system_sources(
+            db_path=ledger, live=_live_release, ledger=model.demo_scenario is None
+        )
 
         def runner(read_model: ConsoleReadModel) -> None:
-            run_home(
-                read_model,
-                journal=recent_journal_lines,
-                release=_release_name,
-                settings_path=settings_path,
-                exports=exports,
+            ticker = live_ticker(read_model)
+            tax = tax_inputs(
+                demo=read_model.demo_scenario is not None,
+                env=snapshot,
+                db_path=db_path if db_path is not None else default_db_path(snapshot),
+                config_dir=default_config_dir(snapshot),
+                now=now_utc(),
             )
+            try:
+                run_home(
+                    read_model,
+                    journal=recent_journal_lines,
+                    release=_release_name,
+                    version=release_label(hermes.__version__),
+                    allow_mainnet=allow_mainnet,
+                    settings_path=settings_path,
+                    exposure_cap=cap,
+                    ticker=ticker,
+                    tax=tax.source,
+                    taxpayer_profile=tax.profile,
+                    tax_pack=tax.pack,
+                    shadow=shadow_sources(read_model, env=snapshot, db_path=db_path),
+                    system=system,
+                    exports=exports,
+                )
+            finally:
+                tax.close()
+                if ticker is not None:
+                    ticker.close()
 
     runner(model)
     return 0
 
 
+def console_color_system(env: Mapping[str, str]) -> str | None:
+    """Return the colour system the console should draw with, or ``None`` to auto-detect.
+
+    The console's palette is designed in 24-bit colour. Auto-detection reads
+    ``COLORTERM``, which ssh does not forward, so over ssh it falls back to 256
+    colours, where the Neon background ``#0B0420`` rounds to black (#992).
+    True colour is therefore the default; an explicit choice in
+    ``TEXTUAL_COLOR_SYSTEM`` and the plain ``linux`` and ``dumb`` terminals
+    keep auto-detection.
+
+    Args:
+        env: Environment snapshot.
+    """
+    if env.get(_COLOR_SYSTEM_ENV, "").strip():
+        return None
+    if env.get("TERM", "").strip() in _PLAIN_TERMS:
+        return None
+    return "truecolor"
+
+
+def apply_console_colors(env: Mapping[str, str], environ: MutableMapping[str, str]) -> None:
+    """Set the console's colour system in ``environ`` before its UI library is imported.
+
+    Args:
+        env: Environment snapshot the choice is made from.
+        environ: The process environment to write (``os.environ``).
+    """
+    system = console_color_system(env)
+    if system is not None:
+        environ[_COLOR_SYSTEM_ENV] = system
+
+
+def live_ticker(model: ConsoleReadModel) -> KrakenPublicAdapter | None:
+    """Return the live public ticker for the console, or ``None`` for demo data.
+
+    The ticker runs in the console process, so over ``--vps`` (where the
+    console runs on the VPS) it runs there too. Demo positions are synthetic,
+    so they are never shown at real prices. Creating the adapter opens no
+    connection; the console's worker makes the first call.
+
+    Args:
+        model: The read model the console shows.
+
+    Returns:
+        A Kraken public adapter, or ``None`` when the model is a demo scenario.
+    """
+    if model.demo_scenario is not None:
+        return None
+    from hermes.adapters.exchanges.kraken_public import (  # noqa: PLC0415 - httpx only when used
+        KrakenPublicAdapter,
+    )
+
+    return KrakenPublicAdapter.create()
+
+
 def _release_name() -> str:
     """Return the running release, read from the link ``hermes status`` reads (#649)."""
     return read_release().name
+
+
+def _live_release() -> LiveRelease:
+    """Return the live release for the System screen, from the same link (#717)."""
+    info = read_release()
+    return LiveRelease(info.name, info.live_since)
 
 
 def _parse(args: list[str]) -> tuple[Path | None, ThemeChoice | None]:

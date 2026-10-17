@@ -20,10 +20,11 @@ tiers in the public ``AssetPairs`` reply on 2026-10-04 (#599).
 Safety (ADR-003 §00 I-08, AGENTS.md rule 7):
 
 - Kraken has no spot testnet, so every signed call reaches a real account.
-  Without ``allow_mainnet`` the adapter is read-only: placing or cancelling
-  an order raises before any request is built. Only the composition root
-  sets ``allow_mainnet``, after ``HermesConfig.allow_mainnet`` and the
-  LIVE_APPROVED gate (#382, ADR-014). ``hermes serve`` wires no exchange.
+  Without a :class:`~hermes.infrastructure.mainnet_permit.MainnetPermit`
+  the adapter is read-only: placing or cancelling an order raises before any
+  request is built. A permit is issued only in the prod tier with
+  ``HermesConfig.allow_mainnet`` set and the strategy LIVE_APPROVED (#382,
+  #781, ADR-014). ``hermes serve`` wires no exchange.
 - Only ``https://api.kraken.com`` is accepted, so signed requests cannot be
   sent to a mistyped host.
 - Requests are signed as Kraken documents: HMAC-SHA512, keyed by the
@@ -36,6 +37,16 @@ Safety (ADR-003 §00 I-08, AGENTS.md rule 7):
 - Orders ask for fees in the quote currency (``oflags=fciq``), so a fill's
   fee is quote money and the bought quantity is not reduced by a fee.
 
+Losing track of a real order (#858):
+
+- Every ``AddOrder`` carries a random ``userref``. A placement whose reply is
+  lost, or whose execution cannot be read back, raises
+  :class:`OrderUnreadError` naming the ``userref`` and, once known, the txid,
+  so the operator can find the live order instead of placing another.
+- With ``nonce_file`` set, the last nonce is kept on disk and every nonce is
+  above it, so a restart with the clock stepped back still sends an
+  increasing nonce instead of earning ``EAPI:Invalid nonce``.
+
 Reference: issue #32; openspec/changes/32-kraken-spot-adapter/change.md.
 """
 
@@ -45,12 +56,15 @@ import base64
 import binascii
 import hashlib
 import hmac
+import os
 import re
+import secrets
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, Overflow
+from pathlib import Path
 from typing import Any, Final
 from urllib.parse import urlencode, urlsplit
 
@@ -71,19 +85,24 @@ from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
+from hermes.infrastructure.mainnet_permit import MainnetPermit
 
-__all__ = ["KRAKEN_BASE_URL", "KrakenSpotAdapter", "KrakenSpotConfig", "sign"]
+__all__ = ["KRAKEN_BASE_URL", "KrakenSpotAdapter", "KrakenSpotConfig", "OrderUnreadError", "sign"]
 
 KRAKEN_BASE_URL: Final = "https://api.kraken.com"
 _KRAKEN_HOST: Final = "api.kraken.com"
 _PRIVATE_PREFIX: Final = "/0/private/"
 _UNKNOWN_ORDER: Final = "EOrder:Unknown order"
+# Kraken documents these as "the order may or may not have been placed".
+_UNSURE_ERROR_PREFIXES: Final = ("EService:Unavailable", "EService:Busy", "EGeneral:Internal error")
 _RATE_LIMIT_ERRORS: Final = frozenset({"EAPI:Rate limit exceeded", "EGeneral:Too many requests"})
 _TXID: Final = re.compile(r"^[A-Z0-9]{6}-[A-Z0-9]{5}-[A-Z0-9]{6}$")
 _FINAL_STATUSES: Final = frozenset({"closed", "canceled", "expired"})
 _DEPTH_LEVELS: Final = 100
 _ERROR_EXCERPT: Final = 200
 _HTTP_ERROR_MIN: Final = 400
+_USERREF_MAX: Final = 2**31 - 1
+"""Kraken's ``userref`` is a signed 32-bit integer."""
 
 # Kraken's legacy asset codes: X for crypto, Z for fiat. Newer listings
 # (USDT, USDC, SOL) are reported unprefixed in balances.
@@ -122,9 +141,12 @@ def _decimal(raw: object, field_name: str) -> Decimal:
     if isinstance(raw, bool) or not isinstance(raw, (str, int, float)):
         raise ExchangeError(msg=f"{field_name} is not numeric: {raw!r}")
     try:
-        return Decimal(str(raw))
+        value = Decimal(str(raw))
     except InvalidOperation as exc:
         raise ExchangeError(msg=f"{field_name} is not a decimal: {raw!r}") from exc
+    if not value.is_finite():
+        raise ExchangeError(msg=f"{field_name} is not a finite number: {raw!r}")
+    return value
 
 
 def _fee_percent(result: Mapping[str, Any], side: str, symbol: str) -> Decimal:
@@ -145,8 +167,15 @@ def _fee_percent(result: Mapping[str, Any], side: str, symbol: str) -> Decimal:
 
 
 def _percent_to_bps(percent: Decimal) -> int:
-    """Convert Kraken's percent (0.26 = 0.26%) to whole basis points."""
-    return int((percent * 100).to_integral_value())
+    """Convert Kraken's percent (0.26 = 0.26%) to whole basis points.
+
+    Raises:
+        ExchangeError: ``percent`` is too large for the decimal context.
+    """
+    try:
+        return int((percent * 100).to_integral_value())
+    except Overflow as exc:
+        raise ExchangeError(msg=f"Kraken fee percent is out of range: {percent}") from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,9 +186,10 @@ class KrakenSpotConfig:
         api_key: Kraken API key (sent as a header, not secret by itself).
         api_secret: Base64 Kraken API secret, used only to sign. Not in ``repr``.
         base_url: REST root; only ``https://api.kraken.com`` is accepted.
-        allow_mainnet: Permit placing and cancelling orders. Kraken has no
-            spot testnet, so without it the adapter is read-only. Only the
-            composition root, after the live-approval gate, sets this.
+        mainnet_permit: Lets the adapter place and cancel orders. Kraken has
+            no spot testnet, so without it the adapter is read-only. Only
+            :func:`~hermes.infrastructure.mainnet_permit.issue_mainnet_permit`
+            makes one, after the tier, kill-switch and live-approval checks.
         timeout_sec: Per-request timeout.
         rate_limit: Token bucket for signed calls, below Kraken's starter
             tier (a counter of 15 decaying 0.33 a second).
@@ -169,12 +199,14 @@ class KrakenSpotConfig:
         settle_checks: How many times to read an order back before giving up
             on it reaching a final state.
         settle_interval_sec: Pause between those reads.
+        nonce_file: Where the last nonce is kept across restarts, or ``None``
+            to keep it in memory only. Give each API key its own file.
     """
 
     api_key: str
     api_secret: str = field(repr=False)
     base_url: str = KRAKEN_BASE_URL
-    allow_mainnet: bool = False
+    mainnet_permit: MainnetPermit | None = None
     timeout_sec: float = 10.0
     rate_limit: RateLimitConfig = field(
         default_factory=lambda: RateLimitConfig(max_weight=15, window_seconds=45)
@@ -182,6 +214,7 @@ class KrakenSpotConfig:
     stop_limit_buffer: Decimal = Decimal("0.01")
     settle_checks: int = 5
     settle_interval_sec: float = 0.5
+    nonce_file: Path | None = None
 
     def __post_init__(self) -> None:
         """Refuse another host, empty keys, a non-base64 secret or bad tuning.
@@ -263,11 +296,12 @@ class KrakenSpotAdapter:
         """Submit a market order and return the confirmed fill.
 
         Raises:
+            OrderUnreadError: Placed, or possibly placed, but not read back.
             ExchangeError: Trading not allowed, rejected order, nothing
                 executed, an order that did not settle, or a malformed reply.
-            NetworkError: Transport failure.
+            NetworkError: Transport failure before the order was sent.
         """
-        txid = self._add_order(
+        txid, userref = self._add_order(
             {
                 "ordertype": "market",
                 "type": side.value.lower(),
@@ -275,7 +309,7 @@ class KrakenSpotAdapter:
             },
             order,
         )
-        status, info = self._settle(txid)
+        status, info = self._settle(txid, userref)
         fill = self._fill(order, info)
         if fill is None:
             raise ExchangeError(msg=f"market order {txid} executed nothing: status {status}")
@@ -289,12 +323,13 @@ class KrakenSpotAdapter:
 
         Raises:
             ValueError: ``order.limit_price`` is missing.
+            OrderUnreadError: Placed, or possibly placed, but not read back.
             ExchangeError: Trading not allowed, rejected order or malformed reply.
-            NetworkError: Transport failure.
+            NetworkError: Transport failure before the order was sent.
         """
         if order.limit_price is None:
             raise ValueError("place_limit_order needs order.limit_price")
-        txid = self._add_order(
+        txid, userref = self._add_order(
             {
                 "ordertype": "limit",
                 "type": order.side.value.lower(),
@@ -304,7 +339,7 @@ class KrakenSpotAdapter:
             },
             order,
         )
-        status, info = self._settle(txid)
+        status, info = self._settle(txid, userref)
         fill = self._fill(order, info)
         if fill is None:
             return Rejection(order=order, reason=f"IOC limit {txid} not filled: {status}")
@@ -362,7 +397,7 @@ class KrakenSpotAdapter:
     def get_fees(self, *, pair: Pair) -> FeeSchedule:
         """Return the account's current maker and taker fee for ``pair``.
 
-        Read-only, so it works without ``allow_mainnet``. ``TradeVolume``
+        Read-only, so it works without a ``mainnet_permit``. ``TradeVolume``
         answers with the fee the account pays now, given its 30-day volume, so
         the schedule has one tier that applies at any volume.
 
@@ -399,15 +434,16 @@ class KrakenSpotAdapter:
 
         Raises:
             ValueError: ``order`` is not a SELL or ``stop_price`` is not positive.
+            OrderUnreadError: Possibly placed, but the reply was lost.
             ExchangeError: Trading not allowed, refusal or malformed reply.
-            NetworkError: Transport failure.
+            NetworkError: Transport failure before the order was sent.
         """
         if order.side is not OrderSide.SELL:
             raise ValueError("a stop-loss protects a long position, so it must be a SELL")
         if stop_price <= 0:
             raise ValueError("stop_price must be positive")
         limit = stop_price * (Decimal("1") - self.config.stop_limit_buffer)
-        return self._add_order(
+        txid, _userref = self._add_order(
             {
                 "ordertype": "stop-loss-limit",
                 "type": "sell",
@@ -418,49 +454,98 @@ class KrakenSpotAdapter:
             },
             order,
         )
+        return txid
 
     # ------------------------------------------------------------------
     # Orders
     # ------------------------------------------------------------------
 
     def _require_trading(self, action: str) -> None:
-        if not self.config.allow_mainnet:
+        if not isinstance(self.config.mainnet_permit, MainnetPermit):
             raise ExchangeError(
                 msg=f"refusing to {action} on Kraken: the adapter is read-only without "
-                "allow_mainnet (set only by the composition root after live approval, ADR-014)"
+                "a MainnetPermit (issued only after live approval, ADR-014)"
             )
 
-    def _add_order(self, params: dict[str, str], order: Order) -> str:
+    def _add_order(self, params: dict[str, str], order: Order) -> tuple[str, int]:
+        """Place an order under a fresh ``userref``; return its txid and that ``userref``."""
         self._require_trading("place an order")
-        result = self._private(
-            "AddOrder",
-            {"pair": _pair_to_kraken_symbol(order.pair), "oflags": "fciq", **params},
-        )
+        userref = secrets.randbelow(_USERREF_MAX) + 1
+        fields = {
+            "pair": _pair_to_kraken_symbol(order.pair),
+            "oflags": "fciq",
+            "userref": str(userref),
+            **params,
+        }
+        # A bad nonce file fails here, before anything is sent, so it is not an unread order.
+        nonce = self._nonce()
+        try:
+            result = self._private("AddOrder", fields, nonce=nonce)
+        except _KrakenRefusalError as refusal:
+            if not any(e.startswith(_UNSURE_ERROR_PREFIXES) for e in refusal.errors):
+                raise
+            raise OrderUnreadError(
+                msg=f"AddOrder answered {list(refusal.errors)} (userref {userref}): the order "
+                "may be live; find it by userref on Kraken before placing another",
+                userref=userref,
+            ) from refusal
+        except NetworkError as exc:
+            if isinstance(exc.__cause__, httpx.ConnectError | httpx.ConnectTimeout):
+                raise  # never connected, so never sent: safe to retry
+            raise OrderUnreadError(
+                msg=f"AddOrder reply lost (userref {userref}): the order may be live; find it "
+                f"by userref on Kraken before placing another ({exc})",
+                userref=userref,
+            ) from exc
+        except ExchangeError as exc:
+            raise OrderUnreadError(
+                msg=f"AddOrder reply lost (userref {userref}): the order may be live; find it "
+                f"by userref on Kraken before placing another ({exc})",
+                userref=userref,
+            ) from exc
         txids = result.get("txid")
         if not isinstance(txids, list) or len(txids) != 1 or not isinstance(txids[0], str):
-            raise ExchangeError(msg=f"AddOrder reply has no single txid: {result!r}")
-        return txids[0]
+            raise OrderUnreadError(
+                msg=f"AddOrder reply has no single txid (userref {userref}): {result!r}",
+                userref=userref,
+            )
+        return txids[0], userref
 
-    def _settle(self, txid: str) -> tuple[str, dict[str, Any]]:
+    def _settle(self, txid: str, userref: int) -> tuple[str, dict[str, Any]]:
         """Read ``txid`` back until it is closed, cancelled or expired.
 
         Raises:
-            ExchangeError: Still live after ``settle_checks`` reads. The
-                message names the txid so the operator can reconcile it.
+            OrderUnreadError: The read-back failed, or the order is still
+                live after ``settle_checks`` reads. The error carries the
+                txid and ``userref`` so the operator can reconcile it.
         """
         status = "unknown"
         for attempt in range(self.config.settle_checks):
             if attempt:
                 self.sleep(self.config.settle_interval_sec)
-            info = self._private("QueryOrders", {"txid": txid}).get(txid)
+            try:
+                info = self._private("QueryOrders", {"txid": txid}).get(txid)
+            except (ExchangeError, NetworkError) as exc:
+                raise OrderUnreadError(
+                    msg=f"order {txid} (userref {userref}) was placed but could not be read "
+                    f"back; reconcile it on Kraken before placing another ({exc})",
+                    txid=txid,
+                    userref=userref,
+                ) from exc
             if not isinstance(info, dict):
-                raise ExchangeError(msg=f"QueryOrders reply has no entry for {txid}")
+                raise OrderUnreadError(
+                    msg=f"QueryOrders reply has no entry for {txid} (userref {userref})",
+                    txid=txid,
+                    userref=userref,
+                )
             status = str(info.get("status"))
             if status in _FINAL_STATUSES:
                 return status, info
-        raise ExchangeError(
-            msg=f"order {txid} still {status} after {self.config.settle_checks} checks; "
-            "reconcile it on Kraken before placing another"
+        raise OrderUnreadError(
+            msg=f"order {txid} still {status} after {self.config.settle_checks} checks "
+            f"(userref {userref}); reconcile it on Kraken before placing another",
+            txid=txid,
+            userref=userref,
         )
 
     def _fill(self, order: Order, info: dict[str, Any]) -> Fill | None:
@@ -487,13 +572,20 @@ class KrakenSpotAdapter:
 
     def _nonce(self) -> str:
         # Kraken rejects a nonce that does not increase, even within one millisecond.
-        self._last_nonce = max(self.clock_ms(), self._last_nonce + 1)
+        floor = self._last_nonce
+        if self.config.nonce_file is not None and floor == 0:
+            floor = _read_nonce(self.config.nonce_file)
+        self._last_nonce = max(self.clock_ms(), floor + 1)
+        if self.config.nonce_file is not None:
+            _write_nonce(self.config.nonce_file, self._last_nonce)
         return str(self._last_nonce)
 
-    def _private(self, method: str, params: dict[str, str]) -> dict[str, Any]:
+    def _private(
+        self, method: str, params: dict[str, str], *, nonce: str | None = None
+    ) -> dict[str, Any]:
         self.limiter.acquire(1)
         path = f"{_PRIVATE_PREFIX}{method}"
-        nonce = self._nonce()
+        nonce = nonce or self._nonce()
         body = urlencode({"nonce": nonce, **params})
         headers = {
             "API-Key": self.config.api_key,
@@ -538,3 +630,45 @@ class _KrakenRefusalError(ExchangeError):
     """Kraken answered with a non-empty ``error`` list."""
 
     errors: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class OrderUnreadError(ExchangeError):
+    """An order was, or may have been, placed on Kraken but was not read back.
+
+    Never place another before finding this one: look it up on Kraken by
+    ``txid``, or by ``userref`` when the txid never arrived.
+
+    Attributes:
+        txid: Kraken's order id, or ``""`` when the AddOrder reply was lost.
+        userref: The reference the order was placed with.
+    """
+
+    txid: str = ""
+    userref: int = 0
+
+
+def _read_nonce(path: Path) -> int:
+    """Return the nonce kept in ``path``, or 0 when there is none yet."""
+    try:
+        text = path.read_text(encoding="ascii").strip()
+    except FileNotFoundError:
+        return 0
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ExchangeError(msg=f"cannot read Kraken nonce file {path}: {exc}") from exc
+    if not text.isdigit():
+        raise ExchangeError(msg=f"Kraken nonce file {path} does not hold a nonce: {text[:40]!r}")
+    return int(text)
+
+
+def _write_nonce(path: Path, nonce: int) -> None:
+    """Keep ``nonce`` in ``path``, atomically, before the request that uses it goes out."""
+    staging = path.with_name(f"{path.name}.tmp")
+    try:
+        with staging.open("w", encoding="ascii") as out:
+            out.write(str(nonce))
+            out.flush()
+            os.fsync(out.fileno())  # a power cut must not bring back an older nonce
+        staging.replace(path)
+    except OSError as exc:
+        raise ExchangeError(msg=f"cannot keep the Kraken nonce in {path}: {exc}") from exc

@@ -116,8 +116,15 @@ def _to_ms(moment: datetime) -> int:
 
 
 def _from_ms(value: int) -> datetime:
-    """Return the UTC datetime for ``value`` milliseconds since the epoch."""
-    return _EPOCH + timedelta(milliseconds=value)
+    """Return the UTC datetime for ``value`` milliseconds since the epoch.
+
+    Raises:
+        ExchangeError: ``value`` is outside the calendar ``datetime`` supports.
+    """
+    try:
+        return _EPOCH + timedelta(milliseconds=value)
+    except OverflowError as exc:
+        raise ExchangeError(f"klines timestamp out of range: {value}") from exc
 
 
 def _symbol(pair: Pair) -> str:
@@ -144,18 +151,21 @@ def _decimal(raw: object, *, field: str) -> Decimal:
     if not isinstance(raw, (str, int, float)) or isinstance(raw, bool):
         raise ExchangeError(f"klines row field {field!r} is not string or numeric: {raw!r}")
     try:
-        return Decimal(str(raw))
+        value = Decimal(str(raw))
     except InvalidOperation as exc:
         raise ExchangeError(f"klines row field {field!r} is not a decimal: {raw!r}") from exc
+    if not value.is_finite():
+        raise ExchangeError(f"klines row field {field!r} is not a finite number: {raw!r}")
+    return value
 
 
-def _row_to_bar(row: object, pair: Pair, interval: KlineInterval) -> Bar:
-    """Convert one raw klines row into a :class:`Bar`.
+def _row_times(row: object, interval: KlineInterval) -> tuple[list[object], datetime, datetime]:
+    """Return a raw klines row's fields, ``open_time`` and ``close_time``, without reading prices.
 
     Raises:
-        ExchangeError: Malformed row, unaligned timestamps, a ``close_time``
-            that is not ``open + interval - 1 ms``, or a domain-invariant
-            violation.
+        ExchangeError: The row is not a list of enough fields, its timestamps
+            are not ints, ``open_time`` is unaligned, or ``close_time`` is not
+            ``open + interval - 1 ms``.
     """
     if not isinstance(row, list) or len(row) < _MIN_KLINE_FIELDS:
         raise ExchangeError(f"klines row must be a list of >= {_MIN_KLINE_FIELDS} fields: {row!r}")
@@ -175,25 +185,59 @@ def _row_to_bar(row: object, pair: Pair, interval: KlineInterval) -> Bar:
         raise ExchangeError(
             f"klines close_time {close_time.isoformat()} is not open + {interval} - 1 ms"
         )
+    return row, open_time, close_time
+
+
+def _row_to_bar(row: object, pair: Pair, interval: KlineInterval) -> Bar:
+    """Convert one raw klines row into a :class:`Bar`.
+
+    Raises:
+        ExchangeError: Malformed row, unaligned timestamps, a ``close_time``
+            that is not ``open + interval - 1 ms``, or a domain-invariant
+            violation.
+    """
+    fields, open_time, close_time = _row_times(row, interval)
     try:
         return Bar(
             pair=pair,
             interval=interval,
             open_time=open_time,
-            open=_decimal(row[1], field="open"),
-            high=_decimal(row[2], field="high"),
-            low=_decimal(row[3], field="low"),
-            close=_decimal(row[4], field="close"),
-            volume=_decimal(row[5], field="volume"),
+            open=_decimal(fields[1], field="open"),
+            high=_decimal(fields[2], field="high"),
+            low=_decimal(fields[3], field="low"),
+            close=_decimal(fields[4], field="close"),
+            volume=_decimal(fields[5], field="volume"),
             close_time=close_time,
         )
     except ValueError as exc:
         raise ExchangeError(f"klines row fails domain invariants: {exc}") from exc
 
 
-def _parse_rows(rows: Sequence[object], pair: Pair, interval: KlineInterval) -> list[Bar]:
-    """Parse rows into bars, ascending by ``open_time`` with duplicates dropped."""
-    by_open = {bar.open_time: bar for bar in (_row_to_bar(r, pair, interval) for r in rows)}
+def _parse_rows(
+    rows: Sequence[object],
+    pair: Pair,
+    interval: KlineInterval,
+    *,
+    keep: Callable[[datetime], bool],
+) -> list[Bar]:
+    """Parse the rows whose ``open_time`` passes ``keep``, ascending with exact repeats dropped.
+
+    Rows are filtered on their timestamps before their prices are read, so a
+    malformed value in a dropped row (the still-forming candle) cannot fail
+    the bars that closed before it (issue #850).
+
+    Raises:
+        ExchangeError: Two rows for the same ``open_time`` disagree, so the
+            reply cannot say which prices the bar closed at (issue #1013).
+    """
+    kept = [row for row in rows if keep(_row_times(row, interval)[1])]
+    by_open: dict[datetime, Bar] = {}
+    for bar in (_row_to_bar(r, pair, interval) for r in kept):
+        first = by_open.setdefault(bar.open_time, bar)
+        if first != bar:
+            raise ExchangeError(
+                f"klines reply holds two different rows for {bar.open_time.isoformat()}"
+            )
     return [by_open[key] for key in sorted(by_open)]
 
 
@@ -314,7 +358,18 @@ class BinanceLiveKlinesAdapter:
             local_now = self._clock.now()
             exchange_now = await self._exchange_now()
             rows = await self._fetch_rows(pair, interval, start_ms=None, limit=count + 1)
-            bars = _parse_rows(rows, pair, interval)
+            closed = _parse_rows(
+                rows,
+                pair,
+                interval,
+                keep=lambda open_time: is_closed(
+                    open_time,
+                    interval,
+                    local_now=local_now,
+                    exchange_now=exchange_now,
+                    settle=self._settle,
+                ),
+            )[-count:]
         except _Transient as exc:
             self._mark_not_started()
             raise exc.cause from exc
@@ -326,17 +381,6 @@ class BinanceLiveKlinesAdapter:
         except InfraError:
             self._fail()
             raise
-        closed = [
-            bar
-            for bar in bars
-            if is_closed(
-                bar.open_time,
-                interval,
-                local_now=local_now,
-                exchange_now=exchange_now,
-                settle=self._settle,
-            )
-        ][-count:]
         if closed:
             stream = (pair, interval)
             self._primed[stream] = max(closed[-1].open_time, self._primed.get(stream, _EPOCH))
@@ -670,22 +714,22 @@ class BinanceLiveKlinesAdapter:
         closed: list[Bar] = []
         for _ in range(_MAX_PAGES_PER_FETCH):
             rows = await self._fetch_rows(pair, interval, start_ms=start_ms, limit=_PAGE_LIMIT)
-            bars = _parse_rows(rows, pair, interval)
-            closed.extend(
-                bar
-                for bar in bars
-                if bar.open_time > cursor
-                and is_closed(
-                    bar.open_time,
+            bars = _parse_rows(
+                rows,
+                pair,
+                interval,
+                keep=lambda open_time: is_closed(
+                    open_time,
                     interval,
                     local_now=local_now,
                     exchange_now=exchange_now,
                     settle=self._settle,
-                )
+                ),
             )
-            if len(rows) < _PAGE_LIMIT or not bars:
+            closed.extend(bar for bar in bars if bar.open_time > cursor)
+            if len(rows) < _PAGE_LIMIT or not rows:
                 break
-            next_start_ms = _to_ms(bars[-1].open_time) + 1
+            next_start_ms = max(_to_ms(_row_times(row, interval)[1]) for row in rows) + 1
             if next_start_ms <= start_ms:
                 break
             start_ms = next_start_ms

@@ -1,0 +1,1 @@
+- With `HERMES_ENV=prod`, hermes no longer reads `.env.local` and refuses a relative `--config-dir`, so the working directory cannot choose a production config. `hermes preview --send` now runs only with `HERMES_ENV=dev`; an unset tier is refused (issue #783).

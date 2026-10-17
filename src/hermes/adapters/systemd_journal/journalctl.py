@@ -33,15 +33,18 @@ def _popen(argv: list[str]) -> subprocess.Popen[str]:
 
 @dataclass(frozen=True, slots=True)
 class JournalctlReader:
-    """Stream hermes.service's journal entries as JSON lines.
+    """Stream a hermes unit's journal entries as JSON lines (hermes.service by default).
 
     Attributes:
         executable: Path to journalctl; ``None`` looks it up on ``PATH``.
         spawn: Starts the process; the default wraps :class:`subprocess.Popen`.
+        unit: The unit whose journal is read; the System screen's service
+            detail reads the other hermes units (#717).
     """
 
     executable: str | None = None
     spawn: Callable[[list[str]], subprocess.Popen[str]] = field(default=_popen)
+    unit: str = _UNIT
 
     def argv(self, *, last: int, since: str | None, follow: bool) -> list[str]:
         """Return the journalctl command line.
@@ -58,7 +61,7 @@ class JournalctlReader:
         if exe is None:
             msg = "journalctl is not available here; run hermes logs on the VPS"
             raise JournalUnavailableError(msg)
-        argv = [exe, "--unit", _UNIT, "--output", "json", "--no-pager", "--lines", str(last)]
+        argv = [exe, "--unit", self.unit, "--output", "json", "--no-pager", "--lines", str(last)]
         if since is not None:
             argv += ["--since", since]
         if follow:
@@ -83,3 +86,5 @@ class JournalctlReader:
         finally:
             process.terminate()
             process.wait(timeout=5)
+            if process.stdout is not None:
+                process.stdout.close()

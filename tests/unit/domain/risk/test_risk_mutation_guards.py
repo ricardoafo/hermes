@@ -50,32 +50,36 @@ class TestSpreadSpikeMedianEdge:
 
 
 class TestCorrelationLockScan:
-    """RO-01 checks every stored pair, not just the first."""
+    """RO-01 checks every pair of open positions, not just the first."""
 
-    # SEV-1: a correlated entry must be blocked wherever it sits in the map (pre-reg §5.5)
-    def test_correlated_pair_after_an_unrelated_one_halts(self) -> None:
-        """An ETH/SOL entry first, then BTC/ETH at 0.9: a BTC candidate is still blocked."""
-        state = make_portfolio_state(correlations={(_ETH, _SOL): 0.95, (_BTC, _ETH): 0.9})
+    # SEV-1: a third correlated entry must be blocked wherever its cluster sits (pre-reg §5.5)
+    def test_cluster_after_an_unclustered_pair_halts(self) -> None:
+        """Three held pairs, the first combination uncorrelated: the later cluster still blocks."""
+        other = Pair(base=Currency.BTC, quote=Currency.USDC)
+        state = make_portfolio_state(
+            held_pairs=frozenset({other, _ETH, _SOL}),
+            correlations={
+                (other, _ETH): 0.1,
+                (other, _SOL): 0.1,
+                (_ETH, _SOL): 0.95,
+                (_BTC, _ETH): 0.9,
+                (_BTC, _SOL): 0.9,
+            },
+        )
         decision = CorrelationLock().evaluate(state, make_market_snapshot(candidate_pair=_BTC))
         assert decision.action is RiskAction.HALT
 
-    @pytest.mark.parametrize(
-        ("key", "candidate", "other"),
-        [((_BTC, _ETH), _BTC, _ETH), ((_BTC, _ETH), _ETH, _BTC)],
-    )
-    def test_reason_names_the_other_pair(
-        self, key: tuple[Pair, Pair], candidate: Pair, other: Pair
-    ) -> None:
-        """Whichever side the candidate is on, the reason names the position it clashes with.
-
-        The candidate is an equal but separate Pair object, as it is in production.
-        """
-        state = make_portfolio_state(correlations={key: 0.9})
-        equal_copy = Pair(base=candidate.base, quote=candidate.quote)
+    def test_equal_but_separate_candidate_is_matched(self) -> None:
+        """The candidate is an equal but separate Pair object, as it is in production."""
+        state = make_portfolio_state(
+            held_pairs=frozenset({_ETH, _SOL}),
+            correlations={(_ETH, _SOL): 0.9, (_BTC, _ETH): 0.9, (_BTC, _SOL): 0.9},
+        )
+        equal_copy = Pair(base=_BTC.base, quote=_BTC.quote)
         decision = CorrelationLock().evaluate(
             state, make_market_snapshot(candidate_pair=equal_copy)
         )
-        assert f"correlated with position {other}" in decision.reason
+        assert decision.action is RiskAction.HALT
 
 
 class TestDepegNearThePeg:

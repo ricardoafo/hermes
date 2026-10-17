@@ -14,7 +14,10 @@ Usage::
     release_notes.py --release <sha> --repo <owner/name> --format telegram
 
 ``markdown`` is the GitHub release body; ``telegram`` is the plain-text
-message the CD deploy job posts after a good deploy. Only the standard
+message the CD deploy job posts after a good deploy. The Telegram message
+leads with the version the release carries (``hermes v1.0.0-shadow.1
+(<sha12>)``, ADR-022 §4), read from ``pyproject.toml`` at the release and
+named by ``src/hermes/release_version.py``, loaded by path. Only the standard
 library and ``git`` are used, so it runs before ``uv sync``.
 
 Exit codes: 0 on success, 2 when ``git`` fails (unknown commit, no repo).
@@ -23,6 +26,7 @@ Exit codes: 0 on success, 2 when ``git`` fails (unknown commit, no repo).
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import re
 import subprocess
 import sys
@@ -36,6 +40,7 @@ TELEGRAM_MAX_ITEMS = 15
 SECTIONS = ("added", "changed", "deprecated", "removed", "fixed", "security")
 _FRAGMENT = re.compile(r"^changelog\.d/(?:\d+-|\+[a-z0-9._-]+\.)(?P<section>[a-z]+)\.md$")
 _PR_SUFFIX = re.compile(r"\(#(?P<pr>\d+)\)$")
+_PYPROJECT_VERSION = re.compile(r'^version = "(?P<v>[^"]+)"$', re.MULTILINE)
 
 
 @dataclass(frozen=True)
@@ -60,6 +65,7 @@ class Notes:
     release: str
     previous_tag: str | None
     changes: tuple[Change, ...]
+    version: str | None = None
 
 
 def _git(root: Path, *args: str) -> str:
@@ -122,7 +128,29 @@ def collect(root: Path, release: str) -> Notes:
         sha, _, subject = line.partition("\x1f")
         changes.append(Change(sha=sha, subject=subject, fragments=_fragments(root, sha)))
     full = _git(root, "rev-parse", f"{release}^{{commit}}").strip()
-    return Notes(release=full, previous_tag=tag, changes=tuple(changes))
+    return Notes(
+        release=full, previous_tag=tag, changes=tuple(changes), version=version_label(root, full)
+    )
+
+
+def version_label(root: Path, release: str) -> str | None:
+    """Return the version ``release`` carries as screens name it, or None if unreadable.
+
+    Reads ``pyproject.toml`` at ``release``, not the working tree, and names it
+    with the mapping in ``src/hermes/release_version.py``.
+    """
+    path = root / "src" / "hermes" / "release_version.py"
+    spec = importlib.util.spec_from_file_location("hermes_release_version", path)
+    if spec is None or spec.loader is None:
+        return None
+    try:
+        pyproject = _git(root, "show", f"{release}:pyproject.toml")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    except OSError, subprocess.CalledProcessError:
+        return None
+    match = _PYPROJECT_VERSION.search(pyproject)
+    return str(module.release_label(match["v"])) if match else None
 
 
 def _since(notes: Notes) -> str:
@@ -159,7 +187,8 @@ def render_markdown(notes: Notes, repo: str) -> str:
 def render_telegram(notes: Notes, repo: str) -> str:
     """Return the plain-text deploy message."""
     sha12 = notes.release[:12]
-    lines = [f"hermes {sha12} is live on hermes-01."]
+    name = f"{notes.version} ({sha12})" if notes.version else sha12
+    lines = [f"hermes {name} is live on hermes-01."]
     if not notes.changes:
         lines.append("Redeploy: no new commits since the previous deploy.")
     else:

@@ -1,0 +1,1 @@
+- `hermes certify` and `hermes shadow-start` now read the signed pre-registration from beside `--config-dir`, as serve does, so they work from an installed release on the VPS (issue #923).

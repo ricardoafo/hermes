@@ -17,6 +17,7 @@ Tests cover:
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -186,6 +187,23 @@ class TestKillTriggerEvaluatorIndividualTriggers:
 # ---------------------------------------------------------------------------
 
 
+class TestHeldShadowKill:
+    """A shadow kill serve recorded holds on every later evaluation (#796)."""
+
+    # SEV-1: S6 a recorded kill that a healthy snapshot clears would reopen entries (#796)
+    def test_a_held_kill_fires_on_an_otherwise_safe_state(
+        self, evaluator: KillTriggerEvaluator
+    ) -> None:
+        """``killed_by`` set fires under that rule even with every metric safe."""
+        decision = evaluator.evaluate(replace(_safe_state(), killed_by="sa9_repeat"))
+        assert (decision.triggered, decision.rule) == (True, "sa9_repeat")
+
+    def test_the_held_kill_wins_over_a_live_drawdown(self, evaluator: KillTriggerEvaluator) -> None:
+        """The held rule is reported, not the drawdown that would also fire."""
+        state = replace(_safe_state(max_drawdown=0.5), killed_by="shadow_sharpe")
+        assert evaluator.evaluate(state).rule == "shadow_sharpe"
+
+
 class TestKillTriggerEvaluatorPriority:
     """Kill triggers are evaluated in priority order; first match wins."""
 
@@ -246,3 +264,24 @@ class TestKillTriggerEvaluatorProperties:
             f"State below all thresholds (drawdown={drawdown:.3f}, days={days:.1f}, "
             f"sharpe={sharpe:.3f}) must not trigger kill. Got triggered=True."
         )
+
+
+@pytest.mark.parametrize(
+    ("overrides", "rule"),
+    [
+        ({"max_drawdown": 0.16}, "max_drawdown"),
+        ({"sa9_halt": True}, "sa9_halt"),
+        ({"days_since_equity_high": 91.0}, "recovery_days"),
+        ({"rolling_30d_sharpe": 0.1}, "rolling_sharpe"),
+    ],
+)
+def test_each_criterion_names_its_rule_id(
+    evaluator: KillTriggerEvaluator, overrides: dict[str, float | bool], rule: str
+) -> None:
+    """A fired criterion carries its stable rule id, which value-free records key on (#749)."""
+    assert evaluator.evaluate(_safe_state(**overrides)).rule == rule
+
+
+def test_no_kill_carries_no_rule_id(evaluator: KillTriggerEvaluator) -> None:
+    """An untriggered decision names no rule."""
+    assert evaluator.evaluate(_safe_state()).rule == ""

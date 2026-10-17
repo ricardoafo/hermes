@@ -18,11 +18,11 @@ Tiers are chosen by directory, not by marker. Status is `live` (a workflow or sc
 | Tier | Directory | What | Where it runs | Cadence | Status |
 | --- | --- | --- | --- | --- | --- |
 | Unit | `tests/unit/` | Hermetic: no network, no real clock. Includes hypothesis and syrupy tests | `ci.yml` job `ci-success`: `pytest tests/unit/ -n 4 --cov=src/hermes --cov-branch`, then `scripts/dev/coverage-check.py --bootstrap`. Merge queue: `scripts/dev/merge-gates.sh` gate `pytest` | Every PR; every merge-queue batch | live |
-| Integration | `tests/integration/` | Real adapters against local fakes; no network, no secrets | `ci.yml`: `pytest tests/integration/ -n 4`. Merge queue: same `pytest` gate as unit | Every PR; every merge-queue batch | live |
-| Contract | `tests/contract/` | Real HTTPS to third-party sandboxes; each test skips when its secret is absent | `scheduled.yml` job `contract`: `pytest tests/contract -m contract` | Daily 11:30 Madrid | live |
+| Integration | `tests/integration/` | Real adapters against local fakes; no network, no secrets | `ci.yml`: `pytest tests/integration/ -n 4`. Merge queue: same `pytest` gate as unit. `scheduled.yml` job `fresh-seeds`: 150 new seeds of each generated market path (#869) | Every PR; every merge-queue batch; fresh seeds daily 11:30 UTC | live |
+| Contract | `tests/contract/` | Real HTTPS to third-party sandboxes; each test skips when its secret is absent | `scheduled.yml` job `contract`: `pytest tests/contract -m contract` | Daily 11:30 UTC | live |
 | Smoke | `tests/smoke/` | Read-only checks on hermes-01 over SSH | `cd.yml` step "Smoke tests": `pytest tests/smoke -m smoke`. Exit 5 (nothing collected) fails the deploy | After each deploy | live |
-| Mutation | `tests/unit/domain/value_objects` (rerun by cosmic-ray) | cosmic-ray over `src/hermes/domain/value_objects`; scope is `module-path` in `cosmic-ray.toml` | `scheduled.yml` job `mutation` | Sundays 11:45 UTC; manual dispatch with `mutation` ticked | live; kill-rate floor (80%) advisory until #406 |
-| End-to-end | `tests/e2e/` | The real `hermes serve` composition root replays recorded Binance bars (`tests/fixtures/e2e/`); offline and keyless | `scheduled.yml` job `e2e`: `pytest tests/e2e -m e2e` | Sundays 11:45 UTC; every manual dispatch | live |
+| Mutation | `tests/unit/domain/value_objects`, `tests/unit/domain/lots` (rerun by cosmic-ray) | cosmic-ray over `src/hermes/domain/value_objects` and `src/hermes/domain/lots`; scope is `module-path` in `cosmic-ray.toml` | `scheduled.yml` job `mutation` | Sundays 11:45 UTC; manual dispatch with `mutation` ticked | live; kill-rate floor (80%) blocking since #406 |
+| End-to-end | `tests/e2e/` | The real `hermes serve` composition root replays recorded Binance bars (`tests/fixtures/e2e/`); offline and keyless | `ci.yml`: `pytest tests/e2e -m e2e`; the CD gate runs the same directory | PRs that touch the serve paths; every merge-queue batch that does; every deploy | live |
 
 A push to `main` skips the suite when the tree already passed on the PR head
 (`scripts/dev/main-tree-validated.sh`). Unit and integration therefore run on the merged tree in the merge queue,
@@ -35,6 +35,7 @@ These are not test tiers but they run next to them:
 | Gate | Where it runs |
 | --- | --- |
 | ruff format and check, `mypy --strict src/hermes`, `lint-imports`, pip-audit, radon, vulture, licenses, gitleaks, markdownlint, test-deletion guard | `ci.yml` (job `ci-success`, the only required check) |
+| The pre-commit guards over the whole tree (weak assertions, naive datetimes, domain trading mode, migration SQL, new modules without tests) and every script self-test; every pre-commit hook must be enforced in CI or listed as local-only with a reason (`scripts/dev/hook-coverage-check.py`) | `ci.yml` steps `guards` and `self-tests` (#840) |
 | ruff, mypy, `lint-imports`, markdownlint, gitleaks on the merged batch | merge queue (`scripts/dev/merge-gates.sh`) |
 | Semgrep over the whole tree | `scheduled.yml` job `semgrep`, daily 11:30 Madrid |
 
@@ -47,8 +48,8 @@ a test uses it. Registered markers are labels; the directory decides what runs, 
 - `smoke`: the CD job selects it with `-m smoke`.
 
 `unit`, `property`, `integration` and `slow` are used by some tests and are not used for selection. `e2e` marks
-the end-to-end tests; the scheduled job runs their directory with `-m e2e`.
-`chaos` and `mutation` are registered and used by no test today. Do not invent a new marker without registering it in
+the end-to-end tests; PR CI and the CD gate run their directory with `-m e2e`.
+`chaos` marks the fault-injection tests in `tests/integration/scenarios/test_chaos_*.py`; they run with the integration tier. `mutation` is registered and used by no test today. Do not invent a new marker without registering it in
 `pyproject.toml`.
 
 ## Rules per tier

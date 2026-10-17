@@ -32,12 +32,14 @@ import json
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import cast
+from typing import ClassVar, cast
 
 import pytest
 from rich.console import Console
 from syrupy.assertion import SnapshotAssertion
 from syrupy.extensions.image import SVGImageSnapshotExtension
+from syrupy.location import PyTestLocation
+from syrupy.types import SnapshotIndex
 from textual.pilot import Pilot
 
 from hermes.adapters.console import FixtureReadModel
@@ -56,6 +58,7 @@ from hermes.entrypoints.tui_logs import (
     trace_text,
 )
 from hermes.entrypoints.tui_query import FacetFilter, QueryBar, QueryInput
+from hermes.entrypoints.tui_settings import ThemeChoice
 from hermes.entrypoints.tui_theme import BASE
 
 _FROZEN = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
@@ -117,6 +120,7 @@ def _logs[T](
     live: bool = True,
     exports: Path | None = None,
     refresh_seconds: float = 3600,
+    theme: ThemeChoice | None = None,
 ) -> T:
     model: ConsoleReadModel = (
         cast("ConsoleReadModel", _LiveModel())
@@ -132,6 +136,7 @@ def _logs[T](
             motion=False,
             refresh_seconds=refresh_seconds,
             exports=exports,
+            theme=theme,
         )
         async with app.run_test(size=size) as pilot:
             await pilot.pause()
@@ -142,7 +147,7 @@ def _logs[T](
 
 
 def _status(app: HomeApp) -> str:
-    return app.query_one(QueryBar).status_text
+    return app.logs_view.query_one(QueryBar).status_text
 
 
 # ----------------------------------------------------------------------
@@ -282,7 +287,7 @@ def test_facet_counts_follow_the_query() -> None:
         await _press(pilot, ["slash"])
         await pilot.press(*"level>=warn")
         await pilot.pause()
-        return app.query_one(FacetFilter).counts_text
+        return app.logs_view.query_one(FacetFilter).counts_text
 
     assert _logs(probe) == ("level  warning 2 · error 1\nservice  engine 2 · bot 1\ncoin  ETH 1")
 
@@ -292,7 +297,7 @@ def test_tab_completes_a_field_in_the_query_line() -> None:
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[str, int]:
         await _press(pilot, ["slash", "l", "e", "v", "tab"])
-        return app.query_one(QueryInput).value, app.tab
+        return app.logs_view.query_one(QueryInput).value, app.tab
 
     assert _logs(probe) == ("level:", 7)
 
@@ -545,25 +550,56 @@ def test_logs_view_is_the_eighth_screen() -> None:
 # ----------------------------------------------------------------------
 
 
-def _svg(keys: Sequence[str], size: tuple[int, int]) -> str:
+class _NamedSVG(SVGImageSnapshotExtension):
+    """Store each snapshot under the name given to ``snapshot(name=...)`` alone."""
+
+    _file_extension: ClassVar[str] = "svg"
+
+    @classmethod
+    def get_snapshot_name(cls, *, test_location: PyTestLocation, index: SnapshotIndex = 0) -> str:
+        """Return the bare custom name, e.g. ``logs_list_neon_160x45``."""
+        if isinstance(index, str):
+            return index
+        return super().get_snapshot_name(test_location=test_location, index=index)
+
+
+_SIZES: tuple[tuple[int, int], ...] = ((80, 24), (120, 36), (160, 45), (240, 60))
+_THEMES: tuple[tuple[str, ThemeChoice], ...] = (
+    ("neon", ThemeChoice.NEON),
+    ("control", ThemeChoice.CONTROL),
+)
+_VIEWS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("list", ()),
+    ("pane", ("down", "enter")),
+    ("trace", ("down", "down", "down", "down", "t")),
+)
+
+
+def _svg(keys: Sequence[str], size: tuple[int, int], theme: ThemeChoice) -> str:
     async def probe(app: HomeApp, pilot: Pilot[None]) -> str:
         await _press(pilot, keys)
         return _repo_clean(app.export_screenshot())
 
-    return _logs(probe, size=size)
+    return _logs(probe, size=size, theme=theme)
 
 
-def test_svg_snapshot_logs_80x24(snapshot: SnapshotAssertion) -> None:
-    """The reviewed 80x24 Logs screen: histogram, query line, facets and the list."""
-    assert _svg([], (80, 24)) == snapshot(extension_class=SVGImageSnapshotExtension)
-
-
-def test_svg_snapshot_logs_pane_160x45(snapshot: SnapshotAssertion) -> None:
-    """The reviewed 160x45 Logs screen with the JSON DetailPane open beside the list."""
-    assert _svg(["down", "enter"], (160, 45)) == snapshot(extension_class=SVGImageSnapshotExtension)
-
-
-def test_svg_snapshot_trace_80x24(snapshot: SnapshotAssertion) -> None:
-    """The reviewed 80x24 trace DetailScreen for the 08:00 cycle."""
-    keys = ["down", "down", "down", "down", "t"]
-    assert _svg(keys, (80, 24)) == snapshot(extension_class=SVGImageSnapshotExtension)
+@pytest.mark.parametrize(
+    ("view", "keys", "theme_name", "theme", "size"),
+    [
+        pytest.param(view, keys, name, theme, size, id=f"logs_{view}_{name}_{size[0]}x{size[1]}")
+        for view, keys in _VIEWS
+        for name, theme in _THEMES
+        for size in _SIZES
+    ],
+)
+def test_logs_svg_snapshot(
+    snapshot: SnapshotAssertion,
+    view: str,
+    keys: tuple[str, ...],
+    theme_name: str,
+    theme: ThemeChoice,
+    size: tuple[int, int],
+) -> None:
+    """The reviewed picture of one Logs view (list, JSON pane, trace) in one theme and size."""
+    name = f"logs_{view}_{theme_name}_{size[0]}x{size[1]}"
+    assert _svg(keys, size, theme) == snapshot(extension_class=_NamedSVG, name=name)

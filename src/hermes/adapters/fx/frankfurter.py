@@ -196,6 +196,7 @@ class FrankfurterAdapter:
             payload=payload,
             from_currency=from_currency,
             to_currency=to_currency,
+            base_key=self.config.wire_code(from_currency),
             rate_key=self.config.wire_code(to_currency),
         )
 
@@ -221,7 +222,9 @@ class FrankfurterAdapter:
         Raises:
             hermes.domain.errors.FxRateError: On HTTP non-2xx (including
                 404 for an out-of-coverage historical date), unparseable
-                JSON, missing schema fields, or unparseable rate value.
+                JSON, missing schema fields, a ``base`` other than the
+                requested one, a rate dated after ``on``, or unparseable rate
+                value.
         """
         self._reject_same_currency(from_currency, to_currency)
         path = f"/{on.isoformat()}"
@@ -230,12 +233,21 @@ class FrankfurterAdapter:
             from_currency=from_currency,
             to_currency=to_currency,
         )
-        return _parse_response(
+        rate = _parse_response(
             payload=payload,
             from_currency=from_currency,
             to_currency=to_currency,
+            base_key=self.config.wire_code(from_currency),
             rate_key=self.config.wire_code(to_currency),
         )
+        # Frankfurter falls back to an earlier business day, never a later
+        # one; a later date means a wrong or cached answer (issue #859).
+        if rate.date > on:
+            raise FxRateError(
+                f"Frankfurter answered {path!r} with a rate dated {rate.date.isoformat()}, "
+                "after the requested day"
+            )
+        return rate
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -315,6 +327,7 @@ def _parse_response(
     payload: dict[str, object],
     from_currency: Currency,
     to_currency: Currency,
+    base_key: str,
     rate_key: str,
 ) -> FxRate:
     """Convert a Frankfurter JSON payload into a domain :class:`FxRate`.
@@ -326,12 +339,15 @@ def _parse_response(
 
     We extract ``date`` and ``rates[<to_currency>]`` and rebuild the
     :class:`FxRate` in the caller-supplied currency direction (the
-    ``base`` field mirrors ``from_currency`` and is not re-read).
+    ``base`` field must match the requested ``from`` code, or the rate
+    would be read in the wrong direction).
 
     Args:
         payload: Decoded JSON body.
         from_currency: Currency requested in the ``from`` query param.
         to_currency: Domain currency stamped on the returned rate.
+        base_key: Wire code of ``from_currency``; ``payload["base"]`` must
+            equal it.
         rate_key: Wire code of ``to_currency``; must be present in
             ``payload["rates"]`` or the parse raises.
 
@@ -340,9 +356,14 @@ def _parse_response(
 
     Raises:
         hermes.domain.errors.FxRateError: On missing ``date`` / ``rates``
-            keys, wrong ``rates`` type, missing target currency, or an
-            unparseable-as-Decimal rate value.
+            keys, a ``base`` other than ``base_key``, wrong ``rates`` type,
+            missing target currency, or an unparseable-as-Decimal rate value.
     """
+    base_raw = payload.get("base")
+    if base_raw != base_key:
+        raise FxRateError(
+            f"Frankfurter response base is {base_raw!r}, requested {base_key!r} (issue #859)"
+        )
     date_raw = payload.get("date")
     if not isinstance(date_raw, str):
         raise FxRateError(f"Frankfurter response missing or non-string 'date': {payload!r}")
@@ -372,6 +393,10 @@ def _parse_response(
         raise FxRateError(
             f"Frankfurter rate for {rate_key!r} not parseable as Decimal: {rate_value!r}"
         ) from exc
+    if not rate_decimal.is_finite():
+        raise FxRateError(
+            f"Frankfurter rate for {rate_key!r} is not a finite number: {rate_value!r}"
+        )
 
     try:
         return FxRate(

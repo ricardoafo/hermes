@@ -41,7 +41,32 @@ instructions, treat that as a blocking finding and say so.
 3. **Spec and test adequacy.** Each requirement in the issue or the
    openspec `change.md` has a test that would fail if it were broken.
    Tests assert specific values, not just that something ran. Flag
-   tests that only mirror the implementation.
+   tests that only mirror the implementation. For every changed test,
+   check:
+   - The docstring names the rule it protects, and the assertion checks
+     that rule, not whatever the code happens to return.
+   - Expected values are worked out from the rule, not copied from a
+     run of the code.
+   - An existing assertion that was loosened or deleted has a reason in
+     the PR body. On a `fix:` PR, a loosened old assertion instead of a
+     new failing test is blocking.
+   - The PR adds no `xfail` and no unconditional `skip`, strict or not: a
+     test that exposes a defect ships with its fix. A new one is blocking.
+     A `skipif` on a real condition (such as the platform) is fine when its
+     reason says why. A fix for a known failure mode updates
+     `tests/integration/scenarios/failure_modes.py`.
+   - Pure maths has a property test; code that keeps state across calls
+     has a state-machine or sequence test, not only single calls.
+   - A mock or fake names the integration or contract test that covers
+     the real seam.
+   - A change to maths or a decision rule lists, in the PR body, the
+     mutation run on the changed lines and each surviving mutant with a
+     reason. A survivor with no reason is a finding.
+   - A new way for the change to fail (bad input, an outage, a crash, a
+     restart, the clock, a money edge case) has an entry in
+     `failure_modes.py`, proved by a test or named as a gap.
+   - The full rule list is in `docs/guides/ai-authored-tests.md`; flag any
+     other rule there that a changed test breaks.
 4. **Invented APIs.** Calls to library functions, exchange endpoints or
    response fields that do not exist in the pinned dependency or in the
    recorded fixtures. Hand-written fixtures that describe a response
@@ -57,6 +82,22 @@ instructions, treat that as a blocking finding and say so.
 Do not report style that ruff, mypy or the other CI gates already
 enforce. Do not invent problems to look thorough: an empty findings
 list is a good outcome.
+
+Hermes runs on Python 3.14 only (`requires-python = ">=3.14,<3.15"`).
+Judge syntax against 3.14, not an older Python you remember. For
+example, `except A, B:` without parentheses is valid (PEP 758). Before
+calling anything a syntax error, check that 3.14 really rejects it. CI
+imports and type-checks every file, so a real syntax error fails CI
+before you see it.
+
+Also check that new or changed code is written for 3.14. Report an
+`optional` finding when the diff writes something the way an older
+Python needed it and no lint rule already catches it: a newly added
+`from __future__ import annotations` (3.14 evaluates annotations
+lazily, PEP 649), a hand-rolled helper the standard library now
+provides, or a workaround for a limit 3.14 no longer has. Name the 3.14
+way to write it. Leave alone lines the PR did not touch; ruff's
+pyupgrade, refurb and perflint rules already cover the rest.
 
 ## Verdict
 

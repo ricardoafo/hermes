@@ -8,6 +8,8 @@ Subcommands:
   show as sealed until certification. A scheduled routine runs this.
 - ``review ID``: score a due decision with its actual outcome and evidence.
 - ``list``: print every entry; ``--json`` prints one JSON document instead.
+- ``repair``: drop a torn last line a power loss left (issue #891). Without
+  ``--confirm REPAIR`` it only says what it would drop.
 
 ``due --json`` prints ``{"reviewable": [...], "sealed": [...]}``; ``list --json``
 prints ``{"entries": [...]}``. ``-h``/``--help`` works on ``hermes journal``
@@ -26,11 +28,11 @@ from __future__ import annotations
 import argparse
 import json
 from dataclasses import asdict
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Final, TextIO
 
-import ulid
+from ulid import ULID
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
 from hermes.adapters.journal.jsonl_store import JsonlDecisionJournal
@@ -48,7 +50,9 @@ from hermes.infrastructure.time import now_utc
 from hermes.ports.certification import CertificationStoreError
 from hermes.ports.decision_journal import JournalIntegrityError
 
-__all__ = ["main"]
+__all__ = ["REPAIR_CONFIRM_WORD", "main"]
+
+REPAIR_CONFIRM_WORD: Final = "REPAIR"
 
 _UNSEALED = frozenset(
     {
@@ -96,6 +100,9 @@ def _build() -> tuple[argparse.ArgumentParser, dict[str, argparse.ArgumentParser
     review.add_argument("--outcome", required=True)
     review.add_argument("--score", choices=[s.value for s in Score], required=True)
     review.add_argument("--evidence", action="append", required=True)
+
+    repair = sub.add_parser("repair", add_help=False, epilog=_EXIT_CODES)
+    repair.add_argument("--confirm", default="")
     return parser, dict(sub.choices)
 
 
@@ -150,10 +157,14 @@ def _dispatch(
     args: argparse.Namespace, journal: JsonlDecisionJournal, certified: bool, stream: TextIO
 ) -> int:
     now = now_utc()
+    if args.command == "repair":
+        return _repair(
+            journal, confirmed=args.confirm == REPAIR_CONFIRM_WORD, now=now, stream=stream
+        )
     if args.command == "add":
         try:
             decision = Decision(
-                entry_id=str(ulid.new()),
+                entry_id=str(ULID()),
                 recorded_at=now,
                 decision=args.decision,
                 options=tuple(args.options),
@@ -171,7 +182,7 @@ def _dispatch(
     elif args.command == "review":
         review = record_review(
             journal,
-            entry_id=str(ulid.new()),
+            entry_id=str(ULID()),
             decision_id=args.decision_id,
             actual_outcome=args.outcome,
             score=Score(args.score),
@@ -189,12 +200,13 @@ def _dispatch(
             }
             stream.write(json.dumps(payload, default=_json_default) + "\n")
             return 0
-        for d in report.reviewable:
-            stream.write(f"DUE     {d.entry_id}  {d.review_on}  {d.decision}\n")
-        for d in report.sealed:
-            stream.write(
-                f"SEALED  {d.entry_id}  {d.review_on}  {d.decision} (until certification)\n"
-            )
+        stream.writelines(
+            f"DUE     {d.entry_id}  {d.review_on}  {d.decision}\n" for d in report.reviewable
+        )
+        stream.writelines(
+            f"SEALED  {d.entry_id}  {d.review_on}  {d.decision} (until certification)\n"
+            for d in report.sealed
+        )
         if not report.reviewable and not report.sealed:
             stream.write("Nothing due.\n")
     elif args.as_json:
@@ -203,8 +215,25 @@ def _dispatch(
             + "\n"
         )
     else:
-        for entry in journal.entries():
-            stream.write(_line(entry) + "\n")
+        stream.writelines(_line(entry) + "\n" for entry in journal.entries())
+    return 0
+
+
+def _repair(
+    journal: JsonlDecisionJournal, *, confirmed: bool, now: datetime, stream: TextIO
+) -> int:
+    torn = journal.torn_line()
+    if torn is None:
+        stream.write("Nothing to repair: the last line is whole.\n")
+        return 0
+    what = f"line {torn.number} ({torn.size} bytes, sha256 {torn.sha256})"
+    if not confirmed:
+        raise JournalError(
+            f"the last line is torn: {what}. With --confirm {REPAIR_CONFIRM_WORD} it is dropped "
+            "and the drop is recorded in the journal"
+        )
+    journal.repair(repaired_at=now)
+    stream.write(f"REPAIRED: dropped {what}; the drop is recorded in the journal\n")
     return 0
 
 

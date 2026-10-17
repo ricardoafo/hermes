@@ -267,12 +267,14 @@ run_check "lockfile hash integrity"           ci_check lockfile
 run_check "CODEOWNERS syntax"                 ci_check codeowners
 run_check "merge-decisions tests (node)"      ci_check merge-decisions
 run_check "markdownlint (full tree)"          ci_check markdown
+run_check "workflows (actionlint + zizmor)"   ci_check workflows
 run_slow_check "deps (pip-audit)"             ci_check deps
 run_slow_check "complexity (radon)"           ci_check complexity
 run_slow_check "deadcode (vulture)"           ci_check deadcode
 run_slow_check "licenses (pip-licenses)"      ci_check licenses
 run_slow_check "unit tests"                   test_tier unit
 run_slow_check "integration tests"            test_tier integration
+run_slow_check "e2e tests"                    ci_check e2e
 if [[ "$FULL_TESTS" == "1" && "${SKIP_PYTEST:-0}" != "1" ]]; then
     run_slow_check "coverage floor (per-package)" ci_check coverage-floor
 fi
@@ -280,6 +282,8 @@ fi
 # 11. Guides index builds. The index itself is rebuilt on main after
 # merge, never in a PR.
 run_check "Guides index builds"               ci_check guides-index
+run_check "pre-commit guards (whole tree)"    ci_check guards
+run_check "script self-tests"                 ci_check self-tests
 
 # 12. CHANGELOG check — infers PR title's conventional-commit type from
 #     the LATEST commit on the branch (matches what the eventual squash

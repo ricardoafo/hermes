@@ -18,6 +18,7 @@ import io
 import json
 import os
 import re
+import sqlite3
 import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -27,9 +28,14 @@ import pytest
 from rich.console import Console
 from syrupy.assertion import SnapshotAssertion
 
+from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.adapters.ledger.status_reader import SqliteStatusReader
 from hermes.application.status import UnitState, build_report
+from hermes.domain.events.risk_halt_recorded import HaltKind, RiskHaltRecorded
 from hermes.domain.strategy.signal import SignalKind
+from hermes.domain.value_objects.currency import Currency
+from hermes.domain.value_objects.pair import Pair
+from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.entrypoints import cli
 from hermes.entrypoints import status as status_module
 from hermes.entrypoints.status_view import render_status
@@ -39,6 +45,7 @@ from tests.support.status_ledger import (
     LAST_4H,
     NOW,
     PAIRS,
+    fill,
     signal,
     write_ledger,
 )
@@ -47,7 +54,11 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _CONFIG = _PROJECT_ROOT / "config"
 _NO_LINK = _PROJECT_ROOT / "no-such-release-link"
 _FLIPPED_AT = datetime(2026, 10, 3, 12, 22, tzinfo=UTC)
-_PNL_WORDS = re.compile(r"p&l|pnl|profit|loss|equity|sharpe|drawdown|win rate|return", re.I)
+# Fixed so the snapshots do not change at every release cut.
+_PACKAGE_VERSION = "1.0.0a1"
+_PNL_WORDS = re.compile(
+    r"p&l|pnl|profit|loss|equity|sharpe|drawdown|win rate|return", re.IGNORECASE
+)
 
 
 def _run(
@@ -56,6 +67,7 @@ def _run(
     now: Any = NOW,
     unit: UnitState = UnitState.RUNNING,
     release_link: Path | None = None,
+    package_version: str = _PACKAGE_VERSION,
 ) -> tuple[int, str]:
     """Run ``hermes status`` with a fixed clock and unit state; return code and output."""
     out = io.StringIO()
@@ -66,6 +78,7 @@ def _run(
         unit_state=lambda: unit,
         bot_state=lambda: UnitState.UNKNOWN,
         release_link=release_link or _NO_LINK,
+        package_version=package_version,
     )
     return code, out.getvalue()
 
@@ -80,6 +93,7 @@ def _run_split(args: list[str]) -> tuple[int, str, str]:
         now=NOW,
         unit_state=lambda: UnitState.RUNNING,
         release_link=_NO_LINK,
+        package_version=_PACKAGE_VERSION,
     )
     return code, out.getvalue(), err.getvalue()
 
@@ -91,8 +105,10 @@ def _rstrip_lines(text: str) -> str:
 
 def _ledger(tmp_path: Path, **kwargs: Any) -> Path:
     """Write the fixture ledger with one open ETH entry."""
-    signals = (signal(ETH, SignalKind.ENTRY, LAST_4H - timedelta(hours=4)),)
-    return write_ledger(tmp_path / "hermes.sqlite3", signals=signals, **kwargs)
+    entry = signal(ETH, SignalKind.ENTRY, LAST_4H - timedelta(hours=4))
+    return write_ledger(
+        tmp_path / "hermes.sqlite3", signals=(entry,), fills=(fill(entry),), **kwargs
+    )
 
 
 def test_current_ledger_exits_zero_and_leads_with_all_good(tmp_path: Path) -> None:
@@ -100,7 +116,7 @@ def test_current_ledger_exits_zero_and_leads_with_all_good(tmp_path: Path) -> No
     code, out = _run(["--db", str(_ledger(tmp_path))])
 
     assert code == 0
-    assert out.splitlines()[3] == "● All good"
+    assert out.splitlines()[4] == "● All good"
 
 
 def test_overdue_ledger_exits_one_and_says_late(tmp_path: Path) -> None:
@@ -238,6 +254,27 @@ def test_json_carries_release_and_live_since_in_utc(tmp_path: Path) -> None:
     assert (data["release"], data["live_since"]) == ("abc123def456", "2026-10-03T12:22:00+00:00")
 
 
+def test_text_header_names_the_running_version_like_its_tag(tmp_path: Path) -> None:
+    """Package 1.0.0a1 shows as `version: v1.0.0-shadow.1`, the tag CD gives it (ADR-022 §4)."""
+    _, out = _run(["--db", str(_ledger(tmp_path))], package_version="1.0.0a2")
+
+    assert "version: v1.0.0-shadow.2" in out.splitlines()
+
+
+def test_json_carries_the_running_version(tmp_path: Path) -> None:
+    """--json names the version the same way the text view does."""
+    _, out = _run(["--db", str(_ledger(tmp_path)), "--json"], package_version="1.0.0")
+
+    assert json.loads(out)["version"] == "v1.0.0"
+
+
+def test_a_development_version_is_shown_as_it_is(tmp_path: Path) -> None:
+    """A version no cut wrote, such as a local build, still prints and never fails status."""
+    code, out = _run(["--db", str(_ledger(tmp_path))], package_version="1.0.1.dev4")
+
+    assert (code, "version: 1.0.1.dev4" in out.splitlines()) == (0, True)
+
+
 def test_text_without_a_release_link_says_unknown_and_exits_unchanged(tmp_path: Path) -> None:
     """No link: `release: unknown`, no live-since, and the verdict exit code stays 0."""
     code, out = _run(["--db", str(_ledger(tmp_path))])
@@ -358,3 +395,70 @@ def test_demo_status_with_an_unknown_scenario_exits_two() -> None:
 
     assert (rc, out.getvalue()) == (2, "")
     assert err.getvalue().startswith("ERROR:")
+
+
+def _ledger_with_kill(tmp_path: Path, *, strategy_wide: bool = False) -> Path:
+    """Write the fixture ledger plus one kill an hour before the 16:00 bar.
+
+    The kill is on BTC, or with ``strategy_wide`` a daily shadow-check kill
+    without a pair (#796).
+    """
+    path = _ledger(tmp_path)
+    connection = sqlite3.connect(path)
+    SqliteLedger(connection).append_event(
+        RiskHaltRecorded(
+            occurred_at=LAST_4H - timedelta(hours=1),
+            correlation_id="01JABCDEFGHJKMNPQRSTVWXYZ0",
+            strategy_id=StrategyId("swing-donchian-4h"),
+            pair=None if strategy_wide else Pair(base=Currency.BTC, quote=Currency.USDT),
+            kind=HaltKind.KILL,
+            rule="sa9_repeat" if strategy_wide else "max_drawdown",
+            reason="sa9_rule_fired_repeatedly" if strategy_wide else "drawdown_kill_threshold",
+            pre_registration_ref="§10",
+        )
+    )
+    connection.close()
+    return path
+
+
+def test_text_shows_the_halt_count_and_the_last_halt(tmp_path: Path) -> None:
+    """The halts line names the 24-hour count and the newest halt's kind, pair and rule (#749)."""
+    code, out = _run(["--db", str(_ledger_with_kill(tmp_path))])
+
+    lines = out.splitlines()
+    at = next(i for i, text in enumerate(lines) if text.startswith("halts"))
+    assert (code, lines[at], lines[at + 1]) == (
+        0,
+        "halts      24h: 1   30d last: kill BTC/USDT max_drawdown",
+        "  2026-10-03 15:00 UTC (Sat 17:00 Madrid)  drawdown_kill_threshold (pre-reg §10)",
+    )
+
+
+def test_json_carries_the_last_halt(tmp_path: Path) -> None:
+    """--json has the same halt facts as the text view."""
+    _, out = _run(["--db", str(_ledger_with_kill(tmp_path)), "--json"])
+
+    assert json.loads(out)["halts"] == {
+        "last_24h": 1,
+        "last": {
+            "kind": "kill",
+            "pair": "BTC/USDT",
+            "rule": "max_drawdown",
+            "reason": "drawdown_kill_threshold",
+            "pre_registration_ref": "§10",
+            "occurred_at": "2026-10-03T15:00:00+00:00",
+        },
+    }
+
+
+def test_a_strategy_wide_kill_reads_all_pairs(tmp_path: Path) -> None:
+    """A daily shadow-check kill has no pair: text says all pairs, JSON a null pair (#796)."""
+    path = _ledger_with_kill(tmp_path, strategy_wide=True)
+    _, text = _run(["--db", str(path)])
+    _, out = _run(["--db", str(path), "--json"])
+
+    line = next(t for t in text.splitlines() if t.startswith("halts"))
+    assert (line, json.loads(out)["halts"]["last"]["pair"]) == (
+        "halts      24h: 1   30d last: kill all pairs sa9_repeat",
+        None,
+    )

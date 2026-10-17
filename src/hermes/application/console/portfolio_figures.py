@@ -242,7 +242,7 @@ def build_portfolio(facts: PortfolioFacts, range_: PortfolioRange) -> PortfolioS
             quote_currency=facts.quote or _DEFAULT_QUOTE,
             starting_capital_rate_date=seed.rate_date,
         )
-    samples = _samples(facts, start)
+    times, samples = _samples(facts, start)
     change = samples[-1] - samples[0]
     change_pct = change * _HUNDRED / samples[0] if samples[0] != _ZERO else _ZERO
     local_today = facts.as_of.astimezone(facts.tz).date()
@@ -270,18 +270,22 @@ def build_portfolio(facts: PortfolioFacts, range_: PortfolioRange) -> PortfolioS
         quote_currency=facts.quote or _DEFAULT_QUOTE,
         eur_rate_date=facts.eur_rate_date,
         starting_capital_rate_date=seed.rate_date,
+        sparkline_at=times,
+        range_from=start,
     )
 
 
-def _samples(facts: PortfolioFacts, start: datetime) -> list[Decimal]:
-    """Return the equity at the range start, then at every change inside the range."""
+def _samples(facts: PortfolioFacts, start: datetime) -> tuple[tuple[datetime, ...], list[Decimal]]:
+    """Return when each sample took effect and the samples.
+
+    The first sample is the equity at the range start, or at the first change
+    when the history starts inside the range; then one per change.
+    """
     times = sorted({p.at for book in facts.books for p in book.points})
     inside = [t for t in times if start < t <= facts.as_of]
-    if any(t <= start for t in times) or not inside:
-        first = equity_at(facts.books, start)
-    else:
-        first = equity_at(facts.books, inside.pop(0))
-    return [first, *(equity_at(facts.books, t) for t in inside)]
+    covered = any(t <= start for t in times) or not inside
+    at = (start, *inside) if covered else tuple(inside)
+    return at, [equity_at(facts.books, t) for t in at]
 
 
 def _column(pieces: Iterable[ClosedPiece]) -> WaterfallColumn:

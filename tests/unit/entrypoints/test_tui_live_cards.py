@@ -13,6 +13,7 @@ Invariants:
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 
 from hermes.adapters.console import FixtureReadModel
 from hermes.application.console import (
@@ -23,10 +24,13 @@ from hermes.application.console import (
     PortfolioSummary,
     PositionDetail,
     PositionRow,
+    RuleCheck,
     ShadowTest,
     ViewNotAvailableError,
     WatchedPair,
 )
+from hermes.application.console.shadow_screen import ShadowEvidence
+from hermes.application.console.views import ConsoleBrief
 from hermes.domain.errors import LedgerError
 from hermes.entrypoints.tui import HomeApp
 
@@ -66,6 +70,9 @@ class _Failing:
     def activity(self, *, include_quiet: bool = False) -> tuple[ActivityDay, ...]:
         return self._base.activity(include_quiet=include_quiet)
 
+    def rule_checks(self) -> tuple[RuleCheck, ...]:
+        return self._base.rule_checks()
+
     def shadow_test(self) -> ShadowTest:
         self._raise("shadow")
         return self._base.shadow_test()
@@ -73,6 +80,15 @@ class _Failing:
     def market_watch(self) -> tuple[WatchedPair, ...]:
         self._raise("market")
         return self._base.market_watch()
+
+    def shadow_evidence(self, since: datetime | None) -> ShadowEvidence:
+        # The 90-day line reads its day 0 through this (issue #718).
+        self._raise("shadow")
+        return self._base.shadow_evidence(since)
+
+    def briefs(self) -> tuple[ConsoleBrief, ...]:
+        self._raise("briefs")
+        return self._base.briefs()
 
 
 def _model(**errors: Exception) -> ConsoleReadModel:
@@ -128,3 +144,41 @@ def test_failing_market_watch_is_one_line_and_positions_stand() -> None:
         "Market watch · could not read the ledger: disk I/O error",
         True,
     )
+
+
+def test_a_key_shows_and_folds_the_check_lines_in_the_activity_card() -> None:
+    """INV: A toggles the quiet 4h check lines; they are folded until asked for (#653)."""
+    from datetime import UTC, date, datetime  # noqa: PLC0415 - local to this test
+
+    from hermes.application.console import ActivityKind  # noqa: PLC0415
+    from hermes.application.console.views import ActivityItem  # noqa: PLC0415
+
+    check = ActivityItem(
+        at=datetime(2026, 10, 3, 12, tzinfo=UTC),
+        kind=ActivityKind.BAR,
+        text="checked 3 coins · no signal",
+        count=3,
+    )
+
+    class _Quiet(_Failing):
+        def activity(self, *, include_quiet: bool = False) -> tuple[ActivityDay, ...]:
+            return (ActivityDay(day=date(2026, 10, 3), items=(check,) if include_quiet else ()),)
+
+    async def drive() -> tuple[str, str, str]:
+        app = HomeApp(_Quiet())
+        async with app.run_test(size=(80, 30)) as pilot:
+            await pilot.pause()
+            folded = app.plain_text("activity")
+            await pilot.press("a")
+            await pilot.pause()
+            shown = app.plain_text("activity")
+            await pilot.press("a")
+            await pilot.pause()
+            return folded, shown, app.plain_text("activity")
+
+    folded, shown, folded_again = asyncio.run(drive())
+    assert ("checked 3 coins · no signal" in folded, "checked 3 coins · no signal" in shown) == (
+        False,
+        True,
+    )
+    assert "checked 3 coins" not in folded_again

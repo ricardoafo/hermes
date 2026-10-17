@@ -55,8 +55,11 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Sub-agent worktree scratch (never commit)
-.claude/
+# Sub-agent worktree scratch and personal settings (never commit). The shared
+# skills and hooks are kept (#847).
+.claude/*
+!.claude/skills/
+!.claude/settings.json
 
 # Real taxpayer profile must never be committed (ADR-016 decision 12).
 # Default location is ~/.config/hermes/taxpayer.yaml, outside the repo; these
@@ -64,3 +67,7 @@ Thumbs.db
 taxpayer.yaml
 **/taxpayer.yaml
 .config/hermes/
+
+# Advisory lock files next to the ledger and the hash-chained logs (#855)
+*.serve.lock
+*.jsonl.lock

@@ -21,21 +21,21 @@
 # Runner binary version is PINNED. Self-updates during a job break the
 # --ephemeral lifecycle; bump this manually + rebuild the image.
 
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
-ARG RUNNER_VERSION=2.337.0
+ARG RUNNER_VERSION=2.338.0
 ARG RUNNER_ARCH=x64
 ARG PYTHON_VERSION=3.14
 ARG UV_VERSION=0.12.5
 ARG NODE_MAJOR=24
-ARG MARKDOWNLINT_VERSION=0.23.2
+ARG MARKDOWNLINT_VERSION=0.23.3
 ARG GITLEAKS_VERSION=8.30.1
 ARG GITLEAKS_SHA256=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
 # The AI review action (ai-review.yml) pins these two; bump them together
 # with the action SHA or the job falls back to downloading its own.
 ARG BUN_VERSION=1.3.14
 ARG CLAUDE_CODE_VERSION=2.1.284
-ARG DOCKER_CE_CLI_VERSION=5:27.4.1-1~ubuntu.24.04~noble
+ARG DOCKER_CE_CLI_VERSION=5:29.9.1-1~ubuntu.26.04~resolute
 ARG DEBIAN_FRONTEND=noninteractive
 
 # ────────────────────────────────────────────────────────────────

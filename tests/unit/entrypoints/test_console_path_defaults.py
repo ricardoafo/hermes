@@ -83,7 +83,7 @@ def test_positions_reads_the_ledger_named_by_the_env(
     """Invariant: bare `hermes positions` opens the ledger at HERMES_DB_PATH."""
     opened: list[Path] = []
 
-    def fake_open(path: Path) -> object:
+    def fake_open(path: Path, **_kwargs: object) -> object:
         opened.append(path)
         raise FileNotFoundError(path)
 

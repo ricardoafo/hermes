@@ -9,18 +9,27 @@ Invariants protected here (openspec/changes/358-parity-check/change.md):
 - a signal on one side only, or executed on one side and declined on the
   other, is a mismatch;
 - the strategy is seeded with the bars before the day, never with the day's;
+- as in serve, a held position is seeded from its entry past any exit declined
+  after it, and an exit declined on the day returns the strategy to that
+  entry (#706);
 - a day with no stored bars, or too little history to warm up, is a data
-  error and not a parity verdict.
+  error and not a parity verdict;
+- the replay's RO-01 reads the daily closes before the day, so a third
+  correlated entry serve refused is refused in the replay too (#514).
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
-from dataclasses import replace
+from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 
+from hermes.adapters.fills.orderbook_walk import OrderbookWalkFillModel
+from hermes.application.execution.kernel import FillKernel
+from hermes.application.order_router.risk_engine import RiskEngine
 from hermes.application.parity.check import HistoryFetcher, ParityDataError, check_day, day_window
 from hermes.application.parity.decisions import ParityReport
 from hermes.domain.events.signal_emitted import SignalEmitted
@@ -29,10 +38,23 @@ from hermes.domain.fees.fee_schedule import FeeSchedule
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.bar_schedule import order_for_delivery
 from hermes.domain.market_data.kline import KlineInterval
-from hermes.domain.strategy.signal import SignalKind
+from hermes.domain.risk.correlation_lock import CorrelationLock
+from hermes.domain.risk.state import PortfolioState
+from hermes.domain.strategy.signal import OpenPosition, SignalKind, StrategySignal
+from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
+from hermes.domain.value_objects.price import Price
+from hermes.domain.value_objects.quantity import Quantity
 from hermes.ports.strategy import StrategyPort
-from tests.support.fill_kernel import BTC_USDT, STRATEGY, fees, kernel, seed
+from tests.support.fill_kernel import (
+    BTC_USDT,
+    SIZING,
+    STRATEGY,
+    fees,
+    kernel,
+    kill_evaluator,
+    seed,
+)
 from tests.support.parity import (
     D1,
     DAY_END,
@@ -244,6 +266,59 @@ def test_a_position_serve_held_at_the_start_of_the_day_is_restored() -> None:
     assert report.matched == 1
 
 
+def _exit_maker(exit_at: datetime, made: list[ScriptedExit]) -> Callable[[], ScriptedExit]:
+    def make() -> ScriptedExit:
+        strategy = ScriptedExit(exit_at)
+        made.append(strategy)
+        return strategy
+
+    return make
+
+
+def test_a_held_position_is_seeded_from_its_entry_past_a_declined_exit() -> None:
+    """Serve declined an exit before the day; the coin is held, so the entry is seeded (#706)."""
+    entry_at = DAY_START - timedelta(hours=8)
+    declined_at = DAY_START - timedelta(hours=4)
+    exit_at = _FIRST_FOUR_HOUR
+    source = _source(
+        signals=[
+            signal_event(entry_at),
+            signal_event(declined_at, SignalKind.EXIT),
+            signal_event(exit_at, SignalKind.EXIT),
+        ],
+        fills=[trade_event(entry_at + _SEC), trade_event(exit_at + _SEC, TradeSide.SELL)],
+    )
+    made: list[ScriptedExit] = []
+
+    report = _check(source, _exit_maker(exit_at, made))
+
+    assert made[0].seeded_position == OpenPosition(
+        entry_time=entry_at, entry_price=Decimal("2618.45")
+    )
+    assert (report.in_parity, report.matched) == (True, 1)
+
+
+def test_an_exit_declined_on_the_day_returns_the_strategy_to_its_entry() -> None:
+    """A no-book exit leaves the coin held, so the strategy gets its entry back (#706)."""
+    entry_at = DAY_START - timedelta(hours=4)
+    exit_at = _FIRST_FOUR_HOUR
+    bars = [
+        replace(b, volume=Decimal("0")) if b.interval is H4 and b.close_time == exit_at else b
+        for b in day_bars()
+    ]
+    source = FakeSource(
+        bars=[*warmup_bars(), *bars],
+        signals=[signal_event(entry_at), signal_event(exit_at, SignalKind.EXIT)],
+        fills=[trade_event(entry_at + _SEC)],
+    )
+    made: list[ScriptedExit] = []
+
+    report = _check(source, _exit_maker(exit_at, made))
+
+    assert made[0].restored == [OpenPosition(entry_time=entry_at, entry_price=Decimal("2618.45"))]
+    assert (report.in_parity, report.matched) == (True, 1)
+
+
 def test_a_day_without_stored_bars_is_a_data_error() -> None:
     """Nothing closed on the day in the ledger: no verdict, not a parity pass."""
     source = FakeSource(bars=warmup_bars())
@@ -338,3 +413,98 @@ def test_still_short_after_the_exchange_read_is_a_data_error() -> None:
 
     with pytest.raises(ParityDataError, match=r"BTC/USDT 4h: 0 bars before 2026-10-03"):
         _check(_only_the_day(), lambda: ScriptedStrategy(frozenset()), history=fetch)
+
+
+_ETH_USDT = Pair(base=Currency.ETH, quote=Currency.USDT)
+_SOL_USDT = Pair(base=Currency.SOL, quote=Currency.USDT)
+_PAIRS = (BTC_USDT, _ETH_USDT, _SOL_USDT)
+
+
+@dataclass
+class _BtcEntry:
+    """Enters BTC/USDT on the first 4h close of the day; the other pairs never signal."""
+
+    def on_bar(self, bar: Bar, portfolio_state: PortfolioState) -> StrategySignal | None:
+        """Emit the BTC entry on the scripted bar."""
+        if bar.pair != BTC_USDT:
+            return None
+        return ScriptedStrategy(frozenset({_FIRST_FOUR_HOUR})).on_bar(bar, portfolio_state)
+
+    def seed(self, bars: Sequence[Bar], open_position: OpenPosition | None = None) -> None:
+        """Seeding changes nothing; the entry is scripted."""
+        _ = (bars, open_position)
+
+    def restore_position(self, open_position: OpenPosition | None) -> None:
+        """Ignore the restore: the entry is scripted."""
+        _ = open_position
+
+
+def _moving_together(pair: Pair) -> list[Bar]:
+    """Return 32 daily bars up to the day whose closes move the same way for every pair."""
+    closes = [Decimal(100 + n % 3) for n in range(32)]
+    return [
+        replace(
+            bar(DAY_START - timedelta(days=n), D1, pair=pair),
+            open=close,
+            high=close,
+            low=close,
+            close=close,
+        )
+        for n, close in enumerate(closes)
+    ]
+
+
+def _held(pair: Pair) -> TradeExecuted:
+    """Return a buy of ``pair`` recorded the day before the checked day."""
+    return replace(
+        trade_event(DAY_START - timedelta(days=1)),
+        pair=pair,
+        qty=Quantity(amount=Decimal("0.01"), asset=pair.base),
+        price=Price(amount=Decimal("100"), pair=pair),
+    )
+
+
+def test_ro01_refuses_in_the_replay_on_the_closes_before_the_day_as_in_serve() -> None:
+    """#514: serve's RO-01 refusal of a third correlated entry is in parity with the replay.
+
+    ETH and SOL are held and all three pairs' daily closes before the day move
+    together, so serve declined the BTC entry on RO-01. The replay only sees
+    the day's bars one at a time; it is seeded with the closes before the day
+    and refuses the same entry.
+    """
+    source = FakeSource(
+        bars=[
+            b
+            for pair in _PAIRS
+            for b in (
+                *[w for w in warmup_bars(pair=pair) if w.interval is H4],
+                *_moving_together(pair),
+                *day_bars(pair=pair),
+            )
+        ],
+        signals=[signal_event(_FIRST_FOUR_HOUR)],
+        fills=[_held(_ETH_USDT), _held(_SOL_USDT)],
+    )
+
+    report = check_day(
+        day=_DAY,
+        source=source,
+        strategy_id=STRATEGY,
+        pairs=list(_PAIRS),
+        intervals=[H4, D1],
+        warmup_bars={H4: 2, D1: 40},
+        min_warmup_bars={H4: 1, D1: 1},
+        seed=seed(),
+        make_strategy=_BtcEntry,
+        make_kernel=lambda tracker: FillKernel(
+            fill_model=OrderbookWalkFillModel(),
+            risk_engine=RiskEngine(rules=[CorrelationLock()]),
+            kill_evaluator=kill_evaluator(),
+            tracker=tracker,
+            strategy_id=STRATEGY,
+            sizing=SIZING,
+        ),
+        fees_at=_fees_at,
+    )
+
+    assert (report.matched, report.mismatches) == (1, ())

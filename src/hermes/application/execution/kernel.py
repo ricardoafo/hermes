@@ -21,8 +21,10 @@ Reference: openspec/changes/backtest-driver-mvp1-phase2/change.md D-2, D-3, R-4.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
 from datetime import datetime
+from decimal import Decimal
 
 from returns.result import Failure
 
@@ -72,6 +74,12 @@ class MarketContext:
         at: UTC-aware time stamped on the fill.
         market_snapshot: Microstructure inputs for the risk overlay.
         experiment_state: Inputs for the kill-trigger evaluation.
+        correlations: 30-day return correlation of pair pairs, for the RO-01
+            correlation lock (pre-registration §5.5). The portfolio has no
+            market data, so the caller supplies them; empty means none known.
+        realized_slippage_cumulative: Sum of the recorded fill slippages
+            the RO-03 cumulative limit counts. The portfolio keeps no fill
+            quality, so the caller supplies it; zero means none known.
     """
 
     orderbook: Orderbook | None
@@ -79,6 +87,8 @@ class MarketContext:
     at: datetime
     market_snapshot: MarketSnapshot
     experiment_state: ExperimentState
+    correlations: Mapping[tuple[Pair, Pair], float] = field(default_factory=dict)
+    realized_slippage_cumulative: Decimal = field(default_factory=Decimal)
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,6 +189,7 @@ class FillKernel:
         )
         self._tracker = tracker
         self._strategy_id = strategy_id
+        self._exposure_cap = sizing.exposure_cap
 
     @property
     def tracker(self) -> PortfolioTracker:
@@ -234,7 +245,11 @@ class FillKernel:
                     stop_px=signal.stop_price,
                     open_notional=self._tracker.open_notional(),
                 ),
-                portfolio_state=self._tracker.state(),
+                portfolio_state=replace(
+                    self._tracker.state(),
+                    correlations=dict(market.correlations),
+                    realized_slippage_cumulative=market.realized_slippage_cumulative,
+                ),
                 market_snapshot=market.market_snapshot,
                 experiment_state=market.experiment_state,
                 orderbook=book,
@@ -244,11 +259,35 @@ class FillKernel:
             )
         )
         if isinstance(result, Fill):
+            over_cap = self._over_exposure_cap(result)
+            if over_cap is not None:
+                return over_cap
             return self._record(result, correlation_id)
         if isinstance(result, KillCircuitBreaker):
             return Halted(breaker=result)
         rejection = self._fill_model.last_rejection if result.rule == "fill_model" else None
         return Declined(reason=result.reason, rule=result.rule, rejection=rejection)
+
+    def _over_exposure_cap(self, fill: Fill) -> Declined | None:
+        """Refuse a fill that would put exposure at the marks past the §5.5 cap (#864).
+
+        Sizing checks the cap at the signal price, but the fill walks the ask
+        side of the book (plus slippage in a backtest), so it can cost more.
+        After the fill the new position is marked at its fill price, so the
+        cap is checked again at that price, the price actually paid. Sizing
+        is unchanged; an entry that only fits at the signal price is refused,
+        as one that does not fit there already is.
+        """
+        exposure = self._tracker.open_notional() + fill.executed_qty * fill.avg_price
+        if exposure <= self._exposure_cap:
+            return None
+        return Declined(
+            reason=(
+                f"total exposure cap: {exposure} at the fill price exceeds "
+                f"{self._exposure_cap} (pre-reg §5.5)"
+            ),
+            rule="sizing",
+        )
 
     def _exit(
         self, pair: Pair, market: MarketContext, book: Orderbook, correlation_id: str

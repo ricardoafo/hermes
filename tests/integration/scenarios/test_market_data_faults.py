@@ -25,6 +25,8 @@ from tests.support.serve_loop import events
 pytestmark = pytest.mark.integration
 
 _OUTAGE = timedelta(minutes=10)
+_DECADE = timedelta(days=3650)
+"""Long enough that a late bar is never shown within a run: the exchange never publishes it."""
 
 
 def _first_close_at(scenario: markets.Scenario, close: Decimal) -> datetime:
@@ -108,3 +110,81 @@ def test_a_bar_published_after_the_next_one_stops_serve_and_a_restart_handles_it
     second = run_scenario(scenario, live_from=shown + timedelta(hours=1))
     assert (first.exit_code, "BarGapError" in failure[0], second.exit_code) == (1, True, 0)
     assert _btc_4h_handled(second).count(late.close_time) == 1
+
+
+def test_a_bar_that_is_never_published_stops_serve_once_and_the_restart_passes_over_it(
+    run_scenario: RunScenario,
+) -> None:
+    """Issue #852: a candle the exchange never publishes cannot crash-loop serve.
+
+    The live feed delivers past the hole, serve refuses the next bar and exits
+    1 as for a late bar. The restart's warm-up still lacks the bar, so instead
+    of exiting again (five times, then systemd gives up and the open position
+    has no exit watching it) serve reports the gap once and goes on: the
+    position bought on the breakout is still sold by its exit rule.
+    """
+    scenario = markets.chandelier_exit()
+    missing = _bar_after(scenario, scenario.breakout_at)
+    never = [(markets.BTC, KlineInterval.H4, missing.open_time, missing.close_time + _DECADE)]
+    first = run_scenario(scenario, late_bars=never)
+    restarted = run_scenario(
+        scenario, live_from=missing.close_time + timedelta(hours=9), late_bars=never
+    )
+    assert (
+        first.exit_code,
+        restarted.exit_code,
+        len(restarted.log_events("serve.bar.gap_passed_over")),
+        missing.close_time in _btc_4h_handled(restarted),
+        outline(restarted.db)["trades"],
+    ) == (1, 0, 1, False, [("BTC/USDT", "BUY"), ("BTC/USDT", "SELL")])
+
+
+def test_a_closed_bar_with_a_nan_close_stops_serve_loudly_and_a_restart_handles_it(
+    run_scenario: RunScenario,
+) -> None:
+    """Issue #841: a NaN close on a closed bar is a typed feed failure, never a raw decimal error.
+
+    After the breakout entry, the next BTC 4h bar is served with a ``"NaN"``
+    close for eight hours, then corrected. Serve refuses the broken row with
+    ExchangeError and exits 1 (systemd restarts it), the same policy as a bar
+    gap. The restart after the correction handles that bar once and the
+    position still exits on its stop.
+    """
+    scenario = markets.chandelier_exit()
+    broken = _bar_after(scenario, scenario.breakout_at)
+    clean_from = broken.close_time + timedelta(hours=8)
+    window = (markets.BTC, KlineInterval.H4, broken.open_time, broken.close_time, clean_from)
+    first = run_scenario(scenario, corrupt_bars=[window])
+    failure = [repr(line.get("exc_info")) for line in first.log_events("serve.run.failed")]
+    second = run_scenario(scenario, live_from=clean_from + timedelta(hours=1))
+    assert (first.exit_code, "not a finite number: 'NaN'" in failure[0], second.exit_code) == (
+        1,
+        True,
+        0,
+    )
+    assert _btc_4h_handled(second).count(broken.close_time) == 1
+    assert outline(second.db)["trades"] == [("BTC/USDT", "BUY"), ("BTC/USDT", "SELL")]
+
+
+def test_a_nan_in_the_forming_candle_does_not_block_the_closed_bar_before_it(
+    run_scenario: RunScenario,
+) -> None:
+    """The open candle is dropped unread by the closed-bar rule, so its values can't stop serve.
+
+    The candle after the breakout carries a ``"NaN"`` close while it is still
+    forming. The breakout bar closed before it and must be delivered and traded.
+    """
+    scenario = markets.chandelier_exit()
+    forming = _bar_after(scenario, scenario.breakout_at)
+    window = (
+        markets.BTC,
+        KlineInterval.H4,
+        forming.open_time,
+        forming.open_time,
+        forming.close_time,
+    )
+    run = run_scenario(scenario, corrupt_bars=[window])
+    assert (run.exit_code, outline(run.db)["trades"]) == (
+        0,
+        [("BTC/USDT", "BUY"), ("BTC/USDT", "SELL")],
+    )

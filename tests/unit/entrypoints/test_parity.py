@@ -8,9 +8,11 @@ Invariants protected here:
   decisions, and exits 1;
 - ``--alert`` sends exactly one alert on a mismatch, none on parity and none
   without the flag, and the alert carries no price, equity or P&L;
-- usage errors exit 2; a missing ledger, a day with no stored bars and a
-  config that cannot run exit 3;
-- the ledger file is byte-identical after any run;
+- usage errors exit 2; a missing ledger, a day with no stored bars, fewer
+  than 300 stored 1d bars offline (#880) and a config that cannot run exit 3;
+- the ledger file is byte-identical after any run without ``--alert``;
+- an ``--alert`` alert is recorded once as an ``AnomalyDetected`` row, and a
+  run in parity records none (#136);
 - the command is registered as ``parity``.
 """
 
@@ -41,6 +43,7 @@ from hermes.entrypoints import parity as module
 from hermes.entrypoints.commands import discover
 from hermes.infrastructure.config.models import MarketDataConfig
 from hermes.ports.bar_feed import SourceState
+from tests.support.anomaly_rows import recorded_anomalies
 from tests.support.parity import D1, DAY_END, DAY_START, H4, bar, signal_event
 from tests.unit.adapters.market_data.fake_binance_public import (
     BTC_USDT,
@@ -80,11 +83,11 @@ class _Channel:
         self.events.append(event)
 
 
-def _insert_bars(connection: sqlite3.Connection, *, history: bool = True) -> None:
-    """Store flat bars: 210 days of 1d history, 10 days of 4h history and the test day."""
+def _insert_bars(connection: sqlite3.Connection, *, history: bool = True, daily: int = 300) -> None:
+    """Store flat bars: ``daily`` days of 1d history, 10 days of 4h history and the test day."""
     rows: list[tuple[str, ...]] = []
     for base in _PAIRS:
-        closes = [(D1, DAY_START - timedelta(days=n)) for n in range(210 if history else 0)]
+        closes = [(D1, DAY_START - timedelta(days=n)) for n in range(daily if history else 0)]
         closes.append((D1, DAY_END))
         closes += [(H4, DAY_END - timedelta(hours=4 * n)) for n in range(66 if history else 6)]
         for interval, close in closes:
@@ -263,6 +266,25 @@ def test_the_ledger_is_byte_identical_after_a_mismatching_run(ledger: Path) -> N
     assert _digest(ledger) == before
 
 
+def test_a_mismatch_alert_is_recorded_once_and_matches_the_sent_alert(ledger: Path) -> None:
+    """#136: --alert on a mismatch leaves exactly the sent alert in the ledger."""
+    _with_signal(ledger, signal_event(DAY_START + timedelta(hours=8)))
+    channel = _Channel()
+
+    _run(_args(ledger, "--alert"), channel=channel)
+
+    (sent,) = channel.events
+    assert [
+        (r["source"], r["reason"], r["correlation_id"]) for r in recorded_anomalies(ledger)
+    ] == [(getattr(sent, "source", None), getattr(sent, "reason", None), sent.correlation_id)]
+
+
+def test_parity_with_the_alert_flag_records_no_anomaly(ledger: Path) -> None:
+    """#136: no mismatch, no alert, no AnomalyDetected row."""
+    assert _run(_args(ledger, "--alert"), channel=_Channel())[0] == 0
+    assert recorded_anomalies(ledger) == []
+
+
 def test_a_missing_ledger_exits_three_and_is_not_created(tmp_path: Path) -> None:
     """A wrong --db path is reported, never created."""
     path = tmp_path / "absent.sqlite3"
@@ -358,6 +380,29 @@ def test_offline_with_too_little_history_exits_three_and_never_reads_the_exchang
         "ERROR: BTC/USDT 4h: 0 bars before 2026-10-03, 45 needed to warm the strategy up\n"
     )
     assert _digest(short_ledger) == before
+
+
+def test_offline_with_299_daily_bars_exits_three_naming_the_300_bar_floor(
+    tmp_path: Path,
+) -> None:
+    """#880: 299 stored 1d bars are one short of the 300 the EMA(200) regime needs.
+
+    Below 300 daily bars the EMA seed, and so the regime, depends on the
+    warm-up length, so the replay would not decide what serve decided.
+    """
+    path = tmp_path / "daily-299.sqlite3"
+    connection = sqlite3.connect(path)
+    SqliteLedger(connection)
+    _insert_bars(connection, daily=299)
+    connection.close()
+
+    code, out, err = _run(_args(path, "--offline"), history=_NoNetwork())
+
+    assert (code, out, err) == (
+        3,
+        "",
+        "ERROR: BTC/USDT 1d: 299 bars before 2026-10-03, 300 needed to warm the strategy up\n",
+    )
 
 
 def test_an_exchange_failure_while_filling_the_gap_exits_three(short_ledger: Path) -> None:

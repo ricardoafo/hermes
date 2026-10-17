@@ -17,6 +17,7 @@ from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.events.trade_executed import TradeExecuted
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
+from hermes.domain.strategy.signal import SignalKind
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
 
@@ -44,9 +45,17 @@ class ParitySourcePort(Protocol):
         ...
 
     def latest_signal(
-        self, strategy_id: StrategyId, pair: Pair, *, at_or_before: datetime
+        self,
+        strategy_id: StrategyId,
+        pair: Pair,
+        *,
+        at_or_before: datetime,
+        kind: SignalKind | None = None,
     ) -> SignalEmitted | None:
-        """Return the newest ``SignalEmitted`` of the strategy and pair up to a bound."""
+        """Return the newest ``SignalEmitted`` of the strategy and pair up to a bound.
+
+        With ``kind``, only signals of that kind count (any kind when ``None``).
+        """
         ...
 
     def trades(self, strategy_id: StrategyId) -> tuple[TradeExecuted, ...]:

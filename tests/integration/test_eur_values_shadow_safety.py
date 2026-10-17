@@ -14,6 +14,7 @@ ADR-016 item 9.
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -64,8 +65,8 @@ def _book(pair: Pair, price: Decimal, clock: FakeClock) -> Orderbook:
     )
 
 
-def _run(fx: FakeFx) -> tuple[list[str], sqlite3.Connection]:
-    """Drive the scripted market; return the behaviour trace and the ledger connection."""
+def _run(fx: FakeFx, conn: sqlite3.Connection) -> list[str]:
+    """Drive the scripted market against the ledger on ``conn``; return the behaviour trace."""
     clock = FakeClock(H4_BASE)
     last_close: dict[str, Decimal] = {"px": Decimal("1000")}
     exchange = SimulatedExchangeAdapter(
@@ -79,7 +80,6 @@ def _run(fx: FakeFx) -> tuple[list[str], sqlite3.Connection]:
         PortfolioSnapshot.seed(_STRATEGY, Money(amount=_CAPITAL, currency=Currency.USDT))
     )
     strategy = fresh_strategy()
-    conn = sqlite3.connect(":memory:")
     recorder = TradeRecorder(SqliteLedger(conn), EurPricer(fx))
 
     trace: list[str] = []
@@ -119,7 +119,7 @@ def _run(fx: FakeFx) -> tuple[list[str], sqlite3.Connection]:
         trace.append(repr(exchange.get_balance(currency=Currency.USDT)))
         trace.append(repr(exchange.get_balance(currency=Currency.BTC)))
     trace.append(repr(tracker.state()))
-    return trace, conn
+    return trace
 
 
 def _fx_up() -> FakeFx:
@@ -131,15 +131,19 @@ def _fx_up() -> FakeFx:
 
 def test_strategy_sizing_and_fills_are_identical_with_and_without_fx() -> None:
     """Invariant (A-5.1): FX availability changes only ledger EUR columns, never behaviour."""
-    with_fx, ledger_with = _run(_fx_up())
-    without_fx, ledger_without = _run(FakeFx(down=True))
+    with (
+        closing(sqlite3.connect(":memory:")) as ledger_with,
+        closing(sqlite3.connect(":memory:")) as ledger_without,
+    ):
+        with_fx = _run(_fx_up(), ledger_with)
+        without_fx = _run(FakeFx(down=True), ledger_without)
 
-    assert "\n".join(with_fx).encode() == "\n".join(without_fx).encode()
-    statuses = (
-        ledger_with.execute("SELECT side, eur_status FROM trades ORDER BY id").fetchall(),
-        ledger_without.execute("SELECT side, eur_status FROM trades ORDER BY id").fetchall(),
-    )
-    assert statuses == (
-        [("BUY", "ok"), ("SELL", "ok")],
-        [("BUY", "pending"), ("SELL", "pending")],
-    )
+        assert "\n".join(with_fx).encode() == "\n".join(without_fx).encode()
+        statuses = (
+            ledger_with.execute("SELECT side, eur_status FROM trades ORDER BY id").fetchall(),
+            ledger_without.execute("SELECT side, eur_status FROM trades ORDER BY id").fetchall(),
+        )
+        assert statuses == (
+            [("BUY", "ok"), ("SELL", "ok")],
+            [("BUY", "pending"), ("SELL", "pending")],
+        )
