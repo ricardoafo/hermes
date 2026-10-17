@@ -41,9 +41,13 @@ class TestKindLookup:
         with pytest.raises(UnknownSignalError, match="donchian-breakuot"):
             strategy_kind("donchian-breakuot")
 
-    def test_the_known_signals_are_listed_in_order(self) -> None:
-        """Only the Donchian breakout exists until a candidate PR adds its kind."""
-        assert known_signals() == (DONCHIAN_BREAKOUT,)
+    def test_the_donchian_breakout_is_listed_first(self) -> None:
+        """The default kind leads the list; each candidate PR appends its own kind."""
+        assert known_signals()[0] == DONCHIAN_BREAKOUT
+
+    def test_every_known_signal_resolves_to_its_own_kind(self) -> None:
+        """A listed signal builds the kind registered under that name, never another."""
+        assert [s for s in known_signals() if strategy_kind(s).signal != s] == []
 
 
 class TestDefaultParameters:
