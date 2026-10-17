@@ -376,8 +376,9 @@ def test_stage_dir_is_private_to_the_deploy_user(box: Harness) -> None:
     assert box.calls("chown") == [f"chown ci-deploy: {posix(stage)}"]
 
 
+@NEEDS_POSIX_MODES
 def test_stage_dir_belongs_to_root_while_cd_runs_as_root(box: Harness) -> None:
-    """Invariant: with no deploy user the staging dir is root's, matching today's root CD login."""
+    """Invariant: with no deploy user the stage dir is root's; a re-run tightens a loose mode."""
     stage = box.base / "var" / "lib" / "hermes-deploy"
     stage.mkdir(parents=True, mode=0o777)
     result = box.run(
@@ -385,6 +386,7 @@ def test_stage_dir_belongs_to_root_while_cd_runs_as_root(box: Harness) -> None:
     )
 
     assert result.returncode == 0, output(result)
+    assert stat.S_IMODE(stage.stat().st_mode) == 0o700
     assert box.calls("chown") == [f"chown root: {posix(stage)}"]
 
 

@@ -272,6 +272,8 @@ def test_deploy_stages_the_release_in_the_private_dir_bootstrap_creates() -> Non
     bootstrap = _BOOTSTRAP_PATH.read_text(encoding="utf-8")
 
     assert "DEPLOY_STAGE_DIR=/var/lib/hermes-deploy\n" in bootstrap
+    assert "install -d -m 0700 /var/lib/hermes-deploy" in deploy_runs
+    assert deploy_runs.index("install -d -m 0700") < deploy_runs.index("scp ")
     assert '"$VPS_SSH_USER@$VPS_SSH_HOST:/var/lib/hermes-deploy/"' in deploy_runs
     assert 'stage="/var/lib/hermes-deploy/hermes-release-$sha12"' in deploy_runs
     assert "/var/tmp" not in deploy_runs  # noqa: S108 - asserts the path is absent
