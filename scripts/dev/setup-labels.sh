@@ -36,9 +36,9 @@ create_label "type:revert"   "333333" "Reverts a prior commit"
 
 echo ""
 echo "sev-* (severity per docs/guides/severity-rubric.md)"
-create_label "sev-1" "b60205" "Critical: security/LOPDGDD/data loss/auth bypass. Blocks release+merge. Fix in 24h."
-create_label "sev-2" "d93f0b" "High: feature broken, wrong legal output. Blocks merge. Fix in 72h."
-create_label "sev-3" "fbca04" "Medium: degraded experience, non-critical wrong data. Fix in 7d."
+create_label "sev-1" "b60205" "Critical: real capital at risk, secrets exposed, ledger or tax data lost or wrong, safety control bypassed. Blocks release+merge. Fix in 24h."
+create_label "sev-2" "d93f0b" "High: wrong legal or money output, lost audit signal, no capital loss yet. Blocks merge. Fix in 72h."
+create_label "sev-3" "fbca04" "Medium: degraded behavior or wrong non-money data. Fix in 7d."
 create_label "sev-4" "c2e0c6" "Low: cosmetic, copy, minor visual. Next sprint."
 
 echo ""
