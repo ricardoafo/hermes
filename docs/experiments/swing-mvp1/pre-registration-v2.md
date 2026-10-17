@@ -43,7 +43,7 @@ backtest_funnel:
 | # | Section | v1 (signed 2026-08-25) | v2 | Why |
 | --- | --- | --- | --- | --- |
 | 1 | §5.2 stop | Chandelier level recomputed on every 4h bar, including the bar it is tested on | Posted at the entry fill, moved once per UTC daily close, never down; the bar being tested never moves it | Issue #785: 27 of 154 Train exits fired only because a bar raised the stop with its own high and then reached it with its own low |
-| 2 | §5.3 / §6.2 exit | On-exchange stop-market; backtest fill 15 bps under the stop | Market sale at the close of the 4h bar whose low reached the stop; fill 5 bps under that close, in the backtest and in shadow | Paper shadow cannot rest a stop order, so it sells at the close; pricing exits at the stop made exit drift 70-390 bps (#796) |
+| 2 | §5.3 / §6.2 exit | On-exchange stop-market; backtest fill 15 bps under the stop | Market sale at the close of the 4h bar whose low reached the stop; fill 5 bps under that close, in the backtest and in shadow. A loss can exceed the 1% risk budget when a bar closes well below the stop (§5.4) | Paper shadow cannot rest a stop order, so it sells at the close; pricing exits at the stop made exit drift 70-390 bps (#796) |
 | 3 | §5.1 warm-up | Daily EMA(200) seeded from a 200- to 300-bar buffer | Exactly 300 closed daily bars of warm-up, everywhere | Issue #880: 200 and 300 bars could decide differently |
 | 4 | §9 / §10 backtest gate | DSR > 0.7 and the §9 secondary metrics | DSR ≥ 0.95 plus the ADR-021 §5 funnel (front matter `backtest_funnel`) | ADR-021 §5 binds every strategy from v2 on |
 | 5 | §7 shadow drift | Fill drift against the §6.2 model price | Same rule; with change 2 the exit model price is the close-based price shadow actually trades at | Makes the 30 bps p50 rule meaningful for exits |
@@ -134,8 +134,10 @@ Unchanged from v1:
   is recomputed from the 4h bars closed by then and the stop becomes the higher of the stop in force and that level.
   The stop never moves down, and the bar it is tested on never moves it. **Trigger**: a 4h bar whose low is at or
   below the stop in force when that bar opened.
-- **Time stop**: 90 calendar days from the entry bar's close.
-- **Regime break**: a new 1D close below EMA(200) on 1D.
+- **Time stop**: 90 calendar days from the entry bar's close. It fires on the first 4h bar whose close is at or
+  after that instant.
+- **Regime break**: a new 1D close below EMA(200) on 1D. It fires on the 4h bar that closes at that UTC daily
+  close (00:00 UTC).
 
 ### 5.3 Order type (changed)
 
@@ -147,6 +149,10 @@ Unchanged from v1:
 ### 5.4 Position sizing
 
 Unchanged from v1: 1% of capital at risk per trade, notional = risk / (entry − stop) × entry, 5% cap per position.
+
+Accepted consequence of §5.3: sizing still uses the stop, but a stop exit fills at the bar close, so a bar that
+closes well below the stop loses more than 1% of capital on that trade. The backtest and shadow both carry that loss;
+nothing caps it.
 
 ### 5.5 Concurrency and correlation
 
