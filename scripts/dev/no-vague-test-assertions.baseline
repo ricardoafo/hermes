@@ -186,10 +186,6 @@ tests/unit/domain/strategy/swing/engines/test_atr_engine.py::test_atr_determinis
 tests/unit/domain/strategy/swing/engines/test_atr_engine.py::test_none_on_empty_bars U3
 tests/unit/domain/strategy/swing/engines/test_atr_engine.py::test_none_on_exactly_period_bars U3
 tests/unit/domain/strategy/swing/engines/test_atr_engine.py::test_none_on_period_minus_one_bars U3
-tests/unit/domain/strategy/swing/engines/test_chandelier_engine.py::test_deterministic_on_identical_inputs U3
-tests/unit/domain/strategy/swing/engines/test_chandelier_engine.py::test_none_on_empty_bars U3
-tests/unit/domain/strategy/swing/engines/test_chandelier_engine.py::test_none_on_period_bars_exactly U3
-tests/unit/domain/strategy/swing/engines/test_chandelier_engine.py::test_returns_value_with_period_plus_one_bars U3
 tests/unit/domain/strategy/swing/engines/test_donchian_engine.py::test_breakout_on_spike_in_channel_window U3
 tests/unit/domain/strategy/swing/engines/test_donchian_engine.py::test_deterministic_on_identical_inputs U3
 tests/unit/domain/strategy/swing/engines/test_donchian_engine.py::test_false_on_empty_bars U3
