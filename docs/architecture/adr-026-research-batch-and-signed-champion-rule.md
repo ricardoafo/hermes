@@ -133,8 +133,11 @@ The `selection` block fixes, before any run:
 
 1. **Eligible**: candidates that pass the full gate on Train + Validation: every §9 metric, DSR ≥ 0.95 with the
    batch-wide N, and every funnel check, as `hermes certify` computes them.
-2. **False-discovery control**: among the eligible, keep those that survive Benjamini–Hochberg at the batch's signed
-   q (default 0.05), using 1 − DSR as each candidate's p-value (ADR-021 §5, "combining results").
+2. **False-discovery control**: run Benjamini–Hochberg at the batch's signed q (default 0.05) over every candidate
+   the batch tested, so m is the batch size, using 1 − DSR as each candidate's p-value and p = 1 for a candidate
+   with no DSR (ADR-021 §5, "combining results"). Survivors are the candidates that are both eligible and rejected
+   by BH. Running it among the eligible only would remove no one, because eligibility already requires
+   1 − DSR ≤ 0.05. With 4 candidates and one passer, that passer needs DSR ≥ 0.9875.
 3. **Champion**: the survivor with the highest DSR. A tie goes to the lowest mean daily-return correlation with the
    other survivors.
 4. **None**: if no candidate survives, the batch has no champion, nothing goes to shadow, and the batch writes one
