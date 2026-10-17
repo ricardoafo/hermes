@@ -89,3 +89,11 @@ run_pytest() {
 echo "::group::gate: pytest"
 run_pytest
 echo "::endgroup::"
+
+# The serve cycle runs once per batch, after the suite, and only when the
+# batch touches the paths it depends on. Same list as the changeset step
+# in ci.yml; a unit test keeps the two equal (#663).
+e2e_paths='^(src/hermes/|tests/e2e/|tests/fixtures/e2e/|config/|pyproject\.toml$|uv\.lock$)'
+if git diff --name-only "$base" HEAD | grep -qE "$e2e_paths"; then
+  gate "e2e" bash scripts/dev/ci-checks.sh e2e
+fi

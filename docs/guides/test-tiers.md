@@ -22,7 +22,7 @@ Tiers are chosen by directory, not by marker. Status is `live` (a workflow or sc
 | Contract | `tests/contract/` | Real HTTPS to third-party sandboxes; each test skips when its secret is absent | `scheduled.yml` job `contract`: `pytest tests/contract -m contract` | Daily 11:30 UTC | live |
 | Smoke | `tests/smoke/` | Read-only checks on hermes-01 over SSH | `cd.yml` step "Smoke tests": `pytest tests/smoke -m smoke`. Exit 5 (nothing collected) fails the deploy | After each deploy | live |
 | Mutation | `tests/unit/domain/value_objects`, `tests/unit/domain/lots` (rerun by cosmic-ray) | cosmic-ray over `src/hermes/domain/value_objects` and `src/hermes/domain/lots`; scope is `module-path` in `cosmic-ray.toml` | `scheduled.yml` job `mutation` | Sundays 11:45 UTC; manual dispatch with `mutation` ticked | live; kill-rate floor (80%) blocking since #406 |
-| End-to-end | `tests/e2e/` | The real `hermes serve` composition root replays recorded Binance bars (`tests/fixtures/e2e/`); offline and keyless | `scheduled.yml` job `e2e`: `pytest tests/e2e -m e2e` | Sundays 11:45 UTC; every manual dispatch | live |
+| End-to-end | `tests/e2e/` | The real `hermes serve` composition root replays recorded Binance bars (`tests/fixtures/e2e/`); offline and keyless | `ci.yml`: `pytest tests/e2e -m e2e`; the CD gate runs the same directory | PRs that touch the serve paths; every merge-queue batch that does; every deploy | live |
 
 A push to `main` skips the suite when the tree already passed on the PR head
 (`scripts/dev/main-tree-validated.sh`). Unit and integration therefore run on the merged tree in the merge queue,
@@ -48,7 +48,7 @@ a test uses it. Registered markers are labels; the directory decides what runs, 
 - `smoke`: the CD job selects it with `-m smoke`.
 
 `unit`, `property`, `integration` and `slow` are used by some tests and are not used for selection. `e2e` marks
-the end-to-end tests; the scheduled job runs their directory with `-m e2e`.
+the end-to-end tests; PR CI and the CD gate run their directory with `-m e2e`.
 `chaos` marks the fault-injection tests in `tests/integration/scenarios/test_chaos_*.py`; they run with the integration tier. `mutation` is registered and used by no test today. Do not invent a new marker without registering it in
 `pyproject.toml`.
 

@@ -16,6 +16,7 @@
 #   licenses                          pip-licenses through license-check.py
 #   unit                              tests/unit/ with branch coverage
 #   integration                       tests/integration/
+#   e2e                               tests/e2e/ (the serve cycle on recorded bars)
 #   coverage-floor                    per-package thresholds (needs unit first)
 #   lockfile                          uv.lock hash integrity
 #   merge-decisions                   node tests for the merge queue and PR metadata
@@ -42,7 +43,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$REPO_ROOT" || exit 2
 
 CHECKS=(format lint types imports deps complexity deadcode licenses unit
-    integration coverage-floor lockfile merge-decisions codeowners markdown
+    integration e2e coverage-floor lockfile merge-decisions codeowners markdown
     guides-index workflows guards self-tests)
 
 # -n 4, not auto: auto counts the host's CPUs, not the container's 4, and
@@ -125,6 +126,7 @@ run_one() {
             ;;
         unit) run_tier unit "$@" ;;
         integration) run_tier integration "$@" ;;
+        e2e) uv run pytest tests/e2e -m e2e --tb=short -p no:cacheprovider ;;
         # --bootstrap: skip EMPTY-package FAILs while the Phase 0 skeleton is
         # not yet populated (#71).
         coverage-floor) uv run python scripts/dev/coverage-check.py --bootstrap ;;
