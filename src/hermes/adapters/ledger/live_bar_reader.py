@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 
 from hermes.adapters.ledger.connection import open_ledger
-from hermes.adapters.ledger.sqlite_ledger import _row_to_bar
+from hermes.adapters.ledger.sqlite_ledger import live_bar_from_row
 from hermes.domain.errors import LedgerError
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
@@ -64,6 +64,6 @@ class SqliteLiveBarReader:
         finally:
             connection.close()
         try:
-            return tuple(_row_to_bar(pair, interval, row) for row in rows)
+            return tuple(live_bar_from_row(pair, interval, row) for row in rows)
         except (ValueError, TypeError) as exc:
             raise LedgerError(msg=f"live bar reader found an unreadable bar: {exc}") from exc

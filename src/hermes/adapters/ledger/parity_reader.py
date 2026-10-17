@@ -18,9 +18,9 @@ from typing import Self
 
 from hermes.adapters.ledger.connection import open_ledger
 from hermes.adapters.ledger.sqlite_ledger import (
-    _row_to_bar,
     _signal_from_payload,
     _trades_from_rows,
+    live_bar_from_row,
 )
 from hermes.domain.errors import LedgerError
 from hermes.domain.events.signal_emitted import SignalEmitted
@@ -101,7 +101,7 @@ class SqliteParityReader:
             ),
         )
         try:
-            return tuple(_row_to_bar(pair, interval, row) for row in rows)
+            return tuple(live_bar_from_row(pair, interval, row) for row in rows)
         except (ValueError, TypeError) as exc:
             raise LedgerError(msg=f"bars_closing_between: unreadable bar: {exc}") from exc
 

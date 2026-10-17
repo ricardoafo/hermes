@@ -84,7 +84,7 @@ from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.infrastructure.time import now_utc
 from hermes.ports.ledger import EurTradeRow, PendingSeed, PendingTrade
 
-__all__ = ["SqliteLedger"]
+__all__ = ["SqliteLedger", "live_bar_from_row"]
 
 _SEED_REF_PREFIX = "seed:"
 _EVIDENCE_EVENTS = ("BarProcessed", "SignalEmitted", "TradeExecuted")
@@ -289,7 +289,7 @@ class SqliteLedger:
             ).fetchone()
         except sqlite3.Error as exc:
             raise LedgerError(msg=f"record_live_bar failed: {exc}") from exc
-        stored = _row_to_bar(bar.pair, bar.interval, row)
+        stored = live_bar_from_row(bar.pair, bar.interval, row)
         return None if stored == bar else stored
 
     def live_bars(
@@ -309,7 +309,7 @@ class SqliteLedger:
             ).fetchall()
         except sqlite3.Error as exc:
             raise LedgerError(msg=f"live_bars failed: {exc}") from exc
-        return tuple(_row_to_bar(pair, interval, row) for row in rows)
+        return tuple(live_bar_from_row(pair, interval, row) for row in rows)
 
     # ------------------------------------------------------------------
     # TradeLedgerPort — trade rows with EUR values
@@ -1534,7 +1534,7 @@ class SqliteLedger:
 # ---------------------------------------------------------------------------
 
 
-def _row_to_bar(pair: Pair, interval: KlineInterval, row: tuple[Any, ...]) -> Bar:
+def live_bar_from_row(pair: Pair, interval: KlineInterval, row: tuple[Any, ...]) -> Bar:
     """Rebuild a :class:`Bar` from a ``live_bars`` row.
 
     Raises:
