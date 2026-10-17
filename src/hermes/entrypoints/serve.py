@@ -64,7 +64,7 @@ import dataclasses
 import os
 import signal
 import sqlite3
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -124,6 +124,8 @@ from hermes.domain.events.event_bus import EventBus, EventDispatchError
 from hermes.domain.events.shadow_capital_seeded import ShadowCapitalSeeded
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.events.signal_notified import SignalNotified
+from hermes.domain.events.trade_executed import TradeExecuted
+from hermes.domain.events.trade_executed import TradeSide as ExecutedSide
 from hermes.domain.fees.fee_schedule import FeeSchedule
 from hermes.domain.fees.fee_schedule_selector import FeeScheduleRow, select_fee_schedule
 from hermes.domain.fx.eur_pricing import fill_date_madrid
@@ -137,6 +139,7 @@ from hermes.domain.market_data.bar_schedule import (
 )
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.portfolio.mark import PortfolioMark
+from hermes.domain.portfolio.position import Position
 from hermes.domain.portfolio.snapshot import PortfolioSnapshot
 from hermes.domain.strategy.signal import OpenPosition, SignalKind, StrategySignal
 from hermes.domain.strategy.stop_mark import StopMark
@@ -206,6 +209,7 @@ BOOT_EUR_MAX_FX_CALLS: Final = 20
 BOOT_EUR_BUDGET_SEC: Final = 60.0
 
 _ONE_MS: Final = timedelta(milliseconds=1)
+_EPOCH: Final = datetime(1970, 1, 1, tzinfo=UTC)
 _NEVER: Final = datetime(1970, 1, 1, tzinfo=UTC)
 
 
@@ -274,6 +278,36 @@ def pre_registration_for(config_dir: Path) -> PreRegistration:
     if experiment_files(root)[0].is_file():
         return PreRegistration(project_root=root)
     return PreRegistration()
+
+
+def _holding_opened_at(
+    trades: Sequence[TradeExecuted], pair: Pair, at_or_before: datetime
+) -> datetime | None:
+    """Return the close time of the 4h bar the held coin was bought on.
+
+    The buy is the first since ``pair`` was last flat. Its fill lands just after
+    the bar closes, but the strategy keys its time stop and its highest high on
+    the bar's ``close_time``, so the fill time is moved back to it.
+    """
+    opened_at: datetime | None = None
+    held = Decimal(0)
+    for trade in trades:
+        if trade.pair != pair or trade.occurred_at > at_or_before:
+            continue
+        if trade.side is ExecutedSide.BUY:
+            if held == 0:
+                opened_at = trade.occurred_at
+            held += trade.qty.amount
+            continue
+        held -= trade.qty.amount
+        if held <= 0:
+            held = Decimal(0)
+            opened_at = None
+    if opened_at is None:
+        return None
+    four_hours = interval_duration(KlineInterval.H4)
+    boundary = _EPOCH + ((opened_at + _ONE_MS - _EPOCH) // four_hours) * four_hours
+    return boundary - _ONE_MS
 
 
 class BarGapError(HermesError):
@@ -1127,17 +1161,47 @@ class _BarLoop:
         pair, so it gives nothing (#707). Exits declined after the entry are
         skipped: the coin is still held, and so is that entry (#706).
         """
-        if pair not in self.c.tracker.snapshot.positions:
+        position = self.c.tracker.snapshot.positions.get(pair)
+        if position is None:
             return None
         entry = self.c.ledger.latest_signal_event(
             self.c.strategy_id, pair, at_or_before=at_or_before, kind=SignalKind.ENTRY
         )
         if entry is None or entry.entry_price is None:
-            return None
+            return self._held_without_entry_signal(position, at_or_before=at_or_before)
         stop = self.c.ledger.latest_stop_mark(self.c.strategy_id, pair, entry.occurred_at)
         return OpenPosition(
             entry_time=entry.occurred_at,
             entry_price=entry.entry_price,
+            last_stop=None if stop is None else stop.record.stop_price,
+        )
+
+    def _held_without_entry_signal(
+        self, position: Position, *, at_or_before: datetime
+    ) -> OpenPosition | None:
+        """Watch a held coin whose entry signal is missing, from its own fills (#902).
+
+        An old or manual trade, or a ledger that lost its signal rows, would
+        otherwise seed the strategy flat: no exit rule would watch the coin,
+        and the next breakout would buy it a second time. The entry time is
+        the first buy since the pair was last flat, so the time stop counts
+        from when the coin was bought; the entry price is the average cost.
+        """
+        opened_at = _holding_opened_at(
+            self.c.ledger.trade_events(self.c.strategy_id), position.pair, at_or_before
+        )
+        if opened_at is None:
+            _log.warning("serve.position.unwatched", pair=str(position.pair))
+            return None
+        _log.warning(
+            "serve.position.no_entry_signal",
+            pair=str(position.pair),
+            entry_time=opened_at.isoformat(),
+        )
+        stop = self.c.ledger.latest_stop_mark(self.c.strategy_id, position.pair, opened_at)
+        return OpenPosition(
+            entry_time=opened_at,
+            entry_price=position.cost_basis / position.quantity,
             last_stop=None if stop is None else stop.record.stop_price,
         )
 
