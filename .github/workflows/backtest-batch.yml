@@ -4,7 +4,7 @@ name: Backtest batch
 # check -> one Train job per candidate -> Train judge -> one Validation job per
 # candidate that passed Train -> champion judge. Single pre-registrations keep
 # backtest.yml. The commands and files each step uses are the research funnel
-# interface contract v1 (issue #1060).
+# interface contract (issue #1060).
 #
 # The jobs share the `backtest` concurrency group with backtest.yml: one
 # backtest at a time on the one runner (ADR-023 §1, §8). Job summaries hold
@@ -102,7 +102,7 @@ jobs:
 
       # `hermes batch check` recomputes the content hash with git, compares the
       # cards and the code binding, and refuses a batch that is not signed
-      # (ADR-026 §1; contract v4 §1).
+      # (ADR-026 §1).
       - name: Batch check
         id: check
         env:
