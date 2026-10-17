@@ -53,8 +53,8 @@ ADR-007 is Accepted, so the fix is a new ADR (ADR-009 lifecycle, AGENTS.md rule 
 | Integration | `tests/integration/`, real adapters against local fakes, no network | `ci.yml` (`pytest tests/integration/ -n 4`); merge queue (same gate as unit) | Every PR; every merge-queue batch | live |
 | Contract | `tests/contract/`, real HTTPS to third-party sandboxes | `scheduled.yml` job `contract`: `pytest tests/contract -m contract` | Daily 11:30 UTC | live |
 | Smoke | `tests/smoke/`, read-only checks on hermes-01 over SSH | `cd.yml` step "Smoke tests": `pytest tests/smoke -m smoke`; exit 5 (nothing collected) fails the deploy | After each deploy | live |
-| Mutation | cosmic-ray over `src/hermes/domain/value_objects` | `scheduled.yml` job `mutation` | Sundays 11:45 UTC; manual dispatch with `mutation` ticked | live, kill-rate floor advisory until #406 |
-| End-to-end | `tests/e2e/` | none; the directory holds only `__init__.py` | planned inside `scheduled.yml` (no `e2e.yml`) | planned, #408 |
+| Mutation | cosmic-ray over `src/hermes/domain/value_objects` and `src/hermes/domain/lots` | `scheduled.yml` job `mutation` | Sundays 11:45 UTC; manual dispatch with `mutation` ticked | live, 80% kill-rate floor blocking since #406 |
+| End-to-end | `tests/e2e/` | `scheduled.yml` job `e2e`: `pytest tests/e2e -m e2e` | Sundays 11:45 UTC; every manual dispatch | live since #408 |
 
 The merge queue and `ci.yml` on a push to `main` do not add a tier. A push to `main` skips the suite when the tree
 already passed on the PR head (`scripts/dev/main-tree-validated.sh`).

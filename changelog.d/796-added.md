@@ -1,0 +1,1 @@
+- `hermes serve` runs the pre-registration §10 shadow kills (SA-9 rule 3+ times in 30 days, shadow Sharpe streak) and the sim-vs-live drift rule once per UTC day; a kill stops new entries for good, a drift breach is recorded for the return to UNTRUSTED, and both are alerted and shown in `hermes status` (#796).

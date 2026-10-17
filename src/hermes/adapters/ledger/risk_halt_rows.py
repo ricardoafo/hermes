@@ -34,15 +34,15 @@ def risk_halt_from_payload(payload: dict[str, Any]) -> RiskHaltRecorded:
         KeyError: A field is missing from the payload.
         ValueError: A field holds a value of the wrong shape.
     """
+    pair = payload["pair"]
     return RiskHaltRecorded(
         occurred_at=datetime.fromisoformat(payload["occurred_at"]),
         correlation_id=payload["correlation_id"],
         event_seq=int(payload["event_seq"]),
         strategy_id=StrategyId(payload["strategy_id"]["value"]),
-        pair=Pair(
-            base=Currency(payload["pair"]["base"]),
-            quote=Currency(payload["pair"]["quote"]),
-        ),
+        pair=None
+        if pair is None
+        else Pair(base=Currency(pair["base"]), quote=Currency(pair["quote"])),
         kind=HaltKind(payload["kind"]),
         rule=str(payload["rule"]),
         reason=str(payload["reason"]),
