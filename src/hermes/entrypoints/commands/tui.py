@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, MutableMapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, TextIO
 
@@ -28,7 +28,7 @@ from hermes.entrypoints.version import read_release
 if TYPE_CHECKING:
     from hermes.adapters.exchanges.kraken_public import KrakenPublicAdapter
 
-__all__ = ["COMMAND", "live_ticker", "run_tui"]
+__all__ = ["COMMAND", "apply_console_colors", "console_color_system", "live_ticker", "run_tui"]
 
 _TUI_USAGE: Final = "Usage: hermes [--demo SCENARIO] tui [--db PATH] [--theme neon|control|auto]"
 _TUI_HELP: Final = (
@@ -39,6 +39,9 @@ _TUI_HELP: Final = (
     "  -h, --help    show this help\n"
     "Exit codes: 0 after the operator quits, 2 usage, unknown scenario or no data source."
 )
+# Read by the console's UI library when it is first imported.
+_COLOR_SYSTEM_ENV: Final = "TEXTUAL_COLOR_SYSTEM"
+_PLAIN_TERMS: Final = frozenset({"dumb", "linux"})
 _DB: Final = "--db"
 _THEME: Final = "--theme"
 
@@ -100,6 +103,7 @@ def run_tui(
         from hermes.entrypoints.tui import run_home  # noqa: PLC0415 - Textual is slow to import
 
         cap = roster_exposure_cap(env or {})
+        apply_console_colors(env or {}, os.environ)
 
         def runner(read_model: ConsoleReadModel) -> None:
             ticker = live_ticker(read_model)
@@ -118,6 +122,38 @@ def run_tui(
 
     runner(model)
     return 0
+
+
+def console_color_system(env: Mapping[str, str]) -> str | None:
+    """Return the colour system the console should draw with, or ``None`` to auto-detect.
+
+    The console's palette is designed in 24-bit colour. Auto-detection reads
+    ``COLORTERM``, which ssh does not forward, so over ssh it falls back to 256
+    colours, where the Neon background ``#0B0420`` rounds to black (#992).
+    True colour is therefore the default; an explicit choice in
+    ``TEXTUAL_COLOR_SYSTEM`` and the plain ``linux`` and ``dumb`` terminals
+    keep auto-detection.
+
+    Args:
+        env: Environment snapshot.
+    """
+    if env.get(_COLOR_SYSTEM_ENV, "").strip():
+        return None
+    if env.get("TERM", "").strip() in _PLAIN_TERMS:
+        return None
+    return "truecolor"
+
+
+def apply_console_colors(env: Mapping[str, str], environ: MutableMapping[str, str]) -> None:
+    """Set the console's colour system in ``environ`` before its UI library is imported.
+
+    Args:
+        env: Environment snapshot the choice is made from.
+        environ: The process environment to write (``os.environ``).
+    """
+    system = console_color_system(env)
+    if system is not None:
+        environ[_COLOR_SYSTEM_ENV] = system
 
 
 def live_ticker(model: ConsoleReadModel) -> KrakenPublicAdapter | None:

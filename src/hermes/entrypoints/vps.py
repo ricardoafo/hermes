@@ -34,7 +34,6 @@ __all__ = [
     "SshResult",
     "VpsSettings",
     "build_ssh_argv",
-    "local_truecolor",
     "run_vps",
     "split_vps_flag",
 ]
@@ -62,11 +61,6 @@ _REMOTE_SCRIPT: Final = REMOTE_GUARD + (
     f'HERMES_CONFIG_DIR="${{HERMES_CONFIG_DIR:-{_REMOTE_CONFIG_DIR}}}"; '
     f'cd {_REMOTE_WORKDIR} && exec runuser -u hermes -- "$@"'
 )
-# The console picks its colour depth from COLORTERM, which ssh does not forward
-# and sudo would drop: without it the VPS sees only TERM=xterm-256color and the
-# theme's dark background rounds to black (#992).
-_REMOTE_TRUECOLOR: Final = "export COLORTERM=truecolor; "
-_TRUECOLOR_VALUES: Final = frozenset({"truecolor", "24bit"})
 _FLAG: Final = "--vps"
 _SSH_FAILED: Final = 255
 _COMMAND_NOT_FOUND: Final = 127
@@ -147,9 +141,7 @@ def split_vps_flag(args: list[str]) -> tuple[bool, list[str]]:
     return False, list(args)
 
 
-def build_ssh_argv(
-    settings: VpsSettings, command: str, args: list[str], *, truecolor: bool = False
-) -> list[str]:
+def build_ssh_argv(settings: VpsSettings, command: str, args: list[str]) -> list[str]:
     """Return the ssh argv that runs ``hermes <command> <args>`` on the VPS.
 
     The remote side is one string quoted with :func:`shlex.join`, so an argument
@@ -159,14 +151,11 @@ def build_ssh_argv(
         settings: Host, user and key.
         command: A console command name.
         args: Its arguments, forwarded verbatim.
-        truecolor: The local terminal draws 24-bit colour; the remote command
-            is told so through ``COLORTERM``.
 
     Returns:
         The argument list for :mod:`subprocess` (no shell involved locally).
     """
-    script = (_REMOTE_TRUECOLOR if truecolor else "") + _REMOTE_SCRIPT
-    remote = shlex.join(["bash", "-c", script, "_", REMOTE_BIN, command, *args])
+    remote = shlex.join(["bash", "-c", _REMOTE_SCRIPT, "_", REMOTE_BIN, command, *args])
     return [
         "ssh",
         "-t",
@@ -299,23 +288,6 @@ def _finish(result: SshResult, settings: VpsSettings, err: TextIO) -> int:
     return result.returncode
 
 
-def local_truecolor(out: TextIO, env: Mapping[str, str], platform: str) -> bool:
-    """Return whether the local terminal draws 24-bit colour.
-
-    It does when ``out`` is a terminal and either ``COLORTERM`` says so or the
-    platform is Windows, whose consoles all draw 24-bit colour since Windows 10
-    and rarely set ``COLORTERM``.
-
-    Args:
-        out: The stream the remote console draws on.
-        env: Environment snapshot.
-        platform: ``sys.platform``.
-    """
-    if not out.isatty():
-        return False
-    return env.get("COLORTERM", "").strip().lower() in _TRUECOLOR_VALUES or platform == "win32"
-
-
 def run_vps(
     command: str,
     args: list[str],
@@ -326,7 +298,6 @@ def run_vps(
     runner: SshRunner = _subprocess_runner,
     sleep: Callable[[float], None] = time.sleep,
     stdout: TextIO | None = None,
-    platform: str = sys.platform,
 ) -> int:
     """Run console ``command`` on the VPS and return its exit code.
 
@@ -346,7 +317,6 @@ def run_vps(
         sleep: Waits between reconnect attempts; injected by tests.
         stdout: Stream that gets the terminal reset after each ssh exit; defaults to
             ``sys.stdout`` and is written only when it is a TTY.
-        platform: ``sys.platform``; see :func:`local_truecolor`.
 
     Returns:
         The remote command's exit code; 2 for a refusal, bad settings or no ssh
@@ -359,8 +329,7 @@ def run_vps(
         err.write(f"ERROR: {problem}\n")
         return 2
     out = stdout if stdout is not None else sys.stdout
-    truecolor = local_truecolor(out, env, platform)
-    argv = build_ssh_argv(settings, command, args, truecolor=truecolor)
+    argv = build_ssh_argv(settings, command, args)
     started = False
     waits = 0
     while True:
