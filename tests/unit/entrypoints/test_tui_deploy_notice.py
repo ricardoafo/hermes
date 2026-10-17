@@ -259,3 +259,32 @@ def test_windows_exits_with_a_message_instead_of_exec(
         [],
         "New version deployed: start hermes again to use it.\n",
     )
+
+
+def test_restart_default_keeps_the_interpreter_flags_of_python_dash_m(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Invariant: started as ``python -m hermes``, a restart runs ``-m hermes`` again."""
+    _fake_run(monkeypatch, restart=True)
+    monkeypatch.setattr(sys, "orig_argv", ["python", "-m", "hermes", "tui"])
+    calls: list[tuple[str, list[str]]] = []
+    run_home(
+        FixtureReadModel.load("ok-two-positions"),
+        exec_fn=lambda path, args: calls.append((path, args)),
+        platform="linux",
+    )
+    assert calls == [(sys.executable, [sys.executable, "-m", "hermes", "tui"])]
+
+
+def test_a_deploy_before_the_first_tick_still_shows_the_notice() -> None:
+    """Invariant: the baseline is the release at construction, not the first read of a refresh."""
+    reader = _Release("aaaaaaaaaaaa")
+    app = _app(reader)
+    reader.name = "bbbbbbbbbbbb"
+
+    async def run() -> str:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            return app.plain_text("notice").strip()
+
+    assert asyncio.run(run()) == _NOTICE

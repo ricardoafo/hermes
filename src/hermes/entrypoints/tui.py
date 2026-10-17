@@ -596,7 +596,8 @@ class HomeApp(App[None]):
         self._tab = _HOME
         self._tab_history: list[int] = []
         self._content: dict[str, RenderableType] = {}
-        self._started_release: str | None = None
+        started = self._read_release()
+        self._started_release = None if started == _UNKNOWN_RELEASE else started
         self._release_is_new = False
         self.restart_requested = False
         self._heartbeat: Heartbeat | None = None
@@ -1685,7 +1686,8 @@ def run_home(
         journal: Source of the logs panel's lines; see :class:`HomeApp`.
         release: Source of the running release's name; see :class:`HomeApp`.
         exec_fn: ``os.execv``-shaped replacement of the process; injectable for tests.
-        argv: The command line to restart with; defaults to ``sys.argv``.
+        argv: The command line to restart with, after the interpreter; defaults to
+            the interpreter's own ``sys.orig_argv``, so ``python -m hermes`` restarts the same way.
         platform: ``sys.platform``; where exec is not meaningful (Windows) the
             console exits with a message instead.
         theme: A ``--theme`` choice; saved, and wins over the saved one.
@@ -1708,4 +1710,4 @@ def run_home(
     if platform == "win32":
         sys.stdout.write("New version deployed: start hermes again to use it.\n")
         return
-    exec_fn(sys.executable, [sys.executable, *(sys.argv if argv is None else argv)])
+    exec_fn(sys.executable, [sys.executable, *(sys.orig_argv[1:] if argv is None else argv)])
