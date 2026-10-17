@@ -18,6 +18,7 @@ from hermes.entrypoints.console import (
     recent_journal_lines,
     resolve_read_model,
     roster_exposure_cap,
+    shadow_sources,
 )
 from hermes.entrypoints.tui_settings import (
     DEFAULT_SETTINGS_PATH,
@@ -103,6 +104,7 @@ def run_tui(
         from hermes.entrypoints.tui import run_home  # noqa: PLC0415 - Textual is slow to import
 
         cap = roster_exposure_cap(env or {})
+        snapshot = env or {}
         allow_mainnet = config_allow_mainnet(env or {})
 
         def runner(read_model: ConsoleReadModel) -> None:
@@ -117,6 +119,7 @@ def run_tui(
                     settings_path=settings_path,
                     exposure_cap=cap,
                     ticker=ticker,
+                    shadow=shadow_sources(read_model, env=snapshot, db_path=db_path),
                 )
             finally:
                 if ticker is not None:

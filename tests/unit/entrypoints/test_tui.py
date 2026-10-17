@@ -354,7 +354,7 @@ def test_big_total_appears_only_on_tall_terminals() -> None:
         )
         async with app.run_test(size=size) as pilot:
             await pilot.pause()
-            big = app.query_one(BigNumber)
+            big = app.query_one("#portfolio-total", BigNumber)
             return big.display, big.figure, app.plain_text("portfolio").splitlines()[0]
 
     tall = asyncio.run(run((120, 40)))
