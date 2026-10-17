@@ -28,6 +28,8 @@ from hermes.adapters.ledger.connection import (
 
 _READ_ONLY_DIR = 0o555
 _WRITABLE_DIR = 0o755
+_READ_ONLY_FILE = 0o444
+_WRITABLE_FILE = 0o644
 
 
 @pytest.mark.parametrize("read_only", [False, True])
@@ -79,11 +81,13 @@ def test_closing_the_last_writer_keeps_the_wal_and_shm_files(tmp_path: Path) -> 
     os.geteuid() == 0, reason="root ignores directory permissions, so nothing is read-only"
 )
 def test_a_read_only_unit_opens_the_ledger_while_serve_is_stopped(tmp_path: Path) -> None:
-    """A reader that cannot write the ledger directory reads every committed row.
+    """A reader that can write neither the directory nor any ledger file reads every row.
 
-    This is the tax pack at 07:30 with serve stopped for a deploy: the
-    directory is read-only to it, so it cannot create the ``-wal`` or ``-shm``
-    file. Committed rows still sitting in the ``-wal`` file must be visible.
+    This is the tax pack at 07:30 with serve stopped for a deploy. It can
+    neither create a ``-wal`` or ``-shm`` file nor open one for writing, as
+    under the VPS's read-only mount. Committed rows still sitting in the
+    ``-wal`` file must be visible. The real read-only mount is in
+    ``tests/integration/adapters/ledger/test_ledger_read_only_mount.py``.
     """
     state = tmp_path / "state"
     state.mkdir()
@@ -92,10 +96,18 @@ def test_a_read_only_unit_opens_the_ledger_while_serve_is_stopped(tmp_path: Path
         serve.execute("CREATE TABLE t (x INTEGER)")
         serve.execute("INSERT INTO t VALUES (1)")
         serve.commit()
+    files = sorted(state.iterdir())
+    for path in files:
+        path.chmod(_READ_ONLY_FILE)
     state.chmod(_READ_ONLY_DIR)
     try:
         with closing(open_ledger(db, read_only=True)) as reader:
             rows = reader.execute("SELECT x FROM t").fetchall()
     finally:
         state.chmod(_WRITABLE_DIR)
-    assert rows == [(1,)]
+        for path in files:
+            path.chmod(_WRITABLE_FILE)
+    assert ([p.name for p in files], rows) == (
+        ["ledger.sqlite3", "ledger.sqlite3-shm", "ledger.sqlite3-wal"],
+        [(1,)],
+    )
