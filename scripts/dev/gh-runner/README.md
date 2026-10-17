@@ -119,10 +119,10 @@ sequenceDiagram
   pattern. `RUNNER_LABEL` set → this runner; unset → `ubuntu-latest`.
 
 - **Image (`gh-runner:latest`) pre-baked for speed**:
-  - Ubuntu 24.04 base
+  - Ubuntu 26.04 LTS base
   - Python 3.14 (via `uv python install`)
   - uv 0.12.5 (pinned)
-  - Node 24 (nodesource) + markdownlint-cli2 0.23.2 (pinned, npm -g)
+  - Node 24 (nodesource) + markdownlint-cli2 0.23.3 (pinned, npm -g)
   - gitleaks 8.30.1 (pinned binary — avoids Docker pull on every scan)
   - git, curl, jq, Docker CLI (socket-mounted for container-based actions)
 
