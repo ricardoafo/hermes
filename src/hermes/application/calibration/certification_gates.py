@@ -109,6 +109,8 @@ class ShadowEvidence:
     drift_p50_bps: float | None = None
     kill_fired: bool | None = None
     drift_breached: bool | None = None
+    round_trips: int | None = None
+    """Shadow round trips when the shadow ended; v1's gate does not read it (v2 §7)."""
 
 
 @dataclass(frozen=True, slots=True)

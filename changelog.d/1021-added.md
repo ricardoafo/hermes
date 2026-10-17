@@ -1,0 +1,1 @@
+- `hermes certify swing-mvp1-v2` evaluates the gates past the backtest: the shadow gate applies pre-registration v2 §7 (90 days and 30 round trips, capped at 180 days), and the OOS and live gates are the v1 gates v2 keeps; the evidence file takes `shadow.round_trips` (#1021).

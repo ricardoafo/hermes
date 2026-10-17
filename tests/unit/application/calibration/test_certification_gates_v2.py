@@ -1,4 +1,4 @@
-"""Unit tests for v2's backtest gate (pre-registration-v2.md §7, §9, §10; #1008).
+"""Unit tests for v2's gates (pre-registration-v2.md §4, §7, §9, §10; #1008, #1021).
 
 The gate is pure, so the tests drive it with hand-built evidence and a fixed
 clock. Every pre-registration text except the one table test is synthetic.
@@ -6,6 +6,7 @@ clock. Every pre-registration text except the one table test is synthetic.
 
 from collections.abc import Mapping
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -24,16 +25,23 @@ from hermes.application.calibration.certification_gates import (
     CertificationRecord,
     GateEvidence,
     GateReport,
+    OperatorSignOff,
+    ShadowEvidence,
     WindowMetrics,
+    v1_parameter_fingerprint,
 )
 from hermes.application.calibration.certification_gates_v2 import (
     V2_STRATEGY_ID,
     V2BacktestRules,
     V2RulesError,
+    V2ShadowRules,
     evaluate_v2_gate,
     parse_v2_backtest_rules,
+    parse_v2_shadow_rules,
+    v2_parameter_fingerprint,
 )
 from hermes.application.calibration.lifecycle import CertificationState
+from hermes.application.execution.prereg_book import ExitPricing
 from hermes.application.strategy_protocol.preregistration import PreRegistration
 from hermes.entrypoints.funnel import read_front_matter
 
@@ -61,6 +69,7 @@ _FUNNEL = FunnelThresholds(
     ),
 )
 _RULES = V2BacktestRules(dsr_min=0.95, funnel=_FUNNEL)
+_SHADOW = V2ShadowRules(min_days=90, min_round_trips=30, max_days=180)
 
 _V1_ROWS = [
     "dsr",
@@ -136,7 +145,9 @@ def _gate(
 ) -> GateReport:
     record = CertificationRecord(V2_STRATEGY_ID, state)
     evidence = GateEvidence(backtest=_metrics(dsr, max_drawdown), calibration_fill_count=40)
-    return evaluate_v2_gate(record, evidence, now=_NOW, v1=v1, rules=_RULES, funnel=funnel)
+    return evaluate_v2_gate(
+        record, evidence, now=_NOW, v1=v1, rules=_RULES, shadow=_SHADOW, funnel=funnel
+    )
 
 
 def _row(report: GateReport, name: str) -> tuple[bool, str, str]:
@@ -180,7 +191,9 @@ class TestDsrBoundary:
         record = CertificationRecord(V2_STRATEGY_ID, _S.UNTRUSTED)
         evidence = GateEvidence(backtest=_metrics(dsr), calibration_fill_count=40)
         rules = V2BacktestRules(dsr_min=floor, funnel=_FUNNEL)
-        report = evaluate_v2_gate(record, evidence, now=_NOW, v1=v1, rules=rules, funnel=None)
+        report = evaluate_v2_gate(
+            record, evidence, now=_NOW, v1=v1, rules=rules, shadow=_SHADOW, funnel=None
+        )
         assert _row(report, "dsr")[0] is (dsr >= floor)
 
 
@@ -224,23 +237,127 @@ class TestRows:
         assert (report.from_state, report.to_state) == (_S.UNTRUSTED, _S.BACKTEST_CERTIFIED)
 
 
-class TestLaterStates:
-    """Only the backtest gate is implemented for v2; later ones are refused (change Scope, Out)."""
-
-    @pytest.mark.parametrize(
-        "state",
-        [_S.BACKTEST_CERTIFIED, _S.SHADOW_CERTIFIED, _S.OOS_CERTIFIED, _S.LIVE_APPROVED],
-    )
-    def test_gates_past_untrusted_are_refused(
-        self, v1: PreRegistration, state: CertificationState
-    ) -> None:
-        """v2 §7 changes the shadow rule, so v1's later gates must not judge v2."""
-        report = _gate(v1, 0.95, funnel=_passing_funnel(), state=state)
-        assert (report.to_state, report.checks, report.passed) == (None, (), False)
-        assert report.refused_reason == (
-            f"the gate out of {state} is not implemented for {V2_STRATEGY_ID}; "
-            "pre-registration v2 §7 changes the shadow rule, so v1's gate does not apply."
+def _shadow_gate(
+    v1: PreRegistration,
+    *,
+    days: int | None = 90,
+    round_trips: int | None = 30,
+    drift: float | None = 12.0,
+    kill: bool | None = False,
+) -> GateReport:
+    record = CertificationRecord(V2_STRATEGY_ID, _S.BACKTEST_CERTIFIED)
+    evidence = GateEvidence(
+        shadow=ShadowEvidence(
+            days=days, round_trips=round_trips, drift_p50_bps=drift, kill_fired=kill
         )
+    )
+    return evaluate_v2_gate(
+        record, evidence, now=_NOW, v1=v1, rules=_RULES, shadow=_SHADOW, funnel=None
+    )
+
+
+class TestShadowGate:
+    """v2 §7: 90 days and 30 round trips, whichever is later, capped at 180 days (#1021)."""
+
+    def test_90_days_and_30_round_trips_pass(self, v1: PreRegistration) -> None:
+        """The earliest end §7 allows passes every row."""
+        report = _shadow_gate(v1)
+        assert (report.passed, report.to_state) == (True, _S.SHADOW_CERTIFIED)
+
+    def test_rows_are_days_round_trips_cap_then_v1_drift_and_kill(
+        self, v1: PreRegistration
+    ) -> None:
+        """v2 adds two rows after v1's days row and keeps v1's drift and kill rows."""
+        report = _shadow_gate(v1)
+        assert [(c.name, c.requirement) for c in report.checks] == [
+            ("shadow_days", ">= 90"),
+            ("shadow_round_trips", ">= 30"),
+            ("shadow_cap", "<= 180 days"),
+            ("shadow_drift_p50_bps", "< 30"),
+            ("shadow_kill", "no §10 shadow kill fired"),
+        ]
+
+    def test_29_round_trips_fail_however_long_the_shadow(self, v1: PreRegistration) -> None:
+        """Days alone never end a v2 shadow: 120 days with 29 round trips fail."""
+        report = _shadow_gate(v1, days=120, round_trips=29)
+        assert report.failed_checks == ("shadow_round_trips",)
+
+    def test_89_days_fail_however_many_round_trips(self, v1: PreRegistration) -> None:
+        """Round trips alone never end it either: 89 days with 60 round trips fail."""
+        report = _shadow_gate(v1, days=89, round_trips=60)
+        assert report.failed_checks == ("shadow_days",)
+
+    def test_reaching_the_cap_first_fails_as_inconclusive(self, v1: PreRegistration) -> None:
+        """A shadow that ran 181 days, whatever its count, reached the cap and fails."""
+        report = _shadow_gate(v1, days=181, round_trips=30)
+        assert (report.failed_checks, _row(report, "shadow_cap")[1]) == (("shadow_cap",), "181")
+
+    def test_180_days_with_30_round_trips_pass(self, v1: PreRegistration) -> None:
+        """The cap is inclusive: the 30th round trip on day 180 still ends the shadow."""
+        assert _shadow_gate(v1, days=180, round_trips=30).passed
+
+    def test_a_missing_round_trip_count_fails_closed(self, v1: PreRegistration) -> None:
+        """No count in the evidence: the row reads 'not computed' and fails."""
+        report = _shadow_gate(v1, round_trips=None)
+        assert (report.failed_checks, _row(report, "shadow_round_trips")[1]) == (
+            ("shadow_round_trips",),
+            "not computed",
+        )
+
+    def test_v1_drift_rule_still_applies(self, v1: PreRegistration) -> None:
+        """v2 §7 keeps SA-5: a p50 drift of 30 bps fails."""
+        assert _shadow_gate(v1, drift=30.0).failed_checks == ("shadow_drift_p50_bps",)
+
+    @given(
+        days=st.integers(min_value=0, max_value=400),
+        round_trips=st.integers(min_value=0, max_value=100),
+    )
+    @example(days=90, round_trips=30)
+    @example(days=180, round_trips=30)
+    @example(days=181, round_trips=30)
+    def test_the_length_rows_pass_exactly_when_section_7_ends_the_shadow(
+        self, v1: PreRegistration, days: int, round_trips: int
+    ) -> None:
+        """Pass iff days >= 90, round trips >= 30 and days <= 180."""
+        expected = 90 <= days <= 180 and round_trips >= 30
+        assert _shadow_gate(v1, days=days, round_trips=round_trips).passed is expected
+
+
+class TestLaterGates:
+    """Past the shadow, v2 runs v1's gates, which v2 keeps unchanged (#1021 D-3)."""
+
+    def test_oos_before_2027_is_refused_as_in_v1(self, v1: PreRegistration) -> None:
+        """§4 is unchanged: the one-shot OOS test cannot begin before 2027-01-01."""
+        report = _gate(v1, 0.95, state=_S.SHADOW_CERTIFIED)
+        assert report.refused_reason == "OOS certification cannot begin before 2027-01-01 (§4)."
+
+    def test_oos_gate_reads_v1_primary_thresholds(self, v1: PreRegistration) -> None:
+        """§9 Primary is unchanged: on 2027-01-02 a full OOS set is judged by v1's rows."""
+        record = CertificationRecord(V2_STRATEGY_ID, _S.SHADOW_CERTIFIED)
+        report = evaluate_v2_gate(
+            record,
+            GateEvidence(oos=_metrics(0.71)),
+            now=datetime(2027, 1, 2, tzinfo=UTC),
+            v1=v1,
+            rules=_RULES,
+            shadow=_SHADOW,
+            funnel=None,
+        )
+        assert (report.passed, report.consumes_oos, _row(report, "dsr")[2]) == (True, True, "> 0.7")
+
+    def test_live_approval_needs_the_typed_phrase(self, v1: PreRegistration) -> None:
+        """§7 is unchanged: the operator types LIVE_APPROVED to approve live capital."""
+        record = CertificationRecord(V2_STRATEGY_ID, _S.OOS_CERTIFIED)
+        report = evaluate_v2_gate(
+            record,
+            GateEvidence(sign_off=OperatorSignOff("Rick", "LIVE_APPROVED", _NOW)),
+            now=_NOW,
+            v1=v1,
+            rules=_RULES,
+            shadow=_SHADOW,
+            funnel=None,
+        )
+        assert (report.passed, report.to_state) == (True, _S.LIVE_APPROVED)
 
     def test_dead_is_refused_as_in_v1(self, v1: PreRegistration) -> None:
         """DEAD stays absorbing for v2 (v2 §10 post-kill protocol, unchanged from v1)."""
@@ -248,6 +365,26 @@ class TestLaterStates:
         assert report.refused_reason == (
             "DEAD is absorbing; a new pre-registration is required (§10)."
         )
+
+
+class TestFingerprint:
+    """v2's fingerprint names a changed exit pricing and keeps records made so far (D-4)."""
+
+    def test_the_signed_bar_close_exit_keeps_the_fingerprint_records_carry(self) -> None:
+        """Records certified by #1008 used v1's formula; the signed exit leaves it unchanged."""
+        assert v2_parameter_fingerprint(
+            capital_budget=Decimal(5000),
+            universe=("BTCUSDT", "ETHUSDT"),
+            exit_pricing=ExitPricing.BAR_CLOSE,
+        ) == v1_parameter_fingerprint(capital_budget=Decimal(5000), universe=("BTCUSDT", "ETHUSDT"))
+
+    def test_another_exit_pricing_is_another_fingerprint(self) -> None:
+        """A v2 entry switched to stop orders no longer matches its certified fingerprint."""
+        assert v2_parameter_fingerprint(
+            capital_budget=Decimal(5000),
+            universe=("BTCUSDT", "ETHUSDT"),
+            exit_pricing=ExitPricing.STOP_ORDER,
+        ) != v1_parameter_fingerprint(capital_budget=Decimal(5000), universe=("BTCUSDT", "ETHUSDT"))
 
 
 _DOCUMENT = """\
@@ -359,6 +496,68 @@ class TestParse:
             parse_v2_backtest_rules(_DOCUMENT.format(dsr="0.95"), _front_matter(status="DRAFT"))
 
 
+_SHADOW_DOCUMENT = """\
+## 4. Data windows (FROZEN)
+
+Unchanged from v1, UTC, both ends inclusive.
+
+## 7. Certification lifecycle
+
+Unchanged from v1 (UNTRUSTED to CERTIFIED), with two v2 rules:
+
+- Shadow follows ADR-021 §5: it ends at {days} days and {trips} round trips, whichever is
+  later, capped at {cap} days; reaching the cap first is inconclusive and counts as a fail.
+
+## 9. Metrics and thresholds
+
+### Primary (must pass for LIVE_APPROVED)
+
+Unchanged from v1: DSR on OOS > 0.7.
+
+## 10. Kill criteria
+
+### Shadow phase and live phase
+
+Unchanged from v1, with the shadow length of §7.
+"""
+
+
+def _shadow_document(days: str = "90", trips: str = "30", cap: str = "180") -> str:
+    return _SHADOW_DOCUMENT.format(days=days, trips=trips, cap=cap)
+
+
+class TestShadowParse:
+    """v2's shadow numbers and the "unchanged" guards come from the signed file (#1021 D-1, D-3)."""
+
+    def test_the_three_numbers_are_read_from_section_7(self) -> None:
+        """The sentence wraps across lines in the signed file; the parse joins them."""
+        rules = parse_v2_shadow_rules(_shadow_document("91", "31", "181"))
+        assert rules == V2ShadowRules(min_days=91, min_round_trips=31, max_days=181)
+
+    def test_a_section_7_without_the_sentence_is_refused(self) -> None:
+        """No end rule in §7: refuse rather than fall back to v1's 90 days."""
+        document = _shadow_document().replace("ends at 90 days", "ends after 90 days")
+        with pytest.raises(V2RulesError, match=r"^§7 states 0 shadow length rules, not 1$"):
+            parse_v2_shadow_rules(document)
+
+    @pytest.mark.parametrize(
+        ("section", "text"),
+        [
+            ("§4", "Unchanged from v1, UTC, both ends inclusive."),
+            ("§7", "Unchanged from v1 (UNTRUSTED to CERTIFIED), with two v2 rules:"),
+            ("§9 primary metrics", "Unchanged from v1: DSR on OOS > 0.7."),
+            ("§10 shadow and live kills", "Unchanged from v1, with the shadow length of §7."),
+        ],
+    )
+    def test_a_section_v2_keeps_from_v1_that_changes_is_refused(
+        self, section: str, text: str
+    ) -> None:
+        """v1's later gates judge v2 only while each section still says it is unchanged."""
+        document = _shadow_document().replace(text, "Changed in v2.")
+        with pytest.raises(V2RulesError, match=rf"^{section} no longer says 'Unchanged from v1'$"):
+            parse_v2_shadow_rules(document)
+
+
 class TestSignedFile:
     """The one table test against the signed text (ai-authored-tests rule 7)."""
 
@@ -369,3 +568,12 @@ class TestSignedFile:
         ).read_text(encoding="utf-8")
         rules = parse_v2_backtest_rules(text, read_front_matter(text))
         assert (rules.dsr_min, rules.funnel.cscv_blocks, rules.funnel.pbo_max) == (0.95, 16, 0.05)
+
+    def test_signed_v2_states_90_days_30_round_trips_and_a_180_day_cap(self) -> None:
+        """pre-registration-v2.md §7, as signed on 2026-10-17."""
+        text = (
+            _PROJECT_ROOT / "docs" / "experiments" / "swing-mvp1" / "pre-registration-v2.md"
+        ).read_text(encoding="utf-8")
+        assert parse_v2_shadow_rules(text) == V2ShadowRules(
+            min_days=90, min_round_trips=30, max_days=180
+        )

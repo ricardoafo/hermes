@@ -1,4 +1,4 @@
-"""Unit tests for ``hermes certify swing-mvp1-v2`` (#1008, change v2-certify-gate).
+"""Unit tests for ``hermes certify swing-mvp1-v2`` (#1008, #1021).
 
 ``main`` runs against the signed v2 pre-registration and a copy of the shipped
 config whose roster holds a v2 entry. Evidence and funnel files are synthetic
@@ -44,6 +44,7 @@ strategies:
     weight: "1.0"
     capital_budget: "4000"
     quote: USDT
+    exit_pricing: bar_close
     sizing:
       risk_pct: "0.01"
       max_position_pct: "0.05"
@@ -215,6 +216,79 @@ class TestRecord:
             assert record is not None
             hashes.append(record.transitions[-1].evidence_sha256)
         assert hashes[0] != hashes[1]
+
+
+def _certify_shadow(
+    tmp_path: Path, config_dir: Path, *, days: int, round_trips: int | None
+) -> tuple[int, str]:
+    """Certify the backtest, then submit shadow evidence against the stored record."""
+    assert _certify(tmp_path, config_dir, 0.95, funnel=_funnel_evidence())[0] == 0
+    shadow: dict[str, object] = {"days": days, "drift_p50_bps": 12.0, "kill_fired": False}
+    if round_trips is not None:
+        shadow["round_trips"] = round_trips
+    evidence = _write(tmp_path, "shadow.json", {"shadow": shadow})
+    args = [_V2, "--evidence", str(evidence), "--config-dir", str(config_dir)]
+    args += ["--store-dir", str(tmp_path / "store")]
+    out = io.StringIO()
+    code = certify_module.main(args, stream=out, err=io.StringIO())
+    return code, out.getvalue()
+
+
+class TestShadowGate:
+    """v2 §7 through ``main``: the evidence file's ``shadow.round_trips`` decides (#1021)."""
+
+    def test_90_days_and_30_round_trips_record_shadow_certified(
+        self, tmp_path: Path, config_dir: Path
+    ) -> None:
+        """The earliest end §7 allows passes and moves the record on."""
+        code, out = _certify_shadow(tmp_path, config_dir, days=90, round_trips=30)
+        assert (code, _line(out, "shadow_round_trips"), _state(tmp_path)) == (
+            0,
+            "PASS shadow_round_trips observed 30 required >= 30",
+            CertificationState.SHADOW_CERTIFIED,
+        )
+
+    def test_29_round_trips_fail_and_keep_backtest_certified(
+        self, tmp_path: Path, config_dir: Path
+    ) -> None:
+        """One round trip short: exit 1, nothing recorded past the backtest."""
+        code, out = _certify_shadow(tmp_path, config_dir, days=120, round_trips=29)
+        assert (code, _line(out, "shadow_round_trips"), _state(tmp_path)) == (
+            1,
+            "FAIL shadow_round_trips observed 29 required >= 30",
+            CertificationState.BACKTEST_CERTIFIED,
+        )
+
+    def test_evidence_without_a_round_trip_count_fails_closed(
+        self, tmp_path: Path, config_dir: Path
+    ) -> None:
+        """An evidence file written for v1 (days only) cannot certify a v2 shadow."""
+        code, out = _certify_shadow(tmp_path, config_dir, days=90, round_trips=None)
+        assert (code, _line(out, "shadow_round_trips")) == (
+            1,
+            "FAIL shadow_round_trips observed not computed required >= 30",
+        )
+
+
+class TestExitPricingFingerprint:
+    """A v2 entry with another exit pricing is another fingerprint (#1021 D-4)."""
+
+    def test_a_stop_order_v2_entry_reverts_the_record(
+        self, tmp_path: Path, config_dir: Path
+    ) -> None:
+        """Certified on bar_close, then switched to stop_order: back to UNTRUSTED."""
+        assert _certify(tmp_path, config_dir, 0.95, funnel=_funnel_evidence())[0] == 0
+        roster = config_dir / "strategies.yaml"
+        roster.write_text(
+            _STRATEGIES_YAML.replace("exit_pricing: bar_close", "exit_pricing: stop_order"),
+            encoding="utf-8",
+        )
+        code, out, _ = _certify(tmp_path, config_dir, 0.5)
+        assert (code, out.splitlines()[0]) == (
+            1,
+            "REVERTED: BACKTEST_CERTIFIED -> UNTRUSTED: "
+            "parameters changed since certification (D-8 guardrail, §11)",
+        )
 
 
 class TestErrors:

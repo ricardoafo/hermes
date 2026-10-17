@@ -12,13 +12,16 @@ trading unattended (issue #949).
 
 ``swing-mvp1-v2`` is judged by pre-registration v2: its backtest gate is DSR
 ≥ 0.95, v1's §9 secondary rows and the ADR-021 §5 funnel, read from
-``--funnel-evidence`` (change v2-certify-gate).
+``--funnel-evidence`` (change v2-certify-gate). Its shadow gate applies v2
+§7's length rule, reading ``shadow.round_trips`` from the evidence, and its
+later gates are v1's (change 1021-v2-shadow-gate).
 
 Exit codes: 0 gate passed and recorded, 1 gate failed or refused, 2 usage,
 3 config, evidence or store error.
 
 Reference: openspec/changes/355-certification-gates/change.md;
-openspec/changes/v2-certify-gate/change.md; ADR-014.
+openspec/changes/v2-certify-gate/change.md;
+openspec/changes/1021-v2-shadow-gate/change.md; ADR-014.
 """
 
 from __future__ import annotations
@@ -52,13 +55,15 @@ from hermes.application.calibration.certification_gates import (
     apply_guardrails,
     evaluate_next_gate,
     record_outcome,
-    v1_parameter_fingerprint,
 )
 from hermes.application.calibration.certification_gates_v2 import (
     V2_STRATEGY_ID,
     V2BacktestRules,
+    V2ShadowRules,
     evaluate_v2_gate,
     parse_v2_backtest_rules,
+    parse_v2_shadow_rules,
+    v2_parameter_fingerprint,
 )
 from hermes.application.calibration.window_metrics import (
     PerformanceRecord,
@@ -197,15 +202,17 @@ def _fingerprint_for(config: HermesConfig, strategy_id: str) -> str:
     roster = next((s for s in config.strategies.strategies if s.name == strategy_id), None)
     if roster is None:
         raise serve_module.StartupError(f"strategies.yaml has no {strategy_id!r} entry")
-    return v1_parameter_fingerprint(
-        capital_budget=roster.capital_budget, universe=config.market_data.pairs
+    return v2_parameter_fingerprint(
+        capital_budget=roster.capital_budget,
+        universe=config.market_data.pairs,
+        exit_pricing=roster.exit_pricing,
     )
 
 
-def _v2_rules(v1: PreRegistration) -> V2BacktestRules:
+def _v2_rules(v1: PreRegistration) -> tuple[V2BacktestRules, V2ShadowRules]:
     """Read v2's rules from the signed v2 file beside the v1 file that was found."""
     text = v1.pre_reg_path().with_name("pre-registration-v2.md").read_text(encoding="utf-8")
-    return parse_v2_backtest_rules(text, read_front_matter(text))
+    return parse_v2_backtest_rules(text, read_front_matter(text)), parse_v2_shadow_rules(text)
 
 
 def _apply_funnel(
@@ -227,7 +234,7 @@ def _prepare_v2(
 ) -> tuple[_Gate, GateEvidence] | int:
     """Return v2's gate and the evidence with the funnel file hashed in, or exit code 3."""
     try:
-        rules = _v2_rules(v1)
+        rules, shadow = _v2_rules(v1)
     except (OSError, UnicodeDecodeError, ValueError) as exc:
         err.write(f"ERROR: pre-registration: {exc}\n")
         return 3
@@ -238,7 +245,9 @@ def _prepare_v2(
         return 3
 
     def gate(record: CertificationRecord, submitted: GateEvidence, now: datetime) -> GateReport:
-        return evaluate_v2_gate(record, submitted, now=now, v1=v1, rules=rules, funnel=funnel)
+        return evaluate_v2_gate(
+            record, submitted, now=now, v1=v1, rules=rules, shadow=shadow, funnel=funnel
+        )
 
     return gate, evidence
 
@@ -395,6 +404,7 @@ def load_evidence(path: Path) -> GateEvidence:
             drift_p50_bps=_float(shadow_section, "drift_p50_bps"),
             kill_fired=_bool(shadow_section, "kill_fired"),
             drift_breached=_bool(shadow_section, "drift_breached"),
+            round_trips=_int(shadow_section, "round_trips"),
         ),
         oos=_metrics(oos_section, extra=set()),
         live=None
