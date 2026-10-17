@@ -425,6 +425,14 @@ def test_backtest_writes_the_funnel_evidence() -> None:
     assert '--funnel-evidence-out "$RUNNER_TEMP/out/funnel-evidence.json"' in script
 
 
+def test_backtest_runs_the_pre_registered_strategy() -> None:
+    """Every run replays the v2 roster entry, never the roster default (a stray v1 trial)."""
+    script = str(_step("Backtest")["run"])
+
+    assert _workflow()["env"]["STRATEGY"] == "swing-mvp1-v2"
+    assert '--strategy "$STRATEGY"' in script
+
+
 def test_funnel_runs_after_certify() -> None:
     """The funnel follows certify, so the v1 gate's outcome is reported unchanged."""
     names = [s.get("name") for s in _job()["steps"]]

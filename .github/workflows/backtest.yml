@@ -29,6 +29,7 @@ env:
   EXPERIMENT: swing-mvp1
   HERMES_DATA_DIR: /srv/hermes-data
   PRE_REGISTRATION: docs/experiments/swing-mvp1/pre-registration-v2.md
+  STRATEGY: swing-mvp1-v2
 
 jobs:
   backtest:
@@ -168,6 +169,7 @@ jobs:
             --start "$START" --end "$END" \
             --manifest "$MANIFEST" \
             --config-dir config \
+            --strategy "$STRATEGY" \
             --trial-log "$RUNNER_TEMP/trial-log.jsonl" \
             --output "$RUNNER_TEMP/out/report.json" \
             --performance-out "$RUNNER_TEMP/out/performance.json" \
