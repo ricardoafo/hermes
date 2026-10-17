@@ -41,7 +41,7 @@ from returns.result import Failure
 
 from hermes.adapters.ledger._cells import decimal_cell, optional_decimal_cell, time_cell
 from hermes.adapters.ledger.migration_runner import apply_migrations
-from hermes.adapters.ledger.risk_halt_rows import RISK_HALT_EVENT_TYPE
+from hermes.adapters.ledger.risk_halt_rows import RISK_HALT_EVENT_TYPE, risk_halt_from_payload
 from hermes.domain.errors import LedgerError
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.fill_quality_recorded import (
@@ -882,8 +882,8 @@ class SqliteLedger:
                 "SELECT 1 FROM events "
                 "WHERE event_type = 'SignalEmitted' AND occurred_at = ? "
                 "  AND json_extract(payload_json, '$.strategy_id.value') = ? "
-                "  AND json_extract(payload_json, '$.pair.base') = ? "
-                "  AND json_extract(payload_json, '$.pair.quote') = ? "
+                "  AND json_extract(payload_json, '$.pair.base') IS ? "
+                "  AND json_extract(payload_json, '$.pair.quote') IS ? "
                 "  AND json_extract(payload_json, '$.kind') = ? "
                 "LIMIT 1",
                 (
@@ -901,8 +901,9 @@ class SqliteLedger:
     def has_risk_halt(self, event: RiskHaltRecorded) -> bool:
         """Return whether a ``RiskHaltRecorded`` row matches ``event`` (#749).
 
-        Matches on strategy, pair, kind, rule and ``occurred_at`` (the signal
-        time), so a bar evaluated again after a restart is recorded once.
+        Matches on strategy, pair (``None`` matches a strategy-wide row),
+        kind, rule and ``occurred_at``, so a bar or day evaluated again after
+        a restart is recorded once.
 
         Args:
             event: The halt or kill record to look up.
@@ -918,8 +919,8 @@ class SqliteLedger:
                 "SELECT 1 FROM events "
                 "WHERE event_type = ? AND occurred_at = ? "
                 "  AND json_extract(payload_json, '$.strategy_id.value') = ? "
-                "  AND json_extract(payload_json, '$.pair.base') = ? "
-                "  AND json_extract(payload_json, '$.pair.quote') = ? "
+                "  AND json_extract(payload_json, '$.pair.base') IS ? "
+                "  AND json_extract(payload_json, '$.pair.quote') IS ? "
                 "  AND json_extract(payload_json, '$.kind') = ? "
                 "  AND json_extract(payload_json, '$.rule') = ? "
                 "LIMIT 1",
@@ -927,8 +928,8 @@ class SqliteLedger:
                     RISK_HALT_EVENT_TYPE,
                     _iso_utc(event.occurred_at),
                     event.strategy_id.value,
-                    event.pair.base.value,
-                    event.pair.quote.value,
+                    None if event.pair is None else event.pair.base.value,
+                    None if event.pair is None else event.pair.quote.value,
                     event.kind.value,
                     event.rule,
                 ),
@@ -936,6 +937,26 @@ class SqliteLedger:
         except sqlite3.Error as exc:
             raise LedgerError(msg=f"has_risk_halt failed: {exc}") from exc
         return row is not None
+
+    def risk_halts(self, strategy_id: StrategyId) -> tuple[RiskHaltRecorded, ...]:
+        """Return every halt, kill and drift row of ``strategy_id``, oldest first (#796).
+
+        Raises:
+            LedgerError: On any SQLite failure or an unreadable payload.
+        """
+        try:
+            rows = self._conn.execute(
+                "SELECT payload_json FROM events WHERE event_type = ? "
+                "  AND json_extract(payload_json, '$.strategy_id.value') = ? "
+                "ORDER BY occurred_at, id",
+                (RISK_HALT_EVENT_TYPE, strategy_id.value),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"risk_halts failed: {exc}") from exc
+        try:
+            return tuple(risk_halt_from_payload(json.loads(payload)) for (payload,) in rows)
+        except (KeyError, ValueError, TypeError) as exc:
+            raise LedgerError(msg=f"risk_halts: unreadable payload: {exc}") from exc
 
     def last_processed_close(self, pair: Pair, interval: KlineInterval) -> datetime | None:
         """Return the newest ``BarProcessed`` close time for one stream.

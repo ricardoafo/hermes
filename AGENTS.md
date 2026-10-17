@@ -458,9 +458,22 @@ Non-negotiable summary:
 - **When updating a test to accommodate a code change: STOP.** If the
   test SHOULD have failed on the behavior change, silencing it defeats
   the point. Ask before updating.
+- **No xfail on main.** A test that exposes a defect ships in the same PR
+  as its fix. If the fix needs the Code Owner's decision or belongs to
+  another PR, hold the test back and record the failure mode as a gap in
+  `tests/integration/scenarios/failure_modes.py` with its issue. A green
+  CI must mean every test passed.
 
 The one question before submitting: *"if I broke the invariant this
 test claims to protect, would this test fail?"* If not, rewrite it.
+
+Three skills in `.claude/skills/` walk through this work step by step
+(#847): `hermes-break-it` (list how a change can fail before writing it),
+`hermes-write-tests` (the order to write a test in) and `hermes-scenario`
+(end-to-end, chaos and generated-path scenarios). Two hooks in
+`.claude/settings.json` back them: cloud sessions install the git hooks at
+start, and editing an assertion that is already committed asks for the
+reason.
 
 Coverage floor: 90% line, 85% branch. Mutation kill rate is
 the load-bearing gate (target ≥ 80%). Line coverage alone is not proof

@@ -394,8 +394,12 @@ def test_demo_status_with_an_unknown_scenario_exits_two() -> None:
     assert err.getvalue().startswith("ERROR:")
 
 
-def _ledger_with_kill(tmp_path: Path) -> Path:
-    """Write the fixture ledger plus one kill on BTC an hour before the 16:00 bar."""
+def _ledger_with_kill(tmp_path: Path, *, strategy_wide: bool = False) -> Path:
+    """Write the fixture ledger plus one kill an hour before the 16:00 bar.
+
+    The kill is on BTC, or with ``strategy_wide`` a daily shadow-check kill
+    without a pair (#796).
+    """
     path = _ledger(tmp_path)
     connection = sqlite3.connect(path)
     SqliteLedger(connection).append_event(
@@ -403,10 +407,10 @@ def _ledger_with_kill(tmp_path: Path) -> Path:
             occurred_at=LAST_4H - timedelta(hours=1),
             correlation_id="01JABCDEFGHJKMNPQRSTVWXYZ0",
             strategy_id=StrategyId("swing-donchian-4h"),
-            pair=Pair(base=Currency.BTC, quote=Currency.USDT),
+            pair=None if strategy_wide else Pair(base=Currency.BTC, quote=Currency.USDT),
             kind=HaltKind.KILL,
-            rule="max_drawdown",
-            reason="drawdown_kill_threshold",
+            rule="sa9_repeat" if strategy_wide else "max_drawdown",
+            reason="sa9_rule_fired_repeatedly" if strategy_wide else "drawdown_kill_threshold",
             pre_registration_ref="§10",
         )
     )
@@ -442,3 +446,16 @@ def test_json_carries_the_last_halt(tmp_path: Path) -> None:
             "occurred_at": "2026-10-03T15:00:00+00:00",
         },
     }
+
+
+def test_a_strategy_wide_kill_reads_all_pairs(tmp_path: Path) -> None:
+    """A daily shadow-check kill has no pair: text says all pairs, JSON a null pair (#796)."""
+    path = _ledger_with_kill(tmp_path, strategy_wide=True)
+    _, text = _run(["--db", str(path)])
+    _, out = _run(["--db", str(path), "--json"])
+
+    line = next(t for t in text.splitlines() if t.startswith("halts"))
+    assert (line, json.loads(out)["halts"]["last"]["pair"]) == (
+        "halts      24h: 1   30d last: kill all pairs sa9_repeat",
+        None,
+    )

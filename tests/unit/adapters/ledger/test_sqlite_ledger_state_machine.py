@@ -19,6 +19,7 @@ import os
 import shutil
 import sqlite3
 import tempfile
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_DOWN, Decimal
@@ -452,5 +453,5 @@ def test_a_second_snapshot_never_overwrites_the_first(tmp_path: Path) -> None:
     conn.close()
     migrate_with_snapshot(db, tmp_path / "snapshots", migrations_dir=migrations, now=_T0)
     restore_snapshot(first, db)
-    conn = _connect(db)
-    assert conn.execute("SELECT COUNT(*) FROM trades").fetchone() == (0,)
+    with closing(_connect(db)) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM trades").fetchone() == (0,)

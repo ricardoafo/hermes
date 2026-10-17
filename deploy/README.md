@@ -88,6 +88,8 @@ Cross-references:
 - `systemd/hermes-health.timer`: Fires the ping every 5 min. Status: installed by `vps-bootstrap`; enabled once the ping URL is set.
 - `systemd/hermes-backup.service`: Nightly borg backup of L2 Parquet and SQLite. Status: installed by `vps-bootstrap`.
 - `systemd/hermes-backup.timer`: Fires the backup daily at 03:00 UTC. Status: installed by `vps-bootstrap`; stays disabled until borg is set up.
+- `systemd/hermes-brief.service`: Keeps the supervisor desk's daily brief in `/var/lib/hermes/briefs.jsonl` (`hermes supervisor brief --keep`, ledger read-only, no env file). Status: installed by `vps-bootstrap`.
+- `systemd/hermes-brief.timer`: Fires the brief daily at 07:15 Europe/Madrid. Status: installed by `vps-bootstrap`; left off until enabled by hand.
 - `systemd/hermes-tax-pack.service`: Refreshes the tax filing packs in `/var/lib/hermes-tax-pack` (`hermes tax-pack`, ledger read-only). Status: installed by `vps-bootstrap`.
 - `systemd/hermes-tax-pack.timer`: Fires the refresh daily at 07:30 Europe/Madrid. Status: installed by `vps-bootstrap`; left off until enabled by hand.
 - `systemd/hermes-notify-failure@.service`: Started by `hermes.service`'s `OnFailure=`; sends one Telegram message. Status: installed by `vps-bootstrap`.

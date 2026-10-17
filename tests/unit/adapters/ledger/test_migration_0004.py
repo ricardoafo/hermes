@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import shutil
 import sqlite3
+from collections.abc import Iterator
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -23,11 +25,11 @@ def _columns(conn: sqlite3.Connection, table: str) -> dict[str, tuple[bool, str 
 
 
 @pytest.fixture
-def migrated() -> sqlite3.Connection:
-    """Return an in-memory ledger with every shipped migration applied."""
-    conn = sqlite3.connect(":memory:")
-    apply_migrations(conn)
-    return conn
+def migrated() -> Iterator[sqlite3.Connection]:
+    """Yield an in-memory ledger with every shipped migration applied, closed afterwards."""
+    with closing(sqlite3.connect(":memory:")) as conn:
+        apply_migrations(conn)
+        yield conn
 
 
 def test_trades_gain_eur_columns_with_pending_default(migrated: sqlite3.Connection) -> None:
@@ -129,8 +131,9 @@ def _through_0004(tmp_path: Path) -> Path:
     return through
 
 
-def _seeded_at_0003(tmp_path: Path) -> sqlite3.Connection:
-    """Return a ledger migrated through 0003_live_bars holding representative legacy rows."""
+@pytest.fixture
+def seeded_at_0003(tmp_path: Path) -> Iterator[sqlite3.Connection]:
+    """Yield a ledger migrated through 0003_live_bars holding legacy rows; closed afterwards."""
     pre = tmp_path / "pre_0004"
     pre.mkdir()
     for name in _PRE_0004:
@@ -167,7 +170,8 @@ def _seeded_at_0003(tmp_path: Path) -> sqlite3.Connection:
         ],
     )
     conn.commit()
-    return conn
+    yield conn
+    conn.close()
 
 
 def _schema_snapshot(conn: sqlite3.Connection) -> list[tuple[str, str, str | None]]:
@@ -198,9 +202,8 @@ def _foreign_keys(conn: sqlite3.Connection, table: str) -> set[tuple[str, str, s
 
 def test_0004_sorts_after_0003_live_bars_in_a_fresh_ledger() -> None:
     """Invariant: the runner orders by filename, so 0004 applies after 0003_live_bars."""
-    conn = sqlite3.connect(":memory:")
-
-    applied = apply_migrations(conn)
+    with closing(sqlite3.connect(":memory:")) as conn:
+        applied = apply_migrations(conn)
 
     assert applied[:4] == (
         "0001_initial_schema.sql",
@@ -210,9 +213,11 @@ def test_0004_sorts_after_0003_live_bars_in_a_fresh_ledger() -> None:
     )
 
 
-def test_ledger_migrated_through_0003_live_bars_upgrades_cleanly_to_0004(tmp_path: Path) -> None:
+def test_ledger_migrated_through_0003_live_bars_upgrades_cleanly_to_0004(
+    tmp_path: Path, seeded_at_0003: sqlite3.Connection
+) -> None:
     """Invariant: a ledger already at 0003_live_bars applies 0004 next and keeps live_bars."""
-    conn = _seeded_at_0003(tmp_path)
+    conn = seeded_at_0003
     conn.execute(
         "INSERT INTO live_bars VALUES ('BTC', 'USDT', '1h', 't0', 't1', '1', '2', '0.5', '1.5', "
         "'10', 'r')"
@@ -233,9 +238,11 @@ def test_ledger_migrated_through_0003_live_bars_upgrades_cleanly_to_0004(tmp_pat
     assert conn.execute("SELECT pair_base, close FROM live_bars").fetchall() == [("BTC", "1.5")]
 
 
-def test_rows_written_before_0004_survive_it(tmp_path: Path) -> None:
+def test_rows_written_before_0004_survive_it(
+    tmp_path: Path, seeded_at_0003: sqlite3.Connection
+) -> None:
     """Invariant (A-1.4): old trades read pending; old lots and consumptions have no trade link."""
-    conn = _seeded_at_0003(tmp_path)
+    conn = seeded_at_0003
 
     apply_migrations(conn, _through_0004(tmp_path))
 
@@ -255,13 +262,15 @@ def test_rows_written_before_0004_survive_it(tmp_path: Path) -> None:
     ]
 
 
-def test_rebuild_preserves_every_lot_and_consumption_value(tmp_path: Path) -> None:
+def test_rebuild_preserves_every_lot_and_consumption_value(
+    tmp_path: Path, seeded_at_0003: sqlite3.Connection
+) -> None:
     """Invariant: the lots / lot_consumptions rebuild loses no row and changes no original value.
 
     Includes lots.strategy_id: explicit values ('swing', 'trend') and the legacy DEFAULT
     ('swing') applied to a row written without it.
     """
-    conn = _seeded_at_0003(tmp_path)
+    conn = seeded_at_0003
     lots_before = conn.execute(_LOTS_SQL).fetchall()
     consumptions_before = conn.execute(_CONSUMPTIONS_SQL).fetchall()
 
@@ -280,18 +289,20 @@ def test_rebuild_preserves_every_lot_and_consumption_value(tmp_path: Path) -> No
     assert consumptions_after[1] == (2, "L3", "0.25", "BTC", "-12.5", "2026-01-06T10:00:00+00:00")
 
 
-def test_strategy_id_keeps_not_null_and_legacy_default_after_0004(tmp_path: Path) -> None:
+def test_strategy_id_keeps_not_null_and_legacy_default_after_0004(
+    tmp_path: Path, seeded_at_0003: sqlite3.Connection
+) -> None:
     """Invariant: 0004 leaves lots.strategy_id NOT NULL DEFAULT 'swing' (dropped later by 0005)."""
-    conn = _seeded_at_0003(tmp_path)
+    conn = seeded_at_0003
 
     apply_migrations(conn, _through_0004(tmp_path))
 
     assert _columns(conn, "lots")["strategy_id"] == (True, "'swing'")
 
 
-def test_second_migration_run_is_a_noop(tmp_path: Path) -> None:
+def test_second_migration_run_is_a_noop(tmp_path: Path, seeded_at_0003: sqlite3.Connection) -> None:
     """Invariant: re-running the runner after 0004 applies nothing and changes nothing."""
-    conn = _seeded_at_0003(tmp_path)
+    conn = seeded_at_0003
     apply_migrations(conn, _through_0004(tmp_path))
     schema_before = _schema_snapshot(conn)
     rows_before = {t: conn.execute(q).fetchall() for t, q in _ALL_ROWS_SQL.items()}
@@ -304,9 +315,11 @@ def test_second_migration_run_is_a_noop(tmp_path: Path) -> None:
     assert rows_after == rows_before
 
 
-def test_indexes_and_foreign_keys_present_before_0004_still_exist_after(tmp_path: Path) -> None:
+def test_indexes_and_foreign_keys_present_before_0004_still_exist_after(
+    tmp_path: Path, seeded_at_0003: sqlite3.Connection
+) -> None:
     """Invariant: every index and foreign key of lots / lot_consumptions survives the rebuild."""
-    conn = _seeded_at_0003(tmp_path)
+    conn = seeded_at_0003
     lots_indexes_before = _indexes(conn, "lots")
     consumption_indexes_before = _indexes(conn, "lot_consumptions")
     consumption_fks_before = _foreign_keys(conn, "lot_consumptions")
