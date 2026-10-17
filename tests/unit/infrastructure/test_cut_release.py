@@ -107,9 +107,10 @@ def test_an_engine_change_on_a_minor_bump_is_allowed(current: str, new: str) -> 
     cut_release.check_bump(current, new, engine_change="yes", real_capital=False)
 
 
-def test_a_patch_bump_without_engine_change_is_allowed() -> None:
-    """A fix-only PATCH cut passes."""
-    cut_release.check_bump("0.2.0", "0.2.1", engine_change="no", real_capital=False)
+@pytest.mark.parametrize("engine_change", ["no", None])
+def test_a_patch_bump_without_engine_change_is_allowed(engine_change: str | None) -> None:
+    """A PATCH cut passes when the engine line says no or is left for the PR body."""
+    cut_release.check_bump("0.2.0", "0.2.1", engine_change=engine_change, real_capital=False)
 
 
 @pytest.mark.parametrize("current", ["0.9.3", "1.0.0a1"])
