@@ -449,7 +449,12 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "The ledger path is wrong or the disk is not mounted",
-            gap="issue #876: serve creates a fresh ledger and drops the open position; inferred",
+            proved_by=(
+                _SERVE
+                + "TestLedgerAndSeedGuards::test_a_missing_ledger_is_refused_and_not_created",
+                _U + "entrypoints/test_cli.py::TestServeExitCodes"
+                "::test_new_ledger_reaches_the_build_only_when_given",
+            ),
         ),
     ),
     "clock": (
@@ -604,7 +609,10 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "capital_budget is changed after the first boot",
-            gap="issue #876: the portfolio sizes from config while the ledger keeps the old seed",
+            proved_by=(
+                _SERVE + "TestLedgerAndSeedGuards"
+                "::test_a_capital_that_differs_from_the_recorded_seed_is_refused_naming_both",
+            ),
         ),
     ),
     "notifications": (
