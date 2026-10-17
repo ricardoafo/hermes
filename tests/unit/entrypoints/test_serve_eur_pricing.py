@@ -218,6 +218,7 @@ def test_serve_gives_both_notifiers_the_pricer_lookup(tmp_path: Path) -> None:
         clock=FakeClock(BASE),
         orderbooks=UnavailableBooks(),
         fx=FakeFx(down=True),
+        new_ledger=True,
     )
     try:
         assert composition.telegram is not None

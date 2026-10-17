@@ -192,6 +192,28 @@ def three_breakouts(btc_climbs_to: Decimal = Decimal(175)) -> Scenario:
     return _scenario(script, _boot_before_breakout(), BTC, Decimal(156))
 
 
+def three_breakouts_within_a_day() -> Scenario:
+    """BTC breaks out, then ETH one bar later and SOL two bars later.
+
+    All three entries come inside RO-03's 24-hour slippage window, so a BTC
+    fill that slips over 0.5% still counts when ETH and SOL break out.
+    """
+    script = _script()
+    script.ramp(BTC, days=_RAMP_DAYS, to=Decimal(150), spread=_WIDE)
+    script.bar(BTC, close=Decimal(156), high=Decimal(157))
+    script.hold(BTC, days=3, spread=_WIDE)
+    script.ramp(ETH, days=_RAMP_DAYS, to=Decimal(150))
+    script.bar(ETH, close=Decimal(150))
+    script.bar(ETH, close=Decimal(156), high=Decimal(157))
+    script.hold(ETH, days=2)
+    script.ramp(SOL, days=_RAMP_DAYS, to=Decimal(150))
+    script.bar(SOL, close=Decimal(150))
+    script.bar(SOL, close=Decimal(150))
+    script.bar(SOL, close=Decimal(156), high=Decimal(157))
+    script.hold(SOL, days=2)
+    return _scenario(script, _boot_before_breakout(), BTC, Decimal(156))
+
+
 def thin_exit_bar() -> Scenario:
     """Script the chandelier breakout, then a gap-down bar that trades no volume at all.
 

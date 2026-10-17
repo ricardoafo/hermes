@@ -103,8 +103,8 @@ sequenceDiagram
     participant IR as install_release.sh
     participant Unit as hermes-staging.service
     Rick->>GH: download hermes-release-<sha12>.tar.gz
-    Rick->>Box: scp the bundle to /var/tmp
-    Rick->>Box: untar into /var/tmp/hermes-release-<sha12>
+    Rick->>Box: scp the bundle to /var/lib/hermes-deploy
+    Rick->>Box: untar into /var/lib/hermes-deploy/hermes-release-<sha12>
     Rick->>IR: HERMES_TARGET=staging install_release.sh <sha12> <stage>
     IR->>IR: guard: no prod path, unit, user or env file
     IR->>IR: preflight: env file 600 root:root, HERMES_ENV=staging, no mainnet
@@ -207,23 +207,25 @@ deploy first and enable afterwards, or ignore that one failed start; the deploy 
 
 ### 5. Deploy a release bundle to staging by hand
 
-Get a bundle from a `cd.yml` run. Every run builds it, including a `dry_run` dispatch, which deploys nothing:
+Get a bundle from a `cd.yml` run. Every run builds it, including a `dry_run` dispatch, which deploys nothing. Stage it in
+the private `/var/lib/hermes-deploy` (0700), as CD does, never in world-writable `/var/tmp` (#782):
 
 ```bash
 # On your machine
 gh run download <run-id> --name hermes-release
-scp hermes-release-<sha12>.tar.gz hermes-01:/var/tmp/
+ssh hermes-01 install -d -m 0700 /var/lib/hermes-deploy
+scp hermes-release-<sha12>.tar.gz hermes-01:/var/lib/hermes-deploy/
 ```
 
 Then, as root on hermes-01:
 
 ```bash
 sha12=<sha12>
-stage=/var/tmp/hermes-release-$sha12
+stage=/var/lib/hermes-deploy/hermes-release-$sha12
 rm -rf "$stage" && install -d -m 0700 "$stage"
-tar -xzf "/var/tmp/hermes-release-$sha12.tar.gz" -C "$stage"
+tar -xzf "/var/lib/hermes-deploy/hermes-release-$sha12.tar.gz" -C "$stage"
 HERMES_TARGET=staging /usr/bin/bash "$stage/bin/install_release.sh" "$sha12" "$stage"
-rm -rf "$stage" "/var/tmp/hermes-release-$sha12.tar.gz"
+rm -rf "$stage" "/var/lib/hermes-deploy/hermes-release-$sha12.tar.gz"
 ```
 
 The last lines of a good deploy are `gate OK: hermes-staging.service active 30s, ...` and

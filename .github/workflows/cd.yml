@@ -405,9 +405,15 @@ jobs:
               echo "::error::no $bundle in the downloaded artifact"
               exit 1
           fi
-          echo "shipping $bundle ($(stat -c%s "$bundle") bytes) → $VPS_HOST:/var/tmp/"
+          # Private 0700 staging dir, not the world-writable tmp dir: another
+          # local user could plant the tarball there before root unpacks and
+          # runs it (#782). vps_bootstrap.sh creates it for a non-root deploy
+          # user; as root, install -d creates or repairs it here.
+          ssh -i ~/.ssh/vps_id -o StrictHostKeyChecking=yes \
+              "$VPS_SSH_USER@$VPS_SSH_HOST" install -d -m 0700 /var/lib/hermes-deploy
+          echo "shipping $bundle ($(stat -c%s "$bundle") bytes) → $VPS_HOST:/var/lib/hermes-deploy/"
           scp -i ~/.ssh/vps_id -o StrictHostKeyChecking=yes \
-              "$bundle" "$VPS_SSH_USER@$VPS_SSH_HOST:/var/tmp/"
+              "$bundle" "$VPS_SSH_USER@$VPS_SSH_HOST:/var/lib/hermes-deploy/"
 
       - name: Mark the deploy start
         id: start
@@ -429,8 +435,8 @@ jobs:
               "$VPS_SSH_USER@$VPS_SSH_HOST" bash -s -- "${RELEASE_SHA::12}" <<'REMOTE'
           set -euo pipefail
           sha12=$1
-          bundle="/var/tmp/hermes-release-$sha12.tar.gz"
-          stage="/var/tmp/hermes-release-$sha12"
+          bundle="/var/lib/hermes-deploy/hermes-release-$sha12.tar.gz"
+          stage="/var/lib/hermes-deploy/hermes-release-$sha12"
           cleanup() { rm -rf "$stage" "$bundle"; }
           trap cleanup EXIT
 

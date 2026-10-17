@@ -60,7 +60,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, Overflow
 from typing import Any, Final
 
 import httpx
@@ -69,6 +69,7 @@ import structlog
 from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.domain.errors import KrakenPublicError
 from hermes.domain.fees import FeeSchedule, FeeTier
+from hermes.domain.market_data.bar_schedule import previous_boundary
 from hermes.domain.market_data.kline import Kline, KlineInterval
 from hermes.domain.market_data.orderbook import Orderbook, OrderbookLevel
 from hermes.domain.market_data.ticker import Ticker
@@ -655,11 +656,15 @@ def _pct_to_bps(pct: Decimal) -> int:
         The equivalent integer basis-points (``0.26 → 26``).
 
     Raises:
-        hermes.domain.errors.KrakenPublicError: On negative percentages.
+        hermes.domain.errors.KrakenPublicError: On negative percentages, or
+            one too large for the decimal context.
     """
     if pct < Decimal("0"):
         raise KrakenPublicError(f"Kraken fee percentage must be >= 0, got {pct}")
-    bps_decimal = pct * Decimal("100")
+    try:
+        bps_decimal = pct * Decimal("100")
+    except Overflow as exc:
+        raise KrakenPublicError(f"Kraken fee percentage is out of range: {pct}") from exc
     # Round to nearest int — Kraken publishes at most 2 decimal places in
     # the percent field; anything below 1 bp of granularity is noise.
     return int(bps_decimal.to_integral_value())
@@ -871,20 +876,23 @@ def _row_to_kline(*, row: Any, pair: Pair, interval: KlineInterval) -> Kline:
 
     Raises:
         hermes.domain.errors.KrakenPublicError: On a non-list row, too
-            few fields, or unparseable numerics.
+            few fields, unparseable numerics, an ``open_time`` off the
+            interval grid, or a price that is not positive.
     """
     if not isinstance(row, list) or len(row) < _MIN_OHLC_ROW_FIELDS:
         raise KrakenPublicError(
             f"Kraken OHLC row must be a list of >={_MIN_OHLC_ROW_FIELDS} fields, got {row!r}"
         )
     open_time_s = row[0]
-    if not isinstance(open_time_s, (int, float)):
+    if not isinstance(open_time_s, (int, float)) or isinstance(open_time_s, bool):
         raise KrakenPublicError(f"Kraken OHLC open_time must be numeric, got {open_time_s!r}")
     open_dec = _decimal_or_raise(row[1], field_name="Kraken OHLC open")
     high_dec = _decimal_or_raise(row[2], field_name="Kraken OHLC high")
     low_dec = _decimal_or_raise(row[3], field_name="Kraken OHLC low")
     close_dec = _decimal_or_raise(row[4], field_name="Kraken OHLC close")
     volume_dec = _decimal_or_raise(row[6], field_name="Kraken OHLC volume")
+    if low_dec <= 0:
+        raise KrakenPublicError(f"Kraken OHLC low price is not positive: {row[3]!r}")
 
     try:
         open_time = datetime.fromtimestamp(int(open_time_s), tz=UTC)
@@ -893,6 +901,10 @@ def _row_to_kline(*, row: Any, pair: Pair, interval: KlineInterval) -> Kline:
         )
     except (OverflowError, OSError, ValueError) as exc:
         raise KrakenPublicError(f"Kraken OHLC open_time out of range: {open_time_s!r}") from exc
+    if open_time_s != int(open_time_s) or previous_boundary(open_time, interval) != open_time:
+        raise KrakenPublicError(
+            f"Kraken OHLC open_time {open_time_s!r} is not on the {interval} grid"
+        )
     base_asset: Currency = pair.base
     try:
         return Kline(

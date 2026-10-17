@@ -256,7 +256,27 @@ def test_deploy_step_uses_the_command_the_sudoers_rule_allows() -> None:
     assert '"${as_root[@]}" /usr/bin/bash "$stage/bin/install_release.sh" "$sha12" "$stage"' in (
         deploy_runs
     )
-    assert "/usr/bin/bash /var/tmp/hermes-release-$sha/bin/install_release.sh $sha" in bootstrap
+    assert (
+        "/usr/bin/bash /var/lib/hermes-deploy/hermes-release-$sha/bin/install_release.sh $sha"
+        in bootstrap
+    )
+
+
+def test_deploy_stages_the_release_in_the_private_dir_bootstrap_creates() -> None:
+    """CD copies and unpacks the bundle in bootstrap's 0700 dir, never in /var/tmp (#782).
+
+    In /var/tmp another local user could pre-create the tarball path and
+    swap it before root runs install_release.sh from it.
+    """
+    deploy_runs = "\n".join(str(step.get("run", "")) for step in _steps("deploy"))
+    bootstrap = _BOOTSTRAP_PATH.read_text(encoding="utf-8")
+
+    assert "DEPLOY_STAGE_DIR=/var/lib/hermes-deploy\n" in bootstrap
+    assert "install -d -m 0700 /var/lib/hermes-deploy" in deploy_runs
+    assert deploy_runs.index("install -d -m 0700") < deploy_runs.index("scp ")
+    assert '"$VPS_SSH_USER@$VPS_SSH_HOST:/var/lib/hermes-deploy/"' in deploy_runs
+    assert 'stage="/var/lib/hermes-deploy/hermes-release-$sha12"' in deploy_runs
+    assert "/var/tmp" not in deploy_runs  # noqa: S108 - asserts the path is absent
 
 
 def test_bundle_ships_the_experiment_files_serve_reads() -> None:

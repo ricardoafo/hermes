@@ -131,7 +131,14 @@ def compose(
         ),
     )
     composition = serve_module.build_composition(
-        config, db_path=db, env={}, feed=feed, clock=clock, orderbooks=books, fx=fx
+        config,
+        db_path=db,
+        env={},
+        feed=feed,
+        clock=clock,
+        orderbooks=books,
+        fx=fx,
+        new_ledger=True,
     )
     # Serve commits several times per bar, and each commit waits for the disk: a 90-day
     # run made about 25,800 fsync calls. Cheap here, but on a loaded runner's virtual
