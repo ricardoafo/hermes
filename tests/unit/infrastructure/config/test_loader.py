@@ -746,3 +746,30 @@ def test_load_config_dotenv_ignored_when_env_snapshot_supplied(
     dotenv = tmp_path / ".env.local"
     dotenv.write_text("HERMES_ENV=sandbox\n", encoding="utf-8")
     assert load_config(config_dir, env={}, dotenv_path=dotenv).env == "dev"
+
+
+def test_prod_never_reads_env_local(
+    config_dir: Path, tmp_path: Path, clean_process_env: pytest.MonkeyPatch
+) -> None:
+    """With HERMES_ENV=prod a dotenv file is not read: prod env comes from the systemd unit only."""
+    clean_process_env.setenv("HERMES_ENV", "prod")
+    dotenv = tmp_path / ".env.local"
+    dotenv.write_text("HERMES_BINANCE__RECV_WINDOW_MS=7000\n", encoding="utf-8")
+    assert load_config(config_dir, dotenv_path=dotenv).binance.recv_window_ms == 5000
+
+
+def test_prod_refuses_a_relative_config_dir(
+    config_dir: Path, clean_process_env: pytest.MonkeyPatch
+) -> None:
+    """With HERMES_ENV=prod a relative config dir raises, so the working directory can't pick it."""
+    clean_process_env.chdir(config_dir.parent)
+    with pytest.raises(ConfigError, match="absolute --config-dir"):
+        load_config(Path(config_dir.name), env={"HERMES_ENV": "prod"})
+
+
+def test_dev_still_accepts_a_relative_config_dir(
+    config_dir: Path, clean_process_env: pytest.MonkeyPatch
+) -> None:
+    """Outside prod a relative config dir still loads, as `uv run hermes` in a checkout needs."""
+    clean_process_env.chdir(config_dir.parent)
+    assert load_config(Path(config_dir.name), env={}).env == "dev"
