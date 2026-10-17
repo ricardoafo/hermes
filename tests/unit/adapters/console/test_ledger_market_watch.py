@@ -10,7 +10,11 @@ Invariants:
 - a signal belongs to the check of its own processing cycle (same correlation
   id), never to a later check of the same pair;
 - an empty ledger has nothing to watch;
-- reading the view leaves the ledger file byte-for-byte unchanged.
+- reading the view leaves the ledger file byte-for-byte unchanged;
+- the read costs SQLite work linear in the number of bar checks, so the
+  console's 5 s poll and every screen switch stay quick as the shadow run
+  grows (a per-row lookup of each stream's newest check took about 2 s at
+  60 days of 4h and 1d checks on three coins, on the console's UI thread).
 """
 
 from __future__ import annotations
@@ -22,7 +26,9 @@ from pathlib import Path
 
 import pytest
 
+import hermes.adapters.console.ledger_read_model as read_model_module
 from hermes.adapters.console.ledger_read_model import LedgerReadModel
+from hermes.adapters.ledger.connection import open_ledger
 from hermes.application.console.views import WatchedPair
 from hermes.domain.errors import LedgerError
 from hermes.domain.market_data.kline import KlineInterval
@@ -135,3 +141,48 @@ def test_unknown_interval_is_a_ledger_error(tmp_path: Path) -> None:
         )
     with pytest.raises(LedgerError, match="market watch: unreadable bar check"):
         _model(path).market_watch()
+
+
+_STEP_GRAIN = 100
+
+
+def _checked_ledger(path: Path, bars: int) -> Path:
+    """Write ``bars`` 4h checks on BTC and ETH, and a 1d check every sixth bar."""
+    b = LedgerBuilder(path)
+    try:
+        for i in range(bars):
+            for pair in (BTC, ETH):
+                b.check(T0 + H4 * i, pair=pair)
+                if i % 6 == 0:
+                    b.check(T0 + H4 * i, pair=pair, interval=KlineInterval.D1)
+    finally:
+        b.close()
+    return path
+
+
+def _read_cost(path: Path, monkeypatch: pytest.MonkeyPatch) -> int:
+    """Return the SQLite virtual-machine work of one market-watch read, in units of 100 steps."""
+    ticks = [0]
+
+    def counted(ledger: Path) -> sqlite3.Connection:
+        conn = open_ledger(ledger, read_only=True)
+
+        def tick() -> int:
+            ticks[0] += 1
+            return 0
+
+        conn.set_progress_handler(tick, _STEP_GRAIN)
+        return conn
+
+    monkeypatch.setattr(read_model_module, "connect_read_only", counted)
+    _model(path).market_watch()
+    return ticks[0]
+
+
+def test_read_cost_grows_linearly_with_the_checks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Twice the bar checks costs about twice the work; a per-check lookup would cost four times."""
+    small = _read_cost(_checked_ledger(tmp_path / "small.sqlite3", 120), monkeypatch)
+    large = _read_cost(_checked_ledger(tmp_path / "large.sqlite3", 240), monkeypatch)
+    assert large <= small * 5 // 2, (small, large)
