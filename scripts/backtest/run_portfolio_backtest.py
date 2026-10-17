@@ -137,9 +137,18 @@ def _merge(bars: list[Bar]) -> list[Bar]:
     return sorted(bars, key=lambda b: (b.close_time, b.interval != KlineInterval.D1, str(b.pair)))
 
 
-def _kernel(strategy_id: StrategyId, starting_cash: Money, sizing: SizingPolicy) -> FillKernel:
-    """Compose the fill kernel over one portfolio with the signed correlation lock."""
-    return FillKernel(
+def _kernel(
+    strategy_id: StrategyId,
+    starting_cash: Money,
+    sizing: SizingPolicy,
+    kernel_type: type[FillKernel] = FillKernel,
+) -> FillKernel:
+    """Compose the fill kernel over one portfolio with the signed correlation lock.
+
+    ``kernel_type`` lets the Train decision replay record each signal through
+    this same composition (#798).
+    """
+    return kernel_type(
         fill_model=OrderbookWalkFillModel(apply_slippage=False, rng=random.Random(_RNG_SEED)),  # noqa: S311 — deterministic replay, not crypto
         risk_engine=RiskEngine(rules=[CorrelationLock()]),
         kill_evaluator=KillTriggerEvaluator(pre_reg=PreRegistration()),

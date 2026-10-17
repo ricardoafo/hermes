@@ -12,7 +12,9 @@ Recording is keyed on the bar's close time, so a replay writes nothing.
 
 Bars handled before the ledger existed are not in ``live_bars``, so a fresh
 ledger covers fewer than 30 returns at first; each row records its count.
-Record only: no rule reads the values.
+Record only: RO-01 computes the same coefficients in process from the 1D
+closes (:class:`~hermes.domain.portfolio.correlation.DailyCloses`, #514), so
+these rows are for review.
 
 Reference: GitHub issues #514, #835.
 """

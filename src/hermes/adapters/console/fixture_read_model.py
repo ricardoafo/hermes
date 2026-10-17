@@ -20,8 +20,14 @@ from importlib import resources
 from pathlib import Path
 from typing import Final, cast
 
+from hermes.adapters.console.shadow_records import ShadowRecordError, parse_run_record
 from hermes.application.console.portfolio_figures import range_start
 from hermes.application.console.render import MADRID
+from hermes.application.console.shadow_screen import (
+    NotebookEntry,
+    ShadowEvidence,
+    ShadowRunRecord,
+)
 from hermes.application.console.views import (
     QUIET_ACTIVITY_KINDS,
     ActivityDay,
@@ -432,6 +438,60 @@ def _shadow_test(raw: _Json) -> ShadowTest:
     )
 
 
+def _opt_bool(obj: _Json, key: str) -> bool | None:
+    value = obj.get(key)
+    if value is not None and not isinstance(value, bool):
+        msg = f"field {key!r} must be true, false or null"
+        raise ScenarioError(msg)
+    return value
+
+
+def _notebook(raw: _Json) -> tuple[NotebookEntry, ...] | None:
+    if raw.get("notebook") is None:
+        return None
+    return tuple(
+        NotebookEntry(
+            at=_dt(entry, "at"),
+            phase=_str(entry, "phase"),
+            actor=_str(entry, "actor"),
+            action=_str(entry, "action"),
+        )
+        for entry in _items(raw, "notebook")
+    )
+
+
+def _shadow_run(raw: _Json) -> ShadowRunRecord | None:
+    if raw.get("run") is None:
+        return None
+    try:
+        return parse_run_record(_obj(raw, "run"))
+    except ShadowRecordError as exc:
+        msg = f"shadow_screen.run: {exc}"
+        raise ScenarioError(msg) from exc
+
+
+def _shadow_evidence(raw: _Json) -> ShadowEvidence:
+    kill_fired = _opt_bool(raw, "kill_fired")
+    return ShadowEvidence(
+        seeded_at=_opt_dt(raw, "seeded_at"),
+        first_fill_at=_opt_dt(raw, "first_fill_at"),
+        missed_days=tuple(
+            _to_date(_to_str(day, "missed_days"), "missed_days")
+            for day in _list(raw, "missed_days")
+        ),
+        live_drifts_bps=_dec_list(raw, "live_drifts_bps"),
+        kill_fired=bool(kill_fired),
+        kill_check_clean=_opt_bool(raw, "kill_check_clean"),
+    )
+
+
+def _to_str(raw: object, key: str) -> str:
+    if not isinstance(raw, str):
+        msg = f"every entry of {key!r} must be a string"
+        raise ScenarioError(msg)
+    return raw
+
+
 def _watched(raw: _Json) -> WatchedPair:
     signal = _opt_str(raw, "signal")
     if signal is not None and signal not in _SIGNAL_KINDS:
@@ -563,6 +623,10 @@ class FixtureReadModel:
         self._activity = _activity(document, rate)
         self._shadow_test = _shadow_test(_obj(document, "shadow_test"))
         self._market_watch = tuple(_watched(raw) for raw in _items(document, "market_watch"))
+        shadow = _obj(document, "shadow_screen")
+        self._shadow_run = _shadow_run(shadow)
+        self._shadow_evidence = _shadow_evidence(shadow)
+        self._notebook = _notebook(shadow)
         self._rule_checks = _rule_checks(self._market_watch, self._rows)
 
     @classmethod
@@ -645,6 +709,24 @@ class FixtureReadModel:
     def market_watch(self) -> tuple[WatchedPair, ...]:
         """Return the scenario's checked streams in file order (no prices, #650)."""
         return self._market_watch
+
+    def shadow_evidence(self, since: datetime | None) -> ShadowEvidence:
+        """Return the scenario's shadow facts; the seed and first fill alone before day 0."""
+        evidence = self._shadow_evidence
+        if since is None:
+            return ShadowEvidence(
+                seeded_at=evidence.seeded_at, first_fill_at=evidence.first_fill_at
+            )
+        return evidence
+
+    def latest_run(self, strategy_id: str) -> ShadowRunRecord | None:
+        """Return the scenario's day-0 record; a scenario holds one strategy."""
+        del strategy_id
+        return self._shadow_run
+
+    def notebook_entries(self) -> tuple[NotebookEntry, ...] | None:
+        """Return the scenario's synthetic lab notebook entries, oldest first."""
+        return self._notebook
 
     def briefs(self) -> tuple[ConsoleBrief, ...]:
         """Return the scenario's daily brief, composed and gated by the supervisor desk (#720)."""

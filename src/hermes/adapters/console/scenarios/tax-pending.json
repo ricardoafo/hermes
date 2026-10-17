@@ -416,5 +416,15 @@
     "day": 12,
     "length_days": 90,
     "note": null
+  },
+  "shadow_screen": {
+    "seeded_at": "2026-09-27T08:00:00+00:00",
+    "first_fill_at": null,
+    "run": null,
+    "missed_days": [],
+    "live_drifts_bps": [],
+    "kill_fired": false,
+    "kill_check_clean": null,
+    "notebook": null
   }
 }

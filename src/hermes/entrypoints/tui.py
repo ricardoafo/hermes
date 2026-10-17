@@ -19,7 +19,15 @@ scenario always reads mainnet off. Every panel sits in a
 :class:`~hermes.entrypoints.tui_widgets.HudPanel`. Tokens, themes, breakpoints
 and timings live in :mod:`hermes.entrypoints.tui_theme`.
 
-Screens: ``1`` Home (issue #712); ``2``-``8`` name the issue that builds them next.
+Screens: ``1`` Home (issue #712); ``5`` Shadow test (issue #718); the others
+name the issue that builds them next.
+
+The Shadow test screen: the big "N / 90" over the shared 90-day run bar with
+month ticks (or "warm-up · not counting" while no ``hermes shadow-start``
+record exists), the five certification checks (pass, fail or pending only), the
+day-0 record with its Ready-rule verdicts, the frozen settings and the lab
+notebook. It shows no money. Its sources come in a
+:class:`~hermes.application.console.shadow_screen.ShadowSources`.
 
 Home layout, per breakpoint token (:func:`~hermes.entrypoints.tui_home.home_layout`):
 under 100 columns one column (Portfolio, Positions, Market, Activity, Engine
@@ -141,7 +149,17 @@ from hermes.application.console.render import (
     render_tax_footnote,
     to_plain_text,
 )
+from hermes.application.console.shadow_figures import SHADOW_TEST_DAYS
+from hermes.application.console.shadow_screen import (
+    ShadowRecordError,
+    ShadowScreen,
+    ShadowSources,
+    build_shadow_screen,
+    run_words,
+    sources_from,
+)
 from hermes.domain.errors import LedgerError
+from hermes.entrypoints.tui_boot import BootScreen, boot_checks
 from hermes.entrypoints.tui_briefs import briefs_screen
 from hermes.entrypoints.tui_drilldown import (
     DetailMode,
@@ -155,13 +173,13 @@ from hermes.entrypoints.tui_home import (
     LOGS_UNAVAILABLE,
     HomeLayout,
     LiveRows,
+    counted_line,
     empty_positions,
     home_layout,
     log_tail,
     portfolio_curve,
     portfolio_meters,
     position_rows,
-    run_line,
     total_text,
 )
 from hermes.entrypoints.tui_live import (
@@ -177,6 +195,15 @@ from hermes.entrypoints.tui_settings import (
     ConsoleSettings,
     load_settings,
     save_settings,
+)
+from hermes.entrypoints.tui_shadow import (
+    checks_table,
+    day_figure,
+    hero_text,
+    notebook_rows,
+    notebook_text,
+    record_text,
+    settings_text,
 )
 from hermes.entrypoints.tui_signals import signals_screen
 from hermes.entrypoints.tui_theme import (
@@ -236,6 +263,7 @@ __all__ = [
 
 REFRESH_SECONDS: Final = MOTION.poll
 _PANEL_PADDING: Final = 2
+_SCROLLBAR_CELLS: Final = 1
 _NEW_VERSION_NOTICE: Final = "new version deployed · press R to restart"
 _UNKNOWN_RELEASE: Final = "unknown"
 _LOGS_LINES: Final = 50
@@ -247,8 +275,22 @@ _LEFT_IDS: Final = frozenset(
 )
 _THIRD_IDS: Final = frozenset({"signals", "log-tail"})
 _FULL_WIDTH_IDS: Final = frozenset(
-    {"shadow", "footer", "footer-status", "countdown", "countdown-meter", "mainnet", "notice"}
+    {
+        "shadow",
+        "footer",
+        "footer-status",
+        "countdown",
+        "countdown-meter",
+        "mainnet",
+        "notice",
+        "shadow-hero",
+        "shadow-checks",
+        "shadow-record",
+        "shadow-settings",
+        "shadow-notebook",
+    }
 )
+_SHADOW_PARTS: Final = ("shadow-checks", "shadow-record", "shadow-settings", "shadow-notebook")
 _WIDTH_CLASSES: Final = ("-compact", "-standard", "-wide", "-ultra")
 _HEIGHT_CLASSES: Final = ("-short", "-tall", "-towering")
 # Spaces the status row's widgets add around their text (padding, margins).
@@ -264,12 +306,13 @@ TABS: Final = (
     Tab("2", "Signals"),
     Tab("3", "Positions", 715),
     Tab("4", "Tax", 719),
-    Tab("5", "Shadow test", 718),
+    Tab("5", "Shadow test"),
     Tab("6", "Briefs"),
     Tab("7", "System", 717),
     Tab("8", "Logs", 716),
 )
 _HOME: Final = 0
+_SHADOW: Final = 4
 _SIGNALS: Final = 1
 _BRIEFS: Final = 5
 _LOGS: Final = 7
@@ -304,6 +347,7 @@ _FOOTER_CHIPS_COMPACT: Final = (
 )
 
 _CARD_ERRORS: Final = (ViewNotAvailableError, LedgerError)
+_SHADOW_ERRORS: Final = (ViewNotAvailableError, LedgerError, ShadowRecordError)
 _OSC_TITLE: Final = "\x1b]2;{}\x07"
 
 
@@ -311,7 +355,14 @@ def _unavailable(title: str, exc: Exception) -> Text:
     """Return the one plain line a card shows instead of its content."""
     if isinstance(exc, LedgerError):
         return Text(f"{title} · could not read the ledger: {exc.msg}", style="yellow")
+    if isinstance(exc, ShadowRecordError):
+        return Text(f"{title} · could not read the day-0 record: {exc}", style="yellow")
     return Text(f"{title} · not available yet", style="dim")
+
+
+def _day_count(value: float) -> str:
+    """Return the Shadow test day mid count-up (``12 / 90``)."""
+    return f"{round(value)} / {SHADOW_TEST_DAYS}"
 
 
 def _card(title: str, build: Callable[[], RenderableType]) -> RenderableType:
@@ -564,6 +615,11 @@ class HomeApp(App[None]):
     #footer {{ width: 1fr; }}
     #footer-status, #panel-footer {{ width: auto; color: $hud-muted; }}
     #panel {{ height: 1fr; padding: 0 1; overflow-y: auto; }}
+    #shadow-body {{ height: auto; layout: vertical; }}
+    #tab-5 {{ scrollbar-gutter: stable; scrollbar-size-vertical: 1; }}
+    #shadow-body.-wide, #shadow-body.-ultra {{ layout: horizontal; }}
+    #shadow-left, #shadow-right {{ height: auto; width: 1fr; }}
+    #shadow-body.-wide #shadow-right, #shadow-body.-ultra #shadow-right {{ margin-left: 1; }}
     """
     BINDINGS: ClassVar[list[BindingType]] = [
         *_range_bindings(),
@@ -596,7 +652,9 @@ class HomeApp(App[None]):
         settings_path: Path | None = None,
         theme: ThemeChoice | None = None,
         exposure_cap: Decimal | None = None,
+        shadow: ShadowSources | None = None,
         ticker: LiveTickerPort | None = None,
+        boot: bool = False,
     ) -> None:
         """Hold the read model, the journal source and the screen state.
 
@@ -623,10 +681,17 @@ class HomeApp(App[None]):
             theme: A choice from ``--theme``; it wins over the saved one and is saved.
             exposure_cap: The roster's pre-registered exposure cap as a share
                 (``0.15``); ``None`` makes the exposure meter say it is unknown.
+            shadow: Where the Shadow test screen and the 90-day line read
+                from; ``None`` takes what ``model`` itself serves.
             ticker: The live public ticker (issue #713); ``None`` shows booked
                 values only and the Market panel without prices.
+            boot: Open on the cold start screen (#1020); shown only with motion on.
         """
         super().__init__()
+        # The checks need the time zone, which the model only gives once mounted.
+        self._boot_checks = (
+            partial(boot_checks, model, journal=journal, ticker=ticker) if boot else None
+        )
         self._model = model
         self._journal = journal
         self._release = release
@@ -655,14 +720,23 @@ class HomeApp(App[None]):
         # The last heartbeat read, kept across a failed read so the bell never rings twice.
         self._last_read: Heartbeat | None = None
         self._ctx = RenderContext(surface=Surface.OPERATOR_TUI, now=clock())
-        self._pulse = 0
-        self._radar = 0
+        self._pulse = self._radar = 0
         self._exposure_cap = exposure_cap
+        self._shadow = shadow or sources_from(model)
         self._layout: HomeLayout = home_layout(80, 24)
         self._empty_facts: tuple[tuple[str, ...], datetime | None] | None = None
         self._title_sent: str | None = None
         self._title_total: str | None = None
         self.effect_timers: dict[str, Timer] = {}
+        self._init_live_feed(ticker, clock)
+        self._summary: PortfolioSummary | None = None
+        self._rows: tuple[PositionRow, ...] = ()
+        self._details: dict[str, PositionDetail] = {}
+        self._watch: tuple[WatchedPair, ...] | None = None
+        for hermes_theme in THEMES:
+            self.register_theme(hermes_theme)
+
+    def _init_live_feed(self, ticker: LiveTickerPort | None, clock: Callable[[], datetime]) -> None:
         self._poller = None if ticker is None else TickerPoller(ticker, clock)
         self._board = LiveBoard()
         self._fetching = False
@@ -671,12 +745,6 @@ class HomeApp(App[None]):
         self._polls: deque[bool] = deque(maxlen=FEED_WIDTH)
         self._feed_timer: Timer | None = None
         self._live_state = LiveState.WAITING
-        self._summary: PortfolioSummary | None = None
-        self._rows: tuple[PositionRow, ...] = ()
-        self._details: dict[str, PositionDetail] = {}
-        self._watch: tuple[WatchedPair, ...] | None = None
-        for hermes_theme in THEMES:
-            self.register_theme(hermes_theme)
 
     def get_theme_variable_defaults(self) -> dict[str, str]:
         """Give TCSS the ``hud-*`` variables before a hermes theme is applied."""
@@ -737,7 +805,10 @@ class HomeApp(App[None]):
                     yield HudPanel(
                         Static(id="log-tail"), title="Log tail", subtitle="L logs", id="log-panel"
                     )
+            yield self._compose_shadow()
             for index, tab in enumerate(TABS[1:], start=1):
+                if index == _SHADOW:
+                    continue
                 ai = index == _BRIEFS
                 yield VerticalScroll(
                     HudPanel(
@@ -754,6 +825,47 @@ class HomeApp(App[None]):
             yield Static(id="footer")
             yield Static(id="footer-status")
 
+    def _compose_shadow(self) -> VerticalScroll:
+        """Return tab 5: the hero, then checks and day 0 beside settings and notebook."""
+        return VerticalScroll(
+            HudPanel(
+                BigNumber(motion=self._motion, counting=_day_count, id="shadow-day"),
+                Static(id="shadow-hero"),
+                title="Shadow test",
+                subtitle="booked · read-only",
+                id="shadow-hero-panel",
+            ),
+            Container(
+                Vertical(
+                    HudPanel(
+                        Static(id="shadow-checks"),
+                        title="Certification checks",
+                        subtitle="pass · fail · pending",
+                        id="shadow-checks-panel",
+                    ),
+                    HudPanel(Static(id="shadow-record"), title="Day 0", id="shadow-record-panel"),
+                    id="shadow-left",
+                ),
+                Vertical(
+                    HudPanel(
+                        Static(id="shadow-settings"),
+                        title="Frozen settings",
+                        subtitle="never edited here",
+                        id="shadow-settings-panel",
+                    ),
+                    HudPanel(
+                        Static(id="shadow-notebook"),
+                        title="Lab notebook",
+                        subtitle="newest first",
+                        id="shadow-notebook-panel",
+                    ),
+                    id="shadow-right",
+                ),
+                id="shadow-body",
+            ),
+            id=f"tab-{TABS[_SHADOW].key}",
+        )
+
     def on_mount(self) -> None:
         """Apply the theme, draw, and start the poll, the clock and the effects."""
         if self._save_choice:
@@ -763,6 +875,14 @@ class HomeApp(App[None]):
         self.set_interval(self._refresh_seconds, self._redraw)
         self.set_interval(MOTION.clock_tick, self._tick)
         self._start_effects()
+        if self._boot_checks is not None and self._motion:
+            self.push_screen(
+                BootScreen(
+                    self._boot_checks(tz=self._render_context().tz),
+                    lambda: tokens_for(self.theme),
+                    release=self._read_release(),
+                )
+            )
 
     def on_resize(self, event: events.Resize) -> None:
         """Re-flow when the terminal size changes."""
@@ -801,8 +921,10 @@ class HomeApp(App[None]):
             self.effect_timers["radar"] = self.set_interval(MOTION.radar_tick, self._step_radar)
 
     def _start_shimmer(self) -> None:
-        big = self._alive(BigNumber)
-        if big is not None:
+        """Start a shimmer pass on every shown big number (Home total, Shadow day)."""
+        if not self.screen_stack:
+            return
+        for big in self._home.query(BigNumber).results(BigNumber):
             big.start_shimmer()
 
     def _step_radar(self) -> None:
@@ -1331,16 +1453,18 @@ class HomeApp(App[None]):
         self._set("brief", Text(_BRIEF_PENDING, style="dim"))
         if layout.third:
             self._redraw_third_column(ctx, layout)
-        self._set(
-            "shadow",
-            _card(
-                "Shadow test",
-                lambda: run_line(
-                    model.shadow_test(), tokens_for(self.theme), width=self.size.width
-                ),
-            ),
-        )
+        self._redraw_run_line()
         self._redraw_detail(ctx)
+        self._redraw_tab_screen(ctx, layout)
+        screen = self.screen
+        if isinstance(screen, _PanelScreen | DetailScreen):
+            screen.refresh_panel()
+
+    def _redraw_tab_screen(self, ctx: RenderContext, layout: HomeLayout) -> None:
+        """Draw the chrome and the screen of the shown tab."""
+        model = self._model
+        if self._tab == _SHADOW:
+            self._redraw_shadow(ctx, layout)
         self._redraw_chrome()
         if self._tab == _BRIEFS:
             self._set(
@@ -1369,9 +1493,6 @@ class HomeApp(App[None]):
                     ),
                 ),
             )
-        screen = self.screen
-        if isinstance(screen, _PanelScreen | DetailScreen):
-            screen.refresh_panel()
 
     def _read_release(self) -> str | None:
         """Return the current release name, or ``None`` without a source or when it fails."""
@@ -1554,6 +1675,72 @@ class HomeApp(App[None]):
                 rate=eur_rate(self._rows, self._summary),
             ),
         )
+
+    def _redraw_run_line(self) -> None:
+        """Draw the bottom 90-day line from the same day 0 as tab 5 (one source)."""
+        try:
+            screen = self.shadow_screen()
+        except _SHADOW_ERRORS as exc:
+            self._set("shadow", _unavailable("Shadow test", exc))
+            return
+        line = counted_line(
+            run_words(screen),
+            None if screen.day is None else min(screen.day, screen.length_days),
+            screen.length_days,
+            tokens_for(self.theme),
+            width=self.size.width,
+        )
+        self._set("shadow", line)
+
+    def shadow_screen(self) -> ShadowScreen:
+        """Return the Shadow test screen read now from the shadow sources.
+
+        Raises:
+            LedgerError: The ledger could not be read.
+            ShadowRecordError: A day-0 record could not be read.
+        """
+        sources = self._shadow
+        strategy = sources.strategy_id
+        runs = sources.runs
+        record = None if runs is None or strategy is None else runs.latest_run(strategy)
+        notebook = None if sources.notebook is None else sources.notebook.notebook_entries()
+        ctx = self._ctx
+        return build_shadow_screen(
+            record=record,
+            evidence=sources.evidence,
+            notebook=notebook,
+            as_of=ctx.now,
+            tz=ctx.tz,
+        )
+
+    def _redraw_shadow(self, ctx: RenderContext, layout: HomeLayout) -> None:
+        """Draw tab 5: the hero, the checks, the day-0 record, the settings, the notebook."""
+        big = self._home.query_one("#shadow-day", BigNumber)
+        body = self._home.query_one("#shadow-body")
+        for name in _WIDTH_CLASSES:
+            body.set_class(name in layout.classes, name)
+        try:
+            screen = self.shadow_screen()
+        except _SHADOW_ERRORS as exc:
+            big.show(None, None)
+            self._set("shadow-hero", _unavailable("Shadow test", exc))
+            for part in _SHADOW_PARTS:
+                self._set(part, Text(""))
+            return
+        tokens = tokens_for(self.theme)
+        figure = day_figure(screen) if layout.big_total else None
+        day = screen.day
+        big.show(figure, None if day is None else float(min(day, screen.length_days)))
+        width = self.size.width - _SCROLLBAR_CELLS - _PANEL_PADDING
+        self._set(
+            "shadow-hero",
+            hero_text(screen, tokens, width=width, tz=ctx.tz, big=figure is not None),
+        )
+        self._set("shadow-checks", checks_table(screen.checks, tokens))
+        self._set("shadow-record", record_text(screen, tokens, tz=ctx.tz))
+        self._set("shadow-settings", settings_text(screen.settings, tokens))
+        rows = notebook_rows(layout.height_class)
+        self._set("shadow-notebook", notebook_text(screen.notebook, tokens, tz=ctx.tz, rows=rows))
 
     def _redraw_third_column(self, ctx: RenderContext, layout: HomeLayout) -> None:
         """Draw the Signals placeholder and the log tail (ultra width)."""
@@ -1847,6 +2034,7 @@ def run_home(
     theme: ThemeChoice | None = None,
     settings_path: Path | None = DEFAULT_SETTINGS_PATH,
     exposure_cap: Decimal | None = None,
+    shadow: ShadowSources | None = None,
     ticker: LiveTickerPort | None = None,
 ) -> None:
     """Run the console until the operator quits, or restarts onto a new release.
@@ -1866,6 +2054,7 @@ def run_home(
         theme: A ``--theme`` choice; saved, and wins over the saved one.
         settings_path: Where the theme choice is read and saved.
         exposure_cap: The roster's exposure cap; see :class:`HomeApp`.
+        shadow: The Shadow test screen's sources; see :class:`HomeApp`.
         ticker: The live public ticker; see :class:`HomeApp`.
     """
     app = HomeApp(
@@ -1877,7 +2066,9 @@ def run_home(
         theme=theme,
         settings_path=settings_path,
         exposure_cap=exposure_cap,
+        shadow=shadow,
         ticker=ticker,
+        boot=True,
     )
     app.run()
     if not app.restart_requested:

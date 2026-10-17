@@ -178,10 +178,6 @@ tests/unit/domain/statistics/test_statistics_mutation_guards.py::test_split_has_
 tests/unit/domain/statistics/test_statistics_mutation_guards.py::test_split_is_frozen U6
 tests/unit/domain/statistics/test_statistics_mutation_guards.py::test_trade_result_has_slots U6
 tests/unit/domain/statistics/test_statistics_mutation_guards.py::test_trade_result_is_frozen U6
-tests/unit/domain/strategy/swing/engines/test_chandelier_engine.py::test_deterministic_on_identical_inputs U3
-tests/unit/domain/strategy/swing/engines/test_chandelier_engine.py::test_none_on_empty_bars U3
-tests/unit/domain/strategy/swing/engines/test_chandelier_engine.py::test_none_on_period_bars_exactly U3
-tests/unit/domain/strategy/swing/engines/test_chandelier_engine.py::test_returns_value_with_period_plus_one_bars U3
 tests/unit/domain/strategy/swing/engines/test_ema_regime_filter.py::test_above_ema_false_below_period U3
 tests/unit/domain/strategy/swing/engines/test_ema_regime_filter.py::test_above_ema_false_on_empty_bars U3
 tests/unit/domain/strategy/swing/engines/test_ema_regime_filter.py::test_above_ema_false_when_price_crashes_below U3

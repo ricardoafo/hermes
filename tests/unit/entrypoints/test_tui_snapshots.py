@@ -9,7 +9,9 @@ Views: Home on the ``ok-two-positions`` and ``empty`` demo scenarios, the
 Positions placeholder (tab 3), the theme picker open over Home, Home with a
 fake ticker (``home_live``, issue #713): live market prices, a position valued
 live and the window bar's feed pulse after a run of polls, one of them failed,
-and Home with the new-version notice up after the release changed (issue #652).
+Home with the new-version notice up after the release changed (issue #652),
+and the Shadow test screen (tab 5, issue #718) counting from a day-0 record
+(``ok-two-positions``) and in the warm-up with no record (``empty``).
 
 Every app here runs with motion off, a frozen clock and synthetic demo data,
 and never reads or writes the real settings file.
@@ -31,6 +33,7 @@ from syrupy.types import SnapshotIndex
 
 from hermes.adapters.console import FixtureReadModel
 from hermes.application.console.live import TickOutcome
+from hermes.application.console.shadow_screen import ShadowSources
 from hermes.domain.errors import KrakenPublicError
 from hermes.domain.market_data.ticker import Ticker
 from hermes.domain.value_objects.pair import Pair
@@ -81,6 +84,8 @@ _VIEWS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("home_empty", "empty", ()),
     ("tab3_placeholder", "ok-two-positions", ("3",)),
     ("theme_picker", "ok-two-positions", ("t",)),
+    ("shadow_counting", "ok-two-positions", ("5",)),
+    ("shadow_warmup", "empty", ("5",)),
     ("home_live", "ok-two-positions", ()),
 )
 
@@ -112,13 +117,15 @@ def _svg(
     live: bool = False,
 ) -> str:
     async def drive() -> str:
+        model = FixtureReadModel.load(scenario)
         app = HomeApp(
-            FixtureReadModel.load(scenario),
+            model,
             clock=lambda: _FROZEN,
             motion=False,
             settings_path=None,
             theme=theme,
             refresh_seconds=3600,
+            shadow=ShadowSources(evidence=model, runs=model, notebook=model, strategy_id="demo"),
             ticker=_FakeTicker() if live else None,
         )
         async with app.run_test(size=size) as pilot:

@@ -18,9 +18,11 @@ from pathlib import Path
 from typing import Self
 
 from hermes.adapters.ledger._cells import decimal_cell, time_cell
+from hermes.adapters.ledger.anomaly_reader import latest_anomaly
 from hermes.adapters.ledger.connection import open_ledger
 from hermes.adapters.ledger.risk_halt_rows import RISK_HALT_EVENT_TYPE, risk_halt_from_payload
 from hermes.domain.errors import LedgerError
+from hermes.domain.events.anomaly_detected import CLOCK_SKEW_SOURCE, AnomalyDetected
 from hermes.domain.events.risk_halt_recorded import RiskHaltRecorded
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.currency import Currency
@@ -210,6 +212,17 @@ class SqliteStatusReader:
             return tuple(risk_halt_from_payload(json.loads(payload)) for (payload,) in rows)
         except (KeyError, ValueError, TypeError) as exc:
             raise LedgerError(msg=f"halts_since: unreadable payload: {exc}") from exc
+
+    def last_clock_skew(self) -> AnomalyDetected | None:
+        """Return the newest clock-skew anomaly serve recorded, or ``None`` (#859).
+
+        Returns:
+            The anomaly; ``CRITICAL`` means the clock is still off.
+
+        Raises:
+            LedgerError: On any SQLite read failure or an unreadable payload.
+        """
+        return latest_anomaly(self._conn, CLOCK_SKEW_SOURCE)
 
     def _fetchone(self, sql: str, params: tuple[str, ...]) -> tuple[str | int | None, ...] | None:
         """Run one read query and return its first row."""
