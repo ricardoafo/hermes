@@ -1,0 +1,1 @@
+- Closed the connections and pipes that `hermes migrate --dry-run` (when the ledger cannot be copied) and the journal reader (`hermes logs`, console activity feed) left open until garbage collection.

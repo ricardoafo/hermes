@@ -110,6 +110,8 @@ class OrderbookDiffMachine(RuleBasedStateMachine):
     - every diff the stream yields starts at the previous yielded diff's final id + 1;
     - a gapped diff and a replayed (out-of-order) diff are refused with ``InfraError``;
     - after a refusal the stream yields nothing more until a re-snapshot;
+    - a diff the snapshot already contains never reaches the book, and the
+      first diff kept straddles ``lastUpdateId + 1`` (issue #866);
     - while the stream lives, snapshot + yielded diffs == the exchange's book.
     """
 
@@ -151,7 +153,8 @@ class OrderbookDiffMachine(RuleBasedStateMachine):
         self.local_asks: Book = {lvl.price: lvl.quantity for lvl in snapshot.asks}
         self.inbox.clear()
         self.stream = cast(
-            "AsyncGenerator[OrderbookDiff]", self.adapter.stream_orderbook_diffs(_PAIR)
+            "AsyncGenerator[OrderbookDiff]",
+            self.adapter.stream_orderbook_diffs(_PAIR, after_update_id=snapshot.last_update_id),
         )
         self.alive = True
         self.prev_final: int | None = None
@@ -173,8 +176,8 @@ class OrderbookDiffMachine(RuleBasedStateMachine):
             "a": _wire(asks),
         }
 
-    def _deliver(self, message: dict[str, Any]) -> OrderbookDiff | InfraError | None:
-        self.inbox.append(json.dumps(message))
+    def _deliver(self, *messages: dict[str, Any]) -> OrderbookDiff | InfraError | None:
+        self.inbox.extend(json.dumps(message) for message in messages)
         try:
             return self.loop.run_until_complete(anext(self.stream))
         except InfraError as exc:
@@ -200,10 +203,8 @@ class OrderbookDiffMachine(RuleBasedStateMachine):
     ) -> None:
         """Send the next diff in sequence: it is yielded unchanged and the books agree.
 
-        The first diff after a snapshot straddles ``lastUpdateId + 1`` (SA-3
-        step 4). A first diff wholly at or before ``lastUpdateId`` is excluded:
-        the snapshot drops ``lastUpdateId``, so no caller can discard it yet
-        (issue #866).
+        The first diff after a snapshot starts at ``lastUpdateId + 1`` here;
+        ``stale_diffs_then_straddling_diff`` covers the other first diffs.
         """
         first = self.exchange_id + 1
         final = first + span
@@ -225,6 +226,61 @@ class OrderbookDiffMachine(RuleBasedStateMachine):
             assert got.first_update_id == self.prev_final + 1
         self.prev_final = got.final_update_id
         _apply_diff(self.local_bids, self.local_asks, got)
+
+    @precondition(lambda self: self.alive and self.prev_final is None)
+    @rule(
+        stale=st.lists(
+            st.tuples(st.integers(min_value=0, max_value=3), _levels(_BID_PRICES)),
+            min_size=1,
+            max_size=3,
+        ),
+        back=st.integers(min_value=0, max_value=3),
+        span=st.integers(min_value=0, max_value=3),
+        bids=_levels(_BID_PRICES),
+    )
+    def stale_diffs_then_straddling_diff(
+        self,
+        stale: list[tuple[int, list[tuple[Decimal, Decimal]]]],
+        back: int,
+        span: int,
+        bids: list[tuple[Decimal, Decimal]],
+    ) -> None:
+        """Diffs the snapshot already holds are dropped; the straddling one is yielded.
+
+        The stale diffs end at or before ``lastUpdateId`` and carry arbitrary
+        levels, so yielding one would put old quantities back into the book.
+        """
+        snapshot_id = self.exchange_id
+        stale_messages = [
+            self._message(snapshot_id - age - 1, snapshot_id - age, levels, [])
+            for age, levels in stale
+        ]
+        first = snapshot_id - back
+        final = snapshot_id + 1 + span
+        _apply(self.exchange_bids, bids)
+        self.exchange_id = final
+        message = self._message(first, final, bids, [])
+        self.last_sent = message
+        got = self._deliver(*stale_messages, message)
+        assert isinstance(got, OrderbookDiff), got
+        assert (got.first_update_id, got.final_update_id) == (first, final)
+        self.prev_final = final
+        _apply_diff(self.local_bids, self.local_asks, got)
+
+    @precondition(lambda self: self.alive and self.prev_final is None)
+    @rule(missed=st.integers(min_value=1, max_value=5), bids=_levels(_BID_PRICES))
+    def first_diff_after_a_gap_since_the_snapshot(
+        self, missed: int, bids: list[tuple[Decimal, Decimal]]
+    ) -> None:
+        """Send a first diff past ``lastUpdateId + 1``: events were lost, so it is refused."""
+        snapshot_id = self.exchange_id
+        first = snapshot_id + 1 + missed
+        _apply(self.exchange_bids, bids)
+        self.exchange_id = first
+        got = self._deliver(self._message(first, first, bids, []))
+        assert isinstance(got, InfraError), got
+        assert f"Expected first_update_id<={snapshot_id + 1}" in str(got)
+        self.alive = False
 
     @precondition(lambda self: self.alive and self.prev_final is not None)
     @rule(
@@ -289,6 +345,28 @@ class OrderbookDiffMachine(RuleBasedStateMachine):
         """Keep the local best bid below the local best ask."""
         if self.local_bids and self.local_asks:
             assert max(self.local_bids) < min(self.local_asks)
+
+
+def test_a_diff_older_than_the_snapshot_never_reaches_the_book() -> None:
+    """With a snapshot at 1000, a diff U=990 u=995 is dropped and U=998 u=1003 is yielded.
+
+    Issue #866: the snapshot used to drop ``lastUpdateId``, so the stale diff
+    was yielded and its old quantities went back into the book.
+    """
+    machine = OrderbookDiffMachine()
+    try:
+        got = machine._deliver(
+            machine._message(990, 995, [(Decimal(95), Decimal(7))], []),
+            machine._message(998, 1003, [(Decimal(96), Decimal(2))], []),
+        )
+    finally:
+        machine.teardown()
+    assert isinstance(got, OrderbookDiff), got
+    assert (got.first_update_id, got.final_update_id, got.bids[0].price) == (
+        998,
+        1003,
+        Decimal(96),
+    )
 
 
 OrderbookDiffMachine.TestCase.settings = settings(
