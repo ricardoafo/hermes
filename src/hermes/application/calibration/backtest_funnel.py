@@ -369,142 +369,148 @@ def _not_computed(name: str, requirement: str) -> GateCheck:
     return GateCheck(name, requirement, _NOT_COMPUTED, passed=False)
 
 
-def _pbo(evidence: FunnelEvidence, t: FunnelThresholds) -> GateCheck:
-    requirement = f"<= {t.pbo_max:g} (CSCV, {t.cscv_blocks} blocks)"
+def _requirement(name: str, t: FunnelThresholds) -> str:
+    bull = sum(1 for r in t.regimes if r.kind == "bull")
+    bear = len(t.regimes) - bull
+    return {
+        "pbo": f"<= {t.pbo_max:g} (CSCV, {t.cscv_blocks} blocks)",
+        "t_stat": f"> {t.t_stat_above:g}",
+        "trade_count": f">= {t.trade_count_min}",
+        "cost_stress": f"return > 0 at >= {t.cost_stress_multiplier:g}x costs",
+        "positive_years": f"share > {t.positive_year_share_above:g}",
+        "bull_return": f"> 0 over {bull} bull stretches",
+        "bear_return": f"> 0 over {bear} bear stretches",
+        "validation_vs_train": f">= {t.validation_to_train_return_min:g} x Train (annualised)",
+        "neighbours": f"Sharpe >= {t.neighbour_sharpe_ratio_min:g} x base, every neighbour",
+        "correlation": f"< {t.return_correlation_below:g} with every running strategy",
+    }[name]
+
+
+class _NotComputedError(Exception):
+    """The statistic cannot be computed from this evidence; the check fails closed."""
+
+
+def _finite(*values: float) -> None:
+    if not all(math.isfinite(v) for v in values):
+        raise _NotComputedError
+
+
+def _pbo(evidence: FunnelEvidence, t: FunnelThresholds) -> tuple[str, bool]:
     if evidence.trials is None:
-        return _not_computed("pbo", requirement)
-    try:
-        pbo = probability_of_backtest_overfitting(
-            list(evidence.trials.values()), blocks=t.cscv_blocks
-        )
-    except ValueError:
-        return _not_computed("pbo", requirement)
-    return GateCheck("pbo", requirement, f"{pbo:g}", pbo <= t.pbo_max)
+        raise _NotComputedError
+    pbo = probability_of_backtest_overfitting(list(evidence.trials.values()), blocks=t.cscv_blocks)
+    _finite(pbo)
+    return f"{pbo:g}", pbo <= t.pbo_max
 
 
-def _t_stat(returns: Sequence[float], t: FunnelThresholds) -> GateCheck:
-    requirement = f"> {t.t_stat_above:g}"
+def _t_stat(returns: Sequence[float], t: FunnelThresholds) -> tuple[str, bool]:
     value = sharpe_t_statistic(returns)
     if value is None:
-        return _not_computed("t_stat", requirement)
-    return GateCheck("t_stat", requirement, f"{value:g}", value > t.t_stat_above)
+        raise _NotComputedError
+    _finite(value)
+    return f"{value:g}", value > t.t_stat_above
 
 
-def _trade_count(evidence: FunnelEvidence, t: FunnelThresholds) -> GateCheck:
-    requirement = f">= {t.trade_count_min}"
+def _trade_count(evidence: FunnelEvidence, t: FunnelThresholds) -> tuple[str, bool]:
     count = evidence.trade_count
     if count is None:
-        return _not_computed("trade_count", requirement)
-    return GateCheck("trade_count", requirement, str(count), count >= t.trade_count_min)
+        raise _NotComputedError
+    return str(count), count >= t.trade_count_min
 
 
-def _cost_stress(evidence: FunnelEvidence, t: FunnelThresholds) -> GateCheck:
-    requirement = f"return > 0 at >= {t.cost_stress_multiplier:g}x costs"
+def _cost_stress(evidence: FunnelEvidence, t: FunnelThresholds) -> tuple[str, bool]:
     stress = evidence.cost_stress
     if stress is None or len(stress.daily_equity) < _MIN_POINTS:
-        return _not_computed("cost_stress", requirement)
+        raise _NotComputedError
     if stress.multiplier < t.cost_stress_multiplier:
-        return GateCheck("cost_stress", requirement, f"run at {stress.multiplier:g}x", False)
+        return f"run at {stress.multiplier:g}x", False
     total = stress.daily_equity[-1] / stress.daily_equity[0] - 1.0
-    return GateCheck("cost_stress", requirement, f"{total:g}", total > 0.0)
+    _finite(total)
+    return f"{total:g}", total > 0.0
 
 
-def _positive_years(evidence: FunnelEvidence, t: FunnelThresholds) -> GateCheck:
-    requirement = f"share > {t.positive_year_share_above:g}"
+def _positive_years(evidence: FunnelEvidence, t: FunnelThresholds) -> tuple[str, bool]:
     years = calendar_year_returns(evidence.start_date, evidence.daily_equity)
     if not years:
-        return _not_computed("positive_years", requirement)
+        raise _NotComputedError
+    _finite(*years.values())
     positive = sum(1 for r in years.values() if r > 0.0)
     share = positive / len(years)
-    return GateCheck(
-        "positive_years",
-        requirement,
-        f"{share:g} ({positive} of {len(years)})",
-        share > t.positive_year_share_above,
-    )
+    return f"{share:g} ({positive} of {len(years)})", share > t.positive_year_share_above
 
 
-def _regime(evidence: FunnelEvidence, t: FunnelThresholds, kind: RegimeKind) -> GateCheck:
-    name = f"{kind}_return"
+def _regime(evidence: FunnelEvidence, t: FunnelThresholds, kind: RegimeKind) -> tuple[str, bool]:
     stretches = [r for r in t.regimes if r.kind == kind]
-    requirement = f"> 0 over {len(stretches)} {kind} stretches"
-    growth = 1.0
-    try:
-        for stretch in stretches:
-            period = stretch_return(
-                evidence.start_date, evidence.daily_equity, stretch.start, stretch.end
-            )
-            growth *= 1.0 + period.total
-    except ValueError:
-        return _not_computed(name, requirement)
     if not stretches:
-        return _not_computed(name, requirement)
-    total = growth - 1.0
-    return GateCheck(name, requirement, f"{total:g}", total > 0.0)
-
-
-def _validation_vs_train(evidence: FunnelEvidence, t: FunnelThresholds) -> GateCheck:
-    requirement = f">= {t.validation_to_train_return_min:g} x Train (annualised)"
-    start, equity = evidence.start_date, evidence.daily_equity
-    try:
-        train: PeriodReturn = stretch_return(start, equity, start, t.train_end)
-        validation = stretch_return(
-            start, equity, t.train_end + timedelta(days=1), evidence.end_date
+        raise _NotComputedError
+    growth = 1.0
+    for stretch in stretches:
+        period = stretch_return(
+            evidence.start_date, evidence.daily_equity, stretch.start, stretch.end
         )
-    except ValueError:
-        return _not_computed("validation_vs_train", requirement)
+        growth *= 1.0 + period.total
+    total = growth - 1.0
+    _finite(total)
+    return f"{total:g}", total > 0.0
+
+
+def _validation_vs_train(evidence: FunnelEvidence, t: FunnelThresholds) -> tuple[str, bool]:
+    start, equity = evidence.start_date, evidence.daily_equity
+    train: PeriodReturn = stretch_return(start, equity, start, t.train_end)
+    validation = stretch_return(start, equity, t.train_end + timedelta(days=1), evidence.end_date)
     train_rate = annualised_return(train)
     validation_rate = annualised_return(validation)
+    _finite(train_rate, validation_rate)
     if train_rate <= 0.0:
-        return GateCheck("validation_vs_train", requirement, f"Train {train_rate:g}", False)
+        return f"Train {train_rate:g}", False
     ratio = validation_rate / train_rate
-    return GateCheck(
-        "validation_vs_train",
-        requirement,
-        f"{ratio:g}",
-        validation_rate >= t.validation_to_train_return_min * train_rate,
-    )
+    return f"{ratio:g}", validation_rate >= t.validation_to_train_return_min * train_rate
 
 
 def _neighbours(
     evidence: FunnelEvidence, returns: Sequence[float], t: FunnelThresholds
-) -> GateCheck:
-    requirement = f"Sharpe >= {t.neighbour_sharpe_ratio_min:g} x base, every neighbour"
+) -> tuple[str, bool]:
     ids = evidence.neighbour_trial_ids
     trials = evidence.trials
     if not ids or trials is None or any(i not in trials for i in ids):
-        return _not_computed("neighbours", requirement)
+        raise _NotComputedError
     base = sharpe_ratio(returns)
+    if base is not None:
+        _finite(base)
     if base is None or base <= 0.0:
-        return GateCheck("neighbours", requirement, "base Sharpe <= 0", False)
+        return "base Sharpe <= 0", False
     ratios: list[float] = []
     for neighbour in ids:
         sharpe = sharpe_ratio(trials[neighbour])
-        if sharpe is None:
-            return GateCheck(
-                "neighbours", requirement, f"neighbour {neighbour} {_NOT_COMPUTED}", False
-            )
+        if sharpe is None or not math.isfinite(sharpe):
+            return f"neighbour {neighbour} {_NOT_COMPUTED}", False
         ratios.append(sharpe / base)
     worst = min(ratios)
-    return GateCheck("neighbours", requirement, f"{worst:g}", worst >= t.neighbour_sharpe_ratio_min)
+    _finite(worst)
+    return f"{worst:g}", worst >= t.neighbour_sharpe_ratio_min
 
 
 def _correlation(
     evidence: FunnelEvidence, returns: Sequence[float], t: FunnelThresholds
-) -> GateCheck:
-    requirement = f"< {t.return_correlation_below:g} with every running strategy"
+) -> tuple[str, bool]:
     running = evidence.running_strategies
     if running is None:
-        return _not_computed("correlation", requirement)
+        raise _NotComputedError
     if not running:
-        return GateCheck("correlation", requirement, "none running", True)
+        return "none running", True
+    highest = max(statistics.correlation(returns, series) for series in running.values())
+    _finite(highest)
+    return f"{highest:g}", highest < t.return_correlation_below
+
+
+def _closed(name: str, t: FunnelThresholds, compute: Callable[[], tuple[str, bool]]) -> GateCheck:
+    """Run one check; any statistic that cannot be computed, overflows or is not finite fails it."""
+    requirement = _requirement(name, t)
     try:
-        highest = max(statistics.correlation(returns, series) for series in running.values())
-    except statistics.StatisticsError:
-        return _not_computed("correlation", requirement)
-    return GateCheck(
-        "correlation", requirement, f"{highest:g}", highest < t.return_correlation_below
-    )
+        observed, passed = compute()
+    except _NotComputedError, ValueError, ArithmeticError:
+        return _not_computed(name, requirement)
+    return GateCheck(name, requirement, observed, passed)
 
 
 def evaluate_funnel(
@@ -512,7 +518,8 @@ def evaluate_funnel(
 ) -> tuple[GateCheck, ...]:
     """Evaluate every ADR-021 §5 funnel criterion on one Train + Validation run.
 
-    Pure. A statistic that cannot be computed fails its check. Call
+    Pure. A statistic that cannot be computed, overflows or is not finite
+    fails its check ("not computed"); nothing raises. Call
     :func:`validate_evidence` first; this function does not refuse.
 
     Args:
@@ -522,16 +529,21 @@ def evaluate_funnel(
     Returns:
         One check per name in :data:`FUNNEL_CHECK_NAMES`, in that order.
     """
-    returns = daily_returns(evidence.daily_equity)
-    return (
-        _pbo(evidence, thresholds),
-        _t_stat(returns, thresholds),
-        _trade_count(evidence, thresholds),
-        _cost_stress(evidence, thresholds),
-        _positive_years(evidence, thresholds),
-        _regime(evidence, thresholds, "bull"),
-        _regime(evidence, thresholds, "bear"),
-        _validation_vs_train(evidence, thresholds),
-        _neighbours(evidence, returns, thresholds),
-        _correlation(evidence, returns, thresholds),
-    )
+    try:
+        returns = daily_returns(evidence.daily_equity)
+    except ValueError:
+        returns = []
+    t = thresholds
+    computations: dict[str, Callable[[], tuple[str, bool]]] = {
+        "pbo": lambda: _pbo(evidence, t),
+        "t_stat": lambda: _t_stat(returns, t),
+        "trade_count": lambda: _trade_count(evidence, t),
+        "cost_stress": lambda: _cost_stress(evidence, t),
+        "positive_years": lambda: _positive_years(evidence, t),
+        "bull_return": lambda: _regime(evidence, t, "bull"),
+        "bear_return": lambda: _regime(evidence, t, "bear"),
+        "validation_vs_train": lambda: _validation_vs_train(evidence, t),
+        "neighbours": lambda: _neighbours(evidence, returns, t),
+        "correlation": lambda: _correlation(evidence, returns, t),
+    }
+    return tuple(_closed(name, t, computations[name]) for name in FUNNEL_CHECK_NAMES)

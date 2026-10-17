@@ -7,6 +7,7 @@ Point ``i`` of a curve is the equity at the end of day ``start + i``. Return
 Reference: ADR-021 §5; openspec/changes/v2-backtest-funnel D-6.
 """
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -84,8 +85,19 @@ def annualised_return(period: PeriodReturn) -> float:
     """Return ``period`` as a 365-day compound rate.
 
     Raises:
-        ValueError: The period holds no return day.
+        ValueError: The period holds no return day, or the rate overflows or
+            is not finite.
     """
     if period.days < 1:
         raise ValueError("annualising needs at least one day")
-    return float((1.0 + period.total) ** (_DAYS_PER_YEAR / period.days) - 1.0)
+    try:
+        rate = float((1.0 + period.total) ** (_DAYS_PER_YEAR / period.days) - 1.0)
+    except OverflowError:
+        raise ValueError(
+            f"annualised return of {period.total:g} over {period.days} days overflows"
+        ) from None
+    if not math.isfinite(rate):
+        raise ValueError(
+            f"annualised return of {period.total:g} over {period.days} days is not finite"
+        )
+    return rate

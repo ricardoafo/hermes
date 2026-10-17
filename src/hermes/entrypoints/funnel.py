@@ -41,9 +41,10 @@ __all__ = ["load_funnel_evidence", "main", "read_front_matter"]
 
 _USAGE = (
     "Usage: hermes funnel <strategy_id> --pre-registration FILE\n"
-    "                     --evidence FILE [--expect-sha256 HEX]\n"
+    "                     --evidence FILE --expect-sha256 HEX\n"
     "\n"
-    "Evaluates the ADR-021 §5 backtest funnel. Every threshold comes from the\n"
+    "Evaluates the ADR-021 §5 backtest funnel. --expect-sha256 is the signed hash\n"
+    "of the pre-registration; any other file is refused. Every threshold comes from the\n"
     "backtest_funnel block of the signed pre-registration's front matter; a missing\n"
     "one refuses the run. Prints one PASS/FAIL line per check. Records nothing.\n"
     "Exit codes: 0 passed, 1 failed or refused, 2 usage, 3 pre-registration/evidence.\n"
@@ -98,8 +99,16 @@ def main(argv: list[str], *, stream: TextIO, err: TextIO | None = None) -> int:
     if args.help:
         stream.write(_USAGE)
         return 0
-    if not args.strategy_id or args.pre_registration is None or args.evidence is None:
-        err.write("ERROR: strategy_id, --pre-registration and --evidence are required.\n" + _USAGE)
+    if (
+        not args.strategy_id
+        or args.pre_registration is None
+        or args.evidence is None
+        or args.expect_sha256 is None
+    ):
+        err.write(
+            "ERROR: strategy_id, --pre-registration, --evidence and --expect-sha256 "
+            "are required.\n" + _USAGE
+        )
         return 2
     return _run(args, stream, err)
 
@@ -152,10 +161,10 @@ def _load_inputs(
 
 
 def _thresholds_or_refusal(
-    expected: str | None, digest: str, front_matter: dict[str, object], strategy_id: str
+    expected: str, digest: str, front_matter: dict[str, object], strategy_id: str
 ) -> FunnelThresholds | str:
     """Return the thresholds, or why the run is refused."""
-    if expected is not None and expected.lower() != digest:
+    if expected.lower() != digest:
         return f"pre-registration sha256 {digest} does not match the expected {expected}"
     try:
         return parse_funnel_front_matter(front_matter, strategy_id=strategy_id)

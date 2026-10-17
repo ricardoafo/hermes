@@ -94,6 +94,11 @@ class TestAnnualisedReturn:
         """Over exactly 365 days the annualised return is the total."""
         assert annualised_return(PeriodReturn(-0.2, 365)) == pytest.approx(-0.2, abs=1e-12)
 
+    def test_overflowing_rate_is_refused(self) -> None:
+        """A 1e10 return over one day annualises past the float range: an error, not inf."""
+        with pytest.raises(ValueError, match="overflows"):
+            annualised_return(PeriodReturn(1e10, 1))
+
     def test_zero_days_is_refused(self) -> None:
         """A period with no return day cannot be annualised."""
         with pytest.raises(ValueError, match="at least one day"):

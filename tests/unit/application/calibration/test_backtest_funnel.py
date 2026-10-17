@@ -124,6 +124,28 @@ class TestReport:
         }
 
 
+class TestOverflow:
+    """Returns too large to square fail the Sharpe-based checks closed (change D-9)."""
+
+    _HUGE = (1.0, 1e200, 1.0, 1.0, 1.0)
+
+    def _checks(self) -> dict[str, GateCheck]:
+        evidence = _evidence(
+            equity=self._HUGE, trials={"n1": (1.0, 2.0, 1.0, 3.0)}, neighbour_trial_ids=("n1",)
+        )
+        return {c.name: c for c in evaluate_funnel(evidence, _thresholds())}
+
+    def test_t_stat_is_not_computed(self) -> None:
+        """Squaring a 1e200 return overflows; the t-statistic row fails, nothing raises."""
+        check = self._checks()["t_stat"]
+        assert (check.passed, check.observed) == (False, "not computed")
+
+    def test_neighbours_are_not_computed(self) -> None:
+        """The base Sharpe overflows the same way, so the neighbour row fails too."""
+        check = self._checks()["neighbours"]
+        assert (check.passed, check.observed) == (False, "not computed")
+
+
 class TestPbo:
     """PBO <= pbo_max, on the CSCV of every logged trial."""
 
@@ -332,6 +354,16 @@ class TestValidationVsTrain:
         evidence = _evidence(equity=_curve(730, {150: 0.8}), cost_stress=None)
         check = _check(evaluate_funnel(evidence, _thresholds()), "validation_vs_train")
         assert (check.passed, check.observed) == (False, "Train -0.2")
+
+    # SEV-1: an overflowing statistic must fail closed, never crash or pass (ADR-021 §5)
+    def test_overflowing_annualised_return_is_not_computed(self) -> None:
+        """A one-day Validation stretch at +1.3e10 annualises past the float range."""
+        evidence = _evidence(equity=(1.0, 1.1, 1.2, 1.3, 1.3e10))
+        check = _check(
+            evaluate_funnel(evidence, _thresholds(train_end=date(2021, 1, 3))),
+            "validation_vs_train",
+        )
+        assert (check.passed, check.observed) == (False, "not computed")
 
     def test_split_day_outside_the_window_is_not_computed(self) -> None:
         """A curve that ends on train_end has no Validation days."""

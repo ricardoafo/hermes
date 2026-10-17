@@ -61,7 +61,7 @@ examples and to properties that hold by construction.
 ### D-1: A sibling command, not a new certify gate row
 
 - **Decision**: `hermes funnel <strategy_id> --pre-registration FILE --evidence
-  FILE` evaluates the funnel and prints its own report. `hermes certify` is
+  FILE --expect-sha256 HEX` evaluates the funnel and prints its own report. `hermes certify` is
   untouched.
 - **Alternatives**: add the funnel rows to certify's `UNTRUSTED →
   BACKTEST_CERTIFIED` gate behind a flag. That edits the v1 gate code path,
@@ -77,8 +77,11 @@ examples and to properties that hold by construction.
 - **Decision**: a `backtest_funnel:` mapping in the front matter of the signed
   pre-registration file. The command refuses unless `status: SIGNED`, refuses
   any missing, unknown or out-of-range key, and prints the file's SHA-256 so the
-  verdict is tied to the exact document. `--expect-sha256 HEX` refuses on a
-  mismatch, for the workflow to pass the hash from the lab notebook.
+  verdict is tied to the exact document. `--expect-sha256 HEX` is required
+  (review of PR #964): without it the run is a usage error (exit 2), and a hash
+  that differs from the file refuses (exit 1). The caller passes the signed hash
+  recorded for the pre-registration (its lab notebook entry), so an edited or
+  swapped file can never be judged. The comparison ignores case.
 - **Strategy binding** (review of PR #964): the front matter carries a
   top-level `strategy_id`, beside `experiment_id` and outside
   `backtest_funnel`, because it names what the whole document binds, not a
@@ -187,6 +190,18 @@ examples and to properties that hold by construction.
   `awk '{print $1, $2}'` keeps name and verdict only.
 - **Cost of reversal**: LOW.
 
+### D-9: Overflow and non-finite statistics fail closed
+
+- **Decision** (review of PR #964): every check runs inside one guard. A
+  statistic that cannot be computed, raises `OverflowError` (squaring a huge
+  return in a Sharpe, `(1 + r) ** (365 / days)` over a tiny stretch) or comes
+  out as `inf`/`nan` fails its check with `not computed`; `evaluate_funnel`
+  never raises. `annualised_return` raises `ValueError` on overflow or a
+  non-finite rate instead of returning `inf`.
+- **Rationale**: a crash would lose the other nine verdicts, and an `inf` that
+  compares as "above the limit" would pass a check on nonsense.
+- **Cost of reversal**: LOW.
+
 ## Requirements
 
 ### R-1: Every funnel criterion has a check and a PASS/FAIL line
@@ -284,7 +299,8 @@ section (`trade_count`, `cost_stress`, `trials`, `neighbour_trial_ids`,
 | `neighbours` | `Sharpe >= r x base, every neighbour` | ≥ 1 neighbour, base > 0, min ratio ≥ r |
 | `correlation` | `< c with every running strategy` | max ρ < c, or none running |
 
-A statistic that cannot be computed prints `not computed` and fails.
+A statistic that cannot be computed, overflows or is not finite prints
+`not computed` and fails (D-9).
 
 ### 4. Modules
 
@@ -321,10 +337,12 @@ ADR-021 §5 backtest funnel against a signed pre-registration.`
      `cost_stress_multiplier`, its equity merged into `cost_stress`;
    - a step `uv run hermes funnel "$strategy" --pre-registration
      "docs/experiments/$EXPERIMENT/pre-registration-<v>.md" --evidence
-     "$out/funnel-evidence.json" > "$out/funnel.txt"`, with the same exit-code
-     handling as certify (1 is a valid outcome, anything else fails);
-   - a new input or env value naming the pre-registration file, and optionally
-     its expected SHA-256 for `--expect-sha256`;
+     "$out/funnel-evidence.json" --expect-sha256 "$PRE_REG_SHA256" >
+     "$out/funnel.txt"`, with the same exit-code handling as certify (1 is a
+     valid outcome, anything else fails);
+   - a new input or env value naming the pre-registration file, and its
+     signed SHA-256 (`PRE_REG_SHA256`, taken from the lab notebook entry, never
+     computed from the checked-out file), which `--expect-sha256` requires;
    - the Summary awk extended to `funnel.txt` and to the `FUNNEL PASSED` / `FUNNEL FAILED` footer:
      `awk '/^(PASS|FAIL) /{print $1, $2; next} /^(# |GATE |FUNNEL |REFUSED|REVERTED)/{print}'`.
    - `funnel-evidence.json` and `funnel.txt` in the uploaded artifact. Neither

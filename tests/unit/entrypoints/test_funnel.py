@@ -98,6 +98,10 @@ def _main(argv: list[str]) -> tuple[int, str, str]:
 
 
 def _args(pre: Path, evidence: Path, *extra: str) -> list[str]:
+    """Arguments for a run; ``--expect-sha256`` is the file's own hash unless ``extra`` sets it."""
+    if "--expect-sha256" not in extra:
+        digest = hashlib.sha256(pre.read_bytes()).hexdigest() if pre.exists() else "0" * 64
+        extra = (*extra, "--expect-sha256", digest)
     return [_SID, "--pre-registration", str(pre), "--evidence", str(evidence), *extra]
 
 
@@ -144,10 +148,10 @@ class TestPassingRun:
         kept = "".join(_summary_lines(out))
         assert [c for c in kept if c.isdigit()] == []
 
-    def test_matching_expected_hash_is_accepted(self, tmp_path: Path) -> None:
-        """--expect-sha256 with the file's own hash evaluates normally."""
+    def test_upper_case_expected_hash_is_accepted(self, tmp_path: Path) -> None:
+        """The signed hash may be written in upper case; it is compared case-blind."""
         pre, evidence = _write(tmp_path, _FUNNEL_YAML, _passing_evidence())
-        digest = hashlib.sha256(_FUNNEL_YAML.encode("utf-8")).hexdigest()
+        digest = hashlib.sha256(_FUNNEL_YAML.encode("utf-8")).hexdigest().upper()
         code, _, _ = _main(_args(pre, evidence, "--expect-sha256", digest))
         assert code == 0
 
@@ -314,14 +318,34 @@ class TestErrors:
             [],
             [_SID, "--evidence", "e.json"],
             [_SID, "--pre-registration", "p.md"],
-            [_SID, "--pre-registration", "p.md", "--evidence", "e.json", "--bogus"],
+            [_SID, "--pre-registration", "p.md", "--evidence", "e.json"],
+            [
+                _SID,
+                "--pre-registration",
+                "p.md",
+                "--evidence",
+                "e.json",
+                "--expect-sha256",
+                "0" * 64,
+                "--bogus",
+            ],
         ],
     )
     def test_incomplete_arguments_exit_two(self, argv: list[str]) -> None:
-        """strategy_id, --pre-registration and --evidence are all required."""
+        """strategy_id, --pre-registration, --evidence and --expect-sha256 are all required."""
         code, _, err = _main(argv)
         assert code == 2
         assert err.startswith("ERROR: ")
+
+    def test_missing_expected_hash_names_the_option(self, tmp_path: Path) -> None:
+        """Without the signed hash the run is a usage error, exit 2, before any file is read."""
+        pre, evidence = _write(tmp_path, _FUNNEL_YAML, _passing_evidence())
+        code, out, err = _main([_SID, "--pre-registration", str(pre), "--evidence", str(evidence)])
+        assert (code, out, err.splitlines()[0]) == (
+            2,
+            "",
+            "ERROR: strategy_id, --pre-registration, --evidence and --expect-sha256 are required.",
+        )
 
     def test_help_exits_zero(self) -> None:
         """--help prints the usage on stdout."""
