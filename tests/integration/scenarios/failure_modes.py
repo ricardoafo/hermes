@@ -743,8 +743,14 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "A coin is held with no entry signal or entry price",
-            gap="issue #902: the strategy is seeded flat, so no exit rule watches it and a"
-            " second breakout buys it again",
+            proved_by=(
+                _S + "test_restart.py"
+                "::test_a_coin_held_without_its_entry_signal_is_watched_after_a_restart",
+                _S + "test_restart.py"
+                "::test_a_coin_held_without_its_entry_signal_is_logged_with_its_first_buy",
+                _U + "entrypoints/test_serve_held_position.py"
+                "::test_the_entry_is_the_close_of_the_bar_the_buy_filled_after",
+            ),
         ),
         FailureMode(
             "Fees are charged wrongly",
