@@ -59,8 +59,8 @@ the API, so editing it and re-running the job is enough. Zero changes passes and
 
 The CI runners bind-mount `/srv/hermes-data` read-only at the same path. The backtest runner alone fills it
 (ADR-023 §3), and every replay re-verifies each file against the manifest hashes, so a PR job can read the klines but
-cannot change one. On a host without the directory Docker mounts an empty one, and the step fails saying the Train
-data is missing.
+cannot change one. On a host without the directory the mount creates an empty one (`create_host_path`), so the
+runner still starts and the step fails saying the Train data is missing.
 
 `hermes parity check` on the VPS stays the check for the shadow days themselves: it compares serve's decisions with a
 replay of the same bars, decisions only, and no AI reads its output.

@@ -30,9 +30,27 @@ CODE_OWNER="${CODE_OWNER:-ricardoafo}"
 workdir="${REPLAY_WORKDIR:-${RUNNER_TEMP:-/tmp}}/train-decision-replay"
 head_dir="$(pwd)"
 
+label() {
+  local method="$1" path="$2" data="${3:-}"
+  [[ -n "${GH_TOKEN:-}" && -n "${PR_NUMBER:-}" ]] || return 0
+  local status
+  status=$(curl -sS -o /dev/null -w '%{http_code}' -X "$method" \
+    -H "Authorization: Bearer $GH_TOKEN" \
+    -H "Accept: application/vnd.github+json" \
+    ${data:+-d "$data"} \
+    "https://api.github.com/repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/labels$path")
+  # 404 on DELETE: the label was not on the PR, which is the state wanted.
+  case "$method $status" in
+    "POST 200" | "DELETE 200" | "DELETE 404") ;;
+    *) echo "::warning::could not $method the $LABEL label (HTTP $status)" ;;
+  esac
+}
+
 engine_files=$(git diff --name-only "$BASE_SHA" HEAD | grep -E "$ENGINE_PATHS" || true)
 if [[ -z "$engine_files" ]]; then
   echo "No engine file changed against the base; no decision can change."
+  # An earlier push may have changed decisions and left the label behind.
+  label DELETE "/$LABEL"
   exit 0
 fi
 echo "Engine files changed:"
@@ -42,17 +60,6 @@ if [[ ! -d "$HERMES_DATA_DIR/klines" ]]; then
   echo "::error::Train data not found under $HERMES_DATA_DIR on this runner (ADR-025 mounts it read-only on the CI pool)"
   exit 1
 fi
-
-label() {
-  local method="$1" path="$2" data="${3:-}"
-  [[ -n "${GH_TOKEN:-}" && -n "${PR_NUMBER:-}" ]] || return 0
-  curl -fsS -o /dev/null -X "$method" \
-    -H "Authorization: Bearer $GH_TOKEN" \
-    -H "Accept: application/vnd.github+json" \
-    ${data:+-d "$data"} \
-    "https://api.github.com/repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/labels$path" \
-    || echo "::warning::could not $method the $LABEL label"
-}
 
 rm -rf "$workdir"
 mkdir -p "$workdir"

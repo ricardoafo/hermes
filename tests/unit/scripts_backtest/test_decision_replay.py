@@ -305,3 +305,26 @@ def test_window_is_the_train_split_in_whole_days() -> None:
         _ROOT / "docs" / "experiments" / "swing-mvp1" / "data-manifest.json"
     )
     assert (start, end) == (datetime(2020, 9, 1, tzinfo=UTC), datetime(2024, 6, 30, tzinfo=UTC))
+
+
+class TestRecordRefusals:
+    """``record`` exits 3, writing nothing, when its inputs are missing."""
+
+    def test_missing_train_data_exits_3(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An empty data directory: exit 3 and no decision file."""
+        monkeypatch.setenv("HERMES_DATA_DIR", str(tmp_path / "empty"))
+        monkeypatch.chdir(_ROOT)
+        out = tmp_path / "head.jsonl"
+        assert SCRIPT.main(["record", "--out", str(out)]) == 3
+        assert not out.exists()
+
+    def test_a_config_without_strategies_exits_3(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A config directory with no roster: exit 3 before any bar is read."""
+        monkeypatch.chdir(_ROOT)
+        out = tmp_path / "head.jsonl"
+        code = SCRIPT.main(["record", "--out", str(out), "--config-dir", str(tmp_path)])
+        assert (code, out.exists()) == (3, False)

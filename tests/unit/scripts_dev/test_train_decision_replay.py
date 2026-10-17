@@ -131,6 +131,38 @@ def test_an_engine_change_without_train_data_fails(tmp_path: Path, changed: str)
     assert "::error::Train data not found" in result.stdout
 
 
+def test_a_changeset_without_engine_files_clears_a_stale_label(tmp_path: Path) -> None:
+    """After a push drops the engine changes, the decisions-changed label is removed."""
+    repo, base = _repo_with_change(tmp_path, "docs/guides/x.md")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    calls = tmp_path / "curl.log"
+    fake = bin_dir / "curl"
+    fake.write_text(f'#!/bin/sh\necho "$@" >> {calls}\necho 200\n', encoding="utf-8")
+    fake.chmod(0o755)
+    env = {
+        "PATH": f"{bin_dir}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+        "BASE_SHA": base,
+        "HERMES_DATA_DIR": str(tmp_path / "no-data"),
+        "REPLAY_WORKDIR": str(tmp_path / "work"),
+        "GH_TOKEN": "fake",
+        "PR_NUMBER": str(_PR),
+        "GITHUB_REPOSITORY": _REPO,
+    }
+    result = subprocess.run(  # noqa: S603 — fixed interpreter, the repo's own script
+        ["bash", str(_SCRIPT)],  # noqa: S607
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    logged = calls.read_text(encoding="utf-8")
+    assert (result.returncode, "::warning" in result.stdout) == (0, False)
+    assert "-X DELETE" in logged
+    assert f"/repos/{_REPO}/issues/{_PR}/labels/decisions-changed" in logged
+
+
 class TestApprovalCitation:
     """What the PR body must say for a decision change to pass."""
 
@@ -247,4 +279,5 @@ def test_ci_pool_mounts_the_data_read_only() -> None:
         "source": "/srv/hermes-data",
         "target": "/srv/hermes-data",
         "read_only": True,
+        "bind": {"create_host_path": True},
     } in mounts

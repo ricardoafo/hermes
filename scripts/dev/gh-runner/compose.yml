@@ -77,12 +77,14 @@ services:
       # Pinned klines for the Train decision replay on engine PRs
       # (ADR-025). Read-only: a PR job reads them and cannot change
       # them; the backtest runner alone fills them. Where the host has
-      # no /srv/hermes-data, Docker mounts an empty directory and the
-      # replay step fails saying so.
+      # no /srv/hermes-data, create_host_path makes an empty directory,
+      # so the runner still starts and the replay step fails saying so.
       - type: bind
         source: /srv/hermes-data
         target: /srv/hermes-data
         read_only: true
+        bind:
+          create_host_path: true
 
       # ─────────────────────────────────────────────────────
       # Tool caches — persist across --force-recreate. First job
