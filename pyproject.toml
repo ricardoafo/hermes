@@ -183,6 +183,10 @@ timeout_method = "thread"
 filterwarnings = [
   "error::DeprecationWarning",
   "error::PendingDeprecationWarning",
+  # Unclosed connections/files are real leaks (#759); GC-time warnings
+  # surface as unraisable exceptions, so both must fail the run.
+  "error::ResourceWarning",
+  "error::pytest.PytestUnraisableExceptionWarning",
   # Third-party warnings we cannot fix — allow with a comment explaining why:
   # (add exceptions here as they surface, with justification + upstream link)
 ]

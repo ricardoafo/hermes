@@ -10,6 +10,7 @@ Invariants under test:
 
 from __future__ import annotations
 
+import gc
 import sqlite3
 from pathlib import Path
 
@@ -116,3 +117,13 @@ def test_missing_ledger_is_refused(tmp_path: Path) -> None:
     with pytest.raises(LedgerError, match="does not exist"):
         dry_run(missing)
     assert not missing.exists()
+
+
+def test_unreadable_ledger_leaves_no_connection_open(tmp_path: Path) -> None:
+    """A dry run that cannot copy the ledger closes the copy it opened before failing (#759)."""
+    db = tmp_path / "garbage.sqlite3"
+    db.write_bytes(b"this is not a sqlite database" * 200)
+
+    with pytest.raises(LedgerError, match="cannot copy"):
+        dry_run(db)
+    gc.collect()

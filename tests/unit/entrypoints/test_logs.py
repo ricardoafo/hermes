@@ -19,7 +19,7 @@ from __future__ import annotations
 import io
 import json
 import re
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -57,11 +57,24 @@ _JOURNAL = [
 ]
 
 
+class _FakeStdout:
+    """A pipe stand-in: iterates canned lines and can be closed, like a real stdout."""
+
+    def __init__(self, lines: Iterable[str]) -> None:
+        self._lines = iter(lines)
+
+    def __iter__(self) -> Iterator[str]:
+        return self._lines
+
+    def close(self) -> None:
+        """Accept the reader closing the pipe."""
+
+
 class _FakeProcess:
     """Stands in for subprocess.Popen: canned stdout, records termination."""
 
     def __init__(self, lines: list[str]) -> None:
-        self.stdout: Iterator[str] = iter(line + "\n" for line in lines)
+        self.stdout = _FakeStdout(line + "\n" for line in lines)
         self.terminated = False
 
     def terminate(self) -> None:

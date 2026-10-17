@@ -6,6 +6,8 @@ Reference: ADR-002 §3, ADR-003 §00 I-06, ADR-016 items 3 and 5.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterator
+from contextlib import closing
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
@@ -78,9 +80,10 @@ def _record(ledger: SqliteLedger, trade: TradeRecord) -> int:
 
 
 @pytest.fixture
-def conn() -> sqlite3.Connection:
-    """Return a fresh in-memory SQLite connection."""
-    return sqlite3.connect(":memory:")
+def conn() -> Iterator[sqlite3.Connection]:
+    """Yield a fresh in-memory SQLite connection and close it afterwards."""
+    with closing(sqlite3.connect(":memory:")) as connection:
+        yield connection
 
 
 @pytest.fixture
@@ -153,12 +156,12 @@ class TestRecordTrade:
 
     def test_record_trade_is_one_commit(self) -> None:
         """Invariant (I-06): trade row, lot effects and event commit together, once."""
-        conn = sqlite3.connect(":memory:", factory=CommitCountingConnection)
-        apply_migrations(conn)
-        ledger = SqliteLedger(conn)
-        conn.commit_count = 0
-        _record(ledger, _trade(OrderSide.BUY, "1", "100", "0", minutes=0))
-        assert conn.commit_count == 1
+        with closing(sqlite3.connect(":memory:", factory=CommitCountingConnection)) as conn:
+            apply_migrations(conn)
+            ledger = SqliteLedger(conn)
+            conn.commit_count = 0
+            _record(ledger, _trade(OrderSide.BUY, "1", "100", "0", minutes=0))
+            assert conn.commit_count == 1
 
     def test_sell_beyond_inventory_stores_nothing(
         self, ledger: SqliteLedger, conn: sqlite3.Connection
