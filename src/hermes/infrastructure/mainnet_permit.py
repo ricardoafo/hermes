@@ -16,7 +16,7 @@ beyond that stays a code-review matter.
 Reference: ADR-014 (live approval), ADR-003 §00 I-08, AGENTS.md rule 7.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass
 from typing import Final, final
 
 from hermes.application.calibration.certification_gates import (
@@ -41,15 +41,17 @@ class MainnetPermit:
     """
 
     strategy: str
-    _key: object = field(repr=False, compare=False)
+    # InitVar, so the key is checked and never stored: a permit holds nothing
+    # that could mint a second one.
+    _key: InitVar[object]
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, _key: object) -> None:
         """Refuse construction outside :func:`issue_mainnet_permit`.
 
         Raises:
             TypeError: The mint key is not the module's own.
         """
-        if self._key is not _MINT_KEY:
+        if _key is not _MINT_KEY:
             raise TypeError("a MainnetPermit is made only by issue_mainnet_permit")
 
     def __reduce__(self) -> str | tuple[object, ...]:

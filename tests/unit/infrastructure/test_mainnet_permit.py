@@ -3,6 +3,7 @@
 Reference: issue #781; ADR-014; AGENTS.md rule 7.
 """
 
+import dataclasses
 import pickle
 from pathlib import Path
 
@@ -113,3 +114,17 @@ def test_no_other_source_module_names_the_mint_key() -> None:
         if "_MINT_KEY" in path.read_text(encoding="utf-8")
     )
     assert users == ["infrastructure/mainnet_permit.py"]
+
+
+# SEV-1: real capital stays behind the live-approval gate (AGENTS.md rule 7, ADR-014)
+def test_an_issued_permit_holds_nothing_that_mints_another() -> None:
+    """dataclasses.replace on a permit can't make a second one: the key is never stored."""
+    permit = issue_mainnet_permit(
+        _config(**_PROD_LIVE),
+        strategy=_SID,
+        record=_record(CertificationState.LIVE_APPROVED),
+        fingerprint=_FP,
+    )
+    assert not hasattr(permit, "_key")
+    with pytest.raises(TypeError, match="only by issue_mainnet_permit"):
+        dataclasses.replace(permit, strategy="another-strategy", _key=object())
