@@ -230,7 +230,10 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "A depth diff older than the snapshot reaches the book",
-            gap="issue #866: the snapshot drops lastUpdateId, so stale diffs cannot be dropped",
+            proved_by=(
+                _BOOK_MACHINE + "test_a_diff_older_than_the_snapshot_never_reaches_the_book",
+                _BOOK_MACHINE + "TestOrderbookDiffMachine::runTest",
+            ),
         ),
     ),
     "exchange and FX": (

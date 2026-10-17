@@ -10,13 +10,15 @@ logic; the VPS-side 24/7 systemd collector unit is out of scope here.
 
 L2 bootstrap procedure (per SA-3):
 
-1. Caller calls ``get_snapshot`` to obtain a REST depth snapshot with a
-   ``lastUpdateId``.
-2. Caller calls ``stream_orderbook_diffs`` to open the WebSocket stream.
-3. Caller discards diff events where ``final_update_id <= lastUpdateId``
-   (stale events received before the snapshot).
+1. Caller calls ``get_snapshot`` to obtain a REST depth snapshot; its
+   ``last_update_id`` carries the venue's ``lastUpdateId``.
+2. Caller calls ``stream_orderbook_diffs(pair, after_update_id=...)`` with
+   that id to open the WebSocket stream.
+3. The stream discards diff events where ``final_update_id <= lastUpdateId``
+   (stale events the snapshot already contains).
 4. The first retained event must satisfy
-   ``first_update_id <= lastUpdateId + 1 <= final_update_id``.
+   ``first_update_id <= lastUpdateId + 1 <= final_update_id``, or the
+   stream raises so the caller re-snapshots.
 5. Subsequent events are applied in ``first_update_id`` order; a gap
    (``first_update_id != prev_final_update_id + 1``) triggers a re-snapshot.
 
@@ -228,7 +230,9 @@ class BinanceLiveWsAdapter:
     # MarketDataPort — L2 diff stream
     # ------------------------------------------------------------------
 
-    async def stream_orderbook_diffs(self, pair: Pair) -> AsyncIterator[OrderbookDiff]:
+    async def stream_orderbook_diffs(
+        self, pair: Pair, *, after_update_id: int | None = None
+    ) -> AsyncIterator[OrderbookDiff]:
         """Yield L2 incremental depth-update events for ``pair``.
 
         Opens a Binance ``<symbol>@depth`` WebSocket stream and yields
@@ -238,6 +242,10 @@ class BinanceLiveWsAdapter:
 
         Args:
             pair: Trading pair.
+            after_update_id: The bootstrap snapshot's ``last_update_id``.
+                When given, diffs the snapshot already contains are
+                dropped and the first diff kept must straddle
+                ``after_update_id + 1`` (SA-3 steps 3-4).
 
         Yields:
             :class:`~hermes.domain.market_data.orderbook_diff.OrderbookDiff`
@@ -268,6 +276,17 @@ class BinanceLiveWsAdapter:
                         pair=pair,
                         source=ws_url,
                     )
+
+                    if prev_final_update_id is None and after_update_id is not None:
+                        if diff.final_update_id <= after_update_id:
+                            continue
+                        if diff.first_update_id > after_update_id + 1:
+                            raise InfraError(
+                                f"BinanceLiveWsAdapter: sequence-number gap for {pair} "
+                                f"after the snapshot at lastUpdateId={after_update_id}. "
+                                f"Expected first_update_id<={after_update_id + 1}, "
+                                f"got {diff.first_update_id}. Re-snapshot required."
+                            )
 
                     # Gap detection (SA-3 §Binance L2 snapshot procedure step 5).
                     if prev_final_update_id is not None:
@@ -562,6 +581,13 @@ def _parse_snapshot(*, data: dict[str, Any], pair: Pair) -> Orderbook:
     # Binance REST depth: bids descending (best bid first), asks ascending.
     # Domain Orderbook enforces these invariants in __post_init__.
 
+    last_update_id = data["lastUpdateId"]
+    if not isinstance(last_update_id, int) or isinstance(last_update_id, bool):
+        raise ExchangeError(
+            f"BinanceLiveWsAdapter: depth snapshot lastUpdateId must be an integer from "
+            f"{source}, got {last_update_id!r}"
+        )
+
     snapshot_time = datetime.now(tz=UTC)
 
     try:
@@ -570,6 +596,7 @@ def _parse_snapshot(*, data: dict[str, Any], pair: Pair) -> Orderbook:
             bids=tuple(bid_levels),
             asks=tuple(ask_levels),
             snapshot_time=snapshot_time,
+            last_update_id=last_update_id,
         )
     except ValueError as exc:
         raise ExchangeError(

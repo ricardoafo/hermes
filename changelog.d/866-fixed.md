@@ -1,1 +1,1 @@
-- Lot selection never draws a lot opened after the sale, and the order-book walk fills an exit of a quantity with more than 28 significant digits in full instead of refusing it (issue #866).
+- The live depth snapshot now keeps Binance's `lastUpdateId`, and the diff stream drops diffs the snapshot already holds and refuses a first diff that skips past it, so an old diff can no longer reach a local book (#866).
