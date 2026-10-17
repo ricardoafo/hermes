@@ -29,7 +29,7 @@ run that ends soon, after which the unit's next start takes the lock.
 def _run(rest: list[str], *, stream: Any, err: TextIO | None = None) -> int:
     """Handle the ``hermes serve`` subcommand.
 
-    Parses ``--config-dir`` and ``--db``, loads the composite
+    Parses ``--config-dir``, ``--db`` and ``--new-ledger``, loads the composite
     :class:`~hermes.infrastructure.config.HermesConfig`, checks it can run
     the shadow loop, wires the composition root, installs signal handlers,
     and runs the bar loop. Returns 0 on a clean shutdown, 1 on a runtime
@@ -51,6 +51,7 @@ def _run(rest: list[str], *, stream: Any, err: TextIO | None = None) -> int:
     parser = argparse.ArgumentParser(prog="hermes serve", add_help=False)
     parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
     parser.add_argument("--db", type=Path, default=serve_module.DEFAULT_DB_PATH)
+    parser.add_argument("--new-ledger", action="store_true")
     parser.add_argument("-h", "--help", action="store_true")
 
     try:
@@ -61,9 +62,10 @@ def _run(rest: list[str], *, stream: Any, err: TextIO | None = None) -> int:
 
     if parsed.help:
         stream.write(
-            "Usage: hermes serve [--config-dir DIR] [--db PATH]\n"
+            "Usage: hermes serve [--config-dir DIR] [--db PATH] [--new-ledger]\n"
             "\n"
             "Runs the shadow bar loop until SIGTERM or SIGINT arrives.\n"
+            "A missing ledger is refused unless --new-ledger is given.\n"
             "The environment tier comes from HERMES_ENV.\n"
             "Exit codes: 0 clean shutdown, 1 runtime failure, 2 usage, 3 config,\n"
             "4 another hermes serve already runs on this ledger.\n"
@@ -95,7 +97,13 @@ def _run(rest: list[str], *, stream: Any, err: TextIO | None = None) -> int:
         return 3
 
     return asyncio.run(
-        serve_main(config, db_path=parsed.db, experiment_root=experiment_root, err=err)
+        serve_main(
+            config,
+            db_path=parsed.db,
+            experiment_root=experiment_root,
+            err=err,
+            new_ledger=parsed.new_ledger,
+        )
     )
 
 
@@ -105,6 +113,7 @@ async def serve_main(
     db_path: Path,
     experiment_root: Path | None = None,
     err: TextIO | None = None,
+    new_ledger: bool = False,
 ) -> int:
     """Wire the composition root and run the bar loop to its exit code.
 
@@ -117,6 +126,7 @@ async def serve_main(
         experiment_root: Directory holding the signed pre-registration and
             the fee history. ``None`` finds the repository root.
         err: Stream for the refusal line; defaults to ``sys.stderr``.
+        new_ledger: Create the ledger when ``db_path`` does not exist.
 
     Returns:
         :func:`~hermes.entrypoints.serve.run`'s exit code: 0 on clean
@@ -127,7 +137,7 @@ async def serve_main(
     shutdown = asyncio.Event()
     try:
         composition = serve_module.build_composition(
-            config, db_path=db_path, experiment_root=experiment_root
+            config, db_path=db_path, experiment_root=experiment_root, new_ledger=new_ledger
         )
     except serve_module.LedgerInUseError as exc:
         resolve_err(err).write(f"ERROR: {exc}\n")
