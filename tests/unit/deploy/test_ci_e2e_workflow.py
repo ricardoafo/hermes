@@ -45,8 +45,8 @@ def test_pr_ci_and_merge_queue_use_the_same_e2e_paths() -> None:
         encoding="utf-8"
     )
 
-    ci_paths = re.search(r"grep -qE '(\^\(src/hermes/[^']+)'", ci)
-    gate_paths = re.search(r"E2E_PATHS='([^']+)'", gates)
+    ci_paths = re.search(r"e2e_paths='([^']+)'", ci)
+    gate_paths = re.search(r"e2e_paths='([^']+)'", gates)
 
     assert ci_paths is not None
     assert gate_paths is not None

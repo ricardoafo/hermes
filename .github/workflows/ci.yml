@@ -131,7 +131,8 @@ jobs:
 
           # The serve cycle only changes with these paths. The merge
           # queue's gates use the same list (merge-gates.sh).
-          if echo "$changed" | grep -qE '^(src/hermes/(entrypoints|application|adapters|domain)/|tests/e2e/|config/)'; then
+          e2e_paths='^(src/hermes/|tests/e2e/|tests/fixtures/e2e/|config/|pyproject\.toml$|uv\.lock$)'
+          if echo "$changed" | grep -qE "$e2e_paths"; then
             echo "e2e=true" >> "$GITHUB_OUTPUT"
           else
             echo "e2e=false" >> "$GITHUB_OUTPUT"
