@@ -11,8 +11,8 @@ Three subcommands:
   :func:`tempfile.gettempdir` under a discoverable filename.
 - ``<event-name> --send`` — same as above, PLUS actually send the
   rendered message through the wired-up Telegram + Slack adapters
-  (whichever the routing table asks for). Refuses to send when
-  ``HERMES_ENV == "prod"`` — never spam prod channels from a dev preview.
+  (whichever the routing table asks for). Sends only when
+  ``HERMES_ENV == "dev"`` — never spam prod channels from a dev preview.
 - ``<event-name> --fixture <path>`` — load event data from a JSON fixture
   file instead of the default sample.
 
@@ -30,8 +30,8 @@ Design notes
   a runtime guard so the ``list`` command works even in an environment
   without ``httpx`` set up.
 - **Prod safety**: the ``--send`` handler reads ``HERMES_ENV`` via
-  :func:`os.environ.get` (dotenv is loaded by ``load_config``). If the
-  value is ``"prod"`` the send is refused with exit code 3.
+  :func:`os.environ.get` (dotenv is loaded by ``load_config``). Unless the
+  value is ``"dev"`` (unset included) the send is refused with exit code 3.
 
 Reference: 2026-08-23-slack-alongside-telegram.md; ADR-003 §04 (env
     tiering); code-conventions.md §1 (no ambient state).
@@ -614,14 +614,16 @@ def run_preview(
     return 0
 
 
-def _refuse_prod_send() -> bool:
-    """Return True when the current HERMES_ENV is 'prod'.
+def _send_refused_tier() -> str | None:
+    """Return the HERMES_ENV value that refuses ``--send``, or ``None`` in dev.
 
+    Sending is opt-in: only an explicit ``HERMES_ENV=dev`` allows it, so an
+    unset or mistyped tier fails closed instead of reaching prod channels.
     Reading ``os.environ`` at call time (not import time) lets tests
-    monkey-patch the environment with :func:`monkeypatch.setenv` and get
-    the expected refusal behaviour.
+    monkey-patch the environment with :func:`monkeypatch.setenv`.
     """
-    return os.environ.get("HERMES_ENV", "").strip().lower() == "prod"
+    tier = os.environ.get("HERMES_ENV", "").strip().lower()
+    return None if tier == "dev" else tier or "(unset)"
 
 
 def run_send(  # pragma: no cover
@@ -629,9 +631,9 @@ def run_send(  # pragma: no cover
 ) -> int:
     """Render + actually send the rendered message via the wired adapters.
 
-    Refuses to run when ``HERMES_ENV == "prod"`` — never spam prod
-    channels from a dev preview. The refusal check is unit-testable
-    via :func:`_refuse_prod_send`; the send path itself is only
+    Runs only when ``HERMES_ENV == "dev"`` — never spam prod channels
+    from a dev preview. The refusal check is unit-testable via
+    :func:`_send_refused_tier`; the send path itself is only
     exercised in adapter-owning follow-up PRs (B + C).
 
     Args:
@@ -641,13 +643,14 @@ def run_send(  # pragma: no cover
         err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
-        Exit code 0 on successful send; 3 on prod refusal.
+        Exit code 0 on successful send; 3 outside the dev tier.
     """
     _ = event_name, fixture, stream  # retained for API symmetry with run_preview
     err = resolve_err(err)
-    if _refuse_prod_send():
+    refused_tier = _send_refused_tier()
+    if refused_tier is not None:
         err.write(
-            "ERROR: --send refuses to run when HERMES_ENV=prod. "
+            f"ERROR: --send runs only with HERMES_ENV=dev, not HERMES_ENV={refused_tier}. "
             "Never spam prod channels from a dev preview.\n"
         )
         return 3

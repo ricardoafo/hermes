@@ -63,6 +63,7 @@ __all__ = [
     "OrderRouterResult",
     "RiskRejected",
     "RoutingInput",
+    "value_free_reason",
 ]
 
 _log = structlog.get_logger(__name__)
@@ -237,7 +238,9 @@ class OrderRouter:
 
         1. Kill circuit breaker — :class:`KillCircuitBreaker` if triggered.
         2. Orphan-position guard (SA-4 P0) — :class:`RiskRejected` if
-           ``open_position_count >= _MAX_CONCURRENT_POSITIONS``.
+           ``open_position_count >= _MAX_CONCURRENT_POSITIONS``. Then a BUY of a
+           pair already held — :class:`RiskRejected` ``already-held`` (§5.4,
+           one position per pair; issue #902).
         3. Risk overlay (all rules, worst wins) — :class:`RiskRejected` on HALT;
            WARN rules are logged and execution continues.
         4. Position sizing — :class:`RiskRejected` if sizing fails (degenerate inputs).
@@ -279,6 +282,11 @@ class OrderRouter:
                 strategy_id=str(inp.strategy_id),
             )
             return RiskRejected(reason=reason, rule="orphan-position")
+        if inp.side is OrderSide.BUY and inp.pair in inp.portfolio_state.held_pairs:
+            # The cap above counts positions, not pairs; a strategy seeded flat
+            # on a held coin would otherwise buy it again (#902).
+            _log.warning("already_held_entry_refused", pair=str(inp.pair))
+            return RiskRejected(reason=f"{inp.pair} is already held", rule="already-held")
 
         # ── 3. Risk overlay ─────────────────────────────────────────────────
         engine_result = self._risk_engine.evaluate(
@@ -288,7 +296,7 @@ class OrderRouter:
 
         # Log all individual rule decisions for audit.
         for decision in engine_result.decisions:
-            rule, rule_reason = _value_free(decision.reason)
+            rule, rule_reason = value_free_reason(decision.reason)
             if decision.action.value == "warn":
                 _log.warning(
                     "risk_overlay_warn",
@@ -306,7 +314,7 @@ class OrderRouter:
 
         worst = engine_result.worst
         if worst.action.value == "halt":
-            rule, rule_reason = _value_free(worst.reason)
+            rule, rule_reason = value_free_reason(worst.reason)
             _log.warning(
                 "risk_overlay_halt",
                 rule=rule,
@@ -392,7 +400,7 @@ class OrderRouter:
         return RiskRejected(reason=fill_result.reason, rule="fill_model")
 
 
-def _value_free(reason: str) -> tuple[str, str]:
+def value_free_reason(reason: str) -> tuple[str, str]:
     """Return the rule id and a fixed reason for a risk-overlay log line.
 
     Args:

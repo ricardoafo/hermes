@@ -80,12 +80,17 @@ class KillDecision:
             Empty string when ``triggered=False``. Where multiple criteria fire
             simultaneously, only the first matched criterion is reported — the
             caller should treat this as "kill immediately, reason logged".
+        rule: Stable id of the criterion that fired (``max_drawdown``,
+            ``sa9_halt``, ``recovery_days``, ``rolling_sharpe`` or
+            ``shadow_sharpe``), for value-free records (#749). Empty when
+            ``triggered=False``.
 
     Reference: pre-registration-v1.md §10.
     """
 
     triggered: bool
     reason: str
+    rule: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -149,6 +154,7 @@ class KillTriggerEvaluator:
                     f"kill threshold {t.max_drawdown_threshold:.1%} "
                     f"(pre-reg §10)."
                 ),
+                rule="max_drawdown",
             )
 
         # 2. SA-9 P0 HALT signal
@@ -161,6 +167,7 @@ class KillTriggerEvaluator:
                     "correlation lock breach, stale book, or exchange downtime). "
                     "Pre-reg §10."
                 ),
+                rule="sa9_halt",
             )
 
         # 3. Recovery period > 90 days
@@ -172,6 +179,7 @@ class KillTriggerEvaluator:
                     f"{t.recovery_days_threshold:.0f}-day kill threshold "
                     f"(pre-reg §10)."
                 ),
+                rule="recovery_days",
             )
 
         # 4. 30-day rolling Sharpe < 0.3 (only evaluated when sample >= 30 trades)
@@ -183,6 +191,7 @@ class KillTriggerEvaluator:
                     f"kill floor {t.rolling_sharpe_min:.1f} "
                     f"(pre-reg §10)."
                 ),
+                rule="rolling_sharpe",
             )
 
         return KillDecision(triggered=False, reason="")

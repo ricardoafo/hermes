@@ -350,7 +350,16 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "A torn last line in the trial log or decision journal",
-            gap="issue #891: detected, but every later append is blocked; recovery is undecided",
+            proved_by=(
+                _S + "test_chaos_torn_append.py"
+                "::test_a_trial_append_killed_halfway_is_repaired_and_the_next_run_records",
+                _S + "test_chaos_torn_append.py"
+                "::test_a_journal_append_killed_halfway_is_repaired_and_the_next_decision_records",
+                _U + "entrypoints/test_trials.py"
+                "::test_without_confirm_a_torn_log_is_refused_and_left_as_it_was",
+                _U + "adapters/trial_log/test_jsonl_file.py"
+                "::test_a_repair_refuses_a_log_edited_before_the_torn_line",
+            ),
         ),
         FailureMode(
             "Another process holds the ledger while serve commits",
@@ -734,8 +743,14 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "A coin is held with no entry signal or entry price",
-            gap="issue #902: the strategy is seeded flat, so no exit rule watches it and a"
-            " second breakout buys it again",
+            proved_by=(
+                _S + "test_restart.py"
+                "::test_a_coin_held_without_its_entry_signal_is_watched_after_a_restart",
+                _S + "test_restart.py"
+                "::test_a_coin_held_without_its_entry_signal_is_logged_with_its_first_buy",
+                _U + "entrypoints/test_serve_held_position.py"
+                "::test_the_entry_is_the_close_of_the_bar_the_buy_filled_after",
+            ),
         ),
         FailureMode(
             "Fees are charged wrongly",
@@ -747,7 +762,13 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "The entry spread pushes total exposure past the cap",
-            gap="issue #864: the cap is checked at the signal price, not the fill",
+            proved_by=(
+                _U + "application/execution/test_kernel.py"
+                "::test_an_entry_that_fits_the_cap_only_at_the_signal_price_is_declined",
+                _RISK
+                + "test_three_entries_that_make_the_cap_at_the_signal_price_overrun_it_at_the_ask",
+                _PORTFOLIO_MACHINE + "TestPortfolioRiskMachine::runTest",
+            ),
         ),
         FailureMode(
             "A position built by two entries on one pair cannot be sold",
@@ -828,11 +849,16 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             proved_by=(_META + "test_more_warm_up_than_the_indicators_need_changes_no_decision",),
         ),
         FailureMode(
-            "Warm-up at the configured floor of 200 daily bars decides otherwise than 300",
-            gap=(
-                "issue #880: reproduced, the EMA(200) is seeded from the oldest buffered "
-                "closes; strict xfail "
-                "test_the_configured_floor_of_200_daily_bars_decides_what_300_decide"
+            "Warm-up with fewer than 300 daily bars decides otherwise than 300",
+            proved_by=(
+                _META + "test_the_configured_floor_of_300_daily_bars_decides_what_400_decide",
+                _U
+                + "infrastructure/config/test_market_data_config.py::"
+                + "TestMarketDataConfigWarmupFloors::"
+                + "test_market_data_rejects_warmup_below_the_floor",
+                _U
+                + "entrypoints/test_parity.py::"
+                + "test_offline_with_299_daily_bars_exits_three_naming_the_300_bar_floor",
             ),
         ),
     ),

@@ -87,6 +87,9 @@ _ATR_SIZING_PERIOD = 14
 # Buffer size cap — keep only as much history as the longest lookback needs
 # Chandelier = 22+1 bars minimum; EMA = 200+1 bars minimum;
 # ADX = 2*14+1 = 29 bars minimum.  Add a margin of 50.
+# The EMA is seeded from the oldest buffered 1d closes, so its value depends
+# on warm-up length until the 1d buffer is full: every 1d warm-up floor is
+# _1D_BUFFER_CAP, not the EMA period (#880).
 _4H_BUFFER_CAP = 300
 _1D_BUFFER_CAP = 300
 

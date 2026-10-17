@@ -5,7 +5,8 @@ Invariants:
 - the host allow-list holds exactly one market-data host: no trading host, no
   testnet, no plain HTTP, no look-alike;
 - warm-up depth never falls below what the strategy's indicators need
-  (45 4h bars, 200 1d bars) and never exceeds the klines page (999);
+  (45 4h bars, 300 1d bars) and never exceeds the klines page (999); below
+  300 1d bars the EMA(200) seed depends on the warm-up length (#880);
 - the shipped ``config/market_data.yaml`` loads and carries the pre-registered
   pairs and both intervals;
 - ``HERMES_MARKET_DATA__<FIELD>`` overrides reach the model.
@@ -61,15 +62,15 @@ class TestMarketDataConfigHostAllowList:
 
 
 class TestMarketDataConfigWarmupFloors:
-    """Warm-up depth: floor 45 (4h) and 200 (1d), cap 999 (one klines page)."""
+    """Warm-up depth: floor 45 (4h) and 300 (1d, #880), cap 999 (one klines page)."""
 
-    @pytest.mark.parametrize(("field", "floor"), [("warmup_bars_4h", 45), ("warmup_bars_1d", 200)])
+    @pytest.mark.parametrize(("field", "floor"), [("warmup_bars_4h", 45), ("warmup_bars_1d", 300)])
     def test_market_data_rejects_warmup_below_the_floor(self, field: str, floor: int) -> None:
-        """One bar below the floor is rejected."""
-        with pytest.raises(ValidationError, match="greater than or equal"):
+        """One bar below the floor is rejected, and the error names the floor."""
+        with pytest.raises(ValidationError, match=f"greater than or equal to {floor} "):
             MarketDataConfig.model_validate({field: floor - 1})
 
-    @pytest.mark.parametrize(("field", "floor"), [("warmup_bars_4h", 45), ("warmup_bars_1d", 200)])
+    @pytest.mark.parametrize(("field", "floor"), [("warmup_bars_4h", 45), ("warmup_bars_1d", 300)])
     def test_market_data_accepts_warmup_exactly_at_the_floor(self, field: str, floor: int) -> None:
         """The floor itself is valid."""
         assert getattr(MarketDataConfig.model_validate({field: floor}), field) == floor
@@ -85,13 +86,13 @@ class TestMarketDataConfigWarmupFloors:
         config = MarketDataConfig()
         assert (config.warmup_bars_4h, config.warmup_bars_1d) == (300, 300)
 
-    @given(depth=st.integers(min_value=200, max_value=999))
+    @given(depth=st.integers(min_value=300, max_value=999))
     def test_market_data_warmup_bars_returns_the_depth_for_each_interval(self, depth: int) -> None:
         """warmup_bars(interval) maps 4h and 1d to their own configured depth."""
-        config = MarketDataConfig(warmup_bars_4h=depth, warmup_bars_1d=999 - depth + 200)
+        config = MarketDataConfig(warmup_bars_4h=depth, warmup_bars_1d=999 - depth + 300)
         assert (config.warmup_bars(KlineInterval.H4), config.warmup_bars(KlineInterval.D1)) == (
             depth,
-            999 - depth + 200,
+            999 - depth + 300,
         )
 
     @pytest.mark.parametrize("interval", [KlineInterval.M1, KlineInterval.M5, KlineInterval.H1])

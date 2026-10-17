@@ -2,7 +2,6 @@
 tests/integration/calibration/test_harness_end_to_end.py::test_m02_is_fill_price_delta_bps_instance U3
 tests/integration/calibration/test_harness_end_to_end.py::test_m07_queue_quality_is_none U3
 tests/integration/deploy/test_release_scripts.py::test_failed_gate_restarts_the_unit_on_the_old_release U3
-tests/integration/scenarios/test_suspected_defects.py::test_an_entry_refused_by_a_risk_halt_is_recorded_in_the_ledger U3
 tests/integration/strategy/swing/test_swing_adapter_integration.py::test_isinstance_strategy_port U6
 tests/integration/strategy/swing/test_swing_adapter_integration.py::test_no_1d_bars_blocks_entry U3
 tests/integration/strategy/swing/test_swing_adapter_integration.py::test_no_entry_when_1d_below_ema U3
