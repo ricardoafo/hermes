@@ -11,6 +11,13 @@
 # other way to open it). A caption for a view that is not in the build yet
 # (an open PR's) is allowed and shows nowhere until its snapshots land.
 
+[views."test_tui_boot/boot"]
+screen = "Cold start"
+state = "All start-up checks passed"
+means = "The console has just started: it read the ledger, the engine heartbeat, the journal, one live price and the AI briefs, and every check passed. Home opens on its own a moment later."
+check = "The Winged H and the release line sit above five rows, each with a cyan tick and what it found; the panel is centred on the dark background; the bottom line reads \"any key opens the console · Q quits\"."
+demo = "Run `hermes tui` with motion on; the screen shows before Home on every start."
+
 [views."test_tui_snapshots/home_ok"]
 screen = "Home"
 state = "Two open positions, everything OK"
