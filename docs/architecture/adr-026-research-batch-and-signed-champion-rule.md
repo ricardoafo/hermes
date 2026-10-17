@@ -86,7 +86,8 @@ run a candidate whose code differs from that commit's.
 
 ### 2. Train runs for every candidate on its own
 
-When a signed batch lands on main, `backtest.yml` starts by itself (`push` to main on `docs/experiments/*/batches/**`).
+When a signed batch lands on main, a batch backtest workflow starts by itself (`push` to main on
+`docs/experiments/*/batches/**`), in the same `backtest` concurrency group as `backtest.yml`.
 It proceeds only when:
 
 - the batch's `content_sha256` matches its file, and its signing commit's merge was made by the Code Owner;
