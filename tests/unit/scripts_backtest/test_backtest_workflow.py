@@ -342,3 +342,203 @@ def test_validation_started_by_anyone_else_fails_closed(
 ) -> None:
     """Any run not both started and (re-)triggered by the owner stops before data."""
     assert _starter_check(tmp_path, actor, triggering_actor) == 1
+
+
+_HASH_STEP = "Signed pre-registration hash"
+_FUNNEL_STEP = "Funnel (nothing recorded)"
+_SIGNED_HASH = "212a109f39b1c31384803d94c842ec550181628883a708deab25eaf2a5535128"
+
+
+def test_pre_registration_hash_is_a_required_string_input() -> None:
+    """No run starts without the signed hash the funnel compares the file against."""
+    field = _workflow()[True]["workflow_dispatch"]["inputs"]["pre_registration_sha256"]
+
+    assert (field["type"], field["required"]) == ("string", True)
+
+
+def test_pre_registration_hash_reaches_steps_only_through_env() -> None:
+    """The typed hash is never spliced into a shell, so it cannot inject commands (zizmor)."""
+    expression = "${{ inputs.pre_registration_sha256 }}"
+    runs = [str(s.get("run", "")) for s in _job()["steps"]]
+
+    assert [r for r in runs if "inputs.pre_registration_sha256" in r] == []
+    assert _step(_HASH_STEP)["env"]["PRE_REG_SHA256"] == expression
+    assert _step(_FUNNEL_STEP)["env"]["PRE_REG_SHA256"] == expression
+
+
+def test_funnel_reads_the_signed_v2_pre_registration() -> None:
+    """The funnel judges against the committed v2 document, the one whose hash is signed."""
+    path = _workflow()["env"]["PRE_REGISTRATION"]
+
+    assert path == "docs/experiments/swing-mvp1/pre-registration-v2.md"
+    assert (_ROOT / path).is_file()
+
+
+def test_hash_is_checked_first_and_unconditionally() -> None:
+    """A bad hash stops the run before the trial-log copy, so no trial is ever logged."""
+    names = [s.get("name") for s in _job()["steps"]]
+
+    assert names.index(_HASH_STEP) == 0
+    assert names.index(_HASH_STEP) < names.index("Copy the experiment trial log")
+    assert "if" not in _step(_HASH_STEP)
+
+
+def _hash_check(tmp_path: Path, value: str) -> subprocess.CompletedProcess[str]:
+    """Run the hash step with ``value`` as the dispatched input."""
+    return _run_step(_HASH_STEP, {"PRE_REG_SHA256": value}, tmp_path)
+
+
+@needs_tools
+@pytest.mark.parametrize("value", [_SIGNED_HASH, _SIGNED_HASH.upper()], ids=["lower", "upper"])
+def test_a_64_hex_hash_proceeds(tmp_path: Path, value: str) -> None:
+    """The signed hash, in either case, lets the run go on (the funnel ignores case)."""
+    assert _hash_check(tmp_path, value).returncode == 0
+
+
+@needs_tools
+@pytest.mark.parametrize(
+    "value",
+    [
+        "",
+        _SIGNED_HASH[:-1],
+        _SIGNED_HASH + "0",
+        _SIGNED_HASH[:-1] + "g",
+        _SIGNED_HASH + "\n",
+        " " + _SIGNED_HASH,
+        "$(touch pwned)" + _SIGNED_HASH[14:],
+    ],
+    ids=["empty", "63-chars", "65-chars", "non-hex", "trailing-newline", "leading-space", "shell"],
+)
+def test_a_malformed_hash_fails_with_an_error_annotation(tmp_path: Path, value: str) -> None:
+    """Anything but exactly 64 hex characters stops the run with a visible ::error::."""
+    result = _hash_check(tmp_path, value)
+
+    assert result.returncode == 1
+    assert result.stdout.startswith("::error::")
+    assert not (tmp_path / "pwned").exists()
+
+
+def test_backtest_writes_the_funnel_evidence() -> None:
+    """The driver leaves the evidence file the funnel step reads, under out/ for the artifact."""
+    script = str(_step("Backtest")["run"])
+
+    assert '--funnel-evidence-out "$RUNNER_TEMP/out/funnel-evidence.json"' in script
+
+
+def test_funnel_runs_after_certify() -> None:
+    """The funnel follows certify, so the v1 gate's outcome is reported unchanged."""
+    names = [s.get("name") for s in _job()["steps"]]
+
+    assert names.index("Certify (temporary store, nothing recorded)") < names.index(_FUNNEL_STEP)
+
+
+_FAKE_UV = """#!/usr/bin/env bash
+printf '%s\\n' "$@" > "$FAKE_ARGS"
+printf '%s\\n' "$FAKE_LINES"
+exit "$FAKE_EXIT"
+"""
+
+
+def _funnel(tmp_path: Path, exit_code: int) -> tuple[subprocess.CompletedProcess[str], Path]:
+    """Run the funnel step against a fake ``uv`` that exits ``exit_code``; return result, temp."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake = bin_dir / "uv"
+    fake.write_text(_FAKE_UV)
+    fake.chmod(0o755)
+    runner_temp = tmp_path / "rt"
+    (runner_temp / "out").mkdir(parents=True)
+    (runner_temp / "out" / "report.json").write_text('{"strategy_id": "swing-mvp1-v2"}')
+    (runner_temp / "github_output").write_text("")
+    env = {
+        "PATH": f"{bin_dir}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+        "RUNNER_TEMP": str(runner_temp),
+        "GITHUB_OUTPUT": str(runner_temp / "github_output"),
+        "PRE_REGISTRATION": "docs/experiments/swing-mvp1/pre-registration-v2.md",
+        "PRE_REG_SHA256": _SIGNED_HASH,
+        "FAKE_ARGS": str(tmp_path / "args"),
+        "FAKE_LINES": "FUNNEL PASSED",
+        "FAKE_EXIT": str(exit_code),
+    }
+    return _run_step(_FUNNEL_STEP, env, tmp_path), runner_temp
+
+
+@needs_tools
+@pytest.mark.parametrize("exit_code", [0, 1], ids=["passed", "failed-or-refused"])
+def test_funnel_verdict_does_not_fail_the_job(tmp_path: Path, exit_code: int) -> None:
+    """Exit 0 and exit 1 are both valid outcomes; the step passes and records the code."""
+    result, runner_temp = _funnel(tmp_path, exit_code)
+
+    assert result.returncode == 0
+    assert (runner_temp / "github_output").read_text() == f"exit={exit_code}\n"
+    assert (runner_temp / "out" / "funnel.txt").read_text() == "FUNNEL PASSED\n"
+
+
+@needs_tools
+@pytest.mark.parametrize("exit_code", [2, 3, 127], ids=["usage", "file-error", "not-found"])
+def test_funnel_error_exit_fails_the_step(tmp_path: Path, exit_code: int) -> None:
+    """A usage, file or evidence error fails the step with its own exit code, still recorded."""
+    result, runner_temp = _funnel(tmp_path, exit_code)
+
+    assert result.returncode == exit_code
+    assert f"::error::hermes funnel exited {exit_code}" in result.stdout
+    assert (runner_temp / "github_output").read_text() == f"exit={exit_code}\n"
+
+
+@needs_tools
+def test_funnel_is_called_with_the_signed_hash_and_evidence(tmp_path: Path) -> None:
+    """The command gets the dispatched hash and the driver's evidence, never a recomputed hash."""
+    _, runner_temp = _funnel(tmp_path, 0)
+
+    assert (tmp_path / "args").read_text().splitlines() == [
+        "run",
+        "hermes",
+        "funnel",
+        "swing-mvp1-v2",
+        "--pre-registration",
+        "docs/experiments/swing-mvp1/pre-registration-v2.md",
+        "--evidence",
+        f"{runner_temp}/out/funnel-evidence.json",
+        "--expect-sha256",
+        _SIGNED_HASH,
+    ]
+
+
+_FUNNEL_HEADER = (
+    f"# hermes funnel swing-mvp1-v2: swing-mvp1-v2 (pre-registration sha256 {_SIGNED_HASH})"
+)
+_FUNNEL_REPORT = f"""{_FUNNEL_HEADER}
+PASS  pbo                      observed 0.0137                 required <= 0.05
+FAIL  t_stat                   observed 2.7181                 required > 3.0
+PASS  trade_count              observed 4242                   required >= 100
+FUNNEL FAILED
+"""
+
+
+@needs_tools
+def test_summary_shows_funnel_verdicts_without_numbers(tmp_path: Path) -> None:
+    """Only names and PASS/FAIL reach the job summary; observed metrics stay in the artifact."""
+    runner_temp = tmp_path / "rt"
+    (runner_temp / "out").mkdir(parents=True)
+    (runner_temp / "out" / "funnel.txt").write_text(_FUNNEL_REPORT)
+    summary = tmp_path / "summary.md"
+    env = {
+        "RUNNER_TEMP": str(runner_temp),
+        "GITHUB_STEP_SUMMARY": str(summary),
+        "EXPERIMENT": "swing-mvp1",
+        "SPLIT": "train",
+        "START": "2020-09-01",
+        "END": "2024-06-30",
+        "SHA": "ceaa676",
+        "FUNNEL_EXIT": "1",
+    }
+
+    result = _run_step("Summary", env, tmp_path)
+    text = summary.read_text()
+
+    assert result.returncode == 0
+    assert "- Funnel exit: 1\n" in text
+    assert (
+        f"```text\n{_FUNNEL_HEADER}\nPASS pbo\nFAIL t_stat\nPASS trade_count\nFUNNEL FAILED\n```\n"
+    ) in text
+    assert [n for n in ("0.0137", "2.7181", "4242", "0.05", "3.0") if n in text] == []
