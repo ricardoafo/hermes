@@ -49,9 +49,34 @@ class Source:
     latest: Callable[[], str]
 
 
+def _https_opener() -> urllib.request.OpenerDirector:
+    """An opener that speaks only HTTPS.
+
+    ``urlopen`` also opens ``file://`` and ``ftp://`` URLs; without those
+    handlers neither a URL nor a redirect can reach a local file (#1000).
+    ``UnknownHandler`` turns any other scheme into a ``URLError``. Only an
+    HTTPS proxy from the environment is honoured, so ``ftp_proxy`` cannot
+    add a scheme back.
+    """
+    https_proxy = {k: v for k, v in urllib.request.getproxies().items() if k == "https"}
+    opener = urllib.request.OpenerDirector()
+    for handler in (
+        urllib.request.ProxyHandler(https_proxy),
+        urllib.request.HTTPSHandler(),
+        urllib.request.UnknownHandler(),
+        urllib.request.HTTPRedirectHandler(),
+        urllib.request.HTTPDefaultErrorHandler(),
+        urllib.request.HTTPErrorProcessor(),
+    ):
+        opener.add_handler(handler)
+    return opener
+
+
 def _get_json(url: str) -> object:
+    if not url.startswith("https://"):
+        raise ValueError(f"refusing a non-https registry URL: {url!r}")
     request = urllib.request.Request(url, headers={"Accept": "application/json"})
-    with urllib.request.urlopen(request, timeout=TIMEOUT_S) as response:
+    with _https_opener().open(request, timeout=TIMEOUT_S) as response:
         return json.load(response)
 
 

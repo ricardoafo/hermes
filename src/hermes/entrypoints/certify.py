@@ -10,10 +10,15 @@ Toward SHADOW_CERTIFIED it also reports the shadow round trips the ledger
 holds; under 30 the execution check is flagged weak (ADR-021 §3). The flag
 changes no pass or fail rule.
 
+``swing-mvp1-v2`` is judged by pre-registration v2: its backtest gate is DSR
+≥ 0.95, v1's §9 secondary rows and the ADR-021 §5 funnel, read from
+``--funnel-evidence`` (change v2-certify-gate).
+
 Exit codes: 0 gate passed and recorded, 1 gate failed or refused, 2 usage,
 3 config, evidence or store error.
 
-Reference: openspec/changes/355-certification-gates/change.md; ADR-014.
+Reference: openspec/changes/355-certification-gates/change.md;
+openspec/changes/v2-certify-gate/change.md; ADR-014.
 """
 
 from __future__ import annotations
@@ -30,6 +35,12 @@ from typing import Any, TextIO
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
 from hermes.adapters.ledger.status_reader import SqliteStatusReader
+from hermes.application.calibration.backtest_funnel import (
+    FunnelEvidence,
+    FunnelEvidenceError,
+    FunnelThresholds,
+    validate_evidence,
+)
 from hermes.application.calibration.certification_gates import (
     CertificationRecord,
     GateEvidence,
@@ -41,6 +52,13 @@ from hermes.application.calibration.certification_gates import (
     apply_guardrails,
     evaluate_next_gate,
     record_outcome,
+    v1_parameter_fingerprint,
+)
+from hermes.application.calibration.certification_gates_v2 import (
+    V2_STRATEGY_ID,
+    V2BacktestRules,
+    evaluate_v2_gate,
+    parse_v2_backtest_rules,
 )
 from hermes.application.calibration.lifecycle import CertificationState
 from hermes.application.calibration.window_metrics import (
@@ -54,6 +72,8 @@ from hermes.domain.statistics.performance import TradeResult
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.entrypoints import serve as serve_module
 from hermes.entrypoints._streams import resolve_err
+from hermes.entrypoints.funnel import load_funnel_evidence, read_front_matter
+from hermes.infrastructure.config import HermesConfig
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
 from hermes.infrastructure.time import now_utc
@@ -65,6 +85,7 @@ _USAGE = (
     "Usage: hermes certify <strategy_id> [--evidence FILE] [--store-dir DIR]\n"
     "                      [--config-dir DIR] [--db PATH]\n"
     "                      [--sign-off NAME --confirm LIVE_APPROVED]\n"
+    "                      [--funnel-evidence FILE]  (swing-mvp1-v2 only)\n"
     "\n"
     "Evaluates the next certification gate (pre-registration §7) and prints every\n"
     "check with its evidence. A passed gate is recorded; a failed one is not, except\n"
@@ -87,6 +108,9 @@ _METRIC_KEYS = (
 
 WEAK_ROUND_TRIPS = 30
 """ADR-021 §3: fewer shadow round trips than this flag the execution check as weak."""
+
+_Gate = Callable[[CertificationRecord, GateEvidence, datetime], GateReport]
+"""Evaluates the next gate from the guarded record, the evidence and the time."""
 
 
 class EvidenceError(ValueError):
@@ -111,7 +135,7 @@ def main(argv: list[str], *, stream: TextIO, err: TextIO | None = None) -> int:
 
     try:
         config = load_config(parsed.config_dir)
-        fingerprint = serve_module.parameter_fingerprint_for(config)
+        fingerprint = _fingerprint_for(config, parsed.strategy_id)
         evidence = load_evidence(parsed.evidence) if parsed.evidence else GateEvidence()
         if parsed.performance:
             evidence = apply_performance(evidence, parsed.performance)
@@ -126,6 +150,12 @@ def main(argv: list[str], *, stream: TextIO, err: TextIO | None = None) -> int:
     except (OSError, ValueError) as exc:
         err.write(f"ERROR: pre-registration: {exc}\n")
         return 3
+    gate: _Gate | None = None
+    if parsed.strategy_id == V2_STRATEGY_ID:
+        prepared = _prepare_v2(pre_reg, evidence, parsed.funnel_evidence, err)
+        if isinstance(prepared, int):
+            return prepared
+        gate, evidence = prepared
 
     now = now_utc()
     if parsed.sign_off is not None:
@@ -142,6 +172,7 @@ def main(argv: list[str], *, stream: TextIO, err: TextIO | None = None) -> int:
         clock=lambda: now,
         pre_reg=pre_reg,
         round_trips=partial(_round_trips, parsed.db, parsed.strategy_id),
+        gate=gate,
     )
 
 
@@ -158,6 +189,59 @@ def _round_trips(db: Path, strategy_id: str) -> int | None:
         return reader.round_trips(StrategyId(strategy_id))
 
 
+def _fingerprint_for(config: HermesConfig, strategy_id: str) -> str:
+    """v1 fingerprints the enabled entry, as serve does; v2 its own entry, enabled or not."""
+    if strategy_id != V2_STRATEGY_ID:
+        return serve_module.parameter_fingerprint_for(config)
+    roster = next((s for s in config.strategies.strategies if s.name == strategy_id), None)
+    if roster is None:
+        raise serve_module.StartupError(f"strategies.yaml has no {strategy_id!r} entry")
+    return v1_parameter_fingerprint(
+        capital_budget=roster.capital_budget, universe=config.market_data.pairs
+    )
+
+
+def _v2_rules(v1: PreRegistration) -> V2BacktestRules:
+    """Read v2's rules from the signed v2 file beside the v1 file that was found."""
+    text = v1.pre_reg_path().with_name("pre-registration-v2.md").read_text(encoding="utf-8")
+    return parse_v2_backtest_rules(text, read_front_matter(text))
+
+
+def _apply_funnel(
+    evidence: GateEvidence, path: Path | None, thresholds: FunnelThresholds
+) -> tuple[FunnelEvidence | None, GateEvidence]:
+    """Load and validate the funnel evidence; the recorded hash then covers that file too."""
+    if path is None:
+        return None, evidence
+    raw = path.read_bytes()
+    funnel = validate_evidence(load_funnel_evidence(path, strategy_id=V2_STRATEGY_ID), thresholds)
+    digest = hashlib.sha256(
+        ((evidence.sha256 or "") + hashlib.sha256(raw).hexdigest()).encode("ascii")
+    ).hexdigest()
+    return funnel, replace(evidence, sha256=digest)
+
+
+def _prepare_v2(
+    v1: PreRegistration, evidence: GateEvidence, funnel_path: Path | None, err: TextIO
+) -> tuple[_Gate, GateEvidence] | int:
+    """Return v2's gate and the evidence with the funnel file hashed in, or exit code 3."""
+    try:
+        rules = _v2_rules(v1)
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        err.write(f"ERROR: pre-registration: {exc}\n")
+        return 3
+    try:
+        funnel, evidence = _apply_funnel(evidence, funnel_path, rules.funnel)
+    except (OSError, FunnelEvidenceError) as exc:
+        err.write(f"ERROR: evidence: {exc}\n")
+        return 3
+
+    def gate(record: CertificationRecord, submitted: GateEvidence, now: datetime) -> GateReport:
+        return evaluate_v2_gate(record, submitted, now=now, v1=v1, rules=rules, funnel=funnel)
+
+    return gate, evidence
+
+
 def _parse(argv: list[str], stream: TextIO, err: TextIO) -> tuple[argparse.Namespace | None, int]:
     """Parse and validate ``argv``; on ``None`` the int is the exit code."""
     parser = argparse.ArgumentParser(prog="hermes certify", add_help=False)
@@ -169,6 +253,7 @@ def _parse(argv: list[str], stream: TextIO, err: TextIO) -> tuple[argparse.Names
     parser.add_argument("--db", type=Path, default=serve_module.DEFAULT_DB_PATH)
     parser.add_argument("--sign-off", default=None)
     parser.add_argument("--confirm", default="")
+    parser.add_argument("--funnel-evidence", type=Path)
     parser.add_argument("-h", "--help", action="store_true")
     try:
         parsed = parser.parse_args(argv)
@@ -181,11 +266,14 @@ def _parse(argv: list[str], stream: TextIO, err: TextIO) -> tuple[argparse.Names
     if not parsed.strategy_id:
         err.write("ERROR: strategy_id is required.\n" + _USAGE)
         return None, 2
-    if parsed.strategy_id != serve_module.SHADOW_STRATEGY_NAME:
+    if parsed.strategy_id not in (serve_module.SHADOW_STRATEGY_NAME, V2_STRATEGY_ID):
         err.write(
-            f"ERROR: only {serve_module.SHADOW_STRATEGY_NAME!r} is pre-registered "
-            f"(swing-mvp1-v1); got {parsed.strategy_id!r}.\n"
+            f"ERROR: only {serve_module.SHADOW_STRATEGY_NAME!r} (swing-mvp1-v1) and "
+            f"{V2_STRATEGY_ID!r} (swing-mvp1-v2) are pre-registered; got {parsed.strategy_id!r}.\n"
         )
+        return None, 2
+    if parsed.funnel_evidence is not None and parsed.strategy_id != V2_STRATEGY_ID:
+        err.write(f"ERROR: --funnel-evidence applies to {V2_STRATEGY_ID!r} only.\n" + _USAGE)
         return None, 2
     return parsed, 0
 
@@ -201,6 +289,7 @@ def run(
     pre_reg: PreRegistration | None = None,
     err: TextIO | None = None,
     round_trips: Callable[[], int | None] = lambda: None,
+    gate: _Gate | None = None,
 ) -> int:
     """Evaluate and record the next gate for ``strategy_id``.
 
@@ -216,6 +305,7 @@ def run(
         round_trips: Counts the shadow round trips in the ledger (``None``
             without one). Called only toward SHADOW_CERTIFIED, so no other
             gate reads the ledger.
+        gate: Evaluates the next gate; defaults to v1's gates read from ``pre_reg``.
 
     Returns:
         Process exit code.
@@ -235,7 +325,10 @@ def run(
             f"REVERTED: {stored.state} -> {record.state}: {record.transitions[-1].reason}\n"
         )
 
-    report = evaluate_next_gate(record, evidence, now=now, pre_reg=rules)
+    if gate is None:
+        report = evaluate_next_gate(record, evidence, now=now, pre_reg=rules)
+    else:
+        report = gate(record, evidence, now)
     _print_report(report, stream)
     if report.to_state == CertificationState.SHADOW_CERTIFIED:
         _print_round_trips(round_trips, stream)

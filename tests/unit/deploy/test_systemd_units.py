@@ -17,6 +17,7 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
+from hermes.application.supervisor.briefing import SOURCES
 from hermes.entrypoints import cli as cli_module
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -30,6 +31,7 @@ _OWN_ENV_FILES = {
     "hermes-bot.service": "/etc/hermes/env.bot",
     _STAGING_UNIT: "/etc/hermes/env.staging",
 }
+_NO_ENV_FILE = {"hermes-brief.service"}
 _EXEC_PREFIXES = "@-:+!"
 
 
@@ -108,12 +110,14 @@ def test_service_environment_file_is_the_bootstrap_path(path: Path) -> None:
     A leading '-' would boot the process with no secrets instead of failing the start.
     The bot reads its own bootstrap-written file so it never sees exchange keys
     (ADR-015 D-05); the staging unit reads the one the operator writes by hand
-    (#192); every other unit reads env.production.
+    (#192); every other unit reads env.production. The supervisor desk's brief
+    unit reads none: the desk never loads the env file (ADR-012 D-07, #897).
     """
     service = _parse(path.name)["Service"]
-    if "EnvironmentFile" not in service:
-        pytest.skip(f"{path.name} loads no environment file")
-    assert service["EnvironmentFile"] == _OWN_ENV_FILES.get(path.name, _ENV_FILE)
+    if path.name in _NO_ENV_FILE:
+        assert "EnvironmentFile" not in service
+    else:
+        assert service["EnvironmentFile"] == _OWN_ENV_FILES.get(path.name, _ENV_FILE)
 
 
 def test_hermes_service_loads_the_environment_file() -> None:
@@ -490,3 +494,39 @@ def test_bot_unit_runs_hermes_bot_read_only_on_the_ledger() -> None:
 
     assert shlex.split(service["ExecStart"])[:2] == ["/opt/hermes/current/.venv/bin/hermes", "bot"]
     assert (service["ReadOnlyPaths"], service.get("ReadWritePaths")) == ("/var/lib/hermes", None)
+
+
+def test_brief_timer_fires_at_a_quarter_past_seven_madrid_time() -> None:
+    """The desk's brief is kept daily at 07:15 Madrid, between the alive line and the tax pack."""
+    timer = _parse("hermes-brief.timer")["Timer"]
+
+    assert (timer["OnCalendar"], timer["Persistent"], timer["Unit"]) == (
+        "*-*-* 07:15:00 Europe/Madrid",
+        "true",
+        "hermes-brief.service",
+    )
+
+
+def test_brief_service_loads_no_env_file_and_writes_only_the_ledger_directory() -> None:
+    """The desk never reads the env file (ADR-012 D-07); the archive sits beside the ledger."""
+    service = _parse("hermes-brief.service")["Service"]
+    argv = shlex.split(service["ExecStart"])
+
+    assert "EnvironmentFile" not in service
+    assert (service["Type"], service["ReadWritePaths"], service["ProtectSystem"]) == (
+        "oneshot",
+        "/var/lib/hermes",
+        "strict",
+    )
+    assert _flag(argv, "--db") == _flag(_hermes_exec_argv(), "--db")
+
+
+def test_brief_service_flags_are_accepted_by_the_real_supervisor(tmp_path: Path) -> None:
+    """The unit keeps the brief with the six source grants the Briefs screen reads."""
+    argv = shlex.split(_parse("hermes-brief.service")["Service"]["ExecStart"])[1:]
+    argv[argv.index("--config-dir") + 1] = str(_REPO_ROOT / "config")
+    argv[argv.index("--db") + 1] = str(tmp_path / "missing.sqlite3")
+
+    grants = {argv[i + 1] for i, flag in enumerate(argv) if flag == "--grant"}
+    assert grants == {f"hermes:read:{name}" for name in SOURCES}
+    assert cli_module.main(argv, stream=io.StringIO(), err=io.StringIO()) == 0

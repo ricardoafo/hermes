@@ -13,6 +13,7 @@ Reference: ADR-003 §03 (migration approach).
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -111,19 +112,19 @@ class TestUnknownAppliedMigrations:
 
     def test_a_ledger_this_code_migrated_has_none(self) -> None:
         """Every applied migration is one this code ships."""
-        conn = sqlite3.connect(":memory:")
-        apply_migrations(conn)
-        assert unknown_applied_migrations(conn) == ()
+        with closing(sqlite3.connect(":memory:")) as conn:
+            apply_migrations(conn)
+            assert unknown_applied_migrations(conn) == ()
 
     def test_a_migration_from_a_newer_release_is_named(self) -> None:
         """The applied filename with no shipped file is returned, in order."""
-        conn = sqlite3.connect(":memory:")
-        apply_migrations(conn)
-        conn.executemany(
-            "INSERT INTO schema_migrations (filename) VALUES (?)",
-            [("9999_b.sql",), ("9998_a.sql",)],
-        )
-        assert unknown_applied_migrations(conn) == ("9998_a.sql", "9999_b.sql")
+        with closing(sqlite3.connect(":memory:")) as conn:
+            apply_migrations(conn)
+            conn.executemany(
+                "INSERT INTO schema_migrations (filename) VALUES (?)",
+                [("9999_b.sql",), ("9998_a.sql",)],
+            )
+            assert unknown_applied_migrations(conn) == ("9998_a.sql", "9999_b.sql")
 
 
 class TestMigrationsDirLocation:

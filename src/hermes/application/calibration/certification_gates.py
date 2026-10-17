@@ -23,7 +23,8 @@ Gates:
 Missing statistics fail closed: a metric that has not been computed fails its
 check (#354 computes them). :func:`apply_guardrails` implements the reverts:
 any parameter change returns the strategy to UNTRUSTED (the D-8 forward-testing
-guardrail), a shadow drift breach does the same (§7), and a live kill is DEAD.
+guardrail), a shadow drift breach does the same (§7), and a shadow or live
+kill is DEAD.
 
 Reference: pre-registration-v1.md §1, §4, §7, §9, §10; ADR-014;
 openspec/changes/355-certification-gates/change.md.
@@ -67,6 +68,10 @@ LIVE_APPROVAL_PHRASE = "LIVE_APPROVED"
 
 _NOT_COMPUTED = "not computed (#354)"
 _LIVE_STATES = frozenset({CertificationState.LIVE_APPROVED, CertificationState.CERTIFIED})
+_SHADOW_STATES = frozenset(
+    {CertificationState.BACKTEST_CERTIFIED, CertificationState.SHADOW_CERTIFIED}
+)
+"""States a shadow kill or a drift breach applies to: the shadow run and its result (ADR-021)."""
 
 
 # ---------------------------------------------------------------------------
@@ -536,7 +541,10 @@ def apply_guardrails(
 
     - Parameters changed since the last passed gate: back to UNTRUSTED (D-8).
     - Live kill fired while LIVE_APPROVED or CERTIFIED: DEAD (§10 live phase).
-    - Shadow drift breach while SHADOW_CERTIFIED: back to UNTRUSTED (§7).
+    - Shadow kill fired while BACKTEST_CERTIFIED or SHADOW_CERTIFIED: DEAD
+      (§10 shadow phase, post-kill protocol; #796).
+    - Shadow drift breach while BACKTEST_CERTIFIED or SHADOW_CERTIFIED: back
+      to UNTRUSTED (§7; ADR-021: the clock restarts).
 
     Args:
         record: The stored record.
@@ -566,11 +574,16 @@ def apply_guardrails(
             fingerprint=record.parameter_fingerprint,
             evidence_sha256=evidence.sha256,
         )
-    if (
-        state == CertificationState.SHADOW_CERTIFIED
-        and evidence.shadow is not None
-        and evidence.shadow.drift_breached
-    ):
+    shadow = evidence.shadow if state in _SHADOW_STATES else None
+    if shadow is not None and shadow.kill_fired:
+        return record.moved_to(
+            CertificationState.DEAD,
+            at=now,
+            reason="§10 shadow kill trigger fired",
+            fingerprint=record.parameter_fingerprint,
+            evidence_sha256=evidence.sha256,
+        )
+    if shadow is not None and shadow.drift_breached:
         return record.moved_to(
             CertificationState.UNTRUSTED,
             at=now,

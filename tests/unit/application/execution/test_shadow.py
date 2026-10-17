@@ -11,6 +11,9 @@ Invariants (change 353-fill-kernel-in-serve D-1..D-5):
   filled twice (restart idempotency).
 - RO-07 sees the BTC/USDT 1d log-return of the bars observed, and RO-03 sees
   the last recorded fill slippage, including one recorded before a restart.
+- Under v2's close-based pricing a stop exit books close x 0.9995 in serve and
+  in the backtest replay on the same bar, and a live v2 exit's drift is
+  measured against that same price (v2-strategy-config R-1).
 
 Collaborators are real (kernel, router, walk fill model, SQLite ledger,
 trade recorder); only the depth source, the FX provider and the clock are
@@ -33,7 +36,8 @@ from hermes.adapters.clock import SimulatedClock
 from hermes.adapters.fills.orderbook_walk import OrderbookWalkFillModel
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.application.backtest.replay import replay
-from hermes.application.execution.kernel import Declined, Executed, FillKernel
+from hermes.application.execution.kernel import Declined, Executed, FillKernel, Halted
+from hermes.application.execution.prereg_book import ExecutionModel, ExitPricing
 from hermes.application.execution.shadow import (
     SLIPPAGE_WINDOW,
     AlreadyFilled,
@@ -184,6 +188,7 @@ def _rig(
     book: Orderbook | None = None,
     daily: tuple[str, str] | None = ("84000", "84500"),
     not_before: datetime | None = None,
+    model: ExecutionModel | None = None,
 ) -> _Rig:
     """Build an executor over real collaborators, with two BTC 1d bars observed."""
     clock = SimulatedClock(start=_NOW)
@@ -207,6 +212,7 @@ def _rig(
         clock=clock,
         fees_at=lambda _at, _pair: fees(),
         strategy_id=STRATEGY,
+        model=model,
         not_before=not_before,
     )
     if daily is not None:
@@ -448,6 +454,77 @@ def test_a_gap_stop_exit_books_the_same_price_in_the_backtest_and_serve(
     )
 
 
+_V2_MODEL = ExecutionModel(exit_pricing=ExitPricing.BAR_CLOSE)
+
+
+def _crash_bar() -> Bar:
+    """Return the 4h bar after ``_bar``: opens at 84500 over the 84100 stop, closes at 83200."""
+    open_time = _OPEN + timedelta(hours=4)
+    return Bar(
+        pair=BTC_USDT,
+        interval=KlineInterval.H4,
+        open_time=open_time,
+        open=Decimal("84500"),
+        high=Decimal("84510"),
+        low=Decimal("83000"),
+        close=Decimal("83200"),
+        volume=Decimal("500"),
+        close_time=close_time_of(open_time, KlineInterval.H4),
+    )
+
+
+def test_a_v2_stop_exit_books_the_bar_close_in_the_backtest_and_serve(
+    connection: sqlite3.Connection,
+) -> None:
+    """ADR-011 parity, v2 §5.3/§6.2: both paths sell the stop exit at 83200 x 0.9995.
+
+    The bar opens over the 84100 stop and closes 900 under it; v1 would book the
+    stop, v2 books the close in the stale serve exit and in the replay alike.
+    """
+    entry_bar, exit_bar = _bar("85000"), _crash_bar()
+    entry, stop_exit = _entry(entry_bar), _exit(exit_bar, "84100")
+    rig = _rig(connection, book=_live_book("84999", "85001"), model=_V2_MODEL)
+    _executed(rig.run(entry, entry_bar, cid="a"))
+    rig.clock.set(exit_bar.close_time + timedelta(hours=3))
+    serve_price = _executed(rig.run(stop_exit, exit_bar, cid="b")).fill.avg_price
+
+    ids = iter(("c", "d"))
+    run = replay(
+        [entry_bar, exit_bar],
+        strategy=_Scripted({entry_bar.close_time: entry, exit_bar.close_time: stop_exit}),
+        kernel=backtest_kernel(),
+        window_start=entry_bar.close_time,
+        window_end=exit_bar.close_time,
+        fees_at=lambda _at, _pair: fees(),
+        correlation_id=lambda: next(ids),
+        model=_V2_MODEL,
+    )
+
+    assert (_price(serve_price), _price(run.fills[-1].avg_price)) == (
+        Decimal("83200") * Decimal("0.9995"),
+        Decimal("83200") * Decimal("0.9995"),
+    )
+
+
+def test_a_live_v2_stop_exit_measures_its_drift_against_the_bar_close(
+    connection: sqlite3.Connection,
+) -> None:
+    """v2 §7: a fresh exit fills on the live bid 83150; its model price is 83200 x 0.9995."""
+    entry_bar, exit_bar = _bar("85000"), _crash_bar()
+    rig = _rig(connection, book=_live_book("84999", "85001"), model=_V2_MODEL)
+    _executed(rig.run(_entry(entry_bar), entry_bar, cid="a"))
+    rig.books.book = _live_book("83150", "83152")
+    rig.clock.set(exit_bar.close_time + timedelta(seconds=6))
+
+    out = rig.run(_exit(exit_bar, "84100"), exit_bar, cid="b")
+
+    assert out.quality is not None
+    assert (out.quality.book_source, _price(out.quality.model_price)) == (
+        BookSource.LIVE,
+        _price(Decimal("83200") * Decimal("0.9995")),
+    )
+
+
 def test_exit_sells_the_held_quantity_and_leaves_the_pair_flat(
     connection: sqlite3.Connection,
 ) -> None:
@@ -606,3 +683,23 @@ def test_clock_behind_the_bar_close_records_no_latency_and_still_fills(
 
     (quality,) = rig.ledger.fill_quality_events(STRATEGY)
     assert (quality.delta_ms, quality.arrival_price) == (None, Decimal("85000"))
+
+
+# SEV-1: S6 a held shadow kill that lets entries through keeps a dead strategy trading (#796)
+def test_a_held_shadow_kill_refuses_entries_and_still_fills_the_exit(
+    connection: sqlite3.Connection,
+) -> None:
+    """After ``hold_kill`` the next entry is Halted under that rule; the open position exits."""
+    rig = _rig(connection, book=_live_book("84999", "85001"))
+    entry_bar = _bar("85000")
+    _executed(rig.run(_entry(entry_bar), entry_bar, cid="a"))
+    rig.executor.hold_kill("sa9_repeat")
+    exit_bar = _bar("84000", open_time=_OPEN + timedelta(hours=4))
+    rig.clock.set(exit_bar.close_time + timedelta(seconds=5))
+
+    exited = rig.run(_exit(exit_bar, "84100"), exit_bar, cid="b").outcome
+    refused = rig.run(_entry(exit_bar), exit_bar, cid="c").outcome
+
+    assert isinstance(exited, Executed)
+    assert isinstance(refused, Halted)
+    assert (rig.executor.killed_by, refused.breaker.decision.rule) == ("sa9_repeat", "sa9_repeat")
