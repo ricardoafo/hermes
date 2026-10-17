@@ -8,7 +8,10 @@ place that makes one, after all three checks pass.
 
 Python cannot make a constructor truly private; the mint key below makes a
 permit impossible to create by accident or by a stray ``**overrides``, which
-is the failure the audit found. Deliberate misuse stays a code-review matter.
+is the failure the audit found. A permit also refuses pickling, so it cannot
+be saved and loaded into a process that never ran the checks, and a unit test
+fails if any other module under src/ names the mint key. Deliberate misuse
+beyond that stays a code-review matter.
 
 Reference: ADR-014 (live approval), ADR-003 §00 I-08, AGENTS.md rule 7.
 """
@@ -48,6 +51,14 @@ class MainnetPermit:
         """
         if self._key is not _MINT_KEY:
             raise TypeError("a MainnetPermit is made only by issue_mainnet_permit")
+
+    def __reduce__(self) -> str | tuple[object, ...]:
+        """Refuse pickling: a permit proves checks passed in this process only.
+
+        Raises:
+            TypeError: Always.
+        """
+        raise TypeError("a MainnetPermit cannot be pickled; issue one in each process")
 
 
 def issue_mainnet_permit(

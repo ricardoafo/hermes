@@ -3,6 +3,7 @@
 Reference: issue #781; ADR-014; AGENTS.md rule 7.
 """
 
+import pickle
 from pathlib import Path
 
 import pytest
@@ -87,3 +88,28 @@ def test_a_permit_cannot_be_constructed_directly() -> None:
     """Calling the constructor with any key but the module's own raises."""
     with pytest.raises(TypeError, match="only by issue_mainnet_permit"):
         MainnetPermit(_SID, object())
+
+
+# SEV-1: real capital stays behind the live-approval gate (AGENTS.md rule 7, ADR-014)
+def test_a_permit_cannot_be_pickled() -> None:
+    """A permit can't be saved and loaded into a process that never passed the checks."""
+    permit = issue_mainnet_permit(
+        _config(**_PROD_LIVE),
+        strategy=_SID,
+        record=_record(CertificationState.LIVE_APPROVED),
+        fingerprint=_FP,
+    )
+    with pytest.raises(TypeError, match="cannot be pickled"):
+        pickle.dumps(permit)
+
+
+# SEV-1: real capital stays behind the live-approval gate (AGENTS.md rule 7, ADR-014)
+def test_no_other_source_module_names_the_mint_key() -> None:
+    """Only mainnet_permit.py may name the mint key, so production code cannot forge a permit."""
+    src = Path(__file__).resolve().parents[3] / "src" / "hermes"
+    users = sorted(
+        str(path.relative_to(src))
+        for path in src.rglob("*.py")
+        if "_MINT_KEY" in path.read_text(encoding="utf-8")
+    )
+    assert users == ["infrastructure/mainnet_permit.py"]
