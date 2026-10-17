@@ -11,6 +11,11 @@ create_label() {
   local name="$1"
   local color="$2"
   local description="$3"
+  # GitHub rejects a description over 100 characters with a bare HTTP 422.
+  if (( ${#description} > 100 )); then
+    echo "ERROR: $name description is ${#description} characters; GitHub allows 100" >&2
+    exit 1
+  fi
   gh label create "$name" \
     --repo "$REPO" \
     --color "$color" \
@@ -48,7 +53,7 @@ create_label "p2" "fbca04" "Priority: this month"
 create_label "p3" "c2e0c6" "Priority: backlog"
 create_label "merge-queue:hand-merge" "fbca04" "The merge queue cannot merge this PR itself; merge it by hand"
 create_label "merge-queue:gates-failed" "b60205" "The merge queue gates failed on this head; push a fix or remove the label to retry"
-create_label "decisions-changed" "b60205" "The Train decision replay found changed decisions; the PR body must cite the Code Owner's OK (ADR-025)"
+create_label "decisions-changed" "b60205" "Train decision replay found changed decisions; PR body must cite the Code Owner's OK (ADR-025)"
 create_label "merge-queue:alerts" "5319e7" "The one issue where the merge queue posts every red head"
 
 echo ""

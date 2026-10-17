@@ -9,11 +9,12 @@ SHADOW_CERTIFIED the shadow round trips are reported and flagged weak under
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import io
 import json
 import shutil
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from functools import partial
 from pathlib import Path
 
@@ -25,8 +26,10 @@ from hermes.application.calibration.certification_gates import (
     LIVE_APPROVAL_PHRASE,
     CertificationRecord,
     GateEvidence,
+    ShadowEvidence,
 )
 from hermes.application.calibration.lifecycle import CertificationState
+from hermes.application.calibration.shadow_parity import MetricStatus
 from hermes.application.strategy_protocol.preregistration import PreRegistration
 from hermes.domain.events.trade_executed import TradeExecuted, TradeSide
 from hermes.domain.value_objects.strategy_id import StrategyId
@@ -34,6 +37,7 @@ from hermes.entrypoints import certify as certify_module
 from hermes.entrypoints import serve as serve_module
 from hermes.entrypoints.certify import EvidenceError, load_evidence, run
 from hermes.infrastructure.config.loader import load_config
+from tests.support.day_zero import write_day_zero
 from tests.support.notification_samples import samples
 
 _SID = "swing-donchian-4h"
@@ -560,3 +564,186 @@ class TestShadowRoundTrips:
         assert [line[:27] for line in out.getvalue().splitlines() if "round trips" in line] == [
             "WEAK  shadow round trips: 2"
         ]
+
+
+_SHADOW = {"days": 90, "drift_p50_bps": 10.0, "kill_fired": False, "drift_breached": False}
+
+
+_DAY_ZERO = datetime(2026, 10, 3, tzinfo=UTC)
+
+
+def _apply(evidence: GateEvidence, path: Path) -> GateEvidence:
+    """Apply a parity file for the run that started at ``_DAY_ZERO``, under the 90-day rule."""
+    return certify_module.apply_shadow_parity(evidence, path, _SID, day_zero=_DAY_ZERO, min_days=90)
+
+
+def _parity_file(tmp_path: Path, **change: object) -> Path:
+    payload = {
+        "strategy_id": _SID,
+        "since": "2026-10-03T00:00:00+00:00",
+        "until": "2027-01-02T00:00:00+00:00",
+        "m09": "pass",
+        "m10": "pass",
+        **change,
+    }
+    path = tmp_path / "parity.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+class TestShadowParity:
+    """`--shadow-parity` feeds M-09 and M-10 to the shadow gate (#965)."""
+
+    def test_the_statuses_join_the_shadow_evidence_already_loaded(self, tmp_path: Path) -> None:
+        """The file sets M-09 and M-10 and keeps days, drift and kill from --evidence."""
+        loaded = load_evidence(_evidence_file(tmp_path, {"shadow": _SHADOW}))
+        path = _parity_file(tmp_path, m10="block")
+
+        evidence = _apply(loaded, path)
+
+        assert evidence.shadow == ShadowEvidence(
+            days=90,
+            drift_p50_bps=10.0,
+            kill_fired=False,
+            drift_breached=False,
+            m09=MetricStatus.OK,
+            m10=MetricStatus.BLOCK,
+        )
+
+    def test_the_hash_chains_the_evidence_hash_with_the_parity_file(self, tmp_path: Path) -> None:
+        """The recorded hash is sha256(evidence hash + sha256(parity file)), like --performance."""
+        path = _parity_file(tmp_path)
+        file_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+
+        evidence = _apply(GateEvidence(sha256="a" * 64), path)
+
+        assert evidence.sha256 == hashlib.sha256(("a" * 64 + file_hash).encode("ascii")).hexdigest()
+
+    @pytest.mark.parametrize(
+        "change",
+        [
+            {"m09": "ok"},
+            {"m10": 0.12},
+            {"strategy_id": "swing-mvp1-v2"},
+            {"correlation": 0.9},
+        ],
+    )
+    def test_a_malformed_parity_file_is_rejected(
+        self, tmp_path: Path, change: dict[str, object]
+    ) -> None:
+        """An unknown status, a value instead of a status, another strategy, an extra key."""
+        with pytest.raises(EvidenceError):
+            _apply(GateEvidence(), _parity_file(tmp_path, **change))
+
+    def test_a_parity_file_without_a_status_is_rejected(self, tmp_path: Path) -> None:
+        """Both statuses are required: a file with M-09 only is not a window verdict."""
+        path = tmp_path / "parity.json"
+        path.write_text(json.dumps({"strategy_id": _SID, "m09": "pass"}), encoding="utf-8")
+
+        with pytest.raises(EvidenceError):
+            _apply(GateEvidence(), path)
+
+    @pytest.mark.parametrize(
+        ("change", "message"),
+        [
+            ({"since": "2026-10-04T00:00:00+00:00"}, "not at day 0"),
+            ({"until": "2026-12-31T23:59:00+00:00"}, "covers 89 days, not 90"),
+            ({"since": "2026-10-03T00:00:00"}, "since must be an ISO time"),
+            ({"until": 1}, "until must be an ISO time"),
+        ],
+    )
+    def test_only_the_counted_run_over_the_shadow_length_is_accepted(
+        self, tmp_path: Path, change: dict[str, object], message: str
+    ) -> None:
+        """A window not starting at day 0, shorter than 90 days or without UTC times is refused."""
+        path = _parity_file(tmp_path, **change)
+
+        with pytest.raises(EvidenceError, match=message):
+            _apply(GateEvidence(), path)
+
+    def test_a_window_of_exactly_the_shadow_length_is_accepted(self, tmp_path: Path) -> None:
+        """Day 0 to day 0 + 90 days is the full shadow: its statuses join the evidence."""
+        path = _parity_file(tmp_path, until="2027-01-01T00:00:00+00:00")
+
+        evidence = _apply(GateEvidence(), path)
+
+        assert evidence.shadow == ShadowEvidence(m09=MetricStatus.OK, m10=MetricStatus.OK)
+
+    def _certify(
+        self, tmp_path: Path, *extra: str, day_zero: datetime | None = _DAY_ZERO
+    ) -> tuple[int, str, CertificationRecord | None]:
+        db = tmp_path / "hermes.sqlite3"
+        if day_zero is not None:
+            write_day_zero(db, _SID, day_zero)
+        store_dir = tmp_path / "store"
+        JsonCertificationStore(store_dir).save(
+            CertificationRecord(
+                _SID,
+                CertificationState.BACKTEST_CERTIFIED,
+                parameter_fingerprint=serve_module.parameter_fingerprint_for(
+                    load_config(_PROJECT_ROOT / "config")
+                ),
+            )
+        )
+        out = io.StringIO()
+        code = certify_module.main(
+            [
+                _SID,
+                "--evidence",
+                str(_evidence_file(tmp_path, {"shadow": _SHADOW})),
+                "--config-dir",
+                str(_PROJECT_ROOT / "config"),
+                "--store-dir",
+                str(store_dir),
+                "--db",
+                str(db),
+                *extra,
+            ],
+            stream=out,
+        )
+        return code, out.getvalue(), JsonCertificationStore(store_dir).load(_SID)
+
+    # SEV-1: the shadow gate must not certify without ADR-021 Done rule 3
+    def test_without_the_file_the_shadow_gate_fails_on_both_metrics(self, tmp_path: Path) -> None:
+        """90 days, low drift and no kill are not enough: M-09 and M-10 fail as not computed."""
+        code, out, record = self._certify(tmp_path)
+
+        assert code == 1
+        assert out.count("not computed (--shadow-parity)") == 2
+        assert record is not None
+        assert record.state == CertificationState.BACKTEST_CERTIFIED
+
+    def test_both_metrics_passed_certify_the_shadow(self, tmp_path: Path) -> None:
+        """With the window's pass verdicts the gate records SHADOW_CERTIFIED."""
+        code, out, record = self._certify(tmp_path, "--shadow-parity", str(_parity_file(tmp_path)))
+
+        assert code == 0, out
+        assert record is not None
+        assert record.state == CertificationState.SHADOW_CERTIFIED
+
+    def test_a_bad_parity_file_exits_three(self, tmp_path: Path) -> None:
+        """A parity file for another strategy is an evidence error, not a gate verdict."""
+        code, out, _ = self._certify(
+            tmp_path, "--shadow-parity", str(_parity_file(tmp_path, strategy_id="other"))
+        )
+
+        assert (code, out) == (3, "")
+
+    def test_a_parity_file_without_a_day_zero_record_exits_three(self, tmp_path: Path) -> None:
+        """No counted run is recorded beside the ledger, so the file has no run to judge."""
+        code, out, _ = self._certify(
+            tmp_path, "--shadow-parity", str(_parity_file(tmp_path)), day_zero=None
+        )
+
+        assert (code, out) == (3, "")
+
+    def test_a_parity_file_from_an_earlier_run_exits_three(self, tmp_path: Path) -> None:
+        """The latest run started later than the file's window: the file is not this run's."""
+        code, out, _ = self._certify(
+            tmp_path,
+            "--shadow-parity",
+            str(_parity_file(tmp_path)),
+            day_zero=_DAY_ZERO + timedelta(days=1),
+        )
+
+        assert (code, out) == (3, "")

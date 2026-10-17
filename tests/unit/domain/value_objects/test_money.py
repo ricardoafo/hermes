@@ -144,18 +144,27 @@ class TestMoneyExampleBased:
 
     def test_from_str_invalid_amount(self) -> None:
         """from_str returns Failure when the amount part is not a valid decimal."""
-        result = Money.from_str("abc EUR")
-        assert isinstance(result, Failure)
+        error = Money.from_str("abc EUR").failure()
+        assert error == InvalidLot(reason="Cannot parse amount 'abc' as Decimal")
 
     def test_from_str_unknown_currency(self) -> None:
         """from_str returns Failure when the currency ticker is not in the allowlist."""
-        result = Money.from_str("100 XYZ")
-        assert isinstance(result, Failure)
+        error = Money.from_str("100 XYZ").failure()
+        assert error == InvalidLot(reason="Unknown currency: 'XYZ'")
 
     def test_from_str_missing_parts(self) -> None:
         """from_str returns Failure when the input lacks the 'amount CURRENCY' structure."""
-        result = Money.from_str("100")
-        assert isinstance(result, Failure)
+        error = Money.from_str("100").failure()
+        assert error == InvalidLot(
+            reason="Cannot parse Money from '100': expected 'AMOUNT CURRENCY'"
+        )
+
+    def test_from_str_extra_parts(self) -> None:
+        """from_str rejects three tokens: exactly 'amount CURRENCY' is accepted, nothing more."""
+        error = Money.from_str("1 2 EUR").failure()
+        assert error == InvalidLot(
+            reason="Cannot parse Money from '1 2 EUR': expected 'AMOUNT CURRENCY'"
+        )
 
     def test_zero_factory(self) -> None:
         """Money.zero() produces a Money with amount=0 in the requested currency."""
@@ -166,9 +175,8 @@ class TestMoneyExampleBased:
     def test_divide_by_zero_fails(self) -> None:
         """Dividing Money by zero returns a Failure wrapping an InvalidLot error."""
         m = Money(amount=Decimal("100"), currency=Currency.EUR)
-        result = m.divide(Decimal("0"))
-        assert isinstance(result, Failure)
-        assert isinstance(result.failure(), InvalidLot)
+        error = m.divide(Decimal("0")).failure()
+        assert error == InvalidLot(reason="Division by zero on Money")
 
     def test_divide_success(self) -> None:
         """Dividing by a non-zero divisor returns a Success with the correctly divided amount."""
@@ -189,9 +197,8 @@ class TestMoneyExampleBased:
         """sub() with mismatched currencies returns a Failure wrapping a CurrencyMismatch error."""
         a = Money(amount=Decimal("10"), currency=Currency.EUR)
         b = Money(amount=Decimal("3"), currency=Currency.BTC)
-        result = a.sub(b)
-        assert isinstance(result, Failure)
-        assert isinstance(result.failure(), CurrencyMismatch)
+        error = a.sub(b).failure()
+        assert error == CurrencyMismatch(expected=Currency.EUR, actual=Currency.BTC)
 
     def test_frozen_immutable(self) -> None:
         """Money is a frozen dataclass — mutating a field after construction raises."""

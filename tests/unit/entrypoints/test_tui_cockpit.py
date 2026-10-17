@@ -4,7 +4,7 @@ Invariants:
 
 - every key has one action; 1-8 jump to screens, Tab / Shift+Tab cycle them,
   Esc goes back, Ctrl+P opens the command palette, D W M Y still set the range;
-- screens not built yet name the issue that builds them;
+- screens not built yet name the issue that builds them (System is built, #717);
 - every home card sits in a HudPanel labelled "computed";
 - the live dot is drawn in the live colour (not dim) when OK; late is amber
   and down is red, as before;
