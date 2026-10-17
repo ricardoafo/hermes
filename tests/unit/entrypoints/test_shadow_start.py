@@ -179,7 +179,6 @@ _ROOT_SKIP = pytest.mark.skipif(
 class TestUnwritableDirectories:
     """The service account's restrictive permissions stop the start before any change."""
 
-    # SEV-1: S5 an archive taken with the ledger left in place resumes the warm-up as day 0 (#797)
     @_ROOT_SKIP
     def test_a_read_only_ledger_directory_changes_nothing(self, tmp_path: Path) -> None:
         """The ledger cannot be removed: exit 3, no archive, no record, ledger intact."""
@@ -207,6 +206,7 @@ class TestUnwritableDirectories:
             archive.chmod(0o755)
         assert (code, _tree(tmp_path), f"cannot write in {archive}" in err) == (3, before, True)
 
+    # SEV-1: S5 an archive taken with the ledger left in place resumes the warm-up as day 0 (#797)
     def test_a_blocked_run_records_path_changes_nothing(self, tmp_path: Path) -> None:
         """Even as root: with ``runs`` taken by a file, no archive is left behind (#797)."""
         db = _ledger(tmp_path)
