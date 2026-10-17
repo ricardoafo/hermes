@@ -99,3 +99,12 @@ class TestCreate:
     def test_the_default_parameters_are_the_builders_keyword_defaults(self) -> None:
         """The driver records these as the base trial's parameters."""
         assert _PROBE.default_parameters() == {"lookback": 20, "multiple": Decimal("3.0")}
+
+    def test_only_keyword_only_parameters_are_defaults(self) -> None:
+        """Only keyword-only parameters are card parameters; positional and ``**`` ones are not."""
+
+        def build(lookback: int = 5, *, multiple: int = 3, **extra: int) -> tuple[int, int]:
+            return lookback, multiple
+
+        kind = StrategyKind(signal="mixed", build=build)
+        assert kind.default_parameters() == {"multiple": 3}
