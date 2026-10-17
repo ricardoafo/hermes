@@ -1,6 +1,6 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       # syrupy's .ambr files indent blank snapshot lines with two spaces and
       # end without a final newline; stripping either breaks the snapshot.
@@ -15,7 +15,7 @@ repos:
         args: [--fix=lf]
 
   - repo: https://github.com/compilerla/conventional-pre-commit
-    rev: v3.6.0
+    rev: v4.4.0
     hooks:
       - id: conventional-pre-commit
         stages: [commit-msg]
@@ -179,6 +179,27 @@ repos:
         files: ^scripts/dev/license-check\.py$
         pass_filenames: false
 
+      - id: cloud-session-start-self-test
+        name: cloud-session-start self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/cloud-session-start.sh'
+        language: system
+        files: ^scripts/dev/cloud-session-start\.sh$
+        pass_filenames: false
+
+      - id: assertion-edit-warning-self-test
+        name: assertion-edit-warning self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 uv run --no-sync python scripts/dev/assertion-edit-warning.py'
+        language: system
+        files: ^scripts/dev/assertion-edit-warning\.py$
+        pass_filenames: false
+
+      - id: fresh-seed-report-self-test
+        name: fresh-seed-report self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 uv run --no-sync python scripts/dev/fresh-seed-report.py'
+        language: system
+        files: ^scripts/dev/fresh-seed-report\.py$
+        pass_filenames: false
+
       - id: reproducibility-check-self-test
         name: reproducibility-check self-test
         entry: bash -c 'HERMES_SELF_TEST=1 python3 scripts/dev/reproducibility-check.py'
@@ -233,6 +254,21 @@ repos:
         entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/test-file-adjacency.sh'
         language: system
         files: ^scripts/dev/test-file-adjacency\.sh$
+        pass_filenames: false
+
+      - id: no-future-annotations
+        name: no new from __future__ import annotations (Python 3.14)
+        entry: bash scripts/dev/no-future-annotations.sh
+        language: system
+        files: \.py$
+        pass_filenames: false
+        stages: [pre-commit]
+
+      - id: no-future-annotations-self-test
+        name: no-future-annotations self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/no-future-annotations.sh'
+        language: system
+        files: ^scripts/dev/no-future-annotations\.sh$
         pass_filenames: false
 
       - id: test-tiers-line-check-self-test

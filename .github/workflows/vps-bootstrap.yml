@@ -140,8 +140,10 @@ jobs:
           # The bootstrap script arrives on stdin, so it cannot read files
           # next to itself. Stream the unit files and the failure-alert script
           # (installed to /opt/hermes/bin, #364) to a fixed path first; the
-          # script installs them and deletes the directory.
-          remote='rm -rf /var/tmp/hermes-bootstrap && install -d -m 0700 /var/tmp/hermes-bootstrap && tar -xf - -C /var/tmp/hermes-bootstrap'
+          # script installs them and deletes the directory. /var/lib, not the
+          # world-writable tmp dir: there another local user could create the
+          # directory between rm and install -d and plant units root installs.
+          remote='rm -rf /var/lib/hermes-bootstrap && install -d -m 0700 /var/lib/hermes-bootstrap && tar -xf - -C /var/lib/hermes-bootstrap'
           tar -C deploy -cf - systemd hermes-notify-failure.sh hermes-notify-crash.sh | ssh -i ~/.ssh/vps_id -o StrictHostKeyChecking=yes "$VPS_SSH_USER@$VPS_SSH_HOST" "$remote"
 
       - name: Run bootstrap script on VPS

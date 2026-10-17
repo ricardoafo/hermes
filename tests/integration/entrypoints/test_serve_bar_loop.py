@@ -42,6 +42,7 @@ from hermes.application.signal_notifier import SignalNotifier
 from hermes.domain.errors import ExchangeError
 from hermes.domain.events.bar_processed import BarProcessed
 from hermes.domain.events.base import DomainEvent
+from hermes.domain.events.risk_halt_recorded import RiskHaltRecorded
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.pair import Pair
@@ -105,7 +106,7 @@ def test_scripted_bars_emit_exactly_one_signal_and_one_notification_per_channel(
     feed = FakeFeed(warm=history(10), live_bars=live(11, 12))
     telegram, slack = RecordingChannel(), RecordingChannel()
 
-    code = run_once(build(db, feed, _after(12), telegram=telegram, slack=slack), feed)
+    code = run_once(build(db, feed, _after(11), telegram=telegram, slack=slack), feed)
 
     assert (
         code,
@@ -173,18 +174,21 @@ def test_notifier_outage_does_not_stop_the_loop(tmp_path: Path, captured: list[E
     """Telegram failing is logged and captured; Slack is still notified; the next bar is handled.
 
     The next bar pushes the entry to Telegram again (#854), so the outage is
-    captured twice; Slack, which took the first push, is not pushed again.
+    captured twice; Slack, which took the first push, is not pushed again. The
+    entry fills on the fresh bar-close book, so no halt alert goes out.
     """
     db = tmp_path / "ledger.sqlite3"
     feed = FakeFeed(warm=history(10), live_bars=live(11, 12))
     outage = TelegramNotifierError("telegram is down")
     telegram, slack = RecordingChannel(raises=outage), RecordingChannel()
 
-    code = run_once(build(db, feed, _after(12), telegram=telegram, slack=slack), feed)
+    code = run_once(build(db, feed, _after(11), telegram=telegram, slack=slack), feed)
 
-    assert (code, signal_kinds(slack), captured, _cursor(db, KlineInterval.H4)) == (
+    halts = [e.rule for e in slack.seen if isinstance(e, RiskHaltRecorded)]
+    assert (code, signal_kinds(slack), halts, captured, _cursor(db, KlineInterval.H4)) == (
         0,
         ["entry"],
+        [],
         [outage, outage],
         h4_bar(12).close_time,
     )
@@ -212,7 +216,7 @@ def test_a_notifier_bug_does_not_stop_serve_and_the_push_is_retried_on_the_next_
     feed = FakeFeed(warm=history(10), live_bars=live(11, 12))
     telegram, slack = _FailsFirst(), RecordingChannel()
 
-    code = run_once(build(db, feed, _after(12), telegram=telegram, slack=slack), feed)
+    code = run_once(build(db, feed, _after(11), telegram=telegram, slack=slack), feed)
 
     assert (
         code,
@@ -254,10 +258,14 @@ def test_restart_over_same_history_emits_nothing_new(tmp_path: Path) -> None:
     )
 
 
-def test_signal_missed_during_downtime_is_emitted_once_across_two_restarts(
+def test_an_entry_missed_during_downtime_is_announced_on_neither_restart(
     tmp_path: Path,
 ) -> None:
-    """An entry that closed while down is notified once, not again on the next boot."""
+    """An entry that closed while down is recorded once and never announced (#708).
+
+    Caught up after the fact it meets only the stale bar-close book, so RO-04
+    halts it: no trade happened, and neither boot pushes an ENTRY for it.
+    """
     db = tmp_path / "ledger.sqlite3"
     boot1 = FakeFeed(warm=history(10))
     run_once(build(db, boot1, _after(10)), boot1)
@@ -272,7 +280,7 @@ def test_signal_missed_during_downtime_is_emitted_once_across_two_restarts(
         [k for k, _ in _signals(db)],
         signal_kinds(telegram2),
         signal_kinds(telegram3),
-    ) == (["entry"], ["entry"], [])
+    ) == (["entry"], [], [])
 
 
 def test_restart_between_entry_and_exit_still_emits_exactly_one_exit(tmp_path: Path) -> None:
@@ -393,8 +401,14 @@ def test_first_boot_notifies_nothing_and_writes_the_cursor(tmp_path: Path) -> No
     ) == (0, [], h4_bar(10).close_time, d1_bar(11).close_time)
 
 
-def test_cursor_older_than_history_exits_one(tmp_path: Path, captured: list[Exception]) -> None:
-    """A cursor that predates the warm-up window means bars were lost: BarGapError, exit 1."""
+def test_cursor_older_than_history_reports_the_lost_bars_and_carries_on(
+    tmp_path: Path, captured: list[Exception]
+) -> None:
+    """Downtime past the warm-up window loses bars for good: report them once, then go on.
+
+    Exiting instead would fail every boot the same way, since no history can
+    bring those bars back (#852).
+    """
     db = tmp_path / "ledger.sqlite3"
     connection = sqlite3.connect(db)
     SqliteLedger(connection).append_event(
@@ -405,7 +419,11 @@ def test_cursor_older_than_history_exits_one(tmp_path: Path, captured: list[Exce
 
     code = run_once(build(db, feed, _after(10)), feed)
 
-    assert (code, [type(e) for e in captured]) == (1, [serve_module.BarGapError])
+    assert (code, [type(e) for e in captured], _cursor(db, KlineInterval.H4)) == (
+        0,
+        [serve_module.BarGapError],
+        h4_bar(10).close_time,
+    )
 
 
 def test_bar_gap_exits_one(tmp_path: Path, captured: list[Exception]) -> None:

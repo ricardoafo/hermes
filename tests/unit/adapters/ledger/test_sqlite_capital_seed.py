@@ -6,7 +6,8 @@ Reference: ADR-016 item 4, ADR-003 §00 I-06.
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import closing
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, localcontext
 
@@ -127,9 +128,10 @@ def _gains(conn: sqlite3.Connection, asset: str) -> list[Decimal]:
 
 
 @pytest.fixture
-def conn() -> sqlite3.Connection:
-    """Return a fresh in-memory SQLite connection."""
-    return sqlite3.connect(":memory:")
+def conn() -> Iterator[sqlite3.Connection]:
+    """Yield a fresh in-memory SQLite connection and close it afterwards."""
+    with closing(sqlite3.connect(":memory:")) as connection:
+        yield connection
 
 
 @pytest.fixture
@@ -163,12 +165,15 @@ class TestRecordCapitalSeed:
 
     def test_seed_and_its_event_share_one_commit(self) -> None:
         """Invariant (I-06): the lot, the seed row and the event land in one transaction."""
-        conn = sqlite3.connect(":memory:", factory=CommitCountingConnection)
-        ledger = SqliteLedger(conn)
-        assert isinstance(conn, CommitCountingConnection)
-        before = conn.commit_count
-        _record_seed(ledger)
-        assert (conn.commit_count - before, _event_types(conn)) == (1, ["ShadowCapitalSeeded"])
+        with closing(sqlite3.connect(":memory:", factory=CommitCountingConnection)) as conn:
+            ledger = SqliteLedger(conn)
+            assert isinstance(conn, CommitCountingConnection)
+            before = conn.commit_count
+            _record_seed(ledger)
+            assert (conn.commit_count - before, _event_types(conn)) == (
+                1,
+                ["ShadowCapitalSeeded"],
+            )
 
     def test_second_seed_for_the_strategy_is_refused_and_stores_nothing(
         self, ledger: SqliteLedger, conn: sqlite3.Connection
@@ -310,13 +315,13 @@ class TestQuoteLeg:
         self, ledger: SqliteLedger, conn: sqlite3.Connection
     ) -> None:
         """Invariant (A-2.1): the quote leg does not change BTC lots or consumptions."""
-        plain_conn = sqlite3.connect(":memory:")
-        plain = SqliteLedger(plain_conn)
-        _record_seed(ledger)
-        for target in (ledger, plain):
-            _record(target, _trade(OrderSide.BUY, "0.01", "50000", "0.5", minutes=1))
-            _record(target, _trade(OrderSide.SELL, "0.004", "60000", "0.24", minutes=2))
-        assert _btc_state(conn) == _btc_state(plain_conn)
+        with closing(sqlite3.connect(":memory:")) as plain_conn:
+            plain = SqliteLedger(plain_conn)
+            _record_seed(ledger)
+            for target in (ledger, plain):
+                _record(target, _trade(OrderSide.BUY, "0.01", "50000", "0.5", minutes=1))
+                _record(target, _trade(OrderSide.SELL, "0.004", "60000", "0.24", minutes=2))
+            assert _btc_state(conn) == _btc_state(plain_conn)
 
     def test_pending_trade_leaves_its_quote_consumption_unvalued_until_priced(
         self, ledger: SqliteLedger, conn: sqlite3.Connection

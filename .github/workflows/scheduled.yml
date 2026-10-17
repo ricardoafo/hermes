@@ -9,7 +9,7 @@
 #
 # ## Schedule
 #
-#   30 11 * * *   daily (Europe/Madrid): Semgrep + contract tests
+#   30 11 * * *   daily (Europe/Madrid): Semgrep + contract tests + fresh seeds
 #   45 11 * * 0   Sundays: the cosmic-ray mutation run, e2e tests, remote branch prune
 #
 # 11:30 Madrid time keeps the daily checks in the day, when the
@@ -31,6 +31,11 @@
 #   the unit-tier mocks cannot see.
 # - e2e: the real `hermes serve` composition root replays recorded
 #   Binance bars (tests/e2e). Offline and keyless.
+# - fresh-seeds: 150 new seeds of each generated market path (#869). PR CI
+#   runs the same twenty; a defect that needs a rarer path shows up here.
+#   The start is the day number times 1000, so each day's seeds are new and
+#   a run is reproducible from its date. Failing seeds are filed as one
+#   issue with the rerun command. About 18 CPU-minutes, 4 workers.
 # - mutation: cosmic-ray on the modules in cosmic-ray.toml, with the
 #   kill-rate floor (advisory until #406 enforces it).
 # - branch-prune: deletes remote branches of PRs closed unmerged more
@@ -76,7 +81,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with: { version: "0.12.5" }
       - run: uv tool install semgrep==1.176.1
       - run: uv tool run semgrep scan --config p/security-audit --config p/python --error
@@ -91,7 +96,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with: { version: "0.12.5" }
       - run: uv sync --frozen
 
@@ -106,6 +111,70 @@ jobs:
         # -m contract overrides the `not contract` addopts filter.
         run: uv run pytest tests/contract -m contract --tb=short -p no:cacheprovider
 
+  # Runs on the daily 11:30 trigger, Sundays included; it skips the separate
+  # Sunday 11:45 mutation trigger so it runs once a day, not twice on Sunday.
+  fresh-seeds:
+    name: Fresh scenario seeds
+    if: github.event.schedule != '45 11 * * 0'
+    runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with: { version: "0.12.5" }
+      - run: uv sync --frozen
+
+      - name: Run 150 new seeds of each generator
+        id: seeds
+        shell: bash
+        run: |
+          set -uo pipefail
+          spec="150@$(( $(date -u +%s) / 86400 * 1000 ))"
+          echo "spec=${spec}" >> "$GITHUB_OUTPUT"
+          echo "::notice::HERMES_SCENARIO_SEEDS=${spec}"
+          HERMES_SCENARIO_SEEDS="${spec}" uv run pytest \
+            tests/integration/scenarios/test_generated_paths.py \
+            -k test_every_rule_holds_after_every_bar -n 4 \
+            --tb=short -p no:cacheprovider --junitxml=fresh-seeds.xml || true
+
+      - name: File failing seeds
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SPEC: ${{ steps.seeds.outputs.spec }}
+        run: |
+          set -uo pipefail
+          uv run python scripts/dev/fresh-seed-report.py fresh-seeds.xml "${SPEC}" > issue.md
+          rc=$?
+          if [[ "$rc" == 0 ]]; then
+            echo "Every fresh seed passed."
+            exit 0
+          fi
+          if [[ "$rc" != 1 ]]; then
+            echo "::error::the seed run left no readable report"
+            exit 1
+          fi
+          # The run summary keeps the failing seeds even if filing the issue fails.
+          cat issue.md >> "$GITHUB_STEP_SUMMARY"
+          if gh issue create \
+            --title "test: fresh scenario seeds broke a rule ($(date -u +%F))" \
+            --body-file issue.md \
+            --label type:test --label p2 --label area:domain --label size:s \
+            --milestone "MVP1 — Simulation ready" \
+            --assignee rafo-claude-bot; then
+            echo "::error::fresh seeds failed; filed as an issue"
+          else
+            echo "::error::fresh seeds failed and the issue could not be filed; the failing seeds are in this run's summary"
+          fi
+          exit 1
+
   e2e:
     name: End-to-end tests
     if: github.event.schedule == '45 11 * * 0' || github.event_name == 'workflow_dispatch'
@@ -116,7 +185,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with: { version: "0.12.5" }
       - run: uv sync --frozen
 
@@ -135,7 +204,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with: { version: "0.12.5" }
 
       - name: Sync dev deps (frozen)
@@ -171,7 +240,7 @@ jobs:
 
       - name: Upload session + report as artifact
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: cosmic-ray-session
           path: |
@@ -195,6 +264,24 @@ jobs:
             echo "::error::Kill rate ${kill}% below floor ${floor}%"
             exit 1
           fi
+
+  freshness:
+    name: Tool freshness report
+    if: >-
+      github.event.schedule == '45 11 * * 0' ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      # Pins Dependabot cannot update; the report lands in the run summary
+      # and as one warning per stale pin. Read-only (#906).
+      - name: Report pins behind their latest release
+        run: python3 scripts/dev/freshness-check.py
 
   branch-prune:
     name: Prune stale remote branches

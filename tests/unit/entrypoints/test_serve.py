@@ -7,7 +7,10 @@ Verifies:
   the ledger to ``SignalEmitted`` and ``BarProcessed``, and ``AnomalyDetected``
   to the ledger only (record-only, #136);
 - ``check_startup`` refuses a roster, universe, interval set or prod
-  credential set the shadow loop cannot run safely;
+  credential set the shadow loop cannot run safely, and a pre-registered
+  strategy whose exit pricing is not its own (v2-strategy-config D-3);
+- the shadow executor prices with the enabled roster entry's execution
+  model, v1's stop-order or v2's bar close (v2-strategy-config D-1);
 - ``SHADOW_UNIVERSE`` mirrors pre-registration §3;
 - the loop skips a repeated bar, raises on a skipped one and seeds warm-up
   history in delivery order (daily bar before the 4h bar at equal close);
@@ -44,8 +47,9 @@ from hermes.adapters.notifier.telegram_adapter import TelegramAdapter
 from hermes.application.backtest.replay import ExecutionModel as ReplayExecutionModel
 from hermes.application.calibration.certification_gates import CertificationRecord
 from hermes.application.calibration.lifecycle import CertificationState
+from hermes.application.execution.prereg_book import ExecutionModel, ExitPricing
 from hermes.application.strategy_protocol.preregistration import PreRegistration
-from hermes.domain.errors import ExchangeError, LedgerError
+from hermes.domain.errors import ExchangeError, InfraError, LedgerError
 from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
 from hermes.domain.events.bar_processed import BarProcessed
 from hermes.domain.events.event_bus import EventBus
@@ -72,6 +76,7 @@ from tests.support.serve_loop import (
     BASE,
     BTC,
     FakeFeed,
+    RecordingChannel,
     UnavailableBooks,
     build,
     d1_bar,
@@ -89,6 +94,26 @@ _SLACK_ENV = {
     "HERMES_SLACK__BOT_TOKEN": "xoxb-fake",  # gitleaks:allow
     "HERMES_SLACK__DEFAULT_CHANNEL": "C1",
 }
+
+
+_V2_ENABLED_ENV = {
+    "HERMES_STRATEGIES__STRATEGIES__0__ENABLED": "false",
+    "HERMES_STRATEGIES__STRATEGIES__1__ENABLED": "true",
+}
+"""Swap the shipped roster to v2: v1 (entry 0) off, swing-mvp1-v2 (entry 1) on."""
+
+
+def _with_pricing(config: HermesConfig, index: int, pricing: ExitPricing) -> HermesConfig:
+    """Return ``config`` with roster entry ``index`` priced ``pricing``."""
+    entries = list(config.strategies.strategies)
+    entries[index] = entries[index].model_copy(update={"exit_pricing": pricing})
+    return config.model_copy(update={"strategies": StrategiesConfig(strategies=entries)})
+
+
+@pytest.fixture
+def v2_config() -> HermesConfig:
+    """Load the shipped ``config/`` with swing-mvp1-v2 enabled in place of v1."""
+    return load_config(_PROJECT_ROOT / "config", env=_V2_ENABLED_ENV)
 
 
 @pytest.fixture
@@ -109,7 +134,10 @@ class TestBuildComposition:
     ) -> None:
         """Every field of Composition is an instance of the expected concrete adapter."""
         composition = serve_module.build_composition(
-            shadow_config, db_path=tmp_path / "test.sqlite3", env={}
+            shadow_config,
+            db_path=tmp_path / "test.sqlite3",
+            env={},
+            new_ledger=True,
         )
         try:
             assert isinstance(composition.ledger, SqliteLedger)
@@ -126,7 +154,11 @@ class TestBuildComposition:
     ) -> None:
         """Three pairs get three separate adapters, all under swing-donchian-4h (D-7)."""
         composition = serve_module.build_composition(
-            shadow_config, db_path=tmp_path / "test.sqlite3", env={}, feed=FakeFeed()
+            shadow_config,
+            db_path=tmp_path / "test.sqlite3",
+            env={},
+            feed=FakeFeed(),
+            new_ledger=True,
         )
         try:
             strategies = list(composition.strategies.values())
@@ -144,7 +176,11 @@ class TestBuildComposition:
     ) -> None:
         """Both loop events have exactly one subscriber: the ledger."""
         composition = serve_module.build_composition(
-            shadow_config, db_path=tmp_path / "test.sqlite3", env={}, feed=FakeFeed()
+            shadow_config,
+            db_path=tmp_path / "test.sqlite3",
+            env={},
+            feed=FakeFeed(),
+            new_ledger=True,
         )
         try:
             counts = (
@@ -161,7 +197,11 @@ class TestBuildComposition:
         """#136: one AnomalyDetected subscriber, and publishing one writes one ledger row."""
         db = tmp_path / "test.sqlite3"
         composition = serve_module.build_composition(
-            shadow_config, db_path=db, env={}, feed=FakeFeed()
+            shadow_config,
+            db_path=db,
+            env={},
+            feed=FakeFeed(),
+            new_ledger=True,
         )
         try:
             count = composition.event_bus.subscriber_count(AnomalyDetected)
@@ -187,6 +227,7 @@ class TestBuildComposition:
             db_path=tmp_path / "test.sqlite3",
             env={**_TELEGRAM_ENV, **_SLACK_ENV},
             feed=FakeFeed(),
+            new_ledger=True,
         )
         try:
             assert isinstance(composition.telegram, TelegramAdapter)
@@ -263,6 +304,20 @@ class TestMainnetNeedsLiveApproval:
         store = self._store_with(tmp_path, CertificationState.LIVE_APPROVED, fingerprint)
         serve_module.check_startup(config, _TELEGRAM_ENV, certification_store=store)
 
+    # SEV-1: a v1 live approval must never unlock real capital for v2 (ADR-014)
+    def test_a_v1_approval_does_not_start_v2_on_mainnet(
+        self, v2_config: HermesConfig, tmp_path: Path
+    ) -> None:
+        """With v2 enabled the approval is read for swing-mvp1-v2, which has no record."""
+        config = self._mainnet(v2_config)
+        fingerprint = serve_module.parameter_fingerprint_for(config)
+        store = self._store_with(tmp_path, CertificationState.LIVE_APPROVED, fingerprint)
+
+        with pytest.raises(
+            serve_module.StartupError, match="'swing-mvp1-v2' but no certification record"
+        ):
+            serve_module.check_startup(config, _TELEGRAM_ENV, certification_store=store)
+
     def test_shadow_does_not_read_the_store(
         self, shadow_config: HermesConfig, tmp_path: Path
     ) -> None:
@@ -305,7 +360,11 @@ class TestPortfolioRebuiltOnStartup:
         _record_trade(db_path, TradeSide.BUY, "01J9Z8T3M5BQR2FVKN4XWY6PH1")
         fresh = tmp_path / "fresh.sqlite3"
         baseline = serve_module.build_composition(
-            shadow_config, db_path=fresh, env={}, feed=FakeFeed()
+            shadow_config,
+            db_path=fresh,
+            env={},
+            feed=FakeFeed(),
+            new_ledger=True,
         )
         composition = serve_module.build_composition(
             shadow_config, db_path=db_path, env={}, feed=FakeFeed()
@@ -326,6 +385,30 @@ class TestPortfolioRebuiltOnStartup:
         db_path = tmp_path / "test.sqlite3"
         _record_trade(db_path, TradeSide.SELL, "01J9Z8T3M5BQR2FVKN4XWY6PH7")
         with pytest.raises(serve_module.StartupError, match="01J9Z8T3M5BQR2FVKN4XWY6PH7"):
+            serve_module.build_composition(shadow_config, db_path=db_path, env={}, feed=FakeFeed())
+
+    def test_a_file_that_is_not_a_ledger_raises_startup_error_naming_it(
+        self, shadow_config: HermesConfig, tmp_path: Path
+    ) -> None:
+        """A corrupt ledger stops startup with a message naming the file, not a raw sqlite error."""
+        db_path = tmp_path / "test.sqlite3"
+        db_path.write_bytes(b"not a database " * 300)
+        with pytest.raises(serve_module.StartupError, match="cannot be opened as a SQLite ledger"):
+            serve_module.build_composition(shadow_config, db_path=db_path, env={}, feed=FakeFeed())
+
+    def test_a_ledger_a_newer_release_migrated_raises_startup_error_naming_the_migration(
+        self, shadow_config: HermesConfig, tmp_path: Path
+    ) -> None:
+        """Old code refuses a schema it does not know instead of writing to it (issue #856)."""
+        db_path = tmp_path / "test.sqlite3"
+        conn = sqlite3.connect(db_path)
+        try:
+            SqliteLedger(conn)
+            conn.execute("INSERT INTO schema_migrations (filename) VALUES ('9999_newer.sql')")
+            conn.commit()
+        finally:
+            conn.close()
+        with pytest.raises(serve_module.StartupError, match=r"9999_newer\.sql"):
             serve_module.build_composition(shadow_config, db_path=db_path, env={}, feed=FakeFeed())
 
     def test_a_ledger_read_failure_raises_startup_error(
@@ -385,6 +468,39 @@ class TestCheckStartup:
     ) -> None:
         """Prod needs only one channel configured."""
         serve_module.check_startup(shadow_config.model_copy(update={"env": "prod"}), env)
+
+    def test_v2_enabled_alone_with_its_close_based_pricing_is_accepted(
+        self, v2_config: HermesConfig
+    ) -> None:
+        """The shipped v2 entry, enabled in place of v1, may run in shadow."""
+        serve_module.check_startup(v2_config, {})
+
+    def test_v2_priced_as_a_stop_order_is_refused(self, v2_config: HermesConfig) -> None:
+        """v2 priced like v1 would trade and measure drift off its signed §6.2 price."""
+        config = _with_pricing(v2_config, 1, ExitPricing.STOP_ORDER)
+
+        with pytest.raises(
+            serve_module.StartupError, match=r"swing-mvp1-v2 must price its exits bar_close"
+        ):
+            serve_module.check_startup(config, {})
+
+    def test_v1_priced_at_the_bar_close_is_refused(self, shadow_config: HermesConfig) -> None:
+        """v1 priced at the bar close would trade off its signed stop-market price."""
+        config = _with_pricing(shadow_config, 0, ExitPricing.BAR_CLOSE)
+
+        with pytest.raises(
+            serve_module.StartupError, match=r"swing-donchian-4h must price its exits stop_order"
+        ):
+            serve_module.check_startup(config, {})
+
+    def test_v1_and_v2_enabled_together_are_refused(self, shadow_config: HermesConfig) -> None:
+        """Serve runs one strategy at a time: both pre-registered entries enabled is refused."""
+        v1, v2 = shadow_config.strategies.strategies
+        both = [v1, v2.model_copy(update={"enabled": True})]
+        config = shadow_config.model_copy(update={"strategies": StrategiesConfig(strategies=both)})
+
+        with pytest.raises(serve_module.StartupError, match="enabled strategies"):
+            serve_module.check_startup(config, {})
 
     def test_other_pairs_are_refused(self, shadow_config: HermesConfig) -> None:
         """Followed pairs must be the pre-registered three."""
@@ -549,6 +665,51 @@ class TestBarLoop:
         with pytest.raises(serve_module.BarGapError, match="expected the bar opening at"):
             asyncio.run(loop.handle(h4_bar(2)))
         composition.sqlite_connection.close()
+
+    def _catching_up_with_telegram(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, telegram: RecordingChannel
+    ) -> tuple[serve_module.Composition, serve_module._BarLoop, list[Exception]]:
+        """Return a loop in its boot catch-up with ``telegram`` wired and Sentry recorded."""
+        sentry: list[Exception] = []
+        monkeypatch.setattr(serve_module.sentry_integration, "capture", sentry.append)
+        composition = dataclasses.replace(
+            build(tmp_path / "test.sqlite3", FakeFeed(), BASE),
+            telegram=telegram,  # type: ignore[arg-type]
+        )
+        loop = serve_module._BarLoop(composition, catching_up=True)
+        return composition, loop, sentry
+
+    def test_a_gap_in_the_boot_catch_up_is_handled_past_and_alerted_once(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A bar still missing after a restart cannot crash-loop serve; Telegram and Sentry hear."""
+        telegram = RecordingChannel()
+        composition, loop, sentry = self._catching_up_with_telegram(tmp_path, monkeypatch, telegram)
+        asyncio.run(loop.handle(h4_bar(0)))
+        asyncio.run(loop.handle(h4_bar(2)))
+        composition.sqlite_connection.close()
+
+        assert (
+            len(events(tmp_path / "test.sqlite3", "BarProcessed")),
+            [(type(e), getattr(e, "source", None)) for e in telegram.seen],
+            [type(e) for e in sentry],
+        ) == (2, [(AnomalyDetected, "serve.bar_gap")], [serve_module.BarGapError])
+
+    def test_a_failed_gap_alert_does_not_stop_the_boot_catch_up(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Telegram being down is logged; the bar after the gap is still handled."""
+        telegram = RecordingChannel(raises=InfraError("telegram down"))
+        composition, loop, _ = self._catching_up_with_telegram(tmp_path, monkeypatch, telegram)
+        asyncio.run(loop.handle(h4_bar(0)))
+        with capture_logs() as logs:
+            asyncio.run(loop.handle(h4_bar(2)))
+        composition.sqlite_connection.close()
+
+        assert (
+            len(events(tmp_path / "test.sqlite3", "BarProcessed")),
+            [line["event"] for line in logs if line["log_level"] == "error"],
+        ) == (2, ["serve.bar.gap_passed_over", "serve.bar.gap_alert_failed"])
 
     def test_each_stream_has_its_own_contiguity(self, tmp_path: Path) -> None:
         """A 1d bar does not count as the 4h stream's previous bar."""
@@ -760,7 +921,11 @@ class TestFillKernelWiring:
     ) -> None:
         """Without an override the executor walks Binance public depth."""
         composition = serve_module.build_composition(
-            shadow_config, db_path=tmp_path / "test.sqlite3", env={}, feed=FakeFeed()
+            shadow_config,
+            db_path=tmp_path / "test.sqlite3",
+            env={},
+            feed=FakeFeed(),
+            new_ledger=True,
         )
         try:
             assert isinstance(composition.orderbooks, BinanceDepthSnapshotAdapter)
@@ -776,6 +941,32 @@ class TestFillKernelWiring:
         composition.sqlite_connection.close()
 
         assert type(composition.executor.model) is ReplayExecutionModel
+
+    def test_the_v1_executor_prices_stop_exits_as_a_stop_order(
+        self, shadow_config: HermesConfig, tmp_path: Path
+    ) -> None:
+        """The shipped roster runs v1, so serve's §6.2 model is v1's, unchanged."""
+        composition = build(tmp_path / "test.sqlite3", FakeFeed(), BASE)
+        composition.sqlite_connection.close()
+
+        assert composition.executor.model == ExecutionModel(exit_pricing=ExitPricing.STOP_ORDER)
+
+    def test_the_v2_executor_prices_every_exit_at_the_bar_close(
+        self, v2_config: HermesConfig, tmp_path: Path
+    ) -> None:
+        """With v2 enabled serve's §6.2 model is the one the v2 backtest prices with."""
+        composition = serve_module.build_composition(
+            v2_config,
+            db_path=tmp_path / "test.sqlite3",
+            env={},
+            feed=FakeFeed(),
+            orderbooks=UnavailableBooks(),
+            new_ledger=True,
+        )
+        composition.sqlite_connection.close()
+
+        assert composition.executor.model == v2_config.strategies.strategies[1].execution_model()
+        assert composition.executor.model.exit_pricing is ExitPricing.BAR_CLOSE
 
     def test_startup_refuses_a_release_without_the_experiment_files(
         self, shadow_config: HermesConfig, tmp_path: Path
@@ -801,6 +992,7 @@ class TestFillKernelWiring:
                 env={},
                 feed=FakeFeed(),
                 experiment_root=tmp_path,
+                new_ledger=True,
             )
 
     def test_run_closes_the_depth_source(self, tmp_path: Path) -> None:
@@ -837,3 +1029,81 @@ class _FixedEntryCheckStrategy(SwingStrategyAdapter):
     def last_entry_check(self) -> EntryCheck | None:
         """Return the fixed record."""
         return self._check
+
+
+def _shut(composition: serve_module.Composition) -> None:
+    """Close the ledger and release the serve lock, as a stopped serve does."""
+    composition.sqlite_connection.close()
+    if composition.serve_lock is not None:
+        composition.serve_lock.release()
+
+
+def _with_capital(config: HermesConfig, amount: str) -> HermesConfig:
+    entry = config.strategies.strategies[0].model_copy(update={"capital_budget": Decimal(amount)})
+    return config.model_copy(update={"strategies": StrategiesConfig(strategies=[entry])})
+
+
+class TestLedgerAndSeedGuards:
+    """Serve refuses a missing ledger and a capital that differs from its seed (issue #876)."""
+
+    # SEV-1: no rubric row matches; a wrong --db must not drop the open positions
+    def test_a_missing_ledger_is_refused_and_not_created(
+        self, shadow_config: HermesConfig, tmp_path: Path
+    ) -> None:
+        """Without --new-ledger a ledger path that does not exist stops startup, naming it."""
+        db_path = tmp_path / "unmounted" / "hermes.sqlite3"
+        with pytest.raises(serve_module.StartupError) as refused:
+            serve_module.build_composition(shadow_config, db_path=db_path, env={}, feed=FakeFeed())
+        assert (str(refused.value).startswith(f"no ledger at {db_path}"), db_path.exists()) == (
+            True,
+            False,
+        )
+
+    def test_new_ledger_creates_the_ledger_and_records_the_seed(
+        self, shadow_config: HermesConfig, tmp_path: Path
+    ) -> None:
+        """With --new-ledger the first boot creates the ledger and seeds the configured capital."""
+        db_path = tmp_path / "hermes.sqlite3"
+        composition = serve_module.build_composition(
+            shadow_config, db_path=db_path, env={}, feed=FakeFeed(), new_ledger=True
+        )
+        try:
+            seed = composition.ledger.capital_seed(StrategyId("swing-donchian-4h"))
+        finally:
+            _shut(composition)
+        assert (db_path.exists(), seed.amount.amount if seed else None) == (True, Decimal(5000))
+
+    # SEV-1: no rubric row matches; sizing must use the cash the ledger recorded
+    def test_a_capital_that_differs_from_the_recorded_seed_is_refused_naming_both(
+        self, shadow_config: HermesConfig, tmp_path: Path
+    ) -> None:
+        """A capital_budget changed after the first boot stops startup with both amounts."""
+        db_path = tmp_path / "hermes.sqlite3"
+        _shut(
+            serve_module.build_composition(
+                shadow_config, db_path=db_path, env={}, feed=FakeFeed(), new_ledger=True
+            )
+        )
+        with pytest.raises(serve_module.StartupError) as refused:
+            serve_module.build_composition(
+                _with_capital(shadow_config, "6000"), db_path=db_path, env={}, feed=FakeFeed()
+            )
+        assert str(refused.value).startswith(
+            "capital_budget 6000 USDT differs from the 5000 USDT seed this ledger recorded"
+        )
+
+    def test_the_same_capital_written_differently_still_boots(
+        self, shadow_config: HermesConfig, tmp_path: Path
+    ) -> None:
+        """5000 and 5000.00 are the same capital, so the second boot goes ahead."""
+        db_path = tmp_path / "hermes.sqlite3"
+        _shut(
+            serve_module.build_composition(
+                shadow_config, db_path=db_path, env={}, feed=FakeFeed(), new_ledger=True
+            )
+        )
+        composition = serve_module.build_composition(
+            _with_capital(shadow_config, "5000.00"), db_path=db_path, env={}, feed=FakeFeed()
+        )
+        _shut(composition)
+        assert composition.tracker.state().current_value == Decimal(5000)

@@ -1,0 +1,1 @@
+- Console: the Signals screen (tab 2) shows the week's bar checks per coin as a heat grid of how many entry rules held, the last check's rules as yes or no, the week's counts and the frozen rules. Rules show as yes or no only, never a price or how close a rule came (#714).

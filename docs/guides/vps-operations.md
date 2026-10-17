@@ -376,6 +376,18 @@ box.
    point is prepared only while nothing is mounted on it: `chown` on a
    live SSHFS mount fails even as root.
 
+On a brand-new VPS there is no ledger yet, and `hermes serve` refuses a
+missing ledger unless it is started with `--new-ledger` (issue #876), so a
+wrong `--db` or an unmounted disk can never start a fresh, flat one. After
+the first deploy installs the release, create the ledger once with
+`hermes_run` (see "Check on hermes"), stop it with Ctrl+C once it logs
+`serve.capital_seeded`, then start the unit:
+
+```bash
+hermes_run serve --config-dir /opt/hermes/current/config --db /var/lib/hermes/hermes.sqlite3 --new-ledger
+sudo systemctl start hermes.service
+```
+
 Idempotent: every step checks state before it acts, so re-dispatch is
 safe. A re-dispatch does not re-render the env file, so it does not
 pick up a changed secret: edit `/etc/hermes/env.production` on the box,
@@ -509,6 +521,11 @@ hermes_run logs --cycle K7Q2ZP     # one bar cycle, by the tail of its correlati
 hermes_run logs -f                 # follow, Ctrl-C to stop
 ```
 
+The env file sets `HERMES_ENV=prod`, and in prod any command that loads the
+config needs an absolute `--config-dir` (here `/opt/hermes/current/config`).
+Without it the command stops with `config dir 'config' is relative`, because
+the working directory must never choose the production config (#783).
+
 - `hermes status`: the verdict (all good, late, down), then each stream's
   last and next bar. Exit 0 only when all good.
 - `hermes positions`: open shadow positions.
@@ -584,7 +601,8 @@ systemctl start hermes.service
   to confirm; `--confirm START` is that confirmation.
 - The confirmed call refuses while `hermes.service` runs. It copies the
   ledger read-only to `/var/lib/hermes/archive/<run id>/`, checks the copy,
-  removes the ledger (serve creates a fresh one on start), and writes
+  replaces the ledger with an empty one (serve records the capital seed on
+  its first start; it refuses a missing ledger), and writes
   `/var/lib/hermes/runs/<run id>.json` with the engine version, release and
   the config, pre-registration and data manifest hashes.
 - It prints a lab notebook entry: commit it to
@@ -649,6 +667,21 @@ D-08): no link, code fence, secret-shaped string or outcome word, and every
 number and reference must exist in what the tools returned. If free text
 such as a decision title fails the gate, the digest of states and counts is
 printed instead and the gate's reasons go to stderr as one JSON line.
+
+`brief --keep` also appends the published brief (the full one, or the digest
+when the gate refused it) to `briefs.jsonl` beside the ledger, once per kind
+and UTC day, so the console's Briefs screen lists earlier days. The file holds
+exactly the text that passed the gate and nothing recomposed later. A second
+run the same day keeps the first brief; a run that cannot write exits 1.
+`--briefs FILE` moves the archive.
+
+`hermes-brief.timer` runs it daily at 07:15 Madrid time as the `hermes` user,
+with the six source grants and no env file. `vps-bootstrap` installs it and
+leaves it off, as for the tax pack:
+
+```bash
+sudo systemctl enable --now hermes-brief.timer
+```
 
 ```mermaid
 flowchart LR

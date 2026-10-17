@@ -24,11 +24,13 @@ from hermes.application.console import (
     PortfolioSummary,
     PositionDetail,
     PositionRow,
+    RuleCheck,
     ShadowTest,
     ViewNotAvailableError,
     WatchedPair,
 )
 from hermes.application.console.shadow_screen import ShadowEvidence
+from hermes.application.console.views import ConsoleBrief
 from hermes.domain.errors import LedgerError
 from hermes.entrypoints.tui import HomeApp
 
@@ -68,6 +70,9 @@ class _Failing:
     def activity(self, *, include_quiet: bool = False) -> tuple[ActivityDay, ...]:
         return self._base.activity(include_quiet=include_quiet)
 
+    def rule_checks(self) -> tuple[RuleCheck, ...]:
+        return self._base.rule_checks()
+
     def shadow_test(self) -> ShadowTest:
         self._raise("shadow")
         return self._base.shadow_test()
@@ -80,6 +85,10 @@ class _Failing:
         # The 90-day line reads its day 0 through this (issue #718).
         self._raise("shadow")
         return self._base.shadow_evidence(since)
+
+    def briefs(self) -> tuple[ConsoleBrief, ...]:
+        self._raise("briefs")
+        return self._base.briefs()
 
 
 def _model(**errors: Exception) -> ConsoleReadModel:

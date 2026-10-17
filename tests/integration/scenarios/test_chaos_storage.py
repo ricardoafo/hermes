@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import errno
+import io
 import sqlite3
 import threading
 from collections.abc import Callable
@@ -30,7 +31,7 @@ from hermes.domain.errors import LedgerError
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.entrypoints import serve as serve_module
-from hermes.entrypoints.commands.serve import serve_main
+from hermes.entrypoints.commands.serve import EXIT_LEDGER_IN_USE, serve_main
 from tests.integration.scenarios import markets
 from tests.integration.scenarios.conftest import RunScenario
 from tests.integration.scenarios.faults import (
@@ -53,7 +54,7 @@ _TRADE_EVENT_WRITE = 9
 """The ``INSERT events`` of TradeExecuted, inside the BUY's transaction on the breakout bar."""
 
 _LOCK_HELD_SECONDS = 0.3
-"""How long another process holds the write lock: well under serve's 5 s busy wait."""
+"""How long another process holds the write lock: well under serve's 10 s busy wait."""
 
 
 def _is_breakout(scenario: markets.Scenario) -> Callable[[Bar], bool]:
@@ -89,7 +90,7 @@ def _boot_through_serve_main(db: Path) -> tuple[int, list[dict[str, Any]]]:
 
     with capture_logs() as logs, pytest.MonkeyPatch.context() as patch:
         patch.setattr(serve_module, "run", loop_must_not_start)
-        code = asyncio.run(serve_main(harness.production_config(), db_path=db))
+        code = asyncio.run(serve_main(harness.production_config(), db_path=db, new_ledger=True))
     return code, [dict(line) for line in logs]
 
 
@@ -317,11 +318,6 @@ async def _serve_until_idle(db: Path, scenario: markets.Scenario, clock: SimCloc
     return await task
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="issue #855: no single-instance lock, so a second serve runs on a ledger in use",
-)
 def test_a_second_serve_on_a_ledger_in_use_refuses_to_run(tmp_path: Path) -> None:
     """While one serve runs, a second on the same ledger handles no bar.
 
@@ -356,11 +352,54 @@ def test_a_second_serve_on_a_ledger_in_use_refuses_to_run(tmp_path: Path) -> Non
     assert handled_by_second == 0
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="issue #856: older code on a newer ledger boots and writes without a word",
-)
+def test_hermes_serve_on_a_ledger_in_use_exits_with_the_refusal_code(tmp_path: Path) -> None:
+    """``hermes serve`` on a ledger another serve holds exits 4 and names the ledger.
+
+    A distinct code lets the operator (and the journal) tell "already running"
+    apart from a crash (1) or a bad config (3).
+    """
+    scenario = markets.chandelier_exit()
+    db = tmp_path / "ledger.sqlite3"
+    clock = SimClock(scenario.live_from, scenario.breakout_at)
+    first = harness.compose(
+        harness.production_config(), db, _fake_exchange(scenario, clock), RecordingChannel()
+    )
+    err = io.StringIO()
+    try:
+        code = asyncio.run(serve_main(harness.production_config(), db_path=db, err=err))
+    finally:
+        asyncio.run(serve_module.run(first, _already_set()))
+    assert (code, f"another hermes serve is running on {db}" in err.getvalue()) == (
+        EXIT_LEDGER_IN_USE,
+        True,
+    )
+
+
+def test_the_serve_lock_is_released_when_the_first_serve_exits(tmp_path: Path) -> None:
+    """Once the first serve has stopped, the next serve on the same ledger boots."""
+    scenario = markets.chandelier_exit()
+    db = tmp_path / "ledger.sqlite3"
+
+    def boot() -> serve_module.Composition:
+        clock = SimClock(scenario.live_from, scenario.breakout_at)
+        return harness.compose(
+            harness.production_config(), db, _fake_exchange(scenario, clock), RecordingChannel()
+        )
+
+    with capture_logs():
+        asyncio.run(serve_module.run(boot(), _already_set()))
+        second = boot()
+        asyncio.run(serve_module.run(second, _already_set()))
+    assert second.serve_lock is not None
+    assert second.serve_lock.held is False
+
+
+def _already_set() -> asyncio.Event:
+    event = asyncio.Event()
+    event.set()
+    return event
+
+
 def test_serve_refuses_a_ledger_a_newer_release_has_migrated(
     run_scenario: RunScenario, tmp_path: Path
 ) -> None:

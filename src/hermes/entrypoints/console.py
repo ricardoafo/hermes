@@ -46,6 +46,7 @@ __all__ = [
     "DemoSplit",
     "LiveReadModelUnavailableError",
     "apply_demo_flag",
+    "config_allow_mainnet",
     "console_commands",
     "default_config_dir",
     "default_db_path",
@@ -230,10 +231,16 @@ def resolve_read_model(
     demo = demo_read_model(demo_flag=demo_flag, env=env)
     if demo is not None:
         return demo
+    from hermes.entrypoints.supervisor import desk_briefs  # noqa: PLC0415 - it imports this module
+
     if db_path is None:
         db_path = default_db_path(env)
     try:
-        return LedgerReadModel.open(db_path, journal=journal_window_lines)
+        return LedgerReadModel.open(
+            db_path,
+            journal=journal_window_lines,
+            briefs=desk_briefs(db_path, config_dir=default_config_dir(env)),
+        )
     except FileNotFoundError:
         msg = (
             f"there is no ledger at {db_path} to read; "
@@ -383,6 +390,32 @@ def shadow_sources(
             strategy_id=roster_strategy_id(env),
         )
     return ShadowSources()
+
+
+def config_allow_mainnet(env: Mapping[str, str]) -> bool | None:
+    """Return the config's ``allow_mainnet``, loaded the way ``hermes serve`` loads it.
+
+    The console's top bar shows it (issue #833) and never hardcodes it. The
+    whole config is loaded and validated, as serve does, from the console's
+    config dir (``HERMES_CONFIG_DIR`` or ``./config``) with ``env`` as the
+    environment, so ``HERMES_ALLOW_MAINNET`` and ``HERMES_ENV`` count exactly
+    as they do for serve (``--vps`` sources the service's env file first).
+
+    Args:
+        env: Environment snapshot.
+
+    Returns:
+        ``True`` or ``False`` as the config says, or ``None`` when the config
+        cannot be loaded (missing, invalid, or mainnet set outside prod), so
+        the screen says the state is unknown instead of guessing "off".
+    """
+    from hermes.infrastructure.config.errors import ConfigError  # noqa: PLC0415 - slow import
+    from hermes.infrastructure.config.loader import load_config  # noqa: PLC0415
+
+    try:
+        return load_config(default_config_dir(env), env=dict(env)).allow_mainnet
+    except ConfigError:
+        return None
 
 
 _JOURNAL_WINDOW_LINES: Final = 20_000

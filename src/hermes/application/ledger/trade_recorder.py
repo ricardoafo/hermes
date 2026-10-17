@@ -12,7 +12,10 @@ Reference: ADR-002 §3, ADR-016 items 3 and 5, change ``trade-eur-values`` R-2.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from hermes.application.ledger.eur_pricer import EurPricer
+from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.trade_executed import TradeExecuted, TradeSide
 from hermes.domain.fx.eur_pricing import fill_date_madrid
 from hermes.domain.trading.fill import Fill
@@ -38,7 +41,7 @@ class TradeRecorder:
         self._ledger = ledger
         self._pricer = pricer
 
-    def record(self, fill: Fill, *, correlation_id: str) -> int:
+    def record(self, fill: Fill, *, correlation_id: str, also: Sequence[DomainEvent] = ()) -> int:
         """Store ``fill`` as a trade row, priced in EUR when the rate is final.
 
         The fill date counts as "today": a rate dated before the fill date is
@@ -48,6 +51,8 @@ class TradeRecorder:
         Args:
             fill: The executed fill.
             correlation_id: Tracing id for the row and its event.
+            also: Further events about the fill, stored in the trade's
+                transaction so a crash never keeps the trade without them.
 
         Returns:
             The trade row id.
@@ -78,4 +83,4 @@ class TradeRecorder:
             fee=fill.fee,
             strategy_id=fill.strategy_id,
         )
-        return self._ledger.record_trade(record, event)
+        return self._ledger.record_trade(record, event, *also)

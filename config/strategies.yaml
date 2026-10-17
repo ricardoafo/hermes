@@ -4,13 +4,18 @@
 # Weights must sum to 1.0 across enabled strategies (validated downstream
 # when the signal engine wires per issue #27).
 #
-# MVP1 runs one swing strategy. `name` is the StrategyId written to events and
-# lots, so it names the variant, not the family. `capital_budget` seeds the
-# portfolio tracker and equals the pre-registered starting capital
-# (pre-registration-v1.md §2); changing it invalidates the run. `sizing` holds
-# the pre-registered limits as shares of that capital: risk per trade and the
-# per-position cap (§5.4), and the total exposure cap across open positions
-# (§5.5).
+# MVP1 runs one swing strategy at a time: serve and the backtest drivers take
+# the one enabled entry, and a driver runs another with `--strategy <name>`.
+# `name` is the StrategyId written to events and lots, so it names the
+# variant, not the family. `capital_budget` seeds the portfolio tracker and
+# equals the pre-registered starting capital (§2); changing it invalidates the
+# run. `sizing` holds the pre-registered limits as shares of that capital: risk
+# per trade and the per-position cap (§5.4), and the total exposure cap across
+# open positions (§5.5). `exit_pricing` is how exits fill in the backtest and
+# in serve: `stop_order` is v1's stop-market (pre-registration-v1.md §5.3),
+# `bar_close` sells every exit 5 bps under the exit bar's close
+# (pre-registration-v2.md §5.3, §6.2). Serve refuses an entry whose pricing is
+# not the one its name pre-registered.
 #
 # Env-override example: set HERMES_STRATEGIES__STRATEGIES__0__ENABLED=false
 # to disable the first strategy without editing this file.
@@ -21,7 +26,18 @@ strategies:
     weight: "1.0"
     capital_budget: "5000" # pre-registration-v1.md §2, in quote units
     quote: USDT
+    exit_pricing: stop_order # pre-registration-v1.md §5.3, §6.2
     sizing:
       risk_pct: "0.01" # pre-registration-v1.md §5.4
       max_position_pct: "0.05" # pre-registration-v1.md §5.4
       max_total_exposure_pct: "0.15" # pre-registration-v1.md §5.5
+  - name: swing-mvp1-v2
+    enabled: false
+    weight: "1.0"
+    capital_budget: "5000" # pre-registration-v2.md §2, in quote units
+    quote: USDT
+    exit_pricing: bar_close # pre-registration-v2.md §5.3, §6.2
+    sizing:
+      risk_pct: "0.01" # pre-registration-v2.md §5.4
+      max_position_pct: "0.05" # pre-registration-v2.md §5.4
+      max_total_exposure_pct: "0.15" # pre-registration-v2.md §5.5

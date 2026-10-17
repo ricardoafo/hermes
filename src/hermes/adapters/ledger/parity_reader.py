@@ -16,10 +16,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Self
 
+from hermes.adapters.ledger.connection import open_ledger
 from hermes.adapters.ledger.sqlite_ledger import (
-    _row_to_bar,
     _signal_from_payload,
     _trades_from_rows,
+    live_bar_from_row,
 )
 from hermes.domain.errors import LedgerError
 from hermes.domain.events.signal_emitted import SignalEmitted
@@ -62,7 +63,7 @@ class SqliteParityReader:
         if not resolved.is_file():
             raise FileNotFoundError(str(path))
         try:
-            connection = sqlite3.connect(f"{resolved.as_uri()}?mode=ro", uri=True)
+            connection = open_ledger(resolved, read_only=True)
         except sqlite3.Error as exc:
             raise LedgerError(msg=f"cannot open {path} read-only: {exc}") from exc
         return cls(connection)
@@ -85,7 +86,7 @@ class SqliteParityReader:
         """Return stored live bars with ``after < close_time <= upto``, oldest first.
 
         Raises:
-            LedgerError: On any SQLite read failure.
+            LedgerError: On any SQLite read failure or an unreadable bar.
         """
         rows = self._fetchall(
             "SELECT open_time, close_time, open, high, low, close, volume FROM live_bars "
@@ -99,7 +100,10 @@ class SqliteParityReader:
                 upto.isoformat(),
             ),
         )
-        return tuple(_row_to_bar(pair, interval, row) for row in rows)
+        try:
+            return tuple(live_bar_from_row(pair, interval, row) for row in rows)
+        except (ValueError, TypeError) as exc:
+            raise LedgerError(msg=f"bars_closing_between: unreadable bar: {exc}") from exc
 
     def signals_between(
         self, strategy_id: StrategyId, after: datetime, upto: datetime

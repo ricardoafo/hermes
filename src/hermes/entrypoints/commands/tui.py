@@ -7,12 +7,14 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, TextIO
 
+import hermes
 from hermes.adapters.console import UnknownScenarioError
 from hermes.application.console import ConsoleReadModel
 from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.commands import Command
 from hermes.entrypoints.console import (
     LiveReadModelUnavailableError,
+    config_allow_mainnet,
     recent_journal_lines,
     resolve_read_model,
     roster_exposure_cap,
@@ -25,6 +27,7 @@ from hermes.entrypoints.tui_settings import (
     save_settings,
 )
 from hermes.entrypoints.version import read_release
+from hermes.release_version import release_label
 
 if TYPE_CHECKING:
     from hermes.adapters.exchanges.kraken_public import KrakenPublicAdapter
@@ -102,6 +105,7 @@ def run_tui(
 
         cap = roster_exposure_cap(env or {})
         snapshot = env or {}
+        allow_mainnet = config_allow_mainnet(env or {})
 
         def runner(read_model: ConsoleReadModel) -> None:
             ticker = live_ticker(read_model)
@@ -110,6 +114,8 @@ def run_tui(
                     read_model,
                     journal=recent_journal_lines,
                     release=_release_name,
+                    version=release_label(hermes.__version__),
+                    allow_mainnet=allow_mainnet,
                     settings_path=settings_path,
                     exposure_cap=cap,
                     ticker=ticker,

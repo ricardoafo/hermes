@@ -14,7 +14,13 @@ Without a month it covers the previous Madrid calendar month, the one a
 month-end cut closes. ``--notify`` sends a Telegram alert when the verdict is
 not CLEAN, and records that alert in the ledger.
 
-Exit codes: 0 clean, 1 review or drift, 2 usage, 3 config error or no ledger.
+With ``allow_mainnet`` set (prod only), the current month is also compared
+with the live Binance spot balances, read with a dedicated read-only key from
+``HERMES_BINANCE_READ__API_KEY`` and ``HERMES_BINANCE_READ__API_SECRET`` (#29).
+A missing key is an error, never a silent fall back to the ledger-only check.
+
+Exit codes: 0 clean, 1 review or drift, 2 usage, 3 config error, no ledger,
+missing read-only key or unreadable exchange.
 
 Reference: openspec/changes/35-monthly-reconciliation/change.md.
 """
@@ -23,12 +29,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any, Final, TextIO
+from typing import Any, Final, Protocol, TextIO
 
+from hermes.adapters.exchanges.binance_balance_reader import (
+    API_KEY_ENV,
+    API_SECRET_ENV,
+    BinanceBalanceReader,
+    BinanceBalanceReaderConfig,
+)
 from hermes.adapters.ledger.reconciliation_reader import SqliteReconciliationReader
 from hermes.adapters.notifier.telegram_adapter import (
     TelegramAdapter,
@@ -51,8 +64,9 @@ from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
 from hermes.infrastructure.time import to_madrid
 from hermes.ports.notifier import NotifierPort
+from hermes.ports.reconciliation import BalanceReadPort
 
-__all__ = ["DEFAULT_TOLERANCE", "main", "report_to_dict"]
+__all__ = ["DEFAULT_TOLERANCE", "ClosableBalanceReader", "main", "report_to_dict"]
 
 DEFAULT_TOLERANCE: Final = Decimal("1e-8")
 """Binance's smallest step for spot quantities; anything above it is real drift."""
@@ -67,7 +81,10 @@ _USAGE: Final = (
     "Without YYYY-MM it covers the previous month (Europe/Madrid).\n"
     "--notify sends a Telegram alert when the verdict is not CLEAN and records\n"
     "it in the ledger.\n"
-    "Exit codes: 0 clean, 1 review or drift, 2 usage, 3 config error or no ledger.\n"
+    "With allow_mainnet set it also reads the live Binance balances, using\n"
+    f"{API_KEY_ENV} and {API_SECRET_ENV} (a read-only key).\n"
+    "Exit codes: 0 clean, 1 review or drift, 2 usage, 3 config error, no ledger,\n"
+    "missing read-only key or unreadable exchange.\n"
 )
 _NEXT_STEP: Final = {
     Verdict.CLEAN: "nothing to do",
@@ -78,6 +95,18 @@ _NEXT_STEP: Final = {
 NotifierFactory = Callable[[Mapping[str, str]], NotifierPort | None]
 
 
+class ClosableBalanceReader(BalanceReadPort, Protocol):
+    """A live balance reader that holds a connection until closed."""
+
+    def close(self) -> None:
+        """Release the connection."""
+        ...
+
+
+BalanceReaderFactory = Callable[[Mapping[str, str]], ClosableBalanceReader]
+"""Builds the live reader from the environment; raises ValueError without a key."""
+
+
 def main(
     rest: list[str],
     *,
@@ -85,6 +114,7 @@ def main(
     now: datetime | None = None,
     env: Mapping[str, str] | None = None,
     notifier_factory: NotifierFactory | None = None,
+    balance_reader_factory: BalanceReaderFactory | None = None,
     err: TextIO | None = None,
 ) -> int:
     """Handle ``hermes reconcile``.
@@ -93,9 +123,15 @@ def main(
         rest: Residual argv after the ``reconcile`` token.
         stream: Output stream.
         now: Run time; defaults to the wall clock. Injected by tests.
-        env: Environment snapshot for the Telegram credentials.
+        env: Environment snapshot for the Telegram credentials and the
+            read-only Binance key; the key is read from ``os.environ`` when
+            this is ``None``.
         notifier_factory: Builds the alert channel from ``env``; defaults to
             Telegram. Injected by tests so no socket opens.
+        balance_reader_factory: Builds the live balance reader from ``env``
+            when ``allow_mainnet`` is set and the month is still open;
+            defaults to Binance. Injected by
+            tests so no socket opens.
         err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
     Returns:
@@ -113,22 +149,44 @@ def main(
     except ConfigError as exc:
         err.write(f"ERROR: config load failed: {exc}\n")
         return 3
+    # A disabled entry (v2 waiting for its shadow) has funded nothing; seeding
+    # it would add its capital to the book the ledger is checked against.
     seeds = [
         StrategySeed(
             strategy_id=StrategyId(s.name),
             capital=Money(amount=s.capital_budget, currency=s.quote),
         )
         for s in config.strategies.strategies
+        if s.enabled
     ]
 
+    exchange: ClosableBalanceReader | None = None
+    # A venue reports balances now, so an ended month never reads them and
+    # needs no key (the month-end cut runs on the previous month).
+    if config.allow_mainnet and at < month.end:
+        factory = balance_reader_factory or _binance_balance_reader
+        try:
+            exchange = factory(env if env is not None else os.environ)
+        except ValueError as exc:
+            err.write(
+                f"ERROR: allow_mainnet is set, so reconcile reads the live balances and needs "
+                f"a read-only key in {API_KEY_ENV} and {API_SECRET_ENV}: {exc}\n"
+            )
+            return 3
     try:
-        with SqliteReconciliationReader.open(parsed.db) as reader:
-            report = reconcile_month(reader, month=month, seeds=seeds, now=at, tolerance=tolerance)
-    except FileNotFoundError:
-        err.write(f"ERROR: no ledger at {parsed.db}\n")
-        return 3
-    except LedgerError as exc:
-        err.write(f"ERROR: could not read the ledger: {exc}\n")
+        report = _report(
+            parsed.db,
+            month=month,
+            seeds=seeds,
+            at=at,
+            tolerance=tolerance,
+            exchange=exchange,
+            err=err,
+        )
+    finally:
+        if exchange is not None:
+            exchange.close()
+    if report is None:
         return 3
 
     if parsed.json:
@@ -146,6 +204,37 @@ def main(
             err=err,
         )
     return 0 if report.verdict is Verdict.CLEAN else 1
+
+
+def _report(
+    db: Path,
+    *,
+    month: ReconciliationMonth,
+    seeds: list[StrategySeed],
+    at: datetime,
+    tolerance: Decimal,
+    exchange: BalanceReadPort | None,
+    err: TextIO,
+) -> ReconciliationReport | None:
+    """Build the report; write the ERROR line and return ``None`` when a source fails."""
+    try:
+        with SqliteReconciliationReader.open(db) as reader:
+            return reconcile_month(
+                reader,
+                month=month,
+                seeds=seeds,
+                now=at,
+                tolerance=tolerance,
+                exchange=exchange,
+            )
+    except FileNotFoundError:
+        err.write(f"ERROR: no ledger at {db}\n")
+    except LedgerError as exc:
+        err.write(f"ERROR: could not read the ledger: {exc}\n")
+    except InfraError as exc:
+        # LedgerError is caught above, so what is left comes from the exchange.
+        err.write(f"ERROR: could not read the exchange balances: {exc}\n")
+    return None
 
 
 def _parse(
@@ -315,6 +404,10 @@ def _send_alert(
         if isinstance(notifier, TelegramAdapter):
             notifier.close()
     stream.write("Alert sent.\n")
+
+
+def _binance_balance_reader(env: Mapping[str, str]) -> ClosableBalanceReader:
+    return BinanceBalanceReader.create(BinanceBalanceReaderConfig.from_env(env))
 
 
 def _telegram_notifier(env: Mapping[str, str]) -> NotifierPort | None:

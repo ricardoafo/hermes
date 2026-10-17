@@ -6,6 +6,9 @@ Reference: ADR-002 §3, ADR-003 §00 I-06, ADR-016 items 3 and 5.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterator
+from contextlib import closing
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
@@ -78,9 +81,10 @@ def _record(ledger: SqliteLedger, trade: TradeRecord) -> int:
 
 
 @pytest.fixture
-def conn() -> sqlite3.Connection:
-    """Return a fresh in-memory SQLite connection."""
-    return sqlite3.connect(":memory:")
+def conn() -> Iterator[sqlite3.Connection]:
+    """Yield a fresh in-memory SQLite connection and close it afterwards."""
+    with closing(sqlite3.connect(":memory:")) as connection:
+        yield connection
 
 
 @pytest.fixture
@@ -153,12 +157,34 @@ class TestRecordTrade:
 
     def test_record_trade_is_one_commit(self) -> None:
         """Invariant (I-06): trade row, lot effects and event commit together, once."""
-        conn = sqlite3.connect(":memory:", factory=CommitCountingConnection)
-        apply_migrations(conn)
-        ledger = SqliteLedger(conn)
-        conn.commit_count = 0
-        _record(ledger, _trade(OrderSide.BUY, "1", "100", "0", minutes=0))
-        assert conn.commit_count == 1
+        with closing(sqlite3.connect(":memory:", factory=CommitCountingConnection)) as conn:
+            apply_migrations(conn)
+            ledger = SqliteLedger(conn)
+            conn.commit_count = 0
+            _record(ledger, _trade(OrderSide.BUY, "1", "100", "0", minutes=0))
+            assert conn.commit_count == 1
+
+    def test_record_trade_stores_its_further_events_in_the_same_commit(self) -> None:
+        """Invariant (#857): events passed with a trade land in its one commit, after its event."""
+        with closing(sqlite3.connect(":memory:", factory=CommitCountingConnection)) as conn:
+            apply_migrations(conn)
+            ledger = SqliteLedger(conn)
+            trade = _trade(OrderSide.BUY, "1", "100", "0", minutes=0)
+            quality = replace(_event(trade), correlation_id="quality-of-the-buy")
+            conn.commit_count = 0
+            ledger.record_trade(trade, _event(trade), quality)
+            ids = [row[0] for row in conn.execute("SELECT correlation_id FROM events ORDER BY id")]
+            assert (conn.commit_count, ids) == (1, [trade.correlation_id, "quality-of-the-buy"])
+
+    def test_a_trade_that_rolls_back_takes_its_further_events_with_it(
+        self, ledger: SqliteLedger, conn: sqlite3.Connection
+    ) -> None:
+        """Invariant (#857): a failed trade stores none of the events passed with it."""
+        trade = _trade(OrderSide.SELL, "1", "100", "0", minutes=0)
+        quality = replace(_event(trade), correlation_id="quality-of-the-sell")
+        with pytest.raises(LedgerError, match="FIFO replay of BTC failed"):
+            ledger.record_trade(trade, _event(trade), quality)
+        assert conn.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 0
 
     def test_sell_beyond_inventory_stores_nothing(
         self, ledger: SqliteLedger, conn: sqlite3.Connection

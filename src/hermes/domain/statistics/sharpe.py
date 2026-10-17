@@ -20,6 +20,7 @@ __all__ = [
     "kurtosis",
     "probabilistic_sharpe_ratio",
     "sharpe_ratio",
+    "sharpe_t_statistic",
     "skewness",
 ]
 
@@ -51,6 +52,24 @@ def sharpe_ratio(returns: Sequence[float]) -> float | None:
     if variance <= 0.0:
         return None
     return mean / math.sqrt(variance)
+
+
+def sharpe_t_statistic(returns: Sequence[float]) -> float | None:
+    """Return the t-statistic of the mean return, SR * sqrt(T).
+
+    Args:
+        returns: Per-period returns.
+
+    Returns:
+        ``mean / (s / sqrt(T))`` with ``s`` the sample standard deviation, or
+        ``None`` when the Sharpe ratio is undefined.
+
+    Reference: ADR-021 §5; openspec/changes/v2-backtest-funnel D-5.
+    """
+    sharpe = sharpe_ratio(returns)
+    if sharpe is None:
+        return None
+    return sharpe * math.sqrt(len(returns))
 
 
 def skewness(returns: Sequence[float]) -> float | None:

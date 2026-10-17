@@ -19,7 +19,9 @@ dependencies = [
   "rich>=15,<16",
   "apscheduler>=3.10,<4",
   "python-telegram-bot>=22.8,<23",
-  "ulid-py>=1.1,<2",
+  # ULID generator for lot, journal and correlation IDs (issue #784 replaced
+  # the unmaintained ulid-py). Approved by the Code Owner 2026-10-17.
+  "python-ulid>=4.0.1,<5",
   "returns>=0.24,<1",
   "anyio>=4.15.1,<5",
   "pyyaml>=6,<7",
@@ -33,15 +35,16 @@ dependencies = [
   # sentry_sdk.capture_exception() calls. No framework integrations enabled
   # (we run vanilla Python, no Django/Flask/etc.). See
   # docs/decisions/ (Sentry wiring entry) for the design rationale.
-  "sentry-sdk>=2.70.0,<3",
+  "sentry-sdk>=2.71.0,<3",
   # Cross-platform file lock for multi-writer manifest transactions in
   # the ingest scripts (scripts/data/_manifest_util.py). Was a transitive
   # dep of virtualenv; promoted to direct after we started depending on
   # it explicitly. See docs/decisions/... and change data-manifest-file-lock (#257).
-  "filelock>=4.0.4,<5",
+  "filelock>=4.0.7,<5",
   # Writes the tax pack's Renta Web sheet and dossier as PDF (#568, change
   # 568-tax-pack D-8). Pure Python; approved by the Code Owner 2026-10-04.
   "fpdf2>=2.8,<3",
+  "textual-image>=0.14.1,<0.15",
   "textual-plotext>=1.0.1,<2",
 ]
 
@@ -63,7 +66,7 @@ dev = [
   # for Windows compatibility (signals do not interrupt blocking C-level
   # calls on Windows the way they do on POSIX).
   "pytest-timeout>=2.3,<3",
-  "hypothesis>=6.168.2,<7",
+  "hypothesis>=6.168.3,<7",
   "syrupy>=6.1.1,<7",  # bumped to unblock pytest 9 (see PYSEC-2026-1845 note above)
   "respx>=0.21,<1",
   "freezegun>=1.5,<2",
@@ -182,6 +185,10 @@ timeout_method = "thread"
 filterwarnings = [
   "error::DeprecationWarning",
   "error::PendingDeprecationWarning",
+  # Unclosed connections/files are real leaks (#759); GC-time warnings
+  # surface as unraisable exceptions, so both must fail the run.
+  "error::ResourceWarning",
+  "error::pytest.PytestUnraisableExceptionWarning",
   # Third-party warnings we cannot fix — allow with a comment explaining why:
   # (add exceptions here as they surface, with justification + upstream link)
 ]

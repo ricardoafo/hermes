@@ -18,6 +18,7 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
+from hermes.application.execution.prereg_book import ExecutionModel, ExitPricing
 from hermes.domain.errors import InfraError
 from hermes.domain.value_objects.currency import Currency
 from hermes.infrastructure.config import (
@@ -277,11 +278,39 @@ def test_shipped_optional_section_yaml_equals_the_model_defaults(
 
 
 def test_shipped_strategies_yaml_is_the_swing_only_roster() -> None:
-    """The committed strategies.yaml loads as one swing-donchian-4h entry seeded 5000 USDT."""
+    """The committed roster enables swing-donchian-4h and carries v2 disabled, both at 5000 USDT."""
     roster = _shipped_roster(env={})
     assert [
         (s.name, s.enabled, s.weight, s.capital_budget, s.quote) for s in roster.strategies
-    ] == [("swing-donchian-4h", True, Decimal("1.0"), Decimal("5000"), Currency.USDT)]
+    ] == [
+        ("swing-donchian-4h", True, Decimal("1.0"), Decimal("5000"), Currency.USDT),
+        ("swing-mvp1-v2", False, Decimal("1.0"), Decimal("5000"), Currency.USDT),
+    ]
+
+
+def test_shipped_v1_entry_keeps_the_stop_order_exit() -> None:
+    """v1 trades as signed: its stop exits price as a stop-market (pre-registration v1 §5.3)."""
+    v1 = _shipped_roster(env={}).strategies[0]
+    assert (v1.name, v1.execution_model()) == (
+        "swing-donchian-4h",
+        ExecutionModel(exit_pricing=ExitPricing.STOP_ORDER),
+    )
+
+
+def test_shipped_v2_entry_sells_every_exit_at_the_bar_close() -> None:
+    """v2 §5.3/§6.2: the swing-mvp1-v2 entry selects the close-based exit pricing."""
+    v2 = _shipped_roster(env={}).strategies[1]
+    assert (v2.name, v2.execution_model()) == (
+        "swing-mvp1-v2",
+        ExecutionModel(exit_pricing=ExitPricing.BAR_CLOSE),
+    )
+
+
+# SEV-1: no rubric row matches; pre-reg v2 §2/§5.4/§5.5 limits must reach sizing unchanged
+def test_shipped_v2_entry_sizes_with_the_v1_capital_and_limits() -> None:
+    """v2 §2, §5.4 and §5.5 are unchanged from v1: the same 5000 capital and the same limits."""
+    v1, v2 = _shipped_roster(env={}).strategies
+    assert (v2.capital_budget, v2.quote, v2.sizing) == (v1.capital_budget, v1.quote, v1.sizing)
 
 
 def _shipped_roster(env: dict[str, str]) -> StrategiesConfig:
@@ -746,3 +775,30 @@ def test_load_config_dotenv_ignored_when_env_snapshot_supplied(
     dotenv = tmp_path / ".env.local"
     dotenv.write_text("HERMES_ENV=sandbox\n", encoding="utf-8")
     assert load_config(config_dir, env={}, dotenv_path=dotenv).env == "dev"
+
+
+def test_prod_never_reads_env_local(
+    config_dir: Path, tmp_path: Path, clean_process_env: pytest.MonkeyPatch
+) -> None:
+    """With HERMES_ENV=prod a dotenv file is not read: prod env comes from the systemd unit only."""
+    clean_process_env.setenv("HERMES_ENV", "prod")
+    dotenv = tmp_path / ".env.local"
+    dotenv.write_text("HERMES_BINANCE__RECV_WINDOW_MS=7000\n", encoding="utf-8")
+    assert load_config(config_dir, dotenv_path=dotenv).binance.recv_window_ms == 5000
+
+
+def test_prod_refuses_a_relative_config_dir(
+    config_dir: Path, clean_process_env: pytest.MonkeyPatch
+) -> None:
+    """With HERMES_ENV=prod a relative config dir raises, so the working directory can't pick it."""
+    clean_process_env.chdir(config_dir.parent)
+    with pytest.raises(ConfigError, match="absolute --config-dir"):
+        load_config(Path(config_dir.name), env={"HERMES_ENV": "prod"})
+
+
+def test_dev_still_accepts_a_relative_config_dir(
+    config_dir: Path, clean_process_env: pytest.MonkeyPatch
+) -> None:
+    """Outside prod a relative config dir still loads, as `uv run hermes` in a checkout needs."""
+    clean_process_env.chdir(config_dir.parent)
+    assert load_config(Path(config_dir.name), env={}).env == "dev"

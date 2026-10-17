@@ -6,7 +6,7 @@ Verifies:
 - ``<event-name> --fixture <path>`` overrides the sample with JSON data.
 - An unknown event name exits with code 2 and a diagnostic message.
 - A missing fixture path exits with code 1.
-- ``--send`` refuses to run when HERMES_ENV=prod (exit code 3).
+- ``--send`` runs only when HERMES_ENV=dev; any other tier, unset included, exits 3.
 - The routing table gates which channel-specific output blocks render.
 
 Reference: docs/decisions/2026-08-23-slack-alongside-telegram.md.
@@ -15,6 +15,7 @@ Reference: docs/decisions/2026-08-23-slack-alongside-telegram.md.
 from __future__ import annotations
 
 import io
+import sys
 from pathlib import Path
 
 import pytest
@@ -193,7 +194,7 @@ class TestUnknownEvent:
 
 
 class TestSendGuard:
-    """`--send` refuses to spam prod channels — exit code 3."""
+    """`--send` runs only in the dev tier; anything else exits 3."""
 
     def test_send_refuses_in_prod(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """--send with HERMES_ENV=prod exits 3 without invoking any adapter."""
@@ -206,6 +207,21 @@ class TestSendGuard:
     def test_send_refuses_prod_case_insensitively(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """--send with HERMES_ENV=PROD (uppercase) still triggers the refusal."""
         monkeypatch.setenv("HERMES_ENV", "PROD")
+        stream = io.StringIO()
+        rc = preview_module.main(["strategy-paused", "--send"], stream=stream)
+        assert rc == 3
+
+    def test_send_refuses_when_the_tier_is_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """--send with no HERMES_ENV exits 3: sending is opt-in, so a missing tier fails closed."""
+        monkeypatch.delenv("HERMES_ENV", raising=False)
+        stream, err = io.StringIO(), io.StringIO()
+        rc = preview_module.main(["strategy-paused", "--send"], stream=stream, err=err)
+        assert (rc, stream.getvalue()) == (3, "")
+        assert "HERMES_ENV=(unset)" in err.getvalue()
+
+    def test_send_refuses_in_staging(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """--send with HERMES_ENV=staging exits 3: only the dev tier may send."""
+        monkeypatch.setenv("HERMES_ENV", "staging")
         stream = io.StringIO()
         rc = preview_module.main(["strategy-paused", "--send"], stream=stream)
         assert rc == 3
@@ -256,18 +272,26 @@ class TestEurRateOption:
         assert raised.value.code == 2
 
 
-def test_attachments_are_written_into_a_fresh_private_directory(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Issue #783: no predictable /tmp path to plant a symlink at; the folder is 0700 and new."""
-    monkeypatch.setattr(preview_module.tempfile, "tempdir", str(tmp_path))
-    planted = tmp_path / "hermes-preview-daily-digest-digest.csv"
-    planted.symlink_to(tmp_path / "victim")
-    message = SlackMessage(
+def _digest_message() -> SlackMessage:
+    return SlackMessage(
         text="x", blocks=[], attachments=(FileAttachment("digest.csv", "text/csv", b"a,b\n"),)
     )
 
-    [written] = preview_module._write_attachments(message, "daily-digest")
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX mode bits; Windows has its own test")
+def test_attachments_are_written_into_a_fresh_0700_directory_on_posix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Issue #783 on POSIX: the folder is new and 0700, so a planted symlink is never followed.
+
+    POSIX is where the VPS runs; the mode bits are what keep other local
+    users from reading the attachments or planting files inside the folder.
+    """
+    monkeypatch.setattr(preview_module.tempfile, "tempdir", str(tmp_path))
+    planted = tmp_path / "hermes-preview-daily-digest-digest.csv"
+    planted.symlink_to(tmp_path / "victim")
+
+    [written] = preview_module._write_attachments(_digest_message(), "daily-digest")
 
     assert (
         written.read_bytes(),
@@ -275,3 +299,33 @@ def test_attachments_are_written_into_a_fresh_private_directory(
         written.parent.stat().st_mode & 0o777,
         (tmp_path / "victim").exists(),
     ) == (b"a,b\n", True, 0o700, False)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows privacy check; POSIX checks mode bits")
+def test_attachments_are_written_into_a_fresh_unique_directory_on_windows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Issue #783 on Windows: each call writes into a new, uniquely named folder under the temp dir.
+
+    Windows ignores mode bits (``st_mode`` always reads 0o777 for a folder);
+    privacy comes from ``tempfile.mkdtemp``, which creates the folder inside
+    the user's own temp directory with an owner-only ACL. So the invariant
+    here is freshness: the folder did not exist before the call, its name is
+    unpredictable, and a file planted at the old predictable path is left alone.
+    """
+    monkeypatch.setattr(preview_module.tempfile, "tempdir", str(tmp_path))
+    planted = tmp_path / "hermes-preview-daily-digest-digest.csv"
+    planted.write_bytes(b"planted")
+    before = set(tmp_path.iterdir())
+
+    [first] = preview_module._write_attachments(_digest_message(), "daily-digest")
+    [second] = preview_module._write_attachments(_digest_message(), "daily-digest")
+
+    assert (
+        first.read_bytes(),
+        first.parent.parent == tmp_path,
+        first.parent.is_dir() and first.parent not in before,
+        first.parent.name.startswith("hermes-preview-daily-digest-"),
+        first.parent != second.parent,
+        planted.read_bytes(),
+    ) == (b"a,b\n", True, True, True, True, b"planted")

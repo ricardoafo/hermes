@@ -4,7 +4,6 @@ Covers:
 - Returns None for insufficient bars
 - Matches hand-computed ATR on minimal fixture
 - ATR is always positive when bars exist
-- Deterministic on identical inputs
 - Period parameter is respected
 
 Reference: spec-5-swing-strategy-adapter change.md.
@@ -22,28 +21,18 @@ from tests.unit.domain.strategy.swing.conftest import make_bar, make_bars
 class TestAtrEngineInsufficientBars:
     """Returns None when bar count < period + 1."""
 
-    def test_none_on_empty_bars(self) -> None:
-        """ATR must return None for empty bar sequence."""
-        result = AtrEngine.value([], period=14)
-        assert result is None, "AtrEngine.value([]) must return None — no bars to compute TR"
-        assert len([]) == 0, "empty bars fixture sanity check — zero bars provided"
+    def test_needs_period_plus_one_bars(self) -> None:
+        """ATR(14) is None for 0, 5 and 14 bars, and 10 at 15 (one extra bar for prev-close).
 
-    def test_none_on_exactly_period_bars(self) -> None:
-        """ATR needs period+1 bars (one extra for prev-close TR); period bars is not enough."""
-        bars = make_bars([Decimal("100")] * 14)
-        result = AtrEngine.value(bars, period=14)
-        assert result is None, (
-            f"AtrEngine.value with {len(bars)} bars and period=14 must return None "
-            "(needs 15 bars minimum)"
-        )
-        assert len(bars) == 14, "fixture must have exactly 14 bars for this boundary test"
+        Every bar has high 105 and low 95 around a close of 100, so each true
+        range is 10 and the Wilder seed over 14 of them is 10.
+        """
+        bars = make_bars([100] * 15, highs=[105] * 15, lows=[95] * 15)
 
-    def test_none_on_period_minus_one_bars(self) -> None:
-        """Fewer than period bars must return None."""
-        bars = make_bars([Decimal("100")] * 5)
-        result = AtrEngine.value(bars, period=14)
-        assert result is None, "AtrEngine.value with 5 bars and period=14 must return None"
-        assert len(bars) == 5, "fixture must have exactly 5 bars for this boundary test"
+        assert AtrEngine.value([], period=14) is None, "no bars, no ATR"
+        assert AtrEngine.value(bars[:5], period=14) is None, "5 bars are far short of 15"
+        assert AtrEngine.value(bars[:14], period=14) is None, "14 bars give only 13 true ranges"
+        assert AtrEngine.value(bars, period=14) == Decimal("10"), "15 bars give 14 ranges of 10"
 
 
 class TestAtrEngineFormula:
@@ -129,14 +118,6 @@ class TestAtrEngineProperties:
         result = AtrEngine.value(bars, period=14)
         assert result is not None, "ATR(14) should be computable with 16 bars"
         assert result > Decimal("0"), f"ATR must be > 0 for bars with range, got {result}"
-
-    def test_atr_deterministic(self) -> None:
-        """ATR must return the same value on identical inputs."""
-        bars = make_bars([100 + i for i in range(20)])
-        r1 = AtrEngine.value(bars, period=14)
-        r2 = AtrEngine.value(bars, period=14)
-        assert isinstance(r1, Decimal), f"ATR must return Decimal with 20 bars, got {type(r1)}"
-        assert r1 == r2, f"ATR must be deterministic: first call={r1}, second call={r2}"
 
     def test_atr_period_respected(self) -> None:
         """ATR(3) and ATR(14) should differ on the same bar sequence."""

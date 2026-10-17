@@ -265,12 +265,14 @@ class TradeLedgerPort(Protocol):
     Adapters raise :class:`hermes.domain.errors.LedgerError` on failure.
     """
 
-    def record_trade(self, trade: TradeRecord, event: DomainEvent) -> int:
-        """Store one trade, its lot effects and its event atomically.
+    def record_trade(self, trade: TradeRecord, event: DomainEvent, *also: DomainEvent) -> int:
+        """Store one trade, its lot effects and its events atomically.
 
         Args:
             trade: The trade; ``trade.eur is None`` stores it pending.
             event: The ``TradeExecuted`` event for the trade.
+            *also: Further events about the same fill, such as its
+                ``FillQualityRecorded`` row, stored in the same transaction.
 
         Returns:
             The new trade row id.
