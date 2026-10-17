@@ -35,7 +35,7 @@ If you cannot tell whether a path reaches a real exchange, treat it as if it can
 | S5 | An LLM output decides, sizes or places a trade, or untrusted text (news, PR comment, exchange message) steers an agent action | SEV-1 |
 | S6 | Sealed out-of-sample data (2025-09-01 to 2026-12-31, ADR-011 and ADR-014) is read outside `CERTIFICATION_MODE` by a backtest, a tuning step or a report | SEV-1 |
 | S7 | The ledger or audit trail can be edited, truncated or reordered without a recorded event | SEV-1 |
-| S8 | Personal data (tax identity, addresses, account numbers) appears in a log, metric or error message | SEV-2 |
+| S8 | Personal data (tax identity, addresses, account numbers), or a price, stop level or P&L figure the supervisor must not see (ADR-012), appears in a log, metric, error message or supervisor row | SEV-2 |
 | S9 | Untrusted PR code runs on a self-hosted runner with secrets or host access | SEV-1 |
 | S10 | A dependency, action or image is unpinned, unverified or known-vulnerable on a deployed path | SEV-2 |
 | S11 | Data from an exchange or data vendor is used in an order or tax path without validation | SEV-2 |
