@@ -12,6 +12,7 @@ stops serve loudly and is recovered on restart.
 
 from __future__ import annotations
 
+import json
 from datetime import timedelta
 
 import pytest
@@ -40,21 +41,19 @@ def test_an_exit_on_a_bar_with_no_volume_and_no_live_book_still_closes_the_posit
     assert outline(run.db)["trades"] == [("BTC/USDT", "BUY"), ("BTC/USDT", "SELL")]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="issue #690 item 3: a refused entry leaves no record in the ledger",
-)
 def test_an_entry_refused_by_a_risk_halt_is_recorded_in_the_ledger(
     run_scenario: RunScenario,
 ) -> None:
-    """A halted entry must leave a ``TradeRejected`` row, not only a log line.
+    """A halted entry leaves one value-free ``RiskHaltRecorded`` row, not only a log line.
 
-    Today the RO-07 macro halt refuses the ETH entry, serve logs one line, and
-    the entry signal is still sent to Telegram as if it had been taken.
+    Issue #690 item 3, fixed by issue #749: the RO-07 macro halt that refuses
+    the ETH entry is recorded with its rule and §10 citation.
     """
     run = run_scenario(markets.btc_daily_crash_then_eth_breakout())
-    assert len(events(run.db, "TradeRejected")) == 1
+    rows = [json.loads(row["payload_json"]) for row in events(run.db, "RiskHaltRecorded")]
+    assert [(r["kind"], r["rule"], r["pair"]["base"], r["pre_registration_ref"]) for r in rows] == [
+        ("halt", "RO-07", "ETH", "§10")
+    ]
 
 
 def test_after_a_refused_entry_the_strategy_is_flat_again(run_scenario: RunScenario) -> None:

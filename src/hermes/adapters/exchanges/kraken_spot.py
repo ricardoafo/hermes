@@ -20,10 +20,11 @@ tiers in the public ``AssetPairs`` reply on 2026-10-04 (#599).
 Safety (ADR-003 §00 I-08, AGENTS.md rule 7):
 
 - Kraken has no spot testnet, so every signed call reaches a real account.
-  Without ``allow_mainnet`` the adapter is read-only: placing or cancelling
-  an order raises before any request is built. Only the composition root
-  sets ``allow_mainnet``, after ``HermesConfig.allow_mainnet`` and the
-  LIVE_APPROVED gate (#382, ADR-014). ``hermes serve`` wires no exchange.
+  Without a :class:`~hermes.infrastructure.mainnet_permit.MainnetPermit`
+  the adapter is read-only: placing or cancelling an order raises before any
+  request is built. A permit is issued only in the prod tier with
+  ``HermesConfig.allow_mainnet`` set and the strategy LIVE_APPROVED (#382,
+  #781, ADR-014). ``hermes serve`` wires no exchange.
 - Only ``https://api.kraken.com`` is accepted, so signed requests cannot be
   sent to a mistyped host.
 - Requests are signed as Kraken documents: HMAC-SHA512, keyed by the
@@ -71,6 +72,7 @@ from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
+from hermes.infrastructure.mainnet_permit import MainnetPermit
 
 __all__ = ["KRAKEN_BASE_URL", "KrakenSpotAdapter", "KrakenSpotConfig", "sign"]
 
@@ -167,9 +169,10 @@ class KrakenSpotConfig:
         api_key: Kraken API key (sent as a header, not secret by itself).
         api_secret: Base64 Kraken API secret, used only to sign. Not in ``repr``.
         base_url: REST root; only ``https://api.kraken.com`` is accepted.
-        allow_mainnet: Permit placing and cancelling orders. Kraken has no
-            spot testnet, so without it the adapter is read-only. Only the
-            composition root, after the live-approval gate, sets this.
+        mainnet_permit: Lets the adapter place and cancel orders. Kraken has
+            no spot testnet, so without it the adapter is read-only. Only
+            :func:`~hermes.infrastructure.mainnet_permit.issue_mainnet_permit`
+            makes one, after the tier, kill-switch and live-approval checks.
         timeout_sec: Per-request timeout.
         rate_limit: Token bucket for signed calls, below Kraken's starter
             tier (a counter of 15 decaying 0.33 a second).
@@ -184,7 +187,7 @@ class KrakenSpotConfig:
     api_key: str
     api_secret: str = field(repr=False)
     base_url: str = KRAKEN_BASE_URL
-    allow_mainnet: bool = False
+    mainnet_permit: MainnetPermit | None = None
     timeout_sec: float = 10.0
     rate_limit: RateLimitConfig = field(
         default_factory=lambda: RateLimitConfig(max_weight=15, window_seconds=45)
@@ -372,7 +375,7 @@ class KrakenSpotAdapter:
     def get_fees(self, *, pair: Pair) -> FeeSchedule:
         """Return the account's current maker and taker fee for ``pair``.
 
-        Read-only, so it works without ``allow_mainnet``. ``TradeVolume``
+        Read-only, so it works without a ``mainnet_permit``. ``TradeVolume``
         answers with the fee the account pays now, given its 30-day volume, so
         the schedule has one tier that applies at any volume.
 
@@ -434,10 +437,10 @@ class KrakenSpotAdapter:
     # ------------------------------------------------------------------
 
     def _require_trading(self, action: str) -> None:
-        if not self.config.allow_mainnet:
+        if not isinstance(self.config.mainnet_permit, MainnetPermit):
             raise ExchangeError(
                 msg=f"refusing to {action} on Kraken: the adapter is read-only without "
-                "allow_mainnet (set only by the composition root after live approval, ADR-014)"
+                "a MainnetPermit (issued only after live approval, ADR-014)"
             )
 
     def _add_order(self, params: dict[str, str], order: Order) -> str:

@@ -36,6 +36,7 @@ from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.ports.exchange import ExchangePort, StopLossPort
+from tests.support.mainnet_permit import issued_permit
 
 _FIXTURES = Path(__file__).resolve().parents[3] / "fixtures" / "kraken_spot"
 _PRIVATE = f"{KRAKEN_BASE_URL}/0/private"
@@ -56,9 +57,11 @@ def _ok(name: str) -> httpx.Response:
     return httpx.Response(200, json=_reply(name))
 
 
-def _build(*, allow_mainnet: bool, sleeps: list[float] | None = None) -> KrakenSpotAdapter:
+def _build(*, trading: bool, sleeps: list[float] | None = None) -> KrakenSpotAdapter:
     config = KrakenSpotConfig(
-        api_key=_KEY, api_secret=_SIGNING_MATERIAL, allow_mainnet=allow_mainnet
+        api_key=_KEY,
+        api_secret=_SIGNING_MATERIAL,
+        mainnet_permit=issued_permit() if trading else None,
     )
     roomy = RateLimitConfig(max_weight=1000, window_seconds=60)
     public_config = KrakenPublicConfig(rate_limit=roomy)
@@ -81,15 +84,15 @@ def _build(*, allow_mainnet: bool, sleeps: list[float] | None = None) -> KrakenS
 @pytest.fixture
 def trading() -> Iterator[KrakenSpotAdapter]:
     """Return an adapter allowed to trade, with a frozen clock and a roomy limiter."""
-    adapter = _build(allow_mainnet=True)
+    adapter = _build(trading=True)
     yield adapter
     adapter.close()
 
 
 @pytest.fixture
 def read_only() -> Iterator[KrakenSpotAdapter]:
-    """Return an adapter without allow_mainnet, the default."""
-    adapter = _build(allow_mainnet=False)
+    """Return an adapter without a mainnet permit, the default."""
+    adapter = _build(trading=False)
     yield adapter
     adapter.close()
 
@@ -164,7 +167,7 @@ def test_from_env_reads_the_kraken_variables() -> None:
         {"HERMES_KRAKEN__API_KEY": _KEY, "HERMES_KRAKEN__API_SECRET": _SIGNING_MATERIAL}
     )
     assert config.api_key == _KEY
-    assert config.allow_mainnet is False
+    assert config.mainnet_permit is None
 
 
 def test_adapter_satisfies_both_ports(read_only: KrakenSpotAdapter) -> None:
@@ -185,11 +188,11 @@ def test_adapter_satisfies_both_ports(read_only: KrakenSpotAdapter) -> None:
     ids=["market", "limit", "stop-loss", "cancel"],
 )
 @respx.mock(assert_all_mocked=True)
-def test_writes_are_refused_without_allow_mainnet_before_any_request(
+def test_writes_are_refused_without_a_permit_before_any_request(
     read_only: KrakenSpotAdapter, action: Callable[[KrakenSpotAdapter], object]
 ) -> None:
-    """Without allow_mainnet no order is placed or cancelled, and nothing is sent."""
-    with pytest.raises(ExchangeError, match="read-only without allow_mainnet"):
+    """Without a mainnet permit no order is placed or cancelled, and nothing is sent."""
+    with pytest.raises(ExchangeError, match="read-only without a MainnetPermit"):
         action(read_only)
     assert respx.calls.call_count == 0
 
@@ -265,7 +268,7 @@ def test_market_order_returns_the_settled_execution(trading: KrakenSpotAdapter) 
 def test_market_order_waits_for_a_pending_order_to_close() -> None:
     """A pending order is read back again after a pause until it closes."""
     sleeps: list[float] = []
-    adapter = _build(allow_mainnet=True, sleeps=sleeps)
+    adapter = _build(trading=True, sleeps=sleeps)
     respx.post(f"{_PRIVATE}/AddOrder").mock(return_value=_ok("add_order_market_buy"))
     respx.post(f"{_PRIVATE}/QueryOrders").mock(
         side_effect=[_ok("query_orders_market_pending"), _ok("query_orders_market_closed")]
@@ -544,7 +547,7 @@ def test_create_builds_a_read_only_adapter_on_the_kraken_host() -> None:
     """create() owns both clients on api.kraken.com, and close() releases them."""
     adapter = KrakenSpotAdapter.create(KrakenSpotConfig(api_key=_KEY, api_secret=_SIGNING_MATERIAL))
     assert str(adapter.client.base_url) == f"{KRAKEN_BASE_URL}"
-    assert adapter.config.allow_mainnet is False
+    assert adapter.config.mainnet_permit is None
     adapter.close()
     assert adapter.client.is_closed
     assert adapter.public.client.is_closed

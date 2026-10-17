@@ -1,4 +1,4 @@
-"""Binance spot trading adapter — testnet by default, mainnet only when allowed.
+"""Binance spot trading adapter — testnet by default, mainnet only with a permit.
 
 Implements :class:`~hermes.ports.exchange.ExchangePort` and
 :class:`~hermes.ports.exchange.StopLossPort` with signed REST calls:
@@ -11,10 +11,11 @@ Implements :class:`~hermes.ports.exchange.ExchangePort` and
 
 Safety (ADR-003 §00 I-08, AGENTS.md rule 7):
 
-- The default host is ``testnet.binance.vision``. Any other host is refused
-  unless the caller passes ``allow_mainnet=True``, which the composition root
-  does only when ``HermesConfig.allow_mainnet`` is set and the strategy is
-  LIVE_APPROVED (#382). ``hermes serve`` stays shadow and wires no exchange.
+- The default host is ``testnet.binance.vision``. Any other host needs a
+  :class:`~hermes.infrastructure.mainnet_permit.MainnetPermit`, which is
+  issued only in the prod tier with ``HermesConfig.allow_mainnet`` set and
+  the strategy LIVE_APPROVED (#382, #781), and must be one of Binance's
+  documented spot hosts. ``hermes serve`` stays shadow and wires no exchange.
 - Requests are signed with HMAC-SHA256 over the exact query string, as
   Binance documents. The secret never leaves this module and is excluded
   from ``repr``.
@@ -52,11 +53,25 @@ from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
+from hermes.infrastructure.mainnet_permit import MainnetPermit
 
 __all__ = ["TESTNET_BASE_URL", "BinanceSpotAdapter", "BinanceSpotConfig", "sign"]
 
 TESTNET_BASE_URL: Final = "https://testnet.binance.vision"
 _TESTNET_HOST: Final = "testnet.binance.vision"
+# Binance's documented spot REST hosts. With a permit only these are accepted,
+# so a typo or an injected base_url cannot send the key and signed orders
+# off-exchange (#781).
+_MAINNET_HOSTS: Final = frozenset(
+    {
+        "api.binance.com",
+        "api-gcp.binance.com",
+        "api1.binance.com",
+        "api2.binance.com",
+        "api3.binance.com",
+        "api4.binance.com",
+    }
+)
 _API_KEY_HEADER: Final = "X-MBX-APIKEY"
 _UNKNOWN_ORDER: Final = -2011
 """Binance error code for cancelling an order that no longer exists."""
@@ -101,9 +116,11 @@ class BinanceSpotConfig:
     Attributes:
         api_key: Binance API key (sent as a header, not secret by itself).
         api_secret: Binance API secret, used only to sign. Not in ``repr``.
-        base_url: REST root. Testnet unless ``allow_mainnet``.
-        allow_mainnet: Permit a non-testnet host. Only the composition root,
-            after the live-approval gate, sets this.
+        base_url: REST root. Testnet unless a ``mainnet_permit`` is given,
+            and then only one of Binance's documented spot hosts.
+        mainnet_permit: Lets the config name a mainnet host. Only
+            :func:`~hermes.infrastructure.mainnet_permit.issue_mainnet_permit`
+            makes one, after the tier, kill-switch and live-approval checks.
         recv_window_ms: Server-side tolerance for clock skew.
         timeout_sec: Per-request timeout.
         rate_limit: Token-bucket sizing, below Binance's 6000 weight a minute.
@@ -115,7 +132,7 @@ class BinanceSpotConfig:
     api_key: str
     api_secret: str = field(repr=False)
     base_url: str = TESTNET_BASE_URL
-    allow_mainnet: bool = False
+    mainnet_permit: MainnetPermit | None = None
     recv_window_ms: int = 5000
     timeout_sec: float = 10.0
     rate_limit: RateLimitConfig = field(
@@ -124,7 +141,7 @@ class BinanceSpotConfig:
     stop_limit_buffer: Decimal = Decimal("0.01")
 
     def __post_init__(self) -> None:
-        """Refuse a non-HTTPS URL, a mainnet host without permission, or empty keys.
+        """Refuse a non-HTTPS URL, a mainnet host without a permit or off the list, or empty keys.
 
         Raises:
             ValueError: On any of those.
@@ -132,11 +149,14 @@ class BinanceSpotConfig:
         parts = urlsplit(self.base_url)
         if parts.scheme != "https":
             raise ValueError(f"base_url must be https, got {self.base_url!r}")
-        if parts.hostname != _TESTNET_HOST and not self.allow_mainnet:
-            raise ValueError(
-                f"{parts.hostname} is not the Binance testnet; mainnet needs allow_mainnet=True "
-                "(set only by the composition root after live approval, ADR-014)"
-            )
+        if parts.hostname != _TESTNET_HOST:
+            if not isinstance(self.mainnet_permit, MainnetPermit):
+                raise ValueError(
+                    f"{parts.hostname} is not the Binance testnet; mainnet needs a MainnetPermit "
+                    "(issued only after live approval, ADR-014)"
+                )
+            if parts.hostname not in _MAINNET_HOSTS:
+                raise ValueError(f"{parts.hostname} is not a documented Binance spot host")
         if not self.api_key or not self.api_secret:
             raise ValueError("api_key and api_secret are required")
         if not Decimal("0") < self.stop_limit_buffer < Decimal("0.1"):

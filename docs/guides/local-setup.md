@@ -19,7 +19,7 @@ in the past; each step below is a scar.
 | `uv`                | 0.12.5 pinned        | <https://github.com/astral-sh/uv> — standalone installer preferred |
 | `gh` CLI            | 2.x                  | <https://cli.github.com>                                           |
 | `pre-commit`        | 3.8+ (via `uv sync`) | Auto-installed by `uv sync --frozen` (dev dep)                     |
-| `markdownlint-cli2` | 0.23.2 (via npm)     | `npm install -g markdownlint-cli2@0.23.2` (for local pre-commit)   |
+| `markdownlint-cli2` | 0.23.3 (via npm)     | `npm install -g markdownlint-cli2@0.23.3` (for local pre-commit)   |
 | Docker Desktop      | latest               | Only if you plan to run the self-hosted CI runner locally          |
 
 You do NOT need a system-wide Python — `uv` provisions Python 3.14 into

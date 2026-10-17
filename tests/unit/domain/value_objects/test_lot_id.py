@@ -32,6 +32,21 @@ class TestLotIdNew:
         ids = {LotId.new().value for _ in range(10)}
         assert len(ids) == 10
 
+    def test_new_ids_sort_in_creation_order(self) -> None:
+        """IDs minted back to back, mostly in the same millisecond, sort in the order made.
+
+        FIFO lot selection orders lots by ID, so two lots opened in one
+        millisecond must not swap places.
+        """
+        ids = [LotId.new().value for _ in range(1000)]
+        assert ids == sorted(ids)
+        assert len(set(ids)) == len(ids)
+
+    def test_id_minted_by_the_old_generator_keeps_its_value(self) -> None:
+        """A lot ID already in a ledger, minted by the former ULID library, parses unchanged."""
+        stored = "01K6V3J0A4ZQ7X9M2C8D5E1F0G"
+        assert LotId.from_str(stored).unwrap().value == stored
+
 
 class TestLotIdFromStr:
     """from_str() validates Crockford base32 format."""

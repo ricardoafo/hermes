@@ -48,6 +48,7 @@ from hermes.domain.events.balance_low import BalanceLow
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.daily_trade_digest import DailyTradeDigest
 from hermes.domain.events.rebalance_triggered import RebalanceTriggered
+from hermes.domain.events.risk_halt_recorded import RiskHaltRecorded
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.events.strategy_paused import StrategyPaused
 from hermes.domain.events.strategy_resumed import StrategyResumed
@@ -158,6 +159,9 @@ class EventClass(StrEnum):
     REBALANCE_TRIGGERED = "REBALANCE_TRIGGERED"
     """Rebalance heads-up — Slack (compact) + Telegram (one-line pointer), silent."""
 
+    RISK_HALT = "RISK_HALT"
+    """A risk halt or a §10 kill refused an entry — Telegram + Slack, loud (#749)."""
+
 
 @dataclass(frozen=True, slots=True)
 class RouterConfig:
@@ -220,6 +224,8 @@ _ROUTING_TABLE: dict[EventClass, tuple[bool, bool]] = {
     EventClass.SIGNAL_EMITTED: (True, True),
     # Notification templates v2 (#144): the heads-up reaches both channels.
     EventClass.REBALANCE_TRIGGERED: (True, True),
+    # #749: a halt or a kill needs the operator, and a durable record.
+    EventClass.RISK_HALT: (True, True),
 }
 """Per-class channel fan-out — encodes the ADR Rationale table verbatim."""
 
@@ -230,6 +236,7 @@ _ALWAYS_LOUD: frozenset[EventClass] = frozenset(
         EventClass.ROLLBACK_FIRED,
         EventClass.BALANCE_LOW,
         EventClass.TRADE_REJECTED_ESCALATED,
+        EventClass.RISK_HALT,
     }
 )
 """Classes that ring the phone: down, P0 and rejected orders (ADR-015 D-06, D-07)."""
@@ -249,6 +256,7 @@ _EVENT_CLASSES: dict[type[DomainEvent], EventClass] = {
     TradeExecuted: EventClass.POSITION_LARGE,
     RebalanceTriggered: EventClass.REBALANCE_TRIGGERED,
     DailyTradeDigest: EventClass.DAILY_TRADE_DIGEST,
+    RiskHaltRecorded: EventClass.RISK_HALT,
 }
 """Concrete event type to routing class. ``LotClosed`` and ``BarProcessed`` have none."""
 
