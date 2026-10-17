@@ -1,0 +1,1 @@
+- The end-to-end serve cycle test no longer expects a push for an entry the exposure cap refused, matching the serve change from issue #708 (#1038).

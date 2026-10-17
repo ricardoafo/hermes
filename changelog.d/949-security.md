@@ -1,0 +1,1 @@
+- `hermes certify --sign-off NAME` now asks for the `LIVE_APPROVED` phrase on an interactive terminal and refuses when stdin is not one; the `--confirm` flag is gone, so a script can no longer approve live trading unattended (issue #949).

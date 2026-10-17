@@ -13,6 +13,7 @@ Invariants:
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 
 from hermes.adapters.console import FixtureReadModel
 from hermes.application.console import (
@@ -28,6 +29,7 @@ from hermes.application.console import (
     ViewNotAvailableError,
     WatchedPair,
 )
+from hermes.application.console.shadow_screen import ShadowEvidence
 from hermes.application.console.views import ConsoleBrief
 from hermes.domain.errors import LedgerError
 from hermes.entrypoints.tui import HomeApp
@@ -78,6 +80,11 @@ class _Failing:
     def market_watch(self) -> tuple[WatchedPair, ...]:
         self._raise("market")
         return self._base.market_watch()
+
+    def shadow_evidence(self, since: datetime | None) -> ShadowEvidence:
+        # The 90-day line reads its day 0 through this (issue #718).
+        self._raise("shadow")
+        return self._base.shadow_evidence(since)
 
     def briefs(self) -> tuple[ConsoleBrief, ...]:
         self._raise("briefs")
