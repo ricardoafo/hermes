@@ -27,6 +27,9 @@ Invariants (change 353-fill-kernel-in-serve R-1, R-4, R-5):
   down) leaves the strategy in the position (#706): the next crash bar, with
   the book back, exits it again with the original entry price and sells the
   coin once, on the same boot or after a restart.
+- A signal that does not fill writes exactly one value-free ``TradeRejected``
+  row with the refusing rule's id, and is not announced; a filled signal still
+  is (#708).
 """
 
 from __future__ import annotations
@@ -397,14 +400,51 @@ def _declined_rules(logs: list[dict[str, object]]) -> list[tuple[object, object]
 
 
 def test_refused_entry_raises_no_later_exit_or_notification(tmp_path: Path) -> None:
-    """A stale-book entry is the only decline: the crash bar signals and notifies no exit."""
+    """A stale-book entry is the only decline: nothing is notified, neither it nor an exit."""
     db = tmp_path / "ledger.sqlite3"
 
     telegram, logs = _refused_entry_run(db, live(12, 14))
 
     kinds = [p["kind"] for p in _payloads(db, "SignalEmitted")]
-    assert (kinds, signal_kinds(telegram), _trade_rows(db)) == (["entry"], ["entry"], [])
+    assert (kinds, signal_kinds(telegram), _trade_rows(db)) == (["entry"], [], [])
     assert _declined_rules(logs) == [("entry", "HALT")]
+
+
+def _refusals(db: Path) -> list[tuple[object, ...]]:
+    """Return ``(rule, reason, kind, side, attempted_at)`` of every TradeRejected row."""
+    return [
+        (p["rule"], p["rejection_reason"], p["signal_kind"], p["side"], p["attempted_at"])
+        for p in _payloads(db, "TradeRejected")
+    ]
+
+
+def test_risk_halted_entry_writes_one_refusal_row_with_its_rule(tmp_path: Path) -> None:
+    """The RO-04 halt of bar 11's entry is one TradeRejected row: RO-04, a code, no figure."""
+    db = tmp_path / "ledger.sqlite3"
+
+    _refused_entry_run(db, live(12, 14))
+
+    assert _refusals(db) == [
+        ("RO-04", "stale_orderbook", "entry", "BUY", h4_bar(11).close_time.isoformat())
+    ]
+
+
+def test_risk_halted_entry_row_is_versioned_and_joins_its_signal(tmp_path: Path) -> None:
+    """The refusal row is TradeRejected v2 under the refused signal's correlation id."""
+    db = tmp_path / "ledger.sqlite3"
+
+    _refused_entry_run(db, [])
+
+    connection = sqlite3.connect(db)
+    try:
+        rows = connection.execute(
+            "SELECT event_type, event_schema_version, correlation_id FROM events "
+            "WHERE event_type IN ('SignalEmitted', 'TradeRejected') ORDER BY id"
+        ).fetchall()
+    finally:
+        connection.close()
+    assert [(t, v) for t, v, _ in rows] == [("SignalEmitted", 1), ("TradeRejected", 2)]
+    assert rows[0][2] == rows[1][2]
 
 
 def test_pair_enters_again_after_a_refused_entry(tmp_path: Path) -> None:
@@ -422,9 +462,12 @@ def test_pair_enters_again_after_a_refused_entry(tmp_path: Path) -> None:
 
     signals = [(p["kind"], p["entry_price"]) for p in _payloads(db, "SignalEmitted")]
     sides = [p["side"] for p in _payloads(db, "TradeExecuted")]
-    assert (signals, signal_kinds(telegram), sides) == (
+    announced = [
+        (e.kind.value, e.entry_price) for e in telegram.seen if isinstance(e, SignalEmitted)
+    ]
+    assert (signals, announced, sides) == (
         [("entry", "2000"), ("entry", "3000")],
-        ["entry", "entry"],
+        [("entry", Decimal("3000"))],
         ["BUY"],
     )
     assert _declined_rules(logs) == [("entry", "HALT")]
@@ -447,14 +490,18 @@ class _DownOnSecondCallBooks(_LiveBooks):
 
 
 def _declined_exit_boot(
-    db: Path, live_bars: Sequence[Bar], *, warm_upto: int = 10
+    db: Path,
+    live_bars: Sequence[Bar],
+    *,
+    warm_upto: int = 10,
+    telegram: RecordingChannel | None = None,
 ) -> tuple[serve_module.Composition, _SteppingFeed]:
     """Build a boot whose second depth read fails, delivering ``live_bars``."""
     clock = SimulatedClock(start=h4_bar(warm_upto).close_time + _DELIVERY_DELAY)
     books = _DownOnSecondCallBooks(clock)
     books.mid = h4_bar(warm_upto).close
     feed = _SteppingFeed(clock, books, warm=history(warm_upto), live_bars=live_bars)
-    return build(db, feed, clock.now(), books=books, clock=clock), feed
+    return build(db, feed, clock.now(), telegram=telegram, books=books, clock=clock), feed
 
 
 def _zero_volume_crash() -> Bar:
@@ -499,3 +546,25 @@ def test_exit_declined_before_a_restart_is_retried_after_it(tmp_path: Path) -> N
         ["BUY", "SELL"],
         {},
     )
+
+
+def test_declined_exit_is_recorded_and_only_the_filled_exit_announced(tmp_path: Path) -> None:
+    """Bar 14's no-book exit is one refusal row and no notice; bar 15's filled exit is announced."""
+    db = tmp_path / "ledger.sqlite3"
+    telegram = RecordingChannel()
+    composition, feed = _declined_exit_boot(
+        db, [*live(11, 13), _zero_volume_crash(), h4_bar(15, crash=True)], telegram=telegram
+    )
+
+    run_once(composition, feed)
+
+    announced = [
+        (e.kind.value, e.occurred_at) for e in telegram.seen if isinstance(e, SignalEmitted)
+    ]
+    assert announced == [
+        ("entry", h4_bar(11).close_time),
+        ("exit", h4_bar(15).close_time),
+    ]
+    assert _refusals(db) == [
+        ("no-book", "no_book", "exit", "SELL", h4_bar(14).close_time.isoformat())
+    ]

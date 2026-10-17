@@ -1,0 +1,1 @@
+- **Shadow loop**: a signal that is not filled (a risk or kill halt, the fill model, sizing, the position cap or no book) is now recorded in the ledger as a `TradeRejected` v2 row with the refusing rule id and a fixed reason code, never a figure, and is no longer announced on Telegram or Slack as if it had been taken; only filled entries and exits are announced (#708).

@@ -18,7 +18,9 @@ What one process does:
   around the fill kernel the backtest uses: a simulated order walks a live
   Binance depth snapshot (or the pre-registration §6.2 book when none is
   fresh), and the fill is recorded as a ``TradeExecuted`` v2 trade with its
-  execution-quality row (change ``353-fill-kernel-in-serve``).
+  execution-quality row (change ``353-fill-kernel-in-serve``). A signal that
+  does not fill is recorded as a value-free ``TradeRejected`` v2 row and is
+  not announced; only filled signals reach Telegram and Slack (#708).
 - The bar loop warms up one :class:`SwingStrategyAdapter` per pair, seeding
   bars up to a persisted cursor without evaluating them, restoring each
   pair's open position from the ledger, then evaluates every later bar as if
@@ -81,6 +83,7 @@ from hermes.application.calibration.certification_gates import (
 )
 from hermes.application.execution.kernel import Declined, Executed, FillKernel, Halted
 from hermes.application.execution.position_sync import sync_after_signal
+from hermes.application.execution.refusal import refusal_of
 from hermes.application.execution.shadow import (
     AlreadyFilled,
     ShadowExecution,
@@ -101,6 +104,7 @@ from hermes.domain.events.bar_processed import BarProcessed
 from hermes.domain.events.event_bus import EventBus, EventDispatchError
 from hermes.domain.events.shadow_capital_seeded import ShadowCapitalSeeded
 from hermes.domain.events.signal_emitted import SignalEmitted
+from hermes.domain.events.trade_rejected import TradeRejected
 from hermes.domain.fees.fee_schedule import FeeSchedule
 from hermes.domain.fees.fee_schedule_selector import FeeScheduleRow, select_fee_schedule
 from hermes.domain.fx.eur_pricing import fill_date_madrid
@@ -167,6 +171,9 @@ SHADOW_STRATEGY_NAME: Final = "swing-donchian-4h"
 
 EXPERIMENT_DIR: Final = Path("docs/experiments/swing-mvp1")
 """Where the signed pre-registration and the fee history sit under the experiment root."""
+
+SHADOW_VENUE: Final = "binance"
+"""The venue the shadow fills simulate (pre-registration §6.1), stamped on refusals."""
 
 _ONE_MS: Final = timedelta(milliseconds=1)
 _NEVER: Final = datetime(1970, 1, 1, tzinfo=UTC)
@@ -444,6 +451,7 @@ def build_composition(
     event_bus = EventBus()
     event_bus.subscribe(SignalEmitted, ledger.append_event)
     event_bus.subscribe(BarProcessed, ledger.append_event)
+    event_bus.subscribe(TradeRejected, ledger.append_event)
 
     roster = next(s for s in config.strategies.strategies if s.enabled)
     strategy_id = StrategyId(roster.name)
@@ -848,19 +856,17 @@ class _BarLoop:
                 c.event_bus.publish(event)
             # The signal row comes first, then the fill (D-5): a crash between
             # them re-evaluates the bar, and the executor sees no trade yet.
-            await self._execute(signal_, bar, correlation_id)
+            result = await self._execute(signal_, bar, correlation_id)
+            refusal = refusal_of(
+                result.outcome,
+                signal_,
+                pair=bar.pair,
+                strategy_id=c.strategy_id,
+                exchange=SHADOW_VENUE,
+                correlation_id=correlation_id,
+            )
             if is_new:
-                if within_catchup(
-                    c.clock.now(), event.occurred_at, bar.interval, bars=CATCHUP_BARS
-                ):
-                    await self._notify(event)
-                else:
-                    _log.warning(
-                        "serve.signal.stale_not_notified",
-                        pair=str(event.pair),
-                        kind=event.kind.value,
-                        occurred_at=event.occurred_at.isoformat(),
-                    )
+                await self._record_or_announce(event, refusal, bar.interval)
         # Data only (#421): the archive check and the parity replay read these
         # values back; nothing in the strategy does. Stored before BarProcessed
         # so a processed bar always has its values on record.
@@ -944,7 +950,9 @@ class _BarLoop:
             )
         return True
 
-    async def _execute(self, signal_: StrategySignal, bar: Bar, correlation_id: str) -> None:
+    async def _execute(
+        self, signal_: StrategySignal, bar: Bar, correlation_id: str
+    ) -> ShadowExecution:
         """Simulate the signal's order, log the outcome (never its P&L, D-7), sync the strategy."""
         result = await self.c.executor.execute(signal_, bar, correlation_id=correlation_id)
         _log_execution(bar.pair, signal_.kind, result)
@@ -956,6 +964,29 @@ class _BarLoop:
             filled=isinstance(result.outcome, Executed | AlreadyFilled),
             held=partial(self._held_position, bar.pair, at_or_before=signal_.signal_time),
         )
+        return result
+
+    async def _record_or_announce(
+        self, event: SignalEmitted, refusal: TradeRejected | None, interval: KlineInterval
+    ) -> None:
+        """Record a refused signal in the ledger; announce a filled one.
+
+        A refused signal is not announced: the operator would read about a
+        trade that did not happen (#708). It gets no notice of its own either;
+        the refusal row and the ``serve.fill.*`` log line are its record.
+        """
+        if refusal is not None:
+            self.c.event_bus.publish(refusal)
+            return
+        if within_catchup(self.c.clock.now(), event.occurred_at, interval, bars=CATCHUP_BARS):
+            await self._notify(event)
+        else:
+            _log.warning(
+                "serve.signal.stale_not_notified",
+                pair=str(event.pair),
+                kind=event.kind.value,
+                occurred_at=event.occurred_at.isoformat(),
+            )
 
     async def _notify(self, event: SignalEmitted) -> None:
         """Fan the event out in a worker thread; a channel outage is logged, not fatal."""
