@@ -11,7 +11,9 @@ Invariants protected here:
 - every ``--notify`` alert is recorded once as an ``AnomalyDetected`` row,
   even when Telegram is not configured, and a run without one records none
   (#136);
-- the command is registered and reachable through ``hermes``.
+- the command is registered and reachable through ``hermes``;
+- only enabled roster entries seed the book: the shipped roster's disabled
+  ``swing-mvp1-v2`` adds no capital (v2-strategy-config).
 """
 
 from __future__ import annotations
@@ -139,6 +141,16 @@ def test_json_carries_exact_decimal_strings(tmp_path: Path) -> None:
     usdt = next(c for c in payload["checks"] if c["asset"] == "USDT")
     assert (code, payload["verdict"], payload["ready_for_cut"]) == (0, "clean", True)
     assert (usdt["book"], payload["tax"]["realized_eur"]) == ("4659.14", "15.6")
+
+
+def test_a_disabled_roster_entry_adds_no_capital_to_the_book(tmp_path: Path) -> None:
+    """The shipped roster carries v2 disabled; the USDT book stays v1's 4659.14, not +5000."""
+    db = write_september(tmp_path / "l.sqlite3")
+
+    _, out = _run(["2026-09", "--db", str(db), "--json"])
+
+    usdt = next(c for c in json.loads(out)["checks"] if c["asset"] == "USDT")
+    assert usdt["book"] == "4659.14"
 
 
 def test_a_missing_ledger_exits_three_and_creates_nothing(tmp_path: Path) -> None:
