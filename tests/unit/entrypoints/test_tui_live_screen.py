@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import threading
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -41,8 +42,9 @@ from hermes.application.console import ConsoleReadModel
 from hermes.domain.errors import KrakenPublicError
 from hermes.domain.market_data.ticker import Ticker
 from hermes.domain.value_objects.pair import Pair
+from hermes.entrypoints import tui
 from hermes.entrypoints.tui import HomeApp
-from hermes.entrypoints.tui_theme import BASE
+from hermes.entrypoints.tui_theme import BASE, MOTION
 from hermes.entrypoints.tui_widgets import BigNumber
 from tests.unit.adapters.console._ledger_builder import one_btc_position
 
@@ -255,23 +257,40 @@ def test_position_detail_leads_with_the_live_line_above_the_booked_figures() -> 
 # ----------------------------------------------------------------------
 
 
-def test_tick_flashes_the_moved_cells_and_the_flash_ends() -> None:
-    """Motion on: ETH up flashes on the up token, SOL down on the down token, then clears."""
+def test_tick_flashes_the_moved_cells(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Motion on: ETH up flashes on the up token and SOL down on the down token.
+
+    The flash outlasts the test, so a busy runner cannot end it before the
+    read (issue #952).
+    """
+    monkeypatch.setattr(tui, "MOTION", replace(MOTION, flash=3600.0))
     fake = _FakeTicker(_FIRST)
 
-    async def probe(
-        app: HomeApp, pilot: Pilot[None], clock: _Clock
-    ) -> tuple[dict[str, int], bool, dict[str, int]]:
+    async def probe(app: HomeApp, pilot: Pilot[None], clock: _Clock) -> tuple[dict[str, int], bool]:
         fake.set(_SECOND)
         await _advance(app, pilot, clock, 10)
-        flashing = app.flashing
         up = f"bold {BASE.void} on {BASE.up}"
-        on_up = any(style == up for _, style in _spans(app._content["market"]))
-        await pilot.pause(1.0)
-        return flashing, on_up, app.flashing
+        return app.flashing, any(style == up for _, style in _spans(app._content["market"]))
 
-    flashing, on_up, after = _run(_fixture(), fake, probe, motion=True)
-    assert (flashing, on_up, after) == ({"BTC": 1, "ETH": 1, "SOL": -1}, True, {})
+    assert _run(_fixture(), fake, probe, motion=True) == ({"BTC": 1, "ETH": 1, "SOL": -1}, True)
+
+
+def test_the_tick_flash_ends(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Motion on: the flash a tick starts is gone once its duration has passed.
+
+    A short flash keeps the wait well past it however slow the runner is
+    (issue #952).
+    """
+    monkeypatch.setattr(tui, "MOTION", replace(MOTION, flash=0.05))
+    fake = _FakeTicker(_FIRST)
+
+    async def probe(app: HomeApp, pilot: Pilot[None], clock: _Clock) -> dict[str, int]:
+        fake.set(_SECOND)
+        await _advance(app, pilot, clock, 10)
+        await pilot.pause(1.0)
+        return app.flashing
+
+    assert _run(_fixture(), fake, probe, motion=True) == {}
 
 
 def test_motion_off_never_flashes() -> None:
