@@ -120,9 +120,13 @@ class JsonlDecisionJournal:
     def _read(self) -> list[tuple[Decision | Review, str]]:
         if not self._path.exists():
             return []
+        try:
+            text = self._path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise JournalIntegrityError(f"{self._path}: not UTF-8 text: {exc}") from exc
         out: list[tuple[Decision | Review, str]] = []
         prev = GENESIS_HASH
-        for number, raw in enumerate(self._path.read_text(encoding="utf-8").splitlines(), 1):
+        for number, raw in enumerate(text.splitlines(), 1):
             try:
                 line = json.loads(raw)
                 kind, data, line_prev, line_hash = (
@@ -132,7 +136,7 @@ class JsonlDecisionJournal:
                     line["hash"],
                 )
                 entry = _decode(kind, data)
-            except (ValueError, KeyError, TypeError) as exc:
+            except (ValueError, KeyError, TypeError, AttributeError, RecursionError) as exc:
                 raise JournalIntegrityError(
                     f"{self._path}:{number}: malformed entry: {exc}"
                 ) from exc

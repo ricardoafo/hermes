@@ -77,27 +77,22 @@ class TelegramBotClient:
             timeout_s: How long Telegram may hold the request open.
 
         Returns:
-            New text messages, oldest first; other update kinds are skipped.
+            New updates, oldest first. One that is not a text message (or
+            whose message is malformed) comes back with an empty chat id and
+            text, so the caller still advances the offset past it.
 
         Raises:
-            TelegramBotError: On a network error or a non-OK answer.
+            TelegramBotError: On a network error, a non-OK answer, or a reply
+                whose ``result`` is not a list of updates with integer ids.
         """
         params: dict[str, Any] = {"timeout": timeout_s, "allowed_updates": '["message"]'}
         if offset is not None:
             params["offset"] = offset
         body = self._call("getUpdates", params=params, read_timeout=timeout_s + 10)
-        updates: list[Update] = []
-        for item in body.get("result", []):
-            message = item.get("message") or {}
-            chat = message.get("chat") or {}
-            updates.append(
-                Update(
-                    update_id=int(item["update_id"]),
-                    chat_id=str(chat.get("id", "")),
-                    text=str(message.get("text", "")),
-                )
-            )
-        return updates
+        items = body.get("result", [])
+        if not isinstance(items, list):
+            raise TelegramBotError("getUpdates failed: result is not a list")
+        return [_update(item) for item in items]
 
     def send_message(self, chat_id: str, text: str, *, silent: bool = False) -> None:
         """Send ``text`` to ``chat_id`` as plain text.
@@ -157,7 +152,26 @@ class TelegramBotClient:
             body = response.json()
         except ValueError:
             body = {}
+        if not isinstance(body, dict):
+            body = {}
         if response.status_code != httpx.codes.OK or not body.get("ok"):
             msg = f"{method} failed: HTTP {response.status_code} {body.get('description', '')}"
             raise TelegramBotError(msg.rstrip())
         return dict(body)
+
+
+def _update(item: object) -> Update:
+    """Read one ``getUpdates`` entry; only a missing or non-integer id is fatal."""
+    update_id = item.get("update_id") if isinstance(item, dict) else None
+    if not isinstance(update_id, int) or isinstance(update_id, bool):
+        raise TelegramBotError("getUpdates failed: an update has no integer update_id")
+    message = item.get("message") if isinstance(item, dict) else None
+    message = message if isinstance(message, dict) else {}
+    chat = message.get("chat")
+    chat = chat if isinstance(chat, dict) else {}
+    text = message.get("text", "")
+    return Update(
+        update_id=update_id,
+        chat_id=str(chat.get("id", "")),
+        text=text if isinstance(text, str) else "",
+    )

@@ -86,19 +86,21 @@ def _read_yaml(path: Path) -> dict[str, Any]:
         Dict parsed from the YAML document. An empty file yields ``{}``.
 
     Raises:
-        ConfigError: File missing, unreadable, non-mapping root, or YAML
-            parse failure.
+        ConfigError: File missing, unreadable, not UTF-8, non-mapping root,
+            or YAML parse failure (including nesting too deep to parse).
     """
     if not path.is_file():
         raise ConfigError(f"config file not found: {path}")
     try:
         raw = path.read_text(encoding="utf-8")
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         raise ConfigError(f"cannot read {path}: {exc}") from exc
     try:
         parsed = yaml.safe_load(raw)
     except yaml.YAMLError as exc:
         raise ConfigError(f"invalid YAML in {path}: {exc}") from exc
+    except RecursionError:
+        raise ConfigError(f"invalid YAML in {path}: nested too deep") from None
     if parsed is None:
         return {}
     if not isinstance(parsed, dict):
@@ -247,14 +249,17 @@ def load_yaml_model[T: BaseModel](
         A validated ``model_cls`` instance.
 
     Raises:
-        ConfigError: File missing / unreadable, YAML invalid, or schema
-            validation fails.
+        ConfigError: File missing / unreadable / not UTF-8, YAML invalid,
+            nested too deep or self-referencing, or schema validation fails.
     """
     env_snapshot = dict(os.environ) if env is None else env
     raw = _read_yaml(path)
-    merged = _apply_env_overrides(raw, env_section, env_snapshot)
     try:
+        merged = _apply_env_overrides(raw, env_section, env_snapshot)
         return model_cls.model_validate(merged)
+    except RecursionError:
+        # A YAML alias can make a mapping contain itself; copying it recurses.
+        raise ConfigError(f"{path} refers to itself or is nested too deep") from None
     except ValidationError as exc:
         raise ConfigError(
             f"validation failed for {path} against {model_cls.__name__}: {_describe(exc)}"

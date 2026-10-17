@@ -37,6 +37,7 @@ from typing import Any
 
 from returns.result import Failure
 
+from hermes.adapters.ledger._cells import decimal_cell, optional_decimal_cell, time_cell
 from hermes.adapters.ledger.migration_runner import apply_migrations
 from hermes.domain.errors import LedgerError
 from hermes.domain.events.base import DomainEvent
@@ -1482,13 +1483,13 @@ def _row_to_bar(pair: Pair, interval: KlineInterval, row: tuple[Any, ...]) -> Ba
     return Bar(
         pair=pair,
         interval=interval,
-        open_time=datetime.fromisoformat(open_time),
-        close_time=datetime.fromisoformat(close_time),
-        open=Decimal(open_),
-        high=Decimal(high),
-        low=Decimal(low),
-        close=Decimal(close),
-        volume=Decimal(volume),
+        open_time=time_cell(open_time),
+        close_time=time_cell(close_time),
+        open=decimal_cell(open_),
+        high=decimal_cell(high),
+        low=decimal_cell(low),
+        close=decimal_cell(close),
+        volume=decimal_cell(volume),
     )
 
 
@@ -1681,7 +1682,7 @@ def _eur_row(asset: Currency, trade: EurTrade, *, quote_leg: bool) -> EurTradeRo
 
 def _optional_decimal(raw: object) -> Decimal | None:
     """Parse a stored decimal string, keeping ``None`` as ``None``."""
-    return None if raw is None else Decimal(str(raw))
+    return optional_decimal_cell(raw)
 
 
 def _signal_from_payload(payload: dict[str, Any]) -> SignalEmitted:
@@ -1698,7 +1699,7 @@ def _signal_from_payload(payload: dict[str, Any]) -> SignalEmitted:
         ValueError: A field holds a value of the wrong shape.
     """
     return SignalEmitted(
-        occurred_at=datetime.fromisoformat(payload["occurred_at"]),
+        occurred_at=time_cell(payload["occurred_at"]),
         correlation_id=payload["correlation_id"],
         event_seq=int(payload["event_seq"]),
         strategy_id=StrategyId(payload["strategy_id"]["value"]),
@@ -1709,8 +1710,8 @@ def _signal_from_payload(payload: dict[str, Any]) -> SignalEmitted:
         kind=SignalKind(payload["kind"]),
         side=SignalSide(payload["side"]),
         entry_price=_optional_decimal(payload["entry_price"]),
-        stop_price=Decimal(str(payload["stop_price"])),
-        atr_context=Decimal(str(payload["atr_context"])),
+        stop_price=decimal_cell(payload["stop_price"]),
+        atr_context=decimal_cell(payload["atr_context"]),
         exit_reason=payload["exit_reason"],
         f_star_estimate=_optional_decimal(payload["f_star_estimate"]),
     )
@@ -1747,15 +1748,15 @@ def _trade_from_payload(payload: dict[str, Any]) -> TradeExecuted:
         quote=Currency(payload["pair"]["quote"]),
     )
     return TradeExecuted(
-        occurred_at=datetime.fromisoformat(payload["occurred_at"]),
+        occurred_at=time_cell(payload["occurred_at"]),
         correlation_id=payload["correlation_id"],
         event_seq=int(payload["event_seq"]),
         pair=pair,
         side=TradeSide(payload["side"]),
-        qty=Quantity(amount=Decimal(str(payload["qty"]["amount"])), asset=pair.base),
-        price=Price(amount=Decimal(str(payload["price"]["amount"])), pair=pair),
+        qty=Quantity(amount=decimal_cell(payload["qty"]["amount"]), asset=pair.base),
+        price=Price(amount=decimal_cell(payload["price"]["amount"]), pair=pair),
         fee=Money(
-            amount=Decimal(str(payload["fee"]["amount"])),
+            amount=decimal_cell(payload["fee"]["amount"]),
             currency=Currency(payload["fee"]["currency"]),
         ),
         strategy_id=StrategyId(payload["strategy_id"]["value"]),

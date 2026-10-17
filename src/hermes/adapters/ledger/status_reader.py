@@ -14,10 +14,10 @@ from __future__ import annotations
 import json
 import sqlite3
 from datetime import datetime
-from decimal import Decimal
 from pathlib import Path
 from typing import Self
 
+from hermes.adapters.ledger._cells import decimal_cell, time_cell
 from hermes.domain.errors import LedgerError
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.currency import Currency
@@ -85,7 +85,8 @@ class SqliteStatusReader:
             The newest ``occurred_at``, or ``None`` when the stream has no row.
 
         Raises:
-            LedgerError: On any SQLite read failure.
+            LedgerError: On any SQLite read failure, or a stored time that is
+                not ISO 8601 with a UTC offset.
         """
         row = self._fetchone(
             "SELECT MAX(occurred_at) FROM events "
@@ -96,7 +97,12 @@ class SqliteStatusReader:
             (pair.base.value, pair.quote.value, interval.value),
         )
         value = None if row is None else row[0]
-        return datetime.fromisoformat(value) if isinstance(value, str) else None
+        if value is None:
+            return None
+        try:
+            return time_cell(value)
+        except ValueError as exc:
+            raise LedgerError(msg=f"last_processed_close: unreadable time: {exc}") from exc
 
     def count_bars_since(self, interval: KlineInterval, since: datetime) -> int:
         """Return the number of ``BarProcessed`` rows of ``interval`` at or after ``since``.
@@ -165,8 +171,8 @@ class SqliteStatusReader:
                 latest[pair] = (
                     ShadowEntry(
                         pair=pair,
-                        entry_time=datetime.fromisoformat(payload["occurred_at"]),
-                        entry_price=Decimal(str(payload["entry_price"])),
+                        entry_time=time_cell(payload["occurred_at"]),
+                        entry_price=decimal_cell(payload["entry_price"]),
                     )
                     if payload["kind"] == "entry"
                     else None

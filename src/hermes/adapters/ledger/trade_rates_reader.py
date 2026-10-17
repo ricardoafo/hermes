@@ -10,11 +10,10 @@ Reference: openspec/changes/568-tax-pack/change.md R-5.
 from __future__ import annotations
 
 import sqlite3
-from datetime import date
-from decimal import Decimal
 from pathlib import Path
 from typing import Self
 
+from hermes.adapters.ledger._cells import date_cell, decimal_cell
 from hermes.domain.errors import LedgerError
 from hermes.domain.filing.trail import TradeRate
 
@@ -71,7 +70,7 @@ class LedgerTradeRates:
         """Return the stored rate per trade id; trades with no rate yet are absent.
 
         Raises:
-            LedgerError: A query failed.
+            LedgerError: A query failed or a row holds an unreadable rate or date.
         """
         try:
             rows = self._conn.execute(
@@ -80,7 +79,10 @@ class LedgerTradeRates:
             ).fetchall()
         except sqlite3.Error as exc:
             raise LedgerError(msg=f"trade rate query failed: {exc}") from exc
-        return {
-            str(row[0]): TradeRate(rate=Decimal(row[1]), rate_date=date.fromisoformat(row[2]))
-            for row in rows
-        }
+        try:
+            return {
+                str(row[0]): TradeRate(rate=decimal_cell(row[1]), rate_date=date_cell(row[2]))
+                for row in rows
+            }
+        except (ValueError, TypeError) as exc:
+            raise LedgerError(msg=f"unreadable trade rate row: {exc}") from exc
