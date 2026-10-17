@@ -328,3 +328,12 @@ class TestRecordRefusals:
         out = tmp_path / "head.jsonl"
         code = SCRIPT.main(["record", "--out", str(out), "--config-dir", str(tmp_path)])
         assert (code, out.exists()) == (3, False)
+
+    def test_an_unknown_strategy_exits_3(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``--strategy`` naming no roster entry: exit 3 before any bar is read."""
+        monkeypatch.chdir(_ROOT)
+        out = tmp_path / "head.jsonl"
+        code = SCRIPT.main(["record", "--out", str(out), "--strategy", "no-such-strategy"])
+        assert (code, out.exists()) == (3, False)

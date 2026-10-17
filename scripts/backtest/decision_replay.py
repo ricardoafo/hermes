@@ -6,9 +6,10 @@ Code Owner knowing, because an altered decision restarts that strategy's
 shadow clock (ADR-021). CI runs ``record`` once on the PR's base tree and
 once on its head tree, then ``diff`` on the two files.
 
-``record`` replays the enabled roster strategy over the Train split of the
-data manifest, through the same bars, fill kernel and execution model as
-``run_portfolio_backtest.py``, and writes one JSON line per in-window signal:
+``record`` replays the enabled roster strategy (or the entry ``--strategy``
+names) over the Train split of the data manifest, through the same bars,
+fill kernel and roster execution model as ``run_portfolio_backtest.py``, so
+a v2 entry sells its exits at the bar close, and writes one JSON line per in-window signal:
 signal time, pair, kind, side, executed or not, and the rule that refused
 it. It writes no price, size, equity or metric and logs no trial, because
 nothing here evaluates the strategy. The bars load through the manifest as
@@ -51,7 +52,7 @@ from run_calibration import (
     _load_manifest,
     _strategy_parameters,
 )
-from run_calibration_full import _enabled_roster
+from run_calibration_full import _select
 from run_portfolio_backtest import _kernel, _load, _parse_pairs
 
 from hermes.adapters.fees.binance_history import load_binance_fee_history
@@ -261,7 +262,7 @@ async def _record(args: argparse.Namespace) -> int:
     # The kernel logs fill prices, sizes and notionals; a CI log carries decisions only.
     structlog.configure(wrapper_class=structlog.make_filtering_bound_logger(logging.CRITICAL))
     try:
-        roster = _enabled_roster(Path(args.config_dir))
+        roster, model = _select(Path(args.config_dir), args.strategy, ExecutionModel().depth_frac)
         start, end = train_window(Path(args.manifest))
         manifest = _load_manifest(Path(args.manifest))
         pairs = _parse_pairs(",".join(PreRegistration().universe()))
@@ -299,7 +300,7 @@ async def _record(args: argparse.Namespace) -> int:
             window_end=end,
             fees_at=fees_at,
             correlation_id=new_correlation_id,
-            model=ExecutionModel(),
+            model=model,
         )
     except FeeHistoryOutOfRangeError as err:
         print(f"ERROR: fee history does not cover a signal: {err}", file=sys.stderr)
@@ -341,6 +342,11 @@ def main(argv: list[str] | None = None) -> int:
     record = commands.add_parser("record", help="Replay Train and write its decisions")
     record.add_argument("--out", required=True, help="Decision file to write (JSON lines)")
     record.add_argument("--config-dir", default="config", help="Directory holding strategies.yaml")
+    record.add_argument(
+        "--strategy",
+        default=None,
+        help="Roster entry to record, e.g. swing-mvp1-v2 (default: the single enabled entry)",
+    )
     record.add_argument("--manifest", default=str(DATA_MANIFEST_JSON), help="Data manifest")
     record.add_argument("--fee-history", default=str(FEE_HISTORY_CSV), help="Fee history CSV")
     diff = commands.add_parser("diff", help="Compare a base and a head decision file")
