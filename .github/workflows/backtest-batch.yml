@@ -575,3 +575,189 @@ jobs:
             ${{ runner.temp }}/judge/funnel-batch.txt
           retention-days: 90
           if-no-files-found: warn
+
+  # Opens the PR that commits the batch's trial lines and PASS/FAIL records, so
+  # no AI session downloads an artifact or handles a value (ADR-026 §6). It runs
+  # after a failed batch too: lines already appended still count. Its token is a
+  # dedicated App's, minted here, scoped to pull requests and contents of this
+  # repository, and the backtest jobs above hold none (ADR-019).
+  results:
+    name: Open the results PR
+    needs: [check, train, judge-train, validation, judge-validation]
+    if: ${{ !cancelled() && needs.check.result == 'success' && needs.train.result != 'skipped' }}
+    runs-on: [self-hosted, hermes-backtest]
+    environment: backtest-results
+    timeout-minutes: 20
+    env:
+      BATCH_ID: ${{ needs.check.outputs.batch_id }}
+      EXPERIMENT: ${{ needs.check.outputs.experiment }}
+      RUN_ID: ${{ github.run_id }}
+      COMMIT: ${{ github.sha }}
+      # Fixed here, never taken from the batch: the App may only push below this prefix.
+      BRANCH_PREFIX: batch-results/
+    steps:
+      - name: Results App configured
+        id: gate
+        env:
+          APP_ID: ${{ vars.HERMES_RESULTS_APP_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "$APP_ID" ]; then
+            echo "::notice::HERMES_RESULTS_APP_ID is not set, so no results PR is opened; the trial lines stay in the run's artifacts for 90 days"
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ ! "$BATCH_ID" =~ ^[a-z0-9][a-z0-9-]*$ || ! "$EXPERIMENT" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+            echo "::error::the batch id and experiment must be plain lowercase names"
+            exit 1
+          fi
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: ${{ steps.gate.outputs.configured == 'true' }}
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: uv
+        if: ${{ steps.gate.outputs.configured == 'true' }}
+        run: |
+          set -euo pipefail
+          have=$(uv --version 2>/dev/null | cut -d' ' -f2 || true)
+          if [ "$have" != "$UV_PIN" ]; then
+            curl -LsSf "https://github.com/astral-sh/uv/releases/download/${UV_PIN}/uv-installer.sh" \
+              | env UV_INSTALL_DIR="$HOME/.local/bin" sh
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: uv sync
+        if: ${{ steps.gate.outputs.configured == 'true' }}
+        run: uv sync --frozen
+
+      - name: Download the trial log chain
+        if: ${{ steps.gate.outputs.configured == 'true' }}
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: trial-log-chain
+          path: ${{ runner.temp }}/chain
+
+      - name: Download the verdicts
+        if: ${{ steps.gate.outputs.configured == 'true' }}
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: batch-${{ needs.check.outputs.batch_id }}-${{ github.run_id }}-*
+          path: ${{ runner.temp }}/verdict-artifacts
+
+      - name: Assemble the results
+        id: assemble
+        if: ${{ steps.gate.outputs.configured == 'true' }}
+        run: |
+          set -euo pipefail
+          args=(--repo-root . --experiment "$EXPERIMENT" --batch-id "$BATCH_ID"
+                --run-id "$RUN_ID" --commit "$COMMIT" --notes-out "$RUNNER_TEMP/notes.md")
+          if [ -f "$RUNNER_TEMP/chain/trial-log.jsonl" ]; then
+            args+=(--chain "$RUNNER_TEMP/chain/trial-log.jsonl")
+          fi
+          for dir in "$RUNNER_TEMP"/verdict-artifacts/*/verdicts; do
+            [ -d "$dir" ] && args+=(--verdicts "$dir")
+          done
+          selection="$RUNNER_TEMP/verdict-artifacts/batch-${BATCH_ID}-${RUN_ID}-validation/selection.json"
+          if [ -f "$selection" ]; then
+            args+=(--selection "$selection")
+          fi
+          uv run python scripts/backtest/assemble_results.py "${args[@]}"
+          if git diff --quiet && [ -z "$(git ls-files --others --exclude-standard)" ]; then
+            echo "::notice::the batch produced nothing to commit"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Mint the results App token
+        id: app-token
+        if: ${{ steps.assemble.outputs.changed == 'true' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.HERMES_RESULTS_APP_ID }}
+          private-key: ${{ secrets.HERMES_RESULTS_APP_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Commit and push the results branch
+        if: ${{ steps.assemble.outputs.changed == 'true' }}
+        env:
+          TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          branch="${BRANCH_PREFIX}${BATCH_ID}-${RUN_ID}"
+          git config user.name "hermes-results[bot]"
+          git config user.email "hermes-results[bot]@users.noreply.github.com"
+          git checkout -q -b "$branch"
+          git add docs/experiments
+          git commit -q -m "docs(experiment): record batch ${BATCH_ID} results (run ${RUN_ID})"
+          auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+            push -q "https://github.com/${REPO}.git" "HEAD:refs/heads/${branch}"
+          echo "BRANCH=$branch" >> "$GITHUB_ENV"
+
+      - name: Open the PR
+        if: ${{ steps.assemble.outputs.changed == 'true' }}
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          NOTES_FILE: ${{ runner.temp }}/notes.md
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const fs = require('fs');
+            const { owner, repo } = context.repo;
+            const notes = fs.readFileSync(process.env.NOTES_FILE, 'utf8');
+            const batch = process.env.BATCH_ID;
+            const run = process.env.RUN_ID;
+            const body = [
+              '## Summary',
+              '',
+              `Before: batch ${batch} ran on server-01 and its trial lines and verdicts exist only in run ${run}'s artifacts.`,
+              '',
+              `After: the run's new trial lines, one verdict record per candidate and stage, and one lab notebook entry per verdict are committed. PASS/FAIL only; no metric value is written (ADR-012 D-06, ADR-023 §7).`,
+              '',
+              notes,
+              '## Related',
+              '',
+              '- ADR: ADR-026 §6, ADR-023 §6',
+              `- Issue: Refs #1061. Run: https://github.com/${owner}/${repo}/actions/runs/${run}`,
+              '',
+              '## Testing',
+              '',
+              'Opened by the batch workflow. The trial lines are appended byte for byte after a check that the chain starts with the committed log.',
+              '',
+              'Test tiers touched: none (experiment records only)',
+              '',
+              '## Zero-warnings compliance',
+              '',
+              'No code changed. Markdown follows the notebook entry format the lab notebook writer produces.',
+              '',
+              '## Risk',
+              '',
+              'None: records only. A reviewer checks the trial lines continue the log and the verdict records hold no value.',
+              '',
+            ].join('\n');
+            const { data: pr } = await github.rest.pulls.create({
+              owner, repo,
+              title: `docs(experiment): record batch ${batch} results`,
+              head: process.env.BRANCH,
+              base: 'main',
+              body,
+            });
+            await github.rest.issues.update({
+              owner, repo, issue_number: pr.number,
+              labels: ['type:docs', 'p1', 'area:docs', 'size:s'],
+              assignees: ['rafo-claude-bot'],
+              milestone: 5,
+            });
+            await github.rest.pulls.requestReviewers({
+              owner, repo, pull_number: pr.number, reviewers: [owner],
+            });
+            core.notice(`Opened PR #${pr.number}`);
