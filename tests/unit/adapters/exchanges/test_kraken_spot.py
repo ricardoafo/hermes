@@ -701,3 +701,18 @@ def test_a_nonce_file_that_holds_no_nonce_is_refused(tmp_path: Path) -> None:
     with pytest.raises(ExchangeError, match="does not hold a nonce"):
         adapter.get_balance(currency=Currency.BTC)
     adapter.close()
+
+
+@respx.mock
+def test_a_bad_nonce_file_fails_an_order_before_sending_it(tmp_path: Path) -> None:
+    """A corrupted nonce file stops AddOrder unsent, so it is not reported as a maybe-live order."""
+    add = respx.post(f"{_PRIVATE}/AddOrder").mock(return_value=_ok("add_order_market_buy"))
+    nonce_file = tmp_path / "kraken.nonce"
+    nonce_file.write_text("garbage", encoding="ascii")
+    adapter = _with_nonce_file(nonce_file, _NOW_MS)
+
+    with pytest.raises(ExchangeError, match="does not hold a nonce") as caught:
+        adapter.place_market_order(side=OrderSide.BUY, order=_order())
+    adapter.close()
+
+    assert (type(caught.value), add.call_count) == (ExchangeError, 0)

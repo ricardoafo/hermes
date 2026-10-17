@@ -381,6 +381,22 @@ def test_a_found_order_whose_trades_cannot_be_read_names_its_binance_id(
 
 
 @respx.mock
+def test_a_malformed_lookup_reply_still_names_the_client_id(adapter: BinanceSpotAdapter) -> None:
+    """A lookup reply with a bad executedQty is unknown status, and names both order ids."""
+    post = respx.post(url__startswith=_ORDER_URL).mock(return_value=httpx.Response(503))
+    respx.get(url__startswith=_ORDER_URL).mock(
+        return_value=httpx.Response(
+            200, json={"orderId": 77, "status": "FILLED", "executedQty": None}
+        )
+    )
+
+    with pytest.raises(OrderStatusUnknownError, match="Binance order 77") as caught:
+        adapter.place_market_order(side=OrderSide.BUY, order=_order())
+
+    assert caught.value.client_order_id == post.calls.last.request.url.params["newClientOrderId"]
+
+
+@respx.mock
 def test_a_stop_loss_whose_reply_was_lost_returns_the_found_order_id(
     adapter: BinanceSpotAdapter,
 ) -> None:

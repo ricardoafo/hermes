@@ -473,7 +473,11 @@ class BinanceSpotAdapter:
             "transactTime": found.get("updateTime", found.get("time")),
             "fills": [],
         }
-        if _decimal(found.get("executedQty"), "executedQty") > 0:
+        try:
+            executed = _decimal(found.get("executedQty"), "executedQty")
+        except ExchangeError as exc:
+            raise self._unknown(symbol, client_id, exc, order_id=order_id) from exc
+        if executed > 0:
             try:
                 trades = self._signed_rows(
                     "/api/v3/myTrades",

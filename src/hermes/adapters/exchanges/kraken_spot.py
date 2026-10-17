@@ -474,8 +474,10 @@ class KrakenSpotAdapter:
             "userref": str(userref),
             **params,
         }
+        # A bad nonce file fails here, before anything is sent, so it is not an unread order.
+        nonce = self._nonce()
         try:
-            result = self._private("AddOrder", fields)
+            result = self._private("AddOrder", fields, nonce=nonce)
         except _KrakenRefusalError:
             raise
         except NetworkError as exc:
@@ -569,10 +571,12 @@ class KrakenSpotAdapter:
             _write_nonce(self.config.nonce_file, self._last_nonce)
         return str(self._last_nonce)
 
-    def _private(self, method: str, params: dict[str, str]) -> dict[str, Any]:
+    def _private(
+        self, method: str, params: dict[str, str], *, nonce: str | None = None
+    ) -> dict[str, Any]:
         self.limiter.acquire(1)
         path = f"{_PRIVATE_PREFIX}{method}"
-        nonce = self._nonce()
+        nonce = nonce or self._nonce()
         body = urlencode({"nonce": nonce, **params})
         headers = {
             "API-Key": self.config.api_key,
