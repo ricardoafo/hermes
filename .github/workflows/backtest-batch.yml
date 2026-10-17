@@ -100,23 +100,17 @@ jobs:
       - name: uv sync
         run: uv sync --frozen
 
-      # The hash and the bound commit come from the signed front matter at the
-      # pushed commit; `hermes batch check` verifies them against the file,
-      # the cards and the code (ADR-026 §1).
+      # `hermes batch check` recomputes the content hash with git, compares the
+      # cards and the code binding, and refuses a batch that is not signed
+      # (ADR-026 §1; contract v4 §1).
       - name: Batch check
         id: check
         env:
           FILE: ${{ steps.batch.outputs.file }}
         run: |
           set -uo pipefail
-          sha=$(sed -n 's/^content_sha256: *//p' "$FILE" | head -n1 | tr -d '"')
-          commit=$(sed -n 's/^code_commit: *//p' "$FILE" | head -n1 | tr -d '"')
-          if [[ ! "$sha" =~ ^[0-9a-f]{64}$ || ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "::error::the batch front matter needs content_sha256 (64 hex) and code_commit (40 hex)"
-            exit 1
-          fi
           mkdir -p "$RUNNER_TEMP/check"
-          uv run hermes batch check "$FILE" --expect-sha256 "$sha" --code-commit "$commit" \
+          uv run hermes batch check "$FILE" --require-signed \
             --candidates-out "$RUNNER_TEMP/check/candidates.json" > "$RUNNER_TEMP/check/check.txt"
           code=$?
           awk '/^(PASS|FAIL|NA) /{print $1, $2}' "$RUNNER_TEMP/check/check.txt" >> "$GITHUB_STEP_SUMMARY"

@@ -63,6 +63,14 @@ def test_batches_start_only_from_a_push_to_main_on_batch_paths() -> None:
     assert on == {"push": {"branches": ["main"], "paths": ["docs/experiments/*/batches/**"]}}
 
 
+def test_batch_check_refuses_an_unsigned_batch_and_writes_the_candidate_list() -> None:
+    """The check job passes --require-signed, so a batch that is not signed starts no run."""
+    run = _step("check", "Batch check")["run"]
+    assert "hermes batch check" in run
+    assert "--require-signed" in run
+    assert "--candidates-out" in run
+
+
 def test_batch_runs_share_the_backtest_concurrency_group_and_queue() -> None:
     """Never two backtests at once with backtest.yml, and a pending run is not cancelled."""
     assert _workflow()["concurrency"] == {"group": "backtest", "cancel-in-progress": False}
