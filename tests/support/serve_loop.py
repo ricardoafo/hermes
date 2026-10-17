@@ -142,11 +142,13 @@ class FakeFeed:
         live_bars: Sequence[Bar] = (),
         *,
         error: Exception | None = None,
+        clock_skew_ms: int | None = None,
     ) -> None:
-        """Script the feed."""
+        """Script the feed; ``clock_skew_ms`` is the skew its health reports."""
         self.warm = list(warm)
         self.live_bars = list(live_bars)
         self.error = error
+        self.clock_skew_ms = clock_skew_ms
         self.drained = asyncio.Event()
         self.closed = False
 
@@ -170,13 +172,13 @@ class FakeFeed:
         await asyncio.Event().wait()
 
     def health(self) -> SourceHealth:
-        """Return a healthy snapshot."""
+        """Return a healthy snapshot with the scripted clock skew."""
         return SourceHealth(
             state=SourceState.HEALTHY,
             overdue_seconds=0.0,
             consecutive_failures=0,
             last_closed=None,
-            clock_skew_ms=None,
+            clock_skew_ms=self.clock_skew_ms,
             used_weight_1m=None,
         )
 

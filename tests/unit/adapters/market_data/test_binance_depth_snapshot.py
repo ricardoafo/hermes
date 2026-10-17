@@ -24,6 +24,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+from typing import cast
 
 import anyio
 import httpx
@@ -48,6 +49,12 @@ _START = datetime(2026, 10, 4, 4, 0, 5, tzinfo=UTC)
 def _recorded() -> object:
     """Return the recorded depth body."""
     return json.loads(_FIXTURE.read_text(encoding="utf-8"))
+
+
+def _moved(updates: int) -> dict[str, object]:
+    """Return the recorded body ``updates`` exchange updates later (same levels)."""
+    body = cast("dict[str, object]", _recorded())
+    return body | {"lastUpdateId": cast("int", body["lastUpdateId"]) + updates}
 
 
 def _adapter(
@@ -140,8 +147,10 @@ def test_a_book_younger_than_the_cache_window_is_reused() -> None:
 
 @respx.mock
 def test_a_book_older_than_the_cache_window_is_refetched() -> None:
-    """After the window the next read is a fresh request with a fresh stamp."""
-    route = respx.get(_DEPTH_URL).mock(return_value=httpx.Response(200, json=_recorded()))
+    """After the window the next read of a moving book is a fresh request with a fresh stamp."""
+    route = respx.get(_DEPTH_URL).mock(
+        side_effect=[httpx.Response(200, json=_moved(n)) for n in (0, 1)]
+    )
     clock = SimulatedClock(start=_START)
     adapter = _adapter(clock)
 
@@ -216,3 +225,65 @@ def test_an_empty_bucket_waits_instead_of_sending() -> None:
     _snapshot(adapter)
 
     assert slept == [60.0]
+
+
+# SEV-1: no rubric row matches; a frozen upstream book must never pass RO-04 as fresh
+@respx.mock
+def test_a_book_whose_update_id_has_not_moved_keeps_its_first_stamp() -> None:
+    """A repeated ``lastUpdateId`` is a frozen upstream: the book is as old as its first sight.
+
+    Issue #859 item 1, option A: RO-04 then measures the real age and halts
+    entries on it.
+    """
+    respx.get(_DEPTH_URL).mock(side_effect=[httpx.Response(200, json=_moved(0))] * 2)
+    clock = SimulatedClock(start=_START)
+    adapter = _adapter(clock)
+
+    _snapshot(adapter)
+    clock.advance(timedelta(minutes=10))
+    book = _snapshot(adapter)
+
+    assert book.snapshot_time == _START
+
+
+@respx.mock
+def test_a_book_whose_update_id_went_back_keeps_the_newest_stamp() -> None:
+    """An older ``lastUpdateId`` (a stale cache upstream) is no fresher than the newest one seen."""
+    respx.get(_DEPTH_URL).mock(side_effect=[httpx.Response(200, json=_moved(n)) for n in (5, 9, 7)])
+    clock = SimulatedClock(start=_START)
+    adapter = _adapter(clock)
+
+    _snapshot(adapter)
+    clock.advance(timedelta(seconds=30))
+    _snapshot(adapter)
+    clock.advance(timedelta(seconds=30))
+    book = _snapshot(adapter)
+
+    assert book.snapshot_time == _START + timedelta(seconds=30)
+
+
+@respx.mock
+def test_a_book_that_moved_after_freezing_is_fresh_again() -> None:
+    """Once the id moves on, the book is stamped on arrival again: the halt clears by itself."""
+    respx.get(_DEPTH_URL).mock(side_effect=[httpx.Response(200, json=_moved(n)) for n in (0, 0, 1)])
+    clock = SimulatedClock(start=_START)
+    adapter = _adapter(clock)
+
+    _snapshot(adapter)
+    clock.advance(timedelta(minutes=10))
+    _snapshot(adapter)
+    clock.advance(timedelta(minutes=10))
+    book = _snapshot(adapter)
+
+    assert book.snapshot_time == _START + timedelta(minutes=20)
+
+
+@respx.mock
+@pytest.mark.parametrize("bad", [None, "101015872942", 1.5, True, -1])
+def test_a_book_without_a_valid_update_id_raises_exchange_error(bad: object) -> None:
+    """Without a usable ``lastUpdateId`` freshness cannot be told, so the caller falls back."""
+    body = _moved(0) | {"lastUpdateId": bad}
+    respx.get(_DEPTH_URL).mock(return_value=httpx.Response(200, json=body))
+
+    with pytest.raises(ExchangeError, match="lastUpdateId"):
+        _snapshot(_adapter(SimulatedClock(start=_START)))

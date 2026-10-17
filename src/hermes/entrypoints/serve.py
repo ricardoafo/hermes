@@ -81,6 +81,7 @@ from hermes.adapters.fills.orderbook_walk import OrderbookWalkFillModel
 from hermes.adapters.fx.frankfurter import FrankfurterAdapter
 from hermes.adapters.fx.frankfurter import FrankfurterConfig as FrankfurterWireConfig
 from hermes.adapters.fx.rate_limiter import RateLimitConfig
+from hermes.adapters.ledger.anomaly_reader import latest_anomaly
 from hermes.adapters.ledger.connection import open_ledger
 from hermes.adapters.ledger.migration_runner import unknown_applied_migrations
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
@@ -109,6 +110,7 @@ from hermes.application.ledger.eur_backfill import backfill_pending_eur, pending
 from hermes.application.ledger.eur_pricer import EurPricer, LookupBudget
 from hermes.application.ledger.trade_recorder import TradeRecorder
 from hermes.application.messages.eur_rate import EurRateLookup
+from hermes.application.monitoring.clock_skew import clock_is_off, clock_skew_change
 from hermes.application.notification_router import EventClass, RouterConfig, route
 from hermes.application.order_router.sizing import SizingPolicy
 from hermes.application.portfolio.tracker import PortfolioTracker
@@ -118,7 +120,11 @@ from hermes.application.signal_notifier import SignalNotifier
 from hermes.application.strategy_protocol.kill_trigger_evaluator import KillTriggerEvaluator
 from hermes.application.strategy_protocol.preregistration import PreRegistration
 from hermes.domain.errors import HermesError, InfraError, LedgerError
-from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
+from hermes.domain.events.anomaly_detected import (
+    CLOCK_SKEW_SOURCE,
+    AnomalyDetected,
+    AnomalySeverity,
+)
 from hermes.domain.events.bar_processed import BarProcessed
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.event_bus import EventBus, EventDispatchError
@@ -1091,6 +1097,8 @@ class _BarLoop:
     c: Composition
     previous: dict[Stream, datetime] = field(default_factory=dict)
     catching_up: bool = False
+    clock_off: bool | None = None
+    """Whether the last recorded clock-skew state is off; read from the ledger once."""
 
     async def warm_up_and_catch_up(self, shutdown: asyncio.Event) -> None:
         """Seed history up to each cursor, then evaluate the bars after it."""
@@ -1232,6 +1240,7 @@ class _BarLoop:
             if not self.catching_up:
                 raise
             await self._report_missing_bars(gap)
+        await self._watch_clock()
         correlation_id = new_correlation_id()
         bind_correlation_id(correlation_id)
 
@@ -1408,6 +1417,37 @@ class _BarLoop:
             await asyncio.to_thread(telegram.notify, alert)
         except InfraError as exc:
             _log.error("serve.bar.gap_alert_failed", exc_info=exc)
+
+    async def _watch_clock(self) -> None:
+        """Record and alert the host clock leaving, or coming back to, exchange time (#859).
+
+        The limit is the settle delay, as in ``hermes health``. Leaving is a
+        loud ``CRITICAL`` alert, coming back a silent ``INFO`` one. Only a
+        change is recorded, so a clock that stays off alerts once; the state survives
+        a restart through the ledger, which is also where ``hermes status``
+        reads it. RO-04 is untouched: entries still halt on a stale book.
+        """
+        c = self.c
+        if self.clock_off is None:
+            self.clock_off = clock_is_off(latest_anomaly(c.sqlite_connection, CLOCK_SKEW_SOURCE))
+        alert = clock_skew_change(
+            c.feed.health().clock_skew_ms,
+            limit=timedelta(seconds=c.config.market_data.settle_delay_seconds),
+            was_off=self.clock_off,
+            now=c.clock.now(),
+            correlation_id=new_correlation_id(),
+        )
+        if alert is None:
+            return
+        self.clock_off = alert.severity is AnomalySeverity.CRITICAL
+        c.ledger.append_event(alert)
+        _log.warning("serve.clock.skew_changed", severity=alert.severity.value, reason=alert.reason)
+        for adapter in route(EventClass.ANOMALY_DETECTED, c.alert_channels):
+            try:
+                await asyncio.to_thread(adapter.notify, alert)
+            except Exception as exc:  # one channel's bug must not stop the bar loop (#854)
+                _log.error("serve.clock.alert_failed", exc_info=exc)
+                sentry_integration.capture(exc)
 
     async def _execute(self, signal_: StrategySignal, bar: Bar, correlation_id: str) -> None:
         """Simulate the signal's order, log the outcome (never its P&L, D-7), sync the strategy."""

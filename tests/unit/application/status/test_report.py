@@ -5,7 +5,8 @@ Invariants protected here:
 - a stream is late only once ``now`` passes its next close plus settle plus
   grace, and never-processed streams count as late ("never run");
 - the verdict is down whenever systemd says the unit is not running, before
-  any stream rule; late when any stream is late; all good otherwise;
+  any stream rule; down when serve's clock is off (#859); late when any
+  stream is late; all good otherwise;
 - the report counts signals in the 24 h and 7 d windows the reader returns.
 
 A fake reader stands in for the ledger; the SQLite reader has its own tests
@@ -15,7 +16,7 @@ run both together.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -29,6 +30,11 @@ from hermes.application.status import (
     VerdictLevel,
     build_report,
     ledger_missing_report,
+)
+from hermes.domain.events.anomaly_detected import (
+    CLOCK_SKEW_SOURCE,
+    AnomalyDetected,
+    AnomalySeverity,
 )
 from hermes.domain.events.risk_halt_recorded import HaltKind, RiskHaltRecorded
 from hermes.domain.market_data.kline import KlineInterval
@@ -51,12 +57,14 @@ class _FakeReader:
         signal_times: tuple[datetime, ...] = (),
         entries: tuple[ShadowEntry, ...] = (),
         halts: tuple[RiskHaltRecorded, ...] = (),
+        clock_skew: AnomalyDetected | None = None,
     ) -> None:
         """Store the canned answers."""
         self.closes = closes
         self.signal_times = signal_times
         self.entries = entries
         self.halts = halts
+        self.clock_skew = clock_skew
 
     def last_processed_close(self, pair: Pair, interval: KlineInterval) -> datetime | None:
         """Return the canned inclusive close."""
@@ -81,6 +89,10 @@ class _FakeReader:
     def halts_since(self, since: datetime) -> tuple[RiskHaltRecorded, ...]:
         """Return the canned halts at or after ``since``."""
         return tuple(h for h in self.halts if h.occurred_at >= since)
+
+    def last_clock_skew(self) -> AnomalyDetected | None:
+        """Return the canned clock-skew anomaly."""
+        return self.clock_skew
 
 
 def _current() -> dict[tuple[Pair, KlineInterval], datetime | None]:
@@ -273,3 +285,45 @@ def test_a_halt_leaves_the_verdict_unchanged() -> None:
     report = _report(_FakeReader(_current(), halts=(_halt_at(NOW - timedelta(hours=1)),)))
 
     assert report.verdict.level is VerdictLevel.OK
+
+
+def _skew(severity: AnomalySeverity) -> AnomalyDetected:
+    """Return a clock-skew anomaly serve recorded at 13:30 Madrid on 17 Oct."""
+    return AnomalyDetected(
+        occurred_at=datetime(2026, 10, 17, 11, 30, tzinfo=UTC),
+        correlation_id="c-skew",
+        source=CLOCK_SKEW_SOURCE,
+        severity=severity,
+        reason="the host clock is 300000 ms ahead of Binance (limit 5000 ms)",
+    )
+
+
+def test_a_clock_left_off_turns_the_status_red_with_the_fix() -> None:
+    """Issue #859 item 2: an uncleared CRITICAL skew is a red verdict saying how to fix it."""
+    report = _report(_FakeReader(_current(), clock_skew=_skew(AnomalySeverity.CRITICAL)))
+
+    assert (report.verdict.level, report.verdict.headline, report.verdict.reason) == (
+        VerdictLevel.DOWN,
+        "The server clock is off",
+        "Since 17 Oct 13:30, the host clock is 300000 ms ahead of Binance (limit 5000 ms).",
+    )
+
+
+def test_a_clock_back_on_time_reads_as_all_good() -> None:
+    """Once serve records the return to exchange time, status is green again."""
+    report = _report(_FakeReader(_current(), clock_skew=_skew(AnomalySeverity.INFO)))
+
+    assert report.verdict.level is VerdictLevel.OK
+
+
+def test_a_stopped_unit_outranks_an_off_clock() -> None:
+    """A stopped hermes is the first thing to fix; the clock waits behind it."""
+    report = _report(
+        _FakeReader(_current(), clock_skew=_skew(AnomalySeverity.CRITICAL)),
+        unit=UnitState.STOPPED,
+    )
+
+    assert (report.verdict.level, report.verdict.headline) == (
+        VerdictLevel.DOWN,
+        "hermes is down",
+    )

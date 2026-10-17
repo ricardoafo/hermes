@@ -6,8 +6,10 @@ close and jumps back twelve hours later, while the fake exchange keeps true
 time, as the real one would; monotonic time does not jump
 (:class:`~tests.integration.scenarios.faults.SkewedClock`).
 
-Whatever the local clock says, every bar is handled once, none is skipped, and
-the run trades and notifies as it does with a steady clock.
+Whatever the local clock says, every bar is handled once and none is skipped.
+Serve records the jump and the fix as clock-skew anomalies (issue #859). A
+clock behind trades as a steady one; a clock ahead leaves the breakout entry
+halted on a stale book, as Rick chose (RO-04 unchanged, the skew alerted).
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ from pathlib import Path
 import pytest
 from structlog.testing import capture_logs
 
+from hermes.domain.events.anomaly_detected import CLOCK_SKEW_SOURCE
 from tests.integration.scenarios import markets
 from tests.integration.scenarios.faults import entries_sent, recording_channels, skewed_clock
 from tests.integration.scenarios.ledger import outline
@@ -46,6 +49,7 @@ class _Outcome:
     btc_4h_handled: list[datetime]
     trades: list[tuple[str, ...]]
     entries_sent: int
+    clock_skews: list[str]
 
 
 @functools.cache
@@ -71,6 +75,11 @@ def _serve(db: Path, jumps: list[tuple[datetime, timedelta]]) -> _Outcome:
         btc_4h_handled=_btc_4h_handled(db),
         trades=outline(db)["trades"],
         entries_sent=entries_sent(channels),
+        clock_skews=[
+            p["severity"]
+            for p in (json.loads(row["payload_json"]) for row in events(db, "AnomalyDetected"))
+            if p["source"] == CLOCK_SKEW_SOURCE
+        ],
     )
 
 
@@ -107,30 +116,37 @@ def test_a_clock_jump_across_a_bar_close_handles_every_bar_exactly_once(
     )
 
 
-@pytest.mark.parametrize(
-    "direction",
-    [
-        pytest.param(
-            "ahead",
-            marks=pytest.mark.xfail(
-                strict=True,
-                raises=AssertionError,
-                reason=(
-                    "issue #859: the live-book window (5 min) is measured on the local wall "
-                    "clock, so a host clock running ahead of the exchange makes every entry "
-                    "fall back to the bar-close book, which RO-04 refuses as stale, while the "
-                    "entry push still goes out"
-                ),
-            ),
-        ),
-        "behind",
-    ],
-)
-def test_a_clock_jump_across_a_bar_close_trades_as_a_steady_clock(
-    steady: _Outcome, jumped: Callable[[str], _Outcome], direction: str
+def test_a_clock_jumped_behind_across_a_bar_close_trades_as_a_steady_clock(
+    steady: _Outcome, jumped: Callable[[str], _Outcome]
 ) -> None:
     """The breakout still buys once and the gap still sells once."""
-    assert jumped(direction).trades == steady.trades
+    assert jumped("behind").trades == steady.trades
+
+
+def test_a_clock_jumped_ahead_across_the_breakout_close_leaves_the_entry_halted(
+    jumped: Callable[[str], _Outcome],
+) -> None:
+    """Issue #859 item 2, option A: RO-04 is unchanged, so the entry stays halted.
+
+    Five hours ahead, the breakout close looks older than the live-book
+    window, the entry falls back to the bar-close book and RO-04 refuses it as
+    stale. Rick chose to keep that halt and alert the clock instead (17 Oct
+    2026), so no trade happens; the next test proves the alert.
+    """
+    assert jumped("ahead").trades == []
+
+
+@pytest.mark.parametrize("direction", sorted(_JUMPS))
+def test_a_clock_jump_is_recorded_as_off_then_back(
+    jumped: Callable[[str], _Outcome], direction: str
+) -> None:
+    """Serve measures skew against the exchange: CRITICAL on the jump, INFO on the fix."""
+    assert jumped(direction).clock_skews == ["CRITICAL", "INFO"]
+
+
+def test_a_steady_clock_records_no_skew(steady: _Outcome) -> None:
+    """A clock that never jumps stays within the limit: nothing is recorded."""
+    assert steady.clock_skews == []
 
 
 @pytest.mark.parametrize("direction", sorted(_JUMPS))
