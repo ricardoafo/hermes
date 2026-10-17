@@ -173,6 +173,10 @@ jobs:
           HERMES_BINANCE_MAINNET__API_SECRET: ${{ secrets.HERMES_BINANCE_MAINNET__API_SECRET }}
           HERMES_BINANCE_TESTNET__API_KEY: ${{ secrets.HERMES_BINANCE_TESTNET__API_KEY }}
           HERMES_BINANCE_TESTNET__API_SECRET: ${{ secrets.HERMES_BINANCE_TESTNET__API_SECRET }}
+          # Read-only, IP-restricted key for `hermes reconcile` (issue #29);
+          # separate from the trading key so the reconcile can never trade.
+          HERMES_BINANCE_READ__API_KEY: ${{ secrets.HERMES_BINANCE_READ__API_KEY }}
+          HERMES_BINANCE_READ__API_SECRET: ${{ secrets.HERMES_BINANCE_READ__API_SECRET }}
 
           # Optional non-root CD account (repo variable VPS_DEPLOY_USER). Unset
           # or root: the script writes no sudoers rule.

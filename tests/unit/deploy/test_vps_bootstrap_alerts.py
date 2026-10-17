@@ -163,6 +163,22 @@ def test_bootstrap_workflow_ships_the_notifier_script() -> None:
     assert "tar -C deploy -cf - systemd hermes-notify-failure.sh hermes-notify-crash.sh" in runs
 
 
+def test_bootstrap_passes_the_read_only_reconcile_key() -> None:
+    """The bootstrap step hands the read-only Binance key to the env file, from prod secrets (#29).
+
+    ``hermes reconcile`` refuses to read live balances without it, and it must
+    come from its own secrets, never the trading key's.
+    """
+    steps = yaml.safe_load(_WORKFLOW.read_text(encoding="utf-8"))["jobs"]["bootstrap"]["steps"]
+    env = next(s for s in steps if s.get("name") == "Run bootstrap script on VPS")["env"]
+
+    names = ("HERMES_BINANCE_READ__API_KEY", "HERMES_BINANCE_READ__API_SECRET")
+
+    assert {name: env.get(name) for name in names} == {
+        name: f"${{{{ secrets.{name} }}}}" for name in names
+    }
+
+
 def test_bootstrap_uploads_to_a_root_only_dir_the_script_reads() -> None:
     """The unit and alert upload lands outside world-writable /var/tmp, where the script reads it.
 
