@@ -96,6 +96,7 @@ from hermes.application.calibration.certification_gates import (
     require_live_approval,
     v1_parameter_fingerprint,
 )
+from hermes.application.execution.halt_record import halt_record
 from hermes.application.execution.kernel import Declined, Executed, FillKernel, Halted
 from hermes.application.execution.position_sync import sync_after_signal
 from hermes.application.execution.shadow import (
@@ -108,7 +109,7 @@ from hermes.application.ledger.eur_backfill import backfill_pending_eur, pending
 from hermes.application.ledger.eur_pricer import EurPricer, LookupBudget
 from hermes.application.ledger.trade_recorder import TradeRecorder
 from hermes.application.messages.eur_rate import EurRateLookup
-from hermes.application.notification_router import RouterConfig
+from hermes.application.notification_router import EventClass, RouterConfig, route
 from hermes.application.order_router.sizing import SizingPolicy
 from hermes.application.portfolio.tracker import PortfolioTracker
 from hermes.application.risk_inputs.correlation_recorder import CorrelationRecorder
@@ -121,6 +122,7 @@ from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeveri
 from hermes.domain.events.bar_processed import BarProcessed
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.event_bus import EventBus, EventDispatchError
+from hermes.domain.events.risk_halt_recorded import RiskHaltRecorded
 from hermes.domain.events.shadow_capital_seeded import ShadowCapitalSeeded
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.events.signal_notified import SignalNotified
@@ -323,6 +325,7 @@ class Composition:
         strategy_id: The bucket id every signal carries.
         tracker: Portfolio state handed to the strategies on every bar.
         signal_notifier: Fans a signal out to the routed channels.
+        alert_channels: The channels a halt or kill alert is routed over (#749).
         pairs: Pairs the feed follows.
         intervals: Intervals the feed follows.
         telegram: Telegram adapter, or ``None`` without credentials. Kept
@@ -354,6 +357,7 @@ class Composition:
     strategy_id: StrategyId
     tracker: PortfolioTracker
     signal_notifier: SignalNotifier
+    alert_channels: RouterConfig
     pairs: tuple[Pair, ...]
     intervals: tuple[KlineInterval, ...]
     telegram: TelegramAdapter | None
@@ -744,6 +748,7 @@ def _wire_on_ledger(
         strategy_id=strategy_id,
         tracker=tracker,
         signal_notifier=SignalNotifier(RouterConfig(telegram=telegram, slack=slack)),
+        alert_channels=RouterConfig(telegram=telegram, slack=slack),
         pairs=pairs,
         intervals=tuple(config.market_data.intervals),
         telegram=telegram,
@@ -1344,6 +1349,15 @@ class _BarLoop:
         """Simulate the signal's order, log the outcome (never its P&L, D-7), sync the strategy."""
         result = await self.c.executor.execute(signal_, bar, correlation_id=correlation_id)
         _log_execution(bar.pair, signal_.kind, result)
+        record = halt_record(
+            result.outcome,
+            strategy_id=self.c.strategy_id,
+            pair=bar.pair,
+            at=signal_.signal_time,
+            correlation_id=correlation_id,
+        )
+        if record is not None:
+            await self._record_halt(record)
         # A signal that did not fill leaves the strategy in the position the
         # portfolio holds: flat after an entry (#707), still long after an exit (#706).
         sync_after_signal(
@@ -1352,6 +1366,31 @@ class _BarLoop:
             filled=isinstance(result.outcome, Executed | AlreadyFilled),
             held=partial(self._held_position, bar.pair, at_or_before=signal_.signal_time),
         )
+
+    async def _record_halt(self, record: RiskHaltRecorded) -> None:
+        """Record a halted or killed entry once, then alert it on every routed channel (#749).
+
+        Record, then push: the ledger row is the record of truth. A bar
+        evaluated again after a restart finds its row and neither records
+        nor alerts it twice. A failing channel is logged and sent to Sentry.
+        """
+        c = self.c
+        if c.ledger.has_risk_halt(record):
+            return
+        c.ledger.append_event(record)
+        _log.warning(
+            "serve.halt.recorded",
+            pair=str(record.pair),
+            kind=record.kind.value,
+            rule=record.rule,
+            reason=record.reason,
+        )
+        for adapter in route(EventClass.RISK_HALT, c.alert_channels):
+            try:
+                await asyncio.to_thread(adapter.notify, record)
+            except Exception as exc:  # one channel's bug must not stop the bar loop (#854)
+                _log.error("serve.halt.alert_failed", exc_info=exc)
+                sentry_integration.capture(exc)
 
     def _stored_signal(self, event: SignalEmitted) -> SignalEmitted:
         """Return the stored row of a re-evaluated signal: its push record keys on it."""

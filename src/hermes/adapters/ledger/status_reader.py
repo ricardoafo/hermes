@@ -19,7 +19,9 @@ from pathlib import Path
 from typing import Self
 
 from hermes.adapters.ledger.connection import open_ledger
+from hermes.adapters.ledger.risk_halt_rows import RISK_HALT_EVENT_TYPE, risk_halt_from_payload
 from hermes.domain.errors import LedgerError
+from hermes.domain.events.risk_halt_recorded import RiskHaltRecorded
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
@@ -177,6 +179,31 @@ class SqliteStatusReader:
         return tuple(
             sorted((e for e in latest.values() if e is not None), key=lambda e: e.entry_time)
         )
+
+    def halts_since(self, since: datetime) -> tuple[RiskHaltRecorded, ...]:
+        """Return every halt and kill recorded at or after ``since``, newest first.
+
+        Args:
+            since: Inclusive lower bound on the signal time, UTC-aware.
+
+        Returns:
+            The rehydrated records.
+
+        Raises:
+            LedgerError: On any SQLite read failure or an unreadable payload.
+        """
+        try:
+            rows = self._conn.execute(
+                "SELECT payload_json FROM events WHERE event_type = ? AND occurred_at >= ? "
+                "ORDER BY occurred_at DESC, id DESC",
+                (RISK_HALT_EVENT_TYPE, since.isoformat()),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"halts_since failed: {exc}") from exc
+        try:
+            return tuple(risk_halt_from_payload(json.loads(payload)) for (payload,) in rows)
+        except (KeyError, ValueError, TypeError) as exc:
+            raise LedgerError(msg=f"halts_since: unreadable payload: {exc}") from exc
 
     def _fetchone(self, sql: str, params: tuple[str, ...]) -> tuple[str | int | None, ...] | None:
         """Run one read query and return its first row."""

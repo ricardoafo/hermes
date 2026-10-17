@@ -21,6 +21,7 @@
   
   
   signals    24h: 1   7d: 1
+  halts      24h: 0   30d last: none
   positions  open: 1 (shadow, entry facts only)
     ETH/USDT  opened 2026-10-03 12:00 UTC (Sat 14:00 Madrid)  entry 2618.45
   
@@ -48,6 +49,7 @@
   
   
   signals    24h: 1   7d: 1
+  halts      24h: 0   30d last: none
   positions  open: 1 (shadow, entry facts only)
     ETH/USDT  opened 2026-10-03 12:00 UTC (Sat 14:00 Madrid)  entry 2618.45
   
