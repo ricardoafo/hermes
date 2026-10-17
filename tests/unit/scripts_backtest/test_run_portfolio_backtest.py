@@ -7,6 +7,8 @@ Invariants (822-portfolio-backtest change.md D-1, D-5, R-5):
 - The trial records the pairs, the shared capital, the active risk rule and
   the execution model, so a portfolio run is a distinct trial from a per-pair one.
 - The report lists every rule the run does not apply.
+- A v2 trial names its close-based exit pricing; a v1 trial keeps its shape
+  (v2-strategy-config D-4).
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ from types import ModuleType
 import pytest
 
 from hermes.application.backtest.replay import ExecutionModel
+from hermes.application.execution.prereg_book import ExitPricing
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.currency import Currency
@@ -104,6 +107,13 @@ def test_trial_parameters_name_the_portfolio() -> None:
         "execution.stop_bps": Decimal("15"),
         "execution.depth_frac": Decimal("0.1"),
     }
+
+
+def test_v2_trial_parameters_name_the_close_based_exit_pricing() -> None:
+    """A v2 portfolio trial adds ``execution.exit_pricing = bar_close`` to v1's fields."""
+    model = ExecutionModel(depth_frac=Decimal("0.1"), exit_pricing=ExitPricing.BAR_CLOSE)
+    params = DRIVER._trial_parameters({"donchian_period": 20}, model, (_BTC,))
+    assert params["execution.exit_pricing"] == "bar_close"
 
 
 def test_report_lists_every_rule_left_off() -> None:

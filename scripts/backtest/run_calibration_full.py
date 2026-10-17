@@ -67,6 +67,7 @@ from hermes.adapters.trial_log.jsonl_file import JsonlTrialLog
 from hermes.application.backtest.replay import BacktestRun, ExecutionModel, replay
 from hermes.application.calibration.harness import CalibrationHarness
 from hermes.application.execution.kernel import FillKernel
+from hermes.application.execution.prereg_book import ExitPricing
 from hermes.application.order_router.risk_engine import RiskEngine
 from hermes.application.order_router.sizing import SizingPolicy
 from hermes.application.portfolio.tracker import PortfolioTracker
@@ -97,12 +98,57 @@ _DEFAULT_END = "2024-03-31"
 _RNG_SEED = 0
 
 
-def _enabled_roster(config_dir: Path) -> StrategyConfig:
-    """Return the single enabled roster entry the serve loop also runs."""
-    enabled = [s for s in load_config(config_dir).strategies.strategies if s.enabled]
+def _roster(config_dir: Path, name: str | None) -> StrategyConfig:
+    """Return the roster entry named ``name``, or the single enabled entry serve also runs.
+
+    A named entry runs whether or not it is enabled: serve's roster decides
+    what trades, the backtest may replay any pre-registered variant.
+
+    Raises:
+        ValueError: No entry has ``name``, or ``name`` is ``None`` and not
+            exactly one entry is enabled.
+    """
+    strategies = load_config(config_dir).strategies.strategies
+    if name is not None:
+        named = [s for s in strategies if s.name == name]
+        if not named:
+            raise ValueError(f"no strategy {name!r} in the roster {[s.name for s in strategies]}")
+        return named[0]
+    enabled = [s for s in strategies if s.enabled]
     if len(enabled) != 1:
         raise ValueError(f"expected exactly one enabled strategy, got {[s.name for s in enabled]}")
     return enabled[0]
+
+
+def _select(
+    config_dir: Path, name: str | None, depth_frac: Decimal
+) -> tuple[StrategyConfig, ExecutionModel]:
+    """Return the roster entry to run and the execution model it prices with.
+
+    The model comes from the entry, as in serve, so a v2 run sells its exits
+    at the bar close (pre-registration v2 §5.3, §6.2) and a v1 run as signed.
+
+    Raises:
+        ValueError: See :func:`_roster`.
+    """
+    roster = _roster(config_dir, name)
+    return roster, roster.execution_model(depth_frac=depth_frac)
+
+
+def _execution_fields(model: ExecutionModel) -> dict[str, Any]:
+    """Return the execution settings a trial and a report record.
+
+    The exit pricing is listed only when it is not v1's, so v1 records keep
+    the shape they had when v1 was signed (v2-strategy-config D-4).
+    """
+    fields: dict[str, Any] = {
+        "entry_bps": model.entry_bps,
+        "stop_bps": model.stop_bps,
+        "depth_frac": model.depth_frac,
+    }
+    if model.exit_pricing is not ExitPricing.STOP_ORDER:
+        fields["exit_pricing"] = model.exit_pricing.value
+    return fields
 
 
 def _depth_frac(text: str) -> Decimal:
@@ -122,9 +168,7 @@ def _trial_parameters(strategy: dict[str, Any], model: ExecutionModel, pair: str
         **strategy,
         "pair": pair.upper(),
         "execution.fill_model": "orderbook_walk",
-        "execution.entry_bps": model.entry_bps,
-        "execution.stop_bps": model.stop_bps,
-        "execution.depth_frac": model.depth_frac,
+        **{f"execution.{key}": value for key, value in _execution_fields(model).items()},
     }
 
 
@@ -169,11 +213,7 @@ def _payload(
         "window_start": start.isoformat(),
         "window_end": end.isoformat(),
         "fill_model": "orderbook_walk",
-        "execution": {
-            "entry_bps": str(model.entry_bps),
-            "stop_bps": str(model.stop_bps),
-            "depth_frac": str(model.depth_frac),
-        },
+        "execution": {key: str(value) for key, value in _execution_fields(model).items()},
         "signals_seen": run.signals_seen,
         "fills_count": len(run.fills),
         "rejections_count": len(run.rejections),
@@ -206,10 +246,8 @@ async def _run(args: argparse.Namespace) -> int:
     pair = _parse_pair(args.pair)
     start = _parse_iso_date(args.start)
     end = _parse_iso_date(args.end)
-    model = ExecutionModel(depth_frac=args.depth_frac)
-
     try:
-        roster = _enabled_roster(Path(args.config_dir))
+        roster, model = _select(Path(args.config_dir), args.strategy, args.depth_frac)
     except (ConfigError, ValueError) as err:
         print(f"ERROR: {err}", file=sys.stderr)
         return 1
@@ -340,6 +378,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Fraction of each bar's volume resting on each synthetic book side",
     )
     parser.add_argument("--config-dir", default="config", help="Directory holding strategies.yaml")
+    parser.add_argument(
+        "--strategy",
+        default=None,
+        help="Roster entry to run, e.g. swing-mvp1-v2 (default: the single enabled entry)",
+    )
     args = parser.parse_args(argv)
     return asyncio.run(_run(args))
 
