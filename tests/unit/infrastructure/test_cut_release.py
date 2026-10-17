@@ -120,6 +120,13 @@ def test_leaving_zero_major_without_real_capital_is_refused(current: str) -> Non
         cut_release.check_bump(current, "1.0.0", engine_change="no", real_capital=False)
 
 
+@pytest.mark.parametrize("new", ["1.0.1", "1.1.0", "2.0.0"])
+def test_leaving_zero_major_lands_on_1_0_0(new: str) -> None:
+    """The step out of 0.y.z is exactly 1.0.0, even with --real-capital (ADR-027 §3)."""
+    with pytest.raises(ValueError, match=r"skips 1\.0\.0"):
+        cut_release.check_bump("0.9.3", new, engine_change="no", real_capital=True)
+
+
 def test_leaving_zero_major_with_real_capital_is_allowed() -> None:
     """--real-capital lets the first 1.x cut through."""
     cut_release.check_bump("0.9.3", "1.0.0", engine_change="no", real_capital=True)

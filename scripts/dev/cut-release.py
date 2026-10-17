@@ -17,9 +17,10 @@ the PR; ``pr-body-lint.sh`` rejects it otherwise.
 
 Versions are ``0.Y.Z`` until a champion trades real money (ADR-027): MINOR
 for features and any engine change, PATCH for fixes that change no engine
-decision, so ``--engine-change yes`` on a PATCH bump is refused. The first
-``1.x`` cut needs ``--real-capital``. The ``X.Y.Z-shadow.N`` line is retired:
-no new one is cut, and the last one (package ``1.0.0a1``) counts as ``0.1.0``.
+decision, so ``--engine-change yes`` on a PATCH bump is refused. The step out
+of ``0.y.z`` is exactly ``1.0.0`` and needs ``--real-capital``. The
+``X.Y.Z-shadow.N`` line is retired: no new one is cut, and the last one
+(package ``1.0.0a1``) counts as ``0.1.0``.
 
 Exit codes: 0 success (or dry run), 2 refused (bad, retired or non-increasing
 version, engine change on a PATCH bump, 1.0.0 without --real-capital,
@@ -124,19 +125,22 @@ def check_bump(
     """Refuse a bump ADR-027 rules out.
 
     Raises:
-        ValueError: an engine change on a PATCH bump (§1), or a first ``1.x``
-            cut without ``real_capital`` (§3).
+        ValueError: an engine change on a PATCH bump (§1), or a step out of
+            ``0.y.z`` that is not ``1.0.0`` or lacks ``real_capital`` (§3).
     """
     current, new = effective_version(current_package), Version(new_package)
     if engine_change == "yes" and new.release[:2] == current.release[:2]:
         raise ValueError(
             f"{new_package} is a PATCH bump; an engine change needs a MINOR cut (ADR-027 §1)"
         )
-    if current.major == 0 and new.major >= 1 and not real_capital:
-        raise ValueError(
-            f"{new_package} leaves 0.y.z; pass --real-capital only for the first release "
-            "a champion trades real money with (ADR-027 §3)"
-        )
+    if current.major == 0 and new.major >= 1:
+        if new != Version("1.0.0"):
+            raise ValueError(f"{new_package} skips 1.0.0; 0.y.z steps to 1.0.0 (ADR-027 §3)")
+        if not real_capital:
+            raise ValueError(
+                f"{new_package} leaves 0.y.z; pass --real-capital only for the first release "
+                "a champion trades real money with (ADR-027 §3)"
+            )
 
 
 def set_version(text: str, pattern: re.Pattern[str], new: str) -> str:

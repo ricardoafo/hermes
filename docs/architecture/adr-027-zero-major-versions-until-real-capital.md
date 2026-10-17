@@ -58,9 +58,10 @@ named the same way it was.
 ### 3. `1.0.0` is the first release a champion trades real money with
 
 `1.0.0` is cut for the release that runs a champion with real money on prod, after the ADR-024 cutover and the
-ADR-014 `LIVE_APPROVED` sign-off (so not before 2027-01-01). The cut script refuses a first `1.x` cut unless it is
-passed `--real-capital`, so it cannot happen by a slip. From `1.0.0` on, ADR-006's MAJOR/MINOR/PATCH meanings and its
-cutover checklist for MAJOR bumps apply, and an engine change still needs at least a MINOR bump.
+ADR-014 `LIVE_APPROVED` sign-off (so not before 2027-01-01). The cut script refuses to leave `0.y.z` for anything but
+`1.0.0`, and refuses `1.0.0` without `--real-capital`, so it cannot happen by a slip. From `1.0.0` on, ADR-006's
+MAJOR/MINOR/PATCH meanings and its cutover checklist for MAJOR bumps apply, and an engine change still needs at least
+a MINOR bump.
 
 ### 4. Nothing else orders versions
 
