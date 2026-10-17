@@ -16,10 +16,14 @@ from typing import Final
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.domain.events.bar_processed import BarProcessed
 from hermes.domain.events.signal_emitted import SignalEmitted
+from hermes.domain.events.trade_executed import TradeExecuted, TradeSide
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.strategy.signal import SignalKind, SignalSide, StrategySignal
 from hermes.domain.value_objects.currency import Currency
+from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
+from hermes.domain.value_objects.price import Price
+from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
 
 BTC: Final = Pair(base=Currency.BTC, quote=Currency.USDT)
@@ -43,7 +47,14 @@ def bar_processed(pair: Pair, interval: KlineInterval, boundary: datetime) -> Ba
     )
 
 
-def signal(pair: Pair, kind: SignalKind, at: datetime, price: str = "2618.45") -> SignalEmitted:
+def signal(
+    pair: Pair,
+    kind: SignalKind,
+    at: datetime,
+    price: str = "2618.45",
+    *,
+    correlation_id: str = _CID,
+) -> SignalEmitted:
     """Return a long entry or exit signal for ``pair`` at ``at``."""
     entry = Decimal(price)
     return SignalEmitted.from_signal(
@@ -58,7 +69,22 @@ def signal(pair: Pair, kind: SignalKind, at: datetime, price: str = "2618.45") -
         ),
         strategy_id=_STRATEGY,
         pair=pair,
-        correlation_id=_CID,
+        correlation_id=correlation_id,
+    )
+
+
+def fill(signal_: SignalEmitted) -> TradeExecuted:
+    """Return the simulated fill of ``signal_``: a BUY for an entry, a SELL for an exit."""
+    pair = signal_.pair
+    return TradeExecuted(
+        occurred_at=signal_.occurred_at + timedelta(seconds=5),
+        correlation_id=signal_.correlation_id,
+        pair=pair,
+        side=TradeSide.BUY if signal_.kind is SignalKind.ENTRY else TradeSide.SELL,
+        qty=Quantity(amount=Decimal("0.01"), asset=pair.base),
+        price=Price(amount=signal_.entry_price or Decimal("2618.45"), pair=pair),
+        fee=Money(amount=Decimal("0.01"), currency=pair.quote),
+        strategy_id=_STRATEGY,
     )
 
 
@@ -68,6 +94,7 @@ def write_ledger(
     last_4h: datetime | None = LAST_4H,
     last_1d: datetime | None = LAST_1D,
     signals: tuple[SignalEmitted, ...] = (),
+    fills: tuple[TradeExecuted, ...] = (),
 ) -> Path:
     """Write a migrated ledger at ``path`` with every stream at the given closes.
 
@@ -76,6 +103,7 @@ def write_ledger(
         last_4h: Boundary of the newest processed 4h bar, or ``None`` for none.
         last_1d: Boundary of the newest processed 1d bar, or ``None`` for none.
         signals: Signal rows to append.
+        fills: Fill rows to append after the signals (see :func:`fill`).
 
     Returns:
         ``path``.
@@ -89,7 +117,7 @@ def write_ledger(
                 ledger.append_event(bar_processed(pair, KlineInterval.H4, last_4h))
             if last_1d is not None:
                 ledger.append_event(bar_processed(pair, KlineInterval.D1, last_1d))
-        for event in signals:
+        for event in (*signals, *fills):
             ledger.append_event(event)
     finally:
         connection.close()

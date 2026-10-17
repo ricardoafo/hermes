@@ -148,7 +148,11 @@ class SqliteStatusReader:
         return value if isinstance(value, int) else 0
 
     def open_entries(self) -> tuple[ShadowEntry, ...]:
-        """Return every pair whose newest signal is an entry, oldest entry first.
+        """Return every pair whose newest filled entry has no exit after it, oldest first.
+
+        An entry counts only when a fill shares its correlation id: an entry
+        the executor refused or halted (exposure cap, stale book) opened
+        nothing, so it must not show as a position (#962).
 
         Returns:
             The open shadow positions, entry facts only.
@@ -158,15 +162,20 @@ class SqliteStatusReader:
         """
         try:
             rows = self._conn.execute(
-                "SELECT payload_json FROM events WHERE event_type = 'SignalEmitted' "
-                "ORDER BY occurred_at, id"
+                "SELECT s.payload_json, EXISTS ("
+                "  SELECT 1 FROM events t WHERE t.event_type = 'TradeExecuted' "
+                "  AND t.correlation_id = s.correlation_id"
+                ") FROM events s WHERE s.event_type = 'SignalEmitted' "
+                "ORDER BY s.occurred_at, s.id"
             ).fetchall()
         except sqlite3.Error as exc:
             raise LedgerError(msg=f"open_entries failed: {exc}") from exc
         latest: dict[Pair, ShadowEntry | None] = {}
         try:
-            for (payload_json,) in rows:
+            for payload_json, filled in rows:
                 payload = json.loads(payload_json)
+                if payload["kind"] == "entry" and not filled:
+                    continue
                 pair = Pair(
                     base=Currency(payload["pair"]["base"]),
                     quote=Currency(payload["pair"]["quote"]),
