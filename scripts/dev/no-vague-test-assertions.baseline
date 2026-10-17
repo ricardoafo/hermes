@@ -178,10 +178,6 @@ tests/unit/domain/statistics/test_statistics_mutation_guards.py::test_split_has_
 tests/unit/domain/statistics/test_statistics_mutation_guards.py::test_split_is_frozen U6
 tests/unit/domain/statistics/test_statistics_mutation_guards.py::test_trade_result_has_slots U6
 tests/unit/domain/statistics/test_statistics_mutation_guards.py::test_trade_result_is_frozen U6
-tests/unit/domain/strategy/swing/engines/test_adx_engine.py::test_deterministic_on_identical_inputs U3
-tests/unit/domain/strategy/swing/engines/test_adx_engine.py::test_none_on_empty_bars U3
-tests/unit/domain/strategy/swing/engines/test_adx_engine.py::test_none_on_exactly_2_period_bars U3
-tests/unit/domain/strategy/swing/engines/test_adx_engine.py::test_returns_value_with_minimum_bars U3
 tests/unit/domain/strategy/swing/engines/test_atr_engine.py::test_atr_deterministic U3
 tests/unit/domain/strategy/swing/engines/test_atr_engine.py::test_none_on_empty_bars U3
 tests/unit/domain/strategy/swing/engines/test_atr_engine.py::test_none_on_exactly_period_bars U3
