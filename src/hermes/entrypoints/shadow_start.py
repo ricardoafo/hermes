@@ -8,7 +8,9 @@ never run it). It:
    parameters about to run, one enabled strategy) and lists the ones only the
    Code Owner can confirm.
 2. Without ``--confirm START``, prints what it would do and changes nothing.
-3. With it, copies the ledger read-only into the archive directory, checks
+3. With it, first proves it can write every directory it will change (the
+   ledger's, the archive's and the run records'), so a start never stops
+   halfway; then copies the ledger read-only into the archive directory, checks
    the copy, replaces the ledger with a fresh, empty one, and writes the
    day-0 record (engine version, config, pre-registration and data manifest
    hashes) next to the ledger. It prints a lab notebook entry to commit.
@@ -30,6 +32,7 @@ import os
 import shutil
 import sqlite3
 import subprocess
+import tempfile
 from collections.abc import Callable
 from contextlib import closing
 from datetime import UTC, datetime
@@ -160,6 +163,7 @@ def run(
         return 0
 
     try:
+        _check_writable(db.parent, archived.parent.parent, runs_dir)
         archived_sha = _archive(db, archived) if db.exists() else None
         day_zero = DayZeroRecord(
             run_id=run_id,
@@ -189,6 +193,26 @@ def run(
     stream.write(f"Start the service; serve runs on the fresh ledger at {db}.\n\n")
     stream.write(_notebook_entry(day_zero, record_path))
     return 0
+
+
+def _check_writable(*dirs: Path) -> None:
+    """Prove each directory, or its nearest existing parent, takes a new file.
+
+    A real write, not a mode-bit check: it also catches a read-only mount and
+    an account that does not own the directory, so a start that would stop
+    halfway (archive taken, ledger left in place) changes nothing instead.
+
+    Raises:
+        OSError: A directory refuses the probe file, naming it.
+    """
+    for wanted in dirs:
+        target = next(d for d in (wanted, *wanted.parents) if d.exists())
+        try:
+            fd, probe = tempfile.mkstemp(prefix=".shadow-start-", dir=target)
+            os.close(fd)
+            Path(probe).unlink()
+        except OSError as exc:
+            raise OSError(exc.errno, f"cannot write in {target}: {exc.strerror}") from exc
 
 
 def _archive(db: Path, target: Path) -> str:
