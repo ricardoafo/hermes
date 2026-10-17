@@ -340,12 +340,13 @@ forbidden_modules = [
   "hermes.entrypoints.tui_live",
 ]
 
-# Issue #835: the RO-01 / RO-02 inputs (spread samples, pair correlations) are
-# recorded only. Nothing that decides or sizes trades may read them until the
-# Code Owner rules on wiring RO-01 and RO-02 (issue #514); lifting this is a
-# deliberate change. The backtest is lifted for RO-01 only (issue #822): the
-# §5.5 gate replays the lock as signed on the correlation of bars it has
-# already replayed, not on recorded rows; serve stays record-only.
+# Issue #835: the recorded RO-01 / RO-02 inputs (spread samples, pair
+# correlation rows) are for review. Nothing that decides or sizes trades may
+# read them; lifting this is a deliberate change. RO-01 runs on the
+# correlation of 1D closes already delivered, computed in process by
+# hermes.domain.portfolio.correlation in the backtest (issue #822) and in
+# serve (issue #514), so that module is shared; RO-02 stays off in shadow
+# (issue #514).
 [[tool.importlinter.contracts]]
 name = "risk-inputs-are-record-only"
 type = "forbidden"
@@ -363,7 +364,6 @@ forbidden_modules = [
   "hermes.application.risk_inputs",
   "hermes.ports.risk_inputs",
   "hermes.domain.market_data.spread_sample",
-  "hermes.domain.portfolio.correlation",
 ]
 
 [[tool.importlinter.contracts]]

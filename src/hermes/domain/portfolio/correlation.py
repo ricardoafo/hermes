@@ -14,10 +14,8 @@ with every value:
 - **Estimator**: Pearson's coefficient, clamped to ``[-1, 1]`` against
   floating-point rounding.
 
-Record only: no rule reads these values. Which threshold comparison applies
-(§5.5 says "exceeds 0.80", ``correlation_lock.py`` uses ``>=``) and whether
-the window is 30 days (§5.5) or 7 days (ADR-011) are open questions for the
-Code Owner (issue #514); recording the value does not settle them.
+RO-01 reads the coefficients of :class:`DailyCloses`, in the backtest replay
+(#822) and in serve (#514); the recorded values are kept for review.
 
 Reference: pre-registration v1 §5.5; GitHub issues #514, #835.
 """
@@ -29,13 +27,15 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
-from itertools import pairwise
+from itertools import combinations, pairwise
 from typing import Final
 
+from hermes.domain.market_data.bar import Bar
 from hermes.domain.value_objects.pair import Pair
 
 __all__ = [
     "CORRELATION_WINDOW_DAYS",
+    "DailyCloses",
     "PairCorrelation",
     "aligned_daily_returns",
     "pearson",
@@ -160,3 +160,48 @@ class PairCorrelation:
                 f"sample_count must be in [{_MIN_POINTS}, {self.window_days}], "
                 f"got {self.sample_count}"
             )
+
+
+class DailyCloses:
+    """The latest daily closes of each pair, for the §5.5 correlation lock (RO-01).
+
+    The backtest replay and serve's shadow executor each hold one and feed it
+    every closed 1D bar in delivery order, so RO-01 reads the same
+    coefficients in both (#514). Only bars already delivered are held, so a
+    coefficient never sees a close after the signal it is checked for. The
+    series and estimator are the ones serve records (#835).
+    """
+
+    _KEEP: Final[int] = 2 * (CORRELATION_WINDOW_DAYS + 1)
+
+    def __init__(self) -> None:
+        """Start with no closes."""
+        self._closes: dict[Pair, dict[datetime, Decimal]] = {}
+
+    def add(self, bar: Bar) -> None:
+        """Record a closed 1D bar, keeping a bounded tail per pair.
+
+        Args:
+            bar: A closed 1D bar.
+        """
+        series = self._closes.setdefault(bar.pair, {})
+        series[bar.open_time] = bar.close
+        if len(series) > self._KEEP:
+            del series[min(series)]
+
+    def correlations(self) -> dict[tuple[Pair, Pair], float]:
+        """Return the coefficient of every two pairs with a full 30-return window.
+
+        Returns:
+            Coefficients keyed by the two pairs in name order; a pair pair
+            with fewer than 30 aligned returns, or no variance, is left out.
+        """
+        out: dict[tuple[Pair, Pair], float] = {}
+        for a, b in combinations(sorted(self._closes, key=str), 2):
+            returns_a, returns_b = aligned_daily_returns(self._closes[a], self._closes[b])
+            if len(returns_a) < CORRELATION_WINDOW_DAYS:
+                continue
+            coeff = pearson(returns_a, returns_b)
+            if coeff is not None:
+                out[(a, b)] = coeff
+        return out

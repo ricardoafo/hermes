@@ -14,6 +14,9 @@ Invariants (change 353-fill-kernel-in-serve D-1..D-5):
 - Under v2's close-based pricing a stop exit books close x 0.9995 in serve and
   in the backtest replay on the same bar, and a live v2 exit's drift is
   measured against that same price (v2-strategy-config R-1).
+- RO-01 refuses a third entry correlated above 0.80 with two held pairs,
+  reading the same 30-day correlations of the observed 1d closes as the
+  backtest replay, and leaves a pair pair under 30 returns unlocked (#514).
 
 Collaborators are real (kernel, router, walk fill model, SQLite ledger,
 trade recorder); only the depth source, the FX provider and the clock are
@@ -25,7 +28,7 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -55,7 +58,9 @@ from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.bar_schedule import close_time_of
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.market_data.orderbook import Orderbook, OrderbookLevel
+from hermes.domain.portfolio.correlation import DailyCloses
 from hermes.domain.strategy.signal import SignalKind, SignalSide, StrategySignal
+from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
 from tests.support.fill_kernel import BTC_USDT, SIZING, STRATEGY, fees, kill_evaluator, seed
 from tests.support.fill_kernel import kernel as backtest_kernel
@@ -683,3 +688,79 @@ def test_clock_behind_the_bar_close_records_no_latency_and_still_fills(
 
     (quality,) = rig.ledger.fill_quality_events(STRATEGY)
     assert (quality.delta_ms, quality.arrival_price) == (None, Decimal("85000"))
+
+
+_ETH_USDT = Pair(base=Currency.ETH, quote=Currency.USDT)
+_SOL_USDT = Pair(base=Currency.SOL, quote=Currency.USDT)
+_CORRELATION_DAYS = 32
+"""Daily closes observed per pair: 31 give the 30 returns RO-01 needs, one spare."""
+
+
+def _observe_moving_together(executor: ShadowExecutor, pairs: tuple[Pair, ...]) -> None:
+    """Observe 1d bars whose closes move identically for every pair (correlation 1.0)."""
+    for day in range(_CORRELATION_DAYS, 0, -1):
+        close = str(84000 + 500 * (day % 3))
+        for pair in pairs:
+            executor.observe(replace(_daily(close, day), pair=pair))
+
+
+def _pair_bar(pair: Pair) -> Bar:
+    """Return the 4h signal bar for ``pair``."""
+    return replace(_bar("85000"), pair=pair)
+
+
+# SEV-1: no rubric row matches; pre-registration §5.5 RO-01 must refuse in shadow as in the backtest
+def test_serve_refuses_a_third_entry_correlated_with_two_held_pairs(
+    connection: sqlite3.Connection,
+) -> None:
+    """#514: with ETH and SOL held, a BTC entry correlated above 0.80 with both halts on RO-01."""
+    rig = _rig(connection, book=_live_book("84999", "85001"), daily=None)
+    _observe_moving_together(rig.executor, (BTC_USDT, _ETH_USDT, _SOL_USDT))
+    for pair in (_ETH_USDT, _SOL_USDT):
+        held = _pair_bar(pair)
+        _executed(rig.run(_entry(held), held, cid=f"c-{pair.base.value}"))
+    bar = _bar("85000")
+
+    refused = _declined(rig.run(_entry(bar), bar))
+
+    assert (refused.rule, refused.reason.split(":")[0]) == ("HALT", "RO-01")
+
+
+def test_serve_does_not_lock_the_third_entry_when_the_closes_cover_under_30_returns(
+    connection: sqlite3.Connection,
+) -> None:
+    """#514: as in the backtest, a pair pair with under 30 aligned returns is not locked.
+
+    The entry passes RO-01 and reaches sizing, where the §5.5 exposure cap
+    refuses it: the two held positions plus their fees leave less than a
+    full position under the cap.
+    """
+    rig = _rig(connection, book=_live_book("84999", "85001"), daily=None)
+    for day in range(10, 0, -1):
+        for pair in (BTC_USDT, _ETH_USDT, _SOL_USDT):
+            rig.executor.observe(replace(_daily(str(84000 + 500 * (day % 3)), day), pair=pair))
+    for pair in (_ETH_USDT, _SOL_USDT):
+        held = _pair_bar(pair)
+        _executed(rig.run(_entry(held), held, cid=f"c-{pair.base.value}"))
+    bar = _bar("85000")
+
+    refused = _declined(rig.run(_entry(bar), bar))
+
+    assert (refused.rule, "total exposure cap" in refused.reason) == ("sizing", True)
+
+
+def test_serve_and_the_backtest_replay_read_the_same_correlations(
+    connection: sqlite3.Connection,
+) -> None:
+    """#514: the executor's coefficients equal those of the backtest's closes on the same bars."""
+    rig = _rig(connection, daily=None)
+    pairs = (BTC_USDT, _ETH_USDT, _SOL_USDT)
+    replayed = DailyCloses()
+    for day in range(_CORRELATION_DAYS, 0, -1):
+        for n, pair in enumerate(pairs):
+            daily = replace(_daily(str(84000 + 500 * ((day + n) % 4)), day), pair=pair)
+            rig.executor.observe(daily)
+            replayed.add(daily)
+
+    assert rig.executor._daily_closes.correlations() == replayed.correlations()
+    assert len(replayed.correlations()) == 3
