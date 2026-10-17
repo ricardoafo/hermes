@@ -2,9 +2,9 @@
 
 The serve loop writes a spread sample per pair every few minutes and the
 30-day pair correlations once per closed 1D bar; the reads exist for review.
-No risk rule, strategy, sizing or kill check reads this store: wiring RO-01
-and RO-02 changes trading decisions and waits for the Code Owner's ruling
-(issue #514). The concrete implementation is
+No risk rule, strategy, sizing or kill check reads this store: RO-01 reads
+the same coefficients computed in process from the 1D closes, as the backtest
+does, and RO-02 stays off in shadow (issue #514). The concrete implementation is
 :class:`hermes.adapters.ledger.sqlite_ledger.SqliteLedger`.
 
 Reference: code-conventions.md §5 (Ports as Protocols), GitHub issue #835.

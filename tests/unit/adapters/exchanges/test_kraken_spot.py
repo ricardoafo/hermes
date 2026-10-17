@@ -8,6 +8,7 @@ real account.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
@@ -25,6 +26,7 @@ from hermes.adapters.exchanges.kraken_spot import (
     KRAKEN_BASE_URL,
     KrakenSpotAdapter,
     KrakenSpotConfig,
+    OrderUnreadError,
     sign,
 )
 from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
@@ -594,3 +596,169 @@ def test_malformed_balance_entry_raises(read_only: KrakenSpotAdapter) -> None:
     )
     with pytest.raises(ExchangeError, match="malformed balance for XXBT"):
         read_only.get_balance(currency=Currency.BTC)
+
+
+# ---------------------------------------------------------------------------
+# Never losing track of a real order (#858)
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+def test_every_order_carries_a_userref(trading: KrakenSpotAdapter) -> None:
+    """AddOrder sends a positive 32-bit ``userref``: the key to an order whose reply is lost."""
+    add = respx.post(f"{_PRIVATE}/AddOrder").mock(return_value=_ok("add_order_market_buy"))
+    respx.post(f"{_PRIVATE}/QueryOrders").mock(return_value=_ok("query_orders_market_closed"))
+
+    trading.place_market_order(side=OrderSide.BUY, order=_order())
+
+    userref = int(_form(add.calls.last.request)["userref"])
+    assert 0 < userref < 2**31
+
+
+# SEV-1: no rubric row matches; a placed real order must never be lost without its id
+@respx.mock
+def test_a_failed_read_back_after_addorder_carries_the_txid(trading: KrakenSpotAdapter) -> None:
+    """QueryOrders failing after AddOrder succeeded raises with the txid and the userref.
+
+    Issue #858 item 3: before, the error dropped the txid, so the live order
+    could not be traced.
+    """
+    add = respx.post(f"{_PRIVATE}/AddOrder").mock(return_value=_ok("add_order_market_buy"))
+    respx.post(f"{_PRIVATE}/QueryOrders").mock(side_effect=httpx.ReadTimeout("slow"))
+
+    with pytest.raises(OrderUnreadError, match=f"order {_MARKET_TXID}") as caught:
+        trading.place_market_order(side=OrderSide.BUY, order=_order())
+
+    sent = int(_form(add.calls.last.request)["userref"])
+    assert (caught.value.txid, caught.value.userref) == (_MARKET_TXID, sent)
+
+
+@respx.mock
+def test_a_lost_addorder_reply_names_the_userref(trading: KrakenSpotAdapter) -> None:
+    """A reply lost after the request went out may hide a live order: the error names it."""
+    add = respx.post(f"{_PRIVATE}/AddOrder").mock(side_effect=httpx.ReadTimeout("slow"))
+
+    with pytest.raises(OrderUnreadError, match="find it by userref") as caught:
+        trading.place_market_order(side=OrderSide.BUY, order=_order())
+
+    assert (caught.value.txid, caught.value.userref) == (
+        "",
+        int(_form(add.calls.last.request)["userref"]),
+    )
+
+
+@respx.mock
+def test_an_addorder_that_never_connected_is_a_plain_network_error(
+    trading: KrakenSpotAdapter,
+) -> None:
+    """No connection means no order: a retry-safe NetworkError, not an unread order."""
+    respx.post(f"{_PRIVATE}/AddOrder").mock(side_effect=httpx.ConnectError("refused"))
+
+    with pytest.raises(NetworkError) as caught:
+        trading.place_market_order(side=OrderSide.BUY, order=_order())
+
+    assert type(caught.value) is NetworkError
+
+
+def _with_nonce_file(path: Path, clock_ms: int) -> KrakenSpotAdapter:
+    adapter = _build(trading=True)
+    return dataclasses.replace(
+        adapter,
+        config=dataclasses.replace(adapter.config, nonce_file=path),
+        clock_ms=lambda: clock_ms,
+    )
+
+
+@respx.mock
+def test_a_restart_with_the_clock_stepped_back_still_sends_a_higher_nonce(
+    tmp_path: Path,
+) -> None:
+    """Issue #858 item 4: the kept nonce outlives the process, so the next one is above it."""
+    route = respx.post(f"{_PRIVATE}/BalanceEx").mock(return_value=_ok("balance_ex"))
+    nonce_file = tmp_path / "kraken.nonce"
+    before = _with_nonce_file(nonce_file, _NOW_MS)
+    before.get_balance(currency=Currency.BTC)
+    before.close()
+
+    after = _with_nonce_file(nonce_file, _NOW_MS - 60_000)
+    after.get_balance(currency=Currency.BTC)
+    after.close()
+
+    first, second = (int(_form(call.request)["nonce"]) for call in route.calls)
+    assert (first, second, nonce_file.read_text(encoding="ascii")) == (
+        _NOW_MS,
+        _NOW_MS + 1,
+        str(_NOW_MS + 1),
+    )
+
+
+def test_a_nonce_file_that_holds_no_nonce_is_refused(tmp_path: Path) -> None:
+    """A corrupted nonce file stops signing instead of guessing a nonce Kraken may reject."""
+    nonce_file = tmp_path / "kraken.nonce"
+    nonce_file.write_text("garbage", encoding="ascii")
+    adapter = _with_nonce_file(nonce_file, _NOW_MS)
+
+    with pytest.raises(ExchangeError, match="does not hold a nonce"):
+        adapter.get_balance(currency=Currency.BTC)
+    adapter.close()
+
+
+@respx.mock
+def test_a_bad_nonce_file_fails_an_order_before_sending_it(tmp_path: Path) -> None:
+    """A corrupted nonce file stops AddOrder unsent, so it is not reported as a maybe-live order."""
+    add = respx.post(f"{_PRIVATE}/AddOrder").mock(return_value=_ok("add_order_market_buy"))
+    nonce_file = tmp_path / "kraken.nonce"
+    nonce_file.write_text("garbage", encoding="ascii")
+    adapter = _with_nonce_file(nonce_file, _NOW_MS)
+
+    with pytest.raises(ExchangeError, match="does not hold a nonce") as caught:
+        adapter.place_market_order(side=OrderSide.BUY, order=_order())
+    adapter.close()
+
+    assert (type(caught.value), add.call_count) == (ExchangeError, 0)
+
+
+def test_a_nonce_file_that_cannot_be_read_is_an_exchange_error(tmp_path: Path) -> None:
+    """A nonce path that is unreadable (here a directory) fails as ExchangeError, not OSError."""
+    adapter = _with_nonce_file(tmp_path, _NOW_MS)
+
+    with pytest.raises(ExchangeError, match="cannot read Kraken nonce file") as caught:
+        adapter.get_balance(currency=Currency.BTC)
+    adapter.close()
+
+    assert (type(caught.value), isinstance(caught.value.__cause__, OSError)) == (
+        ExchangeError,
+        True,
+    )
+
+
+def test_a_nonce_file_that_cannot_be_written_is_an_exchange_error(tmp_path: Path) -> None:
+    """A nonce that cannot be kept fails as ExchangeError before the request goes out."""
+    adapter = _with_nonce_file(tmp_path / "missing" / "kraken.nonce", _NOW_MS)
+
+    with pytest.raises(ExchangeError, match="cannot keep the Kraken nonce") as caught:
+        adapter.get_balance(currency=Currency.BTC)
+    adapter.close()
+
+    assert (type(caught.value), isinstance(caught.value.__cause__, OSError)) == (
+        ExchangeError,
+        True,
+    )
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    "error", ["EService:Unavailable", "EService:Busy", "EGeneral:Internal error"]
+)
+def test_an_addorder_service_error_is_an_unread_order(
+    trading: KrakenSpotAdapter, error: str
+) -> None:
+    """Kraken's "may or may not be placed" errors name the userref, never read as a refusal."""
+    add = respx.post(f"{_PRIVATE}/AddOrder").mock(
+        return_value=httpx.Response(200, json={"error": [error]})
+    )
+
+    with pytest.raises(OrderUnreadError, match="find it by userref") as caught:
+        trading.place_market_order(side=OrderSide.BUY, order=_order())
+
+    assert caught.value.userref == int(_form(add.calls.last.request)["userref"])

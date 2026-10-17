@@ -7,9 +7,9 @@ pair every few minutes and records each spread here. The sample also carries
 the median of every sample of its pair in the hour up to it, so the recorded
 value is the one a rule would read.
 
-Record only: no risk rule, strategy, sizing or kill reads these values yet.
-Wiring RO-02 changes trading decisions and waits for the Code Owner's ruling
-(issue #514).
+Record only: no risk rule, strategy, sizing or kill reads these values. The
+Code Owner ruled (issue #514) that shadow leaves RO-02 off, since the
+backtest's synthetic book never spikes; the values are kept for review.
 
 Reference: pre-registration v1 §10 (SA-9 RO-02); GitHub issue #835.
 """

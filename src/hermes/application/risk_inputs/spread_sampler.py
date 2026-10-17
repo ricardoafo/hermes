@@ -15,7 +15,8 @@ hour, enough for a median that one odd book cannot move.
 
 Off the critical path: the sampler runs as a sibling task of the bar loop. A
 failed or slow sample is logged and skipped, never raised, so it can neither
-stop serve nor hold back a bar. Record only: no rule reads the values.
+stop serve nor hold back a bar. Record only: no rule reads the values, and
+RO-02 stays off in shadow (#514).
 
 Reference: GitHub issues #514, #835.
 """

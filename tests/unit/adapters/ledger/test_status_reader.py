@@ -9,6 +9,7 @@ Invariants protected here:
 - ``count_signals_since`` is inclusive of its bound;
 - ``open_entries`` lists a pair only while its newest filled entry has no exit
   after it; an entry without a fill (refused or halted) opens nothing (#962).
+- ``last_clock_skew`` is the newest clock-skew anomaly, whatever else was recorded.
 """
 
 from __future__ import annotations
@@ -22,6 +23,11 @@ import pytest
 
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.adapters.ledger.status_reader import SqliteStatusReader
+from hermes.domain.events.anomaly_detected import (
+    CLOCK_SKEW_SOURCE,
+    AnomalyDetected,
+    AnomalySeverity,
+)
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.strategy.signal import SignalKind
 from hermes.ports.status import ShadowEntry, StatusReadPort
@@ -179,3 +185,62 @@ def test_a_refused_entry_leaves_an_earlier_open_position_open(tmp_path: Path) ->
     assert entries == (
         ShadowEntry(pair=ETH, entry_time=LAST_4H - timedelta(hours=8), entry_price=Decimal("3600")),
     )
+
+
+def test_last_clock_skew_is_the_newest_skew_anomaly_and_ignores_others(tmp_path: Path) -> None:
+    """A later anomaly from another source does not hide the clock's own state (#859)."""
+    path = write_ledger(tmp_path / "hermes.sqlite3")
+    at = LAST_4H
+
+    def anomaly(source: str, severity: AnomalySeverity, minutes: int) -> AnomalyDetected:
+        return AnomalyDetected(
+            occurred_at=at + timedelta(minutes=minutes),
+            correlation_id=f"c-{minutes}",
+            source=source,
+            severity=severity,
+            reason=f"r{minutes}",
+        )
+
+    connection = sqlite3.connect(path)
+    try:
+        ledger = SqliteLedger(connection)
+        ledger.append_event(anomaly(CLOCK_SKEW_SOURCE, AnomalySeverity.CRITICAL, 1))
+        ledger.append_event(anomaly(CLOCK_SKEW_SOURCE, AnomalySeverity.INFO, 2))
+        ledger.append_event(anomaly(CLOCK_SKEW_SOURCE, AnomalySeverity.CRITICAL, 3))
+        ledger.append_event(anomaly("serve.bar_gap", AnomalySeverity.INFO, 4))
+        connection.commit()
+    finally:
+        connection.close()
+
+    with SqliteStatusReader.open(path) as reader:
+        latest = reader.last_clock_skew()
+
+    assert latest is not None
+    assert (latest.severity, latest.reason) == (AnomalySeverity.CRITICAL, "r3")
+
+
+def test_last_clock_skew_is_none_when_only_other_anomalies_were_recorded(tmp_path: Path) -> None:
+    """A CRITICAL anomaly from another source never reads as an off clock."""
+    path = write_ledger(tmp_path / "hermes.sqlite3")
+    connection = sqlite3.connect(path)
+    try:
+        SqliteLedger(connection).append_event(
+            AnomalyDetected(
+                occurred_at=LAST_4H,
+                correlation_id="c-gap",
+                source="serve.bar_gap",
+                severity=AnomalySeverity.CRITICAL,
+                reason="bar never published",
+            )
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    with SqliteStatusReader.open(path) as reader:
+        skew = reader.last_clock_skew()
+        recorded = reader._conn.execute(
+            "SELECT COUNT(*) FROM events WHERE event_type = 'AnomalyDetected'"
+        ).fetchone()[0]
+
+    assert (skew, recorded) == (None, 1)

@@ -18,7 +18,7 @@ from typing import Self
 from hermes.domain.errors import LedgerError
 from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
 
-__all__ = ["SqliteAnomalyReader"]
+__all__ = ["SqliteAnomalyReader", "latest_anomaly"]
 
 
 class SqliteAnomalyReader:
@@ -95,6 +95,39 @@ class SqliteAnomalyReader:
             return tuple(_anomaly(json.loads(payload)) for (payload,) in rows)
         except (KeyError, ValueError, TypeError) as exc:
             raise LedgerError(msg=f"anomalies: unreadable payload: {exc}") from exc
+
+
+def latest_anomaly(connection: sqlite3.Connection, source: str) -> AnomalyDetected | None:
+    """Return the newest anomaly recorded by ``source``, or ``None`` when there is none.
+
+    Args:
+        connection: An open ledger connection, read-only or not.
+        source: The ``source`` field to match exactly.
+
+    Returns:
+        The anomaly appended last. Append order, not ``occurred_at``, decides:
+        a clock-skew anomaly is stamped by the skewed clock itself, so a later
+        row can carry an earlier time.
+
+    Raises:
+        LedgerError: On a SQLite read failure or an unreadable payload.
+    """
+    try:
+        row = connection.execute(
+            "SELECT payload_json FROM events "
+            "WHERE event_type = 'AnomalyDetected' "
+            "  AND json_extract(payload_json, '$.source') = ? "
+            "ORDER BY id DESC LIMIT 1",
+            (source,),
+        ).fetchone()
+    except sqlite3.Error as exc:
+        raise LedgerError(msg=f"latest anomaly read failed: {exc}") from exc
+    if row is None:
+        return None
+    try:
+        return _anomaly(json.loads(row[0]))
+    except (KeyError, ValueError, TypeError) as exc:
+        raise LedgerError(msg=f"latest anomaly: unreadable payload: {exc}") from exc
 
 
 def _anomaly(payload: dict[str, object]) -> AnomalyDetected:
