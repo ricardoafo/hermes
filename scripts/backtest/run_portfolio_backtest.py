@@ -23,6 +23,11 @@ Usage:
     HERMES_DATA_DIR=D:/hermes-data python scripts/backtest/run_portfolio_backtest.py \\
         --start 2020-09-01 --end 2025-08-31 --performance-out gate/train_val.json
     python scripts/backtest/run_portfolio_backtest.py --dry-run   # load bars, exit
+    python scripts/backtest/run_portfolio_backtest.py --strategy swing-mvp1-v2 ...
+
+``--strategy`` runs a roster entry by name (default: the single enabled one),
+priced with that entry's execution model: v2 sells every exit 5 bps under the
+exit bar's close (pre-registration v2 §5.3, §6.2), v1 as it was signed.
 
 Exit codes:
     0 - backtest completed, trial logged, report and performance file saved
@@ -57,7 +62,7 @@ from run_calibration import (
     _strategy_parameters,
     _trial_record,
 )
-from run_calibration_full import _depth_frac, _enabled_roster, _sharpe
+from run_calibration_full import _depth_frac, _execution_fields, _select, _sharpe
 
 from hermes.adapters.fees.binance_history import load_binance_fee_history
 from hermes.adapters.fills.orderbook_walk import OrderbookWalkFillModel
@@ -147,9 +152,7 @@ def _trial_parameters(
         "portfolio": "shared-capital",
         "risk.rules": "RO-01",
         "execution.fill_model": "orderbook_walk",
-        "execution.entry_bps": model.entry_bps,
-        "execution.stop_bps": model.stop_bps,
-        "execution.depth_frac": model.depth_frac,
+        **{f"execution.{key}": value for key, value in _execution_fields(model).items()},
     }
 
 
@@ -194,11 +197,7 @@ def _payload(
         "window_start": start.isoformat(),
         "window_end": end.isoformat(),
         "fill_model": "orderbook_walk",
-        "execution": {
-            "entry_bps": str(model.entry_bps),
-            "stop_bps": str(model.stop_bps),
-            "depth_frac": str(model.depth_frac),
-        },
+        "execution": {key: str(value) for key, value in _execution_fields(model).items()},
         "signals_seen": run.signals_seen,
         "fills_count": len(run.fills),
         "round_trips": len(round_trips(run.fills)),
@@ -238,10 +237,8 @@ async def _run(args: argparse.Namespace) -> int:
     pairs: tuple[Pair, ...] = args.pairs
     start = _parse_iso_date(args.start)
     end = _parse_iso_date(args.end)
-    model = ExecutionModel(depth_frac=args.depth_frac)
-
     try:
-        roster = _enabled_roster(Path(args.config_dir))
+        roster, model = _select(Path(args.config_dir), args.strategy, args.depth_frac)
     except (ConfigError, ValueError) as err:
         print(f"ERROR: {err}", file=sys.stderr)
         return 1
@@ -386,6 +383,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Fraction of each bar's volume resting on each synthetic book side",
     )
     parser.add_argument("--config-dir", default="config", help="Directory holding strategies.yaml")
+    parser.add_argument(
+        "--strategy",
+        default=None,
+        help="Roster entry to run, e.g. swing-mvp1-v2 (default: the single enabled entry)",
+    )
     args = parser.parse_args(argv)
     return asyncio.run(_run(args))
 
