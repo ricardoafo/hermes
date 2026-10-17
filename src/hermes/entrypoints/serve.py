@@ -64,7 +64,7 @@ import dataclasses
 import os
 import signal
 import sqlite3
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -82,6 +82,7 @@ from hermes.adapters.fx.frankfurter import FrankfurterAdapter
 from hermes.adapters.fx.frankfurter import FrankfurterConfig as FrankfurterWireConfig
 from hermes.adapters.fx.rate_limiter import RateLimitConfig
 from hermes.adapters.ledger.connection import open_ledger
+from hermes.adapters.ledger.migration_runner import unknown_applied_migrations
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.adapters.market_data.binance_depth_snapshot import BinanceDepthSnapshotAdapter
 from hermes.adapters.market_data.binance_live_klines import BinanceLiveKlinesAdapter
@@ -95,6 +96,7 @@ from hermes.application.calibration.certification_gates import (
     require_live_approval,
     v1_parameter_fingerprint,
 )
+from hermes.application.execution.halt_record import halt_record
 from hermes.application.execution.kernel import Declined, Executed, FillKernel, Halted
 from hermes.application.execution.position_sync import sync_after_signal
 from hermes.application.execution.shadow import (
@@ -107,7 +109,7 @@ from hermes.application.ledger.eur_backfill import backfill_pending_eur, pending
 from hermes.application.ledger.eur_pricer import EurPricer, LookupBudget
 from hermes.application.ledger.trade_recorder import TradeRecorder
 from hermes.application.messages.eur_rate import EurRateLookup
-from hermes.application.notification_router import RouterConfig
+from hermes.application.notification_router import EventClass, RouterConfig, route
 from hermes.application.order_router.sizing import SizingPolicy
 from hermes.application.portfolio.tracker import PortfolioTracker
 from hermes.application.risk_inputs.correlation_recorder import CorrelationRecorder
@@ -120,9 +122,12 @@ from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeveri
 from hermes.domain.events.bar_processed import BarProcessed
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.event_bus import EventBus, EventDispatchError
+from hermes.domain.events.risk_halt_recorded import RiskHaltRecorded
 from hermes.domain.events.shadow_capital_seeded import ShadowCapitalSeeded
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.events.signal_notified import SignalNotified
+from hermes.domain.events.trade_executed import TradeExecuted
+from hermes.domain.events.trade_executed import TradeSide as ExecutedSide
 from hermes.domain.fees.fee_schedule import FeeSchedule
 from hermes.domain.fees.fee_schedule_selector import FeeScheduleRow, select_fee_schedule
 from hermes.domain.fx.eur_pricing import fill_date_madrid
@@ -136,6 +141,7 @@ from hermes.domain.market_data.bar_schedule import (
 )
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.portfolio.mark import PortfolioMark
+from hermes.domain.portfolio.position import Position
 from hermes.domain.portfolio.snapshot import PortfolioSnapshot
 from hermes.domain.strategy.signal import OpenPosition, SignalKind, StrategySignal
 from hermes.domain.strategy.stop_mark import StopMark
@@ -205,7 +211,8 @@ BOOT_EUR_MAX_FX_CALLS: Final = 20
 BOOT_EUR_BUDGET_SEC: Final = 60.0
 
 _ONE_MS: Final = timedelta(milliseconds=1)
-_NEVER: Final = datetime(1970, 1, 1, tzinfo=UTC)
+_EPOCH: Final = datetime(1970, 1, 1, tzinfo=UTC)
+_NEVER: Final = _EPOCH
 
 
 class StartupError(HermesError):
@@ -258,8 +265,81 @@ def experiment_files(experiment_root: Path) -> tuple[Path, Path]:
     return folder / "pre-registration-v1.md", folder / "fee-history.csv"
 
 
+def pre_registration_for(config_dir: Path) -> PreRegistration:
+    """Return the signed pre-registration that sits beside ``config_dir``.
+
+    A release keeps ``config/`` and the experiment folder side by side, and
+    an installed package has no repository to search from (issue #923).
+    Without that file beside the config, the repository's copy is read.
+
+    Raises:
+        FileNotFoundError: Neither copy exists.
+        ValueError: The file is not the v1 pre-registration.
+    """
+    root = config_dir.resolve().parent
+    if experiment_files(root)[0].is_file():
+        return PreRegistration(project_root=root)
+    return PreRegistration()
+
+
+def _holding_opened_at(
+    trades: Sequence[TradeExecuted], pair: Pair, at_or_before: datetime
+) -> datetime | None:
+    """Return the close time of the 4h bar the held coin was bought on.
+
+    The buy is the first since ``pair`` was last flat. Its fill lands just after
+    the bar closes, but the strategy keys its time stop and its highest high on
+    the bar's ``close_time``, so the fill time is moved back to it.
+    """
+    opened_at: datetime | None = None
+    held = Decimal(0)
+    for trade in trades:
+        if trade.pair != pair or trade.occurred_at > at_or_before:
+            continue
+        if trade.side is ExecutedSide.BUY:
+            if held == 0:
+                opened_at = trade.occurred_at
+            held += trade.qty.amount
+            continue
+        held -= trade.qty.amount
+        if held <= 0:
+            held = Decimal(0)
+            opened_at = None
+    if opened_at is None:
+        return None
+    four_hours = interval_duration(KlineInterval.H4)
+    boundary = _EPOCH + ((opened_at + _ONE_MS - _EPOCH) // four_hours) * four_hours
+    return boundary - _ONE_MS
+
+
 class BarGapError(HermesError):
     """A stream skipped a bar, so the strategy buffers would be wrong; exits 1."""
+
+
+def _open_ledger(connection: sqlite3.Connection, path: Path) -> SqliteLedger:
+    """Open the ledger, refusing a file that is not one or a schema newer than this code.
+
+    Raises:
+        StartupError: The file is corrupt or not a SQLite database, or a newer
+            release has migrated it. The caller closes the connection.
+    """
+    try:
+        ledger = SqliteLedger(connection)
+        newer = unknown_applied_migrations(connection)
+    except sqlite3.OperationalError:
+        # A full disk or a held lock is not a corrupt file; it keeps its own error.
+        raise
+    except sqlite3.DatabaseError as exc:
+        raise StartupError(f"the ledger {path} cannot be opened as a SQLite ledger: {exc}") from exc
+    if newer:
+        # The deploy and rollback scripts refuse this; a manual symlink flip
+        # or a direct start does not, and old code would write to a schema it
+        # does not know (#856).
+        raise StartupError(
+            f"the ledger {path} was migrated by a newer release ({', '.join(newer)}); "
+            "start the release that migrated it"
+        )
+    return ledger
 
 
 @dataclass(frozen=True)
@@ -279,6 +359,7 @@ class Composition:
         strategy_id: The bucket id every signal carries.
         tracker: Portfolio state handed to the strategies on every bar.
         signal_notifier: Fans a signal out to the routed channels.
+        alert_channels: The channels a halt or kill alert is routed over (#749).
         pairs: Pairs the feed follows.
         intervals: Intervals the feed follows.
         telegram: Telegram adapter, or ``None`` without credentials. Kept
@@ -310,6 +391,7 @@ class Composition:
     strategy_id: StrategyId
     tracker: PortfolioTracker
     signal_notifier: SignalNotifier
+    alert_channels: RouterConfig
     pairs: tuple[Pair, ...]
     intervals: tuple[KlineInterval, ...]
     telegram: TelegramAdapter | None
@@ -509,6 +591,7 @@ def build_composition(
     experiment_root: Path | None = None,
     orderbooks: OrderbookSnapshotPort | None = None,
     fx: FxRateProviderPort | None = None,
+    new_ledger: bool = False,
 ) -> Composition:
     """Wire every adapter the shadow loop needs and return the container.
 
@@ -533,6 +616,10 @@ def build_composition(
             :class:`BinanceDepthSnapshotAdapter`.
         fx: FX provider override for tests. Defaults to Frankfurter (USDT
             read as USD).
+        new_ledger: Create the ledger when ``db_path`` does not exist. Off,
+            a missing ledger is refused (#876): a wrong ``--db`` or an
+            unmounted disk would otherwise start a fresh, flat ledger and
+            drop the open positions without a word.
 
     Returns:
         A fully wired :class:`Composition` ready to hand to :func:`run`.
@@ -540,12 +627,19 @@ def build_composition(
     Raises:
         LedgerInUseError: Another ``hermes serve`` holds this ledger's serve
             lock. Nothing was opened.
-        StartupError: The pre-registration or the fee history cannot be read,
+        StartupError: The ledger does not exist and ``new_ledger`` is off,
+            the configured capital differs from the seed the ledger recorded,
+            the pre-registration or the fee history cannot be read,
             the start capital cannot be recorded, or the ledger's recorded
             trades or fill-quality rows cannot be read or replayed into the
             portfolio. The SQLite connection is closed before raising.
     """
     db_target = db_path if db_path is not None else DEFAULT_DB_PATH
+    if not new_ledger and not db_target.exists():
+        raise StartupError(
+            f"no ledger at {db_target}: check --db and that its disk is mounted, "
+            "or start with --new-ledger to create one"
+        )
     lock = FileLock(serve_lock_path(db_target))
     try:
         acquired = lock.try_acquire()
@@ -605,6 +699,7 @@ def _wire_composition(
             clock=clock,
             orderbooks=orderbooks,
             fx=fx,
+            ledger_path=db_target,
         )
     except BaseException:
         connection.close()
@@ -622,9 +717,10 @@ def _wire_on_ledger(
     clock: ClockPort | None,
     orderbooks: OrderbookSnapshotPort | None,
     fx: FxRateProviderPort | None,
+    ledger_path: Path,
 ) -> Composition:
     """Wire everything that needs the open ledger; the caller closes it on failure."""
-    ledger = SqliteLedger(connection)
+    ledger = _open_ledger(connection, ledger_path)
 
     wall: ClockPort = clock if clock is not None else WallClock()
     event_bus = EventBus()
@@ -642,6 +738,16 @@ def _wire_on_ledger(
         recorded_seed = ledger.capital_seed(strategy_id)
     except LedgerError as exc:
         raise StartupError(f"cannot record the start capital in the ledger: {exc.msg}") from exc
+    if recorded_seed is not None and recorded_seed.amount != capital:
+        # Sizing reads cash from the config seed, the ledger from its own, so
+        # a changed budget would size against cash the ledger never had (#876).
+        recorded = recorded_seed.amount
+        raise StartupError(
+            f"capital_budget {capital.amount} {capital.currency.value} differs from "
+            f"the {recorded.amount} {recorded.currency.value} seed this ledger recorded "
+            f"on {recorded_seed.seeded_at.isoformat()}; restore the recorded amount, "
+            "or start a new ledger for the new capital"
+        )
     tracker = _rebuild_tracker(ledger, seed, strategy_id)
     fill_model = OrderbookWalkFillModel()
     books = (
@@ -698,6 +804,7 @@ def _wire_on_ledger(
         strategy_id=strategy_id,
         tracker=tracker,
         signal_notifier=SignalNotifier(RouterConfig(telegram=telegram, slack=slack)),
+        alert_channels=RouterConfig(telegram=telegram, slack=slack),
         pairs=pairs,
         intervals=tuple(config.market_data.intervals),
         telegram=telegram,
@@ -1081,17 +1188,47 @@ class _BarLoop:
         pair, so it gives nothing (#707). Exits declined after the entry are
         skipped: the coin is still held, and so is that entry (#706).
         """
-        if pair not in self.c.tracker.snapshot.positions:
+        position = self.c.tracker.snapshot.positions.get(pair)
+        if position is None:
             return None
         entry = self.c.ledger.latest_signal_event(
             self.c.strategy_id, pair, at_or_before=at_or_before, kind=SignalKind.ENTRY
         )
         if entry is None or entry.entry_price is None:
-            return None
+            return self._held_without_entry_signal(position, at_or_before=at_or_before)
         stop = self.c.ledger.latest_stop_mark(self.c.strategy_id, pair, entry.occurred_at)
         return OpenPosition(
             entry_time=entry.occurred_at,
             entry_price=entry.entry_price,
+            last_stop=None if stop is None else stop.record.stop_price,
+        )
+
+    def _held_without_entry_signal(
+        self, position: Position, *, at_or_before: datetime
+    ) -> OpenPosition | None:
+        """Watch a held coin whose entry signal is missing, from its own fills (#902).
+
+        An old or manual trade, or a ledger that lost its signal rows, would
+        otherwise seed the strategy flat: no exit rule would watch the coin,
+        and the next breakout would buy it a second time. The entry time is
+        the first buy since the pair was last flat, so the time stop counts
+        from when the coin was bought; the entry price is the average cost.
+        """
+        opened_at = _holding_opened_at(
+            self.c.ledger.trade_events(self.c.strategy_id), position.pair, at_or_before
+        )
+        if opened_at is None:
+            _log.warning("serve.position.unwatched", pair=str(position.pair))
+            return None
+        _log.warning(
+            "serve.position.no_entry_signal",
+            pair=str(position.pair),
+            entry_time=opened_at.isoformat(),
+        )
+        stop = self.c.ledger.latest_stop_mark(self.c.strategy_id, position.pair, opened_at)
+        return OpenPosition(
+            entry_time=opened_at,
+            entry_price=position.cost_basis / position.quantity,
             last_stop=None if stop is None else stop.record.stop_price,
         )
 
@@ -1298,6 +1435,15 @@ class _BarLoop:
         """Simulate the signal's order, log the outcome (never its P&L, D-7), sync the strategy."""
         result = await self.c.executor.execute(signal_, bar, correlation_id=correlation_id)
         _log_execution(bar.pair, signal_.kind, result)
+        record = halt_record(
+            result.outcome,
+            strategy_id=self.c.strategy_id,
+            pair=bar.pair,
+            at=signal_.signal_time,
+            correlation_id=correlation_id,
+        )
+        if record is not None:
+            await self._record_halt(record)
         # A signal that did not fill leaves the strategy in the position the
         # portfolio holds: flat after an entry (#707), still long after an exit (#706).
         sync_after_signal(
@@ -1306,6 +1452,31 @@ class _BarLoop:
             filled=isinstance(result.outcome, Executed | AlreadyFilled),
             held=partial(self._held_position, bar.pair, at_or_before=signal_.signal_time),
         )
+
+    async def _record_halt(self, record: RiskHaltRecorded) -> None:
+        """Record a halted or killed entry once, then alert it on every routed channel (#749).
+
+        Record, then push: the ledger row is the record of truth. A bar
+        evaluated again after a restart finds its row and neither records
+        nor alerts it twice. A failing channel is logged and sent to Sentry.
+        """
+        c = self.c
+        if c.ledger.has_risk_halt(record):
+            return
+        c.ledger.append_event(record)
+        _log.warning(
+            "serve.halt.recorded",
+            pair=str(record.pair),
+            kind=record.kind.value,
+            rule=record.rule,
+            reason=record.reason,
+        )
+        for adapter in route(EventClass.RISK_HALT, c.alert_channels):
+            try:
+                await asyncio.to_thread(adapter.notify, record)
+            except Exception as exc:  # one channel's bug must not stop the bar loop (#854)
+                _log.error("serve.halt.alert_failed", exc_info=exc)
+                sentry_integration.capture(exc)
 
     def _stored_signal(self, event: SignalEmitted) -> SignalEmitted:
         """Return the stored row of a re-evaluated signal: its push record keys on it."""

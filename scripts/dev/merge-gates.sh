@@ -43,7 +43,7 @@ gate() {
 # versions are pinned so a red gate means the tree changed, not the tool.
 install_markdownlint() {
   command -v markdownlint-cli2 >/dev/null 2>&1 \
-    || sudo npm install -g markdownlint-cli2@0.23.2
+    || sudo npm install -g markdownlint-cli2@0.23.3
 }
 
 install_gitleaks() {

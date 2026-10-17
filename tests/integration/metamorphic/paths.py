@@ -62,8 +62,8 @@ START = datetime(2021, 1, 1, tzinfo=UTC)
 PRELUDE_DAYS = 410
 """Days before the window: more than the 300 daily bars the strategy buffers."""
 
-WARM_UP_DAYS = 210
-"""Days of warm-up a plain run gets: the 1d EMA(200) needs 200 closes."""
+WARM_UP_DAYS = 300
+"""Days of warm-up a plain run gets: the ``warmup_bars_1d`` floor of 300 closes (#880)."""
 
 LIVE_DAYS = 90
 """Days in the window."""
@@ -154,18 +154,19 @@ def path(
     return [bar for bar in built if bar.open_time >= first]
 
 
-def regime_edge() -> list[Bar]:
+def regime_edge(calm_days: int = 100) -> list[Bar]:
     """Return a path whose first entry depends on how many daily bars warmed the EMA up.
 
-    100 days at 100, 200 days at 200, then a dip to 190 and a three-day climb
-    to 199. When the climb starts, the EMA(200) over the last 200 daily closes
-    is 200.00, so the regime is off; over the last 300 (the strategy's buffer
-    and serve's ``warmup_bars_1d``) it is 181.61, so the regime is on and the
-    climb's breakout enters. The window opens at day 300.
+    ``calm_days`` days at 100, 200 days at 200, then a dip to 190 and a
+    three-day climb to 199. When the climb starts, the EMA(200) over the last
+    200 daily closes is 200.00, so the regime is off; over the last 300 (the
+    strategy's buffer and the ``warmup_bars_1d`` floor, #880) it is 181.61, so
+    the regime is on and the climb's breakout enters. With the default 100
+    calm days the window opens at day 300 (:data:`REGIME_EDGE_WINDOW`).
     """
     calm = Decimal("0.002")
     script = MarketScript(start=START, prices={BTC: Decimal(100)})
-    script.hold(BTC, days=100, spread=calm)
+    script.hold(BTC, days=calm_days, spread=calm)
     script.ramp(BTC, days=1 / 6, to=Decimal(200), spread=calm)
     script.hold(BTC, days=200 - 1 / 6, spread=calm)
     script.ramp(BTC, days=1, to=Decimal(190), spread=calm)
@@ -181,6 +182,7 @@ def regime_edge() -> list[Bar]:
 
 
 REGIME_EDGE_WINDOW = START + timedelta(days=300)
+"""Window start of :func:`regime_edge` with its default 100 calm days: 300 daily bars before."""
 
 
 def shifted(bars: Iterable[Bar], by: timedelta) -> list[Bar]:

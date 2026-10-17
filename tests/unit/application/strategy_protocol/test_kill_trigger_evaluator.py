@@ -246,3 +246,24 @@ class TestKillTriggerEvaluatorProperties:
             f"State below all thresholds (drawdown={drawdown:.3f}, days={days:.1f}, "
             f"sharpe={sharpe:.3f}) must not trigger kill. Got triggered=True."
         )
+
+
+@pytest.mark.parametrize(
+    ("overrides", "rule"),
+    [
+        ({"max_drawdown": 0.16}, "max_drawdown"),
+        ({"sa9_halt": True}, "sa9_halt"),
+        ({"days_since_equity_high": 91.0}, "recovery_days"),
+        ({"rolling_30d_sharpe": 0.1}, "rolling_sharpe"),
+    ],
+)
+def test_each_criterion_names_its_rule_id(
+    evaluator: KillTriggerEvaluator, overrides: dict[str, float | bool], rule: str
+) -> None:
+    """A fired criterion carries its stable rule id, which value-free records key on (#749)."""
+    assert evaluator.evaluate(_safe_state(**overrides)).rule == rule
+
+
+def test_no_kill_carries_no_rule_id(evaluator: KillTriggerEvaluator) -> None:
+    """An untriggered decision names no rule."""
+    assert evaluator.evaluate(_safe_state()).rule == ""

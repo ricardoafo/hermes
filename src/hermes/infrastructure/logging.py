@@ -43,8 +43,8 @@ from __future__ import annotations
 import logging
 
 import structlog
-import ulid
 from structlog.contextvars import bind_contextvars, merge_contextvars
+from ulid import ULID
 
 _INFO_LEVEL: int = logging.INFO
 _JSON_ENVS: frozenset[str] = frozenset({"prod", "staging"})
@@ -86,7 +86,7 @@ def new_correlation_id() -> str:
     ULIDs sort lexicographically by creation time — useful when grepping
     journald for events in temporal order.
     """
-    return str(ulid.new())
+    return str(ULID())
 
 
 def bind_correlation_id(correlation_id: str) -> None:

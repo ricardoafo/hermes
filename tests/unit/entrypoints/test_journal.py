@@ -162,3 +162,45 @@ def test_due_json_splits_reviewable_and_sealed(tmp_path: Path) -> None:
         [e["entry_id"] for e in report["reviewable"]],
         [e["entry_id"] for e in report["sealed"]],
     ) == (0, [process_id], [strategy_id])
+
+
+def test_repair_without_confirm_names_the_torn_line_and_changes_nothing(tmp_path: Path) -> None:
+    """A dry run refuses (exit 1) with the line, and leaves the journal as it was (#891)."""
+    _add(tmp_path, "process", date(2099, 1, 1))
+    path = tmp_path / "j.jsonl"
+    with path.open("ab") as fh:
+        fh.write(b'{"kind": "deci')
+    before = path.read_bytes()
+    code, _, err = _run_split(tmp_path, "repair")
+    assert (code, "line 2 (14 bytes" in err, "--confirm REPAIR" in err, path.read_bytes()) == (
+        1,
+        True,
+        True,
+        before,
+    )
+
+
+def test_repair_with_confirm_drops_the_torn_line_and_list_works_again(tmp_path: Path) -> None:
+    """With --confirm REPAIR the journal reads again and keeps its one decision (#891)."""
+    _add(tmp_path, "process", date(2099, 1, 1))
+    with (tmp_path / "j.jsonl").open("ab") as fh:
+        fh.write(b'{"kind": "deci')
+    repaired, out = _run(tmp_path, "repair", "--confirm", "REPAIR")
+    listed, listing = _run(tmp_path, "list")
+    assert (
+        repaired,
+        out.startswith("REPAIRED: dropped line 2"),
+        listed,
+        listing.count("DECISION"),
+    ) == (
+        0,
+        True,
+        0,
+        1,
+    )
+
+
+def test_repair_of_a_whole_journal_says_so(tmp_path: Path) -> None:
+    """Nothing torn: exit 0 and one line saying so (#891)."""
+    _add(tmp_path, "process", date(2099, 1, 1))
+    assert _run(tmp_path, "repair") == (0, "Nothing to repair: the last line is whole.\n")

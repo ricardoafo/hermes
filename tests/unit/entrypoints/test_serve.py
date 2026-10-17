@@ -110,7 +110,10 @@ class TestBuildComposition:
     ) -> None:
         """Every field of Composition is an instance of the expected concrete adapter."""
         composition = serve_module.build_composition(
-            shadow_config, db_path=tmp_path / "test.sqlite3", env={}
+            shadow_config,
+            db_path=tmp_path / "test.sqlite3",
+            env={},
+            new_ledger=True,
         )
         try:
             assert isinstance(composition.ledger, SqliteLedger)
@@ -127,7 +130,11 @@ class TestBuildComposition:
     ) -> None:
         """Three pairs get three separate adapters, all under swing-donchian-4h (D-7)."""
         composition = serve_module.build_composition(
-            shadow_config, db_path=tmp_path / "test.sqlite3", env={}, feed=FakeFeed()
+            shadow_config,
+            db_path=tmp_path / "test.sqlite3",
+            env={},
+            feed=FakeFeed(),
+            new_ledger=True,
         )
         try:
             strategies = list(composition.strategies.values())
@@ -145,7 +152,11 @@ class TestBuildComposition:
     ) -> None:
         """Both loop events have exactly one subscriber: the ledger."""
         composition = serve_module.build_composition(
-            shadow_config, db_path=tmp_path / "test.sqlite3", env={}, feed=FakeFeed()
+            shadow_config,
+            db_path=tmp_path / "test.sqlite3",
+            env={},
+            feed=FakeFeed(),
+            new_ledger=True,
         )
         try:
             counts = (
@@ -162,7 +173,11 @@ class TestBuildComposition:
         """#136: one AnomalyDetected subscriber, and publishing one writes one ledger row."""
         db = tmp_path / "test.sqlite3"
         composition = serve_module.build_composition(
-            shadow_config, db_path=db, env={}, feed=FakeFeed()
+            shadow_config,
+            db_path=db,
+            env={},
+            feed=FakeFeed(),
+            new_ledger=True,
         )
         try:
             count = composition.event_bus.subscriber_count(AnomalyDetected)
@@ -188,6 +203,7 @@ class TestBuildComposition:
             db_path=tmp_path / "test.sqlite3",
             env={**_TELEGRAM_ENV, **_SLACK_ENV},
             feed=FakeFeed(),
+            new_ledger=True,
         )
         try:
             assert isinstance(composition.telegram, TelegramAdapter)
@@ -306,7 +322,11 @@ class TestPortfolioRebuiltOnStartup:
         _record_trade(db_path, TradeSide.BUY, "01J9Z8T3M5BQR2FVKN4XWY6PH1")
         fresh = tmp_path / "fresh.sqlite3"
         baseline = serve_module.build_composition(
-            shadow_config, db_path=fresh, env={}, feed=FakeFeed()
+            shadow_config,
+            db_path=fresh,
+            env={},
+            feed=FakeFeed(),
+            new_ledger=True,
         )
         composition = serve_module.build_composition(
             shadow_config, db_path=db_path, env={}, feed=FakeFeed()
@@ -327,6 +347,30 @@ class TestPortfolioRebuiltOnStartup:
         db_path = tmp_path / "test.sqlite3"
         _record_trade(db_path, TradeSide.SELL, "01J9Z8T3M5BQR2FVKN4XWY6PH7")
         with pytest.raises(serve_module.StartupError, match="01J9Z8T3M5BQR2FVKN4XWY6PH7"):
+            serve_module.build_composition(shadow_config, db_path=db_path, env={}, feed=FakeFeed())
+
+    def test_a_file_that_is_not_a_ledger_raises_startup_error_naming_it(
+        self, shadow_config: HermesConfig, tmp_path: Path
+    ) -> None:
+        """A corrupt ledger stops startup with a message naming the file, not a raw sqlite error."""
+        db_path = tmp_path / "test.sqlite3"
+        db_path.write_bytes(b"not a database " * 300)
+        with pytest.raises(serve_module.StartupError, match="cannot be opened as a SQLite ledger"):
+            serve_module.build_composition(shadow_config, db_path=db_path, env={}, feed=FakeFeed())
+
+    def test_a_ledger_a_newer_release_migrated_raises_startup_error_naming_the_migration(
+        self, shadow_config: HermesConfig, tmp_path: Path
+    ) -> None:
+        """Old code refuses a schema it does not know instead of writing to it (issue #856)."""
+        db_path = tmp_path / "test.sqlite3"
+        conn = sqlite3.connect(db_path)
+        try:
+            SqliteLedger(conn)
+            conn.execute("INSERT INTO schema_migrations (filename) VALUES ('9999_newer.sql')")
+            conn.commit()
+        finally:
+            conn.close()
+        with pytest.raises(serve_module.StartupError, match=r"9999_newer\.sql"):
             serve_module.build_composition(shadow_config, db_path=db_path, env={}, feed=FakeFeed())
 
     def test_a_ledger_read_failure_raises_startup_error(
@@ -806,7 +850,11 @@ class TestFillKernelWiring:
     ) -> None:
         """Without an override the executor walks Binance public depth."""
         composition = serve_module.build_composition(
-            shadow_config, db_path=tmp_path / "test.sqlite3", env={}, feed=FakeFeed()
+            shadow_config,
+            db_path=tmp_path / "test.sqlite3",
+            env={},
+            feed=FakeFeed(),
+            new_ledger=True,
         )
         try:
             assert isinstance(composition.orderbooks, BinanceDepthSnapshotAdapter)
@@ -847,6 +895,7 @@ class TestFillKernelWiring:
                 env={},
                 feed=FakeFeed(),
                 experiment_root=tmp_path,
+                new_ledger=True,
             )
 
     def test_run_closes_the_depth_source(self, tmp_path: Path) -> None:
@@ -883,3 +932,81 @@ class _FixedEntryCheckStrategy(SwingStrategyAdapter):
     def last_entry_check(self) -> EntryCheck | None:
         """Return the fixed record."""
         return self._check
+
+
+def _shut(composition: serve_module.Composition) -> None:
+    """Close the ledger and release the serve lock, as a stopped serve does."""
+    composition.sqlite_connection.close()
+    if composition.serve_lock is not None:
+        composition.serve_lock.release()
+
+
+def _with_capital(config: HermesConfig, amount: str) -> HermesConfig:
+    entry = config.strategies.strategies[0].model_copy(update={"capital_budget": Decimal(amount)})
+    return config.model_copy(update={"strategies": StrategiesConfig(strategies=[entry])})
+
+
+class TestLedgerAndSeedGuards:
+    """Serve refuses a missing ledger and a capital that differs from its seed (issue #876)."""
+
+    # SEV-1: no rubric row matches; a wrong --db must not drop the open positions
+    def test_a_missing_ledger_is_refused_and_not_created(
+        self, shadow_config: HermesConfig, tmp_path: Path
+    ) -> None:
+        """Without --new-ledger a ledger path that does not exist stops startup, naming it."""
+        db_path = tmp_path / "unmounted" / "hermes.sqlite3"
+        with pytest.raises(serve_module.StartupError) as refused:
+            serve_module.build_composition(shadow_config, db_path=db_path, env={}, feed=FakeFeed())
+        assert (str(refused.value).startswith(f"no ledger at {db_path}"), db_path.exists()) == (
+            True,
+            False,
+        )
+
+    def test_new_ledger_creates_the_ledger_and_records_the_seed(
+        self, shadow_config: HermesConfig, tmp_path: Path
+    ) -> None:
+        """With --new-ledger the first boot creates the ledger and seeds the configured capital."""
+        db_path = tmp_path / "hermes.sqlite3"
+        composition = serve_module.build_composition(
+            shadow_config, db_path=db_path, env={}, feed=FakeFeed(), new_ledger=True
+        )
+        try:
+            seed = composition.ledger.capital_seed(StrategyId("swing-donchian-4h"))
+        finally:
+            _shut(composition)
+        assert (db_path.exists(), seed.amount.amount if seed else None) == (True, Decimal(5000))
+
+    # SEV-1: no rubric row matches; sizing must use the cash the ledger recorded
+    def test_a_capital_that_differs_from_the_recorded_seed_is_refused_naming_both(
+        self, shadow_config: HermesConfig, tmp_path: Path
+    ) -> None:
+        """A capital_budget changed after the first boot stops startup with both amounts."""
+        db_path = tmp_path / "hermes.sqlite3"
+        _shut(
+            serve_module.build_composition(
+                shadow_config, db_path=db_path, env={}, feed=FakeFeed(), new_ledger=True
+            )
+        )
+        with pytest.raises(serve_module.StartupError) as refused:
+            serve_module.build_composition(
+                _with_capital(shadow_config, "6000"), db_path=db_path, env={}, feed=FakeFeed()
+            )
+        assert str(refused.value).startswith(
+            "capital_budget 6000 USDT differs from the 5000 USDT seed this ledger recorded"
+        )
+
+    def test_the_same_capital_written_differently_still_boots(
+        self, shadow_config: HermesConfig, tmp_path: Path
+    ) -> None:
+        """5000 and 5000.00 are the same capital, so the second boot goes ahead."""
+        db_path = tmp_path / "hermes.sqlite3"
+        _shut(
+            serve_module.build_composition(
+                shadow_config, db_path=db_path, env={}, feed=FakeFeed(), new_ledger=True
+            )
+        )
+        composition = serve_module.build_composition(
+            _with_capital(shadow_config, "5000.00"), db_path=db_path, env={}, feed=FakeFeed()
+        )
+        _shut(composition)
+        assert composition.tracker.state().current_value == Decimal(5000)

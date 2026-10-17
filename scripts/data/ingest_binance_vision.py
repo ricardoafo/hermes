@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Binance Vision historical data downloader — pre-reg v1 sec 4 window.
 
-Downloads monthly ZIPs from Binance Vision for BTC/ETH/SOL across the
-uniform window 2020-09-01 to 2026-12-31 (per swing-mvp1 pre-registration
-v1 sec 4). Supports two dataset kinds:
+Downloads monthly ZIPs from Binance Vision for BTC/ETH/SOL from the
+uniform start 2020-09-01 up to, but never including, the sealed OOS window
+(per swing-mvp1 pre-registration v1 sec 4). The OOS start is read from
+``splits.oos.start`` of docs/experiments/swing-mvp1/data-manifest.json; no
+month on or after it is ever enumerated or downloaded, and no flag changes
+that (#925). Supports two dataset kinds:
 
   * klines     - OHLCV bars at 1h/4h/1d intervals (default)
   * agg_trades - aggregated trades, no interval dimension
@@ -32,18 +35,18 @@ Usage:
     --dry-run              List targets without downloading
 
 Examples:
-    # Full klines ingest (684 files, ~30 MB, ~10-20 min)
+    # Full klines ingest (540 files, ~25 MB, ~10-20 min)
     python scripts/data/ingest_binance_vision.py
 
     # Add agg_trades on top (klines already ingested? resume-safe)
-    # WARNING: agg_trades is LARGE — ~45 GB across 228 files (BTC ~300-500 MB/month,
+    # WARNING: agg_trades is LARGE — ~35 GB across 180 files (BTC ~300-500 MB/month,
     # ETH/SOL smaller). Full ingest can take 2-4 hours on a residential connection.
     python scripts/data/ingest_binance_vision.py --include agg_trades
 
     # Download both in one run (klines + agg_trades)
     python scripts/data/ingest_binance_vision.py --include all
 
-    # Small sanity subset (BTC 1d only, ~76 files, ~2 min)
+    # Small sanity subset (BTC 1d only, 60 files, ~2 min)
     python scripts/data/ingest_binance_vision.py --pair BTCUSDT --interval 1d
 
     # Preview target set without downloading
@@ -62,10 +65,11 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import shutil
 import sys
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import httpx
@@ -80,7 +84,9 @@ PAIRS: tuple[str, ...] = ("BTCUSDT", "ETHUSDT", "SOLUSDT")
 INTERVALS: tuple[str, ...] = ("1h", "4h", "1d")
 BASE_URL = "https://data.binance.vision/data/spot/monthly"
 START_YEAR, START_MONTH = 2020, 9  # uniform start (SOL availability constraint)
-END_YEAR, END_MONTH = 2026, 12  # pre-reg OOS window end
+EXPERIMENT_MANIFEST = Path(__file__).resolve().parents[2] / (
+    "docs/experiments/swing-mvp1/data-manifest.json"
+)
 DEFAULT_DATA_DIR = "D:/hermes-data"
 MANIFEST_CHECKPOINT_EVERY = 20  # files
 DISK_WARN_GB = 100  # print warning if less than this free at start
@@ -90,11 +96,36 @@ HTTP_TIMEOUT_SECONDS = 60
 INCLUDE_CHOICES = ("klines", "agg_trades", "all")
 
 
-def iter_months() -> list[tuple[int, int]]:
-    """Yield (year, month) pairs from START to END inclusive."""
+def oos_start_month(manifest_path: Path) -> tuple[int, int]:
+    """Return the (year, month) of ``splits.oos.start`` in an experiment data manifest."""
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    start = datetime.fromisoformat(payload["splits"]["oos"]["start"])
+    return start.year, start.month
+
+
+# Pre-registration v1 sec 4 keeps OOS sealed until the one-shot OOS test.
+# Read once at import so every code path, whatever its arguments, shares it.
+SEALED_FROM: tuple[int, int] = oos_start_month(EXPERIMENT_MANIFEST)
+
+
+class SealedMonthError(ValueError):
+    """A target month lies on or after the sealed OOS start."""
+
+
+def iter_months(
+    start: tuple[int, int] = (START_YEAR, START_MONTH),
+    end: tuple[int, int] | None = None,
+) -> list[tuple[int, int]]:
+    """Return (year, month) pairs from ``start`` to ``end`` inclusive, stopping before OOS.
+
+    Args:
+        start: First month.
+        end: Last month; ``None`` means the month before the OOS start. An
+            ``end`` on or after the OOS start is cut to the month before it.
+    """
     out: list[tuple[int, int]] = []
-    y, m = START_YEAR, START_MONTH
-    while (y, m) <= (END_YEAR, END_MONTH):
+    y, m = start
+    while (y, m) < SEALED_FROM and (end is None or (y, m) <= end):
         out.append((y, m))
         m += 1
         if m > 12:
@@ -174,6 +205,11 @@ class Target:
         year: int,
         month: int,
     ) -> None:
+        if (year, month) >= SEALED_FROM:
+            raise SealedMonthError(
+                f"{year:04d}-{month:02d} is on or after the sealed OOS start "
+                f"{SEALED_FROM[0]:04d}-{SEALED_FROM[1]:02d} (pre-registration v1 sec 4)"
+            )
         self.dataset = dataset
         self.pair = pair
         self.interval = interval
@@ -383,7 +419,10 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  Pairs:     {', '.join(pairs)}")
     if "klines" in [t.dataset for t in targets[:1]] or args.include != "agg_trades":
         print(f"  Intervals: {', '.join(intervals)} (klines only)")
-    print(f"  Window:    {START_YEAR:04d}-{START_MONTH:02d} .. {END_YEAR:04d}-{END_MONTH:02d}")
+    print(
+        f"  Window:    {START_YEAR:04d}-{START_MONTH:02d} .. "
+        f"{months[-1][0]:04d}-{months[-1][1]:02d} (OOS sealed)"
+    )
     print(f"  Data dir:  {data_dir}")
     print(f"  Manifest:  {manifest_path}")
 

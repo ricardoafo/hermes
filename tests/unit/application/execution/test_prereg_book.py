@@ -73,3 +73,36 @@ def test_regime_exit_book_bids_start_five_bps_below_the_close() -> None:
 def test_backtest_replay_uses_the_same_execution_model_class() -> None:
     """One §6.2 implementation: the replay's name is this class."""
     assert ReplayExecutionModel is ExecutionModel
+
+
+_GAP_BAR = Bar(
+    pair=_BTC,
+    interval=KlineInterval.H4,
+    open_time=_OPEN,
+    open=Decimal("88"),
+    high=Decimal("89"),
+    low=Decimal("85"),
+    close=Decimal("86"),
+    volume=Decimal("1000"),
+    close_time=close_time_of(_OPEN, KlineInterval.H4),
+)
+
+
+def test_a_bar_opening_under_the_stop_sells_from_the_open() -> None:
+    """§5.3 #785: a resting stop-market under a gap fills at the open 88, x 0.9985, not at 90."""
+    book = ExecutionModel().book(_signal(SignalKind.EXIT, "chandelier"), _GAP_BAR)
+    assert book is not None
+    assert book.bids[0].price == Decimal("87.868")
+
+
+def test_a_gap_stop_exit_references_the_open() -> None:
+    """The M-02 reference of a gap stop exit is the open the stop filled at (#785)."""
+    reference = ExecutionModel().reference(_signal(SignalKind.EXIT, "chandelier"), _GAP_BAR)
+    assert reference == (Decimal("88"), Decimal("15"))
+
+
+def test_a_gap_under_the_stop_leaves_a_regime_exit_at_the_close() -> None:
+    """Only a stop exit fills at the open: a regime exit on the gap bar sells at close x 0.9995."""
+    book = ExecutionModel().book(_signal(SignalKind.EXIT, "regime_break"), _GAP_BAR)
+    assert book is not None
+    assert book.bids[0].price == Decimal("85.957")

@@ -54,7 +54,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any, Final
+from typing import Final
 
 import httpx
 import structlog
@@ -215,7 +215,7 @@ class BinanceLiveWsAdapter:
             )
 
         try:
-            data: dict[str, Any] = response.json()
+            data: object = response.json()
         except ValueError as exc:
             raise ExchangeError(
                 f"BinanceLiveWsAdapter: non-JSON response from depth endpoint: "
@@ -331,11 +331,12 @@ def _pair_to_binance_symbol(pair: Pair) -> str:
     return f"{pair.base.value}{pair.quote.value}"
 
 
-def _decimal_or_raise(raw: str, *, field_name: str, source: str) -> Decimal:
+def _decimal_or_raise(raw: object, *, field_name: str, source: str) -> Decimal:
     """Coerce a raw string field to :class:`~decimal.Decimal`.
 
     Args:
-        raw: String from the exchange payload.
+        raw: String from the exchange payload. A JSON number is read through
+            ``str`` so a float's binary expansion never reaches the book.
         field_name: Descriptive name for error messages.
         source: WS URL or endpoint name for traceability.
 
@@ -345,8 +346,12 @@ def _decimal_or_raise(raw: str, *, field_name: str, source: str) -> Decimal:
     Raises:
         hermes.domain.errors.ExchangeError: On unparseable input.
     """
+    if not isinstance(raw, str | int | float) or isinstance(raw, bool):
+        raise ExchangeError(
+            f"BinanceLiveWsAdapter: {field_name} is not a string or number ({raw!r}) from {source}"
+        )
     try:
-        value = Decimal(raw)
+        value = Decimal(str(raw))
     except InvalidOperation as exc:
         raise ExchangeError(
             f"BinanceLiveWsAdapter: {field_name} is not a decimal ({raw!r}) from {source}"
@@ -359,7 +364,7 @@ def _decimal_or_raise(raw: str, *, field_name: str, source: str) -> Decimal:
 
 
 def _parse_level_list(
-    raw_levels: list[list[str]],
+    raw_levels: object,
     *,
     source: str,
     side_label: str,
@@ -380,6 +385,11 @@ def _parse_level_list(
     Raises:
         hermes.domain.errors.ExchangeError: On malformed level data.
     """
+    if not isinstance(raw_levels, list):
+        raise ExchangeError(
+            f"BinanceLiveWsAdapter: {side_label} levels are not a list from {source}: "
+            f"{raw_levels!r}"
+        )
     levels: list[OrderbookDiffLevel] = []
     for idx, level in enumerate(raw_levels):
         if not isinstance(level, list) or len(level) < _LEVEL_MIN_ELEMENTS:
@@ -427,11 +437,16 @@ def _parse_depth_update(*, raw: str | bytes, pair: Pair, source: str) -> Orderbo
         hermes.domain.errors.ExchangeError: On parse error or schema violation.
     """
     try:
-        data: dict[str, Any] = json.loads(raw)
-    except (json.JSONDecodeError, ValueError) as exc:
+        data: object = json.loads(raw)
+    except (ValueError, RecursionError) as exc:
         raise ExchangeError(
             f"BinanceLiveWsAdapter: failed to parse depth update JSON from {source}: {exc!r}"
         ) from exc
+    if not isinstance(data, dict):
+        raise ExchangeError(
+            f"BinanceLiveWsAdapter: depth update is not a JSON object from {source}: "
+            f"{str(data)[:200]}"
+        )
 
     event_type = data.get("e")
     if event_type != "depthUpdate":
@@ -450,17 +465,19 @@ def _parse_depth_update(*, raw: str | bytes, pair: Pair, source: str) -> Orderbo
     first_update_id = data["U"]
     final_update_id = data["u"]
 
-    if not isinstance(first_update_id, int) or not isinstance(final_update_id, int):
+    if (
+        not isinstance(first_update_id, int)
+        or isinstance(first_update_id, bool)
+        or not isinstance(final_update_id, int)
+        or isinstance(final_update_id, bool)
+    ):
         raise ExchangeError(
             f"BinanceLiveWsAdapter: update IDs must be integers from {source}, "
             f"got U={first_update_id!r}, u={final_update_id!r}"
         )
 
-    raw_bids: list[list[str]] = data["b"]
-    raw_asks: list[list[str]] = data["a"]
-
-    bids = _parse_level_list(raw_bids, source=source, side_label="bid")
-    asks = _parse_level_list(raw_asks, source=source, side_label="ask")
+    bids = _parse_level_list(data["b"], source=source, side_label="bid")
+    asks = _parse_level_list(data["a"], source=source, side_label="ask")
 
     try:
         return OrderbookDiff(
@@ -477,7 +494,7 @@ def _parse_depth_update(*, raw: str | bytes, pair: Pair, source: str) -> Orderbo
 
 
 def _parse_orderbook_level_list(
-    raw_levels: list[list[str]],
+    raw_levels: object,
     *,
     source: str,
     side_label: str,
@@ -500,6 +517,11 @@ def _parse_orderbook_level_list(
     Raises:
         hermes.domain.errors.ExchangeError: On malformed level data.
     """
+    if not isinstance(raw_levels, list):
+        raise ExchangeError(
+            f"BinanceLiveWsAdapter: {side_label} levels are not a list from {source}: "
+            f"{raw_levels!r}"
+        )
     levels: list[OrderbookLevel] = []
     for idx, level in enumerate(raw_levels):
         if not isinstance(level, list) or len(level) < _LEVEL_MIN_ELEMENTS:
@@ -524,7 +546,7 @@ def _parse_orderbook_level_list(
     return levels
 
 
-def _parse_snapshot(*, data: dict[str, Any], pair: Pair) -> Orderbook:
+def _parse_snapshot(*, data: object, pair: Pair) -> Orderbook:
     """Convert a Binance REST depth snapshot response dict to an :class:`Orderbook`.
 
     Expected shape::
@@ -546,6 +568,11 @@ def _parse_snapshot(*, data: dict[str, Any], pair: Pair) -> Orderbook:
         hermes.domain.errors.ExchangeError: On missing fields or schema errors.
     """
     source = _DEPTH_SNAPSHOT_PATH
+    if not isinstance(data, dict):
+        raise ExchangeError(
+            f"BinanceLiveWsAdapter: depth snapshot is not a JSON object from {source}: "
+            f"{str(data)[:200]}"
+        )
 
     for required in ("lastUpdateId", "bids", "asks"):
         if required not in data:
@@ -553,11 +580,8 @@ def _parse_snapshot(*, data: dict[str, Any], pair: Pair) -> Orderbook:
                 f"BinanceLiveWsAdapter: depth snapshot missing field {required!r} from {source}"
             )
 
-    raw_bids: list[list[str]] = data["bids"]
-    raw_asks: list[list[str]] = data["asks"]
-
-    bid_levels = _parse_orderbook_level_list(raw_bids, source=source, side_label="bid")
-    ask_levels = _parse_orderbook_level_list(raw_asks, source=source, side_label="ask")
+    bid_levels = _parse_orderbook_level_list(data["bids"], source=source, side_label="bid")
+    ask_levels = _parse_orderbook_level_list(data["asks"], source=source, side_label="ask")
 
     # Binance REST depth: bids descending (best bid first), asks ascending.
     # Domain Orderbook enforces these invariants in __post_init__.

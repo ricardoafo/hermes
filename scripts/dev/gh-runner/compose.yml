@@ -26,7 +26,7 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        RUNNER_VERSION: '2.337.0'
+        RUNNER_VERSION: '2.338.0'
     image: gh-runner:latest
     # No container_name — compose auto-names replicas gh-runner-runner-N
     # so `--scale runner=N` works. Runners identify themselves in the
@@ -155,6 +155,34 @@ services:
       - bun-cache:/home/runner/.cache/bun
 
   # ─────────────────────────────────────────────────────────────
+  # BACKTEST runner — backtest.yml only (label hermes-backtest),
+  # on server-01 only (ADR-023). Behind the `backtest` profile, so
+  # ./up.sh on the PC never starts it. Start it on server-01 with
+  #   docker compose --profile backtest up -d backtest-runner
+  # One replica: runs never overlap (the workflow's concurrency group
+  # holds the rest). The pinned klines live on server-01's P310 at
+  # /srv/hermes-data; every run re-verifies them against the manifest.
+  # Own uv cache, shared with no other runner, and no Docker socket
+  # (ADR-018 D11).
+  # ─────────────────────────────────────────────────────────────
+  backtest-runner:
+    image: gh-runner:latest
+    profiles: [backtest]
+    scale: 1
+    restart: unless-stopped
+    environment:
+      RUNNER_REPOSITORY: ${RUNNER_REPOSITORY:-ricardoafo/hermes}
+      HERMES_RUNNER_REGISTRATION_PAT: ${HERMES_RUNNER_REGISTRATION_PAT:?HERMES_RUNNER_REGISTRATION_PAT is required — put it in .env (see .env.example)}
+      RUNNER_TOKEN: ${RUNNER_TOKEN:-}
+      RUNNER_LABELS: self-hosted,linux,x64,hermes-backtest
+      HERMES_DATA_DIR: /srv/hermes-data
+    mem_limit: 8g
+    cpus: 4
+    volumes:
+      - /srv/hermes-data:/srv/hermes-data
+      - backtest-uv-cache:/home/runner/.cache/uv
+
+  # ─────────────────────────────────────────────────────────────
   # Dependabot runner (label dependabot) with its own Docker daemon.
   # GitHub runs Dependabot updates on a self-hosted runner only when
   # the runner user can run Docker. The CI runners reach the host
@@ -179,7 +207,7 @@ services:
     networks: [dependabot]
 
   dependabot-dind:
-    image: docker:27-dind
+    image: docker:29-dind
     restart: unless-stopped
     privileged: true
     environment:
@@ -204,4 +232,5 @@ volumes:
   ruff-cache:
   hypothesis-db:
   bun-cache:
+  backtest-uv-cache:
   dependabot-docker:

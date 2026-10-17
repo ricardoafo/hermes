@@ -155,7 +155,11 @@ def main(
     if not db.is_file():
         err.write(f"ERROR: ledger not found at {db}\n")
         return 1
-    connection = open_ledger(db)
+    try:
+        connection = open_ledger(db)
+    except sqlite3.Error as exc:
+        err.write(f"ERROR: cannot read ledger {db}: {exc}\n")
+        return 1
     try:
         result = TaxService(SqliteLedger(connection)).estimate(
             year=year,

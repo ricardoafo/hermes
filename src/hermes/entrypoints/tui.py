@@ -23,9 +23,11 @@ Screens: ``1`` Home (issue #712); ``2``-``8`` name the issue that builds them ne
 
 Home layout, per breakpoint token (:func:`~hermes.entrypoints.tui_home.home_layout`):
 under 100 columns one column (Portfolio, Positions, Market, Activity, Engine
-brief) with sparklines for charts, and the position detail opens as its own
-screen; from 100 two columns (Portfolio left; Positions, the detail, Market,
-Activity and the Engine brief right); from 160 the mock layout, Market beside
+brief) with sparklines for charts, and the position detail opens as a
+:class:`~hermes.entrypoints.tui_drilldown.DetailScreen`; from 100 two columns
+(Portfolio left; Positions, the position detail as a
+:class:`~hermes.entrypoints.tui_drilldown.DetailPane`, Market, Activity and the
+Engine brief right); from 160 the mock layout, Market beside
 Activity; from 220 a third column with a Signals placeholder and a log tail.
 Under 30 rows the curve and the big total hide; from 45 rows the curve is
 twice as tall. The bottom line is the 90-day run bar.
@@ -54,21 +56,29 @@ The views read on the last poll are cached, so a tick repaints those cards
 without reading the ledger. Live values stay in this process: nothing here
 writes the ledger or reaches the engine, the supervisor or a notification.
 
+When the release the console started on is no longer the current one, a
+persistent notice offers ``R`` to restart onto the new release (issue #652).
+It is an amber ``warn`` row on the panel surface, under the status row and
+above the screens, so it shows on every tab.
+
 Keys: ``1``-``8`` screens, Tab / Shift+Tab cycle them, Ctrl+P command palette,
 ``D`` ``W`` ``M`` ``Y`` range (day, week, month, year), up and down (or ``j``
-``k``) select a position, Enter opens it, Esc goes back, ``L`` logs, ``T``
-theme, ``?`` help, ``Q`` quit.
+``k``) select a position, Enter opens it, Esc or Backspace goes back, ``[``
+``]`` previous / next inside a detail screen, ``L`` logs, ``T`` theme, ``?``
+help, ``R`` restart (only while the notice shows), ``Q`` quit.
 
 Reference: openspec/changes/readonly-tui-dashboard/change.md;
 openspec/changes/live-home-screen/change.md (D-6);
 openspec/changes/711-cockpit-theme/change.md;
 openspec/changes/712-cockpit-home/change.md;
-openspec/changes/713-live-ticker/change.md.
+openspec/changes/713-live-ticker/change.md;
+openspec/changes/730-drill-down/change.md.
 """
 
 from __future__ import annotations
 
 import os
+import sys
 from collections import deque
 from collections.abc import Callable, Iterable, Sequence
 from contextlib import suppress
@@ -88,6 +98,7 @@ from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.css.query import NoMatches
 from textual.screen import ModalScreen, Screen
 from textual.timer import Timer
+from textual.widget import Widget
 from textual.widgets import ContentSwitcher, Static
 
 from hermes.application.console import (
@@ -132,6 +143,13 @@ from hermes.application.console.render import (
 )
 from hermes.domain.errors import LedgerError
 from hermes.entrypoints.tui_briefs import briefs_screen
+from hermes.entrypoints.tui_drilldown import (
+    DetailMode,
+    DetailPane,
+    DetailScreen,
+    ListState,
+    detail_mode,
+)
 from hermes.entrypoints.tui_home import (
     LOGS_DEMO,
     LOGS_UNAVAILABLE,
@@ -218,6 +236,8 @@ __all__ = [
 
 REFRESH_SECONDS: Final = MOTION.poll
 _PANEL_PADDING: Final = 2
+_NEW_VERSION_NOTICE: Final = "new version deployed · press R to restart"
+_UNKNOWN_RELEASE: Final = "unknown"
 _LOGS_LINES: Final = 50
 _READ_ONLY: Final = "read-only"
 _BRIEF_PENDING: Final = "brief not available yet"
@@ -227,7 +247,7 @@ _LEFT_IDS: Final = frozenset(
 )
 _THIRD_IDS: Final = frozenset({"signals", "log-tail"})
 _FULL_WIDTH_IDS: Final = frozenset(
-    {"shadow", "footer", "footer-status", "countdown", "countdown-meter", "mainnet"}
+    {"shadow", "footer", "footer-status", "countdown", "countdown-meter", "mainnet", "notice"}
 )
 _WIDTH_CLASSES: Final = ("-compact", "-standard", "-wide", "-ultra")
 _HEIGHT_CLASSES: Final = ("-short", "-tall", "-towering")
@@ -265,6 +285,14 @@ _FOOTER_CHIPS: Final = (
     ("^P", "palette"),
     ("Q", "quit"),
 )
+_DETAIL_CHIPS: Final = (
+    ("Esc", "back"),
+    ("[ ]", "prev/next"),
+    ("1-8", "screens"),
+    ("^P", "palette"),
+    ("Q", "quit"),
+)
+_POSITIONS_TRAIL: Final = ("Home", "Positions")
 _FOOTER_CHIPS_COMPACT: Final = (
     ("D W M Y", "range"),
     ("1-8", ""),
@@ -471,6 +499,11 @@ def _placeholder(tab: Tab) -> Text:
     )
 
 
+def _known_release(name: str | None) -> str | None:
+    """Return ``name``, or ``None`` when the release is unreadable or reads as unknown."""
+    return None if name == _UNKNOWN_RELEASE else name
+
+
 class HomeApp(App[None]):
     """The read-only Cockpit console.
 
@@ -498,6 +531,12 @@ class HomeApp(App[None]):
     #theme-chip {{ width: auto; margin-left: 1; }}
     #down-row {{ display: none; height: auto; }}
     #down-row.-down {{ display: block; }}
+    #notice {{
+        display: none; height: 1; padding: 0 1;
+        background: $hud-panel; color: $hud-warn; text-style: bold;
+        border-left: outer $hud-warn;
+    }}
+    #notice.-on {{ display: block; }}
     #screens {{ height: 1fr; }}
     #tab-1 {{ height: 1fr; }}
     #body {{
@@ -521,8 +560,6 @@ class HomeApp(App[None]):
         width: {MARKET_COLUMN_WIDE}; margin-right: 1;
     }}
     #portfolio-curve {{ margin-top: 1; }}
-    #detail-panel {{ display: none; }}
-    #detail-panel.-open {{ display: block; }}
     #shadow, #footer-row, #panel-footer {{ height: 1; }}
     #footer {{ width: 1fr; }}
     #footer-status, #panel-footer {{ width: auto; color: $hud-muted; }}
@@ -536,11 +573,12 @@ class HomeApp(App[None]):
         Binding("up,k", "select(-1)", "previous", show=False),
         Binding("down,j", "select(1)", "next", show=False),
         Binding("enter", "open_detail", "detail", show=False),
-        Binding("escape", "go_back", "back", show=False),
+        Binding("escape,backspace", "go_back", "back", show=False),
         Binding("a,A", "toggle_quiet", "checks", show=False),
         Binding("l,L", "logs", "logs", show=False),
         Binding("t,T", "pick_theme", "theme", show=False),
         Binding("question_mark", "help", "help", show=False),
+        Binding("r,R", "restart", "restart", show=False),
         Binding("q,Q", "quit", "quit", show=False),
     ]
 
@@ -610,6 +648,9 @@ class HomeApp(App[None]):
         self._tab = _HOME
         self._tab_history: list[int] = []
         self._content: dict[str, RenderableType] = {}
+        self._started_release = _known_release(self._read_release())
+        self._release_is_new = False
+        self.restart_requested = False
         self._heartbeat: Heartbeat | None = None
         # The last heartbeat read, kept across a failed read so the bell never rings twice.
         self._last_read: Heartbeat | None = None
@@ -654,6 +695,7 @@ class HomeApp(App[None]):
             yield Static(id="countdown-meter")
             yield ThemeChip(id="theme-chip")
         yield Static(id="down-row")
+        yield Static(id="notice")
         with ContentSwitcher(initial="tab-1", id="screens"):
             with Container(id="tab-1"), Container(id="body"):
                 with Vertical(id="left-column"):
@@ -674,7 +716,7 @@ class HomeApp(App[None]):
                         subtitle="↑↓ select · ↵ detail",
                         id="positions-panel",
                     )
-                    yield HudPanel(
+                    yield DetailPane(
                         Static(id="detail"),
                         title="Position detail",
                         subtitle="Esc close",
@@ -755,29 +797,29 @@ class HomeApp(App[None]):
             period / MOTION.pulse_steps, self._step_pulse
         )
         if not self.is_night:
-            big = self._home.query_one(BigNumber)
-            self.effect_timers["shimmer"] = self.set_interval(MOTION.shimmer, big.start_shimmer)
+            self.effect_timers["shimmer"] = self.set_interval(MOTION.shimmer, self._start_shimmer)
             self.effect_timers["radar"] = self.set_interval(MOTION.radar_tick, self._step_radar)
+
+    def _start_shimmer(self) -> None:
+        big = self._alive(BigNumber)
+        if big is not None:
+            big.start_shimmer()
 
     def _step_radar(self) -> None:
         """Turn the empty-positions radar one step (only while there is no position)."""
         self._radar += 1
-        if self._empty_facts is not None and self.screen_stack:
+        if self._empty_facts is not None:
             coins, next_at = self._empty_facts
-            with suppress(NoMatches):
-                self._set(
-                    "positions",
-                    empty_positions(coins, next_at, self._ctx, self._data, self._radar),
-                )
+            self._set(
+                "positions",
+                empty_positions(coins, next_at, self._ctx, self._data, self._radar),
+            )
 
-    # An effect timer can fire while the app is tearing its widgets down; a
-    # missing widget then means there is nothing left to animate.
     def _step_pulse(self) -> None:
         self._pulse = (self._pulse + 1) % MOTION.pulse_steps
-        with suppress(NoMatches):
-            self._paint_heartbeat()
-            if self._live_state is LiveState.LIVE:
-                self._paint_live()
+        self._paint_heartbeat()
+        if self._live_state is LiveState.LIVE:
+            self._paint_live()
 
     @property
     def live_dot_colour(self) -> str:
@@ -794,12 +836,12 @@ class HomeApp(App[None]):
             return
         now = self._clock()
         self._apply_theme(now)
-        bar = self._home.query_one(WindowBar)
-        bar.clock = now.astimezone(self._ctx.tz).strftime("%H:%M:%S")
-        if not self._polls:
-            bar.show_next_bar(next_bar_text(self._heartbeat, now))
-        self._paint_mainnet()
-        self._fit_release()
+        bar = self._alive(WindowBar)
+        if bar is not None:
+            bar.clock = now.astimezone(self._ctx.tz).strftime("%H:%M:%S")
+            if not self._polls:
+                bar.show_next_bar(next_bar_text(self._heartbeat, now))
+        self._paint_status_badges()
         countdown = countdown_text(self._heartbeat, now)
         on_row, full_chip = self._status_row_layout(countdown)
         self._paint_chip(compact=not full_chip)
@@ -839,6 +881,11 @@ class HomeApp(App[None]):
             len(to_plain_text(self._content.get(part, Text("")), width=width).strip())
             for part in parts
         )
+
+    def _paint_status_badges(self) -> None:
+        """Draw the mainnet badge, then fit the version line around it and the heartbeat."""
+        self._paint_mainnet()
+        self._fit_release()
 
     def _fit_release(self) -> None:
         """Shorten the version line, then the demo tag, until the heartbeat fits whole.
@@ -909,7 +956,9 @@ class HomeApp(App[None]):
         )
 
     def _paint_chip(self, *, compact: bool) -> None:
-        self._home.query_one(ThemeChip).update(self._chip_text(compact=compact))
+        chip = self._alive(ThemeChip)
+        if chip is not None:
+            chip.update(self._chip_text(compact=compact))
 
     def _apply_theme(self, now: datetime) -> None:
         name = resolve_theme(self._choice, now.astimezone(self._ctx.tz).time())
@@ -917,7 +966,9 @@ class HomeApp(App[None]):
         if self.theme != name:
             self.ansi_theme_dark = terminal_theme(data_tokens(name))
             self.theme = name
-        self._home.query_one(WindowBar).display = name == NEON_THEME
+        bar = self._alive(WindowBar)
+        if bar is not None:
+            bar.display = name == NEON_THEME
         if night_changed and self.effect_timers:
             self._start_effects()
 
@@ -1022,8 +1073,9 @@ class HomeApp(App[None]):
 
     def _show_feed(self, *, bright: bool) -> None:
         """Draw the feed pulse; a bright newest glyph dims again after ``MOTION.flash``."""
-        with suppress(NoMatches):
-            self._home.query_one(WindowBar).show_feed(self._polls, bright=bright)
+        bar = self._alive(WindowBar)
+        if bar is not None:
+            bar.show_feed(self._polls, bright=bright)
         if self._feed_timer is not None:
             self._feed_timer.stop()
             self._feed_timer = None
@@ -1076,7 +1128,7 @@ class HomeApp(App[None]):
         self._paint_positions()
         self._paint_market()
         if self._detail_open and self.is_wide and self._selected is not None:
-            self._set("detail", self._detail_content(self._ctx, cached=True))
+            self._set("detail", self._detail_content(self._selected, self._ctx, cached=True))
 
     # ------------------------------------------------------------------
     # Drawing
@@ -1150,11 +1202,36 @@ class HomeApp(App[None]):
 
     def _set(self, widget_id: str, content: RenderableType) -> None:
         self._content[widget_id] = content
-        self._home.query_one(f"#{widget_id}", Static).update(content)
+        static = self._alive(Static, f"#{widget_id}")
+        if static is not None:
+            static.update(content)
 
     @property
     def _home(self) -> Screen[object]:
         return self.screen_stack[0]
+
+    # The clock, the poll and the effect timers keep firing while the app
+    # tears its widgets down at exit; a widget that is gone then has nothing
+    # left to draw, so its lookup gives ``None`` instead of raising.
+    def _alive[W: Widget](self, kind: type[W], selector: str | None = None) -> W | None:
+        """Return a home-screen widget, or ``None`` once it is torn down.
+
+        Args:
+            kind: The widget class to find (and the type to expect).
+            selector: A CSS selector such as ``#portfolio-total``; ``None``
+                matches on ``kind`` alone.
+
+        Returns:
+            The first matching widget, or ``None`` when the home screen or the
+            widget is gone.
+        """
+        if not self.screen_stack:
+            return None
+        home = self._home
+        try:
+            return home.query_one(kind) if selector is None else home.query_one(selector, kind)
+        except NoMatches:
+            return None
 
     def _positions_coins(self) -> list[str]:
         try:
@@ -1170,7 +1247,9 @@ class HomeApp(App[None]):
         down = heartbeat.state is HeartbeatState.DOWN
         self._set("heartbeat", Text("") if down else render_heartbeat(heartbeat, ctx))
         self._set("down-row", render_heartbeat(heartbeat, ctx) if down else Text(""))
-        self._home.query_one("#down-row").set_class(down, "-down")
+        row = self._alive(Widget, "#down-row")
+        if row is not None:
+            row.set_class(down, "-down")
 
     def _announce(self, previous: Heartbeat | None, current: Heartbeat, ctx: RenderContext) -> None:
         """Toast a newly checked bar; ring the bell on turning late or down when asked to."""
@@ -1179,6 +1258,16 @@ class HomeApp(App[None]):
             self.notify(notice, timeout=_NOTICE_SECONDS)
         if beep_enabled(os.environ) and should_beep(previous, current):
             self.bell()
+
+    def _redraw_release(self) -> None:
+        """Remember the running release for the version line; show the notice once it changed."""
+        release = self._read_release()
+        self._release_name = release
+        self._release_is_new = self._release_changed(release)
+        self._set("notice", Text(_NEW_VERSION_NOTICE) if self._release_is_new else Text(""))
+        notice = self._alive(Widget, "#notice")
+        if notice is not None:
+            notice.set_class(self._release_is_new, "-on")
 
     def _redraw(self) -> None:
         if not self.is_running or not self.screen_stack:
@@ -1193,20 +1282,21 @@ class HomeApp(App[None]):
             if scenario
             else Text("")
         )
-        self._release_name = None if self._release is None else self._release()
+        self._redraw_release()
         try:
             self._heartbeat = model.heartbeat()
         except _CARD_ERRORS as exc:
             self._heartbeat = None
             self._set("heartbeat", _unavailable("Heartbeat", exc))
             self._set("down-row", Text(""))
-            self._home.query_one("#down-row").set_class(False, "-down")
+            row = self._alive(Widget, "#down-row")
+            if row is not None:
+                row.set_class(False, "-down")
         else:
             self._announce(self._last_read, self._heartbeat, ctx)
             self._last_read = self._heartbeat
             self._paint_heartbeat()
-        self._paint_mainnet()
-        self._fit_release()
+        self._paint_status_badges()
 
         try:
             self._title_total = title_total(model.portfolio(self._range).total_value, ctx.surface)
@@ -1215,9 +1305,10 @@ class HomeApp(App[None]):
 
         layout = home_layout(self.size.width, self.size.height)
         self._layout = layout
-        body = self._home.query_one("#body")
-        for name in (*_WIDTH_CLASSES, *_HEIGHT_CLASSES):
-            body.set_class(name in layout.classes, name)
+        body = self._alive(Widget, "#body")
+        if body is not None:
+            for name in (*_WIDTH_CLASSES, *_HEIGHT_CLASSES):
+                body.set_class(name in layout.classes, name)
         self._redraw_portfolio()
         self._redraw_positions()
         self._redraw_market()
@@ -1275,13 +1366,32 @@ class HomeApp(App[None]):
                 ),
             )
         screen = self.screen
-        if isinstance(screen, _PanelScreen):
+        if isinstance(screen, _PanelScreen | DetailScreen):
             screen.refresh_panel()
+
+    def _read_release(self) -> str | None:
+        """Return the current release name, or ``None`` without a source or when it fails."""
+        if self._release is None:
+            return None
+        try:
+            return self._release()
+        except Exception:
+            return None
+
+    def _release_changed(self, current: str | None) -> bool:
+        """Return whether ``current`` differs from the release this console started on."""
+        if current is None or current == _UNKNOWN_RELEASE:
+            return False
+        if self._started_release is None:
+            self._started_release = current
+        return current != self._started_release
 
     def _show(self, widget_id: str, content: RenderableType, *, shown: bool) -> None:
         """Set a widget's content and show it only when it has something to show."""
         self._set(widget_id, content)
-        self._home.query_one(f"#{widget_id}").display = shown
+        widget = self._alive(Widget, f"#{widget_id}")
+        if widget is not None:
+            widget.display = shown
 
     def _redraw_portfolio(self) -> None:
         """Read the portfolio, then draw the total, the head, the curve, the meters, the books."""
@@ -1289,7 +1399,9 @@ class HomeApp(App[None]):
             self._summary = self._model.portfolio(self._range)
         except _CARD_ERRORS as exc:
             self._summary = None
-            self._home.query_one("#portfolio-total", BigNumber).show(None, None)
+            big = self._alive(BigNumber, "#portfolio-total")
+            if big is not None:
+                big.show(None, None)
             self._set("portfolio", _unavailable("Portfolio", exc))
             for part in ("portfolio-curve", "portfolio-meters", "portfolio-books"):
                 self._show(part, Text(""), shown=False)
@@ -1307,7 +1419,6 @@ class HomeApp(App[None]):
         if summary is None:
             return
         ctx, layout = self._ctx, self._layout
-        big = self._home.query_one("#portfolio-total", BigNumber)
         look = self._live_look()
         live = self._live_total(look) if ctx.shows_money else None
         figure = total_text(summary, ctx) if layout.big_total else None
@@ -1315,7 +1426,9 @@ class HomeApp(App[None]):
         if live is not None and figure is not None:
             figure, value = fmt_level(live.total), live.total
         paused = live is not None and look is not None and look.paused
-        big.show(figure, float(value), stale=ctx.stale_since is not None or paused)
+        big = self._alive(BigNumber, "#portfolio-total")
+        if big is not None:
+            big.show(figure, float(value), stale=ctx.stale_since is not None or paused)
         head = render_portfolio_head(summary, ctx, total=figure is None, charts=layout.sparklines)
         if live is not None and look is not None:
             lines = live_portfolio_lines(summary, live, look, total_shown=figure is not None)
@@ -1453,47 +1566,52 @@ class HomeApp(App[None]):
         compact = self.size.width < COMPACT_BELOW
         tokens = tokens_for(self.theme)
         self._set("footer", key_chips(_FOOTER_CHIPS_COMPACT if compact else _FOOTER_CHIPS, tokens))
-        tabs = self._home.query_one(TabBar)
-        tabs.compact = compact
-        tabs.active = self._tab
+        tabs = self._alive(TabBar)
+        if tabs is not None:
+            tabs.compact = compact
+            tabs.active = self._tab
         on_home = self._tab == _HOME
-        self._home.query_one("#positions-panel", HudPanel).active = (
-            on_home and not self._detail_open
-        )
-        self._home.query_one("#detail-panel", HudPanel).active = on_home and self._detail_open
+        positions = self._alive(HudPanel, "#positions-panel")
+        if positions is not None:
+            positions.active = on_home and not self._detail_open
+        detail = self._alive(HudPanel, "#detail-panel")
+        if detail is not None:
+            detail.active = on_home and self._detail_open
 
     def _detail_content(
-        self, ctx: RenderContext | None = None, *, cached: bool = False
+        self, coin: str | None, ctx: RenderContext | None = None, *, cached: bool = False
     ) -> RenderableType:
-        """Return the selected position's detail, with its live line when live.
+        """Return one position's detail, with its live line when live.
 
         Args:
+            coin: The position's coin; ``None`` draws the empty detail.
             ctx: Render context; a fresh one when ``None``.
             cached: Use the detail read on the last poll (a tick or a pulse
                 repaints without reading the ledger).
         """
         ctx = ctx or self._render_context()
-        selected = self._selected
         model = self._model
         booked: RenderableType
         if cached:
-            booked = render_position_detail(self._details.get(selected or ""), ctx)
+            booked = render_position_detail(self._details.get(coin or ""), ctx)
         else:
             booked = _card(
                 "Position",
-                lambda: render_position_detail(model.position(selected) if selected else None, ctx),
+                lambda: render_position_detail(model.position(coin) if coin else None, ctx),
             )
         look = self._live_look()
-        live = self._live_positions(look).get(selected or "")
+        live = self._live_positions(look).get(coin or "")
         if look is None or live is None or not ctx.shows_money:
             return booked
         return Group(live_detail_line(live, look), Text(""), booked)
 
     def _redraw_detail(self, ctx: RenderContext) -> None:
         shown = self._detail_open and self.is_wide and self._selected is not None
-        self._home.query_one("#detail-panel").set_class(shown, "-open")
+        panel = self._alive(DetailPane, "#detail-panel")
+        if panel is not None:
+            panel.is_open = shown
         if shown:
-            self._set("detail", self._detail_content(ctx))
+            self._set("detail", self._detail_content(self._selected, ctx))
 
     # ------------------------------------------------------------------
     # Actions
@@ -1569,15 +1687,42 @@ class HomeApp(App[None]):
         self._selected = coins[(current + step) % len(coins)]
         self._redraw()
 
-    def action_open_detail(self) -> None:
-        """Open the selected position: beside the list when wide, else full screen."""
-        if not self._home_shown or self._selected is None:
+    def list_state(self) -> ListState:
+        """Return the positions list's state; it has no filters or sort yet, only a cursor."""
+        return ListState(cursor=self._selected)
+
+    def restore_list_state(self, state: ListState | None) -> None:
+        """Put the positions cursor back where a detail screen left it.
+
+        Args:
+            state: The state the detail screen returned; ``None`` changes nothing.
+        """
+        if state is None:
             return
-        if self.is_wide:
+        self._selected = state.cursor
+        self._redraw()
+
+    def action_open_detail(self) -> None:
+        """Open the selected position: a pane beside the list, else a detail screen."""
+        selected = self._selected
+        if not self._home_shown or selected is None:
+            return
+        if detail_mode(self.size.width) is DetailMode.PANE:
             self._detail_open = True
             self._redraw()
             return
-        self.push_screen(_PanelScreen(self._detail_content))
+        self.push_screen(
+            DetailScreen(
+                trail=_POSITIONS_TRAIL,
+                keys=self._positions_coins,
+                current=selected,
+                body=self._detail_content,
+                title="Position detail",
+                state=self.list_state(),
+                chips=_DETAIL_CHIPS,
+            ),
+            self.restore_list_state,
+        )
 
     def action_pick_theme(self) -> None:
         """Offer Neon, Control room or Auto."""
@@ -1649,6 +1794,12 @@ class HomeApp(App[None]):
         tz = self._render_context().tz
         return Group(Text("Logs", style="bold"), *(render_log_line(line, tz) for line in lines))
 
+    def action_restart(self) -> None:
+        """Quit so the caller can re-exec onto the new release; ignored without the notice."""
+        if self._on_home and self._release_is_new:
+            self.restart_requested = True
+            self.exit()
+
     def action_help(self) -> None:
         """Show the keys and the tax footnote."""
         if self._on_home:
@@ -1662,9 +1813,11 @@ class HomeApp(App[None]):
             Text("Keys", style="bold"),
             Text("  1-8 screens · Tab / Shift+Tab next / previous · Ctrl+P command palette"),
             Text("  D day · W week · M month · Y year"),
-            Text("  ↑ ↓ choose a position · Enter open its detail · Esc back"),
+            Text("  ↑ ↓ choose a position · Enter open its detail · Esc or Backspace back"),
+            Text("  [ ] previous / next item inside a detail screen"),
             Text("  A show or fold the 4h check lines in Activity"),
             Text("  L logs · T theme · ? this help · Q quit"),
+            Text("  R restart onto a new version (only while its notice shows)"),
             Text(
                 "This screen is read-only: nothing here changes a position, a stop or the ledger."
             ),
@@ -1684,12 +1837,15 @@ def run_home(
     *,
     version: str | None = None,
     allow_mainnet: bool | None = None,
+    exec_fn: Callable[[str, list[str]], object] = os.execv,
+    argv: Sequence[str] | None = None,
+    platform: str = sys.platform,
     theme: ThemeChoice | None = None,
     settings_path: Path | None = DEFAULT_SETTINGS_PATH,
     exposure_cap: Decimal | None = None,
     ticker: LiveTickerPort | None = None,
 ) -> None:
-    """Run the console until the operator quits.
+    """Run the console until the operator quits, or restarts onto a new release.
 
     Args:
         model: The read model to show.
@@ -1698,12 +1854,17 @@ def run_home(
         version: The package version in its release form; see :class:`HomeApp`.
         allow_mainnet: The config's ``allow_mainnet``, ``None`` when unread;
             see :class:`HomeApp`.
+        exec_fn: ``os.execv``-shaped replacement of the process; injectable for tests.
+        argv: The command line to restart with, after the interpreter; defaults to
+            the interpreter's own ``sys.orig_argv``, so ``python -m hermes`` restarts the same way.
+        platform: ``sys.platform``; where exec is not meaningful (Windows) the
+            console exits with a message instead.
         theme: A ``--theme`` choice; saved, and wins over the saved one.
         settings_path: Where the theme choice is read and saved.
         exposure_cap: The roster's exposure cap; see :class:`HomeApp`.
         ticker: The live public ticker; see :class:`HomeApp`.
     """
-    HomeApp(
+    app = HomeApp(
         model,
         journal=journal,
         release=release,
@@ -1713,4 +1874,11 @@ def run_home(
         settings_path=settings_path,
         exposure_cap=exposure_cap,
         ticker=ticker,
-    ).run()
+    )
+    app.run()
+    if not app.restart_requested:
+        return
+    if platform == "win32":
+        sys.stdout.write("New version deployed: start hermes again to use it.\n")
+        return
+    exec_fn(sys.executable, [sys.executable, *(sys.orig_argv[1:] if argv is None else argv)])
