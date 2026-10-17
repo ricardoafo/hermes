@@ -128,3 +128,19 @@ means = "The open positions with the selected one's detail beside them (under th
 check = "Rows and detail match Home's for the same coin; the selected row has the cursor; up and down move it and the detail follows."
 scenario = "ok-two-positions"
 keys = "3"
+
+[views."test_tui_drill_snapshots/drill_position"]
+screen = "Positions"
+state = "Drill-down on the first position"
+means = "Enter on a position opens its detail: why it opened, the stop, the money if sold now, the price since entry and the timeline."
+check = "The detail matches the Positions row it came from; Esc goes back; the live price in the detail agrees with the ticker."
+scenario = "ok-two-positions"
+keys = "3 enter"
+
+[views."test_tui_drill_snapshots/drill_breadcrumb"]
+screen = "Positions"
+state = "Detail screen with its breadcrumb"
+means = "On a narrow console Enter pushes the detail as its own screen, and the breadcrumb shows the trail back to the list."
+check = "The breadcrumb names every level from Home to the coin; Esc steps back one level."
+scenario = "ok-two-positions"
+keys = "3 enter"
