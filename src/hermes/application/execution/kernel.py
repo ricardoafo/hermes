@@ -24,6 +24,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import datetime
+from decimal import Decimal
 
 from returns.result import Failure
 
@@ -76,6 +77,9 @@ class MarketContext:
         correlations: 30-day return correlation of pair pairs, for the RO-01
             correlation lock (pre-registration §5.5). The portfolio has no
             market data, so the caller supplies them; empty means none known.
+        realized_slippage_cumulative: Sum of the recorded fill slippages
+            the RO-03 cumulative limit counts. The portfolio keeps no fill
+            quality, so the caller supplies it; zero means none known.
     """
 
     orderbook: Orderbook | None
@@ -84,6 +88,7 @@ class MarketContext:
     market_snapshot: MarketSnapshot
     experiment_state: ExperimentState
     correlations: Mapping[tuple[Pair, Pair], float] = field(default_factory=dict)
+    realized_slippage_cumulative: Decimal = field(default_factory=Decimal)
 
 
 @dataclass(frozen=True, slots=True)
@@ -241,7 +246,9 @@ class FillKernel:
                     open_notional=self._tracker.open_notional(),
                 ),
                 portfolio_state=replace(
-                    self._tracker.state(), correlations=dict(market.correlations)
+                    self._tracker.state(),
+                    correlations=dict(market.correlations),
+                    realized_slippage_cumulative=market.realized_slippage_cumulative,
                 ),
                 market_snapshot=market.market_snapshot,
                 experiment_state=market.experiment_state,

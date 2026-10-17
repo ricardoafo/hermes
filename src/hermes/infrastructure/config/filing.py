@@ -179,8 +179,10 @@ def load_modelo721_history(
         return Modelo721History()
     try:
         raw = yaml.safe_load(target.read_text(encoding="utf-8"))
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         raise ConfigError(f"cannot read 721 history {target}: {type(exc).__name__}") from None
+    except RecursionError:
+        raise ConfigError(f"invalid YAML in 721 history {target}: nested too deep") from None
     except yaml.YAMLError as exc:
         mark = getattr(exc, "problem_mark", None)
         where = f" near line {mark.line + 1}" if mark is not None else ""

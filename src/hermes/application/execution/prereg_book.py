@@ -6,7 +6,9 @@ symmetric synthetic book whose touch sits at the pre-registered execution
 price.
 
 - ENTRY: 5 bps above the signal bar close.
-- EXIT on the chandelier stop: 15 bps below the stop trigger price.
+- EXIT on the chandelier stop: 15 bps below the price the stop fills at, the
+  lower of the stop and the bar's open. A resting stop-market under a bar that
+  opens below it fills from the open, never from the stop above it (#785).
 - Any other EXIT (time stop, regime break): 5 bps below the signal bar close.
 
 Depth per side is the bar's volume times ``depth_frac``. Serve also walks
@@ -38,7 +40,8 @@ class ExecutionModel:
 
     Attributes:
         entry_bps: Cost of a market order over the bar close (§6.2: 5).
-        stop_bps: Cost of a stop exit over the stop trigger (§6.2: 15).
+        stop_bps: Cost of a stop exit under its fill price, the lower of the
+            stop and the bar's open (§6.2: 15).
         depth_frac: Fraction of the bar's volume resting on each book side.
     """
 
@@ -54,10 +57,13 @@ class ExecutionModel:
             bar: The bar that produced ``signal``.
 
         Returns:
-            ``(reference price, half-spread bps)``.
+            ``(reference price, half-spread bps)``. The reference of a
+            chandelier stop exit is ``min(stop, bar.open)`` (#785).
         """
         if signal.kind is SignalKind.EXIT and signal.exit_reason == _STOP_EXIT_REASON:
-            return signal.stop_price, self.stop_bps
+            # §5.3 posts an on-exchange stop-market: a bar that gaps under it
+            # triggers at the open, so the stop above the open is never reached.
+            return min(signal.stop_price, bar.open), self.stop_bps
         return bar.close, self.entry_bps
 
     def book(self, signal: StrategySignal, bar: Bar) -> Orderbook | None:

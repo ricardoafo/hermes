@@ -8,6 +8,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+import os
 import sqlite3
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -198,6 +199,32 @@ def test_unreadable_ledger_exits_1(tmp_path: Path) -> None:
     code, out, err = _run_err(tmp_path, "--db", str(db))
     assert (code, out) == (1, "")
     assert err.startswith(f"ERROR: cannot read ledger {db}")
+
+
+@pytest.mark.skipif(
+    os.geteuid() == 0, reason="root ignores file permissions, so nothing is read-only"
+)
+def test_a_ledger_it_cannot_switch_to_wal_exits_1(tmp_path: Path) -> None:
+    """A read-only ledger not yet in WAL is a ledger failure, not a traceback (#879).
+
+    Before the first serve after the WAL deploy, the ledger is still in the
+    rollback journal, and a read-only file refuses the switch.
+    """
+    state = tmp_path / "state"
+    state.mkdir()
+    db = _ledger(state / "ledger.sqlite3")
+    db.chmod(0o444)
+    state.chmod(0o555)
+    try:
+        code, out, err = _run_err(tmp_path, "--db", str(db))
+    finally:
+        state.chmod(0o755)
+        db.chmod(0o644)
+    assert (code, out, err) == (
+        1,
+        "",
+        f"ERROR: cannot read ledger {db}: attempt to write a readonly database\n",
+    )
 
 
 def test_malformed_profile_is_a_config_error(tmp_path: Path) -> None:

@@ -29,6 +29,7 @@ from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
+from decimal import Decimal
 from typing import Final
 
 from hermes.application.strategy_protocol.kill_trigger_evaluator import KillDecision
@@ -179,5 +180,6 @@ def _drift(
     measured = [f for f in fills if f.drift_bps is not None and start <= f.occurred_at < end]
     counted = [f for f in measured if triggers.shadow_drift_counts_exits or f.side is TradeSide.BUY]
     sizes = [abs(f.drift_bps) for f in counted if f.drift_bps is not None]
-    breached = bool(sizes) and statistics.median(sizes) > triggers.shadow_drift_limit_bps
+    limit = Decimal(str(triggers.shadow_drift_limit_bps))
+    breached = bool(sizes) and statistics.median(sizes) > limit
     return breached, len(measured) - len(counted)

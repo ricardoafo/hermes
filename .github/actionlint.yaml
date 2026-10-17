@@ -1,0 +1,5 @@
+# Custom self-hosted runner labels that workflows name literally in
+# `runs-on`. Labels routed through repository variables need no entry.
+self-hosted-runner:
+  labels:
+    - hermes-backtest # backtest.yml, server-01 only (ADR-023)

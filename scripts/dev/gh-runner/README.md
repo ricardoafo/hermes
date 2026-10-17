@@ -118,6 +118,21 @@ sequenceDiagram
   every job in `.github/workflows/ci.yml` and `merge-queue.yml` uses this
   pattern. `RUNNER_LABEL` set → this runner; unset → `ubuntu-latest`.
 
+- **Runner services in `compose.yml`**:
+  - `runner` (label `hermes`): the CI pool.
+  - `ops-runner` (`hermes-ops`): merge queue and CD.
+  - `review-runner` (`hermes-review`): AI review.
+  - `dependabot-runner` (`dependabot`): Dependabot, with its own DinD sidecar.
+  - `backtest-runner` (`hermes-backtest`): `backtest.yml` only, on server-01 only
+    ([ADR-023](../../../docs/architecture/adr-023-backtest-runs-on-server-01.md)). It sits behind the
+    `backtest` profile, so `./up.sh` never starts it. On server-01, with `/srv/hermes-data` on the
+    P310 owned by the container's `runner` user:
+
+    ```bash
+    docker compose build runner        # builds gh-runner:latest
+    docker compose --profile backtest up -d backtest-runner
+    ```
+
 - **Image (`gh-runner:latest`) pre-baked for speed**:
   - Ubuntu 26.04 LTS base
   - Python 3.14 (via `uv python install`)

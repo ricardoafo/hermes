@@ -1,7 +1,8 @@
 """Stop record and stop mark: the trailing stop of an open position after one bar.
 
-The swing strategy recomputes its chandelier stop on every 4h bar it holds a
-position, but a signal only carries the stop of the bar it fires on. The
+The swing strategy posts its chandelier stop at the entry and moves it at each
+daily close while it holds a position (#785), but a signal only carries the
+stop of the bar it fires on. The
 strategy exposes a :class:`StopRecord` for each such bar, and the serve loop
 stores it as a :class:`StopMark` (#388) so the console can show the stop
 history and a restart can hand the last stop back to the strategy.
@@ -38,7 +39,8 @@ class StopRecord:
     Attributes:
         entry_time: ``close_time`` of the position's entry bar (UTC).
         stop_price: The stop in force after this bar.
-        chandelier_level: The raw chandelier level, highest high minus the ATR
+        chandelier_level: The raw chandelier level last posted (at the entry
+            or the latest daily close, #785), highest high minus the ATR
             multiple, before any rule that keeps the stop from falling.
         atr: The ATR the chandelier level was computed with.
         high_since_entry: Highest high from the entry bar to this bar, or

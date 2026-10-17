@@ -190,7 +190,10 @@ class JsonlDecisionJournal:
         if text is None:
             if not self._path.exists():
                 return []
-            text = self._path.read_text(encoding="utf-8")
+            try:
+                text = self._path.read_text(encoding="utf-8")
+            except UnicodeDecodeError as exc:
+                raise JournalIntegrityError(f"{self._path}: not UTF-8 text: {exc}") from exc
         out: list[tuple[Decision | Review | None, str]] = []
         prev = GENESIS_HASH
         for number, raw in enumerate(text.splitlines(), 1):
@@ -203,7 +206,7 @@ class JsonlDecisionJournal:
                     line["hash"],
                 )
                 entry = None if kind == REPAIR_KIND else _decode(kind, data)
-            except (ValueError, KeyError, TypeError) as exc:
+            except (ValueError, KeyError, TypeError, AttributeError, RecursionError) as exc:
                 raise JournalIntegrityError(
                     f"{self._path}:{number}: malformed entry: {exc}; if a power loss cut "
                     "the last append, `hermes journal repair` drops it"

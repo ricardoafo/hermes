@@ -51,7 +51,7 @@ import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, Overflow
 from typing import Any, Final
 from urllib.parse import urlencode, urlsplit
 
@@ -150,8 +150,15 @@ def _fee_percent(result: Mapping[str, Any], side: str, symbol: str) -> Decimal:
 
 
 def _percent_to_bps(percent: Decimal) -> int:
-    """Convert Kraken's percent (0.26 = 0.26%) to whole basis points."""
-    return int((percent * 100).to_integral_value())
+    """Convert Kraken's percent (0.26 = 0.26%) to whole basis points.
+
+    Raises:
+        ExchangeError: ``percent`` is too large for the decimal context.
+    """
+    try:
+        return int((percent * 100).to_integral_value())
+    except Overflow as exc:
+        raise ExchangeError(msg=f"Kraken fee percent is out of range: {percent}") from exc
 
 
 @dataclass(frozen=True, slots=True)

@@ -599,6 +599,7 @@ def build_composition(
     experiment_root: Path | None = None,
     orderbooks: OrderbookSnapshotPort | None = None,
     fx: FxRateProviderPort | None = None,
+    new_ledger: bool = False,
 ) -> Composition:
     """Wire every adapter the shadow loop needs and return the container.
 
@@ -623,6 +624,10 @@ def build_composition(
             :class:`BinanceDepthSnapshotAdapter`.
         fx: FX provider override for tests. Defaults to Frankfurter (USDT
             read as USD).
+        new_ledger: Create the ledger when ``db_path`` does not exist. Off,
+            a missing ledger is refused (#876): a wrong ``--db`` or an
+            unmounted disk would otherwise start a fresh, flat ledger and
+            drop the open positions without a word.
 
     Returns:
         A fully wired :class:`Composition` ready to hand to :func:`run`.
@@ -630,12 +635,19 @@ def build_composition(
     Raises:
         LedgerInUseError: Another ``hermes serve`` holds this ledger's serve
             lock. Nothing was opened.
-        StartupError: The pre-registration or the fee history cannot be read,
+        StartupError: The ledger does not exist and ``new_ledger`` is off,
+            the configured capital differs from the seed the ledger recorded,
+            the pre-registration or the fee history cannot be read,
             the start capital cannot be recorded, or the ledger's recorded
             trades or fill-quality rows cannot be read or replayed into the
             portfolio. The SQLite connection is closed before raising.
     """
     db_target = db_path if db_path is not None else DEFAULT_DB_PATH
+    if not new_ledger and not db_target.exists():
+        raise StartupError(
+            f"no ledger at {db_target}: check --db and that its disk is mounted, "
+            "or start with --new-ledger to create one"
+        )
     lock = FileLock(serve_lock_path(db_target))
     try:
         acquired = lock.try_acquire()
@@ -734,6 +746,16 @@ def _wire_on_ledger(
         recorded_seed = ledger.capital_seed(strategy_id)
     except LedgerError as exc:
         raise StartupError(f"cannot record the start capital in the ledger: {exc.msg}") from exc
+    if recorded_seed is not None and recorded_seed.amount != capital:
+        # Sizing reads cash from the config seed, the ledger from its own, so
+        # a changed budget would size against cash the ledger never had (#876).
+        recorded = recorded_seed.amount
+        raise StartupError(
+            f"capital_budget {capital.amount} {capital.currency.value} differs from "
+            f"the {recorded.amount} {recorded.currency.value} seed this ledger recorded "
+            f"on {recorded_seed.seeded_at.isoformat()}; restore the recorded amount, "
+            "or start a new ledger for the new capital"
+        )
     tracker = _rebuild_tracker(ledger, seed, strategy_id)
     fill_model = OrderbookWalkFillModel()
     books = (
