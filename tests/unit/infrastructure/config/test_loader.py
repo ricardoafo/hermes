@@ -18,6 +18,7 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
+from hermes.application.execution.prereg_book import ExecutionModel, ExitPricing
 from hermes.domain.errors import InfraError
 from hermes.domain.value_objects.currency import Currency
 from hermes.infrastructure.config import (
@@ -277,11 +278,39 @@ def test_shipped_optional_section_yaml_equals_the_model_defaults(
 
 
 def test_shipped_strategies_yaml_is_the_swing_only_roster() -> None:
-    """The committed strategies.yaml loads as one swing-donchian-4h entry seeded 5000 USDT."""
+    """The committed roster enables swing-donchian-4h and carries v2 disabled, both at 5000 USDT."""
     roster = _shipped_roster(env={})
     assert [
         (s.name, s.enabled, s.weight, s.capital_budget, s.quote) for s in roster.strategies
-    ] == [("swing-donchian-4h", True, Decimal("1.0"), Decimal("5000"), Currency.USDT)]
+    ] == [
+        ("swing-donchian-4h", True, Decimal("1.0"), Decimal("5000"), Currency.USDT),
+        ("swing-mvp1-v2", False, Decimal("1.0"), Decimal("5000"), Currency.USDT),
+    ]
+
+
+def test_shipped_v1_entry_keeps_the_stop_order_exit() -> None:
+    """v1 trades as signed: its stop exits price as a stop-market (pre-registration v1 §5.3)."""
+    v1 = _shipped_roster(env={}).strategies[0]
+    assert (v1.name, v1.execution_model()) == (
+        "swing-donchian-4h",
+        ExecutionModel(exit_pricing=ExitPricing.STOP_ORDER),
+    )
+
+
+def test_shipped_v2_entry_sells_every_exit_at_the_bar_close() -> None:
+    """v2 §5.3/§6.2: the swing-mvp1-v2 entry selects the close-based exit pricing."""
+    v2 = _shipped_roster(env={}).strategies[1]
+    assert (v2.name, v2.execution_model()) == (
+        "swing-mvp1-v2",
+        ExecutionModel(exit_pricing=ExitPricing.BAR_CLOSE),
+    )
+
+
+# SEV-1: no rubric row matches; pre-reg v2 §2/§5.4/§5.5 limits must reach sizing unchanged
+def test_shipped_v2_entry_sizes_with_the_v1_capital_and_limits() -> None:
+    """v2 §2, §5.4 and §5.5 are unchanged from v1: the same 5000 capital and the same limits."""
+    v1, v2 = _shipped_roster(env={}).strategies
+    assert (v2.capital_budget, v2.quote, v2.sizing) == (v1.capital_budget, v1.quote, v1.sizing)
 
 
 def _shipped_roster(env: dict[str, str]) -> StrategiesConfig:

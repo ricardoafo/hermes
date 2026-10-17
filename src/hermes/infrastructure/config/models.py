@@ -33,6 +33,7 @@ from typing import Final
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from returns.result import Failure
 
+from hermes.application.execution.prereg_book import ExecutionModel, ExitPricing
 from hermes.application.order_router.sizing import SizingPolicy
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.currency import Currency
@@ -91,6 +92,10 @@ class StrategyConfig(BaseModel):
         quote: Currency ``capital_budget`` is denominated in. Required.
         sizing: Position-sizing limits as shares of ``capital_budget``.
             Required.
+        exit_pricing: How the strategy's exits are priced in the backtest
+            and in serve. Defaults to v1's stop-market, so an entry written
+            before pre-registration v2 keeps trading as signed; v2 sets
+            ``bar_close`` (v2 §5.3, §6.2).
     """
 
     model_config = _MODEL_CONFIG
@@ -101,6 +106,24 @@ class StrategyConfig(BaseModel):
     capital_budget: Decimal = Field(gt=Decimal("0"))
     quote: Currency
     sizing: PositionSizingConfig
+    exit_pricing: ExitPricing = ExitPricing.STOP_ORDER
+
+    def execution_model(self, *, depth_frac: Decimal | None = None) -> ExecutionModel:
+        """Return the §6.2 execution model this strategy trades with.
+
+        The backtest drivers and serve both build their model here, so a
+        strategy's exits fill at the same price in either (ADR-011 D-01).
+
+        Args:
+            depth_frac: Fraction of a bar's volume on each synthetic book
+                side; the shared default when ``None``.
+
+        Returns:
+            The pre-registered bps with this strategy's exit pricing.
+        """
+        if depth_frac is None:
+            return ExecutionModel(exit_pricing=self.exit_pricing)
+        return ExecutionModel(depth_frac=depth_frac, exit_pricing=self.exit_pricing)
 
     def sizing_policy(self) -> SizingPolicy:
         """Return the sizing limits for this strategy, scaled by its capital.
