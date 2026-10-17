@@ -30,6 +30,7 @@ import asyncio
 import io
 import json
 from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import ClassVar, cast
@@ -183,6 +184,13 @@ def test_export_line_writes_the_pretty_json(tmp_path: Path) -> None:
 def test_export_line_without_a_trace_is_named_line(tmp_path: Path) -> None:
     """A line with no correlation id ends its file name with "line"."""
     assert export_line(_lines()[2], tmp_path).name == "log-20261002-200002-line.json"
+
+
+def test_export_line_keeps_only_letters_and_digits_of_the_trace_tail(tmp_path: Path) -> None:
+    """An id holding path separators cannot name a file outside the export folder."""
+    line = replace(_lines()[6], correlation_id="01J9Z8T3M5BQR2FVKN4X../..\\/a")
+    path = export_line(line, tmp_path / "out")
+    assert (path.parent, path.name) == (tmp_path / "out", "log-20261003-080006-a.json")
 
 
 def test_level_colours_come_from_the_tokens() -> None:

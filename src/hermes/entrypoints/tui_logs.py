@@ -159,14 +159,15 @@ def export_line(line: LogLine, directory: Path) -> Path:
 
     Returns:
         ``log-YYYYMMDD-HHMMSS-<trace tail or "line">.json`` (the line's own
-        UTC time), overwritten if it exists.
+        UTC time; only letters and digits of the trace tail, so an odd id
+        cannot reach outside the folder), overwritten if it exists.
 
     Raises:
         OSError: The folder or the file cannot be written.
     """
     directory.mkdir(parents=True, exist_ok=True)
     corr = line.correlation_id
-    tail = corr[-TRACE_TAIL:] if corr else "line"
+    tail = "".join(ch for ch in (corr or "")[-TRACE_TAIL:] if ch.isalnum()) or "line"
     path = directory / f"log-{line.at:%Y%m%d-%H%M%S}-{tail}.json"
     path.write_text(log_line_pretty_json(line) + "\n", encoding="utf-8")
     return path
