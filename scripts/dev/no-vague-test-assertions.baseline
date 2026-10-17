@@ -186,13 +186,6 @@ tests/unit/domain/strategy/swing/engines/test_chandelier_engine.py::test_determi
 tests/unit/domain/strategy/swing/engines/test_chandelier_engine.py::test_none_on_empty_bars U3
 tests/unit/domain/strategy/swing/engines/test_chandelier_engine.py::test_none_on_period_bars_exactly U3
 tests/unit/domain/strategy/swing/engines/test_chandelier_engine.py::test_returns_value_with_period_plus_one_bars U3
-tests/unit/domain/strategy/swing/engines/test_ema_regime_filter.py::test_above_ema_false_below_period U3
-tests/unit/domain/strategy/swing/engines/test_ema_regime_filter.py::test_above_ema_false_on_empty_bars U3
-tests/unit/domain/strategy/swing/engines/test_ema_regime_filter.py::test_above_ema_false_when_price_crashes_below U3
-tests/unit/domain/strategy/swing/engines/test_ema_regime_filter.py::test_above_ema_false_with_small_period_below U3
-tests/unit/domain/strategy/swing/engines/test_ema_regime_filter.py::test_deterministic_on_identical_inputs U3
-tests/unit/domain/strategy/swing/engines/test_ema_regime_filter.py::test_ema_value_deterministic U3
-tests/unit/domain/strategy/swing/engines/test_ema_regime_filter.py::test_ema_value_not_none_at_period U3
 tests/unit/domain/tax/test_netting.py::test_carry_forward_never_exceeds_four_years U3
 tests/unit/domain/test_errors.py::test_currency_mismatch_is_domain_error U3
 tests/unit/domain/test_errors.py::test_currency_mismatch_is_hermes_error U3
