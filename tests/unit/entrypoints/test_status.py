@@ -45,6 +45,7 @@ from tests.support.status_ledger import (
     LAST_4H,
     NOW,
     PAIRS,
+    fill,
     signal,
     write_ledger,
 )
@@ -104,8 +105,10 @@ def _rstrip_lines(text: str) -> str:
 
 def _ledger(tmp_path: Path, **kwargs: Any) -> Path:
     """Write the fixture ledger with one open ETH entry."""
-    signals = (signal(ETH, SignalKind.ENTRY, LAST_4H - timedelta(hours=4)),)
-    return write_ledger(tmp_path / "hermes.sqlite3", signals=signals, **kwargs)
+    entry = signal(ETH, SignalKind.ENTRY, LAST_4H - timedelta(hours=4))
+    return write_ledger(
+        tmp_path / "hermes.sqlite3", signals=(entry,), fills=(fill(entry),), **kwargs
+    )
 
 
 def test_current_ledger_exits_zero_and_leads_with_all_good(tmp_path: Path) -> None:
