@@ -15,9 +15,10 @@ dual-source rule).
 A new read-only adapter implements the existing `BalanceReadPort` with one
 signed `GET /api/v3/account` and nothing else, using a dedicated key with the
 "reading" permission only. The reconcile entrypoint builds it only when
-`allow_mainnet` is set (prod tier) and refuses to run without the key rather
+`allow_mainnet` is set (prod tier) and the month is still open, and refuses to run without the key rather
 than falling back to the ledger-only check. The main risk is credential
-handling: where the key lives on the VPS is left to the Code Owner (D-2).
+handling: the key lives in two GitHub `prod` secrets that vps-bootstrap
+renders into the env file (D-2, decided 17 Oct 2026).
 
 ## Scope
 
@@ -37,7 +38,8 @@ handling: where the key lives on the VPS is left to the Code Owner (D-2).
 ### Out
 
 - Provisioning the key on the VPS and in the GitHub `prod` environment
-  (open decision D-2, Code Owner).
+  (D-2: the Code Owner adds the secrets; the two-line vps-bootstrap change
+  is its own workflow PR).
 - Any order, cancel or other write endpoint; the trading adapter is
   untouched.
 - Balances at a past month end: Binance reports current balances, so the
@@ -58,23 +60,27 @@ handling: where the key lives on the VPS is left to the Code Owner (D-2).
   A blank or missing credential raises; there is no fallback.
 - **Cost of reversal**: LOW — the variable names are read in one place.
 
-### D-2: Where the key is stored on the VPS — OPEN (Code Owner, issue #29)
+### D-2: Where the key is stored on the VPS
 
-- **Decision**: Not taken here. The code reads the two env vars in every
-  option, so the choice does not change code.
-- **Options**:
-  1. GitHub `prod`-environment secrets rendered into
-     `/etc/hermes/env.production` by vps-bootstrap — **recommended**:
-     same path as every other prod secret, root:root 0600.
-  2. A hand-written root-only file on the VPS loaded by the unit.
-  3. Reusing the trading key — **rejected** (D-1).
+- **Decision**: GitHub `prod`-environment secrets
+  `HERMES_BINANCE_READ__API_KEY` and `HERMES_BINANCE_READ__API_SECRET`,
+  rendered into `/etc/hermes/env.production` (root:root 0600) by
+  vps-bootstrap. Chosen by the Code Owner on 17 Oct 2026 (option A on
+  issue #29).
+- **Rejected**: a hand-written root-only file on the VPS (a second secret
+  path to maintain), and reusing the trading key (D-1).
+- **Consequence**: the bootstrap workflow passes the two secrets; that
+  change ships as its own workflow PR. Agents never create or touch the
+  secrets.
 - **Cost of reversal**: LOW.
 
 ### D-3: Read only behind `allow_mainnet`; a missing key is exit 3
 
 - **Decision**: Without `allow_mainnet` nothing is built and no env var is
-  read (shadow behaviour unchanged). With it, a missing key or an exchange
-  failure prints `ERROR:` and exits 3.
+  read (shadow behaviour unchanged). With it, a month still in progress
+  builds the reader, and a missing key or an exchange failure prints
+  `ERROR:` and exits 3. An ended month (the default, previous-month run)
+  never reads the venue, so it builds nothing and needs no key.
 - **Alternatives**: Skip the exchange view with a warning (rejected: an
   operator would read a CLEAN verdict that never looked at the account).
 - **Rationale**: `allow_mainnet` is the existing real-capital switch, valid
@@ -182,5 +188,5 @@ Test tiers touched: unit, property, contract
 ## Dependencies on other changes
 
 - Builds on `35-monthly-reconciliation` (`BalanceReadPort`, D-5).
-- External: D-2 (key storage) and creating the key on Binance, by the Code
-  Owner.
+- External: creating the key on Binance and adding the two `prod`
+  secrets, by the Code Owner (D-2); the vps-bootstrap workflow PR.

@@ -129,7 +129,8 @@ def main(
         notifier_factory: Builds the alert channel from ``env``; defaults to
             Telegram. Injected by tests so no socket opens.
         balance_reader_factory: Builds the live balance reader from ``env``
-            when ``allow_mainnet`` is set; defaults to Binance. Injected by
+            when ``allow_mainnet`` is set and the month is still open;
+            defaults to Binance. Injected by
             tests so no socket opens.
         err: Stream for ERROR lines; defaults to ``sys.stderr``.
 
@@ -157,7 +158,9 @@ def main(
     ]
 
     exchange: ClosableBalanceReader | None = None
-    if config.allow_mainnet:
+    # A venue reports balances now, so an ended month never reads them and
+    # needs no key (the month-end cut runs on the previous month).
+    if config.allow_mainnet and at < month.end:
         factory = balance_reader_factory or _binance_balance_reader
         try:
             exchange = factory(env if env is not None else os.environ)

@@ -458,3 +458,19 @@ def test_without_mainnet_no_balance_reader_is_built(
     code, out, _ = _run_live(["2026-10", "--db", str(db)], refuse)
 
     assert (code, "exchange: no account connected (shadow mode)" in out) == (0, True)
+
+
+@pytest.mark.usefixtures("mainnet")
+def test_an_ended_month_builds_no_reader_and_needs_no_key(tmp_path: Path) -> None:
+    """September has ended on 4 Oct, so the live balances are never read and no key is asked for."""
+    db = write_september(tmp_path / "l.sqlite3")
+
+    code, out, err = _run_live(
+        ["2026-09", "--db", str(db)], reconcile_module._binance_balance_reader, env={}
+    )
+
+    assert (code, err, "exchange: balances are current, 2026-09 has ended" in out) == (
+        0,
+        "",
+        True,
+    )
