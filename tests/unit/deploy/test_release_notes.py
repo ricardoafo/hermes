@@ -190,6 +190,44 @@ def test_telegram_message_caps_the_list_and_links_the_release(repo: Repo) -> Non
     assert f"https://github.com/{_REPO}/releases/tag/deploy-{release[:12]}" in text
 
 
+def _with_version(repo: Repo, version: str) -> str:
+    """Commit a pyproject with ``version`` beside the real release-name mapping."""
+    mapping = (_ROOT / "src" / "hermes" / "release_version.py").read_text(encoding="utf-8")
+    return repo.commit(
+        f"chore(release): {version}",
+        files={
+            "pyproject.toml": f'[project]\nname = "hermes"\nversion = "{version}"\n',
+            "src/hermes/release_version.py": mapping,
+        },
+    )
+
+
+def test_telegram_message_leads_with_the_release_version(repo: Repo) -> None:
+    """A deploy of package 1.0.0a1 announces v1.0.0-shadow.1 with its commit (ADR-022 §4)."""
+    release = _with_version(repo, "1.0.0a1")
+
+    text = NOTES.render_telegram(NOTES.collect(repo.path, release), _REPO)
+
+    assert text.startswith(f"hermes v1.0.0-shadow.1 ({release[:12]}) is live on hermes-01.\n")
+
+
+def test_the_version_is_read_at_the_release_not_the_checkout(repo: Repo) -> None:
+    """Notes for an older commit name that commit's version, whatever is checked out."""
+    release = _with_version(repo, "1.0.0a1")
+    _with_version(repo, "1.0.0a2")
+
+    assert NOTES.collect(repo.path, release).version == "v1.0.0-shadow.1"
+
+
+def test_without_a_readable_version_the_message_names_the_commit(repo: Repo) -> None:
+    """No pyproject at the release: the message falls back to the commit alone, never fails."""
+    release = repo.commit("chore: no project file")
+
+    text = NOTES.render_telegram(NOTES.collect(repo.path, release), _REPO)
+
+    assert text.startswith(f"hermes {release[:12]} is live on hermes-01.\n")
+
+
 def test_unknown_release_exits_2(repo: Repo, capsys: pytest.CaptureFixture[str]) -> None:
     """Invariant: a bad sha is a clear failure the CD step can replace with a placeholder."""
     repo.commit("chore: base")

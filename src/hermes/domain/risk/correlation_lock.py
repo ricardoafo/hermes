@@ -1,18 +1,27 @@
-"""RO-01 CorrelationLock — blocks new entries in highly correlated pairs.
+"""RO-01 CorrelationLock — blocks a third entry into a correlated cluster.
 
-If the 30-day rolling Pearson correlation between the candidate pair and
-any existing position's pair is ≥ 0.80, the rule returns HALT. This
-prevents doubling exposure through correlated instruments.
+Pre-registration §5.5 (signed): "if 30-day rolling correlation between two
+open pairs exceeds 0.80, block new entry in the third correlated pair
+(existing positions unaffected)". So one or two correlated positions are
+allowed; the rule fires only when two held pairs already correlate above 0.80
+and the candidate correlates above 0.80 with both of them. An earlier version
+blocked any entry correlated with any one held pair, which already refused the
+second position and is not the signed rule.
 
-Threshold (binding — pre-reg §5.5): correlation ≥ 0.80.
+Threshold (binding — pre-reg §5.5): correlation strictly above 0.80.
 
-Reference: SA-9 §5.5 RO-01; spec-8-risk-overlay change.md.
+Reference: pre-registration-v1.md §5.5; SA-9 RO-01;
+openspec/changes/822-portfolio-backtest D-2.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from itertools import combinations
+
 from hermes.domain.risk.state import MarketSnapshot, PortfolioState
 from hermes.domain.risk.types import RiskAction, RiskDecision
+from hermes.domain.value_objects.pair import Pair
 
 __all__ = ["CorrelationLock"]
 
@@ -21,7 +30,7 @@ _CORRELATION_THRESHOLD: float = 0.80
 
 
 class CorrelationLock:
-    """RO-01: Block new entry when candidate pair is highly correlated with any position.
+    """RO-01: Block a new entry that would be the third pair of a correlated cluster.
 
     Stateless — all state flows through the inputs per the RiskOverlayPort contract.
     """
@@ -31,20 +40,21 @@ class CorrelationLock:
         portfolio_state: PortfolioState,
         market_snapshot: MarketSnapshot,
     ) -> RiskDecision:
-        """Fire HALT when candidate pair correlation ≥ 0.80 with any held pair.
+        """Fire HALT when two held pairs and the candidate all correlate above 0.80.
 
-        When no candidate pair is specified in the snapshot, the rule returns OK —
-        correlation is only meaningful when a new entry is being considered.
+        A pair missing from ``correlations`` counts as uncorrelated. When no
+        candidate pair is specified in the snapshot the rule returns OK:
+        correlation only matters when a new entry is being considered.
 
         Args:
-            portfolio_state: Must contain ``correlations`` dict with any
-                relevant pair-pair coefficients.
-            market_snapshot: ``candidate_pair`` field indicates the pair the
-                strategy intends to enter. If ``None``, rule is skipped (OK).
+            portfolio_state: ``held_pairs`` names the open pairs and
+                ``correlations`` their 30-day coefficients, keyed in either order.
+            market_snapshot: ``candidate_pair`` is the pair the strategy
+                intends to enter. If ``None``, the rule is skipped (OK).
 
         Returns:
-            :class:`~hermes.ports.risk_overlay.RiskDecision` with HALT when
-            a correlation ≥ threshold is found; OK otherwise.
+            :class:`~hermes.domain.risk.types.RiskDecision` with HALT when the
+            candidate would be the third correlated pair; OK otherwise.
         """
         candidate = market_snapshot.candidate_pair
         if candidate is None:
@@ -53,20 +63,28 @@ class CorrelationLock:
                 reason="RO-01: no candidate pair — correlation check skipped",
             )
 
-        for (pair_a, pair_b), coeff in portfolio_state.correlations.items():
-            if candidate not in (pair_a, pair_b):
-                continue
-            other = pair_b if pair_a == candidate else pair_a
-            if coeff >= _CORRELATION_THRESHOLD:
+        corr = portfolio_state.correlations
+        held = sorted(portfolio_state.held_pairs - {candidate}, key=str)
+        for first, second in combinations(held, 2):
+            if all(
+                _coefficient(corr, a, b) > _CORRELATION_THRESHOLD
+                for a, b in ((first, second), (candidate, first), (candidate, second))
+            ):
                 return RiskDecision(
                     action=RiskAction.HALT,
                     reason=(
-                        f"RO-01: candidate {candidate} is correlated with position"
-                        f" {other} (coeff={coeff:.4f} ≥ {_CORRELATION_THRESHOLD})"
+                        f"RO-01: candidate {candidate} would be the third pair correlated"
+                        f" above {_CORRELATION_THRESHOLD} with open {first} and {second}"
                     ),
                 )
 
         return RiskDecision(
             action=RiskAction.OK,
-            reason=f"RO-01: no correlation ≥ {_CORRELATION_THRESHOLD} found for {candidate}",
+            reason=f"RO-01: {candidate} is not a third pair correlated above"
+            f" {_CORRELATION_THRESHOLD}",
         )
+
+
+def _coefficient(correlations: Mapping[tuple[Pair, Pair], float], a: Pair, b: Pair) -> float:
+    """Return the coefficient of ``a`` and ``b`` in either key order, 0 when absent."""
+    return correlations.get((a, b), correlations.get((b, a), 0.0))

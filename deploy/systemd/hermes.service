@@ -41,6 +41,11 @@ StateDirectoryMode=0750
 # read-only release.
 WorkingDirectory=/var/lib/hermes
 
+# The prod tier even when the env file forgets HERMES_ENV: without it serve
+# runs as dev and skips the check that prod has a Telegram or Slack channel
+# (#856). A value in the env file below still wins.
+Environment=HERMES_ENV=prod
+
 # Secrets only. systemd reads this file as root before dropping to User=hermes.
 # No leading "-": a missing file must fail the start, not boot without secrets.
 EnvironmentFile=/etc/hermes/env.production

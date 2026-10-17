@@ -1,0 +1,1 @@
+- **A config file that isn't UTF-8 gets a clear config error** naming the file and the bad byte, instead of a raw decode traceback. Closes #807.

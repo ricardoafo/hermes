@@ -19,8 +19,6 @@ sleep here yields a few more turns so the race at the idle await ends as it
 does in production.
 """
 
-from __future__ import annotations
-
 import asyncio
 import contextlib
 import functools

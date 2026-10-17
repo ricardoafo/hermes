@@ -14,6 +14,7 @@ from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
+from hermes.adapters.ledger.connection import open_ledger
 from hermes.domain.errors import LedgerError
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
@@ -41,9 +42,8 @@ class SqliteLiveBarReader:
             LedgerError: The file is missing, has no ``live_bars`` table, or a
                 read fails.
         """
-        uri = f"{self.db_path.resolve().as_uri()}?mode=ro"
         try:
-            connection = sqlite3.connect(uri, uri=True)
+            connection = open_ledger(self.db_path, read_only=True)
         except sqlite3.Error as exc:
             raise LedgerError(msg=f"live bar reader cannot open {self.db_path}: {exc}") from exc
         try:

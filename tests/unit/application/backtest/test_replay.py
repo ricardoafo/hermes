@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, localcontext
 
+import pytest
+
 from hermes.application.backtest.replay import BacktestRun, ExecutionModel, replay
 from hermes.domain.fees.fee_schedule import FeeSchedule
 from hermes.domain.market_data.bar import Bar
@@ -33,6 +35,7 @@ from hermes.domain.portfolio.precision import EXACT_CONTEXT
 from hermes.domain.risk.state import PortfolioState
 from hermes.domain.strategy.signal import OpenPosition, SignalKind, SignalSide, StrategySignal
 from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
+from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
 from tests.support.fill_kernel import BTC_USDT, fees, kernel
 
@@ -422,3 +425,41 @@ def test_real_strategy_starts_the_window_flat_after_a_warm_up_breakout() -> None
     assert [(f.order.side.value, f.avg_price) for f in run.fills] == [
         ("BUY", Decimal("3000") * Decimal("1.0005"))
     ]
+
+
+class TestPortfolioRun:
+    """One strategy per pair through one kernel (#822)."""
+
+    def test_bar_of_a_pair_without_a_strategy_is_refused(self) -> None:
+        """A mapping that does not cover a bar's pair is a wiring error, not a silent skip."""
+        eth = Pair(base=Currency.ETH, quote=Currency.USDT)
+        with pytest.raises(ValueError, match="no strategy for BTC/USDT"):
+            replay(
+                [_bar(_at(4), Decimal("100"))],
+                strategy={eth: _ScriptedStrategy({})},
+                kernel=kernel(),
+                window_start=_WINDOW,
+                window_end=_END,
+                fees_at=_fees_at,
+                correlation_id=lambda: "c0",
+            )
+
+    def test_mapping_with_the_pair_runs_like_the_single_strategy(self) -> None:
+        """{BTC: s} replays exactly as s alone: same fills and equity curve."""
+        bars = [
+            _bar(_at(4), Decimal("100")),
+            _bar(_at(24), Decimal("101"), interval=KlineInterval.D1),
+        ]
+        script = {_at(4): _entry(_at(4), Decimal("100"))}
+        single = _run(bars, script)
+        ids = iter(f"c{i}" for i in range(1000))
+        mapped = replay(
+            bars,
+            strategy={BTC_USDT: _ScriptedStrategy(script)},
+            kernel=kernel(),
+            window_start=_WINDOW,
+            window_end=_END,
+            fees_at=_fees_at,
+            correlation_id=lambda: next(ids),
+        )
+        assert (mapped.fills, mapped.daily_equity) == (single.fills, single.daily_equity)

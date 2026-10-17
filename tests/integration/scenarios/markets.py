@@ -201,3 +201,50 @@ def btc_daily_crash_then_eth_breakout() -> Scenario:
     script.bar(ETH, close=Decimal(156), high=Decimal(157))
     script.hold(ETH, days=2)
     return _scenario(script, _boot_before_breakout(), ETH, Decimal(156))
+
+
+def btc_crash_with_entries_during_and_after_the_halt() -> Scenario:
+    """BTC drops 15% in one day; ETH and SOL break out the next day, ETH again a day later.
+
+    The BTC daily log-return of about -16% puts RO-07 in force for the whole
+    next day, so the ETH breakout at 04:00 and the SOL one at 16:00 are
+    refused. The day after, BTC closes flat (log-return 0) and RO-07 lets
+    entries through again: ETH's second breakout, to 165, fills.
+    """
+    script = _script()
+    script.ramp(BTC, days=_RAMP_DAYS, to=Decimal(100))
+    script.ramp(BTC, days=1, to=Decimal(85))
+    script.hold(BTC, days=5)
+    script.ramp(ETH, days=_RAMP_DAYS + 1, to=Decimal(150))
+    script.bar(ETH, close=Decimal(156), high=Decimal(157))
+    script.hold(ETH, days=1.5)
+    script.bar(ETH, close=Decimal(165), high=Decimal(166))
+    script.hold(ETH, days=2)
+    script.ramp(SOL, days=_RAMP_DAYS + 1.5, to=Decimal(150))
+    script.bar(SOL, close=Decimal(156), high=Decimal(157))
+    script.hold(SOL, days=2)
+    return _scenario(script, _boot_before_breakout(), ETH, Decimal(156))
+
+
+def entry_then_exit_then_two_breakouts() -> Scenario:
+    """BTC breaks out and exits two days later; SOL breaks out in between, ETH after.
+
+    BTC's bar at 150 with a low of 148 is under the chandelier stop, so the
+    position exits on it (§5.2) without a daily drop big enough for RO-07.
+    On a thin book the BTC entry slips past the RO-03 limit, which refuses
+    the SOL entry; the BTC exit is a later fill, so RO-03 judges the ETH
+    entry by the exit's slippage.
+    """
+    script = _script()
+    script.ramp(BTC, days=_RAMP_DAYS, to=Decimal(150))
+    script.bar(BTC, close=Decimal(156), high=Decimal(157))
+    script.hold(BTC, days=2)
+    script.bar(BTC, close=Decimal(150), low=Decimal(148))
+    script.hold(BTC, days=3)
+    script.ramp(SOL, days=_RAMP_DAYS + 1, to=Decimal(150))
+    script.bar(SOL, close=Decimal(156), high=Decimal(157))
+    script.hold(SOL, days=4)
+    script.ramp(ETH, days=_RAMP_DAYS + 4, to=Decimal(150))
+    script.bar(ETH, close=Decimal(156), high=Decimal(157))
+    script.hold(ETH, days=2)
+    return _scenario(script, _boot_before_breakout(), BTC, Decimal(156))

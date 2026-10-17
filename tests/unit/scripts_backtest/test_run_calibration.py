@@ -20,6 +20,7 @@ import pytest
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.strategy.signal import SignalKind, SignalSide, StrategySignal
+from hermes.domain.strategy.swing import adapter as swing_adapter
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
@@ -202,3 +203,13 @@ def test_git_state_returns_a_full_commit_sha() -> None:
     sha, dirty = DRIVER._git_state()
     assert len(sha) == 40
     assert isinstance(dirty, bool)
+
+
+def test_warm_up_fills_the_strategy_daily_buffer() -> None:
+    """Issue #880: a window opens with as many daily bars as serve warms up with.
+
+    The EMA regime filter's value depends on the daily bars it has seen until
+    the strategy's daily buffer is full, so the backtest must load at least
+    that many days before the window (serve loads 300).
+    """
+    assert DRIVER._WARMUP_DAYS >= swing_adapter._1D_BUFFER_CAP

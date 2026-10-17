@@ -13,8 +13,6 @@ What must hold:
 - the boot systemd makes once the outage is over trades as if nothing happened.
 """
 
-from __future__ import annotations
-
 import functools
 from collections.abc import Callable
 from datetime import timedelta

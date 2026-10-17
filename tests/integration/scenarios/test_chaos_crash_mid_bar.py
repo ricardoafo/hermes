@@ -2,7 +2,8 @@
 
 The breakout bar of the chandelier scenario writes the most: the entry signal,
 the BUY with its lots, the fill-quality row, the live bar, the portfolio mark,
-the stop mark and the ``BarProcessed`` cursor, as seven transactions. Each case
+the push record, the stop mark and the ``BarProcessed`` cursor, as eight
+transactions. Each case
 kills serve just before one of those writes or commits runs
 (:class:`~tests.integration.scenarios.faults.ProcessDied`), then boots serve
 again on the same ledger at the same instant, as systemd would.
@@ -13,7 +14,9 @@ because its cursor row is missing. What must hold:
 
 - on disk after the crash: only whole transactions, never part of one;
 - after the restart: the trades, and the whole ledger, as if no crash happened;
-- the entry push reaches Telegram once.
+- the entry push reaches Telegram once, except after a crash between the push
+  and its ``SignalNotified`` record, which pushes it once more (issue #854:
+  at least once beats at most once for a trade).
 
 Faults are injected at the SQLite connection, below the ledger; nothing in
 serve is replaced (``tests/integration/scenarios/faults.py``).
@@ -69,20 +72,23 @@ BREAKOUT_BAR_WRITES = (
     # 11-12: FillQualityRecorded. The Telegram push is sent after this commit.
     "INSERT events",
     COMMIT,
-    # 13-18: the live bar, the portfolio mark, the stop mark.
+    # 13-14: SignalNotified, the record of that push (issue #854).
+    "INSERT events",
+    COMMIT,
+    # 15-20: the live bar, the portfolio mark, the stop mark.
     "INSERT live_bars",
     COMMIT,
     "INSERT portfolio_marks",
     COMMIT,
     "INSERT stop_marks",
     COMMIT,
-    # 19-20: the BarProcessed cursor.
+    # 21-22: the BarProcessed cursor.
     "INSERT events",
     COMMIT,
 )
 """Every write statement and commit serve makes while handling the breakout bar, in order."""
 
-_SIGNAL_SAVED_PUSH_NOT_SENT = range(2, 13)
+_PUSH_SENT_NOT_RECORDED = range(13, 15)
 _TRADE_SAVED_FILL_QUALITY_NOT = range(11, 13)
 
 _EUR_COLUMNS = frozenset(
@@ -258,14 +264,28 @@ def test_a_restart_after_a_crash_mid_bar_leaves_the_ledger_an_uninterrupted_run_
 
 
 @pytest.mark.parametrize(
-    "index",
-    _each_write(
-        xfail=_SIGNAL_SAVED_PUSH_NOT_SENT,
-        reason="issue #854: a crash after the SignalEmitted commit loses the Telegram push",
-    ),
+    "index", [p for p in _each_write() if p.values[0] not in _PUSH_SENT_NOT_RECORDED]
 )
 def test_a_crash_mid_bar_does_not_lose_the_entry_push(
     crash_and_restart: Callable[[int], _CrashAndRestart], index: int
 ) -> None:
-    """The entry reaches Telegram exactly once across the killed run and the restart."""
+    """The entry reaches Telegram exactly once across the killed run and the restart.
+
+    Killed after the signal row and before the push (issue #854), the restart
+    finds no push record and pushes it; killed after the record, it pushes nothing.
+    """
     assert crash_and_restart(index).entries_sent == 1
+
+
+@pytest.mark.parametrize(
+    "index", [p for p in _each_write() if p.values[0] in _PUSH_SENT_NOT_RECORDED]
+)
+def test_a_crash_between_the_push_and_its_record_pushes_the_entry_once_more(
+    crash_and_restart: Callable[[int], _CrashAndRestart], index: int
+) -> None:
+    """Killed after the push and before its record, the restart pushes it again, once.
+
+    The documented at-least-once window (issue #854): the push left the
+    process, but the ledger cannot know, so the restart sends it a second time.
+    """
+    assert crash_and_restart(index).entries_sent == 2

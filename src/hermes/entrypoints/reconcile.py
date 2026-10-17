@@ -1,16 +1,18 @@
-"""``hermes reconcile`` — monthly reconciliation of the ledger, read-only.
+"""``hermes reconcile`` — monthly reconciliation of the ledger.
 
 Compares the trade book with the ``TradeExecuted`` replay and the lot table,
 reports the month's realized EUR P&L and the lots open at its end, and gives a
-verdict: CLEAN, REVIEW (EUR values pending) or DRIFT. Opens the ledger with
-SQLite's ``mode=ro``; it never writes and is safe next to ``hermes serve``.
+verdict: CLEAN, REVIEW (EUR values pending) or DRIFT. Reads the ledger with
+SQLite's ``mode=ro`` and is safe next to ``hermes serve``. Its only write is
+the ``--notify`` alert, appended to the ledger ``events`` table before it is
+sent (#136).
 
 Usage: ``hermes reconcile [YYYY-MM] [--config-dir DIR] [--db PATH]
 [--tolerance QTY] [--json] [--notify]``
 
 Without a month it covers the previous Madrid calendar month, the one a
 month-end cut closes. ``--notify`` sends a Telegram alert when the verdict is
-not CLEAN.
+not CLEAN, and records that alert in the ledger.
 
 Exit codes: 0 clean, 1 review or drift, 2 usage, 3 config error or no ledger.
 
@@ -43,6 +45,7 @@ from hermes.domain.reconciliation import ReconciliationMonth, ReconciliationRepo
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.entrypoints import serve as serve_module
+from hermes.entrypoints._anomaly_record import record_anomaly
 from hermes.entrypoints._streams import resolve_err
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
@@ -59,10 +62,11 @@ _USAGE: Final = (
     "Usage: hermes reconcile [YYYY-MM] [--config-dir DIR] [--db PATH]\n"
     "                        [--tolerance QTY] [--json] [--notify]\n"
     "\n"
-    "Read-only monthly reconciliation: the trade book against the event replay and\n"
+    "Monthly reconciliation: the trade book against the event replay and\n"
     "the lot table, the month's realized EUR P&L and the lots open at its end.\n"
     "Without YYYY-MM it covers the previous month (Europe/Madrid).\n"
-    "--notify sends a Telegram alert when the verdict is not CLEAN.\n"
+    "--notify sends a Telegram alert when the verdict is not CLEAN and records\n"
+    "it in the ledger.\n"
     "Exit codes: 0 clean, 1 review or drift, 2 usage, 3 config error or no ledger.\n"
 )
 _NEXT_STEP: Final = {
@@ -132,7 +136,15 @@ def main(
     else:
         stream.write(render_report(report))
     if parsed.notify:
-        _send_alert(report, at, env or {}, notifier_factory or _telegram_notifier, stream)
+        _send_alert(
+            report,
+            at,
+            env or {},
+            notifier_factory or _telegram_notifier,
+            stream,
+            db=parsed.db,
+            err=err,
+        )
     return 0 if report.verdict is Verdict.CLEAN else 1
 
 
@@ -282,10 +294,14 @@ def _send_alert(
     env: Mapping[str, str],
     factory: NotifierFactory,
     stream: TextIO,
+    *,
+    db: Path,
+    err: TextIO,
 ) -> None:
     alert = reconciliation_alert(report, now=at)
     if alert is None:
         return
+    record_anomaly(db, alert, err)
     notifier = factory(env)
     if notifier is None:
         stream.write("WARNING: --notify given but Telegram is not configured; no alert sent\n")
