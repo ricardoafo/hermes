@@ -103,10 +103,11 @@ def run_tui(
         except OSError as exc:
             err.write(f"WARNING: could not save the theme: {exc}\n")
     if runner is None:
+        # Textual reads the colour depth once, at import, so it is set first.
+        apply_console_colors(env or {}, os.environ)
         from hermes.entrypoints.tui import run_home  # noqa: PLC0415 - Textual is slow to import
 
         cap = roster_exposure_cap(env or {})
-        apply_console_colors(env or {}, os.environ)
         allow_mainnet = config_allow_mainnet(env or {})
 
         def runner(read_model: ConsoleReadModel) -> None:

@@ -6,8 +6,8 @@ Invariants:
   survives an ssh session that does not forward ``COLORTERM``;
 - an explicit ``TEXTUAL_COLOR_SYSTEM`` and the plain ``linux`` and ``dumb``
   terminals keep the library's own detection;
-- the choice reaches the UI library when it is imported after it, as
-  ``hermes tui`` imports it.
+- ``hermes tui`` sets the choice before it imports the UI library, so the
+  app it opens draws with it.
 """
 
 import os
@@ -48,18 +48,28 @@ def test_apply_writes_true_colour_for_an_ssh_session() -> None:
     assert environ == {"TERM": "xterm-256color", "TEXTUAL_COLOR_SYSTEM": "truecolor"}
 
 
-def test_the_ui_library_draws_with_the_choice_when_imported_after_it() -> None:
-    """In a fresh interpreter, as ``hermes tui`` runs, the app's console is 24-bit.
+def test_hermes_tui_draws_in_true_colour_over_ssh() -> None:
+    """In a fresh interpreter, ``hermes tui``'s own start-up gives the app a 24-bit console.
 
-    The UI library reads the choice once, at import, so this runs in a child
-    process with an ssh-like environment (no COLORTERM).
+    The UI library reads the choice once, at import, so the choice must be set
+    before ``run_tui`` imports the console module. This runs ``run_tui`` with its
+    default runner in a child process with an ssh-like environment (no
+    COLORTERM). The console module is replaced by a stand-in that imports the
+    UI library at the moment ``run_tui`` imports it, as the real module does,
+    and records the colour system instead of opening the screen.
     """
     code = (
-        "import os\n"
-        "from hermes.entrypoints.commands.tui import apply_console_colors\n"
-        "apply_console_colors(dict(os.environ), os.environ)\n"
-        "from textual.app import App\n"
-        "print(App().console.color_system)\n"
+        "import io, os, sys, types\n"
+        "def _attr(name):\n"
+        "    from textual.app import App\n"
+        "    def run_home(*args, **kwargs):\n"
+        "        print(App().console.color_system)\n"
+        "    return run_home\n"
+        "stand_in = types.ModuleType('hermes.entrypoints.tui')\n"
+        "stand_in.__getattr__ = _attr\n"
+        "sys.modules['hermes.entrypoints.tui'] = stand_in\n"
+        "from hermes.entrypoints.commands.tui import run_tui\n"
+        "run_tui([], io.StringIO(), demo_flag='ok-two-positions', env=dict(os.environ))\n"
     )
     env = {k: v for k, v in os.environ.items() if k not in {"COLORTERM", "TEXTUAL_COLOR_SYSTEM"}}
     env["TERM"] = "xterm-256color"
