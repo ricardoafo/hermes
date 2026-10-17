@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import AbstractContextManager, contextmanager
@@ -39,8 +40,10 @@ import hermes
 from hermes.adapters.certification.json_store import JsonCertificationStore
 from hermes.adapters.journal.jsonl_store import JsonlDecisionJournal
 from hermes.adapters.ledger.supervisor_reader import SqliteSupervisorReader
+from hermes.application.console.read_model import ViewNotAvailableError
+from hermes.application.console.views import ConsoleBrief
 from hermes.application.status import UnitState
-from hermes.application.supervisor.briefing import BriefKind, gather, publishable
+from hermes.application.supervisor.briefing import SOURCES, BriefKind, gather, publishable
 from hermes.application.supervisor.mcp import McpServer
 from hermes.application.supervisor.tools import (
     MEMORIZATION_GUARD,
@@ -57,7 +60,12 @@ from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
 from hermes.infrastructure.config.root import HermesConfig
 from hermes.ports.supervisor import CertificationFact, CertificationLookup
 
-__all__ = ["GRANTS_ENV_VAR", "main"]
+__all__ = ["BRIEF_CACHE", "GRANTS_ENV_VAR", "desk_briefs", "main"]
+
+BRIEF_CACHE: Final = timedelta(seconds=60)
+"""How long one desk brief serves the console's Briefs screen before it is built again."""
+
+_AUDIT_LOG: Final = logging.getLogger("hermes.supervisor.audit")
 
 GRANTS_ENV_VAR: Final = "HERMES_SUPERVISOR_GRANTS"
 _USAGE: Final = (
@@ -292,3 +300,62 @@ def _serve(server: McpServer, stdin: TextIO | None, stream: TextIO) -> int:
             stream.write(json.dumps(reply, separators=(",", ":")) + "\n")
             stream.flush()
     return 0
+
+
+def desk_briefs(
+    db_path: Path,
+    *,
+    config_dir: Path = DEFAULT_CONFIG_DIR,
+    clock: Callable[[], datetime] | None = None,
+    unit_state: Callable[[], UnitState] | None = None,
+) -> Callable[[], tuple[ConsoleBrief, ...]]:
+    """Return the console's source of the desk's daily brief (#720).
+
+    The brief is the one ``hermes supervisor brief`` prints with every source
+    tool granted (docs/guides/vps-operations.md, Desk briefings): built by code
+    from the same read-only, P&L-blind tools and published only through the
+    output gate. Each brief serves for :data:`BRIEF_CACHE`.
+
+    Args:
+        db_path: The ledger the tools read.
+        config_dir: Where the config lives. It loads with an empty environment,
+            as ``hermes supervisor`` runs without the env file: no secret
+            reaches the desk even when the console holds them (ADR-012 D-07).
+        clock: Wall clock; injected by tests.
+        unit_state: systemd probe; defaults to ``hermes status``'s.
+
+    Returns:
+        A callable returning the daily brief; it raises
+        ``ViewNotAvailableError`` when the config cannot be loaded.
+    """
+    now = clock or (lambda: datetime.now(UTC))
+    args = _parser().parse_args(["brief", "--db", str(db_path), "--config-dir", str(config_dir)])
+    grants = [f"hermes:read:{name}" for name in SOURCES]
+    built: list[tuple[datetime, tuple[ConsoleBrief, ...]]] = []
+
+    def build() -> tuple[ConsoleBrief, ...]:
+        at = now()
+        if built and at - built[0][0] < BRIEF_CACHE:
+            return built[0][1]
+        try:
+            config = load_config(args.config_dir, env={})
+        except ConfigError as exc:
+            raise ViewNotAvailableError(f"briefs: config load failed: {exc}") from exc
+        dispatcher = ToolDispatcher(
+            grants=grants,
+            context=_context_factory(args, config, lambda: at, unit_state),
+            # The console has no stream of its own for audit lines: a TUI owns the
+            # terminal. They go to logging, where a configured handler keeps them.
+            audit=lambda record: _AUDIT_LOG.info(
+                "%s %s %s", record.tool, record.scope, record.outcome.value
+            ),
+            clock=now,
+        )
+        brief, verdict = publishable(
+            gather(dispatcher, kind=BriefKind.DAILY, now=at), kind=BriefKind.DAILY
+        )
+        briefs = (ConsoleBrief.published(brief, verdict, as_of=at),)
+        built[:] = [(at, briefs)]
+        return briefs
+
+    return build

@@ -365,6 +365,17 @@ jobs:
         if: ${{ !cancelled() && steps.sync.outcome == 'success' }}
         run: bash scripts/dev/ci-checks.sh deadcode
 
+      # The pre-commit guards over the whole tree, and every script self-test.
+      # Cloud writer sessions have no pre-commit, so CI is the one place these
+      # always run (#840).
+      - name: guards
+        if: ${{ !cancelled() && steps.sync.outcome == 'success' }}
+        run: bash scripts/dev/ci-checks.sh guards
+
+      - name: self-tests
+        if: ${{ !cancelled() && steps.sync.outcome == 'success' }}
+        run: bash scripts/dev/ci-checks.sh self-tests
+
       # Blocks GPL/AGPL/LGPL, which create commercial-use constraints.
       # See scripts/dev/license-check.py header for allowlist rationale.
       - name: License compliance

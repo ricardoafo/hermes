@@ -2,6 +2,7 @@
 # name: test_plain_output_snapshot
   '''
   hermes status   2026-10-03 16:10 UTC (Sat 18:10 Madrid)   unit: running
+  version: v1.0.0-shadow.1
   release: unknown
   
   ● All good

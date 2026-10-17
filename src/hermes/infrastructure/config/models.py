@@ -487,8 +487,9 @@ class TaxGuardConfig(BaseModel):
       90-day window over trade count, distinct assets, and fee income that
       keeps the observable signals firmly on the "individual investor"
       side of any plausible AEAT recharacterization line. Crossing any
-      threshold emits an ``AnomalyDetected`` and (per ADR-002) pauses
-      new signal generation.
+      threshold emits an ``AnomalyDetected``, which is recorded in the
+      ledger and notified only. Nothing pauses signal generation on it; a
+      pause on anomalies is pending the Code Owner's decision (issue #136).
 
     Attributes:
         annual_realised_pnl_alert_eur: Absolute EUR gain in a calendar year

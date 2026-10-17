@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 
-__all__ = ["changelog_section", "to_package_version", "to_semver"]
+__all__ = ["changelog_section", "release_label", "to_package_version", "to_semver"]
 
 _SEMVER_RE = re.compile(r"^(?P<core>\d+\.\d+\.\d+)(?:-shadow\.(?P<n>[1-9]\d*))?$")
 _PACKAGE_RE = re.compile(r"^(?P<core>\d+\.\d+\.\d+)(?:a(?P<n>[1-9]\d*))?$")
@@ -44,6 +44,18 @@ def to_semver(package_version: str) -> str:
         raise ValueError(f"{package_version!r} is not a hermes package version")
     n = match.group("n")
     return match.group("core") + (f"-shadow.{n}" if n else "")
+
+
+def release_label(package_version: str) -> str:
+    """Return how screens name a package version: ``v1.0.0-shadow.1`` for ``1.0.0a1``.
+
+    A version the cut never writes (a local or development build) is shown as
+    it is, so a status screen never fails on it.
+    """
+    try:
+        return f"v{to_semver(package_version)}"
+    except ValueError:
+        return package_version
 
 
 def changelog_section(changelog: str, release: str) -> str | None:

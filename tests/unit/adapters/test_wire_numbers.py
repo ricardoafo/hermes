@@ -78,9 +78,10 @@ def _kraken_depth(value: str) -> object:
 
 def _frankfurter(value: str) -> object:
     return frankfurter._parse_response(
-        payload={"date": "2025-01-02", "rates": {"EUR": value}},
+        payload={"base": "USD", "date": "2025-01-02", "rates": {"EUR": value}},
         from_currency=Currency.USDT,
         to_currency=Currency.EUR,
+        base_key="USD",
         rate_key="EUR",
     )
 

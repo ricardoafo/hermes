@@ -1,6 +1,6 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       # syrupy's .ambr files indent blank snapshot lines with two spaces and
       # end without a final newline; stripping either breaks the snapshot.
@@ -15,7 +15,7 @@ repos:
         args: [--fix=lf]
 
   - repo: https://github.com/compilerla/conventional-pre-commit
-    rev: v3.6.0
+    rev: v4.4.0
     hooks:
       - id: conventional-pre-commit
         stages: [commit-msg]
@@ -242,6 +242,21 @@ repos:
         files: ^scripts/dev/test-file-adjacency\.sh$
         pass_filenames: false
 
+      - id: no-future-annotations
+        name: no new from __future__ import annotations (Python 3.14)
+        entry: bash scripts/dev/no-future-annotations.sh
+        language: system
+        files: \.py$
+        pass_filenames: false
+        stages: [pre-commit]
+
+      - id: no-future-annotations-self-test
+        name: no-future-annotations self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/no-future-annotations.sh'
+        language: system
+        files: ^scripts/dev/no-future-annotations\.sh$
+        pass_filenames: false
+
       - id: test-tiers-line-check-self-test
         name: test-tiers-line-check self-test
         entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/test-tiers-line-check.sh'
@@ -329,4 +344,11 @@ repos:
         entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/changed-tests.sh'
         language: system
         files: ^scripts/dev/changed-tests\.sh$
+        pass_filenames: false
+
+      - id: hook-coverage-check-self-test
+        name: hook-coverage-check self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 uv run python scripts/dev/hook-coverage-check.py'
+        language: system
+        files: ^scripts/dev/hook-coverage-check\.py$
         pass_filenames: false

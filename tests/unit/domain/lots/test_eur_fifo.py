@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, localcontext
 
-from hypothesis import given, settings
+from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 from returns.result import Failure
 
@@ -289,3 +289,150 @@ def test_each_closed_lot_charges_exactly_its_acquisition_value(trades: list[EurT
         with localcontext() as ctx:
             ctx.prec = _PREC
             assert charged - lot.acquisition_eur == Decimal("0")
+
+
+# ---------------------------------------------------------------------------
+# Metamorphic relations (issue #845): related trade sequences, related results
+# ---------------------------------------------------------------------------
+
+
+def _sells_to_split(trades: list[EurTrade]) -> list[int]:
+    """Indexes of SELLs of at least two units of 1e-8, so they split into two whole parts."""
+    return [
+        i for i, t in enumerate(trades) if t.side == OrderSide.SELL and t.qty >= Decimal("2e-8")
+    ]
+
+
+@settings(max_examples=100)
+@given(trades=_trade_sequences(close_out=True), data=st.data())
+def test_splitting_a_sale_in_two_changes_no_lot_and_no_total_gain(
+    trades: list[EurTrade], data: st.DataObject
+) -> None:
+    """Relation: one SELL of q equals two back-to-back SELLs of q1 + q2 at its price and fee.
+
+    The fee is split pro rata, cut to 1e-30 as the replay cuts its own shares,
+    and the two parts add up to it exactly. FIFO
+    consumes by quantity alone, so every lot ends with the same remainder, and
+    with every lot closed the total gain is the same to the last digit.
+    """
+    candidates = _sells_to_split(trades)
+    assume(candidates)
+    index = data.draw(st.sampled_from(candidates))
+    sale = trades[index]
+    assert sale.price_eur is not None
+    assert sale.fee_eur is not None
+    units = int(sale.qty * Decimal(10**8))
+    first_units = data.draw(st.integers(min_value=1, max_value=units - 1))
+    with localcontext() as ctx:
+        ctx.prec = _PREC
+        first_fee = (sale.fee_eur * first_units / units).quantize(Decimal("1e-30"))
+        parts = [
+            EurTrade(
+                ref=f"{sale.ref}a",
+                side=OrderSide.SELL,
+                qty=Decimal(first_units) / Decimal(10**8),
+                executed_at=sale.executed_at,
+                price_eur=sale.price_eur,
+                fee_eur=first_fee,
+            ),
+            EurTrade(
+                ref=f"{sale.ref}b",
+                side=OrderSide.SELL,
+                qty=Decimal(units - first_units) / Decimal(10**8),
+                executed_at=sale.executed_at,
+                price_eur=sale.price_eur,
+                fee_eur=sale.fee_eur - first_fee,
+            ),
+        ]
+    whole = replay_fifo_eur(Currency.BTC, trades).unwrap()
+    split = replay_fifo_eur(Currency.BTC, [*trades[:index], *parts, *trades[index + 1 :]]).unwrap()
+    assert [lot.remaining_qty for lot in split.lots] == [lot.remaining_qty for lot in whole.lots]
+    assert _total([c.gain_eur for c in split.consumptions]) == _total(
+        [c.gain_eur for c in whole.consumptions]
+    )
+
+
+_SCALE_GAP = Decimal("1e-27")
+"""Most a scaled share may miss k times the plain one.
+
+Each share is cut to 1e-30 before and after scaling, and a lot's or a sale's
+last piece takes the rest of the others' cuts: at most 13 pieces times
+(k + 1) half-quanta, under 1e-28 for k up to 10.
+"""
+
+
+@settings(max_examples=100)
+@given(
+    trades=_trade_sequences(close_out=True),
+    k=st.sampled_from([Decimal("0.5"), Decimal(2), Decimal(3), Decimal(7), Decimal(10)]),
+)
+def test_scaling_every_price_and_fee_by_k_scales_every_eur_value_by_k(
+    trades: list[EurTrade], k: Decimal
+) -> None:
+    """Relation: k times every EUR price and fee gives k times every gain, cost and proceeds.
+
+    Quantities are untouched, so FIFO pairs the same pieces. Each piece's
+    value moves by k up to the 1e-30 cut of its share; the total gain of a
+    closed-out sequence, which no share cut reaches, moves by exactly k.
+    """
+    with localcontext() as ctx:
+        ctx.prec = _PREC
+        scaled_trades = [
+            EurTrade(
+                ref=t.ref,
+                side=t.side,
+                qty=t.qty,
+                executed_at=t.executed_at,
+                price_eur=None if t.price_eur is None else t.price_eur * k,
+                fee_eur=None if t.fee_eur is None else t.fee_eur * k,
+            )
+            for t in trades
+        ]
+    plain = replay_fifo_eur(Currency.BTC, trades).unwrap()
+    scaled = replay_fifo_eur(Currency.BTC, scaled_trades).unwrap()
+    assert [(c.sell_ref, c.buy_ref, c.qty) for c in scaled.consumptions] == [
+        (c.sell_ref, c.buy_ref, c.qty) for c in plain.consumptions
+    ]
+    with localcontext() as ctx:
+        ctx.prec = _PREC
+        gaps = [
+            abs(s - p * k)
+            for sc, pc in zip(scaled.consumptions, plain.consumptions, strict=True)
+            for s, p in (
+                (sc.proceeds_eur, pc.proceeds_eur),
+                (sc.cost_eur, pc.cost_eur),
+                (sc.fee_eur, pc.fee_eur),
+                (sc.gain_eur, pc.gain_eur),
+            )
+            if s is not None and p is not None
+        ]
+        assert [gap for gap in gaps if gap > _SCALE_GAP] == []
+        assert _total([c.gain_eur for c in scaled.consumptions]) == k * _total(
+            [c.gain_eur for c in plain.consumptions]
+        )
+
+
+@settings(max_examples=200)
+@given(trades=_trade_sequences(close_out=False))
+def test_every_unit_bought_is_either_consumed_once_or_still_open(trades: list[EurTrade]) -> None:
+    """Relation (quantity conservation): no unit is lost, made up or sold twice.
+
+    Each SELL's pieces add up to its quantity, each lot's pieces plus its
+    remainder add up to what it bought, and what is still open is what was
+    bought minus what was sold, all exactly.
+    """
+    projection = replay_fifo_eur(Currency.BTC, trades).unwrap()
+    pieces = projection.consumptions
+    sells = {t.ref: t.qty for t in trades if t.side == OrderSide.SELL}
+    buys = {t.ref: t.qty for t in trades if t.side == OrderSide.BUY}
+    sold_per_sell = {ref: exact_sum(c.qty for c in pieces if c.sell_ref == ref) for ref in sells}
+    held_per_lot = {
+        lot.buy_ref: exact_sum(
+            [lot.remaining_qty, *(c.qty for c in pieces if c.buy_ref == lot.buy_ref)]
+        )
+        for lot in projection.lots
+    }
+    assert (sold_per_sell, held_per_lot) == (sells, buys)
+    assert exact_sum(lot.remaining_qty for lot in projection.lots) == exact_sum(
+        buys.values()
+    ) - exact_sum(sells.values())

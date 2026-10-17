@@ -147,3 +147,75 @@ class TestDonchianPeriodParameter:
         assert result is True, (
             "high_break with period=5: close=101 > channel_high=100 → must be True"
         )
+
+
+class TestDonchianPreRegisteredDefault:
+    """With no ``period`` argument the channel is the pre-registered Donchian(20) of §5.1."""
+
+    def test_default_channel_includes_the_twentieth_prior_bar(self) -> None:
+        """A high of 102 at ``bars[-21]`` (20th bar before the signal) blocks a close of 101.
+
+        21 bars: ``bars[0]`` high 102, ``bars[1..19]`` high 100, signal close 101.
+        Donchian(20) channel = max(high of ``bars[0..19]``) = 102, and 101 > 102 is false.
+        A 19-bar channel would see only 100 and call a breakout.
+        """
+        highs = [102] + [100] * 19 + [101]
+        bars = make_bars([100] * 20 + [101], highs=highs)
+
+        assert DonchianEngine.high_break(bars) is False, (
+            "Donchian(20): the 102 high 20 bars back is in the channel, so close 101 is no breakout"
+        )
+
+    def test_default_channel_excludes_the_twenty_first_prior_bar(self) -> None:
+        """A high of 200 at ``bars[-22]`` (21st bar before the signal) does not block a breakout.
+
+        22 bars: ``bars[0]`` high 200, ``bars[1..20]`` high 100, signal close 101.
+        Donchian(20) channel = max(high of ``bars[1..20]``) = 100, and 101 > 100.
+        A 21-bar channel would include the 200 and miss the breakout.
+        """
+        highs = [200] + [100] * 20 + [101]
+        bars = make_bars([200] + [100] * 20 + [101], highs=highs)
+
+        assert DonchianEngine.high_break(bars) is True, (
+            "Donchian(20): the 200 high 21 bars back is outside the channel; close 101 breaks out"
+        )
+
+    def test_default_needs_21_bars_even_when_the_last_close_tops_them_all(self) -> None:
+        """20 rising bars are never a breakout: Donchian(20) needs 20 prior bars plus the signal.
+
+        Closes and highs 100..119, so the last close (119) is above every earlier
+        high (at most 118). Any shorter minimum history would call this a breakout.
+        """
+        bars = make_bars(list(range(100, 120)))
+
+        assert DonchianEngine.high_break(bars) is False, (
+            "Donchian(20) with only 20 bars must not signal, however high the last close"
+        )
+
+
+class TestDonchianOddPeriodWindow:
+    """For an odd period the history check and the channel use exactly ``period + 1`` bars."""
+
+    def test_period_5_with_5_rising_bars_is_no_breakout(self) -> None:
+        """Closes and highs 100..104 with period 5: one bar short, so no signal.
+
+        104 is above every earlier high, so only the ``period + 1`` history rule says no.
+        """
+        bars = make_bars([100, 101, 102, 103, 104])
+
+        assert DonchianEngine.high_break(bars, period=5) is False, (
+            "Donchian(5) with 5 bars must not signal: it needs 6"
+        )
+
+    def test_period_5_channel_includes_the_fifth_prior_bar(self) -> None:
+        """A high of 102 at ``bars[-6]`` (5th bar before the signal) blocks a close of 101.
+
+        6 bars: ``bars[0]`` high 102, ``bars[1..4]`` high 100, signal close 101.
+        Channel = 102 > 101, so no breakout; a 4-bar channel would call one.
+        """
+        highs = [102, 100, 100, 100, 100, 101]
+        bars = make_bars([100, 100, 100, 100, 100, 101], highs=highs)
+
+        assert DonchianEngine.high_break(bars, period=5) is False, (
+            "Donchian(5): the 102 high 5 bars back is in the channel, so close 101 is no breakout"
+        )
