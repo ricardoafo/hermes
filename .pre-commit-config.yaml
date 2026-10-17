@@ -193,6 +193,13 @@ repos:
         files: ^scripts/dev/assertion-edit-warning\.py$
         pass_filenames: false
 
+      - id: fresh-seed-report-self-test
+        name: fresh-seed-report self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 uv run --no-sync python scripts/dev/fresh-seed-report.py'
+        language: system
+        files: ^scripts/dev/fresh-seed-report\.py$
+        pass_filenames: false
+
       - id: reproducibility-check-self-test
         name: reproducibility-check self-test
         entry: bash -c 'HERMES_SELF_TEST=1 python3 scripts/dev/reproducibility-check.py'

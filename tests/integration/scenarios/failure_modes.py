@@ -56,6 +56,8 @@ _LOTS_MACHINE = _U + "domain/lots/test_fifo_lots_state_machine.py::"
 _ALERTS = _U + "deploy/test_alert_scripts.py::"
 _WIRE = _U + "adapters/test_wire_numbers.py::"
 _PATHS = _S + "test_generated_paths.py::"
+_KLINES_DOWN = _S + "test_chaos_klines_down_at_boot.py::"
+_SIGTERM = _S + "test_chaos_sigterm_mid_bar.py::"
 _EVERY_BAR = _PATHS + "test_every_rule_holds_after_every_bar_and_a_restart_changes_nothing"
 _CONTENTION = _I + "adapters/ledger/test_ledger_contention.py::"
 _FILE_LOCK = _U + "infrastructure/test_file_lock.py::"
@@ -187,7 +189,11 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "Klines are down or answer an error page while serve boots",
-            gap="issue #871: serve exits 1 with no in-process retry; inferred, no serve-level test",
+            proved_by=(
+                _KLINES_DOWN + "test_klines_down_at_boot_exits_one_after_the_adapter_retries_only",
+                _KLINES_DOWN + "test_the_boot_systemd_makes_after_a_klines_outage"
+                "_trades_as_an_uninterrupted_run",
+            ),
         ),
         FailureMode(
             "An outage spans a bar boundary",
@@ -344,7 +350,7 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "A torn last line in the trial log or decision journal",
-            gap="issue #871: detected, but every later append is blocked; no recovery path",
+            gap="issue #891: detected, but every later append is blocked; recovery is undecided",
         ),
         FailureMode(
             "Another process holds the ledger while serve commits",
@@ -503,7 +509,11 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "SIGTERM while a bar is being handled",
-            gap="issue #871: slow handling can outlast systemd's stop timeout; untested",
+            proved_by=(
+                _SIGTERM + "test_sigterm_mid_bar_finishes_the_poll_in_flight_and_exits_zero",
+                _SIGTERM + "test_sigterm_mid_bar_exits_before_systemd_s_stop_timeout"
+                "_even_when_every_call_is_slow",
+            ),
         ),
         FailureMode(
             "A runtime failure exits with the code that makes systemd restart",
