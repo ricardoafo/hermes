@@ -66,7 +66,6 @@ from run_calibration import (
     _parse_iso_date,
     _parse_pair,
     _report_to_json,
-    _strategy_parameters,
     _trial_record,
 )
 from run_calibration_full import _depth_frac, _execution_fields, _select, _sharpe
@@ -83,6 +82,7 @@ from hermes.application.order_router.sizing import SizingPolicy
 from hermes.application.portfolio.tracker import PortfolioTracker
 from hermes.application.strategy_protocol.kill_trigger_evaluator import KillTriggerEvaluator
 from hermes.application.strategy_protocol.preregistration import PreRegistration
+from hermes.application.strategy_protocol.strategy_factory import StrategyKind
 from hermes.application.strategy_protocol.trial_log import trial_split, trial_summary
 from hermes.domain.errors import DataManifestFormatError, DomainError, InfraError, TrialLogError
 from hermes.domain.fees.fee_schedule import FeeSchedule
@@ -94,13 +94,13 @@ from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.portfolio.snapshot import PortfolioSnapshot
 from hermes.domain.risk.correlation_lock import CorrelationLock
-from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
 from hermes.domain.trading.order import OrderSide
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.logging import new_correlation_id
+from hermes.ports.strategy import StrategyPort
 
 _DEFAULT_START: Final = "2020-09-01"
 _DEFAULT_END: Final = "2024-06-30"
@@ -159,10 +159,18 @@ def _kernel(
 
 
 def _trial_parameters(
-    strategy: dict[str, Any], model: ExecutionModel, pairs: tuple[Pair, ...]
+    strategy: dict[str, Any],
+    model: ExecutionModel,
+    pairs: tuple[Pair, ...],
+    signal: str | None = None,
 ) -> dict[str, Any]:
-    """Return the strategy parameters plus what makes this run a distinct trial."""
+    """Return the strategy parameters plus what makes this run a distinct trial.
+
+    ``signal`` is recorded only when the entry names one, so a v1 or v2 trial
+    line stays byte-identical to the lines logged before the factory existed.
+    """
     return {
+        **({"signal": signal} if signal is not None else {}),
         **strategy,
         "pairs": ",".join(str(p) for p in pairs),
         "portfolio": "shared-capital",
@@ -250,6 +258,7 @@ def _replay_one(
     spec: FunnelReplay,
     bars: list[Bar],
     *,
+    kind: StrategyKind[StrategyPort],
     parameters: dict[str, Any],
     model: ExecutionModel,
     kernel: FillKernel,
@@ -262,7 +271,7 @@ def _replay_one(
     strategy_id = kernel.tracker.snapshot.strategy_id
     run = replay(
         bars,
-        strategy={pair: SwingStrategyAdapter(**parameters) for pair in pairs},
+        strategy={pair: kind.create(parameters) for pair in pairs},
         kernel=kernel,
         window_start=start,
         window_end=end,
@@ -338,7 +347,8 @@ async def _run(args: argparse.Namespace) -> int:
     def fees_at(at: datetime, for_pair: Pair) -> FeeSchedule:
         return select_fee_schedule(fee_rows, at, for_pair)
 
-    base_parameters = _strategy_parameters()
+    kind = roster.strategy_kind()
+    base_parameters = kind.default_parameters()
     try:
         plan = [
             (spec, spec.parameters(base_parameters))
@@ -353,6 +363,7 @@ async def _run(args: argparse.Namespace) -> int:
             _replay_one(
                 spec,
                 bars,
+                kind=kind,
                 parameters=spec_parameters,
                 model=spec.model(model),
                 kernel=_kernel(strategy_id, starting_cash, roster.sizing_policy()),
@@ -375,7 +386,7 @@ async def _run(args: argparse.Namespace) -> int:
             record = _trial_record(
                 strategy_id,
                 {
-                    **_trial_parameters(result.parameters, result.model, pairs),
+                    **_trial_parameters(result.parameters, result.model, pairs, roster.signal),
                     **result.replay.trial_fields(),
                 },
                 split,

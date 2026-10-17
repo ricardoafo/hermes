@@ -35,6 +35,7 @@ from hermes.application.calibration.certification_gates import GateEvidence
 from hermes.application.execution.kernel import FillKernel
 from hermes.application.order_router.risk_engine import RiskEngine
 from hermes.application.portfolio.tracker import PortfolioTracker
+from hermes.application.strategy_protocol.strategy_factory import strategy_kind
 from hermes.domain.calibration.trial_record import TrialSummary
 from hermes.domain.fees.fee_schedule import FeeSchedule
 from hermes.domain.market_data.bar import Bar
@@ -304,4 +305,28 @@ def test_performance_file_round_trips_through_certify(tmp_path: Path) -> None:
         2,
         ["correlation-lock", "exposure-cap"],
         pytest.approx(max_drawdown([float(e) for _, e in run.daily_equity])),
+    )
+
+
+# SEV-1: v1 and v2 must trade their signed rule after the factory lands (contract §2a)
+def test_an_entry_with_no_signal_replays_exactly_as_the_swing_adapter() -> None:
+    """The factory's default kind is today's adapter, byte for byte (issue #1074).
+
+    Same bars, same kernel set-up: building through ``strategy_kind(None)``
+    gives the same signals, fills, refusals and equity curve as building
+    ``SwingStrategyAdapter()`` directly, as serve, parity and the driver did
+    before the factory existed.
+    """
+    bars = _bars(dict.fromkeys(_PAIRS, _swing_move), days=260)
+    window = {"window_start": _T0 + timedelta(days=210), "window_end": _T0 + timedelta(days=260)}
+    kind = strategy_kind(None)
+
+    direct = _run(bars, {p: SwingStrategyAdapter() for p in _PAIRS}, **window)
+    built = _run(bars, {p: kind.create(kind.default_parameters()) for p in _PAIRS}, **window)
+
+    assert (built.signals_seen, built.fills, built.declined, built.daily_equity) == (
+        direct.signals_seen,
+        direct.fills,
+        direct.declined,
+        direct.daily_equity,
     )

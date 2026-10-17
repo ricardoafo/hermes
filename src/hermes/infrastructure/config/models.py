@@ -35,9 +35,11 @@ from returns.result import Failure
 
 from hermes.application.execution.prereg_book import ExecutionModel, ExitPricing
 from hermes.application.order_router.sizing import SizingPolicy
+from hermes.application.strategy_protocol.strategy_factory import StrategyKind, strategy_kind
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
+from hermes.ports.strategy import StrategyPort
 
 __all__ = [
     "BinanceExchangeConfig",
@@ -96,6 +98,10 @@ class StrategyConfig(BaseModel):
             and in serve. Defaults to v1's stop-market, so an entry written
             before pre-registration v2 keeps trading as signed; v2 sets
             ``bar_close`` (v2 §5.3, §6.2).
+        signal: The strategy kind the entry trades (issue #1074). ``None``
+            is the Donchian breakout of pre-registration v1 §5, so entries
+            written before research batches keep their adapter. An unknown
+            kind fails at load, never falling back to the default.
     """
 
     model_config = _MODEL_CONFIG
@@ -107,6 +113,17 @@ class StrategyConfig(BaseModel):
     quote: Currency
     sizing: PositionSizingConfig
     exit_pricing: ExitPricing = ExitPricing.STOP_ORDER
+    signal: str | None = None
+
+    @field_validator("signal")
+    @classmethod
+    def _known_signal(cls, value: str | None) -> str | None:
+        strategy_kind(value)
+        return value
+
+    def strategy_kind(self) -> StrategyKind[StrategyPort]:
+        """Return the kind serve, parity and the backtest drivers build this strategy with."""
+        return strategy_kind(self.signal)
 
     def execution_model(self, *, depth_frac: Decimal | None = None) -> ExecutionModel:
         """Return the §6.2 execution model this strategy trades with.
