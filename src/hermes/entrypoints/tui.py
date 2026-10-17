@@ -945,10 +945,14 @@ class HomeApp(App[None]):
         """Draw the mainnet badge: in the window bar in Neon, on the status row otherwise."""
         neon = self.theme == NEON_THEME
         allow_mainnet = self.mainnet_state
-        self._home.query_one(WindowBar).show_mainnet(allow_mainnet)
+        bar = self._alive(WindowBar)
+        if bar is not None:
+            bar.show_mainnet(allow_mainnet)
         badge = mainnet_text(allow_mainnet, tokens_for(self.theme))
         self._set("mainnet", Text("") if neon else badge)
-        self._home.query_one("#mainnet").display = not neon
+        slot = self._alive(Widget, "#mainnet")
+        if slot is not None:
+            slot.display = not neon
 
     def _chip_text(self, *, compact: bool) -> Text:
         return theme_chip_text(
