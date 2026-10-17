@@ -18,6 +18,7 @@ import io
 import json
 import os
 import re
+import sqlite3
 import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -27,9 +28,14 @@ import pytest
 from rich.console import Console
 from syrupy.assertion import SnapshotAssertion
 
+from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.adapters.ledger.status_reader import SqliteStatusReader
 from hermes.application.status import UnitState, build_report
+from hermes.domain.events.risk_halt_recorded import HaltKind, RiskHaltRecorded
 from hermes.domain.strategy.signal import SignalKind
+from hermes.domain.value_objects.currency import Currency
+from hermes.domain.value_objects.pair import Pair
+from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.entrypoints import cli
 from hermes.entrypoints import status as status_module
 from hermes.entrypoints.status_view import render_status
@@ -386,3 +392,53 @@ def test_demo_status_with_an_unknown_scenario_exits_two() -> None:
 
     assert (rc, out.getvalue()) == (2, "")
     assert err.getvalue().startswith("ERROR:")
+
+
+def _ledger_with_kill(tmp_path: Path) -> Path:
+    """Write the fixture ledger plus one kill on BTC an hour before the 16:00 bar."""
+    path = _ledger(tmp_path)
+    connection = sqlite3.connect(path)
+    SqliteLedger(connection).append_event(
+        RiskHaltRecorded(
+            occurred_at=LAST_4H - timedelta(hours=1),
+            correlation_id="01JABCDEFGHJKMNPQRSTVWXYZ0",
+            strategy_id=StrategyId("swing-donchian-4h"),
+            pair=Pair(base=Currency.BTC, quote=Currency.USDT),
+            kind=HaltKind.KILL,
+            rule="max_drawdown",
+            reason="drawdown_kill_threshold",
+            pre_registration_ref="§10",
+        )
+    )
+    connection.close()
+    return path
+
+
+def test_text_shows_the_halt_count_and_the_last_halt(tmp_path: Path) -> None:
+    """The halts line names the 24-hour count and the newest halt's kind, pair and rule (#749)."""
+    code, out = _run(["--db", str(_ledger_with_kill(tmp_path))])
+
+    lines = out.splitlines()
+    at = next(i for i, text in enumerate(lines) if text.startswith("halts"))
+    assert (code, lines[at], lines[at + 1]) == (
+        0,
+        "halts      24h: 1   30d last: kill BTC/USDT max_drawdown",
+        "  2026-10-03 15:00 UTC (Sat 17:00 Madrid)  drawdown_kill_threshold (pre-reg §10)",
+    )
+
+
+def test_json_carries_the_last_halt(tmp_path: Path) -> None:
+    """--json has the same halt facts as the text view."""
+    _, out = _run(["--db", str(_ledger_with_kill(tmp_path)), "--json"])
+
+    assert json.loads(out)["halts"] == {
+        "last_24h": 1,
+        "last": {
+            "kind": "kill",
+            "pair": "BTC/USDT",
+            "rule": "max_drawdown",
+            "reason": "drawdown_kill_threshold",
+            "pre_registration_ref": "§10",
+            "occurred_at": "2026-10-03T15:00:00+00:00",
+        },
+    }

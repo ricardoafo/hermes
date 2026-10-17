@@ -15,6 +15,7 @@ from hermes.domain.events.balance_low import BalanceLow
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.daily_trade_digest import DailyTradeDigest, TradeSummary
 from hermes.domain.events.rebalance_triggered import RebalanceTriggered
+from hermes.domain.events.risk_halt_recorded import HaltKind, RiskHaltRecorded
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.events.strategy_paused import StrategyPaused
 from hermes.domain.events.strategy_resumed import StrategyResumed
@@ -177,13 +178,27 @@ def _digest() -> DailyTradeDigest:
     )
 
 
+def _halt(kind: HaltKind) -> RiskHaltRecorded:
+    killed = kind is HaltKind.KILL
+    return RiskHaltRecorded(
+        occurred_at=NOON_SATURDAY_UTC,
+        correlation_id=CORRELATION_ID,
+        strategy_id=STRATEGY,
+        pair=BTC_USDT,
+        kind=kind,
+        rule="max_drawdown" if killed else "RO-04",
+        reason="drawdown_kill_threshold" if killed else "stale_orderbook",
+        pre_registration_ref="§10",
+    )
+
+
 def samples() -> dict[str, DomainEvent]:
     """Return one fixed sample per notifiable event, keyed by a snapshot-friendly name.
 
     Returns:
         Entry signal, an exit signal per exit reason, fill, rejection, pause (critical and
         warning), resume, anomaly (critical and info), low balance,
-        rebalance heads-up and daily digest.
+        rebalance heads-up, daily digest, risk halt and kill.
 
     """
     return {
@@ -201,4 +216,6 @@ def samples() -> dict[str, DomainEvent]:
         "balance-low": _balance_low(),
         "rebalance-triggered": _rebalance(),
         "daily-digest": _digest(),
+        "risk-halt": _halt(HaltKind.HALT),
+        "risk-kill": _halt(HaltKind.KILL),
     }
