@@ -29,6 +29,7 @@ _FAULTS = _S + "test_market_data_faults.py::"
 _OUTAGES = _S + "test_outages.py::"
 _RISK = _S + "test_risk_limits.py::"
 _LIVE = _U + "adapters/market_data/test_binance_live_klines.py::"
+_KLINE_ROWS = _U + "adapters/market_data/test_binance_live_klines_rows.py::"
 _REPLAY = _I + "adapters/market_data/test_binance_live_klines_replay.py::"
 _DEPTH = _U + "adapters/market_data/test_binance_depth_snapshot.py::"
 _FX = _U + "adapters/fx/test_frankfurter.py::"
@@ -174,7 +175,11 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "One klines response holds duplicate or unsorted rows",
-            gap="issue #842: the last duplicate wins silently; inferred, no test feeds such rows",
+            proved_by=(
+                _KLINE_ROWS + "test_rows_in_any_order_come_out_ascending",
+                _KLINE_ROWS + "test_an_exact_repeat_of_a_row_is_dropped",
+                _KLINE_ROWS + "test_two_different_rows_for_one_bar_are_refused",
+            ),
         ),
         FailureMode(
             "The forming candle is delivered as closed",
