@@ -258,3 +258,27 @@ Actors: `operator` | `claude-experimentalist` | `claude-integrity-checker` | `en
 - docs/experiments/swing-mvp1/trial-log.jsonl (modified)
 - docs/experiments/swing-mvp1/lab-notebook.md (modified)
 <!-- entry-sha256: febf45342a83ab685170de5ded6d8a2c3aebd2453c1cc496125108539750b255 -->
+
+### 2026-10-17T20:56:00Z | train | operator | Code Owner declines a Validation touch for swing-mvp1-v2: v2 is killed at the backtest gate
+
+**Observed metrics**: N/A (no metrics this entry)
+
+**Decision**:
+
+- No Validation run for swing-mvp1-v2. All 3 Validation touches stay unspent.
+- swing-mvp1-v2 stays UNTRUSTED and is dead for pre-registration v2; it never reaches shadow.
+- A variant needs a new signed pre-registration; its trials join the same trial log and DSR count.
+- The post-mortem is due by 2026-10-24.
+
+**Rationale**:
+
+- Pre-registration v2 §10 post-kill protocol: dead for this pre-registration, post-mortem within 7 days, a variant needs a new pre-registration.
+- §10 judges the gate on Train + Validation. Train is 46 of the 60 gate months, so a Validation run would be unlikely to lift dsr and the four other failing checks above their thresholds (inferred, not measured). Spending a touch would use up a scarce Validation look for little information.
+- Decision taken by the Code Owner on the Backtesting thread decision card (option: skip Validation).
+- Not a deviation per §11: no signed rule, window, metric or threshold changes.
+- No data from the sealed window (2025-09-01 on) was read.
+
+**Files touched**:
+
+- docs/experiments/swing-mvp1/lab-notebook.md (modified)
+<!-- entry-sha256: 8707097409730bc66f3231c2ba6c8612d7a14e58ae10c50f0185ca643184d375 -->
