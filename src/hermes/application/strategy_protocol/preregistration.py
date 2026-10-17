@@ -201,6 +201,23 @@ class KillTriggers:
     shadow_sharpe_consecutive_days: int
     """Shadow kill: days in a row the Sharpe must stay below the floor (60)."""
 
+    shadow_drift_limit_bps: float
+    """Shadow drift: the sim-vs-live p50 above this, in bps, is a breach (30)."""
+
+    shadow_drift_window_days: int
+    """Shadow drift: the rolling window the p50 is taken over, in days (7)."""
+
+    shadow_drift_counts_exits: bool
+    """Shadow drift: exit fills count toward the p50. ``False`` for v1, whose §6.2
+    model prices a stop exit at the stop while serve sells at the bar close
+    (issue #796; the exits' gap is issue #785's, not execution drift)."""
+
+    sa9_repeat_fires: int
+    """Shadow kill: fires of one SA-9 overlay rule that kill the strategy (3)."""
+
+    sa9_repeat_window_days: int
+    """Shadow kill: the window those fires are counted over, in days (30)."""
+
 
 # ---------------------------------------------------------------------------
 # Parser
@@ -364,6 +381,11 @@ class PreRegistration:
             recovery_days_threshold=90.0,
             rolling_sharpe_min=0.3,
             shadow_sharpe_consecutive_days=60,
+            shadow_drift_limit_bps=30.0,
+            shadow_drift_window_days=7,
+            shadow_drift_counts_exits=False,
+            sa9_repeat_fires=3,
+            sa9_repeat_window_days=30,
         )
 
     def pre_reg_path(self) -> Path:

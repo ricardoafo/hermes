@@ -1,7 +1,8 @@
-"""RiskHaltRecorded domain event — a risk-overlay HALT or a §10 kill refused an entry.
+"""RiskHaltRecorded domain event — a risk-overlay HALT, a §10 kill or a drift breach.
 
 Record-only (#749): the event says that a halt or a kill stopped an entry
-signal. It decides nothing; whether and when halts and kills fire stays with
+signal, or that serve's daily shadow check (#796) found a kill or a drift
+breach. It decides nothing; whether and when halts and kills fire stays with
 the order router and the kill evaluators.
 
 The reason is value-free: it names the rule, never a price, a drawdown or a
@@ -36,18 +37,23 @@ class HaltKind(StrEnum):
     KILL = "kill"
     """A pre-registration §10 kill criterion fired; no new entries while it holds."""
 
+    DRIFT = "drift"
+    """Sim-vs-live drift breached its limit; the strategy goes back to UNTRUSTED (#796)."""
+
 
 @dataclass(frozen=True, slots=True)
 class RiskHaltRecorded(DomainEvent):
-    """An entry signal was refused by a risk halt or a kill.
+    """An entry signal was refused by a risk halt or a kill, or a daily check fired.
 
-    ``occurred_at`` is the signal time, so evaluating the same bar again
-    after a restart yields the same event and the ledger keeps one row.
+    ``occurred_at`` is the signal time, or the end of the UTC day a daily
+    check evaluated, so evaluating the same bar or day again after a restart
+    yields the same event and the ledger keeps one row.
 
     Fields:
         strategy_id: The strategy whose entry was refused.
-        pair: The pair of the refused entry.
-        kind: Halt or kill.
+        pair: The pair of the refused entry, or ``None`` for a daily check
+            that covers the whole strategy.
+        kind: Halt, kill or drift.
         rule: Stable rule id, such as ``RO-08`` or ``max_drawdown``.
         reason: Fixed snake_case reason, such as ``drawdown_limit``.
         pre_registration_ref: The pre-registration section the rule comes
@@ -61,7 +67,7 @@ class RiskHaltRecorded(DomainEvent):
     __event_schema_version__: ClassVar[int] = 1
 
     strategy_id: StrategyId
-    pair: Pair
+    pair: Pair | None
     kind: HaltKind
     rule: str
     reason: str

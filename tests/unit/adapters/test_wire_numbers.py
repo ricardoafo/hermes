@@ -91,7 +91,7 @@ def _kraken_spot(value: str) -> object:
 
 
 def _binance_spot(value: str) -> object:
-    return binance_spot._decimal(value, "price")
+    return binance_spot.parse_decimal(value, "price")
 
 
 _PARSERS: dict[str, tuple[Callable[[str], object], type[Exception]]] = {
