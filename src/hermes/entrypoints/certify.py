@@ -24,6 +24,7 @@ import json
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 from typing import Any, TextIO
 
@@ -130,12 +131,6 @@ def main(argv: list[str], *, stream: TextIO, err: TextIO | None = None) -> int:
     if parsed.sign_off is not None:
         evidence = replace(evidence, sign_off=OperatorSignOff(parsed.sign_off, parsed.confirm, now))
 
-    try:
-        round_trips = _round_trips(parsed.db, parsed.strategy_id)
-    except LedgerError as exc:
-        err.write(f"ERROR: ledger: {exc.msg}\n")
-        return 3
-
     store_dir = parsed.store_dir or serve_module.certification_dir_for(serve_module.DEFAULT_DB_PATH)
     return run(
         parsed.strategy_id,
@@ -146,12 +141,17 @@ def main(argv: list[str], *, stream: TextIO, err: TextIO | None = None) -> int:
         err=err,
         clock=lambda: now,
         pre_reg=pre_reg,
-        round_trips=round_trips,
+        round_trips=partial(_round_trips, parsed.db, parsed.strategy_id),
     )
 
 
 def _round_trips(db: Path, strategy_id: str) -> int | None:
-    """Return the shadow round trips ``db`` holds, or ``None`` without a ledger there."""
+    """Return the shadow round trips ``db`` holds, or ``None`` without a ledger there.
+
+    Raises:
+        LedgerError: The ledger cannot be read as one.
+        OSError: The file cannot be opened.
+    """
     if not db.is_file():
         return None
     with SqliteStatusReader.open(db) as reader:
@@ -200,7 +200,7 @@ def run(
     clock: Callable[[], datetime],
     pre_reg: PreRegistration | None = None,
     err: TextIO | None = None,
-    round_trips: int | None = None,
+    round_trips: Callable[[], int | None] = lambda: None,
 ) -> int:
     """Evaluate and record the next gate for ``strategy_id``.
 
@@ -213,8 +213,9 @@ def run(
         clock: Source of the current UTC time.
         pre_reg: Threshold source; defaults to the signed pre-registration.
         err: Stream for ERROR lines; defaults to ``sys.stderr``.
-        round_trips: Shadow round trips in the ledger, reported toward
-            SHADOW_CERTIFIED; ``None`` without a ledger.
+        round_trips: Counts the shadow round trips in the ledger (``None``
+            without one). Called only toward SHADOW_CERTIFIED, so no other
+            gate reads the ledger.
 
     Returns:
         Process exit code.
@@ -270,8 +271,16 @@ def _print_report(report: GateReport, stream: TextIO) -> None:
     stream.write("GATE PASSED\n" if report.passed else "GATE FAILED\n")
 
 
-def _print_round_trips(round_trips: int | None, stream: TextIO) -> None:
-    """Report the shadow trade count; flag it weak under 30 (ADR-021 §3, decision 10)."""
+def _print_round_trips(count: Callable[[], int | None], stream: TextIO) -> None:
+    """Report the shadow trade count; flag it weak under 30 (ADR-021 §3, decision 10).
+
+    The count is informational, so a ledger it cannot read is a note, never a failure.
+    """
+    try:
+        round_trips = count()
+    except (LedgerError, OSError) as exc:
+        stream.write(f"NOTE  shadow round trips: ledger unreadable, not counted ({exc})\n")
+        return
     if round_trips is None:
         stream.write("NOTE  shadow round trips: no ledger found, not counted\n")
     elif round_trips < WEAK_ROUND_TRIPS:

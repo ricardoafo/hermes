@@ -14,6 +14,7 @@ import json
 import shutil
 import sqlite3
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -391,7 +392,7 @@ def _shadow_gate_out(tmp_path: Path, round_trips: int | None) -> str:
         fingerprint=_FP,
         stream=out,
         clock=lambda: datetime(2027, 1, 20, tzinfo=UTC),
-        round_trips=round_trips,
+        round_trips=lambda: round_trips,
     )
     return out.getvalue()
 
@@ -418,8 +419,12 @@ class TestShadowRoundTrips:
         verdicts = {"GATE FAILED" in _shadow_gate_out(tmp_path / str(n), n) for n in (0, 100)}
         assert verdicts == {True}
 
-    def test_other_gates_print_no_count(self, tmp_path: Path) -> None:
-        """From UNTRUSTED (the backtest gate) nothing about round trips is printed."""
+    def test_other_gates_never_read_the_ledger(self, tmp_path: Path) -> None:
+        """From UNTRUSTED (the backtest gate) the ledger is not read and no count is printed."""
+
+        def count() -> int:
+            raise AssertionError("the backtest gate read the ledger")
+
         out = io.StringIO()
         run(
             _SID,
@@ -428,9 +433,32 @@ class TestShadowRoundTrips:
             fingerprint=_FP,
             stream=out,
             clock=lambda: datetime(2026, 10, 3, tzinfo=UTC),
-            round_trips=3,
+            round_trips=count,
         )
         assert "round trips" not in out.getvalue()
+
+    def test_an_unreadable_ledger_is_a_note_not_an_error(self, tmp_path: Path) -> None:
+        """A file that is not a ledger prints a NOTE and leaves the gate's exit code alone."""
+        db = tmp_path / "hermes.sqlite3"
+        db.write_bytes(b"not a sqlite file" * 100)
+        store = JsonCertificationStore(tmp_path / "store")
+        store.save(
+            CertificationRecord(
+                _SID, CertificationState.BACKTEST_CERTIFIED, parameter_fingerprint=_FP
+            )
+        )
+        out = io.StringIO()
+        code = run(
+            _SID,
+            GateEvidence(),
+            store=store,
+            fingerprint=_FP,
+            stream=out,
+            clock=lambda: datetime(2027, 1, 20, tzinfo=UTC),
+            round_trips=partial(certify_module._round_trips, db, _SID),
+        )
+        notes = [line[:56] for line in out.getvalue().splitlines() if "round trips" in line]
+        assert (code, notes) == (1, ["NOTE  shadow round trips: ledger unreadable, not counted"])
 
     def test_main_counts_the_ledgers_sells_for_the_strategy(self, tmp_path: Path) -> None:
         """``--db`` reads 2 SELLs of this strategy and ignores the other strategy's."""

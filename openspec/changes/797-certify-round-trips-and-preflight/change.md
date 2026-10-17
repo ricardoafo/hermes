@@ -66,4 +66,5 @@ shadow_start.run (confirmed) → _check_writable(db dir, archive dir, runs dir) 
 
 ## Risks
 
-- `hermes certify` now reads the ledger when one is at its path; it opens it read-only.
+- `hermes certify` reads the ledger only toward SHADOW_CERTIFIED, read-only. A ledger it cannot read
+  prints a NOTE and changes no exit code, because the count is informational.
