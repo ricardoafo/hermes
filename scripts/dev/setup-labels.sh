@@ -35,7 +35,7 @@ create_label "type:ci"       "1d76db" "CI workflow change"
 create_label "type:revert"   "333333" "Reverts a prior commit"
 
 echo ""
-echo "sev-* (severity per ~/.claude/rules/severity-rubric.md)"
+echo "sev-* (severity per docs/guides/severity-rubric.md)"
 create_label "sev-1" "b60205" "Critical: security/LOPDGDD/data loss/auth bypass. Blocks release+merge. Fix in 24h."
 create_label "sev-2" "d93f0b" "High: feature broken, wrong legal output. Blocks merge. Fix in 72h."
 create_label "sev-3" "fbca04" "Medium: degraded experience, non-critical wrong data. Fix in 7d."
