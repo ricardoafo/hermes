@@ -70,6 +70,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from functools import partial
 from pathlib import Path
+from types import MappingProxyType
 from typing import Final
 
 import structlog
@@ -99,6 +100,7 @@ from hermes.application.calibration.certification_gates import (
 from hermes.application.execution.halt_record import halt_record
 from hermes.application.execution.kernel import Declined, Executed, FillKernel, Halted
 from hermes.application.execution.position_sync import sync_after_signal
+from hermes.application.execution.prereg_book import ExitPricing
 from hermes.application.execution.shadow import (
     AlreadyFilled,
     ShadowExecution,
@@ -165,6 +167,7 @@ from hermes.ports.strategy import StrategyPort
 __all__ = [
     "CATCHUP_BARS",
     "EXPERIMENT_DIR",
+    "PRE_REGISTERED_EXITS",
     "SERVE_LOCK_SUFFIX",
     "SHADOW_STRATEGY_NAME",
     "SHADOW_UNIVERSE",
@@ -197,7 +200,18 @@ SHADOW_UNIVERSE: Final = ("BTC/USDT", "ETH/USDT", "SOL/USDT")
 """The three pairs of pre-registration §3."""
 
 SHADOW_STRATEGY_NAME: Final = "swing-donchian-4h"
-"""The one strategy the shadow roster may enable (pre-registration §5)."""
+"""The v1 strategy (pre-registration v1 §5), the one the shadow runs today."""
+
+V2_STRATEGY_NAME: Final = "swing-mvp1-v2"
+"""The v2 strategy (pre-registration v2 §5)."""
+
+PRE_REGISTERED_EXITS: Final[Mapping[str, ExitPricing]] = MappingProxyType(
+    {
+        SHADOW_STRATEGY_NAME: ExitPricing.STOP_ORDER,
+        V2_STRATEGY_NAME: ExitPricing.BAR_CLOSE,
+    }
+)
+"""Each strategy the shadow roster may enable, and the exit pricing it signed (§5.3, §6.2)."""
 
 EXPERIMENT_DIR: Final = Path("docs/experiments/swing-mvp1")
 """Where the signed pre-registration and the fee history sit under the experiment root."""
@@ -476,10 +490,18 @@ def check_startup(
         missing = [str(f) for f in experiment_files(experiment_root) if not f.is_file()]
         if missing:
             raise StartupError(f"experiment files missing: {', '.join(missing)}")
-    enabled = [s.name for s in config.strategies.strategies if s.enabled]
-    if enabled != [SHADOW_STRATEGY_NAME]:
+    enabled = [s for s in config.strategies.strategies if s.enabled]
+    if len(enabled) != 1 or enabled[0].name not in PRE_REGISTERED_EXITS:
         raise StartupError(
-            f"enabled strategies must be exactly [{SHADOW_STRATEGY_NAME!r}], got {enabled!r}"
+            "enabled strategies must be exactly one of "
+            f"{sorted(PRE_REGISTERED_EXITS)!r}, got {[s.name for s in enabled]!r}"
+        )
+    (roster,) = enabled
+    signed = PRE_REGISTERED_EXITS[roster.name]
+    if roster.exit_pricing is not signed:
+        raise StartupError(
+            f"{roster.name} must price its exits {signed.value}, as pre-registered; "
+            f"strategies.yaml sets exit_pricing: {roster.exit_pricing.value}"
         )
     if set(config.market_data.pairs) != set(SHADOW_UNIVERSE):
         raise StartupError(
@@ -502,13 +524,15 @@ def _check_live_approval(
     """Raise unless real capital is allowed for the enabled strategy."""
     if certification_store is None:
         raise StartupError("allow_mainnet is set but no certification store is configured")
+    # The enabled strategy's own record: a v1 approval never unlocks v2.
+    name = next(s.name for s in config.strategies.strategies if s.enabled)
     try:
-        record = certification_store.load(SHADOW_STRATEGY_NAME)
+        record = certification_store.load(name)
     except CertificationStoreError as exc:
         raise StartupError(f"allow_mainnet is set but {exc}") from exc
     refusal = require_live_approval(record, parameter_fingerprint_for(config))
     if refusal:
-        raise StartupError(f"allow_mainnet is set but {refusal}")
+        raise StartupError(f"allow_mainnet is set for {name!r} but {refusal}")
 
 
 def seed_capital_once(
@@ -773,6 +797,7 @@ def _wire_on_ledger(
             clock=wall,
             fees_at=_fees_at(fee_rows),
             strategy_id=strategy_id,
+            model=roster.execution_model(),
             not_before=None if recorded_seed is None else recorded_seed.seeded_at,
         )
     except LedgerError as exc:
