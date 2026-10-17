@@ -49,6 +49,7 @@ _FIFO = _U + "domain/lots/test_eur_fifo.py::"
 _CRASH = _S + "test_chaos_crash_mid_bar.py::"
 _STORAGE = _S + "test_chaos_storage.py::"
 _CLOCK = _S + "test_chaos_clock.py::"
+_SHADOW = _U + "application/execution/test_shadow.py::"
 _PORTFOLIO_MACHINE = _U + "application/portfolio/test_portfolio_risk_state_machine.py::"
 _LEDGER_MACHINE = _U + "adapters/ledger/test_sqlite_ledger_state_machine.py::"
 _BOOK_MACHINE = _U + "adapters/market_data/test_orderbook_diff_state_machine.py::"
@@ -753,11 +754,24 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "RO-03 loses its input or stays latched for good",
-            gap="issue #857: the quality row is a separate commit and nothing clears the latch",
+            proved_by=(
+                _CHAOS + "test_a_restart_after_a_crash_mid_bar_leaves_the_ledger"
+                "_an_uninterrupted_run_leaves",
+                _TRADES + "TestRecordTrade"
+                "::test_record_trade_stores_its_further_events_in_the_same_commit",
+                _SHADOW + "test_a_slipping_fill_older_than_the_window_no_longer_halts_entries",
+                _RISK + "test_a_fill_slipping_over_half_a_percent"
+                "_no_longer_halts_entries_four_days_later",
+            ),
         ),
         FailureMode(
             "The RO-03 cumulative slippage limit never fires",
-            gap="issue #857: the cumulative value is always 0",
+            proved_by=(
+                _SHADOW
+                + "test_fills_inside_the_window_that_slip_over_2_percent_together_halt_entries",
+                _SHADOW
+                + "test_slips_older_than_the_window_do_not_count_toward_the_cumulative_limit",
+            ),
         ),
         FailureMode(
             "RO-08 drawdown and time-to-recovery are never driven through serve",
