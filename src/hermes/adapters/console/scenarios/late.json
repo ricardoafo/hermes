@@ -420,5 +420,86 @@
     "day": 12,
     "length_days": 90,
     "note": null
+  },
+  "shadow_screen": {
+    "seeded_at": "2026-09-20T08:00:00+00:00",
+    "first_fill_at": "2026-09-23T16:00:05+00:00",
+    "run": {
+      "run_id": "swing-donchian-4h-20260921T000000Z",
+      "strategy_id": "swing-donchian-4h",
+      "day_zero_at": "2026-09-21T00:00:00+00:00",
+      "package_version": "0.42.0",
+      "release": "2026-09-20-a1b2c3d",
+      "engine_version": "0.42.0",
+      "config_hash": "demo-config-0f3a9c",
+      "pre_registration_hash": "8d73e99ec658712e2304b872e3231421a5f5eeeafbe8255b199cbb8092db3433",
+      "data_manifest_hash": "demo-manifest-5b21e0",
+      "checks": [
+        {
+          "rule": 1,
+          "name": "signed pre-registration, hash in the lab notebook",
+          "verdict": "pass",
+          "detail": "demo"
+        },
+        {
+          "rule": 2,
+          "name": "backtest gate recorded by `hermes certify`",
+          "verdict": "pass",
+          "detail": "demo"
+        },
+        {
+          "rule": 3,
+          "name": "known decision-changing defects fixed",
+          "verdict": "confirm by hand",
+          "detail": "demo"
+        },
+        {
+          "rule": 4,
+          "name": "§10 shadow kills and §7 drift check run inside serve",
+          "verdict": "confirm by hand",
+          "detail": "demo"
+        },
+        {
+          "rule": 6,
+          "name": "backtest and serve make the same decisions",
+          "verdict": "confirm by hand",
+          "detail": "demo"
+        },
+        {
+          "rule": 7,
+          "name": "the only enabled roster entry",
+          "verdict": "pass",
+          "detail": "demo"
+        }
+      ]
+    },
+    "missed_days": [],
+    "live_drifts_bps": [
+      "4.1",
+      "12.6",
+      "7.9"
+    ],
+    "kill_fired": false,
+    "kill_check_clean": true,
+    "notebook": [
+      {
+        "at": "2026-08-25T12:48:18+00:00",
+        "phase": "pre-registration",
+        "actor": "operator",
+        "action": "sign pre-registration v1"
+      },
+      {
+        "at": "2026-09-21T00:05:00+00:00",
+        "phase": "shadow",
+        "actor": "operator",
+        "action": "shadow day 0 recorded with hermes shadow-start (demo)"
+      },
+      {
+        "at": "2026-09-29T10:00:00+00:00",
+        "phase": "shadow",
+        "actor": "operator",
+        "action": "engine bug fix: the stop only moves up (demo, not a deviation)"
+      }
+    ]
   }
 }

@@ -1,0 +1,1 @@
+- The console opens on a cold start screen: the Winged H, the running release and live checks of the ledger, engine, journal, market feed and AI supervisor, each with what it found or why it failed; a first run says when the first bar check is due. Any key opens Home at once, Q quits, and motion off skips it.

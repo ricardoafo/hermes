@@ -6,6 +6,10 @@ prints one line per check with its evidence, and records the outcome. Only a
 passed gate advances the state; a failed one-shot OOS test is recorded too,
 because the shot is spent either way (pre-registration §7).
 
+``--sign-off NAME`` asks for the live-approval phrase on an interactive
+terminal and refuses when stdin is not one, so a script cannot approve live
+trading unattended (issue #949).
+
 ``swing-mvp1-v2`` is judged by pre-registration v2: its backtest gate is DSR
 ≥ 0.95, v1's §9 secondary rows and the ADR-021 §5 funnel, read from
 ``--funnel-evidence`` (change v2-certify-gate).
@@ -22,6 +26,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import sys
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime
@@ -36,6 +41,7 @@ from hermes.application.calibration.backtest_funnel import (
     validate_evidence,
 )
 from hermes.application.calibration.certification_gates import (
+    LIVE_APPROVAL_PHRASE,
     CertificationRecord,
     GateEvidence,
     GateReport,
@@ -74,12 +80,13 @@ __all__ = ["EvidenceError", "apply_performance", "load_evidence", "main", "run"]
 
 _USAGE = (
     "Usage: hermes certify <strategy_id> [--evidence FILE] [--store-dir DIR]\n"
-    "                      [--config-dir DIR] [--sign-off NAME --confirm LIVE_APPROVED]\n"
+    "                      [--config-dir DIR] [--sign-off NAME]\n"
     "                      [--funnel-evidence FILE]  (swing-mvp1-v2 only)\n"
     "\n"
     "Evaluates the next certification gate (pre-registration §7) and prints every\n"
     "check with its evidence. A passed gate is recorded; a failed one is not, except\n"
     "the one-shot OOS test, which is recorded either way.\n"
+    f"--sign-off asks you to type {LIVE_APPROVAL_PHRASE} on an interactive terminal.\n"
     "Exit codes: 0 passed, 1 failed or refused, 2 usage, 3 config/evidence/store.\n"
 )
 
@@ -104,19 +111,34 @@ class EvidenceError(ValueError):
     """The evidence file is malformed."""
 
 
-def main(argv: list[str], *, stream: TextIO, err: TextIO | None = None) -> int:
+def main(
+    argv: list[str],
+    *,
+    stream: TextIO,
+    err: TextIO | None = None,
+    stdin: TextIO | None = None,
+) -> int:
     """Parse ``argv`` and run ``hermes certify``.
 
     Args:
         argv: Arguments after the ``certify`` token.
-        stream: Output stream.
+        stream: Output stream; the live-approval prompt is written here.
         err: Stream for ERROR lines; defaults to ``sys.stderr``.
+        stdin: Where ``--sign-off`` reads the typed phrase; defaults to
+            ``sys.stdin`` and must be an interactive terminal.
 
     Returns:
         Process exit code.
     """
     err = resolve_err(err)
+    stdin = stdin or sys.stdin
     parsed, code = _parse(argv, stream, err)
+    if parsed is not None and parsed.sign_off is not None and not stdin.isatty():
+        err.write(
+            f"ERROR: --sign-off needs an interactive terminal to type {LIVE_APPROVAL_PHRASE}; "
+            "stdin is not one, so nothing was approved.\n"
+        )
+        parsed, code = None, 2
     if parsed is None:
         return code
 
@@ -146,7 +168,13 @@ def main(argv: list[str], *, stream: TextIO, err: TextIO | None = None) -> int:
 
     now = now_utc()
     if parsed.sign_off is not None:
-        evidence = replace(evidence, sign_off=OperatorSignOff(parsed.sign_off, parsed.confirm, now))
+        stream.write(
+            f"Live approval for {parsed.strategy_id} by {parsed.sign_off}. "
+            f"Type {LIVE_APPROVAL_PHRASE} to confirm: "
+        )
+        stream.flush()
+        typed = stdin.readline().rstrip("\r\n")
+        evidence = replace(evidence, sign_off=OperatorSignOff(parsed.sign_off, typed, now))
 
     store_dir = parsed.store_dir or serve_module.certification_dir_for(serve_module.DEFAULT_DB_PATH)
     return run(
@@ -224,7 +252,6 @@ def _parse(argv: list[str], stream: TextIO, err: TextIO) -> tuple[argparse.Names
     parser.add_argument("--store-dir", type=Path)
     parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
     parser.add_argument("--sign-off", default=None)
-    parser.add_argument("--confirm", default="")
     parser.add_argument("--funnel-evidence", type=Path)
     parser.add_argument("-h", "--help", action="store_true")
     try:
