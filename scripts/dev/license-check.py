@@ -36,7 +36,11 @@ exception line + justification to `known_licenses.yaml` (parallel to
 ## Invocation
 
     uv tool install pip-licenses
-    uv tool run pip-licenses --format=json | python3 scripts/dev/license-check.py
+    uv tool run pip-licenses --python "$(uv run python -c 'import sys; print(sys.executable)')" \
+        --format=json | python3 scripts/dev/license-check.py
+
+`--python` matters: without it pip-licenses lists its own tool
+environment, which reads as zero packages and checks nothing (#757).
 
     # Self-test:
     HERMES_SELF_TEST=1 python3 scripts/dev/license-check.py
@@ -44,7 +48,7 @@ exception line + justification to `known_licenses.yaml` (parallel to
 ## Exit codes
 
 - 0: every package's license is allowlisted (or explicitly excepted)
-- 1: at least one violation
+- 1: at least one violation, or zero packages read
 - 2: usage error / malformed stdin
 """
 
@@ -68,6 +72,7 @@ ALLOWED_LICENSES = frozenset(
         "MIT License",
         "MIT license (MIT)",
         "Apache 2.0",
+        "Apache License 2.0",
         "Apache-2.0",
         "Apache Software License",
         "Apache Software License 2.0",
@@ -78,6 +83,7 @@ ALLOWED_LICENSES = frozenset(
         "BSD 3-Clause",
         "BSD-3-Clause",
         "BSD-3-Clause OR Apache-2.0",
+        "MIT-CMU",
         "ISC",
         "ISC License",
         "ISC License (ISCL)",
@@ -119,9 +125,29 @@ def load_exceptions() -> set[str]:
     return exceptions
 
 
+# Hermes itself is installed editable and is proprietary by design.
+OWN_PACKAGE = "hermes"
+
+
 def is_allowed(license_str: str) -> bool:
-    """Whether ``license_str`` matches the allowlist (case-insensitive)."""
-    return license_str.strip().lower() in ALLOWED_LICENSES
+    """Whether ``license_str`` is allowlisted (case-insensitive).
+
+    pip-licenses reports SPDX expressions (``MIT OR Apache-2.0``,
+    ``MIT AND PSF-2.0``) and joins several trove classifiers with ``; ``.
+    An ``OR`` or a ``; `` list passes when any part is allowed (the package
+    may be used under that one); an ``AND`` passes only when every part is.
+    """
+    text = license_str.strip()
+    if text.startswith("(") and text.endswith(")"):
+        text = text[1:-1].strip()
+    if text.lower() in ALLOWED_LICENSES:
+        return True
+    for separator in ("; ", " OR "):
+        if separator in text:
+            return any(is_allowed(part) for part in text.split(separator))
+    if " AND " in text:
+        return all(is_allowed(part) for part in text.split(" AND "))
+    return False
 
 
 def check_packages(pkgs: Iterable[dict]) -> list[str]:
@@ -131,7 +157,7 @@ def check_packages(pkgs: Iterable[dict]) -> list[str]:
     for pkg in pkgs:
         name = pkg.get("Name") or pkg.get("name") or "<unknown>"
         license_str = pkg.get("License") or pkg.get("license") or "UNKNOWN"
-        if name.lower() in exceptions:
+        if name.lower() in exceptions or name.lower() == OWN_PACKAGE:
             continue
         if is_allowed(license_str):
             continue
@@ -172,8 +198,32 @@ def self_test() -> int:
         print(f"SELF-TEST FAIL: UNKNOWN should fail, got: {v}", file=sys.stderr)
         fail = 1
 
+    # Fixture 5: SPDX expressions — OR needs one allowed part, AND needs all
+    v = check_packages(
+        [
+            {"Name": "structlog", "License": "MIT OR Apache-2.0"},
+            {"Name": "greenlet", "License": "MIT AND PSF-2.0"},
+            {"Name": "pytest-timeout", "License": "DFSG approved; MIT License"},
+            {"Name": "mixed", "License": "MIT AND GPL-3.0"},
+        ]
+    )
+    if v != ["mixed: MIT AND GPL-3.0"]:
+        print(f"SELF-TEST FAIL: SPDX expressions, got: {v}", file=sys.stderr)
+        fail = 1
+
+    # Fixture 6: an LGPL package with no exception entry → violation
+    v = check_packages([{"Name": "some-lgpl-lib", "License": "LGPL-3.0-only"}])
+    if v != ["some-lgpl-lib: LGPL-3.0-only"]:
+        print(f"SELF-TEST FAIL: LGPL without exception should fail, got: {v}", file=sys.stderr)
+        fail = 1
+
+    # Fixture 7: zero packages read → error, not a silent pass
+    if run([]) != 1:
+        print("SELF-TEST FAIL: an empty package list should fail", file=sys.stderr)
+        fail = 1
+
     if fail == 0:
-        print("SELF-TEST PASS: license-check.py handles 4 fixtures correctly.")
+        print("SELF-TEST PASS: license-check.py handles 7 fixtures correctly.")
     return fail
 
 
@@ -196,6 +246,18 @@ def main() -> int:
         print("ERROR: expected JSON array on stdin", file=sys.stderr)
         return 2
 
+    return run(packages)
+
+
+def run(packages: list[dict]) -> int:
+    """Check ``packages`` and print the result; return the exit code."""
+    if not packages:
+        print(
+            "::error::License check read 0 packages, so it checked nothing. "
+            "Point pip-licenses at the project interpreter with --python.",
+            file=sys.stderr,
+        )
+        return 1
     violations = check_packages(packages)
     if not violations:
         print(f"License check: {len(packages)} packages, 0 violations.")

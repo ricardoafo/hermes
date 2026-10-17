@@ -20,6 +20,7 @@ import pytest
 from hermes.adapters.ledger.migration_runner import (
     MIGRATIONS_DIR,
     apply_migrations,
+    unknown_applied_migrations,
 )
 
 
@@ -103,6 +104,26 @@ class TestApplyMigrationsFailureRollback:
             assert recorded == 0
         finally:
             conn.close()
+
+
+class TestUnknownAppliedMigrations:
+    """A migration recorded as applied but not shipped marks a ledger a newer release migrated."""
+
+    def test_a_ledger_this_code_migrated_has_none(self) -> None:
+        """Every applied migration is one this code ships."""
+        conn = sqlite3.connect(":memory:")
+        apply_migrations(conn)
+        assert unknown_applied_migrations(conn) == ()
+
+    def test_a_migration_from_a_newer_release_is_named(self) -> None:
+        """The applied filename with no shipped file is returned, in order."""
+        conn = sqlite3.connect(":memory:")
+        apply_migrations(conn)
+        conn.executemany(
+            "INSERT INTO schema_migrations (filename) VALUES (?)",
+            [("9999_b.sql",), ("9998_a.sql",)],
+        )
+        assert unknown_applied_migrations(conn) == ("9998_a.sql", "9999_b.sql")
 
 
 class TestMigrationsDirLocation:

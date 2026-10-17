@@ -14,6 +14,7 @@ Tests cover:
 from __future__ import annotations
 
 import hashlib
+import itertools
 from pathlib import Path
 
 import pytest
@@ -281,3 +282,58 @@ class TestLabNotebookAppendOnlyInvariant:
             "Existing notebook content must not be modified by append. "
             "Original content must appear at the start of the file."
         )
+
+
+# ---------------------------------------------------------------------------
+# verify_file(): hashes checkable from the file text (issue #786)
+# ---------------------------------------------------------------------------
+
+_REPO_NOTEBOOK = Path(__file__).resolve().parents[4] / "docs/experiments/swing-mvp1/lab-notebook.md"
+
+
+class TestVerifyFile:
+    """Every hashed entry verifies against the notebook's own text."""
+
+    def test_an_appended_entry_verifies_as_written(self, tmp_path: Path) -> None:
+        """A new entry with every section hashes exactly as it sits in the file."""
+        nb = _make_notebook(tmp_path, content="# Lab Notebook\n")
+        entry = _make_entry(
+            observed_metrics=("m = 1",),
+            decision=("d",),
+            rationale=("r",),
+            files_touched=("f (added)",),
+        )
+        nb.append(entry)
+        assert nb.verify_file() == {entry.header(): True}
+
+    def test_an_appended_entry_has_a_blank_line_between_each_label_and_its_list(
+        self, tmp_path: Path
+    ) -> None:
+        """Per markdownlint MD032, no bold label line is directly followed by a list item."""
+        nb = _make_notebook(tmp_path)
+        nb.append(_make_entry(observed_metrics=("m = 1",), decision=("d",), files_touched=("f",)))
+        lines = (tmp_path / "lab-notebook.md").read_text(encoding="utf-8").splitlines()
+        assert [
+            (label, following)
+            for label, following in itertools.pairwise(lines)
+            if label.startswith("**") and following.startswith("- ")
+        ] == []
+
+    def test_an_edited_entry_fails(self, tmp_path: Path) -> None:
+        """Changing one word of a hashed entry makes it fail verification."""
+        nb = _make_notebook(tmp_path)
+        entry = _make_entry(decision=("ship it",))
+        nb.append(entry)
+        path = tmp_path / "lab-notebook.md"
+        path.write_text(
+            path.read_text(encoding="utf-8").replace("ship it", "hold it"), encoding="utf-8"
+        )
+        assert nb.verify_file() == {entry.header(): False}
+
+    def test_the_repo_notebook_verifies_entry_by_entry(self) -> None:
+        """The real notebook, including the 2026-10-03 entry with hand-added blank lines."""
+        results = LabNotebook(notebook_path=_REPO_NOTEBOOK).verify_file()
+        assert (
+            any(header.startswith("### 2026-10-03T13:18:31Z") for header in results),
+            [header for header, ok in results.items() if not ok],
+        ) == (True, [])

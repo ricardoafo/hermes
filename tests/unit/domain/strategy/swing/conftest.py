@@ -6,6 +6,7 @@ minimal, precise bar sequences without boilerplate.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -77,10 +78,10 @@ def make_bar(
 
 
 def make_bars(
-    closes: list[Decimal | float | int],
+    closes: Sequence[Decimal | float | int],
     *,
-    highs: list[Decimal | float | int] | None = None,
-    lows: list[Decimal | float | int] | None = None,
+    highs: Sequence[Decimal | float | int] | None = None,
+    lows: Sequence[Decimal | float | int] | None = None,
     interval: KlineInterval = _H4,
     interval_hours: int = 4,
     pair: Pair = _BTC_USDT,

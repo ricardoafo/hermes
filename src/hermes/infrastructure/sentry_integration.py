@@ -155,10 +155,9 @@ def capture(error: Exception, *, extra: dict[str, Any] | None = None) -> None:
     """
     try:
         if extra:
-            # push_scope() gives us a per-capture context that does not
-            # leak into the next capture. sentry_sdk's context manager
-            # cleans up automatically.
-            with sentry_sdk.push_scope() as scope:
+            # new_scope() forks the current scope for this one capture, so
+            # the context does not leak into the next event.
+            with sentry_sdk.new_scope() as scope:
                 scope.set_context(_STRUCTURED_CONTEXT_KEY, dict(extra))
                 sentry_sdk.capture_exception(error)
         else:

@@ -16,18 +16,27 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
+from typing import TYPE_CHECKING, Self
+
+if TYPE_CHECKING:
+    from hermes.application.supervisor.briefing import Brief
+    from hermes.application.supervisor.gate import GateVerdict
 
 __all__ = [
     "QUIET_ACTIVITY_KINDS",
+    "RULE_COUNT",
     "ActivityDay",
     "ActivityItem",
     "ActivityKind",
+    "BriefSection",
+    "ConsoleBrief",
     "Heartbeat",
     "HeartbeatState",
     "PortfolioRange",
     "PortfolioSummary",
     "PositionDetail",
     "PositionRow",
+    "RuleCheck",
     "ShadowTest",
     "ShadowTestStatus",
     "Tax",
@@ -41,6 +50,9 @@ __all__ = [
 ]
 
 _ZERO = Decimal(0)
+
+RULE_COUNT = 3
+"""The frozen entry rules: breakout, momentum and regime (pre-registration §5.1)."""
 
 
 class HeartbeatState(StrEnum):
@@ -379,6 +391,41 @@ class WatchedPair:
     next_check_at: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class RuleCheck:
+    """Which frozen entry rules held for one coin on one bar check (#714).
+
+    Yes or no only, never a price, an indicator value or how close a rule
+    came to holding (ADR-012 D-06): the Signals screen shows rules, not
+    distances.
+
+    Attributes:
+        at: The checked candle's boundary (its close), UTC-aware.
+        coin: Base asset (``"BTC"``).
+        interval: The checked timeframe (``"4h"``).
+        breakout: The Donchian breakout held (4h, pre-registration §5.1).
+        momentum: The ADX momentum gate held (4h, §5.1).
+        regime: The EMA trend filter held (1D, §5.1).
+    """
+
+    at: datetime
+    coin: str
+    interval: str
+    breakout: bool
+    momentum: bool
+    regime: bool
+
+    @property
+    def met(self) -> int:
+        """Return how many of the three entry rules held."""
+        return self.breakout + self.momentum + self.regime
+
+    @property
+    def signal(self) -> bool:
+        """Return whether all three held, which is an entry signal (§5.1)."""
+        return self.met == RULE_COUNT
+
+
 class ActivityKind(StrEnum):
     """Kinds of activity rows. BAR and SIGNAL appear only on request."""
 
@@ -466,3 +513,57 @@ class ShadowTest:
     day: int | None
     length_days: int = 90
     note: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BriefSection:
+    """One item of a supervisor desk brief (#720).
+
+    Attributes:
+        heading: Short label, e.g. ``What the engine did``.
+        text: The item in plain words.
+        sources: The tools or journal entries it cites, e.g. ``("engine",)``.
+    """
+
+    heading: str
+    text: str
+    sources: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ConsoleBrief:
+    """A brief the supervisor desk published, as the Briefs screen shows it (#720).
+
+    The console never writes a brief of its own: this is what
+    :func:`~hermes.application.supervisor.briefing.publishable` returned, the
+    full brief when it passed the output gate, else the digest. The desk reads
+    only the P&L-blind supervisor tools and the gate refuses outcome words and
+    any number the tools did not return, so no price, value, equity or P&L can
+    be in it (ADR-012 D-06, D-08).
+
+    Attributes:
+        kind: ``daily`` or ``weekly``.
+        as_of: The instant the brief describes.
+        sections: The brief's items, in the desk's order.
+        digest: The full brief failed the gate, so this is the digest.
+    """
+
+    kind: str
+    as_of: datetime
+    sections: tuple[BriefSection, ...]
+    digest: bool = False
+
+    @classmethod
+    def published(cls, brief: Brief, verdict: GateVerdict, *, as_of: datetime) -> Self:
+        """Return the view of a brief the desk published, unchanged.
+
+        Args:
+            brief: The brief to show, full or digest.
+            verdict: The full brief's gate verdict; a failed one marks a digest.
+            as_of: The instant the brief describes, timezone-aware.
+
+        Returns:
+            The view.
+        """
+        sections = tuple(BriefSection(i.heading, i.text, i.sources) for i in brief.items)
+        return cls(brief.kind.value, as_of, sections, digest=not verdict.passed)

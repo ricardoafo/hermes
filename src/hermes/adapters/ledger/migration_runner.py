@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from hermes.adapters.ledger.connection import open_ledger
 from hermes.domain.errors import LedgerError
 
 __all__ = [
@@ -43,6 +44,7 @@ __all__ = [
     "migrate_with_snapshot",
     "pending_migrations",
     "restore_snapshot",
+    "unknown_applied_migrations",
 ]
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
@@ -80,6 +82,28 @@ def pending_migrations(
     _ensure_bookkeeping(conn)
     applied = {row[0] for row in conn.execute("SELECT filename FROM schema_migrations")}
     return tuple(p for p in sorted(dir_.glob("*.sql")) if p.name not in applied)
+
+
+def unknown_applied_migrations(
+    conn: sqlite3.Connection, migrations_dir: Path | None = None
+) -> tuple[str, ...]:
+    """Return the applied migrations this code does not ship, in lexical order.
+
+    A non-empty result means a newer release migrated the ledger: this code
+    does not know that schema.
+
+    Args:
+        conn: An open SQLite connection.
+        migrations_dir: Directory to scan. Defaults to :data:`MIGRATIONS_DIR`.
+
+    Returns:
+        The filenames recorded in ``schema_migrations`` with no ``*.sql`` file.
+    """
+    dir_ = migrations_dir if migrations_dir is not None else MIGRATIONS_DIR
+    _ensure_bookkeeping(conn)
+    known = {p.name for p in dir_.glob("*.sql")}
+    applied = {row[0] for row in conn.execute("SELECT filename FROM schema_migrations")}
+    return tuple(sorted(applied - known))
 
 
 def _apply_one(conn: sqlite3.Connection, sql_file: Path) -> None:
@@ -205,7 +229,7 @@ def migrate_with_snapshot(
     """
     if not db_path.exists():
         raise LedgerError(msg=f"ledger {db_path} does not exist")
-    conn = sqlite3.connect(db_path)
+    conn = open_ledger(db_path)
     try:
         pending = pending_migrations(conn, migrations_dir)
         if not pending:
@@ -242,7 +266,7 @@ def restore_snapshot(snapshot_path: Path, db_path: Path) -> None:
     source = sqlite3.connect(f"{snapshot_path.resolve().as_uri()}?mode=ro", uri=True)
     try:
         _check_integrity(source, snapshot_path)
-        target = sqlite3.connect(db_path)
+        target = open_ledger(db_path)
         try:
             source.backup(target)
         finally:
@@ -314,7 +338,7 @@ def dry_run(db_path: Path, *, migrations_dir: Path | None = None) -> DryRunRepor
     with tempfile.TemporaryDirectory(prefix="hermes-dry-run-") as tmp:
         copy_path = Path(tmp) / db_path.name
         try:
-            source = sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True)
+            source = open_ledger(db_path, read_only=True)
             target = sqlite3.connect(copy_path)
             try:
                 source.backup(target)

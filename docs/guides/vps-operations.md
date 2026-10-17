@@ -565,6 +565,31 @@ does what `hermes_run` does and allows only the same console commands (plus
 the default for `--db` and `--config-dir`. `--demo SCENARIO` works before or
 after the command.
 
+## Start a counted shadow run (day 0)
+
+ADR-021 §2 and §3: a strategy's 90-day shadow clock starts at day 0, the
+first bar after every Ready rule holds. The Code Owner runs this; agents
+never do. With `hermes_run` defined as in "Check on hermes":
+
+```bash
+hermes_run shadow-start swing-donchian-4h --config-dir /opt/hermes/current/config --db /var/lib/hermes/hermes.sqlite3
+systemctl stop hermes.service
+hermes_run shadow-start swing-donchian-4h --config-dir /opt/hermes/current/config --db /var/lib/hermes/hermes.sqlite3 --confirm START
+systemctl start hermes.service
+```
+
+- The first call is a dry run: it prints each Ready rule as `pass`, `fail`
+  or `confirm by hand` and what it would do, and changes nothing. Rules 3,
+  4 and 6 (defects fixed, kill and drift checks in serve, parity) are yours
+  to confirm; `--confirm START` is that confirmation.
+- The confirmed call refuses while `hermes.service` runs. It copies the
+  ledger read-only to `/var/lib/hermes/archive/<run id>/`, checks the copy,
+  removes the ledger (serve creates a fresh one on start), and writes
+  `/var/lib/hermes/runs/<run id>.json` with the engine version, release and
+  the config, pre-registration and data manifest hashes.
+- It prints a lab notebook entry: commit it to
+  `docs/experiments/swing-mvp1/lab-notebook.md`.
+
 ## Supervisor tools (read-only, outcome-blind)
 
 `hermes supervisor` serves the supervisor's read tools (ADR-012 D-06, D-07).

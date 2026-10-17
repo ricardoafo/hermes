@@ -45,7 +45,7 @@ from hermes.application.backtest.replay import ExecutionModel as ReplayExecution
 from hermes.application.calibration.certification_gates import CertificationRecord
 from hermes.application.calibration.lifecycle import CertificationState
 from hermes.application.strategy_protocol.preregistration import PreRegistration
-from hermes.domain.errors import ExchangeError, LedgerError
+from hermes.domain.errors import ExchangeError, InfraError, LedgerError
 from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
 from hermes.domain.events.bar_processed import BarProcessed
 from hermes.domain.events.event_bus import EventBus
@@ -72,6 +72,7 @@ from tests.support.serve_loop import (
     BASE,
     BTC,
     FakeFeed,
+    RecordingChannel,
     UnavailableBooks,
     build,
     d1_bar,
@@ -328,6 +329,30 @@ class TestPortfolioRebuiltOnStartup:
         with pytest.raises(serve_module.StartupError, match="01J9Z8T3M5BQR2FVKN4XWY6PH7"):
             serve_module.build_composition(shadow_config, db_path=db_path, env={}, feed=FakeFeed())
 
+    def test_a_file_that_is_not_a_ledger_raises_startup_error_naming_it(
+        self, shadow_config: HermesConfig, tmp_path: Path
+    ) -> None:
+        """A corrupt ledger stops startup with a message naming the file, not a raw sqlite error."""
+        db_path = tmp_path / "test.sqlite3"
+        db_path.write_bytes(b"not a database " * 300)
+        with pytest.raises(serve_module.StartupError, match="cannot be opened as a SQLite ledger"):
+            serve_module.build_composition(shadow_config, db_path=db_path, env={}, feed=FakeFeed())
+
+    def test_a_ledger_a_newer_release_migrated_raises_startup_error_naming_the_migration(
+        self, shadow_config: HermesConfig, tmp_path: Path
+    ) -> None:
+        """Old code refuses a schema it does not know instead of writing to it (issue #856)."""
+        db_path = tmp_path / "test.sqlite3"
+        conn = sqlite3.connect(db_path)
+        try:
+            SqliteLedger(conn)
+            conn.execute("INSERT INTO schema_migrations (filename) VALUES ('9999_newer.sql')")
+            conn.commit()
+        finally:
+            conn.close()
+        with pytest.raises(serve_module.StartupError, match=r"9999_newer\.sql"):
+            serve_module.build_composition(shadow_config, db_path=db_path, env={}, feed=FakeFeed())
+
     def test_a_ledger_read_failure_raises_startup_error(
         self, shadow_config: HermesConfig, tmp_path: Path
     ) -> None:
@@ -549,6 +574,51 @@ class TestBarLoop:
         with pytest.raises(serve_module.BarGapError, match="expected the bar opening at"):
             asyncio.run(loop.handle(h4_bar(2)))
         composition.sqlite_connection.close()
+
+    def _catching_up_with_telegram(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, telegram: RecordingChannel
+    ) -> tuple[serve_module.Composition, serve_module._BarLoop, list[Exception]]:
+        """Return a loop in its boot catch-up with ``telegram`` wired and Sentry recorded."""
+        sentry: list[Exception] = []
+        monkeypatch.setattr(serve_module.sentry_integration, "capture", sentry.append)
+        composition = dataclasses.replace(
+            build(tmp_path / "test.sqlite3", FakeFeed(), BASE),
+            telegram=telegram,  # type: ignore[arg-type]
+        )
+        loop = serve_module._BarLoop(composition, catching_up=True)
+        return composition, loop, sentry
+
+    def test_a_gap_in_the_boot_catch_up_is_handled_past_and_alerted_once(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A bar still missing after a restart cannot crash-loop serve; Telegram and Sentry hear."""
+        telegram = RecordingChannel()
+        composition, loop, sentry = self._catching_up_with_telegram(tmp_path, monkeypatch, telegram)
+        asyncio.run(loop.handle(h4_bar(0)))
+        asyncio.run(loop.handle(h4_bar(2)))
+        composition.sqlite_connection.close()
+
+        assert (
+            len(events(tmp_path / "test.sqlite3", "BarProcessed")),
+            [(type(e), getattr(e, "source", None)) for e in telegram.seen],
+            [type(e) for e in sentry],
+        ) == (2, [(AnomalyDetected, "serve.bar_gap")], [serve_module.BarGapError])
+
+    def test_a_failed_gap_alert_does_not_stop_the_boot_catch_up(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Telegram being down is logged; the bar after the gap is still handled."""
+        telegram = RecordingChannel(raises=InfraError("telegram down"))
+        composition, loop, _ = self._catching_up_with_telegram(tmp_path, monkeypatch, telegram)
+        asyncio.run(loop.handle(h4_bar(0)))
+        with capture_logs() as logs:
+            asyncio.run(loop.handle(h4_bar(2)))
+        composition.sqlite_connection.close()
+
+        assert (
+            len(events(tmp_path / "test.sqlite3", "BarProcessed")),
+            [line["event"] for line in logs if line["log_level"] == "error"],
+        ) == (2, ["serve.bar.gap_passed_over", "serve.bar.gap_alert_failed"])
 
     def test_each_stream_has_its_own_contiguity(self, tmp_path: Path) -> None:
         """A 1d bar does not count as the 4h stream's previous bar."""

@@ -6,7 +6,7 @@ ultra), only changes when a reviewer accepts the new picture. Each file is
 named ``<view>_<theme>_<cols>x<rows>.svg`` so a PR body can link it directly.
 
 Views: Home on the ``ok-two-positions`` and ``empty`` demo scenarios, the
-Signals placeholder (tab 2), the theme picker open over Home, Home with a
+Positions placeholder (tab 3), the theme picker open over Home, Home with a
 fake ticker (``home_live``, issue #713): live market prices, a position valued
 live and the window bar's feed pulse after a run of polls, one of them failed,
 and Home with the new-version notice up after the release changed (issue #652).
@@ -79,7 +79,7 @@ def _poll(failed: str | None) -> tuple[TickOutcome, ...]:
 _VIEWS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("home_ok", "ok-two-positions", ()),
     ("home_empty", "empty", ()),
-    ("tab2_placeholder", "ok-two-positions", ("2",)),
+    ("tab3_placeholder", "ok-two-positions", ("3",)),
     ("theme_picker", "ok-two-positions", ("t",)),
     ("home_live", "ok-two-positions", ()),
 )

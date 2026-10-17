@@ -196,6 +196,24 @@ jobs:
             exit 1
           fi
 
+  freshness:
+    name: Tool freshness report
+    if: >-
+      github.event.schedule == '45 11 * * 0' ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      # Pins Dependabot cannot update; the report lands in the run summary
+      # and as one warning per stale pin. Read-only (#906).
+      - name: Report pins behind their latest release
+        run: python3 scripts/dev/freshness-check.py
+
   branch-prune:
     name: Prune stale remote branches
     if: >-
