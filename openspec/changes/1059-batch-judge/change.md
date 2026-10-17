@@ -119,20 +119,23 @@ boundary would pick the wrong champion; both are pinned by tests.
 ```python
 @dataclass(frozen=True, slots=True)
 class SelectionRule:
-    fdr_q: float                      # 0 < q < 1
+    fdr_q: float  # 0 < q < 1
+
 
 @dataclass(frozen=True, slots=True)
 class CandidateResult:
     strategy_id: str
-    gate_passed: bool                 # GateResult.passed (#1058)
-    dsr: float | None                 # GateResult.dsr, judged with N
+    gate_passed: bool  # GateResult.passed (#1058)
+    dsr: float | None  # GateResult.dsr, judged with N
     daily_returns: tuple[float, ...]  # for the tie-break
+
 
 @dataclass(frozen=True, slots=True)
 class BatchJudgement:
-    eligible: tuple[str, ...]         # rule order; after Train, these go on
-    survivors: tuple[str, ...]        # rule order
-    champion: str | None              # property: first survivor
+    eligible: tuple[str, ...]  # rule order; after Train, these go on
+    survivors: tuple[str, ...]  # rule order
+    champion: str | None  # property: first survivor
+
 
 def batch_trial_summary(records: Iterable[TrialRecord]) -> TrialSummary: ...
 def judge_batch(candidates: Sequence[CandidateResult], rule: SelectionRule) -> BatchJudgement: ...
