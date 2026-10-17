@@ -15,6 +15,9 @@ for a longer run:
 - ``N@START`` runs seeds START to START+N-1, so a nightly job can pass a new
   start each night (``200@20261007``) and the failing seed is in the test id.
 
+Without it, PRs also run ``REGRESSION_SEEDS``: seeds the daily fresh-seed job
+found failing, kept so the bug they found cannot come back.
+
 A failure prints the seed, the bar and the rule, then what the path scripted.
 Rerun one seed by its test id, which ends in ``[hater-7]`` or ``[walk-7]``,
 with the same ``HERMES_SCENARIO_SEEDS`` when the seed is outside 0 to 9.
@@ -42,8 +45,8 @@ pytestmark = pytest.mark.integration
 SEEDS_ENV = "HERMES_SCENARIO_SEEDS"
 _DEFAULT_SEEDS = 10
 
-KNOWN_FAILURES: dict[tuple[str, int], str] = {}
-"""Seeds that hit a filed defect, with the reason; each becomes a strict xfail."""
+REGRESSION_SEEDS: dict[str, tuple[int, ...]] = {"walk": (), "hater": ()}
+"""Seeds the daily fresh-seed run found failing (issue #869); every PR runs them too."""
 
 
 def seeds(spec: str | None) -> range:
@@ -66,17 +69,22 @@ GENERATORS: dict[str, Callable[[int], paths.GeneratedPath]] = {
 }
 
 
-def _marks(kind: str, seed: int) -> list[pytest.MarkDecorator]:
-    reason = KNOWN_FAILURES.get((kind, seed))
-    return [pytest.mark.xfail(strict=True, raises=AssertionError, reason=reason)] if reason else []
+def seeds_for(kind: str, spec: str | None) -> list[int]:
+    """Return the seeds to run for one generator: the fixed PR set plus its regression seeds.
+
+    A run that names its seeds (``HERMES_SCENARIO_SEEDS``) runs only those.
+    """
+    if spec:
+        return list(seeds(spec))
+    return sorted({*seeds(None), *REGRESSION_SEEDS[kind]})
 
 
 @pytest.mark.parametrize(
     ("build", "seed"),
     [
-        pytest.param(build, seed, id=f"{kind}-{seed}", marks=_marks(kind, seed))
+        pytest.param(build, seed, id=f"{kind}-{seed}")
         for kind, build in GENERATORS.items()
-        for seed in seeds(os.environ.get(SEEDS_ENV))
+        for seed in seeds_for(kind, os.environ.get(SEEDS_ENV))
     ],
 )
 def test_every_rule_holds_after_every_bar_and_a_restart_changes_nothing(
@@ -137,4 +145,16 @@ def test_seeds_come_from_the_environment_variable() -> None:
         [20261007, 20261008, 20261009],
         [0, 1],
         range(10),
+    )
+
+
+def test_a_saved_regression_seed_runs_on_every_pr_but_not_in_a_named_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Issue #869: a seed the daily run found failing joins the PR set; a named run is unchanged."""
+    monkeypatch.setitem(REGRESSION_SEEDS, "hater", (20261007, 3))
+    assert (seeds_for("hater", None), seeds_for("walk", None), seeds_for("hater", "2@5")) == (
+        [*range(10), 20261007],
+        list(range(10)),
+        [5, 6],
     )

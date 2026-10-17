@@ -146,6 +146,12 @@ updates:
     open-pull-requests-limit: 10
     cooldown:
       default-days: 7
+    # The runner image tracks Ubuntu LTS only. Interim releases get nine
+    # months of support, so a bump to one leaves CI on an OS that loses
+    # security updates within the year (PR #916 proposed 25.10).
+    ignore:
+      - dependency-name: 'ubuntu'
+        versions: ['>= 26.10, < 28.04']
     labels:
       - 'type:ci'
       - 'area:tooling'
