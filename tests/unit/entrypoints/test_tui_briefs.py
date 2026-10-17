@@ -19,7 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from importlib import resources
 from typing import ClassVar
 
@@ -63,6 +63,10 @@ _THEMES: tuple[tuple[str, ThemeChoice], ...] = (
 )
 
 
+def _shifted(brief: ConsoleBrief, *, days: int) -> ConsoleBrief:
+    return ConsoleBrief(brief.kind, brief.as_of - timedelta(days=days), brief.sections)
+
+
 def _plain(briefs: Sequence[ConsoleBrief], width: int) -> list[str]:
     body = briefs_screen(briefs, _CTX, BASE, width=width)
     return [line.rstrip() for line in to_plain_text(body, width=width).splitlines()]
@@ -82,6 +86,31 @@ def test_the_list_sits_above_the_brief_below_100_columns() -> None:
 
     assert lines[:4] == ["▸ Today       daily", "", EARLIER_DAYS_NOTE, ""]
     assert lines[4] == "Daily brief · Sat 03 Oct 14:12"
+
+
+def test_the_list_holds_the_kept_days_newest_first_and_drops_the_earlier_days_note() -> None:
+    """Invariant: kept briefs are listed by day, newest selected, and the "none kept" note goes."""
+    yesterday = _shifted(_BRIEF, days=1)
+    last_week = _shifted(_BRIEF, days=7)
+
+    lines = _plain((_BRIEF, yesterday, last_week), 80)
+
+    assert lines[:3] == ["▸ Today       daily", "  Fri 02 Oct  daily", "  Sat 26 Sep  daily"]
+    assert EARLIER_DAYS_NOTE not in "\n".join(lines)
+
+
+def test_the_selected_brief_is_the_newest_not_a_kept_one() -> None:
+    """Invariant: opening the screen shows today's brief, whatever is kept behind it."""
+    older = ConsoleBrief(
+        "daily",
+        _BRIEF.as_of - timedelta(days=1),
+        (BriefSection("Health", "Kept text.", ("health",)),),
+    )
+
+    text = "\n".join(_plain((_BRIEF, older), 80))
+
+    assert "Daily brief · Sat 03 Oct 14:12" in text
+    assert "Kept text." not in text
 
 
 def test_each_item_shows_its_heading_text_and_citations() -> None:
