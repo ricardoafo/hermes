@@ -210,6 +210,7 @@ class ShadowExecutor:
         self._live_window = live_window
         self._not_before = not_before
         self._macro_closes: deque[tuple[datetime, Decimal]] = deque(maxlen=_MACRO_WINDOW)
+        self._killed_by = ""
         recorded = ledger.fill_quality_events(strategy_id)
         last = recorded[-1].slippage if recorded else None
         self._last_slippage = last if last is not None else _ZERO
@@ -218,6 +219,21 @@ class ShadowExecutor:
     def model(self) -> ExecutionModel:
         """The §6.2 execution book this executor falls back to."""
         return self._model
+
+    @property
+    def killed_by(self) -> str:
+        """Rule id of the recorded shadow kill that stops entries, or empty."""
+        return self._killed_by
+
+    def hold_kill(self, rule: str) -> None:
+        """Stop every later entry under the recorded shadow kill ``rule`` (#796).
+
+        Exits keep filling: they skip the kill check, as for any kill.
+
+        Args:
+            rule: The ``KillDecision.rule`` of the kill serve recorded.
+        """
+        self._killed_by = rule
 
     def observe(self, bar: Bar) -> None:
         """Remember the closes of the BTC/USDT 1d bars, for RO-07.
@@ -338,12 +354,15 @@ class ShadowExecutor:
         return math.log(latest / previous)
 
     def _experiment_state(self) -> ExperimentState:
-        """Build the kill inputs (D-3): drawdown from the tracker, the rest not yet supplied."""
+        """Build the kill inputs (D-3): drawdown from the tracker, any held shadow kill (#796)."""
         snapshot = self._kernel.tracker.snapshot
         peak = snapshot.peak_equity
         drawdown = _ZERO if peak <= 0 else max(_ZERO, (peak - snapshot.equity) / peak)
         return ExperimentState(
-            max_drawdown=float(drawdown), days_since_equity_high=0.0, sa9_halt=False
+            max_drawdown=float(drawdown),
+            days_since_equity_high=0.0,
+            sa9_halt=False,
+            killed_by=self._killed_by,
         )
 
     def _quality(

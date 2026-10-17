@@ -38,7 +38,7 @@ import dataclasses
 import json
 import sqlite3
 from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -51,7 +51,7 @@ from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.domain.errors import NetworkError
 from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
 from hermes.domain.events.event_bus import EventBus
-from hermes.domain.events.risk_halt_recorded import RiskHaltRecorded
+from hermes.domain.events.risk_halt_recorded import HaltKind, RiskHaltRecorded
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
@@ -686,4 +686,71 @@ def test_a_failing_channel_does_not_stop_the_halt_record(tmp_path: Path) -> None
     assert len(_payloads(db, "RiskHaltRecorded")) == 1
     assert [e["event"] for e in logs if e["event"] == "serve.halt.alert_failed"] == [
         "serve.halt.alert_failed"
+    ]
+
+
+def _seed_three_ro04_halts(db: Path) -> None:
+    """Record three RO-04 halts in the hours before the first live bar's UTC day (#796)."""
+    midnight = datetime.combine(h4_bar(11).close_time.date(), time(), tzinfo=UTC)
+    connection = sqlite3.connect(db)
+    ledger = SqliteLedger(connection)
+    for hours in (1, 2, 3):
+        ledger.append_event(
+            RiskHaltRecorded(
+                occurred_at=midnight - timedelta(hours=hours),
+                correlation_id=f"01JABCDEFGHJKMNPQRSTVWXY{hours:02d}",
+                strategy_id=StrategyId("swing-donchian-4h"),
+                pair=BTC,
+                kind=HaltKind.HALT,
+                rule="RO-04",
+                reason="stale_orderbook",
+                pre_registration_ref="§10",
+            )
+        )
+    connection.close()
+
+
+def _breakout_12() -> Bar:
+    """Return bar 12 as a fresh breakout at 3000, a new entry when the pair is flat."""
+    return dataclasses.replace(
+        h4_bar(12),
+        open=Decimal("3000"),
+        high=Decimal("3002"),
+        low=Decimal("2998"),
+        close=Decimal("3000"),
+    )
+
+
+# SEV-1: S6 a shadow kill that serve never evaluates lets a dead strategy keep entering (#796)
+def test_a_daily_sa9_repeat_kill_is_recorded_alerted_and_stops_every_entry(tmp_path: Path) -> None:
+    """Three RO-04 halts in 30 days kill at the first bar of the next day: one row, no BUY."""
+    db = tmp_path / "ledger.sqlite3"
+    _seed_three_ro04_halts(db)
+
+    telegram, _ = _refused_entry_run(db, [_breakout_12()])
+
+    wide = [r for r in _payloads(db, "RiskHaltRecorded") if r["pair"] is None]
+    assert [(r["kind"], r["rule"], r["reason"], r["pre_registration_ref"]) for r in wide] == [
+        ("kill", "sa9_repeat", "sa9_rule_fired_repeatedly", "§10")
+    ]
+    assert _trade_rows(db) == []
+    assert [(h.kind, h.rule, h.pair) for h in _halts(telegram)] == [
+        (HaltKind.KILL, "sa9_repeat", None),
+        (HaltKind.KILL, "sa9_repeat", BTC),
+        (HaltKind.KILL, "sa9_repeat", BTC),
+    ]
+
+
+def test_a_recorded_shadow_kill_still_holds_after_a_restart(tmp_path: Path) -> None:
+    """Boot 2 over the same ledger refuses the breakout entry with no new kill row."""
+    db = tmp_path / "ledger.sqlite3"
+    _seed_three_ro04_halts(db)
+    _refused_entry_run(db, [])
+
+    telegram, _ = _refused_entry_run(db, [_breakout_12()])
+
+    wide = [r for r in _payloads(db, "RiskHaltRecorded") if r["pair"] is None]
+    assert (len(wide), _trade_rows(db)) == (1, [])
+    assert [(h.kind, h.rule, h.pair) for h in _halts(telegram)] == [
+        (HaltKind.KILL, "sa9_repeat", BTC)
     ]
