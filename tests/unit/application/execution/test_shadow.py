@@ -36,7 +36,7 @@ from hermes.adapters.clock import SimulatedClock
 from hermes.adapters.fills.orderbook_walk import OrderbookWalkFillModel
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.application.backtest.replay import replay
-from hermes.application.execution.kernel import Declined, Executed, FillKernel
+from hermes.application.execution.kernel import Declined, Executed, FillKernel, Halted
 from hermes.application.execution.prereg_book import ExecutionModel, ExitPricing
 from hermes.application.execution.shadow import (
     SLIPPAGE_WINDOW,
@@ -683,3 +683,23 @@ def test_clock_behind_the_bar_close_records_no_latency_and_still_fills(
 
     (quality,) = rig.ledger.fill_quality_events(STRATEGY)
     assert (quality.delta_ms, quality.arrival_price) == (None, Decimal("85000"))
+
+
+# SEV-1: S6 a held shadow kill that lets entries through keeps a dead strategy trading (#796)
+def test_a_held_shadow_kill_refuses_entries_and_still_fills_the_exit(
+    connection: sqlite3.Connection,
+) -> None:
+    """After ``hold_kill`` the next entry is Halted under that rule; the open position exits."""
+    rig = _rig(connection, book=_live_book("84999", "85001"))
+    entry_bar = _bar("85000")
+    _executed(rig.run(_entry(entry_bar), entry_bar, cid="a"))
+    rig.executor.hold_kill("sa9_repeat")
+    exit_bar = _bar("84000", open_time=_OPEN + timedelta(hours=4))
+    rig.clock.set(exit_bar.close_time + timedelta(seconds=5))
+
+    exited = rig.run(_exit(exit_bar, "84100"), exit_bar, cid="b").outcome
+    refused = rig.run(_entry(exit_bar), exit_bar, cid="c").outcome
+
+    assert isinstance(exited, Executed)
+    assert isinstance(refused, Halted)
+    assert (rig.executor.killed_by, refused.breaker.decision.rule) == ("sa9_repeat", "sa9_repeat")

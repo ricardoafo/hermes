@@ -7,7 +7,10 @@ Invariants under test:
 - ``has_risk_halt`` finds a row only for the same strategy, pair, kind, rule
   and signal time, so a re-evaluated bar is recorded once;
 - ``halts_since`` returns halts and kills at or after its bound, newest
-  first, and no other event type.
+  first, and no other event type;
+- a strategy-wide row (no pair, #796) reads back without a pair and is told
+  apart from a pair's row; ``risk_halts`` lists one strategy's rows, oldest
+  first.
 """
 
 import sqlite3
@@ -32,7 +35,7 @@ _ETH = Pair(base=Currency.ETH, quote=Currency.USDT)
 def _halt(
     hours: int = 0,
     *,
-    pair: Pair = BTC,
+    pair: Pair | None = BTC,
     kind: HaltKind = HaltKind.HALT,
     rule: str = "RO-04",
     strategy: str = "swing-donchian-4h",
@@ -114,3 +117,26 @@ def test_the_payload_parser_refuses_a_row_with_figures() -> None:
     }
     with pytest.raises(ValueError, match="reason"):
         risk_halt_from_payload(payload)
+
+
+def test_a_strategy_wide_row_is_found_and_told_apart_from_a_pair_row(
+    ledger: SqliteLedger,
+) -> None:
+    """A row without a pair matches only a record without a pair (#796)."""
+    wide = _halt(kind=HaltKind.DRIFT, rule="sim_live_drift", pair=None)
+    ledger.append_event(wide)
+    assert (
+        ledger.has_risk_halt(wide),
+        ledger.has_risk_halt(_halt(kind=HaltKind.DRIFT, rule="sim_live_drift")),
+    ) == (True, False)
+
+
+def test_risk_halts_lists_one_strategy_oldest_first_with_pairless_rows(
+    ledger: SqliteLedger,
+) -> None:
+    """Another strategy's rows are left out; a pairless kill reads back equal (#796)."""
+    kill = _halt(0, kind=HaltKind.KILL, rule="sa9_repeat", pair=None)
+    halt = _halt(8)
+    for record in (kill, _halt(4, strategy="other-strategy"), halt):
+        ledger.append_event(record)
+    assert ledger.risk_halts(StrategyId("swing-donchian-4h")) == (halt, kill)
