@@ -11,8 +11,9 @@ Usage: ``hermes status [--config-dir DIR] [--db PATH] [--json | --summary]``
 ``--journal FILE`` (``-`` for stdin) it adds the window's journal error and
 warning counts, and ``--restarts N`` the systemd restart count.
 
-The header block also shows the running release (the ``/opt/hermes/current``
-target name) and when it went live; ``release: unknown`` without the link.
+The header block also shows the running version (``v1.0.0-shadow.1``, ADR-022),
+the running release (the ``/opt/hermes/current`` target name) and when it
+went live; ``release: unknown`` without the link.
 
 Exit codes: 0 all good, 1 late or down, 2 usage, 3 config error or no ledger.
 
@@ -33,6 +34,7 @@ from typing import Any, Final, TextIO
 
 from rich.console import Console
 
+from hermes import __version__
 from hermes.adapters.console import UnknownScenarioError
 from hermes.adapters.ledger.status_reader import SqliteStatusReader
 from hermes.application.console import Surface
@@ -53,6 +55,7 @@ from hermes.entrypoints.status_view import render_status, report_to_dict
 from hermes.entrypoints.version import DEFAULT_RELEASE_LINK, ReleaseInfo, read_release
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.loader import load_config
+from hermes.release_version import release_label
 
 __all__ = ["main", "systemd_unit_state"]
 
@@ -80,6 +83,7 @@ def main(
     bot_state: Callable[[], UnitState] | None = None,
     err: TextIO | None = None,
     release_link: Path = DEFAULT_RELEASE_LINK,
+    package_version: str = __version__,
 ) -> int:
     """Handle ``hermes status``.
 
@@ -98,6 +102,7 @@ def main(
         bot_state: Probe for ``hermes-bot.service``; defaults to systemd.
         err: Stream for ERROR lines; defaults to ``sys.stderr``.
         release_link: The ``current`` symlink the release is read from.
+        package_version: The running package version; injected by tests.
 
     Returns:
         Process exit code.
@@ -133,6 +138,7 @@ def main(
         stdin=stdin or sys.stdin,
         bot_state=bot_state,
         release=read_release(release_link),
+        version=release_label(package_version),
     )
 
 
@@ -146,6 +152,7 @@ def _ledger_status(
     stdin: TextIO,
     bot_state: Callable[[], UnitState] | None,
     release: ReleaseInfo,
+    version: str,
 ) -> int:
     """Build the report from config, the ledger and systemd, then print it."""
     try:
@@ -182,7 +189,7 @@ def _ledger_status(
         counts = _journal_counts(parsed.journal, stdin)
         stream.write(daily_line(report, counts, parsed.restarts) + "\n")
     else:
-        _emit(report, stream, as_json=parsed.json, bot=bot, release=release)
+        _emit(report, stream, as_json=parsed.json, bot=bot, release=release, version=version)
     return code
 
 
@@ -291,10 +298,13 @@ def _emit(
     as_json: bool,
     bot: UnitState = UnitState.UNKNOWN,
     release: ReleaseInfo | None = None,
+    version: str | None = None,
 ) -> None:
     """Write ``report`` as JSON or as the Rich human view."""
     if as_json:
-        payload: dict[str, Any] = report_to_dict(report, bot=bot, release=release)
+        payload: dict[str, Any] = report_to_dict(report, bot=bot, release=release, version=version)
         stream.write(json.dumps(payload, indent=2) + "\n")
         return
-    render_status(report, Console(file=stream, highlight=False), bot=bot, release=release)
+    render_status(
+        report, Console(file=stream, highlight=False), bot=bot, release=release, version=version
+    )

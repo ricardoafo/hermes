@@ -5,6 +5,9 @@ One trial per line. Each line carries ``prev_sha256`` (the previous line's
 record's canonical JSON concatenated with ``prev_sha256``. Reading verifies the
 whole chain, so an edited, removed or reordered line is detected instead of
 silently lowering the trial count. The file is only ever opened for append.
+The read-verify-append runs under an exclusive lock on ``<path>.lock``, so two
+runs appending at once cannot both link to the same last line and fork the
+chain (issue #855).
 
 Reference: openspec/changes/357-trial-log/change.md D-2.
 """
@@ -22,10 +25,14 @@ from typing import Any
 from hermes.domain.calibration.trial_record import DatasetRef, TrialRecord
 from hermes.domain.errors import TrialLogError
 from hermes.domain.market_data.dataset_manifest import DataSplit
+from hermes.infrastructure.file_lock import locked
 
 __all__ = ["GENESIS_SHA256", "JsonlTrialLog"]
 
 GENESIS_SHA256 = "0" * 64
+
+APPEND_LOCK_TIMEOUT_SECONDS = 10.0
+"""How long an append waits for another one; an append takes milliseconds."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,23 +45,33 @@ class JsonlTrialLog:
 
     path: Path
 
+    @property
+    def lock_path(self) -> Path:
+        """The lock file every append holds while it reads, verifies and writes."""
+        return self.path.with_name(self.path.name + ".lock")
+
     def append(self, record: TrialRecord) -> None:
-        """Verify the chain, then append ``record`` and fsync.
+        """Verify the chain, then append ``record`` and fsync, under the append lock.
 
         Raises:
-            TrialLogError: The existing chain is broken or the write fails.
+            TrialLogError: The existing chain is broken, another append held
+                the lock for :data:`APPEND_LOCK_TIMEOUT_SECONDS`, or the write
+                fails.
         """
+        try:
+            with locked(self.lock_path, timeout=APPEND_LOCK_TIMEOUT_SECONDS):
+                self._append_unlocked(record)
+        except OSError as exc:
+            raise TrialLogError(path=str(self.path), msg=f"append failed: {exc}") from exc
+
+    def _append_unlocked(self, record: TrialRecord) -> None:
         prev = self._verified_lines()[-1]["sha256"] if self.path.exists() else GENESIS_SHA256
         body = _serialise(record)
         line = {**body, "prev_sha256": prev, "sha256": _chain_hash(body, prev)}
-        try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            with self.path.open("a", encoding="utf-8", newline="\n") as fh:
-                fh.write(json.dumps(line, sort_keys=True) + "\n")
-                fh.flush()
-                os.fsync(fh.fileno())
-        except OSError as exc:
-            raise TrialLogError(path=str(self.path), msg=f"append failed: {exc}") from exc
+        with self.path.open("a", encoding="utf-8", newline="\n") as fh:
+            fh.write(json.dumps(line, sort_keys=True) + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
 
     def records(self) -> tuple[TrialRecord, ...]:
         """Return every record after verifying the chain; empty when the file is absent.

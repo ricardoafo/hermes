@@ -32,6 +32,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Final, Self
 
+from hermes.adapters.ledger.connection import open_ledger
 from hermes.application.console.activity import candle_boundary
 from hermes.application.console.views import ActivityItem, ActivityKind
 from hermes.domain.errors import LedgerError
@@ -72,7 +73,7 @@ class LedgerActivityReader:
         if not resolved.is_file():
             raise FileNotFoundError(str(path))
         try:
-            connection = sqlite3.connect(f"{resolved.as_uri()}?mode=ro", uri=True)
+            connection = open_ledger(resolved, read_only=True)
         except sqlite3.Error as exc:
             raise LedgerError(msg=f"cannot open {path} read-only: {exc}") from exc
         return cls(connection)

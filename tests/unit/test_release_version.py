@@ -3,6 +3,7 @@
 Protects:
 - Release names map one-to-one onto PEP 440 package versions, in SemVer order.
 - Only ``X.Y.Z`` and ``X.Y.Z-shadow.N`` are release names.
+- Screens name a package version by its release, and show any other version as is.
 - A release's changelog section is found exactly, without its neighbours.
 """
 
@@ -15,7 +16,12 @@ from hypothesis import given
 from hypothesis import strategies as st
 from packaging.version import Version
 
-from hermes.release_version import changelog_section, to_package_version, to_semver
+from hermes.release_version import (
+    changelog_section,
+    release_label,
+    to_package_version,
+    to_semver,
+)
 
 release_names = st.builds(
     lambda major, minor, patch, shadow: (
@@ -107,3 +113,15 @@ def test_changelog_section_is_none_for_an_uncut_version() -> None:
     sections = [changelog_section(_CHANGELOG, v) for v in ("0.0.0", "1.0.0-shadow.3")]
 
     assert sections == [None, None]
+
+
+@given(release_names)
+def test_release_label_names_the_release_with_a_v(release: str) -> None:
+    """A cut package version shows as v<release>, the tag CD gives it."""
+    assert release_label(to_package_version(release)) == f"v{release}"
+
+
+@pytest.mark.parametrize("other", ["1.0.0.dev3", "0.1.0+local", "unknown"])
+def test_release_label_shows_other_versions_as_they_are(other: str) -> None:
+    """A development or unknown version is shown unchanged rather than failing the screen."""
+    assert release_label(other) == other

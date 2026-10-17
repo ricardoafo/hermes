@@ -164,6 +164,23 @@ def test_rerun_after_restore_reapplies_cleanly(tmp_path: Path) -> None:
     assert _tables(db) == ["items", "schema_migrations"]
 
 
+def test_a_second_snapshot_in_the_same_second_gets_its_own_name(tmp_path: Path) -> None:
+    """Issue #865: a snapshot never overwrites an earlier one that shares its timestamp."""
+    mig = _migrations(tmp_path)
+    db = _ledger(tmp_path, mig)
+    _add_destructive(mig)
+    _, first = migrate_with_snapshot(db, tmp_path / "snaps", migrations_dir=mig, now=_NOW)
+    assert first is not None
+    restore_snapshot(first, db)
+
+    _, second = migrate_with_snapshot(db, tmp_path / "snaps", migrations_dir=mig, now=_NOW)
+
+    assert (second, first.exists()) == (
+        tmp_path / "snaps" / "ledger-pre-0002_items_drop_default-20261003T180000Z-2.sqlite3",
+        True,
+    )
+
+
 def test_failed_migration_keeps_the_snapshot_and_the_ledger_unchanged(tmp_path: Path) -> None:
     """A destructive migration that fails is rolled back; the snapshot is still there."""
     mig = _migrations(tmp_path)

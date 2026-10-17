@@ -84,7 +84,9 @@ def select_lots_fifo(
 
     Algorithm:
 
-    1. Filter to lots whose ``asset`` matches ``quantity_to_consume.asset``.
+    1. Filter to lots whose ``asset`` matches ``quantity_to_consume.asset``
+       and that were opened at or before ``at_time``: a sale can only draw
+       inventory that existed when it happened.
     2. Sort by ``opened_at`` ascending, then by ``lot_id.value`` ascending
        (see module docstring for tie-breaker rationale).
     3. Consume greedily from the head of the list until the requested amount
@@ -94,7 +96,8 @@ def select_lots_fifo(
 
     Args:
         open_lots: Iterable of currently-open :class:`Lot` instances. May
-            include lots for other assets — they are filtered internally.
+            include lots for other assets or lots opened after ``at_time``;
+            both are filtered out internally.
         quantity_to_consume: Non-zero quantity the SELL wants to draw.
         sell_price_per_unit: EUR fill price per one unit of the asset.
         at_time: UTC-aware moment of the SELL — attached to every emitted
@@ -103,13 +106,17 @@ def select_lots_fifo(
     Returns:
         ``Success(tuple[LotConsumption, ...])`` in FIFO order (oldest lot
         first) when inventory is sufficient. ``Failure(InsufficientInventory)``
-        when combined ``remaining_qty`` across matching open lots is less
+        when combined ``remaining_qty`` across matching lots open at
+        ``at_time`` is less
         than ``quantity_to_consume.amount``. ``Failure(InvalidLot)`` when
         arguments violate the LotConsumption invariants (e.g. non-EUR sell
         price, or zero consumption requested).
     """
-    # 1. Filter to matching asset only.
-    matching = [lot for lot in open_lots if lot.asset == quantity_to_consume.asset]
+    matching = [
+        lot
+        for lot in open_lots
+        if lot.asset == quantity_to_consume.asset and lot.opened_at <= at_time
+    ]
 
     # 2. Sort — primary opened_at asc, secondary lot_id.value asc (see docstring).
     matching.sort(key=lambda lot: (lot.opened_at, lot.lot_id.value))

@@ -95,33 +95,23 @@ def test_every_rule_holds_after_every_bar_and_a_restart_changes_nothing(
     oracle.finish(restarted_db, exits)
     straight_db = tmp_path / "straight.sqlite3"
     run_path(path, straight_db, restarts=False)
-    # Issue #863, which every restart with a position open meets, has its own
-    # strict xfail below; it is left out here so the other rules keep guarding.
-    broken = [v for v in oracle.violations if f" {MARKS_AFTER_BOOT}: " not in v]
-    assert (broken, differences(fingerprint(restarted_db), fingerprint(straight_db))) == (
+    assert (
+        oracle.violations,
+        differences(fingerprint(restarted_db), fingerprint(straight_db)),
+    ) == (
         [],
         [],
     ), "\n".join(path.notes)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason=(
-        "issue #863: after a boot the portfolio values each open position at its fill price "
-        "until that pair's next bar; warm-up never marks the tracker"
-    ),
-)
 def test_after_a_restart_open_positions_keep_their_last_marks(tmp_path: Path) -> None:
     """Equity right after a boot values open positions at the last closes, not at cost.
 
     Random-walk seed 3 holds SOL across its restart. The tracker is rebuilt
-    from the trades, so the position is marked at its fill price until a SOL
-    bar arrives: the BTC and ETH bars handled first after the boot store an
-    equity of 4999.75 where the last closes give 5082.70. The §5.5 exposure
-    check and the RO-08 drawdown read the same values. Cause: the warm-up in
-    ``src/hermes/entrypoints/serve.py`` (``warm_up_and_catch_up``) seeds the
-    strategies and the executor but never calls ``tracker.mark``.
+    from the trades at fill prices, so unless the warm-up marks it, the BTC and
+    ETH bars handled first after the boot store an equity of 4999.75 where the
+    last closes give 5082.70, and the §5.5 exposure check and the RO-08
+    drawdown read the same stale values (issue #863).
     """
     path = paths.random_walk(3)
     oracle = Oracle(path)

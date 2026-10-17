@@ -495,3 +495,37 @@ class TestCreateFactoryAndClose:
         adapter = FrankfurterAdapter.create()
         adapter.close()
         adapter.close()  # must not raise
+
+
+class TestAnswerMatchesTheQuestion:
+    """Issue #859: an answer for another base or a later day is refused, not priced with."""
+
+    def test_a_response_for_another_base_raises(self) -> None:
+        """A rate quoted from EUR when USDT was asked would be read in the wrong direction."""
+        adapter = _make_adapter()
+        try:
+            with respx.mock() as router:
+                router.get(f"{_BASE_URL}/2026-08-21").mock(
+                    return_value=httpx.Response(
+                        200, json={"base": "EUR", "date": "2026-08-21", "rates": {"EUR": 1.0}}
+                    )
+                )
+                with pytest.raises(FxRateError, match="base is 'EUR', requested 'USDT'"):
+                    adapter.get_for_date(Currency.USDT, Currency.EUR, date(2026, 8, 21))
+        finally:
+            adapter.close()
+
+    def test_a_rate_dated_after_the_requested_day_raises(self) -> None:
+        """Frankfurter only falls back to earlier days, so a later date is a wrong answer."""
+        adapter = _make_adapter()
+        try:
+            with respx.mock() as router:
+                router.get(f"{_BASE_URL}/2026-08-21").mock(
+                    return_value=httpx.Response(
+                        200, json={"base": "USDT", "date": "2026-08-24", "rates": {"EUR": 0.92}}
+                    )
+                )
+                with pytest.raises(FxRateError, match="dated 2026-08-24, after the requested day"):
+                    adapter.get_for_date(Currency.USDT, Currency.EUR, date(2026, 8, 21))
+        finally:
+            adapter.close()
