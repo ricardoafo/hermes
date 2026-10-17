@@ -105,7 +105,9 @@ def latest_anomaly(connection: sqlite3.Connection, source: str) -> AnomalyDetect
         source: The ``source`` field to match exactly.
 
     Returns:
-        The rehydrated anomaly (ties in append order, last wins).
+        The anomaly appended last. Append order, not ``occurred_at``, decides:
+        a clock-skew anomaly is stamped by the skewed clock itself, so a later
+        row can carry an earlier time.
 
     Raises:
         LedgerError: On a SQLite read failure or an unreadable payload.
@@ -115,7 +117,7 @@ def latest_anomaly(connection: sqlite3.Connection, source: str) -> AnomalyDetect
             "SELECT payload_json FROM events "
             "WHERE event_type = 'AnomalyDetected' "
             "  AND json_extract(payload_json, '$.source') = ? "
-            "ORDER BY occurred_at DESC, id DESC LIMIT 1",
+            "ORDER BY id DESC LIMIT 1",
             (source,),
         ).fetchone()
     except sqlite3.Error as exc:
