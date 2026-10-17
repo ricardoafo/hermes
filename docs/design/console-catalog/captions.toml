@@ -11,6 +11,13 @@
 # other way to open it). A caption for a view that is not in the build yet
 # (an open PR's) is allowed and shows nowhere until its snapshots land.
 
+[views."test_tui_boot/boot"]
+screen = "Cold start"
+state = "All start-up checks passed"
+means = "The console has just started: it read the ledger, the engine heartbeat, the journal, one live price and the AI briefs, and every check passed. Home opens on its own a moment later."
+check = "The Winged H and the release line sit above five rows, each with a cyan tick and what it found; the panel is centred on the dark background; the bottom line reads \"any key opens the console · Q quits\"."
+demo = "Run `hermes tui` with motion on; the screen shows before Home on every start."
+
 [views."test_tui_snapshots/home_ok"]
 screen = "Home"
 state = "Two open positions, everything OK"
@@ -151,3 +158,24 @@ means = "On a narrow console Enter pushes the detail as its own screen, and the 
 check = "The breadcrumb names every level from Home to the coin; Esc steps back one level."
 scenario = "ok-two-positions"
 keys = "3 enter"
+
+[views."test_tui_topbar_snapshots/topbar"]
+screen = "Home"
+state = "Top bar on a demo console"
+means = "The top bar of a console on demo data: the mainnet badge reads off, the version and release line, the next-bar countdown and its meter half full."
+check = "Mainnet reads off; the version line shortens before the heartbeat does; the meter fills with the time since the last bar check."
+scenario = "ok-two-positions"
+
+[views."test_tui_topbar_snapshots/topbar_on"]
+screen = "Home"
+state = "Top bar, mainnet on"
+means = "A live console whose config says allow_mainnet is on: the badge says so."
+check = "The mainnet badge reads on and is impossible to miss; the heartbeat stays whole."
+demo = "Not reachable from demo data (a demo scenario always reads mainnet off); check it on a live console."
+
+[views."test_tui_topbar_snapshots/topbar_unknown"]
+screen = "Home"
+state = "Top bar, mainnet state unknown"
+means = "A live console that could not read its config: the badge shows mainnet ? instead of guessing."
+check = "The badge reads mainnet ? and never off; the rest of the bar is unchanged."
+demo = "Not reachable from demo data; check it on a live console with an unreadable config."
