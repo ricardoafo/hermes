@@ -843,11 +843,16 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             proved_by=(_META + "test_more_warm_up_than_the_indicators_need_changes_no_decision",),
         ),
         FailureMode(
-            "Warm-up at the configured floor of 200 daily bars decides otherwise than 300",
-            gap=(
-                "issue #880: reproduced, the EMA(200) is seeded from the oldest buffered "
-                "closes; strict xfail "
-                "test_the_configured_floor_of_200_daily_bars_decides_what_300_decide"
+            "Warm-up with fewer than 300 daily bars decides otherwise than 300",
+            proved_by=(
+                _META + "test_the_configured_floor_of_300_daily_bars_decides_what_400_decide",
+                _U
+                + "infrastructure/config/test_market_data_config.py::"
+                + "TestMarketDataConfigWarmupFloors::"
+                + "test_market_data_rejects_warmup_below_the_floor",
+                _U
+                + "entrypoints/test_parity.py::"
+                + "test_offline_with_299_daily_bars_exits_three_naming_the_300_bar_floor",
             ),
         ),
     ),

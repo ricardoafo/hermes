@@ -42,8 +42,8 @@ from tests.integration.scenarios.markets import BTC, ETH, SOL, START
 from tests.support.fake_market.script import BARS_PER_DAY, H4, Market, MarketScript, Step
 
 PAIRS = (BTC, ETH, SOL)
-HISTORY_DAYS = 240
-"""Days of bars before boot: the 1d EMA(200) needs 200 closes."""
+HISTORY_DAYS = 300
+"""Days of bars before boot: the ``warmup_bars_1d`` floor of 300 closes (#880)."""
 
 LIVE_DAYS = 30
 """Days serve runs on the path."""

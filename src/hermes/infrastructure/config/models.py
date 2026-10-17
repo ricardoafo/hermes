@@ -236,7 +236,9 @@ class MarketDataConfig(BaseModel):
         warmup_bars_4h: Closed 4h bars returned by warm-up. The floor is the
             45 bars after which every 4h indicator value stops changing.
         warmup_bars_1d: Closed 1d bars returned by warm-up. The floor is the
-            200 bars the 1d EMA needs.
+            300 bars the strategy buffers, not the 200 the EMA(200) reads:
+            the EMA is seeded from the oldest buffered closes, so a shorter
+            warm-up seeds it differently and can flip the regime (#880).
         settle_delay_seconds: Wait after a candle boundary before the bar
             counts as closed.
         retry_interval_seconds: Re-poll period while a bar is overdue.
@@ -258,7 +260,7 @@ class MarketDataConfig(BaseModel):
         default_factory=lambda: [KlineInterval.H4, KlineInterval.D1], min_length=1
     )
     warmup_bars_4h: int = Field(default=300, ge=45, le=999)
-    warmup_bars_1d: int = Field(default=300, ge=200, le=999)
+    warmup_bars_1d: int = Field(default=300, ge=300, le=999)
     settle_delay_seconds: float = Field(default=5.0, gt=0, le=60)
     retry_interval_seconds: float = Field(default=5.0, gt=0, le=300)
     slow_retry_interval_seconds: float = Field(default=30.0, gt=0, le=3_600)
