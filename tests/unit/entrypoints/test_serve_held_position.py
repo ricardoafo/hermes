@@ -95,4 +95,4 @@ def test_trades_after_the_cutoff_or_of_other_pairs_do_not_count() -> None:
     assert (
         _holding_opened_at(trades, BTC_USDT, _LATER),
         _holding_opened_at(trades, BTC_USDT, after_the_buy),
-    ) == (None, datetime(2024, 11, 28, 7, 59, 59, 999000, tzinfo=UTC))
+    ) == (None, datetime(2024, 11, 28, 3, 59, 59, 999000, tzinfo=UTC))
