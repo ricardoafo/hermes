@@ -494,7 +494,8 @@ def system_sources(
     bar_timing = None
     if ledger:
         try:
-            bar_timing = SqliteStatusReader.open(db_path)
+            # The console reads the System screen in a worker thread (issue #1001).
+            bar_timing = SqliteStatusReader.open(db_path, any_thread=True)
         except FileNotFoundError, LedgerError:
             bar_timing = None
     return SystemSources(

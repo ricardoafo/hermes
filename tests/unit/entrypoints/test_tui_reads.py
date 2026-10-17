@@ -345,3 +345,29 @@ def test_system_sources_are_read_only_while_the_system_screen_shows() -> None:
     hidden = read_console(sources, ReadRequest(width=80))
     shown = read_console(sources, ReadRequest(width=80, system=True))
     assert (hidden.system, shown.system, services.reads) == (None, SystemReads(services=()), 1)
+
+
+def test_a_paint_that_fails_while_the_console_runs_is_not_swallowed() -> None:
+    """Only a quit drops a read quietly; a paint error while running reaches the worker."""
+
+    async def run() -> str:
+        app = HomeApp(
+            FixtureReadModel.load("ok-two-positions"),
+            clock=lambda: _FROZEN,
+            motion=False,
+            refresh_seconds=3600,
+        )
+        async with app.run_test(size=(80, 24)):
+
+            def broken(reads: object) -> None:
+                del reads
+                raise RuntimeError("paint failed")
+
+            app._reads_arrived = broken  # type: ignore[method-assign]
+            try:
+                await asyncio.to_thread(app._read_off_thread, ReadRequest(width=80))
+            except RuntimeError as exc:
+                return str(exc)
+        return "swallowed"
+
+    assert asyncio.run(run()) == "paint failed"

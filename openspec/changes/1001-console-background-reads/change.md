@@ -80,6 +80,17 @@ a read, which the next paint replaces.
   the worker path and that `run_home` uses it.
 - **Cost of reversal**: LOW.
 
+### D-4: Long-lived ledger connections may move to the worker
+
+- **Decision**: `open_ledger(..., any_thread=True)` opens a read-only
+  connection that another thread may use; the Tax source and the System
+  screen's bar timing open theirs that way. A read-write connection refuses it.
+- **Alternatives**: a connection per Tax read (rebuilds the tax service each
+  poll); reading Tax inline (keeps a ledger read on the UI thread).
+- **Rationale**: Python's SQLite is built serialized, a `mode=ro` connection
+  never writes, and the console uses it from one thread at a time.
+- **Cost of reversal**: LOW.
+
 ## Requirements
 
 ### R-1: Reads leave the UI thread

@@ -648,6 +648,15 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             ),
         ),
         FailureMode(
+            "A ledger connection opened on the console's UI thread fails in its read worker",
+            proved_by=(
+                _U + "entrypoints/test_tui_tax.py::"
+                "test_the_tax_source_reads_the_ledger_from_the_console_worker_thread",
+                _U + "adapters/ledger/test_connection.py::"
+                "test_an_any_thread_read_only_connection_answers_another_thread",
+            ),
+        ),
+        FailureMode(
             "Quitting the console while a read is in flight raises an error",
             proved_by=(_READS + "test_quitting_while_a_read_is_held_ends_quietly",),
         ),

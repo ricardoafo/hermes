@@ -1570,10 +1570,14 @@ class HomeApp(App[None]):
 
     def _read_off_thread(self, request: ReadRequest) -> None:
         reads = read_console(self._sources, request)
-        # Q can quit the console while a read is in flight; Textual then
-        # raises here, and the reads have nowhere to show.
-        with suppress(RuntimeError):
+        try:
             self.call_from_thread(self._reads_arrived, reads)
+        except RuntimeError:
+            # Q can quit the console while a read is in flight; Textual then
+            # raises here, and the reads have nowhere to show. A paint that
+            # fails while the console still runs is a real error.
+            if self.is_running:
+                raise
 
     def _reads_arrived(self, reads: ConsoleReads) -> None:
         self._reading = False

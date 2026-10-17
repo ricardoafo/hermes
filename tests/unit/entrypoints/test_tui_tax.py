@@ -4,7 +4,10 @@ Reference: openspec/changes/719-tax-screen/change.md (R-1..R-7).
 """
 
 import asyncio
+import sqlite3
+import threading
 from collections.abc import Awaitable, Callable, Mapping
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -12,6 +15,7 @@ from pathlib import Path
 from rich.console import RenderableType
 
 from hermes.adapters.console import FixtureReadModel
+from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.application.console.format import MINUS
 from hermes.application.console.render import MADRID, to_plain_text
 from hermes.application.console.views import TaxBand, TaxEstimate, TaxPending
@@ -477,3 +481,28 @@ def test_the_pack_sub_tab_shows_the_pack_state() -> None:
     )
     assert "Tax pack 2026 · refreshed" in text
     assert PACK_LINE in text
+
+
+def test_the_tax_source_reads_the_ledger_from_the_console_worker_thread(tmp_path: Path) -> None:
+    """The real Tax source, opened here, reads the 2026 screen from another thread (#1001).
+
+    The console builds it on its UI thread and reads it in a worker; a
+    same-thread-only connection would turn every read into "could not read
+    the ledger".
+    """
+    db = tmp_path / "ledger.sqlite3"
+    with closing(sqlite3.connect(db)) as conn:
+        SqliteLedger(conn)
+    inputs = tax_inputs(demo=False, env={}, db_path=db, config_dir=Path("config"), now=_FROZEN)
+    source = inputs.source
+    assert source is not None
+    screens: list[object] = []
+    worker = threading.Thread(
+        target=lambda: screens.append(source.tax_screen(as_of=_FROZEN, prices={}))
+    )
+    worker.start()
+    worker.join()
+    inputs.close()
+    assert [(type(screen).__name__, getattr(screen, "year", None)) for screen in screens] == [
+        ("TaxScreen", 2026)
+    ]
