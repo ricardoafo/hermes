@@ -31,11 +31,11 @@ def _price(cents: int) -> Decimal:
 
 
 @st.composite
-def _ohlc(draw: st.DrawFn) -> tuple[Decimal, Decimal, Decimal, Decimal]:
+def _ohlc(draw: st.DrawFn, min_wick: int = 0) -> tuple[Decimal, Decimal, Decimal, Decimal]:
     open_c = draw(st.integers(_MIN_CENTS, _MAX_CENTS))
     close_c = draw(st.integers(_MIN_CENTS, _MAX_CENTS))
-    high_c = max(open_c, close_c) + draw(st.integers(0, _MAX_WICK_CENTS))
-    low_c = min(open_c, close_c) - draw(st.integers(0, _MAX_WICK_CENTS))
+    high_c = max(open_c, close_c) + draw(st.integers(min_wick, _MAX_WICK_CENTS))
+    low_c = min(open_c, close_c) - draw(st.integers(min_wick, _MAX_WICK_CENTS))
     return _price(open_c), _price(high_c), _price(low_c), _price(close_c)
 
 
@@ -62,9 +62,9 @@ def _series(min_size: int, max_size: int) -> st.SearchStrategy[list[Bar]]:
 
 
 def _ohlc_series(
-    min_size: int, max_size: int
+    min_size: int, max_size: int, *, min_wick: int = 0
 ) -> st.SearchStrategy[list[tuple[Decimal, Decimal, Decimal, Decimal]]]:
-    return st.lists(_ohlc(), min_size=min_size, max_size=max_size)
+    return st.lists(_ohlc(min_wick=min_wick), min_size=min_size, max_size=max_size)
 
 
 _PERIOD = st.integers(2, 6)
@@ -178,14 +178,14 @@ def test_atr_scales_linearly_with_prices(
 
 
 @_PROPS
-@given(period=_PERIOD, ohlcs=_ohlc_series(2, 40), shift=_SHIFT)
+@given(period=_PERIOD, ohlcs=_ohlc_series(7, 40), shift=_SHIFT)
 def test_atr_invariant_under_constant_price_shift(
     period: int, ohlcs: list[tuple[Decimal, Decimal, Decimal, Decimal]], shift: Decimal
 ) -> None:
     """True range uses price differences only, so a constant shift leaves ATR unchanged."""
     base = AtrEngine.value(_bars_from(ohlcs), period=period)
-    shifted = AtrEngine.value(_bars_from(ohlcs, shift=shift), period=period)
-    assert shifted == base
+    assert base is not None
+    assert AtrEngine.value(_bars_from(ohlcs, shift=shift), period=period) == base
 
 
 # ── ADX ─────────────────────────────────────────────────────────────────────
@@ -203,22 +203,24 @@ def test_adx_within_zero_and_one_hundred(
 
 
 @_PROPS
-@given(period=_PERIOD, ohlcs=_ohlc_series(2, 50), shift=_SHIFT)
+@given(period=_PERIOD, ohlcs=_ohlc_series(13, 50, min_wick=1), shift=_SHIFT)
 def test_adx_invariant_under_constant_price_shift(
     period: int, ohlcs: list[tuple[Decimal, Decimal, Decimal, Decimal]], shift: Decimal
 ) -> None:
     """DM and TR use price differences only, so a constant shift leaves ADX unchanged."""
     base = AdxEngine.value(_bars_from(ohlcs), period=period)
-    shifted = AdxEngine.value(_bars_from(ohlcs, shift=shift), period=period)
-    assert shifted == base
+    assert base is not None
+    assert AdxEngine.value(_bars_from(ohlcs, shift=shift), period=period) == base
 
 
 @_PROPS
 @given(period=_PERIOD, data=st.data())
-def test_adx_none_below_two_periods_plus_one_bars(period: int, data: st.DataObject) -> None:
-    """ADX needs 2 * period + 1 bars; with fewer it reports None instead of a value."""
-    bars = data.draw(_series(0, 2 * period))
-    assert AdxEngine.value(bars, period=period) is None
+def test_adx_first_value_needs_two_periods_plus_one_bars(period: int, data: st.DataObject) -> None:
+    """ADX is None below 2 * period + 1 bars and a value from there on (bars with a range)."""
+    ohlcs = data.draw(_ohlc_series(2 * period + 3, 2 * period + 3, min_wick=1))
+    bars = _bars_from(ohlcs)
+    has_value = [AdxEngine.value(bars[:n], period=period) is not None for n in range(len(bars) + 1)]
+    assert has_value == [n >= 2 * period + 1 for n in range(len(bars) + 1)]
 
 
 # ── EMA ─────────────────────────────────────────────────────────────────────
@@ -253,7 +255,10 @@ def test_ema_of_constant_series_is_that_constant(period: int, extra: int, level:
 
 @_PROPS
 @given(period=st.integers(2, 10), data=st.data())
-def test_ema_none_below_period_bars(period: int, data: st.DataObject) -> None:
-    """EMA(period) needs `period` bars; with fewer it reports None."""
-    bars = data.draw(_series(0, period - 1))
-    assert EmaRegimeFilter.ema_value(bars, period=period) is None
+def test_ema_first_value_needs_period_bars(period: int, data: st.DataObject) -> None:
+    """EMA(period) is None below `period` bars and a value from there on."""
+    bars = data.draw(_series(period + 2, period + 2))
+    has_value = [
+        EmaRegimeFilter.ema_value(bars[:n], period=period) is not None for n in range(len(bars) + 1)
+    ]
+    assert has_value == [n >= period for n in range(len(bars) + 1)]
