@@ -8,9 +8,8 @@
 `bug-triager`, the `sev-*` labels, the `# SEV-1: <row>` test annotation (enforced by
 `tests/plugins/sev1_guard.py`) and the AI reviewer all use the rows below.
 
-The shape follows common severity bars for AI-system bug triage: impact on
-confidentiality, integrity and availability decides the level, and a row names the
-failure, not the fix.
+Impact on confidentiality, integrity and availability decides the level, and a row names
+the failure, not the fix.
 
 ## Levels
 
@@ -34,7 +33,7 @@ If you cannot tell whether a path reaches a real exchange, treat it as if it can
 | S3 | An exchange key with more scope than the job needs (withdraw, trade where read-only is enough) is accepted or stored | SEV-1 |
 | S4 | A write path on `serve` or the console is reachable without authentication, or the read-only console gains a write | SEV-1 |
 | S5 | An LLM output decides, sizes or places a trade, or untrusted text (news, PR comment, exchange message) steers an agent action | SEV-1 |
-| S6 | Sealed out-of-sample data (from 2025-09-01) is read by a backtest, a tuning step or a report | SEV-1 |
+| S6 | Sealed out-of-sample data (2025-09-01 to 2026-12-31, ADR-011 and ADR-014) is read outside `CERTIFICATION_MODE` by a backtest, a tuning step or a report | SEV-1 |
 | S7 | The ledger or audit trail can be edited, truncated or reordered without a recorded event | SEV-1 |
 | S8 | Personal data (tax identity, addresses, account numbers) appears in a log, metric or error message | SEV-2 |
 | S9 | Untrusted PR code runs on a self-hosted runner with secrets or host access | SEV-1 |
