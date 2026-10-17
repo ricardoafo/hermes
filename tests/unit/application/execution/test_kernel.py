@@ -191,6 +191,25 @@ def test_exit_without_a_position_is_declined() -> None:
     assert k.tracker.snapshot == seed()
 
 
+def test_entry_for_a_pair_already_held_is_declined_and_buys_nothing() -> None:
+    """A second entry on a held pair declines as already-held; the one position stays (#902)."""
+    k = kernel()
+    book = _book(Decimal("100"), "15", _T0)
+    _executed(k.execute(_entry(Decimal("100")), BTC_USDT, market(book, _T0), correlation_id="a"))
+    held = k.tracker.snapshot
+    later = _T0 + timedelta(hours=4)
+    out = k.execute(
+        _entry(Decimal("105"), later),
+        BTC_USDT,
+        market(_book(Decimal("105"), "15", later), later),
+        correlation_id="b",
+    )
+    assert (out, k.tracker.snapshot) == (
+        Declined(reason=f"{BTC_USDT} is already held", rule="already-held"),
+        held,
+    )
+
+
 def test_missing_book_is_declined_before_routing() -> None:
     """With no book (zero-volume bar) the entry declines as no-book and nothing changes."""
     k = kernel()

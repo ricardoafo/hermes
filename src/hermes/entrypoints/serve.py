@@ -210,7 +210,7 @@ BOOT_EUR_BUDGET_SEC: Final = 60.0
 
 _ONE_MS: Final = timedelta(milliseconds=1)
 _EPOCH: Final = datetime(1970, 1, 1, tzinfo=UTC)
-_NEVER: Final = datetime(1970, 1, 1, tzinfo=UTC)
+_NEVER: Final = _EPOCH
 
 
 class StartupError(HermesError):
