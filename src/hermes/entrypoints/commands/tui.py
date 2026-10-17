@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Final, TextIO
 import hermes
 from hermes.adapters.console import UnknownScenarioError
 from hermes.application.console import ConsoleReadModel
+from hermes.application.console.system import LiveRelease
 from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.commands import Command
 from hermes.entrypoints.console import (
@@ -21,6 +22,7 @@ from hermes.entrypoints.console import (
     resolve_read_model,
     roster_exposure_cap,
     shadow_sources,
+    system_sources,
 )
 from hermes.entrypoints.tui_settings import (
     DEFAULT_SETTINGS_PATH,
@@ -116,6 +118,11 @@ def run_tui(
         cap = roster_exposure_cap(snapshot)
         allow_mainnet = config_allow_mainnet(snapshot)
 
+        ledger = db_path or default_db_path(env or {})
+        system = system_sources(
+            db_path=ledger, live=_live_release, ledger=model.demo_scenario is None
+        )
+
         def runner(read_model: ConsoleReadModel) -> None:
             ticker = live_ticker(read_model)
             tax = tax_inputs(
@@ -139,6 +146,7 @@ def run_tui(
                     taxpayer_profile=tax.profile,
                     tax_pack=tax.pack,
                     shadow=shadow_sources(read_model, env=snapshot, db_path=db_path),
+                    system=system,
                 )
             finally:
                 tax.close()
@@ -207,6 +215,12 @@ def live_ticker(model: ConsoleReadModel) -> KrakenPublicAdapter | None:
 def _release_name() -> str:
     """Return the running release, read from the link ``hermes status`` reads (#649)."""
     return read_release().name
+
+
+def _live_release() -> LiveRelease:
+    """Return the live release for the System screen, from the same link (#717)."""
+    info = read_release()
+    return LiveRelease(info.name, info.live_since)
 
 
 def _parse(args: list[str]) -> tuple[Path | None, ThemeChoice | None]:
