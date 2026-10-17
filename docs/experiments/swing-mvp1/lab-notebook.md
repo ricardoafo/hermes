@@ -282,3 +282,26 @@ Actors: `operator` | `claude-experimentalist` | `claude-integrity-checker` | `en
 
 - docs/experiments/swing-mvp1/lab-notebook.md (modified)
 <!-- entry-sha256: 8707097409730bc66f3231c2ba6c8612d7a14e58ae10c50f0185ca643184d375 -->
+
+### 2026-10-17T21:15:00Z | post-mortem | claude-experimentalist | swing-mvp1-v2 post-mortem drafted (issue #1045), Code Owner sign-off pending
+
+**Observed metrics**: N/A (no metrics this entry)
+
+**Decision**:
+
+- post-mortem-v2.md records the backtest-phase kill of 2026-10-17T20:56:00Z, PASS/FAIL only.
+- Root cause (inferred): the long-only breakout is regime-dependent; it fails the bear stretch and positive years, so DSR and the t-statistic fail.
+- No threshold is proposed for loosening. Whether a v3 is written, and from which idea family, is the Code Owner's call.
+
+**Rationale**:
+
+- Pre-registration v2 §10 post-kill protocol: post-mortem within 7 days of the kill, due 2026-10-24.
+- Values are not recorded: the AI side sees PASS/FAIL only (ADR-012 D-06, ADR-023 §7).
+- Not a deviation per §11: no signed rule, window, metric or threshold changes.
+- No data from the sealed window (2025-09-01 on) was read.
+
+**Files touched**:
+
+- docs/experiments/swing-mvp1/post-mortem-v2.md (added)
+- docs/experiments/swing-mvp1/lab-notebook.md (modified)
+<!-- entry-sha256: 2ec4f88ef3a98e5e5a00250c0c0eb1b7a7e8bf4035448d857522fbaf6af4044f -->
