@@ -6,6 +6,8 @@ Invariants:
   (240,120,20), warning amber; Neon restyles only the chrome;
 - night keeps the hues of gains and losses in darker shades and warnings fully
   bright;
+- every night colour that draws text reads at 4.5:1 or more on the night
+  panel, focused panel and overlay, and labels stay brighter than hints;
 - night mode runs from 23:00 up to 08:00 local, and only Auto follows it;
 - the breakpoints are compact < 100, standard 100-159, wide 160-219, ultra >= 220
   columns, with height classes at 30 and 45 rows;
@@ -28,6 +30,7 @@ from hermes.entrypoints.tui_theme import (
     HERO_MIN_CONTRAST,
     NEON,
     NIGHT,
+    TEXT_MIN_CONTRAST,
     Tokens,
     contrast_ratio,
 )
@@ -256,6 +259,30 @@ def test_big_total_digits_read_at_7_to_1_on_their_panel(name: str, tokens: Token
         contrast_ratio(tokens.hero_digits, tokens.panel) >= HERO_MIN_CONTRAST,
         contrast_ratio(tokens.hero_digits, tokens.panel_focus) >= HERO_MIN_CONTRAST,
     ) == (True, True)
+
+
+_NIGHT_TEXT_TOKENS = ("text", "muted", "dim", "live", "up", "down", "warn", "ai")
+
+
+@pytest.mark.parametrize("token", _NIGHT_TEXT_TOKENS)
+def test_night_text_reads_at_4_5_to_1_on_every_night_surface(token: str) -> None:
+    """Night text never fades into its panel (issue #1046: labels at 4.0:1, hints at 2.3:1).
+
+    Checked on the panel, the focused panel and the overlay, the three
+    surfaces night draws text on.
+    """
+    colour = getattr(NIGHT, token)
+    surfaces = (NIGHT.panel, NIGHT.panel_focus, NIGHT.overlay)
+    assert [contrast_ratio(colour, surface) >= TEXT_MIN_CONTRAST for surface in surfaces] == [
+        True,
+        True,
+        True,
+    ]
+
+
+def test_night_labels_stay_brighter_than_hints() -> None:
+    """Raising night contrast keeps the hierarchy: labels (muted) outshine hints (dim)."""
+    assert _luminance(NIGHT.muted) > _luminance(NIGHT.dim)
 
 
 def test_contrast_ratio_matches_the_wcag_extremes() -> None:

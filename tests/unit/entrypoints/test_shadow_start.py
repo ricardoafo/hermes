@@ -8,6 +8,9 @@ Invariants (797-shadow-day-zero change.md R-3..R-6):
 
 - Without ``--confirm START`` nothing on disk changes.
 - A failed Ready rule or a running service stops the command before any change.
+- A directory the start cannot write (permissions, a read-only mount, a
+  path that is a file) stops it before any change, so it never archives the
+  ledger and then fails to remove it (#797).
 - Confirmed: the archive is a read-only copy with every row; the ledger and
   its WAL files are gone; the day-0 record holds the hashes and the checks and
   is never overwritten.
@@ -17,6 +20,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import sqlite3
 import stat
 from contextlib import closing
@@ -184,6 +188,52 @@ class TestConfirmed:
         _certify(db)
         assert _run(db, confirm=True)[0] == 0
         assert _run(db, confirm=True)[0] == 3
+
+
+_ROOT_SKIP = pytest.mark.skipif(
+    os.geteuid() == 0, reason="root ignores directory permissions, so nothing is read-only"
+)
+
+
+class TestUnwritableDirectories:
+    """The service account's restrictive permissions stop the start before any change."""
+
+    @_ROOT_SKIP
+    def test_a_read_only_ledger_directory_changes_nothing(self, tmp_path: Path) -> None:
+        """The ledger cannot be removed: exit 3, no archive, no record, ledger intact."""
+        db = _ledger(tmp_path)
+        _certify(db)
+        before = _tree(tmp_path)
+        tmp_path.chmod(0o555)
+        try:
+            code, _, err = _run(db, confirm=True)
+        finally:
+            tmp_path.chmod(0o755)
+        assert (code, _tree(tmp_path), f"cannot write in {tmp_path}" in err) == (3, before, True)
+
+    @_ROOT_SKIP
+    def test_a_read_only_archive_directory_changes_nothing(self, tmp_path: Path) -> None:
+        """The archive cannot be written: exit 3 and the ledger stays."""
+        db = _ledger(tmp_path)
+        _certify(db)
+        archive = tmp_path / "archive"
+        archive.mkdir(mode=0o555)
+        before = _tree(tmp_path)
+        try:
+            code, _, err = _run(db, confirm=True)
+        finally:
+            archive.chmod(0o755)
+        assert (code, _tree(tmp_path), f"cannot write in {archive}" in err) == (3, before, True)
+
+    # SEV-1: S5 an archive taken with the ledger left in place resumes the warm-up as day 0 (#797)
+    def test_a_blocked_run_records_path_changes_nothing(self, tmp_path: Path) -> None:
+        """Even as root: with ``runs`` taken by a file, no archive is left behind (#797)."""
+        db = _ledger(tmp_path)
+        _certify(db)
+        (tmp_path / "runs").write_text("not a directory", encoding="utf-8")
+        before = _tree(tmp_path)
+        code, _, err = _run(db, confirm=True)
+        assert (code, _tree(tmp_path), "cannot write in" in err) == (3, before, True)
 
 
 class TestMain:

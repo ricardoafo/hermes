@@ -274,6 +274,7 @@ run_slow_check "deadcode (vulture)"           ci_check deadcode
 run_slow_check "licenses (pip-licenses)"      ci_check licenses
 run_slow_check "unit tests"                   test_tier unit
 run_slow_check "integration tests"            test_tier integration
+run_slow_check "e2e tests"                    ci_check e2e
 if [[ "$FULL_TESTS" == "1" && "${SKIP_PYTEST:-0}" != "1" ]]; then
     run_slow_check "coverage floor (per-package)" ci_check coverage-floor
 fi

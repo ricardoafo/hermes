@@ -225,3 +225,83 @@ Actors: `operator` | `claude-experimentalist` | `claude-integrity-checker` | `en
 - changelog.d/785-fixed.md (added)
 - docs/experiments/swing-mvp1/lab-notebook.md (modified)
 <!-- entry-sha256: 8cb420aff39d90ca390d428ca3d7f19bb719f0dc574f33cf836c46f103385e49 -->
+
+### 2026-10-17T18:07:43Z | train | claude-experimentalist | first logged v2 Train run (issue #735): GATE FAILED on Train
+
+**Observed metrics**:
+
+- window = 2020-09-01 to 2024-06-30 (Train), backtest workflow run 39056430551 on main at 25c795d, server-01, clean tree
+- pre-registration = pre-registration-v2.md, content_sha256 212a109f39b1c31384803d94c842ec550181628883a708deab25eaf2a5535128
+- dsr: FAIL
+- max_drawdown, recovery_days, profit_factor, ulcer_index, fees_to_gross_pnl, win_rate, calibration_fills: PASS
+- funnel pbo, t_stat, positive_years, bear_return, validation_vs_train: FAIL
+- funnel trade_count, cost_stress, bull_return, neighbours, correlation: PASS
+- hermes certify verdict = GATE FAILED
+- trials logged = 8 (base, six §8.5 neighbours, 2x cost stress), all split train
+
+**Decision**:
+
+- swing-mvp1-v2 stays UNTRUSTED.
+- Whether to spend a Validation touch on v2 is the Code Owner's call; no Validation run was started.
+
+**Rationale**:
+
+- Pre-registration v2 §10: the backtest gate is judged on Train + Validation; this Train run is development use (§4) and is recorded as observed.
+- Values are not recorded here: the AI side sees PASS/FAIL only (ADR-012 D-06). They are in the run's artifact for the Code Owner.
+- validation_vs_train cannot pass on a Train-only window: the Validation stretch is empty. It does not change this verdict, since dsr and four other checks fail.
+- The workflow's Certify step ended red although certify ran and printed its verdict: the runner shell aborts on certify's exit 1, so the Funnel step was skipped. hermes certify already evaluates every funnel row.
+- Not a deviation per §11: no signed rule, window, metric or threshold changes.
+- No data from the sealed window (2025-09-01 on) was read.
+
+**Files touched**:
+
+- docs/experiments/swing-mvp1/trial-log.jsonl (modified)
+- docs/experiments/swing-mvp1/lab-notebook.md (modified)
+<!-- entry-sha256: febf45342a83ab685170de5ded6d8a2c3aebd2453c1cc496125108539750b255 -->
+
+### 2026-10-17T20:56:00Z | train | operator | Code Owner declines a Validation touch for swing-mvp1-v2: v2 is killed at the backtest gate
+
+**Observed metrics**: N/A (no metrics this entry)
+
+**Decision**:
+
+- No Validation run for swing-mvp1-v2. All 3 Validation touches stay unspent.
+- swing-mvp1-v2 stays UNTRUSTED and is dead for pre-registration v2; it never reaches shadow.
+- A variant needs a new signed pre-registration; its trials join the same trial log and DSR count.
+- The post-mortem is due by 2026-10-24.
+
+**Rationale**:
+
+- Pre-registration v2 §10 post-kill protocol: dead for this pre-registration, post-mortem within 7 days, a variant needs a new pre-registration.
+- §10 judges the gate on Train + Validation. Train is 46 of the 60 gate months, so a Validation run would be unlikely to lift dsr and the four other failing checks above their thresholds (inferred, not measured). Spending a touch would use up a scarce Validation look for little information.
+- Decision taken by the Code Owner on the Backtesting thread decision card (option: skip Validation).
+- Not a deviation per §11: no signed rule, window, metric or threshold changes.
+- No data from the sealed window (2025-09-01 on) was read.
+
+**Files touched**:
+
+- docs/experiments/swing-mvp1/lab-notebook.md (modified)
+<!-- entry-sha256: 8707097409730bc66f3231c2ba6c8612d7a14e58ae10c50f0185ca643184d375 -->
+
+### 2026-10-17T21:15:00Z | post-mortem | claude-experimentalist | swing-mvp1-v2 post-mortem drafted (issue #1045), Code Owner sign-off pending
+
+**Observed metrics**: N/A (no metrics this entry)
+
+**Decision**:
+
+- post-mortem-v2.md records the backtest-phase kill of 2026-10-17T20:56:00Z, PASS/FAIL only.
+- Root cause (inferred): the long-only breakout is regime-dependent; it fails the bear stretch and positive years, so DSR and the t-statistic fail.
+- No threshold is proposed for loosening. Whether a v3 is written, and from which idea family, is the Code Owner's call.
+
+**Rationale**:
+
+- Pre-registration v2 §10 post-kill protocol: post-mortem within 7 days of the kill, due 2026-10-24.
+- Values are not recorded: the AI side sees PASS/FAIL only (ADR-012 D-06, ADR-023 §7).
+- Not a deviation per §11: no signed rule, window, metric or threshold changes.
+- No data from the sealed window (2025-09-01 on) was read.
+
+**Files touched**:
+
+- docs/experiments/swing-mvp1/post-mortem-v2.md (added)
+- docs/experiments/swing-mvp1/lab-notebook.md (modified)
+<!-- entry-sha256: 2ec4f88ef3a98e5e5a00250c0c0eb1b7a7e8bf4035448d857522fbaf6af4044f -->

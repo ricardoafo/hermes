@@ -1,4 +1,4 @@
-"""SVG snapshots of the Cockpit console in both day themes (issue #711).
+"""SVG snapshots of the Cockpit console in both day themes and at night (issue #711).
 
 Invariant: what the console draws in Neon and in Control room, at the design
 spec's four breakpoints (80x24 compact, 120x36 standard, 160x45 wide, 240x60
@@ -9,7 +9,11 @@ Views: Home on the ``ok-two-positions`` and ``empty`` demo scenarios, the
 Positions placeholder (tab 3), the theme picker open over Home, Home with a
 fake ticker (``home_live``, issue #713): live market prices, a position valued
 live and the window bar's feed pulse after a run of polls, one of them failed,
-and Home with the new-version notice up after the release changed (issue #652).
+Home with the new-version notice up after the release changed (issue #652),
+and the Shadow test screen (tab 5, issue #718) counting from a day-0 record
+(``ok-two-positions``) and in the warm-up with no record (``empty``).
+Night (Auto after 23:00) has its own Home pictures, on demo data and with live
+prices, so its readable contrast is reviewed too (issue #1046).
 
 Every app here runs with motion off, a frozen clock and synthetic demo data,
 and never reads or writes the real settings file.
@@ -31,6 +35,7 @@ from syrupy.types import SnapshotIndex
 
 from hermes.adapters.console import FixtureReadModel
 from hermes.application.console.live import TickOutcome
+from hermes.application.console.shadow_screen import ShadowSources
 from hermes.domain.errors import KrakenPublicError
 from hermes.domain.market_data.ticker import Ticker
 from hermes.domain.value_objects.pair import Pair
@@ -39,6 +44,8 @@ from hermes.entrypoints.tui_settings import ThemeChoice
 
 # The fixtures' read time (14:12 Madrid), well inside Auto's day window.
 _FROZEN = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
+# 23:30 Madrid the same day, inside Auto's night window.
+_NIGHT = datetime(2026, 10, 3, 21, 30, tzinfo=UTC)
 
 _SIZES: tuple[tuple[int, int], ...] = ((80, 24), (120, 36), (160, 45), (240, 60))
 _THEMES: tuple[tuple[str, ThemeChoice], ...] = (
@@ -81,6 +88,8 @@ _VIEWS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("home_empty", "empty", ()),
     ("tab3_placeholder", "ok-two-positions", ("3",)),
     ("theme_picker", "ok-two-positions", ("t",)),
+    ("shadow_counting", "ok-two-positions", ("5",)),
+    ("shadow_warmup", "empty", ("5",)),
     ("home_live", "ok-two-positions", ()),
 )
 
@@ -110,15 +119,18 @@ def _svg(
     theme: ThemeChoice,
     *,
     live: bool = False,
+    now: datetime = _FROZEN,
 ) -> str:
     async def drive() -> str:
+        model = FixtureReadModel.load(scenario)
         app = HomeApp(
-            FixtureReadModel.load(scenario),
-            clock=lambda: _FROZEN,
+            model,
+            clock=lambda: now,
             motion=False,
             settings_path=None,
             theme=theme,
             refresh_seconds=3600,
+            shadow=ShadowSources(evidence=model, runs=model, notebook=model, strategy_id="demo"),
             ticker=_FakeTicker() if live else None,
         )
         async with app.run_test(size=size) as pilot:
@@ -166,6 +178,23 @@ def test_cockpit_svg_snapshot(
     """The reviewed picture of one view, in one theme, at one spec breakpoint."""
     name = f"{view}_{theme_name}_{size[0]}x{size[1]}"
     svg = _svg(scenario, keys, size, theme, live=view == "home_live")
+    assert svg == snapshot(extension_class=_NamedSVG, name=name)
+
+
+_NIGHT_CASES = [
+    pytest.param(view, scenario, size, id=f"{view}_night_{size[0]}x{size[1]}")
+    for view, scenario in (("home_ok", "ok-two-positions"), ("home_live", "ok-two-positions"))
+    for size in _SIZES
+]
+
+
+@pytest.mark.parametrize(("view", "scenario", "size"), _NIGHT_CASES)
+def test_night_svg_snapshot(
+    snapshot: SnapshotAssertion, view: str, scenario: str, size: tuple[int, int]
+) -> None:
+    """The reviewed picture of Home in the night theme Auto shows after 23:00 (issue #1046)."""
+    name = f"{view}_night_{size[0]}x{size[1]}"
+    svg = _svg(scenario, (), size, ThemeChoice.AUTO, live=view == "home_live", now=_NIGHT)
     assert svg == snapshot(extension_class=_NamedSVG, name=name)
 
 

@@ -35,7 +35,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from functools import partial
-from itertools import combinations
 
 from hermes.application.execution.kernel import (
     Declined,
@@ -53,11 +52,7 @@ from hermes.domain.fees.fee_schedule import FeeSchedule
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.market_data.orderbook import Orderbook
-from hermes.domain.portfolio.correlation import (
-    CORRELATION_WINDOW_DAYS,
-    aligned_daily_returns,
-    pearson,
-)
+from hermes.domain.portfolio.correlation import DailyCloses
 from hermes.domain.risk.state import MarketSnapshot
 from hermes.domain.strategy.signal import OpenPosition, SignalKind, StrategySignal
 from hermes.domain.trading.fill import Fill, Rejection
@@ -106,6 +101,7 @@ def replay(
     correlation_id: Callable[[], str],
     model: ExecutionModel | None = None,
     entries: MutableMapping[Pair, OpenPosition] | None = None,
+    closes: DailyCloses | None = None,
 ) -> BacktestRun:
     """Replay ``bars`` (already in delivery order) through the strategy and kernel.
 
@@ -132,6 +128,10 @@ def replay(
             that replays a few bars per call passes the same mapping each
             time, holding any position it seeded the strategy with; ``None``
             starts an empty one.
+        closes: The 1D closes the RO-01 correlations are computed from,
+            updated with every 1D bar. A caller that replays a few bars per
+            call passes the same instance each time, holding the closes
+            before its first bar; ``None`` starts an empty one.
 
     Returns:
         The :class:`BacktestRun`.
@@ -143,7 +143,7 @@ def replay(
     run = BacktestRun()
     tracker = kernel.tracker
     held_entries: MutableMapping[Pair, OpenPosition] = {} if entries is None else entries
-    closes = _DailyCloses()
+    closes = DailyCloses() if closes is None else closes
     for bar in bars:
         tracker.mark(bar)
         if bar.interval is KlineInterval.D1:
@@ -197,39 +197,6 @@ def _strategy_for(strategy: StrategyPort | Mapping[Pair, StrategyPort], pair: Pa
     if found is None:
         raise ValueError(f"no strategy for {pair}; the run trades {sorted(map(str, strategy))}")
     return found
-
-
-class _DailyCloses:
-    """The latest daily closes of each pair, for the §5.5 correlation lock.
-
-    Only bars already delivered are held, so a coefficient never sees a close
-    after the signal it is checked for. The series and estimator are the ones
-    serve records (#835): Pearson on simple daily returns.
-    """
-
-    _KEEP = 2 * (CORRELATION_WINDOW_DAYS + 1)
-
-    def __init__(self) -> None:
-        self._closes: dict[Pair, dict[datetime, Decimal]] = {}
-
-    def add(self, bar: Bar) -> None:
-        """Record a closed 1D bar, keeping a bounded tail per pair."""
-        series = self._closes.setdefault(bar.pair, {})
-        series[bar.open_time] = bar.close
-        if len(series) > self._KEEP:
-            del series[min(series)]
-
-    def correlations(self) -> dict[tuple[Pair, Pair], float]:
-        """Return the coefficient of every two pairs with a full 30-return window."""
-        out: dict[tuple[Pair, Pair], float] = {}
-        for a, b in combinations(sorted(self._closes, key=str), 2):
-            returns_a, returns_b = aligned_daily_returns(self._closes[a], self._closes[b])
-            if len(returns_a) < CORRELATION_WINDOW_DAYS:
-                continue
-            coeff = pearson(returns_a, returns_b)
-            if coeff is not None:
-                out[(a, b)] = coeff
-        return out
 
 
 def _execute(

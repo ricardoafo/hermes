@@ -30,6 +30,7 @@ __all__ = [
     "DEFAULT_HOST",
     "DEFAULT_USER",
     "REMOTE_BIN",
+    "REMOTE_ENV",
     "REMOTE_GUARD",
     "SshResult",
     "VpsSettings",
@@ -55,10 +56,14 @@ REMOTE_GUARD: Final = (
     '"$1" --help 2>/dev/null | grep -q -- "^  $2 " || '
     '{ echo "hermes: $2 is not on this VPS build" >&2; exit 127; }; '
 )
+REMOTE_ENV: Final = "HERMES_CONSOLE_REMOTE"
+"""Set to ``1`` for a console run over ``--vps``: the console then never reads
+the taxpayer profile, whose figures stay on the operator's PC (issue #719)."""
 _REMOTE_SCRIPT: Final = REMOTE_GUARD + (
     f"set -a; . {_REMOTE_ENV_FILE}; set +a; "
     f'export HERMES_DB_PATH="${{HERMES_DB_PATH:-{_REMOTE_DB}}}" '
-    f'HERMES_CONFIG_DIR="${{HERMES_CONFIG_DIR:-{_REMOTE_CONFIG_DIR}}}"; '
+    f'HERMES_CONFIG_DIR="${{HERMES_CONFIG_DIR:-{_REMOTE_CONFIG_DIR}}}" '
+    f"{REMOTE_ENV}=1; "
     f'cd {_REMOTE_WORKDIR} && exec runuser -u hermes -- "$@"'
 )
 _FLAG: Final = "--vps"

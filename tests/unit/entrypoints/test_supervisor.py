@@ -25,7 +25,7 @@ from hermes.application.status import UnitState
 from hermes.domain.strategy.signal import SignalKind
 from hermes.entrypoints import supervisor as supervisor_module
 from hermes.entrypoints.commands import discover
-from tests.support.status_ledger import ETH, LAST_4H, NOW, signal, write_ledger
+from tests.support.status_ledger import ETH, LAST_4H, NOW, fill, signal, write_ledger
 
 _CONFIG = Path(__file__).resolve().parents[3] / "config"
 
@@ -227,9 +227,8 @@ _ALL_GRANTS = {
 
 def test_brief_prints_the_daily_line_from_a_real_ledger(tmp_path: Path) -> None:
     """``brief`` prints the cited daily line and the engine, auditing one read per tool (#365)."""
-    db = write_ledger(
-        tmp_path / "hermes.sqlite3", signals=(signal(ETH, SignalKind.ENTRY, LAST_4H, "2618.45"),)
-    )
+    entry = signal(ETH, SignalKind.ENTRY, LAST_4H, "2618.45")
+    db = write_ledger(tmp_path / "hermes.sqlite3", signals=(entry,), fills=(fill(entry),))
 
     code, out, audit = _run(["brief"], db, env=_ALL_GRANTS)
 
@@ -239,7 +238,10 @@ def test_brief_prints_the_daily_line_from_a_real_ledger(tmp_path: Path) -> None:
     assert "1 signal(s), 1 open position(s)" in lines[1]
     assert lines[1].endswith("[health] [signals] [positions] [decisions]")
     assert lines[2].startswith("- What the engine did: BTC/USDT: 1 4h and 1 1d bars checked;")
-    assert "ETH/USDT: 1 4h and 1 1d bars checked; 1 entry signal(s); no fills; holding" in out
+    assert (
+        "ETH/USDT: 1 4h and 1 1d bars checked; 1 entry signal(s); fills: 1 buy, 0 sell; holding"
+        in out
+    )
     assert "2618" not in out
     assert len(audit.splitlines()) == 6
 
