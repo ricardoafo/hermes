@@ -747,7 +747,13 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "The entry spread pushes total exposure past the cap",
-            gap="issue #864: the cap is checked at the signal price, not the fill",
+            proved_by=(
+                _U + "application/execution/test_kernel.py"
+                "::test_an_entry_that_fits_the_cap_only_at_the_signal_price_is_declined",
+                _RISK
+                + "test_three_entries_that_make_the_cap_at_the_signal_price_overrun_it_at_the_ask",
+                _PORTFOLIO_MACHINE + "TestPortfolioRiskMachine::runTest",
+            ),
         ),
         FailureMode(
             "A position built by two entries on one pair cannot be sold",

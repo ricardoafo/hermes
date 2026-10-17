@@ -155,7 +155,8 @@ def three_breakouts(btc_climbs_to: Decimal = Decimal(175)) -> Scenario:
     Each entry is capped at 250 notional (§5.4). With BTC at 175 its position
     is worth about 280 by the ETH and SOL breakouts, so ETH fits under the 750
     exposure cap and SOL would take it to about 780 (§5.5). With BTC back at
-    156 all three fit: 3 x 250 is the cap itself.
+    156 the three make the cap itself at the signal price, but each fills a
+    little above it, so SOL does not fit; with BTC at 150 all three do.
     """
     script = _script()
     script.ramp(BTC, days=_RAMP_DAYS, to=Decimal(150), spread=_WIDE)
