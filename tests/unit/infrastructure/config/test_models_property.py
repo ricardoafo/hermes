@@ -23,6 +23,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 from pydantic import BaseModel, ValidationError
 
+from hermes.application.execution.prereg_book import ExecutionModel, ExitPricing
 from hermes.infrastructure.config import (
     BinanceExchangeConfig,
     KrakenPublicConfig,
@@ -274,6 +275,49 @@ def test_strategy_rejects_sizing_share_outside_zero_one(field: str, share: Decim
     _assert_field_in_validation_error(
         {"strategies": [_strategy_entry(sizing=sizing)]}, StrategiesConfig, field
     )
+
+
+def test_strategy_without_an_exit_pricing_prices_exits_as_v1() -> None:
+    """A roster entry written before v2 keeps v1's stop-market exit (v2-strategy-config D-2)."""
+    entry = StrategiesConfig.model_validate({"strategies": [_strategy_entry()]}).strategies[0]
+    assert entry.exit_pricing is ExitPricing.STOP_ORDER
+
+
+def test_strategy_reads_bar_close_as_the_close_based_exit() -> None:
+    """``exit_pricing: bar_close`` in YAML selects the v2 close-based exit."""
+    data = {"strategies": [_strategy_entry(exit_pricing="bar_close")]}
+    entry = StrategiesConfig.model_validate(data).strategies[0]
+    assert entry.exit_pricing is ExitPricing.BAR_CLOSE
+
+
+@_SETTINGS
+@given(text=st.text(max_size=20).filter(lambda t: t not in {p.value for p in ExitPricing}))
+def test_strategy_rejects_an_unknown_exit_pricing(text: str) -> None:
+    """Any spelling but stop_order or bar_close fails at load instead of pricing as v1."""
+    _assert_field_in_validation_error(
+        {"strategies": [_strategy_entry(exit_pricing=text)]}, StrategiesConfig, "exit_pricing"
+    )
+
+
+@_SETTINGS
+@given(
+    pricing=st.sampled_from(list(ExitPricing)),
+    depth=st.decimals(min_value=Decimal("0.01"), max_value=Decimal("1"), places=2),
+)
+def test_execution_model_carries_the_selected_pricing(pricing: ExitPricing, depth: Decimal) -> None:
+    """The model a strategy builds prices with its own pricing at the given depth, §6.2 bps kept."""
+    entry = StrategiesConfig.model_validate(
+        {"strategies": [_strategy_entry(exit_pricing=pricing.value)]}
+    ).strategies[0]
+    assert entry.execution_model(depth_frac=depth) == ExecutionModel(
+        depth_frac=depth, exit_pricing=pricing
+    )
+
+
+def test_execution_model_defaults_to_the_preregistered_depth() -> None:
+    """Without a depth the model keeps the shared default depth fraction."""
+    entry = StrategiesConfig.model_validate({"strategies": [_strategy_entry()]}).strategies[0]
+    assert entry.execution_model().depth_frac == ExecutionModel().depth_frac
 
 
 def test_strategy_rejects_quote_outside_the_currency_allowlist() -> None:
