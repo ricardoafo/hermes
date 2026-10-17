@@ -16,6 +16,7 @@ import pytest
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
 from hermes.application.calibration.certification_gates import (
+    LIVE_APPROVAL_PHRASE,
     CertificationRecord,
     GateEvidence,
 )
@@ -183,6 +184,79 @@ class TestMain:
         )
         assert code == 1
         assert not store_dir.exists()
+
+
+class _Terminal(io.StringIO):
+    """A stdin that reports itself as an interactive terminal."""
+
+    def isatty(self) -> bool:
+        return True
+
+
+def _sign_off_argv(tmp_path: Path, *extra: str) -> list[str]:
+    return [
+        _SID,
+        "--config-dir",
+        str(_PROJECT_ROOT / "config"),
+        "--store-dir",
+        str(tmp_path / "store"),
+        "--sign-off",
+        "Ricardo",
+        *extra,
+    ]
+
+
+class TestLiveSignOff:
+    """Live approval is typed on an interactive terminal, never passed as a flag (#949)."""
+
+    def test_sign_off_without_a_terminal_approves_nothing(self, tmp_path: Path) -> None:
+        """A piped or scripted stdin is refused with exit 2 before any gate runs or is stored."""
+        out, err = io.StringIO(), io.StringIO()
+        piped = io.StringIO(f"{LIVE_APPROVAL_PHRASE}\n")
+
+        code = certify_module.main(_sign_off_argv(tmp_path), stream=out, err=err, stdin=piped)
+
+        assert (code, out.getvalue()) == (2, "")
+        assert "interactive terminal" in err.getvalue()
+        assert not (tmp_path / "store").exists()
+
+    def test_the_old_confirm_flag_is_refused(self, tmp_path: Path) -> None:
+        """``--confirm LIVE_APPROVED`` no longer exists, so a script cannot pass the phrase."""
+        argv = _sign_off_argv(tmp_path, "--confirm", LIVE_APPROVAL_PHRASE)
+        err = io.StringIO()
+
+        code = certify_module.main(argv, stream=io.StringIO(), err=err, stdin=_Terminal())
+
+        assert code == 2
+        assert "could not parse" in err.getvalue()
+
+    @pytest.mark.parametrize("typed", [LIVE_APPROVAL_PHRASE, "live_approved", "yes"])
+    def test_the_typed_line_is_the_recorded_confirmation(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, typed: str
+    ) -> None:
+        """What the operator types becomes the sign-off confirmation, after a prompt naming it.
+
+        ``run`` is replaced to capture its evidence; that the gate accepts only
+        the exact phrase is tested at the seam in
+        ``test_certification_gates.py::TestLiveApprovalGate``.
+        """
+        seen: list[GateEvidence] = []
+
+        def capture(_sid: str, evidence: GateEvidence, **_: object) -> int:
+            seen.append(evidence)
+            return 0
+
+        monkeypatch.setattr(certify_module, "run", capture)
+        out = io.StringIO()
+
+        code = certify_module.main(
+            _sign_off_argv(tmp_path), stream=out, err=io.StringIO(), stdin=_Terminal(f"{typed}\n")
+        )
+
+        assert code == 0
+        assert f"Type {LIVE_APPROVAL_PHRASE} to confirm" in out.getvalue()
+        assert seen[0].sign_off is not None
+        assert (seen[0].sign_off.name, seen[0].sign_off.confirmation) == ("Ricardo", typed)
 
 
 def _strong_performance(window: str) -> dict[str, object]:
