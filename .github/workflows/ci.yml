@@ -301,17 +301,17 @@ jobs:
             exit 1
           fi
 
-      # The runner image bakes uv 0.12.5 (Dockerfile UV_VERSION), but
+      # The runner image bakes uv 0.13.1 (Dockerfile UV_VERSION), but
       # setup-uv looked only in the wiped tool cache and downloaded uv on
       # every job. Use the baked binary when it is the pinned version;
       # install that exact version otherwise (the ubuntu-latest
       # fallback). Any other version fails here instead of drifting.
-      - name: uv 0.12.5
+      - name: uv 0.13.1
         id: uv
         if: ${{ !cancelled() && steps.changeset.outputs.code == 'true' }}
         timeout-minutes: 3
         env:
-          UV_PIN: "0.12.5"
+          UV_PIN: "0.13.1"
         run: |
           set -euo pipefail
           have=$(uv --version 2>/dev/null | cut -d' ' -f2 || true)

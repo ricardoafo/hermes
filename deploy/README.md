@@ -123,7 +123,7 @@ dispatch is safe. The script:
 2. creates `/opt/hermes/{versions,bin,python}` (root-owned),
    `/var/lib/hermes` and `/var/log/hermes` (`hermes`-owned),
    and `/etc/hermes` (root-owned);
-3. installs the uv version pinned in `cd.yml` and Python 3.14.7 under
+3. installs the uv version pinned in `cd.yml` and Python 3.14.8 under
    `/opt/hermes/python`, then checks that user `hermes` can run it;
 4. installs the unit files, enables `hermes.service`, installs the failure
    alert script to `/opt/hermes/bin` and resets a failed alert unit;
@@ -272,7 +272,7 @@ The deploy ships `hermes-release-<sha12>.tar.gz` to the VPS and runs
   current  -> versions/<sha12>                      (what systemd runs)
   previous -> versions/<older>                      (rollback target)
   bin/                health_gate.sh, rollback.sh, schema_guard.py
-  python/             uv-managed Python 3.14.7
+  python/             uv-managed Python 3.14.8
 /etc/hermes/env.production                          (secrets, root:root 0600)
 /var/lib/hermes/hermes.sqlite3                      (state, hermes:hermes)
 ```

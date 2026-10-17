@@ -121,7 +121,7 @@ sequenceDiagram
 - **Image (`gh-runner:latest`) pre-baked for speed**:
   - Ubuntu 24.04 base
   - Python 3.14 (via `uv python install`)
-  - uv 0.12.5 (pinned)
+  - uv 0.13.1 (pinned)
   - Node 24 (nodesource) + markdownlint-cli2 0.23.2 (pinned, npm -g)
   - gitleaks 8.30.1 (pinned binary — avoids Docker pull on every scan)
   - git, curl, jq, Docker CLI (socket-mounted for container-based actions)

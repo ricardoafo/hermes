@@ -378,7 +378,7 @@ jobs:
       # The gates need uv; installing it is seconds, and deciding
       # whether a pass will need it would mean knowing the batch first.
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-        with: { version: "0.12.5" }
+        with: { version: "0.13.1" }
 
       # ─────────────────────────────────────────────────────────────
       # BUILD + GATE — the assertion the design rests on

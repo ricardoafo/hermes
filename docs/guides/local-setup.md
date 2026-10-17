@@ -16,7 +16,7 @@ in the past; each step below is a scar.
 | Tool                | Version              | Install                                                            |
 | ------------------- | -------------------- | ------------------------------------------------------------------ |
 | Python              | 3.14 (via `uv`)      | `uv python install 3.14`                                           |
-| `uv`                | 0.12.5 pinned        | <https://github.com/astral-sh/uv> — standalone installer preferred |
+| `uv`                | 0.13.1 pinned        | <https://github.com/astral-sh/uv> — standalone installer preferred |
 | `gh` CLI            | 2.x                  | <https://cli.github.com>                                           |
 | `pre-commit`        | 3.8+ (via `uv sync`) | Auto-installed by `uv sync --frozen` (dev dep)                     |
 | `markdownlint-cli2` | 0.23.2 (via npm)     | `npm install -g markdownlint-cli2@0.23.2` (for local pre-commit)   |

@@ -55,7 +55,7 @@ umask 022
 
 # Same pin as `astral-sh/setup-uv` in .github/workflows/cd.yml; a test keeps
 # the two equal.
-UV_VERSION=0.12.5
+UV_VERSION=0.13.1
 BOOTSTRAP_DIR=/var/tmp/hermes-bootstrap
 SYSTEMD_SRC="$BOOTSTRAP_DIR/systemd"
 # Alert scripts the units run from /opt/hermes/bin, outside any release.
@@ -64,7 +64,7 @@ ENV_FILE=/etc/hermes/env.production
 PYTHON_DIR=/opt/hermes/python
 # Exact interpreter the release venvs are built on (pyproject requires
 # >=3.14,<3.15). A bump is a one-line change here, then a re-dispatch.
-PYTHON_VERSION=3.14.7
+PYTHON_VERSION=3.14.8
 # Optional: the non-root account CD connects as. Unset or root: no sudoers rule.
 DEPLOY_USER=${DEPLOY_USER:-}
 SUDOERS_FILE=/etc/sudoers.d/hermes-deploy
