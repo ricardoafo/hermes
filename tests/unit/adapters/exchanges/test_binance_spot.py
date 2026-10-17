@@ -19,6 +19,8 @@ from hermes.adapters.exchanges.binance_spot import (
     TESTNET_BASE_URL,
     BinanceSpotAdapter,
     BinanceSpotConfig,
+    OrderNotPlacedError,
+    OrderStatusUnknownError,
     sign,
 )
 from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
@@ -213,16 +215,193 @@ def test_base_asset_commission_is_priced_in_the_quote(adapter: BinanceSpotAdapte
     assert fill.fee.amount == Decimal("0.65000")
 
 
-@respx.mock
-def test_third_asset_commission_is_refused(adapter: BinanceSpotAdapter) -> None:
-    """A fee in BNB can't be priced without another market, so it is an error."""
+_TICKER_URL = f"{TESTNET_BASE_URL}/api/v3/ticker/price"
+_TRADES_URL = f"{TESTNET_BASE_URL}/api/v3/myTrades"
+
+
+def _bnb_fill() -> dict[str, object]:
     body = _filled()
     body["fills"] = [
         {"price": "65000", "qty": "0.01", "commission": "0.001", "commissionAsset": "BNB"}
     ]
-    respx.post(url__startswith=_ORDER_URL).mock(return_value=httpx.Response(200, json=body))
-    with pytest.raises(ExchangeError, match="BNB"):
+    return body
+
+
+@respx.mock
+def test_third_asset_commission_is_priced_at_its_ticker(adapter: BinanceSpotAdapter) -> None:
+    """A fee paid in BNB is a filled order with its fee in the quote, not an error (#858)."""
+    respx.post(url__startswith=_ORDER_URL).mock(return_value=httpx.Response(200, json=_bnb_fill()))
+    ticker = respx.get(url__startswith=_TICKER_URL).mock(
+        return_value=httpx.Response(200, json={"symbol": "BNBUSDT", "price": "600.00"})
+    )
+
+    fill = adapter.place_market_order(side=OrderSide.BUY, order=_order())
+
+    assert (fill.fee.amount, fill.fee.currency, ticker.calls.last.request.url.params["symbol"]) == (
+        Decimal("0.6"),
+        Currency.USDT,
+        "BNBUSDT",
+    )
+
+
+@respx.mock
+def test_third_asset_commission_falls_back_to_the_taker_rate(adapter: BinanceSpotAdapter) -> None:
+    """With the ticker down the fill still returns, its fee at the pre-registered 10 bps."""
+    respx.post(url__startswith=_ORDER_URL).mock(return_value=httpx.Response(200, json=_bnb_fill()))
+    respx.get(url__startswith=_TICKER_URL).mock(side_effect=httpx.ConnectError("down"))
+
+    fill = adapter.place_market_order(side=OrderSide.BUY, order=_order())
+
+    assert (fill.executed_qty, fill.fee.amount) == (Decimal("0.01"), Decimal("0.65"))
+
+
+def test_every_order_carries_a_fresh_client_order_id(adapter: BinanceSpotAdapter) -> None:
+    """Two orders are sent with two different ``hermes-`` client ids, the key of any lookup."""
+    with respx.mock:
+        route = respx.post(url__startswith=_ORDER_URL).mock(
+            return_value=httpx.Response(200, json=_filled())
+        )
         adapter.place_market_order(side=OrderSide.BUY, order=_order())
+        adapter.place_market_order(side=OrderSide.BUY, order=_order())
+    ids = [call.request.url.params["newClientOrderId"] for call in route.calls]
+
+    assert (len(set(ids)), [i.startswith("hermes-") and len(i) == 27 for i in ids]) == (
+        2,
+        [True, True],
+    )
+
+
+# SEV-1: no rubric row matches; an order of unknown status must never be retried as refused
+@respx.mock
+@pytest.mark.parametrize(
+    "failure",
+    [httpx.Response(503, text="<html>busy</html>"), httpx.ReadTimeout("slow")],
+    ids=["5xx", "timeout"],
+)
+def test_an_order_whose_reply_was_lost_returns_the_fill_found_by_its_client_id(
+    adapter: BinanceSpotAdapter, failure: httpx.Response | Exception
+) -> None:
+    """A 5xx or timeout on submission is looked up, and a filled order returns its fill.
+
+    Binance documents 5xx as "execution status unknown": calling it a refusal
+    would invite a retry that doubles the position (#858 item 1).
+    """
+    post = respx.post(url__startswith=_ORDER_URL)
+    if isinstance(failure, Exception):
+        post.mock(side_effect=failure)
+    else:
+        post.mock(return_value=failure)
+    lookup = respx.get(url__startswith=_ORDER_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "symbol": "BTCUSDT",
+                "orderId": 28,
+                "status": "FILLED",
+                "executedQty": "0.01",
+                "cummulativeQuoteQty": "650.00",
+                "updateTime": _NOW_MS,
+            },
+        )
+    )
+    respx.get(url__startswith=_TRADES_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "price": "65000.00",
+                    "qty": "0.01",
+                    "commission": "0.65",
+                    "commissionAsset": "USDT",
+                }
+            ],
+        )
+    )
+
+    fill = adapter.place_market_order(side=OrderSide.BUY, order=_order())
+
+    sent = post.calls.last.request.url.params["newClientOrderId"]
+    asked = lookup.calls.last.request.url.params["origClientOrderId"]
+    assert (fill.executed_qty, fill.avg_price, fill.fee.amount, asked) == (
+        Decimal("0.01"),
+        Decimal("65000"),
+        Decimal("0.65"),
+        sent,
+    )
+
+
+@respx.mock
+def test_an_order_binance_never_saw_is_not_placed(adapter: BinanceSpotAdapter) -> None:
+    """Lookup code -2013 means the order does not exist: a distinct, retry-safe error."""
+    respx.post(url__startswith=_ORDER_URL).mock(return_value=httpx.Response(502, text="bad"))
+    respx.get(url__startswith=_ORDER_URL).mock(
+        return_value=httpx.Response(400, json={"code": -2013, "msg": "Order does not exist."})
+    )
+
+    with pytest.raises(OrderNotPlacedError, match="was not placed") as caught:
+        adapter.place_market_order(side=OrderSide.BUY, order=_order())
+
+    assert caught.value.client_order_id.startswith("hermes-")
+
+
+@respx.mock
+def test_a_failed_lookup_names_the_client_id_to_reconcile(adapter: BinanceSpotAdapter) -> None:
+    """When the lookup fails too, the error says the status is unknown and names the order."""
+    post = respx.post(url__startswith=_ORDER_URL).mock(return_value=httpx.Response(500))
+    respx.get(url__startswith=_ORDER_URL).mock(side_effect=httpx.ConnectError("down"))
+
+    with pytest.raises(OrderStatusUnknownError, match="reconcile") as caught:
+        adapter.place_market_order(side=OrderSide.BUY, order=_order())
+
+    assert caught.value.client_order_id == post.calls.last.request.url.params["newClientOrderId"]
+
+
+@respx.mock
+def test_a_found_order_whose_trades_cannot_be_read_names_its_binance_id(
+    adapter: BinanceSpotAdapter,
+) -> None:
+    """A placed order whose fees can't be read is unknown, and the error carries its order id."""
+    respx.post(url__startswith=_ORDER_URL).mock(return_value=httpx.Response(504))
+    respx.get(url__startswith=_ORDER_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "orderId": 4242,
+                "status": "FILLED",
+                "executedQty": "0.01",
+                "cummulativeQuoteQty": "650.00",
+                "updateTime": _NOW_MS,
+            },
+        )
+    )
+    respx.get(url__startswith=_TRADES_URL).mock(return_value=httpx.Response(503))
+
+    with pytest.raises(OrderStatusUnknownError, match="Binance order 4242"):
+        adapter.place_market_order(side=OrderSide.BUY, order=_order())
+
+
+@respx.mock
+def test_a_stop_loss_whose_reply_was_lost_returns_the_found_order_id(
+    adapter: BinanceSpotAdapter,
+) -> None:
+    """The resting stop is found by client id, so it is not placed twice."""
+    respx.post(url__startswith=_ORDER_URL).mock(side_effect=httpx.ReadTimeout("slow"))
+    respx.get(url__startswith=_ORDER_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "orderId": 77,
+                "status": "NEW",
+                "executedQty": "0",
+                "cummulativeQuoteQty": "0",
+                "time": _NOW_MS,
+            },
+        )
+    )
+
+    order_id = adapter.place_stop_loss(order=_order(OrderSide.SELL), stop_price=Decimal("60000"))
+
+    assert order_id == "BTCUSDT:77"
 
 
 @respx.mock

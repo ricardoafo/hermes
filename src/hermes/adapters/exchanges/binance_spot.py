@@ -26,6 +26,16 @@ Safety (ADR-003 §00 I-08, AGENTS.md rule 7):
 Order IDs returned by :meth:`BinanceSpotAdapter.place_stop_loss` are
 ``SYMBOL:ORDERID``, because Binance cancels by symbol and order id.
 
+Unknown execution status (#858): Binance documents a 5xx on an order as
+"execution status unknown", and a timeout leaves the same doubt. Every order
+therefore carries a ``newClientOrderId``, and such a failure is answered by a
+lookup on that id instead of a refusal: an order Binance never saw is an
+:class:`OrderNotPlacedError` (safe to retry), a placed one returns its fill,
+and a lookup that fails too is an :class:`OrderStatusUnknownError` naming the
+client order id for the operator to reconcile. A commission charged in a third
+asset (BNB) is priced at that asset's ticker, or at the pre-registered taker
+rate when the ticker cannot be read, so a filled order always returns its fill.
+
 Reference: issue #148; openspec/changes/148-binance-testnet-spot/change.md.
 """
 
@@ -33,6 +43,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import secrets
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -42,6 +53,7 @@ from typing import Any, Final
 from urllib.parse import urlencode, urlsplit
 
 import httpx
+import structlog
 
 from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.domain.errors import ExchangeError, NetworkError
@@ -55,7 +67,16 @@ from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
 from hermes.infrastructure.mainnet_permit import MainnetPermit
 
-__all__ = ["TESTNET_BASE_URL", "BinanceSpotAdapter", "BinanceSpotConfig", "sign"]
+__all__ = [
+    "TESTNET_BASE_URL",
+    "BinanceSpotAdapter",
+    "BinanceSpotConfig",
+    "OrderNotPlacedError",
+    "OrderStatusUnknownError",
+    "sign",
+]
+
+_log = structlog.get_logger(__name__)
 
 TESTNET_BASE_URL: Final = "https://testnet.binance.vision"
 _TESTNET_HOST: Final = "testnet.binance.vision"
@@ -75,8 +96,22 @@ _MAINNET_HOSTS: Final = frozenset(
 _API_KEY_HEADER: Final = "X-MBX-APIKEY"
 _UNKNOWN_ORDER: Final = -2011
 """Binance error code for cancelling an order that no longer exists."""
+_NO_SUCH_ORDER: Final = -2013
+"""Binance error code for querying an order that does not exist."""
 _RATE_LIMITED: Final = frozenset({418, 429})
-_WEIGHTS: Final[dict[str, int]] = {"order": 1, "cancel": 1, "depth": 5, "account": 20}
+_SERVER_ERROR_MIN: Final = 500
+_WEIGHTS: Final[dict[str, int]] = {
+    "order": 1,
+    "cancel": 1,
+    "depth": 5,
+    "account": 20,
+    "query": 4,
+    "trades": 20,
+    "ticker": 2,
+}
+_CLIENT_ID_PREFIX: Final = "hermes-"
+_FALLBACK_TAKER_RATE: Final = Decimal("0.001")
+"""The pre-registered 10 bps taker fee, used when a third-asset commission cannot be priced."""
 _DEPTH_LIMIT: Final = 100
 _BPS: Final = Decimal("10000")
 _ERROR_EXCERPT: Final = 200
@@ -208,20 +243,19 @@ class BinanceSpotAdapter:
         """Submit a market order and return the confirmed fill.
 
         Raises:
+            OrderNotPlacedError: The submission failed and Binance has no such order.
+            OrderStatusUnknownError: The submission failed and the lookup did too.
             ExchangeError: Rejected order, nothing executed, or a malformed reply.
-            NetworkError: Transport failure.
+            NetworkError: Transport failure outside the submission.
         """
-        body = self._signed(
-            "POST",
-            "/api/v3/order",
+        body = self._submit(
             {
                 "symbol": _symbol(order.pair),
                 "side": side.value,
                 "type": "MARKET",
                 "quantity": str(order.qty.amount),
                 "newOrderRespType": "FULL",
-            },
-            weight=_WEIGHTS["order"],
+            }
         )
         fill = self._fill(order, body)
         if fill is None:
@@ -236,14 +270,14 @@ class BinanceSpotAdapter:
 
         Raises:
             ValueError: ``order.limit_price`` is missing.
+            OrderNotPlacedError: The submission failed and Binance has no such order.
+            OrderStatusUnknownError: The submission failed and the lookup did too.
             ExchangeError: Rejected order or malformed reply.
-            NetworkError: Transport failure.
+            NetworkError: Transport failure outside the submission.
         """
         if order.limit_price is None:
             raise ValueError("place_limit_order needs order.limit_price")
-        body = self._signed(
-            "POST",
-            "/api/v3/order",
+        body = self._submit(
             {
                 "symbol": _symbol(order.pair),
                 "side": order.side.value,
@@ -252,8 +286,7 @@ class BinanceSpotAdapter:
                 "quantity": str(order.qty.amount),
                 "price": str(order.limit_price),
                 "newOrderRespType": "FULL",
-            },
-            weight=_WEIGHTS["order"],
+            }
         )
         fill = self._fill(order, body)
         if fill is None:
@@ -361,8 +394,9 @@ class BinanceSpotAdapter:
 
         Raises:
             ValueError: ``order`` is not a SELL or ``stop_price`` is not positive.
+            OrderNotPlacedError: The submission failed and Binance has no such order.
+            OrderStatusUnknownError: The submission failed and the lookup did too.
             ExchangeError: Refusal or malformed reply.
-            NetworkError: Transport failure.
         """
         if order.side is not OrderSide.SELL:
             raise ValueError("a stop-loss protects a long position, so it must be a SELL")
@@ -370,9 +404,7 @@ class BinanceSpotAdapter:
             raise ValueError("stop_price must be positive")
         limit = stop_price * (Decimal("1") - self.config.stop_limit_buffer)
         symbol = _symbol(order.pair)
-        body = self._signed(
-            "POST",
-            "/api/v3/order",
+        body = self._submit(
             {
                 "symbol": symbol,
                 "side": "SELL",
@@ -382,8 +414,7 @@ class BinanceSpotAdapter:
                 "price": str(limit.normalize()),
                 "stopPrice": str(stop_price),
                 "newOrderRespType": "ACK",
-            },
-            weight=_WEIGHTS["order"],
+            }
         )
         order_id = body.get("orderId")
         if not isinstance(order_id, int):
@@ -393,6 +424,97 @@ class BinanceSpotAdapter:
     # ------------------------------------------------------------------
     # Wire
     # ------------------------------------------------------------------
+
+    def _submit(self, params: dict[str, str]) -> dict[str, Any]:
+        """POST an order under a fresh client id; on a 5xx or timeout, look it up."""
+        client_id = f"{_CLIENT_ID_PREFIX}{secrets.token_hex(10)}"
+        try:
+            return self._signed(
+                "POST",
+                "/api/v3/order",
+                {**params, "newClientOrderId": client_id},
+                weight=_WEIGHTS["order"],
+            )
+        except (_ServerError, NetworkError) as exc:
+            _log.warning(
+                "binance.order.status_unknown",
+                symbol=params["symbol"],
+                client_order_id=client_id,
+                error=str(exc),
+            )
+            return self._look_up(params["symbol"], client_id, cause=exc)
+
+    def _look_up(self, symbol: str, client_id: str, *, cause: Exception) -> dict[str, Any]:
+        """Return the order sent as ``client_id`` in the shape of a ``FULL`` order reply."""
+        try:
+            found = self._signed(
+                "GET",
+                "/api/v3/order",
+                {"symbol": symbol, "origClientOrderId": client_id},
+                weight=_WEIGHTS["query"],
+            )
+        except _BinanceRefusalError as refusal:
+            if refusal.code == _NO_SUCH_ORDER:
+                raise OrderNotPlacedError(
+                    msg=f"order {client_id} on {symbol} was not placed (after: {cause})",
+                    client_order_id=client_id,
+                ) from cause
+            raise self._unknown(symbol, client_id, refusal) from refusal
+        except (ExchangeError, NetworkError) as exc:
+            raise self._unknown(symbol, client_id, exc) from exc
+        order_id = found.get("orderId")
+        if not isinstance(order_id, int) or isinstance(order_id, bool):
+            raise self._unknown(symbol, client_id, f"lookup has no orderId: {found!r}")
+        reply: dict[str, Any] = {
+            "orderId": order_id,
+            "status": found.get("status"),
+            "executedQty": found.get("executedQty"),
+            "cummulativeQuoteQty": found.get("cummulativeQuoteQty"),
+            "transactTime": found.get("updateTime", found.get("time")),
+            "fills": [],
+        }
+        if _decimal(found.get("executedQty"), "executedQty") > 0:
+            try:
+                trades = self._signed_rows(
+                    "/api/v3/myTrades",
+                    {"symbol": symbol, "orderId": str(order_id)},
+                    weight=_WEIGHTS["trades"],
+                )
+            except (ExchangeError, NetworkError) as exc:
+                raise self._unknown(symbol, client_id, exc, order_id=order_id) from exc
+            reply["fills"] = trades
+        return reply
+
+    @staticmethod
+    def _unknown(
+        symbol: str, client_id: str, cause: object, *, order_id: int | None = None
+    ) -> OrderStatusUnknownError:
+        placed = f" (Binance order {order_id})" if order_id is not None else ""
+        return OrderStatusUnknownError(
+            msg=(
+                f"order {client_id}{placed} on {symbol}: execution status unknown, reconcile "
+                f"it on Binance before retrying ({cause})"
+            ),
+            client_order_id=client_id,
+        )
+
+    def _quote_fee(self, part: Mapping[str, Any], asset: str, quote: str) -> Decimal:
+        """Price a commission charged in a third asset, at its ticker or the pre-registered rate."""
+        commission = _decimal(part.get("commission"), "commission")
+        try:
+            ticker = self._public(
+                "/api/v3/ticker/price", {"symbol": f"{asset}{quote}"}, weight=_WEIGHTS["ticker"]
+            )
+            return commission * _decimal(ticker.get("price"), "ticker price")
+        except (ExchangeError, NetworkError) as exc:
+            notional = _decimal(part.get("price"), "price") * _decimal(part.get("qty"), "qty")
+            _log.warning(
+                "binance.fee.priced_at_taker_rate",
+                commission_asset=asset,
+                commission=str(commission),
+                error=str(exc),
+            )
+            return notional * _FALLBACK_TAKER_RATE
 
     def _account(self) -> dict[str, Any]:
         return self._signed("GET", "/api/v3/account", {}, weight=_WEIGHTS["account"])
@@ -405,6 +527,28 @@ class BinanceSpotAdapter:
         self, method: str, path: str, params: dict[str, str], *, weight: int
     ) -> dict[str, Any]:
         self.limiter.acquire(weight)
+        signed = self._sign_query(params)
+        return self._send(
+            method,
+            f"{path}?{signed}",
+            headers={_API_KEY_HEADER: self.config.api_key},
+        )
+
+    def _signed_rows(
+        self, path: str, params: dict[str, str], *, weight: int
+    ) -> list[dict[str, Any]]:
+        self.limiter.acquire(weight)
+        signed = self._sign_query(params)
+        body = self._send_any(
+            "GET", f"{path}?{signed}", headers={_API_KEY_HEADER: self.config.api_key}
+        )
+        if not isinstance(body, list) or not all(isinstance(row, dict) for row in body):
+            raise ExchangeError(
+                msg=f"expected a JSON list of objects, got {str(body)[:_ERROR_EXCERPT]}"
+            )
+        return body
+
+    def _sign_query(self, params: dict[str, str]) -> str:
         query = urlencode(
             {
                 **params,
@@ -412,12 +556,7 @@ class BinanceSpotAdapter:
                 "timestamp": str(self.clock_ms()),
             }
         )
-        signed = f"{query}&signature={sign(query, self.config.api_secret)}"
-        return self._send(
-            method,
-            f"{path}?{signed}",
-            headers={_API_KEY_HEADER: self.config.api_key},
-        )
+        return f"{query}&signature={sign(query, self.config.api_secret)}"
 
     def _send(
         self,
@@ -427,6 +566,19 @@ class BinanceSpotAdapter:
         params: dict[str, str] | None = None,
         headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
+        body = self._send_any(method, url, params=params, headers=headers)
+        if not isinstance(body, dict):
+            raise ExchangeError(msg=f"expected a JSON object, got {str(body)[:_ERROR_EXCERPT]}")
+        return body
+
+    def _send_any(
+        self,
+        method: str,
+        url: str,
+        *,
+        params: dict[str, str] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> object:
         try:
             response = self.client.request(method, url, params=params, headers=headers)
         except httpx.HTTPError as exc:
@@ -436,6 +588,10 @@ class BinanceSpotAdapter:
         if response.status_code in _RATE_LIMITED:
             raise ExchangeError(
                 msg=f"rate limited (HTTP {response.status_code}); limiter is misconfigured"
+            )
+        if response.status_code >= _SERVER_ERROR_MIN:
+            raise _ServerError(
+                msg=f"Binance HTTP {response.status_code}: {response.text[:_ERROR_EXCERPT]}"
             )
         try:
             body: object = response.json()
@@ -451,8 +607,6 @@ class BinanceSpotAdapter:
                 msg=f"Binance refused (HTTP {response.status_code}, code {code}): {text}",
                 code=code if isinstance(code, int) else 0,
             )
-        if not isinstance(body, dict):
-            raise ExchangeError(msg=f"expected a JSON object, got {str(body)[:_ERROR_EXCERPT]}")
         return body
 
     def _fill(self, order: Order, body: dict[str, Any]) -> Fill | None:
@@ -472,7 +626,7 @@ class BinanceSpotAdapter:
             elif asset == order.pair.base.value:
                 fee += commission * _decimal(part.get("price"), "price")
             elif commission != 0:
-                raise ExchangeError(msg=f"commission in {asset!r} cannot be priced in the quote")
+                fee += self._quote_fee(part, str(asset), order.pair.quote.value)
         try:
             return Fill(
                 order=order,
@@ -492,3 +646,33 @@ class _BinanceRefusalError(ExchangeError):
     """Binance answered with an HTTP error; ``code`` is its error code."""
 
     code: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class _ServerError(ExchangeError):
+    """Binance answered 5xx: for an order, its execution status is unknown."""
+
+
+@dataclass(frozen=True, slots=True)
+class OrderNotPlacedError(ExchangeError):
+    """An order whose submission failed is confirmed absent on Binance: safe to retry.
+
+    Attributes:
+        client_order_id: The ``newClientOrderId`` the lookup used.
+    """
+
+    client_order_id: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class OrderStatusUnknownError(ExchangeError):
+    """Neither the submission nor the lookup told whether the order exists.
+
+    Never retry blindly: the order may be live. Reconcile it on Binance by
+    ``client_order_id`` first.
+
+    Attributes:
+        client_order_id: The ``newClientOrderId`` the order was sent with.
+    """
+
+    client_order_id: str = ""
