@@ -56,6 +56,7 @@ import base64
 import binascii
 import hashlib
 import hmac
+import os
 import re
 import secrets
 import time
@@ -92,6 +93,8 @@ KRAKEN_BASE_URL: Final = "https://api.kraken.com"
 _KRAKEN_HOST: Final = "api.kraken.com"
 _PRIVATE_PREFIX: Final = "/0/private/"
 _UNKNOWN_ORDER: Final = "EOrder:Unknown order"
+# Kraken documents these as "the order may or may not have been placed".
+_UNSURE_ERROR_PREFIXES: Final = ("EService:Unavailable", "EService:Busy", "EGeneral:Internal error")
 _RATE_LIMIT_ERRORS: Final = frozenset({"EAPI:Rate limit exceeded", "EGeneral:Too many requests"})
 _TXID: Final = re.compile(r"^[A-Z0-9]{6}-[A-Z0-9]{5}-[A-Z0-9]{6}$")
 _FINAL_STATUSES: Final = frozenset({"closed", "canceled", "expired"})
@@ -478,8 +481,14 @@ class KrakenSpotAdapter:
         nonce = self._nonce()
         try:
             result = self._private("AddOrder", fields, nonce=nonce)
-        except _KrakenRefusalError:
-            raise
+        except _KrakenRefusalError as refusal:
+            if not any(e.startswith(_UNSURE_ERROR_PREFIXES) for e in refusal.errors):
+                raise
+            raise OrderUnreadError(
+                msg=f"AddOrder answered {list(refusal.errors)} (userref {userref}): the order "
+                "may be live; find it by userref on Kraken before placing another",
+                userref=userref,
+            ) from refusal
         except NetworkError as exc:
             if isinstance(exc.__cause__, httpx.ConnectError | httpx.ConnectTimeout):
                 raise  # never connected, so never sent: safe to retry
@@ -656,7 +665,10 @@ def _write_nonce(path: Path, nonce: int) -> None:
     """Keep ``nonce`` in ``path``, atomically, before the request that uses it goes out."""
     staging = path.with_name(f"{path.name}.tmp")
     try:
-        staging.write_text(str(nonce), encoding="ascii")
+        with staging.open("w", encoding="ascii") as out:
+            out.write(str(nonce))
+            out.flush()
+            os.fsync(out.fileno())  # a power cut must not bring back an older nonce
         staging.replace(path)
     except OSError as exc:
         raise ExchangeError(msg=f"cannot keep the Kraken nonce in {path}: {exc}") from exc

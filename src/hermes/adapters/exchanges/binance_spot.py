@@ -111,6 +111,7 @@ _WEIGHTS: Final[dict[str, int]] = {
 }
 _CLIENT_ID_PREFIX: Final = "hermes-"
 _STILL_WORKING: Final = frozenset({"PENDING_NEW", "NEW", "PARTIALLY_FILLED"})
+_STOP_ON_BOOK: Final = _STILL_WORKING | {"FILLED"}
 _FALLBACK_TAKER_RATE: Final = Decimal("0.001")
 """The pre-registered 10 bps taker fee, used when a third-asset commission cannot be priced."""
 _DEPTH_LIMIT: Final = 100
@@ -397,7 +398,8 @@ class BinanceSpotAdapter:
             ValueError: ``order`` is not a SELL or ``stop_price`` is not positive.
             OrderNotPlacedError: The submission failed and Binance has no such order.
             OrderStatusUnknownError: The submission failed and the lookup did too.
-            ExchangeError: Refusal or malformed reply.
+            ExchangeError: Refusal, malformed reply, or a lost submission found
+                cancelled, expired or rejected (no stop is on the book).
         """
         if order.side is not OrderSide.SELL:
             raise ValueError("a stop-loss protects a long position, so it must be a SELL")
@@ -473,10 +475,14 @@ class BinanceSpotAdapter:
         order_id = found.get("orderId")
         if not isinstance(order_id, int) or isinstance(order_id, bool):
             raise self._unknown(symbol, client_id, f"lookup has no orderId: {found!r}")
-        if not rests and found.get("status") in _STILL_WORKING:
+        status = found.get("status")
+        if not rests and status in _STILL_WORKING:
             # Reading a working market or IOC order as final would call a fill-in-progress a miss.
-            raise self._unknown(
-                symbol, client_id, f"found still {found.get('status')}", order_id=order_id
+            raise self._unknown(symbol, client_id, f"found still {status}", order_id=order_id)
+        if rests and status not in _STOP_ON_BOOK:
+            raise ExchangeError(
+                msg=f"order {client_id} (Binance order {order_id}) on {symbol} was found "
+                f"{status}: it is not on the book"
             )
         reply: dict[str, Any] = {
             "orderId": order_id,

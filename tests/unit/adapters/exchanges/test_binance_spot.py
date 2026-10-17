@@ -448,6 +448,31 @@ def test_a_stop_loss_whose_reply_was_lost_returns_the_found_order_id(
     assert order_id == "BTCUSDT:77"
 
 
+# SEV-1: no rubric row matches; a dead stop reported as resting leaves a position unprotected
+@respx.mock
+@pytest.mark.parametrize("status", ["CANCELED", "EXPIRED", "REJECTED"])
+def test_a_lost_stop_loss_found_dead_is_not_reported_as_resting(
+    adapter: BinanceSpotAdapter, status: str
+) -> None:
+    """A lost stop-loss found cancelled, expired or rejected raises: it is no cover."""
+    respx.post(url__startswith=_ORDER_URL).mock(side_effect=httpx.ReadTimeout("slow"))
+    respx.get(url__startswith=_ORDER_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "orderId": 78,
+                "status": status,
+                "executedQty": "0",
+                "cummulativeQuoteQty": "0",
+                "time": _NOW_MS,
+            },
+        )
+    )
+
+    with pytest.raises(ExchangeError, match=f"Binance order 78.*found {status}.*not on the book"):
+        adapter.place_stop_loss(order=_order(OrderSide.SELL), stop_price=Decimal("60000"))
+
+
 @respx.mock
 def test_ioc_limit_that_fills_returns_a_fill(adapter: BinanceSpotAdapter) -> None:
     """A filled IOC limit is a Fill, and the request is IOC at the given price."""

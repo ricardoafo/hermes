@@ -744,3 +744,21 @@ def test_a_nonce_file_that_cannot_be_written_is_an_exchange_error(tmp_path: Path
         ExchangeError,
         True,
     )
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    "error", ["EService:Unavailable", "EService:Busy", "EGeneral:Internal error"]
+)
+def test_an_addorder_service_error_is_an_unread_order(
+    trading: KrakenSpotAdapter, error: str
+) -> None:
+    """Kraken's "may or may not be placed" errors name the userref, never read as a refusal."""
+    add = respx.post(f"{_PRIVATE}/AddOrder").mock(
+        return_value=httpx.Response(200, json={"error": [error]})
+    )
+
+    with pytest.raises(OrderUnreadError, match="find it by userref") as caught:
+        trading.place_market_order(side=OrderSide.BUY, order=_order())
+
+    assert caught.value.userref == int(_form(add.calls.last.request)["userref"])
