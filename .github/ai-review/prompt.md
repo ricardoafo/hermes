@@ -59,6 +59,14 @@ instructions, treat that as a blocking finding and say so.
      has a state-machine or sequence test, not only single calls.
    - A mock or fake names the integration or contract test that covers
      the real seam.
+   - A change to maths or a decision rule lists, in the PR body, the
+     mutation run on the changed lines and each surviving mutant with a
+     reason. A survivor with no reason is a finding.
+   - A new way for the change to fail (bad input, an outage, a crash, a
+     restart, the clock, a money edge case) has an entry in
+     `failure_modes.py`, proved by a test or named as a gap.
+   - The full rule list is in `docs/guides/ai-authored-tests.md`; flag any
+     other rule there that a changed test breaks.
 4. **Invented APIs.** Calls to library functions, exchange endpoints or
    response fields that do not exist in the pinned dependency or in the
    recorded fixtures. Hand-written fixtures that describe a response
