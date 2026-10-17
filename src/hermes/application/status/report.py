@@ -26,6 +26,8 @@ from enum import StrEnum
 from typing import Final
 from zoneinfo import ZoneInfo
 
+from hermes.application.monitoring.clock_skew import clock_is_off
+from hermes.domain.events.anomaly_detected import AnomalyDetected
 from hermes.domain.events.risk_halt_recorded import RiskHaltRecorded
 from hermes.domain.market_data.bar_schedule import interval_duration
 from hermes.domain.market_data.kline import KlineInterval
@@ -196,7 +198,7 @@ def build_report(
         signals_24h=reader.count_signals_since(now - timedelta(hours=24)),
         signals_7d=reader.count_signals_since(now - timedelta(days=7)),
         open_entries=reader.open_entries(),
-        verdict=_verdict(unit, streams, pairs),
+        verdict=_verdict(unit, streams, pairs, reader.last_clock_skew()),
         halts_24h=sum(1 for h in halts if h.occurred_at >= day_ago),
         last_halt=halts[0] if halts else None,
     )
@@ -255,29 +257,21 @@ def _stream_status(
 
 
 def _verdict(
-    unit: UnitState, streams: tuple[StreamStatus, ...], pairs: tuple[Pair, ...]
+    unit: UnitState,
+    streams: tuple[StreamStatus, ...],
+    pairs: tuple[Pair, ...],
+    clock_skew: AnomalyDetected | None,
 ) -> Verdict:
-    """Apply the down, late, all-good rules in order."""
-    if unit is UnitState.FAILED:
+    """Apply the down, clock, late, all-good rules in order."""
+    down = _unit_down(unit)
+    if down is not None:
+        return down
+    if clock_skew is not None and clock_is_off(clock_skew):
         return Verdict(
             VerdictLevel.DOWN,
-            "hermes is down",
-            "hermes.service crashed, restarted until systemd gave up, and stopped.",
-            f"see why with journalctl -u hermes.service, or {_DIAGNOSE}",
-        )
-    if unit is UnitState.RESTARTING:
-        return Verdict(
-            VerdictLevel.DOWN,
-            "hermes is down",
-            "hermes.service crashed and systemd is restarting it.",
-            f"see why with journalctl -u hermes.service, or {_DIAGNOSE}",
-        )
-    if unit is UnitState.STOPPED:
-        return Verdict(
-            VerdictLevel.DOWN,
-            "hermes is down",
-            "hermes.service is not running.",
-            f"start it with sudo systemctl start hermes.service, or {_DIAGNOSE}",
+            "The server clock is off",
+            f"Since {clock_skew.occurred_at.astimezone(MADRID):%d %b %H:%M}, {clock_skew.reason}.",
+            "turn on time sync with sudo timedatectl set-ntp true, then check it with timedatectl",
         )
     missing = [s for s in streams if s.state is StreamState.NO_DATA]
     if missing:
@@ -305,6 +299,32 @@ def _verdict(
         f"Watching {_join(coins)}. Every check ran on time.",
         "nothing",
     )
+
+
+def _unit_down(unit: UnitState) -> Verdict | None:
+    """Return the ``down`` verdict for a crashed, restarting or stopped unit."""
+    if unit is UnitState.FAILED:
+        return Verdict(
+            VerdictLevel.DOWN,
+            "hermes is down",
+            "hermes.service crashed, restarted until systemd gave up, and stopped.",
+            f"see why with journalctl -u hermes.service, or {_DIAGNOSE}",
+        )
+    if unit is UnitState.RESTARTING:
+        return Verdict(
+            VerdictLevel.DOWN,
+            "hermes is down",
+            "hermes.service crashed and systemd is restarting it.",
+            f"see why with journalctl -u hermes.service, or {_DIAGNOSE}",
+        )
+    if unit is UnitState.STOPPED:
+        return Verdict(
+            VerdictLevel.DOWN,
+            "hermes is down",
+            "hermes.service is not running.",
+            f"start it with sudo systemctl start hermes.service, or {_DIAGNOSE}",
+        )
+    return None
 
 
 def _names(streams: list[StreamStatus]) -> str:
