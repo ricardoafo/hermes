@@ -51,6 +51,13 @@ flowchart LR
 - Every runner is ephemeral. It takes one job, exits and re-registers,
   so one runner showing offline between jobs is normal.
   `hermes runners` (#516) reports each group's health.
+- **No job ever runs on a GitHub-hosted runner.** The deploy secrets and the
+  write token must stay on server-01 (Rick, 17 Oct 2026; issue #754). A job
+  whose runner variable is unset does not fall back to a hosted image: its
+  expression ends in the fixed label set `["self-hosted","linux","hermes"]`,
+  so it queues for a server-01 runner. `scripts/dev/runs-on-check.py`, part of
+  the `workflows` check in PR CI and `pr-preflight.sh`, fails any `runs-on`
+  that names a hosted image or lacks that self-hosted ending (#1069).
 
 Runner commands, all run from `scripts/dev/gh-runner` on Workbench:
 

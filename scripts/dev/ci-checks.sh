@@ -23,7 +23,8 @@
 #   codeowners                        CODEOWNERS syntax
 #   markdown                          markdownlint on the full tree
 #   guides-index                      the guides index still builds (--check)
-#   workflows                         actionlint + zizmor on .github/workflows
+#   workflows                         actionlint + zizmor on .github/workflows, and
+#                                     every runs-on pinned to self-hosted runners (#1069)
 #   guards                            the pre-commit guards, over the whole tree,
 #                                     and every hook covered by CI (#840)
 #   self-tests                        every *-self-test pre-commit hook (#840)
@@ -140,7 +141,8 @@ run_one() {
         # .github/zizmor.yml and is burned down in #529.
         workflows)
             uv tool run --quiet --from "actionlint-py==1.7.12.*" actionlint \
-                && uv tool run --quiet zizmor==1.30.1 --offline --config .github/zizmor.yml .github/workflows
+                && uv tool run --quiet zizmor==1.30.1 --offline --config .github/zizmor.yml .github/workflows \
+                && python3 scripts/dev/runs-on-check.py
             ;;
         guards) run_guards ;;
         self-tests) uv run python scripts/dev/hook-coverage-check.py --run-self-tests ;;
