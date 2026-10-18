@@ -78,6 +78,11 @@ import structlog
 from returns.result import Failure
 
 from hermes.adapters._shared.rate_limiter import RateLimitConfig
+from hermes.adapters.clock.remote import (
+    TEST_CLOCK_URL_ENV,
+    RemoteClock,
+    remote_clock_from_env,
+)
 from hermes.adapters.clock.wall import WallClock
 from hermes.adapters.fees.binance_history import load_binance_fee_history
 from hermes.adapters.fills.orderbook_walk import OrderbookWalkFillModel
@@ -170,7 +175,7 @@ from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.entrypoints._release import read_release
 from hermes.infrastructure import sentry_integration
-from hermes.infrastructure.config.models import FrankfurterConfig
+from hermes.infrastructure.config.models import FrankfurterConfig, MarketDataConfig
 from hermes.infrastructure.config.root import HermesConfig
 from hermes.infrastructure.file_lock import FileLock
 from hermes.infrastructure.logging import bind_correlation_id, new_correlation_id
@@ -807,7 +812,11 @@ def _wire_on_ledger(
     """Wire everything that needs the open ledger; the caller closes it on failure."""
     ledger = _open_ledger(connection, ledger_path)
 
-    wall: ClockPort = clock if clock is not None else WallClock()
+    test_clock = remote_clock_from_env(env_snapshot) if clock is None else None
+    wall: ClockPort = clock if clock is not None else test_clock or WallClock()
+    if test_clock is not None:
+        # The loader allowed it only in dev or qa, on loopback (#972).
+        _log.warning("serve.clock.test_clock", source=TEST_CLOCK_URL_ENV)
     event_bus = EventBus()
     event_bus.subscribe(SignalEmitted, ledger.append_event)
     event_bus.subscribe(BarProcessed, ledger.append_event)
@@ -884,9 +893,7 @@ def _wire_on_ledger(
             event_bus=event_bus,
             ledger=ledger,
             clock=wall,
-            feed=feed
-            if feed is not None
-            else BinanceLiveKlinesAdapter.create(config.market_data, wall),
+            feed=feed if feed is not None else _live_feed(config.market_data, wall, test_clock),
             strategies=strategies,
             strategy_id=strategy_id,
             tracker=tracker,
@@ -905,6 +912,15 @@ def _wire_on_ledger(
         )
         owned.pop_all()
         return composition
+
+
+def _live_feed(
+    config: MarketDataConfig, wall: ClockPort, test_clock: RemoteClock | None
+) -> BinanceLiveKlinesAdapter:
+    """Build the live klines feed; on a test clock it also sleeps on that clock (#972)."""
+    if test_clock is None:
+        return BinanceLiveKlinesAdapter.create(config, wall)
+    return BinanceLiveKlinesAdapter.create(config, wall, sleep=test_clock.sleep)
 
 
 def _notifiers(

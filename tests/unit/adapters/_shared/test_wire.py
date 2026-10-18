@@ -174,6 +174,21 @@ def test_http_config_refuses_plaintext_or_no_timeout(
         validate_http_config("Cfg", url=url, timeout_sec=timeout, url_field="rest_url")
 
 
+@pytest.mark.parametrize(
+    "url", ["http://127.0.0.1:9000/frankfurter", "http://localhost:1", "http://[::1]:2/x"]
+)
+def test_http_config_accepts_plaintext_on_a_loopback_fake(url: str) -> None:
+    """A lower environment's fake on loopback needs no certificate (#972)."""
+    validate_http_config("Cfg", url=url, timeout_sec=5.0)
+
+
+@pytest.mark.parametrize("url", ["http://10.0.0.1", "http://127.0.0.1.example", "ws://127.0.0.1"])
+def test_http_config_still_refuses_plaintext_off_loopback(url: str) -> None:
+    """Only loopback earns the exception; any other host or scheme stays refused."""
+    with pytest.raises(ValueError, match=r"must start with https://, or http:// on a loopback"):
+        validate_http_config("Cfg", url=url, timeout_sec=5.0)
+
+
 def _wire_sources() -> dict[str, str]:
     return {
         str(path.relative_to(_SRC)): path.read_text(encoding="utf-8")
