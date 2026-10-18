@@ -31,6 +31,7 @@ _UNIT = "tests/unit/"
 _SHADOW = _UNIT + "application/execution/test_shadow.py::"
 _SHADOW_CHECKS = _UNIT + "application/strategy_protocol/test_shadow_checks.py::"
 _SERVE_FILLS = "tests/integration/entrypoints/test_serve_fills.py::"
+_TAX_GUARD = "tests/integration/entrypoints/test_serve_tax_guard.py::"
 
 
 @dataclass(frozen=True)
@@ -337,5 +338,24 @@ IN_CODE: tuple[Rule, ...] = (
     Rule(
         "A notification outage never blocks a fill",
         proved_by=(_OUTAGES + "test_a_telegram_outage_does_not_stop_trading",),
+    ),
+    Rule(
+        "ADR-002 Decision 6 tax guard: a breach on a daily close is recorded and alerted",
+        proved_by=(
+            _TAX_GUARD
+            + "test_one_trade_past_the_ceiling_records_one_critical_row_at_the_daily_close",
+            _TAX_GUARD + "test_one_trade_past_the_ceiling_is_alerted_once_on_the_routed_channel",
+            _TAX_GUARD + "test_a_window_exactly_at_the_ceiling_records_and_alerts_nothing",
+        ),
+    ),
+    Rule(
+        "ADR-002 Decision 6 tax guard: a breach changes no decision or fill",
+        proved_by=(
+            _SERVE_FILLS + "test_a_tax_guard_breach_is_recorded_and_changes_no_decision_or_fill",
+        ),
+    ),
+    Rule(
+        "ADR-002 Decision 6 tax guard: a breach pauses new signals",
+        gap="issue #136: the pause is the Code Owner's decision; serve records and alerts only",
     ),
 )

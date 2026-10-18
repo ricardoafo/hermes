@@ -54,10 +54,12 @@ class HermesConfig(BaseModel):
         strategies: Strategy roster with weights.
         binance: Binance-exchange endpoints and testnet flag.
         fees: Per-venue fee schedules.
-        tax_guard: LOPDGDD + tax thresholds. Reserved: no code reads it yet,
-            so the file is optional and the section has defaults.
+        tax_guard: LOPDGDD + tax thresholds. Serve reads the
+            recharacterization guard's window and ceilings; the file is
+            optional and the section has defaults.
         ml: LLM supervisor configuration (never trade-signal source per
-            ADR-001 + ADR-005). Reserved like ``tax_guard``.
+            ADR-001 + ADR-005). Reserved: no code reads it yet, so the file
+            is optional and the section has defaults.
         klines: Historical-klines fetcher + storage configuration
             (issue #28 foundation).
         frankfurter: FX-rate provider configuration — the

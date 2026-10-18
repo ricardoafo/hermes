@@ -10,8 +10,10 @@ Three pure functions compose the tax guard's public surface:
   :class:`TaxGuardThresholds`, returns an :class:`AnomalyDetected`
   when any configured threshold is crossed, otherwise ``None``.
 - :func:`evaluate` — Convenience composition: computes the window and
-  returns the anomaly (or ``None``). This is what the future signal
-  engine subscribes into.
+  returns the anomaly (or ``None``).
+- :func:`evaluate_ledger` — the same over the ledger's trades of the
+  window. Serve calls it once per daily close and records and alerts the
+  anomaly (#1181).
 
 Design invariants (property-tested):
 
@@ -92,8 +94,9 @@ class TaxGuardThresholds(Protocol):
 TAX_GUARD_SOURCE: str = "tax_guard.recharacterization"
 """Value stored in ``AnomalyDetected.source`` for every breach event.
 
-Downstream routers filter on this identifier to trigger the engine-pause
-behavior mandated by ADR-002 §6 (deferred to #25 for the engine work).
+Serve reads the latest row with this source so a restart does not record a
+daily breach twice. ADR-002 §6 also promises a pause of new signals on a
+breach; nothing pauses on it yet, which is the Code Owner's decision (#136).
 """
 
 
@@ -312,9 +315,8 @@ def evaluate(
 ) -> AnomalyDetected | None:
     """Compose :func:`compute_window` + :func:`check_breach` in one call.
 
-    This is the entry point future callers (the paper-trading engine in
-    #25) will subscribe into. The engine takes the returned event, pauses
-    new signal generation, and publishes the event to the bus.
+    Serve goes through :func:`evaluate_ledger`, which reads the window's
+    trades from the ledger and calls this.
 
     Args:
         events: Sequence of domain events to observe.

@@ -520,21 +520,23 @@ class FeesConfig(BaseModel):
 class TaxGuardConfig(BaseModel):
     """Root of ``config/tax_guard.yaml`` — LOPDGDD + tax thresholds.
 
-    Reserved: no running code reads these values yet, so the file is
-    optional and every field has a default (the ADR-002 starters).
+    Serve reads the four recharacterization fields on every daily close
+    (#1181); the other three are not read yet. The file is optional and every
+    field has a default (the ADR-002 starters).
 
     Two axes live under this model:
 
     - **PnL / concentration hygiene** — ``annual_realised_pnl_alert_eur``,
-      ``wash_sale_window_days``, ``max_position_pct_portfolio``. Used by the
-      annual-report + concentration guards.
+      ``wash_sale_window_days``, ``max_position_pct_portfolio``. Meant for
+      the annual-report and concentration guards, which do not read them yet.
     - **Recharacterization guard (ADR-002 §Decision 6)** — the rolling
       90-day window over trade count, distinct assets, and fee income that
       keeps the observable signals firmly on the "individual investor"
-      side of any plausible AEAT recharacterization line. Crossing any
-      threshold emits an ``AnomalyDetected``, which is recorded in the
-      ledger and notified only. Nothing pauses signal generation on it; a
-      pause on anomalies is pending the Code Owner's decision (issue #136).
+      side of any plausible AEAT recharacterization line. Serve evaluates
+      it once per daily close; crossing any threshold emits an
+      ``AnomalyDetected``, which is recorded in the ledger and notified
+      only. Nothing pauses signal generation on it; a pause on anomalies is
+      pending the Code Owner's decision (issue #136).
 
     Attributes:
         annual_realised_pnl_alert_eur: Absolute EUR gain in a calendar year
