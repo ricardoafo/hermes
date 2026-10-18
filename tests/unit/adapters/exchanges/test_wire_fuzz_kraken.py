@@ -21,13 +21,13 @@ import httpx
 from hypothesis import example, given
 from hypothesis import strategies as st
 
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.adapters.exchanges.kraken_public import KrakenPublicAdapter, KrakenPublicConfig
 from hermes.adapters.exchanges.kraken_spot import (
     KRAKEN_BASE_URL,
     KrakenSpotAdapter,
     KrakenSpotConfig,
 )
-from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.domain.errors import ExchangeError, KrakenPublicError
 from hermes.domain.fees.fee_schedule import FeeSchedule
 from hermes.domain.market_data.kline import KlineInterval

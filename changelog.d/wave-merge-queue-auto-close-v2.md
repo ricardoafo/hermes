@@ -1,3 +1,0 @@
-### Fixed
-
-- **Merge-queue auto-close v2** — the v1 belt-and-suspenders block (PR #233) silently no-op'd on 6 consecutive merges (#236, #237, #241, #243, #244, #246) because GitHub's `closingIssuesReferences` GraphQL field is populated by an asynchronous indexer and was empty at the exact moment `pulls.merge` returned. v2 unions the GraphQL result with a body regex (`\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)\b`) so the fallback works even before GitHub finishes indexing. Idempotent (checks `state === 'closed'` before updating, so re-runs don't spam comments). Closes #247.

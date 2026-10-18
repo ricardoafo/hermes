@@ -15,6 +15,7 @@ import httpx
 import pytest
 import respx
 
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.adapters.exchanges.binance_spot import (
     TESTNET_BASE_URL,
     BinanceSpotAdapter,
@@ -23,7 +24,6 @@ from hermes.adapters.exchanges.binance_spot import (
     OrderStatusUnknownError,
     sign,
 )
-from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.domain.errors import ExchangeError, NetworkError
 from hermes.domain.trading.fill import Fill, Rejection
 from hermes.domain.trading.order import Order, OrderSide

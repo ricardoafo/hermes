@@ -208,7 +208,7 @@ than it should have been:
 - **Rate-limiter float drift.** Refilling the token bucket with float
   arithmetic could leave the balance a hair under the request weight, so
   the caller spun forever on tiny top-ups
-  (`src/hermes/adapters/exchanges/rate_limiter.py`). A hypothesis property test ("acquire always returns
+  (`src/hermes/adapters/_shared/rate_limiter.py`). A hypothesis property test ("acquire always returns
   for any cost ≤ capacity") found it. The sub-agent first read the hang
   as a slow test and burned its session retrying. Lesson: write the
   property test first for any numeric loop, and treat a hang as a

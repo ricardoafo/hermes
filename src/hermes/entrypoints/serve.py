@@ -77,12 +77,12 @@ from typing import Final
 import structlog
 from returns.result import Failure
 
+from hermes.adapters._shared.rate_limiter import RateLimitConfig
 from hermes.adapters.clock.wall import WallClock
 from hermes.adapters.fees.binance_history import load_binance_fee_history
 from hermes.adapters.fills.orderbook_walk import OrderbookWalkFillModel
 from hermes.adapters.fx.frankfurter import FrankfurterAdapter
 from hermes.adapters.fx.frankfurter import FrankfurterConfig as FrankfurterWireConfig
-from hermes.adapters.fx.rate_limiter import RateLimitConfig
 from hermes.adapters.ledger.anomaly_reader import latest_anomaly
 from hermes.adapters.ledger.connection import open_ledger
 from hermes.adapters.ledger.migration_runner import unknown_applied_migrations
@@ -792,78 +792,94 @@ def _wire_on_ledger(
             "or start a new ledger for the new capital"
         )
     tracker = _rebuild_tracker(ledger, seed, strategy_id)
-    fill_model = OrderbookWalkFillModel()
-    books = (
-        orderbooks
-        if orderbooks is not None
-        else BinanceDepthSnapshotAdapter.create(config.market_data, wall)
-    )
-    fx_adapter: FrankfurterAdapter | None = None
-    rates = fx
-    if rates is None:
-        fx_adapter = _frankfurter(config.frankfurter)
-        rates = fx_adapter
-    eur_pricer = EurPricer(rates)
-    try:
-        executor = ShadowExecutor(
-            kernel=_build_kernel(
-                fill_model, tracker, strategy_id, pre_registration, roster.sizing_policy()
-            ),
-            fill_model=fill_model,
-            books=books,
-            recorder=TradeRecorder(ledger, eur_pricer),
+    # A start that fails after a client is built closes it here; on success the
+    # composition owns them and _release closes them (#1176). The depth and kline
+    # adapters' AsyncClients cannot be closed from this sync path, but they have
+    # sent no request yet, so they hold no connection to leak.
+    with contextlib.ExitStack() as owned:
+        fill_model = OrderbookWalkFillModel()
+        books = (
+            orderbooks
+            if orderbooks is not None
+            else BinanceDepthSnapshotAdapter.create(config.market_data, wall)
+        )
+        fx_adapter: FrankfurterAdapter | None = None
+        rates = fx
+        if rates is None:
+            fx_adapter = _frankfurter(config.frankfurter)
+            owned.callback(fx_adapter.close)
+            rates = fx_adapter
+        eur_pricer = EurPricer(rates)
+        try:
+            executor = ShadowExecutor(
+                kernel=_build_kernel(
+                    fill_model, tracker, strategy_id, pre_registration, roster.sizing_policy()
+                ),
+                fill_model=fill_model,
+                books=books,
+                recorder=TradeRecorder(ledger, eur_pricer),
+                ledger=ledger,
+                clock=wall,
+                fees_at=_fees_at(fee_rows),
+                strategy_id=strategy_id,
+                model=roster.execution_model(),
+                not_before=None if recorded_seed is None else recorded_seed.seeded_at,
+            )
+            held = _held_shadow_kill(ledger, strategy_id)
+        except LedgerError as exc:
+            raise StartupError(f"cannot read the fill-quality or halt rows: {exc.msg}") from exc
+        if held:
+            executor.hold_kill(held)
+        pairs = config.market_data.parsed_pairs()
+        kind = roster.strategy_kind()
+        strategies: dict[Pair, StrategyPort] = {pair: kind.create() for pair in pairs}
+
+        telegram, slack = _notifiers(env_snapshot, eur_pricer, owned)
+
+        composition = Composition(
+            config=config,
+            event_bus=event_bus,
             ledger=ledger,
             clock=wall,
-            fees_at=_fees_at(fee_rows),
+            feed=feed
+            if feed is not None
+            else BinanceLiveKlinesAdapter.create(config.market_data, wall),
+            strategies=strategies,
             strategy_id=strategy_id,
-            model=roster.execution_model(),
-            not_before=None if recorded_seed is None else recorded_seed.seeded_at,
+            tracker=tracker,
+            signal_notifier=SignalNotifier(RouterConfig(telegram=telegram, slack=slack)),
+            alert_channels=RouterConfig(telegram=telegram, slack=slack),
+            kill_triggers=pre_registration.kill_triggers(),
+            pairs=pairs,
+            intervals=tuple(config.market_data.intervals),
+            telegram=telegram,
+            slack=slack,
+            sqlite_connection=connection,
+            executor=executor,
+            orderbooks=books,
+            fx_adapter=fx_adapter,
+            eur_pricer=eur_pricer,
         )
-        held = _held_shadow_kill(ledger, strategy_id)
-    except LedgerError as exc:
-        raise StartupError(f"cannot read the fill-quality or halt rows: {exc.msg}") from exc
-    if held:
-        executor.hold_kill(held)
-    pairs = config.market_data.parsed_pairs()
-    kind = roster.strategy_kind()
-    strategies: dict[Pair, StrategyPort] = {pair: kind.create() for pair in pairs}
+        owned.pop_all()
+        return composition
 
-    telegram_config = _telegram_config(env_snapshot)
-    slack_config = _slack_config(env_snapshot)
+
+def _notifiers(
+    env_snapshot: Mapping[str, str], eur_pricer: EurPricer, owned: contextlib.ExitStack
+) -> tuple[TelegramAdapter | None, SlackAdapter | None]:
+    """Build the configured Telegram and Slack adapters, each closed by ``owned``."""
     eur_rate = _eur_rate_lookup(eur_pricer)
-    telegram = (
-        TelegramAdapter.create(telegram_config, eur_rate=eur_rate)
-        if telegram_config is not None
-        else None
-    )
-    slack = (
-        SlackAdapter.create(slack_config, eur_rate=eur_rate) if slack_config is not None else None
-    )
-
-    return Composition(
-        config=config,
-        event_bus=event_bus,
-        ledger=ledger,
-        clock=wall,
-        feed=feed
-        if feed is not None
-        else BinanceLiveKlinesAdapter.create(config.market_data, wall),
-        strategies=strategies,
-        strategy_id=strategy_id,
-        tracker=tracker,
-        signal_notifier=SignalNotifier(RouterConfig(telegram=telegram, slack=slack)),
-        alert_channels=RouterConfig(telegram=telegram, slack=slack),
-        kill_triggers=pre_registration.kill_triggers(),
-        pairs=pairs,
-        intervals=tuple(config.market_data.intervals),
-        telegram=telegram,
-        slack=slack,
-        sqlite_connection=connection,
-        executor=executor,
-        orderbooks=books,
-        fx_adapter=fx_adapter,
-        eur_pricer=eur_pricer,
-    )
+    telegram_config = _telegram_config(env_snapshot)
+    telegram = None
+    if telegram_config is not None:
+        telegram = TelegramAdapter.create(telegram_config, eur_rate=eur_rate)
+        owned.callback(telegram.close)
+    slack_config = _slack_config(env_snapshot)
+    slack = None
+    if slack_config is not None:
+        slack = SlackAdapter.create(slack_config, eur_rate=eur_rate)
+        owned.callback(slack.close)
+    return telegram, slack
 
 
 def _load_experiment(

@@ -358,6 +358,54 @@ class TestHealthDispatch:
         cli_module.main(["health", "sentry"], stream=io.StringIO())
         assert seen["HERMES_SENTRY__DSN"] == "https://abc@o1.ingest.sentry.io/1"  # gitleaks:allow
 
+    def test_sentry_is_initialized_from_sentry_yaml_in_the_config_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The DSN and tier in ``sentry.yaml`` reach ``sentry_integration.initialize``."""
+        (tmp_path / "sentry.yaml").write_text(
+            "dsn: https://yaml@example.test/1\nenvironment: staging\n", encoding="utf-8"
+        )
+        calls: list[tuple[str, str]] = []
+        monkeypatch.setattr(
+            cli_module.sentry_integration,
+            "initialize",
+            lambda *, dsn, environment: calls.append((dsn, environment)),
+        )
+        cli_module._initialize_sentry_from_env({"HERMES_CONFIG_DIR": str(tmp_path)})
+        assert calls == [("https://yaml@example.test/1", "staging")]
+
+    def test_sentry_env_variable_overrides_sentry_yaml(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``HERMES_SENTRY__DSN`` wins over the file, as for every other section."""
+        (tmp_path / "sentry.yaml").write_text(
+            "dsn: https://yaml@example.test/1\n", encoding="utf-8"
+        )
+        calls: list[tuple[str, str]] = []
+        monkeypatch.setattr(
+            cli_module.sentry_integration,
+            "initialize",
+            lambda *, dsn, environment: calls.append((dsn, environment)),
+        )
+        cli_module._initialize_sentry_from_env(
+            {"HERMES_CONFIG_DIR": str(tmp_path), "HERMES_SENTRY__DSN": "https://env@example.test/2"}
+        )
+        assert calls == [("https://env@example.test/2", "dev")]
+
+    def test_broken_sentry_yaml_disables_sentry_instead_of_the_cli(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An invalid ``sentry.yaml`` skips Sentry init and does not raise."""
+        (tmp_path / "sentry.yaml").write_text("typoed: 1\n", encoding="utf-8")
+        calls: list[tuple[str, str]] = []
+        monkeypatch.setattr(
+            cli_module.sentry_integration,
+            "initialize",
+            lambda *, dsn, environment: calls.append((dsn, environment)),
+        )
+        cli_module._initialize_sentry_from_env({"HERMES_CONFIG_DIR": str(tmp_path)})
+        assert calls == []
+
     def test_health_real_env_wins_over_env_local(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

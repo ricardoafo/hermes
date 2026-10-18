@@ -23,6 +23,7 @@ import json
 import os
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 from types import ModuleType
@@ -185,7 +186,7 @@ class TestApprovalCitation:
         self, body: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """Another PR, another repo, no comment anchor or a quoted line is no citation."""
-        monkeypatch.setattr(urllib.request, "urlopen", _answer(body, "ricardoafo"))
+        monkeypatch.setattr(urllib.request.OpenerDirector, "open", _answer(body, "ricardoafo"))
         assert APPROVAL.main([_REPO, str(_PR), "ricardoafo", _FP]) == 1
         assert "No 'Decision changes approved:" in capsys.readouterr().out
 
@@ -211,19 +212,27 @@ class TestApprovalCitation:
         )
 
 
+class _Response(io.BytesIO):
+    def __init__(self, payload: object, status: int = 200) -> None:
+        super().__init__(json.dumps(payload).encode())
+        self.status = status
+
+
 def _answer(pr_body: str, commenter: str, comment_body: str = f"approved {_FP}") -> Any:
-    def urlopen(request: urllib.request.Request, timeout: float) -> io.BytesIO:
-        _ = timeout
+    def open_(
+        opener: urllib.request.OpenerDirector, request: urllib.request.Request, timeout: float
+    ) -> _Response:
+        _ = opener, timeout
         if "/pulls/" in request.full_url:
-            return io.BytesIO(json.dumps({"body": pr_body}).encode())
+            return _Response({"body": pr_body})
         comment = {
             "user": {"login": commenter},
             "body": comment_body,
             "issue_url": f"https://api.github.com/repos/{_REPO}/issues/{_PR}",
         }
-        return io.BytesIO(json.dumps(comment).encode())
+        return _Response(comment)
 
-    return urlopen
+    return open_
 
 
 @pytest.mark.parametrize(("commenter", "code"), [("ricardoafo", 0), ("rafo-claude-bot", 1)])
@@ -232,7 +241,7 @@ def test_main_passes_only_the_owners_cited_comment(
 ) -> None:
     """End to end over a faked API: the owner's cited comment exits 0, anyone else's 1."""
     body = f"Decision changes approved: https://github.com/{_REPO}/pull/{_PR}#issuecomment-7"
-    monkeypatch.setattr(urllib.request, "urlopen", _answer(body, commenter))
+    monkeypatch.setattr(urllib.request.OpenerDirector, "open", _answer(body, commenter))
     assert APPROVAL.main([_REPO, str(_PR), "ricardoafo", _FP]) == code
 
 
@@ -240,14 +249,39 @@ def test_an_approval_of_other_changes_does_not_count(monkeypatch: pytest.MonkeyP
     """The owner's comment quoting an earlier fingerprint lapses once the changes differ."""
     body = f"Decision changes approved: https://github.com/{_REPO}/pull/{_PR}#issuecomment-7"
     stale = _answer(body, "ricardoafo", comment_body="approved fedcba9876543210")
-    monkeypatch.setattr(urllib.request, "urlopen", stale)
+    monkeypatch.setattr(urllib.request.OpenerDirector, "open", stale)
     assert APPROVAL.main([_REPO, str(_PR), "ricardoafo", _FP]) == 1
 
 
 def test_main_without_a_citation_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     """A body with no approval line exits 1."""
-    monkeypatch.setattr(urllib.request, "urlopen", _answer("no approval here", "ricardoafo"))
+    monkeypatch.setattr(
+        urllib.request.OpenerDirector, "open", _answer("no approval here", "ricardoafo")
+    )
     assert APPROVAL.main([_REPO, str(_PR), "ricardoafo", _FP]) == 1
+
+
+def test_the_opener_refuses_anything_but_https(tmp_path: Path) -> None:
+    """The API opener cannot read a local file or speak plain HTTP (Semgrep dynamic-urllib-use)."""
+    secret = tmp_path / "secret.txt"
+    secret.write_text("token", encoding="utf-8")
+    for url in (secret.as_uri(), "http://api.github.com/"):
+        with pytest.raises(urllib.error.URLError, match="unknown url type"):
+            APPROVAL.https_only_opener().open(url, timeout=1)
+
+
+def test_an_api_error_is_not_an_approval(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A 404 from the API raises, so the caller's check fails instead of passing."""
+
+    def not_found(
+        opener: urllib.request.OpenerDirector, request: urllib.request.Request, timeout: float
+    ) -> _Response:
+        _ = opener, request, timeout
+        return _Response({"message": "Not Found"}, status=404)
+
+    monkeypatch.setattr(urllib.request.OpenerDirector, "open", not_found)
+    with pytest.raises(OSError, match="HTTP 404"):
+        APPROVAL.main([_REPO, str(_PR), "ricardoafo", _FP])
 
 
 def _ci_step() -> dict[str, Any]:
