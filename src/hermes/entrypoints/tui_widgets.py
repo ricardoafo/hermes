@@ -7,8 +7,8 @@ One implementation each, styled only through :mod:`hermes.entrypoints.tui_theme`
 - :class:`HudPanel`: the frame every panel sits in (bracket corners, gradient
   title bar, "computed" or "✦ AI supervisor" label, key-hint subtitle, focus
   state, AI variant);
-- :class:`WindowBar`: "▐ HERMES // SHADOW CONSOLE" with the live-feed pulse
-  (or the next-bar countdown when there is no ticker) and the clock;
+- :class:`WindowBar`: one row of the theme's ``chrome`` gradient with no text
+  on it, in every theme (issue #1097);
 - :class:`TabBar`: the screen tabs, numbers only at compact width;
 - :class:`ThemeChip` and :class:`ThemePicker`: the theme switch;
 - :func:`key_chips`: reverse-video key chips for the footer;
@@ -56,8 +56,6 @@ from hermes.entrypoints.tui_theme import (
     METER_EMPTY,
     METER_FULL,
     MOTION,
-    WINDOW_MARK,
-    WINDOW_TITLE,
     ThemeChoice,
     Tokens,
     blend,
@@ -65,7 +63,6 @@ from hermes.entrypoints.tui_theme import (
     gradient,
     tokens_for,
 )
-from hermes.entrypoints.tui_topbar import mainnet_text
 
 __all__ = [
     "FEED_FAILED",
@@ -91,8 +88,6 @@ __all__ = [
 
 LABEL_COMPUTED: Final = "computed"
 LABEL_AI: Final = f"{AI_GLYPH} AI supervisor"
-_CLOCK_PAD: Final = 1
-_BADGE_GAP: Final = 2
 FEED_OK: Final = "●"
 FEED_FAILED: Final = "○"
 _BRIGHT_SHARE: Final = 0.5
@@ -271,84 +266,24 @@ def feed_pulse(polls: Sequence[bool], tokens: Tokens, *, bright: bool = False) -
     return out
 
 
-def window_bar_text(
-    width: int, tokens: Tokens, *, status: Text, clock: str, badge: Text | None = None
-) -> Text:
-    """Return the window bar: brand mark, the feed pulse or next-bar countdown, clock at the right.
+def window_bar_text(width: int, tokens: Tokens) -> Text:
+    """Return the window bar: ``width`` blank cells on the sheet's ``chrome`` gradient.
+
+    The bar carries no text (Code Owner, 2026-10-17): the mainnet badge, the
+    feed pulse and the clock sit on the status row below it (issue #1097).
 
     Args:
         width: Columns to fill.
         tokens: Token sheet.
-        status: What sits after the brand: :func:`feed_pulse` while the ticker
-            runs, else the next-bar countdown; empty text for nothing.
-        clock: Local time shown at the right (``HH:MM:SS``), or empty.
-        badge: The mainnet badge, drawn before the clock (issue #833); it
-            outranks the clock and the status when the bar is narrow.
 
     Returns:
-        At most ``width`` cells.
+        Exactly ``width`` cells.
     """
-    out = _gradient_text(f"{WINDOW_MARK} {WINDOW_TITLE} ", tokens.chrome, tokens.void)
-    if status.plain:
-        out.append(" ")
-        out.append_text(status)
-    clock_text = Text(f"{clock}{' ' * _CLOCK_PAD}" if clock else "", style=tokens.muted)
-    right = Text()
-    if badge is not None and badge.plain:
-        right.append_text(badge)
-        right.append(" " * _BADGE_GAP)
-    right.append_text(clock_text)
-    if badge is not None and badge.plain and width - out.cell_len - right.cell_len <= 0:
-        # The mainnet badge outranks the clock and the feed: a narrow bar drops
-        # the time first, then cuts the status, never the badge.
-        right = Text().append_text(badge).append(" " * _CLOCK_PAD)
-        out.truncate(max(width - right.cell_len - 1, 0))
-    gap = width - out.cell_len - right.cell_len
-    if gap > 0:
-        out.append(" " * gap)
-        out.append_text(right)
-    out.truncate(max(width, 0))
-    return out
+    return _gradient_text(" " * max(width, 0), tokens.chrome, tokens.void)
 
 
 class WindowBar(Static):
-    """The Neon window bar; the app sets ``clock`` and the feed or the next-bar countdown."""
-
-    clock: reactive[str] = reactive("")
-
-    def __init__(self, *, id: str | None = None) -> None:
-        super().__init__(id=id)
-        self._polls: tuple[bool, ...] = ()
-        self._bright = False
-        self._next_bar = ""
-        self._mainnet: tuple[bool | None] | None = None
-
-    @property
-    def polls(self) -> tuple[bool, ...]:
-        """The poll results the feed pulse shows, oldest first."""
-        return self._polls
-
-    @property
-    def bright(self) -> bool:
-        """Whether the newest feed glyph is brightened."""
-        return self._bright
-
-    def show_feed(self, polls: Sequence[bool], *, bright: bool) -> None:
-        """Show the feed pulse of ``polls``; ``bright`` brightens the newest glyph."""
-        self._polls, self._bright = tuple(polls)[-FEED_WIDTH:], bright
-        self.paint()
-
-    def show_next_bar(self, text: str) -> None:
-        """Show the next-bar countdown (used while there is no feed)."""
-        if text != self._next_bar:
-            self._next_bar = text
-            self.paint()
-
-    def show_mainnet(self, allow_mainnet: bool | None) -> None:
-        """Show the mainnet badge for the config's ``allow_mainnet`` (``None``: unread)."""
-        if self._mainnet != (allow_mainnet,):
-            self._mainnet = (allow_mainnet,)
-            self.paint()
+    """The window bar: a text-free ``chrome`` gradient row that leads every theme."""
 
     def on_mount(self) -> None:
         """Redraw when the theme changes."""
@@ -360,23 +295,11 @@ class WindowBar(Static):
         del event
         self.paint()
 
-    def watch_clock(self) -> None:
-        """Show the new time."""
-        self.paint()
-
     def paint(self) -> None:
         """Redraw from the current theme's tokens."""
         if not self.is_mounted:
             return
-        tokens = tokens_for(self.app.theme)
-        if self._polls:
-            status = feed_pulse(self._polls, tokens, bright=self._bright)
-        else:
-            status = Text(self._next_bar, style=tokens.muted)
-        badge = None if self._mainnet is None else mainnet_text(self._mainnet[0], tokens)
-        self.update(
-            window_bar_text(self.size.width, tokens, status=status, clock=self.clock, badge=badge)
-        )
+        self.update(window_bar_text(self.size.width, tokens_for(self.app.theme)))
 
 
 @dataclass(frozen=True)
