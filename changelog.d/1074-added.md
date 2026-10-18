@@ -1,0 +1,1 @@
+- Roster entries can name their signal with `signal:`; serve, parity, the portfolio backtest and decision replay build every strategy through one factory, an entry with no `signal:` keeps today's Donchian breakout unchanged, and an unknown signal is refused at config load (research funnel contract §2a).
