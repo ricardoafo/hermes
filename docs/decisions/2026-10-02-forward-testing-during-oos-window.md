@@ -5,7 +5,7 @@
 **Related**: `docs/experiments/swing-mvp1/pre-registration-v1.md` section 4
 (data windows), `src/hermes/application/strategy_protocol/data_split_enforcer.py`,
 ADR-011 (shadow mode), GitHub issues #307 and #301,
-`openspec/changes/307-live-bar-stream/change.md` (D-8),
+`openspec/archive/307-live-bar-stream/change.md` (D-8),
 [2026-10-03 operator sees shadow P&L](2026-10-03-operator-sees-shadow-pnl.md)
 (binding no-change rule that builds on this guardrail)
 

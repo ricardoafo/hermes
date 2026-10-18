@@ -61,6 +61,7 @@ _ALERTS = _U + "deploy/test_alert_scripts.py::"
 _WIRE = _U + "adapters/test_wire_numbers.py::"
 _PATHS = _S + "test_generated_paths.py::"
 _DOWN = _S + "test_downtime_recovery.py::"
+_BUDGET = _S + "test_missed_bar_budget.py::"
 _READS = _U + "entrypoints/test_tui_reads.py::"
 _LOTS_AGREE = _S + "test_portfolio_matches_ledger_lots.py::"
 _KLINES_DOWN = _S + "test_chaos_klines_down_at_boot.py::"
@@ -692,6 +693,28 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         FailureMode(
             "A quick restart treats live bars as missed",
             proved_by=(_DOWN + "test_a_restart_inside_the_live_window_misses_nothing",),
+        ),
+        FailureMode(
+            "One shadow's outage spends another shadow's missed-bar budget",
+            proved_by=(
+                _BUDGET + "test_an_outage_spends_only_the_budget_of_the_shadow_that_was_down",
+            ),
+        ),
+        FailureMode(
+            "A bar re-handled after a crash is spent twice from the missed-bar budget",
+            proved_by=(
+                _U + "adapters/ledger/test_sqlite_ledger_missed_bars.py::"
+                "test_a_bar_re_handled_after_a_crash_counts_once",
+            ),
+        ),
+        FailureMode(
+            "A shadow crosses its missed-bar budget and nobody is told, or is told every restart",
+            proved_by=(
+                _BUDGET
+                + "test_crossing_the_budget_alerts_once_and_a_later_restart_does_not_repeat_it",
+                _BUDGET
+                + "test_a_shadow_that_stays_up_through_a_klines_outage_alerts_when_it_crosses",
+            ),
         ),
         FailureMode(
             "An outage day raises parity mismatches for its unfilled missed entries",

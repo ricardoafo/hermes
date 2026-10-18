@@ -10,7 +10,7 @@ Invariants protected here:
   certification (#319), and the digest's outcome counts need CERTIFIED;
 - an event with no builder raises instead of sending an empty push.
 
-Reference: openspec/changes/144-notification-system/change.md (R-1, R-4).
+Reference: openspec/archive/144-notification-system/change.md (R-1, R-4).
 """
 
 # ruff: noqa: RUF001 - the typographic minus sign is the character under test

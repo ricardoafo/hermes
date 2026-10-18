@@ -6,7 +6,7 @@ strategy runs. Pre-registration v2 fixes its grid in
 ``scripts/backtest/funnel_evidence.py``; a research batch candidate states its
 own (ADR-026 §1, :meth:`~hermes.application.calibration.research_batch.Candidate.funnel_replays`).
 
-Reference: openspec/changes/v2-funnel-evidence/change.md; ADR-026 §1.
+Reference: openspec/archive/v2-funnel-evidence/change.md; ADR-026 §1.
 """
 
 from collections.abc import Callable, Mapping

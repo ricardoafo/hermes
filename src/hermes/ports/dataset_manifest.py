@@ -3,7 +3,7 @@
 The concrete implementation is :mod:`hermes.adapters.data_manifest.json_file`.
 
 Reference: code-conventions.md §5 (Ports as Protocols),
-openspec/changes/356-data-manifest/change.md.
+openspec/archive/356-data-manifest/change.md.
 """
 
 from __future__ import annotations

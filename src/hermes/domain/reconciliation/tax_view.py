@@ -6,7 +6,7 @@ to the period end, so a past month reads exactly as it stood at month end
 even after later fills. A trade still waiting for its ECB rate leaves the
 figures it feeds unknown; the view counts those trades instead of guessing.
 
-Reference: openspec/changes/35-monthly-reconciliation/change.md D-4,
+Reference: openspec/archive/35-monthly-reconciliation/change.md D-4,
 ADR-016 items 3 and 5.
 """
 

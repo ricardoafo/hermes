@@ -12,7 +12,7 @@ To add a command, add a module to this package that defines ``COMMAND``::
 :mod:`hermes.entrypoints.cli` dispatches from that. No shared list names the
 commands, so two PRs that each add a command never edit the same file (#457).
 
-Reference: issue #457; openspec/changes/457-cli-command-registry.
+Reference: issue #457; openspec/archive/457-cli-command-registry.
 """
 
 from __future__ import annotations

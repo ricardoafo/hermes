@@ -70,7 +70,7 @@ ADR-011 table is unchanged.
 
 ## References
 
-- `openspec/changes/309-serve-bar-loop/change.md` D-1
-- `openspec/changes/307-live-bar-stream/change.md` D-1
+- `openspec/archive/309-serve-bar-loop/change.md` D-1
+- `openspec/archive/307-live-bar-stream/change.md` D-1
 - [ADR-011](adr-011-paper-trading-engine.md) D-02, D-10
 - [ADR-009](adr-009-documentation-strategy.md) (ADR immutability)

@@ -18,7 +18,7 @@ Verifies:
 - ``install_signal_handlers`` flips the shutdown event on SIGTERM (skipped on
   Windows, where ``os.kill`` on the pytest process is unsafe).
 
-Reference: ``openspec/changes/309-serve-bar-loop/change.md`` D-1, D-5, D-7, D-9.
+Reference: ``openspec/archive/309-serve-bar-loop/change.md`` D-1, D-5, D-7, D-9.
 """
 
 from __future__ import annotations

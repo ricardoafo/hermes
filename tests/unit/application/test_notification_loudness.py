@@ -9,7 +9,7 @@ Invariants protected here:
   never notified map to none and stay silent;
 - the rebalance heads-up and the resume are routed to Telegram and Slack.
 
-Reference: openspec/changes/144-notification-system/change.md (R-3).
+Reference: openspec/archive/144-notification-system/change.md (R-3).
 """
 
 from __future__ import annotations

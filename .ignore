@@ -1,0 +1,3 @@
+# Shipped change specs stay readable but out of repo-wide searches (#1196).
+# Search them by naming the folder: rg <pattern> openspec/archive
+openspec/archive/

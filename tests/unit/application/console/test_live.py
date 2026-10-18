@@ -15,7 +15,7 @@ Invariants:
   is then cash plus every position at its live price: never half live, half
   booked (D-4, property).
 
-Reference: openspec/changes/713-live-ticker/change.md.
+Reference: openspec/archive/713-live-ticker/change.md.
 """
 
 from __future__ import annotations
