@@ -305,3 +305,32 @@ Actors: `operator` | `claude-experimentalist` | `claude-integrity-checker` | `en
 - docs/experiments/swing-mvp1/post-mortem-v2.md (added)
 - docs/experiments/swing-mvp1/lab-notebook.md (modified)
 <!-- entry-sha256: 2ec4f88ef3a98e5e5a00250c0c0eb1b7a7e8bf4035448d857522fbaf6af4044f -->
+
+### 2026-10-18T15:46:01Z | shadow | operator | §11 deviation: v1 stop exits in the shadow sell at market at the bar's close (issue #1157)
+
+**Observed metrics**: N/A (no metrics this entry)
+
+**Decision**:
+
+- Code Owner decision, 2026-10-18 (option B of issue #1157): record serve's exit as a deviation; serve does not model a resting stop.
+- §5.3 signs an on-exchange stop-market. The paper shadow cannot rest an order, so when a 4h bar's low reaches the chandelier stop in force, serve sells the whole position at market into the live book at that bar's close.
+- When no fresh live book is available, the exit uses the §6.2 model price: the lower of the stop and the bar open, less 15 bps (the 2026-10-17 entry for issue #785).
+- The backtest keeps the §5.3 and §6.2 pricing. v1 exit fills stay out of the drift median (shadow_drift_counts_exits = false, Code Owner card of 2026-10-17) and are counted separately.
+- The chandelier engine does not clamp a stop above the close to close - 1 tick; its docstring is corrected to say so. Nothing in the engine knows a tick size, and no code ever applied the clamp.
+- Signals, parameters (22, 3.0), sizing, fees, metrics and kill rules are unchanged.
+
+**Rationale**:
+
+- Pre-registration v1 §5.3 (exit: on-exchange stop-market) and §11: a change to how §5 exits are priced is a deviation, so it is logged here.
+- This records what serve already does; no engine or serve code changes. v1's shadow exit prices are therefore not comparable with its backtest exits, which the drift rule already accounts for.
+- v1 runs as an uncounted warm-up. Pre-registration v2 signs a market sale at the bar close as its own rule, for the same reason (#796).
+- Counts as a §11 deviation. The signed file is not edited and the parameter fingerprint is unchanged.
+- No data from the sealed window (2025-09-01 on) was read.
+
+**Files touched**:
+
+- src/hermes/domain/strategy/swing/engines/chandelier.py (modified, docstring)
+- tests/integration/scenarios/rules.py (modified)
+- tests/integration/scenarios/test_rule_list.py (modified)
+- docs/experiments/swing-mvp1/lab-notebook.md (modified)
+<!-- entry-sha256: 16d2b4a5185e1429d9ab8a046d13852cc05c7d1ff4aa9dc167684ecd50ce5aa6 -->
