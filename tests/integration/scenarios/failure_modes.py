@@ -773,6 +773,25 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             ),
         ),
         FailureMode(
+            "A staging env file holds a trading key or a loopback endpoint",
+            proved_by=(
+                _RELEASE + "test_real_config_check_refuses_a_staging_env_file_that_breaks_the_tier",
+                _RELEASE + "test_staging_deploy_stops_on_a_config_finding_before_any_restart",
+                _U + "entrypoints/test_config_check.py::TestEnvFile"
+                "::test_stdin_env_file_with_a_trading_key_names_it",
+            ),
+        ),
+        FailureMode(
+            "The env file a staging deploy checks is missing or not UTF-8",
+            proved_by=(
+                _U + "entrypoints/test_config_check.py::TestEnvFile"
+                "::test_missing_env_file_exits_three",
+                _U + "entrypoints/test_config_check.py::TestEnvFile"
+                "::test_env_file_that_is_not_utf8_exits_three",
+                _RELEASE + "test_staging_deploy_stops_when_the_config_check_cannot_run",
+            ),
+        ),
+        FailureMode(
             "A release is half installed",
             proved_by=(
                 _RELEASE + "test_hash_mismatch_removes_the_half_built_release",

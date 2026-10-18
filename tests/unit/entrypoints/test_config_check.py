@@ -266,3 +266,12 @@ class TestEnvFile:
         )
         assert (code, out) == (3, "")
         assert err.getvalue() == "ERROR: env file could not be read: No such file or directory\n"
+
+    def test_env_file_that_is_not_utf8_exits_three(self, tmp_path: Path) -> None:
+        """Invariant: undecodable bytes are exit 3, never a traceback read as findings."""
+        path = tmp_path / "env.staging"
+        path.write_bytes(b"HERMES_ENV=staging\nHERMES_SLACK__API_BASE=\xff\xfe\n")
+        err = io.StringIO()
+        code, out = _run(["--config-dir", str(_ROOT / "config"), "--env-file", str(path)], {}, err)
+        assert (code, out) == (3, "")
+        assert err.getvalue() == "ERROR: env file could not be read: not UTF-8\n"
