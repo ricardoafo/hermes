@@ -237,13 +237,16 @@ class TestRefusedFills:
     def test_buy_over_cash_is_refused(self) -> None:
         """BUY costing 5001 against 5000 cash returns InvalidPortfolioTransition."""
         result = _seed("5000").after_fill(make_fill(_BUY, "1", "5001"))
-        assert isinstance(result, Failure)
-        assert isinstance(result.failure(), InvalidPortfolioTransition)
+        assert result == Failure(
+            InvalidPortfolioTransition(reason="BUY of 1 BTC/USDT costs 5001, cash is 5000")
+        )
 
     def test_buy_whose_fee_tips_it_over_cash_is_refused(self) -> None:
         """The fee counts toward the cost: 5000 notional plus 0.01 fee exceeds 5000 cash."""
         result = _seed("5000").after_fill(make_fill(_BUY, "1", "5000", fee="0.01"))
-        assert isinstance(result, Failure)
+        assert result == Failure(
+            InvalidPortfolioTransition(reason="BUY of 1 BTC/USDT costs 5000.01, cash is 5000")
+        )
 
     def test_buy_costing_exactly_the_cash_is_accepted(self) -> None:
         """A BUY that spends all the cash is the boundary and is accepted, leaving zero cash."""
@@ -253,22 +256,29 @@ class TestRefusedFills:
     def test_sell_without_a_position_is_refused(self) -> None:
         """Selling a pair that is not held returns InvalidPortfolioTransition."""
         result = _seed().after_fill(make_fill(_SELL, "0.001", "50000"))
-        assert isinstance(result, Failure)
-        assert isinstance(result.failure(), InvalidPortfolioTransition)
+        assert result == Failure(
+            InvalidPortfolioTransition(reason="SELL of BTC/USDT without a position")
+        )
 
     def test_sell_above_the_position_is_refused(self) -> None:
         """Selling 0.006 of a 0.005 position returns InvalidPortfolioTransition."""
         snap = _applied(_seed(), make_fill(_BUY, "0.005", "50000"))
         result = snap.after_fill(make_fill(_SELL, "0.006", "50000", minutes=1))
-        assert isinstance(result, Failure)
-        assert isinstance(result.failure(), InvalidPortfolioTransition)
+        assert result == Failure(
+            InvalidPortfolioTransition(
+                reason="SELL of 0.006 BTC/USDT exceeds the position of 0.005"
+            )
+        )
 
     def test_sell_whose_fee_would_overdraw_cash_is_refused(self) -> None:
         """A SELL whose fee exceeds proceeds plus cash would go below zero and is refused."""
         snap = _applied(_seed("100"), make_fill(_BUY, "1", "99", fee="0.5"))
         result = snap.after_fill(make_fill(_SELL, "1", "1", fee="5", minutes=1))
-        assert isinstance(result, Failure)
-        assert isinstance(result.failure(), InvalidPortfolioTransition)
+        assert result == Failure(
+            InvalidPortfolioTransition(
+                reason="SELL of 1 BTC/USDT would take cash to -3.5: the fee exceeds proceeds"
+            )
+        )
 
     def test_fill_in_another_quote_returns_currency_mismatch(self) -> None:
         """A BTC/USDC fill against a USDT snapshot returns CurrencyMismatch(USDT, USDC)."""

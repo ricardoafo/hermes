@@ -144,12 +144,6 @@ tests/unit/domain/monitoring/test_control_chart_mutation_guards.py::test_paramet
 tests/unit/domain/monitoring/test_control_chart_mutation_guards.py::test_parameters_have_slots U6
 tests/unit/domain/portfolio/test_portfolio_mutation_guards.py::test_fill_quoted_above_the_snapshot_currency_is_refused U3
 tests/unit/domain/portfolio/test_portfolio_mutation_guards.py::test_records_are_frozen_with_slots U6
-tests/unit/domain/portfolio/test_snapshot.py::test_buy_over_cash_is_refused U3
-tests/unit/domain/portfolio/test_snapshot.py::test_buy_whose_fee_tips_it_over_cash_is_refused U3
-tests/unit/domain/portfolio/test_snapshot.py::test_sell_above_the_position_is_refused U3
-tests/unit/domain/portfolio/test_snapshot.py::test_sell_whose_fee_would_overdraw_cash_is_refused U3
-tests/unit/domain/portfolio/test_snapshot.py::test_sell_without_a_position_is_refused U3
-tests/unit/domain/portfolio/test_snapshot_properties.py::test_sell_is_accepted_exactly_when_the_position_covers_it U3
 tests/unit/domain/reconciliation/test_tax_view.py::test_a_book_selling_more_than_it_holds_fails U3
 tests/unit/domain/risk/test_correlation_lock.py::test_correlation_threshold_is_binding U7
 tests/unit/domain/risk/test_correlation_lock.py::test_is_risk_overlay_port U6
