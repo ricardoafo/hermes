@@ -16,18 +16,12 @@ Reference: ADR-021 §5; openspec/changes/v2-backtest-funnel/change.md.
 
 import argparse
 import hashlib
-import json
-import math
-from collections.abc import Mapping
-from datetime import date
 from pathlib import Path
 from typing import NoReturn, TextIO
 
 import yaml
 
 from hermes.application.calibration.backtest_funnel import (
-    CostStress,
-    FunnelEvidence,
     FunnelEvidenceError,
     FunnelThresholdError,
     FunnelThresholds,
@@ -35,6 +29,7 @@ from hermes.application.calibration.backtest_funnel import (
     parse_funnel_front_matter,
     validate_evidence,
 )
+from hermes.application.calibration.evidence_files import load_funnel_evidence
 from hermes.entrypoints._streams import resolve_err
 
 __all__ = ["load_funnel_evidence", "main", "read_front_matter"]
@@ -48,19 +43,6 @@ _USAGE = (
     "backtest_funnel block of the signed pre-registration's front matter; a missing\n"
     "one refuses the run. Prints one PASS/FAIL line per check. Records nothing.\n"
     "Exit codes: 0 passed, 1 failed or refused, 2 usage, 3 pre-registration/evidence.\n"
-)
-
-_EVIDENCE_KEYS = frozenset(
-    {
-        "strategy_id",
-        "start_date",
-        "daily_equity",
-        "trade_count",
-        "cost_stress",
-        "trials",
-        "neighbour_trial_ids",
-        "running_strategies",
-    }
 )
 
 
@@ -204,87 +186,3 @@ def read_front_matter(text: str) -> dict[str, object]:
     if not isinstance(parsed, dict):
         raise ValueError("front matter must be a mapping")
     return {str(k): v for k, v in parsed.items()}
-
-
-def load_funnel_evidence(path: Path, *, strategy_id: str) -> FunnelEvidence:
-    """Parse a funnel evidence file (change Design §2). Absent sections mean not computed.
-
-    Args:
-        path: The evidence JSON file.
-        strategy_id: The strategy the run must be for.
-
-    Returns:
-        The parsed evidence. Call ``validate_evidence`` before evaluating it.
-
-    Raises:
-        FunnelEvidenceError: The file is not valid funnel evidence.
-        OSError: The file cannot be read.
-    """
-    try:
-        payload = json.loads(path.read_bytes())
-    except ValueError as exc:
-        raise FunnelEvidenceError(f"{path} is not JSON: {exc}") from exc
-    if not isinstance(payload, dict):
-        raise FunnelEvidenceError(f"{path} must hold a JSON object")
-    unknown = sorted(set(payload) - _EVIDENCE_KEYS)
-    if unknown:
-        raise FunnelEvidenceError(f"unknown evidence keys: {unknown}")
-    if payload.get("strategy_id") != strategy_id:
-        raise FunnelEvidenceError(
-            f"evidence is for {payload.get('strategy_id')!r}, not {strategy_id!r}"
-        )
-    start = payload.get("start_date")
-    try:
-        start_date = date.fromisoformat(start) if isinstance(start, str) else None
-    except ValueError:
-        start_date = None
-    if start_date is None:
-        raise FunnelEvidenceError(f"start_date must be an ISO date, got {start!r}")
-    trades = payload.get("trade_count")
-    if trades is not None and (isinstance(trades, bool) or not isinstance(trades, int)):
-        raise FunnelEvidenceError(f"trade_count must be an integer, got {trades!r}")
-    neighbours = payload.get("neighbour_trial_ids")
-    if neighbours is not None and (
-        not isinstance(neighbours, list) or not all(isinstance(n, str) for n in neighbours)
-    ):
-        raise FunnelEvidenceError("neighbour_trial_ids must be a list of strings")
-    return FunnelEvidence(
-        strategy_id=strategy_id,
-        start_date=start_date,
-        daily_equity=_numbers(payload.get("daily_equity"), "daily_equity"),
-        trade_count=trades,
-        cost_stress=_cost_stress(payload.get("cost_stress")),
-        trials=_series_map(payload.get("trials"), "trials"),
-        neighbour_trial_ids=None if neighbours is None else tuple(neighbours),
-        running_strategies=_series_map(payload.get("running_strategies"), "running_strategies"),
-    )
-
-
-def _numbers(value: object, key: str) -> tuple[float, ...]:
-    if not isinstance(value, list):
-        raise FunnelEvidenceError(f"{key} must be a list of numbers")
-    for item in value:
-        if isinstance(item, bool) or not isinstance(item, int | float) or not math.isfinite(item):
-            raise FunnelEvidenceError(f"{key} values must be numbers, got {item!r}")
-    return tuple(float(item) for item in value)
-
-
-def _cost_stress(value: object) -> CostStress | None:
-    if value is None:
-        return None
-    if not isinstance(value, dict) or set(value) != {"multiplier", "daily_equity"}:
-        raise FunnelEvidenceError("cost_stress needs exactly multiplier and daily_equity")
-    multiplier = value["multiplier"]
-    if isinstance(multiplier, bool) or not isinstance(multiplier, int | float):
-        raise FunnelEvidenceError(f"cost_stress.multiplier must be a number, got {multiplier!r}")
-    return CostStress(
-        float(multiplier), _numbers(value["daily_equity"], "cost_stress.daily_equity")
-    )
-
-
-def _series_map(value: object, key: str) -> Mapping[str, tuple[float, ...]] | None:
-    if value is None:
-        return None
-    if not isinstance(value, dict):
-        raise FunnelEvidenceError(f"{key} must map names to lists of returns")
-    return {str(name): _numbers(series, f"{key}.{name}") for name, series in value.items()}
