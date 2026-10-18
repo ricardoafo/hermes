@@ -108,7 +108,8 @@ boundary would pick the wrong champion; both are pinned by tests.
 
 - **Decision**: at both stages the judge walks every candidate the batch
   names. A candidate with no `DIR/<strategy_id>/` gets one check,
-  `missing_evidence` FAIL, a `null` window and `passed: false`. At Validation
+  `missing_evidence` FAIL (detail `no Train evidence` or `no Validation
+  evidence`, in `funnel-batch.txt` only), a `null` window and `passed: false`. At Validation
   it enters BH with p = 1 (D-1).
 - **Alternatives**: judge only the folders present. Rejected: BH's m must be
   the batch size, and a candidate whose Validation job died must show as a
