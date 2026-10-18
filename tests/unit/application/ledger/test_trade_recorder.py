@@ -8,6 +8,7 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Iterator
 from contextlib import closing
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
@@ -85,3 +86,19 @@ def test_round_trip_gain_includes_both_fees(conn: sqlite3.Connection) -> None:
     recorder.record(_fill(OrderSide.SELL, "150", "1.25"), correlation_id="c-4")
     (gain,) = conn.execute("SELECT realized_gain_eur FROM lot_consumptions").fetchone()
     assert Decimal(gain) == Decimal("18")
+
+
+def test_an_estimated_fee_reaches_the_ledger_marked(conn: sqlite3.Connection) -> None:
+    """A fill whose fee is an estimate is listed by the ledger for correction (#1014).
+
+    A fill with an exact fee next to it is not listed.
+    """
+    recorder = _setup(FakeFx(rates={_FRI: (Decimal("1.25"), _FRI)}), conn)
+    exact = recorder.record(_fill(OrderSide.BUY, "40000", "40"), correlation_id="exact")
+    estimated = recorder.record(
+        replace(_fill(OrderSide.BUY, "40000", "40"), fee_estimated=True), correlation_id="guess"
+    )
+
+    listed = SqliteLedger(conn).list_estimated_fees()
+
+    assert ([fee.trade_id for fee in listed], exact != estimated) == ([estimated], True)

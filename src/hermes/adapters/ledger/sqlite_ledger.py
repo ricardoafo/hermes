@@ -84,7 +84,7 @@ from hermes.domain.value_objects.price import Price
 from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.infrastructure.time import now_utc
-from hermes.ports.ledger import EurTradeRow, PendingSeed, PendingTrade
+from hermes.ports.ledger import EstimatedFee, EurTradeRow, PendingSeed, PendingTrade
 
 __all__ = ["SqliteLedger", "live_bar_from_row"]
 
@@ -340,6 +340,8 @@ class SqliteLedger:
         """
         with self._write("record_trade"):
             trade_id = self._insert_trade(trade)
+            if trade.fee_estimated:
+                self._conn.execute("INSERT INTO estimated_fees (trade_id) VALUES (?)", (trade_id,))
             if trade.lot_id is not None:
                 self._insert_trade_lot(trade, trade_id)
             elif self._has_seed(trade.pair.quote):
@@ -350,6 +352,32 @@ class SqliteLedger:
             for extra in also:
                 self._insert_event(extra)
         return trade_id
+
+    def list_estimated_fees(self) -> tuple[EstimatedFee, ...]:
+        """Return every trade whose fee is an estimate, oldest first (issue #1014).
+
+        Raises:
+            LedgerError: On any SQLite read failure.
+        """
+        try:
+            rows = self._conn.execute(
+                "SELECT t.id, t.pair_base, t.pair_quote, t.side, t.executed_at, "
+                "       t.fee_amount, t.fee_currency "
+                "FROM estimated_fees AS e JOIN trades AS t ON t.id = e.trade_id "
+                "ORDER BY t.executed_at, t.id"
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"list_estimated_fees failed: {exc}") from exc
+        return tuple(
+            EstimatedFee(
+                trade_id=int(row[0]),
+                pair=Pair(base=Currency(row[1]), quote=Currency(row[2])),
+                side=OrderSide(row[3]),
+                executed_at=datetime.fromisoformat(row[4]),
+                fee=Money(amount=Decimal(row[5]), currency=Currency(row[6])),
+            )
+            for row in rows
+        )
 
     def list_pending_trades(self) -> tuple[PendingTrade, ...]:
         """Return every trade with ``eur_status = 'pending'``, oldest first.
