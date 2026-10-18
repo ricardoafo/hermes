@@ -109,6 +109,23 @@ class TestServeSubcommand:
         assert (rc, stream.getvalue()) == (3, "")
         assert "config load failed" in err.getvalue()
 
+    def test_serve_with_a_strategy_missing_from_the_roster_exits_three(self) -> None:
+        """#1076: a shadow instance naming no roster entry stops at the config check, not later."""
+        stream, err = io.StringIO(), io.StringIO()
+        config_dir = Path(__file__).resolve().parents[3] / "config"
+        try:
+            rc = cli_module.main(
+                ["serve", "--config-dir", str(config_dir), "--strategy", "no-such-shadow"],
+                stream=stream,
+                err=err,
+            )
+        finally:
+            structlog.reset_defaults()
+        assert (rc, err.getvalue()) == (
+            3,
+            "ERROR: startup check failed: strategies.yaml has no 'no-such-shadow' entry\n",
+        )
+
     def test_serve_logs_json_the_daily_line_can_count(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:

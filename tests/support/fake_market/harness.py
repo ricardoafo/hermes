@@ -166,6 +166,7 @@ def serve(
     fx_outages: list[tuple[datetime, datetime]] | None = None,
     duplicate_bars: list[tuple[Pair, KlineInterval, datetime]] | None = None,
     after_bar: AfterBar | None = None,
+    strategy: str | None = None,
 ) -> ServeRun:
     """Boot ``hermes serve`` at ``live_from`` and run it on the fake market.
 
@@ -189,6 +190,8 @@ def serve(
         after_bar: Called after each bar serve's loop handled without raising,
             outside the timed part, with serve's own ledger connection so
             rows it has not committed yet are visible.
+        strategy: Roster entry to run, as ``hermes serve --strategy`` does;
+            ``None`` runs the one ``config/strategies.yaml`` enables.
 
     Returns:
         The run's exit code, notifications, requests and final clock.
@@ -211,13 +214,22 @@ def serve(
         duplicate_bars=duplicate_bars or [],
     )
     channel = RecordingChannel(raises=notifier_error)
-    composition = compose(production_config(), db, exchange, channel)
+    composition = compose(_config_for(strategy), db, exchange, channel)
     bar_seconds: list[float] = []
     with _timed_bars(bar_seconds, after_bar):
         code = asyncio.run(_drive(composition, clock))
     return ServeRun(
         exit_code=code, channel=channel, exchange=exchange, clock=clock, bar_seconds=bar_seconds
     )
+
+
+def _config_for(strategy: str | None) -> HermesConfig:
+    """Return the production config, with ``strategy`` the enabled entry when named."""
+    if strategy is None:
+        return production_config()
+    config = serve_module.with_only_enabled(production_config(), strategy)
+    serve_module.check_startup(config, env={})
+    return config
 
 
 @contextlib.contextmanager

@@ -600,6 +600,22 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             ),
         ),
         FailureMode(
+            "A lab shadow runs on another shadow's ledger and mixes their capital and trades",
+            proved_by=(
+                _S + "test_shadow_line.py::"
+                "test_a_shadow_pointed_at_another_shadows_ledger_is_refused_before_writing",
+                _S + "test_shadow_line.py::test_each_shadow_ledger_holds_only_its_own_strategy",
+                _UNITS + "test_shadow_template_runs_the_instance_strategy_on_its_own_ledger",
+            ),
+        ),
+        FailureMode(
+            "A shadow instance names a strategy the roster lacks and runs the enabled one instead",
+            proved_by=(
+                _U + "entrypoints/test_cli.py::TestServeSubcommand::"
+                "test_serve_with_a_strategy_missing_from_the_roster_exits_three",
+            ),
+        ),
+        FailureMode(
             "SIGTERM while idle",
             proved_by=(
                 _LOOP + "test_sigterm_while_idle_closes_every_resource_and_exits_zero",

@@ -1043,6 +1043,30 @@ def _with_capital(config: HermesConfig, amount: str) -> HermesConfig:
     return config.model_copy(update={"strategies": StrategiesConfig(strategies=[entry])})
 
 
+class TestWithOnlyEnabled:
+    """#1076: ``--strategy`` makes the named roster entry the one enabled strategy."""
+
+    def test_the_named_entry_is_the_only_one_enabled(self, shadow_config: HermesConfig) -> None:
+        """Invariant: every later check reads the named entry as the enabled one."""
+        chosen = serve_module.with_only_enabled(shadow_config, serve_module.V2_STRATEGY_NAME)
+        assert [(s.name, s.enabled) for s in chosen.strategies.strategies] == [
+            (serve_module.SHADOW_STRATEGY_NAME, False),
+            (serve_module.V2_STRATEGY_NAME, True),
+        ]
+
+    def test_the_rest_of_the_entry_is_unchanged(self, shadow_config: HermesConfig) -> None:
+        """Invariant: only ``enabled`` moves; capital, sizing and pricing stay as signed."""
+        chosen = serve_module.with_only_enabled(shadow_config, serve_module.V2_STRATEGY_NAME)
+        assert chosen.strategies.strategies[1] == shadow_config.strategies.strategies[1].model_copy(
+            update={"enabled": True}
+        )
+
+    def test_a_name_missing_from_the_roster_is_refused(self, shadow_config: HermesConfig) -> None:
+        """Invariant: an instance never falls back to whatever the file enables."""
+        with pytest.raises(serve_module.StartupError, match="has no 'no-such-shadow' entry"):
+            serve_module.with_only_enabled(shadow_config, "no-such-shadow")
+
+
 class TestLedgerAndSeedGuards:
     """Serve refuses a missing ledger and a capital that differs from its seed (issue #876)."""
 
