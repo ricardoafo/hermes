@@ -6,7 +6,8 @@ Invariants:
   that brings no new row;
 - a row that was not in the last read is highlighted, the others are drawn as
   usual, and the highlight is gone after ``MOTION.activity_fade`` seconds
-  (counted as lines that set a background colour);
+  (counted as lines that set a background colour); the tests never wait on the
+  wall clock: the fade timer is parked and each step is taken by hand;
 - with motion off no row is ever highlighted;
 - ``render_activity`` lays the given style over exactly the rows it is given.
 """
@@ -59,6 +60,18 @@ class _GrowingModel(FixtureReadModel):
         return (replace(today, items=(*extra, _NEW, *today.items)), *days[1:])
 
 
+@pytest.fixture(autouse=True)
+def _parked_fade(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Park the fade timer for an hour so only the steps a test takes move the fade."""
+    monkeypatch.setattr(tui, "MOTION", replace(MOTION, activity_fade=3600.0))
+
+
+def _fade_to_the_end(app: HomeApp) -> None:
+    """Take every remaining fade step by hand."""
+    for _ in range(MOTION.activity_fade_steps):
+        app._fade_activity()
+
+
 def _run[T](
     probe: Callable[[HomeApp, Pilot[None], _GrowingModel], Awaitable[T]], *, motion: bool = True
 ) -> T:
@@ -108,16 +121,15 @@ def test_a_new_row_is_highlighted_and_the_others_are_not() -> None:
     assert _run(probe) == frozenset({_NEW})
 
 
-def test_the_highlight_fades_out_after_its_duration(monkeypatch: pytest.MonkeyPatch) -> None:
-    """With a 0.2 s fade the fresh set is empty again once the fade has run."""
-    monkeypatch.setattr(tui, "MOTION", replace(MOTION, activity_fade=0.2))
+def test_the_highlight_fades_out_after_its_last_step() -> None:
+    """A fresh row has a background until the last fade step, and none after it."""
 
     async def probe(app: HomeApp, pilot: Pilot[None], model: _GrowingModel) -> tuple[int, int]:
         model.grown = True
         app._redraw()
         await pilot.pause()
         during = _background_rows(app._content["activity"])
-        await pilot.pause(1.0)
+        _fade_to_the_end(app)
         return during, _background_rows(app._content["activity"])
 
     assert _run(probe) == (1, 0)
@@ -145,11 +157,8 @@ def test_render_activity_styles_only_the_rows_it_is_given() -> None:
     assert (_background_rows(styled), _background_rows(plain)) == (1, 0)
 
 
-def test_a_second_new_row_in_mid_fade_restarts_the_fade_and_still_ends(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_a_second_new_row_in_mid_fade_restarts_the_fade_and_still_ends() -> None:
     """A row arriving mid-fade becomes the highlighted one, and its highlight ends too."""
-    monkeypatch.setattr(tui, "MOTION", replace(MOTION, activity_fade=0.4))
     later = replace(_NEW, coin="DOGE", at=_FROZEN)
 
     async def probe(
@@ -157,12 +166,13 @@ def test_a_second_new_row_in_mid_fade_restarts_the_fade_and_still_ends(
     ) -> tuple[frozenset[object], int, int]:
         model.grown = True
         app._redraw()
-        await pilot.pause(0.1)
+        await pilot.pause()
+        app._fade_activity()
         model.extra = later
         app._redraw()
         await pilot.pause()
         both = app._fresh_activity
-        await pilot.pause(1.5)
+        _fade_to_the_end(app)
         return both, len(app._fresh_activity), _background_rows(app._content["activity"])
 
     assert _run(probe) == (frozenset({later}), 0, 0)

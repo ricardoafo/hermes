@@ -21,7 +21,6 @@ The fixture is a journalctl JSON export (tests/fixtures/journal/logs_screen.json
 
 import json
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from hypothesis import given
@@ -43,8 +42,9 @@ from hermes.application.console.query import (
     filter_rows,
     parse_query,
 )
+from tests.support.paths import REPO_ROOT
 
-_FIXTURE = Path(__file__).parents[3] / "fixtures" / "journal" / "logs_screen.jsonl"
+_FIXTURE = REPO_ROOT / "tests" / "fixtures" / "journal" / "logs_screen.jsonl"
 _MADRID = ZoneInfo("Europe/Madrid")
 _NOW = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
 _TRACE_A = "01J9Z8T3M5BQR2FVKN4XK7Q2ZP"

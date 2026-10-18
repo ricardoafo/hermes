@@ -19,10 +19,11 @@ from typing import Any
 import pytest
 import yaml
 
-_ROOT = Path(__file__).resolve().parents[3]
-_WORKFLOW = _ROOT / ".github" / "workflows" / "backtest.yml"
-_COMPOSE = _ROOT / "scripts" / "dev" / "gh-runner" / "compose.yml"
-_MANIFEST = _ROOT / "docs" / "experiments" / "swing-mvp1" / "data-manifest.json"
+from tests.support.paths import REPO_ROOT
+
+_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "backtest.yml"
+_COMPOSE = REPO_ROOT / "scripts" / "dev" / "gh-runner" / "compose.yml"
+_MANIFEST = REPO_ROOT / "docs" / "experiments" / "swing-mvp1" / "data-manifest.json"
 _SHA_PIN = re.compile(r"^[\w.-]+/[\w.-]+(/[\w.-]+)*@[0-9a-f]{40}$")
 
 needs_tools = pytest.mark.skipif(
@@ -378,7 +379,7 @@ def test_funnel_reads_the_signed_v2_pre_registration() -> None:
     path = _workflow()["env"]["PRE_REGISTRATION"]
 
     assert path == "docs/experiments/swing-mvp1/pre-registration-v2.md"
-    assert (_ROOT / path).is_file()
+    assert (REPO_ROOT / path).is_file()
 
 
 def test_hash_is_checked_first_and_unconditionally() -> None:

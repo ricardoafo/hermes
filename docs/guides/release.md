@@ -80,4 +80,4 @@ Deleting a tag needs the Code Owner.
 - `scripts/dev/cut-release.py` — the cut itself
 - `changelog.d/README.md` — fragments that feed the changelog
 - [`operator-usage.md`](operator-usage.md) — how auto-deploy works and where to look
-- [`staging-on-hermes-01.md`](staging-on-hermes-01.md) — what hermes-01 is until the first champion
+- [`environments.md`](environments.md#hermes-01-run-as-staging) — what hermes-01 is until the first champion

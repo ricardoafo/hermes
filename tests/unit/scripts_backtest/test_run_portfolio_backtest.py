@@ -46,10 +46,11 @@ from hermes.domain.value_objects.pair import Pair
 from hermes.entrypoints.funnel import load_funnel_evidence, read_front_matter
 from hermes.entrypoints.funnel import main as funnel_main
 from hermes.infrastructure.config.models import StrategyConfig
+from tests.support.paths import REPO_ROOT
 from tests.support.research_batch import BATCH_PATH, batch_front_matter, batch_text
 from tests.support.unknown_signal import config_with_unknown_signal, refusal_lines
 
-_SCRIPTS = Path(__file__).resolve().parents[3] / "scripts" / "backtest"
+_SCRIPTS = REPO_ROOT / "scripts" / "backtest"
 _BTC = Pair(base=Currency.BTC, quote=Currency.USDT)
 _ETH = Pair(base=Currency.ETH, quote=Currency.USDT)
 _SOL = Pair(base=Currency.SOL, quote=Currency.USDT)
@@ -168,13 +169,7 @@ def test_report_lists_every_rule_left_off() -> None:
 # --funnel-evidence-out on a synthetic run (#997, v2-funnel-evidence R-1 to R-3)
 # ---------------------------------------------------------------------------
 
-_PRE_REG_V2 = (
-    Path(__file__).resolve().parents[3]
-    / "docs"
-    / "experiments"
-    / "swing-mvp1"
-    / "pre-registration-v2.md"
-)
+_PRE_REG_V2 = REPO_ROOT / "docs" / "experiments" / "swing-mvp1" / "pre-registration-v2.md"
 _V2 = "swing-mvp1-v2"
 _WARMUP_FROM = datetime(2020, 3, 1, tzinfo=UTC)
 _WINDOW = ("2021-01-01", "2021-04-01")

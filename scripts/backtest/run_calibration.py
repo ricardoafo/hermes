@@ -19,7 +19,8 @@ Phase 1 scope — deliberately narrow (see openspec change
   Train slice).
 - Fills synthesised directly from strategy signals (entry_px =
   bar.close, exit_px = exit-bar.close). No OrderRouter, no
-  SimulatedExchangeAdapter, no orderbook. Those wire in Phase 2.
+  fill kernel, no orderbook. Phase 2 (``run_calibration_full.py``)
+  wires them.
 - Report saved as JSON under $HERMES_DATA_DIR/backtests/mvp1-<ts>.json.
 
 Usage:
@@ -146,8 +147,8 @@ def _synthesise_fill(
 ) -> Fill:
     """Build a Fill from a strategy signal at bar.close price.
 
-    Phase 1 shortcut — Phase 2 replaces this with the full OrderRouter
-    -> SimulatedExchangeAdapter pipeline that walks an orderbook.
+    Phase 1 shortcut — Phase 2 (``run_calibration_full.py``) replaces this
+    with the ``FillKernel`` pipeline (OrderRouter, orderbook walk).
 
     Sizing: 1% risk per trade against ATR-based stop distance, capped
     at 5% of equity per pre-reg §5.4. When the strategy signal doesn't

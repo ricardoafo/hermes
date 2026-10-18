@@ -24,7 +24,9 @@ from urllib.parse import parse_qs
 
 import pytest
 
-_DEPLOY_DIR = Path(__file__).resolve().parents[3] / "deploy"
+from tests.support.paths import REPO_ROOT
+
+_DEPLOY_DIR = REPO_ROOT / "deploy"
 _BASH = shutil.which("bash")
 _CURL = shutil.which("curl")
 

@@ -37,7 +37,6 @@ from hermes.application.order_router.sizing import SizingPolicy
 from hermes.application.portfolio.tracker import PortfolioTracker
 from hermes.application.strategy_protocol.kill_trigger_evaluator import KillTriggerEvaluator
 from hermes.domain.events.trade_executed import TradeExecuted
-from hermes.domain.fees.fee_schedule import FeeSchedule
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.bar_schedule import order_for_delivery
 from hermes.domain.market_data.kline import KlineInterval
@@ -50,7 +49,7 @@ from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.ports.strategy import StrategyPort
 from tests.support.fake_market.script import BARS_PER_DAY, MarketScript
-from tests.support.fill_kernel import STARTING_CASH, STRATEGY, fees, kill_evaluator
+from tests.support.fill_kernel import STARTING_CASH, STRATEGY, fees_at, kill_evaluator
 
 BTC = Pair(base=Currency.BTC, quote=Currency.USDT)
 ETH = Pair(base=Currency.ETH, quote=Currency.USDT)
@@ -248,11 +247,6 @@ def make_kernel(tracker: PortfolioTracker, capital: Decimal = STARTING_CASH) -> 
     )
 
 
-def _fees_at(at: datetime, pair: Pair) -> FeeSchedule:
-    _ = at
-    return fees(pair)
-
-
 def correlation_ids() -> Callable[[], str]:
     """Return a source of ULID-shaped ids that counts from one, so two runs share ids."""
     counter = itertools.count(1)
@@ -320,7 +314,7 @@ def backtest(
         kernel=make_kernel(PortfolioTracker(seed_snapshot(capital)), capital),
         window_start=window_start,
         window_end=window_end,
-        fees_at=_fees_at,
+        fees_at=fees_at,
         correlation_id=correlation_ids(),
     )
 
@@ -349,7 +343,7 @@ def backtest_with_restart(bars: Sequence[Bar], *, restart_at: datetime) -> Backt
         kernel=make_kernel(PortfolioTracker(seed_snapshot())),
         window_start=WINDOW_START,
         window_end=WINDOW_END,
-        fees_at=_fees_at,
+        fees_at=fees_at,
         correlation_id=ids,
         entries=entries,
     )
@@ -374,7 +368,7 @@ def backtest_with_restart(bars: Sequence[Bar], *, restart_at: datetime) -> Backt
         kernel=make_kernel(rebuilt.unwrap()),
         window_start=WINDOW_START,
         window_end=WINDOW_END,
-        fees_at=_fees_at,
+        fees_at=fees_at,
         correlation_id=ids,
         entries=entries,
     )

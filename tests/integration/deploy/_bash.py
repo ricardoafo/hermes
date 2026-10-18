@@ -19,6 +19,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.support.paths import REPO_ROOT
+
 
 def resolve_bash(configured: str | None) -> str:
     """Return the bash to run, swapping Git for Windows' launcher for the bash it wraps.
@@ -46,7 +48,6 @@ BASH = resolve_bash(os.environ.get("HERMES_TEST_BASH"))
 RUN_ON_THIS_PLATFORM = sys.platform != "win32" or bool(os.environ.get("HERMES_TEST_BASH"))
 SKIP_REASON = "needs bash, GNU coreutils and real symlinks (set HERMES_TEST_BASH on Windows)"
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
 SCRIPT_DIR = REPO_ROOT / "scripts" / "deploy"
 
 # Windows has no POSIX file modes, so tests that assert on them run on Linux only.

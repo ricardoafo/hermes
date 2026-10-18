@@ -13,9 +13,15 @@ from pathlib import Path
 
 import pytest
 
+from hermes.application.backtest.fold_evidence import fold_evidence
 from hermes.entrypoints import funnel as funnel_module
 from hermes.entrypoints import funnel_batch
-from tests.support.candidate_evidence import TRAIN_DAYS, write_candidate, write_trial_log
+from tests.support.candidate_evidence import (
+    START,
+    TRAIN_DAYS,
+    write_candidate,
+    write_trial_log,
+)
 from tests.support.research_batch import BATCH_PATH
 
 _ALPHA = "swing-alpha"
@@ -305,3 +311,64 @@ class TestRefusals:
         code, out, _ = _run(["-h"])
 
         assert (code, funnel_batch.USAGE in out) == (0, True)
+
+
+def _add_folds(root: Path, strategy_id: str) -> int:
+    """Add the §8.3 folds of the candidate's base curve to its funnel evidence, as the driver does.
+
+    Returns the number of purged CPCV folds written, so a caller can show the
+    evidence is not empty.
+    """
+    path = root / "evidence" / strategy_id / "funnel-evidence.json"
+    body = json.loads(path.read_text(encoding="utf-8"))
+    body["folds"] = fold_evidence(START, body["daily_equity"])
+    path.write_text(json.dumps(body), encoding="utf-8")
+    return len(body["folds"]["purged_cpcv"]["folds"])
+
+
+def _judged_outputs(
+    root: Path, stage: str, monkeypatch: pytest.MonkeyPatch, *, with_folds: bool
+) -> tuple[int, str, dict[str, bytes]]:
+    """Write alpha (strong) and beta (no calibration fill), judge them, and return what came out."""
+    root.mkdir(parents=True, exist_ok=True)
+    monkeypatch.chdir(root)
+    write_trial_log(root / "trial-log.jsonl", [0.05, 0.06])
+    days = TRAIN_DAYS if stage == "train" else 730
+    write_candidate(root, strategy_id=_ALPHA, days=days)
+    write_candidate(root, strategy_id=_BETA, days=days, fills=0)
+    if with_folds:
+        assert (_add_folds(root, _ALPHA), _add_folds(root, _BETA)) == (10, 10)
+    code, out, _ = _run(_argv(root, stage))
+    files = {
+        str(p.relative_to(root / "out")): p.read_bytes()
+        for p in sorted((root / "out").rglob("*"))
+        if p.is_file()
+    }
+    return code, out, files
+
+
+class TestFoldEvidenceIsReportedOnly:
+    """Pre-registration §8.3 folds are evidence only (#1181): no verdict reads them."""
+
+    @pytest.mark.parametrize("stage", ["train", "validation"])
+    def test_verdicts_are_identical_with_and_without_folds(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stage: str
+    ) -> None:
+        """Same exit code, stdout, verdict records, summary and details file, byte for byte."""
+        plain = _judged_outputs(tmp_path / "plain", stage, monkeypatch, with_folds=False)
+        folded = _judged_outputs(tmp_path / "folds", stage, monkeypatch, with_folds=True)
+
+        assert folded == plain
+
+    def test_the_identical_verdicts_include_a_pass_and_a_fail(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The comparison above is not vacuous: with folds, alpha is champion and beta fails."""
+        code, out, _ = _judged_outputs(tmp_path, "validation", monkeypatch, with_folds=True)
+
+        lines = out.splitlines()
+        assert (code, "FAIL swing-beta calibration_fills" in lines, lines[-1]) == (
+            0,
+            True,
+            "CHAMPION swing-alpha",
+        )

@@ -21,6 +21,7 @@ import pytest
 import respx
 
 from hermes.entrypoints import _health as health_module
+from tests.support.paths import REPO_ROOT
 
 # Test-only fake credentials. Low-entropy so no future secret-scanner
 # false-positives; the token patterns still match each vendor's shape
@@ -88,7 +89,7 @@ def env_all_configured(
 _MD_BASE = "https://data-api.binance.vision"
 _MD_TIME_URL = f"{_MD_BASE}/api/v3/time"
 _MD_KLINES_URL = f"{_MD_BASE}/api/v3/klines"
-_RECORDED_DIR = Path(__file__).parents[2] / "fixtures" / "binance_public"
+_RECORDED_DIR = REPO_ROOT / "tests" / "fixtures" / "binance_public"
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 
