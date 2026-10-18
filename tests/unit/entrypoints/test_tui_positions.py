@@ -131,7 +131,7 @@ def test_a_hidden_surface_never_leaks_a_closed_net_into_a_row(
     """Whatever the closed position's net, a money-hiding surface shows none."""
     item = _closed("BTC", hour, None if net is None else str(net))
     rows = position_rows((), (item,), _HIDDEN)
-    assert rows[0]["net"] is None
+    assert [row["net"] for row in rows] == [None]
 
 
 # ----------------------------------------------------------------------
