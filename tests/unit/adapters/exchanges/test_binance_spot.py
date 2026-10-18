@@ -269,6 +269,42 @@ def test_third_asset_commission_falls_back_to_the_taker_rate(adapter: BinanceSpo
     assert (fill.executed_qty, fill.fee.amount) == (Decimal("0.01"), Decimal("0.65"))
 
 
+@respx.mock
+@pytest.mark.parametrize(
+    ("ticker", "estimated"),
+    [(httpx.Response(200, json={"symbol": "BNBUSDT", "price": "600.00"}), False), (None, True)],
+    ids=["priced-at-ticker", "taker-rate"],
+)
+def test_a_fee_priced_at_the_taker_rate_is_marked_estimated(
+    adapter: BinanceSpotAdapter, ticker: httpx.Response | None, *, estimated: bool
+) -> None:
+    """Only a fee charged at the 10 bps fallback is marked estimated on the fill (#1014).
+
+    The mark is what lets cost basis and tax list the fee for correction.
+    """
+    respx.post(url__startswith=_ORDER_URL).mock(return_value=httpx.Response(200, json=_bnb_fill()))
+    route = respx.get(url__startswith=_TICKER_URL)
+    if ticker is None:
+        route.mock(side_effect=httpx.ConnectError("down"))
+    else:
+        route.mock(return_value=ticker)
+
+    fill = adapter.place_market_order(side=OrderSide.BUY, order=_order())
+
+    assert fill.fee_estimated is estimated
+
+
+def test_an_exact_quote_fee_is_not_marked_estimated(adapter: BinanceSpotAdapter) -> None:
+    """A fee Binance charged in the quote currency is exact: the fill carries no mark."""
+    with respx.mock:
+        respx.post(url__startswith=_ORDER_URL).mock(
+            return_value=httpx.Response(200, json=_filled())
+        )
+        fill = adapter.place_market_order(side=OrderSide.BUY, order=_order())
+
+    assert (fill.fee.amount, fill.fee_estimated) == (Decimal("0.65"), False)
+
+
 def test_every_order_carries_a_fresh_client_order_id(adapter: BinanceSpotAdapter) -> None:
     """Two orders are sent with two different ``hermes-`` client ids, the key of any lookup."""
     with respx.mock:
