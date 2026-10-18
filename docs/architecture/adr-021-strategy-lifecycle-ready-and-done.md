@@ -1,7 +1,7 @@
 # ADR-021: Strategy lifecycle — Ready and Done rules for every stage, a valid shadow clock for v1, and the rules for a multi-strategy lab
 
 **Date**: 2026-10-06
-**Status**: Proposed — Accepted when the Code Owner merges it
+**Status**: Accepted (merged in PR #799)
 **Deciders**: Ricardo Afonso (product owner), Claude (proposer)
 **Supersedes**: none. It applies [pre-registration v1](../experiments/swing-mvp1/pre-registration-v1.md) §7 and §10 as
 written and builds on [ADR-012](adr-012-continuous-ai-evaluation.md) D-11 (research loop) and
