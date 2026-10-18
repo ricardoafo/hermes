@@ -15,6 +15,7 @@ and [ADR-021](../architecture/adr-021-strategy-lifecycle-ready-and-done.md)).
 | [swing-mvp1/](#swing-mvp1) | The Swing MVP1 experiment, listed below |
 | [templates/hypothesis-card.md](templates/hypothesis-card.md) | Template for one research candidate's hypothesis card |
 | [templates/research-batch.md](templates/research-batch.md) | Template for a research batch document that signs several cards together |
+| [verdicts.md](verdicts.md) | Schema of the PASS/FAIL verdict records a batch run commits |
 
 ### swing-mvp1
 
