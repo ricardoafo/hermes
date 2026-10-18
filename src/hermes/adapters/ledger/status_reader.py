@@ -46,11 +46,13 @@ class SqliteStatusReader:
         self._conn = connection
 
     @classmethod
-    def open(cls, path: Path) -> Self:
+    def open(cls, path: Path, *, any_thread: bool = False) -> Self:
         """Open ``path`` read-only.
 
         Args:
             path: The ledger file.
+            any_thread: Let another thread than this one read through it;
+                see :func:`~hermes.adapters.ledger.connection.open_ledger`.
 
         Returns:
             A reader over a ``mode=ro`` connection.
@@ -64,7 +66,7 @@ class SqliteStatusReader:
         if not resolved.is_file():
             raise FileNotFoundError(str(path))
         try:
-            connection = open_ledger(resolved, read_only=True)
+            connection = open_ledger(resolved, read_only=True, any_thread=any_thread)
         except sqlite3.Error as exc:
             raise LedgerError(msg=f"cannot open {path} read-only: {exc}") from exc
         return cls(connection)

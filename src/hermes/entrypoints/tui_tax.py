@@ -864,7 +864,8 @@ def tax_inputs(
 
     if scales_config is None or not db_path.is_file():
         return TaxInputs(source=None, profile=profile, pack=pack, close=lambda: None)
-    connection = open_ledger(db_path, read_only=True)
+    # The console reads the Tax screen in a worker thread (issue #1001).
+    connection = open_ledger(db_path, read_only=True, any_thread=True)
     source = TaxScreenService(
         SqliteLedger(connection),
         scales=scales,
