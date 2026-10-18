@@ -292,6 +292,28 @@ forbidden_modules = [
   "hermes.ports.filing",
 ]
 
+# issue #1181 (Code Owner, 18 Oct 2026): the pre-registration §8.3 walk-forward and
+# purged CPCV folds are reported evidence only. Nothing that judges a run, selects
+# a champion or decides a trade may import them (openspec/changes/1181-fold-evidence).
+[[tool.importlinter.contracts]]
+name = "fold-evidence-is-reported-only"
+type = "forbidden"
+source_modules = [
+  "hermes.application.calibration",
+  "hermes.application.order_router",
+  "hermes.application.strategy_protocol",
+  "hermes.domain.strategy",
+  "hermes.domain.fees",
+  "hermes.domain.risk",
+  "hermes.entrypoints.certify",
+  "hermes.entrypoints.funnel",
+  "hermes.entrypoints.funnel_batch",
+]
+forbidden_modules = [
+  "hermes.application.backtest.fold_evidence",
+  "hermes.domain.statistics.fold_metrics",
+]
+
 # ADR-012 D-08: the supervisor layer reads through read-only ports and
 # projections only. It never reaches an exchange, an order path, the ledger's
 # write port, the portfolio or the composition root (change 34-supervisor-read-tools).
