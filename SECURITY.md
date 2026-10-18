@@ -56,7 +56,7 @@ Ricardo's public GitHub profile.
 - Vulnerabilities in third-party services (Binance API, Kraken API,
   Telegram, healthchecks.io, Backblaze B2, GitHub itself). Report those
   to the respective vendor. This project follows their security advisories
-  and updates dependencies via Renovate with a 7-day cooldown.
+  and updates dependencies via Dependabot with a 7-day cooldown.
 - Vulnerabilities in the operator's personal devices or accounts (Ricardo's
   laptop, VPS, GitHub account, exchange accounts). Out of the repo's
   responsibility scope.

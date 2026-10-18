@@ -1,7 +1,7 @@
 # ADR-026: Research batches — several signed candidates backtested together, Validation started by the pipeline, and a champion picked by a signed rule
 
 **Date**: 2026-10-17
-**Status**: Proposed — Accepted when the Code Owner merges it
+**Status**: Accepted (merged in PR #1055)
 **Deciders**: Ricardo Afonso (product owner), Claude (proposer)
 **Supersedes**: in [ADR-023](adr-023-backtest-runs-on-server-01.md), §5 (a Validation run waits for the Code Owner's
 own click) and §9 (`workflow_dispatch` is the only trigger), for strategies signed in a batch.

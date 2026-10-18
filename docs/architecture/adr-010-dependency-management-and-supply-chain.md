@@ -5,6 +5,7 @@
 **Accepted**: 2026-08-21
 **Deciders**: Ricardo Afonso (product owner), Claude (proposer)
 **Supersedes**: —
+**Superseded in part by**: decision-journal entries [Dependabot over Renovate](../decisions/2026-08-21-dependabot-over-renovate.md) (Renovate), [Drop `safety`](../decisions/2026-08-22-drop-safety.md) (§3, `safety` + `pip-audit` becomes `pip-audit`) and [VPS installs from hashed requirements](../decisions/2026-10-02-vps-install-from-hashed-requirements.md) (§1, VPS install step)
 
 ## Context
 

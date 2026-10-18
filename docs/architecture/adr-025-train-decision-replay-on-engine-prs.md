@@ -1,7 +1,7 @@
 # ADR-025: Engine PRs replay Train and compare decisions, on the CI pool with the klines mounted read-only
 
 **Date**: 2026-10-17
-**Status**: Proposed — Accepted when the Code Owner merges it
+**Status**: Accepted (merged in PR #988)
 **Deciders**: Ricardo Afonso (product owner), Claude (proposer)
 **Supersedes**: none.
 **Amends**: [ADR-018](adr-018-ci-cd-infrastructure-and-resource-budget.md), adding a read-only data mount to the CI

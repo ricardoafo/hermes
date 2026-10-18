@@ -1,7 +1,7 @@
 # ADR-018: CI/CD infrastructure and resource budget — where runners live, what each may use, what runs when
 
 **Date**: 2026-10-05
-**Status**: Proposed — Accepted when the Code Owner merges it
+**Status**: Accepted (merged in PR #764)
 **Deciders**: Ricardo Afonso (product owner), Claude (proposer)
 **Supersedes**: none. It refines the runner sections of `docs/guides/ci-runners-and-merge-queue.md` and builds on
 [ADR-017](adr-017-test-tiers-as-enforced.md) (which tiers exist) by deciding where and when they run.
