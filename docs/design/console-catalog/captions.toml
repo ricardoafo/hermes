@@ -54,14 +54,6 @@ check = "The placeholder names the right issue and the tab bar marks tab 2."
 scenario = "ok-two-positions"
 keys = "2"
 
-[views."test_tui_snapshots/tab3_placeholder"]
-screen = "Positions"
-state = "Not built yet"
-means = "Tab 3 while the Positions screen is not built: a placeholder naming its issue."
-check = "The placeholder names the right issue and the tab bar marks tab 3."
-scenario = "ok-two-positions"
-keys = "3"
-
 [views."test_tui_snapshots/theme_picker"]
 screen = "Theme picker"
 state = "Theme picker open over Home"
@@ -137,9 +129,9 @@ demo = "any console on a terminal without image support"
 
 [views."test_tui_positions/positions"]
 screen = "Positions"
-state = "Two open positions, the first selected"
-means = "The open positions with the selected one's detail beside them (under them on narrow screens): why it opened, the stop, the money if sold now, the price since entry and the timeline."
-check = "Rows and detail match Home's for the same coin; the selected row has the cursor; up and down move it and the detail follows."
+state = "Two open positions and one closed, the first selected"
+means = "The open positions and the recently closed ones in one filterable list, with the selected position's detail beside it (a detail screen on narrow terminals): why it opened, the stop, the money if sold now, the price since entry and the timeline."
+check = "Open rows come before closed ones; the detail matches Home's for the same coin; the selected row has the cursor; up and down move it and the detail follows."
 scenario = "ok-two-positions"
 keys = "3"
 

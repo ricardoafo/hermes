@@ -416,7 +416,7 @@ def test_lots_show_every_lot_and_filter_by_state() -> None:
     async def check(app: HomeApp) -> tuple[int, list[str]]:
         query_list = app.query_one("#tax-lots", QueryList)
         total = len(query_list.shown)
-        app.query_one(QueryInput).value = "state:open"
+        _tax(app).query_one(QueryInput).value = "state:open"
         await _until(lambda: len(query_list.shown) != total)
         return total, sorted(str(row["lot"]) for row in query_list.shown)
 
@@ -429,7 +429,7 @@ def test_highlighting_a_lot_shows_its_fifo_detail() -> None:
     """Invariant: moving the table cursor onto the SOL lot shows the sale that used it."""
 
     async def check(app: HomeApp) -> str:
-        table = app.query_one(SortableTable)
+        table = _tax(app).query_one(SortableTable)
         table.focus()
         table.move_cursor(row=1)
         await _until(lambda: _plain(_tax(app).texts["tax-lot-detail"]).startswith("SOL lot b-2"))
@@ -444,7 +444,7 @@ def test_tab_in_the_query_completes_instead_of_switching_screens() -> None:
     """Invariant: Tab inside the Lots query completes a field name and keeps the Tax screen."""
 
     async def check(app: HomeApp, pilot: Pilot[None]) -> tuple[int, str]:
-        field = app.query_one(QueryInput)
+        field = _tax(app).query_one(QueryInput)
         field.focus()
         field.value = "sta"
         await pilot.pause()
