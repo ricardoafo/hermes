@@ -118,9 +118,6 @@ tests/unit/domain/statistics/test_splits.py::test_ten_splits U3
 tests/unit/domain/statistics/test_splits.py::test_train_never_touches_test_or_its_gaps U3
 tests/unit/domain/tax/test_netting.py::test_carry_forward_never_exceeds_four_years U3
 tests/unit/domain/test_errors_raisable.py::test_declared_fields_stay_frozen U6
-tests/unit/domain/value_objects/test_currency.py::test_currency_is_str_enum U7
-tests/unit/domain/value_objects/test_currency.py::test_from_str_empty_returns_failure U3
-tests/unit/domain/value_objects/test_currency.py::test_from_str_unknown_returns_failure U3
 tests/unit/entrypoints/test_health.py::test_column_widths_adjust_to_longest_value U3
 tests/unit/entrypoints/test_health.py::test_run_all_with_all_ok_yields_ok_results U3
 tests/unit/entrypoints/test_tui.py::test_refresh_interval_is_five_seconds U7
