@@ -1,0 +1,268 @@
+name: Backtest batch recovery
+
+# Re-runs ONE candidate stage of a signed batch whose job died before it logged
+# a trial (ADR-026 §3). backtest-batch.yml refuses any rerun, because a second
+# attempt would be a second touch; this is the Code Owner's own door for the
+# case where the runner was lost before the job read any data. It checks the
+# signed batch again, refuses a candidate stage that already has a trial line,
+# and on a Validation stage the family budget. It uploads the evidence and the
+# extended trial log; judging and the results PR stay with backtest-batch.yml.
+#
+# Shares the `backtest` concurrency group: one backtest at a time on the one
+# runner (ADR-023 §1, §8). The summary holds PASS/FAIL lines only (ADR-023 §7).
+on:
+  workflow_dispatch:
+    inputs:
+      batch:
+        description: 'Path of the signed batch document, docs/experiments/<exp>/batches/<id>.md'
+        required: true
+        type: string
+      candidate:
+        description: 'Strategy id of the candidate to re-run'
+        required: true
+        type: string
+      stage:
+        description: 'Which stage died before it logged a trial'
+        required: true
+        type: choice
+        options: [train, validation]
+      chain_run_id:
+        description: 'Run id of the lost batch run, to extend its trial-log-chain; empty uses the committed log'
+        required: false
+        default: ''
+        type: string
+
+concurrency:
+  group: backtest
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  HERMES_DATA_DIR: /srv/hermes-data
+  UV_PIN: "0.12.5"
+
+jobs:
+  recover:
+    name: Recover ${{ inputs.stage }} ${{ inputs.candidate }}
+    runs-on: [self-hosted, hermes-backtest]
+    environment: ${{ inputs.stage == 'validation' && 'backtest-validation' || 'backtest-train' }}
+    timeout-minutes: 150
+    permissions:
+      contents: read
+      actions: read
+    env:
+      BATCH_FILE: ${{ inputs.batch }}
+      CANDIDATE: ${{ inputs.candidate }}
+      STAGE: ${{ inputs.stage }}
+      CHAIN_RUN_ID: ${{ inputs.chain_run_id }}
+    steps:
+      - name: Code Owner dispatched this
+        env:
+          OWNER: ${{ github.repository_owner }}
+          ACTOR: ${{ github.actor }}
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$REF" != refs/heads/main ]; then
+            echo "::error::a recovery runs from main only, not $REF"
+            exit 1
+          fi
+          if [ "$ACTOR" != "$OWNER" ]; then
+            echo "::error::a recovery is dispatched only by $OWNER, not $ACTOR (ADR-026 §3)"
+            exit 1
+          fi
+          echo "Dispatched by $OWNER"
+
+      - name: Inputs are plain names
+        id: inputs
+        run: |
+          set -euo pipefail
+          if [[ ! "$BATCH_FILE" =~ ^docs/experiments/([a-z0-9][a-z0-9-]*)/batches/([a-z0-9][a-z0-9-]*)\.md$ ]]; then
+            echo "::error::batch must be docs/experiments/<exp>/batches/<id>.md"
+            exit 1
+          fi
+          experiment="${BASH_REMATCH[1]}"
+          batch_id="${BASH_REMATCH[2]}"
+          if [[ ! "$CANDIDATE" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+            echo "::error::candidate must be a plain strategy id"
+            exit 1
+          fi
+          if [[ -n "$CHAIN_RUN_ID" && ! "$CHAIN_RUN_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::chain_run_id must be a run id (digits) or empty"
+            exit 1
+          fi
+          {
+            echo "experiment=$experiment"
+            echo "batch_id=$batch_id"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: uv
+        run: |
+          set -euo pipefail
+          have=$(uv --version 2>/dev/null | cut -d' ' -f2 || true)
+          if [ "$have" != "$UV_PIN" ]; then
+            curl -LsSf "https://github.com/astral-sh/uv/releases/download/${UV_PIN}/uv-installer.sh" \
+              | env UV_INSTALL_DIR="$HOME/.local/bin" sh
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: uv sync
+        run: uv sync --frozen
+
+      # The same signed-batch check as the push path, and the candidate must be
+      # one of the batch's own.
+      - name: Batch check
+        run: |
+          set -uo pipefail
+          mkdir -p "$RUNNER_TEMP/check"
+          uv run hermes batch check "$BATCH_FILE" --require-signed \
+            --candidates-out "$RUNNER_TEMP/check/candidates.json" > "$RUNNER_TEMP/check/check.txt"
+          code=$?
+          awk '/^(PASS|FAIL|NA) /{print $1, $2}' "$RUNNER_TEMP/check/check.txt" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$code" -ne 0 ]; then
+            echo "::error::hermes batch check exited $code, so nothing is recovered"
+            exit 1
+          fi
+          if ! jq -e --arg c "$CANDIDATE" '.candidates | map(.strategy_id) | index($c) != null' \
+            "$RUNNER_TEMP/check/candidates.json" > /dev/null; then
+            echo "::error::$CANDIDATE is not a candidate of $BATCH_FILE"
+            exit 1
+          fi
+
+      - name: Download the lost run's trial log chain
+        if: ${{ inputs.chain_run_id != '' }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: trial-log-chain
+          path: ${{ runner.temp }}/chain
+          run-id: ${{ inputs.chain_run_id }}
+          github-token: ${{ github.token }}
+
+      # With no lost chain the committed log is the base; with one, it must
+      # begin with the committed bytes, so no line is lost or reordered.
+      - name: Trial log to extend
+        env:
+          EXPERIMENT: ${{ steps.inputs.outputs.experiment }}
+        run: |
+          set -euo pipefail
+          src="docs/experiments/${EXPERIMENT}/trial-log.jsonl"
+          if [ ! -f "$src" ]; then
+            echo "::error::$src is not committed. Every earlier trial counts toward the DSR (ADR-023 §6)."
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/chain" "$RUNNER_TEMP/out/$CANDIDATE"
+          if [ -z "$CHAIN_RUN_ID" ]; then
+            cp "$src" "$RUNNER_TEMP/chain/trial-log.jsonl"
+          fi
+          if ! cmp -s -n "$(stat -c %s "$src")" "$src" "$RUNNER_TEMP/chain/trial-log.jsonl"; then
+            echo "::error::the trial log chain does not start with the committed log"
+            exit 1
+          fi
+          echo "Chain: $(wc -l < "$RUNNER_TEMP/chain/trial-log.jsonl") lines before $CANDIDATE"
+
+      # Only a job that died before logging is recovered; a trial line for this
+      # candidate and stage in this batch means the touch was spent.
+      - name: No touch already logged
+        env:
+          BATCH_ID: ${{ steps.inputs.outputs.batch_id }}
+        run: |
+          set -uo pipefail
+          uv run python scripts/backtest/logged_touch.py \
+            --trial-log "$RUNNER_TEMP/chain/trial-log.jsonl" \
+            --batch-id "$BATCH_ID" --candidate "$CANDIDATE" --stage "$STAGE" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          code=${PIPESTATUS[0]}
+          if [ "$code" -ne 0 ]; then
+            echo "::error::$CANDIDATE already has a $STAGE trial in $BATCH_ID (exit $code); the Code Owner decides, not a rerun"
+            exit 1
+          fi
+
+      - name: Family Validation budget
+        if: ${{ inputs.stage == 'validation' }}
+        run: |
+          set -uo pipefail
+          uv run python scripts/backtest/validation_budget.py \
+            --trial-log "$RUNNER_TEMP/chain/trial-log.jsonl" \
+            --batch "$BATCH_FILE" --candidate "$CANDIDATE" | tee -a "$GITHUB_STEP_SUMMARY"
+          code=${PIPESTATUS[0]}
+          if [ "$code" -ne 0 ]; then
+            echo "::error::$CANDIDATE's family has no Validation touch left (exit $code)"
+            exit 1
+          fi
+
+      - name: Window from the manifest
+        id: window
+        env:
+          EXPERIMENT: ${{ steps.inputs.outputs.experiment }}
+        run: |
+          set -euo pipefail
+          manifest="docs/experiments/${EXPERIMENT}/data-manifest.json"
+          start=$(jq -er '.splits.train.start[0:10]' "$manifest")
+          end=$(jq -er --arg s "$STAGE" '.splits[$s].end[0:10]' "$manifest")
+          oos_start=$(jq -er '.splits.oos.start[0:10]' "$manifest")
+          if [[ ! "$end" < "$oos_start" ]]; then
+            echo "::error::window end $end reaches the OOS start $oos_start"
+            exit 1
+          fi
+          echo "Window: $start -> $end ($STAGE)"
+          {
+            echo "start=$start"
+            echo "end=$end"
+            echo "manifest=$manifest"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Fill and verify the pinned data
+        timeout-minutes: 30
+        env:
+          MANIFEST: ${{ steps.window.outputs.manifest }}
+        run: |
+          uv run python scripts/data/prepare_backtest_data.py \
+            --split "$STAGE" --manifest "$MANIFEST" --data-dir "$HERMES_DATA_DIR"
+
+      # Also on failure: the driver may have logged a trial before failing, and
+      # the chain upload below must carry it.
+      - name: Backtest
+        env:
+          START: ${{ steps.window.outputs.start }}
+          END: ${{ steps.window.outputs.end }}
+          MANIFEST: ${{ steps.window.outputs.manifest }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/out/$CANDIDATE"
+          uv run python scripts/backtest/run_portfolio_backtest.py \
+            --start "$START" --end "$END" \
+            --manifest "$MANIFEST" \
+            --config-dir config \
+            --batch "$BATCH_FILE" --candidate "$CANDIDATE" \
+            --trial-log "$RUNNER_TEMP/chain/trial-log.jsonl" \
+            --output "$out/report.json" \
+            --performance-out "$out/performance.json" \
+            --funnel-evidence-out "$out/funnel-evidence.json"
+          jq -e '{backtest: {calibration_fill_count: .fills_count}}' "$out/report.json" > "$out/evidence.json"
+
+      - name: Upload the extended trial log chain
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: trial-log-chain
+          path: ${{ runner.temp }}/chain/
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Upload the candidate's evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: evidence-${{ inputs.stage }}-${{ inputs.candidate }}
+          path: |
+            ${{ runner.temp }}/out/${{ inputs.candidate }}/performance.json
+            ${{ runner.temp }}/out/${{ inputs.candidate }}/evidence.json
+            ${{ runner.temp }}/out/${{ inputs.candidate }}/funnel-evidence.json
+          retention-days: 90
+          if-no-files-found: error
