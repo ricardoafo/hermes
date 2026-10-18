@@ -1,0 +1,1 @@
+- Binance spot adapter: after a lost order reply, "no such order" is believed only when a second lookup two seconds later agrees, and a found order whose reply fails to parse raises unknown status naming both the client and Binance order ids.

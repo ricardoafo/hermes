@@ -161,3 +161,21 @@ def test_bot_once_runs_one_step_with_a_fake_client(tmp_path: Path) -> None:
 
     assert code == 0
     assert [(chat, silent) for chat, _, silent in client.sent] == [(_OPERATOR, False)]
+
+
+def test_a_bad_telegram_api_base_exits_three_naming_it() -> None:
+    """An unsafe HERMES_TELEGRAM__API_BASE stops the bot before any call (#970)."""
+    err = io.StringIO()
+    env = {
+        "HERMES_TELEGRAM__BOT_TOKEN": "123456789:FAKE-bot-token_for_tests",  # gitleaks:allow
+        "HERMES_TELEGRAM__CHAT_ID": _OPERATOR,
+        "HERMES_TELEGRAM__API_BASE": "http://api.telegram.org",
+    }
+
+    code = bot_module.main([], stream=io.StringIO(), env=env, err=err)
+
+    assert (code, err.getvalue()) == (
+        3,
+        "ERROR: HERMES_TELEGRAM__API_BASE may use http only on a loopback host: "
+        "'http://api.telegram.org'\n",
+    )

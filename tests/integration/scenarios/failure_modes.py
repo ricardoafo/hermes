@@ -66,6 +66,8 @@ _SIGTERM = _S + "test_chaos_sigterm_mid_bar.py::"
 _EVERY_BAR = _PATHS + "test_every_rule_holds_after_every_bar_and_a_restart_changes_nothing"
 _FUZZ_BINANCE = _U + "adapters/market_data/test_wire_fuzz_binance.py::"
 _FUZZ_KRAKEN = _U + "adapters/exchanges/test_wire_fuzz_kraken.py::"
+_BINANCE_SPOT = _U + "adapters/exchanges/test_binance_spot.py::"
+_KRAKEN_SPOT = _U + "adapters/exchanges/test_kraken_spot.py::"
 _FUZZ_LEDGER = _U + "adapters/ledger/test_reader_fuzz.py::"
 _FUZZ_CONFIG = _U + "infrastructure/config/test_loader_fuzz.py::"
 _CONTENTION = _I + "adapters/ledger/test_ledger_contention.py::"
@@ -293,15 +295,43 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "An order reply is lost, so the order state is unknown",
-            gap="issue #858: a Binance 5xx reads as a refusal and no client order id exists",
+            proved_by=(
+                _BINANCE_SPOT + "test_every_order_carries_a_fresh_client_order_id",
+                _BINANCE_SPOT
+                + "test_an_order_whose_reply_was_lost_returns_the_fill_found_by_its_client_id",
+                _BINANCE_SPOT + "test_a_failed_lookup_names_the_client_id_to_reconcile",
+                _BINANCE_SPOT + "test_a_stop_loss_whose_reply_was_lost_returns_the_found_order_id",
+                _KRAKEN_SPOT + "test_every_order_carries_a_userref",
+                _KRAKEN_SPOT + "test_a_failed_read_back_after_addorder_carries_the_txid",
+                _KRAKEN_SPOT + "test_a_lost_addorder_reply_names_the_userref",
+            ),
+        ),
+        FailureMode(
+            "An order still in flight inside Binance reads as never placed on the first lookup",
+            proved_by=(
+                _BINANCE_SPOT + "test_an_order_binance_never_saw_is_looked_up_twice_a_wait_apart",
+                _BINANCE_SPOT
+                + "test_an_order_in_flight_at_the_first_lookup_returns_the_fill_found_on"
+                "_the_recheck",
+                _BINANCE_SPOT
+                + "test_a_stop_loss_in_flight_at_the_first_lookup_returns_the_order_found"
+                "_on_the_recheck",
+            ),
         ),
         FailureMode(
             "A filled order is reported as an error",
-            gap="issue #858: a commission in a third asset raises after the fill",
+            proved_by=(
+                _BINANCE_SPOT + "test_third_asset_commission_is_priced_at_its_ticker",
+                _BINANCE_SPOT + "test_third_asset_commission_falls_back_to_the_taker_rate",
+            ),
         ),
         FailureMode(
             "The Kraken nonce goes backwards after a restart",
-            gap="issue #858: the nonce lives only in memory; inferred, untested",
+            proved_by=(
+                _KRAKEN_SPOT
+                + "test_a_restart_with_the_clock_stepped_back_still_sends_a_higher_nonce",
+                _KRAKEN_SPOT + "test_a_bad_nonce_file_fails_an_order_before_sending_it",
+            ),
         ),
         FailureMode(
             "The FX service is down or answers garbage",
@@ -702,6 +732,20 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             "Quitting the console while a read is in flight raises an error",
             proved_by=(_READS + "test_quitting_while_a_read_is_held_ends_quietly",),
         ),
+        FailureMode(
+            "A new activity row arriving while another fades leaves a highlight that never ends",
+            proved_by=(
+                _U + "entrypoints/test_tui_activity_fade.py::"
+                "test_a_second_new_row_in_mid_fade_restarts_the_fade_and_still_ends",
+            ),
+        ),
+        FailureMode(
+            "An activity read that fails while rows fade leaves a stale highlight or no error",
+            proved_by=(
+                _U + "entrypoints/test_tui_activity_fade.py::"
+                "test_a_failed_activity_read_in_mid_fade_shows_the_error_and_no_highlight",
+            ),
+        ),
     ),
     "config and deploy": (
         FailureMode(
@@ -878,7 +922,7 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "RO-08 drawdown and time-to-recovery are never driven through serve",
-            gap="issue #514: serve feeds days since the equity high as 0",
+            gap="issue #1158: serve feeds days since the equity high as 0",
         ),
         FailureMode(
             "A halt survives, or is lost across, a restart",

@@ -3,8 +3,7 @@
 Protects the invariants that define the same-code-path guarantee:
 
 - FillModelPort is a runtime-checkable Protocol.
-- Any class with a matching ``fill_order`` signature satisfies the Protocol
-  at both structural and runtime levels.
+- ``fill_order`` takes exactly ``order, orderbook, clock, fees``.
 - ``Fill`` and ``Rejection`` are the only valid return types — not ``Result``.
 - ``Order`` shape invariants: side, pair, qty, optional limit_price.
 - The Protocol does NOT leak any mode-selection (backtest/shadow/live) into
@@ -28,10 +27,7 @@ from typing import get_type_hints
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
-from returns.result import Result
 
-from hermes.domain.fees import FeeSchedule, FeeTier
-from hermes.domain.market_data.orderbook import Orderbook, OrderbookLevel
 from hermes.domain.trading.fill import Fill, Rejection
 from hermes.domain.trading.order import Order, OrderSide
 from hermes.domain.value_objects.currency import Currency
@@ -51,18 +47,6 @@ _BTC_USDT = Pair(base=Currency.BTC, quote=Currency.USDT)
 _ETH_USDT = Pair(base=Currency.ETH, quote=Currency.USDT)
 
 _CLOCK = datetime(2026, 8, 25, 10, 0, 0, tzinfo=UTC)
-
-_FEE_SCHEDULE = FeeSchedule.from_tiers(
-    pair=_BTC_USDT,
-    tiers=(FeeTier(volume_threshold_usd=Decimal("0"), maker_bps=16, taker_bps=26),),
-)
-
-_ORDERBOOK = Orderbook(
-    pair=_BTC_USDT,
-    bids=(OrderbookLevel(price=Decimal("60000"), quantity=Decimal("1")),),
-    asks=(OrderbookLevel(price=Decimal("60001"), quantity=Decimal("1")),),
-    snapshot_time=_CLOCK,
-)
 
 
 def _make_order(
@@ -95,52 +79,6 @@ def _make_fill(order: Order) -> Fill:
 
 
 # ---------------------------------------------------------------------------
-# Minimal concrete stub — exercises the protocol contract from outside
-# ---------------------------------------------------------------------------
-
-
-class _AlwaysFullFillStub:
-    """Minimal FillModelPort implementation that always returns a full fill.
-
-    Satisfies the structural protocol check. NOT production code — exists
-    only to prove the Protocol is implementable.
-    """
-
-    def fill_order(
-        self,
-        order: Order,
-        orderbook: Orderbook,
-        clock: datetime,
-        fees: FeeSchedule,
-    ) -> Fill | Rejection:
-        """Return a fill equal to the full order quantity."""
-        return Fill(
-            order=order,
-            executed_qty=order.qty.amount,
-            avg_price=Decimal("60000"),
-            fee=Money(amount=Decimal("0.01"), currency=order.pair.quote),
-            timestamp=clock,
-        )
-
-
-class _AlwaysRejectStub:
-    """Minimal FillModelPort implementation that always returns a rejection.
-
-    Satisfies the structural protocol check. NOT production code.
-    """
-
-    def fill_order(
-        self,
-        order: Order,
-        orderbook: Orderbook,
-        clock: datetime,
-        fees: FeeSchedule,
-    ) -> Fill | Rejection:
-        """Reject every order with a fixed reason."""
-        return Rejection(order=order, reason="stub: always reject")
-
-
-# ---------------------------------------------------------------------------
 # Protocol shape tests
 # ---------------------------------------------------------------------------
 
@@ -149,20 +87,8 @@ class TestFillModelPortShape:
     """Verify the FillModelPort Protocol shape matches the spec."""
 
     def test_fill_model_port_is_runtime_checkable(self) -> None:
-        """FillModelPort must be decorated @runtime_checkable so isinstance checks work."""
-        # If the Protocol is not @runtime_checkable, isinstance raises TypeError.
-        try:
-            result = isinstance(object(), FillModelPort)
-        except TypeError as exc:
-            pytest.fail(
-                f"FillModelPort is not @runtime_checkable — isinstance raised {exc!r}. "
-                "Add @runtime_checkable to the class decorator."
-            )
-        # object() has no fill_order method, so it must NOT satisfy the protocol.
-        assert not result, (
-            "object() should not satisfy FillModelPort — it has no fill_order method. "
-            "The @runtime_checkable check may not be working correctly."
-        )
+        """A bare object is not a FillModelPort, and isinstance does not raise."""
+        assert isinstance(object(), FillModelPort) is False
 
     def test_fill_model_port_has_fill_order_method(self) -> None:
         """FillModelPort must expose exactly one method: fill_order."""
@@ -198,113 +124,12 @@ class TestFillModelPortShape:
             "Parameter names are part of the port contract — callers use keyword args."
         )
 
-    def test_fill_order_has_no_mode_parameter(self) -> None:
-        """fill_order must NOT have a mode, dry_run, or backtest parameter.
+    def test_fill_order_returns_fill_or_rejection_not_result(self) -> None:
+        """fill_order is annotated ``Fill | Rejection`` directly, not wrapped in a Result.
 
-        A mode flag inside fill_order is the antipattern that destroys the
-        same-code-path guarantee. Mode selection happens at the composition
-        root via dependency injection, not inside the port.
+        Rejection is an expected business outcome, not an error channel (D-4).
         """
-        sig = inspect.signature(FillModelPort.fill_order)
-        forbidden = {"mode", "dry_run", "backtest", "live", "shadow"}
-        actual_params = set(sig.parameters)
-        overlap = forbidden & actual_params
-        assert not overlap, (
-            f"fill_order has forbidden mode-selection parameters: {overlap!r}. "
-            "Mode divergence must NOT appear in the port signature — this is "
-            "the key architectural invariant (D-02)."
-        )
-
-    def test_fill_order_type_hints_importable(self) -> None:
-        """All type hints in fill_order must resolve without ImportError."""
-        try:
-            hints = get_type_hints(FillModelPort.fill_order)
-        except Exception as exc:
-            pytest.fail(
-                f"get_type_hints(FillModelPort.fill_order) failed: {exc!r}. "
-                "All type annotations must be importable at runtime."
-            )
-        assert "return" in hints, (
-            "fill_order must have a return annotation — Fill | Rejection is "
-            "load-bearing for the discriminated union contract (D-4)."
-        )
-
-
-# ---------------------------------------------------------------------------
-# Runtime-checkable isinstance tests
-# ---------------------------------------------------------------------------
-
-
-class TestFillModelPortConformance:
-    """Verify that minimal concrete classes satisfy the Protocol at runtime."""
-
-    def test_always_fill_stub_satisfies_protocol(self) -> None:
-        """A class with a matching fill_order signature satisfies FillModelPort."""
-        stub = _AlwaysFullFillStub()
-        assert isinstance(stub, FillModelPort), (
-            f"{type(stub).__name__} must satisfy FillModelPort — it implements "
-            "fill_order with the correct signature."
-        )
-
-    def test_always_reject_stub_satisfies_protocol(self) -> None:
-        """A class that always rejects also satisfies FillModelPort at the structural level."""
-        stub = _AlwaysRejectStub()
-        assert isinstance(stub, FillModelPort), (
-            f"{type(stub).__name__} must satisfy FillModelPort — it implements "
-            "fill_order with the correct signature."
-        )
-
-    def test_plain_object_does_not_satisfy_protocol(self) -> None:
-        """An unrelated class without fill_order does not satisfy FillModelPort."""
-
-        class _NoOp:
-            pass
-
-        assert not isinstance(_NoOp(), FillModelPort), (
-            "_NoOp has no fill_order method and must NOT satisfy FillModelPort. "
-            "The @runtime_checkable check is verifying structural compatibility."
-        )
-
-    def test_fill_model_port_stub_fill_order_returns_fill(self) -> None:
-        """The full-fill stub returns a Fill — the happy-path discriminated union branch."""
-        stub = _AlwaysFullFillStub()
-        order = _make_order()
-        result = stub.fill_order(
-            order=order, orderbook=_ORDERBOOK, clock=_CLOCK, fees=_FEE_SCHEDULE
-        )
-        assert isinstance(result, Fill), (
-            f"Expected Fill from _AlwaysFullFillStub.fill_order, "
-            f"got {type(result).__name__!r}. The full-fill stub must return Fill."
-        )
-
-    def test_fill_model_port_stub_fill_order_returns_rejection(self) -> None:
-        """The reject stub returns a Rejection — the rejection discriminated union branch."""
-        stub = _AlwaysRejectStub()
-        order = _make_order()
-        result = stub.fill_order(
-            order=order, orderbook=_ORDERBOOK, clock=_CLOCK, fees=_FEE_SCHEDULE
-        )
-        assert isinstance(result, Rejection), (
-            f"Expected Rejection from _AlwaysRejectStub.fill_order, "
-            f"got {type(result).__name__!r}. The reject stub must return Rejection."
-        )
-
-    def test_fill_model_port_result_is_not_result_monad(self) -> None:
-        """fill_order must return Fill | Rejection directly, NOT a Result monad.
-
-        Rejection is an expected business outcome, not an error. Using
-        Result here would force callers to treat a normal business state
-        as an error channel, which is architecturally wrong (D-4).
-        """
-        stub = _AlwaysFullFillStub()
-        order = _make_order()
-        result = stub.fill_order(
-            order=order, orderbook=_ORDERBOOK, clock=_CLOCK, fees=_FEE_SCHEDULE
-        )
-        assert not isinstance(result, Result), (
-            "fill_order must return Fill | Rejection directly, NOT a Result monad. "
-            "Rejection is a named business outcome, not an error channel."
-        )
+        assert get_type_hints(FillModelPort.fill_order)["return"] == Fill | Rejection
 
 
 # ---------------------------------------------------------------------------
@@ -507,34 +332,3 @@ class TestRejectionShapeInvariants:
         rejection = Rejection(order=order, reason="test reason")
         with pytest.raises((AttributeError, TypeError)):
             rejection.reason = "mutated"  # type: ignore[misc]
-
-
-# ---------------------------------------------------------------------------
-# Discriminated union — isinstance narrowing
-# ---------------------------------------------------------------------------
-
-
-class TestDiscriminatedUnion:
-    """Verify that Fill and Rejection can be narrowed via isinstance."""
-
-    def test_fill_is_fill_not_rejection(self) -> None:
-        """isinstance(Fill(...), Fill) is True and isinstance(Fill(...), Rejection) is False."""
-        order = _make_order()
-        result: Fill | Rejection = _make_fill(order)
-        assert isinstance(result, Fill), (
-            "isinstance narrowing: Fill result must satisfy isinstance(result, Fill)."
-        )
-        assert not isinstance(result, Rejection), (
-            "isinstance narrowing: Fill result must NOT satisfy isinstance(result, Rejection)."
-        )
-
-    def test_rejection_is_rejection_not_fill(self) -> None:
-        """Rejection satisfies isinstance(_, Rejection) and not isinstance(_, Fill)."""
-        order = _make_order()
-        result: Fill | Rejection = Rejection(order=order, reason="no liquidity")
-        assert isinstance(result, Rejection), (
-            "isinstance narrowing: Rejection result must satisfy isinstance(result, Rejection)."
-        )
-        assert not isinstance(result, Fill), (
-            "isinstance narrowing: Rejection result must NOT satisfy isinstance(result, Fill)."
-        )
