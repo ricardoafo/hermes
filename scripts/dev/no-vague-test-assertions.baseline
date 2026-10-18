@@ -14,11 +14,6 @@ tests/unit/adapters/data_manifest/test_json_file.py::test_adapter_satisfies_the_
 tests/unit/adapters/exchanges/test_binance_klines.py::test_adapter_is_klines_fetcher_port_instance U6
 tests/unit/adapters/exchanges/test_binance_klines.py::test_exchange_error_inherits_from_infra_error U3
 tests/unit/adapters/exchanges/test_binance_spot.py::test_adapter_satisfies_both_ports U6
-tests/unit/adapters/exchanges/test_kraken_public.py::test_adapter_satisfies_fee_schedule_provider_port U6
-tests/unit/adapters/exchanges/test_kraken_public.py::test_adapter_satisfies_klines_fetcher_port U3
-tests/unit/adapters/exchanges/test_kraken_public.py::test_call_after_ttl_refetches_from_wire U10
-tests/unit/adapters/exchanges/test_kraken_public.py::test_error_inherits_from_infra_error U3
-tests/unit/adapters/exchanges/test_kraken_public.py::test_second_call_within_ttl_does_not_hit_wire U10
 tests/unit/adapters/exchanges/test_kraken_spot.py::test_adapter_satisfies_both_ports U6
 tests/unit/adapters/exchanges/test_simulated.py::test_buy_fill_opens_lot U3
 tests/unit/adapters/exchanges/test_simulated.py::test_buy_limit_at_ask_returns_fill U3
