@@ -31,6 +31,7 @@ from hermes.domain.strategy.signal import SignalKind, SignalSide, StrategySignal
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
 from tests.support.fill_kernel import BTC_USDT, SIZING, STRATEGY, fees, kernel, market
+from tests.support.unknown_signal import config_with_unknown_signal, refusal_lines
 
 _ROOT = Path(__file__).resolve().parents[3]
 _SCRIPTS = _ROOT / "scripts" / "backtest"
@@ -337,3 +338,20 @@ class TestRecordRefusals:
         out = tmp_path / "head.jsonl"
         code = SCRIPT.main(["record", "--out", str(out), "--strategy", "no-such-strategy"])
         assert (code, out.exists()) == (3, False)
+
+    def test_an_unknown_signal_exits_3_naming_it(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Contract §2a (#1119): an unknown ``signal:`` stops the replay at config load, exit 3."""
+        monkeypatch.chdir(_ROOT)
+        config_dir = config_with_unknown_signal(tmp_path)
+
+        code = SCRIPT.main(
+            ["record", "--out", str(tmp_path / "head.jsonl"), "--config-dir", str(config_dir)]
+        )
+
+        lines = capsys.readouterr().err.splitlines()
+        assert (code, lines[0], lines[-1]) == (3, *refusal_lines(config_dir))
