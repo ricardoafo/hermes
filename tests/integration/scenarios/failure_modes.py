@@ -631,6 +631,22 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             ),
         ),
         FailureMode(
+            "A lab shadow runs on another shadow's ledger and mixes their capital and trades",
+            proved_by=(
+                _S + "test_shadow_line.py::"
+                "test_a_shadow_pointed_at_another_shadows_ledger_is_refused_before_writing",
+                _S + "test_shadow_line.py::test_each_shadow_ledger_holds_only_its_own_strategy",
+                _UNITS + "test_shadow_template_runs_the_instance_strategy_on_its_own_ledger",
+            ),
+        ),
+        FailureMode(
+            "A shadow instance names a strategy the roster lacks and runs the enabled one instead",
+            proved_by=(
+                _U + "entrypoints/test_cli.py::TestServeSubcommand::"
+                "test_serve_with_a_strategy_missing_from_the_roster_exits_three",
+            ),
+        ),
+        FailureMode(
             "An entry on a bar that closed while serve was down fills back-dated or halts",
             proved_by=(
                 _DOWN + "test_an_entry_on_a_bar_that_closed_while_serve_was_down_is_not_filled",
