@@ -29,6 +29,8 @@ Invariants (change 353-fill-kernel-in-serve R-1, R-4, R-5):
   coin once, on the same boot or after a restart.
 - An ``AnomalyDetected`` published on serve's bus is recorded in the ledger
   and changes no signal, fill, position or notification (#136, record-only).
+- A tax-guard breach found on a daily close is recorded and changes no signal,
+  fill, position or signal notification (ADR-002 Decision 6, #1181).
 """
 
 from __future__ import annotations
@@ -53,6 +55,7 @@ from hermes.domain.events.event_bus import EventBus
 from hermes.domain.events.risk_halt_recorded import HaltKind, RiskHaltRecorded
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.market_data.bar import Bar
+from hermes.domain.market_data.bar_schedule import delivery_key
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.market_data.orderbook import Orderbook, OrderbookLevel
 from hermes.domain.value_objects.pair import Pair
@@ -64,6 +67,7 @@ from tests.support.serve_loop import (
     RecordingChannel,
     SteppingFeed,
     build,
+    d1_bar,
     events,
     h4_bar,
     history,
@@ -603,6 +607,65 @@ def test_an_anomaly_on_the_bus_is_recorded_and_changes_no_decision_or_fill(
     assert (
         signal_kinds(noisy_channel),
         noisy.tracker.snapshot.positions,
+    ) == (signal_kinds(plain_channel), plain.tracker.snapshot.positions)
+
+
+def _boot_with_days(
+    db: Path, telegram: RecordingChannel, *, trade_ceiling: int | None = None
+) -> tuple[serve_module.Composition, SteppingFeed]:
+    """Boot over 4h bars 11-14 with the 1D bars of days 16 and 17, in delivery order.
+
+    Days 12-15 closed before the boot and are warm-up history. ``trade_ceiling``
+    replaces the tax guard's trade-count ceiling; ``None`` keeps the shipped 500.
+    """
+    composition, feed = _boot(db, warm_upto=10, live_from=11, live_to=14, telegram=telegram)
+    feed.warm = sorted([*feed.warm, *(d1_bar(i) for i in range(12, 16))], key=delivery_key)
+    feed.live_bars = sorted([*feed.live_bars, d1_bar(16), d1_bar(17)], key=delivery_key)
+    if trade_ceiling is None:
+        return composition, feed
+    config = composition.config
+    guard = config.tax_guard.model_copy(update={"trade_count_90d_max": trade_ceiling})
+    return (
+        dataclasses.replace(composition, config=config.model_copy(update={"tax_guard": guard})),
+        feed,
+    )
+
+
+# SEV-1: real-money guard (AGENTS.md prohibition 7) - the tax guard records and alerts
+# only; pausing on it is the Code Owner's decision (ADR-002 Decision 6, issue #136).
+def test_a_tax_guard_breach_is_recorded_and_changes_no_decision_or_fill(tmp_path: Path) -> None:
+    """The entry and exit fill the same with a ceiling of one trade as with the shipped 500.
+
+    Day 16's close comes before bar 11's entry, so it counts no trade; day
+    17's close counts the BUY and the SELL: 2 > 1 is the one breach.
+    """
+    plain_db = tmp_path / "plain.sqlite3"
+    plain_channel = RecordingChannel()
+    plain, plain_feed = _boot_with_days(plain_db, plain_channel)
+    assert run_once(plain, plain_feed) == 0
+
+    breached_db = tmp_path / "breached.sqlite3"
+    breached_channel = RecordingChannel()
+    breached, breached_feed = _boot_with_days(breached_db, breached_channel, trade_ceiling=1)
+    assert run_once(breached, breached_feed) == 0
+
+    recorded = [
+        (r["occurred_at"], r["source"], r["reason"])
+        for r in _payloads(breached_db, "AnomalyDetected")
+    ]
+    assert recorded == [
+        (
+            "2024-01-18T23:59:59.999000+00:00",
+            "tax_guard.recharacterization",
+            "recharacterization threshold breached: trade_count=2 > 1",
+        )
+    ]
+    assert _payloads(plain_db, "AnomalyDetected") == []
+    assert [t["side"] for t in _decisions(plain_db)["TradeExecuted"]] == ["BUY", "SELL"]
+    assert _decisions(breached_db) == _decisions(plain_db)
+    assert (
+        signal_kinds(breached_channel),
+        breached.tracker.snapshot.positions,
     ) == (signal_kinds(plain_channel), plain.tracker.snapshot.positions)
 
 
