@@ -295,12 +295,11 @@ class LogsView(Vertical):
     """The Logs screen: volume histogram, query list and line detail.
 
     Args:
-        journal: Returns the last N journal lines, or ``None`` when the
-            journal is not readable here.
         now: The current time (``since:`` and the histogram end there).
         tz: Returns the display timezone.
         exports: Where ``E`` writes; ``None`` over ``--vps``.
         demo: Demo data: say there is no journal instead of reading one.
+        refresh: Asks the console to read its sources now (``F`` follows).
         id: Widget id.
     """
 
@@ -329,25 +328,26 @@ class LogsView(Vertical):
     def __init__(
         self,
         *,
-        journal: Callable[[int], Sequence[LogLine] | None] | None,
         now: Callable[[], datetime],
         tz: Callable[[], tzinfo],
         exports: Path | None,
         demo: bool,
+        refresh: Callable[[], None],
         id: str | None = None,
     ) -> None:
         """Remember the sources; nothing is read before the screen is shown."""
         super().__init__(id=id)
-        self._journal = journal
         self._now = now
         self._tz = tz
         self._exports = exports
         self._demo = demo
+        self._refresh = refresh
         self.lines: tuple[LogLine, ...] = ()
         self._by_row: dict[int, LogLine] = {}
         self._shown: tuple[Row, ...] = ()
         self.window = LOG_WINDOWS[0]
         self.following = False
+        self._fresh = True
         self.readable = True
         self.pane_open = False
 
@@ -395,31 +395,38 @@ class LogsView(Vertical):
     # Reading the journal
     # ------------------------------------------------------------------
 
-    def _read(self) -> Sequence[LogLine] | None:
-        if self._demo or self._journal is None:
-            return None
-        return self._journal(READ_LINES)
+    @property
+    def wants_journal(self) -> bool:
+        """Return whether the next refresh should read the journal: just opened, or following."""
+        return self._fresh or self.following
 
-    def load(self) -> None:
-        """Read the journal again and show it (the screen was opened)."""
-        lines = self._read()
-        self.readable = lines is not None
-        self._show(tuple(lines or ()))
+    def open(self) -> None:
+        """The screen was opened: the next journal read replaces the lines shown."""
+        self._fresh = True
 
-    def tick(self) -> None:
-        """On the refresh tick: re-read and append the new lines while following."""
-        if not self.following or self._demo:
-            return
-        fresh = self._read()
-        if fresh is None:
+    def receive(self, lines: Sequence[LogLine] | None) -> None:
+        """Take the journal lines the console read in the background.
+
+        The first read after the screen opens replaces the lines. Later reads
+        change nothing, except while following, when the new lines are appended.
+
+        Args:
+            lines: The last lines of the journal, or ``None`` when it is not
+                readable here.
+        """
+        if lines is None:
             self.readable = False
             self._paint_status()
             return
         self.readable = True
-        merged = append_new_lines(self.lines, fresh, keep=KEEP_LINES)
-        if merged != self.lines:
-            self._show(merged)
-        else:
+        if self._fresh:
+            self._fresh = False
+            self._show(tuple(lines))
+        elif self.following:
+            merged = append_new_lines(self.lines, lines, keep=KEEP_LINES)
+            if merged != self.lines:
+                self._show(merged)
+                return
             self._paint_status()
 
     def _show(self, lines: tuple[LogLine, ...]) -> None:
@@ -623,9 +630,9 @@ class LogsView(Vertical):
     def action_follow(self) -> None:
         """Start or stop following the journal."""
         self.following = not self.following
-        if self.following:
-            self.tick()
         self._paint_status()
+        if self.following:
+            self._refresh()
 
     def action_copy_line(self) -> None:
         """Copy the selected line's JSON to the clipboard."""

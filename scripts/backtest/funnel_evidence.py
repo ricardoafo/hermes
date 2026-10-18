@@ -15,17 +15,20 @@ Reference: openspec/changes/v2-funnel-evidence/change.md;
 openspec/changes/v2-backtest-funnel/change.md Design §2.
 """
 
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field, fields, replace
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta
 from decimal import Decimal
 from itertools import pairwise
 from typing import Any, Final
 
-from hermes.application.execution.prereg_book import ExecutionModel
-from hermes.domain.fees.fee_schedule import FeeSchedule
+from hermes.application.backtest.funnel_replay import (
+    BASE_TRIAL_ID,
+    COST_STRESS,
+    COST_STRESS_MULTIPLIER,
+    FunnelReplay,
+    neighbour,
+)
 from hermes.domain.statistics.performance import daily_returns
-from hermes.domain.value_objects.pair import Pair
 
 __all__ = [
     "COST_STRESS_MULTIPLIER",
@@ -35,118 +38,18 @@ __all__ = [
     "funnel_evidence",
 ]
 
-COST_STRESS_MULTIPLIER: Final = 2
-"""Pre-registration v2 §6.2: every fee and slippage times 2."""
-
-FeesAt = Callable[[datetime, Pair], FeeSchedule]
-
 _ONE_DAY: Final = timedelta(days=1)
-_BASE_ID: Final = "base"
 
-
-@dataclass(frozen=True, slots=True)
-class FunnelReplay:
-    """One replay of the funnel grid.
-
-    Attributes:
-        trial_id: The id of its series in the evidence and of its trial line.
-        overrides: Strategy parameters it replaces; empty for the base and
-            the cost stress.
-        cost_multiplier: Factor on every execution bps and fee bps.
-    """
-
-    trial_id: str
-    overrides: Mapping[str, Any] = field(default_factory=dict)
-    cost_multiplier: int = 1
-
-    def parameters(self, base: Mapping[str, Any]) -> dict[str, Any]:
-        """Return the base strategy parameters with this replay's overrides.
-
-        Args:
-            base: The parameters of the loaded strategy.
-
-        Returns:
-            A new mapping; ``base`` is not changed.
-
-        Raises:
-            ValueError: An override names a parameter ``base`` does not have,
-                or sets it to the base value (change D-2).
-        """
-        for name, value in self.overrides.items():
-            if name not in base:
-                raise ValueError(f"neighbour {self.trial_id}: the strategy has no {name}")
-            if base[name] == value:
-                raise ValueError(f"neighbour {self.trial_id} equals the base {name}={base[name]}")
-        return {**base, **self.overrides}
-
-    def model(self, base: ExecutionModel) -> ExecutionModel:
-        """Return ``base`` with every ``*_bps`` cost times ``cost_multiplier``.
-
-        Args:
-            base: The execution model the driver built.
-
-        Returns:
-            ``base`` itself when the multiplier is 1.
-        """
-        if self.cost_multiplier == 1:
-            return base
-        scaled = {
-            f.name: getattr(base, f.name) * self.cost_multiplier
-            for f in fields(base)
-            if f.name.endswith("_bps")
-        }
-        return replace(base, **scaled)
-
-    def fees(self, fees_at: FeesAt) -> FeesAt:
-        """Return a fee lookup whose every tier's bps are times ``cost_multiplier``.
-
-        Args:
-            fees_at: The fee lookup of the loaded history.
-
-        Returns:
-            ``fees_at`` itself when the multiplier is 1.
-        """
-        if self.cost_multiplier == 1:
-            return fees_at
-        multiplier = self.cost_multiplier
-
-        def stressed(at: datetime, pair: Pair) -> FeeSchedule:
-            schedule = fees_at(at, pair)
-            tiers = tuple(
-                replace(t, maker_bps=t.maker_bps * multiplier, taker_bps=t.taker_bps * multiplier)
-                for t in schedule.tiers
-            )
-            return replace(schedule, tiers=tiers)
-
-        return stressed
-
-    def trial_fields(self) -> dict[str, Any]:
-        """Return what this replay adds to its trial line's parameters (change D-4)."""
-        if self.trial_id == _BASE_ID:
-            return {}
-        extra: dict[str, Any] = {"funnel.replay": self.trial_id}
-        if self.cost_multiplier != 1:
-            extra["execution.cost_multiplier"] = self.cost_multiplier
-        return extra
-
-
-def _neighbour(name: str, value: int | Decimal) -> FunnelReplay:
-    return FunnelReplay(trial_id=f"{name}={value}", overrides={name: value})
-
-
-_COST_STRESS: Final = FunnelReplay(
-    trial_id=f"cost_stress={COST_STRESS_MULTIPLIER}", cost_multiplier=COST_STRESS_MULTIPLIER
-)
 
 FUNNEL_REPLAYS: Final[tuple[FunnelReplay, ...]] = (
-    FunnelReplay(trial_id=_BASE_ID),
-    _neighbour("donchian_period", 15),
-    _neighbour("donchian_period", 25),
-    _neighbour("adx_threshold", Decimal("20")),
-    _neighbour("adx_threshold", Decimal("30")),
-    _neighbour("chandelier_atr_mult", Decimal("2.5")),
-    _neighbour("chandelier_atr_mult", Decimal("3.5")),
-    _COST_STRESS,
+    FunnelReplay(trial_id=BASE_TRIAL_ID),
+    neighbour("donchian_period", 15),
+    neighbour("donchian_period", 25),
+    neighbour("adx_threshold", Decimal("20")),
+    neighbour("adx_threshold", Decimal("30")),
+    neighbour("chandelier_atr_mult", Decimal("2.5")),
+    neighbour("chandelier_atr_mult", Decimal("3.5")),
+    COST_STRESS,
 )
 """The base run, the six §8.5 neighbours and the cost stress, in that order."""
 
@@ -170,14 +73,17 @@ def funnel_evidence(
     curves: Mapping[str, Sequence[tuple[datetime, Decimal]]],
     *,
     trade_count: int,
+    replays: Sequence[FunnelReplay] = FUNNEL_REPLAYS,
 ) -> dict[str, Any]:
     """Return the ``hermes funnel`` evidence body (``v2-backtest-funnel`` Design §2).
 
     Args:
         strategy_id: The strategy the run was for.
         curves: Each replay's ``(close_time, equity)`` daily points, by trial id;
-            every id of ``FUNNEL_REPLAYS`` is required.
+            every id of ``replays`` is required.
         trade_count: The base run's round trips.
+        replays: The grid that ran: v2's by default, or a batch candidate's
+            (ADR-026 §1).
 
     Returns:
         The JSON object, with ``running_strategies`` empty.
@@ -187,14 +93,14 @@ def funnel_evidence(
             closes on other days than the base's, or the days are not
             consecutive.
     """
-    missing = [r.trial_id for r in FUNNEL_REPLAYS if r.trial_id not in curves]
+    missing = [r.trial_id for r in replays if r.trial_id not in curves]
     if missing:
         raise ValueError(f"no daily equity for replays {missing}")
-    base = curves[_BASE_ID]
+    base = curves[BASE_TRIAL_ID]
     if not base:
         raise ValueError("the base run has no daily equity point")
     closes = [at for at, _ in base]
-    for replay in FUNNEL_REPLAYS:
+    for replay in replays:
         if [at for at, _ in curves[replay.trial_id]] != closes:
             raise ValueError(f"replay {replay.trial_id} closes on other days than the base run")
     days = [_day(at) for at in closes]
@@ -204,7 +110,8 @@ def funnel_evidence(
                 f"daily equity is not one point per consecutive day: {before.date()} then "
                 f"{after.date()}"
             )
-    trial_ids = (_BASE_ID, *NEIGHBOUR_TRIAL_IDS)
+    neighbours = [r.trial_id for r in replays if r.overrides]
+    trial_ids = (BASE_TRIAL_ID, *neighbours)
     return {
         "strategy_id": strategy_id,
         "start_date": days[0].date().isoformat(),
@@ -212,9 +119,9 @@ def funnel_evidence(
         "trade_count": trade_count,
         "cost_stress": {
             "multiplier": float(COST_STRESS_MULTIPLIER),
-            "daily_equity": _equity(curves[_COST_STRESS.trial_id]),
+            "daily_equity": _equity(curves[COST_STRESS.trial_id]),
         },
         "trials": {tid: daily_returns(_equity(curves[tid])) for tid in trial_ids},
-        "neighbour_trial_ids": list(NEIGHBOUR_TRIAL_IDS),
+        "neighbour_trial_ids": neighbours,
         "running_strategies": {},
     }

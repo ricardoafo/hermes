@@ -41,6 +41,7 @@ __all__ = [
     "FunnelThresholds",
     "Regime",
     "evaluate_funnel",
+    "parse_funnel_block",
     "parse_funnel_front_matter",
     "validate_evidence",
 ]
@@ -225,6 +226,25 @@ def parse_funnel_front_matter(
         raise FunnelThresholdError(
             f"pre-registration {experiment} is for strategy {named!r}, not {strategy_id!r}"
         )
+    return parse_funnel_block(block)
+
+
+def parse_funnel_block(block: object) -> FunnelThresholds:
+    """Return the thresholds one ``backtest_funnel`` block states.
+
+    Shared by a single pre-registration and a research batch (ADR-026 §1),
+    whose one block binds every candidate.
+
+    Args:
+        block: The value of the ``backtest_funnel`` key.
+
+    Returns:
+        The typed thresholds.
+
+    Raises:
+        FunnelThresholdError: The block is not a mapping, or a key is missing,
+            unknown or out of range. The message names the key.
+    """
     if not isinstance(block, Mapping):
         raise FunnelThresholdError("backtest_funnel must be a mapping")
     unknown = sorted(str(k) for k in set(block) - set(_THRESHOLD_KEYS))

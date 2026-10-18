@@ -95,7 +95,7 @@ height budget at 80x24, where the table keeps only a few rows.
 
 ### D-6: follow re-reads on the existing 5 s poll
 
-- **Decision**: `F` toggles follow; the app's 5 s refresh calls `LogsView.tick()` while Logs is shown, which re-reads the last 2000 lines and appends the ones not shown (`append_new_lines`, keeping at most 5000).
+- **Decision**: `F` toggles follow; the app's background read (issue #1001) asks for the last 2000 journal lines while Logs is shown and the screen was just opened or is following; `LogsView.receive()` takes them: the first read after opening replaces the lines, later ones append the lines not shown (`append_new_lines`, keeping at most 5000). The journal is never read on the UI thread.
 - **Alternatives**: `journalctl --follow` in a worker thread.
 - **Rationale**: the spec's refresh model is the 5 s poll; no long-lived subprocess or thread to stop.
 - **Cost of reversal**: MEDIUM (a streaming reader is the MVP2 path).
@@ -175,7 +175,7 @@ Test tiers touched: unit, property
 ## Risks
 
 - **80x24 height**: chrome, histogram, query line and three facet lines leave about three table rows; the full list is one `/` query or a taller terminal away.
-- **Follow cost**: each tick runs journalctl for 2000 lines while following on screen 8; reading stops when the screen or follow is left.
+- **Follow cost**: each refresh runs journalctl for 2000 lines in the background worker while following on screen 8; reading stops when the screen or follow is left.
 - **Money figures in the journal**: the screen shows, copies and exports them to the operator only; the import-linter contract blocks any path to AI or notifications.
 - **Clipboard over ssh**: OSC 52 depends on the terminal; when it is off, `C` does nothing visible beyond the toast.
 

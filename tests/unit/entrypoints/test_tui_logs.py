@@ -425,7 +425,7 @@ def test_t_on_a_line_without_a_trace_says_so(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_follow_appends_new_lines_on_each_refresh() -> None:
-    """F then a new journal line: the next tick appends it and the list grows to 13."""
+    """F then a new journal line: the next refresh appends it and the list grows to 13."""
     journal = _Journal(_lines())
     extra = LogLine(
         at=_FROZEN,
@@ -438,12 +438,11 @@ def test_follow_appends_new_lines_on_each_refresh() -> None:
         await _press(pilot, ["f"])
         assert journal.lines is not None
         journal.lines.append(extra)
-        app.logs_view.tick()
-        await pilot.pause()
+        await pilot.pause(0.5)
         row = app.logs_view.table.get_row_at(0)
         return _status(app), str(row[3]), app.logs_view.status_text
 
-    assert _logs(probe, journal=journal) == (
+    assert _logs(probe, journal=journal, refresh_seconds=0.05) == (
         "13 of 13 · sort time ▼",
         "serve.bar.failed",
         "13 lines read · following · re-read every 5 s",
@@ -469,7 +468,6 @@ def test_without_follow_the_refresh_reads_nothing() -> None:
     journal = _Journal(_lines())
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> list[int]:
-        app.logs_view.tick()
         await pilot.pause(0.3)
         return journal.asked
 

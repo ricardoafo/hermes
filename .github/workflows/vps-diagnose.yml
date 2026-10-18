@@ -55,7 +55,7 @@ jobs:
     # on this account — the whole-year self-hosted allocation is paid).
     # The runner container is minimal and lacks openssh-client; the
     # first step installs it at runtime.
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || fromJSON('["self-hosted","linux","hermes"]') }}
     environment: prod
     timeout-minutes: 5
 

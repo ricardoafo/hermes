@@ -185,13 +185,14 @@ jobs:
           strategy=$(jq -er '.strategy_id' "$out/report.json") || exit 1
           jq -e '{backtest: {calibration_fill_count: .fills_count}}' "$out/report.json" \
             > "$out/evidence.json" || exit 1
+          # The runner's shell is bash -e: catch the exit, since 1 is a valid verdict.
+          code=0
           uv run hermes certify "$strategy" \
             --performance "$out/performance.json" \
             --evidence "$out/evidence.json" \
             --funnel-evidence "$out/funnel-evidence.json" \
             --config-dir config \
-            --store-dir "$RUNNER_TEMP/cert" > "$out/certify.txt"
-          code=$?
+            --store-dir "$RUNNER_TEMP/cert" > "$out/certify.txt" || code=$?
           echo "exit=$code" >> "$GITHUB_OUTPUT"
           case "$code" in
             0) echo "Gate passed" ;;
@@ -212,11 +213,11 @@ jobs:
           set -uo pipefail
           out="$RUNNER_TEMP/out"
           strategy=$(jq -er '.strategy_id' "$out/report.json") || exit 1
+          code=0
           uv run hermes funnel "$strategy" \
             --pre-registration "$PRE_REGISTRATION" \
             --evidence "$out/funnel-evidence.json" \
-            --expect-sha256 "$PRE_REG_SHA256" > "$out/funnel.txt"
-          code=$?
+            --expect-sha256 "$PRE_REG_SHA256" > "$out/funnel.txt" || code=$?
           echo "exit=$code" >> "$GITHUB_OUTPUT"
           case "$code" in
             0) echo "Funnel passed" ;;
