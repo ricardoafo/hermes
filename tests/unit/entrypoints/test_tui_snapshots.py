@@ -78,6 +78,7 @@ def _poll(failed: str | None) -> tuple[TickOutcome, ...]:
             at=_FROZEN,
             price=None if coin == failed else price,
             error=KrakenPublicError.__name__ if coin == failed else None,
+            spread_bps=None if coin == failed else Decimal("3.4"),
         )
         for coin, price in _PRICES.items()
     )
