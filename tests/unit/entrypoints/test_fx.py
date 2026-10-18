@@ -27,10 +27,10 @@ from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.entrypoints import cli as cli_module
 from hermes.entrypoints import fx as fx_module
 from hermes.infrastructure.config.models import FrankfurterConfig
+from tests.support.paths import REPO_ROOT
 from tests.unit.application.ledger.fake_fx import FakeFx
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
-_CONFIG_DIR = _PROJECT_ROOT / "config"
+_CONFIG_DIR = REPO_ROOT / "config"
 _FILL_DAY = date(2026, 1, 2)
 
 

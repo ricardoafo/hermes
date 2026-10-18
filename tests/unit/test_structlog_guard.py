@@ -9,12 +9,11 @@ value-free overlay test does.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
+from tests.support.paths import REPO_ROOT
+
 _PLUGIN = ("-p", "tests.plugins.structlog_guard")
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 _SUITE = """
     import structlog
     from hermes.infrastructure.logging import configure_logging
@@ -35,7 +34,7 @@ _SUITE = """
 @pytest.fixture(autouse=True)
 def _repo_on_path(monkeypatch: pytest.MonkeyPatch) -> None:
     """Let the subprocess import ``tests.plugins`` and ``hermes`` from the repo."""
-    monkeypatch.setenv("PYTHONPATH", str(_REPO_ROOT))
+    monkeypatch.setenv("PYTHONPATH", str(REPO_ROOT))
 
 
 def test_leak_breaks_capture_without_the_guard(pytester: pytest.Pytester) -> None:

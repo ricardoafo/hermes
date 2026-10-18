@@ -1,0 +1,1 @@
+- `HERMES_TEST_CLOCK_URL` runs `hermes serve` and `hermes bot` on a test clock, such as the fake market's, only in dev and qa and only on loopback. A new integration test drives the installed release through a signal, a Telegram outage and every read-only bot command (part of #972).

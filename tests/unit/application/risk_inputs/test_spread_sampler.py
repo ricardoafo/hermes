@@ -34,6 +34,7 @@ from hermes.domain.errors import NetworkError
 from hermes.domain.market_data.orderbook import Orderbook, OrderbookLevel
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
+from tests.support.clock import FakeClock
 
 _BTC = Pair(base=Currency.BTC, quote=Currency.USDT)
 _ETH = Pair(base=Currency.ETH, quote=Currency.USDT)
@@ -53,18 +54,10 @@ def _sync(
     return run
 
 
-class _Clock:
-    def __init__(self, now: datetime) -> None:
-        self.current = now
-
-    def now(self) -> datetime:
-        return self.current
-
-
 class _Books:
     """Answers a book with ``spreads[pair]`` around 100 at the clock's time."""
 
-    def __init__(self, clock: _Clock, spreads: dict[Pair, str | Exception | None]) -> None:
+    def __init__(self, clock: FakeClock, spreads: dict[Pair, str | Exception | None]) -> None:
         self.clock = clock
         self.spreads = spreads
         self.calls: list[Pair] = []
@@ -96,14 +89,16 @@ def ledger() -> Iterator[SqliteLedger]:
         conn.close()
 
 
-def _sampler(ledger: SqliteLedger, books: _Books, clock: _Clock, **kwargs: float) -> SpreadSampler:
+def _sampler(
+    ledger: SqliteLedger, books: _Books, clock: FakeClock, **kwargs: float
+) -> SpreadSampler:
     return SpreadSampler(books=books, store=ledger, clock=clock, pairs=(_BTC, _ETH), **kwargs)
 
 
 @_sync
 async def test_one_round_stores_one_sample_per_pair(ledger: SqliteLedger) -> None:
     """Both pairs get a row carrying the book's (ask - bid) / mid."""
-    clock = _Clock(_T0)
+    clock = FakeClock(_T0)
     books = _Books(clock, {_BTC: "0.0002", _ETH: "0.0004"})
     assert await _sampler(ledger, books, clock).sample_once() == 2
     (btc,) = ledger.spread_samples(_BTC, _T0, _FAR)
@@ -119,7 +114,7 @@ async def test_one_round_stores_one_sample_per_pair(ledger: SqliteLedger) -> Non
 @_sync
 async def test_median_covers_the_last_hour_only(ledger: SqliteLedger) -> None:
     """Samples at 0, 30, 61 and 65 minutes: the last median spans 30, 61 and 65 only."""
-    clock = _Clock(_T0)
+    clock = FakeClock(_T0)
     books = _Books(clock, {_BTC: "0.0010", _ETH: "0.0001"})
     sampler = _sampler(ledger, books, clock)
     for minute, spread in ((0, "0.0010"), (30, "0.0002"), (61, "0.0004"), (65, "0.0003")):
@@ -134,7 +129,7 @@ async def test_median_covers_the_last_hour_only(ledger: SqliteLedger) -> None:
 @_sync
 async def test_failed_and_one_sided_books_are_skipped(ledger: SqliteLedger) -> None:
     """An outage and a one-sided book store nothing, log a warning, raise nothing."""
-    clock = _Clock(_T0)
+    clock = FakeClock(_T0)
     books = _Books(clock, {_BTC: NetworkError("down"), _ETH: None})
     with capture_logs() as logs:
         assert await _sampler(ledger, books, clock).sample_once() == 0
@@ -150,7 +145,7 @@ async def test_failed_and_one_sided_books_are_skipped(ledger: SqliteLedger) -> N
 @_sync
 async def test_failure_of_one_pair_still_samples_the_next(ledger: SqliteLedger) -> None:
     """BTC fails, ETH is still stored."""
-    clock = _Clock(_T0)
+    clock = FakeClock(_T0)
     books = _Books(clock, {_BTC: NetworkError("down"), _ETH: "0.0001"})
     assert await _sampler(ledger, books, clock).sample_once() == 1
     assert len(ledger.spread_samples(_ETH, _T0, _FAR)) == 1
@@ -159,7 +154,7 @@ async def test_failure_of_one_pair_still_samples_the_next(ledger: SqliteLedger) 
 @_sync
 async def test_a_hung_book_times_out_and_is_skipped(ledger: SqliteLedger) -> None:
     """A book that never answers is abandoned after the timeout."""
-    clock = _Clock(_T0)
+    clock = FakeClock(_T0)
     books = _Books(clock, {_BTC: "hang", _ETH: "0.0001"})
     sampler = _sampler(ledger, books, clock, timeout_seconds=0.05)
     with capture_logs() as logs:
@@ -170,7 +165,7 @@ async def test_a_hung_book_times_out_and_is_skipped(ledger: SqliteLedger) -> Non
 @_sync
 async def test_run_samples_on_its_step_and_stops_on_shutdown(ledger: SqliteLedger) -> None:
     """A short step gives several rounds; shutdown ends the task."""
-    clock = _Clock(_T0)
+    clock = FakeClock(_T0)
     books = _Books(clock, {_BTC: "0.0001", _ETH: "0.0001"})
     shutdown = asyncio.Event()
     task = asyncio.create_task(_sampler(ledger, books, clock, interval_seconds=0.01).run(shutdown))
@@ -186,7 +181,7 @@ async def test_run_samples_on_its_step_and_stops_on_shutdown(ledger: SqliteLedge
 @_sync
 async def test_shutdown_cuts_a_round_in_flight(ledger: SqliteLedger) -> None:
     """A hung book does not hold shutdown back for the sample timeout."""
-    clock = _Clock(_T0)
+    clock = FakeClock(_T0)
     books = _Books(clock, {_BTC: "hang", _ETH: "0.0001"})
     shutdown = asyncio.Event()
     sampler = _sampler(ledger, books, clock, interval_seconds=0.01, timeout_seconds=60)
@@ -201,6 +196,6 @@ async def test_shutdown_cuts_a_round_in_flight(ledger: SqliteLedger) -> None:
 
 def test_step_and_timeout_must_be_positive(ledger: SqliteLedger) -> None:
     """A zero step would spin the event loop."""
-    clock = _Clock(_T0)
+    clock = FakeClock(_T0)
     with pytest.raises(ValueError, match="must be > 0"):
         _sampler(ledger, _Books(clock, {}), clock, interval_seconds=0)

@@ -21,7 +21,6 @@ days at 100 come first so the ATR has its 23 bars.
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from pathlib import Path
 
 import pytest
 from hypothesis import given
@@ -41,6 +40,7 @@ from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
 from hermes.infrastructure.config import StrategiesConfig
 from hermes.infrastructure.config.loader import load_yaml_model
+from tests.support.paths import REPO_ROOT
 
 _PAIR = Pair(base=Currency.BTC, quote=Currency.USDT)
 _DAY0 = datetime(2021, 1, 1, tzinfo=UTC)
@@ -371,7 +371,7 @@ class TestParameters:
     def test_the_roster_entry_builds_this_kind(self) -> None:
         """``swing-b1-daily-ma`` in the shipped roster names ``signal: daily_ma``."""
         roster = load_yaml_model(
-            Path(__file__).resolve().parents[5] / "config" / "strategies.yaml",
+            REPO_ROOT / "config" / "strategies.yaml",
             StrategiesConfig,
             env_section="STRATEGIES",
             env={},

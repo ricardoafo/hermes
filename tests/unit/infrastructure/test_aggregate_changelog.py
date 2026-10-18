@@ -19,9 +19,11 @@ from pathlib import Path
 
 import pytest
 
+from tests.support.paths import REPO_ROOT
+
 # Import the script as a module. Its filename contains a hyphen so it is
 # not importable with plain `import`.
-_SCRIPT_PATH = Path(__file__).resolve().parents[3] / "scripts" / "dev" / "aggregate-changelog.py"
+_SCRIPT_PATH = REPO_ROOT / "scripts" / "dev" / "aggregate-changelog.py"
 _spec = importlib.util.spec_from_file_location("aggregate_changelog", _SCRIPT_PATH)
 assert _spec is not None and _spec.loader is not None
 aggregate_changelog = importlib.util.module_from_spec(_spec)

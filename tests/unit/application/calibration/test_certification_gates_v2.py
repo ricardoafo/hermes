@@ -6,7 +6,6 @@ clock. Every pre-registration text except the one table test is synthetic.
 
 from collections.abc import Mapping
 from datetime import UTC, date, datetime
-from pathlib import Path
 
 import pytest
 from hypothesis import example, given
@@ -36,10 +35,10 @@ from hermes.application.calibration.certification_gates_v2 import (
 from hermes.application.calibration.lifecycle import CertificationState
 from hermes.application.strategy_protocol.preregistration import PreRegistration
 from hermes.entrypoints.funnel import read_front_matter
+from tests.support.paths import REPO_ROOT
 
 _S = CertificationState
 _NOW = datetime(2026, 10, 17, 12, 0, tzinfo=UTC)
-_PROJECT_ROOT = Path(__file__).resolve().parents[4]
 _DAYS = 730
 """31 Dec 2020 to 31 Dec 2022: Train is 2021, Validation is 2022."""
 
@@ -123,7 +122,7 @@ def _passing_funnel() -> FunnelEvidence:
 @pytest.fixture(scope="module")
 def v1() -> PreRegistration:
     """Return the real signed v1 pre-registration, whose §9 secondaries v2 keeps."""
-    return PreRegistration(project_root=_PROJECT_ROOT)
+    return PreRegistration(project_root=REPO_ROOT)
 
 
 def _gate(
@@ -365,7 +364,7 @@ class TestSignedFile:
     def test_signed_v2_states_a_dsr_floor_of_095(self) -> None:
         """pre-registration-v2.md §10: 'DSR < 0.95' kills the backtest."""
         text = (
-            _PROJECT_ROOT / "docs" / "experiments" / "swing-mvp1" / "pre-registration-v2.md"
+            REPO_ROOT / "docs" / "experiments" / "swing-mvp1" / "pre-registration-v2.md"
         ).read_text(encoding="utf-8")
         rules = parse_v2_backtest_rules(text, read_front_matter(text))
         assert (rules.dsr_min, rules.funnel.cscv_blocks, rules.funnel.pbo_max) == (0.95, 16, 0.05)

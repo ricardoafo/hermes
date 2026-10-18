@@ -19,16 +19,16 @@ from collections.abc import AsyncIterator, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from functools import cache
-from pathlib import Path
 
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.bar_schedule import delivery_key
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
+from tests.support.paths import REPO_ROOT
 from tests.support.serve_loop import FakeClock, FakeFeed
 
-FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "e2e" / "serve-cycle-bars.csv.gz"
+FIXTURE = REPO_ROOT / "tests" / "fixtures" / "e2e" / "serve-cycle-bars.csv.gz"
 LIVE_FROM = datetime(2025, 1, 1, tzinfo=UTC)
 """First boot happens here: earlier bars are history, later ones arrive live."""
 

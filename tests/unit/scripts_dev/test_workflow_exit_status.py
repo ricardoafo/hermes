@@ -13,12 +13,12 @@ around the command.
 """
 
 import re
-from pathlib import Path
 
 import yaml
 
-_ROOT = Path(__file__).resolve().parents[3]
-_WORKFLOWS = _ROOT / ".github" / "workflows"
+from tests.support.paths import REPO_ROOT
+
+_WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 _BARE_STATUS = re.compile(r"^\s*\w+=(\$\?|\$\{PIPESTATUS\[\d+\]\})\s*$")
 
 # Sites on main before this guard. The workflow queue fixes them in one PR;
