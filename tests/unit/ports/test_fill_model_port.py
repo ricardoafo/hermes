@@ -133,6 +133,97 @@ class TestFillModelPortShape:
 
 
 # ---------------------------------------------------------------------------
+# Order shape invariant tests (property-based)
+# ---------------------------------------------------------------------------
+
+
+class TestOrderShapeInvariants:
+    """Property tests for Order field constraints."""
+
+    @given(
+        qty_amount=st.decimals(
+            min_value="0.0001", max_value="999999", allow_nan=False, allow_infinity=False
+        )
+    )
+    def test_order_qty_must_be_positive(self, qty_amount: Decimal) -> None:
+        """Order.qty.amount must be > 0 for any valid order.
+
+        Zero or negative quantities have no economic meaning — a zero-qty
+        buy is not a buy.
+        """
+        order = Order(
+            side=OrderSide.BUY,
+            pair=_BTC_USDT,
+            qty=Quantity(amount=qty_amount, asset=Currency.BTC),
+            strategy_id=_STRATEGY_ID,
+        )
+        assert order.qty.amount > Decimal("0"), (
+            f"Order with qty_amount={qty_amount!r} has non-positive qty. "
+            "Order.qty.amount must be > 0."
+        )
+
+    @given(
+        limit=st.decimals(
+            min_value="0.01", max_value="9999999", allow_nan=False, allow_infinity=False
+        )
+    )
+    def test_order_limit_price_when_set_must_be_positive(self, limit: Decimal) -> None:
+        """Order.limit_price, when set, must be > 0.
+
+        A zero or negative limit price cannot appear in a real order book.
+        """
+        order = Order(
+            side=OrderSide.SELL,
+            pair=_BTC_USDT,
+            qty=Quantity(amount=Decimal("0.1"), asset=Currency.BTC),
+            limit_price=limit,
+            strategy_id=_STRATEGY_ID,
+        )
+        assert order.limit_price is not None, (
+            "limit_price was provided but is None after construction."
+        )
+        assert order.limit_price > Decimal("0"), (
+            f"Order.limit_price {order.limit_price!r} must be > 0."
+        )
+
+    def test_order_without_limit_price_is_market_order(self) -> None:
+        """Order with limit_price=None reports is_market=True."""
+        order = _make_order(limit_price=None)
+        assert order.is_market, (
+            "Order without limit_price must report is_market=True — "
+            "this property drives fill-model dispatch."
+        )
+
+    def test_order_with_limit_price_is_not_market_order(self) -> None:
+        """Order with limit_price set reports is_market=False."""
+        order = _make_order(limit_price=Decimal("59000"))
+        assert not order.is_market, (
+            "Order with limit_price must report is_market=False — "
+            "this property drives fill-model dispatch."
+        )
+
+    @given(side=st.sampled_from(list(OrderSide)))
+    def test_order_side_is_buy_or_sell(self, side: OrderSide) -> None:
+        """OrderSide must be BUY or SELL — no other values exist."""
+        order = Order(
+            side=side,
+            pair=_BTC_USDT,
+            qty=Quantity(amount=Decimal("0.01"), asset=Currency.BTC),
+            strategy_id=_STRATEGY_ID,
+        )
+        assert order.side in (OrderSide.BUY, OrderSide.SELL), (
+            f"Order.side {order.side!r} is not BUY or SELL — "
+            "OrderSide is a closed enum with exactly two values."
+        )
+
+    def test_order_is_frozen(self) -> None:
+        """Order must be immutable — frozen dataclass invariant."""
+        order = _make_order()
+        with pytest.raises((AttributeError, TypeError)):
+            order.side = OrderSide.SELL  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
 # Fill shape invariant tests
 # ---------------------------------------------------------------------------
 
