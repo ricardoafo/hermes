@@ -14,11 +14,9 @@ from __future__ import annotations
 import json
 import sqlite3
 from decimal import Decimal, localcontext
-from pathlib import Path
-from typing import Self
 
 from hermes.adapters.ledger._cells import decimal_cell, optional_decimal_cell, time_cell
-from hermes.adapters.ledger.connection import open_ledger
+from hermes.adapters.ledger.connection import ReadOnlyLedgerReader
 from hermes.adapters.ledger.sqlite_ledger import _trade_from_payload
 from hermes.domain.errors import LedgerError
 from hermes.domain.events.trade_executed import TradeExecuted
@@ -32,45 +30,8 @@ from hermes.domain.value_objects.pair import Pair
 __all__ = ["SqliteReconciliationReader"]
 
 
-class SqliteReconciliationReader:
+class SqliteReconciliationReader(ReadOnlyLedgerReader):
     """Answer the reconciliation's ledger questions, read-only."""
-
-    def __init__(self, connection: sqlite3.Connection) -> None:
-        """Wrap an already-open connection.
-
-        Args:
-            connection: A connection opened by :meth:`open` (or a test's own).
-        """
-        self._conn = connection
-
-    @classmethod
-    def open(cls, path: Path) -> Self:
-        """Open ``path`` read-only.
-
-        Raises:
-            FileNotFoundError: There is no file at ``path``.
-            LedgerError: SQLite refused to open the file.
-        """
-        resolved = path.resolve()
-        if not resolved.is_file():
-            raise FileNotFoundError(str(path))
-        try:
-            connection = open_ledger(resolved, read_only=True)
-        except sqlite3.Error as exc:
-            raise LedgerError(msg=f"cannot open {path} read-only: {exc}") from exc
-        return cls(connection)
-
-    def close(self) -> None:
-        """Close the connection."""
-        self._conn.close()
-
-    def __enter__(self) -> Self:
-        """Return ``self`` for ``with`` blocks."""
-        return self
-
-    def __exit__(self, *_exc_info: object) -> None:
-        """Close the connection, whatever ended the ``with`` block."""
-        self.close()
 
     def trades(self) -> tuple[LedgerTrade, ...]:
         """Return every trades-table row, oldest fill first.
