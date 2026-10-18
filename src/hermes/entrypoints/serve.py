@@ -64,6 +64,7 @@ import dataclasses
 import os
 import signal
 import sqlite3
+from collections import Counter
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
@@ -103,6 +104,7 @@ from hermes.application.execution.kernel import Declined, Executed, FillKernel, 
 from hermes.application.execution.position_sync import sync_after_signal
 from hermes.application.execution.prereg_book import ExitPricing
 from hermes.application.execution.shadow import (
+    LIVE_BOOK_WINDOW,
     AlreadyFilled,
     ShadowExecution,
     ShadowExecutor,
@@ -114,6 +116,7 @@ from hermes.application.ledger.eur_pricer import EurPricer, LookupBudget
 from hermes.application.ledger.trade_recorder import TradeRecorder
 from hermes.application.messages.eur_rate import EurRateLookup
 from hermes.application.monitoring.clock_skew import clock_is_off, clock_skew_change
+from hermes.application.monitoring.restart_report import RESTART_SOURCE, restart_report
 from hermes.application.notification_router import EventClass, RouterConfig, route
 from hermes.application.order_router.sizing import SizingPolicy
 from hermes.application.portfolio.tracker import PortfolioTracker
@@ -134,6 +137,7 @@ from hermes.domain.events.anomaly_detected import (
     AnomalyDetected,
     AnomalySeverity,
 )
+from hermes.domain.events.bar_missed import BarMissed, reached_late
 from hermes.domain.events.bar_processed import BarProcessed
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.event_bus import EventBus, EventDispatchError
@@ -821,7 +825,8 @@ def _wire_on_ledger(
     if held:
         executor.hold_kill(held)
     pairs = config.market_data.parsed_pairs()
-    strategies: dict[Pair, StrategyPort] = {pair: SwingStrategyAdapter() for pair in pairs}
+    kind = roster.strategy_kind()
+    strategies: dict[Pair, StrategyPort] = {pair: kind.create() for pair in pairs}
 
     telegram_config = _telegram_config(env_snapshot)
     slack_config = _slack_config(env_snapshot)
@@ -1176,6 +1181,12 @@ class _BarLoop:
     clock_off: bool | None = None
     """Whether the last recorded clock-skew state is off; read from the ledger once."""
     checked_through: date | None = None
+    newest: dict[Pair, Bar] = field(default_factory=dict)
+    """Each pair's most recent closed bar: the price a missed exit fills at (#1078)."""
+    missed: Counter[Stream] = field(default_factory=Counter)
+    """Bars handled after their live window, per stream, since the last restart report."""
+    exits_checked: list[str] = field(default_factory=list)
+    """Outcome of each exit signal on a missed bar, since the last restart report."""
 
     async def warm_up_and_catch_up(self, shutdown: asyncio.Event) -> None:
         """Seed history up to each cursor, then evaluate the bars after it."""
@@ -1186,7 +1197,10 @@ class _BarLoop:
                 count = c.config.market_data.warmup_bars(interval)
                 warm.extend(await c.feed.warm_up(pair, interval, count))
         warm = list(order_for_delivery(warm))
+        for bar in warm:
+            self._note_newest(bar)
         cursors = self._load_cursors(warm)
+        stopped_at = max(cursors.values(), default=_NEVER)
         for pair, strategy in c.strategies.items():
             seeded = [
                 b for b in warm if b.pair == pair and b.close_time <= cursors[(b.pair, b.interval)]
@@ -1209,6 +1223,50 @@ class _BarLoop:
                     await self.handle(bar)
         finally:
             self.catching_up = False
+        await self._report_restart(stopped_at)
+
+    def _note_newest(self, bar: Bar) -> None:
+        newest = self.newest.get(bar.pair)
+        if newest is None or bar.close_time > newest.close_time:
+            self.newest[bar.pair] = bar
+
+    async def _report_restart(self, stopped_at: datetime) -> None:
+        """Send one report when the catch-up met bars that closed while serve was down (#1078).
+
+        It names the downtime, the missed bars per pair and stream, and the
+        outcome of each exit checked on them; never a price or P&L (ADR-012
+        D-02). The row in the ledger is what ``hermes status`` can read back.
+        """
+        if not self.missed:
+            return
+        c = self.c
+        now = c.clock.now()
+        alert = AnomalyDetected(
+            occurred_at=now,
+            correlation_id=new_correlation_id(),
+            source=RESTART_SOURCE,
+            severity=AnomalySeverity.WARNING,
+            reason=restart_report(
+                stopped_at=stopped_at,
+                now=now,
+                missed=self.missed,
+                exits_checked=self.exits_checked,
+            ),
+        )
+        self.missed.clear()
+        self.exits_checked.clear()
+        c.ledger.append_event(alert)
+        _log.warning("serve.restart.missed_bars", reason=alert.reason)
+        await self._alert(alert, failed="serve.restart.alert_failed")
+
+    async def _alert(self, alert: AnomalyDetected, *, failed: str) -> None:
+        """Send ``alert`` to every alert channel; one channel's failure never stops the loop."""
+        for adapter in route(EventClass.ANOMALY_DETECTED, self.c.alert_channels):
+            try:
+                await asyncio.to_thread(adapter.notify, alert)
+            except Exception as exc:  # one channel's bug must not stop the bar loop (#854)
+                _log.error(failed, exc_info=exc)
+                sentry_integration.capture(exc)
 
     def _load_cursors(self, warm: list[Bar]) -> dict[Stream, datetime]:
         """Return each stream's cursor; a first boot starts at its last warm-up bar."""
@@ -1323,6 +1381,9 @@ class _BarLoop:
 
         c.tracker.mark(bar)
         c.executor.observe(bar)
+        self._note_newest(bar)
+        handled_at = c.clock.now()
+        late = reached_late(bar, now=handled_at, window=LIVE_BOOK_WINDOW)
         # Before the strategy: a kill found for the day just ended stops this bar's entry.
         await self._shadow_checks(bar)
         signal_ = c.strategies[bar.pair].on_bar(bar, c.tracker.state())
@@ -1339,15 +1400,14 @@ class _BarLoop:
                 c.event_bus.publish(event)
             # The signal row comes first, then the fill (D-5): a crash between
             # them re-evaluates the bar, and the executor sees no trade yet.
-            outcome = await self._execute(signal_, bar, correlation_id)
-            if signal_.kind is SignalKind.ENTRY and not isinstance(
-                outcome, Executed | AlreadyFilled
+            if (
+                late
+                and signal_.kind is SignalKind.ENTRY
+                and c.executor.prior_fill(signal_, bar.pair) is None
             ):
-                # An entry announcement for a trade that never happened would
-                # misreport the portfolio; the halt alert or the log says why (#708).
-                _log.info("serve.signal.unfilled_entry_not_notified", pair=str(bar.pair))
+                self._pass_over_entry(signal_, bar)
             else:
-                emitted = (event if is_new else self._stored_signal(event), is_new)
+                emitted = await self._fill(signal_, bar, (event, is_new), correlation_id, late=late)
         # Failed pushes of earlier bars go out first: this bar's signal has no
         # failed push yet, so it is never pushed twice in one bar (#854).
         await self._push_owed(bar.pair)
@@ -1377,6 +1437,13 @@ class _BarLoop:
                 stored_close=str(stored.close),
                 received_close=str(bar.close),
             )
+        if late:
+            # Counted by ADR-021's missed-bar budget, so written once per bar,
+            # just before the bar is marked processed.
+            c.ledger.append_event(
+                BarMissed.from_bar(bar, handled_at=handled_at, correlation_id=correlation_id)
+            )
+            self.missed[stream] += 1
         c.event_bus.publish(BarProcessed.from_bar(bar, correlation_id=correlation_id))
         self.previous[stream] = bar.open_time
         # The ledger row alone leaves the journal silent between signals, so
@@ -1390,6 +1457,52 @@ class _BarLoop:
             signal="none" if signal_ is None else signal_.kind.value,
             next_due=self.next_due(stream).isoformat(),
             **_entry_check_fields(c.strategies[bar.pair]),
+        )
+
+    async def _fill(
+        self,
+        signal_: StrategySignal,
+        bar: Bar,
+        emitted: tuple[SignalEmitted, bool],
+        correlation_id: str,
+        *,
+        late: bool,
+    ) -> tuple[SignalEmitted, bool] | None:
+        """Execute the signal and return what to notify, or ``None`` for an unfilled entry.
+
+        An exit on a missed bar fills at the pair's newest bar, stamped now
+        (#1078); its outcome goes into the restart report.
+        """
+        event, is_new = emitted
+        outcome = await self._execute(
+            signal_, bar, correlation_id, price_bar=self.newest[bar.pair] if late else None
+        )
+        if late and signal_.kind is SignalKind.EXIT:
+            self.exits_checked.append(f"{bar.pair} {_outcome_word(outcome)}")
+        if signal_.kind is SignalKind.ENTRY and not isinstance(outcome, Executed | AlreadyFilled):
+            # An entry announcement for a trade that never happened would
+            # misreport the portfolio; the halt alert or the log says why (#708).
+            _log.info("serve.signal.unfilled_entry_not_notified", pair=str(bar.pair))
+            return None
+        return (event if is_new else self._stored_signal(event), is_new)
+
+    def _pass_over_entry(self, signal_: StrategySignal, bar: Bar) -> None:
+        """Leave an entry on a missed bar unfilled: its price is gone (#1078).
+
+        Not a halt: nothing failed, so no kill input moves. The strategy is
+        synced flat, so it waits for a fresh breakout as the backtest does
+        after an unfilled entry.
+        """
+        _log.info(
+            "serve.signal.missed_entry",
+            pair=str(bar.pair),
+            close_time=bar.close_time.isoformat(),
+        )
+        sync_after_signal(
+            self.c.strategies[bar.pair],
+            signal_,
+            filled=False,
+            held=partial(self._held_position, bar.pair, at_or_before=signal_.signal_time),
         )
 
     def _record_correlations(self, bar: Bar) -> None:
@@ -1528,22 +1641,24 @@ class _BarLoop:
         self.clock_off = alert.severity is AnomalySeverity.CRITICAL
         c.ledger.append_event(alert)
         _log.warning("serve.clock.skew_changed", severity=alert.severity.value, reason=alert.reason)
-        for adapter in route(EventClass.ANOMALY_DETECTED, c.alert_channels):
-            try:
-                await asyncio.to_thread(adapter.notify, alert)
-            except Exception as exc:  # one channel's bug must not stop the bar loop (#854)
-                _log.error("serve.clock.alert_failed", exc_info=exc)
-                sentry_integration.capture(exc)
+        await self._alert(alert, failed="serve.clock.alert_failed")
 
     async def _execute(
-        self, signal_: StrategySignal, bar: Bar, correlation_id: str
+        self,
+        signal_: StrategySignal,
+        bar: Bar,
+        correlation_id: str,
+        *,
+        price_bar: Bar | None = None,
     ) -> ShadowOutcome:
         """Simulate the signal's order, log the outcome (never its P&L, D-7), sync the strategy.
 
         Returns:
             The executor's outcome: filled, already filled, declined or halted.
         """
-        result = await self.c.executor.execute(signal_, bar, correlation_id=correlation_id)
+        result = await self.c.executor.execute(
+            signal_, bar, correlation_id=correlation_id, price_bar=price_bar
+        )
         _log_execution(bar.pair, signal_.kind, result)
         record = halt_record(
             result.outcome,
@@ -1710,6 +1825,16 @@ def _entry_check_fields(strategy: StrategyPort) -> dict[str, str]:
 
 def _yes_no(held: bool) -> str:
     return "yes" if held else "no"
+
+
+def _outcome_word(outcome: ShadowOutcome) -> str:
+    if isinstance(outcome, Executed):
+        return "filled"
+    if isinstance(outcome, AlreadyFilled):
+        return "already filled"
+    if isinstance(outcome, Declined):
+        return f"declined ({outcome.rule})"
+    return "halted"
 
 
 def _log_execution(pair: Pair, kind: SignalKind, result: ShadowExecution) -> None:

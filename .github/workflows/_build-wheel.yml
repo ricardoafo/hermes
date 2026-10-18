@@ -11,7 +11,7 @@
 #
 #   runner-label (optional string):
 #     JSON-array runner label to override the default. Empty string means
-#     "fall back to `vars.RUNNER_LABEL` or `ubuntu-latest`" — matches the
+#     "fall back to `vars.RUNNER_LABEL` or the self-hosted CI pool" — matches the
 #     pattern the callers used before extraction so behaviour is preserved.
 #
 #   ref (optional string):
@@ -48,7 +48,7 @@ on:
 jobs:
   build:
     name: Build wheel
-    runs-on: ${{ inputs.runner-label != '' && fromJSON(inputs.runner-label) || (vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest') }}
+    runs-on: ${{ inputs.runner-label != '' && fromJSON(inputs.runner-label) || (vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || fromJSON('["self-hosted","linux","hermes"]')) }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

@@ -130,6 +130,18 @@ def test_a_hash_that_is_not_the_precursors_fails(tmp_path: Path) -> None:
     assert (code, failed) == (1, ["content_sha256"])
 
 
+def test_a_batch_edited_after_signing_fails_the_signed_check(tmp_path: Path) -> None:
+    """A commit that loosens a signed batch keeps its old hash, and --require-signed fails it."""
+    batch = _signed_repo(tmp_path)
+    edited = batch.read_text("utf-8").replace("fdr_q: 0.05", "fdr_q: 0.04")
+    _commit(tmp_path, {BATCH_PATH: edited.encode()}, "edit after signing")
+
+    code, out, _ = _run("check", str(batch), "--repo", str(tmp_path), "--require-signed")
+
+    failed = [ln.split()[1] for ln in out.splitlines() if ln.startswith("FAIL")]
+    assert (code, failed, out.splitlines()[-1]) == (1, ["content_sha256"], "BATCH FAILED")
+
+
 def test_candidates_out_writes_the_workflow_matrix(tmp_path: Path) -> None:
     """Contract §1: batch id plus each candidate's strategy id and family, in run order."""
     batch = _signed_repo(tmp_path / "repo")

@@ -281,11 +281,26 @@ def test_shipped_strategies_yaml_is_the_swing_only_roster() -> None:
     """The committed roster enables swing-donchian-4h and carries v2 disabled, both at 5000 USDT."""
     roster = _shipped_roster(env={})
     assert [
-        (s.name, s.enabled, s.weight, s.capital_budget, s.quote) for s in roster.strategies
+        (s.name, s.enabled, s.weight, s.capital_budget, s.quote) for s in roster.strategies[:2]
     ] == [
         ("swing-donchian-4h", True, Decimal("1.0"), Decimal("5000"), Currency.USDT),
         ("swing-mvp1-v2", False, Decimal("1.0"), Decimal("5000"), Currency.USDT),
     ]
+
+
+def test_shipped_batch_candidates_are_disabled_with_v2_capital_sizing_and_exits() -> None:
+    """Batch candidates take v2's capital, limits and close-priced exits, and stay off.
+
+    A candidate never runs in serve; its backtest picks it with ``--strategy``.
+    """
+    _, v2, *candidates = _shipped_roster(env={}).strategies
+    assert [
+        c.name
+        for c in candidates
+        if c.enabled
+        or (c.capital_budget, c.quote, c.sizing, c.exit_pricing)
+        != (v2.capital_budget, v2.quote, v2.sizing, v2.exit_pricing)
+    ] == []
 
 
 def test_shipped_v1_entry_keeps_the_stop_order_exit() -> None:
@@ -309,7 +324,7 @@ def test_shipped_v2_entry_sells_every_exit_at_the_bar_close() -> None:
 # SEV-1: no rubric row matches; pre-reg v2 §2/§5.4/§5.5 limits must reach sizing unchanged
 def test_shipped_v2_entry_sizes_with_the_v1_capital_and_limits() -> None:
     """v2 §2, §5.4 and §5.5 are unchanged from v1: the same 5000 capital and the same limits."""
-    v1, v2 = _shipped_roster(env={}).strategies
+    v1, v2 = _shipped_roster(env={}).strategies[:2]
     assert (v2.capital_budget, v2.quote, v2.sizing) == (v1.capital_budget, v1.quote, v1.sizing)
 
 

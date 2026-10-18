@@ -134,6 +134,22 @@ def test_v2_trial_parameters_name_the_close_based_exit_pricing() -> None:
     assert params["execution.exit_pricing"] == "bar_close"
 
 
+def test_a_named_signal_is_recorded_in_the_trial() -> None:
+    """A candidate's ``signal:`` is part of what ran, so its trial line names it (#1074)."""
+    params = DRIVER._trial_parameters(
+        {"lookback": 100}, ExecutionModel(depth_frac=Decimal("0.1")), (_BTC,), "daily-ma"
+    )
+    assert (params["signal"], params["lookback"]) == ("daily-ma", 100)
+
+
+def test_no_signal_leaves_the_trial_without_a_signal_key() -> None:
+    """A v1 or v2 trial line stays byte-identical to the lines logged before #1074."""
+    params = DRIVER._trial_parameters(
+        {"donchian_period": 20}, ExecutionModel(depth_frac=Decimal("0.1")), (_BTC,), None
+    )
+    assert "signal" not in params
+
+
 def test_report_lists_every_rule_left_off() -> None:
     """Every SA-9 rule other than RO-01, and the kill evaluator, is listed as stubbed."""
     assert sorted(DRIVER.STUBBED) == [

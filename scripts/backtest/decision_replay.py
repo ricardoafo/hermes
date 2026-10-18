@@ -50,7 +50,6 @@ from run_calibration import (
     DATA_MANIFEST_JSON,
     FEE_HISTORY_CSV,
     _load_manifest,
-    _strategy_parameters,
 )
 from run_calibration_full import _select
 from run_portfolio_backtest import _kernel, _load, _parse_pairs
@@ -74,7 +73,6 @@ from hermes.domain.fees.fee_schedule_selector import (
 )
 from hermes.domain.market_data.dataset_manifest import DataSplit
 from hermes.domain.strategy.signal import StrategySignal
-from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
@@ -290,11 +288,11 @@ async def _record(args: argparse.Namespace) -> int:
         kernel_type=RecordingKernel,
     )
     assert isinstance(kernel, RecordingKernel)  # noqa: S101 — narrows the type for the reader
-    parameters = _strategy_parameters()
+    kind = roster.strategy_kind()
     try:
         replay(
             bars,
-            strategy={pair: SwingStrategyAdapter(**parameters) for pair in pairs},
+            strategy={pair: kind.create() for pair in pairs},
             kernel=kernel,
             window_start=start,
             window_end=end,

@@ -6,7 +6,7 @@ down colour, reversed, while it is on, and an amber ``mainnet ?`` when the
 config could not be read. Nothing here hardcodes the flag; the app is handed
 what the config said. A demo scenario cannot trade, so the app shows it off.
 
-The version line names the package in its release form (``v1.0.0-shadow.1``)
+The version line names the package in its release form (``v0.2.0``)
 next to the running release read from the ``current`` link.
 
 The next-bar share is how much of the span from the last bar check to the next
@@ -60,12 +60,12 @@ def version_text(label: str | None, release: str | None) -> str:
     """Return the status row's version line.
 
     Args:
-        label: The package version in its release form (``v1.0.0-shadow.1``);
+        label: The package version in its release form (``v0.2.0``);
             ``None`` keeps the line as it was before issue #815.
         release: The running release read from the ``current`` link, or ``None``.
 
     Returns:
-        ``v1.0.0-shadow.1 · 679b676``, ``v1.0.0-shadow.1`` without a release,
+        ``v0.2.0 · 679b676``, ``v0.2.0`` without a release,
         ``release 679b676`` without a label, or empty with neither.
     """
     if label is None:
