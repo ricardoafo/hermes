@@ -5,7 +5,6 @@ tests/integration/deploy/test_release_scripts.py::test_failed_gate_restarts_the_
 tests/integration/strategy/swing/test_swing_adapter_integration.py::test_isinstance_strategy_port U6
 tests/integration/strategy/swing/test_swing_adapter_integration.py::test_no_1d_bars_blocks_entry U3
 tests/integration/strategy/swing/test_swing_adapter_integration.py::test_no_entry_when_1d_below_ema U3
-tests/integration/test_simulated_exchange_round_trip.py::test_buy_sell_round_trip_lot_ledger U3
 tests/unit/adapters/certification/test_json_store.py::test_satisfies_the_port U6
 tests/unit/adapters/clock/test_simulated_clock.py::test_isinstance_clock_port U6
 tests/unit/adapters/clock/test_simulated_clock.py::test_now_is_idempotent U3
