@@ -28,6 +28,7 @@ _RISK = _S + "test_risk_limits.py::"
 _FAULTS = _S + "test_market_data_faults.py::"
 _RESTART = _S + "test_restart.py::test_a_restart_with_a_position_open_keeps_it_until_its_exit"
 _UNIT = "tests/unit/"
+_EXEC_QUALITY = "tests/integration/entrypoints/test_serve_execution_quality.py::"
 _SHADOW = _UNIT + "application/execution/test_shadow.py::"
 _SHADOW_CHECKS = _UNIT + "application/strategy_protocol/test_shadow_checks.py::"
 _SERVE_FILLS = "tests/integration/entrypoints/test_serve_fills.py::"
@@ -293,6 +294,14 @@ IN_CODE: tuple[Rule, ...] = (
         "Stale or missing book: an exit still fills",
         proved_by=(
             _FAULTS + "test_an_exit_while_the_depth_endpoint_is_down_fills_on_the_model_book",
+        ),
+    ),
+    Rule(
+        "Execution-quality breaches are alerted only: no decision, size or fill changes",
+        proved_by=(
+            _EXEC_QUALITY
+            + "test_signals_fills_and_halts_are_the_same_whether_the_charts_breach_or_not",
+            _EXEC_QUALITY + "test_the_slippage_breach_is_alerted_once_on_every_channel",
         ),
     ),
     Rule(
