@@ -16,14 +16,13 @@ from types import ModuleType
 import pytest
 
 from hermes.domain.events.fill_quality_recorded import FillQualityRecorded
-
-_ROOT = Path(__file__).resolve().parents[3]
+from tests.support.paths import REPO_ROOT
 
 
 def _load() -> ModuleType:
     """Import the script module (not a package)."""
     spec = importlib.util.spec_from_file_location(
-        "schema_guard", _ROOT / "scripts" / "deploy" / "schema_guard.py"
+        "schema_guard", REPO_ROOT / "scripts" / "deploy" / "schema_guard.py"
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

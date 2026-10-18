@@ -11,7 +11,6 @@ import ast
 import json
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from pathlib import Path
 
 import anyio
 import httpx
@@ -25,10 +24,12 @@ from hermes.domain.errors import ExchangeError, NetworkError
 from hermes.domain.value_objects.pair import Pair
 from hermes.infrastructure.config.models import MarketDataConfig
 from hermes.ports.price_lookup import PriceLookupPort, PriceQuote
+from tests.support.paths import REPO_ROOT
 
-_ROOT = Path(__file__).resolve().parents[4]
 _FIXTURE = json.loads(
-    (_ROOT / "tests/fixtures/binance_public/ticker_price_btcusdt.json").read_text(encoding="utf-8")
+    (REPO_ROOT / "tests/fixtures/binance_public/ticker_price_btcusdt.json").read_text(
+        encoding="utf-8"
+    )
 )
 _URL = "https://data-api.binance.vision/api/v3/ticker/price"
 _START = datetime(2026, 10, 3, 12, 0, tzinfo=UTC)
@@ -125,8 +126,8 @@ def test_strategy_code_cannot_import_the_price_lookup() -> None:
     """No strategy module imports the live price: signals come from closed bars only (§5.1)."""
     banned = {"hermes.ports.price_lookup", "hermes.adapters.market_data.binance_ticker"}
     strategy_files = [
-        *sorted((_ROOT / "src/hermes/domain/strategy").rglob("*.py")),
-        _ROOT / "src/hermes/ports/strategy.py",
+        *sorted((REPO_ROOT / "src/hermes/domain/strategy").rglob("*.py")),
+        REPO_ROOT / "src/hermes/ports/strategy.py",
     ]
     offenders: list[str] = []
     for path in strategy_files:

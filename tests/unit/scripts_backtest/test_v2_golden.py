@@ -46,10 +46,10 @@ from hermes.domain.market_data.dataset_manifest import DataSplit
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
+from tests.support.paths import REPO_ROOT
 
-_ROOT: Final = Path(__file__).resolve().parents[3]
-_SCRIPTS: Final = _ROOT / "scripts" / "backtest"
-_FIXTURES: Final = _ROOT / "tests" / "fixtures" / "backtest_v2"
+_SCRIPTS: Final = REPO_ROOT / "scripts" / "backtest"
+_FIXTURES: Final = REPO_ROOT / "tests" / "fixtures" / "backtest_v2"
 _BARS: Final = _FIXTURES / "v2-golden-bars.csv.gz"
 _GOLDEN_TRIAL_LINE: Final = _FIXTURES / "__snapshots__" / "v2-golden-trial-line.jsonl"
 _GOLDEN_REPORT: Final = _FIXTURES / "__snapshots__" / "v2-golden-report.json"
@@ -154,7 +154,7 @@ def v2_run(tmp_path_factory: pytest.TempPathFactory) -> _V2Run:
 
     trial_log, report = tmp / "trial-log.jsonl", tmp / "report.json"
     with pytest.MonkeyPatch.context() as mp:
-        mp.chdir(_ROOT)
+        mp.chdir(REPO_ROOT)
         mp.setattr(DRIVER, "_load_manifest", lambda _path: object())
         mp.setattr(DRIVER, "_load_verified_bars", verified_bars)
         mp.setattr(DRIVER, "trial_split", lambda *_args: DataSplit.TRAIN)
@@ -164,7 +164,7 @@ def v2_run(tmp_path_factory: pytest.TempPathFactory) -> _V2Run:
                 f"--start={_WINDOW[0]}",
                 f"--end={_WINDOW[1]}",
                 f"--strategy={_V2}",
-                f"--config-dir={_ROOT / 'config'}",
+                f"--config-dir={REPO_ROOT / 'config'}",
                 f"--trial-log={trial_log}",
                 f"--output={report}",
                 f"--performance-out={tmp / 'performance.json'}",

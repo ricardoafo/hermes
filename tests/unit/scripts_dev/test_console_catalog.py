@@ -20,13 +20,13 @@ from types import ModuleType
 
 import pytest
 
-_ROOT = Path(__file__).resolve().parents[3]
+from tests.support.paths import REPO_ROOT
 
 
 def _load() -> ModuleType:
     """Import the script module (not a package)."""
     spec = importlib.util.spec_from_file_location(
-        "console_catalog", _ROOT / "scripts" / "dev" / "console-catalog.py"
+        "console_catalog", REPO_ROOT / "scripts" / "dev" / "console-catalog.py"
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

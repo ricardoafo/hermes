@@ -30,8 +30,9 @@ from hermes.infrastructure.config.tax import (
     TaxScalesConfig,
     resolve_taxpayer_profile_path,
 )
+from tests.support.paths import REPO_ROOT
 
-_REPO_CONFIG = Path(__file__).resolve().parents[4] / "config"
+_REPO_CONFIG = REPO_ROOT / "config"
 
 # Distinctive figures so a leak is unmistakable in any captured text.
 _SECRET_PROFILE = dedent(

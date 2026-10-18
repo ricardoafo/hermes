@@ -31,7 +31,6 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from pathlib import Path
 
 import pytest
 from hypothesis import given
@@ -63,9 +62,10 @@ from hermes.ports.supervisor import (
     SignalFact,
     SupervisorReadPort,
 )
+from tests.support.paths import REPO_ROOT
 from tests.support.status_ledger import BTC, ETH, INTERVALS, LAST_4H, NOW, PAIRS, SOL
 
-_SRC = Path(__file__).resolve().parents[4] / "src" / "hermes"
+_SRC = REPO_ROOT / "src" / "hermes"
 _ALL_SCOPES = [t.scope for t in TOOLS.values()]
 
 ALLOWED_FIELDS = {

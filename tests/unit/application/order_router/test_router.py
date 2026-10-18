@@ -17,7 +17,6 @@ from collections.abc import MutableMapping
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
-from pathlib import Path
 
 import pytest
 import structlog
@@ -51,6 +50,7 @@ from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.ports.fill_model import FillModelPort
 from hermes.ports.risk_overlay import RiskOverlayPort
+from tests.support.paths import REPO_ROOT
 
 _STRATEGY_ID = StrategyId("test-strategy")
 
@@ -106,11 +106,7 @@ class _FixedFillModel:
 @pytest.fixture(scope="module")
 def pre_reg() -> PreRegistration:
     """Real pre-registration from the signed document."""
-    here = Path(__file__).resolve().parent
-    for candidate in [here, *here.parents]:
-        if (candidate / "pyproject.toml").exists():
-            return PreRegistration(project_root=candidate)
-    pytest.skip("Could not find project root for PreRegistration")
+    return PreRegistration(project_root=REPO_ROOT)
 
 
 @pytest.fixture(scope="module")
@@ -224,13 +220,7 @@ def _make_routing_input(
         Tuple of (router, routing_input).
 
     """
-    here = Path(__file__).resolve().parent
-    project_root = next(
-        (c for c in [here, *here.parents] if (c / "pyproject.toml").exists()),
-        None,
-    )
-    if project_root is None:
-        pytest.skip("Could not find project root")
+    project_root = REPO_ROOT
 
     pre_reg = PreRegistration(project_root=project_root)
     evaluator = kill_evaluator or KillTriggerEvaluator(pre_reg=pre_reg)

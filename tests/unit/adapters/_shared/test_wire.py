@@ -17,7 +17,6 @@ import math
 import re
 from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
-from pathlib import Path
 
 import pytest
 from hypothesis import given
@@ -33,10 +32,11 @@ from hermes.adapters._shared.wire import (
 from hermes.domain.errors import ExchangeError, FxRateError, KrakenPublicError
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
+from tests.support.paths import REPO_ROOT
 
 _ERRORS: tuple[type[Exception], ...] = (ExchangeError, KrakenPublicError, FxRateError)
 _NON_FINITE_TEXT = ("NaN", "nan", "sNaN", "Infinity", "-Infinity", "inf", "-inf")
-_SRC = Path(__file__).resolve().parents[4] / "src" / "hermes" / "adapters"
+_SRC = REPO_ROOT / "src" / "hermes" / "adapters"
 _WIRE_PACKAGES = ("exchanges", "market_data", "fx", "healthchecks")
 
 errors = st.sampled_from(_ERRORS)

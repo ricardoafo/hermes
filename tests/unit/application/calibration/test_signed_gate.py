@@ -40,9 +40,9 @@ from tests.support.candidate_evidence import (
     write_candidate,
 )
 from tests.support.candidate_evidence import batch as candidate_batch
+from tests.support.paths import REPO_ROOT
 
 _NOW = datetime(2026, 10, 18, 9, 0, tzinfo=UTC)
-_PROJECT_ROOT = Path(__file__).resolve().parents[4]
 _FEW_TRIALS = TrialSummary(count=2, validation_count=0, sharpe_variance=0.0001)
 _V1_ROWS = (
     "dsr",
@@ -238,7 +238,7 @@ def test_v2_and_the_generic_gate_give_the_same_report(tmp_path: Path) -> None:
         STRATEGY_ID, files, candidate_batch(), _FEW_TRIALS
     )
     batch = candidate_batch()
-    v1 = PreRegistration(project_root=_PROJECT_ROOT)
+    v1 = PreRegistration(project_root=REPO_ROOT)
     record = CertificationRecord(STRATEGY_ID)
     rules = V2BacktestRules(dsr_min=batch.funnel.dsr_min, funnel=batch.funnel.thresholds)
 
