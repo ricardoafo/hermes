@@ -821,7 +821,8 @@ def _wire_on_ledger(
     if held:
         executor.hold_kill(held)
     pairs = config.market_data.parsed_pairs()
-    strategies: dict[Pair, StrategyPort] = {pair: SwingStrategyAdapter() for pair in pairs}
+    kind = roster.strategy_kind()
+    strategies: dict[Pair, StrategyPort] = {pair: kind.create() for pair in pairs}
 
     telegram_config = _telegram_config(env_snapshot)
     slack_config = _slack_config(env_snapshot)
