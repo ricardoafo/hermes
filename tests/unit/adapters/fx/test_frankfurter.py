@@ -30,8 +30,8 @@ import httpx
 import pytest
 import respx
 
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.adapters.fx.frankfurter import FrankfurterAdapter, FrankfurterConfig
-from hermes.adapters.fx.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.domain.errors import FxRateError, InfraError
 from hermes.domain.fx.fx_rate import FxRate
 from hermes.domain.value_objects.currency import Currency
@@ -422,7 +422,7 @@ class TestErrorPaths:
                         },
                     )
                 )
-                with pytest.raises(FxRateError, match="not parseable as Decimal"):
+                with pytest.raises(FxRateError, match="is not a decimal"):
                     adapter.get_latest(Currency.USDT, Currency.EUR)
         finally:
             adapter.close()

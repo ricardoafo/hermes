@@ -32,9 +32,8 @@ Design decisions
   :class:`~hermes.adapters.exchanges.binance_klines.BinanceKlinesAdapter`
   and :class:`~hermes.adapters.fx.frankfurter.FrankfurterAdapter`.
 - **Rate limiter**: owned token-bucket sized to Kraken's published
-  public-tier cap of 1 call/second per IP. The limiter is shared with
-  the Binance klines adapter (same package,
-  :mod:`hermes.adapters.exchanges.rate_limiter`).
+  public-tier cap of 1 call/second per IP. Every HTTP adapter shares the
+  limiter code (:mod:`hermes.adapters._shared.rate_limiter`).
 - **Kraken response envelope**: every response is
   ``{"error": [...], "result": {...}}``. Non-empty ``error`` MUST be
   raised as :class:`~hermes.domain.errors.KrakenPublicError`; the raw
@@ -60,13 +59,19 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from decimal import Decimal, InvalidOperation, Overflow
+from decimal import Decimal
 from typing import Any, Final
 
 import httpx
 import structlog
 
-from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
+from hermes.adapters._shared.wire import (
+    percent_to_bps,
+    validate_http_config,
+    validate_utc_window,
+    wire_decimal,
+)
 from hermes.domain.errors import KrakenPublicError
 from hermes.domain.fees import FeeSchedule, FeeTier
 from hermes.domain.market_data.bar_schedule import previous_boundary
@@ -170,12 +175,7 @@ class KrakenPublicConfig:
             ValueError: On non-https ``base_url``, non-positive
                 ``timeout_sec``, or negative ``fees_cache_ttl_seconds``.
         """
-        if not self.base_url.startswith("https://"):
-            raise ValueError(
-                f"KrakenPublicConfig.base_url must start with https://, got {self.base_url!r}"
-            )
-        if self.timeout_sec <= 0:
-            raise ValueError(f"KrakenPublicConfig.timeout_sec must be > 0, got {self.timeout_sec}")
+        validate_http_config("KrakenPublicConfig", url=self.base_url, timeout_sec=self.timeout_sec)
         if self.fees_cache_ttl_seconds < 0:
             raise ValueError(
                 "KrakenPublicConfig.fees_cache_ttl_seconds must be >= 0, "
@@ -297,7 +297,7 @@ class KrakenPublicAdapter:
             hermes.domain.errors.KrakenPublicError: On any wire, HTTP,
                 envelope-error, or schema failure.
         """
-        _validate_window(since, until)
+        validate_utc_window(since, until, caller="KrakenPublicAdapter.fetch_klines")
         symbol = _pair_to_kraken_symbol(pair)
         interval_minutes = _interval_to_minutes(interval)
         cursor_s = int(since.timestamp())
@@ -641,33 +641,7 @@ def _fee_row_pct(*, row: Any, symbol: str, side: str) -> Decimal:
 
 
 def _pct_to_bps(pct: Decimal) -> int:
-    """Convert a Kraken percentage rate (0.26 = 0.26%) into integer basis points.
-
-    Kraken publishes rates to two decimal places at most; multiplying by
-    100 keeps the value on the integer grid. We then round to the nearest
-    integer to survive any float-representation artefacts (Kraken returns
-    JSON numbers, though we already parsed via ``Decimal(str(x))`` in
-    :func:`_decimal_or_raise`).
-
-    Args:
-        pct: Kraken's percentage (e.g. ``Decimal("0.26")``).
-
-    Returns:
-        The equivalent integer basis-points (``0.26 → 26``).
-
-    Raises:
-        hermes.domain.errors.KrakenPublicError: On negative percentages, or
-            one too large for the decimal context.
-    """
-    if pct < Decimal("0"):
-        raise KrakenPublicError(f"Kraken fee percentage must be >= 0, got {pct}")
-    try:
-        bps_decimal = pct * Decimal("100")
-    except Overflow as exc:
-        raise KrakenPublicError(f"Kraken fee percentage is out of range: {pct}") from exc
-    # Round to nearest int — Kraken publishes at most 2 decimal places in
-    # the percent field; anything below 1 bp of granularity is noise.
-    return int(bps_decimal.to_integral_value())
+    return percent_to_bps(pct, field="Kraken fee percentage", error=KrakenPublicError)
 
 
 def _parse_depth_response(
@@ -962,44 +936,5 @@ def _interval_to_minutes(interval: KlineInterval) -> int:
 # ---------------------------------------------------------------------------
 
 
-def _validate_window(since: datetime, until: datetime) -> None:
-    """Reject naive datetimes and non-strictly-increasing windows.
-
-    Raises:
-        ValueError: On naive datetime or ``until <= since``.
-    """
-    for label, value in (("since", since), ("until", until)):
-        if value.tzinfo is None or value.tzinfo.utcoffset(None) != UTC.utcoffset(None):
-            raise ValueError(f"KrakenPublicAdapter.fetch_klines: {label} must be UTC-aware")
-    if until <= since:
-        raise ValueError(
-            f"KrakenPublicAdapter.fetch_klines: until ({until!r}) must be > since ({since!r})"
-        )
-
-
-def _decimal_or_raise(raw: Any, *, field_name: str) -> Decimal:
-    """Coerce a raw JSON field into a :class:`Decimal` or raise :class:`KrakenPublicError`.
-
-    Uses ``Decimal(str(raw))`` so IEEE-754 float error never leaks into
-    the domain Decimal layer.
-
-    Args:
-        raw: Field value from the Kraken response.
-        field_name: Descriptive name used in the error message.
-
-    Returns:
-        The value as :class:`Decimal`.
-
-    Raises:
-        hermes.domain.errors.KrakenPublicError: On non-string/numeric
-            input or a value :class:`Decimal` refuses.
-    """
-    if not isinstance(raw, (str, int, float)):
-        raise KrakenPublicError(f"Kraken field {field_name!r} not string/numeric: {raw!r}")
-    try:
-        value = Decimal(str(raw))
-    except InvalidOperation as exc:
-        raise KrakenPublicError(f"Kraken field {field_name!r} not a decimal: {raw!r}") from exc
-    if not value.is_finite():
-        raise KrakenPublicError(f"Kraken field {field_name!r} is not a finite number: {raw!r}")
-    return value
+def _decimal_or_raise(raw: object, *, field_name: str) -> Decimal:
+    return wire_decimal(raw, field=f"Kraken field {field_name!r}", error=KrakenPublicError)

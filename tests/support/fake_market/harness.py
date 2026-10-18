@@ -26,11 +26,9 @@ from unittest import mock
 
 import httpx
 
-from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.adapters.fx.frankfurter import FrankfurterAdapter
 from hermes.adapters.fx.frankfurter import FrankfurterConfig as FrankfurterWireConfig
-from hermes.adapters.fx.rate_limiter import RateLimitConfig as FxRateLimitConfig
-from hermes.adapters.fx.rate_limiter import RateLimiter as FxRateLimiter
 from hermes.adapters.market_data.binance_depth_snapshot import BinanceDepthSnapshotAdapter
 from hermes.adapters.market_data.binance_live_klines import BinanceLiveKlinesAdapter
 from hermes.application.notification_router import RouterConfig
@@ -124,8 +122,8 @@ def compose(
             transport=exchange.transport(),
             timeout=fx_config.timeout_sec,
         ),
-        limiter=FxRateLimiter(
-            config=FxRateLimitConfig(max_weight=fx_config.requests_per_minute, window_seconds=60),
+        limiter=RateLimiter(
+            config=RateLimitConfig(max_weight=fx_config.requests_per_minute, window_seconds=60),
             clock=clock.monotonic,
             sleep=lambda _seconds: None,
         ),

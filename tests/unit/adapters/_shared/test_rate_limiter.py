@@ -1,4 +1,4 @@
-"""Invariant tests for the exchange-adapter token-bucket rate limiter.
+"""Invariant tests for the token-bucket rate limiter every HTTP adapter shares.
 
 Uses a deterministic fake clock + sleep observer so no real wall-clock
 time is consumed. The property test verifies the load-bearing invariant:
@@ -8,15 +8,13 @@ full windows of throttling.
 Reference: docs/guides/ai-authored-tests.md.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
 
 
 @dataclass(slots=True)
