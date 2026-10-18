@@ -20,7 +20,7 @@
     // (changelog fragments, PR-body drafts). These are gitignored
     // via `.claude/` in .gitignore; ignore them here too so
     // `markdownlint-cli2` doesn't scan into leftover worktree dirs.
-    ".claude/**",
+    ".claude/worktrees/**",
     // Transient PR-body scratchpads (drift-eval 2026-08-22, wave 3):
     // sub-agents sometimes write `.pr-body-*.md` at repo root before
     // handing off to create-pr.sh. Those files start with `## Summary`

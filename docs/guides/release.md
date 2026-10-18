@@ -3,169 +3,81 @@
 **Type**: Guide (living document — PR any change)
 **Owners**: Code Owner (product owner, sole reviewer)
 **Applies to**: cutting a versioned release of hermes.
-**Description**: How to tag a release, what the release workflow does, how to
-verify the released wheel + CHANGELOG landed correctly.
+**Description**: How to cut a version with a release PR, how CD tags it on first deploy, and how to check the result.
 
-## Status
+## The shape of a release
 
-The placeholder `release.yml` workflow was removed in the CI/CD consolidation;
-it returns when #21 implements it. This guide documents the SHAPE of the
-release process so it's clear what fills in during MVP1. Cross-references:
-[issue #21](https://github.com/ricardoafo/hermes/issues/21).
+A version is cut by a normal pull request, never by a workflow
+([ADR-022](../architecture/adr-022-release-versions-and-deploy-cadence.md) §2;
+`release.yml` is gone and is not coming back). Three things happen, in order:
 
-## The release surface
+1. A **release PR** sets the version, compiles the changelog and goes through CI, the AI
+   review and the Code Owner's approval like any other PR.
+2. When the PR merges, `main` carries a version that has not deployed yet. With the
+   repository variable `DEPLOY_ON=version`, that is what lets CD deploy to hermes-01
+   (ADR-022 §6; only the Code Owner flips the variable).
+3. After a good deploy, CD creates the git tag `v<version>` on the shipped commit, with a
+   GitHub release whose body is that version's `CHANGELOG.md` section (ADR-022 §3). A
+   version that never deploys gets no tag.
 
-Hermes releases are:
+Versions are `0.y.z` until a champion trades real money
+([ADR-027](../architecture/adr-027-zero-major-versions-until-real-capital.md)): MINOR for
+features and any engine change, PATCH for fixes that change no engine decision. The step to
+`1.0.0` is a manual cut with `--real-capital`. Merging a release PR deploys to hermes-01
+staging, so it is the Code Owner's call; agents open the PR and never merge, tag or deploy.
 
-- **Semver-tagged**: `v0.1.0`, `v0.1.1`, `v0.2.0`, `v1.0.0`. `v` prefix
-  is the industry standard for git tags (matches `astral-sh/uv`,
-  `actions/checkout`, most Rust/Go/Python OSS).
-- **Wheel-only**: `uv build --wheel` produces `hermes-<VERSION>-py3-none-any.whl`
-  under `dist/`. No sdist, no signed artifacts (deferred per ADR-010
-  § What we do NOT do).
-- **Uploaded as GitHub Release assets** — not PyPI. Hermes is a private
-  solo-operator tool, not a library.
-- **CHANGELOG.md date-cut on release** — `## [Unreleased]` section gets
-  renamed to `## [v0.1.0] — YYYY-MM-DD` and a fresh `## [Unreleased]`
-  is prepended. Enforced by CI.
+## Cut a release
 
-## Trigger
-
-Releases fire on **git tag push matching `v[0-9]+.[0-9]+.[0-9]+`**.
-Not on merge, not on schedule. Tagging is the deliberate act.
+From a fresh branch off an up-to-date `main`:
 
 ```bash
-# From an up-to-date main
-git checkout main
-git pull --ff-only
-
-# Bump the version in pyproject.toml (must match the tag)
-sed -i 's/^version = ".*"/version = "0.1.0"/' pyproject.toml
-git add pyproject.toml
-
-# Update CHANGELOG.md — move [Unreleased] → [v0.1.0] — YYYY-MM-DD
-# The release workflow verifies this happened before proceeding.
-# See § CHANGELOG date-cut below.
-
-git commit -m "chore(release): v0.1.0"
-git push
-
-# Tag
-git tag -a v0.1.0 -m "release v0.1.0"
-git push origin v0.1.0
+git fetch origin main
+git checkout -b release/0.2.0 origin/main
+uv run python scripts/dev/cut-release.py 0.2.0 --engine-change no
 ```
 
-The tag push triggers `.github/workflows/release.yml`.
+`cut-release.py` does the mechanical part:
 
-## What `release.yml` does (planned)
+- sets `version` in `pyproject.toml` and `__version__` in `src/hermes/__init__.py`, and
+  refreshes `uv.lock`;
+- turns `[Unreleased]` plus every `changelog.d/` fragment into a dated `[0.2.0]` section
+  under a fresh empty `[Unreleased]`, and deletes the compiled fragments;
+- writes the release PR body outside the checkout (`--body-out`, default
+  `<tmp>/hermes-release-0.2.0.md`);
+- refuses a version that is invalid, retired, or not greater than the current one, an
+  engine change on a PATCH bump, and `1.0.0` without `--real-capital`.
 
-```mermaid
-flowchart LR
-    T[git push v0.1.0] --> V[verify]
-    V --> B[build]
-    B --> R[gh-release]
-    R --> N[notify]
+Pass `--dry-run` first to print the new section and change nothing. `--engine-change yes`
+means the release changes a decision the engine makes (ADR-021), so the Code Owner knows
+before approving whether the deploy restarts the shadow clock. The body has an
+`Engine change:` line that `pr-body-lint.sh` rejects while it is blank.
 
-    V -.->|checks| VC["tag matches pyproject version<br/>+ CHANGELOG has dated entry<br/>+ main is at the tagged commit"]
-    B -.->|produces| BC["dist/hermes-0.1.0-py3-none-any.whl"]
-    R -.->|creates| RC["GitHub Release v0.1.0<br/>+ attaches wheel<br/>+ auto-generates release notes<br/>  from PR titles since v0.0.0"]
-    N -.->|alerts| NC["Telegram bot ping<br/>(via TELEGRAM_RELEASE_URL secret)"]
-
-    style V fill:#fff3cd
-    style B fill:#fff3cd
-    style R fill:#fff3cd
-    style N fill:#fff3cd
-```
-
-Yellow = jobs whose bodies get filled in when we cut v0.1.0.
-
-## CHANGELOG date-cut
-
-Every release moves `[Unreleased]` into a dated section and prepends a
-fresh empty `[Unreleased]`. The `scripts/dev/changelog-check.sh`
-script gains an on-release check that:
-
-1. On tag push: `## [Unreleased]` in `CHANGELOG.md` must be empty (all
-   entries must have been moved into the tagged section by the human).
-2. On regular PR merge: `## [Unreleased]` must have content for
-   feat/fix/refactor/perf types (already enforced by CI today).
-
-Example transformation for cutting v0.1.0:
-
-Before:
-
-```markdown
-## [Unreleased]
-
-### Added
-- Rebalancer engine (#100)
-- FIFO calculator (#101)
-
-### Fixed
-- Money rounding on partial fills (#102)
-```
-
-After:
-
-```markdown
-## [Unreleased]
-
-## [v0.1.0] — 2026-09-15
-
-### Added
-- Rebalancer engine (#100)
-- FIFO calculator (#101)
-
-### Fixed
-- Money rounding on partial fills (#102)
-```
-
-## Verification (post-release)
-
-Within 5 minutes of tag push:
+Then commit as `chore(release): 0.2.0`, push, and open the PR with the generated body:
 
 ```bash
-# 1. Workflow finished green
-gh run list --workflow=release.yml --limit=1 --json conclusion,createdAt
-
-# 2. GitHub Release exists
-gh release view v0.1.0 --repo ricardoafo/hermes
-
-# 3. Wheel is downloadable
-gh release download v0.1.0 --repo ricardoafo/hermes --pattern '*.whl'
-ls hermes-0.1.0-py3-none-any.whl
-
-# 4. Sanity: the wheel installs into a fresh venv
-python3 -m venv /tmp/hermes-verify
-/tmp/hermes-verify/bin/pip install ./hermes-0.1.0-py3-none-any.whl
-/tmp/hermes-verify/bin/hermes --version   # expects 0.1.0
+git commit -am "chore(release): 0.2.0"
+bash scripts/dev/create-pr.sh --title "chore(release): 0.2.0" --body-file <body from cut-release>
 ```
 
-If any of the above fails, DO NOT re-run the release workflow. Instead:
+## Verify after the deploy
 
-1. Delete the tag: `git push --delete origin v0.1.0` (requires
-   authorization — Ricardo only)
-2. Delete the failed GH Release via UI or `gh release delete v0.1.0`
-3. Root-cause the failure, patch, re-tag with the SAME version
+```bash
+# The tag and release exist (CD creates them after the first good deploy of the version)
+gh release view v0.2.0 --repo ricardoafo/hermes
 
-Do NOT bump the version to `v0.1.1` for a failed `v0.1.0` — nothing
-downstream saw the failed release. Re-cut it.
+# The running host reports the same version and the live release (run on hermes-01)
+hermes_run version
+```
 
-## Cadence
-
-Rough targets:
-
-- **v0.1.0**: end of MVP1 (domain layer complete: Money, FIFO, Portfolio, ports, paper-trading engine)
-- **v0.2.0**: shadow mode complete (adapters + CLI/TUI + 90-day observation gate)
-- **v1.0.0**: real-capital cutover / MVP2 (see `docs/guides/shadow-mode-checklist.md`)
-
-Releases before v1.0.0 are dry-run-only: the CD pipeline (`cd.yml`)
-never enters `commit: true` mode. See ADR-003 §09.
+If the deploy health gate fails, `install_release.sh` rolls back to the previous release
+and no tag is created. Fix forward with a PATCH release; do not move or delete tags.
+Deleting a tag needs the Code Owner.
 
 ## Related
 
-- Issue #21 — `release.yml` workflow implementation
-- ADR-006 — versioning strategy (semver, CHANGELOG conventions)
-- ADR-010 — supply-chain hygiene (wheel hash pinning, SBOM generation)
-- `scripts/dev/changelog-check.sh` — CI enforcement
-- `docs/guides/dev-workflow.md` § Commit convention — feeds CHANGELOG grouping
+- [ADR-022](../architecture/adr-022-release-versions-and-deploy-cadence.md) — release PR, tag on deploy, deploy only versions
+- [ADR-027](../architecture/adr-027-zero-major-versions-until-real-capital.md) — `0.y.z` until real capital
+- `scripts/dev/cut-release.py` — the cut itself
+- `changelog.d/README.md` — fragments that feed the changelog
+- [`operator-usage.md`](operator-usage.md) — how auto-deploy works and where to look
+- [`staging-on-hermes-01.md`](staging-on-hermes-01.md) — what hermes-01 is until the first champion
