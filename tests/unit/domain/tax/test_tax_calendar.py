@@ -41,12 +41,24 @@ def test_a_sale_late_on_new_years_eve_utc_is_in_the_next_tax_year() -> None:
     assert tax_year_of(datetime(2025, 12, 31, 23, 30, tzinfo=UTC)) == 2026
 
 
-def test_tax_year_bounds_are_madrid_midnights() -> None:
-    """The year runs from Madrid midnight on 1 Jan to the next one."""
-    assert tax_year_bounds(2026) == (
-        datetime(2025, 12, 31, 23, 0, tzinfo=UTC),
-        datetime(2026, 12, 31, 23, 0, tzinfo=UTC),
-    )
+@pytest.mark.parametrize(
+    ("year", "expected"),
+    [
+        (
+            2026,
+            (datetime(2025, 12, 31, 23, 0, tzinfo=UTC), datetime(2026, 12, 31, 23, 0, tzinfo=UTC)),
+        ),
+        (
+            2025,
+            (datetime(2024, 12, 31, 23, 0, tzinfo=UTC), datetime(2025, 12, 31, 23, 0, tzinfo=UTC)),
+        ),
+    ],
+)
+def test_tax_year_bounds_are_madrid_midnights(
+    year: int, expected: tuple[datetime, datetime]
+) -> None:
+    """The year runs from Madrid midnight on 1 Jan to the next one, odd and even years alike."""
+    assert tax_year_bounds(year) == expected
 
 
 @pytest.mark.parametrize("call", [madrid_date, tax_year_of])
