@@ -33,7 +33,7 @@ from hermes.infrastructure.config.models import (
     TaxGuardConfig,
 )
 
-__all__ = ["HermesConfig"]
+__all__ = ["EndpointTierError", "HermesConfig"]
 
 
 EnvName = Literal["dev", "sandbox", "qa", "staging", "prod"]
@@ -44,6 +44,23 @@ LOOPBACK_TIERS: Final[frozenset[str]] = frozenset({"dev", "sandbox", "qa"})
 Staging reads only public market data and the lab's own notifiers, and prod
 only its own, so neither may run against a fake by mistake.
 """
+
+
+class EndpointTierError(ValueError):
+    """An endpoint in the config breaks its tier's rules (ADR-024 §4, #970).
+
+    Pydantic keeps the exception in the validation error's context, so the
+    loader can report each problem by name.
+
+    Args:
+        env: The tier.
+        problems: One entry per problem, naming the field and never its value.
+    """
+
+    def __init__(self, env: str, problems: list[str]) -> None:
+        super().__init__(f"HERMES_ENV={env}: " + "; ".join(problems))
+        self.env = env
+        self.problems = tuple(problems)
 
 
 class HermesConfig(BaseModel):
@@ -167,7 +184,7 @@ class HermesConfig(BaseModel):
                 if url.rstrip("/") != default and not is_loopback(url)
             ]
         if problems:
-            raise ValueError(f"HERMES_ENV={self.env}: " + "; ".join(problems))
+            raise EndpointTierError(self.env, problems)
         return self
 
 

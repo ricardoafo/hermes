@@ -36,11 +36,11 @@ from hermes.application.strategy_protocol.day_zero import sha256_file
 from hermes.entrypoints import serve as serve_module
 from hermes.entrypoints.shadow_start import main, run
 from hermes.infrastructure.config.loader import load_config
+from tests.support.paths import REPO_ROOT
 from tests.support.serve_loop import FakeFeed
 
 _SID = "swing-donchian-4h"
-_ROOT = Path(__file__).resolve().parents[3]
-_CONFIG = _ROOT / "config"
+_CONFIG = REPO_ROOT / "config"
 _AT = datetime(2026, 10, 15, 8, 0, tzinfo=UTC)
 _RUN_ID = f"{_SID}-20261015T080000Z"
 
@@ -171,7 +171,7 @@ class TestConfirmed:
         ) == (
             _RUN_ID,
             sha256_file(archived),
-            sha256_file(_ROOT / "docs" / "experiments" / "swing-mvp1" / "data-manifest.json"),
+            sha256_file(REPO_ROOT / "docs" / "experiments" / "swing-mvp1" / "data-manifest.json"),
             [1, 2, 3, 4, 6, 7],
         )
 

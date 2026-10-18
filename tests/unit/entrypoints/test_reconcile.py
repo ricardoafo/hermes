@@ -40,9 +40,10 @@ from hermes.entrypoints import reconcile as reconcile_module
 from hermes.entrypoints.commands import discover
 from hermes.ports.notifier import NotifierPort
 from tests.support.anomaly_rows import recorded_anomalies
+from tests.support.paths import REPO_ROOT
 from tests.support.reconciliation_ledger import write_september
 
-_CONFIG = Path(__file__).resolve().parents[3] / "config"
+_CONFIG = REPO_ROOT / "config"
 _OCT_4 = datetime(2026, 10, 4, 2, tzinfo=UTC)
 
 

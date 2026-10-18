@@ -35,11 +35,10 @@ Invariants (change 353-fill-kernel-in-serve R-1, R-4, R-5):
 
 from __future__ import annotations
 
-import asyncio
 import dataclasses
 import json
 import sqlite3
-from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -66,6 +65,7 @@ from tests.support.serve_loop import (
     BTC,
     FakeFeed,
     RecordingChannel,
+    SteppingFeed,
     build,
     d1_bar,
     events,
@@ -127,35 +127,14 @@ class _LiveBooks:
         """Nothing to release."""
 
 
-class _SteppingFeed(FakeFeed):
-    """Scripted feed that delivers each live bar a few seconds after its close."""
+def _deliver(clock: SimulatedClock, books: _LiveBooks) -> Callable[[Bar], None]:
+    """Return a feed step moving clock and book to a few seconds after each close."""
 
-    def __init__(
-        self,
-        clock: SimulatedClock,
-        books: _LiveBooks,
-        warm: Sequence[Bar] = (),
-        live_bars: Sequence[Bar] = (),
-    ) -> None:
-        """Script the feed and remember the clock and book to move."""
-        super().__init__(warm=warm, live_bars=live_bars)
-        self.clock = clock
-        self.books = books
+    def step(bar: Bar) -> None:
+        clock.set(bar.close_time + _DELIVERY_DELAY)
+        books.mid = bar.close
 
-    async def stream_closed_bars(
-        self,
-        pairs: Sequence[Pair],
-        intervals: Sequence[KlineInterval],
-        *,
-        resume_after: Mapping[tuple[Pair, KlineInterval], datetime] | None = None,
-    ) -> AsyncIterator[Bar]:
-        """Step the clock and the book to each bar, then yield it."""
-        for bar in self.live_bars:
-            self.clock.set(bar.close_time + _DELIVERY_DELAY)
-            self.books.mid = bar.close
-            yield bar
-        self.drained.set()
-        await asyncio.Event().wait()
+    return step
 
 
 def _boot(
@@ -165,13 +144,15 @@ def _boot(
     live_from: int,
     live_to: int,
     telegram: RecordingChannel | None = None,
-    feed_class: type[_SteppingFeed] = _SteppingFeed,
-) -> tuple[serve_module.Composition, _SteppingFeed]:
+    feed_class: type[SteppingFeed] = SteppingFeed,
+) -> tuple[serve_module.Composition, SteppingFeed]:
     """Build one boot of the loop over ``db`` with live books."""
     clock = SimulatedClock(start=h4_bar(warm_upto).close_time + _DELIVERY_DELAY)
     books = _LiveBooks(clock)
     books.mid = h4_bar(warm_upto).close
-    feed = feed_class(clock, books, warm=history(warm_upto), live_bars=live(live_from, live_to))
+    feed = feed_class(
+        _deliver(clock, books), warm=history(warm_upto), live_bars=live(live_from, live_to)
+    )
     composition = build(db, feed, clock.now(), telegram=telegram, books=books, clock=clock)
     return composition, feed
 
@@ -426,7 +407,7 @@ def _refused_entry_run(
     clock = SimulatedClock(start=h4_bar(10).close_time + _DELIVERY_DELAY)
     books = _StaleFirstBooks(clock)
     books.mid = h4_bar(10).close
-    feed = _SteppingFeed(clock, books, warm=history(10), live_bars=[h4_bar(11), *after])
+    feed = SteppingFeed(_deliver(clock, books), warm=history(10), live_bars=[h4_bar(11), *after])
     telegram = RecordingChannel()
     composition = build(db, feed, clock.now(), telegram=telegram, books=books, clock=clock)
     with capture_logs() as logs:
@@ -497,12 +478,12 @@ class _DownOnSecondCallBooks(_LiveBooks):
 
 def _declined_exit_boot(
     db: Path, live_bars: Sequence[Bar], *, warm_upto: int = 10
-) -> tuple[serve_module.Composition, _SteppingFeed]:
+) -> tuple[serve_module.Composition, SteppingFeed]:
     """Build a boot whose second depth read fails, delivering ``live_bars``."""
     clock = SimulatedClock(start=h4_bar(warm_upto).close_time + _DELIVERY_DELAY)
     books = _DownOnSecondCallBooks(clock)
     books.mid = h4_bar(warm_upto).close
-    feed = _SteppingFeed(clock, books, warm=history(warm_upto), live_bars=live_bars)
+    feed = SteppingFeed(_deliver(clock, books), warm=history(warm_upto), live_bars=live_bars)
     return build(db, feed, clock.now(), books=books, clock=clock), feed
 
 
@@ -550,7 +531,7 @@ def test_exit_declined_before_a_restart_is_retried_after_it(tmp_path: Path) -> N
     )
 
 
-class _AnomalousFeed(_SteppingFeed):
+class _AnomalousFeed(SteppingFeed):
     """Stepping feed that publishes one CRITICAL anomaly on serve's bus before each live bar."""
 
     bus: EventBus | None = None
@@ -567,7 +548,7 @@ class _AnomalousFeed(_SteppingFeed):
             assert self.bus is not None
             self.bus.publish(
                 AnomalyDetected(
-                    occurred_at=self.clock.now(),
+                    occurred_at=bar.close_time + _DELIVERY_DELAY,
                     correlation_id="01JABCDEFGHJKMNPQRSTVWXYZ0",
                     source="test.injected",
                     severity=AnomalySeverity.CRITICAL,
@@ -631,7 +612,7 @@ def test_an_anomaly_on_the_bus_is_recorded_and_changes_no_decision_or_fill(
 
 def _boot_with_days(
     db: Path, telegram: RecordingChannel, *, trade_ceiling: int | None = None
-) -> tuple[serve_module.Composition, _SteppingFeed]:
+) -> tuple[serve_module.Composition, SteppingFeed]:
     """Boot over 4h bars 11-14 with the 1D bars of days 16 and 17, in delivery order.
 
     Days 12-15 closed before the boot and are warm-up history. ``trade_ceiling``
@@ -748,7 +729,9 @@ def test_a_failing_channel_does_not_stop_the_halt_record(tmp_path: Path) -> None
     clock = SimulatedClock(start=h4_bar(10).close_time + _DELIVERY_DELAY)
     books = _StaleFirstBooks(clock)
     books.mid = h4_bar(10).close
-    feed = _SteppingFeed(clock, books, warm=history(10), live_bars=[h4_bar(11), *live(12, 14)])
+    feed = SteppingFeed(
+        _deliver(clock, books), warm=history(10), live_bars=[h4_bar(11), *live(12, 14)]
+    )
     telegram = RecordingChannel(raises=NetworkError("telegram down"))
     composition = build(db, feed, clock.now(), telegram=telegram, books=books, clock=clock)
 

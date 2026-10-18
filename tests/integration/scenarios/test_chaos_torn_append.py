@@ -25,11 +25,11 @@ from hermes.domain.market_data.dataset_manifest import DataSplit
 from hermes.entrypoints import journal as journal_cli
 from hermes.entrypoints import trials as trials_cli
 from hermes.ports.decision_journal import JournalIntegrityError
+from tests.support.paths import REPO_ROOT
 
 pytestmark = pytest.mark.integration
 
 _KILLED_EXIT = 9
-_REPO_ROOT = Path(__file__).resolve().parents[3]
 
 _DIE_HALFWAY = """
 import os, pathlib
@@ -90,7 +90,7 @@ def _killed_mid_append(body: str) -> int:
     """Run ``body`` after the half-write patch in a child; return its exit code."""
     script = _DIE_HALFWAY + textwrap.dedent(body)
     return subprocess.run(  # noqa: S603 - fixed interpreter, script built here
-        [sys.executable, "-c", script], check=False, cwd=_REPO_ROOT
+        [sys.executable, "-c", script], check=False, cwd=REPO_ROOT
     ).returncode
 
 

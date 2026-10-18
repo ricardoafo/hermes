@@ -17,16 +17,16 @@ from pydantic import BaseModel
 
 from hermes.infrastructure.config.loader import load_config
 from hermes.infrastructure.config.root import HermesConfig
+from tests.support.paths import REPO_ROOT
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_CONFIG_DIR = _REPO_ROOT / "config"
+_CONFIG_DIR = REPO_ROOT / "config"
 _TEMPLATES: Final = (
-    _REPO_ROOT / ".env.local.example",
-    _REPO_ROOT / "deploy" / "systemd" / "hermes.env.example",
+    REPO_ROOT / ".env.local.example",
+    REPO_ROOT / "deploy" / "systemd" / "hermes.env.example",
 )
 _ASSIGNMENT = re.compile(r"^#?\s*(HERMES_[A-Z0-9_]+)=(\S*)$")
 _SECTION_OF_NAME = re.compile(r"^HERMES_([A-Z0-9]+(?:_[A-Z0-9]+)*?)__")
-_CONFIG_PACKAGE = _REPO_ROOT / "src" / "hermes" / "infrastructure" / "config"
+_CONFIG_PACKAGE = REPO_ROOT / "src" / "hermes" / "infrastructure" / "config"
 
 
 def _names_and_values(template: Path) -> dict[str, str]:
@@ -64,7 +64,7 @@ def _sections() -> dict[str, type[BaseModel]]:
 
 def _section_is_read(section: str, model: type[BaseModel]) -> bool:
     """Return whether code outside the config package uses the section or its model."""
-    code = _read_tree(_REPO_ROOT / "src", skip=tuple(_CONFIG_PACKAGE.rglob("*")))
+    code = _read_tree(REPO_ROOT / "src", skip=tuple(_CONFIG_PACKAGE.rglob("*")))
     pattern = rf"\.{section}\b|\b{model.__name__}\b|\bload_{section}_config\b"
     return re.search(pattern, code) is not None
 
@@ -83,7 +83,7 @@ def test_every_name_in_a_template_loads_when_uncommented(template: Path) -> None
 def test_every_name_in_a_template_is_read_by_code(template: Path) -> None:
     """Each name in a template appears in src, scripts or deploy, or overrides a read section."""
     code = _read_tree(
-        _REPO_ROOT / "src", _REPO_ROOT / "scripts", _REPO_ROOT / "deploy", skip=_TEMPLATES
+        REPO_ROOT / "src", REPO_ROOT / "scripts", REPO_ROOT / "deploy", skip=_TEMPLATES
     )
     read_sections = {
         name.upper() for name, model in _sections().items() if _section_is_read(name, model)

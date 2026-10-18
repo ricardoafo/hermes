@@ -17,7 +17,6 @@ from __future__ import annotations
 import json
 from datetime import date
 from decimal import Decimal
-from pathlib import Path
 from typing import Any
 
 import httpx
@@ -28,10 +27,11 @@ from hermes.adapters.fx.frankfurter import FrankfurterAdapter, FrankfurterConfig
 from hermes.domain.errors import FxRateError
 from hermes.domain.fx.fx_rate import FxRate
 from hermes.domain.value_objects.currency import Currency
+from tests.support.paths import REPO_ROOT
 
 pytestmark = pytest.mark.integration
 
-_FIXTURES = Path(__file__).parents[3] / "fixtures" / "frankfurter"
+_FIXTURES = REPO_ROOT / "tests" / "fixtures" / "frankfurter"
 _BASE_URL = "https://api.frankfurter.dev/v1"
 
 

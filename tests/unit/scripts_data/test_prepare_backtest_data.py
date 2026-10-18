@@ -31,10 +31,10 @@ from hermes.domain.market_data.dataset_manifest import bars_content_sha256
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
+from tests.support.paths import REPO_ROOT
 
-_ROOT = Path(__file__).resolve().parents[3]
-_SCRIPTS = _ROOT / "scripts" / "data"
-_REAL_MANIFEST = _ROOT / "docs/experiments/swing-mvp1/data-manifest.json"
+_SCRIPTS = REPO_ROOT / "scripts" / "data"
+_REAL_MANIFEST = REPO_ROOT / "docs/experiments/swing-mvp1/data-manifest.json"
 _BTC = Pair(base=Currency.BTC, quote=Currency.USDT)
 _DAY_MS = 86_400_000
 

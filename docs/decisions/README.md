@@ -75,6 +75,7 @@ One line per entry, appended at the end: date, link, and what it supersedes if a
 - 2026-10-03 [Sharpe kill window, M-09/M-10](2026-10-03-calibration-metrics-and-shadow-sharpe-kill.md) (supersedes Draft M-09/M-10 thresholds)
 - 2026-10-04 [Kraken spot trading adapter](2026-10-04-kraken-spot-adapter.md) (supersedes 2026-08-24 Kraken entry (public-only scope))
 - 2026-10-04 [Tax-filing report defaults](2026-10-04-tax-filing-defaults.md)
+- 2026-10-18 [Retire the simulated exchange adapter](2026-10-18-retire-simulated-exchange-adapter.md) (supersedes ADR-011 mode table, Backtest and Shadow `ExchangePort`)
 
 ## Anti-patterns
 

@@ -8,13 +8,13 @@ in the image, pinned and checksum-verified like gitleaks.
 """
 
 import re
-from pathlib import Path
 
 import yaml
 
-_ROOT = Path(__file__).resolve().parents[3]
-_WORKFLOWS = _ROOT / ".github" / "workflows"
-_DOCKERFILE = _ROOT / "scripts" / "dev" / "gh-runner" / "Dockerfile"
+from tests.support.paths import REPO_ROOT
+
+_WORKFLOWS = REPO_ROOT / ".github" / "workflows"
+_DOCKERFILE = REPO_ROOT / "scripts" / "dev" / "gh-runner" / "Dockerfile"
 _SCRIPT_CALL = re.compile(r"scripts/[\w./-]+\.(?:sh|py)")
 _GH_CALL = re.compile(
     r"(?<![\w./-])gh\s+(?:api|auth|issue|label|pr|release|repo|run|secret|variable|workflow)\b"
@@ -38,7 +38,7 @@ def callers_of_gh() -> set[str]:
         if _GH_CALL.search(block):
             found.add(f"run block {index}")
         for script in _SCRIPT_CALL.findall(block):
-            path = _ROOT / script
+            path = REPO_ROOT / script
             if path.is_file() and _GH_CALL.search(path.read_text(encoding="utf-8")):
                 found.add(script)
     return found

@@ -159,6 +159,9 @@ stat -c '%a %U:%G' /etc/hermes/env.staging && grep '^HERMES_ENV=' /etc/hermes/en
 
 Expected: `600 root:root` and `HERMES_ENV="staging"`.
 
+Every staging deploy checks this file with the new release's `hermes config check` before it restarts anything. A
+trading key or a loopback endpoint stops the deploy, and the log names the setting, never its value.
+
 The lab also needs outbound access to Binance and Frankfurter public data and to its notifier and healthchecks hosts,
 with no inbound ports, and about 1 GB of memory. How the box provides these belongs to the infra project (ADR-024 §9).
 
