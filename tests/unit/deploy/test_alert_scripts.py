@@ -219,7 +219,7 @@ def _run(
         {
             "HERMES_TELEGRAM__BOT_TOKEN": _BOT_TOKEN,
             "HERMES_TELEGRAM__CHAT_ID": _CHAT_ID,
-            "HERMES_NOTIFY_API_BASE": server.url,
+            "HERMES_TELEGRAM__API_BASE": server.url,
             "HERMES_HEALTHCHECKS__PING_URL": f"{server.url}{_PING_PATH}",
             "HERMES_HEALTH_HERMES_BIN": (host.bin_dir / "hermes").as_posix(),
         }
@@ -536,7 +536,7 @@ def _crash_env(server: _FakeServer, **result: str) -> dict[str, str]:
     return {
         "HERMES_SLACK__BOT_TOKEN": _SLACK_TOKEN,
         "HERMES_SLACK__DEFAULT_CHANNEL": _SLACK_CHANNEL,
-        "HERMES_NOTIFY_SLACK_API_BASE": server.url,
+        "HERMES_SLACK__API_BASE": server.url,
         "HOSTNAME": "hermes-01",
         **result,
     }

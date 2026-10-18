@@ -39,6 +39,7 @@ from structlog.testing import capture_logs
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
 from hermes.adapters.clock.wall import WallClock
+from hermes.adapters.endpoint import EndpointConfigError
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.adapters.market_data.binance_depth_snapshot import BinanceDepthSnapshotAdapter
 from hermes.adapters.market_data.binance_live_klines import BinanceLiveKlinesAdapter
@@ -1107,3 +1108,15 @@ class TestLedgerAndSeedGuards:
         )
         _shut(composition)
         assert composition.tracker.state().current_value == Decimal(5000)
+
+
+def test_a_bad_notifier_api_base_fails_startup_instead_of_muting_the_channel() -> None:
+    """Missing credentials quietly turn Telegram off; a mistyped endpoint must not (#970)."""
+    env = {
+        "HERMES_TELEGRAM__BOT_TOKEN": "123456:ABC-DEF",  # gitleaks:allow
+        "HERMES_TELEGRAM__CHAT_ID": "-100",
+        "HERMES_TELEGRAM__API_BASE": "http://api.telegram.org",
+    }
+
+    with pytest.raises(EndpointConfigError, match="HERMES_TELEGRAM__API_BASE"):
+        serve_module._telegram_config(env)
