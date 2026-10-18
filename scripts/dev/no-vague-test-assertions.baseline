@@ -179,16 +179,6 @@ tests/unit/domain/statistics/test_statistics_mutation_guards.py::test_split_is_f
 tests/unit/domain/statistics/test_statistics_mutation_guards.py::test_trade_result_has_slots U6
 tests/unit/domain/statistics/test_statistics_mutation_guards.py::test_trade_result_is_frozen U6
 tests/unit/domain/tax/test_netting.py::test_carry_forward_never_exceeds_four_years U3
-tests/unit/domain/test_errors.py::test_currency_mismatch_is_domain_error U3
-tests/unit/domain/test_errors.py::test_currency_mismatch_is_hermes_error U3
-tests/unit/domain/test_errors.py::test_domain_error_is_hermes_error U3
-tests/unit/domain/test_errors.py::test_exchange_error_is_infra_error U3
-tests/unit/domain/test_errors.py::test_infra_error_is_hermes_error U3
-tests/unit/domain/test_errors.py::test_invalid_lot_is_domain_error U3
-tests/unit/domain/test_errors.py::test_invalid_lot_is_hermes_error U3
-tests/unit/domain/test_errors.py::test_ledger_error_is_infra_error U3
-tests/unit/domain/test_errors.py::test_network_error_is_hermes_error U3
-tests/unit/domain/test_errors.py::test_network_error_is_infra_error U3
 tests/unit/domain/test_errors_raisable.py::test_declared_fields_stay_frozen U6
 tests/unit/domain/value_objects/test_currency.py::test_currency_is_str_enum U7
 tests/unit/domain/value_objects/test_currency.py::test_from_str_empty_returns_failure U3
