@@ -113,21 +113,29 @@ def append_trial_lines(committed: Path, chain: Path | None) -> int:
     return new.count(b"\n")
 
 
-def write_verdicts(
-    sources: list[Path], target: Path, *, run_id: int, commit: str, batch_id: str
-) -> list[dict[str, Any]]:
-    """Validate each verdict, fill the run and commit, and write it under ``target``."""
-    written: list[dict[str, Any]] = []
+def load_verdicts(sources: list[Path], batch_id: str) -> list[dict[str, Any]]:
+    """Read and validate every verdict before anything is written."""
+    verdicts: list[dict[str, Any]] = []
     for source in sorted(path for directory in sources for path in directory.glob("*.json")):
         verdict = json.loads(source.read_text(encoding="utf-8"))
         validate_verdict(verdict)
         if verdict["batch_id"] != batch_id:
             raise ResultsError(f"{source.name} belongs to batch {verdict['batch_id']}")
-        verdict = {**verdict, "run_id": run_id, "commit": commit}
+        verdicts.append(verdict)
+    return verdicts
+
+
+def write_verdicts(
+    verdicts: list[dict[str, Any]], target: Path, *, run_id: int, commit: str
+) -> list[dict[str, Any]]:
+    """Fill the run and commit into each validated verdict and write it under ``target``."""
+    written: list[dict[str, Any]] = []
+    for verdict in verdicts:
+        record = {**verdict, "run_id": run_id, "commit": commit}
         target.mkdir(parents=True, exist_ok=True)
-        name = f"{verdict['strategy_id']}.{verdict['stage']}.json"
-        (target / name).write_text(json.dumps(verdict, indent=2) + "\n", encoding="utf-8")
-        written.append(verdict)
+        name = f"{record['strategy_id']}.{record['stage']}.json"
+        (target / name).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+        written.append(record)
     return written
 
 
@@ -179,13 +187,17 @@ def assemble(args: argparse.Namespace, now: datetime) -> str:
         if not _SAFE_NAME.match(getattr(args, field)):
             raise ResultsError(f"{field} is not a plain name")
     experiment_dir = args.repo_root / "docs" / "experiments" / args.experiment
+    loaded = load_verdicts(args.verdicts, args.batch_id)
+    if args.require_chain and loaded and (args.chain is None or not args.chain.exists()):
+        raise ResultsError(
+            "verdicts exist but the trial log chain is missing, so no lines would count"
+        )
     lines = append_trial_lines(experiment_dir / "trial-log.jsonl", args.chain)
     verdicts = write_verdicts(
-        args.verdicts,
+        loaded,
         experiment_dir / "verdicts" / args.batch_id,
         run_id=args.run_id,
         commit=args.commit,
-        batch_id=args.batch_id,
     )
     notebook = LabNotebook(experiment_dir / "lab-notebook.md")
     for verdict in verdicts:
@@ -211,6 +223,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run-id", type=int, required=True)
     parser.add_argument("--commit", required=True)
     parser.add_argument("--chain", type=Path, default=None)
+    parser.add_argument(
+        "--require-chain",
+        action="store_true",
+        help="fail when verdicts exist but the trial log chain does not",
+    )
     parser.add_argument("--verdicts", type=Path, action="append", default=[])
     parser.add_argument("--selection", type=Path, default=None)
     parser.add_argument("--notes-out", type=Path, required=True)

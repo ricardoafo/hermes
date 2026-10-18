@@ -70,7 +70,7 @@ def _verdict_dir(tmp_path: Path, *verdicts: dict[str, Any]) -> Path:
 
 
 def _run(tmp_path: Path, repo: Path, verdicts: Path, **extra: str) -> int:
-    """Run the script's main over ``repo`` and ``verdicts``."""
+    """Run the script's main over ``repo`` and ``verdicts``; an empty value makes a bare flag."""
     argv = [
         "--repo-root", str(repo),
         "--experiment", "swing-mvp1",
@@ -81,7 +81,7 @@ def _run(tmp_path: Path, repo: Path, verdicts: Path, **extra: str) -> int:
         "--notes-out", str(tmp_path / "notes.md"),
     ]  # fmt: skip
     for key, value in extra.items():
-        argv += [f"--{key.replace('_', '-')}", value]
+        argv += [f"--{key.replace('_', '-')}", *([value] if value else [])]
     return int(_script().main(argv))
 
 
@@ -176,6 +176,36 @@ def test_a_verdict_that_could_carry_a_value_is_refused_and_nothing_is_written(
     notebook = repo / "docs/experiments/swing-mvp1/lab-notebook.md"
     assert (code, notebook.read_text(encoding="utf-8")) == (3, _NOTEBOOK_HEADER)
     assert not (repo / "docs/experiments/swing-mvp1/verdicts").exists()
+
+
+def test_one_bad_verdict_among_several_leaves_the_tree_untouched(tmp_path: Path) -> None:
+    """Every verdict is validated before a file is written, so a late bad one leaves nothing."""
+    repo = _tree(tmp_path)
+    good = copy.deepcopy(_VERDICT)
+    bad = {**copy.deepcopy(_VERDICT), "strategy_id": "swing-b1-z", "passed": "1.87"}
+    chain = tmp_path / "chain.jsonl"
+    chain.write_bytes(b'{"n": 1}\n{"n": 2}\n')
+
+    code = _run(tmp_path, repo, _verdict_dir(tmp_path, good, bad), chain=str(chain))
+
+    experiment = repo / "docs/experiments/swing-mvp1"
+    assert (
+        code,
+        (experiment / "trial-log.jsonl").read_bytes(),
+        (experiment / "lab-notebook.md").read_text(encoding="utf-8"),
+        (experiment / "verdicts").exists(),
+    ) == (3, b'{"n": 1}\n', _NOTEBOOK_HEADER, False)
+
+
+def test_verdicts_without_a_trial_log_chain_are_refused_when_the_chain_is_required(
+    tmp_path: Path,
+) -> None:
+    """A failed chain download must not give a verdicts-only PR whose trial lines never count."""
+    repo = _tree(tmp_path)
+
+    code = _run(tmp_path, repo, _verdict_dir(tmp_path, _VERDICT), require_chain="")
+
+    assert (code, (repo / "docs/experiments/swing-mvp1/verdicts").exists()) == (3, False)
 
 
 def test_notebook_entry_holds_pass_fail_lines_and_no_other_number(tmp_path: Path) -> None:
