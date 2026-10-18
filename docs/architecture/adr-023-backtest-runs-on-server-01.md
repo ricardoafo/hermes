@@ -1,9 +1,10 @@
 # ADR-023: Backtests run on server-01 — one runner, pinned data that fills itself, and a Code Owner click for every Validation touch
 
 **Date**: 2026-10-17
-**Status**: Proposed — Accepted when the Code Owner merges it
+**Status**: Accepted (merged in PR #943)
 **Deciders**: Ricardo Afonso (product owner), Claude (proposer)
 **Supersedes**: none.
+**Superseded in part by**: [ADR-026](adr-026-research-batch-and-signed-champion-rule.md) (§5, a Validation run waits for the Code Owner's click, and §9, `workflow_dispatch` is the only trigger, for strategies signed in a batch)
 **Amends**: [ADR-018](adr-018-ci-cd-infrastructure-and-resource-budget.md), adding a backtest runner to its D2 runner
 table. ADR-018 is not edited; this ADR is where the row lives.
 

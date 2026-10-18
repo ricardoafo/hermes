@@ -102,6 +102,7 @@ run_guards() {
     uv run python scripts/dev/migration-sql-check.py || rc=1
     bash scripts/dev/test-file-adjacency.sh --base "${base:-origin/main}" || rc=1
     bash scripts/dev/no-future-annotations.sh --base "${base:-origin/main}" || rc=1
+    python3 scripts/dev/adr-status-check.py || rc=1
     uv run python scripts/dev/hook-coverage-check.py || rc=1
     return "$rc"
 }

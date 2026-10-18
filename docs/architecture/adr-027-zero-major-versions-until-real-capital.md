@@ -1,7 +1,7 @@
 # ADR-027: Release versions are `0.y.z` until a champion trades real money; `1.0.0-shadow.N` is retired
 
 **Date**: 2026-10-17
-**Status**: Proposed — Accepted when the Code Owner merges it
+**Status**: Accepted (merged in PR #1092)
 **Deciders**: Ricardo Afonso (product owner), Claude (proposer)
 **Supersedes**: [ADR-022](adr-022-release-versions-and-deploy-cadence.md) §1 ("Shadow builds are `1.0.0-shadow.N`");
 the `0.x.y` and `1.0.0-shadow.N` pre-release lines of [ADR-006](adr-006-versioning-strategy.md) §1; and, in

@@ -4,6 +4,7 @@
 **Status**: Accepted — confirmed by Ricardo on 2026-10-03; text merged unchanged via #231 on 2026-08-26
 **Deciders**: Ricardo Afonso (product owner, theorist), Claude (proposer, synthesizer)
 **Supersedes**: —
+**Superseded in part by**: [ADR-013](adr-013-shadow-composition-root.md) (D-02, the location of the composition root, and the Shadow row of the mode table)
 
 ---
 
