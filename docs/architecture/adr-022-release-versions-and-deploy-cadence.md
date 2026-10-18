@@ -1,7 +1,7 @@
 # ADR-022: Release versions and deploy cadence — cut versions by release PR, tag them on deploy, and deploy only versions once the shadow clock runs
 
 **Date**: 2026-10-06
-**Status**: Accepted — §1 superseded by [ADR-027](adr-027-zero-major-versions-until-real-capital.md) (`0.y.z` until real capital)
+**Status**: Accepted — §1 superseded by [ADR-027](adr-027-zero-major-versions-until-real-capital.md) (`0.y.z` until real capital); §5 superseded by [ADR-028](adr-028-release-cut-every-merge-window.md) (a cut every merge window)
 **Deciders**: Ricardo Afonso (product owner), Claude (proposer)
 **Supersedes**: [ADR-006](adr-006-versioning-strategy.md) §1 "Version bump rules", the release-cut mechanics only.
 SemVer, the `1.0.0-shadow.N` pre-release scheme (with [ADR-014](adr-014-pre-registration-binds-real-capital.md)'s
