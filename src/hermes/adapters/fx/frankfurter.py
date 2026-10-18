@@ -61,11 +61,9 @@ from hermes.domain.value_objects.currency import Currency
 __all__ = ["FrankfurterAdapter", "FrankfurterConfig"]
 
 
-# The public host moved: this URL now answers 301 to api.frankfurter.dev/v1,
-# which the client does not follow. config/frankfurter.yaml carries the new
-# host; this default stays until its unit test is updated (change
-# trade-eur-values, Risks).
-_DEFAULT_BASE_URL: Final[str] = "https://api.frankfurter.app"
+# Same host as the config default: api.frankfurter.app answers 301 here, and
+# the client does not follow redirects (#1176).
+_DEFAULT_BASE_URL: Final[str] = "https://api.frankfurter.dev/v1"
 _LATEST_PATH: Final[str] = "/latest"
 _DEFAULT_TIMEOUT_SEC: Final[float] = 10.0
 _HTTP_ERROR_THRESHOLD: Final[int] = 400

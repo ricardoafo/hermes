@@ -1,6 +1,7 @@
 """Read-only access to the ``AnomalyDetected`` rows of the ledger ``events`` table (#136).
 
-Opens the ledger with SQLite's ``mode=ro`` URI and never migrates, so
+Opens the ledger through :func:`open_ledger` read-only (``mode=ro`` with the
+shared busy timeout) and never migrates, so
 ``hermes anomalies`` is safe to run next to ``hermes serve``. Each row is
 rehydrated into the :class:`AnomalyDetected` that was appended.
 
@@ -15,6 +16,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Self
 
+from hermes.adapters.ledger.connection import open_ledger
 from hermes.domain.errors import LedgerError
 from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
 
@@ -50,7 +52,7 @@ class SqliteAnomalyReader:
         if not resolved.is_file():
             raise FileNotFoundError(str(path))
         try:
-            connection = sqlite3.connect(f"{resolved.as_uri()}?mode=ro", uri=True)
+            connection = open_ledger(resolved, read_only=True)
         except sqlite3.Error as exc:
             raise LedgerError(msg=f"cannot open {path} read-only: {exc}") from exc
         return cls(connection)

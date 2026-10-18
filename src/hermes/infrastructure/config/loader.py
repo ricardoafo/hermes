@@ -116,7 +116,7 @@ def _read_yaml(path: Path) -> dict[str, Any]:
 
 
 def _coerce_scalar(value: str) -> Any:
-    """Coerce a string env value to bool / int / float / str.
+    """Coerce a string env value to bool / int / str.
 
     Pydantic itself is quite lenient with strict=True + string input for
     scalars: booleans need explicit true/false, numerics are parsed. We do
@@ -128,7 +128,7 @@ def _coerce_scalar(value: str) -> Any:
 
     Returns:
         Bool for ``true``/``false`` (case-insensitive); int if parseable as
-        int; float if parseable as float; otherwise the original string.
+        int; otherwise the original string, decimals included.
     """
     lowered = value.strip().lower()
     if lowered in {"true", "yes", "on"}:
@@ -139,10 +139,8 @@ def _coerce_scalar(value: str) -> Any:
         return int(value)
     except ValueError:
         pass
-    try:
-        return float(value)
-    except ValueError:
-        pass
+    # A decimal string stays a string: pydantic parses it exactly into a Decimal
+    # field, where a float pre-pass would round it first (#1176).
     return value
 
 
