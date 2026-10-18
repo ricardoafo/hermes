@@ -25,6 +25,7 @@ from hermes.adapters.console import FixtureReadModel
 from hermes.application.console.render import RenderContext, render_activity
 from hermes.application.console.views import ActivityDay, ActivityItem, ActivityKind
 from hermes.application.console.visibility import Surface
+from hermes.domain.errors import LedgerError
 from hermes.entrypoints import tui
 from hermes.entrypoints.tui import HomeApp
 from hermes.entrypoints.tui_theme import MOTION
@@ -43,13 +44,19 @@ class _GrowingModel(FixtureReadModel):
     """The fixture whose activity gains one closed row once ``grown`` is set."""
 
     grown = False
+    broken = False
+    extra: ActivityItem | None = None
 
     def activity(self, *, include_quiet: bool = False) -> tuple[ActivityDay, ...]:
+        if self.broken:
+            msg = "ledger locked"
+            raise LedgerError(msg=msg)
         days = super().activity(include_quiet=include_quiet)
         if not self.grown:
             return days
         today = days[0]
-        return (replace(today, items=(_NEW, *today.items)), *days[1:])
+        extra = () if self.extra is None else (self.extra,)
+        return (replace(today, items=(*extra, _NEW, *today.items)), *days[1:])
 
 
 def _run[T](
@@ -136,3 +143,44 @@ def test_render_activity_styles_only_the_rows_it_is_given() -> None:
     styled = render_activity(days, ctx, icons=True, emphasis={_NEW: "on #123456"})
     plain = render_activity(days, ctx, icons=True)
     assert (_background_rows(styled), _background_rows(plain)) == (1, 0)
+
+
+def test_a_second_new_row_in_mid_fade_restarts_the_fade_and_still_ends(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A row that arrives while another fades is highlighted too, and both are gone at the end."""
+    monkeypatch.setattr(tui, "MOTION", replace(MOTION, activity_fade=0.4))
+    later = replace(_NEW, coin="DOGE", at=_FROZEN)
+
+    async def probe(
+        app: HomeApp, pilot: Pilot[None], model: _GrowingModel
+    ) -> tuple[frozenset[object], int, int]:
+        model.grown = True
+        app._redraw()
+        await pilot.pause(0.1)
+        model.extra = later
+        app._redraw()
+        await pilot.pause()
+        both = app._fresh_activity
+        await pilot.pause(1.5)
+        return both, len(app._fresh_activity), _background_rows(app._content["activity"])
+
+    assert _run(probe) == (frozenset({later}), 0, 0)
+
+
+def test_a_failed_activity_read_in_mid_fade_shows_the_error_and_no_highlight() -> None:
+    """The card says it is unavailable while rows were fading; no stale tint stays behind."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None], model: _GrowingModel) -> tuple[bool, int]:
+        model.grown = True
+        app._redraw()
+        await pilot.pause()
+        model.broken = True
+        app._redraw()
+        await pilot.pause()
+        card = " ".join(app.plain_text("activity").split())
+        return "could not read the ledger: ledger locked" in card, _background_rows(
+            app._content["activity"]
+        )
+
+    assert _run(probe) == (True, 0)
