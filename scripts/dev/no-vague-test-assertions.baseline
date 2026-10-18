@@ -20,16 +20,6 @@ tests/unit/adapters/exchanges/test_kraken_public.py::test_call_after_ttl_refetch
 tests/unit/adapters/exchanges/test_kraken_public.py::test_error_inherits_from_infra_error U3
 tests/unit/adapters/exchanges/test_kraken_public.py::test_second_call_within_ttl_does_not_hit_wire U10
 tests/unit/adapters/exchanges/test_kraken_spot.py::test_adapter_satisfies_both_ports U6
-tests/unit/adapters/exchanges/test_simulated.py::test_buy_fill_opens_lot U3
-tests/unit/adapters/exchanges/test_simulated.py::test_buy_limit_at_ask_returns_fill U3
-tests/unit/adapters/exchanges/test_simulated.py::test_buy_limit_below_ask_returns_rejection U3
-tests/unit/adapters/exchanges/test_simulated.py::test_cancel_returns_none U3
-tests/unit/adapters/exchanges/test_simulated.py::test_isinstance_exchange_port U6
-tests/unit/adapters/exchanges/test_simulated.py::test_lot_is_lot_instance U3
-tests/unit/adapters/exchanges/test_simulated.py::test_multiple_buys_grow_lot_ledger U3
-tests/unit/adapters/exchanges/test_simulated.py::test_sell_fill_does_not_open_lot U3
-tests/unit/adapters/exchanges/test_simulated.py::test_sell_limit_above_bid_returns_rejection U3
-tests/unit/adapters/exchanges/test_simulated.py::test_sell_limit_at_bid_returns_fill U3
 tests/unit/adapters/fees/test_binance_history.py::test_load_returns_expected_row_count U3
 tests/unit/adapters/fills/test_orderbook_walk.py::test_different_seeds_do_not_guarantee_different_fills U3
 tests/unit/adapters/fills/test_orderbook_walk.py::test_fill_order_returns_fill_or_rejection U3
