@@ -110,9 +110,9 @@ jobs:
         run: |
           set -uo pipefail
           mkdir -p "$RUNNER_TEMP/check"
+          code=0
           uv run hermes batch check "$FILE" --require-signed \
-            --candidates-out "$RUNNER_TEMP/check/candidates.json" > "$RUNNER_TEMP/check/check.txt"
-          code=$?
+            --candidates-out "$RUNNER_TEMP/check/candidates.json" > "$RUNNER_TEMP/check/check.txt" || code=$?
           awk '/^(PASS|FAIL|NA) /{print $1, $2}' "$RUNNER_TEMP/check/check.txt" >> "$GITHUB_STEP_SUMMARY"
           if [ "$code" -ne 0 ]; then
             echo "::error::hermes batch check exited $code, so no candidate runs"
@@ -321,10 +321,10 @@ jobs:
             [ -d "$dir" ] || continue
             mv "$dir" "$evidence/${dir##*/evidence-train-}"
           done
+          code=0
           uv run hermes funnel --batch "$BATCH_FILE" --stage train \
             --evidence-dir "$evidence" --trial-log "$RUNNER_TEMP/chain/trial-log.jsonl" \
-            --out "$out" > "$out/stdout.txt"
-          code=$?
+            --out "$out" > "$out/stdout.txt" || code=$?
           case "$code" in
             0|1) ;;
             *) echo "::error::hermes funnel --batch exited $code (usage, data or evidence error)"; exit "$code" ;;
@@ -437,10 +437,11 @@ jobs:
       - name: Family Validation budget
         run: |
           set -uo pipefail
+          code=0
           uv run python scripts/backtest/validation_budget.py \
             --trial-log "$RUNNER_TEMP/chain/trial-log.jsonl" \
-            --batch "$BATCH_FILE" --candidate "$CANDIDATE" | tee -a "$GITHUB_STEP_SUMMARY"
-          code=${PIPESTATUS[0]}
+            --batch "$BATCH_FILE" --candidate "$CANDIDATE" | tee -a "$GITHUB_STEP_SUMMARY" \
+            || code=${PIPESTATUS[0]}
           if [ "$code" -ne 0 ]; then
             echo "::error::$CANDIDATE's family has no Validation touch left (exit $code)"
             exit 1
@@ -548,10 +549,10 @@ jobs:
             [ -d "$dir" ] || continue
             mv "$dir" "$evidence/${dir##*/evidence-validation-}"
           done
+          code=0
           uv run hermes funnel --batch "$BATCH_FILE" --stage validation \
             --evidence-dir "$evidence" --trial-log "$RUNNER_TEMP/chain/trial-log.jsonl" \
-            --out "$out" > "$out/stdout.txt"
-          code=$?
+            --out "$out" > "$out/stdout.txt" || code=$?
           case "$code" in
             0|1) ;;
             *) echo "::error::hermes funnel --batch exited $code (usage, data or evidence error)"; exit "$code" ;;
