@@ -77,6 +77,8 @@ script, from a fresh branch off `main`:
 
 ```bash
 uv run python scripts/dev/cut-release.py 0.2.0
+# or, at a merge window (ADR-028): pick the version from the entries
+uv run python scripts/dev/cut-release.py --next --engine-change no
 ```
 
 It merges the hand-written `[Unreleased]` entries and every numbered or

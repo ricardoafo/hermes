@@ -24,6 +24,7 @@ from typing import Any, Final
 from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
 from hermes.domain.strategy.swing.daily_ma import DailyMaAdapter
 from hermes.domain.strategy.swing.ensemble import BreakoutEnsembleAdapter
+from hermes.domain.strategy.swing.pullback import PullbackAdapter
 from hermes.domain.strategy.swing.trend_slope import TrendSlopeAdapter
 from hermes.ports.strategy import StrategyPort
 
@@ -32,6 +33,7 @@ __all__ = [
     "DAILY_MA",
     "DONCHIAN_BREAKOUT",
     "DONCHIAN_SLOPE",
+    "RSI_PULLBACK",
     "StrategyKind",
     "UnknownSignalError",
     "known_signals",
@@ -52,6 +54,10 @@ DAILY_MA: Final = "daily_ma"
 
 DONCHIAN_SLOPE: Final = "donchian_slope"
 """Research batch swing-b1 C3: v2's rule plus a rising daily EMA(200) (issue #1065)."""
+
+
+RSI_PULLBACK: Final = "rsi_pullback"
+"""Research batch swing-b1 C4: a 4h RSI pullback inside a rising daily trend (issue #1066)."""
 
 
 class UnknownSignalError(ValueError):
@@ -108,6 +114,7 @@ _KINDS: Final[Mapping[str, StrategyKind[StrategyPort]]] = MappingProxyType(
         BREAKOUT_ENSEMBLE: StrategyKind(BREAKOUT_ENSEMBLE, BreakoutEnsembleAdapter),
         DAILY_MA: StrategyKind(DAILY_MA, DailyMaAdapter),
         DONCHIAN_SLOPE: StrategyKind(DONCHIAN_SLOPE, TrendSlopeAdapter),
+        RSI_PULLBACK: StrategyKind(RSI_PULLBACK, PullbackAdapter),
     }
 )
 
