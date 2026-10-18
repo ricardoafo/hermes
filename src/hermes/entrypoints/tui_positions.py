@@ -143,7 +143,7 @@ def position_rows(
                 "state": "open",
                 "when": f"opened {_when(position.opened_at, ctx.tz)}",
                 "at": position.opened_at,
-                "change": signed_pct(position.change_pct),
+                "change": signed_pct(position.change_pct) if money else None,
                 "net": signed_eur(position.net) if priced else None,
                 "stop": f"{MINUS}{abs(position.stop_distance_pct):.1f}% · "
                 f"{position.stop_distance_atr:.1f} ATR",

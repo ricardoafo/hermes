@@ -47,6 +47,7 @@ from hermes.entrypoints.tui_positions import (
     closed_items,
     position_rows,
 )
+from hermes.entrypoints.tui_query import QueryList
 from hermes.entrypoints.tui_settings import ThemeChoice
 from hermes.entrypoints.tui_theme import BASE
 
@@ -104,6 +105,14 @@ def test_a_surface_that_hides_money_gets_no_net_in_any_row() -> None:
     hidden = position_rows(model.positions(), (_closed("BTC", 10),), _HIDDEN)
     shown = position_rows(model.positions(), (_closed("BTC", 10),), _OPERATOR)
     assert ([r["net"] for r in hidden], all(r["net"] for r in shown)) == ([None, None, None], True)
+
+
+def test_a_surface_that_hides_money_gets_no_change_in_any_row() -> None:
+    """The change since entry is profit and loss, so a money-hiding surface shows none."""
+    model = _model()
+    hidden = position_rows(model.positions(), (), _HIDDEN)
+    shown = position_rows(model.positions(), (), _OPERATOR)
+    assert ([r["change"] for r in hidden], all(r["change"] for r in shown)) == ([None, None], True)
 
 
 def test_the_closed_detail_shows_exit_price_and_net_only_with_money() -> None:
@@ -189,7 +198,7 @@ def test_the_screen_lists_open_positions_then_the_closed_one() -> None:
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> list[tuple[object, object]]:
         del pilot
-        return [(r["coin"], r["state"]) for r in app.positions_view.query_one("QueryList").shown]  # type: ignore[attr-defined]
+        return [(r["coin"], r["state"]) for r in app.positions_view.query_one(QueryList).shown]
 
     assert _run(probe) == [("ETH", "open"), ("SOL", "open"), ("BTC", "closed")]
 
@@ -231,8 +240,10 @@ def test_the_cursor_stays_on_its_position_when_a_refresh_changes_the_rows() -> N
         view = app.positions_view
         reads = app._reads
         assert reads is not None
+        assert isinstance(reads.positions, tuple)
+        assert isinstance(reads.activity, tuple)
         newer = _closed("XRP", 12)
-        view.receive(reads.positions, (newer, *closed_items(reads.activity)), reads.ctx)  # type: ignore[arg-type]
+        view.receive(reads.positions, (newer, *closed_items(reads.activity)), reads.ctx)
         await pilot.pause()
         return view.selected_key()
 
@@ -246,7 +257,7 @@ def test_a_failed_read_says_so_in_the_note_and_lists_no_row() -> None:
         view = app.positions_view
         view.receive(None, (), _OPERATOR, error="Positions not available: ledger locked")
         await pilot.pause()
-        return _text(app), len(view.query_one("QueryList").shown)  # type: ignore[attr-defined]
+        return _text(app), len(view.query_one(QueryList).shown)
 
     text, rows = _run(probe)
     assert ("Positions not available: ledger locked" in text, rows) == (True, 0)
