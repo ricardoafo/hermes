@@ -148,7 +148,7 @@ def test_render_activity_styles_only_the_rows_it_is_given() -> None:
 def test_a_second_new_row_in_mid_fade_restarts_the_fade_and_still_ends(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A row that arrives while another fades is highlighted too, and both are gone at the end."""
+    """A row arriving mid-fade becomes the highlighted one, and its highlight ends too."""
     monkeypatch.setattr(tui, "MOTION", replace(MOTION, activity_fade=0.4))
     later = replace(_NEW, coin="DOGE", at=_FROZEN)
 
