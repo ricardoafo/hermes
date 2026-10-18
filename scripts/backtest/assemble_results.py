@@ -77,6 +77,13 @@ def validate_verdict(verdict: dict[str, Any]) -> None:
             and key not in NUMBER_KEYS
         ):
             raise ResultsError(f"verdict field {key} holds a number")
+    for key in NUMBER_KEYS:
+        value = verdict.get(key)
+        if value is not None and (not isinstance(value, int) or isinstance(value, bool)):
+            raise ResultsError(f"verdict {key} is not a whole number or null")
+    trial_lines = verdict.get("trial_lines")
+    if trial_lines is not None and trial_lines < 0:
+        raise ResultsError("verdict trial_lines is negative")
     if not isinstance(verdict.get("passed"), bool):
         raise ResultsError("verdict passed is not a boolean")
     for key in ("goes_on", "champion"):

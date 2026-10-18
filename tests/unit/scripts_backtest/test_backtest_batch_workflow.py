@@ -146,6 +146,17 @@ def test_results_job_requires_the_trial_log_chain_whenever_verdicts_exist() -> N
     assert "--require-chain" in run
 
 
+def test_results_pr_metadata_failing_does_not_fail_the_run_after_the_pr_is_open() -> None:
+    """A renamed label or a closed milestone leaves a warning, not a red run with an open PR."""
+    script = _step("results", "Open the PR")["with"]["script"]
+    opened = script.index("pulls.create")
+    guarded = script.index("try {")
+
+    assert opened < script.index("issues.update")
+    assert guarded < script.index("issues.update")
+    assert "core.warning" in script[guarded:]
+
+
 def test_results_job_is_skipped_with_a_notice_until_the_app_is_configured(tmp_path: Path) -> None:
     """Without HERMES_RESULTS_APP_ID the job succeeds, opens nothing and says where lines stay."""
     output = tmp_path / "out"

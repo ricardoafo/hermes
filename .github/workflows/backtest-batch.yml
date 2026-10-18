@@ -752,13 +752,18 @@ jobs:
               base: 'main',
               body,
             });
-            await github.rest.issues.update({
-              owner, repo, issue_number: pr.number,
-              labels: ['type:docs', 'p1', 'area:docs', 'size:s'],
-              assignees: ['rafo-claude-bot'],
-              milestone: 5,
-            });
-            await github.rest.pulls.requestReviewers({
-              owner, repo, pull_number: pr.number, reviewers: [owner],
-            });
             core.notice(`Opened PR #${pr.number}`);
+            // The PR exists now; a renamed label or a closed milestone must not turn the run red.
+            try {
+              await github.rest.issues.update({
+                owner, repo, issue_number: pr.number,
+                labels: ['type:docs', 'p1', 'area:docs', 'size:s'],
+                assignees: ['rafo-claude-bot'],
+                milestone: 5,
+              });
+              await github.rest.pulls.requestReviewers({
+                owner, repo, pull_number: pr.number, reviewers: [owner],
+              });
+            } catch (error) {
+              core.warning(`PR #${pr.number} is open, but its metadata could not be set: ${error.message}`);
+            }
