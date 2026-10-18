@@ -535,6 +535,36 @@ def test_a_stop_loss_whose_reply_was_lost_returns_the_found_order_id(
     assert order_id == "BTCUSDT:77"
 
 
+@respx.mock
+def test_a_stop_loss_in_flight_at_the_first_lookup_returns_the_order_found_on_the_recheck(
+    adapter: BinanceSpotAdapter,
+) -> None:
+    """A lost stop-loss read -2013 then resting returns its order id, not "not placed" (#1027).
+
+    Calling it not placed would let the caller place a second stop for the same position.
+    """
+    respx.post(url__startswith=_ORDER_URL).mock(side_effect=httpx.ReadTimeout("slow"))
+    lookup = respx.get(url__startswith=_ORDER_URL).mock(
+        side_effect=[
+            _NO_SUCH,
+            httpx.Response(
+                200,
+                json={
+                    "orderId": 79,
+                    "status": "NEW",
+                    "executedQty": "0",
+                    "cummulativeQuoteQty": "0",
+                    "time": _NOW_MS,
+                },
+            ),
+        ]
+    )
+
+    order_id = adapter.place_stop_loss(order=_order(OrderSide.SELL), stop_price=Decimal("60000"))
+
+    assert (order_id, lookup.call_count, _SLEPT) == ("BTCUSDT:79", 2, [2.0])
+
+
 # SEV-1: no rubric row matches; a dead stop reported as resting leaves a position unprotected
 @respx.mock
 @pytest.mark.parametrize("status", ["CANCELED", "EXPIRED", "REJECTED"])

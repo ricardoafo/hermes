@@ -65,6 +65,7 @@ _SIGTERM = _S + "test_chaos_sigterm_mid_bar.py::"
 _EVERY_BAR = _PATHS + "test_every_rule_holds_after_every_bar_and_a_restart_changes_nothing"
 _FUZZ_BINANCE = _U + "adapters/market_data/test_wire_fuzz_binance.py::"
 _FUZZ_KRAKEN = _U + "adapters/exchanges/test_wire_fuzz_kraken.py::"
+_BINANCE_SPOT = _U + "adapters/exchanges/test_binance_spot.py::"
 _FUZZ_LEDGER = _U + "adapters/ledger/test_reader_fuzz.py::"
 _FUZZ_CONFIG = _U + "infrastructure/config/test_loader_fuzz.py::"
 _CONTENTION = _I + "adapters/ledger/test_ledger_contention.py::"
@@ -293,6 +294,18 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         FailureMode(
             "An order reply is lost, so the order state is unknown",
             gap="issue #858: a Binance 5xx reads as a refusal and no client order id exists",
+        ),
+        FailureMode(
+            "An order still in flight inside Binance reads as never placed on the first lookup",
+            proved_by=(
+                _BINANCE_SPOT + "test_an_order_binance_never_saw_is_looked_up_twice_a_wait_apart",
+                _BINANCE_SPOT
+                + "test_an_order_in_flight_at_the_first_lookup_returns_the_fill_found_on"
+                "_the_recheck",
+                _BINANCE_SPOT
+                + "test_a_stop_loss_in_flight_at_the_first_lookup_returns_the_order_found"
+                "_on_the_recheck",
+            ),
         ),
         FailureMode(
             "A filled order is reported as an error",
