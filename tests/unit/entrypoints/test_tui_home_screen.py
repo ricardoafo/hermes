@@ -92,6 +92,18 @@ def _run[T](
     return asyncio.run(drive())
 
 
+async def _until(pilot: Pilot[None], done: Callable[[], bool], *, seconds: float = 5.0) -> None:
+    """Wait until ``done()`` holds, so a slow runner cannot be read before the screen moves.
+
+    Raises:
+        TimeoutError: ``done()`` did not hold within ``seconds``.
+
+    """
+    async with asyncio.timeout(seconds):
+        while not done():
+            await pilot.pause(0.01)
+
+
 def _fixture(scenario: str = "ok-two-positions") -> ConsoleReadModel:
     return FixtureReadModel.load(scenario)
 
@@ -204,7 +216,7 @@ def test_compact_draws_the_sparkline_line_instead_of_the_curve() -> None:
 
 
 def test_big_total_counts_up_with_motion_on() -> None:
-    """A €100 rise counts up: mid-way the number is between, after 0.6 s it is the new total."""
+    """A €100 rise counts up: mid-way the number is between, once it ends it is the new total."""
     model = _Growing()
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[str, str, str]:
@@ -212,9 +224,9 @@ def test_big_total_counts_up_with_motion_on() -> None:
         before = big.value
         model.grown = True
         app._redraw()
-        await pilot.pause(0.2)
+        await _until(pilot, lambda: big.value != before)
         during = big.value
-        await pilot.pause(0.8)
+        await _until(pilot, lambda: big.value == big.figure and not big._counting)
         return before, during, big.value
 
     before, during, after = _run(cast("ConsoleReadModel", model), probe, motion=True)
