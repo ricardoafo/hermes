@@ -10,6 +10,7 @@ Invariants protected here:
   so prod talks only to the real vendors;
 - qa and staging refuse a trading key; dev and sandbox keep their testnet
   keys;
+- only dev and qa may set a test clock, and only on loopback (#972);
 - every refusal names the field or variable and never echoes its value,
   since the ping URL, the DSN and the keys carry credentials.
 """
@@ -211,3 +212,39 @@ def test_market_data_still_refuses_any_other_host() -> None:
     """Only the public host and loopback fakes are allowed."""
     with pytest.raises(ValueError, match=r"not an allowed market-data host .* or a loopback fake"):
         MarketDataConfig(base_url="https://api.binance.com")
+
+
+_CLOCK = f"http://127.0.0.1:9000/_fake/clock?{_MARKER}"
+
+
+@pytest.mark.parametrize("tier", ["dev", "qa"])
+def test_dev_and_qa_may_run_on_a_loopback_test_clock(tier: str) -> None:
+    """The scenario tiers may move a release onto the fake market's clock (#972)."""
+    env = {"HERMES_ENV": tier, "HERMES_TEST_CLOCK_URL": _CLOCK}
+
+    assert load_config(_REPO_CONFIG, env=env).env == tier
+
+
+@pytest.mark.parametrize("tier", ["sandbox", "staging", "prod"])
+def test_every_other_tier_refuses_a_test_clock_by_name(tier: str) -> None:
+    """Staging and prod always run on wall time; so does sandbox, which trades testnet."""
+    message = _refusal({"HERMES_ENV": tier, "HERMES_TEST_CLOCK_URL": _CLOCK})
+
+    assert "HERMES_TEST_CLOCK_URL is set, which only dev, qa may use" in message
+    assert _MARKER not in message
+
+
+def test_qa_refuses_a_test_clock_off_loopback() -> None:
+    """A test clock is a local fake; a remote one would move time from elsewhere."""
+    message = _refusal(
+        {"HERMES_ENV": "qa", "HERMES_TEST_CLOCK_URL": f"http://clock.example/{_MARKER}"}
+    )
+
+    assert "HERMES_TEST_CLOCK_URL is not a loopback host, which a test clock must be" in message
+    assert _MARKER not in message
+
+
+@pytest.mark.parametrize("blank", ["", "  "])
+def test_a_blank_test_clock_is_no_clock(blank: str) -> None:
+    """An empty variable, as a rendered env file may leave, sets nothing."""
+    assert env_tier_problems("prod", {"HERMES_TEST_CLOCK_URL": blank}) == []

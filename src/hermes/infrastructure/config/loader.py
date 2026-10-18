@@ -38,6 +38,7 @@ import yaml
 from dotenv import load_dotenv
 from pydantic import BaseModel, ValidationError
 
+from hermes.adapters.clock.remote import TEST_CLOCK_URL_ENV
 from hermes.adapters.endpoint import (
     DEFAULT_SLACK_API_BASE,
     DEFAULT_TELEGRAM_API_BASE,
@@ -108,6 +109,9 @@ _TRADING_KEY_ENV_VARS: tuple[str, ...] = (
     "HERMES_KRAKEN__API_SECRET",
 )
 _NO_TRADING_KEY_TIERS: frozenset[str] = frozenset({"qa", "staging"})
+# A test clock moves the release onto the fake market's scripted time (#972),
+# so only the tiers that run scenarios may name one, and only on loopback.
+_TEST_CLOCK_TIERS: frozenset[str] = frozenset({"dev", "qa"})
 _NOTIFIER_API_BASES: Mapping[str, str] = MappingProxyType(
     {
         TELEGRAM_API_BASE_ENV: DEFAULT_TELEGRAM_API_BASE,
@@ -567,4 +571,10 @@ def env_tier_problems(tier: str, env: Mapping[str, str]) -> list[str]:
             problems.append(f"{name} points at a loopback host, which only {allowed} may use")
         elif tier == "prod" and value.rstrip("/") != default:
             problems.append(f"{name} is not the default endpoint, which prod requires")
+    clock_url = env.get(TEST_CLOCK_URL_ENV, "").strip()
+    if clock_url and tier not in _TEST_CLOCK_TIERS:
+        allowed = ", ".join(sorted(_TEST_CLOCK_TIERS))
+        problems.append(f"{TEST_CLOCK_URL_ENV} is set, which only {allowed} may use")
+    elif clock_url and not is_loopback(clock_url):
+        problems.append(f"{TEST_CLOCK_URL_ENV} is not a loopback host, which a test clock must be")
     return problems
