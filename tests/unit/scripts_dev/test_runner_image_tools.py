@@ -44,17 +44,44 @@ def callers_of_gh() -> set[str]:
     return found
 
 
+def run_instructions(dockerfile: str) -> list[str]:
+    """Return each live ``RUN`` instruction, continuation lines joined, comments dropped."""
+    joined = re.sub(
+        r"\\\n",
+        " ",
+        "\n".join(line for line in dockerfile.splitlines() if not line.lstrip().startswith("#")),
+    )
+    return [line for line in joined.splitlines() if line.startswith("RUN ")]
+
+
+def _gh_install() -> str:
+    """Return the one RUN instruction that installs gh."""
+    runs = [
+        r
+        for r in run_instructions(_DOCKERFILE.read_text(encoding="utf-8"))
+        if "/usr/local/bin/gh" in r
+    ]
+    assert len(runs) == 1
+    return runs[0]
+
+
+def test_run_instructions_skip_comments_and_join_continuations() -> None:
+    """A commented-out install is not an install; a continued RUN is one instruction."""
+    text = "# RUN curl x \\\n#  && gh --version\nRUN a \\\n && b\nUSER x\n"
+    assert run_instructions(text) == ["RUN a   && b"]
+
+
 def test_the_scan_finds_the_jobs_that_need_gh() -> None:
     """The scan sees the branch prune script, so an empty result cannot pass by accident."""
     assert "scripts/dev/prune-merged-branches.sh" in callers_of_gh()
 
 
 def test_the_image_installs_gh_when_a_job_calls_it() -> None:
-    """A job that calls gh runs on an image with gh on PATH, checked at build time."""
-    dockerfile = _DOCKERFILE.read_text(encoding="utf-8")
+    """A job that calls gh runs on an image whose live RUN puts gh on PATH and runs it."""
     assert callers_of_gh()
-    assert "/usr/local/bin/gh" in dockerfile
-    assert "&& gh --version" in dockerfile
+    install = _gh_install()
+    assert "install -m 0755" in install
+    assert install.rstrip().endswith("&& gh --version")
 
 
 def test_gh_is_pinned_and_checksum_verified() -> None:
@@ -62,4 +89,4 @@ def test_gh_is_pinned_and_checksum_verified() -> None:
     dockerfile = _DOCKERFILE.read_text(encoding="utf-8")
     assert re.search(r"^ARG GH_VERSION=\d+\.\d+\.\d+$", dockerfile, re.MULTILINE)
     assert re.search(r"^ARG GH_SHA256=[0-9a-f]{64}$", dockerfile, re.MULTILINE)
-    assert 'echo "${GH_SHA256}  /tmp/gh.tar.gz" | sha256sum -c -' in dockerfile
+    assert 'echo "${GH_SHA256}  /tmp/gh.tar.gz" | sha256sum -c -' in _gh_install()
