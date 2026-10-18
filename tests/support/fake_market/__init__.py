@@ -13,4 +13,6 @@ the production code paths (issue #688).
   production fixtures and every generated payload pass the same checks.
 - :mod:`.exchange` answers the adapters' requests on a simulated clock.
 - :mod:`.harness` wires ``hermes serve`` to it.
+- :mod:`.service` serves the same answers on a loopback socket, with a
+  control API, for a process the mock transport cannot reach (issue #971).
 """
