@@ -9,7 +9,7 @@
 #   /etc/hermes/env.staging                  shared secrets, HERMES_ENV="staging", no keys
 #
 # Shipped disabled: nothing in the repo enables it. The first ledger is created
-# by hand with --new-ledger; see docs/guides/staging-on-hermes-01.md. Serve
+# by hand with --new-ledger; see docs/guides/environments.md. Serve
 # refuses a ledger that holds another strategy's capital, so an instance can
 # never run on a second shadow's file.
 #
