@@ -35,9 +35,11 @@ Reference: spec-2c-simulated-exchange-adapter/change.md.
 
 from __future__ import annotations
 
+import inspect
 import random
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import get_type_hints
 
 import pytest
 
@@ -45,17 +47,26 @@ from hermes.adapters.clock.simulated import SimulatedClock
 from hermes.adapters.exchanges.simulated import SimulatedExchangeAdapter
 from hermes.adapters.fills.orderbook_walk import OrderbookWalkFillModel
 from hermes.domain.fees.fee_schedule import FeeSchedule, FeeTier
-from hermes.domain.lots.lot import Lot
 from hermes.domain.market_data.orderbook import Orderbook, OrderbookLevel
 from hermes.domain.trading.fill import Fill, Rejection
 from hermes.domain.trading.order import Order, OrderSide
 from hermes.domain.value_objects.currency import Currency
+from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.ports.exchange import ExchangePort
 
 _STRATEGY_ID = StrategyId("test-strategy")
+
+_PORT_METHODS = (
+    "place_market_order",
+    "place_limit_order",
+    "cancel_order",
+    "get_orderbook",
+    "get_balance",
+    "get_fees",
+)
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -168,15 +179,22 @@ def _sell_order(
 
 
 class TestPortConformance:
-    """SimulatedExchangeAdapter must satisfy ExchangePort structurally."""
+    """SimulatedExchangeAdapter must match every ExchangePort method signature."""
 
-    def test_isinstance_exchange_port(self) -> None:
-        """``isinstance(SimulatedExchangeAdapter(...), ExchangePort)`` must be True."""
-        adapter = _make_adapter()
-        assert isinstance(adapter, ExchangePort), (
-            "SimulatedExchangeAdapter must satisfy ExchangePort via structural subtyping "
-            "(runtime_checkable Protocol). Check that all six methods match the Protocol "
-            "signatures exactly."
+    @pytest.mark.parametrize("method_name", sorted(_PORT_METHODS))
+    def test_method_signature_matches_the_port(self, method_name: str) -> None:
+        """Parameter names, kinds and annotations equal the port's, so no adapter drift.
+
+        Methods are keyword-only on both sides; a renamed or retyped parameter
+        would break the composition root that swaps this adapter for another.
+        """
+        port_sig = inspect.signature(getattr(ExchangePort, method_name))
+        adapter_sig = inspect.signature(getattr(SimulatedExchangeAdapter, method_name))
+        assert [(p.name, p.kind) for p in adapter_sig.parameters.values()] == [
+            (p.name, p.kind) for p in port_sig.parameters.values()
+        ]
+        assert get_type_hints(getattr(SimulatedExchangeAdapter, method_name)) == get_type_hints(
+            getattr(ExchangePort, method_name)
         )
 
 
@@ -288,39 +306,47 @@ class TestPlaceLimitOrder:
     """Behaviour of place_limit_order."""
 
     def test_buy_limit_at_ask_returns_fill(self) -> None:
-        """BUY limit at or above best ask returns Fill."""
+        """BUY limit at the best ask fills 0.1 BTC at 60001 with the 26 bps taker fee."""
         adapter = _make_adapter()
         order = _buy_order(qty=Decimal("0.1"), limit_price=Decimal("60001"))
-        result = adapter.place_limit_order(order=order)
-        assert isinstance(result, Fill), (
-            f"BUY limit at ask must return Fill, got {type(result).__name__!r}"
+        assert adapter.place_limit_order(order=order) == Fill(
+            order=order,
+            executed_qty=Decimal("0.1"),
+            avg_price=Decimal("60001"),
+            # 0.1 * 60001 * 26 / 10_000
+            fee=Money(amount=Decimal("15.60026"), currency=Currency.USDT),
+            timestamp=_T0,
         )
 
     def test_buy_limit_below_ask_returns_rejection(self) -> None:
-        """BUY limit below best ask returns Rejection."""
+        """BUY limit below the best ask is rejected with the price-filter reason."""
         adapter = _make_adapter()
         order = _buy_order(qty=Decimal("0.1"), limit_price=Decimal("59000"))
-        result = adapter.place_limit_order(order=order)
-        assert isinstance(result, Rejection), (
-            f"BUY limit below ask must return Rejection, got {type(result).__name__!r}"
+        assert adapter.place_limit_order(order=order) == Rejection(
+            order=order,
+            reason="PRICE_FILTER: best ask 60001 > limit_price 59000 for BUY order on BTC/USDT",
         )
 
     def test_sell_limit_at_bid_returns_fill(self) -> None:
-        """SELL limit at or below best bid returns Fill."""
+        """SELL limit at the best bid fills 0.1 BTC at 60000 with the 26 bps taker fee."""
         adapter = _make_adapter()
         order = _sell_order(qty=Decimal("0.1"), limit_price=Decimal("60000"))
-        result = adapter.place_limit_order(order=order)
-        assert isinstance(result, Fill), (
-            f"SELL limit at bid must return Fill, got {type(result).__name__!r}"
+        assert adapter.place_limit_order(order=order) == Fill(
+            order=order,
+            executed_qty=Decimal("0.1"),
+            avg_price=Decimal("60000"),
+            # 0.1 * 60000 * 26 / 10_000
+            fee=Money(amount=Decimal("15.6"), currency=Currency.USDT),
+            timestamp=_T0,
         )
 
     def test_sell_limit_above_bid_returns_rejection(self) -> None:
-        """SELL limit above best bid returns Rejection."""
+        """SELL limit above the best bid is rejected with the price-filter reason."""
         adapter = _make_adapter()
         order = _sell_order(qty=Decimal("0.1"), limit_price=Decimal("70000"))
-        result = adapter.place_limit_order(order=order)
-        assert isinstance(result, Rejection), (
-            f"SELL limit above bid must return Rejection, got {type(result).__name__!r}"
+        assert adapter.place_limit_order(order=order) == Rejection(
+            order=order,
+            reason="PRICE_FILTER: best bid 60000 < limit_price 70000 for SELL order on BTC/USDT",
         )
 
     def test_raises_on_missing_limit_price(self) -> None:
@@ -357,15 +383,6 @@ class TestCancelOrder:
         adapter = _make_adapter()
         # Must not raise
         adapter.cancel_order(order_id="non-existent-id-12345")
-
-    def test_cancel_returns_none(self) -> None:
-        """cancel_order always returns None (port contract)."""
-        adapter = _make_adapter()
-        result = adapter.cancel_order(order_id="any-id")
-        # Port contract: cancel_order returns None always (void).
-        assert result is None, f"cancel_order must return None, got {result!r}"
-        # After cancel, lot_ledger is still empty (cancel does not affect lots).
-        assert len(adapter.lot_ledger) == 0, "cancel_order must not add entries to lot_ledger"
 
 
 # ---------------------------------------------------------------------------
@@ -567,11 +584,17 @@ class TestLotTracking:
     """BUY fills open Lots; SELL fills do not."""
 
     def test_buy_fill_opens_lot(self) -> None:
-        """A single BUY fill creates exactly one Lot in lot_ledger."""
+        """A BUY fill opens one lot carrying the fill's quantity, USDT basis and fee."""
         adapter = _make_adapter()
         adapter.place_market_order(side=OrderSide.BUY, order=_buy_order(qty=Decimal("0.1")))
-        assert len(adapter.lot_ledger) == 1, (
-            f"lot_ledger must have 1 Lot after one BUY fill, got {len(adapter.lot_ledger)!r}"
+        (lot,) = adapter.lot_ledger
+        assert lot.original_qty == Quantity(amount=Decimal("0.1"), asset=Currency.BTC)
+        assert lot.remaining_qty == lot.original_qty
+        # No FX rate here, so the EUR basis stays unset and the native basis is
+        # (0.1 * 60001 + 0.1 * 60001 * 26 / 10_000) / 0.1.
+        assert lot.cost_basis_per_unit is None
+        assert lot.cost_basis_native_per_unit == Money(
+            amount=Decimal("60157.0026"), currency=Currency.USDT
         )
 
     def test_sell_fill_does_not_open_lot(self) -> None:
@@ -580,9 +603,7 @@ class TestLotTracking:
             initial_balances={Currency.USDT: Decimal("0"), Currency.BTC: Decimal("5")}
         )
         adapter.place_market_order(side=OrderSide.SELL, order=_sell_order(qty=Decimal("0.1")))
-        assert len(adapter.lot_ledger) == 0, (
-            f"lot_ledger must be empty after SELL fill, got {len(adapter.lot_ledger)!r}"
-        )
+        assert adapter.lot_ledger == []
 
     def test_lot_asset_matches_fill(self) -> None:
         """Lot.asset matches the fill's base currency."""
@@ -629,22 +650,16 @@ class TestLotTracking:
         assert lot.opened_at == _T0, f"Lot.opened_at must be {_T0!r}, got {lot.opened_at!r}"
 
     def test_multiple_buys_grow_lot_ledger(self) -> None:
-        """Each BUY fill appends one Lot to lot_ledger."""
+        """Each BUY fill appends its own lot, with a distinct id, in fill order."""
         adapter = _make_adapter()
-        for _ in range(3):
-            adapter.place_market_order(side=OrderSide.BUY, order=_buy_order(qty=Decimal("0.05")))
-        assert len(adapter.lot_ledger) == 3, (
-            f"lot_ledger must have 3 Lots after 3 BUY fills, got {len(adapter.lot_ledger)!r}"
-        )
-
-    def test_lot_is_lot_instance(self) -> None:
-        """Items in lot_ledger are Lot instances."""
-        adapter = _make_adapter()
-        adapter.place_market_order(side=OrderSide.BUY, order=_buy_order())
-        lot = adapter.lot_ledger[0]
-        assert isinstance(lot, Lot), (
-            f"lot_ledger items must be Lot instances, got {type(lot).__name__!r}"
-        )
+        for qty in ("0.05", "0.06", "0.07"):
+            adapter.place_market_order(side=OrderSide.BUY, order=_buy_order(qty=Decimal(qty)))
+        assert [lot.original_qty.amount for lot in adapter.lot_ledger] == [
+            Decimal("0.05"),
+            Decimal("0.06"),
+            Decimal("0.07"),
+        ]
+        assert len({lot.lot_id for lot in adapter.lot_ledger}) == 3
 
 
 # ---------------------------------------------------------------------------

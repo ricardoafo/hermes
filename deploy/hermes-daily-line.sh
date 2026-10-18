@@ -34,7 +34,8 @@ set +x
 hermes_bin="${HERMES_DAILY_HERMES_BIN:-/opt/hermes/current/.venv/bin/hermes}"
 config_dir="${HERMES_DAILY_CONFIG_DIR:-/opt/hermes/current/config}"
 db="${HERMES_DAILY_DB:-/var/lib/hermes/hermes.sqlite3}"
-api_base="${HERMES_NOTIFY_SLACK_API_BASE:-https://slack.com}"
+# The same variable the Python notifier reads (#970); unset, the real API.
+api_base="${HERMES_SLACK__API_BASE:-https://slack.com}"
 state_dir="${STATE_DIRECTORY:-/var/lib/hermes-daily}"
 
 token="${HERMES_SLACK__BOT_TOKEN:-}"

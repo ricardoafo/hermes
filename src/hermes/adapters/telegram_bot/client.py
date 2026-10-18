@@ -26,9 +26,10 @@ import httpx
 import structlog
 from pydantic import SecretStr
 
+from hermes.adapters.endpoint import DEFAULT_TELEGRAM_API_BASE
+
 __all__ = ["TelegramBotClient", "TelegramBotError", "Update"]
 
-_API_BASE: Final = "https://api.telegram.org"
 _PER_SECOND: Final = 1.0
 _PER_MINUTE: Final = 20
 _MINUTE_S: Final = 60.0
@@ -61,12 +62,15 @@ class TelegramBotClient:
 
     Attributes:
         token: The bot token.
+        api_base: The Bot API root; :func:`hermes.adapters.endpoint.api_base_from_env`
+            reads it from ``HERMES_TELEGRAM__API_BASE``.
         client: The HTTP client; tests pass one routed through respx.
         clock: Monotonic seconds, for the send throttle.
         sleep: Waits the given seconds, for the send throttle.
     """
 
     token: SecretStr
+    api_base: str = DEFAULT_TELEGRAM_API_BASE
     client: httpx.Client = field(default_factory=lambda: httpx.Client(timeout=60.0))
     clock: Callable[[], float] = time.monotonic
     sleep: Callable[[float], None] = time.sleep
@@ -145,7 +149,7 @@ class TelegramBotClient:
         data: dict[str, str] | None = None,
         read_timeout: float = 30.0,
     ) -> dict[str, Any]:
-        url = f"{_API_BASE}/bot{self.token.get_secret_value()}/{method}"
+        url = f"{self.api_base}/bot{self.token.get_secret_value()}/{method}"
         try:
             response = self.client.post(
                 url,
