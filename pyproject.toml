@@ -69,6 +69,10 @@ dev = [
   "hypothesis>=6.168.3,<7",
   "syrupy>=6.1.1,<7",  # bumped to unblock pytest 9 (see PYSEC-2026-1845 note above)
   "respx>=0.21,<1",
+  # scripts/dev/fresh-seed-report.py parses the fresh-seed JUnit report with
+  # it (Semgrep use-defused-xml). Promoted from a transitive dep of fpdf2 so
+  # an upstream change cannot drop it.
+  "defusedxml>=0.7.1,<1",
   "freezegun>=1.5,<2",
   "coverage[toml]>=7.16.2,<8",
   "ruff>=0.16.9,<1",
@@ -84,6 +88,7 @@ dev = [
   "radon>=6.0,<7",
   "vulture>=2.13,<3",
   "types-pyyaml>=6.0.12.20260906,<7",
+  "types-defusedxml>=0.7.0.20260504,<1",
   # Mutation testing — parso-backed (Python 3.14 native). See
   # docs/decisions/2026-08-22-mutation-testing-cosmic-ray.md for the
   # tool-choice rationale + spike evidence. Weekly workflow at

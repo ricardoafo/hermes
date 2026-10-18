@@ -24,8 +24,9 @@ import os
 import re
 import sys
 import tempfile
-import xml.etree.ElementTree as ET
 from pathlib import Path
+
+from defusedxml import ElementTree
 
 _TEST = "test_every_rule_holds_after_every_bar_and_a_restart_changes_nothing"
 _SEED_ID = re.compile(rf"^{_TEST}\[(?P<kind>walk|hater)-(?P<seed>\d+)\]$")
@@ -35,7 +36,7 @@ _DETAIL_LINES = 40
 def failing_seeds(report: str) -> list[tuple[str, int, str]]:
     """Return ``(kind, seed, failure text)`` for each failed or errored seed in a JUnit report."""
     found = []
-    for case in ET.fromstring(report).iter("testcase"):  # noqa: S314 — the job's own pytest report
+    for case in ElementTree.fromstring(report).iter("testcase"):
         match = _SEED_ID.match(case.get("name", ""))
         problem = case.find("failure")
         if problem is None:
@@ -48,7 +49,7 @@ def failing_seeds(report: str) -> list[tuple[str, int, str]]:
 
 def seed_count(report: str) -> int:
     """Return how many seed testcases a JUnit report holds, whatever their outcome."""
-    root = ET.fromstring(report)  # noqa: S314 — the job's own pytest report
+    root = ElementTree.fromstring(report)
     return sum(1 for case in root.iter("testcase") if _SEED_ID.match(case.get("name", "")))
 
 
@@ -155,7 +156,7 @@ def _main(argv: list[str]) -> int:
         report = Path(argv[0]).read_text(encoding="utf-8")
         failures = failing_seeds(report)
         seeds = seed_count(report)
-    except (OSError, ET.ParseError) as exc:
+    except (OSError, ElementTree.ParseError) as exc:
         print(f"ERROR: cannot read the report {argv[0]}: {exc}", file=sys.stderr)
         return 2
     if seeds == 0:
