@@ -207,6 +207,12 @@ def _check(
         err.write(_failure_line(exc))
         return 3
 
+    if report.missed_bars:
+        bars = f"{report.missed_bars} bar{'' if report.missed_bars == 1 else 's'}"
+        stream.write(
+            f"OK — {day.isoformat()} not compared: serve reached {bars} late after an outage\n"
+        )
+        return 0
     if report.in_parity:
         stream.write(f"OK — {report.matched} signals match for {day.isoformat()}\n")
         return 0

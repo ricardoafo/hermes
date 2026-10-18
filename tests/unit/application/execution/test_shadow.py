@@ -172,9 +172,11 @@ class _Rig:
     clock: SimulatedClock
     kernel: FillKernel
 
-    def run(self, signal: StrategySignal, bar: Bar, cid: str = "c1") -> ShadowExecution:
+    def run(
+        self, signal: StrategySignal, bar: Bar, cid: str = "c1", *, price_bar: Bar | None = None
+    ) -> ShadowExecution:
         async def _go() -> ShadowExecution:
-            return await self.executor.execute(signal, bar, correlation_id=cid)
+            return await self.executor.execute(signal, bar, correlation_id=cid, price_bar=price_bar)
 
         return anyio.run(_go)
 
@@ -784,3 +786,67 @@ def test_serve_and_the_backtest_replay_read_the_same_correlations(
 
     assert rig.executor._daily_closes.correlations() == replayed.correlations()
     assert len(replayed.correlations()) == 3
+
+
+def _missed_exit_rig(connection: sqlite3.Connection) -> tuple[_Rig, Bar, Bar, datetime]:
+    """Hold BTC, then come back three bars after the exit bar closed (#1078)."""
+    rig = _rig(connection, book=_live_book("84999", "85001"))
+    entry_bar = _bar("85000")
+    _executed(rig.run(_entry(entry_bar), entry_bar, cid="a"))
+    exit_bar = _bar("84000", open_time=_OPEN + timedelta(hours=4))
+    newest = _bar("83000", open_time=_OPEN + timedelta(hours=16))
+    back = newest.close_time + timedelta(minutes=2)
+    rig.clock.set(back)
+    return rig, exit_bar, newest, back
+
+
+def test_a_missed_exit_fills_on_the_live_book_stamped_when_serve_is_back(
+    connection: sqlite3.Connection,
+) -> None:
+    """#1078: an exit on a missed bar sells at today's bid, at today's time, never back-dated."""
+    rig, exit_bar, newest, back = _missed_exit_rig(connection)
+
+    result = rig.run(_exit(exit_bar, "83995"), exit_bar, cid="b", price_bar=newest)
+
+    out = _executed(result)
+    assert (out.fill.timestamp, result.book_source, _price(out.fill.avg_price)) == (
+        back,
+        BookSource.LIVE,
+        _price(Decimal("84999")),
+    )
+
+
+def test_a_missed_exit_without_a_live_book_is_stamped_now_on_the_newest_bar(
+    connection: sqlite3.Connection,
+) -> None:
+    """#1078: with the depth read down, the §6.2 book still stands in, but the fill is dated now.
+
+    The quality row's arrival price is the newest bar's close, so drift is
+    measured against the market the exit met, not the one it missed.
+    """
+    rig, exit_bar, newest, back = _missed_exit_rig(connection)
+    rig.books.book = None
+
+    result = rig.run(_exit(exit_bar, "83995"), exit_bar, cid="b", price_bar=newest)
+
+    out = _executed(result)
+    assert result.quality is not None
+    assert (out.fill.timestamp, result.book_source, result.quality.arrival_price) == (
+        back,
+        BookSource.SYNTHETIC,
+        newest.close,
+    )
+
+
+def test_prior_fill_finds_the_trade_a_re_evaluated_entry_already_made(
+    connection: sqlite3.Connection,
+) -> None:
+    """#1078: serve asks before passing over a missed entry; a filled one stays held."""
+    rig = _rig(connection, book=_live_book("84999", "85001"))
+    bar = _bar("85000")
+    before = rig.executor.prior_fill(_entry(bar), BTC_USDT)
+    filled = _executed(rig.run(_entry(bar), bar, cid="a"))
+
+    after = rig.executor.prior_fill(_entry(bar), BTC_USDT)
+
+    assert (before, after is not None and after.occurred_at) == (None, filled.fill.timestamp)

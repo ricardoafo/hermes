@@ -276,14 +276,28 @@ class ShadowExecutor:
         self._macro_closes.append((bar.close_time, bar.close))
 
     async def execute(
-        self, signal: StrategySignal, bar: Bar, *, correlation_id: str
+        self,
+        signal: StrategySignal,
+        bar: Bar,
+        *,
+        correlation_id: str,
+        price_bar: Bar | None = None,
     ) -> ShadowExecution:
         """Execute one signal of ``bar`` and record its fill.
+
+        A ``price_bar`` marks ``bar`` as missed: it closed while serve was down
+        (issue #1078). The order then fills at the price of now, never at the
+        old bar's: on a live book taken now, or on the §6.2 book of
+        ``price_bar`` (the pair's newest closed bar) stamped now when no live
+        snapshot can be had. Serve passes only exits here; an entry on a
+        missed bar is never filled.
 
         Args:
             signal: The strategy signal.
             bar: The bar that produced it.
             correlation_id: Stamped on the trade and its quality row.
+            price_bar: The pair's newest closed bar when ``bar`` was missed;
+                ``None`` for a bar handled in its live window.
 
         Returns:
             What happened; see :class:`ShadowExecution`.
@@ -297,12 +311,14 @@ class ShadowExecutor:
         if prior is not None:
             return ShadowExecution(outcome=AlreadyFilled(trade=prior))
         now = self._clock.now()
-        book, source, error = await self._book(signal, bar, now)
-        at = (
-            book.snapshot_time
-            if book is not None and source is BookSource.LIVE
-            else signal.signal_time
-        )
+        priced = bar if price_bar is None else price_bar
+        book, source, error = await self._book(signal, priced, now, missed=price_bar is not None)
+        if book is not None and source is BookSource.LIVE:
+            at = book.snapshot_time
+        elif price_bar is not None:
+            at = now
+        else:
+            at = signal.signal_time
         if self._not_before is not None and at < self._not_before:
             at = self._not_before
         fees = self._fees_at(at, pair)
@@ -312,7 +328,7 @@ class ShadowExecutor:
             orderbook=book,
             fees=fees,
             at=at,
-            market_snapshot=self._market_snapshot(pair, book, bar, now),
+            market_snapshot=self._market_snapshot(pair, book, priced, now),
             experiment_state=self._experiment_state(),
             correlations=(
                 self._daily_closes.correlations() if signal.kind is SignalKind.ENTRY else {}
@@ -327,7 +343,7 @@ class ShadowExecutor:
             quality = self._quality(
                 outcome.fill,
                 signal=signal,
-                bar=bar,
+                bar=priced,
                 book=book,
                 source=source,
                 fees=fees,
@@ -342,6 +358,23 @@ class ShadowExecutor:
             outcome=outcome, book_source=source, quality=quality, snapshot_error=error
         )
 
+    def prior_fill(self, signal: StrategySignal, pair: Pair) -> TradeExecuted | None:
+        """Return the trade that already filled ``signal``, or ``None``.
+
+        Serve asks before passing over an entry on a missed bar (#1078): a bar
+        re-evaluated after a crash may have filled before the crash, and the
+        strategy must then stay in the position it holds.
+
+        Args:
+            signal: The strategy's signal.
+            pair: The pair it is for.
+
+        Returns:
+            A recorded trade of the signal's pair and side at or after its time.
+        """
+        side = TradeSide.BUY if signal.kind is SignalKind.ENTRY else TradeSide.SELL
+        return self._traded_since(pair, side, signal.signal_time)
+
     def _traded_since(self, pair: Pair, side: TradeSide, since: datetime) -> TradeExecuted | None:
         """Return a recorded trade of ``pair`` and ``side`` at or after ``since``."""
         for trade in self._ledger.trade_events(self._strategy_id):
@@ -350,11 +383,14 @@ class ShadowExecutor:
         return None
 
     async def _book(
-        self, signal: StrategySignal, bar: Bar, now: datetime
+        self, signal: StrategySignal, bar: Bar, now: datetime, *, missed: bool
     ) -> tuple[Orderbook | None, BookSource, str | None]:
-        """Return the book to fill against, where it came from and any snapshot error."""
+        """Return the book to fill against, where it came from and any snapshot error.
+
+        A missed bar's order fills now, so a live book is always worth trying.
+        """
         error = None
-        if now - bar.close_time <= self._live_window:
+        if missed or now - bar.close_time <= self._live_window:
             try:
                 return await self._books.snapshot(bar.pair), BookSource.LIVE, None
             except InfraError as exc:

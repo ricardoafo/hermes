@@ -151,7 +151,7 @@ def check_day(
             far back the exchange read has to reach.
 
     Returns:
-        The :class:`ParityReport`.
+        The :class:`ParityReport`; a day with missed bars is not compared.
 
     Raises:
         ParityDataError: A stream has no stored bar on ``day``, too few
@@ -160,6 +160,11 @@ def check_day(
         hermes.domain.errors.LedgerError: A ledger read failed.
     """
     start, end = day_window(day)
+    missed = source.missed_bars_between(start, end)
+    if missed:
+        # An outage day differs from the replay by rule (ADR-024 §7): its
+        # missed entries stay unfilled and its exits fill late.
+        return ParityReport(day=day, matched=0, mismatches=(), missed_bars=missed)
     day_bars: list[Bar] = []
     warm_bars: list[Bar] = []
     for pair in pairs:
