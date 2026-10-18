@@ -27,7 +27,7 @@ Schema name: `hermes.verdict/1`. A record with any other field is refused.
 | `stage` | string | `train` or `validation` |
 | `run_id` | whole number or null | The workflow run that produced it, filled in by the results job |
 | `commit` | string or null | The commit the run used, filled in by the results job |
-| `window` | object | `start` and `end`, both `YYYY-MM-DD`, the dates the stage covered |
+| `window` | object or null | `start` and `end`, both `YYYY-MM-DD`, the dates the stage covered; null when the candidate had no evidence (its only check is `missing_evidence`, FAIL) |
 | `trial_lines` | whole number or null | How many trial log lines the stage added |
 | `checks` | list | One `{check, status}` entry per certify or funnel check |
 | `passed` | boolean | Whether the candidate passed the stage |
@@ -42,7 +42,7 @@ Schema name: `hermes.verdict/1`. A record with any other field is refused.
 The job validates every record before it writes anything. It stops, and the
 tree stays untouched, when a record has an unknown field, a number anywhere but
 `run_id` and `trial_lines`, a non-boolean `passed`, `goes_on` or `champion`, a
-bad date, a check that is not `{check, status}`, or a name with anything but lowercase
+bad date (a null window is allowed), a check that is not `{check, status}`, or a name with anything but lowercase
 letters, digits and dashes (`batch_id`, `strategy_id`, `idea_family`).
 
 The champion's id, or `none`, goes in the results PR's notes, not in a

@@ -10,12 +10,21 @@ import copy
 import importlib.util
 import json
 import re
+from datetime import date
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 
+from hermes.application.calibration.batch_stage import (
+    MISSING_EVIDENCE,
+    CandidateVerdict,
+    StageOutcome,
+    verdict_record,
+)
+from hermes.application.calibration.signed_gate import CheckResult
+from tests.support.candidate_evidence import batch as candidate_batch
 from tests.support.paths import REPO_ROOT
 
 _SCRIPT = REPO_ROOT / "scripts" / "backtest" / "assemble_results.py"
@@ -288,3 +297,50 @@ def test_missing_notebook_is_an_error(tmp_path: Path) -> None:
         b'{"n": 1}\n',
         False,
     )
+
+
+@pytest.mark.parametrize("stage", ["train", "validation"])
+@pytest.mark.parametrize("with_evidence", [True, False])
+def test_every_record_the_judge_writes_passes_the_assembler_check(
+    stage: Literal["train", "validation"], with_evidence: bool
+) -> None:
+    """A real ``verdict_record`` is accepted, including a candidate with no evidence (null window).
+
+    Producer and checker live in two places; a hand-written verdict cannot catch them drifting.
+    """
+    candidate = candidate_batch().candidates[0]
+    verdict = CandidateVerdict(
+        candidate=candidate,
+        checks=(
+            (CheckResult("dsr", "PASS", "detail"), CheckResult("cost_stress", "NA", "detail"))
+            if with_evidence
+            else (CheckResult(MISSING_EVIDENCE, "FAIL", ""),)
+        ),
+        passed=with_evidence,
+        dsr=None,
+        window=(date(2021, 1, 1), date(2021, 12, 31)) if with_evidence else None,
+        returns=(),
+        trial_lines=0,
+    )
+    outcome = StageOutcome("b1", stage, (verdict,), (), ())
+
+    _script().validate_verdict(verdict_record(outcome, verdict))
+
+
+def test_a_candidate_without_evidence_still_gets_its_record_and_notebook_entry(
+    tmp_path: Path,
+) -> None:
+    """The missing-evidence FAIL has a null window; the batch's results must not be lost for it."""
+    repo = _tree(tmp_path)
+    missing = {
+        **_VERDICT,
+        "window": None,
+        "checks": [{"check": "missing_evidence", "status": "FAIL"}],
+        "passed": False,
+        "goes_on": False,
+    }
+
+    code = _run(tmp_path, repo, _verdict_dir(tmp_path, missing))
+
+    record = repo / "docs/experiments/swing-mvp1/verdicts/b1/swing-b1-a.train.json"
+    assert (code, json.loads(record.read_text())["window"]) == (0, None)

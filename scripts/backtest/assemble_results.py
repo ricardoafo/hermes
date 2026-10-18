@@ -89,9 +89,13 @@ def validate_verdict(verdict: dict[str, Any]) -> None:
     for key in ("goes_on", "champion"):
         if verdict.get(key) is not None and not isinstance(verdict[key], bool):
             raise ResultsError(f"verdict {key} is not a boolean or null")
-    window = verdict.get("window") or {}
-    if set(window) != {"start", "end"} or not all(_DATE.match(str(v)) for v in window.values()):
-        raise ResultsError("verdict window is not a start and end date")
+    window = verdict.get("window")
+    if window is not None and (
+        not isinstance(window, dict)
+        or set(window) != {"start", "end"}
+        or not all(_DATE.match(str(v)) for v in window.values())
+    ):
+        raise ResultsError("verdict window is not null or a start and end date")
     checks = verdict.get("checks")
     if not isinstance(checks, list):
         raise ResultsError("verdict checks is not a list")
