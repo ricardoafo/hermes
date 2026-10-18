@@ -98,12 +98,6 @@ tests/unit/application/order_router/test_router.py::test_triggered_state_returns
 tests/unit/application/order_router/test_router.py::test_warn_rule_allows_dispatch U3
 tests/unit/application/portfolio/test_tracker.py::test_refused_fill_returns_the_failure U3
 tests/unit/application/reconciliation/test_service.py::test_the_pushed_alert_carries_no_amount U3
-tests/unit/application/strategy_protocol/test_data_split_enforcer.py::test_bar_one_day_before_oos_succeeds U3
-tests/unit/application/strategy_protocol/test_data_split_enforcer.py::test_oos_bar_succeeds_in_certification_context U3
-tests/unit/application/strategy_protocol/test_data_split_enforcer.py::test_oos_trade_succeeds_in_certification_context U3
-tests/unit/application/strategy_protocol/test_data_split_enforcer.py::test_train_bar_always_succeeds U3
-tests/unit/application/strategy_protocol/test_data_split_enforcer.py::test_train_trade_always_succeeds U3
-tests/unit/application/strategy_protocol/test_data_split_enforcer.py::test_validation_bar_succeeds U3
 tests/unit/application/strategy_protocol/test_preregistration.py::test_returns_three_symbols U3
 tests/unit/application/strategy_protocol/test_preregistration.py::test_returns_tuple U3
 tests/unit/application/supervisor/test_gate.py::test_outcome_words_are_rejected U3
