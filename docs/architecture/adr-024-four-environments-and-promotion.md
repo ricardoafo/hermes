@@ -1,7 +1,7 @@
 # ADR-024: Four environments, with hermes-01 as staging until a champion earns real money
 
 **Date**: 2026-10-17
-**Status**: Proposed — Accepted when the Code Owner merges it
+**Status**: Accepted (merged in PR #1082)
 **Deciders**: Ricardo Afonso (product owner), Claude (proposer)
 **Supersedes**: none.
 **Amends**: [ADR-018](adr-018-ci-cd-infrastructure-and-resource-budget.md), adding the runner trust split and the

@@ -271,6 +271,20 @@ repos:
         files: ^scripts/dev/no-future-annotations\.sh$
         pass_filenames: false
 
+      - id: adr-status-check
+        name: ADRs are Accepted and supersessions link back
+        entry: python3 scripts/dev/adr-status-check.py
+        language: system
+        files: ^(docs/architecture/.*\.md|scripts/dev/adr-status\.baseline)$
+        pass_filenames: false
+
+      - id: adr-status-check-self-test
+        name: adr-status-check self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 python3 scripts/dev/adr-status-check.py'
+        language: system
+        files: ^scripts/dev/adr-status-check\.py$
+        pass_filenames: false
+
       - id: test-tiers-line-check-self-test
         name: test-tiers-line-check self-test
         entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/test-tiers-line-check.sh'
