@@ -203,6 +203,7 @@ from hermes.entrypoints.tui_live import (
     market_rows,
 )
 from hermes.entrypoints.tui_notices import bar_checked_notice, beep_enabled, should_beep
+from hermes.entrypoints.tui_positions import PositionsView, closed_items
 from hermes.entrypoints.tui_query import QueryInput
 from hermes.entrypoints.tui_reads import (
     CARD_ERRORS,
@@ -343,7 +344,7 @@ _MAINNET_MARGIN: Final = 1
 TABS: Final = (
     Tab("1", "Home"),
     Tab("2", "Signals"),
-    Tab("3", "Positions", 715),
+    Tab("3", "Positions"),
     Tab("4", "Tax"),
     Tab("5", "Shadow test"),
     Tab("6", "Briefs"),
@@ -353,6 +354,7 @@ TABS: Final = (
 _HOME: Final = 0
 _SHADOW: Final = 4
 _SIGNALS: Final = 1
+_POSITIONS: Final = 2
 _TAX: Final = 3
 _BRIEFS: Final = 5
 _SYSTEM: Final = 6
@@ -915,6 +917,11 @@ class HomeApp(App[None]):
             yield self._compose_shadow()
             yield from self._compose_system()
             for index, tab in enumerate(TABS[1:], start=1):
+                if index == _POSITIONS:
+                    yield PositionsView(
+                        detail_body=self._detail_content, now=self._clock, id=f"tab-{tab.key}"
+                    )
+                    continue
                 if index == _TAX:
                     yield TaxTab(now=self._clock, motion=self._motion, id=f"tab-{tab.key}")
                     continue
@@ -1676,8 +1683,27 @@ class HomeApp(App[None]):
             )
         if self._tab == _SIGNALS and reads.rule_checks is not None:
             self._set(f"screen-{TABS[_SIGNALS].key}", self._signals_content(reads))
+        if self._tab == _POSITIONS:
+            self._paint_positions_tab(reads)
         if self._tab == _TAX and reads.tax is not None:
             self._paint_tax(reads.tax, reads.tax_pack, ctx)
+
+    @property
+    def positions_view(self) -> PositionsView:
+        """Return the Positions screen."""
+        return self._home.query_one(PositionsView)
+
+    def _paint_positions_tab(self, reads: ConsoleReads) -> None:
+        """Hand the Positions screen the positions and the recently closed ones of a read."""
+        view = self._alive(PositionsView, f"#tab-{TABS[_POSITIONS].key}")
+        if view is None:
+            return
+        positions, activity = reads.positions, reads.activity
+        closed = () if isinstance(activity, CARD_ERRORS) else closed_items(activity)
+        if isinstance(positions, CARD_ERRORS):
+            view.receive(None, closed, reads.ctx, error=f"Positions not available: {positions}")
+            return
+        view.receive(positions, closed, reads.ctx)
 
     @property
     def _logs_panel_open(self) -> bool:
@@ -2148,6 +2174,8 @@ class HomeApp(App[None]):
     def _switch_to(self, index: int) -> None:
         self._tab = index
         self._home.query_one("#screens", ContentSwitcher).current = f"tab-{TABS[index].key}"
+        if index == _POSITIONS:
+            self.call_after_refresh(self.positions_view.table.focus)
         if self._background_reads:
             # The tab shows its last reads at once; the fresh ones follow.
             self._paint_tab_screen(self._reads, self._layout)
