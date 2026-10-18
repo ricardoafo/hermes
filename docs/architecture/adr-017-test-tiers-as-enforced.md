@@ -1,7 +1,7 @@
 # ADR-017: Test tiers as enforced — pick tiers by path, mutation with cosmic-ray, one table of where each tier runs
 
 **Date**: 2026-10-03
-**Status**: Proposed — Accepted when the Code Owner merges it
+**Status**: Accepted (merged in PR #471)
 **Deciders**: Ricardo Afonso (product owner), Claude (proposer)
 **Supersedes**: in part, [ADR-007](adr-007-testing-strategy.md): its tier cadences (§Test categorization), the
 mutation tool and scope (§Tool stack, §Mutation testing), the per-package coverage table (§Coverage) and the test-data

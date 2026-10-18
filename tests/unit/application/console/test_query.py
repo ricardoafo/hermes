@@ -9,7 +9,10 @@ Invariants protected here:
   rejected with a message that names the problem and the fix;
 - facet counts are exact, most common first;
 - sorting is stable across several keys and keeps empty values last;
-- Tab completion completes field names only, uniquely or to the common prefix.
+- Tab completion completes field names only, uniquely or to the common prefix;
+- ``level`` compares and sorts by severity (debug < info < warn < error <
+  critical), ``warn`` and ``warning`` are one level, and an unknown level is
+  rejected (#716).
 """
 
 from collections.abc import Mapping, Sequence
@@ -21,6 +24,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from hermes.application.console.query import (
+    LEVEL_ORDER,
     SHARED_FACETS,
     Condition,
     FacetCount,
@@ -37,6 +41,7 @@ from hermes.application.console.query import (
     filter_rows,
     format_query,
     format_sort,
+    level_rank,
     matches,
     parse_query,
     sort_rows,
@@ -219,7 +224,18 @@ def test_empty_quotes_are_ignored() -> None:
 
 def test_shared_facets_are_the_default_fields() -> None:
     """Without a field list, the shared facets are accepted."""
-    assert SHARED_FACETS == ("year", "month", "day", "coin", "kind", "state", "level", "run")
+    assert SHARED_FACETS == (
+        "year",
+        "month",
+        "day",
+        "coin",
+        "kind",
+        "state",
+        "level",
+        "service",
+        "trace",
+        "run",
+    )
     assert parse_query("level:error state:open month:2026-10").terms == (
         Condition("level", Op.EQ, "error"),
         Condition("state", Op.EQ, "open"),
@@ -475,3 +491,92 @@ def test_complete_fills_a_unique_field_or_the_common_prefix(
 ) -> None:
     """Tab adds ``field:`` when one field fits, the shared prefix when several do."""
     assert complete(text, fields) == expected
+
+
+# ---------------------------------------------------------------------------
+# Level order (#716)
+# ---------------------------------------------------------------------------
+
+_LEVEL_ROWS: tuple[Row, ...] = tuple(
+    {"level": name, "event": f"e{index}"} for index, name in enumerate(LEVEL_ORDER)
+)
+_LEVEL_FIELDS = ("level", "service", "coin", "trace")
+_OPS = {
+    Op.EQ: lambda a, b: a == b,
+    Op.GE: lambda a, b: a >= b,
+    Op.LE: lambda a, b: a <= b,
+    Op.GT: lambda a, b: a > b,
+    Op.LT: lambda a, b: a < b,
+}
+
+
+def test_level_ge_warn_keeps_warnings_and_worse() -> None:
+    """``level>=warn`` keeps warning, error and critical, not debug or info."""
+    query = parse_query("level>=warn", _LEVEL_FIELDS)
+    kept = filter_rows(_LEVEL_ROWS, query, now=_NOW)
+    assert [row["level"] for row in kept] == ["warning", "error", "critical"]
+
+
+def test_warn_and_warning_are_the_same_level() -> None:
+    """``level:warn`` matches a row logged as ``warning``, in any case."""
+    query = parse_query("level:WARN", _LEVEL_FIELDS)
+    assert [row["level"] for row in filter_rows(_LEVEL_ROWS, query, now=_NOW)] == ["warning"]
+
+
+def test_level_lt_compares_by_severity_not_spelling() -> None:
+    """``level<info`` keeps debug only, although "error" < "info" alphabetically."""
+    query = parse_query("level<info", _LEVEL_FIELDS)
+    assert [row["level"] for row in filter_rows(_LEVEL_ROWS, query, now=_NOW)] == ["debug"]
+
+
+def test_an_unknown_level_is_rejected_with_the_levels() -> None:
+    """``level>=loud`` names the levels the field takes."""
+    with pytest.raises(QueryError) as caught:
+        parse_query("level>=loud", _LEVEL_FIELDS)
+    assert str(caught.value) == (
+        "level takes debug, info, warn, error or critical, like level>=warn"
+    )
+
+
+def test_level_rank_orders_the_levels() -> None:
+    """Ranks run 0..4 from debug to critical; warn aliases warning; other text is None."""
+    assert (
+        [level_rank(name) for name in ("debug", "Info", "warn", "warning", "ERROR", "critical")],
+        level_rank("loud"),
+        level_rank(3),
+    ) == ([0, 1, 2, 2, 3, 4], None, None)
+
+
+def test_sorting_by_level_follows_severity() -> None:
+    """A level column sorts debug, info, warning, error, critical; descending reverses it."""
+    shuffled = [_LEVEL_ROWS[i] for i in (3, 0, 4, 2, 1)]
+    up = [row["level"] for row in sort_rows(shuffled, [SortKey("level")])]
+    down = [row["level"] for row in sort_rows(shuffled, [SortKey("level", descending=True)])]
+    assert (up, down) == (list(LEVEL_ORDER), list(reversed(LEVEL_ORDER)))
+
+
+def test_service_and_trace_are_shared_fields() -> None:
+    """``service:engine trace:K7Q2ZP`` parses with the default field set."""
+    assert parse_query("service:engine trace:K7Q2ZP").terms == (
+        Condition("service", Op.EQ, "engine"),
+        Condition("trace", Op.EQ, "K7Q2ZP"),
+    )
+
+
+def test_tab_completes_service() -> None:
+    """``se`` completes to ``service:`` among the log fields (``since`` starts with "si")."""
+    assert complete("level>=warn se", _LEVEL_FIELDS) == "level>=warn service:"
+
+
+@given(
+    st.lists(st.sampled_from(LEVEL_ORDER), max_size=12),
+    st.sampled_from(list(Op)),
+    st.sampled_from([*LEVEL_ORDER, "warn", "WARN", "Error"]),
+)
+def test_level_conditions_match_the_severity_order(levels: list[str], op: Op, written: str) -> None:
+    """Any level condition keeps exactly the rows whose rank compares as the operator says."""
+    rows = [{"level": name} for name in levels]
+    query = Query((Condition("level", op, written),))
+    wanted = LEVEL_ORDER.index({"warn": "warning"}.get(written.lower(), written.lower()))
+    expected = [r for r in rows if _OPS[op](LEVEL_ORDER.index(str(r["level"])), wanted)]
+    assert list(filter_rows(rows, query, now=_NOW)) == expected

@@ -207,6 +207,12 @@ def _check(
         err.write(_failure_line(exc))
         return 3
 
+    if report.missed_bars:
+        bars = f"{report.missed_bars} bar{'' if report.missed_bars == 1 else 's'}"
+        stream.write(
+            f"OK — {day.isoformat()} not compared: serve reached {bars} late after an outage\n"
+        )
+        return 0
     if report.in_parity:
         stream.write(f"OK — {report.matched} signals match for {day.isoformat()}\n")
         return 0
@@ -220,7 +226,7 @@ def _failure_line(exc: Exception) -> str:
     """Return the ERROR line for a failure that makes the check exit 3."""
     if isinstance(exc, LedgerError | FileNotFoundError):
         return f"ERROR: could not read the ledger: {exc}\n"
-    if isinstance(exc, InfraError):
+    if isinstance(exc, InfraError) and not isinstance(exc, ConfigError):
         return f"ERROR: could not read warm-up bars from the exchange: {exc}\n"
     return f"ERROR: {exc}\n"
 

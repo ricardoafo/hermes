@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import json
 import os
 import signal
 import sqlite3
@@ -39,6 +40,7 @@ from structlog.testing import capture_logs
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
 from hermes.adapters.clock.wall import WallClock
+from hermes.adapters.endpoint import EndpointConfigError
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.adapters.market_data.binance_depth_snapshot import BinanceDepthSnapshotAdapter
 from hermes.adapters.market_data.binance_live_klines import BinanceLiveKlinesAdapter
@@ -230,8 +232,10 @@ class TestBuildComposition:
             new_ledger=True,
         )
         try:
-            assert isinstance(composition.telegram, TelegramAdapter)
-            assert isinstance(composition.slack, SlackAdapter)
+            assert (type(composition.telegram), type(composition.slack)) == (
+                TelegramAdapter,
+                SlackAdapter,
+            )
         finally:
             assert composition.telegram is not None
             assert composition.slack is not None
@@ -495,7 +499,7 @@ class TestCheckStartup:
 
     def test_v1_and_v2_enabled_together_are_refused(self, shadow_config: HermesConfig) -> None:
         """Serve runs one strategy at a time: both pre-registered entries enabled is refused."""
-        v1, v2 = shadow_config.strategies.strategies
+        v1, v2, *_ = shadow_config.strategies.strategies
         both = [v1, v2.model_copy(update={"enabled": True})]
         config = shadow_config.model_copy(update={"strategies": StrategiesConfig(strategies=both)})
 
@@ -646,7 +650,10 @@ class TestBarLoop:
         asyncio.run(loop.handle(h4_bar(1)))
         composition.sqlite_connection.close()
 
-        assert len(events(tmp_path / "test.sqlite3", "BarProcessed")) == 2
+        assert _cursor(tmp_path / "test.sqlite3") == [
+            ("4h", "2024-01-16T03:59:59.999000+00:00"),
+            ("4h", "2024-01-16T07:59:59.999000+00:00"),
+        ]
 
     def test_a_repeated_bar_is_skipped(self, tmp_path: Path) -> None:
         """Handing the same bar twice writes one cursor row."""
@@ -655,7 +662,7 @@ class TestBarLoop:
         asyncio.run(loop.handle(h4_bar(0)))
         composition.sqlite_connection.close()
 
-        assert len(events(tmp_path / "test.sqlite3", "BarProcessed")) == 1
+        assert _cursor(tmp_path / "test.sqlite3") == [("4h", "2024-01-16T03:59:59.999000+00:00")]
 
     def test_a_skipped_bar_raises_bar_gap_error(self, tmp_path: Path) -> None:
         """A bar that does not directly follow the last one raises BarGapError."""
@@ -718,7 +725,10 @@ class TestBarLoop:
         asyncio.run(loop.handle(h4_bar(0)))
         composition.sqlite_connection.close()
 
-        assert len(events(tmp_path / "test.sqlite3", "BarProcessed")) == 2
+        assert _cursor(tmp_path / "test.sqlite3") == [
+            ("1d", "2024-01-01T23:59:59.999000+00:00"),
+            ("4h", "2024-01-16T03:59:59.999000+00:00"),
+        ]
 
     def test_warm_up_seeds_in_delivery_order_daily_bar_first_at_equal_close(
         self, tmp_path: Path
@@ -785,6 +795,14 @@ class _EntryOnceStrategy(_RecordingStrategy):
             atr_context=Decimal("5"),
             signal_time=bar.close_time,
         )
+
+
+def _cursor(db_path: Path) -> list[tuple[str, str]]:
+    """Return ``(interval, occurred_at)`` of every ``BarProcessed`` cursor row, oldest first."""
+    return [
+        (json.loads(row["payload_json"])["interval"], row["occurred_at"])
+        for row in events(db_path, "BarProcessed")
+    ]
 
 
 def _processed(logs: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -888,7 +906,7 @@ class TestBarLogging:
             asyncio.run(loop.handle(h4_bar(0)))
         composition.sqlite_connection.close()
 
-        assert len(_processed(logs)) == 1
+        assert [entry["interval"] for entry in _processed(logs)] == ["4h"]
 
     def test_next_due_lists_every_stream_after_catch_up(self, tmp_path: Path) -> None:
         """Going live logs when each stream's next bar should arrive."""
@@ -928,7 +946,7 @@ class TestFillKernelWiring:
             new_ledger=True,
         )
         try:
-            assert isinstance(composition.orderbooks, BinanceDepthSnapshotAdapter)
+            assert type(composition.orderbooks) is BinanceDepthSnapshotAdapter
         finally:
             asyncio.run(composition.orderbooks.aclose())
             composition.sqlite_connection.close()
@@ -1043,6 +1061,32 @@ def _with_capital(config: HermesConfig, amount: str) -> HermesConfig:
     return config.model_copy(update={"strategies": StrategiesConfig(strategies=[entry])})
 
 
+class TestWithOnlyEnabled:
+    """#1076: ``--strategy`` makes the named roster entry the one enabled strategy."""
+
+    def test_the_named_entry_is_the_only_one_enabled(self, shadow_config: HermesConfig) -> None:
+        """Invariant: every later check reads the named entry as the enabled one."""
+        chosen = serve_module.with_only_enabled(shadow_config, serve_module.V2_STRATEGY_NAME)
+        enabled = [s.name for s in chosen.strategies.strategies if s.enabled]
+        names = [s.name for s in chosen.strategies.strategies]
+        assert (enabled, names) == (
+            [serve_module.V2_STRATEGY_NAME],
+            [s.name for s in shadow_config.strategies.strategies],
+        )
+
+    def test_the_rest_of_the_entry_is_unchanged(self, shadow_config: HermesConfig) -> None:
+        """Invariant: only ``enabled`` moves; capital, sizing and pricing stay as signed."""
+        chosen = serve_module.with_only_enabled(shadow_config, serve_module.V2_STRATEGY_NAME)
+        assert chosen.strategies.strategies[1] == shadow_config.strategies.strategies[1].model_copy(
+            update={"enabled": True}
+        )
+
+    def test_a_name_missing_from_the_roster_is_refused(self, shadow_config: HermesConfig) -> None:
+        """Invariant: an instance never falls back to whatever the file enables."""
+        with pytest.raises(serve_module.StartupError, match="has no 'no-such-shadow' entry"):
+            serve_module.with_only_enabled(shadow_config, "no-such-shadow")
+
+
 class TestLedgerAndSeedGuards:
     """Serve refuses a missing ledger and a capital that differs from its seed (issue #876)."""
 
@@ -1107,3 +1151,15 @@ class TestLedgerAndSeedGuards:
         )
         _shut(composition)
         assert composition.tracker.state().current_value == Decimal(5000)
+
+
+def test_a_bad_notifier_api_base_fails_startup_instead_of_muting_the_channel() -> None:
+    """Missing credentials quietly turn Telegram off; a mistyped endpoint must not (#970)."""
+    env = {
+        "HERMES_TELEGRAM__BOT_TOKEN": "123456:ABC-DEF",  # gitleaks:allow
+        "HERMES_TELEGRAM__CHAT_ID": "-100",
+        "HERMES_TELEGRAM__API_BASE": "http://api.telegram.org",
+    }
+
+    with pytest.raises(EndpointConfigError, match="HERMES_TELEGRAM__API_BASE"):
+        serve_module._telegram_config(env)

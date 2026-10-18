@@ -13,7 +13,9 @@ Invariants protected here:
 - the ledger file is byte-identical after any run without ``--alert``;
 - an ``--alert`` alert is recorded once as an ``AnomalyDetected`` row, and a
   run in parity records none (#136);
-- the command is registered as ``parity``.
+- the command is registered as ``parity``;
+- a day with bars serve reached late after an outage prints that it was not
+  compared, exits 0 and sends no alert (#1078).
 """
 
 from __future__ import annotations
@@ -35,6 +37,7 @@ from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.application.notification_router import RouterConfig
 from hermes.application.parity.check import HistoryFetcher
 from hermes.domain.errors import ExchangeError
+from hermes.domain.events.bar_missed import BarMissed
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.market_data.bar import Bar
@@ -47,6 +50,7 @@ from hermes.ports.bar_feed import SourceState
 from tests.support.anomaly_rows import recorded_anomalies
 from tests.support.day_zero import write_day_zero
 from tests.support.parity import D1, DAY_END, DAY_START, H4, bar, signal_event
+from tests.support.unknown_signal import config_with_unknown_signal, refusal_lines
 from tests.unit.adapters.market_data.fake_binance_public import (
     BTC_USDT,
     START,
@@ -342,6 +346,18 @@ def test_a_config_that_cannot_load_exits_three(ledger: Path, tmp_path: Path) -> 
     assert err.startswith("ERROR: ")
 
 
+def test_an_unknown_signal_exits_three_naming_it(ledger: Path, tmp_path: Path) -> None:
+    """Contract §2a (#1119): an unknown ``signal:`` stops parity at config load, exit 3."""
+    config_dir = config_with_unknown_signal(tmp_path)
+
+    code, _, err = _run(
+        ["check", "--date", "2026-10-03", "--db", str(ledger), "--config-dir", str(config_dir)]
+    )
+
+    lines = err.splitlines()
+    assert (code, lines[0], lines[-1]) == (3, *refusal_lines(config_dir))
+
+
 def test_the_command_is_registered_as_parity() -> None:
     """`hermes parity` is discovered from commands/parity.py."""
     assert discover()["parity"].name == "parity"
@@ -526,3 +542,24 @@ def test_window_usage_errors_exit_two(ledger: Path, since: str) -> None:
 
     assert (code, out) == (2, "")
     assert err.startswith("ERROR: ")
+
+
+def test_an_outage_day_prints_not_compared_and_sends_no_alert(ledger: Path) -> None:
+    """#1078: the unfilled missed entry would be a mismatch; the outage line replaces it."""
+    late = DAY_START + timedelta(hours=8)
+    _with_signal(ledger, signal_event(late))
+    connection = sqlite3.connect(ledger)
+    SqliteLedger(connection).append_event(
+        BarMissed.from_bar(bar(late), handled_at=late + timedelta(hours=3), correlation_id="m1")
+    )
+    connection.close()
+    channel = _Channel()
+
+    code, out, err = _run(_args(ledger, "--alert"), channel=channel)
+
+    assert (code, out, err, channel.events) == (
+        0,
+        "OK — 2026-10-03 not compared: serve reached 1 bar late after an outage\n",
+        "",
+        [],
+    )

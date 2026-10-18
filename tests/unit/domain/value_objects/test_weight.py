@@ -13,6 +13,7 @@ from hypothesis import strategies as st
 from returns.result import Failure, Success
 
 import tests.strategies.weight  # noqa: F401
+from hermes.domain.errors import InvalidLot
 from hermes.domain.value_objects.weight import Weight
 from tests.strategies.weight import weight_strategy
 
@@ -73,12 +74,27 @@ class TestWeightFactories:
     def test_from_str_invalid_decimal(self) -> None:
         """from_str returns Failure when the input is not a valid decimal."""
         result = Weight.from_str("abc")
-        assert isinstance(result, Failure)
+        assert result == Failure(
+            InvalidLot(reason="Cannot parse Weight from 'abc': not a valid Decimal")
+        )
 
     def test_from_str_out_of_range(self) -> None:
         """from_str returns Failure when the decimal is outside the [0, 1] range."""
         result = Weight.from_str("1.5")
-        assert isinstance(result, Failure)
+        assert result == Failure(InvalidLot(reason="Weight must be in [0, 1], got Decimal('1.5')"))
+
+    @pytest.mark.parametrize("raw", ["-0.01", "1.01"])
+    def test_from_str_just_outside_range(self, raw: str) -> None:
+        """from_str rejects values one hundredth beyond either end of [0, 1]."""
+        result = Weight.from_str(raw)
+        assert result == Failure(
+            InvalidLot(reason=f"Weight must be in [0, 1], got Decimal('{raw}')")
+        )
+
+    @pytest.mark.parametrize("raw", ["0", "1"])
+    def test_from_str_bounds_accepted(self, raw: str) -> None:
+        """from_str accepts both ends of [0, 1] (the interval is closed)."""
+        assert Weight.from_str(raw) == Success(Weight(value=Decimal(raw)))
 
     @given(weight_strategy())
     def test_from_decimal_roundtrip(self, w: Weight) -> None:
@@ -90,7 +106,19 @@ class TestWeightFactories:
     def test_from_decimal_out_of_range(self) -> None:
         """from_decimal returns Failure when the value exceeds the [0, 1] constraint."""
         result = Weight.from_decimal(Decimal("2"))
-        assert isinstance(result, Failure)
+        assert result == Failure(InvalidLot(reason="Weight must be in [0, 1], got Decimal('2')"))
+
+    @pytest.mark.parametrize("raw", ["0", "1"])
+    def test_from_decimal_bounds_accepted(self, raw: str) -> None:
+        """from_decimal accepts both ends of [0, 1] (the interval is closed)."""
+        assert Weight.from_decimal(Decimal(raw)) == Success(Weight(value=Decimal(raw)))
+
+    def test_from_decimal_negative_rejected(self) -> None:
+        """from_decimal rejects a value just below zero."""
+        result = Weight.from_decimal(Decimal("-0.01"))
+        assert result == Failure(
+            InvalidLot(reason="Weight must be in [0, 1], got Decimal('-0.01')")
+        )
 
     def test_zero_factory(self) -> None:
         """Weight.zero() produces a Weight with value exactly 0."""

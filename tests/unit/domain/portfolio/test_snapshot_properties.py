@@ -152,13 +152,20 @@ def test_sell_is_accepted_exactly_when_the_position_covers_it(
     """A SELL is refused with InvalidPortfolioTransition iff the pair is unheld or too small."""
     for op, before, _after, accepted in _steps(_seed(cash), ops):
         if isinstance(op, FillOp) and op.fill.order.side == OrderSide.SELL:
-            held = before.positions.get(op.fill.order.pair)
+            pair = op.fill.order.pair
+            held = before.positions.get(pair)
             covered = held is not None and op.fill.executed_qty <= held.quantity
-            assert accepted == covered
-            if not accepted:
-                result = before.after_fill(op.fill)
-                assert isinstance(result, Failure)
-                assert isinstance(result.failure(), InvalidPortfolioTransition)
+            refusal: Failure[InvalidPortfolioTransition] | None = None
+            if not covered:
+                reason = (
+                    f"SELL of {pair} without a position"
+                    if held is None
+                    else f"SELL of {op.fill.executed_qty} {pair} exceeds the position of "
+                    f"{held.quantity}"
+                )
+                refusal = Failure(InvalidPortfolioTransition(reason=reason))
+            outcome = None if accepted else before.after_fill(op.fill)
+            assert (accepted, outcome) == (covered, refusal)
 
 
 @_SETTINGS

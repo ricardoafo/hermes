@@ -45,6 +45,8 @@ from hermes.entrypoints import vps as vps_module
 from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.commands import Command, discover
 from hermes.infrastructure import sentry_integration
+from hermes.infrastructure.config.errors import ConfigError
+from hermes.infrastructure.config.loader import load_sentry_config
 
 __all__ = ["main"]
 
@@ -118,12 +120,12 @@ def _utf8_stdout() -> Any:
 
 
 def _initialize_sentry_from_env(env: dict[str, str]) -> None:
-    """Initialize Sentry from ``env`` — no-op when DSN is empty.
+    """Initialize Sentry from ``sentry.yaml`` plus ``HERMES_SENTRY__*`` overrides.
 
-    Reads ``HERMES_SENTRY__DSN`` + ``HERMES_SENTRY__ENVIRONMENT`` directly
-    from the env snapshot rather than routing through ``load_config`` so
-    the CLI stays runnable on a fresh clone that has not yet populated
-    every YAML file. Delegates to
+    Loads only the Sentry section (through the config loader, from
+    ``HERMES_CONFIG_DIR`` or ``./config``) so the CLI stays runnable on a
+    fresh clone that has not populated every YAML file. A broken
+    ``sentry.yaml`` disables Sentry rather than the CLI. Delegates to
     :func:`sentry_integration.initialize`, which itself:
 
     - Is a no-op when ``dsn`` is empty (integration disabled).
@@ -133,9 +135,11 @@ def _initialize_sentry_from_env(env: dict[str, str]) -> None:
         env: Env-var snapshot (defaults come from ``os.environ`` in
             production; tests inject a controlled dict).
     """
-    dsn = env.get("HERMES_SENTRY__DSN", "").strip()
-    environment = env.get("HERMES_SENTRY__ENVIRONMENT", "dev").strip() or "dev"
-    sentry_integration.initialize(dsn=dsn, environment=environment)
+    try:
+        settings = load_sentry_config(console_module.default_config_dir(env), env=env)
+    except ConfigError:
+        return
+    sentry_integration.initialize(dsn=settings.dsn.strip(), environment=settings.environment)
 
 
 def _demo_then_vps(args: list[str]) -> bool:

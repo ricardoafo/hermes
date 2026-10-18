@@ -31,12 +31,12 @@ from hermes.application.backtest.replay import BacktestRun, ExecutionModel, repl
 from hermes.domain.fees.fee_schedule import FeeSchedule
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
-from hermes.domain.portfolio.precision import EXACT_CONTEXT
 from hermes.domain.risk.state import PortfolioState
 from hermes.domain.strategy.signal import OpenPosition, SignalKind, SignalSide, StrategySignal
 from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
+from hermes.domain.value_objects.precision import EXACT_CONTEXT
 from tests.support.fill_kernel import BTC_USDT, fees, kernel
 
 _WINDOW = datetime(2024, 1, 1, tzinfo=UTC)

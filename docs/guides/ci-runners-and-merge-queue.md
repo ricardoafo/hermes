@@ -102,6 +102,21 @@ flowchart TD
   ruleset doesn't require up-to-date branches, because the queue proves
   the merged tree instead.
 
+## Change types
+
+`scripts/dev/change-type.py` is the one place that says what kind of change a diff is. A file takes the first rule it
+matches, and a diff takes the strictest type of its files. A file no rule names counts as engine, so a gap in the list
+fails safe. A release's type is the strictest type among the changes since the last deploy.
+
+- **Docs**: `docs/`, `openspec/` and any `*.md`. Lint only.
+- **Surface**: console screens and views, tests, and developer tooling. The unit tier and console snapshots.
+- **Runtime**: `serve`, adapters, infrastructure, deploy scripts, migrations and config other than
+  `config/strategies.yaml`. The unit tier and e2e.
+- **Engine**: the `ENGINE_PATHS` of ADR-025. Everything above, plus the Train replay.
+
+Run `python3 scripts/dev/change-type.py origin/main HEAD` to see the type of your branch. The table that says what each
+type runs in each environment is in ADR-024 §3.
+
 ## When a PR does not merge
 
 | Symptom | Where to look |

@@ -1,7 +1,7 @@
 # ADR-024: Four environments, with hermes-01 as staging until a champion earns real money
 
 **Date**: 2026-10-17
-**Status**: Proposed — Accepted when the Code Owner merges it
+**Status**: Accepted (merged in PR #1082)
 **Deciders**: Ricardo Afonso (product owner), Claude (proposer)
 **Supersedes**: none.
 **Amends**: [ADR-018](adr-018-ci-cd-infrastructure-and-resource-budget.md), adding the runner trust split and the
@@ -13,7 +13,7 @@ staging, and staging ahead of prod once prod exists, in §2. Neither ADR is edit
 ## Context
 
 Hermes has two places that run a release today. hermes-01 runs `hermes serve` as the prod tier, but it trades nothing:
-it runs paper shadows. Beside it, a second unit runs staging under its own user (`docs/guides/staging-on-hermes-01.md`,
+it runs paper shadows. Beside it, a second unit runs staging under its own user (`docs/guides/environments.md`,
 PR #555). Staging shares that box's CPU, memory and Binance rate limit, and on the live market it has produced no
 signals, so one clean bar proves the service runs, not that it trades. The fake market (issue #688) and the scenario
 suite (issue #689) prove engine paths, but only inside pytest. An installed release cannot point at them, and Telegram

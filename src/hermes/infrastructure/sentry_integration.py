@@ -76,7 +76,7 @@ def initialize(dsn: str, environment: str) -> None:
         dsn: The Sentry Data Source Name. Empty string disables the
             integration silently — no wire calls happen.
         environment: Environment tag attached to every event
-            (``"dev"`` / ``"sandbox"`` / ``"staging"`` / ``"prod"``). Mirrors
+            (``"dev"`` / ``"sandbox"`` / ``"qa"`` / ``"staging"`` / ``"prod"``). Mirrors
             :attr:`HermesConfig.env` so Sentry's UI can filter accordingly.
 
     Notes:
