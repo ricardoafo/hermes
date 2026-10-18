@@ -8,7 +8,7 @@ uniform start 2020-09-01 up to, but never including, the sealed OOS window
 month on or after it is ever enumerated or downloaded, and no flag changes
 that (#925). Supports two dataset kinds:
 
-  * klines     - OHLCV bars at 1h/4h/1d intervals (default)
+  * klines     - OHLCV bars at 1h/4h/1d intervals (default), 1m on request
   * agg_trades - aggregated trades, no interval dimension
 
 Each ZIP is SHA256-verified against Binance's `.CHECKSUM` companion
@@ -82,6 +82,9 @@ from _manifest_util import manifest_read, manifest_transaction
 # --- Pre-registration v1 sec 4 constants (BINDING; do not edit without a v2) ---
 PAIRS: tuple[str, ...] = ("BTCUSDT", "ETHUSDT", "SOLUSDT")
 INTERVALS: tuple[str, ...] = ("1h", "4h", "1d")
+# Opt-in only: a full default run never downloads minute bars (~400 MB for the
+# Train window); the stop slippage check (#1104) asks for them by name.
+ON_REQUEST_INTERVALS: tuple[str, ...] = ("1m",)
 BASE_URL = "https://data.binance.vision/data/spot/monthly"
 START_YEAR, START_MONTH = 2020, 9  # uniform start (SOL availability constraint)
 EXPERIMENT_MANIFEST = Path(__file__).resolve().parents[2] / (
@@ -381,7 +384,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--interval",
         action="append",
-        choices=list(INTERVALS),
+        choices=[*INTERVALS, *ON_REQUEST_INTERVALS],
         help="Restrict to one or more intervals (klines only; repeatable)",
     )
     parser.add_argument(

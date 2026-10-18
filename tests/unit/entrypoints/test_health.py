@@ -238,6 +238,21 @@ class TestCheckTelegramFailurePaths:
         assert result.exit_code == health_module.EXIT_NOT_CONFIGURED
         assert "CHAT_ID" in result.detail
 
+    def test_a_bad_api_base_returns_exit_three_naming_it(
+        self, env_with_creds: dict[str, str]
+    ) -> None:
+        """An unsafe HERMES_TELEGRAM__API_BASE is a config failure (exit 3), not a traceback."""
+        env = {**env_with_creds, "HERMES_TELEGRAM__API_BASE": "http://api.telegram.org"}
+
+        result = health_module.check_telegram(env)
+
+        assert (result.status, result.exit_code, result.detail) == (
+            health_module.HealthStatus.FAIL,
+            health_module.EXIT_NOT_CONFIGURED,
+            "HERMES_TELEGRAM__API_BASE may use http only on a loopback host: "
+            "'http://api.telegram.org'",
+        )
+
     def test_auth_failure_401_returns_exit_one(self, env_with_creds: dict[str, str]) -> None:
         """HTTP 401 from getMe → exit code 1 (adapter down) + status in detail."""
         with respx.mock() as router:
@@ -321,6 +336,20 @@ class TestCheckSlackHappyPath:
 
 class TestCheckSlackFailurePaths:
     """`check_slack` reports FAIL on missing config, auth error, and network error."""
+
+    def test_a_bad_api_base_returns_exit_three_naming_it(
+        self, env_with_slack_creds: dict[str, str]
+    ) -> None:
+        """An unsafe HERMES_SLACK__API_BASE is a config failure (exit 3), not a traceback."""
+        env = {**env_with_slack_creds, "HERMES_SLACK__API_BASE": "ftp://127.0.0.1"}
+
+        result = health_module.check_slack(env)
+
+        assert (result.status, result.exit_code, result.detail) == (
+            health_module.HealthStatus.FAIL,
+            health_module.EXIT_NOT_CONFIGURED,
+            "HERMES_SLACK__API_BASE must be an https URL: 'ftp://127.0.0.1'",
+        )
 
     def test_missing_bot_token_returns_exit_three(self) -> None:
         """No HERMES_SLACK__BOT_TOKEN → exit code 3 (not configured) + .env.local hint."""

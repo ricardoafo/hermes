@@ -39,6 +39,7 @@ from structlog.testing import capture_logs
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
 from hermes.adapters.clock.wall import WallClock
+from hermes.adapters.endpoint import EndpointConfigError
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.adapters.market_data.binance_depth_snapshot import BinanceDepthSnapshotAdapter
 from hermes.adapters.market_data.binance_live_klines import BinanceLiveKlinesAdapter
@@ -495,7 +496,7 @@ class TestCheckStartup:
 
     def test_v1_and_v2_enabled_together_are_refused(self, shadow_config: HermesConfig) -> None:
         """Serve runs one strategy at a time: both pre-registered entries enabled is refused."""
-        v1, v2 = shadow_config.strategies.strategies
+        v1, v2, *_ = shadow_config.strategies.strategies
         both = [v1, v2.model_copy(update={"enabled": True})]
         config = shadow_config.model_copy(update={"strategies": StrategiesConfig(strategies=both)})
 
@@ -1107,3 +1108,15 @@ class TestLedgerAndSeedGuards:
         )
         _shut(composition)
         assert composition.tracker.state().current_value == Decimal(5000)
+
+
+def test_a_bad_notifier_api_base_fails_startup_instead_of_muting_the_channel() -> None:
+    """Missing credentials quietly turn Telegram off; a mistyped endpoint must not (#970)."""
+    env = {
+        "HERMES_TELEGRAM__BOT_TOKEN": "123456:ABC-DEF",  # gitleaks:allow
+        "HERMES_TELEGRAM__CHAT_ID": "-100",
+        "HERMES_TELEGRAM__API_BASE": "http://api.telegram.org",
+    }
+
+    with pytest.raises(EndpointConfigError, match="HERMES_TELEGRAM__API_BASE"):
+        serve_module._telegram_config(env)
