@@ -22,12 +22,12 @@ from hermes.adapters.ledger.connection import open_ledger
 from hermes.adapters.ledger.sqlite_ledger import _trade_from_payload
 from hermes.domain.errors import LedgerError
 from hermes.domain.events.trade_executed import TradeExecuted
-from hermes.domain.portfolio.precision import EXACT_CONTEXT
 from hermes.domain.reconciliation.holdings import LedgerTrade
 from hermes.domain.trading.order import OrderSide
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
+from hermes.domain.value_objects.precision import EXACT_CONTEXT
 
 __all__ = ["SqliteReconciliationReader"]
 
