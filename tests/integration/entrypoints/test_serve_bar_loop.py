@@ -43,6 +43,7 @@ from hermes.domain.errors import ExchangeError
 from hermes.domain.events.bar_processed import BarProcessed
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.risk_halt_recorded import RiskHaltRecorded
+from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.pair import Pair
@@ -467,7 +468,11 @@ def test_shutdown_set_before_start_returns_zero_without_touching_the_feed(
 
 
 def test_crash_between_signal_row_and_cursor_row_does_not_notify_twice(tmp_path: Path) -> None:
-    """A bar re-evaluated after a crash finds its signal in the ledger and stays silent."""
+    """A bar re-evaluated after a crash finds its signal in the ledger and pushes no signal.
+
+    Bars 11 and 12 are re-handled after their live window, so the restart
+    report (#1078) is the one alert that goes out.
+    """
     db = tmp_path / "ledger.sqlite3"
     boot1 = FakeFeed(warm=history(10), live_bars=live(11, 12))
     run_once(build(db, boot1, _after(12)), boot1)
@@ -484,7 +489,8 @@ def test_crash_between_signal_row_and_cursor_row_does_not_notify_twice(tmp_path:
 
     code = run_once(build(db, boot2, _after(12), telegram=telegram), boot2)
 
-    assert (code, [k for k, _ in _signals(db)], telegram.seen) == (0, ["entry"], [])
+    pushed = [e for e in telegram.seen if isinstance(e, SignalEmitted)]
+    assert (code, [k for k, _ in _signals(db)], pushed) == (0, ["entry"], [])
 
 
 def _live_bar_rows(db: Path) -> list[tuple[str, str, str]]:
