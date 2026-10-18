@@ -20,6 +20,9 @@ The loader raises :class:`ConfigError` on:
 - YAML parse failure,
 - pydantic validation failure (with the full validation error attached).
 
+A setting that breaks its tier's rules raises :class:`TierError`, a
+``ConfigError`` that lists every such problem by name.
+
 Design note: we do NOT use ``BaseSettings`` + ``YamlConfigSettingsSource``
 directly. That path forces every sub-config to declare its own env prefix
 and creates five parallel merge chains. Reading YAML → deep-merging env →
@@ -45,7 +48,7 @@ from hermes.adapters.endpoint import (
     TELEGRAM_API_BASE_ENV,
     is_loopback,
 )
-from hermes.infrastructure.config.errors import ConfigError
+from hermes.infrastructure.config.errors import ConfigError, TierError
 from hermes.infrastructure.config.models import (
     BinanceExchangeConfig,
     FeesConfig,
@@ -59,7 +62,7 @@ from hermes.infrastructure.config.models import (
     StrategiesConfig,
     TaxGuardConfig,
 )
-from hermes.infrastructure.config.root import LOOPBACK_TIERS, HermesConfig
+from hermes.infrastructure.config.root import LOOPBACK_TIERS, EndpointTierError, HermesConfig
 
 __all__ = [
     "DEFAULT_CONFIG_DIR",
@@ -527,14 +530,34 @@ def load_config(
             market_data=market_data,
         )
     except ValidationError as exc:
-        # Root-level validation covers env-tier gates (mainnet outside prod)
-        # + env literal narrowing. Wrap in ConfigError for a consistent
-        # error type across the loader.
-        raise ConfigError(f"HermesConfig validation failed: {_describe(exc)}") from exc
+        endpoint_error = _endpoint_tier_error(exc)
+        if endpoint_error is None:
+            # Root-level validation covers env-tier gates (mainnet outside prod)
+            # + env literal narrowing. Wrap in ConfigError for a consistent
+            # error type across the loader.
+            raise ConfigError(f"HermesConfig validation failed: {_describe(exc)}") from exc
+        problems = [
+            *endpoint_error.problems,
+            *env_tier_problems(endpoint_error.env, env_snapshot),
+        ]
+        raise _tier_error(endpoint_error.env, problems) from exc
     problems = env_tier_problems(config.env, env_snapshot)
     if problems:
-        raise ConfigError(f"HERMES_ENV={config.env}: " + "; ".join(problems))
+        raise _tier_error(config.env, problems)
     return config
+
+
+def _endpoint_tier_error(exc: ValidationError) -> EndpointTierError | None:
+    """Return the tier refusal when it is the only thing pydantic rejected."""
+    errors = exc.errors(include_input=False, include_url=False)
+    if len(errors) != 1:
+        return None
+    cause = errors[0].get("ctx", {}).get("error")
+    return cause if isinstance(cause, EndpointTierError) else None
+
+
+def _tier_error(tier: str, problems: list[str]) -> TierError:
+    return TierError(f"HERMES_ENV={tier}: " + "; ".join(problems), problems=tuple(problems))
 
 
 def env_tier_problems(tier: str, env: Mapping[str, str]) -> list[str]:

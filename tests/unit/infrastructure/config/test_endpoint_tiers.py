@@ -11,7 +11,9 @@ Invariants protected here:
 - qa and staging refuse a trading key; dev and sandbox keep their testnet
   keys;
 - every refusal names the field or variable and never echoes its value,
-  since the ping URL, the DSN and the keys carry credentials.
+  since the ping URL, the DSN and the keys carry credentials;
+- a refusal is a ``TierError`` listing every problem, a config endpoint's
+  and an env-only setting's together.
 """
 
 from pathlib import Path
@@ -20,7 +22,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from hermes.infrastructure.config import ConfigError, load_config
+from hermes.infrastructure.config import ConfigError, TierError, load_config
 from hermes.infrastructure.config.loader import env_tier_problems
 from hermes.infrastructure.config.models import (
     FrankfurterConfig,
@@ -166,6 +168,32 @@ def test_every_problem_is_reported_at_once() -> None:
         "HERMES_KRAKEN__API_KEY is set, but staging holds no trading key",
         "HERMES_SLACK__API_BASE points at a loopback host, which only dev, qa, sandbox may use",
     ]
+
+
+def test_a_tier_error_lists_endpoint_and_env_problems_together() -> None:
+    """A loopback endpoint does not hide a trading key: one restart fixes both."""
+    env = {
+        "HERMES_ENV": "staging",
+        "HERMES_FRANKFURTER__BASE_URL": "http://127.0.0.1:9",
+        "HERMES_BINANCE__API_SECRET": _MARKER,
+    }
+
+    with pytest.raises(TierError) as excinfo:
+        load_config(_REPO_CONFIG, env=env)
+
+    assert excinfo.value.problems == (
+        "frankfurter.base_url points at a loopback host, which only dev, qa, sandbox may use",
+        "HERMES_BINANCE__API_SECRET is set, but staging holds no trading key",
+    )
+
+
+def test_mainnet_outside_prod_is_not_a_tier_error() -> None:
+    """Only tier problems become a TierError; other refusals keep their own message."""
+    with pytest.raises(ConfigError) as excinfo:
+        load_config(_REPO_CONFIG, env={"HERMES_ENV": "staging", "HERMES_ALLOW_MAINNET": "true"})
+
+    assert not isinstance(excinfo.value, TierError)
+    assert "HERMES_ALLOW_MAINNET may only be set in prod env" in str(excinfo.value)
 
 
 @given(octets=st.tuples(*[st.integers(0, 255)] * 3), port=st.integers(1, 65535))
