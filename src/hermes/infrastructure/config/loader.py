@@ -53,7 +53,14 @@ from hermes.infrastructure.config.models import (
 )
 from hermes.infrastructure.config.root import HermesConfig
 
-__all__ = ["DEFAULT_CONFIG_DIR", "DEFAULT_DOTENV_PATH", "load_config", "load_yaml_model"]
+__all__ = [
+    "DEFAULT_CONFIG_DIR",
+    "DEFAULT_DOTENV_PATH",
+    "load_config",
+    "load_optional_yaml_model",
+    "load_sentry_config",
+    "load_yaml_model",
+]
 
 
 DEFAULT_CONFIG_DIR: Path = Path("config")
@@ -68,12 +75,19 @@ _NESTED_DELIMITER: str = "__"
 # specific YAML section.
 _ENV_TIER: str = "HERMES_ENV"
 _ENV_ALLOW_MAINNET: str = "HERMES_ALLOW_MAINNET"
-# Credentials that share a section's prefix but belong to an adapter, not
+# Variables that share a section's prefix but belong to an adapter or a script, not
 # to the section's YAML model (BinanceSpotConfig.from_env reads these).
 # Treating them as overrides failed validation under extra=forbid and
 # echoed the secret in the error (#794).
 _CREDENTIAL_ENV_VARS: frozenset[str] = frozenset(
-    {"HERMES_BINANCE__API_KEY", "HERMES_BINANCE__API_SECRET"}
+    {
+        "HERMES_BINANCE__API_KEY",
+        "HERMES_BINANCE__API_SECRET",
+        # Read by the deploy shell scripts only; the Healthchecks YAML model has
+        # no field for them, so as overrides they stopped `hermes serve` at start.
+        "HERMES_HEALTHCHECKS__DAILY_PING_URL",
+        "HERMES_HEALTHCHECKS__ARCHIVE_CHECK_PING_URL",
+    }
 )
 
 
@@ -269,6 +283,58 @@ def load_yaml_model[T: BaseModel](
         ) from exc
 
 
+def load_optional_yaml_model[T: BaseModel](
+    path: Path,
+    model_cls: type[T],
+    *,
+    env_section: str,
+    env: dict[str, str] | None = None,
+) -> T:
+    """Load a YAML file like :func:`load_yaml_model`, but let a missing file mean defaults.
+
+    For sections that no running code needs yet: a fresh clone or a
+    deployment without the file still starts, and the model's own defaults
+    (plus any ``HERMES_<section>__...`` override) apply.
+
+    Args:
+        path: Path to the YAML file; it may not exist.
+        model_cls: Pydantic model to validate against; every field needs a default.
+        env_section: Uppercase section name for env overrides.
+        env: Optional env-var snapshot (defaults to ``os.environ``).
+
+    Returns:
+        A validated ``model_cls`` instance.
+
+    Raises:
+        ConfigError: The file exists but is unreadable or invalid, or the
+            merged values fail schema validation.
+    """
+    env_snapshot = dict(os.environ) if env is None else env
+    if path.is_file():
+        return load_yaml_model(path, model_cls, env_section=env_section, env=env_snapshot)
+    try:
+        return model_cls.model_validate(_apply_env_overrides({}, env_section, env_snapshot))
+    except ValidationError as exc:
+        raise ConfigError(
+            f"validation failed for {model_cls.__name__} defaults: {_describe(exc)}"
+        ) from exc
+
+
+def load_sentry_config(config_dir: Path, *, env: dict[str, str] | None = None) -> SentryConfig:
+    """Load ``sentry.yaml`` from ``config_dir`` (optional), with ``HERMES_SENTRY__*`` overrides.
+
+    The CLI initializes Sentry before it knows which command runs, so it
+    loads only this section: a fresh clone that has not populated every
+    other YAML file still gets error reporting.
+
+    Raises:
+        ConfigError: The file exists but is invalid.
+    """
+    return load_optional_yaml_model(
+        config_dir / "sentry.yaml", SentryConfig, env_section="SENTRY", env=env
+    )
+
+
 def _root_env_kwargs(env: dict[str, str]) -> dict[str, Any]:
     """Extract root-tier env vars (``HERMES_ENV``, ``HERMES_ALLOW_MAINNET``).
 
@@ -375,13 +441,13 @@ def load_config(
         env_section="FEES",
         env=env_snapshot,
     )
-    tax_guard = load_yaml_model(
+    tax_guard = load_optional_yaml_model(
         base / "tax_guard.yaml",
         TaxGuardConfig,
         env_section="TAX_GUARD",
         env=env_snapshot,
     )
-    ml = load_yaml_model(
+    ml = load_optional_yaml_model(
         base / "ml.yaml",
         MLConfig,
         env_section="ML",
@@ -405,12 +471,7 @@ def load_config(
         env_section="HEALTHCHECKS",
         env=env_snapshot,
     )
-    sentry = load_yaml_model(
-        base / "sentry.yaml",
-        SentryConfig,
-        env_section="SENTRY",
-        env=env_snapshot,
-    )
+    sentry = load_sentry_config(base, env=env_snapshot)
     kraken_public = load_yaml_model(
         base / "kraken_public.yaml",
         KrakenPublicConfig,
