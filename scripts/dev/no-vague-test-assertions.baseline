@@ -214,16 +214,6 @@ tests/unit/ports/test_clock_port.py::test_simulated_clock_is_clock_port U6
 tests/unit/ports/test_clock_port.py::test_simulated_clock_now_returns_datetime U3
 tests/unit/ports/test_clock_port.py::test_wall_clock_is_clock_port U6
 tests/unit/ports/test_clock_port.py::test_wall_clock_now_returns_datetime U3
-tests/unit/ports/test_exchange_port.py::test_each_expected_method_is_callable U3
-tests/unit/ports/test_exchange_port.py::test_exchange_port_defines_all_expected_methods U3
-tests/unit/ports/test_exchange_port.py::test_exchange_port_is_runtime_checkable U3
-tests/unit/ports/test_exchange_port.py::test_exchange_port_methods_have_no_mode_parameter U3
-tests/unit/ports/test_exchange_port.py::test_minimal_stub_satisfies_exchange_port U6
-tests/unit/ports/test_exchange_port.py::test_missing_method_stub_does_not_satisfy_exchange_port U6
-tests/unit/ports/test_exchange_port.py::test_plain_object_does_not_satisfy_exchange_port U6
-tests/unit/ports/test_exchange_port.py::test_stub_get_fees_returns_fee_schedule U3
-tests/unit/ports/test_exchange_port.py::test_stub_get_orderbook_returns_orderbook U3
-tests/unit/ports/test_exchange_port.py::test_stub_place_market_order_returns_fill U3
 tests/unit/ports/test_fill_model_port.py::test_always_fill_stub_satisfies_protocol U6
 tests/unit/ports/test_fill_model_port.py::test_always_reject_stub_satisfies_protocol U6
 tests/unit/ports/test_fill_model_port.py::test_fill_is_fill_not_rejection U3
