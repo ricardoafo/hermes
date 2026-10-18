@@ -11,7 +11,7 @@ Usage: ``hermes status [--config-dir DIR] [--db PATH] [--json | --summary]``
 ``--journal FILE`` (``-`` for stdin) it adds the window's journal error and
 warning counts, and ``--restarts N`` the systemd restart count.
 
-The header block also shows the running version (``v1.0.0-shadow.1``, ADR-022),
+The header block also shows the running version (``v0.2.0``, ADR-022),
 the running release (the ``/opt/hermes/current`` target name) and when it
 went live; ``release: unknown`` without the link.
 
