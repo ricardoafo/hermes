@@ -10,7 +10,7 @@ Invariants protected here:
   added only by the verbose form;
 - the ref is the ellipsis and the last six characters of the correlation id.
 
-Reference: openspec/changes/144-notification-system/change.md (R-2).
+Reference: openspec/archive/144-notification-system/change.md (R-2).
 """
 
 # ruff: noqa: RUF001 - the typographic minus sign is the character under test

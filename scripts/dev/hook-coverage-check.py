@@ -56,6 +56,7 @@ CI_ENFORCED: dict[str, str] = {
     "mypy": "types",
     "import-linter": "imports",
     "migration-sql-check": "guards",
+    "openspec-layout": "guards",
     "no-naive-datetime": "guards",
     "no-vague-test-assertions": "guards",
     "test-file-adjacency": "guards",

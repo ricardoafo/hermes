@@ -39,10 +39,10 @@
       "filename": "changelog.d/135-added.md"
     },
     {
-      "filename": "openspec/changes/135-tax-guard-ledger/change.md"
+      "filename": "openspec/archive/135-tax-guard-ledger/change.md"
     },
     {
-      "filename": "openspec/changes/135-tax-guard-ledger/issue.md"
+      "filename": "openspec/archive/135-tax-guard-ledger/issue.md"
     },
     {
       "filename": "src/hermes/adapters/ledger/sqlite_ledger.py"

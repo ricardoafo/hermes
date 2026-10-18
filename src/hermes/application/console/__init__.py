@@ -3,7 +3,7 @@
 Every console surface (CLI, TUI, pulled Telegram replies) reads through
 :class:`ConsoleReadModel` and renders through :mod:`hermes.application.console.render`.
 
-Reference: openspec/changes/console-read-model/change.md.
+Reference: openspec/archive/console-read-model/change.md.
 """
 
 from hermes.application.console.read_model import ConsoleReadModel, ViewNotAvailableError

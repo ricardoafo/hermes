@@ -10,7 +10,7 @@ The verdict is what the operator acts on:
   itself cannot be replayed. A human resolves it; nothing is auto-healed
   (ADR-003 §10).
 
-Reference: openspec/changes/35-monthly-reconciliation/change.md D-5.
+Reference: openspec/archive/35-monthly-reconciliation/change.md D-5.
 """
 
 from __future__ import annotations

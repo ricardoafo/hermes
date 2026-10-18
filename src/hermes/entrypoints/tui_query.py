@@ -23,7 +23,7 @@ read, so a list screen stays read-only.
 activity rows inside a :class:`~hermes.entrypoints.tui_widgets.HudPanel`. They
 are a demo harness, not wired into ``hermes tui``.
 
-Reference: openspec/changes/729-query-bar/change.md.
+Reference: openspec/archive/729-query-bar/change.md.
 """
 
 from collections.abc import Callable, Iterable, Sequence

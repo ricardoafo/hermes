@@ -5,7 +5,7 @@
 **Related**: [2026-08-23 Binance testnet klines](2026-08-23-binance-testnet-klines.md)
 (its "What would change this decision" section asks for this entry),
 ADR-011 (paper-trading engine, shadow mode), AGENTS.md prohibition 7, GitHub
-issues #307 and #301, `openspec/changes/307-live-bar-stream/change.md` (D-1, D-2)
+issues #307 and #301, `openspec/archive/307-live-bar-stream/change.md` (D-1, D-2)
 
 ## Decision
 

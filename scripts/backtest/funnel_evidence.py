@@ -13,8 +13,8 @@ The replays override parameters of whatever strategy the driver loads and
 scale whatever execution model it builds, so they do not depend on which
 strategy runs.
 
-Reference: openspec/changes/v2-funnel-evidence/change.md;
-openspec/changes/v2-backtest-funnel/change.md Design §2;
+Reference: openspec/archive/v2-funnel-evidence/change.md;
+openspec/archive/v2-backtest-funnel/change.md Design §2;
 openspec/changes/1181-fold-evidence/change.md.
 """
 

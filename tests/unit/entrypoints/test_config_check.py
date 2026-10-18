@@ -16,7 +16,7 @@ Verifies:
 - ``--env-file`` checks that file alone, from a path or stdin, in place of
   the process environment (#970).
 
-Reference: openspec/changes/537-config-check/change.md.
+Reference: openspec/archive/537-config-check/change.md.
 """
 
 from __future__ import annotations

@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-03
 **Author**: AI Bot on behalf of the Code Owner
-**Related**: `openspec/changes/309-serve-bar-loop/change.md` D-4 and R-0,
+**Related**: `openspec/archive/309-serve-bar-loop/change.md` D-4 and R-0,
 [2026-08-23 Slack alongside Telegram](2026-08-23-slack-alongside-telegram.md),
 ADR-012 ruling 1 (aggregate blind), #319
 

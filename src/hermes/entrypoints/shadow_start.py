@@ -22,7 +22,7 @@ Exit codes: 0 done (or dry run passed), 1 a Ready rule failed or the service
 is running, 2 usage, 3 config, store or file error.
 
 Reference: docs/architecture/adr-021-strategy-lifecycle-ready-and-done.md §2,
-§3; issue #797; openspec/changes/797-shadow-day-zero/change.md.
+§3; issue #797; openspec/archive/797-shadow-day-zero/change.md.
 """
 
 from __future__ import annotations
