@@ -11,7 +11,8 @@ Invariants:
   the pessimistic bound at the minute's low, both in bps below the model fill.
 - With trades, the trigger is the first trade inside the 4h bar at or below
   the stop, reported in bps below the model fill; sampled days are spread
-  evenly and repeat on every run.
+  evenly and repeat on every run; a day file must match its published
+  checksum, and no day past Train is downloaded.
 - Percentiles are nearest-rank; shares count values strictly above the
   threshold.
 - The minute reader keeps open time, open and low even for rows ``Bar``
@@ -20,6 +21,7 @@ Invariants:
 """
 
 import csv
+import hashlib
 import io
 import sys
 import zipfile
@@ -27,7 +29,9 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
+import httpx
 import pytest
+import respx
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -340,3 +344,48 @@ def test_trade_summary_counts_unmatched() -> None:
 
     assert (summary.events, summary.unmatched, summary.slippage[50]) == (2, 1, Decimal(10))
     assert summary.over == Decimal("0.5")
+
+
+def _day_archive(body: str) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as bundle:
+        bundle.writestr("BTCUSDT-aggTrades-2021-01-01.csv", body)
+    return buffer.getvalue()
+
+
+_DAY_URL = f"{ss.DAILY_AGG_TRADES_URL}/BTCUSDT/BTCUSDT-aggTrades-2021-01-01.zip"
+
+
+def test_trade_slippage_downloads_the_day_and_measures_the_trigger() -> None:
+    """Invariant: a verified day file whose first trade <= 96 is 95.52 gives 50 bps."""
+    stamp = int((_T0 + _MINUTE).timestamp() * 1000)
+    archive = _day_archive(f"1,96.5,1,1,1,{stamp - 1},True\n2,95.52,1,2,2,{stamp},True\n")
+    digest = hashlib.sha256(archive).hexdigest()
+    with respx.mock() as router:
+        router.get(_DAY_URL + ".CHECKSUM").mock(return_value=httpx.Response(200, text=digest))
+        router.get(_DAY_URL).mock(return_value=httpx.Response(200, content=archive))
+        measured = ss.trade_slippage("BTCUSDT", [_event()], [_T0.date()], _T0 + 10 * _FOUR_H)
+
+    assert measured == {_event(): Decimal(50)}
+
+
+def test_day_file_with_wrong_checksum_is_refused(tmp_path: Path) -> None:
+    """Invariant: a day file whose SHA-256 differs from the published one raises, unread."""
+    archive = _day_archive("1,95,1,1,1,0,True\n")
+    with respx.mock() as router, httpx.Client() as client:
+        router.get(_DAY_URL + ".CHECKSUM").mock(return_value=httpx.Response(200, text="0" * 64))
+        router.get(_DAY_URL).mock(return_value=httpx.Response(200, content=archive))
+        with pytest.raises(OSError, match="checksum mismatch"):
+            ss.fetch_day(client, "BTCUSDT", _T0.date(), tmp_path)
+
+
+def test_trade_day_past_train_is_refused_without_any_request() -> None:
+    """Invariant: a sampled day after the Train end raises before anything is downloaded."""
+    late = (_T0 + timedelta(days=1)).date()
+    with respx.mock(assert_all_called=False) as router:
+        catch_all = router.route().mock(return_value=httpx.Response(200))
+        with pytest.raises(ValueError, match="past Train"):
+            ss.trade_slippage("BTCUSDT", [], [late], _T0)
+        requests = catch_all.call_count
+
+    assert requests == 0

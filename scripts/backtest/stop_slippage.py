@@ -376,7 +376,7 @@ def read_minutes(folder: Path) -> Iterator[Minute]:
                         yield Minute(opened, Decimal(row[1]), Decimal(row[3]))
 
 
-def _fetch_day(client: httpx.Client, symbol: str, day: date, folder: Path) -> Path:
+def fetch_day(client: httpx.Client, symbol: str, day: date, folder: Path) -> Path:
     name = f"{symbol}-aggTrades-{day.isoformat()}.zip"
     url = f"{DAILY_AGG_TRADES_URL}/{symbol}/{name}"
     expected = client.get(url + ".CHECKSUM").raise_for_status().text.split()[0]
@@ -392,7 +392,7 @@ def _fetch_day(client: httpx.Client, symbol: str, day: date, folder: Path) -> Pa
     return path
 
 
-def _trade_slippage(
+def trade_slippage(
     symbol: str, events: Sequence[StopEvent], days: Sequence[date], end: datetime
 ) -> dict[StopEvent, Decimal | None]:
     by_day: dict[date, list[StopEvent]] = defaultdict(list)
@@ -407,7 +407,7 @@ def _trade_slippage(
         for day in days:
             if datetime.combine(day, datetime.min.time(), tzinfo=UTC) > end:
                 raise ValueError(f"{symbol} trades on {day} are past Train")
-            path = _fetch_day(client, symbol, day, Path(tmp))
+            path = fetch_day(client, symbol, day, Path(tmp))
             for e in by_day[day]:
                 price = first_trade_at_or_below(read_trades(path), e)
                 measured[e] = None if price is None else trigger_slippage(e, price)
@@ -463,7 +463,7 @@ async def _run(
         if trade_days > 0:
             days = sample_days(events, trade_days)
             symbol = name.replace("/", "")
-            by_event = _trade_slippage(symbol, events, days, end)
+            by_event = trade_slippage(symbol, events, days, end)
             for m in multiples:
                 slips = [v for e, v in by_event.items() if e.multiple == m]
                 trade_summaries.append(summarize_trades(name, m, slips, threshold_bps))
