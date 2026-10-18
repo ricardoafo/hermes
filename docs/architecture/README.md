@@ -43,4 +43,5 @@ table.
 | [025](adr-025-train-decision-replay-on-engine-prs.md) | Engine PRs replay Train and compare decisions, on the CI pool with the klines mounted read-only | Accepted | — |
 | [026](adr-026-research-batch-and-signed-champion-rule.md) | Research batches — several signed candidates backtested together, Validation started by the pipeline, and a champion picked by a signed rule | Accepted | — |
 | [027](adr-027-zero-major-versions-until-real-capital.md) | Release versions are `0.y.z` until a champion trades real money; `1.0.0-shadow.N` is retired | Accepted | — |
+| [028](adr-028-release-cut-every-merge-window.md) | A release is cut at every merge window | Proposed | — |
 <!-- adr-index-end -->
