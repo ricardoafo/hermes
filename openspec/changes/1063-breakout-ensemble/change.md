@@ -29,7 +29,8 @@ than the signed one. Each rule and parameter is pinned by a hand-computed test.
 - `config/strategies.yaml`: `swing-b1-ensemble`, disabled, with v2's capital,
   sizing and close-priced exits (batch Common).
 
-The batch's `code_paths` for C1 are the module and the factory.
+The batch's `code_paths` for C1 are the module, `adapter.py` (its exits), the
+factory and `config/strategies.yaml`.
 
 ### Out
 
