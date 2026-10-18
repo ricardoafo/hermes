@@ -199,6 +199,10 @@ def assemble(args: argparse.Namespace, now: datetime) -> str:
         raise ResultsError(
             "verdicts exist but the trial log chain is missing, so no lines would count"
         )
+    notebook_path = experiment_dir / "lab-notebook.md"
+    if loaded and not notebook_path.exists():
+        raise ResultsError(f"{notebook_path} is missing, so nothing is written")
+    champion = champion_of(args.selection)
     lines = append_trial_lines(experiment_dir / "trial-log.jsonl", args.chain)
     verdicts = write_verdicts(
         loaded,
@@ -206,10 +210,9 @@ def assemble(args: argparse.Namespace, now: datetime) -> str:
         run_id=args.run_id,
         commit=args.commit,
     )
-    notebook = LabNotebook(experiment_dir / "lab-notebook.md")
+    notebook = LabNotebook(notebook_path)
     for verdict in verdicts:
         notebook.append(notebook_entry(verdict, experiment=args.experiment, now=now))
-    champion = champion_of(args.selection)
     summary = [f"- New trial lines: {lines}", f"- Verdict records: {len(verdicts)}"]
     for verdict in verdicts:
         status = "PASS" if verdict["passed"] else "FAIL"

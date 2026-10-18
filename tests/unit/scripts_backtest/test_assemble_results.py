@@ -273,7 +273,18 @@ def test_missing_notebook_is_an_error(tmp_path: Path) -> None:
     """The notebook is created at signing; its absence means the wrong experiment, so fail."""
     repo = _tree(tmp_path)
     (repo / "docs/experiments/swing-mvp1/lab-notebook.md").unlink()
+    chain = tmp_path / "chain.jsonl"
+    chain.write_bytes(b'{"n": 1}\n{"n": 2}\n')
 
-    code = _run(tmp_path, repo, _verdict_dir(tmp_path, _VERDICT))
+    code = _run(tmp_path, repo, _verdict_dir(tmp_path, _VERDICT), chain=str(chain))
 
-    assert code == 3
+    experiment = repo / "docs/experiments/swing-mvp1"
+    assert (
+        code,
+        (experiment / "trial-log.jsonl").read_bytes(),
+        (experiment / "verdicts").exists(),
+    ) == (
+        3,
+        b'{"n": 1}\n',
+        False,
+    )
