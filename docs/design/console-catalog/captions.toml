@@ -219,3 +219,27 @@ means = "What runs on the VPS and how it is doing: the services, the release his
 check = "Every figure is read-only; the actions panel says nothing runs from here; a missing source reads 'not available here', never zero; meters fill by their share."
 scenario = "ok-two-positions"
 keys = "7"
+
+[views."test_tui_logs/logs_list"]
+screen = "Logs"
+state = "8 Logs, the journal as a list with the volume histogram and facet counts"
+means = "Every journal line as one row (time, level, service, event, coin, details), newest first, with the volume histogram above, the query line and the facet counts under it."
+check = "The count 'N of M' matches the rows shown; the level facet counts add up to M; a query narrows the list, the histogram and the counts together."
+scenario = "ok-two-positions"
+keys = "8"
+
+[views."test_tui_logs/logs_pane"]
+screen = "Logs"
+state = "8 Logs with the selected line open as JSON in the detail pane"
+means = "The selected journal line shown as its JSON beside the list, with the keys to copy it, export it or open its trace."
+check = "The JSON is the selected row's line (same time, event and fields); the pane closes with Esc and leaves the list as it was."
+scenario = "ok-two-positions"
+keys = "8, down, enter"
+
+[views."test_tui_logs/logs_trace"]
+screen = "Logs"
+state = "Trace screen for the 08:00 bar cycle opened with T"
+means = "All journal lines that share one correlation id, in time order, under the breadcrumb Logs > Trace."
+check = "Every line shown carries the same trace id as the line it was opened from; Esc returns to the list on the same row."
+scenario = "ok-two-positions"
+keys = "8, down x4, t"
