@@ -121,7 +121,7 @@ class Tokens:
             theme). Night never dims it: it keeps the day text colour.
         hero_underline: Token ``hero-underline``: gradient stops of the 1-row
             underline under a big number, which also carries the shimmer.
-        highlight: The shimmer's peak and the feed pulse's flash.
+        highlight: The feed pulse's flash on the newest poll.
     """
 
     void: str
