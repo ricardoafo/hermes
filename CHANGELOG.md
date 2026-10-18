@@ -4,12 +4,14 @@ All notable changes to this project will be documented in this file.
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html)
-as defined in [ADR-006](docs/architecture/adr-006-versioning-strategy.md).
+as set out in [ADR-022](docs/architecture/adr-022-release-versions-and-deploy-cadence.md)
+and [ADR-027](docs/architecture/adr-027-zero-major-versions-until-real-capital.md)
+(`0.y.z` until a champion trades real money).
 
-Every PR that changes production behavior must update the `[Unreleased]`
-section under Added / Changed / Deprecated / Removed / Fixed / Security.
-PRs that are pure docs, chore, or CI may skip. The CHANGELOG update check
-lands in Phase 0 CI (per ADR-006).
+Every `feat`, `fix`, `refactor` and `perf` PR adds a fragment under
+[`changelog.d/`](changelog.d/README.md), grouped as Added / Changed / Deprecated /
+Removed / Fixed / Security. PRs that are pure docs, chore, or CI may skip. A release PR
+(`scripts/dev/cut-release.py`) compiles the fragments into a dated section.
 
 ## [Unreleased]
 
@@ -666,12 +668,6 @@ lands in Phase 0 CI (per ADR-006).
 - The AI reviewer can no longer write files, load a PR's own agent settings, pass the check on a PR that changes the review or merge gates, take over another person's comment, or render links and images from model text (#778).
 
 - Setting `HERMES_BINANCE__API_KEY` / `HERMES_BINANCE__API_SECRET` no longer breaks config loading. Config errors no longer echo the rejected value, so a secret can't leak through one, and the config's repr masks the Sentry DSN and healthchecks ping URL (#794).
-
-### Notes
-
-- No production runtime yet — Phase 0 lands `pyproject.toml`,
-  hexagonal `src/hermes/` skeleton, CI workflows, testing scaffold.
-- Version stays at `0.0.0-dev` until Phase 0 tags first pre-release.
 
 [Unreleased]: https://github.com/ricardoafo/hermes/commits/main
 [1.0.0-shadow.1]: https://github.com/ricardoafo/hermes/releases/tag/v1.0.0-shadow.1
