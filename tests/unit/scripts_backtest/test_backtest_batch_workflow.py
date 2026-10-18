@@ -140,6 +140,12 @@ def test_results_branch_prefix_is_fixed_and_the_checkout_keeps_no_credentials() 
 
 
 @needs_tools
+def test_results_job_requires_the_trial_log_chain_whenever_verdicts_exist() -> None:
+    """A failed chain download must stop the job, not give a verdicts-only PR."""
+    run = _step("results", "Assemble the results")["run"]
+    assert "--require-chain" in run
+
+
 def test_results_job_is_skipped_with_a_notice_until_the_app_is_configured(tmp_path: Path) -> None:
     """Without HERMES_RESULTS_APP_ID the job succeeds, opens nothing and says where lines stay."""
     output = tmp_path / "out"

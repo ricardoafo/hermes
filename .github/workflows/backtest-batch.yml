@@ -656,7 +656,8 @@ jobs:
         run: |
           set -euo pipefail
           args=(--repo-root . --experiment "$EXPERIMENT" --batch-id "$BATCH_ID"
-                --run-id "$RUN_ID" --commit "$COMMIT" --notes-out "$RUNNER_TEMP/notes.md")
+                --run-id "$RUN_ID" --commit "$COMMIT" --notes-out "$RUNNER_TEMP/notes.md"
+                --require-chain)
           if [ -f "$RUNNER_TEMP/chain/trial-log.jsonl" ]; then
             args+=(--chain "$RUNNER_TEMP/chain/trial-log.jsonl")
           fi
