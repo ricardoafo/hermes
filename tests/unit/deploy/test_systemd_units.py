@@ -605,3 +605,20 @@ def test_shadow_template_keeps_the_staging_user_hardening_and_crash_guard(
 ) -> None:
     """Each shadow runs as the lab user, sandboxed and loop-limited like the staging serve."""
     assert _parse(_SHADOW_UNIT)[section][key] == _parse(_STAGING_UNIT)[section][key]
+
+
+@pytest.mark.parametrize("name", ["hermes.service", _STAGING_UNIT, _SHADOW_UNIT])
+def test_serve_starts_after_the_clock_is_synced(name: str) -> None:
+    """Serve tells missed bars from live ones by the clock, so it waits for time sync (#1078).
+
+    A clock still wrong at boot would mark live bars as missed and pass over
+    their entries, or treat missed bars as live and fill them back-dated.
+    """
+    unit = _parse(name)["Unit"]
+    assert (
+        "time-sync.target" in unit["After"].split(),
+        "time-sync.target" in unit["Wants"].split(),
+    ) == (
+        True,
+        True,
+    )
