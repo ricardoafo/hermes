@@ -20,7 +20,7 @@ from types import ModuleType
 from hypothesis import given
 from hypothesis import strategies as st
 
-_ROOT = Path(__file__).resolve().parents[3]
+from tests.support.paths import REPO_ROOT as _ROOT
 
 
 def _load() -> ModuleType:
