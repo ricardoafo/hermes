@@ -104,6 +104,8 @@ class FakeSource:
     bars: list[Bar] = field(default_factory=list)
     signals: list[SignalEmitted] = field(default_factory=list)
     fills: list[TradeExecuted] = field(default_factory=list)
+    missed: list[datetime] = field(default_factory=list)
+    """Close times of the bars serve reached late."""
 
     def bars_closing_between(
         self, pair: Pair, interval: KlineInterval, after: datetime, upto: datetime
@@ -143,6 +145,10 @@ class FakeSource:
         """Return every recorded fill, oldest first."""
         _ = strategy_id
         return tuple(sorted(self.fills, key=lambda t: t.occurred_at))
+
+    def missed_bars_between(self, after: datetime, upto: datetime) -> int:
+        """Return how many missed bars closed in ``(after, upto]``."""
+        return sum(after < at <= upto for at in self.missed)
 
 
 @dataclass

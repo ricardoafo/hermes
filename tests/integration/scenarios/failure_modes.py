@@ -58,6 +58,7 @@ _LOTS_MACHINE = _U + "domain/lots/test_fifo_lots_state_machine.py::"
 _ALERTS = _U + "deploy/test_alert_scripts.py::"
 _WIRE = _U + "adapters/test_wire_numbers.py::"
 _PATHS = _S + "test_generated_paths.py::"
+_DOWN = _S + "test_downtime_recovery.py::"
 _LOTS_AGREE = _S + "test_portfolio_matches_ledger_lots.py::"
 _KLINES_DOWN = _S + "test_chaos_klines_down_at_boot.py::"
 _SIGTERM = _S + "test_chaos_sigterm_mid_bar.py::"
@@ -597,6 +598,47 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
                 _S + "test_restart.py::test_a_restart_with_a_position_open_keeps_it_until_its_exit",
                 _LOOP + "test_restart_while_held_writes_the_same_stop_marks_as_an_unbroken_run",
             ),
+        ),
+        FailureMode(
+            "An entry on a bar that closed while serve was down fills back-dated or halts",
+            proved_by=(
+                _DOWN + "test_an_entry_on_a_bar_that_closed_while_serve_was_down_is_not_filled",
+                _FILLS + "test_bar_re_evaluated_after_a_crash_fills_nothing_twice",
+            ),
+        ),
+        FailureMode(
+            "An exit on a bar that closed while serve was down is dated at the old close",
+            proved_by=(
+                _DOWN
+                + "test_an_exit_on_a_bar_that_closed_while_serve_was_down_fills_when_serve_is_back",
+                _SHADOW + "test_a_missed_exit_fills_on_the_live_book_stamped_when_serve_is_back",
+                _SHADOW + "test_a_missed_exit_without_a_live_book_is_stamped_now_on_the_newest_bar",
+            ),
+        ),
+        FailureMode(
+            "Bars missed during an outage go unrecorded, or the operator is not told",
+            proved_by=(
+                _DOWN + "test_bars_missed_over_a_day_are_recorded_per_stream_and_reported_once",
+                _U + "application/monitoring/test_restart_report.py::"
+                "test_the_report_counts_missed_bars_per_pair_and_stream",
+            ),
+        ),
+        FailureMode(
+            "A quick restart treats live bars as missed",
+            proved_by=(_DOWN + "test_a_restart_inside_the_live_window_misses_nothing",),
+        ),
+        FailureMode(
+            "An outage day raises parity mismatches for its unfilled missed entries",
+            proved_by=(
+                _U
+                + "application/parity/test_check.py::test_a_day_with_missed_bars_is_not_compared",
+                _U + "entrypoints/test_parity.py::"
+                "test_an_outage_day_prints_not_compared_and_sends_no_alert",
+            ),
+        ),
+        FailureMode(
+            "Serve boots before the clock syncs and misreads which bars it missed",
+            proved_by=(_UNITS + "test_serve_starts_after_the_clock_is_synced",),
         ),
         FailureMode(
             "SIGTERM while idle",
