@@ -896,7 +896,7 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "RO-08 drawdown and time-to-recovery are never driven through serve",
-            gap="issue #514: serve feeds days since the equity high as 0",
+            gap="issue #1158: serve feeds days since the equity high as 0",
         ),
         FailureMode(
             "A halt survives, or is lost across, a restart",
