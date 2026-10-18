@@ -45,6 +45,7 @@ SCREENS = (
     "Signals",
     "Positions",
     "Tax",
+    "Lab",
     "Shadow test",
     "Briefs",
     "System",
