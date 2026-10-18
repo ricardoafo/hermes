@@ -21,33 +21,33 @@ These steps stop that. The full standard is in
 
 ## Writing
 
-3. **Pin exact values.** Never rely only on `is not None`, truthiness, `> 0`,
+1. **Pin exact values.** Never rely only on `is not None`, truthiness, `> 0`,
    a length or `isinstance`. The `no-vague-test-assertions` guard rejects them.
-4. **Every limit gets two tests**: exactly at it and just past it.
-5. **One behaviour claim per test.** Assert every claim the name makes, and
+2. **Every limit gets two tests**: exactly at it and just past it.
+3. **One behaviour claim per test.** Assert every claim the name makes, and
    nothing else.
-6. **Mock only at the edge**, and name the integration or scenario test that
+4. **Mock only at the edge**, and name the integration or scenario test that
    covers the seam. Never mock the exchange in domain tests; use the
    in-memory fake. Adapter tests use recorded fixtures (`respx`, `syrupy`).
-7. **Maths gets a property test** with Hypothesis (indicators, sizing, tax,
+5. **Maths gets a property test** with Hypothesis (indicators, sizing, tax,
    statistics, parsers). Keep `max_examples` within the CI profile budget.
-8. **Anything with state gets a state machine** (`RuleBasedStateMachine`) with
+6. **Anything with state gets a state machine** (`RuleBasedStateMachine`) with
    a small reference model beside the real code and invariants after every
    step. See `tests/unit/**/test_*_state_machine.py`.
-9. **Cross-module behaviour belongs in a scenario**, not a unit test full of
+7. **Cross-module behaviour belongs in a scenario**, not a unit test full of
    mocks. Use the `hermes-scenario` skill.
-10. **SEV-1 paths** carry `# SEV-1: <rubric row>` above the test function.
-11. **Credential-shaped literals**, even fake ones, carry `# gitleaks:allow`.
+8. **SEV-1 paths** carry `# SEV-1: <rubric row>` above the test function.
+9. **Credential-shaped literals**, even fake ones, carry `# gitleaks:allow`.
 
 ## Prove it
 
-12. **Red first.** Run the new test on the code before your change; it must
+1. **Red first.** Run the new test on the code before your change; it must
     fail for the right reason. For a fix, the test is the reproduction.
-13. **Break it on purpose.** Plant the bug the test claims to catch (flip a
+2. **Break it on purpose.** Plant the bug the test claims to catch (flip a
     `>` to `>=`, drop a call) and check the test fails. For changes in
     `src/hermes/domain/` or `src/hermes/application/`, run
     `bash scripts/dev/mutation-diff.sh` and report the kill rate.
-14. **Ask the one question**: if the invariant broke, would this test fail?
+3. **Ask the one question**: if the invariant broke, would this test fail?
     If not, rewrite or delete it.
 
 ## When a code change breaks an existing test: STOP
