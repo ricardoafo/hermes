@@ -38,8 +38,17 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
+from typing import Self
 
-__all__ = ["BUSY_TIMEOUT_SECONDS", "JOURNAL_SIZE_LIMIT_BYTES", "open_ledger"]
+from hermes.domain.errors import LedgerError
+
+__all__ = [
+    "BUSY_TIMEOUT_SECONDS",
+    "JOURNAL_SIZE_LIMIT_BYTES",
+    "ReadOnlyLedgerReader",
+    "open_ledger",
+    "open_read_only",
+]
 
 BUSY_TIMEOUT_SECONDS = 10.0
 JOURNAL_SIZE_LIMIT_BYTES = 4 * 1024 * 1024
@@ -90,3 +99,74 @@ def open_ledger(
         # inside the handler that names it (serve's StartupError, tax's exit 1).
         pass
     return connection
+
+
+def open_read_only(path: Path, *, any_thread: bool = False) -> sqlite3.Connection:
+    """Open the existing ledger at ``path`` read-only, as every reader does.
+
+    Args:
+        path: The ledger file.
+        any_thread: See :func:`open_ledger`.
+
+    Returns:
+        A ``mode=ro`` connection with the busy timeout set. The caller closes it.
+
+    Raises:
+        LedgerError: SQLite refused to open the file.
+    """
+    try:
+        return open_ledger(path, read_only=True, any_thread=any_thread)
+    except sqlite3.Error as exc:
+        raise LedgerError(msg=f"cannot open {path} read-only: {exc}") from exc
+
+
+class ReadOnlyLedgerReader:
+    """The open, close and ``with`` lifecycle every read-only ledger reader shares.
+
+    A reader subclasses this and adds only its queries over ``self._conn``.
+    One copy keeps every reader on the same rules: a missing file is
+    ``FileNotFoundError`` (a ``mode=ro`` open would otherwise create
+    nothing and fail later with a less useful message), SQLite's own errors
+    become ``LedgerError``, and the connection never writes (issue #1178).
+    """
+
+    def __init__(self, connection: sqlite3.Connection) -> None:
+        """Wrap an already-open connection.
+
+        Args:
+            connection: A connection opened by :meth:`open` (or a test's own).
+        """
+        self._conn = connection
+
+    @classmethod
+    def open(cls, path: Path, *, any_thread: bool = False) -> Self:
+        """Open ``path`` read-only.
+
+        Args:
+            path: The ledger file.
+            any_thread: Let a worker thread use the connection, one thread at
+                a time; see :func:`open_ledger`.
+
+        Returns:
+            A reader over a ``mode=ro`` connection.
+
+        Raises:
+            FileNotFoundError: There is no file at ``path``.
+            LedgerError: SQLite refused to open the file.
+        """
+        resolved = path.resolve()
+        if not resolved.is_file():
+            raise FileNotFoundError(str(path))
+        return cls(open_read_only(path, any_thread=any_thread))
+
+    def close(self) -> None:
+        """Close the connection."""
+        self._conn.close()
+
+    def __enter__(self) -> Self:
+        """Return ``self`` for ``with`` blocks."""
+        return self
+
+    def __exit__(self, *_exc_info: object) -> None:
+        """Close the connection, whatever ended the ``with`` block."""
+        self.close()

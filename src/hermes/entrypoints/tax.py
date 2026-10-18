@@ -19,7 +19,7 @@ import json
 import sqlite3
 from collections.abc import Callable, Mapping
 from datetime import datetime
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Final, TextIO
 
@@ -36,6 +36,7 @@ from hermes.domain.errors import LedgerError
 from hermes.domain.tax.netting import CarriedLoss, TaxpayerYear
 from hermes.domain.tax.scale import SavingsBand, SavingsScale
 from hermes.domain.tax.year_position import tax_year_of
+from hermes.domain.value_objects.cents import to_cents
 from hermes.entrypoints import serve as serve_module
 from hermes.entrypoints._streams import resolve_err
 from hermes.infrastructure.config.errors import ConfigError
@@ -64,7 +65,6 @@ _USAGE: Final[str] = (
 
 # Hermes runs shadow only in MVP1: no live exchange is wired, so no real tax is due.
 _IS_SHADOW: Final[bool] = True
-_CENT: Final[Decimal] = Decimal("0.01")
 
 
 def to_domain_scales(config: TaxScalesConfig) -> dict[int, SavingsScale]:
@@ -223,7 +223,7 @@ def _label(is_shadow: bool) -> str:
 
 
 def _cents(amount: Decimal) -> Decimal:
-    rounded = amount.quantize(_CENT, rounding=ROUND_HALF_UP)
+    rounded = to_cents(amount)
     return rounded if rounded != 0 else Decimal("0.00")
 
 

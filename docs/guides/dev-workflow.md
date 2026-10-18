@@ -235,21 +235,22 @@ category — there is no separate `Change type` section in the template.
   can unblock a merge.
 - **Author cannot approve own PR** — enforced by branch protection setting
   "Require review from Code Owners" + "Dismiss stale approvals".
-- **`ai-bot` PRs** — same rule. Bot opens, Ricardo reviews, Ricardo
-  merges (or asks bot to merge post-approval via Claude Code session).
+- **`ai-bot` PRs** — same rule. Bot opens, Ricardo reviews and approves,
+  and the merge queue merges the approved PR once CI is green
+  ([`pr-flow.md`](pr-flow.md)).
 
 ### CI checks (required, all live)
 
 The following must pass before a PR can merge:
 
 - Pre-commit hooks (markdownlint, ruff, mypy, conventional-commits,
-  detect-secrets, trailing-whitespace, end-of-file-fixer)
+  gitleaks, trailing-whitespace, end-of-file-fixer)
 - Unit + integration tests (pytest)
 - Coverage thresholds per ADR-007 (domain ≥95%, application ≥90%, adapters
   ≥80-90%)
-- Supply-chain checks (safety, pip-audit) per ADR-010
-- CHANGELOG update check per ADR-006 (for `feat` / `fix` / `refactor` / `perf`
-  / breaking commits)
+- Supply-chain checks (pip-audit, license check) per ADR-010
+- CHANGELOG update check per AGENTS.md (a `changelog.d/` fragment, for
+  `feat` / `fix` / `refactor` / `perf` / breaking commits)
 
 During the initial bootstrap window (before MVP1 CI was wired), only the markdown
 pre-commit hook ran. Full CI has been enforced since then.

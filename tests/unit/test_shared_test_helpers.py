@@ -57,6 +57,9 @@ _LEFT: dict[str, tuple[str, frozenset[str]]] = {
         frozenset(
             {
                 "tests/integration/entrypoints/test_home_from_ledger.py",
+                "tests/unit/application/strategy_protocol/test_lab_notebook.py",
+                "tests/unit/infrastructure/config/test_endpoint_tiers.py",
+                "tests/unit/test_production_reachability.py",
                 "tests/unit/adapters/data_manifest/test_json_file.py",
                 "tests/unit/adapters/exchanges/test_binance_balance_reader.py",
                 "tests/unit/adapters/market_data/test_binance_depth_snapshot.py",
