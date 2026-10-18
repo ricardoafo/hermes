@@ -209,11 +209,6 @@ tests/unit/infrastructure/config/test_renta.py::test_layout_type_is_the_domain_l
 tests/unit/infrastructure/test_aggregate_changelog.py::test_gitkeep_and_readme_are_skipped U3
 tests/unit/infrastructure/test_aggregate_changelog.py::test_missing_fragment_dir_returns_empty_sections U3
 tests/unit/infrastructure/test_cve_triage.py::test_duplicate_advisory_yields_one_row U3
-tests/unit/ports/test_clock_port.py::test_all_adapters_are_clock_port_instances U6
-tests/unit/ports/test_clock_port.py::test_simulated_clock_is_clock_port U6
-tests/unit/ports/test_clock_port.py::test_simulated_clock_now_returns_datetime U3
-tests/unit/ports/test_clock_port.py::test_wall_clock_is_clock_port U6
-tests/unit/ports/test_clock_port.py::test_wall_clock_now_returns_datetime U3
 tests/unit/ports/test_exchange_port.py::test_each_expected_method_is_callable U3
 tests/unit/ports/test_exchange_port.py::test_exchange_port_defines_all_expected_methods U3
 tests/unit/ports/test_exchange_port.py::test_exchange_port_is_runtime_checkable U3
