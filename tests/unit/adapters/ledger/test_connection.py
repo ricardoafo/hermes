@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import threading
 from contextlib import closing
 from pathlib import Path
 
@@ -115,3 +116,46 @@ def test_a_read_only_unit_opens_the_ledger_while_serve_is_stopped(tmp_path: Path
         ["ledger.sqlite3", "ledger.sqlite3-shm", "ledger.sqlite3-wal"],
         [(1,)],
     )
+
+
+def _count_in_thread(connection: sqlite3.Connection) -> list[object]:
+    """Run one query on another thread; return its row or the error it raised."""
+    outcome: list[object] = []
+
+    def query() -> None:
+        try:
+            outcome.append(connection.execute("SELECT count(*) FROM t").fetchone())
+        except sqlite3.ProgrammingError as exc:
+            outcome.append(type(exc))
+
+    worker = threading.Thread(target=query)
+    worker.start()
+    worker.join()
+    return outcome
+
+
+def test_an_any_thread_read_only_connection_answers_another_thread(tmp_path: Path) -> None:
+    """The console's worker can read through a connection opened on the UI thread (#1001)."""
+    db = tmp_path / "ledger.sqlite3"
+    with closing(sqlite3.connect(db)) as conn:
+        conn.execute("CREATE TABLE t (x INTEGER)")
+        conn.executemany("INSERT INTO t VALUES (?)", [(1,), (2,)])
+        conn.commit()
+    with closing(open_ledger(db, read_only=True, any_thread=True)) as conn:
+        assert _count_in_thread(conn) == [(2,)]
+
+
+def test_a_default_read_only_connection_stays_on_its_own_thread(tmp_path: Path) -> None:
+    """Without any_thread, SQLite refuses a query from another thread, as before."""
+    db = tmp_path / "ledger.sqlite3"
+    with closing(sqlite3.connect(db)) as conn:
+        conn.execute("CREATE TABLE t (x INTEGER)")
+        conn.commit()
+    with closing(open_ledger(db, read_only=True)) as conn:
+        assert _count_in_thread(conn) == [sqlite3.ProgrammingError]
+
+
+def test_a_writing_connection_never_moves_between_threads(tmp_path: Path) -> None:
+    """any_thread is refused for a read-write connection, which could write from anywhere."""
+    with pytest.raises(ValueError, match="only a read-only ledger connection"):
+        open_ledger(tmp_path / "ledger.sqlite3", any_thread=True)

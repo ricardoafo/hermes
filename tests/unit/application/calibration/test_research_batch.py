@@ -367,6 +367,39 @@ def test_a_precursor_missing_from_history_fails() -> None:
     assert _failed(text, git) == {"content_sha256"}
 
 
+def test_a_parameter_edited_after_signing_fails() -> None:
+    """The signature covers the precursor: a rule changed after it is a rule nobody signed."""
+    fm = batch_front_matter()
+    _, git = signed(fm)
+    fm["candidates"][0]["parameters"]["lookback"]["neighbours"] = [10, 30]
+
+    checks = _checks(batch_text(fm), git)
+    assert (checks["content_sha256"].passed, checks["content_sha256"].detail) == (
+        False,
+        "changed since the signed precursor: candidates",
+    )
+
+
+def test_a_body_edited_after_signing_fails() -> None:
+    """Each candidate's pre-registration is in the body, so the body is signed too."""
+    fm = batch_front_matter()
+    _, git = signed(fm)
+
+    checks = _checks(batch_text(fm, BODY.replace("Rules.", "Looser rules.", 1)), git)
+    assert (checks["content_sha256"].passed, checks["content_sha256"].detail) == (
+        False,
+        "changed since the signed precursor: body",
+    )
+
+
+def test_the_signing_commit_may_change_only_the_signature_keys() -> None:
+    """Signing sets status, signer, date, hash, scope, precursor and code commit; that passes."""
+    fm = batch_front_matter()
+    text, git = signed(fm)
+
+    assert _failed(text, git) == set()
+
+
 def test_a_card_that_differs_from_its_hash_fails() -> None:
     """ADR-026 §2: every candidate's card hash matches its committed card."""
     text, git = signed(batch_front_matter())

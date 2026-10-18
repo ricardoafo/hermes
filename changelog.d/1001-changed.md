@@ -1,0 +1,1 @@
+- The console reads the ledger, the journal and the release in a worker thread and paints when the reads arrive, so a slow read no longer holds a screen switch, a key or an animation; each source is read once per poll (issue #1001).

@@ -74,7 +74,7 @@ Fragments are compiled when a version is cut (ADR-022), by the release-cut
 script, from a fresh branch off `main`:
 
 ```bash
-uv run python scripts/dev/cut-release.py 1.0.0-shadow.1
+uv run python scripts/dev/cut-release.py 0.2.0
 ```
 
 It merges the hand-written `[Unreleased]` entries and every numbered or
