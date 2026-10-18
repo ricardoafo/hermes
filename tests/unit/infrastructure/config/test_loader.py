@@ -452,7 +452,7 @@ def test_env_override_for_one_section_does_not_reach_another(config_dir: Path) -
 
 
 # ---------------------------------------------------------------------------
-# Scalar coercion: the 12-factor bool / int / float pre-pass
+# Scalar coercion: the 12-factor bool / int pre-pass
 # ---------------------------------------------------------------------------
 
 
@@ -473,9 +473,16 @@ def test_env_override_reads_12_factor_booleans(config_dir: Path, raw: str, expec
 
 
 def test_env_override_float_string_reaches_decimal_field(config_dir: Path) -> None:
-    """A non-int numeric string goes through the float path and still lands as Decimal 0.15."""
+    """A non-int numeric string lands as Decimal 0.15."""
     cfg = load_config(config_dir, env={"HERMES_TAX_GUARD__MAX_POSITION_PCT_PORTFOLIO": "0.15"})
     assert cfg.tax_guard.max_position_pct_portfolio == Decimal("0.15")
+
+
+def test_env_override_keeps_every_digit_of_a_decimal(config_dir: Path) -> None:
+    """A decimal longer than a float's 17 digits reaches a Decimal field exactly (#1176)."""
+    raw = "0.123456789012345678901"
+    cfg = load_config(config_dir, env={"HERMES_TAX_GUARD__MAX_POSITION_PCT_PORTFOLIO": raw})
+    assert cfg.tax_guard.max_position_pct_portfolio == Decimal(raw)
 
 
 def test_env_override_float_string_reaches_float_field(config_dir: Path) -> None:
