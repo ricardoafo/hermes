@@ -78,14 +78,6 @@ tests/unit/application/ledger/test_eur_pricer.py::test_final_rates_are_cached_pe
 tests/unit/application/ledger/test_eur_pricer.py::test_prior_day_rate_on_the_fill_day_is_not_final U3
 tests/unit/application/messages/test_escape.py::test_tail_length_constant_matches_documentation U7
 tests/unit/application/messages/test_shapes.py::test_shape_table_is_read_only U3
-tests/unit/application/order_router/test_router.py::test_above_max_concurrent_also_rejected U3
-tests/unit/application/order_router/test_router.py::test_at_max_concurrent_returns_risk_rejected U3
-tests/unit/application/order_router/test_router.py::test_halt_rule_returns_risk_rejected U3
-tests/unit/application/order_router/test_router.py::test_ok_rule_allows_dispatch U3
-tests/unit/application/order_router/test_router.py::test_safe_state_does_not_trigger_kill U3
-tests/unit/application/order_router/test_router.py::test_successful_fill_returned_verbatim U3
-tests/unit/application/order_router/test_router.py::test_triggered_state_returns_kill_circuit_breaker U3
-tests/unit/application/order_router/test_router.py::test_warn_rule_allows_dispatch U3
 tests/unit/application/portfolio/test_tracker.py::test_refused_fill_returns_the_failure U3
 tests/unit/application/reconciliation/test_service.py::test_the_pushed_alert_carries_no_amount U3
 tests/unit/application/strategy_protocol/test_data_split_enforcer.py::test_bar_one_day_before_oos_succeeds U3
