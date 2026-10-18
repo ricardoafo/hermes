@@ -35,7 +35,7 @@ permissions:
 jobs:
   bootstrap:
     name: Bootstrap hermes-01
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || fromJSON('["self-hosted","linux","hermes"]') }}
     environment: prod
     timeout-minutes: 10
 
