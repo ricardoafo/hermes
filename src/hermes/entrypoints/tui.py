@@ -1756,8 +1756,8 @@ class HomeApp(App[None]):
         """Draw the portfolio from the last read: the live total and line when live.
 
         Args:
-            curve: Also redraw the curve, the meters and the books (booked-only,
-                so a tick leaves them alone).
+            curve: Also redraw the curve and the books (booked-only, so a tick
+                leaves them alone); the meters redraw on every call.
         """
         summary = self._summary
         if summary is None:
@@ -1779,18 +1779,25 @@ class HomeApp(App[None]):
             self._set("portfolio", Group(*lines, head))
         else:
             self._set("portfolio", head)
-        if not curve:
-            return
         width = self._inner("portfolio")
         data = self._data
-        chart = portfolio_curve(summary, ctx, data, width=width, rows=layout.curve_rows)
-        self._show("portfolio-curve", chart, shown=bool(chart.plain))
+        if curve:
+            chart = portfolio_curve(summary, ctx, data, width=width, rows=layout.curve_rows)
+            self._show("portfolio-curve", chart, shown=bool(chart.plain))
+        # While live the meters follow the live prices; paused or with a coin unpriced they
+        # fall back to the booked figures, as the total does.
+        metered = (
+            replace(summary, total_value=live.total, invested=live.invested)
+            if live is not None and not paused
+            else summary
+        )
         meters = portfolio_meters(
-            summary, ctx, data, width=width, cap=self._exposure_cap, cash=not layout.sparklines
+            metered, ctx, data, width=width, cap=self._exposure_cap, cash=not layout.sparklines
         )
         self._show("portfolio-meters", meters, shown=bool(meters.renderables))
-        books = render_portfolio_books(summary, ctx)
-        self._show("portfolio-books", books, shown=bool(books.renderables))
+        if curve:
+            books = render_portfolio_books(summary, ctx)
+            self._show("portfolio-books", books, shown=bool(books.renderables))
 
     def _watch_facts(
         self, watch: tuple[WatchedPair, ...] | Failed

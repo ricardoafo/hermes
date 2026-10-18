@@ -444,3 +444,29 @@ def test_property_live_figures_use_only_the_live_price(live: Decimal) -> None:
     assert abs(a.gross - b.gross) <= _TOLERANCE
     assert a.net is not None and b.net is not None
     assert abs(a.net - b.net) <= _TOLERANCE
+
+
+# ----------------------------------------------------------------------
+# Invested at live prices (issue #1162)
+# ----------------------------------------------------------------------
+
+
+@given(book=_book())
+def test_property_live_cash_plus_live_invested_is_the_live_total(
+    book: tuple[PortfolioSummary, list[PositionRow], dict[str, Decimal]],
+) -> None:
+    """Cash does not move between bars, so the live invested figure is the live total less cash."""
+    summary, rows, prices = book
+    total = live_total(summary, rows, prices)
+    assert total is not None
+    assert abs(summary.cash + total.invested - total.total) <= _TOLERANCE
+
+
+def test_live_invested_moves_by_the_open_positions_price_change_only() -> None:
+    """One position of size 2 x 1 EUR/USDT whose price rises by 10 adds 20 EUR to the invested."""
+    detail = _detail()
+    row = replace(detail.row, size=Decimal(2), current_price=Decimal(100), eur_per_usdt=Decimal(1))
+    summary = _summary(total="1000", change="0", cash="800")
+    total = live_total(summary, [row], {row.coin: Decimal(110)})
+    assert total is not None
+    assert (total.invested, total.total) == (Decimal(220), Decimal(1020))

@@ -273,7 +273,12 @@ def test_blind_surface_gets_no_live_money() -> None:
 def test_portfolio_live_lines_name_both_layers() -> None:
     """With the big number showing the live total: the live change, then the booked total."""
     summary = _model().portfolio()
-    live = LiveTotal(total=Decimal("1030.50"), change=Decimal("21.74"), change_pct=Decimal("2.15"))
+    live = LiveTotal(
+        total=Decimal("1030.50"),
+        change=Decimal("21.74"),
+        change_pct=Decimal("2.15"),
+        invested=Decimal("240.00"),
+    )
     lines = live_portfolio_lines(summary, live, _look(), total_shown=True)
     assert [line.plain for line in lines] == [
         "● live · today ▲ +€21.74 +2.15%",
@@ -284,7 +289,12 @@ def test_portfolio_live_lines_name_both_layers() -> None:
 def test_portfolio_live_line_carries_the_total_when_the_big_number_is_hidden() -> None:
     """Short terminals: the live line names the live total itself."""
     summary = _model().portfolio()
-    live = LiveTotal(total=Decimal("1030.50"), change=Decimal("21.74"), change_pct=Decimal("2.15"))
+    live = LiveTotal(
+        total=Decimal("1030.50"),
+        change=Decimal("21.74"),
+        change_pct=Decimal("2.15"),
+        invested=Decimal("240.00"),
+    )
     lines = live_portfolio_lines(summary, live, _look(), total_shown=False)
     assert [line.plain for line in lines] == [
         "● live  €1,030.50 · today ▲ +€21.74 +2.15%",
