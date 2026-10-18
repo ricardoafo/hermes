@@ -22,10 +22,10 @@ from hermes.domain.trading.order import OrderSide
 from hermes.entrypoints import cli as cli_module
 from hermes.entrypoints import tax as tax_module
 from hermes.infrastructure.config.tax import TaxpayerProfile, load_tax_scales
+from tests.support.paths import REPO_ROOT
 from tests.unit.adapters.ledger.test_sqlite_trade_ledger import _record, _trade
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
-_CONFIG_DIR = _PROJECT_ROOT / "config"
+_CONFIG_DIR = REPO_ROOT / "config"
 _NOW = datetime(2026, 1, 2, 18, tzinfo=UTC)
 _PROFILE = """\
 years:

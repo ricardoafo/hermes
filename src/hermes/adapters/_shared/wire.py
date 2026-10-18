@@ -13,6 +13,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation, Overflow
 
+from hermes.adapters.endpoint import is_loopback
 from hermes.domain.value_objects.pair import Pair
 
 __all__ = [
@@ -117,6 +118,10 @@ def validate_http_config(
 ) -> None:
     """Refuse a plaintext base URL or a non-positive timeout in an adapter config.
 
+    Plain ``http://`` is accepted on a loopback host, where a lower
+    environment's fake answers and nothing crosses the network; the config
+    loader keeps loopback out of staging and prod (ADR-024 §4).
+
     Args:
         owner: The config class name, used in the error.
         url: The base URL to check.
@@ -124,9 +129,13 @@ def validate_http_config(
         url_field: The URL attribute's name, used in the error.
 
     Raises:
-        ValueError: ``url`` is not ``https://`` or ``timeout_sec <= 0``.
+        ValueError: ``url`` is neither ``https://`` nor ``http://`` on a
+            loopback host, or ``timeout_sec <= 0``.
     """
-    if not url.startswith("https://"):
-        raise ValueError(f"{owner}.{url_field} must start with https://, got {url!r}")
+    if not url.startswith("https://") and not (url.startswith("http://") and is_loopback(url)):
+        raise ValueError(
+            f"{owner}.{url_field} must start with https://, or http:// on a loopback host, "
+            f"got {url!r}"
+        )
     if timeout_sec <= 0:
         raise ValueError(f"{owner}.timeout_sec must be > 0, got {timeout_sec}")

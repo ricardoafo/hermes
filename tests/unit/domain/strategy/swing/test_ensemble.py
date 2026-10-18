@@ -15,7 +15,6 @@ window only). A signal close of 105 breaks 1 lookback, 115 breaks 2, 125 all 3.
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from pathlib import Path
 
 import pytest
 from hypothesis import given
@@ -37,6 +36,7 @@ from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
 from hermes.infrastructure.config import StrategiesConfig
 from hermes.infrastructure.config.loader import load_yaml_model
+from tests.support.paths import REPO_ROOT
 
 _PAIR = Pair(base=Currency.BTC, quote=Currency.USDT)
 _DAYS = 210
@@ -219,7 +219,7 @@ class TestParameters:
     def test_the_roster_entry_builds_this_kind(self) -> None:
         """``swing-b1-ensemble`` in the shipped roster names ``signal: breakout_ensemble``."""
         roster = load_yaml_model(
-            Path(__file__).resolve().parents[5] / "config" / "strategies.yaml",
+            REPO_ROOT / "config" / "strategies.yaml",
             StrategiesConfig,
             env_section="STRATEGIES",
             env={},

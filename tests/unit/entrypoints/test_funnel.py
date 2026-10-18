@@ -16,6 +16,7 @@ from typing import Any
 
 import pytest
 
+from hermes.application.backtest.fold_evidence import fold_evidence
 from hermes.application.calibration.backtest_funnel import (
     FUNNEL_CHECK_NAMES,
     Regime,
@@ -23,9 +24,9 @@ from hermes.application.calibration.backtest_funnel import (
 )
 from hermes.entrypoints.commands import discover
 from hermes.entrypoints.funnel import main, read_front_matter
+from tests.support.paths import REPO_ROOT
 
 _SID = "swing-v2"
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _DAYS = 730
 """31 Dec 2020 to 31 Dec 2022: Train is 2021, Validation is 2022."""
 
@@ -209,7 +210,7 @@ class TestRefusals:
     def test_v1_pre_registration_refuses(self, tmp_path: Path) -> None:
         """The signed v1 document has no funnel block: ADR-021 §5 does not bind v1."""
         _, evidence = _write(tmp_path, _FUNNEL_YAML, _passing_evidence())
-        v1 = _PROJECT_ROOT / "docs/experiments/swing-mvp1/pre-registration-v1.md"
+        v1 = REPO_ROOT / "docs/experiments/swing-mvp1/pre-registration-v1.md"
         code, out, _ = _main(_args(v1, evidence))
         assert code == 1
         assert out.splitlines()[1:] == [
@@ -406,7 +407,7 @@ class TestSignedV2PreRegistration:
 
     def test_signed_v2_front_matter_parses(self) -> None:
         """Its funnel block, regimes included, passes the parser that ``hermes funnel`` runs."""
-        v2 = _PROJECT_ROOT / "docs/experiments/swing-mvp1/pre-registration-v2.md"
+        v2 = REPO_ROOT / "docs/experiments/swing-mvp1/pre-registration-v2.md"
         front = read_front_matter(v2.read_text(encoding="utf-8"))
         thresholds = parse_funnel_front_matter(front, strategy_id="swing-mvp1-v2")
         assert thresholds.regimes == (
@@ -427,3 +428,35 @@ class TestRegistration:
             0,
             "Usage: hermes funnel <strategy_id> --pre-registration FILE",
         )
+
+
+class TestFoldEvidenceIsReportedOnly:
+    """Pre-registration §8.3 folds in the evidence file never change a funnel verdict (#1181)."""
+
+    @pytest.mark.parametrize(
+        "change",
+        [{}, {"trade_count": 99}],
+        ids=["passing-run", "failing-run"],
+    )
+    def test_the_output_is_identical_with_and_without_folds(
+        self, tmp_path: Path, change: dict[str, Any]
+    ) -> None:
+        """Same exit code and stdout, check lines and values included, for a pass and a fail."""
+        plain = {**_passing_evidence(), **change}
+        folded = {**plain, "folds": fold_evidence(date(2020, 12, 31), plain["daily_equity"])}
+        (tmp_path / "plain").mkdir()
+        (tmp_path / "folds").mkdir()
+
+        without = _main(_args(*_write(tmp_path / "plain", _FUNNEL_YAML, plain)))
+        with_folds = _main(_args(*_write(tmp_path / "folds", _FUNNEL_YAML, folded)))
+
+        assert (with_folds[0], with_folds[1]) == (without[0], without[1])
+
+    def test_a_failing_run_with_folds_still_fails(self, tmp_path: Path) -> None:
+        """99 trades with folds: exit 1, the comparison above covers a FAIL."""
+        evidence = {**_passing_evidence(), "trade_count": 99}
+        evidence["folds"] = fold_evidence(date(2020, 12, 31), evidence["daily_equity"])
+
+        code, out, _ = _main(_args(*_write(tmp_path, _FUNNEL_YAML, evidence)))
+
+        assert (code, out.splitlines()[-1]) == (1, "FUNNEL FAILED")

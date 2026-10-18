@@ -20,6 +20,11 @@ What one process does:
   Binance depth snapshot (or the pre-registration §6.2 book when none is
   fresh), and the fill is recorded as a ``TradeExecuted`` v2 trade with its
   execution-quality row (change ``353-fill-kernel-in-serve``).
+- Each executed fill's fee, slippage and latency feed EWMA + CUSUM control
+  charts (#362, #1181), primed at start-up from the ledger's past fills. The
+  first fill of a breach episode is a ``WARNING`` anomaly in the ledger and an
+  alert; it is never read to decide, size, kill or gate a trade, and a monitor
+  error is logged without stopping the fill.
 - The bar loop warms up one :class:`SwingStrategyAdapter` per pair, seeding
   bars up to a persisted cursor without evaluating them, restoring each
   pair's open position from the ledger, then evaluates every later bar as if
@@ -78,6 +83,11 @@ import structlog
 from returns.result import Failure
 
 from hermes.adapters._shared.rate_limiter import RateLimitConfig
+from hermes.adapters.clock.remote import (
+    TEST_CLOCK_URL_ENV,
+    RemoteClock,
+    remote_clock_from_env,
+)
 from hermes.adapters.clock.wall import WallClock
 from hermes.adapters.fees.binance_history import load_binance_fee_history
 from hermes.adapters.fills.orderbook_walk import OrderbookWalkFillModel
@@ -116,6 +126,10 @@ from hermes.application.ledger.eur_pricer import EurPricer, LookupBudget
 from hermes.application.ledger.trade_recorder import TradeRecorder
 from hermes.application.messages.eur_rate import EurRateLookup
 from hermes.application.monitoring.clock_skew import clock_is_off, clock_skew_change
+from hermes.application.monitoring.execution_quality import (
+    ExecutionQualityMonitor,
+    observation_of,
+)
 from hermes.application.monitoring.restart_report import RESTART_SOURCE, restart_report
 from hermes.application.notification_router import EventClass, RouterConfig, route
 from hermes.application.order_router.sizing import SizingPolicy
@@ -170,7 +184,7 @@ from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.entrypoints._release import read_release
 from hermes.infrastructure import sentry_integration
-from hermes.infrastructure.config.models import FrankfurterConfig
+from hermes.infrastructure.config.models import FrankfurterConfig, MarketDataConfig
 from hermes.infrastructure.config.root import HermesConfig
 from hermes.infrastructure.file_lock import FileLock
 from hermes.infrastructure.logging import bind_correlation_id, new_correlation_id
@@ -429,6 +443,10 @@ class Composition:
             start-up pricing of pending values.
         spread_sample_seconds: Step of the spread sampler that records the
             RO-02 input (#835); no rule reads the samples.
+        execution_quality: Control charts on each fill's fee, slippage and
+            latency (#362, #1181). Primed from the ledger's past fills when
+            the bar loop starts; a breach is recorded and alerted, never read
+            to trade.
         serve_lock: The ledger's serve lock, held from build until
             :func:`run` releases it after closing SQLite; ``None`` for a
             composition built by hand in a test.
@@ -455,6 +473,7 @@ class Composition:
     fx_adapter: FrankfurterAdapter | None
     eur_pricer: EurPricer
     spread_sample_seconds: float = SPREAD_SAMPLE_SECONDS
+    execution_quality: ExecutionQualityMonitor = field(default_factory=ExecutionQualityMonitor)
     serve_lock: FileLock | None = None
 
 
@@ -807,7 +826,11 @@ def _wire_on_ledger(
     """Wire everything that needs the open ledger; the caller closes it on failure."""
     ledger = _open_ledger(connection, ledger_path)
 
-    wall: ClockPort = clock if clock is not None else WallClock()
+    test_clock = remote_clock_from_env(env_snapshot) if clock is None else None
+    wall: ClockPort = clock if clock is not None else test_clock or WallClock()
+    if test_clock is not None:
+        # The loader allowed it only in dev or qa, on loopback (#972).
+        _log.warning("serve.clock.test_clock", source=TEST_CLOCK_URL_ENV)
     event_bus = EventBus()
     event_bus.subscribe(SignalEmitted, ledger.append_event)
     event_bus.subscribe(BarProcessed, ledger.append_event)
@@ -884,9 +907,7 @@ def _wire_on_ledger(
             event_bus=event_bus,
             ledger=ledger,
             clock=wall,
-            feed=feed
-            if feed is not None
-            else BinanceLiveKlinesAdapter.create(config.market_data, wall),
+            feed=feed if feed is not None else _live_feed(config.market_data, wall, test_clock),
             strategies=strategies,
             strategy_id=strategy_id,
             tracker=tracker,
@@ -905,6 +926,15 @@ def _wire_on_ledger(
         )
         owned.pop_all()
         return composition
+
+
+def _live_feed(
+    config: MarketDataConfig, wall: ClockPort, test_clock: RemoteClock | None
+) -> BinanceLiveKlinesAdapter:
+    """Build the live klines feed; on a test clock it also sleeps on that clock (#972)."""
+    if test_clock is None:
+        return BinanceLiveKlinesAdapter.create(config, wall)
+    return BinanceLiveKlinesAdapter.create(config, wall, sleep=test_clock.sleep)
 
 
 def _notifiers(
@@ -1159,6 +1189,7 @@ async def _bar_loop(c: Composition, shutdown: asyncio.Event) -> None:
     if shutdown.is_set():
         return
     loop = _BarLoop(c)
+    loop.prime_execution_quality()
     await loop.warm_up_and_catch_up(shutdown)
     if shutdown.is_set():
         return
@@ -1611,6 +1642,72 @@ class _BarLoop:
             )
         )
 
+    def prime_execution_quality(self) -> None:
+        """Replay the ledger's past fills into the execution-quality charts (#1181).
+
+        Runs before warm-up, so a restart keeps the Phase-I baseline and any
+        open breach episode: it neither waits for a new baseline nor alerts an
+        episode again. Fills replay in ledger order, so two boots over one
+        ledger end in the same chart state. A failure is logged and serve goes
+        on with what was replayed before it; the charts then rebuild from live
+        fills.
+        """
+        c = self.c
+        try:
+            fees = {t.correlation_id: t.fee for t in c.ledger.trade_events(c.strategy_id)}
+            past = [
+                observation_of(quality, fees[quality.correlation_id])
+                for quality in c.ledger.fill_quality_events(c.strategy_id)
+                if quality.correlation_id in fees
+            ]
+            c.execution_quality.prime(past)
+        except Exception as exc:  # alert-only: a monitor bug must never stop serve
+            _log.warning(
+                "serve.execution_quality.failed",
+                step="prime",
+                error=type(exc).__name__,
+                detail=str(exc),
+            )
+            return
+        _log.info("serve.execution_quality.primed", fills=len(past))
+
+    async def _watch_execution_quality(self, result: ShadowExecution) -> None:
+        """Chart an executed fill's fee, slippage and latency; record and alert a new breach.
+
+        Alert only (#362 D-2): no decision, size, kill rule or drift gate reads
+        the charts or the breach. A monitor error is logged and the fill stands;
+        a failed ledger write of a breach fails like any other ledger write.
+        The journal gets the breach's source, never its bps or ms figures.
+        """
+        outcome = result.outcome
+        if not isinstance(outcome, Executed) or result.quality is None:
+            return
+        c = self.c
+        quality = result.quality
+        try:
+            breaches = c.execution_quality.observe(
+                observation_of(quality, outcome.fill.fee),
+                at=quality.occurred_at,
+                correlation_id=quality.correlation_id,
+            )
+        except Exception as exc:  # alert-only: a monitor bug must never cost a fill
+            _log.warning(
+                "serve.execution_quality.failed",
+                step="observe",
+                error=type(exc).__name__,
+                detail=str(exc),
+            )
+            return
+        for alert in breaches:
+            # The bus records it in the ledger; only _alert notifies a person.
+            c.event_bus.publish(alert)
+            _log.warning(
+                "serve.execution_quality.breach",
+                source=alert.source,
+                severity=alert.severity.value,
+            )
+            await self._alert(alert, failed="serve.execution_quality.alert_failed")
+
     def next_due(self, stream: Stream) -> datetime:
         """Return when the bar after the last handled one should arrive.
 
@@ -1736,6 +1833,7 @@ class _BarLoop:
             filled=isinstance(result.outcome, Executed | AlreadyFilled),
             held=partial(self._held_position, bar.pair, at_or_before=signal_.signal_time),
         )
+        await self._watch_execution_quality(result)
         return result.outcome
 
     async def _shadow_checks(self, bar: Bar) -> None:

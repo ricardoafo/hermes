@@ -16,13 +16,13 @@ from pathlib import Path
 
 import pytest
 
-_ROOT = Path(__file__).resolve().parents[3]
+from tests.support.paths import REPO_ROOT
 
 
 def _load():
     """Import the script module (not a package)."""
     spec = importlib.util.spec_from_file_location(
-        "freshness_check", _ROOT / "scripts" / "dev" / "freshness-check.py"
+        "freshness_check", REPO_ROOT / "scripts" / "dev" / "freshness-check.py"
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

@@ -23,7 +23,7 @@ Invariants protected here (v2-strategy-config R-4, pre-registration v2 §5.3,
 
 import dataclasses
 import json
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -39,7 +39,14 @@ from hermes.domain.strategy.swing.engines.chandelier import ChandelierEngine
 from hermes.domain.value_objects.pair import Pair
 from hermes.entrypoints import serve as serve_module
 from hermes.infrastructure.config.loader import load_config
-from tests.support.serve_loop import BTC, PROJECT_ROOT, FakeClock, FakeFeed, events, run_once
+from tests.support.serve_loop import (
+    BTC,
+    PROJECT_ROOT,
+    FakeClock,
+    SteppingFeed,
+    events,
+    run_once,
+)
 from tests.unit.application.ledger.fake_fx import FakeFx
 
 pytestmark = [pytest.mark.e2e, pytest.mark.slow, pytest.mark.timeout(300)]
@@ -160,27 +167,14 @@ class _Books:
         """Nothing to release."""
 
 
-class _SteppingFeed(FakeFeed):
-    """Feed that delivers each live bar six seconds after its close, moving clock and book."""
+def _deliver(clock: FakeClock, books: _Books) -> Callable[[Bar], None]:
+    """Return a feed step that moves clock and book mid to six seconds after each close."""
 
-    def __init__(self, clock: FakeClock, books: _Books) -> None:
-        """Script the warm-up and live bars of this module."""
-        super().__init__(warm=WARM, live_bars=LIVE)
-        self.clock = clock
-        self.books = books
+    def step(bar: Bar) -> None:
+        clock.current = bar.close_time + _DELIVERY_DELAY
+        books.mid = bar.close
 
-    async def stream_closed_bars(
-        self,
-        pairs: Sequence[Pair],
-        intervals: Sequence[KlineInterval],
-        *,
-        resume_after: Mapping[tuple[Pair, KlineInterval], datetime] | None = None,
-    ) -> AsyncIterator[Bar]:
-        """Step the clock and the book's mid to each bar, then yield it."""
-        async for bar in super().stream_closed_bars(pairs, intervals, resume_after=resume_after):
-            self.clock.current = bar.close_time + _DELIVERY_DELAY
-            self.books.mid = bar.close
-            yield bar
+    return step
 
 
 def _serve(db: Path, env: Mapping[str, str], *, down_at_exit: bool) -> int:
@@ -189,7 +183,7 @@ def _serve(db: Path, env: Mapping[str, str], *, down_at_exit: bool) -> int:
     serve_module.check_startup(config, env={})
     clock = FakeClock(WARM[-1].close_time + _DELIVERY_DELAY)
     books = _Books(clock, down_at_exit=down_at_exit)
-    feed = _SteppingFeed(clock, books)
+    feed = SteppingFeed(_deliver(clock, books), warm=WARM, live_bars=LIVE)
     composition = serve_module.build_composition(
         config,
         db_path=db,

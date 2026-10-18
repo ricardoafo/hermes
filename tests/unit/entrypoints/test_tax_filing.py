@@ -16,10 +16,10 @@ from hermes.domain.trading.order import OrderSide
 from hermes.entrypoints import cli as cli_module
 from hermes.entrypoints import tax_filing
 from hermes.entrypoints.commands import discover
+from tests.support.paths import REPO_ROOT
 from tests.unit.adapters.ledger.filing_ledger import constant_fx, record_fill, standard_ledger
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
-_CONFIG_DIR = _PROJECT_ROOT / "config"
+_CONFIG_DIR = REPO_ROOT / "config"
 _AFTER_YEAR_END = date(2027, 1, 5)
 
 

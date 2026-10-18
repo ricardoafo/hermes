@@ -15,10 +15,10 @@ import json
 import subprocess
 import sys
 import tomllib
-from pathlib import Path
 from typing import Final
 
-_ROOT: Final = Path(__file__).resolve().parents[2]
+from tests.support.paths import REPO_ROOT
+
 _LIVE: Final = (
     "hermes.application.console.live",
     "hermes.ports.live_prices",
@@ -55,14 +55,14 @@ def test_engine_supervisor_and_notification_modules_never_load_the_live_modules(
         capture_output=True,
         text=True,
         check=True,
-        cwd=_ROOT,
+        cwd=REPO_ROOT,
     )
     assert json.loads(result.stdout.strip().splitlines()[-1]) == []
 
 
 def test_import_linter_contract_forbids_the_live_modules_to_every_guarded_layer() -> None:
     """The contract lists all three live modules and covers every guarded module and the domain."""
-    config = tomllib.loads((_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    config = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     contracts = {c["name"]: c for c in config["tool"]["importlinter"]["contracts"]}
     contract = contracts["live-prices-are-console-only"]
     assert (contract["type"], sorted(contract["forbidden_modules"])) == ("forbidden", sorted(_LIVE))

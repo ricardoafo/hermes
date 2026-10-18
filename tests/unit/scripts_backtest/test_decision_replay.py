@@ -31,10 +31,10 @@ from hermes.domain.strategy.signal import SignalKind, SignalSide, StrategySignal
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
 from tests.support.fill_kernel import BTC_USDT, SIZING, STRATEGY, fees, kernel, market
+from tests.support.paths import REPO_ROOT
 from tests.support.unknown_signal import config_with_unknown_signal, refusal_lines
 
-_ROOT = Path(__file__).resolve().parents[3]
-_SCRIPTS = _ROOT / "scripts" / "backtest"
+_SCRIPTS = REPO_ROOT / "scripts" / "backtest"
 _T0 = datetime(2024, 1, 1, tzinfo=UTC)
 
 
@@ -303,7 +303,7 @@ class TestDiffExitCodes:
 def test_window_is_the_train_split_in_whole_days() -> None:
     """The window runs from the Train start to the Train end date, at midnight UTC."""
     start, end = SCRIPT.train_window(
-        _ROOT / "docs" / "experiments" / "swing-mvp1" / "data-manifest.json"
+        REPO_ROOT / "docs" / "experiments" / "swing-mvp1" / "data-manifest.json"
     )
     assert (start, end) == (datetime(2020, 9, 1, tzinfo=UTC), datetime(2024, 6, 30, tzinfo=UTC))
 
@@ -316,7 +316,7 @@ class TestRecordRefusals:
     ) -> None:
         """An empty data directory: exit 3 and no decision file."""
         monkeypatch.setenv("HERMES_DATA_DIR", str(tmp_path / "empty"))
-        monkeypatch.chdir(_ROOT)
+        monkeypatch.chdir(REPO_ROOT)
         out = tmp_path / "head.jsonl"
         assert SCRIPT.main(["record", "--out", str(out)]) == 3
         assert not out.exists()
@@ -325,7 +325,7 @@ class TestRecordRefusals:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """A config directory with no roster: exit 3 before any bar is read."""
-        monkeypatch.chdir(_ROOT)
+        monkeypatch.chdir(REPO_ROOT)
         out = tmp_path / "head.jsonl"
         code = SCRIPT.main(["record", "--out", str(out), "--config-dir", str(tmp_path)])
         assert (code, out.exists()) == (3, False)
@@ -334,7 +334,7 @@ class TestRecordRefusals:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """``--strategy`` naming no roster entry: exit 3 before any bar is read."""
-        monkeypatch.chdir(_ROOT)
+        monkeypatch.chdir(REPO_ROOT)
         out = tmp_path / "head.jsonl"
         code = SCRIPT.main(["record", "--out", str(out), "--strategy", "no-such-strategy"])
         assert (code, out.exists()) == (3, False)
@@ -346,7 +346,7 @@ class TestRecordRefusals:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """Contract §2a (#1119): an unknown ``signal:`` stops the replay at config load, exit 3."""
-        monkeypatch.chdir(_ROOT)
+        monkeypatch.chdir(REPO_ROOT)
         config_dir = config_with_unknown_signal(tmp_path)
 
         code = SCRIPT.main(

@@ -371,6 +371,12 @@ hermes_run config check --config-dir /opt/hermes/current/config
 `config check` loads the config and secrets the way `serve` does, without
 starting anything. Both are safe while hermes runs.
 
+To check the staging env file the way a staging deploy does, as root:
+
+```bash
+runuser -u hermes-staging -- /opt/hermes-staging/current/.venv/bin/hermes config check --config-dir /opt/hermes-staging/current/config --env-file - < /etc/hermes/env.staging
+```
+
 | Symptom | Look at |
 | --- | --- |
 | `status` says late | `logs --since 4h`: is there a `serve.bar.processed` line for the last close? |

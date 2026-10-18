@@ -50,6 +50,7 @@ from hermes.ports.bar_feed import SourceState
 from tests.support.anomaly_rows import recorded_anomalies
 from tests.support.day_zero import write_day_zero
 from tests.support.parity import D1, DAY_END, DAY_START, H4, bar, signal_event
+from tests.support.paths import REPO_ROOT
 from tests.support.unknown_signal import config_with_unknown_signal, refusal_lines
 from tests.unit.adapters.market_data.fake_binance_public import (
     BTC_USDT,
@@ -60,7 +61,7 @@ from tests.unit.adapters.market_data.fake_binance_public import (
 )
 
 _NOW = datetime(2026, 10, 4, 0, 5, tzinfo=UTC)
-_CONFIG = Path(__file__).resolve().parents[3] / "config"
+_CONFIG = REPO_ROOT / "config"
 _PAIRS = ("BTC", "ETH", "SOL")
 _PRICE = "100"
 

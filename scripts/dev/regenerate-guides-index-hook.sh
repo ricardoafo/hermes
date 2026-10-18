@@ -3,8 +3,8 @@
 #
 # Runs regenerate-guides-index.sh --check: every guide must have an H1 and
 # a `**Description**:` line, or the index cannot be built. It never writes
-# docs/guides/README.md. The index is a derived file rebuilt on main after
-# each merge, so a commit in a PR must not carry it.
+# docs/guides/README.md; run regenerate-guides-index.sh to update the
+# committed table (issue #1197).
 #
 # Called by:
 #   `.pre-commit-config.yaml` — `regenerate-guides-index` hook, triggered

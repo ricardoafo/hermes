@@ -7,14 +7,17 @@ for machines. Per [ADR-009](../architecture/adr-009-documentation-strategy.md)
 
 ## Living index
 
-The table below is **auto-generated** from `docs/guides/*.md` by
-`scripts/dev/regenerate-guides-index.sh`, rebuilt on `main` after each
-merge. Do NOT edit the table in a PR, by hand or by running the script —
-edit the guide files themselves. Pre-commit and CI only check that the
-index still builds (`--check`).
+The table below is **generated** from `docs/guides/*.md` by
+`scripts/dev/regenerate-guides-index.sh`. Run the script in the PR that
+adds, removes or retitles a guide and commit the result; do not edit the
+table by hand. Pre-commit and CI check that every guide can be indexed
+(`--check`), and `tests/unit/test_docs_indexes.py` fails when a guide is
+missing from the table or a row names a file that no longer exists.
 
-Why: when PRs committed the table, two PRs adding guides conflicted, and
-a committed copy went stale whenever another PR merged first.
+Why committed: nothing rebuilt the table on `main`, so it went stale (it
+still listed a removed guide and missed a new one, issue #1197). Two PRs
+that each add a guide can conflict on the table; the second one re-runs the
+script after merging `main` in.
 
 <!-- guides-index-start -->
 | Guide | What it covers |
@@ -26,13 +29,14 @@ a committed copy went stale whenever another PR merged first.
 | [ci-runners-and-merge-queue.md](ci-runners-and-merge-queue.md) | Where CI jobs run, how they are routed, and how the merge queue batches, gates and merges approved PRs. |
 | [code-conventions.md](code-conventions.md) | Design patterns, error handling, immutability, factories, async, performance, polyglot posture, testing, time handling, event schema versioning, feature flags, engine pause, migrations, and public/internal API conventions. |
 | [dev-workflow.md](dev-workflow.md) | Branching, commits, PRs, merge policy, delete-branch safety, zero-footprint policy. |
+| [environments.md](environments.md) | Where dev, QA, the staging lab and prod live, how a release moves between them, what each environment may touch, and every machine step the Code Owner runs, with what happens when either machine is down. |
 | [ledger-migrations.md](ledger-migrations.md) | How ledger schema migrations run, which ones need `hermes migrate`, and how to roll one back from its snapshot. |
 | [local-setup.md](local-setup.md) | Clone → install → run tests → open your first PR. One-time setup steps you do once per clone, then never again. |
 | [operator-usage.md](operator-usage.md) | Day-to-day use: connect with `ssh hermes` or `hermes --vps`, read the console commands, see the live release, how auto-deploy works, and where to look when something is wrong. |
 | [pr-flow.md](pr-flow.md) | How a PR travels from a branch to main and production, and the rules learned the hard way on 2026-10-03. |
 | [prose-style.md](prose-style.md) | Comments, docstrings, docs, PR/issue bodies — banned words, formatting rules, per-artifact style. |
 | [release.md](release.md) | How to tag a release, what the release workflow does, how to |
-| [staging-on-hermes-01.md](staging-on-hermes-01.md) | How the staging tier runs beside prod on hermes-01 without sharing its user, paths, ledger or secrets, and every manual step to set it up, deploy to it, roll it back and remove it. |
+| [severity-rubric.md](severity-rubric.md) | How Hermes ranks a defect or a PR: SEV-1 to SEV-4 levels, the security rows S1-S12 and the functional rows F1-F12 used by bug triage, the `sev-*` labels and the `# SEV-1:` test annotation. |
 | [tax-pack.md](tax-pack.md) | What the yearly tax filing pack holds, how it refreshes during the year, when it freezes, and how to reopen a frozen year. |
 | [test-tiers.md](test-tiers.md) | The single table of test tiers: what each one is, which workflow or command runs it, how often, and whether it is live or planned; plus coverage floors and layer-isolation contracts. |
 | [vps-operations.md](vps-operations.md) | SSH access, OS maintenance, Docker + Tailscale + ufw ops, systemd services, troubleshooting. |

@@ -67,8 +67,11 @@ _EVIDENCE_KEYS = frozenset(
         "trials",
         "neighbour_trial_ids",
         "running_strategies",
+        "folds",
     }
 )
+"""``folds`` is the §8.3 fold report (issue #1181): accepted and never parsed, so it
+cannot fail or change a judged run."""
 
 
 class EvidenceError(ValueError):
@@ -287,6 +290,9 @@ def _bool(section: dict[str, Any] | None, key: str) -> bool | None:
 
 def load_funnel_evidence(path: Path, *, strategy_id: str) -> FunnelEvidence:
     """Parse a funnel evidence file (change Design §2). Absent sections mean not computed.
+
+    The ``folds`` section (pre-registration §8.3, issue #1181) is reported
+    evidence only: it is accepted and skipped, whatever it holds.
 
     Args:
         path: The evidence JSON file.
