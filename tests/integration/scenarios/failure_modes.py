@@ -715,6 +715,20 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             "Quitting the console while a read is in flight raises an error",
             proved_by=(_READS + "test_quitting_while_a_read_is_held_ends_quietly",),
         ),
+        FailureMode(
+            "A new activity row arriving while another fades leaves a highlight that never ends",
+            proved_by=(
+                _U + "entrypoints/test_tui_activity_fade.py::"
+                "test_a_second_new_row_in_mid_fade_restarts_the_fade_and_still_ends",
+            ),
+        ),
+        FailureMode(
+            "An activity read that fails while rows fade leaves a stale highlight or no error",
+            proved_by=(
+                _U + "entrypoints/test_tui_activity_fade.py::"
+                "test_a_failed_activity_read_in_mid_fade_shows_the_error_and_no_highlight",
+            ),
+        ),
     ),
     "config and deploy": (
         FailureMode(
