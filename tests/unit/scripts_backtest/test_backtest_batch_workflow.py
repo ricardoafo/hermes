@@ -42,12 +42,16 @@ def _step(job: str, name: str) -> dict[str, Any]:
 def _run(
     job: str, name: str, env: dict[str, str], cwd: Path, path_prefix: Path | None = None
 ) -> subprocess.CompletedProcess[str]:
-    """Run a step's shell with ``env`` on top of a minimal environment."""
+    """Run a step's shell with ``env`` on top of a minimal environment.
+
+    ``-e`` matches the runner's default ``bash -e {0}``: without it a non-zero exit in the middle of
+    a step goes unnoticed here and kills the step in CI.
+    """
     path = os.environ.get("PATH", "/usr/bin:/bin")
     if path_prefix is not None:
         path = f"{path_prefix}:{path}"
     return subprocess.run(  # noqa: S603 — fixed interpreter, the workflow's own script
-        ["bash", "-c", str(_step(job, name)["run"])],  # noqa: S607 — bash from PATH, as on the runner
+        ["bash", "-e", "-c", str(_step(job, name)["run"])],  # noqa: S607 — bash from PATH, as on the runner
         env={"PATH": path, **env},
         cwd=cwd,
         capture_output=True,
@@ -455,3 +459,100 @@ def test_a_judge_error_fails_the_job(tmp_path: Path, code: int) -> None:
     )
 
     assert result.returncode == code
+
+
+@needs_tools
+def test_batch_check_writes_its_summary_before_it_fails_the_step(tmp_path: Path) -> None:
+    """A failing batch check still writes its summary, then fails the step."""
+    (tmp_path / "bin").mkdir()
+    uv = tmp_path / "bin" / "uv"
+    uv.write_text("#!/usr/bin/env bash\necho 'FAIL swing-b1-a signature'\nexit 3\n")
+    uv.chmod(uv.stat().st_mode | stat.S_IXUSR)
+    summary = tmp_path / "summary"
+    summary.write_text("")
+
+    result = _run(
+        "check",
+        "Batch check",
+        {
+            "RUNNER_TEMP": str(tmp_path / "rt"),
+            "FILE": "b.md",
+            "GITHUB_STEP_SUMMARY": str(summary),
+            "GITHUB_OUTPUT": str(tmp_path / "output"),
+        },
+        tmp_path,
+        path_prefix=tmp_path / "bin",
+    )
+
+    assert (result.returncode, summary.read_text(), "exited 3" in result.stdout) == (
+        1,
+        "FAIL swing-b1-a\n",
+        True,
+    )
+
+
+@needs_tools
+def test_validation_judge_accepts_a_fail_verdict_and_reports_it(tmp_path: Path) -> None:
+    """Exit 1 from the Validation judge is a verdict: the summary is written and the step passes."""
+    _stub_uv(
+        tmp_path / "bin",
+        "FAIL swing-b1-a dsr\nCHAMPION none",
+        1,
+        {},
+    )
+    runner_temp = tmp_path / "rt"
+    (runner_temp / "chain").mkdir(parents=True)
+    (runner_temp / "chain" / "trial-log.jsonl").write_text("")
+    summary = tmp_path / "summary"
+    summary.write_text("")
+
+    result = _run(
+        "judge-validation",
+        "Judge the batch on Validation",
+        {
+            "RUNNER_TEMP": str(runner_temp),
+            "BATCH_FILE": "b.md",
+            "BATCH_ID": "b1",
+            "CANDIDATES": "[]",
+            "GITHUB_STEP_SUMMARY": str(summary),
+            "GITHUB_OUTPUT": str(tmp_path / "output"),
+        },
+        tmp_path,
+        path_prefix=tmp_path / "bin",
+    )
+
+    assert (result.returncode, "FAIL swing-b1-a dsr" in summary.read_text()) == (0, True)
+
+
+@needs_tools
+def test_an_exhausted_family_budget_names_the_candidate_before_failing_the_step(
+    tmp_path: Path,
+) -> None:
+    """Budget exit 1 is reported with the candidate's name, not lost to the step's ``-e``."""
+    (tmp_path / "bin").mkdir()
+    uv = tmp_path / "bin" / "uv"
+    uv.write_text("#!/usr/bin/env bash\necho 'family fa: 5 of 5 touches used'\nexit 1\n")
+    uv.chmod(uv.stat().st_mode | stat.S_IXUSR)
+    summary = tmp_path / "summary"
+    summary.write_text("")
+
+    result = _run(
+        "validation",
+        "Family Validation budget",
+        {
+            "RUNNER_TEMP": str(tmp_path / "rt"),
+            "BATCH_FILE": "b.md",
+            "CANDIDATE": "swing-b1-a",
+            "GITHUB_STEP_SUMMARY": str(summary),
+        },
+        tmp_path,
+        path_prefix=tmp_path / "bin",
+    )
+
+    assert (
+        result.returncode,
+        "swing-b1-a's family has no Validation touch left" in result.stdout,
+    ) == (
+        1,
+        True,
+    )
