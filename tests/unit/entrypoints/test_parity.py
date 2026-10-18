@@ -50,6 +50,7 @@ from hermes.ports.bar_feed import SourceState
 from tests.support.anomaly_rows import recorded_anomalies
 from tests.support.day_zero import write_day_zero
 from tests.support.parity import D1, DAY_END, DAY_START, H4, bar, signal_event
+from tests.support.unknown_signal import config_with_unknown_signal, refusal_lines
 from tests.unit.adapters.market_data.fake_binance_public import (
     BTC_USDT,
     START,
@@ -343,6 +344,18 @@ def test_a_config_that_cannot_load_exits_three(ledger: Path, tmp_path: Path) -> 
 
     assert (code, out) == (3, "")
     assert err.startswith("ERROR: ")
+
+
+def test_an_unknown_signal_exits_three_naming_it(ledger: Path, tmp_path: Path) -> None:
+    """Contract §2a (#1119): an unknown ``signal:`` stops parity at config load, exit 3."""
+    config_dir = config_with_unknown_signal(tmp_path)
+
+    code, _, err = _run(
+        ["check", "--date", "2026-10-03", "--db", str(ledger), "--config-dir", str(config_dir)]
+    )
+
+    lines = err.splitlines()
+    assert (code, lines[0], lines[-1]) == (3, *refusal_lines(config_dir))
 
 
 def test_the_command_is_registered_as_parity() -> None:

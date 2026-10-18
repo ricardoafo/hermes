@@ -1,0 +1,1 @@
+- Research batch swing-b1 candidate C2, `swing-b1-daily-ma`: a disabled roster entry with `signal: daily_ma` that enters on the 00:00 UTC 4h bar after a daily close crosses above its SMA(`sma_period`), and exits on a daily close below it or on a protective stop of `stop_atr_mult` x daily ATR(22) that is raised at each daily close (ADR-026).

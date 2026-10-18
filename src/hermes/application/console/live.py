@@ -60,6 +60,7 @@ __all__ = [
     "live_position",
     "live_total",
     "poll_succeeded",
+    "spread_bps",
 ]
 
 TICK_EVERY: Final = timedelta(seconds=10)
@@ -70,6 +71,7 @@ LIVE_COINS: Final = ("BTC", "ETH", "SOL")
 LIVE_QUOTE: Final = "USDT"
 _ZERO: Final = Decimal(0)
 _HUNDRED: Final = Decimal(100)
+_BPS: Final = Decimal(10_000)
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,12 +83,29 @@ class TickOutcome:
         at: Console-clock time of the fetch.
         price: Last traded price in the quote currency; ``None`` when it failed.
         error: Name of the failure, when it failed.
+        spread_bps: Best ask over best bid in basis points of the mid price;
+            ``None`` when the fetch failed or the source gave no book.
     """
 
     coin: str
     at: datetime
     price: Decimal | None
     error: str | None = None
+    spread_bps: Decimal | None = None
+
+
+def spread_bps(best_bid: Decimal, best_ask: Decimal) -> Decimal:
+    """Return the gap between the best ask and the best bid in basis points of the mid.
+
+    Args:
+        best_bid: Highest bid; must be positive.
+        best_ask: Lowest ask; must be positive.
+
+    Returns:
+        ``(ask - bid) / mid * 10000``; negative or zero only for a crossed or
+        locked book, which the ticker's own checks reject.
+    """
+    return (best_ask - best_bid) / ((best_ask + best_bid) / 2) * _BPS
 
 
 def poll_succeeded(outcomes: Sequence[TickOutcome]) -> bool:
@@ -116,6 +135,8 @@ class LiveQuote:
         previous: The good price before it, if any.
         history: The kept good prices, oldest first (at most ``RING_TICKS``).
         failed_at: When the newest fetch failed; ``None`` when it succeeded.
+        spread_bps: The spread of that newest good tick in basis points;
+            ``None`` when it had none.
     """
 
     coin: str
@@ -124,6 +145,7 @@ class LiveQuote:
     previous: Decimal | None
     history: tuple[Decimal, ...]
     failed_at: datetime | None = None
+    spread_bps: Decimal | None = None
 
     @property
     def change_pct(self) -> Decimal:
@@ -167,6 +189,7 @@ class LiveBoard:
         self._history: dict[str, deque[Decimal]] = {}
         self._at: dict[str, datetime] = {}
         self._failed: dict[str, datetime] = {}
+        self._spread: dict[str, Decimal] = {}
         self._last_good: datetime | None = None
 
     def apply(self, outcomes: Iterable[TickOutcome]) -> dict[str, int]:
@@ -191,6 +214,10 @@ class LiveBoard:
             history.append(outcome.price)
             self._at[outcome.coin] = outcome.at
             self._failed.pop(outcome.coin, None)
+            if outcome.spread_bps is None:
+                self._spread.pop(outcome.coin, None)
+            else:
+                self._spread[outcome.coin] = outcome.spread_bps
             if self._last_good is None or outcome.at > self._last_good:
                 self._last_good = outcome.at
         return moved
@@ -207,6 +234,7 @@ class LiveBoard:
             previous=history[-2] if len(history) > 1 else None,
             history=tuple(history),
             failed_at=self._failed.get(coin),
+            spread_bps=self._spread.get(coin),
         )
 
     def prices(self) -> dict[str, Decimal]:
@@ -269,13 +297,19 @@ class TickerPoller:
         outcomes = []
         for coin, pair in self._pairs:
             try:
-                price: Decimal | None = self._port.get_ticker(pair).last_price
+                ticker = self._port.get_ticker(pair)
+                price: Decimal | None = ticker.last_price
+                spread = spread_bps(ticker.best_bid, ticker.best_ask)
                 error = None
             # Any failure (network, HTTP, schema, a bug in the fake) must stay a
             # failed tick: the console never lets the ticker raise into the UI.
             except Exception as exc:
-                price, error = None, type(exc).__name__
-            outcomes.append(TickOutcome(coin=coin, at=self._clock(), price=price, error=error))
+                price, spread, error = None, None, type(exc).__name__
+            outcomes.append(
+                TickOutcome(
+                    coin=coin, at=self._clock(), price=price, error=error, spread_bps=spread
+                )
+            )
         return tuple(outcomes)
 
 

@@ -1,0 +1,1 @@
+- `hermes funnel --batch FILE --stage train|validation` judges every candidate of a signed research batch with one trial count for the whole log, writes each verdict record, the candidates that go on to Validation or the champion by the signed rule, and prints only PASS, FAIL and NA lines (ADR-026, issue #1059).

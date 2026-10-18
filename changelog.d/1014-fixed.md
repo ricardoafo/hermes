@@ -1,0 +1,1 @@
+- Ledger: a trade whose fee the Binance adapter estimated at the pre-registered taker rate is now marked, and the ledger lists every such trade for correction from the exchange's trade history.

@@ -193,10 +193,9 @@ class TestDataSplitEnforcerBars:
             )
 
         asyncio.run(run())
-        assert len(bars_received) == 1, (
-            f"Expected 1 bar for date one day before OOS, got {len(bars_received)}. "
-            f"Validation dates must not be blocked."
-        )
+        assert [(item.pair, item.open_time) for item in bars_received] == [
+            (_PAIR, _ONE_DAY_BEFORE_OOS)
+        ]
 
     def test_train_bar_always_succeeds(self, pre_reg: PreRegistration) -> None:
         """Train window bar (2023-06-15) must always pass the enforcer."""
@@ -209,10 +208,7 @@ class TestDataSplitEnforcerBars:
             )
 
         asyncio.run(run())
-        assert len(bars_received) == 1, (
-            f"Expected 1 bar for train date, got {len(bars_received)}. "
-            f"Train data must never be blocked by the enforcer."
-        )
+        assert [(item.pair, item.open_time) for item in bars_received] == [(_PAIR, _TRAIN_TS)]
 
     def test_validation_bar_succeeds(self, pre_reg: PreRegistration) -> None:
         """Validation window bar (2025-01-15) must pass the enforcer."""
@@ -225,9 +221,7 @@ class TestDataSplitEnforcerBars:
             )
 
         asyncio.run(run())
-        assert len(bars_received) == 1, (
-            f"Expected 1 bar for validation date, got {len(bars_received)}."
-        )
+        assert [(item.pair, item.open_time) for item in bars_received] == [(_PAIR, _VAL_TS)]
 
     def test_oos_bar_succeeds_in_certification_context(self, pre_reg: PreRegistration) -> None:
         """OOS bar must pass inside certification_context() — the read refusal is suspended."""
@@ -241,10 +235,7 @@ class TestDataSplitEnforcerBars:
                 )
 
         asyncio.run(run())
-        assert len(bars_received) == 1, (
-            f"Expected 1 bar inside certification_context(), got {len(bars_received)}. "
-            f"Certification mode must lift the OOS read refusal."
-        )
+        assert [(item.pair, item.open_time) for item in bars_received] == [(_PAIR, _OOS_MID_TS)]
 
 
 # ---------------------------------------------------------------------------
@@ -276,9 +267,7 @@ class TestDataSplitEnforcerTrades:
                 trades_received.extend([trade async for trade in enforcer.stream_trades(_PAIR)])
 
         asyncio.run(run())
-        assert len(trades_received) == 1, (
-            f"Expected 1 trade inside certification_context(), got {len(trades_received)}."
-        )
+        assert [(item.pair, item.trade_time) for item in trades_received] == [(_PAIR, _OOS_MID_TS)]
 
     def test_train_trade_always_succeeds(self, pre_reg: PreRegistration) -> None:
         """Train window trade must always pass the enforcer."""
@@ -289,9 +278,7 @@ class TestDataSplitEnforcerTrades:
             trades_received.extend([trade async for trade in enforcer.stream_trades(_PAIR)])
 
         asyncio.run(run())
-        assert len(trades_received) == 1, (
-            f"Expected 1 trade for train date, got {len(trades_received)}."
-        )
+        assert [(item.pair, item.trade_time) for item in trades_received] == [(_PAIR, _TRAIN_TS)]
 
 
 def test_frozen_domain_error_raised_inside_certification_context_propagates() -> None:

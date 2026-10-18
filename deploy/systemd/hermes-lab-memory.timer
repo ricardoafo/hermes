@@ -1,0 +1,17 @@
+# Fire hermes-lab-memory.service every minute (issue #1151).
+#
+# A minute keeps the alert close to the drop, and gives a day of per-instance
+# figures in the journal at one line a minute.
+
+[Unit]
+Description=Fire hermes-lab-memory every minute
+Requires=hermes-lab-memory.service
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+Persistent=true
+Unit=hermes-lab-memory.service
+
+[Install]
+WantedBy=timers.target

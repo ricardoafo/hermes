@@ -35,6 +35,8 @@ from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
 
 __all__ = [
+    "EstimatedFee",
+    "EstimatedFeeSourcePort",
     "EurTradeRow",
     "ExecutionLedgerPort",
     "LedgerPort",
@@ -444,6 +446,44 @@ class EurTradeRow:
     price_eur: Decimal | None
     fee_eur: Decimal | None
     quote_leg: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class EstimatedFee:
+    """A stored trade whose fee is an estimate, to correct from the exchange (issue #1014).
+
+    Attributes:
+        trade_id: The trade row id.
+        pair: Traded pair.
+        side: BUY or SELL.
+        executed_at: Fill time, timezone-aware.
+        fee: The estimated fee as stored.
+    """
+
+    trade_id: int
+    pair: Pair
+    side: OrderSide
+    executed_at: datetime
+    fee: Money
+
+
+@runtime_checkable
+class EstimatedFeeSourcePort(Protocol):
+    """Read side listing estimated fees, for cost basis, P&L and tax corrections.
+
+    Adapters raise :class:`hermes.domain.errors.LedgerError` on failure.
+    """
+
+    def list_estimated_fees(self) -> tuple[EstimatedFee, ...]:
+        """Return every trade whose fee is an estimate, oldest first.
+
+        Returns:
+            Estimated fees ordered by ``executed_at`` then trade id.
+
+        Raises:
+            LedgerError: On any SQLite read failure.
+        """
+        ...
 
 
 @runtime_checkable

@@ -1,0 +1,37 @@
+# Memory watch for the staging lab on hermes-01 (ADR-024 §6, issue #1151).
+#
+# Fired every minute by hermes-lab-memory.timer. Logs MemAvailable and each
+# running hermes-shadow@ instance's MemoryCurrent, and sends one Telegram
+# alert when available memory drops below 1 GiB and one when it recovers.
+#
+# The script ships inside each staging release, so ExecStart follows the
+# staging `current` symlink. The alert credentials come from the lab's env file.
+
+[Unit]
+Description=Hermes lab memory watch (alert below 1 GiB available)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=hermes-staging
+Group=hermes-staging
+
+StateDirectory=hermes-lab-memory
+StateDirectoryMode=0750
+
+# Read by systemd as root before dropping to User=hermes-staging. No leading
+# "-": a missing file must fail the check, not silently skip the alert.
+EnvironmentFile=/etc/hermes/env.staging
+ExecStart=/bin/bash /opt/hermes-staging/current/deploy/hermes-lab-memory.sh
+TimeoutStartSec=60s
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+CapabilityBoundingSet=
+ReadWritePaths=/var/lib/hermes-lab-memory
+
+[Install]
+WantedBy=multi-user.target
