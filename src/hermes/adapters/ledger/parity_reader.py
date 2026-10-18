@@ -174,6 +174,19 @@ class SqliteParityReader:
         )
         return _trades_from_rows(rows, op="trades")
 
+    def missed_bars_between(self, after: datetime, upto: datetime) -> int:
+        """Return how many bars closing in ``(after, upto]`` serve reached late (#1078).
+
+        Raises:
+            LedgerError: On a read failure.
+        """
+        rows = self._fetchall(
+            "SELECT COUNT(*) FROM events "
+            "WHERE event_type = 'BarMissed' AND occurred_at > ? AND occurred_at <= ?",
+            (after.isoformat(), upto.isoformat()),
+        )
+        return int(rows[0][0])
+
     @staticmethod
     def _signals(rows: list[tuple[str]], *, op: str) -> tuple[SignalEmitted, ...]:
         try:
