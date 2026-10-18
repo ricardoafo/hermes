@@ -342,6 +342,8 @@ class Motion:
         shimmer_step: One step of a shimmer pass (8 fps, the ambient cap).
         radar_tick: One step of the empty-positions radar.
         flash: A live price flash, and the feed pulse's bright newest glyph (issue #713).
+        activity_fade: How long a new activity row's highlight takes to fade (issue #721).
+        activity_fade_steps: Colour steps of that fade.
         clock_tick: The clock and the next-bar countdown.
         poll: Re-reading the read model.
     """
@@ -358,6 +360,8 @@ class Motion:
     shimmer_step: float = 0.125
     radar_tick: float = 0.25
     flash: float = 0.9
+    activity_fade: float = 2.0
+    activity_fade_steps: int = 4
     clock_tick: float = 1.0
     poll: float = 5.0
 
