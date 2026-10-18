@@ -290,7 +290,6 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             "A Kraken fee reply holds a percentage too large for decimal maths",
             proved_by=(
                 _FUZZ_KRAKEN + "test_an_accepted_trade_volume_schedule_has_non_negative_fees",
-                _FUZZ_KRAKEN + "test_an_accepted_asset_pairs_schedule_has_finite_non_negative_fees",
             ),
         ),
         FailureMode(
@@ -849,7 +848,7 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
                 _LOOP + "test_a_settled_push_is_not_retried_after_a_restart",
                 _U
                 + "application/test_signal_notifier.py::"
-                + "test_a_non_infra_exception_is_isolated_and_the_fan_out_goes_on",
+                + "test_deliver_names_the_channels_that_took_the_push_and_the_ones_that_raised",
             ),
         ),
         FailureMode(

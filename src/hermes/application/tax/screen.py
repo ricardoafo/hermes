@@ -121,14 +121,6 @@ class LotView:
         return exact_sum(gain for gain in gains if gain is not None)
 
     @property
-    def sale_fees(self) -> Decimal | None:
-        """Return the fees of the lot's sales; ``None`` when one is pending."""
-        fees = [sale.fee for sale in self.sales]
-        if any(fee is None for fee in fees):
-            return None
-        return exact_sum(fee for fee in fees if fee is not None)
-
-    @property
     def two_month(self) -> bool:
         """Return whether any sale of the lot was flagged under the two-month rule."""
         return any(sale.two_month for sale in self.sales)

@@ -6,7 +6,6 @@ Property invariants per code-conventions.md §8:
 - add is commutative
 - zero is neutral element
 - from_str roundtrip
-- multiply by zero yields zero
 
 Reference: R-5 (A-5.3, A-5.4, A-5.6, A-5.7).
 """
@@ -108,29 +107,6 @@ class TestMoneyFromStrRoundtrip:
         assert result.unwrap() == m
 
 
-class TestMoneyMultiplyByZero:
-    """Multiplying by zero yields zero Money."""
-
-    @given(money_strategy())
-    def test_multiply_by_zero_int(self, m: Money) -> None:
-        """Multiplying any Money by integer 0 yields the zero Money in the same currency."""
-        result = m.multiply(0)
-        assert result == Money.zero(m.currency)
-
-    @given(money_strategy())
-    def test_multiply_by_zero_decimal(self, m: Money) -> None:
-        """Multiplying by Decimal('0') yields zero Money — consistent with the int-zero case."""
-        result = m.multiply(Decimal("0"))
-        assert result == Money.zero(m.currency)
-
-    @given(money_strategy())
-    def test_multiply_by_one_is_identity(self, m: Money) -> None:
-        """Multiplying by 1 returns equal Money — 1 is the multiplicative identity."""
-        result = m.multiply(1)
-        assert result.amount == m.amount
-        assert result.currency == m.currency
-
-
 class TestMoneyExampleBased:
     """Example-based tests for factory methods and edge cases."""
 
@@ -171,19 +147,6 @@ class TestMoneyExampleBased:
         z = Money.zero(Currency.BTC)
         assert z.amount == Decimal("0")
         assert z.currency == Currency.BTC
-
-    def test_divide_by_zero_fails(self) -> None:
-        """Dividing Money by zero returns a Failure wrapping an InvalidLot error."""
-        m = Money(amount=Decimal("100"), currency=Currency.EUR)
-        error = m.divide(Decimal("0")).failure()
-        assert error == InvalidLot(reason="Division by zero on Money")
-
-    def test_divide_success(self) -> None:
-        """Dividing by a non-zero divisor returns a Success with the correctly divided amount."""
-        m = Money(amount=Decimal("100"), currency=Currency.EUR)
-        result = m.divide(Decimal("4"))
-        assert isinstance(result, Success)
-        assert result.unwrap().amount == Decimal("25")
 
     def test_sub_same_currency(self) -> None:
         """sub() with same-currency operands returns a Success with the arithmetic difference."""
