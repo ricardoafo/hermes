@@ -1,3 +1,0 @@
-### Fixed
-
-- **`BinanceHistoricalAdapter` handles 2025+ µs klines archives** — Binance changed the klines CSV archive format at 2025-01-01: `open_time` and `close_time` went from 13-digit milliseconds to 16-digit microseconds. The adapter's parser blindly divided by 1000, producing an epoch value ~1.7e12 which overflowed Windows' `datetime.fromtimestamp` limit and crashed with `OSError: [Errno 22] Invalid argument` on every 2025+ file. Now detects the timestamp width per row and dispatches to ms or µs division; unknown widths raise `ExchangeError` with a diagnostic message. Two new unit tests cover the µs format + the unexpected-width defense. Unblocks Phase 1 backtest driver Validate-window runs. Closes #271.

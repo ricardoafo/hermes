@@ -41,9 +41,10 @@ Examples:
 
 Fragments named `<pr-number>-<type>.md` (the earlier convention) still work.
 
-**Legacy placeholders**: other names, such as `wave-4-process-hardening.md`,
-are ignored by the aggregator. Do not create new ones; use the two forms
-above.
+Any other name is an error: the aggregator and the release-cut script refuse
+to run, and a unit test fails in CI, so a note can never be left out of a
+release (#1172). The legacy `wave-*.md` notes were converted to orphan
+fragments for that reason.
 
 ## Format
 
@@ -85,6 +86,3 @@ nothing.
 
 `scripts/dev/aggregate-changelog.py` still prints the merged fragments for
 review; the release-cut script uses it to read them.
-
-Legacy placeholder fragments (`wave-*.md`) are NOT deleted; they are
-visible only to humans reading the directory.

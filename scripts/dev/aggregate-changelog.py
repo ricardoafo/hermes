@@ -13,8 +13,9 @@ Behavior
 - An orphan's number is resolved at release time from the squash commit
   that added it (subject ending in ``(#<pr>)``). Unresolved orphans sort
   last, by slug.
-- Skips ``.gitkeep``, ``README.md``, and any other name, such as the
-  legacy ``wave-*.md`` placeholders (human-only fragments).
+- Skips ``.gitkeep`` and ``README.md``. Any other name is an error: a
+  file the aggregator skipped would be missing from every release's notes
+  (#1172).
 - Groups fragments by section and orders each group by number
   (ascending).
 - Emits a merged ``[Unreleased]`` block in Keep-a-Changelog order.
@@ -31,8 +32,8 @@ Exit codes
 - 0 — success (dry run or --apply completed).
 - 1 — no fragments found AND no existing [Unreleased] to preserve
   (nothing to do; probably a mistake).
-- 2 — invalid fragment filename (unknown type suffix) or CHANGELOG.md
-  missing when --apply is set.
+- 2 — invalid fragment filename (unknown name or type suffix) or
+  CHANGELOG.md missing when --apply is set.
 """
 
 from __future__ import annotations
@@ -109,13 +110,13 @@ def collect_fragments(
 
     Returns a mapping ``section-title -> [(number, body), ...]`` sorted by
     number ascending within each section. Orphan fragments take the number
-    ``resolve_pr`` returns, or :data:`UNRESOLVED`. Other names (legacy
-    ``wave-*`` placeholders) are skipped.
+    ``resolve_pr`` returns, or :data:`UNRESOLVED`.
 
     Raises
     ------
     ValueError
-        If a numeric-prefixed file has an unrecognised type suffix.
+        If a file matches neither fragment name, or has an unrecognised type
+        suffix.
     """
     by_section: dict[str, list[tuple[int, str]]] = {s: [] for s in SECTIONS}
     if not dir_path.is_dir():
@@ -131,8 +132,10 @@ def collect_fragments(
         numbered = FRAGMENT_RE.match(path.name)
         match = numbered or ORPHAN_RE.match(path.name)
         if match is None:
-            # Legacy placeholder — silently skip per convention.
-            continue
+            raise ValueError(
+                f"changelog.d/{path.name}: not a fragment name — "
+                "expected <number>-<type>.md or +<slug>.<type>.md"
+            )
         type_key = match.group("type")
         if type_key not in valid_types:
             raise ValueError(

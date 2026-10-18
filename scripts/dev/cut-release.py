@@ -243,7 +243,7 @@ def cut_changelog(
 
 
 def compiled_fragments(dir_path: Path) -> list[Path]:
-    """Return the fragments the aggregator compiles; legacy ``wave-*`` notes stay."""
+    """Return the fragments the aggregator compiles."""
     if not dir_path.is_dir():
         return []
     return sorted(

@@ -3,7 +3,8 @@
 Protects the wave-4 fragment-based changelog aggregation invariants:
 - Multiple fragments merge under the correct section, ordered by PR number.
 - Empty directory yields just the header (no sections).
-- Non-numeric-prefixed files are skipped (placeholder convention).
+- A file that is not a fragment name is refused, so no entry is dropped (#1172).
+- Every file in the real ``changelog.d/`` is a fragment the aggregator reads.
 - Invalid type suffix raises ValueError with a diagnostic path.
 - ``--apply`` rewrites the [Unreleased] block in place without touching the
   rest of CHANGELOG.md byte-for-byte.
@@ -84,19 +85,27 @@ def test_missing_fragment_dir_returns_empty_sections(tmp_path: Path) -> None:
     assert all(v == [] for v in by_section.values())
 
 
-def test_non_numeric_prefix_is_skipped(tmp_path: Path) -> None:
-    """Placeholder files (non-numeric prefix) are ignored by aggregation."""
+def test_a_file_that_is_not_a_fragment_name_is_refused(tmp_path: Path) -> None:
+    """A note the aggregator cannot read stops the run instead of vanishing (#1172)."""
     frag_dir = tmp_path / "changelog.d"
     frag_dir.mkdir()
     (frag_dir / "wave-4-process-hardening.md").write_text(
-        "- Placeholder for a PR whose number is unknown.\n", encoding="utf-8"
+        "- A note named outside the convention.\n", encoding="utf-8"
     )
     (frag_dir / "132-added.md").write_text("- Real fragment. Closes #132.\n", encoding="utf-8")
 
-    by_section = aggregate_changelog.collect_fragments(frag_dir)
+    with pytest.raises(ValueError, match=r"wave-4-process-hardening\.md: not a fragment"):
+        aggregate_changelog.collect_fragments(frag_dir)
 
-    assert len(by_section["Added"]) == 1
-    assert by_section["Added"][0][0] == 132
+
+def test_every_file_in_the_repo_changelog_dir_is_a_fragment() -> None:
+    """Every note in changelog.d/ reaches the next release; none is skipped by its name (#1172)."""
+    frag_dir = _SCRIPT_PATH.parents[2] / "changelog.d"
+
+    by_section = aggregate_changelog.collect_fragments(frag_dir, resolve_pr=lambda _path: None)
+
+    names = {p.name for p in frag_dir.iterdir()} - {"README.md", ".gitkeep"}
+    assert sum(len(entries) for entries in by_section.values()) == len(names)
 
 
 def test_gitkeep_and_readme_are_skipped(tmp_path: Path) -> None:
