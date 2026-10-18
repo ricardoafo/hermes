@@ -28,6 +28,7 @@ _SERVICE_FILES = [path for path in _UNIT_FILES if path.suffix == ".service"]
 _ENV_FILE = "/etc/hermes/env.production"
 _STAGING_UNIT = "hermes-staging.service"
 _OWN_ENV_FILES = {
+    "hermes-lab-memory.service": "/etc/hermes/env.staging",
     "hermes-bot.service": "/etc/hermes/env.bot",
     _STAGING_UNIT: "/etc/hermes/env.staging",
 }
