@@ -29,6 +29,12 @@ import structlog
 from pydantic import SecretStr
 
 from hermes.adapters.console.ledger_activity import LedgerActivityReader
+from hermes.adapters.endpoint import (
+    DEFAULT_TELEGRAM_API_BASE,
+    TELEGRAM_API_BASE_ENV,
+    EndpointConfigError,
+    api_base_from_env,
+)
 from hermes.adapters.ledger.status_reader import SqliteStatusReader
 from hermes.adapters.systemd_journal import JournalctlReader, JournalUnavailableError
 from hermes.adapters.telegram_bot import TelegramBotClient, TelegramBotError, Update
@@ -147,6 +153,11 @@ def main(
         err.write("ERROR: HERMES_TELEGRAM__BOT_TOKEN and HERMES_TELEGRAM__CHAT_ID must be set.\n")
         return 3
     try:
+        api_base = api_base_from_env(environ, TELEGRAM_API_BASE_ENV, DEFAULT_TELEGRAM_API_BASE)
+    except EndpointConfigError as exc:
+        err.write(f"ERROR: {exc}\n")
+        return 3
+    try:
         config = load_config(parsed.config_dir)
     except ConfigError as exc:
         err.write(f"ERROR: config load failed: {exc}\n")
@@ -154,7 +165,7 @@ def main(
 
     sources = build_sources(config, parsed.db, environ)
     bot = BotLoop(
-        client=client or TelegramBotClient(token=SecretStr(token)),
+        client=client or TelegramBotClient(token=SecretStr(token), api_base=api_base),
         chat_id=chat_id,
         replies=Replies(sources=sources),
         gate=CommandGate(allowed_chat_id=chat_id),

@@ -79,11 +79,14 @@ def ledger() -> Iterator[SqliteLedger]:
 
 def test_migration_is_additive_and_keeps_existing_rows(tmp_path: Path) -> None:
     """Applied after the previous file, it adds both tables and loses no row."""
-    pre = tmp_path / "pre"
+    pre, upto = tmp_path / "pre", tmp_path / "upto"
     pre.mkdir()
+    upto.mkdir()
     for path in MIGRATIONS_DIR.glob("*.sql"):
         if path.name < _MIGRATION:
             shutil.copy(path, pre / path.name)
+        if path.name <= _MIGRATION:
+            shutil.copy(path, upto / path.name)
     conn = sqlite3.connect(":memory:")
     apply_migrations(conn, pre)
     conn.execute(
@@ -92,8 +95,8 @@ def test_migration_is_additive_and_keeps_existing_rows(tmp_path: Path) -> None:
         "'2026-10-06T00:00:05+00:00')"
     )
     conn.commit()
-    assert apply_migrations(conn) == (_MIGRATION,)
-    assert apply_migrations(conn) == ()
+    assert apply_migrations(conn, upto) == (_MIGRATION,)
+    assert apply_migrations(conn, upto) == ()
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     assert {"spread_samples", "pair_correlations"} <= tables
     assert conn.execute("SELECT COUNT(*) FROM live_bars").fetchone() == (1,)
