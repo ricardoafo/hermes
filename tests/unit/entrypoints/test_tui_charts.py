@@ -94,7 +94,7 @@ def test_a_comma_is_one_cell_wide() -> None:
 
 def test_rule_runs_from_the_first_to_the_last_stop() -> None:
     """A 5-cell rule is 5 rule glyphs; the first cell is the first stop, the last the last."""
-    rule = gradient_rule(5, _BRAND)
+    rule = gradient_rule(5, _BRAND, highlight="#FFFFFF")
     colours = _colours(rule)
     assert (rule.plain, colours[0], colours[-1]) == (HERO_RULE_GLYPH * 5, "#000000", "#FFFFFF")
 
@@ -108,7 +108,7 @@ def test_shimmer_brightens_only_the_rule_cells_near_it() -> None:
 
 def test_a_stale_rule_is_one_flat_colour_even_while_shimmering() -> None:
     """``flat`` overrides the gradient and the shimmer: every cell is that colour."""
-    rule = gradient_rule(6, _BRAND, shimmer=2.0, flat="#5D6780")
+    rule = gradient_rule(6, _BRAND, highlight="#FFFFFF", shimmer=2.0, flat="#5D6780")
     assert set(_colours(rule)) == {"#5D6780"}
 
 

@@ -169,7 +169,7 @@ from hermes.application.console.system import (
     ServiceStatus,
     SystemSources,
 )
-from hermes.application.console.views import TaxPending
+from hermes.application.console.views import ActivityDay, ActivityItem, TaxPending
 from hermes.application.tax.screen import TaxpayerProfileView, TaxScreen, TaxScreenSource
 from hermes.domain.errors import LedgerError
 from hermes.entrypoints.tui_boot import BootScreen, boot_checks
@@ -263,6 +263,7 @@ from hermes.entrypoints.tui_theme import (
     VERTICAL_BREAKPOINTS,
     ThemeChoice,
     Tokens,
+    blend,
     data_tokens,
     motion_enabled,
     pulse_steps,
@@ -334,6 +335,8 @@ _WIDTH_CLASSES: Final = ("-compact", "-standard", "-wide", "-ultra")
 _HEIGHT_CLASSES: Final = ("-short", "-tall", "-towering")
 # Spaces the status row's widgets add around their text (padding, margins).
 _STATUS_ROW_SLACK: Final = 8
+# How far toward the live colour a new activity row's background starts (issue #721).
+_FADE_PEAK: Final = 0.4
 # The countdown meter: a space, the end caps and the cells (issue #833).
 _COUNTDOWN_METER_CELLS: Final = METER_CELLS + 3
 # The margins the theme chip and the mainnet badge keep on the status row.
@@ -849,6 +852,10 @@ class HomeApp(App[None]):
         self._fetching = False
         self._flashes: dict[str, int] = {}
         self._flash_timer: Timer | None = None
+        self._activity_seen: frozenset[ActivityItem] | None = None
+        self._fresh_activity: frozenset[ActivityItem] = frozenset()
+        self._fade_step = 0
+        self._fade_timer: Timer | None = None
         self._polls: deque[bool] = deque(maxlen=FEED_WIDTH)
         self._feed_timer: Timer | None = None
         self._live_state = LiveState.WAITING
@@ -1619,13 +1626,8 @@ class HomeApp(App[None]):
         self._paint_portfolio_read(portfolio)
         self._paint_positions_read(reads)
         self._paint_market_read(reads.watch)
-        activity = reads.activity
-        self._set(
-            "activity",
-            _unavailable("Activity", activity)
-            if isinstance(activity, CARD_ERRORS)
-            else render_activity(activity, ctx, limit=layout.activity_rows, icons=True),
-        )
+        self._note_fresh_activity(reads.activity)
+        self._paint_activity(reads.activity)
         self._set("brief", Text(_BRIEF_PENDING, style="dim"))
         if layout.third:
             self._paint_third_column(reads, layout)
@@ -1635,6 +1637,60 @@ class HomeApp(App[None]):
         screen = self.screen
         if isinstance(screen, _PanelScreen | DetailScreen):
             screen.refresh_panel()
+
+    def _paint_activity(self, activity: tuple[ActivityDay, ...] | Failed) -> None:
+        """Draw the Activity card; a new row wears its fading highlight."""
+        if isinstance(activity, CARD_ERRORS):
+            self._set("activity", _unavailable("Activity", activity))
+            return
+        share = 1 - self._fade_step / MOTION.activity_fade_steps
+        emphasis = {
+            item: f"on {blend(self._data.panel, self._data.live, _FADE_PEAK * share)}"
+            for item in self._fresh_activity
+        }
+        self._set(
+            "activity",
+            render_activity(
+                activity,
+                self._ctx,
+                limit=self._layout.activity_rows,
+                icons=True,
+                emphasis=emphasis,
+            ),
+        )
+
+    def _note_fresh_activity(self, activity: tuple[ActivityDay, ...] | Failed) -> None:
+        """Start the highlight fade for rows that were not in the last read.
+
+        The first read of the console highlights nothing, and with motion off
+        nothing fades.
+        """
+        if isinstance(activity, CARD_ERRORS):
+            return
+        items = frozenset(item for day in activity for item in day.items)
+        seen, self._activity_seen = self._activity_seen, items
+        if seen is None or not self._motion or not (items - seen):
+            return
+        self._fresh_activity = items - seen
+        self._fade_step = 0
+        if self._fade_timer is not None:
+            self._fade_timer.stop()
+        self._fade_timer = self.set_interval(
+            MOTION.activity_fade / MOTION.activity_fade_steps, self._fade_activity
+        )
+
+    def _fade_activity(self) -> None:
+        """Take one step of the highlight fade; the last step clears it."""
+        self._fade_step += 1
+        if self._fade_step >= MOTION.activity_fade_steps:
+            self._fresh_activity = frozenset()
+            self._fade_step = 0
+            if self._fade_timer is not None:
+                self._fade_timer.stop()
+                self._fade_timer = None
+        reads = self._reads
+        if reads is not None:
+            self._paint_activity(reads.activity)
 
     def _paint_heartbeat_read(self, heartbeat: Heartbeat | Failed, ctx: RenderContext) -> None:
         if isinstance(heartbeat, CARD_ERRORS):

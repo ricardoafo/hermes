@@ -154,3 +154,20 @@ def test_sends_wait_one_second_apart_and_twenty_per_minute() -> None:
     assert clock.slept[:2] == [1.0, 1.0]
     assert len(clock.slept) == 20
     assert clock.slept[-1] == 41.0
+
+
+@respx.mock
+def test_calls_go_to_the_configured_api_base() -> None:
+    """With ``api_base`` set, the method URL is built on it, not on api.telegram.org."""
+    respx.post(url__startswith="http://127.0.0.1:8081/").mock(
+        return_value=httpx.Response(200, json=_SENT)
+    )
+    client = TelegramBotClient(
+        token=SecretStr(_TOKEN), api_base="http://127.0.0.1:8081", client=httpx.Client()
+    )
+
+    client.send_message("5", "hi")
+
+    assert [str(call.request.url) for call in respx.calls] == [
+        f"http://127.0.0.1:8081/bot{_TOKEN}/sendMessage"
+    ]

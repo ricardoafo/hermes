@@ -103,6 +103,8 @@ class Tokens:
         live: Live dot, focus, live tags; the top-left bracket corner.
         ai: Anything the AI supervisor wrote (✦); the bottom-right corner.
         frame: Chrome accent between ``live`` and ``ai``.
+        frame_text: ``frame`` lifted to read at 4.5:1 on every surface, for
+            tab numbers, the theme chip and any text drawn in the accent.
         up: Gains (colour-blind blue).
         down: Losses (colour-blind orange).
         warn: Late, stop near (amber).
@@ -119,6 +121,7 @@ class Tokens:
             theme). Night never dims it: it keeps the day text colour.
         hero_underline: Token ``hero-underline``: gradient stops of the 1-row
             underline under a big number, which also carries the shimmer.
+        highlight: The feed pulse's flash on the newest poll.
     """
 
     void: str
@@ -130,6 +133,7 @@ class Tokens:
     live: str
     ai: str
     frame: str
+    frame_text: str
     up: str
     down: str
     warn: str
@@ -143,6 +147,7 @@ class Tokens:
     ai_gradient: tuple[str, ...]
     hero_digits: str
     hero_underline: tuple[str, ...]
+    highlight: str
 
 
 BASE: Final = Tokens(
@@ -153,17 +158,20 @@ BASE: Final = Tokens(
     overlay="#18233A",
     line="#1A2740",
     live="#58D1EB",
-    ai="#9D65FF",
+    # Issue #1096: lifted from #9D65FF, which read at 4.3:1 on the overlay.
+    ai="#A26EFE",
     # The spec gives `frame` and `chrome` for Neon only; Control room's values
     # are an implementer decision (change.md D-9): the focus border and the
     # live -> up -> ai stops of the base sheet.
     frame="#2C4F86",
+    frame_text="#768EB2",
     up="#468CE6",
     down="#F07814",
     warn="#E6BE28",
     text="#E6ECF5",
     muted="#8A94A8",
-    dim="#5D6780",
+    # Issue #1096: hints read at 2.8:1 to 3.5:1 as #5D6780.
+    dim="#838CA1",
     brand=("#8BE9FF", "#468CE6", "#9D65FF"),
     chrome=("#58D1EB", "#468CE6", "#9D65FF"),
     gain=("#1B3A6B", "#468CE6", "#8BE9FF"),
@@ -173,6 +181,7 @@ BASE: Final = Tokens(
     # take the text colour and the gradient moves to a rule under them.
     hero_digits="#E6ECF5",
     hero_underline=("#8BE9FF", "#468CE6", "#9D65FF"),
+    highlight="#FFFFFF",
 )
 
 NEON: Final = replace(
@@ -186,9 +195,11 @@ NEON: Final = replace(
     live="#00F0FF",
     ai="#FF3DF0",
     frame="#8A5CFF",
+    frame_text="#9374FF",
     text="#C8FBFF",
     muted="#8FA8D8",
-    dim="#5A5F9A",
+    # Issue #1096: hints read at 2.6:1 to 3.4:1 as #5A5F9A.
+    dim="#798BB6",
     chrome=("#FF3DF0", "#8A5CFF", "#00F0FF"),
     brand=("#00F0FF", "#8A5CFF", "#FF3DF0"),
     hero_digits="#C8FBFF",
@@ -210,6 +221,7 @@ NIGHT: Final = replace(
     # its darker panels (issue #1046: labels read at 4.0:1, hints at 2.3:1).
     ai="#9274C8",
     frame="#1F3961",
+    frame_text="#75859E",
     up="#5186CA",
     down="#CE6812",
     text="#B4BCCB",
@@ -330,6 +342,8 @@ class Motion:
         shimmer_step: One step of a shimmer pass (8 fps, the ambient cap).
         radar_tick: One step of the empty-positions radar.
         flash: A live price flash, and the feed pulse's bright newest glyph (issue #713).
+        activity_fade: How long a new activity row's highlight takes to fade (issue #721).
+        activity_fade_steps: Colour steps of that fade.
         clock_tick: The clock and the next-bar countdown.
         poll: Re-reading the read model.
     """
@@ -346,6 +360,8 @@ class Motion:
     shimmer_step: float = 0.125
     radar_tick: float = 0.25
     flash: float = 0.9
+    activity_fade: float = 2.0
+    activity_fade_steps: int = 4
     clock_tick: float = 1.0
     poll: float = 5.0
 

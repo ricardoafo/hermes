@@ -1,0 +1,1 @@
+- Console: every panel's key hint now starts in the body text's column, and hints, tab numbers, the theme chip and AI text read at 4.5:1 or more on every surface in Neon, Control room and night.
