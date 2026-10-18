@@ -22,8 +22,9 @@ and timings live in :mod:`hermes.entrypoints.tui_theme`.
 Screens: ``1`` Home (issue #712); ``4`` Tax (issue #719, view only:
 :mod:`hermes.entrypoints.tui_tax`); ``5`` Shadow test (issue #718); ``6``
 Briefs; ``7`` System (issue #717, view only:
-:mod:`hermes.entrypoints.tui_system`); the others name the issue that builds
-them next.
+:mod:`hermes.entrypoints.tui_system`); ``8`` Logs (issue #716: the
+journal as a queryable list, :class:`~hermes.entrypoints.tui_logs.LogsView`); the
+others name the issue that builds them next.
 
 The Shadow test screen: the big "N / 90" over the shared 90-day run bar with
 month ticks (or "warm-up · not counting" while no ``hermes shadow-start``
@@ -78,7 +79,10 @@ Keys: ``1``-``8`` screens, Tab / Shift+Tab cycle them, Ctrl+P command palette,
 ``]`` previous / next inside a detail screen, ``L`` logs, ``T`` theme, ``?``
 help, ``R`` restart (only while the notice shows), ``Q`` quit. On the Tax screen
 ``[`` ``]`` switch its sub-tabs, ``S`` shows or masks the taxpayer profile and
-``E`` says editing waits for MVP2.
+``E`` says editing waits for MVP2. On the Logs screen ``/`` goes to the query line (Tab
+completes a field there), ``T`` opens the selected line's trace, ``F``
+follows, ``C`` copies, ``E`` exports and ``D`` ``W`` ``M`` ``Y`` zoom the
+volume histogram.
 
 Reference: openspec/changes/readonly-tui-dashboard/change.md;
 openspec/changes/live-home-screen/change.md (D-6);
@@ -87,7 +91,8 @@ openspec/changes/712-cockpit-home/change.md;
 openspec/changes/713-live-ticker/change.md;
 openspec/changes/719-tax-screen/change.md;
 openspec/changes/730-drill-down/change.md;
-openspec/changes/717-system-screen/change.md.
+openspec/changes/717-system-screen/change.md;
+openspec/changes/716-logs-screen/change.md.
 """
 
 from __future__ import annotations
@@ -202,7 +207,9 @@ from hermes.entrypoints.tui_live import (
     live_portfolio_lines,
     market_rows,
 )
+from hermes.entrypoints.tui_logs import READ_LINES, LogsView
 from hermes.entrypoints.tui_notices import bar_checked_notice, beep_enabled, should_beep
+from hermes.entrypoints.tui_positions import PositionsView, closed_items
 from hermes.entrypoints.tui_query import QueryInput
 from hermes.entrypoints.tui_reads import (
     CARD_ERRORS,
@@ -346,16 +353,17 @@ _MAINNET_MARGIN: Final = 1
 TABS: Final = (
     Tab("1", "Home"),
     Tab("2", "Signals"),
-    Tab("3", "Positions", 715),
+    Tab("3", "Positions"),
     Tab("4", "Tax"),
     Tab("5", "Shadow test"),
     Tab("6", "Briefs"),
     Tab("7", "System"),
-    Tab("8", "Logs", 716),
+    Tab("8", "Logs"),
 )
 _HOME: Final = 0
 _SHADOW: Final = 4
 _SIGNALS: Final = 1
+_POSITIONS: Final = 2
 _TAX: Final = 3
 _BRIEFS: Final = 5
 _SYSTEM: Final = 6
@@ -382,6 +390,25 @@ _DETAIL_CHIPS: Final = (
     ("[ ]", "prev/next"),
     ("1-8", "screens"),
     ("^P", "palette"),
+    ("Q", "quit"),
+)
+_LOGS_FOOTER_CHIPS: Final = (
+    ("/", "query"),
+    ("↵", "line"),
+    ("T", "trace"),
+    ("F", "follow"),
+    ("C", "copy"),
+    ("E", "export"),
+    ("D W M Y", "window"),
+    ("Q", "quit"),
+)
+_LOGS_FOOTER_CHIPS_COMPACT: Final = (
+    ("/", ""),
+    ("↵", ""),
+    ("T", "trace"),
+    ("F", "follow"),
+    ("C", ""),
+    ("E", ""),
     ("Q", "quit"),
 )
 _POSITIONS_TRAIL: Final = ("Home", "Positions")
@@ -718,6 +745,7 @@ class HomeApp(App[None]):
         boot: bool = False,
         background_reads: bool = False,
         system: SystemSources | None = None,
+        exports: Path | None = None,
     ) -> None:
         """Hold the read model, the journal source and the screen state.
 
@@ -759,8 +787,11 @@ class HomeApp(App[None]):
                 holds a key or an animation; ``False`` reads and paints at once.
             system: The System screen's read-only sources; ``None`` shows every
                 System panel as "not available here".
+            exports: Where the Logs screen exports a line; ``None`` (over
+                ``--vps``) says export works from the PC instead.
         """
         super().__init__()
+        self._exports = exports
         # The checks need the time zone, which the model only gives once mounted.
         self._boot_checks = (
             partial(boot_checks, model, journal=journal, ticker=ticker) if boot else None
@@ -922,8 +953,24 @@ class HomeApp(App[None]):
             yield self._compose_shadow()
             yield from self._compose_system()
             for index, tab in enumerate(TABS[1:], start=1):
+                if index == _POSITIONS:
+                    yield PositionsView(
+                        detail_body=self._detail_content, now=self._clock, id=f"tab-{tab.key}"
+                    )
+                    continue
                 if index == _TAX:
                     yield TaxTab(now=self._clock, motion=self._motion, id=f"tab-{tab.key}")
+                    continue
+                if index == _LOGS:
+                    with Container(id=f"tab-{tab.key}"):
+                        yield LogsView(
+                            now=self._clock,
+                            tz=lambda: self._ctx.tz,
+                            exports=self._exports,
+                            demo=self._model.demo_scenario is not None,
+                            refresh=self._redraw,
+                            id="logs-view",
+                        )
                     continue
                 if index in (_SHADOW, _SYSTEM):
                     continue
@@ -1568,12 +1615,18 @@ class HomeApp(App[None]):
             range_=self._range,
             include_quiet=self._show_quiet,
             log_tail_rows=layout.log_rows if layout.third else None,
-            logs_lines=_LOGS_LINES if self._tab == _LOGS or self._logs_panel_open else None,
+            logs_lines=self._logs_lines_wanted(),
             briefs=self._tab == _BRIEFS,
             signals=self._tab == _SIGNALS,
             tax=self._tab == _TAX,
             system=self._tab == _SYSTEM,
         )
+
+    def _logs_lines_wanted(self) -> int | None:
+        """Return how many journal lines the shown Logs screen or panel needs read, if any."""
+        if self._tab == _LOGS and any(v.wants_journal for v in self._home.query(LogsView)):
+            return READ_LINES
+        return _LOGS_LINES if self._logs_panel_open else None
 
     def _read_off_thread(self, request: ReadRequest) -> None:
         reads = read_console(self._sources, request)
@@ -1725,15 +1778,31 @@ class HomeApp(App[None]):
         if self._tab == _SYSTEM and reads.system is not None:
             self._keep_system(reads.system)
             self._paint_system()
-        if self._tab == _LOGS:
-            logs = TABS[_LOGS]
-            self._set(
-                f"screen-{logs.key}", Group(_placeholder(logs), Text(""), self._logs_content())
-            )
+        if self._tab == _LOGS and reads.logs_asked:
+            self.logs_view.receive(reads.logs)
         if self._tab == _SIGNALS and reads.rule_checks is not None:
             self._set(f"screen-{TABS[_SIGNALS].key}", self._signals_content(reads))
+        if self._tab == _POSITIONS:
+            self._paint_positions_tab(reads)
         if self._tab == _TAX and reads.tax is not None:
             self._paint_tax(reads.tax, reads.tax_pack, ctx)
+
+    @property
+    def positions_view(self) -> PositionsView:
+        """Return the Positions screen."""
+        return self._home.query_one(PositionsView)
+
+    def _paint_positions_tab(self, reads: ConsoleReads) -> None:
+        """Hand the Positions screen the positions and the recently closed ones of a read."""
+        view = self._alive(PositionsView, f"#tab-{TABS[_POSITIONS].key}")
+        if view is None:
+            return
+        positions, activity = reads.positions, reads.activity
+        closed = () if isinstance(activity, CARD_ERRORS) else closed_items(activity)
+        if isinstance(positions, CARD_ERRORS):
+            view.receive(None, closed, reads.ctx, error=f"Positions not available: {positions}")
+            return
+        view.receive(positions, closed, reads.ctx)
 
     @property
     def _logs_panel_open(self) -> bool:
@@ -2009,7 +2078,11 @@ class HomeApp(App[None]):
     def _redraw_chrome(self) -> None:
         compact = self.size.width < COMPACT_BELOW
         tokens = tokens_for(self.theme)
-        self._set("footer", key_chips(_FOOTER_CHIPS_COMPACT if compact else _FOOTER_CHIPS, tokens))
+        if self._tab == _LOGS:
+            chips = _LOGS_FOOTER_CHIPS_COMPACT if compact else _LOGS_FOOTER_CHIPS
+        else:
+            chips = _FOOTER_CHIPS_COMPACT if compact else _FOOTER_CHIPS
+        self._set("footer", key_chips(chips, tokens))
         tabs = self._alive(TabBar)
         if tabs is not None:
             tabs.compact = compact
@@ -2201,12 +2274,24 @@ class HomeApp(App[None]):
     def _home_shown(self) -> bool:
         return self._on_home and self._tab == _HOME
 
+    @property
+    def logs_view(self) -> LogsView:
+        """Return the Logs screen."""
+        return self._home.query_one(LogsView)
+
     def _switch_to(self, index: int) -> None:
         self._tab = index
         self._home.query_one("#screens", ContentSwitcher).current = f"tab-{TABS[index].key}"
+        if index == _POSITIONS:
+            self.call_after_refresh(self.positions_view.table.focus)
         if self._background_reads:
             # The tab shows its last reads at once; the fresh ones follow.
             self._paint_tab_screen(self._reads, self._layout)
+        if index == _LOGS:
+            self.logs_view.open()
+            self.logs_view.table.focus()
+        else:
+            self.set_focus(None)
         self._redraw()
 
     def _repaint_positions(self) -> None:
@@ -2235,8 +2320,9 @@ class HomeApp(App[None]):
         """
         if isinstance(self.screen, ModalScreen):
             return
-        if isinstance(self.focused, QueryInput):
-            self.focused.action_complete()
+        focused = self.focused
+        if step > 0 and isinstance(focused, QueryInput):
+            focused.action_complete()
             return
         self.action_show_tab((self._tab + step) % len(TABS))
 
@@ -2418,7 +2504,10 @@ class HomeApp(App[None]):
         if not lines:
             return Text("No journal lines yet.", style="dim")
         tz = reads.ctx.tz
-        return Group(Text("Logs", style="bold"), *(render_log_line(line, tz) for line in lines))
+        return Group(
+            Text("Logs", style="bold"),
+            *(render_log_line(line, tz) for line in lines[-_LOGS_LINES:]),
+        )
 
     def action_restart(self) -> None:
         """Quit so the caller can re-exec onto the new release; ignored without the notice."""
@@ -2445,6 +2534,8 @@ class HomeApp(App[None]):
             Text("  L logs · T theme · ? this help · Q quit"),
             Text("  R restart onto a new version (only while its notice shows)"),
             Text("  7 System is view only: each VPS action is a command to copy; no key runs one."),
+            Text("  Logs: / query (Tab completes) · Enter line · T trace · F follow"),
+            Text("        C copy · E export to the PC · D W M Y histogram window"),
             Text(
                 "This screen is read-only: nothing here changes a position, a stop or the ledger."
             ),
@@ -2484,6 +2575,7 @@ def run_home(
     taxpayer_profile: TaxpayerProfileView | None = None,
     tax_pack: Callable[[int], TaxPackStatus | None] | None = None,
     system: SystemSources | None = None,
+    exports: Path | None = None,
 ) -> None:
     """Run the console until the operator quits, or restarts onto a new release.
 
@@ -2508,6 +2600,7 @@ def run_home(
         taxpayer_profile: What the Tax screen may say about the profile.
         tax_pack: Returns the year's tax pack state.
         system: The System screen's read-only sources; see :class:`HomeApp`.
+        exports: Where the Logs screen exports a line; ``None`` over ``--vps``.
     """
     app = HomeApp(
         model,
@@ -2525,6 +2618,7 @@ def run_home(
         taxpayer_profile=taxpayer_profile,
         tax_pack=tax_pack,
         system=system,
+        exports=exports,
         boot=True,
     )
     app.run()
