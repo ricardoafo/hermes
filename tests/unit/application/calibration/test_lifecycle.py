@@ -79,6 +79,16 @@ _NEXT = {
 }
 
 
+def _orphan_message(count: int) -> str:
+    """Return the refusal for ``count`` orphan positions."""
+    return (
+        f"CertificationLifecycle: SA-4 P0 violation — "
+        f"{count} orphan position(s) detected. "
+        "Every open position must trace to a fill event. "
+        "Transition blocked; state must be set to DEAD. Pre-reg §7."
+    )
+
+
 def _gate(state: CertificationState, *, passed: bool = True, refused: str = "") -> GateReport:
     """Build a gate report for the transition out of ``state`` with one check."""
     check = GateCheck("evidence", "test requirement", "ok" if passed else "bad", passed)
@@ -176,8 +186,9 @@ class TestCertificationLifecyclePreconditions:
         result = _LIFECYCLE.advance(
             CertificationState.CERTIFIED, report, gate=_gate(CertificationState.CERTIFIED)
         )
-        assert isinstance(result, str), (
-            f"CERTIFIED is terminal — advance must return error, got {result!r}."
+        assert result == (
+            "CertificationLifecycle: already CERTIFIED — no further advance. "
+            "The lifecycle is complete. Pre-reg §7."
         )
 
     def test_dead_advance_returns_error(self) -> None:
@@ -262,9 +273,11 @@ class TestCertificationLifecycleKillConditions:
         result = _LIFECYCLE.advance(
             CertificationState.UNTRUSTED, report, gate=_gate(CertificationState.UNTRUSTED)
         )
-        assert isinstance(result, str), (
-            f"100% rejection rate must block transition, got {result!r}. "
-            "Fill model is completely broken."
+        assert result == (
+            "CertificationLifecycle: fill model completely broken — "
+            "rejection rate=1 (100%). "
+            "No fills produced. Transition blocked; state must be set to DEAD. "
+            "Pre-reg §7."
         )
 
     def test_zero_orphans_does_not_block(self) -> None:
@@ -338,25 +351,28 @@ class TestCertificationLifecycleProperties:
     @given(orphan_count=st.integers(min_value=1, max_value=100))
     @settings(max_examples=50)
     def test_any_state_with_orphan_blocks(self, orphan_count: int) -> None:
-        """For all orphan_count >= 1, any advanceable state returns error."""
+        """For all orphan_count >= 1, any advanceable state is refused with the SA-4 message."""
         report = _make_report(fill_count=5, orphan_count=orphan_count)
         for state in _ADVANCEABLE_STATES:
-            result = _LIFECYCLE.advance(state, report, gate=_gate(state))
-            assert isinstance(result, str), (
-                f"orphan_count={orphan_count} from {state!r} must return error, "
-                f"got {result!r}. SA-4 P0 kill condition."
+            assert _LIFECYCLE.advance(state, report, gate=_gate(state)) == _orphan_message(
+                orphan_count
             )
 
-    @given(state=st.sampled_from(list(CertificationState)))
+    @given(
+        fill_count=st.integers(min_value=0, max_value=10_000),
+        orphan_count=st.integers(min_value=0, max_value=100),
+    )
     @settings(max_examples=20)
-    def test_dead_always_returns_error(self, state: CertificationState) -> None:
-        """DEAD.advance always returns error regardless of report content."""
-        report = _make_report(fill_count=100)
+    def test_dead_always_returns_error(self, fill_count: int, orphan_count: int) -> None:
+        """DEAD.advance gives the absorbing-state message whatever the report holds."""
+        report = _make_report(fill_count=fill_count, orphan_count=orphan_count)
         result = _LIFECYCLE.advance(
             CertificationState.DEAD, report, gate=_gate(CertificationState.DEAD)
         )
-        assert isinstance(result, str), (
-            f"DEAD must always return error, got {result!r}. DEAD is absorbing."
+        assert result == (
+            "CertificationLifecycle: DEAD state is absorbing — no advance possible. "
+            "A new pre-registration (v2) is required to restart the lifecycle. "
+            "Pre-reg §7."
         )
 
     @given(
@@ -364,16 +380,12 @@ class TestCertificationLifecycleProperties:
         state=st.sampled_from(_ADVANCEABLE_STATES),
     )
     @settings(max_examples=50)
-    def test_advance_returns_state_or_string(
+    def test_advance_moves_one_step_forward(
         self, fill_count: int, state: CertificationState
     ) -> None:
-        """Advance must always return CertificationState or str — never raises."""
+        """With fills, no kill condition and a passing gate, advance gives the next state."""
         report = _make_report(fill_count=fill_count)
-        result = _LIFECYCLE.advance(state, report, gate=_gate(state))
-        assert isinstance(result, (CertificationState, str)), (
-            f"advance({state!r}, report) must return CertificationState or str, "
-            f"got {type(result).__name__!r}. Must never raise for valid inputs."
-        )
+        assert _LIFECYCLE.advance(state, report, gate=_gate(state)) == _NEXT[state]
 
     @given(
         state=st.sampled_from(_ADVANCEABLE_STATES),
