@@ -15,7 +15,8 @@ Invariants:
 - Percentiles are nearest-rank; shares count values strictly above the
   threshold.
 - The minute reader keeps open time, open and low even for rows ``Bar``
-  refuses, and grouping or the CLI refuse data past the Train window.
+  refuses; grouping and the CLI stop at the Train end, so data past it adds
+  nothing.
 """
 
 import csv
@@ -162,12 +163,14 @@ def test_minutes_group_into_their_event_bar_only() -> None:
     assert grouped == {_T0: [inside]}
 
 
-def test_minute_past_train_end_refuses() -> None:
-    """Invariant: a minute opening after the Train end raises instead of being read."""
-    late = _minute(_T0 + _FOUR_H, "97", "96")
+def test_minutes_after_train_end_are_never_grouped() -> None:
+    """Invariant: inside the same event bar, a minute after the Train end is left out."""
+    in_train = _minute(_T0, "97", "96")
+    after_end = _minute(_T0 + 2 * _MINUTE, "90", "80")
 
-    with pytest.raises(ValueError, match="past Train"):
-        ss.minutes_by_bar([late], [_event()], _T0, _T0 + _MINUTE)
+    grouped = ss.minutes_by_bar([in_train, after_end], [_event()], _T0, _T0 + _MINUTE)
+
+    assert grouped == {_T0: [in_train]}
 
 
 def test_reader_skips_headers_and_keeps_rows_bar_would_refuse(tmp_path: Path) -> None:
@@ -253,14 +256,25 @@ def test_cli_prints_the_measured_event(tmp_path: Path, capsys: pytest.CaptureFix
     )
 
 
-def test_cli_refuses_bars_past_train(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """Invariant: a 4h bar opening in July 2024 (Validation) stops the run with exit 1."""
-    _write_klines(tmp_path, "4h", [(datetime(2024, 7, 1, tzinfo=UTC), "100", "101", "99", "100")])
+def test_cli_stops_at_train_end(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Invariant: a July 2024 (Validation) crash bar in the same directory adds no event.
 
-    code = ss.main(["--data-dir", str(tmp_path), "--pair", "BTC/USDT"])
+    The default ingest keeps Validation months next to Train ones; the run must
+    measure only Train and still succeed.
+    """
+    four_h = [(_T0 + i * _FOUR_H, "100", "101", "99", "100") for i in range(30)]
+    four_h.append((_T0 + 30 * _FOUR_H, "100", "101", "95", "100"))
+    _write_klines(tmp_path, "4h", four_h)
+    _write_klines(tmp_path, "1m", [(_T0 + 30 * _FOUR_H, "97", "101", "95.04", "97")])
+    july = datetime(2024, 7, 1, tzinfo=UTC)
+    _write_klines(tmp_path, "4h", [(july, "100", "101", "50", "60")])
+    _write_klines(tmp_path, "1m", [(july, "100", "101", "50", "60")])
 
-    assert code == 1
-    assert "past Train" in capsys.readouterr().err
+    code = ss.main(["--data-dir", str(tmp_path), "--pair", "BTC/USDT", "--multiple", "2.0"])
+
+    row = capsys.readouterr().out.splitlines()[-1]
+    assert code == 0
+    assert row.startswith("| BTC/USDT | 2.0 | 1 | 0 |")
 
 
 def _trade(minutes: int, price: str) -> tuple[datetime, Decimal]:

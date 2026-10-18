@@ -25,7 +25,9 @@ inside the event's 4h bar as the trigger price. That is the closest the public
 data gets to a real stop-market fill; the table reports it in bps below the
 model fill. Each day file is checksum-verified, read once and deleted.
 
-Only the Train window of the swing-mvp1 data manifest is read. Data comes from
+Only the Train window of the swing-mvp1 data manifest is measured: reading
+stops at the first bar after it, so a data directory that also holds
+Validation months (the default ingest) works unchanged. Data comes from
 ``scripts/data/ingest_binance_vision.py --interval 4h --interval 1m``.
 
 Usage:
@@ -34,7 +36,7 @@ Usage:
 
 Exit codes:
     0 - table printed
-    1 - missing data or a bar outside the Train window
+    1 - missing or unreadable data
 """
 
 import argparse
@@ -341,7 +343,7 @@ async def _collect(
     bars: list[Bar] = []
     async for bar in adapter.stream_bars(pair, interval):
         if bar.open_time > end:
-            raise ValueError(f"{pair} {interval.value} bar at {bar.open_time} is past Train")
+            break
         if bar.open_time >= start:
             bars.append(bar)
     return bars
@@ -355,7 +357,7 @@ def read_minutes(folder: Path) -> Iterator[Minute]:
     its open time) that ``Bar`` rightly refuses, and the measurement only
     needs the open time, open and low. Header rows are skipped. Times are read
     as milliseconds, the Train-era format; the later microsecond format lands
-    far past Train and is refused.
+    far past Train, where reading stops.
 
     Raises:
         OSError: ``folder`` has no archives.
@@ -418,8 +420,8 @@ def minutes_by_bar(
 ) -> dict[datetime, list[Minute]]:
     """Group the minutes that fall inside an event's 4h bar by that bar's open time.
 
-    Raises:
-        ValueError: A minute opens after ``end`` (past the Train window).
+    Reading stops at the first minute after ``end``: archives are in time
+    order, so nothing past the Train window is grouped or read further.
     """
     wanted = {e.bar_open: e.bar_close for e in events}
     by_bar: dict[datetime, list[Minute]] = defaultdict(list)
@@ -427,7 +429,7 @@ def minutes_by_bar(
     i = 0
     for minute in minutes:
         if minute.open_time > end:
-            raise ValueError(f"1m bar at {minute.open_time} is past Train")
+            break
         if minute.open_time < start:
             continue
         while i < len(opens) and wanted[opens[i]] <= minute.open_time:
