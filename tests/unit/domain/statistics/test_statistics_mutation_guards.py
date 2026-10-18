@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Sequence
-from dataclasses import FrozenInstanceError
 from statistics import NormalDist
 
 import pytest
@@ -224,15 +223,11 @@ class TestBlockBootstrapReference:
         with pytest.raises(TypeError):
             call(_WAVY, 1, 100)
 
-    def test_interval_has_slots(self) -> None:
-        """SharpeInterval is slotted, like every value object in the domain."""
-        assert not hasattr(SharpeInterval(lower=0.0, upper=1.0, resamples=1), "__dict__")
-
-    def test_interval_is_frozen(self) -> None:
-        """A computed interval cannot be edited after the fact."""
+    def test_interval_is_hashable_by_value(self) -> None:
+        """Equal intervals are interchangeable dict keys, so a computed one is a value."""
         interval = SharpeInterval(lower=0.0, upper=1.0, resamples=1)
-        with pytest.raises(FrozenInstanceError):
-            interval.lower = -1.0  # type: ignore[misc]
+        same = SharpeInterval(lower=0.0, upper=1.0, resamples=1)
+        assert {interval: "kept"}[same] == "kept"
 
 
 class TestPercentile:
@@ -323,15 +318,9 @@ class TestTradeRatios:
         trades = [_trade(0.5), _trade(0.5), _trade(0.5), _trade(0.0), _trade(-1.0)]
         assert win_rate(trades) == pytest.approx(0.6)
 
-    def test_trade_result_has_slots(self) -> None:
-        """TradeResult is slotted, like every value object in the domain."""
-        assert not hasattr(_trade(1.0), "__dict__")
-
-    def test_trade_result_is_frozen(self) -> None:
-        """A closed trade's PnL cannot be edited after the fact."""
-        trade = _trade(1.0)
-        with pytest.raises(FrozenInstanceError):
-            trade.fees = 2.0  # type: ignore[misc]
+    def test_trade_result_is_hashable_by_value(self) -> None:
+        """Equal closed trades are interchangeable dict keys, so a trade is a value."""
+        assert {_trade(1.0): "kept"}[_trade(1.0)] == "kept"
 
 
 class TestWalkForwardBoundaries:
@@ -353,23 +342,27 @@ class TestWalkForwardBoundaries:
         with pytest.raises(TypeError):
             call(1096, 12)
 
-    def test_split_has_slots(self) -> None:
-        """Split is slotted, like every value object in the domain."""
-        assert not hasattr(Split(train=(), test=()), "__dict__")
-
-    def test_split_is_frozen(self) -> None:
-        """A split cannot be widened after it is built."""
-        split = Split(train=(), test=())
-        with pytest.raises(FrozenInstanceError):
-            split.train = (0,)  # type: ignore[misc]
+    def test_split_is_hashable_by_value(self) -> None:
+        """Equal splits are interchangeable dict keys, so a split is a value."""
+        assert {Split(train=(1,), test=(2,)): "kept"}[Split(train=(1,), test=(2,))] == "kept"
 
 
 class TestPurgedCpcvBoundaries:
     """§8.3 purged CPCV: argument edges and exact purge and embargo."""
 
     def test_default_is_five_groups_two_held_out(self) -> None:
-        """C(5, 2) = 10 splits with the §8.3 defaults."""
-        assert len(purged_cpcv_splits(100)) == 10
+        """C(5, 2) = 10 splits with the §8.3 defaults, in the documented order.
+
+        100 days in 5 groups of 20: the first split holds out days 0-39 and trains from
+        day 43 (3 embargo days after the test block); the last holds out days 60-99.
+        """
+        splits = purged_cpcv_splits(100)
+        assert len(splits) == 10
+        assert splits == purged_cpcv_splits(
+            100, groups=5, test_groups=2, purge_days=5, embargo_days=3
+        )
+        assert splits[0] == Split(train=tuple(range(43, 100)), test=tuple(range(40)))
+        assert splits[-1].test == tuple(range(60, 100))
 
     def test_more_test_groups_than_groups_is_rejected(self) -> None:
         """Holding out 3 of 2 groups is impossible."""

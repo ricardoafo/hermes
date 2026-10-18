@@ -61,3 +61,7 @@ class ParitySourcePort(Protocol):
     def trades(self, strategy_id: StrategyId) -> tuple[TradeExecuted, ...]:
         """Return every ``TradeExecuted`` of the strategy, oldest first."""
         ...
+
+    def missed_bars_between(self, after: datetime, upto: datetime) -> int:
+        """Return how many ``BarMissed`` rows have ``after < occurred_at <= upto`` (#1078)."""
+        ...

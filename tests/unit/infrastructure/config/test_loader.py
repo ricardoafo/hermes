@@ -28,9 +28,14 @@ from hermes.infrastructure.config import (
     MLConfig,
     SentryConfig,
     StrategiesConfig,
+    TaxGuardConfig,
     load_config,
 )
-from hermes.infrastructure.config.loader import load_yaml_model
+from hermes.infrastructure.config.loader import (
+    load_optional_yaml_model,
+    load_sentry_config,
+    load_yaml_model,
+)
 from hermes.infrastructure.config.models import FrankfurterConfig, HealthchecksConfig
 
 _REPO_CONFIG = Path(__file__).resolve().parents[4] / "config"
@@ -452,7 +457,7 @@ def test_env_override_for_one_section_does_not_reach_another(config_dir: Path) -
 
 
 # ---------------------------------------------------------------------------
-# Scalar coercion: the 12-factor bool / int / float pre-pass
+# Scalar coercion: the 12-factor bool / int pre-pass
 # ---------------------------------------------------------------------------
 
 
@@ -473,9 +478,16 @@ def test_env_override_reads_12_factor_booleans(config_dir: Path, raw: str, expec
 
 
 def test_env_override_float_string_reaches_decimal_field(config_dir: Path) -> None:
-    """A non-int numeric string goes through the float path and still lands as Decimal 0.15."""
+    """A non-int numeric string lands as Decimal 0.15."""
     cfg = load_config(config_dir, env={"HERMES_TAX_GUARD__MAX_POSITION_PCT_PORTFOLIO": "0.15"})
     assert cfg.tax_guard.max_position_pct_portfolio == Decimal("0.15")
+
+
+def test_env_override_keeps_every_digit_of_a_decimal(config_dir: Path) -> None:
+    """A decimal longer than a float's 17 digits reaches a Decimal field exactly (#1176)."""
+    raw = "0.123456789012345678901"
+    cfg = load_config(config_dir, env={"HERMES_TAX_GUARD__MAX_POSITION_PCT_PORTFOLIO": raw})
+    assert cfg.tax_guard.max_position_pct_portfolio == Decimal(raw)
 
 
 def test_env_override_float_string_reaches_float_field(config_dir: Path) -> None:
@@ -624,14 +636,14 @@ def test_unknown_field_is_forbidden(tmp_path: Path) -> None:
 
 
 def test_empty_yaml_file_fails_every_required_field(tmp_path: Path) -> None:
-    """An empty YAML file is an empty mapping, so all four required MLConfig fields fail."""
-    path = tmp_path / "ml.yaml"
+    """An empty YAML file is an empty mapping, so every required Binance field fails."""
+    path = tmp_path / "binance.yaml"
     path.write_text("", encoding="utf-8")
     with pytest.raises(ConfigError) as excinfo:
-        load_yaml_model(path, MLConfig, env_section="ML", env={})
+        load_yaml_model(path, BinanceExchangeConfig, env_section="BINANCE", env={})
     assert str(excinfo.value).startswith(
-        f"Config error: validation failed for {path} against MLConfig: "
-        "4 validation errors for MLConfig\n"
+        f"Config error: validation failed for {path} against BinanceExchangeConfig: "
+        "4 validation errors for BinanceExchangeConfig\n"
     )
 
 
@@ -817,3 +829,76 @@ def test_dev_still_accepts_a_relative_config_dir(
     """Outside prod a relative config dir still loads, as `uv run hermes` in a checkout needs."""
     clean_process_env.chdir(config_dir.parent)
     assert load_config(Path(config_dir.name), env={}).env == "dev"
+
+
+# ---------------------------------------------------------------------------
+# Reserved sections: ml and tax_guard have no consumer yet, so they never block startup
+# ---------------------------------------------------------------------------
+
+
+def test_missing_ml_and_tax_guard_files_load_the_documented_defaults(config_dir: Path) -> None:
+    """A tree without ml.yaml and tax_guard.yaml still loads, with the ADR-002 starter values."""
+    (config_dir / "ml.yaml").unlink()
+    (config_dir / "tax_guard.yaml").unlink()
+    config = load_config(config_dir, env={})
+    assert (
+        config.ml.supervisor_model,
+        config.ml.temperature,
+        config.ml.max_tokens,
+        config.ml.enabled,
+    ) == ("claude-sonnet-4-7", Decimal("0.2"), 4096, True)
+    assert (
+        config.tax_guard.annual_realised_pnl_alert_eur,
+        config.tax_guard.wash_sale_window_days,
+        config.tax_guard.max_position_pct_portfolio,
+        config.tax_guard.recharacterization_window_days,
+        config.tax_guard.trade_count_90d_max,
+        config.tax_guard.distinct_assets_90d_max,
+        config.tax_guard.fee_income_90d_max_eur,
+    ) == (Decimal("1000"), 30, Decimal("0.25"), 90, 500, 12, Decimal("0"))
+
+
+def test_shipped_ml_and_tax_guard_yaml_match_the_model_defaults() -> None:
+    """The reserved YAML files and the model defaults say the same thing, so neither drifts."""
+    ml = load_yaml_model(_REPO_CONFIG / "ml.yaml", MLConfig, env_section="ML", env={})
+    tax_guard = load_yaml_model(
+        _REPO_CONFIG / "tax_guard.yaml", TaxGuardConfig, env_section="TAX_GUARD", env={}
+    )
+    assert (ml, tax_guard) == (MLConfig(), TaxGuardConfig())
+
+
+def test_missing_optional_file_still_applies_env_overrides(tmp_path: Path) -> None:
+    """With no file, HERMES_ML__ENABLED=false still reaches the model."""
+    loaded = load_optional_yaml_model(
+        tmp_path / "ml.yaml", MLConfig, env_section="ML", env={"HERMES_ML__ENABLED": "false"}
+    )
+    assert loaded == MLConfig(enabled=False)
+
+
+def test_present_but_broken_optional_file_still_fails(tmp_path: Path) -> None:
+    """Optional means absent is fine; a file that exists and is invalid still aborts the load."""
+    path = tmp_path / "ml.yaml"
+    path.write_text("typoed_field: 1\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="typoed_field"):
+        load_optional_yaml_model(path, MLConfig, env_section="ML", env={})
+
+
+def test_env_api_key_for_the_ml_section_is_still_rejected(config_dir: Path) -> None:
+    """MLConfig has no api_key field, so HERMES_ML__API_KEY must stay out of the env templates."""
+    with pytest.raises(ConfigError, match="api_key"):
+        load_config(config_dir, env={"HERMES_ML__API_KEY": "x"})
+
+
+def test_load_sentry_config_reads_the_yaml_and_env_wins(tmp_path: Path) -> None:
+    """sentry.yaml supplies the values; a HERMES_SENTRY__ variable overrides one of them."""
+    (tmp_path / "sentry.yaml").write_text(
+        "dsn: https://yaml@example.test/1\nenvironment: staging\n", encoding="utf-8"
+    )
+    loaded = load_sentry_config(tmp_path, env={"HERMES_SENTRY__ENVIRONMENT": "prod"})
+    assert (loaded.dsn, loaded.environment) == ("https://yaml@example.test/1", "prod")
+
+
+def test_load_sentry_config_without_a_file_is_disabled(tmp_path: Path) -> None:
+    """A config dir with no sentry.yaml gives the disabled default: empty DSN, dev tier."""
+    loaded = load_sentry_config(tmp_path, env={})
+    assert (loaded.dsn, loaded.environment, loaded.enabled) == ("", "dev", False)

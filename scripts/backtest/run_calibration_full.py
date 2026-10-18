@@ -73,6 +73,7 @@ from hermes.application.order_router.sizing import SizingPolicy
 from hermes.application.portfolio.tracker import PortfolioTracker
 from hermes.application.strategy_protocol.kill_trigger_evaluator import KillTriggerEvaluator
 from hermes.application.strategy_protocol.preregistration import PreRegistration
+from hermes.application.strategy_protocol.strategy_factory import strategy_kind
 from hermes.application.strategy_protocol.trial_log import trial_split
 from hermes.domain.errors import DataManifestFormatError, DomainError, TrialLogError
 from hermes.domain.fees.fee_schedule import FeeSchedule
@@ -83,7 +84,6 @@ from hermes.domain.fees.fee_schedule_selector import (
 from hermes.domain.portfolio.snapshot import PortfolioSnapshot
 from hermes.domain.statistics.performance import daily_returns
 from hermes.domain.statistics.sharpe import sharpe_ratio
-from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
@@ -285,7 +285,7 @@ async def _run(args: argparse.Namespace) -> int:
     try:
         run = replay(
             _merge_by_close_time(bars_4h, bars_1d),
-            strategy=SwingStrategyAdapter(**parameters),
+            strategy=strategy_kind(None).create(parameters),
             kernel=kernel,
             window_start=start,
             window_end=end,

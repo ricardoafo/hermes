@@ -19,9 +19,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TextIO
 
+from hermes.adapters._shared.rate_limiter import RateLimitConfig
 from hermes.adapters.fx.frankfurter import FrankfurterAdapter
 from hermes.adapters.fx.frankfurter import FrankfurterConfig as FrankfurterWireConfig
-from hermes.adapters.fx.rate_limiter import RateLimitConfig
 from hermes.adapters.ledger.connection import open_ledger
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.application.ledger.eur_backfill import BackfillReport, backfill_pending_eur

@@ -148,6 +148,7 @@ SOURCES: tuple[Source, ...] = (
         r"^ARG GITLEAKS_VERSION=(\S+)$",
         _github("gitleaks/gitleaks"),
     ),
+    Source("gh", "scripts/dev/gh-runner/Dockerfile", r"^ARG GH_VERSION=(\S+)$", _github("cli/cli")),
     Source("Bun", "scripts/dev/gh-runner/Dockerfile", r"^ARG BUN_VERSION=(\S+)$", _npm("bun")),
     Source(
         "Claude Code",

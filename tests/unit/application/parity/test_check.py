@@ -508,3 +508,27 @@ def test_ro01_refuses_in_the_replay_on_the_closes_before_the_day_as_in_serve() -
     )
 
     assert (report.matched, report.mismatches) == (1, ())
+
+
+def test_a_day_with_missed_bars_is_not_compared() -> None:
+    """#1078: a missed entry is left unfilled by rule, so the outage day raises no mismatch.
+
+    The same day without the missed bar is the mismatch above; the missed bar
+    alone turns it into a report that says the day was not compared.
+    """
+    source = _source(signals=[signal_event(_FIRST_FOUR_HOUR)])
+    source.missed.append(_FIRST_FOUR_HOUR)
+
+    report = _check(source, lambda: ScriptedStrategy(frozenset({_FIRST_FOUR_HOUR})))
+
+    assert (report.missed_bars, report.matched, report.mismatches) == (1, 0, ())
+
+
+def test_a_missed_bar_on_the_previous_day_does_not_skip_this_one() -> None:
+    """#1078: only bars closing inside the checked day count; the day's start belongs before it."""
+    source = _source(signals=[signal_event(_FIRST_FOUR_HOUR)])
+    source.missed.append(DAY_START)
+
+    report = _check(source, lambda: ScriptedStrategy(frozenset({_FIRST_FOUR_HOUR})))
+
+    assert (report.missed_bars, len(report.mismatches)) == (0, 1)

@@ -62,7 +62,6 @@ def _repo(tmp_path: Path, version: str = "0.0.0") -> Path:
     (frags / "20-added.md").write_text("- Fragment feature twenty.\n", encoding="utf-8")
     (frags / "10-fixed.md").write_text("- Fragment fix ten.\n", encoding="utf-8")
     (frags / "README.md").write_text("# Fragments\n", encoding="utf-8")
-    (frags / "wave-old.md").write_text("Legacy note.\n", encoding="utf-8")
     return tmp_path
 
 
@@ -234,7 +233,7 @@ def test_cut_updates_versions_changelog_and_fragments(tmp_path: Path) -> None:
     assert "## [Unreleased]\n\n## [0.2.0] - 2026-10-06\n" in (root / "CHANGELOG.md").read_text(
         encoding="utf-8"
     )
-    assert sorted(p.name for p in (root / "changelog.d").iterdir()) == ["README.md", "wave-old.md"]
+    assert sorted(p.name for p in (root / "changelog.d").iterdir()) == ["README.md"]
 
 
 def test_cut_writes_a_pr_body_whose_engine_line_must_be_filled(tmp_path: Path) -> None:
@@ -430,3 +429,24 @@ def test_next_without_an_engine_answer_is_a_usage_error(tmp_path: Path) -> None:
         cut_release.main(["--next", "--root", str(root), "--no-lock"])
 
     assert exit_info.value.code == 2
+
+
+def test_a_note_the_aggregator_cannot_read_stops_the_cut(tmp_path: Path) -> None:
+    """A changelog.d file outside the fragment names exits 2 and changes nothing (#1172)."""
+    root = _repo(tmp_path)
+    (root / "changelog.d" / "wave-old.md").write_text("- Legacy note.\n", encoding="utf-8")
+    before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
+
+    code = cut_release.main(
+        [
+            "0.2.0",
+            "--root",
+            str(root),
+            "--no-lock",
+            "--body-out",
+            str(tmp_path / "body.md"),
+        ]
+    )
+
+    assert code == 2
+    assert {p: p.read_bytes() for p in root.rglob("*") if p.is_file()} == before

@@ -13,8 +13,10 @@
 
 [Unit]
 Description=Hermes trading engine (hermes serve)
-After=network-online.target
-Wants=network-online.target
+# A restart reads the clock to tell missed bars from live ones (#1078): with
+# systemd-time-wait-sync enabled, time-sync.target waits for the first NTP sync.
+After=network-online.target time-sync.target
+Wants=network-online.target time-sync.target
 # Crash-loop guard: at most 5 starts in 10 min, then the unit stays failed.
 # Each start re-fetches warm-up history, so an endless loop would hammer the
 # market-data API. 5 x RestartSec (30s) = 150s, well inside the 10 min window.

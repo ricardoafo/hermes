@@ -21,6 +21,7 @@ import yaml
 
 from hermes.adapters.git_history.subprocess_git import SubprocessGit
 from hermes.application.calibration.research_batch import BatchError, check_batch, parse_batch
+from hermes.application.strategy_protocol.strategy_factory import strategy_kind
 from hermes.domain.errors import InfraError
 from hermes.entrypoints._streams import resolve_err
 
@@ -34,7 +35,7 @@ _USAGE = (
     "Checks a research batch (ADR-026 §1): 2 to 6 candidates, one per idea family,\n"
     "a summary and a pre-registration section for each, at most 3 free parameters,\n"
     "a backtest_funnel no looser than the ADR-021 §5 floors, the selection rule, the\n"
-    "signing hash, each hypothesis card's hash, each strategy id in the roster, and\n"
+    "signing hash, each hypothesis card's hash, each strategy id and its parameters in\n"
     "each candidate's code against the commit the batch binds. --repo is the clone\n"
     "that holds FILE (default: the current directory); cards and code are read at its\n"
     "HEAD. --require-signed also fails a DRAFT batch. --candidates-out writes the\n"
@@ -85,15 +86,19 @@ def main(argv: list[str], *, stream: TextIO, err: TextIO | None = None) -> int:
     return _check(args, stream, err)
 
 
-def _roster(repo: Path) -> frozenset[str]:
-    """Every strategy name in the repository's ``config/strategies.yaml``."""
+def _roster(repo: Path) -> dict[str, dict[str, object]]:
+    """Every strategy name in ``config/strategies.yaml``, with its kind's default parameters."""
     parsed = yaml.safe_load((repo / _ROSTER).read_text(encoding="utf-8"))
     entries = parsed.get("strategies") if isinstance(parsed, dict) else None
     if not isinstance(entries, list):
         raise ValueError(f"{_ROSTER} has no strategies list")
-    return frozenset(
-        str(entry["name"]) for entry in entries if isinstance(entry, dict) and "name" in entry
-    )
+    roster: dict[str, dict[str, object]] = {}
+    for entry in entries:
+        if isinstance(entry, dict) and "name" in entry:
+            signal = entry.get("signal")
+            kind = strategy_kind(None if signal is None else str(signal))
+            roster[str(entry["name"])] = kind.default_parameters()
+    return roster
 
 
 def _check(args: argparse.Namespace, stream: TextIO, err: TextIO) -> int:
@@ -119,6 +124,7 @@ def _check(args: argparse.Namespace, stream: TextIO, err: TextIO) -> int:
             text,
             SubprocessGit(repo),
             known_strategies=known,
+            strategy_parameters=known,
             require_signed=args.require_signed,
         )
     except InfraError as exc:

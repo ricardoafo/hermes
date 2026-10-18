@@ -58,7 +58,7 @@ from typing import Final
 import httpx
 import structlog
 
-from hermes.adapters.fx.rate_limiter import RateLimitConfig, RateLimiter
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.domain.errors import HealthchecksError
 
 __all__ = ["HealthchecksAdapter", "HealthchecksAdapterConfig"]

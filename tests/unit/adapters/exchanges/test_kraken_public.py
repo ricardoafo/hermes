@@ -22,20 +22,21 @@ docs/decisions/2026-08-24-kraken-public-adapter.md.
 
 from __future__ import annotations
 
+import inspect
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import Any, get_type_hints
 
 import httpx
 import pytest
 import respx
 
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.adapters.exchanges.kraken_public import (
     KrakenPublicAdapter,
     KrakenPublicConfig,
     _pair_to_kraken_symbol,
 )
-from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.domain.errors import InfraError, KrakenPublicError
 from hermes.domain.fees import FeeSchedule
 from hermes.domain.market_data.kline import KlineInterval
@@ -186,6 +187,8 @@ _FEES_PAYLOAD = _kraken_ok(
     }
 )
 
+_CHEAPER_FEES_PAYLOAD = _kraken_ok({"XBTUSDT": {"fees": [[0, 0.20]], "fees_maker": [[0, 0.10]]}})
+
 
 class TestGetPairFeesHappyPath:
     """AssetPairs endpoint returns a well-formed FeeSchedule."""
@@ -254,10 +257,10 @@ class TestGetPairFeesCache:
                 route = router.get(_ASSET_PAIRS_URL).mock(
                     return_value=httpx.Response(200, json=_FEES_PAYLOAD)
                 )
-                adapter.get_pair_fees(_BTC_USDT)
+                first = adapter.get_pair_fees(_BTC_USDT)
                 clock.advance(100.0)  # well inside TTL
-                adapter.get_pair_fees(_BTC_USDT)
-                assert route.call_count == 1
+                second = adapter.get_pair_fees(_BTC_USDT)
+                assert (second, route.call_count) == (first, 1)
         finally:
             adapter.close()
 
@@ -268,12 +271,38 @@ class TestGetPairFeesCache:
         try:
             with respx.mock() as router:
                 route = router.get(_ASSET_PAIRS_URL).mock(
-                    return_value=httpx.Response(200, json=_FEES_PAYLOAD)
+                    side_effect=[
+                        httpx.Response(200, json=_FEES_PAYLOAD),
+                        httpx.Response(200, json=_CHEAPER_FEES_PAYLOAD),
+                    ]
+                )
+                before = adapter.get_pair_fees(_BTC_USDT)
+                clock.advance(3600.0 + 1.0)  # past TTL
+                after = adapter.get_pair_fees(_BTC_USDT)
+                assert (before.tiers[0].taker_bps, after.tiers[0].taker_bps, route.call_count) == (
+                    26,
+                    20,
+                    2,
+                )
+        finally:
+            adapter.close()
+
+    def test_call_exactly_at_ttl_refetches_from_wire(self) -> None:
+        """A schedule exactly TTL seconds old is expired: the edge belongs to the refetch."""
+        clock = _CounterClock(start=1000.0)
+        adapter = _make_adapter(fees_ttl=3600, clock=clock)
+        try:
+            with respx.mock() as router:
+                route = router.get(_ASSET_PAIRS_URL).mock(
+                    side_effect=[
+                        httpx.Response(200, json=_FEES_PAYLOAD),
+                        httpx.Response(200, json=_CHEAPER_FEES_PAYLOAD),
+                    ]
                 )
                 adapter.get_pair_fees(_BTC_USDT)
-                clock.advance(3600.0 + 1.0)  # past TTL
-                adapter.get_pair_fees(_BTC_USDT)
-                assert route.call_count == 2
+                clock.advance(3600.0)
+                after = adapter.get_pair_fees(_BTC_USDT)
+                assert (after.tiers[0].taker_bps, route.call_count) == (20, 2)
         finally:
             adapter.close()
 
@@ -410,8 +439,8 @@ class TestGetPairFeesErrors:
 
     def test_error_inherits_from_infra_error(self) -> None:
         """KrakenPublicError caught by 'except InfraError' satisfies the base contract."""
-        err = KrakenPublicError(msg="bad")
-        assert isinstance(err, InfraError)
+        with pytest.raises(InfraError, match="bad"):
+            raise KrakenPublicError(msg="bad")
 
 
 # ---------------------------------------------------------------------------
@@ -802,25 +831,31 @@ class TestGetTicker:
 class TestPortConformance:
     """The adapter class satisfies the runtime-checkable Protocols."""
 
-    def test_adapter_satisfies_fee_schedule_provider_port(self) -> None:
-        """Isinstance against the runtime_checkable FeeScheduleProviderPort returns True."""
-        adapter = _make_adapter()
-        try:
-            assert isinstance(adapter, FeeScheduleProviderPort)
-        finally:
-            adapter.close()
+    def test_get_pair_fees_signature_matches_the_fee_port(self) -> None:
+        """``get_pair_fees`` takes the port's parameters and returns the port's type."""
+        adapter_method = KrakenPublicAdapter.get_pair_fees
+        port_method = FeeScheduleProviderPort.get_pair_fees
 
-    def test_adapter_satisfies_klines_fetcher_port(self) -> None:
-        """The adapter has a fetch_klines method — Kraken port shape mirrors Binance."""
-        adapter = _make_adapter()
-        try:
-            # KlinesFetcherPort's protocol method is `fetch`; Kraken exposes
-            # `fetch_klines` because it also owns other endpoints. Wire-up
-            # code adapts the two names. Assert method exists + callable.
-            assert callable(adapter.fetch_klines)
-            _ = KlinesFetcherPort  # keep the import used
-        finally:
-            adapter.close()
+        assert [
+            (p.name, p.kind) for p in inspect.signature(adapter_method).parameters.values()
+        ] == [(p.name, p.kind) for p in inspect.signature(port_method).parameters.values()]
+        assert get_type_hints(adapter_method) == get_type_hints(port_method)
+
+    def test_fetch_klines_takes_the_klines_port_parameters(self) -> None:
+        """``fetch_klines`` mirrors the port's ``fetch`` parameters.
+
+        Kraken exposes ``fetch_klines`` because it also owns other endpoints;
+        the wiring code adapts the two names.
+        """
+        adapter_method = KrakenPublicAdapter.fetch_klines
+        port_method = KlinesFetcherPort.fetch
+
+        assert [
+            (p.name, p.kind) for p in inspect.signature(adapter_method).parameters.values()
+        ] == [(p.name, p.kind) for p in inspect.signature(port_method).parameters.values()]
+        assert {
+            name: hint for name, hint in get_type_hints(adapter_method).items() if name != "return"
+        } == {name: hint for name, hint in get_type_hints(port_method).items() if name != "return"}
 
 
 class TestCreateFactoryAndClose:

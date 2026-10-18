@@ -19,7 +19,7 @@ the approved console UX proposal (2026-10-03).
 from __future__ import annotations
 
 import io
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, tzinfo
 from decimal import Decimal
@@ -972,6 +972,13 @@ _ICONS: Final[dict[ActivityKind, tuple[str, str]]] = {
 }
 
 
+def _emphasised(cell: RenderableType, style: str) -> Text:
+    """Return an activity cell as text with ``style`` laid over it."""
+    text = cell.copy() if isinstance(cell, Text) else Text(str(cell))
+    text.stylize(style)
+    return text
+
+
 def _icon(ctx: RenderContext, item: ActivityItem) -> Text:
     """Return the row's icon; a closed row's tick takes the colour of its net."""
     glyph, style = _ICONS[item.kind]
@@ -1011,6 +1018,7 @@ def render_activity(
     *,
     limit: int | None = None,
     icons: bool = False,
+    emphasis: Mapping[ActivityItem, str] | None = None,
 ) -> Group:
     """Render the day-grouped activity feed, newest first.
 
@@ -1020,6 +1028,8 @@ def render_activity(
         limit: Maximum number of rows across all days (the home screen shows 3-4).
         icons: Lead each row with one icon per kind (◆ opened, ✓ closed,
             ▲ stop raised, • restart, ⚠ warning, ✖ error); the TUI's Cockpit.
+        emphasis: A Rich style per row to lay over the whole row, for the
+            Cockpit's fade on a new row; rows not listed are drawn as usual.
 
     Returns:
         The feed, or the empty-state line.
@@ -1044,7 +1054,11 @@ def render_activity(
                 _when(ctx, item, is_today=header == "Today"),
                 _activity_text(ctx, item, icons=icons),
             ]
-            table.add_row(*([_icon(ctx, item), *cells] if icons else cells))
+            row = [_icon(ctx, item), *cells] if icons else cells
+            style = None if emphasis is None else emphasis.get(item)
+            if style is not None:
+                row = [_emphasised(cell, style) for cell in row]
+            table.add_row(*row)
         parts.append(table)
         if remaining is not None:
             remaining -= len(items)

@@ -28,6 +28,7 @@ _SERVICE_FILES = [path for path in _UNIT_FILES if path.suffix == ".service"]
 _ENV_FILE = "/etc/hermes/env.production"
 _STAGING_UNIT = "hermes-staging.service"
 _OWN_ENV_FILES = {
+    "hermes-lab-memory.service": "/etc/hermes/env.staging",
     "hermes-bot.service": "/etc/hermes/env.bot",
     _STAGING_UNIT: "/etc/hermes/env.staging",
 }
@@ -530,3 +531,20 @@ def test_brief_service_flags_are_accepted_by_the_real_supervisor(tmp_path: Path)
     grants = {argv[i + 1] for i, flag in enumerate(argv) if flag == "--grant"}
     assert grants == {f"hermes:read:{name}" for name in SOURCES}
     assert cli_module.main(argv, stream=io.StringIO(), err=io.StringIO()) == 0
+
+
+@pytest.mark.parametrize("name", ["hermes.service", _STAGING_UNIT])
+def test_serve_starts_after_the_clock_is_synced(name: str) -> None:
+    """Serve tells missed bars from live ones by the clock, so it waits for time sync (#1078).
+
+    A clock still wrong at boot would mark live bars as missed and pass over
+    their entries, or treat missed bars as live and fill them back-dated.
+    """
+    unit = _parse(name)["Unit"]
+    assert (
+        "time-sync.target" in unit["After"].split(),
+        "time-sync.target" in unit["Wants"].split(),
+    ) == (
+        True,
+        True,
+    )

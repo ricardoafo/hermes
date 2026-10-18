@@ -2,7 +2,7 @@
 #
 # Shipped disabled: nothing in the repo enables it. The operator copies it to
 # /etc/systemd/system and enables it by hand; see
-# docs/guides/staging-on-hermes-01.md. Layout, fully separate from prod:
+# docs/guides/environments.md. Layout, fully separate from prod:
 #   /opt/hermes-staging/current    -> versions/<version>  (atomic symlink)
 #   /opt/hermes-staging/current/.venv   per-release virtualenv
 #   /opt/hermes-staging/current/config  per-release non-secret YAML
@@ -13,8 +13,10 @@
 
 [Unit]
 Description=Hermes trading engine, staging (hermes serve)
-After=network-online.target
-Wants=network-online.target
+# A restart reads the clock to tell missed bars from live ones (#1078): with
+# systemd-time-wait-sync enabled, time-sync.target waits for the first NTP sync.
+After=network-online.target time-sync.target
+Wants=network-online.target time-sync.target
 # Same crash-loop guard as prod: every start re-fetches warm-up history from
 # the same IP prod uses, so a loop here would eat prod's rate limit.
 StartLimitIntervalSec=10min

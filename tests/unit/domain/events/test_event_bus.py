@@ -29,6 +29,7 @@ Reference: ADR-003 §00 (I-06), code-conventions.md §10.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -214,6 +215,24 @@ class TestBusFailureIsolation:
         with pytest.raises(EventDispatchError) as exc_info:
             bus.publish(_trade())
         assert "TradeExecuted" in str(exc_info.value)
+
+    @pytest.mark.parametrize("stop", [asyncio.CancelledError, KeyboardInterrupt, SystemExit])
+    def test_a_shutdown_signal_in_a_handler_propagates_at_once(
+        self, stop: type[BaseException]
+    ) -> None:
+        """Cancellation, Ctrl-C and exit escape publish unwrapped; no later handler runs (#1176)."""
+        bus = EventBus()
+        seen: list[str] = []
+
+        def stopping(_event: TradeExecuted) -> None:
+            raise stop
+
+        bus.subscribe(TradeExecuted, stopping)
+        bus.subscribe(TradeExecuted, lambda _event: seen.append("later"))
+
+        with pytest.raises(stop):
+            bus.publish(_trade())
+        assert seen == []
 
 
 class TestBusIntrospection:
