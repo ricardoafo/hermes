@@ -1049,10 +1049,12 @@ class TestWithOnlyEnabled:
     def test_the_named_entry_is_the_only_one_enabled(self, shadow_config: HermesConfig) -> None:
         """Invariant: every later check reads the named entry as the enabled one."""
         chosen = serve_module.with_only_enabled(shadow_config, serve_module.V2_STRATEGY_NAME)
-        assert [(s.name, s.enabled) for s in chosen.strategies.strategies] == [
-            (serve_module.SHADOW_STRATEGY_NAME, False),
-            (serve_module.V2_STRATEGY_NAME, True),
-        ]
+        enabled = [s.name for s in chosen.strategies.strategies if s.enabled]
+        names = [s.name for s in chosen.strategies.strategies]
+        assert (enabled, names) == (
+            [serve_module.V2_STRATEGY_NAME],
+            [s.name for s in shadow_config.strategies.strategies],
+        )
 
     def test_the_rest_of_the_entry_is_unchanged(self, shadow_config: HermesConfig) -> None:
         """Invariant: only ``enabled`` moves; capital, sizing and pricing stay as signed."""
