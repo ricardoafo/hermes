@@ -95,7 +95,6 @@ _CLOCK_PAD: Final = 1
 _BADGE_GAP: Final = 2
 FEED_OK: Final = "●"
 FEED_FAILED: Final = "○"
-_BRIGHT: Final = "#FFFFFF"
 _BRIGHT_SHARE: Final = 0.5
 
 
@@ -159,7 +158,7 @@ def bottom_edge(subtitle: str, width: int, tokens: Tokens, *, ai: bool = False) 
     del ai
     out = Text()
     if subtitle:
-        out.append(f"  {subtitle} ", style=tokens.dim)
+        out.append(f" {subtitle} ", style=tokens.dim)
     rule = width - out.cell_len - cell_len(CORNER_BOTTOM_RIGHT)
     out.append(EDGE * max(rule, 0), style=tokens.line)
     out.append(CORNER_BOTTOM_RIGHT, style=f"bold {tokens.ai}")
@@ -267,7 +266,7 @@ def feed_pulse(polls: Sequence[bool], tokens: Tokens, *, bright: bool = False) -
     for index, ok in enumerate(recent):
         colour = tokens.live if ok else tokens.dim
         if bright and index == len(recent) - 1:
-            colour = f"bold {blend(colour, _BRIGHT, _BRIGHT_SHARE)}"
+            colour = f"bold {blend(colour, tokens.highlight, _BRIGHT_SHARE)}"
         out.append(FEED_OK if ok else FEED_FAILED, style=colour)
     return out
 
@@ -421,7 +420,7 @@ def tab_text(
         elif compact:
             out.append(label, style=tokens.muted)
         else:
-            out.append(f" {tab.key} ", style=f"bold {tokens.frame}")
+            out.append(f" {tab.key} ", style=f"bold {tokens.frame_text}")
             out.append(f"{tab.name} ", style=tokens.muted)
         ranges.append((start, out.cell_len))
     return out, ranges
@@ -507,7 +506,7 @@ def theme_chip_text(
     if choice is ThemeChoice.AUTO and night:
         label += " · NIGHT"
     text = " ◑ " if compact else f" ◑ {label} "
-    return Text(text, style=f"reverse {tokens.frame}")
+    return Text(text, style=f"bold {tokens.void} on {tokens.frame_text}")
 
 
 class ThemeChip(Static):

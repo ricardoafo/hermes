@@ -792,10 +792,31 @@ def _card_hashes(batch: ResearchBatch, git: GitHistoryPort, head: str) -> str:
     return "every card matches its hash"
 
 
-def _strategy_ids_known(batch: ResearchBatch, known: Collection[str]) -> str:
+def _strategy_ids_known(
+    batch: ResearchBatch,
+    known: Collection[str],
+    defaults: Mapping[str, Mapping[str, object]] | None,
+) -> str:
     unknown = [c.strategy_id for c in batch.candidates if c.strategy_id not in known]
     if unknown:
         raise BatchError("strategy_ids_known", f"not in config/strategies.yaml: {unknown}")
+    if defaults is not None:
+        # The driver refuses these on server-01 only after the batch is signed and
+        # merged; catching them here keeps a typo from costing a signature.
+        for c in batch.candidates:
+            taken = defaults.get(c.strategy_id, {})
+            for parameter in c.parameters:
+                if parameter.name not in taken:
+                    raise BatchError(
+                        "strategy_ids_known",
+                        f"{c.strategy_id}: its strategy takes no parameter {parameter.name}",
+                    )
+                if taken[parameter.name] != parameter.base:
+                    raise BatchError(
+                        "strategy_ids_known",
+                        f"{c.strategy_id}: {parameter.name} defaults to "
+                        f"{taken[parameter.name]} in the strategy, {parameter.base} in the batch",
+                    )
     return ", ".join(c.strategy_id for c in batch.candidates)
 
 
@@ -833,6 +854,7 @@ def check_batch(
     git: GitHistoryPort,
     *,
     known_strategies: Collection[str],
+    strategy_parameters: Mapping[str, Mapping[str, object]] | None = None,
     require_signed: bool = False,
     head: str = "HEAD",
 ) -> tuple[BatchCheck, ...]:
@@ -843,6 +865,10 @@ def check_batch(
         text: The file's content.
         git: History of the clone that holds it.
         known_strategies: Every name in ``config/strategies.yaml``.
+        strategy_parameters: Each name's strategy parameters at their defaults.
+            When given, ``strategy_ids_known`` also fails a candidate whose
+            parameter its strategy does not take, or whose signed base is not
+            that parameter's default.
         require_signed: Run ``status_signed``; a DRAFT batch then fails.
         head: The commit cards and code are read at.
 
@@ -888,7 +914,10 @@ def check_batch(
         ("parameters_cap", lambda: _parameters_cap(header)),
         ("funnel_floors", lambda: _funnel_described(front_matter)),
         ("selection", lambda: _selection_described(front_matter)),
-        ("strategy_ids_known", after_parse(lambda b: _strategy_ids_known(b, known_strategies))),
+        (
+            "strategy_ids_known",
+            after_parse(lambda b: _strategy_ids_known(b, known_strategies, strategy_parameters)),
+        ),
         ("code_paths", after_parse(lambda b: _code_bound(b, git, head))),
     ]
     return tuple(

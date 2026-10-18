@@ -13,7 +13,9 @@ Invariants protected here:
 - the ledger file is byte-identical after any run without ``--alert``;
 - an ``--alert`` alert is recorded once as an ``AnomalyDetected`` row, and a
   run in parity records none (#136);
-- the command is registered as ``parity``.
+- the command is registered as ``parity``;
+- a day with bars serve reached late after an outage prints that it was not
+  compared, exits 0 and sends no alert (#1078).
 """
 
 from __future__ import annotations
@@ -35,6 +37,7 @@ from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.application.notification_router import RouterConfig
 from hermes.application.parity.check import HistoryFetcher
 from hermes.domain.errors import ExchangeError
+from hermes.domain.events.bar_missed import BarMissed
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.market_data.bar import Bar
@@ -526,3 +529,24 @@ def test_window_usage_errors_exit_two(ledger: Path, since: str) -> None:
 
     assert (code, out) == (2, "")
     assert err.startswith("ERROR: ")
+
+
+def test_an_outage_day_prints_not_compared_and_sends_no_alert(ledger: Path) -> None:
+    """#1078: the unfilled missed entry would be a mismatch; the outage line replaces it."""
+    late = DAY_START + timedelta(hours=8)
+    _with_signal(ledger, signal_event(late))
+    connection = sqlite3.connect(ledger)
+    SqliteLedger(connection).append_event(
+        BarMissed.from_bar(bar(late), handled_at=late + timedelta(hours=3), correlation_id="m1")
+    )
+    connection.close()
+    channel = _Channel()
+
+    code, out, err = _run(_args(ledger, "--alert"), channel=channel)
+
+    assert (code, out, err, channel.events) == (
+        0,
+        "OK — 2026-10-03 not compared: serve reached 1 bar late after an outage\n",
+        "",
+        [],
+    )
