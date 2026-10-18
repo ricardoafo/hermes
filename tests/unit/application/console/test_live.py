@@ -486,8 +486,7 @@ def test_a_good_tick_without_a_spread_clears_the_old_one() -> None:
     board.apply([_spread("BTC", "60000", "4.0", _T0)])
     board.apply([_spread("BTC", "60000", None, _T0 + timedelta(seconds=10))])
     quote = board.quote("BTC")
-    assert quote is not None
-    assert quote.spread_bps is None
+    assert [q.spread_bps for q in [quote] if q is not None] == [None]
 
 
 @given(
