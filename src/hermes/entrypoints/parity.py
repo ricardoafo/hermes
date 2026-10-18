@@ -79,7 +79,6 @@ from hermes.application.parity.decisions import ParityReport, parity_alert
 from hermes.domain.errors import InfraError, LedgerError
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.portfolio.snapshot import PortfolioSnapshot
-from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.entrypoints._anomaly_record import record_anomaly
@@ -290,7 +289,7 @@ def _run(
             seed=PortfolioSnapshot.seed(
                 strategy_id, Money(amount=roster.capital_budget, currency=roster.quote)
             ),
-            make_strategy=SwingStrategyAdapter,
+            make_strategy=roster.strategy_kind().create,
             make_kernel=lambda tracker: _build_kernel(
                 fill_model, tracker, strategy_id, pre_registration, roster.sizing_policy()
             ),
@@ -436,7 +435,7 @@ def _judge_window(
             warmup_bars={i: market.warmup_bars(i) for i in market.intervals},
             min_warmup_bars=_MIN_WARMUP,
             seed=seed,
-            make_strategy=SwingStrategyAdapter,
+            make_strategy=roster.strategy_kind().create,
             make_kernel=lambda tracker: _build_kernel(
                 fill_model, tracker, strategy_id, pre_registration, roster.sizing_policy()
             ),

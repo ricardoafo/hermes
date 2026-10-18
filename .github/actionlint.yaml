@@ -2,4 +2,4 @@
 # `runs-on`. Labels routed through repository variables need no entry.
 self-hosted-runner:
   labels:
-    - hermes-backtest # backtest.yml, server-01 only (ADR-023)
+    - hermes-backtest # backtest.yml and backtest-batch.yml, server-01 only (ADR-023, ADR-026)
