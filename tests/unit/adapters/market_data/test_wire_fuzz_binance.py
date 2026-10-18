@@ -30,7 +30,6 @@ from hermes.adapters.market_data import (
     binance_historical,
     binance_live_klines,
     binance_live_ws,
-    binance_ticker,
 )
 from hermes.adapters.market_data.binance_depth_snapshot import BinanceDepthSnapshotAdapter
 from hermes.domain.errors import ExchangeError
@@ -48,7 +47,6 @@ from tests.unit.adapters.wire_fuzz import (
     mutated,
     mutated_text,
     numeric_strings,
-    price_violations,
 )
 
 _PAIR: Final = Pair(base=Currency.BTC, quote=Currency.USDT)
@@ -87,7 +85,6 @@ _DEPTH_SNAPSHOT: Final = {
     "bids": [["100.00000000", "0.50000000"], ["99.00000000", "1.00000000"]],
     "asks": [["101.00000000", "0.30000000"], ["102.00000000", "2.00000000"]],
 }
-_TICKER: Final = {"symbol": "BTCUSDT", "price": "100.00000000"}
 
 _numeric_fields: Final = st.one_of(numeric_strings, st.integers(-(2**40), 2**40))
 """Values that keep a field's type plausible, so the domain checks are reached."""
@@ -124,10 +121,6 @@ def _ws_depth(raw: str | bytes) -> object:
 
 def _ws_snapshot(body: object) -> object:
     return binance_live_ws._parse_snapshot(data=body, pair=_PAIR)
-
-
-def _ticker(body: bytes) -> object:
-    return binance_ticker._parse_price(httpx.Response(200, content=body), "BTCUSDT")
 
 
 def _rest_snapshot(body: bytes) -> object:
@@ -275,21 +268,3 @@ def test_an_accepted_depth_snapshot_holds_only_finite_numbers(body: object) -> N
     assert (
         clean_violations(accepted(lambda: _rest_snapshot(_json_bytes(body)), ExchangeError)) == []
     )
-
-
-# --- ticker -------------------------------------------------------------------
-
-
-@FUZZ
-@given(body=mutated_text(_TICKER))
-def test_a_ticker_body_parses_or_raises_exchange_error(body: str | bytes) -> None:
-    """Invariant: any ticker body gives a price or ExchangeError, never a raw exception."""
-    raw = body.encode("utf-8") if isinstance(body, str) else body
-    assert foreign_error(lambda: _ticker(raw), ExchangeError) == ""
-
-
-@FUZZ
-@given(body=mutated(_TICKER, values=_numeric_fields))
-def test_an_accepted_ticker_price_is_finite_and_positive(body: object) -> None:
-    """Invariant: a ticker price the parser accepts is a finite number above zero."""
-    assert price_violations(accepted(lambda: _ticker(_json_bytes(body)), ExchangeError)) == []

@@ -125,7 +125,7 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
                 _FUZZ_BINANCE
                 + "test_a_websocket_adapter_depth_snapshot_parses_or_raises_exchange_error",
                 _FUZZ_BINANCE + "test_a_live_kline_row_parses_or_raises_exchange_error",
-                _FUZZ_BINANCE + "test_a_ticker_body_parses_or_raises_exchange_error",
+                _FUZZ_KRAKEN + "test_a_ticker_reply_parses_or_raises_kraken_public_error",
             ),
         ),
         FailureMode(
