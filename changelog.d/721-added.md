@@ -1,1 +1,1 @@
-- Console: a toast says when a new bar has been checked and when the next one is due, and `HERMES_CONSOLE_BEEP=on` rings the terminal bell once whenever hermes turns late or down (#721).
+- **New activity rows fade in the console**: a row that appears in the Activity card between two reads is highlighted for 2 s, fading out; nothing with `HERMES_CONSOLE_MOTION=off`. Part of #721.

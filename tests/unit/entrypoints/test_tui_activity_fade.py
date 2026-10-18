@@ -1,0 +1,138 @@
+"""A new activity row wears a highlight that fades (issue #721).
+
+Invariants:
+
+- the first read of the console highlights nothing, and neither does a read
+  that brings no new row;
+- a row that was not in the last read is highlighted, the others are drawn as
+  usual, and the highlight is gone after ``MOTION.activity_fade`` seconds
+  (counted as lines that set a background colour);
+- with motion off no row is ever highlighted;
+- ``render_activity`` lays the given style over exactly the rows it is given.
+"""
+
+import asyncio
+from collections.abc import Awaitable, Callable
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+
+import pytest
+from rich.console import Console
+from textual.pilot import Pilot
+
+from hermes.adapters.console import FixtureReadModel
+from hermes.application.console.render import RenderContext, render_activity
+from hermes.application.console.views import ActivityDay, ActivityItem, ActivityKind
+from hermes.application.console.visibility import Surface
+from hermes.entrypoints import tui
+from hermes.entrypoints.tui import HomeApp
+from hermes.entrypoints.tui_theme import MOTION
+
+_FROZEN = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
+_NEW = ActivityItem(
+    at=_FROZEN - timedelta(minutes=1),
+    kind=ActivityKind.CLOSED,
+    coin="XRP",
+    price=Decimal("0.52"),
+    net=Decimal("1.10"),
+)
+
+
+class _GrowingModel(FixtureReadModel):
+    """The fixture whose activity gains one closed row once ``grown`` is set."""
+
+    grown = False
+
+    def activity(self, *, include_quiet: bool = False) -> tuple[ActivityDay, ...]:
+        days = super().activity(include_quiet=include_quiet)
+        if not self.grown:
+            return days
+        today = days[0]
+        return (replace(today, items=(_NEW, *today.items)), *days[1:])
+
+
+def _run[T](
+    probe: Callable[[HomeApp, Pilot[None], _GrowingModel], Awaitable[T]], *, motion: bool = True
+) -> T:
+    model = _GrowingModel.load("ok-two-positions")
+    assert isinstance(model, _GrowingModel)
+
+    async def drive() -> T:
+        app = HomeApp(
+            model, clock=lambda: _FROZEN, motion=motion, refresh_seconds=3600, exposure_cap=None
+        )
+        async with app.run_test(size=(160, 45)) as pilot:
+            await pilot.pause()
+            return await probe(app, pilot, model)
+
+    return asyncio.run(drive())
+
+
+def _background_rows(card: object) -> int:
+    """Return how many lines of a rendered card set a background colour."""
+    console = Console(width=120, force_terminal=True, color_system="truecolor", record=False)
+    with console.capture() as capture:
+        console.print(card)
+    return sum(1 for line in capture.get().splitlines() if "\x1b[48;2;" in line or ";48;2;" in line)
+
+
+def test_a_first_read_and_a_read_with_nothing_new_highlight_nothing() -> None:
+    """Opening the console, then reading the same rows again, leaves every row plain."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None], model: _GrowingModel) -> frozenset[object]:
+        del model
+        app._redraw()
+        await pilot.pause()
+        return app._fresh_activity
+
+    assert _run(probe) == frozenset()
+
+
+def test_a_new_row_is_highlighted_and_the_others_are_not() -> None:
+    """After a read that adds a closed XRP row, only that row is fresh."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None], model: _GrowingModel) -> frozenset[object]:
+        model.grown = True
+        app._redraw()
+        await pilot.pause()
+        return app._fresh_activity
+
+    assert _run(probe) == frozenset({_NEW})
+
+
+def test_the_highlight_fades_out_after_its_duration(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With a 0.2 s fade the fresh set is empty again once the fade has run."""
+    monkeypatch.setattr(tui, "MOTION", replace(MOTION, activity_fade=0.2))
+
+    async def probe(app: HomeApp, pilot: Pilot[None], model: _GrowingModel) -> tuple[int, int]:
+        model.grown = True
+        app._redraw()
+        await pilot.pause()
+        during = _background_rows(app._content["activity"])
+        await pilot.pause(1.0)
+        return during, _background_rows(app._content["activity"])
+
+    assert _run(probe) == (1, 0)
+
+
+def test_motion_off_never_highlights_a_row() -> None:
+    """The same new row with motion off is not fresh and no span has a background."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None], model: _GrowingModel) -> tuple[int, int]:
+        model.grown = True
+        app._redraw()
+        await pilot.pause()
+        return len(app._fresh_activity), _background_rows(app._content["activity"])
+
+    assert _run(probe, motion=False) == (0, 0)
+
+
+def test_render_activity_styles_only_the_rows_it_is_given() -> None:
+    """A style given for the XRP row is on its cells and on none of the other rows."""
+    ctx = RenderContext(surface=Surface.OPERATOR_TUI, now=_FROZEN)
+    other = ActivityItem(at=_FROZEN - timedelta(hours=1), kind=ActivityKind.OPENED, coin="ETH")
+    days = (ActivityDay(_FROZEN.date(), (_NEW, other)),)
+    styled = render_activity(days, ctx, icons=True, emphasis={_NEW: "on #123456"})
+    plain = render_activity(days, ctx, icons=True)
+    assert (_background_rows(styled), _background_rows(plain)) == (1, 0)
