@@ -35,14 +35,15 @@ from __future__ import annotations
 import math
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Final
 
 import anyio
 import httpx
 import structlog
 
-from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
+from hermes.adapters._shared.wire import binance_symbol, wire_decimal
 from hermes.domain.errors import ExchangeError, InfraError, NetworkError
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.bar_schedule import (
@@ -127,11 +128,6 @@ def _from_ms(value: int) -> datetime:
         raise ExchangeError(f"klines timestamp out of range: {value}") from exc
 
 
-def _symbol(pair: Pair) -> str:
-    """Return the Binance concatenated symbol (``BTCUSDT``) for ``pair``."""
-    return f"{pair.base.value}{pair.quote.value}"
-
-
 def _retry_after_seconds(response: httpx.Response) -> float | None:
     """Parse a ``Retry-After`` header given in seconds; ``None`` when unusable."""
     raw = response.headers.get("retry-after")
@@ -147,16 +143,7 @@ def _retry_after_seconds(response: httpx.Response) -> float | None:
 
 
 def _decimal(raw: object, *, field: str) -> Decimal:
-    """Coerce one wire field to :class:`Decimal` or raise :class:`ExchangeError`."""
-    if not isinstance(raw, (str, int, float)) or isinstance(raw, bool):
-        raise ExchangeError(f"klines row field {field!r} is not string or numeric: {raw!r}")
-    try:
-        value = Decimal(str(raw))
-    except InvalidOperation as exc:
-        raise ExchangeError(f"klines row field {field!r} is not a decimal: {raw!r}") from exc
-    if not value.is_finite():
-        raise ExchangeError(f"klines row field {field!r} is not a finite number: {raw!r}")
-    return value
+    return wire_decimal(raw, field=f"klines row field {field!r}", error=ExchangeError)
 
 
 def _row_times(row: object, interval: KlineInterval) -> tuple[list[object], datetime, datetime]:
@@ -690,7 +677,7 @@ class BinanceLiveKlinesAdapter:
     ) -> list[object]:
         """Return one raw page from ``GET /api/v3/klines``."""
         params: dict[str, str] = {
-            "symbol": _symbol(pair),
+            "symbol": binance_symbol(pair),
             "interval": interval.value,
             "limit": str(limit),
         }

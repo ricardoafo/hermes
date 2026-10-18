@@ -53,14 +53,15 @@ import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any, Final
 from urllib.parse import urlencode, urlsplit
 
 import httpx
 import structlog
 
-from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
+from hermes.adapters._shared.wire import binance_symbol, wire_decimal
 from hermes.domain.errors import ExchangeError, NetworkError
 from hermes.domain.fees import FeeSchedule, FeeTier
 from hermes.domain.market_data.orderbook import Orderbook, OrderbookLevel
@@ -142,29 +143,13 @@ def sign(query: str, secret: str) -> str:
     return hmac.new(secret.encode(), query.encode(), hashlib.sha256).hexdigest()
 
 
-def _symbol(pair: Pair) -> str:
-    return f"{pair.base.value}{pair.quote.value}"
-
-
 def parse_decimal(raw: object, field_name: str) -> Decimal:
     """Return a Binance numeric field as a finite :class:`~decimal.Decimal`.
-
-    Args:
-        raw: The JSON value; Binance sends amounts as strings.
-        field_name: Named in the error message.
 
     Raises:
         ExchangeError: ``raw`` is a bool, not a number, or not finite.
     """
-    if isinstance(raw, bool) or not isinstance(raw, (str, int, float)):
-        raise ExchangeError(msg=f"{field_name} is not numeric: {raw!r}")
-    try:
-        value = Decimal(str(raw))
-    except InvalidOperation as exc:
-        raise ExchangeError(msg=f"{field_name} is not a decimal: {raw!r}") from exc
-    if not value.is_finite():
-        raise ExchangeError(msg=f"{field_name} is not a finite number: {raw!r}")
-    return value
+    return wire_decimal(raw, field=field_name, error=ExchangeError)
 
 
 @dataclass(frozen=True, slots=True)
@@ -275,7 +260,7 @@ class BinanceSpotAdapter:
         """
         body = self._submit(
             {
-                "symbol": _symbol(order.pair),
+                "symbol": binance_symbol(order.pair),
                 "side": side.value,
                 "type": "MARKET",
                 "quantity": str(order.qty.amount),
@@ -304,7 +289,7 @@ class BinanceSpotAdapter:
             raise ValueError("place_limit_order needs order.limit_price")
         body = self._submit(
             {
-                "symbol": _symbol(order.pair),
+                "symbol": binance_symbol(order.pair),
                 "side": order.side.value,
                 "type": "LIMIT",
                 "timeInForce": "IOC",
@@ -349,7 +334,7 @@ class BinanceSpotAdapter:
         """
         body = self._public(
             "/api/v3/depth",
-            {"symbol": _symbol(pair), "limit": str(_DEPTH_LIMIT)},
+            {"symbol": binance_symbol(pair), "limit": str(_DEPTH_LIMIT)},
             weight=_WEIGHTS["depth"],
         )
         try:
@@ -433,7 +418,7 @@ class BinanceSpotAdapter:
         if stop_price <= 0:
             raise ValueError("stop_price must be positive")
         limit = stop_price * (Decimal("1") - self.config.stop_limit_buffer)
-        symbol = _symbol(order.pair)
+        symbol = binance_symbol(order.pair)
         body = self._submit(
             {
                 "symbol": symbol,
