@@ -40,8 +40,6 @@ _INDEXED: dict[str, tuple[str, ...]] = {
     "docs/runbook": (),
 }
 _DATED = ("docs/research", "docs/decisions", "docs/experiments")
-# docs/guides/release.md is rewritten by PR #1205; it joins the check when that lands.
-_NOT_YET_CHECKED = frozenset({"docs/guides/release.md"})
 
 _FENCE = re.compile(r"^(```|~~~).*?^\1", re.MULTILINE | re.DOTALL)
 _INLINE = re.compile(r"`[^`\n]+`")
@@ -112,7 +110,7 @@ def _living_docs(root: Path) -> list[Path]:
         if not any(path.is_relative_to(root / dated) for dated in _DATED)
     ]
     docs += [path for path in sorted(root.glob("*.md")) if path.name != "CHANGELOG.md"]
-    return [path for path in docs if str(path.relative_to(root)) not in _NOT_YET_CHECKED]
+    return docs
 
 
 def _prose(path: Path) -> str:
