@@ -193,9 +193,6 @@ tests/unit/domain/test_errors_raisable.py::test_declared_fields_stay_frozen U6
 tests/unit/domain/value_objects/test_currency.py::test_currency_is_str_enum U7
 tests/unit/domain/value_objects/test_currency.py::test_from_str_empty_returns_failure U3
 tests/unit/domain/value_objects/test_currency.py::test_from_str_unknown_returns_failure U3
-tests/unit/domain/value_objects/test_weight.py::test_from_decimal_out_of_range U3
-tests/unit/domain/value_objects/test_weight.py::test_from_str_invalid_decimal U3
-tests/unit/domain/value_objects/test_weight.py::test_from_str_out_of_range U3
 tests/unit/entrypoints/test_health.py::test_column_widths_adjust_to_longest_value U3
 tests/unit/entrypoints/test_health.py::test_run_all_with_all_ok_yields_ok_results U3
 tests/unit/entrypoints/test_serve.py::test_a_repeated_bar_is_skipped U3
