@@ -116,6 +116,12 @@ from hermes.application.ledger.eur_pricer import EurPricer, LookupBudget
 from hermes.application.ledger.trade_recorder import TradeRecorder
 from hermes.application.messages.eur_rate import EurRateLookup
 from hermes.application.monitoring.clock_skew import clock_is_off, clock_skew_change
+from hermes.application.monitoring.missed_bar_budget import (
+    BUDGET_SOURCE,
+    MissedBarBudget,
+    budget_crossed_report,
+    missed_bar_allowance,
+)
 from hermes.application.monitoring.restart_report import RESTART_SOURCE, restart_report
 from hermes.application.notification_router import EventClass, RouterConfig, route
 from hermes.application.order_router.sizing import SizingPolicy
@@ -1251,13 +1257,44 @@ class _BarLoop:
                 now=now,
                 missed=self.missed,
                 exits_checked=self.exits_checked,
-            ),
+            )
+            + "\n"
+            + self._budget().summary(),
         )
         self.missed.clear()
         self.exits_checked.clear()
         c.ledger.append_event(alert)
         _log.warning("serve.restart.missed_bars", reason=alert.reason)
         await self._alert(alert, failed="serve.restart.alert_failed")
+        await self._alert_if_budget_crossed()
+
+    def _budget(self) -> MissedBarBudget:
+        c = self.c
+        streams = [interval for _ in c.pairs for interval in c.intervals]
+        return MissedBarBudget(
+            allowed=missed_bar_allowance(streams), missed=c.ledger.missed_bar_count()
+        )
+
+    async def _alert_if_budget_crossed(self) -> None:
+        """Send one alert the first time this ledger misses more bars than ADR-021 allows (#1117).
+
+        The ledger row is the record that it was sent, so a restart or a bar
+        re-handled after a crash never sends it twice.
+        """
+        c = self.c
+        budget = self._budget()
+        if not budget.crossed or c.ledger.has_anomaly_from(BUDGET_SOURCE):
+            return
+        alert = AnomalyDetected(
+            occurred_at=c.clock.now(),
+            correlation_id=new_correlation_id(),
+            source=BUDGET_SOURCE,
+            severity=AnomalySeverity.WARNING,
+            reason=budget_crossed_report(budget),
+        )
+        c.ledger.append_event(alert)
+        _log.warning("serve.missed_bar_budget.crossed", reason=alert.reason)
+        await self._alert(alert, failed="serve.missed_bar_budget.alert_failed")
 
     async def _alert(self, alert: AnomalyDetected, *, failed: str) -> None:
         """Send ``alert`` to every alert channel; one channel's failure never stops the loop."""
@@ -1445,6 +1482,9 @@ class _BarLoop:
             )
             self.missed[stream] += 1
         c.event_bus.publish(BarProcessed.from_bar(bar, correlation_id=correlation_id))
+        if late and not self.catching_up:
+            # A catch-up checks once, after its restart report.
+            await self._alert_if_budget_crossed()
         self.previous[stream] = bar.open_time
         # The ledger row alone leaves the journal silent between signals, so
         # an operator could not tell a quiet market from a stalled loop (#371).
