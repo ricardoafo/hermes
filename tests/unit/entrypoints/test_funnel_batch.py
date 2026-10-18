@@ -122,6 +122,43 @@ class TestTrain:
             "CANDIDATES swing-alpha",
         )
 
+    def test_the_details_file_lists_each_check_under_its_candidate(self, tmp_path: Path) -> None:
+        """Beta, with no folder, gets its heading and one FAIL line naming the stage."""
+        write_candidate(tmp_path, strategy_id=_ALPHA, days=TRAIN_DAYS)
+
+        _run(_argv(tmp_path, "train"))
+
+        details = (tmp_path / "out/funnel-batch.txt").read_text(encoding="utf-8").splitlines()
+        # status padded to 4, check to 24: "missing_evidence" is 16 characters, so 8 spaces.
+        assert details[-3:] == [
+            "## swing-beta",
+            "FAIL missing_evidence" + " " * 8 + " no Train evidence",
+            "CANDIDATES swing-alpha",
+        ]
+
+    def test_a_verdict_file_keeps_the_contract_key_order(self, tmp_path: Path) -> None:
+        """Contract §5 order, two-space indent: the committed file diffs cleanly between runs."""
+        write_candidate(tmp_path, strategy_id=_ALPHA, days=TRAIN_DAYS)
+
+        _run(_argv(tmp_path, "train"))
+
+        text = (tmp_path / "out/verdicts/swing-beta.json").read_text(encoding="utf-8")
+        assert text.splitlines()[:4] == [
+            "{",
+            '  "schema": "hermes.verdict/1",',
+            '  "batch_id": "b1",',
+            '  "strategy_id": "swing-beta",',
+        ]
+
+    def test_a_second_run_into_the_same_out_rewrites_it(self, tmp_path: Path) -> None:
+        """A retried job writes over its own outputs: exit 0 again, same closing line."""
+        write_candidate(tmp_path, strategy_id=_ALPHA, days=TRAIN_DAYS)
+        _run(_argv(tmp_path, "train"))
+
+        code, out, _ = _run(_argv(tmp_path, "train"))
+
+        assert (code, out.splitlines()[-1]) == (0, "CANDIDATES swing-alpha")
+
 
 class TestValidation:
     """``--stage validation``: the champion by the signed rule."""
@@ -230,6 +267,15 @@ class TestRefusals:
         code, _, err = _run(_argv(tmp_path, "train"))
 
         assert (code, err.startswith("ERROR: batch b1 train:")) == (3, True)
+
+    def test_an_unwritable_out_is_exit_three(self, tmp_path: Path) -> None:
+        """--out names a file, not a folder: an output error, not a verdict."""
+        write_candidate(tmp_path, strategy_id=_ALPHA, days=TRAIN_DAYS)
+        (tmp_path / "out").write_text("", encoding="utf-8")
+
+        code, _, err = _run(_argv(tmp_path, "train"))
+
+        assert (code, err.startswith("ERROR: output:")) == (3, True)
 
     @pytest.mark.parametrize("dropped", ["--stage", "--evidence-dir", "--trial-log", "--out"])
     def test_every_flag_is_required(self, tmp_path: Path, dropped: str) -> None:

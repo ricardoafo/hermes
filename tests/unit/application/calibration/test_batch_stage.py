@@ -14,6 +14,7 @@ import pytest
 
 from hermes.application.calibration.batch_stage import (
     MISSING_EVIDENCE,
+    Stage,
     StageOutcome,
     judge_stage,
     stage_summary,
@@ -175,9 +176,44 @@ class TestTrialCount:
 
         assert {v.strategy_id: v.trial_lines for v in outcome.verdicts} == {_ALPHA: 2, _BETA: 1}
 
+    def test_a_missing_first_candidate_does_not_stop_the_rest(self, tmp_path: Path) -> None:
+        """Alpha, first in the batch, has no folder: beta is still judged and goes on."""
+        evidence = _write(tmp_path, _BETA, days=TRAIN_DAYS)
+
+        outcome = judge_stage(candidate_batch(), "train", evidence, _LOG)
+
+        assert (outcome.goes_on, _statuses(outcome)[_ALPHA]) == (
+            (_BETA,),
+            [(MISSING_EVIDENCE, "FAIL")],
+        )
+
+    @pytest.mark.parametrize(
+        ("stage", "detail"),
+        [("train", "no Train evidence"), ("validation", "no Validation evidence")],
+    )
+    def test_missing_evidence_names_the_stage(
+        self, tmp_path: Path, stage: Stage, detail: str
+    ) -> None:
+        """The detail (funnel-batch.txt only) says which stage's evidence is absent."""
+        tmp_path.joinpath("evidence").mkdir()
+
+        outcome = judge_stage(candidate_batch(), stage, tmp_path / "evidence", _LOG)
+
+        assert [c.detail for v in outcome.verdicts for c in v.checks] == [detail, detail]
+
 
 class TestValidation:
     """After Validation the signed rule picks the champion, or none (ADR-026 §5)."""
+
+    def test_validation_counts_only_validation_lines(self, tmp_path: Path) -> None:
+        """At Validation alpha's two Train lines in b1 do not count; its Validation line does."""
+        log = (*_LOG, _record(_ALPHA, DataSplit.VALIDATION, "b1", 3))
+        evidence = _write(tmp_path, _ALPHA)
+        judge = _StubJudge({_ALPHA: (True, 0.99)})
+
+        outcome = judge_stage(candidate_batch(), "validation", evidence, log, judge=judge)
+
+        assert {v.strategy_id: v.trial_lines for v in outcome.verdicts} == {_ALPHA: 1, _BETA: 0}
 
     def test_the_highest_dsr_survivor_is_champion(self, tmp_path: Path) -> None:
         """DSR 0.97 and 0.99: p = 0.03 and 0.01, both under BH at q = 0.05; beta ranks first."""

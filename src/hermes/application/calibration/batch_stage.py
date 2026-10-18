@@ -60,6 +60,8 @@ _SPLITS: Final[Mapping[Stage, DataSplit]] = {
     "validation": DataSplit.VALIDATION,
 }
 
+_STAGE_NAMES: Final[Mapping[Stage, str]] = {"train": "Train", "validation": "Validation"}
+
 
 @dataclass(frozen=True, slots=True)
 class CandidateVerdict:
@@ -150,7 +152,7 @@ def judge_stage(
         lines = _trial_lines(log, batch.batch_id, candidate.strategy_id, stage)
         folder = evidence_dir / candidate.strategy_id
         if not folder.is_dir():
-            verdicts.append(_missing(candidate, lines))
+            verdicts.append(_missing(candidate, stage, lines))
             continue
         files = CandidateEvidence(
             performance=folder / "performance.json",
@@ -230,10 +232,10 @@ def _trial_lines(log: Iterable[TrialRecord], batch_id: str, strategy_id: str, st
     )
 
 
-def _missing(candidate: Candidate, trial_lines: int) -> CandidateVerdict:
+def _missing(candidate: Candidate, stage: Stage, trial_lines: int) -> CandidateVerdict:
     return CandidateVerdict(
         candidate=candidate,
-        checks=(CheckResult(MISSING_EVIDENCE, "FAIL", "no evidence folder for this candidate"),),
+        checks=(CheckResult(MISSING_EVIDENCE, "FAIL", f"no {_STAGE_NAMES[stage]} evidence"),),
         passed=False,
         dsr=None,
         window=None,
