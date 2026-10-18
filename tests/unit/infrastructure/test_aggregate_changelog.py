@@ -5,6 +5,7 @@ Protects the wave-4 fragment-based changelog aggregation invariants:
 - Empty directory yields just the header (no sections).
 - A file that is not a fragment name is refused, so no entry is dropped (#1172).
 - Every file in the real ``changelog.d/`` is a fragment the aggregator reads.
+- A fragment is exactly one top-level bullet with no headers.
 - Invalid type suffix raises ValueError with a diagnostic path.
 - ``--apply`` rewrites the [Unreleased] block in place without touching the
   rest of CHANGELOG.md byte-for-byte.
@@ -219,3 +220,36 @@ def test_subject_without_squash_suffix_is_unresolved() -> None:
     subjects = ["feat(x): local commit", "fix(y): mention #12 in passing"]
     resolved = aggregate_changelog.pr_from_subjects(subjects)
     assert (resolved, len(subjects)) == (None, 2)
+
+
+@pytest.mark.parametrize(
+    ("body", "reason"),
+    [
+        ("- One note.\n- A second note.\n", "found 2"),
+        ("A note with no bullet.\n", "found 0"),
+        ("### Added\n\n- A note under a header.\n", "found 1"),
+        ("- A note.\n\n## Tests\n", "no headers"),
+    ],
+)
+def test_a_fragment_that_is_not_one_bullet_is_refused(
+    tmp_path: Path, body: str, reason: str
+) -> None:
+    """A fragment that would add a stray section or hide a second note stops the run (#1172)."""
+    frag_dir = tmp_path / "changelog.d"
+    frag_dir.mkdir()
+    (frag_dir / "132-added.md").write_text(body, encoding="utf-8")
+
+    with pytest.raises(ValueError, match=reason):
+        aggregate_changelog.collect_fragments(frag_dir)
+
+
+def test_nested_bullets_under_one_bullet_are_one_fragment(tmp_path: Path) -> None:
+    """Indented sub-bullets stay part of their note and are accepted as written."""
+    frag_dir = tmp_path / "changelog.d"
+    frag_dir.mkdir()
+    body = "- Parent note.\n  - Child detail.\n"
+    (frag_dir / "132-added.md").write_text(body, encoding="utf-8")
+
+    by_section = aggregate_changelog.collect_fragments(frag_dir)
+
+    assert by_section["Added"] == [(132, body)]

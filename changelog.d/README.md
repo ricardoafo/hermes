@@ -49,7 +49,8 @@ fragments for that reason.
 ## Format
 
 Each fragment is a single Markdown bullet (or nested bullets under one
-top-level bullet). No section headers — the type comes from the filename.
+top-level bullet). No section headers — the type comes from the filename. The aggregator
+and the release cut refuse any other shape.
 
 ```markdown
 - **Slack notifier adapter** (`src/hermes/adapters/notifier/slack_adapter.py`):
