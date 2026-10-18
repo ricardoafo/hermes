@@ -31,12 +31,6 @@ tests/unit/adapters/exchanges/test_simulated.py::test_sell_fill_does_not_open_lo
 tests/unit/adapters/exchanges/test_simulated.py::test_sell_limit_above_bid_returns_rejection U3
 tests/unit/adapters/exchanges/test_simulated.py::test_sell_limit_at_bid_returns_fill U3
 tests/unit/adapters/fees/test_binance_history.py::test_load_returns_expected_row_count U3
-tests/unit/adapters/fills/test_orderbook_walk.py::test_different_seeds_do_not_guarantee_different_fills U3
-tests/unit/adapters/fills/test_orderbook_walk.py::test_fill_order_returns_fill_or_rejection U3
-tests/unit/adapters/fills/test_orderbook_walk.py::test_fill_qty_preserves_fill_domain_invariant U3
-tests/unit/adapters/fills/test_orderbook_walk.py::test_isinstance_fill_model_port U6
-tests/unit/adapters/fills/test_orderbook_walk.py::test_limit_buy_at_exactly_best_ask_fills U3
-tests/unit/adapters/fills/test_orderbook_walk.py::test_limit_sell_at_exactly_best_bid_fills U3
 tests/unit/adapters/fx/test_frankfurter.py::test_adapter_is_fx_rate_provider_port_instance U6
 tests/unit/adapters/fx/test_frankfurter.py::test_fx_rate_error_inherits_from_infra_error U3
 tests/unit/adapters/healthchecks/test_hc.py::test_healthchecks_error_is_hermes_error U3
