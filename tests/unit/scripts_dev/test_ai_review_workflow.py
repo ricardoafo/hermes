@@ -23,8 +23,9 @@ from typing import Any
 import pytest
 import yaml
 
-_ROOT = Path(__file__).resolve().parents[3]
-_WORKFLOW = _ROOT / ".github" / "workflows" / "ai-review.yml"
+from tests.support.paths import REPO_ROOT
+
+_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ai-review.yml"
 _FAKE_BEARER = "ghs_FAKEtokenFAKEtokenFAKEtokenFAKE0000"  # gitleaks:allow (fake test token)
 _STEP = "Gather review context"
 

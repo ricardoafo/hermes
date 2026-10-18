@@ -16,7 +16,9 @@ from pathlib import Path
 
 import pytest
 
-_SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "deploy" / "vps_bootstrap.sh"
+from tests.support.paths import REPO_ROOT
+
+_SCRIPT = REPO_ROOT / "scripts" / "deploy" / "vps_bootstrap.sh"
 _BASH = shutil.which("bash")
 
 pytestmark = pytest.mark.skipif(_BASH is None, reason="the bootstrap script needs bash")

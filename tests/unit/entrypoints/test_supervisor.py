@@ -25,9 +25,10 @@ from hermes.application.status import UnitState
 from hermes.domain.strategy.signal import SignalKind
 from hermes.entrypoints import supervisor as supervisor_module
 from hermes.entrypoints.commands import discover
+from tests.support.paths import REPO_ROOT
 from tests.support.status_ledger import ETH, LAST_4H, NOW, fill, signal, write_ledger
 
-_CONFIG = Path(__file__).resolve().parents[3] / "config"
+_CONFIG = REPO_ROOT / "config"
 
 
 def _run(

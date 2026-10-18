@@ -1,0 +1,1 @@
+- **Live meters in the console Portfolio panel**: while live prices are flowing, the invested and exposure meters use the open positions at their live prices; paused or without a price they show the booked figures. Display only. Refs #722. Closes #1162.

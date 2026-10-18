@@ -11,11 +11,12 @@ Tests may build their own zone or cent: the scan covers ``src/hermes`` only.
 import ast
 from collections.abc import Callable
 from decimal import Decimal, InvalidOperation
-from pathlib import Path
 
 import pytest
 
-_SRC = Path(__file__).resolve().parents[4] / "src" / "hermes"
+from tests.support.paths import REPO_ROOT
+
+_SRC = REPO_ROOT / "src" / "hermes"
 _TIME = "domain/value_objects/time.py"
 _CENTS = "domain/value_objects/cents.py"
 _PRECISION = "domain/value_objects/precision.py"

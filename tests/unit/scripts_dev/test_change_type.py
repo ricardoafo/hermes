@@ -15,8 +15,9 @@ from types import ModuleType
 
 import pytest
 
-_ROOT = Path(__file__).resolve().parents[3]
-_SCRIPT = _ROOT / "scripts" / "dev" / "change-type.py"
+from tests.support.paths import REPO_ROOT
+
+_SCRIPT = REPO_ROOT / "scripts" / "dev" / "change-type.py"
 
 
 def _script() -> ModuleType:
@@ -96,7 +97,9 @@ def test_empty_diff_is_docs() -> None:
 
 def test_engine_rule_matches_the_train_replay_list() -> None:
     """The engine rule is the ENGINE_PATHS the Train replay uses today, character for character."""
-    replay = (_ROOT / "scripts" / "dev" / "train-decision-replay.sh").read_text(encoding="utf-8")
+    replay = (REPO_ROOT / "scripts" / "dev" / "train-decision-replay.sh").read_text(
+        encoding="utf-8"
+    )
     match = re.search(r"^ENGINE_PATHS='([^']+)'", replay, re.MULTILINE)
     assert match is not None
     assert match.group(1) == _script().ENGINE_PATHS
@@ -172,7 +175,7 @@ def test_cli_diffs_two_commits(tmp_path: Path) -> None:
 
 def test_ci_guide_lists_the_four_types() -> None:
     """The guide that explains CI names every change type."""
-    guide = (_ROOT / "docs" / "guides" / "ci-runners-and-merge-queue.md").read_text(
+    guide = (REPO_ROOT / "docs" / "guides" / "ci-runners-and-merge-queue.md").read_text(
         encoding="utf-8"
     )
     section = guide.split("## Change types", 1)[1].split("\n## ", 1)[0]

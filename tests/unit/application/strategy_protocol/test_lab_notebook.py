@@ -23,6 +23,7 @@ from hermes.application.strategy_protocol.lab_notebook import (
     LabNotebookEntry,
 )
 from hermes.domain.errors import LabNotebookAppendError
+from tests.support.paths import REPO_ROOT
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -271,7 +272,7 @@ class TestLabNotebookAppendOnlyInvariant:
 # verify_file(): hashes checkable from the file text (issue #786)
 # ---------------------------------------------------------------------------
 
-_REPO_NOTEBOOK = Path(__file__).resolve().parents[4] / "docs/experiments/swing-mvp1/lab-notebook.md"
+_REPO_NOTEBOOK = REPO_ROOT / "docs/experiments/swing-mvp1/lab-notebook.md"
 
 
 class TestVerifyFile:

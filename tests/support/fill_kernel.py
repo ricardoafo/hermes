@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from pathlib import Path
 
 from hermes.adapters.fills.orderbook_walk import OrderbookWalkFillModel
 from hermes.application.execution.kernel import FillKernel, MarketContext
@@ -25,13 +24,12 @@ from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.ports.fill_model import FillModelPort
+from tests.support.paths import REPO_ROOT
 
 BTC_USDT = Pair(base=Currency.BTC, quote=Currency.USDT)
 STRATEGY = StrategyId("swing-donchian-4h")
 STARTING_CASH = Decimal("5000")
 TAKER_BPS = 10
-
-_ROOT = Path(__file__).resolve().parents[2]
 
 
 def fees(pair: Pair = BTC_USDT, taker_bps: int = TAKER_BPS) -> FeeSchedule:
@@ -42,6 +40,12 @@ def fees(pair: Pair = BTC_USDT, taker_bps: int = TAKER_BPS) -> FeeSchedule:
             FeeTier(volume_threshold_usd=Decimal("0"), maker_bps=taker_bps, taker_bps=taker_bps),
         ),
     )
+
+
+def fees_at(at: datetime, pair: Pair) -> FeeSchedule:
+    """Return :func:`fees` for ``pair`` at any time: a schedule that never changes."""
+    _ = at
+    return fees(pair)
 
 
 SIZING = SizingPolicy(
@@ -60,7 +64,7 @@ def seed(cash: Decimal = STARTING_CASH) -> PortfolioSnapshot:
 
 def kill_evaluator() -> KillTriggerEvaluator:
     """Return the evaluator built from the signed pre-registration."""
-    return KillTriggerEvaluator(pre_reg=PreRegistration(project_root=_ROOT))
+    return KillTriggerEvaluator(pre_reg=PreRegistration(project_root=REPO_ROOT))
 
 
 def kernel(

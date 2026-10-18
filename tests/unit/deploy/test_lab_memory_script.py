@@ -30,7 +30,9 @@ from urllib.parse import parse_qs
 
 import pytest
 
-_SCRIPT = Path(__file__).resolve().parents[3] / "deploy" / "hermes-lab-memory.sh"
+from tests.support.paths import REPO_ROOT
+
+_SCRIPT = REPO_ROOT / "deploy" / "hermes-lab-memory.sh"
 _BASH = shutil.which("bash")
 _CURL = shutil.which("curl")
 

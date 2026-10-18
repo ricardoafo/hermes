@@ -5,12 +5,13 @@ it, because the tier ran only weekly. These tests pin the tier into PR CI.
 """
 
 import re
-from pathlib import Path
 from typing import Any
 
 import yaml
 
-_WORKFLOWS = Path(__file__).resolve().parents[3] / ".github" / "workflows"
+from tests.support.paths import REPO_ROOT
+
+_WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 
 
 def _load(name: str) -> dict[str, Any]:

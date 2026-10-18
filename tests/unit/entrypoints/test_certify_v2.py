@@ -21,9 +21,9 @@ from hermes.application.calibration.certification_gates import v1_parameter_fing
 from hermes.application.calibration.lifecycle import CertificationState
 from hermes.application.strategy_protocol.preregistration import PreRegistration
 from hermes.entrypoints import certify as certify_module
+from tests.support.paths import REPO_ROOT
 
 _V2 = "swing-mvp1-v2"
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _START = date(2020, 9, 1)
 _DAYS = (date(2025, 8, 31) - _START).days
 """Train + Validation of v2 §4: every day up to the day before the OOS start."""
@@ -98,7 +98,7 @@ def _funnel_evidence(**changes: object) -> dict[str, Any]:
 def config_dir(tmp_path: Path) -> Path:
     """Return the shipped config with a roster of v1 (enabled) and v2 (disabled)."""
     target = tmp_path / "config"
-    shutil.copytree(_PROJECT_ROOT / "config", target)
+    shutil.copytree(REPO_ROOT / "config", target)
     (target / "strategies.yaml").write_text(_STRATEGIES_YAML, encoding="utf-8")
     return target
 
@@ -281,13 +281,11 @@ class TestErrors:
     ) -> None:
         """A release with only v1's file beside its config cannot judge v2: exit 3."""
         release = tmp_path / "release"
-        shutil.copytree(_PROJECT_ROOT / "config", release / "config")
+        shutil.copytree(REPO_ROOT / "config", release / "config")
         (release / "config" / "strategies.yaml").write_text(_STRATEGIES_YAML, encoding="utf-8")
         experiment = release / "docs" / "experiments" / "swing-mvp1"
         experiment.mkdir(parents=True)
-        shutil.copy(
-            _PROJECT_ROOT / "docs/experiments/swing-mvp1/pre-registration-v1.md", experiment
-        )
+        shutil.copy(REPO_ROOT / "docs/experiments/swing-mvp1/pre-registration-v1.md", experiment)
 
         def _no_repository() -> Path:
             raise FileNotFoundError("no pyproject.toml above the installed package")
@@ -305,7 +303,7 @@ class TestShippedConfig:
         """No evidence: exit 1 with a failing dsr line at v2's floor, and nothing stored."""
         out = io.StringIO()
         code = certify_module.main(
-            [_V2, "--config-dir", str(_PROJECT_ROOT / "config"), "--store-dir", str(tmp_path)],
+            [_V2, "--config-dir", str(REPO_ROOT / "config"), "--store-dir", str(tmp_path)],
             stream=out,
             err=io.StringIO(),
         )

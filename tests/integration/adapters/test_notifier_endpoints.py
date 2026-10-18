@@ -19,11 +19,12 @@ import pytest
 
 from hermes.adapters.notifier import SlackAdapter, SlackConfig, TelegramAdapter, TelegramConfig
 from hermes.entrypoints import bot as bot_module
+from tests.support.paths import REPO_ROOT
 
 _TOKEN = "123456789:FAKE-bot-token_for_tests"  # noqa: S105 - test-only  # gitleaks:allow
 _SLACK_TOKEN = "xoxb-fake-token-for-tests"  # noqa: S105 - test-only  # gitleaks:allow
 _CHAT = "-1001234567890"
-_REPO_CONFIG = Path(__file__).resolve().parents[3] / "config"
+_REPO_CONFIG = REPO_ROOT / "config"
 
 
 @dataclass
