@@ -22,10 +22,12 @@ from types import MappingProxyType
 from typing import Any, Final
 
 from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
+from hermes.domain.strategy.swing.trend_slope import TrendSlopeAdapter
 from hermes.ports.strategy import StrategyPort
 
 __all__ = [
     "DONCHIAN_BREAKOUT",
+    "DONCHIAN_SLOPE",
     "StrategyKind",
     "UnknownSignalError",
     "known_signals",
@@ -34,6 +36,9 @@ __all__ = [
 
 DONCHIAN_BREAKOUT: Final = "donchian_breakout"
 """The v1/v2 rule (pre-registration v1 §5): the kind of an entry with no ``signal:``."""
+
+DONCHIAN_SLOPE: Final = "donchian_slope"
+"""Research batch swing-b1 C3: v2's rule plus a rising daily EMA(200) (issue #1065)."""
 
 
 class UnknownSignalError(ValueError):
@@ -85,7 +90,10 @@ class StrategyKind[S]:
 
 
 _KINDS: Final[Mapping[str, StrategyKind[StrategyPort]]] = MappingProxyType(
-    {DONCHIAN_BREAKOUT: StrategyKind(DONCHIAN_BREAKOUT, SwingStrategyAdapter)}
+    {
+        DONCHIAN_BREAKOUT: StrategyKind(DONCHIAN_BREAKOUT, SwingStrategyAdapter),
+        DONCHIAN_SLOPE: StrategyKind(DONCHIAN_SLOPE, TrendSlopeAdapter),
+    }
 )
 
 

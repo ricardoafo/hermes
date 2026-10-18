@@ -11,11 +11,13 @@ research batch swing-b1 §5 (C3).
 import inspect
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
+from hermes.application.strategy_protocol.strategy_factory import DONCHIAN_SLOPE, strategy_kind
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.risk.state import PortfolioState
@@ -24,7 +26,10 @@ from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter, swing_par
 from hermes.domain.strategy.swing.trend_slope import SlopeEntryCheck, TrendSlopeAdapter
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
+from hermes.infrastructure.config import StrategiesConfig
+from hermes.infrastructure.config.loader import load_yaml_model
 
+_REPO_CONFIG = Path(__file__).resolve().parents[5] / "config"
 _BTC_USDT = Pair(base=Currency.BTC, quote=Currency.USDT)
 _D1_BASE = datetime(2024, 1, 1, tzinfo=UTC)
 _DAILY_BARS = 21
@@ -222,3 +227,25 @@ def test_c3_never_enters_where_v2_would_not(h4: list[Decimal], daily: list[int])
                 True,
                 True,
             )
+
+
+def test_the_donchian_slope_kind_builds_c3_with_the_batch_parameter_names() -> None:
+    """``signal: donchian_slope`` builds C3, and the batch's three parameters are its own."""
+    kind = strategy_kind(DONCHIAN_SLOPE)
+    defaults = kind.default_parameters()
+
+    assert type(kind.create()) is TrendSlopeAdapter
+    assert {
+        name: defaults[name]
+        for name in ("ema_slope_lookback", "donchian_period", "chandelier_atr_mult")
+    } == {"ema_slope_lookback": 20, "donchian_period": 20, "chandelier_atr_mult": Decimal("3.0")}
+
+
+def test_the_shipped_c3_entry_is_disabled_and_trades_donchian_slope() -> None:
+    """The ``swing-b1-trend-slope`` roster entry names the C3 kind and never runs in serve."""
+    roster = load_yaml_model(
+        _REPO_CONFIG / "strategies.yaml", StrategiesConfig, env_section="STRATEGIES", env={}
+    )
+    entry = next(s for s in roster.strategies if s.name == "swing-b1-trend-slope")
+
+    assert (entry.enabled, entry.strategy_kind().signal) == (False, DONCHIAN_SLOPE)
