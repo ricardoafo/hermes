@@ -18,7 +18,6 @@ Invariants:
 import re
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from pathlib import Path
 
 import pytest
 from hypothesis import given
@@ -35,13 +34,14 @@ from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.price import Price
 from hermes.domain.value_objects.quantity import Quantity
 from tests.support.fill_kernel import STRATEGY
+from tests.support.paths import REPO_ROOT
 
 _PAIRS = (
     Pair(base=Currency.BTC, quote=Currency.USDT),
     Pair(base=Currency.ETH, quote=Currency.USDT),
 )
 _T0 = datetime(2026, 10, 3, tzinfo=UTC)
-_SRC = Path(__file__).resolve().parents[4] / "src" / "hermes"
+_SRC = REPO_ROOT / "src" / "hermes"
 
 type _Op = tuple[Pair, OrderSide, Decimal, Decimal, Decimal]
 
