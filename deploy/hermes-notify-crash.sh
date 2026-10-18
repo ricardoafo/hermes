@@ -34,8 +34,9 @@ if [ -z "$result" ] || [ "$result" = "success" ]; then
     exit 0
 fi
 
-# Test seam: points curl at a local fake. Never set it in env.production.
-api_base="${HERMES_NOTIFY_SLACK_API_BASE:-https://slack.com}"
+# The same variable the Python notifier reads (#970): a lower environment
+# points it at a fake; unset, the real API. Never set it in env.production.
+api_base="${HERMES_SLACK__API_BASE:-https://slack.com}"
 token="${HERMES_SLACK__BOT_TOKEN:-}"
 channel="${HERMES_SLACK__DEFAULT_CHANNEL:-}"
 max_line_chars=300
