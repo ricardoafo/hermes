@@ -111,11 +111,15 @@ class ParityReport:
         day: The UTC day checked.
         matched: Signals both sides produced with the same outcome.
         mismatches: Every difference, oldest bar first.
+        missed_bars: Bars serve reached late that day (#1078). Their entries
+            are left unfilled and their exits fill later by rule, so the day
+            is not compared and holds no mismatch.
     """
 
     day: date
     matched: int
     mismatches: tuple[Mismatch, ...]
+    missed_bars: int = 0
 
     @property
     def in_parity(self) -> bool:
