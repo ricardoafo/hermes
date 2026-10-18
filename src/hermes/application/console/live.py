@@ -23,7 +23,7 @@ supervisor, briefs, notifications or any AI. Import-linter contract
 from importing this module; the shared renderers in ``render.py`` never import
 it either.
 
-Reference: openspec/changes/713-live-ticker/change.md (D-2 to D-6).
+Reference: openspec/archive/713-live-ticker/change.md (D-2 to D-6).
 """
 
 from __future__ import annotations

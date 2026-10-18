@@ -12,7 +12,7 @@ Each value is read on its own and is ``None`` where it cannot be read (no
 ``/proc`` on a PC, no snapshot directory), so the screen says "not available
 here" for that value only. Nothing is written.
 
-Reference: openspec/changes/717-system-screen/change.md.
+Reference: openspec/archive/717-system-screen/change.md.
 """
 
 import os

@@ -37,6 +37,7 @@ _TG_429 = _U + "adapters/notifier/test_telegram_adapter.py::TestRateLimitBackOff
 _LOOP = _I + "entrypoints/test_serve_bar_loop.py::"
 _CHAOS = _S + "test_chaos_crash_mid_bar.py::"
 _FILLS = _I + "entrypoints/test_serve_fills.py::"
+_TAX = _I + "entrypoints/test_serve_tax_guard.py::"
 _SERVE = _U + "entrypoints/test_serve.py::"
 _UNITS = _U + "deploy/test_systemd_units.py::"
 _RELEASE = _I + "deploy/test_release_scripts.py::"
@@ -893,6 +894,29 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
     ),
     "notifications": (
+        FailureMode(
+            "A tax-guard breach (ADR-002 Decision 6) is never recorded or alerted",
+            proved_by=(
+                _TAX
+                + "test_one_trade_past_the_ceiling_records_one_critical_row_at_the_daily_close",
+                _TAX + "test_one_trade_past_the_ceiling_is_alerted_once_on_the_routed_channel",
+                _FILLS + "test_a_tax_guard_breach_is_recorded_and_changes_no_decision_or_fill",
+            ),
+        ),
+        FailureMode(
+            "A tax-guard breach is recorded twice for one daily close, across pairs or a restart",
+            proved_by=(
+                _TAX + "test_two_pairs_closing_the_same_day_record_the_breach_once",
+                _TAX + "test_a_restart_that_re_handles_the_second_pairs_bar_records_nothing_new",
+            ),
+        ),
+        FailureMode(
+            "The tax guard cannot read the ledger and stops serve",
+            proved_by=(
+                _TAX
+                + "test_a_guard_that_cannot_read_the_ledger_is_logged_and_the_bar_still_processed",
+            ),
+        ),
         FailureMode(
             "The bot's /pos and /money read another ledger than its --db",
             proved_by=(

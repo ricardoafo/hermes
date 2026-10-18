@@ -12,7 +12,7 @@ Three rules hold in every renderer:
 - a DEMO DATA tag heads the output whenever the data comes from a fixture;
 - when hermes is down, money is dimmed and marked "as of" the stop time.
 
-Reference: openspec/changes/console-read-model/change.md (D-2, D-4, D-5);
+Reference: openspec/archive/console-read-model/change.md (D-2, D-4, D-5);
 the approved console UX proposal (2026-10-03).
 """
 

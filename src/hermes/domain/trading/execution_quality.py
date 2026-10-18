@@ -12,7 +12,7 @@ pre-registration §6.2 book. Two numbers describe one shadow fill:
 Both are signed in the cost direction: a positive value means the fill was
 worse for the strategy (a BUY above, or a SELL below, the reference).
 
-Reference: openspec/changes/353-fill-kernel-in-serve/change.md D-3, D-4.
+Reference: openspec/archive/353-fill-kernel-in-serve/change.md D-3, D-4.
 """
 
 from __future__ import annotations

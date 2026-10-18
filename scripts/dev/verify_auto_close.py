@@ -31,7 +31,7 @@ Usage:
     HERMES_SELF_TEST=1 python scripts/dev/verify_auto_close.py    # fixture matrix
 
 Related:
-    openspec/changes/verify-auto-close-tool/change.md
+    openspec/archive/verify-auto-close-tool/change.md
     .github/workflows/merge-queue.yml (v3 belt-and-suspenders block)
     #232 (v1) → #247 (v2) → #261 (v3) — the auto-close saga
 """

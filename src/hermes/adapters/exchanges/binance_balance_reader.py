@@ -16,7 +16,7 @@ Safety (ADR-003 §00 I-08, AGENTS.md rules 6 and 7):
 - The secret is excluded from ``repr`` and never appears in an error message,
   and neither does the signature.
 
-Reference: openspec/changes/29-binance-balance-read/change.md.
+Reference: openspec/archive/29-binance-balance-read/change.md.
 """
 
 import time

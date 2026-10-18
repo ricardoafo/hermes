@@ -9,7 +9,7 @@ and values year-end holdings (D-8 of the change):
    ADR-016 item 5), through the same :class:`EurPricer` the ledger uses;
 3. else the price is missing and the 721 may be undetermined.
 
-Reference: openspec/changes/36-modelo-100-721/change.md.
+Reference: openspec/archive/36-modelo-100-721/change.md.
 """
 
 from __future__ import annotations

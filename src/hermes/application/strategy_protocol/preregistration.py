@@ -10,7 +10,7 @@ wrong constants.
 
 Reference:
   ``docs/experiments/swing-mvp1/pre-registration-v1.md``
-  ``openspec/changes/spec-9-strategy-development-protocol/change.md`` D-1.
+  ``openspec/archive/spec-9-strategy-development-protocol/change.md`` D-1.
 """
 
 from __future__ import annotations

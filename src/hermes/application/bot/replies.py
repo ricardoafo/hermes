@@ -7,7 +7,7 @@ UTC where a time is actionable, amounts in EUR. Money only appears when
 ``pnl_visible`` allows it for the surface (a pulled reply does; a pushed
 message never does).
 
-Reference: openspec/changes/379-telegram-bot/change.md (D-2).
+Reference: openspec/archive/379-telegram-bot/change.md (D-2).
 """
 
 from __future__ import annotations

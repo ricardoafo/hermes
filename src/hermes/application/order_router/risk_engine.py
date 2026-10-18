@@ -96,8 +96,5 @@ class RiskEngine:
             ok = RiskDecision(action=RiskAction.OK, reason="RiskEngine: no rules configured — OK")
             return RiskEngineResult(worst=ok, decisions=[ok])
 
-        worst = decisions[0]
-        for decision in decisions[1:]:
-            if decision.action.is_worse_than(worst.action):
-                worst = decision
+        worst = max(decisions, key=lambda d: d.action.severity)
         return RiskEngineResult(worst=worst, decisions=decisions)

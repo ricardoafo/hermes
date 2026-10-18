@@ -26,8 +26,6 @@ Reference: issue #360; ADR-011 D-19; decisions journal
 
 from __future__ import annotations
 
-import math
-import statistics
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -35,6 +33,7 @@ from itertools import accumulate
 
 from hermes.application.strategy_protocol.shadow_sharpe_kill import rolling_annualised_sharpe
 from hermes.domain.statistics.bootstrap import percentile
+from hermes.domain.statistics.correlation import pearson
 from hermes.domain.statistics.rng import SplitMix64
 
 __all__ = [
@@ -100,13 +99,6 @@ class MetricVerdict:
         return self._value
 
 
-def _pearson(xs: Sequence[float], ys: Sequence[float]) -> float | None:
-    try:
-        return statistics.correlation(xs, ys)
-    except statistics.StatisticsError:
-        return None
-
-
 def _cumulative(values: Sequence[float]) -> list[float]:
     return list(accumulate(values))
 
@@ -138,7 +130,7 @@ def m09_pnl_correlation(
     n = len(shadow_trade_pnl)
     if n < M09_MIN_TRADES:
         return MetricVerdict("M-09", MetricStatus.INSUFFICIENT)
-    r = _pearson(_cumulative(shadow_trade_pnl), _cumulative(replay_trade_pnl))
+    r = pearson(_cumulative(shadow_trade_pnl), _cumulative(replay_trade_pnl))
     if r is None:
         return MetricVerdict("M-09", MetricStatus.INSUFFICIENT)
 
@@ -146,11 +138,11 @@ def m09_pnl_correlation(
     samples: list[float] = []
     for _ in range(resamples):
         picks = sorted(rng.below(n) for _ in range(n))
-        value = _pearson(
+        value = pearson(
             _cumulative([shadow_trade_pnl[i] for i in picks]),
             _cumulative([replay_trade_pnl[i] for i in picks]),
         )
-        if value is not None and math.isfinite(value):
+        if value is not None:
             samples.append(value)
     if not samples:
         return MetricVerdict("M-09", MetricStatus.INSUFFICIENT, r)

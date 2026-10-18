@@ -34,6 +34,10 @@ What one process does:
   minutes, and each completed 1D bar records the 30-day pair correlations
   (#835). These RO-01 / RO-02 inputs are recorded only: no rule reads them,
   and a failed sample or correlation is logged and skipped.
+- Each daily close also runs the ADR-002 Decision 6 recharacterization guard
+  over the ledger's trades of the last 90 days (#1181). A breach is recorded
+  and alerted only: nothing pauses or gates entries on it, which is the Code
+  Owner's decision (#136). A failed evaluation is logged and skipped.
 - Delivery rule (#854): each signal is pushed to each routed channel once,
   in practice at least once with dedupe. The push is recorded in the ledger
   (``SignalNotified``) after it is sent, so a crash before the record pushes
@@ -151,6 +155,7 @@ from hermes.application.strategy_protocol.shadow_checks import (
     day_end,
     run_shadow_checks,
 )
+from hermes.application.tax_guard.window import TAX_GUARD_SOURCE, evaluate_ledger
 from hermes.domain.errors import HermesError, InfraError, LedgerError
 from hermes.domain.events.anomaly_detected import (
     CLOCK_SKEW_SOURCE,
@@ -1283,6 +1288,8 @@ class _BarLoop:
     """Bars handled after their live window, per stream, since the last restart report."""
     exits_checked: list[str] = field(default_factory=list)
     """Outcome of each exit signal on a missed bar, since the last restart report."""
+    tax_checked_through: datetime | None = None
+    """Close time of the last daily bar the tax guard was evaluated for."""
 
     async def warm_up_and_catch_up(self, shutdown: asyncio.Event) -> None:
         """Seed history up to each cursor, then evaluate the bars after it."""
@@ -1545,6 +1552,7 @@ class _BarLoop:
         # so a processed bar always has its values on record.
         stored = c.ledger.record_live_bar(bar)
         self._record_correlations(bar)
+        await self._check_tax_guard(bar)
         # The console reads the portfolio from the ledger, not from this process (#387).
         c.ledger.record_portfolio_mark(
             PortfolioMark(
@@ -1660,6 +1668,50 @@ class _BarLoop:
                 close_time=bar.close_time.isoformat(),
                 count=written,
             )
+
+    async def _check_tax_guard(self, bar: Bar) -> None:
+        """Record and alert a recharacterization breach once per daily close (ADR-002 Decision 6).
+
+        The first 1D bar handled for a close time evaluates the rolling window
+        that ends at that close; another pair's 1D bar with the same close does
+        not. A breach is published on the bus, which records it (#136), then
+        alerted on every routed channel, once per daily close while it lasts.
+        Record and alert only: nothing pauses or gates entries on it (#1181).
+        A failed evaluation is logged and skipped, like the correlations, so it
+        never stops the loop.
+        """
+        if bar.interval is not KlineInterval.D1:
+            return
+        if self.tax_checked_through is not None and bar.close_time <= self.tax_checked_through:
+            return
+        self.tax_checked_through = bar.close_time
+        c = self.c
+        try:
+            latest = latest_anomaly(c.sqlite_connection, TAX_GUARD_SOURCE)
+            if latest is not None and latest.occurred_at >= bar.close_time:
+                # A restart between two pairs' bars of one day re-handles the
+                # second; the day's breach is already recorded and alerted.
+                return
+            alert = evaluate_ledger(
+                c.ledger,
+                c.config.tax_guard,
+                now=bar.close_time,
+                correlation_id=new_correlation_id(),
+            )
+        except Exception as exc:
+            _log.warning(
+                "serve.tax_guard.failed",
+                close_time=bar.close_time.isoformat(),
+                error=type(exc).__name__,
+                detail=str(exc),
+            )
+            return
+        if alert is None:
+            return
+        c.event_bus.publish(alert)
+        # The reason can carry a EUR fee figure, so the journal gets the close only.
+        _log.warning("serve.tax_guard.breached", close_time=bar.close_time.isoformat())
+        await self._alert(alert, failed="serve.tax_guard.alert_failed")
 
     def _record_stop(self, bar: Bar) -> None:
         """Store the stop the strategy evaluated on this bar, when it holds a position (#388).

@@ -7,7 +7,7 @@ every timestamp must carry an offset. Figures the views can derive (row net,
 change since entry, stop distance) are computed here rather than stored, so a
 scenario cannot contradict itself.
 
-Reference: openspec/changes/console-read-model/change.md (D-3, D-7).
+Reference: openspec/archive/console-read-model/change.md (D-3, D-7).
 """
 
 from __future__ import annotations

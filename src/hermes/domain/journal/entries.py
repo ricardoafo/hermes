@@ -7,7 +7,7 @@ A decision whose outcome depends on strategy results (``OutcomeKind.STRATEGY``)
 cannot be reviewed until the strategy is certified: scoring it earlier would
 reveal shadow P&L (pre-registration ruling 1, ADR-012 D-06).
 
-Reference: issue #363; ADR-012 D-05; openspec/changes/363-decision-journal.
+Reference: issue #363; ADR-012 D-05; openspec/archive/363-decision-journal.
 """
 
 from __future__ import annotations

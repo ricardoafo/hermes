@@ -14,7 +14,7 @@ Every money figure stays a ``Decimal``; rounding is the renderer's job. The
 module does no I/O: the clock, the scales and the taxpayer figures are
 parameters, so over ``--vps`` the caller simply passes no taxpayer figures.
 
-Reference: openspec/changes/719-tax-screen/change.md.
+Reference: openspec/archive/719-tax-screen/change.md.
 """
 
 from collections import defaultdict

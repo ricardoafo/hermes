@@ -147,6 +147,20 @@ class TestRanking:
         )
         assert judgement.survivors == ("a", "b", "c")
 
+    def test_a_flat_series_off_zero_counts_as_fully_correlated(self) -> None:
+        """A run of 0.1s is flat, so it ranks as correlation 1, not as its rounding noise (#1179).
+
+        ``statistics.correlation`` read it as 0.0 against b and c, so z ranked
+        first. Undefined, every mean is 1 and the order falls back to the id.
+        """
+        rising = (0.0, 1.0, 2.0)
+        judgement = _judge(
+            _candidate("z", 0.99, returns=(0.1, 0.1, 0.1)),
+            _candidate("b", 0.99, returns=rising),
+            _candidate("c", 0.99, returns=rising),
+        )
+        assert judgement.survivors == ("b", "c", "z")
+
 
 class TestEligible:
     """After Train, the eligible candidates go on to Validation (ADR-026 §3)."""

@@ -9,7 +9,7 @@ root, so it runs as the ``hermes`` user over ``hermes --vps``.
 Off the VPS (no ``systemctl``, a failed call, or no hermes unit installed) the
 reader returns ``None`` and the screen says "not available here".
 
-Reference: openspec/changes/717-system-screen/change.md.
+Reference: openspec/archive/717-system-screen/change.md.
 """
 
 import shutil

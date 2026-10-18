@@ -21,7 +21,7 @@ formula and the realised risk ``notional * (entry - stop) ÷ entry`` never
 exceeds the risk budget, without an epsilon.
 
 Reference: pre-registration-v1.md §2, §5.4, §5.5;
-openspec/changes/sizing-per-prereg/change.md (supersedes spec-3 D-2).
+openspec/archive/sizing-per-prereg/change.md (supersedes spec-3 D-2).
 """
 
 from __future__ import annotations

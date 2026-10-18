@@ -13,8 +13,8 @@ the registry, so no list here names them (#525). Console commands call
 :func:`resolve_read_model`: a demo scenario when one is selected, otherwise the
 ledger-backed read model when the ledger file exists (#546).
 
-Reference: openspec/changes/console-read-model/change.md (D-4, D-9);
-openspec/changes/ledger-read-model/change.md (D-8, D-9).
+Reference: openspec/archive/console-read-model/change.md (D-4, D-9);
+openspec/archive/ledger-read-model/change.md (D-8, D-9).
 """
 
 from __future__ import annotations

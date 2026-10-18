@@ -34,9 +34,9 @@ because the gate out of UNTRUSTED is judged on Train + Validation.
 Exit codes: 0 gate passed and recorded, 1 gate failed or refused, 2 usage,
 3 config, evidence or store error.
 
-Reference: openspec/changes/355-certification-gates/change.md;
-openspec/changes/v2-certify-gate/change.md;
-openspec/changes/965-shadow-parity-window/change.md; ADR-014.
+Reference: openspec/archive/355-certification-gates/change.md;
+openspec/archive/v2-certify-gate/change.md;
+openspec/archive/965-shadow-parity-window/change.md; ADR-014.
 """
 
 from __future__ import annotations

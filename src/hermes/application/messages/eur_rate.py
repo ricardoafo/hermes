@@ -6,7 +6,7 @@ into the note builders; the notification port does not change (change
 ``668-eur-prices-in-pushes`` D-2). A missing lookup, a ``None`` answer and a
 raising lookup all mean "no rate", so a push keeps its quote-currency text.
 
-Reference: openspec/changes/668-eur-prices-in-pushes/change.md.
+Reference: openspec/archive/668-eur-prices-in-pushes/change.md.
 """
 
 from __future__ import annotations

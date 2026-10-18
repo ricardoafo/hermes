@@ -15,7 +15,7 @@ Exit codes: 0 written, 1 ledger failure, 2 usage, 3 config error,
 5 the requested year is frozen (nothing written). ERROR and WARNING lines go
 to ``err`` (stderr), the report to ``stream``.
 
-Reference: openspec/changes/568-tax-pack/change.md.
+Reference: openspec/archive/568-tax-pack/change.md.
 """
 
 from __future__ import annotations

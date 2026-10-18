@@ -15,7 +15,7 @@ The folds cover exactly the run's window: a Train run's evidence ends at the
 Train end, a Validation run's at the Validation end (its stage already reads
 those bars); the OOS window is refused before any run (ADR-023 §4).
 
-Reference: pre-registration-v1.md §8.3 (v2 keeps it); openspec/changes/354-certification-statistics
+Reference: pre-registration-v1.md §8.3 (v2 keeps it); openspec/archive/354-certification-statistics
 D-5; openspec/changes/1181-fold-evidence/change.md.
 """
 
