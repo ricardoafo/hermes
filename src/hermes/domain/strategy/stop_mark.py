@@ -23,13 +23,9 @@ from decimal import Decimal
 
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
+from hermes.domain.value_objects.time import require_utc
 
 __all__ = ["StopMark", "StopRecord"]
-
-
-def _require_utc(value: datetime, name: str) -> None:
-    if value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError(f"{name} must be timezone-aware UTC")
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,7 +55,7 @@ class StopRecord:
 
     def __post_init__(self) -> None:
         """Require a timezone-aware entry time."""
-        _require_utc(self.entry_time, "StopRecord.entry_time")
+        require_utc(self.entry_time, name="StopRecord.entry_time")
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,4 +76,4 @@ class StopMark:
 
     def __post_init__(self) -> None:
         """Require a timezone-aware bar close time."""
-        _require_utc(self.bar_close_time, "StopMark.bar_close_time")
+        require_utc(self.bar_close_time, name="StopMark.bar_close_time")

@@ -10,8 +10,8 @@ Reference: ADR-016 decisions 2 and 8; repo audit 18 Oct, D-1 and D-2.
 
 import calendar
 from datetime import UTC, date, datetime, time
-from typing import Final
-from zoneinfo import ZoneInfo
+
+from hermes.domain.value_objects.time import MADRID
 
 __all__ = [
     "MADRID",
@@ -21,8 +21,6 @@ __all__ = [
     "tax_year_bounds",
     "tax_year_of",
 ]
-
-MADRID: Final = ZoneInfo("Europe/Madrid")
 
 
 def _aware(at: datetime, caller: str) -> datetime:

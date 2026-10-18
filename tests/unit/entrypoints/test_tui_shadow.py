@@ -1,4 +1,4 @@
-"""The Shadow test screen, tab 5 (design spec screen 5, issue #718).
+"""The Shadow test screen, tab 6 (design spec screen 5, issue #718).
 
 Invariants:
 
@@ -12,10 +12,10 @@ Invariants:
   the data colours (pass up blue, fail down orange), then the mechanical note;
 - the screen draws no money: no euro sign on any scenario, the only bps is the
   M-02 threshold in a check name;
-- tab 5 opens with the key 5, shows each check state per scenario, and Esc
+- tab 6 opens with the key 6, shows each check state per scenario, and Esc
   returns to the previous tab;
 - the big day number keeps the hero-digits colour (the legible big-number rule);
-- the bottom 90-day line on every tab counts from the same day 0 as tab 5.
+- the bottom 90-day line on every tab counts from the same day 0 as tab 6.
 """
 
 import asyncio
@@ -195,12 +195,12 @@ def _text(app: HomeApp) -> str:
 
 
 async def _open(pilot: Pilot[None]) -> None:
-    await pilot.press("5")
+    await pilot.press("6")
     await pilot.pause()
 
 
-def test_key_5_opens_the_shadow_screen_and_esc_goes_back() -> None:
-    """5 shows tab 5 with its panels (not the placeholder); Esc returns Home."""
+def test_key_6_opens_the_shadow_screen_and_esc_goes_back() -> None:
+    """6 shows tab 6 with its panels (not the placeholder); Esc returns Home."""
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[int, bool, bool, int]:
         await _open(pilot)
@@ -209,7 +209,7 @@ def test_key_5_opens_the_shadow_screen_and_esc_goes_back() -> None:
         await pilot.pause()
         return shown, "CERTIFICATION CHECKS" in text, "coming next" in text, app.tab
 
-    assert _run("ok-two-positions", probe) == (4, True, False, 0)
+    assert _run("ok-two-positions", probe) == (5, True, False, 0)
 
 
 @pytest.mark.parametrize(
@@ -324,7 +324,7 @@ def test_run_bar_fill_is_monotonic_in_the_day(day: int, step: int, width: int) -
     ],
 )
 def test_bottom_line_counts_from_the_same_day_zero_on_every_tab(scenario: str, line: str) -> None:
-    """Home and tab 5 show the same day: the bottom line reads the screen's day 0."""
+    """Home and tab 6 show the same day: the bottom line reads the screen's day 0."""
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[str, str]:
         home = app.plain_text("shadow")
