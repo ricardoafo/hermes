@@ -17,7 +17,6 @@ import re
 import sys
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from pathlib import Path
 
 import pytest
 from hypothesis import given
@@ -28,8 +27,9 @@ from hermes.domain.fees.fee_schedule import FeeSchedule, FeeTier
 from hermes.domain.statistics.performance import daily_returns
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
+from tests.support.paths import REPO_ROOT
 
-_SCRIPTS = Path(__file__).resolve().parents[3] / "scripts" / "backtest"
+_SCRIPTS = REPO_ROOT / "scripts" / "backtest"
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 

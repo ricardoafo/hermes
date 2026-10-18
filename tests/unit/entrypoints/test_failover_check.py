@@ -26,8 +26,9 @@ from hermes.domain.value_objects.price import Price
 from hermes.domain.value_objects.quantity import Quantity
 from hermes.entrypoints import cli
 from hermes.entrypoints import failover_check as module
+from tests.support.paths import REPO_ROOT
 
-_PROJECT_CONFIG = Path(__file__).resolve().parents[3] / "config"
+_PROJECT_CONFIG = REPO_ROOT / "config"
 _NOW = datetime(2026, 10, 4, 2, 40, tzinfo=UTC)
 _UNTIL = datetime(2026, 10, 4, tzinfo=UTC)
 _H4 = timedelta(hours=4)

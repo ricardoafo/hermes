@@ -39,6 +39,7 @@ from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.entrypoints import cli
 from hermes.entrypoints import status as status_module
 from hermes.entrypoints.status_view import render_status
+from tests.support.paths import REPO_ROOT
 from tests.support.status_ledger import (
     ETH,
     INTERVALS,
@@ -50,9 +51,8 @@ from tests.support.status_ledger import (
     write_ledger,
 )
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
-_CONFIG = _PROJECT_ROOT / "config"
-_NO_LINK = _PROJECT_ROOT / "no-such-release-link"
+_CONFIG = REPO_ROOT / "config"
+_NO_LINK = REPO_ROOT / "no-such-release-link"
 _FLIPPED_AT = datetime(2026, 10, 3, 12, 22, tzinfo=UTC)
 # Fixed so the snapshots do not change at every release cut.
 _PACKAGE_VERSION = "1.0.0a1"

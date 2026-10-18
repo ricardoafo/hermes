@@ -13,7 +13,9 @@ from types import ModuleType
 
 import pytest
 
-_SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "backtest" / "validation_budget.py"
+from tests.support.paths import REPO_ROOT
+
+_SCRIPT = REPO_ROOT / "scripts" / "backtest" / "validation_budget.py"
 
 
 def _script() -> ModuleType:
