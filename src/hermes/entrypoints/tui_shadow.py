@@ -131,7 +131,7 @@ def month_ticks(start: date | None, length_days: int, width: int, tokens: Tokens
         tick = 0 if after else len(piece) - 1
         for offset, char in enumerate(piece):
             cells[left + offset] = char
-            styles[left + offset] = tokens.frame if offset == tick else tokens.muted
+            styles[left + offset] = tokens.frame_text if offset == tick else tokens.muted
         free_from = left + len(piece) + 1
     out = Text()
     for char, style in zip(cells, styles, strict=True):
@@ -320,7 +320,7 @@ def notebook_text(
     for entry in shown:
         line = Text(no_wrap=True, overflow="ellipsis")
         line.append(f"{_local(entry.at, tz):%d %b %Y}  ", style=tokens.muted)
-        line.append(f"{entry.phase} · {entry.actor}  ", style=tokens.frame)
+        line.append(f"{entry.phase} · {entry.actor}  ", style=tokens.frame_text)
         line.append(entry.action, style=tokens.text)
         lines.append(line)
     hidden = len(entries) - len(shown)

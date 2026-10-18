@@ -243,7 +243,7 @@ def test_meter_turns_amber_on_the_callers_warning() -> None:
 def test_meter_solid_colour_wins_over_gradient_and_warning() -> None:
     """A stale stop meter is drawn ``dim`` even while the stop is close."""
     bar = Meter(1, width=2, warn=True).render(BASE, colour=BASE.dim)
-    assert {_hex(_style_at(bar, i).color) for i in range(2)} == {"#5D6780"}
+    assert {_hex(_style_at(bar, i).color) for i in range(2)} == {BASE.dim}
 
 
 def test_meter_with_caps_label_and_percent() -> None:
