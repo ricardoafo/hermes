@@ -10,9 +10,9 @@
 # The table depends on file content only, never on git history: a commit
 # date changes when the merge queue squashes a PR.
 #
-# The index is a derived file, rebuilt on main after each merge. PRs never
-# commit it: two PRs that each regenerate it conflict, and a committed copy
-# goes stale the moment another PR lands.
+# Run it in the PR that adds, removes or retitles a guide and commit the
+# table: nothing rebuilds it on main (issue #1197).
+# tests/unit/test_docs_indexes.py fails when a guide is missing from it.
 #
 # Usage:
 #   regenerate-guides-index.sh           rewrite the table in README.md
