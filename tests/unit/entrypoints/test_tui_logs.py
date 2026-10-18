@@ -2,7 +2,7 @@
 
 Invariants:
 
-- screen 8 reads the journal once when shown and lists every line, newest
+- screen 9 reads the journal once when shown and lists every line, newest
   first, through the shared query list; the spec query
   ``level>=warn service:engine coin:ETH since:7d`` keeps the one ETH retry;
 - Tab in the query line completes a field instead of leaving the screen;
@@ -141,7 +141,7 @@ def _logs[T](
         )
         async with app.run_test(size=size) as pilot:
             await pilot.pause()
-            await _press(pilot, ["8"])
+            await _press(pilot, ["9"])
             return await probe(app, pilot)
 
     return asyncio.run(drive())
@@ -307,7 +307,7 @@ def test_tab_completes_a_field_in_the_query_line() -> None:
         await _press(pilot, ["slash", "l", "e", "v", "tab"])
         return app.logs_view.query_one(QueryInput).value, app.tab
 
-    assert _logs(probe) == ("level:", 7)
+    assert _logs(probe) == ("level:", 8)
 
 
 def test_tab_outside_the_query_line_still_cycles_screens() -> None:
@@ -327,7 +327,7 @@ def test_escape_leaves_the_query_line_for_the_table() -> None:
         await _press(pilot, ["slash", "escape"])
         return app.focused is app.logs_view.table, app.tab
 
-    assert _logs(probe) == (True, 7)
+    assert _logs(probe) == (True, 8)
 
 
 def test_zoom_keys_set_the_histogram_window() -> None:
@@ -379,7 +379,7 @@ def test_the_pane_follows_the_cursor_and_escape_closes_it() -> None:
         await _press(pilot, ["escape"])
         return moved, app.logs_view.query_one(DetailPane).is_open, app.tab
 
-    assert _logs(probe, size=(160, 45)) == (True, False, 7)
+    assert _logs(probe, size=(160, 45)) == (True, False, 8)
 
 
 def test_enter_opens_a_detail_screen_on_compact_terminals() -> None:
@@ -538,13 +538,13 @@ def test_a_missing_journal_says_where_to_look() -> None:
     )
 
 
-def test_logs_view_is_the_eighth_screen() -> None:
+def test_logs_view_is_the_ninth_screen() -> None:
     """The Logs tab hosts the LogsView, not the old placeholder."""
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[bool, bool]:
         del pilot
         return (
-            isinstance(app.query_one("#tab-8").children[0], LogsView),
+            isinstance(app.query_one("#tab-9").children[0], LogsView),
             "coming next · issue #716" in _screen_text(app),
         )
 

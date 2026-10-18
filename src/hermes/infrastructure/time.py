@@ -12,10 +12,11 @@ from __future__ import annotations
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from hermes.domain.value_objects.time import MADRID
+
 __all__ = ["from_madrid", "now_utc", "to_madrid"]
 
 _UTC = ZoneInfo("UTC")
-_MADRID = ZoneInfo("Europe/Madrid")
 
 
 def now_utc() -> datetime:
@@ -45,7 +46,7 @@ def to_madrid(dt: datetime) -> datetime:
 
     Reference: code-conventions.md §9.
     """
-    return dt.astimezone(_MADRID)
+    return dt.astimezone(MADRID)
 
 
 def from_madrid(dt: datetime) -> datetime:

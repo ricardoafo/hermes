@@ -168,6 +168,54 @@ with no inbound ports, and about 1 GB of memory. How the box provides these belo
 - A clean shutdown when the UPS battery runs low is the infra project's part of the same ask. This guide does not
   describe how the box does it.
 
+## Running several shadows in the lab
+
+ADR-024 makes hermes-01 the staging lab until a champion's shadow is Done. The lab runs up to 6 shadows plus the
+champion, and ADR-021 gives each one its own ledger. Each shadow is one instance of
+`deploy/systemd/hermes-shadow@.service`, named after its roster entry in `config/strategies.yaml`
+(issue #1076):
+
+| Item | One shadow, `<name>` |
+| ---- | -------------------- |
+| Unit | `hermes-shadow@<name>.service` |
+| Command | `hermes serve --strategy <name> --db /var/lib/hermes-staging/shadows/<name>/hermes.sqlite3` |
+| Ledger, day-0 records, certification | `/var/lib/hermes-staging/shadows/<name>/` |
+| Code and config | the staging release, `/opt/hermes-staging/current` |
+| Secrets | `/etc/hermes/env.staging`, shared, no exchange keys |
+| Journal | `journalctl -u hermes-shadow@<name>.service` |
+
+`--strategy` runs that roster entry whatever the file enables, so every shadow runs the same release. Serve refuses
+a ledger that already holds another strategy's capital, so an instance pointed at the wrong file stops at boot,
+before it writes anything. Every instance spends the box's one Binance rate limit, like the staging serve.
+
+To add a shadow, run these on hermes-01 as root, with `<name>` replaced by the roster entry:
+
+1. Create its ledger directory.
+
+   ```bash
+   install -d -m 0750 -o hermes-staging -g hermes-staging /var/lib/hermes-staging/shadows /var/lib/hermes-staging/shadows/<name>
+   ```
+
+2. Create its ledger. Stop it with Ctrl-C once the journal shows `serve.run.started`.
+
+   ```bash
+   sudo -u hermes-staging /opt/hermes-staging/current/.venv/bin/hermes serve --config-dir /opt/hermes-staging/current/config --strategy <name> --db /var/lib/hermes-staging/shadows/<name>/hermes.sqlite3 --new-ledger
+   ```
+
+3. Start it and keep it running across reboots.
+
+   ```bash
+   systemctl enable --now hermes-shadow@<name>.service
+   ```
+
+4. Check it is running.
+
+   ```bash
+   systemctl status hermes-shadow@<name>.service --no-pager
+   ```
+
+Counting the shadow's days still starts with `hermes shadow-start` on its ledger (ADR-021 §2).
+
 ## When a machine is down
 
 Every service is a systemd unit enabled at boot with `Restart=on-failure`. It starts only after the system clock has

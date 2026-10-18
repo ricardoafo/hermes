@@ -31,6 +31,7 @@ from typing import Final
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.pair import Pair
+from hermes.domain.value_objects.time import require_utc
 
 __all__ = [
     "DeliveryPlan",
@@ -63,16 +64,6 @@ _DURATIONS: Final[dict[KlineInterval, timedelta]] = {
 }
 
 
-def _require_utc(value: datetime, *, name: str) -> None:
-    """Reject naive or non-UTC datetimes at the function boundary.
-
-    Raises:
-        ValueError: ``value`` is naive or carries a non-UTC offset.
-    """
-    if value.tzinfo is None or value.tzinfo.utcoffset(None) != UTC.utcoffset(None):
-        raise ValueError(f"{name} must be UTC-aware, got {value!r}")
-
-
 def interval_duration(interval: KlineInterval) -> timedelta:
     """Return the length of one candle at ``interval``.
 
@@ -98,7 +89,7 @@ def close_time_of(open_time: datetime, interval: KlineInterval) -> datetime:
     Raises:
         ValueError: ``open_time`` is not UTC-aware.
     """
-    _require_utc(open_time, name="open_time")
+    require_utc(open_time, name="open_time")
     return open_time + _DURATIONS[interval] - _ONE_MS
 
 
@@ -118,7 +109,7 @@ def next_boundary(now: datetime, interval: KlineInterval) -> datetime:
     Raises:
         ValueError: ``now`` is not UTC-aware.
     """
-    _require_utc(now, name="now")
+    require_utc(now, name="now")
     duration = _DURATIONS[interval]
     elapsed_windows = (now - _EPOCH) // duration
     return _EPOCH + (elapsed_windows + 1) * duration
@@ -137,7 +128,7 @@ def previous_boundary(now: datetime, interval: KlineInterval) -> datetime:
     Raises:
         ValueError: ``now`` is not UTC-aware.
     """
-    _require_utc(now, name="now")
+    require_utc(now, name="now")
     duration = _DURATIONS[interval]
     return _EPOCH + ((now - _EPOCH) // duration) * duration
 
@@ -169,9 +160,9 @@ def is_closed(
     Raises:
         ValueError: Any datetime is not UTC-aware.
     """
-    _require_utc(open_time, name="open_time")
-    _require_utc(local_now, name="local_now")
-    _require_utc(exchange_now, name="exchange_now")
+    require_utc(open_time, name="open_time")
+    require_utc(local_now, name="local_now")
+    require_utc(exchange_now, name="exchange_now")
     return open_time + _DURATIONS[interval] + settle <= min(local_now, exchange_now)
 
 
@@ -195,8 +186,8 @@ def within_catchup(
     Raises:
         ValueError: ``now`` or ``occurred_at`` is not UTC-aware.
     """
-    _require_utc(now, name="now")
-    _require_utc(occurred_at, name="occurred_at")
+    require_utc(now, name="now")
+    require_utc(occurred_at, name="occurred_at")
     age = now - occurred_at
     return timedelta(0) <= age <= bars * _DURATIONS[interval]
 

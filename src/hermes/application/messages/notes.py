@@ -31,11 +31,11 @@ from hermes.application.messages.format import (
     GLYPH_STOP,
     GLYPH_UP,
     SEPARATOR,
+    fmt_asset_qty,
     fmt_distance_pct,
     fmt_duration,
     fmt_money,
     fmt_pp,
-    fmt_qty,
     fmt_quote_money,
     fmt_weight,
     fmt_when,
@@ -137,7 +137,7 @@ def _trade_executed_note(event: TradeExecuted, eur_rate: Decimal | None) -> Note
     glyph = GLYPH_UP if event.side is TradeSide.BUY else GLYPH_DOWN
     quote = event.pair.quote
     price = fmt_quote_money(event.price.amount, quote, eur_rate)
-    qty = fmt_qty(event.qty.amount, event.qty.asset)
+    qty = fmt_asset_qty(event.qty.amount, event.qty.asset)
     fee_currency = event.fee.currency
     fee_rate = _rate_for(fee_currency, quote, eur_rate)
     fee = f"fee {fmt_quote_money(event.fee.amount, fee_currency, fee_rate)}"

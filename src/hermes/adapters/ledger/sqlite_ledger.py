@@ -513,6 +513,20 @@ class SqliteLedger:
             eur_rate=_optional_decimal(row[3]),
         )
 
+    def seeded_strategies(self) -> tuple[StrategyId, ...]:
+        """Return every strategy that has a capital seed in this ledger, in seed order.
+
+        Raises:
+            LedgerError: On any SQLite read failure.
+        """
+        try:
+            rows = self._conn.execute(
+                "SELECT strategy_id FROM capital_seeds ORDER BY seeded_at, strategy_id"
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"seeded_strategies failed: {exc}") from exc
+        return tuple(StrategyId(row[0]) for row in rows)
+
     def earliest_activity(self) -> datetime | None:
         """Return the earliest bar, signal or trade event time, or ``None`` without any.
 

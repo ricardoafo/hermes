@@ -1,5 +1,8 @@
 """Binance spot trading adapter — testnet by default, mainnet only with a permit.
 
+Not wired into any entrypoint until MVP2 (issue #1220): it places real
+orders, so it stays parked rather than deleted.
+
 Implements :class:`~hermes.ports.exchange.ExchangePort` and
 :class:`~hermes.ports.exchange.StopLossPort` with signed REST calls:
 

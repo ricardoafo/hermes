@@ -206,6 +206,7 @@ __all__ = [
     "report_failure",
     "run",
     "serve_lock_path",
+    "with_only_enabled",
 ]
 
 _log = structlog.get_logger(__name__)
@@ -288,6 +289,25 @@ def parameter_fingerprint_for(config: HermesConfig) -> str:
         raise StartupError("no enabled strategy to fingerprint")
     return v1_parameter_fingerprint(
         capital_budget=roster.capital_budget, universe=config.market_data.pairs
+    )
+
+
+def with_only_enabled(config: HermesConfig, name: str) -> HermesConfig:
+    """Return ``config`` with ``name`` as the one enabled roster entry (#1076).
+
+    Each shadow in the lab runs as its own serve on its own ledger, all from
+    one release's config, so the instance names its strategy instead of the
+    file choosing it. Every later check reads the enabled entry as before.
+
+    Raises:
+        StartupError: The roster has no entry called ``name``.
+    """
+    entries = config.strategies.strategies
+    if not any(s.name == name for s in entries):
+        raise StartupError(f"strategies.yaml has no {name!r} entry")
+    roster = [s.model_copy(update={"enabled": s.name == name}) for s in entries]
+    return config.model_copy(
+        update={"strategies": config.strategies.model_copy(update={"strategies": roster})}
     )
 
 
@@ -604,6 +624,28 @@ def seed_capital_once(
     return True
 
 
+def _refuse_another_strategys_ledger(ledger: SqliteLedger, strategy_id: StrategyId) -> None:
+    """Refuse a ledger whose capital belongs to another strategy only (#1076).
+
+    ADR-021 gives each shadow its own ledger. A second shadow pointed at the
+    first one's file would seed its capital beside it and share its rows, so a
+    ledger already seeded for other strategies and not for this one is
+    refused. A ledger that already holds this strategy's seed keeps working.
+
+    Raises:
+        StartupError: The ledger is seeded for other strategies and not this one.
+        LedgerError: The seeds cannot be read.
+    """
+    seeded = ledger.seeded_strategies()
+    if not seeded or strategy_id in seeded:
+        return
+    owners = ", ".join(s.value for s in seeded)
+    raise StartupError(
+        f"this ledger holds the capital of {owners}, not {strategy_id.value}: each shadow "
+        "keeps its own ledger, so point --db at its own file, or start one with --new-ledger"
+    )
+
+
 def _rebuild_tracker(
     ledger: SqliteLedger, seed: PortfolioSnapshot, strategy_id: StrategyId
 ) -> PortfolioTracker:
@@ -782,6 +824,7 @@ def _wire_on_ledger(
     capital = Money(amount=roster.capital_budget, currency=roster.quote)
     seed = PortfolioSnapshot.seed(strategy_id, capital)
     try:
+        _refuse_another_strategys_ledger(ledger, strategy_id)
         seed_capital_once(ledger, strategy_id, capital, now=wall.now())
         recorded_seed = ledger.capital_seed(strategy_id)
     except LedgerError as exc:

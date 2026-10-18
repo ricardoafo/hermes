@@ -51,6 +51,7 @@ from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeveri
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.trade_executed import TradeExecuted
 from hermes.domain.value_objects.currency import Currency
+from hermes.domain.value_objects.time import require_utc
 from hermes.ports.trade_history import TradeHistoryPort
 
 __all__ = [
@@ -141,23 +142,6 @@ class WindowStats:
         return self.fees_by_currency.get(Currency.EUR, Decimal("0"))
 
 
-def _require_utc(dt: datetime, field_name: str) -> None:
-    """Raise ``ValueError`` if ``dt`` is naive (no tzinfo).
-
-    Args:
-        dt: The datetime to check.
-        field_name: Human-readable name for the error message.
-
-    Raises:
-        ValueError: When ``dt.tzinfo is None`` (code-conventions §9).
-    """
-    if dt.tzinfo is None:
-        raise ValueError(
-            f"tax_guard.compute_window: {field_name} must be timezone-aware, "
-            f"got naive datetime {dt!r}."
-        )
-
-
 def compute_window(
     events: Sequence[DomainEvent],
     now: datetime,
@@ -187,7 +171,7 @@ def compute_window(
     Raises:
         ValueError: If ``now`` is naive or ``window_days`` is not positive.
     """
-    _require_utc(now, "now")
+    require_utc(now, name="now")
     if window_days <= 0:
         raise ValueError(
             f"tax_guard.compute_window: window_days must be positive, got {window_days}."
@@ -201,7 +185,7 @@ def compute_window(
     for event in events:
         if not isinstance(event, TradeExecuted):
             continue
-        _require_utc(event.occurred_at, "event.occurred_at")
+        require_utc(event.occurred_at, name="event.occurred_at")
         if event.occurred_at < window_start or event.occurred_at > now:
             continue
         trade_count += 1
@@ -281,7 +265,7 @@ def check_breach(
     Raises:
         ValueError: If ``now`` is naive.
     """
-    _require_utc(now, "now")
+    require_utc(now, name="now")
 
     trade_over = stats.trade_count > config.trade_count_90d_max
     assets_over = stats.distinct_assets > config.distinct_assets_90d_max
@@ -362,7 +346,7 @@ def evaluate_ledger(
     Raises:
         ValueError: If ``now`` is naive or the config window is invalid.
     """
-    _require_utc(now, "now")
+    require_utc(now, name="now")
     if config.recharacterization_window_days <= 0:
         raise ValueError(
             "recharacterization_window_days must be positive, "
