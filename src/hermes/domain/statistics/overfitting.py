@@ -6,7 +6,7 @@ with the best in-sample Sharpe and asks where it ranks out of sample. PBO is
 the share of those choices where it ranks at or below the median.
 
 Reference: ADR-021 §5; Bailey, Borwein, López de Prado and Zhu (2015), "The
-Probability of Backtest Overfitting"; openspec/changes/v2-backtest-funnel D-4.
+Probability of Backtest Overfitting"; openspec/archive/v2-backtest-funnel D-4.
 """
 
 import math

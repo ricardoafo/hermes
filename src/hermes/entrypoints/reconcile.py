@@ -22,7 +22,7 @@ A missing key is an error, never a silent fall back to the ledger-only check.
 Exit codes: 0 clean, 1 review or drift, 2 usage, 3 config error, no ledger,
 missing read-only key or unreadable exchange.
 
-Reference: openspec/changes/35-monthly-reconciliation/change.md.
+Reference: openspec/archive/35-monthly-reconciliation/change.md.
 """
 
 from __future__ import annotations

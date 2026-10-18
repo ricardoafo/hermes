@@ -17,7 +17,7 @@ Implements :class:`~hermes.ports.price_lookup.PriceLookupPort` with
   HTTP errors and malformed bodies raise
   :class:`~hermes.domain.errors.ExchangeError`.
 
-Reference: issue #389; openspec/changes/389-price-lookup/change.md.
+Reference: issue #389; openspec/archive/389-price-lookup/change.md.
 """
 
 from __future__ import annotations

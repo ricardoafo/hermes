@@ -19,8 +19,8 @@ model adds them from the journal reader when it is readable (#653).
 The connection is opened with SQLite's ``mode=ro`` URI and never migrates, so
 the feed is safe to read next to a running ``hermes serve``.
 
-Reference: openspec/changes/374-hermes-activity/change.md;
-openspec/changes/live-home-screen/change.md (D-5).
+Reference: openspec/archive/374-hermes-activity/change.md;
+openspec/archive/live-home-screen/change.md (D-5).
 """
 
 from __future__ import annotations

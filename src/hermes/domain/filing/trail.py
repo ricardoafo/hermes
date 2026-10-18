@@ -10,7 +10,7 @@ figure to the trades that produced it:
 A piece with any pending EUR value has no gain; the Modelo 100 report leaves
 its whole sale out of the totals.
 
-Reference: openspec/changes/568-tax-pack/change.md, ADR-016 item 3.
+Reference: openspec/archive/568-tax-pack/change.md, ADR-016 item 3.
 """
 
 from __future__ import annotations

@@ -15,7 +15,7 @@ dependencies = [
   "textual>=8.2.8,<9",
   # Console renderers import Rich directly (application/console/render.py);
   # promoted from a transitive dep of textual and typer so an upstream
-  # constraint change cannot drop it. See openspec/changes/console-read-model.
+  # constraint change cannot drop it. See openspec/archive/console-read-model.
   "rich>=15,<16",
   "apscheduler>=3.10,<4",
   "python-telegram-bot>=22.8,<23",

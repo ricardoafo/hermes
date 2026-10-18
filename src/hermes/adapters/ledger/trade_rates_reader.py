@@ -4,7 +4,7 @@ Opens the ledger with SQLite's ``mode=ro`` URI and never migrates, like
 :class:`~hermes.adapters.ledger.filing_reader.LedgerFilingReader`, so it can
 run next to ``hermes serve`` and never changes the ledger.
 
-Reference: openspec/changes/568-tax-pack/change.md R-5.
+Reference: openspec/archive/568-tax-pack/change.md R-5.
 """
 
 from __future__ import annotations

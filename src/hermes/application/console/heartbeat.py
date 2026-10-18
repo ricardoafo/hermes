@@ -5,7 +5,7 @@ console (#384) shows it as a :class:`Heartbeat`. :func:`heartbeat_from_report`
 is the one bridge between them, so a ledger-backed console read model, the TUI
 and Telegram ``/status`` show exactly the verdict ``hermes status`` prints.
 
-Reference: openspec/changes/454-status-console/change.md.
+Reference: openspec/archive/454-status-console/change.md.
 """
 
 from __future__ import annotations

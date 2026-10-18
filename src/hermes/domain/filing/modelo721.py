@@ -14,7 +14,7 @@ Both amounts come from ``config/filing.yaml`` through :class:`Modelo721Rules`.
 Year-end units come from the trades; the date shown per coin is the opening
 time of the oldest lot still open, found by the existing FIFO replay.
 
-Reference: openspec/changes/36-modelo-100-721/change.md D-7, D-8.
+Reference: openspec/archive/36-modelo-100-721/change.md D-7, D-8.
 """
 
 from __future__ import annotations

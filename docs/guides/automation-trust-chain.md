@@ -185,4 +185,4 @@ safe to copy before the App is provisioned.
 - [`docs/decisions/2026-08-21-pr-flow-hardening.md`](../decisions/2026-08-21-pr-flow-hardening.md) — earlier PR-flow hardening waves
 - [`docs/decisions/2026-08-23-fetch-before-launch-tooling.md`](../decisions/2026-08-23-fetch-before-launch-tooling.md) — sub-agent launch discipline (fetch main before spawn)
 - [`AGENTS.md` rules 12-13](../../AGENTS.md#12-always-open-prs-as-the-ai-bot-never-as-ricardoafo) — actor separation source of truth
-- [`openspec/changes/sdd-process-hardening/change.md`](../../openspec/changes/sdd-process-hardening/change.md) — the SDD change that landed this guide and the local pre-flight gates that complement it
+- [`openspec/archive/sdd-process-hardening/change.md`](../../openspec/archive/sdd-process-hardening/change.md) — the SDD change that landed this guide and the local pre-flight gates that complement it

@@ -9,7 +9,7 @@ Usage: ``hermes bot [--config-dir DIR] [--db PATH] [--once]``
 
 Exit codes: 0 clean stop, 2 usage, 3 missing Telegram settings or bad config.
 
-Reference: openspec/changes/379-telegram-bot/change.md.
+Reference: openspec/archive/379-telegram-bot/change.md.
 """
 
 from __future__ import annotations

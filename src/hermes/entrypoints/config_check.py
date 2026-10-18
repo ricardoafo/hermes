@@ -11,7 +11,7 @@ never printed, nor is the value of an invalid field.
 
 Exit codes: 0 clean, 1 findings, 2 usage, 3 config could not be read.
 
-Reference: openspec/changes/537-config-check/change.md.
+Reference: openspec/archive/537-config-check/change.md.
 """
 
 from __future__ import annotations

@@ -195,7 +195,7 @@ itself if named well).
   new ADR before archiving; `change.md` then cites the ADR
   ("architectural rationale codified in ADR-NNN"). Non-architectural
   decisions do NOT need promotion.
-- **Historical exception**: `openspec/changes/phase-0-python-toolchain/`
+- **Historical exception**: `openspec/archive/phase-0-python-toolchain/`
   contains 3 files (proposal.md + spec.md + design.md) under the
   prior 2026-08-21 convention. That change shipped as PR #72 + PR #73
   before this amendment landed; per the lifecycle rule, shipped

@@ -6,7 +6,7 @@ the ``hermes tax`` estimate when the caller has one, and adds the trail, the
 readiness checklist and the changes since the previous refresh. Nothing here
 touches the disk; the ``tax-pack`` entrypoint writes what this returns.
 
-Reference: openspec/changes/568-tax-pack/change.md.
+Reference: openspec/archive/568-tax-pack/change.md.
 """
 
 from __future__ import annotations

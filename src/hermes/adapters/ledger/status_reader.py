@@ -6,7 +6,7 @@ write even by accident, and never runs migrations (unlike
 migrates). Safe to run next to a live ``hermes serve``: a read takes only a
 shared lock for the length of one query.
 
-Reference: openspec/changes/370-hermes-status/change.md.
+Reference: openspec/archive/370-hermes-status/change.md.
 """
 
 from __future__ import annotations

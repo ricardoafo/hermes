@@ -1,6 +1,6 @@
 """Unit tests for the hash-chained JSON Lines trial log.
 
-Invariants under test (openspec/changes/357-trial-log/change.md D-2, R-2):
+Invariants under test (openspec/archive/357-trial-log/change.md D-2, R-2):
 
 - Appended trials read back equal and in order.
 - Editing, removing, reordering or emptying lines breaks the chain, and both

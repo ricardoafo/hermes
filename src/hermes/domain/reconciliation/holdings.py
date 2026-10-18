@@ -6,7 +6,7 @@ replay the shadow loop trades from, an exchange's balances) is compared to it
 asset by asset. A difference within the tolerance is a match; anything larger
 is drift. Fail loud, never auto-heal (ADR-003 §10): this module only reports.
 
-Reference: openspec/changes/35-monthly-reconciliation/change.md D-1, D-2.
+Reference: openspec/archive/35-monthly-reconciliation/change.md D-1, D-2.
 """
 
 from __future__ import annotations

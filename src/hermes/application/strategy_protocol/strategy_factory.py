@@ -12,7 +12,7 @@ An unknown kind is refused, never replaced by the default: a typo would
 otherwise trade v1's rule under a candidate's name.
 
 Reference: ADR-026 §1; research funnel interface contract §2a; issue #1074;
-openspec/changes/1074-strategy-factory/change.md.
+openspec/archive/1074-strategy-factory/change.md.
 """
 
 import inspect

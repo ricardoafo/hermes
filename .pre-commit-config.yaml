@@ -213,6 +213,13 @@ repos:
         language: system
         files: ^src/hermes/adapters/ledger/migrations/.*\.sql$
 
+      - id: openspec-layout
+        name: openspec specs parse, archived ones are final, spec paths resolve (#1196)
+        entry: uv run python scripts/dev/openspec-archive.py --check
+        language: system
+        pass_filenames: false
+        always_run: true
+
       - id: no-naive-datetime
         name: no naive datetimes (grep guard)
         entry: bash scripts/dev/no-naive-datetime.sh

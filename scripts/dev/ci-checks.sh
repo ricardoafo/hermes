@@ -99,6 +99,7 @@ run_guards() {
     uv run python scripts/dev/no-vague-test-assertions.py || rc=1
     bash scripts/dev/no-naive-datetime.sh || rc=1
     bash scripts/dev/no-domain-mode-check.sh || rc=1
+    uv run python scripts/dev/openspec-archive.py --check || rc=1
     uv run python scripts/dev/migration-sql-check.py || rc=1
     bash scripts/dev/test-file-adjacency.sh --base "${base:-origin/main}" || rc=1
     bash scripts/dev/no-future-annotations.sh --base "${base:-origin/main}" || rc=1

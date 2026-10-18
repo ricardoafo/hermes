@@ -8,7 +8,7 @@ the lab notebook entries. Nothing here draws money, a price or a distance to a
 threshold. Colours come from the data token sheet: pass blue (``up``), fail
 orange (``down``), pending muted.
 
-Reference: openspec/changes/718-shadow-screen/change.md (D-4 to D-6).
+Reference: openspec/archive/718-shadow-screen/change.md (D-4 to D-6).
 """
 
 from collections.abc import Sequence

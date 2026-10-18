@@ -6,7 +6,7 @@ a gate evaluates. A metric that cannot be computed stays ``None`` and its
 gate row fails closed.
 
 Reference: pre-registration-v1.md §8, §9;
-openspec/changes/354-certification-statistics/change.md.
+openspec/archive/354-certification-statistics/change.md.
 """
 
 from __future__ import annotations

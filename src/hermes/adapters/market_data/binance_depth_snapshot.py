@@ -23,7 +23,7 @@ one, ``https://data-api.binance.vision``).
   and malformed bodies raise ``ExchangeError``. The caller falls back to the
   pre-registration §6.2 book and records that it did.
 
-Reference: openspec/changes/353-fill-kernel-in-serve/change.md D-1;
+Reference: openspec/archive/353-fill-kernel-in-serve/change.md D-1;
 docs/decisions/2026-10-02-binance-public-market-data-host.md.
 """
 

@@ -292,7 +292,7 @@ work?', skip it — the PR body + tests are enough."
   the pattern was written down.
 
 Full orchestrator contract in `~/.claude/CLAUDE.md` §SDD-Workflow.
-Note: existing `openspec/changes/phase-0-python-toolchain/` uses the
+Note: existing `openspec/archive/phase-0-python-toolchain/` uses the
 prior 3-file convention (proposal.md + spec.md + design.md) and stays
 frozen as historical evidence — the 2026-08-22 ADR-009 amendment
 introduced `change.md` for future changes.
@@ -320,7 +320,7 @@ Rationale: between 2026-08-21 and 2026-08-24 the team shipped ~180 PRs
 and only 4 openspec change specs landed. The SDD flow was silently
 skipped on almost every substantive feature. Two-layer enforcement
 turns the rule from a norm into a gate. See
-`openspec/changes/dor-dod-enforcement/change.md` for the full design.
+`openspec/archive/dor-dod-enforcement/change.md` for the full design.
 
 Retroactive spec-writing for already-shipped PRs is explicitly out of
 scope — forward-looking only.

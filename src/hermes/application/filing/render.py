@@ -8,7 +8,7 @@ the tax calendar (ADR-016 item 2).
 The report names form fields; it prints no box numbers or letter keys,
 which change between AEAT campaigns (change D-4).
 
-Reference: openspec/changes/36-modelo-100-721/change.md.
+Reference: openspec/archive/36-modelo-100-721/change.md.
 """
 
 from __future__ import annotations

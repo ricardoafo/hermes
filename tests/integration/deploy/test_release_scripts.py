@@ -10,13 +10,13 @@ read per-test switches from ``STUB_*`` environment variables.
 
 The stubs are the only mocks. The seam they replace is the real unit and
 the real uv, which only the operator acceptance run on the box covers
-(openspec/changes/179-cd-first-real-deploy/change.md, Requirements
+(openspec/archive/179-cd-first-real-deploy/change.md, Requirements
 R-1 to R-4).
 
 CI runs this file on Linux and skips it on Windows; see ``_bash.py`` for
 how a Windows contributor can run it.
 
-Reference: openspec/changes/179-cd-first-real-deploy/change.md (Test plan).
+Reference: openspec/archive/179-cd-first-real-deploy/change.md (Test plan).
 """
 
 from __future__ import annotations
@@ -1257,7 +1257,7 @@ def test_first_deploy_without_a_ledger_skips_the_migrate_check(box: Box) -> None
 
 # ─────────────────────────────────────────────────────────────────────
 # Staging target (#192): HERMES_TARGET=staging never reaches prod.
-# openspec/changes/192-staging-env/change.md, D-3 and R-2.
+# openspec/archive/192-staging-env/change.md, D-3 and R-2.
 # ─────────────────────────────────────────────────────────────────────
 
 _STAGING = {"HERMES_TARGET": "staging"}

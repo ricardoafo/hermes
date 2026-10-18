@@ -12,7 +12,7 @@ stop is the floor the strategy continues from after a restart; that is the
 only way a mark is read back into a decision. These rows hold prices, so
 AI-facing tools must not read them before certification (ADR-012 D-02, D-06).
 
-Reference: GitHub issues #388 and #680, openspec/changes/388-stop-marks/change.md.
+Reference: GitHub issues #388 and #680, openspec/archive/388-stop-marks/change.md.
 """
 
 from __future__ import annotations

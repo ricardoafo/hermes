@@ -4,7 +4,7 @@ The units are the only thing that starts ``hermes serve`` on the VPS and
 nothing in CI starts them. These tests pin the paths and flags the first
 real deploy depends on (issue #306).
 
-Reference: openspec/changes/306-serve-systemd-boot/change.md.
+Reference: openspec/archive/306-serve-systemd-boot/change.md.
 """
 
 from __future__ import annotations

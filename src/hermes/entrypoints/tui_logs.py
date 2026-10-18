@@ -22,7 +22,7 @@ The journal can hold money figures. This screen is operator-only and
 read-only: it shows, copies or exports to the operator's own PC, and sends
 nothing to any AI or notification channel.
 
-Reference: openspec/changes/716-logs-screen/change.md.
+Reference: openspec/archive/716-logs-screen/change.md.
 """
 
 # ruff: noqa: RUF002 - the single right angle quote is the design spec's breadcrumb separator

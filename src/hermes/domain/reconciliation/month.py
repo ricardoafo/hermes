@@ -5,7 +5,7 @@ uses for the tax year, so a fill at 23:30 UTC on 31 March belongs to April.
 :attr:`ReconciliationMonth.start` and :attr:`ReconciliationMonth.end` give the
 bounds as UTC instants, half-open: ``start <= t < end``.
 
-Reference: openspec/changes/35-monthly-reconciliation/change.md D-3, ADR-016.
+Reference: openspec/archive/35-monthly-reconciliation/change.md D-3, ADR-016.
 """
 
 from __future__ import annotations

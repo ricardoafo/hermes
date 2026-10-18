@@ -5,7 +5,7 @@ fixture adapter implements it today; a ledger-backed adapter replaces it view
 by view as the underlying data lands. Implementations are read-only and never
 take the serve lock.
 
-Reference: openspec/changes/console-read-model/change.md (D-1, D-4).
+Reference: openspec/archive/console-read-model/change.md (D-1, D-4).
 """
 
 from __future__ import annotations

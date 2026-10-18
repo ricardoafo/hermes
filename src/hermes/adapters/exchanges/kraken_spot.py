@@ -47,7 +47,7 @@ Losing track of a real order (#858):
   above it, so a restart with the clock stepped back still sends an
   increasing nonce instead of earning ``EAPI:Invalid nonce``.
 
-Reference: issue #32; openspec/changes/32-kraken-spot-adapter/change.md.
+Reference: issue #32; openspec/archive/32-kraken-spot-adapter/change.md.
 """
 
 from __future__ import annotations

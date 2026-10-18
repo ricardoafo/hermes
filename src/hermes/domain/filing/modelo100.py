@@ -16,7 +16,7 @@ gains, losses and net. A sale with any pending EUR value is listed in
 A loss sale with a purchase of the same coin within two calendar months
 either side is flagged for the gestor, never deferred (ADR-016 item 8).
 
-Reference: openspec/changes/36-modelo-100-721/change.md D-1 to D-6.
+Reference: openspec/archive/36-modelo-100-721/change.md D-1 to D-6.
 """
 
 from __future__ import annotations

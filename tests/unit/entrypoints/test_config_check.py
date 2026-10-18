@@ -12,7 +12,7 @@ Verifies:
 - ``--json`` emits one document;
 - ``hermes config`` alone prints usage and exits 2.
 
-Reference: openspec/changes/537-config-check/change.md.
+Reference: openspec/archive/537-config-check/change.md.
 """
 
 from __future__ import annotations

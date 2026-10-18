@@ -11,7 +11,7 @@ carry.
 Times are compared after parsing, not as stored strings, because stored ISO
 strings omit zero microseconds and do not sort as instants in every case.
 
-Reference: openspec/changes/36-modelo-100-721/change.md D-1.
+Reference: openspec/archive/36-modelo-100-721/change.md D-1.
 """
 
 from __future__ import annotations

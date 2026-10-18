@@ -15,7 +15,7 @@ File shape::
 ``dataset_id`` is written for readers and checked on load against the id the
 entry's fields produce, so a hand edit cannot relabel a dataset.
 
-Reference: openspec/changes/356-data-manifest/change.md Design.
+Reference: openspec/archive/356-data-manifest/change.md Design.
 """
 
 from __future__ import annotations

@@ -15,7 +15,7 @@ Verdict rules, in order:
 The report carries no P&L: until certification nothing outcome-related may
 reach a surface that could leak into decisions (pre-registration v1).
 
-Reference: openspec/changes/370-hermes-status/change.md.
+Reference: openspec/archive/370-hermes-status/change.md.
 """
 
 from __future__ import annotations

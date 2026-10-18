@@ -15,7 +15,7 @@ return figure. The plan-versus-actual lines show the plan and say the actual is
 withheld until certification. The only phase-aware builder is the daily digest,
 which adds the winners and losers counts once the phase is ``CERTIFIED``.
 
-Reference: openspec/changes/144-notification-system/change.md (R-1 to R-4);
+Reference: openspec/archive/144-notification-system/change.md (R-1 to R-4);
     docs/decisions/2026-10-04-notification-templates-v2.md.
 """
 

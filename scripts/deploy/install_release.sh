@@ -63,8 +63,8 @@
 # seams override the target's paths, and the staging guard still checks them.
 # The script can be sourced to reach prune_versions on its own.
 #
-# Reference: openspec/changes/179-cd-first-real-deploy/change.md (D-1..D-7),
-# openspec/changes/192-staging-env/change.md (D-3).
+# Reference: openspec/archive/179-cd-first-real-deploy/change.md (D-1..D-7),
+# openspec/archive/192-staging-env/change.md (D-3).
 
 set -euo pipefail
 

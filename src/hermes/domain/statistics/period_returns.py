@@ -4,7 +4,7 @@ Point ``i`` of a curve is the equity at the end of day ``start + i``. Return
 ``i`` (``i >= 1``) is ``equity[i] / equity[i - 1] - 1`` and belongs to day
 ``start + i``; point 0 is the base and has no return of its own.
 
-Reference: ADR-021 §5; openspec/changes/v2-backtest-funnel D-6.
+Reference: ADR-021 §5; openspec/archive/v2-backtest-funnel D-6.
 """
 
 import math
