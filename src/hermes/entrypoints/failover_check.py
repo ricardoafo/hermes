@@ -25,10 +25,10 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Final, TextIO
 
+from hermes.adapters._shared.rate_limiter import RateLimitConfig
 from hermes.adapters.exchanges.binance_klines import BinanceKlinesAdapter, BinanceKlinesConfig
 from hermes.adapters.exchanges.kraken_public import KrakenPublicAdapter
 from hermes.adapters.exchanges.kraken_public import KrakenPublicConfig as KrakenWireConfig
-from hermes.adapters.exchanges.rate_limiter import RateLimitConfig
 from hermes.domain.errors import InfraError
 from hermes.domain.market_data.kline import Kline, KlineInterval
 from hermes.domain.market_data.venue_parity import PairParity, ParityVerdict, compare_closes

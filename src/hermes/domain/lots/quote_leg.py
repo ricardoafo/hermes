@@ -26,7 +26,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import Decimal, localcontext
+from decimal import Decimal
 from typing import Final
 
 from returns.result import Failure, Result, Success
@@ -37,6 +37,7 @@ from hermes.domain.trading.order import OrderSide
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
+from hermes.domain.value_objects.precision import exact
 from hermes.domain.value_objects.strategy_id import StrategyId
 
 __all__ = [
@@ -51,7 +52,6 @@ __all__ = [
     "seed_timestamp",
 ]
 
-_PRECISION: Final[int] = 100
 _UNIT_QUANTUM: Final[Decimal] = Decimal("1e-30")
 _ZERO: Final[Decimal] = Decimal("0")
 
@@ -185,8 +185,7 @@ def quote_unit_eur(rate: Decimal) -> Decimal:
     Returns:
         ``1 / rate``.
     """
-    with localcontext() as ctx:
-        ctx.prec = _PRECISION
+    with exact():
         return (Decimal(1) / rate).quantize(_UNIT_QUANTUM)
 
 
@@ -248,8 +247,7 @@ def quote_leg_qty(trade: LegTrade) -> Result[Decimal, DomainError]:
                 reason=f"{trade.side.value} fee in {trade.fee.currency} is not supported",
             )
         )
-    with localcontext() as ctx:
-        ctx.prec = _PRECISION
+    with exact():
         gross = trade.price * trade.qty
         moved = gross + quote_fee if trade.side == OrderSide.BUY else gross - quote_fee
     if moved <= _ZERO:

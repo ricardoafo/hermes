@@ -21,6 +21,7 @@ import httpx
 import pytest
 import respx
 
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.adapters.exchanges.kraken_public import KrakenPublicAdapter, KrakenPublicConfig
 from hermes.adapters.exchanges.kraken_spot import (
     KRAKEN_BASE_URL,
@@ -29,7 +30,6 @@ from hermes.adapters.exchanges.kraken_spot import (
     OrderUnreadError,
     sign,
 )
-from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.domain.errors import ExchangeError, NetworkError
 from hermes.domain.trading.fill import Fill, Rejection
 from hermes.domain.trading.order import Order, OrderSide

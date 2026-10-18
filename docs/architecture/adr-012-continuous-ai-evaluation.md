@@ -1,7 +1,7 @@
 # ADR-012: Continuous AI evaluation: three loops and a supervisor desk in MVP1; deterministic code trades, AI proposes, the Code Owner decides
 
 **Date**: 2026-10-03
-**Status**: Proposed. Content approved by the Code Owner on 2026-10-03 in the MVP1 scope review; becomes Accepted when this ADR merges.
+**Status**: Accepted (merged in PR #367)
 **Deciders**: Ricardo Afonso (product owner, Code Owner), Claude (proposer)
 **Supersedes**: two parts of [ADR-003 §08](adr-003-solution-architecture/08-llm-supervisor.md), and nothing else in it: (1) the "Sees" item "open positions with stop levels + current unrealized P&L", and the P&L half of `get_tax_status`, until v1 OOS certification (D-06); (2) the "Phased rollout" rule that no LLM layer runs in the runtime before Phase 3 (D-07). ADR-003 §08 is otherwise unchanged and still binds the supervisor.
 **Tracking issue**: #310

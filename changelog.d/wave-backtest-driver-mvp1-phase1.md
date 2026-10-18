@@ -1,3 +1,0 @@
-### Added
-
-- **`scripts/backtest/run_calibration.py`** — MVP1 backtest driver Phase 1. Composition-root script that wires `BinanceHistoricalAdapter` (spec-4c) → `SwingStrategyAdapter` (spec-5) → time-aware fee-history selector (#263) → `CalibrationHarness` (spec-6) into an end-to-end backtest reading Vision klines from `$HERMES_DATA_DIR`. Emits a JSON `CalibrationReport` with M-01..M-07 metrics. Phase 1 synthesises fills at `bar.close` (no `OrderRouter` + orderbook walk yet — that's Phase 2). CLI: `--pair`, `--start`, `--end`, `--output`, `--dry-run`. 250-day warm-up buffer before the trading window so EMA(200) is populated. Smoke-tested end-to-end on 2024-Q1 BTC/USDT (12 signals, 12 fills, valid report). 8 unit tests on pure helpers. Closes #269.

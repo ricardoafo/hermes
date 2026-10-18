@@ -67,6 +67,7 @@ _EVERY_BAR = _PATHS + "test_every_rule_holds_after_every_bar_and_a_restart_chang
 _FUZZ_BINANCE = _U + "adapters/market_data/test_wire_fuzz_binance.py::"
 _FUZZ_KRAKEN = _U + "adapters/exchanges/test_wire_fuzz_kraken.py::"
 _BINANCE_SPOT = _U + "adapters/exchanges/test_binance_spot.py::"
+_KRAKEN_SPOT = _U + "adapters/exchanges/test_kraken_spot.py::"
 _FUZZ_LEDGER = _U + "adapters/ledger/test_reader_fuzz.py::"
 _FUZZ_CONFIG = _U + "infrastructure/config/test_loader_fuzz.py::"
 _CONTENTION = _I + "adapters/ledger/test_ledger_contention.py::"
@@ -124,7 +125,7 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
                 _FUZZ_BINANCE
                 + "test_a_websocket_adapter_depth_snapshot_parses_or_raises_exchange_error",
                 _FUZZ_BINANCE + "test_a_live_kline_row_parses_or_raises_exchange_error",
-                _FUZZ_BINANCE + "test_a_ticker_body_parses_or_raises_exchange_error",
+                _FUZZ_KRAKEN + "test_a_ticker_reply_parses_or_raises_kraken_public_error",
             ),
         ),
         FailureMode(
@@ -294,7 +295,16 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "An order reply is lost, so the order state is unknown",
-            gap="issue #858: a Binance 5xx reads as a refusal and no client order id exists",
+            proved_by=(
+                _BINANCE_SPOT + "test_every_order_carries_a_fresh_client_order_id",
+                _BINANCE_SPOT
+                + "test_an_order_whose_reply_was_lost_returns_the_fill_found_by_its_client_id",
+                _BINANCE_SPOT + "test_a_failed_lookup_names_the_client_id_to_reconcile",
+                _BINANCE_SPOT + "test_a_stop_loss_whose_reply_was_lost_returns_the_found_order_id",
+                _KRAKEN_SPOT + "test_every_order_carries_a_userref",
+                _KRAKEN_SPOT + "test_a_failed_read_back_after_addorder_carries_the_txid",
+                _KRAKEN_SPOT + "test_a_lost_addorder_reply_names_the_userref",
+            ),
         ),
         FailureMode(
             "An order still in flight inside Binance reads as never placed on the first lookup",
@@ -310,11 +320,18 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "A filled order is reported as an error",
-            gap="issue #858: a commission in a third asset raises after the fill",
+            proved_by=(
+                _BINANCE_SPOT + "test_third_asset_commission_is_priced_at_its_ticker",
+                _BINANCE_SPOT + "test_third_asset_commission_falls_back_to_the_taker_rate",
+            ),
         ),
         FailureMode(
             "The Kraken nonce goes backwards after a restart",
-            gap="issue #858: the nonce lives only in memory; inferred, untested",
+            proved_by=(
+                _KRAKEN_SPOT
+                + "test_a_restart_with_the_clock_stepped_back_still_sends_a_higher_nonce",
+                _KRAKEN_SPOT + "test_a_bad_nonce_file_fails_an_order_before_sending_it",
+            ),
         ),
         FailureMode(
             "The FX service is down or answers garbage",
@@ -614,6 +631,22 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             ),
         ),
         FailureMode(
+            "A lab shadow runs on another shadow's ledger and mixes their capital and trades",
+            proved_by=(
+                _S + "test_shadow_line.py::"
+                "test_a_shadow_pointed_at_another_shadows_ledger_is_refused_before_writing",
+                _S + "test_shadow_line.py::test_each_shadow_ledger_holds_only_its_own_strategy",
+                _UNITS + "test_shadow_template_runs_the_instance_strategy_on_its_own_ledger",
+            ),
+        ),
+        FailureMode(
+            "A shadow instance names a strategy the roster lacks and runs the enabled one instead",
+            proved_by=(
+                _U + "entrypoints/test_cli.py::TestServeSubcommand::"
+                "test_serve_with_a_strategy_missing_from_the_roster_exits_three",
+            ),
+        ),
+        FailureMode(
             "An entry on a bar that closed while serve was down fills back-dated or halts",
             proved_by=(
                 _DOWN + "test_an_entry_on_a_bar_that_closed_while_serve_was_down_is_not_filled",
@@ -905,7 +938,7 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "RO-08 drawdown and time-to-recovery are never driven through serve",
-            gap="issue #514: serve feeds days since the equity high as 0",
+            gap="issue #1158: serve feeds days since the equity high as 0",
         ),
         FailureMode(
             "A halt survives, or is lost across, a restart",

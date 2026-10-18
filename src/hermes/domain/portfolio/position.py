@@ -13,8 +13,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, localcontext
 
-from hermes.domain.portfolio.precision import EXACT_CONTEXT
 from hermes.domain.value_objects.pair import Pair
+from hermes.domain.value_objects.precision import EXACT_CONTEXT
 
 __all__ = ["Position"]
 

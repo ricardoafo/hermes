@@ -30,15 +30,16 @@ import httpx
 import pytest
 import respx
 
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.adapters.fx.frankfurter import FrankfurterAdapter, FrankfurterConfig
-from hermes.adapters.fx.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.domain.errors import FxRateError, InfraError
 from hermes.domain.fx.fx_rate import FxRate
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
+from hermes.infrastructure.config.models import FrankfurterConfig as FrankfurterSettings
 from hermes.ports.fx import FxRateProviderPort
 
-_BASE_URL = "https://api.frankfurter.app"
+_BASE_URL = "https://api.frankfurter.dev/v1"
 _LATEST_URL = f"{_BASE_URL}/latest"
 
 
@@ -422,7 +423,7 @@ class TestErrorPaths:
                         },
                     )
                 )
-                with pytest.raises(FxRateError, match="not parseable as Decimal"):
+                with pytest.raises(FxRateError, match="is not a decimal"):
                     adapter.get_latest(Currency.USDT, Currency.EUR)
         finally:
             adapter.close()
@@ -469,10 +470,17 @@ class TestCreateFactoryAndClose:
     """The create() factory produces a working adapter; close is idempotent."""
 
     def test_create_default_targets_public_frankfurter(self) -> None:
-        """create() with no args builds an adapter whose client points at the public API."""
+        """create() with no args points at the same host as the config default (#1176).
+
+        The old ``api.frankfurter.app`` default answered 301 while the config
+        already used the new host; pinning both to one value stops the drift.
+        """
         adapter = FrankfurterAdapter.create()
         try:
-            assert str(adapter.client.base_url) == _BASE_URL
+            assert (str(adapter.client.base_url), _BASE_URL) == (
+                f"{FrankfurterSettings().base_url}/",
+                FrankfurterSettings().base_url,
+            )
         finally:
             adapter.close()
 

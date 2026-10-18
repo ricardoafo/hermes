@@ -1,7 +1,7 @@
 # ADR-020: Read-only exchange query keys before MVP2 — ban trade-capable keys, allow one query-only key for contract tests
 
 **Date**: 2026-10-06
-**Status**: Proposed — Accepted when the Code Owner merges it
+**Status**: Accepted (merged in PR #800)
 **Deciders**: Ricardo Afonso (product owner), Claude (proposer)
 **Supersedes**: in part, [ADR-019](adr-019-security-baseline-and-threat-model.md): Decision 2 and the "Until MVP2"
 bullet of §Exchange API keys. Everything else in ADR-019 stands.

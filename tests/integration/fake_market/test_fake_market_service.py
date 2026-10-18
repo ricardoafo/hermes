@@ -30,11 +30,9 @@ from pathlib import Path
 import httpx
 import pytest
 
-from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.adapters.fx.frankfurter import FrankfurterAdapter
 from hermes.adapters.fx.frankfurter import FrankfurterConfig as FrankfurterWireConfig
-from hermes.adapters.fx.rate_limiter import RateLimitConfig as FxRateLimitConfig
-from hermes.adapters.fx.rate_limiter import RateLimiter as FxRateLimiter
 from hermes.adapters.market_data.binance_depth_snapshot import (
     DEPTH_LEVELS,
     BinanceDepthSnapshotAdapter,
@@ -217,7 +215,7 @@ def test_the_real_depth_and_fx_adapters_read_the_socket(service: FakeMarketServi
     fx = FrankfurterAdapter(
         config=FrankfurterWireConfig(base_url=FX_URL, wire_codes=FrankfurterWireConfig.USDT_AS_USD),
         client=httpx.Client(base_url=service.frankfurter_base, timeout=5),
-        limiter=FxRateLimiter(config=FxRateLimitConfig(max_weight=60, window_seconds=60)),
+        limiter=RateLimiter(config=RateLimitConfig(max_weight=60, window_seconds=60)),
     )
 
     async def read() -> tuple[Decimal, Decimal]:

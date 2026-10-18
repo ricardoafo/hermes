@@ -31,12 +31,20 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 import yaml
 from dotenv import load_dotenv
 from pydantic import BaseModel, ValidationError
 
+from hermes.adapters.endpoint import (
+    DEFAULT_SLACK_API_BASE,
+    DEFAULT_TELEGRAM_API_BASE,
+    SLACK_API_BASE_ENV,
+    TELEGRAM_API_BASE_ENV,
+    is_loopback,
+)
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.models import (
     BinanceExchangeConfig,
@@ -51,9 +59,17 @@ from hermes.infrastructure.config.models import (
     StrategiesConfig,
     TaxGuardConfig,
 )
-from hermes.infrastructure.config.root import HermesConfig
+from hermes.infrastructure.config.root import LOOPBACK_TIERS, HermesConfig
 
-__all__ = ["DEFAULT_CONFIG_DIR", "DEFAULT_DOTENV_PATH", "load_config", "load_yaml_model"]
+__all__ = [
+    "DEFAULT_CONFIG_DIR",
+    "DEFAULT_DOTENV_PATH",
+    "env_tier_problems",
+    "load_config",
+    "load_optional_yaml_model",
+    "load_sentry_config",
+    "load_yaml_model",
+]
 
 
 DEFAULT_CONFIG_DIR: Path = Path("config")
@@ -68,12 +84,35 @@ _NESTED_DELIMITER: str = "__"
 # specific YAML section.
 _ENV_TIER: str = "HERMES_ENV"
 _ENV_ALLOW_MAINNET: str = "HERMES_ALLOW_MAINNET"
-# Credentials that share a section's prefix but belong to an adapter, not
+# Variables that share a section's prefix but belong to an adapter or a script, not
 # to the section's YAML model (BinanceSpotConfig.from_env reads these).
 # Treating them as overrides failed validation under extra=forbid and
 # echoed the secret in the error (#794).
 _CREDENTIAL_ENV_VARS: frozenset[str] = frozenset(
-    {"HERMES_BINANCE__API_KEY", "HERMES_BINANCE__API_SECRET"}
+    {
+        "HERMES_BINANCE__API_KEY",
+        "HERMES_BINANCE__API_SECRET",
+        # Read by the deploy shell scripts only; the Healthchecks YAML model has
+        # no field for them, so as overrides they stopped `hermes serve` at start.
+        "HERMES_HEALTHCHECKS__DAILY_PING_URL",
+        "HERMES_HEALTHCHECKS__ARCHIVE_CHECK_PING_URL",
+    }
+)
+# Keys that can place orders. Dev and sandbox keep their testnet keys; qa
+# runs on fakes and staging on public data only, so neither may hold one
+# (ADR-024 §4). Prod's own gate is HERMES_ALLOW_MAINNET.
+_TRADING_KEY_ENV_VARS: tuple[str, ...] = (
+    "HERMES_BINANCE__API_KEY",
+    "HERMES_BINANCE__API_SECRET",
+    "HERMES_KRAKEN__API_KEY",
+    "HERMES_KRAKEN__API_SECRET",
+)
+_NO_TRADING_KEY_TIERS: frozenset[str] = frozenset({"qa", "staging"})
+_NOTIFIER_API_BASES: Mapping[str, str] = MappingProxyType(
+    {
+        TELEGRAM_API_BASE_ENV: DEFAULT_TELEGRAM_API_BASE,
+        SLACK_API_BASE_ENV: DEFAULT_SLACK_API_BASE,
+    }
 )
 
 
@@ -116,7 +155,7 @@ def _read_yaml(path: Path) -> dict[str, Any]:
 
 
 def _coerce_scalar(value: str) -> Any:
-    """Coerce a string env value to bool / int / float / str.
+    """Coerce a string env value to bool / int / str.
 
     Pydantic itself is quite lenient with strict=True + string input for
     scalars: booleans need explicit true/false, numerics are parsed. We do
@@ -128,7 +167,7 @@ def _coerce_scalar(value: str) -> Any:
 
     Returns:
         Bool for ``true``/``false`` (case-insensitive); int if parseable as
-        int; float if parseable as float; otherwise the original string.
+        int; otherwise the original string, decimals included.
     """
     lowered = value.strip().lower()
     if lowered in {"true", "yes", "on"}:
@@ -139,10 +178,8 @@ def _coerce_scalar(value: str) -> Any:
         return int(value)
     except ValueError:
         pass
-    try:
-        return float(value)
-    except ValueError:
-        pass
+    # A decimal string stays a string: pydantic parses it exactly into a Decimal
+    # field, where a float pre-pass would round it first (#1176).
     return value
 
 
@@ -271,6 +308,58 @@ def load_yaml_model[T: BaseModel](
         ) from exc
 
 
+def load_optional_yaml_model[T: BaseModel](
+    path: Path,
+    model_cls: type[T],
+    *,
+    env_section: str,
+    env: dict[str, str] | None = None,
+) -> T:
+    """Load a YAML file like :func:`load_yaml_model`, but let a missing file mean defaults.
+
+    For sections that no running code needs yet: a fresh clone or a
+    deployment without the file still starts, and the model's own defaults
+    (plus any ``HERMES_<section>__...`` override) apply.
+
+    Args:
+        path: Path to the YAML file; it may not exist.
+        model_cls: Pydantic model to validate against; every field needs a default.
+        env_section: Uppercase section name for env overrides.
+        env: Optional env-var snapshot (defaults to ``os.environ``).
+
+    Returns:
+        A validated ``model_cls`` instance.
+
+    Raises:
+        ConfigError: The file exists but is unreadable or invalid, or the
+            merged values fail schema validation.
+    """
+    env_snapshot = dict(os.environ) if env is None else env
+    if path.is_file():
+        return load_yaml_model(path, model_cls, env_section=env_section, env=env_snapshot)
+    try:
+        return model_cls.model_validate(_apply_env_overrides({}, env_section, env_snapshot))
+    except ValidationError as exc:
+        raise ConfigError(
+            f"validation failed for {model_cls.__name__} defaults: {_describe(exc)}"
+        ) from exc
+
+
+def load_sentry_config(config_dir: Path, *, env: dict[str, str] | None = None) -> SentryConfig:
+    """Load ``sentry.yaml`` from ``config_dir`` (optional), with ``HERMES_SENTRY__*`` overrides.
+
+    The CLI initializes Sentry before it knows which command runs, so it
+    loads only this section: a fresh clone that has not populated every
+    other YAML file still gets error reporting.
+
+    Raises:
+        ConfigError: The file exists but is invalid.
+    """
+    return load_optional_yaml_model(
+        config_dir / "sentry.yaml", SentryConfig, env_section="SENTRY", env=env
+    )
+
+
 def _root_env_kwargs(env: dict[str, str]) -> dict[str, Any]:
     """Extract root-tier env vars (``HERMES_ENV``, ``HERMES_ALLOW_MAINNET``).
 
@@ -377,13 +466,13 @@ def load_config(
         env_section="FEES",
         env=env_snapshot,
     )
-    tax_guard = load_yaml_model(
+    tax_guard = load_optional_yaml_model(
         base / "tax_guard.yaml",
         TaxGuardConfig,
         env_section="TAX_GUARD",
         env=env_snapshot,
     )
-    ml = load_yaml_model(
+    ml = load_optional_yaml_model(
         base / "ml.yaml",
         MLConfig,
         env_section="ML",
@@ -407,12 +496,7 @@ def load_config(
         env_section="HEALTHCHECKS",
         env=env_snapshot,
     )
-    sentry = load_yaml_model(
-        base / "sentry.yaml",
-        SentryConfig,
-        env_section="SENTRY",
-        env=env_snapshot,
-    )
+    sentry = load_sentry_config(base, env=env_snapshot)
     kraken_public = load_yaml_model(
         base / "kraken_public.yaml",
         KrakenPublicConfig,
@@ -428,7 +512,7 @@ def load_config(
 
     root_kwargs = _root_env_kwargs(env_snapshot)
     try:
-        return HermesConfig(
+        config = HermesConfig(
             **root_kwargs,
             strategies=strategies,
             binance=binance,
@@ -447,3 +531,40 @@ def load_config(
         # + env literal narrowing. Wrap in ConfigError for a consistent
         # error type across the loader.
         raise ConfigError(f"HermesConfig validation failed: {_describe(exc)}") from exc
+    problems = env_tier_problems(config.env, env_snapshot)
+    if problems:
+        raise ConfigError(f"HERMES_ENV={config.env}: " + "; ".join(problems))
+    return config
+
+
+def env_tier_problems(tier: str, env: Mapping[str, str]) -> list[str]:
+    """Return how the env-only settings break the tier's rules (ADR-024 §4, #970).
+
+    The YAML-backed endpoints are checked by :class:`HermesConfig`; these
+    settings live only in the environment, beside their credentials. Each
+    problem names the variable, never its value.
+
+    Args:
+        tier: The validated ``HERMES_ENV``.
+        env: Env-var snapshot.
+
+    Returns:
+        The problems found; empty when the environment fits the tier.
+    """
+    problems = []
+    if tier in _NO_TRADING_KEY_TIERS:
+        problems += [
+            f"{name} is set, but {tier} holds no trading key"
+            for name in _TRADING_KEY_ENV_VARS
+            if env.get(name, "").strip()
+        ]
+    for name, default in _NOTIFIER_API_BASES.items():
+        value = env.get(name, "").strip()
+        if not value:
+            continue
+        if tier not in LOOPBACK_TIERS and is_loopback(value):
+            allowed = ", ".join(sorted(LOOPBACK_TIERS))
+            problems.append(f"{name} points at a loopback host, which only {allowed} may use")
+        elif tier == "prod" and value.rstrip("/") != default:
+            problems.append(f"{name} is not the default endpoint, which prod requires")
+    return problems

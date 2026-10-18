@@ -1,0 +1,1 @@
+- **Research candidate `swing-b1-trend-slope`** (batch swing-b1, C3): v2's 4h breakout with an extra entry condition that the daily EMA(200) is rising over `ema_slope_lookback` daily closes. Disabled in `config/strategies.yaml`, built through the strategy factory as `signal: donchian_slope`. Refs #1065.

@@ -31,8 +31,8 @@ import httpx
 import pytest
 import respx
 
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.adapters.clock import SimulatedClock
-from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.adapters.market_data.binance_depth_snapshot import BinanceDepthSnapshotAdapter
 from hermes.domain.errors import ExchangeError, NetworkError
 from hermes.domain.market_data.orderbook import Orderbook
