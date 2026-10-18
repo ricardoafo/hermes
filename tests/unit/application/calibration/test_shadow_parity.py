@@ -47,6 +47,11 @@ class TestM09:
         verdict = m09_pnl_correlation(_TRADES[:29], _TRADES[:29], seed=1, resamples=50)
         assert verdict.status is MetricStatus.INSUFFICIENT
 
+    def test_a_flat_shadow_curve_is_insufficient(self) -> None:
+        """A shadow with zero P&L on every trade has a flat curve: r is undefined (#1179)."""
+        verdict = m09_pnl_correlation([0.0] * 40, _TRADES, seed=1, resamples=50)
+        assert verdict.status is MetricStatus.INSUFFICIENT
+
     def test_same_seed_same_verdict(self) -> None:
         """The bootstrap is reproducible for a seed."""
         a = m09_pnl_correlation(_TRADES, _drift(_TRADES, 3.0), seed=9, resamples=200)
