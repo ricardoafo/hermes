@@ -11,6 +11,8 @@ import shutil
 from pathlib import Path
 from typing import Final
 
+from hermes.application.strategy_protocol.strategy_factory import known_signals
+
 CONFIG_DIR: Final = Path(__file__).resolve().parents[2] / "config"
 UNKNOWN_SIGNAL: Final = "no_such_signal"
 _ANCHOR: Final = "    exit_pricing: stop_order # pre-registration-v1.md §5.3, §6.2\n"
@@ -46,7 +48,8 @@ def refusal_lines(config_dir: Path) -> tuple[str, str]:
     """Return the first and last stderr lines of the config-load refusal.
 
     The first line is the ERROR line naming the file; the last names the
-    unknown signal and the kinds that exist.
+    unknown signal and the kinds that exist. The kinds come from the factory's
+    registry, so a newly registered kind does not break the pin.
 
     Args:
         config_dir: The directory :func:`config_with_unknown_signal` returned.
@@ -58,6 +61,6 @@ def refusal_lines(config_dir: Path) -> tuple[str, str]:
     return (
         f"ERROR: Config error: validation failed for {config_dir / 'strategies.yaml'} "
         "against StrategiesConfig: 1 validation error for StrategiesConfig",
-        f"  Value error, unknown signal '{UNKNOWN_SIGNAL}'; known: donchian_breakout "
+        f"  Value error, unknown signal '{UNKNOWN_SIGNAL}'; known: {', '.join(known_signals())} "
         "[type=value_error]",
     )
