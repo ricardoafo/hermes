@@ -111,7 +111,7 @@ No key writes a file; `hermes tui --vps` reads the release's `docs/experiments`.
 
 ## Design
 
-`LabFiles` (text by repo path) goes into `build_lab`, which parses front matter (`yaml.safe_load`), cards (`## ` sections), the hash-chained trial log and the `hermes.verdict/1` records, then derives the status from the verdicts. `LabView` composes the view bar, a `QueryList` (the shared filter bar and sortable table) and two `HudPanel`s in a grid whose shape the width class sets. The panels draw `strategy_text` and `results_text`, pure functions of the row and the token sheet.
+`LabFiles` (text by repo path) goes into `build_lab`, which parses front matter (`yaml.safe_load`), cards (second-level sections), the hash-chained trial log and the `hermes.verdict/1` records, then derives the status from the verdicts. `LabView` composes the view bar, a `QueryList` (the shared filter bar and sortable table) and two `HudPanel`s in a grid whose shape the width class sets. The panels draw `strategy_text` and `results_text`, pure functions of the row and the token sheet.
 
 ## Test plan
 

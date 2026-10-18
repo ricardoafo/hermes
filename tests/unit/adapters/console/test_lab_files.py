@@ -52,7 +52,7 @@ def test_the_templates_folder_is_not_an_experiment(tmp_path: Path) -> None:
     experiments = tmp_path / "docs" / "experiments"
     (experiments / "templates").mkdir(parents=True)
     (experiments / "templates" / "research-batch.md").write_text("---\nbatch_id: <b1>\n---\n")
-    assert FileLabReader(experiments, values=lambda: False).read() is None
+    assert [FileLabReader(experiments, values=lambda: False).read()] == [None]
 
 
 def test_figures_are_read_only_when_the_callback_allows_it(tmp_path: Path) -> None:
