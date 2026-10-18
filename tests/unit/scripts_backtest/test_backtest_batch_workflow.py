@@ -476,7 +476,7 @@ def test_batch_check_writes_its_summary_before_it_fails_the_step(tmp_path: Path)
         "Batch check",
         {
             "RUNNER_TEMP": str(tmp_path / "rt"),
-            "FILE": "b.md",
+            "FILE": str(_batch_doc(tmp_path, "status: SIGNED\n")),
             "GITHUB_STEP_SUMMARY": str(summary),
             "GITHUB_OUTPUT": str(tmp_path / "output"),
         },
@@ -556,3 +556,93 @@ def test_an_exhausted_family_budget_names_the_candidate_before_failing_the_step(
         1,
         True,
     )
+
+
+def _batch_doc(tmp_path: Path, front_matter: str) -> Path:
+    """Write a batch document with ``front_matter`` and a body that also says ``status:``."""
+    doc = tmp_path / "b1.md"
+    doc.write_text(f"---\n{front_matter}---\n\n# B1\n\nstatus: DRAFT in prose\n", encoding="utf-8")
+    return doc
+
+
+def _stub_batch_check(directory: Path, exit_code: int) -> Path:
+    """Put a ``uv`` on PATH that stands in for ``hermes batch check``; return its call marker."""
+    directory.mkdir(parents=True, exist_ok=True)
+    marker = directory / "called"
+    script = directory / "uv"
+    script.write_text(
+        "#!/usr/bin/env bash\n"
+        f"touch {marker}\n"
+        'while [ "$#" -gt 0 ]; do [ "$1" = --candidates-out ] && out="$2"; shift; done\n'
+        'printf \'{"candidates": [{"strategy_id": "swing-b1-a", "idea_family": "f1"}]}\' > "$out"\n'
+        'echo "PASS front_matter detail"\n'
+        f"exit {exit_code}\n"
+    )
+    script.chmod(script.stat().st_mode | stat.S_IXUSR)
+    return marker
+
+
+def _check_batch(tmp_path: Path, doc: Path, check_exit: int) -> tuple[int, list[str], bool]:
+    """Run the Batch check step on ``doc``; return exit code, GITHUB_OUTPUT lines, uv was called."""
+    output = tmp_path / "out"
+    output.write_text("")
+    summary = tmp_path / "summary"
+    summary.write_text("")
+    marker = _stub_batch_check(tmp_path / "bin", check_exit)
+    result = _run(
+        "check",
+        "Batch check",
+        {
+            "FILE": str(doc),
+            "GITHUB_OUTPUT": str(output),
+            "GITHUB_STEP_SUMMARY": str(summary),
+            "RUNNER_TEMP": str(tmp_path),
+        },
+        tmp_path,
+        path_prefix=tmp_path / "bin",
+    )
+    return result.returncode, output.read_text().splitlines(), marker.exists()
+
+
+@needs_tools
+@pytest.mark.parametrize("status", ["DRAFT", '"DRAFT"', "'DRAFT'"])
+def test_a_draft_batch_ends_green_with_no_candidates_and_runs_no_check(
+    tmp_path: Path, status: str
+) -> None:
+    """A draft is only the precursor of the signed hash: green, empty candidate list, no check."""
+    doc = _batch_doc(tmp_path, f"status: {status}\nbatch_id: b1\n")
+
+    code, lines, called = _check_batch(tmp_path, doc, check_exit=1)
+
+    assert (code, lines, called) == (0, ["candidates=[]", "draft=true"], False)
+
+
+@needs_tools
+@pytest.mark.parametrize(
+    "front_matter", ["status: SIGNED\n", "batch_id: b1\n", "status: draftish\n"]
+)
+def test_any_batch_that_is_not_a_draft_goes_through_the_signed_check(
+    tmp_path: Path, front_matter: str
+) -> None:
+    """Only the exact status DRAFT skips the check; SIGNED, no status or a lookalike is checked."""
+    doc = _batch_doc(tmp_path, front_matter)
+
+    refused = _check_batch(tmp_path, doc, check_exit=1)
+    accepted = _check_batch(tmp_path, doc, check_exit=0)
+
+    assert (refused[0], refused[2], accepted[0], accepted[1][0], accepted[2]) == (
+        1,
+        True,
+        0,
+        "draft=false",
+        True,
+    )
+
+
+def test_every_job_after_check_is_skipped_for_a_draft() -> None:
+    """An empty matrix would fail the run, so Train is skipped and the rest follow from it."""
+    jobs = _workflow()["jobs"]
+
+    assert jobs["train"]["if"] == "${{ needs.check.outputs.draft != 'true' }}"
+    assert "needs.train.result != 'skipped'" in jobs["results"]["if"]
+    assert jobs["judge-train"]["needs"] == ["check", "train"]

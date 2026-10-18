@@ -38,6 +38,7 @@ jobs:
       batch_id: ${{ steps.batch.outputs.batch_id }}
       experiment: ${{ steps.batch.outputs.experiment }}
       candidates: ${{ steps.check.outputs.candidates }}
+      draft: ${{ steps.check.outputs.draft }}
     steps:
       - name: Code Owner merged this
         env:
@@ -100,8 +101,11 @@ jobs:
       - name: uv sync
         run: uv sync --frozen
 
-      # `hermes batch check` recomputes the content hash with git, compares the
-      # cards and the code binding, and refuses a batch that is not signed
+      # A draft is the precursor the signed batch's content hash is computed
+      # from, so it merges to main first and a signing PR follows. It runs
+      # nothing and ends green. Any other status, or none, is checked as a
+      # signed batch: `hermes batch check` recomputes the content hash with git,
+      # compares the cards and the code binding, and refuses an unsigned batch
       # (ADR-026 §1).
       - name: Batch check
         id: check
@@ -109,6 +113,16 @@ jobs:
           FILE: ${{ steps.batch.outputs.file }}
         run: |
           set -uo pipefail
+          status=$(awk '/^---[ \t]*$/{n++; next} n==1 && /^status:/{sub(/^status:[ \t]*/, ""); gsub(/["\047 \t]/, ""); print; exit}' "$FILE")
+          if [ "$status" = DRAFT ]; then
+            echo "::notice::draft batch, nothing runs until it is signed"
+            {
+              echo "candidates=[]"
+              echo "draft=true"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "draft=false" >> "$GITHUB_OUTPUT"
           mkdir -p "$RUNNER_TEMP/check"
           code=0
           uv run hermes batch check "$FILE" --require-signed \
@@ -128,6 +142,7 @@ jobs:
   train:
     name: Train ${{ matrix.candidate.strategy_id }}
     needs: check
+    if: ${{ needs.check.outputs.draft != 'true' }}
     runs-on: [self-hosted, hermes-backtest]
     environment: backtest-train
     timeout-minutes: 120
