@@ -120,9 +120,5 @@ tests/unit/infrastructure/config/test_renta.py::test_layout_type_is_the_domain_l
 tests/unit/infrastructure/test_aggregate_changelog.py::test_gitkeep_and_readme_are_skipped U3
 tests/unit/infrastructure/test_aggregate_changelog.py::test_missing_fragment_dir_returns_empty_sections U3
 tests/unit/infrastructure/test_cve_triage.py::test_duplicate_advisory_yields_one_row U3
-tests/unit/ports/test_market_data_port.py::test_empty_bids_asks_diff_constructs U3
-tests/unit/ports/test_market_data_port.py::test_fake_adapter_satisfies_protocol U6
-tests/unit/ports/test_market_data_port.py::test_partial_implementation_does_not_satisfy_protocol U6
-tests/unit/ports/test_market_data_port.py::test_plain_object_does_not_satisfy_protocol U6
 tests/unit/scripts_backtest/test_run_calibration.py::test_git_state_returns_a_full_commit_sha U3
 tests/unit/scripts_dev/test_migration_sql_check.py::test_transaction_control_is_reported U3
