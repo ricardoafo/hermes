@@ -11,8 +11,9 @@ from typing import Any
 
 import pytest
 
-_ROOT = Path(__file__).resolve().parents[3]
-_SCRIPT = _ROOT / "scripts" / "dev" / "runs-on-check.py"
+from tests.support.paths import REPO_ROOT
+
+_SCRIPT = REPO_ROOT / "scripts" / "dev" / "runs-on-check.py"
 _FALLBACK = 'fromJSON(\'["self-hosted","linux","hermes"]\')'
 _PINNED = "${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || " + _FALLBACK + " }}"
 
@@ -37,13 +38,13 @@ def _workflow(directory: Path, runs_on: str) -> None:
 
 def test_every_workflow_on_main_is_pinned_to_self_hosted_runners() -> None:
     """The repository's own workflows pass, so the fallback cannot have crept back."""
-    assert _script().check(_ROOT / ".github" / "workflows") == []
+    assert _script().check(REPO_ROOT / ".github" / "workflows") == []
 
 
 def test_no_workflow_names_a_hosted_image_anywhere() -> None:
     """Issue #1069: no `ubuntu-latest`, `windows-latest` or `macos-latest` in the workflows."""
     text = "".join(
-        p.read_text(encoding="utf-8") for p in (_ROOT / ".github" / "workflows").glob("*.yml")
+        p.read_text(encoding="utf-8") for p in (REPO_ROOT / ".github" / "workflows").glob("*.yml")
     )
 
     found = [i for i in ("ubuntu-latest", "windows-latest", "macos-latest") if i in text]

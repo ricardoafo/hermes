@@ -23,9 +23,9 @@ from hermes.application.calibration.backtest_funnel import (
 )
 from hermes.entrypoints.commands import discover
 from hermes.entrypoints.funnel import main, read_front_matter
+from tests.support.paths import REPO_ROOT
 
 _SID = "swing-v2"
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _DAYS = 730
 """31 Dec 2020 to 31 Dec 2022: Train is 2021, Validation is 2022."""
 
@@ -209,7 +209,7 @@ class TestRefusals:
     def test_v1_pre_registration_refuses(self, tmp_path: Path) -> None:
         """The signed v1 document has no funnel block: ADR-021 §5 does not bind v1."""
         _, evidence = _write(tmp_path, _FUNNEL_YAML, _passing_evidence())
-        v1 = _PROJECT_ROOT / "docs/experiments/swing-mvp1/pre-registration-v1.md"
+        v1 = REPO_ROOT / "docs/experiments/swing-mvp1/pre-registration-v1.md"
         code, out, _ = _main(_args(v1, evidence))
         assert code == 1
         assert out.splitlines()[1:] == [
@@ -406,7 +406,7 @@ class TestSignedV2PreRegistration:
 
     def test_signed_v2_front_matter_parses(self) -> None:
         """Its funnel block, regimes included, passes the parser that ``hermes funnel`` runs."""
-        v2 = _PROJECT_ROOT / "docs/experiments/swing-mvp1/pre-registration-v2.md"
+        v2 = REPO_ROOT / "docs/experiments/swing-mvp1/pre-registration-v2.md"
         front = read_front_matter(v2.read_text(encoding="utf-8"))
         thresholds = parse_funnel_front_matter(front, strategy_id="swing-mvp1-v2")
         assert thresholds.regimes == (

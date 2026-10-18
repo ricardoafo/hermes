@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 from datetime import date
-from pathlib import Path
 
 from hermes.adapters.fees.binance_history import load_binance_fee_history
+from tests.support.paths import REPO_ROOT
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
 CSV_PATH = REPO_ROOT / "docs" / "experiments" / "swing-mvp1" / "fee-history.csv"
 
 

@@ -32,10 +32,11 @@ from typing import Any
 import pytest
 import yaml
 
-_ROOT = Path(__file__).resolve().parents[3]
-_SCRIPT = _ROOT / "scripts" / "dev" / "train-decision-replay.sh"
-_WORKFLOW = _ROOT / ".github" / "workflows" / "ci.yml"
-_COMPOSE = _ROOT / "scripts" / "dev" / "gh-runner" / "compose.yml"
+from tests.support.paths import REPO_ROOT
+
+_SCRIPT = REPO_ROOT / "scripts" / "dev" / "train-decision-replay.sh"
+_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+_COMPOSE = REPO_ROOT / "scripts" / "dev" / "gh-runner" / "compose.yml"
 _REPO = "ricardoafo/hermes"
 _PR = 798
 _FP = "0123456789abcdef"
@@ -43,7 +44,7 @@ _FP = "0123456789abcdef"
 
 def _import_approval() -> ModuleType:
     """Import the approval checker by path."""
-    path = _ROOT / "scripts" / "dev" / "decision_change_approval.py"
+    path = REPO_ROOT / "scripts" / "dev" / "decision_change_approval.py"
     spec = importlib.util.spec_from_file_location("decision_change_approval", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

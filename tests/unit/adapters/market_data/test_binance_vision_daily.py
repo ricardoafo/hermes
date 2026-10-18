@@ -17,7 +17,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from pathlib import Path
 
 import httpx
 import pytest
@@ -31,8 +30,9 @@ from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
 from hermes.ports.archive_bars import ArchiveBarsPort
+from tests.support.paths import REPO_ROOT
 
-_FIXTURES = Path(__file__).resolve().parents[3] / "fixtures" / "binance_vision"
+_FIXTURES = REPO_ROOT / "tests" / "fixtures" / "binance_vision"
 _ZIP = (_FIXTURES / "BTCUSDT-4h-2025-08-01.zip").read_bytes()
 _CHECKSUM = (_FIXTURES / "BTCUSDT-4h-2025-08-01.zip.CHECKSUM").read_bytes()
 _URL = f"{DAILY_KLINES_BASE_URL}/BTCUSDT/4h/BTCUSDT-4h-2025-08-01.zip"
