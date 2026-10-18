@@ -10,11 +10,13 @@ research batch swing-b1 §5 (C4).
 import inspect
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
+from hermes.application.strategy_protocol.strategy_factory import RSI_PULLBACK, strategy_kind
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.risk.state import PortfolioState
@@ -23,7 +25,10 @@ from hermes.domain.strategy.swing.engines.atr import AtrEngine
 from hermes.domain.strategy.swing.pullback import PullbackAdapter, PullbackEntryCheck
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
+from hermes.infrastructure.config import StrategiesConfig
+from hermes.infrastructure.config.loader import load_yaml_model
 
+_REPO_CONFIG = Path(__file__).resolve().parents[5] / "config"
 _BTC_USDT = Pair(base=Currency.BTC, quote=Currency.USDT)
 _D1_BASE = datetime(2024, 1, 1, tzinfo=UTC)
 _DAILY_BARS = 21
@@ -256,7 +261,7 @@ def test_seed_never_signals_and_restore_none_is_flat() -> None:
 def test_invalid_parameters_are_refused(overrides: dict[str, object]) -> None:
     """A non-positive period, stop or time stop, or a re-entry not below the exit, is refused."""
     with pytest.raises(ValueError, match=r"must be|need"):
-        PullbackAdapter(**overrides)  # type: ignore[arg-type]
+        strategy_kind(RSI_PULLBACK).create(overrides)
 
 
 def test_defaults_are_the_card_values() -> None:
@@ -324,3 +329,28 @@ def test_no_signal_depends_on_a_later_bar(path: list[int], cut: int) -> None:
 def test_a_falling_daily_trend_never_enters(path: list[int]) -> None:
     """Property: with falling daily closes the trend condition never holds, so no signal at all."""
     assert _fired(_run(_adapter(), _daily(_FALLING_DAILY) + _h4(path))) == []
+
+
+def test_the_rsi_pullback_kind_builds_c4_with_the_batch_parameter_names() -> None:
+    """``signal: rsi_pullback`` builds C4, and the batch's three parameters are its own."""
+    kind = strategy_kind(RSI_PULLBACK)
+    defaults = kind.default_parameters()
+
+    assert type(kind.create()) is PullbackAdapter
+    assert {
+        name: defaults[name] for name in ("rsi_reentry", "stop_atr_mult", "time_stop_days")
+    } == {
+        "rsi_reentry": 35,
+        "stop_atr_mult": Decimal("2.0"),
+        "time_stop_days": 20,
+    }
+
+
+def test_the_shipped_c4_entry_is_disabled_and_trades_rsi_pullback() -> None:
+    """The ``swing-b1-pullback`` roster entry names the C4 kind and never runs in serve."""
+    roster = load_yaml_model(
+        _REPO_CONFIG / "strategies.yaml", StrategiesConfig, env_section="STRATEGIES", env={}
+    )
+    entry = next(s for s in roster.strategies if s.name == "swing-b1-pullback")
+
+    assert (entry.enabled, entry.strategy_kind().signal) == (False, RSI_PULLBACK)

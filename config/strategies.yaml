@@ -41,3 +41,14 @@ strategies:
       risk_pct: "0.01" # pre-registration-v2.md §5.4
       max_position_pct: "0.05" # pre-registration-v2.md §5.4
       max_total_exposure_pct: "0.15" # pre-registration-v2.md §5.5
+  - name: swing-b1-pullback
+    enabled: false
+    signal: rsi_pullback # research batch swing-b1 C4 (issue #1066)
+    weight: "1.0"
+    capital_budget: "5000" # batch Common: v2 §2, in quote units
+    quote: USDT
+    exit_pricing: bar_close # batch Common: v2 §5.3, §6.2
+    sizing:
+      risk_pct: "0.01" # batch Common: v2 §5.4
+      max_position_pct: "0.05" # batch Common: v2 §5.4
+      max_total_exposure_pct: "0.15" # batch Common: v2 §5.5

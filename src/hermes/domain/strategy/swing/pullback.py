@@ -56,6 +56,8 @@ __all__ = ["PullbackAdapter", "PullbackEntryCheck"]
 _4H_BUFFER_CAP = 300
 _1D_BUFFER_CAP = 300
 
+_RSI_MAX = 100
+
 
 @dataclass(frozen=True, slots=True)
 class PullbackEntryCheck:
@@ -124,7 +126,7 @@ class PullbackAdapter:
                 raise ValueError(f"{name} must be at least 1, got {value}")
         if stop_atr_mult <= 0:
             raise ValueError(f"stop_atr_mult must be positive, got {stop_atr_mult}")
-        if not 0 < rsi_reentry < rsi_exit <= 100:  # noqa: PLR2004 — the RSI scale
+        if not 0 < rsi_reentry < rsi_exit <= _RSI_MAX:
             raise ValueError(
                 f"need 0 < rsi_reentry < rsi_exit <= 100, got {rsi_reentry} and {rsi_exit}"
             )
