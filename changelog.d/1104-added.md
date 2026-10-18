@@ -1,0 +1,1 @@
+- `scripts/backtest/stop_slippage.py` measures how far below the backtest's stop fill the market really traded, on Train data only: 1-minute bounds for every synthetic stop event and, with `--trade-days`, the trigger trade from the public aggregated-trades archive on N days spread evenly across Train. The ingester can fetch 1-minute klines on request (issue #1104).

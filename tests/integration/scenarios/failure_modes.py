@@ -307,6 +307,18 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             ),
         ),
         FailureMode(
+            "An order still in flight inside Binance reads as never placed on the first lookup",
+            proved_by=(
+                _BINANCE_SPOT + "test_an_order_binance_never_saw_is_looked_up_twice_a_wait_apart",
+                _BINANCE_SPOT
+                + "test_an_order_in_flight_at_the_first_lookup_returns_the_fill_found_on"
+                "_the_recheck",
+                _BINANCE_SPOT
+                + "test_a_stop_loss_in_flight_at_the_first_lookup_returns_the_order_found"
+                "_on_the_recheck",
+            ),
+        ),
+        FailureMode(
             "A filled order is reported as an error",
             proved_by=(
                 _BINANCE_SPOT + "test_third_asset_commission_is_priced_at_its_ticker",

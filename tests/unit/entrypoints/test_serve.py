@@ -495,7 +495,7 @@ class TestCheckStartup:
 
     def test_v1_and_v2_enabled_together_are_refused(self, shadow_config: HermesConfig) -> None:
         """Serve runs one strategy at a time: both pre-registered entries enabled is refused."""
-        v1, v2 = shadow_config.strategies.strategies
+        v1, v2, *_ = shadow_config.strategies.strategies
         both = [v1, v2.model_copy(update={"enabled": True})]
         config = shadow_config.model_copy(update={"strategies": StrategiesConfig(strategies=both)})
 
