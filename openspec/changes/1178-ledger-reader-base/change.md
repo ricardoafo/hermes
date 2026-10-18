@@ -87,7 +87,7 @@ query code is untouched.
 - `tests/unit/adapters/ledger/test_connection.py`: R-2, `with` closes,
   and `any_thread`.
 - `tests/unit/adapters/ledger/test_readers_over_every_schema.py`: R-3 for
-  24 queries across 12 schemas, and the R-1 scan.
+  24 queries across 11 schemas (an empty file and each of the 10 shipped migrations), and the R-1 scan.
 
 ## Risks
 
