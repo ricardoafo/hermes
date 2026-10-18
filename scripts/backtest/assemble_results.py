@@ -50,7 +50,8 @@ NUMBER_KEYS = frozenset({"run_id", "trial_lines"})
 STAGES = frozenset({"train", "validation"})
 _SAFE_NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-_CHECK_NAME = re.compile(r"^[a-z0-9_.-]+$")
+# Gate check names are letters and underscores; no digit or dot, so a name cannot carry a value.
+_CHECK_NAME = re.compile(r"^[a-z][a-z_]*$")
 
 
 class ResultsError(Exception):
@@ -76,6 +77,11 @@ def validate_verdict(verdict: dict[str, Any]) -> None:
             and key not in NUMBER_KEYS
         ):
             raise ResultsError(f"verdict field {key} holds a number")
+    if not isinstance(verdict.get("passed"), bool):
+        raise ResultsError("verdict passed is not a boolean")
+    for key in ("goes_on", "champion"):
+        if verdict.get(key) is not None and not isinstance(verdict[key], bool):
+            raise ResultsError(f"verdict {key} is not a boolean or null")
     window = verdict.get("window") or {}
     if set(window) != {"start", "end"} or not all(_DATE.match(str(v)) for v in window.values()):
         raise ResultsError("verdict window is not a start and end date")
@@ -84,7 +90,8 @@ def validate_verdict(verdict: dict[str, Any]) -> None:
         raise ResultsError("verdict checks is not a list")
     for check in checks:
         if (
-            set(check) != {"check", "status"}
+            not isinstance(check, dict)
+            or set(check) != {"check", "status"}
             or check["status"] not in STATUSES
             or not _CHECK_NAME.match(str(check["check"]))
         ):
