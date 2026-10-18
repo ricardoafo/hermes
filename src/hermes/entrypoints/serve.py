@@ -20,6 +20,11 @@ What one process does:
   Binance depth snapshot (or the pre-registration §6.2 book when none is
   fresh), and the fill is recorded as a ``TradeExecuted`` v2 trade with its
   execution-quality row (change ``353-fill-kernel-in-serve``).
+- Each executed fill's fee, slippage and latency feed EWMA + CUSUM control
+  charts (#362, #1181), primed at start-up from the ledger's past fills. The
+  first fill of a breach episode is a ``WARNING`` anomaly in the ledger and an
+  alert; it is never read to decide, size, kill or gate a trade, and a monitor
+  error is logged without stopping the fill.
 - The bar loop warms up one :class:`SwingStrategyAdapter` per pair, seeding
   bars up to a persisted cursor without evaluating them, restoring each
   pair's open position from the ledger, then evaluates every later bar as if
@@ -121,6 +126,10 @@ from hermes.application.ledger.eur_pricer import EurPricer, LookupBudget
 from hermes.application.ledger.trade_recorder import TradeRecorder
 from hermes.application.messages.eur_rate import EurRateLookup
 from hermes.application.monitoring.clock_skew import clock_is_off, clock_skew_change
+from hermes.application.monitoring.execution_quality import (
+    ExecutionQualityMonitor,
+    observation_of,
+)
 from hermes.application.monitoring.restart_report import RESTART_SOURCE, restart_report
 from hermes.application.notification_router import EventClass, RouterConfig, route
 from hermes.application.order_router.sizing import SizingPolicy
@@ -434,6 +443,10 @@ class Composition:
             start-up pricing of pending values.
         spread_sample_seconds: Step of the spread sampler that records the
             RO-02 input (#835); no rule reads the samples.
+        execution_quality: Control charts on each fill's fee, slippage and
+            latency (#362, #1181). Primed from the ledger's past fills when
+            the bar loop starts; a breach is recorded and alerted, never read
+            to trade.
         serve_lock: The ledger's serve lock, held from build until
             :func:`run` releases it after closing SQLite; ``None`` for a
             composition built by hand in a test.
@@ -460,6 +473,7 @@ class Composition:
     fx_adapter: FrankfurterAdapter | None
     eur_pricer: EurPricer
     spread_sample_seconds: float = SPREAD_SAMPLE_SECONDS
+    execution_quality: ExecutionQualityMonitor = field(default_factory=ExecutionQualityMonitor)
     serve_lock: FileLock | None = None
 
 
@@ -1175,6 +1189,7 @@ async def _bar_loop(c: Composition, shutdown: asyncio.Event) -> None:
     if shutdown.is_set():
         return
     loop = _BarLoop(c)
+    loop.prime_execution_quality()
     await loop.warm_up_and_catch_up(shutdown)
     if shutdown.is_set():
         return
@@ -1627,6 +1642,72 @@ class _BarLoop:
             )
         )
 
+    def prime_execution_quality(self) -> None:
+        """Replay the ledger's past fills into the execution-quality charts (#1181).
+
+        Runs before warm-up, so a restart keeps the Phase-I baseline and any
+        open breach episode: it neither waits for a new baseline nor alerts an
+        episode again. Fills replay in ledger order, so two boots over one
+        ledger end in the same chart state. A failure is logged and serve goes
+        on with what was replayed before it; the charts then rebuild from live
+        fills.
+        """
+        c = self.c
+        try:
+            fees = {t.correlation_id: t.fee for t in c.ledger.trade_events(c.strategy_id)}
+            past = [
+                observation_of(quality, fees[quality.correlation_id])
+                for quality in c.ledger.fill_quality_events(c.strategy_id)
+                if quality.correlation_id in fees
+            ]
+            c.execution_quality.prime(past)
+        except Exception as exc:  # alert-only: a monitor bug must never stop serve
+            _log.warning(
+                "serve.execution_quality.failed",
+                step="prime",
+                error=type(exc).__name__,
+                detail=str(exc),
+            )
+            return
+        _log.info("serve.execution_quality.primed", fills=len(past))
+
+    async def _watch_execution_quality(self, result: ShadowExecution) -> None:
+        """Chart an executed fill's fee, slippage and latency; record and alert a new breach.
+
+        Alert only (#362 D-2): no decision, size, kill rule or drift gate reads
+        the charts or the breach. A monitor error is logged and the fill stands;
+        a failed ledger write of a breach fails like any other ledger write.
+        The journal gets the breach's source, never its bps or ms figures.
+        """
+        outcome = result.outcome
+        if not isinstance(outcome, Executed) or result.quality is None:
+            return
+        c = self.c
+        quality = result.quality
+        try:
+            breaches = c.execution_quality.observe(
+                observation_of(quality, outcome.fill.fee),
+                at=quality.occurred_at,
+                correlation_id=quality.correlation_id,
+            )
+        except Exception as exc:  # alert-only: a monitor bug must never cost a fill
+            _log.warning(
+                "serve.execution_quality.failed",
+                step="observe",
+                error=type(exc).__name__,
+                detail=str(exc),
+            )
+            return
+        for alert in breaches:
+            # The bus records it in the ledger; only _alert notifies a person.
+            c.event_bus.publish(alert)
+            _log.warning(
+                "serve.execution_quality.breach",
+                source=alert.source,
+                severity=alert.severity.value,
+            )
+            await self._alert(alert, failed="serve.execution_quality.alert_failed")
+
     def next_due(self, stream: Stream) -> datetime:
         """Return when the bar after the last handled one should arrive.
 
@@ -1752,6 +1833,7 @@ class _BarLoop:
             filled=isinstance(result.outcome, Executed | AlreadyFilled),
             held=partial(self._held_position, bar.pair, at_or_before=signal_.signal_time),
         )
+        await self._watch_execution_quality(result)
         return result.outcome
 
     async def _shadow_checks(self, bar: Bar) -> None:
