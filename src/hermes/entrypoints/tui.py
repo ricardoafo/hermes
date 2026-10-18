@@ -726,7 +726,7 @@ class HomeApp(App[None]):
             release: Returns the running release's name, re-read on every
                 redraw; ``None`` leaves the top line without a release.
             version: The package version in its release form
-                (``v1.0.0-shadow.1``, issue #815), shown before the release;
+                (``v0.2.0``, issue #815), shown before the release;
                 ``None`` shows the release alone, as ``release <name>``.
             allow_mainnet: The config's ``allow_mainnet``, read the way
                 ``hermes serve`` reads it (issue #833); ``None`` when the
