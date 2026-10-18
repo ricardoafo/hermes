@@ -1,0 +1,1 @@
+- Each shadow now counts its missed bars against ADR-021's 1% budget: the restart report says how many of the allowed bars are used and how many are left, and the lab chat gets one alert when a shadow crosses it; a bar re-handled after a crash counts once (#1117).
