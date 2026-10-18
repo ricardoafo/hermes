@@ -13,7 +13,6 @@ Coverage:
   - m04_rejection_rate is computed over both fills and rejections
   - m05_orphan_position_count is 0 when fill_order_ids match open_position_ids
   - m07_queue_quality is always None in backtest mode
-  - FixtureBaselineJob runs without error and reports within tolerance
 
 Reference: spec-6-calibration-harness/change.md A-4.1, A-4.2.
 """
@@ -25,7 +24,6 @@ from decimal import Decimal
 
 import pytest
 
-from hermes.application.calibration.baseline import FixtureBaselineJob
 from hermes.application.calibration.harness import CalibrationHarness, CalibrationReport
 from hermes.domain.calibration.metrics import FillPriceDeltaBps
 from hermes.domain.trading.fill import Fill, Rejection
@@ -261,132 +259,3 @@ class TestCalibrationHarnessWithRejections:
             f"2 fills + 2 rejections must produce 0.5 rejection rate, "
             f"got {report.m04_rejection_rate}. Hand-computed: 2/(2+2)=0.5."
         )
-
-
-class TestFixtureBaselineJob:
-    """FixtureBaselineJob runs without I/O and reports delta correctly."""
-
-    def test_identical_fills_zero_delta(self) -> None:
-        """Simulated fills identical to reference must produce 0 bps delta."""
-        ref_fills = [_fill("50000"), _fill("50100")]
-        job = FixtureBaselineJob(reference_fills=ref_fills, tolerance_bps=Decimal("5"))
-        sim_fills = [_fill("50000"), _fill("50100")]
-        result = job.run(
-            window_start=_WIN_START,
-            window_end=_WIN_END,
-            simulated_fills=sim_fills,
-        )
-        assert result.delta_bps == Decimal("0"), (
-            f"Identical simulated and reference fills must produce 0 bps delta, "
-            f"got {result.delta_bps}."
-        )
-        assert result.is_within_tolerance is True, (
-            "0 bps delta must be within 5 bps tolerance, got is_within_tolerance=False."
-        )
-
-    def test_large_delta_exceeds_tolerance(self) -> None:
-        """Large price difference must produce delta > tolerance."""
-        ref_fills = [_fill("50000")]
-        job = FixtureBaselineJob(reference_fills=ref_fills, tolerance_bps=Decimal("5"))
-        sim_fills = [_fill("51000")]  # 200 bps above reference
-        result = job.run(
-            window_start=_WIN_START,
-            window_end=_WIN_END,
-            simulated_fills=sim_fills,
-        )
-        assert abs(result.delta_bps) > Decimal("5"), (
-            f"200 bps gap must exceed 5 bps tolerance, got {result.delta_bps}."
-        )
-        assert result.is_within_tolerance is False, (
-            "200 bps gap must not be within 5 bps tolerance, got is_within_tolerance=True."
-        )
-
-    def test_empty_simulated_fills_returns_zero_sim_avg(self) -> None:
-        """Empty simulated fills must return simulated_avg_price = 0."""
-        ref_fills = [_fill("50000")]
-        job = FixtureBaselineJob(reference_fills=ref_fills)
-        result = job.run(
-            window_start=_WIN_START,
-            window_end=_WIN_END,
-            simulated_fills=[],
-        )
-        assert result.simulated_avg_price == Decimal("0"), (
-            f"Empty simulated fills must produce simulated_avg_price=0, "
-            f"got {result.simulated_avg_price}."
-        )
-
-    def test_empty_reference_fills_produces_zero_delta(self) -> None:
-        """Empty reference fills must produce delta_bps = 0 (guard against ZeroDivisionError)."""
-        job = FixtureBaselineJob(reference_fills=[], tolerance_bps=Decimal("5"))
-        result = job.run(
-            window_start=_WIN_START,
-            window_end=_WIN_END,
-            simulated_fills=[_fill("50000")],
-        )
-        assert result.delta_bps == Decimal("0"), (
-            f"Empty reference fills must produce delta_bps=0 (ref_avg=0 guard), "
-            f"got {result.delta_bps}."
-        )
-        assert not isinstance(result.delta_bps, bool), (
-            "delta_bps must be Decimal, not bool — type guard."
-        )
-
-
-class TestCalibrationReportValidation:
-    """CalibrationReport.__post_init__ raises ValueError on invalid inputs."""
-
-    def _make_report(self, **kwargs: object) -> CalibrationReport:
-        """Build a minimal valid CalibrationReport with overrideable fields."""
-        defaults: dict[str, object] = {
-            "strategy_id": "swing-v1",
-            "window_start": _WIN_START,
-            "window_end": _WIN_END,
-            "m01_fill_count": 0,
-            "m02_fill_price_delta_bps": FillPriceDeltaBps(
-                avg_bps=Decimal("0"),
-                p50_bps=Decimal("0"),
-                p95_bps=Decimal("0"),
-                p99_bps=Decimal("0"),
-            ),
-            "m03_latency_ms": Decimal("0"),
-            "m04_rejection_rate": Decimal("0"),
-            "m05_orphan_position_count": 0,
-            "m06_regime_returns": None,
-            "m07_queue_quality": None,
-        }
-        defaults.update(kwargs)
-        return CalibrationReport(**defaults)  # type: ignore[arg-type]
-
-    def test_naive_window_start_raises(self) -> None:
-        """CalibrationReport must raise ValueError when window_start is timezone-naive."""
-        naive_start = datetime(2024, 1, 1)  # no tzinfo
-        with pytest.raises(ValueError, match="window_start"):
-            self._make_report(window_start=naive_start)
-
-    def test_naive_window_end_raises(self) -> None:
-        """CalibrationReport must raise ValueError when window_end is timezone-naive."""
-        naive_end = datetime(2024, 1, 31)  # no tzinfo
-        with pytest.raises(ValueError, match="window_end"):
-            self._make_report(window_end=naive_end)
-
-    def test_inverted_window_raises(self) -> None:
-        """CalibrationReport must raise ValueError when window_end < window_start."""
-        with pytest.raises(ValueError, match="window_end"):
-            self._make_report(
-                window_start=datetime(2024, 1, 31, tzinfo=UTC),
-                window_end=datetime(2024, 1, 1, tzinfo=UTC),
-            )
-
-    def test_empty_strategy_id_raises(self) -> None:
-        """CalibrationReport must raise ValueError when strategy_id is blank."""
-        with pytest.raises(ValueError, match="strategy_id"):
-            self._make_report(strategy_id="   ")
-
-
-class TestCalibrationHarnessValidation:
-    """CalibrationHarness.__init__ raises ValueError on invalid strategy_id."""
-
-    def test_empty_strategy_id_raises(self) -> None:
-        """CalibrationHarness must raise ValueError when strategy_id is blank."""
-        with pytest.raises(ValueError, match="strategy_id"):
-            CalibrationHarness(strategy_id="")

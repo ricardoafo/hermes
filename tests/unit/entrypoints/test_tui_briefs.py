@@ -2,7 +2,7 @@
 
 Invariants:
 
-- tab 6 shows the supervisor desk's daily brief, unchanged, with the list of
+- tab 7 shows the supervisor desk's daily brief, unchanged, with the list of
   briefs beside it from 100 columns and above it below that;
 - every brief carries the "never sees profit" line, and a digest says so;
 - no price, value or P&L of the scenario is drawn on the screen;
@@ -154,15 +154,15 @@ def _briefs_text(model: ConsoleReadModel) -> str:
         app = _app(model)
         async with app.run_test(size=(160, 45)) as pilot:
             await pilot.pause()
-            await pilot.press("6")
+            await pilot.press("7")
             await pilot.pause()
-            assert app.tab == 5
-            return app.plain_text("screen-6")
+            assert app.tab == 6
+            return app.plain_text("screen-7")
 
     return asyncio.run(drive())
 
 
-def test_pressing_6_shows_the_desks_daily_brief() -> None:
+def test_pressing_7_shows_the_desks_daily_brief() -> None:
     """Tab 6 draws the scenario's brief, as the desk published it."""
     model = FixtureReadModel.load("ok-two-positions")
     (brief,) = model.briefs()
@@ -228,7 +228,7 @@ def _svg(size: tuple[int, int], theme: ThemeChoice) -> str:
         app = _app(FixtureReadModel.load("ok-two-positions"), theme)
         async with app.run_test(size=size) as pilot:
             await pilot.pause()
-            await pilot.press("6")
+            await pilot.press("7")
             await pilot.pause()
             svg = app.export_screenshot()
         return "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"

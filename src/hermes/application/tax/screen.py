@@ -27,14 +27,14 @@ from typing import Final, Literal, Protocol
 from returns.result import Success
 
 from hermes.application.console.views import TaxPending
-from hermes.application.tax.estimate import TaxService, TaxYearEstimate
+from hermes.application.tax.estimate import TaxService, TaxYearEstimate, rate_percent
 from hermes.domain.lots.eur_fifo import EurTrade, exact_sum, replay_fifo_eur
 from hermes.domain.tax.netting import TaxpayerYear
-from hermes.domain.tax.precision import exact
 from hermes.domain.tax.scale import SavingsScale
 from hermes.domain.tax.year_position import tax_year_of
 from hermes.domain.trading.order import OrderSide
 from hermes.domain.value_objects.currency import Currency
+from hermes.domain.value_objects.precision import exact
 from hermes.ports.ledger import EurTradeRow, TaxTradeSourcePort
 
 __all__ = [
@@ -53,7 +53,6 @@ __all__ = [
 ]
 
 _ZERO: Final[Decimal] = Decimal(0)
-_HUNDRED: Final[Decimal] = Decimal(100)
 
 type LotState = Literal["open", "closed"]
 
@@ -214,11 +213,6 @@ class TaxScreenSource(Protocol):
         ...
 
 
-def _percent(rate: Decimal) -> Decimal:
-    value = rate * _HUNDRED
-    return value.quantize(Decimal(1)) if value == value.to_integral_value() else value
-
-
 def bracket_fills(scale: SavingsScale, base: Decimal) -> tuple[BracketFill, ...]:
     """Return each band of ``scale`` with the part of ``base`` inside it.
 
@@ -236,7 +230,9 @@ def bracket_fills(scale: SavingsScale, base: Decimal) -> tuple[BracketFill, ...]
             top = base if band.up_to is None else min(base, band.up_to)
             filled = max(top - lower, _ZERO)
             fills.append(
-                BracketFill(lower=lower, upper=band.up_to, rate=_percent(band.rate), filled=filled)
+                BracketFill(
+                    lower=lower, upper=band.up_to, rate=rate_percent(band.rate), filled=filled
+                )
             )
             lower = band.up_to if band.up_to is not None else lower
     return tuple(fills)

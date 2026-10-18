@@ -16,8 +16,8 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Final
 
-from hermes.domain.tax.precision import exact
 from hermes.domain.tax.tax_calendar import tax_year_of
+from hermes.domain.value_objects.precision import exact
 
 __all__ = ["Disposal", "YearPosition", "tax_year_of"]
 

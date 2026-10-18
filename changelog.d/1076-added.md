@@ -1,0 +1,1 @@
+- The staging lab runs each shadow as its own `hermes serve --strategy <name>` on its own ledger through the `hermes-shadow@.service` template, and serve refuses a ledger that holds another strategy's capital (#1076).

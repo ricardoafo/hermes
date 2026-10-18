@@ -34,11 +34,7 @@ tests/unit/adapters/market_data/test_binance_depth_snapshot.py::test_a_book_youn
 tests/unit/adapters/market_data/test_binance_historical.py::test_read_csv_from_zip_returns_rows U3
 tests/unit/adapters/market_data/test_binance_live_klines.py::test_adapter_satisfies_the_port U3
 tests/unit/adapters/market_data/test_binance_live_ws.py::test_parse_depth_update_empty_bids_and_asks U3
-tests/unit/adapters/market_data/test_binance_ticker.py::test_repeated_calls_within_five_seconds_hit_the_cache U10
-tests/unit/adapters/market_data/test_binance_ticker.py::test_satisfies_the_port U6
 tests/unit/adapters/market_data/test_binance_vision_daily.py::test_adapter_satisfies_the_port U6
-tests/unit/adapters/market_data/test_consolidator.py::test_consolidate_empty_stream_yields_no_bars U3
-tests/unit/adapters/market_data/test_consolidator.py::test_consolidate_single_trade_produces_one_bar U3
 tests/unit/adapters/trial_log/test_jsonl_file.py::test_adapter_satisfies_the_port U6
 tests/unit/adapters/trial_log/test_jsonl_file.py::test_removing_the_last_line_is_not_detectable_by_the_chain U3
 tests/unit/application/calibration/test_certification_gates.py::test_win_rate_boundary_passes U3
@@ -120,9 +116,5 @@ tests/unit/infrastructure/config/test_renta.py::test_layout_type_is_the_domain_l
 tests/unit/infrastructure/test_aggregate_changelog.py::test_gitkeep_and_readme_are_skipped U3
 tests/unit/infrastructure/test_aggregate_changelog.py::test_missing_fragment_dir_returns_empty_sections U3
 tests/unit/infrastructure/test_cve_triage.py::test_duplicate_advisory_yields_one_row U3
-tests/unit/ports/test_market_data_port.py::test_empty_bids_asks_diff_constructs U3
-tests/unit/ports/test_market_data_port.py::test_fake_adapter_satisfies_protocol U6
-tests/unit/ports/test_market_data_port.py::test_partial_implementation_does_not_satisfy_protocol U6
-tests/unit/ports/test_market_data_port.py::test_plain_object_does_not_satisfy_protocol U6
 tests/unit/scripts_backtest/test_run_calibration.py::test_git_state_returns_a_full_commit_sha U3
 tests/unit/scripts_dev/test_migration_sql_check.py::test_transaction_control_is_reported U3

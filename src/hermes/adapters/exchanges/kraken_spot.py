@@ -1,5 +1,8 @@
 """Kraken spot trading adapter, the cold backup venue (ADR-004).
 
+Not wired into any entrypoint until MVP2 (issue #1220): it places real
+orders, so it stays parked rather than deleted.
+
 Implements :class:`~hermes.ports.exchange.ExchangePort` and
 :class:`~hermes.ports.exchange.StopLossPort` with signed calls to Kraken's
 private REST API:

@@ -125,7 +125,7 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
                 _FUZZ_BINANCE
                 + "test_a_websocket_adapter_depth_snapshot_parses_or_raises_exchange_error",
                 _FUZZ_BINANCE + "test_a_live_kline_row_parses_or_raises_exchange_error",
-                _FUZZ_BINANCE + "test_a_ticker_body_parses_or_raises_exchange_error",
+                _FUZZ_KRAKEN + "test_a_ticker_reply_parses_or_raises_kraken_public_error",
             ),
         ),
         FailureMode(
@@ -627,6 +627,22 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             proved_by=(
                 _S + "test_restart.py::test_a_restart_with_a_position_open_keeps_it_until_its_exit",
                 _LOOP + "test_restart_while_held_writes_the_same_stop_marks_as_an_unbroken_run",
+            ),
+        ),
+        FailureMode(
+            "A lab shadow runs on another shadow's ledger and mixes their capital and trades",
+            proved_by=(
+                _S + "test_shadow_line.py::"
+                "test_a_shadow_pointed_at_another_shadows_ledger_is_refused_before_writing",
+                _S + "test_shadow_line.py::test_each_shadow_ledger_holds_only_its_own_strategy",
+                _UNITS + "test_shadow_template_runs_the_instance_strategy_on_its_own_ledger",
+            ),
+        ),
+        FailureMode(
+            "A shadow instance names a strategy the roster lacks and runs the enabled one instead",
+            proved_by=(
+                _U + "entrypoints/test_cli.py::TestServeSubcommand::"
+                "test_serve_with_a_strategy_missing_from_the_roster_exits_three",
             ),
         ),
         FailureMode(
