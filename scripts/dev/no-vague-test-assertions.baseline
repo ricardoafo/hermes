@@ -234,9 +234,5 @@ tests/unit/ports/test_fill_model_port.py::test_fill_model_port_stub_fill_order_r
 tests/unit/ports/test_fill_model_port.py::test_fill_order_has_no_mode_parameter U3
 tests/unit/ports/test_fill_model_port.py::test_plain_object_does_not_satisfy_protocol U6
 tests/unit/ports/test_fill_model_port.py::test_rejection_is_rejection_not_fill U3
-tests/unit/ports/test_market_data_port.py::test_empty_bids_asks_diff_constructs U3
-tests/unit/ports/test_market_data_port.py::test_fake_adapter_satisfies_protocol U6
-tests/unit/ports/test_market_data_port.py::test_partial_implementation_does_not_satisfy_protocol U6
-tests/unit/ports/test_market_data_port.py::test_plain_object_does_not_satisfy_protocol U6
 tests/unit/scripts_backtest/test_run_calibration.py::test_git_state_returns_a_full_commit_sha U3
 tests/unit/scripts_dev/test_migration_sql_check.py::test_transaction_control_is_reported U3
