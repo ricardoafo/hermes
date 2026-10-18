@@ -76,3 +76,29 @@ def test_full_enumeration_builds_no_sealed_url() -> None:
     sealed = [t.url() for t in targets if (t.year, t.month) >= _SEALED]
     assert sealed == []
     assert len(targets) == 3 * 3 * 60 + 3 * 60
+
+
+def test_minute_klines_are_never_in_the_default_run(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Invariant: a plain run lists no 1m target; 1m (~400 MB) is fetched only on request."""
+    code = INGEST.main(["--pair", "BTCUSDT", "--data-dir", str(tmp_path), "--dry-run"])
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "klines/BTCUSDT/1h/2020-09" in out
+    assert "/1m/" not in out
+
+
+def test_minute_klines_can_be_requested_and_stay_before_oos(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Invariant: --interval 1m is accepted, and its dry run lists no sealed month."""
+    code = INGEST.main(
+        ["--interval", "1m", "--pair", "BTCUSDT", "--data-dir", str(tmp_path), "--dry-run"]
+    )
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "klines/BTCUSDT/1m/2025-08" in out
+    assert "2025-09" not in out
