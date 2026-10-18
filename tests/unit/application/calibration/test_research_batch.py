@@ -463,6 +463,44 @@ def test_a_strategy_missing_from_the_roster_fails() -> None:
     assert failed == {"strategy_ids_known"}
 
 
+_DEFAULTS: dict[str, dict[str, object]] = {
+    name: {"lookback": 20, "atr_mult": Decimal("3.0"), "fixed_period": 14} for name in _KNOWN
+}
+
+
+def test_parameters_matching_their_strategy_defaults_pass() -> None:
+    """Each signed parameter is one the strategy takes, at its base value."""
+    text, git = signed(batch_front_matter())
+
+    assert _failed(text, git, strategy_parameters=_DEFAULTS) == set()
+
+
+def test_a_parameter_the_strategy_does_not_take_fails() -> None:
+    """A misspelt parameter fails before signing, not on the runner after it."""
+    text, git = signed(batch_front_matter())
+    defaults = {**_DEFAULTS, "swing-beta": {"look_back": 20, "atr_mult": Decimal("3.0")}}
+
+    checks = _checks(text, git, strategy_parameters=defaults)
+
+    assert not checks["strategy_ids_known"].passed
+    assert checks["strategy_ids_known"].detail == (
+        "swing-beta: its strategy takes no parameter lookback"
+    )
+
+
+def test_a_base_that_is_not_the_strategy_default_fails() -> None:
+    """The run starts from the code's defaults, so the signed base must equal them."""
+    text, git = signed(batch_front_matter())
+    defaults = {**_DEFAULTS, "swing-alpha": {"lookback": 20, "atr_mult": Decimal("2.5")}}
+
+    checks = _checks(text, git, strategy_parameters=defaults)
+
+    assert not checks["strategy_ids_known"].passed
+    assert checks["strategy_ids_known"].detail == (
+        "swing-alpha: atr_mult defaults to 2.5 in the strategy, 3.0 in the batch"
+    )
+
+
 def test_a_draft_fails_only_status_signed_when_a_signature_is_required() -> None:
     """The workflow passes --require-signed; a DRAFT never starts a run."""
     fm = batch_front_matter()

@@ -28,6 +28,12 @@ from tests.support.research_batch import (
 )
 
 _ROSTER = "strategies:\n  - name: swing-alpha\n  - name: swing-beta\n"
+# Roster entries without `signal:` build the Donchian kind; the batch frees two of its
+# parameters.
+_DONCHIAN_PARAMETERS: dict[str, Any] = {
+    "donchian_period": {"base": 20, "neighbours": [15, 25]},
+    "chandelier_atr_mult": {"base": "3.0", "neighbours": ["2.5", "3.5"]},
+}
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -63,6 +69,8 @@ def _signed_repo(repo: Path, edit: dict[str, Any] | None = None) -> Path:
         repo, {**code, **cards, "config/strategies.yaml": _ROSTER.encode()}, "code"
     )
     fm = batch_front_matter()
+    for candidate in fm["candidates"]:
+        candidate["parameters"] = copy.deepcopy(_DONCHIAN_PARAMETERS)
     fm.update(edit or {})
     draft = copy.deepcopy(fm)
     draft.update(
@@ -190,6 +198,30 @@ def test_a_repository_without_a_roster_exits_3(tmp_path: Path) -> None:
     code, _, err = _run("check", str(batch), "--repo", str(tmp_path))
 
     assert (code, err.startswith("ERROR: roster:")) == (3, True)
+
+
+def test_a_parameter_the_roster_strategy_does_not_take_fails_with_exit_1(tmp_path: Path) -> None:
+    """The roster's strategy decides which parameter names a batch may sign."""
+    batch = _signed_repo(tmp_path)
+    text = batch.read_text("utf-8").replace("donchian_period:", "donchian_length:", 1)
+    batch.write_text(text, "utf-8")
+
+    code, out, _ = _run("check", str(batch), "--repo", str(tmp_path))
+
+    line = next(ln for ln in out.splitlines() if ln.split()[1] == "strategy_ids_known")
+    assert (code, line.split()[0]) == (1, "FAIL")
+    assert line.endswith("its strategy takes no parameter donchian_length")
+
+
+def test_an_unknown_signal_in_the_roster_exits_3(tmp_path: Path) -> None:
+    """A roster entry naming no kind is unreadable, never a fallback to the default kind."""
+    batch = _signed_repo(tmp_path)
+    roster = _ROSTER.replace("  - name: swing-beta\n", "  - name: swing-beta\n    signal: nope\n")
+    _commit(tmp_path, {"config/strategies.yaml": roster.encode()}, "roster")
+
+    code, _, err = _run("check", str(batch), "--repo", str(tmp_path))
+
+    assert (code, err.startswith("ERROR: roster:"), "nope" in err) == (3, True, True)
 
 
 @pytest.mark.parametrize("argv", [[], ["verify", "x.md"], ["check"], ["check", "x", "--bogus"]])
