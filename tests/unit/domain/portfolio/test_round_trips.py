@@ -18,7 +18,6 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from hermes.domain.portfolio.precision import EXACT_CONTEXT
 from hermes.domain.portfolio.round_trips import (
     ClosedRoundTrip,
     RoundTripError,
@@ -29,6 +28,7 @@ from hermes.domain.trading.order import OrderSide
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
+from hermes.domain.value_objects.precision import EXACT_CONTEXT
 
 _BTC = Pair(base=Currency.BTC, quote=Currency.USDT)
 _ETH = Pair(base=Currency.ETH, quote=Currency.USDT)
