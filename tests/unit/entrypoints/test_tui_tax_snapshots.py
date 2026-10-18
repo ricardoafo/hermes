@@ -26,7 +26,7 @@ from hermes.adapters.console.tax_demo import DemoTaxSource, demo_profile
 from hermes.entrypoints.tui import HomeApp
 from hermes.entrypoints.tui_query import SortableTable
 from hermes.entrypoints.tui_settings import ThemeChoice
-from hermes.entrypoints.tui_tax import TaxPackStatus
+from hermes.entrypoints.tui_tax import TaxPackStatus, TaxTab
 from tests.unit.domain.tax.scales import SCALE_2026
 
 _FROZEN = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
@@ -80,7 +80,7 @@ def _svg(view: str, keys: tuple[str, ...], size: tuple[int, int], theme: ThemeCh
                 await pilot.press(key)
                 await pilot.pause()
             if view == "lots":
-                table = app.query_one(SortableTable)
+                table = app.query_one(TaxTab).query_one(SortableTable)
                 table.focus()
                 table.move_cursor(row=_FLAGGED_ROW, animate=False)
                 await pilot.pause()

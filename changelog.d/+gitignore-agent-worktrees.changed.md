@@ -1,0 +1,1 @@
+- **Lint hygiene** — `.claude/` sub-agent worktree scratch now ignored by both `.gitignore` and `.markdownlint-cli2.jsonc` (belt-and-suspenders; the class of accidental worktree-pollution PRs — see #242 — is closed off at both git and lint layers).

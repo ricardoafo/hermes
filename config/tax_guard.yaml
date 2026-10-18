@@ -1,3 +1,6 @@
+# RESERVED: no code reads this file yet. It is optional; every key has the
+# same default in TaxGuardConfig.
+#
 # Tax guard thresholds — Spain / LOPDGDD-flavoured.
 #
 # Loaded by hermes.infrastructure.config.load_config into TaxGuardConfig.

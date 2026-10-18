@@ -31,12 +31,12 @@ import httpx
 import pytest
 import respx
 
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.adapters.exchanges.kraken_public import (
     KrakenPublicAdapter,
     KrakenPublicConfig,
     _pair_to_kraken_symbol,
 )
-from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.domain.errors import InfraError, KrakenPublicError
 from hermes.domain.fees import FeeSchedule
 from hermes.domain.market_data.kline import KlineInterval

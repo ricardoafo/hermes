@@ -1,0 +1,1 @@
+- The env templates list only variables the code reads; `ml` and `tax_guard` config are optional and marked reserved so they cannot stop startup, Sentry reads `sentry.yaml` through the config loader, and two tests keep it that way.

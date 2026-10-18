@@ -17,7 +17,7 @@ import httpx
 import pytest
 import respx
 
-from hermes.adapters.fx.rate_limiter import RateLimitConfig
+from hermes.adapters._shared.rate_limiter import RateLimitConfig
 from hermes.adapters.healthchecks import (
     HealthchecksAdapter,
     HealthchecksAdapterConfig,

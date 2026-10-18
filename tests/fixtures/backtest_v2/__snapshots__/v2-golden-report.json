@@ -1,0 +1,68 @@
+{
+  "daily_equity_points": 20,
+  "daily_sharpe": 0.42499994549331593,
+  "datasets": [
+    {
+      "content_sha256": "eb55294b7f67e9c1aeaf1b9798ce037263f11f91ac0f9fcb5f0bf899989db08f",
+      "dataset_id": "synthetic/v2-golden-bars.csv.gz"
+    }
+  ],
+  "declined": {},
+  "entries_by_pair": {
+    "BTC/USDT": 2
+  },
+  "execution": {
+    "depth_frac": "0.30",
+    "entry_bps": "5",
+    "exit_pricing": "bar_close",
+    "stop_bps": "15"
+  },
+  "fill_model": "orderbook_walk",
+  "fills_count": 4,
+  "final_equity": "5051.64682105401441042453075879059621699113267035697799385",
+  "generated_at": "<run-time>",
+  "open_positions": [],
+  "pairs": [
+    "BTC/USDT"
+  ],
+  "realized_pnl": "51.64682105401441042453075879059621699113267035697799385",
+  "rejections_count": 0,
+  "report": {
+    "m01_fill_count": 4,
+    "m02_fill_price_delta_bps": {
+      "avg_bps": "5.00000000",
+      "p50_bps": "5.00000000",
+      "p95_bps": "5.00000000",
+      "p99_bps": "5.00000000"
+    },
+    "m03_latency_ms": "0",
+    "m04_rejection_rate": "0E-8",
+    "m05_orphan_position_count": 0,
+    "m06_regime_returns": {
+      "bear_quiet": null,
+      "bear_vol": null,
+      "bull_quiet": null,
+      "bull_vol": null
+    },
+    "m07_queue_quality": null,
+    "strategy_id": "swing-mvp1-v2",
+    "window_end": "2020-10-10T00:00:00+00:00",
+    "window_start": "2020-09-20T00:00:00+00:00"
+  },
+  "round_trips": 2,
+  "signals_seen": 4,
+  "split": "train",
+  "starting_cash": "5000",
+  "strategy_id": "swing-mvp1-v2",
+  "stubbed": {
+    "RO-02 spread spike": "no order book history; the synthetic book's spread is its own median",
+    "RO-03 max slippage": "the synthetic book fills at the \u00a76.2 price",
+    "RO-04 stale book": "every synthetic book is fresh",
+    "RO-05/RO-06 depeg": "no stablecoin price series",
+    "RO-07 macro ATR halt": "not wired in the backtest",
+    "RO-08 portfolio drawdown": "\u00a710 drawdown is judged on the equity curve by certify",
+    "kill evaluator": "experiment state stubbed at zero drawdown; \u00a710 is judged by certify"
+  },
+  "window_end": "2020-10-10T00:00:00+00:00",
+  "window_start": "2020-09-20T00:00:00+00:00"
+}

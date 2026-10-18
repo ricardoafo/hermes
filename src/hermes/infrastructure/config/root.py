@@ -64,9 +64,10 @@ class HermesConfig(BaseModel):
         strategies: Strategy roster with weights.
         binance: Binance-exchange endpoints and testnet flag.
         fees: Per-venue fee schedules.
-        tax_guard: LOPDGDD + tax thresholds.
+        tax_guard: LOPDGDD + tax thresholds. Reserved: no code reads it yet,
+            so the file is optional and the section has defaults.
         ml: LLM supervisor configuration (never trade-signal source per
-            ADR-001 + ADR-005).
+            ADR-001 + ADR-005). Reserved like ``tax_guard``.
         klines: Historical-klines fetcher + storage configuration
             (issue #28 foundation).
         frankfurter: FX-rate provider configuration — the
@@ -101,12 +102,12 @@ class HermesConfig(BaseModel):
     strategies: StrategiesConfig
     binance: BinanceExchangeConfig
     fees: FeesConfig
-    tax_guard: TaxGuardConfig
-    ml: MLConfig
     klines: KlinesConfig
     frankfurter: FrankfurterConfig = FrankfurterConfig()
     healthchecks: HealthchecksConfig = HealthchecksConfig()
     sentry: SentryConfig = SentryConfig()
+    tax_guard: TaxGuardConfig = TaxGuardConfig()
+    ml: MLConfig = MLConfig()
     kraken_public: KrakenPublicConfig = KrakenPublicConfig()
     market_data: MarketDataConfig = MarketDataConfig()
 
