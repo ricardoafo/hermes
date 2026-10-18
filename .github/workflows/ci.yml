@@ -52,7 +52,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────
   ci-success:
     name: CI success
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || fromJSON('["self-hosted","linux","hermes"]') }}
     # A normal run takes 5-8 minutes on a busy pool. Each network step
     # has its own short timeout, so a hung download fails that step
     # instead of holding a runner until this cap. 35, not 20: with many
@@ -316,8 +316,8 @@ jobs:
       # The runner image bakes uv 0.12.5 (Dockerfile UV_VERSION), but
       # setup-uv looked only in the wiped tool cache and downloaded uv on
       # every job. Use the baked binary when it is the pinned version;
-      # install that exact version otherwise (the ubuntu-latest
-      # fallback). Any other version fails here instead of drifting.
+      # install that exact version otherwise (a runner without the baked
+      # one). Any other version fails here instead of drifting.
       - name: uv 0.12.5
         id: uv
         if: ${{ !cancelled() && steps.changeset.outputs.code == 'true' }}

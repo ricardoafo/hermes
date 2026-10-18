@@ -125,7 +125,6 @@ from hermes.application.console import (
     PositionDetail,
     PositionRow,
     Surface,
-    ViewNotAvailableError,
     WatchedPair,
     pnl_visible,
 )
@@ -161,7 +160,6 @@ from hermes.application.console.shadow_screen import (
     ShadowRecordError,
     ShadowScreen,
     ShadowSources,
-    build_shadow_screen,
     run_words,
     sources_from,
 )
@@ -206,6 +204,18 @@ from hermes.entrypoints.tui_live import (
 )
 from hermes.entrypoints.tui_notices import bar_checked_notice, beep_enabled, should_beep
 from hermes.entrypoints.tui_query import QueryInput
+from hermes.entrypoints.tui_reads import (
+    CARD_ERRORS,
+    SHADOW_ERRORS,
+    ConsoleReads,
+    Failed,
+    ReadRequest,
+    ReadSources,
+    ShadowFailed,
+    SystemReads,
+    read_console,
+    read_shadow,
+)
 from hermes.entrypoints.tui_settings import (
     DEFAULT_SETTINGS_PATH,
     ConsoleSettings,
@@ -223,7 +233,6 @@ from hermes.entrypoints.tui_shadow import (
 )
 from hermes.entrypoints.tui_signals import signals_screen
 from hermes.entrypoints.tui_system import (
-    BAR_CHECKS,
     RELEASES_TRAIL,
     SERVICES_TRAIL,
     actions_text,
@@ -296,6 +305,7 @@ _SCROLLBAR_CELLS: Final = 1
 _NEW_VERSION_NOTICE: Final = "new version deployed · press R to restart"
 _UNKNOWN_RELEASE: Final = "unknown"
 _LOGS_LINES: Final = 50
+_LOGS_READING: Final = "Reading the journal…"
 _READ_ONLY: Final = "read-only"
 _BRIEF_PENDING: Final = "brief not available yet"
 _SIGNALS_PENDING: Final = "Heat grid · coming next · issue #714"
@@ -382,8 +392,6 @@ _FOOTER_CHIPS_COMPACT: Final = (
     ("Q", "quit"),
 )
 
-_CARD_ERRORS: Final = (ViewNotAvailableError, LedgerError)
-_SHADOW_ERRORS: Final = (ViewNotAvailableError, LedgerError, ShadowRecordError)
 _OSC_TITLE: Final = "\x1b]2;{}\x07"
 
 
@@ -405,7 +413,7 @@ def _card(title: str, build: Callable[[], RenderableType]) -> RenderableType:
     """Return ``build()``, or the line naming why the card has nothing to show."""
     try:
         return build()
-    except _CARD_ERRORS as exc:
+    except CARD_ERRORS as exc:
         return _unavailable(title, exc)
 
 
@@ -560,6 +568,10 @@ class _PanelScreen(Screen[None]):
         self.dismiss(None)
 
 
+class _LogsPanel(_PanelScreen):
+    """The logs panel; while it is open, every read takes the journal's last lines."""
+
+
 def _system_time() -> datetime:
     return datetime.now(UTC)
 
@@ -701,6 +713,7 @@ class HomeApp(App[None]):
         taxpayer_profile: TaxpayerProfileView | None = None,
         tax_pack: Callable[[int], TaxPackStatus | None] | None = None,
         boot: bool = False,
+        background_reads: bool = False,
         system: SystemSources | None = None,
     ) -> None:
         """Hold the read model, the journal source and the screen state.
@@ -713,7 +726,7 @@ class HomeApp(App[None]):
             release: Returns the running release's name, re-read on every
                 redraw; ``None`` leaves the top line without a release.
             version: The package version in its release form
-                (``v1.0.0-shadow.1``, issue #815), shown before the release;
+                (``v0.2.0``, issue #815), shown before the release;
                 ``None`` shows the release alone, as ``release <name>``.
             allow_mainnet: The config's ``allow_mainnet``, read the way
                 ``hermes serve`` reads it (issue #833); ``None`` when the
@@ -738,6 +751,9 @@ class HomeApp(App[None]):
                 read once by the caller, never over ``--vps``.
             tax_pack: Returns the year's tax pack state.
             boot: Open on the cold start screen (#1020); shown only with motion on.
+            background_reads: Read the sources in a worker thread and paint
+                when the reads arrive (issue #1001), so a slow read never
+                holds a key or an animation; ``False`` reads and paints at once.
             system: The System screen's read-only sources; ``None`` shows every
                 System panel as "not available here".
         """
@@ -776,13 +792,24 @@ class HomeApp(App[None]):
         self._ctx = RenderContext(surface=Surface.OPERATOR_TUI, now=clock())
         self._pulse = self._radar = 0
         self._exposure_cap = exposure_cap
-        self._shadow = shadow or sources_from(model)
-        self._init_tax(tax, taxpayer_profile, tax_pack)
+        self._init_reads(
+            ReadSources(
+                model,
+                shadow or sources_from(model),
+                journal=journal,
+                release=release,
+                tax=tax,
+                tax_pack=tax_pack,
+                system=system or SystemSources(),
+            ),
+            taxpayer_profile,
+            background=background_reads,
+        )
         self._layout: HomeLayout = home_layout(80, 24)
         self._empty_facts: tuple[tuple[str, ...], datetime | None] | None = None
         self._title_sent: str | None = None
         self._title_total: str | None = None
-        self._init_system(system)
+        self._init_system()
         self.effect_timers: dict[str, Timer] = {}
         self._init_live_feed(ticker, clock)
         self._summary: PortfolioSummary | None = None
@@ -792,8 +819,8 @@ class HomeApp(App[None]):
         for hermes_theme in THEMES:
             self.register_theme(hermes_theme)
 
-    def _init_system(self, system: SystemSources | None) -> None:
-        self._system = system or SystemSources()
+    def _init_system(self) -> None:
+        self._system = self._sources.system
         self._sys_cursor: str | None = None
         self._service_open = False
         self._services: tuple[ServiceStatus, ...] | None = None
@@ -801,15 +828,20 @@ class HomeApp(App[None]):
         self._machine: MachineStats | None = None
         self._bar_seconds: tuple[Decimal, ...] | None = None
 
-    def _init_tax(
+    def _init_reads(
         self,
-        tax: TaxScreenSource | None,
+        sources: ReadSources,
         taxpayer_profile: TaxpayerProfileView | None,
-        tax_pack: Callable[[int], TaxPackStatus | None] | None,
+        *,
+        background: bool,
     ) -> None:
-        self._tax = tax
+        self._sources = sources
+        self._shadow = sources.shadow
         self._taxpayer_profile = taxpayer_profile
-        self._tax_pack = tax_pack
+        self._background_reads = background
+        self._reads: ConsoleReads | None = None
+        self._reading = False
+        self._read_again = False
 
     def _init_live_feed(self, ticker: LiveTickerPort | None, clock: Callable[[], datetime]) -> None:
         self._poller = None if ticker is None else TickerPoller(ticker, clock)
@@ -1367,7 +1399,7 @@ class HomeApp(App[None]):
         self._paint_positions()
         self._paint_market()
         if self._detail_open and self.is_wide and self._selected is not None:
-            self._set("detail", self._detail_content(self._selected, self._ctx, cached=True))
+            self._set("detail", self._detail_content(self._selected))
 
     # ------------------------------------------------------------------
     # Drawing
@@ -1433,7 +1465,7 @@ class HomeApp(App[None]):
                 width=self._inner(),
                 down_hint="press L for why",
             )
-        except _CARD_ERRORS:
+        except CARD_ERRORS:
             return RenderContext(
                 surface=Surface.OPERATOR_TUI, now=datetime.now(UTC), width=self._inner()
             )
@@ -1473,10 +1505,7 @@ class HomeApp(App[None]):
             return None
 
     def _positions_coins(self) -> list[str]:
-        try:
-            return [row.coin for row in self._model.positions()]
-        except _CARD_ERRORS:
-            return []
+        return [row.coin for row in self._rows]
 
     def _paint_heartbeat(self) -> None:
         heartbeat = self._heartbeat
@@ -1498,9 +1527,8 @@ class HomeApp(App[None]):
         if beep_enabled(os.environ) and should_beep(previous, current):
             self.bell()
 
-    def _redraw_release(self) -> None:
+    def _paint_release(self, release: str | None) -> None:
         """Remember the running release for the version line; show the notice once it changed."""
-        release = self._read_release()
         self._release_name = release
         self._release_is_new = self._release_changed(release)
         self._set("notice", Text(_NEW_VERSION_NOTICE) if self._release_is_new else Text(""))
@@ -1509,38 +1537,78 @@ class HomeApp(App[None]):
             notice.set_class(self._release_is_new, "-on")
 
     def _redraw(self) -> None:
+        """Read what the shown screens need, then paint it.
+
+        With background reads the read runs in a worker and the paint follows
+        when it arrives; a redraw asked for meanwhile reads again right after.
+        """
         if not self.is_running or not self.screen_stack:
             return
-        model = self._model
-        ctx = self._render_context()
+        request = self._read_request()
+        if not self._background_reads:
+            self._paint(read_console(self._sources, request))
+            return
+        if self._reading:
+            self._read_again = True
+            return
+        self._reading = True
+        self.run_worker(partial(self._read_off_thread, request), group="console-reads", thread=True)
+
+    def _read_request(self) -> ReadRequest:
+        layout = home_layout(self.size.width, self.size.height)
+        return ReadRequest(
+            width=self._inner(),
+            range_=self._range,
+            include_quiet=self._show_quiet,
+            log_tail_rows=layout.log_rows if layout.third else None,
+            logs_lines=_LOGS_LINES if self._tab == _LOGS or self._logs_panel_open else None,
+            briefs=self._tab == _BRIEFS,
+            signals=self._tab == _SIGNALS,
+            tax=self._tab == _TAX,
+            system=self._tab == _SYSTEM,
+        )
+
+    def _read_off_thread(self, request: ReadRequest) -> None:
+        reads = read_console(self._sources, request)
+        try:
+            self.call_from_thread(self._reads_arrived, reads)
+        except RuntimeError:
+            # Q can quit the console while a read is in flight; Textual then
+            # raises here, and the reads have nowhere to show. A paint that
+            # fails while the console still runs is a real error.
+            if self.is_running:
+                raise
+
+    def _reads_arrived(self, reads: ConsoleReads) -> None:
+        self._reading = False
+        self._paint(reads)
+        if self._read_again:
+            self._read_again = False
+            self._redraw()
+
+    def _paint(self, reads: ConsoleReads) -> None:
+        """Paint every card from one set of reads."""
+        if not self.is_running or not self.screen_stack:
+            return
+        self._reads = reads
+        ctx = reads.ctx
         self._ctx = ctx
-        scenario = model.demo_scenario
+        scenario = self._model.demo_scenario
         # Drawn by _fit_release once the heartbeat and the badge are known.
         self._demo_tag = (
             Text(f" {DEMO_TAG} · scenario {scenario} ", style=self._demo_tag_style())
             if scenario
             else Text("")
         )
-        self._redraw_release()
-        try:
-            self._heartbeat = model.heartbeat()
-        except _CARD_ERRORS as exc:
-            self._heartbeat = None
-            self._set("heartbeat", _unavailable("Heartbeat", exc))
-            self._set("down-row", Text(""))
-            row = self._alive(Widget, "#down-row")
-            if row is not None:
-                row.set_class(False, "-down")
-        else:
-            self._announce(self._last_read, self._heartbeat, ctx)
-            self._last_read = self._heartbeat
-            self._paint_heartbeat()
+        self._paint_release(reads.release)
+        self._paint_heartbeat_read(reads.heartbeat, ctx)
         self._paint_status_badges()
-
-        try:
-            self._title_total = title_total(model.portfolio(self._range).total_value, ctx.surface)
-        except _CARD_ERRORS:
-            self._title_total = None
+        portfolio = reads.portfolio
+        self._title_total = (
+            None
+            if isinstance(portfolio, CARD_ERRORS)
+            else title_total(portfolio.total_value, ctx.surface)
+        )
 
         layout = home_layout(self.size.width, self.size.height)
         self._layout = layout
@@ -1548,69 +1616,96 @@ class HomeApp(App[None]):
         if body is not None:
             for name in (*_WIDTH_CLASSES, *_HEIGHT_CLASSES):
                 body.set_class(name in layout.classes, name)
-        self._redraw_portfolio()
-        self._redraw_positions()
-        self._redraw_market()
+        self._paint_portfolio_read(portfolio)
+        self._paint_positions_read(reads)
+        self._paint_market_read(reads.watch)
+        activity = reads.activity
         self._set(
             "activity",
-            _card(
-                "Activity",
-                lambda: render_activity(
-                    model.activity(include_quiet=self._show_quiet),
-                    ctx,
-                    limit=layout.activity_rows,
-                    icons=True,
-                ),
-            ),
+            _unavailable("Activity", activity)
+            if isinstance(activity, CARD_ERRORS)
+            else render_activity(activity, ctx, limit=layout.activity_rows, icons=True),
         )
         self._set("brief", Text(_BRIEF_PENDING, style="dim"))
         if layout.third:
-            self._redraw_third_column(ctx, layout)
-        self._redraw_run_line()
-        self._redraw_detail(ctx)
-        self._redraw_tab_screen(ctx, layout)
+            self._paint_third_column(reads, layout)
+        self._paint_run_line(reads)
+        self._paint_detail()
+        self._paint_tab_screen(reads, layout)
         screen = self.screen
         if isinstance(screen, _PanelScreen | DetailScreen):
             screen.refresh_panel()
 
-    def _redraw_tab_screen(self, ctx: RenderContext, layout: HomeLayout) -> None:
-        """Draw the chrome and the screen of the shown tab."""
-        model = self._model
-        if self._tab == _SHADOW:
-            self._redraw_shadow(ctx, layout)
+    def _paint_heartbeat_read(self, heartbeat: Heartbeat | Failed, ctx: RenderContext) -> None:
+        if isinstance(heartbeat, CARD_ERRORS):
+            self._heartbeat = None
+            self._set("heartbeat", _unavailable("Heartbeat", heartbeat))
+            self._set("down-row", Text(""))
+            row = self._alive(Widget, "#down-row")
+            if row is not None:
+                row.set_class(False, "-down")
+            return
+        self._heartbeat = heartbeat
+        self._announce(self._last_read, heartbeat, ctx)
+        self._last_read = heartbeat
+        self._paint_heartbeat()
+
+    def _paint_tab_screen(self, reads: ConsoleReads | None, layout: HomeLayout) -> None:
+        """Draw the chrome and the screen of the shown tab from the last reads."""
         self._redraw_chrome()
-        if self._tab == _BRIEFS:
+        if reads is None:
+            return
+        ctx = reads.ctx
+        if self._tab == _SHADOW:
+            self._paint_shadow(reads.shadow, ctx, layout)
+        if self._tab == _BRIEFS and reads.briefs is not None:
+            briefs = reads.briefs
             self._set(
                 f"screen-{TABS[_BRIEFS].key}",
-                _card(
-                    "Briefs",
-                    lambda: briefs_screen(model.briefs(), ctx, self._data, width=self.size.width),
-                ),
+                _unavailable("Briefs", briefs)
+                if isinstance(briefs, CARD_ERRORS)
+                else briefs_screen(briefs, ctx, self._data, width=self.size.width),
             )
-        if self._tab == _SYSTEM:
-            self._read_system()
+        if self._tab == _SYSTEM and reads.system is not None:
+            self._keep_system(reads.system)
             self._paint_system()
         if self._tab == _LOGS:
             logs = TABS[_LOGS]
             self._set(
                 f"screen-{logs.key}", Group(_placeholder(logs), Text(""), self._logs_content())
             )
-        if self._tab == _SIGNALS:
-            self._set(
-                f"screen-{TABS[_SIGNALS].key}",
-                _card(
-                    "Signals",
-                    lambda: signals_screen(
-                        model.rule_checks(),
-                        ctx,
-                        self._data,
-                        width=self.size.width,
-                        held={row.coin for row in model.positions()},
-                    ),
-                ),
-            )
-        if self._tab == _TAX:
-            self._redraw_tax(ctx)
+        if self._tab == _SIGNALS and reads.rule_checks is not None:
+            self._set(f"screen-{TABS[_SIGNALS].key}", self._signals_content(reads))
+        if self._tab == _TAX and reads.tax is not None:
+            self._paint_tax(reads.tax, reads.tax_pack, ctx)
+
+    @property
+    def _logs_panel_open(self) -> bool:
+        return any(isinstance(screen, _LogsPanel) for screen in self.screen_stack)
+
+    def _signals_content(self, reads: ConsoleReads) -> RenderableType:
+        checks, positions = reads.rule_checks, reads.positions
+        if checks is None:
+            return Text("")
+        if isinstance(checks, CARD_ERRORS):
+            return _unavailable("Signals", checks)
+        if isinstance(positions, CARD_ERRORS):
+            return _unavailable("Signals", positions)
+        return signals_screen(
+            checks,
+            reads.ctx,
+            self._data,
+            width=self.size.width,
+            held={row.coin for row in positions},
+        )
+
+    def _release_changed(self, current: str | None) -> bool:
+        """Return whether ``current`` differs from the release this console started on."""
+        if current is None or current == _UNKNOWN_RELEASE:
+            return False
+        if self._started_release is None:
+            self._started_release = current
+        return current != self._started_release
 
     def _read_release(self) -> str | None:
         """Return the current release name, or ``None`` without a source or when it fails."""
@@ -1621,35 +1716,14 @@ class HomeApp(App[None]):
         except Exception:
             return None
 
-    def _release_changed(self, current: str | None) -> bool:
-        """Return whether ``current`` differs from the release this console started on."""
-        if current is None or current == _UNKNOWN_RELEASE:
-            return False
-        if self._started_release is None:
-            self._started_release = current
-        return current != self._started_release
-
-    def _tax_screen(self, ctx: RenderContext) -> TaxScreen | TaxPending:
-        """Read the Tax screen from its source; a failed read becomes a pending line."""
-        if self._tax is None:
-            return TaxPending(label="tax estimate not available yet")
-        try:
-            prices = {row.coin: row.current_eur for row in self._model.positions()}
-        except _CARD_ERRORS:
-            prices = {}
-        try:
-            return self._tax.tax_screen(as_of=ctx.now, prices=prices)
-        except LedgerError:
-            return TaxPending(label="could not read the ledger")
-
-    def _redraw_tax(self, ctx: RenderContext) -> None:
+    def _paint_tax(
+        self, screen: TaxScreen | TaxPending, pack: TaxPackStatus | None, ctx: RenderContext
+    ) -> None:
         """Draw the Tax screen from one read of the tax service."""
-        screen = self._tax_screen(ctx)
-        year = screen.year if isinstance(screen, TaxScreen) else ctx.now.astimezone(ctx.tz).year
         self._home.query_one(TaxTab).show(
             screen,
             profile=self._taxpayer_profile,
-            pack=None if self._tax_pack is None else self._tax_pack(year),
+            pack=pack,
             tokens=self._data,
             tz=ctx.tz,
             money=ctx.shows_money,
@@ -1664,19 +1738,18 @@ class HomeApp(App[None]):
         if widget is not None:
             widget.display = shown
 
-    def _redraw_portfolio(self) -> None:
-        """Read the portfolio, then draw the total, the head, the curve, the meters, the books."""
-        try:
-            self._summary = self._model.portfolio(self._range)
-        except _CARD_ERRORS as exc:
+    def _paint_portfolio_read(self, portfolio: PortfolioSummary | Failed) -> None:
+        """Draw the total, the head, the curve, the meters and the books from a read."""
+        if isinstance(portfolio, CARD_ERRORS):
             self._summary = None
             big = self._alive(BigNumber, "#portfolio-total")
             if big is not None:
                 big.show(None, None)
-            self._set("portfolio", _unavailable("Portfolio", exc))
+            self._set("portfolio", _unavailable("Portfolio", portfolio))
             for part in ("portfolio-curve", "portfolio-meters", "portfolio-books"):
                 self._show(part, Text(""), shown=False)
             return
+        self._summary = portfolio
         self._paint_portfolio(curve=True)
 
     def _paint_portfolio(self, *, curve: bool = False) -> None:
@@ -1719,43 +1792,36 @@ class HomeApp(App[None]):
         books = render_portfolio_books(summary, ctx)
         self._show("portfolio-books", books, shown=bool(books.renderables))
 
-    def _watch_facts(self) -> tuple[tuple[str, ...], datetime | None]:
+    def _watch_facts(
+        self, watch: tuple[WatchedPair, ...] | Failed
+    ) -> tuple[tuple[str, ...], datetime | None]:
         """Return the coins hermes checks and when it next looks, for the empty state."""
-        try:
-            watch = self._model.market_watch()
-        except _CARD_ERRORS:
-            watch = ()
-        coins = tuple(dict.fromkeys(pair.coin for pair in watch))
-        if watch:
-            return coins, min(pair.next_check_at for pair in watch)
+        pairs = () if isinstance(watch, CARD_ERRORS) else watch
+        coins = tuple(dict.fromkeys(pair.coin for pair in pairs))
+        if pairs:
+            return coins, min(pair.next_check_at for pair in pairs)
         heartbeat = self._heartbeat
         if heartbeat is not None and heartbeat.next_check_at > heartbeat.last_check_at:
             return coins, heartbeat.next_check_at
         return coins, None
 
-    def _redraw_positions(self) -> None:
-        """Read the positions and their details, then draw them."""
+    def _paint_positions_read(self, reads: ConsoleReads) -> None:
+        """Draw the positions and keep their details from a read."""
         self._empty_facts = None
-        try:
-            rows = tuple(self._model.positions())
-        except _CARD_ERRORS as exc:
+        rows = reads.positions
+        if isinstance(rows, CARD_ERRORS):
             self._selected = None
             self._rows, self._details = (), {}
-            self._set("positions", _unavailable("Positions", exc))
+            self._set("positions", _unavailable("Positions", rows))
             return
         coins = [row.coin for row in rows]
         if self._selected not in coins:
             self._selected = coins[0] if coins else None
         self._rows = rows
-        self._details = {}
+        details = reads.details
+        self._details = {} if not rows or isinstance(details, CARD_ERRORS) else dict(details)
         if not rows:
-            self._empty_facts = self._watch_facts()
-        else:
-            try:
-                details = {row.coin: self._model.position(row.coin) for row in rows}
-            except _CARD_ERRORS:
-                details = {}
-            self._details = {coin: d for coin, d in details.items() if d is not None}
+            self._empty_facts = self._watch_facts(reads.watch)
         self._paint_positions()
 
     def _paint_positions(self) -> None:
@@ -1791,14 +1857,13 @@ class HomeApp(App[None]):
         board = self._board
         return {coin: quote for coin in board.prices() if (quote := board.quote(coin)) is not None}
 
-    def _redraw_market(self) -> None:
-        """Read the market watch, then draw the Market rows."""
-        try:
-            self._watch = tuple(self._model.market_watch())
-        except _CARD_ERRORS as exc:
+    def _paint_market_read(self, watch: tuple[WatchedPair, ...] | Failed) -> None:
+        """Draw the Market rows from a read of the market watch."""
+        if isinstance(watch, CARD_ERRORS):
             self._watch = None
-            self._set("market", _unavailable("Market watch", exc))
+            self._set("market", _unavailable("Market watch", watch))
             return
+        self._watch = watch
         self._paint_market()
 
     def _paint_market(self) -> None:
@@ -1822,12 +1887,11 @@ class HomeApp(App[None]):
             ),
         )
 
-    def _redraw_run_line(self) -> None:
+    def _paint_run_line(self, reads: ConsoleReads) -> None:
         """Draw the bottom 90-day line from the same day 0 as tab 5 (one source)."""
-        try:
-            screen = self.shadow_screen()
-        except _SHADOW_ERRORS as exc:
-            self._set("shadow", _unavailable("Shadow test", exc))
+        screen = reads.shadow
+        if isinstance(screen, SHADOW_ERRORS):
+            self._set("shadow", _unavailable("Shadow test", screen))
             return
         line = counted_line(
             run_words(screen),
@@ -1845,31 +1909,19 @@ class HomeApp(App[None]):
             LedgerError: The ledger could not be read.
             ShadowRecordError: A day-0 record could not be read.
         """
-        sources = self._shadow
-        strategy = sources.strategy_id
-        runs = sources.runs
-        record = None if runs is None or strategy is None else runs.latest_run(strategy)
-        notebook = None if sources.notebook is None else sources.notebook.notebook_entries()
-        ctx = self._ctx
-        return build_shadow_screen(
-            record=record,
-            evidence=sources.evidence,
-            notebook=notebook,
-            as_of=ctx.now,
-            tz=ctx.tz,
-        )
+        return read_shadow(self._shadow, self._ctx)
 
-    def _redraw_shadow(self, ctx: RenderContext, layout: HomeLayout) -> None:
+    def _paint_shadow(
+        self, screen: ShadowScreen | ShadowFailed, ctx: RenderContext, layout: HomeLayout
+    ) -> None:
         """Draw tab 5: the hero, the checks, the day-0 record, the settings, the notebook."""
         big = self._home.query_one("#shadow-day", BigNumber)
         body = self._home.query_one("#shadow-body")
         for name in _WIDTH_CLASSES:
             body.set_class(name in layout.classes, name)
-        try:
-            screen = self.shadow_screen()
-        except _SHADOW_ERRORS as exc:
+        if isinstance(screen, SHADOW_ERRORS):
             big.show(None, None)
-            self._set("shadow-hero", _unavailable("Shadow test", exc))
+            self._set("shadow-hero", _unavailable("Shadow test", screen))
             for part in _SHADOW_PARTS:
                 self._set(part, Text(""))
             return
@@ -1888,12 +1940,11 @@ class HomeApp(App[None]):
         rows = notebook_rows(layout.height_class)
         self._set("shadow-notebook", notebook_text(screen.notebook, tokens, tz=ctx.tz, rows=rows))
 
-    def _redraw_third_column(self, ctx: RenderContext, layout: HomeLayout) -> None:
+    def _paint_third_column(self, reads: ConsoleReads, layout: HomeLayout) -> None:
         """Draw the Signals placeholder and the log tail (ultra width)."""
         self._set("signals", Text(_SIGNALS_PENDING, style="dim"))
         demo = self._model.demo_scenario is not None
-        lines = None if demo or self._journal is None else self._journal(layout.log_rows)
-        self._set("log-tail", log_tail(lines, ctx, demo=demo, count=layout.log_rows))
+        self._set("log-tail", log_tail(reads.log_tail, reads.ctx, demo=demo, count=layout.log_rows))
 
     def _demo_tag_style(self) -> str:
         tokens = tokens_for(self.theme)
@@ -1915,57 +1966,43 @@ class HomeApp(App[None]):
         if detail is not None:
             detail.active = on_home and self._detail_open
 
-    def _detail_content(
-        self, coin: str | None, ctx: RenderContext | None = None, *, cached: bool = False
-    ) -> RenderableType:
-        """Return one position's detail, with its live line when live.
+    def _detail_content(self, coin: str | None) -> RenderableType:
+        """Return one position's detail from the last read, with its live line when live.
 
         Args:
             coin: The position's coin; ``None`` draws the empty detail.
-            ctx: Render context; a fresh one when ``None``.
-            cached: Use the detail read on the last poll (a tick or a pulse
-                repaints without reading the ledger).
         """
-        ctx = ctx or self._render_context()
-        model = self._model
+        ctx = self._ctx
+        details = None if self._reads is None else self._reads.details
         booked: RenderableType
-        if cached:
-            booked = render_position_detail(self._details.get(coin or ""), ctx)
+        if isinstance(details, CARD_ERRORS):
+            booked = _unavailable("Position", details)
         else:
-            booked = _card(
-                "Position",
-                lambda: render_position_detail(model.position(coin) if coin else None, ctx),
-            )
+            booked = render_position_detail((details or {}).get(coin or ""), ctx)
         look = self._live_look()
         live = self._live_positions(look).get(coin or "")
         if look is None or live is None or not ctx.shows_money:
             return booked
         return Group(live_detail_line(live, look), Text(""), booked)
 
-    def _redraw_detail(self, ctx: RenderContext) -> None:
+    def _paint_detail(self) -> None:
         shown = self._detail_open and self.is_wide and self._selected is not None
         panel = self._alive(DetailPane, "#detail-panel")
         if panel is not None:
             panel.is_open = shown
         if shown:
-            self._set("detail", self._detail_content(self._selected, ctx))
+            self._set("detail", self._detail_content(self._selected))
 
     # ------------------------------------------------------------------
     # System (view only: nothing here runs a command)
     # ------------------------------------------------------------------
 
-    def _read_system(self) -> None:
-        """Re-read the System sources; a missing source stays ``None``."""
-        source = self._system
-        self._services = None if source.services is None else source.services.services()
-        self._releases = None if source.releases is None else source.releases.releases()
-        self._machine = None if source.machine is None else source.machine.machine()
-        self._bar_seconds = None
-        if source.bar_timing is not None:
-            try:
-                self._bar_seconds = source.bar_timing.bar_check_seconds(BAR_CHECKS)
-            except LedgerError:
-                self._bar_seconds = None
+    def _keep_system(self, reads: SystemReads) -> None:
+        """Keep the System screen's last reads for its cursor and detail screens."""
+        self._services = reads.services
+        self._releases = reads.releases
+        self._machine = reads.machine
+        self._bar_seconds = reads.bar_seconds
 
     def _service_names(self) -> list[str]:
         return [status.unit.name for status in self._services or ()]
@@ -1985,10 +2022,7 @@ class HomeApp(App[None]):
         return cursor.removeprefix(prefix)
 
     def _eur_rate_date(self) -> date | None:
-        try:
-            return self._model.portfolio(self._range).eur_rate_date
-        except _CARD_ERRORS:
-            return None
+        return None if self._summary is None else self._summary.eur_rate_date
 
     def _paint_system(self) -> None:
         """Draw the System panels from the last read; moving the cursor reads nothing."""
@@ -2114,7 +2148,16 @@ class HomeApp(App[None]):
     def _switch_to(self, index: int) -> None:
         self._tab = index
         self._home.query_one("#screens", ContentSwitcher).current = f"tab-{TABS[index].key}"
+        if self._background_reads:
+            # The tab shows its last reads at once; the fresh ones follow.
+            self._paint_tab_screen(self._reads, self._layout)
         self._redraw()
+
+    def _repaint_positions(self) -> None:
+        """Repaint the cursor, the detail and the panel borders from the last reads."""
+        self._redraw_chrome()
+        self._paint_positions()
+        self._paint_detail()
 
     def action_show_tab(self, index: int) -> None:
         """Show a screen tab, closing any panel screen above the console.
@@ -2170,7 +2213,7 @@ class HomeApp(App[None]):
             return
         if self._detail_open and self._tab == _HOME:
             self._detail_open = False
-            self._redraw()
+            self._repaint_positions()
         elif self._service_open and self._tab == _SYSTEM:
             self._service_open = False
             self._paint_system()
@@ -2202,7 +2245,7 @@ class HomeApp(App[None]):
             return
         current = coins.index(self._selected) if self._selected in coins else 0
         self._selected = coins[(current + step) % len(coins)]
-        self._redraw()
+        self._repaint_positions()
 
     def list_state(self) -> ListState:
         """Return the positions list's state; it has no filters or sort yet, only a cursor."""
@@ -2217,7 +2260,7 @@ class HomeApp(App[None]):
         if state is None:
             return
         self._selected = state.cursor
-        self._redraw()
+        self._repaint_positions()
 
     def action_open_detail(self) -> None:
         """Open the selected position: a pane beside the list, else a detail screen.
@@ -2232,7 +2275,7 @@ class HomeApp(App[None]):
             return
         if detail_mode(self.size.width) is DetailMode.PANE:
             self._detail_open = True
-            self._redraw()
+            self._repaint_positions()
             return
         self.push_screen(
             DetailScreen(
@@ -2304,17 +2347,21 @@ class HomeApp(App[None]):
     def action_logs(self) -> None:
         """Show the last journal lines, as ``hermes logs`` prints them."""
         if self._on_home:
-            self.push_screen(_PanelScreen(self._logs_content))
+            self.push_screen(_LogsPanel(self._logs_content))
+            self._redraw()
 
     def _logs_content(self) -> RenderableType:
         if self._model.demo_scenario is not None:
             return Text(LOGS_DEMO, style="dim")
-        lines = None if self._journal is None else self._journal(_LOGS_LINES)
+        reads = self._reads
+        if reads is None or not reads.logs_asked:
+            return Text(_LOGS_READING, style="dim")
+        lines = reads.logs
         if lines is None:
             return Text(LOGS_UNAVAILABLE, style="dim")
         if not lines:
             return Text("No journal lines yet.", style="dim")
-        tz = self._render_context().tz
+        tz = reads.ctx.tz
         return Group(Text("Logs", style="bold"), *(render_log_line(line, tz) for line in lines))
 
     def action_restart(self) -> None:
@@ -2347,11 +2394,19 @@ class HomeApp(App[None]):
             ),
             Text(""),
             Text("Tax", style="bold"),
-            _card("Tax", lambda: render_tax_footnote(self._model.portfolio(self._range))),
+            self._tax_footnote(),
             Text(""),
             Text("Prices and money are shown in EUR.", style="dim"),
         ]
         return Group(*keys)
+
+    def _tax_footnote(self) -> RenderableType:
+        portfolio = None if self._reads is None else self._reads.portfolio
+        if portfolio is None:
+            return Text("")
+        if isinstance(portfolio, CARD_ERRORS):
+            return _unavailable("Tax", portfolio)
+        return render_tax_footnote(portfolio)
 
 
 def run_home(
@@ -2400,6 +2455,7 @@ def run_home(
     """
     app = HomeApp(
         model,
+        background_reads=True,
         journal=journal,
         release=release,
         version=version,

@@ -18,7 +18,7 @@ import hashlib
 import math
 import re
 from collections.abc import Callable, Collection, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from pathlib import Path, PurePosixPath
 from typing import Final, Literal
@@ -54,6 +54,7 @@ __all__ = [
     "ResearchBatch",
     "Selection",
     "check_batch",
+    "heading_level",
     "load_batch",
     "parse_batch",
     "sha256_scope",
@@ -253,6 +254,9 @@ class ResearchBatch:
     candidates: tuple[Candidate, ...]
     """In document order, which is run order."""
 
+    body: str = field(default="", repr=False)
+    """The Markdown after the front matter: each candidate's pre-registration."""
+
     @property
     def trial_log(self) -> str:
         """The repo-relative path of the experiment's trial log."""
@@ -261,6 +265,39 @@ class ResearchBatch:
     def candidate(self, strategy_id: str) -> Candidate | None:
         """Return the candidate with ``strategy_id``, or None when the batch does not name it."""
         return next((c for c in self.candidates if c.strategy_id == strategy_id), None)
+
+    def section_text(self, candidate: Candidate) -> str:
+        """The candidate's pre-registration: its heading's lines up to the next heading as high.
+
+        Raises:
+            ValueError: The body has no heading for the candidate's section.
+        """
+        lines = self.body.splitlines()
+        for start, line in enumerate(lines):
+            level = heading_level(line)
+            title = line.lstrip("#").strip()
+            if level in (2, 3) and (
+                title == candidate.section or title.startswith(f"{candidate.section} ")
+            ):
+                end = next(
+                    (
+                        i
+                        for i in range(start + 1, len(lines))
+                        if 0 < heading_level(lines[i]) <= level
+                    ),
+                    len(lines),
+                )
+                return "\n".join(lines[start:end])
+        raise ValueError(f"no section {candidate.section!r} in batch {self.batch_id}")
+
+
+_MAX_HEADING_LEVEL: Final = 6
+
+
+def heading_level(line: str) -> int:
+    """The Markdown heading level of ``line``, or 0 when it is not a heading."""
+    hashes = len(line) - len(line.lstrip("#"))
+    return hashes if 0 < hashes <= _MAX_HEADING_LEVEL and line[hashes : hashes + 1] == " " else 0
 
 
 def sha256_scope(precursor: str, path: str) -> str:
@@ -647,6 +684,7 @@ def parse_batch(path: str, text: str) -> ResearchBatch:
         selection=selection,
         funnel=funnel,
         candidates=tuple(_candidate(r) for r in header.candidates),
+        body=body,
     )
 
 
@@ -675,7 +713,46 @@ def load_batch(path: Path, *, repo: Path | None = None) -> ResearchBatch:
 # ---------------------------------------------------------------------------
 
 
-def _content_sha256(batch: ResearchBatch, git: GitHistoryPort, head: str) -> str:
+_SIGNATURE_KEYS: Final = frozenset(
+    {
+        "status",
+        "signed_by",
+        "date_signed",
+        "content_sha256",
+        "content_sha256_scope",
+        "signing_commit_precursor",
+        "code_commit",
+    }
+)
+"""The only keys the signing commit may change; anything else edited after signing fails."""
+
+
+def _unchanged_since_signing(text: str, signed: bytes) -> None:
+    """Refuse a batch that differs from its signed precursor outside the signature keys.
+
+    ``content_sha256`` proves what the precursor held; without this the file
+    checked could have moved on from it, and the signature would cover rules
+    nobody signed.
+    """
+    try:
+        signed_front, signed_body = _split(signed.decode("utf-8"))
+    except (UnicodeDecodeError, BatchError) as exc:
+        raise BatchError("content_sha256", f"the signed precursor cannot be read: {exc}") from exc
+    front, body = _split(text)
+    changed = sorted(
+        key
+        for key in set(front) | set(signed_front)
+        if key not in _SIGNATURE_KEYS and front.get(key) != signed_front.get(key)
+    )
+    if body != signed_body:
+        changed.append("body")
+    if changed:
+        raise BatchError(
+            "content_sha256", f"changed since the signed precursor: {', '.join(changed)}"
+        )
+
+
+def _content_sha256(batch: ResearchBatch, text: str, git: GitHistoryPort, head: str) -> str:
     if batch.status == "DRAFT" and batch.content_sha256 is None:
         return "draft: not hashed yet"
     digest, precursor = batch.content_sha256, batch.signing_commit_precursor
@@ -698,7 +775,8 @@ def _content_sha256(batch: ResearchBatch, git: GitHistoryPort, head: str) -> str
         raise BatchError(
             "content_sha256", f"{batch.path} at {precursor} hashes to {actual}, not {digest}"
         )
-    return f"{digest} matches {batch.path} at {precursor}"
+    _unchanged_since_signing(text, signed)
+    return f"{digest} matches {batch.path} at {precursor}, unchanged since apart from the signature"
 
 
 def _card_hashes(batch: ResearchBatch, git: GitHistoryPort, head: str) -> str:
@@ -801,7 +879,7 @@ def check_batch(
     checks: list[tuple[str, Callable[[], str]]] = [
         ("front_matter", lambda: f"batch {header.batch_id} of {header.experiment}"),
         ("status_signed", signed),
-        ("content_sha256", after_parse(lambda b: _content_sha256(b, git, head))),
+        ("content_sha256", after_parse(lambda b: _content_sha256(b, text, git, head))),
         ("candidate_count", lambda: _candidate_count(header)),
         ("one_per_family", lambda: _one_per_family(header)),
         ("summary_present", lambda: _summary_present(header)),

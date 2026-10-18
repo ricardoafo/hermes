@@ -15,7 +15,7 @@ Usage::
 
 ``markdown`` is the GitHub release body; ``telegram`` is the plain-text
 message the CD deploy job posts after a good deploy. The Telegram message
-leads with the version the release carries (``hermes v1.0.0-shadow.1
+leads with the version the release carries (``hermes v0.2.0
 (<sha12>)``, ADR-022 §4), read from ``pyproject.toml`` at the release and
 named by ``src/hermes/release_version.py``, loaded by path. Only the standard
 library and ``git`` are used, so it runs before ``uv sync``.
