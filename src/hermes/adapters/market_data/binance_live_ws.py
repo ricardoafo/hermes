@@ -55,7 +55,7 @@ import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Final
 
 import httpx
@@ -69,6 +69,7 @@ try:
 except ImportError:
     websockets = None
 
+from hermes.adapters._shared.wire import binance_symbol, validate_http_config, wire_decimal
 from hermes.domain.errors import ExchangeError, InfraError, NetworkError
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
@@ -116,13 +117,12 @@ class BinanceLiveWsConfig:
                 f"BinanceLiveWsConfig.ws_base_url must start with wss:// or ws://, "
                 f"got {self.ws_base_url!r}"
             )
-        if not self.rest_base_url.startswith("https://"):
-            raise ValueError(
-                f"BinanceLiveWsConfig.rest_base_url must start with https://, "
-                f"got {self.rest_base_url!r}"
-            )
-        if self.timeout_sec <= 0:
-            raise ValueError(f"BinanceLiveWsConfig.timeout_sec must be > 0, got {self.timeout_sec}")
+        validate_http_config(
+            "BinanceLiveWsConfig",
+            url=self.rest_base_url,
+            timeout_sec=self.timeout_sec,
+            url_field="rest_base_url",
+        )
         if self.snapshot_limit <= 0:
             raise ValueError(
                 f"BinanceLiveWsConfig.snapshot_limit must be > 0, got {self.snapshot_limit}"
@@ -192,7 +192,7 @@ class BinanceLiveWsAdapter:
             hermes.domain.errors.NetworkError: On transport failure.
             hermes.domain.errors.ExchangeError: On HTTP non-2xx or schema error.
         """
-        symbol = _pair_to_binance_symbol(pair)
+        symbol = binance_symbol(pair)
         client = await self._get_client()
 
         _log.debug("get_snapshot: fetching", symbol=symbol, limit=self.config.snapshot_limit)
@@ -255,7 +255,7 @@ class BinanceLiveWsAdapter:
             hermes.domain.errors.InfraError: On WebSocket failure, parse
                 error, schema violation, or detected sequence-number gap.
         """
-        symbol = _pair_to_binance_symbol(pair).lower()
+        symbol = binance_symbol(pair).lower()
         ws_url = f"{self.config.ws_base_url}/{symbol}@depth"
 
         _log.debug("stream_orderbook_diffs: connecting", url=ws_url)
@@ -338,48 +338,10 @@ class BinanceLiveWsAdapter:
 # ---------------------------------------------------------------------------
 
 
-def _pair_to_binance_symbol(pair: Pair) -> str:
-    """Convert :class:`Pair` to Binance uppercase symbol.
-
-    Args:
-        pair: Trading pair.
-
-    Returns:
-        Uppercase concatenated string, e.g. ``"BTCUSDT"``.
-    """
-    return f"{pair.base.value}{pair.quote.value}"
-
-
 def _decimal_or_raise(raw: object, *, field_name: str, source: str) -> Decimal:
-    """Coerce a raw string field to :class:`~decimal.Decimal`.
-
-    Args:
-        raw: String from the exchange payload. A JSON number is read through
-            ``str`` so a float's binary expansion never reaches the book.
-        field_name: Descriptive name for error messages.
-        source: WS URL or endpoint name for traceability.
-
-    Returns:
-        The value as :class:`~decimal.Decimal`.
-
-    Raises:
-        hermes.domain.errors.ExchangeError: On unparseable input.
-    """
-    if not isinstance(raw, str | int | float) or isinstance(raw, bool):
-        raise ExchangeError(
-            f"BinanceLiveWsAdapter: {field_name} is not a string or number ({raw!r}) from {source}"
-        )
-    try:
-        value = Decimal(str(raw))
-    except InvalidOperation as exc:
-        raise ExchangeError(
-            f"BinanceLiveWsAdapter: {field_name} is not a decimal ({raw!r}) from {source}"
-        ) from exc
-    if not value.is_finite():
-        raise ExchangeError(
-            f"BinanceLiveWsAdapter: {field_name} is not a finite number ({raw!r}) from {source}"
-        )
-    return value
+    return wire_decimal(
+        raw, field=f"BinanceLiveWsAdapter: {field_name} from {source}", error=ExchangeError
+    )
 
 
 def _parse_level_list(

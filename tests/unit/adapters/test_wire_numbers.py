@@ -1,5 +1,9 @@
 """Every parser that reads a price, quantity, rate or time off the wire refuses impossible values.
 
+A JSON ``true`` is refused the same way: ``bool`` is an ``int``, so a parser
+that only checked for numbers read it as 1, and two of the old copies did
+(issue #1177).
+
 ``Decimal("NaN")`` and ``Decimal("Infinity")`` parse without error, so a
 parser that only catches ``InvalidOperation`` from the constructor lets them
 through: NaN then raises a raw ``decimal.InvalidOperation`` from the first
@@ -14,6 +18,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -37,46 +42,50 @@ _CLOSE_MS = _OPEN_MS + 4 * 3_600_000 - 1
 _NOT_FINITE = ("NaN", "sNaN", "Infinity", "-Infinity")
 
 
-def _live_kline(value: str) -> object:
+def _live_kline(value: object) -> object:
     return binance_live_klines._row_to_bar(
         [_OPEN_MS, "100", "110", "90", value, "5", _CLOSE_MS], _PAIR, _H4
     )
 
 
-def _hist_kline(value: str) -> object:
+def _hist_kline(value: object) -> object:
     return binance_klines._row_to_kline(
         row=[_OPEN_MS, "100", value, "90", "95", "5", _CLOSE_MS], pair=_PAIR, interval=_H4
     )
 
 
-def _vision_kline(value: str) -> object:
+def _vision_kline(value: object) -> object:
     row = [str(_OPEN_MS), "100", "110", "90", "105", value, str(_CLOSE_MS), "0", "0", "0", "0", "0"]
+    # A CSV row only ever holds strings; the cast lets the bool case reach the parser anyway.
     return binance_historical._row_to_bar(
-        row=row, pair=_PAIR, interval=_H4, source=Path("BTCUSDT-4h-2025-01-01.zip")
+        row=cast("list[str]", row),
+        pair=_PAIR,
+        interval=_H4,
+        source=Path("BTCUSDT-4h-2025-01-01.zip"),
     )
 
 
-def _ws_depth(value: str) -> object:
+def _ws_depth(value: object) -> object:
     message = {"e": "depthUpdate", "E": 1, "s": "BTCUSDT", "U": 1, "u": 2}
     message |= {"b": [[value, "1"]], "a": []}
     return binance_live_ws._parse_depth_update(raw=json.dumps(message), pair=_PAIR, source="ws")
 
 
-def _rest_depth(value: str) -> object:
+def _rest_depth(value: object) -> object:
     return binance_depth_snapshot._levels([["100", value]], side="bids")
 
 
-def _kraken_kline(value: str) -> object:
+def _kraken_kline(value: object) -> object:
     row = [_OPEN_MS // 1000, "100", "110", value, "105", "102", "5", 10]
     return kraken_public._row_to_kline(row=row, pair=_PAIR, interval=_H4)
 
 
-def _kraken_depth(value: str) -> object:
+def _kraken_depth(value: object) -> object:
     result = {"XXBTZUSD": {"bids": [[value, "1", 0]], "asks": []}}
     return kraken_public._parse_depth_response(result=result, pair=_PAIR, symbol="XXBTZUSD")
 
 
-def _frankfurter(value: str) -> object:
+def _frankfurter(value: object) -> object:
     return frankfurter._parse_response(
         payload={"base": "USD", "date": "2025-01-02", "rates": {"EUR": value}},
         from_currency=Currency.USDT,
@@ -86,15 +95,15 @@ def _frankfurter(value: str) -> object:
     )
 
 
-def _kraken_spot(value: str) -> object:
+def _kraken_spot(value: object) -> object:
     return kraken_spot._decimal(value, "cost")
 
 
-def _binance_spot(value: str) -> object:
+def _binance_spot(value: object) -> object:
     return binance_spot.parse_decimal(value, "price")
 
 
-_PARSERS: dict[str, tuple[Callable[[str], object], type[Exception]]] = {
+_PARSERS: dict[str, tuple[Callable[[object], object], type[Exception]]] = {
     "binance live klines (serve)": (_live_kline, ExchangeError),
     "binance historical klines": (_hist_kline, ExchangeError),
     "binance vision klines": (_vision_kline, ExchangeError),
@@ -120,6 +129,16 @@ def test_a_non_finite_number_is_refused_with_the_adapters_own_error(
         parse(value)
 
     assert repr(value) in str(raised.value)
+
+
+@pytest.mark.parametrize("value", [True, False])
+@pytest.mark.parametrize("parser", sorted(_PARSERS))
+def test_a_json_bool_is_refused_with_the_adapters_own_error(parser: str, value: bool) -> None:
+    """A true or false where a number belongs raises the adapter's typed error, naming the value."""
+    parse, error = _PARSERS[parser]
+
+    with pytest.raises(error, match=rf"is not (numeric|a string): {value!r}"):
+        parse(value)
 
 
 def test_a_live_kline_time_past_the_calendar_is_an_exchange_error() -> None:

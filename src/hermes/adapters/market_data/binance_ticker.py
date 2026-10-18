@@ -24,13 +24,14 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Final
 
 import anyio
 import httpx
 
-from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
+from hermes.adapters._shared.wire import binance_symbol, wire_decimal
 from hermes.domain.errors import ExchangeError, NetworkError
 from hermes.domain.value_objects.pair import Pair
 from hermes.infrastructure.config.models import MarketDataConfig
@@ -44,10 +45,6 @@ _TICKER_WEIGHT: Final[int] = 2
 _API_KEY_HEADER: Final[str] = "x-mbx-apikey"
 _HTTP_OK_MAX: Final[int] = 299
 _ERROR_EXCERPT_CHARS: Final[int] = 200
-
-
-def _symbol(pair: Pair) -> str:
-    return f"{pair.base.value}{pair.quote.value}"
 
 
 class BinanceTickerPriceAdapter:
@@ -132,7 +129,7 @@ class BinanceTickerPriceAdapter:
     async def _fetch(self, pair: Pair) -> Decimal:
         while not self._limiter.try_acquire(_TICKER_WEIGHT):
             await self._sleep(_TICKER_WEIGHT / self._limiter.refill_per_second)
-        symbol = _symbol(pair)
+        symbol = binance_symbol(pair)
         try:
             response = await self._client.get(self._url, params={"symbol": symbol})
         except httpx.HTTPError as exc:
@@ -153,12 +150,9 @@ def _parse_price(response: httpx.Response, symbol: str) -> Decimal:
     if not isinstance(body, dict) or body.get("symbol") != symbol:
         raise ExchangeError(f"ticker body is not for {symbol}: {str(body)[:_ERROR_EXCERPT_CHARS]}")
     raw = body.get("price")
-    if not isinstance(raw, str):
-        raise ExchangeError(f"ticker price for {symbol} is not a string: {raw!r}")
-    try:
-        price = Decimal(raw)
-    except InvalidOperation as exc:
-        raise ExchangeError(f"ticker price for {symbol} is not a decimal: {raw!r}") from exc
-    if not price.is_finite() or price <= 0:
+    price = wire_decimal(
+        raw, field=f"ticker price for {symbol}", error=ExchangeError, numbers=False
+    )
+    if price <= 0:
         raise ExchangeError(f"ticker price for {symbol} is not positive: {raw!r}")
     return price

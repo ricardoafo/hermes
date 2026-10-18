@@ -77,12 +77,12 @@ from typing import Final
 import structlog
 from returns.result import Failure
 
+from hermes.adapters._shared.rate_limiter import RateLimitConfig
 from hermes.adapters.clock.wall import WallClock
 from hermes.adapters.fees.binance_history import load_binance_fee_history
 from hermes.adapters.fills.orderbook_walk import OrderbookWalkFillModel
 from hermes.adapters.fx.frankfurter import FrankfurterAdapter
 from hermes.adapters.fx.frankfurter import FrankfurterConfig as FrankfurterWireConfig
-from hermes.adapters.fx.rate_limiter import RateLimitConfig
 from hermes.adapters.ledger.anomaly_reader import latest_anomaly
 from hermes.adapters.ledger.connection import open_ledger
 from hermes.adapters.ledger.migration_runner import unknown_applied_migrations

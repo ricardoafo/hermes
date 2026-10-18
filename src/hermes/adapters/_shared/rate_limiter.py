@@ -1,24 +1,31 @@
-"""Token-bucket rate limiter — private helper for the FX adapter package.
+"""Simple synchronous token-bucket rate limiter for every HTTP adapter.
 
-This is a deliberate copy of the token-bucket pattern used by the
-:mod:`hermes.adapters.exchanges.rate_limiter` module. The FX adapter
-must not cross-import from the exchange-adapter package (hex-arch
-boundary — adapters own their own infra dependencies). The alternative
-— lifting the limiter into a shared ``adapters/_shared/`` module —
-adds an import surface that only two callers use today and both size
-their bucket differently anyway (Binance: 5000 weight/60s; Frankfurter:
-60 req/60s). Duplicating ~120 lines of well-covered code is the smaller
-sin than a premature abstraction shared across venues with unrelated
-lifecycles.
+One copy serves the exchange, market-data, FX and healthcheck adapters
+(issue #1177). Each adapter that calls a rate-limited endpoint owns its
+own :class:`RateLimiter` instance sized to that endpoint's published
+limits; only the code is shared.
 
-If a third adapter needs a token bucket, promote to
-``adapters/_shared/rate_limiter.py`` and delete both copies in one PR.
+Design choices
+--------------
+
+- **Sync**: matches the :class:`~hermes.ports.klines.KlinesFetcherPort`
+  shape. If Phase 2 needs async fan-out, adapter + limiter migrate as a
+  pair.
+- **Token bucket**: refills continuously at ``max_weight / window_seconds``
+  tokens per second and permits bursts up to ``max_weight``. Matches
+  Binance's weight-based rate-limit model (ADR-003 §04).
+- **Blocking**: :meth:`acquire` sleeps until the requested weight fits.
+  Callers that need a non-blocking check can use :meth:`try_acquire`.
+- **Clock injection**: :attr:`clock` and :attr:`sleep` are constructor
+  parameters so tests can supply deterministic replacements (see
+  :func:`RateLimiter.for_testing`). The defaults use
+  :func:`time.monotonic` and :func:`time.sleep`.
+- **Not thread-safe**: hermes runs one writer/fetcher at a time. Adding a
+  ``threading.Lock`` is a two-line change if that ever becomes false.
 
 Reference: ADR-003 §04 (rate limiting — defensive token bucket per adapter),
-docs/decisions/2026-08-23-fx-rate-source-frankfurter.md.
+docs/decisions/2026-08-23-binance-testnet-klines.md.
 """
-
-from __future__ import annotations
 
 import time
 from collections.abc import Callable
@@ -33,8 +40,8 @@ class RateLimitConfig:
 
     Attributes:
         max_weight: Maximum weight tokens available in one full window.
-            For Frankfurter this defaults to 60 (a polite req/min cap
-            for a free public API with no published limit).
+            For Binance klines this is 6000 (published cap); we buffer
+            below to leave headroom.
         window_seconds: Length of the refill window in seconds. Together
             with ``max_weight`` this defines the steady-state rate
             (``max_weight / window_seconds`` tokens per second).
@@ -44,7 +51,7 @@ class RateLimitConfig:
     window_seconds: int
 
     def __post_init__(self) -> None:
-        """Reject non-positive parameters — either would produce a nonsensical rate."""
+        """Reject non-positive parameters — both would produce a nonsensical rate."""
         if self.max_weight <= 0:
             raise ValueError(f"RateLimitConfig.max_weight must be > 0, got {self.max_weight}")
         if self.window_seconds <= 0:
@@ -135,6 +142,12 @@ class RateLimiter:
         if self._tokens >= weight:
             self._tokens -= weight
             return
+        # Sleep just long enough to earn the deficit, then set state
+        # directly. Trusting a second _refill() to round-trip
+        # `elapsed * rate` back to `deficit` accumulates float error
+        # that can leave tokens at (weight - epsilon), spinning the
+        # caller loop on infinitesimal top-ups. Validation guarantees
+        # weight <= max_weight, so one sleep is always sufficient.
         deficit = weight - self._tokens
         wait = deficit / self.refill_per_second
         self.sleep(wait)
@@ -150,3 +163,25 @@ class RateLimiter:
                 f"RateLimiter weight ({weight}) exceeds max_weight "
                 f"({self.config.max_weight}); request would never succeed"
             )
+
+    @classmethod
+    def for_testing(
+        cls,
+        config: RateLimitConfig,
+        *,
+        clock: Callable[[], float],
+        sleep: Callable[[float], None],
+    ) -> RateLimiter:
+        """Factory that requires explicit clock+sleep injection for tests.
+
+        Args:
+            config: Bucket sizing.
+            clock: Deterministic monotonic clock (e.g. returning values
+                from a fixed list).
+            sleep: Sleep observer (e.g. that appends to a list instead
+                of blocking).
+
+        Returns:
+            A :class:`RateLimiter` wired to the injected time surface.
+        """
+        return cls(config=config, clock=clock, sleep=sleep)
