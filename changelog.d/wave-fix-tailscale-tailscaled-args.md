@@ -1,3 +1,0 @@
-### Fixed
-
-- **`.github/workflows/vps-bootstrap.yml` + `.github/workflows/vps-diagnose.yml`** — both workflows passed `--tun=userspace-networking` via a job-level `ADDITIONAL_DAEMON_ARGS` env var (PR #284 approach), but the value was empty in the composite action's `Start Tailscale Daemon` step, so tailscaled tried to open `/dev/net/tun`, failed on the container runner, and every dispatch crashed with `failed to connect to local tailscaled`. The correct path is `with: tailscaled-args:` — the composite action sources `inputs.tailscaled-args → ADDITIONAL_DAEMON_ARGS` inside its Start-Daemon step (see `tailscale/github-action@v3` `action.yml:285`). Both workflows now pass it as an input; the job-level env block is removed.
