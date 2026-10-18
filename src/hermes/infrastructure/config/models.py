@@ -520,6 +520,9 @@ class FeesConfig(BaseModel):
 class TaxGuardConfig(BaseModel):
     """Root of ``config/tax_guard.yaml`` — LOPDGDD + tax thresholds.
 
+    Reserved: no running code reads these values yet, so the file is
+    optional and every field has a default (the ADR-002 starters).
+
     Two axes live under this model:
 
     - **PnL / concentration hygiene** — ``annual_realised_pnl_alert_eur``,
@@ -564,17 +567,22 @@ class TaxGuardConfig(BaseModel):
 
     model_config = _MODEL_CONFIG
 
-    annual_realised_pnl_alert_eur: Decimal = Field(gt=Decimal("0"))
-    wash_sale_window_days: int = Field(ge=1, le=365)
-    max_position_pct_portfolio: Decimal = Field(gt=Decimal("0"), le=Decimal("1"))
-    recharacterization_window_days: int = Field(ge=1, le=365)
-    trade_count_90d_max: int = Field(ge=1)
-    distinct_assets_90d_max: int = Field(ge=1)
-    fee_income_90d_max_eur: Decimal = Field(ge=Decimal("0"))
+    annual_realised_pnl_alert_eur: Decimal = Field(default=Decimal("1000"), gt=Decimal("0"))
+    wash_sale_window_days: int = Field(default=30, ge=1, le=365)
+    max_position_pct_portfolio: Decimal = Field(
+        default=Decimal("0.25"), gt=Decimal("0"), le=Decimal("1")
+    )
+    recharacterization_window_days: int = Field(default=90, ge=1, le=365)
+    trade_count_90d_max: int = Field(default=500, ge=1)
+    distinct_assets_90d_max: int = Field(default=12, ge=1)
+    fee_income_90d_max_eur: Decimal = Field(default=Decimal("0"), ge=Decimal("0"))
 
 
 class MLConfig(BaseModel):
     """Root of ``config/ml.yaml`` — ML/LLM subsystem configuration.
+
+    Reserved: the supervisor is not built yet, so no running code reads
+    these values. The file is optional and every field has a default.
 
     LLMs supervise and monitor per ADR-001 + ADR-005; they never emit trade
     signals. This config carries knobs for the supervisor role only.
@@ -591,7 +599,7 @@ class MLConfig(BaseModel):
 
     model_config = _MODEL_CONFIG
 
-    supervisor_model: str = Field(min_length=1)
-    temperature: Decimal = Field(ge=Decimal("0"), le=Decimal("2"))
-    max_tokens: int = Field(ge=1, le=200_000)
-    enabled: bool
+    supervisor_model: str = Field(default="claude-sonnet-4-7", min_length=1)
+    temperature: Decimal = Field(default=Decimal("0.2"), ge=Decimal("0"), le=Decimal("2"))
+    max_tokens: int = Field(default=4096, ge=1, le=200_000)
+    enabled: bool = True
