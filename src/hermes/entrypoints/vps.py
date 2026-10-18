@@ -11,7 +11,7 @@ Connection settings come from ``HERMES_VPS_HOST``, ``HERMES_VPS_USER`` and
 (``root@hermes-01`` over Tailscale, key ``~/.ssh/hermes_vps_ed25519``). No
 secret lives in the repo: the key is only a path.
 
-Reference: openspec/changes/console-vps/change.md.
+Reference: openspec/archive/console-vps/change.md.
 """
 
 from __future__ import annotations

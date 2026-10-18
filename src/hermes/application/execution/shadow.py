@@ -30,7 +30,7 @@ The executor does what the backtest replay does around the
 The executor performs no logging and reads no wall clock of its own; the
 caller logs from the returned :class:`ShadowExecution`.
 
-Reference: openspec/changes/353-fill-kernel-in-serve/change.md D-1..D-5.
+Reference: openspec/archive/353-fill-kernel-in-serve/change.md D-1..D-5.
 """
 
 from __future__ import annotations

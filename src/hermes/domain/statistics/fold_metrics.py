@@ -9,7 +9,7 @@ test days made money and takes the median test Sharpe.
 These numbers are reported evidence. No gate, threshold or selection reads
 them (issue #1181; the ``fold-evidence-is-reported-only`` import contract).
 
-Reference: pre-registration-v1.md §8.3; openspec/changes/354-certification-statistics
+Reference: pre-registration-v1.md §8.3; openspec/archive/354-certification-statistics
 D-5; openspec/changes/1181-fold-evidence/change.md.
 """
 

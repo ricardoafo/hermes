@@ -7,7 +7,7 @@ pinned dataset still hashes to its manifest entry, and, for the OOS split, the
 certification lifecycle allows the read.
 
 Reference: pre-registration-v1.md §4 and §7, ADR-014,
-openspec/changes/356-data-manifest/change.md D-3, D-4.
+openspec/archive/356-data-manifest/change.md D-3, D-4.
 """
 
 from __future__ import annotations

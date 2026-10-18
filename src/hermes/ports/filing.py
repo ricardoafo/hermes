@@ -6,7 +6,7 @@ kill code (the ``filing-is-measurement-only`` import-linter contract). The
 concrete implementation is
 :class:`hermes.adapters.ledger.filing_reader.LedgerFilingReader`.
 
-Reference: openspec/changes/36-modelo-100-721/change.md.
+Reference: openspec/archive/36-modelo-100-721/change.md.
 """
 
 from __future__ import annotations

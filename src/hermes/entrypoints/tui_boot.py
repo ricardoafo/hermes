@@ -10,7 +10,7 @@ The checks are real reads, so the screen doubles as a connection check.
 They run in a worker thread, never on the UI thread, and a failed check
 never stops the console: Home shows the same failure on its own panel.
 
-Reference: openspec/changes/1020-cold-start/change.md; the design spec's
+Reference: openspec/archive/1020-cold-start/change.md; the design spec's
 "Start-up sequence" (Look A).
 """
 

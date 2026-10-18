@@ -6,7 +6,7 @@ even by accident, and never runs migrations. Safe next to a live
 read fails with a :class:`~hermes.domain.errors.LedgerError` that names
 ``hermes migrate``.
 
-Reference: openspec/changes/35-monthly-reconciliation/change.md D-1.
+Reference: openspec/archive/35-monthly-reconciliation/change.md D-1.
 """
 
 from __future__ import annotations

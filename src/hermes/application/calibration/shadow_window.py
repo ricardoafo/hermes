@@ -19,7 +19,7 @@ same days. This module turns both sides into what
 
 Only the verdicts leave this module; the values stay sealed (ADR-012 D-06).
 
-Reference: openspec/changes/965-shadow-parity-window/change.md.
+Reference: openspec/archive/965-shadow-parity-window/change.md.
 """
 
 from collections.abc import Iterable, Sequence

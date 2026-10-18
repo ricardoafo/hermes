@@ -11,7 +11,7 @@ The §9 rows and the DSR stay with ``hermes certify``; this module does not
 change them or v1's gate.
 
 Reference: ADR-021 §5; ADR-012 D-06, D-11; ADR-023 §4, §7;
-openspec/changes/v2-backtest-funnel/change.md.
+openspec/archive/v2-backtest-funnel/change.md.
 """
 
 import math

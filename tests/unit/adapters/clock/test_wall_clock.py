@@ -5,7 +5,7 @@ Tests:
 - ``now()`` values are monotonically non-decreasing across successive calls.
 - Structural conformance to ``ClockPort``.
 
-Reference: openspec/changes/spec-4a-clock-port/change.md A-2.1, A-2.2.
+Reference: openspec/archive/spec-4a-clock-port/change.md A-2.1, A-2.2.
 """
 
 from __future__ import annotations

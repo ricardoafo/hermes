@@ -16,7 +16,7 @@ only through these tools. Each tool:
 Access is deny-by-default: :class:`ToolDispatcher` serves only the tools whose
 scope the caller was granted, and every call, refused or not, is audited.
 
-Reference: openspec/changes/34-supervisor-read-tools/change.md; issues #34, #470.
+Reference: openspec/archive/34-supervisor-read-tools/change.md; issues #34, #470.
 """
 
 from __future__ import annotations

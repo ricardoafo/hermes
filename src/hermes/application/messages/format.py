@@ -17,7 +17,7 @@ One rule per quantity, so a message reads the same on Telegram and Slack:
 Money, signs and rounding come from :mod:`hermes.application.console.format`,
 the helpers the operator approved for screens. All functions are pure.
 
-Reference: openspec/changes/144-notification-system/change.md (R-2);
+Reference: openspec/archive/144-notification-system/change.md (R-2);
     docs/decisions/2026-10-04-notification-templates-v2.md (rules 1-3, 6).
 """
 

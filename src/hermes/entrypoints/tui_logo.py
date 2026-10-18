@@ -13,7 +13,7 @@ The wordmark takes its colours from the console theme tokens
 ``textual_image`` queries the terminal when it is imported, so it is
 imported lazily and only on the image path.
 
-Reference: openspec/changes/733-image/change.md.
+Reference: openspec/archive/733-image/change.md.
 """
 
 from collections.abc import Mapping

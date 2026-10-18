@@ -1,6 +1,6 @@
 """Unit tests for scripts/backtest/trial_stats.py.
 
-Invariant under test (openspec/changes/357-trial-log/change.md R-3): the
+Invariant under test (openspec/archive/357-trial-log/change.md R-3): the
 script prints the trial count from the log in the shape of the ``trials``
 section of certification evidence, and fails on a broken log.
 """

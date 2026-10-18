@@ -8,7 +8,7 @@ prices legitimately differ (#353 owns price drift).
 
 Pure: no I/O, no clock.
 
-Reference: openspec/changes/358-parity-check/change.md D-1.
+Reference: openspec/archive/358-parity-check/change.md D-1.
 """
 
 from __future__ import annotations

@@ -11,7 +11,7 @@ Forms: ``hermes version [--db PATH] [--json]``; ``hermes --version`` and
 
 Exit codes: 0 always, 2 usage.
 
-Reference: issue #539; openspec/changes/539-hermes-version.
+Reference: issue #539; openspec/archive/539-hermes-version.
 """
 
 from __future__ import annotations

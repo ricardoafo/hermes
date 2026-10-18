@@ -298,7 +298,7 @@ class DataManifestFormatError(InfraError):
         path: Manifest file path.
         msg: What was wrong with it.
 
-    Reference: openspec/changes/356-data-manifest/change.md Design.
+    Reference: openspec/archive/356-data-manifest/change.md Design.
     """
 
     path: str
@@ -392,7 +392,7 @@ class DatasetHashMismatchError(DomainError):
         expected_rows: Row count pinned in the manifest.
         actual_rows: Row count actually loaded.
 
-    Reference: openspec/changes/356-data-manifest/change.md R-1.
+    Reference: openspec/archive/356-data-manifest/change.md R-1.
     """
 
     dataset_id: str
@@ -420,7 +420,7 @@ class DatasetNotPinnedError(DomainError):
         interval: Interval string (e.g. ``4h``).
         reason: Which split is missing, or that the range lies outside every split.
 
-    Reference: openspec/changes/356-data-manifest/change.md R-3.
+    Reference: openspec/archive/356-data-manifest/change.md R-3.
     """
 
     pair: str
@@ -492,7 +492,7 @@ class TrialLogError(InfraError):
         path: Trial log path.
         msg: What went wrong, with the line number when known.
 
-    Reference: openspec/changes/357-trial-log/change.md D-2.
+    Reference: openspec/archive/357-trial-log/change.md D-2.
     """
 
     path: str

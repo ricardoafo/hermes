@@ -20,7 +20,7 @@ I/O and no AI:
 The journal can hold money figures. These functions only reshape what hermes
 logged for the operator's own screen; nothing here is sent anywhere.
 
-Reference: openspec/changes/716-logs-screen/change.md.
+Reference: openspec/archive/716-logs-screen/change.md.
 """
 
 import json

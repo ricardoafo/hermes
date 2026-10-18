@@ -161,6 +161,6 @@ fi
     echo "  Expected: openspec/changes/<change-name>/change.md added or modified."
     echo "  Template: openspec/changes/TEMPLATE/change.md"
     echo "  Bypass (with cause): SKIP_OPENSPEC_CHECK=1 git commit ..."
-    echo "  Rationale: #194 DoR/DoD hardening — openspec/changes/dor-dod-enforcement/"
+    echo "  Rationale: #194 DoR/DoD hardening — openspec/archive/dor-dod-enforcement/"
 } >&2
 exit 1

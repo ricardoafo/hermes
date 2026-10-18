@@ -6,8 +6,8 @@ in the application layer so the generic gate (:mod:`signed_gate`) can read a
 batch candidate's files the same way the CLIs do. Absent keys mean not
 computed.
 
-Reference: openspec/changes/355-certification-gates/change.md;
-openspec/changes/v2-certify-gate/change.md; issue #1058.
+Reference: openspec/archive/355-certification-gates/change.md;
+openspec/archive/v2-certify-gate/change.md; issue #1058.
 """
 
 import hashlib

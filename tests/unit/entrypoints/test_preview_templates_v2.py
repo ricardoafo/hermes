@@ -9,7 +9,7 @@ Invariants protected here:
 - old event payloads, the committed JSON fixtures written before v2, still
   load and render through both templates (R-6, the migration test).
 
-Reference: openspec/changes/144-notification-system/change.md (R-5, R-6).
+Reference: openspec/archive/144-notification-system/change.md (R-5, R-6).
 """
 
 from __future__ import annotations

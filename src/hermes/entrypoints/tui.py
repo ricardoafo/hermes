@@ -85,15 +85,15 @@ completes a field there), ``T`` opens the selected line's trace, ``F``
 follows, ``C`` copies, ``E`` exports and ``D`` ``W`` ``M`` ``Y`` zoom the
 volume histogram.
 
-Reference: openspec/changes/readonly-tui-dashboard/change.md;
-openspec/changes/live-home-screen/change.md (D-6);
-openspec/changes/711-cockpit-theme/change.md;
-openspec/changes/712-cockpit-home/change.md;
-openspec/changes/713-live-ticker/change.md;
-openspec/changes/719-tax-screen/change.md;
-openspec/changes/730-drill-down/change.md;
-openspec/changes/717-system-screen/change.md;
-openspec/changes/716-logs-screen/change.md.
+Reference: openspec/archive/readonly-tui-dashboard/change.md;
+openspec/archive/live-home-screen/change.md (D-6);
+openspec/archive/711-cockpit-theme/change.md;
+openspec/archive/712-cockpit-home/change.md;
+openspec/archive/713-live-ticker/change.md;
+openspec/archive/719-tax-screen/change.md;
+openspec/archive/730-drill-down/change.md;
+openspec/archive/717-system-screen/change.md;
+openspec/archive/716-logs-screen/change.md.
 """
 
 from __future__ import annotations

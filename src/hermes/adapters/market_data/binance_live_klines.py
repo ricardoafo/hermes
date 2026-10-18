@@ -4,7 +4,7 @@ Implements :class:`~hermes.ports.bar_feed.ClosedBarFeedPort` (and the
 :class:`~hermes.ports.market_data.MarketDataPort` bar channel) by polling
 ``GET /api/v3/klines`` shortly after each 4h and 1d candle closes.
 
-Design decisions (openspec/changes/307-live-bar-stream/change.md):
+Design decisions (openspec/archive/307-live-bar-stream/change.md):
 
 - **REST polling, not a WebSocket** (D-1): the strategy evaluates once per 4h
   candle, so sub-second latency buys nothing, and polling needs no connection

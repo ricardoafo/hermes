@@ -48,7 +48,7 @@
 #
 # DoR/DoD openspec gate (drift-eval 2026-08-24, #194):
 #   feat/refactor/perf commits MUST add an openspec/changes/*/change.md
-#   in the branch diff vs origin/main. See openspec/changes/dor-dod-enforcement/.
+#   in the branch diff vs origin/main. See openspec/archive/dor-dod-enforcement/.
 #   Bypass with --skip-openspec-check "reason" — the reason is required and
 #   is echoed to stderr for audit trail visibility.
 #
@@ -126,7 +126,7 @@ validate_title() {
 # Exit codes: 0 (pass or exempt), 3 (fail — spec required, none found).
 # Bypass: --skip-openspec-check "reason" sets SKIP_OPENSPEC_REASON.
 #
-# See openspec/changes/dor-dod-enforcement/change.md for the full rationale.
+# See openspec/archive/dor-dod-enforcement/change.md for the full rationale.
 # ────────────────────────────────────────────────────────────────
 validate_openspec_change_present() {
     if [[ -n "$SKIP_OPENSPEC_REASON" ]]; then
@@ -155,7 +155,7 @@ validate_openspec_change_present() {
         echo "  Expected: openspec/changes/<change-name>/change.md added or modified"
         echo "  Template: openspec/changes/TEMPLATE/change.md"
         echo "  Bypass:   --skip-openspec-check \"reason\" (audit-logged)"
-        echo "  Rationale: #194 DoR/DoD hardening — openspec/changes/dor-dod-enforcement/"
+        echo "  Rationale: #194 DoR/DoD hardening — openspec/archive/dor-dod-enforcement/"
     } >&2
     return 3
 }

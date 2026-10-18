@@ -1,6 +1,6 @@
 """Tax-filing reports: build Modelo 100 and Modelo 721 figures from the ledger.
 
-Reference: openspec/changes/36-modelo-100-721/change.md.
+Reference: openspec/archive/36-modelo-100-721/change.md.
 """
 
 from hermes.application.filing.render import render_csv_files, render_markdown

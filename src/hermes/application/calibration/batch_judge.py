@@ -10,7 +10,7 @@ is decided in code (ADR-012 D-08) and does not depend on the order the
 candidates ran in.
 
 Reference: ADR-026 §3-§5; ADR-021 §5; issue #1059; the research funnel
-interface contract §4; openspec/changes/1059-batch-judge/change.md.
+interface contract §4; openspec/archive/1059-batch-judge/change.md.
 """
 
 import math

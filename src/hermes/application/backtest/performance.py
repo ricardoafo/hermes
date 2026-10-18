@@ -13,7 +13,7 @@ quote currency. A position still open when the window ends is not a trade;
 its value is in the equity curve.
 
 Reference: pre-registration-v1.md §8.1, §9;
-openspec/changes/822-portfolio-backtest/change.md D-4.
+openspec/archive/822-portfolio-backtest/change.md D-4.
 """
 
 from __future__ import annotations
