@@ -88,8 +88,8 @@ def gradient_rule(
     width: int,
     stops: Sequence[str],
     *,
+    highlight: str,
     shimmer: float | None = None,
-    highlight: str = "#FFFFFF",
     flat: str | None = None,
 ) -> Text:
     """Return the 1-row rule under the big total, one gradient colour per cell.
@@ -97,9 +97,9 @@ def gradient_rule(
     Args:
         width: Cells.
         stops: Gradient stops, first cell to last (the ``hero-underline`` token).
+        highlight: The shimmer's colour.
         shimmer: Cell position of a shimmer pass, or ``None``; cells within
             the band blend toward ``highlight``.
-        highlight: The shimmer's colour.
         flat: One colour for every cell (stale), overriding gradient and shimmer.
 
     Returns:

@@ -42,7 +42,7 @@ from hermes.application.console import ConsoleReadModel, PortfolioRange, Portfol
 from hermes.application.console.logs import LogLine
 from hermes.entrypoints.tui import HomeApp
 from hermes.entrypoints.tui_home import LOGS_UNAVAILABLE
-from hermes.entrypoints.tui_theme import HERO_RULE_GLYPH
+from hermes.entrypoints.tui_theme import HERO_RULE_GLYPH, MOTION
 from hermes.entrypoints.tui_widgets import BigNumber, HudPanel
 from tests.unit.adapters.console._ledger_builder import LedgerBuilder
 
@@ -203,18 +203,25 @@ def test_compact_draws_the_sparkline_line_instead_of_the_curve() -> None:
 # ----------------------------------------------------------------------
 
 
-def test_big_total_counts_up_with_motion_on() -> None:
+def test_big_total_counts_up_with_motion_on(monkeypatch: pytest.MonkeyPatch) -> None:
     """A €100 rise counts up: mid-way the number is between, after 0.6 s it is the new total."""
     model = _Growing()
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[str, str, str]:
+        del pilot
+        # The animator reads its own clock, so the frames are stepped by hand:
+        # a busy CI runner can stall a real pause past the whole count-up.
+        now = [app.animator._get_time()]
+        monkeypatch.setattr(app.animator, "_get_time", lambda: now[0])
         big = app.query_one("#portfolio-total", BigNumber)
         before = big.value
         model.grown = True
         app._redraw()
-        await pilot.pause(0.2)
+        now[0] += MOTION.slow / 3
+        app.animator()
         during = big.value
-        await pilot.pause(0.8)
+        now[0] += MOTION.slow
+        app.animator()
         return before, during, big.value
 
     before, during, after = _run(cast("ConsoleReadModel", model), probe, motion=True)

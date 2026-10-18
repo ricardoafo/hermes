@@ -15,6 +15,7 @@ Reference: code-conventions.md §10 — Event schema versioning + upcaster chain
 
 from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
 from hermes.domain.events.balance_low import BalanceLow
+from hermes.domain.events.bar_missed import BarMissed
 from hermes.domain.events.bar_processed import BarProcessed
 from hermes.domain.events.base import DomainEvent, SchemaVersion
 from hermes.domain.events.daily_trade_digest import DailyTradeDigest, TradeSummary
@@ -34,6 +35,7 @@ __all__ = [
     "AnomalyDetected",
     "AnomalySeverity",
     "BalanceLow",
+    "BarMissed",
     "BarProcessed",
     "DailyTradeDigest",
     "DomainEvent",

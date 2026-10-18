@@ -40,7 +40,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import inspect
 import json
 import os
 import shutil
@@ -64,6 +63,7 @@ from hermes.application.strategy_protocol.pinned_dataset import (
     load_pinned_bars,
 )
 from hermes.application.strategy_protocol.preregistration import PreRegistration
+from hermes.application.strategy_protocol.strategy_factory import strategy_kind
 from hermes.application.strategy_protocol.trial_log import trial_split
 from hermes.domain.calibration.trial_record import DatasetRef, TrialRecord
 from hermes.domain.errors import DataManifestFormatError, DomainError, TrialLogError
@@ -76,7 +76,6 @@ from hermes.domain.market_data.dataset_manifest import DatasetManifest, DataSpli
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.risk.state import PortfolioState
 from hermes.domain.strategy.signal import SignalKind, StrategySignal
-from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
 from hermes.domain.trading.fill import Fill
 from hermes.domain.trading.order import Order, OrderSide
 from hermes.domain.value_objects.currency import Currency
@@ -233,12 +232,8 @@ def _jsonify(obj: Any) -> Any:
 
 
 def _strategy_parameters() -> dict[str, Any]:
-    """Return every SwingStrategyAdapter parameter at its default, so the trial records what ran."""
-    return {
-        name: param.default
-        for name, param in inspect.signature(SwingStrategyAdapter.__init__).parameters.items()
-        if param.kind is inspect.Parameter.KEYWORD_ONLY
-    }
+    """Return every parameter of the strategy kind at its default, so the trial records what ran."""
+    return strategy_kind(None).default_parameters()
 
 
 def _git_state() -> tuple[str, bool]:
@@ -344,7 +339,7 @@ async def _run(args: argparse.Namespace) -> int:
     merged = _merge_by_close_time(bars_4h, bars_1d)
 
     parameters = _strategy_parameters()
-    strategy = SwingStrategyAdapter(**parameters)
+    strategy = strategy_kind(None).create(parameters)
     portfolio_state = PortfolioState(
         peak_value=_DEFAULT_STARTING_EQUITY_USD,
         current_value=_DEFAULT_STARTING_EQUITY_USD,
