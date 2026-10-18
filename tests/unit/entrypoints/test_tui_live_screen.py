@@ -354,3 +354,56 @@ def _svg(size: tuple[int, int]) -> str:
 def test_svg_snapshot_live(size: tuple[int, int], snapshot: SnapshotAssertion) -> None:
     """The reviewed rendering with two fake ticks at each breakpoint."""
     assert _svg(size) == snapshot(extension_class=SVGImageSnapshotExtension)
+
+
+# ----------------------------------------------------------------------
+# Meters at live prices (issue #1162)
+# ----------------------------------------------------------------------
+
+
+def _booked_meters() -> str:
+    """Return the meters of the fixture with no ticker: the booked figures."""
+
+    async def drive() -> str:
+        app = HomeApp(
+            _fixture(), clock=_Clock(), motion=False, refresh_seconds=3600, exposure_cap=_CAP
+        )
+        async with app.run_test(size=(160, 45)) as pilot:
+            await pilot.pause()
+            return app.plain_text("portfolio-meters")
+
+    return asyncio.run(drive())
+
+
+def test_invested_and_exposure_meters_follow_the_live_prices() -> None:
+    """Live prices move the invested figure and the exposure share; the cash figure stays booked."""
+    fake = _FakeTicker(_FIRST)
+
+    async def probe(app: HomeApp, pilot: Pilot[None], clock: _Clock) -> str:
+        del pilot, clock
+        return app.plain_text("portfolio-meters")
+
+    live = _run(_fixture(), fake, probe)
+    assert (
+        _line_of(live, "cash").split()[-2:],
+        _line_of(live, "invested").split()[-2:],
+        _line_of(live, "exposure").endswith("23.5% of 15% cap"),
+    ) == (["€790.36", "77.1%"], ["€235.14", "22.9%"], True)
+
+
+def test_the_meters_go_back_to_booked_when_the_layer_pauses() -> None:
+    """After 61 s with no good tick the meters read the booked figures again."""
+    fake = _FakeTicker(_FIRST)
+
+    async def probe(app: HomeApp, pilot: Pilot[None], clock: _Clock) -> str:
+        fake.fail = {"BTC", "ETH", "SOL"}
+        for _ in range(6):
+            await _advance(app, pilot, clock, 10)
+        await _advance(app, pilot, clock, 1)
+        return app.plain_text("portfolio-meters")
+
+    assert _run(_fixture(), fake, probe) == _booked_meters()
+
+
+def _line_of(text: str, starts: str) -> str:
+    return next(line for line in text.splitlines() if line.startswith(starts))
