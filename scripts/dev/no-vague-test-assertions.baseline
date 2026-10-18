@@ -198,12 +198,6 @@ tests/unit/domain/value_objects/test_weight.py::test_from_str_invalid_decimal U3
 tests/unit/domain/value_objects/test_weight.py::test_from_str_out_of_range U3
 tests/unit/entrypoints/test_health.py::test_column_widths_adjust_to_longest_value U3
 tests/unit/entrypoints/test_health.py::test_run_all_with_all_ok_yields_ok_results U3
-tests/unit/entrypoints/test_serve.py::test_a_repeated_bar_is_skipped U3
-tests/unit/entrypoints/test_serve.py::test_a_repeated_bar_logs_nothing U3
-tests/unit/entrypoints/test_serve.py::test_credentials_in_env_wire_both_channels U3
-tests/unit/entrypoints/test_serve.py::test_default_depth_source_is_the_keyless_binance_snapshot_adapter U3
-tests/unit/entrypoints/test_serve.py::test_each_stream_has_its_own_contiguity U3
-tests/unit/entrypoints/test_serve.py::test_in_order_bars_each_write_a_cursor_row U3
 tests/unit/entrypoints/test_tui.py::test_refresh_interval_is_five_seconds U7
 tests/unit/infrastructure/config/test_renta.py::test_layout_type_is_the_domain_layout U3
 tests/unit/infrastructure/test_aggregate_changelog.py::test_gitkeep_and_readme_are_skipped U3
