@@ -2,7 +2,7 @@
 
 **SDD change**: `1059-batch-judge`
 **Date**: 2026-10-17
-**Status**: Applied (part 1 of 2)
+**Status**: Applied (parts 1 and 2)
 **Tracking issue**: see sibling `issue.md` (#1059)
 
 Mirror of engram topic key `sdd/1059-batch-judge/change` (see
@@ -30,15 +30,21 @@ boundary would pick the wrong champion; both are pinned by tests.
   `CandidateResult`, `BatchJudgement`, `batch_trial_summary`, `judge_batch`.
 - Unit and property tests for both, and `changelog.d/1059-added.md`.
 
+### In (part 2)
+
+- `src/hermes/application/calibration/batch_stage.py`: `judge_stage` runs
+  `judge_candidate` (issue #1058) over each candidate's evidence folder with
+  one `batch_trial_summary`, then applies `judge_batch` after Validation;
+  `verdict_record` and `stage_summary` build the contract §4-§5 files.
+- `src/hermes/entrypoints/funnel_batch.py`: `hermes funnel --batch FILE
+  --stage train|validation --evidence-dir DIR --trial-log FILE --out DIR`,
+  routed from `hermes funnel` when `--batch` is given.
+- `tests/support/candidate_evidence.py`: `write_candidate` takes the
+  candidate's strategy id, so a test can write both candidates.
+- Unit tests for both modules and `changelog.d/+funnel-batch-cli.added.md`.
+
 ### Out
 
-- **Part 2, `hermes funnel --batch --stage train|validation`.** Needs
-  `judge_candidate` and `GateResult` from issue #1058 (Defects lane) and
-  `load_batch` from issue #1057. It maps each `GateResult` to a
-  `CandidateResult` (`passed`, `dsr`, the daily returns from
-  `performance.json`), calls `judge_batch`, and writes
-  `validation-candidates.json`, `selection.json`, `verdicts/<id>.json` and
-  `funnel-batch.txt` to the contract's paths, with no value on stdout.
 - **An implied-independent-trials estimator.** The trial log keeps one Sharpe
   per trial and no return series, so N is the raw count (D-2).
 
@@ -98,6 +104,46 @@ boundary would pick the wrong champion; both are pinned by tests.
   depends on run order. An undefined correlation ranks last (fails closed).
 - **Cost of reversal**: LOW.
 
+### D-6: Every candidate gets a verdict at every stage
+
+- **Decision**: at both stages the judge walks every candidate the batch
+  names. A candidate with no `DIR/<strategy_id>/` gets one check,
+  `missing_evidence` FAIL, a `null` window and `passed: false`. At Validation
+  it enters BH with p = 1 (D-1).
+- **Alternatives**: judge only the folders present. Rejected: BH's m must be
+  the batch size, and a candidate whose Validation job died must show as a
+  failure, not vanish. A candidate that failed Train also gets a
+  `missing_evidence` Validation record; the Train record says why.
+- **Cost of reversal**: LOW.
+
+### D-7: The tie-break's returns come from the funnel evidence
+
+- **Decision**: a candidate's daily returns are those of
+  `funnel-evidence.json`'s `daily_equity`, and its window is that file's first
+  and last day. Every judged candidate must cover the same window, or the run
+  stops with exit 3. A candidate without evidence carries zeros of the common
+  length; it is never eligible, so they are never read.
+- **Rationale**: the funnel evidence is the file the gate's funnel rows read,
+  with explicit dates; the performance file holds the same curve without them.
+- **Cost of reversal**: LOW.
+
+### D-8: Refuse instead of guessing
+
+- **Decision**: a DRAFT batch is REFUSED (exit 1, nothing written), as
+  `hermes certify --batch` does. A missing trial log is exit 3: an empty log
+  would judge every candidate with N = 0. Unreadable evidence, evidence of the
+  wrong stage and a broken log chain are exit 3, and no output is written.
+- **Cost of reversal**: LOW.
+
+### D-9: stdout carries statuses only
+
+- **Decision**: one `PASS|FAIL|NA <strategy_id> <check>` line per check, then
+  `CANDIDATES <ids>` or `CANDIDATES none` (Train), or `CHAMPION <id>` or
+  `CHAMPION none` (Validation). Values go only to `funnel-batch.txt`
+  (ADR-023 §7, ADR-012 D-06). `NA` lines are printed because the workflow
+  summary keeps them (contract §3).
+- **Cost of reversal**: LOW.
+
 ## Requirements
 
 ### R-1: BH follows the step-up rule
@@ -113,6 +159,20 @@ boundary would pick the wrong champion; both are pinned by tests.
 - **A-2.1**: `uv run pytest tests/unit/application/calibration/test_batch_judge.py`
   passes, including the property that any permutation of the candidates gives
   the same judgement.
+
+### R-3: The stage outputs follow the contract
+
+- **A-3.1**: `uv run pytest tests/unit/application/calibration/test_batch_stage.py`
+  passes: who goes on after Train, the champion and BH over the whole batch
+  after Validation, N over the whole log for every candidate, `trial_lines`
+  per candidate, batch and split, and a verdict record whose only number is
+  `trial_lines` (`run_id` until the workflow fills it).
+
+### R-4: The CLI's exit codes and lines follow the contract
+
+- **A-4.1**: `uv run pytest tests/unit/entrypoints/test_funnel_batch.py`
+  passes: exit 0/1/2/3 cases, stdout lines with no values, the files written,
+  and the single pre-registration path unchanged.
 
 ## Design
 
@@ -147,8 +207,9 @@ series of different lengths.
 
 ## Test plan
 
-1. Tests written before the code; the first run failed on the missing
-   modules, then on the float boundary (D-3).
+1. Part 1: tests written before the code; the first run failed on the missing
+   modules, then on the float boundary (D-3). Part 2: tests written after the
+   modules, from contract §4-§5, with every expected file worked by hand.
 2. `bash scripts/dev/mutation-diff.sh` on the new lines.
 3. `GITHUB_BASE_REF=main bash scripts/dev/ci-checks.sh guards`, ruff, mypy.
 
@@ -160,8 +221,9 @@ Test tiers touched: unit, property, mutation
   m = eligible, BH becomes a no-op; the change is one line and the tests say
   which.
 - **Part 2 maps the gate's result.** A `GateResult.passed` that ignored the
-  DSR row would let a low-DSR candidate be eligible; part 2's tests pin that
-  `dsr` is among the checks.
+  DSR row would let a low-DSR candidate be eligible; `test_signed_gate.py`
+  pins that a failed DSR row fails the gate, and `judge_batch` also requires
+  a DSR.
 
 ## Dependencies on other changes
 

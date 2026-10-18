@@ -92,6 +92,7 @@ def write_candidate(
     fills: int = 40,
     window: str = "train_val",
     body: str = BODY,
+    strategy_id: str = STRATEGY_ID,
 ) -> Written:
     """Write a batch under ``root`` and the candidate's three files beside it.
 
@@ -102,6 +103,7 @@ def write_candidate(
         fills: The calibration fill count in ``evidence.json``.
         window: The performance file's window.
         body: The batch body, to test the §9 secondary rule.
+        strategy_id: The candidate; its files go to ``root/evidence/<strategy_id>/``.
 
     """
     front_matter = batch_front_matter()
@@ -112,7 +114,7 @@ def write_candidate(
 
     base = returns(drift, days)
     curve = equity(base)
-    out = root / "evidence" / STRATEGY_ID
+    out = root / "evidence" / strategy_id
     out.mkdir(parents=True, exist_ok=True)
     performance = {
         "window": window,
@@ -123,7 +125,7 @@ def write_candidate(
         "bootstrap_seed": 11,
     }
     funnel = {
-        "strategy_id": STRATEGY_ID,
+        "strategy_id": strategy_id,
         "start_date": START.isoformat(),
         "daily_equity": curve,
         "trade_count": 140,
