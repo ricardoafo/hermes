@@ -292,12 +292,20 @@ class BinanceLiveKlinesAdapter:
         self._reported_gaps: set[tuple[Stream, datetime]] = set()
 
     @classmethod
-    def create(cls, config: MarketDataConfig, clock: ClockPort) -> BinanceLiveKlinesAdapter:
+    def create(
+        cls,
+        config: MarketDataConfig,
+        clock: ClockPort,
+        *,
+        sleep: Callable[[float], Awaitable[None]] = anyio.sleep,
+    ) -> BinanceLiveKlinesAdapter:
         """Build an adapter with a default client and limiter from ``config``.
 
         Args:
             config: Market-data configuration.
             clock: Local time source.
+            sleep: Async sleep; a test clock's own, so the poller waits on
+                that clock rather than wall time (#972).
 
         Returns:
             An adapter owning its :class:`httpx.AsyncClient` and limiter.
@@ -312,6 +320,7 @@ class BinanceLiveKlinesAdapter:
                     window_seconds=config.rate_limit_window_seconds,
                 )
             ),
+            sleep=sleep,
         )
 
     # ------------------------------------------------------------------

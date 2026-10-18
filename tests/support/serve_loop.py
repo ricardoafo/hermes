@@ -40,11 +40,13 @@ from hermes.ports.bar_feed import SourceHealth, SourceState
 from hermes.ports.clock import ClockPort
 from hermes.ports.fx import FxRateProviderPort
 from hermes.ports.orderbook_snapshot import OrderbookSnapshotPort
+from tests.support.clock import FakeClock
+from tests.support.paths import REPO_ROOT
 from tests.unit.application.ledger.fake_fx import FakeFx
 
 BTC = Pair(base=Currency.BTC, quote=Currency.USDT)
 ETH = Pair(base=Currency.ETH, quote=Currency.USDT)
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = REPO_ROOT
 BASE = datetime(2024, 1, 1, tzinfo=UTC)
 H4_BASE = BASE + timedelta(days=15)
 _H4 = timedelta(hours=4)
@@ -116,18 +118,6 @@ def fresh_strategy() -> SwingStrategyAdapter:
     )
 
 
-class FakeClock:
-    """Clock that always reads ``current``."""
-
-    def __init__(self, current: datetime) -> None:
-        """Start at ``current``."""
-        self.current = current
-
-    def now(self) -> datetime:
-        """Return the fixed instant."""
-        return self.current
-
-
 class FakeFeed:
     """Scripted closed-bar feed.
 
@@ -185,6 +175,38 @@ class FakeFeed:
     async def aclose(self) -> None:
         """Record that the feed was closed."""
         self.closed = True
+
+
+class SteppingFeed(FakeFeed):
+    """Feed that calls ``step`` with each live bar just before it yields it.
+
+    A live feed delivers a bar a little after its close, so ``step`` moves the
+    test's clock (and any scripted book) to that moment. A clock fixed after
+    the last bar would make every earlier book stale, and RO-04 would refuse
+    every entry (#707).
+    """
+
+    def __init__(
+        self,
+        step: Callable[[Bar], None],
+        warm: Sequence[Bar] = (),
+        live_bars: Sequence[Bar] = (),
+    ) -> None:
+        """Script the feed and keep the step to run before each live bar."""
+        super().__init__(warm=warm, live_bars=live_bars)
+        self.step = step
+
+    async def stream_closed_bars(
+        self,
+        pairs: Sequence[Pair],
+        intervals: Sequence[KlineInterval],
+        *,
+        resume_after: Mapping[tuple[Pair, KlineInterval], datetime] | None = None,
+    ) -> AsyncIterator[Bar]:
+        """Run ``step`` on each scripted live bar, then yield it."""
+        async for bar in super().stream_closed_bars(pairs, intervals, resume_after=resume_after):
+            self.step(bar)
+            yield bar
 
 
 class UnavailableBooks:

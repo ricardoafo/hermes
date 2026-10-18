@@ -10,7 +10,11 @@ Verifies:
 - a missing directory or malformed YAML exits 3;
 - bad arguments exit 2, ``-h`` exits 0;
 - ``--json`` emits one document;
-- ``hermes config`` alone prints usage and exits 2.
+- ``hermes config`` alone prints usage and exits 2;
+- a setting that breaks its tier's rules is a ``tier`` finding, named and
+  never valued, and every such problem is listed (#970);
+- ``--env-file`` checks that file alone, from a path or stdin, in place of
+  the process environment (#970).
 
 Reference: openspec/archive/537-config-check/change.md.
 """
@@ -44,9 +48,14 @@ def config_dir(tmp_path: Path) -> Path:
     return target
 
 
-def _run(argv: list[str], env: dict[str, str], err: io.StringIO | None = None) -> tuple[int, str]:
+def _run(
+    argv: list[str],
+    env: dict[str, str],
+    err: io.StringIO | None = None,
+    stdin: str = "",
+) -> tuple[int, str]:
     stream = io.StringIO()
-    code = check.main(argv, stream=stream, env=env, err=err)
+    code = check.main(argv, stream=stream, env=env, err=err, stdin=io.StringIO(stdin))
     return code, stream.getvalue()
 
 
@@ -174,3 +183,95 @@ class TestOsEnvironment:
         code = check.main(["--config-dir", str(_ROOT / "config")], stream=stream)
         assert code == 1
         assert "FINDING missing_secret HERMES_SLACK__BOT_TOKEN" in stream.getvalue()
+
+
+class TestTierFindings:
+    """A setting that breaks its tier's rules is named, never valued (#970)."""
+
+    def test_loopback_endpoint_in_staging_is_a_tier_finding(self) -> None:
+        """Invariant: a YAML-backed endpoint on loopback in staging names its field."""
+        env = {
+            "HERMES_ENV": "staging",
+            "HERMES_MARKET_DATA__BASE_URL": f"http://127.0.0.1:9000/{_SECRET}",
+        }
+        code, out = _run(["--config-dir", str(_ROOT / "config")], env)
+        assert code == 1
+        assert out == (
+            "FINDING tier market_data.base_url: points at a loopback host, "
+            "which only dev, qa, sandbox may use\n"
+        )
+
+    def test_endpoint_and_key_problems_are_listed_together(self) -> None:
+        """Invariant: a YAML endpoint problem does not hide an env-only one."""
+        env = {
+            "HERMES_ENV": "staging",
+            "HERMES_SENTRY__DSN": f"http://{_SECRET}@127.0.0.1:9/1",
+            "HERMES_KRAKEN__API_SECRET": _SECRET,
+        }
+        code, out = _run(["--config-dir", str(_ROOT / "config"), "--json"], env)
+        assert code == 1
+        assert _SECRET not in out
+        assert [(f["kind"], f["name"]) for f in json.loads(out)["findings"]] == [
+            ("tier", "sentry.dsn"),
+            ("tier", "HERMES_KRAKEN__API_SECRET"),
+        ]
+
+
+class TestEnvFile:
+    """``--env-file`` checks one env file, alone, from a path or stdin (#970)."""
+
+    def test_stdin_env_file_with_a_trading_key_names_it(self) -> None:
+        """Invariant: a staging env file on stdin holding a trading key is refused by name."""
+        text = f'HERMES_ENV="staging"\nHERMES_BINANCE__API_KEY="{_SECRET}"\n'
+        code, out = _run(["--config-dir", str(_ROOT / "config"), "--env-file", "-"], {}, stdin=text)
+        assert code == 1
+        assert (
+            out
+            == "FINDING tier HERMES_BINANCE__API_KEY: is set, but staging holds no trading key\n"
+        )
+
+    def test_env_file_replaces_the_process_environment(self) -> None:
+        """Invariant: only the file counts, as for a unit with no Environment= line."""
+        env = {"HERMES_ENV": "staging", "HERMES_KRAKEN__API_KEY": _SECRET}
+        code, out = _run(
+            ["--config-dir", str(_ROOT / "config"), "--env-file", "-"],
+            env,
+            stdin="HERMES_ENV=staging\n",
+        )
+        assert (code, out) == (0, "OK: config loads and the startup checks pass.\n")
+
+    def test_env_file_by_path_is_read(self, tmp_path: Path) -> None:
+        """Invariant: a path works like stdin, so an operator can check a file by hand."""
+        path = tmp_path / "env.staging"
+        path.write_text("HERMES_ENV=staging\nHERMES_SLACK__API_BASE=http://[::1]:1\n", "utf-8")
+        code, out = _run(["--config-dir", str(_ROOT / "config"), "--env-file", str(path)], {})
+        assert code == 1
+        assert out.startswith("FINDING tier HERMES_SLACK__API_BASE: points at a loopback host")
+
+    def test_env_file_is_not_interpolated(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Invariant: ${VAR} stays literal, as systemd leaves it, so no value is pulled in."""
+        monkeypatch.setenv("HOST", "127.0.0.1")
+        code, out = _run(
+            ["--config-dir", str(_ROOT / "config"), "--env-file", "-"],
+            {},
+            stdin="HERMES_ENV=staging\nHERMES_TELEGRAM__API_BASE=http://${HOST}:1\n",
+        )
+        assert (code, out) == (0, "OK: config loads and the startup checks pass.\n")
+
+    def test_missing_env_file_exits_three(self, tmp_path: Path) -> None:
+        """Invariant: an absent env file is exit 3, never an empty environment checked clean."""
+        err = io.StringIO()
+        code, out = _run(
+            ["--config-dir", str(_ROOT / "config"), "--env-file", str(tmp_path / "nope")], {}, err
+        )
+        assert (code, out) == (3, "")
+        assert err.getvalue() == "ERROR: env file could not be read: No such file or directory\n"
+
+    def test_env_file_that_is_not_utf8_exits_three(self, tmp_path: Path) -> None:
+        """Invariant: undecodable bytes are exit 3, never a traceback read as findings."""
+        path = tmp_path / "env.staging"
+        path.write_bytes(b"HERMES_ENV=staging\nHERMES_SLACK__API_BASE=\xff\xfe\n")
+        err = io.StringIO()
+        code, out = _run(["--config-dir", str(_ROOT / "config"), "--env-file", str(path)], {}, err)
+        assert (code, out) == (3, "")
+        assert err.getvalue() == "ERROR: env file could not be read: not UTF-8\n"

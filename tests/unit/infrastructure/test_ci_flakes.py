@@ -12,13 +12,13 @@ from __future__ import annotations
 
 import importlib.util
 import sys
-from pathlib import Path
 
 from hypothesis import given
 from hypothesis import strategies as st
 
-_REPO = Path(__file__).resolve().parents[3]
-_SCRIPT_PATH = _REPO / "scripts" / "dev" / "ci-flakes.py"
+from tests.support.paths import REPO_ROOT
+
+_SCRIPT_PATH = REPO_ROOT / "scripts" / "dev" / "ci-flakes.py"
 _spec = importlib.util.spec_from_file_location("ci_flakes", _SCRIPT_PATH)
 assert _spec is not None and _spec.loader is not None
 ci_flakes = importlib.util.module_from_spec(_spec)

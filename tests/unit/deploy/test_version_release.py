@@ -24,10 +24,10 @@ from types import ModuleType
 import pytest
 
 import hermes
+from tests.support.paths import REPO_ROOT
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_SCRIPT = _REPO_ROOT / "scripts" / "deploy" / "version_release.py"
-_MAPPING = _REPO_ROOT / "src" / "hermes" / "release_version.py"
+_SCRIPT = REPO_ROOT / "scripts" / "deploy" / "version_release.py"
+_MAPPING = REPO_ROOT / "src" / "hermes" / "release_version.py"
 
 _CHANGELOG = """# Changelog
 
@@ -233,8 +233,8 @@ def test_runs_with_the_standard_library_alone(tmp_path: Path) -> None:
 
 def test_the_repository_head_is_a_cut_version_with_a_tag() -> None:
     """Main declares a cut version, so its next deploy has a tag and notes to publish."""
-    release_version = version_release._load_release_version(_REPO_ROOT)
-    described = version_release.describe(_REPO_ROOT, "HEAD")
+    release_version = version_release._load_release_version(REPO_ROOT)
+    described = version_release.describe(REPO_ROOT, "HEAD")
 
     assert described["tag"] == f"v{release_version.to_semver(hermes.__version__)}"
     assert described["body"].startswith("### ")

@@ -99,7 +99,7 @@ if [[ "${HERMES_SELF_TEST:-0}" == "1" ]]; then
     expect "a top-level src module selects the whole tier" ALL src/hermes/__main__.py
     expect "docs alone select nothing" "" docs/guides/README.md
     expect "a changed unit test selects itself" tests/unit/test_sev1_guard.py tests/unit/test_sev1_guard.py
-    expect "an integration test is not a unit test" "" tests/integration/test_simulated_exchange_round_trip.py
+    expect "an integration test is not a unit test" "" tests/integration/test_eur_values_shadow_safety.py
     got=$(printf 'src/hermes/domain/value_objects/money.py\n' | select_tests unit)
     if grep -q 'tests/unit/domain/value_objects/test_money.py' <<< "$got"; then
         echo "PASS: a src module selects the tests that import it"

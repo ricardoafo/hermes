@@ -63,6 +63,7 @@ CI_ENFORCED: dict[str, str] = {
     "no-future-annotations": "guards",
     "adr-status-check": "guards",
     "no-domain-mode-check": "guards",
+    "lab-notebook-hashes": "unit",
     "secrets-scan": "step:Secrets scan",
     "conventional-pre-commit": "step:PR title",
 }

@@ -76,6 +76,7 @@ One line per entry, appended at the end: date, link, and what it supersedes if a
 - 2026-10-04 [Kraken spot trading adapter](2026-10-04-kraken-spot-adapter.md) (supersedes 2026-08-24 Kraken entry (public-only scope))
 - 2026-10-04 [Tax-filing report defaults](2026-10-04-tax-filing-defaults.md)
 - 2026-10-18 [Shipped change specs move to `openspec/archive/`](2026-10-18-openspec-archive.md) (supersedes ADR-009 §6 Pending archival choice)
+- 2026-10-18 [Retire the simulated exchange adapter](2026-10-18-retire-simulated-exchange-adapter.md) (supersedes ADR-011 mode table, Backtest and Shadow `ExchangePort`)
 
 ## Anti-patterns
 

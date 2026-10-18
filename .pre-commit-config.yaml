@@ -339,6 +339,15 @@ repos:
         entry: uv run lint-imports
         pass_filenames: false
 
+      # Pre-registration §11: a notebook entry is never edited after it is
+      # written. Checks every entry's hash before the commit lands (#1181).
+      - id: lab-notebook-hashes
+        name: lab notebook entries verify against their hashes
+        language: system
+        entry: uv run pytest -q tests/unit/application/strategy_protocol/test_lab_notebook.py
+        files: ^(docs/experiments/[^/]+/lab-notebook\.md|src/hermes/application/strategy_protocol/lab_notebook\.py)$
+        pass_filenames: false
+
       # Pre-push: the fast subset of the CI suite. A stale base fails in
       # seconds; the test tiers, pip-audit, radon, vulture and the license
       # check are left to CI, which runs them on every head (#416). Run

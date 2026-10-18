@@ -43,6 +43,7 @@ _HELP: Final = "Commands: /status /next /signals /money [week|month|year] /pos [
 _NO_LIVE_MONEY: Final = "No live money yet: simulated fills start with #353."
 _BLIND: Final = "Money is not shown here."
 _TAX_PENDING: Final = "tax estimate: not available yet"
+"""The whole tax item when there is no estimate; a known tax reads ``tax <amount>``."""
 _EUR_PENDING: Final = "EUR pending"
 _LOG_LINES: Final = 20
 # A line that is not structlog JSON can be a traceback quoting an upstream
@@ -214,11 +215,11 @@ class Replies:
                 tax = (
                     _TAX_PENDING
                     if isinstance(detail.tax, TaxPending)
-                    else signed_eur(-tax_amount(detail.tax))
+                    else f"tax {signed_eur(-tax_amount(detail.tax))}"
                 )
                 fees = signed_eur(-(detail.fees_paid + detail.fees_to_close))
                 lines.append(
-                    f"Gross {signed_eur(detail.gross)} · fees {fees} · tax {tax}"
+                    f"Gross {signed_eur(detail.gross)} · fees {fees} · {tax}"
                     f" · net {signed_eur(detail.net)}"
                 )
             return "\n".join(lines)
@@ -263,9 +264,11 @@ def _waterfall(label: str, column: WaterfallColumn) -> str:
     if column.eur_pending:
         return f"{label}: {_EUR_PENDING}"
     tax = (
-        _TAX_PENDING if isinstance(column.tax, TaxPending) else signed_eur(-tax_amount(column.tax))
+        _TAX_PENDING
+        if isinstance(column.tax, TaxPending)
+        else f"tax {signed_eur(-tax_amount(column.tax))}"
     )
     return (
         f"{label}: gross {signed_eur(column.gross)} · fees {signed_eur(-column.fees)}"
-        f" · tax {tax} · net {signed_eur(column.net)}"
+        f" · {tax} · net {signed_eur(column.net)}"
     )

@@ -42,11 +42,11 @@ from tests.support import candidate_evidence
 from tests.support.candidate_evidence import TRAIN_DAYS, write_candidate
 from tests.support.day_zero import write_day_zero
 from tests.support.notification_samples import samples
+from tests.support.paths import REPO_ROOT
 from tests.support.research_batch import BATCH_PATH
 
 _SID = "swing-donchian-4h"
 _FP = "f" * 64
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _METRICS = {
     "dsr": 0.8,
     "bootstrap_ci_lower": 0.1,
@@ -184,7 +184,7 @@ class TestMain:
                 "--evidence",
                 str(path),
                 "--config-dir",
-                str(_PROJECT_ROOT / "config"),
+                str(REPO_ROOT / "config"),
                 "--store-dir",
                 str(tmp_path / "store"),
             ],
@@ -198,7 +198,7 @@ class TestMain:
         """With the shipped config and no evidence, the gate fails and nothing is stored."""
         store_dir = tmp_path / "store"
         code = certify_module.main(
-            [_SID, "--config-dir", str(_PROJECT_ROOT / "config"), "--store-dir", str(store_dir)],
+            [_SID, "--config-dir", str(REPO_ROOT / "config"), "--store-dir", str(store_dir)],
             stream=io.StringIO(),
         )
         assert code == 1
@@ -216,7 +216,7 @@ def _sign_off_argv(tmp_path: Path, *extra: str) -> list[str]:
     return [
         _SID,
         "--config-dir",
-        str(_PROJECT_ROOT / "config"),
+        str(REPO_ROOT / "config"),
         "--store-dir",
         str(tmp_path / "store"),
         "--sign-off",
@@ -357,7 +357,7 @@ class TestPerformance:
                 "--performance",
                 str(performance_path),
                 "--config-dir",
-                str(_PROJECT_ROOT / "config"),
+                str(REPO_ROOT / "config"),
                 "--store-dir",
                 str(store_dir),
             ],
@@ -377,11 +377,11 @@ class TestReleaseLayout:
     ) -> None:
         """An installed package with no repository above it still certifies a release."""
         release = tmp_path / "release"
-        shutil.copytree(_PROJECT_ROOT / "config", release / "config")
+        shutil.copytree(REPO_ROOT / "config", release / "config")
         experiment = release / "docs" / "experiments" / "swing-mvp1"
         experiment.mkdir(parents=True)
         shutil.copy(
-            _PROJECT_ROOT / "docs" / "experiments" / "swing-mvp1" / "pre-registration-v1.md",
+            REPO_ROOT / "docs" / "experiments" / "swing-mvp1" / "pre-registration-v1.md",
             experiment,
         )
 
@@ -419,7 +419,7 @@ class TestReleaseLayout:
     ) -> None:
         """No file beside the config and no repository: exit 3 with one ERROR line."""
         release = tmp_path / "release"
-        shutil.copytree(_PROJECT_ROOT / "config", release / "config")
+        shutil.copytree(REPO_ROOT / "config", release / "config")
 
         def _no_repository() -> Path:
             raise FileNotFoundError("no pyproject.toml above the installed package")
@@ -545,7 +545,7 @@ class TestShadowRoundTrips:
     def test_main_counts_the_ledgers_sells_for_the_strategy(self, tmp_path: Path) -> None:
         """``--db`` reads 2 SELLs of this strategy and ignores the other strategy's."""
         db = _ledger_with_round_trips(tmp_path, sells=2)
-        fingerprint = serve_module.parameter_fingerprint_for(load_config(_PROJECT_ROOT / "config"))
+        fingerprint = serve_module.parameter_fingerprint_for(load_config(REPO_ROOT / "config"))
         store_dir = tmp_path / "store"
         JsonCertificationStore(store_dir).save(
             CertificationRecord(
@@ -557,7 +557,7 @@ class TestShadowRoundTrips:
             [
                 _SID,
                 "--config-dir",
-                str(_PROJECT_ROOT / "config"),
+                str(REPO_ROOT / "config"),
                 "--store-dir",
                 str(store_dir),
                 "--db",
@@ -685,7 +685,7 @@ class TestShadowParity:
                 _SID,
                 CertificationState.BACKTEST_CERTIFIED,
                 parameter_fingerprint=serve_module.parameter_fingerprint_for(
-                    load_config(_PROJECT_ROOT / "config")
+                    load_config(REPO_ROOT / "config")
                 ),
             )
         )
@@ -696,7 +696,7 @@ class TestShadowParity:
                 "--evidence",
                 str(_evidence_file(tmp_path, {"shadow": _SHADOW})),
                 "--config-dir",
-                str(_PROJECT_ROOT / "config"),
+                str(REPO_ROOT / "config"),
                 "--store-dir",
                 str(store_dir),
                 "--db",
@@ -780,7 +780,7 @@ def _batch_argv(tmp_path: Path, files: CandidateEvidence, *extra: str) -> list[s
 def _config_with_candidate(tmp_path: Path) -> Path:
     """Copy the shipped config and add the candidate's roster entry, as a new strategy does."""
     config = tmp_path / "config"
-    shutil.copytree(_PROJECT_ROOT / "config", config)
+    shutil.copytree(REPO_ROOT / "config", config)
     roster = config / "strategies.yaml"
     entry = (
         f"  - name: {candidate_evidence.STRATEGY_ID}\n"
@@ -847,7 +847,7 @@ class TestBatch:
         err = io.StringIO()
 
         code = certify_module.main(
-            _batch_argv(tmp_path, files, "--config-dir", str(_PROJECT_ROOT / "config")),
+            _batch_argv(tmp_path, files, "--config-dir", str(REPO_ROOT / "config")),
             stream=io.StringIO(),
             err=err,
         )

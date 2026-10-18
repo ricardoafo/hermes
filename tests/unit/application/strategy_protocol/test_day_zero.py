@@ -32,6 +32,7 @@ from hermes.application.strategy_protocol.day_zero import (
     roster_check,
     sha256_tree,
 )
+from tests.support.paths import REPO_ROOT
 
 _FP = "fp-1"
 _AT = datetime(2026, 10, 15, tzinfo=UTC)
@@ -94,7 +95,7 @@ class TestNotebookCheck:
 
     def test_repository_pre_registration_passes(self) -> None:
         """The signed v1 document's hash is in the v1 lab notebook."""
-        root = Path(__file__).resolve().parents[4] / "docs" / "experiments" / "swing-mvp1"
+        root = REPO_ROOT / "docs" / "experiments" / "swing-mvp1"
         check = notebook_check(root / "pre-registration-v1.md", root / "lab-notebook.md")
         assert check.verdict is Verdict.PASS
 

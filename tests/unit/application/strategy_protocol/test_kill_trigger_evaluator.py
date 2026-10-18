@@ -18,7 +18,6 @@ Tests cover:
 from __future__ import annotations
 
 from dataclasses import replace
-from pathlib import Path
 
 import pytest
 from hypothesis import given, settings
@@ -29,6 +28,7 @@ from hermes.application.strategy_protocol.kill_trigger_evaluator import (
     KillTriggerEvaluator,
 )
 from hermes.application.strategy_protocol.preregistration import PreRegistration
+from tests.support.paths import REPO_ROOT
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -38,12 +38,8 @@ from hermes.application.strategy_protocol.preregistration import PreRegistration
 @pytest.fixture(scope="module")
 def evaluator() -> KillTriggerEvaluator:
     """Return a KillTriggerEvaluator using real pre-registration thresholds."""
-    here = Path(__file__).resolve().parent
-    for candidate in [here, *here.parents]:
-        if (candidate / "pyproject.toml").exists():
-            pre_reg = PreRegistration(project_root=candidate)
-            return KillTriggerEvaluator(pre_reg=pre_reg)
-    pytest.skip("Could not find project root")
+    pre_reg = PreRegistration(project_root=REPO_ROOT)
+    return KillTriggerEvaluator(pre_reg=pre_reg)
 
 
 def _safe_state(**overrides: float | bool | None) -> ExperimentState:
