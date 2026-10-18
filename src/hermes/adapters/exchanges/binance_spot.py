@@ -34,7 +34,8 @@ lookup on that id instead of a refusal: an order Binance never saw is an
 and a lookup that fails too is an :class:`OrderStatusUnknownError` naming the
 client order id for the operator to reconcile. A commission charged in a third
 asset (BNB) is priced at that asset's ticker, or at the pre-registered taker
-rate when the ticker cannot be read, so a filled order always returns its fill.
+rate when the ticker cannot be read, so a filled order always returns its fill;
+such a fill is marked ``fee_estimated`` (#1014).
 
 Reference: issue #148; openspec/changes/148-binance-testnet-spot/change.md.
 """
@@ -537,14 +538,18 @@ class BinanceSpotAdapter:
             client_order_id=client_id,
         )
 
-    def _quote_fee(self, part: Mapping[str, Any], asset: str, quote: str) -> Decimal:
-        """Price a commission charged in a third asset, at its ticker or the pre-registered rate."""
+    def _quote_fee(self, part: Mapping[str, Any], asset: str, quote: str) -> tuple[Decimal, bool]:
+        """Price a commission charged in a third asset, at its ticker or the pre-registered rate.
+
+        Returns:
+            The fee in the quote currency, and whether it is the taker-rate estimate.
+        """
         commission = parse_decimal(part.get("commission"), "commission")
         try:
             ticker = self._public(
                 "/api/v3/ticker/price", {"symbol": f"{asset}{quote}"}, weight=_WEIGHTS["ticker"]
             )
-            return commission * parse_decimal(ticker.get("price"), "ticker price")
+            return commission * parse_decimal(ticker.get("price"), "ticker price"), False
         except (ExchangeError, NetworkError) as exc:
             notional = parse_decimal(part.get("price"), "price") * parse_decimal(
                 part.get("qty"), "qty"
@@ -555,7 +560,7 @@ class BinanceSpotAdapter:
                 commission=str(commission),
                 error=str(exc),
             )
-            return notional * _FALLBACK_TAKER_RATE
+            return notional * _FALLBACK_TAKER_RATE, True
 
     def _account(self) -> dict[str, Any]:
         return self._signed("GET", "/api/v3/account", {}, weight=_WEIGHTS["account"])
@@ -657,6 +662,7 @@ class BinanceSpotAdapter:
         quote_spent = parse_decimal(body.get("cummulativeQuoteQty"), "cummulativeQuoteQty")
         avg_price = quote_spent / executed
         fee = Decimal("0")
+        estimated = False
         for part in body.get("fills", []):
             if not isinstance(part, dict):
                 raise ExchangeError(msg=f"malformed fill: {part!r}")
@@ -667,7 +673,9 @@ class BinanceSpotAdapter:
             elif asset == order.pair.base.value:
                 fee += commission * parse_decimal(part.get("price"), "price")
             elif commission != 0:
-                fee += self._quote_fee(part, str(asset), order.pair.quote.value)
+                priced, guessed = self._quote_fee(part, str(asset), order.pair.quote.value)
+                fee += priced
+                estimated = estimated or guessed
         try:
             return Fill(
                 order=order,
@@ -677,6 +685,7 @@ class BinanceSpotAdapter:
                 timestamp=datetime.fromtimestamp(
                     float(parse_decimal(body.get("transactTime"), "transactTime")) / 1000, tz=UTC
                 ),
+                fee_estimated=estimated,
             )
         except ValueError as exc:
             raise ExchangeError(msg=f"fill fails domain invariants: {exc}") from exc
