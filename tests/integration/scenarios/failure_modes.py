@@ -41,6 +41,7 @@ _TAX = _I + "entrypoints/test_serve_tax_guard.py::"
 _SERVE = _U + "entrypoints/test_serve.py::"
 _UNITS = _U + "deploy/test_systemd_units.py::"
 _RELEASE = _I + "deploy/test_release_scripts.py::"
+_EXEC_QUALITY = _I + "entrypoints/test_serve_execution_quality.py::"
 _LEDGER = _U + "adapters/ledger/test_sqlite_ledger.py::"
 _TRADES = _U + "adapters/ledger/test_sqlite_trade_ledger.py::"
 _ROLLBACK = _U + "adapters/ledger/test_sqlite_ledger_rollback_any_error.py::"
@@ -567,6 +568,23 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
     ),
     "clock": (
         FailureMode(
+            "A test clock is set where real time must rule",
+            proved_by=(
+                _U + "infrastructure/config/test_endpoint_tiers.py"
+                "::test_every_other_tier_refuses_a_test_clock_by_name",
+                _U + "infrastructure/config/test_endpoint_tiers.py"
+                "::test_qa_refuses_a_test_clock_off_loopback",
+            ),
+        ),
+        FailureMode(
+            "The test clock stops answering or answers a naive time",
+            proved_by=(
+                _U + "adapters/clock/test_remote.py::test_an_unreachable_clock_is_refused",
+                _U + "adapters/clock/test_remote.py"
+                "::test_an_answer_without_an_aware_instant_is_refused",
+            ),
+        ),
+        FailureMode(
             "The exchange or local clock is ahead and closes a bar early",
             proved_by=(
                 _LIVE + "TestExchangeClock::test_exchange_clock_ahead_never_advances_closure",
@@ -878,6 +896,13 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             ),
         ),
         FailureMode(
+            "The bot's /pos and /money read another ledger than its --db",
+            proved_by=(
+                _I + "lower_env/test_installed_release.py"
+                "::test_the_bot_shows_the_runs_position_and_money_from_its_db",
+            ),
+        ),
+        FailureMode(
             "Telegram is down",
             proved_by=(
                 _OUTAGES + "test_a_telegram_outage_does_not_stop_trading",
@@ -946,6 +971,31 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
                 _RISK + "test_a_fill_slipping_over_half_a_percent_halts_later_entries",
                 _FAULTS + "test_an_entry_while_the_depth_endpoint_is_down_is_skipped",
                 _RISK + "test_a_btc_daily_drop_over_ten_percent_halts_entries_on_any_pair",
+            ),
+        ),
+        FailureMode(
+            "Fill costs drift out of control (fees, slippage, latency) and nobody hears",
+            proved_by=(
+                _EXEC_QUALITY
+                + "test_a_slippage_step_after_the_baseline_is_recorded_once_with_its_reason",
+                _EXEC_QUALITY + "test_the_slippage_breach_is_alerted_once_on_every_channel",
+                _EXEC_QUALITY + "test_a_breach_episode_that_continues_is_not_alerted_again",
+                _EXEC_QUALITY
+                + "test_a_fill_without_latency_still_feeds_slippage_and_leaves_latency_alone",
+            ),
+        ),
+        FailureMode(
+            "A restart forgets the execution-quality baseline or alerts an old breach again",
+            proved_by=(
+                _EXEC_QUALITY + "test_a_restart_keeps_the_baseline_from_the_ledger",
+                _EXEC_QUALITY + "test_a_restart_does_not_alert_an_episode_already_alerted",
+            ),
+        ),
+        FailureMode(
+            "An execution-quality monitor error stops a fill from being recorded",
+            proved_by=(
+                _EXEC_QUALITY + "test_a_monitor_error_is_logged_and_the_fills_are_still_recorded",
+                _EXEC_QUALITY + "test_a_failed_replay_at_start_up_is_logged_and_serve_still_fills",
             ),
         ),
         FailureMode(
