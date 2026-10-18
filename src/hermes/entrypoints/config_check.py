@@ -111,8 +111,9 @@ def main(
     if parsed.env_file is not None:
         try:
             snapshot = _read_env_file(parsed.env_file, sys.stdin if stdin is None else stdin)
-        except OSError as exc:
-            err.write(f"ERROR: env file could not be read: {exc.strerror}\n")
+        except (OSError, UnicodeDecodeError) as exc:
+            reason = exc.strerror if isinstance(exc, OSError) else "not UTF-8"
+            err.write(f"ERROR: env file could not be read: {reason}\n")
             return 3
     try:
         config = load_config(parsed.config_dir, env=snapshot)
