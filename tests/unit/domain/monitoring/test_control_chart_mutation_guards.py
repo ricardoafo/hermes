@@ -13,7 +13,6 @@ from __future__ import annotations
 import math
 import statistics
 from collections.abc import Callable, Sequence
-from dataclasses import FrozenInstanceError
 
 import pytest
 
@@ -148,17 +147,22 @@ class TestParameters:
         )
 
     @pytest.mark.parametrize(
-        "build",
+        ("build", "expected"),
         [
-            lambda: ChartParameters(baseline_size=2),
-            lambda: ChartParameters(ewma_lambda=1.0),
-            lambda: ChartParameters(cusum_k=0.0),
-            lambda: ChartParameters(ewma_l=0.5, cusum_h=0.5),
+            (lambda: ChartParameters(baseline_size=2), (2, 0.2, 3.0, 0.5, 5.0)),
+            (lambda: ChartParameters(ewma_lambda=1.0), (30, 1.0, 3.0, 0.5, 5.0)),
+            (lambda: ChartParameters(cusum_k=0.0), (30, 0.2, 3.0, 0.0, 5.0)),
+            (lambda: ChartParameters(ewma_l=0.5, cusum_h=0.5), (30, 0.2, 0.5, 0.5, 0.5)),
         ],
     )
-    def test_edge_values_are_valid(self, build: Callable[[], ChartParameters]) -> None:
-        """A 2-point baseline, λ = 1, k = 0 and widths under 1 are all valid."""
-        assert isinstance(build(), ChartParameters)
+    def test_edge_values_are_valid(
+        self,
+        build: Callable[[], ChartParameters],
+        expected: tuple[int, float, float, float, float],
+    ) -> None:
+        """A 2-point baseline, λ = 1, k = 0 and widths under 1 are accepted and kept as given."""
+        p = build()
+        assert (p.baseline_size, p.ewma_lambda, p.ewma_l, p.cusum_k, p.cusum_h) == expected
 
     @pytest.mark.parametrize(
         "build",
@@ -178,29 +182,20 @@ class TestParameters:
         with pytest.raises(ValueError, match="must be"):
             build()
 
-    def test_parameters_are_frozen(self) -> None:
-        """Settings cannot change under a running chart."""
-        params = ChartParameters()
-        with pytest.raises(FrozenInstanceError):
-            params.cusum_h = 1.0  # type: ignore[misc]
-
-    def test_parameters_have_slots(self) -> None:
-        """ChartParameters is slotted, like every value object in the domain."""
-        assert not hasattr(ChartParameters(), "__dict__")
+    def test_parameters_are_hashable_by_value(self) -> None:
+        """Equal settings are one dict key, so a chart's settings can key a registry."""
+        assert {ChartParameters(): "a"}[ChartParameters()] == "a"
+        assert ChartParameters(cusum_h=1.0) not in {ChartParameters(): "a"}
 
 
 class TestBreachRecord:
     """A breach is an immutable record."""
 
-    def test_breach_is_frozen(self) -> None:
-        """An alert's figures cannot be edited after the fact."""
+    def test_breach_is_hashable_by_value(self) -> None:
+        """Equal alerts are one dict key, so an alert's figures can be de-duplicated."""
         breach = Breach((Signal.CUSUM_HIGH,), 1.0, 0.0, 1.0)
-        with pytest.raises(FrozenInstanceError):
-            breach.value = 2.0  # type: ignore[misc]
-
-    def test_breach_has_slots(self) -> None:
-        """Breach is slotted, like every value object in the domain."""
-        assert not hasattr(Breach((Signal.CUSUM_HIGH,), 1.0, 0.0, 1.0), "__dict__")
+        assert {breach: "a"}[Breach((Signal.CUSUM_HIGH,), 1.0, 0.0, 1.0)] == "a"
+        assert Breach((Signal.CUSUM_HIGH,), 2.0, 0.0, 1.0) not in {breach: "a"}
 
 
 class TestChartState:

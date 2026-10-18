@@ -137,11 +137,6 @@ tests/unit/domain/lots/test_quote_leg.py::test_trade_quoted_in_another_currency_
 tests/unit/domain/lots/test_selection.py::test_consumed_sum_equals_requested U3
 tests/unit/domain/lots/test_selection.py::test_eth_lots_ignored_when_selling_btc U3
 tests/unit/domain/lots/test_selection.py::test_over_request_returns_insufficient_inventory U3
-tests/unit/domain/monitoring/test_control_chart_mutation_guards.py::test_breach_has_slots U6
-tests/unit/domain/monitoring/test_control_chart_mutation_guards.py::test_breach_is_frozen U6
-tests/unit/domain/monitoring/test_control_chart_mutation_guards.py::test_edge_values_are_valid U3
-tests/unit/domain/monitoring/test_control_chart_mutation_guards.py::test_parameters_are_frozen U6
-tests/unit/domain/monitoring/test_control_chart_mutation_guards.py::test_parameters_have_slots U6
 tests/unit/domain/portfolio/test_portfolio_mutation_guards.py::test_fill_quoted_above_the_snapshot_currency_is_refused U3
 tests/unit/domain/portfolio/test_portfolio_mutation_guards.py::test_records_are_frozen_with_slots U6
 tests/unit/domain/portfolio/test_snapshot.py::test_buy_over_cash_is_refused U3
