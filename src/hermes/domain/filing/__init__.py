@@ -5,7 +5,7 @@ tax (that is the estimate module, #395), submits anything, or reads the
 taxpayer profile. Filing outputs are measurement only: an import-linter
 contract keeps strategy, sizing, fees, risk and kill code from importing them.
 
-Reference: openspec/changes/36-modelo-100-721/change.md, ADR-002, ADR-016.
+Reference: openspec/archive/36-modelo-100-721/change.md, ADR-002, ADR-016.
 """
 
 from hermes.domain.filing.modelo100 import (

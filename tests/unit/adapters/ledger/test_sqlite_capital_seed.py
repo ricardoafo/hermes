@@ -140,6 +140,25 @@ def ledger(conn: sqlite3.Connection) -> SqliteLedger:
     return SqliteLedger(conn)
 
 
+class TestSeededStrategies:
+    """#1076: serve reads which strategies a ledger's capital belongs to."""
+
+    def test_an_unseeded_ledger_names_no_strategy(self, ledger: SqliteLedger) -> None:
+        """Invariant: a new ledger belongs to no strategy yet."""
+        assert ledger.seeded_strategies() == ()
+
+    def test_seeded_strategies_come_back_in_seed_order(self, ledger: SqliteLedger) -> None:
+        """Invariant: every seeded strategy is named once, the earliest seed first."""
+        later = CapitalSeed(
+            strategy_id=StrategyId("another"),
+            amount=Money(amount=Decimal("500"), currency=Currency.USDT),
+            seeded_at=_T0 - timedelta(days=1),
+        )
+        _record_seed(ledger)
+        _record_seed(ledger, later)
+        assert ledger.seeded_strategies() == (StrategyId("another"), _SWING)
+
+
 class TestRecordCapitalSeed:
     """D-1: the seed is one pending quote lot, written once."""
 

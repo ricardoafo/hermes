@@ -13,7 +13,7 @@ other channels.
 - :meth:`ClosedBarFeedPort.stream_closed_bars` yields each closed bar once,
   in delivery order (see :func:`hermes.domain.market_data.bar_schedule.delivery_key`).
 
-Reference: openspec/changes/307-live-bar-stream/change.md D-4, D-5, D-7.
+Reference: openspec/archive/307-live-bar-stream/change.md D-4, D-5, D-7.
 """
 
 from __future__ import annotations

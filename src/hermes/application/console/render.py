@@ -12,7 +12,7 @@ Three rules hold in every renderer:
 - a DEMO DATA tag heads the output whenever the data comes from a fixture;
 - when hermes is down, money is dimmed and marked "as of" the stop time.
 
-Reference: openspec/changes/console-read-model/change.md (D-2, D-4, D-5);
+Reference: openspec/archive/console-read-model/change.md (D-2, D-4, D-5);
 the approved console UX proposal (2026-10-03).
 """
 
@@ -24,7 +24,6 @@ from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, tzinfo
 from decimal import Decimal
 from typing import Final
-from zoneinfo import ZoneInfo
 
 from rich import box
 from rich.console import Console, Group, RenderableType
@@ -73,6 +72,8 @@ from hermes.application.console.views import (
     WaterfallColumn,
 )
 from hermes.application.console.visibility import Surface, pnl_visible
+from hermes.domain.value_objects.cents import to_cents
+from hermes.domain.value_objects.time import MADRID
 
 __all__ = [
     "DEMO_TAG",
@@ -95,7 +96,6 @@ __all__ = [
     "to_plain_text",
 ]
 
-MADRID: Final = ZoneInfo("Europe/Madrid")
 DEMO_TAG: Final = "DEMO DATA"
 _DEFAULT_DOWN_HINT: Final = "run hermes logs for why"
 _WIDE_FROM: Final = 100
@@ -105,7 +105,6 @@ _HIDDEN_NOTE: Final = "money hidden on this surface"
 _EUR_PENDING: Final = "EUR pending"
 _EUR_PENDING_NOTE: Final = "EUR pending · priced on the next restart, or run hermes fx backfill"
 _ZERO: Final = Decimal(0)
-_CENT: Final = Decimal("0.01")
 
 _RANGE_LABEL: Final[dict[PortfolioRange, str]] = {
     PortfolioRange.TODAY: "today",
@@ -419,12 +418,12 @@ def _column_money(ctx: RenderContext, column: WaterfallColumn, value: Decimal) -
 
 
 def _fmt_quote(value: Decimal) -> str:
-    return f"{value.quantize(_CENT):,} USDT"
+    return f"{to_cents(value):,} USDT"
 
 
 def _fmt_seed(value: Decimal, currency: str) -> str:
     """Return a seed amount as the operator funded it: ``5,000 USDT``, cents only if any."""
-    cents = value.quantize(_CENT)
+    cents = to_cents(value)
     shown = f"{cents:,.0f}" if cents == cents.to_integral_value() else f"{cents:,}"
     return f"{shown} {currency}"
 

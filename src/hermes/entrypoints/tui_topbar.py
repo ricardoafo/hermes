@@ -12,7 +12,7 @@ next to the running release read from the ``current`` link.
 The next-bar share is how much of the span from the last bar check to the next
 one has passed, the fill of the countdown meter.
 
-Reference: openspec/changes/833-top-bar/change.md.
+Reference: openspec/archive/833-top-bar/change.md.
 """
 
 from datetime import datetime

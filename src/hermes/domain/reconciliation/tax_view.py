@@ -6,7 +6,7 @@ to the period end, so a past month reads exactly as it stood at month end
 even after later fills. A trade still waiting for its ECB rate leaves the
 figures it feeds unknown; the view counts those trades instead of guessing.
 
-Reference: openspec/changes/35-monthly-reconciliation/change.md D-4,
+Reference: openspec/archive/35-monthly-reconciliation/change.md D-4,
 ADR-016 items 3 and 5.
 """
 
@@ -16,7 +16,7 @@ from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import Decimal, localcontext
+from decimal import Decimal
 from typing import Final
 
 from returns.result import Failure, Result, Success
@@ -26,12 +26,12 @@ from hermes.domain.lots.eur_fifo import EurTrade, exact_sum, replay_fifo_eur
 from hermes.domain.reconciliation.holdings import LedgerTrade
 from hermes.domain.trading.order import OrderSide
 from hermes.domain.value_objects.currency import Currency
+from hermes.domain.value_objects.precision import exact
 
 __all__ = ["MonthPnl", "OpenLotLine", "TaxView", "tax_view"]
 
 _ZERO: Final = Decimal("0")
 # Same width as the FIFO replay, so a lot value is never rounded.
-_PRECISION: Final = 100
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,8 +97,7 @@ class TaxView:
         for lot in self.open_lots:
             if lot.cost_basis_per_unit_eur is None:
                 return None
-            with localcontext() as ctx:
-                ctx.prec = _PRECISION
+            with exact():
                 parts.append(lot.cost_basis_per_unit_eur * lot.remaining_qty)
         return exact_sum(parts)
 

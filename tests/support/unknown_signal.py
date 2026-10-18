@@ -12,8 +12,9 @@ from pathlib import Path
 from typing import Final
 
 from hermes.application.strategy_protocol.strategy_factory import known_signals
+from tests.support.paths import REPO_ROOT
 
-CONFIG_DIR: Final = Path(__file__).resolve().parents[2] / "config"
+CONFIG_DIR: Final = REPO_ROOT / "config"
 UNKNOWN_SIGNAL: Final = "no_such_signal"
 _ANCHOR: Final = "    exit_pricing: stop_order # pre-registration-v1.md §5.3, §6.2\n"
 

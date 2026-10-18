@@ -20,11 +20,10 @@ Reference: ADR-016 item 3, IRPF art. 35, change ``trade-eur-values`` D-5, D-6.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator, Sequence
-from contextlib import contextmanager
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
-from decimal import Decimal, localcontext
+from decimal import Decimal
 from typing import Final
 
 from returns.result import Failure, Result, Success
@@ -33,6 +32,7 @@ from hermes.domain.errors import DomainError
 from hermes.domain.lots.selection import InsufficientInventory
 from hermes.domain.trading.order import OrderSide
 from hermes.domain.value_objects.currency import Currency
+from hermes.domain.value_objects.precision import exact
 from hermes.domain.value_objects.quantity import Quantity
 
 __all__ = [
@@ -48,16 +48,8 @@ __all__ = [
 
 # Wide enough that no sum or difference of stored values is ever rounded;
 # shares are cut to _SHARE_QUANTUM so their digit count stays bounded.
-_PRECISION: Final[int] = 100
 _SHARE_QUANTUM: Final[Decimal] = Decimal("1e-30")
 _ZERO: Final[Decimal] = Decimal("0")
-
-
-@contextmanager
-def _exact() -> Iterator[None]:
-    with localcontext() as ctx:
-        ctx.prec = _PRECISION
-        yield
 
 
 def exact_sum(values: Iterable[Decimal]) -> Decimal:
@@ -73,7 +65,7 @@ def exact_sum(values: Iterable[Decimal]) -> Decimal:
     Returns:
         Their exact sum.
     """
-    with _exact():
+    with exact():
         return sum(values, start=_ZERO)
 
 
@@ -88,7 +80,7 @@ def acquisition_value(*, price: Decimal, qty: Decimal, fee: Decimal) -> Decimal:
     Returns:
         The acquisition value.
     """
-    with _exact():
+    with exact():
         return price * qty + fee
 
 
@@ -103,7 +95,7 @@ def transmission_value(*, price: Decimal, qty: Decimal, fee: Decimal) -> Decimal
     Returns:
         The transmission value.
     """
-    with _exact():
+    with exact():
         return price * qty - fee
 
 
@@ -238,7 +230,7 @@ def replay_fifo_eur(
         ``Success(FifoEurProjection)``, or ``Failure(InsufficientInventory)``
         when a SELL exceeds the quantity still open at that point.
     """
-    with _exact():
+    with exact():
         lots: list[_OpenLot] = []
         consumptions: list[ConsumptionEurValue] = []
         for trade in trades:

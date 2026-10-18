@@ -1,6 +1,6 @@
 """Tests for the one-day parity check.
 
-Invariants protected here (openspec/changes/358-parity-check/change.md):
+Invariants protected here (openspec/archive/358-parity-check/change.md):
 
 - the same bars through serve's recorded decisions and the replay are in parity;
 - a delivery order that differs from serve's (open time instead of close

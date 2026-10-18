@@ -24,6 +24,7 @@ from hermes.application.strategy_protocol.lab_notebook import (
     LabNotebookEntry,
 )
 from hermes.domain.errors import LabNotebookAppendError
+from tests.support.paths import REPO_ROOT
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -288,7 +289,7 @@ class TestLabNotebookAppendOnlyInvariant:
 # verify_file(): hashes checkable from the file text (issue #786)
 # ---------------------------------------------------------------------------
 
-_REPO_NOTEBOOK = Path(__file__).resolve().parents[4] / "docs/experiments/swing-mvp1/lab-notebook.md"
+_REPO_NOTEBOOK = REPO_ROOT / "docs/experiments/swing-mvp1/lab-notebook.md"
 
 
 class TestVerifyFile:
@@ -337,3 +338,67 @@ class TestVerifyFile:
             any(header.startswith("### 2026-10-03T13:18:31Z") for header in results),
             [header for header, ok in results.items() if not ok],
         ) == (True, [])
+
+
+# ---------------------------------------------------------------------------
+# Every experiment's notebook: no entry goes unhashed (issue #1181)
+# ---------------------------------------------------------------------------
+
+_EXPERIMENTS = Path(__file__).resolve().parents[4] / "docs/experiments"
+# The signing entry was written by hand before the writer hashed entries, so it
+# has no hash to check. Shrink only: a new entry never joins this set.
+_UNHASHED_BEFORE_THE_WRITER = frozenset(
+    {"### 2026-08-25T12:48:18Z | pre-registration | operator | sign pre-registration v1"}
+)
+
+
+def _entry_headers(text: str) -> list[str]:
+    """Return the ``###`` headers under the notebook's ``## Entries`` section."""
+    _, _, entries = text.partition("\n## Entries\n")
+    return [line for line in entries.splitlines() if line.startswith("### ")]
+
+
+def _notebooks() -> list[Path]:
+    return sorted(_EXPERIMENTS.glob("*/lab-notebook.md"))
+
+
+def test_the_experiments_folder_holds_the_swing_mvp1_notebook() -> None:
+    """The scan finds the real notebook, so the checks below cannot pass on an empty list.
+
+    A new experiment adds its notebook here, which shows its entries are checked too.
+    """
+    assert [path.relative_to(_EXPERIMENTS).as_posix() for path in _notebooks()] == [
+        "swing-mvp1/lab-notebook.md"
+    ]
+
+
+@pytest.mark.parametrize("notebook", _notebooks(), ids=lambda path: path.parent.name)
+def test_every_entry_is_hashed_and_verifies(notebook: Path) -> None:
+    """Pre-registration §11: a notebook entry is never edited after it is written.
+
+    ``verify_file`` only sees entries that carry an ``entry-sha256`` comment, so an
+    entry written by hand without one would go unchecked. Every entry under
+    ``## Entries`` must carry a hash that verifies, except the one signing entry
+    written before the writer existed.
+    """
+    results = LabNotebook(notebook_path=notebook).verify_file()
+    headers = _entry_headers(notebook.read_text(encoding="utf-8"))
+    assert (
+        [header for header in headers if header not in results],
+        [header for header, ok in results.items() if not ok],
+    ) == (sorted(_UNHASHED_BEFORE_THE_WRITER), [])
+
+
+def test_an_entry_written_by_hand_without_a_hash_is_reported(tmp_path: Path) -> None:
+    """A hand-written entry next to a hashed one shows up as unhashed, not as verified."""
+    nb = _make_notebook(tmp_path, content="# Lab Notebook\n\n## Entries\n\n")
+    entry = _make_entry(decision=("hashed",))
+    nb.append(entry)
+    path = tmp_path / "lab-notebook.md"
+    hand = "### 2026-10-18T15:00:00Z | shadow | operator | written by hand\n\n**Decision**: none\n"
+    path.write_text(path.read_text(encoding="utf-8") + "\n" + hand, encoding="utf-8")
+    results = nb.verify_file()
+    headers = _entry_headers(path.read_text(encoding="utf-8"))
+    assert [header for header in headers if header not in results] == [
+        "### 2026-10-18T15:00:00Z | shadow | operator | written by hand"
+    ]

@@ -1,0 +1,1 @@
+- **Activity fade tests no longer wait on the clock**: they park the fade timer and take each step by hand, so they cannot fail on a loaded runner. Test-only. Closes #1234.

@@ -4,7 +4,7 @@ The serve loop stores one per handled bar (#387) so a separate process (the
 console) can read value, cash versus invested and history without access to the
 tracker's memory.
 
-Reference: GitHub issue #387, openspec/changes/387-portfolio-snapshots/change.md.
+Reference: GitHub issue #387, openspec/archive/387-portfolio-marks/change.md.
 """
 
 from __future__ import annotations

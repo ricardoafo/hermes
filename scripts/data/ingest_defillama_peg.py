@@ -10,13 +10,13 @@ JSON file per (coin, year, month) under
 Purpose: feeds the SA-9 depeg overlay wired by Spec 8 (pre-registration
 v1 §5.5 correlation lock + depeg WARN 1.5% / HALT 3% rules).
 
-Provider swap history (see `openspec/changes/peg-ingest-defillama-swap/`):
+Provider swap history (see `openspec/archive/peg-ingest-defillama-swap/`):
     CoinGecko free tier changed 2026-08 (401/429 across the board);
     DefiLlama's public chart endpoint is free, no-auth, and aggregates
     from CoinGecko + on-chain sources.
 
 Reference:
-    - openspec/changes/peg-ingest-defillama-swap/change.md
+    - openspec/archive/peg-ingest-defillama-swap/change.md
     - docs/experiments/swing-mvp1/data-ingest-plan.md §3 (Runbook)
     - docs/research/paper-trading/sa9-portfolio-shocks.md (depeg overlay)
 

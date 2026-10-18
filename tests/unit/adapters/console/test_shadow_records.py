@@ -39,12 +39,10 @@ from hermes.application.strategy_protocol.day_zero import (
     DayZeroRecord,
     Verdict,
 )
+from tests.support.paths import REPO_ROOT
 
 _FIXTURE = (
-    Path(__file__).resolve().parents[3]
-    / "fixtures"
-    / "shadow_runs"
-    / "swing-donchian-4h-20261015T000000Z.json"
+    REPO_ROOT / "tests" / "fixtures" / "shadow_runs" / "swing-donchian-4h-20261015T000000Z.json"
 )
 _STRATEGY = "swing-donchian-4h"
 

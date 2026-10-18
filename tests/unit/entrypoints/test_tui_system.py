@@ -2,7 +2,7 @@
 
 Invariants:
 
-- tab 7 shows Services (state + next timer), Releases (live first), Data and
+- tab 8 shows Services (state + next timer), Releases (live first), Data and
   timing, Machine and Actions, from fake readers;
 - a reader that cannot answer here makes its panel say "not available here";
   a figure hermes does not record yet says "not available yet";
@@ -76,7 +76,7 @@ _MADRID = ZoneInfo("Europe/Madrid")
 _LIVE = "2bc2798a1f00"
 _PREVIOUS = "9f01a3c5d2e1"
 _EARLIER = "77de210b4c3a"
-_SYSTEM_TAB = 6
+_SYSTEM_TAB = 7
 
 
 class _Services:
@@ -195,7 +195,7 @@ def _run[T](
         )
         async with app.run_test(size=size) as pilot:
             await pilot.pause()
-            await _press(pilot, ["7"])
+            await _press(pilot, ["8"])
             return await probe(app, pilot)
 
     return asyncio.run(drive())
@@ -380,7 +380,7 @@ def _plain(renderable: object) -> str:
 
 
 def test_tab_seven_shows_every_panel_from_the_readers() -> None:
-    """Services, Releases, timing, Machine and Actions are all drawn on tab 7."""
+    """Services, Releases, timing, Machine and Actions are all drawn on tab 8."""
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[int, list[str]]:
         text = _screen_text(app)

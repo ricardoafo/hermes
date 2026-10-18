@@ -8,7 +8,7 @@ not contain. A model cannot invent a figure or a source that survives it.
 
 On failure the caller posts the deterministic digest instead (D-08).
 
-Reference: openspec/changes/365-supervisor-desk-briefings/change.md; issues #365, #496.
+Reference: openspec/archive/365-supervisor-desk-briefings/change.md; issues #365, #496.
 """
 
 from __future__ import annotations

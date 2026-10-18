@@ -12,7 +12,7 @@ other console surface and adds the last 24 hours of journal health:
 frequent events. A late or down verdict replaces "alive" and leads with the
 verdict headline. No P&L, ever.
 
-Reference: openspec/changes/373-daily-alive-line/change.md.
+Reference: openspec/archive/373-daily-alive-line/change.md.
 """
 
 from __future__ import annotations

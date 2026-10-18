@@ -27,7 +27,7 @@
 # HERMES_CONFIG_DIR, HERMES_ENV_FILE, HERMES_RUN (runs a command as the hermes user),
 # NOW_EPOCH (fixes the clock for the bar-window guard).
 #
-# Reference: docs/runbook/failover-to-kraken.md; openspec/changes/31-failover-drill.
+# Reference: docs/runbook/failover-to-kraken.md; openspec/archive/31-failover-drill.
 
 set -euo pipefail
 

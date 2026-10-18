@@ -6,7 +6,6 @@ in-memory fake of the git port, whose subprocess adapter has its own tests.
 
 import hashlib
 from decimal import Decimal
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -23,6 +22,7 @@ from hermes.application.calibration.research_batch import (
     parse_batch,
     sha256_scope,
 )
+from tests.support.paths import REPO_ROOT
 from tests.support.research_batch import (
     BATCH_PATH,
     BODY,
@@ -35,7 +35,6 @@ from tests.support.research_batch import (
 )
 
 _KNOWN = frozenset({"swing-alpha", "swing-beta", "swing-gamma"})
-_ROOT = Path(__file__).resolve().parents[4]
 
 
 def _checks(text: str, git: FakeGit, **kwargs: Any) -> dict[str, BatchCheck]:
@@ -554,7 +553,7 @@ def test_sha256_scope_is_the_v2_signing_command() -> None:
 
 def test_the_batch_template_parses_once_its_placeholders_are_filled() -> None:
     """docs/experiments/templates/research-batch.md stays a valid DRAFT batch shape."""
-    template = (_ROOT / "docs/experiments/templates/research-batch.md").read_text("utf-8")
+    template = (REPO_ROOT / "docs/experiments/templates/research-batch.md").read_text("utf-8")
     alpha, beta = (hashlib.sha256(name.encode()).hexdigest() for name in ("a", "b"))
     filled = (
         template.replace("<b1>", "b1")

@@ -6,7 +6,7 @@ write even by accident, and never runs migrations (unlike
 migrates). Safe to run next to a live ``hermes serve``: a read takes only a
 shared lock for the length of one query.
 
-Reference: openspec/changes/370-hermes-status/change.md.
+Reference: openspec/archive/370-hermes-status/change.md.
 """
 
 from __future__ import annotations
@@ -15,12 +15,10 @@ import json
 import sqlite3
 from datetime import datetime
 from decimal import Decimal
-from pathlib import Path
-from typing import Self
 
 from hermes.adapters.ledger._cells import decimal_cell, time_cell
 from hermes.adapters.ledger.anomaly_reader import latest_anomaly
-from hermes.adapters.ledger.connection import open_ledger
+from hermes.adapters.ledger.connection import ReadOnlyLedgerReader
 from hermes.adapters.ledger.risk_halt_rows import RISK_HALT_EVENT_TYPE, risk_halt_from_payload
 from hermes.domain.errors import LedgerError
 from hermes.domain.events.anomaly_detected import CLOCK_SKEW_SOURCE, AnomalyDetected
@@ -34,54 +32,8 @@ from hermes.ports.status import ShadowEntry
 __all__ = ["SqliteStatusReader"]
 
 
-class SqliteStatusReader:
+class SqliteStatusReader(ReadOnlyLedgerReader):
     """Answer the status questions from a ledger file, read-only."""
-
-    def __init__(self, connection: sqlite3.Connection) -> None:
-        """Wrap an already-open read-only connection.
-
-        Args:
-            connection: A connection opened by :meth:`open` (or a test's own).
-        """
-        self._conn = connection
-
-    @classmethod
-    def open(cls, path: Path, *, any_thread: bool = False) -> Self:
-        """Open ``path`` read-only.
-
-        Args:
-            path: The ledger file.
-            any_thread: Let another thread than this one read through it;
-                see :func:`~hermes.adapters.ledger.connection.open_ledger`.
-
-        Returns:
-            A reader over a ``mode=ro`` connection.
-
-        Raises:
-            FileNotFoundError: There is no file at ``path``. SQLite would
-                otherwise report a generic "unable to open" error.
-            LedgerError: SQLite refused to open the file.
-        """
-        resolved = path.resolve()
-        if not resolved.is_file():
-            raise FileNotFoundError(str(path))
-        try:
-            connection = open_ledger(resolved, read_only=True, any_thread=any_thread)
-        except sqlite3.Error as exc:
-            raise LedgerError(msg=f"cannot open {path} read-only: {exc}") from exc
-        return cls(connection)
-
-    def close(self) -> None:
-        """Close the connection."""
-        self._conn.close()
-
-    def __enter__(self) -> Self:
-        """Return ``self`` for ``with`` blocks."""
-        return self
-
-    def __exit__(self, *_exc_info: object) -> None:
-        """Close the connection, whatever ended the ``with`` block."""
-        self.close()
 
     def last_processed_close(self, pair: Pair, interval: KlineInterval) -> datetime | None:
         """Return the newest ``BarProcessed`` close time for one stream.

@@ -3,7 +3,7 @@
 One :class:`~hermes.application.calibration.certification_gates.CertificationRecord`
 per strategy. Implementations live in :mod:`hermes.adapters.certification`.
 
-Reference: openspec/changes/355-certification-gates/change.md D-7.
+Reference: openspec/archive/355-certification-gates/change.md D-7.
 """
 
 from __future__ import annotations
