@@ -13,13 +13,13 @@ Reference: ADR-026 §3-§5; ADR-021 §5; issue #1059; the research funnel
 interface contract §4; openspec/archive/1059-batch-judge/change.md.
 """
 
-import math
 import statistics
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from fractions import Fraction
 
 from hermes.domain.calibration.trial_record import TrialRecord, TrialSummary, summarise_trials
+from hermes.domain.statistics.correlation import pearson
 from hermes.domain.statistics.false_discovery import benjamini_hochberg
 
 __all__ = [
@@ -167,8 +167,5 @@ def _rank(candidates: Sequence[CandidateResult]) -> tuple[str, ...]:
 
 
 def _correlation(a: CandidateResult, b: CandidateResult) -> float:
-    try:
-        value = statistics.correlation(a.daily_returns, b.daily_returns)
-    except statistics.StatisticsError:
-        return _UNDEFINED_CORRELATION
-    return value if math.isfinite(value) else _UNDEFINED_CORRELATION
+    value = pearson(a.daily_returns, b.daily_returns)
+    return _UNDEFINED_CORRELATION if value is None else value

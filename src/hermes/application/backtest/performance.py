@@ -19,30 +19,16 @@ openspec/archive/822-portfolio-backtest/change.md D-4.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
-from decimal import Decimal
 from typing import Any
 
 from hermes.application.backtest.replay import BacktestRun
 from hermes.domain.calibration.trial_record import TrialSummary
+from hermes.domain.portfolio.round_trips import RoundTripFill
+from hermes.domain.portfolio.round_trips import round_trips as closed_round_trips
 from hermes.domain.statistics.performance import TradeResult
 from hermes.domain.trading.fill import Fill
-from hermes.domain.trading.order import OrderSide
-from hermes.domain.value_objects.pair import Pair
 
 __all__ = ["performance_file", "round_trips"]
-
-_ZERO = Decimal("0")
-
-
-@dataclass(slots=True)
-class _Open:
-    """The part of a round trip not yet sold."""
-
-    qty: Decimal = _ZERO
-    cost: Decimal = _ZERO
-    fees: Decimal = _ZERO
-    gross: Decimal = _ZERO
 
 
 def round_trips(fills: Iterable[Fill]) -> list[TradeResult]:
@@ -55,30 +41,21 @@ def round_trips(fills: Iterable[Fill]) -> list[TradeResult]:
         One :class:`TradeResult` per round trip that ended flat.
 
     Raises:
-        ValueError: A SELL fill sells more than is held in its pair.
+        RoundTripError: A SELL fill sells more than is held in its pair, or a
+            fee is not in the pair's quote currency.
     """
-    held: dict[Pair, _Open] = {}
-    out: list[TradeResult] = []
-    for fill in fills:
-        pair = fill.order.pair
-        position = held.setdefault(pair, _Open())
-        qty = fill.executed_qty
-        if fill.order.side is OrderSide.BUY:
-            position.qty += qty
-            position.cost += qty * fill.avg_price
-            position.fees += fill.fee.amount
-            continue
-        if qty > position.qty:
-            raise ValueError(f"{pair}: sell of {qty} exceeds the {position.qty} held")
-        sold_cost = position.cost * qty / position.qty
-        position.gross += qty * fill.avg_price - sold_cost
-        position.fees += fill.fee.amount
-        position.cost -= sold_cost
-        position.qty -= qty
-        if position.qty == _ZERO:
-            out.append(TradeResult(gross_pnl=float(position.gross), fees=float(position.fees)))
-            del held[pair]
-    return out
+    closed = closed_round_trips(
+        RoundTripFill(
+            pair=fill.order.pair,
+            side=fill.order.side,
+            qty=fill.executed_qty,
+            price=fill.avg_price,
+            fee=fill.fee,
+            at=fill.timestamp,
+        )
+        for fill in fills
+    )
+    return [TradeResult(gross_pnl=float(t.gross_pnl), fees=float(t.fees)) for t in closed]
 
 
 def performance_file(
