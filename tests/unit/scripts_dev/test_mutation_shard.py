@@ -92,11 +92,13 @@ _keys = st.lists(
 def test_every_mutant_lands_in_exactly_one_shard(
     keys: list[tuple[object, ...]], shards: int
 ) -> None:
-    """The shards partition the mutants: none lost, none run twice."""
+    """The shards partition the mutants and differ in size by at most one."""
     assignment = shard.shard_of(keys, shards)
+    sizes = [list(assignment.values()).count(index) for index in range(shards)]
     expected_keys = set(keys)
     assert set(assignment) == expected_keys
-    assert {index for index in assignment.values()} <= set(range(shards))
+    assert sum(sizes) == len(keys)
+    assert max(sizes) - min(sizes) <= 1
 
 
 @settings(max_examples=100)
