@@ -18,10 +18,6 @@ tests/unit/adapters/exchanges/test_kraken_spot.py::test_adapter_satisfies_both_p
 tests/unit/adapters/fees/test_binance_history.py::test_load_returns_expected_row_count U3
 tests/unit/adapters/fx/test_frankfurter.py::test_adapter_is_fx_rate_provider_port_instance U6
 tests/unit/adapters/fx/test_frankfurter.py::test_fx_rate_error_inherits_from_infra_error U3
-tests/unit/adapters/healthchecks/test_hc.py::test_healthchecks_error_is_hermes_error U3
-tests/unit/adapters/healthchecks/test_hc.py::test_healthchecks_error_is_infra_error U3
-tests/unit/adapters/healthchecks/test_hc.py::test_ping_start_without_details_uses_get U10
-tests/unit/adapters/healthchecks/test_hc.py::test_ping_success_without_details_uses_get U10
 tests/unit/adapters/ledger/test_filing_reader.py::test_reader_satisfies_the_port U6
 tests/unit/adapters/ledger/test_sqlite_capital_seed.py::test_adapter_still_satisfies_the_trade_ledger_port U6
 tests/unit/adapters/ledger/test_sqlite_ledger.py::test_sqlite_ledger_is_a_ledger_port U6
