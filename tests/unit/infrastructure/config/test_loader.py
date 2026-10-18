@@ -117,7 +117,7 @@ _VALID_KLINES = dedent(
 
 _VALID_FRANKFURTER = dedent(
     """
-    base_url: https://api.frankfurter.app
+    base_url: https://api.frankfurter.dev/v1
     timeout_sec: 10.0
     requests_per_minute: 60
     """
@@ -227,7 +227,7 @@ def test_load_config_reads_every_section_from_its_own_file(config_dir: Path) -> 
         Decimal("0.25"),
         4096,
         "var/hermes/klines.db",
-        "https://api.frankfurter.app",
+        "https://api.frankfurter.dev/v1",
         4.0,
         "sandbox",
         7.5,
@@ -697,7 +697,7 @@ def test_load_config_defaults_to_dev_without_mainnet_when_unset(config_dir: Path
     assert (cfg.env, cfg.allow_mainnet) == ("dev", False)
 
 
-@pytest.mark.parametrize("tier", ["dev", "sandbox", "staging", "prod"])
+@pytest.mark.parametrize("tier", ["dev", "sandbox", "qa", "staging", "prod"])
 def test_load_config_reads_the_tier_from_hermes_env(config_dir: Path, tier: str) -> None:
     """Each of the four tiers in HERMES_ENV becomes HermesConfig.env, mainnet still off."""
     cfg = load_config(config_dir, env={"HERMES_ENV": tier, "HERMES_ALLOW_MAINNET": "no"})
@@ -705,9 +705,9 @@ def test_load_config_reads_the_tier_from_hermes_env(config_dir: Path, tier: str)
 
 
 def test_load_config_rejects_unknown_hermes_env_value(config_dir: Path) -> None:
-    """HERMES_ENV=qa is not one of the four tiers, so the root fails validation on ``env``."""
+    """HERMES_ENV=uat is not one of the five tiers, so the root fails validation on ``env``."""
     with pytest.raises(ConfigError) as excinfo:
-        load_config(config_dir, env={"HERMES_ENV": "qa"})
+        load_config(config_dir, env={"HERMES_ENV": "uat"})
     assert str(excinfo.value).startswith(
         "Config error: HermesConfig validation failed: 1 validation error for HermesConfig\nenv\n"
     )

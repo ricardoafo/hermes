@@ -31,12 +31,20 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 import yaml
 from dotenv import load_dotenv
 from pydantic import BaseModel, ValidationError
 
+from hermes.adapters.endpoint import (
+    DEFAULT_SLACK_API_BASE,
+    DEFAULT_TELEGRAM_API_BASE,
+    SLACK_API_BASE_ENV,
+    TELEGRAM_API_BASE_ENV,
+    is_loopback,
+)
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.models import (
     BinanceExchangeConfig,
@@ -51,9 +59,15 @@ from hermes.infrastructure.config.models import (
     StrategiesConfig,
     TaxGuardConfig,
 )
-from hermes.infrastructure.config.root import HermesConfig
+from hermes.infrastructure.config.root import LOOPBACK_TIERS, HermesConfig
 
-__all__ = ["DEFAULT_CONFIG_DIR", "DEFAULT_DOTENV_PATH", "load_config", "load_yaml_model"]
+__all__ = [
+    "DEFAULT_CONFIG_DIR",
+    "DEFAULT_DOTENV_PATH",
+    "env_tier_problems",
+    "load_config",
+    "load_yaml_model",
+]
 
 
 DEFAULT_CONFIG_DIR: Path = Path("config")
@@ -74,6 +88,22 @@ _ENV_ALLOW_MAINNET: str = "HERMES_ALLOW_MAINNET"
 # echoed the secret in the error (#794).
 _CREDENTIAL_ENV_VARS: frozenset[str] = frozenset(
     {"HERMES_BINANCE__API_KEY", "HERMES_BINANCE__API_SECRET"}
+)
+# Keys that can place orders. Dev and sandbox keep their testnet keys; qa
+# runs on fakes and staging on public data only, so neither may hold one
+# (ADR-024 §4). Prod's own gate is HERMES_ALLOW_MAINNET.
+_TRADING_KEY_ENV_VARS: tuple[str, ...] = (
+    "HERMES_BINANCE__API_KEY",
+    "HERMES_BINANCE__API_SECRET",
+    "HERMES_KRAKEN__API_KEY",
+    "HERMES_KRAKEN__API_SECRET",
+)
+_NO_TRADING_KEY_TIERS: frozenset[str] = frozenset({"qa", "staging"})
+_NOTIFIER_API_BASES: Mapping[str, str] = MappingProxyType(
+    {
+        TELEGRAM_API_BASE_ENV: DEFAULT_TELEGRAM_API_BASE,
+        SLACK_API_BASE_ENV: DEFAULT_SLACK_API_BASE,
+    }
 )
 
 
@@ -428,7 +458,7 @@ def load_config(
 
     root_kwargs = _root_env_kwargs(env_snapshot)
     try:
-        return HermesConfig(
+        config = HermesConfig(
             **root_kwargs,
             strategies=strategies,
             binance=binance,
@@ -447,3 +477,40 @@ def load_config(
         # + env literal narrowing. Wrap in ConfigError for a consistent
         # error type across the loader.
         raise ConfigError(f"HermesConfig validation failed: {_describe(exc)}") from exc
+    problems = env_tier_problems(config.env, env_snapshot)
+    if problems:
+        raise ConfigError(f"HERMES_ENV={config.env}: " + "; ".join(problems))
+    return config
+
+
+def env_tier_problems(tier: str, env: Mapping[str, str]) -> list[str]:
+    """Return how the env-only settings break the tier's rules (ADR-024 §4, #970).
+
+    The YAML-backed endpoints are checked by :class:`HermesConfig`; these
+    settings live only in the environment, beside their credentials. Each
+    problem names the variable, never its value.
+
+    Args:
+        tier: The validated ``HERMES_ENV``.
+        env: Env-var snapshot.
+
+    Returns:
+        The problems found; empty when the environment fits the tier.
+    """
+    problems = []
+    if tier in _NO_TRADING_KEY_TIERS:
+        problems += [
+            f"{name} is set, but {tier} holds no trading key"
+            for name in _TRADING_KEY_ENV_VARS
+            if env.get(name, "").strip()
+        ]
+    for name, default in _NOTIFIER_API_BASES.items():
+        value = env.get(name, "").strip()
+        if not value:
+            continue
+        if tier not in LOOPBACK_TIERS and is_loopback(value):
+            allowed = ", ".join(sorted(LOOPBACK_TIERS))
+            problems.append(f"{name} points at a loopback host, which only {allowed} may use")
+        elif tier == "prod" and value.rstrip("/") != default:
+            problems.append(f"{name} is not the default endpoint, which prod requires")
+    return problems
