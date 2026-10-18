@@ -24,7 +24,6 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Final
-from zoneinfo import ZoneInfo
 
 from hermes.application.monitoring.clock_skew import clock_is_off
 from hermes.domain.events.anomaly_detected import AnomalyDetected
@@ -32,6 +31,7 @@ from hermes.domain.events.risk_halt_recorded import RiskHaltRecorded
 from hermes.domain.market_data.bar_schedule import interval_duration
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.pair import Pair
+from hermes.domain.value_objects.time import MADRID
 from hermes.ports.status import ShadowEntry, StatusReadPort
 
 __all__ = [
@@ -46,7 +46,6 @@ __all__ = [
     "ledger_missing_report",
 ]
 
-MADRID: Final = ZoneInfo("Europe/Madrid")
 _ONE_MS: Final = timedelta(milliseconds=1)
 _HALT_LOOKBACK: Final = timedelta(days=30)
 """How far back the last halt is looked up: the SA-9 window of pre-registration §10."""

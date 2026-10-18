@@ -52,6 +52,19 @@ def approves(comment: dict[str, Any], *, repo: str, pr: int, owner: str, fingerp
     return on_pr and quoted and user.get("login") == owner
 
 
+def https_only_opener() -> urllib.request.OpenerDirector:
+    """Return an opener that speaks HTTPS and nothing else.
+
+    ``urlopen`` would also follow ``file://`` and ``http://``; this opener
+    has no handler for them, so any other scheme raises ``URLError`` and no
+    URL can read a local file.
+    """
+    opener = urllib.request.OpenerDirector()
+    opener.add_handler(urllib.request.HTTPSHandler())
+    opener.add_handler(urllib.request.UnknownHandler())
+    return opener
+
+
 def _get(path: str, token: str) -> dict[str, Any]:
     request = urllib.request.Request(
         f"{_API}{path}",
@@ -60,7 +73,11 @@ def _get(path: str, token: str) -> dict[str, Any]:
             "Accept": "application/vnd.github+json",
         },
     )
-    with urllib.request.urlopen(request, timeout=_TIMEOUT_S) as response:
+    with https_only_opener().open(request, timeout=_TIMEOUT_S) as response:
+        # The bare opener has no error processor, so a 4xx or 5xx comes back
+        # as a response; it must still fail the check.
+        if response.status != 200:
+            raise OSError(f"{path}: HTTP {response.status}")
         loaded = json.load(response)
     if not isinstance(loaded, dict):
         raise ValueError(f"{path}: expected an object")

@@ -103,7 +103,7 @@ state = "Today's daily brief"
 means = "The supervisor desk's daily brief, as published through its output gate, beside the list of briefs."
 check = "Every item has its citations; the footer says the desk never sees profit, equity or prices; no price or money figure anywhere."
 scenario = "ok-two-positions"
-keys = "6"
+keys = "7"
 
 [views."test_tui_signals/signals"]
 screen = "Signals"
@@ -178,7 +178,7 @@ state = "Counting from a day-0 record"
 means = "The 90-day run has started: the big day figure, the share of the run behind it, the five certification checks, the day-0 record with the Ready rules as they stood and the frozen settings."
 check = "Day 12 of 90 matches the day-0 record; each check shows pass, fail or pending with its reason; rules the console cannot read say confirm by hand."
 scenario = "ok-two-positions"
-keys = "5"
+keys = "6"
 
 [views."test_tui_snapshots/shadow_warmup"]
 screen = "Shadow test"
@@ -186,7 +186,7 @@ state = "Warm-up, no day-0 record yet"
 means = "No day 0 exists yet: the screen says warm-up days do not count, the checks wait for day 0 and the record says it is missing."
 check = "The 90-day figure reads not counting, not 0 of 90; the way to start the run is named."
 scenario = "empty"
-keys = "5"
+keys = "6"
 
 [views."test_tui_tax_snapshots/tax_summary"]
 screen = "Tax"
@@ -206,27 +206,75 @@ keys = "4 ]"
 
 [views."test_tui_system/system"]
 screen = "System"
-state = "7 System, demo scenario with fixed service, release and machine figures"
+state = "8 System, demo scenario with fixed service, release and machine figures"
 means = "What runs on the VPS and how it is doing: the services, the release history, the actions as commands to copy, the data and bar timing, and the machine load."
 check = "Every figure is read-only; the actions panel says nothing runs from here; a missing source reads 'not available here', never zero; meters fill by their share."
 scenario = "ok-two-positions"
-keys = "7"
+keys = "8"
+
+[views."test_tui_lab/lab_list"]
+screen = "Lab"
+state = "5 Lab, the backtested strategies as a list with the first one selected"
+means = "Every strategy id with its family, the S T V J stage strip (signed, Train, Validation, judged), its status, trials, the family's Validation touches used of 5 and its last run, with the selected strategy's brief, rules, hypothesis and parameters beside or under the list and its gate results on the right."
+check = "Values are hidden: the tag says so and no result figure shows anywhere; the gate lists its 17 checks with their signed thresholds; a strategy with no run still has its row."
+scenario = "ok-two-positions"
+keys = "5"
+
+[views."test_tui_lab/lab_champion"]
+screen = "Lab"
+state = "5 Lab with the batch's champion selected"
+means = "The champion's panels: PASS on every check for Train and Validation, the batch's survivor and champion rows, its runs with their hash chain and its links to the batch, the card and the verdicts."
+check = "The stage strip ends in a star; every run shows a chain mark; the parameters show the signed base and neighbours next to the values the runs used."
+scenario = "ok-two-positions"
+keys = "5 down"
+
+[views."test_tui_lab/lab_mismatch"]
+screen = "Lab"
+state = "5 Lab with a strategy whose run used a value that was not signed"
+means = "A parameter run at a value that is neither the signed base nor a signed neighbour carries an amber warning mark and the words 'differs from signed'."
+check = "The mark is on the changed parameter only; the status says the strategy passed Train and waits for Validation."
+scenario = "ok-two-positions"
+keys = "5 down down"
+
+[views."test_tui_lab/lab_values"]
+screen = "Lab"
+state = "5 Lab with the trial log's figures allowed and shown"
+means = "The same list with the amber 'values shown' tag; each run now carries its own figures. They appear only when the settings file allows them and the session is not an AI session."
+check = "The tag is amber and offers V to hide; the gate lines are the same as without values."
+scenario = "ok-two-positions"
+keys = "5"
+
+[views."test_tui_lab/lab_drafts"]
+screen = "Lab"
+state = "5 Lab, the Drafts view"
+means = "The second view, switched to with the right square bracket: a note that the parameter chat and the drafts of the next batch come with the MVP2 lab."
+check = "The Backtests list is gone and the note names issue #967; the left bracket returns."
+scenario = "ok-two-positions"
+keys = "5 ]"
+
+[views."test_tui_lab/lab_detail"]
+screen = "Lab"
+state = "5 Lab on a compact terminal with a strategy opened by Enter"
+means = "The full-page detail: the strategy above its results under the breadcrumb Lab > Backtests > the strategy id; [ and ] step through the list."
+check = "The breadcrumb names the strategy; Esc returns with the cursor on it."
+scenario = "ok-two-positions"
+keys = "5 enter"
 
 [views."test_tui_logs/logs_list"]
 screen = "Logs"
-state = "8 Logs, the journal as a list with the volume histogram and facet counts"
+state = "9 Logs, the journal as a list with the volume histogram and facet counts"
 means = "Every journal line as one row (time, level, service, event, coin, details), newest first, with the volume histogram above, the query line and the facet counts under it."
 check = "The count 'N of M' matches the rows shown; the level facet counts add up to M; a query narrows the list, the histogram and the counts together."
 scenario = "ok-two-positions"
-keys = "8"
+keys = "9"
 
 [views."test_tui_logs/logs_pane"]
 screen = "Logs"
-state = "8 Logs with the selected line open as JSON in the detail pane"
+state = "9 Logs with the selected line open as JSON in the detail pane"
 means = "The selected journal line shown as its JSON beside the list, with the keys to copy it, export it or open its trace."
 check = "The JSON is the selected row's line (same time, event and fields); the pane closes with Esc and leaves the list as it was."
 scenario = "ok-two-positions"
-keys = "8, down, enter"
+keys = "9, down, enter"
 
 [views."test_tui_logs/logs_trace"]
 screen = "Logs"
@@ -234,4 +282,4 @@ state = "Trace screen for the 08:00 bar cycle opened with T"
 means = "All journal lines that share one correlation id, in time order, under the breadcrumb Logs > Trace."
 check = "Every line shown carries the same trace id as the line it was opened from; Esc returns to the list on the same row."
 scenario = "ok-two-positions"
-keys = "8, down x4, t"
+keys = "9, down x4, t"

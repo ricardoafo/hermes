@@ -59,8 +59,12 @@ itself if named well).
   `NN-section.md` files for the sections (ADR-003 is the model).
 - **Format** (established by ADR-001 through ADR-008):
   - `# ADR-NNN: Title — short punch line describing the decision`
-  - `**Date**`, `**Status**` (Draft / Proposed / Accepted / Superseded),
-    `**Deciders**`, `**Supersedes**` metadata block
+  - `**Date**`, `**Status**`, `**Deciders**`, `**Supersedes**` metadata block.
+    The status is set for the merge: write `Accepted (merged in PR #N)` with the
+    PR's own number, which exists once the PR is open, so the ADR never reads
+    `Proposed` on `main`. A later partial replacement adds a
+    `**Superseded in part by**` line (and the new ADR's `**Supersedes**` line
+    names what it replaces). `scripts/dev/adr-status-check.py` enforces both.
   - `## Context` — what forces are at play, what changed to make this a decision
   - `## Decision` — the answer, stated affirmatively
   - `## Why` — reasoning, evidence, alternatives considered

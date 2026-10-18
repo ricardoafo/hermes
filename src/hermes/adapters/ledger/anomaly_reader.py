@@ -1,6 +1,8 @@
 """Read-only access to the ``AnomalyDetected`` rows of the ledger ``events`` table (#136).
 
-Opens the ledger with SQLite's ``mode=ro`` URI and never migrates, so
+Opens the ledger read-only through
+:class:`~hermes.adapters.ledger.connection.ReadOnlyLedgerReader` (``mode=ro``
+with the shared busy timeout) and never migrates, so
 ``hermes anomalies`` is safe to run next to ``hermes serve``. Each row is
 rehydrated into the :class:`AnomalyDetected` that was appended.
 
@@ -12,60 +14,16 @@ from __future__ import annotations
 import json
 import sqlite3
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import Self
 
+from hermes.adapters.ledger.connection import ReadOnlyLedgerReader
 from hermes.domain.errors import LedgerError
 from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
 
 __all__ = ["SqliteAnomalyReader", "latest_anomaly"]
 
 
-class SqliteAnomalyReader:
+class SqliteAnomalyReader(ReadOnlyLedgerReader):
     """List recorded anomalies from a ledger file without write access."""
-
-    def __init__(self, connection: sqlite3.Connection) -> None:
-        """Wrap an already-open connection.
-
-        Args:
-            connection: A connection opened by :meth:`open` (or a test's own).
-        """
-        self._conn = connection
-
-    @classmethod
-    def open(cls, path: Path) -> Self:
-        """Open ``path`` read-only.
-
-        Args:
-            path: The ledger file.
-
-        Returns:
-            A reader over a ``mode=ro`` connection.
-
-        Raises:
-            FileNotFoundError: There is no file at ``path``; nothing is created.
-            LedgerError: SQLite refused to open the file.
-        """
-        resolved = path.resolve()
-        if not resolved.is_file():
-            raise FileNotFoundError(str(path))
-        try:
-            connection = sqlite3.connect(f"{resolved.as_uri()}?mode=ro", uri=True)
-        except sqlite3.Error as exc:
-            raise LedgerError(msg=f"cannot open {path} read-only: {exc}") from exc
-        return cls(connection)
-
-    def close(self) -> None:
-        """Close the connection."""
-        self._conn.close()
-
-    def __enter__(self) -> Self:
-        """Return ``self`` for ``with`` blocks."""
-        return self
-
-    def __exit__(self, *_exc_info: object) -> None:
-        """Close the connection, whatever ended the ``with`` block."""
-        self.close()
 
     def since(self, since: datetime) -> tuple[AnomalyDetected, ...]:
         """Return every anomaly that occurred at or after ``since``, newest first.

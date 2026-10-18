@@ -1,5 +1,8 @@
 """Kraken spot trading adapter, the cold backup venue (ADR-004).
 
+Not wired into any entrypoint until MVP2 (issue #1220): it places real
+orders, so it stays parked rather than deleted.
+
 Implements :class:`~hermes.ports.exchange.ExchangePort` and
 :class:`~hermes.ports.exchange.StopLossPort` with signed calls to Kraken's
 private REST API:
@@ -63,19 +66,20 @@ import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from decimal import Decimal, InvalidOperation, Overflow
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Final
 from urllib.parse import urlencode, urlsplit
 
 import httpx
 
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
+from hermes.adapters._shared.wire import percent_to_bps, wire_decimal
 from hermes.adapters.exchanges.kraken_public import (
     KrakenPublicAdapter,
     KrakenPublicConfig,
     _pair_to_kraken_symbol,
 )
-from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.domain.errors import ExchangeError, NetworkError
 from hermes.domain.fees import FeeSchedule, FeeTier
 from hermes.domain.market_data.orderbook import Orderbook
@@ -138,15 +142,7 @@ def sign(*, path: str, nonce: str, post_data: str, secret: str) -> str:
 
 
 def _decimal(raw: object, field_name: str) -> Decimal:
-    if isinstance(raw, bool) or not isinstance(raw, (str, int, float)):
-        raise ExchangeError(msg=f"{field_name} is not numeric: {raw!r}")
-    try:
-        value = Decimal(str(raw))
-    except InvalidOperation as exc:
-        raise ExchangeError(msg=f"{field_name} is not a decimal: {raw!r}") from exc
-    if not value.is_finite():
-        raise ExchangeError(msg=f"{field_name} is not a finite number: {raw!r}")
-    return value
+    return wire_decimal(raw, field=field_name, error=ExchangeError)
 
 
 def _fee_percent(result: Mapping[str, Any], side: str, symbol: str) -> Decimal:
@@ -167,15 +163,7 @@ def _fee_percent(result: Mapping[str, Any], side: str, symbol: str) -> Decimal:
 
 
 def _percent_to_bps(percent: Decimal) -> int:
-    """Convert Kraken's percent (0.26 = 0.26%) to whole basis points.
-
-    Raises:
-        ExchangeError: ``percent`` is too large for the decimal context.
-    """
-    try:
-        return int((percent * 100).to_integral_value())
-    except Overflow as exc:
-        raise ExchangeError(msg=f"Kraken fee percent is out of range: {percent}") from exc
+    return percent_to_bps(percent, field="Kraken fee percent", error=ExchangeError)
 
 
 @dataclass(frozen=True, slots=True)

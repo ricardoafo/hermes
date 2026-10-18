@@ -17,17 +17,15 @@ import csv
 import io
 from collections.abc import Sequence
 from datetime import datetime
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 from typing import Final
-from zoneinfo import ZoneInfo
 
 from hermes.application.filing.service import FilingPack
 from hermes.domain.filing.modelo721 import Obligation
+from hermes.domain.value_objects.cents import cents_text as _eur
+from hermes.domain.value_objects.time import MADRID
 
-__all__ = ["CSV_FILES", "render_csv_files", "render_markdown"]
-
-_CENT: Final[Decimal] = Decimal("0.01")
-_MADRID: Final = ZoneInfo("Europe/Madrid")
+__all__ = ["CSV_FILES", "csv_text", "madrid_day", "render_csv_files", "render_markdown"]
 
 CSV_FILES: Final[tuple[str, ...]] = (
     "modelo100-summary.csv",
@@ -90,7 +88,7 @@ def render_csv_files(pack: FilingPack) -> dict[str, str]:
     m721 = pack.modelo721
     prices = {p.asset: p for p in pack.prices}
     return {
-        "modelo100-summary.csv": _csv(
+        "modelo100-summary.csv": csv_text(
             ["coin", "consideration", "sales", "units", "transmission_eur",
              "acquisition_eur", "gain_eur"],
             [
@@ -99,23 +97,23 @@ def render_csv_files(pack: FilingPack) -> dict[str, str]:
                 for s in m100.summaries
             ],
         ),
-        "modelo100-sales.csv": _csv(
+        "modelo100-sales.csv": csv_text(
             ["sale_id", "date", "coin", "received", "units", "transmission_eur",
              "acquisition_eur", "gain_eur", "first_acquired"],
             [
-                [t.sell_ref, _day(t.disposed_at), t.asset.value, t.received.value,
+                [t.sell_ref, madrid_day(t.disposed_at), t.asset.value, t.received.value,
                  _units(t.qty), _eur(t.transmission_eur), _eur(t.acquisition_eur),
-                 _eur(t.gain_eur), _day(t.first_acquired_at)]
+                 _eur(t.gain_eur), madrid_day(t.first_acquired_at)]
                 for t in m100.transmissions
             ],
         ),
-        "modelo721.csv": _csv(
+        "modelo721.csv": csv_text(
             ["coin", "origin", "units", "price_eur", "value_eur", "oldest_open_lot",
              "price_source"],
             [
                 [line.asset.value, line.origin.value, _units(line.units),
                  _optional_eur(line.price_eur), _optional_eur(line.value_eur),
-                 "" if line.oldest_lot_opened_at is None else _day(line.oldest_lot_opened_at),
+                 "" if line.oldest_lot_opened_at is None else madrid_day(line.oldest_lot_opened_at),
                  prices[line.asset].source if line.asset in prices else ""]
                 for line in m721.lines
             ],
@@ -177,15 +175,16 @@ def _modelo100(pack: FilingPack) -> list[str]:
         out += ["### Sales left out (EUR values pending)", ""]
         out += ["Run `hermes fx backfill`, then this report again.", ""]
         out += [
-            f"- Sale {p.sell_ref} on {_day(p.disposed_at)}: {_units(p.qty)} {p.asset.value}"
+            f"- Sale {p.sell_ref} on {madrid_day(p.disposed_at)}: {_units(p.qty)} {p.asset.value}"
             for p in m100.pending
         ]
         out.append("")
     if m100.flags:
         out += ["### Two-month repurchase flags (for the gestor, not applied)", ""]
         out += [
-            f"- Sale {f.sell_ref} on {_day(f.disposed_at)}: loss of {_eur(f.loss_eur)} EUR on "
-            f"{f.asset.value}; purchases {', '.join(f.purchase_refs)} within two months"
+            f"- Sale {f.sell_ref} on {madrid_day(f.disposed_at)}: "
+            f"loss of {_eur(f.loss_eur)} EUR on {f.asset.value}; "
+            f"purchases {', '.join(f.purchase_refs)} within two months"
             for f in m100.flags
         ]
         out.append("")
@@ -195,9 +194,9 @@ def _modelo100(pack: FilingPack) -> list[str]:
             ["Sale", "Date", "Coin", "Received", "Units", "Transmission (EUR)",
              "Acquisition (EUR)", "Gain or loss (EUR)", "First acquired"],
             [
-                [t.sell_ref, _day(t.disposed_at), t.asset.value, t.received.value,
+                [t.sell_ref, madrid_day(t.disposed_at), t.asset.value, t.received.value,
                  _units(t.qty), _eur(t.transmission_eur), _eur(t.acquisition_eur),
-                 _eur(t.gain_eur), _day(t.first_acquired_at)]
+                 _eur(t.gain_eur), madrid_day(t.first_acquired_at)]
                 for t in m100.transmissions
             ],
         )  # fmt: skip
@@ -235,7 +234,7 @@ def _modelo721(pack: FilingPack) -> list[str]:
         [
             [line.asset.value, line.origin.value, _units(line.units),
              _optional_eur(line.price_eur), _optional_eur(line.value_eur),
-             "" if line.oldest_lot_opened_at is None else _day(line.oldest_lot_opened_at),
+             "" if line.oldest_lot_opened_at is None else madrid_day(line.oldest_lot_opened_at),
              prices[line.asset].source if line.asset in prices else "no longer held"]
             for line in m721.lines
         ],
@@ -257,16 +256,13 @@ def _table(header: Sequence[str], rows: Sequence[Sequence[str]]) -> list[str]:
     return out
 
 
-def _csv(header: Sequence[str], rows: Sequence[Sequence[str]]) -> str:
+def csv_text(header: Sequence[str], rows: Sequence[Sequence[str]]) -> str:
+    """Return ``header`` and ``rows`` as CSV text with ``\n`` line ends."""
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\n")
     writer.writerow(header)
     writer.writerows(rows)
     return buffer.getvalue()
-
-
-def _eur(amount: Decimal) -> str:
-    return str(amount.quantize(_CENT, rounding=ROUND_HALF_UP))
 
 
 def _optional_eur(amount: Decimal | None) -> str:
@@ -277,5 +273,6 @@ def _units(qty: Decimal) -> str:
     return format(qty.normalize(), "f")
 
 
-def _day(at: datetime) -> str:
-    return at.astimezone(_MADRID).date().isoformat()
+def madrid_day(at: datetime) -> str:
+    """Return the Madrid calendar date of ``at``, ``2026-06-15`` style."""
+    return at.astimezone(MADRID).date().isoformat()

@@ -27,10 +27,12 @@ _SERVICE_FILES = [path for path in _UNIT_FILES if path.suffix == ".service"]
 
 _ENV_FILE = "/etc/hermes/env.production"
 _STAGING_UNIT = "hermes-staging.service"
+_SHADOW_UNIT = "hermes-shadow@.service"
 _OWN_ENV_FILES = {
     "hermes-lab-memory.service": "/etc/hermes/env.staging",
     "hermes-bot.service": "/etc/hermes/env.bot",
     _STAGING_UNIT: "/etc/hermes/env.staging",
+    _SHADOW_UNIT: "/etc/hermes/env.staging",
 }
 _NO_ENV_FILE = {"hermes-brief.service"}
 _EXEC_PREFIXES = "@-:+!"
@@ -533,7 +535,80 @@ def test_brief_service_flags_are_accepted_by_the_real_supervisor(tmp_path: Path)
     assert cli_module.main(argv, stream=io.StringIO(), err=io.StringIO()) == 0
 
 
-@pytest.mark.parametrize("name", ["hermes.service", _STAGING_UNIT])
+def _shadow_argv(name: str) -> list[str]:
+    """Return the shadow template's ExecStart for instance ``name``, as systemd expands it."""
+    return shlex.split(_parse(_SHADOW_UNIT)["Service"]["ExecStart"].replace("%i", name))
+
+
+def test_shadow_template_runs_the_instance_strategy_on_its_own_ledger() -> None:
+    """#1076: instance <name> serves strategy <name> on a ledger no other instance names."""
+    argv = _shadow_argv("swing-donchian-4h")
+    assert (
+        argv[:2],
+        _flag(argv, "--config-dir"),
+        _flag(argv, "--strategy"),
+        _flag(argv, "--db"),
+    ) == (
+        ["/opt/hermes-staging/current/.venv/bin/hermes", "serve"],
+        "/opt/hermes-staging/current/config",
+        "swing-donchian-4h",
+        "/var/lib/hermes-staging/shadows/swing-donchian-4h/hermes.sqlite3",
+    )
+
+
+def test_shadow_template_can_write_only_its_own_ledger_directory() -> None:
+    """#1076: the state dir, cwd and only writable path are the instance's ledger directory."""
+    service = _parse(_SHADOW_UNIT)["Service"]
+    ledger_dir = str(PurePosixPath(_flag(_shadow_argv("%i"), "--db")).parent)
+    assert (
+        "/var/lib/" + service["StateDirectory"],
+        service["WorkingDirectory"],
+        service["ReadWritePaths"],
+    ) == (ledger_dir, ledger_dir, ledger_dir)
+
+
+def test_shadow_template_flags_are_accepted_by_the_real_cli_parser() -> None:
+    """An unknown flag in the template's ExecStart would crash-loop every shadow."""
+    out = io.StringIO()
+    rc = cli_module.main([*_shadow_argv("swing-donchian-4h")[1:], "--help"], stream=out)
+    assert rc == 0, out.getvalue()
+
+
+def test_shadow_template_never_pages_and_names_no_prod_path() -> None:
+    """A lab shadow stays in the journal and never touches prod's code, state or secrets."""
+    parser = _parse(_SHADOW_UNIT)
+    keys = {key for section in parser.sections() for key in parser[section]}
+    text = (_UNIT_DIR / _SHADOW_UNIT).read_text(encoding="utf-8")
+    words = (
+        " ".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+        .replace("=", " ")
+        .split()
+    )
+    prod = [w for w in words for p in _PROD_PATHS if w == p or w.startswith(f"{p}/")]
+    assert (keys & {"OnFailure", "ExecStopPost"}, prod) == (set(), [])
+
+
+@pytest.mark.parametrize(
+    ("section", "key"),
+    [
+        ("Unit", "StartLimitIntervalSec"),
+        ("Unit", "StartLimitBurst"),
+        ("Service", "User"),
+        ("Service", "RestartPreventExitStatus"),
+        ("Service", "NoNewPrivileges"),
+        ("Service", "PrivateTmp"),
+        ("Service", "ProtectSystem"),
+        ("Service", "ProtectHome"),
+    ],
+)
+def test_shadow_template_keeps_the_staging_user_hardening_and_crash_guard(
+    section: str, key: str
+) -> None:
+    """Each shadow runs as the lab user, sandboxed and loop-limited like the staging serve."""
+    assert _parse(_SHADOW_UNIT)[section][key] == _parse(_STAGING_UNIT)[section][key]
+
+
+@pytest.mark.parametrize("name", ["hermes.service", _STAGING_UNIT, _SHADOW_UNIT])
 def test_serve_starts_after_the_clock_is_synced(name: str) -> None:
     """Serve tells missed bars from live ones by the clock, so it waits for time sync (#1078).
 

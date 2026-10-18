@@ -55,6 +55,7 @@ from hermes.application.reconciliation import (
 )
 from hermes.domain.errors import InfraError, LedgerError
 from hermes.domain.reconciliation import ReconciliationMonth, ReconciliationReport, Verdict
+from hermes.domain.value_objects.cents import to_cents
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.entrypoints import serve as serve_module
@@ -71,7 +72,6 @@ __all__ = ["DEFAULT_TOLERANCE", "ClosableBalanceReader", "main", "report_to_dict
 DEFAULT_TOLERANCE: Final = Decimal("1e-8")
 """Binance's smallest step for spot quantities; anything above it is real drift."""
 
-_EUR_PLACES: Final = Decimal("0.01")
 _USAGE: Final = (
     "Usage: hermes reconcile [YYYY-MM] [--config-dir DIR] [--db PATH]\n"
     "                        [--tolerance QTY] [--json] [--notify]\n"
@@ -428,4 +428,4 @@ def _exact(value: Decimal | None) -> str | None:
 
 
 def _eur(value: Decimal | None) -> str:
-    return "pending" if value is None else f"{value.quantize(_EUR_PLACES):f}"
+    return "pending" if value is None else f"{to_cents(value):f}"

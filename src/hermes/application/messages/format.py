@@ -31,7 +31,9 @@ from zoneinfo import ZoneInfo
 from hermes.application.console.format import MINUS, fmt_level
 from hermes.application.messages._escape import correlation_tail
 from hermes.domain.events.anomaly_detected import AnomalySeverity
+from hermes.domain.value_objects.cents import CENT
 from hermes.domain.value_objects.currency import Currency
+from hermes.domain.value_objects.time import MADRID
 
 __all__ = [
     "GLYPH_DOWN",
@@ -40,11 +42,11 @@ __all__ = [
     "GLYPH_STOP",
     "GLYPH_UP",
     "SEPARATOR",
+    "fmt_asset_qty",
     "fmt_distance_pct",
     "fmt_duration",
     "fmt_money",
     "fmt_pp",
-    "fmt_qty",
     "fmt_quote_money",
     "fmt_ref",
     "fmt_weight",
@@ -67,10 +69,8 @@ GLYPH_OK: Final = "●"
 SEPARATOR: Final = " · "
 """Joins the parts of one line."""
 
-_MADRID: Final = ZoneInfo("Europe/Madrid")
 _UTC: Final = ZoneInfo("UTC")
 _WEEKDAYS: Final = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
-_CENT: Final = Decimal("0.01")
 _TENTH: Final = Decimal("0.1")
 _FOUR_PLACES: Final = Decimal("0.0001")
 _HUNDRED: Final = Decimal(100)
@@ -119,7 +119,7 @@ def fmt_money(amount: Decimal, currency: Currency) -> str:
     """
     if currency is Currency.EUR:
         return fmt_level(amount)
-    return f"{_grouped(amount, _CENT)} {currency.value}"
+    return f"{_grouped(amount, CENT)} {currency.value}"
 
 
 def fmt_quote_money(amount: Decimal, currency: Currency, eur_rate: Decimal | None) -> str:
@@ -139,7 +139,7 @@ def fmt_quote_money(amount: Decimal, currency: Currency, eur_rate: Decimal | Non
     return fmt_money(amount / eur_rate, Currency.EUR)
 
 
-def fmt_qty(amount: Decimal, asset: Currency) -> str:
+def fmt_asset_qty(amount: Decimal, asset: Currency) -> str:
     """Return a quantity with four decimals, separators and its asset code.
 
     Args:
@@ -230,7 +230,7 @@ def fmt_when(moment: datetime) -> str:
     Returns:
         Weekday and ``HH:MM`` in Europe/Madrid, rounded to the minute.
     """
-    local = _to_minute(moment, _MADRID)
+    local = _to_minute(moment, MADRID)
     return f"{_WEEKDAYS[local.weekday()]} {local:%H:%M}"
 
 

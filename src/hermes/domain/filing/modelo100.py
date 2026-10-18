@@ -14,14 +14,15 @@ gains, losses and net. A sale with any pending EUR value is listed in
 ``pending`` and left out of every total: the year is then incomplete.
 
 A loss sale with a purchase of the same coin within two calendar months
-either side is flagged for the gestor, never deferred (ADR-016 item 8).
+either side is flagged for the gestor, never deferred (ADR-016 item 8). The
+window counts Madrid calendar dates and is the tax screen's own rule
+(:func:`hermes.domain.tax.two_month.in_repurchase_window`, issue #1171).
 
 Reference: openspec/archive/36-modelo-100-721/change.md D-1 to D-6.
 """
 
 from __future__ import annotations
 
-import calendar
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
@@ -32,6 +33,7 @@ from typing import Final
 
 from hermes.domain.filing.tax_year import tax_year_of
 from hermes.domain.lots.eur_fifo import exact_sum
+from hermes.domain.tax.two_month import in_repurchase_window
 from hermes.domain.value_objects.currency import Currency
 
 __all__ = [
@@ -43,12 +45,10 @@ __all__ = [
     "PurchaseRecord",
     "RepurchaseFlag",
     "Transmission",
-    "add_months",
     "build_modelo100",
 ]
 
 _ZERO: Final[Decimal] = Decimal("0")
-_REPURCHASE_WINDOW_MONTHS: Final[int] = 2
 _FIAT: Final[frozenset[Currency]] = frozenset({Currency.EUR})
 
 
@@ -251,22 +251,6 @@ class Modelo100Report:
         return not self.pending
 
 
-def add_months(at: datetime, months: int) -> datetime:
-    """Shift ``at`` by whole calendar months, clamping the day to the month's end.
-
-    Args:
-        at: The instant to shift.
-        months: Months to add; negative moves back.
-
-    Returns:
-        The shifted instant, same time of day and timezone.
-    """
-    index = at.year * 12 + at.month - 1 + months
-    year, month = divmod(index, 12)
-    last_day = calendar.monthrange(year, month + 1)[1]
-    return at.replace(year=year, month=month + 1, day=min(at.day, last_day))
-
-
 def build_modelo100(
     year: int,
     pieces: Iterable[DisposalPiece],
@@ -365,13 +349,13 @@ def _repurchase_flags(
     for t in transmissions:
         if t.gain_eur >= _ZERO:
             continue
-        start = add_months(t.disposed_at, -_REPURCHASE_WINDOW_MONTHS)
-        end = add_months(t.disposed_at, _REPURCHASE_WINDOW_MONTHS)
         # The lots the sale itself consumed are what was sold, not a repurchase.
         inside = tuple(
             p.ref
             for p in sorted(purchases, key=lambda p: (p.acquired_at, p.ref))
-            if p.asset == t.asset and p.ref not in t.buy_refs and start <= p.acquired_at <= end
+            if p.asset == t.asset
+            and p.ref not in t.buy_refs
+            and in_repurchase_window(t.disposed_at, p.acquired_at)
         )
         if inside:
             flags.append(

@@ -1,6 +1,7 @@
 """The console's saved settings: ``~/.config/hermes/console.toml`` on the operator's PC.
 
-Only the theme choice is saved today (issue #711, theme switch). A missing,
+The theme choice (issue #711) and ``show_values`` (issue #1056, the Lab screen
+may show the trial log's figures) are saved. A missing,
 unreadable or malformed file reads as "nothing picked", so the console always
 opens; the file is rewritten whole on every save.
 """
@@ -23,6 +24,7 @@ __all__ = [
 
 DEFAULT_SETTINGS_PATH: Final = Path("~/.config/hermes/console.toml")
 _THEME_KEY: Final = "theme"
+_VALUES_KEY: Final = "show_values"
 
 
 class ThemeChoice(StrEnum):
@@ -42,9 +44,13 @@ class ConsoleSettings:
 
     Attributes:
         theme: The theme choice, or ``None`` when none was picked (Auto applies).
+        show_values: The operator allows the Lab screen to show the trial log's
+            figures. Only ever set by hand in the file; the console never
+            writes it ``True`` itself, and an AI session ignores it.
     """
 
     theme: ThemeChoice | None = None
+    show_values: bool = False
 
 
 def load_settings(path: Path) -> ConsoleSettings:
@@ -55,19 +61,19 @@ def load_settings(path: Path) -> ConsoleSettings:
 
     Returns:
         The saved settings, or empty settings when the file is missing,
-        unreadable, not TOML, or names an unknown theme.
+        unreadable or not TOML; an unknown theme reads as none picked.
     """
     try:
         data = tomllib.loads(path.expanduser().read_text(encoding="utf-8"))
     except OSError, UnicodeDecodeError, tomllib.TOMLDecodeError:
         return ConsoleSettings()
+    show_values = data.get(_VALUES_KEY) is True
     raw = data.get(_THEME_KEY)
     try:
-        return (
-            ConsoleSettings(theme=ThemeChoice(raw)) if isinstance(raw, str) else ConsoleSettings()
-        )
+        theme = ThemeChoice(raw) if isinstance(raw, str) else None
     except ValueError:
-        return ConsoleSettings()
+        theme = None
+    return ConsoleSettings(theme=theme, show_values=show_values)
 
 
 def save_settings(path: Path, settings: ConsoleSettings) -> None:
@@ -83,4 +89,6 @@ def save_settings(path: Path, settings: ConsoleSettings) -> None:
     target = path.expanduser()
     target.parent.mkdir(parents=True, exist_ok=True)
     lines = [] if settings.theme is None else [f'{_THEME_KEY} = "{settings.theme.value}"']
+    if settings.show_values:
+        lines.append(f"{_VALUES_KEY} = true")
     target.write_text("".join(f"{line}\n" for line in lines), encoding="utf-8")

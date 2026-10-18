@@ -1,0 +1,1 @@
+- Modelo 100 and the tax screen now flag the same two-month repurchase sales: both count Madrid calendar dates through one shared rule, so a buy late on the window's last Madrid day is flagged by both (#1171).

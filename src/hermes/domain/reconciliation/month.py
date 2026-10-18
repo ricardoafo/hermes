@@ -14,11 +14,11 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Final
-from zoneinfo import ZoneInfo
+
+from hermes.domain.value_objects.time import MADRID
 
 __all__ = ["ReconciliationMonth"]
 
-_MADRID: Final = ZoneInfo("Europe/Madrid")
 _PATTERN: Final = re.compile(r"(\d{4})-(\d{2})")
 _DECEMBER: Final = 12
 # datetime ends at year 9999, and a month needs its following month for its end.
@@ -84,7 +84,7 @@ class ReconciliationMonth:
         """
         if instant.tzinfo is None:
             raise ValueError("ReconciliationMonth.containing needs an aware datetime")
-        local = instant.astimezone(_MADRID)
+        local = instant.astimezone(MADRID)
         return cls(year=local.year, month=local.month)
 
     def previous(self) -> ReconciliationMonth:
@@ -102,7 +102,7 @@ class ReconciliationMonth:
     @property
     def start(self) -> datetime:
         """Madrid midnight on the first day, as a UTC instant (inclusive)."""
-        return datetime(self.year, self.month, 1, tzinfo=_MADRID).astimezone(UTC)
+        return datetime(self.year, self.month, 1, tzinfo=MADRID).astimezone(UTC)
 
     @property
     def end(self) -> datetime:

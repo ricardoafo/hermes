@@ -41,14 +41,16 @@ Examples:
 
 Fragments named `<pr-number>-<type>.md` (the earlier convention) still work.
 
-**Legacy placeholders**: other names, such as `wave-4-process-hardening.md`,
-are ignored by the aggregator. Do not create new ones; use the two forms
-above.
+Any other name is an error: the aggregator and the release-cut script refuse
+to run, and a unit test fails in CI, so a note can never be left out of a
+release (#1172). The legacy `wave-*.md` notes were converted to orphan
+fragments for that reason.
 
 ## Format
 
 Each fragment is a single Markdown bullet (or nested bullets under one
-top-level bullet). No section headers — the type comes from the filename.
+top-level bullet). No section headers — the type comes from the filename. The aggregator
+and the release cut refuse any other shape.
 
 ```markdown
 - **Slack notifier adapter** (`src/hermes/adapters/notifier/slack_adapter.py`):
@@ -75,6 +77,8 @@ script, from a fresh branch off `main`:
 
 ```bash
 uv run python scripts/dev/cut-release.py 0.2.0
+# or, at a merge window (ADR-028): pick the version from the entries
+uv run python scripts/dev/cut-release.py --next --engine-change no
 ```
 
 It merges the hand-written `[Unreleased]` entries and every numbered or
@@ -85,6 +89,3 @@ nothing.
 
 `scripts/dev/aggregate-changelog.py` still prints the merged fragments for
 review; the release-cut script uses it to read them.
-
-Legacy placeholder fragments (`wave-*.md`) are NOT deleted; they are
-visible only to humans reading the directory.

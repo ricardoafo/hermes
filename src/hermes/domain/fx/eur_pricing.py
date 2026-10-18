@@ -18,11 +18,11 @@ from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 from typing import Final
-from zoneinfo import ZoneInfo
 
 from hermes.domain.fx.fx_rate import FxRate
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
+from hermes.domain.value_objects.time import MADRID
 
 __all__ = [
     "IDENTITY_SOURCE",
@@ -33,7 +33,6 @@ __all__ = [
 ]
 
 IDENTITY_SOURCE: Final[str] = "identity"
-_MADRID: Final = ZoneInfo("Europe/Madrid")
 
 
 class EurStatus(StrEnum):
@@ -146,7 +145,7 @@ def fill_date_madrid(at: datetime) -> date:
     """
     if at.tzinfo is None:
         raise ValueError(f"fill_date_madrid needs a timezone-aware datetime, got {at!r}")
-    return at.astimezone(_MADRID).date()
+    return at.astimezone(MADRID).date()
 
 
 def rate_is_final(*, fill_date: date, rate_date: date, today: date) -> bool:

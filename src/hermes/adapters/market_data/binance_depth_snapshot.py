@@ -31,14 +31,15 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Final
 
 import anyio
 import httpx
 import structlog
 
-from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
+from hermes.adapters._shared.wire import binance_symbol, wire_decimal
 from hermes.domain.errors import ExchangeError, NetworkError
 from hermes.domain.market_data.orderbook import Orderbook, OrderbookLevel
 from hermes.domain.value_objects.pair import Pair
@@ -60,16 +61,7 @@ _log = structlog.get_logger(__name__)
 
 
 def _decimal(raw: object, *, field: str) -> Decimal:
-    """Parse a wire number given as a string."""
-    if not isinstance(raw, str):
-        raise ExchangeError(f"depth {field} is not a string: {raw!r}")
-    try:
-        value = Decimal(raw)
-    except InvalidOperation as exc:
-        raise ExchangeError(f"depth {field} is not a number: {raw!r}") from exc
-    if not value.is_finite():
-        raise ExchangeError(f"depth {field} is not a finite number: {raw!r}")
-    return value
+    return wire_decimal(raw, field=f"depth {field}", error=ExchangeError, numbers=False)
 
 
 def _levels(raw: object, *, side: str) -> tuple[OrderbookLevel, ...]:
@@ -190,7 +182,7 @@ class BinanceDepthSnapshotAdapter:
             return cached
         while not self._limiter.try_acquire(_DEPTH_WEIGHT):
             await self._sleep(_DEPTH_WEIGHT / self._limiter.refill_per_second)
-        params = {"symbol": f"{pair.base.value}{pair.quote.value}", "limit": str(DEPTH_LEVELS)}
+        params = {"symbol": binance_symbol(pair), "limit": str(DEPTH_LEVELS)}
         try:
             response = await self._client.get(self._url, params=params)
         except httpx.HTTPError as exc:

@@ -23,7 +23,6 @@ from collections.abc import Sequence
 from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Final
-from zoneinfo import ZoneInfo
 
 from hermes.application.filing.document import Block, Document, Heading, Paragraph, Table, Tone
 from hermes.application.filing.service import FilingPack
@@ -32,15 +31,15 @@ from hermes.domain.filing.modelo721 import Modelo721Origin, Obligation
 from hermes.domain.filing.readiness import PackStatus
 from hermes.domain.filing.renta_campaign import RentaCampaign
 from hermes.domain.filing.trail import TradeRate, TrailLine
+from hermes.domain.value_objects.cents import CENT
 from hermes.domain.value_objects.currency import Currency
+from hermes.domain.value_objects.time import MADRID
 
 __all__ = ["DOSSIER_FILE", "RENTA_SHEET_FILE", "build_dossier", "build_renta_sheet"]
 
 RENTA_SHEET_FILE: Final[str] = "renta-web.pdf"
 DOSSIER_FILE: Final[str] = "dossier.pdf"
 
-_MADRID: Final = ZoneInfo("Europe/Madrid")
-_CENT: Final[Decimal] = Decimal("0.01")
 _SIX: Final[Decimal] = Decimal("0.000001")
 
 # Renta Web's "tipo de contraprestación" keys.
@@ -337,7 +336,7 @@ def _spanish(amount: Decimal, quantum: Decimal) -> str:
 
 
 def _eur(amount: Decimal) -> str:
-    return _spanish(amount, _CENT)
+    return _spanish(amount, CENT)
 
 
 def _optional_eur(amount: Decimal | None) -> str:
@@ -363,8 +362,8 @@ def _rate(rate: TradeRate | None) -> str:
 
 
 def _day(at: datetime) -> str:
-    return at.astimezone(_MADRID).strftime("%d/%m/%Y")
+    return at.astimezone(MADRID).strftime("%d/%m/%Y")
 
 
 def _stamp(at: datetime) -> str:
-    return at.astimezone(_MADRID).strftime("%d/%m/%Y %H:%M") + " (hora de Madrid)"
+    return at.astimezone(MADRID).strftime("%d/%m/%Y %H:%M") + " (hora de Madrid)"
