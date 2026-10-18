@@ -28,6 +28,9 @@ _RISK = _S + "test_risk_limits.py::"
 _FAULTS = _S + "test_market_data_faults.py::"
 _RESTART = _S + "test_restart.py::test_a_restart_with_a_position_open_keeps_it_until_its_exit"
 _UNIT = "tests/unit/"
+_SHADOW = _UNIT + "application/execution/test_shadow.py::"
+_SHADOW_CHECKS = _UNIT + "application/strategy_protocol/test_shadow_checks.py::"
+_SERVE_FILLS = "tests/integration/entrypoints/test_serve_fills.py::"
 
 
 @dataclass(frozen=True)
@@ -103,8 +106,8 @@ PRE_REGISTERED: dict[str, tuple[Rule, ...]] = {
         Rule(
             "Exit: **on-exchange stop-market**",
             gap=(
-                "issue #785: shadow sells at market on the bar after the stop is touched; "
-                "no resting stop, no clamp under the close"
+                "issue #1157: serve sells at market at the close of the bar that touches "
+                "the stop; no resting stop"
             ),
         ),
     ),
@@ -136,7 +139,12 @@ PRE_REGISTERED: dict[str, tuple[Rule, ...]] = {
         ),
         Rule(
             "**Correlation lock",
-            gap="issue #514: serve has no 30-day pair correlations, so RO-01 is not applied",
+            proved_by=(
+                _SHADOW + "test_serve_refuses_a_third_entry_correlated_with_two_held_pairs",
+                _SHADOW
+                + "test_serve_does_not_lock_the_third_entry_when_the_closes_cover_under_30_returns",
+                _SHADOW + "test_serve_and_the_backtest_replay_read_the_same_correlations",
+            ),
         ),
         Rule(
             "**Total exposure cap**",
@@ -213,11 +221,19 @@ PRE_REGISTERED: dict[str, tuple[Rule, ...]] = {
     "10 shadow": (
         Rule(
             "Sim-vs-live PnL divergence",
-            gap="issue #358: the nightly parity check that measures the divergence",
+            proved_by=(
+                _SHADOW_CHECKS + "test_a_drift_median_above_30_bps_breaches_without_killing",
+                _SHADOW_CHECKS + "test_the_drift_rule_ignores_direction",
+                _SHADOW_CHECKS + "test_v1_exits_stay_out_of_the_drift_median_and_are_counted",
+            ),
         ),
         Rule(
             "Any SA-9 shock overlay rule fires 3+",
-            gap="issue #514: serve keeps no history of halts to count",
+            proved_by=(
+                _SHADOW_CHECKS + "test_one_overlay_rule_halting_three_times_in_30_days_kills",
+                _SERVE_FILLS
+                + "test_a_daily_sa9_repeat_kill_is_recorded_alerted_and_stops_every_entry",
+            ),
         ),
         Rule(
             "Shadow Sharpe < 0.3",
@@ -237,7 +253,7 @@ PRE_REGISTERED: dict[str, tuple[Rule, ...]] = {
         ),
         Rule(
             "Time-to-recovery > 90 days",
-            gap="issue #514: serve feeds days since the equity high as 0",
+            gap="issue #1158: serve feeds days since the equity high as 0",
         ),
         Rule("30 rolling trades OOS Sharpe", outside="live phase; MVP1 runs shadow only"),
         Rule("Any SA-9 P0 rule violation", outside="live phase; MVP1 runs shadow only"),
@@ -281,7 +297,7 @@ IN_CODE: tuple[Rule, ...] = (
     ),
     Rule(
         "Chandelier stop clamped under the close",
-        gap="issue #785: the clamp the engine docstring describes is not implemented",
+        gap="issue #1157: the clamp the engine docstring describes is not implemented",
     ),
     Rule(
         "RO-03 slippage halt",
@@ -302,8 +318,8 @@ IN_CODE: tuple[Rule, ...] = (
             "::TestPortfolioDrawdownHalt::test_at_or_above_threshold_returns_halt",
         ),
     ),
-    Rule("RO-02 spread spike", gap="issue #514: serve has no one-hour median spread"),
-    Rule("RO-05 and RO-06 depeg", gap="issue #514: serve passes no stablecoin price"),
+    Rule("RO-02 spread spike", gap="issue #1158: serve has no one-hour median spread"),
+    Rule("RO-05 and RO-06 depeg", gap="issue #1158: serve passes no stablecoin price"),
     Rule(
         "Late or missing bar: serve never handles a bar out of order",
         proved_by=(

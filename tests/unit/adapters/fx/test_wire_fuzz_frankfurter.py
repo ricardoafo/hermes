@@ -15,8 +15,8 @@ import httpx
 from hypothesis import example, given
 from hypothesis import strategies as st
 
+from hermes.adapters._shared.rate_limiter import RateLimiter
 from hermes.adapters.fx.frankfurter import FrankfurterAdapter, FrankfurterConfig
-from hermes.adapters.fx.rate_limiter import RateLimiter
 from hermes.domain.errors import FxRateError
 from hermes.domain.fx.fx_rate import FxRate
 from hermes.domain.value_objects.currency import Currency

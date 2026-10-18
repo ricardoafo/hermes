@@ -1,3 +1,6 @@
+# RESERVED: no code reads this file yet (the supervisor is not built). It is
+# optional; every key has the same default in MLConfig.
+#
 # ML / LLM subsystem configuration.
 #
 # Loaded by hermes.infrastructure.config.load_config into MLConfig.

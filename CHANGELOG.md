@@ -69,6 +69,20 @@ lands in Phase 0 CI (per ADR-006).
 
 - Console: the Signals screen (tab 2) shows the week's bar checks per coin as a heat grid of how many entry rules held, the last check's rules as yes or no, the week's counts and the frozen rules. Rules show as yes or no only, never a price or how close a rule came (#714).
 
+- **Console Positions screen** (tab 3 of `hermes tui`, view only): the open positions and the recently closed ones in one filterable list (coin, state, when, change, net, stop room), with the selected position's detail beside it (a detail screen on terminals under 100 columns): why it opened, what would close it, the money if sold now, the price path and the timeline. No net or price shows on a surface that hides money. Closes #715.
+
+- **Console Logs screen** (`hermes tui`, screen 8): hermes's journal as a
+  queryable list. Type a query such as `level>=warn service:engine coin:ETH
+  since:7d` (Tab completes fields; `level` compares by severity, debug < info
+  < warn < error), see facet counts for level, service and coin, a volume
+  histogram coloured by level (`D` `W` `M` `Y` zoom its window) and columns
+  sortable by time, level, service, event, coin, details and trace. Enter
+  shows the line as pretty JSON beside the list; `C` copies it and `E` exports
+  it to `~/hermes-exports/` on the PC (over `--vps` the console says export
+  works from the PC). `T` opens every line of that correlation id as a tree
+  with timings, and `F` follows the journal live. Nothing from the screen
+  goes to any AI or notification. Closes #716.
+
 - **Console System screen** (tab 7 of `hermes tui`, view only): Services shows
   hermes, the bot, health, daily, backup, archive check and tax pack with their
   systemd state and next timer run; Releases lists the live release and the
@@ -144,6 +158,8 @@ lands in Phase 0 CI (per ADR-006).
 
 - `hermes parity window` replays the shadow window from day 0 and reports M-09 (P&L correlation) and M-10 (Sharpe match) as pass, block or insufficient; `hermes certify --shadow-parity FILE` makes both a condition of `SHADOW_CERTIFIED` (#965).
 
+- **Notifier endpoints from config**: `HERMES_TELEGRAM__API_BASE` and `HERMES_SLACK__API_BASE` point the Telegram notifier, the Slack notifier, `hermes bot` and the systemd alert scripts at another host, so a lower environment reaches a loopback fake by config alone. Unset, they use the real APIs; plain `http` is accepted only on a loopback host, and a bad value stops startup instead of muting the channel. Refs #970.
+
 - A `swing-mvp1-v2` strategy config whose exits all sell 5 bps under the close of the 4h bar they fire on, the stop included, priced the same way in the backtest drivers (`--strategy swing-mvp1-v2`) and in serve, where it is also the drift model price (pre-registration v2 §5.3, §6.2, §7). v1 keeps its stop-market exit prices.
 
 - `hermes certify` reports the shadow round trips the ledger holds toward SHADOW_CERTIFIED and flags the execution check weak under 30, without changing any pass or fail rule (#797).
@@ -162,7 +178,769 @@ lands in Phase 0 CI (per ADR-006).
 
 - Research batches are judged at their end by a signed rule: one trial count for every candidate, a Benjamini-Hochberg step on 1 - DSR across the batch, and the highest-DSR survivor as champion, or none (ADR-026 §4, §5).
 
+- Research batch swing-b1 candidate C1, `swing-b1-ensemble`: a disabled roster entry with `signal: breakout_ensemble` that enters when at least `agree_min` of the 20, 55 and `longest_lookback` 4h Donchian breakouts agree above the daily EMA(200), and exits as v2 with its own chandelier multiple (ADR-026).
+
+- Research batch swing-b1 candidate C2, `swing-b1-daily-ma`: a disabled roster entry with `signal: daily_ma` that enters on the 00:00 UTC 4h bar after a daily close crosses above its SMA(`sma_period`), and exits on a daily close below it or on a protective stop of `stop_atr_mult` x daily ATR(22) that is raised at each daily close (ADR-026).
+
 - Roster entries can name their signal with `signal:`; serve, parity, the portfolio backtest and decision replay build every strategy through one factory, an entry with no `signal:` keeps today's Donchian breakout unchanged, and an unknown signal is refused at config load (research funnel contract §2a).
+
+- `scripts/backtest/stop_slippage.py` measures how far below the backtest's stop fill the market really traded, on Train data only: 1-minute bounds for every synthetic stop event and, with `--trade-days`, the trigger trade from the public aggregated-trades archive on N days spread evenly across Train. The ingester can fetch 1-minute klines on request (issue #1104).
+
+- The staging lab now logs its available memory and each running shadow's memory once a minute, and sends one Telegram message when available memory drops below 1 GiB and one when it recovers (`hermes-lab-memory.timer`, off until enabled on hermes-01).
+
+- **Live spread in the console Market panel**: each coin shows its spread in basis points, taken from the best bid and best ask of the ticker poll the console already makes (from 64 cells wide). A coin whose last fetch failed shows a dash. Display only. Refs #722. Closes #1156.
+
+- **Process hardening wave 6** (`scripts/dev/launch-agent.sh`,
+  `.pre-commit-config.yaml`, `AGENTS.md`,
+  `docs/decisions/2026-08-23-fetch-before-launch-tooling.md`,
+  `docs/decisions/README.md`): turns the AGENTS.md rule 4 norm ("Fetch
+  origin/main BEFORE spawning a worktree-isolated sub-agent") into an
+  ENFORCED tooling gate. Introduced by GH #146 after Wave 4 (PR #133)
+  established the norm and Wave 5 (PR #140) hardened process cadence
+  without closing this window. New `launch-agent.sh` fetches
+  `origin/main`, exits 1 with an exact fast-forward command when local
+  `main` is behind, and prints the current `origin/main` SHA on
+  success so the orchestrator can pin sub-agents against a KNOWN base
+  in the launch prompt. `--quiet` outputs SHA-only for scripting.
+  Hermetic self-test (`HERMES_SELF_TEST=1`) covers 7 fixtures via a
+  `GIT_CMD` shell-stub simulating fresh / stale / ahead / offline /
+  norefs / unknown-flag paths — no network, no ref manipulation.
+  Pre-commit hook `launch-agent-self-test` mirrors the existing
+  `create-pr-self-test` pattern: any change to `launch-agent.sh`
+  re-runs its self-test on commit. AGENTS.md prose stays UNCHANGED —
+  the norm still explains WHY; the new tool is the CHECK that
+  ENFORCES it. Decision journal entry documents the rejection of
+  Option B (post-checkout git hook — pre-commit does not manage that
+  hook type, fires only per checkout not per launch) and Option C
+  (extending `pr-preflight.sh` — dilutes its pre-push contract and
+  hurts discoverability). Placeholder-named fragment per
+  `changelog.d/README.md` — aggregator ignores non-numeric prefixes.
+
+- **Process hardening wave 7** (`.pre-commit-config.yaml`,
+  `scripts/dev/regenerate-guides-index-hook.sh`,
+  `scripts/dev/no-pr-body-at-repo-root.sh`,
+  `scripts/dev/sub-agent-prompt-checklist.md`, `AGENTS.md`): closes
+  three drifts observed during the 2026-08-23 → 2026-08-24 autonomous
+  work session (audited in GH #181, deferring items 5-10). (1) The
+  `regenerate-guides-index` pre-commit hook now delegates to
+  `regenerate-guides-index-hook.sh`, which re-runs the regen script,
+  `git add`s the refreshed `docs/guides/README.md`, and fails LOUDLY
+  with a `git commit --amend --no-edit` hint when the file actually
+  changed. Wave 5 sub-agent and the 2026-08-24 Sentry salvage each
+  burned one recovery cycle on the previous silent-drift pattern
+  (commit, push, CI fails on "guides index stale"). Self-test covers
+  3 fixtures including idempotence. (2) New
+  `no-pr-body-at-repo-root` pre-commit hook rejects `pr-body-*.md`,
+  `.pr-body-*.md`, and `*.pr-body.md` files staged at the repo root
+  BEFORE they hit markdownlint MD041 (first line must be H1 — PR
+  bodies open with `## Summary`, so they always fail). Wave 3 patched
+  `create-pr.sh` to copy repo-relative bodies to `/tmp/`; Wave 7
+  slams the door on the file ever reaching the index. Hermetic
+  self-test (`HERMES_SELF_TEST=1`) covers 14 fixtures via a pure
+  matcher — no filesystem writes, no git-index mutation. Pre-commit
+  hook `no-pr-body-at-repo-root-self-test` mirrors the existing
+  `create-pr-self-test` pattern: any change to the script re-runs
+  its self-test on commit. (3) `AGENTS.md § On sub-agent delegation`
+  gained a "Sub-agent rate-limit resilience" subsection with three
+  rules: WIP commits every ~30 tool uses (or per Part), push after
+  every WIP commit for GitHub salvage, `mem_save` engram checkpoint
+  at each milestone. New
+  `scripts/dev/sub-agent-prompt-checklist.md` holds the copy-paste
+  block orchestrators paste into non-trivial sub-agent launch
+  prompts. Part 4 of the audit (merge-dependency label + GH Action
+  gate) DEFERRED per the "> 15 min → separate issue" rule in the
+  spec — filed follow-up for a dedicated PR. Placeholder-named
+  fragment per `changelog.d/README.md` — aggregator ignores
+  non-numeric prefixes.
+
+- **New activity rows fade in the console**: a row that appears in the Activity card between two reads is highlighted for 2 s, fading out; nothing with `HERMES_CONSOLE_MOTION=off`. Part of #721.
+
+- **Auto-update PR branches workflow**
+  (`.github/workflows/auto-update-pr-branches.yml`): on every push to `main`,
+  every open non-draft PR whose head is BEHIND main gets a fresh merge commit
+  via GitHub's `pulls/{n}/update-branch` endpoint. Complements the
+  merge-queue's own reconciliation (which only touches APPROVED candidates)
+  by closing the UX gap where non-approved PRs (still in review) linger in
+  "BEHIND main" state until they eventually reach the queue. This workflow
+  does NOT merge anything, does NOT run on draft PRs, does NOT bypass any
+  status/review gates — it only owns branch freshness. Cost: paginated
+  `pulls.list` + one `pulls.get` per PR + at most one `updateBranch` call
+  per BEHIND PR (sub-second for any realistic PR count). 422 responses
+  (already up-to-date or race conditions) are logged and swallowed;
+  workflow never fails, only reports.
+
+- **`scripts/backtest/run_calibration.py`** — MVP1 backtest driver Phase 1. Composition-root script that wires `BinanceHistoricalAdapter` (spec-4c) → `SwingStrategyAdapter` (spec-5) → time-aware fee-history selector (#263) → `CalibrationHarness` (spec-6) into an end-to-end backtest reading Vision klines from `$HERMES_DATA_DIR`. Emits a JSON `CalibrationReport` with M-01..M-07 metrics. Phase 1 synthesises fills at `bar.close` (no `OrderRouter` + orderbook walk yet — that's Phase 2). CLI: `--pair`, `--start`, `--end`, `--output`, `--dry-run`. 250-day warm-up buffer before the trading window so EMA(200) is populated. Smoke-tested end-to-end on 2024-Q1 BTC/USDT (12 signals, 12 fills, valid report). 8 unit tests on pure helpers. Closes #269.
+
+- **Backtest driver Phase 2 design proposal (spec-only PR)** — design document for `scripts/backtest/run_calibration_full.py` wiring the full spec-3 `OrderRouter` + spec-2c `SimulatedExchangeAdapter` + spec-2b `OrderbookWalkFillModel` pipeline. Phase 1's `_synthesise_fill` shortcut is replaced. Key design decision D-1: synthesise the Vision-missing `Orderbook` per bar from OHLCV + a volume-proportional 10-level depth model (Vision has no L2). Multi-pair walk + SA-9 correlation lock + statistical framework deferred to Phase 3. Non-zero M-02 slippage / M-04 rejection rate / M-06 regime returns become reachable. This PR is design-only — implementation lands in a follow-up after operator approval. Closes #273.
+
+- **`scripts/dev/prune-merged-branches.sh`** — three-phase branch cleanup covering the drift gaps neither `delete_branch_on_merge:true` nor `merge-queue.yml`'s explicit `git.deleteRef` catches: (A) local branches whose every commit is patch-equivalent to something already in main (squash-merge remnants), (B) remote refs attached to CLOSED-but-not-merged PRs, (C) remote refs with no PR at all. `--dry-run` default; `--yes` deletes. Interactive per-branch prompt on `worktree-agent-*` / `agent-*` / `*-wip` remote refs even in `--yes` mode. `HERMES_SELF_TEST=1` fixture matrix. Closes #249.
+
+- **`.github/workflows/vps-bootstrap.yml` + `scripts/deploy/vps_bootstrap.sh`** — idempotent `workflow_dispatch` workflow that SSHes to VPS via Tailscale and: (1) creates missing FHS dirs (`/var/log/hermes`, `/etc/hermes`) with `hermes:hermes 750`; (2) renders `.env.production` from GH prod-env secrets and writes it to `/etc/hermes/env.production` (chmod 0400, atomic tmp + mv); (3) mounts Hetzner Storage Box via SSHFS when its credentials are present in the env (skipped gracefully otherwise). Reuses the Tailscale + openssh scaffolding from `vps-diagnose.yml`. Unblocks #179 CD-to-VPS deploy body. Closes #285.
+
+- **`.github/workflows/vps-diagnose.yml`** — manual `workflow_dispatch` workflow that SSHes into the production VPS using existing `prod` Environment secrets (`VPS_SSH_HOST`, `VPS_SSH_USER`, `VPS_SSH_KEY`) and emits a structured 10-section snapshot of the VPS state (OS, Python + uv, `/opt/hermes`, systemd units, storage-box mount, disk, firewall, fail2ban, GH Actions runner). Zero side effects — READ commands only. Unblocks #179 (CD-to-VPS deploy body) by giving operator + agent ground-truth on what's provisioned vs missing. Validates the secret plumbing the future CD deploy body will use. Closes #276.
+
+- **CI hygiene batch 1a — per-PR concurrency + post-main rebase job**
+  (`.github/workflows/ci.yml`): two orthogonal improvements shipped
+  together because they both edit the same workflow. (1) Concurrency
+  now groups by `${{ github.workflow }}-${{ github.ref }}` with
+  unconditional `cancel-in-progress: true`, so pushing a fix to an
+  open PR cancels the previous in-progress run for that same ref —
+  frees self-hosted runner slots that used to burn on stale commits.
+  Different PRs still run in parallel (each has its own ref).
+  Replaces the previous SHA-based scheme which only deduped
+  push+PR-on-same-commit and never actually canceled a superseded PR
+  run. Trade-off: consecutive pushes to main now also cancel each
+  other; that's fine for main because the merge queue serializes
+  merges anyway. Closes #174. (2) New `rebase-stale-prs` job gated on
+  `needs: [ci-success]` + `push: refs/heads/main` posts
+  `@dependabot rebase` on every open dependabot PR (unless
+  `no-auto-rebase` label) and runs `peter-evans/rebase@v3` on
+  human/sub-agent PRs (excluding drafts + `no-auto-rebase` +
+  `dependencies` to avoid double-rebasing dependabot). Rebase only
+  fires when main's own CI passed green, so a broken main cannot
+  cascade its state into open PRs. Runs on `ubuntu-latest` (not
+  `RUNNER_LABEL`) so it stays alive when self-hosted is down.
+  Closes portions of #180. Placeholder-named fragment per
+  `changelog.d/README.md` — aggregator ignores non-numeric prefixes;
+  rename to `<PR#>-added.md` after PR opens.
+
+- **`scripts/dev/create-issue.sh`** — mandatory wrapper around `gh issue create`. Rejects invocations without `--milestone`, `--assignee`, `--body`/`--body-file`, and at least one label from each of the three classes (`type:`, `area:`, `size:`). Prevents the metadata-drift class of process violations exemplified by #245. `HERMES_SELF_TEST=1` fixture matrix + `HERMES_ISSUE_DRY_RUN=1` for non-destructive verification. Closes #251.
+
+- **Binance Vision aggTrades support + CoinGecko peg downloader + 404
+  classification fix** (`scripts/data/ingest_binance_vision.py`,
+  `scripts/data/ingest_coingecko_peg.py` NEW,
+  `openspec/changes/data-ingest-agg-trades-and-peg/`): extends the
+  klines-only ingest from #218 (PR #219) to cover the remaining MVP1
+  historical data classes. (1) `--include` flag on the Binance script
+  accepts `klines` (default), `agg_trades`, or `all`. aggTrades feeds
+  intrabar slippage calibration (Spec 6) and fill-timing modelling
+  (Spec 2b). Same SHA256 verify, same manifest, same resume logic;
+  manifest keys are now namespaced (`klines/BTCUSDT/1h/2020-09`,
+  `agg_trades/BTCUSDT/-/2020-09`) with backward-compat migration for
+  the legacy 3-part format. (2) 404 responses for future months are
+  now classified as `not_yet_published` (informational) rather than
+  `failed`, so the script exits 0 when everything worked as expected —
+  fixes the mis-report observed when running before end-of-window
+  months were published. (3) New `ingest_coingecko_peg.py` downloads
+  hourly USDT / USDC / DAI prices vs USD in month windows for the
+  SA-9 depeg overlay (pre-reg v1 §5.5 correlation lock + depeg
+  WARN 1.5% / HALT 3% rules) that Spec 8 will wire. Free-tier rate
+  limit respected via 4-second inter-request sleep (~15 req/min,
+  well under the 30/min ceiling). Both scripts remain stdlib-only.
+
+- **Binance Vision historical klines downloader**
+  (`scripts/data/ingest_binance_vision.py`,
+  `openspec/changes/data-ingest-binance-vision/`): stdlib-only Python
+  script that materialises the plan documented in
+  `docs/experiments/swing-mvp1/data-ingest-plan.md` §1. Downloads all
+  monthly klines ZIPs for BTC/ETH/SOL × 1h/4h/1d across the pre-reg
+  v1 §4 uniform window (2020-09-01 → 2026-12-31; 684 target files).
+  SHA256-verifies every ZIP against Binance's `.CHECKSUM` companion
+  BEFORE writing to disk. Resume-safe: on rerun, files present on
+  disk with a matching manifest entry are skipped; missing files are
+  re-downloaded and re-verified. Manifest checkpointed every 20
+  files so an interrupt loses at most 20 entries. CLI flags:
+  `--data-dir`, `--manifest`, `--pair`, `--interval`, `--dry-run`.
+  No new Python dependency (`urllib` + `hashlib` + `json` only).
+  Operator runs locally on the dev machine; not a workflow — bulk
+  download would burn CI runner time for zero value. Fingerprint
+  output feeds pre-reg v1 §16 (Dataset fingerprints requirement).
+
+- **Dependency-review discipline** (`.github/workflows/ci.yml`,
+  `.github/dependabot.yml`, `pyproject.toml`,
+  `docs/decisions/2026-08-24-dependency-upgrade-checklist.md`,
+  `docs/decisions/README.md`): three coordinated moves that turn
+  dependabot's PR firehose from a rubber-stamp risk back into a
+  reviewable slice. Related to `Meta: MVP1 status` (#141) and
+  builds on Wave 5 (PR #140, pytest-timeout as tooling precedent)
+  and Wave 6 (PR #149, process tooling gate precedent). (1) CI
+  `pr-body` job now carries an `if:` gate that skips it for
+  `dependabot[bot]`-authored PRs — the 4-section (Summary/Related/
+  Testing/Risk) template does not map to dependabot's
+  auto-generated release-notes body, and failing the check on
+  every dependabot PR trained reviewers to ignore red X's on human
+  PRs too. Skipped is an accepted state in
+  `scripts/dev/ci-success-check.sh` (allowlist `{success, skipped}`)
+  so dependabot PRs unblock cleanly; every human PR still gates on
+  the check. (2) `pyproject.toml [tool.pytest.ini_options]` gains
+  `filterwarnings = ["error::DeprecationWarning",
+  "error::PendingDeprecationWarning"]` so deprecated APIs we still
+  use fail LOUDLY at PR time, not "the day the library removed the
+  API". 789 unit tests pass under the new config on this PR — no
+  in-tree deprecations to fix, and the escape hatch (targeted
+  `ignore::DeprecationWarning:<module>` with a comment + upstream
+  link) is documented in the decision doc for third-party warnings
+  we cannot patch. (3) `.github/dependabot.yml` is refined (not
+  clobbered — assignees, labels, reviewers, cooldown, weekly
+  schedule preserved from PR #128's work): grouping now applies to
+  PATCH updates only (`groups.patch-updates: patterns: ['*'],
+  update-types: ['patch']`), so minor + major bumps ship as
+  individual PRs that get real CHANGELOG-diff reads; PR limit
+  raised from 3 to 10 to leave headroom for a busy security week
+  without letting the queue explode; `commit-message.prefix-development:
+  chore(deps-dev)` differentiates dev-group bumps from prod
+  `chore(deps)` for cleaner conventional-commit history. Decision
+  doc codifies the automated CI checks (pip-audit, deprecation-as-error,
+  coverage delta, ruff UP, import-linter) + the manual checklist
+  (read upstream CHANGELOG for the version range, security fast-lane,
+  major-bump API-usage grep) + the dependabot-specific fast-lane
+  (security same-day, patch group quick-review, minor/major
+  individual review). Follow-up (p3): a GH Action that rewrites
+  dependabot PR bodies into our compliant 4-section format enriched
+  with major-bump warnings + upstream-CHANGELOG links (tracked in
+  its own issue). Placeholder-named fragment per
+  `changelog.d/README.md` — aggregator ignores non-numeric prefixes.
+
+- **DoR/DoD openspec-first enforcement** (#194 → openspec change
+  `dor-dod-enforcement`): two-layer gate that refuses to open a PR (or
+  push a branch) whose latest commit is `feat|refactor|perf` and whose
+  diff vs `origin/main` includes no `openspec/changes/*/change.md`
+  addition or modification. Enforcement lives at both
+  `scripts/dev/create-pr.sh` (exit 3, new distinct code) and
+  `scripts/dev/pr-preflight.sh` (check #13). AGENTS.md rule 15 tells
+  the sub-agent orchestrator to verify the spec BEFORE delegating any
+  Write/Edit tool. Bypass with `--skip-openspec-check "reason"` (create-pr)
+  or `SKIP_OPENSPEC_CHECK=1` (pr-preflight) — reason is audit-logged
+  to stderr. Rationale: between 2026-08-21 and 2026-08-24 the team
+  shipped ~180 PRs and only 4 openspec change specs landed. Follow-up
+  PR adds the CI job + pre-commit hook layers described in #194.
+
+- **Credential + env-flag plumbing foundation** (`src/hermes/infrastructure/config/root.py`,
+  `src/hermes/infrastructure/config/loader.py`, `src/hermes/infrastructure/env_gate.py`,
+  `.env.local.example`, `deploy/systemd/hermes.service`,
+  `deploy/systemd/hermes.env.example`, `docs/guides/local-setup.md`,
+  `docs/decisions/2026-08-23-credential-storage-layered-by-env.md`,
+  `pyproject.toml`): one-off MVP1 setup so per-integration PRs only add one
+  env var each and never touch plumbing. `HermesConfig` gains root-level
+  `env: Literal["dev", "sandbox", "prod"]` (from `HERMES_ENV`, defaults to
+  `dev`) and `allow_mainnet: bool` (from `HERMES_ALLOW_MAINNET`, defaults to
+  `False`); a `model_validator(mode="after")` raises at load time when
+  `allow_mainnet=True` outside `prod` — belt-and-suspenders so misconfigs
+  surface at process start, not first trade. `load_config` now calls
+  `python-dotenv`'s `load_dotenv(".env.local", override=False)` before
+  reading env, so local dev picks up secrets from a gitignored file while a
+  real shell env var (CI / systemd) always wins. New `EnvGate` helper
+  (`env_gate.require_env(current, allowed, component)`) raises
+  `EnvGateError` (extends `InfraError`) when an adapter is wired in a
+  forbidden tier; per-adapter mainnet gates one-line this at construction.
+  `.env.local.example` (committed) documents every current + planned env
+  var (Telegram, Slack, Binance, Kraken, Frankfurter, Healthchecks, Sentry,
+  LLM) with placeholder values only. `deploy/systemd/hermes.service` +
+  `deploy/systemd/hermes.env.example` template the prod counterpart
+  (`EnvironmentFile=/etc/hermes.env`, root:root 0600). Docs cover the
+  three-tier storage story (dotenv → GH Secrets → systemd EnvironmentFile)
+  and the local-setup flow. `python-dotenv>=1,<2` added as a runtime dep.
+
+- **`.env.local.example` additions** for planned + newly-added config surface:
+  - `HERMES_SHADOW` — placeholder for the shadow-mode flag arriving in #175.
+    Explains three-gate rule (`SHADOW=false` + `ENV=prod` + `ALLOW_MAINNET=yes`)
+    for real-money enablement in MVP2.
+  - Binance testnet ↔ mainnet split — replaces the generic `HERMES_BINANCE__*`
+    with explicit `HERMES_BINANCE_TESTNET__*` (dev/sandbox) and
+    `HERMES_BINANCE_MAINNET__*` (prod, with shadow gate). Documents the
+    "Enable Reading only" permission rule for MVP1 mainnet keys.
+  - Kraken section — documents the two-scenario branching (Futures Demo defer
+    vs mainnet with shadow gate) pending operator's URL confirmation.
+  - `HERMES_LEDGER__DB_PATH` — path override for the SQLite ledger from #134.
+
+Pure documentation — no code path reads these values yet (shadow flag lands
+with #175). Prevents future drift where operator sets a var but the example
+still shows the old shape.
+
+- **`.github/workflows/cd.yml`** — wired the Phase-0 deploy pipeline. Downloads the wheel from the `build` job, joins the tailnet, scp's it to hermes-01, installs into `/opt/hermes/.venv` via pip, `systemctl restart hermes.service`, then polls healthchecks.io for 2 minutes waiting for the post-restart heartbeat. `workflow_dispatch` only for now (default `dry_run=true`); auto-deploy on `push: [main]` will be enabled in a follow-up once we've had a few successful manual runs. Prerequisites on hermes-01 (`hermes` user, `/opt/hermes/.venv`, `hermes.service` systemd unit, passwordless sudo on restart) are documented in the workflow header — first deploy fails loudly if any are missing; folding one-time VPS setup into `vps_bootstrap.sh` is a separate PR.
+
+- **`hermes serve` composition root** (`src/hermes/entrypoints/serve.py`):
+  replaces the "not yet implemented" stub with a real composition that wires
+  `HermesConfig` → `SqliteLedger` (runs migrations on construct) + `WallClock`
+  and `BinanceHistoricalAdapter` + `SwingStrategyAdapter` + `EventBus` + an
+  optional `TelegramAdapter` (best-effort — absent credentials degrade to
+  `None`). `run()` awaits an `asyncio.Event` and closes the SQLite connection
+  and notifier in a `finally` block. `install_signal_handlers` binds SIGTERM +
+  SIGINT to the shutdown event with a Windows fallback via `signal.signal`.
+  OrderRouter + SimulatedExchangeAdapter wiring intentionally left for a
+  follow-up Phase-2 wave. CLI accepts `--config-dir` and `--db` flags.
+
+- **Time-aware Binance fee selector** — new `src/hermes/domain/fees/fee_schedule_selector.py` exposes `select_fee_schedule(rows, timestamp, pair) -> FeeSchedule`, returning the point-in-time Binance VIP0 rate for the given pair, including the 2022-07-28 → 2023-03-21 zero-fee BTC promotional window (BTC pairs 0/0 bps; ETH/SOL unaffected at 10/10). Companion adapter `src/hermes/adapters/fees/binance_history.py` loads `docs/experiments/swing-mvp1/fee-history.csv`. Composition-root wire (`sim_ex = SimulatedExchangeAdapter(fee_schedule_fn=lambda pair: select_fee_schedule(rows, clock.now(), pair))`) will land with the future backtest driver script — this change ships the primitives only. Closes #260. Satisfies ADR-011 D-09 + pre-registration v1 §6.1.
+
+- **FIFO lot ledger foundation** (`src/hermes/domain/lots/`,
+  `src/hermes/adapters/ledger/`, `src/hermes/ports/ledger.py`): SQLite schema
+  for `trades`, `lots`, `lot_consumptions`, and `events`; migration runner
+  applying numbered `*.sql` files idempotently; pure FIFO selection algorithm
+  (`select_lots_fifo`) with a deterministic `LotId`-lexical tie-breaker;
+  `SqliteLedger` adapter grouping every row insert + event append into ONE
+  transaction (invariant I-06). Partially addresses #24 (foundation only —
+  event-source wiring for tax_guard, paper-trading pause on AnomalyDetected,
+  and migration rollback tooling deferred to follow-up issues).
+
+- **Frankfurter FX rate adapter** (`src/hermes/domain/fx/`, `src/hermes/adapters/fx/`, `src/hermes/ports/fx.py`):
+  domain `FxRate` value object with positive-rate and distinct-currency invariants + `convert(Money) -> Money` (Decimal-precise, no rounding); sync `FxRateProviderPort` Protocol with `get_latest` + `get_for_date`; `FrankfurterAdapter` for the public `api.frankfurter.app` endpoint via raw `httpx.Client` (no SDK — anyio-on-asyncio policy). Owned token-bucket rate limiter sized at a polite 60 req/min (Frankfurter publishes no cap). Business-day fallback documented: a weekend/holiday date returns the closest prior trading day's rate stamped with the response's actual date. Wire failures wrap into new `FxRateError` (`InfraError` subclass) — HTTP non-2xx, unparseable JSON, missing target currency, unparseable Decimal all funnel through one exception type. Frankfurter is the ECB reference-rate wrapper — authoritative for AEAT tax reporting per ADR-002 §Decision 4. Fallback plan to ECB direct (~30 LOC swap) documented in `docs/decisions/2026-08-23-fx-rate-source-frankfurter.md`. Contract tests via `respx` cover happy path, weekend resolution, all documented failure modes, port conformance, and end-to-end `Money` conversion. `config/frankfurter.yaml` + `HERMES_FRANKFURTER__<FIELD>` env overrides wire the adapter into `HermesConfig`. Zero new runtime dependencies. Related: MVP1 status (#141).
+
+- `hermes funnel --batch FILE --stage train|validation` judges every candidate of a signed research batch with one trial count for the whole log, writes each verdict record, the candidates that go on to Validation or the champion by the signed rule, and prints only PASS, FAIL and NA lines (ADR-026, issue #1059).
+
+- **Healthchecks.io adapter + consolidated `hermes health` registry walk**
+  (`src/hermes/adapters/healthchecks/`, `src/hermes/entrypoints/_health.py`,
+  `src/hermes/entrypoints/cli.py`, `src/hermes/infrastructure/config/models.py`,
+  `src/hermes/infrastructure/config/root.py`,
+  `src/hermes/infrastructure/config/loader.py`, `src/hermes/domain/errors.py`,
+  `config/healthchecks.yaml`, `tests/unit/adapters/healthchecks/`,
+  `tests/contract/test_healthchecks_ping.py`, `docs/guides/local-setup.md`,
+  `scripts/dev/coverage-check.py`):
+  end-to-end wire probe for the Healthchecks.io dead-man's-switch monitor plus
+  a consolidated `hermes health` (no arg) invocation that walks the entire
+  integration registry in one pass. The new `HealthchecksAdapter` owns three
+  ping surfaces (`ping_success`, `ping_fail`, `ping_start`) implemented over
+  a raw `httpx.Client` with an owned 30 req/min token-bucket limiter —
+  same pattern as Telegram / Slack / Frankfurter, no SDK dependency. Aggressive
+  5s timeout by default so a slow ping never blocks the trading path. The
+  health probe uses `ping_start` (idempotent + informational, does NOT fire
+  the dead-man's-switch alert) — using `ping_fail` from a health path would
+  page the operator on every `hermes health` tick. New `HealthchecksError`
+  (`InfraError` subclass) wraps transport failures and HTTP non-2xx into one
+  exception surface. `hermes health` (no arg) now calls a new `run_all(env)`
+  helper that returns `list[HealthCheckResult]` — pure function, testable
+  without stubbing the CLI — and renders it via `render_table_multi` as one
+  aligned multi-row table with columns `integration / status / latency /
+  detail / last_check`. Aggregated exit code: 0 all-OK, 1 any-FAIL, 3
+  any-NOT_CONFIGURED-and-no-FAIL (partial config is a fresh-clone state,
+  not a system-down state). The per-integration `hermes health <integration>`
+  form stays unchanged. `HealthchecksConfig` in the config loader (with
+  `enabled` property) plus a `config/healthchecks.yaml` stub and the
+  existing `HERMES_HEALTHCHECKS__PING_URL` env var (already documented in
+  `.env.local.example` line 59-60) complete the wiring. New per-package
+  coverage threshold at 85% for `src/hermes/adapters/healthchecks` (matches
+  the existing notifier + fx thresholds). Contract tier gets a third test
+  (`test_healthchecks_ping.py`) mirroring PRs B/D — fires `ping_start`
+  against the real ping URL, skips when the env var is empty. Related:
+  MVP1 status (#141), PR #150 (Telegram wiring — registry pattern),
+  PR #151 (Slack wiring — mirror), PR #143 (env plumbing).
+
+- **Historical klines fetcher foundation** (`src/hermes/domain/market_data/`, `src/hermes/adapters/exchanges/`, `src/hermes/ports/klines.py`):
+  domain `Kline` + `KlineInterval` (M1/M5/H1/D1) with OHLC-invariant validation; sync `KlinesFetcherPort` protocol; `BinanceKlinesAdapter` for the testnet klines endpoint via raw `httpx.Client` (no SDK — anyio-on-asyncio policy). Owned token-bucket `RateLimiter` sized at 5000 weight/min (below Binance's 6000 cap). Handles pagination via cursor advance + defensive dedup termination on stale-row retransmit. 429 raises `ExchangeError` immediately (no silent retry — limiter is the primary defense). Contract tests via `respx` cover happy path, timestamps, pagination, empty batch, HTTP errors, malformed schemas. Storage backend deferred to a follow-up (kline_store had frozen-dataclass exception issues; scope-out documented in decisions journal). Partially addresses #28.
+
+- **Kraken public-endpoints adapter** (`src/hermes/adapters/exchanges/kraken_public.py`,
+  `src/hermes/domain/fees/`, `src/hermes/domain/market_data/orderbook.py`,
+  `src/hermes/domain/market_data/ticker.py`, `src/hermes/ports/fees.py`):
+  read-only Kraken adapter covering `AssetPairs` (fee schedules), `OHLC`
+  (klines), `Depth` (orderbook), and `Ticker` — no API key required, no
+  signed methods. Enables cross-venue commission modelling for the
+  backtest harness, adds Kraken as a second backtest source alongside
+  Binance testnet, and gives us cross-venue price validation for free.
+  Positions the adapter shape for MVP2 Kraken trading (signed methods
+  slot in without reshaping the class — same HTTP client, rate limiter,
+  and envelope parser). Domain additions: `FeeSchedule` / `FeeTier`
+  value objects with volume-tier normalisation via `FeeSchedule.from_tiers`
+  (schedules with arbitrary tier orderings always normalise ascending)
+  and `Orderbook` / `Ticker` snapshots with crossed-book invariants.
+  Wire failures wrap into new `KrakenPublicError` (`InfraError` subclass) —
+  Kraken's `{"error": [...], "result": ...}` envelope, HTTP non-2xx,
+  malformed JSON, missing pair, and unparseable Decimal all funnel
+  through one exception type. Kraken's legacy X/Z asset-code prefixes
+  (BTC/USD → XXBTZUSD, ETH/USDT → XETHZUSDT) are handled in the
+  `_pair_to_kraken_symbol()` translator; unlisted pairs fall back to
+  raw `BASEQUOTE` concatenation. Owned token-bucket rate limiter sized
+  at Kraken's published 1 call/second public-tier cap. Fee schedules
+  are cached in-memory with a 24 h TTL — schedules change
+  weeks-to-months apart and the commission use case reads on every
+  price event, so caching drops the request rate ~99% while still
+  catching schedule changes within a business day. Market data
+  (klines, ticker, orderbook) is never cached — always fresh from the
+  wire. Contract tests via the `contract` marker hit real Kraken (no
+  auth needed) for AssetPairs / OHLC / Ticker and detect upstream
+  drift before unit mocks lie about production. `config/kraken_public.yaml`
+  and `HERMES_KRAKEN_PUBLIC__<FIELD>` env overrides wire the adapter into
+  `HermesConfig`. Zero new runtime dependencies. Related: MVP1 status
+  (#141); shadow-mode integration follow-up (#175); operator
+  conversation 2026-08-24 (commission calc need + EU regulatory hedge).
+
+- **Message templates + `hermes preview` CLI foundation**
+  (`src/hermes/application/messages/telegram.py`,
+  `src/hermes/application/messages/slack.py`,
+  `src/hermes/application/messages/_escape.py`,
+  `src/hermes/application/messages/__init__.py`,
+  `src/hermes/entrypoints/preview.py`, `src/hermes/entrypoints/cli.py`,
+  `src/hermes/domain/events/{strategy_paused,strategy_resumed,balance_low,trade_rejected,daily_trade_digest}.py`,
+  `src/hermes/application/notification_router.py`,
+  `docs/decisions/2026-08-23-slack-alongside-telegram.md`,
+  `tests/fixtures/events/*.json`, `pyproject.toml`):
+  standalone template + preview foundation for MVP1 integration.
+  Five new domain events (all frozen dataclasses, `__event_schema_version__ = 1`)
+  cover the extended MVP1 signal surface: `StrategyPaused`,
+  `StrategyResumed`, `BalanceLow`, `TradeRejected`, `DailyTradeDigest`
+  (with nested `TradeSummary`). `BalanceLow.__post_init__` enforces the
+  tri-currency invariant (`asset == current.currency == threshold.currency`),
+  failing fast at construction rather than silently corrupting downstream
+  arithmetic. The application-layer `notification_router.EventClass`
+  gains `STRATEGY_PAUSED`, `STRATEGY_RESUMED`, `BALANCE_LOW`,
+  `TRADE_REJECTED_ESCALATED`, `DAILY_TRADE_DIGEST`, `POSITION_LARGE`,
+  `ANOMALY_DETECTED` members, each with a routing-table row cited in the
+  2026-08-23 decisions-journal entry (extended table); a new
+  introspection helper `channels_for(EventClass) -> (bool, bool)` exposes
+  the routing decision without wiring adapters. A new `application/messages/`
+  package renders each event to either a 3-line MarkdownV2 Telegram push
+  or a Block Kit `SlackMessage` NamedTuple (`text` + `blocks` +
+  `attachments`); attachments are populated with stdlib-generated CSV
+  bytes (`DailyTradeDigest` — no third-party PDF dep). The dispatch
+  registry raises `ValueError` for an unregistered event type so
+  misclassification surfaces immediately. A new `hermes` CLI entry point
+  (`[project.scripts]` in `pyproject.toml`, `entrypoints/cli.py` +
+  `entrypoints/preview.py`) exposes `hermes preview list`,
+  `hermes preview <event>`, `hermes preview <event> --fixture <path>`,
+  and `hermes preview <event> --send` (which refuses when
+  `HERMES_ENV=prod`); `serve` / `health` / `simulate` are stub
+  subcommands that exit 2 pending the future integration PRs. Committed
+  JSON fixtures under `tests/fixtures/events/` sample every event.
+  Templates stay standalone in this PR — the Telegram + Slack adapters
+  consume them in follow-up PRs B + C. Zero new runtime deps
+  (argparse + stdlib `csv` + `tempfile`). 639 unit tests pass;
+  `application/messages/` at 100% coverage, `entrypoints/` at 93.94%
+  (thresholds 90% / 70%).
+
+- **`pr-preflight.sh` — `Tracking-issue project assignment` check** — walks openspec change → `issue.md` → GitHub issue → `projectItems`. Fails when the tracked issue is not attached to any GitHub Project. Graceful degradation: WARN + skip when the local `gh` token lacks `read:project` scope (CI's App-auth token grants it, so enforcement lives in CI). Bypass via `SKIP_PROJECT_CHECK=1`. Closes the ship-validation gap surfaced on #242. Closes #253.
+
+- **`pr-preflight.sh` — `PR title semantic` check** — validates HEAD commit subject against the same `TITLE_REGEX` `create-pr.sh` enforces (conventional-commit prefix + lowercase first char after `:`). Closes the class of drift where a rebase or amend leaves an uppercase subject that `amannn/action-semantic-pull-request@v6` rejects at CI-time, forcing a close-and-reopen cycle. Restores Tier-2 defer from #215 (`sdd-process-hardening`). Bypass: `SKIP_TITLE_CHECK=1` for rebase-in-progress workflows. Closes #255.
+
+- **SDD process hardening — codify PR/actor/changelog gates locally**
+  (`scripts/dev/pr-actor-check.sh` NEW, `scripts/dev/create-pr.sh`,
+  `scripts/dev/changelog-check.sh`,
+  `scripts/dev/sub-agent-prompt-checklist.md`,
+  `docs/guides/automation-trust-chain.md` NEW, `AGENTS.md`): permafixes
+  process rakes surfaced during 2026-08-25 autonomous SDD delegation.
+  (1) New `pr-actor-check.sh` refuses PR-open when the gh-authenticated
+  user matches the intended reviewer, wired into `create-pr.sh` with
+  exit code 4 (silent deadlock previously only discovered at review
+  time when the operator tried to self-approve). (2)
+  `changelog-check.sh` now requires a `changelog.d/*.md` fragment for
+  `feat|fix|refactor|perf` — CHANGELOG.md-only edit fails because it
+  merge-conflicts across parallel PRs at scale. Bypass via
+  `ALLOW_CHANGELOG_MD_EDIT=1` preserves old behavior for forks. (3)
+  Sub-agent checklist extended with items 5-9: `isolation: worktree`
+  REQUIRED for parallel spawns, PR body via `render-pr-body.sh` only,
+  changelog fragment as acceptance criterion (not follow-up),
+  `no-vague-test-assertions.py` as pre-PR checkpoint, upfront-fix-up
+  rule (`ruff format` + `markdownlint-cli2 --fix` before first WIP push
+  to preempt hook-loop tool-use inflation). (4) New guide
+  `docs/guides/automation-trust-chain.md` documents the PR #209 (queue
+  BEHIND reconciliation) + #210 (auto-update on push:main) + #213
+  (GitHub App auth) hands-off architecture as a cross-repo reproduction
+  reference. (5) `AGENTS.md` rule 13 gains a paragraph pointing at
+  `pr-actor-check.sh` and the new guide. Every new gate ships with a
+  `SKIP_*` env-var escape hatch (pattern established by
+  `openspec/changes/dor-dod-enforcement/`).
+
+- **Sentry error-reporting wiring** (`src/hermes/infrastructure/sentry_integration.py`,
+  `src/hermes/entrypoints/cli.py`, `src/hermes/entrypoints/_health.py`,
+  `src/hermes/infrastructure/config/models.py`, `config/sentry.yaml`): initializes the
+  Sentry SDK at CLI startup from `HERMES_SENTRY__DSN` + `HERMES_SENTRY__ENVIRONMENT`.
+  Vanilla-Python posture — no framework integrations, no PII, no traces (free-tier posture).
+  `hermes health sentry` validates the DSN URL parses via `sentry_sdk.utils.Dsn` — read-only,
+  zero wire cost, does NOT eat the operator's 5,000-event/month quota. Registered alongside
+  Telegram / Slack / Healthchecks in the shared health-check registry; `hermes health`
+  (no arg) walks all four. Empty DSN → integration silently disabled (matches Healthchecks
+  empty-ping-url pattern). Init and capture never raise — SDK failures are logged via
+  structlog and swallowed so error reporting can never crash the CLI. Closes the MVP1
+  integration wiring layer.
+
+- **`hermes health slack` subcommand + Slack contract-test tier**
+  (`src/hermes/entrypoints/cli.py`, `src/hermes/entrypoints/_health.py`,
+  `tests/contract/__init__.py`, `tests/contract/test_slack_auth_test.py`,
+  `docs/guides/local-setup.md`, `pyproject.toml`):
+  end-to-end wire probe for the Slack integration. `hermes health slack`
+  calls the Slack Web API `auth.test` endpoint (read-only, never
+  `chat.postMessage`) and prints a status table with `OK/FAIL`, latency,
+  workspace name, bot user, and a UTC-aware `last_check` timestamp.
+  Exit codes distinguish OK (0), adapter-down (1), and not-configured
+  (3) so wrapper scripts can react differently — a fresh clone missing
+  `.env.local` should not page an operator. A tiny registry scaffold in
+  `_health.py` (`registered_integrations`, `get_check`, `check_slack`)
+  anticipates the PR E consolidation where `hermes health` (no arg)
+  walks the entire registry, and converges with PR B (Telegram wiring,
+  #150) which adds `check_telegram` to the same registry — same shape,
+  no dispatcher rewrite. A new `contract` pytest marker + `tests/contract/`
+  directory establish a third test tier alongside unit + integration:
+  contract tests hit real third-party sandbox endpoints (here: real
+  `slack.com/api/auth.test`), skip gracefully when credentials are
+  absent, and are excluded from the default `pytest` invocation via
+  `addopts = "... -m 'not contract'"` so the per-PR unit path stays
+  fast. The first Slack contract test (`test_slack_auth_test.py`)
+  mirrors PR B's Telegram pattern and asserts the two response fields
+  the health probe reads (`team`, `user`) so upstream shape drift is
+  caught before it silently breaks the wire path.
+
+- **spec-1 domain aggregates — bucket-aware `Lot` + event hash chain**
+  (`src/hermes/domain/value_objects/strategy_id.py`,
+  `src/hermes/domain/lots/lot.py`, `src/hermes/domain/events/base.py`,
+  `src/hermes/adapters/ledger/sqlite_ledger.py`,
+  `src/hermes/adapters/ledger/migrations/0002_lots_add_strategy_id.sql`,
+  `openspec/changes/spec-1-domain-aggregates/`): first engineering spec
+  landing behind the signed paper-trading pre-registration v1
+  (`docs/experiments/swing-mvp1/pre-registration-v1.md`, PR #204).
+  Delivers the two foundational domain additions every subsequent
+  paper-trading spec depends on. (1) `StrategyId` value object + mandatory
+  `Lot.strategy_id` field — bucket-aware aggregates from day 1 per
+  SA-6 finding 1 (SYNTHESIS §1). SQLite ledger INSERT/SELECT/rehydration
+  updated; migration 0002 adds the column with `DEFAULT 'swing'` for
+  backward compat with pre-existing rows. (2) `DomainEvent.event_seq`
+  (caller-supplied monotonic sequence, kw-only default 0) +
+  `DomainEvent.payload_sha256` (auto-computed BLAKE2b-256 in
+  `__post_init__` — faster than SHA-256 with equivalent security margin,
+  per SA-8). Enables the event-sourcing hash chain required for
+  deterministic replay. Test coverage: new `test_strategy_id.py` and
+  `test_domain_event_hash.py` (determinism + differentiation properties);
+  21 pre-existing Lot/event construction sites updated to pass the new
+  mandatory fields. See `openspec/changes/spec-1-domain-aggregates/change.md`
+  for the full decision record (D-1 StrategyId shape, D-2 hash algorithm,
+  D-3 event_seq semantics).
+
+- **spec-2a FillModelPort + ExchangePort** (`src/hermes/ports/fill_model.py`,
+  `src/hermes/ports/exchange.py`, `src/hermes/domain/trading/`,
+  `openspec/changes/spec-2a-fill-model-port/`): introduces `FillModelPort` —
+  a single-method `@runtime_checkable` Protocol whose `fill_order` signature
+  is shared identically by backtest, shadow, and live modes, enforcing the
+  same-code-path invariant at the structural level (mode divergence is wired
+  at the composition root, never inside the port). Replaces the empty 19-LOC
+  `ExchangePort` stub with a full six-method Protocol contract
+  (`place_market_order`, `place_limit_order`, `cancel_order`, `get_orderbook`,
+  `get_balance`, `get_fees`), closing Issue #199. Domain types `Order`,
+  `Fill`, `Rejection`, and `OrderSide` are introduced as pure domain value
+  objects. The fill result uses a native `Fill | Rejection` discriminated
+  union rather than a `Result` monad — both are expected business outcomes,
+  not errors. Structural-conformance harnesses (54 tests) prove both
+  Protocols are implementable via minimal stubs and verify the absence of
+  mode-selection parameters. Follow-ups: `OrderbookWalkFillModel` concrete
+  fill implementation (Spec 2b), `SimulatedExchangeAdapter` (Spec 2c),
+  Binance/Kraken adapter migration to the new `ExchangePort` shape.
+
+- **spec-2b OrderbookWalkFillModel** (`src/hermes/adapters/fills/orderbook_walk.py`,
+  `src/hermes/adapters/fills/__init__.py`,
+  `openspec/changes/spec-2b-orderbook-walk-fill-model/`): delivers the
+  concrete `FillModelPort` implementation that drives both backtest (synthetic
+  orderbook from historical bars) and shadow (live L2 book) phases — the same
+  class, same code path, no `if backtest_mode:` branching (ADR-011 D-02
+  same-code-path invariant). The fill model walks orderbook levels by price,
+  computes a VWAP across consumed levels, and applies optional basis-point
+  slippage (5 bps entries / 15 bps stop-exits, pre-reg §6.2) only when
+  `apply_slippage=True` at the composition root. Limit orders are rejected
+  with `PRICE_FILTER` when the best price is unreachable; thin books return
+  `INSUFFICIENT_DEPTH`. A deterministic `random.Random` instance is accepted
+  for reproducible chaos and property testing. Anti-Zipline invariant enforced:
+  market orders fill at the first orderbook level (= next bar's open as wired
+  by the composition root), never at the current bar's close (SA-2 AP-1).
+  Test suite (32 tests): port conformance, anti-Zipline, quantity bound
+  property, VWAP multi-level, slippage directional checks, fee taker-rate
+  validation, deterministic replay, rejection matrix (PRICE_FILTER /
+  INSUFFICIENT_DEPTH / naive-clock), and Fill timestamp contract.
+  Closes #230.
+
+- **SimulatedExchangeAdapter** (`src/hermes/adapters/exchanges/simulated.py`,
+  closes #238): composition-root-swappable `ExchangePort` that wires
+  `FillModelPort` (Spec 2a/2b), a `Orderbook`-returning callable, `ClockPort`
+  (Spec 4a), and a `FeeSchedule`-returning callable into a single concrete
+  exchange adapter serving both backtest and shadow modes without any
+  `if mode:` branching. Local state: in-memory balance ledger initialised
+  from a `dict[Currency, Decimal]` at construction, and a `lot_ledger:
+  list[Lot]` that records every BUY fill as a `Lot.open()` aggregate (Spec 1).
+  All limit orders are IOC (immediate-or-cancel); GTC deferred to MVP2.
+  The adapter accepts an optional `random.Random` for deterministic replay
+  under seeded property tests (M-07 queue-position modeling hook). Tested via
+  25 unit tests, 5 property tests (Hypothesis), and 4 integration tests
+  verifying round-trips, multi-pair independence, and clock-advancing semantics.
+
+- **Spec 3 — Order Router** (`src/hermes/application/order_router/`):
+  application-layer orchestrator that composes the full T-1 position-sizing
+  pipeline and gates every entry through the Spec 8 risk overlay and Spec 9 kill
+  triggers.
+  (1) `SizingCalculator` — implements the three-cap `min()` formula from
+  pre-reg §5.4: ATR-baseline notional `(equity × risk_pct) / stop_atr_mult`,
+  Kelly-cap notional `equity × min(0.25 × f_star, 0.05)`, and a 5% hard cap
+  `0.05 × equity`; returns `qty = min(atr, kelly, hard_cap) / entry_px`.
+  MVP1 sets `f_star_estimate = 0.20` (OD-4 Kelly floor), making kelly =
+  hard_cap so the 5% cap always binds.
+  (2) `RiskEngine` — composes a list of `RiskOverlayPort` implementations
+  (worst-wins: HALT > WARN > OK); preserves all individual rule decisions for
+  audit logging; enforces per-strategy capital budgets (SA-6 `capital_budget`
+  dict).
+  (3) `OrderRouter` — stateless orchestrator wiring the full pipeline: kill
+  circuit breaker (Spec 9 §10) → SA-4 orphan-position guard (max 3 concurrent
+  per pre-reg) → risk overlay (HALT → `RiskRejected`, WARN → log + proceed) →
+  `SizingCalculator` → `FillModelPort.fill_order`. Returns the discriminated
+  union `Fill | RiskRejected | KillCircuitBreaker` — all are expected business
+  outcomes, not exceptions.
+  Correlation lock (RO-01 via `CorrelationLock`) wired through `RiskEngine`
+  refuses new entries when 30-day rolling Pearson ≥ 0.80.
+  Full test suite: 3 modules, property tests via Hypothesis for the three-cap
+  sizing invariants (≥ 100 examples per property), matrix tests for HALT/WARN/OK
+  overlay composition, and router integration tests covering kill, orphan-position,
+  and fill-dispatch paths.
+  Closes #234.
+
+- **spec-4a ClockPort + WallClock + SimulatedClock**
+  (`src/hermes/ports/clock.py`, `src/hermes/adapters/clock/wall.py`,
+  `src/hermes/adapters/clock/simulated.py`,
+  `src/hermes/adapters/clock/__init__.py`,
+  `openspec/changes/spec-4a-clock-port/`): first hexagonal port
+  introduced behind the signed paper-trading pre-registration v1
+  (`docs/experiments/swing-mvp1/pre-registration-v1.md`, PR #204).
+  `ClockPort` is a `@runtime_checkable` Protocol with `now() -> datetime`
+  (tz-aware UTC only). `WallClock` wraps `now_utc()` for production;
+  `SimulatedClock` provides `now()`, `advance(delta)`, and `set(t)`
+  with a strict monotonicity guard (backwards jumps rejected — SA-8
+  replay-determinism requirement) and thread safety via an internal
+  lock. Populates the previously-empty
+  `src/hermes/adapters/clock/__init__.py` (0 bytes before this
+  change), a foundational blocker per
+  `docs/research/paper-trading/spec-readiness.md`. 43 tests: 26
+  `SimulatedClock`, 8 `WallClock`, 9 structural-conformance. Follow-up
+  (out of scope): migrate existing `datetime.now()` call sites through
+  the new port — count reported in the SDD change document.
+
+- **spec-4b MarketDataPort** (`src/hermes/ports/market_data.py`,
+  `src/hermes/domain/market_data/bar.py`,
+  `src/hermes/domain/market_data/trade.py`,
+  `src/hermes/domain/market_data/orderbook_diff.py`,
+  `openspec/changes/spec-4b-market-data-port/`):
+  `@runtime_checkable` Protocol defining the contract for live market-data adapters —
+  `stream_bars` (closed-bar consolidated stream), `stream_trades` (tick-by-tick stream),
+  `stream_orderbook_diffs` (L2 incremental depth updates), and `get_snapshot` (REST
+  bootstrap for L2 state). Domain value objects `Bar`, `Trade` (with `TradeSide` enum),
+  and `OrderbookDiff` / `OrderbookDiffLevel` land alongside the port; `Bar` reuses
+  `KlineInterval` from the existing klines foundation, and `OrderbookDiff` carries
+  exchange sequence numbers (`first_update_id` / `final_update_id`) enabling gap detection
+  in adapters. Streams return `AsyncIterator[T]` per PEP 525, matching the async-first
+  adapter policy. This is a pure port-introduction change: no concrete adapters ship here.
+  Follow-up: spec-4c will deliver Binance and Kraken WebSocket streaming adapters and the
+  `Consolidator` that produces bars from a raw trade stream.
+
+- **Spec 4c — market data adapters** (`src/hermes/adapters/market_data/`):
+  `binance_historical.py`, a filesystem-backed `MarketDataPort` that streams
+  `Bar` and `Trade` objects in order from Binance Vision klines and aggTrades
+  ZIP archives under `$HERMES_DATA_DIR`, with no network I/O;
+  `binance_live_ws.py`, a WebSocket L2 depth adapter for the shadow phase
+  (`stream_orderbook_diffs`, `get_snapshot` for the book bootstrap, and
+  sequence-gap detection); and `consolidator.py`, a `BarConsolidator` that
+  builds closed OHLCV bars from a trade stream for every `KlineInterval`,
+  UTC epoch-aligned, never using a trade at or after the bar's close time.
+
+- **Spec 5 — swing strategy adapter** (`src/hermes/ports/strategy.py`,
+  `src/hermes/domain/strategy/`): first signal-generation layer of the
+  swing-MVP1 experiment. `SwingStrategyAdapter` implements the new
+  `StrategyPort` with 4h and 1D bar buffers and an entry/exit state machine
+  over five engines bound to pre-registration v1 §5: 4h Donchian(20) breakout,
+  4h Chandelier(22, 3.0) trailing stop, 4h ADX(14), 1D EMA(200) regime filter
+  and a Wilder ATR helper. Adds the `StrategySignal` value object and the
+  `StrategyConfig` dataclass; the Kelly `f_star_estimate` stays `None` until
+  enough out-of-sample trades exist. Closes #235.
+
+- **Spec 6 — Calibration Harness** (`src/hermes/domain/calibration/`,
+  `src/hermes/application/calibration/`): validates `SimulatedExchangeAdapter`
+  fill accuracy and drives the 6-state certification lifecycle for `swing-mvp1-v1`.
+  (1) Seven pure-function metric calculators (`compute_m01`..`compute_m07`) in
+  `src/hermes/domain/calibration/metrics.py`:
+  M-01 total fill count;
+  M-02 fill-price delta bps (avg + p50/p95/p99 — the PRIMARY calibration metric
+  that validates `OrderbookWalkFillModel` accuracy using Decimal arithmetic per
+  code-conventions.md §6);
+  M-03 latency simulation (mocked to 0 for MVP1 backtest — placeholder for shadow mode);
+  M-04 rejection rate;
+  M-05 orphan position count (SA-4 P0 guard — every open position must trace to a fill);
+  M-06 regime-tagged returns (bull×quiet, bull×vol, bear×quiet, bear×vol buckets);
+  M-07 queue-position quality (placeholder returning `None` for MVP1 per OD-2).
+  (2) `CalibrationHarness` orchestrator (`src/hermes/application/calibration/harness.py`)
+  that accepts pre-collected fills, rejections, mid-prices, regime labels, and open-position
+  IDs, calls the domain calculators, and emits a frozen `CalibrationReport` dataclass
+  with all 7 metric values + window metadata.
+  (3) `CertificationLifecycle` pure state machine
+  (`src/hermes/application/calibration/lifecycle.py`) implementing the 6+1 state
+  transition table from pre-registration-v1.md §7:
+  `UNTRUSTED → BACKTEST_CERTIFIED → SHADOW_CERTIFIED → OOS_CERTIFIED → LIVE_APPROVED
+  → CERTIFIED`; `DEAD` is the absorbing error state triggered by SA-4 P0 violations or
+  100% rejection rate; `force_dead()` is the external kill-trigger integration point.
+  (4) `FixtureBaselineJob` stub (`src/hermes/application/calibration/baseline.py`)
+  implementing the `BaselineJob` Protocol for testnet-vs-testnet baseline comparison;
+  replays pre-captured fills without live HTTP calls (actual testnet integration is
+  Spec 6 follow-up).
+  Full testing pyramid: 20 unit tests for metric calculators with hand-computed bps
+  fixtures, 12 property tests covering the full state machine transition matrix via
+  Hypothesis, 10 integration tests exercising end-to-end harness over a synthetic
+  5-fill data window and FixtureBaselineJob.
+  Closes #240.
+
+- **spec-7 test infrastructure** (`pyproject.toml`, `docs/guides/test-tiers.md`,
+  `openspec/changes/spec-7-test-infrastructure/`):
+  Formalises the six-tier marker taxonomy (`unit`, `property`, `integration`,
+  `chaos`, `mutation`, `contract`) in `[tool.pytest.ini_options]`. Adds
+  `[tool.cosmic-ray]` targeting `hermes.domain` with a ≥ 85 % kill-rate
+  baseline (per SA-10). Verifies all five `[tool.importlinter]` layer-isolation
+  contracts and per-package coverage thresholds in `scripts/dev/coverage-check.py`
+  (domain ≥ 95 %, application ≥ 90 %, adapters ≥ 85–90 %) — no rewrites needed.
+  Introduces `docs/guides/test-tiers.md` as the single-page reference every
+  subsequent spec cites for its test-plan section. CI wire-up for mutation
+  (weekly cron) is a follow-up PR.
+
+- **Spec 8 — risk overlay** (`src/hermes/ports/risk_overlay.py`,
+  `src/hermes/domain/risk/`): the eight portfolio-shock rules as stateless
+  implementations of the new `RiskOverlayPort`, each returning a
+  `RiskDecision` (OK, WARN or HALT) from shared `PortfolioState` and
+  `MarketSnapshot` inputs: RO-01 correlation lock, RO-02 spread spike, RO-03
+  max slippage, RO-04 stale book, RO-05/RO-06 stablecoin depeg warn and halt,
+  RO-07 BTC macro drop and RO-08 portfolio drawdown (15%, pre-registration
+  §10). Adds `RiskViolationError` to the domain error hierarchy. Closes #228.
+
+- **Spec 9 — Strategy Development Protocol** (`src/hermes/application/strategy_protocol/`):
+  five scientific guardrail modules that make every subsequent spec's outputs admissible
+  as pre-certification evidence for the Swing MVP1 experiment (`swing-mvp1-v1`).
+  (1) `PreRegistration` parser — typed accessor layer over the SIGNED
+  `docs/experiments/swing-mvp1/pre-registration-v1.md` frontmatter and binding
+  constants (data windows, universe, sizing config, §9 H1 thresholds, §10 kill
+  triggers); validates `experiment_id` at init time to catch file tampering.
+  (2) `DataSplitEnforcer` — transparent `MarketDataPort` wrapper that raises
+  `OOSDataLeakageError` when code attempts to read a bar or trade with timestamp
+  inside the OOS window (`2025-09-01 → 2026-12-31`) unless `certification_context()`
+  is active; implements the code-enforced read refusal mandated by pre-reg §4.
+  (3) `H1AcceptanceGate` — evaluates `CertificationResult` against all §9 thresholds
+  (DSR, bootstrap CI, max drawdown, ulcer index, recovery days, win rate) and returns
+  `AcceptanceDecision(accepted, failed_criteria)` with a full audit trail of failed
+  criteria.
+  (4) `KillTriggerEvaluator` — evaluates `ExperimentState` against §10 kill criteria
+  (drawdown >= 15%, SA-9 HALT, 90-day recovery breach, rolling Sharpe < 0.3) and
+  returns `KillDecision(triggered, reason)`.
+  (5) `LabNotebook` append-only writer — enforces the anti-p-hacking append-only
+  invariant for `docs/experiments/swing-mvp1/lab-notebook.md`; computes per-entry
+  SHA256 comment for integrity verification; raises `LabNotebookAppendError` on
+  duplicate-header attempts.
+  Domain errors `OOSDataLeakageError` and `LabNotebookAppendError` added to
+  `src/hermes/domain/errors.py`. Full test suite: 5 modules, property tests via
+  Hypothesis for parser window isolation and gate threshold matrices.
+  Closes #226.
+
+- **`hermes health telegram` subcommand + contract-test tier**
+  (`src/hermes/entrypoints/cli.py`, `src/hermes/entrypoints/_health.py`,
+  `tests/contract/test_telegram_getme.py`, `tests/contract/__init__.py`,
+  `docs/decisions/2026-08-23-contract-test-tier.md`,
+  `docs/guides/local-setup.md`, `pyproject.toml`):
+  first end-to-end wire probe for MVP1 integrations. `hermes health
+  telegram` calls the Telegram Bot API `getMe` endpoint (read-only,
+  never `sendMessage`) and prints a status table with `OK/FAIL`,
+  latency, bot username, and a UTC-aware `last_check` timestamp. Exit
+  codes distinguish OK (0), adapter-down (1), and not-configured (3)
+  so wrapper scripts can react differently — a fresh clone missing
+  `.env.local` should not page an operator. A tiny registry scaffold
+  in `_health.py` (`registered_integrations`, `get_check`) anticipates
+  the PR E consolidation where `hermes health` (no arg) walks the
+  entire registry. `_health.py` lives under `entrypoints/` (the wiring
+  layer) so it may compose adapters + config; import-linter still
+  forbids adapters from importing entrypoints, so the arrow points
+  the right way. A new `contract` pytest marker + `tests/contract/`
+  directory establish a third test tier alongside unit + integration:
+  contract tests hit real third-party sandbox endpoints, skip
+  gracefully when credentials are absent, and are excluded from the
+  default `pytest` invocation via `addopts = "... -m 'not contract'"`
+  so the per-PR unit path stays fast. The first contract test
+  (`test_telegram_getme.py`) is the pattern PRs D (Slack `auth.test`),
+  G (Healthchecks `/ping`), and future adapters will follow. See
+  `docs/decisions/2026-08-23-contract-test-tier.md` for the tier
+  policy + CI-run cadence.
+
+- **`scripts/dev/verify-auto-close.sh`** — audit tool that walks the last N merged PRs, extracts `Closes #NNN` from each body, queries linked issues' state, and reports per-PR auto-close success. Correlates against merge-queue workflow logs to distinguish `v3_ok` from `v3_did_not_run` from `v3_fired_but_token_or_perm_bug`. `--limit N` / `--since <date>` / `--json` / `--quiet` flags. Exit 0 iff every linked issue is CLOSED. `HERMES_SELF_TEST=1` fixture. Closes #264.
 
 ### Changed
 
@@ -173,6 +951,154 @@ lands in Phase 0 CI (per ADR-006).
 - After downtime, serve records each bar that closed while it was down as missed, leaves entries on those bars unfilled, fills their exits at the price when it is back (never back-dated), and sends one restart report; the parity check skips outage days and the service waits for clock sync (#1078).
 
 - **Release versions are `0.y.z` until a champion trades real money** (ADR-027, `scripts/dev/cut-release.py`): the `1.0.0-shadow.N` line is retired and the next cut is `0.2.0` (the 6 Oct `v1.0.0-shadow.1` cut counts as `0.1.0` and keeps its tag). The cut script refuses a new `-shadow.N` name, refuses `--engine-change yes` on a PATCH bump so a PATCH release never restarts a counted shadow, and refuses the first `1.x` cut unless `--real-capital` is passed. Old wheels, tags and changelog sections are still named `v1.0.0-shadow.N`.
+
+- The HTTP adapters share one copy of their wire helpers (decimal parsing, Binance symbols, fee percents, window and config checks) and one rate limiter, in `hermes.adapters._shared`; a JSON `true` where a number belongs is now refused by every adapter with its own error (#1177).
+
+- **Process hardening wave 5** (`pyproject.toml`, `scripts/dev/pr-preflight.sh`,
+  `docs/guides/ai-authored-tests.md`, `tests/unit/test_pytest_timeout_integration.py`,
+  `AGENTS.md`, `SECURITY.md`, `.github/dependabot.yml`,
+  `docs/guides/{dev-workflow,local-setup,ai-development-lifecycle,ai-authored-tests}.md`,
+  `docs/decisions/2026-08-23-binance-testnet-klines.md`): closes two drifts from the
+  post-#138 review. (1) pytest-timeout added at `>=2.3,<3` with a 60s
+  default and `timeout_method = "thread"` (Windows-safe) in
+  `[tool.pytest.ini_options]`. A test that hangs past the cap now fails
+  LOUDLY with a stack trace instead of silently draining sub-agent /
+  CI time — root cause of the wave-4 slot-12 sub-agent kill was a real
+  production float-drift infinite loop that no watchdog surfaced. The
+  `tests/unit/test_pytest_timeout_integration.py` self-test runs an
+  inner pytest via subprocess against a `while True` marked
+  `@pytest.mark.timeout(2)` and asserts the inner run terminated
+  non-zero within the 2s cap — regressions in the plugin config break
+  this file first. `pr-preflight.sh` self-test's tool list gained
+  `pytest-timeout` so the pre-flight rejects environments where the
+  plugin is missing. `docs/guides/ai-authored-tests.md` gained the
+  Hypothesis-and-timeouts note near the property-testing section.
+  (2) Prose scrub of the underlying operator-owned bot GitHub
+  username to the project-neutral alias `ai-bot` in docs (AGENTS.md,
+  SECURITY.md, four guides under `docs/guides/`, one decisions-journal
+  entry). Functional occurrences preserved: `.github/dependabot.yml`
+  `assignees` (real GH username required), `git config --local
+  user.name` / `user.email` commands (real git identity required),
+  and `gh auth switch --user` invocation (real GH CLI account name).
+  AGENTS.md gained a naming-convention paragraph in "The three roles"
+  explaining the split so future PRs replace the underlying username
+  in prose but never in config. Placeholder-named fragment per
+  `changelog.d/README.md` — aggregator ignores non-numeric prefixes.
+
+- **`runs-on:` alignment across all workflows**: two jobs (`rebase-stale-prs` in
+  `ci.yml`, `semgrep` in `nightly-quality.yml`) were shipped in #188/#189 with
+  plain `runs-on: ubuntu-latest`. Updated both to use the standard
+  `RUNNER_LABEL` fallback pattern per the "always self-hosted" rule.
+  Cron/scheduled jobs on offline runners QUEUE and pick up when a runner comes
+  online — no missed executions. Applies operator preference documented in
+  engram `preferences/self-hosted-runners-mandatory`.
+
+- **`_build-wheel.yml` workflow name**: `Build wheel (reusable)` →
+  `Build wheel`. The `(reusable)` suffix was dev-speak leaking into a
+  user-facing string; the underscore prefix on the filename already
+  signals "not directly triggered." Cosmetic only — no behavior change.
+
+- **`scripts/dev/gh-runner/{Dockerfile,compose.yml}`** — bumped `RUNNER_VERSION` from `2.336.0` to `2.337.0` (matches current GitHub-released version). Eliminates the auto-update crash loop where fresh containers had `./bin/Runner.Listener` wiped on first-job pickup and never recovered — 5+ of 8 replicas were stuck restart-looping with exit code 127 on 2026-09-06. Requires `docker compose build && docker compose up -d --force-recreate --scale runner=8` after merge.
+
+- **CI: move heavy jobs to nightly cron** (`.github/workflows/ci.yml`,
+  `.github/workflows/nightly-quality.yml`, `.github/workflows/mutation.yml`):
+  extracted the Semgrep (SAST) job out of the per-PR `ci.yml` pipeline
+  into a new dedicated workflow `nightly-quality.yml` that runs at
+  03:00 UTC daily on `ubuntu-latest`. Rationale: semgrep findings are
+  codebase-wide patterns that rarely change per-PR, and its ~30s+
+  per-run cost was pinning scarce self-hosted runner slots (8 ephemeral)
+  that are better spent on per-commit signal (unit tests, ruff, mypy,
+  import-linter, pip-audit, licenses). Running on `ubuntu-latest`
+  ensures the cron fires even when the operator's self-hosted PC is
+  off overnight. Removed `semgrep` from `ci.yml`'s `ci-success`
+  aggregator `needs:` list so PR gate no longer waits on it — the
+  remaining 14 per-PR jobs (`changeset`, `markdown-lint`, `pr-title`,
+  `pr-body`, `changelog`, `auto-label`, `merge-decisions`, `quality`,
+  `unit`, `guards`, `licenses`, `reproducible`, `codeowners`, `secrets`)
+  are still required. `mutation.yml` (weekly Sunday cosmic-ray run)
+  was left untouched — it was already correctly scheduled — and gained
+  a header comment cross-referencing `nightly-quality.yml` as its
+  sibling in the "nightly heavy jobs" tier. Placeholder-named fragment
+  per `changelog.d/README.md` — aggregator ignores non-numeric
+  prefixes. Related: #182.
+
+- **Lint hygiene** — `.claude/` sub-agent worktree scratch now ignored by both `.gitignore` and `.markdownlint-cli2.jsonc` (belt-and-suspenders; the class of accidental worktree-pollution PRs — see #242 — is closed off at both git and lint layers).
+
+- **Peg data ingest** — swapped provider from CoinGecko (free tier changed 2026-08, now requires API key + tighter rate limits) to DefiLlama (`coins.llama.fi/chart`, no auth). Same manifest key layout (`peg/<coin>/-/<yyyy>-<mm>`), same on-disk namespacing (`<data-dir>/peg/<coin>/<yyyy>-<mm>.json`) — downstream SA-9 depeg overlay reader (Spec 8) sees no shape change. Reverses decision D-2 of `data-ingest-agg-trades-and-peg`. Closes #245.
+
+- **Workflow renames + build-wheel extraction** (`.github/workflows/cd.yml`,
+  `.github/workflows/merge-queue.yml`, `.github/workflows/mutation.yml`,
+  `.github/workflows/_build-wheel.yml`, `.github/workflows/release.yml`,
+  `docs/guides/*.md`, `deploy/README.md`, `deploy/bootstrap-vps.sh`,
+  `scripts/dev/setup-branch-protection.sh`, `scripts/dev/gh-runner/README.md`,
+  `tools/merge/decisions.cjs`): renamed `deploy.yml` → `cd.yml`
+  (internal `name:` `CD to VPS` → `CD`), `pr-revalidate.yml` →
+  `merge-queue.yml` (`name: Merge queue` unchanged), and
+  `mutation.yml` internal name `Mutation testing (cosmic-ray)` →
+  `Mutation` (the tool is an implementation detail). Extracted the
+  duplicated wheel-build step from `cd.yml` and `release.yml` into a
+  reusable workflow at `.github/workflows/_build-wheel.yml` (underscore
+  prefix = not directly triggered). Both callers now invoke
+  `uses: ./.github/workflows/_build-wheel.yml`; `release.yml`'s `build`
+  job preserves `needs: verify` so the verify → build → gh-release order
+  stands. `merge-queue.yml`'s self-dispatch (`createWorkflowDispatch`
+  target) updated to the new filename so the queue continues to chain
+  candidates after a merge. Docs, script comments, and the
+  `deploy/README.md` mermaid diagram updated to match the new filenames.
+  Placeholder-named fragment per `changelog.d/README.md` — aggregator
+  ignores non-numeric prefixes.
+
+- **Slack adapter now consumes application-layer templates**
+  (`src/hermes/adapters/notifier/slack_adapter.py`,
+  `tests/unit/adapters/notifier/test_slack_adapter.py`):
+  the adapter's new `notify(event: DomainEvent)` method delegates
+  Block Kit rendering to `slack_template()` from
+  `application/messages/slack.py` (PR #145) — no more inline Block Kit
+  formatting in the adapter. `notify()` posts the rendered blocks via
+  `chat.postMessage` and uploads any `SlackMessage.attachments` as
+  THREADED REPLIES (the completed file lands under the parent post's
+  `thread_ts` so the channel timeline stays a single card per event —
+  especially useful for `DailyTradeDigest`, which ships a CSV). Also
+  adds an `auth_test()` method for the `hermes health slack` probe.
+  The old `notify_urgent(event, correlation_id, message)`,
+  `notify_report(...)`, and `post_message(...)` signatures are kept
+  as thin compatibility wrappers with deprecation docstrings ("removed
+  after router migration lands"). Every existing error-handling path
+  (`ok=false` HTTP-200 footgun, 401, 429, transport failures, malformed
+  `getUploadURLExternal` bodies, signed-PUT errors) is preserved
+  verbatim. File upload uses the Slack v2 external-upload flow
+  (`files.getUploadURLExternal` → PUT to signed URL →
+  `files.completeUploadExternal`); the legacy `files.upload` endpoint
+  was retired by Slack in Nov 2025 and is no longer callable.
+
+- **Telegram adapter now consumes application-layer templates**
+  (`src/hermes/adapters/notifier/telegram_adapter.py`): the adapter's
+  new `notify(event: DomainEvent)` method delegates rendering to
+  `telegram_template()` from `application/messages/telegram.py` (PR
+  #145) — no more inline MarkdownV2 escaping in the adapter. The old
+  `notify_urgent(event, correlation_id, message)` signature is kept
+  as a thin compatibility wrapper that constructs a synthetic
+  `AnomalyDetected` event, so existing PR #92 callers keep working;
+  the wrapper is documented as deprecated and will be removed once
+  the notification router migration lands. `notify_report` (no-op
+  with WARNING log) and every existing error-handling path (401/403/
+  429/network/`ok=false`) are preserved. Adds a `get_me()` method for
+  the `hermes health telegram` probe. Removes the now-unused
+  `_escape_markdown_v2` helper + `_MARKDOWN_V2_RESERVED` constant
+  from the adapter — escaping is fully centralised in
+  `application/messages/_escape.py`.
+
+### Removed
+
+- **`rich` from runtime dependencies** (`pyproject.toml`, `uv.lock`): grep of
+  `src/` and `scripts/` shows zero `import rich` / `from rich` usages —
+  the dep was declared but never called. Removing it: (a) reduces attack
+  surface, (b) unblocks `import-linter>=2.13` (which requires `rich>=14.2`
+  as its own transitive dep, and can install it freely once we don't pin
+  a conflicting `<14`), (c) supersedes the pending Dependabot bump #158
+  (bumping unused code is worse than removing it). Should we later need
+  rich for CLI pretty-printing (e.g. `hermes health` colored table), we
+  re-add explicitly with a clear consumer in the same commit.
 
 ### Fixed
 
@@ -262,11 +1188,143 @@ lands in Phase 0 CI (per ADR-006).
 
 - A klines reply that gives one bar two different rows is now refused as a bad reply instead of silently keeping the last row; exact repeats are still dropped.
 
+- Ledger: a trade whose fee the Binance adapter estimated at the pre-registered taker rate is now marked, and the ledger lists every such trade for correction from the exchange's trade history.
+
+- Binance spot adapter: after a lost order reply, "no such order" is believed only when a second lookup two seconds later agrees, and a found order whose reply fails to parse raises unknown status naming both the client and Binance order ids.
+
 - The end-to-end serve cycle test no longer expects a push for an entry the exposure cap refused, matching the serve change from issue #708 (#1038).
 
 - The console's night theme draws labels, hints, gains, losses and AI marks at 4.5:1 contrast or more on its panels, so they no longer fade into the background after 23:00 (#1046).
 
 - Console: every panel's key hint now starts in the body text's column, and hints, tab numbers, the theme chip and AI text read at 4.5:1 or more on every surface in Neon, Control room and night.
+
+- `hermes parity` no longer reports a config that fails to load, such as a strategy naming an unknown `signal:`, as a failed exchange read of warm-up bars; it prints the config error itself and still exits 3 (issue #1119).
+
+- `hermes batch check` now fails a candidate whose signed parameter its strategy does not take, or whose signed base is not the strategy's default, so a typo is caught before signing rather than on the backtest runner.
+
+- Modelo 100 and the tax screen now flag the same two-month repurchase sales: both count Madrid calendar dates through one shared rule, so a buy late on the window's last Madrid day is flagged by both (#1171).
+
+- The env templates list only variables the code reads; `ml` and `tax_guard` config are optional and marked reserved so they cannot stop startup, Sentry reads `sentry.yaml` through the config loader, and two tests keep it that way.
+
+- Ctrl-C, exit and task cancellation inside an event handler now stop dispatch at once instead of being re-raised later as a dispatch error. A serve start that fails after its FX, Telegram or Slack client is built now closes those clients. `hermes anomalies` waits out a busy ledger like every other reader. The FX adapter's built-in default is now the live Frankfurter host. Decimal settings from env overrides keep every digit.
+
+- **Newly-opened PRs no longer sit in BEHIND state until the next
+  push:main** (`.github/workflows/auto-update-pr-branches.yml`): added
+  `pull_request: [opened, reopened, ready_for_review]` trigger to the
+  auto-update workflow. Previously the workflow fired only on
+  `push:main`, so a PR opened while main was already ahead of its
+  branch waited for ANOTHER merge to trigger the freshness pass — the
+  reviewer's first impression was a "This branch is out-of-date"
+  banner. The new triggers cover: opened (fresh PR), reopened (closed
+  → reopened flow), ready_for_review (draft → ready promotion). Each
+  event fires exactly one workflow run, updates the branch if BEHIND,
+  and no-ops otherwise. Zero-cost when the branch is already
+  up-to-date.
+
+- **`data-manifest.json` read-modify-write race** — running klines + agg_trades + peg ingests concurrently could silently lose entries because both scripts read-then-wrote the shared manifest without locking. New `scripts/data/_manifest_util.py` exposes a `manifest_transaction()` context manager wrapping the cycle in a cross-platform `filelock.FileLock`; both ingest scripts refactored to use it. Concurrency test asserts 2 threads × 100 unique writes leave 200 entries (no lost updates). `filelock` promoted from transitive to direct dep. Closes #257.
+
+- **`BinanceHistoricalAdapter` handles 2025+ µs klines archives** — Binance changed the klines CSV archive format at 2025-01-01: `open_time` and `close_time` went from 13-digit milliseconds to 16-digit microseconds. The adapter's parser blindly divided by 1000, producing an epoch value ~1.7e12 which overflowed Windows' `datetime.fromtimestamp` limit and crashed with `OSError: [Errno 22] Invalid argument` on every 2025+ file. Now detects the timestamp width per row and dispatches to ms or µs division; unknown widths raise `ExchangeError` with a diagnostic message. Two new unit tests cover the µs format + the unexpected-width defense. Unblocks Phase 1 backtest driver Validate-window runs. Closes #271.
+
+- **`.github/workflows/vps-bootstrap.yml` + `.github/workflows/vps-diagnose.yml`** — both workflows passed `--tun=userspace-networking` via a job-level `ADDITIONAL_DAEMON_ARGS` env var (PR #284 approach), but the value was empty in the composite action's `Start Tailscale Daemon` step, so tailscaled tried to open `/dev/net/tun`, failed on the container runner, and every dispatch crashed with `failed to connect to local tailscaled`. The correct path is `with: tailscaled-args:` — the composite action sources `inputs.tailscaled-args → ADDITIONAL_DAEMON_ARGS` inside its Start-Daemon step (see `tailscale/github-action@v3` `action.yml:285`). Both workflows now pass it as an input; the job-level env block is removed.
+
+- **`scripts/dev/verify_auto_close.py`** — the head_sha correlation shipped in #287 was wrong: merge-queue runs perform the merge FROM their pre-merge main tip and then push, so the run whose Revalidate job actually closes linked issues has `head_sha != pr.mergeCommit.oid`. Every PR with a linked issue was reported as `manual_close_no_v3_marker`, even though the v3 auto-close code was running fine (verified by inspecting merge-queue.yml logs). Now correlates by fetching each candidate run's jobs and matching on the Revalidate job's name regex `^Revalidate\s*\(\s*{pr_num}\s*,` — this signal embeds the PR number unambiguously and survives the pre-merge head_sha quirk. Self-test replaces the head-sha fixtures with a positive/no-match/substring-discrimination matrix (287 must not match a job for PR 2870).
+
+- **`scripts/dev/verify_auto_close.py`** — merge-queue run correlation was broken: substring-matched `str(pr_num)` against `display_title`, but every merge-queue run's `display_title` is the literal string `"Merge queue"` (no PR number), so the matcher never found the right run and every PR reported `v3_did_not_run`. Now correlates by `head_sha == pr.mergeCommit.oid` via new `_find_merge_queue_run_id()` helper. PR query updated to fetch `mergeCommit`. Self-test extended with 3 head-sha matching fixtures (positive, negative, empty-sha).
+
+- **`.github/workflows/vps-bootstrap.yml`** — Tailscale-self diagnostic step now reads per-device fields from `.Self` (was reading from the top level of `tailscale status --json`, which only mirrors `TailscaleIPs`). Fixes misleading `Tags: null` output that suggested the runner joined untagged when it actually carried `tag:ci-runner`. Followup to #294 — surfaced during 2026-09-06 vps-bootstrap debugging when the false-negative sent us down a wrong-track investigation.
+
+- **`scripts/deploy/vps_bootstrap.sh`** — the identity line printed `user: *** (999)` when the SSH-server-side user happened to match a passed-through secret (`***` masks the username). Made the identity legible regardless: prints `uid`/`gid`/username on one line, `groups` on another, and probes sudo availability (n/a when root, `passwordless OK`, or `NOT available`). Surfaced during dispatch 33084988200 where Tailscale-SSH ACL mapped the CI ephemeral device to an unprivileged uid 999 and the FHS-dirs step failed with `install: cannot change owner and permissions of '/var/log/hermes': No such file or directory`.
+
+- **`.github/workflows/vps-bootstrap.yml`** — env-passing loop truncated multi-line secrets at the first newline. `while IFS='=' read -r name value; do ... done < <(env)` treated each newline in a value as a new env var, silently dropping everything after the first line. Symptom: `STORAGE_BOX_KEY` (a PEM-encoded ed25519 private key) arrived on hermes-01 as exactly 36 bytes — only the `-----BEGIN OPENSSH PRIVATE KEY-----` header — and the Storage Box SSHFS mount failed with `read: Connection reset by peer`. Fixed by switching to null-separated iteration via `env -0` + `read -d ''`, preserving multi-line values byte-for-byte for all `HERMES_*` and `STORAGE_BOX_*` secrets.
+
+- **`.github/workflows/vps-bootstrap.yml`** — added a diagnostic step between "Join tailnet" and "Run bootstrap script on VPS" that dumps `tailscale status --self` (proves the runner carries `tag:ci-runner`), dumps the `hermes-01` peer info (proves the runner sees `tag:hermes-vps` on the target), and runs `tailscale ping --timeout=30s hermes-01` (forces peer discovery to complete before the SSH attempt). `tailscale/github-action@v3` waits for the tunnel but not for peer/tag sync — the race manifested as consistent "tailnet policy does not permit you to SSH to this node" false-negatives across 5 dispatches on 2026-09-06 despite Tailscale's own `sshTests` validator confirming the SSH ACL grant is correct.
+
+- **Automation-triggered CI runs no longer require manual approval**
+  (`.github/workflows/merge-queue.yml`,
+  `.github/workflows/auto-update-pr-branches.yml`, GitHub App
+  `hermes-automation-bot`, repo variable `HERMES_AUTOMATION_APP_ID`,
+  repo secret `HERMES_AUTOMATION_APP_KEY`): both automation workflows now
+  mint a short-lived installation token from the dedicated
+  `hermes-automation-bot` GitHub App (via `actions/create-github-app-token`)
+  and pass that token to `pulls/{n}/update-branch` and `pulls/{n}/merge`
+  calls, instead of the workflow's default `GITHUB_TOKEN`. GitHub's
+  built-in loop-prevention rule holds workflows triggered by
+  `github-actions[bot]` commits in `action_required` status until manually
+  approved — App-authored commits are a distinct actor and bypass this
+  gate. The result: fully hands-off "idea → merge" flow, no per-PR
+  approval clicks on downstream CI. GitHub Apps are the mature-PDP
+  pattern for this problem — no rotation drift (short-lived
+  installation tokens self-issued from a stable private key), fine-grained
+  per-repo permissions (Contents R/W + Pull requests R/W only), dedicated
+  identity in the git log. Falls back to `GITHUB_TOKEN` if the App
+  variable is unset (e.g., forks), so the workflows continue to function
+  with the approval friction rather than breaking outright.
+
+- **Merge-queue auto-close v2** — the v1 belt-and-suspenders block (PR #233) silently no-op'd on 6 consecutive merges (#236, #237, #241, #243, #244, #246) because GitHub's `closingIssuesReferences` GraphQL field is populated by an asynchronous indexer and was empty at the exact moment `pulls.merge` returned. v2 unions the GraphQL result with a body regex (`\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)\b`) so the fallback works even before GitHub finishes indexing. Idempotent (checks `state === 'closed'` before updating, so re-runs don't spam comments). Closes #247.
+
+- **Merge-queue auto-close v3** — v2 (PR #248) body-regex fallback correctly identified linked issues after every merge, but the `issues.update` call still failed silently with `Resource not accessible by integration`. Root cause: the hermes-automation-bot GitHub App token used to bypass branch protection during `pulls.merge` does not have `Issues: Read & Write` at App-install time, and the workflow-declared `permissions: issues: write` grants that scope only to the default `GITHUB_TOKEN`. Fix routes the belt-and-suspenders `issues.get` / `issues.update` / `issues.createComment` calls through a second Octokit instance authed with `github.token`. The merge itself keeps the App token. All three failure modes now documented in the block header for the next debugger. Closes #261.
+
+- **Merge-queue auto-close v4** — v3 (PR #262) added `require('@actions/github').getOctokit(WORKFLOW_TOKEN)` for the belt-and-suspenders close loop, but the require failed with `MODULE_NOT_FOUND` at runtime because the merge queue's sparse-checkout step (`sparse-checkout: tools/merge`) leaves the workspace with no `node_modules`. The crash killed EVERYTHING after `pulls.merge` — the close loop, the delete-ref step, and the hand-dispatch of the next queue pass all silently no-op'd. v4 replaces the Octokit-via-require with three direct `fetch()` calls (`GET /issues/N` + `PATCH /issues/N` + `POST /issues/N/comments`) using WORKFLOW_TOKEN — Node 20+ has fetch built-in, zero dependencies. Preserves v3's union of GraphQL + body regex + idempotency check. Closes #267.
+
+- **Merge queue explicitly closes linked issues** + **sub-agent
+  template requires PR body implementation detail**
+  (`.github/workflows/merge-queue.yml`,
+  `scripts/dev/sub-agent-prompt-checklist.md`): follow-up to #225
+  addressing the observed 2026-08-25 behaviour where PRs with correct
+  `Closes #N` references (visible in GraphQL's
+  `closingIssuesReferences`) merged without actually closing the
+  linked issues. The queue-merge path via `pulls.merge` API silently
+  bypasses GitHub's built-in auto-close hook. Fix: after `pulls.merge`
+  succeeds, iterate `closingIssuesReferences` via GraphQL and call
+  `issues.update` explicitly for each still-OPEN linked issue.
+  Idempotent (closing already-closed issues is a no-op). Adds a
+  linking comment on each closure for audit. Also extends the
+  sub-agent prompt checklist with item 10: PR body must include a
+  technical implementation explanation (design decisions, new
+  abstractions, interactions with existing code), not just a one-line
+  summary. Mermaid diagrams welcome when they clarify architecture,
+  flow, or state — but not when a paragraph would say the same thing.
+
+- **Merge queue no longer stalls on BEHIND PRs under strict branch protection**
+  (`.github/workflows/merge-queue.yml`): the repository ruleset for `main` sets
+  `strict_required_status_checks_policy: true`, meaning GitHub refuses
+  `pulls.merge` on a PR whose head SHA is not up-to-date with `main` even when
+  the required `CI success` check is green on that head. The queue's `Build
+  merge tree` step validated a synthetic merged tree locally, but never
+  pushed — so the PR head stayed BEHIND, GitHub refused every merge attempt
+  with 405, and the queue retriggered forever. Reproduced on PRs #204 + #206
+  after PRs #205 + #207 merged and moved main forward. The fix adds a
+  reconciliation branch in the `Merge` step: when the freshness re-assertion
+  passes but `mergeable_state === 'behind'`, the queue calls
+  `pulls/{n}/update-branch` (creating a GitHub-native merge commit on the PR
+  head) and returns. That triggers a fresh CI run; when CI completes,
+  `workflow_run:CI:completed` re-fires this workflow, the PR is no longer
+  BEHIND, and the merge succeeds on the next pass. `DRY_RUN` respected. Both
+  the update-branch call and the merge attempt still race-check via
+  `shouldMerge` — no silent bypass of any existing safety property.
+
+- **Merge queue preserves `Closes #N` trailers from PR body**
+  (`.github/workflows/merge-queue.yml`): passes `pr.body` as
+  `commit_message` in the `pulls.merge` call so GitHub's issue
+  auto-close mechanism sees `Closes #N` / `Fixes #N` / `Resolves #N`
+  trailers. Previously the queue deliberately omitted
+  `commit_message`, expecting per-commit trailers to survive — but
+  our `render-pr-body.sh` writes `Closes #N` in the PR body (from
+  openspec `issue.md`), NOT in individual commit messages. Observed
+  2026-08-25: PRs #215, #219, #222 all merged with `Closes #N` in
+  their bodies; none of the referenced issues (#214, #218, #220)
+  auto-closed. Fix targets that specific path; empty body falls
+  back to prior behavior (commit-message trailers). Fixes #224.
+
+- **`uv.lock` drift**: regenerated lockfile against current `pyproject.toml`.
+  Dependabot #157 (cyclonedx-python-lib bump) landed pyproject.toml changes
+  without a clean lockfile regen; subsequent `uv run` invocations kept
+  updating the lock on the fly, tripping pre-commit's "files modified by
+  hook" gate on every PR. Wave 7 (#183) worked around it via
+  `UV_FROZEN=1`. This PR is the real fix: `uv lock` run cleanly, three
+  transitive updates picked up as a byproduct (`py-serializable` 1.1.2 →
+  2.1.0, `python-telegram-bot` 21.11.1 → 22.8, `rich` 13.9.4 → 15.0.0
+  from #170 + import-linter's own transitive). Closes #184.
 
 ### Security
 

@@ -220,7 +220,10 @@ def _tables(path: Path) -> list[str]:
             )
         ]
         filled = [n for n in names if connection.execute(f'SELECT 1 FROM "{n}"').fetchone()]  # noqa: S608 - names come from the template's own schema
-        return sorted(filled)
+        # schema_migrations is the runner's bookkeeping, not data a reader returns: a corrupt
+        # filename makes the ledger re-run that migration, which raises sqlite3.Error by design
+        # (migration_runner.apply_migrations; test_migration_runner covers it).
+        return sorted(name for name in filled if name != "schema_migrations")
     finally:
         connection.close()
 

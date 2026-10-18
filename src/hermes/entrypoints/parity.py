@@ -226,7 +226,7 @@ def _failure_line(exc: Exception) -> str:
     """Return the ERROR line for a failure that makes the check exit 3."""
     if isinstance(exc, LedgerError | FileNotFoundError):
         return f"ERROR: could not read the ledger: {exc}\n"
-    if isinstance(exc, InfraError):
+    if isinstance(exc, InfraError) and not isinstance(exc, ConfigError):
         return f"ERROR: could not read warm-up bars from the exchange: {exc}\n"
     return f"ERROR: {exc}\n"
 

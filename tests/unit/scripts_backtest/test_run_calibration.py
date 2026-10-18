@@ -21,6 +21,7 @@ from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.strategy.signal import SignalKind, SignalSide, StrategySignal
 from hermes.domain.strategy.swing import adapter as swing_adapter
+from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
@@ -195,7 +196,17 @@ def test_strategy_parameters_cover_every_keyword_and_build_the_adapter() -> None
     params = DRIVER._strategy_parameters()
     assert set(params) >= {"donchian_period", "adx_period", "ema_period", "time_stop_days"}
     assert all(value is not inspect.Parameter.empty for value in params.values())
-    DRIVER.SwingStrategyAdapter(**params)
+    SwingStrategyAdapter(**params)
+
+
+def test_strategy_parameters_are_the_adapters_own_keyword_defaults() -> None:
+    """The trial records the defaults the adapter would run with, not a copy that can drift."""
+    expected = {
+        name: parameter.default
+        for name, parameter in inspect.signature(SwingStrategyAdapter.__init__).parameters.items()
+        if parameter.kind is inspect.Parameter.KEYWORD_ONLY
+    }
+    assert DRIVER._strategy_parameters() == expected
 
 
 def test_git_state_returns_a_full_commit_sha() -> None:

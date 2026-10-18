@@ -69,6 +69,10 @@ dev = [
   "hypothesis>=6.168.3,<7",
   "syrupy>=6.1.1,<7",  # bumped to unblock pytest 9 (see PYSEC-2026-1845 note above)
   "respx>=0.21,<1",
+  # scripts/dev/fresh-seed-report.py parses the fresh-seed JUnit report with
+  # it (Semgrep use-defused-xml). Promoted from a transitive dep of fpdf2 so
+  # an upstream change cannot drop it.
+  "defusedxml>=0.7.1,<1",
   "freezegun>=1.5,<2",
   "coverage[toml]>=7.16.2,<8",
   "ruff>=0.16.9,<1",
@@ -84,6 +88,7 @@ dev = [
   "radon>=6.0,<7",
   "vulture>=2.13,<3",
   "types-pyyaml>=6.0.12.20260906,<7",
+  "types-defusedxml>=0.7.0.20260504,<1",
   # Mutation testing — parso-backed (Python 3.14 native). See
   # docs/decisions/2026-08-22-mutation-testing-cosmic-ray.md for the
   # tool-choice rationale + spike evidence. Weekly workflow at
@@ -368,6 +373,29 @@ forbidden_modules = [
   "hermes.application.risk_inputs",
   "hermes.ports.risk_inputs",
   "hermes.domain.market_data.spread_sample",
+]
+
+# The Logs screen shows the journal, which can hold money figures, to the
+# operator only: nothing from it reaches an AI or a notification channel (#716).
+# Direct imports only: the shared console widgets reach the Briefs screen's
+# supervisor reader through hermes.application.console.views, and that read-only
+# path is not a way for a journal line to leave.
+[[tool.importlinter.contracts]]
+name = "logs-screen-never-leaves-the-console"
+type = "forbidden"
+allow_indirect_imports = true
+source_modules = [
+  "hermes.application.console.log_figures",
+  "hermes.entrypoints.tui_logs",
+]
+forbidden_modules = [
+  "hermes.adapters.notifier",
+  "hermes.adapters.telegram_bot",
+  "hermes.ports.notifier",
+  "hermes.ports.supervisor",
+  "hermes.application.supervisor",
+  "hermes.application.notification_router",
+  "hermes.application.signal_notifier",
 ]
 
 [[tool.importlinter.contracts]]

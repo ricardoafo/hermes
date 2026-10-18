@@ -66,6 +66,7 @@ _TF: Final = 4
 _PRICE: Final = 11
 _CHANGE: Final = 10
 _RESULT: Final = 7
+_SPREAD: Final = 8
 _NEXT: Final = 9
 _FULL_FROM: Final = 64
 _MIN_CHART: Final = 4
@@ -195,7 +196,7 @@ class _Columns:
     @classmethod
     def for_width(cls, width: int) -> _Columns:
         full = width >= _FULL_FROM
-        fixed = _COIN + _PRICE + _CHANGE + 1 + _NEXT + ((_TF + _RESULT) if full else 0)
+        fixed = _COIN + _PRICE + _CHANGE + 1 + _NEXT + ((_TF + _RESULT + _SPREAD) if full else 0)
         chart = min(_MAX_CHART, width - fixed - 1)
         return cls(full=full, chart=chart if chart >= _MIN_CHART else 0)
 
@@ -209,7 +210,7 @@ def _header(columns: _Columns, rate: Decimal | None) -> Text:
     if columns.chart:
         out.append(f"{'chart':<{columns.chart}} ")
     if columns.full:
-        out.append(f"{'result':<{_RESULT}}")
+        out.append(f"{'spread':<{_SPREAD}}{'result':<{_RESULT}}")
     out.append("next")
     return out
 
@@ -240,6 +241,13 @@ def _quote_cells(
         out.append_text(braille_spark(quote.history, columns.chart, look.style(colour)))
         out.append(" ")
     return out
+
+
+def _spread_cell(quote: LiveQuote | None, look: LiveLook) -> Text:
+    """Return the spread cell of one coin: basis points, or a dim dash without one."""
+    if quote is None or quote.failed_at is not None or quote.spread_bps is None:
+        return Text(f"{_NONE:<{_SPREAD}}", style=look.tokens.dim)
+    return Text(f"{f'{quote.spread_bps:.1f} bp':<{_SPREAD}}", style=look.tokens.muted)
 
 
 def market_rows(
@@ -281,6 +289,7 @@ def market_rows(
             lines.append(line)
             continue
         if columns.full:
+            line.append_text(_spread_cell(quotes.get(coin), look))
             result = pair.signal or "none"
             line.append(f"{result:<{_RESULT}}", style="bold" if pair.signal else tokens.dim)
         line.append(day_clock(look.ctx, pair.next_check_at))

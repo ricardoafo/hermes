@@ -23,9 +23,9 @@ import httpx
 from hypothesis import example, given
 from hypothesis import strategies as st
 
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.adapters.clock import SimulatedClock
 from hermes.adapters.exchanges import binance_klines
-from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.adapters.market_data import (
     binance_historical,
     binance_live_klines,
