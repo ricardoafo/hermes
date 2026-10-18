@@ -94,11 +94,14 @@ def test_idle_title_is_a_chrome_gradient() -> None:
 
 
 def test_bottom_edge_carries_hints_and_the_magenta_corner() -> None:
-    """The bottom edge reads the key hints and ends with ━┛ in the AI colour."""
+    """The bottom edge reads the key hints from the body column (one cell in) and ends with ━┛.
+
+    The corner is in the AI colour; issue #1096 moved the hint from column 2 to 1.
+    """
     edge = bottom_edge("D W M Y range", 30, NEON)
     corner = _style_at(edge, 29)
     assert (edge.plain, _hex(corner.color)) == (
-        "  D W M Y range ────────────━┛",
+        " D W M Y range ─────────────━┛",
         "#FF3DF0",
     )
 
