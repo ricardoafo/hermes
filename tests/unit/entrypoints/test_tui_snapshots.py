@@ -6,11 +6,11 @@ ultra), only changes when a reviewer accepts the new picture. Each file is
 named ``<view>_<theme>_<cols>x<rows>.svg`` so a PR body can link it directly.
 
 Views: Home on the ``ok-two-positions`` and ``empty`` demo scenarios, the
-Positions placeholder (tab 3), the theme picker open over Home, Home with a
+theme picker open over Home, Home with a
 fake ticker (``home_live``, issue #713): live market prices, a position valued
 live and the window bar's feed pulse after a run of polls, one of them failed,
 Home with the new-version notice up after the release changed (issue #652),
-and the Shadow test screen (tab 5, issue #718) counting from a day-0 record
+and the Shadow test screen (tab 6, issue #718) counting from a day-0 record
 (``ok-two-positions``) and in the warm-up with no record (``empty``).
 Night (Auto after 23:00) has its own Home pictures, on demo data and with live
 prices, so its readable contrast is reviewed too (issue #1046).
@@ -78,6 +78,7 @@ def _poll(failed: str | None) -> tuple[TickOutcome, ...]:
             at=_FROZEN,
             price=None if coin == failed else price,
             error=KrakenPublicError.__name__ if coin == failed else None,
+            spread_bps=None if coin == failed else Decimal("3.4"),
         )
         for coin, price in _PRICES.items()
     )
@@ -86,10 +87,9 @@ def _poll(failed: str | None) -> tuple[TickOutcome, ...]:
 _VIEWS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("home_ok", "ok-two-positions", ()),
     ("home_empty", "empty", ()),
-    ("tab3_placeholder", "ok-two-positions", ("3",)),
     ("theme_picker", "ok-two-positions", ("t",)),
-    ("shadow_counting", "ok-two-positions", ("5",)),
-    ("shadow_warmup", "empty", ("5",)),
+    ("shadow_counting", "ok-two-positions", ("6",)),
+    ("shadow_warmup", "empty", ("6",)),
     ("home_live", "ok-two-positions", ()),
 )
 

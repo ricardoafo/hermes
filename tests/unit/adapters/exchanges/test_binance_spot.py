@@ -15,6 +15,7 @@ import httpx
 import pytest
 import respx
 
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.adapters.exchanges.binance_spot import (
     TESTNET_BASE_URL,
     BinanceSpotAdapter,
@@ -23,7 +24,6 @@ from hermes.adapters.exchanges.binance_spot import (
     OrderStatusUnknownError,
     sign,
 )
-from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.domain.errors import ExchangeError, NetworkError
 from hermes.domain.trading.fill import Fill, Rejection
 from hermes.domain.trading.order import Order, OrderSide
@@ -39,16 +39,30 @@ _BTC = Pair(base=Currency.BTC, quote=Currency.USDT)
 _NOW_MS = 1_790_000_000_000
 _KEY = "test-key-not-real"  # gitleaks:allow
 _SIGNING_MATERIAL = "test-secret-not-real"  # gitleaks:allow
+_SLEPT: list[float] = []
+_FOUND_FILLED: dict[str, object] = {
+    "symbol": "BTCUSDT",
+    "orderId": 28,
+    "status": "FILLED",
+    "executedQty": "0.01",
+    "cummulativeQuoteQty": "650.00",
+    "updateTime": _NOW_MS,
+}
+_NO_SUCH = httpx.Response(400, json={"code": -2013, "msg": "Order does not exist."})
 
 
 @pytest.fixture
 def adapter() -> Iterator[BinanceSpotAdapter]:
-    """Return an adapter on the testnet host with a fixed clock and a roomy limiter."""
+    """Return an adapter on the testnet host with a fixed clock, a roomy limiter and no real waits.
+
+    Its waits are recorded in ``_SLEPT``, cleared for each test.
+    """
+    _SLEPT.clear()
     config = BinanceSpotConfig(api_key=_KEY, api_secret=_SIGNING_MATERIAL)
     client = httpx.Client(base_url=config.base_url)
     limiter = RateLimiter(config=RateLimitConfig(max_weight=1000, window_seconds=60))
     yield BinanceSpotAdapter(
-        config=config, client=client, limiter=limiter, clock_ms=lambda: _NOW_MS
+        config=config, client=client, limiter=limiter, clock_ms=lambda: _NOW_MS, sleep=_SLEPT.append
     )
     client.close()
 
@@ -255,6 +269,42 @@ def test_third_asset_commission_falls_back_to_the_taker_rate(adapter: BinanceSpo
     assert (fill.executed_qty, fill.fee.amount) == (Decimal("0.01"), Decimal("0.65"))
 
 
+@respx.mock
+@pytest.mark.parametrize(
+    ("ticker", "estimated"),
+    [(httpx.Response(200, json={"symbol": "BNBUSDT", "price": "600.00"}), False), (None, True)],
+    ids=["priced-at-ticker", "taker-rate"],
+)
+def test_a_fee_priced_at_the_taker_rate_is_marked_estimated(
+    adapter: BinanceSpotAdapter, ticker: httpx.Response | None, *, estimated: bool
+) -> None:
+    """Only a fee charged at the 10 bps fallback is marked estimated on the fill (#1014).
+
+    The mark is what lets cost basis and tax list the fee for correction.
+    """
+    respx.post(url__startswith=_ORDER_URL).mock(return_value=httpx.Response(200, json=_bnb_fill()))
+    route = respx.get(url__startswith=_TICKER_URL)
+    if ticker is None:
+        route.mock(side_effect=httpx.ConnectError("down"))
+    else:
+        route.mock(return_value=ticker)
+
+    fill = adapter.place_market_order(side=OrderSide.BUY, order=_order())
+
+    assert fill.fee_estimated is estimated
+
+
+def test_an_exact_quote_fee_is_not_marked_estimated(adapter: BinanceSpotAdapter) -> None:
+    """A fee Binance charged in the quote currency is exact: the fill carries no mark."""
+    with respx.mock:
+        respx.post(url__startswith=_ORDER_URL).mock(
+            return_value=httpx.Response(200, json=_filled())
+        )
+        fill = adapter.place_market_order(side=OrderSide.BUY, order=_order())
+
+    assert (fill.fee.amount, fill.fee_estimated) == (Decimal("0.65"), False)
+
+
 def test_every_order_carries_a_fresh_client_order_id(adapter: BinanceSpotAdapter) -> None:
     """Two orders are sent with two different ``hermes-`` client ids, the key of any lookup."""
     with respx.mock:
@@ -342,6 +392,79 @@ def test_an_order_binance_never_saw_is_not_placed(adapter: BinanceSpotAdapter) -
         adapter.place_market_order(side=OrderSide.BUY, order=_order())
 
     assert caught.value.client_order_id.startswith("hermes-")
+
+
+@respx.mock
+def test_an_order_binance_never_saw_is_looked_up_twice_a_wait_apart(
+    adapter: BinanceSpotAdapter,
+) -> None:
+    """-2013 is believed only when a second lookup after the recheck wait says it too (#1027).
+
+    A 5xx can leave the order in flight inside Binance; one -2013 straight
+    after it would call a live order not placed and invite a doubling retry.
+    """
+    respx.post(url__startswith=_ORDER_URL).mock(return_value=httpx.Response(502, text="bad"))
+    lookup = respx.get(url__startswith=_ORDER_URL).mock(return_value=_NO_SUCH)
+
+    with pytest.raises(OrderNotPlacedError, match="two lookups 2 s apart"):
+        adapter.place_market_order(side=OrderSide.BUY, order=_order())
+
+    assert (lookup.call_count, _SLEPT) == (2, [2.0])
+
+
+@respx.mock
+def test_an_order_in_flight_at_the_first_lookup_returns_the_fill_found_on_the_recheck(
+    adapter: BinanceSpotAdapter,
+) -> None:
+    """A -2013 then the order on the recheck returns that fill, not "not placed" (#1027)."""
+    respx.post(url__startswith=_ORDER_URL).mock(return_value=httpx.Response(503))
+    lookup = respx.get(url__startswith=_ORDER_URL).mock(
+        side_effect=[_NO_SUCH, httpx.Response(200, json=_FOUND_FILLED)]
+    )
+    respx.get(url__startswith=_TRADES_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "price": "65000.00",
+                    "qty": "0.01",
+                    "commission": "0.65",
+                    "commissionAsset": "USDT",
+                }
+            ],
+        )
+    )
+
+    fill = adapter.place_market_order(side=OrderSide.BUY, order=_order())
+
+    assert (fill.executed_qty, fill.fee.amount, lookup.call_count, _SLEPT) == (
+        Decimal("0.01"),
+        Decimal("0.65"),
+        2,
+        [2.0],
+    )
+
+
+@respx.mock
+@pytest.mark.parametrize("missing", ["cummulativeQuoteQty", "updateTime"])
+def test_a_found_order_whose_reply_fails_to_parse_names_both_ids(
+    adapter: BinanceSpotAdapter, missing: str
+) -> None:
+    """Once a lookup found the order, a reply the fill parser rejects is unknown status (#1027).
+
+    The error carries the client order id and Binance's order id, so the
+    operator can reconcile the live order instead of retrying it.
+    """
+    post = respx.post(url__startswith=_ORDER_URL).mock(return_value=httpx.Response(503))
+    found = {key: value for key, value in _FOUND_FILLED.items() if key != missing}
+    respx.get(url__startswith=_ORDER_URL).mock(return_value=httpx.Response(200, json=found))
+    respx.get(url__startswith=_TRADES_URL).mock(return_value=httpx.Response(200, json=[]))
+
+    with pytest.raises(OrderStatusUnknownError, match="Binance order 28") as caught:
+        adapter.place_market_order(side=OrderSide.BUY, order=_order())
+
+    sent = post.calls.last.request.url.params["newClientOrderId"]
+    assert (caught.value.client_order_id, caught.value.order_id) == (sent, 28)
 
 
 @respx.mock
@@ -446,6 +569,36 @@ def test_a_stop_loss_whose_reply_was_lost_returns_the_found_order_id(
     order_id = adapter.place_stop_loss(order=_order(OrderSide.SELL), stop_price=Decimal("60000"))
 
     assert order_id == "BTCUSDT:77"
+
+
+@respx.mock
+def test_a_stop_loss_in_flight_at_the_first_lookup_returns_the_order_found_on_the_recheck(
+    adapter: BinanceSpotAdapter,
+) -> None:
+    """A lost stop-loss read -2013 then resting returns its order id, not "not placed" (#1027).
+
+    Calling it not placed would let the caller place a second stop for the same position.
+    """
+    respx.post(url__startswith=_ORDER_URL).mock(side_effect=httpx.ReadTimeout("slow"))
+    lookup = respx.get(url__startswith=_ORDER_URL).mock(
+        side_effect=[
+            _NO_SUCH,
+            httpx.Response(
+                200,
+                json={
+                    "orderId": 79,
+                    "status": "NEW",
+                    "executedQty": "0",
+                    "cummulativeQuoteQty": "0",
+                    "time": _NOW_MS,
+                },
+            ),
+        ]
+    )
+
+    order_id = adapter.place_stop_loss(order=_order(OrderSide.SELL), stop_price=Decimal("60000"))
+
+    assert (order_id, lookup.call_count, _SLEPT) == ("BTCUSDT:79", 2, [2.0])
 
 
 # SEV-1: no rubric row matches; a dead stop reported as resting leaves a position unprotected

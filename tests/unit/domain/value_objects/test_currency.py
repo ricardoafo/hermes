@@ -9,6 +9,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from returns.result import Failure, Success
 
+from hermes.domain.errors import InvalidLot
 from hermes.domain.value_objects.currency import Currency
 
 
@@ -25,12 +26,12 @@ class TestCurrencyFromStr:
     def test_from_str_unknown_returns_failure(self) -> None:
         """from_str returns Failure for a ticker that is not in the allowlist."""
         result = Currency.from_str("DOGE")
-        assert isinstance(result, Failure)
+        assert result == Failure(InvalidLot(reason="Unknown currency: 'DOGE'"))
 
     def test_from_str_empty_returns_failure(self) -> None:
         """from_str returns Failure for an empty string — empty tickers are never valid."""
         result = Currency.from_str("")
-        assert isinstance(result, Failure)
+        assert result == Failure(InvalidLot(reason="Unknown currency: ''"))
 
     def test_from_str_lowercase_accepted(self) -> None:
         """from_str is case-insensitive — normalises to upper."""
@@ -53,7 +54,7 @@ class TestCurrencyAllowlist:
         actual = {c.value for c in Currency}
         assert actual == {"EUR", "USDT", "USDC", "BTC", "ETH", "SOL"}
 
-    def test_currency_is_str_enum(self) -> None:
-        """StrEnum — Currency.EUR == "EUR"."""
-        assert Currency.EUR == "EUR"
-        assert Currency.BTC == "BTC"
+    @given(st.sampled_from(list(Currency)))
+    def test_str_is_the_bare_ticker(self, c: Currency) -> None:
+        """str(currency) is the bare ticker, so Pair renders as 'BTC/USDT'."""
+        assert str(c) == c.value

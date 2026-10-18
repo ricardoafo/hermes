@@ -33,8 +33,8 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 import hermes.adapters.market_data.binance_live_klines as klines_module
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.adapters.clock import SimulatedClock
-from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.adapters.market_data.binance_live_klines import BinanceLiveKlinesAdapter
 from hermes.domain.errors import ExchangeError, NetworkError
 from hermes.domain.market_data.bar_schedule import interval_duration
@@ -771,7 +771,7 @@ class TestWireEdgeCases:
         ("row", "message"),
         [
             ([0, "abc", "1", "1", "1", "1", 14_399_999], "not a decimal"),
-            ([0, True, "1", "1", "1", "1", 14_399_999], "not string or numeric"),
+            ([0, True, "1", "1", "1", "1", 14_399_999], "is not numeric"),
             ([0, "1", "1", "2", "1", "1", 14_399_999], "domain invariants"),
             ([1, "1", "1", "1", "1", "1", 14_400_000], "aligned"),
         ],

@@ -19,7 +19,9 @@ Design invariants (property-tested — see tests/unit/domain/events/):
   handlers from running. Exceptions are collected and re-raised as a single
   ``EventDispatchError`` after every handler has run. This keeps the ledger
   transaction contract intact (invariant I-06) — one failing subscriber
-  cannot silently drop side-effects for the rest.
+  cannot silently drop side-effects for the rest. Only ``Exception`` is
+  collected: ``KeyboardInterrupt``, ``SystemExit`` and asyncio cancellation
+  stop the dispatch at once, so a shutdown is never deferred or disguised.
 
 Reference: ADR-003 §00 (Domain Events pattern), §02 (data flow — every
 trade fans out to ledger + notifier + audit), code-conventions.md §1
@@ -59,7 +61,7 @@ class EventDispatchError(DomainError):
     """
 
     event_type_name: str
-    failures: tuple[BaseException, ...]
+    failures: tuple[Exception, ...]
 
     def __str__(self) -> str:
         """Return human-readable summary listing every failure."""
@@ -135,11 +137,11 @@ class EventBus:
         bucket = self._subscribers.get(type(event), [])
         if not bucket:
             return
-        failures: list[BaseException] = []
+        failures: list[Exception] = []
         for handler in bucket:
             try:
                 handler(event)
-            except BaseException as exc:
+            except Exception as exc:
                 failures.append(exc)
         if failures:
             raise EventDispatchError(

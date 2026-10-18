@@ -57,14 +57,12 @@ flowchart TB
 
 | Surface | What it holds | When items appear | When they close |
 | ------- | -------------- | ------------------- | ---------------- |
-| **Milestones** (Phase 0 / 1 / 2 / 3) | Long-lived planning buckets. Every open issue and PR belongs to exactly one. | At issue-creation time (`--milestone` flag or GH UI dropdown). Assigned based on WHICH PHASE the work belongs to. | Automatic — when all issues in the milestone are closed. `open_issues=0` triggers the milestone's own closed state (manual close by Ricardo). |
+| **Milestones** (MVP1 / MVP2) | Long-lived planning buckets. Every open issue and PR belongs to exactly one. | At issue-creation time (`--milestone` flag or GH UI dropdown). Assigned based on WHICH PHASE the work belongs to. | Automatic — when all issues in the milestone are closed. `open_issues=0` triggers the milestone's own closed state (manual close by Ricardo). |
 | **Issues** | Atomic units of work. Every PR closes at least one. | User (or AI) files via `.github/ISSUE_TEMPLATE/{bug,feature,chore}.yml`. Labels applied by the template + by the `auto-label` CI job. | Automatic — PR merges with `Closes #N` in the body. Manual close is also allowed for wontfix / duplicate. |
 | **Project board** ([Project Hermes](https://github.com/users/ricardoafo/projects/4)) | Visual pipeline: Backlog → In progress → In review → Done. | Automatic — `add-to-project` CI job (see `.github/workflows/ci.yml`) adds every new issue and PR. Existing items were bulk-added at project creation. | Automatic — GH Project workflow "Item closed → Done" (configured once in the project UI, not in CI). |
 
-**Empty milestones are expected**. Phase 1/2/3 will show 0/0 until we plan
-that phase's work and file its issues. Phase 0 shows 10/11 (10 closed, 1
-open) because that's the current active phase. Milestone progress = closed /
-(closed + open).
+**Empty milestones are expected**: a milestone shows 0/0 until its work is
+planned and filed. Milestone progress = closed / (closed + open).
 
 ## Phase-by-phase audit
 
@@ -108,12 +106,12 @@ in hermes.
 
 - **Who**: Ricardo or bot
 - **What**: Write code + tests. Every commit runs the pre-commit hook chain
-  (markdownlint, conventional-commit validation, trailing-whitespace, etc.).
-  Ruff / mypy / detect-secrets land in Phase 0.
+  (markdownlint, ruff, mypy, conventional-commit validation, gitleaks, the
+  weak-assertion guard, etc.).
 - **Where**: local working tree
-- **State**: 🚧 Partial. Full Python toolchain (ruff / mypy / pytest /
-  hypothesis / syrupy / cosmic-ray / detect-secrets / `sev1_guard` plugin) lands
-  in Phase 0.
+- **State**: ✅ Ready. The Python toolchain (ruff, mypy, pytest, hypothesis,
+  syrupy, cosmic-ray, gitleaks, the `sev1_guard` plugin) is installed by
+  `uv sync --frozen`; see [`local-setup.md`](local-setup.md).
 - **Test tiers**: which tier runs where and how often is in [`test-tiers.md`](test-tiers.md). The
   test-writing discipline is in [`ai-authored-tests.md`](ai-authored-tests.md).
 
@@ -169,24 +167,14 @@ in hermes.
 ### 7. CI pipeline
 
 - **Who**: GH Actions
-- **What**: `.github/workflows/ci.yml` runs 15 jobs:
-  - **Always-on gates**:
-    - `changeset` — classifier (docs-only vs code); sets outputs the code-gated jobs read
-    - `markdown-lint` (markdownlint-cli2) — runs if docs changed
-    - `pr-title` — Conventional Commits format validation
-    - `pr-body` — mandatory template sections have real content (not placeholder comments)
-    - `changelog` — blocks `feat/fix/refactor/perf/breaking` PRs without `[Unreleased]` update
-    - `auto-label` — path-based `area:*` labels + `size:*` from LOC
-    - `merge-decisions` — Node `node:test` runs `tools/merge/decisions.test.cjs` (34 cases)
-    - `codeowners` — CODEOWNERS syntax guard (broken CODEOWNERS silently disables review enforcement)
-    - `secrets` — gitleaks history scan
-  - **Code-gated (fire only when `changeset.outputs.code == 'true'`)**:
-    - `quality` — ruff format + ruff check + mypy --strict + pip-audit (skeleton today, Phase 0 fills body)
-    - `unit` — pytest with branch coverage + `--cov-fail-under=90` (skeleton)
-    - `guards` — test-deletion detector (skeleton)
-    - `semgrep` — SAST scan (`p/security-audit` + `p/python`) (skeleton)
-  - **Aggregator**: `ci-success` — needs every above job; single required status check on branch protection
-- **State**: ✅ Ready. Skeleton bodies for the four code-gated jobs are `echo TODO` today with the exact Phase 0 command shown — swap for real code without touching workflow structure.
+- **What**: `.github/workflows/ci.yml`. Every check is defined once in
+  `scripts/dev/ci-checks.sh` (`bash scripts/dev/ci-checks.sh --list`), which CI and
+  `scripts/dev/pr-preflight.sh` both call, so a local run and CI cannot drift. The
+  `CI success` aggregator needs every job and is the single required status check.
+  Where the jobs run and how the merge queue works:
+  [`ci-runners-and-merge-queue.md`](ci-runners-and-merge-queue.md). Which test tier
+  runs where: [`test-tiers.md`](test-tiers.md).
+- **State**: ✅ Ready.
 
 ### 8. Human review
 
@@ -232,10 +220,12 @@ in hermes.
 
 ### 11. Release
 
-- **Who**: Ricardo (manual SemVer bump per ADR-006 — no `semantic-release`)
-- **What**: Tag `v0.x.y`, cut a release, move `[Unreleased]` CHANGELOG
-  section to a dated version. Full release workflow lands in Phase 0.
-- **State**: 📅 Phase 0 scope (deferred until first release-worthy change)
+- **Who**: the bot opens a release PR; Ricardo approves it
+- **What**: `scripts/dev/cut-release.py` sets the version, compiles the
+  changelog fragments into a dated section and writes the PR body (ADR-022 §2,
+  versions are `0.y.z` until real capital, ADR-027). CD tags `v<version>` the
+  first time that version deploys. See [`release.md`](release.md).
+- **State**: ✅ Ready
 
 ### 12. Deploy (CD to VPS)
 
@@ -256,8 +246,8 @@ in hermes.
 - **What**: Structlog → journald, healthchecks.io ping loop, Telegram
   alerts on failure. Incidents trigger `bug-triager` agent → new issue
   with severity per rubric → back to step 1.
-- **State**: 📅 Phase 0+ (structlog scaffold in Phase 0; full stack in
-  Phase 2+)
+- **State**: ✅ Running on hermes-01 (see [`operator-usage.md`](operator-usage.md)
+  and [`vps-operations.md`](vps-operations.md)).
 
 ## How AI-authored code catches bugs before merge
 
@@ -328,16 +318,17 @@ rather than from the code.
 The authoritative list of tiers, where each runs and its status is
 [`test-tiers.md`](test-tiers.md).
 
-## Gaps table
+## Where the current state lives
 
-| # | Area | State | Gap |
-| --- | --- | --- | --- |
-| 5 | Local implementation | 🚧 Skeleton | Real ruff / mypy / pytest / hypothesis / mutmut / `sev1_guard` — Phase 0 fills bodies (pipeline shape is locked) |
-| 7 | CI pipeline (Python quality/unit/guards/semgrep) | 🚧 Skeleton | Bodies are `echo TODO`; swap for real tool invocations in Phase 0 without touching workflow structure |
-| 7 | Required status checks | ✅ Ready | `CI success` aggregator required; `strict:false` (freshness enforced by merge-queue.yml, not by branch update) |
-| 11 | Release | 📅 Phase 0 | Release workflow, tag automation, CHANGELOG date-cut |
-| 12 | CD to VPS | 🚧 Skeleton | `cd.yml` scaffolded (build → deploy → health → smoke → confirm); Phase 0 fills bodies + Ricardo provisions `prod` Environment secrets |
-| 13 | Observability | 📅 Phase 0+ | Structlog scaffold Phase 0, full stack Phase 2 |
+This guide describes the shape of the pipeline, not its progress. For the state
+of each part, read the file that owns it:
+
+- Test tiers, where each runs, their status: [`test-tiers.md`](test-tiers.md)
+- Runners, required checks, the merge queue:
+  [`ci-runners-and-merge-queue.md`](ci-runners-and-merge-queue.md)
+- Releases: [`release.md`](release.md)
+- Deploys and operating the host: [`operator-usage.md`](operator-usage.md),
+  [`vps-operations.md`](vps-operations.md)
 
 ## One-time setup (Ricardo, in the browser)
 
@@ -397,7 +388,7 @@ Two settings live in GitHub's UI and can't be fully configured via CLI:
 - [`AGENTS.md`](../../AGENTS.md) — AI collaboration protocol
 - [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) — the CI implementation
 - [`.github/workflows/merge-queue.yml`](../../.github/workflows/merge-queue.yml) — the merge queue
-- [ADR-003 § 09 Deployment](../architecture/adr-003-solution-architecture/09-deployment.md) — CD design (Phase 0+)
+- [ADR-003 § 09 Deployment](../architecture/adr-003-solution-architecture/09-deployment.md) — CD design
 - [ADR-006](../architecture/adr-006-versioning-strategy.md) — SemVer + release
 - [ADR-007](../architecture/adr-007-testing-strategy.md) — testing tiers
 - [ADR-010](../architecture/adr-010-dependency-management-and-supply-chain.md) — deps (see also [decisions/2026-08-21-dependabot-over-renovate.md](../decisions/2026-08-21-dependabot-over-renovate.md))

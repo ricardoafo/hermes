@@ -24,13 +24,15 @@ class FakeFilingReader:
     trades: list[UnitTrade] = field(default_factory=list)
     closes: dict[Pair, Decimal] = field(default_factory=dict)
     close_queries: list[tuple[Pair, datetime]] = field(default_factory=list)
+    purchase_queries: list[tuple[datetime, datetime]] = field(default_factory=list)
 
     def disposal_pieces(self, start: datetime, end: datetime) -> tuple[DisposalPiece, ...]:
         """Return the scripted pieces disposed in ``[start, end)``."""
         return tuple(p for p in self.pieces if start <= p.disposed_at < end)
 
     def purchases(self, start: datetime, end: datetime) -> tuple[PurchaseRecord, ...]:
-        """Return the scripted buys in ``[start, end]``."""
+        """Return the scripted buys in ``[start, end]`` and record the range."""
+        self.purchase_queries.append((start, end))
         return tuple(b for b in self.buys if start <= b.acquired_at <= end)
 
     def unit_trades(self, until: datetime) -> tuple[UnitTrade, ...]:

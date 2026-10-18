@@ -1,7 +1,7 @@
 # Security policy
 
-Project Hermes handles real capital from Phase 3+ and generates legal
-artifacts (invoices, tax filings for Spanish jurisdiction). Security bugs
+Project Hermes is a paper-trading system today and will handle real capital
+from MVP2. It generates legal artifacts (invoices, tax filings for Spanish jurisdiction). Security bugs
 have real financial and legal consequences. Report them responsibly.
 
 ## Reporting a vulnerability
@@ -26,8 +26,8 @@ Ricardo's public GitHub profile.
 - Steps to reproduce (or proof-of-concept, if safe to share)
 - Impact assessment (what an attacker could do; who is affected)
 - Suggested severity per the project rubric (S1-S12 security axis, F1-F12
-  functional axis) — see [`~/.claude/rules/severity-rubric.md`](https://github.com/ricardoafo/hermes/blob/main/AGENTS.md#precedence-read-in-this-order)
-  referenced in AGENTS.md. If unsure, leave severity assessment to the
+  functional axis) — see [`docs/guides/severity-rubric.md`](docs/guides/severity-rubric.md).
+  If unsure, leave severity assessment to the
   `bug-triager` triage.
 - Whether you have disclosed to anyone else, and if so who
 
@@ -56,7 +56,7 @@ Ricardo's public GitHub profile.
 - Vulnerabilities in third-party services (Binance API, Kraken API,
   Telegram, healthchecks.io, Backblaze B2, GitHub itself). Report those
   to the respective vendor. This project follows their security advisories
-  and updates dependencies via Renovate with a 7-day cooldown.
+  and updates dependencies via Dependabot with a 7-day cooldown.
 - Vulnerabilities in the operator's personal devices or accounts (Ricardo's
   laptop, VPS, GitHub account, exchange accounts). Out of the repo's
   responsibility scope.

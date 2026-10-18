@@ -1,4 +1,0 @@
-### Added
-
-- **Historical klines fetcher foundation** (`src/hermes/domain/market_data/`, `src/hermes/adapters/exchanges/`, `src/hermes/ports/klines.py`):
-  domain `Kline` + `KlineInterval` (M1/M5/H1/D1) with OHLC-invariant validation; sync `KlinesFetcherPort` protocol; `BinanceKlinesAdapter` for the testnet klines endpoint via raw `httpx.Client` (no SDK — anyio-on-asyncio policy). Owned token-bucket `RateLimiter` sized at 5000 weight/min (below Binance's 6000 cap). Handles pagination via cursor advance + defensive dedup termination on stale-row retransmit. 429 raises `ExchangeError` immediately (no silent retry — limiter is the primary defense). Contract tests via `respx` cover happy path, timestamps, pagination, empty batch, HTTP errors, malformed schemas. Storage backend deferred to a follow-up (kline_store had frozen-dataclass exception issues; scope-out documented in decisions journal). Partially addresses #28.

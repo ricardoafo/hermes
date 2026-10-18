@@ -60,6 +60,7 @@ CI_ENFORCED: dict[str, str] = {
     "no-vague-test-assertions": "guards",
     "test-file-adjacency": "guards",
     "no-future-annotations": "guards",
+    "adr-status-check": "guards",
     "no-domain-mode-check": "guards",
     "secrets-scan": "step:Secrets scan",
     "conventional-pre-commit": "step:PR title",
