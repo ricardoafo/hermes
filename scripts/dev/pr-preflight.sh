@@ -319,11 +319,6 @@ check_changelog_if_applicable() {
 }
 run_check "CHANGELOG check (inferred from latest commit)" check_changelog_if_applicable
 
-# 13. Openspec change spec present when the PR's conventional-commit type
-#     implies a material change (feat|refactor|perf). Coarse heuristic
-#     — false positives (small feat) bypass via SKIP_OPENSPEC_CHECK=1
-#     with a logged reason. False negatives (large fix) caught in code
-#     review. See #194 for the DoR/DoD rationale that motivates this.
 # Check: tracking-issue project assignment (opt-in).
 #
 # For every openspec change modified on this branch, resolve its
@@ -392,6 +387,11 @@ check_pr_project_assigned() {
 }
 run_check "Tracking-issue project assignment (opt-in)" check_pr_project_assigned
 
+# 13. Openspec change spec present when the PR's conventional-commit type
+#     implies a material change (feat|refactor|perf). Coarse heuristic
+#     — false positives (small feat) bypass via SKIP_OPENSPEC_CHECK=1
+#     with a logged reason. False negatives (large fix) caught in code
+#     review. See #194 for the DoR/DoD rationale that motivates this.
 check_openspec_change_required() {
     if [[ "${SKIP_OPENSPEC_CHECK:-0}" == "1" ]]; then
         echo "  WARN: openspec check skipped via SKIP_OPENSPEC_CHECK=1" >&2
