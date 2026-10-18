@@ -68,11 +68,6 @@ tests/unit/adapters/trial_log/test_jsonl_file.py::test_adapter_satisfies_the_por
 tests/unit/adapters/trial_log/test_jsonl_file.py::test_removing_the_last_line_is_not_detectable_by_the_chain U3
 tests/unit/application/calibration/test_certification_gates.py::test_win_rate_boundary_passes U3
 tests/unit/application/calibration/test_harness.py::test_valid_strategy_id_does_not_raise U3
-tests/unit/application/calibration/test_lifecycle.py::test_advance_returns_state_or_string U3
-tests/unit/application/calibration/test_lifecycle.py::test_any_state_with_orphan_blocks U3
-tests/unit/application/calibration/test_lifecycle.py::test_certified_advance_returns_error U3
-tests/unit/application/calibration/test_lifecycle.py::test_dead_always_returns_error U3
-tests/unit/application/calibration/test_lifecycle.py::test_full_rejection_rate_blocks_transition U3
 tests/unit/application/calibration/test_metrics.py::test_empty_fills_returns_none U3
 tests/unit/application/calibration/test_metrics.py::test_return_type_is_decimal U3
 tests/unit/application/calibration/test_metrics.py::test_return_type_is_fill_price_delta_bps U3
