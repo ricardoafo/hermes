@@ -804,6 +804,21 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             ),
         ),
         FailureMode(
+            "A staging deploy leaves a lab shadow on the old release or an unmigrated ledger",
+            proved_by=(
+                _RELEASE + "test_staging_deploy_restarts_and_gates_every_shadow_after_the_flip",
+                _RELEASE
+                + "test_staging_deploy_migrates_every_shadow_ledger_with_its_instance_stopped",
+            ),
+        ),
+        FailureMode(
+            "A deploy fails after some shadow ledgers were migrated",
+            proved_by=(
+                _RELEASE + "test_a_failed_gate_on_one_shadow_rolls_back_every_instance",
+                _RELEASE + "test_a_failed_shadow_migration_restores_the_ledgers_already_migrated",
+            ),
+        ),
+        FailureMode(
             "Older code is started on a newer ledger outside the deploy script",
             proved_by=(
                 _SERVE + "TestPortfolioRebuiltOnStartup"

@@ -102,6 +102,9 @@ case "$1" in
         case " ${STUB_BAD_RELEASES:-} " in
             *" $name "*) exit 3 ;;
         esac
+        case " ${STUB_BAD_UNITS:-} " in
+            *" ${@: -1} "*) exit 3 ;;
+        esac
         ;;
     daemon-reload)
         # The unit backup exists only between the unit sync and the end of
@@ -171,12 +174,32 @@ exec "$@"
 """
 
 # `hermes migrate`: `--status` prints STUB_MIGRATE_STATUS (default: nothing
-# pending); a run logs its arguments and fails when STUB_MIGRATE_FAIL is set.
+# pending); a run logs its arguments and fails when STUB_MIGRATE_FAIL is set,
+# or when its --db is STUB_MIGRATE_FAIL_DB. With STUB_MIGRATE_MARK set, a run
+# rewrites the ledger's marker to "migrated", so a test can see a restore.
 _STUB_HERMES = """#!/usr/bin/env bash
 echo "hermes $*" >> "$STUB_LOG"
+db=""
+prev=""
+for arg in "$@"; do
+    [ "$prev" != "--db" ] || db=$arg
+    prev=$arg
+done
 case " $* " in
     *" --status "*) echo "${STUB_MIGRATE_STATUS:-No pending migrations.}" ;;
-    *) [ -z "${STUB_MIGRATE_FAIL:-}" ] || exit 1 ;;
+    *)
+        [ -z "${STUB_MIGRATE_FAIL:-}" ] || exit 1
+        [ "$db" != "${STUB_MIGRATE_FAIL_DB:-}" ] || exit 1
+        if [ -n "${STUB_MIGRATE_MARK:-}" ]; then
+            "$HERMES_BACKUP_PYTHON" -c '
+import sqlite3, sys
+conn = sqlite3.connect(sys.argv[1])
+with conn:
+    conn.execute("UPDATE marker SET value = ?", ("migrated",))
+conn.close()
+' "$db"
+        fi
+        ;;
 esac
 exit 0
 """
@@ -1817,3 +1840,177 @@ def test_good_deploy_installs_the_schema_guard_for_manual_rollbacks(box: Box) ->
     box.deploy(_SHA_A)
 
     assert (box.root / "bin" / _SCHEMA_GUARD).is_file()
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Lab shadows (#1150): a staging release reaches every enabled
+# hermes-shadow@ instance, each on its own ledger (#1076, ADR-024 §6).
+# ─────────────────────────────────────────────────────────────────────
+
+_SHADOWS = ("swing-a", "swing-b")
+
+
+def _shadow_unit(name: str) -> str:
+    return f"hermes-shadow@{name}.service"
+
+
+def _shadow_db(box: Box, name: str) -> Path:
+    return box.base / "var-lib-hermes-staging" / "shadows" / name / "hermes.sqlite3"
+
+
+def _shadow_env(box: Box, **extra: str) -> dict[str, str]:
+    """Return the staging switches plus the scratch stand-in for the shadows' state dir."""
+    return {
+        **_STAGING,
+        "HERMES_SHADOWS_DIR": _posix(box.base / "var-lib-hermes-staging" / "shadows"),
+        **extra,
+    }
+
+
+def _enable_shadows(box: Box, *names: str) -> None:
+    """Enable each instance as `systemctl enable` does: a link in multi-user.target.wants."""
+    wants = box.units / "multi-user.target.wants"
+    wants.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        (wants / _shadow_unit(name)).symlink_to(box.units / "hermes-shadow@.service")
+        box.write_ledger(f"{name}-before", _shadow_db(box, name))
+
+
+@pytest.fixture
+def lab_box(staging_box: Box) -> Box:
+    """Return a staging box with release A live and two enabled shadows on their own ledgers."""
+    result = staging_box.deploy(_SHA_A, **_shadow_env(staging_box))
+    assert result.returncode == 0, _output(result)
+    staging_box.write_ledger("staging-before")
+    _enable_shadows(staging_box, *_SHADOWS)
+    staging_box.log.unlink()
+    return staging_box
+
+
+def test_staging_deploy_snapshots_every_shadow_ledger_beside_it(lab_box: Box) -> None:
+    """#1150: each shadow's ledger gets its own pre-<sha> snapshot in shadows/<name>/backups."""
+    result = lab_box.deploy(_SHA_B, **_shadow_env(lab_box))
+
+    assert result.returncode == 0, _output(result)
+    for name in _SHADOWS:
+        snapshot = _shadow_db(lab_box, name).parent / "backups" / f"pre-{_SHA_B}.sqlite3"
+        assert Box.ledger_value(snapshot) == f"{name}-before"
+
+
+def test_staging_deploy_restarts_and_gates_every_shadow_after_the_flip(lab_box: Box) -> None:
+    """#1150: every enabled shadow restarts on the new release and passes its own gate."""
+    result = lab_box.deploy(_SHA_B, **_shadow_env(lab_box))
+
+    assert result.returncode == 0, _output(result)
+    calls = lab_box.calls()
+    for name in _SHADOWS:
+        unit = _shadow_unit(name)
+        assert f"systemctl restart {unit}" in calls
+        assert any(c.startswith(f"journalctl -u {unit} ") for c in calls)
+    assert lab_box.target("current") == _SHA_B
+
+
+def test_staging_deploy_migrates_every_shadow_ledger_with_its_instance_stopped(
+    lab_box: Box,
+) -> None:
+    """#1150: a destructive migration reaches each shadow ledger, its instance stopped first."""
+    result = lab_box.deploy(
+        _SHA_B, STUB_MIGRATE_STATUS=_DESTRUCTIVE_PENDING, **_shadow_env(lab_box)
+    )
+
+    assert result.returncode == 0, _output(result)
+    calls = lab_box.calls()
+    for name in _SHADOWS:
+        db = _posix(_shadow_db(lab_box, name))
+        stop = calls.index(f"systemctl stop {_shadow_unit(name)}")
+        migrate = next(
+            i for i, c in enumerate(calls) if c.startswith(f"hermes migrate --db {db} --snapshot")
+        )
+        restart = calls.index(f"systemctl restart {_shadow_unit(name)}")
+        assert stop < migrate < restart
+
+
+def test_a_failed_gate_on_one_shadow_rolls_back_every_instance(lab_box: Box) -> None:
+    """#1150 Done-when: one shadow failing its gate puts the release and both ledgers back."""
+    result = lab_box.deploy(
+        _SHA_B,
+        STUB_MIGRATE_STATUS=_DESTRUCTIVE_PENDING,
+        STUB_MIGRATE_MARK="1",
+        STUB_BAD_UNITS=_shadow_unit("swing-b"),
+        **_shadow_env(lab_box),
+    )
+
+    assert result.returncode == 1, _output(result)
+    assert lab_box.target("current") == _SHA_A
+    values = {name: Box.ledger_value(_shadow_db(lab_box, name)) for name in _SHADOWS}
+    assert values == {name: f"{name}-before" for name in _SHADOWS}
+    assert Box.ledger_value(lab_box.db) == "staging-before"
+    restarts = {
+        name: lab_box.calls().count(f"systemctl restart {_shadow_unit(name)}") for name in _SHADOWS
+    }
+    assert restarts == {name: 2 for name in _SHADOWS}
+
+
+def test_a_failed_shadow_migration_restores_the_ledgers_already_migrated(lab_box: Box) -> None:
+    """#1150: the old release never meets a ledger migrated by a deploy that then stopped."""
+    result = lab_box.deploy(
+        _SHA_B,
+        STUB_MIGRATE_STATUS=_DESTRUCTIVE_PENDING,
+        STUB_MIGRATE_MARK="1",
+        STUB_MIGRATE_FAIL_DB=_posix(_shadow_db(lab_box, "swing-b")),
+        **_shadow_env(lab_box),
+    )
+
+    assert result.returncode == 1, _output(result)
+    assert "hermes migrate failed" in result.stdout
+    assert lab_box.target("current") == _SHA_A
+    assert Box.ledger_value(lab_box.db) == "staging-before"
+    assert Box.ledger_value(_shadow_db(lab_box, "swing-a")) == "swing-a-before"
+    started = {c.split()[2] for c in lab_box.calls() if c.startswith("systemctl start ")}
+    assert started == {_STAGING_UNIT, *(_shadow_unit(n) for n in _SHADOWS)}
+
+
+def test_staging_deploy_with_shadows_holds_around_the_bar_close(lab_box: Box) -> None:
+    """#1150: a shadow restarted inside a bar close would miss that bar, so the deploy waits."""
+    result = lab_box.deploy(_SHA_B, HERMES_NOW_EPOCH=str(_BAR * 1000 - 10), **_shadow_env(lab_box))
+
+    assert result.returncode == 0, _output(result)
+    assert "holding 310s for the 4h bar close" in result.stdout
+
+
+@pytest.mark.parametrize("name", ["..", "Swing", "a\\x2fb", "-x", "a_b"])
+def test_staging_deploy_refuses_a_shadow_name_that_is_not_a_plain_name(
+    staging_box: Box, name: str
+) -> None:
+    """#1150: an instance name becomes a path, so anything but a plain name changes nothing."""
+    wants = staging_box.units / "multi-user.target.wants"
+    wants.mkdir(parents=True)
+    (wants / f"hermes-shadow@{name}.service").touch()
+    stage = staging_box.make_stage(_SHA_A)
+    before = staging_box.disk()
+
+    result = staging_box.deploy(_SHA_A, stage=stage, **_shadow_env(staging_box))
+
+    assert result.returncode == 1, _output(result)
+    assert "not a plain shadow name" in result.stdout
+    assert staging_box.disk() == before
+
+
+def test_prod_deploy_never_touches_a_shadow(box: Box) -> None:
+    """#1150: shadows run from staging's release, so a prod deploy leaves them alone."""
+    _enable_shadows(box, *_SHADOWS)
+
+    result = box.deploy(_SHA_A, **{"HERMES_SHADOWS_DIR": _posix(box.base / "shadows")})
+
+    assert result.returncode == 0, _output(result)
+    assert not any("hermes-shadow@" in c for c in box.calls())
+
+
+def test_staging_deploy_refuses_a_shadows_dir_inside_prods_state(staging_box: Box) -> None:
+    """#1150: the staging guard covers the shadows' directory like every other write path."""
+    result = staging_box.deploy(
+        _SHA_A, **{**_shadow_env(staging_box), "HERMES_SHADOWS_DIR": "/var/lib/hermes/shadows"}
+    )
+
+    assert result.returncode == 1, _output(result)
+    assert "inside prod's" in result.stdout
