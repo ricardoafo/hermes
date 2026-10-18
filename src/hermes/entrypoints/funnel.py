@@ -11,6 +11,9 @@ Exit codes: 0 every check passed, 1 a check failed or the run was refused
 (missing threshold, unsigned document, hash mismatch), 2 usage,
 3 pre-registration file or evidence error.
 
+With ``--batch``, judges every candidate of a signed research batch instead:
+see :mod:`hermes.entrypoints.funnel_batch`.
+
 Reference: ADR-021 §5; openspec/changes/v2-backtest-funnel/change.md.
 """
 
@@ -30,6 +33,7 @@ from hermes.application.calibration.backtest_funnel import (
     validate_evidence,
 )
 from hermes.application.calibration.evidence_files import load_funnel_evidence
+from hermes.entrypoints import funnel_batch
 from hermes.entrypoints._streams import resolve_err
 
 __all__ = ["load_funnel_evidence", "main", "read_front_matter"]
@@ -43,6 +47,7 @@ _USAGE = (
     "backtest_funnel block of the signed pre-registration's front matter; a missing\n"
     "one refuses the run. Prints one PASS/FAIL line per check. Records nothing.\n"
     "Exit codes: 0 passed, 1 failed or refused, 2 usage, 3 pre-registration/evidence.\n"
+    "\n" + funnel_batch.USAGE
 )
 
 
@@ -66,6 +71,8 @@ def main(argv: list[str], *, stream: TextIO, err: TextIO | None = None) -> int:
     Returns:
         Process exit code.
     """
+    if "--batch" in argv:
+        return funnel_batch.main(argv, stream=stream, err=err)
     err = resolve_err(err)
     parser = _Parser(prog="hermes funnel", add_help=False)
     parser.add_argument("strategy_id", nargs="?")

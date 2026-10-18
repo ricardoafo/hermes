@@ -1,0 +1,1 @@
+- `hermes batch check` now fails a candidate whose signed parameter its strategy does not take, or whose signed base is not the strategy's default, so a typo is caught before signing rather than on the backtest runner.
