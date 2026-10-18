@@ -16,8 +16,9 @@ from typing import Any
 
 import pytest
 
-_ROOT = Path(__file__).resolve().parents[3]
-_SCRIPT = _ROOT / "scripts" / "backtest" / "assemble_results.py"
+from tests.support.paths import REPO_ROOT
+
+_SCRIPT = REPO_ROOT / "scripts" / "backtest" / "assemble_results.py"
 _NOTEBOOK_HEADER = "# Lab notebook\n\n## Entries\n"
 
 _VERDICT: dict[str, Any] = {
