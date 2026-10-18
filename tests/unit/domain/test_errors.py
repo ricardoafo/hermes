@@ -1,11 +1,11 @@
 """Tests for the HermesError hierarchy shape (R-2).
 
 Verifies that:
-- Concrete errors inherit from the expected abstract bases
+- Concrete errors are caught by the handler of their own subtree only
 - Payload fields are accessible
 - String representations are human-readable
 
-Reference: R-2 (A-2.3) — hierarchy shape via isinstance checks.
+Reference: R-2 (A-2.3) — hierarchy shape, checked by what each handler catches.
 """
 
 from __future__ import annotations
@@ -24,60 +24,38 @@ from hermes.domain.errors import (
 )
 
 
+def _handler_that_catches(err: BaseException) -> str:
+    """Raise ``err`` and name the first handler, from most to least specific, that catches it."""
+    try:
+        raise err
+    except DomainError:
+        return "domain"
+    except InfraError:
+        return "infra"
+    except HermesError:
+        return "hermes"
+
+
 class TestHierarchyShape:
-    """Verify isinstance relationships across the error tree."""
+    """Which handler catches each error: the domain subtree and the infra subtree stay apart."""
 
-    def test_currency_mismatch_is_domain_error(self) -> None:
-        """CurrencyMismatch is a subtype of DomainError — it belongs in the domain error subtree."""
-        err = CurrencyMismatch(expected="EUR", actual="BTC")
-        assert isinstance(err, DomainError)
-
-    def test_currency_mismatch_is_hermes_error(self) -> None:
-        """CurrencyMismatch is a subtype of HermesError — catchable at the top-level handler."""
-        err = CurrencyMismatch(expected="EUR", actual="BTC")
-        assert isinstance(err, HermesError)
-
-    def test_invalid_lot_is_domain_error(self) -> None:
-        """InvalidLot is a subtype of DomainError — it belongs in the domain error subtree."""
-        err = InvalidLot(reason="qty must be > 0")
-        assert isinstance(err, DomainError)
-
-    def test_invalid_lot_is_hermes_error(self) -> None:
-        """InvalidLot is a subtype of HermesError — it can be caught at the top-level handler."""
-        err = InvalidLot(reason="qty must be > 0")
-        assert isinstance(err, HermesError)
-
-    def test_network_error_is_infra_error(self) -> None:
-        """NetworkError is a subtype of InfraError — belongs in the infrastructure error subtree."""
-        err = NetworkError(msg="connection refused")
-        assert isinstance(err, InfraError)
-
-    def test_network_error_is_hermes_error(self) -> None:
-        """NetworkError is a subtype of HermesError — it can be caught at the top-level handler."""
-        err = NetworkError(msg="connection refused")
-        assert isinstance(err, HermesError)
-
-    def test_exchange_error_is_infra_error(self) -> None:
-        """ExchangeError is a subtype of InfraError — exchange failures stay in the infra tree."""
-        err = ExchangeError(msg="503 Service Unavailable")
-        assert isinstance(err, InfraError)
-
-    def test_ledger_error_is_infra_error(self) -> None:
-        """LedgerError is a subtype of InfraError — ledger failures stay in the infra subtree."""
-        err = LedgerError(msg="disk full")
-        assert isinstance(err, InfraError)
-
-    def test_domain_error_is_hermes_error(self) -> None:
-        """DomainError is a subtype of HermesError — the domain error subtree roots there."""
-        # DomainError itself
-        err = DomainError("oops")
-        assert isinstance(err, HermesError)
-
-    def test_infra_error_is_hermes_error(self) -> None:
-        """InfraError is a subtype of HermesError — the infra error subtree roots at HermesError."""
-        # InfraError itself
-        err = InfraError("oops")
-        assert isinstance(err, HermesError)
+    @pytest.mark.parametrize(
+        ("err", "expected"),
+        [
+            (CurrencyMismatch(expected="EUR", actual="BTC"), "domain"),
+            (InvalidLot(reason="qty must be > 0"), "domain"),
+            (DomainError("oops"), "domain"),
+            (NetworkError(msg="connection refused"), "infra"),
+            (ExchangeError(msg="503 Service Unavailable"), "infra"),
+            (LedgerError(msg="disk full"), "infra"),
+            (InfraError("oops"), "infra"),
+            (HermesError("oops"), "hermes"),
+        ],
+        ids=lambda value: type(value).__name__ if not isinstance(value, str) else value,
+    )
+    def test_error_is_caught_by_its_own_subtree(self, err: HermesError, expected: str) -> None:
+        """Each error meets its own subtree's handler first, never a sibling's."""
+        assert _handler_that_catches(err) == expected
 
 
 class TestCurrencyMismatchPayload:
@@ -96,9 +74,7 @@ class TestCurrencyMismatchPayload:
     def test_str_contains_currencies(self) -> None:
         """str(CurrencyMismatch) includes both the expected and actual currency names."""
         err = CurrencyMismatch(expected="EUR", actual="BTC")
-        s = str(err)
-        assert "EUR" in s
-        assert "BTC" in s
+        assert str(err) == "Currency mismatch: expected EUR, got BTC"
 
     def test_frozen_immutable(self) -> None:
         """CurrencyMismatch is a frozen dataclass — mutations raise."""
@@ -118,4 +94,4 @@ class TestInvalidLotPayload:
     def test_str_contains_reason(self) -> None:
         """str(InvalidLot) includes the reason string, making log output self-explanatory."""
         err = InvalidLot(reason="amount must be positive")
-        assert "amount must be positive" in str(err)
+        assert str(err) == "Invalid lot: amount must be positive"
