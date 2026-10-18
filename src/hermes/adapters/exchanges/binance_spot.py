@@ -32,7 +32,11 @@ therefore carries a ``newClientOrderId``, and such a failure is answered by a
 lookup on that id instead of a refusal: an order Binance never saw is an
 :class:`OrderNotPlacedError` (safe to retry), a placed one returns its fill,
 and a lookup that fails too is an :class:`OrderStatusUnknownError` naming the
-client order id for the operator to reconcile. A commission charged in a third
+client order id for the operator to reconcile. A 5xx can leave the order still
+in flight inside Binance, so "no such order" is only believed when a second
+lookup after a short wait says it too (#1027). Once a lookup has found the
+order, any later failure is unknown status naming both ids, never a plain
+refusal. A commission charged in a third
 asset (BNB) is priced at that asset's ticker, or at the pre-registered taker
 rate when the ticker cannot be read, so a filled order always returns its fill.
 
@@ -101,6 +105,8 @@ _UNKNOWN_ORDER: Final = -2011
 """Binance error code for cancelling an order that no longer exists."""
 _NO_SUCH_ORDER: Final = -2013
 """Binance error code for querying an order that does not exist."""
+_RECHECK_DELAY_SEC: Final = 2.0
+"""How long to wait before believing a -2013 that follows a lost submission."""
 _RATE_LIMITED: Final = frozenset({418, 429})
 _SERVER_ERROR_MIN: Final = 500
 _WEIGHTS: Final[dict[str, int]] = {
@@ -121,6 +127,8 @@ _DEPTH_LIMIT: Final = 100
 _BPS: Final = Decimal("10000")
 _ERROR_EXCERPT: Final = 200
 _HTTP_ERROR_MIN: Final = 400
+_FOUND_KEY: Final = "_hermesFoundClientOrderId"
+"""Marks a reply rebuilt from a lookup, with the client id it was found by."""
 
 
 def sign(query: str, secret: str) -> str:
@@ -232,12 +240,14 @@ class BinanceSpotAdapter:
         client: HTTP client bound to ``config.base_url``.
         limiter: Token bucket for request weight.
         clock_ms: Source of the request timestamp in epoch milliseconds.
+        sleep: Waits the given seconds; the -2013 recheck uses it.
     """
 
     config: BinanceSpotConfig
     client: httpx.Client
     limiter: RateLimiter
     clock_ms: Callable[[], int] = field(default=lambda: int(time.time() * 1000))
+    sleep: Callable[[float], None] = field(default=time.sleep)
 
     @classmethod
     def create(cls, config: BinanceSpotConfig) -> BinanceSpotAdapter:
@@ -271,7 +281,7 @@ class BinanceSpotAdapter:
                 "newOrderRespType": "FULL",
             }
         )
-        fill = self._fill(order, body)
+        fill = self._fill_reply(order, body)
         if fill is None:
             raise ExchangeError(msg=f"market order executed nothing: status {body.get('status')}")
         return fill
@@ -302,7 +312,7 @@ class BinanceSpotAdapter:
                 "newOrderRespType": "FULL",
             }
         )
-        fill = self._fill(order, body)
+        fill = self._fill_reply(order, body)
         if fill is None:
             return Rejection(order=order, reason=f"IOC limit not filled: {body.get('status')}")
         return fill
@@ -471,23 +481,21 @@ class BinanceSpotAdapter:
     def _look_up(
         self, symbol: str, client_id: str, *, cause: Exception, rests: bool
     ) -> dict[str, Any]:
-        """Return the order sent as ``client_id`` in the shape of a ``FULL`` order reply."""
-        try:
-            found = self._signed(
-                "GET",
-                "/api/v3/order",
-                {"symbol": symbol, "origClientOrderId": client_id},
-                weight=_WEIGHTS["query"],
-            )
-        except _BinanceRefusalError as refusal:
-            if refusal.code == _NO_SUCH_ORDER:
-                raise OrderNotPlacedError(
-                    msg=f"order {client_id} on {symbol} was not placed (after: {cause})",
-                    client_order_id=client_id,
-                ) from cause
-            raise self._unknown(symbol, client_id, refusal) from refusal
-        except (ExchangeError, NetworkError) as exc:
-            raise self._unknown(symbol, client_id, exc) from exc
+        """Return the order sent as ``client_id`` in the shape of a ``FULL`` order reply.
+
+        The reply carries the client id under ``_FOUND_KEY``, so a fill that
+        fails to parse later can still name both ids.
+        """
+        found = self._query(symbol, client_id)
+        if found is None:
+            self.sleep(_RECHECK_DELAY_SEC)
+            found = self._query(symbol, client_id)
+        if found is None:
+            raise OrderNotPlacedError(
+                msg=f"order {client_id} on {symbol} was not placed: Binance had no such order "
+                f"on two lookups {_RECHECK_DELAY_SEC:g} s apart (after: {cause})",
+                client_order_id=client_id,
+            ) from cause
         order_id = found.get("orderId")
         if not isinstance(order_id, int) or isinstance(order_id, bool):
             raise self._unknown(symbol, client_id, f"lookup has no orderId: {found!r}")
@@ -501,6 +509,8 @@ class BinanceSpotAdapter:
                 f"{status}: it is not on the book"
             )
         reply: dict[str, Any] = {
+            _FOUND_KEY: client_id,
+            "symbol": symbol,
             "orderId": order_id,
             "status": found.get("status"),
             "executedQty": found.get("executedQty"),
@@ -524,6 +534,34 @@ class BinanceSpotAdapter:
             reply["fills"] = trades
         return reply
 
+    def _query(self, symbol: str, client_id: str) -> dict[str, Any] | None:
+        """Return Binance's record of ``client_id``, or ``None`` when it answers -2013."""
+        try:
+            return self._signed(
+                "GET",
+                "/api/v3/order",
+                {"symbol": symbol, "origClientOrderId": client_id},
+                weight=_WEIGHTS["query"],
+            )
+        except _BinanceRefusalError as refusal:
+            if refusal.code == _NO_SUCH_ORDER:
+                return None
+            raise self._unknown(symbol, client_id, refusal) from refusal
+        except (ExchangeError, NetworkError) as exc:
+            raise self._unknown(symbol, client_id, exc) from exc
+
+    def _fill_reply(self, order: Order, body: dict[str, Any]) -> Fill | None:
+        """Return :meth:`_fill` of ``body``; a found order that fails to parse is unknown status."""
+        client_id = body.get(_FOUND_KEY)
+        if not isinstance(client_id, str):
+            return self._fill(order, body)
+        try:
+            return self._fill(order, body)
+        except ExchangeError as exc:
+            raise self._unknown(
+                str(body["symbol"]), client_id, exc, order_id=body["orderId"]
+            ) from exc
+
     @staticmethod
     def _unknown(
         symbol: str, client_id: str, cause: object, *, order_id: int | None = None
@@ -535,6 +573,7 @@ class BinanceSpotAdapter:
                 f"it on Binance before retrying ({cause})"
             ),
             client_order_id=client_id,
+            order_id=order_id,
         )
 
     def _quote_fee(self, part: Mapping[str, Any], asset: str, quote: str) -> Decimal:
@@ -698,6 +737,8 @@ class _ServerError(ExchangeError):
 class OrderNotPlacedError(ExchangeError):
     """An order whose submission failed is confirmed absent on Binance: safe to retry.
 
+    Confirmed means two lookups, a short wait apart, both found no such order.
+
     Attributes:
         client_order_id: The ``newClientOrderId`` the lookup used.
     """
@@ -714,6 +755,8 @@ class OrderStatusUnknownError(ExchangeError):
 
     Attributes:
         client_order_id: The ``newClientOrderId`` the order was sent with.
+        order_id: Binance's order id when a lookup found the order, else ``None``.
     """
 
     client_order_id: str = ""
+    order_id: int | None = None
