@@ -28,6 +28,7 @@ from typing import Final, TextIO
 import structlog
 from pydantic import SecretStr
 
+from hermes.adapters.clock.remote import remote_clock_from_env
 from hermes.adapters.console.ledger_activity import LedgerActivityReader
 from hermes.adapters.endpoint import (
     DEFAULT_TELEGRAM_API_BASE,
@@ -163,7 +164,9 @@ def main(
         err.write(f"ERROR: config load failed: {exc}\n")
         return 3
 
-    sources = build_sources(config, parsed.db, environ)
+    test_clock = remote_clock_from_env(environ)
+    clock = _utc_now if test_clock is None else test_clock.now
+    sources = build_sources(config, parsed.db, environ, clock=clock)
     bot = BotLoop(
         client=client or TelegramBotClient(token=SecretStr(token), api_base=api_base),
         chat_id=chat_id,
@@ -171,25 +174,35 @@ def main(
         gate=CommandGate(allowed_chat_id=chat_id),
         alerter=HeartbeatAlerter(),
         status=sources.status,
+        clock=clock,
     )
     return _run(bot, once=parsed.once)
 
 
-def build_sources(config: HermesConfig, db: Path, env: Mapping[str, str]) -> ReplySources:
+def build_sources(
+    config: HermesConfig,
+    db: Path,
+    env: Mapping[str, str],
+    *,
+    clock: Callable[[], datetime] | None = None,
+) -> ReplySources:
     """Wire the reply sources to the ledger, the journal, systemd and the read model.
 
     Args:
         config: Loaded config (pairs, intervals, settle and stale delays).
         db: The ledger file, opened read-only per call.
         env: Environment, for the console demo switch.
+        clock: Current UTC time; defaults to the wall clock. A test clock
+            in dev or qa (#972).
 
     Returns:
         The sources.
     """
     market = config.market_data
+    current = _utc_now if clock is None else clock
 
     def status() -> StatusReport:
-        now = datetime.now(UTC)
+        now = current()
         unit = systemd_unit_state()
         try:
             with SqliteStatusReader.open(db) as reader:
@@ -207,7 +220,9 @@ def build_sources(config: HermesConfig, db: Path, env: Mapping[str, str]) -> Rep
 
     def read_model() -> ConsoleReadModel | None:
         try:
-            return console_module.resolve_read_model(demo_flag=None, env=env)
+            return console_module.resolve_read_model(
+                demo_flag=None, env=env, db_path=db, clock=current
+            )
         except console_module.LiveReadModelUnavailableError:
             return None
 
@@ -227,6 +242,10 @@ def build_sources(config: HermesConfig, db: Path, env: Mapping[str, str]) -> Rep
             return []
 
     return ReplySources(status=status, read_model=read_model, activity=activity, warnings=warnings)
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
 
 
 def _run(bot: BotLoop, *, once: bool) -> int:

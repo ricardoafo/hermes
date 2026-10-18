@@ -566,6 +566,23 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
     ),
     "clock": (
         FailureMode(
+            "A test clock is set where real time must rule",
+            proved_by=(
+                _U + "infrastructure/config/test_endpoint_tiers.py"
+                "::test_every_other_tier_refuses_a_test_clock_by_name",
+                _U + "infrastructure/config/test_endpoint_tiers.py"
+                "::test_qa_refuses_a_test_clock_off_loopback",
+            ),
+        ),
+        FailureMode(
+            "The test clock stops answering or answers a naive time",
+            proved_by=(
+                _U + "adapters/clock/test_remote.py::test_an_unreachable_clock_is_refused",
+                _U + "adapters/clock/test_remote.py"
+                "::test_an_answer_without_an_aware_instant_is_refused",
+            ),
+        ),
+        FailureMode(
             "The exchange or local clock is ahead and closes a bar early",
             proved_by=(
                 _LIVE + "TestExchangeClock::test_exchange_clock_ahead_never_advances_closure",
@@ -853,6 +870,13 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
     ),
     "notifications": (
+        FailureMode(
+            "The bot's /pos and /money read another ledger than its --db",
+            proved_by=(
+                _I + "lower_env/test_installed_release.py"
+                "::test_the_bot_shows_the_runs_position_and_money_from_its_db",
+            ),
+        ),
         FailureMode(
             "Telegram is down",
             proved_by=(

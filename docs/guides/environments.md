@@ -76,6 +76,7 @@ see the type of your branch, run `python3 scripts/dev/change-type.py origin/main
 | Exchange keys | None | None | None | Trade-capable, only after certification |
 | Notifier, healthchecks, Sentry | None | Recording fakes | The lab's own | Prod's own |
 | Outside network | None | Loopback only | Public market data only | Public market data, exchanges, notifiers |
+| Clock | Wall, or a loopback test clock | The fake market's test clock | Wall | Wall |
 
 - Hold no exchange key of any kind on hermes-01 while it is staging. A trade-capable key reaches hermes-01 only at
   the cutover, after the staging state has left the box.
@@ -84,6 +85,9 @@ see the type of your branch, run `python3 scripts/dev/change-type.py origin/main
   hermes-01's deploy secrets live in `staging`, and `prod` holds nothing.
 - Runners that hold deploy secrets never run PR, QA or Dependabot code.
 - The config loader and the deploy preflight refuse each tier's forbidden values (issue #970).
+- `HERMES_TEST_CLOCK_URL` points `hermes serve` and `hermes bot` at a test clock, such as the fake market's
+  `/_fake/clock`, so a scenario runs an installed release on scripted time (issue #972). Only dev and QA may set it, and
+  only on loopback.
 
 ## Rick's steps
 
