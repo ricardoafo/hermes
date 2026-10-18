@@ -1,1 +1,0 @@
-- **A broken forming candle no longer costs a trade.** The live candle feed now drops the still-forming candle before reading its prices, so a bad value in it can't fail the poll that delivers the bar that just closed. Before, serve exited on that poll and the breakout entry was missed after the restart. Closes #850.

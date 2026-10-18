@@ -1,1 +1,0 @@
-- **Lab-notebook hashes can be checked from the file.** New entries are written with the blank lines markdownlint needs, so they hash exactly as they appear, and `LabNotebook.verify_file()` checks every entry, including the older ones whose blank lines were added by hand. Closes #786.

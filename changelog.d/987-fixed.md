@@ -1,1 +1,0 @@
-- `hermes funnel` now checks `--expect-sha256` before it reads the evidence, so a wrong pre-registration hash always refuses (exit 1) even when the evidence file is bad, and it refuses a pre-registration whose bull or bear stretches overlap, because the shared days would compound twice (issue #987).

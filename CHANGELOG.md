@@ -13,6 +13,279 @@ lands in Phase 0 CI (per ADR-006).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-18
+
+### Added
+
+- **`hermes reconcile` reads the live Binance spot balances** when `allow_mainnet` is set, with a dedicated read-only key from `HERMES_BINANCE_READ__API_KEY` and `HERMES_BINANCE_READ__API_SECRET`, and compares them with the trade book for the current month. The adapter sends only the signed `GET /api/v3/account`; a missing key or an unreadable exchange exits 3 instead of falling back to the ledger-only check. Refs #29.
+
+- **Anomalies are recorded in the ledger** and listed with `hermes anomalies [--since 7d] [--json]`, read-only. Serve records every `AnomalyDetected` published on its bus. `archive-check`, `reconcile --notify` and `parity check --alert` record each alert before sending it, and the alert itself is unchanged. Record-only: nothing pauses trading on an anomaly; that decision is still open. Refs #136.
+
+- **Console new-version notice** (`src/hermes/entrypoints/tui.py`): an open `hermes tui` compares the release it started on with the current one (the link `hermes status` reads) on its 5 s refresh and shows "new version deployed · press R to restart" as an amber `warn` row in the theme tokens, under the status row on every tab; R exits and re-execs the console with the same arguments (on Windows it exits with a message). Part of #652; the release-prune guard is issue #956.
+
+- **Live activity feed** shows restarts (with the release), deploys, warnings and errors read from the journal, and one quiet `checked N coins · no signal` line per 4h check (`--all`, or `A` in the TUI); read-only, omitted when the journal is unreadable. Closes #653.
+
+- **Cockpit console, step 2: the home screen at full width**
+  (`src/hermes/entrypoints/tui.py`, `tui_home.py`, `tui_charts.py`,
+  `tui_widgets.py`): the `hermes tui` home screen now lays itself out per
+  terminal size: one column under 100 columns (charts become sparklines), two
+  from 100, the mock layout from 160, and a third column from 220 with a
+  Signals placeholder and a live log tail. Under 30 rows the curve hides; from
+  45 rows charts are twice as tall. The portfolio total is a big number in
+  bold, high-contrast digits (at least 7:1 in every theme, never dimmed at
+  night) over a gradient underline; it counts up when it changes. Below it are
+  a braille curve, cash /
+  invested meters and an exposure meter against the roster's cap (amber near
+  it). Positions show a sparkline, change, net and a stop-room meter that turns
+  amber when the stop is close, or a radar with "hermes is watching … and will
+  look again at HH:MM". Market, Activity (with icons), an Engine brief slot and
+  the 90-day run bar complete the screen. Read-only; no new dependency.
+  Closes #712.
+
+- **Cockpit console, step 3: live prices between bars**
+  (`src/hermes/entrypoints/tui.py`, `tui_live.py`, `tui_home.py`,
+  `src/hermes/application/console/live.py`, `src/hermes/ports/live_prices.py`):
+  `hermes tui` now reads Kraken's public ticker for BTC, ETH and SOL every
+  10 s in a background worker, so the screen never blocks. The Market panel
+  shows each coin's live price, its change over the last 15 minutes and a
+  braille sparkline. Each open position's now price, change, net, stop-room
+  meter and trend, and the big total and today's change, follow the live
+  prices under a pulsing `live` tag, beside the booked values ("booked as of
+  16:00"); the waterfall, tax and Shadow test stay booked-only. A tick flashes
+  the cell blue (up) or orange (down), off with `HERMES_CONSOLE_MOTION=off`. A
+  failed fetch keeps the last price, dimmed, "as of HH:MM:SS"; after 60 s
+  without a price the live values dim and the tag reads "live · paused".
+  Live prices stay in the console process: they are never written to the
+  ledger and never reach the engine, the supervisor or a notification
+  (import-linter contract `live-prices-are-console-only`). Demo data gets no
+  live prices. The empty-ledger heartbeat now names the next 4h check instead
+  of "due". Every Portfolio chart now has a dim caption saying what it
+  covers ("this week · 18 checks since 3 Oct · flat", or start → end and the
+  high), and the braille curve has a time axis (hours, weekdays, days or
+  months). The Neon window bar's decorative binary strip is replaced by a
+  live-feed pulse (one dot per recent poll, hollow for a failed one), or the
+  time to the next 4h check when there is no ticker, and the whole window
+  now takes the theme background. No new dependency. Closes #713.
+
+- Console: the Signals screen (tab 2) shows the week's bar checks per coin as a heat grid of how many entry rules held, the last check's rules as yes or no, the week's counts and the frozen rules. Rules show as yes or no only, never a price or how close a rule came (#714).
+
+- **Console System screen** (tab 7 of `hermes tui`, view only): Services shows
+  hermes, the bot, health, daily, backup, archive check and tax pack with their
+  systemd state and next timer run; Releases lists the live release and the
+  earlier ones, and Enter opens a release with its deploy steps and rollback
+  target under `◂ System › Releases › <sha>`; Data and timing shows market
+  data, order book and EUR rate freshness and a bar-check time sparkline;
+  Machine shows cpu, memory and disk meters, the ledger size and the last
+  ledger snapshot. Bootstrap, restart, rollback and a read-only diagnosis
+  (`hermes status`) are shown as commands to copy: nothing runs from the
+  screen. Over `--vps` it reads the VPS; elsewhere each panel says "not
+  available here". Closes #717.
+
+- **Cockpit console, screen 5: Shadow test** (`src/hermes/entrypoints/tui.py`,
+  `tui_shadow.py`, `src/hermes/application/console/shadow_screen.py`,
+  `src/hermes/adapters/console/shadow_records.py`): tab 5 of `hermes tui`
+  shows a big "N / 90" over the shared 90-day run bar with month ticks, the
+  five certification checks as pass, fail or pending only ("mechanical: pass
+  or fail stands"), the day-0 record with its Ready-rule verdicts, the frozen
+  pre-registered settings and the lab notebook entries. Under ADR-021 day 0 is
+  the record `hermes shadow-start` will write beside the ledger (`runs/`);
+  until it exists the screen says "warm-up · not counting". Which fact starts
+  the count is one switch, and the 90-day line at the bottom of every tab
+  counts from the same day 0. Read-only, no money shown, no new dependency.
+  Closes #718.
+
+- **Tax screen** (`hermes tui`, tab 4, view only): Summary (realised gains, fees, taxable base, estimated tax, open if sold now, two-month-rule flags for BTC, ETH and SOL only, savings bracket meters with "€X left before 21%"), Lots (every FIFO lot in the shared query list, month subtotals and the highlighted lot's sales), Brackets, Tax pack ("for your gestor, never submitted to AEAT") and Your profile (masked, `S` shows; over `--vps` it says only whether a profile exists and never reads it). `[` and `]` switch the sub-tabs. Every figure comes from the tax estimate (#719).
+
+- Console: the Briefs screen (tab 6) shows the supervisor desk's daily brief, as `hermes supervisor brief` publishes it, beside the list of briefs. It never shows profit, equity or prices (issue #720).
+
+- Console: a toast says when a new bar has been checked and when the next one is due, and `HERMES_CONSOLE_BEEP=on` rings the terminal bell once whenever hermes turns late or down (#721).
+
+- **One query, filter and sort bar for console lists** (`application/console/query.py`, `entrypoints/tui_query.py`): a pure parser and matcher for `field:value`, `field>=value`, free text and `since:7d`, with stable multi-key sort, facet counts and Tab completion of field names, plus the `QueryBar`, `FacetFilter`, `SortableTable` and `QueryList` widgets, shown first on a demo activity list inside a `HudPanel`, styled only through the console theme tokens, with the activity rows now covering restarts, deploys, warnings, errors and folded check lines. Closes #729.
+
+- **Console drill-down** (`src/hermes/entrypoints/tui_drilldown.py`): one shared
+  way to open a detail in `hermes tui`. A `DetailPane` shows it beside the list;
+  a `DetailScreen` shows it full screen under a breadcrumb
+  (`◂ Home › Positions › ETH`). Esc or Backspace goes back with the list's
+  filters, sort and cursor kept, `[` and `]` show the previous and next item
+  (stopping at the ends), and number keys and Ctrl+P still work. Below 100
+  columns a detail pane opens as a screen. `TruncatedText` cuts long text with
+  "…" (and a "+N" count for lists) and shows it whole on Enter. The Home
+  position detail now uses them, with the same content. Closes #730.
+
+- **Console charts library**: `textual-plotext` (pinned `>=1.0.1,<2`, MIT) and a reusable `PriceChart` widget in `hermes.entrypoints.tui_charts` that plots a series of Decimal closes. The Code Owner approved the library on 2026-10-05 in the console design's "needs your OK" list. Not wired into a screen yet (issues #712 and #715 do that). Closes #732.
+
+- **Winged H logo widget** (`src/hermes/entrypoints/tui_logo.py`): adds the `textual-image` dependency (`>=0.14.1,<0.15`) and a reusable `Logo` widget that shows the Winged H picture where the terminal can draw images and a block-letter HERMES wordmark everywhere else (including ssh and tests), drawn in the Neon brand gradient or plain Control room cyan from the console theme tokens. The Code Owner approved the library on 2026-10-05 in the console design's "needs your OK" list and chose the Winged H logo the same day. Not shown at start-up yet (issue #721). Closes #733.
+
+- `hermes serve` records every risk-overlay halt and §10 kill of an entry in the ledger, alerts it on Telegram and Slack, and `hermes status` shows the last 24 hours and the newest one (#749).
+
+- `hermes serve` runs the pre-registration §10 shadow kills (SA-9 rule 3+ times in 30 days, shadow Sharpe streak) and the sim-vs-live drift rule once per UTC day; a kill stops new entries for good, a drift breach is recorded for the return to UNTRUSTED, and both are alerted and shown in `hermes status` (#796).
+
+- **`hermes shadow-start`**: the Code Owner's day-0 command for a counted shadow run (ADR-021 §2, §3). It checks the Ready rules a program can check (signed pre-registration hash in the lab notebook, backtest gate recorded for the running parameters, one enabled strategy) and lists rules 3, 4 and 6 for the Code Owner to confirm. With `--confirm START` and `hermes.service` stopped, it copies the warm-up ledger read-only into the archive, verifies the copy, removes the ledger so serve starts fresh, writes the day-0 record (engine version and release, config, pre-registration and data manifest hashes) and prints the lab notebook entry. Without it nothing changes (#797).
+
+- Engine PRs now replay the strategy over Train on the base and on the head, and CI fails when a signal or fill decision changed unless the PR cites the Code Owner's OK; decisions only, no trial logged (ADR-025, issue #798).
+
+- **Version tags on deploy** (`.github/workflows/cd.yml`, `scripts/deploy/version_release.py`, `src/hermes/release_version.py`): the first good deploy of a cut version also creates the `v<version>` tag (for example `v1.0.0-shadow.1`) on the commit that first shipped that version, with a GitHub pre-release whose body is that version's `CHANGELOG.md` section. Later deploys of the same version leave it as is, the `deploy-<sha12>` releases stay the latest ones, and a tagging failure is a warning, never a failed deploy (ADR-022 §3).
+
+- CD can deploy hermes-01 only when a new version lands: setting the `DEPLOY_ON` repository variable to `version` at day 0 makes every other green `main` build and check without deploying (ADR-022 §6).
+
+- `hermes status` shows the running version as its release tag (`version: v1.0.0-shadow.1`, also in `--json`), and the Telegram deploy message leads with `hermes v<version> (<sha12>)` (ADR-022 §4).
+
+- **Portfolio backtest on one capital**: `scripts/backtest/run_portfolio_backtest.py` replays BTC, ETH and SOL through one fill kernel and one portfolio seeded with the roster's 5,000 USDT, so the §5.4 sizing, the 3-position limit, the 15% exposure cap and the RO-01 correlation lock bind across pairs. Each run appends one trial and writes the `hermes certify --performance` file (daily equity, round trips, trial statistics, bootstrap seed). RO-01 now follows the signed §5.5 text: an entry is blocked only when two open pairs and the candidate all correlate above 0.80 over 30 daily returns (#822).
+
+- **The console's top bar shows the mainnet state, the release version and a countdown meter.** The Neon window bar (or, in Control room, the status row) reads `SHADOW · mainnet off` from the same `allow_mainnet` config `hermes serve` loads; `LIVE · mainnet ON` shows reversed in the down colour, and an amber `mainnet ?` when a live console cannot read its config; demo data always reads mainnet off. The status row names the package in its release form next to the running release (`v1.0.0-shadow.1 · 679b676`), and the next-bar countdown gains a meter of the share of the bar that has passed; at compact width the meter drops and the text stays. Refs #833, #815.
+
+- **Serve risk inputs (record only)**: serve now samples each pair's depth book every 5 minutes and records the spread with its rolling 1-hour median (RO-02 input), and on each completed 1D bar records the 30-day correlation of every two pairs' daily returns (RO-01 input, pre-registration §5.5) in two new ledger tables. No rule reads them yet: RO-01 and RO-02 stay unwired, and a failed sample is logged and skipped (#835).
+
+- New `hermes trials repair` and `hermes journal repair` drop a torn last line that a power loss or kill left in the trial log or the decision journal. They need `--confirm REPAIR`, record the drop as a chain line, and refuse a file whose chain breaks before its last line (issue #891).
+
+- The Briefs screen lists the supervisor desk's earlier daily briefs, newest first: `hermes supervisor brief --keep` keeps each brief exactly as it passed the output gate in `briefs.jsonl` beside the ledger, once per day, and the new `hermes-brief.timer` runs it at 07:15 Madrid.
+
+- **Backtest funnel (ADR-021 §5)**: `hermes funnel <strategy_id> --pre-registration FILE --evidence FILE` checks the eight funnel criteria that bind strategies from v2 on (CSCV probability of backtest overfitting, t-statistic, trade count, profit at stressed costs, positive years, bull and bear stretches, Validation against Train, neighbouring parameters, correlation with running strategies) and prints one `PASS`/`FAIL` line per check in the `hermes certify` format. Every threshold comes from a `backtest_funnel:` block in the signed pre-registration's front matter; a missing one refuses the run. Nothing is recorded, and `hermes certify` and v1's gate are unchanged (#957).
+
+- `hermes parity window` replays the shadow window from day 0 and reports M-09 (P&L correlation) and M-10 (Sharpe match) as pass, block or insufficient; `hermes certify --shadow-parity FILE` makes both a condition of `SHADOW_CERTIFIED` (#965).
+
+- A `swing-mvp1-v2` strategy config whose exits all sell 5 bps under the close of the 4h bar they fire on, the stop included, priced the same way in the backtest drivers (`--strategy swing-mvp1-v2`) and in serve, where it is also the drift model price (pre-registration v2 §5.3, §6.2, §7). v1 keeps its stop-market exit prices.
+
+- `hermes certify` reports the shadow round trips the ledger holds toward SHADOW_CERTIFIED and flags the execution check weak under 30, without changing any pass or fail rule (#797).
+
+- **Funnel evidence from the backtest driver**: `scripts/backtest/run_portfolio_backtest.py --funnel-evidence-out PATH` also replays the six pre-registration v2 §8.5 neighbours (Donchian 15/25, ADX 20/30, chandelier multiple 2.5/3.5) and the base parameters at twice the fees and slippage, appends each replay to the trial log as its own trial, and writes the evidence file `hermes funnel` reads (daily equity, trade count, cost stress, the base-and-neighbours trial matrix, neighbour ids, no running strategies). Without the flag the driver runs as before (#997).
+
+- **v2 backtest gate**: `hermes certify swing-mvp1-v2` judges the backtest by the signed pre-registration v2: DSR at or above 0.95 (read from v2 §10), v1's §9 secondary rows and calibration fill (v2 §9 keeps them unchanged), and the ten ADR-021 §5 funnel checks from a new `--funnel-evidence FILE` (v2 §7); without that file the `funnel` row fails. v2 is fingerprinted from its own `strategies.yaml` entry, and gates past `BACKTEST_CERTIFIED` are refused for v2 until v2's shadow rule is implemented. v1's gate, output and records are unchanged (#1008).
+
+- The console opens on a cold start screen: the Winged H, the running release and live checks of the ledger, engine, journal, market feed and AI supervisor, each with what it found or why it failed; a first run says when the first bar check is due. Any key opens Home at once, Q quits, and motion off skips it.
+
+- `hermes risk-inputs` shows the risk inputs shadow records but never acts on (the RO-02 spread against its 1-hour median, the days since the equity high and the deepest drawdown since) with whether each rule would fire, plus the latest recorded RO-01 correlations (#1030).
+
+- Research batches (ADR-026 §1): a batch and hypothesis card template, `hermes batch check FILE`, which checks the candidate count, one candidate per idea family, summaries, sections, free parameters, funnel floors, the selection rule, the signing hash, card hashes, the strategy roster and the bound code, and the backtest driver's `--batch FILE --candidate ID`, which runs a candidate's own neighbour grid and records the batch id on every trial line.
+
+- One backtest gate for any signed strategy (ADR-026): pre-registration v2 and every research batch candidate are judged by the same code, with thresholds from the signed document. `hermes certify <id> --batch FILE` judges a batch candidate, deflating its DSR by every trial in the experiment's log; on a Train-only run `validation_vs_train` shows NA instead of failing, and only a Train + Validation pass is recorded. `hermes batch check` now also fails a batch edited after it was signed.
+
+- Research batches are judged at their end by a signed rule: one trial count for every candidate, a Benjamini-Hochberg step on 1 - DSR across the batch, and the highest-DSR survivor as champion, or none (ADR-026 §4, §5).
+
+- Roster entries can name their signal with `signal:`; serve, parity, the portfolio backtest and decision replay build every strategy through one factory, an entry with no `signal:` keeps today's Donchian breakout unchanged, and an unknown signal is refused at config load (research funnel contract §2a).
+
+### Changed
+
+- Serve now runs the RO-01 correlation lock on the same 30-day correlations of the 1D closes as the backtest, and the daily parity check replays it; RO-02 and the live-phase recovery, single SA-9 and 30-trade Sharpe kills stay off in shadow (#514).
+
+- The console reads the ledger, the journal and the release in a worker thread and paints when the reads arrive, so a slow read no longer holds a screen switch, a key or an animation; each source is read once per poll (issue #1001).
+
+- After downtime, serve records each bar that closed while it was down as missed, leaves entries on those bars unfilled, fills their exits at the price when it is back (never back-dated), and sends one restart report; the parity check skips outage days and the service waits for clock sync (#1078).
+
+- **Release versions are `0.y.z` until a champion trades real money** (ADR-027, `scripts/dev/cut-release.py`): the `1.0.0-shadow.N` line is retired and the next cut is `0.2.0` (the 6 Oct `v1.0.0-shadow.1` cut counts as `0.1.0` and keeps its tag). The cut script refuses a new `-shadow.N` name, refuses `--engine-change yes` on a PATCH bump so a PATCH release never restarts a counted shadow, and refuses the first `1.x` cut unless `--real-capital` is passed. Old wheels, tags and changelog sections are still named `v1.0.0-shadow.N`.
+
+### Fixed
+
+- **Shadow loop and backtest**: an exit that is not filled (no book on a zero-volume bar while the depth endpoint is down, the fill model, a kill halt) now leaves the strategy in the position it still holds, with its original entry time and price, so its exit rules run again on the next bar and the coin is sold when an exit fills, also after a restart; the parity check mirrors this (#706).
+
+- `hermes serve` no longer sends the ENTRY push for an entry that did not fill (a risk halt, a declined size); the halt alert or the log says why (#708).
+
+- **The license check now checks something.** It read zero packages locally and in CI because pip-licenses listed its own tool environment; it now reads the project interpreter, fails when it counts zero packages, understands SPDX `OR` / `AND` expressions, and records the shipped LGPL libraries (fpdf2, python-telegram-bot, textual-image) and dev-only yattag in `known_licenses.yaml`. Closes #757.
+
+- **Sentry events with extra context are no longer dropped.** The capture uses `sentry_sdk.new_scope()` instead of the deprecated `push_scope()`, whose warning the test settings turn into an error that dropped the event. Closes #758.
+
+- Closed the connections and pipes that `hermes migrate --dry-run` (when the ledger cannot be copied) and the journal reader (`hermes logs`, console activity feed) left open until garbage collection.
+
+- `hermes preview` now shows the exit message with a reason the strategy really sends (`chandelier`) instead of `trailing_stop`, which it never sends (issue #765).
+
+- The swing strategy now moves its chandelier stop once per daily close and never from the 4h bar it is tested on, and a stop exit on a bar that opens below the stop fills at the open less slippage, in both the backtest and serve (pre-registration §5.3, #785).
+
+- **Lab-notebook hashes can be checked from the file.** New entries are written with the blank lines markdownlint needs, so they hash exactly as they appear, and `LabNotebook.verify_file()` checks every entry, including the older ones whose blank lines were added by hand. Closes #786.
+
+- **A config file that isn't UTF-8 gets a clear config error** naming the file and the bad byte, instead of a raw decode traceback. Closes #807.
+
+- serve now restores the peak equity from the latest portfolio mark on restart, so the RO-08 drawdown no longer reads low until bars are marked again (integrity rules 4.1; no risk-rule or threshold change).
+
+- Market data, exchange and FX parsers now refuse NaN and infinite numbers and out-of-range timestamps with their own error, so a broken row fails the feed cleanly instead of escaping as a raw decimal or overflow error (issue #841).
+
+- **Every wire parser now fails with its own error on malformed input**: Binance depth stream and snapshot, Binance historical and archive klines, Kraken OHLC and fees, Telegram replies, config files, the trial log, the decision journal and every ledger reader refuse wrong types, non-objects, invalid UTF-8, too-deep nesting, NaN and naive times with the adapter's typed error instead of a raw exception; historical and Kraken candles off the interval grid or priced at or below zero are refused. Closes #842.
+
+- **A broken forming candle no longer costs a trade.** The live candle feed now drops the still-forming candle before reading its prices, so a bad value in it can't fail the poll that delivers the bar that just closed. Before, serve exited on that poll and the breakout entry was missed after the restart. Closes #850.
+
+- A 4h candle the exchange never publishes, or downtime longer than the warm-up window, no longer puts serve in a crash loop: the first exit is kept so a late bar is picked up on restart, and if the bar is still missing the restart reports it to Sentry and Telegram and carries on, so an open position keeps its exit watched (issue #852).
+
+- A ledger write that fails on any error, not only a SQLite one, now rolls back, so the next successful write can no longer commit its partial rows (issue #853). The migration runner does the same for a failing migration.
+
+- A trade is no longer made without its Telegram push: serve records each push in the ledger and sends it again after a crash between the signal row and the push, and a notifier error of any kind (a missing template as much as an outage) is logged instead of stopping serve, with the failed channel pushed again on the next bar while the signal is recent. A crash right after a push and before its record sends that push a second time; at least once is the rule for trades (issue #854).
+
+- Serve no longer exits 1 when a reader (console, bot, tax pack, `hermes status`) holds the ledger for a few seconds: every ledger connection now waits up to 10 s for a lock. A second `hermes serve` on a ledger already in use refuses to start with exit code 4 and names the ledger, and trial-log and decision-journal appends take a file lock so two appenders cannot fork the hash chain. The ledger still runs in the rollback journal, not WAL: the read-only units cannot open a WAL ledger yet (issue #855).
+
+- Serve now refuses to start on a corrupt ledger file or on a ledger a newer release has migrated, with a clear startup error instead of a raw SQLite error or a silent write; hermes.service sets HERMES_ENV=prod when the env file omits it; and the health ping reports a broken `hermes status` call (exit 2 on a release that has the command) as a failure instead of green (issue #856).
+
+- The RO-03 slippage halt now works as intended in serve (issue #857). A fill's quality row is saved in the same transaction as its trade, so a crash can no longer drop the slippage RO-03 reloads on boot. A fill's slippage now counts for 24 hours: a single fill over 0.5% halts entries for a day instead of until the next fill, which could never come while flat. The 2% cumulative limit now sums the fills of the last 24 hours instead of always reading 0.
+
+- **Live order adapters no longer lose track of a real order.** Binance orders carry a client order id, and a 5xx or timeout on submission is looked up instead of reported as a refusal: an order Binance never saw is a retry-safe error, a placed one returns its fill, and an unresolved one names the id to reconcile. A Binance commission paid in BNB is priced at its ticker, or at the pre-registered 10 bps when the ticker is down, so a filled order always returns its fill. Kraken orders carry a `userref`, errors after placement carry the txid, and an optional nonce file keeps nonces increasing across a restart with the clock stepped back (#858).
+
+- **FX answers are checked against the question.** The Frankfurter adapter refuses a response quoted from a different base currency, which would read the rate in the wrong direction, and a rate dated after the requested day. Part of #859.
+
+- After a restart, serve marks every open position at the last closed bar before it handles new bars, so the exposure cap, equity and drawdown no longer read entry prices until each pair's next bar (issue #863).
+
+- An entry is now refused when the price actually paid at the ask would push total exposure past the 15% cap (pre-registration §5.5). Before, the cap was checked only at the signal price, and a spread could end exposure slightly over it. Sizing is unchanged (issue #864).
+
+- A migration snapshot taken in the same second as an earlier one gets its own name instead of overwriting it, so every rollback point stays restorable (issue #865).
+
+- Lot selection never draws a lot opened after the sale, and the order-book walk fills an exit of a quantity with more than 28 significant digits in full instead of refusing it (issue #866).
+
+- `hermes serve` now refuses to start on a ledger path that does not exist unless it is given `--new-ledger`, so a wrong `--db` or an unmounted disk can no longer start a fresh, flat ledger and drop the open positions. It also refuses to start when `capital_budget` differs from the capital seed the ledger recorded, naming both amounts. `hermes shadow-start` now leaves an empty ledger for day 0 instead of none (issue #876).
+
+- The ledger now runs in WAL, as ADR-003 says: a long read (tax pack, bot, console) no longer holds up serve's commit, and the read-only units still open the ledger while serve is stopped (issues #855, #879).
+
+- The daily warm-up floor is now 300 bars everywhere (`warmup_bars_1d` and the `hermes parity check` minimum), up from 200: the EMA(200) regime filter is seeded from the oldest buffered daily closes, so a 200-bar warm-up could decide differently from serve (#880).
+
+- Serve now watches a coin it holds without an entry signal (an old or manual trade, or lost signal rows): it restores the position from the coin's own fills, logs `serve.position.no_entry_signal`, keeps its exit rules running and never buys it a second time (issue #902).
+
+- `hermes certify` and `hermes shadow-start` now read the signed pre-registration from beside `--config-dir`, as serve does, so they work from an installed release on the VPS (issue #923).
+
+- The Binance Vision ingest no longer downloads any month on or after the sealed OOS start (2025-09-01), whatever its arguments, and the new `scripts/data/prepare_backtest_data.py --split train|validation` downloads only the missing klines a backtest needs and exits non-zero unless every pinned dataset matches the data manifest (issue #925).
+
+- Backtests now load 300 days of daily bars before their window, as serve warms up with, so the EMA regime filter's first decisions match serve's (issue #880).
+
+- Telegram pushes that hit the Bot API rate limit (HTTP 429) are retried after the wait Telegram asks for, at most three times and within 30 seconds, instead of being dropped on the first 429 (issue #859).
+
+- The console's 1 s clock tick, its redraw and its effects (pulse, feed pulse, radar, shimmer) no longer crash when a widget is torn down while the app closes; a widget that is gone is skipped and the tab title is still written.
+
+- `hermes status` and the daily brief no longer list an entry the engine refused or halted as an open position; only entries with a fill count (#962).
+
+- `hermes shadow-start` proves it can write the ledger, archive and run-record directories before changing anything, so a read-only directory no longer leaves an archive and a day-0 record beside the old ledger (#797).
+
+- The live depth snapshot now keeps Binance's `lastUpdateId`, and the diff stream drops diffs the snapshot already holds and refuses a first diff that skips past it, so an old diff can no longer reach a local book (#866).
+
+- `hermes funnel` now checks `--expect-sha256` before it reads the evidence, so a wrong pre-registration hash always refuses (exit 1) even when the evidence file is bad, and it refuses a pre-registration whose bull or bear stretches overlap, because the shared days would compound twice (issue #987).
+
+- The console switches screens and animates without stalling on a long ledger: the market watch finds each stream's newest bar check in one pass instead of one lookup per check (about 2 s down to about 15 ms at 60 days of history).
+
+- `hermes tui` draws in 24-bit colour by default, so over ssh (where the terminal's colour setting is not forwarded) the console keeps its violet background and panels instead of falling back to 256 colours that turned them black and navy; set `TEXTUAL_COLOR_SYSTEM` to choose another depth.
+
+- The Home Market panel shows each coin once when it is too narrow for the timeframe column, with that coin's soonest next check, instead of one identical-looking row per timeframe.
+
+- **Frozen depth books and an off clock no longer pass quietly.** A Binance depth book whose `lastUpdateId` has not moved keeps the stamp of the response that first carried it, so RO-04 halts entries on a frozen upstream (a kill-rule change Rick approved on 17 Oct 2026). Serve records and alerts its clock leaving Binance time by more than the settle delay as a P0 anomaly, and `hermes status` shows "The server clock is off" in red until the clock is back. Closes #859.
+
+- A klines reply that gives one bar two different rows is now refused as a bad reply instead of silently keeping the last row; exact repeats are still dropped.
+
+- The end-to-end serve cycle test no longer expects a push for an entry the exposure cap refused, matching the serve change from issue #708 (#1038).
+
+- The console's night theme draws labels, hints, gains, losses and AI marks at 4.5:1 contrast or more on its panels, so they no longer fade into the background after 23:00 (#1046).
+
+- Console: every panel's key hint now starts in the body text's column, and hints, tab numbers, the theme chip and AI text read at 4.5:1 or more on every surface in Neon, Control room and night.
+
+### Security
+
+- Binance and Kraken trading adapters now need a `MainnetPermit` to reach a real account. Only `issue_mainnet_permit` makes one, in the prod tier with `HERMES_ALLOW_MAINNET` set and a LIVE_APPROVED record with unchanged parameters; with a permit, Binance accepts only its documented spot hosts (issue #781).
+
+- The nightly backup sends its healthchecks.io ping URL to curl on stdin instead of in argv, where `ps` showed the secret to every local user on hermes-01.
+
+- **Bot and preview hardening.** `/logs` on Telegram no longer sends the text of an unstructured journal line (a traceback can quote an upstream response), the bot skips a malformed Telegram update instead of restart-looping, and `hermes preview` writes attachments into a fresh private folder instead of a predictable `/tmp` path. Part of #783.
+
+- Lot, journal and correlation IDs are now generated by `python-ulid`, which is maintained; it replaces `ulid-py`, unreleased since 2020. Stored IDs are unchanged, and IDs minted in the same millisecond now sort in creation order (issue #784).
+
+- CD now copies and unpacks each release in `/var/lib/hermes-deploy`, a 0700 directory owned by the deploy account, instead of world-writable `/var/tmp`, and the non-root deploy sudoers rule points there; the VPS bootstrap upload moves from `/var/tmp` to `/var/lib/hermes-bootstrap` for the same reason (issue #782).
+
+- With `HERMES_ENV=prod`, hermes no longer reads `.env.local` and refuses a relative `--config-dir`, so the working directory cannot choose a production config. `hermes preview --send` now runs only with `HERMES_ENV=dev`; an unset tier is refused (issue #783).
+
+- `hermes certify --sign-off NAME` now asks for the `LIVE_APPROVED` phrase on an interactive terminal and refuses when stdin is not one; the `--confirm` flag is gone, so a script can no longer approve live trading unattended (issue #949).
+
+- The tool freshness check reads registries through an HTTPS-only opener and refuses any other URL, so it cannot open `file://` or `ftp://` URLs; this clears the daily Semgrep finding (issue #1000).
+
 ## [1.0.0-shadow.1] - 2026-10-06
 
 ### Added
@@ -674,4 +947,5 @@ lands in Phase 0 CI (per ADR-006).
 - Version stays at `0.0.0-dev` until Phase 0 tags first pre-release.
 
 [Unreleased]: https://github.com/ricardoafo/hermes/commits/main
+[0.2.0]: https://github.com/ricardoafo/hermes/releases/tag/v0.2.0
 [1.0.0-shadow.1]: https://github.com/ricardoafo/hermes/releases/tag/v1.0.0-shadow.1

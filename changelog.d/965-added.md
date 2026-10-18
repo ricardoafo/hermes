@@ -1,1 +1,0 @@
-- `hermes parity window` replays the shadow window from day 0 and reports M-09 (P&L correlation) and M-10 (Sharpe match) as pass, block or insufficient; `hermes certify --shadow-parity FILE` makes both a condition of `SHADOW_CERTIFIED` (#965).
