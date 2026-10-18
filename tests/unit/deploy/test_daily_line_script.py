@@ -159,7 +159,7 @@ def _run(host: _Host, slack: _Slack, **env: str) -> subprocess.CompletedProcess[
             "REAL_CURL": _CURL,
             "NO_PROXY": "*",
             "HERMES_DAILY_HERMES_BIN": (host.bin / "hermes").as_posix(),
-            "HERMES_NOTIFY_SLACK_API_BASE": slack.url,
+            "HERMES_SLACK__API_BASE": slack.url,
             "HERMES_SLACK__BOT_TOKEN": _TOKEN,
             "HERMES_SLACK__DEFAULT_CHANNEL": _CHANNEL,
             "STATE_DIRECTORY": host.state.as_posix(),

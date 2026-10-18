@@ -134,6 +134,11 @@ class FakeExchange:
             self._index[(pair, interval)] = stream
         return stream
 
+    def load(self, market: Market) -> None:
+        """Answer from ``market`` from now on, dropping the old market's index."""
+        self.market = market
+        self._index.clear()
+
     def transport(self) -> httpx.MockTransport:
         """Return a transport for an ``httpx.Client`` or ``httpx.AsyncClient``."""
         return httpx.MockTransport(self.handle)

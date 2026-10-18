@@ -95,6 +95,8 @@ class TradeRecord:
         strategy_id: Strategy that produced the fill.
         lot_id: Id of the lot a BUY opens; ``None`` for a SELL.
         eur: EUR values, or ``None`` while pending.
+        fee_estimated: The fee is an estimate, not the exchange's figure
+            (issue #1014).
     """
 
     correlation_id: str
@@ -107,6 +109,7 @@ class TradeRecord:
     strategy_id: StrategyId
     lot_id: LotId | None
     eur: TradeEur | None
+    fee_estimated: bool = False
 
     def __post_init__(self) -> None:
         """Enforce positive quantity and price, an aware time and the BUY/lot pairing.
@@ -154,6 +157,7 @@ class TradeRecord:
             strategy_id=fill.strategy_id,
             lot_id=LotId.new() if side == OrderSide.BUY else None,
             eur=eur,
+            fee_estimated=fill.fee_estimated,
         )
 
     @property

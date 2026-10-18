@@ -49,6 +49,11 @@ from typing import Any, Final
 import httpx
 import structlog
 
+from hermes.adapters.endpoint import (
+    DEFAULT_TELEGRAM_API_BASE,
+    TELEGRAM_API_BASE_ENV,
+    api_base_from_env,
+)
 from hermes.application.messages.eur_rate import EurRateLookup, resolve_eur_rate
 from hermes.application.messages.telegram import telegram_template
 from hermes.application.notification_router import is_event_loud
@@ -58,7 +63,6 @@ from hermes.domain.events.base import DomainEvent
 
 __all__ = ["TelegramAdapter", "TelegramConfig", "TelegramNotifierError"]
 
-_TELEGRAM_API_BASE: Final[str] = "https://api.telegram.org"
 _DEFAULT_TIMEOUT_SEC: Final[float] = 10.0
 _CORRELATION_TAIL_LEN: Final[int] = 6
 # HTTP status boundary — anything at or above signals an error response
@@ -115,10 +119,13 @@ class TelegramConfig:
         chat_id: Numeric chat ID or ``@channelname`` string identifying
             where messages go. Stored as ``str`` since the API accepts
             both int and str and pydantic would need a union anyway.
+        api_base: The Bot API root. ``HERMES_TELEGRAM__API_BASE`` points a
+            lower environment at a fake; unset, it is Telegram's own.
     """
 
     bot_token: str = field(repr=False)
     chat_id: str
+    api_base: str = DEFAULT_TELEGRAM_API_BASE
 
     @classmethod
     def from_env(cls, env: dict[str, str]) -> TelegramConfig:
@@ -137,6 +144,8 @@ class TelegramConfig:
                 or empty. Fail-fast — the adapter is useless without
                 credentials and we would rather see the error at process
                 start than at first alert time.
+            EndpointConfigError: ``HERMES_TELEGRAM__API_BASE`` is set but
+                malformed or unsafe (see :mod:`hermes.adapters.endpoint`).
         """
         token = env.get("HERMES_TELEGRAM__BOT_TOKEN", "").strip()
         chat = env.get("HERMES_TELEGRAM__CHAT_ID", "").strip()
@@ -144,7 +153,8 @@ class TelegramConfig:
             raise TelegramNotifierError("HERMES_TELEGRAM__BOT_TOKEN is not set (or empty)")
         if not chat:
             raise TelegramNotifierError("HERMES_TELEGRAM__CHAT_ID is not set (or empty)")
-        return cls(bot_token=token, chat_id=chat)
+        api_base = api_base_from_env(env, TELEGRAM_API_BASE_ENV, DEFAULT_TELEGRAM_API_BASE)
+        return cls(bot_token=token, chat_id=chat, api_base=api_base)
 
 
 def _correlation_tail(correlation_id: str) -> str:
@@ -246,7 +256,7 @@ class TelegramAdapter:
         Returns:
             A new adapter owning its :class:`httpx.Client`.
         """
-        client = httpx.Client(base_url=_TELEGRAM_API_BASE, timeout=timeout_sec)
+        client = httpx.Client(base_url=config.api_base, timeout=timeout_sec)
         return cls(config=config, client=client, timeout_sec=timeout_sec, eur_rate=eur_rate)
 
     def close(self) -> None:
