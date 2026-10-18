@@ -190,9 +190,6 @@ tests/unit/domain/test_errors.py::test_ledger_error_is_infra_error U3
 tests/unit/domain/test_errors.py::test_network_error_is_hermes_error U3
 tests/unit/domain/test_errors.py::test_network_error_is_infra_error U3
 tests/unit/domain/test_errors_raisable.py::test_declared_fields_stay_frozen U6
-tests/unit/domain/value_objects/test_pair.py::test_ambiguous_concatenated_fails U3
-tests/unit/domain/value_objects/test_pair.py::test_from_str_same_base_quote_fails U3
-tests/unit/domain/value_objects/test_pair.py::test_from_str_unknown_base_fails U3
 tests/unit/domain/value_objects/test_weight.py::test_from_decimal_out_of_range U3
 tests/unit/domain/value_objects/test_weight.py::test_from_str_invalid_decimal U3
 tests/unit/domain/value_objects/test_weight.py::test_from_str_out_of_range U3
