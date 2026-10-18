@@ -45,7 +45,9 @@ BUSY_TIMEOUT_SECONDS = 10.0
 JOURNAL_SIZE_LIMIT_BYTES = 4 * 1024 * 1024
 
 
-def open_ledger(path: Path, *, read_only: bool = False) -> sqlite3.Connection:
+def open_ledger(
+    path: Path, *, read_only: bool = False, any_thread: bool = False
+) -> sqlite3.Connection:
     """Open the ledger at ``path`` with :data:`BUSY_TIMEOUT_SECONDS`.
 
     A read-write connection also switches the ledger to WAL and keeps the
@@ -55,16 +57,25 @@ def open_ledger(path: Path, *, read_only: bool = False) -> sqlite3.Connection:
         path: The SQLite ledger file.
         read_only: Open with ``mode=ro``: the file must exist, and no write
             goes through.
+        any_thread: Let a thread other than the opening one use a read-only
+            connection, one thread at a time (the console reads in a worker,
+            issue #1001). Python's SQLite is built serialized, so this is safe.
 
     Returns:
         A connection with the busy timeout set. The caller closes it.
 
     Raises:
         sqlite3.Error: The file cannot be opened.
+        ValueError: ``any_thread`` was asked for a connection that can write.
     """
+    if any_thread and not read_only:
+        raise ValueError("only a read-only ledger connection may move between threads")
     if read_only:
         return sqlite3.connect(
-            f"{path.resolve().as_uri()}?mode=ro", uri=True, timeout=BUSY_TIMEOUT_SECONDS
+            f"{path.resolve().as_uri()}?mode=ro",
+            uri=True,
+            timeout=BUSY_TIMEOUT_SECONDS,
+            check_same_thread=not any_thread,
         )
     connection = sqlite3.connect(path, timeout=BUSY_TIMEOUT_SECONDS)
     connection.setconfig(sqlite3.SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, True)
