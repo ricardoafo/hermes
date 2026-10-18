@@ -94,11 +94,14 @@ def test_idle_title_is_a_chrome_gradient() -> None:
 
 
 def test_bottom_edge_carries_hints_and_the_magenta_corner() -> None:
-    """The bottom edge reads the key hints and ends with ━┛ in the AI colour."""
+    """The bottom edge reads the key hints from the body column (one cell in) and ends with ━┛.
+
+    The corner is in the AI colour; issue #1096 moved the hint from column 2 to 1.
+    """
     edge = bottom_edge("D W M Y range", 30, NEON)
     corner = _style_at(edge, 29)
     assert (edge.plain, _hex(corner.color)) == (
-        "  D W M Y range ────────────━┛",
+        " D W M Y range ─────────────━┛",
         "#FF3DF0",
     )
 
@@ -243,7 +246,7 @@ def test_meter_turns_amber_on_the_callers_warning() -> None:
 def test_meter_solid_colour_wins_over_gradient_and_warning() -> None:
     """A stale stop meter is drawn ``dim`` even while the stop is close."""
     bar = Meter(1, width=2, warn=True).render(BASE, colour=BASE.dim)
-    assert {_hex(_style_at(bar, i).color) for i in range(2)} == {"#5D6780"}
+    assert {_hex(_style_at(bar, i).color) for i in range(2)} == {BASE.dim}
 
 
 def test_meter_with_caps_label_and_percent() -> None:
