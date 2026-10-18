@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable, Mapping, MutableMapping
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, TextIO
 
 import hermes
 from hermes.adapters.console import UnknownScenarioError
+from hermes.adapters.console.lab_files import FileLabReader, find_experiments_root
 from hermes.application.console import ConsoleReadModel
+from hermes.application.console.lab import values_allowed
 from hermes.application.console.system import LiveRelease
 from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.commands import Command
@@ -26,8 +29,8 @@ from hermes.entrypoints.console import (
 )
 from hermes.entrypoints.tui_settings import (
     DEFAULT_SETTINGS_PATH,
-    ConsoleSettings,
     ThemeChoice,
+    load_settings,
     save_settings,
 )
 from hermes.entrypoints.version import read_release
@@ -105,7 +108,7 @@ def run_tui(
         return 2
     if theme is not None:
         try:
-            save_settings(settings_path, ConsoleSettings(theme=theme))
+            save_settings(settings_path, replace(load_settings(settings_path), theme=theme))
         except OSError as exc:
             err.write(f"WARNING: could not save the theme: {exc}\n")
     if runner is None:
@@ -121,6 +124,13 @@ def run_tui(
         ledger = db_path or default_db_path(env or {})
         system = system_sources(
             db_path=ledger, live=_live_release, ledger=model.demo_scenario is None
+        )
+
+        lab = FileLabReader(
+            find_experiments_root(Path(__file__)),
+            values=lambda: values_allowed(
+                load_settings(settings_path).show_values, {**os.environ, **snapshot}
+            ),
         )
 
         def runner(read_model: ConsoleReadModel) -> None:
@@ -147,6 +157,7 @@ def run_tui(
                     tax_pack=tax.pack,
                     shadow=shadow_sources(read_model, env=snapshot, db_path=db_path),
                     system=system,
+                    lab=lab,
                 )
             finally:
                 tax.close()

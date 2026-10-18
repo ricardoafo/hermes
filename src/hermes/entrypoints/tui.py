@@ -20,8 +20,9 @@ scenario always reads mainnet off. Every panel sits in a
 and timings live in :mod:`hermes.entrypoints.tui_theme`.
 
 Screens: ``1`` Home (issue #712); ``4`` Tax (issue #719, view only:
-:mod:`hermes.entrypoints.tui_tax`); ``5`` Shadow test (issue #718); ``6``
-Briefs; ``7`` System (issue #717, view only:
+:mod:`hermes.entrypoints.tui_tax`); ``5`` Lab (issue #1056, view only:
+:mod:`hermes.entrypoints.tui_lab`); ``6`` Shadow test (issue #718); ``7``
+Briefs; ``8`` System (issue #717, view only:
 :mod:`hermes.entrypoints.tui_system`); the others name the issue that builds
 them next.
 
@@ -129,6 +130,7 @@ from hermes.application.console import (
     pnl_visible,
 )
 from hermes.application.console.format import MINUS, fmt_level
+from hermes.application.console.lab import AI_SESSION_VARS, LabReader
 from hermes.application.console.live import (
     LiveBoard,
     LivePosition,
@@ -195,6 +197,7 @@ from hermes.entrypoints.tui_home import (
     position_rows,
     total_text,
 )
+from hermes.entrypoints.tui_lab import LabView
 from hermes.entrypoints.tui_live import (
     LiveLook,
     eur_rate,
@@ -345,18 +348,20 @@ TABS: Final = (
     Tab("2", "Signals"),
     Tab("3", "Positions", 715),
     Tab("4", "Tax"),
-    Tab("5", "Shadow test"),
-    Tab("6", "Briefs"),
-    Tab("7", "System"),
-    Tab("8", "Logs", 716),
+    Tab("5", "Lab"),
+    Tab("6", "Shadow test"),
+    Tab("7", "Briefs"),
+    Tab("8", "System"),
+    Tab("9", "Logs", 716),
 )
 _HOME: Final = 0
-_SHADOW: Final = 4
 _SIGNALS: Final = 1
 _TAX: Final = 3
-_BRIEFS: Final = 5
-_SYSTEM: Final = 6
-_LOGS: Final = 7
+_LAB: Final = 4
+_SHADOW: Final = 5
+_BRIEFS: Final = 6
+_SYSTEM: Final = 7
+_LOGS: Final = 8
 _NOTICE_SECONDS: Final = 6
 # The big estimated-tax figure shows from the height the big total shows (30 rows).
 _BIG_FROM_ROWS: Final = 30
@@ -366,7 +371,7 @@ _SERVICE_JOURNAL_LINES: Final = 12
 
 _FOOTER_CHIPS: Final = (
     ("D W M Y", "range"),
-    ("1-8", "screens"),
+    ("1-9", "screens"),
     ("↵", "detail"),
     ("L", "logs"),
     ("T", "theme"),
@@ -377,14 +382,14 @@ _FOOTER_CHIPS: Final = (
 _DETAIL_CHIPS: Final = (
     ("Esc", "back"),
     ("[ ]", "prev/next"),
-    ("1-8", "screens"),
+    ("1-9", "screens"),
     ("^P", "palette"),
     ("Q", "quit"),
 )
 _POSITIONS_TRAIL: Final = ("Home", "Positions")
 _FOOTER_CHIPS_COMPACT: Final = (
     ("D W M Y", "range"),
-    ("1-8", ""),
+    ("1-9", ""),
     ("↵", ""),
     ("T", ""),
     ("?", ""),
@@ -664,7 +669,7 @@ class HomeApp(App[None]):
     #footer-status, #panel-footer {{ width: auto; color: $hud-muted; }}
     #panel {{ height: 1fr; padding: 0 1; overflow-y: auto; }}
     #shadow-body {{ height: auto; layout: vertical; }}
-    #tab-5 {{ scrollbar-gutter: stable; scrollbar-size-vertical: 1; }}
+    #tab-{TABS[_SHADOW].key} {{ scrollbar-gutter: stable; scrollbar-size-vertical: 1; }}
     #shadow-body.-wide, #shadow-body.-ultra {{ layout: horizontal; }}
     #shadow-left, #shadow-right {{ height: auto; width: 1fr; }}
     #shadow-body.-wide #shadow-right, #shadow-body.-ultra #shadow-right {{ margin-left: 1; }}
@@ -715,6 +720,8 @@ class HomeApp(App[None]):
         boot: bool = False,
         background_reads: bool = False,
         system: SystemSources | None = None,
+        lab: LabReader | None = None,
+        ai_session: bool | None = None,
     ) -> None:
         """Hold the read model, the journal source and the screen state.
 
@@ -756,6 +763,10 @@ class HomeApp(App[None]):
                 holds a key or an animation; ``False`` reads and paints at once.
             system: The System screen's read-only sources; ``None`` shows every
                 System panel as "not available here".
+            lab: The Lab screen's reader of the committed experiment files;
+                ``None`` says there are none here.
+            ai_session: The console runs in an AI session, so the Lab never shows
+                a value; ``None`` reads ``HERMES_AI_SESSION`` and ``CLAUDECODE``.
         """
         super().__init__()
         # The checks need the time zone, which the model only gives once mounted.
@@ -810,6 +821,12 @@ class HomeApp(App[None]):
         self._title_sent: str | None = None
         self._title_total: str | None = None
         self._init_system()
+        self._lab = lab
+        self._ai_session = (
+            any(os.environ.get(name) for name in AI_SESSION_VARS)
+            if ai_session is None
+            else ai_session
+        )
         self.effect_timers: dict[str, Timer] = {}
         self._init_live_feed(ticker, clock)
         self._summary: PortfolioSummary | None = None
@@ -917,6 +934,16 @@ class HomeApp(App[None]):
             for index, tab in enumerate(TABS[1:], start=1):
                 if index == _TAX:
                     yield TaxTab(now=self._clock, motion=self._motion, id=f"tab-{tab.key}")
+                    continue
+                if index == _LAB:
+                    with Container(id=f"tab-{tab.key}"):
+                        yield LabView(
+                            reader=self._lab,
+                            now=self._clock,
+                            tz=lambda: self._ctx.tz,
+                            ai_session=self._ai_session,
+                            id="lab-view",
+                        )
                     continue
                 if index in (_SHADOW, _SYSTEM):
                     continue
@@ -1263,7 +1290,8 @@ class HomeApp(App[None]):
         if self._settings_path is None:
             return
         try:
-            save_settings(self._settings_path, ConsoleSettings(theme=self._choice))
+            saved = load_settings(self._settings_path)
+            save_settings(self._settings_path, replace(saved, theme=self._choice))
         except OSError as exc:
             self.notify(f"Could not save the theme: {exc}", severity="warning")
 
@@ -1476,6 +1504,11 @@ class HomeApp(App[None]):
         static = self._alive(Static, f"#{widget_id}")
         if static is not None:
             static.update(content)
+
+    @property
+    def lab_view(self) -> LabView:
+        """Return the Lab screen."""
+        return self._home.query_one(LabView)
 
     @property
     def _home(self) -> Screen[object]:
@@ -2148,6 +2181,11 @@ class HomeApp(App[None]):
     def _switch_to(self, index: int) -> None:
         self._tab = index
         self._home.query_one("#screens", ContentSwitcher).current = f"tab-{TABS[index].key}"
+        if index == _LAB:
+            self.lab_view.load()
+            self.lab_view.table.focus()
+        else:
+            self.set_focus(None)
         if self._background_reads:
             # The tab shows its last reads at once; the fresh ones follow.
             self._paint_tab_screen(self._reads, self._layout)
@@ -2428,6 +2466,7 @@ def run_home(
     taxpayer_profile: TaxpayerProfileView | None = None,
     tax_pack: Callable[[int], TaxPackStatus | None] | None = None,
     system: SystemSources | None = None,
+    lab: LabReader | None = None,
 ) -> None:
     """Run the console until the operator quits, or restarts onto a new release.
 
@@ -2452,6 +2491,7 @@ def run_home(
         taxpayer_profile: What the Tax screen may say about the profile.
         tax_pack: Returns the year's tax pack state.
         system: The System screen's read-only sources; see :class:`HomeApp`.
+        lab: The Lab screen's reader; see :class:`HomeApp`.
     """
     app = HomeApp(
         model,
@@ -2469,6 +2509,7 @@ def run_home(
         taxpayer_profile=taxpayer_profile,
         tax_pack=tax_pack,
         system=system,
+        lab=lab,
         boot=True,
     )
     app.run()

@@ -2,7 +2,7 @@
 
 Invariants:
 
-- every key has one action; 1-8 jump to screens, Tab / Shift+Tab cycle them,
+- every key has one action; 1-9 jump to screens, Tab / Shift+Tab cycle them,
   Esc goes back, Ctrl+P opens the command palette, D W M Y still set the range;
 - screens not built yet name the issue that builds them (System is built, #717);
 - every home card sits in a HudPanel labelled "computed";
@@ -125,10 +125,10 @@ def test_no_key_is_bound_twice() -> None:
     assert sorted({key for key in keys if keys.count(key) > 1}) == []
 
 
-def test_number_keys_one_to_eight_each_name_a_screen() -> None:
-    """Keys 1-8 are bound, one per tab, and nothing binds 9 or 0 yet."""
+def test_number_keys_one_to_nine_each_name_a_screen() -> None:
+    """Keys 1-9 are bound, one per tab, and nothing binds 0 yet."""
     keys = set(_bound_keys())
-    assert ({str(n) for n in range(1, 9)} <= keys, {"9", "0"} & keys) == (True, set())
+    assert ({str(n) for n in range(1, 10)} <= keys, {"0"} & keys) == (True, set())
 
 
 def test_number_keys_switch_screens() -> None:
@@ -167,7 +167,7 @@ def test_tab_and_shift_tab_cycle_the_screens() -> None:
         await _press(pilot, ["1", "shift+tab"])
         return forward, app.tab
 
-    assert _run(probe) == (1, 7)
+    assert _run(probe) == (1, 8)
 
 
 def test_escape_goes_back_to_the_previous_screen() -> None:
@@ -254,7 +254,7 @@ def test_briefs_screen_is_the_ai_variant() -> None:
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[bool, str]:
         del pilot
-        panel = app.query_one("#screen-6").parent
+        panel = app.query_one("#screen-7").parent
         assert isinstance(panel, HudPanel)
         return panel.ai, panel.label
 
@@ -272,7 +272,8 @@ def test_window_bar_and_tabs_lead_the_screen() -> None:
     assert (bar.startswith("▐ HERMES // SHADOW CONSOLE"), bar.endswith("14:12:00"), tabs) == (
         True,
         True,
-        "  1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Shadow test · 6 Briefs · 7 System · 8 Logs",
+        "  1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test"
+        " · 7 Briefs · 8 System · 9 Logs",
     )
 
 
@@ -286,7 +287,7 @@ def test_compact_tabs_are_numbers_only_and_the_countdown_is_in_the_footer() -> N
 
     tabs, footer = _run(probe, size=(80, 24))
     assert (tabs, footer.endswith("next 3h 48m 00s · read-only")) == (
-        "  1   2   3   4   5   6   7   8",
+        "  1   2   3   4   5   6   7   8   9",
         True,
     )
 
@@ -746,7 +747,7 @@ def _switcher_and_bar(app: HomeApp) -> tuple[int, str | None, int]:
 
 
 def test_each_number_key_selects_its_screen_in_the_switcher_and_the_tab_bar() -> None:
-    """Keys 1-8 each show their own screen body and highlight their own tab."""
+    """Keys 1-9 each show their own screen body and highlight their own tab."""
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> list[tuple[int, str | None, int]]:
         seen = []
@@ -763,12 +764,13 @@ def test_each_number_key_selects_its_screen_in_the_switcher_and_the_tab_bar() ->
         (5, "tab-6", 5),
         (6, "tab-7", 6),
         (7, "tab-8", 7),
+        (8, "tab-9", 8),
         (0, "tab-1", 0),
     ]
 
 
 def test_tab_walks_every_screen_in_order_and_wraps_home() -> None:
-    """Eight Tab presses visit Signals ... Logs, then Home again."""
+    """Nine Tab presses visit Signals ... Logs, then Home again."""
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> list[int]:
         seen = []
@@ -777,11 +779,11 @@ def test_tab_walks_every_screen_in_order_and_wraps_home() -> None:
             seen.append(app.tab)
         return seen
 
-    assert _run(probe) == [1, 2, 3, 4, 5, 6, 7, 0]
+    assert _run(probe) == [1, 2, 3, 4, 5, 6, 7, 8, 0]
 
 
 def test_shift_tab_walks_every_screen_backwards() -> None:
-    """Eight Shift+Tab presses visit Logs ... Signals, then Home again."""
+    """Nine Shift+Tab presses visit Logs ... Signals, then Home again."""
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> list[int]:
         seen = []
@@ -790,7 +792,7 @@ def test_shift_tab_walks_every_screen_backwards() -> None:
             seen.append(app.tab)
         return seen
 
-    assert _run(probe) == [7, 6, 5, 4, 3, 2, 1, 0]
+    assert _run(probe) == [8, 7, 6, 5, 4, 3, 2, 1, 0]
 
 
 def test_tab_does_nothing_while_the_theme_picker_is_open() -> None:
@@ -854,7 +856,8 @@ def test_picking_control_room_hides_the_window_bar_and_recolours_the_title_bars(
         NEON.chrome[0].lower(),
         False,
         CONTROL_ROOM.chrome[0].lower(),
-        "  1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Shadow test · 6 Briefs · 7 System · 8 Logs",
+        "  1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test"
+        " · 7 Briefs · 8 System · 9 Logs",
     )
 
 
@@ -913,7 +916,7 @@ def test_palette_search_goes_to_a_screen() -> None:
         await _palette_pick(pilot, "Go to Logs")
         return app.tab, isinstance(app.screen, CommandPalette)
 
-    assert _run(probe) == (7, False)
+    assert _run(probe) == (8, False)
 
 
 def test_palette_search_switches_and_saves_the_theme(tmp_path: Path) -> None:
