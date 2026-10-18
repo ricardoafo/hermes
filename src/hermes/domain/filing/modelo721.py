@@ -23,7 +23,7 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import Decimal, localcontext
+from decimal import Decimal
 from enum import StrEnum
 from typing import Final
 
@@ -34,6 +34,7 @@ from hermes.domain.filing.tax_year import tax_year_bounds
 from hermes.domain.lots.eur_fifo import EurTrade, exact_sum, replay_fifo_eur
 from hermes.domain.trading.order import OrderSide
 from hermes.domain.value_objects.currency import Currency
+from hermes.domain.value_objects.precision import exact
 
 __all__ = [
     "HoldingLine",
@@ -49,7 +50,6 @@ __all__ = [
 ]
 
 _ZERO: Final[Decimal] = Decimal("0")
-_PRECISION: Final[int] = 100
 
 
 class Modelo721Origin(StrEnum):
@@ -283,8 +283,7 @@ def build_modelo721(
         price = prices_eur.get(position.asset)
         value = None
         if price is not None:
-            with localcontext() as ctx:
-                ctx.prec = _PRECISION
+            with exact():
                 value = position.units * price
         lines.append(
             HoldingLine(

@@ -50,9 +50,13 @@ def is_loopback(url: str) -> bool:
         url: An absolute URL.
 
     Returns:
-        ``True`` when the host is ``localhost``, in ``127.0.0.0/8`` or ``::1``.
+        ``True`` when the host is ``localhost``, in ``127.0.0.0/8`` or ``::1``;
+        ``False`` for a URL that does not parse.
     """
-    host = urlsplit(url).hostname or ""
+    try:
+        host = urlsplit(url).hostname or ""
+    except ValueError:
+        return False
     if host == _LOCALHOST:
         return True
     try:
