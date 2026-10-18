@@ -9,9 +9,10 @@ from decimal import Decimal
 
 import pytest
 from hypothesis import given
-from returns.result import Failure, Success
+from returns.result import Success
 
 import tests.strategies.quantity  # noqa: F401
+from hermes.domain.errors import InvalidLot
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.quantity import Quantity
 from tests.strategies.quantity import quantity_strategy
@@ -51,23 +52,34 @@ class TestQuantityFactories:
 
     def test_from_str_negative_fails(self) -> None:
         """from_str returns Failure for negative amounts — Quantity must be non-negative."""
-        result = Quantity.from_str("-1 BTC")
-        assert isinstance(result, Failure)
+        error = Quantity.from_str("-1 BTC").failure()
+        assert error == InvalidLot(reason="Quantity amount must be ≥ 0, got Decimal('-1')")
+
+    def test_from_str_zero_is_accepted(self) -> None:
+        """from_str accepts exactly zero: the non-negative rule rejects only amounts below 0."""
+        assert Quantity.from_str("0 BTC").unwrap() == Quantity.zero(Currency.BTC)
 
     def test_from_str_invalid_amount(self) -> None:
         """from_str returns Failure when the amount part is not a valid decimal."""
-        result = Quantity.from_str("abc BTC")
-        assert isinstance(result, Failure)
+        error = Quantity.from_str("abc BTC").failure()
+        assert error == InvalidLot(reason="Cannot parse amount 'abc' as Decimal")
 
     def test_from_str_unknown_currency(self) -> None:
         """from_str returns Failure when the asset ticker is not in the currency allowlist."""
-        result = Quantity.from_str("1 DOGE")
-        assert isinstance(result, Failure)
+        error = Quantity.from_str("1 DOGE").failure()
+        assert error == InvalidLot(reason="Unknown currency: 'DOGE'")
 
     def test_from_str_missing_parts(self) -> None:
         """from_str returns Failure when the input lacks the expected 'amount ASSET' structure."""
-        result = Quantity.from_str("1")
-        assert isinstance(result, Failure)
+        error = Quantity.from_str("1").failure()
+        assert error == InvalidLot(reason="Cannot parse Quantity from '1': expected 'AMOUNT ASSET'")
+
+    def test_from_str_extra_parts(self) -> None:
+        """from_str rejects three tokens: exactly 'amount ASSET' is accepted, nothing more."""
+        error = Quantity.from_str("1 BTC now").failure()
+        assert error == InvalidLot(
+            reason="Cannot parse Quantity from '1 BTC now': expected 'AMOUNT ASSET'"
+        )
 
     def test_zero_factory(self) -> None:
         """Quantity.zero() produces a Quantity with amount=0 in the requested asset."""
