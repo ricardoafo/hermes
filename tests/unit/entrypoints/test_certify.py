@@ -30,6 +30,7 @@ from hermes.application.calibration.certification_gates import (
 )
 from hermes.application.calibration.lifecycle import CertificationState
 from hermes.application.calibration.shadow_parity import MetricStatus
+from hermes.application.calibration.signed_gate import CandidateEvidence
 from hermes.application.strategy_protocol.preregistration import PreRegistration
 from hermes.domain.events.trade_executed import TradeExecuted, TradeSide
 from hermes.domain.value_objects.strategy_id import StrategyId
@@ -37,8 +38,11 @@ from hermes.entrypoints import certify as certify_module
 from hermes.entrypoints import serve as serve_module
 from hermes.entrypoints.certify import EvidenceError, load_evidence, run
 from hermes.infrastructure.config.loader import load_config
+from tests.support import candidate_evidence
+from tests.support.candidate_evidence import TRAIN_DAYS, write_candidate
 from tests.support.day_zero import write_day_zero
 from tests.support.notification_samples import samples
+from tests.support.research_batch import BATCH_PATH
 
 _SID = "swing-donchian-4h"
 _FP = "f" * 64
@@ -747,3 +751,155 @@ class TestShadowParity:
         )
 
         assert (code, out) == (3, "")
+
+
+# ---------------------------------------------------------------------------
+# --batch (ADR-026, issue #1058)
+# ---------------------------------------------------------------------------
+
+
+def _batch_argv(tmp_path: Path, files: CandidateEvidence, *extra: str) -> list[str]:
+    return [
+        candidate_evidence.STRATEGY_ID,
+        "--batch",
+        BATCH_PATH,
+        "--evidence",
+        str(files.evidence),
+        "--performance",
+        str(files.performance),
+        "--funnel-evidence",
+        str(files.funnel_evidence),
+        "--trial-log",
+        str(tmp_path / "trial-log.jsonl"),
+        "--store-dir",
+        str(tmp_path / "store"),
+        *extra,
+    ]
+
+
+def _config_with_candidate(tmp_path: Path) -> Path:
+    """Copy the shipped config and add the candidate's roster entry, as a new strategy does."""
+    config = tmp_path / "config"
+    shutil.copytree(_PROJECT_ROOT / "config", config)
+    roster = config / "strategies.yaml"
+    entry = (
+        f"  - name: {candidate_evidence.STRATEGY_ID}\n"
+        "    enabled: false\n"
+        '    weight: "1.0"\n'
+        '    capital_budget: "5000"\n'
+        "    quote: USDT\n"
+        "    exit_pricing: bar_close\n"
+        "    sizing:\n"
+        '      risk_pct: "0.01"\n'
+        '      max_position_pct: "0.05"\n'
+        '      max_total_exposure_pct: "0.15"\n'
+    )
+    roster.write_text(roster.read_text(encoding="utf-8") + entry, encoding="utf-8")
+    return config
+
+
+class TestBatch:
+    """`hermes certify <id> --batch FILE`: one gate for any candidate of a signed batch."""
+
+    @pytest.fixture(autouse=True)
+    def _in_tmp(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Start at the clone's root: the batch is named by its repo-relative path."""
+        monkeypatch.chdir(tmp_path)
+        candidate_evidence.write_trial_log(tmp_path / "trial-log.jsonl", [0.05, 0.06])
+
+    def test_a_train_run_prints_na_and_records_nothing(self, tmp_path: Path) -> None:
+        """Issue #1037: validation_vs_train is NA on Train, and a Train pass certifies nothing."""
+        files = write_candidate(tmp_path, days=TRAIN_DAYS).files
+        out = io.StringIO()
+
+        code = certify_module.main(_batch_argv(tmp_path, files), stream=out, err=io.StringIO())
+
+        lines = out.getvalue().splitlines()
+        assert (code, lines[0], lines[-1], (tmp_path / "store").exists()) == (
+            0,
+            "# hermes certify swing-alpha: batch b1, judged on Train only",
+            "TRAIN PASSED: nothing recorded; the backtest gate is judged on Train + Validation",
+            False,
+        )
+        assert "NA    validation_vs_train      not applicable: judged on Train only" in lines
+
+    def test_a_validation_pass_records_backtest_certified(self, tmp_path: Path) -> None:
+        """A new candidate certifies with no code beyond its roster entry (issue #1058)."""
+        files = write_candidate(tmp_path).files
+        config = _config_with_candidate(tmp_path)
+        out = io.StringIO()
+
+        code = certify_module.main(
+            _batch_argv(tmp_path, files, "--config-dir", str(config)),
+            stream=out,
+            err=io.StringIO(),
+        )
+
+        record = JsonCertificationStore(tmp_path / "store").load(candidate_evidence.STRATEGY_ID)
+        assert (code, record.state if record else None) == (
+            0,
+            CertificationState.BACKTEST_CERTIFIED,
+        ), out.getvalue()
+
+    def test_a_candidate_without_a_roster_entry_is_a_config_error(self, tmp_path: Path) -> None:
+        """Recording needs the strategy's roster entry for its parameter fingerprint."""
+        files = write_candidate(tmp_path).files
+        err = io.StringIO()
+
+        code = certify_module.main(
+            _batch_argv(tmp_path, files, "--config-dir", str(_PROJECT_ROOT / "config")),
+            stream=io.StringIO(),
+            err=err,
+        )
+
+        assert (code, err.getvalue().startswith("ERROR: config:")) == (3, True)
+
+    def test_an_id_the_batch_does_not_name_is_refused(self, tmp_path: Path) -> None:
+        """Only a candidate a signed batch names is judged; nothing else certifies this way."""
+        files = write_candidate(tmp_path).files
+        argv = _batch_argv(tmp_path, files)
+        argv[0] = "swing-x"
+        out = io.StringIO()
+
+        code = certify_module.main(argv, stream=out, err=io.StringIO())
+
+        assert (code, out.getvalue().splitlines()[-1]) == (
+            1,
+            "REFUSED: batch b1 does not name 'swing-x'",
+        )
+
+    def test_a_draft_batch_is_refused(self, tmp_path: Path) -> None:
+        """Only a SIGNED batch binds thresholds; a DRAFT certifies nothing."""
+        files = write_candidate(tmp_path).files
+        batch_file = tmp_path / BATCH_PATH
+        batch_file.write_text(
+            batch_file.read_text(encoding="utf-8").replace("status: SIGNED", "status: DRAFT"),
+            encoding="utf-8",
+        )
+        out = io.StringIO()
+
+        code = certify_module.main(_batch_argv(tmp_path, files), stream=out, err=io.StringIO())
+
+        assert (code, "only a SIGNED batch is judged" in out.getvalue()) == (1, True)
+
+    def test_batch_needs_every_evidence_file(self, tmp_path: Path) -> None:
+        """The gate reads three files; a missing flag is a usage error, not a FAIL."""
+        files = write_candidate(tmp_path).files
+        argv = _batch_argv(tmp_path, files)
+        at = argv.index("--funnel-evidence")
+        del argv[at : at + 2]
+        err = io.StringIO()
+
+        code = certify_module.main(argv, stream=io.StringIO(), err=err)
+
+        assert (code, "--batch needs --funnel-evidence" in err.getvalue()) == (2, True)
+
+    def test_trial_log_without_batch_is_a_usage_error(self, tmp_path: Path) -> None:
+        """v1 and v2 read their trials from the performance file; --trial-log is batch-only."""
+        err = io.StringIO()
+
+        code = certify_module.main(
+            [_SID, "--trial-log", str(tmp_path / "trial-log.jsonl")], stream=io.StringIO(), err=err
+        )
+
+        assert (code, "--trial-log applies to --batch only" in err.getvalue()) == (2, True)
