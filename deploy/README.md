@@ -94,8 +94,11 @@ Cross-references:
 - `systemd/hermes-tax-pack.timer`: Fires the refresh daily at 07:30 Europe/Madrid. Status: installed by `vps-bootstrap`; left off until enabled by hand.
 - `systemd/hermes-notify-failure@.service`: Started by `hermes.service`'s `OnFailure=`; sends one Telegram message. Status: installed by `vps-bootstrap`.
 - `systemd/hermes-bot.service`: Read-only Telegram bot (`hermes bot`, ADR-015); reads only `/etc/hermes/env.bot`. Status: `vps-bootstrap` enables it when the Telegram secrets are set.
+- `systemd/hermes-lab-memory.service`: The staging lab's memory watch: runs `hermes-lab-memory.sh` as `hermes-staging`, reading `/etc/hermes/env.staging` for the Telegram chat. Status: installed by `vps-bootstrap`; staging only.
+- `systemd/hermes-lab-memory.timer`: Fires the watch every minute. Status: installed by `vps-bootstrap`; left off until enabled on hermes-01 with `sudo systemctl enable --now hermes-lab-memory.timer`.
 - `hermes-health-ping.sh`: The progress ping: `hermes status --json` decides success or `/fail` while the unit is active. Status: shipped in each release.
 - `hermes-notify-failure.sh`: Builds and sends the Telegram failure message; needs only bash and curl. Status: `/opt/hermes/bin`: `vps-bootstrap`, then each good deploy.
+- `hermes-lab-memory.sh`: Logs `MemAvailable` and each running `hermes-shadow@` instance's `MemoryCurrent` once a minute, and sends one Telegram message when available memory drops below 1 GiB and one when it recovers (ADR-024 §6). Read a day of figures with `journalctl -u hermes-lab-memory.service --since=-1d --output=cat`. With no Telegram chat in `env.staging`, a due alert fails the run instead of going nowhere. Status: shipped in each release; run from `/opt/hermes-staging/current/deploy`.
 - `hermes-notify-crash.sh`: `hermes.service`'s `ExecStopPost=`: one Slack line after a stop that was not clean. Status: `/opt/hermes/bin`: `vps-bootstrap`, then each good deploy.
 
 The scripts the workflows run live in `scripts/deploy/`:

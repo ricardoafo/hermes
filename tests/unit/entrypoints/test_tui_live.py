@@ -79,7 +79,7 @@ def _look(
     )
 
 
-def _quote(coin: str, *prices: str, failed: bool = False) -> LiveQuote:
+def _quote(coin: str, *prices: str, failed: bool = False, spread: str | None = None) -> LiveQuote:
     history = tuple(Decimal(p) for p in prices)
     return LiveQuote(
         coin=coin,
@@ -88,6 +88,7 @@ def _quote(coin: str, *prices: str, failed: bool = False) -> LiveQuote:
         previous=history[-2] if len(history) > 1 else None,
         history=history,
         failed_at=_TICK + timedelta(seconds=10) if failed else None,
+        spread_bps=None if spread is None else Decimal(spread),
     )
 
 
@@ -169,11 +170,38 @@ def test_market_rows_show_price_change_and_sparkline_per_coin() -> None:
     assert lines[2].split()[4] == "⣀⣀⣀⣸⣿⣿⣿"
 
 
-def test_market_rows_add_timeframe_and_result_from_64_cells() -> None:
-    """At 70 cells the header also names the timeframe and the result."""
+def test_market_rows_add_timeframe_spread_and_result_from_64_cells() -> None:
+    """At 70 cells the header also names the timeframe, the spread and the result."""
     watch = _model().market_watch()
     text = _plain(market_rows(watch, {}, _look(), width=70, rate=None), width=70)
-    assert text.splitlines()[1].split() == ["coin", "tf", "USDT", "15m", "chart", "result", "next"]
+    assert text.splitlines()[1].split() == [
+        "coin",
+        "tf",
+        "USDT",
+        "15m",
+        "chart",
+        "spread",
+        "result",
+        "next",
+    ]
+
+
+def test_market_rows_show_the_spread_in_basis_points_from_64_cells() -> None:
+    """At 100 cells BTC reads ``3.4 bp`` under the spread header; at 44 cells no spread shows."""
+    watch = _model().market_watch()
+    quotes = {"BTC": _quote("BTC", "60000", "61200", spread="3.449")}
+    wide = _plain(market_rows(watch, quotes, _look(), width=100, rate=None), width=100)
+    narrow = _plain(market_rows(watch, quotes, _look(), width=44, rate=None), width=44)
+    btc = next(line for line in wide.splitlines() if line.startswith("BTC"))
+    assert ("3.4 bp" in btc, " bp" in narrow) == (True, False)
+
+
+def test_a_failed_coin_shows_no_spread() -> None:
+    """After a failed tick the old spread is stale: the cell is a dash, not the last figure."""
+    watch = _model().market_watch()
+    quotes = {"BTC": _quote("BTC", "60000", "61200", failed=True, spread="3.449")}
+    wide = _plain(market_rows(watch, quotes, _look(), width=100, rate=None), width=100)
+    assert " bp" not in wide
 
 
 def test_failed_coin_keeps_its_last_price_dimmed_with_as_of() -> None:

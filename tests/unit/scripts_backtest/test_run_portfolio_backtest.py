@@ -47,6 +47,7 @@ from hermes.entrypoints.funnel import load_funnel_evidence, read_front_matter
 from hermes.entrypoints.funnel import main as funnel_main
 from hermes.infrastructure.config.models import StrategyConfig
 from tests.support.research_batch import BATCH_PATH, batch_front_matter, batch_text
+from tests.support.unknown_signal import config_with_unknown_signal, refusal_lines
 
 _SCRIPTS = Path(__file__).resolve().parents[3] / "scripts" / "backtest"
 _BTC = Pair(base=Currency.BTC, quote=Currency.USDT)
@@ -498,3 +499,21 @@ def test_batch_without_candidate_is_a_usage_error(tmp_path: Path) -> None:
         DRIVER.main([f"--batch={tmp_path / 'b1.md'}"])
 
     assert caught.value.code == 2
+
+
+def test_an_unknown_signal_exits_1_naming_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Contract §2a (#1119): an unknown ``signal:`` stops the driver at config load, exit 1."""
+    config_dir = config_with_unknown_signal(tmp_path)
+
+    code = DRIVER.main(
+        [
+            f"--config-dir={config_dir}",
+            f"--trial-log={tmp_path / 'trial-log.jsonl'}",
+            f"--output={tmp_path / 'report.json'}",
+        ]
+    )
+
+    lines = capsys.readouterr().err.splitlines()
+    assert (code, lines[0], lines[-1]) == (1, *refusal_lines(config_dir))

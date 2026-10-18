@@ -22,12 +22,14 @@ from types import MappingProxyType
 from typing import Any, Final
 
 from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
+from hermes.domain.strategy.swing.daily_ma import DailyMaAdapter
 from hermes.domain.strategy.swing.ensemble import BreakoutEnsembleAdapter
 from hermes.domain.strategy.swing.trend_slope import TrendSlopeAdapter
 from hermes.ports.strategy import StrategyPort
 
 __all__ = [
     "BREAKOUT_ENSEMBLE",
+    "DAILY_MA",
     "DONCHIAN_BREAKOUT",
     "DONCHIAN_SLOPE",
     "StrategyKind",
@@ -39,8 +41,14 @@ __all__ = [
 DONCHIAN_BREAKOUT: Final = "donchian_breakout"
 """The v1/v2 rule (pre-registration v1 §5): the kind of an entry with no ``signal:``."""
 
+
 BREAKOUT_ENSEMBLE: Final = "breakout_ensemble"
 """Research batch swing-b1, candidate C1 (swing-b1-ensemble, issue #1063)."""
+
+
+DAILY_MA: Final = "daily_ma"
+"""Research batch swing-b1, candidate C2 (swing-b1-daily-ma, issue #1064)."""
+
 
 DONCHIAN_SLOPE: Final = "donchian_slope"
 """Research batch swing-b1 C3: v2's rule plus a rising daily EMA(200) (issue #1065)."""
@@ -98,6 +106,7 @@ _KINDS: Final[Mapping[str, StrategyKind[StrategyPort]]] = MappingProxyType(
     {
         DONCHIAN_BREAKOUT: StrategyKind(DONCHIAN_BREAKOUT, SwingStrategyAdapter),
         BREAKOUT_ENSEMBLE: StrategyKind(BREAKOUT_ENSEMBLE, BreakoutEnsembleAdapter),
+        DAILY_MA: StrategyKind(DAILY_MA, DailyMaAdapter),
         DONCHIAN_SLOPE: StrategyKind(DONCHIAN_SLOPE, TrendSlopeAdapter),
     }
 )
