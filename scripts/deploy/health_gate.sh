@@ -16,7 +16,8 @@
 # Do not drop any of the three. Limit: this proves start and a stable
 # first 30 s, not that the strategy trades.
 #
-# HERMES_TARGET=staging gates hermes-staging.service instead (#192).
+# HERMES_TARGET=staging gates hermes-staging.service instead (#192), and
+# HERMES_GATE_UNIT names one lab shadow instance to gate (#1150).
 #
 # Test seams: SYSTEMCTL, JOURNALCTL, GATE_HOLD_SECONDS.
 #
@@ -35,6 +36,7 @@ case "${HERMES_TARGET:-prod}" in
     staging) unit=hermes-staging.service ;;
     *) bad "unknown HERMES_TARGET '${HERMES_TARGET}': expected prod or staging" ;;
 esac
+unit=${HERMES_GATE_UNIT:-$unit}
 since=${1:?usage: health_gate.sh <since_epoch>}
 hold=${GATE_HOLD_SECONDS:-30}
 SYSTEMCTL=${SYSTEMCTL:-systemctl}
