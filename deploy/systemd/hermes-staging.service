@@ -2,7 +2,7 @@
 #
 # Shipped disabled: nothing in the repo enables it. The operator copies it to
 # /etc/systemd/system and enables it by hand; see
-# docs/guides/staging-on-hermes-01.md. Layout, fully separate from prod:
+# docs/guides/environments.md. Layout, fully separate from prod:
 #   /opt/hermes-staging/current    -> versions/<version>  (atomic symlink)
 #   /opt/hermes-staging/current/.venv   per-release virtualenv
 #   /opt/hermes-staging/current/config  per-release non-secret YAML
