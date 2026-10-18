@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 from hermes.domain.errors import InfraError
 
-__all__ = ["ConfigError"]
+__all__ = ["ConfigError", "TierError"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,3 +35,16 @@ class ConfigError(InfraError):
     def __str__(self) -> str:
         """Return the wrapped human-readable message."""
         return f"Config error: {self.msg}"
+
+
+@dataclass(frozen=True, slots=True)
+class TierError(ConfigError):
+    """The config is well formed, but a setting breaks its tier's rules (ADR-024 §4, #970).
+
+    Args:
+        msg: Every problem on one line, after the tier.
+        problems: One entry per problem. Each starts with the setting's name,
+            then a space and what is wrong; none holds the setting's value.
+    """
+
+    problems: tuple[str, ...] = ()
