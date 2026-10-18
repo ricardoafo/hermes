@@ -21,15 +21,9 @@ from tests.support.paths import REPO_ROOT
 _WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 _BARE_STATUS = re.compile(r"^\s*\w+=(\$\?|\$\{PIPESTATUS\[\d+\]\})\s*$")
 
-# Sites on main before this guard. The workflow queue fixes them in one PR;
-# the list only shrinks, and a fixed site must be removed from it.
-_KNOWN = {
-    "backtest-batch.yml:check:Batch check: code=$?",
-    "backtest-batch.yml:judge-train:Judge the batch on Train: code=$?",
-    "backtest-batch.yml:judge-validation:Judge the batch on Validation: code=$?",
-    "backtest-batch.yml:validation:Family Validation budget: code=${PIPESTATUS[0]}",
-    "scheduled.yml:fresh-seeds:File failing seeds: rc=$?",
-}
+# Sites that may keep a bare exit-status read. None: the list only shrinks, and a
+# new site fails the guard instead of joining it.
+_KNOWN: set[str] = set()
 
 
 def _run_blocks() -> list[tuple[str, str]]:
