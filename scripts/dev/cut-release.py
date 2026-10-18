@@ -5,6 +5,11 @@ ADR-022 §2: a version is cut by a normal release PR, never by a workflow.
 Run from a fresh branch off ``main``:
 
     uv run python scripts/dev/cut-release.py 0.2.0
+    uv run python scripts/dev/cut-release.py --next --engine-change no
+
+``--next`` picks the version a merge-window cut takes (ADR-028): PATCH when
+every changelog entry is ``Fixed`` or ``Security`` and the engine line is
+``no``, MINOR otherwise.
 
 It sets ``version`` in ``pyproject.toml`` and ``__version__`` in
 ``src/hermes/__init__.py``, refreshes ``uv.lock`` with ``uv lock``, turns the
@@ -141,6 +146,34 @@ def check_bump(
                 f"{new_package} leaves 0.y.z; pass --real-capital only for the first release "
                 "a champion trades real money with (ADR-027 §3)"
             )
+
+
+PATCH_SECTIONS = frozenset({"Fixed", "Security"})
+
+
+def next_version(current_package: str, sections: set[str], *, engine_change: str) -> str:
+    """Return the release a cut at a merge window takes (ADR-028).
+
+    PATCH when every entry is a fix or a security fix and the engine line is
+    ``no``; MINOR otherwise (ADR-027 §1). From the retired shadow line the
+    count starts at ``0.1.0``.
+
+    Raises:
+        ValueError: there is nothing to release.
+    """
+    if not sections:
+        raise ValueError("no changelog entries since the last cut: nothing to release")
+    major, minor, patch = effective_version(current_package).release[:3]
+    if engine_change == "no" and sections <= PATCH_SECTIONS:
+        return f"{major}.{minor}.{patch + 1}"
+    return f"{major}.{minor + 1}.0"
+
+
+def entry_sections(changelog: str, fragments: dict[str, list[tuple[int, str]]]) -> set[str]:
+    """Return the sections with at least one entry, hand-written or fragment."""
+    _, legacy_body, _ = _split_unreleased(changelog)
+    legacy = {name for name, lines in _sections(legacy_body).items() if "".join(lines).strip()}
+    return legacy | {name for name, entries in fragments.items() if entries}
 
 
 def set_version(text: str, pattern: re.Pattern[str], new: str) -> str:
@@ -303,7 +336,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("version", help="0.Y.Z, or X.Y.Z from 1.0.0 on")
+    target = parser.add_mutually_exclusive_group(required=True)
+    target.add_argument("version", nargs="?", help="0.Y.Z, or X.Y.Z from 1.0.0 on")
+    target.add_argument(
+        "--next",
+        action="store_true",
+        help="Pick the version from the changelog entries (ADR-028); needs --engine-change.",
+    )
     parser.add_argument(
         "--date", default=None, help="Release date, YYYY-MM-DD (default: today, UTC)."
     )
@@ -327,6 +366,8 @@ def main(argv: list[str] | None = None) -> int:
         help="Where to write the PR body (default: <tmp>/hermes-release-<version>.md).",
     )
     args = parser.parse_args(argv)
+    if args.next and args.engine_change is None:
+        parser.error("--next needs --engine-change yes or no")
 
     root = args.root or _repo_root()
     pyproject = root / "pyproject.toml"
@@ -336,11 +377,22 @@ def main(argv: list[str] | None = None) -> int:
     date = args.date or datetime.now(UTC).date().isoformat()
 
     try:
-        check_release_name(args.version)
-        new_package = to_package_version(args.version)
         pyproject_text = pyproject.read_text(encoding="utf-8")
         init_text = init.read_text(encoding="utf-8")
+        changelog_text = changelog.read_text(encoding="utf-8")
         current_package = read_current_version(pyproject_text, init_text)
+        fragments = aggregate_changelog.collect_fragments(frag_dir)
+        version = (
+            next_version(
+                current_package,
+                entry_sections(changelog_text, fragments),
+                engine_change=args.engine_change,
+            )
+            if args.next
+            else args.version
+        )
+        check_release_name(version)
+        new_package = to_package_version(version)
         check_newer(current_package, new_package)
         check_bump(
             current_package,
@@ -348,10 +400,7 @@ def main(argv: list[str] | None = None) -> int:
             engine_change=args.engine_change,
             real_capital=args.real_capital,
         )
-        fragments = aggregate_changelog.collect_fragments(frag_dir)
-        new_changelog, section = cut_changelog(
-            changelog.read_text(encoding="utf-8"), args.version, date, fragments
-        )
+        new_changelog, section = cut_changelog(changelog_text, version, date, fragments)
     except (ValueError, FileNotFoundError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
@@ -370,10 +419,10 @@ def main(argv: list[str] | None = None) -> int:
         path.unlink()
     if not args.no_lock:
         _run_uv_lock(root)
-    body_out = args.body_out or Path(tempfile.gettempdir()) / f"hermes-release-{args.version}.md"
-    body_out.write_text(render_pr_body(args.version, section, args.engine_change), encoding="utf-8")
+    body_out = args.body_out or Path(tempfile.gettempdir()) / f"hermes-release-{version}.md"
+    body_out.write_text(render_pr_body(version, section, args.engine_change), encoding="utf-8")
     print(
-        f"Cut v{args.version} ({new_package}): compiled {len(removed)} fragment(s); "
+        f"Cut v{version} ({new_package}): compiled {len(removed)} fragment(s); "
         f"PR body in {body_out}. Fill in its Engine change line before opening the PR.",
         file=sys.stderr,
     )
