@@ -132,7 +132,7 @@ def test_number_keys_one_to_nine_each_name_a_screen() -> None:
 
 
 def test_number_keys_switch_screens() -> None:
-    """Pressing 3 shows Positions, pressing 1 returns Home."""
+    """Pressing 3 shows the Positions list, pressing 1 returns Home."""
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[int, str, int]:
         await _press(pilot, ["3"])
@@ -141,7 +141,7 @@ def test_number_keys_switch_screens() -> None:
         return shown, text, app.tab
 
     shown, text, back = _run(probe)
-    assert (shown, "Positions · coming next · issue #715" in text, back) == (2, True, 0)
+    assert (shown, "State" in text and "Stop room" in text, back) == (2, True, 0)
 
 
 def test_every_unbuilt_screen_names_its_issue() -> None:

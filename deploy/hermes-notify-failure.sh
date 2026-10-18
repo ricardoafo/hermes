@@ -22,8 +22,9 @@ set +x
 
 unit="${1:-hermes.service}"
 
-# Test seam: points curl at a local fake. Never set it in env.production.
-api_base="${HERMES_NOTIFY_API_BASE:-https://api.telegram.org}"
+# The same variable the Python notifier reads (#970): a lower environment
+# points it at a fake; unset, the real API. Never set it in env.production.
+api_base="${HERMES_TELEGRAM__API_BASE:-https://api.telegram.org}"
 token="${HERMES_TELEGRAM__BOT_TOKEN:-}"
 chat_id="${HERMES_TELEGRAM__CHAT_ID:-}"
 

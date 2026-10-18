@@ -36,6 +36,7 @@ from hermes.application.console.live import (
     TickOutcome,
     live_position,
     live_total,
+    spread_bps,
 )
 from hermes.application.console.position_figures import LotFacts, PositionFacts, build_detail
 from hermes.application.console.views import (
@@ -92,6 +93,12 @@ def _ok(coin: str, price: str, at: datetime) -> TickOutcome:
 
 def _failed(coin: str, at: datetime) -> TickOutcome:
     return TickOutcome(coin=coin, at=at, price=None, error="KrakenPublicError")
+
+
+def _spread(coin: str, price: str, bps: str | None, at: datetime) -> TickOutcome:
+    return TickOutcome(
+        coin=coin, at=at, price=Decimal(price), spread_bps=None if bps is None else Decimal(bps)
+    )
 
 
 # ----------------------------------------------------------------------
@@ -444,3 +451,54 @@ def test_property_live_figures_use_only_the_live_price(live: Decimal) -> None:
     assert abs(a.gross - b.gross) <= _TOLERANCE
     assert a.net is not None and b.net is not None
     assert abs(a.net - b.net) <= _TOLERANCE
+
+
+# ----------------------------------------------------------------------
+# Spread (issue #1156)
+# ----------------------------------------------------------------------
+
+
+def test_spread_is_the_gap_over_the_mid_in_basis_points() -> None:
+    """A bid of 99 and an ask of 101 around a mid of 100 is 200 bp."""
+    assert spread_bps(Decimal(99), Decimal(101)) == Decimal(200)
+
+
+def test_fetch_carries_the_spread_of_each_coin_and_none_for_a_failure() -> None:
+    """A book of price -1 / +1 gives 2 / 60000 x 10000 bp for BTC; a failed coin has none."""
+    fake = _FakeTicker({"BTC": "60000"}, fail={"ETH": RuntimeError("socket closed")})
+    outcomes = TickerPoller(fake, _Clock(), coins=("BTC", "ETH")).fetch()
+    assert [o.spread_bps for o in outcomes] == [Decimal(2) / Decimal(60000) * 10000, None]
+
+
+def test_the_quote_carries_the_newest_good_spread() -> None:
+    """The second good tick's spread replaces the first's."""
+    board = LiveBoard()
+    board.apply([_spread("BTC", "60000", "4.0", _T0)])
+    board.apply([_spread("BTC", "60000", "6.5", _T0 + timedelta(seconds=10))])
+    quote = board.quote("BTC")
+    assert quote is not None
+    assert quote.spread_bps == Decimal("6.5")
+
+
+def test_a_good_tick_without_a_spread_clears_the_old_one() -> None:
+    """A spread is never carried over a tick that did not measure one."""
+    board = LiveBoard()
+    board.apply([_spread("BTC", "60000", "4.0", _T0)])
+    board.apply([_spread("BTC", "60000", None, _T0 + timedelta(seconds=10))])
+    quote = board.quote("BTC")
+    assert [q.spread_bps for q in [quote] if q is not None] == [None]
+
+
+@given(
+    bid=st.decimals(min_value=Decimal("0.01"), max_value=Decimal(10**6), places=2),
+    gap=st.decimals(min_value=Decimal("0.01"), max_value=Decimal(10**4), places=2),
+    scale=st.integers(min_value=1, max_value=1000),
+)
+def test_property_spread_is_positive_and_does_not_depend_on_the_price_unit(
+    bid: Decimal, gap: Decimal, scale: int
+) -> None:
+    """An uncrossed book has a positive spread, and quoting in another unit leaves it as it was."""
+    ask = bid + gap
+    here = spread_bps(bid, ask)
+    there = spread_bps(bid * scale, ask * scale)
+    assert (here > 0, abs(here - there) <= _TOLERANCE * 10**6) == (True, True)
