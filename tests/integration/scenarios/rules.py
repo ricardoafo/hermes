@@ -214,8 +214,8 @@ PRE_REGISTERED: dict[str, tuple[Rule, ...]] = {
         Rule(
             "Max drawdown ≥ 15% during train+val",
             proved_by=(
-                _UNIT + "application/strategy_protocol/test_h1_acceptance_gate.py"
-                "::TestH1AcceptanceGateIndividualFailures::test_max_drawdown_at_threshold_fails",
+                _UNIT + "application/calibration/test_certification_gates.py"
+                "::TestSection9Checks::test_each_row_fails_at_its_boundary",
             ),
         ),
     ),

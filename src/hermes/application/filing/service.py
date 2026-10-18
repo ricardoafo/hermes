@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal, localcontext
+from decimal import Decimal
 from typing import Final
 
 from returns.result import Failure, Result, Success
@@ -38,11 +38,11 @@ from hermes.domain.tax.tax_calendar import add_months, madrid_midnight
 from hermes.domain.tax.two_month import REPURCHASE_WINDOW_MONTHS
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
+from hermes.domain.value_objects.precision import exact
 from hermes.ports.filing import FilingLedgerReaderPort
 
 __all__ = ["Custodian", "FilingPack", "YearEndPrice", "build_filing_pack"]
 
-_PRECISION: Final[int] = 100
 _VALUATION_QUOTE: Final[Currency] = Currency.USDT
 
 
@@ -192,6 +192,5 @@ def _value(
             return YearEndPrice(asset=asset, price_eur=None, source="no stored bar before year end")
         native = close
         source = f"last bar close {close} USDT at the {rate_note}"
-    with localcontext() as ctx:
-        ctx.prec = _PRECISION
+    with exact():
         return YearEndPrice(asset=asset, price_eur=native / pricing.rate, source=source)

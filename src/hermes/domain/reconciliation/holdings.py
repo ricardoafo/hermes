@@ -18,11 +18,11 @@ from decimal import Decimal, localcontext
 from enum import StrEnum
 from typing import Final
 
-from hermes.domain.portfolio.precision import EXACT_CONTEXT
 from hermes.domain.trading.order import OrderSide
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
+from hermes.domain.value_objects.precision import EXACT_CONTEXT
 
 __all__ = [
     "CheckStatus",

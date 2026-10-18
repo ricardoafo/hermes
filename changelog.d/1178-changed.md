@@ -1,0 +1,1 @@
+- The read-only ledger readers share one open/close lifecycle, `ReadOnlyLedgerReader`, instead of seven copies (#1178).

@@ -46,7 +46,7 @@ Test tiers touched: <!-- e.g. unit, property -->
 ## Zero-warnings compliance
 
 All applicable linters pass with **zero** warnings (markdownlint, ruff,
-mypy, safety, pip-audit — whichever apply). No `# noqa`, no `# type:
+mypy, pip-audit — whichever apply). No `# noqa`, no `# type:
 ignore`, no `<!-- markdownlint-disable -->` added. If a suppression was
 unavoidable, explain in the Risk section below.
 
