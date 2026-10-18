@@ -14,7 +14,6 @@ counts distinct bars, so it is spent once.
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import timedelta
-from decimal import ROUND_FLOOR, Decimal
 from typing import Final
 
 from hermes.domain.market_data.bar_schedule import interval_duration
@@ -22,14 +21,14 @@ from hermes.domain.market_data.kline import KlineInterval
 
 __all__ = [
     "BUDGET_SOURCE",
-    "MISSED_BAR_SHARE",
+    "MISSED_BAR_PERCENT",
     "SHADOW_DAYS",
     "MissedBarBudget",
     "budget_crossed_report",
     "missed_bar_allowance",
 ]
 
-MISSED_BAR_SHARE: Final = Decimal("0.01")
+MISSED_BAR_PERCENT: Final = 1
 """ADR-021 §2 Done rule 2: at most 1% of bars missed."""
 
 SHADOW_DAYS: Final = 90
@@ -52,7 +51,7 @@ def missed_bar_allowance(intervals: Iterable[KlineInterval], *, days: int = SHAD
     """
     span = timedelta(days=days)
     bars = sum(span // interval_duration(interval) for interval in intervals)
-    return int((MISSED_BAR_SHARE * bars).to_integral_value(rounding=ROUND_FLOOR))
+    return bars * MISSED_BAR_PERCENT // 100
 
 
 @dataclass(frozen=True, slots=True)
