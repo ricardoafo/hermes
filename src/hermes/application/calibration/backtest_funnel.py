@@ -15,13 +15,13 @@ openspec/changes/v2-backtest-funnel/change.md.
 """
 
 import math
-import statistics
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, fields
 from datetime import date, datetime, timedelta
 from typing import Literal
 
 from hermes.application.calibration.certification_gates import GateCheck
+from hermes.domain.statistics.correlation import pearson
 from hermes.domain.statistics.overfitting import probability_of_backtest_overfitting
 from hermes.domain.statistics.performance import daily_returns
 from hermes.domain.statistics.period_returns import (
@@ -539,8 +539,11 @@ def _correlation(
         raise _NotComputedError
     if not running:
         return "none running", True
-    highest = max(statistics.correlation(returns, series) for series in running.values())
-    _finite(highest)
+    coefficients = [pearson(returns, series) for series in running.values()]
+    defined = [c for c in coefficients if c is not None]
+    if len(defined) < len(coefficients):
+        raise _NotComputedError
+    highest = max(defined)
     return f"{highest:g}", highest < t.return_correlation_below
 
 
