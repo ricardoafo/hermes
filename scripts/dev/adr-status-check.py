@@ -30,7 +30,6 @@ ADR_DIR = Path("docs") / "architecture"
 BASELINE = Path("scripts") / "dev" / "adr-status.baseline"
 _HEADER_LINES = 15
 _UNMERGED = re.compile(r"^(proposed|draft)\b", re.IGNORECASE)
-_ADR_NUMBER = re.compile(r"ADR-(\d{3})")
 _FILE_NAME = re.compile(r"adr-(\d{3})-")
 _LINK = re.compile(r"\]\(([^)#]+\.md)")
 _NO_SUPERSESSION = re.compile(r"^(none|nothing|no one|—|-)", re.IGNORECASE)
@@ -81,7 +80,6 @@ def check_statuses(root: Path) -> list[str]:
     """Report ADRs that read Proposed or Draft and are not in the baseline."""
     allowed = read_baseline(root)
     problems: list[str] = []
-    seen: set[str] = set()
     for path in adr_files(root):
         rel = path.relative_to(root).as_posix()
         status = header_field(path.read_text(encoding="utf-8"), "Status")
@@ -92,7 +90,6 @@ def check_statuses(root: Path) -> list[str]:
             problems.append(f"{rel}: status is '{status[:40]}'; a merged ADR is Accepted")
         if not unmerged and rel in allowed:
             problems.append(f"{rel}: Accepted now; delete it from {BASELINE.as_posix()}")
-        seen.add(rel)
     return problems
 
 
