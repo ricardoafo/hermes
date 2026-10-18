@@ -10,8 +10,8 @@ Invariants:
   reaches the stop. The optimistic bound fills at ``min(stop, minute open)``,
   the pessimistic bound at the minute's low, both in bps below the model fill.
 - With trades, the trigger is the first trade inside the 4h bar at or below
-  the stop, reported in bps below the model fill; sampled days repeat for a
-  seed.
+  the stop, reported in bps below the model fill; sampled days are spread
+  evenly and repeat on every run.
 - Percentiles are nearest-rank; shares count values strictly above the
   threshold.
 - The minute reader keeps open time, open and low even for rows ``Bar``
@@ -297,19 +297,16 @@ def test_trigger_slippage_is_bps_below_model_fill() -> None:
     assert ss.trigger_slippage(_event(), Decimal("95.52")) == Decimal(50)
 
 
-def test_sample_days_is_reproducible_and_distinct() -> None:
-    """Invariant: the same seed picks the same distinct days; asking for more returns them all."""
+def test_sample_days_are_spread_evenly_and_distinct() -> None:
+    """Invariant: 3 of 9 event days (two events each) are days 0, 3 and 6; more gives all 9."""
     events = [
         ss.StopEvent(_TWO, _T0 + timedelta(days=d, hours=h), _T0, Decimal(1), Decimal(1))
-        for d in range(10)
+        for d in range(9)
         for h in (0, 4)
     ]
 
-    first, again = ss.sample_days(events, 3), ss.sample_days(events, 3)
-    every = ss.sample_days(events, 50)
-
-    assert (first == again, len(set(first)), set(first) <= set(every)) == (True, 3, True)
-    assert every == [(_T0 + timedelta(days=d)).date() for d in range(10)]
+    assert ss.sample_days(events, 3) == [(_T0 + timedelta(days=d)).date() for d in (0, 3, 6)]
+    assert ss.sample_days(events, 50) == [(_T0 + timedelta(days=d)).date() for d in range(9)]
 
 
 def test_trade_reader_skips_header_and_reads_time_and_price(tmp_path: Path) -> None:

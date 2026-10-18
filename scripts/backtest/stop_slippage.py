@@ -18,8 +18,8 @@ gets two bounds, both in bps below the model fill:
   opens through the stop costs anything.
 * pessimistic: fill at the touch minute's low; the worst trade the minute saw.
 
-With ``--trade-days N``, the script also samples ``N`` event days per pair
-(seeded, so reruns pick the same days), downloads each day's aggregated
+With ``--trade-days N``, the script also takes ``N`` event days per pair,
+spread evenly across Train, downloads each day's aggregated
 trades from the public archive, and takes the first trade at or below the stop
 inside the event's 4h bar as the trigger price. That is the closest the public
 data gets to a real stop-market fill; the table reports it in bps below the
@@ -43,7 +43,6 @@ import csv
 import hashlib
 import io
 import json
-import random
 import sys
 import tempfile
 import zipfile
@@ -76,7 +75,6 @@ _BPS: Final[Decimal] = Decimal(10_000)
 _ZERO: Final[Decimal] = Decimal(0)
 _EPOCH: Final[datetime] = datetime(1970, 1, 1, tzinfo=UTC)
 DAILY_AGG_TRADES_URL: Final[str] = "https://data.binance.vision/data/spot/daily/aggTrades"
-SAMPLE_SEED: Final[int] = 1104
 _HTTP_TIMEOUT_SECONDS: Final[int] = 120
 # AtrEngine reads only the last 2p + 1 bars; passing just those keeps the scan linear.
 _ATR_WINDOW: Final[int] = 2 * ATR_PERIOD + 1
@@ -245,11 +243,16 @@ def trigger_slippage(event: StopEvent, price: Decimal) -> Decimal:
     return _bps_below(event.model_fill, price)
 
 
-def sample_days(events: Sequence[StopEvent], count: int, seed: int = SAMPLE_SEED) -> list[date]:
-    """Return up to ``count`` distinct event days, the same ones for the same seed."""
+def sample_days(events: Sequence[StopEvent], count: int) -> list[date]:
+    """Return up to ``count`` distinct event days, spread evenly across the window.
+
+    Evenly spaced rather than random, so reruns pick the same days and every
+    year of the window is represented.
+    """
     days = sorted({e.bar_open.date() for e in events})
-    rng = random.Random(seed)  # noqa: S311 — a reproducible sample, not a secret
-    return sorted(rng.sample(days, min(count, len(days))))
+    if count >= len(days):
+        return days
+    return [days[i * len(days) // count] for i in range(count)]
 
 
 def summarize_trades(
