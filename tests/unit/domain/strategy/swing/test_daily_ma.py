@@ -191,6 +191,18 @@ class TestEntry:
         adapter.on_bar(_daily(_FLAT_DAYS + 1, Decimal("101")), _state())
         assert _kind(adapter.on_bar(_h4(_FLAT_DAYS, 5, _FLAT), _state())) == "none"
 
+    def test_an_adapter_never_seeded_starts_flat_and_enters(self) -> None:
+        """Daily bars delivered live, no seed: the first fresh cross is an entry, stop 95."""
+        adapter = DailyMaAdapter(sma_period=3)
+        for day in range(_FLAT_DAYS):
+            adapter.on_bar(_daily(day, _FLAT), _state())
+        assert _summary(_entered(adapter)) == (
+            SignalKind.ENTRY,
+            Decimal("101"),
+            Decimal("95"),
+            None,
+        )
+
     def test_sizing_reads_the_larger_multiple(self) -> None:
         """At the 3.5 neighbour the stop is 101 - 3.5 x 2 = 94."""
         signal = _entered(_seeded(stop_atr_mult=Decimal("3.5")))
