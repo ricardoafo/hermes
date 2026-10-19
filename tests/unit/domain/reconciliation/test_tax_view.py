@@ -24,6 +24,7 @@ from hermes.domain.trading.order import OrderSide
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
+from hermes.domain.value_objects.quantity import Quantity
 
 _BTC = Pair(base=Currency.BTC, quote=Currency.USDT)
 _SEPT = ReconciliationMonth(2026, 9)
@@ -136,8 +137,12 @@ def test_a_book_selling_more_than_it_holds_fails() -> None:
         [_trade(1, OrderSide.SELL, "1", "100", "0", _SEP)], start=_SEPT.start, end=_SEPT.end
     )
 
-    assert isinstance(result, Failure)
-    assert isinstance(result.failure(), InsufficientInventory)
+    assert result == Failure(
+        InsufficientInventory(
+            requested=Quantity(amount=Decimal("1"), asset=Currency.BTC),
+            available=Quantity(amount=Decimal("0"), asset=Currency.BTC),
+        )
+    )
 
 
 def test_an_empty_book_is_a_quiet_month() -> None:

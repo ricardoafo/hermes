@@ -81,7 +81,7 @@ def test_pending_sales_point_at_the_backfill() -> None:
 def test_shadow_adds_the_no_real_tax_note() -> None:
     """Invariant: a shadow pack says no real tax is due."""
     texts = [i.text for i in _assess(shadow=True).items]
-    assert any("no real tax is due" in text for text in texts)
+    assert "Shadow ledger (simulated fills): no real tax is due on these figures." in texts
 
 
 def test_unconfirmed_renta_boxes_keep_a_closed_year_incomplete() -> None:

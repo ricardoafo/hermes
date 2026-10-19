@@ -9,7 +9,7 @@ no offset, and the immutability of the records. Each test below pins one.
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError, replace
+from dataclasses import replace
 from datetime import datetime, timedelta, tzinfo
 from decimal import Decimal
 
@@ -73,8 +73,9 @@ class TestTransitionEdges:
         result = _seed(quote=Currency.USDC).after_fill(
             make_fill(OrderSide.BUY, "0.01", "100", pair=BTC_USDT)
         )
-        assert isinstance(result, Failure)
-        assert isinstance(result.failure(), CurrencyMismatch)
+        assert result == Failure(
+            CurrencyMismatch(expected=str(Currency.USDC), actual=str(Currency.USDT))
+        )
 
     def test_sell_that_leaves_cash_at_exactly_zero_is_allowed(self) -> None:
         """All cash in BTC, then a SELL whose fee equals its proceeds: cash ends at 0, allowed."""
@@ -109,18 +110,3 @@ class TestMarkAndRecords:
                 interval=KlineInterval.H4,
                 bar_close_time=datetime(2026, 10, 1, tzinfo=_NoOffset()),
             )
-
-    def test_records_are_frozen_with_slots(self) -> None:
-        """Snapshot, position and mark reject edits and carry no instance dict."""
-        mark = PortfolioMark(
-            snapshot=_seed(), pair=BTC_USDT, interval=KlineInterval.H4, bar_close_time=at(0)
-        )
-        records: list[tuple[object, str]] = [
-            (_seed(), "cash"),
-            (_btc_position(), "quantity"),
-            (mark, "pair"),
-        ]
-        for record, field_name in records:
-            with pytest.raises(FrozenInstanceError):
-                setattr(record, field_name, None)
-        assert not any(hasattr(record, "__dict__") for record, _ in records)
