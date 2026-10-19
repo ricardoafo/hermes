@@ -14,9 +14,9 @@ This module is a pure port: no I/O, no adapter code, no external dependencies.
 
 Design decisions:
 
-- ``@runtime_checkable`` Protocol (not ABC) — consistent with ``KlinesFetcherPort``
-  and ``FeeScheduleProviderPort``; allows ``isinstance`` injection guards without
-  requiring adapters to inherit from hermes types.
+- ``@runtime_checkable`` Protocol (not ABC) — consistent with ``KlinesFetcherPort``;
+  allows ``isinstance`` injection guards without requiring adapters to inherit from
+  hermes types.
 - All three stream methods return ``AsyncIterator[T]`` — the canonical Python
   streaming type (PEP 525); adapters may implement with async generators or
   any async-iterable object.
