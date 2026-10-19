@@ -18,6 +18,7 @@ from hermes.application.strategy_protocol.preregistration import (
     H1Thresholds,
     PreRegistration,
 )
+from hermes.infrastructure.project_root import load_pre_registration
 from tests.support.paths import REPO_ROOT
 
 # ---------------------------------------------------------------------------
@@ -28,7 +29,7 @@ from tests.support.paths import REPO_ROOT
 @pytest.fixture(scope="module")
 def pre_reg(tmp_path_factory: pytest.TempPathFactory) -> PreRegistration:
     """Return a PreRegistration pointed at the real pre-reg file in the repo."""
-    return PreRegistration(project_root=REPO_ROOT)
+    return load_pre_registration(REPO_ROOT)
 
 
 # ---------------------------------------------------------------------------
@@ -208,7 +209,7 @@ class TestPreRegistrationErrors:
     def test_raises_file_not_found_when_file_missing(self, tmp_path: Path) -> None:
         """FileNotFoundError raised when pre-registration file is absent."""
         with pytest.raises(FileNotFoundError, match="not found"):
-            PreRegistration(project_root=tmp_path)
+            load_pre_registration(tmp_path)
 
     def test_raises_value_error_when_experiment_id_wrong(self, tmp_path: Path) -> None:
         """ValueError raised when frontmatter experiment_id does not match expected value."""
@@ -221,7 +222,7 @@ class TestPreRegistrationErrors:
         )
         (tmp_path / "pyproject.toml").write_text('[project]\nname = "hermes"\n')
         with pytest.raises(ValueError, match="experiment_id mismatch"):
-            PreRegistration(project_root=tmp_path)
+            load_pre_registration(tmp_path)
 
     def test_raises_value_error_when_no_frontmatter(self, tmp_path: Path) -> None:
         """ValueError raised when the pre-registration file has no YAML frontmatter."""
@@ -231,7 +232,7 @@ class TestPreRegistrationErrors:
         pre_reg_file.write_text("# No frontmatter\n\ncontent here\n", encoding="utf-8")
         (tmp_path / "pyproject.toml").write_text('[project]\nname = "hermes"\n')
         with pytest.raises(ValueError, match="no YAML frontmatter"):
-            PreRegistration(project_root=tmp_path)
+            load_pre_registration(tmp_path)
 
 
 class TestCertificationGateValuesMatchSignedText:

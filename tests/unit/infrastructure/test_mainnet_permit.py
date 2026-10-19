@@ -8,8 +8,7 @@ import pickle
 
 import pytest
 
-from hermes.application.calibration.certification_gates import CertificationRecord
-from hermes.application.calibration.lifecycle import CertificationState
+from hermes.domain.calibration.certification import CertificationRecord, CertificationState
 from hermes.infrastructure.config import HermesConfig, load_config
 from hermes.infrastructure.env_gate import EnvGateError
 from hermes.infrastructure.mainnet_permit import MainnetPermit, issue_mainnet_permit

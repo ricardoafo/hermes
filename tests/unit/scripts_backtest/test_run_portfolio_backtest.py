@@ -31,6 +31,7 @@ from types import ModuleType
 
 import pytest
 
+from hermes.adapters.files import LocalFiles
 from hermes.adapters.trial_log.jsonl_file import JsonlTrialLog
 from hermes.application.backtest.replay import ExecutionModel
 from hermes.application.calibration.backtest_funnel import (
@@ -299,7 +300,7 @@ def test_funnel_evidence_passes_the_hermes_funnel_parser(funnel_run: _SyntheticR
     """R-1: the file parses and validates against the signed v2 front matter's thresholds."""
     front_matter = read_front_matter(_PRE_REG_V2.read_text(encoding="utf-8"))
     thresholds = parse_funnel_front_matter(front_matter, strategy_id=_V2)
-    evidence = load_funnel_evidence(funnel_run.evidence, strategy_id=_V2)
+    evidence = load_funnel_evidence(funnel_run.evidence, strategy_id=_V2, files=LocalFiles())
     assert validate_evidence(evidence, thresholds) is evidence
     assert set(evidence.trials or {}) == {"base", *(evidence.neighbour_trial_ids or ())}
 

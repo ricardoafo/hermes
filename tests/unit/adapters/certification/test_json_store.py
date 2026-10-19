@@ -8,8 +8,7 @@ from pathlib import Path
 import pytest
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
-from hermes.application.calibration.certification_gates import CertificationRecord
-from hermes.application.calibration.lifecycle import CertificationState
+from hermes.domain.calibration.certification import CertificationRecord, CertificationState
 from hermes.ports.certification import CertificationStoreError, CertificationStorePort
 
 _AT = datetime(2027, 1, 1, tzinfo=UTC)

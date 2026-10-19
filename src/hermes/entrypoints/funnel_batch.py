@@ -23,6 +23,7 @@ import json
 from pathlib import Path
 from typing import Final, NoReturn, TextIO
 
+from hermes.adapters.files import LocalFiles
 from hermes.adapters.trial_log.jsonl_file import JsonlTrialLog
 from hermes.application.calibration.batch_stage import (
     StageOutcome,
@@ -33,6 +34,7 @@ from hermes.application.calibration.batch_stage import (
 from hermes.application.calibration.research_batch import BatchError, ResearchBatch, load_batch
 from hermes.domain.errors import TrialLogError
 from hermes.entrypoints._streams import resolve_err
+from hermes.infrastructure.project_root import load_pre_registration
 
 __all__ = ["main"]
 
@@ -101,7 +103,14 @@ def _run(args: argparse.Namespace, stream: TextIO, err: TextIO) -> int:
         return 3
     try:
         records = JsonlTrialLog(args.trial_log).records()
-        outcome = judge_stage(batch, args.stage, args.evidence_dir, records)
+        outcome = judge_stage(
+            batch,
+            args.stage,
+            args.evidence_dir,
+            records,
+            v1=load_pre_registration(),
+            files=LocalFiles(),
+        )
     except TrialLogError as exc:
         err.write(f"ERROR: trial log: {exc}\n")
         return 3
@@ -118,7 +127,7 @@ def _run(args: argparse.Namespace, stream: TextIO, err: TextIO) -> int:
 
 def _signed_batch(path: Path, stream: TextIO, err: TextIO) -> ResearchBatch | int:
     try:
-        batch = load_batch(path)
+        batch = load_batch(path, files=LocalFiles())
     except (BatchError, OSError) as exc:
         err.write(f"ERROR: batch: {exc}\n")
         return 3

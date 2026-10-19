@@ -27,7 +27,7 @@
 #                                     every runs-on pinned to self-hosted runners (#1069)
 #   guards                            the pre-commit guards, over the whole tree,
 #                                     and every hook covered by CI (#840)
-#   self-tests                        every *-self-test pre-commit hook (#840)
+#   self-tests                        every scripts/dev self-test mode (#840, #1190)
 #
 # `--changed <base>` (unit, integration) runs only the tests for the files
 # changed since <base>: see scripts/dev/changed-tests.sh. CI always runs

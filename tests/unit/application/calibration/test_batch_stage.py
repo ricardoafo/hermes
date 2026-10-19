@@ -6,12 +6,13 @@ Validation 2022. Selection tests replace the gate with a stub so each DSR is
 chosen by hand; the evidence files still give the window and the returns.
 """
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
+from hermes.adapters.files import LocalFiles
 from hermes.application.calibration.batch_stage import (
     MISSING_EVIDENCE,
     Stage,
@@ -23,15 +24,22 @@ from hermes.application.calibration.batch_stage import (
 from hermes.application.calibration.research_batch import ResearchBatch
 from hermes.application.calibration.signed_gate import (
     CandidateEvidence,
+    CandidateJudge,
     CheckResult,
     GateResult,
     Split,
+    judge_candidate,
 )
+from hermes.application.strategy_protocol.preregistration import PreRegistration
 from hermes.domain.calibration.trial_record import DatasetRef, TrialRecord, TrialSummary
 from hermes.domain.market_data.dataset_manifest import DataSplit
+from hermes.infrastructure.project_root import load_pre_registration
+from hermes.ports.files import FilesPort
 from tests.support.candidate_evidence import TRAIN_DAYS, write_candidate
 from tests.support.candidate_evidence import batch as candidate_batch
+from tests.support.paths import REPO_ROOT
 
+_V1 = load_pre_registration(REPO_ROOT)
 _ALPHA = "swing-alpha"
 _BETA = "swing-beta"
 
@@ -75,6 +83,9 @@ class _StubJudge:
         evidence: CandidateEvidence,
         batch: ResearchBatch,
         trials: TrialSummary,
+        *,
+        v1: PreRegistration,
+        files: FilesPort,
     ) -> GateResult:
         self.trials.append(trials)
         passed, dsr = self._verdicts[strategy_id]
@@ -86,6 +97,18 @@ class _StubJudge:
             dsr=dsr,
             passed=passed,
         )
+
+
+def _judge_stage(
+    batch: ResearchBatch,
+    stage: Stage,
+    evidence_dir: Path,
+    records: Iterable[TrialRecord],
+    *,
+    judge: CandidateJudge = judge_candidate,
+) -> StageOutcome:
+    """Judge the stage over the repository's v1 pre-registration and the local disk."""
+    return judge_stage(batch, stage, evidence_dir, records, v1=_V1, files=LocalFiles(), judge=judge)
 
 
 def _write(root: Path, *ids: str, days: int = 730) -> Path:
@@ -105,7 +128,7 @@ class TestTrain:
         """Both pass on Train with validation_vs_train NA, so both go on: alpha, then beta."""
         evidence = _write(tmp_path, _BETA, _ALPHA, days=TRAIN_DAYS)
 
-        outcome = judge_stage(candidate_batch(), "train", evidence, _LOG)
+        outcome = _judge_stage(candidate_batch(), "train", evidence, _LOG)
 
         na = {
             v.strategy_id: dict(_statuses(outcome)[v.strategy_id])["validation_vs_train"]
@@ -117,7 +140,7 @@ class TestTrain:
         """Contract §4: no folder for beta is FAIL beta missing_evidence, and beta stays."""
         evidence = _write(tmp_path, _ALPHA, days=TRAIN_DAYS)
 
-        outcome = judge_stage(candidate_batch(), "train", evidence, _LOG)
+        outcome = _judge_stage(candidate_batch(), "train", evidence, _LOG)
 
         assert (outcome.goes_on, _statuses(outcome)[_BETA]) == (
             (_ALPHA,),
@@ -129,7 +152,7 @@ class TestTrain:
         evidence = _write(tmp_path, _ALPHA, _BETA, days=TRAIN_DAYS)
         judge = _StubJudge({_ALPHA: (False, 0.5), _BETA: (True, 0.99)})
 
-        outcome = judge_stage(candidate_batch(), "train", evidence, _LOG, judge=judge)
+        outcome = _judge_stage(candidate_batch(), "train", evidence, _LOG, judge=judge)
 
         assert outcome.goes_on == (_BETA,)
 
@@ -138,7 +161,7 @@ class TestTrain:
         evidence = _write(tmp_path, _ALPHA, _BETA, days=TRAIN_DAYS)
         judge = _StubJudge({_ALPHA: (True, 0.99), _BETA: (True, 0.99)})
 
-        outcome = judge_stage(candidate_batch(), "train", evidence, _LOG, judge=judge)
+        outcome = _judge_stage(candidate_batch(), "train", evidence, _LOG, judge=judge)
 
         assert (outcome.survivors, outcome.champion) == ((), None)
 
@@ -157,7 +180,7 @@ class TestTrialCount:
         evidence = _write(tmp_path, _ALPHA, _BETA, days=TRAIN_DAYS)
         judge = _StubJudge({_ALPHA: (True, 0.99), _BETA: (True, 0.99)})
 
-        judge_stage(candidate_batch(), "train", evidence, log, judge=judge)
+        _judge_stage(candidate_batch(), "train", evidence, log, judge=judge)
 
         assert [t.count for t in judge.trials] == [5, 5]
 
@@ -172,7 +195,7 @@ class TestTrialCount:
         )
         evidence = _write(tmp_path, _ALPHA, days=TRAIN_DAYS)
 
-        outcome = judge_stage(candidate_batch(), "train", evidence, log)
+        outcome = _judge_stage(candidate_batch(), "train", evidence, log)
 
         assert {v.strategy_id: v.trial_lines for v in outcome.verdicts} == {_ALPHA: 2, _BETA: 1}
 
@@ -180,7 +203,7 @@ class TestTrialCount:
         """Alpha, first in the batch, has no folder: beta is still judged and goes on."""
         evidence = _write(tmp_path, _BETA, days=TRAIN_DAYS)
 
-        outcome = judge_stage(candidate_batch(), "train", evidence, _LOG)
+        outcome = _judge_stage(candidate_batch(), "train", evidence, _LOG)
 
         assert (outcome.goes_on, _statuses(outcome)[_ALPHA]) == (
             (_BETA,),
@@ -197,7 +220,7 @@ class TestTrialCount:
         """The detail (funnel-batch.txt only) says which stage's evidence is absent."""
         tmp_path.joinpath("evidence").mkdir()
 
-        outcome = judge_stage(candidate_batch(), stage, tmp_path / "evidence", _LOG)
+        outcome = _judge_stage(candidate_batch(), stage, tmp_path / "evidence", _LOG)
 
         assert [c.detail for v in outcome.verdicts for c in v.checks] == [detail, detail]
 
@@ -211,7 +234,7 @@ class TestValidation:
         evidence = _write(tmp_path, _ALPHA)
         judge = _StubJudge({_ALPHA: (True, 0.99)})
 
-        outcome = judge_stage(candidate_batch(), "validation", evidence, log, judge=judge)
+        outcome = _judge_stage(candidate_batch(), "validation", evidence, log, judge=judge)
 
         assert {v.strategy_id: v.trial_lines for v in outcome.verdicts} == {_ALPHA: 1, _BETA: 0}
 
@@ -220,7 +243,7 @@ class TestValidation:
         evidence = _write(tmp_path, _ALPHA, _BETA)
         judge = _StubJudge({_ALPHA: (True, 0.97), _BETA: (True, 0.99)})
 
-        outcome = judge_stage(candidate_batch(), "validation", evidence, _LOG, judge=judge)
+        outcome = _judge_stage(candidate_batch(), "validation", evidence, _LOG, judge=judge)
 
         assert (outcome.survivors, outcome.champion, outcome.goes_on) == (
             (_BETA, _ALPHA),
@@ -236,7 +259,7 @@ class TestValidation:
         evidence = _write(tmp_path, _ALPHA)
         judge = _StubJudge({_ALPHA: (True, 0.97)})
 
-        outcome = judge_stage(candidate_batch(), "validation", evidence, _LOG, judge=judge)
+        outcome = _judge_stage(candidate_batch(), "validation", evidence, _LOG, judge=judge)
 
         assert (outcome.survivors, outcome.champion) == ((), None)
 
@@ -245,7 +268,7 @@ class TestValidation:
         evidence = _write(tmp_path, _ALPHA, _BETA)
         judge = _StubJudge({_ALPHA: (True, 0.99), _BETA: (False, 0.999)})
 
-        outcome = judge_stage(candidate_batch(), "validation", evidence, _LOG, judge=judge)
+        outcome = _judge_stage(candidate_batch(), "validation", evidence, _LOG, judge=judge)
 
         assert (outcome.survivors, outcome.champion) == ((_ALPHA,), _ALPHA)
 
@@ -256,7 +279,7 @@ class TestValidation:
         judge = _StubJudge({_ALPHA: (True, 0.99), _BETA: (True, 0.99)})
 
         with pytest.raises(ValueError, match="different windows"):
-            judge_stage(candidate_batch(), "validation", tmp_path / "evidence", _LOG, judge=judge)
+            _judge_stage(candidate_batch(), "validation", tmp_path / "evidence", _LOG, judge=judge)
 
 
 class TestRecords:
@@ -266,7 +289,7 @@ class TestRecords:
         """Every field of the §5 example, for alpha passing Train with two trial lines."""
         evidence = _write(tmp_path, _ALPHA, days=TRAIN_DAYS)
         judge = _StubJudge({_ALPHA: (True, 0.99)})
-        outcome = judge_stage(candidate_batch(), "train", evidence, _LOG, judge=judge)
+        outcome = _judge_stage(candidate_batch(), "train", evidence, _LOG, judge=judge)
 
         record = verdict_record(outcome, outcome.verdicts[0])
 
@@ -289,7 +312,7 @@ class TestRecords:
     def test_a_missing_candidate_has_no_window(self, tmp_path: Path) -> None:
         """Beta never ran: window null, one FAIL, and it does not go on."""
         evidence = _write(tmp_path, _ALPHA, days=TRAIN_DAYS)
-        outcome = judge_stage(candidate_batch(), "train", evidence, _LOG)
+        outcome = _judge_stage(candidate_batch(), "train", evidence, _LOG)
 
         record = verdict_record(outcome, outcome.verdicts[1])
 
@@ -303,7 +326,7 @@ class TestRecords:
         """At Validation goes_on is null and champion is true for beta alone."""
         evidence = _write(tmp_path, _ALPHA, _BETA)
         judge = _StubJudge({_ALPHA: (True, 0.97), _BETA: (True, 0.99)})
-        outcome = judge_stage(candidate_batch(), "validation", evidence, _LOG, judge=judge)
+        outcome = _judge_stage(candidate_batch(), "validation", evidence, _LOG, judge=judge)
 
         flags = [
             (r["strategy_id"], r["goes_on"], r["champion"])
@@ -315,7 +338,7 @@ class TestRecords:
     def test_the_only_numbers_in_a_record_are_run_id_and_trial_lines(self, tmp_path: Path) -> None:
         """Contract §5: a real gate's verdict carries no metric value, at any depth."""
         evidence = _write(tmp_path, _ALPHA, _BETA)
-        outcome = judge_stage(candidate_batch(), "validation", evidence, _LOG)
+        outcome = _judge_stage(candidate_batch(), "validation", evidence, _LOG)
 
         numeric: set[str] = set()
         for verdict in outcome.verdicts:
@@ -343,7 +366,7 @@ class TestSummary:
         """validation-candidates.json after Train (contract §4)."""
         evidence = _write(tmp_path, _ALPHA, _BETA, days=TRAIN_DAYS)
         judge = _StubJudge({_ALPHA: (False, 0.5), _BETA: (True, 0.99)})
-        outcome = judge_stage(candidate_batch(), "train", evidence, _LOG, judge=judge)
+        outcome = _judge_stage(candidate_batch(), "train", evidence, _LOG, judge=judge)
 
         assert stage_summary(outcome) == {"batch_id": "b1", "stage": "train", "candidates": [_BETA]}
 
@@ -351,7 +374,7 @@ class TestSummary:
         """selection.json after Validation (contract §4)."""
         evidence = _write(tmp_path, _ALPHA, _BETA)
         judge = _StubJudge({_ALPHA: (True, 0.97), _BETA: (True, 0.99)})
-        outcome = judge_stage(candidate_batch(), "validation", evidence, _LOG, judge=judge)
+        outcome = _judge_stage(candidate_batch(), "validation", evidence, _LOG, judge=judge)
 
         assert stage_summary(outcome) == {
             "batch_id": "b1",
@@ -364,7 +387,7 @@ class TestSummary:
         """No survivor: champion null, survivors empty."""
         evidence = _write(tmp_path, _ALPHA, _BETA)
         judge = _StubJudge({_ALPHA: (False, 0.97), _BETA: (False, 0.99)})
-        outcome = judge_stage(candidate_batch(), "validation", evidence, _LOG, judge=judge)
+        outcome = _judge_stage(candidate_batch(), "validation", evidence, _LOG, judge=judge)
 
         assert stage_summary(outcome) == {
             "batch_id": "b1",

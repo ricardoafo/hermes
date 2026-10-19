@@ -11,21 +11,24 @@ Every hook id in ``.pre-commit-config.yaml`` must be in exactly one place:
 
 - ``CI_ENFORCED``: the ``ci-checks.sh`` check (or the CI workflow step) that
   enforces the same rule over the whole tree;
-- ``LOCAL_ONLY``: with the reason it needs no CI twin;
-- a ``*-self-test`` hook, which the ``self-tests`` check runs in CI.
+- ``LOCAL_ONLY``: with the reason it needs no CI twin.
+
+A per-script ``*-self-test`` hook fails the check: the one ``self-tests`` hook
+already runs every script's self-test (#1190).
 
 It also fails on a script directly under ``scripts/dev/`` that nothing else in
 the tree names (no hook, workflow, script or doc), so dead tooling is deleted
 instead of piling up (#1189). The changelog and archived specs do not count:
 they record history, not use.
 
-``--run-self-tests`` runs every ``*-self-test`` hook's command, so a new
-self-test is picked up with no edit here. Every one must pass: a failing
-self-test is fixed, never listed as expected to fail.
+``--run-self-tests`` runs, with ``HERMES_SELF_TEST=1``, every script directly
+under ``scripts/dev/`` that reads that variable, so a new self-test is picked
+up with no edit here. Every one must pass: a failing self-test is fixed, never
+listed as expected to fail.
 
 Called by:
   - ``bash scripts/dev/ci-checks.sh guards`` (coverage) and ``self-tests``
-  - .pre-commit-config.yaml ``hook-coverage-check-self-test`` hook
+  - .pre-commit-config.yaml ``self-tests`` hook
 
 Env vars:
   HERMES_SELF_TEST  set to 1 to run built-in pass/fail fixtures and exit
@@ -50,6 +53,7 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SELF_TEST_SUFFIX = "-self-test"
+SELF_TEST_VAR = "HERMES_SELF_TEST"
 STEP_PREFIX = "step:"
 BASH = shutil.which("bash") or "/bin/bash"
 DEV_SCRIPTS = "scripts/dev/"
@@ -76,6 +80,7 @@ CI_ENFORCED: dict[str, str] = {
     "lab-notebook-hashes": "unit",
     "secrets-scan": "step:Secrets scan",
     "conventional-pre-commit": "step:PR title",
+    "self-tests": "self-tests",
 }
 
 LOCAL_ONLY: dict[str, str] = {
@@ -110,6 +115,9 @@ def coverage_problems(
     problems: list[str] = []
     for hook_id in sorted(hook_ids):
         if hook_id.endswith(SELF_TEST_SUFFIX):
+            problems.append(
+                f"{hook_id}: per-script self-test hook; the self-tests hook already runs it"
+            )
             continue
         places = (hook_id in ci_enforced) + (hook_id in local_only)
         if places == 0:
@@ -164,16 +172,26 @@ def _tracked_corpus() -> tuple[list[str], dict[str, str]]:
     return scripts, corpus
 
 
-def run_self_tests(entries: dict[str, str]) -> list[str]:
-    """Run every ``*-self-test`` entry; return one line per failure."""
-    problems: list[str] = []
-    env = os.environ.copy()
-    env.pop("HERMES_SELF_TEST", None)
-    for hook_id, entry in sorted(entries.items()):
-        if not hook_id.endswith(SELF_TEST_SUFFIX):
+def self_test_commands(scripts: list[str], corpus: dict[str, str]) -> dict[str, list[str]]:
+    """Return the command for each script in ``scripts`` that reads ``HERMES_SELF_TEST``."""
+    commands: dict[str, list[str]] = {}
+    for script in sorted(scripts):
+        if SELF_TEST_VAR not in corpus.get(script, ""):
             continue
-        result = subprocess.run(  # noqa: S603 — the entry is the repo's own hook command
-            [BASH, "-c", entry],
+        if script.endswith(".py"):
+            commands[script] = ["uv", "run", "--no-sync", "python", script]
+        else:
+            commands[script] = [BASH, script]
+    return commands
+
+
+def run_self_tests(commands: dict[str, list[str]]) -> list[str]:
+    """Run every command with ``HERMES_SELF_TEST=1``; return one line per failure."""
+    problems: list[str] = []
+    env = os.environ | {SELF_TEST_VAR: "1"}
+    for name, argv in sorted(commands.items()):
+        result = subprocess.run(  # noqa: S603 — the repo's own scripts
+            argv,
             cwd=REPO_ROOT,
             env=env,
             capture_output=True,
@@ -181,10 +199,10 @@ def run_self_tests(entries: dict[str, str]) -> list[str]:
             check=False,
         )
         passed = result.returncode == 0
-        print(f"{hook_id}: {'ok' if passed else 'FAILED'}")
+        print(f"{name}: {'ok' if passed else 'FAILED'}")
         if not passed:
             tail = (result.stdout + result.stderr).strip().splitlines()[-5:]
-            problems.append(f"{hook_id}: failed\n    " + "\n    ".join(tail))
+            problems.append(f"{name}: failed\n    " + "\n    ".join(tail))
     return problems
 
 
@@ -218,9 +236,9 @@ def _self_test() -> int:
             0,
         ),
         (
-            "self-test hooks need no entry",
+            "a per-script self-test hook",
             coverage_problems({"a-self-test"}, set(), workflow, {}, {}),
-            0,
+            1,
         ),
         ("uncovered hook", coverage_problems({"a"}, set(), workflow, {}, {}), 1),
         (
@@ -240,15 +258,21 @@ def _self_test() -> int:
     for name, problems, want in cases:
         if len(problems) != want:
             failures.append(f"{name}: expected {want} problem(s), got {problems}")
-    ok, bad = "a-self-test", "b-self-test"
-    entries = {ok: "true", bad: "false", "plain": "false"}
+    reads_var = [BASH, "-c", f'[ "${SELF_TEST_VAR}" = 1 ]']
     runs: list[tuple[str, list[str], int]] = [
-        ("a failing self-test is reported", run_self_tests(entries), 1),
-        ("passing self-tests report nothing", run_self_tests({ok: "true"}), 0),
+        ("a failing self-test is reported", run_self_tests({"a": ["true"], "b": ["false"]}), 1),
+        ("passing self-tests report nothing", run_self_tests({"a": ["true"]}), 0),
+        ("the script sees HERMES_SELF_TEST=1", run_self_tests({"a": reads_var}), 0),
     ]
     for name, problems, want in runs:
         if len(problems) != want:
             failures.append(f"{name}: expected {want} problem(s), got {problems}")
+    sh, py, plain = f"{DEV_SCRIPTS}s.sh", f"{DEV_SCRIPTS}p.py", f"{DEV_SCRIPTS}n.sh"
+    corpus = {sh: SELF_TEST_VAR, py: SELF_TEST_VAR, plain: "echo"}
+    found = self_test_commands([sh, py, plain], corpus)
+    want_found = {sh: [BASH, sh], py: ["uv", "run", "--no-sync", "python", py]}
+    if found != want_found:
+        failures.append(f"self_test_commands: expected {want_found}, got {found}")
     dev = f"{DEV_SCRIPTS}x.sh"
     orphans: list[tuple[str, list[str], int]] = [
         ("a referenced script", orphan_scripts([dev], {dev: "", "ci.yml": "bash x.sh"}), 0),
@@ -269,7 +293,7 @@ def _self_test() -> int:
         print(f"SELF-TEST FAIL: {line}")
     if failures:
         return 2
-    total = len(cases) + len(runs) + len(orphans) + 1
+    total = len(cases) + len(runs) + len(orphans) + 2
     print(f"SELF-TEST PASS: hook-coverage-check.py handles {total} fixtures.")
     return 0
 
@@ -281,13 +305,14 @@ def main(argv: list[str]) -> int:
     if argv not in ([], ["--run-self-tests"]):
         print("usage: hook-coverage-check.py [--run-self-tests]", file=sys.stderr)
         return 2
-    entries = hooks(REPO_ROOT / ".pre-commit-config.yaml")
+    scripts, corpus = _tracked_corpus()
     if argv == ["--run-self-tests"]:
-        problems = run_self_tests(entries)
+        problems = run_self_tests(self_test_commands(scripts, corpus))
     else:
+        entries = hooks(REPO_ROOT / ".pre-commit-config.yaml")
         workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
         problems = coverage_problems(set(entries), _ci_checks(), workflow, CI_ENFORCED, LOCAL_ONLY)
-        problems.extend(orphan_scripts(*_tracked_corpus()))
+        problems.extend(orphan_scripts(scripts, corpus))
     for line in problems:
         print(f"FAIL: {line}")
     if problems:
