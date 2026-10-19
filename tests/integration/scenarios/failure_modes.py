@@ -366,11 +366,19 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "The FX answer is dated well before the fill day",
-            gap="issue #996: any earlier date is accepted; the allowed gap is a tax-rule call",
+            proved_by=(
+                _U + "application/ledger/test_eur_pricer.py"
+                "::test_a_rate_five_days_older_than_a_past_fill_stays_pending_with_a_warning",
+            ),
         ),
         FailureMode(
             "A slow FX service stalls the bar loop",
-            gap="issue #996: a sync client runs on the event loop; inferred, untested",
+            proved_by=(
+                _U + "entrypoints/test_serve_eur_pricing.py"
+                "::test_a_live_fill_with_a_cold_cache_makes_no_provider_call_on_the_loop",
+                _U + "entrypoints/test_serve_eur_pricing.py"
+                "::test_the_daily_pass_prices_a_fill_the_first_pass_left_pending",
+            ),
         ),
     ),
     "ledger and disk": (
