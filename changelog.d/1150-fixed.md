@@ -1,0 +1,1 @@
+- A staging deploy now snapshots, migrates, restarts and gates every enabled lab shadow (`hermes-shadow@<name>`), rolls every shadow ledger back to its snapshot when any gate fails, and waits out the 4h bar close while shadows run (#1150).
