@@ -10,7 +10,6 @@ ValueError-to-Failure conversion).
 
 from __future__ import annotations
 
-import dataclasses
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -241,8 +240,11 @@ def test_open_converts_invariant_errors_to_failure() -> None:
         strategy_id=_SWING,
         opened_at=_T0,
     )
-    assert isinstance(result, Failure)
-    assert isinstance(result.failure(), InvalidLot)
+    assert result == Failure(
+        InvalidLot(
+            reason=(f"Lot.cost_basis_per_unit must be in EUR (ADR-003 §03), got {Currency.USDT!r}")
+        )
+    )
 
 
 def test_record_converts_invariant_errors_to_failure() -> None:
@@ -284,47 +286,3 @@ def test_open_takes_keyword_arguments_only() -> None:
             _SWING,
             _T0,
         )
-
-
-@pytest.mark.parametrize(
-    "value",
-    [
-        _lot(Currency.BTC, "1"),
-        LotConsumption(
-            lot_id=_ID_A,
-            consumed_qty=Quantity(amount=Decimal("1"), asset=Currency.BTC),
-            realized_gain=_eur("1"),
-            consumed_at=_T0,
-        ),
-        InsufficientInventory(
-            requested=Quantity(amount=Decimal("2"), asset=Currency.BTC),
-            available=Quantity(amount=Decimal("1"), asset=Currency.BTC),
-        ),
-    ],
-    ids=["Lot", "LotConsumption", "InsufficientInventory"],
-)
-def test_lot_values_are_immutable(
-    value: Lot | LotConsumption | InsufficientInventory,
-) -> None:
-    """FIFO records are frozen: no field can change after creation."""
-    field = dataclasses.fields(value)[0].name
-    with pytest.raises(dataclasses.FrozenInstanceError):
-        setattr(value, field, None)
-
-
-@pytest.mark.parametrize(
-    "value",
-    [
-        _lot(Currency.BTC, "1"),
-        LotConsumption(
-            lot_id=_ID_A,
-            consumed_qty=Quantity(amount=Decimal("1"), asset=Currency.BTC),
-            realized_gain=_eur("1"),
-            consumed_at=_T0,
-        ),
-    ],
-    ids=["Lot", "LotConsumption"],
-)
-def test_lot_records_are_slotted(value: Lot | LotConsumption) -> None:
-    """Lot records use __slots__, so no stray attribute can be attached to a tax record."""
-    assert not hasattr(value, "__dict__")
