@@ -24,6 +24,9 @@ _SRC = _ROOT / "src"
 _PARKED: dict[str, str] = {
     "hermes.adapters.ledger.migrations": "SQL files the migration runner loads by path",
     "hermes.adapters.exchanges.kraken_spot": "order-placing adapter, not wired until MVP2",
+    "hermes.adapters.exchanges.binance_spot": "issue #1220: order-placing adapter, MVP2",
+    "hermes.infrastructure.mainnet_permit": "issue #1220: real-money gate of the order adapters",
+    "hermes.infrastructure.env_gate": "issue #1220: read only by mainnet_permit",
     "hermes.ports.exchange": "the order port the MVP2 adapters implement",
     "hermes.adapters.market_data.binance_live_ws": "issue #1181: live L2 stream, Code Owner call",
     "hermes.ports.market_data": "issue #1181: the port binance_live_ws implements",

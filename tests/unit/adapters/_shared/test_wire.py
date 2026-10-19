@@ -23,6 +23,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from hermes.adapters._shared.wire import (
+    binance_sign,
     binance_symbol,
     percent_to_bps,
     validate_http_config,
@@ -214,3 +215,18 @@ def test_no_wire_adapter_grows_its_own_copy_again(pattern: str, allowed: set[str
     }
 
     assert found ^ allowed == set()
+
+
+def test_binance_signature_matches_the_binance_documentation_vector() -> None:
+    """HMAC-SHA256 over the query string reproduces Binance's published example."""
+    doc_key_material = (
+        "NhqPtmdSJYdKjVHjA7PZj4Mge3R5YNiP1e3UZjInClVN65XAbvqqM6A7H5fATj0j"  # gitleaks:allow
+    )
+    query = (
+        "symbol=LTCBTC&side=BUY&type=LIMIT&timeInForce=GTC&quantity=1&price=0.1"
+        "&recvWindow=5000&timestamp=1499827319559"
+    )
+    assert (
+        binance_sign(query, doc_key_material)
+        == "c8db56825ae71d6d79447849e617115f4a920fa2acdcab2b053c4b2838bd6b71"
+    )
