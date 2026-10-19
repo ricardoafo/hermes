@@ -19,6 +19,10 @@
 #     commit whose CI passed, which under workflow_run differs from
 #     GITHUB_SHA (main's tip when CD starts).
 #
+#   version (optional string):
+#     Version to stamp into pyproject.toml and hermes/__init__.py before
+#     the build (ADR-030 §4). Empty builds the committed version.
+#
 # ## Outputs
 #
 #   wheel-artifact-name:
@@ -44,6 +48,11 @@ on:
         type: string
         required: false
         default: ''
+      version:
+        description: 'Version to stamp before building; empty keeps the committed one'
+        type: string
+        required: false
+        default: ''
 
 jobs:
   build:
@@ -61,6 +70,11 @@ jobs:
           version: "0.12.5"
 
       - run: uv sync --frozen
+      - name: Stamp the computed version
+        if: inputs.version != ''
+        env:
+          VERSION: ${{ inputs.version }}
+        run: uv run --no-project --python 3.14 scripts/deploy/next_version.py --set "$VERSION"
       - run: uv build --wheel
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

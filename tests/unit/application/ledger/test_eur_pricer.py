@@ -108,8 +108,8 @@ def test_cached_only_view_prices_warmed_rates_and_never_calls_the_provider() -> 
 def test_prior_day_rate_on_the_fill_day_is_not_final() -> None:
     """Invariant (A-2.3): a same-day lookup that resolves to an earlier date is not stored."""
     fx = FakeFx(rates={_MON: (Decimal("1.17"), _FRI)})
-    assert EurPricer(fx).price(Currency.USDT, _MON, today=_MON) is None
-    assert len(fx.calls) == 1
+    pricing = EurPricer(fx).price(Currency.USDT, _MON, today=_MON)
+    assert (pricing, fx.calls) == (None, [(Currency.EUR, Currency.USDT, _MON)])
 
 
 def test_weekend_fill_takes_friday_once_the_weekend_is_past() -> None:
@@ -143,7 +143,7 @@ def test_final_rates_are_cached_per_currency_and_day() -> None:
     pricer = EurPricer(fx)
     pricer.price(Currency.USDT, _FRI, today=_FRI)
     pricer.price(Currency.USDT, _FRI, today=_FRI)
-    assert len(fx.calls) == 1
+    assert fx.calls == [(Currency.EUR, Currency.USDT, _FRI)]
 
 
 def test_eur_quote_needs_no_lookup() -> None:

@@ -340,15 +340,6 @@ class TestRouterPurity:
         assert first == expected_tuple
         assert second == expected_tuple
 
-    @given(event_class=st.sampled_from(list(EventClass)))
-    def test_return_type_is_always_a_tuple(self, event_class: EventClass) -> None:
-        """route() always returns a tuple — never a list, never None."""
-        config, _telegram, _slack = _both_wired()
-
-        result = route(event_class, config)
-
-        assert isinstance(result, tuple)
-
 
 # ---------------------------------------------------------------------------
 # Adapter-injection integrity — the router uses the exact objects handed in

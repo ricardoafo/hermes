@@ -870,6 +870,22 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             ),
         ),
         FailureMode(
+            "Two batches merged close together deploy under one version number",
+            proved_by=(
+                _U + "deploy/test_next_version.py"
+                "::test_settle_adopts_the_next_number_when_an_earlier_deploy_took_it",
+                _U + "deploy/test_cd_workflow.py"
+                "::test_the_version_is_settled_under_the_deploy_lock_before_the_box",
+            ),
+        ),
+        FailureMode(
+            "A good deploy leaves no version tag, so the next push reuses its number",
+            proved_by=(
+                _U + "deploy/test_cd_workflow.py"
+                "::test_a_missing_version_tag_fails_the_deploy_after_the_announcement",
+            ),
+        ),
+        FailureMode(
             "A staging deploy leaves a lab shadow on the old release or an unmigrated ledger",
             proved_by=(
                 _RELEASE + "test_staging_deploy_restarts_and_gates_every_shadow_after_the_flip",

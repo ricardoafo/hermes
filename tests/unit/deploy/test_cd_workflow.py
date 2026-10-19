@@ -8,7 +8,9 @@ that would run during a dry run (issue #179).
 Reference: openspec/archive/179-cd-first-real-deploy/change.md.
 """
 
+import importlib.util
 import re
+from types import ModuleType
 from typing import Any
 
 import pytest
@@ -18,6 +20,9 @@ from tests.support.paths import REPO_ROOT
 
 _CD_PATH = REPO_ROOT / ".github" / "workflows" / "cd.yml"
 _BOOTSTRAP_PATH = REPO_ROOT / "scripts" / "deploy" / "vps_bootstrap.sh"
+_ASSEMBLE_PATH = REPO_ROOT / "scripts" / "deploy" / "assemble_bundle.sh"
+_WHEEL_PATH = REPO_ROOT / ".github" / "workflows" / "_build-wheel.yml"
+_NEXT_VERSION_PATH = REPO_ROOT / "scripts" / "deploy" / "next_version.py"
 
 _DRY_RUN_GUARD = "inputs.dry_run != true"
 _DRY_RUN_NOTICE_GUARD = "inputs.dry_run == true"
@@ -40,6 +45,12 @@ def _steps(job: str) -> list[dict[str, Any]]:
 def _label(step: dict[str, Any]) -> str:
     """Return a step's name, or its action for an unnamed `uses:` step."""
     return str(step.get("name", step.get("uses", "")))
+
+
+def _bundle_text() -> str:
+    """Return what the bundle job runs: its steps and the assembly script they call."""
+    runs = "\n".join(str(step.get("run", "")) for step in _steps("bundle"))
+    return runs + "\n" + _ASSEMBLE_PATH.read_text(encoding="utf-8")
 
 
 def _dry_run_guarded(step: dict[str, Any]) -> bool:
@@ -240,7 +251,7 @@ def test_every_script_a_unit_runs_from_current_deploy_is_in_the_bundle() -> None
             r"/opt/hermes/current/deploy/([\w.-]+\.sh)", unit.read_text(encoding="utf-8")
         )
     }
-    bundle_text = "\n".join(str(step.get("run", "")) for step in _steps("bundle"))
+    bundle_text = _bundle_text()
 
     assert referenced
     assert {name for name in referenced if f"deploy/{name}" not in bundle_text} == set()
@@ -279,7 +290,7 @@ def test_deploy_stages_the_release_in_the_private_dir_bootstrap_creates() -> Non
 
 def test_bundle_ships_the_experiment_files_serve_reads() -> None:
     """Serve reads the signed pre-registration and the fee history from the release (#353)."""
-    bundle_text = "\n".join(str(step.get("run", "")) for step in _steps("bundle"))
+    bundle_text = _bundle_text()
 
     assert [
         name
@@ -345,12 +356,12 @@ def test_gate_runs_e2e_and_serve_path_contracts_before_the_bar_hold() -> None:
     )
     assert "tests/e2e -m e2e" in runs
     assert set(re.findall(r"tests/contract/\S+\.py", runs)) == _SERVE_PATH_CONTRACTS
-    assert _workflow()["jobs"]["build"]["needs"] == "gate"
+    assert "gate" in _workflow()["jobs"]["build"]["needs"]
 
 
 def test_bundle_ships_every_unit_and_timer_for_install_release() -> None:
     """install_release.sh syncs units from the bundle, so the bundle carries them all (#626)."""
-    bundle_text = "\n".join(str(step.get("run", "")) for step in _steps("bundle"))
+    bundle_text = _bundle_text()
 
     assert (
         'install -m 0644 deploy/systemd/*.service deploy/systemd/*.timer "$stage/deploy/systemd/"'
@@ -411,7 +422,7 @@ def test_release_is_tagged_with_the_shipped_commit() -> None:
 
 
 def test_version_is_tagged_after_the_deploy_release_and_before_telegram() -> None:
-    """A cut version is tagged once the box runs it, never failing the deploy (ADR-022 §3)."""
+    """A cut version is tagged once the box runs it, before the announcement (ADR-022 §3)."""
     labels = [_label(s) for s in _steps("deploy")]
     step = next(s for s in _steps("deploy") if _label(s) == "Tag the version")
 
@@ -424,71 +435,138 @@ def test_version_is_tagged_after_the_deploy_release_and_before_telegram() -> Non
     )
 
 
+def test_a_missing_version_tag_fails_the_deploy_after_the_announcement() -> None:
+    """ADR-030 §5: a deploy whose tag failed goes red, or the next push reuses its number."""
+    steps = _steps("deploy")
+    labels = [_label(s) for s in steps]
+    step = next(s for s in steps if _label(s) == "Fail when the version was not tagged")
+
+    assert next(s for s in steps if _label(s) == "Tag the version")["id"] == "tag"
+    assert step["if"] == f"{_DRY_RUN_GUARD} && steps.tag.outcome == 'failure'"
+    assert "exit 1" in step["run"]
+    assert labels.index("Announce the release on Telegram") < labels.index(
+        "Fail when the version was not tagged"
+    )
+
+
 def test_version_tag_is_created_once_on_the_shipped_commit() -> None:
-    """The tag goes on the commit that first shipped the version; an existing tag stays."""
+    """ADR-030 §5: the tag goes on the commit that shipped; an existing tag stays."""
     script = str(
         next(s for s in _steps("deploy") if _label(s) == "Tag the version")["with"]["script"]
     )
 
     assert "getReleaseByTag({ ...context.repo, tag: version.tag })" in script
-    assert "target_commitish: version.target," in script
+    assert "target_commitish: process.env.RELEASE_SHA," in script
+    assert "body: fs.readFileSync('notes/markdown.txt', 'utf8')," in script
     assert "make_latest: 'false'," in script
     assert "${{" not in script
 
 
-def test_notes_job_ships_the_version_description_and_never_fails_on_it() -> None:
-    """version.json rides the notes artifact, and a failed description means nothing to tag."""
+def _version_step() -> dict[str, Any]:
+    return next(s for s in _steps("notes") if _label(s) == "Compute the version")
+
+
+def test_notes_job_computes_the_version_before_the_notes_it_names() -> None:
+    """ADR-030 §3: version.json comes from next_version.py and the notes carry that number."""
     labels = [_label(s) for s in _steps("notes")]
-    run = next(
-        str(s["run"]) for s in _steps("notes") if _label(s) == "Describe the version release"
+    notes_run = next(
+        str(s["run"]) for s in _steps("notes") if _label(s) == "Write the release notes"
     )
 
-    assert '--release "$RELEASE_SHA" > notes/version.json; then' in run
-    assert "echo '{}' > notes/version.json" in run
-    assert labels.index("Describe the version release") < next(
+    assert 'next_version.py \\\n    --release "$RELEASE_SHA" > notes/version.json' in str(
+        _version_step()["run"]
+    )
+    assert '--version "$VERSION"' in notes_run
+    assert labels.index("Compute the version") < labels.index("Write the release notes")
+    assert labels.index("Write the release notes") < next(
         i for i, label in enumerate(labels) if label.startswith("actions/upload-artifact@")
     )
 
 
-def _cadence_step() -> dict[str, Any]:
-    return next(s for s in _steps("notes") if _label(s) == "Decide whether this commit deploys")
-
-
-def test_deploy_runs_only_when_the_cadence_says_so() -> None:
-    """With DEPLOY_ON=version a commit without a new version stops before the box (ADR-022 §6)."""
+def test_deploy_runs_only_when_the_push_ships() -> None:
+    """ADR-030 §2: a push that changes nothing in the bundle stops before the box."""
     workflow = _workflow()
 
-    assert workflow["jobs"]["notes"]["outputs"]["deploy"] == "${{ steps.cadence.outputs.deploy }}"
+    assert workflow["jobs"]["notes"]["outputs"]["deploy"] == "${{ steps.version.outputs.deploy }}"
+    assert 'echo "deploy=$ships" >> "$GITHUB_OUTPUT"' in str(_version_step()["run"])
     assert workflow["jobs"]["deploy"]["if"] == (
         "inputs.dry_run == true || needs.notes.outputs.deploy == 'true'"
     )
 
 
-def test_every_green_main_deploys_until_deploy_on_is_set() -> None:
-    """An unset DEPLOY_ON keeps today's behaviour; only the Code Owner's variable changes it."""
-    step = _cadence_step()
+def test_the_retired_deploy_on_variable_decides_nothing() -> None:
+    """ADR-030 §6: DEPLOY_ON only raises a warning to delete it; no condition reads it."""
+    text = _CD_PATH.read_text(encoding="utf-8")
+    code_lines = [line for line in text.splitlines() if not line.lstrip().startswith("#")]
 
-    assert step["env"]["DEPLOY_ON"] == "${{ vars.DEPLOY_ON || 'every-green' }}"
-    assert "every-green) deploy=true ;;" in str(step["run"])
+    assert [line.strip() for line in code_lines if "DEPLOY_ON" in line] == [
+        "DEPLOY_ON: ${{ vars.DEPLOY_ON }}",
+        'if [ -n "$DEPLOY_ON" ]; then',
+        'echo "::warning::DEPLOY_ON is retired by ADR-030 and ignored; the Code Owner can delete'
+        ' the variable"',
+    ]
 
 
-def test_version_cadence_deploys_only_a_first_deploy_from_version_json() -> None:
-    """DEPLOY_ON=version reads first_deploy; a missing or failed description means no deploy."""
-    run = str(_cadence_step()["run"])
-    labels = [_label(s) for s in _steps("notes")]
+def test_the_wheel_is_built_with_the_computed_version() -> None:
+    """ADR-030 §4: the build stamps the notes job's version before `uv build`."""
+    build = _workflow()["jobs"]["build"]
+    wheel_steps = yaml.safe_load(_WHEEL_PATH.read_text(encoding="utf-8"))["jobs"]["build"]["steps"]
+    runs = [str(step.get("run", "")) for step in wheel_steps]
+    stamp = next(i for i, run in enumerate(runs) if "next_version.py --set" in run)
 
-    assert 'get("first_deploy") is True' in run
-    assert labels.index("Describe the version release") < labels.index(
-        "Decide whether this commit deploys"
+    assert build["with"]["version"] == "${{ needs.notes.outputs.version }}"
+    assert "notes" in build["needs"]
+    assert stamp < runs.index("uv build --wheel")
+
+
+def test_the_version_is_settled_under_the_deploy_lock_before_the_box() -> None:
+    """ADR-030 §4: recomputed in the locked job, after the downloads, before anything ships."""
+    labels = [_label(s) for s in _steps("deploy")]
+    checkout = next(i for i, label in enumerate(labels) if label.startswith("actions/checkout@"))
+    settle = labels.index("Settle the version under the deploy lock")
+    run = str(_steps("deploy")[settle]["run"])
+
+    assert _workflow()["jobs"]["deploy"]["concurrency"]["group"] == "deploy-vps"
+    assert _steps("deploy")[checkout]["with"]["fetch-depth"] == 0
+    assert checkout < labels.index("Download release bundle") < settle
+    assert labels.index("Download release notes") < settle < labels.index("Join tailnet")
+    assert '--release "$RELEASE_SHA" --settle notes/version.json' in run
+    assert 'if [ "$moved" != true ]; then' in run
+    assert 'assemble_bundle.sh "${RELEASE_SHA::12}" dist' in run
+
+
+def _next_version() -> ModuleType:
+    spec = importlib.util.spec_from_file_location("next_version", _NEXT_VERSION_PATH)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_every_repo_path_the_bundle_copies_makes_a_push_ship() -> None:
+    """ADR-030 §2: a file the bundle carries counts as shipped, or its change never deploys."""
+    copy_lines = [
+        line
+        for line in _ASSEMBLE_PATH.read_text(encoding="utf-8").replace("\\\n", " ").splitlines()
+        if not line.lstrip().startswith("#") and re.search(r"\b(cp|install -m)\b", line)
+    ]
+    copied = {
+        token
+        for line in copy_lines
+        for token in line.split()
+        if re.match(r"^(config|deploy/|scripts/deploy/|docs/)", token)
+    }
+    ships = _next_version().BUNDLE_PATHS
+
+    assert {"config", "deploy/systemd/*.service", "scripts/deploy/schema_guard.py"} <= copied
+    assert (
+        sorted(
+            path
+            for path in copied
+            if not ships.search(path.replace("*", "x") + ("/" if "/" not in path else ""))
+        )
+        == []
     )
-
-
-def test_an_unknown_deploy_on_value_fails_the_run() -> None:
-    """A mistyped DEPLOY_ON fails loudly instead of silently deploying or not."""
-    run = str(_cadence_step()["run"])
-
-    assert "*)" in run
-    assert "exit 1 ;;" in run.split("*)", 1)[1]
 
 
 def test_empty_release_notes_ship_a_placeholder() -> None:
@@ -520,6 +598,6 @@ def test_telegram_announcement_never_fails_the_deploy() -> None:
 
 def test_bundle_ships_the_schema_guard() -> None:
     """install_release.sh and rollback.sh run schema_guard.py from the bundle's bin (#655)."""
-    bundle_text = "\n".join(str(step.get("run", "")) for step in _steps("bundle"))
+    bundle_text = _bundle_text()
 
     assert "scripts/deploy/schema_guard.py" in bundle_text

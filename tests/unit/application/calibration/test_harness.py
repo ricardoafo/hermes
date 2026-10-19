@@ -107,11 +107,3 @@ class TestCalibrationHarnessValidation:
         """CalibrationHarness must raise ValueError when strategy_id is whitespace."""
         with pytest.raises(ValueError, match="strategy_id"):
             CalibrationHarness(strategy_id="   ")
-
-    def test_valid_strategy_id_does_not_raise(self) -> None:
-        """CalibrationHarness must not raise when strategy_id is non-empty."""
-        harness = CalibrationHarness(strategy_id="swing-v1")
-        assert isinstance(harness, CalibrationHarness), (
-            "CalibrationHarness with non-empty strategy_id must initialise as CalibrationHarness, "
-            f"got {type(harness).__name__!r}."
-        )

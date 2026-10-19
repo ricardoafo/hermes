@@ -117,7 +117,7 @@ def test_sheet_names_the_campaign_box() -> None:
     """Invariant: the Modelo 100 heading names the configured box."""
     sheet = _sheet(_pack(FakeFilingReader(pieces=[_piece()])))
     headings = [b.text for b in sheet.blocks if isinstance(b, Heading)]
-    assert any(text.endswith("casilla 1804") for text in headings)
+    assert "Ganancias y pérdidas patrimoniales · Monedas virtuales · casilla 1804" in headings
 
 
 def test_provisional_box_says_to_check_the_new_campaign() -> None:
@@ -139,7 +139,13 @@ def test_open_year_is_marked_as_still_changing() -> None:
     """Invariant: a sheet built before 31 December warns that figures still change."""
     sheet = _sheet(_pack(FakeFilingReader(pieces=[_piece()])), status=PackStatus.OPEN)
     warnings = [b.text for b in sheet.blocks if isinstance(b, Paragraph) and b.tone is Tone.WARNING]
-    assert any("sigue abierto" in text for text in warnings)
+    assert warnings == [
+        "Borrador para revisar con su gestor. hermes no presenta nada a la AEAT; "
+        "copie estos datos en Renta Web.\n"
+        "El ejercicio 2026 sigue abierto: las cifras cambian con cada operación "
+        "hasta el 31 de diciembre.\n"
+        "Simulación (shadow): operaciones no reales, no hay impuesto que pagar."
+    ]
 
 
 def test_shadow_sheet_says_no_tax_is_due() -> None:

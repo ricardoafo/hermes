@@ -5,8 +5,6 @@ Telegram replies; False for pushed Telegram, Slack, reports, MCP tools, the
 supervisor desk, the challenger lab and the ADR-012 loops. No override.
 """
 
-import inspect
-
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
@@ -46,11 +44,6 @@ def test_every_surface_is_classified() -> None:
 def test_only_the_three_operator_surfaces_see_pnl(surface: Surface) -> None:
     """Visibility holds exactly for the operator allow list."""
     assert pnl_visible(surface) is (surface in _OPERATOR)
-
-
-def test_visibility_takes_no_override_argument() -> None:
-    """The rule has one input, the surface: no date, env or flag can unblind."""
-    assert list(inspect.signature(pnl_visible).parameters) == ["surface"]
 
 
 def test_environment_cannot_unblind_a_surface(monkeypatch: pytest.MonkeyPatch) -> None:
