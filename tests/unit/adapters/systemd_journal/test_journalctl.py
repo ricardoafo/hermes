@@ -3,7 +3,10 @@
 import subprocess
 import sys
 
-from hermes.adapters.systemd_journal import JournalctlReader
+import pytest
+
+from hermes.adapters.systemd_journal import JournalctlReader, JournalUnavailableError
+from hermes.domain.errors import InfraError
 
 
 def test_lines_closes_the_process_pipe_when_the_stream_ends() -> None:
@@ -50,3 +53,26 @@ def test_lines_closes_the_process_pipe_when_the_caller_stops_early() -> None:
     (process,) = spawned
     assert process.stdout is not None
     assert process.stdout.closed
+
+
+def test_a_missing_journalctl_is_caught_as_an_infra_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Issue #1187: no journalctl raises an ``InfraError``, the adapter I/O root."""
+    monkeypatch.setattr("shutil.which", lambda _name: None)
+
+    with pytest.raises(InfraError) as caught:
+        JournalctlReader().argv(last=1, since=None, follow=False)
+
+    assert (type(caught.value), str(caught.value)) == (
+        JournalUnavailableError,
+        "journalctl is not available here; run hermes logs on the VPS",
+    )
+
+
+def test_a_missing_journalctl_is_still_caught_as_a_runtime_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Issue #1187: re-parenting keeps every older ``except RuntimeError`` working."""
+    monkeypatch.setattr("shutil.which", lambda _name: None)
+
+    with pytest.raises(RuntimeError, match="journalctl is not available here"):
+        JournalctlReader().argv(last=1, since=None, follow=False)

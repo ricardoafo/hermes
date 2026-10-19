@@ -75,6 +75,7 @@ import httpx
 import structlog
 
 from hermes.adapters.endpoint import DEFAULT_SLACK_API_BASE, SLACK_API_BASE_ENV, api_base_from_env
+from hermes.application.messages import correlation_tail
 from hermes.application.messages.eur_rate import EurRateLookup, resolve_eur_rate
 from hermes.application.messages.reporting_phase import (
     DEFAULT_REPORTING_PHASE,
@@ -88,7 +89,6 @@ from hermes.domain.events.base import DomainEvent
 __all__ = ["SlackAdapter", "SlackConfig", "SlackNotifierError"]
 
 _DEFAULT_TIMEOUT_SEC: Final[float] = 10.0
-_CORRELATION_TAIL_LEN: Final[int] = 6
 # HTTP status boundary — anything at or above signals an error response
 # regardless of what Slack sets in the body.
 _HTTP_ERROR_THRESHOLD: Final[int] = 400
@@ -178,23 +178,6 @@ class SlackConfig:
             raise SlackNotifierError("HERMES_SLACK__DEFAULT_CHANNEL is not set (or empty)")
         api_base = api_base_from_env(env, SLACK_API_BASE_ENV, DEFAULT_SLACK_API_BASE)
         return cls(bot_token=token, default_channel=channel, api_base=api_base)
-
-
-def _correlation_tail(correlation_id: str) -> str:
-    """Return the last :data:`_CORRELATION_TAIL_LEN` chars of ``correlation_id``.
-
-    Per ADR-008 § Correlation ID convention, notifications carry the
-    correlation ID's tail so an operator reading a Slack ping can
-    immediately grep journald for the full log context.
-
-    Args:
-        correlation_id: The full ULID or short identifier.
-
-    Returns:
-        The tail (possibly the entire string if it is shorter than the
-        tail length). Never raises.
-    """
-    return correlation_id[-_CORRELATION_TAIL_LEN:]
 
 
 @dataclass(slots=True)
@@ -471,7 +454,7 @@ class SlackAdapter:
                 response, or ``ok=false`` body from any of the (1 +
                 3*len(attachments)) HTTP calls this method makes.
         """
-        tail = _correlation_tail(correlation_id)
+        tail = correlation_tail(correlation_id)
         blocks: list[dict[str, Any]] = [
             {"type": "header", "text": {"type": "plain_text", "text": title, "emoji": True}},
             {

@@ -1013,6 +1013,15 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             ),
         ),
         FailureMode(
+            "Telegram answers 429 to hermes bot",
+            proved_by=(
+                _U + "adapters/telegram_bot/test_client.py"
+                "::test_a_429_on_send_is_waited_out_and_the_message_sent_once",
+                _U + "adapters/telegram_bot/test_client.py"
+                "::test_a_429_that_outlasts_the_retries_raises_the_bot_error",
+            ),
+        ),
+        FailureMode(
             "A slow Telegram holds up the bar that sent the push",
             proved_by=(
                 _U + "entrypoints/test_serve_push_budget.py"
