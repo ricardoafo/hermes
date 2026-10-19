@@ -18,7 +18,7 @@ Verifies:
 - ``install_signal_handlers`` flips the shutdown event on SIGTERM (skipped on
   Windows, where ``os.kill`` on the pytest process is unsafe).
 
-Reference: ``openspec/changes/309-serve-bar-loop/change.md`` D-1, D-5, D-7, D-9.
+Reference: ``openspec/archive/309-serve-bar-loop/change.md`` D-1, D-5, D-7, D-9.
 """
 
 from __future__ import annotations
@@ -35,10 +35,12 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
+import httpx
 import pytest
 from structlog.testing import capture_logs
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
+from hermes.adapters.clock.remote import TEST_CLOCK_URL_ENV, RemoteClock
 from hermes.adapters.clock.wall import WallClock
 from hermes.adapters.endpoint import EndpointConfigError
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
@@ -147,6 +149,39 @@ class TestBuildComposition:
             assert isinstance(composition.feed, BinanceLiveKlinesAdapter)
             assert isinstance(composition.event_bus, EventBus)
             assert (composition.telegram, composition.slack) == (None, None)
+        finally:
+            asyncio.run(composition.feed.aclose())
+            composition.sqlite_connection.close()
+
+    def test_a_test_clock_in_the_env_becomes_serves_clock(
+        self, shadow_config: HermesConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """HERMES_TEST_CLOCK_URL puts serve on the test clock (#972).
+
+        The clock's transport is mocked here; the real socket seam is covered by
+        tests/integration/lower_env/test_installed_release.py.
+        """
+        scripted = datetime(2024, 10, 28, tzinfo=UTC)
+        test_clock = RemoteClock(
+            "http://127.0.0.1:9/_fake/clock",
+            transport=httpx.MockTransport(
+                lambda _request: httpx.Response(200, json={"now": scripted.isoformat()})
+            ),
+        )
+        monkeypatch.setattr(
+            serve_module,
+            "remote_clock_from_env",
+            lambda env: test_clock if env.get(TEST_CLOCK_URL_ENV) else None,
+        )
+
+        composition = serve_module.build_composition(
+            shadow_config,
+            db_path=tmp_path / "test.sqlite3",
+            env={TEST_CLOCK_URL_ENV: "http://127.0.0.1:9/_fake/clock"},
+            new_ledger=True,
+        )
+        try:
+            assert (composition.clock is test_clock, composition.clock.now()) == (True, scripted)
         finally:
             asyncio.run(composition.feed.aclose())
             composition.sqlite_connection.close()
@@ -1059,6 +1094,32 @@ def _shut(composition: serve_module.Composition) -> None:
 def _with_capital(config: HermesConfig, amount: str) -> HermesConfig:
     entry = config.strategies.strategies[0].model_copy(update={"capital_budget": Decimal(amount)})
     return config.model_copy(update={"strategies": StrategiesConfig(strategies=[entry])})
+
+
+class TestWithOnlyEnabled:
+    """#1076: ``--strategy`` makes the named roster entry the one enabled strategy."""
+
+    def test_the_named_entry_is_the_only_one_enabled(self, shadow_config: HermesConfig) -> None:
+        """Invariant: every later check reads the named entry as the enabled one."""
+        chosen = serve_module.with_only_enabled(shadow_config, serve_module.V2_STRATEGY_NAME)
+        enabled = [s.name for s in chosen.strategies.strategies if s.enabled]
+        names = [s.name for s in chosen.strategies.strategies]
+        assert (enabled, names) == (
+            [serve_module.V2_STRATEGY_NAME],
+            [s.name for s in shadow_config.strategies.strategies],
+        )
+
+    def test_the_rest_of_the_entry_is_unchanged(self, shadow_config: HermesConfig) -> None:
+        """Invariant: only ``enabled`` moves; capital, sizing and pricing stay as signed."""
+        chosen = serve_module.with_only_enabled(shadow_config, serve_module.V2_STRATEGY_NAME)
+        assert chosen.strategies.strategies[1] == shadow_config.strategies.strategies[1].model_copy(
+            update={"enabled": True}
+        )
+
+    def test_a_name_missing_from_the_roster_is_refused(self, shadow_config: HermesConfig) -> None:
+        """Invariant: an instance never falls back to whatever the file enables."""
+        with pytest.raises(serve_module.StartupError, match="has no 'no-such-shadow' entry"):
+            serve_module.with_only_enabled(shadow_config, "no-such-shadow")
 
 
 class TestLedgerAndSeedGuards:

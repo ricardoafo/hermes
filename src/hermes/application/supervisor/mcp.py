@@ -12,7 +12,7 @@ and a hand-written handler keeps the VPS process free of an HTTP stack and
 its supply chain (ADR-010). Reachable only over stdio, which the operator
 runs over SSH on the private network (ADR-012 D-07).
 
-Reference: openspec/changes/34-supervisor-read-tools/change.md; issue #34.
+Reference: openspec/archive/34-supervisor-read-tools/change.md; issue #34.
 """
 
 from __future__ import annotations

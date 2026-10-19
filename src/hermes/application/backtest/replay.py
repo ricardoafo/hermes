@@ -22,8 +22,8 @@ go through the same kernel, so the pairs share one capital, the §5.5 position
 limit and exposure cap, and the RO-01 correlation lock, fed the 30-day return
 correlation of the daily closes delivered so far (#822).
 
-Reference: openspec/changes/backtest-driver-mvp1-phase2/change.md D-1, D-4, D-5;
-openspec/changes/822-portfolio-backtest/change.md D-1, D-3.
+Reference: openspec/archive/backtest-driver-mvp1-phase2/change.md D-1, D-4, D-5;
+openspec/archive/822-portfolio-backtest/change.md D-1, D-3.
 """
 
 from __future__ import annotations

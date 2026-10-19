@@ -3,7 +3,7 @@
 Read-only, like :mod:`hermes.ports.filing`. The concrete implementation is
 :class:`hermes.adapters.ledger.trade_rates_reader.LedgerTradeRates`.
 
-Reference: openspec/changes/568-tax-pack/change.md.
+Reference: openspec/archive/568-tax-pack/change.md.
 """
 
 from __future__ import annotations

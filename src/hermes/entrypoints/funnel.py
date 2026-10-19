@@ -14,7 +14,7 @@ Exit codes: 0 every check passed, 1 a check failed or the run was refused
 With ``--batch``, judges every candidate of a signed research batch instead:
 see :mod:`hermes.entrypoints.funnel_batch`.
 
-Reference: ADR-021 §5; openspec/changes/v2-backtest-funnel/change.md.
+Reference: ADR-021 §5; openspec/archive/v2-backtest-funnel/change.md.
 """
 
 import argparse

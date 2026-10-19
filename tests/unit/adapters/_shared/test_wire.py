@@ -17,7 +17,6 @@ import math
 import re
 from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
-from pathlib import Path
 
 import pytest
 from hypothesis import given
@@ -33,10 +32,11 @@ from hermes.adapters._shared.wire import (
 from hermes.domain.errors import ExchangeError, FxRateError, KrakenPublicError
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
+from tests.support.paths import REPO_ROOT
 
 _ERRORS: tuple[type[Exception], ...] = (ExchangeError, KrakenPublicError, FxRateError)
 _NON_FINITE_TEXT = ("NaN", "nan", "sNaN", "Infinity", "-Infinity", "inf", "-inf")
-_SRC = Path(__file__).resolve().parents[4] / "src" / "hermes" / "adapters"
+_SRC = REPO_ROOT / "src" / "hermes" / "adapters"
 _WIRE_PACKAGES = ("exchanges", "market_data", "fx", "healthchecks")
 
 errors = st.sampled_from(_ERRORS)
@@ -172,6 +172,21 @@ def test_http_config_refuses_plaintext_or_no_timeout(
     """A plaintext URL or a non-positive timeout raises ValueError naming the config field."""
     with pytest.raises(ValueError, match=message):
         validate_http_config("Cfg", url=url, timeout_sec=timeout, url_field="rest_url")
+
+
+@pytest.mark.parametrize(
+    "url", ["http://127.0.0.1:9000/frankfurter", "http://localhost:1", "http://[::1]:2/x"]
+)
+def test_http_config_accepts_plaintext_on_a_loopback_fake(url: str) -> None:
+    """A lower environment's fake on loopback needs no certificate (#972)."""
+    validate_http_config("Cfg", url=url, timeout_sec=5.0)
+
+
+@pytest.mark.parametrize("url", ["http://10.0.0.1", "http://127.0.0.1.example", "ws://127.0.0.1"])
+def test_http_config_still_refuses_plaintext_off_loopback(url: str) -> None:
+    """Only loopback earns the exception; any other host or scheme stays refused."""
+    with pytest.raises(ValueError, match=r"must start with https://, or http:// on a loopback"):
+        validate_http_config("Cfg", url=url, timeout_sec=5.0)
 
 
 def _wire_sources() -> dict[str, str]:

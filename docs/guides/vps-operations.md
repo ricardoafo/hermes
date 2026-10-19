@@ -480,7 +480,7 @@ purpose. Only the Code Owner changes this variable.
 
 - `.github/workflows/vps-bootstrap.yml`
 - `scripts/deploy/vps_bootstrap.sh`
-- `openspec/changes/chore-vps-bootstrap-workflow/change.md`
+- `openspec/archive/chore-vps-bootstrap-workflow/change.md`
 
 ## Systemd services (populated as hermes services land)
 

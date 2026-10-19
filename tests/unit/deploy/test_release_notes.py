@@ -17,14 +17,15 @@ from types import ModuleType
 
 import pytest
 
-_ROOT = Path(__file__).resolve().parents[3]
+from tests.support.paths import REPO_ROOT
+
 _REPO = "owner/hermes"
 
 
 def _load() -> ModuleType:
     """Import the script module (not a package)."""
     spec = importlib.util.spec_from_file_location(
-        "release_notes", _ROOT / "scripts" / "deploy" / "release_notes.py"
+        "release_notes", REPO_ROOT / "scripts" / "deploy" / "release_notes.py"
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -192,7 +193,7 @@ def test_telegram_message_caps_the_list_and_links_the_release(repo: Repo) -> Non
 
 def _with_version(repo: Repo, version: str) -> str:
     """Commit a pyproject with ``version`` beside the real release-name mapping."""
-    mapping = (_ROOT / "src" / "hermes" / "release_version.py").read_text(encoding="utf-8")
+    mapping = (REPO_ROOT / "src" / "hermes" / "release_version.py").read_text(encoding="utf-8")
     return repo.commit(
         f"chore(release): {version}",
         files={

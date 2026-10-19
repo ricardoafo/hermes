@@ -1,0 +1,1 @@
+- The Telegram bot's `/pos` and `/money` now read the ledger given by `--db`, not `HERMES_DB_PATH` or `./hermes.sqlite3`. A pending tax now reads "tax estimate: not available yet" instead of "tax tax estimate: not available yet".

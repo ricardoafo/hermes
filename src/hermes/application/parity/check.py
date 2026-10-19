@@ -13,7 +13,7 @@ and the portfolio are restored from the ledger as serve restores them. Only
 the day's bars then go through :func:`~hermes.application.backtest.replay.replay`.
 Everything is read: the ledger is never written.
 
-Reference: openspec/changes/358-parity-check/change.md.
+Reference: openspec/archive/358-parity-check/change.md.
 """
 
 from __future__ import annotations

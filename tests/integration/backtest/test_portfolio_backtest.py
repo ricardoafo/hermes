@@ -37,7 +37,6 @@ from hermes.application.order_router.risk_engine import RiskEngine
 from hermes.application.portfolio.tracker import PortfolioTracker
 from hermes.application.strategy_protocol.strategy_factory import strategy_kind
 from hermes.domain.calibration.trial_record import TrialSummary
-from hermes.domain.fees.fee_schedule import FeeSchedule
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.risk.correlation_lock import CorrelationLock
@@ -48,7 +47,14 @@ from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
 from hermes.entrypoints.certify import apply_performance
 from hermes.ports.strategy import StrategyPort
-from tests.support.fill_kernel import BTC_USDT, SIZING, STRATEGY, fees, kill_evaluator, seed
+from tests.support.fill_kernel import (
+    BTC_USDT,
+    SIZING,
+    STRATEGY,
+    fees_at,
+    kill_evaluator,
+    seed,
+)
 from tests.support.parity import ScriptedStrategy
 
 pytestmark = pytest.mark.integration
@@ -124,11 +130,6 @@ def _kernel() -> FillKernel:
     )
 
 
-def _fees_at(at: datetime, pair: Pair) -> FeeSchedule:
-    _ = at
-    return fees(pair)
-
-
 def _run(
     bars: Sequence[Bar],
     strategies: Mapping[Pair, StrategyPort],
@@ -144,7 +145,7 @@ def _run(
         kernel=kernel if kernel is not None else _kernel(),
         window_start=window_start,
         window_end=window_end,
-        fees_at=_fees_at,
+        fees_at=fees_at,
         correlation_id=lambda: next(ids),
     )
 

@@ -10,7 +10,6 @@ research batch swing-b1 §5 (C4).
 import inspect
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from pathlib import Path
 
 import pytest
 from hypothesis import HealthCheck, given, settings
@@ -27,8 +26,9 @@ from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
 from hermes.infrastructure.config import StrategiesConfig
 from hermes.infrastructure.config.loader import load_yaml_model
+from tests.support.paths import REPO_ROOT
 
-_REPO_CONFIG = Path(__file__).resolve().parents[5] / "config"
+_REPO_CONFIG = REPO_ROOT / "config"
 _BTC_USDT = Pair(base=Currency.BTC, quote=Currency.USDT)
 _D1_BASE = datetime(2024, 1, 1, tzinfo=UTC)
 _DAILY_BARS = 21

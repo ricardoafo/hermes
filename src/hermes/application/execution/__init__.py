@@ -9,7 +9,7 @@ Public surface:
   :class:`~hermes.application.execution.kernel.Declined`,
   :class:`~hermes.application.execution.kernel.Halted` — the outcomes
 
-Reference: openspec/changes/backtest-driver-mvp1-phase2/change.md D-2; ADR-011 D-01.
+Reference: openspec/archive/backtest-driver-mvp1-phase2/change.md D-2; ADR-011 D-01.
 """
 
 from hermes.application.execution.kernel import (

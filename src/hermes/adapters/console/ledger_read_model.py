@@ -12,8 +12,8 @@ capital seed (#405) and the closed trades' FIFO values; activity reuses the
 ledger activity rows; the shadow test counts days from the capital seed. A view
 the ledger cannot answer yet raises :class:`ViewNotAvailableError`.
 
-Reference: openspec/changes/ledger-read-model/change.md (D-1, D-3 to D-9);
-openspec/changes/live-home-screen/change.md (D-1 to D-6).
+Reference: openspec/archive/ledger-read-model/change.md (D-1, D-3 to D-9);
+openspec/archive/live-home-screen/change.md (D-1 to D-6).
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Final, Self
 
 from hermes.adapters.console.ledger_activity import LedgerActivityReader
-from hermes.adapters.ledger.connection import open_ledger
+from hermes.adapters.ledger.connection import open_read_only
 from hermes.application.console.activity import group_activity
 from hermes.application.console.journal_activity import (
     fold_checks,
@@ -105,10 +105,7 @@ def connect_read_only(path: Path) -> sqlite3.Connection:
     Raises:
         LedgerError: SQLite refused to open the file.
     """
-    try:
-        return open_ledger(path, read_only=True)
-    except sqlite3.Error as exc:
-        raise LedgerError(msg=f"cannot open {path} read-only: {exc}") from exc
+    return open_read_only(path)
 
 
 class LedgerReadModel:

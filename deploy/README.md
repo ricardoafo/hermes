@@ -7,7 +7,7 @@
 ## Status
 
 The bootstrap and the deploy path are implemented
-(`openspec/changes/179-cd-first-real-deploy/change.md`). The health timer,
+(`openspec/archive/179-cd-first-real-deploy/change.md`). The health timer,
 the backup timer and the smoke suite are still placeholders. See ADR-003 §09
 (`docs/architecture/adr-003-solution-architecture/09-deployment.md`)
 for the target design.

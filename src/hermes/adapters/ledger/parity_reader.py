@@ -5,7 +5,7 @@ cannot modify the ledger even by accident, and never runs migrations (unlike
 :class:`~hermes.adapters.ledger.sqlite_ledger.SqliteLedger`, whose constructor
 migrates). Safe next to a running ``hermes serve``.
 
-Reference: openspec/changes/358-parity-check/change.md.
+Reference: openspec/archive/358-parity-check/change.md.
 """
 
 from __future__ import annotations
@@ -13,10 +13,8 @@ from __future__ import annotations
 import json
 import sqlite3
 from datetime import datetime
-from pathlib import Path
-from typing import Self
 
-from hermes.adapters.ledger.connection import open_ledger
+from hermes.adapters.ledger.connection import ReadOnlyLedgerReader
 from hermes.adapters.ledger.sqlite_ledger import (
     _signal_from_payload,
     _trades_from_rows,
@@ -34,51 +32,8 @@ from hermes.domain.value_objects.strategy_id import StrategyId
 __all__ = ["SqliteParityReader"]
 
 
-class SqliteParityReader:
+class SqliteParityReader(ReadOnlyLedgerReader):
     """Answer the parity check's questions from a ledger file, read-only."""
-
-    def __init__(self, connection: sqlite3.Connection) -> None:
-        """Wrap an already-open read-only connection.
-
-        Args:
-            connection: A connection opened by :meth:`open` (or a test's own).
-        """
-        self._conn = connection
-
-    @classmethod
-    def open(cls, path: Path) -> Self:
-        """Open ``path`` read-only.
-
-        Args:
-            path: The ledger file.
-
-        Returns:
-            A reader over a ``mode=ro`` connection.
-
-        Raises:
-            FileNotFoundError: There is no file at ``path``.
-            LedgerError: SQLite refused to open the file.
-        """
-        resolved = path.resolve()
-        if not resolved.is_file():
-            raise FileNotFoundError(str(path))
-        try:
-            connection = open_ledger(resolved, read_only=True)
-        except sqlite3.Error as exc:
-            raise LedgerError(msg=f"cannot open {path} read-only: {exc}") from exc
-        return cls(connection)
-
-    def close(self) -> None:
-        """Close the connection."""
-        self._conn.close()
-
-    def __enter__(self) -> Self:
-        """Return ``self`` for ``with`` blocks."""
-        return self
-
-    def __exit__(self, *_exc_info: object) -> None:
-        """Close the connection, whatever ended the ``with`` block."""
-        self.close()
 
     def bars_closing_between(
         self, pair: Pair, interval: KlineInterval, after: datetime, upto: datetime

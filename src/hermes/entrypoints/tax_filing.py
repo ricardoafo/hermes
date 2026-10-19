@@ -8,7 +8,7 @@ submits anything and never reads the taxpayer profile.
 Exit codes: 0 complete, 1 ledger failure, 2 usage, 3 config error,
 4 incomplete (a sale with pending EUR values or a coin with no year-end price).
 
-Reference: openspec/changes/36-modelo-100-721/change.md.
+Reference: openspec/archive/36-modelo-100-721/change.md.
 """
 
 from __future__ import annotations

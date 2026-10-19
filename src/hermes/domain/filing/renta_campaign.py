@@ -5,7 +5,7 @@ one entry per tax year (ejercicio), and are checked when each campaign is
 published. Until a year's campaign is published, the latest earlier layout is
 used and marked provisional.
 
-Reference: openspec/changes/568-tax-pack/change.md D-6.
+Reference: openspec/archive/568-tax-pack/change.md D-6.
 """
 
 from __future__ import annotations

@@ -10,7 +10,7 @@ selection rule the batch signed and names the champion, or none (ADR-026 §5).
 (contract §5): statuses only, never a metric value (ADR-012 D-06).
 
 Reference: ADR-026 §3-§5; issue #1059; the research funnel interface contract
-§4 and §5; openspec/changes/1059-funnel-cli/change.md.
+§4 and §5; openspec/archive/1059-batch-judge/change.md.
 """
 
 from collections.abc import Iterable, Mapping

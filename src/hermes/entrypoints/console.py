@@ -13,15 +13,15 @@ the registry, so no list here names them (#525). Console commands call
 :func:`resolve_read_model`: a demo scenario when one is selected, otherwise the
 ledger-backed read model when the ledger file exists (#546).
 
-Reference: openspec/changes/console-read-model/change.md (D-4, D-9);
-openspec/changes/ledger-read-model/change.md (D-8, D-9).
+Reference: openspec/archive/console-read-model/change.md (D-4, D-9);
+openspec/archive/ledger-read-model/change.md (D-8, D-9).
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Final, TextIO
@@ -45,6 +45,7 @@ from hermes.application.console.shadow_screen import ShadowSources, sources_from
 from hermes.application.console.system import LiveRelease, SystemSources
 from hermes.domain.errors import LedgerError
 from hermes.entrypoints._streams import resolve_err
+from hermes.infrastructure.time import now_utc
 
 __all__ = [
     "CONFIG_DIR_ENV_VAR",
@@ -219,7 +220,11 @@ def demo_read_model(*, demo_flag: str | None, env: Mapping[str, str]) -> Fixture
 
 
 def resolve_read_model(
-    *, demo_flag: str | None, env: Mapping[str, str], db_path: Path | None = None
+    *,
+    demo_flag: str | None,
+    env: Mapping[str, str],
+    db_path: Path | None = None,
+    clock: Callable[[], datetime] | None = None,
 ) -> ConsoleReadModel:
     """Return the read model a console command should use.
 
@@ -229,6 +234,7 @@ def resolve_read_model(
         demo_flag: Scenario named by ``--demo``, if any.
         env: Environment snapshot.
         db_path: Ledger file; defaults to ``hermes serve``'s default path.
+        clock: Read time of the ledger's views; defaults to the wall clock.
 
     Returns:
         A fixture read model for the chosen scenario, or the ledger read model.
@@ -248,6 +254,7 @@ def resolve_read_model(
     try:
         return LedgerReadModel.open(
             db_path,
+            clock=now_utc if clock is None else clock,
             journal=journal_window_lines,
             briefs=desk_briefs(db_path, config_dir=default_config_dir(env)),
         )

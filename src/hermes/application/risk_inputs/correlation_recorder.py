@@ -32,8 +32,8 @@ from hermes.domain.portfolio.correlation import (
     CORRELATION_WINDOW_DAYS,
     PairCorrelation,
     aligned_daily_returns,
-    pearson,
 )
+from hermes.domain.statistics.correlation import pearson
 from hermes.domain.value_objects.pair import Pair
 from hermes.ports.live_bars import LiveBarStorePort
 from hermes.ports.risk_inputs import RiskInputStorePort

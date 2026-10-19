@@ -1,6 +1,6 @@
 """Tests for the console's Tax screen (issue #719, design spec screen 4).
 
-Reference: openspec/changes/719-tax-screen/change.md (R-1..R-7).
+Reference: openspec/archive/719-tax-screen/change.md (R-1..R-7).
 """
 
 import asyncio

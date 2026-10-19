@@ -22,6 +22,7 @@ from hermes.application.strategy_protocol.preregistration import (
     H1Thresholds,
     PreRegistration,
 )
+from tests.support.paths import REPO_ROOT
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -31,11 +32,7 @@ from hermes.application.strategy_protocol.preregistration import (
 @pytest.fixture(scope="module")
 def pre_reg(tmp_path_factory: pytest.TempPathFactory) -> PreRegistration:
     """Return a PreRegistration pointed at the real pre-reg file in the repo."""
-    here = Path(__file__).resolve().parent
-    for candidate in [here, *here.parents]:
-        if (candidate / "pyproject.toml").exists():
-            return PreRegistration(project_root=candidate)
-    pytest.skip("Could not find project root — skipping integration-style test")
+    return PreRegistration(project_root=REPO_ROOT)
 
 
 # ---------------------------------------------------------------------------

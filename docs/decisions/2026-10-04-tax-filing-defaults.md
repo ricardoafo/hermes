@@ -4,7 +4,7 @@
 **Author**: AI Bot on behalf of the Code Owner
 **Related**: [ADR-002](../architecture/adr-002-tax-posture.md),
 [ADR-016](../architecture/adr-016-tax-estimate-rules.md),
-`openspec/changes/36-modelo-100-721/change.md`, GitHub issues #36, #395, #405
+`openspec/archive/36-modelo-100-721/change.md`, GitHub issues #36, #395, #405
 
 ## Decision
 

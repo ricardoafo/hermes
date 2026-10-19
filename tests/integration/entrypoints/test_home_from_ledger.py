@@ -5,7 +5,7 @@ seed and its EUR pricing, bar checks, the entry signal, a buy and a partial
 sale with their EUR values, three portfolio marks). The commands then read it
 read-only, with no demo scenario, exactly as on the VPS.
 
-Reference: openspec/changes/live-home-screen/change.md (A-1.1, A-2.1, A-4.1).
+Reference: openspec/archive/live-home-screen/change.md (A-1.1, A-2.1, A-4.1).
 """
 
 from __future__ import annotations

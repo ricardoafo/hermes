@@ -76,6 +76,7 @@ see the type of your branch, run `python3 scripts/dev/change-type.py origin/main
 | Exchange keys | None | None | None | Trade-capable, only after certification |
 | Notifier, healthchecks, Sentry | None | Recording fakes | The lab's own | Prod's own |
 | Outside network | None | Loopback only | Public market data only | Public market data, exchanges, notifiers |
+| Clock | Wall, or a loopback test clock | The fake market's test clock | Wall | Wall |
 
 - Hold no exchange key of any kind on hermes-01 while it is staging. A trade-capable key reaches hermes-01 only at
   the cutover, after the staging state has left the box.
@@ -84,6 +85,9 @@ see the type of your branch, run `python3 scripts/dev/change-type.py origin/main
   hermes-01's deploy secrets live in `staging`, and `prod` holds nothing.
 - Runners that hold deploy secrets never run PR, QA or Dependabot code.
 - The config loader and the deploy preflight refuse each tier's forbidden values (issue #970).
+- `HERMES_TEST_CLOCK_URL` points `hermes serve` and `hermes bot` at a test clock, such as the fake market's
+  `/_fake/clock`, so a scenario runs an installed release on scripted time (issue #972). Only dev and QA may set it, and
+  only on loopback.
 
 ## Rick's steps
 
@@ -159,6 +163,9 @@ stat -c '%a %U:%G' /etc/hermes/env.staging && grep '^HERMES_ENV=' /etc/hermes/en
 
 Expected: `600 root:root` and `HERMES_ENV="staging"`.
 
+Every staging deploy checks this file with the new release's `hermes config check` before it restarts anything. A
+trading key or a loopback endpoint stops the deploy, and the log names the setting, never its value.
+
 The lab also needs outbound access to Binance and Frankfurter public data and to its notifier and healthchecks hosts,
 with no inbound ports, and about 1 GB of memory. How the box provides these belongs to the infra project (ADR-024 §9).
 
@@ -167,6 +174,54 @@ with no inbound ports, and about 1 GB of memory. How the box provides these belo
 - In the BIOS, set "power on after power loss" to on. It is a setting, not a command.
 - A clean shutdown when the UPS battery runs low is the infra project's part of the same ask. This guide does not
   describe how the box does it.
+
+## Running several shadows in the lab
+
+ADR-024 makes hermes-01 the staging lab until a champion's shadow is Done. The lab runs up to 6 shadows plus the
+champion, and ADR-021 gives each one its own ledger. Each shadow is one instance of
+`deploy/systemd/hermes-shadow@.service`, named after its roster entry in `config/strategies.yaml`
+(issue #1076):
+
+| Item | One shadow, `<name>` |
+| ---- | -------------------- |
+| Unit | `hermes-shadow@<name>.service` |
+| Command | `hermes serve --strategy <name> --db /var/lib/hermes-staging/shadows/<name>/hermes.sqlite3` |
+| Ledger, day-0 records, certification | `/var/lib/hermes-staging/shadows/<name>/` |
+| Code and config | the staging release, `/opt/hermes-staging/current` |
+| Secrets | `/etc/hermes/env.staging`, shared, no exchange keys |
+| Journal | `journalctl -u hermes-shadow@<name>.service` |
+
+`--strategy` runs that roster entry whatever the file enables, so every shadow runs the same release. Serve refuses
+a ledger that already holds another strategy's capital, so an instance pointed at the wrong file stops at boot,
+before it writes anything. Every instance spends the box's one Binance rate limit, like the staging serve.
+
+To add a shadow, run these on hermes-01 as root, with `<name>` replaced by the roster entry:
+
+1. Create its ledger directory.
+
+   ```bash
+   install -d -m 0750 -o hermes-staging -g hermes-staging /var/lib/hermes-staging/shadows /var/lib/hermes-staging/shadows/<name>
+   ```
+
+2. Create its ledger. Stop it with Ctrl-C once the journal shows `serve.run.started`.
+
+   ```bash
+   sudo -u hermes-staging /opt/hermes-staging/current/.venv/bin/hermes serve --config-dir /opt/hermes-staging/current/config --strategy <name> --db /var/lib/hermes-staging/shadows/<name>/hermes.sqlite3 --new-ledger
+   ```
+
+3. Start it and keep it running across reboots.
+
+   ```bash
+   systemctl enable --now hermes-shadow@<name>.service
+   ```
+
+4. Check it is running.
+
+   ```bash
+   systemctl status hermes-shadow@<name>.service --no-pager
+   ```
+
+Counting the shadow's days still starts with `hermes shadow-start` on its ledger (ADR-021 §2).
 
 ## When a machine is down
 

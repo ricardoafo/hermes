@@ -513,6 +513,20 @@ class SqliteLedger:
             eur_rate=_optional_decimal(row[3]),
         )
 
+    def seeded_strategies(self) -> tuple[StrategyId, ...]:
+        """Return every strategy that has a capital seed in this ledger, in seed order.
+
+        Raises:
+            LedgerError: On any SQLite read failure.
+        """
+        try:
+            rows = self._conn.execute(
+                "SELECT strategy_id FROM capital_seeds ORDER BY seeded_at, strategy_id"
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"seeded_strategies failed: {exc}") from exc
+        return tuple(StrategyId(row[0]) for row in rows)
+
     def earliest_activity(self) -> datetime | None:
         """Return the earliest bar, signal or trade event time, or ``None`` without any.
 
@@ -1012,6 +1026,43 @@ class SqliteLedger:
         except sqlite3.Error as exc:
             raise LedgerError(msg=f"last_processed_close failed: {exc}") from exc
         return None if row is None else datetime.fromisoformat(row[0])
+
+    def missed_bar_count(self) -> int:
+        """Return how many distinct bars this ledger records as missed (#1117).
+
+        A bar re-handled after a crash between its ``BarMissed`` and
+        ``BarProcessed`` rows has two ``BarMissed`` rows; it counts once.
+
+        Raises:
+            LedgerError: On any SQLite read failure.
+        """
+        try:
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM (SELECT DISTINCT occurred_at, "
+                "  json_extract(payload_json, '$.pair.base'), "
+                "  json_extract(payload_json, '$.pair.quote'), "
+                "  json_extract(payload_json, '$.interval') "
+                "FROM events WHERE event_type = 'BarMissed')"
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"missed_bar_count failed: {exc}") from exc
+        return int(row[0])
+
+    def has_anomaly_from(self, source: str) -> bool:
+        """Return whether an ``AnomalyDetected`` row from ``source`` is recorded (#1117).
+
+        Raises:
+            LedgerError: On any SQLite read failure.
+        """
+        try:
+            row = self._conn.execute(
+                "SELECT 1 FROM events WHERE event_type = 'AnomalyDetected' "
+                "  AND json_extract(payload_json, '$.source') = ? LIMIT 1",
+                (source,),
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"has_anomaly_from failed: {exc}") from exc
+        return row is not None
 
     def latest_signal_event(
         self,

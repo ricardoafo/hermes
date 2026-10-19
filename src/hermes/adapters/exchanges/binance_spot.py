@@ -1,5 +1,8 @@
 """Binance spot trading adapter — testnet by default, mainnet only with a permit.
 
+Not wired into any entrypoint until MVP2 (issue #1220): it places real
+orders, so it stays parked rather than deleted.
+
 Implements :class:`~hermes.ports.exchange.ExchangePort` and
 :class:`~hermes.ports.exchange.StopLossPort` with signed REST calls:
 
@@ -41,7 +44,7 @@ asset (BNB) is priced at that asset's ticker, or at the pre-registered taker
 rate when the ticker cannot be read, so a filled order always returns its fill;
 such a fill is marked ``fee_estimated`` (#1014).
 
-Reference: issue #148; openspec/changes/148-binance-testnet-spot/change.md.
+Reference: issue #148; openspec/archive/148-binance-testnet-spot/change.md.
 """
 
 from __future__ import annotations

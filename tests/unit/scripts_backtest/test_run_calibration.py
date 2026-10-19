@@ -13,7 +13,6 @@ import inspect
 import sys
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from pathlib import Path
 
 import pytest
 
@@ -25,13 +24,14 @@ from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
+from tests.support.paths import REPO_ROOT
 
 _STRATEGY_ID = StrategyId("swing-mvp1-phase1-btcusdt")
 
 
 def _import_driver():
     """Import the driver module (not a proper package — same-dir import)."""
-    root = Path(__file__).resolve().parents[3]
+    root = REPO_ROOT
     module_path = root / "scripts" / "backtest" / "run_calibration.py"
     assert module_path.exists(), f"missing driver: {module_path}"
     spec = importlib.util.spec_from_file_location("run_calibration_driver", module_path)

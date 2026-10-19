@@ -1,6 +1,6 @@
 """Tests for the Tax screen's synthetic demo rows (issue #719).
 
-Reference: openspec/changes/719-tax-screen/change.md (R-6).
+Reference: openspec/archive/719-tax-screen/change.md (R-6).
 """
 
 from datetime import UTC, datetime
