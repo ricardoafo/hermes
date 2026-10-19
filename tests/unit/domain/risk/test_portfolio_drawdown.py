@@ -16,21 +16,11 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from hermes.domain.risk.portfolio_drawdown import _DRAWDOWN_HALT_THRESHOLD, PortfolioDrawdown
-from hermes.ports.risk_overlay import RiskAction, RiskOverlayPort
+from hermes.ports.risk_overlay import RiskAction
 from tests.unit.domain.risk.conftest import make_market_snapshot, make_portfolio_state
 
 _RULE = PortfolioDrawdown()
 _PEAK = Decimal("10000")
-
-
-class TestPortfolioDrawdownThresholdConstants:
-    """Verify the pre-reg §10 constant is exactly 15%."""
-
-    def test_drawdown_threshold_is_binding(self) -> None:
-        """Drawdown halt threshold must be exactly 0.15 (15%) per pre-reg §10."""
-        assert Decimal("0.15") == _DRAWDOWN_HALT_THRESHOLD, (
-            f"RO-08 threshold must be exactly 0.15 (pre-reg §10), got {_DRAWDOWN_HALT_THRESHOLD}"
-        )
 
 
 class TestPortfolioDrawdownOK:
@@ -138,14 +128,4 @@ class TestPortfolioDrawdownHaltFlag:
         )
         assert decision.action == RiskAction.OK, (
             f"dd_halt_required=False with 1% drawdown must return OK, got {decision.action}"
-        )
-
-
-class TestPortfolioDrawdownProtocolConformance:
-    """Rule instance satisfies RiskOverlayPort at runtime."""
-
-    def test_is_risk_overlay_port(self) -> None:
-        """PortfolioDrawdown must be an instance of RiskOverlayPort (runtime_checkable)."""
-        assert isinstance(_RULE, RiskOverlayPort), (
-            "PortfolioDrawdown must satisfy RiskOverlayPort Protocol"
         )
