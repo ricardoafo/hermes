@@ -65,7 +65,7 @@ must be updated to supply `event_seq` and `payload_sha256`.
 - **Rationale**: Matches the pattern established by `LotId` (wrapped validated string). The
   printable-ASCII constraint is conservative and safe; it allows `"swing"`, `"balancer"`,
   `"swing-v2"` while rejecting control characters and non-ASCII that would corrupt log lines.
-  `StrEnum` is ruled out by SA-6's finding that NautilusTrader uses `StrategyId` as a first-class
+  `StrEnum` is ruled out by SA-6's finding that a mature engine uses `StrategyId` as a first-class
   domain value (not a config enum) to support N-strategy registration at runtime.
 - **Cost of reversal**: LOW — only `StrategyId` consumers need updating; no persistence format
   affected (no persisted events yet).
