@@ -212,9 +212,11 @@ class TestAdapterLifecycle:
     """Adapter honours the close() contract and rate-limits pings."""
 
     def test_close_is_idempotent(self, adapter: HealthchecksAdapter) -> None:
-        """Calling close() twice does not raise — safe for finally blocks."""
+        """Closing twice does not raise and leaves the client closed, so finally blocks are safe."""
         adapter.close()
-        adapter.close()  # second call must not raise
+        adapter.close()
+
+        assert adapter.client.is_closed is True
 
     def test_rate_limiter_size_derived_from_config(self) -> None:
         """The internal rate-limit config carries the requested requests_per_minute."""

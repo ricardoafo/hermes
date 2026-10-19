@@ -173,6 +173,9 @@ addopts = "-ra --strict-markers --strict-config -m 'not contract'"
 # interrupt blocking C-level calls on Windows the way they do on POSIX.
 timeout = 60
 timeout_method = "thread"
+# An xfail test that passes fails the run; tests/plugins/xfail_guard.py fails any
+# xfail outcome, so a green run means every test passed (#1193).
+xfail_strict = true
 
 # filterwarnings — surface deprecated APIs as HARD test failures so we
 # discover them at PR time (not at "the day the library removed the API").
@@ -188,12 +191,10 @@ timeout_method = "thread"
 # issue. Never a bare `default::DeprecationWarning` — that silences the
 # whole class and defeats the discipline.
 filterwarnings = [
-  "error::DeprecationWarning",
-  "error::PendingDeprecationWarning",
-  # Unclosed connections/files are real leaks (#759); GC-time warnings
-  # surface as unraisable exceptions, so both must fail the run.
-  "error::ResourceWarning",
-  "error::pytest.PytestUnraisableExceptionWarning",
+  # Every warning fails the run, including a never-awaited coroutine
+  # (RuntimeWarning) and the unclosed connections/files of #759; GC-time
+  # warnings surface as unraisable exceptions, which this covers as well.
+  "error",
   # Third-party warnings we cannot fix — allow with a comment explaining why:
   # (add exceptions here as they surface, with justification + upstream link)
 ]

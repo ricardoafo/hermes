@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """Unit-test standard AST guard.
 
-Fails a test function that can't catch a real bug, under four rules of the
-unit-test standard in ``docs/guides/ai-authored-tests.md`` (#691):
+Fails a test function that can't catch a real bug, under six rules of the
+unit-test standard in ``docs/guides/ai-authored-tests.md`` (#691, #1193):
 
 - **U3, vague only.** Every assertion is vague: ``is None`` / ``is not None``,
   ``> 0`` / ``>= 0`` / ``!= 0``, ``== True`` / ``== False``, a bare name, a
   name compared with a name, ``isinstance(...)``, ``callable(...)``,
   ``all(...)`` / ``any(...)``, or a length compared with a literal.
+- **U3, an ``or``.** Any assertion whose top-level test is ``a or b``: it
+  passes when either side holds, so it can't tell which behaviour happened.
+  Assert the one value the rule calls for. (Counted under U3; a test with a
+  meaningful assertion elsewhere is still flagged.)
 - **U6, tests Python or the type checker.** Its only checks are that a
   dataclass is frozen (``FrozenInstanceError``), that an object has slots or
   no ``__dict__``, that a value is an instance of a ``*Port`` protocol, or a
@@ -18,6 +22,11 @@ unit-test standard in ``docs/guides/ai-authored-tests.md`` (#691):
 - **U10, mock-only.** Its only checks are that a mock was called
   (``assert_called*`` / ``assert_awaited*`` / ``assert_not_called``,
   ``.called``, ``.call_count``, ``.call_args``).
+
+- **U11, no assertion.** The test has no ``assert``, no ``pytest.raises`` /
+  ``warns`` / ``fail``, no mock check and no call to a helper whose name
+  starts with ``assert``. Running without an exception proves nothing; check
+  the state afterwards (standard rule 11).
 
 A test is fine when at least one check is meaningful. Assertions inside a
 ``with pytest.raises(...)`` block count as the raise being the assertion,
@@ -60,6 +69,7 @@ RULE_TEXT = {
     "U6": "tests Python or the type checker, not hermes (standard rule 6)",
     "U7": "only restates a constant (standard rule 7)",
     "U10": "only checks that a mock was called (standard rule 10)",
+    "U11": "has no assertion (standard rule 11)",
 }
 
 _VAGUE_CALLS = frozenset({"isinstance", "callable", "all", "any"})
@@ -226,6 +236,26 @@ def _raises_blocks(fn: ast.FunctionDef) -> list[tuple[ast.With, bool]]:
     return blocks
 
 
+_CHECKING_CALLS = frozenset({"raises", "warns", "fail", "deprecated_call"})
+
+
+def _is_checking_call(node: ast.AST) -> bool:
+    """Return True for a call that can fail the test (``assert_*`` helpers, ``pytest.fail``)."""
+    name = _call_name(node)
+    if name is None:
+        return False
+    return (
+        name.lstrip("_").startswith("assert")
+        or name.startswith("run_state_machine")
+        or name in _CHECKING_CALLS
+    )
+
+
+def _is_or_assertion(assert_node: ast.Assert) -> bool:
+    """Return True if the assertion is ``a or b`` (U3)."""
+    return isinstance(assert_node.test, ast.BoolOp) and isinstance(assert_node.test.op, ast.Or)
+
+
 def classify(fn: ast.FunctionDef, oracles: frozenset[str] = frozenset()) -> tuple[str, str] | None:
     """Return ``(rule, snippet)`` when ``fn`` breaks a rule, else ``None``."""
     blocks = _raises_blocks(fn)
@@ -245,6 +275,10 @@ def classify(fn: ast.FunctionDef, oracles: frozenset[str] = frozenset()) -> tupl
     ]
     if meaningful_raises:
         return None
+
+    for a in asserts:
+        if _is_or_assertion(a):
+            return "U3", ast.unparse(a.test).splitlines()[0].strip()
 
     python_checks = [a for a in asserts if _is_python_check(a)]
     mock_asserts = [a for a in asserts if _is_mock_check(a)]
@@ -273,6 +307,8 @@ def classify(fn: ast.FunctionDef, oracles: frozenset[str] = frozenset()) -> tupl
         return "U7", ast.unparse(restatements[0]).strip()
     if vague:
         return "U3", ast.unparse(vague[0]).strip()
+    if not asserts and not frozen_raises and not any(_is_checking_call(n) for n in ast.walk(fn)):
+        return "U11", fn.name
     return None
 
 
@@ -314,6 +350,11 @@ def _load_baseline() -> set[str]:
 def _run_self_test() -> int:
     """Run built-in PASS/FAIL fixtures. Exit 0 if all match, 2 otherwise."""
     pass_cases = [
+        "def test_assert_helper():\n    assert_closed(run())\n",
+        "def test_private_assert_helper():\n    _assert_total(run(), 3)\n",
+        "def test_explicit_fail():\n    if run():\n        pytest.fail('ran')\n",
+        "def test_state_machine():\n    run_state_machine_as_test(Machine)\n",
+        "def test_and_not_or():\n    assert a == 1 and b == 2\n",
         "def test_ok():\n    x = 1\n    assert x == 1\n",
         (
             "import pytest\ndef test_raises():\n"
@@ -352,6 +393,14 @@ def _run_self_test() -> int:
         ),
         ("def test_bad_slots():\n    assert not hasattr(o, '__dict__')\n", "U6"),
         ("def test_bad_port():\n    assert isinstance(adapter, MarketDataPort)\n", "U6"),
+        ("def test_bad_or():\n    assert f() == 1 or g() == 1\n", "U3"),
+        (
+            "def test_bad_or_beside_a_good_one():\n"
+            "    assert f() == 1\n    assert 'a' in s or 'b' in s\n",
+            "U3",
+        ),
+        ("def test_bad_no_assert():\n    run()\n", "U11"),
+        ("def test_bad_unchecked_close():\n    adapter.close()\n    adapter.close()\n", "U11"),
         ("def test_bad_constant():\n    assert TIME_STOP_DAYS == 90\n", "U7"),
         ("def test_bad_mock():\n    m = make()\n    run(m)\n    m.assert_called_once()\n", "U10"),
         ("def test_bad_mock_count():\n    assert m.call_count == 1\n", "U10"),

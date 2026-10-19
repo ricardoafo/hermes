@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from hermes.domain.value_objects.time import MADRID, require_utc
+from tests.support.accepted import assert_accepted
 
 
 def test_madrid_is_one_hour_ahead_of_utc_in_winter() -> None:
@@ -26,7 +27,7 @@ def test_madrid_is_two_hours_ahead_of_utc_in_summer() -> None:
 @pytest.mark.parametrize("zone", [UTC, UTC, ZoneInfo("UTC"), ZoneInfo("Etc/UTC")])
 def test_every_spelling_of_utc_is_accepted(zone: timezone | ZoneInfo) -> None:
     """The standard library has four ways to say UTC; all four pass."""
-    require_utc(datetime(2026, 7, 15, 12, tzinfo=zone), name="now")
+    assert_accepted(require_utc, datetime(2026, 7, 15, 12, tzinfo=zone), name="now")
 
 
 def test_a_naive_time_is_refused_and_named() -> None:

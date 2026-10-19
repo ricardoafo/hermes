@@ -76,7 +76,9 @@ def test_every_name_in_a_template_loads_when_uncommented(template: Path) -> None
     An unknown ``HERMES_<SECTION>__<FIELD>`` makes ``hermes serve`` exit 3.
     """
     env = _names_and_values(template)
-    load_config(_CONFIG_DIR, env=env)
+    config = load_config(_CONFIG_DIR, env=env)
+
+    assert config.env == env["HERMES_ENV"]
 
 
 @pytest.mark.parametrize("template", _TEMPLATES, ids=lambda path: path.name)

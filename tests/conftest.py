@@ -1,6 +1,6 @@
 """Shared pytest fixtures, plugin registration and the Hypothesis profiles.
 
-The sev1_guard, sentry_guard, network_guard and structlog_guard plugins are registered
+The sev1_guard, sentry_guard, network_guard, structlog_guard and xfail_guard plugins are registered
 here (not via addopts -p) because pytest loads conftest.py from the rootdir before
 importing plugins, so it can resolve the `tests.plugins.sev1_guard` module by path.
 
@@ -22,6 +22,7 @@ pytest_plugins = [
     "tests.plugins.sentry_guard",
     "tests.plugins.network_guard",
     "tests.plugins.structlog_guard",
+    "tests.plugins.xfail_guard",
     "pytester",  # enables the `pytester` fixture used by test_sev1_guard.py
 ]
 

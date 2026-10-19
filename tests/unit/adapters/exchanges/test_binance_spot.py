@@ -32,6 +32,7 @@ from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.ports.exchange import ExchangePort, StopLossPort
+from tests.support.accepted import assert_accepted
 from tests.support.mainnet_permit import issued_permit
 
 _ORDER_URL = f"{TESTNET_BASE_URL}/api/v3/order"
@@ -687,7 +688,7 @@ def test_cancelling_a_gone_order_is_not_an_error(adapter: BinanceSpotAdapter) ->
     respx.delete(url__startswith=_ORDER_URL).mock(
         return_value=httpx.Response(400, json={"code": -2011, "msg": "Unknown order sent."})
     )
-    adapter.cancel_order(order_id="BTCUSDT:77")
+    assert_accepted(adapter.cancel_order, order_id="BTCUSDT:77")
 
 
 @respx.mock
