@@ -22,7 +22,6 @@ from decimal import Decimal
 
 import pytest
 
-from hermes.application.calibration.lifecycle import CertificationState
 from hermes.application.strategy_protocol.data_split_enforcer import certification_context
 from hermes.application.strategy_protocol.pinned_dataset import (
     PinnedBars,
@@ -31,6 +30,7 @@ from hermes.application.strategy_protocol.pinned_dataset import (
     pin_dataset,
 )
 from hermes.application.strategy_protocol.preregistration import PreRegistration
+from hermes.domain.calibration.certification import CertificationState
 from hermes.domain.errors import (
     DatasetHashMismatchError,
     DatasetNotPinnedError,
@@ -47,6 +47,7 @@ from hermes.domain.market_data.dataset_manifest import (
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
+from hermes.infrastructure.project_root import load_pre_registration
 from tests.support.paths import REPO_ROOT
 
 _BTC = Pair(base=Currency.BTC, quote=Currency.USDT)
@@ -319,7 +320,7 @@ def test_pinning_oos_is_refused_outside_certification() -> None:
 @pytest.fixture(scope="module")
 def pre_reg() -> PreRegistration:
     """Return the signed pre-registration from the repo."""
-    return PreRegistration(project_root=REPO_ROOT)
+    return load_pre_registration(REPO_ROOT)
 
 
 def _signed_manifest(pre_reg: PreRegistration) -> DatasetManifest:

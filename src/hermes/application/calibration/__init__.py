@@ -8,7 +8,8 @@ Reference: spec-6-calibration-harness/change.md.
 """
 
 from hermes.application.calibration.harness import CalibrationHarness, CalibrationReport
-from hermes.application.calibration.lifecycle import CertificationLifecycle, CertificationState
+from hermes.application.calibration.lifecycle import CertificationLifecycle
+from hermes.domain.calibration.certification import CertificationState
 
 __all__ = [
     "CalibrationHarness",

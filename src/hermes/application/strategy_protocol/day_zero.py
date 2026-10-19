@@ -4,9 +4,9 @@ ADR-021 §2 says shadow day 0 is the first bar after every Ready rule holds,
 and Ready rule 5 asks for the engine version, config hash, pre-registration
 hash and data manifest hash to be recorded at day 0. This module checks the
 rules a program can check, lists the ones only the Code Owner can confirm,
-and builds the day-0 record. It does no I/O beyond reading the files it
-hashes; the ``hermes shadow-start`` command archives the ledger and writes
-the record.
+and builds the day-0 record. It reads and hashes files only through the
+files port (issue #1186); the ``hermes shadow-start`` command archives the
+ledger and writes the record.
 
 Reference: docs/architecture/adr-021-strategy-lifecycle-ready-and-done.md §2,
 §3; openspec/archive/797-shadow-day-zero/change.md.
@@ -23,8 +23,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from hermes.application.calibration.certification_gates import CertificationRecord
-from hermes.application.calibration.lifecycle import CertificationState
+from hermes.domain.calibration.certification import CertificationRecord, CertificationState
+from hermes.ports.files import FilesPort
 
 __all__ = [
     "MANUAL_RULES",
@@ -35,7 +35,6 @@ __all__ = [
     "notebook_check",
     "ready",
     "roster_check",
-    "sha256_file",
     "sha256_tree",
 ]
 
@@ -104,23 +103,24 @@ def certification_check(record: CertificationRecord | None, fingerprint: str) ->
     return Check(2, name, Verdict.PASS, f"state {record.state.value}, same parameters")
 
 
-def notebook_check(pre_registration: Path, notebook: Path) -> Check:
+def notebook_check(pre_registration: Path, notebook: Path, *, files: FilesPort) -> Check:
     """Rule 1: the pre-registration is signed and its hash is in the lab notebook.
 
     Args:
         pre_registration: The pre-registration document.
         notebook: The experiment's lab notebook.
+        files: Reads both.
 
     Returns:
         PASS when the front matter says ``status: SIGNED`` and its
         ``content_sha256`` appears in the notebook.
     """
     name = "signed pre-registration with its hash in the lab notebook"
-    front = _front_matter(pre_registration.read_text(encoding="utf-8"))
+    front = _front_matter(files.read_text(pre_registration))
     if front.get("status") != "SIGNED":
         return Check(1, name, Verdict.FAIL, "pre-registration is not signed")
     digest = front.get("content_sha256", "")
-    if not digest or digest not in notebook.read_text(encoding="utf-8"):
+    if not digest or digest not in files.read_text(notebook):
         return Check(1, name, Verdict.FAIL, "signed hash is not in the lab notebook")
     return Check(1, name, Verdict.PASS, f"signed hash {digest[:12]} in the notebook")
 
@@ -146,26 +146,21 @@ def ready(checks: Iterable[Check]) -> bool:
     return all(c.verdict is not Verdict.FAIL for c in checks)
 
 
-def sha256_file(path: Path) -> str:
-    """Return the SHA-256 of a file's bytes."""
-    digest = hashlib.sha256()
-    with path.open("rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 16), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def sha256_tree(directory: Path) -> str:
+def sha256_tree(directory: Path, *, files: FilesPort) -> str:
     """Return one SHA-256 over every file under ``directory``, path and bytes.
 
     Files are taken in sorted relative-path order, so the hash does not
     depend on the file system's listing order.
+
+    Args:
+        directory: The tree to hash.
+        files: Lists and hashes its files.
     """
     digest = hashlib.sha256()
-    for path in sorted(p for p in directory.rglob("*") if p.is_file()):
+    for path in sorted(files.files_under(directory)):
         relative = path.relative_to(directory).as_posix()
         digest.update(relative.encode("utf-8") + b"\0")
-        digest.update(sha256_file(path).encode("ascii") + b"\n")
+        digest.update(files.sha256(path).encode("ascii") + b"\n")
     return digest.hexdigest()
 
 

@@ -23,7 +23,6 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from hermes.application.strategy_protocol.preregistration import PreRegistration
 from hermes.application.strategy_protocol.shadow_checks import (
     SA9_REPEAT_RULE,
     daily_equity,
@@ -40,13 +39,14 @@ from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
+from hermes.infrastructure.project_root import load_pre_registration
 
 _SID = StrategyId("swing-donchian-4h")
 _BTC = Pair(base=Currency.BTC, quote=Currency.USDT)
 _CID = "01J9Z8T3M5BQR2FVKN4XWY6PH1"
 _DAY = date(2026, 12, 1)
 _END = day_end(_DAY)
-_TRIGGERS = PreRegistration().kill_triggers()
+_TRIGGERS = load_pre_registration().kill_triggers()
 
 
 def _mark(at: datetime, equity: float) -> PortfolioMark:

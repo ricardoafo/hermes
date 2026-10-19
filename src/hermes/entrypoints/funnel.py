@@ -24,6 +24,7 @@ from typing import NoReturn, TextIO
 
 import yaml
 
+from hermes.adapters.files import LocalFiles
 from hermes.application.calibration.backtest_funnel import (
     FunnelEvidenceError,
     FunnelThresholdError,
@@ -108,7 +109,8 @@ def _run(args: argparse.Namespace, stream: TextIO, err: TextIO) -> int:
         return thresholds
     try:
         evidence = validate_evidence(
-            load_funnel_evidence(args.evidence, strategy_id=args.strategy_id), thresholds
+            load_funnel_evidence(args.evidence, strategy_id=args.strategy_id, files=LocalFiles()),
+            thresholds,
         )
     except (OSError, FunnelEvidenceError) as exc:
         err.write(f"ERROR: evidence: {exc}\n")

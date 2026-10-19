@@ -42,14 +42,14 @@ from ingest_binance_vision import (
 
 from hermes.adapters.data_manifest.json_file import JsonFileDatasetManifest
 from hermes.adapters.market_data.binance_historical import BinanceHistoricalAdapter
-from hermes.application.calibration.lifecycle import CertificationState
 from hermes.application.strategy_protocol.pinned_dataset import (
     assert_manifest_matches_preregistration,
     load_pinned_bars,
 )
-from hermes.application.strategy_protocol.preregistration import PreRegistration
+from hermes.domain.calibration.certification import CertificationState
 from hermes.domain.errors import HermesError
 from hermes.domain.market_data.dataset_manifest import DatasetEntry, DatasetManifest, DataSplit
+from hermes.infrastructure.project_root import load_pre_registration
 
 SPLIT_CHOICES = ("train", "validation")
 
@@ -143,7 +143,7 @@ def prepare(manifest_path: Path, data_dir: Path, split: str) -> int:
     try:
         splits = splits_to_prepare(split)
         manifest = JsonFileDatasetManifest(manifest_path).load()
-        pre_reg = PreRegistration()
+        pre_reg = load_pre_registration()
         assert_manifest_matches_preregistration(
             manifest, experiment_id=pre_reg.experiment_id(), windows=pre_reg.data_windows()
         )

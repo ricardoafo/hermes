@@ -5,8 +5,7 @@ and live-approval checks a composition root would, over the repository's
 config and an in-memory LIVE_APPROVED record. Nothing here touches a network.
 """
 
-from hermes.application.calibration.certification_gates import CertificationRecord
-from hermes.application.calibration.lifecycle import CertificationState
+from hermes.domain.calibration.certification import CertificationRecord, CertificationState
 from hermes.infrastructure.config import load_config
 from hermes.infrastructure.mainnet_permit import MainnetPermit, issue_mainnet_permit
 from tests.support.paths import REPO_ROOT

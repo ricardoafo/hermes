@@ -18,9 +18,9 @@ import pytest
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
 from hermes.application.calibration.certification_gates import v1_parameter_fingerprint
-from hermes.application.calibration.lifecycle import CertificationState
-from hermes.application.strategy_protocol.preregistration import PreRegistration
+from hermes.domain.calibration.certification import CertificationState
 from hermes.entrypoints import certify as certify_module
+from hermes.infrastructure import project_root as project_root_module
 from tests.support.paths import REPO_ROOT
 
 _V2 = "swing-mvp1-v2"
@@ -290,7 +290,7 @@ class TestErrors:
         def _no_repository() -> Path:
             raise FileNotFoundError("no pyproject.toml above the installed package")
 
-        monkeypatch.setattr(PreRegistration, "_detect_project_root", staticmethod(_no_repository))
+        monkeypatch.setattr(project_root_module, "find_project_root", _no_repository)
         code, _, err = _certify(tmp_path, release / "config", 0.95, funnel=_funnel_evidence())
         assert (code, err.startswith("ERROR: pre-registration:")) == (3, True)
         assert "pre-registration-v2.md" in err

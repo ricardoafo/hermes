@@ -11,14 +11,13 @@ from typing import Any
 
 import pytest
 
+from hermes.adapters.files import LocalFiles
 from hermes.application.calibration.backtest_funnel import FUNNEL_CHECK_NAMES
-from hermes.application.calibration.certification_gates import CertificationRecord
 from hermes.application.calibration.certification_gates_v2 import (
     V2BacktestRules,
     evaluate_v2_gate,
 )
 from hermes.application.calibration.evidence_files import EvidenceError
-from hermes.application.calibration.lifecycle import CertificationState
 from hermes.application.calibration.signed_gate import (
     CandidateJudge,
     CheckResult,
@@ -30,8 +29,9 @@ from hermes.application.calibration.signed_gate import (
     judge_candidate,
     require_v1_secondary,
 )
-from hermes.application.strategy_protocol.preregistration import PreRegistration
+from hermes.domain.calibration.certification import CertificationRecord, CertificationState
 from hermes.domain.calibration.trial_record import TrialSummary
+from hermes.infrastructure.project_root import load_pre_registration
 from tests.support.candidate_evidence import (
     BODY,
     SECONDARY_V1,
@@ -41,6 +41,9 @@ from tests.support.candidate_evidence import (
 )
 from tests.support.candidate_evidence import batch as candidate_batch
 from tests.support.paths import REPO_ROOT
+
+_FILES = LocalFiles()
+_V1 = load_pre_registration(REPO_ROOT)
 
 _NOW = datetime(2026, 10, 18, 9, 0, tzinfo=UTC)
 _FEW_TRIALS = TrialSummary(count=2, validation_count=0, sharpe_variance=0.0001)
@@ -100,7 +103,9 @@ def _judge(
     **written: Any,
 ) -> GateResult:
     files = write_candidate(tmp_path, **written).files
-    return judge_candidate(STRATEGY_ID, split, files, candidate_batch(), trials)
+    return judge_candidate(
+        STRATEGY_ID, split, files, candidate_batch(), trials, v1=_V1, files=_FILES
+    )
 
 
 def _statuses(result: GateResult) -> dict[str, CheckStatus]:
@@ -125,7 +130,9 @@ def test_validation_vs_train_binds_on_a_validation_run(tmp_path: Path) -> None:
     payload["daily_equity"] = payload["daily_equity"][:train_points] + flat
     files.funnel_evidence.write_text(json.dumps(payload))
 
-    result = judge_candidate(STRATEGY_ID, "validation", files, candidate_batch(), _FEW_TRIALS)
+    result = judge_candidate(
+        STRATEGY_ID, "validation", files, candidate_batch(), _FEW_TRIALS, v1=_V1, files=_FILES
+    )
 
     assert (_statuses(result)["validation_vs_train"], result.passed) == ("FAIL", False)
 
@@ -142,9 +149,17 @@ def test_a_strong_candidate_passes_every_check_on_validation(tmp_path: Path) -> 
 def test_the_dsr_is_deflated_by_the_trials_passed_in(tmp_path: Path) -> None:
     """ADR-026 §4: the batch-wide N, not the run's own trials block, deflates the DSR."""
     files = write_candidate(tmp_path, days=TRAIN_DAYS, drift=0.0002).files
-    few = judge_candidate(STRATEGY_ID, "train", files, candidate_batch(), _FEW_TRIALS)
+    few = judge_candidate(
+        STRATEGY_ID, "train", files, candidate_batch(), _FEW_TRIALS, v1=_V1, files=_FILES
+    )
     many = judge_candidate(
-        STRATEGY_ID, "train", files, candidate_batch(), TrialSummary(1000, 0, 0.01)
+        STRATEGY_ID,
+        "train",
+        files,
+        candidate_batch(),
+        TrialSummary(1000, 0, 0.01),
+        v1=_V1,
+        files=_FILES,
     )
 
     assert (few.passed, _statuses(many)["dsr"]) == (True, "FAIL")
@@ -170,7 +185,9 @@ def test_a_candidate_the_batch_does_not_name_is_refused(tmp_path: Path) -> None:
     files = write_candidate(tmp_path).files
 
     with pytest.raises(ValueError, match="does not name"):
-        judge_candidate("swing-x", "validation", files, candidate_batch(), _FEW_TRIALS)
+        judge_candidate(
+            "swing-x", "validation", files, candidate_batch(), _FEW_TRIALS, v1=_V1, files=_FILES
+        )
 
 
 def test_train_evidence_judged_as_validation_is_refused(tmp_path: Path) -> None:
@@ -178,7 +195,9 @@ def test_train_evidence_judged_as_validation_is_refused(tmp_path: Path) -> None:
     files = write_candidate(tmp_path, days=TRAIN_DAYS).files
 
     with pytest.raises(ValueError, match="not a validation run"):
-        judge_candidate(STRATEGY_ID, "validation", files, candidate_batch(), _FEW_TRIALS)
+        judge_candidate(
+            STRATEGY_ID, "validation", files, candidate_batch(), _FEW_TRIALS, v1=_V1, files=_FILES
+        )
 
 
 def test_validation_evidence_judged_as_train_is_refused(tmp_path: Path) -> None:
@@ -186,7 +205,9 @@ def test_validation_evidence_judged_as_train_is_refused(tmp_path: Path) -> None:
     files = write_candidate(tmp_path).files
 
     with pytest.raises(ValueError, match="not a train run"):
-        judge_candidate(STRATEGY_ID, "train", files, candidate_batch(), _FEW_TRIALS)
+        judge_candidate(
+            STRATEGY_ID, "train", files, candidate_batch(), _FEW_TRIALS, v1=_V1, files=_FILES
+        )
 
 
 def test_an_oos_performance_file_is_refused(tmp_path: Path) -> None:
@@ -201,7 +222,15 @@ def test_a_section_that_changes_the_secondaries_is_refused(tmp_path: Path) -> No
     files = write_candidate(tmp_path, body=body).files
 
     with pytest.raises(ValueError, match="Unchanged from v1"):
-        judge_candidate(STRATEGY_ID, "validation", files, candidate_batch(body), _FEW_TRIALS)
+        judge_candidate(
+            STRATEGY_ID,
+            "validation",
+            files,
+            candidate_batch(body),
+            _FEW_TRIALS,
+            v1=_V1,
+            files=_FILES,
+        )
 
 
 @pytest.mark.parametrize(
@@ -235,10 +264,10 @@ def test_v2_and_the_generic_gate_give_the_same_report(tmp_path: Path) -> None:
     """Issue #1058: v2's gate is the generic gate with v2's thresholds; its output is unchanged."""
     files = write_candidate(tmp_path).files
     gate_evidence, funnel = candidate_gate_evidence(
-        STRATEGY_ID, files, candidate_batch(), _FEW_TRIALS
+        STRATEGY_ID, files, candidate_batch(), _FEW_TRIALS, files=_FILES
     )
     batch = candidate_batch()
-    v1 = PreRegistration(project_root=REPO_ROOT)
+    v1 = load_pre_registration(REPO_ROOT)
     record = CertificationRecord(STRATEGY_ID)
     rules = V2BacktestRules(dsr_min=batch.funnel.dsr_min, funnel=batch.funnel.thresholds)
 
@@ -264,9 +293,13 @@ def test_v2_and_the_generic_gate_give_the_same_report(tmp_path: Path) -> None:
 def test_the_evidence_hash_chains_all_three_files(tmp_path: Path) -> None:
     """A recorded verdict names the exact files it was judged on, as certify chains them."""
     files = write_candidate(tmp_path).files
-    first, _ = candidate_gate_evidence(STRATEGY_ID, files, candidate_batch(), _FEW_TRIALS)
+    first, _ = candidate_gate_evidence(
+        STRATEGY_ID, files, candidate_batch(), _FEW_TRIALS, files=_FILES
+    )
     files.funnel_evidence.write_text(files.funnel_evidence.read_text() + "\n")
-    second, _ = candidate_gate_evidence(STRATEGY_ID, files, candidate_batch(), _FEW_TRIALS)
+    second, _ = candidate_gate_evidence(
+        STRATEGY_ID, files, candidate_batch(), _FEW_TRIALS, files=_FILES
+    )
 
     assert first.sha256 != second.sha256
 

@@ -51,6 +51,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from hermes.domain.errors import LabNotebookAppendError
+from hermes.ports.files import FilesPort
 
 __all__ = [
     "LabNotebook",
@@ -163,34 +164,31 @@ class LabNotebook:
     accidental duplicate entries.
 
     Args:
-        notebook_path: Path to the lab notebook Markdown file. Defaults to
-            auto-detected path relative to the project root. Pass explicitly
-            in tests.
+        notebook_path: Path to the lab notebook Markdown file; the caller
+            names it (issue #1186).
+        files: Reads and appends to it.
 
     Reference:
       pre-registration-v1.md §12.
       spec-9-strategy-development-protocol change.md D-5.
     """
 
-    _DEFAULT_REL_PATH = Path("docs/experiments/swing-mvp1/lab-notebook.md")
-
-    def __init__(self, notebook_path: Path | None = None) -> None:
+    def __init__(self, notebook_path: Path, *, files: FilesPort) -> None:
         """Initialise the writer.
 
         Args:
-            notebook_path: Explicit path to the notebook file. If ``None``,
-                auto-detects the project root and uses the default relative path.
+            notebook_path: The notebook file.
+            files: Reads and appends to it.
 
         Raises:
             FileNotFoundError: If the notebook file does not exist at the
                 resolved path. The file MUST be pre-created (it was initialised
                 at pre-registration signing).
         """
-        if notebook_path is None:
-            notebook_path = self._detect_notebook_path()
         self._path = notebook_path
+        self._files = files
 
-        if not self._path.exists():
+        if not files.exists(self._path):
             raise FileNotFoundError(
                 f"Lab notebook not found at {self._path}. "
                 f"The notebook must be created before appending entries."
@@ -224,8 +222,7 @@ class LabNotebook:
 
         append_block = f"\n{entry_text}{sha256_comment}\n"
 
-        with self._path.open("a", encoding="utf-8") as fh:
-            fh.write(append_block)
+        self._files.append_text(self._path, append_block)
 
         return sha256
 
@@ -238,7 +235,7 @@ class LabNotebook:
             The header string (e.g. ``"### 2026-08-25T12:48:18Z | ..."``),
             or ``None`` if no entries exist yet.
         """
-        text = self._path.read_text(encoding="utf-8")
+        text = self._files.read_text(self._path)
         last_header: str | None = None
         for line in text.splitlines():
             if line.startswith("### "):
@@ -258,7 +255,7 @@ class LabNotebook:
             Each hashed entry's header line, in file order, mapped to whether
             it verifies.
         """
-        text = self._path.read_text(encoding="utf-8")
+        text = self._files.read_text(self._path)
         results: dict[str, bool] = {}
         for match in _ENTRY.finditer(text):
             body, stored = match.group(1), match.group(2)
@@ -283,25 +280,6 @@ class LabNotebook:
         last = self.last_entry_header()
         if last is not None and last == header:
             raise LabNotebookAppendError(header=header)
-
-    @staticmethod
-    def _detect_notebook_path() -> Path:
-        """Detect the notebook path from the project root.
-
-        Returns:
-            Resolved :class:`Path` to the lab notebook file.
-
-        Raises:
-            FileNotFoundError: If no ``pyproject.toml`` is found walking upward
-                from this module's directory.
-        """
-        here = Path(__file__).resolve().parent
-        for candidate in [here, *here.parents]:
-            if (candidate / "pyproject.toml").exists():
-                return candidate / LabNotebook._DEFAULT_REL_PATH
-        raise FileNotFoundError(
-            f"Could not detect project root: no pyproject.toml found searching upward from {here}."
-        )
 
 
 def _sha256(text: str) -> str:

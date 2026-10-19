@@ -28,12 +28,12 @@ from hermes.application.calibration.backtest_funnel import (
     parse_funnel_front_matter,
 )
 from hermes.application.calibration.certification_gates import (
-    CertificationRecord,
     GateEvidence,
     GateReport,
 )
 from hermes.application.calibration.signed_gate import evaluate_signed_gate
 from hermes.application.strategy_protocol.preregistration import PreRegistration
+from hermes.domain.calibration.certification import CertificationRecord
 
 __all__ = [
     "V2_STRATEGY_ID",
