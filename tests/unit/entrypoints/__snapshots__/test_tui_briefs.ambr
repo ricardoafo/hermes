@@ -1,0 +1,335 @@
+# serializer version: 1
+# name: test_briefs_svg_snapshot[briefs_control_120x36][briefs_control_120x36]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions         ● live · checked 14:00 · next 18:00  ◑ CONTROL ROOM
+  ┏━ ✦ BRIEFS  ────────────────────────────────────────────────────────────────────────────────────────── ✦ AI supervisor
+   ▸ Today       daily        Daily brief · Sat 03 Oct 14:12
+  
+   earlier days are not       ✦ Today
+   kept yet                   Health ok, every stream is on time. Since 2026-10-02 12:12 UTC: 0 signal(s), 2 open
+                              position(s), 0 decision(s) waiting.  [health] [signals] [positions] [decisions]
+  
+                              ✦ What the engine did
+                              BTC/USDT: 6 4h bars checked; no signal; no fills; flat. ETH/USDT: 6 4h bars checked; no
+                              signal; no fills; holding since 2026-10-02 08:00 UTC. SOL/USDT: 1 1d bars checked; no
+                              signal; no fills; holding since 2026-09-28 00:00 UTC. No signal means no check met all
+                              three frozen entry rules (breakout, momentum, regime). Which rules held on each check, and
+                              fills the engine declined: not on the data connection yet.  [engine]
+  
+                              written by the AI supervisor desk · it never sees profit, equity or prices
+   never sees profit ───────────────────────────────────────────────────────────────────────────────────────────────────━┛
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  Shadow test · day 12 of 90  ███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit    next 3h 48m 00s · read-only
+  ---
+  colours: #070b14 #0c1424 #131d31 #1a2740 #3a2a66 #468de6 #468ee6 #478ce6 #478fe6 #4790e6 #4791e6 #488be7 #4892e6 #4894e7 #4895e7 #4996e7 #4997e7 #4998e7 #4999e7 #4a8ae7 #4a9ae7 #4a9ce7 #4a9de7 #4b8ae7 #4b9ee7 #4b9fe7 #4ba0e7 #4ca1e8 #4ca3e8 #4ca4e8 #4d89e8 #4da5e8 #4da6e8 #4da7e8 #4da8e8 #4e88e8 #4eaae8 #4eabe8 #4eace8 #4fade8 #4faee8 #4fafe9 #503788 #5088e9 #50b1e9 #50b2e9 #50b3e9 #50b4e9 #5187e9 #51b5e9 #51b6e9 #51b7e9 #5286ea #52b9e9 #52bae9 #52bbe9 #538fab #53bce9 #53bdea #53beea #53c0ea #5486ea #5490ab #54c1ea #54c2ea #54c3ea #5585ea #5591ab #55c4ea #55c5ea #55c7ea #5693ac #56c8ea #56c9ea #56caea #56cbeb #5784eb #5794ac #57cceb #57ceeb #57cfeb #5884eb #5896ad #58d0eb #58d1eb #5a83ec #5a97ad #5a98ad #5b82ec #5c9aae #5c9cae #5d6575 #5d82ed #5e81ed #5e9daf #6081ed #6180ee #637fee #647fef #657eef #6644aa #677def #687df0 #6a7cf0 #6b7bf1 #6d7bf1 #6e7af2 #7079f2 #7179f2 #7378f3 #7477f3 #7677f4 #768eb2 #7776f4 #7875f4 #7a75f5 #7b74f5 #7c51cc #7d73f6 #7e73f6 #8072f7 #8171f7 #8371f7 #838ca1 #8470f8 #866ff8 #876ff9 #896ef9 #8a6efa #8a94a8 #8b6dfa #8d6cfa #8e6cfb #906bfb #916afc #925eee #936afc #9469fc #9668fd #9768fd #9967fe #9a66fe #9a9fa8 #9c66ff #9d65ff #a26efe #a470ff #b386ff #c29cff #d1b2ff #e0c8ff #e6be28 #e6ecf5
+  
+  '''
+# ---
+# name: test_briefs_svg_snapshot[briefs_control_160x45][briefs_control_160x45]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions             ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
+  ┏━ ✦ BRIEFS  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── ✦ AI supervisor
+   ▸ Today       daily        Daily brief · Sat 03 Oct 14:12
+  
+   earlier days are not       ✦ Today
+   kept yet                   Health ok, every stream is on time. Since 2026-10-02 12:12 UTC: 0 signal(s), 2 open position(s), 0 decision(s) waiting.  [health]
+                              [signals] [positions] [decisions]
+  
+                              ✦ What the engine did
+                              BTC/USDT: 6 4h bars checked; no signal; no fills; flat. ETH/USDT: 6 4h bars checked; no signal; no fills; holding since 2026-10-02
+                              08:00 UTC. SOL/USDT: 1 1d bars checked; no signal; no fills; holding since 2026-09-28 00:00 UTC. No signal means no check met all
+                              three frozen entry rules (breakout, momentum, regime). Which rules held on each check, and fills the engine declined: not on the
+                              data connection yet.  [engine]
+  
+                              written by the AI supervisor desk · it never sees profit, equity or prices
+   never sees profit ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────━┛
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  Shadow test · day 12 of 90  █████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                                                              read-only
+  ---
+  colours: #070b14 #0c1424 #131d31 #1a2740 #3a2a66 #468ce6 #468de6 #478ce6 #478ee6 #478fe6 #4790e6 #4791e6 #4792e6 #488be6 #4893e6 #4893e7 #4894e7 #4895e7 #498be7 #4996e7 #4997e7 #4998e7 #4999e7 #4a8ae7 #4a99e7 #4a9ae7 #4a9be7 #4a9ce7 #4a9de7 #4b8ae7 #4b9ee7 #4b9fe7 #4ba0e7 #4c89e8 #4ca1e8 #4ca2e8 #4ca3e8 #4ca4e8 #4ca5e8 #4d89e8 #4da6e8 #4da7e8 #4da8e8 #4e88e8 #4ea9e8 #4eaae8 #4eabe8 #4eace8 #4eade8 #4f88e9 #4fade8 #4faee8 #4fafe9 #4fb0e9 #503788 #5087e9 #50b1e9 #50b2e9 #50b3e9 #5187e9 #51b4e9 #51b5e9 #51b6e9 #51b7e9 #51b8e9 #528dab #528fab #52b9e9 #52bae9 #52bbe9 #5386ea #53bce9 #53bdea #53beea #53bfea #53c0ea #5486ea #548fab #5490ab #54c1ea #54c2ea #54c3ea #5585ea #5591ab #55c4ea #55c5ea #55c6ea #55c7ea #5685eb #5692ac #5693ac #56c7ea #56c8ea #56c9ea #56caea #56cbeb #5784eb #5794ac #57cceb #57cdeb #57ceeb #5884eb #5895ad #5896ad #58cfeb #58d0eb #58d1eb #5983ec #5997ad #5a83ec #5a98ad #5b82ec #5b99ad #5c82ec #5c9aae #5c9bae #5d6575 #5d9caf #5e81ed #5e9daf #5f81ed #6080ed #6180ee #627fee #637fee #647fef #657eef #6644aa #667eef #677df0 #687df0 #6a7cf0 #6b7cf1 #6c7bf1 #6d7bf1 #6e7af1 #6f7af2 #7079f2 #7179f2 #7278f3 #7378f3 #7577f3 #7677f4 #768eb2 #7776f4 #7876f4 #7975f5 #7a75f5 #7b74f5 #7c51cc #7c74f6 #7d73f6 #7e73f6 #7f72f7 #8172f7 #8271f7 #8371f7 #838ca1 #8470f8 #8570f8 #866ff8 #876ff9 #886ef9 #896ef9 #8a6dfa #8a94a8 #8b6dfa #8d6cfa #8e6cfb #8f6bfb #906bfb #916afc #925eee #926afc #9369fc #9469fc #9568fd #9668fd #9867fd #9967fe #9a66fe #9a9fa8 #9b66fe #9c65ff #9d65ff #a26efe #a470ff #b386ff #c29cff #d1b2ff #e0c8ff #e6be28 #e6ecf5
+  
+  '''
+# ---
+# name: test_briefs_svg_snapshot[briefs_control_240x60][briefs_control_240x60]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                             ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
+  ┏━ ✦ BRIEFS  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── ✦ AI supervisor
+   ▸ Today       daily        Daily brief · Sat 03 Oct 14:12
+  
+   earlier days are not       ✦ Today
+   kept yet                   Health ok, every stream is on time. Since 2026-10-02 12:12 UTC: 0 signal(s), 2 open position(s), 0 decision(s) waiting.  [health] [signals] [positions] [decisions]
+  
+                              ✦ What the engine did
+                              BTC/USDT: 6 4h bars checked; no signal; no fills; flat. ETH/USDT: 6 4h bars checked; no signal; no fills; holding since 2026-10-02 08:00 UTC. SOL/USDT: 1 1d bars checked; no signal; no fills; holding since
+                              2026-09-28 00:00 UTC. No signal means no check met all three frozen entry rules (breakout, momentum, regime). Which rules held on each check, and fills the engine declined: not on the data connection yet.
+                              [engine]
+  
+                              written by the AI supervisor desk · it never sees profit, equity or prices
+   never sees profit ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────━┛
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  Shadow test · day 12 of 90  ███████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                                                                                                                                              read-only
+  ---
+  colours: #070b14 #0c1424 #131d31 #1a2740 #3a2a66 #468ce6 #468de6 #478ce6 #478ee6 #478fe6 #4790e6 #4791e6 #488be7 #4892e6 #4893e6 #4893e7 #4894e7 #4895e7 #4896e7 #498be7 #4996e7 #4997e7 #4998e7 #4999e7 #4a8ae7 #4a9ae7 #4a9be7 #4a9ce7 #4a9de7 #4b8ae7 #4b8ae8 #4b9ee7 #4b9fe7 #4ba0e7 #4ba1e8 #4c89e8 #4ca2e8 #4ca3e8 #4ca4e8 #4ca5e8 #4d89e8 #4da5e8 #4da6e8 #4da7e8 #4da8e8 #4da9e8 #4e88e8 #4e89e8 #4ea9e8 #4eaae8 #4eabe8 #4eace8 #4f88e9 #4fade8 #4faee8 #4fafe9 #4fb0e9 #503788 #5088e9 #50b1e9 #50b2e9 #50b3e9 #50b4e9 #5187e9 #51b5e9 #51b6e9 #51b7e9 #51b8e9 #5287e9 #528dab #528eab #52b8e9 #52b9e9 #52bae9 #52bbe9 #52bce9 #5386ea #538fab #53bce9 #53bdea #53beea #53bfea #53c0ea #5486ea #548fab #5490ab #54c0ea #54c1ea #54c2ea #54c3ea #5585ea #5591ab #5592ab #55c4ea #55c5ea #55c6ea #55c7ea #5685ea #5685eb #5692ac #5693ac #56c8ea #56c9ea #56caea #56cbeb #5784eb #5794ac #57cceb #57cdeb #57ceeb #57cfeb #5884eb #5894ad #5895ad #5896ad #58cfeb #58d0eb #58d1eb #5983ec #5984eb #5996ad #5997ad #5a83ec #5a98ad #5a99ad #5b82ec #5b83ec #5b9aae #5c82ec #5c9aae #5c9bae #5d6575 #5d82ed #5d9caf #5e81ed #5e9daf #5f81ed #6080ed #6180ee #627fee #637fee #647eef #657eef #6644aa #667def #667eef #677df0 #687df0 #697cf0 #6a7cf0 #6b7bf1 #6b7cf1 #6c7bf1 #6d7bf1 #6e7af1 #6e7af2 #6f7af2 #7079f2 #7179f2 #7278f3 #7378f3 #7477f3 #7478f3 #7577f3 #7676f4 #7677f4 #768eb2 #7776f4 #7876f4 #7975f5 #7a75f5 #7b74f5 #7c51cc #7c74f5 #7c74f6 #7d73f6 #7e73f6 #7f72f6 #8072f7 #8171f7 #8172f7 #8271f7 #8371f7 #838ca1 #8470f8 #8570f8 #866ff8 #866ff9 #876ff9 #886ef9 #896ef9 #8a6dfa #8a94a8 #8b6dfa #8c6dfa #8d6cfa #8e6cfb #8f6bfb #906bfb #916afc #916bfb #925eee #926afc #936afc #9469fc #9569fd #9668fd #9768fd #9867fe #9967fe #9a66fe #9a9fa8 #9b66fe #9c65ff #9c66ff #9d65ff #a26efe #a470ff #b386ff #c29cff #d1b2ff #e0c8ff #e6be28 #e6ecf5
+  
+  '''
+# ---
+# name: test_briefs_svg_snapshot[briefs_control_80x24][briefs_control_80x24]
+  '''
+  
+    1   2   3   4   5   6   7   8   9
+  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  ┏━ ✦ BRIEFS  ──────────────────────────────────────────────── ✦ AI supervisor
+   ▸ Today       daily
+  
+   earlier days are not kept yet
+  
+   Daily brief · Sat 03 Oct 14:12
+  
+   ✦ Today
+   Health ok, every stream is on time. Since 2026-10-02 12:12 UTC: 0 signal(s),
+   2 open position(s), 0 decision(s) waiting.  [health] [signals] [positions]
+   [decisions]
+  
+   ✦ What the engine did
+   BTC/USDT: 6 4h bars checked; no signal; no fills; flat. ETH/USDT: 6 4h bars
+   checked; no signal; no fills; holding since 2026-10-02 08:00 UTC. SOL/USDT:
+   1 1d bars checked; no signal; no fills; holding since 2026-09-28 00:00 UTC.
+   No signal means no check met all three frozen entry rules (breakout,         ▄▄
+   momentum, regime). Which rules held on each check, and fills the engine
+   declined: not on the data connection yet.  [engine]
+  Shadow test · day 12 of 90  ██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9    ↵    T    ?    ^P    Q quit  next 3h 48m 00s · read-only
+  ---
+  colours: #000000 #070b14 #0c1424 #131d31 #1a2740 #23535e #3a2a66 #468de6 #478ce6 #478fe6 #4790e6 #4892e6 #4894e7 #498be7 #4996e7 #4997e7 #4999e7 #4a9be7 #4a9de7 #4b9ee7 #4ba0e7 #4c8ae8 #4ca2e8 #4ca4e8 #4da5e8 #4da7e8 #4e89e8 #4ea9e8 #4eabe8 #4eace8 #4faee8 #4fb0e9 #503788 #5088e9 #50b2e9 #50b3e9 #51b5e9 #51b7e9 #5287e9 #52b9e9 #52bae9 #53bce9 #53beea #53c0ea #5486ea #548fab #54c1ea #54c3ea #55c5ea #55c7ea #5692ac #56c8ea #56caea #5785eb #57cceb #57ceeb #5895ad #58cfeb #58d1eb #5984eb #5a98ad #5b83ec #5c9aae #5d6575 #5d82ed #5e9daf #5f81ed #6280ee #647fef #6644aa #667eef #687df0 #6a7cf0 #6d7bf1 #6f7af2 #7179f2 #7378f3 #7577f4 #768eb2 #7876f4 #7a75f5 #7c51cc #7c74f6 #7e73f6 #8072f7 #8371f7 #838ca1 #8570f8 #876ff9 #896ef9 #8a94a8 #8b6dfa #8e6cfb #906bfb #925eee #926afc #9469fc #9668fd #9967fe #9a9fa8 #9b66fe #9d65ff #a26efe #a470ff #b386ff #c29cff #d1b2ff #e0c8ff #e6be28 #e6ecf5
+  
+  '''
+# ---
+# name: test_briefs_svg_snapshot[briefs_neon_120x36][briefs_neon_120x36]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions        ● live · checked 14:00 · next 18:00 14:12:00  ◑ NEON
+  ┏━ ✦ BRIEFS  ────────────────────────────────────────────────────────────────────────────────────────── ✦ AI supervisor
+   ▸ Today       daily        Daily brief · Sat 03 Oct 14:12
+  
+   earlier days are not       ✦ Today
+   kept yet                   Health ok, every stream is on time. Since 2026-10-02 12:12 UTC: 0 signal(s), 2 open
+                              position(s), 0 decision(s) waiting.  [health] [signals] [positions] [decisions]
+  
+                              ✦ What the engine did
+                              BTC/USDT: 6 4h bars checked; no signal; no fills; flat. ETH/USDT: 6 4h bars checked; no
+                              signal; no fills; holding since 2026-10-02 08:00 UTC. SOL/USDT: 1 1d bars checked; no
+                              signal; no fills; holding since 2026-09-28 00:00 UTC. No signal means no check met all
+                              three frozen entry rules (breakout, momentum, regime). Which rules held on each check, and
+                              fills the engine declined: not on the data connection yet.  [engine]
+  
+                              written by the AI supervisor desk · it never sees profit, equity or prices
+   never sees profit ───────────────────────────────────────────────────────────────────────────────────────────────────━┛
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  Shadow test · day 12 of 90  ███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit    next 3h 48m 00s · read-only
+  ---
+  colours: #00f0ff #02eeff #039fb3 #059db3 #05ebff #079bb3 #07e9ff #09e6ff #0a99b3 #0b0420 #0c96b3 #0ce4ff #0e94b3 #0ee1ff #1091b3 #10dfff #120731 #128fb3 #13dcff #148db3 #15daff #168bb3 #17d7ff #1888b3 #1ad5ff #1cd2ff #1ed0ff #20cdff #23cbff #25c8ff #27c6ff #2ac3ff #2cc1ff #2ebeff #31bcff #33b9ff #34186f #35b7ff #38b4ff #3a2a66 #3ab2ff #3cafff #3fadff #41aaff #43a8ff #46a5ff #48a3ff #4a2399 #4aa0ff #4d9eff #4f9bff #503788 #5199ff #5396ff #5694ff #5891ff #58d1eb #5a8fff #5d8dff #5f8aff #6188ff #627099 #6485ff #6644aa #6683ff #6880ff #6b7eff #6d7bff #6f79ff #7276ff #7474ff #7671ff #796fff #798bb6 #7b6cff #7c51cc #7d6aff #8067ff #8265ff #838ca1 #8462ff #8760ff #87a7b3 #895dff #8a94a8 #8b5cff #8d5bff #8f5bfe #8fa8d8 #915afe #925eee #935afe #9374ff #9559fe #9759fd #9958fd #9b58fd #9d57fd #9f57fc #a156fc #a26efe #a355fc #a470ff #a555fc #a754fb #a854fb #aa53fb #ac53fb #ae52fa #b052fa #b251fa #b386ff #b451fa #b650f9 #b850f9 #ba4ff9 #bc4ff9 #be4ef8 #c04ef8 #c24df8 #c29cff #c44df8 #c64cf7 #c84cf7 #c8fbff #ca4bf7 #cc4bf7 #ce4af6 #d04af6 #d1b2ff #d249f6 #d448f6 #d648f5 #d847f5 #da47f5 #dc46f5 #de46f4 #e045f4 #e0c8ff #e245f4 #e344f4 #e544f3 #e6be28 #e6ecf5 #e743f3 #e943f3 #eb42f3 #ed42f2 #ef41f2 #f141f2 #f340f2 #f540f1 #f73ff1 #f93ff1 #fb3ef1 #fd3ef0 #ff3df0
+  
+  '''
+# ---
+# name: test_briefs_svg_snapshot[briefs_neon_240x60][briefs_neon_240x60]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                     ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ NEON
+  ┏━ ✦ BRIEFS  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── ✦ AI supervisor
+   ▸ Today       daily        Daily brief · Sat 03 Oct 14:12
+  
+   earlier days are not       ✦ Today
+   kept yet                   Health ok, every stream is on time. Since 2026-10-02 12:12 UTC: 0 signal(s), 2 open position(s), 0 decision(s) waiting.  [health] [signals] [positions] [decisions]
+  
+                              ✦ What the engine did
+                              BTC/USDT: 6 4h bars checked; no signal; no fills; flat. ETH/USDT: 6 4h bars checked; no signal; no fills; holding since 2026-10-02 08:00 UTC. SOL/USDT: 1 1d bars checked; no signal; no fills; holding since
+                              2026-09-28 00:00 UTC. No signal means no check met all three frozen entry rules (breakout, momentum, regime). Which rules held on each check, and fills the engine declined: not on the data connection yet.
+                              [engine]
+  
+                              written by the AI supervisor desk · it never sees profit, equity or prices
+   never sees profit ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────━┛
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  Shadow test · day 12 of 90  ███████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                                                                                                                                              read-only
+  ---
+  colours: #00f0ff #01efff #02eeff #039fb3 #03ecff #049fb3 #059db3 #05ebff #069db3 #06eaff #079bb3 #07e9ff #089bb3 #08e7ff #0999b3 #09e6ff #0ae5ff #0b0420 #0b97b3 #0c96b3 #0ce4ff #0d95b3 #0de2ff #0e94b3 #0ee1ff #0f93b3 #0fe0ff #1091b3 #1092b3 #10dfff #11ddff #120731 #128fb3 #1290b3 #12dcff #138eb3 #148db3 #14dbff #158cb3 #15daff #168bb3 #16d8ff #178ab3 #17d7ff #1888b3 #1889b3 #18d6ff #19d5ff #1a86b3 #1a88b3 #1bd4ff #1cd2ff #1dd1ff #1ed0ff #1fcfff #20cdff #21ccff #23cbff #24caff #25c8ff #26c7ff #27c6ff #28c5ff #2ac3ff #2bc2ff #2cc1ff #2dc0ff #2ebeff #2fbdff #31bcff #32bbff #33baff #34186f #34b8ff #35b7ff #36b6ff #37b5ff #39b3ff #3a2a66 #3ab2ff #3bb1ff #3cb0ff #3daeff #3eadff #40acff #41abff #42a9ff #43a8ff #44a7ff #45a6ff #46a4ff #48a3ff #49a2ff #4a2399 #4aa1ff #4b9fff #4c9eff #4d9dff #4f9cff #503788 #509bff #5199ff #5298ff #5397ff #5496ff #5594ff #5793ff #5892ff #58d1eb #5991ff #5a8fff #5b8eff #5c8dff #5e8cff #5f8aff #6089ff #6188ff #627099 #6287ff #6385ff #6484ff #6644aa #6683ff #6782ff #6881ff #697fff #6a7eff #6b7dff #6d7cff #6e7aff #6f79ff #7078ff #7177ff #7275ff #7374ff #7573ff #7672ff #7770ff #786fff #796eff #798bb6 #7a6dff #7c51cc #7c6bff #7d6aff #7e69ff #7f68ff #8067ff #8165ff #8264ff #838ca1 #8463ff #8562ff #8660ff #875fff #87a7b3 #885eff #895dff #8a5cff #8a94a8 #8b5cff #8c5bff #8d5bff #8e5bfe #8f5bfe #8fa8d8 #905afe #915afe #925afe #925eee #935afe #9374ff #9459fe #9559fe #9659fd #9758fd #9858fd #9958fd #9a58fd #9b57fd #9c57fd #9d57fd #9e57fc #9f56fc #a056fc #a156fc #a256fc #a26efe #a355fc #a455fc #a470ff #a555fc #a655fb #a754fb #a854fb #a954fb #aa54fb #ab53fb #ac53fb #ad53fb #ae53fa #af52fa #b052fa #b152fa #b251fa #b351fa #b386ff #b451fa #b551fa #b650f9 #b750f9 #b850f9 #b94ff9 #b950f9 #ba4ff9 #bb4ff9 #bc4ff9 #bd4ef8 #be4ef8 #bf4ef8 #c04ef8 #c14df8 #c24df8 #c29cff #c34df8 #c44df8 #c54cf7 #c64cf7 #c74cf7 #c84cf7 #c8fbff #c94bf7 #ca4bf7 #cb4bf7 #cc4af7 #cd4af6 #ce4af6 #cf4af6 #d049f6 #d149f6 #d1b2ff #d249f6 #d349f6 #d448f6 #d548f5 #d648f5 #d748f5 #d847f5 #d947f5 #da47f5 #db47f5 #dc46f5 #dd46f4 #de46f4 #df46f4 #e045f4 #e0c8ff #e145f4 #e245f4 #e345f4 #e444f4 #e544f3 #e644f3 #e6be28 #e6ecf5 #e743f3 #e843f3 #e943f3 #ea42f3 #eb42f3 #ec42f2 #ed42f2 #ee41f2 #ef41f2 #f041f2 #f141f2 #f240f2 #f340f2 #f440f1 #f540f1 #f63ff1 #f73ff1 #f83ff1 #f93ff1 #fa3ef1 #fb3ef1 #fc3ef0 #fd3ef0 #fe3df0 #ff3df0
+  
+  '''
+# ---
+# name: test_briefs_svg_snapshot[briefs_neon_80x24][briefs_neon_80x24]
+  '''
+  
+    1   2   3   4   5   6   7   8   9
+  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  ┏━ ✦ BRIEFS  ──────────────────────────────────────────────── ✦ AI supervisor
+   ▸ Today       daily
+  
+   earlier days are not kept yet
+  
+   Daily brief · Sat 03 Oct 14:12
+  
+   ✦ Today
+   Health ok, every stream is on time. Since 2026-10-02 12:12 UTC: 0 signal(s),
+   2 open position(s), 0 decision(s) waiting.  [health] [signals] [positions]
+   [decisions]
+  
+   ✦ What the engine did
+   BTC/USDT: 6 4h bars checked; no signal; no fills; flat. ETH/USDT: 6 4h bars
+   checked; no signal; no fills; holding since 2026-10-02 08:00 UTC. SOL/USDT:
+   1 1d bars checked; no signal; no fills; holding since 2026-09-28 00:00 UTC.
+   No signal means no check met all three frozen entry rules (breakout,         ▄▄
+   momentum, regime). Which rules held on each check, and fills the engine
+   declined: not on the data connection yet.  [engine]
+  Shadow test · day 12 of 90  ██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9    ↵    T    ?    ^P    Q quit  next 3h 48m 00s · read-only
+  ---
+  colours: #000010 #00606f #00f0ff #039fb3 #03ecff #079bb3 #07e9ff #0ae5ff #0b0420 #0b97b3 #0ee1ff #0f92b3 #11ddff #120731 #148eb3 #15daff #1889b3 #18d6ff #1cd2ff #1fceff #23cbff #26c7ff #2ac3ff #2dbfff #31bcff #34186f #34b8ff #38b4ff #3a2a66 #3bb0ff #3fadff #42a9ff #46a5ff #49a1ff #4a2399 #4d9eff #503788 #509aff #5496ff #5792ff #58d1eb #5b8fff #5e8bff #627099 #6287ff #6583ff #6644aa #6980ff #6c7cff #7078ff #7374ff #7771ff #798bb6 #7a6dff #7c51cc #7e69ff #8165ff #838ca1 #8562ff #87a7b3 #885eff #8a94a8 #8b5cff #8e5bfe #8fa8d8 #915afe #925eee #9374ff #9459fe #9758fd #9a58fd #9d57fd #a056fc #a26efe #a355fc #a470ff #a655fb #a954fb #ac53fb #af52fa #b251fa #b386ff #b551f9 #b850f9 #bb4ff9 #be4ef8 #c14df8 #c29cff #c44df8 #c74cf7 #c8fbff #ca4bf7 #cd4af6 #d04af6 #d1b2ff #d349f6 #d648f5 #d847f5 #db46f5 #de46f4 #e0c8ff #e145f4 #e444f3 #e6be28 #e6ecf5 #e743f3 #ea42f3 #ed42f2 #f041f2 #f340f2 #f63ff1 #f93ff1 #fc3ef0 #ff3df0
+  
+  '''
+# ---

@@ -23,7 +23,7 @@ from hermes.entrypoints.tui import HomeApp
 from hermes.entrypoints.tui_query import SortableTable
 from hermes.entrypoints.tui_settings import ThemeChoice
 from hermes.entrypoints.tui_tax import TaxPackStatus, TaxTab
-from tests.support.svg_snapshots import NamedSVG, repo_clean
+from tests.support.tui_views import assert_view, capture
 from tests.unit.domain.tax.scales import SCALE_2026
 
 _FROZEN = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
@@ -63,7 +63,7 @@ def _svg(view: str, keys: tuple[str, ...], size: tuple[int, int], theme: ThemeCh
                 table.focus()
                 table.move_cursor(row=_FLAGGED_ROW, animate=False)
                 await pilot.pause()
-            return repo_clean(app.export_screenshot())
+            return capture(app)
 
     return asyncio.run(drive())
 
@@ -87,4 +87,4 @@ def test_tax_svg_snapshot(
 ) -> None:
     """The reviewed picture of one Tax sub-tab, in one theme, at one breakpoint."""
     name = f"tax_{view}_{theme_name}_{size[0]}x{size[1]}"
-    assert _svg(view, keys, size, theme) == snapshot(extension_class=NamedSVG, name=name)
+    assert_view(snapshot, _svg(view, keys, size, theme), name=name)

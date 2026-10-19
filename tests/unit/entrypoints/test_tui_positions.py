@@ -46,7 +46,7 @@ from hermes.entrypoints.tui_positions import (
 from hermes.entrypoints.tui_query import QueryList
 from hermes.entrypoints.tui_settings import ThemeChoice
 from hermes.entrypoints.tui_theme import BASE
-from tests.support.svg_snapshots import NamedSVG, repo_clean
+from tests.support.tui_views import assert_view, capture
 
 _FROZEN = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)  # 14:12 Madrid
 _MADRID = ZoneInfo("Europe/Madrid")
@@ -285,7 +285,7 @@ _THEMES: tuple[tuple[str, ThemeChoice], ...] = (
 def _svg(size: tuple[int, int], theme: ThemeChoice) -> str:
     async def probe(app: HomeApp, pilot: Pilot[None]) -> str:
         del pilot
-        return repo_clean(app.export_screenshot())
+        return capture(app)
 
     return _run(probe, size=size, theme=theme)
 
@@ -303,4 +303,4 @@ def test_positions_svg_snapshot(
 ) -> None:
     """The reviewed Positions screen in one theme at one of the four spec breakpoints."""
     name = f"positions_{theme_name}_{size[0]}x{size[1]}"
-    assert _svg(size, theme) == snapshot(extension_class=NamedSVG, name=name)
+    assert_view(snapshot, _svg(size, theme), name=name)

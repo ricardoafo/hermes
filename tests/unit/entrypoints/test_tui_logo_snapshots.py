@@ -22,7 +22,7 @@ from hermes.entrypoints.tui_theme import (
     terminal_theme,
     theme_variables,
 )
-from tests.support.svg_snapshots import NamedSVG, repo_clean
+from tests.support.tui_views import assert_view, capture
 
 _SIZES: tuple[tuple[int, int], ...] = ((80, 24), (160, 45))
 _THEMES: tuple[tuple[str, str], ...] = (("neon", NEON_THEME), ("control", CONTROL_THEME))
@@ -50,7 +50,7 @@ def _svg(theme: str, size: tuple[int, int]) -> str:
         app = _LogoApp(theme)
         async with app.run_test(size=size) as pilot:
             await pilot.pause()
-            return repo_clean(app.export_screenshot())
+            return capture(app)
 
     return asyncio.run(drive())
 
@@ -68,4 +68,4 @@ def test_wordmark_svg_snapshot(
 ) -> None:
     """The reviewed picture of the wordmark fallback, in one theme, at one size."""
     name = f"logo_wordmark_{theme_name}_{size[0]}x{size[1]}"
-    assert _svg(theme, size) == snapshot(extension_class=NamedSVG, name=name)
+    assert_view(snapshot, _svg(theme, size), name=name)

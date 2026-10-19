@@ -59,7 +59,7 @@ from hermes.entrypoints.tui_query import FacetFilter, QueryBar, QueryInput
 from hermes.entrypoints.tui_settings import ThemeChoice
 from hermes.entrypoints.tui_theme import BASE
 from tests.support.paths import REPO_ROOT
-from tests.support.svg_snapshots import NamedSVG, repo_clean
+from tests.support.tui_views import assert_view, capture
 
 _FROZEN = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
 _FIXTURE = REPO_ROOT / "tests" / "fixtures" / "journal" / "logs_screen.jsonl"
@@ -565,7 +565,7 @@ _VIEWS: tuple[tuple[str, tuple[str, ...]], ...] = (
 def _svg(keys: Sequence[str], size: tuple[int, int], theme: ThemeChoice) -> str:
     async def probe(app: HomeApp, pilot: Pilot[None]) -> str:
         await _press(pilot, keys)
-        return repo_clean(app.export_screenshot())
+        return capture(app)
 
     return _logs(probe, size=size, theme=theme)
 
@@ -589,4 +589,4 @@ def test_logs_svg_snapshot(
 ) -> None:
     """The reviewed picture of one Logs view (list, JSON pane, trace) in one theme and size."""
     name = f"logs_{view}_{theme_name}_{size[0]}x{size[1]}"
-    assert _svg(keys, size, theme) == snapshot(extension_class=NamedSVG, name=name)
+    assert_view(snapshot, _svg(keys, size, theme), name=name)

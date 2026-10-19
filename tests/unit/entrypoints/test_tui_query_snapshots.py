@@ -21,7 +21,7 @@ from hermes.application.console.render import MADRID
 from hermes.application.console.views import ActivityItem, ActivityKind
 from hermes.entrypoints.tui_query import QueryInput, activity_query_app
 from hermes.entrypoints.tui_theme import CONTROL_THEME, NEON_THEME
-from tests.support.svg_snapshots import NamedSVG, repo_clean
+from tests.support.tui_views import assert_view, capture
 from tests.unit.entrypoints._settle import settle
 
 _FROZEN = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
@@ -70,7 +70,7 @@ def _query_svg(theme: str, size: tuple[int, int]) -> str:
             await settle(pilot)
             app.query_one(QueryInput).value = _QUERY
             await settle(pilot)
-            return repo_clean(app.export_screenshot())
+            return capture(app)
 
     return asyncio.run(drive())
 
@@ -88,4 +88,4 @@ def test_query_activity_svg_snapshot(
 ) -> None:
     """The reviewed picture of the activity query list, in one theme, at one breakpoint."""
     name = f"query_activity_{theme_name}_{size[0]}x{size[1]}"
-    assert _query_svg(theme, size) == snapshot(extension_class=NamedSVG, name=name)
+    assert_view(snapshot, _query_svg(theme, size), name=name)

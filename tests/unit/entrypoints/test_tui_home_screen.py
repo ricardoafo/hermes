@@ -33,7 +33,6 @@ from typing import cast
 
 import pytest
 from syrupy.assertion import SnapshotAssertion
-from syrupy.extensions.image import SVGImageSnapshotExtension
 from textual.pilot import Pilot
 
 from hermes.adapters.console import FixtureReadModel
@@ -44,11 +43,12 @@ from hermes.entrypoints.tui import HomeApp
 from hermes.entrypoints.tui_home import LOGS_UNAVAILABLE
 from hermes.entrypoints.tui_theme import HERO_RULE_GLYPH, MOTION
 from hermes.entrypoints.tui_widgets import BigNumber, HudPanel
-from tests.support.svg_snapshots import repo_clean
+from tests.support.tui_views import assert_view, capture
 from tests.unit.adapters.console._ledger_builder import LedgerBuilder
 
 _FROZEN = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
 _CAP = Decimal("0.15")
+_RECORD_SIZE = (160, 45)
 _SIZES = ((80, 24), (120, 36), (160, 45), (240, 60))
 _READ_METHODS = {
     "demo_scenario",
@@ -427,7 +427,7 @@ def test_app_only_reads_at_every_width() -> None:
 def _svg(model: ConsoleReadModel, size: tuple[int, int]) -> str:
     async def probe(app: HomeApp, pilot: Pilot[None]) -> str:
         del pilot
-        return repo_clean(app.export_screenshot())
+        return capture(app)
 
     return _run(model, probe, size=size)
 
@@ -435,7 +435,7 @@ def _svg(model: ConsoleReadModel, size: tuple[int, int]) -> str:
 @pytest.mark.parametrize("size", _SIZES, ids=lambda s: f"{s[0]}x{s[1]}")
 def test_svg_snapshot_empty(size: tuple[int, int], snapshot: SnapshotAssertion) -> None:
     """The reviewed rendering of the empty demo scenario at each breakpoint."""
-    assert _svg(_fixture("empty"), size) == snapshot(extension_class=SVGImageSnapshotExtension)
+    assert_view(snapshot, _svg(_fixture("empty"), size), record=size == _RECORD_SIZE)
 
 
 @pytest.mark.parametrize("size", _SIZES, ids=lambda s: f"{s[0]}x{s[1]}")
@@ -446,4 +446,4 @@ def test_svg_snapshot_empty_live_ledger(
     path = tmp_path / "hermes.sqlite3"
     LedgerBuilder(path).close()
     model = LedgerReadModel(path, clock=lambda: _FROZEN)
-    assert _svg(model, size) == snapshot(extension_class=SVGImageSnapshotExtension)
+    assert_view(snapshot, _svg(model, size), record=size == _RECORD_SIZE)
