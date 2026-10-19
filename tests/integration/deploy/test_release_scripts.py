@@ -1861,9 +1861,9 @@ def test_staging_deploy_never_installs_the_console_wrapper(box: Box, tmp_path: P
 # ─────────────────────────────────────────────────────────────────────
 
 
-def _write_events(box: Box, version: int) -> None:
+def _write_events(box: Box, version: int, db: Path | None = None) -> None:
     """Add an events table holding one FillQualityRecorded row at ``version``."""
-    conn = sqlite3.connect(box.db)
+    conn = sqlite3.connect(db or box.db)
     with conn:
         conn.execute("CREATE TABLE events (event_type TEXT, event_schema_version INTEGER)")
         conn.execute("INSERT INTO events VALUES ('FillQualityRecorded', ?)", (version,))
@@ -2133,6 +2133,30 @@ def test_a_migration_that_fails_restores_no_ledger(lab_box: Box) -> None:
     assert result.returncode == 1, _output(result)
     assert "hermes migrate failed" in result.stdout
     assert "restored ledger" not in result.stdout
+
+
+def test_a_release_that_cannot_read_a_shadow_ledger_is_refused(lab_box: Box) -> None:
+    """#1150 review: the schema guard covers each shadow ledger, so no shadow meets newer events."""
+    _write_events(lab_box, 999, _shadow_db(lab_box, "swing-b"))
+
+    result = lab_box.deploy(_SHA_B, **_shadow_env(lab_box))
+
+    assert result.returncode == 1, _output(result)
+    assert f"cannot read the events in {_posix(_shadow_db(lab_box, 'swing-b'))}" in result.stdout
+    assert lab_box.target("current") == _SHA_A
+    assert not any(c.startswith("systemctl restart") for c in lab_box.calls())
+
+
+def test_a_failed_shadow_snapshot_stops_the_deploy(lab_box: Box) -> None:
+    """#1150 review: no shadow is migrated or restarted without its snapshot."""
+    _shadow_db(lab_box, "swing-b").write_bytes(b"not a database")
+
+    result = lab_box.deploy(_SHA_B, **_shadow_env(lab_box))
+
+    assert result.returncode == 1, _output(result)
+    assert f"ledger snapshot of {_posix(_shadow_db(lab_box, 'swing-b'))} failed" in result.stdout
+    assert lab_box.target("current") == _SHA_A
+    assert not any(c.startswith("systemctl restart") for c in lab_box.calls())
 
 
 def test_staging_deploy_with_shadows_holds_around_the_bar_close(lab_box: Box) -> None:
