@@ -163,6 +163,8 @@ declare -A shadow_snapshot=()
 # the units stopped for it, so a failure puts both back.
 declare -A migrated=()
 stopped_units=()
+# Shadows restarted on the new release, so a failed gate knows which to undo.
+restarted_shadows=()
 
 log() {
     echo "[install_release] $*"
@@ -425,8 +427,10 @@ migrate_ledger() {
     log "destructive migration pending on $db: stopping $unit and running hermes migrate"
     "$SYSTEMCTL" stop "$unit" || return 1
     stopped_units+=("$unit")
+    # A failed run rolls back in its own transaction, so only a ledger the
+    # run changed needs its snapshot back.
+    "$RUNUSER" -u "$RUN_AS" -- "$bin" migrate --db "$db" --snapshot-dir "$dir/migrations" || return 1
     migrated[$db]=$snapshot
-    "$RUNUSER" -u "$RUN_AS" -- "$bin" migrate --db "$db" --snapshot-dir "$dir/migrations"
 }
 
 # Copy snapshot $2 over ledger $1, whose writer is stopped, as rollback.sh
@@ -562,17 +566,24 @@ activate_shadows() {
     for name in ${shadows[@]+"${shadows[@]}"}; do
         unit=$(shadow_unit "$name")
         since=$(date +%s)
+        restarted_shadows+=("$name")
         "$SYSTEMCTL" reset-failed "$unit" || return 1
         "$SYSTEMCTL" restart "$unit" || return 1
         HERMES_GATE_UNIT=$unit bash "$SCRIPT_DIR/health_gate.sh" "$since" || return 1
     done
 }
 
-# After a failed gate: stop each shadow, put its ledger back to its
-# pre-deploy snapshot, and, when the old release is back, start and gate it.
+# After a failed gate: stop each shadow the new release reached (migrated or
+# restarted), put its ledger back to its pre-deploy snapshot, and, when the
+# old release is back, start and gate it. A shadow it never reached still
+# runs the old release on its own ledger and is left alone.
 roll_back_shadows() {
     local restart=$1 name unit since
     for name in ${shadows[@]+"${shadows[@]}"}; do
+        if [ -z "${migrated[$(shadow_db "$name")]+x}" ] \
+            && [[ " ${restarted_shadows[*]-} " != *" $name "* ]]; then
+            continue
+        fi
         unit=$(shadow_unit "$name")
         "$SYSTEMCTL" stop "$unit" || true
         restore_ledger "$(shadow_db "$name")" "${shadow_snapshot[$name]}" \

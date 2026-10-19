@@ -2110,6 +2110,31 @@ def test_a_failed_shadow_migration_restores_the_ledgers_already_migrated(lab_box
     assert started == {_STAGING_UNIT, *(_shadow_unit(n) for n in _SHADOWS)}
 
 
+def test_a_failed_staging_gate_leaves_shadows_the_release_never_reached(lab_box: Box) -> None:
+    """#1150 review: a shadow neither migrated nor restarted keeps running and keeps its writes."""
+    result = lab_box.deploy(_SHA_B, STUB_BAD_UNITS=_STAGING_UNIT, **_shadow_env(lab_box))
+
+    assert result.returncode == 1, _output(result)
+    shadow_calls = [c for c in lab_box.calls() if "hermes-shadow@" in c]
+    assert shadow_calls == []
+    restored = [line for line in result.stdout.splitlines() if "restored ledger" in line]
+    assert not any("/shadows/" in line for line in restored)
+
+
+def test_a_migration_that_fails_restores_no_ledger(lab_box: Box) -> None:
+    """#1150 review: a failed run rolled back in its transaction, so no snapshot is copied back."""
+    result = lab_box.deploy(
+        _SHA_B,
+        STUB_MIGRATE_STATUS=_DESTRUCTIVE_PENDING,
+        STUB_MIGRATE_FAIL_DB=_posix(lab_box.db),
+        **_shadow_env(lab_box),
+    )
+
+    assert result.returncode == 1, _output(result)
+    assert "hermes migrate failed" in result.stdout
+    assert "restored ledger" not in result.stdout
+
+
 def test_staging_deploy_with_shadows_holds_around_the_bar_close(lab_box: Box) -> None:
     """#1150: a shadow restarted inside a bar close would miss that bar, so the deploy waits."""
     result = lab_box.deploy(_SHA_B, HERMES_NOW_EPOCH=str(_BAR * 1000 - 10), **_shadow_env(lab_box))

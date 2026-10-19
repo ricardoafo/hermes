@@ -880,6 +880,13 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             ),
         ),
         FailureMode(
+            "A failed deploy copies a snapshot over a ledger it never changed, losing its writes",
+            proved_by=(
+                _RELEASE + "test_a_failed_staging_gate_leaves_shadows_the_release_never_reached",
+                _RELEASE + "test_a_migration_that_fails_restores_no_ledger",
+            ),
+        ),
+        FailureMode(
             "Older code is started on a newer ledger outside the deploy script",
             proved_by=(
                 _SERVE + "TestPortfolioRebuiltOnStartup"
