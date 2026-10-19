@@ -7,7 +7,7 @@ readme = "README.md"
 license = { text = "Proprietary" }
 authors = [{ name = "Ricardo Afonso" }]
 dependencies = [
-  "pydantic>=2.13.5,<3",
+  "pydantic>=2.14.1,<3",
   "pydantic-settings>=2.5,<3",
   "httpx>=0.27,<1",
   "structlog>=26.1.0,<27",
@@ -152,6 +152,8 @@ python_version = "3.14"
 mypy_path = "src"
 packages = ["hermes"]
 exclude = ["build/", "dist/", ".venv/"]
+# A call to a @deprecated API fails the type check, not just a test run (#1199).
+enable_error_code = ["deprecated"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
