@@ -240,6 +240,17 @@ type = "forbidden"
 source_modules = ["hermes.application"]
 forbidden_modules = ["hermes.adapters", "hermes.infrastructure", "hermes.entrypoints"]
 
+# Issue #1186: a port names only domain values, so an adapter that implements
+# it never depends on the application layer through it.
+[[tool.importlinter.contracts]]
+name = "ports-import-only-domain"
+type = "forbidden"
+source_modules = ["hermes.ports"]
+forbidden_modules = [
+  "hermes.application", "hermes.adapters",
+  "hermes.infrastructure", "hermes.entrypoints",
+]
+
 [[tool.importlinter.contracts]]
 name = "adapters-never-import-entrypoints"
 type = "forbidden"

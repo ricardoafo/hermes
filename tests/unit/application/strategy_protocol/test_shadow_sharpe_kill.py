@@ -10,11 +10,11 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from hermes.application.strategy_protocol.preregistration import PreRegistration
 from hermes.application.strategy_protocol.shadow_sharpe_kill import (
     ShadowSharpeKill,
     rolling_annualised_sharpe,
 )
+from hermes.infrastructure.project_root import load_pre_registration
 
 _START = date(2026, 10, 10)
 
@@ -24,7 +24,7 @@ def rule() -> ShadowSharpeKill:
     """Build the rule from the signed §10 values, as shadow_checks does."""
     here = Path(__file__).resolve().parent
     root = next(p for p in [here, *here.parents] if (p / "pyproject.toml").exists())
-    triggers = PreRegistration(project_root=root).kill_triggers()
+    triggers = load_pre_registration(root).kill_triggers()
     return ShadowSharpeKill(
         floor=triggers.rolling_sharpe_min,
         required_days=triggers.shadow_sharpe_consecutive_days,

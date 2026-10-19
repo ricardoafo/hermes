@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 
+from hermes.adapters.files import LocalFiles
 from hermes.application.strategy_protocol.lab_notebook import (
     LabNotebook,
     LabNotebookEntry,
@@ -34,7 +35,7 @@ def _make_notebook(tmp_path: Path, content: str = "") -> LabNotebook:
     """Create a notebook file and return a LabNotebook instance."""
     notebook_file = tmp_path / "lab-notebook.md"
     notebook_file.write_text(content, encoding="utf-8")
-    return LabNotebook(notebook_path=notebook_file)
+    return LabNotebook(notebook_file, files=LocalFiles())
 
 
 def _make_entry(
@@ -127,7 +128,7 @@ class TestLabNotebookFileNotFound:
         """FileNotFoundError must be raised when the notebook file does not exist."""
         missing_path = tmp_path / "does-not-exist.md"
         with pytest.raises(FileNotFoundError, match="not found"):
-            LabNotebook(notebook_path=missing_path)
+            LabNotebook(missing_path, files=LocalFiles())
 
 
 class TestLabNotebookFirstAppend:
@@ -316,7 +317,7 @@ class TestVerifyFile:
 
     def test_the_repo_notebook_verifies_entry_by_entry(self) -> None:
         """The real notebook, including the 2026-10-03 entry with hand-added blank lines."""
-        results = LabNotebook(notebook_path=_REPO_NOTEBOOK).verify_file()
+        results = LabNotebook(_REPO_NOTEBOOK, files=LocalFiles()).verify_file()
         assert (
             any(header.startswith("### 2026-10-03T13:18:31Z") for header in results),
             [header for header, ok in results.items() if not ok],
@@ -364,7 +365,7 @@ def test_every_entry_is_hashed_and_verifies(notebook: Path) -> None:
     ``## Entries`` must carry a hash that verifies, except the one signing entry
     written before the writer existed.
     """
-    results = LabNotebook(notebook_path=notebook).verify_file()
+    results = LabNotebook(notebook, files=LocalFiles()).verify_file()
     headers = _entry_headers(notebook.read_text(encoding="utf-8"))
     assert (
         [header for header in headers if header not in results],

@@ -31,7 +31,6 @@ from hermes.application.calibration.backtest_funnel import (
     validate_evidence,
 )
 from hermes.application.calibration.certification_gates import (
-    CertificationRecord,
     GateCheck,
     GateEvidence,
     GateReport,
@@ -43,11 +42,12 @@ from hermes.application.calibration.evidence_files import (
     load_funnel_evidence,
     load_performance,
 )
-from hermes.application.calibration.lifecycle import CertificationState
 from hermes.application.calibration.research_batch import ResearchBatch, heading_level
 from hermes.application.calibration.window_metrics import TrialStats, compute_window_metrics
 from hermes.application.strategy_protocol.preregistration import PreRegistration
+from hermes.domain.calibration.certification import CertificationRecord, CertificationState
 from hermes.domain.calibration.trial_record import TrialSummary
+from hermes.ports.files import FilesPort
 
 __all__ = [
     "NOT_APPLICABLE_ON_TRAIN",
@@ -125,6 +125,9 @@ class CandidateJudge(Protocol):
         evidence: CandidateEvidence,
         batch: ResearchBatch,
         trials: TrialSummary,
+        *,
+        v1: PreRegistration,
+        files: FilesPort,
     ) -> GateResult:
         """Judge ``strategy_id`` on ``split`` against the thresholds ``batch`` signed.
 
@@ -243,7 +246,12 @@ def evidence_split(funnel: FunnelEvidence, thresholds: FunnelThresholds) -> Spli
 
 
 def candidate_gate_evidence(
-    strategy_id: str, evidence: CandidateEvidence, batch: ResearchBatch, trials: TrialSummary
+    strategy_id: str,
+    evidence: CandidateEvidence,
+    batch: ResearchBatch,
+    trials: TrialSummary,
+    *,
+    files: FilesPort,
 ) -> tuple[GateEvidence, FunnelEvidence]:
     """Read a candidate's three files and compute its Train + Validation metrics.
 
@@ -260,8 +268,8 @@ def candidate_gate_evidence(
             strategy, or reaches the OOS window.
         OSError: A file cannot be read.
     """
-    gate = load_evidence(evidence.evidence)
-    window, record = load_performance(evidence.performance)
+    gate = load_evidence(evidence.evidence, files=files)
+    window, record = load_performance(evidence.performance, files=files)
     if window != "train_val":
         raise EvidenceError(f"{evidence.performance} is a {window} window, not train_val")
     stats = (
@@ -270,12 +278,12 @@ def candidate_gate_evidence(
         else TrialStats(trials.count, trials.sharpe_variance)
     )
     funnel = validate_evidence(
-        load_funnel_evidence(evidence.funnel_evidence, strategy_id=strategy_id),
+        load_funnel_evidence(evidence.funnel_evidence, strategy_id=strategy_id, files=files),
         batch.funnel.thresholds,
     )
     digest = gate.sha256 or ""
     for path in (evidence.performance, evidence.funnel_evidence):
-        file_digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        file_digest = files.sha256(path)
         digest = hashlib.sha256((digest + file_digest).encode("ascii")).hexdigest()
     metrics = compute_window_metrics(replace(record, trials=stats))
     return replace(gate, backtest=metrics, sha256=digest), funnel
@@ -287,6 +295,9 @@ def judge_candidate(
     evidence: CandidateEvidence,
     batch: ResearchBatch,
     trials: TrialSummary,
+    *,
+    v1: PreRegistration,
+    files: FilesPort,
 ) -> GateResult:
     """Judge a batch candidate on ``split`` against the thresholds its batch signed.
 
@@ -296,6 +307,8 @@ def judge_candidate(
         evidence: The candidate's three files (contract §2).
         batch: The signed batch that names the candidate.
         trials: The trial summary of the whole log (ADR-026 §4).
+        v1: The signed v1 pre-registration whose §9 rows the gate keeps.
+        files: Reads the evidence files.
 
     Returns:
         One check per gate row, ``validation_vs_train`` NA on ``train``.
@@ -311,7 +324,9 @@ def judge_candidate(
     if candidate is None:
         raise ValueError(f"batch {batch.batch_id} does not name {strategy_id!r}")
     require_v1_secondary(batch.section_text(candidate))
-    gate_evidence, funnel = candidate_gate_evidence(strategy_id, evidence, batch, trials)
+    gate_evidence, funnel = candidate_gate_evidence(
+        strategy_id, evidence, batch, trials, files=files
+    )
     if evidence_split(funnel, batch.funnel.thresholds) != split:
         raise ValueError(
             f"{strategy_id}: the evidence ends {funnel.end_date}, which is not a {split} run "
@@ -321,7 +336,7 @@ def judge_candidate(
         CertificationRecord(strategy_id),
         gate_evidence,
         now=_UNTRUSTED_GATE_TIME,
-        v1=PreRegistration(),
+        v1=v1,
         dsr_min=batch.funnel.dsr_min,
         thresholds=batch.funnel.thresholds,
         funnel=funnel,

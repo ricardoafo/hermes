@@ -19,14 +19,14 @@ from typing import Final
 
 from hermes.adapters._shared.wire import binance_symbol
 from hermes.adapters.market_data.binance_historical import BinanceHistoricalAdapter
-from hermes.application.strategy_protocol.preregistration import PreRegistration
 from hermes.domain.errors import HermesError
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.pair import Pair
+from hermes.infrastructure.project_root import load_pre_registration
 from tests.support.fake_market.script import BARS_PER_DAY, H4, Market, _day_bar
 
-REPLAY_LIMIT: Final = PreRegistration().data_windows().validation_start
+REPLAY_LIMIT: Final = load_pre_registration().data_windows().validation_start
 """Exclusive end of what may replay: the first instant of the Validation window."""
 
 

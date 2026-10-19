@@ -48,6 +48,7 @@ from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
+from hermes.infrastructure.project_root import load_pre_registration
 from hermes.ports.fill_model import FillModelPort
 from hermes.ports.risk_overlay import RiskOverlayPort
 from tests.support.paths import REPO_ROOT
@@ -106,7 +107,7 @@ class _FixedFillModel:
 @pytest.fixture(scope="module")
 def pre_reg() -> PreRegistration:
     """Real pre-registration from the signed document."""
-    return PreRegistration(project_root=REPO_ROOT)
+    return load_pre_registration(REPO_ROOT)
 
 
 @pytest.fixture(scope="module")
@@ -222,7 +223,7 @@ def _make_routing_input(
     """
     project_root = REPO_ROOT
 
-    pre_reg = PreRegistration(project_root=project_root)
+    pre_reg = load_pre_registration(project_root)
     evaluator = kill_evaluator or KillTriggerEvaluator(pre_reg=pre_reg)
     rules = risk_rules or []
     engine = RiskEngine(rules=rules)

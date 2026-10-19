@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Final, TextIO
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
+from hermes.adapters.files import LocalFiles
 from hermes.adapters.ledger.connection import open_ledger
 from hermes.adapters.ledger.migration_runner import apply_migrations
 from hermes.application.strategy_protocol.day_zero import (
@@ -51,7 +52,6 @@ from hermes.application.strategy_protocol.day_zero import (
     notebook_check,
     ready,
     roster_check,
-    sha256_file,
     sha256_tree,
 )
 from hermes.application.strategy_protocol.preregistration import PreRegistration
@@ -67,6 +67,7 @@ CONFIRM_WORD: Final = "START"
 _SERVICE: Final = "hermes.service"
 _READ_ONLY_FILE: Final = 0o444
 _READ_ONLY_DIR: Final = 0o555
+_FILES: Final = LocalFiles()
 
 _USAGE = (
     "Usage: hermes shadow-start <strategy_id> [--db PATH] [--config-dir DIR]\n"
@@ -130,7 +131,7 @@ def run(
         pre_reg_file = signed.pre_reg_path()
         experiment = pre_reg_file.parent
         checks = (
-            notebook_check(pre_reg_file, experiment / "lab-notebook.md"),
+            notebook_check(pre_reg_file, experiment / "lab-notebook.md", files=_FILES),
             certification_check(record, fingerprint),
             *MANUAL_RULES,
             roster_check([s.name for s in config.strategies.strategies if s.enabled], strategy_id),
@@ -171,10 +172,10 @@ def run(
             day_zero_at=now,
             package_version=_package_version(),
             release=read_release(release_link).name,
-            config_sha256=sha256_tree(config_dir),
-            preregistration_sha256=sha256_file(pre_reg_file),
+            config_sha256=sha256_tree(config_dir, files=_FILES),
+            preregistration_sha256=_FILES.sha256(pre_reg_file),
             preregistration_signed_sha256=_signed_hash(pre_reg_file),
-            data_manifest_sha256=sha256_file(experiment / "data-manifest.json"),
+            data_manifest_sha256=_FILES.sha256(experiment / "data-manifest.json"),
             parameter_fingerprint=fingerprint,
             archived_ledger=None if archived_sha is None else str(archived),
             archived_ledger_sha256=archived_sha,
@@ -238,7 +239,7 @@ def _archive(db: Path, target: Path) -> str:
         source.close()
     target.chmod(_READ_ONLY_FILE)
     target.parent.chmod(_READ_ONLY_DIR)
-    return sha256_file(target)
+    return _FILES.sha256(target)
 
 
 def _row_counts(conn: sqlite3.Connection) -> dict[str, int]:

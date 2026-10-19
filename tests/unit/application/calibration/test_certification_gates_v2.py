@@ -20,7 +20,6 @@ from hermes.application.calibration.backtest_funnel import (
     Regime,
 )
 from hermes.application.calibration.certification_gates import (
-    CertificationRecord,
     GateEvidence,
     GateReport,
     WindowMetrics,
@@ -32,9 +31,10 @@ from hermes.application.calibration.certification_gates_v2 import (
     evaluate_v2_gate,
     parse_v2_backtest_rules,
 )
-from hermes.application.calibration.lifecycle import CertificationState
 from hermes.application.strategy_protocol.preregistration import PreRegistration
+from hermes.domain.calibration.certification import CertificationRecord, CertificationState
 from hermes.entrypoints.funnel import read_front_matter
+from hermes.infrastructure.project_root import load_pre_registration
 from tests.support.paths import REPO_ROOT
 
 _S = CertificationState
@@ -122,7 +122,7 @@ def _passing_funnel() -> FunnelEvidence:
 @pytest.fixture(scope="module")
 def v1() -> PreRegistration:
     """Return the real signed v1 pre-registration, whose §9 secondaries v2 keeps."""
-    return PreRegistration(project_root=REPO_ROOT)
+    return load_pre_registration(REPO_ROOT)
 
 
 def _gate(
