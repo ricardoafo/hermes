@@ -22,6 +22,8 @@ from tests.support.paths import REPO_ROOT
 _LIVE: Final = (
     "hermes.application.console.live",
     "hermes.application.console.live_context",
+    "hermes.application.console.live_book",
+    "hermes.entrypoints.tui_feeds",
     "hermes.ports.live_prices",
     "hermes.entrypoints.tui_live",
 )

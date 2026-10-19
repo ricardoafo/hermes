@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Final
 
@@ -47,6 +47,7 @@ from hermes.application.console.live import (
     LiveStatus,
     LiveTotal,
 )
+from hermes.application.console.live_book import BookHealth
 from hermes.application.console.live_context import BarContext, DayContext, FormingBar
 from hermes.application.console.render import RenderContext, day_clock, range_label
 from hermes.entrypoints.tui_charts import braille_spark
@@ -54,8 +55,10 @@ from hermes.entrypoints.tui_theme import LIVE_GLYPH, Tokens
 
 __all__ = [
     "LiveLook",
+    "book_line",
     "context_lines",
     "eur_rate",
+    "latency_chip",
     "live_detail_line",
     "live_portfolio_lines",
     "live_tag",
@@ -78,6 +81,9 @@ _NONE: Final = "…"
 _CONTEXT_INDENT: Final = " " * _COIN
 _DIVIDER: Final = Text(" │ ")
 _VOLUME_WHOLE_FROM: Final = Decimal(100)
+_LATENCY_SPARK: Final = 8
+_THOUSAND: Final = Decimal(1000)
+_MILLION: Final = Decimal(1_000_000)
 
 
 @dataclass(frozen=True, slots=True)
@@ -263,6 +269,7 @@ def market_rows(
     width: int,
     rate: Decimal | None,
     contexts: Mapping[str, BarContext] | None = None,
+    books: Mapping[str, BookHealth] | None = None,
     now: datetime | None = None,
 ) -> RenderableType:
     """Return the Market panel: the live tag, then per coin price, change, chart, next check.
@@ -275,6 +282,8 @@ def market_rows(
         rate: EUR per quote unit for the prices, or ``None`` to show USDT.
         contexts: Bar context per coin; with it, a dim forming 4h bar line and a
             24 h line follow each coin's first row.
+        books: Book health per coin; with it, a dim book line (depth and the
+            fresh/stale flag) follows each coin's context lines.
         now: The console clock, for the time left in the forming bar.
 
     Returns:
@@ -294,6 +303,11 @@ def market_rows(
         context = None if contexts is None else contexts.get(coin)
         if context is not None and quote.failed_at is None and now is not None:
             extra[coin] = context_lines(context, quote.price, look, width=width, rate=rate, now=now)
+    for coin, health in (books or {}).items():
+        if coin in quotes:
+            book = book_line(health, look, width=width, rate=rate)
+            if book is not None:
+                extra.setdefault(coin, []).append(book)
     for pair in pairs:
         coin = pair if isinstance(pair, str) else pair.coin
         line = Text(f"{coin:<{_COIN}}", style="bold")
@@ -415,6 +429,80 @@ def context_lines(
             return [Text.assemble(_CONTEXT_INDENT, full, _DIVIDER, full_day)]
     parts = (_fitting(forming_options, room), _fitting(day_options, room))
     return [Text.assemble(_CONTEXT_INDENT, part) for part in parts if part is not None]
+
+
+def _size(value: Decimal) -> str:
+    """Return a money size short: ``480``, ``12.4k``, ``1.2M``."""
+    if value >= _MILLION:
+        return f"{value / _MILLION:.1f}M"
+    if value >= _THOUSAND:
+        return f"{value / _THOUSAND:.1f}k"
+    return f"{value:.0f}"
+
+
+def _book_options(health: BookHealth, look: LiveLook, rate: Decimal | None) -> list[Text]:
+    """Return the book line from the fullest form to the shortest.
+
+    Fresh: ``book  depth 480k · fresh``, ``depth 480k · fresh``, ``depth 480k``.
+    Stale, in amber: ``book  stale 34s · depth 480k``, ``book stale 34s``,
+    ``stale 34s``.
+    """
+    tokens = look.tokens
+    depth = _size(health.depth * rate if rate is not None else health.depth)
+    if health.fresh:
+        forms = (f"book  depth {depth} · fresh", f"depth {depth} · fresh", f"depth {depth}")
+        style = tokens.dim
+    else:
+        age = f"{int(health.age.total_seconds())}s"
+        forms = (f"book  stale {age} · depth {depth}", f"book stale {age}", f"stale {age}")
+        style = tokens.dim if look.paused else tokens.warn
+    return [Text(form, style=style) for form in forms]
+
+
+def book_line(
+    health: BookHealth, look: LiveLook, *, width: int, rate: Decimal | None
+) -> Text | None:
+    """Return the dim line under a coin: the depth of its book and whether it is fresh.
+
+    Args:
+        health: The coin's book health.
+        look: The live layer's look.
+        width: Cells available to the panel.
+        rate: EUR per quote unit for the depth, or ``None`` to show USDT.
+
+    Returns:
+        The fullest form that fits, or ``None`` when none does.
+    """
+    part = _fitting(_book_options(health, look, rate), width - len(_CONTEXT_INDENT))
+    return None if part is None else Text.assemble(_CONTEXT_INDENT, part)
+
+
+def latency_chip(
+    round_trips: Sequence[Decimal], age: timedelta | None, tokens: Tokens, *, room: int
+) -> Text:
+    """Return the status row's latency chip: the last round trip, its sparkline, the price age.
+
+    ``84ms ⣀⣤⣶⣤ 3s`` with the sparkline, ``84ms 3s`` without it.
+
+    Args:
+        round_trips: Recent book-call round trips in milliseconds, oldest first.
+        age: Age of the newest live price, or ``None`` before the first one.
+        tokens: The active design tokens.
+        room: Cells the chip may use, a leading space included.
+
+    Returns:
+        The fullest form that fits, or an empty text when none does or there is
+        no round trip yet.
+    """
+    if not round_trips:
+        return Text("")
+    last = f"{int(round_trips[-1])}ms"
+    seen = "" if age is None else f" {int(age.total_seconds())}s"
+    full = Text(" ").append(f"{last} ", style=tokens.dim)
+    full.append_text(braille_spark(round_trips, _LATENCY_SPARK, tokens.muted))
+    full.append(seen, style=tokens.dim)
+    short = Text(f" {last}{seen}", style=tokens.dim)
+    return next((chip for chip in (full, short) if chip.cell_len <= room), Text(""))
 
 
 def _soonest_per_coin(watch: Sequence[WatchedPair]) -> list[WatchedPair]:
