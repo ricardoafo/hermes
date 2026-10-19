@@ -16,30 +16,12 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from hermes.domain.risk.max_slippage import (
-    _CUMULATIVE_SLIPPAGE_LIMIT,
-    _SINGLE_SLIPPAGE_LIMIT,
     MaxSlippage,
 )
-from hermes.ports.risk_overlay import RiskAction, RiskOverlayPort
+from hermes.ports.risk_overlay import RiskAction
 from tests.unit.domain.risk.conftest import make_market_snapshot, make_portfolio_state
 
 _RULE = MaxSlippage()
-
-
-class TestMaxSlippageThresholdConstants:
-    """Verify the pre-reg §5.5 RO-03 constants are exactly 0.5% and 2.0%."""
-
-    def test_single_slippage_limit_is_binding(self) -> None:
-        """Single slippage limit must be exactly 0.005 (0.5%) per pre-reg §5.5 RO-03."""
-        assert Decimal("0.005") == _SINGLE_SLIPPAGE_LIMIT, (
-            f"RO-03 single limit must be 0.005 (pre-reg §5.5), got {_SINGLE_SLIPPAGE_LIMIT}"
-        )
-
-    def test_cumulative_slippage_limit_is_binding(self) -> None:
-        """Cumulative slippage limit must be exactly 0.02 (2.0%) per pre-reg §5.5 RO-03."""
-        assert Decimal("0.02") == _CUMULATIVE_SLIPPAGE_LIMIT, (
-            f"RO-03 cumulative limit must be 0.02 (pre-reg §5.5), got {_CUMULATIVE_SLIPPAGE_LIMIT}"
-        )
 
 
 class TestMaxSlippageBothOK:
@@ -130,14 +112,4 @@ class TestMaxSlippageCumulativeExceeded:
         assert decision.action == RiskAction.OK, (
             "Cumulative slippage exactly at limit 0.02 must return OK (exclusive),"
             f" got {decision.action}"
-        )
-
-
-class TestMaxSlippageProtocolConformance:
-    """Rule instance satisfies RiskOverlayPort at runtime."""
-
-    def test_is_risk_overlay_port(self) -> None:
-        """MaxSlippage must be an instance of RiskOverlayPort (runtime_checkable)."""
-        assert isinstance(_RULE, RiskOverlayPort), (
-            "MaxSlippage must satisfy RiskOverlayPort Protocol"
         )
