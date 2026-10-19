@@ -1,13 +1,13 @@
 ---
 batch_id: swing-b2
 experiment: swing-mvp1
-status: DRAFT
-signed_by: null
-date_signed: null
-content_sha256: null
-content_sha256_scope: null
-signing_commit_precursor: null
-code_commit: null
+status: SIGNED
+signed_by: ricardoafo
+date_signed: 2026-10-19
+content_sha256: 08d4eae61b96898ec98fbd35deee2e2ed1b32c94bfa0f5a724055854027007d7
+content_sha256_scope: "git show a3a078559d720320944c3d0d0260a7dc9c89ab81:docs/experiments/swing-mvp1/batches/swing-b2.md | sha256sum"
+signing_commit_precursor: a3a078559d720320944c3d0d0260a7dc9c89ab81
+code_commit: a3a078559d720320944c3d0d0260a7dc9c89ab81
 selection:
   eligible: full_gate_train_validation
   fdr: benjamini_hochberg
