@@ -38,6 +38,7 @@ from hermes.application.console.logs import LogLine
 from hermes.entrypoints import tui as tui_module
 from hermes.entrypoints.tui import REFRESH_SECONDS, HomeApp, _PanelScreen
 from hermes.entrypoints.tui_widgets import BigNumber
+from tests.support.svg_snapshots import repo_clean
 
 _TAX_FOOTNOTE = "est. · FIFO · 19% band · €5,988.30 left before 21%"
 # The fixture's read time (14:12 Madrid): snapshots never show the wall clock.
@@ -85,11 +86,6 @@ def _styled(content: RenderableType, width: int) -> str:
     return console.export_text(styles=True)
 
 
-def _repo_clean(svg: str) -> str:
-    """Strip trailing whitespace, as the repository's pre-commit hook does to committed SVGs."""
-    return "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
-
-
 async def _drive(
     model: ConsoleReadModel,
     keys: Sequence[str],
@@ -105,7 +101,7 @@ async def _drive(
         texts = {name: app.plain_text(name) for name in _WIDGETS}
         styled = {name: _styled(content, size[0]) for name, content in app._content.items()}
         screen = "\n".join(strip.text.rstrip() for strip in app.screen._compositor.render_strips())
-        svg = _repo_clean(app.export_screenshot())
+        svg = repo_clean(app.export_screenshot())
         shot = Shot(texts, styled, screen, len(app.screen_stack), svg)
     return shot, app
 

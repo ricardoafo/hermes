@@ -47,6 +47,7 @@ from hermes.entrypoints.tui import HomeApp
 from hermes.entrypoints.tui_theme import BASE, MOTION
 from hermes.entrypoints.tui_widgets import BigNumber
 from tests.support.clock import FakeClock
+from tests.support.svg_snapshots import repo_clean
 from tests.unit.adapters.console._ledger_builder import one_btc_position
 
 _FROZEN = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
@@ -331,18 +332,13 @@ def test_ticks_never_write_the_ledger(tmp_path: Path) -> None:
 # ----------------------------------------------------------------------
 
 
-def _repo_clean(svg: str) -> str:
-    """Strip trailing whitespace, as the repository's pre-commit hook does to committed SVGs."""
-    return "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
-
-
 def _svg(size: tuple[int, int]) -> str:
     fake = _FakeTicker(_FIRST)
 
     async def probe(app: HomeApp, pilot: Pilot[None], clock: FakeClock) -> str:
         fake.set(_SECOND)
         await _advance(app, pilot, clock, 10)
-        return _repo_clean(app.export_screenshot())
+        return repo_clean(app.export_screenshot())
 
     return _run(_fixture(), fake, probe, size=size)
 
