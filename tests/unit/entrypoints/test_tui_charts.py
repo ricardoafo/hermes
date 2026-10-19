@@ -135,6 +135,27 @@ def test_empty_series_is_blank_cells() -> None:
     assert braille_area([], width=2, rows=2) == [BRAILLE_BLANK * 2, BRAILLE_BLANK * 2]
 
 
+def _straight(values: list[float], share: float) -> float:
+    """Return the series read straight between neighbouring points, as the chart draws it."""
+    position = share * (len(values) - 1)
+    index = int(position)
+    if index >= len(values) - 1:
+        return values[-1]
+    return values[index] + (values[index + 1] - values[index]) * (position - index)
+
+
+def test_a_short_series_draws_a_slope_not_steps() -> None:
+    """Two points over 4 cells (8 dot columns, 8 levels) rise one level per column."""
+    heights = _column_heights(braille_area([0.0, 7.0], width=4, rows=2))
+    assert heights == [1, 2, 3, 4, 5, 6, 7, 8]
+
+
+def test_the_first_and_last_columns_hold_the_first_and_last_values() -> None:
+    """Whatever lies between, the left edge is the first value's height and the right the last's."""
+    heights = _column_heights(braille_area([2.0, 9.0, 0.0, 5.0], width=3, rows=1))
+    assert (heights[0], heights[-1]) == (1 + round(2 / 9 * 3), 1 + round(5 / 9 * 3))
+
+
 @given(
     values=st.lists(
         st.floats(min_value=-1e6, max_value=1e6, allow_nan=False, allow_infinity=False),
@@ -154,7 +175,9 @@ def test_curve_shape_and_order_property(values: list[float], width: int, rows: i
     heights = _column_heights(chart)
     total_dots = sum((ord(c) - 0x2800).bit_count() for row in chart for c in row)
     columns = width * 2
-    sampled = [values[round(x * (len(values) - 1) / (columns - 1))] for x in range(columns)]
+    sampled = [
+        _straight(values, x / (columns - 1)) if columns > 1 else values[-1] for x in range(columns)
+    ]
     ordered = all(
         heights[a] <= heights[b]
         for a in range(columns)
