@@ -12,7 +12,7 @@ logged §11 deviation); a pass stands only once it can no longer change (day 90
 reached, or the closing notebook entry signed). Nothing here reads P&L, equity
 or a price, so the screen has no money for ``pnl_visible`` to hide.
 
-Reference: openspec/changes/718-shadow-screen/change.md; ADR-021 §2 and §3;
+Reference: openspec/archive/718-shadow-screen/change.md; ADR-021 §2 and §3;
 docs/experiments/swing-mvp1/success-criteria.md (G8 ``SHADOW_CERTIFIED``).
 """
 

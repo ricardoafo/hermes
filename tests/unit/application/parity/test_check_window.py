@@ -1,6 +1,6 @@
 """Tests for the whole-window replay behind M-09 and M-10 (#965).
 
-Invariants protected here (openspec/changes/965-shadow-parity-window/change.md):
+Invariants protected here (openspec/archive/965-shadow-parity-window/change.md):
 
 - the replay starts flat at day 0 and executes only signals after it;
 - it never reads serve's trades, so its fills are priced from the bars and not

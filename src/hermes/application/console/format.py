@@ -9,7 +9,7 @@ typographic minus sign (U+2212), which lines up with the plus sign.
 
 All functions are pure.
 
-Reference: openspec/changes/console-read-model/change.md (D-6).
+Reference: openspec/archive/console-read-model/change.md (D-6).
 """
 
 from __future__ import annotations

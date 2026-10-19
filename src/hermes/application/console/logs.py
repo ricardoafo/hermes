@@ -14,7 +14,7 @@ Lines whose message is not structlog JSON (systemd's own messages,
 tracebacks) pass through raw. No field is added or dropped: the line shows
 what hermes logged, which by ADR-008 never includes secrets or P&L.
 
-Reference: openspec/changes/376-hermes-logs/change.md.
+Reference: openspec/archive/376-hermes-logs/change.md.
 """
 
 from __future__ import annotations

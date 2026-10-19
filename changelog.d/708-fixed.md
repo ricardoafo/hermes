@@ -1,1 +1,0 @@
-- `hermes serve` no longer sends the ENTRY push for an entry that did not fill (a risk halt, a declined size); the halt alert or the log says why (#708).

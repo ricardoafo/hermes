@@ -13,7 +13,7 @@ Modules:
 - :mod:`kill_trigger_evaluator` — §10 kill-criteria evaluator
 - :mod:`lab_notebook` — append-only lab notebook writer
 
-Reference: ``openspec/changes/spec-9-strategy-development-protocol/change.md``,
+Reference: ``openspec/archive/spec-9-strategy-development-protocol/change.md``,
 ``docs/experiments/swing-mvp1/pre-registration-v1.md``.
 """
 

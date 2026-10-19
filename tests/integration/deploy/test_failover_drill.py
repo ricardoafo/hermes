@@ -9,7 +9,7 @@ The stubs are the only mocks. The seam they replace is the real unit and
 release on the box, which only the operator's monthly drill covers
 (docs/runbook/failover-to-kraken.md).
 
-Reference: openspec/changes/31-failover-drill/change.md (Test plan).
+Reference: openspec/archive/31-failover-drill/change.md (Test plan).
 """
 
 from __future__ import annotations

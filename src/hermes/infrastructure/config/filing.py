@@ -9,7 +9,7 @@ Two sources:
   years. Its values are private: excluded from ``repr``, never logged, never
   copied into error messages. No file means no 721 filed yet.
 
-Reference: openspec/changes/36-modelo-100-721/change.md D-7, D-9.
+Reference: openspec/archive/36-modelo-100-721/change.md D-7, D-9.
 """
 
 from __future__ import annotations

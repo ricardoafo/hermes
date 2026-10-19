@@ -5,7 +5,7 @@ These tests pin the failures a first run would hit: an aggregator that can
 never fail, a removed job that is still referenced, and real deploy steps
 that would run during a dry run (issue #179).
 
-Reference: openspec/changes/179-cd-first-real-deploy/change.md.
+Reference: openspec/archive/179-cd-first-real-deploy/change.md.
 """
 
 from __future__ import annotations

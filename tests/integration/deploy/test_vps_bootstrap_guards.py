@@ -8,7 +8,7 @@ each one is run twice and the second run must change nothing.
 
 Covered: ``require_tools``, ``ensure_uv``, ``ensure_python``, ``install_units``,
 ``render_deploy_sudoers`` and ``ensure_deploy_sudoers``. The operator
-acceptance run (openspec/changes/179-cd-first-real-deploy/change.md, R-5) covers
+acceptance run (openspec/archive/179-cd-first-real-deploy/change.md, R-5) covers
 the real box.
 """
 

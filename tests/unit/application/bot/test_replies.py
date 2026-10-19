@@ -8,6 +8,8 @@ Invariants protected here:
 - ``/next``, ``/signals`` and ``/logs`` render from the shared layers;
 - ``/money`` and ``/pos`` show money on a pulled reply and none on a blind
   surface, and say there is no live money without a read model;
+- the tax item is named once, as ``tax <amount>`` or, with no estimate yet,
+  as ``tax estimate: not available yet``;
 - anything else gets the one-line help.
 """
 
@@ -191,6 +193,26 @@ def test_pos_lists_positions_with_net_and_the_detail_with_the_waterfall(tmp_path
     assert " · net " in rows[1]
     assert detail[0].startswith(f"{coin} ")
     assert detail[-1].startswith("Gross ")
+
+
+@pytest.mark.parametrize(
+    ("scenario", "tax_item"),
+    [("tax-pending", "tax estimate: not available yet"), ("ok-two-positions", "tax \u2212€")],
+)
+def test_the_tax_item_is_named_once_on_money_and_pos(
+    tmp_path: Path, scenario: str, tax_item: str
+) -> None:
+    """Every waterfall line names tax once, never "tax tax", known or pending."""
+    model = FixtureReadModel.load(scenario)
+    replies = _replies(tmp_path, model=model)
+    coin = model.positions()[0].coin
+
+    lines = [
+        *replies.reply("money", ["year"], NOW).splitlines()[1:],
+        replies.reply("pos", [coin], NOW).splitlines()[-1],
+    ]
+
+    assert [(line.count("tax"), f" · {tax_item}" in line) for line in lines] == [(1, True)] * 3
 
 
 def test_logs_shows_the_last_twenty_warning_lines(tmp_path: Path) -> None:

@@ -12,8 +12,8 @@ capital seed (#405) and the closed trades' FIFO values; activity reuses the
 ledger activity rows; the shadow test counts days from the capital seed. A view
 the ledger cannot answer yet raises :class:`ViewNotAvailableError`.
 
-Reference: openspec/changes/ledger-read-model/change.md (D-1, D-3 to D-9);
-openspec/changes/live-home-screen/change.md (D-1 to D-6).
+Reference: openspec/archive/ledger-read-model/change.md (D-1, D-3 to D-9);
+openspec/archive/live-home-screen/change.md (D-1 to D-6).
 """
 
 from __future__ import annotations

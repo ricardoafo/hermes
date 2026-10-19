@@ -6,8 +6,8 @@ Invariants:
   (off, on, unread) and is never hardcoded (a demo scenario cannot trade and
   always reads off): ``SHADOW · mainnet off``, ``LIVE · mainnet ON`` in
   the down colour reversed, or ``mainnet ?`` in amber;
-- the badge sits in the Neon window bar and on the Control room status row,
-  and a narrow window bar drops the clock before it drops the badge;
+- the badge leads the status row in every theme (Neon, Control room, night);
+  the window bar above it carries no text (issue #1097);
 - the version line reads ``v1.0.0-shadow.1 · <release>``, the release form of
   the package version, and shortens before the heartbeat is cut;
 - the countdown meter fills with the share of the time from the last bar check
@@ -54,7 +54,7 @@ from hermes.entrypoints.tui_topbar import (
     mainnet_text,
     version_text,
 )
-from hermes.entrypoints.tui_widgets import Meter, window_bar_text
+from hermes.entrypoints.tui_widgets import Meter
 from hermes.release_version import release_label
 
 # The fixture's read time: 14:12 Madrid; last check 14:00, next check 18:00 Madrid.
@@ -64,6 +64,14 @@ _NEXT = _LAST + timedelta(hours=4)
 _REPO_CONFIG = Path(__file__).resolve().parents[3] / "config"
 _LABEL = "v1.0.0-shadow.1"
 _SHA = "679b676"
+# 23:30 Madrid: Auto shows the night theme.
+_NIGHT = datetime(2026, 10, 3, 21, 30, tzinfo=UTC)
+_THEMES = (
+    (ThemeChoice.NEON, _DAY),
+    (ThemeChoice.CONTROL, _DAY),
+    (ThemeChoice.AUTO, _NIGHT),
+)
+_THEME_IDS = ("neon", "control", "night")
 
 
 def _ok() -> Heartbeat:
@@ -174,35 +182,16 @@ def test_config_that_does_not_load_reads_unknown() -> None:
     assert (config_allow_mainnet(outside_prod), config_allow_mainnet(missing)) == (None, None)
 
 
-def test_neon_window_bar_shows_the_badge_before_the_clock() -> None:
-    """Neon, mainnet off: the window bar ends ``SHADOW · mainnet off  14:12:00``."""
-
-    async def probe(app: HomeApp, pilot: Pilot[None]) -> str:
-        del pilot
-        return _row(app, 0)
-
-    assert _run(probe).endswith("SHADOW · mainnet off  14:12:00")
-
-
-def test_neon_keeps_the_badge_off_the_status_row() -> None:
-    """Neon has the badge in the window bar, so the status row does not repeat it."""
+@pytest.mark.parametrize(("theme", "now"), _THEMES, ids=_THEME_IDS)
+def test_every_theme_status_row_starts_with_the_badge(theme: ThemeChoice, now: datetime) -> None:
+    """Neon, Control room and night: the status row starts ``SHADOW · mainnet off`` (#1097)."""
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[bool, str]:
         del pilot
         return app.query_one("#mainnet").display, _row(app, 2)
 
-    shown, row = _run(probe)
-    assert (shown, "mainnet" in row) == (False, False)
-
-
-def test_control_room_status_row_starts_with_the_badge() -> None:
-    """Control room has no window bar: the status row starts ``SHADOW · mainnet off``."""
-
-    async def probe(app: HomeApp, pilot: Pilot[None]) -> str:
-        del pilot
-        return _row(app, 1)
-
-    assert _run(probe, theme=ThemeChoice.CONTROL).startswith("SHADOW · mainnet off  DEMO DATA")
+    shown, row = _run(probe, theme=theme, clock=now)
+    assert (shown, row.startswith("SHADOW · mainnet off  DEMO DATA")) == (True, True)
 
 
 def test_control_room_status_row_shows_mainnet_on() -> None:
@@ -217,14 +206,14 @@ def test_control_room_status_row_shows_mainnet_on() -> None:
     )
 
 
-def test_neon_window_bar_shows_mainnet_unknown() -> None:
-    """Config unread: the Neon window bar ends ``mainnet ?  14:12:00``."""
+def test_neon_status_row_shows_mainnet_unknown() -> None:
+    """Config unread: the Neon status row starts ``mainnet ?``."""
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> str:
         del pilot
-        return _row(app, 0)
+        return _row(app, 2)
 
-    assert _run(probe, allow_mainnet=None, live=True).endswith("  mainnet ?  14:12:00")
+    assert _run(probe, allow_mainnet=None, live=True).startswith("mainnet ? ")
 
 
 def test_demo_scenario_reads_mainnet_off_whatever_the_config_says() -> None:
@@ -232,7 +221,7 @@ def test_demo_scenario_reads_mainnet_off_whatever_the_config_says() -> None:
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[bool | None, str]:
         del pilot
-        return app.mainnet_state, _row(app, 1)
+        return app.mainnet_state, _row(app, 2)
 
     unread = _run(probe, theme=ThemeChoice.CONTROL, allow_mainnet=None)
     on = _run(probe, theme=ThemeChoice.CONTROL, allow_mainnet=True)
@@ -251,20 +240,6 @@ def test_live_console_shows_the_config_state() -> None:
         False,
         None,
     ]
-
-
-def test_narrow_window_bar_drops_the_clock_before_the_badge() -> None:
-    """In 50 cells the bar keeps the brand and the badge and drops the clock."""
-    bar = window_bar_text(
-        50, NEON, status=Text("next bar 03:48:00"), clock="14:12:00", badge=mainnet_text(True, NEON)
-    ).plain
-    assert (bar.endswith(" LIVE · mainnet ON  "), "14:12:00" in bar, len(bar)) == (True, False, 50)
-
-
-def test_window_bar_without_a_badge_is_unchanged() -> None:
-    """No badge: the bar is the brand, the status and the clock, as before issue #833."""
-    bar = window_bar_text(60, NEON, status=Text("next bar 03:48:00"), clock="14:12:00").plain
-    assert bar == "▐ HERMES // SHADOW CONSOLE  next bar 03:48:00" + " " * 6 + "14:12:00 "
 
 
 # ----------------------------------------------------------------------
@@ -297,25 +272,17 @@ def test_status_row_shows_the_version_beside_the_release() -> None:
     assert _run(probe, size=(160, 45)) == "v1.0.0-shadow.1 · 679b676"
 
 
-def test_compact_neon_row_drops_the_version_before_the_heartbeat() -> None:
-    """Neon at 80 columns: no room for the version, so it goes and the heartbeat stays whole."""
+@pytest.mark.parametrize(("theme", "now"), _THEMES, ids=_THEME_IDS)
+def test_compact_row_drops_the_scenario_name_before_the_heartbeat(
+    theme: ThemeChoice, now: datetime
+) -> None:
+    """At 80 columns in every theme: the badge stays, the demo tag loses its scenario name."""
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> str:
         del pilot
         return _row(app, 2)
 
-    row = _run(probe, size=(80, 24))
-    assert row == " DEMO DATA · scenario ok-two-positions   ● live · checked 14:00 · next 18:00  ◑"
-
-
-def test_compact_control_row_drops_the_scenario_name_before_the_heartbeat() -> None:
-    """Control room at 80 columns: the badge stays, the demo tag loses its scenario name."""
-
-    async def probe(app: HomeApp, pilot: Pilot[None]) -> str:
-        del pilot
-        return _row(app, 1)
-
-    row = _run(probe, size=(80, 24), theme=ThemeChoice.CONTROL)
+    row = _run(probe, size=(80, 24), theme=theme, clock=now)
     assert row == "SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑"
 
 

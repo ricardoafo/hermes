@@ -34,6 +34,15 @@ class RiskAction(enum.Enum):
     WARN = "warn"
     HALT = "halt"
 
+    @property
+    def severity(self) -> int:
+        """Return the rank in the severity order: OK 0, WARN 1, HALT 2.
+
+        The order is the declaration order, so a new action ranks by where it
+        is declared and no second table can disagree (issue #1179).
+        """
+        return _ORDER.index(self)
+
     def is_worse_than(self, other: RiskAction) -> bool:
         """Return ``True`` when this action has higher severity than *other*.
 
@@ -43,12 +52,10 @@ class RiskAction(enum.Enum):
         Returns:
             ``True`` if ``self`` is more severe than ``other``.
         """
-        _severity: dict[RiskAction, int] = {
-            RiskAction.OK: 0,
-            RiskAction.WARN: 1,
-            RiskAction.HALT: 2,
-        }
-        return _severity[self] > _severity[other]
+        return self.severity > other.severity
+
+
+_ORDER: tuple[RiskAction, ...] = tuple(RiskAction)
 
 
 @dataclass(frozen=True, slots=True)

@@ -56,7 +56,7 @@ class TestWeightConstraint:
 
 
 class TestWeightFactories:
-    """from_str, from_decimal, zero, one factories."""
+    """from_str and zero factories."""
 
     @given(weight_strategy())
     def test_from_str_roundtrip(self, w: Weight) -> None:
@@ -96,36 +96,7 @@ class TestWeightFactories:
         """from_str accepts both ends of [0, 1] (the interval is closed)."""
         assert Weight.from_str(raw) == Success(Weight(value=Decimal(raw)))
 
-    @given(weight_strategy())
-    def test_from_decimal_roundtrip(self, w: Weight) -> None:
-        """from_decimal(w.value) round-trips to an equal Weight for all valid values."""
-        result = Weight.from_decimal(w.value)
-        assert isinstance(result, Success)
-        assert result.unwrap() == w
-
-    def test_from_decimal_out_of_range(self) -> None:
-        """from_decimal returns Failure when the value exceeds the [0, 1] constraint."""
-        result = Weight.from_decimal(Decimal("2"))
-        assert result == Failure(InvalidLot(reason="Weight must be in [0, 1], got Decimal('2')"))
-
-    @pytest.mark.parametrize("raw", ["0", "1"])
-    def test_from_decimal_bounds_accepted(self, raw: str) -> None:
-        """from_decimal accepts both ends of [0, 1] (the interval is closed)."""
-        assert Weight.from_decimal(Decimal(raw)) == Success(Weight(value=Decimal(raw)))
-
-    def test_from_decimal_negative_rejected(self) -> None:
-        """from_decimal rejects a value just below zero."""
-        result = Weight.from_decimal(Decimal("-0.01"))
-        assert result == Failure(
-            InvalidLot(reason="Weight must be in [0, 1], got Decimal('-0.01')")
-        )
-
     def test_zero_factory(self) -> None:
         """Weight.zero() produces a Weight with value exactly 0."""
         z = Weight.zero()
         assert z.value == Decimal("0")
-
-    def test_one_factory(self) -> None:
-        """Weight.one() produces a Weight with value exactly 1 (the maximum allowed)."""
-        o = Weight.one()
-        assert o.value == Decimal("1")

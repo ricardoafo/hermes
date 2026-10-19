@@ -11,8 +11,8 @@ from the live console read model over the ledger, read-only, over the last
 
 Exit codes: 0 success, 2 usage or unknown scenario, 3 no ledger or unreadable.
 
-Reference: openspec/changes/374-hermes-activity/change.md;
-openspec/changes/live-home-screen/change.md (D-5, D-6).
+Reference: openspec/archive/374-hermes-activity/change.md;
+openspec/archive/live-home-screen/change.md (D-5, D-6).
 """
 
 from __future__ import annotations

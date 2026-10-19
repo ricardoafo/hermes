@@ -1,1 +1,0 @@
-- Research batch swing-b1 candidate C1, `swing-b1-ensemble`: a disabled roster entry with `signal: breakout_ensemble` that enters when at least `agree_min` of the 20, 55 and `longest_lookback` 4h Donchian breakouts agree above the daily EMA(200), and exits as v2 with its own chandelier multiple (ADR-026).

@@ -16,6 +16,7 @@ from typing import Any
 
 import pytest
 
+from hermes.application.backtest.fold_evidence import fold_evidence
 from hermes.application.calibration.backtest_funnel import (
     FUNNEL_CHECK_NAMES,
     Regime,
@@ -427,3 +428,35 @@ class TestRegistration:
             0,
             "Usage: hermes funnel <strategy_id> --pre-registration FILE",
         )
+
+
+class TestFoldEvidenceIsReportedOnly:
+    """Pre-registration §8.3 folds in the evidence file never change a funnel verdict (#1181)."""
+
+    @pytest.mark.parametrize(
+        "change",
+        [{}, {"trade_count": 99}],
+        ids=["passing-run", "failing-run"],
+    )
+    def test_the_output_is_identical_with_and_without_folds(
+        self, tmp_path: Path, change: dict[str, Any]
+    ) -> None:
+        """Same exit code and stdout, check lines and values included, for a pass and a fail."""
+        plain = {**_passing_evidence(), **change}
+        folded = {**plain, "folds": fold_evidence(date(2020, 12, 31), plain["daily_equity"])}
+        (tmp_path / "plain").mkdir()
+        (tmp_path / "folds").mkdir()
+
+        without = _main(_args(*_write(tmp_path / "plain", _FUNNEL_YAML, plain)))
+        with_folds = _main(_args(*_write(tmp_path / "folds", _FUNNEL_YAML, folded)))
+
+        assert (with_folds[0], with_folds[1]) == (without[0], without[1])
+
+    def test_a_failing_run_with_folds_still_fails(self, tmp_path: Path) -> None:
+        """99 trades with folds: exit 1, the comparison above covers a FAIL."""
+        evidence = {**_passing_evidence(), "trade_count": 99}
+        evidence["folds"] = fold_evidence(date(2020, 12, 31), evidence["daily_equity"])
+
+        code, out, _ = _main(_args(*_write(tmp_path, _FUNNEL_YAML, evidence)))
+
+        assert (code, out.splitlines()[-1]) == (1, "FUNNEL FAILED")

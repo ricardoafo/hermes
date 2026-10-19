@@ -11,6 +11,10 @@ Each rule is in one of three states:
 - ``gap``: not wired into serve yet; names the open issue that tracks it.
 - ``outside``: not an engine behaviour (a certification step, a procedure,
   or the live phase, which MVP1 does not run); says which.
+
+A rule the Code Owner replaced with a §11 deviation is proved by tests of the
+replacement behaviour, and its ``deviation`` names the lab-notebook entry that
+approved it.
 """
 
 from __future__ import annotations
@@ -28,9 +32,12 @@ _RISK = _S + "test_risk_limits.py::"
 _FAULTS = _S + "test_market_data_faults.py::"
 _RESTART = _S + "test_restart.py::test_a_restart_with_a_position_open_keeps_it_until_its_exit"
 _UNIT = "tests/unit/"
+_EXEC_QUALITY = "tests/integration/entrypoints/test_serve_execution_quality.py::"
 _SHADOW = _UNIT + "application/execution/test_shadow.py::"
 _SHADOW_CHECKS = _UNIT + "application/strategy_protocol/test_shadow_checks.py::"
 _SERVE_FILLS = "tests/integration/entrypoints/test_serve_fills.py::"
+_PREREG_BOOK = _UNIT + "application/execution/test_prereg_book.py::"
+_TAX_GUARD = "tests/integration/entrypoints/test_serve_tax_guard.py::"
 
 
 @dataclass(frozen=True)
@@ -43,6 +50,9 @@ class Rule:
         proved_by: Test node ids that fail when the rule breaks.
         gap: ``issue #N``, and what is missing, when the rule is not wired yet.
         outside: Why the rule is not an engine behaviour.
+        deviation: The heading, without ``### ``, of the lab-notebook entry
+            whose approved §11 deviation replaces the rule; ``proved_by``
+            then proves the replacement.
 
     """
 
@@ -50,6 +60,7 @@ class Rule:
     proved_by: tuple[str, ...] = ()
     gap: str = ""
     outside: str = ""
+    deviation: str = ""
 
 
 PRE_REGISTERED: dict[str, tuple[Rule, ...]] = {
@@ -105,9 +116,13 @@ PRE_REGISTERED: dict[str, tuple[Rule, ...]] = {
         ),
         Rule(
             "Exit: **on-exchange stop-market**",
-            gap=(
-                "issue #1157: serve sells at market at the close of the bar that touches "
-                "the stop; no resting stop"
+            proved_by=(
+                _ENTRY + "test_the_exit_sells_the_whole_position_into_the_live_book",
+                _FAULTS + "test_an_exit_while_the_depth_endpoint_is_down_fills_on_the_model_book",
+            ),
+            deviation=(
+                "2026-10-18T15:46:01Z | shadow | operator | §11 deviation: v1 stop exits "
+                "in the shadow sell at market at the bar's close (issue #1157)"
             ),
         ),
     ),
@@ -296,8 +311,16 @@ IN_CODE: tuple[Rule, ...] = (
         ),
     ),
     Rule(
-        "Chandelier stop clamped under the close",
-        gap="issue #1157: the clamp the engine docstring describes is not implemented",
+        "Execution-quality breaches are alerted only: no decision, size or fill changes",
+        proved_by=(
+            _EXEC_QUALITY
+            + "test_signals_fills_and_halts_are_the_same_whether_the_charts_breach_or_not",
+            _EXEC_QUALITY + "test_the_slippage_breach_is_alerted_once_on_every_channel",
+        ),
+    ),
+    Rule(
+        "Chandelier stop not clamped: a bar opening under the stop exits from the open",
+        proved_by=(_PREREG_BOOK + "test_a_bar_opening_under_the_stop_sells_from_the_open",),
     ),
     Rule(
         "RO-03 slippage halt",
@@ -337,5 +360,24 @@ IN_CODE: tuple[Rule, ...] = (
     Rule(
         "A notification outage never blocks a fill",
         proved_by=(_OUTAGES + "test_a_telegram_outage_does_not_stop_trading",),
+    ),
+    Rule(
+        "ADR-002 Decision 6 tax guard: a breach on a daily close is recorded and alerted",
+        proved_by=(
+            _TAX_GUARD
+            + "test_one_trade_past_the_ceiling_records_one_critical_row_at_the_daily_close",
+            _TAX_GUARD + "test_one_trade_past_the_ceiling_is_alerted_once_on_the_routed_channel",
+            _TAX_GUARD + "test_a_window_exactly_at_the_ceiling_records_and_alerts_nothing",
+        ),
+    ),
+    Rule(
+        "ADR-002 Decision 6 tax guard: a breach changes no decision or fill",
+        proved_by=(
+            _SERVE_FILLS + "test_a_tax_guard_breach_is_recorded_and_changes_no_decision_or_fill",
+        ),
+    ),
+    Rule(
+        "ADR-002 Decision 6 tax guard: a breach pauses new signals",
+        gap="issue #136: the pause is the Code Owner's decision; serve records and alerts only",
     ),
 )

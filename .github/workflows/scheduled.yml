@@ -149,8 +149,10 @@ jobs:
           SPEC: ${{ steps.seeds.outputs.spec }}
         run: |
           set -uo pipefail
-          uv run python scripts/dev/fresh-seed-report.py fresh-seeds.xml "${SPEC}" > issue.md
-          rc=$?
+          # The step shell runs with -e, so a bare `rc=$?` on the next line is
+          # never reached when the report exits 1 or 2 (#1206).
+          rc=0
+          uv run python scripts/dev/fresh-seed-report.py fresh-seeds.xml "${SPEC}" > issue.md || rc=$?
           if [[ "$rc" == 0 ]]; then
             echo "Every fresh seed passed."
             exit 0

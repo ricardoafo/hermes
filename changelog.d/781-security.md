@@ -1,1 +1,0 @@
-- Binance and Kraken trading adapters now need a `MainnetPermit` to reach a real account. Only `issue_mainnet_permit` makes one, in the prod tier with `HERMES_ALLOW_MAINNET` set and a LIVE_APPROVED record with unchanged parameters; with a permit, Binance accepts only its documented spot hosts (issue #781).

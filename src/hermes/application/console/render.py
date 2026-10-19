@@ -12,7 +12,7 @@ Three rules hold in every renderer:
 - a DEMO DATA tag heads the output whenever the data comes from a fixture;
 - when hermes is down, money is dimmed and marked "as of" the stop time.
 
-Reference: openspec/changes/console-read-model/change.md (D-2, D-4, D-5);
+Reference: openspec/archive/console-read-model/change.md (D-2, D-4, D-5);
 the approved console UX proposal (2026-10-03).
 """
 
@@ -141,7 +141,7 @@ class RenderContext:
         surface: Where the output goes; decides whether money shows.
         now: The read time every relative time is measured from.
         tz: Display timezone (Europe/Madrid unless the operator asks for UTC).
-        width: Target width in columns; 100 and over adds wide-only columns.
+        width: Target width in columns.
         demo_scenario: Fixture scenario name; set means DEMO DATA is shown.
         stale_since: When numbers froze because hermes is down, else ``None``.
         down_hint: Call to action on the down row (the TUI says "press L").
@@ -194,11 +194,6 @@ class RenderContext:
     def shows_money(self) -> bool:
         """Return whether money may appear on this surface."""
         return pnl_visible(self.surface)
-
-    @property
-    def wide(self) -> bool:
-        """Return whether the width allows the wide-only columns."""
-        return self.width >= _WIDE_FROM
 
 
 def to_plain_text(renderable: RenderableType, *, width: int) -> str:

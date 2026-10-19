@@ -7,7 +7,7 @@ The console reads the file format only; it imports nothing from the command
 that writes it. :class:`NotebookFile` reads the lab notebook shipped in the
 release. Neither writes anything.
 
-Reference: openspec/changes/718-shadow-screen/change.md (D-2, D-3); ADR-021 §2.
+Reference: openspec/archive/718-shadow-screen/change.md (D-2, D-3); ADR-021 §2.
 """
 
 import json

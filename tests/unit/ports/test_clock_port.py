@@ -4,7 +4,7 @@ Verifies that both concrete adapters — :class:`WallClock` and
 :class:`SimulatedClock` — return the time the ``ClockPort`` contract asks
 for: a timezone-aware UTC instant, read from the right source.
 
-Reference: openspec/changes/spec-4a-clock-port/change.md A-2.1, A-3.1.
+Reference: openspec/archive/spec-4a-clock-port/change.md A-2.1, A-3.1.
 """
 
 from __future__ import annotations

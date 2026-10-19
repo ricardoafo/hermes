@@ -10,7 +10,7 @@ from hermes.entrypoints.commands import Command
 
 __all__ = ["COMMAND"]
 
-_USAGE = "Usage: hermes config check [--config-dir DIR] [--json]"
+_USAGE = "Usage: hermes config check [--config-dir DIR] [--env-file PATH|-] [--json]"
 
 
 def _run(argv: list[str], *, stream: Any, err: TextIO | None = None) -> int:

@@ -255,3 +255,33 @@ def test_every_trial_has_one_return_per_day_after_the_first(values: list[Decimal
         growth *= 1.0 + r
     assert len(evidence["trials"]["base"]) == len(evidence["daily_equity"]) - 1
     assert growth == pytest.approx(float(values[-1]) / float(values[0]), rel=1e-9)
+
+
+def test_folds_date_the_base_run_from_the_day_after_the_first_close() -> None:
+    """§8.3 folds use the base curve; its first close is 1 Jan, so day 0 of the folds is 2 Jan.
+
+    Five equity points are four returns (2-5 Jan): CPCV needs five, so it is
+    empty; six points give five one-day groups, and the fold holding out
+    groups 0 and 1 tests 2-3 Jan.
+    """
+    evidence = fe.funnel_evidence(
+        "swing-x", _curves(["5000", "5050", "5000", "5100", "5150", "5200"]), trade_count=0
+    )
+    first = evidence["folds"]["purged_cpcv"]["folds"][0]
+    assert first["test"]["ranges"] == [["2021-01-02", "2021-01-03"]]
+
+
+def test_fold_returns_come_from_the_base_run_not_the_stress() -> None:
+    """Holding out 2-3 Jan of the base run 5000 -> 5050 -> 5000 compounds to 0, not the stress's."""
+    curves = _curves(["5000", "5050", "5000", "5100", "5150", "5200"])
+    curves["cost_stress=2"] = _curve(["5000", "4000", "4500", "5100", "5150", "5200"])
+    evidence = fe.funnel_evidence("swing-x", curves, trade_count=0)
+    first = evidence["folds"]["purged_cpcv"]["folds"][0]
+    assert first["test"]["total_return"] == pytest.approx(0.0, abs=1e-12)
+
+
+def test_too_short_a_run_still_writes_its_evidence_with_empty_folds() -> None:
+    """Two points: no fold fits, and the funnel evidence is still written (never refused)."""
+    evidence = fe.funnel_evidence("swing-x", _curves(["5000", "5050"]), trade_count=0)
+    folds = evidence["folds"]
+    assert (folds["walk_forward"]["folds"], folds["purged_cpcv"]["folds"]) == ([], [])

@@ -1,1 +1,0 @@
-- **New activity rows fade in the console**: a row that appears in the Activity card between two reads is highlighted for 2 s, fading out; nothing with `HERMES_CONSOLE_MOTION=off`. Part of #721.

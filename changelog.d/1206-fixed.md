@@ -1,0 +1,1 @@
+- A failing batch check or a FAIL verdict from the funnel judges no longer ends the step early: the summary is written and the verdict is accepted.

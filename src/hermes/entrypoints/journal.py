@@ -20,7 +20,7 @@ Whether the strategy is certified comes from the certification record
 
 Exit codes: 0 ok, 1 refused by a journal rule, 2 usage, 3 store error.
 
-Reference: issue #363; openspec/changes/363-decision-journal.
+Reference: issue #363; openspec/archive/363-decision-journal.
 """
 
 from __future__ import annotations

@@ -34,8 +34,8 @@ pass, block or insufficient only, never a value (ADR-012 D-06); ``hermes
 certify --shadow-parity`` reads the file. Exit codes: 0 both pass, 1 otherwise,
 2 usage, 3 no data, no ledger, no day-0 record or bad config.
 
-Reference: openspec/changes/358-parity-check/change.md;
-openspec/changes/965-shadow-parity-window/change.md.
+Reference: openspec/archive/358-parity-check/change.md;
+openspec/archive/965-shadow-parity-window/change.md.
 """
 
 from __future__ import annotations
