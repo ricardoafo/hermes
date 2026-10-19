@@ -20,7 +20,9 @@ Invariants protected here (issue #408, ADR-007 Tier 3):
   while down are caught up, nothing is re-notified;
 - a skipped live bar stops the loop with exit 1, and the restart reconciles
   the ledger to the uninterrupted run;
-- ``hermes status --json`` over the resulting ledger matches its snapshot.
+- ``hermes status --json`` over the resulting ledger matches its snapshot;
+- with real money and USDT off its peg, the depeg halt reads the polled
+  price and no position opens (#1158).
 """
 
 from __future__ import annotations
@@ -39,6 +41,7 @@ import pytest
 from structlog.testing import capture_logs
 from syrupy.assertion import SnapshotAssertion
 
+from hermes.application.live_risk_inputs import StablePriceWatch
 from hermes.application.notification_router import RouterConfig
 from hermes.application.signal_notifier import SignalNotifier
 from hermes.application.status import UnitState
@@ -205,8 +208,24 @@ class _DepthDownFrom(_RecordedBooks):
         return await super().snapshot(pair)
 
 
+def _pinned_usdt(usdt: Decimal, clock: FakeClock) -> StablePriceWatch:
+    """Return a USDT watch already holding ``usdt``, fresh for the whole recording.
+
+    The replay crosses twenty days in about a second, so a watch polling on
+    wall seconds would go stale between two bars; this one never does, and
+    its first reading is in before the first bar.
+    """
+    watch = StablePriceWatch(fetch=lambda: usdt, clock=clock, max_age=timedelta(days=365))
+    asyncio.run(watch.poll_once())
+    return watch
+
+
 def _boot(
-    db: Path, feed: ReplayFeed, channel: RecordingChannel, books: _RecordedBooks | None = None
+    db: Path,
+    feed: ReplayFeed,
+    channel: RecordingChannel,
+    books: _RecordedBooks | None = None,
+    usdt: Decimal | None = None,
 ) -> serve_module.Composition:
     """Build the production composition over ``db`` with the replay feed and clock.
 
@@ -214,9 +233,15 @@ def _boot(
     channel stands in for Telegram. Depth comes from the recording and FX from
     one fixed rate for every day of it, so no call reaches Binance or the FX
     service (#620, #637). Everything else is what ``hermes serve`` wires.
+
+    ``usdt`` boots the real-money path (``allow_mainnet``) with that USDT
+    price polled (#1158). Its live-approval gate in ``check_startup`` is
+    skipped: no certification record exists here, and no exchange is wired.
     """
     config = load_config(PROJECT_ROOT / "config", env={})
     serve_module.check_startup(config, env={})
+    if usdt is not None:
+        config = config.model_copy(update={"allow_mainnet": True})
     composition = serve_module.build_composition(
         config,
         db_path=db,
@@ -226,6 +251,7 @@ def _boot(
         orderbooks=books if books is not None else _RecordedBooks(feed.clock),
         fx=_fixed_eur_rate(),
         new_ledger=True,
+        stable_watch=None if usdt is None else _pinned_usdt(usdt, feed.clock),
     )
     return dataclasses.replace(
         composition, signal_notifier=SignalNotifier(RouterConfig(telegram=channel, slack=None))
@@ -238,12 +264,14 @@ def _serve(
     boot_at: datetime,
     live: Sequence[Bar] | None = None,
     depth: Callable[[FakeClock], _RecordedBooks] | None = None,
+    usdt: Decimal | None = None,
 ) -> tuple[int, RecordingChannel]:
     """Boot at ``boot_at`` and serve until the replay idles or the run fails.
 
     Warm-up sees every bar delivered by ``boot_at``; ``live`` defaults to every
     bar delivered after it. ``depth`` builds the depth source on the replay
-    clock; it defaults to :class:`_RecordedBooks`.
+    clock; it defaults to :class:`_RecordedBooks`. ``usdt`` boots the
+    real-money path with that USDT price.
 
     Returns:
         The exit code of :func:`serve_module.run` and the channel it notified.
@@ -256,7 +284,7 @@ def _serve(
     books = depth(clock) if depth is not None else None
     started = time.perf_counter()
     code = asyncio.run(
-        drive(_boot(db, feed, channel, books), feed, timeout=serve_budget(len(live_bars)))
+        drive(_boot(db, feed, channel, books, usdt), feed, timeout=serve_budget(len(live_bars)))
     )
     SERVE_TIMINGS.append((len(live_bars), time.perf_counter() - started))
     return code, channel
@@ -461,3 +489,21 @@ def test_depth_outage_lets_open_positions_exit_but_blocks_new_entries(tmp_path: 
         0,
         [("SOL/USDT", "BUY"), ("BTC/USDT", "BUY"), ("BTC/USDT", "SELL"), ("SOL/USDT", "SELL")],
     )
+
+
+# SEV-1: S12 — with real money the depeg halt must read the polled USDT price (#1158).
+def test_real_money_with_usdt_off_its_peg_opens_no_position(tmp_path: Path) -> None:
+    """USDT at $0.96 is 4% off the peg: RO-06 halts every entry, so nothing trades.
+
+    The same recording opens five positions in shadow
+    (:func:`test_serve_on_recorded_bars_records_notifies_and_logs_exactly_the_pinned_signals`).
+    """
+    db = tmp_path / "ledger.sqlite3"
+
+    with capture_logs() as logs:
+        code, _ = _serve(db, boot_at=LIVE_FROM, usdt=Decimal("0.96"))
+
+    depeg_halts = [
+        line for line in logs if (line["event"], line.get("rule")) == ("risk_overlay_halt", "RO-06")
+    ]
+    assert (code, _ledger_trades(db), bool(depeg_halts)) == (0, [], True)
