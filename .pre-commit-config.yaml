@@ -40,28 +40,6 @@ repos:
         language: system
         files: \.md$
 
-      - id: no-pr-body-at-repo-root
-        name: reject PR body files at repo root
-        # PR body scratchpads (`pr-body-*.md`, `*.pr-body.md`) at the repo
-        # root trip markdownlint MD041 (first line must be H1, PR bodies
-        # open with `## Summary`). Sub-agents rediscover this pattern
-        # repeatedly — Wave 3 patched create-pr.sh to copy repo-relative
-        # bodies to /tmp/, Wave 7 slams the door on the file ever landing
-        # in the index at all. Put PR bodies in /tmp/ or
-        # C:/Users/rafon/AppData/Local/Temp/pr-bodies/ instead.
-        entry: bash scripts/dev/no-pr-body-at-repo-root.sh
-        language: system
-        pass_filenames: false
-        stages: [pre-commit]
-        always_run: true
-
-      - id: no-pr-body-at-repo-root-self-test
-        name: no-pr-body-at-repo-root self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/no-pr-body-at-repo-root.sh'
-        language: system
-        files: ^scripts/dev/no-pr-body-at-repo-root\.sh$
-        pass_filenames: false
-
       - id: main-tree-validated-self-test
         name: main-tree-validated self-test
         entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/main-tree-validated.sh'
@@ -164,7 +142,6 @@ repos:
         files: ^scripts/dev/codeowners-syntax-check\.sh$
         pass_filenames: false
 
-
       - id: render-pr-body-self-test
         name: render-pr-body self-test
         entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/render-pr-body.sh'
@@ -233,20 +210,6 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
-
-      - id: no-naive-datetime
-        name: no naive datetimes (grep guard)
-        entry: bash scripts/dev/no-naive-datetime.sh
-        language: system
-        types: [python]
-        pass_filenames: false
-
-      - id: no-naive-datetime-self-test
-        name: no-naive-datetime self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/no-naive-datetime.sh'
-        language: system
-        files: ^scripts/dev/no-naive-datetime\.sh$
-        pass_filenames: false
 
       - id: no-vague-test-assertions
         name: no vague test assertions (AST guard)

@@ -7,8 +7,7 @@
 # Referenced by scripts/dev/license-check.py — package name (case-
 # insensitive) matches exempt the license check.
 #
-# Every exception requires yearly re-review (parallel to known_advisories.yaml
-# quarterly re-audit for CVEs).
+# Every exception requires yearly re-review.
 #
 # Format:
 #   exceptions:

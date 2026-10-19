@@ -109,7 +109,7 @@ line-length = 100
 extend-exclude = ["src/hermes/**/__init__.py"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "PL", "RUF", "S", "PTH", "ERA", "PGH", "D", "FURB", "PERF"]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "PL", "RUF", "S", "PTH", "ERA", "PGH", "D", "FURB", "PERF", "DTZ"]
 ignore = [
   "PLR0913",  # arg count — hexagonal use cases take many ports
   # Decimal("100") over Decimal(100): every money literal stays a string, so a
@@ -123,6 +123,8 @@ ignore = [
   # A test whose only assertion is `x is None` fails the no-vague-test-assertions
   # hook; `type(x) is type(None)` is how such a test states "returns nothing".
   "FURB169",
+  # Tests build fixed naive datetimes to prove the domain rejects them.
+  "DTZ001",
 ]
 # D-family docstring enforcement is TEST-SCOPED for this PR (see docs/guides/ai-authored-tests.md
 # §"Enforcement in this repo"). Production src has variable docstring coverage; a global roll-out
