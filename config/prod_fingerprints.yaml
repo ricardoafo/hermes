@@ -1,0 +1,21 @@
+# SHA-256 fingerprints of prod's notifier, heartbeat and error-report values
+# (ADR-024 §4, #970).
+#
+# Every tier but prod refuses a value whose fingerprint is listed here, and
+# names the variable, so a value copied from prod's env file into staging's
+# stops staging at start and at install. The values themselves never appear
+# here or anywhere in the repo; a fingerprint of a long random token or URL
+# gives the value away to no one.
+#
+# Fill or refresh this file after each rotation with, on prod's machine:
+#
+#   sudo /opt/hermes/current/.venv/bin/hermes config fingerprint \
+#       --env-file /etc/hermes/env.production
+#
+# and paste its output below. A rotation may keep the old fingerprint beside
+# the new one until the old value is revoked. Only these variables may be
+# listed: HERMES_TELEGRAM__BOT_TOKEN, HERMES_SLACK__BOT_TOKEN,
+# HERMES_HEALTHCHECKS__PING_URL, HERMES_HEALTHCHECKS__DAILY_PING_URL,
+# HERMES_HEALTHCHECKS__ARCHIVE_CHECK_PING_URL, HERMES_SENTRY__DSN.
+
+fingerprints: {}

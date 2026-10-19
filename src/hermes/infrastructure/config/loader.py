@@ -62,6 +62,10 @@ from hermes.infrastructure.config.models import (
     StrategiesConfig,
     TaxGuardConfig,
 )
+from hermes.infrastructure.config.prod_fingerprints import (
+    ProdFingerprints,
+    load_prod_fingerprints,
+)
 from hermes.infrastructure.config.root import LOOPBACK_TIERS, EndpointTierError, HermesConfig
 
 __all__ = [
@@ -429,7 +433,8 @@ def load_config(
         ConfigError: Any of the YAML files is missing, malformed, or fails
             schema validation. The message identifies the offending file and
             the pydantic validation error. Also raised when the tier is prod
-            and ``config_dir`` is relative.
+            and ``config_dir`` is relative, and outside prod when
+            ``prod_fingerprints.yaml`` is malformed.
     """
     base = config_dir if config_dir is not None else DEFAULT_CONFIG_DIR
     if env is None:
@@ -513,6 +518,8 @@ def load_config(
         env=env_snapshot,
     )
 
+    # Prod checks against nothing, so a bad fingerprint file never stops it.
+    prod_fingerprints = None if _is_prod(env_snapshot) else load_prod_fingerprints(base)
     root_kwargs = _root_env_kwargs(env_snapshot)
     try:
         config = HermesConfig(
@@ -538,10 +545,10 @@ def load_config(
             raise ConfigError(f"HermesConfig validation failed: {_describe(exc)}") from exc
         problems = [
             *endpoint_error.problems,
-            *env_tier_problems(endpoint_error.env, env_snapshot),
+            *env_tier_problems(endpoint_error.env, env_snapshot, prod_fingerprints),
         ]
         raise _tier_error(endpoint_error.env, problems) from exc
-    problems = env_tier_problems(config.env, env_snapshot)
+    problems = env_tier_problems(config.env, env_snapshot, prod_fingerprints)
     if problems:
         raise _tier_error(config.env, problems)
     return config
@@ -560,7 +567,11 @@ def _tier_error(tier: str, problems: list[str]) -> TierError:
     return TierError(f"HERMES_ENV={tier}: " + "; ".join(problems), problems=tuple(problems))
 
 
-def env_tier_problems(tier: str, env: Mapping[str, str]) -> list[str]:
+def env_tier_problems(
+    tier: str,
+    env: Mapping[str, str],
+    prod_fingerprints: ProdFingerprints | None = None,
+) -> list[str]:
     """Return how the env-only settings break the tier's rules (ADR-024 §4, #970).
 
     The YAML-backed endpoints are checked by :class:`HermesConfig`; these
@@ -570,6 +581,8 @@ def env_tier_problems(tier: str, env: Mapping[str, str]) -> list[str]:
     Args:
         tier: The validated ``HERMES_ENV``.
         env: Env-var snapshot.
+        prod_fingerprints: Prod's value fingerprints, which every other tier
+            refuses; ``None`` checks none.
 
     Returns:
         The problems found; empty when the environment fits the tier.
@@ -590,4 +603,9 @@ def env_tier_problems(tier: str, env: Mapping[str, str]) -> list[str]:
             problems.append(f"{name} points at a loopback host, which only {allowed} may use")
         elif tier == "prod" and value.rstrip("/") != default:
             problems.append(f"{name} is not the default endpoint, which prod requires")
+    if tier != "prod" and prod_fingerprints is not None:
+        problems += [
+            f"{name} matches a prod value, which only prod may use"
+            for name in prod_fingerprints.matching(env)
+        ]
     return problems

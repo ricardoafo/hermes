@@ -42,7 +42,7 @@ from hermes.infrastructure.config.errors import ConfigError, TierError
 from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
 from hermes.infrastructure.config.root import HermesConfig
 
-__all__ = ["Finding", "main"]
+__all__ = ["Finding", "main", "read_env_file"]
 
 USAGE: Final = "Usage: hermes config check [--config-dir DIR] [--env-file PATH|-] [--json]"
 _EXIT_CODES: Final = "Exit codes: 0 clean, 1 findings, 2 usage, 3 config could not be read."
@@ -110,7 +110,7 @@ def main(
     snapshot = None if env is None else dict(env)
     if parsed.env_file is not None:
         try:
-            snapshot = _read_env_file(parsed.env_file, sys.stdin if stdin is None else stdin)
+            snapshot = read_env_file(parsed.env_file, sys.stdin if stdin is None else stdin)
         except (OSError, UnicodeDecodeError) as exc:
             reason = exc.strerror if isinstance(exc, OSError) else "not UTF-8"
             err.write(f"ERROR: env file could not be read: {reason}\n")
@@ -128,10 +128,21 @@ def main(
     return _report(findings, parsed.json, stream)
 
 
-def _read_env_file(path: str, stdin: TextIO) -> dict[str, str]:
+def read_env_file(path: str, stdin: TextIO) -> dict[str, str]:
     """Parse an env file without expanding ``${VAR}``, as systemd reads it.
 
     A key with no ``=`` has no value and is left out.
+
+    Args:
+        path: The file, or ``-`` for ``stdin``.
+        stdin: Where ``-`` reads from.
+
+    Returns:
+        Each variable's value.
+
+    Raises:
+        OSError: The file cannot be opened.
+        UnicodeDecodeError: The file is not UTF-8.
     """
     if path == "-":
         values = dotenv_values(stream=stdin, interpolate=False)
