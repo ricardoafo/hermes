@@ -22,9 +22,12 @@ Paper-trading is the FOUNDATIONAL subsystem of hermes. Every substantive design 
 
 ## Synthesis
 
-| # | Focus                                                                                          | File                         | Engram topic key                   | Status  |
-|---|------------------------------------------------------------------------------------------------|------------------------------|------------------------------------|---------|
-| — | Synthesis: reconciled architecture, 20-decision ADR outline, 7 focused specs, 8 open decisions | [SYNTHESIS.md](SYNTHESIS.md) | `research/paper-trading-synthesis` | ✅ Done |
+| # | Focus                                                                                          | File                                                         | Engram topic key                   | Status  |
+|---|------------------------------------------------------------------------------------------------|--------------------------------------------------------------|------------------------------------|---------|
+| — | Synthesis: reconciled architecture, 20-decision ADR outline, 7 focused specs, 8 open decisions | [SYNTHESIS.md](SYNTHESIS.md)                                 | `research/paper-trading-synthesis` | ✅ Done |
+| — | Synthesis amendment: additions to the synthesis after review, additive only                    | [SYNTHESIS-AMENDMENT.md](SYNTHESIS-AMENDMENT.md)             | —                                  | Draft   |
+| — | Spec-readiness audit of the 9 specs the synthesis proposed                                     | [spec-readiness.md](spec-readiness.md)                       | —                                  | ✅ Done |
+| — | Prior art: pre-registration discipline in quantitative finance before pre-registration v1      | [prior-art-preregistration.md](prior-art-preregistration.md) | —                                  | ✅ Done |
 
 Drives the paper-trading ADR + focused specs.
 

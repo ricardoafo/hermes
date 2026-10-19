@@ -9,7 +9,7 @@ adapter imports no entrypoint. It only reads; it never flips a link.
 
 Off the VPS there is no ``versions`` directory and the reader returns ``None``.
 
-Reference: openspec/changes/717-system-screen/change.md.
+Reference: openspec/archive/717-system-screen/change.md.
 """
 
 from collections.abc import Callable

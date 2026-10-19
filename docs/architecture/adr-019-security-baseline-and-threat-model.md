@@ -1,7 +1,7 @@
 # ADR-019: Security baseline and threat model — what Hermes protects, from whom, and the controls that answer each threat
 
 **Date**: 2026-10-06
-**Status**: Proposed — Accepted when the Code Owner merges it
+**Status**: Accepted (merged in PR #787)
 **Deciders**: Ricardo Afonso (product owner), Claude (proposer)
 **Supersedes**: none. It builds on [ADR-010](adr-010-dependency-management-and-supply-chain.md) (supply chain),
 [ADR-014](adr-014-pre-registration-binds-real-capital.md) (real capital) and ADR-018 (CI/CD infrastructure, where the

@@ -15,7 +15,7 @@ Display only: nothing here is written anywhere, and no engine, supervisor or
 notification code imports this module (import-linter contract
 ``live-prices-are-console-only``).
 
-Reference: openspec/changes/713-live-ticker/change.md.
+Reference: openspec/archive/713-live-ticker/change.md.
 """
 
 from __future__ import annotations

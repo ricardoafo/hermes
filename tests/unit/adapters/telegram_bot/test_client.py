@@ -45,7 +45,9 @@ _UPDATES = {
 _SENT = {"ok": True, "result": {"message_id": 8}}
 
 
-class _Clock:
+class _MonotonicClock:
+    """Seconds since an arbitrary start, with a recorded ``sleep`` that moves it on."""
+
     def __init__(self) -> None:
         self.now = 1000.0
         self.slept: list[float] = []
@@ -58,8 +60,8 @@ class _Clock:
         self.now += seconds
 
 
-def _client(clock: _Clock | None = None) -> TelegramBotClient:
-    clk = clock or _Clock()
+def _client(clock: _MonotonicClock | None = None) -> TelegramBotClient:
+    clk = clock or _MonotonicClock()
     return TelegramBotClient(
         token=SecretStr(_TOKEN), client=httpx.Client(), clock=clk, sleep=clk.sleep
     )
@@ -145,7 +147,7 @@ def test_a_network_error_raises_without_the_token_or_its_url() -> None:
 def test_sends_wait_one_second_apart_and_twenty_per_minute() -> None:
     """Back-to-back sends wait 1 s each; the 21st waits for the minute to roll."""
     respx.post(f"{_BASE}/sendMessage").mock(return_value=httpx.Response(200, json=_SENT))
-    clock = _Clock()
+    clock = _MonotonicClock()
     client = _client(clock)
 
     for _ in range(21):

@@ -3,7 +3,7 @@
 Verifies bare ``hermes config`` and unknown subcommands exit 2, ``-h`` exits 0
 and ``check`` reaches :mod:`hermes.entrypoints.config_check`.
 
-Reference: openspec/changes/537-config-check/change.md.
+Reference: openspec/archive/537-config-check/change.md.
 """
 
 from __future__ import annotations

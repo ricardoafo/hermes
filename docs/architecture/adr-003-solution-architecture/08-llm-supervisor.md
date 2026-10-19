@@ -3,6 +3,7 @@
 **Parent ADR**: [README.md](./README.md)
 **Status**: Accepted
 **Accepted**: 2026-08-21
+**Superseded in part by**: [ADR-012](../adr-012-continuous-ai-evaluation.md) (the unrealized-P&L item in "Sees" until certification, D-06; the "Phased rollout" rule that no LLM layer runs before Phase 3, D-07)
 
 ## Question this section answers
 

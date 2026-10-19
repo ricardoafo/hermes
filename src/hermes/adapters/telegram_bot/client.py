@@ -11,7 +11,7 @@
 The token is held as a ``SecretStr`` and never appears in errors or logs: the
 error text names the method and status only.
 
-Reference: openspec/changes/379-telegram-bot/change.md (D-4, D-5).
+Reference: openspec/archive/379-telegram-bot/change.md (D-4, D-5).
 """
 
 from __future__ import annotations

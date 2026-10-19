@@ -21,6 +21,7 @@ import httpx
 import pytest
 import respx
 
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.adapters.exchanges.kraken_public import KrakenPublicAdapter, KrakenPublicConfig
 from hermes.adapters.exchanges.kraken_spot import (
     KRAKEN_BASE_URL,
@@ -29,7 +30,6 @@ from hermes.adapters.exchanges.kraken_spot import (
     OrderUnreadError,
     sign,
 )
-from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.domain.errors import ExchangeError, NetworkError
 from hermes.domain.trading.fill import Fill, Rejection
 from hermes.domain.trading.order import Order, OrderSide
@@ -39,8 +39,9 @@ from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.ports.exchange import ExchangePort, StopLossPort
 from tests.support.mainnet_permit import issued_permit
+from tests.support.paths import REPO_ROOT
 
-_FIXTURES = Path(__file__).resolve().parents[3] / "fixtures" / "kraken_spot"
+_FIXTURES = REPO_ROOT / "tests" / "fixtures" / "kraken_spot"
 _PRIVATE = f"{KRAKEN_BASE_URL}/0/private"
 _BTC = Pair(base=Currency.BTC, quote=Currency.USDT)
 _NOW_MS = 1_790_000_000_000

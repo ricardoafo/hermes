@@ -11,7 +11,7 @@ supervisor, briefs, notifications or any AI. Import-linter contract
 ``live-prices-are-console-only`` keeps engine, supervisor and notification code
 from importing this module.
 
-Reference: openspec/changes/713-live-ticker/change.md (D-1, D-6).
+Reference: openspec/archive/713-live-ticker/change.md (D-1, D-6).
 """
 
 from __future__ import annotations

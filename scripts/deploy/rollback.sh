@@ -39,8 +39,8 @@
 # Test seams: HERMES_ROOT, SYSTEMCTL, HERMES_DB, RUNUSER, HERMES_SCHEMA_PYTHON
 # (health_gate.sh adds its own).
 #
-# Reference: openspec/changes/179-cd-first-real-deploy/change.md (D-6),
-# openspec/changes/192-staging-env/change.md (D-3).
+# Reference: openspec/archive/179-cd-first-real-deploy/change.md (D-6),
+# openspec/archive/192-staging-env/change.md (D-3).
 
 set -euo pipefail
 

@@ -23,7 +23,7 @@ supervisor, briefs, notifications or any AI. Import-linter contract
 from importing this module; the shared renderers in ``render.py`` never import
 it either.
 
-Reference: openspec/changes/713-live-ticker/change.md (D-2 to D-6).
+Reference: openspec/archive/713-live-ticker/change.md (D-2 to D-6).
 """
 
 from __future__ import annotations
@@ -399,11 +399,13 @@ class LiveTotal:
         total: Cash plus every open position at its live price, EUR.
         change: The range's change with the open positions at live prices, EUR.
         change_pct: That change as a percentage of the range's starting value.
+        invested: EUR in the open positions at their live prices.
     """
 
     total: Decimal
     change: Decimal
     change_pct: Decimal
+    invested: Decimal
 
 
 def live_total(
@@ -431,4 +433,9 @@ def live_total(
     change = summary.change + delta
     start = summary.total_value - summary.change
     pct = change * _HUNDRED / start if start > 0 else _ZERO
-    return LiveTotal(total=summary.total_value + delta, change=change, change_pct=pct)
+    return LiveTotal(
+        total=summary.total_value + delta,
+        change=change,
+        change_pct=pct,
+        invested=summary.invested + delta,
+    )

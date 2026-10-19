@@ -10,7 +10,7 @@ tests pin that reading:
   - no candidate pair → OK (rule skipped)
   - a coefficient missing from the map counts as uncorrelated
 
-Reference: pre-registration-v1.md §5.5; openspec/changes/822-portfolio-backtest D-2.
+Reference: pre-registration-v1.md §5.5; openspec/archive/822-portfolio-backtest D-2.
 """
 
 from __future__ import annotations

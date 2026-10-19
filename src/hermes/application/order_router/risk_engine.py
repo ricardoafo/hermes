@@ -120,7 +120,7 @@ class RiskEngine:
             ok = RiskDecision(action=RiskAction.OK, reason="RiskEngine: no rules configured — OK")
             return RiskEngineResult(worst=ok, decisions=[ok])
 
-        worst = max(decisions, key=lambda d: _severity(d.action))
+        worst = max(decisions, key=lambda d: d.action.severity)
         return RiskEngineResult(worst=worst, decisions=decisions)
 
     def check_budget(
@@ -174,15 +174,3 @@ class RiskEngine:
                 f"{total!r} ≤ {budget.amount!r} {budget.currency}."
             ),
         )
-
-
-def _severity(action: RiskAction) -> int:
-    """Map :class:`~hermes.domain.risk.types.RiskAction` to a numeric severity.
-
-    Args:
-        action: The risk action to map.
-
-    Returns:
-        Integer severity: OK=0, WARN=1, HALT=2.
-    """
-    return {RiskAction.OK: 0, RiskAction.WARN: 1, RiskAction.HALT: 2}[action]

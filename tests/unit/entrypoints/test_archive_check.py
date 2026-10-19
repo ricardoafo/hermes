@@ -27,8 +27,9 @@ from hermes.domain.value_objects.pair import Pair
 from hermes.entrypoints import archive_check as module
 from hermes.entrypoints import cli
 from tests.support.anomaly_rows import recorded_anomalies
+from tests.support.paths import REPO_ROOT
 
-_PROJECT_CONFIG = Path(__file__).resolve().parents[3] / "config"
+_PROJECT_CONFIG = REPO_ROOT / "config"
 
 
 class _EmptyArchive:

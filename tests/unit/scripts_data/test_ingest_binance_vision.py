@@ -16,8 +16,10 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-_SCRIPTS = Path(__file__).resolve().parents[3] / "scripts" / "data"
-_MANIFEST = Path(__file__).resolve().parents[3] / "docs/experiments/swing-mvp1/data-manifest.json"
+from tests.support.paths import REPO_ROOT
+
+_SCRIPTS = REPO_ROOT / "scripts" / "data"
+_MANIFEST = REPO_ROOT / "docs/experiments/swing-mvp1/data-manifest.json"
 
 
 def _import_ingest() -> ModuleType:

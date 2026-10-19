@@ -11,7 +11,7 @@ Thread safety: an internal :class:`threading.Lock` guards the internal
 calibration or replay orchestration).
 
 Reference: SA-8 §4.1 S-01, NautilusTrader ``TestClock`` pattern,
-openspec/changes/spec-4a-clock-port/change.md D-4 (monotonicity policy).
+openspec/archive/spec-4a-clock-port/change.md D-4 (monotonicity policy).
 """
 
 from __future__ import annotations

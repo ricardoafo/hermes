@@ -62,7 +62,6 @@ def _repo(tmp_path: Path, version: str = "0.0.0") -> Path:
     (frags / "20-added.md").write_text("- Fragment feature twenty.\n", encoding="utf-8")
     (frags / "10-fixed.md").write_text("- Fragment fix ten.\n", encoding="utf-8")
     (frags / "README.md").write_text("# Fragments\n", encoding="utf-8")
-    (frags / "wave-old.md").write_text("Legacy note.\n", encoding="utf-8")
     return tmp_path
 
 
@@ -234,7 +233,7 @@ def test_cut_updates_versions_changelog_and_fragments(tmp_path: Path) -> None:
     assert "## [Unreleased]\n\n## [0.2.0] - 2026-10-06\n" in (root / "CHANGELOG.md").read_text(
         encoding="utf-8"
     )
-    assert sorted(p.name for p in (root / "changelog.d").iterdir()) == ["README.md", "wave-old.md"]
+    assert sorted(p.name for p in (root / "changelog.d").iterdir()) == ["README.md"]
 
 
 def test_cut_writes_a_pr_body_whose_engine_line_must_be_filled(tmp_path: Path) -> None:
@@ -342,6 +341,111 @@ def test_a_cut_adr_027_refuses_changes_nothing(tmp_path: Path, argv: list[str]) 
 
     code = cut_release.main(
         [*argv, "--root", str(root), "--no-lock", "--body-out", str(tmp_path / "body.md")]
+    )
+
+    assert code == 2
+    assert {p: p.read_bytes() for p in root.rglob("*") if p.is_file()} == before
+
+
+@pytest.mark.parametrize(
+    ("current", "sections", "engine", "expected"),
+    [
+        ("0.2.0", {"Fixed"}, "no", "0.2.1"),
+        ("0.2.3", {"Fixed", "Security"}, "no", "0.2.4"),
+        ("0.2.3", {"Fixed"}, "yes", "0.3.0"),
+        ("0.2.3", {"Fixed", "Added"}, "no", "0.3.0"),
+        ("0.2.3", {"Changed"}, "no", "0.3.0"),
+        ("1.0.0a1", {"Fixed"}, "no", "0.1.1"),
+        ("1.0.0a1", {"Added"}, "no", "0.2.0"),
+        ("1.4.2", {"Security"}, "no", "1.4.3"),
+    ],
+)
+def test_next_version_follows_the_entry_types(
+    current: str, sections: set[str], engine: str, expected: str
+) -> None:
+    """Fix-only entries with no engine change are a PATCH; anything else a MINOR (ADR-028)."""
+    assert cut_release.next_version(current, sections, engine_change=engine) == expected
+
+
+def test_next_version_refuses_an_empty_release() -> None:
+    """No entries since the last cut means no release PR (ADR-028)."""
+    with pytest.raises(ValueError, match="nothing to release"):
+        cut_release.next_version("0.2.0", set(), engine_change="no")
+
+
+@given(st.integers(0, 9), st.integers(0, 30), st.integers(0, 30), st.sampled_from(["yes", "no"]))
+def test_next_version_always_passes_the_cut_checks(
+    minor: int, patch: int, extra: int, engine: str
+) -> None:
+    """A picked version is newer and never breaks the engine-change rule."""
+    current = f"0.{minor + 1}.{patch}"
+    sections = {"Fixed"} if extra % 2 else {"Added"}
+    new = cut_release.next_version(current, sections, engine_change=engine)
+
+    cut_release.check_newer(current, new)
+    cut_release.check_bump(current, new, engine_change=engine, real_capital=False)
+
+
+def test_entry_sections_counts_hand_written_and_fragment_entries() -> None:
+    """Both the [Unreleased] block and the fragments decide the bump."""
+    sections = cut_release.entry_sections(
+        _CHANGELOG, {"Fixed": [(10, "- A fix.\n")], "Security": []}
+    )
+
+    assert sections == {"Added", "Notes", "Fixed"}
+
+
+def test_next_cut_from_fix_only_fragments_is_a_patch(tmp_path: Path) -> None:
+    """--next with only Fixed fragments and engine no cuts the next PATCH."""
+    root = _repo(tmp_path, version="0.2.0")
+    (root / "CHANGELOG.md").write_text(
+        "# Changelog\n\n## [Unreleased]\n\n[Unreleased]: https://example.invalid\n",
+        encoding="utf-8",
+    )
+    (root / "changelog.d" / "20-added.md").unlink()
+
+    code = cut_release.main(
+        [
+            "--next",
+            "--engine-change",
+            "no",
+            "--root",
+            str(root),
+            "--no-lock",
+            "--body-out",
+            str(tmp_path / "body.md"),
+        ]
+    )
+
+    assert code == 0
+    assert 'version = "0.2.1"' in (root / "pyproject.toml").read_text(encoding="utf-8")
+
+
+def test_next_without_an_engine_answer_is_a_usage_error(tmp_path: Path) -> None:
+    """--next cannot pick a bump without the engine line."""
+    root = _repo(tmp_path, version="0.2.0")
+
+    with pytest.raises(SystemExit) as exit_info:
+        cut_release.main(["--next", "--root", str(root), "--no-lock"])
+
+    assert exit_info.value.code == 2
+
+
+def test_a_note_the_aggregator_cannot_read_stops_the_cut(tmp_path: Path) -> None:
+    """A changelog.d file outside the fragment names exits 2 and changes nothing (#1172)."""
+    root = _repo(tmp_path)
+    (root / "changelog.d" / "wave-old.md").write_text("- Legacy note.\n", encoding="utf-8")
+    before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
+
+    code = cut_release.main(
+        [
+            "0.2.0",
+            "--root",
+            str(root),
+            "--no-lock",
+            "--body-out",
+            str(tmp_path / "body.md"),
+        ]
     )
 
     assert code == 2

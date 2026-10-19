@@ -122,3 +122,9 @@ def test_any_accepted_http_base_is_loopback(host: str, port: int) -> None:
         assert not is_loopback(url)
     else:
         assert is_loopback(url)
+
+
+@pytest.mark.parametrize("url", ["http://[::1", "http://[not-an-ip]:80", ""])
+def test_a_url_that_does_not_parse_is_not_loopback(url: str) -> None:
+    """A malformed URL is never treated as a local fake, and does not raise."""
+    assert is_loopback(url) is False

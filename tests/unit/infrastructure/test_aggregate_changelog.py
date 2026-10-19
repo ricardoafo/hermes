@@ -3,7 +3,9 @@
 Protects the wave-4 fragment-based changelog aggregation invariants:
 - Multiple fragments merge under the correct section, ordered by PR number.
 - Empty directory yields just the header (no sections).
-- Non-numeric-prefixed files are skipped (placeholder convention).
+- A file that is not a fragment name is refused, so no entry is dropped (#1172).
+- Every file in the real ``changelog.d/`` is a fragment the aggregator reads.
+- A fragment is exactly one top-level bullet with no headers.
 - Invalid type suffix raises ValueError with a diagnostic path.
 - ``--apply`` rewrites the [Unreleased] block in place without touching the
   rest of CHANGELOG.md byte-for-byte.
@@ -17,9 +19,11 @@ from pathlib import Path
 
 import pytest
 
+from tests.support.paths import REPO_ROOT
+
 # Import the script as a module. Its filename contains a hyphen so it is
 # not importable with plain `import`.
-_SCRIPT_PATH = Path(__file__).resolve().parents[3] / "scripts" / "dev" / "aggregate-changelog.py"
+_SCRIPT_PATH = REPO_ROOT / "scripts" / "dev" / "aggregate-changelog.py"
 _spec = importlib.util.spec_from_file_location("aggregate_changelog", _SCRIPT_PATH)
 assert _spec is not None and _spec.loader is not None
 aggregate_changelog = importlib.util.module_from_spec(_spec)
@@ -84,19 +88,27 @@ def test_missing_fragment_dir_returns_empty_sections(tmp_path: Path) -> None:
     assert all(v == [] for v in by_section.values())
 
 
-def test_non_numeric_prefix_is_skipped(tmp_path: Path) -> None:
-    """Placeholder files (non-numeric prefix) are ignored by aggregation."""
+def test_a_file_that_is_not_a_fragment_name_is_refused(tmp_path: Path) -> None:
+    """A note the aggregator cannot read stops the run instead of vanishing (#1172)."""
     frag_dir = tmp_path / "changelog.d"
     frag_dir.mkdir()
     (frag_dir / "wave-4-process-hardening.md").write_text(
-        "- Placeholder for a PR whose number is unknown.\n", encoding="utf-8"
+        "- A note named outside the convention.\n", encoding="utf-8"
     )
     (frag_dir / "132-added.md").write_text("- Real fragment. Closes #132.\n", encoding="utf-8")
 
-    by_section = aggregate_changelog.collect_fragments(frag_dir)
+    with pytest.raises(ValueError, match=r"wave-4-process-hardening\.md: not a fragment"):
+        aggregate_changelog.collect_fragments(frag_dir)
 
-    assert len(by_section["Added"]) == 1
-    assert by_section["Added"][0][0] == 132
+
+def test_every_file_in_the_repo_changelog_dir_is_a_fragment() -> None:
+    """Every note in changelog.d/ reaches the next release; none is skipped by its name (#1172)."""
+    frag_dir = _SCRIPT_PATH.parents[2] / "changelog.d"
+
+    by_section = aggregate_changelog.collect_fragments(frag_dir, resolve_pr=lambda _path: None)
+
+    names = {p.name for p in frag_dir.iterdir()} - {"README.md", ".gitkeep"}
+    assert sum(len(entries) for entries in by_section.values()) == len(names)
 
 
 def test_gitkeep_and_readme_are_skipped(tmp_path: Path) -> None:
@@ -210,3 +222,36 @@ def test_subject_without_squash_suffix_is_unresolved() -> None:
     subjects = ["feat(x): local commit", "fix(y): mention #12 in passing"]
     resolved = aggregate_changelog.pr_from_subjects(subjects)
     assert (resolved, len(subjects)) == (None, 2)
+
+
+@pytest.mark.parametrize(
+    ("body", "reason"),
+    [
+        ("- One note.\n- A second note.\n", "found 2"),
+        ("A note with no bullet.\n", "found 0"),
+        ("### Added\n\n- A note under a header.\n", "found 1"),
+        ("- A note.\n\n## Tests\n", "no headers"),
+    ],
+)
+def test_a_fragment_that_is_not_one_bullet_is_refused(
+    tmp_path: Path, body: str, reason: str
+) -> None:
+    """A fragment that would add a stray section or hide a second note stops the run (#1172)."""
+    frag_dir = tmp_path / "changelog.d"
+    frag_dir.mkdir()
+    (frag_dir / "132-added.md").write_text(body, encoding="utf-8")
+
+    with pytest.raises(ValueError, match=reason):
+        aggregate_changelog.collect_fragments(frag_dir)
+
+
+def test_nested_bullets_under_one_bullet_are_one_fragment(tmp_path: Path) -> None:
+    """Indented sub-bullets stay part of their note and are accepted as written."""
+    frag_dir = tmp_path / "changelog.d"
+    frag_dir.mkdir()
+    body = "- Parent note.\n  - Child detail.\n"
+    (frag_dir / "132-added.md").write_text(body, encoding="utf-8")
+
+    by_section = aggregate_changelog.collect_fragments(frag_dir)
+
+    assert by_section["Added"] == [(132, body)]

@@ -33,6 +33,7 @@ from typing import Final
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from returns.result import Failure
 
+from hermes.adapters.endpoint import is_loopback
 from hermes.application.execution.prereg_book import ExecutionModel, ExitPricing
 from hermes.application.order_router.sizing import SizingPolicy
 from hermes.application.strategy_protocol.strategy_factory import StrategyKind, strategy_kind
@@ -42,6 +43,8 @@ from hermes.domain.value_objects.pair import Pair
 from hermes.ports.strategy import StrategyPort
 
 __all__ = [
+    "DEFAULT_FRANKFURTER_BASE_URL",
+    "DEFAULT_KRAKEN_PUBLIC_BASE_URL",
     "BinanceExchangeConfig",
     "FeesConfig",
     "FrankfurterConfig",
@@ -193,6 +196,21 @@ class BinanceExchangeConfig(BaseModel):
     testnet: bool
 
 
+DEFAULT_FRANKFURTER_BASE_URL: Final = "https://api.frankfurter.dev/v1"
+DEFAULT_KRAKEN_PUBLIC_BASE_URL: Final = "https://api.kraken.com"
+
+
+def _https_or_loopback(value: str) -> str:
+    """Refuse a base URL that is neither ``https`` nor ``http`` on this machine.
+
+    Plain ``http`` elsewhere would carry requests in clear; a loopback fake
+    needs no certificate (ADR-024 decision 2, #970).
+    """
+    if value.startswith("https://") or (value.startswith("http://") and is_loopback(value)):
+        return value
+    raise ValueError(f"base_url {value!r} must be https://, or http:// on a loopback host")
+
+
 class FrankfurterConfig(BaseModel):
     """Root of ``config/frankfurter.yaml`` — official FX rate provider.
 
@@ -214,9 +232,15 @@ class FrankfurterConfig(BaseModel):
 
     model_config = _MODEL_CONFIG
 
-    base_url: str = Field(default="https://api.frankfurter.dev/v1", pattern=r"^https://")
+    base_url: str = Field(default=DEFAULT_FRANKFURTER_BASE_URL)
     timeout_sec: float = Field(default=10.0, gt=0)
     requests_per_minute: int = Field(default=60, gt=0, le=6000)
+
+    @field_validator("base_url")
+    @classmethod
+    def _scheme_is_safe(cls, value: str) -> str:
+        """Accept ``https``, or ``http`` on a loopback fake (tiers: :class:`HermesConfig`)."""
+        return _https_or_loopback(value)
 
 
 class KrakenPublicConfig(BaseModel):
@@ -243,10 +267,16 @@ class KrakenPublicConfig(BaseModel):
 
     model_config = _MODEL_CONFIG
 
-    base_url: str = Field(default="https://api.kraken.com", pattern=r"^https://")
+    base_url: str = Field(default=DEFAULT_KRAKEN_PUBLIC_BASE_URL)
     timeout_sec: float = Field(default=10.0, gt=0)
     requests_per_second: int = Field(default=1, gt=0, le=60)
     fees_cache_ttl_seconds: int = Field(default=86_400, ge=0, le=7 * 86_400)
+
+    @field_validator("base_url")
+    @classmethod
+    def _scheme_is_safe(cls, value: str) -> str:
+        """Accept ``https``, or ``http`` on a loopback fake (tiers: :class:`HermesConfig`)."""
+        return _https_or_loopback(value)
 
 
 # The only host the live closed-bar source may read. data-api.binance.vision
@@ -314,11 +344,18 @@ class MarketDataConfig(BaseModel):
     @field_validator("base_url")
     @classmethod
     def _host_is_allow_listed(cls, value: str) -> str:
-        """Accept only the public market-data host, with no trailing slash."""
+        """Accept only the public market-data host or a loopback fake, with no trailing slash.
+
+        Which tiers may use a loopback fake is :class:`HermesConfig`'s rule.
+        """
         normalised = value.rstrip("/")
-        if normalised not in _MARKET_DATA_ALLOWED_BASE_URLS:
+        fake = normalised.startswith(("http://", "https://")) and is_loopback(normalised)
+        if normalised not in _MARKET_DATA_ALLOWED_BASE_URLS and not fake:
             allowed = ", ".join(sorted(_MARKET_DATA_ALLOWED_BASE_URLS))
-            raise ValueError(f"base_url {value!r} is not an allowed market-data host ({allowed})")
+            raise ValueError(
+                f"base_url {value!r} is not an allowed market-data host ({allowed}) "
+                "or a loopback fake"
+            )
         return normalised
 
     @field_validator("pairs")
@@ -520,18 +557,23 @@ class FeesConfig(BaseModel):
 class TaxGuardConfig(BaseModel):
     """Root of ``config/tax_guard.yaml`` — LOPDGDD + tax thresholds.
 
+    Serve reads the four recharacterization fields on every daily close
+    (#1181); the other three are not read yet. The file is optional and every
+    field has a default (the ADR-002 starters).
+
     Two axes live under this model:
 
     - **PnL / concentration hygiene** — ``annual_realised_pnl_alert_eur``,
-      ``wash_sale_window_days``, ``max_position_pct_portfolio``. Used by the
-      annual-report + concentration guards.
+      ``wash_sale_window_days``, ``max_position_pct_portfolio``. Meant for
+      the annual-report and concentration guards, which do not read them yet.
     - **Recharacterization guard (ADR-002 §Decision 6)** — the rolling
       90-day window over trade count, distinct assets, and fee income that
       keeps the observable signals firmly on the "individual investor"
-      side of any plausible AEAT recharacterization line. Crossing any
-      threshold emits an ``AnomalyDetected``, which is recorded in the
-      ledger and notified only. Nothing pauses signal generation on it; a
-      pause on anomalies is pending the Code Owner's decision (issue #136).
+      side of any plausible AEAT recharacterization line. Serve evaluates
+      it once per daily close; crossing any threshold emits an
+      ``AnomalyDetected``, which is recorded in the ledger and notified
+      only. Nothing pauses signal generation on it; a pause on anomalies is
+      pending the Code Owner's decision (issue #136).
 
     Attributes:
         annual_realised_pnl_alert_eur: Absolute EUR gain in a calendar year
@@ -564,17 +606,22 @@ class TaxGuardConfig(BaseModel):
 
     model_config = _MODEL_CONFIG
 
-    annual_realised_pnl_alert_eur: Decimal = Field(gt=Decimal("0"))
-    wash_sale_window_days: int = Field(ge=1, le=365)
-    max_position_pct_portfolio: Decimal = Field(gt=Decimal("0"), le=Decimal("1"))
-    recharacterization_window_days: int = Field(ge=1, le=365)
-    trade_count_90d_max: int = Field(ge=1)
-    distinct_assets_90d_max: int = Field(ge=1)
-    fee_income_90d_max_eur: Decimal = Field(ge=Decimal("0"))
+    annual_realised_pnl_alert_eur: Decimal = Field(default=Decimal("1000"), gt=Decimal("0"))
+    wash_sale_window_days: int = Field(default=30, ge=1, le=365)
+    max_position_pct_portfolio: Decimal = Field(
+        default=Decimal("0.25"), gt=Decimal("0"), le=Decimal("1")
+    )
+    recharacterization_window_days: int = Field(default=90, ge=1, le=365)
+    trade_count_90d_max: int = Field(default=500, ge=1)
+    distinct_assets_90d_max: int = Field(default=12, ge=1)
+    fee_income_90d_max_eur: Decimal = Field(default=Decimal("0"), ge=Decimal("0"))
 
 
 class MLConfig(BaseModel):
     """Root of ``config/ml.yaml`` — ML/LLM subsystem configuration.
+
+    Reserved: the supervisor is not built yet, so no running code reads
+    these values. The file is optional and every field has a default.
 
     LLMs supervise and monitor per ADR-001 + ADR-005; they never emit trade
     signals. This config carries knobs for the supervisor role only.
@@ -591,7 +638,7 @@ class MLConfig(BaseModel):
 
     model_config = _MODEL_CONFIG
 
-    supervisor_model: str = Field(min_length=1)
-    temperature: Decimal = Field(ge=Decimal("0"), le=Decimal("2"))
-    max_tokens: int = Field(ge=1, le=200_000)
-    enabled: bool
+    supervisor_model: str = Field(default="claude-sonnet-4-7", min_length=1)
+    temperature: Decimal = Field(default=Decimal("0.2"), ge=Decimal("0"), le=Decimal("2"))
+    max_tokens: int = Field(default=4096, ge=1, le=200_000)
+    enabled: bool = True

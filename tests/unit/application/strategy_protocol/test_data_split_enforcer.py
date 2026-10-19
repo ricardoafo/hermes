@@ -18,7 +18,6 @@ import asyncio
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from pathlib import Path
 
 import pytest
 
@@ -34,6 +33,7 @@ from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.market_data.orderbook import Orderbook
 from hermes.domain.market_data.trade import Trade, TradeSide
 from hermes.domain.value_objects.pair import Pair
+from tests.support.paths import REPO_ROOT
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -106,11 +106,7 @@ class _FakeMarketDataPort:
 @pytest.fixture(scope="module")
 def pre_reg(tmp_path_factory: pytest.TempPathFactory) -> PreRegistration:
     """Return a PreRegistration instance pointed at the real repo file."""
-    here = Path(__file__).resolve().parent
-    for candidate in [here, *here.parents]:
-        if (candidate / "pyproject.toml").exists():
-            return PreRegistration(project_root=candidate)
-    pytest.skip("Could not find project root")
+    return PreRegistration(project_root=REPO_ROOT)
 
 
 def make_enforcer(ts: datetime, pre_reg: PreRegistration) -> DataSplitEnforcer:

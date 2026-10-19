@@ -5,7 +5,7 @@ direction (positive means the fill cost the strategy more), a fill exactly at
 the reference measures zero, and the two sides mirror each other. A sign error
 would let an adverse shadow fill look favourable to the SHADOW_CERTIFIED gate.
 
-Reference: openspec/changes/353-fill-kernel-in-serve/change.md D-4.
+Reference: openspec/archive/353-fill-kernel-in-serve/change.md D-4.
 """
 
 from __future__ import annotations

@@ -3,7 +3,7 @@
 Writes go to a temporary file in the same directory and replace the target, so
 a crash mid-write leaves the previous record intact.
 
-Reference: openspec/changes/355-certification-gates/change.md D-7.
+Reference: openspec/archive/355-certification-gates/change.md D-7.
 """
 
 from __future__ import annotations

@@ -42,12 +42,16 @@ def _step(job: str, name: str) -> dict[str, Any]:
 def _run(
     job: str, name: str, env: dict[str, str], cwd: Path, path_prefix: Path | None = None
 ) -> subprocess.CompletedProcess[str]:
-    """Run a step's shell with ``env`` on top of a minimal environment."""
+    """Run a step's shell with ``env`` on top of a minimal environment.
+
+    ``-e`` matches the runner's default ``bash -e {0}``: without it a non-zero exit in the middle of
+    a step goes unnoticed here and kills the step in CI.
+    """
     path = os.environ.get("PATH", "/usr/bin:/bin")
     if path_prefix is not None:
         path = f"{path_prefix}:{path}"
     return subprocess.run(  # noqa: S603 — fixed interpreter, the workflow's own script
-        ["bash", "-c", str(_step(job, name)["run"])],  # noqa: S607 — bash from PATH, as on the runner
+        ["bash", "-e", "-c", str(_step(job, name)["run"])],  # noqa: S607 — bash from PATH, as on the runner
         env={"PATH": path, **env},
         cwd=cwd,
         capture_output=True,
@@ -85,7 +89,7 @@ def test_candidates_run_one_after_another(job: str) -> None:
 
 
 def test_jobs_run_in_the_adr_026_order() -> None:
-    """Check, Train, Train judge, Validation, champion: each waits on the one before."""
+    """Check, Train, Train judge, Validation, champion, results: each waits on the ones before."""
     jobs = _workflow()["jobs"]
 
     assert {name: job.get("needs") for name, job in jobs.items()} == {
@@ -94,18 +98,106 @@ def test_jobs_run_in_the_adr_026_order() -> None:
         "judge-train": ["check", "train"],
         "validation": ["check", "judge-train"],
         "judge-validation": ["check", "judge-train", "validation"],
+        "results": ["check", "train", "judge-train", "validation", "judge-validation"],
     }
 
 
-def test_no_job_holds_a_write_token_or_a_secret() -> None:
-    """The backtest jobs keep contents: read and read no secret (ADR-023 §6, ADR-026 §6)."""
-    text = _WORKFLOW.read_text(encoding="utf-8")
+def test_only_the_results_job_reads_a_secret() -> None:
+    """The backtest jobs keep contents: read and no secret; the results App key is the only one."""
+    jobs = _workflow()["jobs"]
     workflow = _workflow()
 
+    holders = {
+        name
+        for name, job in jobs.items()
+        if "secrets." in yaml.safe_dump(job) or "github.token" in yaml.safe_dump(job)
+    }
     assert workflow["permissions"] == {"contents": "read"}
-    assert all("permissions" not in job for job in workflow["jobs"].values())
-    assert "secrets." not in text
-    assert "github.token" not in text
+    assert all("permissions" not in job for job in jobs.values())
+    assert holders == {"results"}
+    assert "github.token" not in _WORKFLOW.read_text(encoding="utf-8")
+
+
+def test_results_job_uses_its_own_environment_and_a_scoped_app_token() -> None:
+    """ADR-026 §6: a dedicated App with contents and pull requests only, in its own environment."""
+    job = _workflow()["jobs"]["results"]
+    mint = next(s for s in job["steps"] if s.get("name") == "Mint the results App token")
+
+    assert job["environment"] == "backtest-results"
+    assert mint["with"] == {
+        "app-id": "${{ vars.HERMES_RESULTS_APP_ID }}",
+        "private-key": "${{ secrets.HERMES_RESULTS_APP_KEY }}",
+        "permission-contents": "write",
+        "permission-pull-requests": "write",
+    }
+
+
+def test_results_branch_prefix_is_fixed_and_the_checkout_keeps_no_credentials() -> None:
+    """The App may only push below batch-results/, and no step persists a token in .git."""
+    job = _workflow()["jobs"]["results"]
+    checkouts = [s for s in job["steps"] if str(s.get("uses", "")).startswith("actions/checkout")]
+
+    assert job["env"]["BRANCH_PREFIX"] == "batch-results/"
+    push = next(s for s in job["steps"] if s.get("name") == "Commit and push the results branch")
+    assert 'branch="${BRANCH_PREFIX}${BATCH_ID}-${RUN_ID}"' in push["run"]
+    assert all(c["with"]["persist-credentials"] is False for c in checkouts)
+
+
+@needs_tools
+def test_results_job_requires_the_trial_log_chain_whenever_verdicts_exist() -> None:
+    """A failed chain download must stop the job, not give a verdicts-only PR."""
+    run = _step("results", "Assemble the results")["run"]
+    assert "--require-chain" in run
+
+
+def test_results_pr_metadata_failing_does_not_fail_the_run_after_the_pr_is_open() -> None:
+    """A renamed label or a closed milestone leaves a warning, not a red run with an open PR."""
+    script = _step("results", "Open the PR")["with"]["script"]
+    opened = script.index("pulls.create")
+    guarded = script.index("try {")
+
+    assert opened < script.index("issues.update")
+    assert guarded < script.index("issues.update")
+    assert "core.warning" in script[guarded:]
+
+
+def test_results_job_is_skipped_with_a_notice_until_the_app_is_configured(tmp_path: Path) -> None:
+    """Without HERMES_RESULTS_APP_ID the job succeeds, opens nothing and says where lines stay."""
+    output = tmp_path / "out"
+    output.write_text("")
+    env = {"BATCH_ID": "b1", "EXPERIMENT": "swing-mvp1", "GITHUB_OUTPUT": str(output)}
+
+    result = _run("results", "Results App configured", {**env, "APP_ID": ""}, tmp_path)
+
+    assert (result.returncode, output.read_text()) == (0, "configured=false\n")
+    assert "::notice::" in result.stdout
+
+
+@needs_tools
+@pytest.mark.parametrize("name", ["B1", "b1/../x", "b1 x", ""])
+def test_results_job_refuses_a_batch_id_that_is_not_a_plain_name(tmp_path: Path, name: str) -> None:
+    """The branch name is built from the batch id, so anything but [a-z0-9-] stops the job."""
+    output = tmp_path / "out"
+    output.write_text("")
+    env = {
+        "BATCH_ID": name,
+        "EXPERIMENT": "swing-mvp1",
+        "GITHUB_OUTPUT": str(output),
+        "APP_ID": "1",
+    }
+
+    result = _run("results", "Results App configured", env, tmp_path)
+
+    assert result.returncode == 1
+
+
+def test_results_job_runs_after_a_failed_batch_but_not_a_refused_one() -> None:
+    """Trial lines already appended still count, so a failed Train still gets its results PR."""
+    condition = _workflow()["jobs"]["results"]["if"]
+
+    assert "!cancelled()" in condition
+    assert "needs.check.result == 'success'" in condition
+    assert "needs.train.result != 'skipped'" in condition
 
 
 def test_validation_runs_in_the_main_only_validation_environment() -> None:
@@ -367,3 +459,100 @@ def test_a_judge_error_fails_the_job(tmp_path: Path, code: int) -> None:
     )
 
     assert result.returncode == code
+
+
+@needs_tools
+def test_batch_check_writes_its_summary_before_it_fails_the_step(tmp_path: Path) -> None:
+    """A failing batch check still writes its summary, then fails the step."""
+    (tmp_path / "bin").mkdir()
+    uv = tmp_path / "bin" / "uv"
+    uv.write_text("#!/usr/bin/env bash\necho 'FAIL swing-b1-a signature'\nexit 3\n")
+    uv.chmod(uv.stat().st_mode | stat.S_IXUSR)
+    summary = tmp_path / "summary"
+    summary.write_text("")
+
+    result = _run(
+        "check",
+        "Batch check",
+        {
+            "RUNNER_TEMP": str(tmp_path / "rt"),
+            "FILE": "b.md",
+            "GITHUB_STEP_SUMMARY": str(summary),
+            "GITHUB_OUTPUT": str(tmp_path / "output"),
+        },
+        tmp_path,
+        path_prefix=tmp_path / "bin",
+    )
+
+    assert (result.returncode, summary.read_text(), "exited 3" in result.stdout) == (
+        1,
+        "FAIL swing-b1-a\n",
+        True,
+    )
+
+
+@needs_tools
+def test_validation_judge_accepts_a_fail_verdict_and_reports_it(tmp_path: Path) -> None:
+    """Exit 1 from the Validation judge is a verdict: the summary is written and the step passes."""
+    _stub_uv(
+        tmp_path / "bin",
+        "FAIL swing-b1-a dsr\nCHAMPION none",
+        1,
+        {},
+    )
+    runner_temp = tmp_path / "rt"
+    (runner_temp / "chain").mkdir(parents=True)
+    (runner_temp / "chain" / "trial-log.jsonl").write_text("")
+    summary = tmp_path / "summary"
+    summary.write_text("")
+
+    result = _run(
+        "judge-validation",
+        "Judge the batch on Validation",
+        {
+            "RUNNER_TEMP": str(runner_temp),
+            "BATCH_FILE": "b.md",
+            "BATCH_ID": "b1",
+            "CANDIDATES": "[]",
+            "GITHUB_STEP_SUMMARY": str(summary),
+            "GITHUB_OUTPUT": str(tmp_path / "output"),
+        },
+        tmp_path,
+        path_prefix=tmp_path / "bin",
+    )
+
+    assert (result.returncode, "FAIL swing-b1-a dsr" in summary.read_text()) == (0, True)
+
+
+@needs_tools
+def test_an_exhausted_family_budget_names_the_candidate_before_failing_the_step(
+    tmp_path: Path,
+) -> None:
+    """Budget exit 1 is reported with the candidate's name, not lost to the step's ``-e``."""
+    (tmp_path / "bin").mkdir()
+    uv = tmp_path / "bin" / "uv"
+    uv.write_text("#!/usr/bin/env bash\necho 'family fa: 5 of 5 touches used'\nexit 1\n")
+    uv.chmod(uv.stat().st_mode | stat.S_IXUSR)
+    summary = tmp_path / "summary"
+    summary.write_text("")
+
+    result = _run(
+        "validation",
+        "Family Validation budget",
+        {
+            "RUNNER_TEMP": str(tmp_path / "rt"),
+            "BATCH_FILE": "b.md",
+            "CANDIDATE": "swing-b1-a",
+            "GITHUB_STEP_SUMMARY": str(summary),
+        },
+        tmp_path,
+        path_prefix=tmp_path / "bin",
+    )
+
+    assert (
+        result.returncode,
+        "swing-b1-a's family has no Validation touch left" in result.stdout,
+    ) == (
+        1,
+        True,
+    )

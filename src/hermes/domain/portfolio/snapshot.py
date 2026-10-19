@@ -22,22 +22,26 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from decimal import Decimal, localcontext
 from types import MappingProxyType
+from typing import Final
 
 from returns.result import Failure, Result, Success
 
 from hermes.domain.errors import CurrencyMismatch, DomainError, InvalidPortfolioTransition
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.portfolio.position import Position
-from hermes.domain.portfolio.precision import COST_QUANTUM, EXACT_CONTEXT
 from hermes.domain.risk.state import PortfolioState
 from hermes.domain.trading.fill import Fill
 from hermes.domain.trading.order import OrderSide
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
+from hermes.domain.value_objects.precision import EXACT_CONTEXT
 from hermes.domain.value_objects.strategy_id import StrategyId
 
 __all__ = ["PortfolioSnapshot"]
+
+_COST_QUANTUM: Final[Decimal] = Decimal("1e-8")
+"""Grid for the cost released on a partial SELL (eight quote places)."""
 
 _ZERO = Decimal("0")
 
@@ -288,7 +292,7 @@ class PortfolioSnapshot:
                 # The rounded share can exceed the cost by one quantum when the
                 # cost is off the grid; the clamp keeps the remaining cost >= 0.
                 released = min(
-                    (held.cost_basis * qty / held.quantity).quantize(COST_QUANTUM),
+                    (held.cost_basis * qty / held.quantity).quantize(_COST_QUANTUM),
                     held.cost_basis,
                 )
                 positions[pair] = Position(

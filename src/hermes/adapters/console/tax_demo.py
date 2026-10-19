@@ -8,7 +8,7 @@ current one. The demo taxpayer earns a synthetic general income of
 :data:`DEMO_GENERAL_INCOME`, so the savings base is taxed from its first euro.
 Nothing here reads the ledger or the real taxpayer profile.
 
-Reference: openspec/changes/719-tax-screen/change.md.
+Reference: openspec/archive/719-tax-screen/change.md.
 """
 
 from collections.abc import Mapping

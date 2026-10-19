@@ -13,7 +13,7 @@ Only the gate out of ``UNTRUSTED`` exists for v2: v2 §7 changes the shadow
 rule, so every later gate is refused until it is implemented.
 
 Reference: pre-registration-v2.md §0, §7, §9, §10; ADR-021 §5;
-openspec/changes/v2-certify-gate/change.md.
+openspec/archive/v2-certify-gate/change.md.
 """
 
 import re

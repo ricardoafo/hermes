@@ -26,8 +26,8 @@ import anyio
 import httpx
 import respx
 
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.adapters.clock import SimulatedClock
-from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.adapters.market_data.binance_live_klines import BinanceLiveKlinesAdapter
 from hermes.domain.errors import InfraError
 from hermes.domain.market_data.bar import Bar

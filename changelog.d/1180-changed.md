@@ -1,0 +1,1 @@
+- One home each for the Europe/Madrid zone, the UTC check, the cent and the exact Decimal context (`domain/value_objects`), with a source scan that fails when a copy comes back. Stop marks and the tax guard now refuse a Madrid-aware time, and console USDT amounts and `hermes reconcile` EUR values round half a cent up like every other screen.

@@ -12,6 +12,8 @@
 #   - gitleaks binary (pinned) — the secrets job uses this directly instead
 #     of pulling the gitleaks-action Docker image on every run
 #   - semgrep (via uv tool) — the SAST job skips ~15-20s cold install per run
+#   - gh (GitHub CLI, pinned binary) — scheduled jobs prune branches and
+#     file issues with it (#1206)
 #
 # BuildKit cache mounts (--mount=type=cache) persist apt + uv-install
 # downloads across image rebuilds. Rebuilds after a Dockerfile edit only
@@ -31,6 +33,8 @@ ARG NODE_MAJOR=24
 ARG MARKDOWNLINT_VERSION=0.23.3
 ARG GITLEAKS_VERSION=8.30.1
 ARG GITLEAKS_SHA256=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+ARG GH_VERSION=2.102.0
+ARG GH_SHA256=bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019386
 # The AI review action (ai-review.yml) pins these two; bump them together
 # with the action SHA or the job falls back to downloading its own.
 ARG BUN_VERSION=1.3.14
@@ -106,6 +110,19 @@ RUN curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEA
  && tar -xzf /tmp/gitleaks.tar.gz -C /usr/local/bin gitleaks \
  && rm /tmp/gitleaks.tar.gz \
  && chmod +x /usr/local/bin/gitleaks
+
+# ────────────────────────────────────────────────────────────────
+# gh (GitHub CLI) — pinned binary. The scheduled branch prune and the
+# fresh-seed issue filing call it; without it both stop at their first
+# gh call (#1206). `gh --version` fails the build if the binary is broken.
+# ────────────────────────────────────────────────────────────────
+RUN curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" \
+      -o /tmp/gh.tar.gz \
+ && echo "${GH_SHA256}  /tmp/gh.tar.gz" | sha256sum -c - \
+ && tar -xzf /tmp/gh.tar.gz -C /tmp \
+ && install -m 0755 "/tmp/gh_${GH_VERSION}_linux_amd64/bin/gh" /usr/local/bin/gh \
+ && rm -rf /tmp/gh.tar.gz "/tmp/gh_${GH_VERSION}_linux_amd64" \
+ && gh --version
 
 # ────────────────────────────────────────────────────────────────
 # Non-root runner user (GH runner refuses to run as root).

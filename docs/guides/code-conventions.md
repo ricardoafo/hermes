@@ -457,42 +457,31 @@ class RebalanceUC(PausableUseCase):
 - Resume without prior pause is a no-op
 - CLI: `hermes engine pause --reason "cve-2026-N"` and `hermes engine resume`
 
-## 13. Schema migrations — forward-only, numbered, paused-during-migration
+## 13. Schema migrations — forward-only, numbered SQL files
 
-**`src/hermes/infrastructure/migrations/`** holds numbered migration files:
+**`src/hermes/adapters/ledger/migrations/`** holds the ledger's migrations as
+SQL files, named by their UTC creation time (`YYYYMMDDTHHMM_<slug>.sql`; the
+older `0001` to `0006` files keep their numbers and sort first):
 
 ```text
 migrations/
-├── __init__.py
-├── 0001_initial.py    # first schema
-├── 0002_add_fees.py   # adds fee_currency to fills
+├── 0001_initial_schema.sql
+├── ...
+├── 20261004T0300_portfolio_marks.sql
 └── ...
 ```
 
-**Schema version table** (`schema_version` in SQLite) tracks the highest-applied migration.
+**Rules** ([ADR-006](../architecture/adr-006-versioning-strategy.md) §2):
 
-**Migrations run at startup** if `db_version < len(MIGRATIONS)`. Engine is PAUSED during migration (`PausableUseCase.pause(reason="schema_migration")`).
-
-**Migration file shape**:
-
-```python
-# migrations/0002_add_fees.py
-def upgrade(conn: sqlite3.Connection) -> None:
-    conn.execute("ALTER TABLE fills ADD COLUMN fee_currency TEXT NOT NULL DEFAULT 'EUR'")
-```
-
-**Rules**:
-
-- Forward-only — no `downgrade()`. Rollback via restoring backup (`hermes backup --restore`).
+- Forward-only: no down-migrations. Rolling back means restoring the snapshot
+  taken just before the migration, then fixing forward with a new migration.
 - Never edit an applied migration. Add a new one.
-- Every migration is atomic — wraps in a transaction; failure = automatic rollback + engine stays paused.
-- Zero live migrations. Engine paused → migration → engine resumed. No dual-write, no read-through.
+- Each migration runs in one transaction that the runner opens, so a file
+  never writes `BEGIN`, `COMMIT` or `SAVEPOINT`;
+  `scripts/dev/migration-sql-check.py` enforces the name and this rule.
 
-**Why forward-only + paused**: simplicity wins for solo-dev SQLite. Complex live-migration logic serves distributed systems, not us.
-
-**Enforcement**: test asserts every file in `migrations/` matches `NNNN_<slug>.py` pattern + has `upgrade` function.
-
-**Anti-patterns**: alembic (heavy dep, ORM-coupled — we don't have ORM); SQL files (no rollback safety, harder to test); editing an applied migration.
+How migrations are applied, which ones need `hermes migrate`, and how to roll
+one back are in [ledger-migrations.md](ledger-migrations.md).
 
 ## 14. Additional cross-phase conventions
 

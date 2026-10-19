@@ -1,0 +1,1 @@
+- Pearson correlation, the round-trip loop behind both sides of the M-09 parity check, and the risk severity order each have one copy; a flat return series is undefined at every gate, and a fee outside the quote currency is refused when counting round trips (#1179).

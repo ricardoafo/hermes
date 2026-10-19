@@ -9,7 +9,7 @@ and values year-end holdings (D-8 of the change):
    ADR-016 item 5), through the same :class:`EurPricer` the ledger uses;
 3. else the price is missing and the 721 may be undetermined.
 
-Reference: openspec/changes/36-modelo-100-721/change.md.
+Reference: openspec/archive/36-modelo-100-721/change.md.
 """
 
 from __future__ import annotations
@@ -17,14 +17,14 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal, localcontext
+from decimal import Decimal
 from typing import Final
 
 from returns.result import Failure, Result, Success
 
 from hermes.application.ledger.eur_pricer import EurPricer
 from hermes.domain.errors import DomainError
-from hermes.domain.filing.modelo100 import Modelo100Report, add_months, build_modelo100
+from hermes.domain.filing.modelo100 import Modelo100Report, build_modelo100
 from hermes.domain.filing.modelo721 import (
     Modelo721Report,
     Modelo721Rules,
@@ -34,15 +34,16 @@ from hermes.domain.filing.modelo721 import (
     year_end_positions,
 )
 from hermes.domain.filing.tax_year import tax_year_bounds
+from hermes.domain.tax.tax_calendar import add_months, madrid_midnight
+from hermes.domain.tax.two_month import REPURCHASE_WINDOW_MONTHS
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
+from hermes.domain.value_objects.precision import exact
 from hermes.ports.filing import FilingLedgerReaderPort
 
 __all__ = ["Custodian", "FilingPack", "YearEndPrice", "build_filing_pack"]
 
-_PRECISION: Final[int] = 100
 _VALUATION_QUOTE: Final[Currency] = Currency.USDT
-_REPURCHASE_MARGIN_MONTHS: Final[int] = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,8 +134,8 @@ def build_filing_pack(
         year,
         reader.disposal_pieces(start, end),
         reader.purchases(
-            add_months(start, -_REPURCHASE_MARGIN_MONTHS),
-            add_months(end, _REPURCHASE_MARGIN_MONTHS),
+            madrid_midnight(add_months(date(year, 1, 1), -REPURCHASE_WINDOW_MONTHS)),
+            madrid_midnight(add_months(date(year + 1, 1, 1), REPURCHASE_WINDOW_MONTHS)),
         ),
     )
     positions = year_end_positions(year, reader.unit_trades(end))
@@ -191,6 +192,5 @@ def _value(
             return YearEndPrice(asset=asset, price_eur=None, source="no stored bar before year end")
         native = close
         source = f"last bar close {close} USDT at the {rate_note}"
-    with localcontext() as ctx:
-        ctx.prec = _PRECISION
+    with exact():
         return YearEndPrice(asset=asset, price_eur=native / pricing.rate, source=source)

@@ -15,7 +15,7 @@ Invariants protected here:
 ``respx`` replaces the network; everything above it is the real adapter.
 The live shape is checked by ``tests/contract/test_binance_public_depth.py``.
 
-Reference: openspec/changes/353-fill-kernel-in-serve/change.md D-1, R-6.
+Reference: openspec/archive/353-fill-kernel-in-serve/change.md D-1, R-6.
 """
 
 from __future__ import annotations
@@ -31,8 +31,8 @@ import httpx
 import pytest
 import respx
 
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.adapters.clock import SimulatedClock
-from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.adapters.market_data.binance_depth_snapshot import BinanceDepthSnapshotAdapter
 from hermes.domain.errors import ExchangeError, NetworkError
 from hermes.domain.market_data.orderbook import Orderbook

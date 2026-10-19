@@ -4,7 +4,7 @@
 **Author**: AI Bot on behalf of the Code Owner
 **Related**: ADR-004 (Kraken cold backup), ADR-014 (live approval),
 [2026-08-24 Kraken public adapter](2026-08-24-kraken-public-adapter.md),
-`openspec/changes/32-kraken-spot-adapter/change.md`, #32, #148
+`openspec/archive/32-kraken-spot-adapter/change.md`, #32, #148
 
 ## Decision
 

@@ -12,7 +12,7 @@ An unknown kind is refused, never replaced by the default: a typo would
 otherwise trade v1's rule under a candidate's name.
 
 Reference: ADR-026 §1; research funnel interface contract §2a; issue #1074;
-openspec/changes/1074-strategy-factory/change.md.
+openspec/archive/1074-strategy-factory/change.md.
 """
 
 import inspect
@@ -24,12 +24,16 @@ from typing import Any, Final
 from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
 from hermes.domain.strategy.swing.daily_ma import DailyMaAdapter
 from hermes.domain.strategy.swing.ensemble import BreakoutEnsembleAdapter
+from hermes.domain.strategy.swing.pullback import PullbackAdapter
+from hermes.domain.strategy.swing.trend_slope import TrendSlopeAdapter
 from hermes.ports.strategy import StrategyPort
 
 __all__ = [
     "BREAKOUT_ENSEMBLE",
     "DAILY_MA",
     "DONCHIAN_BREAKOUT",
+    "DONCHIAN_SLOPE",
+    "RSI_PULLBACK",
     "StrategyKind",
     "UnknownSignalError",
     "known_signals",
@@ -46,6 +50,14 @@ BREAKOUT_ENSEMBLE: Final = "breakout_ensemble"
 
 DAILY_MA: Final = "daily_ma"
 """Research batch swing-b1, candidate C2 (swing-b1-daily-ma, issue #1064)."""
+
+
+DONCHIAN_SLOPE: Final = "donchian_slope"
+"""Research batch swing-b1 C3: v2's rule plus a rising daily EMA(200) (issue #1065)."""
+
+
+RSI_PULLBACK: Final = "rsi_pullback"
+"""Research batch swing-b1 C4: a 4h RSI pullback inside a rising daily trend (issue #1066)."""
 
 
 class UnknownSignalError(ValueError):
@@ -101,6 +113,8 @@ _KINDS: Final[Mapping[str, StrategyKind[StrategyPort]]] = MappingProxyType(
         DONCHIAN_BREAKOUT: StrategyKind(DONCHIAN_BREAKOUT, SwingStrategyAdapter),
         BREAKOUT_ENSEMBLE: StrategyKind(BREAKOUT_ENSEMBLE, BreakoutEnsembleAdapter),
         DAILY_MA: StrategyKind(DAILY_MA, DailyMaAdapter),
+        DONCHIAN_SLOPE: StrategyKind(DONCHIAN_SLOPE, TrendSlopeAdapter),
+        RSI_PULLBACK: StrategyKind(RSI_PULLBACK, PullbackAdapter),
     }
 )
 

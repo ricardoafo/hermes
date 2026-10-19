@@ -29,7 +29,7 @@
 #                             case fails with exit 2 and produces no `gh` call
 #
 # Related:
-#   openspec/changes/create-issue-wrapper/change.md
+#   openspec/archive/create-issue-wrapper/change.md
 #   AGENTS.md § "On issue discipline"
 
 set -uo pipefail

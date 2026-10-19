@@ -4,7 +4,7 @@ The example documents the production env file. If it names a variable the
 config loader rejects, an operator who copies it gets `hermes serve`
 exit 3 at start (issue #306).
 
-Reference: openspec/changes/306-serve-systemd-boot/change.md.
+Reference: openspec/archive/306-serve-systemd-boot/change.md.
 """
 
 from __future__ import annotations

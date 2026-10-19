@@ -1,7 +1,7 @@
 # ADR-015: Read-only Telegram commands — a separate long-polling bot that answers the operator, never trades, and keeps pushed messages blind
 
 **Date**: 2026-10-03
-**Status**: Proposed — Accepted when the Code Owner merges it
+**Status**: Accepted (merged in PR #444)
 **Deciders**: Ricardo Afonso (product owner), Claude (proposer)
 **Supersedes**: in part, [ADR-003 §06](adr-003-solution-architecture/06-notifications.md) "Telegram adapter —
 outbound-only, no polling" and its rejected-alternatives row "Webhook / polling for inbound commands", for the

@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Final
 
-from hermes.domain.tax.precision import exact
+from hermes.domain.value_objects.precision import exact
 
 __all__ = [
     "CARRY_FORWARD_YEARS",

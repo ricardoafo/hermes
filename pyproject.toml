@@ -15,7 +15,7 @@ dependencies = [
   "textual>=8.2.8,<9",
   # Console renderers import Rich directly (application/console/render.py);
   # promoted from a transitive dep of textual and typer so an upstream
-  # constraint change cannot drop it. See openspec/changes/console-read-model.
+  # constraint change cannot drop it. See openspec/archive/console-read-model.
   "rich>=15,<16",
   "apscheduler>=3.10,<4",
   "python-telegram-bot>=22.8,<23",
@@ -69,6 +69,10 @@ dev = [
   "hypothesis>=6.168.3,<7",
   "syrupy>=6.1.1,<7",  # bumped to unblock pytest 9 (see PYSEC-2026-1845 note above)
   "respx>=0.21,<1",
+  # scripts/dev/fresh-seed-report.py parses the fresh-seed JUnit report with
+  # it (Semgrep use-defused-xml). Promoted from a transitive dep of fpdf2 so
+  # an upstream change cannot drop it.
+  "defusedxml>=0.7.1,<1",
   "freezegun>=1.5,<2",
   "coverage[toml]>=7.16.2,<8",
   "ruff>=0.16.9,<1",
@@ -84,6 +88,7 @@ dev = [
   "radon>=6.0,<7",
   "vulture>=2.13,<3",
   "types-pyyaml>=6.0.12.20260906,<7",
+  "types-defusedxml>=0.7.0.20260504,<1",
   # Mutation testing — parso-backed (Python 3.14 native). See
   # docs/decisions/2026-08-22-mutation-testing-cosmic-ray.md for the
   # tool-choice rationale + spike evidence. Weekly workflow at
@@ -285,6 +290,28 @@ forbidden_modules = [
   "hermes.application.filing",
   "hermes.domain.filing",
   "hermes.ports.filing",
+]
+
+# issue #1181 (Code Owner, 18 Oct 2026): the pre-registration §8.3 walk-forward and
+# purged CPCV folds are reported evidence only. Nothing that judges a run, selects
+# a champion or decides a trade may import them (openspec/changes/1181-fold-evidence).
+[[tool.importlinter.contracts]]
+name = "fold-evidence-is-reported-only"
+type = "forbidden"
+source_modules = [
+  "hermes.application.calibration",
+  "hermes.application.order_router",
+  "hermes.application.strategy_protocol",
+  "hermes.domain.strategy",
+  "hermes.domain.fees",
+  "hermes.domain.risk",
+  "hermes.entrypoints.certify",
+  "hermes.entrypoints.funnel",
+  "hermes.entrypoints.funnel_batch",
+]
+forbidden_modules = [
+  "hermes.application.backtest.fold_evidence",
+  "hermes.domain.statistics.fold_metrics",
 ]
 
 # ADR-012 D-08: the supervisor layer reads through read-only ports and
