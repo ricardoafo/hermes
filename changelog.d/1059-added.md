@@ -1,1 +1,0 @@
-- Research batches are judged at their end by a signed rule: one trial count for every candidate, a Benjamini-Hochberg step on 1 - DSR across the batch, and the highest-DSR survivor as champion, or none (ADR-026 §4, §5).

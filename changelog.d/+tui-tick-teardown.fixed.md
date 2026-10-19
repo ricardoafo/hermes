@@ -1,1 +1,0 @@
-- The console's 1 s clock tick, its redraw and its effects (pulse, feed pulse, radar, shimmer) no longer crash when a widget is torn down while the app closes; a widget that is gone is skipped and the tab title is still written.

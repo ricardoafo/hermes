@@ -656,7 +656,7 @@ wheels = [
 
 [[package]]
 name = "hermes"
-version = "1.0.0a1"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "anyio" },

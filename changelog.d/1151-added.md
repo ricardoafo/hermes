@@ -1,1 +1,0 @@
-- The staging lab now logs its available memory and each running shadow's memory once a minute, and sends one Telegram message when available memory drops below 1 GiB and one when it recovers (`hermes-lab-memory.timer`, off until enabled on hermes-01).

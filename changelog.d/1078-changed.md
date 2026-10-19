@@ -1,1 +1,0 @@
-- After downtime, serve records each bar that closed while it was down as missed, leaves entries on those bars unfilled, fills their exits at the price when it is back (never back-dated), and sends one restart report; the parity check skips outage days and the service waits for clock sync (#1078).

@@ -1,1 +1,0 @@
-- **Sentry events with extra context are no longer dropped.** The capture uses `sentry_sdk.new_scope()` instead of the deprecated `push_scope()`, whose warning the test settings turn into an error that dropped the event. Closes #758.

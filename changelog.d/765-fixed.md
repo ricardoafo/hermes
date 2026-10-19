@@ -1,1 +1,0 @@
-- `hermes preview` now shows the exit message with a reason the strategy really sends (`chandelier`) instead of `trailing_stop`, which it never sends (issue #765).

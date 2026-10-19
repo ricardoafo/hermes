@@ -1,1 +1,0 @@
-- A klines reply that gives one bar two different rows is now refused as a bad reply instead of silently keeping the last row; exact repeats are still dropped.
