@@ -26,7 +26,9 @@ push to `main` whose CI passes goes through CD, and one merge-queue batch is one
 4. **Tag.** After the health gate and the smoke suite pass, CD creates `v<version>` on the
    shipped commit, with the deploy's notes (the fragments and PRs since the previous
    deploy) as the release body. A deploy that rolls back is not tagged, and the next push
-   reuses its number.
+   reuses its number. When the tag itself cannot be created after a good deploy, the run
+   goes red after the Telegram announcement: the Code Owner creates the tag on that commit
+   before the next merge, or the next push would reuse a number that is already live.
 
 The Code Owner's merge is the deploy decision. Agents never dispatch CD, tag, deploy by
 hand or merge.
