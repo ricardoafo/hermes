@@ -1,1 +1,0 @@
-- The console's night theme draws labels, hints, gains, losses and AI marks at 4.5:1 contrast or more on its panels, so they no longer fade into the background after 23:00 (#1046).

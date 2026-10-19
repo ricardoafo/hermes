@@ -1,1 +1,0 @@
-- The HTTP adapters share one copy of their wire helpers (decimal parsing, Binance symbols, fee percents, window and config checks) and one rate limiter, in `hermes.adapters._shared`; a JSON `true` where a number belongs is now refused by every adapter with its own error (#1177).

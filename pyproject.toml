@@ -1,6 +1,6 @@
 [project]
 name = "hermes"
-version = "1.0.0a1"
+version = "0.2.0"
 description = "Crypto trading engine — hexagonal, event-sourced, tax-compliant."
 requires-python = ">=3.14,<3.15"
 readme = "README.md"

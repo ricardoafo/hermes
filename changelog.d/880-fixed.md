@@ -1,1 +1,0 @@
-- The daily warm-up floor is now 300 bars everywhere (`warmup_bars_1d` and the `hermes parity check` minimum), up from 200: the EMA(200) regime filter is seeded from the oldest buffered daily closes, so a 200-bar warm-up could decide differently from serve (#880).

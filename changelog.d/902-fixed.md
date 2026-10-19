@@ -1,1 +1,0 @@
-- Serve now watches a coin it holds without an entry signal (an old or manual trade, or lost signal rows): it restores the position from the coin's own fills, logs `serve.position.no_entry_signal`, keeps its exit rules running and never buys it a second time (issue #902).

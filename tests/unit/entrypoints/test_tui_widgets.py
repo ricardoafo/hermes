@@ -122,21 +122,16 @@ def test_narrow_top_edge_drops_the_label_before_the_title() -> None:
     assert edge.plain == "┏━ ACTIVITY  " + "─" * 3
 
 
-def test_window_bar_has_mark_status_and_clock() -> None:
-    """The bar opens with ▐ HERMES // SHADOW CONSOLE, then the status, and ends with the clock."""
-    status = Text("next bar 03:48:00")
-    bar = window_bar_text(80, NEON, status=status, clock="14:12:00").plain
-    assert (
-        bar.startswith("▐ HERMES // SHADOW CONSOLE  next bar 03:48:00 "),
-        bar.endswith("14:12:00 "),
-        len(bar),
-    ) == (True, True, 80)
-
-
-def test_window_bar_with_empty_status_has_only_mark_and_clock() -> None:
-    """With nothing to show (hermes late or down, no ticker) the bar is the mark and the clock."""
-    bar = window_bar_text(40, NEON, status=Text(""), clock="14:12:00").plain
-    assert bar == "▐ HERMES // SHADOW CONSOLE" + " " * 5 + "14:12:00 "
+def test_window_bar_has_no_characters_at_any_width() -> None:
+    """The bar is blank cells at every width and every sheet: nothing to read, only chrome."""
+    bars = [
+        window_bar_text(width, tokens).plain
+        for width in (0, 1, 40, 80, 200)
+        for tokens in (NEON, BASE)
+    ]
+    assert [(bar.strip(), len(bar)) for bar in bars] == [
+        ("", width) for width in (0, 0, 1, 1, 40, 40, 80, 80, 200, 200)
+    ]
 
 
 def test_tabs_show_names_and_numbers_when_wide() -> None:

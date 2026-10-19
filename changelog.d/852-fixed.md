@@ -1,1 +1,0 @@
-- A 4h candle the exchange never publishes, or downtime longer than the warm-up window, no longer puts serve in a crash loop: the first exit is kept so a late bar is picked up on restart, and if the bar is still missing the restart reports it to Sentry and Telegram and carries on, so an open position keeps its exit watched (issue #852).

@@ -1,1 +1,0 @@
-- The Home Market panel shows each coin once when it is too narrow for the timeframe column, with that coin's soonest next check, instead of one identical-looking row per timeframe.

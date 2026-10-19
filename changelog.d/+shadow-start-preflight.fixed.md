@@ -1,1 +1,0 @@
-- `hermes shadow-start` proves it can write the ledger, archive and run-record directories before changing anything, so a read-only directory no longer leaves an archive and a day-0 record beside the old ledger (#797).
