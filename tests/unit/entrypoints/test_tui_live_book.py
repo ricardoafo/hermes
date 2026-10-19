@@ -16,6 +16,7 @@ Invariants:
 """
 
 import asyncio
+from collections.abc import Mapping
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -69,25 +70,34 @@ def _health(*, age: int = 3, depth: str = "480000") -> BookHealth:
     )
 
 
-def _rows(width: int, **overrides: object) -> Group:
+def _rows(
+    width: int,
+    *,
+    look: LiveLook | None = None,
+    rate: Decimal | None = None,
+    books: Mapping[str, BookHealth] | None = None,
+) -> Group:
     model = FixtureReadModel.load("ok-two-positions")
-    args: dict[str, object] = {
-        "watch": model.market_watch(),
-        "quotes": {"BTC": _quote()},
-        "look": _look(),
-        "width": width,
-        "rate": None,
-        "books": {"BTC": _health()},
-        "now": _NOW,
-    }
-    args.update(overrides)
-    rows = market_rows(**args)  # type: ignore[arg-type]
+    rows = market_rows(
+        model.market_watch(),
+        {"BTC": _quote()},
+        look or _look(),
+        width=width,
+        rate=rate,
+        books={"BTC": _health()} if books is None else books,
+        now=_NOW,
+    )
     assert isinstance(rows, Group)
     return rows
 
 
-def _book_lines(width: int, **overrides: object) -> list[str]:
-    text = to_plain_text(_rows(width, **overrides), width=width)
+def _book_lines(
+    width: int,
+    *,
+    rate: Decimal | None = None,
+    books: Mapping[str, BookHealth] | None = None,
+) -> list[str]:
+    text = to_plain_text(_rows(width, rate=rate, books=books), width=width)
     return [line for line in text.splitlines() if line.startswith("     ")]
 
 
