@@ -7,11 +7,11 @@ readme = "README.md"
 license = { text = "Proprietary" }
 authors = [{ name = "Ricardo Afonso" }]
 dependencies = [
-  "pydantic>=2.13.5,<3",
+  "pydantic>=2.14.1,<3",
   "pydantic-settings>=2.5,<3",
   "httpx>=0.27,<1",
   "structlog>=26.1.0,<27",
-  "typer>=0.27.2,<1",
+  "typer>=0.27.3,<1",
   "textual>=8.2.8,<9",
   # Console renderers import Rich directly (application/console/render.py);
   # promoted from a transitive dep of textual and typer so an upstream
@@ -28,19 +28,19 @@ dependencies = [
   # Loads .env.local at process start for local dev (systemd EnvironmentFile
   # in prod, GH Actions secrets in CI). See
   # docs/decisions/2026-08-23-credential-storage-layered-by-env.md.
-  "python-dotenv>=1,<2",
+  "python-dotenv>=1.2.4,<2",
   # Sentry SDK — error reporting. Initialized once at CLI startup via
   # hermes.infrastructure.sentry_integration.initialize(); after that the
   # SDK installs a global sys.excepthook + captures explicit
   # sentry_sdk.capture_exception() calls. No framework integrations enabled
   # (we run vanilla Python, no Django/Flask/etc.). See
   # docs/decisions/ (Sentry wiring entry) for the design rationale.
-  "sentry-sdk>=2.71.0,<3",
+  "sentry-sdk>=2.72.0,<3",
   # Cross-platform file lock for multi-writer manifest transactions in
   # the ingest scripts (scripts/data/_manifest_util.py). Was a transitive
   # dep of virtualenv; promoted to direct after we started depending on
   # it explicitly. See docs/decisions/... and change data-manifest-file-lock (#257).
-  "filelock>=4.0.7,<5",
+  "filelock>=4.1.1,<5",
   # Writes the tax pack's Renta Web sheet and dossier as PDF (#568, change
   # 568-tax-pack D-8). Pure Python; approved by the Code Owner 2026-10-04.
   "fpdf2>=2.8,<3",
@@ -66,7 +66,7 @@ dev = [
   # for Windows compatibility (signals do not interrupt blocking C-level
   # calls on Windows the way they do on POSIX).
   "pytest-timeout>=2.3,<3",
-  "hypothesis>=6.168.3,<7",
+  "hypothesis>=6.169.0,<7",
   "syrupy>=6.1.1,<7",  # bumped to unblock pytest 9 (see PYSEC-2026-1845 note above)
   "respx>=0.21,<1",
   # scripts/dev/fresh-seed-report.py parses the fresh-seed JUnit report with
@@ -75,8 +75,8 @@ dev = [
   "defusedxml>=0.7.1,<1",
   "freezegun>=1.5,<2",
   "coverage[toml]>=7.16.2,<8",
-  "ruff>=0.16.9,<1",
-  "mypy>=2.3.1,<3",
+  "ruff>=0.17.0,<1",
+  "mypy>=2.4.0,<3",
   "import-linter>=2.15,<3",
   # safety dropped 2026-08-22: v3.7.0 requires interactive auth OR --key API key
   # (breaking change from pre-2024 flow), and the scan command crashes with a
