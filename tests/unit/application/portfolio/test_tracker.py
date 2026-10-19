@@ -130,8 +130,9 @@ class TestRefusedFill:
     def test_refused_fill_returns_the_failure(self) -> None:
         """A BUY over cash returns Failure(InvalidPortfolioTransition) to the caller."""
         result = PortfolioTracker(_seed()).apply_fill(make_fill(OrderSide.BUY, "1", "6000"))
-        assert isinstance(result, Failure)
-        assert isinstance(result.failure(), InvalidPortfolioTransition)
+        assert result == Failure(
+            InvalidPortfolioTransition(reason="BUY of 1 BTC/USDT costs 6000, cash is 5000")
+        )
 
     def test_refused_fill_leaves_the_state_unchanged(self) -> None:
         """After a refused BUY the risk state equals what it was before the call."""
