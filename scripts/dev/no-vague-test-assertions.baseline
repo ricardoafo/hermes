@@ -9,7 +9,6 @@ tests/unit/adapters/certification/test_json_store.py::test_satisfies_the_port U6
 tests/unit/adapters/clock/test_simulated_clock.py::test_isinstance_clock_port U6
 tests/unit/adapters/clock/test_simulated_clock.py::test_now_is_idempotent U3
 tests/unit/adapters/clock/test_wall_clock.py::test_isinstance_clock_port U6
-tests/unit/adapters/data_manifest/test_json_file.py::test_adapter_satisfies_the_port U6
 tests/unit/adapters/exchanges/test_binance_klines.py::test_adapter_is_klines_fetcher_port_instance U6
 tests/unit/adapters/exchanges/test_binance_klines.py::test_exchange_error_inherits_from_infra_error U3
 tests/unit/adapters/exchanges/test_binance_spot.py::test_adapter_satisfies_both_ports U6
