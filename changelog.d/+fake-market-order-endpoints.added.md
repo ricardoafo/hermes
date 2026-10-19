@@ -1,0 +1,1 @@
+- The fake market answers the Binance spot order endpoints (new order, query, cancel, open orders, trades and account) on the testnet host, with fills from the backtests' fill kernel, resting stop-loss sells, signature checks and lost-answer faults, so the real order adapter runs end to end with no real key (#971).
