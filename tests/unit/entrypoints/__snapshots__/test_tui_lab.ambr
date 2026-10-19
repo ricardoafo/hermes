@@ -65,7 +65,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions     ● live · checked 14:00 · next 18:00 due  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions       ● live · checked 14d 21h ago · next 18:00 11:00:00  ◑
     Backtests   Drafts  [ ] switch    ○ values hidden
   ┏━ BACKTESTS  ──────────────────────────────────────────────────────────────────────────────────────────────── computed
     ⌕ type to filter…  family:breakout status:champion split:validation
@@ -98,7 +98,7 @@
    • Fewer trades than the baseline.                           stretch
    signed parameters against as run ───────────────────────━┛  thresholds always · values only when shown ──────────────━┛
   Shadow test · day 12 of 90  ███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
-   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                      read-only
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit           next due · read-only
   ---
   colours: #000000 #070b14 #0c1424 #131d31 #161e2e #182338 #19253c #1a2740 #23535e #468ce6 #468de6 #468ee6 #478ce6 #478fe6 #4790e6 #4791e6 #488be7 #4892e6 #4894e7 #4895e7 #4996e7 #4997e7 #4998e7 #4999e7 #4a8ae7 #4a9ae7 #4a9ce7 #4a9de7 #4b8ae7 #4b9ee7 #4b9fe7 #4ba0e7 #4ca1e8 #4ca3e8 #4ca4e8 #4d89e8 #4da5e8 #4da6e8 #4da7e8 #4da8e8 #4e88e8 #4eaae8 #4eabe8 #4eace8 #4fade8 #4faee8 #4fafe9 #5088e9 #50b1e9 #50b2e9 #50b3e9 #50b4e9 #5187e9 #51b5e9 #51b6e9 #51b7e9 #5286ea #52b9e9 #52bae9 #52bbe9 #538fab #53bce9 #53bdea #53beea #53c0ea #5486ea #5490ab #54c0ea #54c1ea #54c2ea #54c3ea #5585ea #5591ab #55c4ea #55c5ea #55c7ea #5693ac #56c8ea #56c9ea #56caea #56cbeb #5784eb #5794ac #57cceb #57ceeb #57cfeb #5884eb #5896ad #58d0eb #58d1eb #5a83ec #5a97ad #5a98ad #5b82ec #5c82ec #5c9aae #5c9cae #5d6575 #5d82ed #5e81ed #5e9daf #6081ed #6180ee #637fee #647fef #657eef #677def #687df0 #697cf0 #6a7cf0 #6b7bf1 #6d7bf1 #6e7af2 #7079f2 #7179f2 #7278f2 #7378f3 #7477f3 #7676f4 #7677f4 #768eb2 #7776f4 #7875f4 #7a75f5 #7b74f5 #7d73f6 #7e73f6 #8072f7 #8171f7 #8371f7 #838ca1 #8470f8 #866ff8 #876ff9 #896ef9 #8a6ef9 #8a6efa #8a94a8 #8b6dfa #8c6dfa #8d6cfa #8e6cfb #906bfb #916afc #936afc #9469fc #9668fd #9768fd #9967fe #9a66fe #9a9fa8 #9c66ff #9d65ff #a26efe #e6be28 #e6ecf5
   
@@ -108,7 +108,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                       ● live · checked 14:00 · next 18:00 due ▕██████████▏ 11:00:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                 ● live · checked 14d 21h ago · next 18:00 due ▕██████████▏ 11:00:00  ◑ CONTROL ROOM
     Backtests   Drafts  [ ] switch    ○ values hidden
   ┏━ BACKTESTS  ─────────────────────────────────────────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────────── computed
     ⌕ type to filter…  family:breakout status:champion split:validation                            GATE                 Train  Valid  threshold
@@ -160,7 +160,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                       ● live · checked 14:00 · next 18:00 due ▕██████████▏ 11:00:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                 ● live · checked 14d 21h ago · next 18:00 due ▕██████████▏ 11:00:00  ◑ CONTROL ROOM
     Backtests   Drafts  [ ] switch    ○ values hidden
   ┏━ BACKTESTS  ────────────────────────────────────────────────────────────────────────────── computed  ┏━ STRATEGY  ───────────────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────────────── computed
     ⌕ type to filter…  family:breakout status:champion split:validation                                   synth-ensemble  ★ CHAMPION                                           GATE                 Train  Valid  threshold
@@ -227,7 +227,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA    ● live · checked 14d 21h ago · next 18:00  ◑
     Backtests   Drafts  [ ] switch    ○ values hidden
   ┏━ BACKTESTS  ──────────────────────────────────────────────────────── computed
     ⌕ type to filter…  family:breakout status:champion split:validation
@@ -258,7 +258,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions             ● live · checked 14:00 · next 18:00 due  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions       ● live · checked 14d 21h ago · next 18:00 due  ◑ NEON
     Backtests   Drafts  [ ] switch    ○ values hidden
   ┏━ BACKTESTS  ──────────────────────────────────────────────────────────────────────────────────────────────── computed
     ⌕ type to filter…  family:breakout status:champion split:validation
@@ -301,7 +301,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                               ● live · checked 14:00 · next 18:00 due ▕██████████▏ 11:00:00  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                         ● live · checked 14d 21h ago · next 18:00 due ▕██████████▏ 11:00:00  ◑ NEON
     Backtests   Drafts  [ ] switch    ○ values hidden
   ┏━ BACKTESTS  ────────────────────────────────────────────────────────────────────────────── computed  ┏━ STRATEGY  ───────────────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────────────── computed
     ⌕ type to filter…  family:breakout status:champion split:validation                                   synth-ensemble  ★ CHAMPION                                           GATE                 Train  Valid  threshold
@@ -368,7 +368,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA    ● live · checked 14d 21h ago · next 18:00  ◑
     Backtests   Drafts  [ ] switch    ○ values hidden
   ┏━ BACKTESTS  ──────────────────────────────────────────────────────── computed
     ⌕ type to filter…  family:breakout status:champion split:validation
@@ -399,7 +399,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions     ● live · checked 14:00 · next 18:00 due  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions       ● live · checked 14d 21h ago · next 18:00 11:00:00  ◑
     Backtests   Drafts  [ ] switch    ○ values hidden
   
     Drafts: the parameter chat and the drafts of the next batch come with the MVP2 lab (issue #967).
@@ -432,7 +432,7 @@
   
   
   Shadow test · day 12 of 90  ███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
-   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                      read-only
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit           next due · read-only
   ---
   colours: #070b14 #131d31 #468de6 #468ee6 #478ce6 #478fe6 #4790e6 #4791e6 #488be7 #4892e6 #4894e7 #4895e7 #4996e7 #4997e7 #4998e7 #4999e7 #4a8ae7 #4a9ae7 #4a9ce7 #4a9de7 #4b8ae7 #4b9ee7 #4b9fe7 #4ba0e7 #4ca1e8 #4ca3e8 #4ca4e8 #4d89e8 #4da5e8 #4da6e8 #4da7e8 #4da8e8 #4e88e8 #4eaae8 #4eabe8 #4eace8 #4fade8 #4faee8 #4fafe9 #5088e9 #50b1e9 #50b2e9 #50b3e9 #50b4e9 #5187e9 #51b5e9 #51b6e9 #51b7e9 #5286ea #52b9e9 #52bae9 #52bbe9 #538fab #53bce9 #53bdea #53beea #53c0ea #5486ea #5490ab #54c1ea #54c2ea #54c3ea #5585ea #5591ab #55c4ea #55c5ea #55c7ea #5693ac #56c8ea #56c9ea #56caea #56cbeb #5784eb #5794ac #57cceb #57ceeb #57cfeb #5884eb #5896ad #58d0eb #58d1eb #5a83ec #5a97ad #5a98ad #5b82ec #5c9aae #5c9cae #5d6575 #5d82ed #5e81ed #5e9daf #6081ed #6180ee #637fee #647fef #657eef #677def #687df0 #6a7cf0 #6b7bf1 #6d7bf1 #6e7af2 #7079f2 #7179f2 #7378f3 #7477f3 #7677f4 #768eb2 #7776f4 #7875f4 #7a75f5 #7b74f5 #7d73f6 #7e73f6 #8072f7 #8171f7 #8371f7 #838ca1 #8470f8 #866ff8 #876ff9 #896ef9 #8a6efa #8a94a8 #8b6dfa #8d6cfa #8e6cfb #906bfb #916afc #936afc #9469fc #9668fd #9768fd #9967fe #9a66fe #9a9fa8 #9c66ff #9d65ff #e6be28 #e6ecf5
   
@@ -442,7 +442,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                       ● live · checked 14:00 · next 18:00 due ▕██████████▏ 11:00:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                 ● live · checked 14d 21h ago · next 18:00 due ▕██████████▏ 11:00:00  ◑ CONTROL ROOM
     Backtests   Drafts  [ ] switch    ○ values hidden
   
     Drafts: the parameter chat and the drafts of the next batch come with the MVP2 lab (issue #967).
@@ -494,7 +494,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                       ● live · checked 14:00 · next 18:00 due ▕██████████▏ 11:00:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                 ● live · checked 14d 21h ago · next 18:00 due ▕██████████▏ 11:00:00  ◑ CONTROL ROOM
     Backtests   Drafts  [ ] switch    ○ values hidden
   
     Drafts: the parameter chat and the drafts of the next batch come with the MVP2 lab (issue #967).
@@ -561,7 +561,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA    ● live · checked 14d 21h ago · next 18:00  ◑
     Backtests   Drafts  [ ] switch    ○ values hidden
   
     Drafts: the parameter chat and the drafts of the next batch come with the
@@ -592,7 +592,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions             ● live · checked 14:00 · next 18:00 due  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions       ● live · checked 14d 21h ago · next 18:00 due  ◑ NEON
     Backtests   Drafts  [ ] switch    ○ values hidden
   
     Drafts: the parameter chat and the drafts of the next batch come with the MVP2 lab (issue #967).
@@ -635,7 +635,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                               ● live · checked 14:00 · next 18:00 due ▕██████████▏ 11:00:00  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                         ● live · checked 14d 21h ago · next 18:00 due ▕██████████▏ 11:00:00  ◑ NEON
     Backtests   Drafts  [ ] switch    ○ values hidden
   
     Drafts: the parameter chat and the drafts of the next batch come with the MVP2 lab (issue #967).
@@ -702,7 +702,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA    ● live · checked 14d 21h ago · next 18:00  ◑
     Backtests   Drafts  [ ] switch    ○ values hidden
   
     Drafts: the parameter chat and the drafts of the next batch come with the
@@ -733,7 +733,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions     ● live · checked 14:00 · next 18:00 due  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions       ● live · checked 14d 21h ago · next 18:00 11:00:00  ◑
     Backtests   Drafts  [ ] switch    ○ values hidden
   ┏━ BACKTESTS  ──────────────────────────────────────────────────────────────────────────────────────────────── computed
     ⌕ type to filter…  family:breakout status:champion split:validation
@@ -766,7 +766,7 @@
    PARAMETERS                                                  stretch
    signed parameters against as run ───────────────────────━┛  thresholds always · values only when shown ──────────────━┛
   Shadow test · day 12 of 90  ███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
-   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                      read-only
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit           next due · read-only
   ---
   colours: #000000 #070b14 #0c1424 #131d31 #161e2e #182338 #19253c #1a2740 #23535e #468ce6 #468de6 #468ee6 #478ce6 #478fe6 #4790e6 #4791e6 #488be7 #4892e6 #4894e7 #4895e7 #4996e7 #4997e7 #4998e7 #4999e7 #4a8ae7 #4a9ae7 #4a9ce7 #4a9de7 #4b8ae7 #4b9ee7 #4b9fe7 #4ba0e7 #4ca1e8 #4ca3e8 #4ca4e8 #4d89e8 #4da5e8 #4da6e8 #4da7e8 #4da8e8 #4e88e8 #4eaae8 #4eabe8 #4eace8 #4fade8 #4faee8 #4fafe9 #5088e9 #50b1e9 #50b2e9 #50b3e9 #50b4e9 #5187e9 #51b5e9 #51b6e9 #51b7e9 #5286ea #52b9e9 #52bae9 #52bbe9 #538fab #53bce9 #53bdea #53beea #53c0ea #5486ea #5490ab #54c0ea #54c1ea #54c2ea #54c3ea #5585ea #5591ab #55c4ea #55c5ea #55c7ea #5693ac #56c8ea #56c9ea #56caea #56cbeb #5784eb #5794ac #57cceb #57ceeb #57cfeb #5884eb #5896ad #58d0eb #58d1eb #5a83ec #5a97ad #5a98ad #5b82ec #5c82ec #5c9aae #5c9cae #5d6575 #5d82ed #5e81ed #5e9daf #6081ed #6180ee #637fee #647fef #657eef #677def #687df0 #697cf0 #6a7cf0 #6b7bf1 #6d7bf1 #6e7af2 #7079f2 #7179f2 #7278f2 #7378f3 #7477f3 #7676f4 #7677f4 #768eb2 #7776f4 #7875f4 #7a75f5 #7b74f5 #7d73f6 #7e73f6 #8072f7 #8171f7 #8371f7 #838ca1 #8470f8 #866ff8 #876ff9 #896ef9 #8a6ef9 #8a6efa #8a94a8 #8b6dfa #8c6dfa #8d6cfa #8e6cfb #906bfb #916afc #936afc #9469fc #9668fd #9768fd #9967fe #9a66fe #9a9fa8 #9c66ff #9d65ff #a26efe #e6be28 #e6ecf5 #f07814
   
@@ -776,7 +776,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                       ● live · checked 14:00 · next 18:00 due ▕██████████▏ 11:00:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                 ● live · checked 14d 21h ago · next 18:00 due ▕██████████▏ 11:00:00  ◑ CONTROL ROOM
     Backtests   Drafts  [ ] switch    ○ values hidden
   ┏━ BACKTESTS  ─────────────────────────────────────────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────────── computed
     ⌕ type to filter…  family:breakout status:champion split:validation                            GATE                 Train  Valid  threshold
@@ -828,7 +828,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                       ● live · checked 14:00 · next 18:00 due ▕██████████▏ 11:00:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                 ● live · checked 14d 21h ago · next 18:00 due ▕██████████▏ 11:00:00  ◑ CONTROL ROOM
     Backtests   Drafts  [ ] switch    ○ values hidden
   ┏━ BACKTESTS  ────────────────────────────────────────────────────────────────────────────── computed  ┏━ STRATEGY  ───────────────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────────────── computed
     ⌕ type to filter…  family:breakout status:champion split:validation                                   synth-daily-ma  ✗ FAIL · validation                                  GATE                 Train  Valid  threshold
@@ -895,7 +895,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA    ● live · checked 14d 21h ago · next 18:00  ◑
     Backtests   Drafts  [ ] switch    ○ values hidden
   ┏━ BACKTESTS  ──────────────────────────────────────────────────────── computed
     ⌕ type to filter…  family:breakout status:champion split:validation
@@ -926,7 +926,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions             ● live · checked 14:00 · next 18:00 due  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions       ● live · checked 14d 21h ago · next 18:00 due  ◑ NEON
     Backtests   Drafts  [ ] switch    ○ values hidden
   ┏━ BACKTESTS  ──────────────────────────────────────────────────────────────────────────────────────────────── computed
     ⌕ type to filter…  family:breakout status:champion split:validation
@@ -969,7 +969,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                               ● live · checked 14:00 · next 18:00 due ▕██████████▏ 11:00:00  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                         ● live · checked 14d 21h ago · next 18:00 due ▕██████████▏ 11:00:00  ◑ NEON
     Backtests   Drafts  [ ] switch    ○ values hidden
   ┏━ BACKTESTS  ────────────────────────────────────────────────────────────────────────────── computed  ┏━ STRATEGY  ───────────────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────────────── computed
     ⌕ type to filter…  family:breakout status:champion split:validation                                   synth-daily-ma  ✗ FAIL · validation                                  GATE                 Train  Valid  threshold
@@ -1036,7 +1036,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA    ● live · checked 14d 21h ago · next 18:00  ◑
     Backtests   Drafts  [ ] switch    ○ values hidden
   ┏━ BACKTESTS  ──────────────────────────────────────────────────────── computed
     ⌕ type to filter…  family:breakout status:champion split:validation
@@ -1067,7 +1067,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions     ● live · checked 14:00 · next 18:00 due  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions       ● live · checked 14d 21h ago · next 18:00 11:00:00  ◑
     Backtests   Drafts  [ ] switch    ○ values hidden
   ┏━ BACKTESTS  ──────────────────────────────────────────────────────────────────────────────────────────────── computed
     ⌕ type to filter…  family:breakout status:champion split:validation
@@ -1100,7 +1100,7 @@
    PARAMETERS                                                  stretch
    signed parameters against as run ───────────────────────━┛  thresholds always · values only when shown ──────────────━┛
   Shadow test · day 12 of 90  ███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
-   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                      read-only
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit           next due · read-only
   ---
   colours: #000000 #070b14 #0c1424 #131d31 #161e2e #182338 #19253c #1a2740 #23535e #468ce6 #468de6 #468ee6 #478ce6 #478fe6 #4790e6 #4791e6 #488be7 #4892e6 #4894e7 #4895e7 #4996e7 #4997e7 #4998e7 #4999e7 #4a8ae7 #4a9ae7 #4a9ce7 #4a9de7 #4b8ae7 #4b9ee7 #4b9fe7 #4ba0e7 #4ca1e8 #4ca3e8 #4ca4e8 #4d89e8 #4da5e8 #4da6e8 #4da7e8 #4da8e8 #4e88e8 #4eaae8 #4eabe8 #4eace8 #4fade8 #4faee8 #4fafe9 #5088e9 #50b1e9 #50b2e9 #50b3e9 #50b4e9 #5187e9 #51b5e9 #51b6e9 #51b7e9 #5286ea #52b9e9 #52bae9 #52bbe9 #538fab #53bce9 #53bdea #53beea #53c0ea #5486ea #5490ab #54c0ea #54c1ea #54c2ea #54c3ea #5585ea #5591ab #55c4ea #55c5ea #55c7ea #5693ac #56c8ea #56c9ea #56caea #56cbeb #5784eb #5794ac #57cceb #57ceeb #57cfeb #5884eb #5896ad #58d0eb #58d1eb #5a83ec #5a97ad #5a98ad #5b82ec #5c82ec #5c9aae #5c9cae #5d6575 #5d82ed #5e81ed #5e9daf #6081ed #6180ee #637fee #647fef #657eef #677def #687df0 #697cf0 #6a7cf0 #6b7bf1 #6d7bf1 #6e7af2 #7079f2 #7179f2 #7278f2 #7378f3 #7477f3 #7676f4 #7677f4 #768eb2 #7776f4 #7875f4 #7a75f5 #7b74f5 #7d73f6 #7e73f6 #8072f7 #8171f7 #8371f7 #838ca1 #8470f8 #866ff8 #876ff9 #896ef9 #8a6ef9 #8a6efa #8a94a8 #8b6dfa #8c6dfa #8d6cfa #8e6cfb #906bfb #916afc #936afc #9469fc #9668fd #9768fd #9967fe #9a66fe #9a9fa8 #9c66ff #9d65ff #a26efe #e6be28 #e6ecf5
   
@@ -1110,7 +1110,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                       ● live · checked 14:00 · next 18:00 due ▕██████████▏ 11:00:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                 ● live · checked 14d 21h ago · next 18:00 due ▕██████████▏ 11:00:00  ◑ CONTROL ROOM
     Backtests   Drafts  [ ] switch    ○ values hidden
   ┏━ BACKTESTS  ─────────────────────────────────────────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────────── computed
     ⌕ type to filter…  family:breakout status:champion split:validation                            GATE                 Train  Valid  threshold
@@ -1162,7 +1162,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                       ● live · checked 14:00 · next 18:00 due ▕██████████▏ 11:00:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                 ● live · checked 14d 21h ago · next 18:00 due ▕██████████▏ 11:00:00  ◑ CONTROL ROOM
     Backtests   Drafts  [ ] switch    ○ values hidden
   ┏━ BACKTESTS  ────────────────────────────────────────────────────────────────────────────── computed  ┏━ STRATEGY  ───────────────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────────────── computed
     ⌕ type to filter…  family:breakout status:champion split:validation                                   synth-pullback  ▸ TRAIN PASS                                         GATE                 Train  Valid  threshold
@@ -1229,7 +1229,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA    ● live · checked 14d 21h ago · next 18:00  ◑
     Backtests   Drafts  [ ] switch    ○ values hidden
   ┏━ BACKTESTS  ──────────────────────────────────────────────────────── computed
     ⌕ type to filter…  family:breakout status:champion split:validation
@@ -1260,7 +1260,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions             ● live · checked 14:00 · next 18:00 due  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions       ● live · checked 14d 21h ago · next 18:00 due  ◑ NEON
     Backtests   Drafts  [ ] switch    ○ values hidden
   ┏━ BACKTESTS  ──────────────────────────────────────────────────────────────────────────────────────────────── computed
     ⌕ type to filter…  family:breakout status:champion split:validation
@@ -1303,7 +1303,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                               ● live · checked 14:00 · next 18:00 due ▕██████████▏ 11:00:00  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                         ● live · checked 14d 21h ago · next 18:00 due ▕██████████▏ 11:00:00  ◑ NEON
     Backtests   Drafts  [ ] switch    ○ values hidden
   ┏━ BACKTESTS  ────────────────────────────────────────────────────────────────────────────── computed  ┏━ STRATEGY  ───────────────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────────────── computed
     ⌕ type to filter…  family:breakout status:champion split:validation                                   synth-pullback  ▸ TRAIN PASS                                         GATE                 Train  Valid  threshold
@@ -1370,7 +1370,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA    ● live · checked 14d 21h ago · next 18:00  ◑
     Backtests   Drafts  [ ] switch    ○ values hidden
   ┏━ BACKTESTS  ──────────────────────────────────────────────────────── computed
     ⌕ type to filter…  family:breakout status:champion split:validation
@@ -1401,7 +1401,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions     ● live · checked 14:00 · next 18:00 due  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions       ● live · checked 14d 21h ago · next 18:00 11:00:00  ◑
     Backtests   Drafts  [ ] switch    ● values shown · V hides
   ┏━ BACKTESTS  ──────────────────────────────────────────────────────────────────────────────────────────────── computed
     ⌕ type to filter…  family:breakout status:champion split:validation
@@ -1434,7 +1434,7 @@
    PARAMETERS                                                  stretch
    signed parameters against as run ───────────────────────━┛  thresholds always · values only when shown ──────────────━┛
   Shadow test · day 12 of 90  ███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
-   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                      read-only
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit           next due · read-only
   ---
   colours: #000000 #070b14 #0c1424 #131d31 #161e2e #182338 #19253c #1a2740 #23535e #468ce6 #468de6 #468ee6 #478ce6 #478fe6 #4790e6 #4791e6 #488be7 #4892e6 #4894e7 #4895e7 #4996e7 #4997e7 #4998e7 #4999e7 #4a8ae7 #4a9ae7 #4a9ce7 #4a9de7 #4b8ae7 #4b9ee7 #4b9fe7 #4ba0e7 #4ca1e8 #4ca3e8 #4ca4e8 #4d89e8 #4da5e8 #4da6e8 #4da7e8 #4da8e8 #4e88e8 #4eaae8 #4eabe8 #4eace8 #4fade8 #4faee8 #4fafe9 #5088e9 #50b1e9 #50b2e9 #50b3e9 #50b4e9 #5187e9 #51b5e9 #51b6e9 #51b7e9 #5286ea #52b9e9 #52bae9 #52bbe9 #538fab #53bce9 #53bdea #53beea #53c0ea #5486ea #5490ab #54c0ea #54c1ea #54c2ea #54c3ea #5585ea #5591ab #55c4ea #55c5ea #55c7ea #5693ac #56c8ea #56c9ea #56caea #56cbeb #5784eb #5794ac #57cceb #57ceeb #57cfeb #5884eb #5896ad #58d0eb #58d1eb #5a83ec #5a97ad #5a98ad #5b82ec #5c82ec #5c9aae #5c9cae #5d6575 #5d82ed #5e81ed #5e9daf #6081ed #6180ee #637fee #647fef #657eef #677def #687df0 #697cf0 #6a7cf0 #6b7bf1 #6d7bf1 #6e7af2 #7079f2 #7179f2 #7278f2 #7378f3 #7477f3 #7676f4 #7677f4 #768eb2 #7776f4 #7875f4 #7a75f5 #7b74f5 #7d73f6 #7e73f6 #8072f7 #8171f7 #8371f7 #838ca1 #8470f8 #866ff8 #876ff9 #896ef9 #8a6ef9 #8a6efa #8a94a8 #8b6dfa #8c6dfa #8d6cfa #8e6cfb #906bfb #916afc #936afc #9469fc #9668fd #9768fd #9967fe #9a66fe #9a9fa8 #9c66ff #9d65ff #a26efe #e6be28 #e6ecf5 #f07814
   
@@ -1444,7 +1444,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                       ● live · checked 14:00 · next 18:00 due ▕██████████▏ 11:00:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                 ● live · checked 14d 21h ago · next 18:00 due ▕██████████▏ 11:00:00  ◑ CONTROL ROOM
     Backtests   Drafts  [ ] switch    ● values shown · V hides
   ┏━ BACKTESTS  ─────────────────────────────────────────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────────── computed
     ⌕ type to filter…  family:breakout status:champion split:validation                            GATE                 Train  Valid  threshold
@@ -1496,7 +1496,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                       ● live · checked 14:00 · next 18:00 due ▕██████████▏ 11:00:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                 ● live · checked 14d 21h ago · next 18:00 due ▕██████████▏ 11:00:00  ◑ CONTROL ROOM
     Backtests   Drafts  [ ] switch    ● values shown · V hides
   ┏━ BACKTESTS  ────────────────────────────────────────────────────────────────────────────── computed  ┏━ STRATEGY  ───────────────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────────────── computed
     ⌕ type to filter…  family:breakout status:champion split:validation                                   synth-daily-ma  ✗ FAIL · validation                                  GATE                 Train  Valid  threshold
@@ -1563,7 +1563,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA    ● live · checked 14d 21h ago · next 18:00  ◑
     Backtests   Drafts  [ ] switch    ● values shown · V hides
   ┏━ BACKTESTS  ──────────────────────────────────────────────────────── computed
     ⌕ type to filter…  family:breakout status:champion split:validation
@@ -1594,7 +1594,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions             ● live · checked 14:00 · next 18:00 due  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions       ● live · checked 14d 21h ago · next 18:00 due  ◑ NEON
     Backtests   Drafts  [ ] switch    ● values shown · V hides
   ┏━ BACKTESTS  ──────────────────────────────────────────────────────────────────────────────────────────────── computed
     ⌕ type to filter…  family:breakout status:champion split:validation
@@ -1637,7 +1637,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                               ● live · checked 14:00 · next 18:00 due ▕██████████▏ 11:00:00  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                         ● live · checked 14d 21h ago · next 18:00 due ▕██████████▏ 11:00:00  ◑ NEON
     Backtests   Drafts  [ ] switch    ● values shown · V hides
   ┏━ BACKTESTS  ────────────────────────────────────────────────────────────────────────────── computed  ┏━ STRATEGY  ───────────────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────────────── computed
     ⌕ type to filter…  family:breakout status:champion split:validation                                   synth-daily-ma  ✗ FAIL · validation                                  GATE                 Train  Valid  threshold
@@ -1704,7 +1704,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA    ● live · checked 14d 21h ago · next 18:00  ◑
     Backtests   Drafts  [ ] switch    ● values shown · V hides
   ┏━ BACKTESTS  ──────────────────────────────────────────────────────── computed
     ⌕ type to filter…  family:breakout status:champion split:validation

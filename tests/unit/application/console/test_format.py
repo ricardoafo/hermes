@@ -11,6 +11,7 @@ stop bars keep their width and character set.
 from __future__ import annotations
 
 import re
+from datetime import timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 import pytest
@@ -20,6 +21,7 @@ from hypothesis import strategies as st
 from hermes.application.console.format import (
     CushionLevel,
     cushion_level,
+    elapsed_text,
     fmt_atr,
     fmt_change,
     fmt_eur,
@@ -195,3 +197,33 @@ def test_stop_bar_is_empty_at_or_below_the_stop() -> None:
 def test_cushion_bands(distance: Decimal, level: CushionLevel) -> None:
     """Green above 2 ATR, amber from 1 to 2, red below 1."""
     assert cushion_level(distance) is level
+
+
+@pytest.mark.parametrize(
+    ("seconds", "expected"),
+    [
+        (-5, "0s"),
+        (0, "0s"),
+        (59, "59s"),
+        (60, "1m"),
+        (14 * 60 + 59, "14m"),
+        (59 * 60 + 59, "59m"),
+        (3600, "1h 00m"),
+        (9 * 3600 + 30 * 60, "9h 30m"),
+        (23 * 3600 + 59 * 60 + 59, "23h 59m"),
+        (86400, "1d 0h"),
+        (3 * 86400 + 4 * 3600 + 59, "3d 4h"),
+    ],
+)
+def test_elapsed_text_examples(seconds: int, expected: str) -> None:
+    """Seconds only under a minute, minutes under an hour, then hours and days; never negative."""
+    assert elapsed_text(timedelta(seconds=seconds)) == expected
+
+
+@given(st.integers(min_value=0, max_value=10**7))
+def test_elapsed_text_leads_with_a_number_below_its_unit(seconds: int) -> None:
+    """The first number stays below its unit: under 60 s, 60 min or 24 h; days are unbounded."""
+    found = re.match(r"(\d+)([smhd])", elapsed_text(timedelta(seconds=seconds)))
+    assert found is not None
+    first, unit = found.groups()
+    assert int(first) < {"s": 60, "m": 60, "h": 24, "d": 10**7}[unit]

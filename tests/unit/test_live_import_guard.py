@@ -23,6 +23,7 @@ _LIVE: Final = (
     "hermes.application.console.live",
     "hermes.application.console.live_context",
     "hermes.application.console.live_book",
+    "hermes.application.console.live_rate",
     "hermes.entrypoints.tui_feeds",
     "hermes.ports.live_prices",
     "hermes.entrypoints.tui_live",

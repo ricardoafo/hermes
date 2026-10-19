@@ -1197,6 +1197,7 @@ class HomeApp(App[None]):
             countdown if on_row else "", meter, full_chip=full_chip
         )
         self._paint_feed_and_clock()
+        self._paint_heartbeat()
         short = countdown.removeprefix("in ")
         status = f"next {short} · {_READ_ONLY}" if countdown and not on_row else _READ_ONLY
         self._set("footer-status", Text(status))
@@ -1424,9 +1425,11 @@ class HomeApp(App[None]):
         )
 
     def _feeds_answered(self) -> None:
-        """Repaint what the bars and book feeds show: the Market panel and the status row."""
+        """Repaint what the feeds show: the Market panel, the status row and the EUR rate."""
         self._paint_market()
         self._paint_feed_and_clock()
+        if self._tab == _SYSTEM:
+            self._system_tab.paint()
 
     def _fetch_ticks(self, poller: TickerPoller) -> None:
         """Fetch one tick per coin (worker thread) and hand them to the UI thread."""
@@ -2244,6 +2247,7 @@ class HomeApp(App[None]):
             wide=self.is_wide,
             width=self.size.width,
             on_system=self._tab == _SYSTEM,
+            live_rate=self._feeds.rate(self._clock()),
         )
 
     # ------------------------------------------------------------------

@@ -18,6 +18,7 @@ from rich.console import RenderableType
 from textual.screen import Screen
 
 from hermes.application.console import Heartbeat
+from hermes.application.console.live_rate import LiveRate
 from hermes.application.console.logs import LogLine
 from hermes.application.console.system import MachineStats, ReleaseHistory, ServiceStatus
 from hermes.entrypoints.tui_drilldown import (
@@ -66,6 +67,7 @@ class SystemFrame:
         wide: Whether the terminal is wide enough for a detail beside the list.
         width: The terminal width in cells.
         on_system: Whether the System tab is the shown tab.
+        live_rate: Kraken's USDT/EUR quote beside the ECB rate, when the console has one.
     """
 
     now: datetime
@@ -76,6 +78,7 @@ class SystemFrame:
     wide: bool
     width: int
     on_system: bool
+    live_rate: LiveRate | None = None
 
 
 class SystemTabController:
@@ -163,6 +166,7 @@ class SystemTabController:
                 now=frame.now,
                 tz=frame.tz,
                 tokens=frame.tokens,
+                live_rate=frame.live_rate,
             ),
         )
         self._set("sys-machine", machine_text(self._machine, frame.now, frame.tz, frame.tokens))

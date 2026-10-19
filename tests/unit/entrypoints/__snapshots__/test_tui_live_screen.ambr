@@ -3,7 +3,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions        ● live · checked 14:00 · next 18:00 14:12:10  ◑ AUTO
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions      ● live · checked 12m ago · next 18:00 14:12:10  ◑ AUTO
   ┏━ PORTFOLIO  ────────────────────── computed  ┏━ POSITIONS  ──────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓╺━┓╻ ╻ ╺━┓╺━┓                         coin  tf  trend         change          net  stop room  ● live
    ╪═  ┃  ┃ ┃┏━┛┗━┫   ┃  ┃                        ▸ETH   4h  ▂▃▁▃▇▅▅▅▇█  ▲ +3.51%     ▲ +€3.07  ████████ −4.8%
@@ -46,7 +46,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                    ● live · checked 14:00 · next 18:00 in 3h 47m 50s ▕█░░░░░░░░░▏               ●● 14:12:10  ◑ AUTO
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                  ● live · checked 12m ago · next 18:00 in 3h 47m 50s ▕█░░░░░░░░░▏               ●● 14:12:10  ◑ AUTO
   ┏━ PORTFOLIO  ──────────────────────────────────── computed  ┏━ POSITIONS  ────────────────────────────────────────────────────────────────────────────────── computed  ┏━ SIGNALS  ───────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓╺━┓╻ ╻ ╺━┓╺━┓                                       coin  tf  entry → now             trend         change          net  stop room  ● live                    Heat grid · coming next · issue #714
    ╪═  ┃  ┃ ┃┏━┛┗━┫   ┃  ┃                                      ▸ETH   4h  €2,243 → €2,322         ▂▃▁▃▇▅▅▅▇█  ▲ +3.51%     ▲ +€3.07  ████████ stop −4.8%                 ─────────────────────────────────────────────────────────────────────━┛
@@ -113,7 +113,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA        ● live · checked 12m ago · next 18:00  ◑
   ┏━ PORTFOLIO  ─────────────────────────────────────────────────────── computed
    ● live  €1,024.77 · today ▲ +€16.01 +1.59%
    booked as of 14:00

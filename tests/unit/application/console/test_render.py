@@ -86,9 +86,9 @@ def test_blind_positions_show_only_the_allowed_columns() -> None:
 
 
 def test_ok_heartbeat_is_one_quiet_line() -> None:
-    """When all is well the heartbeat is a single live line with both check times."""
+    """When all is well the heartbeat is one live line: the age of the last check, the next one."""
     text = render("ok-two-positions", "heartbeat", surface=Surface.OPERATOR_CLI)
-    assert text.splitlines()[1].strip() == "● live · checked 14:00 · next 18:00"
+    assert text.splitlines()[1].strip() == "● live · checked 12m ago · next 18:00"
 
 
 def test_ok_heartbeat_dot_carries_the_live_style_and_the_words_stay_dim() -> None:

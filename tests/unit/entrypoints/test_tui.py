@@ -118,7 +118,7 @@ def test_ok_status_is_one_dim_line_and_nothing_else() -> None:
         shot.texts["down-row"].strip(),
         "All good" in shot.screen,
         "Your move" in shot.screen,
-    ) == ("● live · checked 14:00 · next 18:00", "", False, False)
+    ) == ("● live · checked 12m ago · next 18:00", "", False, False)
 
 
 def test_ok_heartbeat_is_dim() -> None:
@@ -503,7 +503,7 @@ def test_top_line_names_the_running_release() -> None:
         top.startswith(
             "SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions release abc123def456"
         ),
-        "● live · checked 14:00 · next 18:00" in top,
+        "● live · checked 12m ago · next 18:00" in top,
     ) == (True, True)
 
 

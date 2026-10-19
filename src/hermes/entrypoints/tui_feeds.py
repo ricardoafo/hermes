@@ -1,10 +1,11 @@
-"""The console's slow public feeds: hourly bars and order books (issues #1289, #1292).
+"""The console's slow public feeds: bars, order books and the EUR quote (#1289, #1292, #1330).
 
-The ticker polls prices every 10 s. Two more public calls feed the Market panel
-and the status row: the hourly bars of each coin every 60 s (forming 4h bar and
-24 h context) and the order book of each coin every 10 s (depth, the fresh/stale
-flag and the round-trip time). :class:`ContextFeeds` owns both pollers and their
-boards, starts a worker when a poll is due and hands the answer to the UI thread.
+The ticker polls prices every 10 s. Three more public calls feed the Market panel,
+the status row and the System tab: the hourly bars of each coin every 60 s (forming
+4h bar and 24 h context), the order book of each coin every 10 s (depth, the
+fresh/stale flag and the round-trip time) and the USDT/EUR quote every 30 s.
+:class:`ContextFeeds` owns the pollers and their boards, starts a worker when a
+poll is due and hands the answer to the UI thread.
 
 Display only: nothing here is written anywhere, and no engine, supervisor or
 notification code imports this module (import-linter contract
@@ -29,6 +30,12 @@ from hermes.application.console.live_context import (
     BarsPoller,
     ContextBoard,
     LiveBarsPort,
+)
+from hermes.application.console.live_rate import (
+    LiveRate,
+    LiveTickerPort,
+    RateBoard,
+    RatePoller,
 )
 
 __all__ = ["ContextFeeds"]
@@ -94,7 +101,7 @@ class _Feed[Outcome]:
 
 
 class ContextFeeds:
-    """The bars feed and the book feed of one console.
+    """The bars, book and EUR-quote feeds of one console.
 
     Args:
         source: The ticker the console was given; a feed starts only when it
@@ -106,6 +113,7 @@ class ContextFeeds:
         """Build the feeds the source can give; the others stay off."""
         self._contexts = ContextBoard()
         self._books = BookBoard()
+        self._rates = RateBoard()
         self._bars = _Feed(
             "bars",
             BarsPoller(source, clock) if isinstance(source, LiveBarsPort) else None,
@@ -116,11 +124,17 @@ class ContextFeeds:
             BookPoller(source, clock) if isinstance(source, LiveBookPort) else None,
             self._books.apply,
         )
+        self._rate = _Feed(
+            "rate",
+            RatePoller(source, clock) if isinstance(source, LiveTickerPort) else None,
+            self._rates.apply,
+        )
 
     def start(self, app: _Host, now: datetime, repaint: Callable[[], None]) -> None:
         """Start the polls that are due; ``repaint`` runs on the UI thread after each answer."""
         self._bars.start(app, now, repaint)
         self._book.start(app, now, repaint)
+        self._rate.start(app, now, repaint)
 
     def contexts(self, coins: Iterable[str], now: datetime) -> dict[str, BarContext]:
         """Return the fresh bar context of every coin that has one."""
@@ -135,3 +149,7 @@ class ContextFeeds:
     def round_trips(self) -> tuple[Decimal, ...]:
         """Return the recent book-call round trips in milliseconds, oldest first."""
         return self._books.round_trips()
+
+    def rate(self, now: datetime) -> LiveRate | None:
+        """Return the live USDT/EUR quote, or ``None`` before the first good one."""
+        return self._rates.quote(now)
