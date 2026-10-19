@@ -211,6 +211,20 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: ratchets
+        name: no new duplicate blocks or oversized modules in src/ (#1201)
+        entry: bash -c 'uv run python scripts/dev/ratchets.py dup && uv run python scripts/dev/ratchets.py size'
+        language: system
+        files: ^src/
+        pass_filenames: false
+
+      - id: ratchets-self-test
+        name: ratchets self-test
+        entry: bash -c 'HERMES_SELF_TEST=1 uv run python scripts/dev/ratchets.py'
+        language: system
+        files: ^scripts/dev/ratchets\.py$
+        pass_filenames: false
+
       - id: no-vague-test-assertions
         name: no vague test assertions (AST guard)
         entry: uv run python scripts/dev/no-vague-test-assertions.py
@@ -326,7 +340,7 @@ repos:
         pass_filenames: false
 
       # Pre-push: the fast subset of the CI suite. A stale base fails in
-      # seconds; the test tiers, pip-audit, radon, vulture and the license
+      # seconds; the test tiers, pip-audit, complexity, dead code and the license
       # check are left to CI, which runs them on every head (#416). Run
       # `bash scripts/dev/pr-preflight.sh` by hand for every CI check.
       # One-time install: `pre-commit install --hook-type pre-push`.

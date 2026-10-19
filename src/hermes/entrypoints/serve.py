@@ -211,6 +211,7 @@ from hermes.ports.certification import CertificationStoreError, CertificationSto
 from hermes.ports.clock import ClockPort
 from hermes.ports.fx import FxRateProviderPort
 from hermes.ports.orderbook_snapshot import OrderbookSnapshotPort
+from hermes.ports.stop_history import StopHistoryPort
 from hermes.ports.strategy import StrategyPort
 
 __all__ = [
@@ -366,9 +367,7 @@ def pre_registration_for(config_dir: Path) -> PreRegistration:
         ValueError: The file is not the v1 pre-registration.
     """
     root = config_dir.resolve().parent
-    if experiment_files(root)[0].is_file():
-        return load_pre_registration(root)
-    return load_pre_registration()
+    return load_pre_registration(root if experiment_files(root)[0].is_file() else None)
 
 
 def _holding_opened_at(
@@ -1348,6 +1347,14 @@ async def _anext(stream: AsyncIterator[Bar]) -> Bar:
     return await anext(stream)
 
 
+def _last_stop(
+    history: StopHistoryPort, strategy_id: StrategyId, pair: Pair, entry_time: datetime
+) -> Decimal | None:
+    """Return the newest stop stored for the position opened at ``entry_time``, or ``None``."""
+    mark = history.latest_stop_mark(strategy_id, pair, entry_time)
+    return None if mark is None else mark.record.stop_price
+
+
 async def _next_or_stop(stream: AsyncIterator[Bar], shutdown: asyncio.Event) -> Bar | None:
     """Wait for the next bar or for shutdown, whichever comes first.
 
@@ -1561,11 +1568,10 @@ class _BarLoop:
         )
         if entry is None or entry.entry_price is None:
             return self._held_without_entry_signal(position, at_or_before=at_or_before)
-        stop = self.c.ledger.latest_stop_mark(self.c.strategy_id, pair, entry.occurred_at)
         return OpenPosition(
             entry_time=entry.occurred_at,
             entry_price=entry.entry_price,
-            last_stop=None if stop is None else stop.record.stop_price,
+            last_stop=_last_stop(self.c.ledger, self.c.strategy_id, pair, entry.occurred_at),
         )
 
     def _held_without_entry_signal(
@@ -1590,11 +1596,10 @@ class _BarLoop:
             pair=str(position.pair),
             entry_time=opened_at.isoformat(),
         )
-        stop = self.c.ledger.latest_stop_mark(self.c.strategy_id, position.pair, opened_at)
         return OpenPosition(
             entry_time=opened_at,
             entry_price=position.cost_basis / position.quantity,
-            last_stop=None if stop is None else stop.record.stop_price,
+            last_stop=_last_stop(self.c.ledger, self.c.strategy_id, position.pair, opened_at),
         )
 
     async def handle(self, bar: Bar) -> None:

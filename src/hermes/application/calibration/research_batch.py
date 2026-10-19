@@ -695,16 +695,14 @@ def load_batch(path: Path, *, files: FilesPort, repo: Path | None = None) -> Res
     Args:
         path: The batch file.
         files: Reads it.
-        repo: The clone that holds it, to name it by its repo-relative path;
-            defaults to the current directory.
+        repo: The clone that holds it (default: the current directory), to name it.
 
     Raises:
         BatchError: The file cannot be read (check ``front_matter``) or breaks a rule.
     """
-    root = files.resolve(repo or Path())
     try:
         text = files.read_text(path)
-        relative = files.resolve(path).relative_to(root).as_posix()
+        relative = files.resolve(path).relative_to(files.resolve(repo or Path())).as_posix()
     except (OSError, UnicodeDecodeError, ValueError) as exc:
         raise BatchError("front_matter", f"cannot read {path}: {exc}") from exc
     return parse_batch(relative, text)

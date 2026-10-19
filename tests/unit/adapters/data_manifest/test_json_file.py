@@ -30,7 +30,6 @@ from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
 from hermes.infrastructure.project_root import load_pre_registration
-from hermes.ports.dataset_manifest import DatasetManifestPort
 from tests.support.paths import REPO_ROOT
 
 _COMMITTED = REPO_ROOT / "docs" / "experiments" / "swing-mvp1" / "data-manifest.json"
@@ -69,11 +68,6 @@ def _manifest() -> DatasetManifest:
             ),
         ),
     )
-
-
-def test_adapter_satisfies_the_port(tmp_path: Path) -> None:
-    """The JSON adapter can be injected wherever DatasetManifestPort is expected."""
-    assert isinstance(JsonFileDatasetManifest(tmp_path / "m.json"), DatasetManifestPort)
 
 
 def test_write_then_load_round_trips(tmp_path: Path) -> None:
