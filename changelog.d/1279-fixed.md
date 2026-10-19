@@ -1,0 +1,1 @@
+- Stopped passing the deprecated `send_default_pii` option to the Sentry SDK, so error reporting starts under sentry-sdk 2.72 and still sends no personal data (#1279).
