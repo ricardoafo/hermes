@@ -1,0 +1,1 @@
+- The console's window bar now leads every theme (Neon, Control room, night) as one text-free row of the theme's chrome gradient; the mainnet badge, the live-feed pulse and the clock sit on the status row, and the next-bar countdown that duplicated the status row's countdown is gone (#1097).

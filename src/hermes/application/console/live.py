@@ -111,7 +111,7 @@ def spread_bps(best_bid: Decimal, best_ask: Decimal) -> Decimal:
 def poll_succeeded(outcomes: Sequence[TickOutcome]) -> bool:
     """Return whether one ticker poll priced every coin it asked for.
 
-    The Neon window bar's feed pulse draws one glyph per poll (issue #713);
+    The status row's feed pulse draws one glyph per poll (issue #713);
     a poll with any failed coin counts as failed, so a half-working feed
     never looks healthy.
 
