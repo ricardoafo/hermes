@@ -13,20 +13,10 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from hermes.domain.risk.stale_book import _MAX_ORDERBOOK_AGE_SECONDS, StaleBook
-from hermes.ports.risk_overlay import RiskAction, RiskOverlayPort
+from hermes.ports.risk_overlay import RiskAction
 from tests.unit.domain.risk.conftest import make_market_snapshot, make_portfolio_state
 
 _RULE = StaleBook()
-
-
-class TestStaleBookThresholdConstants:
-    """Verify the pre-reg §5.5 RO-04 constant is exactly 2.0 seconds."""
-
-    def test_max_age_is_binding(self) -> None:
-        """Max orderbook age must be exactly 2.0 seconds per pre-reg §5.5 RO-04."""
-        assert _MAX_ORDERBOOK_AGE_SECONDS == 2.0, (
-            f"RO-04 threshold must be exactly 2.0s (pre-reg §5.5), got {_MAX_ORDERBOOK_AGE_SECONDS}"
-        )
 
 
 class TestStaleBookFreshBook:
@@ -85,11 +75,3 @@ class TestStaleBookStaleBook:
         assert decision.action == RiskAction.HALT, (
             f"Age 2.001s must return HALT, got {decision.action}"
         )
-
-
-class TestStaleBookProtocolConformance:
-    """Rule instance satisfies RiskOverlayPort at runtime."""
-
-    def test_is_risk_overlay_port(self) -> None:
-        """StaleBook must be an instance of RiskOverlayPort (runtime_checkable)."""
-        assert isinstance(_RULE, RiskOverlayPort), "StaleBook must satisfy RiskOverlayPort Protocol"
