@@ -150,6 +150,13 @@ from hermes.application.console.live import (
     live_total,
     poll_succeeded,
 )
+from hermes.application.console.live_context import (
+    BarContext,
+    BarsOutcome,
+    BarsPoller,
+    ContextBoard,
+    LiveBarsPort,
+)
 from hermes.application.console.logs import LogLine, render_log_line
 from hermes.application.console.render import (
     DEMO_TAG,
@@ -862,6 +869,9 @@ class HomeApp(App[None]):
 
     def _init_live_feed(self, ticker: LiveTickerPort | None, clock: Callable[[], datetime]) -> None:
         self._poller = None if ticker is None else TickerPoller(ticker, clock)
+        self._bars_poller = BarsPoller(ticker, clock) if isinstance(ticker, LiveBarsPort) else None
+        self._contexts = ContextBoard()
+        self._fetching_bars = False
         self._board = LiveBoard()
         self._fetching = False
         self._flashes: dict[str, int] = {}
@@ -1396,6 +1406,7 @@ class HomeApp(App[None]):
         if state is not self._live_state:
             self._live_state = state
             self._paint_live()
+        self._start_bars(now)
         poller = self._poller
         if poller is None or self._fetching or not poller.due(now):
             return
@@ -1408,6 +1419,37 @@ class HomeApp(App[None]):
             thread=True,
             exit_on_error=False,
         )
+
+    def _start_bars(self, now: datetime) -> None:
+        """Start a poll of the hourly bars (forming 4h bar, 24 h context) when one is due."""
+        poller = self._bars_poller
+        if poller is None or self._fetching_bars or not poller.due(now):
+            return
+        poller.begin(now)
+        self._fetching_bars = True
+        self.run_worker(
+            partial(self._fetch_bars, poller),
+            name="bars",
+            group="bars",
+            thread=True,
+            exit_on_error=False,
+        )
+
+    def _fetch_bars(self, poller: BarsPoller) -> None:
+        """Fetch the hourly bars of every coin (worker thread) and hand them to the UI thread."""
+        outcomes = poller.fetch()
+        with suppress(RuntimeError):
+            self.call_from_thread(self.apply_bars, outcomes)
+
+    def apply_bars(self, outcomes: Sequence[BarsOutcome]) -> None:
+        """Record fetched bar contexts and repaint the Market panel (UI thread, memory only).
+
+        Args:
+            outcomes: One outcome per coin from :meth:`BarsPoller.fetch`.
+        """
+        self._fetching_bars = False
+        self._contexts.apply(outcomes)
+        self._paint_market()
 
     def _fetch_ticks(self, poller: TickerPoller) -> None:
         """Fetch one tick per coin (worker thread) and hand them to the UI thread."""
@@ -2064,6 +2106,15 @@ class HomeApp(App[None]):
         board = self._board
         return {coin: quote for coin in board.prices() if (quote := board.quote(coin)) is not None}
 
+    def _bar_contexts(self, now: datetime) -> dict[str, BarContext]:
+        """Return the fresh bar context of every coin that has one."""
+        contexts = {}
+        for coin in self._board.prices():
+            context = self._contexts.get(coin, now)
+            if context is not None:
+                contexts[coin] = context
+        return contexts
+
     def _paint_market_read(self, watch: tuple[WatchedPair, ...] | Failed) -> None:
         """Draw the Market rows from a read of the market watch."""
         if isinstance(watch, CARD_ERRORS):
@@ -2080,6 +2131,7 @@ class HomeApp(App[None]):
             return
         look = self._live_look()
         ctx = self._ctx
+        now = self._clock()
         if look is None or not ctx.shows_money:
             self._set("market", render_market_watch(watch, ctx, title=False))
             return
@@ -2091,6 +2143,8 @@ class HomeApp(App[None]):
                 look,
                 width=self._inner("market"),
                 rate=eur_rate(self._rows, self._summary),
+                contexts=self._bar_contexts(now),
+                now=now,
             ),
         )
 

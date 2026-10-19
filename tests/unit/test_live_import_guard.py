@@ -21,6 +21,7 @@ from tests.support.paths import REPO_ROOT
 
 _LIVE: Final = (
     "hermes.application.console.live",
+    "hermes.application.console.live_context",
     "hermes.ports.live_prices",
     "hermes.entrypoints.tui_live",
 )
@@ -61,7 +62,7 @@ def test_engine_supervisor_and_notification_modules_never_load_the_live_modules(
 
 
 def test_import_linter_contract_forbids_the_live_modules_to_every_guarded_layer() -> None:
-    """The contract lists all three live modules and covers every guarded module and the domain."""
+    """The contract lists all four live modules and covers every guarded module and the domain."""
     config = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     contracts = {c["name"]: c for c in config["tool"]["importlinter"]["contracts"]}
     contract = contracts["live-prices-are-console-only"]
