@@ -67,6 +67,7 @@ CI_ENFORCED: dict[str, str] = {
     "openspec-layout": "guards",
     "agents-md-check": "guards",
     "footprint-check": "guards",
+    "ratchets": "guards",
     "no-vague-test-assertions": "guards",
     "test-file-adjacency": "guards",
     "no-future-annotations": "guards",
