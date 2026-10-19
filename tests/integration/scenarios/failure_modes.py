@@ -970,6 +970,13 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             ),
         ),
         FailureMode(
+            "Telegram, Slack and Sentry are all down while a trade fires",
+            proved_by=(
+                _I + "lower_env/test_installed_operations.py"
+                "::test_every_alert_sink_down_through_a_trade_changes_nothing_the_run_records",
+            ),
+        ),
+        FailureMode(
             "A Telegram reply has the wrong shape, so a poll crashes hermes bot",
             proved_by=(
                 _U + "adapters/telegram_bot/test_wire_fuzz_telegram.py"
