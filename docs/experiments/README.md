@@ -34,6 +34,7 @@ and [ADR-021](../architecture/adr-021-strategy-lifecycle-ready-and-done.md)).
 | [post-mortem-v2.md](swing-mvp1/post-mortem-v2.md) | Trial termination report for v2 | Draft |
 | [REVIEW-BRIEF.md](swing-mvp1/REVIEW-BRIEF.md) | Overnight research brief on the paper-trading engine | Dated |
 | [cards/](swing-mvp1/cards/README.md) | Hypothesis cards of the research candidates | Living |
+| [batches/swing-b1.md](swing-mvp1/batches/swing-b1.md) | Research batch swing-b1: four candidates and the champion rule | Draft |
 | [data-manifest.json](swing-mvp1/data-manifest.json) | Pinned dataset manifest | Data |
 | [fee-history.csv](swing-mvp1/fee-history.csv) | Exchange fee history the backtests charge | Data |
 | [trial-log.jsonl](swing-mvp1/trial-log.jsonl) | Every trial run, counted in the DSR | Data |
