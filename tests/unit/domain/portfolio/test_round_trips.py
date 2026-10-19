@@ -121,6 +121,16 @@ def test_a_fee_outside_the_quote_is_refused(side: OrderSide) -> None:
         round_trips(fills)
 
 
+@pytest.mark.parametrize("side", list(OrderSide))
+def test_a_fee_currency_that_sorts_after_the_quote_is_refused_too(side: OrderSide) -> None:
+    """A USDT fee on a BTC/EUR fill is refused: the check is identity, not an order (#1219)."""
+    btc_eur = Pair(base=Currency.BTC, quote=Currency.EUR)
+    fills = [_fill(0, side, "1", "100", "0.1", pair=btc_eur, fee_currency=Currency.USDT)]
+
+    with pytest.raises(RoundTripError, match=r"fee at .* is in USDT, not the quote EUR"):
+        round_trips(fills)
+
+
 @given(qty=_eighteen_places, buy=_eighteen_places, sell=_eighteen_places)
 def test_a_full_round_trip_is_exact_at_fill_precision(
     qty: Decimal, buy: Decimal, sell: Decimal

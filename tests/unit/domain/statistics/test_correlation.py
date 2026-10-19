@@ -57,6 +57,24 @@ def test_pearson_refuses_series_of_different_length() -> None:
         pearson([0.1, 0.2], [0.1, 0.2, 0.3])
 
 
+def test_pearson_refuses_a_first_series_longer_than_the_second() -> None:
+    """The length check holds both ways round, not only when the first is shorter (#1219)."""
+    with pytest.raises(ValueError, match="length"):
+        pearson([0.1, 0.2, 0.3], [0.1, 0.2])
+
+
+@pytest.mark.parametrize(
+    ("ys", "expected"),
+    [([3.0, 5.0], 1.0), ([5.0, 3.0], -1.0)],
+    ids=["rising", "falling"],
+)
+def test_pearson_of_exactly_two_points_is_plus_or_minus_one(
+    ys: list[float], expected: float
+) -> None:
+    """Two points with variance always lie on a line, so r is defined: +1 or -1 (#1219)."""
+    assert pearson([1.0, 2.0], ys) == pytest.approx(expected, abs=1e-12)
+
+
 @pytest.mark.property
 @given(xs=_series, data=st.data())
 def test_pearson_is_bounded_and_symmetric(xs: list[float], data: st.DataObject) -> None:
