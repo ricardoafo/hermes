@@ -76,7 +76,7 @@ def test_row_net_equals_detail_net() -> None:
 
 def test_tax_is_pending_until_the_tax_module() -> None:
     """No tax estimate is invented; net is before tax."""
-    assert isinstance(build_detail(_facts(lots=(_lot(),))).tax, TaxPending)
+    assert build_detail(_facts(lots=(_lot(),))).tax == TaxPending()
 
 
 def test_change_is_measured_in_eur() -> None:

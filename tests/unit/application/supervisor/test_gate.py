@@ -79,7 +79,7 @@ def test_outcome_words_are_rejected(word: str) -> None:
     """Strategy outcomes stay out of every AI-facing text until certification."""
     reasons = _reasons(f"The {word} looks fine.")
 
-    assert any(r.startswith("names a strategy outcome") for r in reasons)
+    assert reasons == (f"names a strategy outcome: {word.lower()}",)
 
 
 def test_an_unknown_reference_is_rejected() -> None:

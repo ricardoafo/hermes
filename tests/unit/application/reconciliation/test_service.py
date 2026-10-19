@@ -285,7 +285,7 @@ def test_a_long_drift_list_is_cut_to_three_details() -> None:
 
 
 def test_the_pushed_alert_carries_no_amount(tmp_path: Path) -> None:
-    """Drift on BTC and USDT: the reason holds no digit beyond the month, so no money leaks."""
+    """Drift on BTC and USDT: the reason names the views and the month, never an amount."""
     path = write_september(tmp_path / "l.sqlite3")
     _sql(
         path,
@@ -296,4 +296,7 @@ def test_the_pushed_alert_carries_no_amount(tmp_path: Path) -> None:
     alert = reconciliation_alert(_run(path), now=_AFTER_SEPT)
 
     assert alert is not None
-    assert not any(ch.isdigit() for ch in alert.reason.replace("2026-09", ""))
+    assert alert.reason == (
+        "2026-09 drift: events BTC disagrees with the book; "
+        "events USDT disagrees with the book; run `hermes reconcile 2026-09`"
+    )

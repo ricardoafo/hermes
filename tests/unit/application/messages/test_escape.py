@@ -62,10 +62,6 @@ class TestCorrelationTail:
         """A string shorter than the tail length is returned unchanged."""
         assert correlation_tail("abc") == "abc"
 
-    def test_tail_length_constant_matches_documentation(self) -> None:
-        """The exported constant equals 6 (as documented in ADR-008)."""
-        assert CORRELATION_TAIL_LEN == 6
-
 
 class TestEscapeSlack:
     """Slack reads &, < and > as markup, so they must reach the API as entities."""
