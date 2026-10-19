@@ -91,7 +91,7 @@ Every test freezes time to a specific timestamp. The code's behavior around real
 ## The unit-test standard
 
 These rules apply to every test in the repo, written by a person or an AI agent. A reviewer can check each one,
-and the AI review applies them on every PR. Rules 3, 6, 7 and 10 are also enforced by
+and the AI review applies them on every PR. Rules 3, 6, 7, 10 and 11 are also enforced by
 `scripts/dev/no-vague-test-assertions.py` (see [Enforcement](#enforcement-in-this-repo-phase-0)). Adopted under
 issue #691 from the 2026-10-05 testing review.
 
@@ -101,9 +101,10 @@ issue #691 from the 2026-10-05 testing review.
 2. **Write the expected value by hand.** Use a worked example computed outside the code. Never compute it with
    the code under test, and never read it from the same table or config the code reads.
 3. **Pin exact values.** Never use these as the only assertion: `is not None`, truthiness, `> 0`, a length,
-   `isinstance`, a substring joined with `or`, `all()` or `any()` over a list that could be empty, or an
-   absence check with no matching presence check. For a function that returns a `bool`, assert `is True` or
-   `is False`.
+   `isinstance`, `all()` or `any()` over a list that could be empty, or an absence check with no matching
+   presence check. Never write `assert a or b`, a substring check joined with `or` for example: it passes when
+   either side holds, so the guard rejects it whatever else the test asserts. For a function that returns a
+   `bool`, assert `is True` or `is False`.
 4. **Test every limit at the limit.** Every threshold gets a test exactly at it and one just past it, so `>`
    versus `>=` is pinned.
 5. **Assert every claim in the name.** If the name says "per currency and day", the test changes the currency
@@ -122,7 +123,8 @@ issue #691 from the 2026-10-05 testing review.
     `# integration: tests/integration/.../test_x.py::test_y`.
 11. **"Doesn't raise" checks the state afterwards**, for example that the open orders are unchanged after
     cancelling an unknown one. Every function that can raise has a test for the specific exception on the
-    specific bad input.
+    specific bad input. A test with no assertion at all fails the guard. A validator that accepts by
+    returning `None` has no state to read: use `assert_accepted` from `tests/support/accepted.py`.
 12. **Pure maths gets a property test** (indicators, sizing, tax, statistics). The gates run Hypothesis on the
     derandomized `ci` profile (issue #637), so a property test is as repeatable as an example test. Pin known
     regressions with `@example`. A test that needs more than the 60s `pytest-timeout` default says so with
@@ -161,7 +163,9 @@ Rules enforced today (tiers and cadences: [test-tiers.md](test-tiers.md)):
 | Every test has a docstring | ruff `D103` (tests-only via `per-file-ignores`) | pre-commit + `ci.yml` ruff step | live |
 | Coverage floor (global) | coverage.py `fail_under = 90`, branch coverage | `ci.yml` unit step — pytest exits non-zero | live |
 | Coverage floor (per-package) | `scripts/dev/coverage-check.py --bootstrap` (flag is a no-op while every listed package has code) | `ci.yml` coverage step — per-package thresholds | live |
-| Standard rules 3, 6, 7 and 10 (vague-only, tests Python, restated constant, mock-only) | `scripts/dev/no-vague-test-assertions.py` (AST walker) with `no-vague-test-assertions.baseline` (violations known on adoption; the list only shrinks) | pre-commit hook on staged tests; a full run also fails on stale baseline lines | live |
+| Standard rules 3, 6, 7, 10 and 11 (vague-only or an `or` assertion, tests Python, restated constant, mock-only, no assertion) | `scripts/dev/no-vague-test-assertions.py` (AST walker) with `no-vague-test-assertions.baseline` (violations known on adoption; the list only shrinks) | pre-commit hook on staged tests; a full run also fails on stale baseline lines | live |
+| No expected failure on main | `xfail_strict = true` plus `tests/plugins/xfail_guard.py` (any xfail outcome fails the session) | every pytest run, local and `ci.yml` | live |
+| Every warning fails the run | `filterwarnings = ["error"]` in `pyproject.toml` | every pytest run | live |
 | Mutation kill floor | cosmic-ray (see `docs/decisions/2026-08-22-mutation-testing-cosmic-ray.md`) | ≥ 80% kill rate on `src/hermes/domain/value_objects` and `src/hermes/domain/lots`, weekly in `scheduled.yml`; blocking since #406 | live |
 | Property-based tests exist | manual review + `grep hypothesis` | reviewer checklist | manual |
 | No snapshot without reviewer comment on the diff | syrupy `__snapshots__/` folders next to the tests | reviewer checklist | manual |

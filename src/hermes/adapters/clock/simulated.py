@@ -10,7 +10,7 @@ Thread safety: an internal :class:`threading.Lock` guards the internal
 ``_current`` state so the clock is safe to share across threads (e.g.
 calibration or replay orchestration).
 
-Reference: SA-8 §4.1 S-01, NautilusTrader ``TestClock`` pattern,
+Reference: SA-8 §4.1 S-01 (a test clock the caller advances),
 openspec/archive/spec-4a-clock-port/change.md D-4 (monotonicity policy).
 """
 

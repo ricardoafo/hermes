@@ -84,7 +84,7 @@ Notes:
 | ------ | ------------- | ------------------ | --------- |
 | **G1: Foundation** | Week 1 | Spec 7 + Spec 1 merged; PR CI green; import-linter baseline committed | All subsequent specs |
 | **G2: Data layer** | Week 3 | Spec 4 merged; Binance WS ingest live against public feed; Parquet round-trip determinism test green; nightly chaos green | Spec 2 (needs orderbook snapshots) |
-| **G3: Fill kernel** | Week 5 | Spec 2 merged; `OrderbookWalkFillModel` golden replay passing; stateful property tests green; anti-Zipline + anti-Freqtrade tests pass | Spec 3 and Spec 6 |
+| **G3: Fill kernel** | Week 5 | Spec 2 merged; `OrderbookWalkFillModel` golden replay passing; stateful property tests green; no-look-ahead and single-fill-path tests pass | Spec 3 and Spec 6 |
 | **G4: Risk gates** | Week 7 | Spec 3 merged; all composition-root port-swap pattern verified; sizing never exceeds 5% notional (per pre-registration §5.4) | Spec 5 (signals need OrderRouter) |
 | **G5: Protocol** | Week 8 or 9 | Spec 9 entry-criteria met: Spec 8 also merged OR both Spec 3 and Spec 8 merged before Spec 9 starts. Spec 9 itself ships: `DataSplitEnforcer` raises `OOSDataLeakageError` for any non-certification access to 2025-09-01 → 2026-12-31; `PreRegistrationSigned` event has a stable SHA-256 across platforms | Spec 5 can be trusted as a source of strategy results |
 | **G6: Strategy** | Week 9 | Spec 5 merged; no OOS data access in non-certification mode; `DeviationDetector` in Spec 9 confirms config matches frozen pre-registration | Spec 6 (strategy feeds fill pairs) |
@@ -213,8 +213,8 @@ per-order fill-time guards (SA-9 §3.5; owned here, not in Spec 8).
 | RO-02 guard: cancel order if simulated slippage > 0.50% of notional at mid | Unit test with engineered 0.5% slippage scenario |
 | RO-03 guard: WARN (do not block) if exit slippage > 2.00% of notional at mid | Unit test; non-blocking confirmed |
 | `SimulatedExchangeAdapter` routes to `FillModelPort` — zero real-exchange calls | Import-linter: no exchange HTTP calls from adapter |
-| Anti-Zipline test (SA-2 AP-1): market orders NEVER fill at current bar's close price | Test: fabricated bar sequence; fill timestamp always > bar close timestamp |
-| Anti-Freqtrade test (SA-2 AP-2): grep/import-linter confirms no `if.*shadow` or `if.*dry_run` in `fill.py` | Import-linter contract; `rg 'dry_run\|shadow' src/hermes/domain/fill` returns zero |
+| No-look-ahead fill test (SA-2 AP-1): market orders NEVER fill at current bar's close price | Test: fabricated bar sequence; fill timestamp always > bar close timestamp |
+| Single-fill-path test (SA-2 AP-2): grep/import-linter confirms no `if.*shadow` or `if.*dry_run` in `fill.py` | Import-linter contract; `rg 'dry_run\|shadow' src/hermes/domain/fill` returns zero |
 | Fill-pair (`SimulatedFill`, `RealFill`) recording emits events for calibration harness | Integration test with fake `ExchangePort` |
 | Hypothesis stateful `FillStateMachine` covering INV-04, INV-05, INV-14, INV-15, INV-16, INV-17 | Property test present; nightly max_examples=10,000 |
 | Golden-replay fixture: 1 small BTCUSDT replay (< 200 events) committed to `tests/fixtures/replays/` | syrupy snapshot test passes |
