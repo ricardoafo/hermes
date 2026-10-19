@@ -118,8 +118,11 @@ def test_carry_forward_never_exceeds_four_years(
         carried_losses=tuple(CarriedLoss(year + delta, amount) for delta, amount in carried),
     )
     result = net_savings_base(year, hermes, taxpayer)
-    assert all(year - c.origin_year <= CARRY_FORWARD_YEARS for c in result.carried_used)
-    assert all(year + 1 - c.origin_year <= CARRY_FORWARD_YEARS for c in result.carried_left)
+    too_old_used = [c for c in result.carried_used if year - c.origin_year > CARRY_FORWARD_YEARS]
+    too_old_left = [
+        c for c in result.carried_left if year + 1 - c.origin_year > CARRY_FORWARD_YEARS
+    ]
+    assert (too_old_used, too_old_left) == ([], [])
 
 
 def test_repr_hides_every_profile_value() -> None:

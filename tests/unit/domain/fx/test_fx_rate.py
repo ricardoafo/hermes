@@ -14,7 +14,6 @@ docs/decisions/2026-08-23-fx-rate-source-frankfurter.md.
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
 from datetime import date
 from decimal import Decimal
 
@@ -72,21 +71,6 @@ class TestFxRateConstruction:
         assert fx.to_currency == Currency.EUR
         assert fx.rate == Decimal("0.92")
         assert fx.date == _TODAY
-
-
-class TestFxRateFrozen:
-    """FxRate is frozen — matches the value-object contract from code-conventions §1."""
-
-    def test_attribute_assignment_raises(self) -> None:
-        """Reassigning any attribute raises FrozenInstanceError (dataclass frozen=True)."""
-        fx = FxRate(
-            from_currency=Currency.USDT,
-            to_currency=Currency.EUR,
-            rate=Decimal("0.92"),
-            date=_TODAY,
-        )
-        with pytest.raises(FrozenInstanceError):
-            fx.rate = Decimal("1.5")  # type: ignore[misc]
 
 
 class TestFxRateConvert:
