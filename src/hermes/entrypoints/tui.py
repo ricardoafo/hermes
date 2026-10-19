@@ -171,9 +171,6 @@ from hermes.application.console.shadow_screen import (
     sources_from,
 )
 from hermes.application.console.system import (
-    MachineStats,
-    ReleaseHistory,
-    ServiceStatus,
     SystemSources,
 )
 from hermes.application.console.views import ActivityDay, ActivityItem, TaxPending
@@ -222,7 +219,6 @@ from hermes.entrypoints.tui_reads import (
     ReadRequest,
     ReadSources,
     ShadowFailed,
-    SystemReads,
     read_console,
     read_shadow,
 )
@@ -242,17 +238,7 @@ from hermes.entrypoints.tui_shadow import (
     settings_text,
 )
 from hermes.entrypoints.tui_signals import signals_screen
-from hermes.entrypoints.tui_system import (
-    RELEASES_TRAIL,
-    SERVICES_TRAIL,
-    actions_text,
-    machine_text,
-    release_detail,
-    releases_text,
-    service_detail,
-    services_text,
-    timing_text,
-)
+from hermes.entrypoints.tui_system_tab import SystemFrame, SystemTabController
 from hermes.entrypoints.tui_tax import EDIT_LATER, PROFILE, TaxPackStatus, TaxTab
 from hermes.entrypoints.tui_theme import (
     BASE,
@@ -377,9 +363,6 @@ _LOGS: Final = 8
 _NOTICE_SECONDS: Final = 6
 # The big estimated-tax figure shows from the height the big total shows (30 rows).
 _BIG_FROM_ROWS: Final = 30
-_SERVICE: Final = "service:"
-_RELEASE: Final = "release:"
-_SERVICE_JOURNAL_LINES: Final = 12
 
 _FOOTER_CHIPS: Final = (
     ("D W M Y", "range"),
@@ -850,13 +833,14 @@ class HomeApp(App[None]):
             self.register_theme(hermes_theme)
 
     def _init_system(self) -> None:
-        self._system = self._sources.system
-        self._sys_cursor: str | None = None
-        self._service_open = False
-        self._services: tuple[ServiceStatus, ...] | None = None
-        self._releases: ReleaseHistory | None = None
-        self._machine: MachineStats | None = None
-        self._bar_seconds: tuple[Decimal, ...] | None = None
+        self._system_tab = SystemTabController(
+            unit_journal=self._sources.system.unit_journal,
+            frame=self._system_frame,
+            home=lambda: self._home,
+            set_content=self._set,
+            push_screen=self.push_screen,
+            chips=_DETAIL_CHIPS,
+        )
 
     def _init_reads(
         self,
@@ -1827,8 +1811,8 @@ class HomeApp(App[None]):
                 else briefs_screen(briefs, ctx, self._data, width=self.size.width),
             )
         if self._tab == _SYSTEM and reads.system is not None:
-            self._keep_system(reads.system)
-            self._paint_system()
+            self._system_tab.keep(reads.system)
+            self._system_tab.paint()
         if self._tab == _LOGS and reads.logs_asked:
             self.logs_view.receive(reads.logs)
         if self._tab == _SIGNALS and reads.rule_checks is not None:
@@ -2184,140 +2168,20 @@ class HomeApp(App[None]):
     # System (view only: nothing here runs a command)
     # ------------------------------------------------------------------
 
-    def _keep_system(self, reads: SystemReads) -> None:
-        """Keep the System screen's last reads for its cursor and detail screens."""
-        self._services = reads.services
-        self._releases = reads.releases
-        self._machine = reads.machine
-        self._bar_seconds = reads.bar_seconds
-
-    def _service_names(self) -> list[str]:
-        return [status.unit.name for status in self._services or ()]
-
-    def _release_names(self) -> list[str]:
-        return [] if self._releases is None else list(self._releases.names())
-
-    def _system_keys(self) -> list[str]:
-        return [f"{_SERVICE}{name}" for name in self._service_names()] + [
-            f"{_RELEASE}{name}" for name in self._release_names()
-        ]
-
-    def _system_selected(self, prefix: str) -> str | None:
-        cursor = self._sys_cursor
-        if cursor is None or not cursor.startswith(prefix):
-            return None
-        return cursor.removeprefix(prefix)
-
     def _eur_rate_date(self) -> date | None:
         return None if self._summary is None else self._summary.eur_rate_date
 
-    def _paint_system(self) -> None:
-        """Draw the System panels from the last read; moving the cursor reads nothing."""
-        keys = self._system_keys()
-        if self._sys_cursor not in keys:
-            self._sys_cursor = keys[0] if keys else None
-        tokens = tokens_for(self.theme)
-        tz = self._ctx.tz
-        now = self._clock()
-        service = self._system_selected(_SERVICE)
-        release = self._system_selected(_RELEASE)
-        self._home.query_one("#system-body").set_class(self.is_wide, "-split")
-        self._set("sys-services", services_text(self._services, service, tz, tokens))
-        self._set("sys-releases", releases_text(self._releases, release, tz, tokens))
-        self._set("sys-actions", actions_text(tokens))
-        self._set(
-            "sys-timing",
-            timing_text(
-                self._heartbeat,
-                eur_rate_date=self._eur_rate_date(),
-                bar_seconds=self._bar_seconds,
-                now=now,
-                tz=tz,
-                tokens=tokens,
-            ),
-        )
-        self._set("sys-machine", machine_text(self._machine, now, tz, tokens))
-        on_system = self._tab == _SYSTEM
-        services_panel = self._home.query_one("#sys-services-panel", HudPanel)
-        services_panel.active = on_system and service is not None
-        releases_panel = self._home.query_one("#sys-releases-panel", HudPanel)
-        releases_panel.active = on_system and release is not None
-        shown = (
-            self._service_open
-            and service is not None
-            and detail_mode(self.size.width, beside=self.is_wide) is DetailMode.PANE
-        )
-        self._home.query_one("#sys-service-pane", DetailPane).is_open = shown
-        if shown and service is not None:
-            self._set("sys-service-detail", self._service_content(service))
-
-    def _service_content(self, name: str) -> RenderableType:
-        unit = next((s.unit for s in self._services or () if s.unit.name == name), None)
-        reader = self._system.unit_journal
-        journal = (
-            None if unit is None or reader is None else reader(unit.unit, _SERVICE_JOURNAL_LINES)
-        )
-        return service_detail(
-            self._services,
-            name,
-            journal=journal,
+    def _system_frame(self) -> SystemFrame:
+        return SystemFrame(
             now=self._clock(),
             tz=self._ctx.tz,
             tokens=tokens_for(self.theme),
+            heartbeat=self._heartbeat,
+            eur_rate_date=self._eur_rate_date(),
+            wide=self.is_wide,
+            width=self.size.width,
+            on_system=self._tab == _SYSTEM,
         )
-
-    def _release_content(self, name: str) -> RenderableType:
-        return release_detail(
-            self._releases, name, self._clock(), self._ctx.tz, tokens_for(self.theme)
-        )
-
-    def _restore_system_cursor(self, prefix: str, state: ListState | None) -> None:
-        if state is not None and state.cursor is not None:
-            self._sys_cursor = f"{prefix}{state.cursor}"
-        self._paint_system()
-
-    def _open_system_detail(self) -> None:
-        """Open the selected service (pane, or screen when compact) or release (screen)."""
-        service = self._system_selected(_SERVICE)
-        release = self._system_selected(_RELEASE)
-        if service is not None:
-            if detail_mode(self.size.width, beside=self.is_wide) is DetailMode.PANE:
-                self._service_open = True
-                self._paint_system()
-                return
-            self.push_screen(
-                DetailScreen(
-                    trail=SERVICES_TRAIL,
-                    keys=self._service_names,
-                    current=service,
-                    body=self._service_content,
-                    title="Service detail",
-                    state=ListState(cursor=service),
-                    chips=_DETAIL_CHIPS,
-                ),
-                partial(self._restore_system_cursor, _SERVICE),
-            )
-        elif release is not None:
-            self.push_screen(
-                DetailScreen(
-                    trail=RELEASES_TRAIL,
-                    keys=self._release_names,
-                    current=release,
-                    body=self._release_content,
-                    title="Release detail",
-                    state=ListState(cursor=release),
-                    chips=_DETAIL_CHIPS,
-                ),
-                partial(self._restore_system_cursor, _RELEASE),
-            )
-
-    def _step_system(self, step: int) -> None:
-        keys = self._system_keys()
-        if not keys:
-            return
-        current = keys.index(self._sys_cursor) if self._sys_cursor in keys else 0
-        self._sys_cursor = keys[(current + step) % len(keys)]
-        self._paint_system()
 
     # ------------------------------------------------------------------
     # Actions
@@ -2419,9 +2283,8 @@ class HomeApp(App[None]):
         if self._detail_open and self._tab == _HOME:
             self._detail_open = False
             self._repaint_positions()
-        elif self._service_open and self._tab == _SYSTEM:
-            self._service_open = False
-            self._paint_system()
+        elif self._system_tab.service_open and self._tab == _SYSTEM:
+            self._system_tab.close_service()
         elif self._tab_history:
             self._switch_to(self._tab_history.pop())
 
@@ -2443,7 +2306,7 @@ class HomeApp(App[None]):
             step: ``-1`` for the previous position, ``1`` for the next.
         """
         if self._on_home and self._tab == _SYSTEM:
-            self._step_system(step)
+            self._system_tab.step(step)
             return
         coins = self._positions_coins()
         if not self._home_shown or not coins:
@@ -2473,7 +2336,7 @@ class HomeApp(App[None]):
         On System it opens the selected service or release instead.
         """
         if self._on_home and self._tab == _SYSTEM:
-            self._open_system_detail()
+            self._system_tab.open_detail()
             return
         selected = self._selected
         if not self._home_shown or selected is None:
