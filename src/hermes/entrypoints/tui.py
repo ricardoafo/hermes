@@ -106,6 +106,7 @@ from contextlib import suppress
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta, tzinfo
 from decimal import ROUND_HALF_UP, Decimal
+from fractions import Fraction
 from functools import partial
 from pathlib import Path
 from typing import ClassVar, Final
@@ -153,6 +154,7 @@ from hermes.application.console.logs import LogLine, render_log_line
 from hermes.application.console.render import (
     DEMO_TAG,
     RenderContext,
+    is_checking,
     render_activity,
     render_heartbeat,
     render_market_watch,
@@ -254,6 +256,7 @@ from hermes.entrypoints.tui_theme import (
     METER_CELLS,
     MOTION,
     NIGHT_THEME,
+    SPINNER_FRAMES,
     THEMES,
     VERTICAL_BREAKPOINTS,
     ThemeChoice,
@@ -867,6 +870,9 @@ class HomeApp(App[None]):
         self._fresh_activity: frozenset[ActivityItem] = frozenset()
         self._fade_step = 0
         self._fade_timer: Timer | None = None
+        self._slide_step = MOTION.slide_steps
+        self._slide_timer: Timer | None = None
+        self._spinner = 0
         self._polls: deque[bool] = deque(maxlen=FEED_WIDTH)
         self._feed_timer: Timer | None = None
         self._feed_bright = False
@@ -1129,6 +1135,7 @@ class HomeApp(App[None]):
         if not self.is_night:
             self.effect_timers["shimmer"] = self.set_interval(MOTION.shimmer, self._start_shimmer)
             self.effect_timers["radar"] = self.set_interval(MOTION.radar_tick, self._step_radar)
+        self.effect_timers["spinner"] = self.set_interval(MOTION.spinner_tick, self._step_spinner)
 
     def _start_shimmer(self) -> None:
         """Start a shimmer pass on every shown big number (Home total, Shadow day)."""
@@ -1146,6 +1153,13 @@ class HomeApp(App[None]):
                 "positions",
                 empty_positions(coins, next_at, self._ctx, self._data, self._radar),
             )
+
+    def _step_spinner(self) -> None:
+        """Turn the checking spinner one frame; repaint only while a check is running."""
+        self._spinner = (self._spinner + 1) % len(SPINNER_FRAMES)
+        heartbeat = self._heartbeat
+        if heartbeat is not None and is_checking(heartbeat, self._clock()):
+            self._paint_heartbeat()
 
     def _step_pulse(self) -> None:
         self._pulse = (self._pulse + 1) % MOTION.pulse_steps
@@ -1600,7 +1614,13 @@ class HomeApp(App[None]):
         heartbeat = self._heartbeat
         if heartbeat is None or not self.screen_stack:
             return
-        ctx = replace(self._ctx, live_dot=f"bold {self.live_dot_colour}")
+        spinner = SPINNER_FRAMES[self._spinner] if self._motion else self._ctx.spinner
+        ctx = replace(
+            self._ctx,
+            live_dot=f"bold {self.live_dot_colour}",
+            now=self._clock(),
+            spinner=spinner,
+        )
         down = heartbeat.state is HeartbeatState.DOWN
         self._set("heartbeat", Text("") if down else render_heartbeat(heartbeat, ctx))
         self._set("down-row", render_heartbeat(heartbeat, ctx) if down else Text(""))
@@ -1736,6 +1756,9 @@ class HomeApp(App[None]):
             item: f"on {blend(self._data.panel, self._data.live, _FADE_PEAK * share)}"
             for item in self._fresh_activity
         }
+        reveal = {
+            item: Fraction(self._slide_step, MOTION.slide_steps) for item in self._fresh_activity
+        }
         self._set(
             "activity",
             render_activity(
@@ -1744,6 +1767,7 @@ class HomeApp(App[None]):
                 limit=self._layout.activity_rows,
                 icons=True,
                 emphasis=emphasis,
+                reveal=reveal,
             ),
         )
 
@@ -1761,11 +1785,27 @@ class HomeApp(App[None]):
             return
         self._fresh_activity = items - seen
         self._fade_step = 0
+        self._slide_step = 1
+        if self._slide_timer is not None:
+            self._slide_timer.stop()
+        self._slide_timer = self.set_interval(
+            MOTION.base / (MOTION.slide_steps - 1), self._slide_activity
+        )
         if self._fade_timer is not None:
             self._fade_timer.stop()
         self._fade_timer = self.set_interval(
             MOTION.activity_fade / MOTION.activity_fade_steps, self._fade_activity
         )
+
+    def _slide_activity(self) -> None:
+        """Reveal a new row one step further, left to right; the last step stops the slide."""
+        self._slide_step = min(self._slide_step + 1, MOTION.slide_steps)
+        if self._slide_step >= MOTION.slide_steps and self._slide_timer is not None:
+            self._slide_timer.stop()
+            self._slide_timer = None
+        reads = self._reads
+        if reads is not None:
+            self._paint_activity(reads.activity)
 
     def _fade_activity(self) -> None:
         """Take one step of the highlight fade; the last step clears it."""
@@ -2410,6 +2450,8 @@ class HomeApp(App[None]):
         if not self._on_home:
             return
         self._show_quiet = not self._show_quiet
+        # Rows the toggle reveals were always there; they are not new activity.
+        self._activity_seen = None
         self._redraw()
 
     def action_logs(self) -> None:

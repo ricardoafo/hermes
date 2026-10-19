@@ -1,0 +1,335 @@
+# serializer version: 1
+# name: test_query_activity_svg_snapshot[query_activity_control_120x36][query_activity_control_120x36]
+  '''
+  ┏━ ACTIVITY  ───────────────────────────────────────────────────────────────────────────────────────────────── computed
+    since:2d
+   6 of 10 · sort when ▼
+   kind  bar 1 · closed 1 · error 1 · restart 1 · +2 more
+   coin  BTC 2 · ETH 1
+    When ▼            Kind         Coin  Text
+    2026-10-03 13:59  bar                checked 3 coins · no signal
+    2026-10-03 10:01  restart            deployed 9f3a1c0 (was 2bc2798)
+    2026-10-03 09:00  warning      ETH   exchange.slow (Timeout)
+    2026-10-02 18:00  closed       BTC
+    2026-10-02 14:00  stop_raised  BTC
+    2026-10-01 22:00  error              order.failed (ApiError)
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+   Tab completes · Enter table · S sorts ───────────────────────────────────────────────────────────────────────────────━┛
+  ---
+  colours: #070b14 #0c1424 #0e192f #0f1b33 #19253c #1a2740 #4894e7 #4ca3e8 #5088e9 #50b2e9 #54c2ea #58d1eb #637fee #7676f4 #838ca1 #8a6ef9 #8a94a8 #9d65ff #a26efe #e6ecf5
+  
+  '''
+# ---
+# name: test_query_activity_svg_snapshot[query_activity_control_160x45][query_activity_control_160x45]
+  '''
+  ┏━ ACTIVITY  ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── computed
+    since:2d
+   6 of 10 · sort when ▼
+   kind  bar 1 · closed 1 · error 1 · restart 1 · +2 more
+   coin  BTC 2 · ETH 1
+    When ▼            Kind         Coin  Text
+    2026-10-03 13:59  bar                checked 3 coins · no signal
+    2026-10-03 10:01  restart            deployed 9f3a1c0 (was 2bc2798)
+    2026-10-03 09:00  warning      ETH   exchange.slow (Timeout)
+    2026-10-02 18:00  closed       BTC
+    2026-10-02 14:00  stop_raised  BTC
+    2026-10-01 22:00  error              order.failed (ApiError)
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+   Tab completes · Enter table · S sorts ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────━┛
+  ---
+  colours: #070b14 #0c1424 #0e192f #0f1b33 #19253c #1a2740 #4894e7 #4ca3e8 #5088e9 #50b2e9 #54c2ea #58d1eb #637fee #7676f4 #838ca1 #8a6ef9 #8a94a8 #9d65ff #a26efe #e6ecf5
+  
+  '''
+# ---
+# name: test_query_activity_svg_snapshot[query_activity_control_240x60][query_activity_control_240x60]
+  '''
+  ┏━ ACTIVITY  ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── computed
+    since:2d
+   6 of 10 · sort when ▼
+   kind  bar 1 · closed 1 · error 1 · restart 1 · +2 more
+   coin  BTC 2 · ETH 1
+    When ▼            Kind         Coin  Text
+    2026-10-03 13:59  bar                checked 3 coins · no signal
+    2026-10-03 10:01  restart            deployed 9f3a1c0 (was 2bc2798)
+    2026-10-03 09:00  warning      ETH   exchange.slow (Timeout)
+    2026-10-02 18:00  closed       BTC
+    2026-10-02 14:00  stop_raised  BTC
+    2026-10-01 22:00  error              order.failed (ApiError)
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+   Tab completes · Enter table · S sorts ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────━┛
+  ---
+  colours: #070b14 #0c1424 #0e192f #0f1b33 #19253c #1a2740 #4894e7 #4ca3e8 #5088e9 #50b2e9 #54c2ea #58d1eb #637fee #7676f4 #838ca1 #8a6ef9 #8a94a8 #9d65ff #a26efe #e6ecf5
+  
+  '''
+# ---
+# name: test_query_activity_svg_snapshot[query_activity_control_80x24][query_activity_control_80x24]
+  '''
+  ┏━ ACTIVITY  ───────────────────────────────────────────────────────── computed
+    since:2d
+   6 of 10 · sort when ▼
+   kind  bar 1 · closed 1 · error 1 · restart 1 · +2 more
+   coin  BTC 2 · ETH 1
+    When ▼            Kind         Coin  Text
+    2026-10-03 13:59  bar                checked 3 coins · no signal
+    2026-10-03 10:01  restart            deployed 9f3a1c0 (was 2bc2798)
+    2026-10-03 09:00  warning      ETH   exchange.slow (Timeout)
+    2026-10-02 18:00  closed       BTC
+    2026-10-02 14:00  stop_raised  BTC
+    2026-10-01 22:00  error              order.failed (ApiError)
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+   Tab completes · Enter table · S sorts ───────────────────────────────────────━┛
+  ---
+  colours: #070b14 #0c1424 #0e192f #0f1b33 #19253c #1a2740 #4894e7 #4ca3e8 #5088e9 #50b2e9 #54c2ea #58d1eb #637fee #7676f4 #838ca1 #8a6ef9 #8a94a8 #9d65ff #a26efe #e6ecf5
+  
+  '''
+# ---
+# name: test_query_activity_svg_snapshot[query_activity_neon_120x36][query_activity_neon_120x36]
+  '''
+  ┏━ ACTIVITY  ───────────────────────────────────────────────────────────────────────────────────────────────── computed
+    since:2d
+   6 of 10 · sort when ▼
+   kind  bar 1 · closed 1 · error 1 · restart 1 · +2 more
+   coin  BTC 2 · ETH 1
+    When ▼            Kind         Coin  Text
+    2026-10-03 13:59  bar                checked 3 coins · no signal
+    2026-10-03 10:01  restart            deployed 9f3a1c0 (was 2bc2798)
+    2026-10-03 09:00  warning      ETH   exchange.slow (Timeout)
+    2026-10-02 18:00  closed       BTC
+    2026-10-02 14:00  stop_raised  BTC
+    2026-10-01 22:00  error              order.failed (ApiError)
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+   Tab completes · Enter table · S sorts ───────────────────────────────────────────────────────────────────────────────━┛
+  ---
+  colours: #00f0ff #0b0420 #120731 #15093a #170a3d #1f1646 #1fcfff #3daeff #4a2399 #5c8dff #798bb6 #7b6cff #8fa8d8 #9759fd #b152fa #c8fbff #cb4bf7 #e544f3 #ff3df0
+  
+  '''
+# ---
+# name: test_query_activity_svg_snapshot[query_activity_neon_240x60][query_activity_neon_240x60]
+  '''
+  ┏━ ACTIVITY  ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── computed
+    since:2d
+   6 of 10 · sort when ▼
+   kind  bar 1 · closed 1 · error 1 · restart 1 · +2 more
+   coin  BTC 2 · ETH 1
+    When ▼            Kind         Coin  Text
+    2026-10-03 13:59  bar                checked 3 coins · no signal
+    2026-10-03 10:01  restart            deployed 9f3a1c0 (was 2bc2798)
+    2026-10-03 09:00  warning      ETH   exchange.slow (Timeout)
+    2026-10-02 18:00  closed       BTC
+    2026-10-02 14:00  stop_raised  BTC
+    2026-10-01 22:00  error              order.failed (ApiError)
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+   Tab completes · Enter table · S sorts ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────━┛
+  ---
+  colours: #00f0ff #0b0420 #120731 #15093a #170a3d #1f1646 #1fcfff #3daeff #4a2399 #5c8dff #798bb6 #7b6cff #8fa8d8 #9759fd #b152fa #c8fbff #cb4bf7 #e544f3 #ff3df0
+  
+  '''
+# ---
+# name: test_query_activity_svg_snapshot[query_activity_neon_80x24][query_activity_neon_80x24]
+  '''
+  ┏━ ACTIVITY  ───────────────────────────────────────────────────────── computed
+    since:2d
+   6 of 10 · sort when ▼
+   kind  bar 1 · closed 1 · error 1 · restart 1 · +2 more
+   coin  BTC 2 · ETH 1
+    When ▼            Kind         Coin  Text
+    2026-10-03 13:59  bar                checked 3 coins · no signal
+    2026-10-03 10:01  restart            deployed 9f3a1c0 (was 2bc2798)
+    2026-10-03 09:00  warning      ETH   exchange.slow (Timeout)
+    2026-10-02 18:00  closed       BTC
+    2026-10-02 14:00  stop_raised  BTC
+    2026-10-01 22:00  error              order.failed (ApiError)
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+   Tab completes · Enter table · S sorts ───────────────────────────────────────━┛
+  ---
+  colours: #00f0ff #0b0420 #120731 #15093a #170a3d #1f1646 #1fcfff #3daeff #4a2399 #5c8dff #798bb6 #7b6cff #8fa8d8 #9759fd #b152fa #c8fbff #cb4bf7 #e544f3 #ff3df0
+  
+  '''
+# ---

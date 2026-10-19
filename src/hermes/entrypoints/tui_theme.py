@@ -61,6 +61,7 @@ __all__ = [
     "NIGHT_START",
     "NIGHT_THEME",
     "RADAR_FRAMES",
+    "SPINNER_FRAMES",
     "TALL_FROM",
     "TEXT_MIN_CONTRAST",
     "THEMES",
@@ -281,6 +282,8 @@ TOWERING_CHART_FACTOR: Final = 2
 LOG_TAIL_ROWS: Final = 10
 # The empty-positions radar: one braille dot sweeping round.
 RADAR_FRAMES: Final = "⠁⠂⠄⡀⢀⠠⠐⠈"
+# The "checking" spinner on the status row, one braille frame per ``Motion.spinner_tick``.
+SPINNER_FRAMES: Final = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 # The big total's rule: one row of this glyph under the digits.
 HERO_RULE_GLYPH: Final = "▔"
 # Legibility floor of the big total on its panel (WCAG 2 AAA for text).
@@ -342,6 +345,8 @@ class Motion:
         flash: A live price flash, and the feed pulse's bright newest glyph (issue #713).
         activity_fade: How long a new activity row's highlight takes to fade (issue #721).
         activity_fade_steps: Colour steps of that fade.
+        slide_steps: Steps of the new row's slide-in, spread over ``base`` (issue #721).
+        spinner_tick: One frame of the checking spinner (issue #721).
         clock_tick: The clock and the next-bar countdown.
         poll: Re-reading the read model.
     """
@@ -360,6 +365,8 @@ class Motion:
     flash: float = 0.9
     activity_fade: float = 2.0
     activity_fade_steps: int = 4
+    slide_steps: int = 3
+    spinner_tick: float = 0.08
     clock_tick: float = 1.0
     poll: float = 5.0
 

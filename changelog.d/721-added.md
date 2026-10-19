@@ -1,0 +1,1 @@
+- The status row shows a spinner while a due bar check runs, and a new Activity row slides in from the left.

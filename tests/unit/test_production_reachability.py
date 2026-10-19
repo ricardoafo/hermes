@@ -34,7 +34,6 @@ _PARKED: dict[str, str] = {
     "hermes.ports.dataset_manifest": "issue #1181: port with no consumer, to judge",
     "hermes.ports.fees": "issue #1181: port with no consumer, to judge",
     "hermes.ports.klines": "issue #1181: port with no consumer, to judge",
-    "hermes.ports.portfolio_history": "issue #1181: port with no consumer, to judge",
     "hermes.ports.stop_history": "issue #1181: port with no consumer, to judge",
 }
 

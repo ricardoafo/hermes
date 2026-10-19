@@ -27,7 +27,6 @@ from typing import cast
 
 from rich.console import Console, RenderableType
 from syrupy.assertion import SnapshotAssertion
-from syrupy.extensions.image import SVGImageSnapshotExtension
 from textual.binding import Binding
 from textual.widgets import Static
 
@@ -38,6 +37,7 @@ from hermes.application.console.logs import LogLine
 from hermes.entrypoints import tui as tui_module
 from hermes.entrypoints.tui import REFRESH_SECONDS, HomeApp, _PanelScreen
 from hermes.entrypoints.tui_widgets import BigNumber
+from tests.support.tui_views import assert_view, capture
 
 _TAX_FOOTNOTE = "est. · FIFO · 19% band · €5,988.30 left before 21%"
 # The fixture's read time (14:12 Madrid): snapshots never show the wall clock.
@@ -85,11 +85,6 @@ def _styled(content: RenderableType, width: int) -> str:
     return console.export_text(styles=True)
 
 
-def _repo_clean(svg: str) -> str:
-    """Strip trailing whitespace, as the repository's pre-commit hook does to committed SVGs."""
-    return "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
-
-
 async def _drive(
     model: ConsoleReadModel,
     keys: Sequence[str],
@@ -105,7 +100,7 @@ async def _drive(
         texts = {name: app.plain_text(name) for name in _WIDGETS}
         styled = {name: _styled(content, size[0]) for name, content in app._content.items()}
         screen = "\n".join(strip.text.rstrip() for strip in app.screen._compositor.render_strips())
-        svg = _repo_clean(app.export_screenshot())
+        svg = capture(app)
         shot = Shot(texts, styled, screen, len(app.screen_stack), svg)
     return shot, app
 
@@ -454,31 +449,31 @@ def test_q_quits_the_app() -> None:
 def test_svg_snapshot_80x24(snapshot: SnapshotAssertion) -> None:
     """The reviewed 80x24 rendering of ok-two-positions."""
     svg = _shoot("ok-two-positions").svg
-    assert svg == snapshot(extension_class=SVGImageSnapshotExtension)
+    assert_view(snapshot, svg, record=False)
 
 
 def test_svg_snapshot_120x36(snapshot: SnapshotAssertion) -> None:
     """The reviewed 120x36 rendering of ok-two-positions with the detail open."""
     svg = _shoot("ok-two-positions", ["enter"], size=(120, 36)).svg
-    assert svg == snapshot(extension_class=SVGImageSnapshotExtension)
+    assert_view(snapshot, svg, record=False)
 
 
 def test_svg_snapshot_160x45(snapshot: SnapshotAssertion) -> None:
     """The reviewed 160x45 (wide) rendering of ok-two-positions."""
     svg = _shoot("ok-two-positions", size=(160, 45)).svg
-    assert svg == snapshot(extension_class=SVGImageSnapshotExtension)
+    assert_view(snapshot, svg, record=True)
 
 
 def test_svg_snapshot_240x60(snapshot: SnapshotAssertion) -> None:
     """The reviewed 240x60 (ultra) rendering of ok-two-positions."""
     svg = _shoot("ok-two-positions", size=(240, 60)).svg
-    assert svg == snapshot(extension_class=SVGImageSnapshotExtension)
+    assert_view(snapshot, svg, record=False)
 
 
 def test_svg_snapshot_down_80x24(snapshot: SnapshotAssertion) -> None:
     """The reviewed 80x24 rendering while hermes is down: red row, dimmed money."""
     svg = _shoot("down-stale").svg
-    assert svg == snapshot(extension_class=SVGImageSnapshotExtension)
+    assert_view(snapshot, svg, record=True)
 
 
 def _top_line(release: Callable[[], str] | None, size: tuple[int, int] = (100, 30)) -> str:
