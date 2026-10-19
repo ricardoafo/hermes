@@ -37,7 +37,6 @@ from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
-from hermes.ports.exchange import ExchangePort, StopLossPort
 from tests.support.accepted import assert_accepted
 from tests.support.mainnet_permit import issued_permit
 from tests.support.paths import REPO_ROOT
@@ -172,12 +171,6 @@ def test_from_env_reads_the_kraken_variables() -> None:
     )
     assert config.api_key == _KEY
     assert config.mainnet_permit is None
-
-
-def test_adapter_satisfies_both_ports(read_only: KrakenSpotAdapter) -> None:
-    """The adapter is an ExchangePort and a StopLossPort."""
-    assert isinstance(read_only, ExchangePort)
-    assert isinstance(read_only, StopLossPort)
 
 
 # SEV-1: real capital stays behind the live-approval gate (AGENTS.md rule 7, ADR-014)

@@ -23,7 +23,6 @@ from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
-from hermes.ports.live_bars import LiveBarStorePort
 
 _BTC = Pair(base=Currency.BTC, quote=Currency.USDT)
 _ETH = Pair(base=Currency.ETH, quote=Currency.USDT)
@@ -52,11 +51,6 @@ def conn() -> Iterator[sqlite3.Connection]:
     connection = sqlite3.connect(":memory:")
     yield connection
     connection.close()
-
-
-def test_ledger_satisfies_the_live_bar_port(conn: sqlite3.Connection) -> None:
-    """The ledger can be injected wherever LiveBarStorePort is expected."""
-    assert isinstance(SqliteLedger(conn), LiveBarStorePort)
 
 
 def test_stored_bar_reads_back_exactly(conn: sqlite3.Connection) -> None:

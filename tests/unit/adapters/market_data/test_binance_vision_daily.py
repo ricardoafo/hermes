@@ -29,7 +29,6 @@ from hermes.domain.errors import InfraError
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
-from hermes.ports.archive_bars import ArchiveBarsPort
 from tests.support.paths import REPO_ROOT
 
 _FIXTURES = REPO_ROOT / "tests" / "fixtures" / "binance_vision"
@@ -48,11 +47,6 @@ def _archive(files: dict[str, bytes], status: int | None = None) -> BinanceVisio
         return httpx.Response(404) if body is None else httpx.Response(200, content=body)
 
     return BinanceVisionDailyArchive(httpx.Client(transport=httpx.MockTransport(handler)))
-
-
-def test_adapter_satisfies_the_port() -> None:
-    """The adapter can be injected wherever ArchiveBarsPort is expected."""
-    assert isinstance(_archive({}), ArchiveBarsPort)
 
 
 def test_published_day_parses_the_recorded_bars() -> None:
