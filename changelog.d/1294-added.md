@@ -1,0 +1,1 @@
+- `scripts/backtest/rechain_trials.py` joins two results PRs that forked the trial log: it appends one log's new trials after the other's through the chained writer, leaves every trial body unchanged, verifies the chain, and prints counts only.
