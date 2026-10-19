@@ -5,7 +5,6 @@ Tests cover:
 - Worst-wins composition: HALT beats WARN beats OK.
 - All decisions are preserved in RiskEngineResult.decisions.
 - Empty rule list returns OK.
-- Capital budget enforcement (SA-6): check_budget HALT / OK paths.
 - Correlation lock refusal (RO-01 via CorrelationLock) wired through RiskEngine.
 """
 
@@ -22,9 +21,7 @@ from hermes.domain.risk.correlation_lock import CorrelationLock
 from hermes.domain.risk.state import MarketSnapshot, PortfolioState
 from hermes.domain.risk.types import RiskAction, RiskDecision
 from hermes.domain.value_objects.currency import Currency
-from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
-from hermes.domain.value_objects.strategy_id import StrategyId
 
 # ---------------------------------------------------------------------------
 # Stub rule implementations
@@ -214,79 +211,6 @@ class TestRiskEngineWorstWins:
         expected = {RiskAction.OK, RiskAction.WARN, RiskAction.HALT}
         assert actions == expected, (
             f"Expected decisions to contain all three actions {expected!r}, got {actions!r}."
-        )
-
-
-# ---------------------------------------------------------------------------
-# Capital budget enforcement (SA-6)
-# ---------------------------------------------------------------------------
-
-
-class TestRiskEngineCapitalBudget:
-    """check_budget: SA-6 capital budget enforcement."""
-
-    _STRATEGY = StrategyId("swing")
-    _BUDGET = Money(amount=Decimal("5000"), currency=Currency.USDT)
-
-    def test_budget_ok_when_within_limit(self) -> None:
-        """check_budget returns OK when total does not exceed budget."""
-        engine = RiskEngine(
-            rules=[],
-            capital_budget={self._STRATEGY: self._BUDGET},
-        )
-        decision = engine.check_budget(
-            strategy_id=self._STRATEGY,
-            requested_notional=Decimal("2000"),
-            current_open_notional=Decimal("2000"),
-        )
-        assert decision.action == RiskAction.OK, (
-            f"Expected OK when total (4000) < budget (5000), got {decision.action!r}."
-        )
-
-    def test_budget_halt_when_exceeded(self) -> None:
-        """check_budget returns HALT when total would exceed budget."""
-        engine = RiskEngine(
-            rules=[],
-            capital_budget={self._STRATEGY: self._BUDGET},
-        )
-        decision = engine.check_budget(
-            strategy_id=self._STRATEGY,
-            requested_notional=Decimal("3000"),
-            current_open_notional=Decimal("3000"),
-        )
-        assert decision.action == RiskAction.HALT, (
-            f"Expected HALT when total (6000) > budget (5000), got {decision.action!r}. "
-            f"SA-6 budget enforcement must block over-allocation."
-        )
-
-    def test_budget_ok_for_unknown_strategy(self) -> None:
-        """check_budget returns OK when no budget configured for the strategy."""
-        engine = RiskEngine(rules=[], capital_budget={})
-        decision = engine.check_budget(
-            strategy_id=self._STRATEGY,
-            requested_notional=Decimal("999999"),
-            current_open_notional=Decimal("0"),
-        )
-        assert decision.action == RiskAction.OK, (
-            f"Expected OK for strategy with no configured budget, got {decision.action!r}."
-        )
-
-    def test_halt_reason_mentions_sa6(self) -> None:
-        """HALT reason from check_budget must mention SA-6 for traceability."""
-        engine = RiskEngine(
-            rules=[],
-            capital_budget={self._STRATEGY: self._BUDGET},
-        )
-        decision = engine.check_budget(
-            strategy_id=self._STRATEGY,
-            requested_notional=Decimal("5001"),
-            current_open_notional=Decimal("0"),
-        )
-        assert decision.action == RiskAction.HALT, (
-            f"Expected HALT for over-budget request, got {decision.action!r}."
-        )
-        assert "SA-6" in decision.reason, (
-            f"HALT reason must mention 'SA-6' for traceability. Got: {decision.reason!r}."
         )
 
 

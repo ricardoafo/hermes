@@ -90,8 +90,3 @@ class Order:
                 f"Order.limit_price must be > 0 when set, got {self.limit_price!r} "
                 f"(pair={self.pair}, side={self.side})"
             )
-
-    @property
-    def is_market(self) -> bool:
-        """Return ``True`` when no limit price is set (market order semantics)."""
-        return self.limit_price is None

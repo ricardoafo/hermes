@@ -348,10 +348,10 @@ class KrakenPublicError(InfraError):
 class OOSDataLeakageError(DomainError):
     """Attempted to read OOS data outside certification mode.
 
-    Raised by :class:`hermes.application.strategy_protocol.data_split_enforcer.DataSplitEnforcer`
-    when code attempts to read a bar or trade whose timestamp falls inside the
-    OOS test window (``2025-09-01 ≤ ts ≤ 2026-12-31``) while
-    ``certification_mode`` context variable is ``False``.
+    Raised by :func:`hermes.application.strategy_protocol.pinned_dataset.assert_oos_access_allowed`
+    when code attempts to read bars inside the OOS test window
+    (``2025-09-01 ≤ ts ≤ 2026-12-31``) while the certification lifecycle does
+    not allow it, for example outside certification mode.
 
     This is the code-enforced read refusal mandated by
     ``docs/experiments/swing-mvp1/pre-registration-v1.md`` §4 discipline gate.
