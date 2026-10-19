@@ -872,10 +872,11 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             ),
         ),
         FailureMode(
-            "A deploy fails after some shadow ledgers were migrated",
+            "A deploy fails after some ledgers were migrated",
             proved_by=(
                 _RELEASE + "test_a_failed_gate_on_one_shadow_rolls_back_every_instance",
                 _RELEASE + "test_a_failed_shadow_migration_restores_the_ledgers_already_migrated",
+                _RELEASE + "test_failed_unit_install_after_a_migration_restores_the_ledger",
             ),
         ),
         FailureMode(

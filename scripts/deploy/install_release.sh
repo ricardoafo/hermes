@@ -445,7 +445,7 @@ restore_ledger() {
 # ledger already migrated goes back to its snapshot and every stopped unit
 # starts again on the old release, which `current` still points at.
 migrate_ledgers() {
-    local vdir=$1 snapshot=$2 name db unit
+    local vdir=$1 snapshot=$2 name db
     if migrate_ledger "$vdir" "$DB" "$UNIT" "$BACKUP_DIR" "$snapshot"; then
         for name in ${shadows[@]+"${shadows[@]}"}; do
             db=$(shadow_db "$name")
@@ -455,6 +455,15 @@ migrate_ledgers() {
         done
         [ -n "${db:-}" ] || return 0
     fi
+    undo_migrations
+    return 1
+}
+
+# Before the flip: put every ledger this deploy migrated back to its snapshot
+# and start every unit it stopped, so the old release, which `current` still
+# points at, never meets a migrated ledger.
+undo_migrations() {
+    local db unit
     for db in "${!migrated[@]}"; do
         restore_ledger "$db" "${migrated[$db]}" || echo "::error::restoring $db failed"
     done
@@ -462,7 +471,6 @@ migrate_ledgers() {
     for unit in ${stopped_units[@]+"${stopped_units[@]}"}; do
         [ "$unit" = "$UNIT" ] || "$SYSTEMCTL" start "$unit" || true
     done
-    return 1
 }
 
 # Install every *.service and *.timer from the release's deploy/systemd whose
@@ -680,7 +688,7 @@ main() {
     if ! sync_units "$stage"; then
         # Nothing reloaded systemd yet, so the old units still run the old release.
         restore_units
-        "$SYSTEMCTL" start "$UNIT" || true
+        undo_migrations
         die "installing the release's systemd units failed: not deploying $sha"
     fi
 

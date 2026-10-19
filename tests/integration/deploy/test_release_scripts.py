@@ -215,10 +215,11 @@ exit 0
 # the real one cannot set some modes ("cannot change permissions"); only
 # there, and only after it failed, the call is retried without -m/-o/-g and
 # the dropped mode is recorded, so the test box runs and no test mistakes
-# that for the 0700 the VPS gets (#683).
+# that for the 0700 the VPS gets (#683). A call naming STUB_INSTALL_FAIL fails.
 _STUB_INSTALL = """\
 #!/usr/bin/env bash
 echo "install $*" >> "$STUB_STATE/install.log"
+[ -z "${STUB_INSTALL_FAIL:-}" ] || [[ "$*" != *"$STUB_INSTALL_FAIL"* ]] || exit 1
 /usr/bin/install "$@" 2>/dev/null && exit 0
 case "$(uname -s)" in
     MINGW* | MSYS* | CYGWIN*) ;;
@@ -1276,6 +1277,26 @@ def test_failed_migration_keeps_the_old_release_running_and_exits_1(box: Box) ->
     assert "hermes migrate failed" in result.stdout + result.stderr
     assert box.target("current") == _SHA_A
     assert any(c.split()[:2] == ["systemctl", "start"] for c in box.calls())
+
+
+def test_failed_unit_install_after_a_migration_restores_the_ledger(box: Box) -> None:
+    """#1150 review: a deploy that stops after migrating restores the ledger it migrated."""
+    box.seed_release(_SHA_A)
+    box.link("current", _SHA_A)
+    box.write_ledger("before")
+
+    result = box.deploy(
+        _SHA_B,
+        STUB_MIGRATE_STATUS=_DESTRUCTIVE_PENDING,
+        STUB_MIGRATE_MARK="1",
+        STUB_INSTALL_FAIL=f"/{_UNIT}",
+    )
+
+    assert result.returncode == 1
+    assert "installing the release's systemd units failed" in result.stdout + result.stderr
+    assert box.target("current") == _SHA_A
+    assert Box.ledger_value(box.db) == "before"
+    assert f"systemctl start {_UNIT}" in box.calls()
 
 
 def test_first_deploy_without_a_ledger_skips_the_migrate_check(box: Box) -> None:
