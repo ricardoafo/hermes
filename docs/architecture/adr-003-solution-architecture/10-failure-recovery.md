@@ -368,7 +368,7 @@ If reconnect fails >5 attempts: Telegram alert, swing daemon pauses (existing po
 5. Restore encrypted credentials from off-VPS backup:
    sudo tar xzf ~/backup/credstore.tar.gz -C /etc/
 6. Deploy hermes code:
-   git clone git@github.com:ricardoafo-org/hermes /opt/hermes
+   git clone git@github.com:ricardoafo/hermes /opt/hermes
    cd /opt/hermes && uv sync --frozen
    sudo chown -R hermes:hermes /opt/hermes
 7. Restore latest ledger from restic:

@@ -3,7 +3,7 @@
 Every test protects one invariant of the orderbook-walk fill model:
 
 - Port conformance: ``isinstance(impl, FillModelPort)`` → ``True``.
-- **Anti-Zipline** (SA-2 AP-1): market order at bar T fills at bar T+1
+- **No look-ahead fill** (SA-2 AP-1): market order at bar T fills at bar T+1
   open — the fill price is the first level in the book, never the
   previous bar's close.
 - Fill quantity ≤ order quantity (never over-fill).
@@ -159,11 +159,11 @@ class TestPortConformance:
 
 
 # ---------------------------------------------------------------------------
-# Anti-Zipline test (SA-2 AP-1)
+# No look-ahead fill test (SA-2 AP-1)
 # ---------------------------------------------------------------------------
 
 
-class TestAntiZipline:
+class TestNoLookaheadFill:
     """Market order fills at the orderbook's first level — NOT the previous close.
 
     ADR-011 D-10: the caller is responsible for passing the NEXT bar's open
@@ -176,7 +176,7 @@ class TestAntiZipline:
     def test_market_buy_fills_at_best_ask_not_prior_close(self) -> None:
         """Market BUY fills at the best ask (= next bar's open), not the prior close.
 
-        Anti-Zipline invariant (SA-2 AP-1): fill_order must NOT apply the
+        No look-ahead invariant (SA-2 AP-1): fill_order must NOT apply the
         prior-bar-close logic that produces look-ahead bias. The composition
         root provides a synthetic book where asks[0].price == next_bar_open.
         """
@@ -203,18 +203,18 @@ class TestAntiZipline:
         assert result.avg_price == next_bar_open, (
             f"Market BUY must fill at best ask (next bar open) {next_bar_open}, "
             f"got {result.avg_price!r}. Fill model must NOT use prior_bar_close={prior_bar_close}. "
-            "Anti-Zipline invariant violated (SA-2 AP-1)."
+            "No look-ahead invariant violated (SA-2 AP-1)."
         )
         assert result.avg_price != prior_bar_close, (
             f"Fill price {result.avg_price!r} equals prior_bar_close={prior_bar_close} — "
-            "this is the Zipline look-ahead bias bug. Market orders fill at T+1 open, "
+            "this is the look-ahead bias bug. Market orders fill at T+1 open, "
             "never at T close."
         )
 
     def test_market_sell_fills_at_best_bid_not_prior_close(self) -> None:
         """Market SELL fills at the best bid (= next bar's open), not the prior close.
 
-        Symmetric anti-Zipline check for the SELL side.
+        Symmetric no-look-ahead check for the SELL side.
         """
         next_bar_open_bid = Decimal("60900")
         prior_bar_close = Decimal("61000")  # must NOT appear in fill
@@ -237,11 +237,11 @@ class TestAntiZipline:
         )
         assert result.avg_price == next_bar_open_bid, (
             f"Market SELL must fill at best bid (next bar open) {next_bar_open_bid}, "
-            f"got {result.avg_price!r}. Anti-Zipline invariant violated (SA-2 AP-1, SELL side)."
+            f"got {result.avg_price!r}. No look-ahead invariant violated (SA-2 AP-1, SELL side)."
         )
         assert result.avg_price != prior_bar_close, (
             f"Fill price {result.avg_price!r} equals prior_bar_close={prior_bar_close} — "
-            "Zipline bias. Market SELL fills at next bar bid, never at prior close."
+            "Look-ahead bias. Market SELL fills at next bar bid, never at prior close."
         )
 
 

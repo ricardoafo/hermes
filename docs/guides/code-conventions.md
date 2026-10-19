@@ -30,7 +30,7 @@ The patterns we USE (with hermes examples). Anything not in this list is a candi
 Split by layer because:
 
 - Domain errors are EXPECTED OUTCOMES (currency mismatch, insufficient balance, invalid lot). Making them visible in type signatures via `Result` means mypy catches unhandled cases. Critical for a real-money system.
-- I/O errors ARE exceptional (network drops, exchange 500s, ledger disk-full). Typed exception hierarchy matches `python-binance` / `ccxt` / `NautilusTrader` — three production financial systems. Traceback stays clean.
+- I/O errors ARE exceptional (network drops, exchange 500s, ledger disk-full). Typed exception hierarchy, the convention of established exchange client libraries. Traceback stays clean.
 
 **Example (domain)**:
 
@@ -233,7 +233,7 @@ Reference: engram `phase-1-code-conventions-research-2026-08-23` § Topic 3.
 
 ## 7. Polyglot posture — Rust YES (when triggered), Go NO for hermes
 
-**PyO3 Rust extension** for a proven hot spot. Marketcalls quant guidance: "profile, find the 5% consuming 80% of runtime, replace only that with a PyO3 module." Reference: `polars` (Rust core + Python API + pyo3-polars plugins). NautilusTrader shipped as Rust core + Cython + Python control plane. Speedup: 113-154× vs Python, 2× vs Numba, ~100× effort — earn it, don't guess.
+**PyO3 Rust extension** for a proven hot spot. The usual guidance: profile, find the 5% consuming 80% of runtime, and replace only that with a PyO3 module. Reference: `polars` (Rust core + Python API + pyo3-polars plugins). Mature open-source trading engines ship the same way: a Rust core with a Python control plane. Speedup: 113-154× vs Python, 2× vs Numba, ~100× effort — earn it, don't guess.
 
 **Numba as intermediate step** — 56-135× on pure-numeric hot loops. Cheap to try before reaching for Rust. Best when: pure Python numeric loop with no I/O.
 
