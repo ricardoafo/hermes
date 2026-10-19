@@ -36,13 +36,13 @@ from ulid import ULID
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
 from hermes.adapters.journal.jsonl_store import JsonlDecisionJournal
-from hermes.application.calibration.lifecycle import CertificationState
 from hermes.application.journal.service import (
     JournalError,
     due,
     record_decision,
     record_review,
 )
+from hermes.domain.calibration.certification import CertificationState
 from hermes.domain.journal.entries import Decision, OutcomeKind, Review, Score
 from hermes.entrypoints import serve as serve_module
 from hermes.entrypoints._streams import resolve_err

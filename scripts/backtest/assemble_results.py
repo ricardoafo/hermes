@@ -24,6 +24,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from hermes.adapters.files import LocalFiles
 from hermes.application.strategy_protocol.lab_notebook import LabNotebook, LabNotebookEntry
 
 SCHEMA = "hermes.verdict/1"
@@ -214,7 +215,7 @@ def assemble(args: argparse.Namespace, now: datetime) -> str:
         run_id=args.run_id,
         commit=args.commit,
     )
-    notebook = LabNotebook(notebook_path)
+    notebook = LabNotebook(notebook_path, files=LocalFiles())
     for verdict in verdicts:
         notebook.append(notebook_entry(verdict, experiment=args.experiment, now=now))
     summary = [f"- New trial lines: {lines}", f"- Verdict records: {len(verdicts)}"]

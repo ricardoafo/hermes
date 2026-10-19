@@ -30,9 +30,8 @@ from pathlib import Path
 import pytest
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
-from hermes.application.calibration.certification_gates import CertificationRecord
-from hermes.application.calibration.lifecycle import CertificationState
-from hermes.application.strategy_protocol.day_zero import sha256_file
+from hermes.adapters.files import LocalFiles
+from hermes.domain.calibration.certification import CertificationRecord, CertificationState
 from hermes.entrypoints import serve as serve_module
 from hermes.entrypoints.shadow_start import main, run
 from hermes.infrastructure.config.loader import load_config
@@ -99,9 +98,9 @@ class TestRefusals:
         """No backtest gate: exit 1, the ledger untouched, rule 2 printed as fail."""
         db = _ledger(tmp_path)
         _certify(db, CertificationState.UNTRUSTED)
-        before = sha256_file(db)
+        before = LocalFiles().sha256(db)
         code, out, err = _run(db, confirm=True)
-        assert (code, sha256_file(db), "not Ready" in err) == (1, before, True)
+        assert (code, LocalFiles().sha256(db), "not Ready" in err) == (1, before, True)
         assert "rule 2            fail" in out
 
     # SEV-1: archiving a ledger serve is writing to would lose rows (ADR-021 §3)
@@ -170,8 +169,10 @@ class TestConfirmed:
             [c["rule"] for c in record["checks"]],
         ) == (
             _RUN_ID,
-            sha256_file(archived),
-            sha256_file(REPO_ROOT / "docs" / "experiments" / "swing-mvp1" / "data-manifest.json"),
+            LocalFiles().sha256(archived),
+            LocalFiles().sha256(
+                REPO_ROOT / "docs" / "experiments" / "swing-mvp1" / "data-manifest.json"
+            ),
             [1, 2, 3, 4, 6, 7],
         )
 

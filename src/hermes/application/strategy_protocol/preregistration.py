@@ -19,6 +19,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from hermes.ports.files import FilesPort
+
 __all__ = [
     "CertificationSchedule",
     "DataWindows",
@@ -175,12 +177,13 @@ class PreRegistration:
     against the hard-coded values in this module to detect tampering.
 
     The file is expected to live at ``<project_root>/docs/experiments/swing-mvp1/
-    pre-registration-v1.md``. Project root is auto-detected from this module's
-    location unless ``project_root`` is passed explicitly (useful for tests).
+    pre-registration-v1.md``. The caller names the project root: an installed
+    package has no repository to search from (issue #1186), so the entrypoint
+    or script that builds this decides where the signed file is.
 
     Args:
-        project_root: Optional path override. Defaults to the repository root
-            detected by walking up from this module's directory.
+        project_root: The directory that holds ``docs/experiments/``.
+        files: Reads the signed file.
 
     Raises:
         FileNotFoundError: If the pre-registration file is not found.
@@ -193,23 +196,22 @@ class PreRegistration:
 
     _PRE_REG_REL_PATH = Path("docs/experiments/swing-mvp1/pre-registration-v1.md")
 
-    def __init__(self, project_root: Path | None = None) -> None:
+    def __init__(self, project_root: Path, *, files: FilesPort) -> None:
         """Initialise parser and validate the pre-registration file exists.
 
         Args:
-            project_root: Optional explicit project root. Defaults to
-                auto-detected repository root.
+            project_root: The directory that holds ``docs/experiments/``.
+            files: Reads the signed file.
 
         Raises:
             FileNotFoundError: If the pre-registration file is absent.
             ValueError: If the frontmatter experiment_id is wrong.
         """
-        if project_root is None:
-            project_root = self._detect_project_root()
         self._root = project_root
+        self._files = files
         self._pre_reg_path = project_root / self._PRE_REG_REL_PATH
 
-        if not self._pre_reg_path.exists():
+        if not files.exists(self._pre_reg_path):
             raise FileNotFoundError(
                 f"Pre-registration file not found at {self._pre_reg_path}. "
                 f"This file is SIGNED and IMMUTABLE — do not rename or move it."
@@ -326,28 +328,6 @@ class PreRegistration:
     # Private helpers
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _detect_project_root() -> Path:
-        """Walk up from this module's directory to find the repo root.
-
-        Looks for a ``pyproject.toml`` (repo marker) walking upward from the
-        directory containing this file.
-
-        Returns:
-            Resolved :class:`Path` to the project root.
-
-        Raises:
-            FileNotFoundError: If no ``pyproject.toml`` is found in the
-                directory tree.
-        """
-        here = Path(__file__).resolve().parent
-        for candidate in [here, *here.parents]:
-            if (candidate / "pyproject.toml").exists():
-                return candidate
-        raise FileNotFoundError(
-            f"Could not detect project root: no pyproject.toml found searching upward from {here}."
-        )
-
     def _validate_experiment_id(self) -> None:
         """Validate the YAML frontmatter experiment_id matches the expected value.
 
@@ -358,7 +338,7 @@ class PreRegistration:
             ValueError: If ``experiment_id`` is missing or does not match
                 ``swing-mvp1-v1``.
         """
-        text = self._pre_reg_path.read_text(encoding="utf-8")
+        text = self._files.read_text(self._pre_reg_path)
         lines = text.splitlines()
 
         # Locate YAML frontmatter: first line must be `---`

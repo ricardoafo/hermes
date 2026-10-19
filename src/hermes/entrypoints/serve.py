@@ -200,6 +200,7 @@ from hermes.infrastructure.config.models import FrankfurterConfig, MarketDataCon
 from hermes.infrastructure.config.root import HermesConfig
 from hermes.infrastructure.file_lock import FileLock
 from hermes.infrastructure.logging import bind_correlation_id, new_correlation_id
+from hermes.infrastructure.project_root import load_pre_registration
 from hermes.ports.bar_feed import ClosedBarFeedPort
 from hermes.ports.certification import CertificationStoreError, CertificationStorePort
 from hermes.ports.clock import ClockPort
@@ -361,8 +362,8 @@ def pre_registration_for(config_dir: Path) -> PreRegistration:
     """
     root = config_dir.resolve().parent
     if experiment_files(root)[0].is_file():
-        return PreRegistration(project_root=root)
-    return PreRegistration()
+        return load_pre_registration(root)
+    return load_pre_registration()
 
 
 def _holding_opened_at(
@@ -982,7 +983,7 @@ def _load_experiment(
         StartupError: Either file is missing or unreadable.
     """
     try:
-        pre_registration = PreRegistration(project_root=experiment_root)
+        pre_registration = load_pre_registration(experiment_root)
         fee_path = pre_registration.pre_reg_path().parent / "fee-history.csv"
         return pre_registration, load_binance_fee_history(fee_path)
     except (OSError, ValueError, KeyError) as exc:

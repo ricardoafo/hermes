@@ -33,9 +33,11 @@ from hermes.application.calibration.signed_gate import (
     CheckResult,
     judge_candidate,
 )
+from hermes.application.strategy_protocol.preregistration import PreRegistration
 from hermes.domain.calibration.trial_record import TrialRecord
 from hermes.domain.market_data.dataset_manifest import DataSplit
 from hermes.domain.statistics.performance import daily_returns
+from hermes.ports.files import FilesPort
 
 __all__ = [
     "MISSING_EVIDENCE",
@@ -124,6 +126,8 @@ def judge_stage(
     evidence_dir: Path,
     records: Iterable[TrialRecord],
     *,
+    v1: PreRegistration,
+    files: FilesPort,
     judge: CandidateJudge = judge_candidate,
 ) -> StageOutcome:
     """Judge every candidate of ``batch`` at ``stage``.
@@ -135,6 +139,8 @@ def judge_stage(
             each candidate that ran; a candidate without a folder fails
             ``missing_evidence``.
         records: The whole trial log, the batch's runs appended.
+        v1: The signed v1 pre-registration the gate keeps.
+        files: Reads the evidence files.
         judge: The per-candidate gate.
 
     Returns:
@@ -151,16 +157,18 @@ def judge_stage(
     for candidate in batch.candidates:
         lines = _trial_lines(log, batch.batch_id, candidate.strategy_id, stage)
         folder = evidence_dir / candidate.strategy_id
-        if not folder.is_dir():
+        if not files.is_dir(folder):
             verdicts.append(_missing(candidate, stage, lines))
             continue
-        files = CandidateEvidence(
+        paths = CandidateEvidence(
             performance=folder / "performance.json",
             evidence=folder / "evidence.json",
             funnel_evidence=folder / "funnel-evidence.json",
         )
-        result = judge(candidate.strategy_id, stage, files, batch, trials)
-        funnel = load_funnel_evidence(files.funnel_evidence, strategy_id=candidate.strategy_id)
+        result = judge(candidate.strategy_id, stage, paths, batch, trials, v1=v1, files=files)
+        funnel = load_funnel_evidence(
+            paths.funnel_evidence, strategy_id=candidate.strategy_id, files=files
+        )
         verdicts.append(
             CandidateVerdict(
                 candidate=candidate,

@@ -36,6 +36,7 @@ from hermes.application.calibration.window_metrics import (
     compute_window_metrics,
 )
 from hermes.domain.statistics.performance import TradeResult
+from hermes.ports.files import FilesPort
 
 __all__ = [
     "EvidenceError",
@@ -78,11 +79,12 @@ class EvidenceError(ValueError):
     """The evidence file is malformed."""
 
 
-def load_evidence(path: Path) -> GateEvidence:
+def load_evidence(path: Path, *, files: FilesPort) -> GateEvidence:
     """Parse an evidence JSON file. Absent keys mean not computed.
 
     Args:
         path: The evidence file.
+        files: Reads it.
 
     Returns:
         The parsed :class:`GateEvidence` with the file's SHA-256.
@@ -91,7 +93,7 @@ def load_evidence(path: Path) -> GateEvidence:
         EvidenceError: The file is not valid evidence.
         OSError: The file cannot be read.
     """
-    raw = path.read_bytes()
+    raw = files.read_bytes(path)
     try:
         payload = json.loads(raw)
     except ValueError as exc:
@@ -130,7 +132,7 @@ def load_evidence(path: Path) -> GateEvidence:
 _WINDOWS = ("train_val", "oos")
 
 
-def apply_performance(evidence: GateEvidence, path: Path) -> GateEvidence:
+def apply_performance(evidence: GateEvidence, path: Path, *, files: FilesPort) -> GateEvidence:
     """Compute a window's §9 metrics from a performance file and add them to ``evidence``.
 
     The file names its window: ``train_val`` fills the backtest metrics,
@@ -139,6 +141,7 @@ def apply_performance(evidence: GateEvidence, path: Path) -> GateEvidence:
     Args:
         evidence: Evidence loaded from ``--evidence`` (or empty).
         path: The performance file.
+        files: Reads it.
 
     Returns:
         ``evidence`` with that window's metrics replaced by computed ones.
@@ -147,7 +150,7 @@ def apply_performance(evidence: GateEvidence, path: Path) -> GateEvidence:
         EvidenceError: The file is not a valid performance record.
         OSError: The file cannot be read.
     """
-    raw = path.read_bytes()
+    raw = files.read_bytes(path)
     window, record = _performance_record(_json_object(path, raw))
     try:
         metrics = compute_window_metrics(record)
@@ -161,11 +164,12 @@ def apply_performance(evidence: GateEvidence, path: Path) -> GateEvidence:
     return replace(evidence, backtest=metrics, sha256=digest)
 
 
-def load_performance(path: Path) -> tuple[str, PerformanceRecord]:
+def load_performance(path: Path, *, files: FilesPort) -> tuple[str, PerformanceRecord]:
     """Parse a performance file without computing its metrics.
 
     Args:
         path: The performance file.
+        files: Reads it.
 
     Returns:
         The window it names (``train_val`` or ``oos``) and its record.
@@ -174,7 +178,7 @@ def load_performance(path: Path) -> tuple[str, PerformanceRecord]:
         EvidenceError: The file is not a valid performance record.
         OSError: The file cannot be read.
     """
-    return _performance_record(_json_object(path, path.read_bytes()))
+    return _performance_record(_json_object(path, files.read_bytes(path)))
 
 
 def _json_object(path: Path, raw: bytes) -> dict[str, Any]:
@@ -288,7 +292,7 @@ def _bool(section: dict[str, Any] | None, key: str) -> bool | None:
     return bool(value)
 
 
-def load_funnel_evidence(path: Path, *, strategy_id: str) -> FunnelEvidence:
+def load_funnel_evidence(path: Path, *, strategy_id: str, files: FilesPort) -> FunnelEvidence:
     """Parse a funnel evidence file (change Design §2). Absent sections mean not computed.
 
     The ``folds`` section (pre-registration §8.3, issue #1181) is reported
@@ -297,6 +301,7 @@ def load_funnel_evidence(path: Path, *, strategy_id: str) -> FunnelEvidence:
     Args:
         path: The evidence JSON file.
         strategy_id: The strategy the run must be for.
+        files: Reads it.
 
     Returns:
         The parsed evidence. Call ``validate_evidence`` before evaluating it.
@@ -306,7 +311,7 @@ def load_funnel_evidence(path: Path, *, strategy_id: str) -> FunnelEvidence:
         OSError: The file cannot be read.
     """
     try:
-        payload = json.loads(path.read_bytes())
+        payload = json.loads(files.read_bytes(path))
     except ValueError as exc:
         raise FunnelEvidenceError(f"{path} is not JSON: {exc}") from exc
     if not isinstance(payload, dict):

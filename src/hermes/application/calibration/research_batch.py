@@ -36,6 +36,7 @@ from hermes.application.calibration.backtest_funnel import (
     FunnelThresholds,
     parse_funnel_block,
 )
+from hermes.ports.files import FilesPort
 from hermes.ports.git_history import GitHistoryPort
 
 __all__ = [
@@ -688,21 +689,22 @@ def parse_batch(path: str, text: str) -> ResearchBatch:
     )
 
 
-def load_batch(path: Path, *, repo: Path | None = None) -> ResearchBatch:
+def load_batch(path: Path, *, files: FilesPort, repo: Path | None = None) -> ResearchBatch:
     """Read and parse the batch at ``path``.
 
     Args:
         path: The batch file.
+        files: Reads it.
         repo: The clone that holds it, to name it by its repo-relative path;
             defaults to the current directory.
 
     Raises:
         BatchError: The file cannot be read (check ``front_matter``) or breaks a rule.
     """
-    root = (repo or Path()).resolve()
+    root = files.resolve(repo or Path())
     try:
-        text = path.read_text(encoding="utf-8")
-        relative = path.resolve().relative_to(root).as_posix()
+        text = files.read_text(path)
+        relative = files.resolve(path).relative_to(root).as_posix()
     except (OSError, UnicodeDecodeError, ValueError) as exc:
         raise BatchError("front_matter", f"cannot read {path}: {exc}") from exc
     return parse_batch(relative, text)

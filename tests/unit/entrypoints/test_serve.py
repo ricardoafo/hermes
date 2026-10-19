@@ -49,10 +49,8 @@ from hermes.adapters.market_data.binance_live_klines import BinanceLiveKlinesAda
 from hermes.adapters.notifier.slack_adapter import SlackAdapter
 from hermes.adapters.notifier.telegram_adapter import TelegramAdapter
 from hermes.application.backtest.replay import ExecutionModel as ReplayExecutionModel
-from hermes.application.calibration.certification_gates import CertificationRecord
-from hermes.application.calibration.lifecycle import CertificationState
 from hermes.application.execution.prereg_book import ExecutionModel, ExitPricing
-from hermes.application.strategy_protocol.preregistration import PreRegistration
+from hermes.domain.calibration.certification import CertificationRecord, CertificationState
 from hermes.domain.errors import ExchangeError, InfraError, LedgerError
 from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
 from hermes.domain.events.bar_processed import BarProcessed
@@ -75,6 +73,7 @@ from hermes.entrypoints import serve as serve_module
 from hermes.infrastructure.config.loader import load_config
 from hermes.infrastructure.config.models import StrategiesConfig
 from hermes.infrastructure.config.root import HermesConfig
+from hermes.infrastructure.project_root import load_pre_registration
 from tests.support.accepted import assert_accepted
 from tests.support.anomaly_rows import recorded_anomalies
 from tests.support.paths import REPO_ROOT
@@ -570,7 +569,7 @@ def test_shadow_universe_equals_the_pre_registered_universe() -> None:
     """SHADOW_UNIVERSE is pre-registration §3 once the slash is removed (D-7)."""
     symbols = tuple(pair.replace("/", "") for pair in serve_module.SHADOW_UNIVERSE)
 
-    assert symbols == PreRegistration().universe()
+    assert symbols == load_pre_registration().universe()
 
 
 @pytest.mark.skipif(
