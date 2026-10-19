@@ -1,4 +1,4 @@
-# ADR-030: Research sweeps, 100+ signed candidates per batch to find one strong champion
+# ADR-031: Research sweeps, 100+ signed candidates per batch to find one strong champion
 
 **Date**: 2026-10-19
 **Status**: Accepted (merged in PR #1284)

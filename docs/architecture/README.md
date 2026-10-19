@@ -45,5 +45,5 @@ table.
 | [027](adr-027-zero-major-versions-until-real-capital.md) | Release versions are `0.y.z` until a champion trades real money; `1.0.0-shadow.N` is retired | Accepted | — |
 | [028](adr-028-release-cut-every-merge-window.md) | A release is cut at every merge window | Proposed | — |
 | [029](adr-029-one-hour-bars-for-intraday-holding-candidates.md) | 1h bars for intraday-holding candidates, in backtest, shadow and prod together | Proposed | — |
-| [030](adr-030-research-sweep-for-a-strong-champion.md) | Research sweeps, 100+ signed candidates per batch to find one strong champion | Accepted | — |
+| [031](adr-031-research-sweep-for-a-strong-champion.md) | Research sweeps, 100+ signed candidates per batch to find one strong champion | Accepted | — |
 <!-- adr-index-end -->
