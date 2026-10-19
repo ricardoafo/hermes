@@ -87,7 +87,7 @@ def duplicate_pairs(sources: dict[str, str]) -> set[str]:
             and not line.startswith(("#", "import ", "from ", '"""'))
             and line not in TRIVIAL_LINES
         ]
-        for start in range(len(kept) - WINDOW):
+        for start in range(len(kept) - WINDOW + 1):
             chunk = "\n".join(kept[start : start + WINDOW])
             owners[hashlib.sha256(chunk.encode()).hexdigest()].add(path)
     pairs: set[str] = set()
@@ -258,6 +258,13 @@ def _self_test() -> int:
         (
             "a shared block makes a pair",
             lambda: duplicate_pairs({"a.py": block, "b.py": block}),
+            {"a.py <-> b.py"},
+        ),
+        (
+            "a block of exactly one window makes a pair",
+            lambda: duplicate_pairs(
+                {"a.py": block[: block.rindex("value_")], "b.py": block[: block.rindex("value_")]}
+            ),
             {"a.py <-> b.py"},
         ),
         (
