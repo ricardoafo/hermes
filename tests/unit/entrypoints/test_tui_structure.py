@@ -6,10 +6,11 @@ shrinks. A new screen's painter goes in a controller next to its
 """
 
 import ast
-from pathlib import Path
 from typing import Final
 
-_TUI: Final = Path(__file__).parents[3] / "src" / "hermes" / "entrypoints" / "tui.py"
+from tests.support.paths import REPO_ROOT
+
+_TUI: Final = REPO_ROOT / "src" / "hermes" / "entrypoints" / "tui.py"
 _ALLOWED: Final = frozenset(
     {
         "_paint",

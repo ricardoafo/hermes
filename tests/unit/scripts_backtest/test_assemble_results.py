@@ -24,6 +24,7 @@ from hermes.application.calibration.batch_stage import (
     verdict_record,
 )
 from hermes.application.calibration.signed_gate import CheckResult
+from tests.support.accepted import assert_accepted
 from tests.support.candidate_evidence import batch as candidate_batch
 from tests.support.paths import REPO_ROOT
 
@@ -324,7 +325,7 @@ def test_every_record_the_judge_writes_passes_the_assembler_check(
     )
     outcome = StageOutcome("b1", stage, (verdict,), (), ())
 
-    _script().validate_verdict(verdict_record(outcome, verdict))
+    assert_accepted(_script().validate_verdict, verdict_record(outcome, verdict))
 
 
 def test_a_candidate_without_evidence_still_gets_its_record_and_notebook_entry(

@@ -50,7 +50,7 @@ Pre-registration §8 references purged CV + DSR + walk-forward — I assumed we 
 
 ### 4. **No formal prior art exists for the full pre-registration protocol**
 
-QuantConnect / Numerai / WorldQuant / López de Prado each cover PARTS. Elements with no known precedent:
+Existing research platforms, crowdsourced-fund tournaments and López de Prado each cover PARTS. Elements with no known precedent:
 
 - Code-enforced OOS wall (engine physically refuses to read OOS outside certification)
 - Pre-specified kill criteria in the pre-registration

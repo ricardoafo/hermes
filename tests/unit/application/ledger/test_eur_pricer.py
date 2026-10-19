@@ -8,6 +8,8 @@ from __future__ import annotations
 from datetime import date, timedelta
 from decimal import Decimal
 
+from structlog.testing import capture_logs
+
 from hermes.application.ledger.eur_pricer import (
     FAILURE_RETRY_SEC,
     MAX_CACHED_RATE_AGE_DAYS,
@@ -119,6 +121,21 @@ def test_weekend_fill_takes_friday_once_the_weekend_is_past() -> None:
     )
     assert pricing == EurPricing(
         quote=Currency.USDT, rate=Decimal("1.1721"), rate_date=_FRI, source="ecb:frankfurter"
+    )
+
+
+def test_a_rate_five_days_older_than_a_past_fill_stays_pending_with_a_warning() -> None:
+    """Invariant (#996): a frozen source's old rate is not stored; the trade stays pending."""
+    fill = date(2026, 1, 9)
+    fx = FakeFx(rates={fill: (Decimal("1.17"), date(2026, 1, 4))})
+    pricer = EurPricer(fx)
+
+    with capture_logs() as logs:
+        pricing = pricer.price(Currency.USDT, fill, today=date(2026, 1, 12))
+
+    assert (pricing, [e["event"] for e in logs if e["log_level"] == "warning"]) == (
+        None,
+        ["eur_rate_too_old"],
     )
 
 

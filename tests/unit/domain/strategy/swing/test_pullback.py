@@ -296,7 +296,7 @@ def _path(draw: st.DrawFn) -> list[int]:
 
 
 @given(path=_path())
-@settings(max_examples=80, suppress_health_check=[HealthCheck.too_slow], deadline=None)
+@settings(max_examples=80, suppress_health_check=[HealthCheck.too_slow])
 def test_signals_alternate_and_every_entry_meets_the_rule(path: list[int]) -> None:
     """Property: entries and exits alternate; each entry has both conditions and stop < entry."""
     adapter = _adapter(time_stop_days=2)
@@ -315,7 +315,7 @@ def test_signals_alternate_and_every_entry_meets_the_rule(path: list[int]) -> No
 
 
 @given(path=_path(), cut=st.integers(min_value=0, max_value=89))
-@settings(max_examples=60, suppress_health_check=[HealthCheck.too_slow], deadline=None)
+@settings(max_examples=60, suppress_health_check=[HealthCheck.too_slow])
 def test_no_signal_depends_on_a_later_bar(path: list[int], cut: int) -> None:
     """Property: the signals up to bar T are the same whether or not later bars follow."""
     bars = _daily(_RISING_DAILY) + _h4(path)
@@ -325,7 +325,7 @@ def test_no_signal_depends_on_a_later_bar(path: list[int], cut: int) -> None:
 
 
 @given(path=_path())
-@settings(max_examples=40, suppress_health_check=[HealthCheck.too_slow], deadline=None)
+@settings(max_examples=40, suppress_health_check=[HealthCheck.too_slow])
 def test_a_falling_daily_trend_never_enters(path: list[int]) -> None:
     """Property: with falling daily closes the trend condition never holds, so no signal at all."""
     assert _fired(_run(_adapter(), _daily(_FALLING_DAILY) + _h4(path))) == []

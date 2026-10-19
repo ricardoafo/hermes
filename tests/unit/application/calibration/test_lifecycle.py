@@ -173,11 +173,10 @@ class TestCertificationLifecyclePreconditions:
         result = _LIFECYCLE.advance(
             CertificationState.UNTRUSTED, report, gate=_gate(CertificationState.UNTRUSTED)
         )
-        assert isinstance(result, str), (
-            f"UNTRUSTED with 0 fills must return error string, got {result!r}."
-        )
-        assert "fill" in result.lower() or "BACKTEST" in result, (
-            f"Error must mention fill count requirement, got '{result}'."
+        assert result == (
+            "CertificationLifecycle: cannot advance UNTRUSTED → BACKTEST_CERTIFIED. "
+            "m01_fill_count=0 — at least 1 fill required to certify backtest evidence. "
+            "Pre-reg §7."
         )
 
     def test_certified_advance_returns_error(self) -> None:
@@ -197,11 +196,10 @@ class TestCertificationLifecyclePreconditions:
         result = _LIFECYCLE.advance(
             CertificationState.DEAD, report, gate=_gate(CertificationState.DEAD)
         )
-        assert isinstance(result, str), (
-            f"DEAD advance must return error, got {result!r}. R-3.4: DEAD is absorbing."
-        )
-        assert "DEAD" in result or "absorbing" in result, (
-            f"Error must mention DEAD/absorbing state, got '{result}'."
+        assert result == (
+            "CertificationLifecycle: DEAD state is absorbing — no advance possible. "
+            "A new pre-registration (v2) is required to restart the lifecycle. "
+            "Pre-reg §7."
         )
 
 
@@ -259,13 +257,11 @@ class TestCertificationLifecycleKillConditions:
             CertificationState.LIVE_APPROVED,
         ]:
             result = _LIFECYCLE.advance(state, report, gate=_gate(state))
-            assert isinstance(result, str), (
-                f"Orphan position must block transition from {state!r}, got {result!r}. "
-                "SA-4 P0: every position must trace to a fill."
-            )
-            assert "orphan" in result.lower() or "SA-4" in result, (
-                f"Error must mention orphan/SA-4 for state {state!r}, got '{result}'."
-            )
+            assert result == (
+                "CertificationLifecycle: SA-4 P0 violation — 1 orphan position(s) detected. "
+                "Every open position must trace to a fill event. "
+                "Transition blocked; state must be set to DEAD. Pre-reg §7."
+            ), f"Orphan position must block transition from {state!r}, got {result!r}."
 
     def test_full_rejection_rate_blocks_transition(self) -> None:
         """m04_rejection_rate == 1.0 must block transition — fill model broken."""

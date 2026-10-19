@@ -379,8 +379,8 @@ class TestOrderRouterOrphanPositionGuard:
         assert isinstance(result, RiskRejected), (
             f"Expected RiskRejected for orphan-position cap, got {type(result).__name__!r}."
         )
-        assert "orphan" in result.rule.lower() or "position" in result.rule.lower(), (
-            f"RiskRejected.rule must mention 'orphan' or 'position' for SA-4 traceability. "
+        assert result.rule == "orphan-position", (
+            f"RiskRejected.rule must be 'orphan-position' for SA-4 traceability. "
             f"Got rule={result.rule!r}."
         )
 
@@ -424,10 +424,7 @@ class TestOrderRouterOrphanPositionGuard:
             open_position_count=2,
         )
         result = router.route(inp)
-        assert (
-            not isinstance(result, RiskRejected)
-            or "orphan" not in getattr(result, "rule", "").lower()
-        ), (
+        assert result == fill, (
             f"open_position_count=2 must not trigger orphan-position guard. "
             f"Got {type(result).__name__!r}: {result!r}."
         )

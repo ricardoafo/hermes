@@ -192,6 +192,8 @@ async def test_shutdown_cuts_a_round_in_flight(ledger: SqliteLedger) -> None:
         await asyncio.sleep(0.01)
     shutdown.set()
     await asyncio.wait_for(task, timeout=5)
+    # The round hung on the first book, so the second was never asked for.
+    assert books.calls == [_BTC]
 
 
 def test_step_and_timeout_must_be_positive(ledger: SqliteLedger) -> None:

@@ -220,6 +220,20 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: agents-md-check
+        name: AGENTS.md stays under its line budget and names no fixed ADR range (#1195)
+        entry: uv run python scripts/dev/agents-md-check.py
+        language: system
+        pass_filenames: false
+        files: ^AGENTS\.md$
+
+      - id: footprint-check
+        name: no outside project names, bot account only in code (#1198)
+        entry: uv run python scripts/dev/footprint-check.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
       - id: no-naive-datetime
         name: no naive datetimes (grep guard)
         entry: bash scripts/dev/no-naive-datetime.sh

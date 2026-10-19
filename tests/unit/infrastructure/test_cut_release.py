@@ -21,6 +21,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from hermes.release_version import to_package_version, to_semver
+from tests.support.accepted import assert_accepted
 
 _ROOT = Path(__file__).resolve().parents[3]
 _SCRIPT_PATH = _ROOT / "scripts" / "dev" / "cut-release.py"
@@ -84,7 +85,7 @@ def test_any_zero_version_above_0_1_0_follows_the_retired_shadow(
     if new == "0.1.0":
         return
 
-    cut_release.check_newer(f"1.0.0a{shadow}", new)
+    assert_accepted(cut_release.check_newer, f"1.0.0a{shadow}", new)
 
 
 def test_a_retired_shadow_name_is_refused() -> None:
@@ -103,13 +104,15 @@ def test_an_engine_change_on_a_patch_bump_is_refused(current: str, new: str) -> 
 @pytest.mark.parametrize(("current", "new"), [("0.2.0", "0.3.0"), ("1.0.0a1", "0.2.0")])
 def test_an_engine_change_on_a_minor_bump_is_allowed(current: str, new: str) -> None:
     """A MINOR bump may carry an engine change."""
-    cut_release.check_bump(current, new, engine_change="yes", real_capital=False)
+    assert_accepted(cut_release.check_bump, current, new, engine_change="yes", real_capital=False)
 
 
 @pytest.mark.parametrize("engine_change", ["no", None])
 def test_a_patch_bump_without_engine_change_is_allowed(engine_change: str | None) -> None:
     """A PATCH cut passes when the engine line says no or is left for the PR body."""
-    cut_release.check_bump("0.2.0", "0.2.1", engine_change=engine_change, real_capital=False)
+    assert_accepted(
+        cut_release.check_bump, "0.2.0", "0.2.1", engine_change=engine_change, real_capital=False
+    )
 
 
 @pytest.mark.parametrize("current", ["0.9.3", "1.0.0a1"])
@@ -128,12 +131,14 @@ def test_leaving_zero_major_lands_on_1_0_0(new: str) -> None:
 
 def test_leaving_zero_major_with_real_capital_is_allowed() -> None:
     """--real-capital lets the first 1.x cut through."""
-    cut_release.check_bump("0.9.3", "1.0.0", engine_change="no", real_capital=True)
+    assert_accepted(cut_release.check_bump, "0.9.3", "1.0.0", engine_change="no", real_capital=True)
 
 
 def test_bumps_after_one_need_no_real_capital_flag() -> None:
     """Only the step out of 0.y.z needs the flag."""
-    cut_release.check_bump("1.0.0", "1.1.0", engine_change="yes", real_capital=False)
+    assert_accepted(
+        cut_release.check_bump, "1.0.0", "1.1.0", engine_change="yes", real_capital=False
+    )
 
 
 def test_mismatched_version_files_are_refused() -> None:
@@ -382,8 +387,8 @@ def test_next_version_always_passes_the_cut_checks(
     sections = {"Fixed"} if extra % 2 else {"Added"}
     new = cut_release.next_version(current, sections, engine_change=engine)
 
-    cut_release.check_newer(current, new)
-    cut_release.check_bump(current, new, engine_change=engine, real_capital=False)
+    assert_accepted(cut_release.check_newer, current, new)
+    assert_accepted(cut_release.check_bump, current, new, engine_change=engine, real_capital=False)
 
 
 def test_entry_sections_counts_hand_written_and_fragment_entries() -> None:
