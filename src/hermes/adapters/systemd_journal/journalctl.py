@@ -14,13 +14,19 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Final
 
+from hermes.domain.errors import InfraError
+
 __all__ = ["JournalUnavailableError", "JournalctlReader"]
 
 _UNIT: Final = "hermes.service"
 
 
-class JournalUnavailableError(RuntimeError):
-    """There is no ``journalctl`` on this machine (a dev box)."""
+class JournalUnavailableError(InfraError, RuntimeError):
+    """There is no ``journalctl`` on this machine (a dev box).
+
+    An :class:`~hermes.domain.errors.InfraError` like every adapter I/O
+    failure (issue #1187); still a ``RuntimeError`` for older handlers.
+    """
 
 
 def _popen(argv: list[str]) -> subprocess.Popen[str]:

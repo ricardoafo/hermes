@@ -37,12 +37,14 @@ table.
 | [019](adr-019-security-baseline-and-threat-model.md) | Security baseline and threat model — what Hermes protects, from whom, and the controls that answer each threat | Accepted | [ADR-020](adr-020-read-only-exchange-query-keys.md) (Decision 2 and §Exchange API keys, "Until MVP2": a read-only query key for contract tests is allowed) |
 | [020](adr-020-read-only-exchange-query-keys.md) | Read-only exchange query keys before MVP2 — ban trade-capable keys, allow one query-only key for contract tests | Accepted | — |
 | [021](adr-021-strategy-lifecycle-ready-and-done.md) | Strategy lifecycle — Ready and Done rules for every stage, a valid shadow clock for v1, and the rules for a multi-strategy lab | Accepted | — |
-| [022](adr-022-release-versions-and-deploy-cadence.md) | Release versions and deploy cadence — cut versions by release PR, tag them on deploy, and deploy only versions once the shadow clock runs | Accepted | — |
+| [022](adr-022-release-versions-and-deploy-cadence.md) | Release versions and deploy cadence — cut versions by release PR, tag them on deploy, and deploy only versions once the shadow clock runs | Accepted | [ADR-030](adr-030-every-merge-deploys-with-a-computed-version.md) (§2, §6 and §7: every merge deploys with a computed version) |
 | [023](adr-023-backtest-runs-on-server-01.md) | Backtests run on server-01 — one runner, pinned data that fills itself, and a Code Owner click for every Validation touch | Accepted | [ADR-026](adr-026-research-batch-and-signed-champion-rule.md) (§5, a Validation run waits for the Code Owner's click, and §9, `workflow_dispatch` is the only trigger, for strategies signed in a batch) |
 | [024](adr-024-four-environments-and-promotion.md) | Four environments, with hermes-01 as staging until a champion earns real money | Accepted | — |
 | [025](adr-025-train-decision-replay-on-engine-prs.md) | Engine PRs replay Train and compare decisions, on the CI pool with the klines mounted read-only | Accepted | — |
 | [026](adr-026-research-batch-and-signed-champion-rule.md) | Research batches — several signed candidates backtested together, Validation started by the pipeline, and a champion picked by a signed rule | Accepted | — |
 | [027](adr-027-zero-major-versions-until-real-capital.md) | Release versions are `0.y.z` until a champion trades real money; `1.0.0-shadow.N` is retired | Accepted | — |
-| [028](adr-028-release-cut-every-merge-window.md) | A release is cut at every merge window | Proposed | — |
+| [028](adr-028-release-cut-every-merge-window.md) | A release is cut at every merge window | Proposed | [ADR-030](adr-030-every-merge-deploys-with-a-computed-version.md) (every merge deploys with a computed version) |
 | [029](adr-029-one-hour-bars-for-intraday-holding-candidates.md) | 1h bars for intraday-holding candidates, in backtest, shadow and prod together | Proposed | — |
+| [030](adr-030-every-merge-deploys-with-a-computed-version.md) | Every merge to `main` deploys to hermes-01 with a version computed from what changed | Accepted | — |
+| [031](adr-031-research-sweep-for-a-strong-champion.md) | Research sweeps, 100+ signed candidates per batch to find one strong champion | Accepted | — |
 <!-- adr-index-end -->

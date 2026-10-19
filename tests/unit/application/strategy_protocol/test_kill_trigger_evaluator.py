@@ -25,7 +25,7 @@ from hermes.application.strategy_protocol.kill_trigger_evaluator import (
     ExperimentState,
     KillTriggerEvaluator,
 )
-from hermes.application.strategy_protocol.preregistration import PreRegistration
+from hermes.infrastructure.project_root import load_pre_registration
 from tests.support.paths import REPO_ROOT
 
 # ---------------------------------------------------------------------------
@@ -36,7 +36,7 @@ from tests.support.paths import REPO_ROOT
 @pytest.fixture(scope="module")
 def evaluator() -> KillTriggerEvaluator:
     """Return a KillTriggerEvaluator using real pre-registration thresholds."""
-    pre_reg = PreRegistration(project_root=REPO_ROOT)
+    pre_reg = load_pre_registration(REPO_ROOT)
     return KillTriggerEvaluator(pre_reg=pre_reg)
 
 

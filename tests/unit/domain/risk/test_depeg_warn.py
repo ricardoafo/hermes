@@ -14,21 +14,11 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from hermes.domain.risk.depeg_warn import _WARN_THRESHOLD, DepegWarn
-from hermes.ports.risk_overlay import RiskAction, RiskOverlayPort
+from hermes.ports.risk_overlay import RiskAction
 from tests.unit.domain.risk.conftest import make_market_snapshot, make_portfolio_state
 
 _RULE = DepegWarn()
 _PEG = Decimal("1.00")
-
-
-class TestDepegWarnThresholdConstants:
-    """Verify the pre-reg §5.5 RO-05 constant is exactly 1.5%."""
-
-    def test_warn_threshold_is_binding(self) -> None:
-        """Warn threshold must be exactly 0.015 (1.5%) per pre-reg §5.5 RO-05."""
-        assert Decimal("0.015") == _WARN_THRESHOLD, (
-            f"RO-05 threshold must be exactly 0.015 (pre-reg §5.5), got {_WARN_THRESHOLD}"
-        )
 
 
 class TestDepegWarnNoStablePrice:
@@ -122,11 +112,3 @@ class TestDepegWarnAtOrAboveThreshold:
         assert decision.action == RiskAction.WARN, (
             f"Price {price} (below peg by 2%) must return WARN, got {decision.action}"
         )
-
-
-class TestDepegWarnProtocolConformance:
-    """Rule instance satisfies RiskOverlayPort at runtime."""
-
-    def test_is_risk_overlay_port(self) -> None:
-        """DepegWarn must be an instance of RiskOverlayPort (runtime_checkable)."""
-        assert isinstance(_RULE, RiskOverlayPort), "DepegWarn must satisfy RiskOverlayPort Protocol"

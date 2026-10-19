@@ -43,7 +43,6 @@ from hermes.application.execution.kernel import FillKernel
 from hermes.application.order_router.risk_engine import RiskEngine
 from hermes.application.portfolio.tracker import PortfolioTracker
 from hermes.application.strategy_protocol.kill_trigger_evaluator import KillTriggerEvaluator
-from hermes.application.strategy_protocol.preregistration import PreRegistration
 from hermes.domain.events.trade_executed import TradeExecuted
 from hermes.domain.fees.fee_schedule import FeeSchedule
 from hermes.domain.fees.fee_schedule_selector import select_fee_schedule
@@ -59,6 +58,7 @@ from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.infrastructure.config.loader import load_config
+from hermes.infrastructure.project_root import load_pre_registration
 from tests.support.serve_loop import (
     BTC,
     PROJECT_ROOT,
@@ -221,7 +221,7 @@ def _backtest(bars: list[Bar]) -> _PathResult:
     kernel = FillKernel(
         fill_model=OrderbookWalkFillModel(),
         risk_engine=RiskEngine(rules=[CorrelationLock()]),
-        kill_evaluator=KillTriggerEvaluator(pre_reg=PreRegistration()),
+        kill_evaluator=KillTriggerEvaluator(pre_reg=load_pre_registration()),
         tracker=PortfolioTracker(
             PortfolioSnapshot.seed(
                 strategy_id, Money(amount=roster.capital_budget, currency=roster.quote)

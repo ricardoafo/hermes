@@ -24,43 +24,15 @@ Reference: spec-6-calibration-harness/change.md D-3, pre-reg §7.
 """
 
 from decimal import Decimal
-from enum import StrEnum
 from typing import TYPE_CHECKING, ClassVar
 
 from hermes.application.calibration.harness import CalibrationReport
+from hermes.domain.calibration.certification import CertificationState
 
 if TYPE_CHECKING:
     from hermes.application.calibration.certification_gates import GateReport
 
-__all__ = ["CertificationLifecycle", "CertificationState"]
-
-
-class CertificationState(StrEnum):
-    """6+1 states of the certification lifecycle per pre-reg §7.
-
-    Reference: pre-registration-v1.md §7.
-    """
-
-    UNTRUSTED = "UNTRUSTED"
-    """Default state — no certification evidence."""
-
-    BACKTEST_CERTIFIED = "BACKTEST_CERTIFIED"
-    """Backtest evidence collected — at least one fill in the calibration window."""
-
-    SHADOW_CERTIFIED = "SHADOW_CERTIFIED"
-    """Shadow-mode evidence collected — operator-triggered after 90+ shadow days."""
-
-    OOS_CERTIFIED = "OOS_CERTIFIED"
-    """H1 accepted on OOS window per §9 — operator-triggered after OOS run."""
-
-    LIVE_APPROVED = "LIVE_APPROVED"
-    """Manual operator gate + risk overlay green — operator-triggered."""
-
-    CERTIFIED = "CERTIFIED"
-    """Full certification — 90+ days live with metrics matching OOS within tolerance."""
-
-    DEAD = "DEAD"
-    """Absorbing error state — kill trigger fired. Requires new pre-reg v2."""
+__all__ = ["CertificationLifecycle"]
 
 
 class CertificationLifecycle:

@@ -40,27 +40,6 @@ repos:
         language: system
         files: \.md$
 
-      - id: main-tree-validated-self-test
-        name: main-tree-validated self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/main-tree-validated.sh'
-        language: system
-        files: ^scripts/dev/main-tree-validated\.sh$
-        pass_filenames: false
-
-      - id: pr-ready-check-self-test
-        name: pr-ready-check self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/pr-ready-check.sh'
-        language: system
-        files: ^scripts/dev/pr-ready-check\.sh$
-        pass_filenames: false
-
-      - id: doctor-self-test
-        name: doctor self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/doctor.sh'
-        language: system
-        files: ^scripts/dev/doctor\.sh$
-        pass_filenames: false
-
       - id: regenerate-guides-index
         name: guides index builds on docs/guides/ change
         # Checks every guide can be indexed (H1 + Description) without
@@ -72,13 +51,6 @@ repos:
         pass_filenames: false
         stages: [pre-commit]
 
-      - id: regenerate-guides-index-hook-self-test
-        name: regenerate-guides-index-hook self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/regenerate-guides-index-hook.sh'
-        language: system
-        files: ^scripts/dev/regenerate-guides-index-hook\.sh$
-        pass_filenames: false
-
       - id: secrets-scan
         name: secrets-scan (gitleaks pre-commit)
         entry: scripts/dev/pre-commit-secrets-scan.sh
@@ -86,102 +58,11 @@ repos:
         stages: [pre-commit]
         pass_filenames: false
 
-      - id: pr-body-lint-self-test
-        name: pr-body-lint self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/pr-body-lint.sh'
-        language: system
-        files: ^scripts/dev/pr-body-lint\.sh$
-        pass_filenames: false
-
-      - id: pr-body-recheck-self-test
-        name: pr-body-recheck self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/pr-body-recheck.sh'
-        language: system
-        files: ^scripts/dev/pr-body-recheck\.sh$
-        pass_filenames: false
-
-      - id: create-pr-self-test
-        name: create-pr self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/create-pr.sh'
-        language: system
-        files: ^scripts/dev/create-pr\.sh$
-        pass_filenames: false
-
-      - id: launch-agent-self-test
-        name: launch-agent self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/launch-agent.sh'
-        language: system
-        files: ^scripts/dev/launch-agent\.sh$
-        pass_filenames: false
-
-      - id: prune-merged-branches-self-test
-        name: prune-merged-branches self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/prune-merged-branches.sh'
-        language: system
-        files: ^scripts/dev/prune-merged-branches\.sh$
-        pass_filenames: false
-
-      - id: changelog-check-self-test
-        name: changelog-check self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/changelog-check.sh'
-        language: system
-        files: ^scripts/dev/changelog-check\.sh$
-        pass_filenames: false
-
       - id: codeowners-syntax
         name: CODEOWNERS syntax check
         entry: bash scripts/dev/codeowners-syntax-check.sh
         language: system
         files: ^(\.github/CODEOWNERS|scripts/dev/codeowners-syntax-check\.sh)$
-        pass_filenames: false
-
-      - id: codeowners-syntax-self-test
-        name: codeowners-syntax self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/codeowners-syntax-check.sh'
-        language: system
-        files: ^scripts/dev/codeowners-syntax-check\.sh$
-        pass_filenames: false
-
-      - id: render-pr-body-self-test
-        name: render-pr-body self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/render-pr-body.sh'
-        language: system
-        files: ^scripts/dev/render-pr-body\.sh$
-        pass_filenames: false
-
-      - id: license-check-self-test
-        name: license-check self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 python3 scripts/dev/license-check.py'
-        language: system
-        files: ^scripts/dev/license-check\.py$
-        pass_filenames: false
-
-      - id: cloud-session-start-self-test
-        name: cloud-session-start self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/cloud-session-start.sh'
-        language: system
-        files: ^scripts/dev/cloud-session-start\.sh$
-        pass_filenames: false
-
-      - id: assertion-edit-warning-self-test
-        name: assertion-edit-warning self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 uv run --no-sync python scripts/dev/assertion-edit-warning.py'
-        language: system
-        files: ^scripts/dev/assertion-edit-warning\.py$
-        pass_filenames: false
-
-      - id: fresh-seed-report-self-test
-        name: fresh-seed-report self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 uv run --no-sync python scripts/dev/fresh-seed-report.py'
-        language: system
-        files: ^scripts/dev/fresh-seed-report\.py$
-        pass_filenames: false
-
-      - id: reproducibility-check-self-test
-        name: reproducibility-check self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 python3 scripts/dev/reproducibility-check.py'
-        language: system
-        files: ^scripts/dev/reproducibility-check\.py$
         pass_filenames: false
 
       - id: migration-sql-check
@@ -211,19 +92,19 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: ratchets
+        name: no new duplicate blocks or oversized modules in src/ (#1201)
+        entry: bash -c 'uv run python scripts/dev/ratchets.py dup && uv run python scripts/dev/ratchets.py size'
+        language: system
+        files: ^src/
+        pass_filenames: false
+
       - id: no-vague-test-assertions
         name: no vague test assertions (AST guard)
         entry: uv run python scripts/dev/no-vague-test-assertions.py
         language: system
         files: ^tests/.*\.py$
         pass_filenames: true
-
-      - id: no-vague-test-assertions-self-test
-        name: no-vague-test-assertions self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 uv run python scripts/dev/no-vague-test-assertions.py'
-        language: system
-        files: ^scripts/dev/no-vague-test-assertions\.py$
-        pass_filenames: false
 
       - id: test-file-adjacency
         name: new src module needs a matching tests/unit test file
@@ -233,13 +114,6 @@ repos:
         pass_filenames: false
         stages: [pre-commit]
 
-      - id: test-file-adjacency-self-test
-        name: test-file-adjacency self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/test-file-adjacency.sh'
-        language: system
-        files: ^scripts/dev/test-file-adjacency\.sh$
-        pass_filenames: false
-
       - id: no-future-annotations
         name: no new from __future__ import annotations (Python 3.14)
         entry: bash scripts/dev/no-future-annotations.sh
@@ -248,13 +122,6 @@ repos:
         pass_filenames: false
         stages: [pre-commit]
 
-      - id: no-future-annotations-self-test
-        name: no-future-annotations self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/no-future-annotations.sh'
-        language: system
-        files: ^scripts/dev/no-future-annotations\.sh$
-        pass_filenames: false
-
       - id: adr-status-check
         name: ADRs are Accepted and supersessions link back
         entry: python3 scripts/dev/adr-status-check.py
@@ -262,32 +129,11 @@ repos:
         files: ^(docs/architecture/.*\.md|scripts/dev/adr-status\.baseline)$
         pass_filenames: false
 
-      - id: adr-status-check-self-test
-        name: adr-status-check self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 python3 scripts/dev/adr-status-check.py'
-        language: system
-        files: ^scripts/dev/adr-status-check\.py$
-        pass_filenames: false
-
-      - id: test-tiers-line-check-self-test
-        name: test-tiers-line-check self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/test-tiers-line-check.sh'
-        language: system
-        files: ^scripts/dev/test-tiers-line-check\.sh$
-        pass_filenames: false
-
       - id: no-domain-mode-check
         name: no TradingMode in domain (grep guard)
         entry: bash scripts/dev/no-domain-mode-check.sh
         language: system
         files: ^src/hermes/domain/.*\.py$
-        pass_filenames: false
-
-      - id: no-domain-mode-check-self-test
-        name: no-domain-mode-check self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/no-domain-mode-check.sh'
-        language: system
-        files: ^scripts/dev/no-domain-mode-check\.sh$
         pass_filenames: false
 
       - id: ruff-check
@@ -326,7 +172,7 @@ repos:
         pass_filenames: false
 
       # Pre-push: the fast subset of the CI suite. A stale base fails in
-      # seconds; the test tiers, pip-audit, radon, vulture and the license
+      # seconds; the test tiers, pip-audit, complexity, dead code and the license
       # check are left to CI, which runs them on every head (#416). Run
       # `bash scripts/dev/pr-preflight.sh` by hand for every CI check.
       # One-time install: `pre-commit install --hook-type pre-push`.
@@ -338,38 +184,11 @@ repos:
         pass_filenames: false
         always_run: true
 
-      # Self-test of pr-preflight — runs on every commit that touches it.
-      - id: secret-ages-self-test
-        name: secret-ages self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/secret-ages.sh'
+      # One hook runs every scripts/dev self-test: any script there that reads
+      # HERMES_SELF_TEST is found and run, so a new one needs no stanza (#1190).
+      - id: self-tests
+        name: scripts/dev self-tests
+        entry: uv run --no-sync python scripts/dev/hook-coverage-check.py --run-self-tests
         language: system
-        files: ^scripts/dev/secret-ages\.sh$
-        pass_filenames: false
-
-      - id: pr-preflight-self-test
-        name: pr-preflight self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/pr-preflight.sh'
-        language: system
-        files: ^scripts/dev/pr-preflight\.sh$
-        pass_filenames: false
-
-      - id: ci-checks-self-test
-        name: ci-checks self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/ci-checks.sh'
-        language: system
-        files: ^scripts/dev/ci-checks\.sh$
-        pass_filenames: false
-
-      - id: changed-tests-self-test
-        name: changed-tests self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 bash scripts/dev/changed-tests.sh'
-        language: system
-        files: ^scripts/dev/changed-tests\.sh$
-        pass_filenames: false
-
-      - id: hook-coverage-check-self-test
-        name: hook-coverage-check self-test
-        entry: bash -c 'HERMES_SELF_TEST=1 uv run python scripts/dev/hook-coverage-check.py'
-        language: system
-        files: ^scripts/dev/hook-coverage-check\.py$
+        files: ^scripts/dev/
         pass_filenames: false

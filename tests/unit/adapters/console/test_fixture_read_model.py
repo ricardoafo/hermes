@@ -30,6 +30,7 @@ from hermes.application.console import (
     PortfolioRange,
     TaxPending,
 )
+from hermes.domain.errors import InfraError
 
 _EXPECTED = (
     "down-stale",
@@ -207,6 +208,21 @@ def test_non_object_document_is_rejected(tmp_path: Path) -> None:
     path.write_text("[]", encoding="utf-8")
     with pytest.raises(ScenarioError, match="JSON object"):
         FixtureReadModel.from_path(path)
+
+
+def test_a_bad_scenario_is_caught_as_an_infra_error(tmp_path: Path) -> None:
+    """Issue #1187: a malformed scenario raises an ``InfraError``, the adapter I/O root."""
+    path = tmp_path / "list.json"
+    path.write_text("[]", encoding="utf-8")
+    with pytest.raises(InfraError) as caught:
+        FixtureReadModel.from_path(path)
+    assert type(caught.value) is ScenarioError
+
+
+def test_an_unknown_scenario_is_still_caught_as_a_value_error() -> None:
+    """Issue #1187: re-parenting keeps every ``except ValueError`` around a load working."""
+    with pytest.raises(ValueError, match="unknown demo scenario 'nope'"):
+        FixtureReadModel.load("nope")
 
 
 def test_from_path_names_the_scenario_after_the_file(tmp_path: Path) -> None:

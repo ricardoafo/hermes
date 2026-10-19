@@ -19,7 +19,6 @@ import argparse
 import json
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta, tzinfo
-from pathlib import Path
 from typing import Final, TextIO
 
 from rich.console import Console
@@ -31,6 +30,7 @@ from hermes.application.console.activity import activity_to_json
 from hermes.application.console.render import MADRID, RenderContext, render_activity
 from hermes.domain.errors import LedgerError
 from hermes.entrypoints import console as console_module
+from hermes.entrypoints._cli import add_db_arg
 from hermes.entrypoints._streams import resolve_err
 
 __all__ = ["run_activity"]
@@ -107,7 +107,7 @@ def _parse(
     parser.add_argument("--all", action="store_true")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--utc", action="store_true")
-    parser.add_argument("--db", type=Path, default=None)
+    add_db_arg(parser, default=None)
     parser.add_argument("--days", type=int, default=_DEFAULT_DAYS)
     parser.add_argument("-h", "--help", action="store_true")
     try:

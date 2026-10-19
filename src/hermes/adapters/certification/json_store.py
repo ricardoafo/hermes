@@ -13,8 +13,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from hermes.application.calibration.certification_gates import CertificationRecord, Transition
-from hermes.application.calibration.lifecycle import CertificationState
+from hermes.domain.calibration.certification import (
+    CertificationRecord,
+    CertificationState,
+    Transition,
+)
 from hermes.ports.certification import CertificationStoreError
 
 __all__ = ["JsonCertificationStore"]

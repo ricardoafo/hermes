@@ -3,6 +3,8 @@
 **Date**: 2026-10-06
 **Status**: Accepted — §1 superseded by [ADR-027](adr-027-zero-major-versions-until-real-capital.md) (`0.y.z` until real capital); §5 superseded by [ADR-028](adr-028-release-cut-every-merge-window.md) (a cut every merge window)
 **Deciders**: Ricardo Afonso (product owner), Claude (proposer)
+**Superseded in part by**: [ADR-030](adr-030-every-merge-deploys-with-a-computed-version.md) (§2, §6 and §7: every merge
+deploys with a computed version)
 **Supersedes**: [ADR-006](adr-006-versioning-strategy.md) §1 "Version bump rules", the release-cut mechanics only.
 SemVer, the `1.0.0-shadow.N` pre-release scheme (with [ADR-014](adr-014-pre-registration-binds-real-capital.md)'s
 calendar), numbered ledger migrations and versioned config schemas stay as written.

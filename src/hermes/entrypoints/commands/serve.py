@@ -8,10 +8,9 @@ from typing import Any, TextIO
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
 from hermes.entrypoints import serve as serve_module
+from hermes.entrypoints._cli import add_config_dir_arg, add_db_arg, load_config_or_exit
 from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.commands import Command
-from hermes.infrastructure.config.errors import ConfigError
-from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
 from hermes.infrastructure.logging import configure_logging
 
 __all__ = ["COMMAND", "EXIT_LEDGER_IN_USE", "serve_main"]
@@ -50,8 +49,8 @@ def _run(rest: list[str], *, stream: Any, err: TextIO | None = None) -> int:
     """
     err = resolve_err(err)
     parser = argparse.ArgumentParser(prog="hermes serve", add_help=False)
-    parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
-    parser.add_argument("--db", type=Path, default=serve_module.DEFAULT_DB_PATH)
+    add_config_dir_arg(parser)
+    add_db_arg(parser)
     parser.add_argument("--strategy", default=None)
     parser.add_argument("--new-ledger", action="store_true")
     parser.add_argument("-h", "--help", action="store_true")
@@ -79,11 +78,9 @@ def _run(rest: list[str], *, stream: Any, err: TextIO | None = None) -> int:
     # and `hermes logs` parse serve's journal as JSON and skip anything else.
     configure_logging(env="prod")
 
-    try:
-        config = load_config(parsed.config_dir)
-    except ConfigError as exc:
-        err.write(f"ERROR: config load failed: {exc}\n")
-        return 3
+    config = load_config_or_exit(parsed.config_dir, err)
+    if isinstance(config, int):
+        return config
 
     experiment_root = parsed.config_dir.resolve().parent
     try:

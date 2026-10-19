@@ -1,0 +1,283 @@
+# serializer version: 1
+# name: test_svg_snapshot_empty[120x36]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario empty     ● live · checked 14:00 · next 18:00 in 3h 48m 00s 14:12:00  ◑ AUTO
+  ┏━ PORTFOLIO  ────────────────────── computed  ┏━ POSITIONS  ──────────────────────────────────────────────── computed
+   ╭─╮╺┓  ┏━┓┏━┓┏━┓ ┏━┓┏━┓                        ⠁ No open positions
+   ╪═  ┃  ┃ ┃┃ ┃┃ ┃ ┃ ┃┃ ┃
+   ╰─╯╺┻╸,┗━┛┗━┛┗━┛•┗━┛┗━┛                        hermes is watching the market and will look again at 18:00
+   ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔                        A position appears here when a rule fires. Nothing is traded from this
+   · €0.00 0.00% today                            screen.
+   net · €0.00 today                              ↑↓ select · ↵ detail ────────────────────────────────────────────────━┛
+   started €1,000.00 on 27 Sep                   ┏━ MARKET  ─────────────────────────────────────────────────── computed
+                                                  No pairs checked yet.
+   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀  ──────────────────────────────────────────────────────────────────────━┛
+   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀  ┏━ ACTIVITY  ───────────────────────────────────────────────── computed
+   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀   No activity yet.
+   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀  ──────────────────────────────────────────────────────────────────────━┛
+   ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  ┏━ ✦ ENGINE BRIEF  ──────────────────────────────────── ✦ AI supervisor
+   00                06                 12        brief not available yet
+   today · 4 checks · flat                        never sees profit ───────────────────────────────────────────────────━┛
+   cash     █████████████████  €1,000.00 100.0%
+   invested ░░░░░░░░░░░░░░░░░      €0.00   0.0%
+   exposure ░░░░░░░░░░░░░░░░░ 0.0% of 15% cap
+  
+                   Today    This year
+   Gross         · €0.00      · €0.00
+   − Fees        · €0.00      · €0.00
+   − Est. tax    · €0.00      · €0.00
+   Net           · €0.00      · €0.00
+   Open · €0.00 · tax if sold now · €0.00
+   D W M Y range ─────────────────────────────━┛
+  
+  
+  
+  
+  Shadow test · warm-up · not counting
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                      read-only
+  ---
+  colours: #00f0ff #02eeff #05ebff #07e9ff #09e6ff #0b0420 #0ce4ff #0de3ff #0ee1ff #10dfff #120731 #13dcff #15daff #170a3d #17d7ff #19d5ff #1a2740 #1ad5ff #1b3a6b #1cd2ff #1ed0ff #1fcfff #20cdff #23cbff #25c8ff #26c8ff #27c6ff #2ac3ff #2cc1ff #2ebeff #3063a8 #31bcff #32baff #33b9ff #35b7ff #37b5ff #38b4ff #3a2a66 #3ab2ff #3cafff #3daeff #3fadff #41aaff #43a8ff #468ce6 #46a5ff #47327a #48a3ff #4a2399 #4aa0ff #4b9fff #4d9eff #4f9bff #5199ff #5396ff #5397ff #543a8f #5694ff #5891ff #5892ff #58d1eb #5a8fff #5c8dff #5d8dff #5f8aff #6188ff #6242a3 #6484ff #6485ff #6683ff #6880ff #68baf2 #6b7eff #6d7bff #6e7aff #6f49b8 #6f79ff #7177ff #7276ff #7474ff #7671ff #796fff #798bb6 #7b6cff #7c51cc #7d69ff #7d6aff #8067ff #8265ff #838ca1 #8462ff #8760ff #87a7b3 #8959e0 #895dff #8a5cff #8a94a8 #8aa8b8 #8b5cff #8be9ff #8d5bff #8f5bfe #8fa8d8 #915afe #935afe #9374ff #9559fe #9661f5 #9759fd #9958fd #9b58fd #9d57fd #9f56fc #9f57fc #a156fc #a16cff #a355fc #a555fc #a754fb #a854fb #aa53fb #aa54fb #aa79ff #ac53fb #ae52fa #b052fa #b152fa #b251fa #b386ff #b451fa #b551fa #b650f9 #b850f9 #b950f9 #ba4ff9 #bc4ff9 #bc93ff #be4ef8 #bf4ef8 #c04ef8 #c24df8 #c44df8 #c5a0ff #c64cf7 #c84cf7 #c8fbff #ca4bf7 #cb4bf7 #cc4bf7 #ce4af6 #ceaeff #d049f6 #d04af6 #d249f6 #d448f5 #d448f6 #d648f5 #d7bbff #d847f5 #da47f5 #dc46f5 #de46f4 #df45f4 #e045f4 #e0c8ff #e245f4 #e344f4 #e544f3 #e6be28 #e743f3 #e843f3 #e943f3 #ea43f3 #eb42f3 #ed42f2 #ef41f2 #f141f2 #f340f2 #f440f1 #f540f1 #f73ff1 #f93ff1 #fb3ef1 #fd3ef0 #ff3df0
+  
+  '''
+# ---
+# name: test_svg_snapshot_empty[240x60]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario empty                                                                                                                ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ AUTO
+  ┏━ PORTFOLIO  ──────────────────────────────────── computed  ┏━ POSITIONS  ────────────────────────────────────────────────────────────────────────────────── computed  ┏━ SIGNALS  ───────────────────────────────────────────────── computed
+   ╭─╮╺┓  ┏━┓┏━┓┏━┓ ┏━┓┏━┓                                      ⠁ No open positions                                                                                        Heat grid · coming next · issue #714
+   ╪═  ┃  ┃ ┃┃ ┃┃ ┃ ┃ ┃┃ ┃                                                                                                                                                ─────────────────────────────────────────────────────────────────────━┛
+   ╰─╯╺┻╸,┗━┛┗━┛┗━┛•┗━┛┗━┛                                      hermes is watching the market and will look again at 18:00                                                ┏━ LOG TAIL  ──────────────────────────────────────────────── computed
+   ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔                                      A position appears here when a rule fires. Nothing is traded from this screen.                             Logs come from the VPS journal; demo data has none.
+   · €0.00 0.00% today                                          ↑↓ select · ↵ detail ──────────────────────────────────────────────────────────────────────────────────━┛  L logs ─────────────────────────────────────────────────────────────━┛
+   net · €0.00 today                                           ┏━ MARKET  ───────────────────────── computed  ┏━ ACTIVITY  ──────────────────────────────────── computed
+   started €1,000.00 on 27 Sep                                  No pairs checked yet.                          No activity yet.
+                                                               ────────────────────────────────────────────━┛ ─────────────────────────────────────────────────────────━┛
+   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀  ┏━ ✦ ENGINE BRIEF  ────────────────────────────────────────────────────────────────────── ✦ AI supervisor
+   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀   brief not available yet
+   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀   never sees profit ─────────────────────────────────────────────────────────────────────────────────────━┛
+   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+   ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀
+   00                      06                       12
+   today · 4 checks · flat
+   cash     ███████████████████████████████  €1,000.00 100.0%
+   invested ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      €0.00   0.0%
+   exposure ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 0.0% of 15% cap
+  
+                   Today    This year
+   Gross         · €0.00      · €0.00
+   − Fees        · €0.00      · €0.00
+   − Est. tax    · €0.00      · €0.00
+   Net           · €0.00      · €0.00
+   Open · €0.00 · tax if sold now · €0.00
+   D W M Y range ───────────────────────────────────────────━┛
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  Shadow test · warm-up · not counting
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                                                                                                                                              read-only
+  ---
+  colours: #00f0ff #01efff #02eeff #03ecff #05ebff #06eaff #07e9ff #08e7ff #09e6ff #0ae5ff #0b0420 #0ce4ff #0de2ff #0de3ff #0ee1ff #0fe0ff #10dfff #11ddff #120731 #12dcff #14dbff #15daff #16d8ff #170a3d #17d7ff #18d6ff #19d5ff #1a2740 #1b3a6b #1bd4ff #1cd2ff #1dd1ff #1ed0ff #1fcfff #20cdff #21ccff #22cbff #234981 #23cbff #24caff #25c8ff #26c7ff #26c8ff #27c6ff #28c5ff #2ac3ff #2b5898 #2bc2ff #2cc1ff #2dc0ff #2ebeff #2fbdff #31bcff #3267ae #32baff #32bbff #33baff #34b8ff #35b7ff #36b6ff #37b5ff #39b3ff #3a2a66 #3a76c4 #3ab2ff #3bb1ff #3cb0ff #3daeff #3eadff #3fadff #40acff #41abff #4285db #42a9ff #43a8ff #44a7ff #45a6ff #46a4ff #47327a #48a3ff #49a2ff #4a2399 #4aa1ff #4b9fff #4c94e8 #4c9eff #4d9dff #4f9bff #4f9cff #509bff #5199ff #5298ff #5397ff #543a8f #5496ff #5594ff #5793ff #5892ff #58d1eb #5991ff #59a5ed #5a8fff #5b8eff #5c8dff #5e8cff #5f8aff #6089ff #6188ff #6242a3 #6287ff #6385ff #6484ff #65b6f1 #6683ff #6782ff #6881ff #697fff #6a7eff #6b7dff #6d7cff #6e7aff #6f49b8 #6f79ff #7078ff #7177ff #7275ff #72c7f6 #7374ff #7573ff #7671ff #7672ff #7770ff #786fff #796eff #798bb6 #7a6dff #7b6cff #7c51cc #7c6bff #7d69ff #7d6aff #7e69ff #7ed8fa #7f68ff #8067ff #8165ff #8264ff #838ca1 #8463ff #8562ff #8660ff #875fff #87a7b3 #885eff #8959e0 #895dff #8a5cff #8a94a8 #8aa8b8 #8b5cff #8be9ff #8c5bff #8d5bff #8e5bfe #8f5bfe #8fa8d8 #905afe #915afe #925afe #935afe #9374ff #9459fe #9559fe #9659fd #9661f5 #9758fd #9759fd #9858fd #9958fd #9a58fd #9b57fd #9b58fd #9c57fd #9d57fd #9e57fc #9f56fc #a056fc #a156fc #a16cff #a256fc #a355fc #a455fc #a555fc #a655fb #a754fb #a854fb #a954fb #aa54fb #aa79ff #ab53fb #ac53fb #ad53fb #ae53fa #af52fa #b052fa #b152fa #b251fa #b351fa #b386ff #b451fa #b551fa #b650f9 #b750f9 #b850f9 #b94ff9 #b950f9 #ba4ff9 #bb4ff9 #bc4ff9 #bc93ff #bd4ef8 #be4ef8 #bf4ef8 #c04ef8 #c14df8 #c24df8 #c34df8 #c44cf8 #c44df8 #c54cf7 #c5a0ff #c64cf7 #c74cf7 #c84cf7 #c8fbff #c94bf7 #ca4bf7 #cb4bf7 #cc4af7 #cd4af6 #ce4af6 #ceaeff #cf4af6 #d049f6 #d149f6 #d249f6 #d349f6 #d448f5 #d448f6 #d548f5 #d648f5 #d748f5 #d7bbff #d847f5 #d947f5 #da47f5 #db47f5 #dc46f5 #dd46f4 #de46f4 #df45f4 #df46f4 #e045f4 #e0c8ff #e145f4 #e245f4 #e345f4 #e444f4 #e544f3 #e644f3 #e6be28 #e743f3 #e843f3 #e943f3 #ea42f3 #ea43f3 #eb42f3 #ec42f2 #ed42f2 #ee41f2 #ef41f2 #f041f2 #f141f2 #f240f2 #f340f2 #f440f1 #f540f1 #f63ff1 #f73ff1 #f83ff1 #f93ff1 #fa3ef1 #fb3ef1 #fc3ef0 #fd3ef0 #fe3df0 #ff3df0
+  
+  '''
+# ---
+# name: test_svg_snapshot_empty[80x24]
+  '''
+  
+    1   2   3   4   5   6   7   8   9
+  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  ┏━ PORTFOLIO  ─────────────────────────────────────────────────────── computed
+   €1,000.00   · €0.00 0.00% today
+   net · €0.00 today
+   ▄▄▄▄
+   D · 4 checks · flat
+   cash €1,000.00 100.00% · invested €0.00 0.00%
+   started €1,000.00 on 27 Sep
+   exposure ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 0.0% of 15% cap
+  
+                   Today    This year
+   Gross         · €0.00      · €0.00
+   − Fees        · €0.00      · €0.00                                            ▅
+   − Est. tax    · €0.00      · €0.00
+   Net           · €0.00      · €0.00
+   Open · €0.00 · tax if sold now · €0.00
+   D W M Y range ──────────────────────────────────────────────────────────────━┛
+  ┏━ POSITIONS  ─────────────────────────────────────────────────────── computed
+   ⠁ No open positions
+  
+  Shadow test · warm-up · not counting
+   D W M Y range   1-9    ↵    T    ?    ^P    Q quit  next 3h 48m 00s · read-only
+  ---
+  colours: #000010 #00606f #00f0ff #03ecff #07e9ff #0ae5ff #0b0420 #0ee1ff #11ddff #120731 #15daff #170a3d #18d6ff #1a2740 #1cd2ff #1fceff #23cbff #26c7ff #2ac3ff #2dbfff #31bcff #34b8ff #37b5ff #38b4ff #3bb0ff #3fadff #42a9ff #46a5ff #49a1ff #4a2399 #4d9eff #509aff #5397ff #5496ff #5792ff #58d1eb #5b8fff #5e8bff #6287ff #6583ff #6980ff #6c7cff #6e7aff #7078ff #7374ff #7771ff #798bb6 #7a6dff #7e69ff #8165ff #8562ff #87a7b3 #885eff #8a5cff #8aa8b8 #8b5cff #8e5bfe #8fa8d8 #915afe #9374ff #9459fe #9758fd #9a58fd #9d57fd #a056fc #a156fc #a355fc #a655fb #a954fb #ac53fb #af52fa #b251fa #b551f9 #b850f9 #b950f9 #bb4ff9 #be4ef8 #c14df8 #c44df8 #c74cf7 #c8fbff #ca4bf7 #cd4af6 #d049f6 #d04af6 #d349f6 #d648f5 #d847f5 #db46f5 #de46f4 #e145f4 #e444f3 #e6be28 #e743f3 #e843f3 #ea42f3 #ed42f2 #f041f2 #f340f2 #f63ff1 #f93ff1 #fc3ef0 #ff3df0
+  
+  '''
+# ---
+# name: test_svg_snapshot_empty_live_ledger[120x36]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  mainnet ?                               ● live · checked 14:12 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ AUTO
+  ┏━ PORTFOLIO  ────────────────────── computed  ┏━ POSITIONS  ──────────────────────────────────────────────── computed
+   Portfolio · not available yet                  ⠁ No open positions
+   D W M Y range ─────────────────────────────━┛
+                                                  hermes is watching the market and will look again at 18:00
+                                                  A position appears here when a rule fires. Nothing is traded from this
+                                                  screen.
+                                                  ↑↓ select · ↵ detail ────────────────────────────────────────────────━┛
+                                                 ┏━ MARKET  ─────────────────────────────────────────────────── computed
+                                                  No pairs checked yet.
+                                                 ──────────────────────────────────────────────────────────────────────━┛
+                                                 ┏━ ACTIVITY  ───────────────────────────────────────────────── computed
+                                                  No activity yet.
+                                                 ──────────────────────────────────────────────────────────────────────━┛
+                                                 ┏━ ✦ ENGINE BRIEF  ──────────────────────────────────── ✦ AI supervisor
+                                                  brief not available yet
+                                                  never sees profit ───────────────────────────────────────────────────━┛
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  Shadow test · warm-up · not counting
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                      read-only
+  ---
+  colours: #00f0ff #02eeff #05ebff #07e9ff #09e6ff #0b0420 #0ce4ff #0ee1ff #10dfff #120731 #13dcff #15daff #170a3d #17d7ff #1ad5ff #1cd2ff #1ed0ff #1fcfff #20cdff #23cbff #25c8ff #27c6ff #2ac3ff #2cc1ff #2ebeff #31bcff #33b9ff #35b7ff #37b5ff #38b4ff #3a2a66 #3ab2ff #3cafff #3daeff #3fadff #41aaff #43a8ff #46a5ff #47327a #48a3ff #4a2399 #4aa0ff #4d9eff #4f9bff #5199ff #5396ff #5397ff #543a8f #5694ff #5891ff #58d1eb #5a8fff #5c8dff #5d8dff #5f8aff #6188ff #6242a3 #6485ff #6683ff #6880ff #6b7eff #6d7bff #6e7aff #6f49b8 #6f79ff #7276ff #7474ff #7671ff #796fff #798bb6 #7b6cff #7c51cc #7d6aff #8067ff #8265ff #838ca1 #8462ff #8760ff #87a7b3 #8959e0 #895dff #8a5cff #8a94a8 #8aa8b8 #8b5cff #8d5bff #8f5bfe #8fa8d8 #915afe #935afe #9374ff #9559fe #9661f5 #9759fd #9958fd #9b58fd #9d57fd #9f57fc #a156fc #a16cff #a355fc #a555fc #a754fb #a854fb #aa53fb #aa79ff #ac53fb #ae52fa #b052fa #b152fa #b251fa #b386ff #b451fa #b650f9 #b850f9 #b950f9 #ba4ff9 #bc4ff9 #bc93ff #be4ef8 #c04ef8 #c24df8 #c44df8 #c5a0ff #c64cf7 #c84cf7 #c8fbff #ca4bf7 #cb4bf7 #cc4bf7 #ce4af6 #ceaeff #d049f6 #d04af6 #d249f6 #d448f6 #d648f5 #d7bbff #d847f5 #da47f5 #dc46f5 #de46f4 #e045f4 #e0c8ff #e245f4 #e344f4 #e544f3 #e6be28 #e743f3 #e843f3 #e943f3 #eb42f3 #ed42f2 #ef41f2 #f141f2 #f340f2 #f540f1 #f73ff1 #f93ff1 #fb3ef1 #fd3ef0 #ff3df0
+  
+  '''
+# ---
+# name: test_svg_snapshot_empty_live_ledger[240x60]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  mainnet ?                                                                                                                                                       ● live · checked 14:12 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ AUTO
+  ┏━ PORTFOLIO  ──────────────────────────────────── computed  ┏━ POSITIONS  ────────────────────────────────────────────────────────────────────────────────── computed  ┏━ SIGNALS  ───────────────────────────────────────────────── computed
+   Portfolio · not available yet                                ⠁ No open positions                                                                                        Heat grid · coming next · issue #714
+   D W M Y range ───────────────────────────────────────────━┛                                                                                                            ─────────────────────────────────────────────────────────────────────━┛
+                                                                hermes is watching the market and will look again at 18:00                                                ┏━ LOG TAIL  ──────────────────────────────────────────────── computed
+                                                                A position appears here when a rule fires. Nothing is traded from this screen.                             The journal is not readable here; run hermes logs on the VPS.
+                                                                ↑↓ select · ↵ detail ──────────────────────────────────────────────────────────────────────────────────━┛  L logs ─────────────────────────────────────────────────────────────━┛
+                                                               ┏━ MARKET  ───────────────────────── computed  ┏━ ACTIVITY  ──────────────────────────────────── computed
+                                                                No pairs checked yet.                          No activity yet.
+                                                               ────────────────────────────────────────────━┛ ─────────────────────────────────────────────────────────━┛
+                                                               ┏━ ✦ ENGINE BRIEF  ────────────────────────────────────────────────────────────────────── ✦ AI supervisor
+                                                                brief not available yet
+                                                                never sees profit ─────────────────────────────────────────────────────────────────────────────────────━┛
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  Shadow test · warm-up · not counting
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                                                                                                                                              read-only
+  ---
+  colours: #00f0ff #01efff #02eeff #03ecff #05ebff #06eaff #07e9ff #08e7ff #09e6ff #0ae5ff #0b0420 #0ce4ff #0de2ff #0ee1ff #0fe0ff #10dfff #11ddff #120731 #12dcff #14dbff #15daff #16d8ff #170a3d #17d7ff #18d6ff #19d5ff #1bd4ff #1cd2ff #1dd1ff #1ed0ff #1fcfff #20cdff #21ccff #22cbff #23cbff #24caff #25c8ff #26c7ff #27c6ff #28c5ff #2ac3ff #2bc2ff #2cc1ff #2dc0ff #2ebeff #2fbdff #31bcff #32bbff #33baff #34b8ff #35b7ff #36b6ff #37b5ff #39b3ff #3a2a66 #3ab2ff #3bb1ff #3cb0ff #3daeff #3eadff #40acff #41abff #42a9ff #43a8ff #44a7ff #45a6ff #46a4ff #47327a #48a3ff #49a2ff #4a2399 #4aa1ff #4b9fff #4c9eff #4d9dff #4f9bff #4f9cff #509bff #5199ff #5298ff #5397ff #543a8f #5496ff #5594ff #5793ff #5892ff #58d1eb #5991ff #5a8fff #5b8eff #5c8dff #5e8cff #5f8aff #6089ff #6188ff #6242a3 #6287ff #6385ff #6484ff #6683ff #6782ff #6881ff #697fff #6a7eff #6b7dff #6d7cff #6e7aff #6f49b8 #6f79ff #7078ff #7177ff #7275ff #7374ff #7573ff #7671ff #7672ff #7770ff #786fff #796eff #798bb6 #7a6dff #7b6cff #7c51cc #7c6bff #7d6aff #7e69ff #7f68ff #8067ff #8165ff #8264ff #838ca1 #8463ff #8562ff #8660ff #875fff #87a7b3 #885eff #8959e0 #895dff #8a5cff #8a94a8 #8aa8b8 #8b5cff #8c5bff #8d5bff #8e5bfe #8f5bfe #8fa8d8 #905afe #915afe #925afe #935afe #9374ff #9459fe #9559fe #9659fd #9661f5 #9758fd #9759fd #9858fd #9958fd #9a58fd #9b57fd #9b58fd #9c57fd #9d57fd #9e57fc #9f56fc #a056fc #a156fc #a16cff #a256fc #a355fc #a455fc #a555fc #a655fb #a754fb #a854fb #a954fb #aa54fb #aa79ff #ab53fb #ac53fb #ad53fb #ae53fa #af52fa #b052fa #b152fa #b251fa #b351fa #b386ff #b451fa #b551fa #b650f9 #b750f9 #b850f9 #b94ff9 #b950f9 #ba4ff9 #bb4ff9 #bc4ff9 #bc93ff #bd4ef8 #be4ef8 #bf4ef8 #c04ef8 #c14df8 #c24df8 #c34df8 #c44cf8 #c44df8 #c54cf7 #c5a0ff #c64cf7 #c74cf7 #c84cf7 #c8fbff #c94bf7 #ca4bf7 #cb4bf7 #cc4af7 #cd4af6 #ce4af6 #ceaeff #cf4af6 #d049f6 #d149f6 #d249f6 #d349f6 #d448f6 #d548f5 #d648f5 #d748f5 #d7bbff #d847f5 #d947f5 #da47f5 #db47f5 #dc46f5 #dd46f4 #de46f4 #df46f4 #e045f4 #e0c8ff #e145f4 #e245f4 #e345f4 #e444f4 #e544f3 #e644f3 #e6be28 #e743f3 #e843f3 #e943f3 #ea42f3 #eb42f3 #ec42f2 #ed42f2 #ee41f2 #ef41f2 #f041f2 #f141f2 #f240f2 #f340f2 #f440f1 #f540f1 #f63ff1 #f73ff1 #f83ff1 #f93ff1 #fa3ef1 #fb3ef1 #fc3ef0 #fd3ef0 #fe3df0 #ff3df0
+  
+  '''
+# ---
+# name: test_svg_snapshot_empty_live_ledger[80x24]
+  '''
+  
+    1   2   3   4   5   6   7   8   9
+  mainnet ?                                ● live · checked 14:12 · next 18:00  ◑
+  ┏━ PORTFOLIO  ─────────────────────────────────────────────────────── computed
+   Portfolio · not available yet
+   D W M Y range ──────────────────────────────────────────────────────────────━┛
+  ┏━ POSITIONS  ─────────────────────────────────────────────────────── computed
+   ⠁ No open positions
+  
+   hermes is watching the market and will look again at 18:00
+   A position appears here when a rule fires. Nothing is traded from this
+   screen.
+   ↑↓ select · ↵ detail ───────────────────────────────────────────────────────━┛
+  ┏━ MARKET  ────────────────────────────────────────────────────────── computed
+   No pairs checked yet.
+  ─────────────────────────────────────────────────────────────────────────────━┛
+  ┏━ ACTIVITY  ──────────────────────────────────────────────────────── computed
+   No activity yet.
+  ─────────────────────────────────────────────────────────────────────────────━┛
+  ┏━ ✦ ENGINE BRIEF  ─────────────────────────────────────────── ✦ AI supervisor
+   brief not available yet
+   never sees profit ──────────────────────────────────────────────────────────━┛
+  Shadow test · warm-up · not counting
+   D W M Y range   1-9    ↵    T    ?    ^P    Q quit  next 3h 48m 00s · read-only
+  ---
+  colours: #00f0ff #03ecff #07e9ff #0ae5ff #0b0420 #0ee1ff #11ddff #120731 #15daff #170a3d #18d6ff #1cd2ff #1fceff #1fcfff #23cbff #26c7ff #27c6ff #2ac3ff #2dbfff #31bcff #34b8ff #37b5ff #38b4ff #3a2a66 #3bb0ff #3daeff #3fadff #42a9ff #46a5ff #47327a #49a1ff #4a2399 #4d9eff #4f9bff #509aff #5397ff #543a8f #5496ff #5792ff #58d1eb #5b8fff #5c8dff #5e8bff #6242a3 #6287ff #6583ff #6980ff #6c7cff #6e7aff #6f49b8 #7078ff #7374ff #7671ff #7771ff #798bb6 #7a6dff #7b6cff #7c51cc #7e69ff #8165ff #838ca1 #8562ff #87a7b3 #885eff #8959e0 #8a5cff #8a94a8 #8aa8b8 #8b5cff #8e5bfe #8fa8d8 #915afe #9374ff #9459fe #9661f5 #9758fd #9759fd #9a58fd #9b58fd #9d57fd #a056fc #a156fc #a16cff #a355fc #a655fb #a954fb #aa79ff #ac53fb #af52fa #b152fa #b251fa #b386ff #b551f9 #b850f9 #b950f9 #bb4ff9 #bc4ff9 #bc93ff #be4ef8 #c14df8 #c44df8 #c5a0ff #c74cf7 #c8fbff #ca4bf7 #cb4bf7 #cd4af6 #ceaeff #d049f6 #d04af6 #d349f6 #d648f5 #d7bbff #d847f5 #db46f5 #de46f4 #e0c8ff #e145f4 #e444f3 #e544f3 #e6be28 #e743f3 #e843f3 #ea42f3 #ed42f2 #f041f2 #f340f2 #f63ff1 #f93ff1 #fc3ef0 #ff3df0
+  
+  '''
+# ---

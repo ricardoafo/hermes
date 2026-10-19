@@ -14,6 +14,7 @@
 [Unit]
 Description=Hermes supervisor desk daily brief, kept for the console
 After=hermes.service
+OnFailure=hermes-notify-failure@%N.service
 
 [Service]
 Type=oneshot
@@ -31,6 +32,19 @@ ProtectHome=true
 PrivateTmp=true
 CapabilityBoundingSet=
 ReadWritePaths=/var/lib/hermes
-
-[Install]
-WantedBy=multi-user.target
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+UMask=0027

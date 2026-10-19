@@ -14,7 +14,7 @@
 #
 # Wired to git-push via `.pre-commit-config.yaml` `stages: [pre-push]` hook,
 # which passes --pre-push: the slow checks CI runs on every head anyway
-# (tests, pip-audit, radon, vulture, licenses) are skipped (#416).
+# (tests, pip-audit, complexity, dead code, licenses) are skipped (#416).
 #
 # The CI checks themselves live in scripts/dev/ci-checks.sh, which CI's
 # workflow steps also call (#489).
@@ -269,8 +269,8 @@ run_check "merge-decisions tests (node)"      ci_check merge-decisions
 run_check "markdownlint (full tree)"          ci_check markdown
 run_check "workflows (actionlint + zizmor)"   ci_check workflows
 run_slow_check "deps (pip-audit)"             ci_check deps
-run_slow_check "complexity (radon)"           ci_check complexity
-run_slow_check "deadcode (vulture)"           ci_check deadcode
+run_slow_check "complexity (ruff C901)"       ci_check complexity
+run_slow_check "deadcode (ratchet)"           ci_check deadcode
 run_slow_check "licenses (pip-licenses)"      ci_check licenses
 run_slow_check "unit tests"                   test_tier unit
 run_slow_check "integration tests"            test_tier integration

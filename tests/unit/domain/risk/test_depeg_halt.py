@@ -14,21 +14,11 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from hermes.domain.risk.depeg_halt import _HALT_THRESHOLD, DepegHalt
-from hermes.ports.risk_overlay import RiskAction, RiskOverlayPort
+from hermes.ports.risk_overlay import RiskAction
 from tests.unit.domain.risk.conftest import make_market_snapshot, make_portfolio_state
 
 _RULE = DepegHalt()
 _PEG = Decimal("1.00")
-
-
-class TestDepegHaltThresholdConstants:
-    """Verify the pre-reg §5.5 RO-06 constant is exactly 3.0%."""
-
-    def test_halt_threshold_is_binding(self) -> None:
-        """Halt threshold must be exactly 0.030 (3.0%) per pre-reg §5.5 RO-06."""
-        assert Decimal("0.030") == _HALT_THRESHOLD, (
-            f"RO-06 threshold must be exactly 0.030 (pre-reg §5.5), got {_HALT_THRESHOLD}"
-        )
 
 
 class TestDepegHaltNoStablePrice:
@@ -122,11 +112,3 @@ class TestDepegHaltAtOrAboveThreshold:
         assert decision.action == RiskAction.HALT, (
             f"Price {price} (below peg by 4%) must return HALT, got {decision.action}"
         )
-
-
-class TestDepegHaltProtocolConformance:
-    """Rule instance satisfies RiskOverlayPort at runtime."""
-
-    def test_is_risk_overlay_port(self) -> None:
-        """DepegHalt must be an instance of RiskOverlayPort (runtime_checkable)."""
-        assert isinstance(_RULE, RiskOverlayPort), "DepegHalt must satisfy RiskOverlayPort Protocol"

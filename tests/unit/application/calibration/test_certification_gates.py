@@ -15,7 +15,6 @@ from hypothesis import strategies as st
 
 from hermes.application.calibration.certification_gates import (
     LIVE_APPROVAL_PHRASE,
-    CertificationRecord,
     GateEvidence,
     LiveEvidence,
     OperatorSignOff,
@@ -29,9 +28,10 @@ from hermes.application.calibration.certification_gates import (
     section9_checks,
     v1_parameter_fingerprint,
 )
-from hermes.application.calibration.lifecycle import CertificationState
 from hermes.application.calibration.shadow_parity import MetricStatus
 from hermes.application.strategy_protocol.preregistration import PreRegistration
+from hermes.domain.calibration.certification import CertificationRecord, CertificationState
+from hermes.infrastructure.project_root import load_pre_registration
 
 _S = CertificationState
 _SID = "swing-donchian-4h"
@@ -74,7 +74,7 @@ def pre_reg() -> PreRegistration:
     """Return the real signed pre-registration."""
     here = Path(__file__).resolve().parent
     root = next(p for p in [here, *here.parents] if (p / "pyproject.toml").exists())
-    return PreRegistration(project_root=root)
+    return load_pre_registration(root)
 
 
 def _record(

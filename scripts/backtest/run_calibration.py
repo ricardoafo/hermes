@@ -55,15 +55,14 @@ from hermes.adapters.fees.binance_history import load_binance_fee_history
 from hermes.adapters.market_data.binance_historical import BinanceHistoricalAdapter
 from hermes.adapters.trial_log.jsonl_file import JsonlTrialLog
 from hermes.application.calibration.harness import CalibrationHarness
-from hermes.application.calibration.lifecycle import CertificationState
 from hermes.application.strategy_protocol.pinned_dataset import (
     PinnedBars,
     assert_manifest_matches_preregistration,
     load_pinned_bars,
 )
-from hermes.application.strategy_protocol.preregistration import PreRegistration
 from hermes.application.strategy_protocol.strategy_factory import strategy_kind
 from hermes.application.strategy_protocol.trial_log import trial_split
+from hermes.domain.calibration.certification import CertificationState
 from hermes.domain.calibration.trial_record import DatasetRef, TrialRecord
 from hermes.domain.errors import DataManifestFormatError, DomainError, TrialLogError
 from hermes.domain.fees.fee_schedule_selector import (
@@ -82,6 +81,7 @@ from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
+from hermes.infrastructure.project_root import load_pre_registration
 
 FEE_HISTORY_CSV = Path("docs/experiments/swing-mvp1/fee-history.csv")
 DATA_MANIFEST_JSON = Path("docs/experiments/swing-mvp1/data-manifest.json")
@@ -120,7 +120,7 @@ def _parse_iso_date(s: str) -> datetime:
 def _load_manifest(path: Path) -> DatasetManifest:
     """Load the data manifest and refuse it unless it matches the signed pre-registration."""
     manifest = JsonFileDatasetManifest(path).load()
-    pre_reg = PreRegistration()
+    pre_reg = load_pre_registration()
     assert_manifest_matches_preregistration(
         manifest, experiment_id=pre_reg.experiment_id(), windows=pre_reg.data_windows()
     )

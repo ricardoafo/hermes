@@ -46,7 +46,7 @@ right after a boot is reported under ``marks-after-boot``, not ``equity``, so
 a return of the warm-up marking defect (#863, fixed in #885) is named as such;
 ``test_generated_paths.py`` asserts it never appears. Not checked: the correlation
 lock, spread spike and depeg rules and the time-to-recovery kill (issue #514:
-serve does not feed them).
+shadow does not feed them; only real money does, #1158).
 """
 
 import itertools

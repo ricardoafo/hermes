@@ -19,10 +19,8 @@ Reference: ADR-014 (live approval), ADR-003 §00 I-08, AGENTS.md rule 7.
 from dataclasses import InitVar, dataclass
 from typing import Final, final
 
-from hermes.application.calibration.certification_gates import (
-    CertificationRecord,
-    require_live_approval,
-)
+from hermes.application.calibration.certification_gates import require_live_approval
+from hermes.domain.calibration.certification import CertificationRecord
 from hermes.infrastructure.config.root import HermesConfig
 from hermes.infrastructure.env_gate import EnvGateError, require_env
 

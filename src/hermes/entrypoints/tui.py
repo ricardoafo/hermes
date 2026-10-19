@@ -104,6 +104,7 @@ from contextlib import suppress
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta, tzinfo
 from decimal import ROUND_HALF_UP, Decimal
+from fractions import Fraction
 from functools import partial
 from pathlib import Path
 from typing import ClassVar, Final
@@ -151,6 +152,7 @@ from hermes.application.console.logs import LogLine, render_log_line
 from hermes.application.console.render import (
     DEMO_TAG,
     RenderContext,
+    is_checking,
     render_activity,
     render_heartbeat,
     render_market_watch,
@@ -183,6 +185,7 @@ from hermes.entrypoints.tui_drilldown import (
     ListState,
     detail_mode,
 )
+from hermes.entrypoints.tui_feeds import ContextFeeds
 from hermes.entrypoints.tui_home import (
     LOGS_DEMO,
     LOGS_UNAVAILABLE,
@@ -201,6 +204,7 @@ from hermes.entrypoints.tui_lab import LabView
 from hermes.entrypoints.tui_live import (
     LiveLook,
     eur_rate,
+    latency_chip,
     live_detail_line,
     live_portfolio_lines,
     market_rows,
@@ -252,6 +256,7 @@ from hermes.entrypoints.tui_theme import (
     METER_CELLS,
     MOTION,
     NIGHT_THEME,
+    SPINNER_FRAMES,
     THEMES,
     VERTICAL_BREAKPOINTS,
     ThemeChoice,
@@ -857,6 +862,7 @@ class HomeApp(App[None]):
 
     def _init_live_feed(self, ticker: LiveTickerPort | None, clock: Callable[[], datetime]) -> None:
         self._poller = None if ticker is None else TickerPoller(ticker, clock)
+        self._feeds = ContextFeeds(ticker, clock)
         self._board = LiveBoard()
         self._fetching = False
         self._flashes: dict[str, int] = {}
@@ -865,6 +871,9 @@ class HomeApp(App[None]):
         self._fresh_activity: frozenset[ActivityItem] = frozenset()
         self._fade_step = 0
         self._fade_timer: Timer | None = None
+        self._slide_step = MOTION.slide_steps
+        self._slide_timer: Timer | None = None
+        self._spinner = 0
         self._polls: deque[bool] = deque(maxlen=FEED_WIDTH)
         self._feed_timer: Timer | None = None
         self._feed_bright = False
@@ -1127,6 +1136,7 @@ class HomeApp(App[None]):
         if not self.is_night:
             self.effect_timers["shimmer"] = self.set_interval(MOTION.shimmer, self._start_shimmer)
             self.effect_timers["radar"] = self.set_interval(MOTION.radar_tick, self._step_radar)
+        self.effect_timers["spinner"] = self.set_interval(MOTION.spinner_tick, self._step_spinner)
 
     def _start_shimmer(self) -> None:
         """Start a shimmer pass on every shown big number (Home total, Shadow day)."""
@@ -1144,6 +1154,13 @@ class HomeApp(App[None]):
                 "positions",
                 empty_positions(coins, next_at, self._ctx, self._data, self._radar),
             )
+
+    def _step_spinner(self) -> None:
+        """Turn the checking spinner one frame; repaint only while a check is running."""
+        self._spinner = (self._spinner + 1) % len(SPINNER_FRAMES)
+        heartbeat = self._heartbeat
+        if heartbeat is not None and is_checking(heartbeat, self._clock()):
+            self._paint_heartbeat()
 
     def _step_pulse(self) -> None:
         self._pulse = (self._pulse + 1) % MOTION.pulse_steps
@@ -1273,9 +1290,19 @@ class HomeApp(App[None]):
             pulse = feed_pulse(self._polls, tokens_for(self.theme), bright=self._feed_bright)
             feed = Text(" ").append_text(pulse)
             spare -= feed.cell_len
+            chip = self._latency_chip(spare)
+            feed.append_text(chip)
+            spare -= chip.cell_len
         self._set("feed", feed)
         fits = bool(self._clock_text) and spare >= _CLOCK_CELLS
         self._set("clock", Text(f" {self._clock_text}" if fits else ""))
+
+    def _latency_chip(self, room: int) -> Text:
+        """Return the book-call round trip, its sparkline and the age of the newest price."""
+        now = self._clock()
+        last = self._board.status(now).last_tick_at
+        age = None if last is None else max(now - last, timedelta(0))
+        return latency_chip(self._feeds.round_trips(), age, tokens_for(self.theme), room=room)
 
     def _meter_fits(self, countdown: str) -> bool:
         """Return whether the countdown meter fits after the countdown and the full chip."""
@@ -1380,6 +1407,7 @@ class HomeApp(App[None]):
         if state is not self._live_state:
             self._live_state = state
             self._paint_live()
+        self._feeds.start(self, now, self._feeds_answered)
         poller = self._poller
         if poller is None or self._fetching or not poller.due(now):
             return
@@ -1392,6 +1420,11 @@ class HomeApp(App[None]):
             thread=True,
             exit_on_error=False,
         )
+
+    def _feeds_answered(self) -> None:
+        """Repaint what the bars and book feeds show: the Market panel and the status row."""
+        self._paint_market()
+        self._paint_feed_and_clock()
 
     def _fetch_ticks(self, poller: TickerPoller) -> None:
         """Fetch one tick per coin (worker thread) and hand them to the UI thread."""
@@ -1598,7 +1631,13 @@ class HomeApp(App[None]):
         heartbeat = self._heartbeat
         if heartbeat is None or not self.screen_stack:
             return
-        ctx = replace(self._ctx, live_dot=f"bold {self.live_dot_colour}")
+        spinner = SPINNER_FRAMES[self._spinner] if self._motion else self._ctx.spinner
+        ctx = replace(
+            self._ctx,
+            live_dot=f"bold {self.live_dot_colour}",
+            now=self._clock(),
+            spinner=spinner,
+        )
         down = heartbeat.state is HeartbeatState.DOWN
         self._set("heartbeat", Text("") if down else render_heartbeat(heartbeat, ctx))
         self._set("down-row", render_heartbeat(heartbeat, ctx) if down else Text(""))
@@ -1734,6 +1773,9 @@ class HomeApp(App[None]):
             item: f"on {blend(self._data.panel, self._data.live, _FADE_PEAK * share)}"
             for item in self._fresh_activity
         }
+        reveal = {
+            item: Fraction(self._slide_step, MOTION.slide_steps) for item in self._fresh_activity
+        }
         self._set(
             "activity",
             render_activity(
@@ -1742,6 +1784,7 @@ class HomeApp(App[None]):
                 limit=self._layout.activity_rows,
                 icons=True,
                 emphasis=emphasis,
+                reveal=reveal,
             ),
         )
 
@@ -1759,11 +1802,27 @@ class HomeApp(App[None]):
             return
         self._fresh_activity = items - seen
         self._fade_step = 0
+        self._slide_step = 1
+        if self._slide_timer is not None:
+            self._slide_timer.stop()
+        self._slide_timer = self.set_interval(
+            MOTION.base / (MOTION.slide_steps - 1), self._slide_activity
+        )
         if self._fade_timer is not None:
             self._fade_timer.stop()
         self._fade_timer = self.set_interval(
             MOTION.activity_fade / MOTION.activity_fade_steps, self._fade_activity
         )
+
+    def _slide_activity(self) -> None:
+        """Reveal a new row one step further, left to right; the last step stops the slide."""
+        self._slide_step = min(self._slide_step + 1, MOTION.slide_steps)
+        if self._slide_step >= MOTION.slide_steps and self._slide_timer is not None:
+            self._slide_timer.stop()
+            self._slide_timer = None
+        reads = self._reads
+        if reads is not None:
+            self._paint_activity(reads.activity)
 
     def _fade_activity(self) -> None:
         """Take one step of the highlight fade; the last step clears it."""
@@ -2038,6 +2097,7 @@ class HomeApp(App[None]):
             return
         look = self._live_look()
         ctx = self._ctx
+        now = self._clock()
         if look is None or not ctx.shows_money:
             self._set("market", render_market_watch(watch, ctx, title=False))
             return
@@ -2049,6 +2109,9 @@ class HomeApp(App[None]):
                 look,
                 width=self._inner("market"),
                 rate=eur_rate(self._rows, self._summary),
+                contexts=self._feeds.contexts(self._board.prices(), now),
+                books=self._feeds.healths(self._board.prices(), now),
+                now=now,
             ),
         )
 
@@ -2408,6 +2471,8 @@ class HomeApp(App[None]):
         if not self._on_home:
             return
         self._show_quiet = not self._show_quiet
+        # Rows the toggle reveals were always there; they are not new activity.
+        self._activity_seen = None
         self._redraw()
 
     def action_logs(self) -> None:

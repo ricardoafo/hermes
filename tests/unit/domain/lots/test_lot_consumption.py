@@ -99,8 +99,14 @@ class TestLotConsumptionRecord:
             lot_cost_basis_per_unit=Money(amount=Decimal("65000"), currency=Currency.EUR),
             consumed_at=datetime(2027, 3, 20, tzinfo=UTC),
         )
-        assert isinstance(result, Failure)
-        assert isinstance(result.failure(), InvalidLot)
+        assert result == Failure(
+            InvalidLot(
+                reason=(
+                    "LotConsumption.record: sell_price_per_unit must be EUR "
+                    f"(ADR-003 §03), got {Currency.USDT!r}"
+                )
+            )
+        )
 
     def test_record_rejects_non_eur_cost_basis(self) -> None:
         """Cost basis in a non-EUR currency returns Failure(InvalidLot)."""
@@ -111,5 +117,11 @@ class TestLotConsumptionRecord:
             lot_cost_basis_per_unit=Money(amount=Decimal("65000"), currency=Currency.USDT),
             consumed_at=datetime(2027, 3, 20, tzinfo=UTC),
         )
-        assert isinstance(result, Failure)
-        assert isinstance(result.failure(), InvalidLot)
+        assert result == Failure(
+            InvalidLot(
+                reason=(
+                    "LotConsumption.record: lot_cost_basis_per_unit must be EUR "
+                    f"(ADR-003 §03), got {Currency.USDT!r}"
+                )
+            )
+        )

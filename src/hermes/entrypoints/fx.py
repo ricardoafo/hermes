@@ -6,8 +6,8 @@ and re-projects the lots and consumptions that depended on it. A pending
 capital seed is priced by the rate of its seed date. Safe to run any number of
 times: a trade or seed whose rate is still missing stays pending.
 
-Exit codes: 0 done (some rows may stay pending), 1 ledger failure, 2 usage,
-3 config error.
+Exit codes: 0 done (some rows may stay pending), 1 ledger read failure, 2 usage,
+3 config error or no ledger.
 
 Reference: change ``trade-eur-values`` R-3, ADR-016 item 5.
 """
@@ -26,10 +26,13 @@ from hermes.application.ledger.eur_backfill import BackfillReport, backfill_pend
 from hermes.application.ledger.eur_pricer import EurPricer
 from hermes.domain.errors import LedgerError
 from hermes.domain.fx.eur_pricing import fill_date_madrid
-from hermes.entrypoints import serve as serve_module
+from hermes.entrypoints._cli import (
+    add_config_dir_arg,
+    add_db_arg,
+    load_config_or_exit,
+    require_ledger,
+)
 from hermes.entrypoints._streams import resolve_err
-from hermes.infrastructure.config.errors import ConfigError
-from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
 from hermes.infrastructure.config.models import FrankfurterConfig
 from hermes.infrastructure.time import now_utc
 from hermes.ports.fx import FxRateProviderPort
@@ -41,7 +44,7 @@ _USAGE = (
     "\n"
     "Prices every trade whose EUR values are pending from the ECB rate of its\n"
     "fill date, then re-projects its lots and consumptions.\n"
-    "Exit codes: 0 done, 1 ledger failure, 2 usage, 3 config.\n"
+    "Exit codes: 0 done, 1 ledger read failure, 2 usage, 3 config or no ledger.\n"
 )
 
 FxFactory = Callable[[FrankfurterConfig], FxRateProviderPort]
@@ -110,11 +113,12 @@ def main(
     if parsed is None:
         return code
 
-    try:
-        config = load_config(parsed.config_dir)
-    except ConfigError as exc:
-        err.write(f"ERROR: config load failed: {exc}\n")
-        return 3
+    config = load_config_or_exit(parsed.config_dir, err)
+    if isinstance(config, int):
+        return config
+    missing = require_ledger(parsed.db, err)
+    if missing is not None:
+        return missing
 
     fx = fx_factory(config.frankfurter)
     try:
@@ -144,8 +148,8 @@ def _parse(argv: list[str], stream: TextIO, err: TextIO) -> tuple[argparse.Names
         return None, 2
 
     parser = argparse.ArgumentParser(prog="hermes fx backfill", add_help=False)
-    parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
-    parser.add_argument("--db", type=Path, default=serve_module.DEFAULT_DB_PATH)
+    add_config_dir_arg(parser)
+    add_db_arg(parser)
     parser.add_argument("-h", "--help", action="store_true")
     try:
         parsed = parser.parse_args(argv[1:])

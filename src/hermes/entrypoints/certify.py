@@ -48,10 +48,11 @@ from dataclasses import replace
 from datetime import datetime, timedelta
 from functools import partial
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, Final, TextIO
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
 from hermes.adapters.console.shadow_records import RunsDirectory, ShadowRecordError, runs_dir_for
+from hermes.adapters.files import LocalFiles
 from hermes.adapters.ledger.status_reader import SqliteStatusReader
 from hermes.adapters.trial_log.jsonl_file import JsonlTrialLog
 from hermes.application.calibration.backtest_funnel import (
@@ -62,7 +63,6 @@ from hermes.application.calibration.backtest_funnel import (
 )
 from hermes.application.calibration.certification_gates import (
     LIVE_APPROVAL_PHRASE,
-    CertificationRecord,
     GateEvidence,
     GateReport,
     OperatorSignOff,
@@ -85,7 +85,6 @@ from hermes.application.calibration.evidence_files import (
     load_evidence,
     load_funnel_evidence,
 )
-from hermes.application.calibration.lifecycle import CertificationState
 from hermes.application.calibration.research_batch import (
     BatchError,
     Candidate,
@@ -102,15 +101,18 @@ from hermes.application.calibration.signed_gate import (
     require_v1_secondary,
 )
 from hermes.application.strategy_protocol.preregistration import PreRegistration
+from hermes.domain.calibration.certification import CertificationRecord, CertificationState
 from hermes.domain.calibration.trial_record import summarise_trials
 from hermes.domain.errors import LedgerError, TrialLogError
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.entrypoints import serve as serve_module
+from hermes.entrypoints._cli import add_config_dir_arg, add_db_arg
 from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.funnel import read_front_matter
 from hermes.infrastructure.config import HermesConfig
 from hermes.infrastructure.config.errors import ConfigError
-from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
+from hermes.infrastructure.config.loader import load_config
+from hermes.infrastructure.project_root import load_pre_registration
 from hermes.infrastructure.time import now_utc
 from hermes.ports.certification import CertificationStoreError, CertificationStorePort
 
@@ -122,6 +124,8 @@ __all__ = [
     "main",
     "run",
 ]
+
+_FILES: Final = LocalFiles()
 
 _USAGE = (
     "Usage: hermes certify <strategy_id> [--evidence FILE] [--store-dir DIR]\n"
@@ -227,9 +231,11 @@ def _load(
     try:
         config = load_config(parsed.config_dir)
         fingerprint = _fingerprint_for(config, parsed.strategy_id)
-        evidence = load_evidence(parsed.evidence) if parsed.evidence else GateEvidence()
+        evidence = (
+            load_evidence(parsed.evidence, files=_FILES) if parsed.evidence else GateEvidence()
+        )
         if parsed.performance:
-            evidence = apply_performance(evidence, parsed.performance)
+            evidence = apply_performance(evidence, parsed.performance, files=_FILES)
     except (ConfigError, serve_module.StartupError) as exc:
         err.write(f"ERROR: config: {exc}\n")
         return 3
@@ -294,7 +300,9 @@ def _apply_funnel(
     if path is None:
         return None, evidence
     raw = path.read_bytes()
-    funnel = validate_evidence(load_funnel_evidence(path, strategy_id=V2_STRATEGY_ID), thresholds)
+    funnel = validate_evidence(
+        load_funnel_evidence(path, strategy_id=V2_STRATEGY_ID, files=_FILES), thresholds
+    )
     digest = hashlib.sha256(
         ((evidence.sha256 or "") + hashlib.sha256(raw).hexdigest()).encode("ascii")
     ).hexdigest()
@@ -329,8 +337,8 @@ def _parse(argv: list[str], stream: TextIO, err: TextIO) -> tuple[argparse.Names
     parser.add_argument("--evidence", type=Path)
     parser.add_argument("--performance", type=Path)
     parser.add_argument("--store-dir", type=Path)
-    parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
-    parser.add_argument("--db", type=Path, default=serve_module.DEFAULT_DB_PATH)
+    add_config_dir_arg(parser)
+    add_db_arg(parser)
     parser.add_argument("--sign-off", default=None)
     parser.add_argument("--funnel-evidence", type=Path)
     parser.add_argument("--shadow-parity", type=Path)
@@ -398,7 +406,7 @@ def _batch_inputs(parsed: argparse.Namespace, stream: TextIO, err: TextIO) -> _B
     """The signed batch, its candidate and the candidate's evidence, or an exit code."""
     strategy_id: str = parsed.strategy_id
     try:
-        batch = load_batch(parsed.batch)
+        batch = load_batch(parsed.batch, files=_FILES)
     except BatchError as exc:
         err.write(f"ERROR: batch: {exc}\n")
         return 3
@@ -412,11 +420,11 @@ def _batch_inputs(parsed: argparse.Namespace, stream: TextIO, err: TextIO) -> _B
         stream.write(f"# hermes certify {strategy_id}: batch {batch.batch_id}\nREFUSED: {reason}\n")
         return 1
     trial_log = JsonlTrialLog(parsed.trial_log or Path(batch.trial_log))
-    files = CandidateEvidence(parsed.performance, parsed.evidence, parsed.funnel_evidence)
+    paths = CandidateEvidence(parsed.performance, parsed.evidence, parsed.funnel_evidence)
     try:
         require_v1_secondary(batch.section_text(candidate))
         trials = summarise_trials(trial_log.records())
-        evidence, funnel = candidate_gate_evidence(strategy_id, files, batch, trials)
+        evidence, funnel = candidate_gate_evidence(strategy_id, paths, batch, trials, files=_FILES)
     except (OSError, ValueError, TrialLogError) as exc:
         err.write(f"ERROR: {strategy_id} in batch {batch.batch_id}: {exc}\n")
         return 3
@@ -540,7 +548,7 @@ def run(
     """
     err = resolve_err(err)
     now = clock()
-    rules = pre_reg or PreRegistration()
+    rules = pre_reg or load_pre_registration()
     try:
         stored = store.load(strategy_id) or CertificationRecord(strategy_id)
     except CertificationStoreError as exc:

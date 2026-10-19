@@ -12,7 +12,7 @@
 #
 # Checks:
 #   format, lint, types, imports      ruff format, ruff check, mypy, import-linter
-#   deps, complexity, deadcode        pip-audit, radon, vulture
+#   deps, complexity, deadcode        pip-audit, ruff C901, the dead-code ratchet (#1201)
 #   licenses                          pip-licenses through license-check.py
 #   unit                              tests/unit/ with branch coverage
 #   integration                       tests/integration/
@@ -27,7 +27,7 @@
 #                                     every runs-on pinned to self-hosted runners (#1069)
 #   guards                            the pre-commit guards, over the whole tree,
 #                                     and every hook covered by CI (#840)
-#   self-tests                        every *-self-test pre-commit hook (#840)
+#   self-tests                        every scripts/dev self-test mode (#840, #1190)
 #
 # `--changed <base>` (unit, integration) runs only the tests for the files
 # changed since <base>: see scripts/dev/changed-tests.sh. CI always runs
@@ -101,6 +101,8 @@ run_guards() {
     uv run python scripts/dev/openspec-archive.py --check || rc=1
     uv run python scripts/dev/agents-md-check.py || rc=1
     uv run python scripts/dev/footprint-check.py || rc=1
+    uv run python scripts/dev/ratchets.py dup || rc=1
+    uv run python scripts/dev/ratchets.py size || rc=1
     uv run python scripts/dev/migration-sql-check.py || rc=1
     bash scripts/dev/test-file-adjacency.sh --base "${base:-origin/main}" || rc=1
     bash scripts/dev/no-future-annotations.sh --base "${base:-origin/main}" || rc=1
@@ -119,8 +121,8 @@ run_one() {
         imports) uv run lint-imports ;;
         # --skip-editable skips our own local hermes package (not on PyPI).
         deps) uv run pip-audit --skip-editable ;;
-        complexity) uv run radon cc --min B src/ ;;
-        deadcode) uv run vulture src/ ;;
+        complexity) uv run ruff check --select C901 src scripts ;;
+        deadcode) uv run python scripts/dev/ratchets.py deadcode ;;
         # Blocks GPL/AGPL/LGPL, which create commercial-use constraints.
         licenses)
             uv tool install --quiet pip-licenses==5.5.5 \

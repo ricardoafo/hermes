@@ -1,0 +1,1 @@
+- The application layer no longer reads files or walks up to the checkout on its own: evidence files, the signed pre-registration, the lab notebook and the day-0 hashes go through a files port, the entrypoint or script names the project root, the certification record moves to the domain, and an import contract keeps ports on domain values only (#1186).

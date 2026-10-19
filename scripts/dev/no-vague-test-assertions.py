@@ -41,7 +41,7 @@ baseline line that no longer matches a violation, so the list only shrinks.
 
 Called by:
   - .pre-commit-config.yaml ``no-vague-test-assertions`` hook (staged tests)
-  - .pre-commit-config.yaml ``no-vague-test-assertions-self-test`` hook
+  - .pre-commit-config.yaml ``self-tests`` hook (self-test mode)
   - Manually: ``uv run python scripts/dev/no-vague-test-assertions.py [PATH...]``
 
 Env vars:

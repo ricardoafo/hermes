@@ -1,5 +1,7 @@
 """Unit tests for walk-forward and purged CPCV splits (pre-registration §8.3)."""
 
+import itertools
+
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
@@ -37,7 +39,8 @@ class TestPurgedCpcv:
 
     def test_ten_splits(self) -> None:
         """C(5, 2) = 10 combinations."""
-        assert len(purged_cpcv_splits(1000)) == 10
+        pairs = [(s.test[0] // 200, s.test[-1] // 200) for s in purged_cpcv_splits(1000)]
+        assert sorted(pairs) == list(itertools.combinations(range(5), 2))
 
     def test_purge_and_embargo_gaps(self) -> None:
         """Holding out the middle group drops 5 days before it and 3 after it."""
@@ -58,9 +61,10 @@ class TestPurgedCpcv:
         k = data.draw(st.integers(min_value=1, max_value=groups - 1))
         for split in purged_cpcv_splits(n, groups=groups, test_groups=k):
             test = set(split.test)
-            for day in split.train:
-                assert not any(day + d in test for d in range(1, 6))
-                assert not any(day - d in test for d in range(4))
+            forbidden = {day + d for day in split.train for d in range(1, 6)} | {
+                day - d for day in split.train for d in range(4)
+            }
+            assert forbidden.isdisjoint(test)
 
     @pytest.mark.parametrize("kwargs", [{"test_groups": 5}, {"test_groups": 0}, {"purge_days": -1}])
     def test_invalid_arguments_raise(self, kwargs: dict[str, int]) -> None:

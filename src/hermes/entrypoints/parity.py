@@ -80,9 +80,9 @@ from hermes.domain.portfolio.snapshot import PortfolioSnapshot
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.entrypoints._anomaly_record import record_anomaly
+from hermes.entrypoints._cli import add_config_dir_arg, add_db_arg, require_ledger
 from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.serve import (
-    DEFAULT_DB_PATH,
     StartupError,
     _build_kernel,
     _fees_at,
@@ -91,7 +91,7 @@ from hermes.entrypoints.serve import (
     _telegram_config,
 )
 from hermes.infrastructure.config.errors import ConfigError
-from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
+from hermes.infrastructure.config.loader import load_config
 from hermes.infrastructure.config.models import MarketDataConfig, StrategyConfig
 from hermes.ports.bar_feed import ClosedBarFeedPort
 
@@ -190,9 +190,9 @@ def _check(
         return request
     parsed, day = request
     db: Path = parsed.db
-    if not db.is_file():
-        err.write(f"ERROR: no ledger at {db}.\n")
-        return 3
+    missing = require_ledger(db, err)
+    if missing is not None:
+        return missing
     try:
         report = _run(
             day,
@@ -235,8 +235,8 @@ def _parse(
     """Parse argv; return the request, or the exit code to stop with."""
     parser = argparse.ArgumentParser(prog="hermes parity check", add_help=False)
     parser.add_argument("--date", default=None)
-    parser.add_argument("--db", type=Path, default=DEFAULT_DB_PATH)
-    parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
+    add_db_arg(parser)
+    add_config_dir_arg(parser)
     parser.add_argument("--alert", action="store_true")
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("-h", "--help", action="store_true")
@@ -318,9 +318,9 @@ def _window(
     if isinstance(parsed, int):
         return parsed
     db: Path = parsed.db
-    if not db.is_file():
-        err.write(f"ERROR: no ledger at {db}.\n")
-        return 3
+    missing = require_ledger(db, err)
+    if missing is not None:
+        return missing
     try:
         config = load_config(parsed.config_dir)
         roster = _enabled(config.strategies.strategies)
@@ -365,8 +365,8 @@ def _parse_window(argv: list[str], stream: TextIO, err: TextIO) -> argparse.Name
     parser = argparse.ArgumentParser(prog="hermes parity window", add_help=False)
     parser.add_argument("--since", default=None)
     parser.add_argument("--out", type=Path, default=None)
-    parser.add_argument("--db", type=Path, default=DEFAULT_DB_PATH)
-    parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
+    add_db_arg(parser)
+    add_config_dir_arg(parser)
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("-h", "--help", action="store_true")
     try:

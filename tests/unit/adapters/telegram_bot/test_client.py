@@ -7,7 +7,9 @@ Invariants protected here:
 - ``sendMessage`` posts plain text with ``disable_notification`` set for
   silent messages;
 - an API error or a network error raises without the token in the message;
-- sends are throttled to 1 per second and 20 per minute by waiting.
+- sends are throttled to 1 per second and 20 per minute by waiting;
+- an HTTP 429 is waited out through the shared transport (issue #1187);
+- the client's error is an ``InfraError`` and still a ``RuntimeError``.
 
 respx answers with recorded Bot API responses; no real Telegram call.
 """
@@ -20,6 +22,7 @@ import respx
 from pydantic import SecretStr
 
 from hermes.adapters.telegram_bot import TelegramBotClient, TelegramBotError, Update
+from hermes.domain.errors import InfraError
 
 _TOKEN = "123456789:FAKE-bot-token_for_tests"  # noqa: S105 - test-only  # gitleaks:allow
 _BASE = f"https://api.telegram.org/bot{_TOKEN}"
@@ -171,3 +174,82 @@ def test_calls_go_to_the_configured_api_base() -> None:
     assert [str(call.request.url) for call in respx.calls] == [
         f"http://127.0.0.1:8081/bot{_TOKEN}/sendMessage"
     ]
+
+
+def _too_many(retry_after: int) -> httpx.Response:
+    return httpx.Response(
+        429,
+        json={
+            "ok": False,
+            "error_code": 429,
+            "description": f"Too Many Requests: retry after {retry_after}",
+            "parameters": {"retry_after": retry_after},
+        },
+    )
+
+
+@respx.mock
+def test_a_429_on_send_is_waited_out_and_the_message_sent_once() -> None:
+    """Issue #1187: the bot waits ``retry_after`` and retries instead of failing the reply."""
+    route = respx.post(f"{_BASE}/sendMessage").mock(
+        side_effect=[_too_many(4), httpx.Response(200, json=_SENT)]
+    )
+    clock = _MonotonicClock()
+
+    _client(clock).send_message(_CHAT, "x")
+
+    assert (route.call_count, clock.slept) == (2, [4.0])
+
+
+@respx.mock
+def test_a_429_that_outlasts_the_retries_raises_the_bot_error() -> None:
+    """Issue #1187: after 3 retries the 429 is a ``TelegramBotError`` with Telegram's reason."""
+    route = respx.post(f"{_BASE}/getUpdates").mock(return_value=_too_many(2))
+    clock = _MonotonicClock()
+
+    with pytest.raises(TelegramBotError) as caught:
+        _client(clock).get_updates(offset=None)
+
+    assert (route.call_count, clock.slept, str(caught.value)) == (
+        4,
+        [2.0, 2.0, 2.0],
+        "getUpdates failed: HTTP 429 Too Many Requests: retry after 2",
+    )
+
+
+@respx.mock
+def test_a_non_json_reply_raises_with_the_status_only() -> None:
+    """A proxy's HTML page is a ``TelegramBotError`` naming the status, not a ``ValueError``."""
+    respx.post(f"{_BASE}/sendMessage").mock(
+        return_value=httpx.Response(502, text="<html>bad gateway</html>")
+    )
+
+    with pytest.raises(TelegramBotError) as caught:
+        _client().send_message(_CHAT, "x")
+
+    assert str(caught.value) == "sendMessage failed: HTTP 502"
+
+
+@respx.mock
+def test_the_bot_error_is_caught_as_an_infra_error() -> None:
+    """Issue #1187: the bot's error sits under ``InfraError``, the adapter I/O root."""
+    respx.post(f"{_BASE}/sendMessage").mock(
+        return_value=httpx.Response(401, json={"ok": False, "description": "Unauthorized"})
+    )
+
+    with pytest.raises(InfraError) as caught:
+        _client().send_message(_CHAT, "x")
+
+    assert (type(caught.value), str(caught.value)) == (
+        TelegramBotError,
+        "sendMessage failed: HTTP 401 Unauthorized",
+    )
+
+
+@respx.mock
+def test_the_bot_error_is_still_caught_as_a_runtime_error() -> None:
+    """Issue #1187: re-parenting keeps every older ``except RuntimeError`` working."""
+    respx.post(f"{_BASE}/getUpdates").mock(side_effect=httpx.ReadTimeout("slow"))
+
+    with pytest.raises(RuntimeError, match=r"^getUpdates failed: ReadTimeout$"):
+        _client().get_updates(offset=None)

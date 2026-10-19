@@ -3,6 +3,8 @@
 **Date**: 2026-10-18
 **Status**: Proposed — Accepted when the Code Owner merges it
 **Deciders**: Ricardo Afonso (product owner), Claude (proposer)
+**Superseded by**: [ADR-030](adr-030-every-merge-deploys-with-a-computed-version.md) (every merge deploys with a
+computed version)
 **Supersedes**: [ADR-022](adr-022-release-versions-and-deploy-cadence.md) §5 ("The Code Owner decides when to cut.
 There is no schedule."). The rest of ADR-022 and all of [ADR-027](adr-027-zero-major-versions-until-real-capital.md)
 stay as written.

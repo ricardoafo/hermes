@@ -6,8 +6,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
-from hermes.application.calibration.certification_gates import CertificationRecord
-from hermes.application.calibration.lifecycle import CertificationState
+from hermes.domain.calibration.certification import CertificationRecord, CertificationState
 from hermes.entrypoints import journal as journal_module
 from hermes.infrastructure.time import now_utc
 

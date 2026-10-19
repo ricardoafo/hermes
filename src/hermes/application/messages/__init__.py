@@ -21,6 +21,7 @@ Reference: ``docs/decisions/2026-08-23-slack-alongside-telegram.md``
     § "Extended MVP1 events"; code-conventions.md §1.
 """
 
+from hermes.application.messages._escape import correlation_tail
 from hermes.application.messages.reporting_phase import ReportingPhase
 from hermes.application.messages.slack import (
     FileAttachment,
@@ -33,6 +34,7 @@ __all__ = [
     "FileAttachment",
     "ReportingPhase",
     "SlackMessage",
+    "correlation_tail",
     "slack_template",
     "telegram_template",
 ]

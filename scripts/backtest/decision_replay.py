@@ -64,7 +64,6 @@ from hermes.application.execution.kernel import (
     Halted,
     MarketContext,
 )
-from hermes.application.strategy_protocol.preregistration import PreRegistration
 from hermes.domain.errors import DataManifestFormatError, DomainError, InfraError
 from hermes.domain.fees.fee_schedule import FeeSchedule
 from hermes.domain.fees.fee_schedule_selector import (
@@ -78,6 +77,7 @@ from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.logging import new_correlation_id
+from hermes.infrastructure.project_root import load_pre_registration
 
 EXIT_SAME: Final = 0
 EXIT_CHANGED: Final = 1
@@ -263,7 +263,7 @@ async def _record(args: argparse.Namespace) -> int:
         roster, model = _select(Path(args.config_dir), args.strategy, ExecutionModel().depth_frac)
         start, end = train_window(Path(args.manifest))
         manifest = _load_manifest(Path(args.manifest))
-        pairs = _parse_pairs(",".join(PreRegistration().universe()))
+        pairs = _parse_pairs(",".join(load_pre_registration().universe()))
         bars, _ = await _load(manifest, pairs, start, end)
         fee_rows = load_binance_fee_history(Path(args.fee_history))
     except (

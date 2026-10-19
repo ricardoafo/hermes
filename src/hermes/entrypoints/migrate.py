@@ -20,7 +20,6 @@ import sqlite3
 from pathlib import Path
 from typing import TextIO
 
-from hermes.adapters.ledger.connection import open_ledger
 from hermes.adapters.ledger.migration_runner import (
     DESTRUCTIVE_MARKER,
     DryRunReport,
@@ -30,8 +29,8 @@ from hermes.adapters.ledger.migration_runner import (
     restore_snapshot,
 )
 from hermes.domain.errors import LedgerError
+from hermes.entrypoints._cli import add_db_arg, open_ledger_or_exit
 from hermes.entrypoints._streams import resolve_err
-from hermes.entrypoints.serve import DEFAULT_DB_PATH
 
 __all__ = ["main"]
 
@@ -48,7 +47,7 @@ _USAGE = (
 
 def _parse(argv: list[str], err: TextIO) -> argparse.Namespace | None:
     parser = argparse.ArgumentParser(prog="hermes migrate", add_help=False)
-    parser.add_argument("--db", type=Path, default=DEFAULT_DB_PATH)
+    add_db_arg(parser)
     parser.add_argument("--snapshot-dir", type=Path, default=None)
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--status", action="store_true")
@@ -89,10 +88,9 @@ def _dry_run(db: Path, stream: TextIO, err: TextIO) -> int:
 
 
 def _status(db: Path, stream: TextIO, err: TextIO) -> int:
-    if not db.exists():
-        err.write(f"ERROR: ledger {db} does not exist\n")
-        return 3
-    conn = open_ledger(db)
+    conn = open_ledger_or_exit(db, err, read_only=False)
+    if isinstance(conn, int):
+        return conn
     try:
         pending = pending_migrations(conn)
     finally:

@@ -24,16 +24,12 @@ import re
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from importlib import resources
-from typing import ClassVar
 
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 from rich.text import Text
 from syrupy.assertion import SnapshotAssertion
-from syrupy.extensions.image import SVGImageSnapshotExtension
-from syrupy.location import PyTestLocation
-from syrupy.types import SnapshotIndex
 
 from hermes.adapters.console import FixtureReadModel
 from hermes.application.console import ConsoleReadModel, Surface, ViewNotAvailableError
@@ -49,6 +45,7 @@ from hermes.entrypoints.tui_signals import (
     signals_screen,
 )
 from hermes.entrypoints.tui_theme import BASE
+from tests.support.tui_views import assert_view, capture
 
 # The fixtures' read time (14:12 Madrid), well inside Auto's day window.
 _FROZEN = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
@@ -250,19 +247,6 @@ def _document(name: str) -> dict[str, object]:
     return loaded
 
 
-class _NamedSVG(SVGImageSnapshotExtension):
-    """Store each snapshot under the name given to ``snapshot(name=...)`` alone."""
-
-    _file_extension: ClassVar[str] = "svg"
-
-    @classmethod
-    def get_snapshot_name(cls, *, test_location: PyTestLocation, index: SnapshotIndex = 0) -> str:
-        """Return the bare custom name, e.g. ``signals_neon_160x45``."""
-        if isinstance(index, str):
-            return index
-        return super().get_snapshot_name(test_location=test_location, index=index)
-
-
 def _svg(size: tuple[int, int], theme: ThemeChoice) -> str:
     async def drive() -> str:
         app = _app(FixtureReadModel.load("ok-two-positions"), theme)
@@ -270,8 +254,7 @@ def _svg(size: tuple[int, int], theme: ThemeChoice) -> str:
             await pilot.pause()
             await pilot.press("2")
             await pilot.pause()
-            svg = app.export_screenshot()
-        return "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
+            return capture(app)
 
     return asyncio.run(drive())
 
@@ -289,4 +272,4 @@ def test_signals_svg_snapshot(
 ) -> None:
     """The reviewed picture of the Signals screen, in one theme, at one spec breakpoint."""
     name = f"signals_{theme_name}_{size[0]}x{size[1]}"
-    assert _svg(size, theme) == snapshot(extension_class=_NamedSVG, name=name)
+    assert_view(snapshot, _svg(size, theme), name=name)

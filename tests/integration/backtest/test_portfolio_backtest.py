@@ -26,6 +26,7 @@ from pathlib import Path
 
 import pytest
 
+from hermes.adapters.files import LocalFiles
 from hermes.adapters.fills.orderbook_walk import OrderbookWalkFillModel
 from hermes.application.backtest.performance import performance_file
 from hermes.application.backtest.replay import BacktestRun, replay
@@ -297,7 +298,7 @@ def test_performance_file_round_trips_through_certify(tmp_path: Path) -> None:
     path = tmp_path / "train_val.json"
     path.write_text(json.dumps(payload))
 
-    metrics = apply_performance(GateEvidence(), path).backtest
+    metrics = apply_performance(GateEvidence(), path, files=LocalFiles()).backtest
 
     assert metrics is not None
     assert (metrics.trade_count, sorted(run.declined), metrics.max_drawdown) == (

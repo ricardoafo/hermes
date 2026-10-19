@@ -21,7 +21,6 @@ import argparse
 import os
 from collections.abc import Mapping
 from datetime import date, timedelta
-from pathlib import Path
 from typing import TextIO
 
 import httpx
@@ -39,10 +38,14 @@ from hermes.application.notification_router import EventClass, RouterConfig, rou
 from hermes.domain.errors import InfraError
 from hermes.domain.events.anomaly_detected import AnomalyDetected
 from hermes.entrypoints._anomaly_record import record_anomaly
+from hermes.entrypoints._cli import (
+    add_config_dir_arg,
+    add_db_arg,
+    load_config_or_exit,
+    require_ledger,
+)
 from hermes.entrypoints._streams import resolve_err
-from hermes.entrypoints.serve import DEFAULT_DB_PATH
 from hermes.infrastructure.config.errors import ConfigError
-from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
 from hermes.infrastructure.logging import new_correlation_id
 from hermes.infrastructure.time import now_utc
 
@@ -71,8 +74,8 @@ def _report_deadman(env: Mapping[str, str], *, ok: bool, body: str, stream: Text
 def _parse(argv: list[str], stream: TextIO, err: TextIO) -> argparse.Namespace | None:
     parser = argparse.ArgumentParser(prog="hermes archive-check", add_help=False)
     parser.add_argument("--date", type=date.fromisoformat, default=None)
-    parser.add_argument("--db", type=Path, default=DEFAULT_DB_PATH)
-    parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
+    add_db_arg(parser)
+    add_config_dir_arg(parser)
     parser.add_argument("-h", "--help", action="store_true")
     try:
         parsed = parser.parse_args(argv)
@@ -144,12 +147,18 @@ def main(
         return 0
     if env is None:
         env = dict(os.environ)
-    try:
-        config = load_config(parsed.config_dir)
-    except ConfigError as exc:
-        err.write(f"ERROR: config: {exc}\n")
-        _report_deadman(env, ok=False, body=f"config: {exc}", stream=stream)
-        return 3
+    deadman_env = env
+
+    def report_config_failure(exc: ConfigError) -> None:
+        _report_deadman(deadman_env, ok=False, body=f"config: {exc}", stream=stream)
+
+    config = load_config_or_exit(parsed.config_dir, err, on_error=report_config_failure)
+    if isinstance(config, int):
+        return config
+    missing = require_ledger(parsed.db, err)
+    if missing is not None:
+        _report_deadman(env, ok=False, body=f"no ledger at {parsed.db}", stream=stream)
+        return missing
     now = now_utc()
     day = parsed.date if parsed.date is not None else (now - timedelta(days=1)).date()
     router = _router(env)

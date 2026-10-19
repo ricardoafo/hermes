@@ -1,0 +1,1 @@
+- The Portfolio chart and the sparklines now draw a slope between points instead of wide flat steps.

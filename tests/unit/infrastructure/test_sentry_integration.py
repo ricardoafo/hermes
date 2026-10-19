@@ -106,7 +106,7 @@ class TestInitialize:
     def test_dsn_initialises_the_sdk_with_exactly_the_safe_options(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A DSN initialises the SDK once, with no PII, no locals, no traces, no integrations."""
+        """A DSN initialises the SDK once, with no locals, no traces, no integrations."""
         calls = _spy_init(monkeypatch)
 
         sentry_integration.initialize(dsn=_DSN, environment="sandbox")
@@ -115,13 +115,25 @@ class TestInitialize:
             {
                 "dsn": _DSN,
                 "environment": "sandbox",
-                "send_default_pii": False,
                 "include_local_variables": False,
                 "traces_sample_rate": 0.0,
                 "default_integrations": False,
                 "integrations": [],
             }
         ]
+
+    def test_initialised_client_sends_no_pii_and_no_local_variables(
+        self, recording_sentry: _RecordingTransport
+    ) -> None:
+        """The real SDK, started through ``initialize``, sends no PII and no frame locals.
+
+        ``send_default_pii`` is no longer passed (deprecated since sentry-sdk 2.72), so
+        the SDK's own resolved options are what has to stay private.
+        """
+        client = sentry_sdk.get_client()
+
+        assert client.should_send_default_pii() is False
+        assert client.options["include_local_variables"] is False
 
     def test_sdk_init_failure_is_logged_not_raised(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """An SDK init crash becomes one ``sentry.init.failed`` warning naming the error."""

@@ -12,12 +12,15 @@ from pathlib import Path
 
 import pytest
 
+from hermes.adapters.files import LocalFiles
 from hermes.application.calibration.evidence_files import (
     EvidenceError,
     load_funnel_evidence,
     load_performance,
 )
 from hermes.application.calibration.window_metrics import TrialStats
+
+_FILES = LocalFiles()
 
 
 def _write(tmp_path: Path, payload: object) -> Path:
@@ -41,7 +44,7 @@ def test_load_performance_names_the_window_and_keeps_the_record(
     tmp_path: Path, window: str
 ) -> None:
     """The gate needs the raw record, not computed metrics, to deflate it by its own N."""
-    loaded_window, record = load_performance(_write(tmp_path, _performance(window)))
+    loaded_window, record = load_performance(_write(tmp_path, _performance(window)), files=_FILES)
 
     assert (loaded_window, record.daily_equity, record.trials) == (
         window,
@@ -54,7 +57,7 @@ def test_load_performance_names_the_window_and_keeps_the_record(
 def test_load_performance_refuses_what_certify_refuses(tmp_path: Path, payload: object) -> None:
     """The generic gate reads performance files exactly as ``certify --performance`` does."""
     with pytest.raises(EvidenceError):
-        load_performance(_write(tmp_path, payload))
+        load_performance(_write(tmp_path, payload), files=_FILES)
 
 
 def _funnel(tmp_path: Path, name: str, payload: dict[str, object]) -> Path:
@@ -78,5 +81,7 @@ def test_folds_never_reach_the_parsed_funnel_evidence(tmp_path: Path) -> None:
     folded = {**plain, "folds": "not even an object"}
 
     assert load_funnel_evidence(
-        _funnel(tmp_path, "folds.json", folded), strategy_id="swing-x"
-    ) == load_funnel_evidence(_funnel(tmp_path, "plain.json", plain), strategy_id="swing-x")
+        _funnel(tmp_path, "folds.json", folded), strategy_id="swing-x", files=_FILES
+    ) == load_funnel_evidence(
+        _funnel(tmp_path, "plain.json", plain), strategy_id="swing-x", files=_FILES
+    )

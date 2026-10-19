@@ -21,6 +21,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, tzinfo
 from decimal import Decimal
+from fractions import Fraction
+from math import ceil
 from typing import Final
 
 from rich import box
@@ -78,6 +80,7 @@ __all__ = [
     "MADRID",
     "RenderContext",
     "day_clock",
+    "is_checking",
     "range_label",
     "render_activity",
     "render_heartbeat",
@@ -103,6 +106,7 @@ _HIDDEN_NOTE: Final = "money hidden on this surface"
 _EUR_PENDING: Final = "EUR pending"
 _EUR_PENDING_NOTE: Final = "EUR pending · priced on the next restart, or run hermes fx backfill"
 _ZERO: Final = Decimal(0)
+_CHECKING_WINDOW: Final = timedelta(seconds=60)
 
 _RANGE_LABEL: Final[dict[PortfolioRange, str]] = {
     PortfolioRange.TODAY: "today",
@@ -144,6 +148,7 @@ class RenderContext:
         stale_since: When numbers froze because hermes is down, else ``None``.
         down_hint: Call to action on the down row (the TUI says "press L").
         live_dot: Style of the OK line's dot; the TUI pulses it (issue #711).
+        spinner: Glyph of the "checking" line; the TUI turns it (issue #721).
     """
 
     surface: Surface
@@ -154,6 +159,7 @@ class RenderContext:
     stale_since: datetime | None = None
     down_hint: str = _DEFAULT_DOWN_HINT
     live_dot: str = "bold cyan"
+    spinner: str = "◌"
 
     @classmethod
     def for_model(
@@ -305,6 +311,23 @@ def _grid(*, wide_padding: bool = False) -> Table:
 # ----------------------------------------------------------------------
 
 
+def is_checking(heartbeat: Heartbeat, now: datetime) -> bool:
+    """Return whether a bar check is due and under a minute overdue.
+
+    Past a minute the line goes back to the plain OK text, and past
+    ``LATE_AFTER`` the heartbeat itself is LATE.
+
+    Args:
+        heartbeat: The heartbeat view.
+        now: The time to judge at (the console clock between reads).
+
+    Returns:
+        ``True`` while the scheduled check has just come due.
+    """
+    overdue = now - heartbeat.next_check_at
+    return heartbeat.state is HeartbeatState.OK and timedelta(0) <= overdue < _CHECKING_WINDOW
+
+
 def render_heartbeat(heartbeat: Heartbeat, ctx: RenderContext) -> Group:
     """Render the status line: quiet when OK, amber when late, a red row when down.
 
@@ -327,6 +350,10 @@ def render_heartbeat(heartbeat: Heartbeat, ctx: RenderContext) -> Group:
             style="yellow",
             justify="right",
         )
+    elif is_checking(heartbeat, ctx.now):
+        line = Text(justify="right")
+        line.append(ctx.spinner, style=ctx.live_dot)
+        line.append(f" checking {_clock(ctx, heartbeat.next_check_at)} bar…", style="dim")
     else:
         # The dot carries the live colour; only the words stay muted (#711:
         # a fully dim line read as "live is gray").
@@ -979,6 +1006,12 @@ def _icon(ctx: RenderContext, item: ActivityItem) -> Text:
     return Text(glyph, style=style)
 
 
+def _revealed(text: Text, share: Fraction | None) -> Text:
+    if share is None or share >= 1:
+        return text
+    return text[: ceil(len(text.plain) * share)]
+
+
 def _activity_text(ctx: RenderContext, item: ActivityItem, *, icons: bool = False) -> Text:
     coin = item.coin or ""
     price_eur = item.price_eur
@@ -1011,6 +1044,7 @@ def render_activity(
     limit: int | None = None,
     icons: bool = False,
     emphasis: Mapping[ActivityItem, str] | None = None,
+    reveal: Mapping[ActivityItem, Fraction] | None = None,
 ) -> Group:
     """Render the day-grouped activity feed, newest first.
 
@@ -1022,6 +1056,8 @@ def render_activity(
             ▲ stop raised, • restart, ⚠ warning, ✖ error); the TUI's Cockpit.
         emphasis: A Rich style per row to lay over the whole row, for the
             Cockpit's fade on a new row; rows not listed are drawn as usual.
+        reveal: How much of a row's text to show, left to right, for the new
+            row's slide-in; rows not listed are drawn whole.
 
     Returns:
         The feed, or the empty-state line.
@@ -1044,7 +1080,10 @@ def render_activity(
         for item in items:
             cells: list[RenderableType] = [
                 _when(ctx, item, is_today=header == "Today"),
-                _activity_text(ctx, item, icons=icons),
+                _revealed(
+                    _activity_text(ctx, item, icons=icons),
+                    None if reveal is None else reveal.get(item),
+                ),
             ]
             row = [_icon(ctx, item), *cells] if icons else cells
             style = None if emphasis is None else emphasis.get(item)

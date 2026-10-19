@@ -181,7 +181,7 @@ def test_bad_config_exits_3(tmp_path: Path) -> None:
         err=err,
     )
     assert (code, out.getvalue()) == (3, "")
-    assert err.getvalue().startswith("ERROR: config:")
+    assert err.getvalue().startswith("ERROR: config load failed:")
 
 
 def test_daily_interval_uses_day_boundaries() -> None:

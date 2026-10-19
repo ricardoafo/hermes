@@ -165,7 +165,7 @@ def test_market_rows_show_price_change_and_sparkline_per_coin() -> None:
     assert lines[0] == "● live"
     assert lines[1].split() == ["coin", "price", "15m", "chart", "next"]
     assert lines[2].split()[:4] == ["BTC", "€30,600", "▲", "+2.00%"]
-    assert lines[2].split()[4] == "⣀⣀⣀⣸⣿⣿⣿"
+    assert lines[2].split()[4] == "⣀⣠⣤⣴⣶⣾⣿"
 
 
 def test_market_rows_add_timeframe_spread_and_result_from_64_cells() -> None:

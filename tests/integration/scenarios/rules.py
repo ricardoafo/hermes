@@ -266,7 +266,13 @@ PRE_REGISTERED: dict[str, tuple[Rule, ...]] = {
         ),
         Rule(
             "Time-to-recovery > 90 days",
-            gap="issue #1158: serve feeds days since the equity high as 0",
+            proved_by=(
+                _SHADOW + "test_ninety_one_days_without_a_new_high_kill_the_live_entry",
+                _UNIT + "application/test_live_risk_inputs.py"
+                "::test_recovery_days_count_from_the_high_after_an_eight_percent_drawdown",
+                _UNIT + "application/test_live_risk_inputs.py"
+                "::test_a_drawdown_under_eight_percent_never_counts_recovery_days",
+            ),
         ),
         Rule("30 rolling trades OOS Sharpe", outside="live phase; MVP1 runs shadow only"),
         Rule("Any SA-9 P0 rule violation", outside="live phase; MVP1 runs shadow only"),
@@ -339,8 +345,24 @@ IN_CODE: tuple[Rule, ...] = (
             "::TestPortfolioDrawdownHalt::test_at_or_above_threshold_returns_halt",
         ),
     ),
-    Rule("RO-02 spread spike", gap="issue #1158: serve has no one-hour median spread"),
-    Rule("RO-05 and RO-06 depeg", gap="issue #1158: serve passes no stablecoin price"),
+    Rule(
+        "RO-02 spread spike",
+        proved_by=(
+            _SHADOW + "test_ro02_halts_a_live_entry_on_a_spread_ten_times_its_median",
+            _UNIT + "application/test_live_risk_inputs.py"
+            "::test_median_covers_only_the_pairs_samples_of_the_last_hour",
+            _UNIT + "entrypoints/test_serve_live_risk_inputs.py"
+            "::test_real_money_hands_the_executor_live_inputs_and_runs_ro02",
+        ),
+    ),
+    Rule(
+        "RO-05 and RO-06 depeg",
+        proved_by=(
+            _SHADOW + "test_a_usdt_four_percent_off_its_peg_halts_the_live_entry",
+            _UNIT + "entrypoints/test_serve_live_risk_inputs.py"
+            "::test_real_money_polls_the_usdt_price_at_start",
+        ),
+    ),
     Rule(
         "Late or missing bar: serve never handles a bar out of order",
         proved_by=(

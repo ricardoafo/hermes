@@ -29,9 +29,9 @@ from returns.result import Success
 
 from hermes.adapters.data_manifest.json_file import JsonFileDatasetManifest
 from hermes.adapters.market_data.binance_historical import BinanceHistoricalAdapter
-from hermes.application.calibration.lifecycle import CertificationState
 from hermes.application.strategy_protocol.pinned_dataset import pin_dataset
 from hermes.application.strategy_protocol.preregistration import PreRegistration
+from hermes.domain.calibration.certification import CertificationState
 from hermes.domain.market_data.dataset_manifest import (
     DatasetEntry,
     DatasetManifest,
@@ -40,6 +40,7 @@ from hermes.domain.market_data.dataset_manifest import (
 )
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.pair import Pair
+from hermes.infrastructure.project_root import load_pre_registration
 
 DEFAULT_OUTPUT = Path("docs/experiments/swing-mvp1/data-manifest.json")
 SOURCE_NAME = "binance-vision"
@@ -74,7 +75,7 @@ def universe_pairs(pre_reg: PreRegistration) -> list[Pair]:
 
 
 async def _build(data_dir: Path | None, output: Path) -> int:
-    pre_reg = PreRegistration()
+    pre_reg = load_pre_registration()
     skeleton = manifest_skeleton(pre_reg)
     source = BinanceHistoricalAdapter.create(data_dir=data_dir)
     now = datetime.now(UTC)

@@ -15,9 +15,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
-from hermes.application.calibration.lifecycle import CertificationState
 from hermes.application.strategy_protocol.data_split_enforcer import is_certification_mode
 from hermes.application.strategy_protocol.preregistration import DataWindows
+from hermes.domain.calibration.certification import CertificationState
 from hermes.domain.errors import (
     DatasetHashMismatchError,
     DatasetNotPinnedError,

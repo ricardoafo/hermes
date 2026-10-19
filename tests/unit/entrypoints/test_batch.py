@@ -17,6 +17,7 @@ from typing import Any
 import pytest
 
 from hermes.application.calibration.research_batch import BATCH_CHECK_NAMES
+from hermes.application.calibration.research_sweep import SWEEP_CHECK_NAMES
 from hermes.entrypoints.batch import main
 from hermes.entrypoints.commands import discover
 from tests.support.research_batch import (
@@ -26,6 +27,7 @@ from tests.support.research_batch import (
     batch_text,
     card_path,
 )
+from tests.support.research_sweep import sweep_front_matter
 
 _ROSTER = "strategies:\n  - name: swing-alpha\n  - name: swing-beta\n"
 # Roster entries without `signal:` build the Donchian kind; the batch frees two of its
@@ -56,8 +58,13 @@ def _commit(repo: Path, files: dict[str, bytes], message: str) -> str:
     return _git(repo, "rev-parse", "HEAD")
 
 
-def _signed_repo(repo: Path, edit: dict[str, Any] | None = None) -> Path:
-    """Commit code, then the DRAFT batch, then the signed batch; return the batch file."""
+def _signed_repo(
+    repo: Path, edit: dict[str, Any] | None = None, *, front_matter: dict[str, Any] | None = None
+) -> Path:
+    """Commit code, then the DRAFT batch, then the signed batch; return the batch file.
+
+    ``front_matter`` replaces the default two-candidate batch, for a sweep.
+    """
     repo.mkdir(parents=True, exist_ok=True)
     _git(repo, "init", "-q", "-b", "main")
     _git(repo, "config", "user.email", "test@example.invalid")
@@ -68,8 +75,8 @@ def _signed_repo(repo: Path, edit: dict[str, Any] | None = None) -> Path:
     code_commit = _commit(
         repo, {**code, **cards, "config/strategies.yaml": _ROSTER.encode()}, "code"
     )
-    fm = batch_front_matter()
-    for candidate in fm["candidates"]:
+    fm = front_matter or batch_front_matter()
+    for candidate in fm.get("candidates", []):
         candidate["parameters"] = copy.deepcopy(_DONCHIAN_PARAMETERS)
     fm.update(edit or {})
     draft = copy.deepcopy(fm)
@@ -167,6 +174,69 @@ def test_candidates_out_writes_the_workflow_matrix(tmp_path: Path) -> None:
                 {"strategy_id": "swing-alpha", "idea_family": "breakout"},
                 {"strategy_id": "swing-beta", "idea_family": "pullback"},
             ],
+        },
+    )
+
+
+def _donchian_sweep() -> dict[str, Any]:
+    fm = sweep_front_matter()
+    fm["families"][0]["grid"] = {"donchian_period": [15, 20], "chandelier_atr_mult": ["2.5", "3.0"]}
+    fm["families"][1]["grid"] = {"donchian_period": [30, 40]}
+    return fm
+
+
+def test_a_signed_sweep_passes_with_one_line_per_sweep_check(tmp_path: Path) -> None:
+    """ADR-031 §1: a kind: sweep document is checked as a sweep, every check passing."""
+    batch = _signed_repo(tmp_path, front_matter=_donchian_sweep())
+
+    code, out, _ = _run("check", str(batch), "--repo", str(tmp_path), "--require-signed")
+
+    lines = out.splitlines()
+    assert (code, [ln.split()[:2] for ln in lines[1:-1]], lines[-1]) == (
+        0,
+        [["PASS", name] for name in SWEEP_CHECK_NAMES],
+        "BATCH PASSED",
+    )
+
+
+def test_a_sweep_template_that_does_not_take_a_grid_axis_fails(tmp_path: Path) -> None:
+    """The roster's strategy kind decides which grid axes a template can run."""
+    fm = _donchian_sweep()
+    fm["families"][1]["grid"] = {"rsi_period": [10, 14]}
+    batch = _signed_repo(tmp_path, front_matter=fm)
+
+    code, out, _ = _run("check", str(batch), "--repo", str(tmp_path))
+
+    failed = [ln.split()[1] for ln in out.splitlines() if ln.startswith("FAIL")]
+    assert (code, failed) == (1, ["templates_known"])
+
+
+def test_candidates_out_for_a_sweep_names_each_points_template_and_values(tmp_path: Path) -> None:
+    """A generated id is not a roster name, so the matrix carries what to run."""
+    batch = _signed_repo(tmp_path / "repo", front_matter=_donchian_sweep())
+    out_file = tmp_path / "candidates.json"
+
+    code, _, _ = _run(
+        "check", str(batch), "--repo", str(tmp_path / "repo"), "--candidates-out", str(out_file)
+    )
+
+    matrix = json.loads(out_file.read_text("utf-8"))
+    assert (
+        code,
+        matrix["kind"],
+        matrix["max_candidates"],
+        len(matrix["candidates"]),
+        matrix["candidates"][-1],
+    ) == (
+        0,
+        "sweep",
+        10,
+        6,
+        {
+            "strategy_id": "pullback@donchian_period=40",
+            "idea_family": "pullback",
+            "template": "swing-beta",
+            "parameters": {"donchian_period": "40"},
         },
     )
 

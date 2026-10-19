@@ -267,13 +267,13 @@ def test_out_defaults_to_the_environment_folder(tmp_path: Path) -> None:
     assert (folder / "2026" / "README.md").is_file()
 
 
-def test_missing_ledger_exits_1(tmp_path: Path) -> None:
-    """Invariant: no ledger file is a ledger failure and writes no pack."""
+def test_missing_ledger_exits_3(tmp_path: Path) -> None:
+    """Invariant: no ledger file exits 3 (#1187) and writes no pack."""
     out = tmp_path / "packs"
     code, _, errors = _invoke(
         ["--year", "2026", "--db", str(tmp_path / "missing.sqlite3"), "--out", str(out)], tmp_path
     )
-    assert (code, out.exists()) == (1, False)
+    assert (code, out.exists()) == (3, False)
     assert "ERROR: no ledger at" in errors
 
 

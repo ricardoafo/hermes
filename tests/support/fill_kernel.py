@@ -12,7 +12,6 @@ from hermes.application.strategy_protocol.kill_trigger_evaluator import (
     ExperimentState,
     KillTriggerEvaluator,
 )
-from hermes.application.strategy_protocol.preregistration import PreRegistration
 from hermes.domain.fees.fee_schedule import FeeSchedule, FeeTier
 from hermes.domain.market_data.orderbook import Orderbook
 from hermes.domain.portfolio.snapshot import PortfolioSnapshot
@@ -21,6 +20,7 @@ from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
+from hermes.infrastructure.project_root import load_pre_registration
 from hermes.ports.fill_model import FillModelPort
 from tests.support.paths import REPO_ROOT
 
@@ -62,7 +62,7 @@ def seed(cash: Decimal = STARTING_CASH) -> PortfolioSnapshot:
 
 def kill_evaluator() -> KillTriggerEvaluator:
     """Return the evaluator built from the signed pre-registration."""
-    return KillTriggerEvaluator(pre_reg=PreRegistration(project_root=REPO_ROOT))
+    return KillTriggerEvaluator(pre_reg=load_pre_registration(REPO_ROOT))
 
 
 def kernel(

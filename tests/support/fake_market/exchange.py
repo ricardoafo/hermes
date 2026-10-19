@@ -8,6 +8,10 @@ under the client is swapped, so no socket is opened.
 What a request sees depends on :class:`SimClock`'s ``now``, as on the real
 host: klines list every candle that has opened, the last one still forming;
 server time is ``now``; the depth book sits around the latest closed 4h close.
+
+On the testnet host (``testnet.binance.vision``) the same public endpoints
+answer, and :attr:`FakeExchange.spot` matches signed orders against that book
+(:mod:`tests.support.fake_market.spot`).
 """
 
 import asyncio
@@ -25,6 +29,7 @@ from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.pair import Pair
 from tests.support.fake_market import wire
 from tests.support.fake_market.script import Market
+from tests.support.fake_market.spot import SPOT_HOST, SPOT_PATHS, SpotAccount
 
 BINANCE_HOST = "data-api.binance.vision"
 DEPTH_LEVELS_MAX = 5000
@@ -92,6 +97,7 @@ class FakeExchange:
         duplicate_bars: ``(pair, interval, open_time)``: the bar's row appears
             twice in every klines answer that holds it.
         requests: Every request served, as ``(host, path, params)``.
+        spot: The account signed order requests on the testnet host trade in.
 
     """
 
@@ -111,6 +117,7 @@ class FakeExchange:
     fx_outages: list[tuple[datetime, datetime]] = field(default_factory=list)
     duplicate_bars: list[tuple[Pair, KlineInterval, datetime]] = field(default_factory=list)
     requests: list[tuple[str, str, dict[str, str]]] = field(default_factory=list)
+    spot: SpotAccount = field(default_factory=SpotAccount)
     _update_id: int = 1
     _index: dict[tuple[Pair, KlineInterval], _Stream] = field(default_factory=dict)
 
@@ -146,11 +153,36 @@ class FakeExchange:
         params = dict(request.url.params)
         host, path = request.url.host, request.url.path
         self.requests.append((host, path, params))
-        if host == BINANCE_HOST:
+        if host == SPOT_HOST and path in SPOT_PATHS:
+            return self.spot.handle(request, self)
+        if host in {BINANCE_HOST, SPOT_HOST}:
             return self._binance(path, params)
         if host == self.fx_host and path.startswith(self.fx_prefix):
             return self._frankfurter(path.removeprefix(self.fx_prefix), params)
         return httpx.Response(404, text=f"fake exchange: no route for {host}{path}")
+
+    # -- what the spot account reads ------------------------------------
+
+    def now(self) -> datetime:
+        """Return the scripted instant."""
+        return self.clock.now()
+
+    def pair_for(self, symbol: str) -> Pair | None:
+        """Return the scripted pair Binance names ``symbol``, if any."""
+        return self._pair(symbol)
+
+    def last_close(self, pair: Pair) -> Decimal | None:
+        """Return the close of the latest closed 4h bar of ``pair``, if any has closed."""
+        stream = self._stream(pair, KlineInterval.H4)
+        closed = bisect.bisect_left(stream.close_times, self.clock.now())
+        return stream.bars[closed - 1].close if closed else None
+
+    def closed_h4(self, pair: Pair, opened_from: datetime) -> list[Bar]:
+        """Return the closed 4h bars of ``pair`` opened at or after ``opened_from``."""
+        stream = self._stream(pair, KlineInterval.H4)
+        first = bisect.bisect_left(stream.open_times, opened_from)
+        closed = bisect.bisect_left(stream.close_times, self.clock.now())
+        return stream.bars[first:closed]
 
     # -- Binance ---------------------------------------------------------
 

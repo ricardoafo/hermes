@@ -51,6 +51,7 @@ from hermes.application.console.views import (
     tax_amount,
 )
 from hermes.application.supervisor.briefing import BriefKind, publishable
+from hermes.domain.errors import InfraError
 
 __all__ = [
     "FixtureReadModel",
@@ -69,8 +70,13 @@ _SIGNAL_KINDS: Final = frozenset({"entry", "exit"})
 type _Json = Mapping[str, object]
 
 
-class ScenarioError(ValueError):
-    """A scenario file is missing a field or holds an invalid value."""
+class ScenarioError(InfraError, ValueError):
+    """A scenario file is missing a field or holds an invalid value.
+
+    An :class:`~hermes.domain.errors.InfraError` like every adapter I/O
+    failure (issue #1187); still a ``ValueError``, which the parsers' own
+    ``except ValueError`` re-wrapping relies on.
+    """
 
 
 class UnknownScenarioError(ScenarioError):

@@ -70,7 +70,6 @@ from hermes.application.order_router.risk_engine import RiskEngine
 from hermes.application.order_router.sizing import SizingPolicy
 from hermes.application.portfolio.tracker import PortfolioTracker
 from hermes.application.strategy_protocol.kill_trigger_evaluator import KillTriggerEvaluator
-from hermes.application.strategy_protocol.preregistration import PreRegistration
 from hermes.application.strategy_protocol.strategy_factory import strategy_kind
 from hermes.application.strategy_protocol.trial_log import trial_split
 from hermes.domain.errors import DataManifestFormatError, DomainError, TrialLogError
@@ -89,6 +88,7 @@ from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.loader import load_config
 from hermes.infrastructure.config.models import StrategyConfig
 from hermes.infrastructure.logging import new_correlation_id
+from hermes.infrastructure.project_root import load_pre_registration
 
 _DEFAULT_PAIR = "BTCUSDT"
 _DEFAULT_START = "2024-01-01"
@@ -233,7 +233,7 @@ def _kernel(strategy_id: StrategyId, starting_cash: Money, sizing: SizingPolicy)
     return FillKernel(
         fill_model=OrderbookWalkFillModel(apply_slippage=False, rng=random.Random(_RNG_SEED)),  # noqa: S311 — deterministic replay, not crypto
         risk_engine=RiskEngine(rules=[]),
-        kill_evaluator=KillTriggerEvaluator(pre_reg=PreRegistration()),
+        kill_evaluator=KillTriggerEvaluator(pre_reg=load_pre_registration()),
         tracker=PortfolioTracker(PortfolioSnapshot.seed(strategy_id, starting_cash)),
         strategy_id=strategy_id,
         sizing=sizing,

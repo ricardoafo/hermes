@@ -23,7 +23,8 @@ from hypothesis import strategies as st
 
 from hermes.application.calibration.certification_gates import GateCheck, GateReport
 from hermes.application.calibration.harness import CalibrationReport
-from hermes.application.calibration.lifecycle import CertificationLifecycle, CertificationState
+from hermes.application.calibration.lifecycle import CertificationLifecycle
+from hermes.domain.calibration.certification import CertificationState
 from hermes.domain.calibration.metrics import FillPriceDeltaBps, RegimeReturns
 
 # ---------------------------------------------------------------------------

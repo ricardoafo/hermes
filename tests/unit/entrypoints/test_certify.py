@@ -19,22 +19,22 @@ from pathlib import Path
 import pytest
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
+from hermes.adapters.files import LocalFiles
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.application.calibration.certification_gates import (
     LIVE_APPROVAL_PHRASE,
-    CertificationRecord,
     GateEvidence,
     ShadowEvidence,
 )
-from hermes.application.calibration.lifecycle import CertificationState
 from hermes.application.calibration.shadow_parity import MetricStatus
 from hermes.application.calibration.signed_gate import CandidateEvidence
-from hermes.application.strategy_protocol.preregistration import PreRegistration
+from hermes.domain.calibration.certification import CertificationRecord, CertificationState
 from hermes.domain.events.trade_executed import TradeExecuted, TradeSide
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.entrypoints import certify as certify_module
 from hermes.entrypoints import serve as serve_module
 from hermes.entrypoints.certify import EvidenceError, load_evidence, run
+from hermes.infrastructure import project_root as project_root_module
 from hermes.infrastructure.config.loader import load_config
 from tests.support import candidate_evidence
 from tests.support.candidate_evidence import TRAIN_DAYS, write_candidate
@@ -77,7 +77,8 @@ class TestRun:
         """A full backtest evidence set records BACKTEST_CERTIFIED and exits 0."""
         store = JsonCertificationStore(tmp_path)
         evidence = load_evidence(
-            _evidence_file(tmp_path, {"backtest": {**_METRICS, "calibration_fill_count": 40}})
+            _evidence_file(tmp_path, {"backtest": {**_METRICS, "calibration_fill_count": 40}}),
+            files=LocalFiles(),
         )
         code, out = _run(store, evidence, datetime(2026, 10, 3, tzinfo=UTC))
         record = store.load(_SID)
@@ -105,7 +106,7 @@ class TestRun:
             _SID, CertificationState.SHADOW_CERTIFIED, parameter_fingerprint=_FP
         )
         store.save(record)
-        evidence = load_evidence(_evidence_file(tmp_path, {"oos": _METRICS}))
+        evidence = load_evidence(_evidence_file(tmp_path, {"oos": _METRICS}), files=LocalFiles())
         code, out = _run(store, evidence, datetime(2026, 12, 31, tzinfo=UTC))
         assert code == 1
         assert "REFUSED" in out
@@ -133,7 +134,7 @@ class TestLoadEvidence:
 
     def test_absent_sections_are_none(self, tmp_path: Path) -> None:
         """An empty object yields no evidence at all."""
-        evidence = load_evidence(_evidence_file(tmp_path, {}))
+        evidence = load_evidence(_evidence_file(tmp_path, {}), files=LocalFiles())
         assert (evidence.backtest, evidence.shadow, evidence.oos, evidence.live) == (
             None,
             None,
@@ -156,7 +157,7 @@ class TestLoadEvidence:
     def test_malformed_evidence_is_rejected(self, tmp_path: Path, payload: object) -> None:
         """Wrong shapes, unknown keys and wrong types are errors, never zeros."""
         with pytest.raises(EvidenceError):
-            load_evidence(_evidence_file(tmp_path, payload))
+            load_evidence(_evidence_file(tmp_path, payload), files=LocalFiles())
 
 
 class TestMain:
@@ -303,7 +304,7 @@ class TestPerformance:
     def test_train_val_fills_the_backtest_metrics(self, tmp_path: Path) -> None:
         """A train_val file fills the backtest section and leaves OOS empty."""
         path = _performance_file(tmp_path, _strong_performance("train_val"))
-        evidence = certify_module.apply_performance(GateEvidence(), path)
+        evidence = certify_module.apply_performance(GateEvidence(), path, files=LocalFiles())
         assert evidence.backtest is not None
         assert evidence.backtest.is_complete()
         assert evidence.oos is None
@@ -311,14 +312,18 @@ class TestPerformance:
     def test_oos_fills_the_oos_metrics(self, tmp_path: Path) -> None:
         """An oos file fills the OOS section only."""
         path = _performance_file(tmp_path, _strong_performance("oos"))
-        evidence = certify_module.apply_performance(GateEvidence(), path)
+        evidence = certify_module.apply_performance(GateEvidence(), path, files=LocalFiles())
         assert (evidence.backtest, evidence.oos is not None) == (None, True)
 
     def test_hash_covers_both_files(self, tmp_path: Path) -> None:
         """Changing the evidence file changes the recorded hash even with the same performance."""
         path = _performance_file(tmp_path, _strong_performance("train_val"))
-        first = certify_module.apply_performance(GateEvidence(sha256="a" * 64), path)
-        second = certify_module.apply_performance(GateEvidence(sha256="b" * 64), path)
+        first = certify_module.apply_performance(
+            GateEvidence(sha256="a" * 64), path, files=LocalFiles()
+        )
+        second = certify_module.apply_performance(
+            GateEvidence(sha256="b" * 64), path, files=LocalFiles()
+        )
         assert first.sha256 != second.sha256
 
     @pytest.mark.parametrize(
@@ -339,7 +344,7 @@ class TestPerformance:
         """Bad windows, shapes, a missing seed, bad trials or zero equity are errors."""
         path = _performance_file(tmp_path, {**_strong_performance("train_val"), **change})
         with pytest.raises(EvidenceError):
-            certify_module.apply_performance(GateEvidence(), path)
+            certify_module.apply_performance(GateEvidence(), path, files=LocalFiles())
 
     def test_strong_backtest_passes_the_gate(self, tmp_path: Path) -> None:
         """Computed metrics plus a calibration fill certify the backtest end to end."""
@@ -386,7 +391,7 @@ class TestReleaseLayout:
         def _no_repository() -> Path:
             raise FileNotFoundError("no pyproject.toml above the installed package")
 
-        monkeypatch.setattr(PreRegistration, "_detect_project_root", staticmethod(_no_repository))
+        monkeypatch.setattr(project_root_module, "find_project_root", _no_repository)
         evidence_path = _evidence_file(tmp_path, {"backtest": {"calibration_fill_count": 40}})
         performance_path = _performance_file(tmp_path, _strong_performance("train_val"))
         store_dir = tmp_path / "store"
@@ -422,7 +427,7 @@ class TestReleaseLayout:
         def _no_repository() -> Path:
             raise FileNotFoundError("no pyproject.toml above the installed package")
 
-        monkeypatch.setattr(PreRegistration, "_detect_project_root", staticmethod(_no_repository))
+        monkeypatch.setattr(project_root_module, "find_project_root", _no_repository)
         err = io.StringIO()
         code = certify_module.main(
             [_SID, "--config-dir", str(release / "config"), "--store-dir", str(tmp_path / "s")],
@@ -598,7 +603,7 @@ class TestShadowParity:
 
     def test_the_statuses_join_the_shadow_evidence_already_loaded(self, tmp_path: Path) -> None:
         """The file sets M-09 and M-10 and keeps days, drift and kill from --evidence."""
-        loaded = load_evidence(_evidence_file(tmp_path, {"shadow": _SHADOW}))
+        loaded = load_evidence(_evidence_file(tmp_path, {"shadow": _SHADOW}), files=LocalFiles())
         path = _parity_file(tmp_path, m10="block")
 
         evidence = _apply(loaded, path)

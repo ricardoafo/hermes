@@ -87,7 +87,6 @@ from hermes.application.order_router.risk_engine import RiskEngine
 from hermes.application.order_router.sizing import SizingPolicy
 from hermes.application.portfolio.tracker import PortfolioTracker
 from hermes.application.strategy_protocol.kill_trigger_evaluator import KillTriggerEvaluator
-from hermes.application.strategy_protocol.preregistration import PreRegistration
 from hermes.application.strategy_protocol.strategy_factory import StrategyKind
 from hermes.application.strategy_protocol.trial_log import trial_split, trial_summary
 from hermes.domain.errors import DataManifestFormatError, DomainError, InfraError, TrialLogError
@@ -106,6 +105,7 @@ from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.logging import new_correlation_id
+from hermes.infrastructure.project_root import load_pre_registration
 from hermes.ports.strategy import StrategyPort
 
 _DEFAULT_START: Final = "2020-09-01"
@@ -128,7 +128,7 @@ STUBBED: Final[dict[str, str]] = {
 
 def _parse_pairs(text: str) -> tuple[Pair, ...]:
     """Parse ``--pairs``: comma-separated symbols inside the signed universe."""
-    universe = PreRegistration().universe()
+    universe = load_pre_registration().universe()
     symbols = [s.strip().upper() for s in text.split(",") if s.strip()]
     outside = [s for s in symbols if s not in universe]
     if not symbols or outside or len(set(symbols)) != len(symbols):
@@ -157,7 +157,7 @@ def _kernel(
     return kernel_type(
         fill_model=OrderbookWalkFillModel(apply_slippage=False, rng=random.Random(_RNG_SEED)),  # noqa: S311 — deterministic replay, not crypto
         risk_engine=RiskEngine(rules=[CorrelationLock()]),
-        kill_evaluator=KillTriggerEvaluator(pre_reg=PreRegistration()),
+        kill_evaluator=KillTriggerEvaluator(pre_reg=load_pre_registration()),
         tracker=PortfolioTracker(PortfolioSnapshot.seed(strategy_id, starting_cash)),
         strategy_id=strategy_id,
         sizing=sizing,
@@ -526,7 +526,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--pairs",
         type=_parse_pairs,
-        default=_parse_pairs(",".join(PreRegistration().universe())),
+        default=_parse_pairs(",".join(load_pre_registration().universe())),
         help="Comma-separated symbols (default: the signed §3 universe)",
     )
     parser.add_argument("--start", default=_DEFAULT_START, help="Window start (YYYY-MM-DD UTC)")
