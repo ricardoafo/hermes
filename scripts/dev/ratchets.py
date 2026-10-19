@@ -24,7 +24,7 @@ sees the diff. Complexity is not here: ruff ``C901`` enforces it.
 
 Called by:
   - ``bash scripts/dev/ci-checks.sh guards`` (dup, size) and ``deadcode``
-  - .pre-commit-config.yaml ``ratchets`` and ``ratchets-self-test`` hooks
+  - .pre-commit-config.yaml ``ratchets`` and ``self-tests`` hooks
   - Manually: ``uv run python scripts/dev/ratchets.py dup|size|deadcode``
 
 Env vars:
