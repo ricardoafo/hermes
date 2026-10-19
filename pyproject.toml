@@ -149,6 +149,7 @@ max-complexity = 15
 [tool.mypy]
 strict = true
 python_version = "3.14"
+enable_error_code = ["deprecated"]
 mypy_path = "src"
 packages = ["hermes"]
 exclude = ["build/", "dist/", ".venv/"]
