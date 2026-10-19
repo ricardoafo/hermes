@@ -155,7 +155,8 @@ HERMES_TELEGRAM__CHAT_ID="..."
 ```
 
 Never copy prod's healthchecks ping URL or Sentry DSN into this file. A staging ping would hide a prod outage, and
-staging errors would land in prod's Sentry environment. Check the result:
+staging errors would land in prod's Sentry environment. The lab's own check goes in `HERMES_HEALTHCHECKS__PING_URL`
+here; `deploy/README.md` ("Alerting when the lab goes quiet") has the steps to create it (#1079). Check the result:
 
 ```bash
 stat -c '%a %U:%G' /etc/hermes/env.staging && grep '^HERMES_ENV=' /etc/hermes/env.staging

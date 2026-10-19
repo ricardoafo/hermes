@@ -1,0 +1,40 @@
+# Dead-man's-switch ping for the staging lab (issue #1079).
+#
+# Fired every 5 minutes by hermes-lab-health.timer. Pings the lab's own
+# healthchecks.io check, never prod's: success while every enabled
+# hermes-shadow@ instance is active and `hermes status` finds it current,
+# /fail otherwise, nothing while no shadow is enabled. A missed or failed
+# ping makes the check alert the lab Telegram chat (deploy/README.md,
+# "Alerting when the lab goes quiet").
+#
+# The script ships inside each staging release, so ExecStart follows the
+# staging `current` symlink. The ping URL comes from the lab's env file.
+#
+# Shipped disabled: the operator enables the timer once the lab's check
+# exists (deploy/README.md).
+
+[Unit]
+Description=Hermes lab liveness ping (healthchecks.io, the lab's own check)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=hermes-staging
+Group=hermes-staging
+
+# Read by systemd as root before dropping to User=hermes-staging. No leading
+# "-": a missing file must fail the ping, not silently skip it.
+EnvironmentFile=/etc/hermes/env.staging
+ExecStart=/bin/bash /opt/hermes-staging/current/deploy/hermes-lab-health-ping.sh
+TimeoutStartSec=120s
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+CapabilityBoundingSet=
+ReadWritePaths=
+
+[Install]
+WantedBy=multi-user.target

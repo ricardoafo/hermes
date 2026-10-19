@@ -1,0 +1,1 @@
+- The staging lab has its own liveness ping: `hermes-lab-health.timer` checks every enabled lab shadow with `hermes status --unit` and pings the lab's own healthchecks check, so a stopped or stalled lab alerts the lab chat, never prod's (#1079).

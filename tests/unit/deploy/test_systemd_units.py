@@ -30,6 +30,7 @@ _STAGING_UNIT = "hermes-staging.service"
 _SHADOW_UNIT = "hermes-shadow@.service"
 _OWN_ENV_FILES = {
     "hermes-lab-memory.service": "/etc/hermes/env.staging",
+    "hermes-lab-health.service": "/etc/hermes/env.staging",
     "hermes-bot.service": "/etc/hermes/env.bot",
     _STAGING_UNIT: "/etc/hermes/env.staging",
     _SHADOW_UNIT: "/etc/hermes/env.staging",
@@ -623,3 +624,42 @@ def test_serve_starts_after_the_clock_is_synced(name: str) -> None:
         True,
         True,
     )
+
+
+_LAB_HEALTH = "hermes-lab-health.service"
+
+
+def test_lab_health_runs_as_the_lab_user_on_the_lab_env_file() -> None:
+    """The lab ping reads the lab's URL and ledgers as the lab user, never prod's (#1079)."""
+    service = _parse(_LAB_HEALTH)["Service"]
+    assert (service["User"], service["Group"], service["EnvironmentFile"]) == (
+        "hermes-staging",
+        "hermes-staging",
+        "/etc/hermes/env.staging",
+    )
+
+
+def test_lab_health_pings_through_the_staging_release_script() -> None:
+    """ExecStart follows the staging `current`; the script ships in repo deploy/ (#1079)."""
+    argv = _exec_argv(_LAB_HEALTH)
+    assert (argv, (REPO_ROOT / "deploy" / PurePosixPath(argv[1]).name).is_file()) == (
+        ["/bin/bash", "/opt/hermes-staging/current/deploy/hermes-lab-health-ping.sh"],
+        True,
+    )
+
+
+def test_lab_health_names_no_prod_path() -> None:
+    """A lab unit that named a prod path could ping or read as prod (#1079)."""
+    text = (_UNIT_DIR / _LAB_HEALTH).read_text(encoding="utf-8")
+    words = (
+        " ".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+        .replace("=", " ")
+        .split()
+    )
+    assert [w for w in words for p in _PROD_PATHS if w == p or w.startswith(f"{p}/")] == []
+
+
+def test_lab_health_timer_fires_the_lab_ping_every_five_minutes() -> None:
+    """The lab's check expects a ping every 5 minutes, as prod's does (#1079)."""
+    timer = _parse("hermes-lab-health.timer")["Timer"]
+    assert (timer["Unit"], timer["OnUnitActiveSec"]) == (_LAB_HEALTH, "5min")

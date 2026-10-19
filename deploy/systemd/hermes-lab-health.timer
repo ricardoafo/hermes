@@ -1,0 +1,19 @@
+# Fire hermes-lab-health.service every 5 minutes (issue #1079).
+#
+# The same cadence as prod's hermes-health.timer: the lab's check expects a
+# ping every 5 minutes with a 10 minute grace, so a quiet lab alerts after
+# about 15 minutes and a single missed ping never does.
+
+[Unit]
+Description=Fire hermes-lab-health every 5 minutes
+Requires=hermes-lab-health.service
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+RandomizedDelaySec=30
+Unit=hermes-lab-health.service
+
+[Install]
+WantedBy=timers.target
