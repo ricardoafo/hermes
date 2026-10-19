@@ -114,7 +114,7 @@ def _expected_flags(ledger: _Ledger) -> set[str]:
     return flagged
 
 
-@settings(max_examples=300, deadline=None)
+@settings(max_examples=300)
 @given(_ledgers())
 def test_tax_screen_and_modelo100_flag_the_same_sales(ledger: _Ledger) -> None:
     """For any ledger, both surfaces flag exactly the loss sales the Madrid-date rule names."""

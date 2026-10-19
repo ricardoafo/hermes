@@ -355,7 +355,7 @@ _sales = st.lists(
 )
 
 
-@settings(max_examples=15, deadline=None)
+@settings(max_examples=15)
 @given(
     sales=_sales,
     other_gains=st.decimals(min_value=-20000, max_value=20000, places=2, allow_nan=False),

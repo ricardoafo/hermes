@@ -497,7 +497,7 @@ CI-approval clicks — see `docs/guides/automation-trust-chain.md`.
 3. `HERMES_SELF_TEST=1 bash scripts/dev/{pr-actor-check,pr-preflight,pr-body-lint,changelog-check,create-pr}.sh` all exit 0.
 4. Dogfood: this change's PR opens via `bash scripts/dev/create-pr.sh
    --render-body sdd-process-hardening` and passes the actor check
-   (rafo-claude-bot opens, ricardoafo reviews).
+   (`ai-bot` opens, ricardoafo reviews).
 5. Manual smoke: throwaway branch attempting self-review → blocked
    with clear error message + escape-hatch hint.
 

@@ -41,7 +41,7 @@ Phase 1 Wave 1 foundation. Ships `docs/guides/code-conventions.md` (14 sections 
 
 - **Decision**: Domain functions return `Result[T, DomainError]` via `dry-python/returns`. Adapters raise typed exceptions from a sealed `HermesError` hierarchy. Application layer converts adapter exceptions → domain `Result`.
 - **Alternatives**: (a) pure Result everywhere (verbose noise in adapters); (b) pure exceptions everywhere (silent-swallow risk on domain paths for real money); (c) NamedTuple `(value, error)` returns (no mypy enforcement, roll-your-own).
-- **Rationale**: Domain errors are EXPECTED OUTCOMES (currency mismatch, invalid lot). Type signatures make them visible to callers — critical for a real-money system. I/O errors ARE exceptional; typed exception hierarchies match `python-binance`/`ccxt`/`NautilusTrader` convention (three production financial systems). Splitting by layer takes the best of both. Evidence: `dry-python/returns` used in production banking; Sobolev's "exceptions considered antipattern" is the reference argument. See engram `phase-1-code-conventions-research-2026-08-23` § Topic 1.
+- **Rationale**: Domain errors are EXPECTED OUTCOMES (currency mismatch, invalid lot). Type signatures make them visible to callers — critical for a real-money system. I/O errors ARE exceptional; typed exception hierarchies follow the convention of established exchange client libraries. Splitting by layer takes the best of both. Evidence: `dry-python/returns` used in production banking; Sobolev's "exceptions considered antipattern" is the reference argument. See engram `phase-1-code-conventions-research-2026-08-23` § Topic 1.
 - **Cost of reversal**: MEDIUM — swapping to pure Result would touch every adapter; swapping to pure exceptions would touch every domain function's callers. Making this call upfront saves both.
 
 ### D-2: Frozen dataclass everywhere in domain (no pydantic)
@@ -109,7 +109,7 @@ Phase 1 Wave 1 foundation. Ships `docs/guides/code-conventions.md` (14 sections 
 
 ### D-11: Polyglot posture — Rust YES (when triggered), Go NO for hermes
 
-- **Decision**: PyO3 Rust extension for a proven hot spot (Marketcalls quant guidance). Numba as intermediate step. Go microservice: NO for solo dev + single VPS. Cython/mypyc: legacy, new work → PyO3.
+- **Decision**: PyO3 Rust extension for a proven hot spot. Numba as intermediate step. Go microservice: NO for solo dev + single VPS. Cython/mypyc: legacy, new work → PyO3.
 - **Alternatives**: pure Python forever (accept the ceiling); polyglot from day one (premature).
 - **Rationale**: Hexagonal architecture makes swapping a hot-path adapter for a Rust extension an ADAPTER change, not a rewrite. Go microservice adds gRPC + schema drift + deploy surface for zero real benefit at solo scale.
 - **Cost of reversal**: LOW (never adding Rust is easy); adding then removing is medium (rewrite in Python).

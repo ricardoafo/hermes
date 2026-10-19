@@ -990,7 +990,7 @@ def _release_sets(draw: st.DrawFn) -> tuple[int, list[int], int, int]:
 @pytest.mark.property
 # timeout: each example spawns bash twice; 25 examples can pass the 60 s default on a slow runner.
 @pytest.mark.timeout(120)
-@settings(max_examples=25, deadline=None)
+@settings(max_examples=25)
 @given(_release_sets())
 def test_prune_keeps_exactly_the_three_newest_plus_current_and_previous(
     release_set: tuple[int, list[int], int, int],

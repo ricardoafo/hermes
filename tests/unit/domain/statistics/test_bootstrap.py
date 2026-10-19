@@ -70,7 +70,7 @@ def test_confidence_outside_unit_interval_raises(confidence: float) -> None:
         block_bootstrap_sharpe_ci(_DRIFT, seed=0, confidence=confidence)
 
 
-@settings(max_examples=25, deadline=None)
+@settings(max_examples=25)
 @given(seed=st.integers(min_value=0, max_value=2**64 - 1))
 def test_lower_bound_never_exceeds_upper(seed: int) -> None:
     """For any seed the interval is ordered."""

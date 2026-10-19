@@ -44,11 +44,11 @@ enough to hand-roll from the primary sources (Bailey & López de Prado 2021,
 AFML Ch. 12). The abandoned package would introduce Python 3.14 incompatibility
 and a dead dependency. Implementing DSR directly is ~50 LOC; CPCV is ~120 LOC.
 
-### 1.2 alphalens / pyfolio (Quantopian legacy)
+### 1.2 alphalens / pyfolio (archived)
 
-Quantopian released `alphalens` (factor analysis) and `pyfolio` (portfolio
-analytics) as open-source tools. Both are now under the `quantopian` GitHub org,
-which is a community-maintained archive. `pyfolio` covers rolling Sharpe,
+`alphalens` (factor analysis) and `pyfolio` (portfolio analytics) are
+open-source tools whose original maintainer shut down; both now sit in a
+community-maintained archive. `pyfolio` covers rolling Sharpe,
 drawdown, return attribution, and tear-sheet generation. `alphalens` covers
 factor IC, turnover, and forward-return analysis.
 
@@ -896,7 +896,7 @@ Assumptions:
 | --------- | -------- | ---------- |
 | mlfinlab | ABANDONED — no Python 3.12+ support; paid pro tier required for maintenance | DO NOT USE |
 | pyfolio / pyfolio-reloaded | SLOW MAINTENANCE — pandas 2.x compat uncertain; DeprecationWarning risk | DO NOT USE |
-| alphalens | ARCHIVED — Quantopian shutdown; factor-specific, not relevant | DO NOT USE |
+| alphalens | ARCHIVED — original maintainer shut down; factor-specific, not relevant | DO NOT USE |
 | Zipline | DEAD — last active 2022, no 3.12+ support | DO NOT USE |
 | Backtrader | COMMUNITY-MAINTAINED — no testing roadmap, no 3.13+ coverage | DO NOT USE |
 | statsmodels | ACTIVE but oversized — only `multipletests` is relevant; hand-roll instead | DO NOT ADD |

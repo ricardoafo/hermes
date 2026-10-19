@@ -33,6 +33,7 @@ from hermes.adapters._shared.wire import (
 from hermes.domain.errors import ExchangeError, FxRateError, KrakenPublicError
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
+from tests.support.accepted import assert_accepted
 from tests.support.paths import REPO_ROOT
 
 _ERRORS: tuple[type[Exception], ...] = (ExchangeError, KrakenPublicError, FxRateError)
@@ -180,7 +181,7 @@ def test_http_config_refuses_plaintext_or_no_timeout(
 )
 def test_http_config_accepts_plaintext_on_a_loopback_fake(url: str) -> None:
     """A lower environment's fake on loopback needs no certificate (#972)."""
-    validate_http_config("Cfg", url=url, timeout_sec=5.0)
+    assert_accepted(validate_http_config, "Cfg", url=url, timeout_sec=5.0)
 
 
 @pytest.mark.parametrize("url", ["http://10.0.0.1", "http://127.0.0.1.example", "ws://127.0.0.1"])

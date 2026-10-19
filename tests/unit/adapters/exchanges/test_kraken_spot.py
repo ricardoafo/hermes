@@ -38,6 +38,7 @@ from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.ports.exchange import ExchangePort, StopLossPort
+from tests.support.accepted import assert_accepted
 from tests.support.mainnet_permit import issued_permit
 from tests.support.paths import REPO_ROOT
 
@@ -395,7 +396,7 @@ def test_cancel_sends_the_txid(trading: KrakenSpotAdapter) -> None:
 def test_cancelling_an_unknown_order_is_not_an_error(trading: KrakenSpotAdapter) -> None:
     """EOrder:Unknown order means the order is already gone, so the cancel succeeds."""
     respx.post(f"{_PRIVATE}/CancelOrder").mock(return_value=_ok("cancel_order_unknown"))
-    trading.cancel_order(order_id=_MARKET_TXID)
+    assert_accepted(trading.cancel_order, order_id=_MARKET_TXID)
 
 
 @respx.mock

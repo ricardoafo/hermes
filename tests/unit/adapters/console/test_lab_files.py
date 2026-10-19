@@ -94,7 +94,7 @@ def test_find_experiments_root_gives_none_outside_a_clone(tmp_path: Path) -> Non
     lonely = tmp_path / "a" / "b"
     lonely.mkdir(parents=True)
     root = find_experiments_root(lonely)
-    assert root is None or "synth" not in str(root)
+    assert (lonely.is_dir(), root) == (True, None)
 
 
 @pytest.mark.parametrize("figure", FIGURES)
