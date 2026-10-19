@@ -1,7 +1,7 @@
 # Prod systemd unit for the hermes main process (`hermes serve`).
 #
 # Installed to /etc/systemd/system/hermes.service by the CD deploy.
-# Layout this unit assumes (see openspec/changes/306-serve-systemd-boot):
+# Layout this unit assumes (see openspec/archive/306-serve-systemd-boot):
 #   /opt/hermes/current            -> versions/<version>  (atomic symlink)
 #   /opt/hermes/current/.venv      per-release virtualenv (console script `hermes`)
 #   /opt/hermes/current/config     per-release non-secret YAML

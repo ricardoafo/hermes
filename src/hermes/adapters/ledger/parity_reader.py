@@ -5,7 +5,7 @@ cannot modify the ledger even by accident, and never runs migrations (unlike
 :class:`~hermes.adapters.ledger.sqlite_ledger.SqliteLedger`, whose constructor
 migrates). Safe next to a running ``hermes serve``.
 
-Reference: openspec/changes/358-parity-check/change.md.
+Reference: openspec/archive/358-parity-check/change.md.
 """
 
 from __future__ import annotations

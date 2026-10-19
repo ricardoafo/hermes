@@ -7,7 +7,7 @@ challenger lab and the ADR-012 evaluation loops. The rule is a closed allow
 list with no date, environment or configuration override, so a new surface is
 blind until a reviewed change adds it here.
 
-Reference: openspec/changes/console-read-model/change.md (D-5); Code Owner
+Reference: openspec/archive/console-read-model/change.md (D-5); Code Owner
 ruling 2026-10-03.
 """
 

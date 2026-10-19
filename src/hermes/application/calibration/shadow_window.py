@@ -19,7 +19,7 @@ same days. This module turns both sides into what
 
 Only the verdicts leave this module; the values stay sealed (ADR-012 D-06).
 
-Reference: openspec/changes/965-shadow-parity-window/change.md.
+Reference: openspec/archive/965-shadow-parity-window/change.md.
 """
 
 from collections.abc import Iterable, Sequence
@@ -37,11 +37,14 @@ from hermes.application.calibration.shadow_parity import (
     m10_sharpe_match,
 )
 from hermes.application.portfolio.tracker import PortfolioTracker
-from hermes.domain.events.trade_executed import TradeExecuted, TradeSide
+from hermes.domain.events.trade_executed import TradeExecuted
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.bar_schedule import interval_duration, order_for_delivery
 from hermes.domain.market_data.kline import KlineInterval
+from hermes.domain.portfolio.round_trips import RoundTripError, RoundTripFill
+from hermes.domain.portfolio.round_trips import round_trips as closed_round_trips
 from hermes.domain.portfolio.snapshot import PortfolioSnapshot
+from hermes.domain.trading.order import OrderSide
 from hermes.domain.value_objects.pair import Pair
 
 __all__ = [
@@ -79,14 +82,6 @@ class RoundTrip:
     """Proceeds minus cost minus every fee, in the quote currency."""
 
 
-@dataclass(slots=True)
-class _Open:
-    entered_at: datetime
-    qty: Decimal = _ZERO
-    cost: Decimal = _ZERO
-    net: Decimal = _ZERO
-
-
 def round_trips(trades: Iterable[TradeExecuted]) -> list[RoundTrip]:
     """Return the closed round trips of ``trades``, in the order they closed.
 
@@ -97,33 +92,25 @@ def round_trips(trades: Iterable[TradeExecuted]) -> list[RoundTrip]:
         One :class:`RoundTrip` per pair that went from flat back to flat.
 
     Raises:
-        ShadowWindowError: A SELL sells more than its pair holds.
+        ShadowWindowError: A SELL sells more than its pair holds, or a fee is
+            not in the pair's quote currency.
     """
-    held: dict[Pair, _Open] = {}
-    out: list[RoundTrip] = []
-    for trade in trades:
-        qty = trade.qty.amount
-        price = trade.price.amount
-        if trade.side is TradeSide.BUY:
-            position = held.setdefault(trade.pair, _Open(entered_at=trade.occurred_at))
-            position.qty += qty
-            position.cost += qty * price
-            position.net -= trade.fee.amount
-            continue
-        position = held.get(trade.pair) or _Open(entered_at=trade.occurred_at)
-        if qty > position.qty:
-            raise ShadowWindowError(
-                f"{trade.pair}: sell of {qty} at {trade.occurred_at.isoformat()} "
-                f"exceeds the {position.qty} held"
-            )
-        sold_cost = position.cost * qty / position.qty
-        position.net += qty * price - sold_cost - trade.fee.amount
-        position.cost -= sold_cost
-        position.qty -= qty
-        if position.qty == _ZERO:
-            out.append(RoundTrip(trade.pair, position.entered_at, position.net))
-            del held[trade.pair]
-    return out
+    fills = (
+        RoundTripFill(
+            pair=trade.pair,
+            side=OrderSide(trade.side.value),
+            qty=trade.qty.amount,
+            price=trade.price.amount,
+            fee=trade.fee,
+            at=trade.occurred_at,
+        )
+        for trade in trades
+    )
+    try:
+        closed = closed_round_trips(fills)
+    except RoundTripError as exc:
+        raise ShadowWindowError(str(exc)) from exc
+    return [RoundTrip(t.pair, t.entered_at, t.net_pnl) for t in closed]
 
 
 def matched_pnl(

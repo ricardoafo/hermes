@@ -1,6 +1,6 @@
 """Unit tests for the dataset manifest JSON file adapter.
 
-Invariants under test (openspec/changes/356-data-manifest/change.md Design):
+Invariants under test (openspec/archive/356-data-manifest/change.md Design):
 
 - Write then load returns an equal manifest.
 - A malformed, mislabelled or wrong-version file fails with DataManifestFormatError.

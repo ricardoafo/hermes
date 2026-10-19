@@ -22,7 +22,7 @@ sheet, so tests check the text without running an app. A source that cannot
 answer on this machine shows "not available here"; a figure hermes does not
 record yet shows "not available yet".
 
-Reference: openspec/changes/717-system-screen/change.md.
+Reference: openspec/archive/717-system-screen/change.md.
 """
 
 # ruff: noqa: RUF002 - the single right angle quote is the design spec's breadcrumb separator

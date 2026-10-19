@@ -21,8 +21,8 @@ Sorting is stable over several :class:`SortKey` values; empty values sort last
 whichever way a key points. Everything here is pure, so a list filters the same
 way in tests, in the TUI and anywhere else.
 
-Reference: openspec/changes/729-query-bar/change.md;
-openspec/changes/716-logs-screen/change.md (the level order and the
+Reference: openspec/archive/729-query-bar/change.md;
+openspec/archive/716-logs-screen/change.md (the level order and the
 ``service`` / ``trace`` fields).
 """
 

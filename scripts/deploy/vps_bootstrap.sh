@@ -44,7 +44,7 @@
 #      restarted only when the drop-in changed.
 #
 # Reference:
-#   openspec/changes/179-cd-first-real-deploy/change.md (D-5, D-8, R-5)
+#   openspec/archive/179-cd-first-real-deploy/change.md (D-5, D-8, R-5)
 #   .github/workflows/vps-bootstrap.yml
 
 set -euo pipefail

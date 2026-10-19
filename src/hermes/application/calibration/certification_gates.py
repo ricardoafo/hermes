@@ -28,7 +28,7 @@ guardrail), a shadow drift breach does the same (§7), and a shadow or live
 kill is DEAD.
 
 Reference: pre-registration-v1.md §1, §4, §7, §9, §10; ADR-014;
-openspec/changes/355-certification-gates/change.md.
+openspec/archive/355-certification-gates/change.md.
 """
 
 from __future__ import annotations

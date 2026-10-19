@@ -7,7 +7,7 @@ exchanges and the informational ``VIP0_BTCBUSD`` rows (BUSD was phased
 out via the Paxos/NYDFS action Feb 2023 and is not a tracked pair).
 
 Reference:
-    - openspec/changes/fee-history-time-aware-wire/change.md
+    - openspec/archive/fee-history-time-aware-wire/change.md
     - docs/experiments/swing-mvp1/fee-history.csv
     - docs/experiments/swing-mvp1/pre-registration-v1.md §6.1
 """

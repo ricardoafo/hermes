@@ -13,7 +13,7 @@ Invariants protected here:
 - a failed parent posts no reply and raises as before;
 - an event without a plan posts exactly once, with no ``thread_ts``.
 
-Reference: openspec/changes/667-slack-plan-thread/change.md.
+Reference: openspec/archive/667-slack-plan-thread/change.md.
 """
 
 from __future__ import annotations

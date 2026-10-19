@@ -24,6 +24,10 @@
 #   1. Preflight: nothing on disk changes until every check passes.
 #   2. Install into versions/<sha12> unless its .installed marker exists.
 #      The venv is built at its final path because a venv is not relocatable.
+#   2a. (staging) Check the env file against the new release's config with
+#      `hermes config check`, as the service user, before anything restarts
+#      (#970). A loopback endpoint, a trading key or any other finding stops
+#      the deploy; the release stays installed but never goes live.
 #   2b. (prod) Wait out the 4h bar close: no restart from QUIET_BEFORE
 #      seconds before a close until QUIET_AFTER seconds after it (#626).
 #      The wait sits here, right before the steps that stop or restart
@@ -59,12 +63,13 @@
 #
 # Test seams: HERMES_ROOT, HERMES_ENV_FILE, SYSTEMCTL, HERMES_DB,
 # HERMES_BACKUP_DIR, HERMES_BACKUP_PYTHON, HERMES_MIGRATE_BIN, RUNUSER,
-# HERMES_UNIT_DIR, HERMES_NOW_EPOCH, HERMES_SCHEMA_PYTHON, HERMES_PROC_DIR. The
+# HERMES_UNIT_DIR, HERMES_NOW_EPOCH, HERMES_SCHEMA_PYTHON, HERMES_PROC_DIR,
+# HERMES_CONFIG_CHECK_BIN. The
 # seams override the target's paths, and the staging guard still checks them.
 # The script can be sourced to reach prune_versions on its own.
 #
-# Reference: openspec/changes/179-cd-first-real-deploy/change.md (D-1..D-7),
-# openspec/changes/192-staging-env/change.md (D-3).
+# Reference: openspec/archive/179-cd-first-real-deploy/change.md (D-1..D-7),
+# openspec/archive/192-staging-env/change.md (D-3).
 
 set -euo pipefail
 
@@ -257,6 +262,29 @@ install_version() {
     cp -r "$stage/docs" "$vdir/docs"
     touch "$vdir/.installed"
     partial_dir=""
+}
+
+# Check the staging env file the way the new release will read it (#970):
+# same tier rules, same startup checks, before the unit is touched. It runs
+# as the service user, which systemd gives the file to anyway; the file goes
+# in on stdin because it is root 600. Findings name settings, never values.
+check_staging_env() {
+    local vdir=$1 bin out rc=0
+    [ "$TARGET" = staging ] || return 0
+    bin=${HERMES_CONFIG_CHECK_BIN:-$vdir/.venv/bin/hermes}
+    out=$("$RUNUSER" -u "$RUN_AS" -- "$bin" config check --config-dir "$vdir/config" \
+        --env-file - <"$ENV_FILE" 2>&1) || rc=$?
+    case $rc in
+        0) log "staging env file passes the release's config check" ;;
+        1)
+            echo "$out"
+            die "$ENV_FILE breaks the release's config rules: not deploying"
+            ;;
+        *)
+            echo "$out"
+            die "hermes config check failed to run on $ENV_FILE (exit $rc): not deploying"
+            ;;
+    esac
 }
 
 # Print how many seconds to wait so a restart starting now stays clear of
@@ -491,6 +519,8 @@ main() {
         log "installing release $sha"
         install_version "$vdir" "$stage"
     fi
+
+    check_staging_env "$vdir"
 
     wait_for_quiet_bar
 

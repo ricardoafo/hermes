@@ -9,7 +9,7 @@ contract: it never writes, never migrates and can run next to a live
 account, so nothing implements it yet; the live exchange adapter supplies one
 when real capital is wired (#29).
 
-Reference: openspec/changes/35-monthly-reconciliation/change.md D-1, D-2.
+Reference: openspec/archive/35-monthly-reconciliation/change.md D-1, D-2.
 """
 
 from __future__ import annotations

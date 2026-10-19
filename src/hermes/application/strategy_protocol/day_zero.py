@@ -9,7 +9,7 @@ hashes; the ``hermes shadow-start`` command archives the ledger and writes
 the record.
 
 Reference: docs/architecture/adr-021-strategy-lifecycle-ready-and-done.md §2,
-§3; openspec/changes/797-shadow-day-zero/change.md.
+§3; openspec/archive/797-shadow-day-zero/change.md.
 """
 
 from __future__ import annotations

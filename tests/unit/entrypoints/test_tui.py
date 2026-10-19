@@ -320,8 +320,12 @@ def test_down_key_moves_the_cursor_and_the_detail_follows() -> None:
 
 
 def test_demo_data_tag_is_visible_on_fixtures() -> None:
-    """A fixture read model always shows DEMO DATA with its scenario name."""
-    shot = _shoot("ok-two-positions")
+    """A fixture read model always shows DEMO DATA with its scenario name where the row has room.
+
+    At 80 columns the mainnet badge leads the status row in every theme
+    (issue #1097), so the scenario name only fits on a wider terminal.
+    """
+    shot = _shoot("ok-two-positions", size=(120, 36))
     assert shot.texts["demo-tag"].strip() == "DEMO DATA · scenario ok-two-positions"
 
 
@@ -496,11 +500,14 @@ def test_top_line_names_the_running_release() -> None:
     """The status row reads "release <name>" beside the heartbeat (#649).
 
     Since issue #711 the window bar and the tabs sit above it and the theme
-    chip follows the heartbeat; the heartbeat is still drawn whole.
+    chip follows the heartbeat; since issue #1097 the mainnet badge leads it
+    in every theme. The heartbeat is still drawn whole.
     """
-    top = _top_line(lambda: "abc123def456")
+    top = _top_line(lambda: "abc123def456", size=(140, 30))
     assert (
-        top.startswith(" DEMO DATA · scenario ok-two-positions release abc123def456"),
+        top.startswith(
+            "SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions release abc123def456"
+        ),
         "● live · checked 14:00 · next 18:00" in top,
     ) == (True, True)
 

@@ -1,6 +1,6 @@
 """Tests for M-09 and M-10 over a whole shadow window (#965).
 
-Invariants protected here (openspec/changes/965-shadow-parity-window/change.md):
+Invariants protected here (openspec/archive/965-shadow-parity-window/change.md):
 
 - a round trip runs from a pair's first BUY while flat to the SELL that flattens
   it; its net P&L subtracts every fee; an open position is not a round trip;

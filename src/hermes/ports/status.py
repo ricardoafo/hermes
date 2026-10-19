@@ -5,7 +5,7 @@ is read-only by contract: an implementation never writes, never migrates and
 never takes the serve process's locks, so the console can run next to a live
 ``hermes serve``.
 
-Reference: openspec/changes/370-hermes-status/change.md.
+Reference: openspec/archive/370-hermes-status/change.md.
 """
 
 from __future__ import annotations

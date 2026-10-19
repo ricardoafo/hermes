@@ -1,6 +1,6 @@
 """Unit tests for loading historical bars through the data manifest.
 
-Invariants under test (openspec/changes/356-data-manifest/change.md R-1..R-3, D-3, D-4):
+Invariants under test (openspec/archive/356-data-manifest/change.md R-1..R-3, D-3, D-4):
 
 - Bars are returned only when every split they touch is pinned and the whole
   pinned dataset still hashes to its manifest entry.

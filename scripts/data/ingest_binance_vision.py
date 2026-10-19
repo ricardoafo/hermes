@@ -20,8 +20,8 @@ agg_trades coexist.
 Reference:
     - docs/experiments/swing-mvp1/data-ingest-plan.md (URL patterns)
     - docs/experiments/swing-mvp1/pre-registration-v1.md sec 4 (windows)
-    - openspec/changes/data-ingest-binance-vision/change.md (original)
-    - openspec/changes/data-ingest-agg-trades-and-peg/change.md (this extension)
+    - openspec/archive/data-ingest-binance-vision/change.md (original)
+    - openspec/archive/data-ingest-agg-trades-and-peg/change.md (this extension)
 
 Usage:
     python scripts/data/ingest_binance_vision.py [OPTIONS]

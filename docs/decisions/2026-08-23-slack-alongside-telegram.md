@@ -3,7 +3,7 @@
 **Date**: 2026-08-23
 **Author**: claude on behalf of Ricardo
 **Related**: ADR-008 § Telegram alerts (partially superseded by this entry),
-`openspec/changes/phase-1-observability-rollback-slack-scaffolds/change.md` D-3
+`openspec/archive/phase-1-observability-rollback-slack-scaffolds/change.md` D-3
 
 ## Decision
 

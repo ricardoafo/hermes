@@ -26,7 +26,7 @@ Briefs screen (issue #897).
 Exit codes: 0 ok, 1 the tool refused the call or the brief was not kept,
 2 usage, 3 config error.
 
-Reference: openspec/changes/34-supervisor-read-tools/change.md; issues #34, #470.
+Reference: openspec/archive/34-supervisor-read-tools/change.md; issues #34, #470.
 """
 
 from __future__ import annotations

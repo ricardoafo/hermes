@@ -302,11 +302,9 @@ AI_GLYPH: Final = "✦"
 LIVE_GLYPH: Final = "●"
 LATE_GLYPH: Final = "◐"
 DOWN_GLYPH: Final = "✖"
-WINDOW_MARK: Final = "▐"
 CORNER_TOP_LEFT: Final = "┏━"
 CORNER_BOTTOM_RIGHT: Final = "━┛"
 EDGE: Final = "─"
-WINDOW_TITLE: Final = "HERMES // SHADOW CONSOLE"
 BACK_GLYPH: Final = "◂"
 CRUMB_SEPARATOR: Final = " › "  # noqa: RUF001 - the design spec's breadcrumb separator
 ELLIPSIS: Final = "…"
@@ -369,7 +367,7 @@ class Motion:
 MOTION: Final = Motion()
 MOTION_ENV: Final = "HERMES_CONSOLE_MOTION"
 _MOTION_OFF: Final = frozenset({"off", "0", "false", "no"})
-# Recent ticker polls the Neon window bar shows, newest on the right (issue #713).
+# Recent ticker polls the status row's feed pulse shows, newest on the right (issue #713).
 FEED_WIDTH: Final = 16
 
 

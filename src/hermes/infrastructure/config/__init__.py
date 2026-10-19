@@ -14,12 +14,14 @@ Public surface:
 - :class:`HermesConfig` — composite root wiring all five sub-configs.
 - :func:`load_config` — reads YAML files, applies env overrides, validates.
 - :class:`ConfigError` — raised on malformed YAML / validation failure.
+- :class:`TierError` — a :class:`ConfigError` naming each setting that breaks
+  its tier's rules.
 - Individual sub-config classes for consumers that only need one slice.
 """
 
 from __future__ import annotations
 
-from hermes.infrastructure.config.errors import ConfigError
+from hermes.infrastructure.config.errors import ConfigError, TierError
 from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
 from hermes.infrastructure.config.models import (
     BinanceExchangeConfig,
@@ -59,6 +61,7 @@ __all__ = [
     "TaxGuardConfig",
     "TaxScalesConfig",
     "TaxpayerProfile",
+    "TierError",
     "load_config",
     "load_tax_scales",
     "load_taxpayer_profile",

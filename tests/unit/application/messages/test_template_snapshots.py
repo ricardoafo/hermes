@@ -8,7 +8,7 @@ and ``test_slack.py``.
 Invariant protected: the rendered Telegram text and Slack message of every
 sample event stay exactly as reviewed.
 
-Reference: openspec/changes/144-notification-system/change.md (test plan).
+Reference: openspec/archive/144-notification-system/change.md (test plan).
 """
 
 from __future__ import annotations

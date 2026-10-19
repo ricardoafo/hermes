@@ -1,1 +1,0 @@
-- The live depth snapshot now keeps Binance's `lastUpdateId`, and the diff stream drops diffs the snapshot already holds and refuses a first diff that skips past it, so an old diff can no longer reach a local book (#866).

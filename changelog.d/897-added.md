@@ -1,1 +1,0 @@
-- The Briefs screen lists the supervisor desk's earlier daily briefs, newest first: `hermes supervisor brief --keep` keeps each brief exactly as it passed the output gate in `briefs.jsonl` beside the ledger, once per day, and the new `hermes-brief.timer` runs it at 07:15 Madrid.

@@ -9,7 +9,7 @@ sit beside them under ``pnl`` with the rate used (operator ruling 2026-10-03).
 A row whose fills have no EUR values yet carries ``eur_pending: true`` and no
 EUR key at all (change ``ledger-read-model`` D-4).
 
-Reference: openspec/changes/console-positions/change.md (D-2).
+Reference: openspec/archive/console-positions/change.md (D-2).
 """
 
 from __future__ import annotations
