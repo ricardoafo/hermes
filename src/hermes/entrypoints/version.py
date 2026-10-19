@@ -21,15 +21,19 @@ import json
 import platform
 import sqlite3
 from dataclasses import asdict, dataclass
-from importlib import metadata
 from pathlib import Path
 from typing import TextIO
 
 from hermes.adapters.ledger.connection import open_ledger
 from hermes.adapters.ledger.migration_runner import pending_migrations
-from hermes.entrypoints._release import DEFAULT_RELEASE_LINK, ReleaseInfo, read_release
+from hermes.entrypoints._cli import add_db_arg
+from hermes.entrypoints._release import (
+    DEFAULT_RELEASE_LINK,
+    ReleaseInfo,
+    package_version,
+    read_release,
+)
 from hermes.entrypoints._streams import resolve_err
-from hermes.entrypoints.serve import DEFAULT_DB_PATH
 
 __all__ = [
     "DEFAULT_RELEASE_LINK",
@@ -40,7 +44,6 @@ __all__ = [
     "read_release",
 ]
 
-_UNKNOWN = "unknown"
 _NO_LEDGER = "no ledger"
 
 _USAGE = (
@@ -68,13 +71,6 @@ class VersionInfo:
     release: str
     python: str
     ledger: str
-
-
-def _package_version() -> str:
-    try:
-        return metadata.version("hermes")
-    except metadata.PackageNotFoundError:
-        return _UNKNOWN
 
 
 def _ledger_level(db: Path) -> str:
@@ -107,7 +103,7 @@ def collect_info(*, db: Path, release_link: Path = DEFAULT_RELEASE_LINK) -> Vers
         The report.
     """
     return VersionInfo(
-        version=_package_version(),
+        version=package_version(),
         release=read_release(release_link).name,
         python=platform.python_version(),
         ledger=_ledger_level(db),
@@ -116,7 +112,7 @@ def collect_info(*, db: Path, release_link: Path = DEFAULT_RELEASE_LINK) -> Vers
 
 def _parse(argv: list[str], stream: TextIO, err: TextIO) -> argparse.Namespace | None:
     parser = argparse.ArgumentParser(prog="hermes version", add_help=False)
-    parser.add_argument("--db", type=Path, default=DEFAULT_DB_PATH)
+    add_db_arg(parser)
     parser.add_argument("--json", action="store_true")
     parser.add_argument("-h", "--help", action="store_true")
     try:

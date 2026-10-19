@@ -26,12 +26,9 @@ Reference: issues #514, #835, #1030.
 """
 
 import argparse
-import sqlite3
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Final, TextIO
 
-from hermes.adapters.ledger.connection import open_ledger
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.application.risk_inputs.readings import (
     RECOVERY_DAYS,
@@ -44,10 +41,13 @@ from hermes.domain.errors import LedgerError
 from hermes.domain.portfolio.correlation import PairCorrelation
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
+from hermes.entrypoints._cli import (
+    add_config_dir_arg,
+    add_db_arg,
+    load_config_or_exit,
+    open_ledger_or_exit,
+)
 from hermes.entrypoints._streams import resolve_err
-from hermes.entrypoints.serve import DEFAULT_DB_PATH
-from hermes.infrastructure.config.errors import ConfigError
-from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
 from hermes.infrastructure.time import now_utc
 
 __all__ = ["main"]
@@ -87,15 +87,10 @@ def main(
     parsed = _parse(argv, stream, err)
     if isinstance(parsed, int):
         return parsed
-    if not parsed.db.is_file():
-        err.write(f"ERROR: no ledger at {parsed.db}\n")
-        return 3
     at = now if now is not None else now_utc()
-    try:
-        connection = open_ledger(parsed.db, read_only=True)
-    except sqlite3.Error as exc:
-        err.write(f"ERROR: could not open the ledger: {exc}\n")
-        return 3
+    connection = open_ledger_or_exit(parsed.db, err)
+    if isinstance(connection, int):
+        return connection
     try:
         lines = _report(
             SqliteLedger(connection), strategy_id=parsed.strategy_id, pairs=parsed.pairs, now=at
@@ -113,8 +108,8 @@ def _parse(argv: list[str], stream: TextIO, err: TextIO) -> argparse.Namespace |
     """Parse ``argv`` and resolve the strategy and pairs, or return the exit code."""
     parser = argparse.ArgumentParser(prog="hermes risk-inputs", add_help=False)
     parser.add_argument("--strategy", default=None)
-    parser.add_argument("--db", type=Path, default=DEFAULT_DB_PATH)
-    parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
+    add_db_arg(parser)
+    add_config_dir_arg(parser)
     parser.add_argument("-h", "--help", action="store_true")
     try:
         parsed = parser.parse_args(argv)
@@ -124,11 +119,9 @@ def _parse(argv: list[str], stream: TextIO, err: TextIO) -> argparse.Namespace |
     if parsed.help:
         stream.write(_USAGE)
         return 0
-    try:
-        config = load_config(parsed.config_dir)
-    except ConfigError as exc:
-        err.write(f"ERROR: config: {exc}\n")
-        return 3
+    config = load_config_or_exit(parsed.config_dir, err)
+    if isinstance(config, int):
+        return config
     enabled = next((s.name for s in config.strategies.strategies if s.enabled), None)
     name = parsed.strategy or enabled
     if name is None:

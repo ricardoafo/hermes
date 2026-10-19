@@ -108,11 +108,12 @@ from hermes.domain.calibration.trial_record import summarise_trials
 from hermes.domain.errors import LedgerError, TrialLogError
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.entrypoints import serve as serve_module
+from hermes.entrypoints._cli import add_config_dir_arg, add_db_arg
 from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.funnel import read_front_matter
 from hermes.infrastructure.config import HermesConfig
 from hermes.infrastructure.config.errors import ConfigError
-from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
+from hermes.infrastructure.config.loader import load_config
 from hermes.infrastructure.project_root import load_pre_registration
 from hermes.infrastructure.time import now_utc
 from hermes.ports.certification import CertificationStoreError, CertificationStorePort
@@ -338,8 +339,8 @@ def _parse(argv: list[str], stream: TextIO, err: TextIO) -> tuple[argparse.Names
     parser.add_argument("--evidence", type=Path)
     parser.add_argument("--performance", type=Path)
     parser.add_argument("--store-dir", type=Path)
-    parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
-    parser.add_argument("--db", type=Path, default=serve_module.DEFAULT_DB_PATH)
+    add_config_dir_arg(parser)
+    add_db_arg(parser)
     parser.add_argument("--sign-off", default=None)
     parser.add_argument("--funnel-evidence", type=Path)
     parser.add_argument("--shadow-parity", type=Path)
