@@ -4,8 +4,6 @@ Each case runs a synthetic mini-suite through ``pytester`` in a subprocess,
 so the Sentry patches it provokes never reach this worker.
 """
 
-from __future__ import annotations
-
 import pytest
 
 from tests.support.paths import REPO_ROOT

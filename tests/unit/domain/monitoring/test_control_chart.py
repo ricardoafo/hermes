@@ -1,7 +1,5 @@
 """Unit tests for the EWMA + CUSUM control chart (#362, ADR-005 Category B)."""
 
-from __future__ import annotations
-
 import math
 from collections.abc import Callable
 

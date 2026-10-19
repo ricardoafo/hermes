@@ -9,8 +9,6 @@ Invariants protected here:
 - the command is registered as ``ledger``.
 """
 
-from __future__ import annotations
-
 import io
 import json
 import sqlite3

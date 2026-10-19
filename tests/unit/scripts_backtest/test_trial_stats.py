@@ -5,8 +5,6 @@ script prints the trial count from the log in the shape of the ``trials``
 section of certification evidence, and fails on a broken log.
 """
 
-from __future__ import annotations
-
 import importlib.util
 import json
 import sys

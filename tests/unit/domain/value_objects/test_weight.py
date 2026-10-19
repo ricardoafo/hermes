@@ -3,8 +3,6 @@
 Reference: R-5 (A-5.3, A-5.6, A-5.7).
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 import pytest

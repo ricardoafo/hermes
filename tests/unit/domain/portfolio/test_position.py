@@ -7,8 +7,6 @@ exact products and differences of its fields.
 Reference: 308-signal-event-portfolio-state change.md D-5.
 """
 
-from __future__ import annotations
-
 from datetime import datetime
 from decimal import Decimal
 

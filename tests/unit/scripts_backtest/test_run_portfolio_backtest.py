@@ -14,8 +14,6 @@ Invariants (822-portfolio-backtest change.md D-1, D-5, R-5):
   (v2-strategy-config D-4).
 """
 
-from __future__ import annotations
-
 import argparse
 import hashlib
 import importlib.util

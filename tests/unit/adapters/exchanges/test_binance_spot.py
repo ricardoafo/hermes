@@ -5,8 +5,6 @@ REST documentation; no test reaches the network. The real-testnet round trip
 lives in ``tests/contract/test_binance_spot_testnet.py``.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterator
 from decimal import Decimal
 from urllib.parse import parse_qs, urlsplit

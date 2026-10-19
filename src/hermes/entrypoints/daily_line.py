@@ -15,8 +15,6 @@ verdict headline. No P&L, ever.
 Reference: openspec/archive/373-daily-alive-line/change.md.
 """
 
-from __future__ import annotations
-
 import json
 from collections import Counter
 from collections.abc import Iterable

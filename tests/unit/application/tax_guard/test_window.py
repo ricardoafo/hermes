@@ -14,8 +14,6 @@ across randomly-generated event streams so a subtle off-by-one in the
 threshold check surfaces here rather than in production.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 

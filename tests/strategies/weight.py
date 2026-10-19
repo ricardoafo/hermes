@@ -1,7 +1,5 @@
 """Hypothesis strategies for the Weight value object."""
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 from hypothesis import strategies as st

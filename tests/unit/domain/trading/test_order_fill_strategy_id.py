@@ -3,8 +3,6 @@
 Reference: ADR-011 D-03, 323-order-fill-strategy-id change.md D-1 and D-2.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any

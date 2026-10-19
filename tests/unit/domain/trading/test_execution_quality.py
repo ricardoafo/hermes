@@ -8,8 +8,6 @@ would let an adverse shadow fill look favourable to the SHADOW_CERTIFIED gate.
 Reference: openspec/archive/353-fill-kernel-in-serve/change.md D-4.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from decimal import Decimal
 

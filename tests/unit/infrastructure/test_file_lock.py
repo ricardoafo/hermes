@@ -8,8 +8,6 @@ Invariants under test:
 - ``locked`` waits for a holder, and gives up with ``LockTimeoutError``.
 """
 
-from __future__ import annotations
-
 import os
 import signal
 import subprocess

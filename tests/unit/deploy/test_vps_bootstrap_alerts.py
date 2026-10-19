@@ -8,8 +8,6 @@ out of the real script and run them under bash with ``systemctl`` and
 ``install`` replaced by recorders (both need root on a real systemd host).
 """
 
-from __future__ import annotations
-
 import os
 import shutil
 import subprocess

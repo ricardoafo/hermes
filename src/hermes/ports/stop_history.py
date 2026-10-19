@@ -9,8 +9,6 @@ hold prices, so AI-facing tools must not read them before certification
 Reference: code-conventions.md §5 (Ports as Protocols), GitHub issue #388.
 """
 
-from __future__ import annotations
-
 from datetime import datetime
 from typing import Protocol, runtime_checkable
 

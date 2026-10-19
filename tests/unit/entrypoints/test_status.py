@@ -12,8 +12,6 @@ The rendered views are pinned with syrupy snapshots (plain text and a
 terminal render) so a layout change shows up in review.
 """
 
-from __future__ import annotations
-
 import io
 import json
 import os

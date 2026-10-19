@@ -9,8 +9,6 @@ Protects the report's invariants:
 - Queue wait is the time from job creation to a runner picking it up.
 """
 
-from __future__ import annotations
-
 import importlib.util
 import sys
 

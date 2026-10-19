@@ -8,8 +8,6 @@ Invariants under test:
   a sample count outside [2, window].
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 

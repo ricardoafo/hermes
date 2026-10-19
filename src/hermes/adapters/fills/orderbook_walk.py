@@ -25,8 +25,6 @@ Semantic contracts enforced here (per ADR-011 and pre-reg §6.2):
 Reference: spec-2b-orderbook-walk-fill-model/change.md, ADR-011.
 """
 
-from __future__ import annotations
-
 import random
 from dataclasses import dataclass, field
 from datetime import UTC, datetime

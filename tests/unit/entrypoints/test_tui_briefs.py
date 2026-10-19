@@ -14,8 +14,6 @@ Every app runs with motion off, a frozen clock and synthetic demo data, and
 never reads or writes the real settings file.
 """
 
-from __future__ import annotations
-
 import asyncio
 import json
 from collections.abc import Sequence

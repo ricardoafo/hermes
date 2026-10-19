@@ -18,8 +18,6 @@ Each failure mode is in one of three states:
 - ``accepted``: ``approved by Rick YYYY-MM-DD: why we live with it``.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 _U = "tests/unit/"

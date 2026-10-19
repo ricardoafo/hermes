@@ -7,8 +7,6 @@ out of the real script and run it under bash with ``mountpoint`` and
 ``install`` replaced by recorders (both need a real FUSE mount and root).
 """
 
-from __future__ import annotations
-
 import os
 import shutil
 import subprocess

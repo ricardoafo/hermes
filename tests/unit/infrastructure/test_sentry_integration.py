@@ -20,8 +20,6 @@ crash, the SDK function is replaced at the module boundary.
 Reference: docs/guides/ai-authored-tests.md.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterator
 from typing import Any
 

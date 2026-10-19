@@ -18,8 +18,6 @@ Seams: the integration test at the HTTP boundary lives in
 ``tests/integration/adapters/market_data/test_binance_live_klines_replay.py``.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path

@@ -5,8 +5,6 @@ with a constant fake FX rate and a fixed clock. Exit codes: 0 written,
 1 ledger failure, 2 usage, 3 config, 5 frozen.
 """
 
-from __future__ import annotations
-
 import hashlib
 import io
 import json

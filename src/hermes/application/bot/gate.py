@@ -6,8 +6,6 @@ Only the operator's chat gets replies. Each command gets at most one reply per
 Reference: openspec/archive/379-telegram-bot/change.md (D-1).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import StrEnum

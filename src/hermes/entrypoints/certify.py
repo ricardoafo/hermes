@@ -39,8 +39,6 @@ openspec/archive/v2-certify-gate/change.md;
 openspec/archive/965-shadow-parity-window/change.md; ADR-014.
 """
 
-from __future__ import annotations
-
 import argparse
 import hashlib
 import json

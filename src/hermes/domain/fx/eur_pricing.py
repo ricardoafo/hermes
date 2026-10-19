@@ -11,8 +11,6 @@ Domain purity: stdlib and other domain value objects only.
 Reference: ADR-002 §3, ADR-016 items 2 and 5, change ``trade-eur-values`` D-1, D-2.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal

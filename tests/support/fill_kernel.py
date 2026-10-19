@@ -1,7 +1,5 @@
 """Builders shared by the fill-kernel, replay and backtest integration tests."""
 
-from __future__ import annotations
-
 from datetime import datetime
 from decimal import Decimal
 

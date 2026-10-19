@@ -6,8 +6,6 @@ rate", so a push never fails or shows a wrong euro figure because of it.
 Reference: openspec/archive/668-eur-prices-in-pushes/change.md (D-2, R-2).
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 import pytest

@@ -24,8 +24,6 @@ Example-based tests cover:
 Reference: ADR-003 §03, ADR-002 (Spanish FIFO), code-conventions.md.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 

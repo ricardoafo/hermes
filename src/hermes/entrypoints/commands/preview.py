@@ -1,7 +1,5 @@
 """``hermes preview``: see :mod:`hermes.entrypoints.preview`."""
 
-from __future__ import annotations
-
 from hermes.entrypoints import preview as _impl
 from hermes.entrypoints.commands import Command
 

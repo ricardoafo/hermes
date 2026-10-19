@@ -6,8 +6,6 @@ The concrete implementation is
 Reference: code-conventions.md §5 (Ports as Protocols), GitHub issue #359.
 """
 
-from __future__ import annotations
-
 from datetime import date
 from typing import Protocol, runtime_checkable
 

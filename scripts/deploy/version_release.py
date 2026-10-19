@@ -33,8 +33,6 @@ the version mapping is loaded by path from ``src/hermes/release_version.py``.
 Exit codes: 0 always (a problem prints ``{}`` and a warning on stderr), 2 usage.
 """
 
-from __future__ import annotations
-
 import argparse
 import importlib.util
 import json

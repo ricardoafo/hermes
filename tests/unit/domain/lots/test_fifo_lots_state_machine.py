@@ -11,8 +11,6 @@ must do. Invariants are checked after every step.
 Reference: ADR-003 §03 (FIFO worked example), ADR-002 (Spanish FIFO), issue #844.
 """
 
-from __future__ import annotations
-
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta

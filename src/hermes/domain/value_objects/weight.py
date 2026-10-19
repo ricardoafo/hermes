@@ -8,8 +8,6 @@ not on the individual ``Weight``).
 Reference: code-conventions.md §1 (Value Object) and §4 (Factory methods).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 

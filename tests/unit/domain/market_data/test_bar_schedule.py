@@ -10,8 +10,6 @@ Invariants (live-bar-stream change D-3 and D-5):
   precede the 1d bar closing at the same instant, and reports skipped bars.
 """
 
-from __future__ import annotations
-
 import itertools
 import random
 from datetime import UTC, datetime, timedelta

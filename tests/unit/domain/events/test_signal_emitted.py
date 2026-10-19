@@ -11,8 +11,6 @@ Invariants protected here:
 Reference: 308-signal-event-portfolio-state change.md D-1, D-2, R-1.
 """
 
-from __future__ import annotations
-
 import dataclasses
 from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal

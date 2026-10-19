@@ -11,8 +11,6 @@ Protects what CD tags after a deploy:
 - The script runs with the standard library alone, before ``uv sync``.
 """
 
-from __future__ import annotations
-
 import importlib.util
 import json
 import shutil

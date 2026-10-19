@@ -8,8 +8,6 @@ Verifies:
 Reference: R-4 (A-4.1 through A-4.4).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import datetime
 from typing import ClassVar

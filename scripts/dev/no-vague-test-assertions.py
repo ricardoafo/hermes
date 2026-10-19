@@ -44,8 +44,6 @@ Exit codes:
   2 — usage error / self-test failure
 """
 
-from __future__ import annotations
-
 import ast
 import os
 import re

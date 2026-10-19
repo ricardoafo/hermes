@@ -12,8 +12,6 @@ and produced by every concrete fill implementation — backtest, shadow, and liv
 Domain purity: no pydantic, no httpx (enforced by import-linter contracts).
 """
 
-from __future__ import annotations
-
 from hermes.domain.trading.fill import Fill, Rejection
 from hermes.domain.trading.order import Order, OrderSide
 

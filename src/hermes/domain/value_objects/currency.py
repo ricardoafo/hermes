@@ -7,8 +7,6 @@ parsing exchange responses without extra conversion steps.
 Reference: code-conventions.md §1 (Value Object) and §4 (Factory methods).
 """
 
-from __future__ import annotations
-
 from enum import StrEnum
 
 from returns.result import Failure, Result, Success

@@ -6,8 +6,6 @@ release directory; its name is the release. Kept apart from
 without importing the version command (which imports serve).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path

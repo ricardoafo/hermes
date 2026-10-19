@@ -3,8 +3,6 @@
 Reference: ADR-016 item 4.
 """
 
-from __future__ import annotations
-
 import dataclasses
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta

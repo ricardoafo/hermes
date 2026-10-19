@@ -18,8 +18,6 @@ Invariants protected here (openspec/archive/358-parity-check/change.md):
   correlated entry serve refused is refused in the replay too (#514).
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta

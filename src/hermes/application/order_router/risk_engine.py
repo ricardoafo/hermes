@@ -16,8 +16,6 @@ MVP1 note: multi-strategy balancing is deferred to SA-6 MVP2. For MVP1 the
 Reference: spec-3-order-router change.md D-3, SA-6, SA-9 §5.5.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from decimal import Decimal
 

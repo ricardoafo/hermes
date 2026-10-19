@@ -18,8 +18,6 @@ Invariants:
 - the portfolio and detail live lines name both layers.
 """
 
-from __future__ import annotations
-
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal

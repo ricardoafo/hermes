@@ -11,8 +11,6 @@ Exit codes: 0 complete, 1 ledger failure, 2 usage, 3 config error,
 Reference: openspec/archive/36-modelo-100-721/change.md.
 """
 
-from __future__ import annotations
-
 import argparse
 import os
 from collections.abc import Mapping

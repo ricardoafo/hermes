@@ -8,8 +8,6 @@ Property tests verify the threshold boundary at -10% BTC 1D log-return (pre-reg 
 Reference: SA-9 §5.5 RO-07; spec-8-risk-overlay change.md R-2.
 """
 
-from __future__ import annotations
-
 from hypothesis import given, settings
 from hypothesis import strategies as st
 

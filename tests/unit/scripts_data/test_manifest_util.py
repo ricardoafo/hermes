@@ -5,8 +5,6 @@ mutation across concurrent writers — the bug that motivated change
 ``data-manifest-file-lock`` (#257).
 """
 
-from __future__ import annotations
-
 import importlib.util
 import json
 import sys

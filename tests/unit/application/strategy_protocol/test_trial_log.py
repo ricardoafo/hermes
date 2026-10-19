@@ -7,8 +7,6 @@ Invariants under test (openspec/archive/357-trial-log/change.md R-1, R-3):
 - The DSR summary is read from the trial log itself.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 

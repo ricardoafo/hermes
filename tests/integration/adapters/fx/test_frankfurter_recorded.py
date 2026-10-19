@@ -12,8 +12,6 @@ as USD). Fixtures in ``tests/fixtures/frankfurter/`` were recorded on
 Reference: change ``trade-eur-values`` R-6, ADR-016 item 5.
 """
 
-from __future__ import annotations
-
 import json
 from datetime import date
 from decimal import Decimal

@@ -6,8 +6,6 @@ Reference: code-conventions.md §5 (Ports as Protocols),
 openspec/archive/356-data-manifest/change.md.
 """
 
-from __future__ import annotations
-
 from typing import Protocol, runtime_checkable
 
 from hermes.domain.market_data.dataset_manifest import DatasetManifest

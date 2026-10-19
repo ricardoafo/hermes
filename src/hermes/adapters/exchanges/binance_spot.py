@@ -47,8 +47,6 @@ such a fill is marked ``fee_estimated`` (#1014).
 Reference: issue #148; openspec/archive/148-binance-testnet-spot/change.md.
 """
 
-from __future__ import annotations
-
 import hashlib
 import hmac
 import secrets

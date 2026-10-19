@@ -43,8 +43,6 @@ Reference: docs/decisions/2026-08-23-fx-rate-source-frankfurter.md,
 ADR-002 §Decision 4 (EUR-first accounting, ECB reference rates).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from datetime import date
 from typing import ClassVar, Final

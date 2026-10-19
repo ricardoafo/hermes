@@ -34,8 +34,6 @@ Reference:
   spec-9-strategy-development-protocol change.md D-2, D-3.
 """
 
-from __future__ import annotations
-
 from collections.abc import AsyncIterator
 from contextvars import ContextVar, Token
 from datetime import datetime

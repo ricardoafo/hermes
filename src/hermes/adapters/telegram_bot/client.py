@@ -14,8 +14,6 @@ error text names the method and status only.
 Reference: openspec/archive/379-telegram-bot/change.md (D-4, D-5).
 """
 
-from __future__ import annotations
-
 import time
 from collections import deque
 from collections.abc import Callable

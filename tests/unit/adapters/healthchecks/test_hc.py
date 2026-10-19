@@ -11,8 +11,6 @@ a credential (see task spec Part 6) but keeping it plainly synthetic
 avoids any operator confusion.
 """
 
-from __future__ import annotations
-
 import httpx
 import pytest
 import respx

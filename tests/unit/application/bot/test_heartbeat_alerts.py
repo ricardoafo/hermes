@@ -11,8 +11,6 @@ Invariants protected here:
 - no pushed message carries money.
 """
 
-from __future__ import annotations
-
 import re
 from datetime import UTC, datetime, time, timedelta
 

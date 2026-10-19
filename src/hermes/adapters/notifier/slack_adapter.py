@@ -64,8 +64,6 @@ Design decisions
   ``chat.postMessage`` when threaded — expected cost.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path

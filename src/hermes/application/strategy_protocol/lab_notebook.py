@@ -43,8 +43,6 @@ Reference:
   spec-9-strategy-development-protocol change.md D-5.
 """
 
-from __future__ import annotations
-
 import hashlib
 import re
 from dataclasses import dataclass

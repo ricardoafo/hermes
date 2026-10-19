@@ -15,8 +15,6 @@ Invariants under test:
 - ``run`` samples on its step and ends promptly on shutdown, even mid-round.
 """
 
-from __future__ import annotations
-
 import asyncio
 import functools
 import sqlite3

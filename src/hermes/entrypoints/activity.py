@@ -15,8 +15,6 @@ Reference: openspec/archive/374-hermes-activity/change.md;
 openspec/archive/live-home-screen/change.md (D-5, D-6).
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 from collections.abc import Mapping

@@ -3,8 +3,6 @@
 Reference: ADR-016 item 5.
 """
 
-from __future__ import annotations
-
 import io
 import sqlite3
 from datetime import UTC, date, datetime

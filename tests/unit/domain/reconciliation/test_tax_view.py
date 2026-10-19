@@ -9,8 +9,6 @@ Invariants protected here:
 - a book that sells more than it holds is a failure, not a report.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from decimal import Decimal
 

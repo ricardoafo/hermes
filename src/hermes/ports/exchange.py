@@ -29,8 +29,6 @@ ADR-004 (exchange-adapter choice).
 Closes: #199 (empty ExchangePort stub with no methods).
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 from typing import Protocol, runtime_checkable
 

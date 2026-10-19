@@ -43,8 +43,6 @@ call site for :func:`initialize`; the router / adapters can call
 :func:`capture` inline for exceptions they catch-and-continue on.
 """
 
-from __future__ import annotations
-
 from typing import Any
 
 import sentry_sdk

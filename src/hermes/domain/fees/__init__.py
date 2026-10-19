@@ -10,8 +10,6 @@ translate wire responses (Kraken, Binance, ...) into these types at the
 port boundary.
 """
 
-from __future__ import annotations
-
 from hermes.domain.fees.fee_schedule import FeeSchedule, FeeTier
 
 __all__ = ["FeeSchedule", "FeeTier"]

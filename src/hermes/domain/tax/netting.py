@@ -19,8 +19,6 @@ excluded from ``repr``.
 Reference: ADR-016 decisions 6 and 12, IRPF art. 49.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Final

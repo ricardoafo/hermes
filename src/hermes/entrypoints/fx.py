@@ -12,8 +12,6 @@ Exit codes: 0 done (some rows may stay pending), 1 ledger failure, 2 usage,
 Reference: change ``trade-eur-values`` R-3, ADR-016 item 5.
 """
 
-from __future__ import annotations
-
 import argparse
 from collections.abc import Callable
 from pathlib import Path

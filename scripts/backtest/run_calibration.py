@@ -37,8 +37,6 @@ Exit codes:
     2 - usage error
 """
 
-from __future__ import annotations
-
 import argparse
 import asyncio
 import json

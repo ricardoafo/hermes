@@ -7,8 +7,6 @@ Property tests verify the threshold boundary at 2 seconds (pre-reg §5.5):
 Reference: SA-9 §5.5 RO-04; spec-8-risk-overlay change.md R-2.
 """
 
-from __future__ import annotations
-
 from hypothesis import given, settings
 from hypothesis import strategies as st
 

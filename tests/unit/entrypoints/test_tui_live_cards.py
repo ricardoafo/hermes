@@ -10,8 +10,6 @@ Invariants:
 - a failing market watch is one line and the positions above it still show (#650).
 """
 
-from __future__ import annotations
-
 import asyncio
 from datetime import datetime
 

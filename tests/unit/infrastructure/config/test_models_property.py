@@ -13,8 +13,6 @@ through the loader — the loader path is covered by ``test_loader.py``; here
 we're pinning the schema invariants themselves.
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 from typing import Any
 

@@ -16,8 +16,6 @@ Reference: openspec/archive/console-read-model/change.md (D-2, D-4, D-5);
 the approved console UX proposal (2026-10-03).
 """
 
-from __future__ import annotations
-
 import io
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace

@@ -14,8 +14,6 @@ code-conventions §1).
 Reference: https://core.telegram.org/bots/api#markdownv2-style
 """
 
-from __future__ import annotations
-
 from typing import Final
 
 __all__ = ["CORRELATION_TAIL_LEN", "correlation_tail", "escape_markdown_v2", "escape_slack"]

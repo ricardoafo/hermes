@@ -24,8 +24,6 @@ Reference: ADR-003 §03 (migration approach — plain SQL, numbered),
 ADR-006 §2 (forward-only, restore from backup), GitHub issue #137.
 """
 
-from __future__ import annotations
-
 import sqlite3
 import tempfile
 from contextlib import closing

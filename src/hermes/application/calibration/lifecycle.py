@@ -23,8 +23,6 @@ property-testable across the full 7x6 transition matrix.
 Reference: spec-6-calibration-harness/change.md D-3, pre-reg §7.
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 from enum import StrEnum
 from typing import TYPE_CHECKING, ClassVar

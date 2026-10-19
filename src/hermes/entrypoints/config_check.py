@@ -21,8 +21,6 @@ Exit codes: 0 clean, 1 findings, 2 usage, 3 config could not be read.
 Reference: openspec/archive/537-config-check/change.md.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import os

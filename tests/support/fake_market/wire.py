@@ -15,8 +15,6 @@ The shapes follow what production receives and what the recorded fixtures in
 these renderings must pass.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, date, datetime
 from decimal import Decimal
 

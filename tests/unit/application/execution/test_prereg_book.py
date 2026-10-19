@@ -11,8 +11,6 @@ Reference: openspec/archive/353-fill-kernel-in-serve/change.md R-2;
 backtest-driver-mvp1-phase2 change.md A-2.1; v2-strategy-config change.md R-1.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from decimal import Decimal
 

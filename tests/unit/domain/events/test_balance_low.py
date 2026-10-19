@@ -12,8 +12,6 @@ Verifies:
 Reference: code-conventions.md §10 + §3.
 """
 
-from __future__ import annotations
-
 import re
 from datetime import UTC, datetime
 from decimal import Decimal

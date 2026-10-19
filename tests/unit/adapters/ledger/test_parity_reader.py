@@ -14,8 +14,6 @@ Invariants protected here:
 - missed bars are counted by close time, ``after < close <= upto`` (#1078).
 """
 
-from __future__ import annotations
-
 import sqlite3
 from datetime import timedelta
 from pathlib import Path

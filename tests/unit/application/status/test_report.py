@@ -14,8 +14,6 @@ in ``tests/unit/adapters/ledger/test_status_reader.py``, and the CLI tests
 run both together.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 

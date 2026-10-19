@@ -14,8 +14,6 @@ secret lives in the repo: the key is only a path.
 Reference: openspec/archive/console-vps/change.md.
 """
 
-from __future__ import annotations
-
 import re
 import shlex
 import subprocess

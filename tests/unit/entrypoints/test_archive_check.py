@@ -6,8 +6,6 @@ configured pair and interval and maps the outcome to its exit code (0 match,
 file. Each mismatch alert is recorded once as an ``AnomalyDetected`` row (#136).
 """
 
-from __future__ import annotations
-
 import io
 import sqlite3
 from datetime import UTC, date, datetime, timedelta

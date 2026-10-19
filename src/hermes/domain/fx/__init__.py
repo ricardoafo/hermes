@@ -10,8 +10,6 @@ contracts ``domain-no-pydantic`` and ``domain-no-async-or-network``).
 Reference: docs/decisions/2026-08-23-fx-rate-source-frankfurter.md.
 """
 
-from __future__ import annotations
-
 from hermes.domain.fx.eur_pricing import EurPricing, EurStatus
 from hermes.domain.fx.fx_rate import FxRate
 

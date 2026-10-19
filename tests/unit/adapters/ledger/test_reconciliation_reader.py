@@ -9,8 +9,6 @@ Invariants protected here:
 - a ledger without the EUR columns fails naming ``hermes migrate``.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from decimal import Decimal
 from pathlib import Path

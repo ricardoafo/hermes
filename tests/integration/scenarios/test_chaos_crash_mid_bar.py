@@ -22,8 +22,6 @@ Faults are injected at the SQLite connection, below the ledger; nothing in
 serve is replaced (``tests/integration/scenarios/faults.py``).
 """
 
-from __future__ import annotations
-
 import contextlib
 import functools
 from collections.abc import Callable

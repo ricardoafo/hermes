@@ -3,8 +3,6 @@
 Reference: ADR-016 item 4, ADR-003 §00 I-06.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from collections.abc import Callable, Iterator
 from contextlib import closing

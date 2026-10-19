@@ -23,8 +23,6 @@ library and ``git`` are used, so it runs before ``uv sync``.
 Exit codes: 0 on success, 2 when ``git`` fails (unknown commit, no repo).
 """
 
-from __future__ import annotations
-
 import argparse
 import importlib.util
 import re

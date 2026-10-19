@@ -7,8 +7,6 @@ the module is missing or stops returning the CLI exit code.
 Reference: openspec/archive/306-serve-systemd-boot/change.md.
 """
 
-from __future__ import annotations
-
 import runpy
 import sys
 

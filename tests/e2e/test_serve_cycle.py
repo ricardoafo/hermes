@@ -23,8 +23,6 @@ Invariants protected here (issue #408, ADR-007 Tier 3):
 - ``hermes status --json`` over the resulting ledger matches its snapshot.
 """
 
-from __future__ import annotations
-
 import asyncio
 import dataclasses
 import io

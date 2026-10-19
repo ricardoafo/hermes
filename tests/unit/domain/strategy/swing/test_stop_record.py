@@ -9,8 +9,6 @@ Reference: pre-registration-v1.md §5.2, §5.3, §11; 388-stop-marks change.md;
 GitHub issue #680.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 

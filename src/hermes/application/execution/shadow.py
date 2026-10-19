@@ -33,8 +33,6 @@ caller logs from the returned :class:`ShadowExecution`.
 Reference: openspec/archive/353-fill-kernel-in-serve/change.md D-1..D-5.
 """
 
-from __future__ import annotations
-
 import math
 from collections import deque
 from collections.abc import Callable, Sequence

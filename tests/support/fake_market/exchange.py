@@ -10,8 +10,6 @@ host: klines list every candle that has opened, the last one still forming;
 server time is ``now``; the depth book sits around the latest closed 4h close.
 """
 
-from __future__ import annotations
-
 import asyncio
 import bisect
 import json

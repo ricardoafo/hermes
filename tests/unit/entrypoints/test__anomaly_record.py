@@ -9,8 +9,6 @@ Invariants under test:
   alert that follows still goes out.
 """
 
-from __future__ import annotations
-
 import io
 import sqlite3
 from datetime import UTC, datetime

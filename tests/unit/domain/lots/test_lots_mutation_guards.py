@@ -8,8 +8,6 @@ exact-inventory sell, the keyword-only API, immutability, and the
 ValueError-to-Failure conversion).
 """
 
-from __future__ import annotations
-
 import dataclasses
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta

@@ -6,8 +6,6 @@ SHADOW_CERTIFIED the shadow round trips are reported and flagged weak under
 30, without changing the verdict (ADR-021 §3, #797).
 """
 
-from __future__ import annotations
-
 import dataclasses
 import hashlib
 import io

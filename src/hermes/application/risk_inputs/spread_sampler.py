@@ -21,8 +21,6 @@ RO-02 stays off in shadow (#514).
 Reference: GitHub issues #514, #835.
 """
 
-from __future__ import annotations
-
 import asyncio
 from collections.abc import Sequence
 from typing import Final

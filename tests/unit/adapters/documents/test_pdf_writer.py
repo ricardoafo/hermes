@@ -5,8 +5,6 @@ the compressed default is what ``hermes tax-pack`` writes, covered end to end
 in ``tests/unit/entrypoints/test_tax_pack.py``.
 """
 
-from __future__ import annotations
-
 import re
 from datetime import UTC, datetime
 

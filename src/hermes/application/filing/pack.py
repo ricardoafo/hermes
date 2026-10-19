@@ -9,8 +9,6 @@ touches the disk; the ``tax-pack`` entrypoint writes what this returns.
 Reference: openspec/archive/568-tax-pack/change.md.
 """
 
-from __future__ import annotations
-
 import hashlib
 import json
 from collections.abc import Mapping, Sequence

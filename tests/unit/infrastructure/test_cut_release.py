@@ -9,8 +9,6 @@ Protects the release-cut invariants:
 - The PR body carries the Engine change line the PR body lint enforces.
 """
 
-from __future__ import annotations
-
 import importlib.util
 import re
 import sys

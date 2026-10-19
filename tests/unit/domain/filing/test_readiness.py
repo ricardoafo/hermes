@@ -3,8 +3,6 @@
 Reference: ADR-016 item 2 (Madrid tax year).
 """
 
-from __future__ import annotations
-
 from datetime import date
 
 from hermes.domain.filing.modelo721 import Obligation

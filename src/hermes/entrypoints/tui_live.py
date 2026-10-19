@@ -18,8 +18,6 @@ notification code imports this module (import-linter contract
 Reference: openspec/archive/713-live-ticker/change.md.
 """
 
-from __future__ import annotations
-
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime

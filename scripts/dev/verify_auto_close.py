@@ -36,8 +36,6 @@ Related:
     #232 (v1) → #247 (v2) → #261 (v3) — the auto-close saga
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import os

@@ -25,8 +25,6 @@ missing read-only key or unreadable exchange.
 Reference: openspec/archive/35-monthly-reconciliation/change.md.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import os

@@ -19,8 +19,6 @@ how a Windows contributor can run it.
 Reference: openspec/archive/179-cd-first-real-deploy/change.md (Test plan).
 """
 
-from __future__ import annotations
-
 import os
 import shutil
 import sqlite3

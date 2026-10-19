@@ -11,8 +11,6 @@ Property invariants per code-conventions.md §8:
 Reference: R-5 (A-5.3, A-5.4, A-5.6, A-5.7).
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 import pytest

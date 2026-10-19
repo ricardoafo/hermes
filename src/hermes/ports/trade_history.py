@@ -7,8 +7,6 @@ recharacterization tax guard reads its rolling window through it (#135).
 Reference: code-conventions.md §5 (Ports as Protocols), ADR-002 §6.
 """
 
-from __future__ import annotations
-
 from datetime import datetime
 from typing import Protocol, runtime_checkable
 

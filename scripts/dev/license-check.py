@@ -52,8 +52,6 @@ environment, which reads as zero packages and checks nothing (#757).
 - 2: usage error / malformed stdin
 """
 
-from __future__ import annotations
-
 import json
 import os
 import sys

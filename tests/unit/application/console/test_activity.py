@@ -9,8 +9,6 @@ Invariants protected here:
   restart, deploy, warning, error and folded check rows the journal adds (#653).
 """
 
-from __future__ import annotations
-
 from datetime import UTC, date, datetime
 from decimal import Decimal
 

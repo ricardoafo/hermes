@@ -3,8 +3,6 @@
 Reference: ADR-016 decision 3; change trade-eur-values D-6 (the rows the FIFO replays).
 """
 
-from __future__ import annotations
-
 import sqlite3
 from collections.abc import Iterator
 from datetime import timedelta

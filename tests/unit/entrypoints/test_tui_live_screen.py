@@ -19,8 +19,6 @@ Invariants:
   240x60, motion off and a frozen clock (A-6.1).
 """
 
-from __future__ import annotations
-
 import asyncio
 import threading
 from collections.abc import Awaitable, Callable

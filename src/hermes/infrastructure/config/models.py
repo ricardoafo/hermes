@@ -25,8 +25,6 @@ Values are placeholders until the feature that consumes them lands
 feature that reads them.
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 from typing import Final
 

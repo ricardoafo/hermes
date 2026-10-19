@@ -9,8 +9,6 @@ Invariants under test:
 - Range reads are half-open and ordered by open time.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta

@@ -1,7 +1,5 @@
 """Hypothesis strategies for the LotId value object."""
 
-from __future__ import annotations
-
 from hypothesis import strategies as st
 
 from hermes.domain.value_objects.lot_id import LotId

@@ -8,8 +8,6 @@ trade pending (change ``trade-eur-values`` D-1, D-2).
 Reference: ADR-016 item 5.
 """
 
-from __future__ import annotations
-
 import threading
 import time
 from collections.abc import Callable, Iterable

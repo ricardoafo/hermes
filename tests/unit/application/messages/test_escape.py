@@ -9,8 +9,6 @@ Verifies:
 Reference: docs/decisions/2026-08-23-slack-alongside-telegram.md.
 """
 
-from __future__ import annotations
-
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st

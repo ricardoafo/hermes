@@ -9,8 +9,6 @@ Reference: code-conventions.md §2 (hybrid Result / exceptions — config is
 adapter/infrastructure, so exceptions are the natural shape).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 from hermes.domain.errors import InfraError

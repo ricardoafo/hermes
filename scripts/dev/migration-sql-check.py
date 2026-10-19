@@ -25,8 +25,6 @@ Exit codes:
     1 - at least one violation (printed one per line)
 """
 
-from __future__ import annotations
-
 import re
 import sys
 from pathlib import Path

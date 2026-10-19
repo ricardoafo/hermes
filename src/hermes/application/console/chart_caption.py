@@ -12,8 +12,6 @@ rate rule of :mod:`hermes.application.console.portfolio_figures`) and only show
 when the caller says the surface may show money (``pnl_visible``).
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, tzinfo

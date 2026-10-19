@@ -8,8 +8,6 @@ Reference: pre-registration-v1.md §9; openspec/archive/354-certification-statis
 D-4, D-6.
 """
 
-from __future__ import annotations
-
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass

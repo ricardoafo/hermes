@@ -13,8 +13,6 @@ tests pin that reading:
 Reference: pre-registration-v1.md §5.5; openspec/archive/822-portfolio-backtest D-2.
 """
 
-from __future__ import annotations
-
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st

@@ -12,8 +12,6 @@ Exit codes: 0 OK, 1 findings, 2 usage, 3 ledger missing or unreadable.
 Reference: openspec/archive/538-ledger-verify/change.md.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import sqlite3

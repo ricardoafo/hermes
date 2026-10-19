@@ -8,8 +8,6 @@ Invariants protected here:
 - ``parse`` accepts only ``YYYY-MM`` naming a real month.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 
 import pytest

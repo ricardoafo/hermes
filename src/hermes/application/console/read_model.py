@@ -8,8 +8,6 @@ take the serve lock.
 Reference: openspec/archive/console-read-model/change.md (D-1, D-4).
 """
 
-from __future__ import annotations
-
 from typing import Protocol
 
 from hermes.application.console.views import (

@@ -37,8 +37,6 @@ Design decisions:
 Reference: spec-4c-market-data-adapters change.md D-1, D-4.
 """
 
-from __future__ import annotations
-
 import csv
 import io
 import os

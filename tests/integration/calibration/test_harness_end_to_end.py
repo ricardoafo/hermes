@@ -17,8 +17,6 @@ Coverage:
 Reference: spec-6-calibration-harness/change.md A-4.1, A-4.2.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from decimal import Decimal
 

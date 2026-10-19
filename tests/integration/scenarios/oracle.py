@@ -49,8 +49,6 @@ lock, spread spike and depeg rules and the time-to-recovery kill (issue #514:
 serve does not feed them).
 """
 
-from __future__ import annotations
-
 import itertools
 import json
 import sqlite3

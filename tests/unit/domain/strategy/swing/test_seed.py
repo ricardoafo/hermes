@@ -14,8 +14,6 @@ Invariants protected here:
 Reference: 309-serve-bar-loop change.md D-6, R-4 (A-4.1).
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 

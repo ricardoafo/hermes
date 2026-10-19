@@ -12,8 +12,6 @@ Invariants protected here:
 respx answers with recorded Bot API responses; no real Telegram call.
 """
 
-from __future__ import annotations
-
 from urllib.parse import parse_qs
 
 import httpx

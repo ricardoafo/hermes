@@ -11,8 +11,6 @@ Invariants:
 - the stop distance is measured from the current price, in percent and in ATR.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 

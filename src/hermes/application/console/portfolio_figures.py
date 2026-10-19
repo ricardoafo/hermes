@@ -14,8 +14,6 @@ rate. Whatever has no EUR value yet is flagged pending, never guessed.
 Reference: openspec/archive/live-home-screen/change.md (D-1 to D-3).
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, tzinfo

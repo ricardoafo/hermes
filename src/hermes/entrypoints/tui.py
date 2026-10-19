@@ -96,8 +96,6 @@ openspec/archive/717-system-screen/change.md;
 openspec/archive/716-logs-screen/change.md.
 """
 
-from __future__ import annotations
-
 import os
 import sys
 from collections import deque

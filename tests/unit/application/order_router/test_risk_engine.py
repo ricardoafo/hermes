@@ -9,8 +9,6 @@ Tests cover:
 - Correlation lock refusal (RO-01 via CorrelationLock) wired through RiskEngine.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal

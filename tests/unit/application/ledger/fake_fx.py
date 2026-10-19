@@ -4,8 +4,6 @@ The seam it replaces is covered against recorded Frankfurter responses in
 ``tests/integration/adapters/fx/test_frankfurter_recorded.py``.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal

@@ -8,8 +8,6 @@ tests never start a real journalctl.
 Reference: openspec/archive/376-hermes-logs/change.md.
 """
 
-from __future__ import annotations
-
 import shutil
 import subprocess
 from collections.abc import Callable, Iterator

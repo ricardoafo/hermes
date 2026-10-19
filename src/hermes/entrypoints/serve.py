@@ -65,8 +65,6 @@ AND :attr:`~hermes.infrastructure.config.HermesConfig.env` being ``"prod"``
 I-08.
 """
 
-from __future__ import annotations
-
 import asyncio
 import contextlib
 import dataclasses

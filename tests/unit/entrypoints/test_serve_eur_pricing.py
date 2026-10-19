@@ -4,8 +4,6 @@ The FX seam is the scripted ``FakeFx``; the Frankfurter adapter itself is covere
 against recorded responses in ``tests/integration/adapters/fx``.
 """
 
-from __future__ import annotations
-
 import asyncio
 import dataclasses
 import sqlite3

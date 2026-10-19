@@ -14,8 +14,6 @@ Exit codes: 0 every pair passes, 1 at least one pair fails, 2 usage,
 3 config failure.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 from collections.abc import Callable, Iterable

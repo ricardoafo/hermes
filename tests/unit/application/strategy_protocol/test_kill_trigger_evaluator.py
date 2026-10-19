@@ -15,8 +15,6 @@ Tests cover:
 - Property: no trigger below all thresholds.
 """
 
-from __future__ import annotations
-
 from dataclasses import replace
 
 import pytest

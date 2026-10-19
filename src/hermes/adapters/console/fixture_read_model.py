@@ -10,8 +10,6 @@ scenario cannot contradict itself.
 Reference: openspec/archive/console-read-model/change.md (D-3, D-7).
 """
 
-from __future__ import annotations
-
 import json
 from collections.abc import Mapping, Sequence
 from datetime import date, datetime, timedelta

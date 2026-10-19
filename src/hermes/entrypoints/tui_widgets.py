@@ -19,8 +19,6 @@ The text of each piece is built by a pure function so tests can check it
 without running an app.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from decimal import Decimal

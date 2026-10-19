@@ -15,8 +15,6 @@ Reference: code-conventions.md §5 (Ports as Protocols),
 docs/decisions/2026-08-24-kraken-public-adapter.md.
 """
 
-from __future__ import annotations
-
 from typing import Protocol, runtime_checkable
 
 from hermes.domain.fees import FeeSchedule

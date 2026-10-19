@@ -15,8 +15,6 @@ Reference: docs/decisions/2026-10-04-notification-templates-v2.md;
     openspec/archive/144-notification-system/change.md (R-1).
 """
 
-from __future__ import annotations
-
 import dataclasses
 import re
 from dataclasses import dataclass

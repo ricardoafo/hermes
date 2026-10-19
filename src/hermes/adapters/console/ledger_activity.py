@@ -23,8 +23,6 @@ Reference: openspec/archive/374-hermes-activity/change.md;
 openspec/archive/live-home-screen/change.md (D-5).
 """
 
-from __future__ import annotations
-
 import json
 import sqlite3
 from datetime import datetime

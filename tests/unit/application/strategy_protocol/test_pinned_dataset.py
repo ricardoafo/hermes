@@ -12,8 +12,6 @@ The bar source is an in-memory fake; the real archive adapter is exercised by
 ``scripts/data/build_dataset_manifest.py`` and the backtest driver dry run.
 """
 
-from __future__ import annotations
-
 import asyncio
 from collections.abc import AsyncIterator
 from dataclasses import replace

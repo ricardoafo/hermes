@@ -24,8 +24,6 @@ scripted. The depth seam is covered by
 ``tests/unit/adapters/market_data/test_binance_depth_snapshot.py``.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from collections.abc import Iterator
 from dataclasses import dataclass, field, replace

@@ -11,8 +11,6 @@ D-1), so the quote-currency leg gains its EUR values too.
 Reference: ADR-016 item 5.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import date
 

@@ -27,8 +27,6 @@ Reference: code-conventions.md §5 (Ports as Protocols).
 spec-4b-market-data-port change.md D-1 through D-6.
 """
 
-from __future__ import annotations
-
 from collections.abc import AsyncIterator
 from typing import Protocol, runtime_checkable
 

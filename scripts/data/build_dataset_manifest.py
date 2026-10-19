@@ -19,8 +19,6 @@ Exit codes:
     1 - a dataset is empty (missing ingest)
 """
 
-from __future__ import annotations
-
 import argparse
 import asyncio
 import sys

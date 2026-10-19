@@ -30,8 +30,6 @@ Design decisions (openspec/archive/307-live-bar-stream/change.md):
 one the Vision archives carry, so live and backtest bars compare equal.
 """
 
-from __future__ import annotations
-
 import math
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta

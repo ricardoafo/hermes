@@ -7,8 +7,6 @@ on the import error, and an exit-code check would pass for the wrong reason
 (#704).
 """
 
-from __future__ import annotations
-
 import pytest
 
 from tests.support.paths import REPO_ROOT
