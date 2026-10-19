@@ -54,11 +54,6 @@ class _Live:
         return getattr(self._inner, name)
 
 
-def _repo_clean(svg: str) -> str:
-    """Strip trailing whitespace, as the repository's pre-commit hook does to committed SVGs."""
-    return "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
-
-
 def _svg(size: tuple[int, int], theme: ThemeChoice, allow_mainnet: bool | None) -> str:
     async def drive() -> str:
         model: ConsoleReadModel = (

@@ -40,11 +40,6 @@ _VIEWS: tuple[tuple[str, tuple[str, ...]], ...] = (
 _FLAGGED_ROW = 3
 
 
-def _repo_clean(svg: str) -> str:
-    """Strip trailing whitespace, as the repository's pre-commit hook does to committed SVGs."""
-    return "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
-
-
 def _svg(view: str, keys: tuple[str, ...], size: tuple[int, int], theme: ThemeChoice) -> str:
     async def drive() -> str:
         app = HomeApp(

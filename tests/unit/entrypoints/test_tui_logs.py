@@ -97,11 +97,6 @@ class _Journal:
         return None if self.lines is None else self.lines[-count:]
 
 
-def _repo_clean(svg: str) -> str:
-    """Strip trailing whitespace, as the repository's pre-commit hook does to committed SVGs."""
-    return "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
-
-
 def _screen_text(app: HomeApp) -> str:
     return "\n".join(strip.text.rstrip() for strip in app.screen._compositor.render_strips())
 

@@ -91,11 +91,6 @@ _VIEWS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
 )
 
 
-def _repo_clean(svg: str) -> str:
-    """Strip trailing whitespace, as the repository's pre-commit hook does to committed SVGs."""
-    return "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
-
-
 def _svg(
     scenario: str,
     keys: Sequence[str],

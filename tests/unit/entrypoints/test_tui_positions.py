@@ -275,11 +275,6 @@ def test_the_view_type_is_the_tab_widget() -> None:
 # ----------------------------------------------------------------------
 
 
-def _repo_clean(svg: str) -> str:
-    """Strip trailing whitespace, as the repository's pre-commit hook does to committed SVGs."""
-    return "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
-
-
 _SIZES: tuple[tuple[int, int], ...] = ((80, 24), (120, 36), (160, 45), (240, 60))
 _THEMES: tuple[tuple[str, ThemeChoice], ...] = (
     ("neon", ThemeChoice.NEON),

@@ -85,11 +85,6 @@ def _styled(content: RenderableType, width: int) -> str:
     return console.export_text(styles=True)
 
 
-def _repo_clean(svg: str) -> str:
-    """Strip trailing whitespace, as the repository's pre-commit hook does to committed SVGs."""
-    return "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
-
-
 async def _drive(
     model: ConsoleReadModel,
     keys: Sequence[str],

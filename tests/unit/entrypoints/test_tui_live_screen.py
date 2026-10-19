@@ -332,11 +332,6 @@ def test_ticks_never_write_the_ledger(tmp_path: Path) -> None:
 # ----------------------------------------------------------------------
 
 
-def _repo_clean(svg: str) -> str:
-    """Strip trailing whitespace, as the repository's pre-commit hook does to committed SVGs."""
-    return "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
-
-
 def _svg(size: tuple[int, int]) -> str:
     fake = _FakeTicker(_FIRST)
 
