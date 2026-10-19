@@ -452,6 +452,12 @@ def _series(job: _Job, seed: int) -> SeriesResult:
         )
 
 
+def run_all(job: _Job, seeds: range, jobs: int) -> list[SeriesResult]:
+    """Run every series, ``jobs`` at a time, in seed order."""
+    with ProcessPoolExecutor(max_workers=jobs) as pool:
+        return list(pool.map(_series, [job] * len(seeds), seeds))
+
+
 def _parse(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--sweep", type=Path, required=True)
@@ -491,8 +497,7 @@ def main(argv: list[str] | None = None) -> int:
         f"{args.series} series, q {q:g}"
     )
     try:
-        with ProcessPoolExecutor(max_workers=args.jobs) as pool:
-            results = list(pool.map(_series, [job] * len(seeds), seeds))
+        results = run_all(job, seeds, args.jobs)
     except Exception as exc:  # any run failure is an error, never a verdict
         print(f"ERROR: run: {exc!r}", file=sys.stderr)
         return 3

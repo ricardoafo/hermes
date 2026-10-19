@@ -341,6 +341,23 @@ def test_a_sweep_outside_the_repository_exits_3(tmp_path: Path) -> None:
     assert NC.main(["--sweep", str(sweep), "--repo", str(tmp_path / "repo")]) == 3
 
 
+def test_a_series_that_crashes_exits_3_and_writes_no_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed run is an error, never a verdict: no PASS, no FAIL, no record."""
+
+    def crash(*_: object) -> list[object]:
+        raise RuntimeError("worker died")
+
+    monkeypatch.setattr(NC, "run_all", crash)
+    sweep = _sweep_file(tmp_path)
+    out = tmp_path / "record.json"
+
+    code = NC.main(["--sweep", str(sweep), "--repo", str(tmp_path), "--out", str(out)])
+
+    assert (code, out.exists()) == (3, False)
+
+
 def test_the_record_round_trips_as_json() -> None:
     """The record is plain JSON the draft can embed."""
     body = NC.record(NC.NullCheck(20, 0, 0.05), _sweep(), "text", 5)
