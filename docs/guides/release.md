@@ -2,82 +2,67 @@
 
 **Type**: Guide (living document — PR any change)
 **Owners**: Code Owner (product owner, sole reviewer)
-**Applies to**: cutting a versioned release of hermes.
-**Description**: How to cut a version with a release PR, how CD tags it on first deploy, and how to check the result.
+**Applies to**: how a version of hermes is numbered, deployed and tagged.
+**Description**: How every merge to `main` deploys with a computed version, how CD tags it, and how to check the result.
 
 ## The shape of a release
 
-A version is cut by a normal pull request, never by a workflow
-([ADR-022](../architecture/adr-022-release-versions-and-deploy-cadence.md) §2;
-`release.yml` is gone and is not coming back). Three things happen, in order:
+There is no release PR
+([ADR-030](../architecture/adr-030-every-merge-deploys-with-a-computed-version.md)). Each
+push to `main` whose CI passes goes through CD, and one merge-queue batch is one push:
 
-1. A **release PR** sets the version, compiles the changelog and goes through CI, the AI
-   review and the Code Owner's approval like any other PR.
-2. When the PR merges, `main` carries a version that has not deployed yet. With the
-   repository variable `DEPLOY_ON=version`, that is what lets CD deploy to hermes-01
-   (ADR-022 §6; only the Code Owner flips the variable).
-3. After a good deploy, CD creates the git tag `v<version>` on the shipped commit, with a
-   GitHub release whose body is that version's `CHANGELOG.md` section (ADR-022 §3). A
-   version that never deploys gets no tag.
+1. **Does it ship?** `scripts/deploy/next_version.py` compares the push with the commit of
+   the last `v` tag. When no file the release bundle carries changed (docs, tests, CI,
+   research batch and results PRs), CD runs its release checks and stops: no version, no
+   deploy.
+2. **Which version?** MINOR when a changelog fragment added or edited since that tag is
+   `added`, `changed`, `deprecated` or `removed`, or when any engine file changed (the
+   ADR-025 list); PATCH otherwise. Versions stay `0.y.z` until a champion trades real money
+   ([ADR-027](../architecture/adr-027-zero-major-versions-until-real-capital.md)).
+3. **Build and deploy.** The wheel is built with that version stamped into
+   `pyproject.toml` and `hermes/__init__.py`; the repository copy keeps the last cut
+   version. The deploy job recomputes the version under the deploy lock, so two batches
+   merged close together never get one number, and rebuilds the bundle when it moved.
+4. **Tag.** After the health gate and the smoke suite pass, CD creates `v<version>` on the
+   shipped commit, with the deploy's notes (the fragments and PRs since the previous
+   deploy) as the release body. A deploy that rolls back is not tagged, and the next push
+   reuses its number.
 
-Versions are `0.y.z` until a champion trades real money
-([ADR-027](../architecture/adr-027-zero-major-versions-until-real-capital.md)): MINOR for
-features and any engine change, PATCH for fixes that change no engine decision. The step to
-`1.0.0` is a manual cut with `--real-capital`. Merging a release PR deploys to hermes-01
-staging, so it is the Code Owner's call; agents open the PR and never merge, tag or deploy.
+The Code Owner's merge is the deploy decision. Agents never dispatch CD, tag, deploy by
+hand or merge.
 
-## Cut a release
+## The step to `1.0.0`
 
-From a fresh branch off an up-to-date `main`:
+`1.0.0` is the first release a champion trades real money with (ADR-027 §3). It is the one
+manual cut left, a release PR from a fresh branch off `main`:
 
 ```bash
-git fetch origin main
-git checkout -b release/0.2.0 origin/main
-uv run python scripts/dev/cut-release.py 0.2.0 --engine-change no
+uv run python scripts/dev/cut-release.py 1.0.0 --engine-change yes --real-capital
 ```
 
-`cut-release.py` does the mechanical part:
-
-- sets `version` in `pyproject.toml` and `__version__` in `src/hermes/__init__.py`, and
-  refreshes `uv.lock`;
-- turns `[Unreleased]` plus every `changelog.d/` fragment into a dated `[0.2.0]` section
-  under a fresh empty `[Unreleased]`, and deletes the compiled fragments;
-- writes the release PR body outside the checkout (`--body-out`, default
-  `<tmp>/hermes-release-0.2.0.md`);
-- refuses a version that is invalid, retired, or not greater than the current one, an
-  engine change on a PATCH bump, and `1.0.0` without `--real-capital`.
-
-Pass `--dry-run` first to print the new section and change nothing. `--engine-change yes`
-means the release changes a decision the engine makes (ADR-021), so the Code Owner knows
-before approving whether the deploy restarts the shadow clock. The body has an
-`Engine change:` line that `pr-body-lint.sh` rejects while it is blank.
-
-Then commit as `chore(release): 0.2.0`, push, and open the PR with the generated body:
+## Verify after a deploy
 
 ```bash
-git commit -am "chore(release): 0.2.0"
-bash scripts/dev/create-pr.sh --title "chore(release): 0.2.0" --body-file <body from cut-release>
-```
-
-## Verify after the deploy
-
-```bash
-# The tag and release exist (CD creates them after the first good deploy of the version)
-gh release view v0.2.0 --repo ricardoafo/hermes
+# The tag and release exist (CD creates them after a good deploy of a new version)
+gh release view v0.3.0 --repo ricardoafo/hermes
 
 # The running host reports the same version and the live release (run on hermes-01)
 hermes_run version
 ```
 
+The CD run's "Compute the version" step prints the decision: `ships`, the previous and new
+version, the bump, and the engine files and fragments that set it.
+
 If the deploy health gate fails, `install_release.sh` rolls back to the previous release
-and no tag is created. Fix forward with a PATCH release; do not move or delete tags.
-Deleting a tag needs the Code Owner.
+and no tag is created. Fix forward; do not move or delete tags. Deleting a tag needs the
+Code Owner.
 
 ## Related
 
-- [ADR-022](../architecture/adr-022-release-versions-and-deploy-cadence.md) — release PR, tag on deploy, deploy only versions
+- [ADR-030](../architecture/adr-030-every-merge-deploys-with-a-computed-version.md) — every merge deploys with a computed version
 - [ADR-027](../architecture/adr-027-zero-major-versions-until-real-capital.md) — `0.y.z` until real capital
-- `scripts/dev/cut-release.py` — the cut itself
-- `changelog.d/README.md` — fragments that feed the changelog
+- [ADR-022](../architecture/adr-022-release-versions-and-deploy-cadence.md) — tags on deploy, the version on screen
+- `scripts/deploy/next_version.py` — the ship decision and the bump
+- `changelog.d/README.md` — fragments, whose types set the bump
 - [`operator-usage.md`](operator-usage.md) — how auto-deploy works and where to look
 - [`environments.md`](environments.md#hermes-01-run-as-staging) — what hermes-01 is until the first champion
