@@ -145,7 +145,7 @@ class TestSection9Checks:
     def test_win_rate_boundary_passes(self, pre_reg: PreRegistration) -> None:
         """Win rate is the one ≥ row in §9: exactly 30% passes."""
         checks = section9_checks(replace(_PASSING, win_rate=0.30), pre_reg.h1_thresholds())
-        assert all(c.passed for c in checks)
+        assert [c.name for c in checks if not c.passed] == []
 
 
 # ---------------------------------------------------------------------------
