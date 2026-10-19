@@ -984,9 +984,9 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "A slow Telegram holds up the bar that sent the push",
-            gap=(
-                "issue #996: the push runs in a thread, but serve awaits it before it "
-                "finishes the bar (up to 30 s per channel on 429); inferred, untested"
+            proved_by=(
+                _U + "entrypoints/test_serve_push_budget.py"
+                "::test_the_worst_case_push_wait_stays_inside_the_live_book_window",
             ),
         ),
     ),
