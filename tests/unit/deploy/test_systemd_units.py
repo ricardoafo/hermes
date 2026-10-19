@@ -395,14 +395,14 @@ def test_tax_pack_service_runs_tax_pack_from_the_release() -> None:
 
 
 def test_tax_pack_flags_are_accepted_by_the_real_cli_parser(tmp_path: Path) -> None:
-    """The unit's flags parse; with no ledger at the server path the run stops at exit 1."""
+    """The unit's flags parse; with no ledger at the server path the run stops at exit 3."""
     argv = shlex.split(_parse("hermes-tax-pack.service")["Service"]["ExecStart"])[1:]
     argv[argv.index("--out") + 1] = str(tmp_path / "packs")
     argv[argv.index("--config-dir") + 1] = str(REPO_ROOT / "config")
     argv[argv.index("--db") + 1] = str(tmp_path / "missing.sqlite3")
     stream, err = io.StringIO(), io.StringIO()
 
-    assert cli_module.main(argv, stream=stream, err=err) == 1
+    assert cli_module.main(argv, stream=stream, err=err) == 3
     assert "no ledger at" in err.getvalue()
 
 

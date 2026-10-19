@@ -58,11 +58,9 @@ from hermes.domain.reconciliation import ReconciliationMonth, ReconciliationRepo
 from hermes.domain.value_objects.cents import to_cents
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.strategy_id import StrategyId
-from hermes.entrypoints import serve as serve_module
 from hermes.entrypoints._anomaly_record import record_anomaly
+from hermes.entrypoints._cli import add_config_dir_arg, add_db_arg, load_config_or_exit
 from hermes.entrypoints._streams import resolve_err
-from hermes.infrastructure.config.errors import ConfigError
-from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
 from hermes.infrastructure.time import to_madrid
 from hermes.ports.notifier import NotifierPort
 from hermes.ports.reconciliation import BalanceReadPort
@@ -144,11 +142,9 @@ def main(
         return request
     parsed, month, tolerance = request
 
-    try:
-        config = load_config(parsed.config_dir)
-    except ConfigError as exc:
-        err.write(f"ERROR: config load failed: {exc}\n")
-        return 3
+    config = load_config_or_exit(parsed.config_dir, err)
+    if isinstance(config, int):
+        return config
     # A disabled entry (v2 waiting for its shadow) has funded nothing; seeding
     # it would add its capital to the book the ledger is checked against.
     seeds = [
@@ -243,8 +239,8 @@ def _parse(
     """Parse argv; return the request, or the exit code to stop with."""
     parser = argparse.ArgumentParser(prog="hermes reconcile", add_help=False)
     parser.add_argument("month", nargs="?", default=None)
-    parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
-    parser.add_argument("--db", type=Path, default=serve_module.DEFAULT_DB_PATH)
+    add_config_dir_arg(parser)
+    add_db_arg(parser)
     parser.add_argument("--tolerance", default=str(DEFAULT_TOLERANCE))
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--notify", action="store_true")

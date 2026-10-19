@@ -90,7 +90,7 @@ def test_missing_ledger_exits_three(tmp_path: Path) -> None:
     missing = tmp_path / "nope.sqlite3"
     err = io.StringIO()
     assert _run(["verify", "--db", str(missing)], err) == (3, "")
-    assert err.getvalue() == f"ERROR: no ledger at {missing}.\n"
+    assert err.getvalue() == f"ERROR: no ledger at {missing}\n"
 
 
 def test_non_sqlite_file_exits_three(tmp_path: Path) -> None:
