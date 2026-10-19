@@ -17,7 +17,8 @@ Invariants under test:
 
 from datetime import timedelta
 
-from hermes.adapters.notifier import slack_adapter, telegram_adapter
+from hermes.adapters._shared import telegram_http
+from hermes.adapters.notifier import slack_adapter
 from hermes.application.execution.shadow import LIVE_BOOK_WINDOW
 from hermes.infrastructure.config.loader import load_config
 from tests.support.paths import REPO_ROOT
@@ -35,7 +36,7 @@ def test_the_worst_case_push_wait_stays_inside_the_live_book_window() -> None:
     """
     pairs = load_config(REPO_ROOT / "config", env={}).market_data.pairs
     per_push = timedelta(
-        seconds=telegram_adapter._MAX_SEND_SEC
+        seconds=telegram_http.MAX_CALL_SEC
         + _SLACK_POSTS_PER_SIGNAL * slack_adapter._DEFAULT_TIMEOUT_SEC
     )
 

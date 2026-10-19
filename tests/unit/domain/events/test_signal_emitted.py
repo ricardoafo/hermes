@@ -14,6 +14,7 @@ Reference: 308-signal-event-portfolio-state change.md D-1, D-2, R-1.
 from __future__ import annotations
 
 import dataclasses
+import re
 from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -194,7 +195,7 @@ class TestSignalEmittedPayloadHash:
 
     def test_payload_sha256_is_a_64_char_hex_digest(self) -> None:
         """The hash is a BLAKE2b-256 hex digest, not the empty string a skipped base call leaves."""
-        assert len(bytes.fromhex(_event().payload_sha256)) == 32
+        assert re.fullmatch(r"[0-9a-f]{64}", _event().payload_sha256)
 
     def test_changing_a_field_changes_the_hash(self) -> None:
         """The hash covers the signal fields: a different stop gives a different digest."""

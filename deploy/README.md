@@ -92,7 +92,7 @@ Cross-references:
 - `systemd/hermes-brief.timer`: Fires the brief daily at 07:15 Europe/Madrid. Status: installed by `vps-bootstrap`; left off until enabled by hand.
 - `systemd/hermes-tax-pack.service`: Refreshes the tax filing packs in `/var/lib/hermes-tax-pack` (`hermes tax-pack`, ledger read-only). Status: installed by `vps-bootstrap`.
 - `systemd/hermes-tax-pack.timer`: Fires the refresh daily at 07:30 Europe/Madrid. Status: installed by `vps-bootstrap`; left off until enabled by hand.
-- `systemd/hermes-notify-failure@.service`: Started by `hermes.service`'s `OnFailure=`; sends one Telegram message. Status: installed by `vps-bootstrap`.
+- `systemd/hermes-notify-failure@.service`: Started by the `OnFailure=` of `hermes.service`, `hermes-bot`, `hermes-backup`, `hermes-brief`, `hermes-daily` and `hermes-tax-pack`; sends one Telegram message. Status: installed by `vps-bootstrap`.
 - `systemd/hermes-bot.service`: Read-only Telegram bot (`hermes bot`, ADR-015); reads only `/etc/hermes/env.bot`. Status: `vps-bootstrap` enables it when the Telegram secrets are set.
 - `systemd/hermes-lab-memory.service`: The staging lab's memory watch: runs `hermes-lab-memory.sh` as `hermes-staging`, reading `/etc/hermes/env.staging` for the Telegram chat. Status: installed by `vps-bootstrap`; staging only.
 - `systemd/hermes-lab-memory.timer`: Fires the watch every minute. Status: installed by `vps-bootstrap`; left off until enabled on hermes-01 with `sudo systemctl enable --now hermes-lab-memory.timer`.
@@ -158,12 +158,18 @@ ssh hermes-01 'id hermes; stat -c "%a %U:%G" /etc/hermes/env.production; systemc
 
 ### Alerting when hermes is down
 
+Every unit carries the same systemd sandbox (no capabilities, kernel and
+device protections, a `@system-service` syscall filter, `UMask=0027`);
+`tests/unit/deploy/test_systemd_units.py` keeps the set identical (#1192).
+The staging lab's units, `hermes-health` (healthchecks.io already alerts)
+and `hermes-archive-check` (it alerts on a mismatch itself) never page.
+
 Two independent paths reach the operator on Telegram, and a third posts
 same-day notices to Slack:
 
 | Path                  | Fires when                                                                                      | Needs                                                     |
 | --------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| `OnFailure=` notifier | `hermes.service` enters `failed`: start limit tripped (5 starts in 10 min) or exit code 2 or 3  | `HERMES_TELEGRAM__BOT_TOKEN`, `HERMES_TELEGRAM__CHAT_ID`  |
+| `OnFailure=` notifier | `hermes.service` or a prod-side unit (bot, backup, brief, daily, tax-pack) enters `failed`      | `HERMES_TELEGRAM__BOT_TOKEN`, `HERMES_TELEGRAM__CHAT_ID`  |
 | healthchecks.io ping  | the ping stops (service stopped, crash-looping, VPS down) or `hermes status` says late or down  | `HERMES_HEALTHCHECKS__PING_URL` and the integration below |
 | Slack crash notice    | any stop that is not clean (crash, signal, timeout), including the ones `Restart=` recovers     | `HERMES_SLACK__BOT_TOKEN` and `__DEFAULT_CHANNEL`         |
 

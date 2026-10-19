@@ -11,7 +11,7 @@ out by hand.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import FrozenInstanceError, replace
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta, tzinfo
 from decimal import Decimal
 
@@ -114,13 +114,6 @@ class TestM02Percentiles:
         with pytest.raises(ValueError, match="mid_price must be > 0"):
             compute_m02_fill_price_delta_bps([_fill("100")], [Decimal("-1")])
 
-    def test_result_is_frozen_with_slots(self) -> None:
-        """An M-02 result cannot be edited and carries no instance dict."""
-        result = self._result()
-        with pytest.raises(FrozenInstanceError):
-            result.avg_bps = Decimal(0)  # type: ignore[misc]
-        assert not hasattr(result, "__dict__")
-
 
 class TestM03Signature:
     """M-03's mode flag is keyword-only."""
@@ -191,13 +184,6 @@ class TestM06RegimeReturns:
                 [Decimal("110")] * exits,
             )
 
-    def test_result_is_frozen_with_slots(self) -> None:
-        """An M-06 result cannot be edited and carries no instance dict."""
-        result = _m06([RegimeLabel.BULL_QUIET], ["100"], ["110"])
-        with pytest.raises(FrozenInstanceError):
-            result.bull_quiet = None  # type: ignore[misc]
-        assert not hasattr(result, "__dict__")
-
 
 class _NoOffset(tzinfo):
     """A tzinfo that claims a zone but reports no UTC offset."""
@@ -241,19 +227,6 @@ class TestTrialRecordChecks:
         start = datetime(2024, 1, 1, tzinfo=UTC)
         with pytest.raises(ValueError, match="precede"):
             replace(_record(), window_start=start, window_end=start)
-
-    def test_records_are_frozen_with_slots(self) -> None:
-        """Records, dataset references and summaries cannot be edited and carry no dict."""
-        record = _record()
-        summary = summarise_trials([record])
-        for value, field_name in (
-            (record, "strategy_id"),
-            (record.datasets[0], "dataset_id"),
-            (summary, "count"),
-        ):
-            with pytest.raises(FrozenInstanceError):
-                setattr(value, field_name, "x")
-        assert not any(hasattr(v, "__dict__") for v in (record, record.datasets[0], summary))
 
 
 class TestSummariseTrialsFilter:

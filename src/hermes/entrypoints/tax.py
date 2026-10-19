@@ -7,7 +7,7 @@ says no real tax is due (ADR-016 decision 10). Profile values are never logged
 (decision 12); only figures derived from them are printed, to this terminal.
 
 Exit codes: 0 printed (an estimate or a pending notice), 1 ledger failure,
-2 usage, 3 config error.
+2 usage, 3 config error or no ledger.
 
 Reference: change ``tax-estimates``, ADR-016.
 """
@@ -37,10 +37,14 @@ from hermes.domain.tax.netting import CarriedLoss, TaxpayerYear
 from hermes.domain.tax.scale import SavingsBand, SavingsScale
 from hermes.domain.tax.year_position import tax_year_of
 from hermes.domain.value_objects.cents import to_cents
-from hermes.entrypoints import serve as serve_module
+from hermes.entrypoints._cli import (
+    EXIT_FAILURE,
+    add_config_dir_arg,
+    add_db_arg,
+    config_or_exit,
+    require_ledger,
+)
 from hermes.entrypoints._streams import resolve_err
-from hermes.infrastructure.config.errors import ConfigError
-from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR
 from hermes.infrastructure.config.tax import SavingsScale as SavingsScaleConfig
 from hermes.infrastructure.config.tax import (
     TaxpayerProfile,
@@ -60,7 +64,7 @@ _USAGE: Final[str] = (
     "Prints the estimated tax on hermes gains for one tax year (Madrid calendar\n"
     "year, default: this year). --price gives the current EUR price of an open\n"
     "position for 'tax if sold now'. Figures are estimates, never a filing.\n"
-    "Exit codes: 0 printed, 1 ledger failure, 2 usage, 3 config.\n"
+    "Exit codes: 0 printed, 1 ledger failure, 2 usage, 3 config or no ledger.\n"
 )
 
 # Hermes runs shadow only in MVP1: no live exchange is wired, so no real tax is due.
@@ -142,24 +146,30 @@ def main(
 
     as_of = now()
     year: int = args.year if args.year is not None else tax_year_of(as_of)
-    try:
-        scales_config = load_tax_scales(args.config_dir)
-        profile = load_taxpayer_profile(
-            resolve_taxpayer_profile_path(None if env is None else dict(env))
-        )
-    except ConfigError as exc:
-        err.write(f"ERROR: config load failed: {exc}\n")
-        return 3
+    configs = config_or_exit(
+        lambda: (
+            load_tax_scales(args.config_dir),
+            load_taxpayer_profile(
+                resolve_taxpayer_profile_path(None if env is None else dict(env))
+            ),
+        ),
+        err,
+    )
+    if isinstance(configs, int):
+        return configs
+    scales_config, profile = configs
 
     db: Path = args.db
-    if not db.is_file():
-        err.write(f"ERROR: ledger not found at {db}\n")
-        return 1
+    missing = require_ledger(db, err)
+    if missing is not None:
+        return missing
+    # A read-only ledger still in the rollback journal refuses the WAL switch:
+    # that is a ledger failure (1), not a missing ledger (#879).
     try:
         connection = open_ledger(db)
     except sqlite3.Error as exc:
         err.write(f"ERROR: cannot read ledger {db}: {exc}\n")
-        return 1
+        return EXIT_FAILURE
     try:
         result = TaxService(SqliteLedger(connection)).estimate(
             year=year,
@@ -174,7 +184,7 @@ def main(
         )
     except (LedgerError, sqlite3.Error) as exc:
         err.write(f"ERROR: cannot read ledger {db}: {exc}\n")
-        return 1
+        return EXIT_FAILURE
     finally:
         connection.close()
 
@@ -193,8 +203,8 @@ def _parse(
     parser.add_argument("--year", type=int, default=None)
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--price", action="append", default=[])
-    parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
-    parser.add_argument("--db", type=Path, default=serve_module.DEFAULT_DB_PATH)
+    add_config_dir_arg(parser)
+    add_db_arg(parser)
     parser.add_argument("-h", "--help", action="store_true")
     try:
         args = parser.parse_args(argv)

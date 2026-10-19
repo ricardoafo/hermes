@@ -21,10 +21,11 @@ from datetime import datetime
 from typing import Protocol, runtime_checkable
 
 from hermes.domain.market_data.kline import Kline, KlineInterval
+from hermes.domain.market_data.orderbook import Orderbook
 from hermes.domain.market_data.ticker import Ticker
 from hermes.domain.value_objects.pair import Pair
 
-__all__ = ["LiveBarsPort", "LiveTickerPort"]
+__all__ = ["LiveBarsPort", "LiveBookPort", "LiveTickerPort"]
 
 
 @runtime_checkable
@@ -61,6 +62,24 @@ class LiveBarsPort(Protocol):
 
         Blocking: the console calls it from a worker thread, never the UI thread.
         The newest candle may still be forming.
+
+        Raises:
+            Exception: Any failure; the caller turns it into a failed outcome.
+        """
+        ...
+
+
+@runtime_checkable
+class LiveBookPort(Protocol):
+    """Read-only order book of a pair, for the console's book health and latency.
+
+    ``KrakenPublicAdapter.get_orderbook`` satisfies it as it is (issue #1292).
+    """
+
+    def get_orderbook(self, pair: Pair, *, depth: int = 10) -> Orderbook:
+        """Return the top ``depth`` levels per side of ``pair``'s book.
+
+        Blocking: the console calls it from a worker thread, never the UI thread.
 
         Raises:
             Exception: Any failure; the caller turns it into a failed outcome.

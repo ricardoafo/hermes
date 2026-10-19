@@ -94,13 +94,13 @@ def test_pending_eur_values_exit_4(tmp_path: Path) -> None:
     assert (code, "1 sale(s) with pending EUR values" in out) == (tax_filing.EXIT_INCOMPLETE, True)
 
 
-def test_missing_ledger_exits_1_and_creates_nothing(tmp_path: Path) -> None:
-    """Invariant: no ledger file is an error, and the command never creates one."""
+def test_missing_ledger_exits_3_and_creates_nothing(tmp_path: Path) -> None:
+    """Invariant: no ledger file exits 3 (#1187), and the command never creates one."""
     missing = tmp_path / "absent.sqlite3"
     err = io.StringIO()
     code, out = _run(["--year", "2026", "--db", str(missing)], tmp_path, err)
     assert (code, out, err.getvalue(), missing.exists()) == (
-        1,
+        3,
         "",
         f"ERROR: no ledger at {missing}\n",
         False,
