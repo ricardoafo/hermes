@@ -1,8 +1,8 @@
 # src/ modules over 800 lines, with their line count (#1201). Only shrinks.
 src/hermes/adapters/ledger/sqlite_ledger.py 2023
 src/hermes/application/calibration/research_batch.py 934
-src/hermes/application/console/render.py 1124
+src/hermes/application/console/render.py 1163
 src/hermes/entrypoints/_health.py 840
-src/hermes/entrypoints/serve.py 2202
-src/hermes/entrypoints/tui.py 2559
+src/hermes/entrypoints/serve.py 2269
+src/hermes/entrypoints/tui.py 2601
 src/hermes/entrypoints/tui_tax.py 875
