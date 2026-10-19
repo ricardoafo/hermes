@@ -83,13 +83,14 @@ whose "no ledger" exit code changes from 1 to 3.
 
 | Command | Case | Before | After |
 | --- | --- | --- | --- |
-| `hermes tax` | no ledger, ledger SQLite cannot open | 1 | 3 |
+| `hermes tax` | no ledger | 1 | 3 |
 | `hermes tax-filing` | no ledger | 1 | 3 |
 | `hermes tax-pack` | no ledger | 1 | 3 |
 | `hermes fx backfill` | no ledger | 1 (after creating an empty file) | 3, nothing created |
 
-Read failures after the ledger opened stay 1 ("ledger read failure") in all
-four. Every other command keeps its codes; `archive-check` now checks the
+Read failures after the ledger opened stay 1 in all four. `hermes tax`
+keeps 1 and its own wording when SQLite cannot open the ledger (a read-only
+ledger refusing the WAL switch, #879), as its test pins. Every other command keeps its codes; `archive-check` now checks the
 ledger before downloading the archive, with the same exit 3 and a failed
 dead-man ping as before.
 

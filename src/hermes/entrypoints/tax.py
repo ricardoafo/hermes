@@ -6,8 +6,8 @@ as text or JSON. Every output is labelled an estimate, and a shadow estimate
 says no real tax is due (ADR-016 decision 10). Profile values are never logged
 (decision 12); only figures derived from them are printed, to this terminal.
 
-Exit codes: 0 printed (an estimate or a pending notice), 1 ledger read failure,
-2 usage, 3 config error, no ledger or unopenable ledger.
+Exit codes: 0 printed (an estimate or a pending notice), 1 ledger failure,
+2 usage, 3 config error or no ledger.
 
 Reference: change ``tax-estimates``, ADR-016.
 """
@@ -23,6 +23,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Final, TextIO
 
+from hermes.adapters.ledger.connection import open_ledger
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.application.console.views import Tax, TaxEstimate, TaxPending
 from hermes.application.tax.estimate import (
@@ -41,7 +42,7 @@ from hermes.entrypoints._cli import (
     add_config_dir_arg,
     add_db_arg,
     config_or_exit,
-    open_ledger_or_exit,
+    require_ledger,
 )
 from hermes.entrypoints._streams import resolve_err
 from hermes.infrastructure.config.tax import SavingsScale as SavingsScaleConfig
@@ -63,7 +64,7 @@ _USAGE: Final[str] = (
     "Prints the estimated tax on hermes gains for one tax year (Madrid calendar\n"
     "year, default: this year). --price gives the current EUR price of an open\n"
     "position for 'tax if sold now'. Figures are estimates, never a filing.\n"
-    "Exit codes: 0 printed, 1 ledger read failure, 2 usage, 3 config or no ledger.\n"
+    "Exit codes: 0 printed, 1 ledger failure, 2 usage, 3 config or no ledger.\n"
 )
 
 # Hermes runs shadow only in MVP1: no live exchange is wired, so no real tax is due.
@@ -159,9 +160,16 @@ def main(
     scales_config, profile = configs
 
     db: Path = args.db
-    connection = open_ledger_or_exit(db, err, read_only=False)
-    if isinstance(connection, int):
-        return connection
+    missing = require_ledger(db, err)
+    if missing is not None:
+        return missing
+    # A read-only ledger still in the rollback journal refuses the WAL switch:
+    # that is a ledger failure (1), not a missing ledger (#879).
+    try:
+        connection = open_ledger(db)
+    except sqlite3.Error as exc:
+        err.write(f"ERROR: cannot read ledger {db}: {exc}\n")
+        return EXIT_FAILURE
     try:
         result = TaxService(SqliteLedger(connection)).estimate(
             year=year,
