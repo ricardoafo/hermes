@@ -7,4 +7,12 @@
 # Regenerate on prod's machine after every rotation, and commit the output:
 #   hermes config fingerprint --env-file /etc/hermes/env.production
 
-fingerprints: {}
+fingerprints:
+  HERMES_TELEGRAM__BOT_TOKEN:
+  - 612dc9cb3c327ef6bc6ff9b60180c9d4c72e7b832d27d57a3f8a203c5ca5eb57
+  HERMES_SLACK__BOT_TOKEN:
+  - 3993029bd1eb73f548b3cdb731000c08f6a729fde2b4b5edbf4a71bb2249ba22
+  HERMES_HEALTHCHECKS__PING_URL:
+  - 3adbb0ccaf0782bc33d64d6179e4c9bbdac0d115ea08decea0844ee8e4ac2f35
+  HERMES_SENTRY__DSN:
+  - d291bc93a0d39a590708a9c796c00d935aef0c19d7ae9857d2ef795033198cda
