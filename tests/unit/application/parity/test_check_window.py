@@ -19,11 +19,9 @@ import pytest
 
 from hermes.application.parity.check import ParityDataError, WindowReplay, replay_window
 from hermes.domain.events.trade_executed import TradeSide
-from hermes.domain.fees.fee_schedule import FeeSchedule
 from hermes.domain.market_data.bar import Bar
-from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.price import Price
-from tests.support.fill_kernel import BTC_USDT, fees, kernel, seed
+from tests.support.fill_kernel import BTC_USDT, fees_at, kernel, seed
 from tests.support.parity import (
     D1,
     DAY_END,
@@ -40,11 +38,6 @@ from tests.support.parity import (
 _FIRST = DAY_START + timedelta(hours=4)
 
 
-def _fees_at(at: datetime, pair: Pair) -> FeeSchedule:
-    _ = at
-    return fees(pair)
-
-
 def _replay(
     source: FakeSource, entries: frozenset[datetime], *, min_warmup: int = 1
 ) -> WindowReplay:
@@ -59,7 +52,7 @@ def _replay(
         seed=seed(),
         make_strategy=lambda: ScriptedStrategy(entries),
         make_kernel=kernel,
-        fees_at=_fees_at,
+        fees_at=fees_at,
     )
 
 

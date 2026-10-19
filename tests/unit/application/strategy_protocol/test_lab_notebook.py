@@ -327,7 +327,7 @@ class TestVerifyFile:
 # Every experiment's notebook: no entry goes unhashed (issue #1181)
 # ---------------------------------------------------------------------------
 
-_EXPERIMENTS = Path(__file__).resolve().parents[4] / "docs/experiments"
+_EXPERIMENTS = REPO_ROOT / "docs/experiments"
 # The signing entry was written by hand before the writer hashed entries, so it
 # has no hash to check. Shrink only: a new entry never joins this set.
 _UNHASHED_BEFORE_THE_WRITER = frozenset(

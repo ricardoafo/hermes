@@ -22,9 +22,9 @@ from hypothesis import strategies as st
 
 from hermes.release_version import to_package_version, to_semver
 from tests.support.accepted import assert_accepted
+from tests.support.paths import REPO_ROOT
 
-_ROOT = Path(__file__).resolve().parents[3]
-_SCRIPT_PATH = _ROOT / "scripts" / "dev" / "cut-release.py"
+_SCRIPT_PATH = REPO_ROOT / "scripts" / "dev" / "cut-release.py"
 _spec = importlib.util.spec_from_file_location("cut_release", _SCRIPT_PATH)
 assert _spec is not None and _spec.loader is not None
 cut_release = importlib.util.module_from_spec(_spec)
@@ -150,8 +150,8 @@ def test_mismatched_version_files_are_refused() -> None:
 def test_the_repository_version_files_agree() -> None:
     """The checked-in pyproject.toml and src/hermes/__init__.py declare one version."""
     version = cut_release.read_current_version(
-        (_ROOT / "pyproject.toml").read_text(encoding="utf-8"),
-        (_ROOT / "src" / "hermes" / "__init__.py").read_text(encoding="utf-8"),
+        (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"),
+        (REPO_ROOT / "src" / "hermes" / "__init__.py").read_text(encoding="utf-8"),
     )
 
     assert version == to_package_version(to_semver(version))
@@ -198,9 +198,9 @@ def test_a_second_cut_keeps_the_earlier_release_section() -> None:
 
 def test_compiling_the_real_changelog_loses_no_entry() -> None:
     """A dry cut of this repository keeps every bullet of [Unreleased] plus one per fragment."""
-    changelog = (_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     fragments = cut_release.aggregate_changelog.collect_fragments(
-        _ROOT / "changelog.d", resolve_pr=lambda _: None
+        REPO_ROOT / "changelog.d", resolve_pr=lambda _: None
     )
     _, legacy, _ = cut_release._split_unreleased(changelog)
 

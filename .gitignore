@@ -71,3 +71,9 @@ taxpayer.yaml
 # Advisory lock files next to the ledger and the hash-chained logs (#855)
 *.serve.lock
 *.jsonl.lock
+
+# PR body scratchpads belong outside the tree; at the root they fail
+# markdownlint MD041 (a PR body opens with `## Summary`, not an H1).
+/pr-body-*.md
+/.pr-body-*.md
+/*.pr-body.md
