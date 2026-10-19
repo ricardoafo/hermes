@@ -85,7 +85,6 @@ dev = [
   "pip-audit>=2.7,<3",
   "cyclonedx-python-lib>=11.12.0,<12",
   "pre-commit>=4.6.2,<5",
-  "radon>=6.0,<7",
   "vulture>=2.13,<3",
   "types-pyyaml>=6.0.12.20260906,<7",
   "types-defusedxml>=0.7.0.20260504,<1",
@@ -109,13 +108,16 @@ line-length = 100
 extend-exclude = ["src/hermes/**/__init__.py"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "PL", "RUF", "S", "PTH", "ERA", "PGH", "D", "FURB", "PERF", "DTZ"]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "PL", "RUF", "S", "PTH", "ERA", "PGH", "D", "FURB", "PERF", "DTZ", "C90"]
 ignore = [
   "PLR0913",  # arg count — hexagonal use cases take many ports
   # Decimal("100") over Decimal(100): every money literal stays a string, so a
   # fractional amount never slips in as a float-built Decimal next to it.
   "FURB157",
 ]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = [
@@ -132,6 +134,10 @@ ignore = [
 # so every test names the invariant it protects.
 "src/**/*.py" = ["D"]
 "scripts/**/*.py" = ["D", "PLR2004", "PLR0911", "PLR0912", "PLR0915", "PLR0917", "S310"]
+# Complexity baseline (#1201): these predate C901 and only shrink; no new entry.
+"scripts/backtest/assemble_results.py" = ["C901"]
+"scripts/backtest/run_portfolio_backtest.py" = ["C901"]
+"scripts/data/ingest_defillama_peg.py" = ["C901"]
 # Domain errors intentionally omit the "Error" suffix — CurrencyMismatch and
 # InvalidLot read more naturally as domain concepts than CurrencyMismatchError.
 # The layer + hierarchy (DomainError base) make the exception nature clear.
@@ -381,6 +387,7 @@ source_modules = [
 ]
 forbidden_modules = [
   "hermes.application.console.live",
+  "hermes.application.console.live_context",
   "hermes.ports.live_prices",
   "hermes.entrypoints.tui_live",
 ]

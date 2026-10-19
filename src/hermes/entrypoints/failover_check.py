@@ -38,6 +38,7 @@ from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
 from hermes.infrastructure.config.root import HermesConfig
 from hermes.infrastructure.time import now_utc
+from hermes.ports.klines import KlinesFetcherPort
 
 __all__ = ["FetchKlines", "Venues", "main"]
 
@@ -255,8 +256,9 @@ def _live_venues(config: HermesConfig) -> tuple[Venues, Callable[[], None]]:
         binance.close()
         kraken.close()
 
+    primary: KlinesFetcherPort = binance
     venues = Venues(
-        primary=lambda p, i, s, u: binance.fetch(pair=p, interval=i, since=s, until=u),
+        primary=lambda p, i, s, u: primary.fetch(pair=p, interval=i, since=s, until=u),
         backup=lambda p, i, s, u: kraken.fetch_klines(pair=p, interval=i, since=s, until=u),
     )
     return venues, close

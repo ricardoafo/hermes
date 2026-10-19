@@ -31,10 +31,6 @@ _PARKED: dict[str, str] = {
     "hermes.ports.exchange": "the order port the MVP2 adapters implement",
     "hermes.adapters.market_data.binance_live_ws": "issue #1181: live L2 stream, Code Owner call",
     "hermes.ports.market_data": "issue #1181: the port binance_live_ws implements",
-    "hermes.ports.dataset_manifest": "issue #1181: port with no consumer, to judge",
-    "hermes.ports.fees": "issue #1181: port with no consumer, to judge",
-    "hermes.ports.klines": "issue #1181: port with no consumer, to judge",
-    "hermes.ports.stop_history": "issue #1181: port with no consumer, to judge",
 }
 
 

@@ -1,0 +1,11 @@
+# File pairs sharing a 10-line block (#1201). This list only shrinks.
+src/hermes/adapters/console/fixture_read_model.py <-> src/hermes/application/console/__init__.py
+src/hermes/adapters/exchanges/binance_klines.py <-> src/hermes/adapters/exchanges/kraken_public.py
+src/hermes/adapters/ledger/sqlite_ledger.py <-> src/hermes/ports/ledger.py
+src/hermes/adapters/notifier/slack_adapter.py <-> src/hermes/adapters/notifier/telegram_adapter.py
+src/hermes/application/calibration/backtest_funnel.py <-> src/hermes/application/console/lab.py
+src/hermes/application/console/live.py <-> src/hermes/application/console/live_context.py
+src/hermes/application/status/__init__.py <-> src/hermes/application/status/report.py
+src/hermes/domain/risk/depeg_halt.py <-> src/hermes/domain/risk/depeg_warn.py
+src/hermes/entrypoints/tax_filing.py <-> src/hermes/entrypoints/tax_pack.py
+src/hermes/infrastructure/config/loader.py <-> src/hermes/infrastructure/config/root.py

@@ -47,12 +47,14 @@ from hermes.application.console.live import (
     LiveStatus,
     LiveTotal,
 )
+from hermes.application.console.live_context import BarContext, DayContext, FormingBar
 from hermes.application.console.render import RenderContext, day_clock, range_label
 from hermes.entrypoints.tui_charts import braille_spark
 from hermes.entrypoints.tui_theme import LIVE_GLYPH, Tokens
 
 __all__ = [
     "LiveLook",
+    "context_lines",
     "eur_rate",
     "live_detail_line",
     "live_portfolio_lines",
@@ -73,6 +75,9 @@ _MIN_CHART: Final = 4
 _MAX_CHART: Final = 24
 _WINDOW: Final = "15m"
 _NONE: Final = "…"
+_CONTEXT_INDENT: Final = " " * _COIN
+_DIVIDER: Final = Text(" │ ")
+_VOLUME_WHOLE_FROM: Final = Decimal(100)
 
 
 @dataclass(frozen=True, slots=True)
@@ -257,6 +262,8 @@ def market_rows(
     *,
     width: int,
     rate: Decimal | None,
+    contexts: Mapping[str, BarContext] | None = None,
+    now: datetime | None = None,
 ) -> RenderableType:
     """Return the Market panel: the live tag, then per coin price, change, chart, next check.
 
@@ -266,6 +273,9 @@ def market_rows(
         look: The live layer's look.
         width: Cells available; from 64 the timeframe and the result show too.
         rate: EUR per quote unit for the prices, or ``None`` to show USDT.
+        contexts: Bar context per coin; with it, a dim forming 4h bar line and a
+            24 h line follow each coin's first row.
+        now: The console clock, for the time left in the forming bar.
 
     Returns:
         The tag line, a header and one row per stream; under 64 cells, where
@@ -279,6 +289,11 @@ def market_rows(
     header.stylize(tokens.muted)
     lines: list[RenderableType] = [look.tag(), header]
     pairs: Sequence[WatchedPair | str] = watch or [coin for coin in LIVE_COINS if coin in quotes]
+    extra: dict[str, list[Text]] = {}
+    for coin, quote in quotes.items():
+        context = None if contexts is None else contexts.get(coin)
+        if context is not None and quote.failed_at is None and now is not None:
+            extra[coin] = context_lines(context, quote.price, look, width=width, rate=rate, now=now)
     for pair in pairs:
         coin = pair if isinstance(pair, str) else pair.coin
         line = Text(f"{coin:<{_COIN}}", style="bold")
@@ -287,6 +302,7 @@ def market_rows(
         line.append_text(_quote_cells(quotes.get(coin), look, columns, rate))
         if isinstance(pair, str):
             lines.append(line)
+            lines.extend(extra.pop(coin, []))
             continue
         if columns.full:
             line.append_text(_spread_cell(quotes.get(coin), look))
@@ -294,7 +310,111 @@ def market_rows(
             line.append(f"{result:<{_RESULT}}", style="bold" if pair.signal else tokens.dim)
         line.append(day_clock(look.ctx, pair.next_check_at))
         lines.append(line)
+        lines.extend(extra.pop(coin, []))
     return Group(*lines)
+
+
+def _plain_price(price: Decimal, rate: Decimal | None) -> str:
+    return fmt_price(price * rate if rate is not None else price)
+
+
+def _volume(volume: Decimal, coin: str) -> str:
+    """Return a traded volume, whole units from 100, one decimal below."""
+    shown = f"{volume:,.0f}" if volume >= _VOLUME_WHOLE_FROM else f"{volume:,.1f}"
+    return f"{shown} {coin}"
+
+
+def _left(bar: FormingBar, now: datetime, *, spaced: bool) -> str:
+    """Return the time left in the bar, ``1h 40m`` (``1h40m`` when ``spaced`` is false)."""
+    hours, minutes = divmod(int(bar.left(now).total_seconds()) // 60, 60)
+    if not hours:
+        return f"{minutes}m"
+    return f"{hours}h {minutes:02d}m" if spaced else f"{hours}h{minutes:02d}m"
+
+
+def _forming_options(
+    bar: FormingBar, look: LiveLook, rate: Decimal | None, now: datetime
+) -> list[Text]:
+    """Return the forming-bar line from the fullest form to the shortest.
+
+    ``forming  O 53,020  H 53,240  L 52,980  last 53,115 · 2h 11m left``, then
+    without the label, the live price (the price column shows it) and the double
+    spaces, then the range alone.
+    """
+    o, h, low, last = (_plain_price(v, rate) for v in (bar.open, bar.high, bar.low, bar.last))
+    forms = (
+        f"forming  O {o}  H {h}  L {low}  last {last} · {_left(bar, now, spaced=True)} left",
+        f"O {o} H {h} L {low} · {_left(bar, now, spaced=False)} left",
+        f"O {o} H {h} L {low}",
+    )
+    return [Text(form, style=look.tokens.dim) for form in forms]
+
+
+def _day_options(coin: str, day: DayContext, look: LiveLook, rate: Decimal | None) -> list[Text]:
+    """Return the 24 h line from the fullest form to the shortest.
+
+    ``24h ▲ +1.20%  H 53,900  L 52,400  vol 1,240 BTC``, then without the volume
+    and the double spaces, then the change alone.
+    """
+    tokens = look.tokens
+    change = fmt_pct(day.change_pct)
+    high, low = _plain_price(day.high, rate), _plain_price(day.low, rate)
+    tails = (f"  H {high}  L {low}  vol {_volume(day.volume, coin)}", f" H {high} L {low}", "")
+    options = []
+    for tail in tails:
+        out = Text(style=tokens.dim)
+        out.append("24h ")
+        out.append(change, style=_signed_style(look, day.change_pct))
+        out.append(tail)
+        options.append(out)
+    return options
+
+
+def _fitting(options: Sequence[Text], room: int) -> Text | None:
+    """Return the first (fullest) option that fits ``room`` cells."""
+    return next((option for option in options if option.cell_len <= room), None)
+
+
+def context_lines(
+    context: BarContext,
+    last: Decimal,
+    look: LiveLook,
+    *,
+    width: int,
+    rate: Decimal | None,
+    now: datetime,
+) -> list[Text]:
+    """Return the dim lines under a coin: the forming 4h bar and the 24 h context.
+
+    Each part uses its fullest form that fits the panel, so a narrow panel drops
+    the label, the live price and the volume before it drops a part.
+
+    Args:
+        context: The coin's bar context from the hourly bars.
+        last: The coin's live price.
+        look: The live layer's look.
+        width: Cells available to the panel.
+        rate: EUR per quote unit for the prices, or ``None`` to show USDT.
+        now: The console clock.
+
+    Returns:
+        One line when the full forms fit side by side, else a line per part;
+        a part that is missing or does not fit in any form is left out.
+    """
+    bar = context.forming(last, now)
+    day = context.day(last)
+    room = width - len(_CONTEXT_INDENT)
+    forming_options = [] if bar is None else _forming_options(bar, look, rate, now)
+    day_options = [] if day is None else _day_options(context.coin, day, look, rate)
+    if look.paused:
+        for option in (*forming_options, *day_options):
+            option.stylize(look.tokens.dim)
+    if forming_options and day_options:
+        full, full_day = forming_options[0], day_options[0]
+        if full.cell_len + _DIVIDER.cell_len + full_day.cell_len <= room:
+            return [Text.assemble(_CONTEXT_INDENT, full, _DIVIDER, full_day)]
+    parts = (_fitting(forming_options, room), _fitting(day_options, room))
+    return [Text.assemble(_CONTEXT_INDENT, part) for part in parts if part is not None]
 
 
 def _soonest_per_coin(watch: Sequence[WatchedPair]) -> list[WatchedPair]:
