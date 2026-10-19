@@ -9,6 +9,8 @@ Protects what CD ships and what version it ships as:
   unmerged tag or a retired ``-shadow.N`` one.
 - A computed bump never leaves the major version (ADR-027 §3).
 - ``--stamp`` writes the version into both version files the wheel reads.
+- Under the deploy lock, a number an earlier deploy took is never reused
+  (ADR-030 §4).
 - The engine list is the one the Train replay uses (ADR-025).
 """
 
@@ -269,3 +271,71 @@ def test_set_stamps_the_given_version_without_git(tmp_path: Path) -> None:
 
     assert code == 0
     assert (tmp_path / "pyproject.toml").read_text(encoding="utf-8") == 'version = "0.5.2"\n'
+
+
+def _notes(root: Path, version: str) -> Path:
+    built = root / "notes-version.json"
+    built.write_text(json.dumps({"version": version}) + "\n", encoding="utf-8")
+    return built
+
+
+def test_settle_keeps_a_version_no_deploy_took(tmp_path: Path) -> None:
+    """ADR-030 §4: with no newer tag, the built version holds and nothing is rewritten."""
+    root = _repo(tmp_path)
+    head = _commit(root, {"uv.lock": "lock\n"}, "build(deps): lock")
+    built = _notes(root, "0.3.0")
+
+    result = next_version.settle(root, head, built)
+
+    assert (result["moved"], result["version"]) == (False, "0.3.0")
+    assert built.read_text(encoding="utf-8") == '{"version": "0.3.0"}\n'
+    assert (root / "pyproject.toml").read_text(encoding="utf-8").count('version = "0.2.0"') == 1
+
+
+def test_settle_adopts_the_next_number_when_an_earlier_deploy_took_it(tmp_path: Path) -> None:
+    """ADR-030 §4: two batches never ship as one version.
+
+    Batch A (an engine lock change) and batch B (a fix) were both computed
+    against v0.2.0 as 0.3.0. A deployed first and tagged v0.3.0 on its commit,
+    so B, a fix with no engine file since that tag, ships as 0.3.1.
+    """
+    root = _repo(tmp_path)
+    _commit(root, {"uv.lock": "lock\n"}, "build(deps): lock")
+    _git(root, "tag", "v0.3.0")
+    head = _commit(root, {"src/hermes/cli.py": "fix\n"}, "fix(cli): typo")
+    built = _notes(root, "0.3.0")
+
+    result = next_version.settle(root, head, built)
+
+    assert (result["moved"], result["version"], result["bump"]) == (True, "0.3.1", "patch")
+    assert json.loads(built.read_text(encoding="utf-8"))["version"] == "0.3.1"
+    assert (root / "src/hermes/__init__.py").read_text(
+        encoding="utf-8"
+    ) == '__version__ = "0.3.1"\n'
+
+
+def test_cli_settle_prints_moved_for_the_workflow(tmp_path: Path) -> None:
+    """The deploy job rebuilds only on ``"moved": true`` from this line."""
+    root = _repo(tmp_path)
+    _commit(root, {"uv.lock": "lock\n"}, "build(deps): lock")
+    _git(root, "tag", "v0.3.0")
+    head = _commit(root, {"src/hermes/cli.py": "fix\n"}, "fix(cli): typo")
+    built = _notes(root, "0.3.0")
+
+    out = subprocess.run(  # noqa: S603 (fixed argv)
+        [
+            sys.executable,
+            str(_SCRIPT),
+            "--release",
+            head,
+            "--root",
+            str(root),
+            "--settle",
+            str(built),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+
+    assert (json.loads(out)["moved"], json.loads(out)["version"]) == (True, "0.3.1")

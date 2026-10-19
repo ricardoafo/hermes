@@ -28,9 +28,15 @@ repository copy keeps the last released version.
 ``--set <version>`` only stamps that version, for a build that was handed
 it (the reusable wheel build checks out one commit, without tags).
 
+``--settle <file>`` recomputes the version under the deploy lock against the
+JSON the notes job wrote to ``<file>`` (ADR-030 §4). When an earlier deploy
+took that number, it rewrites ``<file>`` and stamps the new version; the
+printed JSON carries ``"moved": true`` so CD rebuilds the wheel and bundle.
+
 Usage::
 
     next_version.py --release <sha> [--root <checkout>] [--stamp]
+    next_version.py --release <sha> --settle <file> [--root <checkout>]
     next_version.py --set <version> [--root <checkout>]
 
 Only the standard library and ``git`` are used, so it runs before ``uv sync``.
@@ -169,6 +175,28 @@ def stamp(root: Path, version: str) -> None:
         path.write_text(pattern.sub(line, text, count=1), encoding="utf-8")
 
 
+def settle(root: Path, release: str, built: Path) -> dict[str, object]:
+    """Recompute ``release`` against the version in ``built``, adopting a moved one.
+
+    Returns the current result with ``moved`` set. When the version moved,
+    ``built`` is rewritten with the result and the tree under ``root`` stamped.
+
+    Raises:
+        subprocess.CalledProcessError: git fails (unknown commit, no repo).
+        ValueError: as ``compute``, or ``built`` holds no version.
+        OSError: ``built`` cannot be read or written.
+    """
+    before = json.loads(built.read_text(encoding="utf-8")).get("version")
+    if not isinstance(before, str):
+        raise ValueError(f"{built} has no version")
+    result = compute(root, release)
+    moved = result["version"] != before
+    if moved:
+        built.write_text(json.dumps(result) + "\n", encoding="utf-8")
+        stamp(root, str(result["version"]))
+    return {**result, "moved": moved}
+
+
 def main(argv: list[str] | None = None) -> int:
     """Print the ship decision and version as JSON, and stamp it with ``--stamp``."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -176,6 +204,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--root", type=Path, default=Path.cwd(), help="release checkout")
     parser.add_argument("--stamp", action="store_true", help="write the version into the tree")
     parser.add_argument("--set", metavar="VERSION", help="only stamp VERSION, computing nothing")
+    parser.add_argument("--settle", type=Path, metavar="FILE", help="adopt a version that moved")
     args = parser.parse_args(argv)
     if args.set:
         try:
@@ -187,8 +216,11 @@ def main(argv: list[str] | None = None) -> int:
     if not args.release:
         parser.error("--release is required unless --set is given")
     try:
-        result = compute(args.root, args.release)
-        if args.stamp:
+        if args.settle:
+            result = settle(args.root, args.release, args.settle)
+        else:
+            result = compute(args.root, args.release)
+        if args.stamp and not args.settle:
             stamp(args.root, str(result["version"]))
     except (subprocess.CalledProcessError, ValueError, OSError) as exc:
         detail = exc.stderr.strip() if isinstance(exc, subprocess.CalledProcessError) else exc

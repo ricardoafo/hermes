@@ -532,7 +532,8 @@ def test_the_version_is_settled_under_the_deploy_lock_before_the_box() -> None:
     assert _steps("deploy")[checkout]["with"]["fetch-depth"] == 0
     assert checkout < labels.index("Download release bundle") < settle
     assert labels.index("Download release notes") < settle < labels.index("Join tailnet")
-    assert 'next_version.py --set "$now"' in run
+    assert '--release "$RELEASE_SHA" --settle notes/version.json' in run
+    assert 'if [ "$moved" != true ]; then' in run
     assert 'assemble_bundle.sh "${RELEASE_SHA::12}" dist' in run
 
 

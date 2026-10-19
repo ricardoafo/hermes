@@ -351,25 +351,21 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          built=$(uv run --no-project --python 3.14 python -c 'import json; print(json.load(open("notes/version.json"))["version"])')
+          # Rewrites notes/version.json and stamps the tree when the number moved.
           uv run --no-project --python 3.14 scripts/deploy/next_version.py \
-              --release "$RELEASE_SHA" > /tmp/hermes-version.json
-          read_version() {
-              uv run --no-project --python 3.14 python -c 'import json, sys; print(json.load(open(sys.argv[1]))["version"])' "$1"
-          }
-          built=$(read_version notes/version.json)
-          now=$(read_version /tmp/hermes-version.json)
-          if [ "$built" = "$now" ]; then
+              --release "$RELEASE_SHA" --settle notes/version.json > /tmp/hermes-version.json
+          read -r moved now < <(uv run --no-project --python 3.14 python -c 'import json, sys; r = json.load(open(sys.argv[1])); print(str(r["moved"]).lower(), r["version"])' /tmp/hermes-version.json)
+          if [ "$moved" != true ]; then
               echo "Version $now still holds under the lock."
               exit 0
           fi
           echo "::notice::a deploy that finished first took v$built; this push ships as v$now"
-          uv run --no-project --python 3.14 scripts/deploy/next_version.py --set "$now"
           rm -rf dist release
           uv build --wheel
           mkdir -p release
           bash scripts/deploy/assemble_bundle.sh "${RELEASE_SHA::12}" dist
           mv "hermes-release-${RELEASE_SHA::12}.tar.gz" release/
-          cp /tmp/hermes-version.json notes/version.json
           uv run --no-project --python 3.14 scripts/deploy/release_notes.py \
               --release "$RELEASE_SHA" --repo "$REPO" --format telegram --version "$now" > notes/telegram.txt
 
