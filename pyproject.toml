@@ -238,6 +238,17 @@ type = "forbidden"
 source_modules = ["hermes.adapters"]
 forbidden_modules = ["hermes.entrypoints"]
 
+# Issue #1220: a read-only exchange client never imports the modules that place
+# orders, so reading a balance cannot pull order placement into a process.
+[[tool.importlinter.contracts]]
+name = "read-only-exchange-clients-never-import-order-placement"
+type = "forbidden"
+source_modules = ["hermes.adapters.exchanges.binance_balance_reader"]
+forbidden_modules = [
+  "hermes.adapters.exchanges.binance_spot",
+  "hermes.adapters.exchanges.kraken_spot",
+]
+
 # change trade-eur-values D-3: EUR ledger values are measurement only. Strategy,
 # sizing, fees, risk and kill rules keep reading native (USDT) values.
 [[tool.importlinter.contracts]]
