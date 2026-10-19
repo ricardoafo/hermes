@@ -84,14 +84,28 @@ def _statuses(db: Path) -> list[tuple[str, str]]:
         return conn.execute("SELECT side, eur_status FROM trades ORDER BY id").fetchall()
 
 
+def _seed_status(db: Path) -> str:
+    """Return the ``eur_status`` of the capital seed."""
+    with closing(sqlite3.connect(db)) as conn:
+        return str(conn.execute("SELECT eur_status FROM capital_seeds").fetchone()[0])
+
+
 def test_strategy_sizing_and_fills_are_identical_with_and_without_fx(tmp_path: Path) -> None:
-    """Invariant (A-5.1): FX availability changes only ledger EUR columns, never behaviour."""
+    """Invariant (A-5.1): FX availability changes only ledger EUR columns, never behaviour.
+
+    The boot pass prices the seed when FX answers. Live fills read the rate
+    cache only (#996), so both runs leave their trades pending for the daily pass.
+    """
     with_fx, without_fx = tmp_path / "with-fx.sqlite3", tmp_path / "without-fx.sqlite3"
     exit_codes = (_serve(with_fx, fx_down=False), _serve(without_fx, fx_down=True))
 
     assert "\n".join(_behaviour(with_fx)).encode() == "\n".join(_behaviour(without_fx)).encode()
-    assert (exit_codes, _statuses(with_fx), _statuses(without_fx)) == (
+    assert (exit_codes, _seed_status(with_fx), _seed_status(without_fx)) == (
         (0, 0),
-        [("BUY", "ok"), ("SELL", "ok")],
+        "ok",
+        "pending",
+    )
+    assert (_statuses(with_fx), _statuses(without_fx)) == (
+        [("BUY", "pending"), ("SELL", "pending")],
         [("BUY", "pending"), ("SELL", "pending")],
     )

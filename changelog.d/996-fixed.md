@@ -1,0 +1,1 @@
+- A fill whose EUR rate is more than four days older than the fill now stays pending, with an `eur_rate_too_old` warning, instead of storing a stale rate. Live fills read the rate cache only, so a slow FX service no longer stalls the bar loop; serve prices what they leave pending at boot and again each day at 17:00 Madrid, after the ECB publishes (#996).
