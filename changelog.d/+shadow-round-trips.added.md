@@ -1,1 +1,0 @@
-- `hermes certify` reports the shadow round trips the ledger holds toward SHADOW_CERTIFIED and flags the execution check weak under 30, without changing any pass or fail rule (#797).

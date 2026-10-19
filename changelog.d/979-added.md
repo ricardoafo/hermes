@@ -1,1 +1,0 @@
-- A `swing-mvp1-v2` strategy config whose exits all sell 5 bps under the close of the 4h bar they fire on, the stop included, priced the same way in the backtest drivers (`--strategy swing-mvp1-v2`) and in serve, where it is also the drift model price (pre-registration v2 §5.3, §6.2, §7). v1 keeps its stop-market exit prices.

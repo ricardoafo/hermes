@@ -1,1 +1,0 @@
-- The Binance Vision ingest no longer downloads any month on or after the sealed OOS start (2025-09-01), whatever its arguments, and the new `scripts/data/prepare_backtest_data.py --split train|validation` downloads only the missing klines a backtest needs and exits non-zero unless every pinned dataset matches the data manifest (issue #925).

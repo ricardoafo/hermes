@@ -1,1 +1,0 @@
-- `hermes tui` draws in 24-bit colour by default, so over ssh (where the terminal's colour setting is not forwarded) the console keeps its violet background and panels instead of falling back to 256 colours that turned them black and navy; set `TEXTUAL_COLOR_SYSTEM` to choose another depth.

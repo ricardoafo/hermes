@@ -1,1 +1,0 @@
-- The swing strategy now moves its chandelier stop once per daily close and never from the 4h bar it is tested on, and a stop exit on a bar that opens below the stop fills at the open less slippage, in both the backtest and serve (pre-registration §5.3, #785).

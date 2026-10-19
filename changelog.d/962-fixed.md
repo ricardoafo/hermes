@@ -1,1 +1,0 @@
-- `hermes status` and the daily brief no longer list an entry the engine refused or halted as an open position; only entries with a fill count (#962).

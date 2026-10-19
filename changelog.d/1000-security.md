@@ -1,1 +1,0 @@
-- The tool freshness check reads registries through an HTTPS-only opener and refuses any other URL, so it cannot open `file://` or `ftp://` URLs; this clears the daily Semgrep finding (issue #1000).
