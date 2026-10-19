@@ -5,7 +5,7 @@ ones :class:`~hermes.application.console.lab.LabFiles` names. Nothing is
 written. A file that cannot be read is left out, so a half-checked-out tree
 shows what it has.
 
-Reference: openspec/changes/1056-lab-screen/change.md.
+Reference: openspec/archive/1056-lab-screen/change.md.
 """
 
 from collections.abc import Callable

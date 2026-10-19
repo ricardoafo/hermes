@@ -195,6 +195,12 @@ champion, and ADR-021 gives each one its own ledger. Each shadow is one instance
 a ledger that already holds another strategy's capital, so an instance pointed at the wrong file stops at boot,
 before it writes anything. Every instance spends the box's one Binance rate limit, like the staging serve.
 
+A staging deploy reaches every enabled instance (issue #1150). It snapshots each shadow's ledger into
+`/var/lib/hermes-staging/shadows/<name>/backups/`, migrates it with the instance stopped, and restarts and gates each
+instance after the release goes live. If any instance fails its gate, the deploy puts the old release back and every
+ledger back to its snapshot. With shadows enabled, a staging deploy waits out the 4h bar close as prod does, so no
+shadow misses a bar to a restart.
+
 To add a shadow, run these on hermes-01 as root, with `<name>` replaced by the roster entry:
 
 1. Create its ledger directory.

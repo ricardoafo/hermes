@@ -872,6 +872,36 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             ),
         ),
         FailureMode(
+            "A staging deploy leaves a lab shadow on the old release or an unmigrated ledger",
+            proved_by=(
+                _RELEASE + "test_staging_deploy_restarts_and_gates_every_shadow_after_the_flip",
+                _RELEASE
+                + "test_staging_deploy_migrates_every_shadow_ledger_with_its_instance_stopped",
+            ),
+        ),
+        FailureMode(
+            "A staging deploy reaches a shadow ledger it cannot snapshot or cannot read",
+            proved_by=(
+                _RELEASE + "test_a_release_that_cannot_read_a_shadow_ledger_is_refused",
+                _RELEASE + "test_a_failed_shadow_snapshot_stops_the_deploy",
+            ),
+        ),
+        FailureMode(
+            "A deploy fails after some ledgers were migrated",
+            proved_by=(
+                _RELEASE + "test_a_failed_gate_on_one_shadow_rolls_back_every_instance",
+                _RELEASE + "test_a_failed_shadow_migration_restores_the_ledgers_already_migrated",
+                _RELEASE + "test_failed_unit_install_after_a_migration_restores_the_ledger",
+            ),
+        ),
+        FailureMode(
+            "A failed deploy copies a snapshot over a ledger it never changed, losing its writes",
+            proved_by=(
+                _RELEASE + "test_a_failed_staging_gate_leaves_shadows_the_release_never_reached",
+                _RELEASE + "test_a_migration_that_fails_restores_no_ledger",
+            ),
+        ),
+        FailureMode(
             "Older code is started on a newer ledger outside the deploy script",
             proved_by=(
                 _SERVE + "TestPortfolioRebuiltOnStartup"
