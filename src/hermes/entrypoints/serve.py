@@ -57,12 +57,12 @@ What one process does:
 Real-money guard
 ----------------
 
-No exchange adapter is wired, so no order can be placed by construction:
-fills are simulated by walking a public, keyless depth snapshot. The
-real-money gate stays on :attr:`~hermes.infrastructure.config.HermesConfig.allow_mainnet`
-AND :attr:`~hermes.infrastructure.config.HermesConfig.env` being ``"prod"``
-(``_mainnet_only_in_prod`` on the config model). See ADR-003 §00 invariant
-I-08.
+No order adapter is wired, so serve sends no entry or exit order: fills are
+simulated on a public, keyless depth snapshot. Real money is
+:attr:`~hermes.infrastructure.config.HermesConfig.allow_mainnet`, prod only
+(``_mainnet_only_in_prod``, ADR-003 §00 I-08). Only then does a composition's
+``stop_exchange`` rest a stop for every held position (``_exchange_stops``,
+#1080); ``hermes serve`` wires none yet, so it refuses real money (#1220).
 """
 
 from __future__ import annotations
@@ -199,6 +199,8 @@ from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.domain.value_objects.time import MADRID
+from hermes.entrypoints import _exchange_stops as stops
+from hermes.entrypoints._journal_fields import entry_check_fields
 from hermes.entrypoints._release import read_release
 from hermes.infrastructure import sentry_integration
 from hermes.infrastructure.config.models import FrankfurterConfig, MarketDataConfig
@@ -209,6 +211,7 @@ from hermes.infrastructure.project_root import load_pre_registration
 from hermes.ports.bar_feed import ClosedBarFeedPort
 from hermes.ports.certification import CertificationStoreError, CertificationStorePort
 from hermes.ports.clock import ClockPort
+from hermes.ports.exchange_stops import ExchangeStopsPort
 from hermes.ports.fx import FxRateProviderPort
 from hermes.ports.orderbook_snapshot import OrderbookSnapshotPort
 from hermes.ports.stop_history import StopHistoryPort
@@ -476,6 +479,8 @@ class Composition:
         stable_price_watch: Polls the USDT price the depeg rules read with
             real money (#1158); ``None`` in shadow.
         kraken_adapter: The adapter the watch reads; closed by :func:`run`.
+        stop_exchange: The venue that holds a stop for each held position with
+            real money (#1080); ``None`` in shadow and until one is wired (#1220).
     """
 
     config: HermesConfig
@@ -503,6 +508,7 @@ class Composition:
     serve_lock: FileLock | None = None
     stable_price_watch: StablePriceWatch | None = None
     kraken_adapter: KrakenPublicAdapter | None = None
+    stop_exchange: ExchangeStopsPort | None = None
 
 
 def _eur_rate_lookup(pricer: EurPricer) -> EurRateLookup:
@@ -1426,6 +1432,7 @@ class _BarLoop:
                 b for b in warm if b.pair == pair and b.close_time <= cursors[(b.pair, b.interval)]
             ]
             strategy.seed(seeded, open_position=self._restore_position(pair, cursors))
+        await stops.reconcile(c, partial(self._restore_position, cursors=cursors), self._alert)
         for bar in warm:
             if bar.close_time <= cursors[(bar.pair, bar.interval)]:
                 # The tracker is rebuilt from trades at fill prices; without the
@@ -1678,6 +1685,7 @@ class _BarLoop:
             )
         )
         self._record_stop(bar)
+        await stops.after_bar(c, bar, self._alert)
         if stored is not None:
             _log.warning(
                 "serve.live_bar.differs_from_stored",
@@ -1709,7 +1717,7 @@ class _BarLoop:
             close_time=bar.close_time.isoformat(),
             signal="none" if signal_ is None else signal_.kind.value,
             next_due=self.next_due(stream).isoformat(),
-            **_entry_check_fields(c.strategies[bar.pair]),
+            **entry_check_fields(c.strategies[bar.pair]),
         )
 
     async def _fill(
@@ -1727,6 +1735,7 @@ class _BarLoop:
         (#1078); its outcome goes into the restart report.
         """
         event, is_new = emitted
+        await stops.before_exit(self.c, signal_, bar.pair, self._alert)
         outcome = await self._execute(
             signal_, bar, correlation_id, price_bar=self.newest[bar.pair] if late else None
         )
@@ -2166,29 +2175,6 @@ class _BarLoop:
         )
         for failure in failures:
             sentry_integration.capture(failure)
-
-
-def _entry_check_fields(strategy: StrategyPort) -> dict[str, str]:
-    """Return which entry conditions held on the bar just evaluated, as yes/no.
-
-    Booleans only, never a price or an indicator value, so the journal line
-    stays outcome-blind for the reviews that read it (ADR-012 D-06, #656).
-    Empty when the bar was not an entry check (a daily bar, or a position open).
-    """
-    if not isinstance(strategy, SwingStrategyAdapter):
-        return {}
-    check = strategy.last_entry_check
-    if check is None:
-        return {}
-    return {
-        "entry_breakout": _yes_no(check.breakout),
-        "entry_momentum": _yes_no(check.momentum),
-        "entry_regime": _yes_no(check.regime),
-    }
-
-
-def _yes_no(held: bool) -> str:
-    return "yes" if held else "no"
 
 
 def _outcome_word(outcome: ShadowOutcome) -> str:

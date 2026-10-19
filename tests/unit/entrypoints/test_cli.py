@@ -35,6 +35,7 @@ from hermes.entrypoints import serve as serve_module
 from hermes.entrypoints.commands import discover
 from hermes.entrypoints.commands import serve as serve_command
 from hermes.entrypoints.daily_line import count_journal
+from hermes.infrastructure.config.loader import load_config
 from tests.support.paths import REPO_ROOT
 
 _RECORDED_DIR = REPO_ROOT / "tests" / "fixtures" / "binance_public"
@@ -181,6 +182,27 @@ class TestServeExitCodes:
         rc = cli_module.main(["serve", "--config-dir", str(config_dir)], stream=stream, err=err)
 
         assert (rc, "roster is wrong" in err.getvalue()) == (3, True)
+
+    # SEV-1: S1 — no real-money path starts without its exchange-held stop (ADR-024 §7, #1080)
+    def test_real_money_is_refused_until_a_venue_holds_the_exchange_stop(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """allow_mainnet exits 3 before anything is built: no venue holds the stop yet (#1220)."""
+        config_dir = REPO_ROOT / "config"
+        real_money = load_config(config_dir).model_copy(update={"allow_mainnet": True})
+        built: list[object] = []
+        monkeypatch.setattr(serve_command, "load_config", lambda _dir: real_money)
+        monkeypatch.setattr(serve_module, "check_startup", lambda *_a, **_k: None)
+        monkeypatch.setattr(serve_module, "build_composition", lambda *a, **_k: built.append(a))
+        stream, err = io.StringIO(), io.StringIO()
+
+        rc = cli_module.main(
+            ["serve", "--config-dir", str(config_dir), "--db", str(tmp_path / "x.sqlite3")],
+            stream=stream,
+            err=err,
+        )
+
+        assert (rc, "stop held by the exchange (#1080)" in err.getvalue(), built) == (3, True, [])
 
     def test_serve_main_returns_the_exit_code_of_run(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path

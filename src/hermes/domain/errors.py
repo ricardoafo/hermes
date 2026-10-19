@@ -34,6 +34,8 @@ __all__ = [
     "LedgerError",
     "NetworkError",
     "OOSDataLeakageError",
+    "OrderNotPlacedError",
+    "OrderStatusUnknownError",
     "RiskViolationError",
     "TrialLogError",
 ]
@@ -242,6 +244,36 @@ class ExchangeError(InfraError):
     def __str__(self) -> str:
         """Return human-readable description."""
         return f"Exchange error: {self.msg}"
+
+
+@dataclass(frozen=True, slots=True)
+class OrderNotPlacedError(ExchangeError):
+    """An order whose submission failed is confirmed absent on the exchange: safe to retry.
+
+    Confirmed means two lookups, a short wait apart, both found no such order
+    (#858, #1027).
+
+    Attributes:
+        client_order_id: The client order id the lookup used.
+    """
+
+    client_order_id: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class OrderStatusUnknownError(ExchangeError):
+    """Neither the submission nor the lookup told whether the order exists.
+
+    Never retry blindly: the order may be live. Reconcile it on the exchange
+    by ``client_order_id`` first.
+
+    Attributes:
+        client_order_id: The client order id the order was sent with.
+        order_id: The exchange's order id when a lookup found the order, else ``None``.
+    """
+
+    client_order_id: str = ""
+    order_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

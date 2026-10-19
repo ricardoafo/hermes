@@ -76,6 +76,10 @@ _FUZZ_CONFIG = _U + "infrastructure/config/test_loader_fuzz.py::"
 _CONTENTION = _I + "adapters/ledger/test_ledger_contention.py::"
 _FILE_LOCK = _U + "infrastructure/test_file_lock.py::"
 _META = _I + "metamorphic/test_backtest_relations.py::"
+_STOPS = _S + "test_exchange_stops.py::"
+_KEEPER = _U + "application/execution/test_exchange_stops.py::"
+_KEEPER_MACHINE = _U + "application/execution/test_exchange_stops_state_machine.py::"
+_SPOT_STOPS = _U + "adapters/exchanges/test_binance_spot_stops.py::"
 
 
 @dataclass(frozen=True)
@@ -378,6 +382,86 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
                 "::test_a_live_fill_with_a_cold_cache_makes_no_provider_call_on_the_loop",
                 _U + "entrypoints/test_serve_eur_pricing.py"
                 "::test_the_daily_pass_prices_a_fill_the_first_pass_left_pending",
+            ),
+        ),
+        FailureMode(
+            "A real-money position is left with no stop on the exchange while serve is down",
+            proved_by=(
+                _STOPS
+                + "test_the_stop_is_placed_at_entry_moved_with_the_strategy_and_cancelled_on_exit",
+                _KEEPER + "test_a_held_position_rests_one_stop_at_the_strategy_stop_rounded_down",
+                _KEEPER_MACHINE + "TestKeeperMachine::runTest",
+            ),
+        ),
+        FailureMode(
+            "The exchange stop stays at the old level after the strategy moves its stop",
+            proved_by=(
+                _STOPS
+                + "test_the_stop_is_placed_at_entry_moved_with_the_strategy_and_cancelled_on_exit",
+                _KEEPER + "test_a_moved_stop_leaves_only_the_new_level_resting",
+                _KEEPER + "test_a_refused_cancel_while_moving_places_no_second_stop",
+            ),
+        ),
+        FailureMode(
+            "An exchange stop still rests after the exit, locking the quantity the exit sells",
+            proved_by=(
+                _STOPS + "test_the_stop_is_cancelled_before_the_exit_sells",
+                _KEEPER + "test_a_stop_still_resting_when_the_strategy_exits_is_cancelled",
+            ),
+        ),
+        FailureMode(
+            "The exchange stop sold during downtime and the restart rests a new one for nothing",
+            proved_by=(
+                _STOPS
+                + "test_a_stop_that_sold_during_the_downtime_is_recorded_and_never_placed_again",
+                _KEEPER + "test_a_position_whose_stop_filled_gets_no_new_stop",
+            ),
+        ),
+        FailureMode(
+            "Someone cancels the exchange stop by hand and the position runs unprotected",
+            proved_by=(
+                _STOPS + "test_a_stop_cancelled_outside_hermes_during_the_downtime_is_placed_again",
+                _KEEPER + "test_a_stop_gone_from_the_exchange_is_recorded_and_placed_again",
+            ),
+        ),
+        FailureMode(
+            "A lost answer to a stop placement leaves two stops, or none",
+            proved_by=(
+                _STOPS + "test_a_lost_answer_to_the_first_stop_leaves_exactly_one_stop",
+                _KEEPER + "test_a_placement_the_exchange_never_saw_is_sent_once_more",
+                _KEEPER + "test_an_unknown_status_is_not_retried",
+                _KEEPER + "test_the_stop_whose_status_was_unknown_is_adopted_on_the_next_pass",
+            ),
+        ),
+        FailureMode(
+            "Serve dies between placing a stop and recording it, and the restart places a second",
+            proved_by=(
+                _STOPS + "test_a_stop_placed_but_never_recorded_is_adopted_after_the_crash",
+            ),
+        ),
+        FailureMode(
+            "The exchange refuses or cannot be read while keeping a stop, and nobody hears",
+            proved_by=(
+                _KEEPER + "test_a_refused_placement_fails_with_a_critical_alert",
+                _KEEPER + "test_an_unreadable_book_fails_without_cancelling_or_placing",
+                _KEEPER + "test_an_unreadable_fate_fails_and_places_nothing",
+                _SPOT_STOPS + "test_a_listing_that_is_not_a_list_is_an_exchange_error",
+            ),
+        ),
+        FailureMode(
+            "A shadow, or a real-money boot with no venue for its stops, sends an order",
+            proved_by=(
+                _STOPS + "test_a_shadow_with_a_venue_wired_sends_no_request_to_the_spot_endpoints",
+                _U
+                + "entrypoints/test_cli.py::TestServeExitCodes::"
+                + "test_real_money_is_refused_until_a_venue_holds_the_exchange_stop",
+            ),
+        ),
+        FailureMode(
+            "An exchange stop that sold is not the ledger's trade, so ledger and account differ",
+            gap=(
+                "issue #1220: inferred; the keeper records the fill as an ExchangeStopChanged "
+                "row with a WARNING alert, and the strategy's own exit stays the recorded trade"
             ),
         ),
     ),

@@ -99,6 +99,13 @@ def _run(rest: list[str], *, stream: Any, err: TextIO | None = None) -> int:
             ),
             experiment_root=experiment_root,
         )
+        if config.allow_mainnet:
+            # ADR-024 §7: real money only once every position's stop is held by
+            # the exchange, and this command builds no venue to hold it yet.
+            raise serve_module.StartupError(
+                "allow_mainnet is set, but every real-money position needs a stop held by "
+                "the exchange (#1080) and hermes serve wires no exchange venue yet (#1220)"
+            )
     except serve_module.StartupError as exc:
         err.write(f"ERROR: startup check failed: {exc}\n")
         return 3

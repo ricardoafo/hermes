@@ -7,6 +7,11 @@ depth and Frankfurter adapters with their real base URLs. Three things are
 swapped: the HTTP transport under those adapters (the fake exchange), the
 clock (simulated), and the Telegram channel (a recorder). No order path exists
 in serve, so nothing can trade (ADR-003 §00 I-08).
+
+``real_money`` boots the ``allow_mainnet`` path, and ``spot`` wires the real
+Binance spot adapter as the venue that holds the exchange stops (#1080), on the
+testnet host and over the same fake transport: the account it trades in is
+``spot``, in this process. No request leaves it.
 """
 
 from __future__ import annotations
@@ -19,7 +24,7 @@ import sqlite3
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from unittest import mock
@@ -27,20 +32,34 @@ from unittest import mock
 import httpx
 
 from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
+from hermes.adapters.exchanges.binance_spot import (
+    TESTNET_BASE_URL,
+    BinanceSpotAdapter,
+    BinanceSpotConfig,
+)
 from hermes.adapters.fx.frankfurter import FrankfurterAdapter
 from hermes.adapters.fx.frankfurter import FrankfurterConfig as FrankfurterWireConfig
 from hermes.adapters.market_data.binance_depth_snapshot import BinanceDepthSnapshotAdapter
 from hermes.adapters.market_data.binance_live_klines import BinanceLiveKlinesAdapter
+from hermes.application.live_risk_inputs import StablePriceWatch
 from hermes.application.notification_router import RouterConfig
 from hermes.application.signal_notifier import SignalNotifier
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
+from hermes.domain.market_data.spread_sample import SpreadSample
+from hermes.domain.trading.execution_quality import book_spread
 from hermes.domain.value_objects.pair import Pair
 from hermes.entrypoints import serve as serve_module
 from hermes.infrastructure.config.loader import load_config
 from hermes.infrastructure.config.root import HermesConfig
+from tests.support.fake_market import wire
 from tests.support.fake_market.exchange import FakeExchange, SimClock
 from tests.support.fake_market.script import Market
+from tests.support.fake_market.spot import (
+    FAKE_API_KEY,
+    FAKE_SIGNING_MATERIAL,
+    SpotAccount,
+)
 from tests.support.serve_loop import PROJECT_ROOT, RecordingChannel
 
 _RUN_TIMEOUT_SECONDS = 120
@@ -81,9 +100,18 @@ def production_config() -> HermesConfig:
 
 
 def compose(
-    config: HermesConfig, db: Path, exchange: FakeExchange, channel: RecordingChannel
+    config: HermesConfig,
+    db: Path,
+    exchange: FakeExchange,
+    channel: RecordingChannel,
+    *,
+    stop_venue: BinanceSpotAdapter | None = None,
 ) -> serve_module.Composition:
-    """Build the serve composition with the real adapters over the fake transport."""
+    """Build the serve composition with the real adapters over the fake transport.
+
+    ``stop_venue`` becomes the composition's ``stop_exchange``; serve keeps
+    stops on it only when ``config`` allows real money.
+    """
     clock = exchange.clock
     md = config.market_data
     feed = BinanceLiveKlinesAdapter(
@@ -137,6 +165,7 @@ def compose(
         orderbooks=books,
         fx=fx,
         new_ledger=True,
+        stable_watch=_pinned_usdt(clock) if config.allow_mainnet else None,
     )
     # Serve commits several times per bar, and each commit waits for the disk: a 90-day
     # run made about 25,800 fsync calls. Cheap here, but on a loaded runner's virtual
@@ -144,7 +173,36 @@ def compose(
     # what serve reads and writes is unchanged.
     composition.sqlite_connection.execute("PRAGMA synchronous = OFF")
     return dataclasses.replace(
-        composition, signal_notifier=SignalNotifier(RouterConfig(telegram=channel, slack=None))
+        composition,
+        signal_notifier=SignalNotifier(RouterConfig(telegram=channel, slack=None)),
+        stop_exchange=stop_venue,
+    )
+
+
+def _pinned_usdt(clock: SimClock) -> StablePriceWatch:
+    """Return a USDT watch holding 1.00, fresh for the whole run, so no Kraken adapter is built."""
+    watch = StablePriceWatch(fetch=lambda: Decimal(1), clock=clock, max_age=timedelta(days=3650))
+    asyncio.run(watch.poll_once())
+    return watch
+
+
+def spot_venue(exchange: FakeExchange) -> BinanceSpotAdapter:
+    """Return the real Binance spot adapter on the testnet host, answered by ``exchange``.
+
+    Its transport is the fake's, so no request can leave the process; its
+    clock is the simulated one, so the fake's timestamp check passes.
+    """
+    clock = exchange.clock
+    return BinanceSpotAdapter(
+        config=BinanceSpotConfig(api_key=FAKE_API_KEY, api_secret=FAKE_SIGNING_MATERIAL),
+        client=httpx.Client(base_url=TESTNET_BASE_URL, transport=exchange.transport()),
+        limiter=RateLimiter(
+            RateLimitConfig(max_weight=1000, window_seconds=60),
+            clock=clock.monotonic,
+            sleep=lambda _seconds: None,
+        ),
+        clock_ms=lambda: wire.ms(clock.now()),
+        sleep=lambda _seconds: None,
     )
 
 
@@ -165,6 +223,8 @@ def serve(
     duplicate_bars: list[tuple[Pair, KlineInterval, datetime]] | None = None,
     after_bar: AfterBar | None = None,
     strategy: str | None = None,
+    real_money: bool = False,
+    spot: SpotAccount | None = None,
 ) -> ServeRun:
     """Boot ``hermes serve`` at ``live_from`` and run it on the fake market.
 
@@ -190,6 +250,10 @@ def serve(
             rows it has not committed yet are visible.
         strategy: Roster entry to run, as ``hermes serve --strategy`` does;
             ``None`` runs the one ``config/strategies.yaml`` enables.
+        real_money: Boot with ``allow_mainnet`` set, its USDT price pinned at 1.
+        spot: The fake spot account; when given, the Binance spot adapter over
+            it is the composition's stop venue. Pass the same account to a
+            restart: it is the exchange's memory across the downtime.
 
     Returns:
         The run's exit code, notifications, requests and final clock.
@@ -210,11 +274,26 @@ def serve(
         klines_outages=klines_outages or [],
         fx_outages=fx_outages or [],
         duplicate_bars=duplicate_bars or [],
+        spot=spot if spot is not None else SpotAccount(),
     )
     channel = RecordingChannel(raises=notifier_error)
-    composition = compose(_config_for(strategy), db, exchange, channel)
+    config = _config_for(strategy)
+    if real_money:
+        config = config.model_copy(update={"allow_mainnet": True})
+    venue = spot_venue(exchange) if spot is not None else None
+    # A chaos tool may stand in for compose with the four positional arguments only.
+    composition = (
+        compose(config, db, exchange, channel)
+        if venue is None
+        else compose(config, db, exchange, channel, stop_venue=venue)
+    )
     bar_seconds: list[float] = []
-    with _timed_bars(bar_seconds, after_bar):
+    with (
+        _timed_bars(bar_seconds, after_bar, sample_spreads=real_money),
+        contextlib.ExitStack() as stack,
+    ):
+        if venue is not None:
+            stack.callback(venue.client.close)
         code = asyncio.run(_drive(composition, clock))
     return ServeRun(
         exit_code=code, channel=channel, exchange=exchange, clock=clock, bar_seconds=bar_seconds
@@ -231,7 +310,9 @@ def _config_for(strategy: str | None) -> HermesConfig:
 
 
 @contextlib.contextmanager
-def _timed_bars(into: list[float], after_bar: AfterBar | None = None) -> Iterator[None]:
+def _timed_bars(
+    into: list[float], after_bar: AfterBar | None = None, *, sample_spreads: bool = False
+) -> Iterator[None]:
     """Record how long each bar takes in serve's bar loop.
 
     The per-bar cost is what decides whether serve keeps up with the feed, and
@@ -243,10 +324,17 @@ def _timed_bars(into: list[float], after_bar: AfterBar | None = None) -> Iterato
     wall time of the same bars from 4 ms to over 30 ms. Work serve hands to a
     worker thread (the notifier send) is not counted; it does not hold up the
     loop.
+
+    ``sample_spreads`` records each pair's spread, read from the fake book,
+    one minute before each 4h close. Serve's sampler waits on wall seconds,
+    which a simulated run never gives it, so without this the real-money path
+    finds no median spread and RO-02 halts every entry.
     """
     original = serve_module._BarLoop.handle
 
     async def timed(self: serve_module._BarLoop, bar: Bar) -> None:
+        if sample_spreads and bar.interval is KlineInterval.H4:
+            await _sample_before(self.c, bar.close_time - timedelta(minutes=1))
         started = time.thread_time()
         try:
             await original(self, bar)
@@ -257,6 +345,21 @@ def _timed_bars(into: list[float], after_bar: AfterBar | None = None) -> Iterato
 
     with mock.patch.object(serve_module._BarLoop, "handle", timed):
         yield
+
+
+async def _sample_before(c: serve_module.Composition, at: datetime) -> None:
+    for pair in c.pairs:
+        spread = book_spread(await c.orderbooks.snapshot(pair))
+        c.ledger.record_spread_sample(
+            SpreadSample(
+                pair=pair,
+                sampled_at=at,
+                book_time=at,
+                spread=spread,
+                median_spread_1h=spread,
+                samples_1h=1,
+            )
+        )
 
 
 async def _drive(composition: serve_module.Composition, clock: SimClock) -> int:
