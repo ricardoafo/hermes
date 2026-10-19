@@ -193,7 +193,6 @@ def test_sigterm_mid_bar_exits_before_systemd_s_stop_timeout_even_when_every_cal
     assert (stopped.calls_after, worst_case < _stop_timeout_seconds()) == (
         [
             "data-api.binance.vision/api/v3/depth",
-            "api.frankfurter.dev/v1/2024-10-29",
             _TELEGRAM,
         ],
         True,
