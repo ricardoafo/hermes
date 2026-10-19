@@ -62,8 +62,8 @@ class _GrowingModel(FixtureReadModel):
 
 @pytest.fixture(autouse=True)
 def _parked_fade(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Park the fade timer for an hour so only the steps a test takes move the fade."""
-    monkeypatch.setattr(tui, "MOTION", replace(MOTION, activity_fade=3600.0))
+    """Park the fade and slide timers for an hour so only the steps a test takes move them."""
+    monkeypatch.setattr(tui, "MOTION", replace(MOTION, activity_fade=3600.0, base=3600.0))
 
 
 def _fade_to_the_end(app: HomeApp) -> None:
@@ -194,3 +194,15 @@ def test_a_failed_activity_read_in_mid_fade_shows_the_error_and_no_highlight() -
         )
 
     assert _run(probe) == (True, 0)
+
+
+def test_folding_the_check_lines_back_in_marks_no_row_as_new() -> None:
+    """The A key reveals rows that were always there, so none is highlighted or slid in."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None], model: _GrowingModel) -> frozenset[object]:
+        del model
+        await pilot.press("a")
+        await pilot.pause()
+        return app._fresh_activity
+
+    assert _run(probe) == frozenset()
