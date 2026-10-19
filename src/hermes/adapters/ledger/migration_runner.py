@@ -34,6 +34,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from hermes.adapters.ledger.connection import open_ledger
+from hermes.adapters.ledger.row_counts import table_row_counts
 from hermes.domain.errors import LedgerError
 
 __all__ = [
@@ -302,21 +303,6 @@ class DryRunReport:
         return self.error is None and self.intact
 
 
-def _row_counts(conn: sqlite3.Connection) -> dict[str, int]:
-    tables = [
-        row[0]
-        for row in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table' "
-            "AND name NOT LIKE 'sqlite_%' ORDER BY name"
-        )
-    ]
-    # Table names come from sqlite_master itself, quoted as identifiers.
-    return {
-        name: int(conn.execute(f'SELECT COUNT(*) FROM "{name}"').fetchone()[0])  # noqa: S608
-        for name in tables
-    }
-
-
 def dry_run(db_path: Path, *, migrations_dir: Path | None = None) -> DryRunReport:
     """Apply every pending migration to a temporary copy of the ledger and report.
 
@@ -350,7 +336,7 @@ def dry_run(db_path: Path, *, migrations_dir: Path | None = None) -> DryRunRepor
             raise LedgerError(msg=f"cannot copy {db_path} for a dry run: {exc}") from exc
         try:
             pending = pending_migrations(target, migrations_dir)
-            rows_before = _row_counts(target)
+            rows_before = table_row_counts(target)
             applied: list[str] = []
             error: str | None = None
             for sql_file in pending:
@@ -367,7 +353,7 @@ def dry_run(db_path: Path, *, migrations_dir: Path | None = None) -> DryRunRepor
                 error=error,
                 intact=check is not None and check[0] == "ok",
                 rows_before=rows_before,
-                rows_after=_row_counts(target),
+                rows_after=table_row_counts(target),
             )
         finally:
             target.close()

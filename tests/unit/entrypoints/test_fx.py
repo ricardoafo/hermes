@@ -139,3 +139,20 @@ def test_backfill_command_reports_seeds_when_the_ledger_has_one(tmp_path: Path) 
     )
 
     assert (code, stream.getvalue()) == (0, "filled=0 pending=0\nseeds_filled=1 seeds_pending=0\n")
+
+
+def test_backfill_on_a_missing_ledger_creates_no_file(tmp_path: Path) -> None:
+    """A wrong --db path is reported, never created as an empty ledger (#1187)."""
+    missing = tmp_path / "absent.sqlite3"
+    err = io.StringIO()
+
+    fx_module.main(
+        ["backfill", "--db", str(missing), "--config-dir", str(_CONFIG_DIR)],
+        stream=io.StringIO(),
+        fx_factory=lambda _cfg: FakeFx(rates={}),
+        err=err,
+    )
+
+    assert (missing.exists(), err.getvalue()) == (False, f"ERROR: no ledger at {missing}\n"), (
+        "nothing created, the path named"
+    )

@@ -37,9 +37,10 @@ from pydantic import ValidationError
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
 from hermes.entrypoints import serve as serve_module
+from hermes.entrypoints._cli import add_config_dir_arg
 from hermes.entrypoints._streams import resolve_err
 from hermes.infrastructure.config.errors import ConfigError, TierError
-from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
+from hermes.infrastructure.config.loader import load_config
 from hermes.infrastructure.config.root import HermesConfig
 
 __all__ = ["Finding", "main", "read_env_file"]
@@ -93,7 +94,7 @@ def main(
     """
     err = resolve_err(err)
     parser = argparse.ArgumentParser(prog="hermes config check", add_help=False)
-    parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
+    add_config_dir_arg(parser)
     parser.add_argument("--env-file")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("-h", "--help", action="store_true")

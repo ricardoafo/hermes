@@ -61,6 +61,7 @@ from hermes.application.supervisor.tools import (
 from hermes.domain.errors import BriefArchiveError
 from hermes.entrypoints import serve as serve_module
 from hermes.entrypoints import status as status_module
+from hermes.entrypoints._cli import add_config_dir_arg, add_db_arg, load_config_or_exit
 from hermes.entrypoints._streams import resolve_err
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
@@ -130,13 +131,11 @@ def main(
     if args.mode == "call" and not args.tool:
         err.write("ERROR: `call` needs a TOOL.\n" + _USAGE)
         return 2
-    try:
-        # An explicit env snapshot skips the .env.local load: the supervisor never
-        # reads a dotenv file, so no secret can reach it that way (ADR-012 D-07).
-        config = load_config(args.config_dir, env=dict(env or {}))
-    except ConfigError as exc:
-        err.write(f"ERROR: config load failed: {exc}\n")
-        return 3
+    # An explicit env snapshot skips the .env.local load: the supervisor never
+    # reads a dotenv file, so no secret can reach it that way (ADR-012 D-07).
+    config = load_config_or_exit(args.config_dir, err, env=dict(env or {}))
+    if isinstance(config, int):
+        return config
     clock = now or (lambda: datetime.now(UTC))
     grants = [*args.grant, *_env_grants(env or {})]
     diagnostics = audit_stream or sys.stderr
@@ -184,8 +183,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--briefs", type=Path, default=None)
     parser.add_argument("--grant", action="append", default=[])
-    parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
-    parser.add_argument("--db", type=Path, default=serve_module.DEFAULT_DB_PATH)
+    add_config_dir_arg(parser)
+    add_db_arg(parser)
     parser.add_argument("--journal", type=Path, default=None)
     parser.add_argument("--store-dir", type=Path, default=None)
     parser.add_argument("--guard-date", type=_guard_date, default=MEMORIZATION_GUARD)

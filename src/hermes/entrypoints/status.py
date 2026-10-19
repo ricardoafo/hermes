@@ -51,11 +51,11 @@ from hermes.application.status import (
 )
 from hermes.domain.errors import LedgerError
 from hermes.entrypoints import console as console_module
+from hermes.entrypoints._cli import add_config_dir_arg, add_db_arg, config_or_exit
 from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.daily_line import JournalCounts, count_journal, daily_line
 from hermes.entrypoints.status_view import render_status, report_to_dict
 from hermes.entrypoints.version import DEFAULT_RELEASE_LINK, ReleaseInfo, read_release
-from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.loader import load_config
 from hermes.release_version import release_label
 
@@ -113,8 +113,8 @@ def main(
     """
     err = resolve_err(err)
     parser = argparse.ArgumentParser(prog="hermes status", add_help=False)
-    parser.add_argument("--config-dir", type=Path, default=None)
-    parser.add_argument("--db", type=Path, default=None)
+    add_config_dir_arg(parser, default=None)
+    add_db_arg(parser, default=None)
     parser.add_argument("--unit", default=_UNIT)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--json", action="store_true")
@@ -163,11 +163,9 @@ def _ledger_status(
     version: str,
 ) -> int:
     """Build the report from config, the ledger and systemd, then print it."""
-    try:
-        config = load_config(parsed.config_dir)
-    except ConfigError as exc:
-        err.write(f"ERROR: config load failed: {exc}\n")
-        return 3
+    config = config_or_exit(lambda: load_config(parsed.config_dir), err)
+    if isinstance(config, int):
+        return config
 
     at = now if now is not None else datetime.now(UTC)
     unit = (unit_state or (lambda: systemd_unit_state(unit=parsed.unit)))()
