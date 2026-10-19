@@ -13,41 +13,20 @@ every picture waits for the app to settle (``_settle``), never for CPU idle alon
 import asyncio
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import ClassVar
 
 import pytest
 from syrupy.assertion import SnapshotAssertion
-from syrupy.extensions.image import SVGImageSnapshotExtension
-from syrupy.location import PyTestLocation
-from syrupy.types import SnapshotIndex
 
 from hermes.application.console.render import MADRID
 from hermes.application.console.views import ActivityItem, ActivityKind
 from hermes.entrypoints.tui_query import QueryInput, activity_query_app
 from hermes.entrypoints.tui_theme import CONTROL_THEME, NEON_THEME
+from tests.support.svg_snapshots import NamedSVG, repo_clean
 from tests.unit.entrypoints._settle import settle
 
 _FROZEN = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
 
 _SIZES: tuple[tuple[int, int], ...] = ((80, 24), (120, 36), (160, 45), (240, 60))
-
-
-class _NamedSVG(SVGImageSnapshotExtension):
-    """Store each snapshot under the name given to ``snapshot(name=...)`` alone."""
-
-    _file_extension: ClassVar[str] = "svg"
-
-    @classmethod
-    def get_snapshot_name(cls, *, test_location: PyTestLocation, index: SnapshotIndex = 0) -> str:
-        """Return the bare custom name, e.g. ``query_activity_neon_160x45``."""
-        if isinstance(index, str):
-            return index
-        return super().get_snapshot_name(test_location=test_location, index=index)
-
-
-def _repo_clean(svg: str) -> str:
-    """Strip trailing whitespace, as the repository's pre-commit hook does to committed SVGs."""
-    return "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
 
 
 _QUERY_THEMES: tuple[tuple[str, str], ...] = (("neon", NEON_THEME), ("control", CONTROL_THEME))
@@ -91,7 +70,7 @@ def _query_svg(theme: str, size: tuple[int, int]) -> str:
             await settle(pilot)
             app.query_one(QueryInput).value = _QUERY
             await settle(pilot)
-            return _repo_clean(app.export_screenshot())
+            return repo_clean(app.export_screenshot())
 
     return asyncio.run(drive())
 
@@ -109,4 +88,4 @@ def test_query_activity_svg_snapshot(
 ) -> None:
     """The reviewed picture of the activity query list, in one theme, at one breakpoint."""
     name = f"query_activity_{theme_name}_{size[0]}x{size[1]}"
-    assert _query_svg(theme, size) == snapshot(extension_class=_NamedSVG, name=name)
+    assert _query_svg(theme, size) == snapshot(extension_class=NamedSVG, name=name)

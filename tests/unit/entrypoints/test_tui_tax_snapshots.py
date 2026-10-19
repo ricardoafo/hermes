@@ -13,13 +13,9 @@ SOL lot highlighted, so its FIFO detail shows.
 import asyncio
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import ClassVar
 
 import pytest
 from syrupy.assertion import SnapshotAssertion
-from syrupy.extensions.image import SVGImageSnapshotExtension
-from syrupy.location import PyTestLocation
-from syrupy.types import SnapshotIndex
 
 from hermes.adapters.console import FixtureReadModel
 from hermes.adapters.console.tax_demo import DemoTaxSource, demo_profile
@@ -27,6 +23,7 @@ from hermes.entrypoints.tui import HomeApp
 from hermes.entrypoints.tui_query import SortableTable
 from hermes.entrypoints.tui_settings import ThemeChoice
 from hermes.entrypoints.tui_tax import TaxPackStatus, TaxTab
+from tests.support.svg_snapshots import NamedSVG, repo_clean
 from tests.unit.domain.tax.scales import SCALE_2026
 
 _FROZEN = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
@@ -41,24 +38,6 @@ _VIEWS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 # Newest first: ETH, BTC, SOL (open), then the flagged SOL lot.
 _FLAGGED_ROW = 3
-
-
-class _NamedSVG(SVGImageSnapshotExtension):
-    """Store each snapshot under the name given to ``snapshot(name=...)`` alone."""
-
-    _file_extension: ClassVar[str] = "svg"
-
-    @classmethod
-    def get_snapshot_name(cls, *, test_location: PyTestLocation, index: SnapshotIndex = 0) -> str:
-        """Return the bare custom name, e.g. ``tax_summary_neon_160x45``."""
-        if isinstance(index, str):
-            return index
-        return super().get_snapshot_name(test_location=test_location, index=index)
-
-
-def _repo_clean(svg: str) -> str:
-    """Strip trailing whitespace, as the repository's pre-commit hook does to committed SVGs."""
-    return "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
 
 
 def _svg(view: str, keys: tuple[str, ...], size: tuple[int, int], theme: ThemeChoice) -> str:
@@ -84,7 +63,7 @@ def _svg(view: str, keys: tuple[str, ...], size: tuple[int, int], theme: ThemeCh
                 table.focus()
                 table.move_cursor(row=_FLAGGED_ROW, animate=False)
                 await pilot.pause()
-            return _repo_clean(app.export_screenshot())
+            return repo_clean(app.export_screenshot())
 
     return asyncio.run(drive())
 
@@ -108,4 +87,4 @@ def test_tax_svg_snapshot(
 ) -> None:
     """The reviewed picture of one Tax sub-tab, in one theme, at one breakpoint."""
     name = f"tax_{view}_{theme_name}_{size[0]}x{size[1]}"
-    assert _svg(view, keys, size, theme) == snapshot(extension_class=_NamedSVG, name=name)
+    assert _svg(view, keys, size, theme) == snapshot(extension_class=NamedSVG, name=name)

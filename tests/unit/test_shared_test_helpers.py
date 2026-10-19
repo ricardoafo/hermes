@@ -33,6 +33,8 @@ _PATTERNS: dict[str, str] = {
     "clock": r"^class _Clock\b",
     "repo-root": r"Path\(__file__\)(?:\.resolve\(\))?\.parents\[",
     "root-skip": r"Could not find project root",
+    "named-svg": r"^class _NamedSVG\b",
+    "repo-clean": r"^def _repo_clean\(",
 }
 
 

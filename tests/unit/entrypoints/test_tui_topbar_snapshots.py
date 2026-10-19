@@ -16,18 +16,15 @@ views), a fixed version and release, and no settings file.
 
 import asyncio
 from datetime import UTC, datetime
-from typing import ClassVar
 
 import pytest
 from syrupy.assertion import SnapshotAssertion
-from syrupy.extensions.image import SVGImageSnapshotExtension
-from syrupy.location import PyTestLocation
-from syrupy.types import SnapshotIndex
 
 from hermes.adapters.console import FixtureReadModel
 from hermes.application.console import ConsoleReadModel
 from hermes.entrypoints.tui import HomeApp
 from hermes.entrypoints.tui_settings import ThemeChoice
+from tests.support.svg_snapshots import NamedSVG, repo_clean
 
 # 16:00 Madrid: two hours after the fixture's 14:00 check, two before the 18:00 one.
 _HALF_WAY = datetime(2026, 10, 3, 14, 0, tzinfo=UTC)
@@ -57,24 +54,6 @@ class _Live:
         return getattr(self._inner, name)
 
 
-class _NamedSVG(SVGImageSnapshotExtension):
-    """Store each snapshot under the name given to ``snapshot(name=...)`` alone."""
-
-    _file_extension: ClassVar[str] = "svg"
-
-    @classmethod
-    def get_snapshot_name(cls, *, test_location: PyTestLocation, index: SnapshotIndex = 0) -> str:
-        """Return the bare custom name, e.g. ``topbar_neon_160x45``."""
-        if isinstance(index, str):
-            return index
-        return super().get_snapshot_name(test_location=test_location, index=index)
-
-
-def _repo_clean(svg: str) -> str:
-    """Strip trailing whitespace, as the repository's pre-commit hook does to committed SVGs."""
-    return "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
-
-
 def _svg(size: tuple[int, int], theme: ThemeChoice, allow_mainnet: bool | None) -> str:
     async def drive() -> str:
         model: ConsoleReadModel = (
@@ -93,7 +72,7 @@ def _svg(size: tuple[int, int], theme: ThemeChoice, allow_mainnet: bool | None) 
         )
         async with app.run_test(size=size) as pilot:
             await pilot.pause()
-            return _repo_clean(app.export_screenshot())
+            return repo_clean(app.export_screenshot())
 
     return asyncio.run(drive())
 
@@ -121,4 +100,4 @@ def test_topbar_svg_snapshot(
     allow_mainnet: bool | None,
 ) -> None:
     """The reviewed picture of Home's top bar for one mainnet state, theme and breakpoint."""
-    assert _svg(size, theme, allow_mainnet) == snapshot(extension_class=_NamedSVG, name=name)
+    assert _svg(size, theme, allow_mainnet) == snapshot(extension_class=NamedSVG, name=name)
