@@ -466,7 +466,7 @@ _DRIFT_PAST_1E_18 = (
 )
 
 
-@settings(max_examples=300, deadline=None)
+@settings(max_examples=300)
 @given(history=_seeded_history())
 # Missed by 1.06e-18 against the former fixed 1e-18 tolerance (#608).
 @example(history=_DRIFT_PAST_1E_18)

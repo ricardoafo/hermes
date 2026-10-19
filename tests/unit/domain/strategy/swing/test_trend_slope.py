@@ -195,7 +195,7 @@ def _h4_closes(draw: st.DrawFn) -> list[Decimal]:
 
 
 @given(h4=_h4_closes(), step=st.integers(min_value=1, max_value=50))
-@settings(max_examples=60, suppress_health_check=[HealthCheck.too_slow], deadline=None)
+@settings(max_examples=60, suppress_health_check=[HealthCheck.too_slow])
 def test_with_a_rising_daily_trend_c3_trades_exactly_like_v2(h4: list[Decimal], step: int) -> None:
     """Property: strictly rising daily closes make the filter a no-op, entries and exits alike."""
     daily = [Decimal(1000 + step * i) for i in range(_DAILY_BARS)]
@@ -211,7 +211,7 @@ def test_with_a_rising_daily_trend_c3_trades_exactly_like_v2(h4: list[Decimal], 
     h4=_h4_closes(),
     daily=st.lists(st.integers(min_value=100, max_value=400), min_size=14, max_size=_DAILY_BARS),
 )
-@settings(max_examples=60, suppress_health_check=[HealthCheck.too_slow], deadline=None)
+@settings(max_examples=60, suppress_health_check=[HealthCheck.too_slow])
 def test_c3_never_enters_where_v2_would_not(h4: list[Decimal], daily: list[int]) -> None:
     """Property: from flat, every C3 entry is on a bar where v2's three conditions also held."""
     c3 = _c3()
