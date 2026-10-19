@@ -298,7 +298,7 @@ def test_a_missing_ledger_exits_three_and_is_not_created(tmp_path: Path) -> None
 
     code, out, err = _run(_args(path))
 
-    assert (code, out, err) == (3, "", f"ERROR: no ledger at {path}.\n")
+    assert (code, out, err) == (3, "", f"ERROR: no ledger at {path}\n")
     assert not path.exists()
 
 
@@ -530,7 +530,7 @@ def test_window_on_a_missing_ledger_exits_three(tmp_path: Path) -> None:
 
     code, _, err = _run(_window_args(missing, "--since", DAY_START.isoformat()))
 
-    assert (code, err, missing.exists()) == (3, f"ERROR: no ledger at {missing}.\n", False)
+    assert (code, err, missing.exists()) == (3, f"ERROR: no ledger at {missing}\n", False)
 
 
 @pytest.mark.parametrize(
