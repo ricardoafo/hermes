@@ -15,7 +15,7 @@ Invariants protected here:
   removed;
 - the rendered file round-trips: loading it refuses exactly the values it
   was rendered from;
-- the shipped file lists no digest yet and parses.
+- the shipped file parses and lists prod's four values.
 """
 
 import hashlib
@@ -186,9 +186,16 @@ def test_unparseable_fingerprint_yaml_stops_the_load(config_dir: Path) -> None:
         load_config(config_dir, env={"HERMES_ENV": "staging"})
 
 
-def test_the_shipped_file_parses_and_lists_no_digest_yet() -> None:
-    """The committed file is valid; the operator fills it on prod's machine."""
-    assert load_prod_fingerprints(_REPO_CONFIG) == ProdFingerprints(fingerprints={})
+def test_the_shipped_file_lists_prod_s_four_values() -> None:
+    """The committed file parses and lists the four values prod's env file sets (#1285)."""
+    shipped = load_prod_fingerprints(_REPO_CONFIG).fingerprints
+
+    assert {name: len(digests) for name, digests in shipped.items()} == {
+        "HERMES_TELEGRAM__BOT_TOKEN": 1,
+        "HERMES_SLACK__BOT_TOKEN": 1,
+        "HERMES_HEALTHCHECKS__PING_URL": 1,
+        "HERMES_SENTRY__DSN": 1,
+    }
 
 
 def test_render_lists_only_the_watched_values_that_are_set() -> None:
