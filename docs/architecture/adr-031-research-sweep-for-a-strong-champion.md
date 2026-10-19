@@ -37,7 +37,7 @@ A sweep batch is an ADR-026 batch with `kind: sweep`. Instead of hand-written ca
   `grid`: the values each free parameter takes. The free-parameter cap of the card still applies.
 - `max_candidates`: the signed total, at most 150. The pipeline expands the grids in a fixed order and refuses a
   batch whose expansion exceeds it.
-- `selection` and `backtest_funnel` blocks as ADR-026 §1 and §5 define them, plus `validation_per_family` (§3).
+- `selection` and `backtest_funnel` blocks as ADR-026 §1 and §5 define them.
 
 Each grid point is a candidate with a generated id (`<family>@<param>=<value>,...`). Its rules are its family's
 template at that point; nothing else differs between candidates of one family. Sizing, fees, universe, exits and
@@ -58,8 +58,9 @@ One signature signs the whole sweep. A sweep is immutable once signed, like any 
 ### 3. Validation only for the strongest Train passer of each family
 
 - After Train, a candidate goes on only if it passes every Train-judgeable check with the batch-wide N.
-- Of those, the pipeline sends to Validation at most `validation_per_family` per family (signed, default 1). It
-  picks the one with the highest Train DSR, computed and compared in code. No agent sees or ranks the values.
+- Of those, the pipeline sends to Validation at most one per family: the one with the highest Train DSR, computed
+  and compared in code. No agent sees or ranks the values. The count is fixed at one, not signed per sweep, so the
+  Validation set and the m of §4 stay at most 12.
 - The ADR-021 §5 budget of 5 Validation touches per family still binds, counted from the trial log as ADR-026 §3
   does. A family past its budget sends nothing.
 - At most 12 candidates reach Validation in one sweep, one per family.
@@ -73,6 +74,12 @@ Why not m = every candidate tested: with m = 150, a single survivor would need D
 real clears. The selection effect of the sweep is already charged in N, which deflates every DSR for all 150 trials.
 Charging it again in m would count the same trials twice. The conservative alternative, m = all candidates, is
 recorded under "What would change this decision".
+
+Before the first sweep is signed, the pipeline proves this m on synthetic data. It runs a full sweep of the signed
+shape (same families, grids and gates) on many random-walk price series that hold no edge, and counts how often a
+champion comes out. If that false-champion rate is above the batch's q, sweeps use m = every candidate tested until a
+decision record says otherwise. The check uses generated prices only, never real or sealed data, and its PASS/FAIL
+goes in the sweep's record.
 
 The champion is the survivor with the highest DSR, ties broken as in ADR-026 §5. If nothing survives, there is no
 champion and one post-mortem covers the sweep.
@@ -138,14 +145,15 @@ Alternatives considered:
 
 ## What would change this decision
 
-- Evidence that the batch-wide N under-charges correlated grid points: then BH runs with m = every candidate, by
-  decision record.
+- The §4 null check failing, or other evidence that the batch-wide N under-charges correlated grid points: then BH
+  runs with m = every candidate tested, by decision record.
 - A sweep whose champion fails its shadow badly: then the grid caps tighten.
 
 ## Build (after acceptance)
 
 - Sweep front matter, grid expansion and `hermes batch check` support.
 - Chunked Train jobs and per-family Validation selection in `backtest-batch.yml`.
+- The §4 null check on random-walk data, run before the first sweep is signed.
 - Champion step with m from §4; results job and Lab screen read per-candidate verdicts.
 - The first sweep's families and cards, drafted from the literature and the swing-b1 and swing-b2 records.
 
