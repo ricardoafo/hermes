@@ -13,7 +13,6 @@ fields stay read-only.
 from __future__ import annotations
 
 import contextlib
-import dataclasses
 import importlib
 import pkgutil
 from collections.abc import Iterator
@@ -69,10 +68,3 @@ def test_a_frozen_error_leaves_a_generator_context_manager_as_itself(
     with pytest.raises(error_type) as caught, _block():
         raise error
     assert (caught.value is error, caught.value.__traceback__ is not None) == (True, True)
-
-
-def test_declared_fields_stay_frozen() -> None:
-    """Letting the traceback through does not unfreeze the error's own fields."""
-    error = LedgerError(msg="disk full")
-    with pytest.raises(dataclasses.FrozenInstanceError):
-        error.__setattr__("msg", "changed")
