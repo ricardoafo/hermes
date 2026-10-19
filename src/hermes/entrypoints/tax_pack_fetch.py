@@ -101,9 +101,20 @@ def build_fetch_argv(settings: VpsSettings, year: int) -> list[str]:
 
 
 def _subprocess_runner(argv: list[str]) -> FetchResult:
-    """Run ssh and capture the archive on stdout and the diagnostics on stderr."""
-    done = subprocess.run(argv, capture_output=True, check=False)  # noqa: S603 - argv list, fixed ssh binary
-    return FetchResult(done.returncode, done.stdout, done.stderr.decode("utf-8", errors="replace"))
+    """Run ssh, keeping at most one byte past the size cap of its stdout.
+
+    Reading stops (and ssh is killed) as soon as the stream is larger than a tax
+    pack can be, so memory stays bounded whatever the server sends.
+    """
+    with subprocess.Popen(  # noqa: S603 - argv list, fixed ssh binary
+        argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    ) as proc:
+        assert proc.stdout is not None  # noqa: S101 - PIPE guarantees it
+        archive = proc.stdout.read(_MAX_PACK_BYTES + 1)
+        if len(archive) > _MAX_PACK_BYTES:
+            proc.kill()
+        _, stderr = proc.communicate()
+        return FetchResult(proc.returncode, archive, stderr.decode("utf-8", errors="replace"))
 
 
 def verify_pack(year: int, files: Mapping[str, bytes]) -> str | None:
@@ -140,6 +151,8 @@ def verify_pack(year: int, files: Mapping[str, bytes]) -> str | None:
 
 def _read_archive(archive: bytes, year: int) -> dict[str, bytes] | str:
     """Return the flat file map of ``<year>/`` in ``archive``, or one line on a bad archive."""
+    if len(archive) > _MAX_PACK_BYTES:
+        return "the archive is larger than a tax pack can be"
     files: dict[str, bytes] = {}
     total = 0
     try:
@@ -183,14 +196,23 @@ def _parse(argv: list[str], stream: TextIO, err: TextIO) -> argparse.Namespace |
 
 
 def _install(destination: Path, files: Mapping[str, bytes]) -> None:
-    """Write ``files`` to ``destination`` next to it first, then swap the folder in."""
+    """Write ``files`` next to ``destination``, then swap the folder in, the old one aside first."""
     staging = destination.with_name(f".{destination.name}.fetching")
     shutil.rmtree(staging, ignore_errors=True)
     staging.mkdir(parents=True)
     for name, content in files.items():
         (staging / name).write_bytes(content)
-    shutil.rmtree(destination, ignore_errors=True)
-    staging.replace(destination)
+    previous = destination.with_name(f".{destination.name}.previous")
+    shutil.rmtree(previous, ignore_errors=True)
+    if destination.exists():
+        destination.replace(previous)
+    try:
+        staging.replace(destination)
+    except OSError:
+        if previous.exists():
+            previous.replace(destination)
+        raise
+    shutil.rmtree(previous, ignore_errors=True)
 
 
 def fetch_main(

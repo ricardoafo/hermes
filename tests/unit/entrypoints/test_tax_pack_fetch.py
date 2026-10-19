@@ -9,6 +9,8 @@ Exit codes: 0 fetched, 1 ssh or server failure, 2 usage, 4 manifest mismatch.
 import hashlib
 import io
 import json
+import shutil
+import sys
 import tarfile
 from datetime import UTC, datetime
 from pathlib import Path
@@ -18,6 +20,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from hermes.application.filing.pack import MANIFEST_FILE, render_manifest
+from hermes.entrypoints import tax_pack_fetch
 from hermes.entrypoints.commands import discover
 from hermes.entrypoints.tax_pack_fetch import (
     EXIT_UNVERIFIED,
@@ -355,3 +358,81 @@ def test_a_manifest_that_is_not_json_is_refused() -> None:
     assert verify_pack(_YEAR, {MANIFEST_FILE: json.dumps({"x": 1}).encode()}) == (
         "manifest.json is not a pack manifest"
     )
+
+
+def test_the_real_runner_reads_stdout_stderr_and_the_exit_code() -> None:
+    """R-1: the subprocess seam returns the child's bytes, diagnostics and exit code unchanged."""
+    program = "import sys; sys.stdout.buffer.write(b'abc'); sys.stderr.write('warn'); sys.exit(3)"
+    result = tax_pack_fetch._subprocess_runner([sys.executable, "-c", program])
+    assert result == FetchResult(3, b"abc", "warn")
+
+
+def test_the_real_runner_stops_reading_past_the_size_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    """R-2: a server that streams more than a pack can hold is cut off, not buffered."""
+    monkeypatch.setattr(tax_pack_fetch, "_MAX_PACK_BYTES", 10)
+    program = "import sys; sys.stdout.buffer.write(b'x' * 1000)"
+    result = tax_pack_fetch._subprocess_runner([sys.executable, "-c", program])
+    assert result.archive == b"x" * 11
+
+
+def test_an_oversized_stream_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """R-2: more bytes than the cap is exit 4 and nothing is written."""
+    monkeypatch.setattr(tax_pack_fetch, "_MAX_PACK_BYTES", 10)
+    code, _, err = _run(tmp_path, _ok(), "--year", "2026", "--out", str(tmp_path / "p"))
+    assert code == EXIT_UNVERIFIED
+    assert (
+        err
+        == "ERROR: the 2026 pack was not written: the archive is larger than a tax pack can be\n"
+    )
+    assert not (tmp_path / "p").exists()
+
+
+@pytest.mark.skipif(shutil.which("tar") is None, reason="needs a tar command")
+def test_a_pack_streamed_by_the_real_tar_command_verifies(tmp_path: Path) -> None:
+    """R-1: the archive the server's `tar -C <dir> -cf - <year>` writes parses and verifies.
+
+    Seam: the only part not run is ssh itself; the tar command and the subprocess
+    runner are the real ones, pointed at a local folder.
+    """
+    folder = tmp_path / "server" / "2026"
+    folder.mkdir(parents=True)
+    for name, content in _pack().items():
+        (folder / name).write_bytes(content)
+
+    def local_tar(_ssh_argv: list[str]) -> FetchResult:
+        return tax_pack_fetch._subprocess_runner(
+            ["tar", "-C", str(tmp_path / "server"), "-cf", "-", "2026"]
+        )
+
+    out, err = io.StringIO(), io.StringIO()
+    code = fetch_main(
+        ["--year", "2026"],
+        stream=out,
+        default_out=tmp_path / "pc",
+        env={},
+        runner=local_tar,
+        err=err,
+    )
+    assert code == 0
+    assert (tmp_path / "pc" / "server" / "2026" / "trail.csv").read_bytes() == b"sale,lot\n1,2\n"
+
+
+def test_a_crash_while_swapping_never_loses_the_earlier_copy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R-2: if the new folder cannot be moved in, the earlier fetched pack is put back."""
+    out = tmp_path / "p"
+    assert _run(tmp_path, _ok(), "--year", "2026", "--out", str(out))[0] == 0
+    destination = out / "server" / "2026"
+    real_replace = Path.replace
+
+    def failing_replace(self: Path, target: Path) -> Path:
+        if self.name == ".2026.fetching":
+            raise OSError("disk full")
+        return real_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", failing_replace)
+    with pytest.raises(OSError, match="disk full"):
+        _run(tmp_path, _ok(), "--year", "2026", "--out", str(out))
+    monkeypatch.undo()
+    assert (destination / "trail.csv").read_bytes() == b"sale,lot\n1,2\n"
