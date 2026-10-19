@@ -48,7 +48,7 @@ class Run:
     Attributes:
         db: Its ledger.
         log: Its stdout and stderr.
-        exit_code: How it exited after SIGTERM.
+        exit_code: How it exited after its stop signal.
         telegram: Every Telegram request it made, oldest first.
         stopped_at: The scripted instant the run was stopped at.
 
