@@ -446,22 +446,17 @@ listing the PRs and changelog lines since the previous deploy, and posts
 the same summary to Telegram (#626). On the box,
 `readlink /opt/hermes/current` names the live `versions/<sha12>`.
 
-### Day 0: deploy only new versions
+### What deploys
 
-Until the shadow's day 0, every green `main` deploys. At day 0 (ADR-021,
-issue #797), right after archiving the warm-up ledger, set the repository
-variable that makes CD deploy only a cut version's first deploy
-(ADR-022 §6):
+Every green `main` that changes a file the release bundle carries deploys,
+as the next computed version (ADR-030). A push that changes only docs,
+tests or CI is gated and bundled, then shows a notice and a skipped
+deploy job. The `DEPLOY_ON` repository variable is retired: CD ignores it
+and warns while it is still set, so the Code Owner can delete it:
 
 ```bash
-gh variable set DEPLOY_ON --body version --repo ricardoafo/hermes
+gh variable delete DEPLOY_ON --repo ricardoafo/hermes
 ```
-
-From then on, CD still gates and bundles every green `main`, but deploys
-only a commit that carries a version with no `v<version>` tag and no
-earlier deploy. Other runs show a notice and a skipped deploy job. To go
-back, set it to `every-green` or delete it. Any other value fails CD on
-purpose. Only the Code Owner changes this variable.
 
 ### Failure modes
 
