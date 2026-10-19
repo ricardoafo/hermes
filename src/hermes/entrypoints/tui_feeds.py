@@ -37,15 +37,8 @@ __all__ = ["ContextFeeds"]
 class _Host(Protocol):
     """The two methods of a Textual app the feeds call."""
 
-    def run_worker(
-        self,
-        work: Callable[[], None],
-        *,
-        name: str,
-        group: str,
-        thread: bool,
-        exit_on_error: bool,
-    ) -> object: ...
+    @property
+    def run_worker(self) -> Callable[..., object]: ...
 
     def call_from_thread(self, callback: Callable[..., None], *args: Any) -> object: ...
 

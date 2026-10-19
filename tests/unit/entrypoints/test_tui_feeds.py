@@ -61,7 +61,9 @@ class _App:
         self.held: list[Callable[[], None]] = []
         self.hold = False
 
-    def run_worker(self, work: Callable[[], None], *, name: str, **_: Any) -> None:
+    def run_worker(
+        self, work: Callable[[], None], /, *, name: str, group: str, **options: bool
+    ) -> None:
         self.workers.append(name)
         if self.hold:
             self.held.append(work)
