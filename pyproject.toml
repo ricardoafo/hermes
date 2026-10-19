@@ -381,6 +381,7 @@ source_modules = [
 ]
 forbidden_modules = [
   "hermes.application.console.live",
+  "hermes.application.console.live_context",
   "hermes.ports.live_prices",
   "hermes.entrypoints.tui_live",
 ]
