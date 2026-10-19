@@ -531,9 +531,11 @@ jobs:
       # shipped commit, with this deploy's notes as the release body
       # (ADR-030 §5). A redeploy of a version already tagged leaves the tag.
       # The deploy-<sha12> release stays the latest one, since the notes
-      # chain runs on those tags. A failure here is a warning: the box
-      # already runs the release.
+      # chain runs on those tags. The box already runs the release, so a
+      # failure here lets Telegram still announce it, then fails the job
+      # below: without the tag the next push would reuse this number.
       - name: Tag the version
+        id: tag
         if: inputs.dry_run != true
         continue-on-error: true
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
@@ -578,6 +580,12 @@ jobs:
               --data-urlencode "text@notes/telegram.txt" \
               --data-urlencode "disable_web_page_preview=true" \
               "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage"
+
+      - name: Fail when the version was not tagged
+        if: inputs.dry_run != true && steps.tag.outcome == 'failure'
+        run: |
+          echo "::error::the release is live on hermes-01 but its version tag was not created; the Code Owner creates it on this commit before the next merge, or the next push reuses the number"
+          exit 1
 
       - name: Dry-run notice
         if: inputs.dry_run == true

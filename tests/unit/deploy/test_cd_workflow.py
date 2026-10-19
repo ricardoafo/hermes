@@ -424,7 +424,7 @@ def test_release_is_tagged_with_the_shipped_commit() -> None:
 
 
 def test_version_is_tagged_after_the_deploy_release_and_before_telegram() -> None:
-    """A cut version is tagged once the box runs it, never failing the deploy (ADR-022 §3)."""
+    """A cut version is tagged once the box runs it, before the announcement (ADR-022 §3)."""
     labels = [_label(s) for s in _steps("deploy")]
     step = next(s for s in _steps("deploy") if _label(s) == "Tag the version")
 
@@ -434,6 +434,20 @@ def test_version_is_tagged_after_the_deploy_release_and_before_telegram() -> Non
         labels.index("Create the release")
         < labels.index("Tag the version")
         < labels.index("Announce the release on Telegram")
+    )
+
+
+def test_a_missing_version_tag_fails_the_deploy_after_the_announcement() -> None:
+    """ADR-030 §5: a deploy whose tag failed goes red, or the next push reuses its number."""
+    steps = _steps("deploy")
+    labels = [_label(s) for s in steps]
+    step = next(s for s in steps if _label(s) == "Fail when the version was not tagged")
+
+    assert next(s for s in steps if _label(s) == "Tag the version")["id"] == "tag"
+    assert step["if"] == f"{_DRY_RUN_GUARD} && steps.tag.outcome == 'failure'"
+    assert "exit 1" in step["run"]
+    assert labels.index("Announce the release on Telegram") < labels.index(
+        "Fail when the version was not tagged"
     )
 
 
