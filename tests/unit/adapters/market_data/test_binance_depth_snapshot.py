@@ -23,7 +23,6 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from pathlib import Path
 from typing import cast
 
 import anyio
@@ -39,8 +38,9 @@ from hermes.domain.market_data.orderbook import Orderbook
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
 from hermes.infrastructure.config.models import MarketDataConfig
+from tests.support.paths import REPO_ROOT
 
-_FIXTURE = Path(__file__).parents[3] / "fixtures" / "binance_public" / "depth_btcusdt_limit20.json"
+_FIXTURE = REPO_ROOT / "tests" / "fixtures" / "binance_public" / "depth_btcusdt_limit20.json"
 _DEPTH_URL = "https://data-api.binance.vision/api/v3/depth"
 _BTC = Pair(base=Currency.BTC, quote=Currency.USDT)
 _START = datetime(2026, 10, 4, 4, 0, 5, tzinfo=UTC)

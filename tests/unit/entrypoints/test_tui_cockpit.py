@@ -54,21 +54,12 @@ from hermes.entrypoints.tui import (
 from hermes.entrypoints.tui_settings import ThemeChoice, load_settings
 from hermes.entrypoints.tui_theme import BASE, CONTROL_ROOM, MOTION, NEON, NIGHT, pulse_steps
 from hermes.entrypoints.tui_widgets import HudPanel, TabBar, ThemePicker, WindowBar
+from tests.support.clock import FakeClock
 
 _MADRID = ZoneInfo("Europe/Madrid")
 # The fixture's read time: 14:12 Madrid, next check 18:00 Madrid.
 _DAY = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
 _NIGHT = datetime(2026, 10, 3, 21, 30, tzinfo=UTC)  # 23:30 Madrid
-
-
-class _Clock:
-    """A clock the test moves by hand."""
-
-    def __init__(self, now: datetime) -> None:
-        self.now = now
-
-    def __call__(self) -> datetime:
-        return self.now
 
 
 def _run[T](
@@ -307,10 +298,10 @@ def test_wide_status_row_shows_the_countdown() -> None:
 
 def test_clock_and_countdown_tick_every_second() -> None:
     """One second later the status-row clock and the countdown have both moved."""
-    clock = _Clock(_DAY)
+    clock = FakeClock(_DAY)
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[str, str]:
-        clock.now = _DAY + timedelta(seconds=1)
+        clock.current = _DAY + timedelta(seconds=1)
         await pilot.pause(1.3)
         return app.plain_text("clock").strip(), app.plain_text("countdown").strip()
 
@@ -489,11 +480,11 @@ def test_auto_is_neon_by_day() -> None:
 
 def test_auto_switches_to_night_at_23() -> None:
     """When the clock passes 23:00 Madrid, the next tick switches Auto to the night theme."""
-    clock = _Clock(datetime(2026, 10, 3, 20, 59, 59, tzinfo=UTC))
+    clock = FakeClock(datetime(2026, 10, 3, 20, 59, 59, tzinfo=UTC))
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[str, str]:
         before = app.theme
-        clock.now = datetime(2026, 10, 3, 21, 0, 0, tzinfo=UTC)
+        clock.current = datetime(2026, 10, 3, 21, 0, 0, tzinfo=UTC)
         await pilot.pause(1.3)
         return before, app.theme
 
@@ -1080,11 +1071,11 @@ def test_late_and_down_have_no_live_dot() -> None:
 
 def test_auto_leaves_night_at_eight() -> None:
     """When the clock passes 08:00 Madrid, the next tick switches Auto back to Neon."""
-    clock = _Clock(datetime(2026, 10, 4, 5, 59, 59, tzinfo=UTC))
+    clock = FakeClock(datetime(2026, 10, 4, 5, 59, 59, tzinfo=UTC))
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[str, str]:
         before = app.theme
-        clock.now = datetime(2026, 10, 4, 6, 0, 0, tzinfo=UTC)
+        clock.current = datetime(2026, 10, 4, 6, 0, 0, tzinfo=UTC)
         await pilot.pause(1.3)
         return before, app.theme
 
@@ -1095,11 +1086,11 @@ def test_a_hand_picked_control_room_ignores_the_night(tmp_path: Path) -> None:
     """A saved Control room choice stays Control room across 23:00."""
     path = tmp_path / "console.toml"
     path.write_text('theme = "control"\n', encoding="utf-8")
-    clock = _Clock(datetime(2026, 10, 3, 20, 59, 59, tzinfo=UTC))
+    clock = FakeClock(datetime(2026, 10, 3, 20, 59, 59, tzinfo=UTC))
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[str, str]:
         before = app.theme
-        clock.now = datetime(2026, 10, 3, 21, 0, 1, tzinfo=UTC)
+        clock.current = datetime(2026, 10, 3, 21, 0, 1, tzinfo=UTC)
         await pilot.pause(1.3)
         return before, app.theme
 
@@ -1115,11 +1106,11 @@ def test_entering_night_slows_the_pulse_and_stops_the_day_effects() -> None:
     Issue #712's day effects (radar, shimmer) stop at night; the binary strip
     is gone since issue #713.
     """
-    clock = _Clock(datetime(2026, 10, 3, 20, 59, 59, tzinfo=UTC))
+    clock = FakeClock(datetime(2026, 10, 3, 20, 59, 59, tzinfo=UTC))
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[list[str], list[str], float]:
         before = sorted(app.effect_timers)
-        clock.now = datetime(2026, 10, 3, 21, 0, 0, tzinfo=UTC)
+        clock.current = datetime(2026, 10, 3, 21, 0, 0, tzinfo=UTC)
         await pilot.pause(1.3)
         return before, sorted(app.effect_timers), app.effect_timers["pulse"]._interval
 

@@ -77,6 +77,7 @@ from hermes.infrastructure.config.models import StrategiesConfig
 from hermes.infrastructure.config.root import HermesConfig
 from tests.support.accepted import assert_accepted
 from tests.support.anomaly_rows import recorded_anomalies
+from tests.support.paths import REPO_ROOT
 from tests.support.serve_loop import (
     BASE,
     BTC,
@@ -90,7 +91,6 @@ from tests.support.serve_loop import (
     history,
 )
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _TELEGRAM_ENV = {
     "HERMES_TELEGRAM__BOT_TOKEN": "123:fake",  # gitleaks:allow
     "HERMES_TELEGRAM__CHAT_ID": "1",
@@ -118,7 +118,7 @@ def _with_pricing(config: HermesConfig, index: int, pricing: ExitPricing) -> Her
 @pytest.fixture
 def v2_config() -> HermesConfig:
     """Load the shipped ``config/`` with swing-mvp1-v2 enabled in place of v1."""
-    return load_config(_PROJECT_ROOT / "config", env=_V2_ENABLED_ENV)
+    return load_config(REPO_ROOT / "config", env=_V2_ENABLED_ENV)
 
 
 @pytest.fixture
@@ -128,7 +128,7 @@ def shadow_config() -> HermesConfig:
     Uses an empty env dict so no ambient shell variable can flip the
     tier or bleed credentials into the composition.
     """
-    return load_config(_PROJECT_ROOT / "config", env={})
+    return load_config(REPO_ROOT / "config", env={})
 
 
 class TestBuildComposition:
@@ -1040,9 +1040,7 @@ class TestFillKernelWiring:
         self, shadow_config: HermesConfig
     ) -> None:
         """The repo carries both files, so development runs start."""
-        assert_accepted(
-            serve_module.check_startup, shadow_config, {}, experiment_root=_PROJECT_ROOT
-        )
+        assert_accepted(serve_module.check_startup, shadow_config, {}, experiment_root=REPO_ROOT)
 
     def test_build_refuses_an_experiment_root_without_the_pre_registration(
         self, shadow_config: HermesConfig, tmp_path: Path

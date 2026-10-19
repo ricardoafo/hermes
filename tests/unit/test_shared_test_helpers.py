@@ -9,11 +9,8 @@ whole module if it ever happened. ``tests/support`` now holds ``fees_at``,
 
 Invariants: ``FakeClock`` answers ``now()`` and a call with the instant the
 test set, and ``SteppingFeed`` runs its step on a bar before yielding it.
-Outside ``tests/support``, each pattern below appears in exactly
-the files listed for it. A new copy fails the test, and so does a file that
-lost its copy but is still listed, so the list only shrinks. The listed files
-are the ones other open pull requests were changing when this guard landed;
-each later change that switches one removes it here.
+Outside ``tests/support``, none of the patterns below appears: a new private
+copy fails the test.
 """
 
 import asyncio
@@ -30,58 +27,12 @@ from tests.support.serve_loop import BTC, SteppingFeed, live
 
 _TESTS = REPO_ROOT / "tests"
 
-_LEFT: dict[str, tuple[str, frozenset[str]]] = {
-    "fees-at": (
-        r"^def _fees_at\(",
-        frozenset(
-            {
-                "tests/unit/application/backtest/test_replay.py",
-                "tests/unit/application/parity/test_check.py",
-                "tests/unit/application/parity/test_check_window.py",
-            }
-        ),
-    ),
-    "stepping-feed": (r"^class _SteppingFeed\b", frozenset()),
-    "clock": (
-        r"^class _Clock\b",
-        frozenset(
-            {
-                "tests/unit/application/console/test_live.py",
-                "tests/unit/entrypoints/test_tui_cockpit.py",
-                "tests/unit/entrypoints/test_tui_live_screen.py",
-            }
-        ),
-    ),
-    "repo-root": (
-        r"Path\(__file__\)(?:\.resolve\(\))?\.parents\[",
-        frozenset(
-            {
-                "tests/integration/entrypoints/test_home_from_ledger.py",
-                "tests/unit/application/strategy_protocol/test_lab_notebook.py",
-                "tests/unit/infrastructure/config/test_endpoint_tiers.py",
-                "tests/unit/test_production_reachability.py",
-                "tests/unit/adapters/data_manifest/test_json_file.py",
-                "tests/unit/adapters/exchanges/test_binance_balance_reader.py",
-                "tests/unit/adapters/market_data/test_binance_depth_snapshot.py",
-                "tests/unit/deploy/test_cd_workflow.py",
-                "tests/unit/deploy/test_hermes_env_example.py",
-                "tests/unit/deploy/test_systemd_units.py",
-                "tests/unit/entrypoints/test_cli.py",
-                "tests/unit/entrypoints/test_config_check.py",
-                "tests/unit/entrypoints/test_serve.py",
-                "tests/unit/entrypoints/test_tui_logs.py",
-                "tests/unit/entrypoints/test_tui_topbar.py",
-                "tests/unit/infrastructure/config/test_loader.py",
-                "tests/unit/infrastructure/test_cut_release.py",
-                "tests/unit/scripts_backtest/test_backtest_batch_workflow.py",
-                "tests/unit/scripts_backtest/test_trial_stats.py",
-            }
-        ),
-    ),
-    "root-skip": (
-        r"Could not find project root",
-        frozenset({"tests/unit/application/strategy_protocol/test_pinned_dataset.py"}),
-    ),
+_PATTERNS: dict[str, str] = {
+    "fees-at": r"^def _fees_at\(",
+    "stepping-feed": r"^class _SteppingFeed\b",
+    "clock": r"^class _Clock\b",
+    "repo-root": r"Path\(__file__\)(?:\.resolve\(\))?\.parents\[",
+    "root-skip": r"Could not find project root",
 }
 
 
@@ -96,12 +47,10 @@ def _holding(pattern: str) -> set[str]:
     }
 
 
-@pytest.mark.parametrize("helper", sorted(_LEFT))
+@pytest.mark.parametrize("helper", sorted(_PATTERNS))
 def test_no_test_module_grows_its_own_copy(helper: str) -> None:
-    """Only the listed files still hold the pattern; a new copy or a stale entry fails."""
-    pattern, left = _LEFT[helper]
-
-    assert _holding(pattern) ^ left == set()
+    """No test module outside ``tests/support`` holds a private copy of a shared helper."""
+    assert _holding(_PATTERNS[helper]) == set()
 
 
 def test_fake_clock_reads_the_same_instant_both_ways_until_moved() -> None:

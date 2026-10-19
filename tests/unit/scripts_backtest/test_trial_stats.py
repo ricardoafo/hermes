@@ -18,11 +18,12 @@ import pytest
 from hermes.adapters.trial_log.jsonl_file import JsonlTrialLog
 from hermes.domain.calibration.trial_record import DatasetRef, TrialRecord
 from hermes.domain.market_data.dataset_manifest import DataSplit
+from tests.support.paths import REPO_ROOT
 
 
 def _import_script():
     """Import the script module (not a package)."""
-    root = Path(__file__).resolve().parents[3]
+    root = REPO_ROOT
     spec = importlib.util.spec_from_file_location(
         "trial_stats_script", root / "scripts" / "backtest" / "trial_stats.py"
     )
