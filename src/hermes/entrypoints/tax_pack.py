@@ -79,6 +79,7 @@ __all__ = [
     "PACK_DIR_ENV",
     "EstimateRunner",
     "main",
+    "out_root",
     "run_estimate",
 ]
 
@@ -90,7 +91,8 @@ EstimateRunner = Callable[[list[str], Mapping[str, str], Callable[[], datetime]]
 """Runs ``hermes tax`` with the given arguments; its text, or ``None`` on a non-zero exit."""
 
 _USAGE: Final[str] = (
-    "Usage: hermes tax-pack [--year YYYY] [--out DIR] [--db PATH] [--config-dir DIR]\n"
+    "Usage: hermes tax-pack fetch --year YYYY [--out DIR]   (see below)\n"
+    "       hermes tax-pack [--year YYYY] [--out DIR] [--db PATH] [--config-dir DIR]\n"
     "                       [--price COIN=EUR ...] [--history PATH] [--live]\n"
     "\n"
     "Refreshes the tax filing pack of a tax year in DIR/<year>/: the Modelo 100\n"
@@ -104,6 +106,9 @@ _USAGE: Final[str] = (
     "  --price COIN=EUR  31 December value of one unit; wins over the ledger\n"
     "  --history PATH  your earlier 721 declarations\n"
     "  --live          the ledger holds real fills (drops the shadow label)\n"
+    "\n"
+    "`fetch` copies the server's pack for a year to DIR/server/YEAR/ over ssh\n"
+    "and checks it against its manifest (exit 4 on a mismatch).\n"
     "\n"
     "Exit codes: 0 written, 1 ledger failure, 2 usage, 3 config, 5 frozen.\n"
 )
@@ -176,7 +181,7 @@ def main(
         history=history,
         campaigns=campaigns,
         overrides=overrides,
-        out_root=_out_root(parsed.out, snapshot),
+        out_root=out_root(parsed.out, snapshot),
         fx_factory=fx_factory,
         env=snapshot,
         now=now,
@@ -350,7 +355,7 @@ def _report(stream: TextIO, year: int, directory: Path, output: PackOutput) -> N
     stream.write("\n".join(lines) + "\n")
 
 
-def _out_root(out: Path | None, env: Mapping[str, str]) -> Path:
+def out_root(out: Path | None, env: Mapping[str, str]) -> Path:
     if out is not None:
         return out
     configured = env.get(PACK_DIR_ENV)
