@@ -1,0 +1,1 @@
+- The fake market service can replay recorded Train-window 4h bars from a Binance Vision directory, and refuses any window that reaches the Validation start on 2024-07-01 (#971).

@@ -5,15 +5,15 @@ breakpoint is checked on text: what each cell says and which colours the screen
 uses. A text snapshot shows its change in a diff; a 100 KB SVG does not.
 """
 
-from typing import ClassVar, Final
+from typing import Final
 
 from syrupy.assertion import SnapshotAssertion
 from syrupy.extensions.image import SVGImageSnapshotExtension
-from syrupy.location import PyTestLocation
-from syrupy.types import SnapshotIndex
 from textual.app import App
 
-__all__ = ["NamedSVG", "View", "assert_view", "capture", "is_record"]
+from tests.support.svg_snapshots import NamedSVG, repo_clean
+
+__all__ = ["View", "assert_view", "capture", "is_record"]
 
 _RECORD_SIZE: Final = "160x45"
 _NOT_RECORD_THEMES: Final = ("control",)
@@ -29,24 +29,6 @@ class View(str):
         view = super().__new__(cls, svg)
         view.digest = digest
         return view
-
-
-class NamedSVG(SVGImageSnapshotExtension):
-    """Store each SVG snapshot under the name given to ``snapshot(name=...)`` alone."""
-
-    _file_extension: ClassVar[str] = "svg"
-
-    @classmethod
-    def get_snapshot_name(cls, *, test_location: PyTestLocation, index: SnapshotIndex = 0) -> str:
-        """Return the bare custom name, e.g. ``home_ok_neon_160x45``."""
-        if isinstance(index, str):
-            return index
-        return super().get_snapshot_name(test_location=test_location, index=index)
-
-
-def _repo_clean(svg: str) -> str:
-    """Strip trailing whitespace, as the repository's pre-commit hook does to committed SVGs."""
-    return "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
 
 
 def capture(app: App[None]) -> View:
@@ -71,7 +53,7 @@ def capture(app: App[None]) -> View:
                 if colour is not None:
                     colours.add(colour.get_truecolor().hex)
     palette = " ".join(sorted(colours))
-    return View(_repo_clean(app.export_screenshot()), f"{text}\n---\ncolours: {palette}\n")
+    return View(repo_clean(app.export_screenshot()), f"{text}\n---\ncolours: {palette}\n")
 
 
 def is_record(name: str) -> bool:

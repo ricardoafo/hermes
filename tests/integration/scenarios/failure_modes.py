@@ -1014,9 +1014,9 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "A slow Telegram holds up the bar that sent the push",
-            gap=(
-                "issue #996: the push runs in a thread, but serve awaits it before it "
-                "finishes the bar (up to 30 s per channel on 429); inferred, untested"
+            proved_by=(
+                _U + "entrypoints/test_serve_push_budget.py"
+                "::test_the_worst_case_push_wait_stays_inside_the_live_book_window",
             ),
         ),
     ),
@@ -1091,7 +1091,12 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "RO-08 drawdown and time-to-recovery are never driven through serve",
-            gap="issue #1158: serve feeds days since the equity high as 0",
+            proved_by=(
+                _SHADOW + "test_a_drawdown_past_fifteen_percent_stops_the_entry_through_serve",
+                _SHADOW + "test_ninety_one_days_without_a_new_high_kill_the_live_entry",
+                _U + "entrypoints/test_serve_live_risk_inputs.py"
+                "::test_real_money_hands_the_executor_live_inputs_and_runs_ro02",
+            ),
         ),
         FailureMode(
             "A halt survives, or is lost across, a restart",

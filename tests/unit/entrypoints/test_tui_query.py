@@ -35,6 +35,7 @@ from hermes.entrypoints.tui_query import (
     status_line,
 )
 from hermes.entrypoints.tui_theme import CONTROL_THEME, NEON_THEME
+from tests.support.svg_snapshots import repo_clean
 from tests.unit.entrypoints._settle import settle
 
 _NOW = datetime(2026, 10, 5, 12, tzinfo=UTC)
@@ -67,11 +68,6 @@ class Shot:
     headers: tuple[str, ...]
     focused: str | None
     svg: str
-
-
-def _repo_clean(svg: str) -> str:
-    """Strip trailing whitespace, as the repository's pre-commit hook does to committed SVGs."""
-    return "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
 
 
 async def _drive(
@@ -107,7 +103,7 @@ async def _drive(
             sort=table.sort_keys,
             headers=tuple(str(c.label) for c in table.columns.values()),
             focused=None if focused is None else focused.id,
-            svg=_repo_clean(app.export_screenshot()),
+            svg=repo_clean(app.export_screenshot()),
         )
 
 

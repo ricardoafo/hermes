@@ -6,6 +6,8 @@ docs/decisions/2026-08-23-contract-test-tier.md.
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 import httpx
 import pytest
 
@@ -51,5 +53,27 @@ def test_get_ticker_against_real_kraken_returns_positive_prices() -> None:
         # Pair round-trip check — the domain Pair we asked for is the one
         # stamped on the returned Ticker.
         assert ticker.pair == Pair(base=Currency.BTC, quote=Currency.USDT)
+    finally:
+        adapter.close()
+
+
+@pytest.mark.contract
+def test_usdt_usd_book_answers_under_the_mapped_symbol() -> None:
+    """Real Kraken answers the USDT/USD book under ``USDTZUSD`` (#1158).
+
+    The depeg rules RO-05 and RO-06 read this price before real money; a
+    symbol Kraken renamed would leave both rules without a price. A pegged
+    USDT sits within 5% of $1.00; a reading outside that is a depeg or a
+    wrong book, and either needs a look.
+    """
+    adapter = KrakenPublicAdapter.create()
+    try:
+        try:
+            price = adapter.get_usd_price(Currency.USDT)
+        except KrakenPublicError as exc:
+            pytest.fail(f"Real Kraken Ticker failed for USDT/USD: {exc}.")
+        except httpx.HTTPError as exc:
+            pytest.fail(f"Transport failure calling Kraken Ticker: {exc!r}")
+        assert Decimal("0.95") < price < Decimal("1.05"), f"USDT/USD mid {price} is off the peg"
     finally:
         adapter.close()

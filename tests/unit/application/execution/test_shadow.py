@@ -17,6 +17,9 @@ Invariants (change 353-fill-kernel-in-serve D-1..D-5):
 - RO-01 refuses a third entry correlated above 0.80 with two held pairs,
   reading the same 30-day correlations of the observed 1d closes as the
   backtest replay, and leaves a pair pair under 30 returns unlocked (#514).
+- With real money's ``live_inputs`` (#1158), RO-02 reads the 1-hour median
+  spread, RO-05/RO-06 the stablecoin price and the recovery kill the days
+  since the equity high; each refuses an entry it lets through when neutral.
 
 Collaborators are real (kernel, router, walk fill model, SQLite ledger,
 trade recorder); only the depth source, the FX provider and the clock are
@@ -46,6 +49,7 @@ from hermes.application.execution.shadow import (
     AlreadyFilled,
     ShadowExecution,
     ShadowExecutor,
+    live_risk_engine,
     shadow_risk_engine,
 )
 from hermes.application.ledger.eur_pricer import EurPricer
@@ -59,6 +63,7 @@ from hermes.domain.market_data.bar_schedule import close_time_of
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.market_data.orderbook import Orderbook, OrderbookLevel
 from hermes.domain.portfolio.correlation import DailyCloses
+from hermes.domain.portfolio.snapshot import PortfolioSnapshot
 from hermes.domain.strategy.signal import SignalKind, SignalSide, StrategySignal
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
@@ -181,6 +186,27 @@ class _Rig:
         return anyio.run(_go)
 
 
+@dataclass
+class _LiveInputs:
+    """Scripted live risk inputs; the defaults are a calm market (#1158)."""
+
+    median: Decimal | None = Decimal("0.00002")
+    stable: Decimal | None = Decimal("1.0001")
+    days: float = 0.0
+
+    def median_spread_1h(self, pair: Pair, now: datetime) -> Decimal | None:
+        """Return the scripted median."""
+        return self.median
+
+    def stable_price(self, now: datetime) -> Decimal | None:
+        """Return the scripted stablecoin price."""
+        return self.stable
+
+    def days_since_equity_high(self, now: datetime) -> float:
+        """Return the scripted recovery days."""
+        return self.days
+
+
 @pytest.fixture
 def connection() -> Iterator[sqlite3.Connection]:
     """Return an in-memory SQLite connection, closed afterwards."""
@@ -196,16 +222,25 @@ def _rig(
     daily: tuple[str, str] | None = ("84000", "84500"),
     not_before: datetime | None = None,
     model: ExecutionModel | None = None,
+    live_inputs: _LiveInputs | None = None,
+    start: PortfolioSnapshot | None = None,
 ) -> _Rig:
-    """Build an executor over real collaborators, with two BTC 1d bars observed."""
+    """Build an executor over real collaborators, with two BTC 1d bars observed.
+
+    ``live_inputs`` builds it as serve does with real money: the live risk
+    engine and the live inputs (#1158). ``start`` replaces the seed the
+    tracker replays the ledger over.
+    """
     clock = SimulatedClock(start=_NOW)
     ledger = SqliteLedger(connection)
     fill_model = OrderbookWalkFillModel()
     kernel = FillKernel(
         fill_model=fill_model,
-        risk_engine=shadow_risk_engine(),
+        risk_engine=shadow_risk_engine() if live_inputs is None else live_risk_engine(),
         kill_evaluator=kill_evaluator(),
-        tracker=PortfolioTracker.rebuilt(seed(), ledger.trade_events(STRATEGY)).unwrap(),
+        tracker=PortfolioTracker.rebuilt(
+            seed() if start is None else start, ledger.trade_events(STRATEGY)
+        ).unwrap(),
         strategy_id=STRATEGY,
         sizing=SIZING,
     )
@@ -221,6 +256,7 @@ def _rig(
         strategy_id=STRATEGY,
         model=model,
         not_before=not_before,
+        live_inputs=live_inputs,
     )
     if daily is not None:
         executor.observe(_daily(daily[0], 2))
@@ -850,3 +886,125 @@ def test_prior_fill_finds_the_trade_a_re_evaluated_entry_already_made(
     after = rig.executor.prior_fill(_entry(bar), BTC_USDT)
 
     assert (before, after is not None and after.occurred_at) == (None, filled.fill.timestamp)
+
+
+def test_the_live_risk_engine_is_the_shadow_set_plus_ro02() -> None:
+    """Real money runs RO-01 and RO-03 to RO-08 as shadow does, and adds RO-02 (#1158)."""
+    shadow_rules = [type(rule).__name__ for rule in shadow_risk_engine()._rules]
+
+    assert [type(rule).__name__ for rule in live_risk_engine()._rules] == [
+        *shadow_rules,
+        "SpreadSpike",
+    ]
+
+
+def test_live_inputs_of_a_calm_market_let_the_entry_fill(connection: sqlite3.Connection) -> None:
+    """A calm median, a pegged USDT and no recovery days leave the entry to fill (#1158)."""
+    rig = _rig(connection, book=_live_book("84999", "85001"), live_inputs=_LiveInputs())
+    bar = _bar("85000")
+
+    assert _price(_executed(rig.run(_entry(bar), bar)).fill.avg_price) == Decimal(
+        "85001.000000000000"
+    )
+
+
+def _live_outcome(connection: sqlite3.Connection, inputs: _LiveInputs | None) -> object:
+    """Return the outcome of one fresh entry on a 2-USDT-wide BTC book."""
+    rig = _rig(connection, book=_live_book("84999", "85001"), live_inputs=inputs)
+    bar = _bar("85000")
+    return rig.run(_entry(bar), bar).outcome
+
+
+# SEV-1: S12 — with real money RO-02 must read a real median, never a neutral one (#1158).
+def test_ro02_halts_a_live_entry_on_a_spread_ten_times_its_median(
+    connection: sqlite3.Connection,
+) -> None:
+    """The book's spread (about 2.35e-5) is over ten times a 2e-6 median: RO-02 halts it."""
+    outcome = _live_outcome(connection, _LiveInputs(median=Decimal("0.000002")))
+
+    assert isinstance(outcome, Declined)
+    assert (outcome.rule, "RO-02: spread spike" in outcome.reason) == ("HALT", True)
+
+
+def test_without_a_recent_spread_sample_ro02_halts_the_live_entry(
+    connection: sqlite3.Connection,
+) -> None:
+    """No sample in the hour reads as a zero median, on which RO-02 halts conservatively."""
+    outcome = _live_outcome(connection, _LiveInputs(median=None))
+
+    assert isinstance(outcome, Declined)
+    assert (outcome.rule, "RO-02: 1H median spread is 0" in outcome.reason) == ("HALT", True)
+
+
+# SEV-1: S12 — with real money the depeg halt must read a real price (#1158).
+def test_a_usdt_four_percent_off_its_peg_halts_the_live_entry(
+    connection: sqlite3.Connection,
+) -> None:
+    """USDT at $0.96 is 4% off the peg, past RO-06's 3%: the entry is halted."""
+    outcome = _live_outcome(connection, _LiveInputs(stable=Decimal("0.96")))
+
+    assert isinstance(outcome, Declined)
+    assert outcome.rule == "HALT"
+
+
+def test_without_a_fresh_stablecoin_price_the_depeg_rules_skip(
+    connection: sqlite3.Connection,
+) -> None:
+    """A missing price reads as ``None``, which the depeg rules skip, as without a feed."""
+    outcome = _live_outcome(connection, _LiveInputs(stable=None))
+
+    assert isinstance(outcome, Executed)
+    assert _price(outcome.fill.avg_price) == Decimal("85001.000000000000")
+
+
+# SEV-1: S12 — a 15% drawdown must stop entries in serve, shadow and real money alike.
+def test_a_drawdown_past_fifteen_percent_stops_the_entry_through_serve(
+    connection: sqlite3.Connection,
+) -> None:
+    """At 16% under the peak the §10 drawdown kill halts the entry before RO-08 runs.
+
+    The router checks the kill first (router step 1), and RO-08 halts at the
+    same 15%, so the kill is the rule that stops it.
+    """
+    start = replace(seed(), cash=Decimal(4200), peak_equity=Decimal(5000))
+    rig = _rig(connection, book=_live_book("84999", "85001"), start=start)
+    bar = _bar("85000")
+
+    outcome = rig.run(_entry(bar), bar).outcome
+
+    assert isinstance(outcome, Halted)
+    assert outcome.breaker.decision.rule == "max_drawdown"
+
+
+# SEV-1: S12 — with real money the §10 recovery kill must read real days (#1158).
+def test_ninety_one_days_without_a_new_high_kill_the_live_entry(
+    connection: sqlite3.Connection,
+) -> None:
+    """91 days since the equity high fire the §10 recovery kill on the next entry."""
+    outcome = _live_outcome(connection, _LiveInputs(days=91.0))
+
+    assert isinstance(outcome, Halted)
+    assert outcome.breaker.decision.rule == "recovery_days"
+
+
+@pytest.mark.parametrize(
+    ("inputs", "refused_as"),
+    [
+        (_LiveInputs(median=Decimal("0.000002")), "Declined"),
+        (_LiveInputs(stable=Decimal("0.96")), "Declined"),
+        (_LiveInputs(days=91.0), "Halted"),
+    ],
+    ids=["ro02-spike", "depeg", "recovery"],
+)
+def test_shadow_fills_the_entry_the_live_inputs_refuse(
+    connection: sqlite3.Connection, inputs: _LiveInputs, refused_as: str
+) -> None:
+    """Without ``live_inputs`` the same market fills: shadow stays on the backtest's set (#514)."""
+    refused = _live_outcome(connection, inputs)
+    filled = _live_outcome(connection, None)
+
+    assert isinstance(filled, Executed)
+    assert (type(refused).__name__, _price(filled.fill.avg_price)) == (
+        refused_as,
+        Decimal("85001.000000000000"),
+    )

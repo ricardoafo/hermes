@@ -613,28 +613,29 @@ def test_motion_off_runs_no_effect_timer() -> None:
 
 
 def test_motion_on_runs_the_pulse_shimmer_and_radar() -> None:
-    """With motion on by day the pulse, the shimmer and the radar run.
+    """With motion on by day the pulse, the shimmer, the radar and the spinner run.
 
     Issue #712 added the shimmer and the radar; issue #713 removed the binary
-    strip (Code Owner 2026-10-06), so no strip timer runs.
+    strip (Code Owner 2026-10-06), so no strip timer runs; issue #721 added the
+    checking spinner.
     """
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> list[str]:
         await pilot.pause(1.3)
         return sorted(app.effect_timers)
 
-    assert _run(probe, motion=True) == ["pulse", "radar", "shimmer"]
+    assert _run(probe, motion=True) == ["pulse", "radar", "shimmer", "spinner"]
 
 
 def test_night_runs_only_the_slow_pulse() -> None:
-    """At night only the pulse runs, stepping every 0.8 s instead of 0.4 s."""
+    """At night the slow pulse and the checking spinner run; no shimmer, no radar."""
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[list[str], float]:
         del pilot
         pulse = app.effect_timers["pulse"]
         return sorted(app.effect_timers), pulse._interval
 
-    assert _run(probe, motion=True, clock=lambda: _NIGHT) == (["pulse"], 0.8)
+    assert _run(probe, motion=True, clock=lambda: _NIGHT) == (["pulse", "spinner"], 0.8)
 
 
 @pytest.fixture
@@ -1103,7 +1104,8 @@ def test_a_hand_picked_control_room_ignores_the_night(tmp_path: Path) -> None:
 def test_entering_night_slows_the_pulse_and_stops_the_day_effects() -> None:
     """With motion on, crossing 23:00 restarts the pulse at 0.8 s per step.
 
-    Issue #712's day effects (radar, shimmer) stop at night; the binary strip
+    Issue #712's day effects (radar, shimmer) stop at night, the checking
+    spinner (issue #721) keeps running; the binary strip
     is gone since issue #713.
     """
     clock = FakeClock(datetime(2026, 10, 3, 20, 59, 59, tzinfo=UTC))
@@ -1115,7 +1117,7 @@ def test_entering_night_slows_the_pulse_and_stops_the_day_effects() -> None:
         return before, sorted(app.effect_timers), app.effect_timers["pulse"]._interval
 
     assert _run(probe, clock=clock, motion=True) == (
-        ["pulse", "radar", "shimmer"],
-        ["pulse"],
+        ["pulse", "radar", "shimmer", "spinner"],
+        ["pulse", "spinner"],
         0.8,
     )

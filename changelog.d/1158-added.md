@@ -1,0 +1,1 @@
+- With real money (`allow_mainnet`), serve now feeds RO-02 the pair's 1-hour median spread, the depeg rules RO-05 and RO-06 a USDT price polled every 60 seconds from Kraken's public USDT/USD book, and the §10 recovery kill the days since the equity high once the drawdown since it reaches 8%. Shadow keeps all three neutral, as the backtest does.
