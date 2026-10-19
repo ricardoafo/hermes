@@ -27,8 +27,8 @@ from enum import IntEnum
 import pytest
 
 from hermes.adapters.ledger import SqliteLedger
+from hermes.adapters.ledger.codecs import iso_utc, json_default
 from hermes.adapters.ledger.migration_runner import apply_migrations
-from hermes.adapters.ledger.sqlite_ledger import _iso_utc, _json_default
 from hermes.domain.errors import LedgerError
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.events.trade_executed import TradeExecuted, TradeSide
@@ -440,7 +440,7 @@ class TestAppendEventPersistsSignalEmitted:
             row = conn.execute(
                 "SELECT event_type, event_schema_version, occurred_at FROM events"
             ).fetchone()
-            assert row == ("SignalEmitted", 1, _iso_utc(event.occurred_at))
+            assert row == ("SignalEmitted", 1, iso_utc(event.occurred_at))
         finally:
             conn.close()
 
@@ -552,17 +552,17 @@ class TestListOpenLotsRollbackOnSqlError:
 
 
 class TestSerialisationHelpers:
-    """Module-level helpers _iso_utc and _json_default handle boundary cases."""
+    """Module-level helpers iso_utc and json_default handle boundary cases."""
 
     def test_iso_utc_refuses_naive_datetime(self) -> None:
-        """_iso_utc raises LedgerError on naive datetime — bug caught at boundary."""
+        """iso_utc raises LedgerError on naive datetime — bug caught at boundary."""
         with pytest.raises(LedgerError, match="naive datetime"):
-            _iso_utc(datetime(2027, 3, 20, 12, 0, 0))  # naive on purpose
+            iso_utc(datetime(2027, 3, 20, 12, 0, 0))  # naive on purpose
 
     def test_json_default_rejects_unknown_type(self) -> None:
-        """_json_default raises TypeError for values it does not know how to serialise."""
+        """json_default raises TypeError for values it does not know how to serialise."""
         with pytest.raises(TypeError, match="Cannot serialize"):
-            _json_default(object())
+            json_default(object())
 
     def test_json_default_serialises_enum_by_value(self) -> None:
         """Non-str Enum values fall through to the .value branch."""
@@ -570,7 +570,7 @@ class TestSerialisationHelpers:
         class _NumberEnum(IntEnum):
             ONE = 1
 
-        assert _json_default(_NumberEnum.ONE) == 1
+        assert json_default(_NumberEnum.ONE) == 1
 
 
 class TestTradesBetween:

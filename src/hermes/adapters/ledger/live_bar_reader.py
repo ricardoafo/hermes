@@ -13,8 +13,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from hermes.adapters.ledger.codecs import live_bar_from_row
 from hermes.adapters.ledger.connection import open_ledger
-from hermes.adapters.ledger.sqlite_ledger import live_bar_from_row
 from hermes.domain.errors import LedgerError
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval

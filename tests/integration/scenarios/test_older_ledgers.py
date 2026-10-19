@@ -27,13 +27,13 @@ from pathlib import Path
 
 import pytest
 
+from hermes.adapters.ledger.codecs import event_to_json, iso_utc
 from hermes.adapters.ledger.migration_runner import (
     DESTRUCTIVE_MARKER,
     MIGRATIONS_DIR,
     apply_migrations,
     migrate_with_snapshot,
 )
-from hermes.adapters.ledger.sqlite_ledger import _event_to_json, _iso_utc
 from hermes.domain.errors import LedgerError
 from hermes.domain.events.bar_processed import BarProcessed
 from hermes.domain.market_data.bar import Bar
@@ -73,9 +73,9 @@ def _ledger_at(db: Path, last: str, bar: Bar, work: Path) -> None:
             (
                 BarProcessed.__event_schema_version__,
                 event.correlation_id,
-                _iso_utc(event.occurred_at),
-                _event_to_json(event),
-                _iso_utc(bar.close_time),
+                iso_utc(event.occurred_at),
+                event_to_json(event),
+                iso_utc(bar.close_time),
             ),
         )
         if "live_bars" in _tables(conn):
@@ -87,14 +87,14 @@ def _ledger_at(db: Path, last: str, bar: Bar, work: Path) -> None:
                     bar.pair.base.value,
                     bar.pair.quote.value,
                     bar.interval.value,
-                    _iso_utc(bar.open_time),
-                    _iso_utc(bar.close_time),
+                    iso_utc(bar.open_time),
+                    iso_utc(bar.close_time),
                     str(bar.open),
                     str(bar.high),
                     str(bar.low),
                     str(bar.close),
                     str(bar.volume),
-                    _iso_utc(bar.close_time),
+                    iso_utc(bar.close_time),
                 ),
             )
         conn.commit()

@@ -14,12 +14,12 @@ import json
 import sqlite3
 from datetime import datetime
 
-from hermes.adapters.ledger.connection import ReadOnlyLedgerReader
-from hermes.adapters.ledger.sqlite_ledger import (
-    _signal_from_payload,
-    _trades_from_rows,
+from hermes.adapters.ledger.codecs import (
     live_bar_from_row,
+    signal_from_payload,
+    trades_from_rows,
 )
+from hermes.adapters.ledger.connection import ReadOnlyLedgerReader
 from hermes.domain.errors import LedgerError
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.events.trade_executed import TradeExecuted
@@ -127,7 +127,7 @@ class SqliteParityReader(ReadOnlyLedgerReader):
             "ORDER BY occurred_at ASC, id ASC",
             (strategy_id.value,),
         )
-        return _trades_from_rows(rows, op="trades")
+        return trades_from_rows(rows, op="trades")
 
     def missed_bars_between(self, after: datetime, upto: datetime) -> int:
         """Return how many bars closing in ``(after, upto]`` serve reached late (#1078).
@@ -145,7 +145,7 @@ class SqliteParityReader(ReadOnlyLedgerReader):
     @staticmethod
     def _signals(rows: list[tuple[str]], *, op: str) -> tuple[SignalEmitted, ...]:
         try:
-            return tuple(_signal_from_payload(json.loads(row[0])) for row in rows)
+            return tuple(signal_from_payload(json.loads(row[0])) for row in rows)
         except (KeyError, ValueError, TypeError) as exc:
             raise LedgerError(msg=f"{op}: unreadable payload: {exc}") from exc
 
