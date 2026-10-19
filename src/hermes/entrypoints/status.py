@@ -1,11 +1,12 @@
 """``hermes status`` — is hermes processing bars, and when is the next one?
 
 Read-only: opens the ledger with SQLite's ``mode=ro`` and asks systemd about
-``hermes.service``; it never writes and is safe next to a running
+``hermes.service`` (or the unit ``--unit`` names, such as a lab shadow's
+``hermes-shadow@<name>.service``, #1079); it never writes and is safe next to a running
 ``hermes serve``. Leads with the verdict every console surface shares (all
 good, late, down), then one row per stream with its last and next close.
 
-Usage: ``hermes status [--config-dir DIR] [--db PATH] [--json | --summary]``
+Usage: ``hermes status [--config-dir DIR] [--db PATH] [--unit NAME] [--json | --summary]``
 
 ``--summary`` prints the one-line daily summary instead (#373); with
 ``--journal FILE`` (``-`` for stdin) it adds the window's journal error and
@@ -24,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -61,11 +63,13 @@ __all__ = ["main", "systemd_unit_state"]
 
 _UNIT: Final = "hermes.service"
 _BOT_UNIT: Final = "hermes-bot.service"
+_UNIT_NAME: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9@._:-]*\.service")
 _USAGE: Final = (
-    "Usage: hermes status [--config-dir DIR] [--db PATH] [--json | --summary]\n"
-    "                     [--journal FILE|-] [--restarts N]\n"
+    "Usage: hermes status [--config-dir DIR] [--db PATH] [--unit NAME]\n"
+    "                     [--json | --summary] [--journal FILE|-] [--restarts N]\n"
     "\n"
     "Read-only progress check: the verdict, then each stream's last and next close.\n"
+    "--unit names the systemd unit to check (default hermes.service).\n"
     "--summary prints the one-line daily summary; --journal and --restarts feed it.\n"
     "Exit codes: 0 all good, 1 late or down, 2 usage, 3 config error or no ledger.\n"
 )
@@ -95,7 +99,7 @@ def main(
         rest: Residual argv after the ``status`` token.
         stream: Output stream.
         now: Reference instant; defaults to the wall clock. Injected by tests.
-        unit_state: systemd probe; defaults to :func:`systemd_unit_state`.
+        unit_state: systemd probe; defaults to :func:`systemd_unit_state` of ``--unit``.
         stdin: Where ``--journal -`` reads from; defaults to ``sys.stdin``.
         demo_flag: Scenario from the leading ``--demo`` option, if any.
         env: Environment snapshot for ``HERMES_CONSOLE_DEMO``; defaults to empty.
@@ -111,6 +115,7 @@ def main(
     parser = argparse.ArgumentParser(prog="hermes status", add_help=False)
     parser.add_argument("--config-dir", type=Path, default=None)
     parser.add_argument("--db", type=Path, default=None)
+    parser.add_argument("--unit", default=_UNIT)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--json", action="store_true")
     mode.add_argument("--summary", action="store_true")
@@ -121,6 +126,9 @@ def main(
         parsed = parser.parse_args(rest)
     except SystemExit:
         err.write("ERROR: could not parse `hermes status` arguments.\n" + _USAGE)
+        return 2
+    if not _UNIT_NAME.fullmatch(parsed.unit):
+        err.write(f"ERROR: --unit must name a systemd service, got {parsed.unit!r}.\n" + _USAGE)
         return 2
     parsed.config_dir = parsed.config_dir or console_module.default_config_dir(env or {})
     parsed.db = parsed.db or console_module.default_db_path(env or {})
@@ -162,7 +170,7 @@ def _ledger_status(
         return 3
 
     at = now if now is not None else datetime.now(UTC)
-    unit = (unit_state or systemd_unit_state)()
+    unit = (unit_state or (lambda: systemd_unit_state(unit=parsed.unit)))()
     bot = (bot_state or (lambda: systemd_unit_state(unit=_BOT_UNIT)))()
     market = config.market_data
     try:
