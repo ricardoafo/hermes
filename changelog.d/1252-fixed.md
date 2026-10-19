@@ -1,0 +1,1 @@
+- `swing-b1-daily-ma` now takes its daily decision on exchange bars, which close 1 ms before midnight; before, it never traded on real data (#1252).
