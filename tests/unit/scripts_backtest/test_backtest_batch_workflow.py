@@ -18,8 +18,9 @@ from typing import Any
 import pytest
 import yaml
 
-_ROOT = Path(__file__).resolve().parents[3]
-_WORKFLOW = _ROOT / ".github" / "workflows" / "backtest-batch.yml"
+from tests.support.paths import REPO_ROOT
+
+_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "backtest-batch.yml"
 
 needs_tools = pytest.mark.skipif(
     shutil.which("bash") is None or shutil.which("jq") is None or shutil.which("git") is None,

@@ -18,8 +18,9 @@ from pathlib import Path
 
 import pytest
 
-_ROOT = Path(__file__).resolve().parents[2]
-_SRC = _ROOT / "src"
+from tests.support.paths import REPO_ROOT
+
+_SRC = REPO_ROOT / "src"
 
 _PARKED: dict[str, str] = {
     "hermes.adapters.ledger.migrations": "SQL files the migration runner loads by path",
@@ -104,9 +105,9 @@ def unreachable(modules: dict[str, Path], roots: set[str]) -> set[str]:
 
 def _roots(modules: dict[str, Path]) -> set[str]:
     roots = {"hermes.__main__"} | {n for n in modules if n.startswith("hermes.entrypoints")}
-    project = tomllib.loads((_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     roots.update(target.split(":")[0] for target in project["project"]["scripts"].values())
-    for script in sorted((_ROOT / "scripts").rglob("*.py")):
+    for script in sorted((REPO_ROOT / "scripts").rglob("*.py")):
         roots |= _resolve(_named(_parse(script), ""), modules)
     return roots
 

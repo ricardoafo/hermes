@@ -19,7 +19,6 @@ Invariants protected here (openspec/archive/29-binance-balance-read R-1..R-4):
 import json
 from collections.abc import Iterator
 from decimal import Decimal
-from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
@@ -36,8 +35,9 @@ from hermes.adapters.exchanges.binance_balance_reader import (
 from hermes.adapters.exchanges.binance_spot import TESTNET_BASE_URL, sign
 from hermes.domain.errors import ExchangeError, NetworkError
 from hermes.domain.value_objects.currency import Currency
+from tests.support.paths import REPO_ROOT
 
-_FIXTURES = Path(__file__).resolve().parents[3] / "fixtures" / "binance_spot"
+_FIXTURES = REPO_ROOT / "tests" / "fixtures" / "binance_spot"
 _BASE = "https://api.binance.com"
 _ACCOUNT_URL = f"{_BASE}/api/v3/account"
 _NOW_MS = 1_790_000_000_000
