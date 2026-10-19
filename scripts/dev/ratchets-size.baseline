@@ -4,5 +4,5 @@ src/hermes/application/calibration/research_batch.py 934
 src/hermes/application/console/render.py 1163
 src/hermes/entrypoints/_health.py 840
 src/hermes/entrypoints/serve.py 2276
-src/hermes/entrypoints/tui.py 2601
+src/hermes/entrypoints/tui.py 2655
 src/hermes/entrypoints/tui_tax.py 875
