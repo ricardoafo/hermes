@@ -14,9 +14,6 @@ Failure policy:
   the push for good.
 - :meth:`deliver` reports which channels took the push and which raised, so
   the caller can record it and push the failed ones again later.
-  :meth:`dispatch` raises one
-  :class:`~hermes.domain.events.event_bus.EventDispatchError` carrying every
-  failure instead.
 - Zero wired channels is not an error: the router drops unwired slots.
 
 Reference: 309-serve-bar-loop change.md D-3, D-4, D-5;
@@ -29,7 +26,6 @@ from collections.abc import Collection
 from dataclasses import dataclass
 
 from hermes.application.notification_router import EventClass, RouterConfig, channels_for
-from hermes.domain.events.event_bus import EventDispatchError
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.ports.notifier import NotifierPort
 
@@ -87,23 +83,6 @@ class SignalNotifier:
             else:
                 delivered.append(name)
         return Delivery(delivered=tuple(delivered), failures=tuple(failures))
-
-    def dispatch(self, event: SignalEmitted) -> None:
-        """Notify every routed channel, isolating per-channel failures.
-
-        Args:
-            event: The signal event to announce.
-
-        Raises:
-            EventDispatchError: At least one channel raised; every channel
-                was still attempted.
-        """
-        delivery = self.deliver(event)
-        if delivery.failures:
-            raise EventDispatchError(
-                event_type_name=type(event).__qualname__,
-                failures=tuple(exc for _, exc in delivery.failures),
-            )
 
     def _routed(self) -> tuple[tuple[str, NotifierPort], ...]:
         """Return the wired channels the signal row routes to, Telegram first."""
