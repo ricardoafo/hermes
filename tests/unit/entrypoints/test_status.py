@@ -177,6 +177,53 @@ def test_bad_arguments_exit_two() -> None:
     assert "Usage: hermes status" in err
 
 
+def _probed_units(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, extra: list[str]
+) -> tuple[int, list[str]]:
+    """Run status with the default probe replaced by a recorder; return the code and units asked."""
+    asked: list[str] = []
+
+    def probe(run: object = None, unit: str = "") -> UnitState:
+        asked.append(unit)
+        return UnitState.RUNNING
+
+    monkeypatch.setattr(status_module, "systemd_unit_state", probe)
+    code = status_module.main(
+        ["--config-dir", str(_CONFIG), "--db", str(_ledger(tmp_path)), *extra],
+        stream=io.StringIO(),
+        now=NOW,
+        bot_state=lambda: UnitState.UNKNOWN,
+        release_link=_NO_LINK,
+        package_version=_PACKAGE_VERSION,
+    )
+    return code, asked
+
+
+def test_status_asks_systemd_about_hermes_service_by_default(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Without --unit the verdict reads prod's unit, as every existing caller expects."""
+    assert _probed_units(monkeypatch, tmp_path, []) == (0, ["hermes.service"])
+
+
+def test_status_asks_systemd_about_the_unit_named_by_unit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A lab shadow's ping asks about its own instance, not prod's unit (#1079)."""
+    result = _probed_units(monkeypatch, tmp_path, ["--unit", "hermes-shadow@swing-b2.service"])
+
+    assert result == (0, ["hermes-shadow@swing-b2.service"])
+
+
+@pytest.mark.parametrize("unit", ["--json", "hermes-shadow@x", "-x.service", "a b.service", ""])
+def test_a_unit_that_is_not_a_service_name_is_a_usage_error(unit: str) -> None:
+    """Anything but a plain ``*.service`` name never reaches systemctl's argv."""
+    code, out, err = _run_split([f"--unit={unit}"])
+
+    assert (code, out) == (2, "")
+    assert "--unit must name a systemd service" in err
+
+
 def test_human_view_shows_utc_and_madrid_times(tmp_path: Path) -> None:
     """The 20:00 UTC next close also shows as 22:00 Madrid (CEST in October)."""
     _, out = _run(["--db", str(_ledger(tmp_path))])
