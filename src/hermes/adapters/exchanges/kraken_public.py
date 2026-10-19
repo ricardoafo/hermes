@@ -1,14 +1,8 @@
 """Kraken read-only adapter — public endpoints only, no auth required.
 
-Implements four narrow slices of Kraken's public REST API against
+Implements three narrow slices of Kraken's public REST API against
 ``https://api.kraken.com/0/public/``:
 
-- :meth:`KrakenPublicAdapter.get_pair_fees` — the ``AssetPairs`` endpoint,
-  returning a volume-tiered :class:`~hermes.domain.fees.FeeSchedule`.
-  Satisfies :class:`~hermes.ports.fees.FeeScheduleProviderPort`. Since
-  2026-10-04 Kraken returns empty fee lists here, so this raises against the
-  live API; the trading adapter reads its fees from the private
-  ``TradeVolume`` call instead (#599).
 - :meth:`KrakenPublicAdapter.fetch_klines` — the ``OHLC`` endpoint,
   yielding :class:`~hermes.domain.market_data.kline.Kline` values.
   Satisfies :class:`~hermes.ports.klines.KlinesFetcherPort`.
@@ -42,10 +36,6 @@ Design decisions
   XXBT, USD → ZUSD; USDT is untranslated). The mapping lives in
   :func:`_pair_to_kraken_symbol` — extendable per pair, defaults to the
   raw ``BASEQUOTE`` concatenation for pairs not in the override table.
-- **Fee-schedule caching**: 24h in-memory TTL on ``get_pair_fees``
-  results. Kraken's fee schedules change weeks-to-months apart; caching
-  saves ~99% of the rate-limit budget for the commission use case which
-  hits this endpoint on every price event.
 - **Market data: never cached**. Klines, ticker, and orderbook always
   hit the wire. The backtest use case is deterministic replay from
   fetched-once data; the price-validation use case needs freshness.
@@ -65,13 +55,11 @@ import structlog
 
 from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.adapters._shared.wire import (
-    percent_to_bps,
     validate_http_config,
     validate_utc_window,
     wire_decimal,
 )
 from hermes.domain.errors import KrakenPublicError
-from hermes.domain.fees import FeeSchedule, FeeTier
 from hermes.domain.market_data.bar_schedule import previous_boundary
 from hermes.domain.market_data.kline import Kline, KlineInterval
 from hermes.domain.market_data.orderbook import Orderbook, OrderbookLevel
@@ -85,7 +73,6 @@ __all__ = ["KrakenPublicAdapter", "KrakenPublicConfig"]
 
 
 _DEFAULT_BASE_URL: Final[str] = "https://api.kraken.com"
-_ASSET_PAIRS_PATH: Final[str] = "/0/public/AssetPairs"
 _OHLC_PATH: Final[str] = "/0/public/OHLC"
 _DEPTH_PATH: Final[str] = "/0/public/Depth"
 _TICKER_PATH: Final[str] = "/0/public/Ticker"
@@ -98,19 +85,13 @@ _ERROR_EXCERPT_MAX_CHARS: Final[int] = 200
 # for the public tier — every call is one token in our bucket.
 _REQUEST_WEIGHT: Final[int] = 1
 _DEFAULT_RATE_LIMIT: Final[RateLimitConfig] = RateLimitConfig(max_weight=1, window_seconds=1)
-# Fee-schedule cache TTL — 24 hours. Kraken changes fee schedules
-# infrequently (weeks-to-months); 24h keeps the commission use case
-# well below the 1 req/s cap while still catching schedule changes
-# within a business day.
-_DEFAULT_FEES_CACHE_TTL_SECONDS: Final[int] = 86_400
 # Seconds-per-minute conversion. Kraken's OHLC interval query parameter
 # is expressed in minutes (1, 5, 15, ...).
 _SECONDS_PER_MINUTE: Final[int] = 60
-# Minimum row lengths — the fee-schedule rows are [threshold, pct] pairs
-# and the depth-level rows are [price, quantity, ts?] tuples; the OHLC
-# rows are 8-position lists. Constants keep the numeric comparisons out
-# of the PLR2004 (magic-value) bucket and self-document the wire shape.
-_MIN_FEE_ROW_FIELDS: Final[int] = 2
+# Minimum row lengths — the depth-level rows are [price, quantity, ts?]
+# tuples; the OHLC rows are 8-position lists. Constants keep the numeric
+# comparisons out of the PLR2004 (magic-value) bucket and self-document
+# the wire shape.
 _MIN_DEPTH_ROW_FIELDS: Final[int] = 2
 _MIN_OHLC_ROW_FIELDS: Final[int] = 7
 
@@ -155,38 +136,19 @@ class KrakenPublicConfig:
         rate_limit: Sizing for the internal token-bucket limiter. Default
             is 1 call/second — Kraken's published public-tier cap.
         timeout_sec: Per-request timeout in seconds.
-        fees_cache_ttl_seconds: TTL for the in-memory fee-schedule
-            cache. Kraken changes schedules infrequently; 24 h (86_400 s)
-            is safe and drastically cuts rate-limit pressure on the
-            commission-calculation path.
     """
 
     base_url: str = _DEFAULT_BASE_URL
     rate_limit: RateLimitConfig = _DEFAULT_RATE_LIMIT
     timeout_sec: float = _DEFAULT_TIMEOUT_SEC
-    fees_cache_ttl_seconds: int = _DEFAULT_FEES_CACHE_TTL_SECONDS
 
     def __post_init__(self) -> None:
-        """Validate URL scheme, timeout and cache TTL — cheap fail-fast at config layer.
+        """Validate URL scheme and timeout — cheap fail-fast at config layer.
 
         Raises:
-            ValueError: On non-https ``base_url``, non-positive
-                ``timeout_sec``, or negative ``fees_cache_ttl_seconds``.
+            ValueError: On non-https ``base_url`` or non-positive ``timeout_sec``.
         """
         validate_http_config("KrakenPublicConfig", url=self.base_url, timeout_sec=self.timeout_sec)
-        if self.fees_cache_ttl_seconds < 0:
-            raise ValueError(
-                "KrakenPublicConfig.fees_cache_ttl_seconds must be >= 0, "
-                f"got {self.fees_cache_ttl_seconds}"
-            )
-
-
-@dataclass(slots=True)
-class _FeesCacheEntry:
-    """One row in the fee-schedule TTL cache — schedule + monotonic timestamp."""
-
-    schedule: FeeSchedule
-    saved_at_monotonic: float
 
 
 @dataclass(slots=True)
@@ -205,7 +167,6 @@ class KrakenPublicAdapter:
     config: KrakenPublicConfig
     client: httpx.Client = field()
     limiter: RateLimiter = field()
-    _fees_cache: dict[Pair, _FeesCacheEntry] = field(default_factory=dict, init=False)
 
     @classmethod
     def create(cls, config: KrakenPublicConfig | None = None) -> KrakenPublicAdapter:
@@ -234,37 +195,6 @@ class KrakenPublicAdapter:
     # ------------------------------------------------------------------
     # Public port methods
     # ------------------------------------------------------------------
-
-    def get_pair_fees(self, pair: Pair) -> FeeSchedule:
-        """Return the volume-tiered fee schedule for ``pair``.
-
-        Hits ``GET /0/public/AssetPairs?pair=<KRAKEN_SYMBOL>``. Kraken's
-        response includes both a taker tier array (``fees``) and a
-        maker tier array (``fees_maker``) — same threshold rows, different
-        rates. We zip them into :class:`FeeTier` rows.
-
-        Uses a 24h in-memory cache keyed by :class:`Pair` — schedules
-        rarely change, and the commission use case hits this method on
-        every price event.
-
-        Args:
-            pair: Trading pair to look up.
-
-        Returns:
-            A :class:`FeeSchedule` normalised ascending by volume threshold.
-
-        Raises:
-            hermes.domain.errors.KrakenPublicError: On any wire, HTTP,
-                envelope-error, or schema failure.
-        """
-        cached = self._read_cache(pair)
-        if cached is not None:
-            return cached
-        symbol = _pair_to_kraken_symbol(pair)
-        result = self._get_result(path=_ASSET_PAIRS_PATH, params={"pair": symbol})
-        schedule = _parse_fees_response(result=result, pair=pair, symbol=symbol)
-        self._write_cache(pair, schedule)
-        return schedule
 
     def fetch_klines(
         self,
@@ -385,30 +315,6 @@ class KrakenPublicAdapter:
         return _parse_ticker_response(result=result, pair=pair, symbol=symbol)
 
     # ------------------------------------------------------------------
-    # Cache helpers
-    # ------------------------------------------------------------------
-
-    def _read_cache(self, pair: Pair) -> FeeSchedule | None:
-        """Return a cached schedule for ``pair`` if still within TTL."""
-        entry = self._fees_cache.get(pair)
-        if entry is None:
-            return None
-        now_monotonic = self.limiter.clock()
-        elapsed = now_monotonic - entry.saved_at_monotonic
-        if elapsed >= self.config.fees_cache_ttl_seconds:
-            # Expired — drop and re-fetch.
-            del self._fees_cache[pair]
-            return None
-        return entry.schedule
-
-    def _write_cache(self, pair: Pair, schedule: FeeSchedule) -> None:
-        """Persist ``schedule`` in the in-memory TTL cache."""
-        self._fees_cache[pair] = _FeesCacheEntry(
-            schedule=schedule,
-            saved_at_monotonic=self.limiter.clock(),
-        )
-
-    # ------------------------------------------------------------------
     # HTTP helper
     # ------------------------------------------------------------------
 
@@ -500,76 +406,6 @@ def _pair_to_kraken_symbol(pair: Pair) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _parse_fees_response(
-    *,
-    result: dict[str, Any],
-    pair: Pair,
-    symbol: str,
-) -> FeeSchedule:
-    """Parse the ``AssetPairs`` ``result`` mapping into a :class:`FeeSchedule`.
-
-    Kraken's fees payload looks like::
-
-        {"XXBTZUSD": {
-            "fees":       [[0, 0.26], [50000, 0.24], ...],
-            "fees_maker": [[0, 0.16], [50000, 0.14], ...],
-            ...
-        }}
-
-    Both arrays share the same thresholds (Kraken enforces this); we
-    zip them into :class:`FeeTier` rows.
-
-    Args:
-        result: Kraken's ``result`` mapping.
-        pair: Domain :class:`Pair` (returned unchanged inside the schedule).
-        symbol: Kraken symbol we asked for (used to attribute errors).
-
-    Returns:
-        A validated :class:`FeeSchedule`.
-
-    Raises:
-        hermes.domain.errors.KrakenPublicError: On missing pair key,
-            missing / mismatched fee arrays, or unparseable rows.
-    """
-    pair_payload = _lookup_pair_payload(result=result, symbol=symbol)
-    taker_raw = pair_payload.get("fees")
-    maker_raw = pair_payload.get("fees_maker")
-    if not isinstance(taker_raw, list) or not taker_raw:
-        raise KrakenPublicError(
-            f"Kraken AssetPairs missing or empty 'fees' for {symbol!r}: {pair_payload!r}"
-        )
-    if not isinstance(maker_raw, list) or not maker_raw:
-        raise KrakenPublicError(
-            f"Kraken AssetPairs missing or empty 'fees_maker' for {symbol!r}: {pair_payload!r}"
-        )
-    if len(taker_raw) != len(maker_raw):
-        raise KrakenPublicError(
-            "Kraken AssetPairs 'fees' and 'fees_maker' length mismatch for "
-            f"{symbol!r}: taker={len(taker_raw)}, maker={len(maker_raw)}"
-        )
-
-    tiers: list[FeeTier] = []
-    for taker_row, maker_row in zip(taker_raw, maker_raw, strict=True):
-        threshold = _fee_row_threshold(taker_row=taker_row, maker_row=maker_row, symbol=symbol)
-        taker_pct = _fee_row_pct(row=taker_row, symbol=symbol, side="taker")
-        maker_pct = _fee_row_pct(row=maker_row, symbol=symbol, side="maker")
-        # Kraken publishes rates as percent (e.g. 0.26 = 0.26% = 26 bps).
-        # Convert to bps as an integer — bps is our domain unit.
-        tiers.append(
-            FeeTier(
-                volume_threshold_usd=threshold,
-                maker_bps=_pct_to_bps(maker_pct),
-                taker_bps=_pct_to_bps(taker_pct),
-            )
-        )
-    try:
-        return FeeSchedule.from_tiers(pair=pair, tiers=tuple(tiers))
-    except ValueError as exc:
-        raise KrakenPublicError(
-            f"Kraken fee schedule for {symbol!r} fails domain invariants: {exc}"
-        ) from exc
-
-
 def _lookup_pair_payload(*, result: dict[str, Any], symbol: str) -> dict[str, Any]:
     """Return ``result[symbol]`` or attempt a case-insensitive fallback.
 
@@ -608,38 +444,6 @@ def _lookup_pair_payload(*, result: dict[str, Any], symbol: str) -> dict[str, An
             f"Kraken response for pair {symbol!r} is not an object: {payload!r}"
         )
     return payload
-
-
-def _fee_row_threshold(
-    *,
-    taker_row: Any,
-    maker_row: Any,
-    symbol: str,
-) -> Decimal:
-    """Extract and validate the volume threshold shared by paired taker/maker rows."""
-    if not isinstance(taker_row, list) or len(taker_row) < _MIN_FEE_ROW_FIELDS:
-        raise KrakenPublicError(f"Kraken fees row malformed for {symbol!r}: {taker_row!r}")
-    if not isinstance(maker_row, list) or len(maker_row) < _MIN_FEE_ROW_FIELDS:
-        raise KrakenPublicError(f"Kraken fees_maker row malformed for {symbol!r}: {maker_row!r}")
-    taker_threshold = _decimal_or_raise(taker_row[0], field_name=f"{symbol} fees threshold")
-    maker_threshold = _decimal_or_raise(maker_row[0], field_name=f"{symbol} fees_maker threshold")
-    if taker_threshold != maker_threshold:
-        raise KrakenPublicError(
-            "Kraken paired fees / fees_maker thresholds differ for "
-            f"{symbol!r}: taker={taker_threshold}, maker={maker_threshold}"
-        )
-    return taker_threshold
-
-
-def _fee_row_pct(*, row: Any, symbol: str, side: str) -> Decimal:
-    """Extract the percentage field from one fee row."""
-    if not isinstance(row, list) or len(row) < _MIN_FEE_ROW_FIELDS:
-        raise KrakenPublicError(f"Kraken {side} fees row malformed for {symbol!r}: {row!r}")
-    return _decimal_or_raise(row[1], field_name=f"{symbol} {side} pct")
-
-
-def _pct_to_bps(pct: Decimal) -> int:
-    return percent_to_bps(pct, field="Kraken fee percentage", error=KrakenPublicError)
 
 
 def _parse_depth_response(

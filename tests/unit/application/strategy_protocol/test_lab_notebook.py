@@ -5,7 +5,6 @@ Tests cover:
 - Second write appends a second entry (both present in file).
 - Attempting to write entry with same header as last entry raises LabNotebookAppendError.
 - SHA256 in the comment matches hashlib.sha256(entry_text.encode()).hexdigest().
-- SHA256 chain verifiable: verify_sha256() returns True for each appended entry.
 - last_entry_header() returns the correct header after each append.
 - FileNotFoundError raised when notebook file is missing.
 - Entry.render() produces header in the correct format.
@@ -195,22 +194,6 @@ class TestLabNotebookMultiEntry:
         assert "2026-08-25T14:00:00Z" in content, (
             "Second entry must be present after second append."
         )
-
-    def test_sha256_chain_verifiable(self, tmp_path: Path) -> None:
-        """verify_sha256() must return True for every entry in a multi-entry chain."""
-        nb = _make_notebook(tmp_path, content="# Lab Notebook\n\n## Entries\n")
-        entries = [
-            _make_entry(timestamp=f"2026-08-25T{h:02d}:00:00Z", action=f"entry-{h}")
-            for h in range(13, 16)
-        ]
-        for entry in entries:
-            nb.append(entry)
-
-        for entry in entries:
-            assert nb.verify_sha256(entry) is True, (
-                f"verify_sha256() must return True for entry with action={entry.action!r}. "
-                f"SHA256 chain broken."
-            )
 
     def test_last_entry_header_reflects_most_recent(self, tmp_path: Path) -> None:
         """last_entry_header() must return the most recently appended entry's header."""

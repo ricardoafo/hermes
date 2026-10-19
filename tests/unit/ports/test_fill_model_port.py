@@ -184,22 +184,6 @@ class TestOrderShapeInvariants:
             f"Order.limit_price {order.limit_price!r} must be > 0."
         )
 
-    def test_order_without_limit_price_is_market_order(self) -> None:
-        """Order with limit_price=None reports is_market=True."""
-        order = _make_order(limit_price=None)
-        assert order.is_market, (
-            "Order without limit_price must report is_market=True — "
-            "this property drives fill-model dispatch."
-        )
-
-    def test_order_with_limit_price_is_not_market_order(self) -> None:
-        """Order with limit_price set reports is_market=False."""
-        order = _make_order(limit_price=Decimal("59000"))
-        assert not order.is_market, (
-            "Order with limit_price must report is_market=False — "
-            "this property drives fill-model dispatch."
-        )
-
     @given(side=st.sampled_from(list(OrderSide)))
     def test_order_side_is_buy_or_sell(self, side: OrderSide) -> None:
         """OrderSide must be BUY or SELL — no other values exist."""

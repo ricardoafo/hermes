@@ -23,7 +23,6 @@ __all__ = [
     "H1Thresholds",
     "KillTriggers",
     "PreRegistration",
-    "SizingConfig",
 ]
 
 # ---------------------------------------------------------------------------
@@ -65,62 +64,6 @@ class DataWindows:
     validation_end: datetime
     oos_start: datetime
     oos_end: datetime
-
-    def is_in_oos(self, ts: datetime) -> bool:
-        """Return True if ``ts`` falls inside the OOS test window (inclusive).
-
-        Args:
-            ts: UTC-aware datetime to check.
-
-        Returns:
-            True iff ``oos_start <= ts <= oos_end``.
-        """
-        return self.oos_start <= ts <= self.oos_end
-
-    def is_in_train(self, ts: datetime) -> bool:
-        """Return True if ``ts`` falls inside the train window (inclusive).
-
-        Args:
-            ts: UTC-aware datetime to check.
-
-        Returns:
-            True iff ``train_start <= ts <= train_end``.
-        """
-        return self.train_start <= ts <= self.train_end
-
-    def is_in_validation(self, ts: datetime) -> bool:
-        """Return True if ``ts`` falls inside the validation window (inclusive).
-
-        Args:
-            ts: UTC-aware datetime to check.
-
-        Returns:
-            True iff ``validation_start <= ts <= validation_end``.
-        """
-        return self.validation_start <= ts <= self.validation_end
-
-
-@dataclass(frozen=True, slots=True)
-class SizingConfig:
-    """Position-sizing constants from pre-reg §5.4 and §5.5.
-
-    Reference: pre-registration-v1.md §5.4, §5.5.
-    """
-
-    risk_per_trade_fraction: float
-    """Fraction of experiment capital risked per trade (0.01 = 1%)."""
-
-    position_hard_cap_fraction: float
-    """Maximum notional per position as fraction of capital (0.05 = 5%)."""
-
-    max_concurrent_positions: int
-    """Maximum number of simultaneously open positions (3)."""
-
-    correlation_lock_threshold: float
-    """30-day rolling correlation above which new entry in third pair is blocked (0.80)."""
-
-    time_stop_days: int
-    """Maximum days to hold a position before forced close (90)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -242,7 +185,7 @@ class PreRegistration:
         ValueError: If the file's experiment_id in the YAML frontmatter does not
             match the expected ``swing-mvp1-v1``.
 
-    Reference: pre-registration-v1.md §4, §5.4, §9, §10.
+    Reference: pre-registration-v1.md §4, §9, §10.
     spec-9-strategy-development-protocol change.md D-1.
     """
 
@@ -311,23 +254,6 @@ class PreRegistration:
             validation_end=_SIGNED_VAL_END,
             oos_start=_SIGNED_OOS_START,
             oos_end=_SIGNED_OOS_END,
-        )
-
-    def sizing_config(self) -> SizingConfig:
-        """Return position-sizing constants from pre-reg §5.4 and §5.5.
-
-        Returns:
-            :class:`SizingConfig` with risk fraction, cap, concurrency, and
-            correlation-lock threshold.
-
-        Reference: pre-registration-v1.md §5.4, §5.5.
-        """
-        return SizingConfig(
-            risk_per_trade_fraction=0.01,
-            position_hard_cap_fraction=0.05,
-            max_concurrent_positions=3,
-            correlation_lock_threshold=0.80,
-            time_stop_days=90,
         )
 
     def h1_thresholds(self) -> H1Thresholds:

@@ -31,7 +31,6 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from hermes.application.strategy_protocol.kill_trigger_evaluator import KillDecision
-from hermes.application.strategy_protocol.preregistration import PreRegistration
 from hermes.domain.statistics.sharpe import sharpe_ratio
 
 __all__ = [
@@ -72,15 +71,6 @@ class ShadowSharpeKill:
     required_days: int
     _streak: int = field(default=0, init=False)
     _last_day: date | None = field(default=None, init=False)
-
-    @classmethod
-    def from_pre_registration(cls, pre_reg: PreRegistration) -> ShadowSharpeKill:
-        """Build the rule from the signed §10 values (0.3, 60 days)."""
-        triggers = pre_reg.kill_triggers()
-        return cls(
-            floor=triggers.rolling_sharpe_min,
-            required_days=triggers.shadow_sharpe_consecutive_days,
-        )
 
     @property
     def streak(self) -> int:

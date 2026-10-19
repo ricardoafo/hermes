@@ -19,10 +19,14 @@ _START = date(2026, 10, 10)
 
 @pytest.fixture
 def rule() -> ShadowSharpeKill:
-    """Build the rule from the signed §10 values."""
+    """Build the rule from the signed §10 values, as shadow_checks does."""
     here = Path(__file__).resolve().parent
     root = next(p for p in [here, *here.parents] if (p / "pyproject.toml").exists())
-    return ShadowSharpeKill.from_pre_registration(PreRegistration(project_root=root))
+    triggers = PreRegistration(project_root=root).kill_triggers()
+    return ShadowSharpeKill(
+        floor=triggers.rolling_sharpe_min,
+        required_days=triggers.shadow_sharpe_consecutive_days,
+    )
 
 
 def _feed(rule: ShadowSharpeKill, values: list[float | None]) -> list[bool]:

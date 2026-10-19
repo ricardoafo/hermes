@@ -2,8 +2,6 @@
 
 Tests cover:
 - All five typed accessors return correct signed constants.
-- Property: DataWindows.is_in_oos, is_in_train, is_in_validation are mutually
-  exclusive for non-overlapping ranges.
 - Parser raises FileNotFoundError when the file is missing.
 - Parser raises ValueError when experiment_id in frontmatter is wrong.
 """
@@ -12,8 +10,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from hypothesis import given
-from hypothesis import strategies as st
 
 from hermes.application.strategy_protocol.preregistration import (
     CertificationSchedule,
@@ -135,81 +131,6 @@ class TestDataWindows:
                 f"DataWindows.{name} must be UTC-aware (tzinfo == UTC), got {dt.tzinfo!r}."
             )
 
-    def test_is_in_oos_true_for_oos_date(self, pre_reg: PreRegistration) -> None:
-        """is_in_oos() must return True for a date inside the OOS window."""
-        windows = pre_reg.data_windows()
-        oos_ts = datetime(2026, 1, 1, tzinfo=UTC)
-        assert windows.is_in_oos(oos_ts) is True, (
-            "is_in_oos(2026-01-01) expected True, got False. OOS window is signed."
-        )
-
-    def test_is_in_oos_false_for_train_date(self, pre_reg: PreRegistration) -> None:
-        """is_in_oos() must return False for a date in the train window."""
-        windows = pre_reg.data_windows()
-        train_ts = datetime(2023, 6, 1, tzinfo=UTC)
-        assert windows.is_in_oos(train_ts) is False, (
-            "is_in_oos(2023-06-01) expected False, got True. Train dates must not be OOS."
-        )
-
-    def test_is_in_train_true_for_train_date(self, pre_reg: PreRegistration) -> None:
-        """is_in_train() must return True for a date inside the train window."""
-        windows = pre_reg.data_windows()
-        train_ts = datetime(2022, 3, 15, tzinfo=UTC)
-        assert windows.is_in_train(train_ts) is True, (
-            "is_in_train(2022-03-15) expected True, got False."
-        )
-
-    def test_is_in_validation_true_for_val_date(self, pre_reg: PreRegistration) -> None:
-        """is_in_validation() must return True for a date inside the validation window."""
-        windows = pre_reg.data_windows()
-        val_ts = datetime(2025, 1, 15, tzinfo=UTC)
-        assert windows.is_in_validation(val_ts) is True, (
-            "is_in_validation(2025-01-15) expected True, got False."
-        )
-
-
-class TestSizingConfig:
-    """sizing_config() returns the signed §5.4/§5.5 position-sizing constants."""
-
-    def test_risk_per_trade_is_1_percent(self, pre_reg: PreRegistration) -> None:
-        """risk_per_trade_fraction must be 0.01 (1%) per pre-reg §5.4."""
-        config = pre_reg.sizing_config()
-        assert config.risk_per_trade_fraction == 0.01, (
-            f"risk_per_trade_fraction expected 0.01 (1%), got {config.risk_per_trade_fraction}. "
-            f"Signed in pre-reg §5.4."
-        )
-
-    def test_hard_cap_is_5_percent(self, pre_reg: PreRegistration) -> None:
-        """position_hard_cap_fraction must be 0.05 (5%) per pre-reg §5.4."""
-        config = pre_reg.sizing_config()
-        assert config.position_hard_cap_fraction == 0.05, (
-            f"position_hard_cap_fraction expected 0.05 (5%), "
-            f"got {config.position_hard_cap_fraction}. Signed in pre-reg §5.4."
-        )
-
-    def test_max_concurrent_is_3(self, pre_reg: PreRegistration) -> None:
-        """max_concurrent_positions must be 3 per pre-reg §5.5."""
-        config = pre_reg.sizing_config()
-        assert config.max_concurrent_positions == 3, (
-            f"max_concurrent_positions expected 3, got {config.max_concurrent_positions}. "
-            f"Signed in pre-reg §5.5."
-        )
-
-    def test_correlation_lock_is_0_80(self, pre_reg: PreRegistration) -> None:
-        """correlation_lock_threshold must be 0.80 per pre-reg §5.5."""
-        config = pre_reg.sizing_config()
-        assert config.correlation_lock_threshold == 0.80, (
-            f"correlation_lock_threshold expected 0.80, got {config.correlation_lock_threshold}. "
-            f"Signed in pre-reg §5.5."
-        )
-
-    def test_time_stop_is_90_days(self, pre_reg: PreRegistration) -> None:
-        """time_stop_days must be 90 per pre-reg §5.2."""
-        config = pre_reg.sizing_config()
-        assert config.time_stop_days == 90, (
-            f"time_stop_days expected 90, got {config.time_stop_days}. Signed in pre-reg §5.2."
-        )
-
 
 class TestH1Thresholds:
     """h1_thresholds() returns the signed §9 H1 acceptance thresholds."""
@@ -309,49 +230,6 @@ class TestPreRegistrationErrors:
         (tmp_path / "pyproject.toml").write_text('[project]\nname = "hermes"\n')
         with pytest.raises(ValueError, match="no YAML frontmatter"):
             PreRegistration(project_root=tmp_path)
-
-
-# ---------------------------------------------------------------------------
-# Property tests
-# ---------------------------------------------------------------------------
-
-
-class TestDataWindowsProperties:
-    """Property tests for DataWindows boundary checks — windows must be mutually exclusive."""
-
-    @given(
-        year=st.integers(min_value=2025, max_value=2026),
-        month=st.integers(min_value=9, max_value=12),
-        day=st.integers(min_value=1, max_value=28),
-    )
-    def test_oos_dates_not_in_train(
-        self, year: int, month: int, day: int, pre_reg: PreRegistration
-    ) -> None:
-        """OOS timestamps must not be classified as train — windows are mutually exclusive."""
-        ts = datetime(year, month, day, tzinfo=UTC)
-        windows = pre_reg.data_windows()
-        if windows.is_in_oos(ts):
-            assert not windows.is_in_train(ts), (
-                f"Timestamp {ts} classified as both OOS and train — "
-                f"windows must be mutually exclusive."
-            )
-
-    @given(
-        year=st.integers(min_value=2020, max_value=2024),
-        month=st.integers(min_value=1, max_value=12),
-        day=st.integers(min_value=1, max_value=28),
-    )
-    def test_train_dates_not_in_oos(
-        self, year: int, month: int, day: int, pre_reg: PreRegistration
-    ) -> None:
-        """Train timestamps must not be classified as OOS — windows are mutually exclusive."""
-        ts = datetime(year, month, day, tzinfo=UTC)
-        windows = pre_reg.data_windows()
-        if windows.is_in_train(ts):
-            assert not windows.is_in_oos(ts), (
-                f"Timestamp {ts} classified as both train and OOS — "
-                f"windows must be mutually exclusive."
-            )
 
 
 class TestCertificationGateValuesMatchSignedText:

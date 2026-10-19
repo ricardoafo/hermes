@@ -243,26 +243,6 @@ class LabNotebook:
                 last_header = line
         return last_header
 
-    def verify_sha256(self, entry: LabNotebookEntry) -> bool:
-        """Verify the SHA256 comment for an entry that exists in the notebook.
-
-        Reads the notebook file and locates the SHA256 comment immediately
-        following the entry header. Returns True if the stored hash matches the
-        hash of the entry's rendered text.
-
-        Args:
-            entry: The :class:`LabNotebookEntry` to verify.
-
-        Returns:
-            True if the SHA256 comment in the file matches the re-computed hash
-            of the entry text. False if the comment is missing or the hash
-            does not match.
-        """
-        expected_sha = hashlib.sha256(entry.render().encode("utf-8")).hexdigest()
-        text = self._path.read_text(encoding="utf-8")
-        expected_comment = f"{_SHA256_COMMENT_PREFIX}{expected_sha}{_SHA256_COMMENT_SUFFIX}"
-        return expected_comment in text
-
     def verify_file(self) -> dict[str, bool]:
         """Check every hashed entry against the notebook's own text.
 

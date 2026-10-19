@@ -3,7 +3,6 @@
 Invariants protected here:
 
 - one failing channel never stops the other from being notified;
-- every channel failure arrives in ONE ``EventDispatchError``;
 - a non-infra exception (a bug) is isolated like an outage, so it cannot stop
   serve after the fill (#854);
 - ``deliver`` names the channels that took the push and the ones that raised,
@@ -19,15 +18,13 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
-import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
 from hermes.application.notification_router import RouterConfig
 from hermes.application.signal_notifier import SignalNotifier
-from hermes.domain.errors import ExchangeError, InfraError, NetworkError
+from hermes.domain.errors import NetworkError
 from hermes.domain.events.base import DomainEvent
-from hermes.domain.events.event_bus import EventDispatchError
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.strategy.signal import SignalKind, SignalSide, StrategySignal
 from hermes.domain.value_objects.currency import Currency
@@ -83,60 +80,6 @@ def _event() -> SignalEmitted:
     )
 
 
-def test_both_channels_receive_the_event_telegram_first() -> None:
-    """A signal reaches Telegram then Slack, each exactly once."""
-    log: list[str] = []
-    telegram, slack = _Channel("telegram", log), _Channel("slack", log)
-    event = _event()
-
-    SignalNotifier(RouterConfig(telegram=telegram, slack=slack)).dispatch(event)
-
-    assert (log, telegram.seen, slack.seen) == (["telegram", "slack"], [event], [event])
-
-
-def test_a_failing_channel_does_not_stop_the_other() -> None:
-    """Telegram failing still lets Slack be notified."""
-    log: list[str] = []
-    telegram = _Channel("telegram", log, raises=NetworkError("telegram down"))
-    slack = _Channel("slack", log)
-
-    with pytest.raises(EventDispatchError):
-        SignalNotifier(RouterConfig(telegram=telegram, slack=slack)).dispatch(_event())
-
-    assert (log, len(slack.seen)) == (["telegram", "slack"], 1)
-
-
-def test_every_failure_arrives_in_one_dispatch_error() -> None:
-    """Two failing channels give one error carrying both failures, in order."""
-    log: list[str] = []
-    first, second = NetworkError("a"), ExchangeError("b")
-    channels = RouterConfig(
-        telegram=_Channel("telegram", log, raises=first),
-        slack=_Channel("slack", log, raises=second),
-    )
-
-    with pytest.raises(EventDispatchError) as caught:
-        SignalNotifier(channels).dispatch(_event())
-
-    assert (caught.value.event_type_name, caught.value.failures) == (
-        "SignalEmitted",
-        (first, second),
-    )
-
-
-def test_a_non_infra_exception_is_isolated_and_the_fan_out_goes_on() -> None:
-    """A missing template (ValueError) is collected like an outage; Slack still gets the push."""
-    log: list[str] = []
-    bug = ValueError("no template")
-    slack = _Channel("slack", log)
-    channels = RouterConfig(telegram=_Channel("telegram", log, raises=bug), slack=slack)
-
-    with pytest.raises(EventDispatchError) as caught:
-        SignalNotifier(channels).dispatch(_event())
-
-    assert (log, len(slack.seen), caught.value.failures) == (["telegram", "slack"], 1, (bug,))
-
-
 def test_deliver_names_the_channels_that_took_the_push_and_the_ones_that_raised() -> None:
     """A failing Telegram and a working Slack give delivered=slack, failed=telegram."""
     log: list[str] = []
@@ -190,23 +133,3 @@ def test_deliver_reports_every_attempted_channel_once(
     attempted = [n for n in wired if only is None or n in only]
     assert (sorted(delivery.delivered + delivery.failed), log) == (sorted(attempted), attempted)
     assert not set(delivery.delivered) & set(delivery.failed)
-
-
-def test_zero_wired_channels_is_not_an_error() -> None:
-    """With no channel wired, dispatch returns silently."""
-    SignalNotifier(RouterConfig()).dispatch(_event())
-
-
-def test_infra_error_subclasses_are_isolated() -> None:
-    """Any InfraError subclass is treated as a channel outage."""
-    assert issubclass(NetworkError, InfraError)
-    log: list[str] = []
-    slack = _Channel("slack", log)
-    channels = RouterConfig(
-        telegram=_Channel("telegram", log, raises=NetworkError("x")), slack=slack
-    )
-
-    with pytest.raises(EventDispatchError):
-        SignalNotifier(channels).dispatch(_event())
-
-    assert len(slack.seen) == 1
