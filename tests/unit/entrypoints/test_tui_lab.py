@@ -53,7 +53,7 @@ from hermes.entrypoints.tui_settings import (
 )
 from hermes.entrypoints.tui_theme import BASE
 from tests.support.lab_files import FIGURES, synthetic_files, write_experiment
-from tests.support.svg_snapshots import NamedSVG, repo_clean
+from tests.support.tui_views import assert_view, capture
 
 _FROZEN = datetime(2026, 10, 18, 9, 0, tzinfo=UTC)
 _MADRID = ZoneInfo("Europe/Madrid")
@@ -571,7 +571,7 @@ _VIEWS: tuple[tuple[str, tuple[str, ...], bool], ...] = (
 def _svg(keys: Sequence[str], size: tuple[int, int], theme: ThemeChoice, *, values: bool) -> str:
     async def probe(app: HomeApp, pilot: Pilot[None]) -> str:
         await _press(pilot, keys)
-        return repo_clean(app.export_screenshot())
+        return capture(app)
 
     return _run(probe, size=size, theme=theme, values=values)
 
@@ -598,7 +598,7 @@ def test_lab_svg_snapshot(
 ) -> None:
     """The reviewed picture of one Lab view in one theme and size."""
     name = f"lab_{view}_{theme_name}_{size[0]}x{size[1]}"
-    assert _svg(keys, size, theme, values=values) == snapshot(extension_class=NamedSVG, name=name)
+    assert_view(snapshot, _svg(keys, size, theme, values=values), name=name)
 
 
 @pytest.mark.parametrize(
@@ -610,6 +610,4 @@ def test_lab_detail_svg_snapshot(
 ) -> None:
     """The compact detail screen (strategy over results) in both themes at 80x24."""
     name = f"lab_detail_{theme_name}_80x24"
-    assert _svg(("down", "enter"), (80, 24), theme, values=False) == snapshot(
-        extension_class=NamedSVG, name=name
-    )
+    assert_view(snapshot, _svg(("down", "enter"), (80, 24), theme, values=False), name=name)

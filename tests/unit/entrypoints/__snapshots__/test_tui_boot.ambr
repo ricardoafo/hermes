@@ -1,0 +1,335 @@
+# serializer version: 1
+# name: test_finished_boot_screen_snapshot[control-120x36][boot_control_120x36]
+  '''
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+                                        █   █ █████ ████  █   █ █████  ████
+                                        █   █ █     █   █ ██ ██ █     █
+                                        █████ ████  ████  █ █ █ ████   ███
+                                        █   █ █     █  █  █   █ █         █
+                                        █   █ █████ █   █ █   █ █████ ████
+  
+                                        release 1.0.0-shadow.7
+  
+                                        ✓  ledger         last bar check 14:00
+                                        ✓  engine         on time · next check 18:00
+                                        ✓  journal        readable
+                                        ✓  market feed    Kraken prices every 10 s
+                                        ✓  AI supervisor  1 brief published
+  
+                                        any key opens the console · Q quits
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  ---
+  colours: #070b14 #18233a #58d1eb #838ca1 #8a94a8 #e6ecf5
+  
+  '''
+# ---
+# name: test_finished_boot_screen_snapshot[control-160x45][boot_control_160x45]
+  '''
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+                                                            █   █ █████ ████  █   █ █████  ████
+                                                            █   █ █     █   █ ██ ██ █     █
+                                                            █████ ████  ████  █ █ █ ████   ███
+                                                            █   █ █     █  █  █   █ █         █
+                                                            █   █ █████ █   █ █   █ █████ ████
+  
+                                                            release 1.0.0-shadow.7
+  
+                                                            ✓  ledger         last bar check 14:00
+                                                            ✓  engine         on time · next check 18:00
+                                                            ✓  journal        readable
+                                                            ✓  market feed    Kraken prices every 10 s
+                                                            ✓  AI supervisor  1 brief published
+  
+                                                            any key opens the console · Q quits
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  ---
+  colours: #070b14 #18233a #58d1eb #838ca1 #8a94a8 #e6ecf5
+  
+  '''
+# ---
+# name: test_finished_boot_screen_snapshot[control-240x60][boot_control_240x60]
+  '''
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+                                                                                                    █   █ █████ ████  █   █ █████  ████
+                                                                                                    █   █ █     █   █ ██ ██ █     █
+                                                                                                    █████ ████  ████  █ █ █ ████   ███
+                                                                                                    █   █ █     █  █  █   █ █         █
+                                                                                                    █   █ █████ █   █ █   █ █████ ████
+  
+                                                                                                    release 1.0.0-shadow.7
+  
+                                                                                                    ✓  ledger         last bar check 14:00
+                                                                                                    ✓  engine         on time · next check 18:00
+                                                                                                    ✓  journal        readable
+                                                                                                    ✓  market feed    Kraken prices every 10 s
+                                                                                                    ✓  AI supervisor  1 brief published
+  
+                                                                                                    any key opens the console · Q quits
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  ---
+  colours: #070b14 #18233a #58d1eb #838ca1 #8a94a8 #e6ecf5
+  
+  '''
+# ---
+# name: test_finished_boot_screen_snapshot[control-80x24][boot_control_80x24]
+  '''
+  
+  
+  
+  
+                    █   █ █████ ████  █   █ █████  ████
+                    █   █ █     █   █ ██ ██ █     █
+                    █████ ████  ████  █ █ █ ████   ███
+                    █   █ █     █  █  █   █ █         █
+                    █   █ █████ █   █ █   █ █████ ████
+  
+                    release 1.0.0-shadow.7
+  
+                    ✓  ledger         last bar check 14:00
+                    ✓  engine         on time · next check 18:00
+                    ✓  journal        readable
+                    ✓  market feed    Kraken prices every 10 s
+                    ✓  AI supervisor  1 brief published
+  
+                    any key opens the console · Q quits
+  
+  
+  
+  
+  
+  ---
+  colours: #070b14 #18233a #58d1eb #838ca1 #8a94a8 #e6ecf5
+  
+  '''
+# ---
+# name: test_finished_boot_screen_snapshot[neon-120x36][boot_neon_120x36]
+  '''
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+                                        █   █ █████ ████  █   █ █████  ████
+                                        █   █ █     █   █ ██ ██ █     █
+                                        █████ ████  ████  █ █ █ ████   ███
+                                        █   █ █     █  █  █   █ █         █
+                                        █   █ █████ █   █ █   █ █████ ████
+  
+                                        release 1.0.0-shadow.7
+  
+                                        ✓  ledger         last bar check 14:00
+                                        ✓  engine         on time · next check 18:00
+                                        ✓  journal        readable
+                                        ✓  market feed    Kraken prices every 10 s
+                                        ✓  AI supervisor  1 brief published
+  
+                                        any key opens the console · Q quits
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  ---
+  colours: #00f0ff #08e7ff #0b0420 #10dfff #18233a #18d6ff #20cdff #29c4ff #31bcff #39b3ff #41aaff #49a2ff #5199ff #5990ff #6188ff #6a7fff #7276ff #798bb6 #7a6dff #8265ff #8a5cff #8fa8d8 #915afe #9858fd #9f57fc #a655fb #ac53fb #b351fa #ba4ff9 #c14df8 #c84cf7 #c8fbff #cf4af6 #d648f5 #dd46f4 #e344f4 #ea42f3 #f141f2 #f83ff1 #ff3df0
+  
+  '''
+# ---
+# name: test_finished_boot_screen_snapshot[neon-240x60][boot_neon_240x60]
+  '''
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+                                                                                                    █   █ █████ ████  █   █ █████  ████
+                                                                                                    █   █ █     █   █ ██ ██ █     █
+                                                                                                    █████ ████  ████  █ █ █ ████   ███
+                                                                                                    █   █ █     █  █  █   █ █         █
+                                                                                                    █   █ █████ █   █ █   █ █████ ████
+  
+                                                                                                    release 1.0.0-shadow.7
+  
+                                                                                                    ✓  ledger         last bar check 14:00
+                                                                                                    ✓  engine         on time · next check 18:00
+                                                                                                    ✓  journal        readable
+                                                                                                    ✓  market feed    Kraken prices every 10 s
+                                                                                                    ✓  AI supervisor  1 brief published
+  
+                                                                                                    any key opens the console · Q quits
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  ---
+  colours: #00f0ff #08e7ff #0b0420 #10dfff #18233a #18d6ff #20cdff #29c4ff #31bcff #39b3ff #41aaff #49a2ff #5199ff #5990ff #6188ff #6a7fff #7276ff #798bb6 #7a6dff #8265ff #8a5cff #8fa8d8 #915afe #9858fd #9f57fc #a655fb #ac53fb #b351fa #ba4ff9 #c14df8 #c84cf7 #c8fbff #cf4af6 #d648f5 #dd46f4 #e344f4 #ea42f3 #f141f2 #f83ff1 #ff3df0
+  
+  '''
+# ---
+# name: test_finished_boot_screen_snapshot[neon-80x24][boot_neon_80x24]
+  '''
+  
+  
+  
+  
+                    █   █ █████ ████  █   █ █████  ████
+                    █   █ █     █   █ ██ ██ █     █
+                    █████ ████  ████  █ █ █ ████   ███
+                    █   █ █     █  █  █   █ █         █
+                    █   █ █████ █   █ █   █ █████ ████
+  
+                    release 1.0.0-shadow.7
+  
+                    ✓  ledger         last bar check 14:00
+                    ✓  engine         on time · next check 18:00
+                    ✓  journal        readable
+                    ✓  market feed    Kraken prices every 10 s
+                    ✓  AI supervisor  1 brief published
+  
+                    any key opens the console · Q quits
+  
+  
+  
+  
+  
+  ---
+  colours: #00f0ff #08e7ff #0b0420 #10dfff #18233a #18d6ff #20cdff #29c4ff #31bcff #39b3ff #41aaff #49a2ff #5199ff #5990ff #6188ff #6a7fff #7276ff #798bb6 #7a6dff #8265ff #8a5cff #8fa8d8 #915afe #9858fd #9f57fc #a655fb #ac53fb #b351fa #ba4ff9 #c14df8 #c84cf7 #c8fbff #cf4af6 #d648f5 #dd46f4 #e344f4 #ea42f3 #f141f2 #f83ff1 #ff3df0
+  
+  '''
+# ---

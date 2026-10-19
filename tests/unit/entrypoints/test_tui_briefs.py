@@ -40,7 +40,7 @@ from hermes.entrypoints.tui_briefs import (
 )
 from hermes.entrypoints.tui_settings import ThemeChoice
 from hermes.entrypoints.tui_theme import BASE
-from tests.support.svg_snapshots import NamedSVG
+from tests.support.tui_views import assert_view, capture
 
 # The fixtures' read time (14:12 Madrid), well inside Auto's day window.
 _FROZEN = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
@@ -214,8 +214,7 @@ def _svg(size: tuple[int, int], theme: ThemeChoice) -> str:
             await pilot.pause()
             await pilot.press("7")
             await pilot.pause()
-            svg = app.export_screenshot()
-        return "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
+            return capture(app)
 
     return asyncio.run(drive())
 
@@ -233,4 +232,4 @@ def test_briefs_svg_snapshot(
 ) -> None:
     """The reviewed picture of the Briefs screen, in one theme, at one spec breakpoint."""
     name = f"briefs_{theme_name}_{size[0]}x{size[1]}"
-    assert _svg(size, theme) == snapshot(extension_class=NamedSVG, name=name)
+    assert_view(snapshot, _svg(size, theme), name=name)

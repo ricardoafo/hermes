@@ -49,7 +49,7 @@ from hermes.entrypoints.tui_theme import (
     theme_variables,
     tokens_for,
 )
-from tests.support.svg_snapshots import NamedSVG, repo_clean
+from tests.support.tui_views import assert_view, capture
 
 _MADRID = ZoneInfo("Europe/Madrid")
 _SIZES: tuple[tuple[int, int], ...] = ((80, 24), (120, 36), (160, 45), (240, 60))
@@ -375,7 +375,7 @@ def _svg(theme: str, size: tuple[int, int]) -> str:
             await pilot.pause()
             await app.workers.wait_for_complete()
             await pilot.pause()
-            return repo_clean(app.export_screenshot())
+            return capture(app)
 
     return asyncio.run(drive())
 
@@ -390,6 +390,4 @@ def test_finished_boot_screen_snapshot(
 ) -> None:
     """The finished checklist only changes when a reviewer accepts the new picture."""
     width, height = size
-    assert _svg(theme, size) == snapshot(
-        extension_class=NamedSVG, name=f"boot_{theme_name}_{width}x{height}"
-    )
+    assert_view(snapshot, _svg(theme, size), name=f"boot_{theme_name}_{width}x{height}")

@@ -24,7 +24,7 @@ from syrupy.assertion import SnapshotAssertion
 from hermes.adapters.console import FixtureReadModel
 from hermes.entrypoints.tui import HomeApp
 from hermes.entrypoints.tui_settings import ThemeChoice
-from tests.support.svg_snapshots import NamedSVG, repo_clean
+from tests.support.tui_views import assert_view, capture
 
 # The fixtures' read time (14:12 Madrid), well inside Auto's day window.
 _FROZEN = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
@@ -69,7 +69,7 @@ def _svg(
             if open_at is not None:
                 await pilot.resize_terminal(*size)
                 await pilot.pause()
-            return repo_clean(app.export_screenshot())
+            return capture(app)
 
     return asyncio.run(drive())
 
@@ -103,4 +103,4 @@ def test_drill_down_svg_snapshot(
     """The reviewed picture of one drill-down view, in one theme, at one spec breakpoint."""
     name = f"{view}_{theme_name}_{size[0]}x{size[1]}"
     svg = _svg(keys, size, theme, open_at)
-    assert svg == snapshot(extension_class=NamedSVG, name=name)
+    assert_view(snapshot, svg, name=name)
