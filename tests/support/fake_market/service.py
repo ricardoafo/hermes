@@ -15,9 +15,13 @@ multiple of wall time) and injects faults: the exchange's own outages, late,
 duplicate and broken bars, a thin book, and service-level rate-limit replies
 and slow answers.
 
+A script can also replay recorded Train-window bars instead of scripted
+steps (part 2, :mod:`tests.support.fake_market.replay`); a window reaching the
+Validation start is refused.
+
 Run standalone with ``python -m tests.support.fake_market.service --port N
 --script path.json``. It binds loopback by default and holds no key: Binance
-order endpoints and recorded-bar replay are later parts of issue #971.
+order endpoints are a later part of issue #971.
 """
 
 import argparse
@@ -41,6 +45,7 @@ from returns.result import Failure
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.pair import Pair
 from tests.support.fake_market.exchange import BINANCE_HOST, FakeExchange, SimClock
+from tests.support.fake_market.replay import ReplayError, market_from_recording
 from tests.support.fake_market.script import Market, MarketScript
 
 BINANCE_PREFIX: Final = "/binance"
@@ -439,6 +444,13 @@ def market_from_spec(spec: Mapping[str, object]) -> Market:
              {"bar": {"close": "156", "high": "157"}},
              {"hold": {"days": 2}}]}}}
 
+    Or, to replay recorded 4h bars of the Train window (issue #971, part 2)::
+
+        {"replay": {"dir": "/srv/hermes-data", "pairs": ["BTC/USDT"],
+                    "start": "2023-01-01T00:00:00+00:00",
+                    "end": "2023-07-01T00:00:00+00:00"},
+         "now": "2023-03-01T00:00:00+00:00"}
+
     Args:
         spec: The decoded description; ``now`` is optional and read by the
             service, not here.
@@ -450,6 +462,8 @@ def market_from_spec(spec: Mapping[str, object]) -> Market:
         ControlError: A field is missing, malformed or names an unknown step.
 
     """
+    if "replay" in spec:
+        return _replayed(spec["replay"])
     pairs = spec.get("pairs")
     if not isinstance(pairs, dict) or not pairs:
         raise ControlError("pairs must be a non-empty object of pair to {price, steps}")
@@ -474,6 +488,26 @@ def market_from_spec(spec: Mapping[str, object]) -> Market:
     if not any(script.steps.values()):
         raise ControlError("the script has no steps")
     return script.build()
+
+
+def _replayed(replay: object) -> Market:
+    if not isinstance(replay, dict):
+        raise ControlError("replay must be an object of dir, pairs, start and end")
+    data_dir = replay.get("dir")
+    if not isinstance(data_dir, str) or not data_dir:
+        raise ControlError(f"replay dir must be a path, got {data_dir!r}")
+    pairs = replay.get("pairs")
+    if not isinstance(pairs, list) or not pairs:
+        raise ControlError("replay pairs must be a non-empty list")
+    try:
+        return market_from_recording(
+            Path(data_dir),
+            [_pair(text) for text in pairs],
+            _instant(replay.get("start"), "start"),
+            _instant(replay.get("end"), "end"),
+        )
+    except ReplayError as exc:
+        raise ControlError(str(exc)) from exc
 
 
 def _apply_step(script: MarketScript, pair: Pair, step: object) -> None:
