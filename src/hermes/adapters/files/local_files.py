@@ -4,6 +4,7 @@ Reference: GitHub issue #1186.
 """
 
 import hashlib
+import os
 from pathlib import Path
 from typing import Final
 
@@ -41,8 +42,9 @@ class LocalFiles:
         Raises:
             FileNotFoundError: ``path`` does not exist; an append never creates a file.
         """
-        with path.open("r+", encoding="utf-8") as fh:
-            fh.seek(0, 2)
+        # O_APPEND without O_CREAT: the OS places each write at the end, even with
+        # two writers, and a missing file raises instead of being created.
+        with os.fdopen(os.open(path, os.O_WRONLY | os.O_APPEND), "a", encoding="utf-8") as fh:
             fh.write(text)
 
     def sha256(self, path: Path) -> str:

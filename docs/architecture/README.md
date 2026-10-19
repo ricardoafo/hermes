@@ -46,4 +46,5 @@ table.
 | [028](adr-028-release-cut-every-merge-window.md) | A release is cut at every merge window | Proposed | [ADR-030](adr-030-every-merge-deploys-with-a-computed-version.md) (every merge deploys with a computed version) |
 | [029](adr-029-one-hour-bars-for-intraday-holding-candidates.md) | 1h bars for intraday-holding candidates, in backtest, shadow and prod together | Proposed | — |
 | [030](adr-030-every-merge-deploys-with-a-computed-version.md) | Every merge to `main` deploys to hermes-01 with a version computed from what changed | Accepted | — |
+| [031](adr-031-research-sweep-for-a-strong-champion.md) | Research sweeps, 100+ signed candidates per batch to find one strong champion | Accepted | — |
 <!-- adr-index-end -->

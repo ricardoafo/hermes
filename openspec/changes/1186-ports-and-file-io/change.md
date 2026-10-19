@@ -144,8 +144,8 @@ Test tiers touched: unit, property
 - **Call-site churn**: any caller outside this tree that builds
   `PreRegistration()` with no root breaks. Every caller in `src/`, `scripts/`
   and `tests/` is updated; mypy strict checks `src/`.
-- **Append semantics**: `LocalFiles.append_text` opens the file `r+` and
-  refuses a missing one. Before, `open("a")` could create it, but
+- **Append semantics**: `LocalFiles.append_text` opens the file `O_APPEND`
+  without `O_CREAT`, so it refuses a missing one. Before, `open("a")` could create it, but
   `LabNotebook` already refused a missing notebook at construction.
 - **Open PRs**: PR #1250 drops `from __future__ import annotations` in files
   this change touches. Whichever merges second merges main in.
