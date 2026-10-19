@@ -150,13 +150,6 @@ from hermes.application.console.live import (
     live_total,
     poll_succeeded,
 )
-from hermes.application.console.live_context import (
-    BarContext,
-    BarsOutcome,
-    BarsPoller,
-    ContextBoard,
-    LiveBarsPort,
-)
 from hermes.application.console.logs import LogLine, render_log_line
 from hermes.application.console.render import (
     DEMO_TAG,
@@ -194,6 +187,7 @@ from hermes.entrypoints.tui_drilldown import (
     ListState,
     detail_mode,
 )
+from hermes.entrypoints.tui_feeds import ContextFeeds
 from hermes.entrypoints.tui_home import (
     LOGS_DEMO,
     LOGS_UNAVAILABLE,
@@ -212,6 +206,7 @@ from hermes.entrypoints.tui_lab import LabView
 from hermes.entrypoints.tui_live import (
     LiveLook,
     eur_rate,
+    latency_chip,
     live_detail_line,
     live_portfolio_lines,
     market_rows,
@@ -869,9 +864,7 @@ class HomeApp(App[None]):
 
     def _init_live_feed(self, ticker: LiveTickerPort | None, clock: Callable[[], datetime]) -> None:
         self._poller = None if ticker is None else TickerPoller(ticker, clock)
-        self._bars_poller = BarsPoller(ticker, clock) if isinstance(ticker, LiveBarsPort) else None
-        self._contexts = ContextBoard()
-        self._fetching_bars = False
+        self._feeds = ContextFeeds(ticker, clock)
         self._board = LiveBoard()
         self._fetching = False
         self._flashes: dict[str, int] = {}
@@ -1299,9 +1292,19 @@ class HomeApp(App[None]):
             pulse = feed_pulse(self._polls, tokens_for(self.theme), bright=self._feed_bright)
             feed = Text(" ").append_text(pulse)
             spare -= feed.cell_len
+            chip = self._latency_chip(spare)
+            feed.append_text(chip)
+            spare -= chip.cell_len
         self._set("feed", feed)
         fits = bool(self._clock_text) and spare >= _CLOCK_CELLS
         self._set("clock", Text(f" {self._clock_text}" if fits else ""))
+
+    def _latency_chip(self, room: int) -> Text:
+        """Return the book-call round trip, its sparkline and the age of the newest price."""
+        now = self._clock()
+        last = self._board.status(now).last_tick_at
+        age = None if last is None else max(now - last, timedelta(0))
+        return latency_chip(self._feeds.round_trips(), age, tokens_for(self.theme), room=room)
 
     def _meter_fits(self, countdown: str) -> bool:
         """Return whether the countdown meter fits after the countdown and the full chip."""
@@ -1406,7 +1409,7 @@ class HomeApp(App[None]):
         if state is not self._live_state:
             self._live_state = state
             self._paint_live()
-        self._start_bars(now)
+        self._feeds.start(self, now, self._feeds_answered)
         poller = self._poller
         if poller is None or self._fetching or not poller.due(now):
             return
@@ -1420,36 +1423,10 @@ class HomeApp(App[None]):
             exit_on_error=False,
         )
 
-    def _start_bars(self, now: datetime) -> None:
-        """Start a poll of the hourly bars (forming 4h bar, 24 h context) when one is due."""
-        poller = self._bars_poller
-        if poller is None or self._fetching_bars or not poller.due(now):
-            return
-        poller.begin(now)
-        self._fetching_bars = True
-        self.run_worker(
-            partial(self._fetch_bars, poller),
-            name="bars",
-            group="bars",
-            thread=True,
-            exit_on_error=False,
-        )
-
-    def _fetch_bars(self, poller: BarsPoller) -> None:
-        """Fetch the hourly bars of every coin (worker thread) and hand them to the UI thread."""
-        outcomes = poller.fetch()
-        with suppress(RuntimeError):
-            self.call_from_thread(self.apply_bars, outcomes)
-
-    def apply_bars(self, outcomes: Sequence[BarsOutcome]) -> None:
-        """Record fetched bar contexts and repaint the Market panel (UI thread, memory only).
-
-        Args:
-            outcomes: One outcome per coin from :meth:`BarsPoller.fetch`.
-        """
-        self._fetching_bars = False
-        self._contexts.apply(outcomes)
+    def _feeds_answered(self) -> None:
+        """Repaint what the bars and book feeds show: the Market panel and the status row."""
         self._paint_market()
+        self._paint_feed_and_clock()
 
     def _fetch_ticks(self, poller: TickerPoller) -> None:
         """Fetch one tick per coin (worker thread) and hand them to the UI thread."""
@@ -2106,15 +2083,6 @@ class HomeApp(App[None]):
         board = self._board
         return {coin: quote for coin in board.prices() if (quote := board.quote(coin)) is not None}
 
-    def _bar_contexts(self, now: datetime) -> dict[str, BarContext]:
-        """Return the fresh bar context of every coin that has one."""
-        contexts = {}
-        for coin in self._board.prices():
-            context = self._contexts.get(coin, now)
-            if context is not None:
-                contexts[coin] = context
-        return contexts
-
     def _paint_market_read(self, watch: tuple[WatchedPair, ...] | Failed) -> None:
         """Draw the Market rows from a read of the market watch."""
         if isinstance(watch, CARD_ERRORS):
@@ -2143,7 +2111,8 @@ class HomeApp(App[None]):
                 look,
                 width=self._inner("market"),
                 rate=eur_rate(self._rows, self._summary),
-                contexts=self._bar_contexts(now),
+                contexts=self._feeds.contexts(self._board.prices(), now),
+                books=self._feeds.healths(self._board.prices(), now),
                 now=now,
             ),
         )
