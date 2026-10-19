@@ -1,1 +1,0 @@
-- The ledger now runs in WAL, as ADR-003 says: a long read (tax pack, bot, console) no longer holds up serve's commit, and the read-only units still open the ledger while serve is stopped (issues #855, #879).

@@ -18,7 +18,7 @@ Verifies:
 - ``install_signal_handlers`` flips the shutdown event on SIGTERM (skipped on
   Windows, where ``os.kill`` on the pytest process is unsafe).
 
-Reference: ``openspec/changes/309-serve-bar-loop/change.md`` D-1, D-5, D-7, D-9.
+Reference: ``openspec/archive/309-serve-bar-loop/change.md`` D-1, D-5, D-7, D-9.
 """
 
 from __future__ import annotations
@@ -35,10 +35,12 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
+import httpx
 import pytest
 from structlog.testing import capture_logs
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
+from hermes.adapters.clock.remote import TEST_CLOCK_URL_ENV, RemoteClock
 from hermes.adapters.clock.wall import WallClock
 from hermes.adapters.endpoint import EndpointConfigError
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
@@ -147,6 +149,39 @@ class TestBuildComposition:
             assert isinstance(composition.feed, BinanceLiveKlinesAdapter)
             assert isinstance(composition.event_bus, EventBus)
             assert (composition.telegram, composition.slack) == (None, None)
+        finally:
+            asyncio.run(composition.feed.aclose())
+            composition.sqlite_connection.close()
+
+    def test_a_test_clock_in_the_env_becomes_serves_clock(
+        self, shadow_config: HermesConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """HERMES_TEST_CLOCK_URL puts serve on the test clock (#972).
+
+        The clock's transport is mocked here; the real socket seam is covered by
+        tests/integration/lower_env/test_installed_release.py.
+        """
+        scripted = datetime(2024, 10, 28, tzinfo=UTC)
+        test_clock = RemoteClock(
+            "http://127.0.0.1:9/_fake/clock",
+            transport=httpx.MockTransport(
+                lambda _request: httpx.Response(200, json={"now": scripted.isoformat()})
+            ),
+        )
+        monkeypatch.setattr(
+            serve_module,
+            "remote_clock_from_env",
+            lambda env: test_clock if env.get(TEST_CLOCK_URL_ENV) else None,
+        )
+
+        composition = serve_module.build_composition(
+            shadow_config,
+            db_path=tmp_path / "test.sqlite3",
+            env={TEST_CLOCK_URL_ENV: "http://127.0.0.1:9/_fake/clock"},
+            new_ledger=True,
+        )
+        try:
+            assert (composition.clock is test_clock, composition.clock.now()) == (True, scripted)
         finally:
             asyncio.run(composition.feed.aclose())
             composition.sqlite_connection.close()

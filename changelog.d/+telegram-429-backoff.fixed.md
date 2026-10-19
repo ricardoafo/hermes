@@ -1,1 +1,0 @@
-- Telegram pushes that hit the Bot API rate limit (HTTP 429) are retried after the wait Telegram asks for, at most three times and within 30 seconds, instead of being dropped on the first 429 (issue #859).

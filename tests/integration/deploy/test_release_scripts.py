@@ -10,13 +10,13 @@ read per-test switches from ``STUB_*`` environment variables.
 
 The stubs are the only mocks. The seam they replace is the real unit and
 the real uv, which only the operator acceptance run on the box covers
-(openspec/changes/179-cd-first-real-deploy/change.md, Requirements
+(openspec/archive/179-cd-first-real-deploy/change.md, Requirements
 R-1 to R-4).
 
 CI runs this file on Linux and skips it on Windows; see ``_bash.py`` for
 how a Windows contributor can run it.
 
-Reference: openspec/changes/179-cd-first-real-deploy/change.md (Test plan).
+Reference: openspec/archive/179-cd-first-real-deploy/change.md (Test plan).
 """
 
 from __future__ import annotations
@@ -177,8 +177,15 @@ exec "$@"
 # pending); a run logs its arguments and fails when STUB_MIGRATE_FAIL is set,
 # or when its --db is STUB_MIGRATE_FAIL_DB. With STUB_MIGRATE_MARK set, a run
 # rewrites the ledger's marker to "migrated", so a test can see a restore.
+# `hermes config check` keeps its stdin in the state dir, prints
+# STUB_CONFIG_CHECK_OUT and exits STUB_CONFIG_CHECK_RC (default 0).
 _STUB_HERMES = """#!/usr/bin/env bash
 echo "hermes $*" >> "$STUB_LOG"
+if [ "$1 $2" = "config check" ]; then
+    cat > "$STUB_STATE/config-check-stdin"
+    [ -z "${STUB_CONFIG_CHECK_OUT:-}" ] || echo "$STUB_CONFIG_CHECK_OUT"
+    exit "${STUB_CONFIG_CHECK_RC:-0}"
+fi
 db=""
 prev=""
 for arg in "$@"; do
@@ -388,6 +395,7 @@ class Box:
                 "HERMES_BACKUP_DIR": _posix(self.backups),
                 "HERMES_BACKUP_PYTHON": _posix(Path(sys.executable)),
                 "HERMES_MIGRATE_BIN": _posix(self._stubs / "hermes"),
+                "HERMES_CONFIG_CHECK_BIN": _posix(self._stubs / "hermes"),
                 "HERMES_UNIT_DIR": _posix(self.units),
                 "HERMES_NOW_EPOCH": _QUIET_EPOCH,
                 "HERMES_SCHEMA_PYTHON": _posix(Path(sys.executable)),
@@ -1280,7 +1288,7 @@ def test_first_deploy_without_a_ledger_skips_the_migrate_check(box: Box) -> None
 
 # ─────────────────────────────────────────────────────────────────────
 # Staging target (#192): HERMES_TARGET=staging never reaches prod.
-# openspec/changes/192-staging-env/change.md, D-3 and R-2.
+# openspec/archive/192-staging-env/change.md, D-3 and R-2.
 # ─────────────────────────────────────────────────────────────────────
 
 _STAGING = {"HERMES_TARGET": "staging"}
@@ -1441,6 +1449,117 @@ def test_staging_deploy_refuses_any_path_that_resolves_to_prod(
     assert "refusing" in result.stdout
     assert staging_box.disk() == before
     assert staging_box.calls() == []
+
+
+# Staging env file against the release's config (#970 part 3).
+
+_REPO_CONFIG = _SCRIPT_DIR.parents[1] / "config"
+_TIER_MARKER = "sekrit-970"  # gitleaks:allow
+
+
+def test_staging_deploy_checks_the_env_file_as_the_staging_user(staging_box: Box) -> None:
+    """The release's config check reads the env file on stdin, as hermes-staging."""
+    result = staging_box.deploy(_SHA_A, **_STAGING)
+
+    assert result.returncode == 0, _output(result)
+    release = _posix(staging_box.root / "versions" / _SHA_A)
+    assert any(
+        call.startswith("runuser -u hermes-staging -- ")
+        and call.endswith(f"config check --config-dir {release}/config --env-file -")
+        for call in staging_box.calls()
+    )
+    stdin = (staging_box._state / "config-check-stdin").read_text(encoding="utf-8")
+    assert stdin == _STAGING_ENV_FILE
+
+
+def test_staging_deploy_stops_on_a_config_finding_before_any_restart(staging_box: Box) -> None:
+    """A finding stops the deploy: current is not flipped and no unit restarts."""
+    finding = "FINDING tier HERMES_BINANCE__API_KEY: is set, but staging holds no trading key"
+
+    result = staging_box.deploy(
+        _SHA_A, STUB_CONFIG_CHECK_RC="1", STUB_CONFIG_CHECK_OUT=finding, **_STAGING
+    )
+
+    assert result.returncode == 1, _output(result)
+    assert finding in result.stdout
+    assert "breaks the release's config rules: not deploying" in result.stdout
+    assert staging_box.target("current") is None
+    assert not any(call.startswith("systemctl restart") for call in staging_box.calls())
+
+
+def test_staging_deploy_stops_when_the_config_check_cannot_run(staging_box: Box) -> None:
+    """Any other exit is a failed check, never a pass."""
+    result = staging_box.deploy(_SHA_A, STUB_CONFIG_CHECK_RC="3", **_STAGING)
+
+    assert result.returncode == 1, _output(result)
+    assert "hermes config check failed to run" in result.stdout
+    assert "(exit 3)" in result.stdout
+    assert not any(call.startswith("systemctl restart") for call in staging_box.calls())
+
+
+def test_prod_deploy_does_not_run_the_staging_config_check(box: Box) -> None:
+    """Prod's env file is not part of this check; a prod deploy is unchanged."""
+    result = box.deploy(_SHA_A, STUB_CONFIG_CHECK_RC="1")
+
+    assert result.returncode == 0, _output(result)
+    assert not any(call.startswith("hermes config check") for call in box.calls())
+
+
+def _real_config_check(box: Box) -> dict[str, str]:
+    """Point the check seam at this checkout's hermes, and the stage at its config."""
+    wrapper = box.base / "hermes-real"
+    wrapper.write_text(
+        f'#!/usr/bin/env bash\nexec "{_posix(Path(sys.executable))}" -m hermes "$@"\n',
+        encoding="utf-8",
+        newline="\n",
+    )
+    wrapper.chmod(0o755)
+    return {"HERMES_CONFIG_CHECK_BIN": _posix(wrapper)}
+
+
+def _stage_with_repo_config(box: Box, sha: str) -> Path:
+    stage = box.make_stage(sha)
+    shutil.rmtree(stage / "config")
+    shutil.copytree(_REPO_CONFIG, stage / "config")
+    return stage
+
+
+@pytest.mark.parametrize(
+    ("line", "name"),
+    [
+        (f'HERMES_KRAKEN__API_SECRET="{_TIER_MARKER}"', "HERMES_KRAKEN__API_SECRET"),
+        (f"HERMES_MARKET_DATA__BASE_URL=http://127.0.0.1:9/{_TIER_MARKER}", "market_data.base_url"),
+        (
+            f"HERMES_TELEGRAM__API_BASE=http://localhost:8081/{_TIER_MARKER}",
+            "HERMES_TELEGRAM__API_BASE",
+        ),
+    ],
+    ids=["trading-key", "loopback-market-data", "loopback-telegram"],
+)
+def test_real_config_check_refuses_a_staging_env_file_that_breaks_the_tier(
+    staging_box: Box, line: str, name: str
+) -> None:
+    """End to end: the shipped config and CLI refuse the file by name, never by value."""
+    staging_box.env_file.write_text(f"{_STAGING_ENV_FILE}{line}\n", encoding="utf-8")
+    stage = _stage_with_repo_config(staging_box, _SHA_A)
+
+    result = staging_box.deploy(_SHA_A, stage=stage, **_STAGING, **_real_config_check(staging_box))
+
+    assert result.returncode == 1, _output(result)
+    assert f"FINDING tier {name}: " in result.stdout
+    assert _TIER_MARKER not in _output(result)
+    assert staging_box.target("current") is None
+
+
+def test_real_config_check_passes_a_clean_staging_env_file(staging_box: Box) -> None:
+    """End to end: a staging file with no key and public endpoints deploys."""
+    stage = _stage_with_repo_config(staging_box, _SHA_A)
+
+    result = staging_box.deploy(_SHA_A, stage=stage, **_STAGING, **_real_config_check(staging_box))
+
+    assert result.returncode == 0, _output(result)
+    assert "staging env file passes the release's config check" in result.stdout
+    assert staging_box.target("current") == _SHA_A
 
 
 @pytest.mark.parametrize("script", ["install_release.sh", "rollback.sh", "health_gate.sh"])

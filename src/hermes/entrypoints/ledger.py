@@ -9,7 +9,7 @@ lists each finding.
 
 Exit codes: 0 OK, 1 findings, 2 usage, 3 ledger missing or unreadable.
 
-Reference: openspec/changes/538-ledger-verify/change.md.
+Reference: openspec/archive/538-ledger-verify/change.md.
 """
 
 from __future__ import annotations

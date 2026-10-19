@@ -1,6 +1,6 @@
 """Renta Web campaign layouts: ``config/renta_campaigns.yaml``.
 
-Reference: openspec/changes/568-tax-pack/change.md D-6.
+Reference: openspec/archive/568-tax-pack/change.md D-6.
 """
 
 from __future__ import annotations

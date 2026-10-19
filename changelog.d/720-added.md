@@ -1,1 +1,0 @@
-- Console: the Briefs screen (tab 6) shows the supervisor desk's daily brief, as `hermes supervisor brief` publishes it, beside the list of briefs. It never shows profit, equity or prices (issue #720).

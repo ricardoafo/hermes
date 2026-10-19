@@ -14,7 +14,7 @@ Every money figure stays a ``Decimal``; rounding is the renderer's job. The
 module does no I/O: the clock, the scales and the taxpayer figures are
 parameters, so over ``--vps`` the caller simply passes no taxpayer figures.
 
-Reference: openspec/changes/719-tax-screen/change.md.
+Reference: openspec/archive/719-tax-screen/change.md.
 """
 
 from collections import defaultdict
@@ -118,14 +118,6 @@ class LotView:
         if any(gain is None for gain in gains):
             return None
         return exact_sum(gain for gain in gains if gain is not None)
-
-    @property
-    def sale_fees(self) -> Decimal | None:
-        """Return the fees of the lot's sales; ``None`` when one is pending."""
-        fees = [sale.fee for sale in self.sales]
-        if any(fee is None for fee in fees):
-            return None
-        return exact_sum(fee for fee in fees if fee is not None)
 
     @property
     def two_month(self) -> bool:

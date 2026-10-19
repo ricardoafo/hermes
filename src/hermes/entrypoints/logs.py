@@ -10,7 +10,7 @@ otherwise. Times are Madrid unless ``--utc``.
 
 Exit codes: 0 success, 2 usage or no journalctl on this machine.
 
-Reference: openspec/changes/376-hermes-logs/change.md.
+Reference: openspec/archive/376-hermes-logs/change.md.
 """
 
 from __future__ import annotations

@@ -4,7 +4,7 @@
 **Author**: AI Bot on behalf of the Code Owner
 **Related**: ADR-010 §1 (`uv sync --frozen` as the install command) and §4
 (SHA-256 hash pinning),
-[`openspec/changes/179-cd-first-real-deploy/change.md`](../../openspec/changes/179-cd-first-real-deploy/change.md)
+[`openspec/archive/179-cd-first-real-deploy/change.md`](../../openspec/archive/179-cd-first-real-deploy/change.md)
 (D-4), GH #179
 
 ## Decision

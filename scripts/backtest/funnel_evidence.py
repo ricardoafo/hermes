@@ -5,14 +5,17 @@ time (Donchian 15 and 25, ADX gate 20 and 30, chandelier multiple 2.5 and
 3.5), and the base parameters at twice the fees and slippage (§6.2). Each
 replay is logged as its own trial. The evidence file holds the base run's
 daily equity, the stress run's, and the daily returns of the base run and its
-neighbours, the CSCV matrix of §8.5.
+neighbours, the CSCV matrix of §8.5. It also reports the base run's
+pre-registration §8.3 walk-forward and purged CPCV folds (``folds``), as
+evidence no gate reads (issue #1181).
 
 The replays override parameters of whatever strategy the driver loads and
 scale whatever execution model it builds, so they do not depend on which
 strategy runs.
 
-Reference: openspec/changes/v2-funnel-evidence/change.md;
-openspec/changes/v2-backtest-funnel/change.md Design §2.
+Reference: openspec/archive/v2-funnel-evidence/change.md;
+openspec/archive/v2-backtest-funnel/change.md Design §2;
+openspec/changes/1181-fold-evidence/change.md.
 """
 
 from collections.abc import Mapping, Sequence
@@ -21,6 +24,7 @@ from decimal import Decimal
 from itertools import pairwise
 from typing import Any, Final
 
+from hermes.application.backtest.fold_evidence import fold_evidence
 from hermes.application.backtest.funnel_replay import (
     BASE_TRIAL_ID,
     COST_STRESS,
@@ -86,7 +90,8 @@ def funnel_evidence(
             (ADR-026 §1).
 
     Returns:
-        The JSON object, with ``running_strategies`` empty.
+        The JSON object, with ``running_strategies`` empty and the base run's
+        §8.3 ``folds``, which are reported and never judged.
 
     Raises:
         ValueError: A replay is missing, the base curve is empty, a curve
@@ -124,4 +129,5 @@ def funnel_evidence(
         "trials": {tid: daily_returns(_equity(curves[tid])) for tid in trial_ids},
         "neighbour_trial_ids": neighbours,
         "running_strategies": {},
+        "folds": fold_evidence(days[0].date(), _equity(base)),
     }

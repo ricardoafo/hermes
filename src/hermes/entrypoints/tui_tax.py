@@ -20,7 +20,7 @@ Every figure comes from :class:`~hermes.application.tax.screen.TaxScreen`, built
 the tax service; this module only lays it out, and money shows only where
 ``pnl_visible`` allows it.
 
-Reference: openspec/changes/719-tax-screen/change.md.
+Reference: openspec/archive/719-tax-screen/change.md.
 """
 
 from collections.abc import Callable, Mapping, Sequence

@@ -1,1 +1,0 @@
-- `hermes parity` no longer reports a config that fails to load, such as a strategy naming an unknown `signal:`, as a failed exchange read of warm-up bars; it prints the config error itself and still exits 3 (issue #1119).

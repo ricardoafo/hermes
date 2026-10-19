@@ -14,7 +14,7 @@ configured starting capital):
 
 Read-only throughout; the result is a report, never a correction.
 
-Reference: openspec/changes/35-monthly-reconciliation/change.md D-1, D-2, D-5.
+Reference: openspec/archive/35-monthly-reconciliation/change.md D-1, D-2, D-5.
 """
 
 from __future__ import annotations

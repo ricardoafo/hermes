@@ -1,1 +1,0 @@
-- **Live spread in the console Market panel**: each coin shows its spread in basis points, taken from the best bid and best ask of the ticker poll the console already makes (from 64 cells wide). A coin whose last fetch failed shows a dash. Display only. Refs #722. Closes #1156.

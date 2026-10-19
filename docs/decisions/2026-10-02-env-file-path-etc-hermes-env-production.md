@@ -4,9 +4,9 @@
 **Author**: AI Bot on behalf of the Code Owner
 **Related**: `docs/decisions/2026-08-23-credential-storage-layered-by-env.md`
 (supersedes its prod path),
-[`openspec/changes/179-cd-first-real-deploy/change.md`](../../openspec/changes/179-cd-first-real-deploy/change.md)
+[`openspec/archive/179-cd-first-real-deploy/change.md`](../../openspec/archive/179-cd-first-real-deploy/change.md)
 (D-2, D-8),
-[`openspec/changes/306-serve-systemd-boot/change.md`](../../openspec/changes/306-serve-systemd-boot/change.md),
+[`openspec/archive/306-serve-systemd-boot/change.md`](../../openspec/archive/306-serve-systemd-boot/change.md),
 GH #179, GH #306
 
 ## Decision

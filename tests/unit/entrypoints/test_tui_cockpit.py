@@ -262,16 +262,15 @@ def test_briefs_screen_is_the_ai_variant() -> None:
 
 
 def test_window_bar_and_tabs_lead_the_screen() -> None:
-    """Row 0 is the window bar with the clock; row 1 the tabs with names at 120 columns."""
+    """Row 0 is the text-free window bar; row 1 the tabs with names at 120 columns."""
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> list[str]:
         del pilot
         return _screen_text(app).splitlines()[:2]
 
     bar, tabs = _run(probe)
-    assert (bar.startswith("▐ HERMES // SHADOW CONSOLE"), bar.endswith("14:12:00"), tabs) == (
-        True,
-        True,
+    assert (bar, tabs) == (
+        "",
         "  1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test"
         " · 7 Briefs · 8 System · 9 Logs",
     )
@@ -293,25 +292,29 @@ def test_compact_tabs_are_numbers_only_and_the_countdown_is_in_the_footer() -> N
 
 
 def test_wide_status_row_shows_the_countdown() -> None:
-    """At 120 columns the countdown follows the heartbeat on the status row."""
+    """At 140 columns the countdown follows the heartbeat on the status row.
+
+    Since issue #1097 the mainnet badge leads the row in Neon too, so the
+    countdown needs more than the 120 columns it fitted in before.
+    """
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[str, str]:
         del pilot
         return app.plain_text("countdown").strip(), app.plain_text("footer-status").strip()
 
-    assert _run(probe) == ("in 3h 48m 00s", "read-only")
+    assert _run(probe, size=(140, 36)) == ("in 3h 48m 00s", "read-only")
 
 
 def test_clock_and_countdown_tick_every_second() -> None:
-    """One second later the window bar clock and the countdown have both moved."""
+    """One second later the status-row clock and the countdown have both moved."""
     clock = _Clock(_DAY)
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[str, str]:
         clock.now = _DAY + timedelta(seconds=1)
         await pilot.pause(1.3)
-        return app.query_one(WindowBar).clock, app.plain_text("countdown").strip()
+        return app.plain_text("clock").strip(), app.plain_text("countdown").strip()
 
-    assert _run(probe, clock=clock) == ("14:12:01", "in 3h 47m 59s")
+    assert _run(probe, clock=clock, size=(200, 36)) == ("14:12:01", "in 3h 47m 59s")
 
 
 def test_footer_keys_are_reverse_video_chips() -> None:
@@ -838,10 +841,10 @@ def _title_bar_start(app: HomeApp) -> str:
     return bgcolor.name
 
 
-def test_picking_control_room_hides_the_window_bar_and_recolours_the_title_bars(
+def test_picking_control_room_keeps_the_window_bar_and_recolours_the_chrome(
     tmp_path: Path,
 ) -> None:
-    """After picking Control room the window bar is gone and title bars start on its chrome."""
+    """After picking Control room the window bar stays, blank, and title bars take its chrome."""
     path = tmp_path / "console.toml"
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[bool, str, bool, str, str]:
@@ -854,27 +857,26 @@ def test_picking_control_room_hides_the_window_bar_and_recolours_the_title_bars(
     assert _run(probe, settings_path=path) == (
         True,
         NEON.chrome[0].lower(),
-        False,
+        True,
         CONTROL_ROOM.chrome[0].lower(),
-        "  1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test"
-        " · 7 Briefs · 8 System · 9 Logs",
+        "",
     )
 
 
 @pytest.mark.parametrize(
-    ("theme", "now", "shown"),
+    ("theme", "now"),
     [
-        (ThemeChoice.NEON, _DAY, True),
-        (ThemeChoice.CONTROL, _DAY, False),
-        (ThemeChoice.AUTO, _DAY, True),
-        (ThemeChoice.AUTO, _NIGHT, False),
+        (ThemeChoice.NEON, _DAY),
+        (ThemeChoice.CONTROL, _DAY),
+        (ThemeChoice.AUTO, _DAY),
+        (ThemeChoice.AUTO, _NIGHT),
     ],
     ids=["neon", "control", "auto-day", "auto-night"],
 )
-def test_window_bar_shows_only_in_neon(theme: ThemeChoice, now: datetime, shown: bool) -> None:
-    """The Neon window bar leads the screen in Neon only."""
+def test_window_bar_leads_every_theme(theme: ThemeChoice, now: datetime) -> None:
+    """The window bar leads the screen in every theme, with no text on it (issue #1097)."""
 
-    async def drive() -> tuple[bool, bool]:
+    async def drive() -> tuple[bool, str]:
         app = HomeApp(
             FixtureReadModel.load("ok-two-positions"),
             clock=lambda: now,
@@ -885,9 +887,9 @@ def test_window_bar_shows_only_in_neon(theme: ThemeChoice, now: datetime, shown:
         async with app.run_test(size=(120, 36)) as pilot:
             await pilot.pause()
             first = _screen_text(app).splitlines()[0]
-            return app.query_one(WindowBar).display, first.startswith("▐ HERMES // SHADOW CONSOLE")
+            return app.query_one(WindowBar).display, first
 
-    assert asyncio.run(drive()) == (shown, shown)
+    assert asyncio.run(drive()) == (True, "")
 
 
 def test_demo_tag_is_drawn_on_the_warn_amber() -> None:

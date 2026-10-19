@@ -15,7 +15,7 @@ renderer here only chooses the lines and puts the one correlation ref at the
 end; the channel modules wrap those lines for their wire format.
 
 Reference: docs/decisions/2026-10-04-notification-templates-v2.md (rules 3, 6
-    and the recommendation); openspec/changes/144-notification-system/change.md.
+    and the recommendation); openspec/archive/144-notification-system/change.md.
 """
 
 from __future__ import annotations

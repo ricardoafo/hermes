@@ -4,7 +4,7 @@ Every request is answered by respx (or an ``httpx.MockTransport`` in the
 property test) with replies shaped like Binance's spot REST API, served from
 ``tests/fixtures/binance_spot``; no test reaches the network.
 
-Invariants protected here (openspec/changes/29-binance-balance-read R-1..R-4):
+Invariants protected here (openspec/archive/29-binance-balance-read R-1..R-4):
 
 - the config refuses plain HTTP, an undocumented host and a blank credential,
   and ``from_env`` names a missing variable without echoing any value;

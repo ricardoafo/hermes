@@ -16,7 +16,7 @@ price reaches a row or the closed-position detail.
 Every builder here is a pure function of view objects, the time zone and the
 token sheet, so tests check the text without running an app.
 
-Reference: openspec/changes/715-positions-screen/change.md.
+Reference: openspec/archive/715-positions-screen/change.md.
 """
 
 # ruff: noqa: RUF002 - the single right angle quote is the design spec's breadcrumb separator

@@ -18,7 +18,7 @@ either side is flagged for the gestor, never deferred (ADR-016 item 8). The
 window counts Madrid calendar dates and is the tax screen's own rule
 (:func:`hermes.domain.tax.two_month.in_repurchase_window`, issue #1171).
 
-Reference: openspec/changes/36-modelo-100-721/change.md D-1 to D-6.
+Reference: openspec/archive/36-modelo-100-721/change.md D-1 to D-6.
 """
 
 from __future__ import annotations

@@ -2,7 +2,7 @@
 
 **Date**: 2026-08-22
 **Author**: claude on behalf of Ricardo
-**Related**: ADR-010 §3 CVE scanning (partially superseded by this entry), `openspec/changes/phase-0-python-toolchain/`
+**Related**: ADR-010 §3 CVE scanning (partially superseded by this entry), `openspec/archive/phase-0-python-toolchain/`
 
 ## Decision
 

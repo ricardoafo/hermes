@@ -238,7 +238,7 @@ in hermes.
   - `confirm` — aggregator; deployment marker set only when all above pass
 - **Serialized** via `concurrency: deploy-vps` (never two deploys racing)
 - **Full flow**: see `deploy/README.md` — includes mermaid diagram of the whole pipeline
-- **State**: Implemented by `openspec/changes/179-cd-first-real-deploy/change.md`. The `vps-bootstrap` workflow provisions the VPS layout idempotently (`scripts/deploy/vps_bootstrap.sh`); the smoke suite is still a placeholder.
+- **State**: Implemented by `openspec/archive/179-cd-first-real-deploy/change.md`. The `vps-bootstrap` workflow provisions the VPS layout idempotently (`scripts/deploy/vps_bootstrap.sh`); the smoke suite is still a placeholder.
 
 ### 13. Operate + incident
 

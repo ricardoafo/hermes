@@ -151,7 +151,7 @@ added.
 ## What happens next
 
 Once the shapes are picked, the implementation PR follows
-`openspec/changes/144-notification-system/change.md`. It contains:
+`openspec/archive/144-notification-system/change.md`. It contains:
 
 - the shared formatters;
 - the templates rewritten for every event, with the missing ones added;

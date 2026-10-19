@@ -21,8 +21,8 @@ from hermes.domain.errors import LedgerError
 from hermes.entrypoints import serve as serve_module
 from hermes.infrastructure.config.loader import load_config
 from hermes.infrastructure.config.root import HermesConfig
+from tests.support.paths import REPO_ROOT
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _TELEGRAM_ENV = {
     "HERMES_TELEGRAM__BOT_TOKEN": "123:fake",  # gitleaks:allow
     "HERMES_TELEGRAM__CHAT_ID": "1",
@@ -32,7 +32,7 @@ _TELEGRAM_ENV = {
 @pytest.fixture
 def config() -> HermesConfig:
     """Load the shipped ``config/`` with no ambient environment."""
-    return load_config(_PROJECT_ROOT / "config", env={})
+    return load_config(REPO_ROOT / "config", env={})
 
 
 @pytest.fixture

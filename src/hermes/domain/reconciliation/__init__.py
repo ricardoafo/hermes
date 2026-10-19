@@ -11,7 +11,7 @@ Public surface:
 
 Pure Python, no I/O. Read-only by nature: nothing here changes a ledger.
 
-Reference: openspec/changes/35-monthly-reconciliation/change.md.
+Reference: openspec/archive/35-monthly-reconciliation/change.md.
 """
 
 from hermes.domain.reconciliation.holdings import (

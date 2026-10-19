@@ -8,7 +8,7 @@ at p50 over 90 days) and of risk rule RO-03 (last single-fill slippage).
 The event holds execution quality only: prices of one order, never equity,
 P&L or position value.
 
-Reference: openspec/changes/353-fill-kernel-in-serve/change.md D-2, D-4;
+Reference: openspec/archive/353-fill-kernel-in-serve/change.md D-2, D-4;
 code-conventions.md §10 (event schema versioning).
 """
 

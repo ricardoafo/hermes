@@ -9,7 +9,7 @@ Public surface:
 Imports domain and ports only (enforced by the
 ``application-imports-only-domain-and-ports`` contract).
 
-Reference: openspec/changes/35-monthly-reconciliation/change.md.
+Reference: openspec/archive/35-monthly-reconciliation/change.md.
 """
 
 from hermes.application.reconciliation.service import (

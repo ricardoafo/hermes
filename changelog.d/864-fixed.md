@@ -1,1 +1,0 @@
-- An entry is now refused when the price actually paid at the ask would push total exposure past the 15% cap (pre-registration §5.5). Before, the cap was checked only at the signal price, and a spread could end exposure slightly over it. Sizing is unchanged (issue #864).

@@ -15,7 +15,7 @@ directory) returns ``None`` (or ``None`` per value), and the screen says "not
 available here". Nothing here runs a command: the VPS actions are only shown as
 :data:`VPS_ACTIONS`, commands for the operator to copy.
 
-Reference: openspec/changes/717-system-screen/change.md.
+Reference: openspec/archive/717-system-screen/change.md.
 """
 
 from collections.abc import Callable, Sequence

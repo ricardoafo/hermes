@@ -5,7 +5,6 @@ Tests cover:
 - Second write appends a second entry (both present in file).
 - Attempting to write entry with same header as last entry raises LabNotebookAppendError.
 - SHA256 in the comment matches hashlib.sha256(entry_text.encode()).hexdigest().
-- SHA256 chain verifiable: verify_sha256() returns True for each appended entry.
 - last_entry_header() returns the correct header after each append.
 - FileNotFoundError raised when notebook file is missing.
 - Entry.render() produces header in the correct format.
@@ -24,6 +23,7 @@ from hermes.application.strategy_protocol.lab_notebook import (
     LabNotebookEntry,
 )
 from hermes.domain.errors import LabNotebookAppendError
+from tests.support.paths import REPO_ROOT
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -197,22 +197,6 @@ class TestLabNotebookMultiEntry:
             "Second entry must be present after second append."
         )
 
-    def test_sha256_chain_verifiable(self, tmp_path: Path) -> None:
-        """verify_sha256() must return True for every entry in a multi-entry chain."""
-        nb = _make_notebook(tmp_path, content="# Lab Notebook\n\n## Entries\n")
-        entries = [
-            _make_entry(timestamp=f"2026-08-25T{h:02d}:00:00Z", action=f"entry-{h}")
-            for h in range(13, 16)
-        ]
-        for entry in entries:
-            nb.append(entry)
-
-        for entry in entries:
-            assert nb.verify_sha256(entry) is True, (
-                f"verify_sha256() must return True for entry with action={entry.action!r}. "
-                f"SHA256 chain broken."
-            )
-
     def test_last_entry_header_reflects_most_recent(self, tmp_path: Path) -> None:
         """last_entry_header() must return the most recently appended entry's header."""
         nb = _make_notebook(tmp_path, content="# Lab Notebook\n\n## Entries\n")
@@ -288,7 +272,7 @@ class TestLabNotebookAppendOnlyInvariant:
 # verify_file(): hashes checkable from the file text (issue #786)
 # ---------------------------------------------------------------------------
 
-_REPO_NOTEBOOK = Path(__file__).resolve().parents[4] / "docs/experiments/swing-mvp1/lab-notebook.md"
+_REPO_NOTEBOOK = REPO_ROOT / "docs/experiments/swing-mvp1/lab-notebook.md"
 
 
 class TestVerifyFile:

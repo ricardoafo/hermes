@@ -6,7 +6,7 @@ and never touches the ledger itself. Money is ``Decimal`` EUR; timestamps are
 timezone-aware. Net figures are derived properties so ``net = gross - fees - tax``
 holds by construction rather than by convention.
 
-Reference: openspec/changes/console-read-model/change.md (D-1, D-7);
+Reference: openspec/archive/console-read-model/change.md (D-1, D-7);
 ADR-003 §07.
 """
 

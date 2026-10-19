@@ -7,11 +7,11 @@ the read methods of the read model, so opening it while ``hermes serve`` runs
 neither blocks nor touches the ledger. The only file it writes is the
 operator's theme choice (``~/.config/hermes/console.toml``).
 
-Chrome (top to bottom): the window bar ("▐ HERMES // SHADOW CONSOLE", the
-live-feed pulse or the next-bar countdown, the mainnet badge, the clock; Neon
-only), the screen tabs, the status row (the mainnet badge outside Neon, demo
-tag, version and release, heartbeat with the pulsing live dot, next-bar
-countdown and its meter, theme chip), the screen, the 90-day line and the
+Chrome (top to bottom): the window bar (one text-free row of the theme's
+``chrome`` gradient, every theme; issue #1097), the screen tabs, the status
+row (mainnet badge, demo tag, version and release, heartbeat with the pulsing
+live dot, next-bar countdown and its meter, live-feed pulse, clock, theme
+chip), the screen, the 90-day line and the
 footer key chips. The mainnet badge (issue #833) follows the config's
 ``allow_mainnet``: ``SHADOW · mainnet off``, ``LIVE · mainnet ON`` in the down
 colour, or an amber ``mainnet ?`` when the config could not be read; a demo
@@ -85,15 +85,15 @@ completes a field there), ``T`` opens the selected line's trace, ``F``
 follows, ``C`` copies, ``E`` exports and ``D`` ``W`` ``M`` ``Y`` zoom the
 volume histogram.
 
-Reference: openspec/changes/readonly-tui-dashboard/change.md;
-openspec/changes/live-home-screen/change.md (D-6);
-openspec/changes/711-cockpit-theme/change.md;
-openspec/changes/712-cockpit-home/change.md;
-openspec/changes/713-live-ticker/change.md;
-openspec/changes/719-tax-screen/change.md;
-openspec/changes/730-drill-down/change.md;
-openspec/changes/717-system-screen/change.md;
-openspec/changes/716-logs-screen/change.md.
+Reference: openspec/archive/readonly-tui-dashboard/change.md;
+openspec/archive/live-home-screen/change.md (D-6);
+openspec/archive/711-cockpit-theme/change.md;
+openspec/archive/712-cockpit-home/change.md;
+openspec/archive/713-live-ticker/change.md;
+openspec/archive/719-tax-screen/change.md;
+openspec/archive/730-drill-down/change.md;
+openspec/archive/717-system-screen/change.md;
+openspec/archive/716-logs-screen/change.md.
 """
 
 from __future__ import annotations
@@ -267,7 +267,6 @@ from hermes.entrypoints.tui_theme import (
     MARKET_COLUMN_WIDE,
     METER_CELLS,
     MOTION,
-    NEON_THEME,
     NIGHT_THEME,
     THEMES,
     VERTICAL_BREAKPOINTS,
@@ -294,6 +293,7 @@ from hermes.entrypoints.tui_widgets import (
     ThemeChip,
     ThemePicker,
     WindowBar,
+    feed_pulse,
     key_chips,
     theme_chip_text,
 )
@@ -303,7 +303,6 @@ __all__ = [
     "TABS",
     "HomeApp",
     "countdown_text",
-    "next_bar_text",
     "osc_title",
     "run_home",
     "terminal_title",
@@ -352,6 +351,8 @@ _COUNTDOWN_METER_CELLS: Final = METER_CELLS + 3
 # The margins the theme chip and the mainnet badge keep on the status row.
 _CHIP_MARGIN: Final = 1
 _MAINNET_MARGIN: Final = 1
+# The status-row clock: a space and ``HH:MM:SS`` (issue #1097).
+_CLOCK_CELLS: Final = 9
 
 TABS: Final = (
     Tab("1", "Home"),
@@ -534,30 +535,6 @@ def countdown_text(heartbeat: Heartbeat | None, now: datetime) -> str:
     return f"in {hours}h {minutes:02d}m {secs:02d}s" if hours else f"in {minutes}m {secs:02d}s"
 
 
-def next_bar_text(heartbeat: Heartbeat | None, now: datetime) -> str:
-    """Return the Neon window bar's countdown to the next 4h check, ticking every second.
-
-    Shown in place of the live-feed pulse while there is no ticker (demo data,
-    or before the first poll), Code Owner 2026-10-06.
-
-    Args:
-        heartbeat: The last heartbeat read.
-        now: The current time.
-
-    Returns:
-        ``next bar 01:12:05``, ``next bar due`` once the check time has passed,
-        or empty when hermes is late, down or unknown.
-    """
-    if heartbeat is None or heartbeat.state is not HeartbeatState.OK:
-        return ""
-    left = heartbeat.next_check_at - now
-    if left <= timedelta(0):
-        return "next bar due"
-    hours, rest = divmod(int(left.total_seconds()), 3600)
-    minutes, seconds = divmod(rest, 60)
-    return f"next bar {hours:02d}:{minutes:02d}:{seconds:02d}"
-
-
 _RANGE_KEYS: Final[dict[str, PortfolioRange]] = {
     "today": PortfolioRange.TODAY,
     "week": PortfolioRange.WEEK,
@@ -662,6 +639,8 @@ class HomeApp(App[None]):
     #countdown {{ width: auto; color: $hud-muted; }}
     #mainnet {{ width: auto; margin-right: 1; }}
     #countdown-meter {{ width: auto; }}
+    #feed {{ width: auto; }}
+    #clock {{ width: auto; color: $hud-muted; }}
     #theme-chip {{ width: auto; margin-left: 1; }}
     #down-row {{ display: none; height: auto; }}
     #down-row.-down {{ display: block; }}
@@ -906,6 +885,9 @@ class HomeApp(App[None]):
         self._fade_timer: Timer | None = None
         self._polls: deque[bool] = deque(maxlen=FEED_WIDTH)
         self._feed_timer: Timer | None = None
+        self._feed_bright = False
+        self._clock_text = ""
+        self._spare_cells = 0
         self._live_state = LiveState.WAITING
 
     def get_theme_variable_defaults(self) -> dict[str, str]:
@@ -916,14 +898,7 @@ class HomeApp(App[None]):
         """Lay out the chrome, the eight screens, the 90-day line and the footer."""
         yield WindowBar(id="window-bar")
         yield TabBar(TABS, id="tabs")
-        with Horizontal(id="top"):
-            yield Static(id="mainnet")
-            yield Static(id="demo-tag")
-            yield Static(id="release")
-            yield Static(id="heartbeat")
-            yield Static(id="countdown")
-            yield Static(id="countdown-meter")
-            yield ThemeChip(id="theme-chip")
+        yield from self._compose_top()
         yield Static(id="down-row")
         yield Static(id="notice")
         with ContentSwitcher(initial="tab-1", id="screens"):
@@ -1001,6 +976,19 @@ class HomeApp(App[None]):
         with Horizontal(id="footer-row"):
             yield Static(id="footer")
             yield Static(id="footer-status")
+
+    def _compose_top(self) -> ComposeResult:
+        """Lay out the status row: mainnet, release, heartbeat, countdown, feed, clock, theme."""
+        with Horizontal(id="top"):
+            yield Static(id="mainnet")
+            yield Static(id="demo-tag")
+            yield Static(id="release")
+            yield Static(id="heartbeat")
+            yield Static(id="countdown")
+            yield Static(id="countdown-meter")
+            yield Static(id="feed")
+            yield Static(id="clock")
+            yield ThemeChip(id="theme-chip")
 
     def _compose_lab(self, tab: Tab) -> Container:
         """Return the Lab tab: the strategy list and its detail."""
@@ -1196,11 +1184,7 @@ class HomeApp(App[None]):
             return
         now = self._clock()
         self._apply_theme(now)
-        bar = self._alive(WindowBar)
-        if bar is not None:
-            bar.clock = now.astimezone(self._ctx.tz).strftime("%H:%M:%S")
-            if not self._polls:
-                bar.show_next_bar(next_bar_text(self._heartbeat, now))
+        self._clock_text = now.astimezone(self._ctx.tz).strftime("%H:%M:%S")
         self._paint_status_badges()
         countdown = countdown_text(self._heartbeat, now)
         on_row, full_chip = self._status_row_layout(countdown)
@@ -1208,6 +1192,10 @@ class HomeApp(App[None]):
         self._set("countdown", Text(f" {countdown}" if on_row else ""))
         meter = self._countdown_meter(now) if on_row and self._meter_fits(countdown) else None
         self._set("countdown-meter", Text("") if meter is None else Text(" ").append_text(meter))
+        self._spare_cells = self._status_row_spare(
+            countdown if on_row else "", meter, full_chip=full_chip
+        )
+        self._paint_feed_and_clock()
         short = countdown.removeprefix("in ")
         status = f"next {short} · {_READ_ONLY}" if countdown and not on_row else _READ_ONLY
         self._set("footer-status", Text(status))
@@ -1232,11 +1220,9 @@ class HomeApp(App[None]):
     def _status_row_used(self, *, release: bool = True) -> int:
         """Return the cells the status row's fixed parts take, slack included."""
         width = self.size.width
-        parts = ["demo-tag", "heartbeat"]
+        parts = ["demo-tag", "heartbeat", "mainnet"]
         if release:
             parts.append("release")
-        if self.theme != NEON_THEME:
-            parts.append("mainnet")
         return _STATUS_ROW_SLACK + sum(
             len(to_plain_text(self._content.get(part, Text("")), width=width).strip())
             for part in parts
@@ -1263,9 +1249,8 @@ class HomeApp(App[None]):
         width = self.size.width
         fixed = self._chip_text(compact=True).cell_len + _CHIP_MARGIN
         fixed += len(to_plain_text(self._content.get("heartbeat", Text("")), width=width).strip())
-        if self.theme != NEON_THEME:
-            mainnet = self._content.get("mainnet", Text(""))
-            fixed += len(to_plain_text(mainnet, width=width).strip()) + _MAINNET_MARGIN
+        mainnet = self._content.get("mainnet", Text(""))
+        fixed += len(to_plain_text(mainnet, width=width).strip()) + _MAINNET_MARGIN
         fitted: str | None = None
         tag = self._demo_tag
         for tag in (self._demo_tag, short_tag):
@@ -1275,6 +1260,40 @@ class HomeApp(App[None]):
                 break
         self._set("demo-tag", tag)
         self._set("release", Text(candidates[-1] if fitted is None else fitted))
+
+    def _status_row_spare(self, countdown: str, meter: Text | None, *, full_chip: bool) -> int:
+        """Return the status row's cells left after the parts that are never cut for the feed.
+
+        Args:
+            countdown: The countdown shown on the row, or empty when it is in the footer.
+            meter: The countdown meter shown on the row, or ``None``.
+            full_chip: Whether the theme chip shows its full label.
+        """
+        if self.size.width < COMPACT_BELOW:
+            return 0
+        used = self._status_row_used() + self._chip_text(compact=not full_chip).cell_len
+        if countdown:
+            used += len(countdown) + 1
+        if meter is not None:
+            used += meter.cell_len + 1
+        return self.size.width - used
+
+    def _paint_feed_and_clock(self) -> None:
+        """Fill the status row's spare cells: the feed pulse, then the clock (issue #1097).
+
+        Both moved here from the window bar. They take only cells nothing else
+        needs: a narrow row drops the clock first, then the feed pulse, and
+        never cuts the heartbeat, the mainnet badge, the countdown or its meter.
+        """
+        spare = self._spare_cells
+        feed = Text("")
+        if self._polls and spare >= FEED_WIDTH + 1:
+            pulse = feed_pulse(self._polls, tokens_for(self.theme), bright=self._feed_bright)
+            feed = Text(" ").append_text(pulse)
+            spare -= feed.cell_len
+        self._set("feed", feed)
+        fits = bool(self._clock_text) and spare >= _CLOCK_CELLS
+        self._set("clock", Text(f" {self._clock_text}" if fits else ""))
 
     def _meter_fits(self, countdown: str) -> bool:
         """Return whether the countdown meter fits after the countdown and the full chip."""
@@ -1302,17 +1321,8 @@ class HomeApp(App[None]):
         return self._allow_mainnet
 
     def _paint_mainnet(self) -> None:
-        """Draw the mainnet badge: in the window bar in Neon, on the status row otherwise."""
-        neon = self.theme == NEON_THEME
-        allow_mainnet = self.mainnet_state
-        bar = self._alive(WindowBar)
-        if bar is not None:
-            bar.show_mainnet(allow_mainnet)
-        badge = mainnet_text(allow_mainnet, tokens_for(self.theme))
-        self._set("mainnet", Text("") if neon else badge)
-        slot = self._alive(Widget, "#mainnet")
-        if slot is not None:
-            slot.display = not neon
+        """Draw the mainnet badge at the start of the status row, in every theme."""
+        self._set("mainnet", mainnet_text(self.mainnet_state, tokens_for(self.theme)))
 
     def _chip_text(self, *, compact: bool) -> Text:
         return theme_chip_text(
@@ -1330,9 +1340,6 @@ class HomeApp(App[None]):
         if self.theme != name:
             self.ansi_theme_dark = terminal_theme(data_tokens(name))
             self.theme = name
-        bar = self._alive(WindowBar)
-        if bar is not None:
-            bar.display = name == NEON_THEME
         if night_changed and self.effect_timers:
             self._start_effects()
 
@@ -1433,14 +1440,13 @@ class HomeApp(App[None]):
 
     @property
     def feed(self) -> tuple[bool, ...]:
-        """Return the recent poll results the window bar's feed pulse shows, oldest first."""
+        """Return the recent poll results the status row's feed pulse shows, oldest first."""
         return tuple(self._polls)
 
     def _show_feed(self, *, bright: bool) -> None:
         """Draw the feed pulse; a bright newest glyph dims again after ``MOTION.flash``."""
-        bar = self._alive(WindowBar)
-        if bar is not None:
-            bar.show_feed(self._polls, bright=bright)
+        self._feed_bright = bright
+        self._paint_feed_and_clock()
         if self._feed_timer is not None:
             self._feed_timer.stop()
             self._feed_timer = None
@@ -1926,8 +1932,8 @@ class HomeApp(App[None]):
         """Draw the portfolio from the last read: the live total and line when live.
 
         Args:
-            curve: Also redraw the curve, the meters and the books (booked-only,
-                so a tick leaves them alone).
+            curve: Also redraw the curve and the books (booked-only, so a tick
+                leaves them alone); the meters redraw on every call.
         """
         summary = self._summary
         if summary is None:
@@ -1949,18 +1955,25 @@ class HomeApp(App[None]):
             self._set("portfolio", Group(*lines, head))
         else:
             self._set("portfolio", head)
-        if not curve:
-            return
         width = self._inner("portfolio")
         data = self._data
-        chart = portfolio_curve(summary, ctx, data, width=width, rows=layout.curve_rows)
-        self._show("portfolio-curve", chart, shown=bool(chart.plain))
+        if curve:
+            chart = portfolio_curve(summary, ctx, data, width=width, rows=layout.curve_rows)
+            self._show("portfolio-curve", chart, shown=bool(chart.plain))
+        # While live the meters follow the live prices; paused or with a coin unpriced they
+        # fall back to the booked figures, as the total does.
+        metered = (
+            replace(summary, total_value=live.total, invested=live.invested)
+            if live is not None and not paused
+            else summary
+        )
         meters = portfolio_meters(
-            summary, ctx, data, width=width, cap=self._exposure_cap, cash=not layout.sparklines
+            metered, ctx, data, width=width, cap=self._exposure_cap, cash=not layout.sparklines
         )
         self._show("portfolio-meters", meters, shown=bool(meters.renderables))
-        books = render_portfolio_books(summary, ctx)
-        self._show("portfolio-books", books, shown=bool(books.renderables))
+        if curve:
+            books = render_portfolio_books(summary, ctx)
+            self._show("portfolio-books", books, shown=bool(books.renderables))
 
     def _watch_facts(
         self, watch: tuple[WatchedPair, ...] | Failed

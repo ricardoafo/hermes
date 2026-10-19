@@ -21,8 +21,8 @@
 #
 # Test seams: SYSTEMCTL, JOURNALCTL, GATE_HOLD_SECONDS.
 #
-# Reference: openspec/changes/179-cd-first-real-deploy/change.md (D-7),
-# openspec/changes/192-staging-env/change.md (D-3).
+# Reference: openspec/archive/179-cd-first-real-deploy/change.md (D-7),
+# openspec/archive/192-staging-env/change.md (D-3).
 
 set -euo pipefail
 
