@@ -1,0 +1,1 @@
+- The Market panel shows the 4h bar being built and the last 24 hours under each coin.
