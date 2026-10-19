@@ -1,6 +1,6 @@
 """Unit and property tests for the one round-trip loop (issue #1179).
 
-Invariants (openspec/changes/1179-one-pearson-round-trips/change.md):
+Invariants (openspec/archive/1179-one-pearson-round-trips/change.md):
 
 - a round trip runs from a pair's first BUY while flat to the SELL that
   flattens it; gross P&L is proceeds minus the average cost of what was sold,

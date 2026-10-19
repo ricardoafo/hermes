@@ -2,7 +2,7 @@
 
 **SDD change**: `1178-ledger-reader-base`
 **Date**: 2026-10-18
-**Status**: Applied
+**Status**: Shipped
 **Tracking issue**: see sibling `issue.md`
 
 Mirror of engram topic key `sdd/1178-ledger-reader-base/change` (see
