@@ -12,6 +12,9 @@ Implements three narrow slices of Kraken's public REST API against
 - :meth:`KrakenPublicAdapter.get_ticker` — the ``Ticker`` endpoint,
   returning a :class:`~hermes.domain.market_data.ticker.Ticker` for
   cross-venue price comparison.
+- :meth:`KrakenPublicAdapter.get_usd_price` — the same endpoint for a
+  stablecoin's USD book, the price the depeg rules RO-05 and RO-06 read
+  before real money (pre-registration §5.5, #1158).
 
 Design decisions
 ----------------
@@ -122,6 +125,14 @@ _PAIR_OVERRIDES: Final[dict[str, str]] = {
     "SOL/USDT": "SOLUSDT",
     "SOL/USDC": "SOLUSDC",
     "SOL/EUR": "SOLEUR",
+}
+
+# The USD books of the stablecoins, keyed as Kraken answers them: asked for
+# the plain ``USDTUSD`` altname, Kraken answers under ``USDTZUSD``. USD is no
+# hermes Currency (nothing trades against it), so these sit outside the Pair map.
+_USD_SYMBOLS: Final[dict[Currency, str]] = {
+    Currency.USDT: "USDTZUSD",
+    Currency.USDC: "USDCUSD",
 }
 
 
@@ -315,6 +326,37 @@ class KrakenPublicAdapter:
         symbol = _pair_to_kraken_symbol(pair)
         result = self._get_result(path=_TICKER_PATH, params={"pair": symbol})
         return _parse_ticker_response(result=result, pair=pair, symbol=symbol)
+
+    def get_usd_price(self, coin: Currency) -> Decimal:
+        """Return the mid of ``coin``'s USD book.
+
+        Hits ``GET /0/public/Ticker?pair=<COIN>USD``. The mid of the best bid
+        and ask is read, not the last trade: a thin book's last trade can be
+        minutes old.
+
+        Args:
+            coin: A stablecoin with a Kraken USD book (USDT or USDC).
+
+        Returns:
+            ``(best_bid + best_ask) / 2`` in USD.
+
+        Raises:
+            ValueError: ``coin`` has no USD book here.
+            hermes.domain.errors.KrakenPublicError: On any wire, HTTP,
+                envelope-error or schema failure, or a crossed book.
+        """
+        symbol = _USD_SYMBOLS.get(coin)
+        if symbol is None:
+            raise ValueError(f"no Kraken USD book for {coin.value}")
+        result = self._get_result(path=_TICKER_PATH, params={"pair": symbol})
+        payload = _lookup_pair_payload(result=result, symbol=symbol)
+        ask = _ticker_first_price(payload=payload, key="a", symbol=symbol)
+        bid = _ticker_first_price(payload=payload, key="b", symbol=symbol)
+        if bid <= 0 or ask < bid:
+            raise KrakenPublicError(
+                f"Kraken {symbol} book is crossed or empty: bid={bid} ask={ask}"
+            )
+        return (bid + ask) / 2
 
     # ------------------------------------------------------------------
     # HTTP helper

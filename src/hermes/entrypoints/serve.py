@@ -93,6 +93,8 @@ from hermes.adapters.clock.remote import (
     remote_clock_from_env,
 )
 from hermes.adapters.clock.wall import WallClock
+from hermes.adapters.exchanges.kraken_public import KrakenPublicAdapter
+from hermes.adapters.exchanges.kraken_public import KrakenPublicConfig as KrakenWireConfig
 from hermes.adapters.fees.binance_history import load_binance_fee_history
 from hermes.adapters.fills.orderbook_walk import OrderbookWalkFillModel
 from hermes.adapters.fx.frankfurter import FrankfurterAdapter
@@ -123,11 +125,13 @@ from hermes.application.execution.shadow import (
     ShadowExecution,
     ShadowExecutor,
     ShadowOutcome,
+    live_risk_engine,
     shadow_risk_engine,
 )
 from hermes.application.ledger.eur_backfill import backfill_pending_eur, pending_rate_keys
 from hermes.application.ledger.eur_pricer import EurPricer, LookupBudget
 from hermes.application.ledger.trade_recorder import TradeRecorder
+from hermes.application.live_risk_inputs import LedgerLiveRiskInputs, StablePriceWatch
 from hermes.application.messages.eur_rate import EurRateLookup
 from hermes.application.monitoring.clock_skew import clock_is_off, clock_skew_change
 from hermes.application.monitoring.execution_quality import (
@@ -190,6 +194,7 @@ from hermes.domain.portfolio.snapshot import PortfolioSnapshot
 from hermes.domain.strategy.signal import OpenPosition, SignalKind, StrategySignal
 from hermes.domain.strategy.stop_mark import StopMark
 from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
+from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
@@ -468,6 +473,9 @@ class Composition:
         serve_lock: The ledger's serve lock, held from build until
             :func:`run` releases it after closing SQLite; ``None`` for a
             composition built by hand in a test.
+        stable_price_watch: Polls the USDT price the depeg rules read with
+            real money (#1158); ``None`` in shadow.
+        kraken_adapter: The adapter the watch reads; closed by :func:`run`.
     """
 
     config: HermesConfig
@@ -493,6 +501,8 @@ class Composition:
     spread_sample_seconds: float = SPREAD_SAMPLE_SECONDS
     execution_quality: ExecutionQualityMonitor = field(default_factory=ExecutionQualityMonitor)
     serve_lock: FileLock | None = None
+    stable_price_watch: StablePriceWatch | None = None
+    kraken_adapter: KrakenPublicAdapter | None = None
 
 
 def _eur_rate_lookup(pricer: EurPricer) -> EurRateLookup:
@@ -714,6 +724,7 @@ def build_composition(
     orderbooks: OrderbookSnapshotPort | None = None,
     fx: FxRateProviderPort | None = None,
     new_ledger: bool = False,
+    stable_watch: StablePriceWatch | None = None,
 ) -> Composition:
     """Wire every adapter the shadow loop needs and return the container.
 
@@ -742,6 +753,9 @@ def build_composition(
             a missing ledger is refused (#876): a wrong ``--db`` or an
             unmounted disk would otherwise start a fresh, flat ledger and
             drop the open positions without a word.
+        stable_watch: USDT price watch override for tests, used only with
+            ``allow_mainnet`` (#1158). Defaults to a watch polling Kraken's
+            public USDT/USD book.
 
     Returns:
         A fully wired :class:`Composition` ready to hand to :func:`run`.
@@ -784,6 +798,7 @@ def build_composition(
             experiment_root=experiment_root,
             orderbooks=orderbooks,
             fx=fx,
+            stable_watch=stable_watch,
         )
     except BaseException:
         lock.release()
@@ -801,6 +816,7 @@ def _wire_composition(
     experiment_root: Path | None = None,
     orderbooks: OrderbookSnapshotPort | None = None,
     fx: FxRateProviderPort | None = None,
+    stable_watch: StablePriceWatch | None = None,
 ) -> Composition:
     """Wire the composition once the serve lock is held; see :func:`build_composition`."""
     db_target = db_path if db_path is not None else DEFAULT_DB_PATH
@@ -821,6 +837,7 @@ def _wire_composition(
             clock=clock,
             orderbooks=orderbooks,
             fx=fx,
+            stable_watch=stable_watch,
             ledger_path=db_target,
         )
     except BaseException:
@@ -839,6 +856,7 @@ def _wire_on_ledger(
     clock: ClockPort | None,
     orderbooks: OrderbookSnapshotPort | None,
     fx: FxRateProviderPort | None,
+    stable_watch: StablePriceWatch | None,
     ledger_path: Path,
 ) -> Composition:
     """Wire everything that needs the open ledger; the caller closes it on failure."""
@@ -894,10 +912,23 @@ def _wire_on_ledger(
             owned.callback(fx_adapter.close)
             rates = fx_adapter
         eur_pricer = EurPricer(rates)
+        stable_watch, kraken = _stable_price_watch(config, wall, stable_watch, owned)
+        live_inputs = (
+            None
+            if stable_watch is None
+            else LedgerLiveRiskInputs(
+                spreads=ledger, marks=ledger, strategy_id=strategy_id, stable=stable_watch
+            )
+        )
         try:
             executor = ShadowExecutor(
                 kernel=_build_kernel(
-                    fill_model, tracker, strategy_id, pre_registration, roster.sizing_policy()
+                    fill_model,
+                    tracker,
+                    strategy_id,
+                    pre_registration,
+                    roster.sizing_policy(),
+                    live=live_inputs is not None,
                 ),
                 fill_model=fill_model,
                 books=books,
@@ -908,6 +939,7 @@ def _wire_on_ledger(
                 strategy_id=strategy_id,
                 model=roster.execution_model(),
                 not_before=None if recorded_seed is None else recorded_seed.seeded_at,
+                live_inputs=live_inputs,
             )
             held = _held_shadow_kill(ledger, strategy_id)
         except LedgerError as exc:
@@ -941,9 +973,38 @@ def _wire_on_ledger(
             orderbooks=books,
             fx_adapter=fx_adapter,
             eur_pricer=eur_pricer,
+            stable_price_watch=stable_watch,
+            kraken_adapter=kraken,
         )
         owned.pop_all()
         return composition
+
+
+def _stable_price_watch(
+    config: HermesConfig,
+    wall: ClockPort,
+    override: StablePriceWatch | None,
+    owned: contextlib.ExitStack,
+) -> tuple[StablePriceWatch | None, KrakenPublicAdapter | None]:
+    """Build the USDT price watch the depeg rules read with real money (#1158).
+
+    Shadow builds none: RO-05 and RO-06 then skip, as in the backtest (#514).
+    """
+    if not config.allow_mainnet:
+        return None, None
+    if override is not None:
+        return override, None
+    kraken = KrakenPublicAdapter.create(
+        KrakenWireConfig(
+            base_url=config.kraken_public.base_url,
+            rate_limit=RateLimitConfig(
+                max_weight=config.kraken_public.requests_per_second, window_seconds=1
+            ),
+            timeout_sec=config.kraken_public.timeout_sec,
+        )
+    )
+    owned.callback(kraken.close)
+    return StablePriceWatch(fetch=lambda: kraken.get_usd_price(Currency.USDT), clock=wall), kraken
 
 
 def _live_feed(
@@ -1020,16 +1081,18 @@ def _build_kernel(
     strategy_id: StrategyId,
     pre_registration: PreRegistration,
     sizing: SizingPolicy,
+    *,
+    live: bool = False,
 ) -> FillKernel:
     """Build the fill kernel the backtest uses, with serve's risk rules (D-3).
 
     The one place serve configures the kernel. ``sizing`` is the enabled
     roster entry's ``StrategyConfig.sizing_policy()``, the same limits the
-    backtest sizes with.
+    backtest sizes with. ``live`` (real money) adds RO-02 (#1158).
     """
     return FillKernel(
         fill_model=fill_model,
-        risk_engine=shadow_risk_engine(),
+        risk_engine=live_risk_engine() if live else shadow_risk_engine(),
         kill_evaluator=KillTriggerEvaluator(pre_reg=pre_registration),
         tracker=tracker,
         strategy_id=strategy_id,
@@ -1077,6 +1140,8 @@ async def run(composition: Composition, shutdown: asyncio.Event) -> int:
         async with asyncio.TaskGroup() as group:
             group.create_task(_bar_loop(composition, shutdown))
             group.create_task(_sample_spreads(composition, shutdown))
+            if composition.stable_price_watch is not None:
+                group.create_task(composition.stable_price_watch.run(shutdown))
     except* Exception as failures:
         code = 1
         for exc in failures.exceptions:
@@ -1223,6 +1288,8 @@ async def _release(c: Composition) -> None:
         stack.callback(_close_quietly, c.sqlite_connection.close)
         if c.fx_adapter is not None:
             stack.callback(_close_quietly, c.fx_adapter.close)
+        if c.kraken_adapter is not None:
+            stack.callback(_close_quietly, c.kraken_adapter.close)
         if c.telegram is not None:
             stack.callback(_close_quietly, c.telegram.close)
         if c.slack is not None:
