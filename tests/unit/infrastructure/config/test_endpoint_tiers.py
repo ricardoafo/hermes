@@ -17,8 +17,6 @@ Invariants protected here:
   and an env-only setting's together.
 """
 
-from pathlib import Path
-
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
@@ -30,8 +28,9 @@ from hermes.infrastructure.config.models import (
     KrakenPublicConfig,
     MarketDataConfig,
 )
+from tests.support.paths import REPO_ROOT
 
-_REPO_CONFIG = Path(__file__).resolve().parents[4] / "config"
+_REPO_CONFIG = REPO_ROOT / "config"
 _MARKER = "sekrit42"
 _LOOPBACK = f"http://{_MARKER}@127.0.0.1:9000"
 

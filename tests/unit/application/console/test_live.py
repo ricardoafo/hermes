@@ -48,6 +48,7 @@ from hermes.application.console.views import (
 from hermes.domain.errors import KrakenPublicError
 from hermes.domain.market_data.ticker import Ticker
 from hermes.domain.value_objects.pair import Pair
+from tests.support.clock import FakeClock
 
 _T0 = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
 _RATE = Decimal("0.8")
@@ -77,14 +78,6 @@ class _FakeTicker:
         )
 
 
-class _Clock:
-    def __init__(self, at: datetime = _T0) -> None:
-        self.at = at
-
-    def __call__(self) -> datetime:
-        return self.at
-
-
 def _ok(coin: str, price: str, at: datetime) -> TickOutcome:
     return TickOutcome(coin=coin, at=at, price=Decimal(price))
 
@@ -106,14 +99,14 @@ def _spread(coin: str, price: str, bps: str | None, at: datetime) -> TickOutcome
 
 def test_poller_asks_each_coin_once_every_ten_seconds() -> None:
     """Over 60 s stepped every second, the ticker is called at 0, 10, ... 50 s: 6 x 3 coins."""
-    clock = _Clock()
+    clock = FakeClock(_T0)
     fake = _FakeTicker({"BTC": "60000", "ETH": "2600", "SOL": "140"})
     poller = TickerPoller(fake, clock)
     polled_at = []
     for second in range(60):
-        clock.at = _T0 + timedelta(seconds=second)
-        if poller.due(clock.at):
-            poller.begin(clock.at)
+        clock.current = _T0 + timedelta(seconds=second)
+        if poller.due(clock.current):
+            poller.begin(clock.current)
             poller.fetch()
             polled_at.append(second)
     assert (polled_at, len(fake.calls), fake.calls[:3]) == (
@@ -125,7 +118,7 @@ def test_poller_asks_each_coin_once_every_ten_seconds() -> None:
 
 def test_poller_is_not_due_again_before_ten_seconds() -> None:
     """A poll started at t is not due at t + 9.999 s and is due at t + 10 s."""
-    poller = TickerPoller(_FakeTicker({}), _Clock())
+    poller = TickerPoller(_FakeTicker({}), FakeClock(_T0))
     poller.begin(_T0)
     assert (
         poller.due(_T0 + timedelta(seconds=9, milliseconds=999)),
@@ -139,7 +132,7 @@ def test_fetch_turns_every_failure_into_a_failed_tick() -> None:
         {"BTC": "60000"},
         fail={"ETH": KrakenPublicError("Kraken said no"), "SOL": RuntimeError("socket closed")},
     )
-    outcomes = TickerPoller(fake, _Clock()).fetch()
+    outcomes = TickerPoller(fake, FakeClock(_T0)).fetch()
     assert [(o.coin, o.price, o.error, o.at) for o in outcomes] == [
         ("BTC", Decimal(60000), None, _T0),
         ("ETH", None, "KrakenPublicError", _T0),
@@ -490,7 +483,7 @@ def test_spread_is_the_gap_over_the_mid_in_basis_points() -> None:
 def test_fetch_carries_the_spread_of_each_coin_and_none_for_a_failure() -> None:
     """A book of price -1 / +1 gives 2 / 60000 x 10000 bp for BTC; a failed coin has none."""
     fake = _FakeTicker({"BTC": "60000"}, fail={"ETH": RuntimeError("socket closed")})
-    outcomes = TickerPoller(fake, _Clock(), coins=("BTC", "ETH")).fetch()
+    outcomes = TickerPoller(fake, FakeClock(_T0), coins=("BTC", "ETH")).fetch()
     assert [o.spread_bps for o in outcomes] == [Decimal(2) / Decimal(60000) * 10000, None]
 
 

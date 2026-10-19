@@ -568,6 +568,22 @@ expected as this rule surfaces existing footprint).
 - Public tooling names (`ruff`, `mypy`, `pytest`, `uv`) — these are what we depend on
 - Public standards (`Conventional Commits`, `Keep a Changelog`, `SemVer`)
 - Public specifications and regulations (`DGT V2232-25`, `LOPDGDD`)
+- Public package names in a dependency assessment: what was weighed for
+  installing and why it was not added
+
+### Dated prior-art research (carve-out)
+
+Research that compares hermes with prior art can't do its job without naming
+that prior art. Two places may name public outside projects, as evidence:
+
+- the dated research files under `docs/research/`;
+- accepted ADRs under `docs/architecture/`, which are dated, immutable
+  records of the alternatives weighed and the evidence behind each choice.
+
+Everywhere else (guides, experiment notes, specs, code, tests, comments,
+commits, PR and issue bodies) the rule above holds. The names the CI check
+looks for live in `docs/research/prior-art-names.txt`, inside the carve-out,
+so the check itself leaves no footprint.
 
 ### Editorial scrubs
 

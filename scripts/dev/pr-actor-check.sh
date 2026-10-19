@@ -3,7 +3,7 @@
 #
 # Refuses to open a PR when the gh-authenticated user matches the
 # intended reviewer. The two-account discipline is:
-#   * `rafo-claude-bot` opens PRs (the bot / AI identity)
+#   * `ai-bot` opens PRs (the bot / AI identity)
 #   * `ricardoafo` reviews and approves (the human operator)
 #
 # Author self-review is a silent deadlock — GitHub does not report a
@@ -97,7 +97,7 @@ check_actor() {
             echo "  Reviewer:           $reviewer"
             echo ""
             echo "  This repo enforces two-account discipline (AGENTS.md 12-13):"
-            echo "    * rafo-claude-bot opens PRs"
+            echo "    * ai-bot opens PRs"
             echo "    * ricardoafo reviews and approves"
             echo ""
             echo "  Fix (typical): gh auth switch --user rafo-claude-bot"

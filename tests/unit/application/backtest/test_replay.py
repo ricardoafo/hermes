@@ -26,7 +26,6 @@ from decimal import Decimal, localcontext
 import pytest
 
 from hermes.application.backtest.replay import BacktestRun, ExecutionModel, replay
-from hermes.domain.fees.fee_schedule import FeeSchedule
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.risk.state import PortfolioState
@@ -35,7 +34,7 @@ from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.precision import EXACT_CONTEXT
-from tests.support.fill_kernel import BTC_USDT, fees, kernel
+from tests.support.fill_kernel import BTC_USDT, fees_at, kernel
 
 _WINDOW = datetime(2024, 1, 1, tzinfo=UTC)
 _END = datetime(2024, 1, 31, tzinfo=UTC)
@@ -108,11 +107,6 @@ class _ScriptedStrategy:
         self.restored.append(open_position)
 
 
-def _fees_at(at: datetime, pair: Pair) -> FeeSchedule:
-    _ = at
-    return fees(pair)
-
-
 def _run(bars: list[Bar], script: dict[datetime, StrategySignal]) -> BacktestRun:
     ids = iter(f"c{i}" for i in range(1000))
     return replay(
@@ -121,7 +115,7 @@ def _run(bars: list[Bar], script: dict[datetime, StrategySignal]) -> BacktestRun
         kernel=kernel(),
         window_start=_WINDOW,
         window_end=_END,
-        fees_at=_fees_at,
+        fees_at=fees_at,
         correlation_id=lambda: next(ids),
     )
 
@@ -224,7 +218,7 @@ def test_strategy_sees_the_portfolio_marked_at_the_bar_close() -> None:
         kernel=k,
         window_start=_WINDOW,
         window_end=_END,
-        fees_at=_fees_at,
+        fees_at=fees_at,
         correlation_id=lambda: "c",
     )
     assert strategy.seen[1].current_value == k.tracker.snapshot.equity
@@ -251,7 +245,7 @@ def _replay_with(
         kernel=kernel(),
         window_start=window_start,
         window_end=_END,
-        fees_at=_fees_at,
+        fees_at=fees_at,
         correlation_id=lambda: next(ids),
     )
 
@@ -301,7 +295,7 @@ def test_entries_passed_in_carry_a_held_position_across_calls() -> None:
             kernel=k,
             window_start=_WINDOW,
             window_end=_END,
-            fees_at=_fees_at,
+            fees_at=fees_at,
             correlation_id=lambda: "c",
             entries=entries,
         )
@@ -438,7 +432,7 @@ class TestPortfolioRun:
                 kernel=kernel(),
                 window_start=_WINDOW,
                 window_end=_END,
-                fees_at=_fees_at,
+                fees_at=fees_at,
                 correlation_id=lambda: "c0",
             )
 
@@ -457,7 +451,7 @@ class TestPortfolioRun:
             kernel=kernel(),
             window_start=_WINDOW,
             window_end=_END,
-            fees_at=_fees_at,
+            fees_at=fees_at,
             correlation_id=lambda: next(ids),
         )
         assert (mapped.fills, mapped.daily_equity) == (single.fills, single.daily_equity)

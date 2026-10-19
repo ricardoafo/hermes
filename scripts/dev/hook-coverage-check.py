@@ -14,6 +14,11 @@ Every hook id in ``.pre-commit-config.yaml`` must be in exactly one place:
 - ``LOCAL_ONLY``: with the reason it needs no CI twin;
 - a ``*-self-test`` hook, which the ``self-tests`` check runs in CI.
 
+It also fails on a script directly under ``scripts/dev/`` that nothing else in
+the tree names (no hook, workflow, script or doc), so dead tooling is deleted
+instead of piling up (#1189). The changelog and archived specs do not count:
+they record history, not use.
+
 ``--run-self-tests`` runs every ``*-self-test`` hook's command, so a new
 self-test is picked up with no edit here. Every one must pass: a failing
 self-test is fixed, never listed as expected to fail.
@@ -28,7 +33,8 @@ Env vars:
 Exit codes:
   0  every hook is covered (or every self-test passed)
   1  a hook is uncovered or listed twice, a listed check is not run by CI,
-     a listed hook no longer exists, or a self-test failed
+     a listed hook no longer exists, a dev script is unreferenced, or a
+     self-test failed
   2  usage error
 """
 
@@ -46,6 +52,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SELF_TEST_SUFFIX = "-self-test"
 STEP_PREFIX = "step:"
 BASH = shutil.which("bash") or "/bin/bash"
+DEV_SCRIPTS = "scripts/dev/"
+HISTORY_PATHS = ("CHANGELOG.md", "changelog.d/", "openspec/archive/")
 
 CI_ENFORCED: dict[str, str] = {
     "markdownlint-cli2": "markdown",
@@ -57,7 +65,8 @@ CI_ENFORCED: dict[str, str] = {
     "import-linter": "imports",
     "migration-sql-check": "guards",
     "openspec-layout": "guards",
-    "no-naive-datetime": "guards",
+    "agents-md-check": "guards",
+    "footprint-check": "guards",
     "no-vague-test-assertions": "guards",
     "test-file-adjacency": "guards",
     "no-future-annotations": "guards",
@@ -75,7 +84,6 @@ LOCAL_ONLY: dict[str, str] = {
     "check-yaml": "workflow YAML is parsed by actionlint in CI; config YAML by its loader tests",
     "check-json": "JSON fixtures are parsed by the tests that load them",
     "check-merge-conflict": "a conflict marker fails ruff, mypy or markdownlint in CI",
-    "no-pr-body-at-repo-root": "a PR body committed at the root fails markdownlint MD041 in CI",
     "pr-preflight": "the local pre-push wrapper that runs these same CI checks",
 }
 
@@ -121,6 +129,38 @@ def coverage_problems(
         elif not re.search(rf"ci-checks\.sh {re.escape(where)}\s*$", workflow, re.MULTILINE):
             problems.append(f"{hook_id}: the CI workflow never runs ci-checks.sh {where}")
     return problems
+
+
+def orphan_scripts(scripts: list[str], corpus: dict[str, str]) -> list[str]:
+    """Return one line per script whose file name no other file in ``corpus`` mentions."""
+    problems: list[str] = []
+    for script in sorted(scripts):
+        name = Path(script).name
+        if not any(name in text for path, text in corpus.items() if path != script):
+            problems.append(f"{script}: no hook, workflow, script or doc references it")
+    return problems
+
+
+def _tracked_corpus() -> tuple[list[str], dict[str, str]]:
+    listed = subprocess.run(
+        ["git", "ls-files", "-z"],  # noqa: S607 — git on PATH
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    paths = [path for path in listed.stdout.split("\0") if path]
+    scripts = [p for p in paths if p.startswith(DEV_SCRIPTS) and "/" not in p[len(DEV_SCRIPTS) :]]
+    corpus: dict[str, str] = {}
+    for path in paths:
+        file = REPO_ROOT / path
+        if path.startswith(HISTORY_PATHS) or not file.is_file():
+            continue
+        try:
+            corpus[path] = file.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+    return scripts, corpus
 
 
 def run_self_tests(entries: dict[str, str]) -> list[str]:
@@ -208,6 +248,15 @@ def _self_test() -> int:
     for name, problems, want in runs:
         if len(problems) != want:
             failures.append(f"{name}: expected {want} problem(s), got {problems}")
+    dev = f"{DEV_SCRIPTS}x.sh"
+    orphans: list[tuple[str, list[str], int]] = [
+        ("a referenced script", orphan_scripts([dev], {dev: "", "ci.yml": "bash x.sh"}), 0),
+        ("an unreferenced script", orphan_scripts([dev], {dev: "", "ci.yml": "y.sh"}), 1),
+        ("a script naming itself", orphan_scripts([dev], {dev: "x.sh"}), 1),
+    ]
+    for name, problems, want in orphans:
+        if len(problems) != want:
+            failures.append(f"{name}: expected {want} problem(s), got {problems}")
     with tempfile.TemporaryDirectory() as tmp:
         config = Path(tmp) / "config.yaml"
         config.write_text(
@@ -219,7 +268,8 @@ def _self_test() -> int:
         print(f"SELF-TEST FAIL: {line}")
     if failures:
         return 2
-    print(f"SELF-TEST PASS: hook-coverage-check.py handles {len(cases) + len(runs) + 1} fixtures.")
+    total = len(cases) + len(runs) + len(orphans) + 1
+    print(f"SELF-TEST PASS: hook-coverage-check.py handles {total} fixtures.")
     return 0
 
 
@@ -236,6 +286,7 @@ def main(argv: list[str]) -> int:
     else:
         workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
         problems = coverage_problems(set(entries), _ci_checks(), workflow, CI_ENFORCED, LOCAL_ONLY)
+        problems.extend(orphan_scripts(*_tracked_corpus()))
     for line in problems:
         print(f"FAIL: {line}")
     if problems:

@@ -405,8 +405,6 @@ class TestEvaluateComposition:
 
 _HYPOTHESIS = settings(
     max_examples=50,
-    deadline=None,
-    derandomize=True,
     suppress_health_check=[HealthCheck.function_scoped_fixture],
 )
 

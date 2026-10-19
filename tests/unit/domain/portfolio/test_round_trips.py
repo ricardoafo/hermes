@@ -1,6 +1,6 @@
 """Unit and property tests for the one round-trip loop (issue #1179).
 
-Invariants (openspec/changes/1179-one-pearson-round-trips/change.md):
+Invariants (openspec/archive/1179-one-pearson-round-trips/change.md):
 
 - a round trip runs from a pair's first BUY while flat to the SELL that
   flattens it; gross P&L is proceeds minus the average cost of what was sold,
@@ -118,6 +118,16 @@ def test_a_fee_outside_the_quote_is_refused(side: OrderSide) -> None:
     fills = [_fill(0, side, "1", "100", "0.001", fee_currency=Currency.BTC)]
 
     with pytest.raises(RoundTripError, match=r"fee at .* is in BTC, not the quote USDT"):
+        round_trips(fills)
+
+
+@pytest.mark.parametrize("side", list(OrderSide))
+def test_a_fee_currency_that_sorts_after_the_quote_is_refused_too(side: OrderSide) -> None:
+    """A USDT fee on a BTC/EUR fill is refused: the check is identity, not an order (#1219)."""
+    btc_eur = Pair(base=Currency.BTC, quote=Currency.EUR)
+    fills = [_fill(0, side, "1", "100", "0.1", pair=btc_eur, fee_currency=Currency.USDT)]
+
+    with pytest.raises(RoundTripError, match=r"fee at .* is in USDT, not the quote EUR"):
         round_trips(fills)
 
 

@@ -16,7 +16,7 @@ Delivers `OrderbookWalkFillModel` — the concrete implementation of
 (synthetic book from historical bars) and shadow (live L2 book) modes,
 enforcing ADR-011 D-02's same-code-path invariant: no `if backtest_mode:`
 branching exists anywhere. Fill semantics follow ADR-011: market orders fill
-at the next bar's open (anti-Zipline), limit orders fill when price crosses
+at the next bar's open (no look-ahead), limit orders fill when price crosses
 within a future bar, and slippage (backtest only) is 5 bps for entries and
 15 bps for stop-exits. The main risk is over-fill when orderbook depth is
 shallow; a strict depth check returns `Rejection` before any fill is
@@ -33,7 +33,7 @@ attempted.
 - `openspec/archive/spec-2b-orderbook-walk-fill-model/issue.md`.
 - `tests/unit/adapters/fills/__init__.py`.
 - `tests/unit/adapters/fills/test_orderbook_walk.py` — property tests,
-  anti-Zipline test, determinism, rejection matrix.
+  no-look-ahead test, determinism, rejection matrix.
 - `changelog.d/wave-spec-2b-orderbook-walk-fill-model.md`.
 
 ### Out
@@ -98,7 +98,7 @@ attempted.
 - **A-1.1**: `isinstance(OrderbookWalkFillModel(), FillModelPort)` returns
   `True` (structural check via `@runtime_checkable`).
 
-### R-2: Anti-Zipline (SA-2 AP-1)
+### R-2: No look-ahead fill (SA-2 AP-1)
 
 - **A-2.1**: A market order submitted at bar T fills at bar T+1 open —
   the caller passes the next bar's open as the `next_open` parameter; the
@@ -184,7 +184,7 @@ unreachable → `Rejection("PRICE_FILTER: ...")`.
 ## Test plan
 
 1. Port conformance: `isinstance(impl, FillModelPort)` → `True`.
-2. Anti-Zipline: market order → fill price equals `next_open` (not current close).
+2. No look-ahead: market order → fill price equals `next_open` (not current close).
 3. Fill quantity ≤ order quantity property.
 4. Fill price within walked book levels property.
 5. Determinism: same `random.Random(seed)` + same inputs → identical fills.

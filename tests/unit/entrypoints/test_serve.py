@@ -73,7 +73,9 @@ from hermes.entrypoints import serve as serve_module
 from hermes.infrastructure.config.loader import load_config
 from hermes.infrastructure.config.models import StrategiesConfig
 from hermes.infrastructure.config.root import HermesConfig
+from tests.support.accepted import assert_accepted
 from tests.support.anomaly_rows import recorded_anomalies
+from tests.support.paths import REPO_ROOT
 from tests.support.serve_loop import (
     BASE,
     BTC,
@@ -87,7 +89,6 @@ from tests.support.serve_loop import (
     history,
 )
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _TELEGRAM_ENV = {
     "HERMES_TELEGRAM__BOT_TOKEN": "123:fake",  # gitleaks:allow
     "HERMES_TELEGRAM__CHAT_ID": "1",
@@ -115,7 +116,7 @@ def _with_pricing(config: HermesConfig, index: int, pricing: ExitPricing) -> Her
 @pytest.fixture
 def v2_config() -> HermesConfig:
     """Load the shipped ``config/`` with swing-mvp1-v2 enabled in place of v1."""
-    return load_config(_PROJECT_ROOT / "config", env=_V2_ENABLED_ENV)
+    return load_config(REPO_ROOT / "config", env=_V2_ENABLED_ENV)
 
 
 @pytest.fixture
@@ -125,7 +126,7 @@ def shadow_config() -> HermesConfig:
     Uses an empty env dict so no ambient shell variable can flip the
     tier or bleed credentials into the composition.
     """
-    return load_config(_PROJECT_ROOT / "config", env={})
+    return load_config(REPO_ROOT / "config", env={})
 
 
 class TestBuildComposition:
@@ -339,7 +340,9 @@ class TestMainnetNeedsLiveApproval:
         config = self._mainnet(shadow_config)
         fingerprint = serve_module.parameter_fingerprint_for(config)
         store = self._store_with(tmp_path, CertificationState.LIVE_APPROVED, fingerprint)
-        serve_module.check_startup(config, _TELEGRAM_ENV, certification_store=store)
+        assert_accepted(
+            serve_module.check_startup, config, _TELEGRAM_ENV, certification_store=store
+        )
 
     # SEV-1: a v1 live approval must never unlock real capital for v2 (ADR-014)
     def test_a_v1_approval_does_not_start_v2_on_mainnet(
@@ -360,8 +363,11 @@ class TestMainnetNeedsLiveApproval:
     ) -> None:
         """Without allow_mainnet a corrupt store is irrelevant: shadow never needs approval."""
         (tmp_path / f"{serve_module.SHADOW_STRATEGY_NAME}.json").write_text("{", encoding="utf-8")
-        serve_module.check_startup(
-            shadow_config, {}, certification_store=JsonCertificationStore(tmp_path)
+        assert_accepted(
+            serve_module.check_startup,
+            shadow_config,
+            {},
+            certification_store=JsonCertificationStore(tmp_path),
         )
 
 
@@ -469,7 +475,7 @@ class TestCheckStartup:
         self, shadow_config: HermesConfig
     ) -> None:
         """The repo's own config in dev with no credentials passes (D-9)."""
-        serve_module.check_startup(shadow_config, {})
+        assert_accepted(serve_module.check_startup, shadow_config, {})
 
     def test_wrong_roster_is_refused(self, shadow_config: HermesConfig) -> None:
         """A roster whose enabled entry is not swing-donchian-4h is a config error."""
@@ -504,13 +510,15 @@ class TestCheckStartup:
         self, shadow_config: HermesConfig, env: dict[str, str]
     ) -> None:
         """Prod needs only one channel configured."""
-        serve_module.check_startup(shadow_config.model_copy(update={"env": "prod"}), env)
+        assert_accepted(
+            serve_module.check_startup, shadow_config.model_copy(update={"env": "prod"}), env
+        )
 
     def test_v2_enabled_alone_with_its_close_based_pricing_is_accepted(
         self, v2_config: HermesConfig
     ) -> None:
         """The shipped v2 entry, enabled in place of v1, may run in shadow."""
-        serve_module.check_startup(v2_config, {})
+        assert_accepted(serve_module.check_startup, v2_config, {})
 
     def test_v2_priced_as_a_stop_order_is_refused(self, v2_config: HermesConfig) -> None:
         """v2 priced like v1 would trade and measure drift off its signed §6.2 price."""
@@ -1030,7 +1038,7 @@ class TestFillKernelWiring:
         self, shadow_config: HermesConfig
     ) -> None:
         """The repo carries both files, so development runs start."""
-        serve_module.check_startup(shadow_config, {}, experiment_root=_PROJECT_ROOT)
+        assert_accepted(serve_module.check_startup, shadow_config, {}, experiment_root=REPO_ROOT)
 
     def test_build_refuses_an_experiment_root_without_the_pre_registration(
         self, shadow_config: HermesConfig, tmp_path: Path

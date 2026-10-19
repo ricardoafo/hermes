@@ -44,7 +44,7 @@ import json
 import os
 import sys
 import time
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -270,7 +270,7 @@ def process_window(
             "year": year,
             "month": month,
             "chunk_urls": chunk_urls,
-            "downloaded_at": date.today().isoformat(),
+            "downloaded_at": datetime.now(UTC).date().isoformat(),
         },
     }
     body = json.dumps(merged_envelope, indent=2, sort_keys=True).encode()
@@ -283,7 +283,7 @@ def process_window(
         "size_bytes": len(body),
         "prices_count": len(deduped),
         "provider": "defillama",
-        "downloaded_at": date.today().isoformat(),
+        "downloaded_at": datetime.now(UTC).date().isoformat(),
     }
     return "ok", f"OK ({len(deduped)} points, {len(body):,} bytes, {len(chunk_offsets)} chunks)"
 

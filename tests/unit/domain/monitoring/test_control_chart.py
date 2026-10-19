@@ -100,7 +100,7 @@ def test_invalid_parameters_raise(build: Callable[[], ChartParameters]) -> None:
         build()
 
 
-@settings(max_examples=50, deadline=None)
+@settings(max_examples=50)
 @given(st.lists(st.floats(min_value=9.0, max_value=11.0), min_size=1, max_size=200))
 def test_values_inside_baseline_range_rarely_alert(values: list[float]) -> None:
     """Values inside the baseline's own range produce at most a handful of episodes."""

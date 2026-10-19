@@ -17,7 +17,6 @@ from collections.abc import AsyncIterator
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from pathlib import Path
 
 import pytest
 
@@ -46,6 +45,7 @@ from hermes.domain.market_data.dataset_manifest import (
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
+from tests.support.paths import REPO_ROOT
 
 _BTC = Pair(base=Currency.BTC, quote=Currency.USDT)
 _H4 = KlineInterval.H4
@@ -317,11 +317,7 @@ def test_pinning_oos_is_refused_outside_certification() -> None:
 @pytest.fixture(scope="module")
 def pre_reg() -> PreRegistration:
     """Return the signed pre-registration from the repo."""
-    here = Path(__file__).resolve().parent
-    for candidate in [here, *here.parents]:
-        if (candidate / "pyproject.toml").exists():
-            return PreRegistration(project_root=candidate)
-    pytest.skip("Could not find project root")
+    return PreRegistration(project_root=REPO_ROOT)
 
 
 def _signed_manifest(pre_reg: PreRegistration) -> DatasetManifest:

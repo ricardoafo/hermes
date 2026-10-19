@@ -19,9 +19,10 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from hermes.release_version import to_package_version, to_semver
+from tests.support.accepted import assert_accepted
+from tests.support.paths import REPO_ROOT
 
-_ROOT = Path(__file__).resolve().parents[3]
-_SCRIPT_PATH = _ROOT / "scripts" / "dev" / "cut-release.py"
+_SCRIPT_PATH = REPO_ROOT / "scripts" / "dev" / "cut-release.py"
 _spec = importlib.util.spec_from_file_location("cut_release", _SCRIPT_PATH)
 assert _spec is not None and _spec.loader is not None
 cut_release = importlib.util.module_from_spec(_spec)
@@ -82,7 +83,7 @@ def test_any_zero_version_above_0_1_0_follows_the_retired_shadow(
     if new == "0.1.0":
         return
 
-    cut_release.check_newer(f"1.0.0a{shadow}", new)
+    assert_accepted(cut_release.check_newer, f"1.0.0a{shadow}", new)
 
 
 def test_a_retired_shadow_name_is_refused() -> None:
@@ -101,13 +102,15 @@ def test_an_engine_change_on_a_patch_bump_is_refused(current: str, new: str) -> 
 @pytest.mark.parametrize(("current", "new"), [("0.2.0", "0.3.0"), ("1.0.0a1", "0.2.0")])
 def test_an_engine_change_on_a_minor_bump_is_allowed(current: str, new: str) -> None:
     """A MINOR bump may carry an engine change."""
-    cut_release.check_bump(current, new, engine_change="yes", real_capital=False)
+    assert_accepted(cut_release.check_bump, current, new, engine_change="yes", real_capital=False)
 
 
 @pytest.mark.parametrize("engine_change", ["no", None])
 def test_a_patch_bump_without_engine_change_is_allowed(engine_change: str | None) -> None:
     """A PATCH cut passes when the engine line says no or is left for the PR body."""
-    cut_release.check_bump("0.2.0", "0.2.1", engine_change=engine_change, real_capital=False)
+    assert_accepted(
+        cut_release.check_bump, "0.2.0", "0.2.1", engine_change=engine_change, real_capital=False
+    )
 
 
 @pytest.mark.parametrize("current", ["0.9.3", "1.0.0a1"])
@@ -126,12 +129,14 @@ def test_leaving_zero_major_lands_on_1_0_0(new: str) -> None:
 
 def test_leaving_zero_major_with_real_capital_is_allowed() -> None:
     """--real-capital lets the first 1.x cut through."""
-    cut_release.check_bump("0.9.3", "1.0.0", engine_change="no", real_capital=True)
+    assert_accepted(cut_release.check_bump, "0.9.3", "1.0.0", engine_change="no", real_capital=True)
 
 
 def test_bumps_after_one_need_no_real_capital_flag() -> None:
     """Only the step out of 0.y.z needs the flag."""
-    cut_release.check_bump("1.0.0", "1.1.0", engine_change="yes", real_capital=False)
+    assert_accepted(
+        cut_release.check_bump, "1.0.0", "1.1.0", engine_change="yes", real_capital=False
+    )
 
 
 def test_mismatched_version_files_are_refused() -> None:
@@ -143,8 +148,8 @@ def test_mismatched_version_files_are_refused() -> None:
 def test_the_repository_version_files_agree() -> None:
     """The checked-in pyproject.toml and src/hermes/__init__.py declare one version."""
     version = cut_release.read_current_version(
-        (_ROOT / "pyproject.toml").read_text(encoding="utf-8"),
-        (_ROOT / "src" / "hermes" / "__init__.py").read_text(encoding="utf-8"),
+        (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"),
+        (REPO_ROOT / "src" / "hermes" / "__init__.py").read_text(encoding="utf-8"),
     )
 
     assert version == to_package_version(to_semver(version))
@@ -191,9 +196,9 @@ def test_a_second_cut_keeps_the_earlier_release_section() -> None:
 
 def test_compiling_the_real_changelog_loses_no_entry() -> None:
     """A dry cut of this repository keeps every bullet of [Unreleased] plus one per fragment."""
-    changelog = (_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     fragments = cut_release.aggregate_changelog.collect_fragments(
-        _ROOT / "changelog.d", resolve_pr=lambda _: None
+        REPO_ROOT / "changelog.d", resolve_pr=lambda _: None
     )
     _, legacy, _ = cut_release._split_unreleased(changelog)
 
@@ -380,8 +385,8 @@ def test_next_version_always_passes_the_cut_checks(
     sections = {"Fixed"} if extra % 2 else {"Added"}
     new = cut_release.next_version(current, sections, engine_change=engine)
 
-    cut_release.check_newer(current, new)
-    cut_release.check_bump(current, new, engine_change=engine, real_capital=False)
+    assert_accepted(cut_release.check_newer, current, new)
+    assert_accepted(cut_release.check_bump, current, new, engine_change=engine, real_capital=False)
 
 
 def test_entry_sections_counts_hand_written_and_fragment_entries() -> None:

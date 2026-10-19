@@ -19,7 +19,7 @@ from typing import Final
 import structlog
 
 from hermes.domain.errors import FxRateError, InfraError
-from hermes.domain.fx.eur_pricing import EurPricing, rate_is_final
+from hermes.domain.fx.eur_pricing import MAX_RATE_AGE_DAYS, EurPricing, rate_is_final
 from hermes.domain.fx.fx_rate import FxRate
 from hermes.domain.value_objects.currency import Currency
 from hermes.ports.fx import FxRateProviderPort
@@ -135,8 +135,10 @@ class EurPricer:
                 ``fill_date`` is final only once ``fill_date < today``.
 
         Returns:
-            The pricing, or ``None`` when the provider failed or its rate is
-            not final yet. Never raises for a provider failure.
+            The pricing, or ``None`` when the provider failed, its rate is
+            not final yet, or its rate is more than
+            :data:`~hermes.domain.fx.eur_pricing.MAX_RATE_AGE_DAYS` older than
+            the fill (logged as a warning). Never raises for a provider failure.
         """
         if quote == Currency.EUR:
             return EurPricing.identity(fill_date)
@@ -160,8 +162,9 @@ class EurPricer:
             return None
         self._latest[quote] = pricing
         if not rate_is_final(fill_date=fill_date, rate_date=pricing.rate_date, today=today):
-            _log.info(
-                "eur_rate_not_final",
+            stale = (fill_date - pricing.rate_date).days > MAX_RATE_AGE_DAYS
+            (_log.warning if stale else _log.info)(
+                "eur_rate_too_old" if stale else "eur_rate_not_final",
                 quote=quote.value,
                 fill_date=fill_date.isoformat(),
                 rate_date=pricing.rate_date.isoformat(),

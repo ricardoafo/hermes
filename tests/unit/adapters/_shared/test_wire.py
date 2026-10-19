@@ -23,6 +23,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from hermes.adapters._shared.wire import (
+    binance_sign,
     binance_symbol,
     percent_to_bps,
     validate_http_config,
@@ -32,6 +33,7 @@ from hermes.adapters._shared.wire import (
 from hermes.domain.errors import ExchangeError, FxRateError, KrakenPublicError
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
+from tests.support.accepted import assert_accepted
 from tests.support.paths import REPO_ROOT
 
 _ERRORS: tuple[type[Exception], ...] = (ExchangeError, KrakenPublicError, FxRateError)
@@ -179,7 +181,7 @@ def test_http_config_refuses_plaintext_or_no_timeout(
 )
 def test_http_config_accepts_plaintext_on_a_loopback_fake(url: str) -> None:
     """A lower environment's fake on loopback needs no certificate (#972)."""
-    validate_http_config("Cfg", url=url, timeout_sec=5.0)
+    assert_accepted(validate_http_config, "Cfg", url=url, timeout_sec=5.0)
 
 
 @pytest.mark.parametrize("url", ["http://10.0.0.1", "http://127.0.0.1.example", "ws://127.0.0.1"])
@@ -214,3 +216,18 @@ def test_no_wire_adapter_grows_its_own_copy_again(pattern: str, allowed: set[str
     }
 
     assert found ^ allowed == set()
+
+
+def test_binance_signature_matches_the_binance_documentation_vector() -> None:
+    """HMAC-SHA256 over the query string reproduces Binance's published example."""
+    doc_key_material = (
+        "NhqPtmdSJYdKjVHjA7PZj4Mge3R5YNiP1e3UZjInClVN65XAbvqqM6A7H5fATj0j"  # gitleaks:allow
+    )
+    query = (
+        "symbol=LTCBTC&side=BUY&type=LIMIT&timeInForce=GTC&quantity=1&price=0.1"
+        "&recvWindow=5000&timestamp=1499827319559"
+    )
+    assert (
+        binance_sign(query, doc_key_material)
+        == "c8db56825ae71d6d79447849e617115f4a920fa2acdcab2b053c4b2838bd6b71"
+    )

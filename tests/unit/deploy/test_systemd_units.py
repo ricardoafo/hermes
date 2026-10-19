@@ -17,9 +17,9 @@ import pytest
 
 from hermes.application.supervisor.briefing import SOURCES
 from hermes.entrypoints import cli as cli_module
+from tests.support.paths import REPO_ROOT
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_UNIT_DIR = _REPO_ROOT / "deploy" / "systemd"
+_UNIT_DIR = REPO_ROOT / "deploy" / "systemd"
 _UNIT_FILES = sorted([*_UNIT_DIR.glob("*.service"), *_UNIT_DIR.glob("*.timer")])
 _SERVICE_FILES = [path for path in _UNIT_FILES if path.suffix == ".service"]
 
@@ -85,7 +85,7 @@ def test_hermes_service_runs_the_serve_subcommand_of_the_console_script() -> Non
 
 def test_hermes_service_binary_is_a_declared_console_script() -> None:
     """ExecStart cannot drift from the `[project.scripts]` table in pyproject.toml."""
-    pyproject = tomllib.loads((_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     binary = PurePosixPath(_hermes_exec_argv()[0]).name
     assert binary in pyproject["project"]["scripts"], f"{binary!r} is not a console script"
 
@@ -254,7 +254,7 @@ def test_hermes_service_posts_a_crash_notice_after_every_unclean_stop() -> None:
         str(_HERMES_BIN_DIR / "hermes-notify-crash.sh"),
         "%n",
     ]
-    assert (_REPO_ROOT / "deploy" / "hermes-notify-crash.sh").is_file()
+    assert (REPO_ROOT / "deploy" / "hermes-notify-crash.sh").is_file()
 
 
 def test_failure_notifier_is_a_oneshot() -> None:
@@ -281,7 +281,7 @@ def test_failure_notifier_runs_its_script_from_outside_the_release() -> None:
     """A missing or broken `current` is why hermes fails; the alert must not depend on it (#364)."""
     script = PurePosixPath(_exec_argv(_NOTIFIER_TEMPLATE)[1])
     assert script == _HERMES_BIN_DIR / "hermes-notify-failure.sh"
-    assert (_REPO_ROOT / "deploy" / script.name).is_file()
+    assert (REPO_ROOT / "deploy" / script.name).is_file()
 
 
 def test_health_service_loads_the_ping_url_from_the_environment_file() -> None:
@@ -292,8 +292,8 @@ def test_health_service_loads_the_ping_url_from_the_environment_file() -> None:
 def test_health_ping_script_reads_the_variable_the_bootstrap_workflow_writes() -> None:
     """The ping URL variable must be one vps-bootstrap.yml renders into env.production."""
     variable = "HERMES_HEALTHCHECKS__PING_URL"
-    script = (_REPO_ROOT / "deploy" / "hermes-health-ping.sh").read_text(encoding="utf-8")
-    workflow = (_REPO_ROOT / ".github" / "workflows" / "vps-bootstrap.yml").read_text(
+    script = (REPO_ROOT / "deploy" / "hermes-health-ping.sh").read_text(encoding="utf-8")
+    workflow = (REPO_ROOT / ".github" / "workflows" / "vps-bootstrap.yml").read_text(
         encoding="utf-8"
     )
     assert f"${{{variable}:-}}" in script
@@ -302,7 +302,7 @@ def test_health_ping_script_reads_the_variable_the_bootstrap_workflow_writes() -
 
 @pytest.mark.parametrize(
     "path",
-    [_UNIT_DIR / "hermes-health.service", _REPO_ROOT / "deploy" / "hermes-health-ping.sh"],
+    [_UNIT_DIR / "hermes-health.service", REPO_ROOT / "deploy" / "hermes-health-ping.sh"],
     ids=lambda p: p.name,
 )
 def test_health_ping_never_falls_back_to_a_placeholder_url(path: Path) -> None:
@@ -324,7 +324,7 @@ def test_health_script_is_shipped_in_the_release_deploy_directory() -> None:
     """ExecStart follows `current/deploy/`; a script missing from repo deploy/ fails with 127."""
     script = PurePosixPath(_exec_argv("hermes-health.service")[1])
     assert script.parent == _RELEASE_DEPLOY_DIR
-    assert (_REPO_ROOT / "deploy" / script.name).is_file()
+    assert (REPO_ROOT / "deploy" / script.name).is_file()
 
 
 def test_daily_timer_fires_at_seven_madrid_time() -> None:
@@ -355,7 +355,7 @@ def test_daily_service_runs_the_shipped_script_from_the_release() -> None:
     script = PurePosixPath(_exec_argv("hermes-daily.service")[1])
 
     assert script == _RELEASE_DEPLOY_DIR / "hermes-daily-line.sh"
-    assert (_REPO_ROOT / "deploy" / script.name).is_file()
+    assert (REPO_ROOT / "deploy" / script.name).is_file()
 
 
 def test_tax_pack_timer_fires_at_half_past_seven_madrid_time() -> None:
@@ -395,7 +395,7 @@ def test_tax_pack_flags_are_accepted_by_the_real_cli_parser(tmp_path: Path) -> N
     """The unit's flags parse; with no ledger at the server path the run stops at exit 1."""
     argv = shlex.split(_parse("hermes-tax-pack.service")["Service"]["ExecStart"])[1:]
     argv[argv.index("--out") + 1] = str(tmp_path / "packs")
-    argv[argv.index("--config-dir") + 1] = str(_REPO_ROOT / "config")
+    argv[argv.index("--config-dir") + 1] = str(REPO_ROOT / "config")
     argv[argv.index("--db") + 1] = str(tmp_path / "missing.sqlite3")
     stream, err = io.StringIO(), io.StringIO()
 
@@ -525,7 +525,7 @@ def test_brief_service_loads_no_env_file_and_writes_only_the_ledger_directory() 
 def test_brief_service_flags_are_accepted_by_the_real_supervisor(tmp_path: Path) -> None:
     """The unit keeps the brief with the six source grants the Briefs screen reads."""
     argv = shlex.split(_parse("hermes-brief.service")["Service"]["ExecStart"])[1:]
-    argv[argv.index("--config-dir") + 1] = str(_REPO_ROOT / "config")
+    argv[argv.index("--config-dir") + 1] = str(REPO_ROOT / "config")
     argv[argv.index("--db") + 1] = str(tmp_path / "missing.sqlite3")
 
     grants = {argv[i + 1] for i, flag in enumerate(argv) if flag == "--grant"}

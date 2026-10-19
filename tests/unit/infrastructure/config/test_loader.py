@@ -35,8 +35,9 @@ from hermes.infrastructure.config.loader import (
     load_yaml_model,
 )
 from hermes.infrastructure.config.models import FrankfurterConfig, HealthchecksConfig
+from tests.support.paths import REPO_ROOT
 
-_REPO_CONFIG = Path(__file__).resolve().parents[4] / "config"
+_REPO_CONFIG = REPO_ROOT / "config"
 
 # ---------------------------------------------------------------------------
 # Fixtures: a full valid config tree written to a tmp dir per test. Values

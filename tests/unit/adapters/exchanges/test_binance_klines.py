@@ -477,7 +477,9 @@ class TestCreateFactoryAndClose:
             adapter.close()
 
     def test_close_is_idempotent(self) -> None:
-        """close() called twice does not raise (second call is a no-op)."""
+        """Closing twice does not raise and leaves the client closed."""
         adapter = BinanceKlinesAdapter.create()
         adapter.close()
-        adapter.close()  # must not raise
+        adapter.close()
+
+        assert adapter.client.is_closed is True

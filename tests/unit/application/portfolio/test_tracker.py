@@ -147,7 +147,7 @@ class TestRefusedFill:
         assert tracker.open_position_count() == 1
 
 
-@settings(max_examples=60, deadline=None, derandomize=True)
+@settings(max_examples=60)
 @given(cash=starting_cash, ops=operations())
 def test_tracker_state_matches_the_pure_fold_of_the_same_operations(
     cash: Decimal, ops: list[Operation]
@@ -240,7 +240,7 @@ class TestRebuilt:
         assert "LATERBAD" not in str(result.failure())
 
 
-@settings(max_examples=60, deadline=None, derandomize=True)
+@settings(max_examples=60)
 @given(cash=starting_cash, ops=operations())
 def test_rebuilt_equals_the_live_tracker_for_any_accepted_fill_sequence(
     cash: Decimal, ops: list[Operation]

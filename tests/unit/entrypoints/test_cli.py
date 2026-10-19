@@ -33,8 +33,9 @@ from hermes.entrypoints import serve as serve_module
 from hermes.entrypoints.commands import discover
 from hermes.entrypoints.commands import serve as serve_command
 from hermes.entrypoints.daily_line import count_journal
+from tests.support.paths import REPO_ROOT
 
-_RECORDED_DIR = Path(__file__).parents[2] / "fixtures" / "binance_public"
+_RECORDED_DIR = REPO_ROOT / "tests" / "fixtures" / "binance_public"
 
 
 class TestTopLevelHelp:
@@ -110,7 +111,7 @@ class TestServeSubcommand:
     def test_serve_with_a_strategy_missing_from_the_roster_exits_three(self) -> None:
         """#1076: a shadow instance naming no roster entry stops at the config check, not later."""
         stream, err = io.StringIO(), io.StringIO()
-        config_dir = Path(__file__).resolve().parents[3] / "config"
+        config_dir = REPO_ROOT / "config"
         try:
             rc = cli_module.main(
                 ["serve", "--config-dir", str(config_dir), "--strategy", "no-such-shadow"],
@@ -173,7 +174,7 @@ class TestServeExitCodes:
 
         monkeypatch.setattr(serve_module, "check_startup", _refuse)
         stream, err = io.StringIO(), io.StringIO()
-        config_dir = Path(__file__).resolve().parents[3] / "config"
+        config_dir = REPO_ROOT / "config"
 
         rc = cli_module.main(["serve", "--config-dir", str(config_dir)], stream=stream, err=err)
 
@@ -213,7 +214,7 @@ class TestServeExitCodes:
         monkeypatch.setattr(serve_module, "check_startup", lambda *_a, **_k: None)
         monkeypatch.setattr(serve_module, "build_composition", _build)
         monkeypatch.setattr(serve_module, "report_failure", lambda _exc: None)
-        config_dir = Path(__file__).resolve().parents[3] / "config"
+        config_dir = REPO_ROOT / "config"
 
         rc = cli_module.main(
             ["serve", "--config-dir", str(config_dir), "--db", str(tmp_path / "x.sqlite3"), *argv],

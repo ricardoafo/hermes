@@ -47,8 +47,6 @@ such a fill is marked ``fee_estimated`` (#1014).
 Reference: issue #148; openspec/archive/148-binance-testnet-spot/change.md.
 """
 
-import hashlib
-import hmac
 import secrets
 import time
 from collections.abc import Callable, Mapping
@@ -62,7 +60,13 @@ import httpx
 import structlog
 
 from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
-from hermes.adapters._shared.wire import binance_symbol, wire_decimal
+from hermes.adapters._shared.wire import (
+    BINANCE_MAINNET_HOSTS,
+    BINANCE_TESTNET_HOST,
+    binance_sign,
+    binance_symbol,
+    wire_decimal,
+)
 from hermes.domain.errors import ExchangeError, NetworkError
 from hermes.domain.fees import FeeSchedule, FeeTier
 from hermes.domain.market_data.orderbook import Orderbook, OrderbookLevel
@@ -75,34 +79,17 @@ from hermes.domain.value_objects.quantity import Quantity
 from hermes.infrastructure.mainnet_permit import MainnetPermit
 
 __all__ = [
-    "MAINNET_HOSTS",
     "TESTNET_BASE_URL",
-    "TESTNET_HOST",
     "BinanceSpotAdapter",
     "BinanceSpotConfig",
     "OrderNotPlacedError",
     "OrderStatusUnknownError",
     "parse_decimal",
-    "sign",
 ]
 
 _log = structlog.get_logger(__name__)
 
 TESTNET_BASE_URL: Final = "https://testnet.binance.vision"
-TESTNET_HOST: Final = "testnet.binance.vision"
-# Binance's documented spot REST hosts. With a permit only these are accepted,
-# so a typo or an injected base_url cannot send the key and signed orders
-# off-exchange (#781).
-MAINNET_HOSTS: Final = frozenset(
-    {
-        "api.binance.com",
-        "api-gcp.binance.com",
-        "api1.binance.com",
-        "api2.binance.com",
-        "api3.binance.com",
-        "api4.binance.com",
-    }
-)
 _API_KEY_HEADER: Final = "X-MBX-APIKEY"
 _UNKNOWN_ORDER: Final = -2011
 """Binance error code for cancelling an order that no longer exists."""
@@ -132,16 +119,6 @@ _ERROR_EXCERPT: Final = 200
 _HTTP_ERROR_MIN: Final = 400
 _FOUND_KEY: Final = "_hermesFoundClientOrderId"
 """Marks a reply rebuilt from a lookup, with the client id it was found by."""
-
-
-def sign(query: str, secret: str) -> str:
-    """Return Binance's HMAC-SHA256 signature of ``query`` as lower-case hex.
-
-    Args:
-        query: The exact URL-encoded parameter string that will be sent.
-        secret: The API secret.
-    """
-    return hmac.new(secret.encode(), query.encode(), hashlib.sha256).hexdigest()
 
 
 def parse_decimal(raw: object, field_name: str) -> Decimal:
@@ -193,13 +170,13 @@ class BinanceSpotConfig:
         parts = urlsplit(self.base_url)
         if parts.scheme != "https":
             raise ValueError(f"base_url must be https, got {self.base_url!r}")
-        if parts.hostname != TESTNET_HOST:
+        if parts.hostname != BINANCE_TESTNET_HOST:
             if not isinstance(self.mainnet_permit, MainnetPermit):
                 raise ValueError(
                     f"{parts.hostname} is not the Binance testnet; mainnet needs a MainnetPermit "
                     "(issued only after live approval, ADR-014)"
                 )
-            if parts.hostname not in MAINNET_HOSTS:
+            if parts.hostname not in BINANCE_MAINNET_HOSTS:
                 raise ValueError(f"{parts.hostname} is not a documented Binance spot host")
         if not self.api_key or not self.api_secret:
             raise ValueError("api_key and api_secret are required")
@@ -627,7 +604,7 @@ class BinanceSpotAdapter:
                 "timestamp": str(self.clock_ms()),
             }
         )
-        return f"{query}&signature={sign(query, self.config.api_secret)}"
+        return f"{query}&signature={binance_sign(query, self.config.api_secret)}"
 
     def _send(
         self,

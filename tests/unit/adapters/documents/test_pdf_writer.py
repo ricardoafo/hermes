@@ -103,8 +103,9 @@ def test_unprintable_characters_never_fail_the_render() -> None:
 
 @given(st.text())
 def test_latin1_output_always_encodes(text: str) -> None:
-    """Property: whatever the input, the mapped text encodes as latin-1."""
-    latin1(text).encode("latin-1")
+    """Property: whatever the input, the mapped text encodes as latin-1 and decodes back."""
+    mapped = latin1(text)
+    assert mapped.encode("latin-1").decode("latin-1") == mapped
 
 
 @given(st.text(alphabet=st.characters(max_codepoint=0xFF)))

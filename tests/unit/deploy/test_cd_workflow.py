@@ -9,15 +9,15 @@ Reference: openspec/archive/179-cd-first-real-deploy/change.md.
 """
 
 import re
-from pathlib import Path
 from typing import Any
 
 import pytest
 import yaml
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_CD_PATH = _REPO_ROOT / ".github" / "workflows" / "cd.yml"
-_BOOTSTRAP_PATH = _REPO_ROOT / "scripts" / "deploy" / "vps_bootstrap.sh"
+from tests.support.paths import REPO_ROOT
+
+_CD_PATH = REPO_ROOT / ".github" / "workflows" / "cd.yml"
+_BOOTSTRAP_PATH = REPO_ROOT / "scripts" / "deploy" / "vps_bootstrap.sh"
 
 _DRY_RUN_GUARD = "inputs.dry_run != true"
 _DRY_RUN_NOTICE_GUARD = "inputs.dry_run == true"
@@ -207,7 +207,7 @@ def test_bootstrap_installs_the_same_uv_version_as_the_bundle_job() -> None:
 def test_setup_uv_versions_agree_across_jobs(job: str) -> None:
     """Every job that uses uv pins the same version as the reusable wheel build."""
     wheel_workflow = yaml.safe_load(
-        (_REPO_ROOT / ".github" / "workflows" / "_build-wheel.yml").read_text(encoding="utf-8")
+        (REPO_ROOT / ".github" / "workflows" / "_build-wheel.yml").read_text(encoding="utf-8")
     )
     wheel_versions = [
         str(step["with"]["version"])
@@ -223,7 +223,7 @@ def test_bootstrap_python_pin_is_an_exact_patch_inside_the_supported_range() -> 
     match = re.search(
         r"^PYTHON_VERSION=(\S+)$", _BOOTSTRAP_PATH.read_text(encoding="utf-8"), re.MULTILINE
     )
-    pyproject = (_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
 
     assert match is not None
     assert re.fullmatch(r"3\.14\.\d+", match.group(1))
@@ -232,7 +232,7 @@ def test_bootstrap_python_pin_is_an_exact_patch_inside_the_supported_range() -> 
 
 def test_every_script_a_unit_runs_from_current_deploy_is_in_the_bundle() -> None:
     """Units run /opt/hermes/current/deploy/<x>.sh, so the bundle job must ship each one."""
-    units = (_REPO_ROOT / "deploy" / "systemd").glob("*.service")
+    units = (REPO_ROOT / "deploy" / "systemd").glob("*.service")
     referenced = {
         name
         for unit in units

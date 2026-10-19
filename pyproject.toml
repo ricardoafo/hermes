@@ -109,7 +109,7 @@ line-length = 100
 extend-exclude = ["src/hermes/**/__init__.py"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "PL", "RUF", "S", "PTH", "ERA", "PGH", "D", "FURB", "PERF", "TID251"]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "PL", "RUF", "S", "PTH", "ERA", "PGH", "D", "FURB", "PERF", "DTZ", "TID251"]
 ignore = [
   "PLR0913",  # arg count — hexagonal use cases take many ports
   # Decimal("100") over Decimal(100): every money literal stays a string, so a
@@ -126,6 +126,8 @@ ignore = [
   # A test whose only assertion is `x is None` fails the no-vague-test-assertions
   # hook; `type(x) is type(None)` is how such a test states "returns nothing".
   "FURB169",
+  # Tests build fixed naive datetimes to prove the domain rejects them.
+  "DTZ001",
 ]
 # D-family docstring enforcement is TEST-SCOPED for this PR (see docs/guides/ai-authored-tests.md
 # §"Enforcement in this repo"). Production src has variable docstring coverage; a global roll-out
@@ -176,6 +178,9 @@ addopts = "-ra --strict-markers --strict-config -m 'not contract'"
 # interrupt blocking C-level calls on Windows the way they do on POSIX.
 timeout = 60
 timeout_method = "thread"
+# An xfail test that passes fails the run; tests/plugins/xfail_guard.py fails any
+# xfail outcome, so a green run means every test passed (#1193).
+xfail_strict = true
 
 # filterwarnings — surface deprecated APIs as HARD test failures so we
 # discover them at PR time (not at "the day the library removed the API").
@@ -191,12 +196,10 @@ timeout_method = "thread"
 # issue. Never a bare `default::DeprecationWarning` — that silences the
 # whole class and defeats the discipline.
 filterwarnings = [
-  "error::DeprecationWarning",
-  "error::PendingDeprecationWarning",
-  # Unclosed connections/files are real leaks (#759); GC-time warnings
-  # surface as unraisable exceptions, so both must fail the run.
-  "error::ResourceWarning",
-  "error::pytest.PytestUnraisableExceptionWarning",
+  # Every warning fails the run, including a never-awaited coroutine
+  # (RuntimeWarning) and the unclosed connections/files of #759; GC-time
+  # warnings surface as unraisable exceptions, which this covers as well.
+  "error",
   # Third-party warnings we cannot fix — allow with a comment explaining why:
   # (add exceptions here as they surface, with justification + upstream link)
 ]
@@ -239,6 +242,17 @@ name = "adapters-never-import-entrypoints"
 type = "forbidden"
 source_modules = ["hermes.adapters"]
 forbidden_modules = ["hermes.entrypoints"]
+
+# Issue #1220: a read-only exchange client never imports the modules that place
+# orders, so reading a balance cannot pull order placement into a process.
+[[tool.importlinter.contracts]]
+name = "read-only-exchange-clients-never-import-order-placement"
+type = "forbidden"
+source_modules = ["hermes.adapters.exchanges.binance_balance_reader"]
+forbidden_modules = [
+  "hermes.adapters.exchanges.binance_spot",
+  "hermes.adapters.exchanges.kraken_spot",
+]
 
 # change trade-eur-values D-3: EUR ledger values are measurement only. Strategy,
 # sizing, fees, risk and kill rules keep reading native (USDT) values.

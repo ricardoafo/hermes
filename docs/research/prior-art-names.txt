@@ -1,0 +1,16 @@
+# Outside project and company names that may appear only inside the
+# dated-research carve-out (docs/research/, accepted ADRs). One name per line,
+# matched case-insensitively as a whole word by scripts/dev/footprint-check.py.
+# Add a name the first time research cites a new outside project.
+freqtrade
+freqai
+hummingbot
+nautilustrader
+nautilus
+quantconnect
+quantopian
+octobot
+superalgos
+numerai
+worldquant
+marketcalls

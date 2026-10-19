@@ -37,7 +37,7 @@ from tests.strategies.portfolio import (
     starting_cash,
 )
 
-_SETTINGS = settings(max_examples=100, deadline=None, derandomize=True)
+_SETTINGS = settings(max_examples=100)
 _STRATEGY = StrategyId("swing-donchian-4h")
 _QTY = st.decimals(min_value=Decimal("0.0001"), max_value=Decimal("5"), places=4)
 _PRICE = st.decimals(min_value=Decimal("1"), max_value=Decimal("100000"), places=2)

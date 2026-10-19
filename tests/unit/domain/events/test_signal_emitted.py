@@ -208,7 +208,7 @@ class TestSignalEmittedPayloadHash:
         )
         assert other.payload_sha256 != _event().payload_sha256
 
-    @settings(max_examples=60, deadline=None, derandomize=True)
+    @settings(max_examples=60)
     @given(
         entry=st.decimals(
             min_value=Decimal("10"), max_value=Decimal("200000"), places=2, allow_nan=False

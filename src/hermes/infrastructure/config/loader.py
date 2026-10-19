@@ -48,6 +48,10 @@ from hermes.adapters.endpoint import (
     is_loopback,
 )
 from hermes.infrastructure.config.errors import ConfigError, TierError
+from hermes.infrastructure.config.fingerprints import (
+    load_prod_fingerprints,
+    prod_value_problems,
+)
 from hermes.infrastructure.config.models import (
     BinanceExchangeConfig,
     FeesConfig,
@@ -431,7 +435,9 @@ def load_config(
         ConfigError: Any of the YAML files is missing, malformed, or fails
             schema validation. The message identifies the offending file and
             the pydantic validation error. Also raised when the tier is prod
-            and ``config_dir`` is relative.
+            and ``config_dir`` is relative. A tier refusal, including a
+            watched value whose hash ``prod_fingerprints.yaml`` lists outside
+            prod, is a :class:`TierError` naming each variable.
     """
     base = config_dir if config_dir is not None else DEFAULT_CONFIG_DIR
     if env is None:
@@ -514,6 +520,7 @@ def load_config(
         env_section="MARKET_DATA",
         env=env_snapshot,
     )
+    prod_fingerprints = load_prod_fingerprints(base)
 
     root_kwargs = _root_env_kwargs(env_snapshot)
     try:
@@ -541,9 +548,13 @@ def load_config(
         problems = [
             *endpoint_error.problems,
             *env_tier_problems(endpoint_error.env, env_snapshot),
+            *prod_value_problems(endpoint_error.env, env_snapshot, prod_fingerprints),
         ]
         raise _tier_error(endpoint_error.env, problems) from exc
-    problems = env_tier_problems(config.env, env_snapshot)
+    problems = [
+        *env_tier_problems(config.env, env_snapshot),
+        *prod_value_problems(config.env, env_snapshot, prod_fingerprints),
+    ]
     if problems:
         raise _tier_error(config.env, problems)
     return config

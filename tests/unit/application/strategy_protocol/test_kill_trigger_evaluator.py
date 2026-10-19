@@ -114,9 +114,8 @@ class TestKillTriggerEvaluatorIndividualTriggers:
         """Kill reason must be a non-empty string that describes the drawdown trigger."""
         state = _safe_state(max_drawdown=0.20)
         decision = evaluator.evaluate(state)
-        assert "drawdown" in decision.reason.lower() or "15%" in decision.reason, (
-            f"Kill reason for drawdown trigger must mention 'drawdown' or '15%'. "
-            f"Got '{decision.reason}'."
+        assert decision.reason == "Max drawdown 20.0% >= kill threshold 15.0% (pre-reg §10).", (
+            f"Kill reason must name the drawdown and the 15% threshold. Got '{decision.reason}'."
         )
 
     def test_sa9_halt_triggers(self, evaluator: KillTriggerEvaluator) -> None:
@@ -208,8 +207,8 @@ class TestKillTriggerEvaluatorPriority:
         assert decision.triggered is True, (
             "When both drawdown and SA-9 fire, kill must be triggered."
         )
-        assert "15%" in decision.reason or "drawdown" in decision.reason.lower(), (
-            f"Reason should mention drawdown when both triggers fire. Got '{decision.reason}'."
+        assert decision.rule == "max_drawdown", (
+            f"Drawdown outranks SA-9 when both fire. Got rule {decision.rule!r}."
         )
 
 

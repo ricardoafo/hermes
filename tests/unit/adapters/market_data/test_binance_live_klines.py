@@ -90,7 +90,7 @@ class TestDelivery:
         assert keys(run.bars) == _reference_keys()
 
     @pytest.mark.timeout(120)  # each example simulates two days of polling
-    @settings(max_examples=12, deadline=None)
+    @settings(max_examples=12)
     @given(start_offset_minutes=st.integers(min_value=0, max_value=24 * 60))
     def test_emitted_close_times_are_monotonic(self, start_offset_minutes: int) -> None:
         """Close times never go backwards, wherever in the day the stream starts."""
@@ -132,7 +132,7 @@ class TestOutageBackfill:
     """A source outage is healed by the cursor: no gap, no duplicate, same order."""
 
     @pytest.mark.timeout(180)  # each example polls through an outage on a 5 s cadence
-    @settings(max_examples=10, deadline=None)
+    @settings(max_examples=10)
     @given(
         outage_start_minutes=st.integers(min_value=0, max_value=30 * 60),
         outage_minutes=st.integers(min_value=1, max_value=5 * 60),

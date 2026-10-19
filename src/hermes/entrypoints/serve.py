@@ -74,7 +74,7 @@ import sqlite3
 from collections import Counter
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from functools import partial
 from pathlib import Path
@@ -191,6 +191,7 @@ from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
+from hermes.domain.value_objects.time import MADRID
 from hermes.entrypoints._release import read_release
 from hermes.infrastructure import sentry_integration
 from hermes.infrastructure.config.models import FrankfurterConfig, MarketDataConfig
@@ -264,6 +265,12 @@ EXPERIMENT_DIR: Final = Path("docs/experiments/swing-mvp1")
 # ``hermes fx backfill``.
 BOOT_EUR_MAX_FX_CALLS: Final = 20
 BOOT_EUR_BUDGET_SEC: Final = 60.0
+
+# Why 17:00 Madrid: the ECB publishes its reference rates around 16:00 CET, so
+# a pass at 17:00 finds that day's rate. Live fills read the rate cache only
+# (issue #996); this daily pass prices whatever they left pending.
+DAILY_EUR_PASS_AT: Final = time(17, 0)
+"""Madrid wall time of the daily pass that prices pending EUR values."""
 
 _ONE_MS: Final = timedelta(milliseconds=1)
 _EPOCH: Final = datetime(1970, 1, 1, tzinfo=UTC)
@@ -892,7 +899,7 @@ def _wire_on_ledger(
                 ),
                 fill_model=fill_model,
                 books=books,
-                recorder=TradeRecorder(ledger, eur_pricer),
+                recorder=TradeRecorder(ledger, eur_pricer.cached_only()),
                 ledger=ledger,
                 clock=wall,
                 fees_at=_fees_at(fee_rows),
@@ -1151,6 +1158,41 @@ async def _price_pending_eur_capped(c: Composition, shutdown: asyncio.Event) -> 
     price_pending_eur_once(c, c.eur_pricer.cached_only())
 
 
+def seconds_until_next_eur_pass(now: datetime) -> float:
+    """Return the seconds from ``now`` to the next :data:`DAILY_EUR_PASS_AT` in Madrid.
+
+    Args:
+        now: A timezone-aware instant.
+
+    Returns:
+        Seconds to wait; a full day when ``now`` is exactly the pass time.
+    """
+    local = now.astimezone(MADRID)
+    target = datetime.combine(local.date(), DAILY_EUR_PASS_AT, tzinfo=MADRID)
+    if target <= local:
+        target = datetime.combine(
+            local.date() + timedelta(days=1), DAILY_EUR_PASS_AT, tzinfo=MADRID
+        )
+    # Why UTC: subtracting two aware datetimes in the same zone ignores the
+    # offset change, so across a DST switch the wait would be an hour off.
+    return (target.astimezone(UTC) - now.astimezone(UTC)).total_seconds()
+
+
+async def _price_pending_eur_daily(c: Composition, shutdown: asyncio.Event) -> None:
+    """Price pending EUR values at boot, then once a day after the ECB publishes.
+
+    Live fills read the rate cache only, so a fill whose rate is not cached
+    yet is stored pending; this pass, run off the event loop under the boot
+    budget, prices it (issue #996).
+    """
+    while not shutdown.is_set():
+        await _price_pending_eur_capped(c, shutdown)
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(
+                shutdown.wait(), timeout=seconds_until_next_eur_pass(c.clock.now())
+            )
+
+
 def report_failure(exc: BaseException) -> None:
     """Log ``exc`` with its traceback and send it to Sentry.
 
@@ -1204,7 +1246,7 @@ async def _bar_loop(c: Composition, shutdown: asyncio.Event) -> None:
         return
     # After catch-up so its fills keep the live book; as a task so the live
     # stream is not held back; cancelled with the loop so shutdown is prompt.
-    pricing = asyncio.create_task(_price_pending_eur_capped(c, shutdown))
+    pricing = asyncio.create_task(_price_pending_eur_daily(c, shutdown))
     try:
         loop.log_next_due()
         stream = c.feed.stream_closed_bars(c.pairs, c.intervals).__aiter__()

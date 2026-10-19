@@ -67,7 +67,7 @@ import json
 import os
 import shutil
 import sys
-from datetime import date, datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -330,7 +330,7 @@ def process_target(target: Target, root: Path, manifest: dict) -> tuple[str, str
         "sha256": actual,
         "url": target.url(),
         "size_bytes": len(data),
-        "downloaded_at": date.today().isoformat(),
+        "downloaded_at": datetime.now(UTC).date().isoformat(),
     }
     return "ok", f"OK ({len(data):,} bytes)"
 

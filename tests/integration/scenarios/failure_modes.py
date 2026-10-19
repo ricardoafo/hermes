@@ -364,11 +364,19 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "The FX answer is dated well before the fill day",
-            gap="issue #996: any earlier date is accepted; the allowed gap is a tax-rule call",
+            proved_by=(
+                _U + "application/ledger/test_eur_pricer.py"
+                "::test_a_rate_five_days_older_than_a_past_fill_stays_pending_with_a_warning",
+            ),
         ),
         FailureMode(
             "A slow FX service stalls the bar loop",
-            gap="issue #996: a sync client runs on the event loop; inferred, untested",
+            proved_by=(
+                _U + "entrypoints/test_serve_eur_pricing.py"
+                "::test_a_live_fill_with_a_cold_cache_makes_no_provider_call_on_the_loop",
+                _U + "entrypoints/test_serve_eur_pricing.py"
+                "::test_the_daily_pass_prices_a_fill_the_first_pass_left_pending",
+            ),
         ),
     ),
     "ledger and disk": (
@@ -859,6 +867,36 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             proved_by=(
                 _RELEASE + "test_deploy_of_a_release_older_than_the_ledger_is_refused",
                 _RELEASE + "test_rollback_onto_a_release_older_than_the_ledger_is_refused",
+            ),
+        ),
+        FailureMode(
+            "A staging deploy leaves a lab shadow on the old release or an unmigrated ledger",
+            proved_by=(
+                _RELEASE + "test_staging_deploy_restarts_and_gates_every_shadow_after_the_flip",
+                _RELEASE
+                + "test_staging_deploy_migrates_every_shadow_ledger_with_its_instance_stopped",
+            ),
+        ),
+        FailureMode(
+            "A staging deploy reaches a shadow ledger it cannot snapshot or cannot read",
+            proved_by=(
+                _RELEASE + "test_a_release_that_cannot_read_a_shadow_ledger_is_refused",
+                _RELEASE + "test_a_failed_shadow_snapshot_stops_the_deploy",
+            ),
+        ),
+        FailureMode(
+            "A deploy fails after some ledgers were migrated",
+            proved_by=(
+                _RELEASE + "test_a_failed_gate_on_one_shadow_rolls_back_every_instance",
+                _RELEASE + "test_a_failed_shadow_migration_restores_the_ledgers_already_migrated",
+                _RELEASE + "test_failed_unit_install_after_a_migration_restores_the_ledger",
+            ),
+        ),
+        FailureMode(
+            "A failed deploy copies a snapshot over a ledger it never changed, losing its writes",
+            proved_by=(
+                _RELEASE + "test_a_failed_staging_gate_leaves_shadows_the_release_never_reached",
+                _RELEASE + "test_a_migration_that_fails_restores_no_ledger",
             ),
         ),
         FailureMode(

@@ -393,7 +393,7 @@ class TestPlanDelivery:
         assert plan.bars == ()
         assert plan.cursors == cursors
 
-    @settings(max_examples=60, deadline=None)
+    @settings(max_examples=60)
     @given(
         hold_daily=st.booleans(),
         offsets=st.lists(st.integers(min_value=0, max_value=11), min_size=1, max_size=12),

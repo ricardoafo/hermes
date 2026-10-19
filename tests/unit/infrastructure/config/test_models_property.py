@@ -43,7 +43,7 @@ from hermes.infrastructure.config.models import (
 )
 
 # Deterministic profile — CI must be reproducible.
-_SETTINGS = settings(max_examples=50, deadline=None, derandomize=True)
+_SETTINGS = settings(max_examples=50)
 
 
 def _assert_field_in_validation_error(

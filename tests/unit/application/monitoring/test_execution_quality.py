@@ -180,7 +180,7 @@ _SLIPPAGES = st.lists(
 )
 
 
-@settings(max_examples=50, deadline=None)
+@settings(max_examples=50)
 @given(past=_SLIPPAGES, live=_SLIPPAGES)
 def test_a_primed_monitor_alerts_exactly_as_one_that_saw_every_fill_live(
     past: list[float], live: list[float]
