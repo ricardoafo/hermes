@@ -1,0 +1,10 @@
+# SHA-256 of each prod notifier, heartbeat and error-report value (#970).
+#
+# Every tier but prod refuses a value whose hash is listed here, so a value
+# copied from prod's env file into staging's stops staging at load and at
+# the install preflight. Hashes only: never put a value in this file.
+#
+# Regenerate on prod's machine after every rotation, and commit the output:
+#   hermes config fingerprint --env-file /etc/hermes/env.production
+
+fingerprints: {}

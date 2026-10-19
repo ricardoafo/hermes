@@ -21,6 +21,7 @@ Reference: openspec/archive/537-config-check/change.md.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import shutil
@@ -215,6 +216,24 @@ class TestTierFindings:
             ("tier", "sentry.dsn"),
             ("tier", "HERMES_KRAKEN__API_SECRET"),
         ]
+
+    def test_a_prod_value_in_a_staging_env_file_is_a_tier_finding(self, config_dir: Path) -> None:
+        """Invariant: the install preflight refuses a value prod's fingerprints list, by name."""
+        (config_dir / "prod_fingerprints.yaml").write_text(
+            "fingerprints:\n  HERMES_SENTRY__DSN:\n"
+            f"  - {hashlib.sha256(_SECRET.encode()).hexdigest()}\n",
+            encoding="utf-8",
+        )
+        code, out = _run(
+            ["--config-dir", str(config_dir), "--env-file", "-"],
+            {},
+            stdin=f"HERMES_ENV=staging\nHERMES_TELEGRAM__BOT_TOKEN={_SECRET}\n",
+        )
+        assert (code, out) == (
+            1,
+            "FINDING tier HERMES_TELEGRAM__BOT_TOKEN: holds one of prod's values, "
+            "which only prod may use\n",
+        )
 
 
 class TestEnvFile:
