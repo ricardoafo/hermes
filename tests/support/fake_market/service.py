@@ -7,21 +7,24 @@ process, or an adapter with only its base URL changed reads the same payloads,
 built by the same code and held to the same schema (issue #971, part 1):
 
 - ``/binance/...`` answers as ``https://data-api.binance.vision/...``.
+- ``/binance-spot/...`` answers as ``https://testnet.binance.vision/...``:
+  the same public endpoints plus the signed spot order endpoints of
+  :mod:`tests.support.fake_market.spot` (part 3).
 - ``/frankfurter/...`` answers as the configured Frankfurter base URL.
 
 A control API under ``/_fake/`` (or the Python methods of the same names)
 loads a market script, drives the scripted clock (set, advance, or tick at a
 multiple of wall time) and injects faults: the exchange's own outages, late,
 duplicate and broken bars, a thin book, and service-level rate-limit replies
-and slow answers.
+and slow answers, and an order submission whose answer is lost.
 
 A script can also replay recorded Train-window bars instead of scripted
 steps (part 2, :mod:`tests.support.fake_market.replay`); a window reaching the
 Validation start is refused.
 
 Run standalone with ``python -m tests.support.fake_market.service --port N
---script path.json``. It binds loopback by default and holds no key: Binance
-order endpoints are a later part of issue #971.
+--script path.json``. It binds loopback by default; the order endpoints take
+only the fake key in :data:`tests.support.fake_market.spot.FAKE_API_KEY`.
 """
 
 import argparse
@@ -47,8 +50,10 @@ from hermes.domain.value_objects.pair import Pair
 from tests.support.fake_market.exchange import BINANCE_HOST, FakeExchange, SimClock
 from tests.support.fake_market.replay import ReplayError, market_from_recording
 from tests.support.fake_market.script import Market, MarketScript
+from tests.support.fake_market.spot import SPOT_HOST, Lost
 
 BINANCE_PREFIX: Final = "/binance"
+BINANCE_SPOT_PREFIX: Final = "/binance-spot"
 FRANKFURTER_PREFIX: Final = "/frankfurter"
 CONTROL_PREFIX: Final = "/_fake"
 
@@ -147,6 +152,11 @@ class FakeMarketService:
     def binance_base(self) -> str:
         """Return the base URL that stands in for ``https://data-api.binance.vision``."""
         return f"{self.url}{BINANCE_PREFIX}"
+
+    @property
+    def binance_spot_base(self) -> str:
+        """Return the base URL that stands in for ``https://testnet.binance.vision``."""
+        return f"{self.url}{BINANCE_SPOT_PREFIX}"
 
     @property
     def frankfurter_base(self) -> str:
@@ -293,6 +303,10 @@ class FakeMarketService:
                     self.exchange.book_step_bps = _decimal(spec.get("step_bps"), "step_bps")
                 case "late_bar" | "duplicate_bar" | "corrupt_bar":
                     self._add_bar_fault(kind, spec)
+                case "order_lost":
+                    self.exchange.spot.lose_next_order(
+                        _choice(Lost, spec.get("how", "placed"), "how")
+                    )
                 case _:
                     raise ControlError(f"unknown fault kind {kind!r}")
 
@@ -327,39 +341,49 @@ class FakeMarketService:
             ex.corrupt_bars.clear()
             ex.duplicate_bars.clear()
             ex.requests.clear()
+            ex.spot.lost.clear()
             ex.fx_down = False
             ex.book_step_bps = Decimal(1)
 
     # -- serving -------------------------------------------------------------
 
-    def _handle(self, method: str, target: str, raw: bytes) -> _Reply:
+    def _handle(self, method: str, target: str, raw: bytes, api_key: str | None = None) -> _Reply:
         split = urlsplit(target)
         path = split.path
         try:
             if path.startswith(CONTROL_PREFIX + "/"):
                 return self._control(method, path.removeprefix(CONTROL_PREFIX), raw)
-            for prefix, upstream in (
-                (BINANCE_PREFIX, Upstream.BINANCE),
-                (FRANKFURTER_PREFIX, Upstream.FRANKFURTER),
+            # Both Binance hosts are one upstream: their faults are Binance's.
+            for prefix, upstream, host in (
+                (BINANCE_SPOT_PREFIX, Upstream.BINANCE, SPOT_HOST),
+                (BINANCE_PREFIX, Upstream.BINANCE, BINANCE_HOST),
+                (FRANKFURTER_PREFIX, Upstream.FRANKFURTER, self.exchange.fx_host),
             ):
                 if path.startswith(prefix + "/"):
-                    return self._vendor(upstream, method, path.removeprefix(prefix), split.query)
+                    return self._vendor(
+                        upstream, method, f"{host}{path.removeprefix(prefix)}", split.query, api_key
+                    )
         except ControlError as exc:
             return _Reply.json(400, {"error": str(exc)})
         return _Reply.json(404, {"error": f"no route for {path}"})
 
-    def _vendor(self, upstream: Upstream, method: str, path: str, query: str) -> _Reply:
+    def _vendor(
+        self, upstream: Upstream, method: str, target: str, query: str, api_key: str | None
+    ) -> _Reply:
+        """Answer ``target`` (host and path) as the vendor would, unless a fault comes first."""
         with self._lock:
             self._tick()
             fault = self._faults[upstream].pop(0) if self._faults[upstream] else None
             if fault is Fault.RATE_LIMITED:
                 return _RATE_LIMITED[upstream](self.retry_after_s)
-            if upstream is Upstream.BINANCE:
-                url = f"https://{BINANCE_HOST}{path}"
-            else:
-                url = f"https://{self.exchange.fx_host}{self.exchange.fx_prefix}{path}"
+            url = f"https://{target}"
+            if upstream is Upstream.FRANKFURTER:
+                host, _, rest = target.partition("/")
+                url = f"https://{host}{self.exchange.fx_prefix}/{rest}"
+            # The query goes on byte for byte: the spot endpoints check a signature over it.
+            sent = {"X-MBX-APIKEY": api_key} if api_key is not None else {}
             response = self.exchange.handle(
-                httpx.Request(method, url, params=httpx.QueryParams(query))
+                httpx.Request(method, f"{url}?{query}" if query else url, headers=sent)
             )
         if fault is Fault.SLOW:
             time.sleep(self.slow_hold_s)
@@ -412,7 +436,9 @@ class FakeMarketService:
             def _serve(self) -> None:
                 length = int(self.headers.get("Content-Length") or 0)
                 raw = self.rfile.read(length) if length else b""
-                reply = service._handle(self.command, self.path, raw)
+                reply = service._handle(
+                    self.command, self.path, raw, self.headers.get("X-MBX-APIKEY")
+                )
                 self.send_response(reply.status)
                 for name, value in reply.headers:
                     self.send_header(name, value)
@@ -421,7 +447,7 @@ class FakeMarketService:
                 if self.command != "HEAD":
                     self.wfile.write(reply.body)
 
-            do_GET = do_POST = do_HEAD = _serve  # noqa: N815
+            do_GET = do_POST = do_HEAD = do_DELETE = _serve  # noqa: N815
 
             def log_message(self, format: str, *args: object) -> None:
                 """Keep test output quiet."""

@@ -20,7 +20,10 @@ the previous `v*` release tag; `--since <tag>` compares with another one.
 
 - The pictures are the SVG snapshots under
   `tests/unit/entrypoints/__snapshots__/`, which the console tests compare on
-  every run, so the catalog shows exactly what this release draws.
+  every run, so the catalog shows exactly what this release draws. Each view
+  keeps one picture (Neon at 160x45; Night where it has its own); the other
+  themes and breakpoints are checked on text and colours in the `.ambr` files
+  beside them (issue #1194).
 - Each view has a caption in [`captions.toml`](captions.toml): the screen,
   the state, what it means, what to check, and how to open it with
   `hermes --demo <scenario> tui`.

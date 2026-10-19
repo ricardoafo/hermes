@@ -7,13 +7,9 @@ like the Cockpit snapshots in ``test_tui_snapshots``.
 """
 
 import asyncio
-from typing import ClassVar
 
 import pytest
 from syrupy.assertion import SnapshotAssertion
-from syrupy.extensions.image import SVGImageSnapshotExtension
-from syrupy.location import PyTestLocation
-from syrupy.types import SnapshotIndex
 from textual.app import App, ComposeResult
 
 from hermes.entrypoints.tui_logo import Logo
@@ -26,22 +22,10 @@ from hermes.entrypoints.tui_theme import (
     terminal_theme,
     theme_variables,
 )
+from tests.support.tui_views import assert_view, capture
 
 _SIZES: tuple[tuple[int, int], ...] = ((80, 24), (160, 45))
 _THEMES: tuple[tuple[str, str], ...] = (("neon", NEON_THEME), ("control", CONTROL_THEME))
-
-
-class _NamedSVG(SVGImageSnapshotExtension):
-    """Store each snapshot under the name given to ``snapshot(name=...)`` alone."""
-
-    _file_extension: ClassVar[str] = "svg"
-
-    @classmethod
-    def get_snapshot_name(cls, *, test_location: PyTestLocation, index: SnapshotIndex = 0) -> str:
-        """Return the bare custom name, e.g. ``logo_wordmark_neon_80x24``."""
-        if isinstance(index, str):
-            return index
-        return super().get_snapshot_name(test_location=test_location, index=index)
 
 
 class _LogoApp(App[None]):
@@ -61,17 +45,12 @@ class _LogoApp(App[None]):
         yield Logo()
 
 
-def _repo_clean(svg: str) -> str:
-    """Strip trailing whitespace, as the repository's pre-commit hook does to committed SVGs."""
-    return "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
-
-
 def _svg(theme: str, size: tuple[int, int]) -> str:
     async def drive() -> str:
         app = _LogoApp(theme)
         async with app.run_test(size=size) as pilot:
             await pilot.pause()
-            return _repo_clean(app.export_screenshot())
+            return capture(app)
 
     return asyncio.run(drive())
 
@@ -89,4 +68,4 @@ def test_wordmark_svg_snapshot(
 ) -> None:
     """The reviewed picture of the wordmark fallback, in one theme, at one size."""
     name = f"logo_wordmark_{theme_name}_{size[0]}x{size[1]}"
-    assert _svg(theme, size) == snapshot(extension_class=_NamedSVG, name=name)
+    assert_view(snapshot, _svg(theme, size), name=name)

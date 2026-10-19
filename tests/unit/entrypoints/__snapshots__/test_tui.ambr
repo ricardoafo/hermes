@@ -1,0 +1,142 @@
+# serializer version: 1
+# name: test_svg_snapshot_120x36
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions        ● live · checked 14:00 · next 18:00 14:12:00  ◑ AUTO
+  ┏━ PORTFOLIO  ────────────────────── computed  ┏━ POSITIONS  ──────────────────────────────────────────────── computed
+   ╭─╮╺┓  ┏━┓╺━┓╺┓  ┏━┓┏━╸                         coin  tf  trend         change          net  stop room
+   ╪═  ┃  ┃ ┃┏━┛ ┃  ┃ ┃┣━┓                        ▸ETH   4h  ▂▃▁▄█▆▆▆    ▲ +2.06%     ▲ +€1.54  ███████░ −3.4%
+   ╰─╯╺┻╸,┗━┛┗━╸╺┻╸•┗━┛┗━┛                         SOL   1d  ▁▃▅▄▆█▇     ▲ +5.40%     ▲ +€6.05  ██████░░ −3.0%
+   ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔                        ↑↓ select · ↵ detail ────────────────────────────────────────────────━┛
+   ▲ +€12.30 +1.22% today                        ┏━ POSITION DETAIL  ────────────────────────────────────────── computed
+   net ▲ +€10.66 today                            ETH · 4h · long · open 1d 4h   ▲ +€1.54 net
+   started €1,000.00 on 27 Sep                    size 0.0350 ETH · now worth €80.12 · cost €78.58
+                                                  Why: donchian-breakout-v1 on 4h · entry €2,243 · donchian_high €2,240
+   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⣿⣿⣿   · atr €25.79
+   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣤⣤⣤⣤⣤⣤⣤⣤⣼⣿⣿⣿⣿   Stop: ▕███████░▏ 3.1 × average range (ATR) · €2,210 · −3.4% · high
+   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿   since entry €2,305 · moved 3×
+   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+   ⣀⣀⣀⣀⣸⣿⣿⣿⣿⣿⣿⣿⣿⣧⣤⣤⣤⣤⣤⣤⣤⣤⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿   Money if sold now
+   00                06                 12        Gross                     ▲ +€2.10
+   today · 6 checks · €1,009 → €1,021             − Fees paid               ▼ −€0.08
+   cash     █████████████░░░░    €790.36  77.4%   − Fees to close (est.)    ▼ −€0.09
+   invested ████░░░░░░░░░░░░░    €230.70  22.6%   − Est. tax if sold now    ▼ −€0.39
+   exposure 23.1% · cap unknown                   Net                       ▲ +€1.54
+  
+                    Today    This year            Price ▂▃▁▄█▆▆▆ entry €2,243 · stop €2,210 · high €2,305                ▇
+   Gross         ▲ +€4.10    ▲ +€14.80            quoted in USDT · entry 2,618 · now 2,672 · stop 2,580 · high 2,690
+   − Fees        ▼ −€0.18     ▼ −€3.10
+   − Est. tax    ▼ −€0.74     ▼ −€2.22            Timeline
+   Net           ▲ +€3.18     ▲ +€9.48            Fri 02 Oct 10:00    signal: long ETH on 4h close
+   Open ▲ +€9.36 · tax if sold now ▼ −€1.77       Fri 02 Oct 10:00    filled 0.035 at €2,243
+   D W M Y range ─────────────────────────────━┛  Fri 02 Oct 18:00    stop raised €2,186 → €2,198
+                                                  Sat 03 Oct 02:00    stop raised €2,198 → €2,206
+                                                  Sat 03 Oct 06:00    stop raised €2,206 → €2,210
+                                                  Esc close ───────────────────────────────────────────────────────────━┛
+                                                 ┏━ MARKET  ─────────────────────────────────────────────────── computed
+  Shadow test · day 12 of 90  ███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit    next 3h 48m 00s · read-only
+  ---
+  colours: #000010 #00606f #00f0ff #02eeff #039fb3 #059db3 #05ebff #079bb3 #07e9ff #09e6ff #0a99b3 #0b0420 #0c96b3 #0ce4ff #0de3ff #0e94b3 #0ee1ff #1091b3 #10dfff #120731 #128fb3 #13dcff #148db3 #15daff #168bb3 #170a3d #17d7ff #1888b3 #19d5ff #1a2740 #1ad5ff #1b3a6b #1cd2ff #1ed0ff #20cdff #23cbff #25c8ff #26c8ff #27518e #27c6ff #2ac3ff #2cc1ff #2ebeff #3063a8 #31bcff #32baff #33b9ff #34186f #3469b1 #35b7ff #37b5ff #38b4ff #3ab2ff #3cafff #3fadff #4080d4 #41aaff #43a8ff #468ce6 #46a5ff #48a3ff #4a2399 #4aa0ff #4b9fff #4d9eff #4f9bff #5099ea #5199ff #5396ff #5397ff #5694ff #5891ff #5892ff #58d1eb #5a8fff #5d8dff #5f8aff #6188ff #627099 #6484ff #6485ff #64b4f1 #6683ff #6880ff #68baf2 #6b7eff #6d7bff #6e7aff #6f79ff #7177ff #7276ff #7474ff #7671ff #77cef8 #796fff #798bb6 #7b6cff #7d69ff #7d6aff #8067ff #8265ff #838ca1 #8462ff #8760ff #87a7b3 #895dff #8a5cff #8a94a8 #8aa8b8 #8b5cff #8ba9bd #8be9ff #8d5bff #8f5bfe #8fa8d8 #915afe #935afe #9374ff #9559fe #9759fd #9958fd #9b58fd #9d57fd #9f56fc #9f57fc #a156fc #a355fc #a555fc #a754fb #a854fb #aa53fb #aa54fb #ac53fb #ae52fa #b052fa #b251fa #b451fa #b551fa #b650f9 #b850f9 #b950f9 #ba4ff9 #bc4ff9 #be4ef8 #bf4ef8 #c04ef8 #c24df8 #c44df8 #c64cf7 #c84cf7 #c8fbff #ca4bf7 #cc4bf7 #ce4af6 #d049f6 #d04af6 #d249f6 #d448f5 #d448f6 #d648f5 #d847f5 #da47f5 #dc46f5 #de46f4 #df45f4 #e045f4 #e245f4 #e344f4 #e544f3 #e6be28 #e743f3 #e843f3 #e943f3 #ea43f3 #eb42f3 #ed42f2 #ef41f2 #f07814 #f141f2 #f340f2 #f440f1 #f540f1 #f73ff1 #f93ff1 #fb3ef1 #fd3ef0 #ff3df0
+  
+  '''
+# ---
+# name: test_svg_snapshot_240x60
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                     ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ AUTO
+  ┏━ PORTFOLIO  ──────────────────────────────────── computed  ┏━ POSITIONS  ────────────────────────────────────────────────────────────────────────────────── computed  ┏━ SIGNALS  ───────────────────────────────────────────────── computed
+   ╭─╮╺┓  ┏━┓╺━┓╺┓  ┏━┓┏━╸                                       coin  tf  entry → now             trend         change          net  stop room                            Heat grid · coming next · issue #714
+   ╪═  ┃  ┃ ┃┏━┛ ┃  ┃ ┃┣━┓                                      ▸ETH   4h  €2,243 → €2,289         ▂▃▁▄█▆▆▆    ▲ +2.06%     ▲ +€1.54  ███████░ stop −3.4%                 ─────────────────────────────────────────────────────────────────────━┛
+   ╰─╯╺┻╸,┗━┛┗━╸╺┻╸•┗━┛┗━┛                                       SOL   1d  €119.1 → €125.5         ▁▃▅▄▆█▇     ▲ +5.40%     ▲ +€6.05  ██████░░ stop −3.0%                 ┏━ LOG TAIL  ──────────────────────────────────────────────── computed
+   ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔                                      ↑↓ select · ↵ detail ──────────────────────────────────────────────────────────────────────────────────━┛  Logs come from the VPS journal; demo data has none.
+   ▲ +€12.30 +1.22% today                                      ┏━ MARKET  ───────────────────────── computed  ┏━ ACTIVITY  ──────────────────────────────────── computed   L logs ─────────────────────────────────────────────────────────────━┛
+   net ▲ +€10.66 today                                          coin   tf   last check   result   next check   Today
+   started €1,000.00 on 27 Sep                                  ────────────────────────────────────────────   ✓    2h ago      closed BTC at €52,464 · ▲ +€3.18 net
+                                                                BTC    4h   14:00        none     18:00        ▲    4h ago      SOL stop raised ×6, €119.1→€121.7
+   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿   ETH    4h   14:00        none     18:00        Yesterday
+   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿   SOL    1d   02:00        none     Sun 02:00    ⚠    15:00       market data retry after timeout
+   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿  ────────────────────────────────────────────━┛  ◆    10:00       opened ETH at €2,243
+   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣿⣿⣿⣿⣿⣿                                                  Mon 28 Sep
+   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                                                  ◆    02:00       opened SOL at €119.1
+   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                                                  •    00:30       restart · deploy
+   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣼⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                                                 ─────────────────────────────────────────────────────────━┛
+   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿  ┏━ ✦ ENGINE BRIEF  ────────────────────────────────────────────────────────────────────── ✦ AI supervisor
+   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿   brief not available yet
+   ⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿   never sees profit ─────────────────────────────────────────────────────────────────────────────────────━┛
+   ⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+   ⣀⣀⣀⣀⣀⣀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+   00                      06                       12
+   today · 6 checks · €1,009 → €1,021 · high €1,021
+   cash     ████████████████████████░░░░░░░    €790.36  77.4%
+   invested ███████░░░░░░░░░░░░░░░░░░░░░░░░    €230.70  22.6%
+   exposure 23.1% · cap unknown
+  
+                    Today    This year
+   Gross         ▲ +€4.10    ▲ +€14.80
+   − Fees        ▼ −€0.18     ▼ −€3.10
+   − Est. tax    ▼ −€0.74     ▼ −€2.22
+   Net           ▲ +€3.18     ▲ +€9.48
+   Open ▲ +€9.36 · tax if sold now ▼ −€1.77
+   D W M Y range ───────────────────────────────────────────━┛
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  Shadow test · day 12 of 90  ███████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                                                                                                                                              read-only
+  ---
+  colours: #00f0ff #01efff #02eeff #039fb3 #03ecff #049fb3 #059db3 #05ebff #069db3 #06eaff #079bb3 #07e9ff #089bb3 #08e7ff #0999b3 #09e6ff #0ae5ff #0b0420 #0b97b3 #0c96b3 #0ce4ff #0d95b3 #0de2ff #0de3ff #0e94b3 #0ee1ff #0f93b3 #0fe0ff #1091b3 #1092b3 #10dfff #11ddff #120731 #128fb3 #1290b3 #12dcff #138eb3 #148db3 #14dbff #158cb3 #15daff #168bb3 #16d8ff #170a3d #178ab3 #17d7ff #1888b3 #1889b3 #18d6ff #19d5ff #1a2740 #1a86b3 #1a88b3 #1b3a6b #1bd4ff #1cd2ff #1dd1ff #1ed0ff #1fcfff #20cdff #21ccff #22cbff #234981 #23cbff #24caff #25c8ff #26c7ff #26c8ff #27518e #27c6ff #28c5ff #2ac3ff #2b5898 #2bc2ff #2cc1ff #2dc0ff #2ebeff #2fbdff #31bcff #3267ae #32baff #32bbff #33baff #34186f #3469b1 #34b8ff #35b7ff #36b6ff #37b5ff #39b3ff #3a2a66 #3a76c4 #3ab2ff #3bb1ff #3cb0ff #3daeff #3eadff #3fadff #4080d4 #40acff #41abff #4285db #42a9ff #43a8ff #44a7ff #45a6ff #468ce6 #46a4ff #47327a #48a3ff #49a2ff #4a2399 #4aa1ff #4b9fff #4c94e8 #4c9eff #4d9dff #4f9bff #4f9cff #5099ea #509bff #5199ff #5298ff #5397ff #543a8f #5496ff #5594ff #5793ff #5892ff #58d1eb #5991ff #59a5ed #5a8fff #5b8eff #5c8dff #5e8cff #5f8aff #6089ff #6188ff #6242a3 #627099 #6287ff #6385ff #6484ff #64b4f1 #65b6f1 #6683ff #6782ff #6881ff #697fff #6a7eff #6b7dff #6d7cff #6e7aff #6f49b8 #6f79ff #7078ff #7177ff #7275ff #72c7f6 #7374ff #7573ff #7671ff #7672ff #7770ff #77cef8 #786fff #796eff #798bb6 #7a6dff #7b6cff #7c51cc #7c6bff #7d69ff #7d6aff #7e69ff #7ed8fa #7f68ff #8067ff #8165ff #8264ff #838ca1 #8463ff #8562ff #8660ff #875fff #87a7b3 #885eff #8959e0 #895dff #8a5cff #8a94a8 #8aa8b8 #8b5cff #8be9ff #8c5bff #8d5bff #8e5bfe #8f5bfe #8fa8d8 #905afe #915afe #925afe #935afe #9374ff #9459fe #9559fe #9659fd #9661f5 #9758fd #9759fd #9858fd #9958fd #9a58fd #9b57fd #9b58fd #9c57fd #9d57fd #9e57fc #9f56fc #a056fc #a156fc #a16cff #a256fc #a355fc #a455fc #a555fc #a655fb #a754fb #a854fb #a954fb #aa54fb #aa79ff #ab53fb #ac53fb #ad53fb #ae53fa #af52fa #b052fa #b152fa #b251fa #b351fa #b386ff #b451fa #b551fa #b650f9 #b750f9 #b850f9 #b94ff9 #b950f9 #ba4ff9 #bb4ff9 #bc4ff9 #bc93ff #bd4ef8 #be4ef8 #bf4ef8 #c04ef8 #c14df8 #c24df8 #c34df8 #c44cf8 #c44df8 #c54cf7 #c5a0ff #c64cf7 #c74cf7 #c84cf7 #c8fbff #c94bf7 #ca4bf7 #cb4bf7 #cc4af7 #cd4af6 #ce4af6 #ceaeff #cf4af6 #d049f6 #d149f6 #d249f6 #d349f6 #d448f5 #d448f6 #d548f5 #d648f5 #d748f5 #d7bbff #d847f5 #d947f5 #da47f5 #db47f5 #dc46f5 #dd46f4 #de46f4 #df45f4 #df46f4 #e045f4 #e0c8ff #e145f4 #e245f4 #e345f4 #e444f4 #e544f3 #e644f3 #e6be28 #e743f3 #e843f3 #e943f3 #ea42f3 #ea43f3 #eb42f3 #ec42f2 #ed42f2 #ee41f2 #ef41f2 #f041f2 #f07814 #f141f2 #f240f2 #f340f2 #f440f1 #f540f1 #f63ff1 #f73ff1 #f83ff1 #f93ff1 #fa3ef1 #fb3ef1 #fc3ef0 #fd3ef0 #fe3df0 #ff3df0
+  
+  '''
+# ---
+# name: test_svg_snapshot_80x24
+  '''
+  
+    1   2   3   4   5   6   7   8   9
+  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  ┏━ PORTFOLIO  ─────────────────────────────────────────────────────── computed
+   €1,021.06   ▲ +€12.30 +1.22% today
+   net ▲ +€10.66 today
+   ▁▂▁▄▆█
+   D · 6 checks · €1,009 → €1,021 · high €1,021
+   cash €790.36 77.41% · invested €230.70 22.59%
+   started €1,000.00 on 27 Sep
+   exposure 23.1% · cap unknown
+  
+                    Today    This year                                           ▄
+   Gross         ▲ +€4.10    ▲ +€14.80
+   − Fees        ▼ −€0.18     ▼ −€3.10
+   − Est. tax    ▼ −€0.74     ▼ −€2.22
+   Net           ▲ +€3.18     ▲ +€9.48
+   Open ▲ +€9.36 · tax if sold now ▼ −€1.77
+   D W M Y range ──────────────────────────────────────────────────────────────━┛
+  ┏━ POSITIONS  ─────────────────────────────────────────────────────── computed
+    coin  tf  trend         change          net  stop room
+   ▸ETH   4h  ▂▃▁▄█▆▆▆    ▲ +2.06%     ▲ +€1.54  ███████░ −3.4%
+  Shadow test · day 12 of 90  ██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9    ↵    T    ?    ^P    Q quit  next 3h 48m 00s · read-only
+  ---
+  colours: #000010 #00606f #00f0ff #039fb3 #03ecff #079bb3 #07e9ff #0ae5ff #0b0420 #0b97b3 #0ee1ff #0f92b3 #11ddff #120731 #148eb3 #15daff #170a3d #1889b3 #18d6ff #1a2740 #1b3a6b #1cd2ff #1fceff #23cbff #26c7ff #27518e #2ac3ff #2dbfff #31bcff #34186f #3469b1 #34b8ff #37b5ff #38b4ff #3bb0ff #3fadff #4080d4 #42a9ff #468ce6 #46a5ff #49a1ff #4a2399 #4d9eff #5099ea #509aff #5397ff #5496ff #5792ff #58d1eb #5b8fff #5e8bff #627099 #6287ff #64b4f1 #6583ff #6980ff #6c7cff #6e7aff #7078ff #7374ff #7771ff #77cef8 #798bb6 #7a6dff #7e69ff #8165ff #8562ff #87a7b3 #885eff #8a5cff #8a94a8 #8aa8b8 #8b5cff #8e5bfe #8fa8d8 #915afe #9374ff #9459fe #9758fd #9a58fd #9d57fd #a056fc #a156fc #a355fc #a655fb #a954fb #ac53fb #af52fa #b251fa #b551f9 #b850f9 #b950f9 #bb4ff9 #be4ef8 #c14df8 #c44df8 #c74cf7 #c8fbff #ca4bf7 #cd4af6 #d049f6 #d04af6 #d349f6 #d648f5 #d847f5 #db46f5 #de46f4 #e145f4 #e444f3 #e6be28 #e743f3 #e843f3 #ea42f3 #ed42f2 #f041f2 #f07814 #f340f2 #f63ff1 #f93ff1 #fc3ef0 #ff3df0
+  
+  '''
+# ---

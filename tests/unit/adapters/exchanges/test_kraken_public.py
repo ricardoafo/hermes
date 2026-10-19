@@ -612,6 +612,67 @@ class TestGetTicker:
             adapter.close()
 
 
+def _usd_book(symbol: str, bid: str, ask: str) -> dict[str, Any]:
+    """Return a Ticker envelope holding one stablecoin USD book."""
+    return _kraken_ok(
+        {symbol: {"a": [ask, "1", "1.000"], "b": [bid, "1", "1.000"], "c": [bid, "1"]}}
+    )
+
+
+class TestGetUsdPrice:
+    """The depeg rules read the mid of a stablecoin's USD book (#1158)."""
+
+    def test_usdt_asks_for_the_usdtzusd_book(self) -> None:
+        """USDT is priced on the book Kraken keys ``USDTZUSD``."""
+        adapter = _make_adapter()
+        try:
+            with respx.mock(assert_all_called=True) as router:
+                route = router.get(_TICKER_URL).mock(
+                    return_value=httpx.Response(200, json=_usd_book("USDTZUSD", "0.9990", "0.9994"))
+                )
+                adapter.get_usd_price(Currency.USDT)
+                assert route.calls[0].request.url.params["pair"] == "USDTZUSD"
+        finally:
+            adapter.close()
+
+    def test_price_is_the_mid_of_bid_and_ask(self) -> None:
+        """The price is ``(bid + ask) / 2``, not the last trade."""
+        adapter = _make_adapter()
+        try:
+            with respx.mock() as router:
+                router.get(_TICKER_URL).mock(
+                    return_value=httpx.Response(200, json=_usd_book("USDCUSD", "0.9990", "0.9994"))
+                )
+                assert adapter.get_usd_price(Currency.USDC) == Decimal("0.9992")
+        finally:
+            adapter.close()
+
+    def test_crossed_book_raises(self) -> None:
+        """A bid above the ask is refused rather than read as a price."""
+        adapter = _make_adapter()
+        try:
+            with respx.mock() as router:
+                router.get(_TICKER_URL).mock(
+                    return_value=httpx.Response(200, json=_usd_book("USDTZUSD", "1.0010", "1.0000"))
+                )
+                with pytest.raises(KrakenPublicError, match="crossed or empty"):
+                    adapter.get_usd_price(Currency.USDT)
+        finally:
+            adapter.close()
+
+    def test_coin_without_a_usd_book_raises_before_any_request(self) -> None:
+        """BTC has no stablecoin USD book here; no request is sent."""
+        adapter = _make_adapter()
+        try:
+            with respx.mock(assert_all_called=False) as router:
+                route = router.get(_TICKER_URL)
+                with pytest.raises(ValueError, match="no Kraken USD book for BTC"):
+                    adapter.get_usd_price(Currency.BTC)
+                assert not route.called
+        finally:
+            adapter.close()
+
+
 # ---------------------------------------------------------------------------
 # Port conformance + factory
 # ---------------------------------------------------------------------------
