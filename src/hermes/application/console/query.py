@@ -27,7 +27,6 @@ openspec/archive/716-logs-screen/change.md (the level order and the
 """
 
 import difflib
-import os
 import re
 from collections import Counter
 from collections.abc import Collection, Iterable, Mapping, Sequence
@@ -36,6 +35,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from functools import partial
+from itertools import takewhile
 from typing import Final
 
 __all__ = [
@@ -532,6 +532,14 @@ def completions(prefix: str, fields: Collection[str]) -> tuple[str, ...]:
     return tuple(name for name in _known(fields) if name.startswith(wanted))
 
 
+def _common_prefix(names: Sequence[str]) -> str:
+    """Return the longest leading run of characters every name shares."""
+    return "".join(
+        chars[0]
+        for chars in takewhile(lambda chars: len(set(chars)) == 1, zip(*names, strict=False))
+    )
+
+
 def complete(text: str, fields: Collection[str]) -> str:
     """Complete the field name being typed at the end of ``text`` (Tab).
 
@@ -550,7 +558,7 @@ def complete(text: str, fields: Collection[str]) -> str:
     names = completions(word, fields)
     if not names:
         return text
-    filled = f"{names[0]}:" if len(names) == 1 else os.path.commonprefix(list(names))
+    filled = f"{names[0]}:" if len(names) == 1 else _common_prefix(names)
     if len(filled) <= len(word):
         return text
     return text[: len(text) - len(word)] + filled

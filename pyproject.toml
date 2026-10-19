@@ -109,7 +109,7 @@ line-length = 100
 extend-exclude = ["src/hermes/**/__init__.py"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "PL", "RUF", "S", "PTH", "ERA", "PGH", "D", "FURB", "PERF"]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "PL", "RUF", "S", "PTH", "ERA", "PGH", "D", "FURB", "PERF", "DTZ"]
 ignore = [
   "PLR0913",  # arg count — hexagonal use cases take many ports
   # Decimal("100") over Decimal(100): every money literal stays a string, so a
@@ -123,6 +123,8 @@ ignore = [
   # A test whose only assertion is `x is None` fails the no-vague-test-assertions
   # hook; `type(x) is type(None)` is how such a test states "returns nothing".
   "FURB169",
+  # Tests build fixed naive datetimes to prove the domain rejects them.
+  "DTZ001",
 ]
 # D-family docstring enforcement is TEST-SCOPED for this PR (see docs/guides/ai-authored-tests.md
 # §"Enforcement in this repo"). Production src has variable docstring coverage; a global roll-out
@@ -237,6 +239,17 @@ name = "adapters-never-import-entrypoints"
 type = "forbidden"
 source_modules = ["hermes.adapters"]
 forbidden_modules = ["hermes.entrypoints"]
+
+# Issue #1220: a read-only exchange client never imports the modules that place
+# orders, so reading a balance cannot pull order placement into a process.
+[[tool.importlinter.contracts]]
+name = "read-only-exchange-clients-never-import-order-placement"
+type = "forbidden"
+source_modules = ["hermes.adapters.exchanges.binance_balance_reader"]
+forbidden_modules = [
+  "hermes.adapters.exchanges.binance_spot",
+  "hermes.adapters.exchanges.kraken_spot",
+]
 
 # change trade-eur-values D-3: EUR ledger values are measurement only. Strategy,
 # sizing, fees, risk and kill rules keep reading native (USDT) values.

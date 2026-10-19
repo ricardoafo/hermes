@@ -28,11 +28,11 @@ from urllib.parse import urlencode, urlsplit
 
 import httpx
 
-from hermes.adapters.exchanges.binance_spot import (
-    MAINNET_HOSTS,
-    TESTNET_HOST,
-    parse_decimal,
-    sign,
+from hermes.adapters._shared.wire import (
+    BINANCE_MAINNET_HOSTS,
+    BINANCE_TESTNET_HOST,
+    binance_sign,
+    wire_decimal,
 )
 from hermes.domain.errors import ExchangeError, NetworkError
 from hermes.domain.value_objects.currency import Currency
@@ -81,7 +81,7 @@ class BinanceBalanceReaderConfig:
         parts = urlsplit(self.base_url)
         if parts.scheme != "https":
             raise ValueError(f"base_url must be https, got {self.base_url!r}")
-        if parts.hostname != TESTNET_HOST and parts.hostname not in MAINNET_HOSTS:
+        if parts.hostname != BINANCE_TESTNET_HOST and parts.hostname not in BINANCE_MAINNET_HOSTS:
             raise ValueError(f"{parts.hostname} is not a documented Binance spot host")
         if not self.api_key.strip():
             raise ValueError(f"the read-only API key is blank ({API_KEY_ENV})")
@@ -159,8 +159,12 @@ class BinanceBalanceReader:
             currency = by_code.get(asset)
             if currency is None:
                 continue
-            free = parse_decimal(row.get("free"), f"{currency.value} free")
-            locked = parse_decimal(row.get("locked"), f"{currency.value} locked")
+            free = wire_decimal(
+                row.get("free"), field=f"{currency.value} free", error=ExchangeError
+            )
+            locked = wire_decimal(
+                row.get("locked"), field=f"{currency.value} locked", error=ExchangeError
+            )
             totals[currency] += free + locked
         return totals
 
@@ -168,7 +172,7 @@ class BinanceBalanceReader:
         query = urlencode(
             {"recvWindow": str(self.config.recv_window_ms), "timestamp": str(self.clock_ms())}
         )
-        signature = sign(query, self.config.api_secret)
+        signature = binance_sign(query, self.config.api_secret)
         try:
             response = self.client.get(
                 f"{_ACCOUNT_PATH}?{query}&signature={signature}",

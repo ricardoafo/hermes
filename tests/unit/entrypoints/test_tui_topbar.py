@@ -56,12 +56,13 @@ from hermes.entrypoints.tui_topbar import (
 )
 from hermes.entrypoints.tui_widgets import Meter
 from hermes.release_version import release_label
+from tests.support.paths import REPO_ROOT
 
 # The fixture's read time: 14:12 Madrid; last check 14:00, next check 18:00 Madrid.
 _DAY = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
 _LAST = datetime(2026, 10, 3, 12, 0, tzinfo=UTC)
 _NEXT = _LAST + timedelta(hours=4)
-_REPO_CONFIG = Path(__file__).resolve().parents[3] / "config"
+_REPO_CONFIG = REPO_ROOT / "config"
 _LABEL = "v1.0.0-shadow.1"
 _SHA = "679b676"
 # 23:30 Madrid: Auto shows the night theme.

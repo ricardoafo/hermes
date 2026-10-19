@@ -9,15 +9,21 @@ its retry and degraded-feed handling catches.
 Reference: ADR-003 §04, code-conventions.md §6 (``Decimal(str(x))``).
 """
 
+import hashlib
+import hmac
 from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation, Overflow
+from typing import Final
 
 from hermes.adapters.endpoint import is_loopback
 from hermes.domain.value_objects.pair import Pair
 
 __all__ = [
+    "BINANCE_MAINNET_HOSTS",
+    "BINANCE_TESTNET_HOST",
     "WireError",
+    "binance_sign",
     "binance_symbol",
     "percent_to_bps",
     "validate_http_config",
@@ -27,6 +33,22 @@ __all__ = [
 
 type WireError = Callable[[str], Exception]
 """Builds the caller's own exception from a message, e.g. ``ExchangeError``."""
+
+BINANCE_TESTNET_HOST: Final = "testnet.binance.vision"
+# Binance's documented spot REST hosts. With a permit only these are accepted,
+# so a typo or an injected base_url cannot send the key and signed orders
+# off-exchange (#781). Here, not in the order adapter, so a read-only client
+# checks the same hosts without importing order placement (#1220).
+BINANCE_MAINNET_HOSTS: Final = frozenset(
+    {
+        "api.binance.com",
+        "api-gcp.binance.com",
+        "api1.binance.com",
+        "api2.binance.com",
+        "api3.binance.com",
+        "api4.binance.com",
+    }
+)
 
 
 def wire_decimal(raw: object, *, field: str, error: WireError, numbers: bool = True) -> Decimal:
@@ -62,6 +84,16 @@ def wire_decimal(raw: object, *, field: str, error: WireError, numbers: bool = T
     if not value.is_finite():
         raise error(f"{field} is not a finite number: {raw!r}")
     return value
+
+
+def binance_sign(query: str, secret: str) -> str:
+    """Return Binance's HMAC-SHA256 signature of ``query`` as lower-case hex.
+
+    Args:
+        query: The exact URL-encoded parameter string that will be sent.
+        secret: The API secret.
+    """
+    return hmac.new(secret.encode(), query.encode(), hashlib.sha256).hexdigest()
 
 
 def binance_symbol(pair: Pair) -> str:

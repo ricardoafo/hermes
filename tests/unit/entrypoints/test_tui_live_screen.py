@@ -45,6 +45,7 @@ from hermes.entrypoints import tui
 from hermes.entrypoints.tui import HomeApp
 from hermes.entrypoints.tui_theme import BASE, MOTION
 from hermes.entrypoints.tui_widgets import BigNumber
+from tests.support.clock import FakeClock
 from tests.support.tui_views import assert_view, capture
 from tests.unit.adapters.console._ledger_builder import one_btc_position
 
@@ -84,23 +85,15 @@ class _FakeTicker:
         )
 
 
-class _Clock:
-    def __init__(self) -> None:
-        self.at = _FROZEN
-
-    def __call__(self) -> datetime:
-        return self.at
-
-
 async def _settle(app: HomeApp, pilot: Pilot[None]) -> None:
     """Wait for the ticker worker and the UI-thread hand-over."""
     await app.workers.wait_for_complete()
     await pilot.pause()
 
 
-async def _advance(app: HomeApp, pilot: Pilot[None], clock: _Clock, seconds: int) -> None:
+async def _advance(app: HomeApp, pilot: Pilot[None], clock: FakeClock, seconds: int) -> None:
     """Move the clock on and run one 1 s clock tick, as the app's timer does."""
-    clock.at += timedelta(seconds=seconds)
+    clock.current += timedelta(seconds=seconds)
     app._tick()
     await _settle(app, pilot)
 
@@ -108,12 +101,12 @@ async def _advance(app: HomeApp, pilot: Pilot[None], clock: _Clock, seconds: int
 def _run[T](
     model: ConsoleReadModel,
     fake: _FakeTicker,
-    probe: Callable[[HomeApp, Pilot[None], _Clock], Awaitable[T]],
+    probe: Callable[[HomeApp, Pilot[None], FakeClock], Awaitable[T]],
     *,
     size: tuple[int, int] = (160, 45),
     motion: bool = False,
 ) -> T:
-    clock = _Clock()
+    clock = FakeClock(_FROZEN)
 
     async def drive() -> T:
         app = HomeApp(
@@ -158,7 +151,7 @@ def test_ticker_is_read_on_open_then_every_ten_seconds_in_a_worker_thread() -> N
     """Open, +9 s, +1 s, +5 s, +5 s: polls at 0, 10 and 20 s only; never on the UI thread."""
     fake = _FakeTicker(_FIRST)
 
-    async def probe(app: HomeApp, pilot: Pilot[None], clock: _Clock) -> tuple[int, ...]:
+    async def probe(app: HomeApp, pilot: Pilot[None], clock: FakeClock) -> tuple[int, ...]:
         counts = [len(fake.calls)]
         for step in (9, 1, 5, 5):
             await _advance(app, pilot, clock, step)
@@ -174,7 +167,7 @@ def test_failed_tick_keeps_the_last_price_dimmed_with_as_of() -> None:
     """ETH fails on the second poll: its row keeps €2,313, dim, and says as of 14:12:00."""
     fake = _FakeTicker(_FIRST)
 
-    async def probe(app: HomeApp, pilot: Pilot[None], clock: _Clock) -> tuple[str, bool]:
+    async def probe(app: HomeApp, pilot: Pilot[None], clock: FakeClock) -> tuple[str, bool]:
         fake.fail = {"ETH"}
         await _advance(app, pilot, clock, 10)
         eth = _line(app, "market", "ETH")
@@ -190,7 +183,7 @@ def test_a_ticker_that_never_answers_never_raises_into_the_ui() -> None:
     fake = _FakeTicker(_FIRST)
     fake.fail = {"BTC", "ETH", "SOL"}
 
-    async def probe(app: HomeApp, pilot: Pilot[None], clock: _Clock) -> tuple[bool, str, str]:
+    async def probe(app: HomeApp, pilot: Pilot[None], clock: FakeClock) -> tuple[bool, str, str]:
         await _advance(app, pilot, clock, 10)
         return app.is_running, app.plain_text("market").splitlines()[0], _line(app, "market", "BTC")
 
@@ -202,7 +195,7 @@ def test_stale_ticker_pauses_the_live_values() -> None:
     """No good tick for 61 s: tags read paused at the last tick, the big total dims."""
     fake = _FakeTicker(_FIRST)
 
-    async def probe(app: HomeApp, pilot: Pilot[None], clock: _Clock) -> tuple[str, str, bool]:
+    async def probe(app: HomeApp, pilot: Pilot[None], clock: FakeClock) -> tuple[str, str, bool]:
         fake.fail = {"BTC", "ETH", "SOL"}
         for _ in range(6):
             await _advance(app, pilot, clock, 10)
@@ -227,7 +220,7 @@ def test_big_total_and_rows_follow_the_live_prices_beside_the_booked_values() ->
     """The big total moves off the booked €1,021.06; the booked total stays named below it."""
     fake = _FakeTicker(_FIRST)
 
-    async def probe(app: HomeApp, pilot: Pilot[None], clock: _Clock) -> tuple[str, list[str]]:
+    async def probe(app: HomeApp, pilot: Pilot[None], clock: FakeClock) -> tuple[str, list[str]]:
         del pilot, clock
         big = app.screen_stack[0].query_one("#portfolio-total", BigNumber)
         return big.figure, app.plain_text("portfolio").splitlines()[:2]
@@ -242,7 +235,7 @@ def test_position_detail_leads_with_the_live_line_above_the_booked_figures() -> 
     """Enter opens ETH's detail: the live line, then where the booked figures are."""
     fake = _FakeTicker(_FIRST)
 
-    async def probe(app: HomeApp, pilot: Pilot[None], clock: _Clock) -> list[str]:
+    async def probe(app: HomeApp, pilot: Pilot[None], clock: FakeClock) -> list[str]:
         del clock
         await pilot.press("enter")
         await pilot.pause()
@@ -267,7 +260,9 @@ def test_tick_flashes_the_moved_cells(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(tui, "MOTION", replace(MOTION, flash=3600.0))
     fake = _FakeTicker(_FIRST)
 
-    async def probe(app: HomeApp, pilot: Pilot[None], clock: _Clock) -> tuple[dict[str, int], bool]:
+    async def probe(
+        app: HomeApp, pilot: Pilot[None], clock: FakeClock
+    ) -> tuple[dict[str, int], bool]:
         fake.set(_SECOND)
         await _advance(app, pilot, clock, 10)
         up = f"bold {BASE.void} on {BASE.up}"
@@ -285,7 +280,7 @@ def test_the_tick_flash_ends(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(tui, "MOTION", replace(MOTION, flash=0.05))
     fake = _FakeTicker(_FIRST)
 
-    async def probe(app: HomeApp, pilot: Pilot[None], clock: _Clock) -> dict[str, int]:
+    async def probe(app: HomeApp, pilot: Pilot[None], clock: FakeClock) -> dict[str, int]:
         fake.set(_SECOND)
         await _advance(app, pilot, clock, 10)
         await pilot.pause(1.0)
@@ -298,7 +293,9 @@ def test_motion_off_never_flashes() -> None:
     """Motion off: the same moves flash nothing, and no cell has a flash background."""
     fake = _FakeTicker(_FIRST)
 
-    async def probe(app: HomeApp, pilot: Pilot[None], clock: _Clock) -> tuple[dict[str, int], bool]:
+    async def probe(
+        app: HomeApp, pilot: Pilot[None], clock: FakeClock
+    ) -> tuple[dict[str, int], bool]:
         fake.set(_SECOND)
         await _advance(app, pilot, clock, 10)
         spans = _spans(app._content["market"]) + _spans(app._content["positions"])
@@ -319,7 +316,7 @@ def test_ticks_never_write_the_ledger(tmp_path: Path) -> None:
     before = (path.read_bytes(), path.stat().st_mtime_ns)
     fake = _FakeTicker(_FIRST)
 
-    async def probe(app: HomeApp, pilot: Pilot[None], clock: _Clock) -> tuple[int, str]:
+    async def probe(app: HomeApp, pilot: Pilot[None], clock: FakeClock) -> tuple[int, str]:
         for _ in range(2):
             await _advance(app, pilot, clock, 10)
         return len(fake.calls), app.plain_text("positions").splitlines()[0]
@@ -343,7 +340,7 @@ def _repo_clean(svg: str) -> str:
 def _svg(size: tuple[int, int]) -> str:
     fake = _FakeTicker(_FIRST)
 
-    async def probe(app: HomeApp, pilot: Pilot[None], clock: _Clock) -> str:
+    async def probe(app: HomeApp, pilot: Pilot[None], clock: FakeClock) -> str:
         fake.set(_SECOND)
         await _advance(app, pilot, clock, 10)
         return capture(app)
@@ -367,7 +364,11 @@ def _booked_meters() -> str:
 
     async def drive() -> str:
         app = HomeApp(
-            _fixture(), clock=_Clock(), motion=False, refresh_seconds=3600, exposure_cap=_CAP
+            _fixture(),
+            clock=FakeClock(_FROZEN),
+            motion=False,
+            refresh_seconds=3600,
+            exposure_cap=_CAP,
         )
         async with app.run_test(size=(160, 45)) as pilot:
             await pilot.pause()
@@ -380,7 +381,7 @@ def test_invested_and_exposure_meters_follow_the_live_prices() -> None:
     """Live prices move the invested figure and the exposure share; the cash figure stays booked."""
     fake = _FakeTicker(_FIRST)
 
-    async def probe(app: HomeApp, pilot: Pilot[None], clock: _Clock) -> str:
+    async def probe(app: HomeApp, pilot: Pilot[None], clock: FakeClock) -> str:
         del pilot, clock
         return app.plain_text("portfolio-meters")
 
@@ -396,7 +397,7 @@ def test_the_meters_go_back_to_booked_when_the_layer_pauses() -> None:
     """After 61 s with no good tick the meters read the booked figures again."""
     fake = _FakeTicker(_FIRST)
 
-    async def probe(app: HomeApp, pilot: Pilot[None], clock: _Clock) -> str:
+    async def probe(app: HomeApp, pilot: Pilot[None], clock: FakeClock) -> str:
         fake.fail = {"BTC", "ETH", "SOL"}
         for _ in range(6):
             await _advance(app, pilot, clock, 10)

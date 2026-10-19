@@ -164,7 +164,24 @@ stat -c '%a %U:%G' /etc/hermes/env.staging && grep '^HERMES_ENV=' /etc/hermes/en
 Expected: `600 root:root` and `HERMES_ENV="staging"`.
 
 Every staging deploy checks this file with the new release's `hermes config check` before it restarts anything. A
-trading key or a loopback endpoint stops the deploy, and the log names the setting, never its value.
+trading key, a loopback endpoint or one of prod's values stops the deploy, and the log names the setting, never its
+value.
+
+### Prod value fingerprints
+
+`config/prod_fingerprints.yaml` lists the SHA-256 of prod's Telegram and Slack bot tokens, its three healthchecks
+ping URLs and its Sentry DSN. Every tier but prod refuses to load with a value whose hash is listed, naming the
+variable, so a value copied from prod's env file into `env.staging` stops staging before it starts (#970). The file
+holds hashes only, never a value.
+
+Fill it on prod's machine, and again after each rotation. On hermes-01, as root:
+
+```bash
+/opt/hermes/current/.venv/bin/hermes config fingerprint --env-file - < /etc/hermes/env.production
+```
+
+The command prints the file's new text. Commit it as `config/prod_fingerprints.yaml`; the next staging deploy
+refuses those values. It exits 3 and prints nothing when the env file sets none of the six values.
 
 The lab also needs outbound access to Binance and Frankfurter public data and to its notifier and healthchecks hosts,
 with no inbound ports, and about 1 GB of memory. How the box provides these belongs to the infra project (ADR-024 §9).
@@ -194,6 +211,12 @@ champion, and ADR-021 gives each one its own ledger. Each shadow is one instance
 `--strategy` runs that roster entry whatever the file enables, so every shadow runs the same release. Serve refuses
 a ledger that already holds another strategy's capital, so an instance pointed at the wrong file stops at boot,
 before it writes anything. Every instance spends the box's one Binance rate limit, like the staging serve.
+
+A staging deploy reaches every enabled instance (issue #1150). It snapshots each shadow's ledger into
+`/var/lib/hermes-staging/shadows/<name>/backups/`, migrates it with the instance stopped, and restarts and gates each
+instance after the release goes live. If any instance fails its gate, the deploy puts the old release back and every
+ledger back to its snapshot. With shadows enabled, a staging deploy waits out the 4h bar close as prod does, so no
+shadow misses a bar to a restart.
 
 To add a shadow, run these on hermes-01 as root, with `<name>` replaced by the roster entry:
 
