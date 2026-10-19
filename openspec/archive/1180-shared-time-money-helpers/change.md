@@ -2,7 +2,7 @@
 
 **SDD change**: `1180-shared-time-money-helpers`
 **Date**: 2026-10-18
-**Status**: Applied
+**Status**: Shipped
 **Tracking issue**: see sibling `issue.md`
 
 Mirror of engram topic key `sdd/1180-shared-time-money-helpers/change` (see

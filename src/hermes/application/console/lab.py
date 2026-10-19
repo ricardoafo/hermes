@@ -19,7 +19,7 @@ that come from outside them are the trial log's own, kept in
 :attr:`RunRow.values` and read only when the caller asked for them
 (:func:`values_allowed`): never in an AI session (ADR-012 D-06).
 
-Reference: openspec/changes/1056-lab-screen/change.md.
+Reference: openspec/archive/1056-lab-screen/change.md.
 """
 
 import json
