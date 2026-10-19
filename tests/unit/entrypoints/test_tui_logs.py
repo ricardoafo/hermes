@@ -61,9 +61,10 @@ from hermes.entrypoints.tui_logs import (
 from hermes.entrypoints.tui_query import FacetFilter, QueryBar, QueryInput
 from hermes.entrypoints.tui_settings import ThemeChoice
 from hermes.entrypoints.tui_theme import BASE
+from tests.support.paths import REPO_ROOT
 
 _FROZEN = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
-_FIXTURE = Path(__file__).parents[2] / "fixtures" / "journal" / "logs_screen.jsonl"
+_FIXTURE = REPO_ROOT / "tests" / "fixtures" / "journal" / "logs_screen.jsonl"
 _TRACE_A = "01J9Z8T3M5BQR2FVKN4XK7Q2ZP"
 
 

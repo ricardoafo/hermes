@@ -31,9 +31,9 @@ from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
 from hermes.ports.dataset_manifest import DatasetManifestPort
+from tests.support.paths import REPO_ROOT
 
-_ROOT = Path(__file__).resolve().parents[4]
-_COMMITTED = _ROOT / "docs" / "experiments" / "swing-mvp1" / "data-manifest.json"
+_COMMITTED = REPO_ROOT / "docs" / "experiments" / "swing-mvp1" / "data-manifest.json"
 
 
 def _manifest() -> DatasetManifest:
@@ -150,7 +150,7 @@ def test_non_json_file_is_refused(tmp_path: Path) -> None:
 def test_committed_manifest_matches_the_signed_preregistration() -> None:
     """The pinned manifest in the repo uses the signed windows and pins no OOS dataset."""
     manifest = JsonFileDatasetManifest(_COMMITTED).load()
-    pre_reg = PreRegistration(project_root=_ROOT)
+    pre_reg = PreRegistration(project_root=REPO_ROOT)
     assert_manifest_matches_preregistration(
         manifest, experiment_id=pre_reg.experiment_id(), windows=pre_reg.data_windows()
     )

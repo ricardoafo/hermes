@@ -22,7 +22,7 @@ turned ``show_values`` on in the settings file and the session is not an AI
 session (``HERMES_AI_SESSION`` or ``CLAUDECODE``); ``V`` hides and shows them
 again. In an AI session ``V`` does nothing and the reader never loads a figure.
 
-Reference: openspec/changes/1056-lab-screen/change.md.
+Reference: openspec/archive/1056-lab-screen/change.md.
 """
 
 # ruff: noqa: RUF001 - the single right angle quote is the design spec's breadcrumb separator

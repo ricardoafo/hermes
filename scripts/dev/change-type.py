@@ -51,7 +51,6 @@ RUNTIME_PATHS = (
     r"|^\.github/workflows/cd\.yml$"
     r"|^tests/e2e/|^tests/fixtures/e2e/"
     r"|^pyproject\.toml$|^\.python-version$"
-    r"|^known_(advisories|licenses)\.yaml$"
 )
 
 # What a person sees. It is checked before the runtime rule, because the console
@@ -65,7 +64,7 @@ SCREEN_PATHS = (
 SURFACE_PATHS = (
     r"^tests/"
     r"|^scripts/dev/|^scripts/assets/|^tools/"
-    r"|^\.github/|^\.claude/|^\.atl/"
+    r"|^\.github/|^\.claude/"
     r"|^\.(gitignore|gitattributes|gitleaksignore|markdownlint-cli2\.jsonc|pre-commit-config\.yaml)$"
     r"|^\.env\.local\.example$|^cosmic-ray[a-z-]*\.toml$"
 )

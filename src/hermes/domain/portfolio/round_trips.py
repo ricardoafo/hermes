@@ -12,7 +12,7 @@ any currency but the pair's quote is refused: adding it to quote amounts
 would mix currencies in the P&L.
 
 Reference: pre-registration-v1.md §8.1, §9; ADR-021 Done rule 3;
-openspec/changes/1179-one-pearson-round-trips/change.md.
+openspec/archive/1179-one-pearson-round-trips/change.md.
 """
 
 from collections.abc import Iterable
