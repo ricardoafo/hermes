@@ -2,7 +2,7 @@
 
 **SDD change**: `1177-shared-wire-helpers`
 **Date**: 2026-10-18
-**Status**: Applied
+**Status**: Shipped
 **Tracking issue**: see sibling `issue.md`
 
 Mirror of engram topic key `sdd/1177-shared-wire-helpers/change` (see
