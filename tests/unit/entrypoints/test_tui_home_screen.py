@@ -44,6 +44,7 @@ from hermes.entrypoints.tui import HomeApp
 from hermes.entrypoints.tui_home import LOGS_UNAVAILABLE
 from hermes.entrypoints.tui_theme import HERO_RULE_GLYPH, MOTION
 from hermes.entrypoints.tui_widgets import BigNumber, HudPanel
+from tests.support.svg_snapshots import repo_clean
 from tests.unit.adapters.console._ledger_builder import LedgerBuilder
 
 _FROZEN = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
@@ -59,11 +60,6 @@ _READ_METHODS = {
     "shadow_test",
     "market_watch",
 }
-
-
-def _repo_clean(svg: str) -> str:
-    """Strip trailing whitespace, as the repository's pre-commit hook does to committed SVGs."""
-    return "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
 
 
 def _run[T](
@@ -431,7 +427,7 @@ def test_app_only_reads_at_every_width() -> None:
 def _svg(model: ConsoleReadModel, size: tuple[int, int]) -> str:
     async def probe(app: HomeApp, pilot: Pilot[None]) -> str:
         del pilot
-        return _repo_clean(app.export_screenshot())
+        return repo_clean(app.export_screenshot())
 
     return _run(model, probe, size=size)
 
