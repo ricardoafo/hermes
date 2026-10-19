@@ -49,8 +49,8 @@ flowchart LR
 | Staging to prod (phase 2) | The change type's staging check passes |
 | Prod (phase 2) | Install, smoke tests, bake on the next bar, automatic rollback on failure |
 
-Until QA runs (issue #973), the wheel tests of issue #670 are the gate in front of staging. Only a cut version
-deploys, because CD runs with `DEPLOY_ON=version`.
+Until QA runs (issue #973), the wheel tests of issue #670 are the gate in front of staging. Every merge that
+changes the release bundle deploys, as the next computed version (ADR-030).
 
 ## Change types
 
