@@ -22,6 +22,7 @@ import re
 import shutil
 import subprocess
 import tarfile
+import tempfile
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -104,17 +105,21 @@ def _subprocess_runner(argv: list[str]) -> FetchResult:
     """Run ssh, keeping at most one byte past the size cap of its stdout.
 
     Reading stops (and ssh is killed) as soon as the stream is larger than a tax
-    pack can be, so memory stays bounded whatever the server sends.
+    pack can be, so memory stays bounded whatever the server sends. stderr goes to
+    a temporary file, so a chatty ssh can never fill a pipe nobody is reading.
     """
-    with subprocess.Popen(  # noqa: S603 - argv list, fixed ssh binary
-        argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-    ) as proc:
-        assert proc.stdout is not None  # noqa: S101 - PIPE guarantees it
-        archive = proc.stdout.read(_MAX_PACK_BYTES + 1)
-        if len(archive) > _MAX_PACK_BYTES:
-            proc.kill()
-        _, stderr = proc.communicate()
-        return FetchResult(proc.returncode, archive, stderr.decode("utf-8", errors="replace"))
+    with tempfile.TemporaryFile() as diagnostics:
+        with subprocess.Popen(  # noqa: S603 - argv list, fixed ssh binary
+            argv, stdout=subprocess.PIPE, stderr=diagnostics
+        ) as proc:
+            assert proc.stdout is not None  # noqa: S101 - PIPE guarantees it
+            archive = proc.stdout.read(_MAX_PACK_BYTES + 1)
+            if len(archive) > _MAX_PACK_BYTES:
+                proc.kill()
+            returncode = proc.wait()
+        diagnostics.seek(0)
+        stderr = diagnostics.read().decode("utf-8", errors="replace")
+    return FetchResult(returncode, archive, stderr)
 
 
 def verify_pack(year: int, files: Mapping[str, bytes]) -> str | None:

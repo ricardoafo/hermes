@@ -436,3 +436,14 @@ def test_a_crash_while_swapping_never_loses_the_earlier_copy(
         _run(tmp_path, _ok(), "--year", "2026", "--out", str(out))
     monkeypatch.undo()
     assert (destination / "trail.csv").read_bytes() == b"sale,lot\n1,2\n"
+
+
+def test_the_real_runner_survives_a_child_that_writes_a_lot_to_stderr() -> None:
+    """R-3: stderr far larger than a pipe buffer neither stalls the run nor loses the last line."""
+    program = (
+        "import sys; sys.stderr.write('x' * 500000 + '\\nlast line\\n'); "
+        "sys.stdout.buffer.write(b'ok')"
+    )
+    result = tax_pack_fetch._subprocess_runner([sys.executable, "-c", program])
+    assert result.archive == b"ok"
+    assert result.stderr.splitlines()[-1] == "last line"
