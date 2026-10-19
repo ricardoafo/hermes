@@ -209,8 +209,8 @@ Test tiers touched: unit, property
 - **`serve` still exits 1 with no ledger**: its refusal is a `StartupError`
   inside the composition root. The serve units set
   `RestartPreventExitStatus=2 3`, so moving it to 3 would stop systemd from
-  retrying while a disk mounts. Left for the Code Owner to decide; the guard
-  test lists it as exempt with this reason.
+  retrying while a disk mounts. It keeps 1 on purpose, and the guard test
+  lists it as exempt with this reason.
 - **`fx backfill` no longer creates an empty ledger at a wrong `--db`**:
   intended (the read-write open used to leave a stray file behind).
 - **`shadow-start`'s archive check no longer compares `sqlite_sequence`**:
