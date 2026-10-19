@@ -87,7 +87,6 @@ _RULE_LOG_REASONS: dict[str, str] = {
 }
 
 # OrderRouterResult discriminated union — callers pattern-match on isinstance.
-# Forward references (strings) are used because the classes are defined below.
 type OrderRouterResult = Fill | RiskRejected | KillCircuitBreaker
 
 
