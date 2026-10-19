@@ -110,7 +110,7 @@ with Progress(
 ### Distribution
 
 ```bash
-uv tool install --from git+https://github.com/ricardoafo-org/hermes hermes
+uv tool install --from git+https://github.com/ricardoafo/hermes hermes
 # → hermes ends up in ~/.local/bin/
 ```
 
@@ -436,7 +436,7 @@ uv run hermes tui
 VPS deploy:
 
 ```bash
-uv tool install --from git+https://github.com/ricardoafo-org/hermes hermes
+uv tool install --from git+https://github.com/ricardoafo/hermes hermes
 # → hermes in /home/hermes/.local/bin/
 ```
 

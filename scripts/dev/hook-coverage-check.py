@@ -57,6 +57,8 @@ CI_ENFORCED: dict[str, str] = {
     "import-linter": "imports",
     "migration-sql-check": "guards",
     "openspec-layout": "guards",
+    "agents-md-check": "guards",
+    "footprint-check": "guards",
     "no-naive-datetime": "guards",
     "no-vague-test-assertions": "guards",
     "test-file-adjacency": "guards",

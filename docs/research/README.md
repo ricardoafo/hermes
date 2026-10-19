@@ -71,6 +71,7 @@ New questions surfaced. Follow-up research needed.
 | [paper-trading/](paper-trading/README.md) | ADR-011 | 2026-08 |
 | [2026-10-04-notification-inventory.md](2026-10-04-notification-inventory.md) | issue #144, notification templates v2 | 2026-10-04 |
 | [2026-10-04-notification-ux-research.md](2026-10-04-notification-ux-research.md) | issue #144, notification templates v2 | 2026-10-04 |
+| [prior-art-names.txt](prior-art-names.txt) | issue #1198, `scripts/dev/footprint-check.py` (names kept out of hermes outside this folder and accepted ADRs) | 2026-10-18 |
 
 ## Retention
 
