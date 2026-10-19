@@ -99,6 +99,30 @@ provides, or a workaround for a limit 3.14 no longer has. Name the 3.14
 way to write it. Leave alone lines the PR did not touch; ruff's
 pyupgrade, refurb and perflint rules already cover the rest.
 
+## Security lens
+
+Report a `blocking` finding when the diff does any of these, and say
+which line:
+
+- **Secrets and tokens.** A secret, token or key in the repo, a fixture,
+  a log line or an error message; a token passed on a command line.
+- **Real money and mainnet.** A path that reaches a real exchange
+  without dry-run as the default and the typed confirmation (ADR-003 §00
+  principle 6 and I-03), or that reads, sets or bypasses
+  `HERMES_ALLOW_MAINNET`.
+- **Workflow permissions and triggers.** A workflow permission wider
+  than the job needs, a `pull_request_target` or `workflow_run` trigger
+  that runs PR code with a write token, or a `${{ }}` expression from PR
+  data interpolated into a shell line instead of `env:`.
+- **Subprocess and file paths.** A subprocess built from untrusted text
+  with `shell=True` or string concatenation, or a file path from input
+  that is not confined to its directory.
+- **Deserialisation.** `pickle`, `yaml.load` without a safe loader, or
+  `eval`/`exec` on data that did not come from the repo.
+- **Log and Sentry leakage.** Credentials, account identifiers or
+  balances written to a log, a Telegram or Slack message, or a Sentry
+  event.
+
 ## Verdict
 
 - `approve`: no blocking finding. Rick can approve without reading code.

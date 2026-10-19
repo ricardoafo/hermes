@@ -29,16 +29,6 @@ _WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ai-review.yml"
 _FAKE_BEARER = "ghs_FAKEtokenFAKEtokenFAKEtokenFAKE0000"  # gitleaks:allow (fake test token)
 _STEP = "Gather review context"
 
-# The embedded script in ai-review.yml opens pr.md without closing it. Workflow
-# edits go through a separate queue, so until issue #985 lands
-# this module alone tolerates the leak; every other test still fails on it.
-pytestmark = [
-    pytest.mark.filterwarnings("ignore:unclosed file:ResourceWarning"),
-    pytest.mark.filterwarnings(
-        "ignore:Exception ignored while finalizing file:pytest.PytestUnraisableExceptionWarning"
-    ),
-]
-
 
 def _step_run() -> str:
     """Return the shell of the step that builds the review input."""
@@ -166,3 +156,27 @@ def test_pr_agent_settings_are_removed_before_the_review() -> None:
     assert remove < names.index("Review")
     for target in (".claude", ".mcp.json", "CLAUDE.md", "CLAUDE.local.md"):
         assert f"-name {target}" in run
+
+
+def test_review_model_is_pinned_unless_the_variable_overrides_it() -> None:
+    """Invariant (#685): only a PR or the variable can change the reviewer's model."""
+    review = next(step for step in _review_steps() if step.get("name") == "Review")
+    args = str(review["with"]["claude_args"])
+
+    assert "--model ${{ vars.AI_REVIEW_MODEL || 'claude-sonnet-5-5' }}" in args
+
+
+def test_prompt_has_the_security_checklist() -> None:
+    """Invariant (#773): the reviewer's prompt names each risk class the security lens covers."""
+    prompt = (REPO_ROOT / ".github" / "ai-review" / "prompt.md").read_text(encoding="utf-8")
+    section = prompt.split("## Security lens", 1)[1].split("\n## ", 1)[0].lower()
+
+    for topic in (
+        "hermes_allow_mainnet",
+        "typed confirmation",
+        "workflow permissions",
+        "subprocess",
+        "deserialis",
+        "sentry",
+    ):
+        assert topic in section

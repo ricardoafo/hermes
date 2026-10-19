@@ -33,7 +33,9 @@
 #
 # ## Variables (optional)
 #
-#   AI_REVIEW_MODEL  model id passed to --model; unset uses the default.
+#   AI_REVIEW_MODEL  model id passed to --model; unset uses the pinned
+#                    default (claude-sonnet-5-5), so a model change is
+#                    always a visible PR, never an action bump (#685).
 
 name: AI review
 
@@ -117,6 +119,7 @@ jobs:
           # line or an error message: pr.md goes to the model (#642).
           python3 - .ai-review/pr.md <<'PY'
           import json, os, re, sys, urllib.request
+          from pathlib import Path
           repo = f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}"
 
           def api(path):
@@ -141,7 +144,7 @@ jobs:
                   out += [f"# Closed issue #{issue['number']}: {issue['title']}", "", issue.get("body") or ""]
               except Exception as err:  # the review still runs without the issue
                   out += [f"(Could not read issue #{m.group(1)}: {failure(err)})"]
-          open(sys.argv[1], "w").write("\n".join(out))
+          Path(sys.argv[1]).write_text("\n".join(out))
           PY
 
           {
@@ -213,7 +216,7 @@ jobs:
           allowed_bots: 'dependabot[bot]'
           prompt: ${{ steps.ctx.outputs.prompt }}
           claude_args: >-
-            ${{ vars.AI_REVIEW_MODEL && format('--model {0}', vars.AI_REVIEW_MODEL) || '' }}
+            --model ${{ vars.AI_REVIEW_MODEL || 'claude-sonnet-5-5' }}
             --max-turns 80
             --allowedTools "Read,Grep,Glob"
             --disallowedTools "Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch"

@@ -1,0 +1,1 @@
+- CI: the AI review closes its context file, pins its model, and carries a security checklist; the daily Semgrep job runs 1.180.0.
