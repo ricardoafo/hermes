@@ -29,15 +29,11 @@ from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import ClassVar
 from zoneinfo import ZoneInfo
 
 import pytest
 from rich.console import Console
 from syrupy.assertion import SnapshotAssertion
-from syrupy.extensions.image import SVGImageSnapshotExtension
-from syrupy.location import PyTestLocation
-from syrupy.types import SnapshotIndex
 from textual.app import App
 from textual.binding import Binding
 from textual.pilot import Pilot
@@ -70,6 +66,7 @@ from hermes.entrypoints.tui_system import (
     timing_text,
 )
 from hermes.entrypoints.tui_theme import BASE
+from tests.support.tui_views import assert_view, capture
 
 _FROZEN = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)  # 14:12 Madrid
 _MADRID = ZoneInfo("Europe/Madrid")
@@ -557,19 +554,6 @@ def _repo_clean(svg: str) -> str:
     return "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
 
 
-class _NamedSVG(SVGImageSnapshotExtension):
-    """Store each snapshot under the name given to ``snapshot(name=...)`` alone."""
-
-    _file_extension: ClassVar[str] = "svg"
-
-    @classmethod
-    def get_snapshot_name(cls, *, test_location: PyTestLocation, index: SnapshotIndex = 0) -> str:
-        """Return the bare custom name, e.g. ``system_neon_160x45``."""
-        if isinstance(index, str):
-            return index
-        return super().get_snapshot_name(test_location=test_location, index=index)
-
-
 _SIZES: tuple[tuple[int, int], ...] = ((80, 24), (120, 36), (160, 45), (240, 60))
 _THEMES: tuple[tuple[str, ThemeChoice], ...] = (
     ("neon", ThemeChoice.NEON),
@@ -579,7 +563,7 @@ _THEMES: tuple[tuple[str, ThemeChoice], ...] = (
 
 def _svg(size: tuple[int, int], theme: ThemeChoice) -> str:
     async def probe(app: HomeApp, pilot: Pilot[None]) -> str:
-        return _repo_clean(app.export_screenshot())
+        return capture(app)
 
     return _run(probe, size=size, theme=theme)
 
@@ -597,4 +581,4 @@ def test_system_svg_snapshot(
 ) -> None:
     """The reviewed System screen in one theme at one of the four spec breakpoints."""
     name = f"system_{theme_name}_{size[0]}x{size[1]}"
-    assert _svg(size, theme) == snapshot(extension_class=_NamedSVG, name=name)
+    assert_view(snapshot, _svg(size, theme), name=name)

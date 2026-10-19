@@ -17,17 +17,14 @@ and never reads or writes the real settings file.
 import asyncio
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import ClassVar
 
 import pytest
 from syrupy.assertion import SnapshotAssertion
-from syrupy.extensions.image import SVGImageSnapshotExtension
-from syrupy.location import PyTestLocation
-from syrupy.types import SnapshotIndex
 
 from hermes.adapters.console import FixtureReadModel
 from hermes.entrypoints.tui import HomeApp
 from hermes.entrypoints.tui_settings import ThemeChoice
+from tests.support.tui_views import assert_view, capture
 
 # The fixtures' read time (14:12 Madrid), well inside Auto's day window.
 _FROZEN = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
@@ -47,19 +44,6 @@ _VIEWS: tuple[tuple[str, tuple[str, ...], tuple[int, int] | None], ...] = (
     ("drill_position", ("enter",), None),
     ("drill_breadcrumb", ("enter", "right_square_bracket"), _COMPACT),
 )
-
-
-class _NamedSVG(SVGImageSnapshotExtension):
-    """Store each snapshot under the name given to ``snapshot(name=...)`` alone."""
-
-    _file_extension: ClassVar[str] = "svg"
-
-    @classmethod
-    def get_snapshot_name(cls, *, test_location: PyTestLocation, index: SnapshotIndex = 0) -> str:
-        """Return the bare custom name, e.g. ``drill_position_neon_160x45``."""
-        if isinstance(index, str):
-            return index
-        return super().get_snapshot_name(test_location=test_location, index=index)
 
 
 def _repo_clean(svg: str) -> str:
@@ -90,7 +74,7 @@ def _svg(
             if open_at is not None:
                 await pilot.resize_terminal(*size)
                 await pilot.pause()
-            return _repo_clean(app.export_screenshot())
+            return capture(app)
 
     return asyncio.run(drive())
 
@@ -124,4 +108,4 @@ def test_drill_down_svg_snapshot(
     """The reviewed picture of one drill-down view, in one theme, at one spec breakpoint."""
     name = f"{view}_{theme_name}_{size[0]}x{size[1]}"
     svg = _svg(keys, size, theme, open_at)
-    assert svg == snapshot(extension_class=_NamedSVG, name=name)
+    assert_view(snapshot, svg, name=name)
