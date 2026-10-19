@@ -1,7 +1,7 @@
 # ADR-030: Research sweeps, 100+ signed candidates per batch to find one strong champion
 
 **Date**: 2026-10-19
-**Status**: Accepted (merged in PR #1281)
+**Status**: Accepted (merged in PR #1284)
 **Deciders**: Ricardo Afonso (product owner), Claude (proposer)
 **Supersedes**: nothing. Extends [ADR-026](adr-026-research-batch-and-signed-champion-rule.md) §1 (batch size and
 one candidate per family) and §5 (the Benjamini–Hochberg m) for sweep batches only. Tracking issue: #1280.
