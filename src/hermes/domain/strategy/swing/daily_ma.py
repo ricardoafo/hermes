@@ -162,8 +162,8 @@ class DailyMaAdapter:
     def _daily_decision(self, bar: Bar) -> tuple[bool, bool, bool] | None:
         """Return (above, below, previous at or below) for the daily close ending at ``bar``.
 
-        ``None`` unless ``bar`` closes at 00:00 UTC and the daily bar closing
-        at the same instant, and enough history for both SMAs, are buffered.
+        ``None`` unless ``bar`` ends the UTC day, the daily bar closing at the
+        same instant is buffered, and there is enough history for both SMAs.
         """
         # Exchange bars close 1 ms before the boundary, so the day end is open_time + interval.
         end = bar.open_time + interval_duration(bar.interval)
