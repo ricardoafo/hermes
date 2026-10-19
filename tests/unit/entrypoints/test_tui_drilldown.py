@@ -183,10 +183,16 @@ def test_truncate_line_marks_hidden_lines() -> None:
 
 @given(st.text(max_size=60), st.integers(min_value=0, max_value=40))
 def test_truncate_line_never_overflows(text: str, width: int) -> None:
-    """Property: the result fits the width and is either a prefix of the text or ends in "…"."""
+    """Property: the result fits; a line that fits is kept whole, any other ends in "…"."""
     cut = truncate_line(text, width)
+    lines = text.splitlines()
+    first = lines[0] if lines else ""
     assert cell_len(cut) <= width
-    assert text.startswith(cut) or cut.endswith("…")
+    if len(lines) <= 1 and cell_len(first) <= width:
+        assert cut == first
+    elif width > 0:
+        assert cut.endswith("…")
+        assert first.startswith(cut[:-1])
 
 
 def test_truncate_items_counts_what_was_cut() -> None:

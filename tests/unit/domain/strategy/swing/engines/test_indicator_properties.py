@@ -17,7 +17,7 @@ from hermes.domain.strategy.swing.engines.donchian import DonchianEngine
 from hermes.domain.strategy.swing.engines.ema import EmaRegimeFilter
 from tests.unit.domain.strategy.swing.conftest import make_bar
 
-_PROPS = settings(max_examples=60, deadline=None)
+_PROPS = settings(max_examples=60)
 _TOLERANCE = Decimal("1e-18")
 
 _CENTS = Decimal("0.01")

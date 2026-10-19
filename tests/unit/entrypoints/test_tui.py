@@ -146,7 +146,7 @@ def test_down_adds_one_red_row_and_dims_the_money() -> None:
     """Down: a single red row with the call to action; money is dim and reads 'as of 18:04'."""
     shot = _shoot("down-stale")
     assert shot.texts["down-row"].strip() == "✖ hermes down since 18:04 · press L for why"
-    assert "\x1b[31m" in shot.styled["down-row"] or "\x1b[1;31m" in shot.styled["down-row"]
+    assert "\x1b[1;31m" in shot.styled["down-row"]
     assert "as of 18:04" in shot.texts["portfolio"]
     assert "\x1b[2m" in shot.styled["portfolio"]
     assert "as of 18:04" in shot.texts["positions"]
