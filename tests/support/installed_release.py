@@ -48,7 +48,7 @@ class Run:
     Attributes:
         db: Its ledger.
         log: Its stdout and stderr.
-        exit_code: How it exited after SIGTERM.
+        exit_code: How it exited after its stop signal.
         telegram: Every Telegram request it made, oldest first.
         stopped_at: The scripted instant the run was stopped at.
 
@@ -104,8 +104,10 @@ def serve(
     until: datetime,
     *,
     outage: tuple[Outage, int] | None = None,
+    restart: bool = False,
+    stop: signal.Signals = signal.SIGTERM,
 ) -> Run:
-    """Boot an installed ``hermes serve`` on a fresh ledger and step the clock to ``until``.
+    """Boot an installed ``hermes serve`` and step the clock to ``until``.
 
     Args:
         tmp_path: Directory for the ledger and the log.
@@ -114,13 +116,18 @@ def serve(
         until: The scripted instant to stop at; a bar is handled once the
             clock reaches its close plus the settle delay.
         outage: Make the next N Telegram requests fail this way.
+        restart: Boot on the ledger an earlier run in ``tmp_path`` left,
+            as a deploy or a reboot does, instead of a fresh one.
+        stop: How the run ends: SIGTERM is systemd's stop, SIGKILL a crash
+            or a power cut.
 
     Returns:
         The run's ledger, log, exit code and Telegram calls.
 
     """
     db = tmp_path / "hermes.sqlite3"
-    log_path = tmp_path / "serve.log"
+    log_path = tmp_path / f"serve-{len(list(tmp_path.glob('serve-*.log')))}.log"
+    new_ledger = [] if restart else ["--new-ledger"]
     with market_service(market, live_from) as service, FakeNotify(timeout_hold_s=0.5) as notify:
         if outage is not None:
             notify.fail_next(Sink.TELEGRAM, *outage)
@@ -133,7 +140,7 @@ def serve(
                     str(PROJECT_ROOT / "config"),
                     "--db",
                     str(db),
-                    "--new-ledger",
+                    *new_ledger,
                 ],
                 env=release_env(service, notify),
                 stdout=log,
@@ -149,7 +156,7 @@ def serve(
                     _wait_handled(log_path, due, process)
                     _wait_quiet(service, process)
             finally:
-                process.send_signal(signal.SIGTERM)
+                process.send_signal(stop)
                 code = process.wait(timeout=30)
         return Run(
             db=db,
