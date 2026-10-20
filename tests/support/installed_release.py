@@ -17,7 +17,7 @@ import signal
 import subprocess
 import sys
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -115,6 +115,7 @@ def serve(
     outages: Mapping[Sink, tuple[Outage, int]] | None = None,
     restart: bool = False,
     stop: signal.Signals = signal.SIGTERM,
+    alongside: Callable[[Path, dict[str, str]], None] | None = None,
 ) -> Run:
     """Boot an installed ``hermes serve`` and step the clock to ``until``.
 
@@ -129,6 +130,8 @@ def serve(
             as a deploy or a reboot does, instead of a fresh one.
         stop: How the run ends: SIGTERM is systemd's stop, SIGKILL a crash
             or a power cut.
+        alongside: Called once the run has started, with its ledger and
+            env, to do something to it while it runs.
 
     Returns:
         The run's ledger, log, exit code and sink calls.
@@ -140,6 +143,7 @@ def serve(
     with market_service(market, live_from) as service, FakeNotify(timeout_hold_s=0.5) as notify:
         for sink, (outage, times) in (outages or {}).items():
             notify.fail_next(sink, outage, times)
+        env = release_env(service, notify)
         with log_path.open("w", encoding="utf-8") as log:
             process = subprocess.Popen(  # noqa: S603 - this checkout's own entry point
                 [
@@ -151,13 +155,15 @@ def serve(
                     str(db),
                     *new_ledger,
                 ],
-                env=release_env(service, notify),
+                env=env,
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 text=True,
             )
             try:
                 _wait_started(log_path, process)
+                if alongside is not None:
+                    alongside(db, env)
                 _wait_quiet(service, process)
                 while service.now() < until and process.poll() is None:
                     due = min(_next_due(service.now()), until)
