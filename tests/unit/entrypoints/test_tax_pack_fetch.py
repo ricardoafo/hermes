@@ -165,7 +165,18 @@ def test_a_manifest_for_another_year_is_refused(tmp_path: Path) -> None:
     )
 
 
-@pytest.mark.parametrize("name", ["../escape.txt", "2026/sub/deep.txt", "other/file.txt"])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "../escape.txt",
+        "2026/sub/deep.txt",
+        "other/file.txt",
+        "2026/..\\..\\x.bat",
+        "2026/C:x",
+        "2026/:stream",
+        "2026/..",
+    ],
+)
 def test_an_entry_outside_the_year_folder_is_refused(tmp_path: Path, name: str) -> None:
     """R-2: a path that climbs out of <year>/ or nests inside it never reaches the disk."""
     info = tarfile.TarInfo(name)

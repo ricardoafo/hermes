@@ -47,6 +47,9 @@ REMOTE_PACK_DIR: Final[str] = "/var/lib/hermes-tax-pack"
 SERVER_SUBDIR: Final[str] = "server"
 _MAX_PACK_BYTES: Final[int] = 64 * 1024 * 1024
 _CONNECT_TIMEOUT_SECONDS: Final[int] = 10
+# Names are written to the PC verbatim: refuse anything a Windows path could reinterpret
+# (backslashes, drive letters, streams), not just what POSIX parsing sees.
+_PLAIN_NAME: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 _TOO_LARGE: Final[str] = "the archive is larger than a tax pack can be"
 _SAFE_TOKEN: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
@@ -167,7 +170,11 @@ def _read_archive(archive: bytes, year: int) -> dict[str, bytes] | str:
                 path = PurePosixPath(member.name)
                 if member.isdir():
                     continue
-                if not member.isfile() or path.parent != PurePosixPath(str(year)):
+                if (
+                    not member.isfile()
+                    or path.parent != PurePosixPath(str(year))
+                    or not _PLAIN_NAME.fullmatch(path.name)
+                ):
                     return f"unexpected entry {member.name!r} in the archive"
                 total += member.size
                 if total > _MAX_PACK_BYTES:
