@@ -252,6 +252,7 @@ def test_ssh_reads_the_year_folder_with_tar_and_no_terminal(tmp_path: Path) -> N
     assert runner.argvs == [
         [
             "ssh", "-i", "/k/key", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
+            "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=4",
             "ops@box", f"tar -C {REMOTE_PACK_DIR} -cf - 2026",
         ]
     ]  # fmt: skip

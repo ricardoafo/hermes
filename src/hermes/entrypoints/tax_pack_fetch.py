@@ -102,6 +102,11 @@ def build_fetch_argv(settings: VpsSettings, year: int) -> list[str]:
         "BatchMode=yes",
         "-o",
         f"ConnectTimeout={_CONNECT_TIMEOUT_SECONDS}",
+        # A server that connects and then stalls is dropped after about a minute.
+        "-o",
+        "ServerAliveInterval=15",
+        "-o",
+        "ServerAliveCountMax=4",
         f"{settings.user}@{settings.host}",
         f"tar -C {REMOTE_PACK_DIR} -cf - {year}",
     ]
