@@ -47,6 +47,7 @@ REMOTE_PACK_DIR: Final[str] = "/var/lib/hermes-tax-pack"
 SERVER_SUBDIR: Final[str] = "server"
 _MAX_PACK_BYTES: Final[int] = 64 * 1024 * 1024
 _CONNECT_TIMEOUT_SECONDS: Final[int] = 10
+_TOO_LARGE: Final[str] = "the archive is larger than a tax pack can be"
 _SAFE_TOKEN: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 _USAGE: Final[str] = (
@@ -157,7 +158,7 @@ def verify_pack(year: int, files: Mapping[str, bytes]) -> str | None:
 def _read_archive(archive: bytes, year: int) -> dict[str, bytes] | str:
     """Return the flat file map of ``<year>/`` in ``archive``, or one line on a bad archive."""
     if len(archive) > _MAX_PACK_BYTES:
-        return "the archive is larger than a tax pack can be"
+        return _TOO_LARGE
     files: dict[str, bytes] = {}
     total = 0
     try:
@@ -170,7 +171,7 @@ def _read_archive(archive: bytes, year: int) -> dict[str, bytes] | str:
                     return f"unexpected entry {member.name!r} in the archive"
                 total += member.size
                 if total > _MAX_PACK_BYTES:
-                    return "the archive is larger than a tax pack can be"
+                    return _TOO_LARGE
                 handle = tar.extractfile(member)
                 if handle is None:
                     return f"cannot read {member.name!r} from the archive"
@@ -256,7 +257,8 @@ def fetch_main(
     except FileNotFoundError:
         err.write("ERROR: ssh not found; install the OpenSSH client.\n")
         return 2
-    if result.returncode != 0:
+    # The runner kills ssh once the stream passes the cap, so that exit code is ours.
+    if result.returncode != 0 and len(result.archive) <= _MAX_PACK_BYTES:
         detail = result.stderr.strip().splitlines()
         err.write(
             f"ERROR: could not fetch the {parsed.year} pack from {settings.host}"

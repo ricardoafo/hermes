@@ -447,3 +447,16 @@ def test_the_real_runner_survives_a_child_that_writes_a_lot_to_stderr() -> None:
     result = tax_pack_fetch._subprocess_runner([sys.executable, "-c", program])
     assert result.archive == b"ok"
     assert result.stderr.splitlines()[-1] == "last line"
+
+
+def test_a_stream_cut_off_at_the_cap_reports_the_size_not_an_ssh_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R-2: the runner kills ssh past the cap; that exit must not hide the real reason."""
+    monkeypatch.setattr(tax_pack_fetch, "_MAX_PACK_BYTES", 10)
+    runner = _Runner(FetchResult(-9, b"x" * 11, ""))
+    code, _, err = _run(tmp_path, runner, "--year", "2026", "--out", str(tmp_path / "p"))
+    assert code == EXIT_UNVERIFIED
+    assert err == (
+        "ERROR: the 2026 pack was not written: the archive is larger than a tax pack can be\n"
+    )
