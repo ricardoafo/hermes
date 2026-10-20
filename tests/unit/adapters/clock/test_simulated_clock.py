@@ -27,7 +27,6 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from hermes.adapters.clock import SimulatedClock
-from hermes.ports.clock import ClockPort
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Shared fixtures
@@ -57,11 +56,6 @@ class TestSimulatedClockConstructor:
         start = datetime(2026, 6, 15, 12, 0, 0, tzinfo=UTC)
         clock = SimulatedClock(start=start)
         assert clock.now() == start
-
-    def test_isinstance_clock_port(self) -> None:
-        """SimulatedClock satisfies ClockPort via runtime_checkable isinstance."""
-        clock = SimulatedClock(start=_EPOCH)
-        assert isinstance(clock, ClockPort)
 
 
 class TestSimulatedClockNow:

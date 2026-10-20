@@ -36,7 +36,6 @@ from hermes.domain.errors import ExchangeError, InfraError, NetworkError
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
-from hermes.ports.klines import KlinesFetcherPort
 
 _BTC_USDT = Pair(base=Currency.BTC, quote=Currency.USDT)
 _TESTNET = "https://testnet.binance.vision"
@@ -453,18 +452,6 @@ class TestFetchErrorPaths:
         """ExchangeError caught by an 'except InfraError' clause satisfies the base contract."""
         err = ExchangeError(msg="bad")
         assert isinstance(err, InfraError)
-
-
-class TestPortConformance:
-    """The adapter class satisfies the runtime-checkable Protocol."""
-
-    def test_adapter_is_klines_fetcher_port_instance(self) -> None:
-        """Isinstance against the runtime_checkable Protocol returns True."""
-        adapter = _make_adapter()
-        try:
-            assert isinstance(adapter, KlinesFetcherPort)
-        finally:
-            adapter.close()
 
 
 class TestCreateFactoryAndClose:

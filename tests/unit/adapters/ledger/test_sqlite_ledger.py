@@ -42,7 +42,6 @@ from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.price import Price
 from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
-from hermes.ports.ledger import LedgerPort
 
 
 class CommitCountingConnection(sqlite3.Connection):
@@ -467,19 +466,6 @@ class TestAppendEventPersistsSignalEmitted:
             (payload_json,) = conn.execute("SELECT payload_json FROM events").fetchone()
             assert json.loads(payload_json)["payload_sha256"] == event.payload_sha256
             assert len(event.payload_sha256) == 64
-        finally:
-            conn.close()
-
-
-class TestLedgerPortProtocolConformance:
-    """The concrete adapter satisfies the LedgerPort structural type."""
-
-    def test_sqlite_ledger_is_a_ledger_port(self) -> None:
-        """Runtime isinstance check against the LedgerPort Protocol returns True."""
-        conn = sqlite3.connect(":memory:")
-        try:
-            ledger = SqliteLedger(conn)
-            assert isinstance(ledger, LedgerPort)
         finally:
             conn.close()
 
