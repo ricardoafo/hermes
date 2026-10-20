@@ -18,8 +18,6 @@ Invariants:
 The meters are the shared ``Meter`` and are checked in ``test_tui_widgets.py``.
 """
 
-from __future__ import annotations
-
 import asyncio
 from decimal import Decimal
 

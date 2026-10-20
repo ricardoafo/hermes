@@ -6,8 +6,6 @@ Tests cover:
 - A frozen DomainError raised inside the block propagates unchanged.
 """
 
-from __future__ import annotations
-
 import pytest
 
 from hermes.application.strategy_protocol.data_split_enforcer import (

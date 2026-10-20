@@ -5,8 +5,6 @@ ledger's events. These tests run it against scratch SQLite ledgers with
 this checkout's own event classes; nothing is mocked.
 """
 
-from __future__ import annotations
-
 import importlib.util
 import sqlite3
 import sys

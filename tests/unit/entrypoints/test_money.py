@@ -11,8 +11,6 @@ Invariants protected here:
 - ``hermes --demo SCENARIO money`` works through the top-level CLI.
 """
 
-from __future__ import annotations
-
 import io
 import json
 

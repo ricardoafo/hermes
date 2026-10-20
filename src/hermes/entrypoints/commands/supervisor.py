@@ -1,7 +1,5 @@
 """``hermes supervisor``: see :mod:`hermes.entrypoints.supervisor`."""
 
-from __future__ import annotations
-
 import os
 
 from hermes.entrypoints import supervisor as _impl

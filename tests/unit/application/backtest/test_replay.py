@@ -17,8 +17,6 @@ Invariants (backtest-driver-mvp1-phase2 change.md D-1, D-4, R-2):
 - The equity curve holds the marked equity at each in-window 1D close.
 """
 
-from __future__ import annotations
-
 import dataclasses
 from collections.abc import Sequence
 from dataclasses import dataclass, field

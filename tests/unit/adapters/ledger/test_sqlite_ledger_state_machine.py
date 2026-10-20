@@ -12,8 +12,6 @@ Reference: ADR-003 §00 (I-06), §03 (schema, FIFO), ADR-006 §2 (forward-only,
 restore from snapshot), issues #137, #844, #853.
 """
 
-from __future__ import annotations
-
 import copy
 import os
 import shutil

@@ -16,8 +16,6 @@ Reference: 308-signal-event-portfolio-state change.md D-1, D-2;
     code-conventions.md §10 (event schema versioning).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import ClassVar

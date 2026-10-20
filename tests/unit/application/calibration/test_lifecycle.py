@@ -14,8 +14,6 @@ Tests cover:
 Reference: spec-6-calibration-harness/change.md R-3, D-3.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from decimal import Decimal
 

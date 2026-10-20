@@ -16,8 +16,6 @@ Reference:
   spec-9-strategy-development-protocol change.md D-2.
 """
 
-from __future__ import annotations
-
 from contextvars import ContextVar, Token
 
 __all__ = [

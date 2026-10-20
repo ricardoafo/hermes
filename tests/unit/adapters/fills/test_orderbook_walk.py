@@ -19,8 +19,6 @@ Reference: spec-2b-orderbook-walk-fill-model/change.md,
 ADR-011 D-10/D-11/D-02, pre-reg §6.2.
 """
 
-from __future__ import annotations
-
 import inspect
 import random
 from datetime import UTC, datetime

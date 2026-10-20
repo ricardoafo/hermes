@@ -10,8 +10,6 @@ token change restyles every chart. Each function is pure, so tests check the tex
 charts are display-only and never decide anything.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from decimal import Decimal
 from typing import Final

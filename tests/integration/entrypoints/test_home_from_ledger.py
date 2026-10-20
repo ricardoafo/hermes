@@ -8,8 +8,6 @@ read-only, with no demo scenario, exactly as on the VPS.
 Reference: openspec/archive/live-home-screen/change.md (A-1.1, A-2.1, A-4.1).
 """
 
-from __future__ import annotations
-
 import asyncio
 import hashlib
 import io

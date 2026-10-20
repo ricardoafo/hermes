@@ -4,8 +4,6 @@ Each test names the pre-registration rule it protects. Gates are pure, so the
 tests drive them with hand-built records and evidence and a fixed clock.
 """
 
-from __future__ import annotations
-
 from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal

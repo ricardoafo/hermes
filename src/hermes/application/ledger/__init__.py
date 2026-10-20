@@ -10,8 +10,6 @@
 Reference: change ``trade-eur-values``.
 """
 
-from __future__ import annotations
-
 from hermes.application.ledger.eur_backfill import BackfillReport, backfill_pending_eur
 from hermes.application.ledger.eur_pricer import DEFAULT_EUR_SOURCE, EurPricer
 from hermes.application.ledger.trade_recorder import TradeRecorder

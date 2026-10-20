@@ -9,8 +9,6 @@ Financial Machine Learning*, ch. 7 and 12;
 openspec/archive/354-certification-statistics D-5.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from itertools import combinations
 

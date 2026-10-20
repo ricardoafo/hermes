@@ -6,8 +6,6 @@ cannot modify the ledger even by accident, and does not run migrations.
 Reference: GitHub issues #359, #421.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime

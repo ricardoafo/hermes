@@ -17,8 +17,6 @@ time of the oldest lot still open, found by the existing FIFO replay.
 Reference: openspec/archive/36-modelo-100-721/change.md D-7, D-8.
 """
 
-from __future__ import annotations
-
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass

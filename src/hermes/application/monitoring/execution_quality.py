@@ -24,8 +24,6 @@ currency) is ``None``: that chart does not move, the others still do.
 Reference: issue #362; issue #1181; ADR-005 Category B; ADR-012 D-04.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime

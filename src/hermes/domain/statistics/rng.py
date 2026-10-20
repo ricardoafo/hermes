@@ -5,8 +5,6 @@ same stream on every platform and Python version, which keeps bootstrap
 results reproducible for audit.
 """
 
-from __future__ import annotations
-
 __all__ = ["SplitMix64"]
 
 

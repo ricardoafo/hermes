@@ -16,8 +16,6 @@ the risk rules already consume, so that type is not edited.
 Reference: 308-signal-event-portfolio-state change.md D-4, D-5.
 """
 
-from __future__ import annotations
-
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from decimal import Decimal, localcontext

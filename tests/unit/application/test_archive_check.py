@@ -7,8 +7,6 @@ Invariants under test:
 - The check reads the ledger with a read-only connection and never writes it.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta

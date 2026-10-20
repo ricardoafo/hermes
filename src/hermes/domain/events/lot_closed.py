@@ -9,8 +9,6 @@ Reference: ADR-003 §03 (FIFO worked example — "lot #1 fully consumed"),
 code-conventions.md §10.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import ClassVar
 

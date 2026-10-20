@@ -1,7 +1,5 @@
 """Unit tests for the decision journal service and its JSONL store (#363)."""
 
-from __future__ import annotations
-
 import json
 import threading
 from collections.abc import Callable

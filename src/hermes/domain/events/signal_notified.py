@@ -17,8 +17,6 @@ bar's close time), so it carries no wall clock and replays deterministically.
 Reference: code-conventions.md §10 (event schema versioning).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import ClassVar
 

@@ -7,8 +7,6 @@ Invariants protected here:
 - different commands have independent windows.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 
 from hermes.application.bot.gate import CommandGate, GateDecision

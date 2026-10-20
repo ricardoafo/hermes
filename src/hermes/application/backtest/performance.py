@@ -16,8 +16,6 @@ Reference: pre-registration-v1.md §8.1, §9;
 openspec/archive/822-portfolio-backtest/change.md D-4.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterable
 from typing import Any
 

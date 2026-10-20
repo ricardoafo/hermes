@@ -9,8 +9,6 @@ a ``curl`` wrapper that records its argv, then execs the real binary.
 The scripts need only bash and curl; the tests skip when either is missing.
 """
 
-from __future__ import annotations
-
 import os
 import re
 import shutil

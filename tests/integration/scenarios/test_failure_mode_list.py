@@ -6,8 +6,6 @@ its open issue, an accepted risk carries Rick's approval, and a named proof is
 a test that exists.
 """
 
-from __future__ import annotations
-
 import re
 
 import pytest

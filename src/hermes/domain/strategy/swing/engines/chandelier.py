@@ -27,8 +27,6 @@ Reference: pre-registration-v1.md §5.2.
 spec-5-swing-strategy-adapter change.md D-4.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from decimal import Decimal
 

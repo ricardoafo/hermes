@@ -6,8 +6,6 @@ and carry the changelog lines those commits added. The tests build a
 scratch git repository; nothing is mocked.
 """
 
-from __future__ import annotations
-
 import importlib.util
 import re
 import subprocess

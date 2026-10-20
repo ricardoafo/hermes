@@ -8,8 +8,6 @@ Public entry points:
 Reference: spec-2b-orderbook-walk-fill-model/change.md.
 """
 
-from __future__ import annotations
-
 from hermes.adapters.fills.orderbook_walk import OrderbookWalkFillModel
 
 __all__ = ["OrderbookWalkFillModel"]

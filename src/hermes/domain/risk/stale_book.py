@@ -9,8 +9,6 @@ Threshold (binding — pre-reg §5.5): orderbook_age_seconds > 2.
 Reference: SA-9 §5.5 RO-04; spec-8-risk-overlay change.md.
 """
 
-from __future__ import annotations
-
 from hermes.domain.risk.state import MarketSnapshot, PortfolioState
 from hermes.domain.risk.types import RiskAction, RiskDecision
 

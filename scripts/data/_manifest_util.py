@@ -27,8 +27,6 @@ mutated dict back atomically (temp file + rename) on exit. The lock is
 released on normal exit and on exceptions.
 """
 
-from __future__ import annotations
-
 import json
 from collections.abc import Iterator
 from contextlib import contextmanager

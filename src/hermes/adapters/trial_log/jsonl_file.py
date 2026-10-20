@@ -18,8 +18,6 @@ them.
 Reference: openspec/archive/357-trial-log/change.md D-2.
 """
 
-from __future__ import annotations
-
 import hashlib
 import json
 import os

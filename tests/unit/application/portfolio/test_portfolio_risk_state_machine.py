@@ -17,8 +17,6 @@ Reference: pre-registration-v1.md §2, §5.4, §5.5, §10; SA-9 §5.5 (RO-04);
 308-signal-event-portfolio-state change.md D-4, D-5; issues #844, #863.
 """
 
-from __future__ import annotations
-
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta

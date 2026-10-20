@@ -12,8 +12,6 @@ Reference: 309-serve-bar-loop change.md D-6;
     code-conventions.md §10 (event schema versioning).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import ClassVar
 

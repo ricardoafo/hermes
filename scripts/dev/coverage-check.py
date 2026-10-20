@@ -7,8 +7,6 @@ Usage:
 --bootstrap: packages with 0 executable lines pass instead of fail.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import sys

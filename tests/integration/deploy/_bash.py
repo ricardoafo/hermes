@@ -10,8 +10,6 @@ Git for Windows ships two of them. ``Git/bin/bash.exe`` is a launcher that puts
 is the bash it wraps and leaves ``PATH`` alone, so the launcher is swapped for it.
 """
 
-from __future__ import annotations
-
 import os
 import subprocess
 import sys

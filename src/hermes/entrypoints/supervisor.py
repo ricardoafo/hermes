@@ -29,8 +29,6 @@ Exit codes: 0 ok, 1 the tool refused the call or the brief was not kept,
 Reference: openspec/archive/34-supervisor-read-tools/change.md; issues #34, #470.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import logging

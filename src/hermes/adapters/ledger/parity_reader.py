@@ -8,8 +8,6 @@ migrates). Safe next to a running ``hermes serve``.
 Reference: openspec/archive/358-parity-check/change.md.
 """
 
-from __future__ import annotations
-
 import json
 import sqlite3
 from datetime import datetime

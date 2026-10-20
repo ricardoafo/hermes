@@ -10,8 +10,6 @@ Reference: spec-5-swing-strategy-adapter change.md D-1, D-3.
 pre-registration-v1.md §5.1 (EMA(200) 1D regime filter).
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 from hermes.domain.market_data.kline import KlineInterval

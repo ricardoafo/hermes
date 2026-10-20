@@ -1,7 +1,5 @@
 """``hermes activity``: the day-grouped console feed; see :mod:`hermes.entrypoints.activity`."""
 
-from __future__ import annotations
-
 import os
 from typing import TextIO
 

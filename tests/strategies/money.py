@@ -5,8 +5,6 @@ Register via ``st.register_type_strategy`` so hypothesis auto-generates
 ``Money`` values for any dataclass field of that type.
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 from hypothesis import strategies as st

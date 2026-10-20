@@ -4,8 +4,6 @@ Year-end valuation order: operator override, then last bar close in USDT at
 the ECB rate of 31 December, else missing.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 

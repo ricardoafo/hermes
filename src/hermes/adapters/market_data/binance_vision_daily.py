@@ -11,8 +11,6 @@ Reference: GitHub issue #359, scripts/data/ingest_binance_vision.py (checksum
 convention).
 """
 
-from __future__ import annotations
-
 import hashlib
 import tempfile
 from dataclasses import dataclass

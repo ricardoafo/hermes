@@ -18,8 +18,6 @@ Reference: pre-registration-v1.md §5.2, §5.3; sa7-strategy-design.md :153,
 :261; integrity-checker-rules.md §4.1; GitHub issue #680.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 

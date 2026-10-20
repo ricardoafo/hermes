@@ -4,8 +4,6 @@
 - A DOWN heartbeat carries the time it went down, and only a DOWN one does.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from decimal import Decimal
 

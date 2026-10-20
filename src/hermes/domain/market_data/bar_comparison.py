@@ -9,8 +9,6 @@ milliseconds, so ``...59.999999`` and ``...59.999`` are the same close.
 Reference: GitHub issues #359, #343 (risk R-6).
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime

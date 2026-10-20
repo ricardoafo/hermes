@@ -1,7 +1,5 @@
 """Tests for the changes between two tax pack refreshes (change 568-tax-pack R-4)."""
 
-from __future__ import annotations
-
 from hermes.domain.filing.pack_changes import FIRST_REFRESH, figure_changes
 
 

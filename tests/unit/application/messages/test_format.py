@@ -15,8 +15,6 @@ Reference: openspec/archive/144-notification-system/change.md (R-2).
 
 # ruff: noqa: RUF001 - the typographic minus sign is the character under test
 
-from __future__ import annotations
-
 import re
 from datetime import UTC, datetime
 from decimal import Decimal

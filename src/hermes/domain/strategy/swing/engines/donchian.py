@@ -22,8 +22,6 @@ Reference: pre-registration-v1.md §5.1 (Donchian 20, 4h).
 spec-5-swing-strategy-adapter change.md D-1, D-3.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 
 from hermes.domain.market_data.bar import Bar

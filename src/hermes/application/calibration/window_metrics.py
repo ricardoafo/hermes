@@ -9,8 +9,6 @@ Reference: pre-registration-v1.md §8, §9;
 openspec/archive/354-certification-statistics/change.md.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from dataclasses import dataclass
 

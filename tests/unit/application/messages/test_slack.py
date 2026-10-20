@@ -18,8 +18,6 @@ Reference: docs/decisions/2026-10-04-notification-templates-v2.md;
 
 # ruff: noqa: RUF001 - the typographic minus sign is the character under test
 
-from __future__ import annotations
-
 import dataclasses
 import json
 from dataclasses import dataclass

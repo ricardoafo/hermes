@@ -16,8 +16,6 @@ Reference: issues #707 and #706; pre-registration-v1 §5.2 (exits), §6.3 (a
 rejected trade is skipped).
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 

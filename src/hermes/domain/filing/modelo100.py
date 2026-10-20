@@ -21,8 +21,6 @@ window counts Madrid calendar dates and is the tax screen's own rule
 Reference: openspec/archive/36-modelo-100-721/change.md D-1 to D-6.
 """
 
-from __future__ import annotations
-
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass

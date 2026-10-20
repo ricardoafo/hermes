@@ -14,8 +14,6 @@ Each test configures structlog for real, logs through
 ``structlog.get_logger``, and reads the rendered line from stdout.
 """
 
-from __future__ import annotations
-
 import json
 import time
 from collections.abc import Iterator

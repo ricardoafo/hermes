@@ -12,8 +12,6 @@ Exit codes: 0 printed (an estimate or a pending notice), 1 ledger failure,
 Reference: change ``tax-estimates``, ADR-016.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import sqlite3

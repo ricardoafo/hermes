@@ -18,8 +18,6 @@ Reference: SA-3 §Binance L2 snapshot procedure, spec-4c-market-data-adapters
 change.md D-2, issue #844.
 """
 
-from __future__ import annotations
-
 import asyncio
 import json
 import os

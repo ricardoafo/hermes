@@ -8,8 +8,6 @@ Invariants:
   held coin has no entry check after it, as serve logs none while it holds.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path

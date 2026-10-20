@@ -3,8 +3,6 @@
 Reference: spec-5-swing-strategy-adapter change.md.
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 from hermes.domain.strategy.swing.engines.atr import AtrEngine

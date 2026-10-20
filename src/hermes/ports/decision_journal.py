@@ -4,8 +4,6 @@ There is deliberately no update or delete: the journal is append-only, and a
 correction is a new entry (issue #363).
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
 

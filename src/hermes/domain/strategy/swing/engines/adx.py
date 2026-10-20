@@ -35,8 +35,6 @@ Reference: pre-registration-v1.md §5.1 (ADX(14) ≥ 25, 4h).
 spec-5-swing-strategy-adapter change.md.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from decimal import Decimal
 

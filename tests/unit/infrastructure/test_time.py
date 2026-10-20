@@ -8,8 +8,6 @@ Verifies:
 Reference: R-3 (A-3.1 through A-3.4).
 """
 
-from __future__ import annotations
-
 from datetime import datetime
 from zoneinfo import ZoneInfo
 

@@ -29,8 +29,6 @@ and creates five parallel merge chains. Reading YAML → deep-merging env →
 ``Model.model_validate`` keeps one merge chain, one prefix, one error path.
 """
 
-from __future__ import annotations
-
 import os
 from collections.abc import Mapping
 from pathlib import Path

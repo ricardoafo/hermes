@@ -13,8 +13,6 @@ Times show in UTC and Europe/Madrid. No P&L field exists in either form.
 Reference: openspec/archive/370-hermes-status/change.md.
 """
 
-from __future__ import annotations
-
 from datetime import datetime
 from typing import Any, Final
 

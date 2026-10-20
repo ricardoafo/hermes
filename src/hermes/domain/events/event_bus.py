@@ -28,8 +28,6 @@ trade fans out to ledger + notifier + audit), code-conventions.md §1
 (Ports & Adapters — bus stays in the domain because it's pure Python).
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable
 from dataclasses import dataclass, field
 

@@ -18,8 +18,6 @@ a pending destructive migration stops the boot before any row is written.
 Reference: docs/guides/ledger-migrations.md; issue #692.
 """
 
-from __future__ import annotations
-
 import shutil
 import sqlite3
 from contextlib import closing

@@ -3,8 +3,6 @@
 Synthetic data only: every summary below is built in the test.
 """
 
-from __future__ import annotations
-
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal

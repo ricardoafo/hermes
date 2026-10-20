@@ -12,8 +12,6 @@ Reference: openspec/archive/353-fill-kernel-in-serve/change.md D-2, D-4;
 code-conventions.md §10 (event schema versioning).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal

@@ -9,8 +9,6 @@ read fails with a :class:`~hermes.domain.errors.LedgerError` that names
 Reference: openspec/archive/35-monthly-reconciliation/change.md D-1.
 """
 
-from __future__ import annotations
-
 import json
 import sqlite3
 from decimal import Decimal, localcontext

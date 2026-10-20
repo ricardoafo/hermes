@@ -11,8 +11,6 @@ Exit codes: 0 OK or DEGRADED, 1 FAIL (or the API refused the token), 2 usage,
 Reference: change ``177-runner-health``.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 from collections.abc import Mapping, Sequence

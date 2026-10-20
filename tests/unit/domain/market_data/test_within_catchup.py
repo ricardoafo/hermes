@@ -6,8 +6,6 @@ Invariants protected here: a signal is recent exactly when it is between 0 and
 Reference: 309-serve-bar-loop change.md D-6.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 
 import pytest

@@ -16,8 +16,6 @@ Invariants protected here:
 - missing credentials and Slack's ``ok:false`` fail the run.
 """
 
-from __future__ import annotations
-
 import os
 import shutil
 import subprocess

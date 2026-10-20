@@ -27,8 +27,6 @@ Reference: openspec/archive/353-fill-kernel-in-serve/change.md D-1;
 docs/decisions/2026-10-02-binance-public-market-data-host.md.
 """
 
-from __future__ import annotations
-
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 from decimal import Decimal
