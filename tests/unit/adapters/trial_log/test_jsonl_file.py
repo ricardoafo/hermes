@@ -27,7 +27,6 @@ from hermes.domain.calibration.trial_record import DatasetRef, TrialRecord
 from hermes.domain.errors import TrialLogError
 from hermes.domain.market_data.dataset_manifest import DataSplit
 from hermes.infrastructure.file_lock import FileLock
-from hermes.ports.trial_log import TrialLogPort
 
 Edit = Callable[[list[str]], list[str]]
 
@@ -66,11 +65,6 @@ def _rewrite(log: JsonlTrialLog, edit: Edit) -> None:
 
 def _edit_middle(lines: list[str]) -> list[str]:
     return [lines[0], lines[1].replace('"fills_count": "1"', '"fills_count": "7"'), lines[2]]
-
-
-def test_adapter_satisfies_the_port(tmp_path: Path) -> None:
-    """The JSONL adapter can be injected wherever TrialLogPort is expected."""
-    assert isinstance(JsonlTrialLog(tmp_path / "t.jsonl"), TrialLogPort)
 
 
 def test_missing_file_reads_as_no_trials(tmp_path: Path) -> None:

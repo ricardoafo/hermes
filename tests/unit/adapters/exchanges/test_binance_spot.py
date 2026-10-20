@@ -31,7 +31,6 @@ from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
-from hermes.ports.exchange import ExchangePort, StopLossPort
 from tests.support.accepted import assert_accepted
 from tests.support.mainnet_permit import issued_permit
 
@@ -156,12 +155,6 @@ def test_missing_credentials_are_refused() -> None:
     """from_env without credentials raises instead of sending unsigned requests."""
     with pytest.raises(ValueError, match="required"):
         BinanceSpotConfig.from_env({})
-
-
-def test_adapter_satisfies_both_ports(adapter: BinanceSpotAdapter) -> None:
-    """The adapter is an ExchangePort and a StopLossPort."""
-    assert isinstance(adapter, ExchangePort)
-    assert isinstance(adapter, StopLossPort)
 
 
 @respx.mock

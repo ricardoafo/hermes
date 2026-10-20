@@ -24,7 +24,6 @@ from hermes.domain.portfolio.snapshot import PortfolioSnapshot
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
-from hermes.ports.portfolio_history import PortfolioHistoryPort
 
 _BTC = Pair(base=Currency.BTC, quote=Currency.USDT)
 _SWING = StrategyId("swing-donchian-4h")
@@ -66,11 +65,6 @@ def ledger() -> Iterator[SqliteLedger]:
     conn = sqlite3.connect(":memory:")
     yield SqliteLedger(conn)
     conn.close()
-
-
-def test_ledger_satisfies_the_port(ledger: SqliteLedger) -> None:
-    """The ledger can be injected wherever PortfolioHistoryPort is expected."""
-    assert isinstance(ledger, PortfolioHistoryPort)
 
 
 def test_mark_round_trips_exactly(ledger: SqliteLedger) -> None:

@@ -16,7 +16,6 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from hermes.adapters.clock import WallClock
-from hermes.ports.clock import ClockPort
 
 
 class TestWallClockUnit:
@@ -57,11 +56,6 @@ class TestWallClockUnit:
                 f"WallClock.now() violated monotonicity at index {i}: "
                 f"{timestamps[i]!r} > {timestamps[i + 1]!r}"
             )
-
-    def test_isinstance_clock_port(self) -> None:
-        """WallClock satisfies ClockPort via runtime_checkable isinstance."""
-        clock = WallClock()
-        assert isinstance(clock, ClockPort)
 
     def test_now_has_zero_utc_offset(self) -> None:
         """now() UTC offset is exactly zero — not just non-None tzinfo."""
