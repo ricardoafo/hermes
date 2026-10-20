@@ -220,11 +220,11 @@ in hermes.
 
 ### 11. Release
 
-- **Who**: the bot opens a release PR; Ricardo approves it
-- **What**: `scripts/dev/cut-release.py` sets the version, compiles the
-  changelog fragments into a dated section and writes the PR body (ADR-022 §2,
-  versions are `0.y.z` until real capital, ADR-027). CD tags `v<version>` the
-  first time that version deploys. See [`release.md`](release.md).
+- **Who**: CD, on every merge Ricardo lets onto `main`
+- **What**: `scripts/deploy/next_version.py` decides whether the push ships
+  and computes its version from the changelog fragments and engine files since
+  the last `v` tag (ADR-030; `0.y.z` until real capital, ADR-027). CD tags
+  `v<version>` after a good deploy. See [`release.md`](release.md).
 - **State**: ✅ Ready
 
 ### 12. Deploy (CD to VPS)

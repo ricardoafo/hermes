@@ -54,10 +54,7 @@ class TestUniverse:
 
     def test_returns_three_symbols(self, pre_reg: PreRegistration) -> None:
         """universe() must return exactly 3 symbols (BTC, ETH, SOL per §3)."""
-        universe = pre_reg.universe()
-        assert len(universe) == 3, (
-            f"Expected 3 symbols in the signed universe, got {len(universe)}: {universe}"
-        )
+        assert pre_reg.universe() == ("BTCUSDT", "ETHUSDT", "SOLUSDT")
 
     def test_contains_btcusdt(self, pre_reg: PreRegistration) -> None:
         """BTCUSDT must be in the signed universe per pre-reg §3."""
@@ -78,13 +75,6 @@ class TestUniverse:
         universe = pre_reg.universe()
         assert "SOLUSDT" in universe, (
             f"SOLUSDT missing from universe {universe}. Signed in pre-reg §3."
-        )
-
-    def test_returns_tuple(self, pre_reg: PreRegistration) -> None:
-        """universe() must return a tuple (immutable) not a list."""
-        universe = pre_reg.universe()
-        assert isinstance(universe, tuple), (
-            f"universe() must return a tuple for immutability, got {type(universe)}"
         )
 
 

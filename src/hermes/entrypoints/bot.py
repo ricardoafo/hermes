@@ -48,11 +48,9 @@ from hermes.application.console.views import ActivityItem
 from hermes.application.status import StatusReport, build_report, ledger_missing_report
 from hermes.domain.errors import LedgerError
 from hermes.entrypoints import console as console_module
-from hermes.entrypoints import serve as serve_module
+from hermes.entrypoints._cli import add_config_dir_arg, add_db_arg, load_config_or_exit
 from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.status import systemd_unit_state
-from hermes.infrastructure.config.errors import ConfigError
-from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
 from hermes.infrastructure.config.root import HermesConfig
 
 __all__ = ["BotLoop", "main"]
@@ -135,8 +133,8 @@ def main(
     """
     err = resolve_err(err)
     parser = argparse.ArgumentParser(prog="hermes bot", add_help=False)
-    parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
-    parser.add_argument("--db", type=Path, default=serve_module.DEFAULT_DB_PATH)
+    add_config_dir_arg(parser)
+    add_db_arg(parser)
     parser.add_argument("--once", action="store_true")
     parser.add_argument("-h", "--help", action="store_true")
     try:
@@ -158,11 +156,9 @@ def main(
     except EndpointConfigError as exc:
         err.write(f"ERROR: {exc}\n")
         return 3
-    try:
-        config = load_config(parsed.config_dir)
-    except ConfigError as exc:
-        err.write(f"ERROR: config load failed: {exc}\n")
-        return 3
+    config = load_config_or_exit(parsed.config_dir, err)
+    if isinstance(config, int):
+        return config
 
     test_clock = remote_clock_from_env(environ)
     clock = _utc_now if test_clock is None else test_clock.now

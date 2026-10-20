@@ -395,14 +395,14 @@ def test_tax_pack_service_runs_tax_pack_from_the_release() -> None:
 
 
 def test_tax_pack_flags_are_accepted_by_the_real_cli_parser(tmp_path: Path) -> None:
-    """The unit's flags parse; with no ledger at the server path the run stops at exit 1."""
+    """The unit's flags parse; with no ledger at the server path the run stops at exit 3."""
     argv = shlex.split(_parse("hermes-tax-pack.service")["Service"]["ExecStart"])[1:]
     argv[argv.index("--out") + 1] = str(tmp_path / "packs")
     argv[argv.index("--config-dir") + 1] = str(REPO_ROOT / "config")
     argv[argv.index("--db") + 1] = str(tmp_path / "missing.sqlite3")
     stream, err = io.StringIO(), io.StringIO()
 
-    assert cli_module.main(argv, stream=stream, err=err) == 1
+    assert cli_module.main(argv, stream=stream, err=err) == 3
     assert "no ledger at" in err.getvalue()
 
 
@@ -663,3 +663,91 @@ def test_lab_health_timer_fires_the_lab_ping_every_five_minutes() -> None:
     """The lab's check expects a ping every 5 minutes, as prod's does (#1079)."""
     timer = _parse("hermes-lab-health.timer")["Timer"]
     assert (timer["Unit"], timer["OnUnitActiveSec"]) == (_LAB_HEALTH, "5min")
+
+
+# The sandbox every service carries (#1192). MemoryDenyWriteExecute stays off
+# because libffi closures (ctypes, cffi) need pages that are writable and
+# executable. UMask is 0027, not 0077, so group read access between the units
+# keeps working.
+_HARDENING = {
+    "NoNewPrivileges": "true",
+    "PrivateTmp": "true",
+    "PrivateDevices": "true",
+    "ProtectSystem": "strict",
+    "ProtectHome": "true",
+    "ProtectKernelTunables": "true",
+    "ProtectKernelModules": "true",
+    "ProtectKernelLogs": "true",
+    "ProtectControlGroups": "true",
+    "ProtectClock": "true",
+    "ProtectHostname": "true",
+    "CapabilityBoundingSet": "",
+    "RestrictAddressFamilies": "AF_UNIX AF_INET AF_INET6 AF_NETLINK",
+    "RestrictNamespaces": "true",
+    "RestrictRealtime": "true",
+    "RestrictSUIDSGID": "true",
+    "LockPersonality": "true",
+    "SystemCallArchitectures": "native",
+    "SystemCallFilter": "@system-service",
+    "SystemCallErrorNumber": "EPERM",
+    "UMask": "0027",
+}
+
+_PAGES_ON_FAILURE = {
+    "hermes.service",
+    "hermes-bot.service",
+    "hermes-backup.service",
+    "hermes-brief.service",
+    "hermes-daily.service",
+    "hermes-tax-pack.service",
+}
+# Lab units never page; healthchecks.io already alerts on a missing health
+# ping; archive-check exits 1 on the mismatch it has just alerted on; and the
+# notifier paging on its own failure could loop.
+_SILENT_ON_FAILURE = {
+    _STAGING_UNIT,
+    _SHADOW_UNIT,
+    "hermes-lab-health.service",
+    "hermes-lab-memory.service",
+    "hermes-health.service",
+    "hermes-archive-check.service",
+    "hermes-notify-failure@.service",
+}
+_TIMED_SERVICES = sorted(f"{path.stem}.service" for path in _UNIT_DIR.glob("*.timer"))
+
+
+@pytest.mark.parametrize("path", _SERVICE_FILES, ids=lambda p: p.name)
+def test_every_service_carries_the_full_sandbox(path: Path) -> None:
+    """A unit missing one setting runs with more of the kernel exposed than the rest (#1192)."""
+    service = _parse(path.name)["Service"]
+    assert {key: service.get(key) for key in _HARDENING} == _HARDENING
+
+
+def test_every_service_is_classed_as_paging_or_silent() -> None:
+    """A new unit must choose whether its failure pages, so none fails silently by omission."""
+    names = {path.name for path in _SERVICE_FILES}
+    assert names - _PAGES_ON_FAILURE - _SILENT_ON_FAILURE == set()
+
+
+def test_no_service_is_classed_as_both_paging_and_silent() -> None:
+    """The two classes are exclusive, so each unit has one documented failure behaviour."""
+    assert _PAGES_ON_FAILURE.isdisjoint(_SILENT_ON_FAILURE)
+
+
+@pytest.mark.parametrize("name", sorted(_PAGES_ON_FAILURE))
+def test_prod_side_service_pages_when_it_fails(name: str) -> None:
+    """A prod-side unit that fails starts the Telegram notifier for itself (#1192)."""
+    assert _parse(name)["Unit"].get("OnFailure") == "hermes-notify-failure@%N.service"
+
+
+@pytest.mark.parametrize("name", sorted(_SILENT_ON_FAILURE))
+def test_silent_service_declares_no_failure_alert(name: str) -> None:
+    """The silent units keep their failures in the journal only."""
+    parser = _parse(name)
+    assert [section for section in parser.sections() if "OnFailure" in parser[section]] == []
+
+
+@pytest.mark.parametrize("name", _TIMED_SERVICES)
+def test_timer_driven_service_has_no_install_section(name: str) -> None:
+    """Its timer starts it; an [Install] section would let `enable` start it at every boot."""
+    assert "Install" not in _parse(name).sections()
