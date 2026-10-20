@@ -49,9 +49,11 @@ _MAX_PACK_BYTES: Final[int] = 64 * 1024 * 1024
 _CONNECT_TIMEOUT_SECONDS: Final[int] = 10
 # Names are written to the PC verbatim: refuse anything a Windows path could reinterpret
 # (backslashes, drive letters, streams), not just what POSIX parsing sees.
+# The same shape keeps ssh host and user from reading as options.
 _PLAIN_NAME: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+# Windows opens these as devices whatever the extension.
+_RESERVED_STEM: Final = re.compile(r"(?i)(con|prn|aux|nul|com[0-9]|lpt[0-9])")
 _TOO_LARGE: Final[str] = "the archive is larger than a tax pack can be"
-_SAFE_TOKEN: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 _USAGE: Final[str] = (
     "Usage: hermes tax-pack fetch --year YYYY [--out DIR]\n"
@@ -174,6 +176,7 @@ def _read_archive(archive: bytes, year: int) -> dict[str, bytes] | str:
                     not member.isfile()
                     or path.parent != PurePosixPath(str(year))
                     or not _PLAIN_NAME.fullmatch(path.name)
+                    or _RESERVED_STEM.fullmatch(path.name.split(".")[0])
                 ):
                     return f"unexpected entry {member.name!r} in the archive"
                 total += member.size
@@ -256,7 +259,7 @@ def fetch_main(
         return parsed
     snapshot = dict(os.environ if env is None else env)
     settings = VpsSettings.from_env(snapshot)
-    if not (_SAFE_TOKEN.fullmatch(settings.host) and _SAFE_TOKEN.fullmatch(settings.user)):
+    if not (_PLAIN_NAME.fullmatch(settings.host) and _PLAIN_NAME.fullmatch(settings.user)):
         err.write("ERROR: HERMES_VPS_HOST and HERMES_VPS_USER must be plain names.\n")
         return 2
     try:
