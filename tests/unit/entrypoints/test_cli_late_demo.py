@@ -1,7 +1,5 @@
 """`--demo SCENARIO` works after the console command as well as before it (#610)."""
 
-from __future__ import annotations
-
 import io
 
 import pytest

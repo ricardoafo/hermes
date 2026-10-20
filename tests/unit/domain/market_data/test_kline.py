@@ -6,8 +6,6 @@ docstring is the spec — the assertion is the enforcement.
 Reference: docs/guides/ai-authored-tests.md.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 

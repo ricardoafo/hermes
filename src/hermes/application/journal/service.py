@@ -11,8 +11,6 @@ Rules:
 Reference: issue #363; openspec/archive/363-decision-journal.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime

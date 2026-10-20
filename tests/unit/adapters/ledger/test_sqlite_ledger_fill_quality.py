@@ -9,8 +9,6 @@ these rows, so a lossy round trip would corrupt both.
 All run against SQLite ``:memory:``.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta

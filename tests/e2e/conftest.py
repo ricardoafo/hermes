@@ -5,8 +5,6 @@ would pass unnoticed until it hit the guard; printing the per-bar time in
 every run keeps it visible in the release gate's log.
 """
 
-from __future__ import annotations
-
 import pytest
 
 from tests.e2e import test_serve_cycle

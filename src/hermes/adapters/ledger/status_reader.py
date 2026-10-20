@@ -9,8 +9,6 @@ shared lock for the length of one query.
 Reference: openspec/archive/370-hermes-status/change.md.
 """
 
-from __future__ import annotations
-
 import json
 import sqlite3
 from datetime import datetime

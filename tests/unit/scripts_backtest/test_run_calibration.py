@@ -6,8 +6,6 @@ The full end-to-end async run is smoke-tested manually via
 because it depends on the ~30 MB Binance Vision klines archive.
 """
 
-from __future__ import annotations
-
 import importlib.util
 import inspect
 import sys

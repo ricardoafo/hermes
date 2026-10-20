@@ -7,8 +7,6 @@ accepted, and hand out the risk state for it.
 Reference: 308-signal-event-portfolio-state change.md D-4, D-7, Test plan.
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 from hypothesis import given, settings

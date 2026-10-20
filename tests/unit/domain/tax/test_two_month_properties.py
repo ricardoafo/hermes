@@ -14,8 +14,6 @@ sale's Madrid date, and the flag names the nearest such buy.
 Reference: ADR-016 decision 8, change ``tax-estimates`` D-4; issue #692.
 """
 
-from __future__ import annotations
-
 import calendar
 import random
 from datetime import UTC, date, datetime, timedelta, timezone

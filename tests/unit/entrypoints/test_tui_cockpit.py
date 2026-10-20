@@ -20,8 +20,6 @@ Invariants:
 Every app here gets a frozen clock; none reads or writes the real home folder.
 """
 
-from __future__ import annotations
-
 import asyncio
 import io
 from collections.abc import Awaitable, Callable, Sequence

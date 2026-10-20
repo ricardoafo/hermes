@@ -7,8 +7,6 @@ Invariants under test (openspec/archive/356-data-manifest/change.md Design):
 - The committed manifest loads and matches the signed pre-registration.
 """
 
-from __future__ import annotations
-
 import json
 from datetime import UTC, datetime
 from pathlib import Path

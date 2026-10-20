@@ -15,8 +15,6 @@ worse for the strategy (a BUY above, or a SELL below, the reference).
 Reference: openspec/archive/353-fill-kernel-in-serve/change.md D-3, D-4.
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 from hermes.domain.market_data.orderbook import Orderbook

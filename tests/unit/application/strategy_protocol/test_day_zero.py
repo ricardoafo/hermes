@@ -11,8 +11,6 @@ Invariants (797-shadow-day-zero change.md R-1, R-2):
 - The tree hash depends on file paths and bytes, not on listing order.
 """
 
-from __future__ import annotations
-
 import json
 from datetime import UTC, datetime
 from pathlib import Path

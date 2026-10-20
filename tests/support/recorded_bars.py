@@ -10,8 +10,6 @@ each bar's delivery time, so the serve loop sees the same "now" it would have
 seen in production and notifies every fresh signal.
 """
 
-from __future__ import annotations
-
 import asyncio
 import csv
 import gzip

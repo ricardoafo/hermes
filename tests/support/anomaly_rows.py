@@ -1,7 +1,5 @@
 """Read the ``AnomalyDetected`` rows a test run left in a ledger file (#136)."""
 
-from __future__ import annotations
-
 import json
 import sqlite3
 from pathlib import Path

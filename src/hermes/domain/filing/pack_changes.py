@@ -6,8 +6,6 @@ what the operator would see change.
 Reference: openspec/archive/568-tax-pack/change.md R-4.
 """
 
-from __future__ import annotations
-
 from collections.abc import Mapping
 from typing import Final
 

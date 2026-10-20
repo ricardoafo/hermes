@@ -1,7 +1,5 @@
 """Unit tests for walk-forward and purged CPCV splits (pre-registration §8.3)."""
 
-from __future__ import annotations
-
 import itertools
 
 import pytest

@@ -1,7 +1,5 @@
 """``hermes config``: config tools; see :mod:`hermes.entrypoints.config_check`."""
 
-from __future__ import annotations
-
 from typing import Any, TextIO
 
 from hermes.entrypoints import config_check as _check

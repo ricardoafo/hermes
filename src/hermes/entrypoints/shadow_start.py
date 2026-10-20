@@ -25,8 +25,6 @@ Reference: docs/architecture/adr-021-strategy-lifecycle-ready-and-done.md §2,
 §3; issue #797; openspec/archive/797-shadow-day-zero/change.md.
 """
 
-from __future__ import annotations
-
 import argparse
 import os
 import shutil

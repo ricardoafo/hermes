@@ -13,8 +13,6 @@ Exit codes: 0 success, 2 usage or no journalctl on this machine.
 Reference: openspec/archive/376-hermes-logs/change.md.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import re

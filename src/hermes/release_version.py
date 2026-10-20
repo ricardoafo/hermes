@@ -12,8 +12,6 @@ so the release scripts load it by path in CI jobs that have not installed the
 package.
 """
 
-from __future__ import annotations
-
 import re
 
 __all__ = ["changelog_section", "release_label", "to_package_version", "to_semver"]

@@ -5,8 +5,6 @@ The shadow universe (BTC, ETH, SOL against USDT at 4h and 1d) matches
 current" when each stream's last close is the latest boundary before ``now``.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal

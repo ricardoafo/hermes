@@ -16,8 +16,6 @@ Invariants proven here (each maps to a hard requirement):
 Reference: ADR-003 §00 (I-06), §03 (persistence schema), code-conventions.md.
 """
 
-from __future__ import annotations
-
 import json
 import sqlite3
 from datetime import UTC, datetime

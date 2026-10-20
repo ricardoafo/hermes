@@ -11,8 +11,6 @@ bytes and the manifest only changes when a figure does.
 Reference: openspec/archive/568-tax-pack/change.md D-8.
 """
 
-from __future__ import annotations
-
 from datetime import datetime
 from typing import Final
 

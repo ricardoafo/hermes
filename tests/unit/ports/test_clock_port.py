@@ -7,8 +7,6 @@ for: a timezone-aware UTC instant, read from the right source.
 Reference: openspec/archive/spec-4a-clock-port/change.md A-2.1, A-3.1.
 """
 
-from __future__ import annotations
-
 import typing
 from datetime import UTC, datetime, timedelta
 

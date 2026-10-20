@@ -7,8 +7,6 @@ at the bar close, so RO-04 (stale book) refuses an entry, while an exit skips
 the risk overlay and fills on it.
 """
 
-from __future__ import annotations
-
 import json
 from datetime import datetime, timedelta
 from decimal import Decimal

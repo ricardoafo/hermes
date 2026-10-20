@@ -19,8 +19,6 @@ Design notes:
 Reference: spec-6-calibration-harness/change.md R-4, D-1.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime

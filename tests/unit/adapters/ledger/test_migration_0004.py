@@ -3,8 +3,6 @@
 Reference: ADR-002 §3 (EUR values on every trade row), ADR-016 item 3.
 """
 
-from __future__ import annotations
-
 import shutil
 import sqlite3
 from collections.abc import Iterator

@@ -14,8 +14,6 @@ pydantic, no httpx (enforced by import-linter contracts).
 Reference: code-conventions.md §1 (Value Object) and §9 (UTC internally).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal

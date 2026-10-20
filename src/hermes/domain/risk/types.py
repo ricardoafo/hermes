@@ -12,8 +12,6 @@ Reference: spec-8-risk-overlay change.md § Design; import-linter contract
 ``domain-is-pure``.
 """
 
-from __future__ import annotations
-
 import enum
 from dataclasses import dataclass
 

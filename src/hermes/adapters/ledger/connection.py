@@ -34,8 +34,6 @@ does both).
 Reference: issues #855, #879; ADR-003 §03.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from pathlib import Path
 from typing import Self

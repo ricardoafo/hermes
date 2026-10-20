@@ -18,8 +18,6 @@ Reference: docs/decisions/2026-10-04-notification-templates-v2.md (rules 3, 6
     and the recommendation); openspec/archive/144-notification-system/change.md.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType

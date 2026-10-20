@@ -8,8 +8,6 @@ Reference: pre-registration-v1.md §8.1; Bailey and López de Prado (2014),
 "The Deflated Sharpe Ratio"; openspec/archive/354-certification-statistics D-2.
 """
 
-from __future__ import annotations
-
 import math
 from collections.abc import Sequence
 from statistics import NormalDist, fmean

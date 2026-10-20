@@ -21,8 +21,6 @@ Rules (live-bar-stream change D-3 and D-5):
 Domain purity: stdlib and domain types only.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta

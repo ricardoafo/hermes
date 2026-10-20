@@ -8,8 +8,6 @@ port reads a public endpoint and holds no key.
 Reference: openspec/archive/353-fill-kernel-in-serve/change.md D-1.
 """
 
-from __future__ import annotations
-
 from typing import Protocol, runtime_checkable
 
 from hermes.domain.market_data.orderbook import Orderbook

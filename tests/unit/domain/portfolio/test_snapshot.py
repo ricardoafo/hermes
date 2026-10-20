@@ -7,8 +7,6 @@ invariants that must hold for every sequence of operations live in
 Reference: 308-signal-event-portfolio-state change.md D-5, Design (transition rules).
 """
 
-from __future__ import annotations
-
 from dataclasses import replace
 from decimal import Decimal
 

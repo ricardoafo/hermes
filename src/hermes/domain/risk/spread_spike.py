@@ -8,8 +8,6 @@ Threshold (binding — pre-reg §5.5): current_spread ≥ 10 x median_spread_1h.
 Reference: SA-9 §5.5 RO-02; spec-8-risk-overlay change.md.
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 from hermes.domain.risk.state import MarketSnapshot, PortfolioState

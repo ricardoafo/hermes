@@ -9,8 +9,6 @@ the guard too. That is intended: an expected failure hides a broken SEV-1
 path just as a skip does.
 """
 
-from __future__ import annotations
-
 import os
 import re
 from pathlib import Path

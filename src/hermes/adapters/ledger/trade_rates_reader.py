@@ -7,8 +7,6 @@ run next to ``hermes serve`` and never changes the ledger.
 Reference: openspec/archive/568-tax-pack/change.md R-5.
 """
 
-from __future__ import annotations
-
 import sqlite3
 
 from hermes.adapters.ledger._cells import date_cell, decimal_cell

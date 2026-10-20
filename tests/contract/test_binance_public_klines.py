@@ -20,8 +20,6 @@ Reference: docs/decisions/2026-08-23-contract-test-tier.md,
 docs/decisions/2026-10-02-binance-public-market-data-host.md.
 """
 
-from __future__ import annotations
-
 from datetime import timedelta
 
 import httpx

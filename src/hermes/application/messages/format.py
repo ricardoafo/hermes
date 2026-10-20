@@ -21,8 +21,6 @@ Reference: openspec/archive/144-notification-system/change.md (R-2);
     docs/decisions/2026-10-04-notification-templates-v2.md (rules 1-3, 6).
 """
 
-from __future__ import annotations
-
 from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Final

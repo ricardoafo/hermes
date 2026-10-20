@@ -7,8 +7,6 @@ tracker's memory.
 Reference: GitHub issue #387, openspec/archive/387-portfolio-marks/change.md.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import datetime
 

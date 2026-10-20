@@ -38,8 +38,6 @@ Reference: openspec/archive/358-parity-check/change.md;
 openspec/archive/965-shadow-parity-window/change.md.
 """
 
-from __future__ import annotations
-
 import argparse
 import asyncio
 import json

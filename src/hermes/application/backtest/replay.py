@@ -26,8 +26,6 @@ Reference: openspec/archive/backtest-driver-mvp1-phase2/change.md D-1, D-4, D-5;
 openspec/archive/822-portfolio-backtest/change.md D-1, D-3.
 """
 
-from __future__ import annotations
-
 import re
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, MutableMapping

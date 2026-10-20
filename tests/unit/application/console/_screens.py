@@ -1,7 +1,5 @@
 """Every console screen, keyed by name, for parametrised renderer tests."""
 
-from __future__ import annotations
-
 from collections.abc import Callable
 from typing import Final
 

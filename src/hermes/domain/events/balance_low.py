@@ -8,8 +8,6 @@ so they can top up before the next trade cycle stalls.
 Reference: ADR-003 §02 (balance guards), code-conventions.md §10 + §3.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import datetime
 from typing import ClassVar

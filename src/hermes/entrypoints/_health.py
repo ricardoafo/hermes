@@ -30,8 +30,6 @@ Design notes
   path — a watchdog script would spam the channel on every tick.
 """
 
-from __future__ import annotations
-
 import json
 import re
 import time

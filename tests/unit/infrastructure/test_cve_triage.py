@@ -10,8 +10,6 @@ Protects the #37 triage invariants:
 - The link points at the GHSA advisory when one exists, else OSV.
 """
 
-from __future__ import annotations
-
 import importlib.util
 import json
 import sys

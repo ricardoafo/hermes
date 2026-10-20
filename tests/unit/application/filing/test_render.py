@@ -3,8 +3,6 @@
 Reference: ADR-016 item 10 (estimate and shadow labels), change D-4 and D-10.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, date, datetime
 from decimal import Decimal
 

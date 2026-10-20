@@ -8,8 +8,6 @@ Not covered yet: ``hermes status`` reporting a fresh heartbeat (#370),
 added once that command has merged.
 """
 
-from __future__ import annotations
-
 import pytest
 
 from tests.smoke._remote import RunOnVps

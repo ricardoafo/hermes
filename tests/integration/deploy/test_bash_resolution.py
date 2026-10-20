@@ -6,8 +6,6 @@ The harness swaps it for the ``usr/bin/bash.exe`` it wraps. These tests use
 fake Git layouts and run on every platform.
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 
 from tests.integration.deploy._bash import resolve_bash

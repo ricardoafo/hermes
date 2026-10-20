@@ -7,8 +7,6 @@ snapshots without boilerplate.
 Reference: spec-8-risk-overlay change.md § Test plan.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from decimal import Decimal
 

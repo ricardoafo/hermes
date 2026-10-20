@@ -11,8 +11,6 @@ Invariants protected here:
   print the plain report; the command exits 0 except 2 on bad usage.
 """
 
-from __future__ import annotations
-
 import io
 import json
 import platform

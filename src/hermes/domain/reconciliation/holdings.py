@@ -9,8 +9,6 @@ is drift. Fail loud, never auto-heal (ADR-003 §10): this module only reports.
 Reference: openspec/archive/35-monthly-reconciliation/change.md D-1, D-2.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime

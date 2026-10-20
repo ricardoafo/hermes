@@ -18,8 +18,6 @@ Invariants (822-portfolio-backtest change.md R-1..R-4):
   count and drawdown are the run's own.
 """
 
-from __future__ import annotations
-
 import json
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta

@@ -12,8 +12,6 @@ and values year-end holdings (D-8 of the change):
 Reference: openspec/archive/36-modelo-100-721/change.md.
 """
 
-from __future__ import annotations
-
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date

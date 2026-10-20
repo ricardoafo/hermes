@@ -25,8 +25,6 @@ Exit codes
 - 3 — body already rewritten (marker present); nothing written.
 """
 
-from __future__ import annotations
-
 import argparse
 import os
 import re

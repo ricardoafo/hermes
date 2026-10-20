@@ -17,8 +17,6 @@ replacement behaviour, and its ``deviation`` names the lab-notebook entry that
 approved it.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 PRE_REGISTRATION = "docs/experiments/swing-mvp1/pre-registration-v1.md"

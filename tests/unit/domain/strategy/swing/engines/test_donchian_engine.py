@@ -10,8 +10,6 @@ Reference: spec-5-swing-strategy-adapter change.md.
 pre-registration-v1.md §5.1 (Donchian(20) 4h breakout).
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 from hermes.domain.strategy.swing.engines.donchian import DonchianEngine

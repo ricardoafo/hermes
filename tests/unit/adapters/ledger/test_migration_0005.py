@@ -10,8 +10,6 @@ Invariants under test:
   ``migrate_with_snapshot`` applies it after a snapshot.
 """
 
-from __future__ import annotations
-
 import shutil
 import sqlite3
 from pathlib import Path

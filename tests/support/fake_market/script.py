@@ -9,8 +9,6 @@ taken from a recording (ADR-012 keeps live bars and the pre-registered test
 window away from AI-written tests).
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta

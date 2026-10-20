@@ -6,8 +6,6 @@ JSON (#543). ``err`` is optional everywhere and resolves to the live
 ``sys.stderr`` when omitted.
 """
 
-from __future__ import annotations
-
 import sys
 from typing import TextIO
 

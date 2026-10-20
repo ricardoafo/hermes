@@ -12,8 +12,6 @@ Invariants under test:
 - A checksum mismatch, a missing checksum or an HTTP error fails loudly.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable
 from datetime import UTC, date, datetime
 from decimal import Decimal

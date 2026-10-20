@@ -10,8 +10,6 @@ does, and RO-02 stays off in shadow (issue #514). The concrete implementation is
 Reference: code-conventions.md §5 (Ports as Protocols), GitHub issue #835.
 """
 
-from __future__ import annotations
-
 from datetime import datetime
 from typing import Protocol, runtime_checkable
 

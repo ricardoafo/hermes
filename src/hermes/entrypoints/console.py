@@ -17,8 +17,6 @@ Reference: openspec/archive/console-read-model/change.md (D-4, D-9);
 openspec/archive/ledger-read-model/change.md (D-8, D-9).
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta

@@ -6,8 +6,6 @@ the same seam against a real ledger file is covered in
 ``tests/unit/entrypoints/test_tax_pack.py``.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, date, datetime
 from decimal import Decimal
 

@@ -28,8 +28,6 @@ What the plain generator leaves out, and why:
 - NaN or non-numeric prices (issue #850).
 """
 
-from __future__ import annotations
-
 import math
 import random
 from dataclasses import dataclass, field

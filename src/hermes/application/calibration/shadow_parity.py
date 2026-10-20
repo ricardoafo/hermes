@@ -24,8 +24,6 @@ Reference: issue #360; ADR-011 D-19; decisions journal
 ``2026-10-03-calibration-metrics-and-shadow-sharpe-kill``.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
