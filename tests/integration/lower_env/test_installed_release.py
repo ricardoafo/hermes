@@ -49,7 +49,8 @@ _SCENARIO = markets.three_breakouts()
 
 
 def _serve(tmp_path: Path, until: datetime, *, outage: tuple[Outage, int] | None = None) -> Run:
-    return serve(tmp_path, _SCENARIO.market, _SCENARIO.live_from, until, outage=outage)
+    outages = None if outage is None else {Sink.TELEGRAM: outage}
+    return serve(tmp_path, _SCENARIO.market, _SCENARIO.live_from, until, outages=outages)
 
 
 def _texts(calls: list[Call]) -> list[str]:
