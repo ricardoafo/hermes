@@ -17,8 +17,6 @@ what hermes logged, which by ADR-008 never includes secrets or P&L.
 Reference: openspec/archive/376-hermes-logs/change.md.
 """
 
-from __future__ import annotations
-
 import json
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field

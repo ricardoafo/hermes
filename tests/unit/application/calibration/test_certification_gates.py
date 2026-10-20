@@ -4,8 +4,6 @@ Each test names the pre-registration rule it protects. Gates are pure, so the
 tests drive them with hand-built records and evidence and a fixed clock.
 """
 
-from __future__ import annotations
-
 from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -145,7 +143,7 @@ class TestSection9Checks:
     def test_win_rate_boundary_passes(self, pre_reg: PreRegistration) -> None:
         """Win rate is the one ≥ row in §9: exactly 30% passes."""
         checks = section9_checks(replace(_PASSING, win_rate=0.30), pre_reg.h1_thresholds())
-        assert all(c.passed for c in checks)
+        assert [c.name for c in checks if not c.passed] == []
 
 
 # ---------------------------------------------------------------------------

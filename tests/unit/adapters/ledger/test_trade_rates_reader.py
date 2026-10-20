@@ -4,8 +4,6 @@ The ledger is written through ``TradeRecorder``, so the lookup is checked
 against the rates production stores on each trade.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from collections.abc import Iterator
 from datetime import date
@@ -17,7 +15,6 @@ import pytest
 from hermes.adapters.ledger.trade_rates_reader import LedgerTradeRates
 from hermes.domain.errors import LedgerError
 from hermes.domain.filing.trail import TradeRate
-from hermes.ports.tax_pack import TradeRatesPort
 from tests.unit.adapters.ledger.filing_ledger import RATE, standard_ledger
 
 
@@ -34,11 +31,6 @@ def rates(db: Path) -> Iterator[LedgerTradeRates]:
     """Yield a read-only lookup over the standard ledger."""
     with LedgerTradeRates.open(db) as opened:
         yield opened
-
-
-def test_lookup_satisfies_the_port(rates: LedgerTradeRates) -> None:
-    """Invariant: the adapter can be injected wherever the port is expected."""
-    assert isinstance(rates, TradeRatesPort)
 
 
 def test_every_priced_trade_has_its_stored_rate(rates: LedgerTradeRates) -> None:

@@ -18,8 +18,6 @@ a price, value or P&L.
 Reference: openspec/archive/365-supervisor-desk-briefings/change.md; issues #365, #496.
 """
 
-from __future__ import annotations
-
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta

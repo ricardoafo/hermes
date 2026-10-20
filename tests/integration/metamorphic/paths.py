@@ -15,8 +15,6 @@ one pair goes through one strategy per pair and one shared portfolio, the way
 serve and the parity check route bars by ``bar.pair``.
 """
 
-from __future__ import annotations
-
 import itertools
 import random
 import sqlite3

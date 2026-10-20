@@ -9,8 +9,6 @@ Invariants:
   so the note says the verdict is not available, with the fill count.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 

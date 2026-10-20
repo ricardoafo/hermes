@@ -7,8 +7,6 @@ across all 8 rules.
 Reference: spec-8-risk-overlay change.md § Decisions D-1; R-3.
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 from hermes.domain.risk.correlation_lock import CorrelationLock

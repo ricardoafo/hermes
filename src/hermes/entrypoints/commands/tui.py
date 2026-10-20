@@ -1,7 +1,5 @@
 """``hermes tui``: the read-only home screen; see :mod:`hermes.entrypoints.console`."""
 
-from __future__ import annotations
-
 import os
 from collections.abc import Callable, Mapping, MutableMapping
 from dataclasses import replace

@@ -18,8 +18,6 @@ Contract vs unit
 Reference: docs/decisions/2026-08-23-contract-test-tier.md.
 """
 
-from __future__ import annotations
-
 import os
 
 import httpx

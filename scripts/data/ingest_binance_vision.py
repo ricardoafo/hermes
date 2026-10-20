@@ -61,8 +61,6 @@ Exit codes:
     1 - one or more unexpected failures (see stderr for details)
 """
 
-from __future__ import annotations
-
 import argparse
 import hashlib
 import json

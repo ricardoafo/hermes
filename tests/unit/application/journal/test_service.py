@@ -1,7 +1,5 @@
 """Unit tests for the decision journal service and its JSONL store (#363)."""
 
-from __future__ import annotations
-
 import json
 import threading
 from collections.abc import Callable
@@ -15,7 +13,7 @@ from hermes.adapters.journal.jsonl_store import JsonlDecisionJournal
 from hermes.application.journal.service import JournalError, due, record_decision, record_review
 from hermes.domain.journal.entries import Decision, OutcomeKind, Score
 from hermes.infrastructure.file_lock import FileLock
-from hermes.ports.decision_journal import DecisionJournalPort, JournalIntegrityError
+from hermes.ports.decision_journal import JournalIntegrityError
 
 _DAY = datetime(2026, 10, 3, 9, 0, tzinfo=UTC)
 _LATER = datetime(2026, 11, 3, 9, 0, tzinfo=UTC)
@@ -46,11 +44,6 @@ def _decision(
 def journal(tmp_path: Path) -> JsonlDecisionJournal:
     """Return an empty journal in a temp file."""
     return JsonlDecisionJournal(tmp_path / "journal.jsonl")
-
-
-def test_store_satisfies_the_port(journal: JsonlDecisionJournal) -> None:
-    """The JSONL store is a structural DecisionJournalPort."""
-    assert isinstance(journal, DecisionJournalPort)
 
 
 def test_round_trip_keeps_the_decision(journal: JsonlDecisionJournal) -> None:

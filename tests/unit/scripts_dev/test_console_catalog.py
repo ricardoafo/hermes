@@ -11,8 +11,6 @@ Invariants under test:
   was removed or when there is no earlier release.
 """
 
-from __future__ import annotations
-
 import importlib.util
 import sys
 from pathlib import Path

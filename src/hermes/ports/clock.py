@@ -12,8 +12,6 @@ Reference: SA-8 §4.1 S-01 — deterministic replay requires an injected
 clock so domain logic never reads the wall clock directly.
 """
 
-from __future__ import annotations
-
 from datetime import datetime
 from typing import Protocol, runtime_checkable
 

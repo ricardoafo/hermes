@@ -18,8 +18,6 @@ Reference: code-conventions.md §1 (Value Object) and §9 (UTC internally).
 spec-4b-market-data-port change.md §Design.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal

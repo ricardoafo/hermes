@@ -14,8 +14,6 @@ All run against SQLite ``:memory:``.
 Reference: 309-serve-bar-loop change.md D-6.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta

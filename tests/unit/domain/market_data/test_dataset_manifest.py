@@ -8,8 +8,6 @@ Invariants under test (openspec/archive/356-data-manifest/change.md D-1, D-2):
 - A manifest pins at most one entry per (pair, interval, split).
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 

@@ -20,8 +20,6 @@ Invariants under test:
   kills neutral, whatever the portfolio did.
 """
 
-from __future__ import annotations
-
 import inspect
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta

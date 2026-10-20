@@ -10,8 +10,6 @@ real feed: see ``test_market_data_faults.py``, where a late bar either waits or
 stops serve loudly and is recovered on restart.
 """
 
-from __future__ import annotations
-
 import json
 from datetime import timedelta
 

@@ -8,8 +8,6 @@ hold, so a run under way is ``RUNNING`` and says its verdict is not available.
 Reference: openspec/archive/live-home-screen/change.md (D-4).
 """
 
-from __future__ import annotations
-
 from datetime import datetime, tzinfo
 from typing import Final
 

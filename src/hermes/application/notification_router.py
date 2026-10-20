@@ -38,8 +38,6 @@ Reference: ``docs/decisions/2026-08-23-slack-alongside-telegram.md``
     imports ports + domain, never adapters).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from enum import StrEnum
 

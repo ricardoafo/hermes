@@ -14,8 +14,6 @@ No pydantic, no httpx, no asyncio (enforced by ``import-linter`` contract
 Reference: code-conventions.md §1 (Value Object) and §9 (UTC internally).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum

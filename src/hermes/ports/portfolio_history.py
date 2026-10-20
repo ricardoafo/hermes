@@ -7,8 +7,6 @@ AI-facing tools must not read them before certification (ADR-012 D-06).
 Reference: code-conventions.md §5 (Ports as Protocols), GitHub issue #387.
 """
 
-from __future__ import annotations
-
 from datetime import datetime
 from typing import Protocol, runtime_checkable
 

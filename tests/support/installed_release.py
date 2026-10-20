@@ -17,6 +17,7 @@ import signal
 import subprocess
 import sys
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -34,6 +35,8 @@ from tests.support.serve_loop import PROJECT_ROOT
 HERMES = Path(sys.executable).parent / "hermes"
 TOKEN = "123456:installed-release-fake"  # noqa: S105 - test-only  # gitleaks:allow
 CHAT = "-1001234567890"
+SLACK_BOT = "xoxb-installed-release-fake"  # gitleaks:allow
+SLACK_CHANNEL = "C0INSTALLED"
 BAR = timedelta(hours=4)
 SETTLE = timedelta(seconds=production_config().market_data.settle_delay_seconds)
 _QUIET_S = 0.3
@@ -50,6 +53,7 @@ class Run:
         log: Its stdout and stderr.
         exit_code: How it exited after its stop signal.
         telegram: Every Telegram request it made, oldest first.
+        calls: Every request it made to any sink, oldest first.
         stopped_at: The scripted instant the run was stopped at.
 
     """
@@ -58,6 +62,7 @@ class Run:
     log: str
     exit_code: int
     telegram: list[Call]
+    calls: list[Call]
     stopped_at: datetime
 
 
@@ -83,6 +88,10 @@ def release_env(market: FakeMarketService, notify: FakeNotify) -> dict[str, str]
         "HERMES_TELEGRAM__BOT_TOKEN": TOKEN,
         "HERMES_TELEGRAM__CHAT_ID": CHAT,
         "HERMES_TELEGRAM__API_BASE": notify.telegram_base,
+        "HERMES_SLACK__BOT_TOKEN": SLACK_BOT,
+        "HERMES_SLACK__DEFAULT_CHANNEL": SLACK_CHANNEL,
+        "HERMES_SLACK__API_BASE": notify.slack_base,
+        "HERMES_SENTRY__DSN": notify.sentry_dsn(),
         "HERMES_TEST_CLOCK_URL": f"{market.url}{CONTROL_PREFIX}/clock",
     }
 
@@ -103,7 +112,7 @@ def serve(
     live_from: datetime,
     until: datetime,
     *,
-    outage: tuple[Outage, int] | None = None,
+    outages: Mapping[Sink, tuple[Outage, int]] | None = None,
     restart: bool = False,
     stop: signal.Signals = signal.SIGTERM,
 ) -> Run:
@@ -115,22 +124,22 @@ def serve(
         live_from: Boot instant; warm-up sees every bar closed by then.
         until: The scripted instant to stop at; a bar is handled once the
             clock reaches its close plus the settle delay.
-        outage: Make the next N Telegram requests fail this way.
+        outages: Per sink, make its next N requests fail this way.
         restart: Boot on the ledger an earlier run in ``tmp_path`` left,
             as a deploy or a reboot does, instead of a fresh one.
         stop: How the run ends: SIGTERM is systemd's stop, SIGKILL a crash
             or a power cut.
 
     Returns:
-        The run's ledger, log, exit code and Telegram calls.
+        The run's ledger, log, exit code and sink calls.
 
     """
     db = tmp_path / "hermes.sqlite3"
     log_path = tmp_path / f"serve-{len(list(tmp_path.glob('serve-*.log')))}.log"
     new_ledger = [] if restart else ["--new-ledger"]
     with market_service(market, live_from) as service, FakeNotify(timeout_hold_s=0.5) as notify:
-        if outage is not None:
-            notify.fail_next(Sink.TELEGRAM, *outage)
+        for sink, (outage, times) in (outages or {}).items():
+            notify.fail_next(sink, outage, times)
         with log_path.open("w", encoding="utf-8") as log:
             process = subprocess.Popen(  # noqa: S603 - this checkout's own entry point
                 [
@@ -163,6 +172,7 @@ def serve(
             log=log_path.read_text(encoding="utf-8"),
             exit_code=code,
             telegram=notify.calls(Sink.TELEGRAM),
+            calls=notify.calls(),
             stopped_at=service.now(),
         )
 

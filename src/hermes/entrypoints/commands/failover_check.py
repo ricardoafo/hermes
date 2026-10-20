@@ -1,7 +1,5 @@
 """``hermes failover-check``: see :mod:`hermes.entrypoints.failover_check`."""
 
-from __future__ import annotations
-
 from hermes.entrypoints import failover_check as _impl
 from hermes.entrypoints.commands import Command
 

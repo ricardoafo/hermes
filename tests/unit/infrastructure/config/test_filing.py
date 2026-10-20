@@ -1,7 +1,5 @@
 """Tests for the tax-filing config and the local Modelo 721 history (change 36 D-7, D-9)."""
 
-from __future__ import annotations
-
 from decimal import Decimal
 from pathlib import Path
 

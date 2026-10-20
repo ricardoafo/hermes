@@ -7,8 +7,6 @@ deterministically; a naive timestamp is refused.
 Reference: 309-serve-bar-loop change.md D-6.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 

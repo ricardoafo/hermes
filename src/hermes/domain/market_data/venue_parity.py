@@ -9,8 +9,6 @@ makes the pair incomplete: after a failover the strategy would see a gap.
 Reference: GitHub issue #31; ADR-004 Decision 3 and 6.
 """
 
-from __future__ import annotations
-
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime

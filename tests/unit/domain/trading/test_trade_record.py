@@ -3,8 +3,6 @@
 Reference: ADR-002 §3, ADR-016 item 3.
 """
 
-from __future__ import annotations
-
 from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal

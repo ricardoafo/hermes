@@ -4,8 +4,6 @@ Year-end valuation order: operator override, then last bar close in USDT at
 the ECB rate of 31 December, else missing.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
@@ -24,6 +22,7 @@ from hermes.domain.lots.selection import InsufficientInventory
 from hermes.domain.trading.order import OrderSide
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
+from hermes.domain.value_objects.quantity import Quantity
 from tests.unit.application.filing.fake_reader import FakeFilingReader
 from tests.unit.application.ledger.fake_fx import FakeFx
 
@@ -225,4 +224,7 @@ def test_inconsistent_trades_are_a_failure() -> None:
         today=_AFTER,
         shadow=True,
     )
-    assert isinstance(result.failure(), InsufficientInventory)
+    assert result.failure() == InsufficientInventory(
+        requested=Quantity(amount=Decimal("1"), asset=Currency.BTC),
+        available=Quantity(amount=Decimal("0"), asset=Currency.BTC),
+    )

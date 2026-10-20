@@ -17,8 +17,6 @@ Invariants:
   60 days of 4h and 1d checks on three coins, on the console's UI thread).
 """
 
-from __future__ import annotations
-
 import hashlib
 import sqlite3
 from contextlib import closing

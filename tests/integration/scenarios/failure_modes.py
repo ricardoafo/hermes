@@ -18,8 +18,6 @@ Each failure mode is in one of three states:
 - ``accepted``: ``approved by Rick YYYY-MM-DD: why we live with it``.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 _U = "tests/unit/"
@@ -58,6 +56,7 @@ _LEDGER_MACHINE = _U + "adapters/ledger/test_sqlite_ledger_state_machine.py::"
 _BOOK_MACHINE = _U + "adapters/market_data/test_orderbook_diff_state_machine.py::"
 _LOTS_MACHINE = _U + "domain/lots/test_fifo_lots_state_machine.py::"
 _ALERTS = _U + "deploy/test_alert_scripts.py::"
+_NULL = _U + "scripts_backtest/test_null_check.py::"
 _WIRE = _U + "adapters/test_wire_numbers.py::"
 _PATHS = _S + "test_generated_paths.py::"
 _DOWN = _S + "test_downtime_recovery.py::"
@@ -872,6 +871,22 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             ),
         ),
         FailureMode(
+            "Two batches merged close together deploy under one version number",
+            proved_by=(
+                _U + "deploy/test_next_version.py"
+                "::test_settle_adopts_the_next_number_when_an_earlier_deploy_took_it",
+                _U + "deploy/test_cd_workflow.py"
+                "::test_the_version_is_settled_under_the_deploy_lock_before_the_box",
+            ),
+        ),
+        FailureMode(
+            "A good deploy leaves no version tag, so the next push reuses its number",
+            proved_by=(
+                _U + "deploy/test_cd_workflow.py"
+                "::test_a_missing_version_tag_fails_the_deploy_after_the_announcement",
+            ),
+        ),
+        FailureMode(
             "A staging deploy leaves a lab shadow on the old release or an unmigrated ledger",
             proved_by=(
                 _RELEASE + "test_staging_deploy_restarts_and_gates_every_shadow_after_the_flip",
@@ -967,6 +982,13 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             proved_by=(
                 _OUTAGES + "test_a_telegram_outage_does_not_stop_trading",
                 _LOOP + "test_notifier_outage_does_not_stop_the_loop",
+            ),
+        ),
+        FailureMode(
+            "Telegram, Slack and Sentry are all down while a trade fires",
+            proved_by=(
+                _I + "lower_env/test_installed_operations.py"
+                "::test_every_alert_sink_down_through_a_trade_changes_nothing_the_run_records",
             ),
         ),
         FailureMode(
@@ -1283,6 +1305,30 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
                 _U
                 + "entrypoints/test_parity.py::"
                 + "test_offline_with_299_daily_bars_exits_three_naming_the_300_bar_floor",
+            ),
+        ),
+        FailureMode(
+            "A sweep sends a Train failure, or two candidates of one family, to Validation",
+            proved_by=(
+                _U + "application/calibration/test_sweep_selection.py::"
+                "test_a_candidate_that_failed_train_is_never_sent_whatever_its_dsr",
+                _U + "application/calibration/test_sweep_selection.py::"
+                "test_each_family_sends_its_passer_with_the_highest_train_dsr",
+                _NULL + "test_only_one_candidate_per_family_runs_validation",
+            ),
+        ),
+        FailureMode(
+            "The null check misses an edge that is there, or names one on pure noise",
+            proved_by=(
+                _NULL + "test_a_planted_edge_is_found_as_the_champion",
+                _NULL + "test_a_sweep_with_no_edge_names_no_champion",
+            ),
+        ),
+        FailureMode(
+            "The null check passes on too few series to show q, or a crash reads as a verdict",
+            proved_by=(
+                _NULL + "test_fewer_series_than_one_over_q_is_a_usage_error",
+                _NULL + "test_a_series_that_crashes_exits_3_and_writes_no_record",
             ),
         ),
     ),

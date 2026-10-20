@@ -6,8 +6,6 @@ then applies, ``--restore`` puts the snapshot back, and each outcome maps to
 its exit code.
 """
 
-from __future__ import annotations
-
 import io
 import sqlite3
 from pathlib import Path

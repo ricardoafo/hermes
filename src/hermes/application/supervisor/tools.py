@@ -19,8 +19,6 @@ scope the caller was granted, and every call, refused or not, is audited.
 Reference: openspec/archive/34-supervisor-read-tools/change.md; issues #34, #470.
 """
 
-from __future__ import annotations
-
 import dataclasses
 import hashlib
 import json

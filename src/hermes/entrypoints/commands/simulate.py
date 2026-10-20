@@ -1,7 +1,5 @@
 """``hermes simulate``: placeholder until historical replay ships."""
 
-from __future__ import annotations
-
 from typing import TextIO
 
 from hermes.entrypoints._streams import resolve_err

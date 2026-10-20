@@ -8,8 +8,6 @@ and lists both subcommands, ``check`` reaches
 Reference: openspec/archive/537-config-check/change.md.
 """
 
-from __future__ import annotations
-
 import io
 
 from hermes.entrypoints import cli

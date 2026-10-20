@@ -12,8 +12,6 @@ All functions are pure.
 Reference: openspec/archive/console-read-model/change.md (D-6).
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum

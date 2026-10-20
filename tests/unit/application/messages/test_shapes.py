@@ -13,8 +13,6 @@ Invariants protected here:
 Reference: docs/decisions/2026-10-04-notification-templates-v2.md.
 """
 
-from __future__ import annotations
-
 from types import MappingProxyType
 
 import pytest
@@ -69,7 +67,8 @@ def test_table_encodes_the_recommendation(family: Family, channel: Channel, shap
 
 def test_shape_table_is_read_only() -> None:
     """SHAPES is a mapping proxy, so no caller can change a shape at runtime."""
-    assert isinstance(SHAPES, MappingProxyType)
+    with pytest.raises(TypeError):
+        SHAPES["x"] = next(iter(SHAPES.values()))  # type: ignore[index]
 
 
 def test_minimal_is_one_line_ending_with_the_ref() -> None:

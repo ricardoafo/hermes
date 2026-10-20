@@ -11,8 +11,6 @@ sample event stay exactly as reviewed.
 Reference: openspec/archive/144-notification-system/change.md (test plan).
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 import pytest

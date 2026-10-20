@@ -21,8 +21,6 @@ Verifies:
 Reference: ``openspec/archive/309-serve-bar-loop/change.md`` D-1, D-5, D-7, D-9.
 """
 
-from __future__ import annotations
-
 import asyncio
 import dataclasses
 import json

@@ -8,8 +8,6 @@ Property tests verify both threshold boundaries (pre-reg §5.5):
 Reference: SA-9 §5.5 RO-03; spec-8-risk-overlay change.md R-2.
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 from hypothesis import given, settings

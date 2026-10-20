@@ -19,8 +19,6 @@ by ``tests/unit/adapters/ledger/test_supervisor_reader.py`` and the CLI tests
 in ``tests/unit/entrypoints/test_supervisor.py``.
 """
 
-from __future__ import annotations
-
 import dataclasses
 import hashlib
 import json

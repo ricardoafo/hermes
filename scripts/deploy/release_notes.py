@@ -11,26 +11,25 @@ commits.
 Usage::
 
     release_notes.py --release <sha> --repo <owner/name> --format markdown
-    release_notes.py --release <sha> --repo <owner/name> --format telegram
+    release_notes.py --release <sha> --repo <owner/name> --format telegram --version 0.3.0
 
 ``markdown`` is the GitHub release body; ``telegram`` is the plain-text
 message the CD deploy job posts after a good deploy. The Telegram message
 leads with the version the release carries (``hermes v0.2.0
-(<sha12>)``, ADR-022 §4), read from ``pyproject.toml`` at the release and
-named by ``src/hermes/release_version.py``, loaded by path. Only the standard
+(<sha12>)``, ADR-022 §4): the one CD computed, passed as ``--version``
+(ADR-030), else the one in ``pyproject.toml`` at the release, named by
+``src/hermes/release_version.py``, loaded by path. Only the standard
 library and ``git`` are used, so it runs before ``uv sync``.
 
 Exit codes: 0 on success, 2 when ``git`` fails (unknown commit, no repo).
 """
-
-from __future__ import annotations
 
 import argparse
 import importlib.util
 import re
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 TAG_PREFIX = "deploy-"
@@ -208,12 +207,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo", required=True, help="owner/name, for links")
     parser.add_argument("--format", choices=("markdown", "telegram"), default="markdown")
     parser.add_argument("--root", type=Path, default=Path.cwd(), help="git checkout")
+    parser.add_argument(
+        "--version", default=None, help="the version CD computed for this push (ADR-030)"
+    )
     args = parser.parse_args(argv)
     try:
         notes = collect(args.root, args.release)
     except subprocess.CalledProcessError as exc:
         print(f"git failed: {exc.stderr.strip()}", file=sys.stderr)
         return 2
+    if args.version:
+        notes = replace(notes, version=f"v{args.version}")
     render = render_markdown if args.format == "markdown" else render_telegram
     sys.stdout.write(render(notes, args.repo))
     return 0

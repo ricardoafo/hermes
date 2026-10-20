@@ -24,8 +24,6 @@ Reference: pre-registration-v1.md §2, §5.4, §5.5;
 openspec/archive/sizing-per-prereg/change.md (supersedes spec-3 D-2).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from decimal import ROUND_DOWN, Decimal, localcontext
 

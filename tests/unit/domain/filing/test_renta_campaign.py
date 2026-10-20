@@ -1,7 +1,5 @@
 """Tests for picking a tax year's Renta Web layout (change 568-tax-pack D-6)."""
 
-from __future__ import annotations
-
 from datetime import date
 
 from hermes.domain.filing.renta_campaign import CampaignLayout, RentaCampaign, campaign_for

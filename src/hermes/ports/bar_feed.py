@@ -16,8 +16,6 @@ other channels.
 Reference: openspec/archive/307-live-bar-stream/change.md D-4, D-5, D-7.
 """
 
-from __future__ import annotations
-
 from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime

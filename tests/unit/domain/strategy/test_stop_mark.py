@@ -6,8 +6,6 @@ can always be matched to its position and bar in UTC.
 Reference: 388-stop-marks change.md.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from decimal import Decimal
 

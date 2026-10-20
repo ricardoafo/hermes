@@ -9,8 +9,6 @@ raising lookup all mean "no rate", so a push keeps its quote-currency text.
 Reference: openspec/archive/668-eur-prices-in-pushes/change.md.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable
 from decimal import Decimal
 

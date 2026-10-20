@@ -13,8 +13,6 @@ Reference: spec-2a-fill-model-port/change.md D-3 (read + write in one port,
 safety at composition root), Issue #199.
 """
 
-from __future__ import annotations
-
 import inspect
 from decimal import Decimal
 from typing import Any, get_type_hints

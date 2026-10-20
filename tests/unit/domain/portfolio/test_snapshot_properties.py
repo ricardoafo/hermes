@@ -8,8 +8,6 @@ use ``==``, not a tolerance.
 Reference: 308-signal-event-portfolio-state change.md D-5, Test plan.
 """
 
-from __future__ import annotations
-
 from collections import defaultdict
 from collections.abc import Iterator
 from decimal import Decimal

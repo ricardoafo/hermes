@@ -10,8 +10,6 @@ is exercised (including ZIP iteration, CSV parsing, domain construction).
 Test pyramid: integration tier (marker: ``integration``).
 """
 
-from __future__ import annotations
-
 import csv
 import io
 import zipfile

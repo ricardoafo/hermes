@@ -12,8 +12,6 @@ Reference: docs/architecture/adr-021-strategy-lifecycle-ready-and-done.md §2,
 §3; openspec/archive/797-shadow-day-zero/change.md.
 """
 
-from __future__ import annotations
-
 import hashlib
 import json
 from collections.abc import Iterable, Sequence

@@ -10,8 +10,6 @@ Reference: openspec/archive/35-monthly-reconciliation/change.md D-4,
 ADR-016 items 3 and 5.
 """
 
-from __future__ import annotations
-
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass

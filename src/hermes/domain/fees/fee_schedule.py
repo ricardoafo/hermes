@@ -17,8 +17,6 @@ Reference: code-conventions.md §1 (Value Object) and §6 (Decimal for
 ledger values).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Final

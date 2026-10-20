@@ -15,8 +15,6 @@ Reference: issue #498; console build plan step 5;
 openspec/archive/live-home-screen/change.md (D-1 to D-3).
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 from collections.abc import Mapping

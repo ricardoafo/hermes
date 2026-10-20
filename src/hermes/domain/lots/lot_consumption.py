@@ -13,8 +13,6 @@ ADR-002 (Spanish tax posture), code-conventions.md §1 (Value Object),
 §3 (immutability), §6 (Decimal).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal

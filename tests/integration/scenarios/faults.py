@@ -19,8 +19,6 @@ as the boot EUR pricing, is not counted unless that task is armed too.
 exchange keeps true time, as when NTP steps the host clock.
 """
 
-from __future__ import annotations
-
 import contextlib
 import json
 import sqlite3

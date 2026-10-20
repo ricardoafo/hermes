@@ -11,8 +11,6 @@ So a format change at the vendor fails the contract run, and a generator that
 drifts from the vendor fails the fake-market tests (issue #688).
 """
 
-from __future__ import annotations
-
 import re
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation

@@ -25,8 +25,6 @@ Reference:
   spec-9-strategy-development-protocol change.md (KillDecision design).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 
 from hermes.application.strategy_protocol.preregistration import (

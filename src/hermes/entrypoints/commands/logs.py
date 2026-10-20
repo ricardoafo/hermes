@@ -1,7 +1,5 @@
 """``hermes logs``: hermes's journal, readable; see :mod:`hermes.entrypoints.logs`."""
 
-from __future__ import annotations
-
 from hermes.entrypoints import logs as _impl
 from hermes.entrypoints.commands import Command
 

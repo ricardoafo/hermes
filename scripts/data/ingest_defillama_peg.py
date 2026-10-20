@@ -38,8 +38,6 @@ Exit codes:
     1 - one or more failures (see stderr)
 """
 
-from __future__ import annotations
-
 import argparse
 import hashlib
 import json

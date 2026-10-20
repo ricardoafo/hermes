@@ -1,7 +1,5 @@
 """``hermes health``: probe one integration, or every registered one."""
 
-from __future__ import annotations
-
 import os
 from pathlib import Path
 from typing import Any, TextIO

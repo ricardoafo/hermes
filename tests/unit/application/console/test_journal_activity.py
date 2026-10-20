@@ -9,8 +9,6 @@ Invariants:
 - a bar line without the entry fields adds no counts.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 
 from hypothesis import given

@@ -15,8 +15,6 @@ Reference: openspec/archive/353-fill-kernel-in-serve/change.md R-6;
 docs/decisions/2026-08-23-contract-test-tier.md.
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 import httpx

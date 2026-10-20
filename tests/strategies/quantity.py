@@ -1,7 +1,5 @@
 """Hypothesis strategies for the Quantity value object."""
 
-from __future__ import annotations
-
 from hypothesis import strategies as st
 
 from hermes.domain.value_objects.currency import Currency

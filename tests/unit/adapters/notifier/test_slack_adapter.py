@@ -23,8 +23,6 @@ Reference: docs/decisions/2026-08-23-slack-alongside-telegram.md;
     docs/guides/ai-authored-tests.md §"The unit-test standard".
 """
 
-from __future__ import annotations
-
 import json
 import re
 from datetime import UTC, date, datetime

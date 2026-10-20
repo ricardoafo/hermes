@@ -9,8 +9,6 @@ concrete implementation is
 Reference: openspec/archive/36-modelo-100-721/change.md.
 """
 
-from __future__ import annotations
-
 from datetime import datetime
 from decimal import Decimal
 from typing import Protocol, runtime_checkable

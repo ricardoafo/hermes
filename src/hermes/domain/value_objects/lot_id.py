@@ -7,8 +7,6 @@ without a separate timestamp column.
 Reference: code-conventions.md §1 (Value Object) and §4 (Factory methods).
 """
 
-from __future__ import annotations
-
 import re
 from dataclasses import dataclass
 

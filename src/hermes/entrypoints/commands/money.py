@@ -1,7 +1,5 @@
 """``hermes money``: the portfolio section; see :mod:`hermes.entrypoints.money`."""
 
-from __future__ import annotations
-
 import os
 
 from hermes.entrypoints import money as _impl

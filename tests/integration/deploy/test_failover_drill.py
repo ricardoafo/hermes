@@ -12,8 +12,6 @@ release on the box, which only the operator's monthly drill covers
 Reference: openspec/archive/31-failover-drill/change.md (Test plan).
 """
 
-from __future__ import annotations
-
 import json
 import sqlite3
 import subprocess

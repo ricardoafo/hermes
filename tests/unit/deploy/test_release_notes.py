@@ -6,8 +6,6 @@ and carry the changelog lines those commits added. The tests build a
 scratch git repository; nothing is mocked.
 """
 
-from __future__ import annotations
-
 import importlib.util
 import re
 import subprocess
@@ -237,3 +235,30 @@ def test_unknown_release_exits_2(repo: Repo, capsys: pytest.CaptureFixture[str])
 
     assert code == 2
     assert "git failed" in capsys.readouterr().err
+
+
+def test_the_computed_version_overrides_the_committed_one(
+    repo: Repo, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """ADR-030 §4: the repo keeps the last release; the message names what CD stamped."""
+    release = _with_version(repo, "0.2.0")
+
+    code = NOTES.main(
+        [
+            "--release",
+            release,
+            "--repo",
+            _REPO,
+            "--root",
+            str(repo.path),
+            "--format",
+            "telegram",
+            "--version",
+            "0.3.0",
+        ]
+    )
+
+    assert code == 0
+    assert capsys.readouterr().out.startswith(
+        f"hermes v0.3.0 ({release[:12]}) is live on hermes-01.\n"
+    )

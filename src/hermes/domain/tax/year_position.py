@@ -8,8 +8,6 @@ included (ADR-016 decision 3, computed upstream by the EUR FIFO replay).
 Reference: ADR-016 decisions 2, 3 and 6.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime

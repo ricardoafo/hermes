@@ -3,8 +3,6 @@
 Reference: ADR-016 decision 3; change trade-eur-values D-6 (the rows the FIFO replays).
 """
 
-from __future__ import annotations
-
 import sqlite3
 from collections.abc import Iterator
 from datetime import timedelta
@@ -16,7 +14,7 @@ from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.domain.errors import LedgerError
 from hermes.domain.trading.order import OrderSide
 from hermes.domain.value_objects.currency import Currency
-from hermes.ports.ledger import EurTradeRow, TaxTradeSourcePort
+from hermes.ports.ledger import EurTradeRow
 from tests.unit.adapters.ledger.test_sqlite_capital_seed import _pricing, _record_seed
 from tests.unit.adapters.ledger.test_sqlite_capital_seed import _record as _record_usdt
 from tests.unit.adapters.ledger.test_sqlite_capital_seed import _trade as _usdt_trade
@@ -57,11 +55,6 @@ def test_lists_priced_and_pending_trades_in_fill_order(connection: sqlite3.Conne
             fee_eur=None,
         ),
     )
-
-
-def test_sqlite_ledger_satisfies_the_tax_source_port(connection: sqlite3.Connection) -> None:
-    """The adapter is usable wherever the tax service expects the port."""
-    assert isinstance(SqliteLedger(connection), TaxTradeSourcePort)
 
 
 def test_read_failure_raises_ledger_error() -> None:

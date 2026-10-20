@@ -35,8 +35,6 @@ Design decisions
   use one ``except InfraError`` if they want to.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta

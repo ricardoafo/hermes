@@ -15,8 +15,6 @@ AI-facing tools must not read them before certification (ADR-012 D-02, D-06).
 Reference: GitHub issues #388 and #680, openspec/archive/388-stop-marks/change.md.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal

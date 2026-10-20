@@ -12,8 +12,6 @@ clock behind trades as a steady one; a clock ahead leaves the breakout entry
 halted on a stale book, as Rick chose (RO-04 unchanged, the skew alerted).
 """
 
-from __future__ import annotations
-
 import functools
 import json
 from collections.abc import Callable

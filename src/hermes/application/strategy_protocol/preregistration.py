@@ -13,8 +13,6 @@ Reference:
   ``openspec/archive/spec-9-strategy-development-protocol/change.md`` D-1.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path

@@ -3,8 +3,6 @@
 Reference: pre-registration-v1.md §4 and §8.1, openspec/archive/357-trial-log/change.md.
 """
 
-from __future__ import annotations
-
 from datetime import datetime
 
 from hermes.domain.calibration.trial_record import TrialSummary, summarise_trials

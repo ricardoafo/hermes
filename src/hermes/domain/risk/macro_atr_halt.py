@@ -13,8 +13,6 @@ Threshold (binding — pre-reg §5.5): log-return < -0.10 → HALT.
 Reference: SA-9 §5.5 RO-07; spec-8-risk-overlay change.md.
 """
 
-from __future__ import annotations
-
 from hermes.domain.risk.state import MarketSnapshot, PortfolioState
 from hermes.domain.risk.types import RiskAction, RiskDecision
 

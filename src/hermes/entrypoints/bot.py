@@ -12,8 +12,6 @@ Exit codes: 0 clean stop, 2 usage, 3 missing Telegram settings or bad config.
 Reference: openspec/archive/379-telegram-bot/change.md.
 """
 
-from __future__ import annotations
-
 import argparse
 import os
 import signal

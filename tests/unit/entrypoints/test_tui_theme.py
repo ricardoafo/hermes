@@ -16,8 +16,6 @@ Invariants:
 - the Neon tokens are the values the Code Owner agreed.
 """
 
-from __future__ import annotations
-
 from datetime import time
 
 import pytest

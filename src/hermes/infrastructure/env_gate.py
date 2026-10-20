@@ -20,8 +20,6 @@ Reference:
 ``docs/decisions/2026-08-23-credential-storage-layered-by-env.md``
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 from hermes.domain.errors import InfraError

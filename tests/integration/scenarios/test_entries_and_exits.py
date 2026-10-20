@@ -5,8 +5,6 @@ ledger. Sizes, prices and fees are worked out in :mod:`.expected` from the
 pre-registration text.
 """
 
-from __future__ import annotations
-
 import json
 from datetime import timedelta
 from decimal import Decimal
