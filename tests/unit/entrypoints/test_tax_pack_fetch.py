@@ -176,6 +176,7 @@ def test_a_manifest_for_another_year_is_refused(tmp_path: Path) -> None:
         "2026/:stream",
         "2026/..",
         "2026/NUL",
+        "2026/trail.csv.",
         "2026/aux.txt",
         "2026/COM1.pdf",
     ],

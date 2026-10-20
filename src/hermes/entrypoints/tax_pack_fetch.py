@@ -181,6 +181,7 @@ def _read_archive(archive: bytes, year: int) -> dict[str, bytes] | str:
                     not member.isfile()
                     or path.parent != PurePosixPath(str(year))
                     or not _PLAIN_NAME.fullmatch(path.name)
+                    or path.name.endswith(".")
                     or _RESERVED_STEM.fullmatch(path.name.split(".")[0])
                 ):
                     return f"unexpected entry {member.name!r} in the archive"
