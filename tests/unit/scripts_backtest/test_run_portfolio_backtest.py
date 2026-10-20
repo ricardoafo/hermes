@@ -47,6 +47,7 @@ from hermes.entrypoints.funnel import main as funnel_main
 from hermes.infrastructure.config.models import StrategyConfig
 from tests.support.paths import REPO_ROOT
 from tests.support.research_batch import BATCH_PATH, batch_front_matter, batch_text
+from tests.support.research_sweep import sweep_front_matter
 from tests.support.unknown_signal import config_with_unknown_signal, refusal_lines
 
 _SCRIPTS = REPO_ROOT / "scripts" / "backtest"
@@ -242,8 +243,23 @@ class _SyntheticRun:
     performance: Path
 
 
-def _run_driver(tmp: Path, *, funnel: bool, extra: list[str] | None = None) -> _SyntheticRun:
-    """Run the driver's main on synthetic bars, with the manifest, roster and split stubbed."""
+def _run_driver(
+    tmp: Path,
+    *,
+    funnel: bool,
+    extra: list[str] | None = None,
+    selected: list[str | None] | None = None,
+) -> _SyntheticRun:
+    """Run the driver's main on synthetic bars, with the manifest, roster and split stubbed.
+
+    Every roster name the driver asks for is appended to ``selected``.
+    """
+    asked = [] if selected is None else selected
+
+    def select(_dir: Path, name: str | None, depth: Decimal) -> tuple[StrategyConfig, object]:
+        asked.append(name)
+        return _v2_roster(), _v2_roster().execution_model(depth_frac=depth)
+
     bars = DRIVER._merge(_walk(_BTC, 1) + _walk(_ETH, 2))
     datasets = [{"dataset_id": "synthetic", "content_sha256": "0" * 64}]
 
@@ -271,14 +287,7 @@ def _run_driver(tmp: Path, *, funnel: bool, extra: list[str] | None = None) -> _
         mp.setattr(DRIVER, "_load_manifest", lambda _path: object())
         mp.setattr(DRIVER, "_load", load)
         mp.setattr(DRIVER, "trial_split", lambda *_args: DataSplit.TRAIN)
-        mp.setattr(
-            DRIVER,
-            "_select",
-            lambda _dir, _name, depth: (
-                _v2_roster(),
-                _v2_roster().execution_model(depth_frac=depth),
-            ),
-        )
+        mp.setattr(DRIVER, "_select", select)
         code = DRIVER.main(argv)
     return replace(out, exit_code=code)
 
@@ -511,3 +520,93 @@ def test_an_unknown_signal_exits_1_naming_it(
 
     lines = capsys.readouterr().err.splitlines()
     assert (code, lines[0], lines[-1]) == (1, *refusal_lines(config_dir))
+
+
+# ---------------------------------------------------------------------------
+# --batch SWEEP --candidate POINT (ADR-031 §2, issue #1310)
+# ---------------------------------------------------------------------------
+
+_POINT = "breakout@donchian_period=25"
+
+
+def _sweep_file(tmp: Path, grid: dict[str, list[object]]) -> Path:
+    """Write a signed sweep whose breakout family is v2 with ``grid``."""
+    fm = sweep_front_matter()
+    fm["families"][0].update(template=_V2, grid=grid)
+    path = tmp / BATCH_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(batch_text(fm), encoding="utf-8")
+    return path
+
+
+@pytest.fixture(scope="module")
+def point_run(tmp_path_factory: pytest.TempPathFactory) -> tuple[_SyntheticRun, list[str | None]]:
+    """One synthetic run of a sweep's grid point, and the roster names the driver asked for."""
+    tmp = tmp_path_factory.mktemp("point")
+    sweep = _sweep_file(tmp, {"donchian_period": [20, 25]})
+    selected: list[str | None] = []
+    run = _run_driver(
+        tmp, funnel=True, extra=[f"--batch={sweep}", f"--candidate={_POINT}"], selected=selected
+    )
+    return run, selected
+
+
+def test_a_grid_point_runs_its_familys_template(
+    point_run: tuple[_SyntheticRun, list[str | None]],
+) -> None:
+    """ADR-031 §1: the roster entry is the family's template, not the point's id."""
+    run, selected = point_run
+
+    assert (run.exit_code, selected) == (0, [_V2])
+
+
+def test_a_grid_points_trial_lines_carry_its_own_id_and_batch(
+    point_run: tuple[_SyntheticRun, list[str | None]],
+) -> None:
+    """Every Train touch counts against the point itself (ADR-031 §2)."""
+    records = JsonlTrialLog(point_run[0].trial_log).records()
+
+    assert {(r.strategy_id, r.parameters["batch.id"]) for r in records} == {(_POINT, "b1")}
+
+
+def test_a_grid_point_starts_from_its_own_value_and_moves_to_its_neighbour(
+    point_run: tuple[_SyntheticRun, list[str | None]],
+) -> None:
+    """The base runs the point's value, 25, and the one neighbour runs the adjacent grid value."""
+    records = JsonlTrialLog(point_run[0].trial_log).records()
+
+    assert [
+        (r.parameters.get("funnel.replay", "base"), r.parameters["donchian_period"])
+        for r in records
+    ] == [("base", "25"), ("donchian_period=20", "20"), ("cost_stress=2", "25")]
+
+
+def test_a_grid_points_evidence_names_the_point(
+    point_run: tuple[_SyntheticRun, list[str | None]],
+) -> None:
+    """The judge reads the evidence folder by candidate id, so the file must name it too."""
+    evidence = json.loads(point_run[0].evidence.read_text())
+
+    assert evidence["strategy_id"] == _POINT
+
+
+def test_a_grid_point_on_a_parameter_the_template_lacks_is_refused(tmp_path: Path) -> None:
+    """A point the template cannot run would log trials of something else, so nothing is logged."""
+    sweep = _sweep_file(tmp_path, {"no_such_knob": [1, 2]})
+
+    run = _run_driver(
+        tmp_path, funnel=True, extra=[f"--batch={sweep}", "--candidate=breakout@no_such_knob=2"]
+    )
+
+    assert (run.exit_code, run.trial_log.exists()) == (1, False)
+
+
+def test_a_point_the_sweep_does_not_expand_to_is_refused(tmp_path: Path) -> None:
+    """--candidate must be one of the sweep's grid points."""
+    sweep = _sweep_file(tmp_path, {"donchian_period": [20, 25]})
+
+    run = _run_driver(
+        tmp_path, funnel=True, extra=[f"--batch={sweep}", "--candidate=breakout@donchian_period=30"]
+    )
+
+    assert (run.exit_code, run.trial_log.exists()) == (1, False)

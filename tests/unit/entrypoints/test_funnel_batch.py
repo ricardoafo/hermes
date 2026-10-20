@@ -17,12 +17,16 @@ from hermes.application.backtest.fold_evidence import fold_evidence
 from hermes.entrypoints import funnel as funnel_module
 from hermes.entrypoints import funnel_batch
 from tests.support.candidate_evidence import (
+    BODY,
+    DAYS,
+    FUNNEL,
     START,
     TRAIN_DAYS,
     write_candidate,
     write_trial_log,
 )
-from tests.support.research_batch import BATCH_PATH
+from tests.support.research_batch import BATCH_PATH, batch_text
+from tests.support.research_sweep import SWEEP_IDS, sweep_front_matter
 
 _ALPHA = "swing-alpha"
 _BETA = "swing-beta"
@@ -372,3 +376,90 @@ class TestFoldEvidenceIsReportedOnly:
             True,
             "CHAMPION swing-alpha",
         )
+
+
+# ---------------------------------------------------------------------------
+# A sweep (ADR-031 §3, §4; issue #1310)
+# ---------------------------------------------------------------------------
+
+
+def _write_sweep(root: Path, strong: tuple[str, ...], *, days: int) -> None:
+    """Write the synthetic sweep at the batch path, with evidence for the ``strong`` points only.
+
+    Every strong point gets the same evidence, so the same DSR.
+    """
+    for strategy_id in strong:
+        write_candidate(root, strategy_id=strategy_id, days=days)
+    front_matter = sweep_front_matter()
+    front_matter["backtest_funnel"] = dict(FUNNEL)
+    (root / BATCH_PATH).parent.mkdir(parents=True, exist_ok=True)
+    (root / BATCH_PATH).write_text(batch_text(front_matter, BODY), encoding="utf-8")
+
+
+class TestSweep:
+    """A sweep sends one Train passer per family on, and judges only those at Validation."""
+
+    def test_train_lists_one_winner_per_family_and_a_tie_keeps_expansion_order(
+        self, tmp_path: Path
+    ) -> None:
+        """ADR-031 §3: two equal breakout passers send the first; pullback sends its own."""
+        _write_sweep(tmp_path, (SWEEP_IDS[3], SWEEP_IDS[1], SWEEP_IDS[7]), days=TRAIN_DAYS)
+
+        code, out, _ = _run(_argv(tmp_path, "train"))
+
+        assert (code, out.splitlines()[-1], _json(tmp_path / "out/validation-candidates.json")) == (
+            0,
+            f"CANDIDATES {SWEEP_IDS[1]} {SWEEP_IDS[7]}",
+            {"batch_id": "b1", "stage": "train", "candidates": [SWEEP_IDS[1], SWEEP_IDS[7]]},
+        )
+
+    def test_a_passer_that_is_not_its_familys_winner_does_not_go_on(self, tmp_path: Path) -> None:
+        """Its verdict record says it passed Train and does not go on."""
+        _write_sweep(tmp_path, (SWEEP_IDS[1], SWEEP_IDS[3]), days=TRAIN_DAYS)
+
+        _run(_argv(tmp_path, "train"))
+
+        record = _json(tmp_path / "out" / "verdicts" / f"{SWEEP_IDS[3]}.json")
+        assert isinstance(record, dict)
+        assert (record["passed"], record["goes_on"]) == (True, False)
+
+    def test_validation_judges_only_the_candidates_sent(self, tmp_path: Path) -> None:
+        """ADR-031 §4: m is the candidates sent, so only they get a Validation verdict."""
+        _write_sweep(tmp_path, (SWEEP_IDS[1], SWEEP_IDS[7]), days=DAYS)
+        sent = tmp_path / "sweep-selection.json"
+        sent.write_text(json.dumps({"sent": [SWEEP_IDS[7], SWEEP_IDS[1]]}), encoding="utf-8")
+
+        code, out, _ = _run(_argv(tmp_path, "validation", "--sent", str(sent)))
+
+        verdicts = sorted(p.name for p in (tmp_path / "out" / "verdicts").iterdir())
+        assert (code, out.splitlines()[-1], verdicts) == (
+            0,
+            f"CHAMPION {SWEEP_IDS[1]}",
+            sorted(f"{s}.json" for s in (SWEEP_IDS[1], SWEEP_IDS[7])),
+        )
+
+    def test_a_sweeps_validation_without_sent_is_a_usage_error(self, tmp_path: Path) -> None:
+        """Without the record, every grid point would count in m."""
+        _write_sweep(tmp_path, (), days=DAYS)
+
+        code, _, err = _run(_argv(tmp_path, "validation"))
+
+        assert (code, err.startswith("ERROR: a sweep's Validation needs --sent")) == (2, True)
+
+    def test_sent_outside_a_sweeps_validation_is_a_usage_error(self, tmp_path: Path) -> None:
+        """A plain batch judges every candidate, so --sent is refused rather than ignored."""
+        write_candidate(tmp_path, strategy_id=_ALPHA)
+
+        code, _, err = _run(_argv(tmp_path, "validation", "--sent", str(tmp_path / "x.json")))
+
+        assert (code, err.startswith("ERROR: --sent is only for")) == (2, True)
+
+    def test_a_sent_id_outside_the_sweep_is_exit_three(self, tmp_path: Path) -> None:
+        """A typo in the record must not shrink m silently."""
+        _write_sweep(tmp_path, (), days=DAYS)
+        sent = tmp_path / "sweep-selection.json"
+        sent.write_text(json.dumps({"sent": ["pullback@lookback=99"]}), encoding="utf-8")
+
+        code, _, err = _run(_argv(tmp_path, "validation", "--sent", str(sent)))
+
+        assert (code, "not candidates of b1" in err) == (3, True)

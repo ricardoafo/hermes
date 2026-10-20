@@ -39,7 +39,9 @@ exit bar's close (pre-registration v2 §5.3, §6.2), v1 as it was signed.
 candidate's own grid instead of v2's, and every trial line records
 ``batch.id``. The workflow checks the batch with ``hermes batch check`` first;
 the driver refuses a candidate whose signed base values differ from the
-strategy's own.
+strategy's own. A sweep's candidate (ADR-031) is one grid point: the roster
+entry is its family's template, and the point's values replace the template's
+defaults, so the base is the point itself.
 
 Exit codes:
     0 - backtest completed, trial logged, report and performance file saved
@@ -82,6 +84,7 @@ from hermes.application.backtest.performance import performance_file, round_trip
 from hermes.application.backtest.replay import BacktestRun, ExecutionModel, replay
 from hermes.application.calibration.harness import CalibrationHarness
 from hermes.application.calibration.research_batch import BatchError, Candidate, parse_batch
+from hermes.application.calibration.research_sweep import SweepPoint, is_sweep, parse_sweep
 from hermes.application.execution.kernel import FillKernel
 from hermes.application.order_router.risk_engine import RiskEngine
 from hermes.application.order_router.sizing import SizingPolicy
@@ -331,6 +334,7 @@ class _Grid:
     replays: tuple[FunnelReplay, ...]
     trial_fields: dict[str, Any]
     candidate: Candidate | None = None
+    point: SweepPoint | None = None
 
 
 def _grid(args: argparse.Namespace) -> _Grid:
@@ -343,8 +347,15 @@ def _grid(args: argparse.Namespace) -> _Grid:
     if args.batch is None:
         return _Grid(FUNNEL_REPLAYS, {})
     path = Path(args.batch)
+    point: SweepPoint | None = None
     try:
-        batch = parse_batch(path.as_posix(), path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
+        if is_sweep(text):
+            sweep = parse_sweep(path.as_posix(), text)
+            batch = sweep.batch
+            point = next((p for p in sweep.points if p.candidate_id == args.candidate), None)
+        else:
+            batch = parse_batch(path.as_posix(), text)
     except (OSError, UnicodeDecodeError) as err:
         raise ValueError(f"batch {path}: {err}") from err
     except BatchError as err:
@@ -357,7 +368,7 @@ def _grid(args: argparse.Namespace) -> _Grid:
     if args.strategy not in (None, candidate.strategy_id):
         raise ValueError(f"--strategy {args.strategy} is not candidate {candidate.strategy_id}")
     args.strategy = candidate.strategy_id
-    return _Grid(candidate.funnel_replays(), {"batch.id": batch.batch_id}, candidate)
+    return _Grid(candidate.funnel_replays(), {"batch.id": batch.batch_id}, candidate, point)
 
 
 def _signed_bases(candidate: Candidate, base: dict[str, Any]) -> None:
@@ -372,6 +383,17 @@ def _signed_bases(candidate: Candidate, base: dict[str, Any]) -> None:
             )
 
 
+def _point_bases(point: SweepPoint, defaults: dict[str, Any]) -> dict[str, Any]:
+    """The template's defaults with the grid point's values in place.
+
+    Raises:
+        ValueError: The template has no parameter the point sets.
+    """
+    if unknown := sorted(set(dict(point.values)) - set(defaults)):
+        raise ValueError(f"template {point.template} has no parameter {unknown}")
+    return defaults | dict(point.values)
+
+
 async def _run(args: argparse.Namespace) -> int:
     pairs: tuple[Pair, ...] = args.pairs
     start = _parse_iso_date(args.start)
@@ -382,11 +404,13 @@ async def _run(args: argparse.Namespace) -> int:
         print(f"ERROR: {err}", file=sys.stderr)
         return 1
     try:
-        roster, model = _select(Path(args.config_dir), args.strategy, args.depth_frac)
+        roster_name = args.strategy if grid.point is None else grid.point.template
+        roster, model = _select(Path(args.config_dir), roster_name, args.depth_frac)
     except (ConfigError, ValueError) as err:
         print(f"ERROR: {err}", file=sys.stderr)
         return 1
-    strategy_id = StrategyId(roster.name)
+    # A sweep candidate's trial lines and evidence carry its own id, not its template's.
+    strategy_id = StrategyId(roster.name if grid.point is None else grid.point.candidate_id)
     names = ",".join(str(p) for p in pairs)
     print(f"Portfolio backtest: {start.date()} -> {end.date()} ({names}, {strategy_id.value})")
     fee_rows = load_binance_fee_history(FEE_HISTORY_CSV)
@@ -409,6 +433,8 @@ async def _run(args: argparse.Namespace) -> int:
     kind = roster.strategy_kind()
     base_parameters = kind.default_parameters()
     try:
+        if grid.point is not None:
+            base_parameters = _point_bases(grid.point, base_parameters)
         if grid.candidate is not None:
             _signed_bases(grid.candidate, base_parameters)
         plan = [

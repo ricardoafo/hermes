@@ -57,6 +57,8 @@ _BOOK_MACHINE = _U + "adapters/market_data/test_orderbook_diff_state_machine.py:
 _LOTS_MACHINE = _U + "domain/lots/test_fifo_lots_state_machine.py::"
 _ALERTS = _U + "deploy/test_alert_scripts.py::"
 _NULL = _U + "scripts_backtest/test_null_check.py::"
+_SWEEP_RUN = _U + "scripts_backtest/test_backtest_batch_workflow.py::"
+_SWEEP_JUDGE = _U + "entrypoints/test_funnel_batch.py::TestSweep::"
 _WIRE = _U + "adapters/test_wire_numbers.py::"
 _PATHS = _S + "test_generated_paths.py::"
 _DOWN = _S + "test_downtime_recovery.py::"
@@ -1329,6 +1331,31 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             proved_by=(
                 _NULL + "test_fewer_series_than_one_over_q_is_a_usage_error",
                 _NULL + "test_a_series_that_crashes_exits_3_and_writes_no_record",
+            ),
+        ),
+        FailureMode(
+            "A sweep's Train jobs skip, reorder or keep running past a candidate that errors",
+            proved_by=(
+                _SWEEP_RUN + "test_train_runs_in_chunks_of_twenty_in_batch_order",
+                _SWEEP_RUN + "test_a_candidate_that_errors_stops_the_chunk",
+            ),
+        ),
+        FailureMode(
+            "A grid point runs or logs as its template, so its trials count against another id",
+            proved_by=(
+                _U + "scripts_backtest/test_run_portfolio_backtest.py::"
+                "test_a_grid_point_runs_its_familys_template",
+                _U + "scripts_backtest/test_run_portfolio_backtest.py::"
+                "test_a_grid_points_trial_lines_carry_its_own_id_and_batch",
+            ),
+        ),
+        FailureMode(
+            "A sweep sends a family past its Validation budget, or counts unsent points in m",
+            proved_by=(
+                _U + "scripts_backtest/test_validation_budget.py::"
+                "test_a_sweep_sends_each_winner_whose_family_has_a_touch_left",
+                _SWEEP_JUDGE + "test_validation_judges_only_the_candidates_sent",
+                _SWEEP_JUDGE + "test_a_sweeps_validation_without_sent_is_a_usage_error",
             ),
         ),
     ),

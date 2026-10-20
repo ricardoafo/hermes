@@ -1,0 +1,1 @@
+- A signed sweep runs in `backtest-batch.yml`: Train runs every grid point in jobs of up to 20 on one trial log chain, each family sends its best Train passer to Validation if it has a touch left, and the champion rule judges only the candidates sent.

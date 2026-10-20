@@ -10,10 +10,13 @@ import re
 from collections.abc import Sequence
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import pytest
 
 from tests.support.paths import REPO_ROOT
+from tests.support.research_batch import BATCH_PATH, batch_text
+from tests.support.research_sweep import SWEEP_IDS, sweep_front_matter
 
 _SCRIPT = REPO_ROOT / "scripts" / "backtest" / "validation_budget.py"
 
@@ -191,3 +194,93 @@ def test_v1_touches_cover_every_validation_entry_in_the_lab_notebook() -> None:
     counted = _script().touches(root / "trial-log.jsonl", {"swing-donchian-4h"})
 
     assert counted >= entries
+
+
+# ---------------------------------------------------------------------------
+# Sweeps (ADR-031 §3, issue #1310)
+# ---------------------------------------------------------------------------
+
+
+def _sweep(directory: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Write the synthetic two-family sweep (breakout, pullback); return its repo path.
+
+    A sweep is read at its repo-relative path, as the workflow passes it, so the
+    test runs from ``directory`` as the clone's root.
+    """
+    (directory / BATCH_PATH).parent.mkdir(parents=True)
+    (directory / BATCH_PATH).write_text(batch_text(sweep_front_matter()), encoding="utf-8")
+    monkeypatch.chdir(directory)
+    return Path(BATCH_PATH)
+
+
+def _select(tmp_path: Path, batch: Path, log: Path, winners: list[str]) -> tuple[int, Any]:
+    """Run --winners and return the exit code and the selection record."""
+    listed = tmp_path / "validation-candidates.json"
+    listed.write_text(json.dumps({"candidates": winners}), encoding="utf-8")
+    out = tmp_path / "sweep-selection.json"
+    code = _script().main(
+        [
+            "--trial-log",
+            str(log),
+            "--batch",
+            str(batch),
+            "--winners",
+            str(listed),
+            "--sent-out",
+            str(out),
+        ]
+    )
+    return code, json.loads(out.read_text(encoding="utf-8")) if out.exists() else None
+
+
+def test_every_grid_point_of_a_sweep_spends_its_familys_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Five touches by other breakout points leave none for a sixth breakout point."""
+    batch = _sweep(tmp_path, monkeypatch)
+    log = _log(tmp_path / "log.jsonl", [(SWEEP_IDS[i], "validation", f"s{i}") for i in range(5)])
+
+    code = _script().main(
+        ["--trial-log", str(log), "--batch", str(batch), "--candidate", SWEEP_IDS[5]]
+    )
+
+    assert code == 1
+
+
+def test_a_sweep_sends_each_winner_whose_family_has_a_touch_left(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR-031 §3: the spent breakout family is dropped, pullback goes on; ids only."""
+    batch = _sweep(tmp_path, monkeypatch)
+    log = _log(tmp_path / "log.jsonl", [(SWEEP_IDS[i], "validation", f"s{i}") for i in range(5)])
+
+    code, record = _select(tmp_path, batch, log, [SWEEP_IDS[5], SWEEP_IDS[7]])
+
+    assert (code, record) == (
+        0,
+        {
+            "schema": "hermes.sweep-selection/1",
+            "winners": [SWEEP_IDS[5], SWEEP_IDS[7]],
+            "sent": [SWEEP_IDS[7]],
+            "over_budget": [SWEEP_IDS[5]],
+            "limit": 5,
+        },
+    )
+
+
+def test_a_winner_outside_every_batch_writes_no_selection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A winner that cannot be budgeted stops the step with exit 3, not a silent send."""
+    batch = _sweep(tmp_path, monkeypatch)
+    log = _log(tmp_path / "log.jsonl", [])
+
+    assert _select(tmp_path, batch, log, ["pullback@lookback=99"]) == (3, None)
+
+
+def test_winners_need_the_selection_output(tmp_path: Path) -> None:
+    """--winners without --sent-out is a usage error (argparse exit 2)."""
+    with pytest.raises(SystemExit) as caught:
+        _script().main(["--trial-log", "l", "--batch", "b", "--winners", str(tmp_path / "w.json")])
+
+    assert caught.value.code == 2

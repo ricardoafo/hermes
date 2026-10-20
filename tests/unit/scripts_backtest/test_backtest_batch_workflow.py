@@ -382,6 +382,7 @@ def test_train_judge_keeps_only_pass_fail_in_the_summary_and_lists_who_goes_on(
             "RUNNER_TEMP": str(runner_temp),
             "BATCH_FILE": "docs/experiments/swing-mvp1/batches/b1.md",
             "BATCH_ID": "b1",
+            "SWEEP": "false",
             "CANDIDATES": json.dumps(candidates),
             "GITHUB_STEP_SUMMARY": str(summary),
             "GITHUB_OUTPUT": str(output),
@@ -423,6 +424,7 @@ def test_train_judge_with_no_candidate_going_on_is_not_a_failure(tmp_path: Path)
             "RUNNER_TEMP": str(runner_temp),
             "BATCH_FILE": "b.md",
             "BATCH_ID": "b1",
+            "SWEEP": "false",
             "CANDIDATES": '[{"strategy_id": "swing-b1-a", "idea_family": "fa", "index": 0}]',
             "GITHUB_STEP_SUMMARY": str(summary),
             "GITHUB_OUTPUT": str(output),
@@ -451,6 +453,7 @@ def test_a_judge_error_fails_the_job(tmp_path: Path, code: int) -> None:
             "RUNNER_TEMP": str(runner_temp),
             "BATCH_FILE": "b.md",
             "BATCH_ID": "b1",
+            "SWEEP": "false",
             "CANDIDATES": "[]",
             "GITHUB_STEP_SUMMARY": str(tmp_path / "summary"),
             "GITHUB_OUTPUT": str(output),
@@ -514,6 +517,7 @@ def test_validation_judge_accepts_a_fail_verdict_and_reports_it(tmp_path: Path) 
             "RUNNER_TEMP": str(runner_temp),
             "BATCH_FILE": "b.md",
             "BATCH_ID": "b1",
+            "SWEEP": "false",
             "CANDIDATES": "[]",
             "GITHUB_STEP_SUMMARY": str(summary),
             "GITHUB_OUTPUT": str(tmp_path / "output"),
@@ -615,7 +619,7 @@ def test_a_draft_batch_ends_green_with_no_candidates_and_runs_no_check(
 
     code, lines, called = _check_batch(tmp_path, doc, check_exit=1)
 
-    assert (code, lines, called) == (0, ["candidates=[]", "draft=true"], False)
+    assert (code, lines, called) == (0, ["candidates=[]", "chunks=[]", "draft=true"], False)
 
 
 @needs_tools
@@ -647,3 +651,254 @@ def test_every_job_after_check_is_skipped_for_a_draft() -> None:
     assert jobs["train"]["if"] == "${{ needs.check.outputs.draft != 'true' }}"
     assert "needs.train.result != 'skipped'" in jobs["results"]["if"]
     assert jobs["judge-train"]["needs"] == ["check", "train"]
+
+
+# ---------------------------------------------------------------------------
+# Chunked Train and one Validation candidate per family (ADR-031 §2, §3; #1310)
+# ---------------------------------------------------------------------------
+
+
+def _stub_sweep_check(directory: Path, candidates: dict[str, Any]) -> None:
+    """Put a ``uv`` on PATH that stands in for ``hermes batch check`` writing ``candidates``."""
+    directory.mkdir(parents=True, exist_ok=True)
+    script = directory / "uv"
+    script.write_text(
+        "#!/usr/bin/env bash\n"
+        'while [ "$#" -gt 0 ]; do [ "$1" = --candidates-out ] && out="$2"; shift; done\n'
+        f"printf '%s' '{json.dumps(candidates)}' > \"$out\"\n"
+        'echo "PASS front_matter"\n'
+    )
+    script.chmod(script.stat().st_mode | stat.S_IXUSR)
+
+
+def _check_outputs(tmp_path: Path, candidates: dict[str, Any]) -> dict[str, str]:
+    """Run the Batch check step on a signed document; return its GITHUB_OUTPUT."""
+    _stub_sweep_check(tmp_path / "bin", candidates)
+    output = tmp_path / "out"
+    output.write_text("")
+    result = _run(
+        "check",
+        "Batch check",
+        {
+            "FILE": str(_batch_doc(tmp_path, "status: SIGNED\n")),
+            "GITHUB_OUTPUT": str(output),
+            "GITHUB_STEP_SUMMARY": str(tmp_path / "summary"),
+            "RUNNER_TEMP": str(tmp_path),
+        },
+        tmp_path,
+        path_prefix=tmp_path / "bin",
+    )
+    assert result.returncode == 0, result.stderr
+    return dict(line.split("=", 1) for line in output.read_text().splitlines())
+
+
+@needs_tools
+def test_train_runs_in_chunks_of_twenty_in_batch_order(tmp_path: Path) -> None:
+    """45 candidates make chunks of 20, 20 and 5; each names its first position for the chain."""
+    ids = [f"fam@n={i}" for i in range(45)]
+    candidates = {
+        "kind": "sweep",
+        "candidates": [{"strategy_id": s, "idea_family": "fam"} for s in ids],
+    }
+
+    chunks = json.loads(_check_outputs(tmp_path, candidates)["chunks"])
+
+    assert chunks == [
+        {"chunk": 0, "first": 0, "ids": ids[:20]},
+        {"chunk": 1, "first": 20, "ids": ids[20:40]},
+        {"chunk": 2, "first": 40, "ids": ids[40:]},
+    ]
+
+
+@needs_tools
+@pytest.mark.parametrize(("kind", "expected"), [("sweep", "true"), (None, "false")])
+def test_the_check_says_whether_the_batch_is_a_sweep(
+    tmp_path: Path, kind: str | None, expected: str
+) -> None:
+    """Only a sweep sends one candidate per family and judges Validation on the ones sent."""
+    candidates: dict[str, Any] = {"candidates": [{"strategy_id": "swing-b1-a"}]}
+    if kind is not None:
+        candidates["kind"] = kind
+
+    assert _check_outputs(tmp_path, candidates)["sweep"] == expected
+
+
+def test_train_jobs_are_chunks_of_the_check_output() -> None:
+    """The Train matrix is the chunk list, one job at a time, so the chain stays linear."""
+    train = _workflow()["jobs"]["train"]
+
+    assert (train["strategy"]["matrix"], train["timeout-minutes"]) == (
+        {"chunk": "${{ fromJSON(needs.check.outputs.chunks) }}"},
+        120,
+    )
+
+
+def _stub_driver(directory: Path, failing: str | None) -> Path:
+    """Put a ``uv`` on PATH that stands in for the driver; return the file it logs ids to.
+
+    It appends each ``--candidate`` to the log, writes the report, and fails on ``failing``.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    calls = directory / "calls"
+    script = directory / "uv"
+    script.write_text(
+        "#!/usr/bin/env bash\n"
+        'while [ "$#" -gt 0 ]; do\n'
+        '  case "$1" in --candidate) id="$2";; --output) report="$2";; esac; shift\n'
+        "done\n"
+        f'echo "$id" >> {calls}\n'
+        f'[ "$id" = "{failing}" ] && exit 1\n'
+        'echo \'{"fills_count": 3}\' > "$report"\n'
+    )
+    script.chmod(script.stat().st_mode | stat.S_IXUSR)
+    return calls
+
+
+def _train_chunk(tmp_path: Path, ids: list[str], failing: str | None) -> tuple[int, list[str]]:
+    """Run the Train Backtest step on ``ids``; return its exit code and the candidates it ran."""
+    calls = _stub_driver(tmp_path / "bin", failing)
+    result = _run(
+        "train",
+        "Backtest",
+        {
+            "RUNNER_TEMP": str(tmp_path / "rt"),
+            "CHUNK_IDS": json.dumps(ids),
+            "BATCH_FILE": "b.md",
+            "START": "2020-09-01",
+            "END": "2024-06-30",
+            "MANIFEST": "m.json",
+        },
+        tmp_path,
+        path_prefix=tmp_path / "bin",
+    )
+    ran = calls.read_text().split() if calls.exists() else []
+    return result.returncode, ran
+
+
+@needs_tools
+def test_a_chunk_runs_its_candidates_in_order_and_keeps_only_the_three_evidence_files(
+    tmp_path: Path,
+) -> None:
+    """Each candidate gets its folder with evidence.json; the report, which holds values, goes."""
+    ids = ["fam@n=1", "fam@n=2"]
+
+    code, ran = _train_chunk(tmp_path, ids, failing=None)
+
+    folder = tmp_path / "rt" / "out" / ids[1]
+    assert (code, ran, sorted(p.name for p in folder.iterdir())) == (0, ids, ["evidence.json"])
+
+
+@needs_tools
+def test_a_candidate_that_errors_stops_the_chunk(tmp_path: Path) -> None:
+    """ADR-026 §2: the candidates after an error never run, and the job fails."""
+    ids = ["fam@n=1", "fam@n=2", "fam@n=3"]
+
+    assert _train_chunk(tmp_path, ids, failing=ids[1]) == (1, ids[:2])
+
+
+def _stub_sweep_judge(directory: Path, winners: list[str], selection: dict[str, Any]) -> Path:
+    """Put a ``uv`` on PATH for the Train judge and the budget; return its argument log.
+
+    ``hermes funnel`` lists ``winners``; ``validation_budget.py`` writes ``selection``
+    and prints one PASS/FAIL line per winner.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    calls = directory / "calls"
+    listed = json.dumps({"candidates": winners})
+    budget_lines = "\\n".join(
+        f"{'PASS' if w in selection['sent'] else 'FAIL'} {w} validation_budget" for w in winners
+    )
+    script = directory / "uv"
+    script.write_text(
+        "#!/usr/bin/env bash\n"
+        f'echo "$*" >> {calls}\n'
+        'args=" $* "\n'
+        'while [ "$#" -gt 0 ]; do\n'
+        '  case "$1" in --out) out="$2";; --sent-out) sent="$2";; esac; shift\n'
+        "done\n"
+        'if [[ "$args" == *validation_budget.py* ]]; then\n'
+        f"  printf '%s' '{json.dumps(selection)}' > \"$sent\"\n"
+        f"  printf '{budget_lines}\\n'\n"
+        "  exit 0\n"
+        "fi\n"
+        'mkdir -p "$out/verdicts"\n'
+        f"printf '%s' '{listed}' > \"$out/validation-candidates.json\"\n"
+        f"echo 'CANDIDATES {' '.join(winners)}'\n"
+    )
+    script.chmod(script.stat().st_mode | stat.S_IXUSR)
+    return calls
+
+
+@needs_tools
+def test_a_sweep_sends_only_the_winners_with_budget_left_in_batch_order(tmp_path: Path) -> None:
+    """ADR-031 §3: the Validation matrix is the selection's sent list, each with its position."""
+    candidates = [
+        {"strategy_id": s, "idea_family": s.split("@")[0], "index": i}
+        for i, s in enumerate(["a@n=1", "a@n=2", "b@n=1", "c@n=1"])
+    ]
+    winners = ["a@n=2", "b@n=1", "c@n=1"]
+    selection = {"winners": winners, "sent": ["a@n=2", "c@n=1"], "over_budget": ["b@n=1"]}
+    _stub_sweep_judge(tmp_path / "bin", winners, selection)
+    runner_temp = tmp_path / "rt"
+    (runner_temp / "chain").mkdir(parents=True)
+    output, summary = tmp_path / "output", tmp_path / "summary"
+    output.write_text("")
+    summary.write_text("")
+
+    result = _run(
+        "judge-train",
+        "Judge the batch on Train",
+        {
+            "RUNNER_TEMP": str(runner_temp),
+            "BATCH_FILE": "b.md",
+            "BATCH_ID": "b1",
+            "SWEEP": "true",
+            "CANDIDATES": json.dumps(candidates),
+            "GITHUB_STEP_SUMMARY": str(summary),
+            "GITHUB_OUTPUT": str(output),
+        },
+        tmp_path,
+        path_prefix=tmp_path / "bin",
+    )
+
+    outputs = dict(line.split("=", 1) for line in output.read_text().splitlines())
+    assert (result.returncode, json.loads(outputs["validation_candidates"])) == (
+        0,
+        [candidates[1], candidates[3]],
+    )
+    assert "FAIL b@n=1 validation_budget" in summary.read_text()
+
+
+@needs_tools
+@pytest.mark.parametrize(("sweep", "passed"), [("true", True), ("false", False)])
+def test_a_sweeps_champion_is_judged_on_the_candidates_it_sent(
+    tmp_path: Path, sweep: str, passed: bool
+) -> None:
+    """ADR-031 §4: --sent names Train's selection record for a sweep, and only for a sweep."""
+    _stub_uv(tmp_path / "bin", "CHAMPION none", 1, {})
+    calls = tmp_path / "bin" / "calls"
+    uv = tmp_path / "bin" / "uv"
+    uv.write_text(
+        uv.read_text().replace(
+            "#!/usr/bin/env bash\n", f'#!/usr/bin/env bash\necho "$*" >> {calls}\n', 1
+        )
+    )
+    runner_temp = tmp_path / "rt"
+    (runner_temp / "chain").mkdir(parents=True)
+
+    result = _run(
+        "judge-validation",
+        "Judge the batch on Validation",
+        {
+            "RUNNER_TEMP": str(runner_temp),
+            "BATCH_FILE": "b.md",
+            "BATCH_ID": "b1",
+            "SWEEP": sweep,
+            "GITHUB_STEP_SUMMARY": str(tmp_path / "summary"),
+        },
+        tmp_path,
+        path_prefix=tmp_path / "bin",
+    )
+
+    expected = f"--sent {runner_temp}/train/sweep-selection.json"
+    assert (result.returncode, expected in calls.read_text()) == (0, passed)
