@@ -1,0 +1,1 @@
+- `scripts/backtest/null_check.py` runs a whole sweep on seeded random-walk prices and reports whether the ADR-031 §4 champion rule (BH over one Validation candidate per family) names a false champion at most q of the time; `family_winners` picks the one candidate per family that goes to Validation.
