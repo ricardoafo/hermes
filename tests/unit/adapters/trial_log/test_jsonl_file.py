@@ -110,8 +110,9 @@ def test_tampering_breaks_reads_and_appends(tmp_path: Path, edit: Edit) -> None:
 def test_removing_the_last_line_is_not_detectable_by_the_chain(tmp_path: Path) -> None:
     """Known limit: a truncated tail is a valid shorter chain; git history guards it."""
     log = _log_with(tmp_path, 3)
+    first_two = log.records()[:2]
     _rewrite(log, lambda ls: ls[:2])
-    assert len(log.records()) == 2
+    assert log.records() == first_two
 
 
 def test_malformed_record_fields_are_reported_with_the_line(tmp_path: Path) -> None:

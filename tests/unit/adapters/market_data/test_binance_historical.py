@@ -164,8 +164,7 @@ def test_read_csv_from_zip_returns_rows(tmp_path: Path) -> None:
     zip_path = tmp_path / "test.zip"
     zip_path.write_bytes(zip_bytes)
 
-    result = _read_csv_from_zip(zip_path)
-    assert len(result) == 2, f"Expected 2 rows, got {len(result)}"
+    assert _read_csv_from_zip(zip_path) == rows
 
 
 @pytest.mark.unit

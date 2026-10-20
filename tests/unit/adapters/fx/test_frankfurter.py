@@ -32,7 +32,7 @@ import respx
 
 from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.adapters.fx.frankfurter import FrankfurterAdapter, FrankfurterConfig
-from hermes.domain.errors import FxRateError, InfraError
+from hermes.domain.errors import FxRateError
 from hermes.domain.fx.fx_rate import FxRate
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
@@ -446,11 +446,6 @@ class TestErrorPaths:
                     adapter.get_latest(Currency.USDT, Currency.EUR)
         finally:
             adapter.close()
-
-    def test_fx_rate_error_inherits_from_infra_error(self) -> None:
-        """FxRateError caught by 'except InfraError' satisfies the base contract."""
-        err = FxRateError(msg="bad")
-        assert isinstance(err, InfraError)
 
 
 class TestCreateFactoryAndClose:

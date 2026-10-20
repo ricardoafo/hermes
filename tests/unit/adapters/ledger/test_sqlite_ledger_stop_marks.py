@@ -92,12 +92,14 @@ def test_a_new_position_does_not_inherit_the_previous_stop(ledger: SqliteLedger)
     ledger.record_stop_mark(_mark(3))
     later_entry = _ENTRY + _H4 * 10
     assert ledger.latest_stop_mark(_SWING, _BTC, later_entry) is None
+    assert ledger.latest_stop_mark(_SWING, _BTC, _ENTRY) == _mark(3)
 
 
 def test_latest_is_per_pair(ledger: SqliteLedger) -> None:
     """Another pair's stop never answers for this pair's position."""
     ledger.record_stop_mark(_mark(1, pair=_ETH))
     assert ledger.latest_stop_mark(_SWING, _BTC, _ENTRY) is None
+    assert ledger.latest_stop_mark(_SWING, _ETH, _ENTRY) == _mark(1, pair=_ETH)
 
 
 def test_unreadable_row_raises_ledger_error() -> None:
