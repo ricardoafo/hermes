@@ -8,11 +8,13 @@ read past, never parsed (#1181).
 """
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from hermes.adapters.files import LocalFiles
+from hermes.application.calibration.backtest_funnel import FunnelEvidenceError
 from hermes.application.calibration.evidence_files import (
     EvidenceError,
     load_funnel_evidence,
@@ -85,3 +87,61 @@ def test_folds_never_reach_the_parsed_funnel_evidence(tmp_path: Path) -> None:
     ) == load_funnel_evidence(
         _funnel(tmp_path, "plain.json", plain), strategy_id="swing-x", files=_FILES
     )
+
+
+_TRIPS_PLAIN: dict[str, object] = {
+    "strategy_id": "swing-x",
+    "start_date": "2020-12-31",
+    "daily_equity": [5000.0, 5010.0, 5020.0],
+    "trade_count": 2,
+}
+
+
+def test_round_trip_opening_times_are_parsed_as_utc_times(tmp_path: Path) -> None:
+    """ADR-029 §4: the cap row reads when each round trip opened, exactly as written."""
+    payload = {
+        **_TRIPS_PLAIN,
+        "round_trip_opened_at": ["2021-01-01T04:00:00+00:00", "2021-01-02T08:00:00+00:00"],
+    }
+
+    evidence = load_funnel_evidence(
+        _funnel(tmp_path, "trips.json", payload), strategy_id="swing-x", files=_FILES
+    )
+
+    assert evidence.round_trip_opened_at == (
+        datetime(2021, 1, 1, 4, tzinfo=UTC),
+        datetime(2021, 1, 2, 8, tzinfo=UTC),
+    )
+
+
+def test_evidence_without_round_trip_times_parses_as_not_recorded(tmp_path: Path) -> None:
+    """Evidence written before the cap row still parses; the row then fails closed."""
+    evidence = load_funnel_evidence(
+        _funnel(tmp_path, "plain.json", _TRIPS_PLAIN), strategy_id="swing-x", files=_FILES
+    )
+
+    assert (evidence.round_trip_opened_at, evidence.trade_count) == (None, 2)
+
+
+@pytest.mark.parametrize(
+    ("times", "reason"),
+    [
+        ("2021-01-01T04:00:00+00:00", r"must be a list of ISO 8601 times"),
+        (["2021-01-01T04:00:00", "2021-01-02T08:00:00+00:00"], r"\[0\] must be a UTC"),
+        (["2021-01-01T04:00:00+00:00", "2021-01-02T08:00:00+02:00"], r"\[1\] must be a UTC"),
+        (["2021-01-01T04:00:00+00:00", 1609459200], r"\[1\] must be a UTC"),
+        (["2021-01-01T04:00:00+00:00", "yesterday"], r"\[1\] must be a UTC"),
+        (["2021-01-01T04:00:00+00:00"], r"holds 1 round trips but trade_count is 2"),
+    ],
+    ids=["not-a-list", "naive", "not-utc", "a-number", "not-a-time", "count-differs"],
+)
+def test_unusable_round_trip_times_are_refused_with_the_reason(
+    tmp_path: Path, times: object, reason: str
+) -> None:
+    """A cap row judged on times that are not one UTC time per counted trade would mislead."""
+    payload = {**_TRIPS_PLAIN, "round_trip_opened_at": times}
+
+    with pytest.raises(FunnelEvidenceError, match=reason):
+        load_funnel_evidence(
+            _funnel(tmp_path, "bad.json", payload), strategy_id="swing-x", files=_FILES
+        )
