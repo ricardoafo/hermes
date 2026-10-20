@@ -191,7 +191,7 @@ class TestServeExitCodes:
         config_dir = REPO_ROOT / "config"
         real_money = load_config(config_dir).model_copy(update={"allow_mainnet": True})
         built: list[object] = []
-        monkeypatch.setattr(serve_command, "load_config", lambda _dir: real_money)
+        monkeypatch.setattr(serve_command, "load_config_or_exit", lambda _dir, _err: real_money)
         monkeypatch.setattr(serve_module, "check_startup", lambda *_a, **_k: None)
         monkeypatch.setattr(serve_module, "build_composition", lambda *a, **_k: built.append(a))
         stream, err = io.StringIO(), io.StringIO()
