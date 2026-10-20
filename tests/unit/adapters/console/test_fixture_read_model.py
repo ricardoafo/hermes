@@ -9,8 +9,6 @@ Invariants:
 - a naive timestamp, a float amount or an unknown name fails on load.
 """
 
-from __future__ import annotations
-
 import json
 from decimal import Decimal
 from importlib import resources

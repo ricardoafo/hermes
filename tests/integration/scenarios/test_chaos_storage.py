@@ -8,8 +8,6 @@ raised at the SQLite connection serve opens
 (``tests/integration/scenarios/faults.py``); serve itself is not changed.
 """
 
-from __future__ import annotations
-
 import asyncio
 import contextlib
 import errno

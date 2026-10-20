@@ -10,8 +10,6 @@ Reference: spec-5-swing-strategy-adapter change.md R-2 through R-8.
 pre-registration-v1.md §5.1 (entry), §5.2 (exit).
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 

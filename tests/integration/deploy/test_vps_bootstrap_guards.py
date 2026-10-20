@@ -12,8 +12,6 @@ acceptance run (openspec/archive/179-cd-first-real-deploy/change.md, R-5) covers
 the real box.
 """
 
-from __future__ import annotations
-
 import os
 import re
 import stat

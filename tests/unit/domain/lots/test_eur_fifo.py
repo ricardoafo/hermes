@@ -4,8 +4,6 @@ Reference: ADR-016 item 3 (fees in acquisition and transmission value),
 IRPF art. 35.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, localcontext
 

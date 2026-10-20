@@ -30,8 +30,6 @@ This module provides a reusable ``FakeMarketDataAdapter`` that any adapter autho
 import to validate their own implementation satisfies the Protocol contract.
 """
 
-from __future__ import annotations
-
 import asyncio
 import inspect
 from collections.abc import AsyncIterator

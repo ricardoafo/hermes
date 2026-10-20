@@ -5,8 +5,6 @@ Without ``--demo`` the positions are read from the ledger, read-only
 the empty state (change ``ledger-read-model`` D-9).
 """
 
-from __future__ import annotations
-
 import json
 import os
 from collections.abc import Mapping

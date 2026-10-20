@@ -13,8 +13,6 @@ test_a_non_sqlite_error_mid_write_leaves_nothing_for_the_next_commit``.
 Reference: ADR-003 §00 I-06 (one write, one transaction).
 """
 
-from __future__ import annotations
-
 import inspect
 import sqlite3
 from collections.abc import Callable, Iterator, Sequence

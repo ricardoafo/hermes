@@ -11,8 +11,6 @@ Telegram sample is valid MarkdownV2 (no reserved character left bare).
 Reference: pre-registration v1 §5.2 (exit rules); issue #692.
 """
 
-from __future__ import annotations
-
 import ast
 
 import pytest

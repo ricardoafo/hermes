@@ -19,8 +19,6 @@ inputs per call.
 Reference: openspec/archive/backtest-driver-mvp1-phase2/change.md D-2, D-3, R-4.
 """
 
-from __future__ import annotations
-
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import datetime

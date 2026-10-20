@@ -14,8 +14,6 @@ backtest's synthetic book never spikes; the values are kept for review.
 Reference: pre-registration v1 §10 (SA-9 RO-02); GitHub issue #835.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta

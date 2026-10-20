@@ -12,8 +12,6 @@ Invariants protected here:
 Reference: openspec/archive/144-notification-system/change.md (R-3).
 """
 
-from __future__ import annotations
-
 import pytest
 
 from hermes.application.notification_router import (

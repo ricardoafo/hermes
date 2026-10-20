@@ -13,8 +13,6 @@ the default run by ``-m 'not contract'``; run with
 Reference: docs/decisions/2026-08-23-contract-test-tier.md.
 """
 
-from __future__ import annotations
-
 import os
 from decimal import Decimal
 

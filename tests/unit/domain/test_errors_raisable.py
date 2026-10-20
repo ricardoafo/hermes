@@ -10,8 +10,6 @@ generator context manager reaches the caller as itself, while its declared
 fields stay read-only.
 """
 
-from __future__ import annotations
-
 import contextlib
 import importlib
 import pkgutil

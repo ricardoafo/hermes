@@ -1,7 +1,5 @@
 """``hermes fx``: see :mod:`hermes.entrypoints.fx`."""
 
-from __future__ import annotations
-
 from hermes.entrypoints import fx as _impl
 from hermes.entrypoints.commands import Command
 

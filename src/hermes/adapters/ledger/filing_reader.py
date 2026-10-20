@@ -14,8 +14,6 @@ strings omit zero microseconds and do not sort as instants in every case.
 Reference: openspec/archive/36-modelo-100-721/change.md D-1.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from datetime import datetime
 from decimal import Decimal

@@ -16,8 +16,6 @@ Invariants:
 - reading every view leaves the ledger file byte-for-byte unchanged.
 """
 
-from __future__ import annotations
-
 import hashlib
 from datetime import date, datetime, timedelta
 from decimal import Decimal

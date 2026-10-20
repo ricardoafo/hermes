@@ -5,8 +5,6 @@ was given, unchanged, and without a desk the Briefs view is "not available
 yet" rather than an empty list that would pass for "no brief today".
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from pathlib import Path
 

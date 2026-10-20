@@ -5,8 +5,6 @@ Contract-seam note: the real ``subprocess.run`` seam is exercised only by the
 operator's manual run against the VPS; no integration test may open a connection.
 """
 
-from __future__ import annotations
-
 import io
 import os
 import shlex

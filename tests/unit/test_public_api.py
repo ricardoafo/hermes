@@ -11,8 +11,6 @@ D-5); an explicit `__all__: list[str] = []` documents intent. Modules with
 public symbols must list them.
 """
 
-from __future__ import annotations
-
 import importlib
 import pkgutil
 from types import ModuleType

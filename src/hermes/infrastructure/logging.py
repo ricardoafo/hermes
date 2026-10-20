@@ -38,8 +38,6 @@ Additional fields per feature via ``bind_contextvars()``. Rules:
     log.info("rebalance.cycle.started", pair="BTCUSDT")
 """
 
-from __future__ import annotations
-
 import logging
 
 import structlog

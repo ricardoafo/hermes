@@ -14,8 +14,6 @@ not a cut from the top of the base.
 Reference: ADR-016 decisions 6 and 7, change ``tax-estimates`` D-1.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Final

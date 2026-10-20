@@ -20,8 +20,6 @@ Invariants protected here:
   ``swing-mvp1-v2`` adds no capital (v2-strategy-config).
 """
 
-from __future__ import annotations
-
 import io
 import json
 import sqlite3

@@ -25,8 +25,6 @@ Reference: ADR-012 ruling 1 (Code Owner ruling, 2026-10-02, option B);
     docs/experiments/swing-mvp1/integrity-checker-rules.md rule 1.8.
 """
 
-from __future__ import annotations
-
 from enum import StrEnum
 from typing import Final
 

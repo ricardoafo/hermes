@@ -1,7 +1,5 @@
 """Unit tests for the §9 secondary metrics (pre-registration §9)."""
 
-from __future__ import annotations
-
 import math
 
 import pytest

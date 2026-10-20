@@ -25,8 +25,6 @@ Reference: ADR-003 §00 (I-06), §03 (persistence schema),
 code-conventions.md §6 (Decimal ledger values), §9 (UTC timestamps).
 """
 
-from __future__ import annotations
-
 import dataclasses
 import json
 import sqlite3

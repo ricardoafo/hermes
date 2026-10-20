@@ -17,8 +17,6 @@ Reference:
   infra config, never adapters or the ledger implementation.
 """
 
-from __future__ import annotations
-
 from hermes.application.tax_guard.window import (
     TaxGuardThresholds,
     WindowStats,

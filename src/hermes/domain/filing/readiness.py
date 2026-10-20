@@ -10,8 +10,6 @@ estimate, the gestor defaults, the shadow label) never change the status.
 Reference: openspec/archive/568-tax-pack/change.md D-2, R-3.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date

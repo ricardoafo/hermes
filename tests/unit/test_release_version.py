@@ -7,8 +7,6 @@ Protects:
 - A release's changelog section is found exactly, without its neighbours.
 """
 
-from __future__ import annotations
-
 import sys
 
 import pytest

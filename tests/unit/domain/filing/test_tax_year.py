@@ -1,7 +1,5 @@
 """Tests for the tax-year calendar (ADR-016 item 2: Madrid calendar year)."""
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta, timezone
 
 import pytest

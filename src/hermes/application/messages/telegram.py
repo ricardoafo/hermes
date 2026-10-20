@@ -23,8 +23,6 @@ Reference: docs/decisions/2026-10-04-notification-templates-v2.md;
     openspec/archive/144-notification-system/change.md.
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 from typing import Final
 

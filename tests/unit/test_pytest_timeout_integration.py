@@ -26,8 +26,6 @@ Test strategy — why a subprocess:
     run. This is the same pattern pytest-timeout's own test suite uses.
 """
 
-from __future__ import annotations
-
 import subprocess
 import sys
 import textwrap

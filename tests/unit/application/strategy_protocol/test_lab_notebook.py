@@ -10,8 +10,6 @@ Tests cover:
 - Entry.render() produces header in the correct format.
 """
 
-from __future__ import annotations
-
 import hashlib
 import itertools
 from pathlib import Path

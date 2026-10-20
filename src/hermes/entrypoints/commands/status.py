@@ -1,7 +1,5 @@
 """``hermes status``: see :mod:`hermes.entrypoints.status`."""
 
-from __future__ import annotations
-
 import os
 
 from hermes.entrypoints import status as _impl

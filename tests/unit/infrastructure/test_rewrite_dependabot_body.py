@@ -10,8 +10,6 @@ Protects the #162 invariants:
 - A body that already carries the marker is not rewritten again.
 """
 
-from __future__ import annotations
-
 import importlib.util
 import os
 import shutil

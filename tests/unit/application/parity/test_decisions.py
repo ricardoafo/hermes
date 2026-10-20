@@ -9,8 +9,6 @@ Invariants protected here (openspec/archive/358-parity-check/change.md):
 - the alert names bars and decisions and carries no price, equity or P&L.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, date, datetime
 
 from hermes.application.parity.decisions import (

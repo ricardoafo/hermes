@@ -8,8 +8,6 @@ check on both sides. Each test below pins one of those with a value worked
 out by hand.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta, tzinfo

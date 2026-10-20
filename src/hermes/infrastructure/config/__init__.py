@@ -19,8 +19,6 @@ Public surface:
 - Individual sub-config classes for consumers that only need one slice.
 """
 
-from __future__ import annotations
-
 from hermes.infrastructure.config.errors import ConfigError, TierError
 from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
 from hermes.infrastructure.config.models import (

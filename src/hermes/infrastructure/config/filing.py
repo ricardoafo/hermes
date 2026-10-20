@@ -12,8 +12,6 @@ Two sources:
 Reference: openspec/archive/36-modelo-100-721/change.md D-7, D-9.
 """
 
-from __future__ import annotations
-
 import logging
 import os
 from decimal import Decimal

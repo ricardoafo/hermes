@@ -4,8 +4,6 @@ The ledger is written through ``TradeRecorder`` and ``SqliteLedger``, so the
 reader is checked against the FIFO projection production stores.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from collections.abc import Iterator
 from datetime import UTC, datetime

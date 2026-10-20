@@ -27,8 +27,6 @@ the foundation the ledger integration will build on.
 Reference: ADR-003 §00 (I-06), code-conventions.md §10.
 """
 
-from __future__ import annotations
-
 import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime

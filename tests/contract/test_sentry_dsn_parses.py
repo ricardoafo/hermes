@@ -13,8 +13,6 @@ Reference: docs/decisions/2026-08-23-contract-test-tier.md;
 https://docs.sentry.io/product/sentry-basics/dsn-explainer/.
 """
 
-from __future__ import annotations
-
 import os
 
 import pytest

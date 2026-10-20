@@ -7,8 +7,6 @@ fees. Implementations open the ledger read-only.
 Reference: issue #470 (part of #34); issue #365; ADR-003 §08; ADR-012 D-06, D-07.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime

@@ -16,8 +16,6 @@ Everything is read: the ledger is never written.
 Reference: openspec/archive/358-parity-check/change.md.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta

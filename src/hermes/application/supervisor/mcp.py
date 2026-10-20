@@ -15,8 +15,6 @@ runs over SSH on the private network (ADR-012 D-07).
 Reference: openspec/archive/34-supervisor-read-tools/change.md; issue #34.
 """
 
-from __future__ import annotations
-
 import json
 from collections.abc import Mapping
 from typing import Final

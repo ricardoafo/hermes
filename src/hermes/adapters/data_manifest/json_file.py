@@ -18,8 +18,6 @@ entry's fields produce, so a hand edit cannot relabel a dataset.
 Reference: openspec/archive/356-data-manifest/change.md Design.
 """
 
-from __future__ import annotations
-
 import json
 from dataclasses import dataclass
 from datetime import datetime

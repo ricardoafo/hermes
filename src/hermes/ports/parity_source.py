@@ -8,8 +8,6 @@ concrete implementation opens the ledger read-only.
 Reference: code-conventions.md §5 (Ports as Protocols), GitHub issue #358.
 """
 
-from __future__ import annotations
-
 from datetime import datetime
 from typing import Protocol, runtime_checkable
 

@@ -6,8 +6,6 @@ and a positive entry price, so a bad ledger row cannot seed a nonsense state.
 Reference: 309-serve-bar-loop change.md D-6.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from decimal import Decimal
 

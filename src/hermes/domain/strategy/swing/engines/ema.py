@@ -19,8 +19,6 @@ Reference: pre-registration-v1.md §5.1 (EMA(200) 1D regime filter).
 spec-5-swing-strategy-adapter change.md D-1, D-3.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from decimal import Decimal
 

@@ -12,8 +12,6 @@ Spec 3 (OrderRouter); these types are the data contract the rules consume.
 Reference: SA-9 §5.5 — risk overlay inputs.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal

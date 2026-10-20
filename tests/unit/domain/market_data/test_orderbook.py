@@ -9,8 +9,6 @@ Every test protects one invariant of the domain orderbook contract:
 - The book must be uncrossed (best_bid < best_ask).
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from decimal import Decimal
 

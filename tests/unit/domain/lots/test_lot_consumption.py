@@ -12,8 +12,6 @@ Verifies:
 Reference: ADR-003 §03, code-conventions.md §1 + §3.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from decimal import Decimal
 

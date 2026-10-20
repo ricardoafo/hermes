@@ -11,8 +11,6 @@ Reference: openspec/archive/console-read-model/change.md (D-5); Code Owner
 ruling 2026-10-03.
 """
 
-from __future__ import annotations
-
 from enum import StrEnum
 from typing import Final
 

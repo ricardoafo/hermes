@@ -8,8 +8,6 @@ Invariants protected here:
 - a naive time is refused.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from decimal import Decimal
 

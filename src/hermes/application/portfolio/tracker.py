@@ -15,8 +15,6 @@ Reference: 308-signal-event-portfolio-state change.md D-4, D-7, D-8;
 322-rebuild-portfolio-from-ledger change.md D-2.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterable
 from decimal import Decimal
 from typing import Self

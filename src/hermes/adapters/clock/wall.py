@@ -8,8 +8,6 @@ scenarios to keep domain logic replayable.
 Reference: SA-8 §4.1 S-01, openspec/archive/spec-4a-clock-port/change.md.
 """
 
-from __future__ import annotations
-
 from datetime import datetime
 
 from hermes.infrastructure.time import now_utc

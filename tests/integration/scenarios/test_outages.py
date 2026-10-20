@@ -5,8 +5,6 @@ trades pending and the next boot prices them. A Telegram outage is logged and th
 push is tried again on the next bar; the fills are recorded all the same.
 """
 
-from __future__ import annotations
-
 from datetime import timedelta
 
 import pytest

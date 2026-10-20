@@ -7,8 +7,6 @@ release binary are stand-ins, and the production paths are rewritten to a
 scratch directory in a copy.
 """
 
-from __future__ import annotations
-
 import os
 import re
 import shutil

@@ -12,8 +12,6 @@ Invariants protected here:
 Reference: openspec/archive/144-notification-system/change.md (R-5, R-6).
 """
 
-from __future__ import annotations
-
 import io
 import re
 from pathlib import Path

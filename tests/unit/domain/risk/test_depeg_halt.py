@@ -8,8 +8,6 @@ Property tests verify the hard-threshold boundary at 3.0% deviation (pre-reg §5
 Reference: SA-9 §5.5 RO-06; spec-8-risk-overlay change.md R-2.
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 from hypothesis import given, settings

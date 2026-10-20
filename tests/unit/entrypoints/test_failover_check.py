@@ -8,8 +8,6 @@ endpoints is covered by ``tests/contract/test_kraken_public_klines.py`` and the
 operator's monthly drill run (docs/runbook/failover-to-kraken.md).
 """
 
-from __future__ import annotations
-
 import io
 import json
 from collections.abc import Callable, Iterable

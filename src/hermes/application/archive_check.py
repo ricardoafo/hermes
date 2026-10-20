@@ -8,8 +8,6 @@ writes the ledger or the bar store.
 Reference: GitHub issues #359, #343 (risk R-6), #421.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta

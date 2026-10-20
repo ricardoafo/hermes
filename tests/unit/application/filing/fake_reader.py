@@ -4,8 +4,6 @@ The seam it replaces is covered against a real ledger file in
 ``tests/unit/adapters/ledger/test_filing_reader.py``.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal

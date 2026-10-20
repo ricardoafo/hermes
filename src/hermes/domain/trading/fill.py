@@ -19,8 +19,6 @@ Reference: spec-2a-fill-model-port/change.md D-4 (Fill | Rejection
 discriminated union — native union, not Result).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal

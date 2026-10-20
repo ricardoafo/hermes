@@ -7,8 +7,6 @@ Invariants protected (ADR-016 decisions 1 and 12):
   repr, str, error messages or log output.
 """
 
-from __future__ import annotations
-
 import logging
 from decimal import Decimal
 from pathlib import Path

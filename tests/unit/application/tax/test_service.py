@@ -3,8 +3,6 @@
 Reference: ADR-016 decisions 3 and 7; change trade-eur-values (EUR trade rows).
 """
 
-from __future__ import annotations
-
 import sqlite3
 from collections.abc import Iterator
 from datetime import UTC, datetime

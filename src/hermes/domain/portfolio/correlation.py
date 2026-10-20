@@ -20,8 +20,6 @@ RO-01 reads the coefficients of :class:`DailyCloses`, in the backtest replay
 Reference: pre-registration v1 §5.5; GitHub issues #514, #835.
 """
 
-from __future__ import annotations
-
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta

@@ -14,8 +14,6 @@ The gate is pure; the briefing tests in ``test_briefing.py`` exercise it on
 composed briefs.
 """
 
-from __future__ import annotations
-
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st

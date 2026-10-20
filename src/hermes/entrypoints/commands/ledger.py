@@ -1,7 +1,5 @@
 """``hermes ledger``: see :mod:`hermes.entrypoints.ledger`."""
 
-from __future__ import annotations
-
 from hermes.entrypoints import ledger as _impl
 from hermes.entrypoints.commands import Command
 

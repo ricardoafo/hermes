@@ -13,8 +13,6 @@ callers only need one import path.
 Reference: SA-9 §5.5 — risk overlay; spec-8-risk-overlay change.md.
 """
 
-from __future__ import annotations
-
 from typing import Protocol, runtime_checkable
 
 from hermes.domain.risk.state import MarketSnapshot, PortfolioState

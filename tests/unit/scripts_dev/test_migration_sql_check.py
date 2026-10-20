@@ -11,8 +11,6 @@ Invariants under test:
   migrations last without renaming anything.
 """
 
-from __future__ import annotations
-
 import importlib.util
 import sys
 from pathlib import Path

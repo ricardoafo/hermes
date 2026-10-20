@@ -10,8 +10,6 @@ Invariants protected here:
 A fake client stands in for Telegram; the client itself has contract tests.
 """
 
-from __future__ import annotations
-
 import io
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta

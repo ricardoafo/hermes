@@ -5,8 +5,6 @@ and the ``TradeExecuted`` event agree exactly as they do in production; tests
 that need drift tamper with one table afterwards.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from datetime import UTC, date, datetime
 from decimal import Decimal

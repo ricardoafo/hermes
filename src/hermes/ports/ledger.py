@@ -10,8 +10,6 @@ SQLite transaction with its domain event), §03 (persistence schema),
 code-conventions.md §1 (Ports & Adapters).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal

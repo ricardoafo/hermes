@@ -16,8 +16,6 @@ Invariants (backtest-driver-mvp1-phase2 change.md D-4, R-1, R-6):
 The full run is smoke-tested against real data (see the change spec).
 """
 
-from __future__ import annotations
-
 import argparse
 import importlib.util
 import sys

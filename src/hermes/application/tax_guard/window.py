@@ -39,8 +39,6 @@ Design invariants (property-tested):
 Reference: ADR-002 §Decision 6.
 """
 
-from __future__ import annotations
-
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta

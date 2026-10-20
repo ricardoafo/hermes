@@ -18,8 +18,6 @@ Invariants protected here:
   compared, exits 0 and sends no alert (#1078).
 """
 
-from __future__ import annotations
-
 import hashlib
 import io
 import json

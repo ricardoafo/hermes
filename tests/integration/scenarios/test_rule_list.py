@@ -5,8 +5,6 @@ forgetting to list it, and a new version of the document fails here until the
 list in ``rules.py`` is reviewed against it.
 """
 
-from __future__ import annotations
-
 import hashlib
 import re
 

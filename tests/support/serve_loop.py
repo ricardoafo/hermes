@@ -11,8 +11,6 @@ Bars carry Binance's inclusive ``close_time`` (``open + interval - 1 ms``), the
 value the live feed delivers.
 """
 
-from __future__ import annotations
-
 import asyncio
 import dataclasses
 import sqlite3
