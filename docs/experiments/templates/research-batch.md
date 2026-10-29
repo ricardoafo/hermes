@@ -44,6 +44,8 @@ candidates:
       - <tests/... its tests>
     parameters:
       <parameter_name>: {base: 20, neighbours: [15, 25]}
+    holding: a_day_or_more      # or under_a_day (ADR-029 §5); optional
+    round_trips_90d_max: 250    # ADR-029 §4, every candidate: Train fails above this in any 90 days
   - strategy_id: <strategy-id-2>
     idea_family: <family-2>
     card: docs/experiments/<experiment>/cards/<strategy-id-2>.md
@@ -55,6 +57,8 @@ candidates:
       - <src/hermes/... signal module>
     parameters:
       <parameter_name>: {base: "3.0", neighbours: ["2.5", "3.5"]}
+    holding: a_day_or_more
+    round_trips_90d_max: 250
 ---
 
 # Research batch <b1>: <experiment>

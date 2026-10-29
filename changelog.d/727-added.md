@@ -1,0 +1,1 @@
+- Added `hermes tax-pack fetch --year YYYY`, which copies the server's tax pack to the PC over ssh, checks it against its manifest and writes it to `<out>/server/<year>/` (#727).

@@ -15,7 +15,7 @@ import json
 import math
 from collections.abc import Mapping
 from dataclasses import replace
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -68,6 +68,7 @@ _EVIDENCE_KEYS = frozenset(
         "trials",
         "neighbour_trial_ids",
         "running_strategies",
+        "round_trip_opened_at",
         "folds",
     }
 )
@@ -347,7 +348,35 @@ def load_funnel_evidence(path: Path, *, strategy_id: str, files: FilesPort) -> F
         trials=_series_map(payload.get("trials"), "trials"),
         neighbour_trial_ids=None if neighbours is None else tuple(neighbours),
         running_strategies=_series_map(payload.get("running_strategies"), "running_strategies"),
+        round_trip_opened_at=_opened_at(payload.get("round_trip_opened_at"), trades),
     )
+
+
+def _opened_at(value: object, trade_count: int | None) -> tuple[datetime, ...] | None:
+    """When each round trip opened (ADR-029 §4): UTC ISO 8601 times, one per counted trade.
+
+    A count that differs from ``trade_count`` means the two fields describe
+    different runs, so the cap and the trade-count rows would judge different trades.
+    """
+    if value is None:
+        return None
+    key = "round_trip_opened_at"
+    if not isinstance(value, list):
+        raise FunnelEvidenceError(f"{key} must be a list of ISO 8601 times")
+    out: list[datetime] = []
+    for index, item in enumerate(value):
+        try:
+            opened = datetime.fromisoformat(item) if isinstance(item, str) else None
+        except ValueError:
+            opened = None
+        if opened is None or opened.utcoffset() != UTC.utcoffset(None):
+            raise FunnelEvidenceError(f"{key}[{index}] must be a UTC ISO 8601 time, got {item!r}")
+        out.append(opened)
+    if trade_count is not None and len(out) != trade_count:
+        raise FunnelEvidenceError(
+            f"{key} holds {len(out)} round trips but trade_count is {trade_count}"
+        )
+    return tuple(out)
 
 
 def _numbers(value: object, key: str) -> tuple[float, ...]:

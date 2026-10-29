@@ -110,6 +110,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           ref: ${{ env.RELEASE_SHA }}
           fetch-depth: 1
 
@@ -174,6 +175,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           ref: ${{ env.RELEASE_SHA }}
           # Full history and tags: the notes run from the previous deploy tag.
           fetch-depth: 0
@@ -240,6 +242,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           ref: ${{ env.RELEASE_SHA }}
           fetch-depth: 1
 
@@ -586,6 +589,11 @@ jobs:
       - name: Dry-run notice
         if: inputs.dry_run == true
         run: echo "::notice::dry_run=true — built the bundle, skipped tailnet + scp + install + smoke."
+
+      # The runner container outlives the job, so the key must not.
+      - name: Remove the SSH keyfile
+        if: always()
+        run: rm -f ~/.ssh/vps_id
 
   # ─────────────────────────────────────────────────────────────────
   # CONFIRM — deploy-gate aggregator

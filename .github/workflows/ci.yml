@@ -50,9 +50,13 @@ jobs:
   # matching the old fail-fast: false matrix — surface every violation.
   # Docs-only changesets skip the code checks.
   # ─────────────────────────────────────────────────────────────────────
+  #
+  # A pull request from a fork runs on a GitHub-hosted runner, never on
+  # the self-hosted pool: its code is untrusted and the pool shares a
+  # host with the deploy runners. Steps that need the pool's data skip.
   ci-success:
     name: CI success
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || fromJSON('["self-hosted","linux","hermes"]') }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || (vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || fromJSON('["self-hosted","linux","hermes"]')) }}
     # A normal run takes 5-8 minutes on a busy pool. Each network step
     # has its own short timeout, so a hung download fails that step
     # instead of holding a runner until this cap. 35, not 20: with many
@@ -65,6 +69,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           # Full history: the changeset diff, the CHANGELOG check, the
           # test-deletion guard and gitleaks all read a commit range.
           fetch-depth: 0
@@ -302,10 +307,11 @@ jobs:
         if: ${{ !cancelled() && steps.changeset.outputs.code == 'true' }}
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_REF: ${{ github.base_ref }}
         run: |
           set -euo pipefail
           DELETED=$(git diff --name-only --diff-filter=D \
-            "origin/${{ github.base_ref }}...HEAD" -- 'tests/**/*.py' || true)
+            "origin/${BASE_REF}...HEAD" -- 'tests/**/*.py' || true)
           [ -z "$DELETED" ] && exit 0
           if ! grep -q '^SEV-1:' <<< "$PR_BODY"; then
             echo "Tests deleted but PR body lacks 'SEV-1:' opt-in header." >&2
@@ -422,8 +428,10 @@ jobs:
       # and compares decisions only; no metric, no trial (ADR-025). Exits
       # at once when no engine file changed. Last, so a red unit tier is
       # reported before the replay's minutes are spent.
+      # Forks skip it: the bar data lives on the self-hosted pool, and a
+      # maintainer re-runs a fork's engine change from a branch here.
       - name: Train decision replay
-        if: ${{ !cancelled() && github.event_name == 'pull_request' && steps.unit.outcome == 'success' }}
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && steps.unit.outcome == 'success' }}
         timeout-minutes: 15
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}

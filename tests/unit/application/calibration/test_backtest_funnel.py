@@ -7,7 +7,7 @@ limit and just past it (test rule 4).
 """
 
 from dataclasses import replace
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from types import MappingProxyType
 from typing import Any
 
@@ -823,6 +823,21 @@ class TestValidateEvidence:
         start = date(2025, 8, 27)
         evidence = _evidence(start_date=start)
         assert start + timedelta(days=4) == date(2025, 8, 31)
+        assert validate_evidence(evidence, _thresholds()) is evidence
+
+    # SEV-1: no evidence from the sealed OOS window may be evaluated (ADR-023 §4)
+    def test_a_round_trip_opened_on_the_oos_start_is_refused(self) -> None:
+        """A round-trip time on oos_start is sealed data, whatever the equity curve says."""
+        opened = (datetime(2025, 8, 31, 23, 0, tzinfo=UTC), datetime(2025, 9, 1, tzinfo=UTC))
+        evidence = _evidence(round_trip_opened_at=opened)
+
+        with pytest.raises(FunnelEvidenceError, match="opened 2025-09-01T00:00:00"):
+            validate_evidence(evidence, _thresholds())
+
+    def test_a_round_trip_opened_the_day_before_oos_is_accepted(self) -> None:
+        """31 August 2025, 23:00 UTC is the last Validation day, not OOS."""
+        evidence = _evidence(round_trip_opened_at=(datetime(2025, 8, 31, 23, 0, tzinfo=UTC),))
+
         assert validate_evidence(evidence, _thresholds()) is evidence
 
     @pytest.mark.parametrize(

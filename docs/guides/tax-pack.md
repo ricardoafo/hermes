@@ -57,6 +57,20 @@ sudo systemctl enable --now hermes-tax-pack.timer
 The server packs live in `/var/lib/hermes-tax-pack/<year>/`. The server has no taxpayer
 profile, so they hold the filing figures only.
 
+## Fetching the server pack to your PC
+
+With the server pack present, one command on the PC (Windows PowerShell or Linux) copies it over ssh,
+checks every file against `manifest.json` and writes `<out>/server/<year>/`:
+
+```bash
+uv run hermes tax-pack fetch --year 2026
+```
+
+It uses the same `HERMES_VPS_HOST`, `HERMES_VPS_USER` and `HERMES_VPS_KEY` as `hermes --vps`. A pack that
+does not match its manifest is not written (exit 4) and an earlier fetched copy is kept. The fetched folder is
+separate from `<out>/<year>/`, so a local run with your profile is never overwritten. Nothing is uploaded and
+nothing is submitted. With the timer off there is no server pack yet, and the command says so (exit 1).
+
 ## Running it locally with your profile
 
 Your taxpayer profile stays on your machine. To get a pack that also carries the tax estimate,

@@ -37,6 +37,7 @@ from rich.text import Text
 
 from hermes.application.console import Heartbeat
 from hermes.application.console.format import sparkline
+from hermes.application.console.live_rate import LiveRate
 from hermes.application.console.logs import LogLine, render_log_line
 from hermes.application.console.system import (
     DEPLOY_STEPS,
@@ -319,6 +320,14 @@ def _row(label: str, value: Text | str, tokens: Tokens) -> Text:
     return out
 
 
+def _live_rate_text(live: LiveRate, now: datetime, tokens: Tokens) -> Text:
+    """Return ``live 0.8908`` in the live colour, or dimmed with its age once it is stale."""
+    shown = f"live {live.eur_per_usdt:.4f}"
+    if live.fresh:
+        return Text(shown, style=tokens.live)
+    return Text(f"{shown} · {age_text(live.at, now)}", style=tokens.muted)
+
+
 def timing_text(
     heartbeat: Heartbeat | None,
     *,
@@ -327,6 +336,7 @@ def timing_text(
     now: datetime,
     tz: tzinfo,
     tokens: Tokens,
+    live_rate: LiveRate | None = None,
 ) -> Text:
     """Return the Data and timing panel.
 
@@ -338,6 +348,7 @@ def timing_text(
         now: The current time.
         tz: Display timezone.
         tokens: Token sheet.
+        live_rate: Kraken's USDT/EUR quote beside the ECB rate, if the console has one.
 
     Returns:
         Market data, order book, EUR rate and bar-check time rows.
@@ -362,6 +373,9 @@ def timing_text(
         if eur_rate_date is None
         else Text(f"ECB rate of {eur_rate_date.isoformat()}")
     )
+    if live_rate is not None:
+        rate.append(" · ")
+        rate.append_text(_live_rate_text(live_rate, now, tokens))
     rows.append(_row("EUR rate", rate, tokens))
     if not bar_seconds:
         rows.append(_row("bar-check time", Text(NOT_YET, style=tokens.dim), tokens))

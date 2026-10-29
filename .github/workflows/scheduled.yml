@@ -34,8 +34,11 @@
 #   The start is the day number times 1000, so each day's seeds are new and
 #   a run is reproducible from its date. Failing seeds are filed as one
 #   issue with the rerun command. About 18 CPU-minutes, 4 workers.
-# - mutation: cosmic-ray on the modules in cosmic-ray.toml, with the
-#   kill-rate floor (advisory until #406 enforces it).
+# - mutation: cosmic-ray on the modules in cosmic-ray.toml, dealt over six
+#   parallel shards of about 190 mutants (~25 minutes each at ~8 s a
+#   mutant), each capped at 40 minutes (#1213).
+# - mutation-verdict: merges the shards and always ends PASS or FAIL: a
+#   mutant no shard ran fails it, and so does a kill rate below the floor.
 # - branch-prune: deletes remote branches of PRs closed unmerged more
 #   than 3 days ago and no-PR branches idle more than 14 days
 #   (scripts/dev/prune-merged-branches.sh --remote-only). Merged PR
@@ -77,6 +80,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           fetch-depth: 1
 
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
@@ -92,6 +96,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           fetch-depth: 1
 
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
@@ -175,17 +180,28 @@ jobs:
           fi
           exit 1
 
+  # The mutants are dealt over MUTATION_SHARDS legs (#1213): one runner
+  # running all ~1,100 one after another needs about 2.5 hours. Each leg
+  # caps cosmic-ray at 40 minutes and uploads its session even when cut
+  # off; mutation-verdict merges them and always ends PASS or FAIL.
   mutation:
-    name: Cosmic-ray mutation run
+    name: Cosmic-ray mutation shard ${{ matrix.index }}
     if: >-
       github.event.schedule == '45 11 * * 0' ||
       (github.event_name == 'workflow_dispatch' && inputs.mutation)
     runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || fromJSON('["self-hosted","linux","hermes"]') }}
-    timeout-minutes: 60
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        index: [0, 1, 2, 3, 4, 5]
+    env:
+      MUTATION_SHARDS: "6"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with: { version: "0.12.5" }
@@ -196,57 +212,86 @@ jobs:
       - name: Baseline (unmutated tests must be green)
         run: uv run cosmic-ray baseline cosmic-ray.toml
 
-      - name: Initialize mutation session
-        run: |
-          rm -f mutation-session.sqlite
-          uv run cosmic-ray init cosmic-ray.toml mutation-session.sqlite
-
-      - name: Execute mutations
-        # The local distributor runs sequentially. If wall-clock grows,
-        # switch to the http worker or shard by module_path across legs.
-        run: uv run cosmic-ray exec cosmic-ray.toml mutation-session.sqlite
-
-      - name: Compute kill rate
-        id: rate
-        shell: bash
+      - name: Initialize this shard's session
+        env:
+          SHARD_INDEX: ${{ matrix.index }}
         run: |
           set -euo pipefail
-          survival=$(uv run cr-rate mutation-session.sqlite | tr -d '\r')
-          kill=$(python3 -c "print(f'{100 - float('${survival}'):.2f}')")
-          echo "survival=${survival}" >> "$GITHUB_OUTPUT"
-          echo "kill=${kill}" >> "$GITHUB_OUTPUT"
-          echo "::notice::Mutation kill rate: ${kill}% (survivors: ${survival}%)"
+          rm -f mutation-session.sqlite
+          uv run cosmic-ray init cosmic-ray.toml mutation-session.sqlite
+          uv run python scripts/dev/mutation-shard.py select mutation-session.sqlite \
+            --shards "${MUTATION_SHARDS}" --index "${SHARD_INDEX}"
 
-      - name: Publish detailed report
-        if: always()
-        run: uv run cr-report mutation-session.sqlite > cosmic-ray-report.txt
+      - name: Execute this shard's mutants
+        # Capped below the job limit so the session upload below still runs;
+        # mutants left unrun make the verdict FAIL as incomplete.
+        run: timeout 40m uv run cosmic-ray exec cosmic-ray.toml mutation-session.sqlite
 
-      - name: Upload session + report as artifact
+      - name: Upload this shard's session
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: cosmic-ray-session
-          path: |
-            mutation-session.sqlite
-            cosmic-ray-report.txt
+          name: cosmic-ray-shard-${{ matrix.index }}
+          path: mutation-session.sqlite
           retention-days: 30
 
-      - name: Enforce kill-rate floor
+  mutation-verdict:
+    name: Cosmic-ray mutation verdict
+    needs: mutation
+    if: >-
+      always() && (
+      github.event.schedule == '45 11 * * 0' ||
+      (github.event_name == 'workflow_dispatch' && inputs.mutation))
+    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || fromJSON('["self-hosted","linux","hermes"]') }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with: { version: "0.12.5" }
+
+      - name: Sync dev deps (frozen)
+        run: uv sync --frozen
+
+      # Non-fatal: with no shard uploaded, the verdict below still runs and
+      # reports every mutant as unrun.
+      - name: Download every shard's session
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: cosmic-ray-shard-*
+          path: ${{ runner.temp }}/shards
+
+      # A leg that never uploaded leaves its share unrun, which the verdict
+      # reports as incomplete: the init below lists every mutant of the config.
+      - name: Merge the shards and enforce the kill-rate floor
         shell: bash
         run: |
           set -euo pipefail
-          kill="${{ steps.rate.outputs.kill }}"
-          floor="${KILL_RATE_FLOOR}"
+          rm -f all-mutants.sqlite
+          uv run cosmic-ray init cosmic-ray.toml all-mutants.sqlite
+          mkdir -p "${RUNNER_TEMP}/shards"
+          mapfile -t sessions < <(find "${RUNNER_TEMP}/shards" -name mutation-session.sqlite | sort)
+          status=0
+          uv run python scripts/dev/mutation-shard.py verdict all-mutants.sqlite "${sessions[@]}" \
+            --floor "${KILL_RATE_FLOOR}" --summary "${GITHUB_STEP_SUMMARY}" > mutation-verdict.md || status=$?
+          cat mutation-verdict.md
           if [[ "${KILL_RATE_ADVISORY}" == "true" ]]; then
-            echo "Advisory mode — kill=${kill}% (floor ${floor}%), NOT blocking."
+            echo "Advisory mode: verdict exit ${status}, not blocking."
             exit 0
           fi
-          if python3 -c "import sys; sys.exit(0 if float('${kill}') >= float('${floor}') else 1)"; then
-            echo "Kill rate ${kill}% ≥ ${floor}% — pass."
-          else
-            echo "::error::Kill rate ${kill}% below floor ${floor}%"
-            exit 1
-          fi
+          exit "${status}"
+
+      - name: Upload the verdict
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: cosmic-ray-verdict
+          path: mutation-verdict.md
+          retention-days: 30
 
   freshness:
     name: Tool freshness report
@@ -277,8 +322,10 @@ jobs:
       contents: write
       pull-requests: read
     steps:
+      # Keeps the token: the prune script deletes branches with `git push
+      # origin --delete`, and this job runs only main's own code.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
+        with: # zizmor: ignore[artipacked]
           fetch-depth: 0
 
       - name: Delete closed and orphaned remote branches

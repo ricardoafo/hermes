@@ -9,9 +9,9 @@ one input. No market data is read.
 
 import json
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 from hermes.adapters.trial_log.jsonl_file import JsonlTrialLog
 from hermes.application.calibration.research_batch import ResearchBatch, parse_batch
@@ -56,6 +56,13 @@ FUNNEL: dict[str, Any] = {
 }
 
 
+_EVERY_OTHER_DAY: Final = [
+    datetime(START.year, START.month, START.day, 12, tzinfo=UTC) + timedelta(days=2 * i)
+    for i in range(140)
+]
+"""140 round trips, at most 46 in any 90 days: well under the cap."""
+
+
 def returns(drift: float, days: int = DAYS) -> list[float]:
     """Alternating returns ``drift ± 0.001``: positive mean, dispersion in every block."""
     return [drift + (0.001 if i % 2 else -0.001) for i in range(days)]
@@ -69,10 +76,16 @@ def equity(daily: list[float]) -> list[float]:
     return points
 
 
-def batch(body: str = BODY) -> ResearchBatch:
-    """Return a SIGNED batch whose ``backtest_funnel`` fits the synthetic history."""
+def batch(body: str = BODY, *, round_trip_cap: int | None = None) -> ResearchBatch:
+    """Return a SIGNED batch whose ``backtest_funnel`` fits the synthetic history.
+
+    Every candidate signs the ADR-029 §4 cap of 250; ``round_trip_cap``
+    signs another on the first candidate.
+    """
     front_matter = batch_front_matter()
     front_matter["backtest_funnel"] = dict(FUNNEL)
+    if round_trip_cap is not None:
+        front_matter["candidates"][0]["round_trips_90d_max"] = round_trip_cap
     return parse_batch(BATCH_PATH, batch_text(front_matter, body))
 
 
@@ -93,6 +106,8 @@ def write_candidate(
     window: str = "train_val",
     body: str = BODY,
     strategy_id: str = STRATEGY_ID,
+    round_trip_opened_at: list[datetime] | None = None,
+    round_trip_times: bool = True,
 ) -> Written:
     """Write a batch under ``root`` and the candidate's three files beside it.
 
@@ -104,6 +119,10 @@ def write_candidate(
         window: The performance file's window.
         body: The batch body, to test the §9 secondary rule.
         strategy_id: The candidate; its files go to ``root/evidence/<strategy_id>/``.
+        round_trip_opened_at: When each round trip opened; written with a
+            matching ``trade_count``. ``None`` writes the 140 trips the
+            fixture counts, one every two days from ``START``.
+        round_trip_times: False writes no round-trip times at all.
 
     """
     front_matter = batch_front_matter()
@@ -138,6 +157,10 @@ def write_candidate(
         "neighbour_trial_ids": ["lookback=25"],
         "running_strategies": {},
     }
+    if round_trip_times:
+        opened = round_trip_opened_at or _EVERY_OTHER_DAY
+        funnel["trade_count"] = len(opened)
+        funnel["round_trip_opened_at"] = [t.isoformat() for t in opened]
     files = CandidateEvidence(
         performance=out / "performance.json",
         evidence=out / "evidence.json",

@@ -23,7 +23,7 @@
 # Runner binary version is PINNED. Self-updates during a job break the
 # --ephemeral lifecycle; bump this manually + rebuild the image.
 
-FROM ubuntu:26.04
+FROM ubuntu:26.04 AS base
 
 ARG RUNNER_VERSION=2.338.0
 ARG RUNNER_ARCH=x64
@@ -61,6 +61,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       ca-certificates \
       curl \
       git \
+      openssh-client \
       jq \
       sudo \
       unzip \
@@ -125,24 +126,30 @@ RUN curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_$
  && gh --version
 
 # ────────────────────────────────────────────────────────────────
-# Non-root runner user (GH runner refuses to run as root).
-# Docker group ID 999 matches typical host docker.sock ownership.
+# Non-root runner user (GH runner refuses to run as root), with no
+# sudo: CI and review jobs run pull request code. Only the `ops`
+# target below grants sudo, for the Tailscale action in CD and the
+# VPS workflows. Docker group ID 999 is for the Dependabot runner's
+# Docker-in-Docker client; no runner mounts the host socket.
 # ────────────────────────────────────────────────────────────────
 RUN useradd -m -s /bin/bash runner \
- && usermod -aG sudo runner \
- && echo "runner ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/runner \
  && groupadd -g 999 docker || true \
  && usermod -aG docker runner
 
 USER runner
 WORKDIR /home/runner
 
-# Pre-create cache dir with runner ownership so uv (and later named
-# volume mount) can write to it without a permission-fix step at
-# entrypoint time.
+# Pre-create every cache dir with runner ownership: a new named volume
+# takes the ownership of the directory it mounts over, so the runner
+# can write to it without a root permission fix at entrypoint time.
 RUN mkdir -p /home/runner/.cache/uv \
              /home/runner/.cache/npm \
-             /home/runner/.cache/pip
+             /home/runner/.cache/pip \
+             /home/runner/.cache/pytest \
+             /home/runner/.cache/mypy \
+             /home/runner/.cache/ruff \
+             /home/runner/.cache/hypothesis \
+             /home/runner/.cache/bun
 
 # ────────────────────────────────────────────────────────────────
 # uv + Python 3.14 (pre-baked as runner user so tool cache is warm
@@ -196,3 +203,20 @@ COPY --chown=runner:runner entrypoint.sh /home/runner/entrypoint.sh
 RUN chmod +x /home/runner/entrypoint.sh
 
 ENTRYPOINT ["/home/runner/entrypoint.sh"]
+
+# ────────────────────────────────────────────────────────────────
+# ops: the merge queue, CD and VPS runner. The Tailscale action
+# starts tailscaled with sudo, so this target alone grants it. It
+# runs no pull request code before review.
+# ────────────────────────────────────────────────────────────────
+FROM base AS ops
+USER root
+RUN echo "runner ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/runner \
+ && chmod 0440 /etc/sudoers.d/runner
+USER runner
+
+# ────────────────────────────────────────────────────────────────
+# ci: the default target. CI, AI review, backtest and Dependabot
+# runners: no sudo.
+# ────────────────────────────────────────────────────────────────
+FROM base AS ci

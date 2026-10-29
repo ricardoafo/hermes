@@ -78,6 +78,7 @@ def funnel_evidence(
     *,
     trade_count: int,
     replays: Sequence[FunnelReplay] = FUNNEL_REPLAYS,
+    round_trip_opened_at: Sequence[datetime] | None = None,
 ) -> dict[str, Any]:
     """Return the ``hermes funnel`` evidence body (``v2-backtest-funnel`` Design §2).
 
@@ -88,6 +89,8 @@ def funnel_evidence(
         trade_count: The base run's round trips.
         replays: The grid that ran: v2's by default, or a batch candidate's
             (ADR-026 §1).
+        round_trip_opened_at: When each of the base run's round trips opened,
+            for the ADR-029 §4 cap row; ``None`` leaves the key out.
 
     Returns:
         The JSON object, with ``running_strategies`` empty and the base run's
@@ -117,7 +120,7 @@ def funnel_evidence(
             )
     neighbours = [r.trial_id for r in replays if r.overrides]
     trial_ids = (BASE_TRIAL_ID, *neighbours)
-    return {
+    evidence: dict[str, Any] = {
         "strategy_id": strategy_id,
         "start_date": days[0].date().isoformat(),
         "daily_equity": _equity(base),
@@ -131,3 +134,6 @@ def funnel_evidence(
         "running_strategies": {},
         "folds": fold_evidence(days[0].date(), _equity(base)),
     }
+    if round_trip_opened_at is not None:
+        evidence["round_trip_opened_at"] = [t.isoformat() for t in round_trip_opened_at]
+    return evidence

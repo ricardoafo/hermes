@@ -129,9 +129,18 @@ sequenceDiagram
     P310 owned by the container's `runner` user:
 
     ```bash
-    docker compose build runner        # builds gh-runner:latest
+    docker compose build               # builds gh-runner:latest (ci) and gh-runner:ops
     docker compose --profile backtest up -d backtest-runner
     ```
+
+- **Isolation between pools**: the CI pool runs pull request code, so:
+  - no runner mounts the host Docker socket;
+  - only the `ops` image (`ops-runner`) has sudo, which the Tailscale action in CD and the VPS
+    workflows needs; the default `ci` image has none;
+  - the ops and review runners have their own cache volumes, so nothing the CI pool writes is read
+    by a job that holds the deploy key, the merge credentials or the review token;
+  - the entrypoint removes the registration PAT from the environment before the runner starts, and
+    deletes any `~/.ssh` a killed deploy job left behind.
 
 - **Image (`gh-runner:latest`) pre-baked for speed**:
   - Ubuntu 26.04 LTS base
@@ -249,10 +258,13 @@ token exists.
   `docker compose logs runner`. Common causes: PAT expired, disk full,
   Docker Desktop paused.
 - **`Cannot connect to Docker daemon`** → Docker Desktop not running.
-- **Job hangs on socket operations** → `/var/run/docker.sock` group
-  permissions differ from image assumption (GID 999). Adjust
-  `groupadd -g` in `Dockerfile` to match host
-  `stat -c '%g' /var/run/docker.sock`.
+- **A step fails with `sudo: a password is required`** → it ran on the `ci`
+  image, which has no sudo. Bake the tool into the `base` stage of the
+  `Dockerfile` instead of installing it in the job.
+- **Applying a change to `compose.yml` or the `Dockerfile`** → `./up.sh`
+  starts missing runners but does not recreate running ones. When no job
+  is running: `docker compose build`, then
+  `docker compose up -d --force-recreate --remove-orphans`.
 - **Manual cleanup** if a runner is stuck offline in GH:
 
     ```bash

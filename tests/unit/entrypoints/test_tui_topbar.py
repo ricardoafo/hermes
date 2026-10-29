@@ -33,6 +33,7 @@ import hermes
 import hermes.entrypoints.tui as tui_module
 from hermes.adapters.console import FixtureReadModel
 from hermes.application.console import Heartbeat, HeartbeatState
+from hermes.application.console.format import elapsed_text
 from hermes.entrypoints.commands.tui import run_tui
 from hermes.entrypoints.console import config_allow_mainnet
 from hermes.entrypoints.tui import HomeApp
@@ -284,7 +285,11 @@ def test_compact_row_drops_the_scenario_name_before_the_heartbeat(
         return _row(app, 2)
 
     row = _run(probe, size=(80, 24), theme=theme, clock=now)
-    assert row == "SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑"
+    age = elapsed_text(now - FixtureReadModel.load("ok-two-positions").heartbeat().last_check_at)
+    assert (
+        row.startswith("SHADOW · mainnet off  DEMO DATA "),
+        row.endswith(f"● live · checked {age} ago · next 18:00  ◑"),
+    ) == (True, True)
 
 
 def test_status_row_drops_the_release_before_the_version() -> None:

@@ -14,8 +14,8 @@ import sqlite3
 from decimal import Decimal, localcontext
 
 from hermes.adapters.ledger._cells import decimal_cell, optional_decimal_cell, time_cell
+from hermes.adapters.ledger.codecs import trade_from_payload
 from hermes.adapters.ledger.connection import ReadOnlyLedgerReader
-from hermes.adapters.ledger.sqlite_ledger import _trade_from_payload
 from hermes.domain.errors import LedgerError
 from hermes.domain.events.trade_executed import TradeExecuted
 from hermes.domain.reconciliation.holdings import LedgerTrade
@@ -93,7 +93,7 @@ class SqliteReconciliationReader(ReadOnlyLedgerReader):
             if version != TradeExecuted.__event_schema_version__:
                 raise LedgerError(msg=f"unsupported TradeExecuted schema version {version}")
             try:
-                events.append(_trade_from_payload(json.loads(payload_json)))
+                events.append(trade_from_payload(json.loads(payload_json)))
             except (KeyError, ValueError, TypeError) as exc:
                 raise LedgerError(msg=f"unreadable TradeExecuted payload: {exc}") from exc
         return tuple(events)
