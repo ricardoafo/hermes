@@ -7,7 +7,6 @@ against the rates production stores on each trade.
 import sqlite3
 from collections.abc import Iterator
 from datetime import date
-from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -76,4 +75,4 @@ def test_query_failure_is_a_ledger_error(tmp_path: Path) -> None:
 
 def test_rates_are_decimals_not_floats(rates: LedgerTradeRates) -> None:
     """Invariant: rates keep their stored digits."""
-    assert all(isinstance(r.rate, Decimal) for r in rates.eur_rates().values())
+    assert [repr(r.rate) for r in rates.eur_rates().values()] == [repr(RATE)] * 3

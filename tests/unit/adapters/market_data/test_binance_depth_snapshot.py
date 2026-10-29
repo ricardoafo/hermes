@@ -136,11 +136,11 @@ def test_a_book_younger_than_the_cache_window_is_reused() -> None:
     clock = SimulatedClock(start=_START)
     adapter = _adapter(clock)
 
-    _snapshot(adapter)
+    first = _snapshot(adapter)
     clock.advance(timedelta(milliseconds=500))
-    _snapshot(adapter)
+    second = _snapshot(adapter)
 
-    assert route.call_count == 1
+    assert (route.call_count, second) == (1, first)
 
 
 @respx.mock
