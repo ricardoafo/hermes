@@ -40,7 +40,7 @@ dependencies = [
   # the ingest scripts (scripts/data/_manifest_util.py). Was a transitive
   # dep of virtualenv; promoted to direct after we started depending on
   # it explicitly. See docs/decisions/... and change data-manifest-file-lock (#257).
-  "filelock>=4.1.1,<5",
+  "filelock>=4.2.1,<5",
   # Writes the tax pack's Renta Web sheet and dossier as PDF (#568, change
   # 568-tax-pack D-8). Pure Python; approved by the Code Owner 2026-10-04.
   "fpdf2>=2.8,<3",
