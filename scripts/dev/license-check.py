@@ -7,9 +7,9 @@ license is in the allowlist; exits 1 with one line per violation if not.
 ## Why
 
 Meta issue #71 Phase 0 blocking item. `pip-audit` catches CVEs but not
-licenses. A GPL/AGPL dep would create commercial-use constraints
-incompatible with hermes' private closed operation. This script is the
-enforcement point in CI (see .github/workflows/ci.yml `licenses` job).
+licenses. Hermes is licensed Apache-2.0; a GPL/AGPL dependency would force
+the whole program under its terms. This script is the enforcement point
+in CI (see .github/workflows/ci.yml `licenses` job).
 
 ## Allowlist rationale
 
@@ -18,8 +18,8 @@ The allowlist covers permissive licenses only:
 - **MIT / Apache-2.0 / BSD-*** — the modern permissive-OSS mainline
 - **ISC** — MIT-equivalent, common in node/js ecosystem
 - **Python-2.0 / Python Software Foundation License** — stdlib itself
-- **MPL-2.0** — file-level copyleft, permissive for our use (linking
-  MPL code into a proprietary app is explicitly permitted; only MPL
+- **MPL-2.0** — file-level copyleft, permissive for our use (using MPL
+  code from an Apache-2.0 program is explicitly permitted; only MPL
   files themselves are copyleft)
 
 Explicitly blocked:
@@ -122,7 +122,7 @@ def load_exceptions() -> set[str]:
     return exceptions
 
 
-# Hermes itself is installed editable and is proprietary by design.
+# Hermes itself is installed editable; its own licence is in LICENSE.
 OWN_PACKAGE = "hermes"
 
 
