@@ -28,8 +28,9 @@ if [[ ! -f .env ]]; then
 fi
 
 # Build if missing or Dockerfile changed
-if ! docker image inspect gh-runner:latest >/dev/null 2>&1; then
-    echo "Building gh-runner:latest (first time, ~3-5 min)…"
+if ! docker image inspect gh-runner:latest >/dev/null 2>&1 \
+    || ! docker image inspect gh-runner:ops >/dev/null 2>&1; then
+    echo "Building gh-runner:latest and gh-runner:ops (first time, ~3-5 min)…"
     docker compose build
 elif [[ Dockerfile -nt "$(docker image inspect --format '{{.Metadata.LastTagTime}}' gh-runner:latest 2>/dev/null || echo 0)" ]]; then
     echo "Dockerfile changed — rebuilding gh-runner:latest…"
