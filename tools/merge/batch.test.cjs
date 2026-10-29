@@ -188,6 +188,11 @@ test('gitOps: fetches a pull request head with the token on the command line onl
   const os = require('node:os');
   const path = require('node:path');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gitops-'));
+  // A git hook runs this suite with GIT_DIR and friends set to the real
+  // repository; they would point every git call below, and gitOps' own,
+  // at it. Clear them for the test and put them back after.
+  const saved = Object.entries(process.env).filter(([name]) => name.startsWith('GIT_'));
+  for (const [name] of saved) delete process.env[name];
   const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
   const origin = path.join(tmp, 'origin');
   const work = path.join(tmp, 'work');
@@ -207,6 +212,7 @@ test('gitOps: fetches a pull request head with the token on the command line onl
     assert.doesNotMatch(git(work, 'config', '--list', '--show-origin'), /extraheader|ghs_secret/i);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
+    Object.assign(process.env, Object.fromEntries(saved));
   }
 });
 
