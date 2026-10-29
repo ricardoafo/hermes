@@ -1,0 +1,1 @@
+- **Dependency review on pull requests**: CI fails a pull request that adds a dependency or action with a known vulnerability of any severity, using GitHub's dependency graph and advisory database. Licences are still checked by the existing licence allowlist.

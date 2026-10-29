@@ -302,6 +302,18 @@ jobs:
         if: ${{ !cancelled() && steps.changeset.outputs.code == 'true' }}
         run: bash scripts/dev/ci-checks.sh lockfile
 
+      # A pull request that adds a dependency with a known vulnerability
+      # fails here (GitHub's dependency graph and advisory database).
+      # Licences stay with the License compliance step below.
+      - name: Dependency review
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        timeout-minutes: 3
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: low
+          license-check: false
+          comment-summary-in-pr: never
+
       # A PR that removes a test must opt in with a `SEV-1:` header.
       - name: Test-deletion guard
         if: ${{ !cancelled() && steps.changeset.outputs.code == 'true' }}
