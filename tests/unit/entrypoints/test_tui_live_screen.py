@@ -56,12 +56,17 @@ _SECOND = {"BTC": "62100", "ETH": "2710", "SOL": "149"}
 
 
 class _FakeTicker:
-    """Answers from a price table; raises for coins in ``fail``; records each pair asked."""
+    """Answers from a price table; raises for coins in ``fail``; records each price pair asked.
+
+    The euro quote of the System tab (USDT/EUR, #1330) is answered apart and counted
+    in ``rate_calls``, so ``calls`` stays the price polls the cadence tests count.
+    """
 
     def __init__(self, prices: dict[str, str]) -> None:
         self.prices = {coin: Decimal(price) for coin, price in prices.items()}
         self.fail: set[str] = set()
         self.calls: list[str] = []
+        self.rate_calls = 0
         self.threads: set[str] = set()
 
     def set(self, prices: dict[str, str]) -> None:
@@ -69,6 +74,9 @@ class _FakeTicker:
 
     def get_ticker(self, pair: Pair) -> Ticker:
         coin = pair.base.value
+        if pair.quote.value == "EUR":
+            self.rate_calls += 1
+            return Ticker(pair, Decimal("0.89"), Decimal("0.91"), Decimal("0.90"), _FROZEN)
         self.calls.append(f"{coin}/{pair.quote.value}")
         self.threads.add(threading.current_thread().name)
         if coin in self.fail:

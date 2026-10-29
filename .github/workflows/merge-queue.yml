@@ -359,6 +359,10 @@ jobs:
           # Full history: about to perform real merges, which need a
           # merge base.
           fetch-depth: 0
+          # The gates run the batch's code. Checkout would keep the token
+          # in a credentials file they can read; gitOps passes it to each
+          # fetch on the command line instead.
+          persist-credentials: false
 
       # Once the batch is checked out, the workspace holds the PRs'
       # versions of every file, including the queue's own tooling. A PR
@@ -435,6 +439,7 @@ jobs:
                 base,
                 gatesScript: `${process.env.QUEUE_TOOLS}/merge-gates.sh`,
                 failFile: path.join(process.env.RUNNER_TEMP, 'merge-gates.failed'),
+                token: core.getInput('github-token'),
                 ciConclusion,
               }),
               log: (line) => core.info(line),

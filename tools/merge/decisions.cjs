@@ -39,7 +39,7 @@
  */
 
 /**
- * @typedef {{ user: { login: string }, state: string }} Review
+ * @typedef {{ user: { login: string }, state: string, author_association?: string }} Review
  * @typedef {{ number: number, draft: boolean, head: { sha: string, ref: string },
  *             mergeable: boolean | null, mergeable_state: string }} PullSummary
  */
@@ -64,6 +64,25 @@
 const MERGEABLE_STATES = new Set(['clean', 'unstable', 'behind', 'has_hooks']);
 
 /**
+ * Repository roles whose reviews the queue counts.
+ *
+ * Anyone with a GitHub account can submit a review on a public
+ * repository. Only the owner, members and collaborators can approve
+ * work into this one, so a drive-by APPROVE never makes a PR a
+ * candidate. A review without the field counts for nothing: the safe
+ * direction to be wrong in.
+ */
+const MAINTAINER_ASSOCIATIONS = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
+
+/**
+ * @param {Review} review
+ * @returns {boolean}
+ */
+function isMaintainerReview(review) {
+  return MAINTAINER_ASSOCIATIONS.has(review.author_association ?? '');
+}
+
+/**
  * Has a human approved this pull request as it currently stands?
  *
  * The last OPINIONATED review per author wins, so a CHANGES_REQUESTED
@@ -78,6 +97,9 @@ const MERGEABLE_STATES = new Set(['clean', 'unstable', 'behind', 'has_hooks']);
 function isApproved(reviews) {
   const latest = new Map();
   for (const r of reviews) {
+    if (!isMaintainerReview(r)) {
+      continue;
+    }
     if (r.state === 'APPROVED' || r.state === 'CHANGES_REQUESTED') {
       latest.set(r.user.login, r.state);
     }
@@ -269,7 +291,7 @@ function ciRestart(input) {
 function approvedAt(reviews) {
   let latest = null;
   for (const r of reviews) {
-    if (r.state !== 'APPROVED' || !r.submitted_at) {
+    if (r.state !== 'APPROVED' || !r.submitted_at || !isMaintainerReview(r)) {
       continue;
     }
     if (latest === null || Date.parse(r.submitted_at) > Date.parse(latest)) {
@@ -801,6 +823,7 @@ module.exports = {
   MERGEABLE_STATES,
   BATCH_CONFLICT_REASON,
   isApproved,
+  isMaintainerReview,
   isCandidate,
   shouldMerge,
   gateSkip,

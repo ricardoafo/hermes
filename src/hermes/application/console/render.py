@@ -38,6 +38,7 @@ from hermes.application.console.format import (
     arrow,
     big_digits,
     cushion_level,
+    elapsed_text,
     fmt_atr_range,
     fmt_change,
     fmt_eur,
@@ -355,12 +356,11 @@ def render_heartbeat(heartbeat: Heartbeat, ctx: RenderContext) -> Group:
         line.append(ctx.spinner, style=ctx.live_dot)
         line.append(f" checking {_clock(ctx, heartbeat.next_check_at)} bar…", style="dim")
     else:
-        # The dot carries the live colour; only the words stay muted (#711:
-        # a fully dim line read as "live is gray").
+        # The dot carries the live colour; only the words stay muted (#711).
         line = Text(justify="right")
         line.append("●", style=ctx.live_dot)
         line.append(
-            f" live · checked {_clock(ctx, heartbeat.last_check_at)}"
+            f" live · checked {elapsed_text(ctx.now - heartbeat.last_check_at)} ago"
             f" · next {_clock(ctx, heartbeat.next_check_at)}",
             style="dim",
         )

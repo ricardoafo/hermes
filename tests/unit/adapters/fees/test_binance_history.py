@@ -15,10 +15,17 @@ def test_load_returns_expected_row_count() -> None:
     informational ``VIP0_BTCBUSD`` line.
     """
     rows = load_binance_fee_history(CSV_PATH)
-    assert len(rows) == 9, (
-        f"expected 9 Binance rows after VIP0_BTCBUSD filter, got {len(rows)}: "
-        f"{[(r.effective_date, r.tier) for r in rows]}"
-    )
+    assert [(r.effective_date, r.tier) for r in rows] == [
+        (date(2017, 7, 14), "VIP0"),
+        (date(2018, 7, 14), "VIP0"),
+        (date(2019, 3, 22), "VIP0"),
+        (date(2020, 1, 1), "VIP0"),
+        (date(2022, 7, 28), "VIP0"),
+        (date(2022, 7, 28), "VIP0_ETH_SOL"),
+        (date(2023, 3, 22), "VIP0"),
+        (date(2024, 1, 1), "VIP0"),
+        (date(2026, 8, 25), "VIP0"),
+    ]
 
 
 def test_zero_fee_btc_row_is_present() -> None:
