@@ -3,7 +3,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions         ● live · checked 14:00 · next 18:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions       ● live · checked 12m ago · next 18:00  ◑ CONTROL ROOM
     4.1 Summary · 4.2 Lots · 4.3 Brackets · 4.4 Tax pack · 4.5 Your profile
   ┏━ LOTS  ──────────────────────────────────────────────────── computed  ┏━ LOT DETAIL  ─────────────────────── computed
     filter: state:open coin:SOL month:2026-07 or any text · Tab            SOL lot demo-4 · closed
@@ -46,7 +46,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions             ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions           ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
     4.1 Summary · 4.2 Lots · 4.3 Brackets · 4.4 Tax pack · 4.5 Your profile
   ┏━ LOTS  ──────────────────────────────────────────────────────────────────────────── computed  ┏━ LOT DETAIL  ─────────────────────────────────────── computed
     filter: state:open coin:SOL month:2026-07 or any text · Tab completes                          SOL lot demo-4 · closed
@@ -98,7 +98,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                             ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                           ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
     4.1 Summary · 4.2 Lots · 4.3 Brackets · 4.4 Tax pack · 4.5 Your profile
   ┏━ LOTS  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── computed  ┏━ LOT DETAIL  ─────────────────────────────────────────────────────────────────────── computed
     filter: state:open coin:SOL month:2026-07 or any text · Tab completes                                                                          SOL lot demo-4 · closed
@@ -165,7 +165,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA        ● live · checked 12m ago · next 18:00  ◑
     4.1 Summary · 4.2 Lots · 4.3 Brackets · 4.4 Tax pack · 4.5 Your profile
   ┏━ LOTS  ─────────────────────────────────────────────────────────── computed
     filter: state:open coin:SOL month:2026-07 or any text · Tab completes
@@ -196,7 +196,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions        ● live · checked 14:00 · next 18:00 14:12:00  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions      ● live · checked 12m ago · next 18:00 14:12:00  ◑ NEON
     4.1 Summary · 4.2 Lots · 4.3 Brackets · 4.4 Tax pack · 4.5 Your profile
   ┏━ LOTS  ──────────────────────────────────────────────────── computed  ┏━ LOT DETAIL  ─────────────────────── computed
     filter: state:open coin:SOL month:2026-07 or any text · Tab            SOL lot demo-4 · closed
@@ -239,7 +239,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                     ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                   ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ NEON
     4.1 Summary · 4.2 Lots · 4.3 Brackets · 4.4 Tax pack · 4.5 Your profile
   ┏━ LOTS  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── computed  ┏━ LOT DETAIL  ─────────────────────────────────────────────────────────────────────── computed
     filter: state:open coin:SOL month:2026-07 or any text · Tab completes                                                                          SOL lot demo-4 · closed
@@ -306,7 +306,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA        ● live · checked 12m ago · next 18:00  ◑
     4.1 Summary · 4.2 Lots · 4.3 Brackets · 4.4 Tax pack · 4.5 Your profile
   ┏━ LOTS  ─────────────────────────────────────────────────────────── computed
     filter: state:open coin:SOL month:2026-07 or any text · Tab completes
@@ -337,7 +337,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions         ● live · checked 14:00 · next 18:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions       ● live · checked 12m ago · next 18:00  ◑ CONTROL ROOM
     4.1 Summary · 4.2 Lots · 4.3 Brackets · 4.4 Tax pack · 4.5 Your profile
   ┏━ SUMMARY  ────────────────────────────────────────────────────────────────────────────────────────────────── computed
    ╭─╮╺┓ ┏━┓ ┏━┓┏━┓
@@ -380,7 +380,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions             ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions           ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
     4.1 Summary · 4.2 Lots · 4.3 Brackets · 4.4 Tax pack · 4.5 Your profile
   ┏━ SUMMARY  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── computed
    ╭─╮╺┓ ┏━┓ ┏━┓┏━┓
@@ -432,7 +432,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                             ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                           ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
     4.1 Summary · 4.2 Lots · 4.3 Brackets · 4.4 Tax pack · 4.5 Your profile
   ┏━ SUMMARY  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── computed
    ╭─╮╺┓ ┏━┓ ┏━┓┏━┓
@@ -499,7 +499,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA        ● live · checked 12m ago · next 18:00  ◑
     4.1 Summary · 4.2 Lots · 4.3 Brackets · 4.4 Tax pack · 4.5 Your profile
   ┏━ SUMMARY  ──────────────────────────────────────────────────────── computed
    Tax year 2026 · estimate · shadow (no real tax due)
@@ -530,7 +530,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions        ● live · checked 14:00 · next 18:00 14:12:00  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions      ● live · checked 12m ago · next 18:00 14:12:00  ◑ NEON
     4.1 Summary · 4.2 Lots · 4.3 Brackets · 4.4 Tax pack · 4.5 Your profile
   ┏━ SUMMARY  ────────────────────────────────────────────────────────────────────────────────────────────────── computed
    ╭─╮╺┓ ┏━┓ ┏━┓┏━┓
@@ -573,7 +573,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                     ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                   ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ NEON
     4.1 Summary · 4.2 Lots · 4.3 Brackets · 4.4 Tax pack · 4.5 Your profile
   ┏━ SUMMARY  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── computed
    ╭─╮╺┓ ┏━┓ ┏━┓┏━┓
@@ -640,7 +640,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA        ● live · checked 12m ago · next 18:00  ◑
     4.1 Summary · 4.2 Lots · 4.3 Brackets · 4.4 Tax pack · 4.5 Your profile
   ┏━ SUMMARY  ──────────────────────────────────────────────────────── computed
    Tax year 2026 · estimate · shadow (no real tax due)

@@ -406,7 +406,7 @@ def test_systemd_probe_is_unknown_without_systemctl(monkeypatch: pytest.MonkeyPa
 @pytest.mark.parametrize(
     ("scenario", "code", "verdict"),
     [
-        ("ok-two-positions", 0, "● live · checked 14:00 · next 18:00"),
+        ("ok-two-positions", 0, "● live · checked 12m ago · next 18:00"),
         ("late", 1, "◐ 18:00 check late · 12m"),
         ("down-stale", 1, "✖ hermes down since 18:04"),
     ],

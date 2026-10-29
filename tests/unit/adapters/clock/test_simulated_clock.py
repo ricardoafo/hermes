@@ -62,8 +62,7 @@ class TestSimulatedClockNow:
     def test_now_is_idempotent(self) -> None:
         """Multiple now() calls without advance return the same value (A-4.4)."""
         clock = SimulatedClock(start=_EPOCH)
-        results = [clock.now() for _ in range(5)]
-        assert all(r == _EPOCH for r in results), f"now() is not idempotent — got {results!r}"
+        assert [clock.now() for _ in range(5)] == [_EPOCH] * 5
 
     def test_now_is_tz_aware(self) -> None:
         """now() always returns a tz-aware datetime with zero UTC offset."""

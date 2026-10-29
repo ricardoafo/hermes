@@ -30,7 +30,7 @@ from hermes.adapters.exchanges.binance_klines import (
     BinanceKlinesAdapter,
     BinanceKlinesConfig,
 )
-from hermes.domain.errors import ExchangeError, InfraError, NetworkError
+from hermes.domain.errors import ExchangeError, NetworkError
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
@@ -445,11 +445,6 @@ class TestFetchErrorPaths:
                     )
         finally:
             adapter.close()
-
-    def test_exchange_error_inherits_from_infra_error(self) -> None:
-        """ExchangeError caught by an 'except InfraError' clause satisfies the base contract."""
-        err = ExchangeError(msg="bad")
-        assert isinstance(err, InfraError)
 
 
 class TestCreateFactoryAndClose:

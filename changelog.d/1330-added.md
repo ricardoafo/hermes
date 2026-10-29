@@ -1,0 +1,1 @@
+- The status line shows how long ago hermes last checked a bar, and the System tab shows Kraken's live USDT/EUR quote beside the ECB rate.

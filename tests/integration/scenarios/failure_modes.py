@@ -36,6 +36,7 @@ _LOOP = _I + "entrypoints/test_serve_bar_loop.py::"
 _CHAOS = _S + "test_chaos_crash_mid_bar.py::"
 _FILLS = _I + "entrypoints/test_serve_fills.py::"
 _TAX = _I + "entrypoints/test_serve_tax_guard.py::"
+_FETCH = _U + "entrypoints/test_tax_pack_fetch.py::"
 _SERVE = _U + "entrypoints/test_serve.py::"
 _UNITS = _U + "deploy/test_systemd_units.py::"
 _RELEASE = _I + "deploy/test_release_scripts.py::"
@@ -80,6 +81,10 @@ _GATE = _U + "application/calibration/test_signed_gate.py::"
 _EVIDENCE = _U + "application/calibration/test_evidence_files.py::"
 _BATCH = _U + "application/calibration/test_research_batch.py::"
 _RUN_BACKTEST = _U + "scripts_backtest/test_run_portfolio_backtest.py::"
+_STOPS = _S + "test_exchange_stops.py::"
+_KEEPER = _U + "application/execution/test_exchange_stops.py::"
+_KEEPER_MACHINE = _U + "application/execution/test_exchange_stops_state_machine.py::"
+_SPOT_STOPS = _U + "adapters/exchanges/test_binance_spot_stops.py::"
 
 
 @dataclass(frozen=True)
@@ -384,6 +389,86 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
                 "::test_the_daily_pass_prices_a_fill_the_first_pass_left_pending",
             ),
         ),
+        FailureMode(
+            "A real-money position is left with no stop on the exchange while serve is down",
+            proved_by=(
+                _STOPS
+                + "test_the_stop_is_placed_at_entry_moved_with_the_strategy_and_cancelled_on_exit",
+                _KEEPER + "test_a_held_position_rests_one_stop_at_the_strategy_stop_rounded_down",
+                _KEEPER_MACHINE + "TestKeeperMachine::runTest",
+            ),
+        ),
+        FailureMode(
+            "The exchange stop stays at the old level after the strategy moves its stop",
+            proved_by=(
+                _STOPS
+                + "test_the_stop_is_placed_at_entry_moved_with_the_strategy_and_cancelled_on_exit",
+                _KEEPER + "test_a_moved_stop_leaves_only_the_new_level_resting",
+                _KEEPER + "test_a_refused_cancel_while_moving_places_no_second_stop",
+            ),
+        ),
+        FailureMode(
+            "An exchange stop still rests after the exit, locking the quantity the exit sells",
+            proved_by=(
+                _STOPS + "test_the_stop_is_cancelled_before_the_exit_sells",
+                _KEEPER + "test_a_stop_still_resting_when_the_strategy_exits_is_cancelled",
+            ),
+        ),
+        FailureMode(
+            "The exchange stop sold during downtime and the restart rests a new one for nothing",
+            proved_by=(
+                _STOPS
+                + "test_a_stop_that_sold_during_the_downtime_is_recorded_and_never_placed_again",
+                _KEEPER + "test_a_position_whose_stop_filled_gets_no_new_stop",
+            ),
+        ),
+        FailureMode(
+            "Someone cancels the exchange stop by hand and the position runs unprotected",
+            proved_by=(
+                _STOPS + "test_a_stop_cancelled_outside_hermes_during_the_downtime_is_placed_again",
+                _KEEPER + "test_a_stop_gone_from_the_exchange_is_recorded_and_placed_again",
+            ),
+        ),
+        FailureMode(
+            "A lost answer to a stop placement leaves two stops, or none",
+            proved_by=(
+                _STOPS + "test_a_lost_answer_to_the_first_stop_leaves_exactly_one_stop",
+                _KEEPER + "test_a_placement_the_exchange_never_saw_is_sent_once_more",
+                _KEEPER + "test_an_unknown_status_is_not_retried",
+                _KEEPER + "test_the_stop_whose_status_was_unknown_is_adopted_on_the_next_pass",
+            ),
+        ),
+        FailureMode(
+            "Serve dies between placing a stop and recording it, and the restart places a second",
+            proved_by=(
+                _STOPS + "test_a_stop_placed_but_never_recorded_is_adopted_after_the_crash",
+            ),
+        ),
+        FailureMode(
+            "The exchange refuses or cannot be read while keeping a stop, and nobody hears",
+            proved_by=(
+                _KEEPER + "test_a_refused_placement_fails_with_a_critical_alert",
+                _KEEPER + "test_an_unreadable_book_fails_without_cancelling_or_placing",
+                _KEEPER + "test_an_unreadable_fate_fails_and_places_nothing",
+                _SPOT_STOPS + "test_a_listing_that_is_not_a_list_is_an_exchange_error",
+            ),
+        ),
+        FailureMode(
+            "A shadow, or a real-money boot with no venue for its stops, sends an order",
+            proved_by=(
+                _STOPS + "test_a_shadow_with_a_venue_wired_sends_no_request_to_the_spot_endpoints",
+                _U
+                + "entrypoints/test_cli.py::TestServeExitCodes::"
+                + "test_real_money_is_refused_until_a_venue_holds_the_exchange_stop",
+            ),
+        ),
+        FailureMode(
+            "An exchange stop that sold is not the ledger's trade, so ledger and account differ",
+            gap=(
+                "issue #1220: inferred; the keeper records the fill as an ExchangeStopChanged "
+                "row with a WARNING alert, and the strategy's own exit stays the recorded trade"
+            ),
+        ),
     ),
     "ledger and disk": (
         FailureMode(
@@ -652,6 +737,8 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
                 _STORAGE + "test_hermes_serve_on_a_ledger_in_use_exits_with_the_refusal_code",
                 _STORAGE + "test_the_serve_lock_is_released_when_the_first_serve_exits",
                 _FILE_LOCK + "test_a_holder_process_that_is_killed_frees_the_lock",
+                _I + "lower_env/test_installed_operations.py"
+                "::test_a_second_serve_on_the_ledger_in_use_is_refused_and_changes_nothing",
             ),
         ),
         FailureMode(
@@ -1383,6 +1470,24 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             proved_by=(
                 _BATCH + "test_the_batches_signed_before_the_cap_row_sign_no_cap",
                 _GATE + "test_a_candidate_that_signed_no_cap_gets_no_round_trip_row",
+            ),
+        ),
+        FailureMode(
+            "The server tax pack fetch saves a tampered, partial or hostile pack on the PC",
+            proved_by=(
+                _FETCH + "test_a_changed_file_is_refused_and_nothing_is_written",
+                _FETCH + "test_a_missing_file_is_refused",
+                _FETCH + "test_an_unlisted_file_is_refused",
+                _FETCH + "test_an_entry_outside_the_year_folder_is_refused",
+                _FETCH + "test_an_oversized_stream_is_refused",
+            ),
+        ),
+        FailureMode(
+            "The tax pack fetch cannot reach the server, or a crash mid-swap loses the old copy",
+            proved_by=(
+                _FETCH + "test_ssh_failure_reports_the_last_diagnostic",
+                _FETCH + "test_a_failed_fetch_keeps_the_previous_copy",
+                _FETCH + "test_a_crash_while_swapping_never_loses_the_earlier_copy",
             ),
         ),
     ),

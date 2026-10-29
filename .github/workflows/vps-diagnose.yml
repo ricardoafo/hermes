@@ -51,11 +51,10 @@ permissions:
 jobs:
   diagnose:
     name: Snapshot VPS state
-    # Runs on the self-hosted runner (GitHub-hosted minutes are exhausted
-    # on this account — the whole-year self-hosted allocation is paid).
-    # The runner container is minimal and lacks openssh-client; the
-    # first step installs it at runtime.
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || fromJSON('["self-hosted","linux","hermes"]') }}
+    # Runs on the self-hosted ops runner, not the CI pool: the CI pool
+    # runs pull request code. The runner container is minimal and lacks
+    # openssh-client; the first step installs it at runtime.
+    runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || fromJSON('["self-hosted","linux","hermes"]') }}
     environment: prod
     timeout-minutes: 5
 
@@ -321,3 +320,8 @@ jobs:
           echo ""
           echo "═════════════ DIAGNOSTIC COMPLETE ═════════════"
           REMOTE
+
+      # The runner container outlives the job, so the key must not.
+      - name: Remove the SSH keyfile
+        if: always()
+        run: rm -f ~/.ssh/vps_id

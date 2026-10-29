@@ -18,6 +18,7 @@ const {
   branchRefPath,
   classifyBranchDelete,
   isApproved,
+  isMaintainerReview,
   isCandidate,
   shouldMerge,
   gateSkip,
@@ -39,9 +40,9 @@ const {
 // Fixtures
 // ============================================================
 
-const approval = (login) => ({ user: { login }, state: 'APPROVED' });
-const changes = (login) => ({ user: { login }, state: 'CHANGES_REQUESTED' });
-const comment = (login) => ({ user: { login }, state: 'COMMENTED' });
+const approval = (login, author_association = 'COLLABORATOR') => ({ user: { login }, state: 'APPROVED', author_association });
+const changes = (login, author_association = 'COLLABORATOR') => ({ user: { login }, state: 'CHANGES_REQUESTED', author_association });
+const comment = (login, author_association = 'COLLABORATOR') => ({ user: { login }, state: 'COMMENTED', author_association });
 
 const readyPr = (over = {}) => ({
   number: 1,
@@ -74,6 +75,29 @@ test('isApproved: COMMENTED reviews are ignored, prior APPROVED still counts', (
 
 test('isApproved: another author requesting changes does not block an approval', () => {
   assert.equal(isApproved([approval('alice'), changes('bob')]), true);
+});
+
+test('isApproved: an approval from someone outside the repository does not count', () => {
+  assert.equal(isApproved([approval('drive-by', 'NONE')]), false);
+  assert.equal(isApproved([approval('first-timer', 'FIRST_TIME_CONTRIBUTOR')]), false);
+  assert.equal(isApproved([approval('past-author', 'CONTRIBUTOR')]), false);
+});
+
+test('isApproved: a review without author_association does not count', () => {
+  assert.equal(isApproved([{ user: { login: 'alice' }, state: 'APPROVED' }]), false);
+});
+
+test('isApproved: an outsider requesting changes does not withdraw a maintainer approval', () => {
+  assert.equal(isApproved([approval('owner', 'OWNER'), changes('drive-by', 'NONE')]), true);
+});
+
+test('isMaintainerReview: owner, member and collaborator count; everyone else does not', () => {
+  for (const a of ['OWNER', 'MEMBER', 'COLLABORATOR']) {
+    assert.equal(isMaintainerReview(approval('x', a)), true, a);
+  }
+  for (const a of ['CONTRIBUTOR', 'FIRST_TIME_CONTRIBUTOR', 'FIRST_TIMER', 'MANNEQUIN', 'NONE']) {
+    assert.equal(isMaintainerReview(approval('x', a)), false, a);
+  }
 });
 
 test('isApproved: empty review list is not approved', () => {
@@ -300,7 +324,12 @@ test('ciRestart: both null -> restart', () => {
 // approvedAt + orderCandidates — the order a batch lands in
 // ============================================================
 
-const at = (login, state, submitted_at) => ({ user: { login }, state, submitted_at });
+const at = (login, state, submitted_at, author_association = 'COLLABORATOR') => ({
+  user: { login },
+  state,
+  submitted_at,
+  author_association,
+});
 
 test('approvedAt: the LATEST approval wins, so a re-approval moves the PR back', () => {
   const res = approvedAt([
@@ -313,6 +342,14 @@ test('approvedAt: the LATEST approval wins, so a re-approval moves the PR back',
 
 test('approvedAt: no approval -> null', () => {
   assert.equal(approvedAt([at('alice', 'CHANGES_REQUESTED', '2026-10-01T10:00:00Z')]), null);
+});
+
+test('approvedAt: a later approval from outside the repository does not move the PR', () => {
+  const res = approvedAt([
+    at('owner', 'APPROVED', '2026-10-01T10:00:00Z', 'OWNER'),
+    at('drive-by', 'APPROVED', '2026-10-01T11:00:00Z', 'NONE'),
+  ]);
+  assert.equal(res, '2026-10-01T10:00:00Z');
 });
 
 test('orderCandidates: oldest approval first', () => {
@@ -721,7 +758,7 @@ test('selectDecision: conflicts are the one refusal logged as a warning', () => 
 
 test('selectDecision + orderCandidates: green approved PRs come out oldest approval first', () => {
   const base = green(recorded(467));
-  const at = (iso) => [{ user: { login: 'ricardoafo' }, state: 'APPROVED', submitted_at: iso }];
+  const at = (iso) => [{ user: { login: 'ricardoafo' }, state: 'APPROVED', submitted_at: iso, author_association: 'OWNER' }];
   const picks = [
     { ...base, pr: { ...base.pr, number: 3 }, reviews: at('2026-10-04T03:00:00Z') },
     { ...base, pr: { ...base.pr, number: 1 }, reviews: at('2026-10-04T01:00:00Z') },

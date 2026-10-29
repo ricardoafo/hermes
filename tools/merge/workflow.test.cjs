@@ -84,3 +84,11 @@ test('CI on main and the queue\'s own merges take no merge pass (#694)', () => {
   assert.equal(evaluate(selectIf, { event_name: 'push', actor: QUEUE_APP }), false);
   assert.equal(evaluate(selectIf, { event_name: 'push', actor: 'ricardoafo' }), true);
 });
+
+test('the merge job checks out without leaving the token where the gates can read it', () => {
+  const job = WORKFLOW.slice(WORKFLOW.indexOf('\n  revalidate:'));
+  const checkout = job.slice(job.indexOf('actions/checkout@'), job.indexOf('\n      - ', job.indexOf('actions/checkout@')));
+
+  assert.match(checkout, /\n {10}persist-credentials: false\n/);
+  assert.match(job, /token: core\.getInput\('github-token'\),/);
+});

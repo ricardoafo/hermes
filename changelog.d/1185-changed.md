@@ -1,0 +1,1 @@
+- The SQLite ledger adapter is split into per-table store modules behind the same `SqliteLedger` class, its row codecs are public in `adapters/ledger/codecs.py`, and its `recorded_at` stamps can come from an injected clock (#1185).

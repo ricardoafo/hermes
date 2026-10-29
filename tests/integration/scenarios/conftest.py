@@ -18,6 +18,7 @@ from hermes.domain.value_objects.pair import Pair
 from hermes.entrypoints import serve as serve_module
 from tests.integration.scenarios.markets import Scenario
 from tests.support.fake_market import harness
+from tests.support.fake_market.spot import SpotAccount
 
 BAR_BUDGET_SECONDS = 0.050
 """Median CPU time serve's event loop may spend on one bar.
@@ -44,6 +45,7 @@ class Run:
         notified: Every event handed to the Telegram stand-in.
         logs: Every structured log line serve emitted.
         bar_seconds: CPU time of the event loop's thread per handled bar.
+        requests: Every request the fake exchange served, as ``(host, path, params)``.
 
     """
 
@@ -52,6 +54,7 @@ class Run:
     notified: list[object]
     logs: list[dict[str, Any]]
     bar_seconds: list[float] = field(default_factory=list)
+    requests: list[tuple[str, str, dict[str, str]]] = field(default_factory=list)
 
     def log_events(self, name: str) -> list[dict[str, Any]]:
         """Return the log lines whose event is ``name``, in order."""
@@ -97,6 +100,8 @@ def run_scenario(tmp_path: Path) -> Iterator[RunScenario]:
         corrupt_bars: list[tuple[Pair, KlineInterval, datetime, datetime, datetime]] | None = None,
         fx_down: bool = False,
         notifier_error: Exception | None = None,
+        real_money: bool = False,
+        spot: SpotAccount | None = None,
     ) -> Run:
         with capture_logs() as logs:
             served = harness.serve(
@@ -110,6 +115,8 @@ def run_scenario(tmp_path: Path) -> Iterator[RunScenario]:
                 corrupt_bars=corrupt_bars,
                 fx_down=fx_down,
                 notifier_error=notifier_error,
+                real_money=real_money,
+                spot=spot,
             )
         outcome = Run(
             exit_code=served.exit_code,
@@ -117,6 +124,7 @@ def run_scenario(tmp_path: Path) -> Iterator[RunScenario]:
             notified=list(served.channel.seen),
             logs=[dict(line) for line in logs],
             bar_seconds=served.bar_seconds,
+            requests=served.exchange.requests,
         )
         runs.append(outcome)
         return outcome

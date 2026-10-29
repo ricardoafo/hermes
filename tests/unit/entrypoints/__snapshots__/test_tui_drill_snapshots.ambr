@@ -337,7 +337,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions         ● live · checked 14:00 · next 18:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions       ● live · checked 12m ago · next 18:00  ◑ CONTROL ROOM
   ┏━ PORTFOLIO  ────────────────────── computed  ┏━ POSITIONS  ──────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓╺━┓╺┓  ┏━┓┏━╸                         coin  tf  trend         change          net  stop room
    ╪═  ┃  ┃ ┃┏━┛ ┃  ┃ ┃┣━┓                        ▸ETH   4h  ▂▃▁▄█▆▆▆    ▲ +2.06%     ▲ +€1.54  ███████░ −3.4%
@@ -380,7 +380,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions             ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions           ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
   ┏━ PORTFOLIO  ──────────────────────────────────── computed  ┏━ POSITIONS  ────────────────────────────────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓╺━┓╺┓  ┏━┓┏━╸                                       coin  tf  entry → now             trend         change          net  stop room
    ╪═  ┃  ┃ ┃┏━┛ ┃  ┃ ┃┣━┓                                      ▸ETH   4h  €2,243 → €2,289         ▂▃▁▄█▆▆▆    ▲ +2.06%     ▲ +€1.54  ███████░ stop −3.4%
@@ -432,7 +432,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                             ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                           ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
   ┏━ PORTFOLIO  ──────────────────────────────────── computed  ┏━ POSITIONS  ────────────────────────────────────────────────────────────────────────────────── computed  ┏━ SIGNALS  ───────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓╺━┓╺┓  ┏━┓┏━╸                                       coin  tf  entry → now             trend         change          net  stop room                            Heat grid · coming next · issue #714
    ╪═  ┃  ┃ ┃┏━┛ ┃  ┃ ┃┣━┓                                      ▸ETH   4h  €2,243 → €2,289         ▂▃▁▄█▆▆▆    ▲ +2.06%     ▲ +€1.54  ███████░ stop −3.4%                 ─────────────────────────────────────────────────────────────────────━┛
@@ -530,7 +530,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions        ● live · checked 14:00 · next 18:00 14:12:00  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions      ● live · checked 12m ago · next 18:00 14:12:00  ◑ NEON
   ┏━ PORTFOLIO  ────────────────────── computed  ┏━ POSITIONS  ──────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓╺━┓╺┓  ┏━┓┏━╸                         coin  tf  trend         change          net  stop room
    ╪═  ┃  ┃ ┃┏━┛ ┃  ┃ ┃┣━┓                        ▸ETH   4h  ▂▃▁▄█▆▆▆    ▲ +2.06%     ▲ +€1.54  ███████░ −3.4%
@@ -573,7 +573,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                     ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                   ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ NEON
   ┏━ PORTFOLIO  ──────────────────────────────────── computed  ┏━ POSITIONS  ────────────────────────────────────────────────────────────────────────────────── computed  ┏━ SIGNALS  ───────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓╺━┓╺┓  ┏━┓┏━╸                                       coin  tf  entry → now             trend         change          net  stop room                            Heat grid · coming next · issue #714
    ╪═  ┃  ┃ ┃┏━┛ ┃  ┃ ┃┣━┓                                      ▸ETH   4h  €2,243 → €2,289         ▂▃▁▄█▆▆▆    ▲ +2.06%     ▲ +€1.54  ███████░ stop −3.4%                 ─────────────────────────────────────────────────────────────────────━┛
