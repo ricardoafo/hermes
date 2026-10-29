@@ -9,8 +9,6 @@ Defines the sealed ``HermesError`` root and its two subtrees:
 Reference: code-conventions.md §2 — Error handling — hybrid Result/exceptions.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Final

@@ -8,8 +8,6 @@ Protects the report's invariants:
 - Only failed steps are reported, and the tally counts runs per test.
 """
 
-from __future__ import annotations
-
 import importlib.util
 import sys
 

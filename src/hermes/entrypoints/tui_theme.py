@@ -18,8 +18,6 @@ orange (240,120,20), warning is amber. Neon restyles only the chrome; there is
 no scanline, blur or glow, and no neon colour on the data.
 """
 
-from __future__ import annotations
-
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import time

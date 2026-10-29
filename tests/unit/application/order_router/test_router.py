@@ -11,8 +11,6 @@ Tests cover:
 - Sizing failure (degenerate inputs) wrapped as RiskRejected.
 """
 
-from __future__ import annotations
-
 from collections.abc import MutableMapping
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime

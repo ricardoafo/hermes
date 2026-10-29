@@ -6,8 +6,6 @@ fails once the busy timeout runs out. In WAL the commit lands at once while the
 reader keeps reading its own snapshot, however long it holds.
 """
 
-from __future__ import annotations
-
 import threading
 import time
 from contextlib import closing

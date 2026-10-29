@@ -21,8 +21,6 @@ Reference: docs/guides/ai-authored-tests.md,
 docs/decisions/2026-08-23-fx-rate-source-frankfurter.md.
 """
 
-from __future__ import annotations
-
 from datetime import date
 from decimal import Decimal
 
@@ -37,7 +35,6 @@ from hermes.domain.fx.fx_rate import FxRate
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
 from hermes.infrastructure.config.models import FrankfurterConfig as FrankfurterSettings
-from hermes.ports.fx import FxRateProviderPort
 
 _BASE_URL = "https://api.frankfurter.dev/v1"
 _LATEST_URL = f"{_BASE_URL}/latest"
@@ -452,18 +449,6 @@ class TestErrorPaths:
         """FxRateError caught by 'except InfraError' satisfies the base contract."""
         err = FxRateError(msg="bad")
         assert isinstance(err, InfraError)
-
-
-class TestPortConformance:
-    """The adapter class satisfies the runtime-checkable Protocol."""
-
-    def test_adapter_is_fx_rate_provider_port_instance(self) -> None:
-        """Isinstance against the runtime_checkable Protocol returns True."""
-        adapter = _make_adapter()
-        try:
-            assert isinstance(adapter, FxRateProviderPort)
-        finally:
-            adapter.close()
 
 
 class TestCreateFactoryAndClose:

@@ -6,8 +6,6 @@ would read. The shipped ``config/`` tree is the input, so the tests follow
 whatever the repo ships.
 """
 
-from __future__ import annotations
-
 import pytest
 
 from hermes.infrastructure.config.errors import ConfigError

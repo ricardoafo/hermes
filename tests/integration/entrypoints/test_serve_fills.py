@@ -33,8 +33,6 @@ Invariants (change 353-fill-kernel-in-serve R-1, R-4, R-5):
   fill, position or signal notification (ADR-002 Decision 6, #1181).
 """
 
-from __future__ import annotations
-
 import dataclasses
 import json
 import sqlite3

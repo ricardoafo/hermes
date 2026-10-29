@@ -7,8 +7,6 @@ band, and only the last band is unbounded.
 Reference: ADR-016 decision 1, IRPF art. 66 and art. 76.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from decimal import Decimal
 from itertools import pairwise

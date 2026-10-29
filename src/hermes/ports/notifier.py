@@ -14,8 +14,6 @@ Adapters implement whichever methods they meaningfully support:
 Both live under ``src/hermes/adapters/notifier/`` in Phase 1.
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 

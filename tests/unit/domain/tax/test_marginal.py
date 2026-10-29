@@ -3,8 +3,6 @@
 Reference: ADR-016 decision 7, IRPF arts. 56.2 and 66.1.
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 import pytest

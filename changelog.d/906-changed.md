@@ -1,0 +1,1 @@
+- Dropped `from __future__ import annotations` from every Python file (Python 3.14 evaluates annotations lazily) and made ruff reject it (`TID251`) (#906).

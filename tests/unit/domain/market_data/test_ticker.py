@@ -7,8 +7,6 @@ Every test protects one invariant of the domain ticker contract:
 - Crossed book (best_bid >= best_ask) rejected.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from decimal import Decimal
 

@@ -13,8 +13,6 @@ Invariants protected here:
 Reference: 309-serve-bar-loop change.md D-3, D-5, R-2; issue #854.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal

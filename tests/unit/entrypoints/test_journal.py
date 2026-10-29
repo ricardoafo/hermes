@@ -1,7 +1,5 @@
 """Unit tests for ``hermes journal`` (#363)."""
 
-from __future__ import annotations
-
 import io
 import json
 from datetime import date, timedelta

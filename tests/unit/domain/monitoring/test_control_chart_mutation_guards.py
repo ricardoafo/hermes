@@ -8,8 +8,6 @@ the two-sided tabular CUSUM (Montgomery, ch. 9) on deterministic sequences,
 and every parameter check is tested on both sides of its edge.
 """
 
-from __future__ import annotations
-
 import math
 import statistics
 from collections.abc import Callable, Sequence

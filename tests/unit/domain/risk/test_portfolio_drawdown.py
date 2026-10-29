@@ -8,8 +8,6 @@ Property tests verify the threshold boundary at 15% drawdown (pre-reg §10):
 Reference: SA-9 §5.5 RO-08; pre-reg §10; spec-8-risk-overlay change.md R-2.
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 from hypothesis import given, settings

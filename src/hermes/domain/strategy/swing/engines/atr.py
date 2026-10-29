@@ -19,8 +19,6 @@ pre-registration-v1.md §5.2 (Chandelier 22 3.0 uses ATR(22)).
 pre-registration-v1.md §5.4 (sizing hint uses ATR(14)).
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from decimal import Decimal
 

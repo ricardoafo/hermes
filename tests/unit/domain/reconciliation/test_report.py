@@ -7,8 +7,6 @@ Invariants protected here:
 - only a CLEAN verdict on an ended month is ready for the month-end cut.
 """
 
-from __future__ import annotations
-
 from datetime import datetime, timedelta
 from decimal import Decimal
 

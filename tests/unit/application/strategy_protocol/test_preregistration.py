@@ -6,8 +6,6 @@ Tests cover:
 - Parser raises ValueError when experiment_id in frontmatter is wrong.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from pathlib import Path
 

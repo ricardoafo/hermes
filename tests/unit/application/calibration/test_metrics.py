@@ -16,8 +16,6 @@ Test coverage:
 Reference: spec-6-calibration-harness/change.md R-1..R-5.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from decimal import Decimal
 

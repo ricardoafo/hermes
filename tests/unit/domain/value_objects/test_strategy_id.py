@@ -12,8 +12,6 @@ Verifies the class-level invariants documented on :class:`StrategyId`:
 Reference: spec-1-domain-aggregates, code-conventions.md §3.
 """
 
-from __future__ import annotations
-
 import pytest
 
 from hermes.domain.value_objects.strategy_id import StrategyId

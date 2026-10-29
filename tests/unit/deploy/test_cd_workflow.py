@@ -8,8 +8,6 @@ that would run during a dry run (issue #179).
 Reference: openspec/archive/179-cd-first-real-deploy/change.md.
 """
 
-from __future__ import annotations
-
 import importlib.util
 import re
 from types import ModuleType

@@ -1,17 +1,24 @@
-"""The installed release survives a restart or a crash with a position open (issue #975, part 1).
+"""Operations the installed release must ride out without changing a trade (issue #975).
 
-Invariant: an installed ``hermes serve`` stopped a day after an entry, by
-systemd's SIGTERM (every deploy) or by SIGKILL (a crash, the OOM killer, a
-power cut), then started again on the same ledger without ``--new-ledger``,
-ends with the same signals, trades and stops as one uninterrupted run: the
-open position is rebuilt from the ledger, its exit fires once and nothing is
-bought twice. The second run exits cleanly.
+Restart or crash with a position open (part 1). Invariant: an installed
+``hermes serve`` stopped a day after an entry, by systemd's SIGTERM (every
+deploy) or by SIGKILL (a crash, the OOM killer, a power cut), then started
+again on the same ledger without ``--new-ledger``, ends with the same
+signals, trades and stops as one uninterrupted run: the open position is
+rebuilt from the ledger, its exit fires once and nothing is bought twice.
+The second run exits cleanly.
 
 The uninterrupted reference is the in-process serve the scenario suite holds
 to the pre-registration rules; ``test_installed_scenarios.py`` proves the
 installed release matches it without a restart. The kill lands while serve
 waits for the next bar; a kill inside a bar's writes is
 ``tests/integration/scenarios/test_chaos_crash_mid_bar.py``.
+
+Every alert sink down while a signal fires (part 2). Invariant: with
+Telegram, Slack and Sentry all failing for the whole run, the installed
+release still records the same signals, trades and stops as the in-process
+run and exits cleanly. A dead sink costs the message, never the trade or the
+run.
 """
 
 import signal
@@ -24,6 +31,7 @@ import pytest
 from tests.integration.scenarios import markets
 from tests.integration.scenarios.oracle import fingerprint
 from tests.support.fake_market import harness
+from tests.support.fake_notify.server import Outage, Sink
 from tests.support.installed_release import SETTLE, serve
 
 pytestmark = [pytest.mark.integration, pytest.mark.slow, pytest.mark.timeout(300)]
@@ -67,3 +75,29 @@ def test_a_stop_with_a_position_open_changes_nothing_the_run_records(
         0,
         expected,
     ), second.log
+
+
+_DOWN = (Sink.TELEGRAM, Sink.SLACK, Sink.SENTRY)
+
+
+def test_every_alert_sink_down_through_a_trade_changes_nothing_the_run_records(
+    tmp_path: Path,
+) -> None:
+    """Telegram, Slack and Sentry failing all run: same trades, a clean exit, nothing delivered."""
+    scenario = markets.chandelier_exit()
+    expected = fingerprint(_straight(tmp_path, scenario))
+
+    run = serve(
+        tmp_path,
+        scenario.market,
+        scenario.live_from,
+        scenario.market.end + SETTLE,
+        outages=dict.fromkeys(_DOWN, (Outage.SERVER_ERROR, 1_000)),
+    )
+    answered = {(call.sink, call.status // 100) for call in run.calls}
+
+    assert (run.exit_code, fingerprint(run.db), answered) == (
+        0,
+        expected,
+        {(sink, 5) for sink in _DOWN},
+    ), run.log

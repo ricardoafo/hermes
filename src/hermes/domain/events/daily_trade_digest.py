@@ -9,8 +9,6 @@ re-querying the ledger.
 Reference: ADR-003 §02 (reporting cadence), code-conventions.md §10 + §3.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import date
 from typing import ClassVar

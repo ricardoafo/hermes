@@ -16,5 +16,3 @@ Modules:
 Reference: ``openspec/archive/spec-9-strategy-development-protocol/change.md``,
 ``docs/experiments/swing-mvp1/pre-registration-v1.md``.
 """
-
-from __future__ import annotations

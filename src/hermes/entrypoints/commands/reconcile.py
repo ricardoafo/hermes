@@ -1,7 +1,5 @@
 """``hermes reconcile``: see :mod:`hermes.entrypoints.reconcile`."""
 
-from __future__ import annotations
-
 import os
 
 from hermes.entrypoints import reconcile as _impl

@@ -49,8 +49,6 @@ Reference: spec-4c-market-data-adapters change.md D-2.
 SA-3 §Binance L2 snapshot procedure.
 """
 
-from __future__ import annotations
-
 import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field

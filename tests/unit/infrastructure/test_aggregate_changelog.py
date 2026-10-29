@@ -11,8 +11,6 @@ Protects the wave-4 fragment-based changelog aggregation invariants:
   rest of CHANGELOG.md byte-for-byte.
 """
 
-from __future__ import annotations
-
 import importlib.util
 import sys
 from pathlib import Path

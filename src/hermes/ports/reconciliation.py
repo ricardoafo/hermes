@@ -12,8 +12,6 @@ when real capital is wired (#29).
 Reference: openspec/archive/35-monthly-reconciliation/change.md D-1, D-2.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterable, Mapping
 from decimal import Decimal
 from typing import Protocol, runtime_checkable

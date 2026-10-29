@@ -6,8 +6,6 @@ ledger really stores. The rate is 1.25 USD per EUR on every day, so a USDT
 amount divided by 1.25 is its EUR value.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal

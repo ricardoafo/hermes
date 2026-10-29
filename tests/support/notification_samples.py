@@ -5,8 +5,6 @@ free-text fields never contain an outcome word, so the blind scan can reject
 any P&L word that a template adds on its own.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, date, datetime
 from decimal import Decimal
 

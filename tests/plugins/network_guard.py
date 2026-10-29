@@ -24,8 +24,6 @@ swallow it. The call is also recorded, and a test whose attempt was
 swallowed anyway still fails after it runs.
 """
 
-from __future__ import annotations
-
 import ipaddress
 import socket
 from collections.abc import Callable, Generator

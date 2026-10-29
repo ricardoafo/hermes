@@ -9,8 +9,6 @@ Invariants under test (openspec/archive/357-trial-log/change.md R-1, R-3):
   gives a Sharpe variance only when two or more trials report a Sharpe.
 """
 
-from __future__ import annotations
-
 import statistics
 from dataclasses import replace
 from datetime import UTC, datetime

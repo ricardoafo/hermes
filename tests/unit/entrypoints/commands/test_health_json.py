@@ -13,8 +13,6 @@ Invariants protected here:
 Probes are faked: no network.
 """
 
-from __future__ import annotations
-
 import io
 import json
 from datetime import UTC, datetime

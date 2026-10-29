@@ -16,8 +16,6 @@ Invariants (797-shadow-day-zero change.md R-3..R-6):
   is never overwritten.
 """
 
-from __future__ import annotations
-
 import io
 import json
 import os

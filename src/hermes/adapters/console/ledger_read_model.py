@@ -16,8 +16,6 @@ Reference: openspec/archive/ledger-read-model/change.md (D-1, D-3 to D-9);
 openspec/archive/live-home-screen/change.md (D-1 to D-6).
 """
 
-from __future__ import annotations
-
 import json
 import sqlite3
 from collections.abc import Callable, Sequence

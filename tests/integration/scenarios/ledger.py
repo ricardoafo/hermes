@@ -1,7 +1,5 @@
 """Read what a scenario run left in the ledger, as plain values to compare."""
 
-from __future__ import annotations
-
 import json
 import sqlite3
 from dataclasses import dataclass

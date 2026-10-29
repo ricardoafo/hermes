@@ -15,8 +15,6 @@ Invariants protected here:
 - the pushed alert carries no amount (pushed surfaces stay blind to shadow money).
 """
 
-from __future__ import annotations
-
 import sqlite3
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime

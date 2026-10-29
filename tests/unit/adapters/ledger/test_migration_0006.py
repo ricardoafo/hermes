@@ -3,8 +3,6 @@
 Reference: ADR-016 item 4, ADR-006 §2 (forward-only migrations).
 """
 
-from __future__ import annotations
-
 import shutil
 import sqlite3
 from collections.abc import Iterator

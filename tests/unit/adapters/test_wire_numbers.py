@@ -13,8 +13,6 @@ the caller's retry and degraded-feed handling, which catches the adapter's
 own error, is bypassed (issue #841, failure-mode catalogue issue #839).
 """
 
-from __future__ import annotations
-
 import json
 from collections.abc import Callable
 from pathlib import Path

@@ -6,8 +6,6 @@ a crash mid-write leaves the previous record intact.
 Reference: openspec/archive/355-certification-gates/change.md D-7.
 """
 
-from __future__ import annotations
-
 import json
 import os
 import tempfile

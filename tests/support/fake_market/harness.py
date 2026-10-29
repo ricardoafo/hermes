@@ -14,8 +14,6 @@ testnet host and over the same fake transport: the account it trades in is
 ``spot``, in this process. No request leaves it.
 """
 
-from __future__ import annotations
-
 import asyncio
 import contextlib
 import dataclasses

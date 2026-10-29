@@ -10,8 +10,6 @@ message never does).
 Reference: openspec/archive/379-telegram-bot/change.md (D-2).
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, tzinfo

@@ -24,8 +24,6 @@ This is state bookkeeping only: no entry or exit condition, stop, sizing, fee
 or risk rule changes (pre-registration §11, engine bug fix).
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 from hermes.domain.strategy.signal import SignalKind, StrategySignal

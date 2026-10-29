@@ -13,8 +13,6 @@ The verdict is what the operator acts on:
 Reference: openspec/archive/35-monthly-reconciliation/change.md D-5.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum

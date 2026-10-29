@@ -53,8 +53,6 @@ Losing track of a real order (#858):
 Reference: issue #32; openspec/archive/32-kraken-spot-adapter/change.md.
 """
 
-from __future__ import annotations
-
 import base64
 import binascii
 import hashlib

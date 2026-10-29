@@ -7,8 +7,6 @@ to ``timedelta(hours=...)`` (which silently breaks around DST).
 Reference: code-conventions.md §9 — Time handling — UTC internally, Madrid at edges.
 """
 
-from __future__ import annotations
-
 from datetime import datetime
 from zoneinfo import ZoneInfo
 

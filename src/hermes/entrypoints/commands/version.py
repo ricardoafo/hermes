@@ -1,7 +1,5 @@
 """``hermes version``: see :mod:`hermes.entrypoints.version`."""
 
-from __future__ import annotations
-
 from hermes.entrypoints import version as _impl
 from hermes.entrypoints.commands import Command
 

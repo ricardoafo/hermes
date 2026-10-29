@@ -3,8 +3,6 @@
 Reference: ADR-016 decisions 1, 10 and 12.
 """
 
-from __future__ import annotations
-
 import io
 import json
 import logging

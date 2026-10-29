@@ -17,8 +17,6 @@ Reference: spec-2a-fill-model-port/change.md D-1 (single-method protocol),
 D-2 (composition-root injection, no mode flag), D-4 (Fill | Rejection union).
 """
 
-from __future__ import annotations
-
 import inspect
 from datetime import UTC, datetime
 from decimal import Decimal

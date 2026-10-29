@@ -21,8 +21,6 @@ Relations:
    decides on a path built to sit on the EMA(200) regime edge (issue #880).
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal

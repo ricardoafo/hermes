@@ -1,7 +1,5 @@
 """Fixtures for the scenario suite: one serve run per call, with logs and a time budget."""
 
-from __future__ import annotations
-
 import statistics
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field

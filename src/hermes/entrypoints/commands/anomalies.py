@@ -1,7 +1,5 @@
 """``hermes anomalies``: see :mod:`hermes.entrypoints.anomalies`."""
 
-from __future__ import annotations
-
 from hermes.entrypoints import anomalies as _impl
 from hermes.entrypoints.commands import Command
 

@@ -18,8 +18,6 @@ to ``err`` (stderr), the report to ``stream``.
 Reference: openspec/archive/568-tax-pack/change.md.
 """
 
-from __future__ import annotations
-
 import argparse
 import io
 import json

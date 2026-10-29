@@ -65,8 +65,6 @@ simulated on a public, keyless depth snapshot. Real money is
 #1080); ``hermes serve`` wires none yet, so it refuses real money (#1220).
 """
 
-from __future__ import annotations
-
 import asyncio
 import contextlib
 import dataclasses

@@ -16,8 +16,6 @@ Invariants:
   shipped with the release.
 """
 
-from __future__ import annotations
-
 import io
 from decimal import Decimal
 from pathlib import Path

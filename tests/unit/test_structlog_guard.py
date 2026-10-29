@@ -7,8 +7,6 @@ then captures a debug line from that same logger, as the router's
 value-free overlay test does.
 """
 
-from __future__ import annotations
-
 import pytest
 
 from tests.support.paths import REPO_ROOT

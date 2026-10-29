@@ -8,8 +8,6 @@ capital and percentages.
 Reference: openspec/archive/sizing-per-prereg/change.md R-1..R-3.
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 from fractions import Fraction
 

@@ -10,8 +10,6 @@ window" semantics. Rate-limiting, pagination, retry, and error mapping
 are adapter concerns hidden behind the port.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterable
 from datetime import datetime
 from typing import Protocol, runtime_checkable

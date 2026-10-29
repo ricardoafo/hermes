@@ -13,8 +13,6 @@ its whole sale out of the totals.
 Reference: openspec/archive/568-tax-pack/change.md, ADR-016 item 3.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime

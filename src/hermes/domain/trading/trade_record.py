@@ -8,8 +8,6 @@ EUR values is stored with ``eur_status = pending`` and filled by the backfill.
 Reference: ADR-002 §3, ADR-016 items 3 and 5, change ``trade-eur-values`` D-2, D-3.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal

@@ -17,8 +17,6 @@ Invariants (backtest-driver-mvp1-phase2 change.md R-1.2, R-2, A-4.4):
   from them reproduces the backtest's cash, realized PnL and positions.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal

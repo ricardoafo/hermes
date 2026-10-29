@@ -12,8 +12,6 @@ Invariants under test:
 - Fewer stored days give fewer returns, and the row says how many.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta

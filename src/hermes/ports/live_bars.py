@@ -8,8 +8,6 @@ this store. The concrete implementation is
 Reference: code-conventions.md §5 (Ports as Protocols), GitHub issue #421.
 """
 
-from __future__ import annotations
-
 from datetime import datetime
 from typing import Protocol, runtime_checkable
 

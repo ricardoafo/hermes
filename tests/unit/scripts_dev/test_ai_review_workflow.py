@@ -7,8 +7,6 @@ own Python block with ``urllib.request.urlopen`` replaced, so no network
 is touched; the real API call is exercised by every AI review run.
 """
 
-from __future__ import annotations
-
 import io
 import json
 import re

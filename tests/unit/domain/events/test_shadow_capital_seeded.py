@@ -3,8 +3,6 @@
 Reference: ADR-016 item 4.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from decimal import Decimal
 

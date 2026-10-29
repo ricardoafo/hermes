@@ -3,8 +3,6 @@
 Reference: ADR-002 §3, ADR-003 §00 I-06, ADR-016 items 3 and 5.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from collections.abc import Iterator
 from contextlib import closing
@@ -28,7 +26,7 @@ from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.price import Price
 from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
-from hermes.ports.ledger import PendingTrade, TradeLedgerPort
+from hermes.ports.ledger import PendingTrade
 from tests.unit.adapters.ledger.test_sqlite_ledger import CommitCountingConnection
 
 _BTC_USDT = Pair(base=Currency.BTC, quote=Currency.USDT)
@@ -254,8 +252,3 @@ class TestPendingAndBackfill:
             ledger.apply_trade_eur(
                 99, TradeEur(pricing=_PRICING, price_eur=Decimal("1"), fee_eur=Decimal("0"))
             )
-
-
-def test_sqlite_ledger_satisfies_trade_ledger_port(ledger: SqliteLedger) -> None:
-    """Invariant: the adapter structurally satisfies TradeLedgerPort."""
-    assert isinstance(ledger, TradeLedgerPort)

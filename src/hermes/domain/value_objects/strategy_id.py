@@ -16,8 +16,6 @@ Reference: SYNTHESIS §1 (bucket-aware aggregates), SA-6 (strategy_id as
 first-class domain field), spec-1-domain-aggregates D-1.
 """
 
-from __future__ import annotations
-
 import string
 from dataclasses import dataclass
 

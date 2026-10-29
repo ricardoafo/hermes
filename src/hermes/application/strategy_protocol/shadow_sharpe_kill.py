@@ -25,8 +25,6 @@ rule 4 of the 2026-10-03 shadow-P&L decision).
 Reference: pre-registration-v1.md §10; issue #422.
 """
 
-from __future__ import annotations
-
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field

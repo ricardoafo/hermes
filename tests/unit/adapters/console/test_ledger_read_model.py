@@ -14,8 +14,6 @@ The home views (portfolio, activity, shadow test) are covered in
 Reference: openspec/archive/ledger-read-model/change.md (R-1 to R-3, D-8).
 """
 
-from __future__ import annotations
-
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal

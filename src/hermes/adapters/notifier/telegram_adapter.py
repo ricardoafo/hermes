@@ -34,8 +34,6 @@ Design decisions
   entry); routing a report to Telegram is almost always a misuse.
 """
 
-from __future__ import annotations
-
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field

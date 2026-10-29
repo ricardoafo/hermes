@@ -18,8 +18,6 @@ reach a surface that could leak into decisions (pre-registration v1).
 Reference: openspec/archive/370-hermes-status/change.md.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum

@@ -9,8 +9,6 @@ Invariants (backtest-driver-mvp1-phase2 change.md R-3):
 - The book carries the given snapshot time.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 

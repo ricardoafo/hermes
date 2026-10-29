@@ -7,8 +7,6 @@ layer only defines shape and invariants; adapters under
 these values.
 """
 
-from __future__ import annotations
-
 from hermes.domain.market_data.kline import Kline, KlineInterval
 from hermes.domain.market_data.orderbook import Orderbook, OrderbookLevel
 from hermes.domain.market_data.ticker import Ticker

@@ -8,8 +8,6 @@ opens; no real credentials are ever transmitted.
 Reference: docs/decisions/2026-08-23-contract-test-tier.md.
 """
 
-from __future__ import annotations
-
 import io
 import json
 from datetime import UTC, datetime, timedelta

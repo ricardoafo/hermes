@@ -21,8 +21,6 @@ instead of adding quote units (D-2); a fee in any other asset is refused.
 Reference: ADR-016 item 4, change ``405-usdt-fifo``.
 """
 
-from __future__ import annotations
-
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime

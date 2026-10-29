@@ -19,8 +19,6 @@ as ``<=`` (or a fallback written wrong) changes the signal:
 Synthetic bars only. Reference: pre-registration-v1 §5.1-§5.3.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 

@@ -10,8 +10,6 @@ Pure data and loading, no tax computation (that is #395). Two sources:
   (ADR-016 decision 12). No profile means zeros plus a notice.
 """
 
-from __future__ import annotations
-
 import logging
 import os
 from decimal import Decimal

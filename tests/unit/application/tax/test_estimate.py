@@ -3,8 +3,6 @@
 Reference: ADR-016 decisions 2, 3, 6, 7, 8, 10 and 12.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal

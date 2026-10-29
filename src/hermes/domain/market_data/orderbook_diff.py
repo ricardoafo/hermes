@@ -27,8 +27,6 @@ Reference: code-conventions.md §1 (Value Object) and §9 (UTC internally).
 spec-4b-market-data-port change.md §Design and D-5.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from decimal import Decimal
 

@@ -19,8 +19,6 @@ Reference: docs/guides/ai-authored-tests.md,
 docs/decisions/2026-08-24-kraken-public-adapter.md.
 """
 
-from __future__ import annotations
-
 import inspect
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal

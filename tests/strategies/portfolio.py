@@ -7,8 +7,6 @@ fee 8 places) so every sum stays exact and the accounting identities can be
 asserted with ``==``.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal

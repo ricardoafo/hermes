@@ -5,8 +5,6 @@ the desk's published brief, unchanged: this module only lays it out, so the
 screen can show nothing the output gate did not pass (ADR-012 D-06, D-08).
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from typing import Final
 

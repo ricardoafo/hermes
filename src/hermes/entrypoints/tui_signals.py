@@ -6,8 +6,6 @@ a rule came to holding (ADR-012 D-06), so the screen takes nothing but
 :class:`RuleCheck` rows and the coins held.
 """
 
-from __future__ import annotations
-
 from collections.abc import Collection, Sequence
 from datetime import datetime, timedelta
 from typing import Final

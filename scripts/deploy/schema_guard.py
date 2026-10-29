@@ -20,8 +20,6 @@ An event type the release does not know at all is printed as a warning
 and does not fail the check: older releases skip types they never read.
 """
 
-from __future__ import annotations
-
 import importlib
 import pkgutil
 import sqlite3

@@ -21,8 +21,6 @@ Exit codes: 0 all good, 1 late or down, 2 usage, 3 config error or no ledger.
 Reference: openspec/archive/370-hermes-status/change.md.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import re
