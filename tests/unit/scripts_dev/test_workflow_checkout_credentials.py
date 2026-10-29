@@ -7,13 +7,13 @@ token. Only a job that pushes needs it; these tests keep every other
 checkout credential-free and the template-injected values out of shell.
 """
 
-from pathlib import Path
 from typing import Any
 
 import yaml
 
-_ROOT = Path(__file__).resolve().parents[3]
-_WORKFLOWS = _ROOT / ".github" / "workflows"
+from tests.support.paths import REPO_ROOT
+
+_WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 
 # Jobs allowed to keep the token, and why:
 # - merge-queue.yml: its Revalidate job merges; issue #779 splits it.
@@ -79,17 +79,14 @@ def test_the_test_deletion_guard_reads_the_base_ref_from_env() -> None:
     assert (step["env"].get("BASE_REF"), "${{" in step["run"]) == ("${{ github.base_ref }}", False)
 
 
-def test_the_kill_rate_floor_reads_the_rate_from_env() -> None:
-    """The mutation kill rate reaches the shell and Python as data, not as code."""
+def test_the_kill_rate_verdict_runs_no_template_text() -> None:
+    """The mutation verdict reads the floor from env, never as template text in its script."""
     workflow = yaml.safe_load((_WORKFLOWS / "scheduled.yml").read_text(encoding="utf-8"))
     step = next(
         step
         for job in workflow["jobs"].values()
         for step in job.get("steps") or []
-        if step.get("name") == "Enforce kill-rate floor"
+        if step.get("name") == "Merge the shards and enforce the kill-rate floor"
     )
 
-    assert (step["env"].get("KILL_RATE"), "${{" in step["run"]) == (
-        "${{ steps.rate.outputs.kill }}",
-        False,
-    )
+    assert ("${{" in step["run"], '"${KILL_RATE_FLOOR}"' in step["run"]) == (False, True)

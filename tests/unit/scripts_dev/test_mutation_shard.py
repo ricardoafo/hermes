@@ -25,13 +25,13 @@ from cosmic_ray.work_item import MutationSpec, WorkerOutcome, WorkItem, WorkResu
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-_ROOT = Path(__file__).resolve().parents[3]
+from tests.support.paths import REPO_ROOT
 
 
 def _load() -> ModuleType:
     """Import the script module (not a package)."""
     spec = importlib.util.spec_from_file_location(
-        "mutation_shard", _ROOT / "scripts" / "dev" / "mutation-shard.py"
+        "mutation_shard", REPO_ROOT / "scripts" / "dev" / "mutation-shard.py"
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
