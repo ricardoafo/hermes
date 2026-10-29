@@ -36,6 +36,7 @@ _LOOP = _I + "entrypoints/test_serve_bar_loop.py::"
 _CHAOS = _S + "test_chaos_crash_mid_bar.py::"
 _FILLS = _I + "entrypoints/test_serve_fills.py::"
 _TAX = _I + "entrypoints/test_serve_tax_guard.py::"
+_FETCH = _U + "entrypoints/test_tax_pack_fetch.py::"
 _SERVE = _U + "entrypoints/test_serve.py::"
 _UNITS = _U + "deploy/test_systemd_units.py::"
 _RELEASE = _I + "deploy/test_release_scripts.py::"
@@ -1415,6 +1416,24 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             proved_by=(
                 _NULL + "test_fewer_series_than_one_over_q_is_a_usage_error",
                 _NULL + "test_a_series_that_crashes_exits_3_and_writes_no_record",
+            ),
+        ),
+        FailureMode(
+            "The server tax pack fetch saves a tampered, partial or hostile pack on the PC",
+            proved_by=(
+                _FETCH + "test_a_changed_file_is_refused_and_nothing_is_written",
+                _FETCH + "test_a_missing_file_is_refused",
+                _FETCH + "test_an_unlisted_file_is_refused",
+                _FETCH + "test_an_entry_outside_the_year_folder_is_refused",
+                _FETCH + "test_an_oversized_stream_is_refused",
+            ),
+        ),
+        FailureMode(
+            "The tax pack fetch cannot reach the server, or a crash mid-swap loses the old copy",
+            proved_by=(
+                _FETCH + "test_ssh_failure_reports_the_last_diagnostic",
+                _FETCH + "test_a_failed_fetch_keeps_the_previous_copy",
+                _FETCH + "test_a_crash_while_swapping_never_loses_the_earlier_copy",
             ),
         ),
     ),
