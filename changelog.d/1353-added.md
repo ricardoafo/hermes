@@ -1,0 +1,1 @@
+- **Apache-2.0 licence** (`LICENSE`, `NOTICE`, `pyproject.toml`): Hermes is licensed under the Apache License 2.0, with the licence metadata in the package. The unused `python-telegram-bot` dependency is removed. Part of #1353.
