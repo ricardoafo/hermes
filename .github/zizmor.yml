@@ -1,17 +1,20 @@
-# zizmor baseline (#529). Every entry is a finding that existed when the
-# workflow check was added. New findings fail `ci-checks.sh workflows`;
-# these are burned down in #529 and removed from here as they are fixed.
+# zizmor baseline (#529, burned down in #597). New findings fail
+# `ci-checks.sh workflows`. Each entry below says why it stays.
 rules:
-  # actions/checkout keeps the token in .git/config; most jobs need no push.
+  # merge-queue.yml: the Revalidate job runs batch code beside the write
+  # token; splitting gate and merge jobs is issue #779, which removes
+  # these four entries. Elsewhere every checkout sets
+  # persist-credentials: false, except the branch-prune job, which pushes
+  # and carries an inline ignore.
   artipacked:
     ignore:
-      - _build-wheel.yml
-      - cd.yml
-      - ci.yml
       - merge-queue.yml
-      - pr-housekeeping.yml
-      - scheduled.yml
-      - vps-bootstrap.yml
+  github-app:
+    ignore:
+      - merge-queue.yml
+  github-env:
+    ignore:
+      - merge-queue.yml
   # By design: workflow_run and pull_request_target run base-branch code
   # only; nothing from the PR head is checked out or executed.
   # cd.yml deploys only when CI succeeded on a push to main
@@ -21,16 +24,9 @@ rules:
       - cd.yml
       - merge-queue.yml
       - pr-housekeeping.yml
-  github-app:
-    ignore:
-      - merge-queue.yml
-  github-env:
-    ignore:
-      - merge-queue.yml
+  # The suggested `$/...` form fails actionlint 1.7.12 (the pinned
+  # version), which accepts only `./...` for a reusable workflow in the
+  # same repository.
   self-repository:
     ignore:
       - cd.yml
-  template-injection:
-    ignore:
-      - ci.yml
-      - scheduled.yml
