@@ -63,9 +63,6 @@ merge queue merges approved PRs once CI is green ([`docs/guides/pr-flow.md`](doc
 No self-approval, no bot merges, no force-push to `main`. See dev-workflow.md
 for the full discipline.
 
-## No license (yet)
+## License
 
-This repository is proprietary — all rights reserved by the copyright holder.
-No license file is present. If you are reading this and are not Ricardo
-Afonso, you do not have permission to use, copy, modify, or distribute this
-code. A license may be added in a future phase if the project goes public.
+Apache License 2.0. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).

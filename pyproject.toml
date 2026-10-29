@@ -4,8 +4,22 @@ version = "0.2.0"
 description = "Crypto trading engine — hexagonal, event-sourced, tax-compliant."
 requires-python = ">=3.14,<3.15"
 readme = "README.md"
-license = { text = "Proprietary" }
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Ricardo Afonso" }]
+keywords = ["trading", "crypto", "paper-trading", "backtesting", "hexagonal-architecture"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Office/Business :: Financial :: Investment",
+  "Typing :: Typed",
+  # Installed from source; the name is not ours on PyPI.
+  "Private :: Do Not Upload",
+]
 dependencies = [
   "pydantic>=2.14.1,<3",
   "pydantic-settings>=2.5,<3",
@@ -18,7 +32,6 @@ dependencies = [
   # constraint change cannot drop it. See openspec/archive/console-read-model.
   "rich>=15,<16",
   "apscheduler>=3.10,<4",
-  "python-telegram-bot>=22.8,<23",
   # ULID generator for lot, journal and correlation IDs (issue #784 replaced
   # the unmaintained ulid-py). Approved by the Code Owner 2026-10-17.
   "python-ulid>=4.0.1,<5",
@@ -47,6 +60,12 @@ dependencies = [
   "textual-image>=0.14.1,<0.15",
   "textual-plotext>=1.0.1,<2",
 ]
+
+[project.urls]
+Homepage = "https://github.com/ricardoafo/hermes"
+Source = "https://github.com/ricardoafo/hermes"
+Issues = "https://github.com/ricardoafo/hermes/issues"
+Changelog = "https://github.com/ricardoafo/hermes/blob/main/CHANGELOG.md"
 
 [project.scripts]
 hermes = "hermes.entrypoints.cli:main"
@@ -96,7 +115,7 @@ dev = [
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]

@@ -48,7 +48,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 # ────────────────────────────────────────────────────────────────
 LABEL org.opencontainers.image.source="https://github.com/ricardoafo/hermes"
 LABEL org.opencontainers.image.description="Self-hosted GitHub Actions runner for hermes CI (Python 3.14 + uv + semgrep + markdownlint pre-baked)"
-LABEL org.opencontainers.image.licenses="Proprietary"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
 
 # ────────────────────────────────────────────────────────────────
 # Base OS + system tools
