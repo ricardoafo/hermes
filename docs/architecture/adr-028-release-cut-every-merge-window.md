@@ -1,8 +1,8 @@
 # ADR-028: A release is cut at every merge window
 
 **Date**: 2026-10-18
-**Status**: Proposed — Accepted when the Code Owner merges it
-**Deciders**: Ricardo Afonso (product owner), Claude (proposer)
+**Status**: Superseded by ADR-030 (accepted, merged in PR #1110)
+**Deciders**: Maintainer
 **Superseded by**: [ADR-030](adr-030-every-merge-deploys-with-a-computed-version.md) (every merge deploys with a
 computed version)
 **Supersedes**: [ADR-022](adr-022-release-versions-and-deploy-cadence.md) §5 ("The Code Owner decides when to cut.

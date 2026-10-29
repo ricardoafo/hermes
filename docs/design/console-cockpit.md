@@ -2,9 +2,6 @@
 
 Status: agreed with the Code Owner on 2026-10-05 (issue #711, round 3 comment).
 
-Visual reference (animated mock, all screens):
-<https://claude.ai/artifact/XasRPByihoZZc4hjovguts>
-
 Implementation: issues #711–#722, in the build order below. Mock figures are synthetic. Build from the real read model.
 
 ## Decisions the Code Owner made

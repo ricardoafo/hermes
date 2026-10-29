@@ -3,7 +3,7 @@
 **Date**: 2026-08-20
 **Status**: Accepted
 **Accepted**: 2026-08-21
-**Deciders**: Ricardo Afonso (product owner), Claude (proposer)
+**Deciders**: Maintainer
 **Supersedes**: the initial design, in which Claude placed orders through MCP and hooks constrained it
 
 ## Context

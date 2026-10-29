@@ -2,7 +2,7 @@
 
 The catalogue in ``failure_modes.py`` lists every way we know Hermes can fail.
 These tests keep it honest: every entry has exactly one answer, a gap names
-its open issue, an accepted risk carries Rick's approval, and a named proof is
+its open issue, an accepted risk carries the maintainer's approval, and a named proof is
 a test that exists.
 """
 
@@ -16,7 +16,7 @@ from tests.support.node_ids import names_a_test
 pytestmark = pytest.mark.integration
 
 _ISSUE = re.compile(r"^issue #\d+: \S")
-_APPROVED = re.compile(r"^approved by Rick \d{4}-\d{2}-\d{2}: \S")
+_APPROVED = re.compile(r"^approved by the maintainer \d{4}-\d{2}-\d{2}: \S")
 
 
 def _all_modes() -> list[FailureMode]:
@@ -32,7 +32,7 @@ def test_every_area_has_its_failure_modes_listed() -> None:
 
 
 def test_every_failure_mode_has_exactly_one_kind_of_answer() -> None:
-    """A failure mode is proved by tests, a gap with an issue, or accepted by Rick: never none."""
+    """A failure mode is proved by tests, a gap with an issue, or accepted by the maintainer."""
     wrong = [
         mode.name
         for mode in _all_modes()

@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-17
 **Status**: Accepted (merged in PR #1082)
-**Deciders**: Ricardo Afonso (product owner), Claude (proposer)
+**Deciders**: Maintainer
 **Supersedes**: none.
 **Amends**: [ADR-018](adr-018-ci-cd-infrastructure-and-resource-budget.md), adding the runner trust split and the
 fresh-runner-per-job ask in §4 and §9; [ADR-022](adr-022-release-versions-and-deploy-cadence.md), putting QA ahead of
@@ -21,8 +21,8 @@ and Slack have hard-coded API bases.
 
 The Code Owner decided on 2026-10-04 that MVP2 gets its own lower environment. On 2026-10-17 server-01 came online.
 The same day the Code Owner asked for a place to "simulate properly all the functionalities and test this thing
-entirely on every real life scenario". After review he approved a four-environment proposal at 22:54 UTC. At 23:08 UTC
-he placed staging on hermes-01 until a champion exists, because nothing runs on prod before then. This ADR records
+entirely on every real life scenario". After review they approved a four-environment proposal at 22:54 UTC. At 23:08 UTC
+they placed staging on hermes-01 until a champion exists, because nothing runs on prod before then. This ADR records
 both. The build is tracked in issue #968.
 
 ## Decision

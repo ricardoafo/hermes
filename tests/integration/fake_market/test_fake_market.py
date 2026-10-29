@@ -1,6 +1,6 @@
 """The fake market speaks the production contract and drives the real serve wiring.
 
-Issue #688. Rick, 2026-10-05: the generated data may differ from production in
+Issue #688. The maintainer, 2026-10-05: the generated data may differ from production in
 its values, because it is adjusted to force scenarios, but it must match
 production by contract, in schema and in the way it arrives.
 

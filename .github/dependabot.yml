@@ -56,10 +56,10 @@ updates:
       prefix: 'chore'
       include: scope
 
-    # One weekly PR per ecosystem (CI/CD consolidation, Rick's call on
+    # One weekly PR per ecosystem (CI/CD consolidation, the maintainer's call on
     # 2026-10-03): every version update, patch to major, lands in a single
     # grouped PR that goes through the same CI and merge queue as any other
-    # and still needs Rick's approval. Read each bump's changelog in that PR
+    # and still needs the maintainer's approval. Read each bump's changelog in that PR
     # (docs/decisions/2026-08-24-dependency-upgrade-checklist.md). Security
     # updates are not grouped: each advisory fix opens its own PR at once.
     groups:
@@ -104,7 +104,7 @@ updates:
   # ────────────────────────────────────────────────────────────────
   # pre-commit hook revisions and the runner image's Docker bases
   # ────────────────────────────────────────────────────────────────
-  # Rick 2026-10-06: every tool on its latest stable release (#906).
+  # Maintainer decision, 2026-10-06: every tool on its latest stable release (#906).
   # Pins Dependabot cannot see (Dockerfile ARGs, the VPS bootstrap,
   # versions inside workflow steps) are reported weekly by
   # scripts/dev/freshness-check.py in the Scheduled workflow.
@@ -134,7 +134,7 @@ updates:
         patterns: ['*']
 
   # Runner image base (Dockerfile FROM) and the Docker-in-Docker sidecar
-  # (compose.yml image). A new image only reaches CI when Rick rebuilds
+  # (compose.yml image). A new image only reaches CI when the maintainer rebuilds
   # the runners, so these PRs change files, not the running machines.
   - package-ecosystem: docker
     directory: '/scripts/dev/gh-runner'

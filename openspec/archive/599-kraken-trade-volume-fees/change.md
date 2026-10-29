@@ -86,6 +86,6 @@ sequenceDiagram
 
 ## Risks
 
-- Until Rick adds a read-only key as repository secrets, the fee contract
+- Until the maintainer adds a read-only key as repository secrets, the fee contract
   test is skipped, so a future change to the `TradeVolume` reply would not be
   caught by the daily run.

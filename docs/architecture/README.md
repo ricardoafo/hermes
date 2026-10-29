@@ -43,8 +43,8 @@ table.
 | [025](adr-025-train-decision-replay-on-engine-prs.md) | Engine PRs replay Train and compare decisions, on the CI pool with the klines mounted read-only | Accepted | — |
 | [026](adr-026-research-batch-and-signed-champion-rule.md) | Research batches — several signed candidates backtested together, Validation started by the pipeline, and a champion picked by a signed rule | Accepted | — |
 | [027](adr-027-zero-major-versions-until-real-capital.md) | Release versions are `0.y.z` until a champion trades real money; `1.0.0-shadow.N` is retired | Accepted | — |
-| [028](adr-028-release-cut-every-merge-window.md) | A release is cut at every merge window | Proposed | [ADR-030](adr-030-every-merge-deploys-with-a-computed-version.md) (every merge deploys with a computed version) |
-| [029](adr-029-one-hour-bars-for-intraday-holding-candidates.md) | 1h bars for intraday-holding candidates, in backtest, shadow and prod together | Proposed | — |
+| [028](adr-028-release-cut-every-merge-window.md) | A release is cut at every merge window | Superseded | [ADR-030](adr-030-every-merge-deploys-with-a-computed-version.md) (every merge deploys with a computed version) |
+| [029](adr-029-one-hour-bars-for-intraday-holding-candidates.md) | 1h bars for intraday-holding candidates, in backtest, shadow and prod together | Accepted | — |
 | [030](adr-030-every-merge-deploys-with-a-computed-version.md) | Every merge to `main` deploys to hermes-01 with a version computed from what changed | Accepted | — |
 | [031](adr-031-research-sweep-for-a-strong-champion.md) | Research sweeps, 100+ signed candidates per batch to find one strong champion | Accepted | — |
 <!-- adr-index-end -->

@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-06
 **Status**: Accepted — §1 superseded by [ADR-027](adr-027-zero-major-versions-until-real-capital.md) (`0.y.z` until real capital); §5 superseded by [ADR-028](adr-028-release-cut-every-merge-window.md) (a cut every merge window)
-**Deciders**: Ricardo Afonso (product owner), Claude (proposer)
+**Deciders**: Maintainer
 **Superseded in part by**: [ADR-030](adr-030-every-merge-deploys-with-a-computed-version.md) (§2, §6 and §7: every merge
 deploys with a computed version)
 **Supersedes**: [ADR-006](adr-006-versioning-strategy.md) §1 "Version bump rules", the release-cut mechanics only.
@@ -68,7 +68,7 @@ release. `hermes version` already prints both (issue #539).
 
 ### 5. The Code Owner decides when to cut
 
-There is no schedule. A cut is a product decision, usually at a milestone or before a deploy he wants.
+There is no schedule. A cut is a product decision, usually at a milestone or before a deploy they want.
 
 ### 6. From day 0, hermes-01 deploys only versions
 

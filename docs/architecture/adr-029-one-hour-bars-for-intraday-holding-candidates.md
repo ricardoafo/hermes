@@ -1,8 +1,8 @@
 # ADR-029: 1h bars for intraday-holding candidates, in backtest, shadow and prod together
 
 **Date**: 2026-10-18
-**Status**: Proposed — Accepted when the Code Owner merges it
-**Deciders**: Ricardo Afonso (product owner), Claude (proposer)
+**Status**: Accepted (merged in PR #1114)
+**Deciders**: Maintainer
 **Supersedes**: nothing. Extends [ADR-026](adr-026-research-batch-and-signed-champion-rule.md) (what a candidate may
 be) and the market-data config's `4h`/`1d`-only rule. Tracking issue: #1105.
 

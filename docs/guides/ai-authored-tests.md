@@ -276,7 +276,7 @@ each item against the failure-mode catalogue in
 - Every bug fixed adds its catalogue entry and the test that would have
   caught it.
 - An entry is proved by tests, a gap naming its open issue, or accepted
-  with Rick's dated approval. `test_failure_mode_list.py` fails on
+  with the maintainer's dated approval. `test_failure_mode_list.py` fails on
   anything else, and on a proof that names a test that does not exist.
 
 ## The one question to ask before submitting

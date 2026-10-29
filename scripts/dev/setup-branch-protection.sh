@@ -8,11 +8,11 @@
 # cleanly with org rules if we ever add them.
 #
 # Discipline enforced (see docs/guides/dev-workflow.md + docs/decisions/):
-#   - 1 approving review required (Ricardo, via CODEOWNERS)
+#   - 1 approving review required (the maintainer, via CODEOWNERS)
 #   - Code owner review required
 #   - Dismiss stale reviews on new commits
-#   - Last-push approval OFF: an "Update branch" click records Rick as the
-#     last pusher and would strand his own approval. Stale-review
+#   - Last-push approval OFF: an "Update branch" click records the maintainer as the
+#     last pusher and would strand their own approval. Stale-review
 #     dismissal already covers new commits.
 #   - Require review-thread resolution before merge
 #   - `CI success` aggregator must be green (single required check)

@@ -52,7 +52,7 @@ flowchart LR
   so one runner showing offline between jobs is normal.
   `hermes runners` (#516) reports each group's health.
 - **No job ever runs on a GitHub-hosted runner.** The deploy secrets and the
-  write token must stay on server-01 (Rick, 17 Oct 2026; issue #754). A job
+  write token must stay on server-01 (the maintainer, 17 Oct 2026; issue #754). A job
   whose runner variable is unset does not fall back to a hosted image: its
   expression ends in the fixed label set `["self-hosted","linux","hermes"]`,
   so it queues for a server-01 runner. `scripts/dev/runs-on-check.py`, part of

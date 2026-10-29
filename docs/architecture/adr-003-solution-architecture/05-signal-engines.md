@@ -245,7 +245,7 @@ position_sizing:
 
 ## Deferred to Phase 1 (dedicated SDD design)
 
-Per Ricardo's explicit request, these get their own SDD change with proper depth:
+Per the maintainer's explicit request, these get their own SDD change with proper depth:
 
 - **Donchian parameter sweep**: 20/55/100-day entry lookbacks per asset, per-regime performance, per-asset vs global params
 - **Tax-aware defer formula**: opportunity-cost model, real backtest with vs without defer

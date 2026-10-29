@@ -2,8 +2,6 @@ name: Feature request
 description: Propose a new capability. For architectural changes, open an SDD change instead.
 title: "[feat] "
 labels: ["type:feat"]
-assignees:
-  - ricardoafo
 body:
   - type: markdown
     attributes:

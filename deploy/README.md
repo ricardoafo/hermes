@@ -1,7 +1,7 @@
 # deploy/ — VPS Provisioning + Systemd Units
 
 **Type**: Deploy assets (living scaffolding)
-**Owners**: Ricardo Afonso
+**Owners**: Maintainer
 **Description**: Systemd units and reference material for the VPS bootstrap workflow and the CD pipeline defined in `.github/workflows/cd.yml`.
 
 ## Status

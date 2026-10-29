@@ -139,8 +139,6 @@ rules to make your work salvageable:
 
 - [`AGENTS.md § On sub-agent delegation`](../../AGENTS.md#on-sub-agent-delegation)
   — the norm this checklist enforces.
-- [`~/.claude/CLAUDE.md § SDD Workflow`](../../.claude/CLAUDE.md) —
-  Apply-Progress Continuity rule (read-merge-write, don't overwrite).
 - [`docs/guides/dev-workflow.md`](../../docs/guides/dev-workflow.md)
   — git/gh discipline (no `--no-verify`, conventional commits,
   squash-merge policy).

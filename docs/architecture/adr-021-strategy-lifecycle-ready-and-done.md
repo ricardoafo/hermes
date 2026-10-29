@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-06
 **Status**: Accepted (merged in PR #799)
-**Deciders**: Ricardo Afonso (product owner), Claude (proposer)
+**Deciders**: Maintainer
 **Supersedes**: none. It applies [pre-registration v1](../experiments/swing-mvp1/pre-registration-v1.md) §7 and §10 as
 written and builds on [ADR-012](adr-012-continuous-ai-evaluation.md) D-11 (research loop) and
 [ADR-014](adr-014-pre-registration-binds-real-capital.md) (real capital).

@@ -89,7 +89,7 @@ see the type of your branch, run `python3 scripts/dev/change-type.py origin/main
   `/_fake/clock`, so a scenario runs an installed release on scripted time (issue #972). Only dev and QA may set it, and
   only on loopback.
 
-## Rick's steps
+## The maintainer's steps
 
 Each step names the machine and is one command or one setting. A step marked **later** is not needed in phase 1.
 
@@ -271,7 +271,7 @@ synced, and it resumes from its ledger, never from memory.
 
 The lab moves to server-01 and hermes-01 becomes prod only when a shadow keeps its day count across the move. ADR-024
 §7a lists the six conditions: the same release, the same ledger with a checksum, one writer at a time, a clean point
-between bars, the same data, and a rehearsal first. Issue #1085 turns them into a runbook of steps Rick runs. This
+between bars, the same data, and a rehearsal first. Issue #1085 turns them into a runbook of steps the maintainer runs. This
 guide gets a section for it when that lands.
 
 ## Deploying to staging by hand

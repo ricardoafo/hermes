@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-17
 **Status**: Accepted (merged in PR #1055)
-**Deciders**: Ricardo Afonso (product owner), Claude (proposer)
+**Deciders**: Maintainer
 **Supersedes**: in [ADR-023](adr-023-backtest-runs-on-server-01.md), §5 (a Validation run waits for the Code Owner's
 own click) and §9 (`workflow_dispatch` is the only trigger), for strategies signed in a batch.
 **Amends**: [ADR-021](adr-021-strategy-lifecycle-ready-and-done.md) §1 stages 1, 3 and 4 (one signature covers a
@@ -18,7 +18,7 @@ v1 failed its backtest gate on 2026-10-08 and v2 failed on Train on 2026-10-17. 
 signature, and a manual click at every step: dispatch Train, read the verdict, dispatch Validation from the Code
 Owner's account, commit the trial lines by hand. With one strategy at a time and a gate that rejects most ideas, the
 first shadow is far away. On 2026-10-17 the Code Owner asked for a research funnel instead: research several
-strategies, backtest them in one batch without him running steps, evaluate them, and pick a champion for the first
+strategies, backtest them in one batch without them running steps, evaluate them, and pick a champion for the first
 shadow, with several shadows later (issue #967).
 
 What the repo does today (checked on main at 95d2786):
@@ -47,9 +47,9 @@ The Code Owner's answers on issue #967 (2026-10-17) set the direction this ADR f
 1. The pipeline starts Validation; signing the pre-registration is the OK.
 2. A shadow starts by itself once shadow Ready holds.
 3. The parameter chat works before launch only, never on a running test.
-4. The chat writes drafts that he signs.
+4. The chat writes drafts that they sign.
 5. A new console screen holds it.
-6. Only drafts he signs count as trials.
+6. Only drafts they sign count as trials.
 
 And for the shadow line: up to 6 shadows plus the champion, at most one per idea family, the cap a signed setting,
 and strategies that pass wait in order without displacing a running shadow.
@@ -107,7 +107,7 @@ ADR-023 §5's own-account click for batch candidates. Single pre-registrations o
 - After every candidate's Train touch is done, the batch's Train results are judged together (§4). Only candidates
   that pass every Train-judgeable check go on to Validation. A failed candidate never spends a touch.
 - Validation runs in the `backtest-validation` environment, from main only. Instead of checking that the Code Owner
-  started the run, the job checks that the run belongs to a signed batch whose merge he made (§2), and that the
+  started the run, the job checks that the run belongs to a signed batch whose merge they made (§2), and that the
   candidate passed Train in this batch's run.
 - Each Validation run is one touch for the candidate's family. The job counts the family's touches from the trial
   log (lines with `split: validation`) and refuses a run past the ADR-021 §5 budget of 5.

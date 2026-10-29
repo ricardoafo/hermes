@@ -3,10 +3,10 @@
 **Type**: Guide (living document — PR any change)
 **Owners**: Code Owner (product owner, sole approver)
 **Applies to**: every PR on `github.com/ricardoafo/hermes` and every writer that opens one.
-**Description**: How the independent AI review works on every PR, what the "For Rick" card means, how writers act on findings, and how the reviewer token is set up.
+**Description**: How the independent AI review works on every PR, what the maintainer card means, how writers act on findings, and how the reviewer token is set up.
 
-Hermes PRs are written by many AI writers, and Rick is the only human
-approver. He approves outcomes as product owner; he does not read code.
+Hermes PRs are written by many AI writers, and the maintainer is the only human
+approver. They approve outcomes as product owner; they do not read code.
 The `AI review` job in [`ai-review.yml`](../../.github/workflows/ai-review.yml)
 is the code review (#590).
 
@@ -19,11 +19,11 @@ flowchart LR
     C --> D{Verdict}
     D -- Changes needed --> E[Writer fixes and pushes]
     E --> C
-    D -- Needs your decision --> F[Writer asks Rick in its thread]
-    D -- Approve --> G[For Rick card says ready]
+    D -- Needs your decision --> F[Writer asks the maintainer in its thread]
+    D -- Approve --> G[Maintainer card says ready]
     B --> H{CI green and AI review green?}
     G --> H
-    H -- yes --> I[Rick approves the outcome]
+    H -- yes --> I[The maintainer approves the outcome]
     I --> J[Merge queue]
 ```
 
@@ -41,22 +41,22 @@ flowchart LR
   read from `main`. A PR that edits the instructions is still reviewed by
   main's copy.
 
-## The For Rick card
+## The maintainer card
 
-The comment opens with what Rick needs as product owner: what changes
-for him or the running system, why now, the risk level and why, what
+The comment opens with what the maintainer needs as product owner: what changes
+for them or the running system, why now, the risk level and why, what
 proves it works, and the verdict. Findings for the writer follow below
 it, marked blocking or optional.
 
 | Verdict | Check | Who acts |
 | --- | --- | --- |
-| Approve, no blocking finding | green | Rick, once CI is green too |
+| Approve, no blocking finding | green | The maintainer, once CI is green too |
 | Changes needed | red | The writer fixes every blocking finding and pushes |
-| Needs your decision | red | The writer asks Rick in its thread; the PR body records the answer |
+| Needs your decision | red | The writer asks the maintainer in its thread; the PR body records the answer |
 
 ## Rules for writers
 
-- Ask Rick to approve only when `CI success` and `AI review` are both
+- Ask the maintainer to approve only when `CI success` and `AI review` are both
   green and no decision is open.
 - Fix every blocking finding. Answer each optional one in the PR, either
   by fixing it or with one line on why it stays.
@@ -65,9 +65,9 @@ it, marked blocking or optional.
 - Never edit the review instructions, schema or renderer in the same PR
   as the code they would judge.
 
-## Setup (Rick, once)
+## Setup (the maintainer, once)
 
-The reviewer runs on Rick's Claude plan.
+The reviewer runs on the maintainer's Claude plan.
 
 1. On a machine with Claude Code signed in to that plan, run
    `claude setup-token` and copy the token it prints.

@@ -20,7 +20,7 @@ flowchart LR
     D --> E{create-pr.sh ready gate}
     E -- not ready --> B
     E -- ready --> F[PR CI: one CI success job]
-    F --> G[Rick reviews and approves]
+    F --> G[The maintainer reviews and approves]
     G --> H[Merge queue: batch, gate, squash]
     H --> I[main CI: skipped if tree already passed]
     I --> J[CD: deploy, smoke, rollback on failure]
@@ -58,13 +58,13 @@ flowchart TD
   open it once the base has merged.
 - If your PR conflicts with main, merge main in at once. Don't wait to
   be asked.
-- After Rick approves, push only fixes for CI or for review comments.
+- After the maintainer approves, push only fixes for CI or for review comments.
   Merge main only for a real conflict.
 
 ## Approval and the merge queue
 
-- Rick approves once he has reviewed and agrees. CI should already be
-  green and the PR conflict-free when he is asked.
+- The maintainer approves once they have reviewed and agree. CI should already be
+  green and the PR conflict-free when they are asked.
 - The queue takes every approved, green, non-draft PR, oldest approval
   first. It builds one tree, main plus each PR in order, and runs the
   gates once on it. Then it squash-merges the batch back to back.

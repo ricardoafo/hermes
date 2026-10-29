@@ -3,7 +3,7 @@
 **Date**: 2026-08-20
 **Status**: Accepted
 **Accepted**: 2026-08-21
-**Deciders**: Ricardo Afonso (product owner), Claude (proposer)
+**Deciders**: Maintainer
 **Supersedes**: —
 
 ## Context
@@ -283,7 +283,7 @@ Locked from research findings; each item unlocks the next once shipped.
   (StockBench 2025, FINSABER 2025, various FreqAI community
   post-mortems). If that changes, Category D re-opens for a targeted
   supersession ADR — not blanket reversal.
-- **User's AUM grows past €100k+.** Some Category D techniques
+- **Capital under management grows past €100k+.** Some Category D techniques
   (execution algorithms, cross-venue routing) start earning their
   complexity at that scale. Would still not permit signal-generating
   ML; would consider execution ML.

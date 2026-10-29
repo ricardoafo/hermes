@@ -1,7 +1,7 @@
 # Secret rotation
 
 **Last exercised**: never (written 2026-10-06; drill on first rotation)
-**Owner**: Ricardo
+**Owner**: Maintainer
 **Related**: AGENTS.md rule 6, issue #679, issue #768 (prod-environment
 scoping), [`vps-restart-procedure.md`](vps-restart-procedure.md)
 

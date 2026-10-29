@@ -1,7 +1,7 @@
 # Hetzner Storage Box — Setup Runbook
 
 Nightly backup destination for `hermes-01`. Storage Box `hermes-storage-box-1`
-in Falkenstein (same DC as VPS, ~1ms latency), user `uXXXXXX`, SSH on port 23.
+in the same location as the VPS (~1ms latency), user `uXXXXXX` (your box's user), SSH on port 23.
 
 Encrypted, deduplicated backups via `borg`. Fires at 03:00 UTC via
 `hermes-backup.timer`.
@@ -16,7 +16,7 @@ with a separate full-access key, never from the VPS.
 One-time, done by operator at [robot.hetzner.com](https://robot.hetzner.com):
 
 1. Storage Boxes → order **BX11** (1 TB, ~€3.81/mo).
-2. Location: **FSN1** (Falkenstein) to match `hermes-01`.
+2. Location: the same location as the VPS.
 3. In the box's settings enable:
    - **SSH support** (needed for borg over SSH)
    - **ZFS snapshots** (defence-in-depth against a ransomed VPS pushing empty repos)
@@ -197,7 +197,7 @@ is a click in Cloud Console, ~1 min downtime.
 
 | Resource | Monthly cost | Notes |
 | ---------- | -------------- | ------- |
-| Storage Box BX11 (1 TB, Falkenstein) | ~€3.81 | Pre-paid annually gets ~5% off |
+| Storage Box BX11 (1 TB) | ~€3.81 | Pre-paid annually gets ~5% off |
 | Estimated egress | €0 | Same-DC as VPS, no bandwidth charge |
 | **Total backup infra** | **~€4/mo** | |
 

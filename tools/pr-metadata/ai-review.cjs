@@ -12,7 +12,7 @@ const MARKER = '<!-- hermes-ai-review -->';
 const AUTHOR = 'github-actions[bot]';
 // Paths that steer the reviewer or the merge gates. A PR touching them
 // can rewrite what the review checks, so its own review never passes the
-// check: Rick decides (#778).
+// check: the maintainer decides (#778).
 const REVIEW_PATH = [/^\.github\//, /^tools\/pr-metadata\//, /^AGENTS\.md$/];
 const VERDICTS = ['approve', 'changes_needed', 'needs_decision'];
 const RISKS = ['low', 'medium', 'high'];
@@ -95,7 +95,7 @@ function reviewPathChanges(nameStatus) {
 
 /**
  * Turns an Approve on a PR that touches the review path into a decision
- * for Rick: such a PR can change what its own review checks.
+ * for the maintainer: such a PR can change what its own review checks.
  *
  * @param {ReturnType<typeof parseReview>} review
  * @param {string[]} touched from {@link reviewPathChanges}
@@ -203,7 +203,7 @@ function renderComment(review, meta) {
   const optional = review.findings.filter((f) => f.severity === 'optional');
   const lines = [
     MARKER,
-    `## For Rick: ${pass ? 'ready for your approval' : VERDICT_LABEL[review.verdict].toLowerCase()}`,
+    `## For the maintainer: ${pass ? 'ready for your approval' : VERDICT_LABEL[review.verdict].toLowerCase()}`,
     '',
     `**What changes for you:** ${oneLine(fr.whatChanges)}`,
     '',
@@ -241,7 +241,7 @@ function renderComment(review, meta) {
 function renderFailure(reason, meta) {
   return [
     MARKER,
-    '## For Rick: AI review did not finish',
+    '## For the maintainer: AI review did not finish',
     '',
     `${oneLine(reason)}. Re-run the "AI review" job; the PR is not ready for approval until it passes.`,
     '',

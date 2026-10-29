@@ -2,17 +2,17 @@
 # AI review — an independent code review on every PR (#590)
 # =====================================================================
 #
-# Rick is the only human reviewer for PRs written by many AI writers, and
-# he approves outcomes as product owner rather than reading code. This
+# The maintainer is the only human reviewer for PRs written by many AI writers, and
+# they approve outcomes as product owner rather than reading code. This
 # job is the code review: a fresh Claude Code session that never saw the
 # writer's reasoning reads the diff, the issue, the spec, AGENTS.md and
 # the ADRs, and returns a structured verdict. It has read-only tools and
 # posts nothing itself. The last step, which runs no model, turns the
 # verdict into one sticky PR comment that opens with a plain-language
-# "For Rick" card, and fails this job unless the verdict is Approve with
+# "For the maintainer" card, and fails this job unless the verdict is Approve with
 # no blocking finding.
 #
-# The job is the "AI review" check. It is advisory until Rick adds it to
+# The job is the "AI review" check. It is advisory until the maintainer adds it to
 # the ruleset's required checks.
 #
 # ## Pinned from main
@@ -25,7 +25,7 @@
 #
 # ## Secrets
 #
-#   CLAUDE_CODE_OAUTH_TOKEN  Rick's Claude plan token (`claude setup-token`).
+#   CLAUDE_CODE_OAUTH_TOKEN  the maintainer's Claude plan token (`claude setup-token`).
 #                            Add it as an Actions secret, and as a
 #                            Dependabot secret for Dependabot PRs.
 #

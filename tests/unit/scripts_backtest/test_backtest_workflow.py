@@ -328,7 +328,7 @@ def _starter_check(tmp_path: Path, actor: str, triggering_actor: str) -> int:
 
 @needs_tools
 def test_validation_started_by_the_owner_proceeds(tmp_path: Path) -> None:
-    """The Code Owner pressing Run workflow himself is the Validation OK."""
+    """The Code Owner pressing Run workflow themselves is the Validation OK."""
     assert _starter_check(tmp_path, "ricardoafo", "ricardoafo") == 0
 
 

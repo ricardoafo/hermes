@@ -2,5 +2,3 @@
 # the ADR is flipped to "Accepted (merged in PR #N)". A line for a file that is
 # no longer Proposed fails scripts/dev/adr-status-check.py. Lines for files not
 # on this branch yet are ignored until the file lands.
-docs/architecture/adr-028-release-cut-every-merge-window.md
-docs/architecture/adr-029-one-hour-bars-for-intraday-holding-candidates.md

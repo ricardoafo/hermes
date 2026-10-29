@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-03
 **Status**: Accepted — under the Code Owner's pre-approval of change `309-serve-bar-loop` (#309), 2026-10-03
-**Deciders**: Ricardo Afonso (product owner), Claude (proposer)
+**Deciders**: Maintainer
 **Supersedes**: ADR-011 D-02 (location of the composition root) and the Shadow row of the ADR-011 mode table, see [ADR-011](adr-011-paper-trading-engine.md). Nothing else in ADR-011 changes.
 
 ---

@@ -9,7 +9,7 @@ review → Prevention link. Per
 
 - An incident actually happened OR is likely to happen.
 - The recovery procedure is non-obvious under stress.
-- A future-Ricardo (or future-collaborator) waking up at 3 AM needs to
+- A future maintainer or collaborator waking up at 3 AM needs to
   get to a fix in <5 minutes without reading prose.
 
 ## Entry format
@@ -22,7 +22,7 @@ Body:
 # {Symptom or System}
 
 **Last exercised**: YYYY-MM-DD (drill or real incident)
-**Owner**: Ricardo
+**Owner**: Maintainer
 **Related**: ADR-NNN, related runbook entries
 
 ## Symptom

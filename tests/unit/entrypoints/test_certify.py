@@ -219,7 +219,7 @@ def _sign_off_argv(tmp_path: Path, *extra: str) -> list[str]:
         "--store-dir",
         str(tmp_path / "store"),
         "--sign-off",
-        "Ricardo",
+        "Operator",
         *extra,
     ]
 
@@ -274,7 +274,7 @@ class TestLiveSignOff:
         assert code == 0
         assert f"Type {LIVE_APPROVAL_PHRASE} to confirm" in out.getvalue()
         assert seen[0].sign_off is not None
-        assert (seen[0].sign_off.name, seen[0].sign_off.confirmation) == ("Ricardo", typed)
+        assert (seen[0].sign_off.name, seen[0].sign_off.confirmation) == ("Operator", typed)
 
 
 def _strong_performance(window: str) -> dict[str, object]:

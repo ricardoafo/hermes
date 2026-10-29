@@ -107,7 +107,7 @@ manual step.
   checklist says where to run it.
 - **Alternatives**: always run the estimate with the no-profile defaults
   (a misleading figure on the server).
-- **Rationale**: tax figures stay on Rick's machine (project decision); the
+- **Rationale**: tax figures stay on the maintainer's machine (project decision); the
   server has no profile, so its pack holds filing figures only.
 - **Cost of reversal**: LOW.
 
@@ -132,7 +132,7 @@ manual step.
 - **Alternatives**: an import file (Renta Web has no import for this
   section, checked 2026-10-04); hard-coded boxes (AEAT can renumber them).
 - **Rationale**: it is what Spanish crypto-tax tools hand their users (a
-  box-by-box report plus a dossier), and Rick asked for the boxes filled.
+  box-by-box report plus a dossier), and the maintainer asked for the boxes filled.
 - **Cost of reversal**: LOW.
 
 ### D-7: The 721 as fields in the web form's order, not a submission file
@@ -147,10 +147,10 @@ manual step.
   there is no file upload. With 5,000 USDT it is unlikely to be due at all.
 - **Cost of reversal**: LOW.
 
-### D-8: PDF output (decided by Rick, 2026-10-04)
+### D-8: PDF output (decided by the maintainer, 2026-10-04)
 
 - **Decision**: the Renta Web sheet and the dossier are written as PDF files.
-  Rick chose PDF over printable HTML on the thread's decision card, and
+  The maintainer chose PDF over printable HTML on the thread's decision card, and
   approved fpdf2 (pure Python, core Helvetica font, no font file shipped) as
   the library. The application builds each sheet as a small `Document`
   (headings, paragraphs, tables); `adapters/documents/pdf_writer.py` renders

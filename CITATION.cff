@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Hermes"
+type: software
+authors:
+  - family-names: "Afonso"
+    given-names: "Ricardo"
+license: Apache-2.0
+repository-code: "https://github.com/ricardoafo/hermes"
+abstract: >-
+  A crypto paper-trading engine with an event-sourced FIFO ledger, Spanish tax
+  figures and a pre-registered, out-of-sample research funnel for strategies.
+keywords:
+  - trading
+  - backtesting
+  - paper-trading
+  - hexagonal-architecture

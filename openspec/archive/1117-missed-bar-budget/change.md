@@ -17,7 +17,7 @@ and each shadow keeps its own ledger (issue #1076). This change counts those
 rows per ledger by distinct bar, gives the budget as a whole number of bars
 fixed up front, adds "N of M bars used, K left" to the restart report, and
 sends the lab chat one alert when a shadow crosses it. The main risk is the
-denominator chosen (D-1), which Rick may want read another way.
+denominator chosen (D-1), which the maintainer may want read another way.
 
 ## Scope
 
@@ -99,7 +99,7 @@ Test tiers touched: unit, property, integration
 
 ## Risks
 
-- **D-1 read differently**: if Rick reads the 1% against bars elapsed, only
+- **D-1 read differently**: if the maintainer reads the 1% against bars elapsed, only
   `missed_bar_allowance` changes.
 - **Alert lost on a crash between the row and the send**: the row is written
   first, so the alert is not sent again; the restart report still shows the

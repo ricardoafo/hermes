@@ -1,67 +1,128 @@
-# Project Hermes
+# Hermes
 
-Solo-developer crypto trading system.
-Deterministic rule engine, hexagonal architecture, Spanish tax posture
-(FIFO + Modelo 100/721), LLM supervision via MCP in MVP2+.
+Hermes is a crypto trading engine written in Python. It runs rule-based strategies on
+live public market data in paper-trading mode. Every fill is recorded in an
+event-sourced FIFO ledger, and the ledger produces EUR valuations and Spanish tax
+figures (Modelo 100 and 721). Strategies reach it only through a research pipeline that
+is pre-registered and tested out of sample.
 
-**Status**: MVP1 in progress. Hermes runs as a paper-trading engine on live public
-market data on the `hermes-01` host, which is the staging environment until a
-champion strategy finishes its shadow test ([ADR-024](docs/architecture/adr-024-four-environments-and-promotion.md)).
-No exchange key is installed and no order is sent: real capital is MVP2.
+**Status:** paper trading only. No exchange key is installed and no order is sent.
+Versions stay at `0.y.z` until real capital is involved
+([ADR-027](docs/architecture/adr-027-zero-major-versions-until-real-capital.md)).
+Nothing here is financial advice.
 
-## What lives where
+## What it does
 
-| Surface | Purpose |
-| ------- | ------- |
-| [`docs/architecture/`](docs/architecture/) | Architecture decision records (ADRs), numbered in order. Source of truth for architectural WHAT and HOW. |
-| [`docs/guides/`](docs/guides/) | Reproducible procedures (dev workflow, ops, release). |
-| [`docs/decisions/`](docs/decisions/) | Journal of small operational choices that don't warrant an ADR. |
-| [`docs/runbook/`](docs/runbook/) | Incident recovery playbooks (populated as incidents happen). |
-| [`docs/research/`](docs/research/) | Digests of external material that fed decisions. |
-| [`AGENTS.md`](AGENTS.md) | Project-specific AI collaboration protocol (13 absolute prohibitions + behavioral defaults). |
-| [`CHANGELOG.md`](CHANGELOG.md) | Release notes (Keep a Changelog format; versions per [ADR-022](docs/architecture/adr-022-release-versions-and-deploy-cadence.md) and [ADR-027](docs/architecture/adr-027-zero-major-versions-until-real-capital.md)). |
-| [`SECURITY.md`](SECURITY.md) | How to report security issues. |
-| [Project board](https://github.com/users/ricardoafo/projects/4) | Roadmap by milestone, open work items, issue-to-PR flow. |
+- **Paper-trading engine.** It fetches 4-hour bars from public exchange endpoints,
+  evaluates the active strategy, sizes positions under fixed risk limits and simulates
+  fills with slippage and fees
+  ([ADR-011](docs/architecture/adr-011-paper-trading-engine.md)).
+- **Ledger.** It is append-only and event-sourced, with FIFO lots, schema migrations
+  that keep a rollback path, and an integrity check (`hermes ledger verify`).
+- **Tax.** Each trade is valued in EUR from cached ECB rates. The ledger then gives
+  yearly gain estimates and the figures for Modelo 100 and 721. Hermes submits nothing
+  ([ADR-002](docs/architecture/adr-002-tax-posture.md),
+  [ADR-016](docs/architecture/adr-016-tax-estimate-rules.md)).
+- **Research funnel.** Batches of candidate strategies are pre-registered before any
+  backtest. They run on a fixed Train window, then a Validation window, and the final
+  out-of-sample window stays sealed. Every trial is written to a hash-chained trial log
+  and counted in the deflated Sharpe ratio, so later choices can't hide earlier tries
+  ([ADR-014](docs/architecture/adr-014-pre-registration-binds-real-capital.md),
+  [ADR-026](docs/architecture/adr-026-research-batch-and-signed-champion-rule.md),
+  [ADR-031](docs/architecture/adr-031-research-sweep-for-a-strong-champion.md)).
+- **Shadow test.** A winning strategy runs in shadow for 90 counted days before it can
+  be considered for anything more
+  ([ADR-021](docs/architecture/adr-021-strategy-lifecycle-ready-and-done.md)).
+- **Operator tools.** There is a read-only terminal console (`hermes tui`), status,
+  money, positions and activity commands, and a read-only Telegram bot. Monthly
+  reconciliation and a read-only supervisor complete the set
+  ([ADR-012](docs/architecture/adr-012-continuous-ai-evaluation.md)).
 
-## Roadmap
+## Architecture
 
-Two active milestones. See the [project board](https://github.com/users/ricardoafo/projects/4)
-for current status.
+Hexagonal (ports and adapters), with import rules enforced by import-linter
+([ADR-003](docs/architecture/adr-003-solution-architecture/)):
 
-| Milestone | What lands |
-| --------- | ---------- |
-| **MVP1 — Simulation ready** | Paper-trading engine, FIFO ledger, backtest + calibration harness, shadow-mode flag, Binance testnet + Kraken demo adapters, notifications live, ledger + tax guard operational |
-| **MVP2 — Live trading** | Real money on Binance + Kraken mainnet, warm-standby VPS, full observability, LLM supervisor via MCP, monthly reconciliation, Modelo 100/721 pipeline |
+| Package | Holds |
+| ------- | ----- |
+| `src/hermes/domain/` | Pure types and rules: events, lots, fees, risk. No I/O. |
+| `src/hermes/application/` | Use cases: execution, ledger, tax, backtest, calibration, reconciliation. |
+| `src/hermes/ports/` | Interfaces the application depends on. |
+| `src/hermes/adapters/` | Exchanges, market data, FX rates, SQLite ledger, notifier, console. |
+| `src/hermes/infrastructure/` | Config, logging, wiring. |
+| `src/hermes/entrypoints/` | The `hermes` CLI and the services it starts. |
 
-## Install and run
+Configuration lives in [`config/`](config/) as YAML. Secrets come from the environment,
+never from the repository.
 
-Python 3.14, managed by [`uv`](https://github.com/astral-sh/uv). The full first-clone
-checklist (git config, hooks, bot identity) is in
-[`docs/guides/local-setup.md`](docs/guides/local-setup.md).
+## Quick start
+
+You need Python 3.14 and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 git clone https://github.com/ricardoafo/hermes.git
 cd hermes
 uv sync --frozen
 uv run hermes --help
+```
+
+Try the console on demo data, without a ledger or network:
+
+```bash
+uv run hermes --demo ok-two-positions tui
+```
+
+Run the unit tests:
+
+```bash
 uv run pytest tests/unit
 ```
 
-Operating the live host (connect, read the console, deploys):
-[`docs/guides/operator-usage.md`](docs/guides/operator-usage.md).
+The full setup, including the git hooks, is in
+[`docs/guides/local-setup.md`](docs/guides/local-setup.md).
 
-## Working on the code
+## Main commands
 
-Read these first, in order:
+| Command | Does |
+| ------- | ---- |
+| `hermes serve` | Runs the paper-trading engine until stopped. |
+| `hermes tui` | Opens the read-only console: portfolio, positions, activity, shadow test. |
+| `hermes status` | Shows the verdict and the last and next bar for each stream. |
+| `hermes money` | Shows the portfolio total in EUR and the gross-to-net breakdown. |
+| `hermes ledger verify` | Checks ledger integrity, schema and event gaps. |
+| `hermes funnel` | Evaluates the backtest funnel against a signed pre-registration. |
+| `hermes tax-filing` | Gives the Modelo 100 and 721 figures for a tax year, as an estimate. |
 
-1. [`docs/guides/dev-workflow.md`](docs/guides/dev-workflow.md) — branching, commits, PRs, merge policy
-2. [`AGENTS.md`](AGENTS.md) — if you (or your AI assistant) will open PRs on this repo
-3. Relevant [ADR](docs/architecture/) for whatever you are touching
+`hermes --help` lists every command, and `hermes <command> --help` gives its options and
+exit codes. Most commands accept `--json`.
 
-Every change goes through a PR. The Code Owner reviews and approves everything, and the
-merge queue merges approved PRs once CI is green ([`docs/guides/pr-flow.md`](docs/guides/pr-flow.md)).
-No self-approval, no bot merges, no force-push to `main`. See dev-workflow.md
-for the full discipline.
+## Quality bar
+
+- mypy in strict mode, ruff, and zero warnings from every linter
+  ([ADR-009](docs/architecture/adr-009-documentation-strategy.md)).
+- Test tiers: unit, property (Hypothesis), contract, integration, end-to-end and
+  mutation ([ADR-007](docs/architecture/adr-007-testing-strategy.md),
+  [ADR-017](docs/architecture/adr-017-test-tiers-as-enforced.md)).
+- Supply chain: a locked `uv.lock`, pip-audit, a licence allowlist, pinned Actions,
+  gitleaks, Semgrep, actionlint and zizmor
+  ([ADR-010](docs/architecture/adr-010-dependency-management-and-supply-chain.md),
+  [ADR-019](docs/architecture/adr-019-security-baseline-and-threat-model.md)).
+
+## Documentation
+
+| Where | What |
+| ----- | ---- |
+| [`docs/architecture/`](docs/architecture/) | Architecture decision records, numbered in order. |
+| [`docs/guides/`](docs/guides/) | How-to guides: development workflow, tests, releases. |
+| [`docs/decisions/`](docs/decisions/) | Smaller choices that don't need an ADR. |
+| [`docs/research/`](docs/research/) | Notes on the external material behind decisions. |
+| [`CHANGELOG.md`](CHANGELOG.md) | Release notes, in Keep a Changelog format. |
+
+## Contributing
+
+Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening an issue or a pull request.
+Report security issues privately, as described in [`SECURITY.md`](SECURITY.md).
+This project follows a [code of conduct](CODE_OF_CONDUCT.md).
 
 ## License
 

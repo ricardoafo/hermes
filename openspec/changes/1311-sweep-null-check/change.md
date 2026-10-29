@@ -35,7 +35,7 @@ below.
 ### Out
 
 - Running the check for the first sweep, and putting its record in the draft
-  (#1313). It runs on server-01 when Rick starts it.
+  (#1313). It runs on server-01 when the maintainer starts it.
 - The workflow's per-family Validation (#1310) and champion step (#1312); they
   call `family_winners` and `validation_batch`.
 
@@ -124,7 +124,7 @@ Test tiers touched: unit, property
 
 ## Risks
 
-- **Run time on server-01**: the record above lets Rick size `--jobs`; the
+- **Run time on server-01**: the record above lets the maintainer size `--jobs`; the
   backtest runner is not used, so the workflow is not blocked.
 - **Driver internals**: the script imports the driver's `_replay_one` and
   `_kernel`, so a change to them changes the check with them, which is the

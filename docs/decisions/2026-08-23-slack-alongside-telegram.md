@@ -1,7 +1,7 @@
 # Add Slack channel alongside Telegram for notifications
 
 **Date**: 2026-08-23
-**Author**: claude on behalf of Ricardo
+**Author**: Maintainer
 **Related**: ADR-008 § Telegram alerts (partially superseded by this entry),
 `openspec/archive/phase-1-observability-rollback-slack-scaffolds/change.md` D-3
 

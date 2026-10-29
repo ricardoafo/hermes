@@ -54,7 +54,7 @@
 #
 #   TS_OAUTH_CLIENT_ID      — Tailscale OAuth client (auth_keys write, tag:ci-runner)
 #   TS_OAUTH_SECRET         — that client's secret
-#   VPS_SSH_HOST            — hermes-01 (tailnet hostname or TAILNET-IP)
+#   VPS_SSH_HOST            — hermes-01 (tailnet hostname or tailnet IP)
 #   VPS_SSH_USER            — root
 #   VPS_SSH_KEY             — hermes_ci_ed25519 (unencrypted ed25519 private)
 

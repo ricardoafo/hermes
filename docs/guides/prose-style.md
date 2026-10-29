@@ -267,7 +267,7 @@ Also banned:
 
 ## Language and voice
 
-- **English throughout the repo.** Ricardo speaks Spanish natively but
+- **English throughout the repo.** The maintainer speaks Spanish natively but
   the repo language is English (per ADR-009 §Language). Rationale:
   future collaborator ceiling, tooling assumptions (linters, AI
   reviewers), and consistency with dependency ecosystems.

@@ -18,7 +18,7 @@ Add to `$PROFILE` (PowerShell) or `~/.bashrc` (bash) so every session
 has them ready:
 
 ```bash
-export HERMES_VPS_IP=203.0.113.10           # or the Tailscale IP once linked
+export HERMES_VPS_IP=203.0.113.10             # your VPS address, or its Tailscale IP once linked
 export HERMES_VPS_USER=root                    # non-root user lands in a future update
 export HERMES_SSH_KEY="$HOME/.ssh/hermes_vps_ed25519"
 ```

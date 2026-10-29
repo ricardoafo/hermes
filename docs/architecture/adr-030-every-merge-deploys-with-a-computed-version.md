@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-19
 **Status**: Accepted (draft approved by the Code Owner on 2026-10-19)
-**Deciders**: Ricardo Afonso (product owner), Claude (proposer)
+**Deciders**: Maintainer
 **Supersedes**: all of [ADR-028](adr-028-release-cut-every-merge-window.md) (a release PR at every merge window); and in
 [ADR-022](adr-022-release-versions-and-deploy-cadence.md) §2 (a version is cut by a release PR), §6 (`DEPLOY_ON`,
 hermes-01 deploys only versions from day 0) and §7 (a hand-written `Engine change` line). ADR-022 §3 (`v` tags on
@@ -82,10 +82,10 @@ occasional chores PR sweeps released ones, and the naming rule already keeps a s
 
 ### 6. The Code Owner's merge is the deploy decision
 
-"Never deploy without the Code Owner" now means: nothing reaches `main` without his approval or his merge, and every
-push he lets onto `main` deploys. In particular:
+"Never deploy without the Code Owner" now means: nothing reaches `main` without their approval or their merge, and every
+push they let onto `main` deploys. In particular:
 
-- An engine PR that changes a decision is flagged by ADR-025's replay before he approves it. Merging it is the
+- An engine PR that changes a decision is flagged by ADR-025's replay before they approve it. Merging it is the
   decision to restart any counted shadow clock it touches (ADR-021).
 - A deploy restarts serve. That alone restarts no shadow clock: ADR-021 restarts a clock on an altered decision, a
   drift breach or a kill, and serve recovers the bars it missed (#1103). So restarts are safe for v1's uncounted
@@ -125,7 +125,7 @@ push he lets onto `main` deploys. In particular:
 ## What would change this decision
 
 - A counted shadow running (ADR-021) and the Code Owner wanting engine changes batched: then a push with engine
-  files waits for a window he picks, and other pushes keep deploying.
+  files waits for a window they pick, and other pushes keep deploying.
 - The ADR-024 cutover: staging keeps deploying every push, and prod takes a version only through the staging-to-prod
   gate.
 - Real capital (ADR-014): `1.0.0` and later MAJOR bumps keep ADR-006's manual cutover checklist.

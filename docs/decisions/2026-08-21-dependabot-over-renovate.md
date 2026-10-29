@@ -1,7 +1,7 @@
 # Dependabot over Renovate for dependency updates
 
 **Date**: 2026-08-21
-**Author**: claude on behalf of Ricardo
+**Author**: Maintainer
 **Related**: ADR-010 §Renovate (partially superseded by this entry)
 
 ## Decision
@@ -60,7 +60,7 @@ Actions), Dependabot's simplicity wins:
 - Configuration lives in `.github/dependabot.yml` — one file, one syntax
 - Cooldown + grouping strategies remain (same discipline, different tool)
 - Auto-merge conditions handled by the existing CI's `ci-success` gate
-  plus branch protection's `require_code_owner_reviews` — Ricardo still
+  plus branch protection's `require_code_owner_reviews` — the maintainer still
   reviews every dependency update PR (no silent auto-merge)
 
 **What this forecloses**:

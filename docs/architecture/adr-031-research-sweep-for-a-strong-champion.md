@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-19
 **Status**: Accepted (merged in PR #1284)
-**Deciders**: Ricardo Afonso (product owner), Claude (proposer)
+**Deciders**: Maintainer
 **Supersedes**: nothing. Extends [ADR-026](adr-026-research-batch-and-signed-champion-rule.md) §1 (batch size and
 one candidate per family) and §5 (the Benjamini–Hochberg m) for sweep batches only. Tracking issue: #1280.
 

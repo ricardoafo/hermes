@@ -55,7 +55,7 @@ names (they belong in the commit body and PR body). No personal prefixes
 
 ### Who creates branches
 
-- **Ricardo** works on feature branches created from `main`, opens PRs, and
+- **The maintainer** works on feature branches created from `main`, opens PRs, and
   self-approves via the review workflow (see [Pull requests](#pull-requests)).
 - **The `ai-bot`** creates branches only when explicitly directed via a
   Claude Code session. It commits, pushes, opens the PR, and stops. It
@@ -230,12 +230,12 @@ category — there is no separate `Change type` section in the template.
 ### Reviewers and approvals
 
 - `.github/CODEOWNERS` assigns **@ricardoafo** as reviewer for every path.
-  GitHub auto-requests review from him on every PR.
+  GitHub auto-requests review from them on every PR.
 - **Exactly one approval required** — from `@ricardoafo`. No other reviewer
   can unblock a merge.
 - **Author cannot approve own PR** — enforced by branch protection setting
   "Require review from Code Owners" + "Dismiss stale approvals".
-- **`ai-bot` PRs** — same rule. Bot opens, Ricardo reviews and approves,
+- **`ai-bot` PRs** — same rule. Bot opens, the maintainer reviews and approves,
   and the merge queue merges the approved PR once CI is green
   ([`pr-flow.md`](pr-flow.md)).
 
@@ -261,7 +261,7 @@ pre-commit hook ran. Full CI has been enforced since then.
 
 - **GitHub merge button config**: allow squash-merge; disallow merge-commit
   and rebase-merge. Configured via repo settings (`gh repo edit`).
-- **Squash commit message**: the PR title. Ricardo edits the collapsed body if
+- **Squash commit message**: the PR title. The maintainer edits the collapsed body if
   needed before clicking Confirm squash.
 - **Result**: `main` has one commit per PR, each in Conventional Commits format,
   each traceable back to its PR via the auto-appended `(#PR-number)` suffix.
@@ -355,7 +355,7 @@ step in the prior cycle — clean it now.
 ### After merge — nothing to clean up locally
 
 Because the local branch was deleted in the push step, there is
-nothing local to delete after Ricardo merges the PR. Remote branch
+nothing local to delete after the maintainer merges the PR. Remote branch
 auto-deletes (`--delete-branch-on-merge` repo setting). Fast-forward
 local main:
 
@@ -378,8 +378,8 @@ The **local** git config for this repo MUST identify commits as the
 `ai-bot`, NOT the operator. Reason: branch protection
 `require_last_push_approval: true` blocks a reviewer from approving
 commits authored by themselves. If commits are authored by the
-operator (from global `user.name` = "Ricardo Afonso"), Ricardo
-cannot approve his own bot's PR, and the merge deadlocks.
+operator (from the global `user.name`), the maintainer
+cannot approve their own bot's PR, and the merge deadlocks.
 
 Global `~/.claude/CLAUDE.md` says "NEVER update the git config" —
 that applies to GLOBAL config only. Local (per-repo) config is
@@ -399,7 +399,7 @@ operator-owned bot account name — the project-facing alias is
 
 Also required: `gh auth setup-git --hostname github.com`. Windows
 credential manager otherwise caches the operator's PAT and pushes
-under Ricardo's identity regardless of the active `gh` user.
+under the maintainer's identity regardless of the active `gh` user.
 
 ### Parallel PRs on shared files
 
@@ -506,10 +506,10 @@ changes against real open PRs without merging.
 ## Emergency exceptions
 
 There is one exception to "no direct pushes to `main`": production incident
-where the operator (Ricardo) is the sole reviewer of a fix he wrote, and every
+where the operator (the maintainer) is the sole reviewer of a fix they wrote, and every
 minute of delay compounds real-capital exposure. In that case:
 
-1. Ricardo temporarily lifts branch protection via `gh api`.
+1. The maintainer temporarily lifts branch protection via `gh api`.
 2. Pushes the hotfix directly to `main`.
 3. Re-enables branch protection within 10 minutes.
 4. Opens a retrospective issue within 24 hours documenting: what broke, what
@@ -585,6 +585,18 @@ commits, PR and issue bodies) the rule above holds. The names the CI check
 looks for live in `docs/research/prior-art-names.txt`, inside the carve-out,
 so the check itself leaves no footprint.
 
+### Private values
+
+The same CI check also fails on private values anywhere outside
+`docs/experiments/` (the signed research record, kept exactly as signed):
+
+- a value on the scrub list: host addresses, the backup account and personal
+  email addresses. The check keeps only their SHA-256 digests, so it names none
+  of them itself;
+- a public or tailnet IP address. Examples use the documentation range
+  `203.0.113.0/24`;
+- an AI attribution footer.
+
 ### Editorial scrubs
 
 When footprint is discovered, an editorial-scrub PR is opened with type
@@ -595,11 +607,11 @@ immutable" rule for the specific case of external-reference removal.
 
 When operating in a Claude Code session against this repo:
 
-1. **Never merge a PR** — even if Ricardo says "and merge it". Stop after
-   push and PR-open. Ask Ricardo to merge from the GitHub UI or via `gh pr
-   merge` command he issues himself.
+1. **Never merge a PR** — even if the maintainer says "and merge it". Stop after
+   push and PR-open. Ask the maintainer to merge from the GitHub UI or via `gh pr
+   merge` command they issue themselves.
 2. **Never approve a PR** — you may not review-approve any PR, including
-   Ricardo's. GitHub blocks this via CODEOWNERS + branch protection anyway,
+   the maintainer's. GitHub blocks this via CODEOWNERS + branch protection anyway,
    but the intent is: bot does not exercise review judgment.
 3. **Follow Conventional Commits strictly** — commit-msg hook will reject
    malformed messages. Do not `--no-verify`.
@@ -621,8 +633,8 @@ When operating in a Claude Code session against this repo:
   changelog. Each merge is one logical change. Bisecting is deterministic.
 - **Conventional Commits over free-form**: enables mechanical CHANGELOG
   extraction (ADR-006), enables commit-type filtering during release notes,
-  gives future-Ricardo a scannable history.
-- **Required review from Ricardo over "self-approval OK"**: forces every
+  gives a future maintainer a scannable history.
+- **Required review from the maintainer over "self-approval OK"**: forces every
   change through a human decision point. Prevents AI-driven momentum from
   landing something the operator did not choose.
 - **No bot merges over "bot can merge post-approval"**: keeps the merge
@@ -635,4 +647,3 @@ When operating in a Claude Code session against this repo:
 - [ADR-007 — Testing strategy](../architecture/adr-007-testing-strategy.md)
 - [ADR-009 — Documentation strategy](../architecture/adr-009-documentation-strategy.md)
 - [ADR-010 — Dependency management](../architecture/adr-010-dependency-management-and-supply-chain.md)
-- [Global rules — Ricardo's CLAUDE.md](file:///C:/Users/rafon/.claude/CLAUDE.md)

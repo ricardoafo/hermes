@@ -1,7 +1,7 @@
 # Revalidate-then-merge queue — no branch pushes, decisions in code
 
 **Date**: 2026-08-21
-**Author**: claude on behalf of Ricardo
+**Author**: Maintainer
 **Related**: dev-workflow.md §Merge queue, ADR-003 §09 Deployment,
 `.github/workflows/pr-revalidate.yml`, `tools/merge/decisions.cjs`,
 `docs/decisions/2026-08-21-pr-flow-hardening.md` (partially superseded)

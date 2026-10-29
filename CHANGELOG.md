@@ -1186,7 +1186,7 @@ still shows the old shape.
 
 - The Home Market panel shows each coin once when it is too narrow for the timeframe column, with that coin's soonest next check, instead of one identical-looking row per timeframe.
 
-- **Frozen depth books and an off clock no longer pass quietly.** A Binance depth book whose `lastUpdateId` has not moved keeps the stamp of the response that first carried it, so RO-04 halts entries on a frozen upstream (a kill-rule change Rick approved on 17 Oct 2026). Serve records and alerts its clock leaving Binance time by more than the settle delay as a P0 anomaly, and `hermes status` shows "The server clock is off" in red until the clock is back. Closes #859.
+- **Frozen depth books and an off clock no longer pass quietly.** A Binance depth book whose `lastUpdateId` has not moved keeps the stamp of the response that first carried it, so RO-04 halts entries on a frozen upstream (a kill-rule change the maintainer approved on 17 Oct 2026). Serve records and alerts its clock leaving Binance time by more than the settle delay as a P0 anomaly, and `hermes status` shows "The server clock is off" in red until the clock is back. Closes #859.
 
 - A klines reply that gives one bar two different rows is now refused as a bad reply instead of silently keeping the last row; exact repeats are still dropped.
 
@@ -1534,7 +1534,7 @@ still shows the old shape.
 - Merge queue test — PR C (competing edit)
 - Architecture Decision Records 001-010 (accepted 2026-08-21)
 - Version-control discipline (`docs/guides/dev-workflow.md`) — trunk-based,
-  Conventional Commits, squash-merge only, Ricardo-only approval
+  Conventional Commits, squash-merge only, maintainer-only approval
 - AI collaboration protocol (`AGENTS.md`) — role separation, 10 absolute
   prohibitions, precedence order
 - Pre-commit hook chain: markdownlint-cli2, conventional-pre-commit
